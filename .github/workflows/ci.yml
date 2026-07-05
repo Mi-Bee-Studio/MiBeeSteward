@@ -10,7 +10,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Build the frontend once, then share the produced web/dist/ as an artifact.
+  # Both the `go` job (which embeds web/dist via go:embed) and the frontend
+  # test job consume it, so neither has to rebuild independently.
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: web/dist
+
   go:
+    needs: build-frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,17 +40,24 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # web/dist/ is gitignored (a build artifact) but go:embed all:dist
+      # requires it at compile time — restore the frontend build here.
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: web/dist
       - run: go vet ./...
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.61.0
+          version: v2.x
       - run: go test -race -coverprofile=cover.out -covermode=atomic ./...
       - uses: actions/upload-artifact@v4
         with:
           name: go-coverage
           path: cover.out
 
-  frontend:
+  frontend-test:
+    needs: build-frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +70,6 @@ jobs:
         run: |
           npm ci
           npm test
-          npm run build
 
   sqlc-verify:
     runs-on: ubuntu-latest
@@ -54,4 +82,6 @@ jobs:
         run: |
           go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
           sqlc version
-      - run: sqlc verify
+      # `sqlc compile` validates queries against the schema locally without
+      # requiring a sqlc Cloud project (which `sqlc verify` does).
+      - run: sqlc compile
