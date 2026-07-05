@@ -21,7 +21,7 @@ func setupScanRateLimitTestServer(t *testing.T, limit int) *httptest.Server {
 
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019 deprecated; mirrors production chain
 	r.Use(chimw.Recoverer)
 
 	r.Route("/api/v1/scanner", func(r chi.Router) {

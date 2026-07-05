@@ -90,7 +90,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	// Build router
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019 deprecated; mirrors production chain
 	r.Use(chimw.Recoverer)
 
 	// Public health endpoint

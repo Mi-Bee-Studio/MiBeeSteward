@@ -57,7 +57,7 @@ func setupExtendedTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019 deprecated; mirrors production chain
 	r.Use(chimw.Recoverer)
 
 	r.Get("/api/v1/health", handler.HealthHandler(db))

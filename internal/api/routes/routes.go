@@ -89,7 +89,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Middleware chain: RequestID → RealIP → Logging → Metrics → Recoverer → SecurityHeaders
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	// RealIP is deprecated in chi (IP-spoofing risk: it trusts X-Forwarded-For
+	// unconditionally). We keep it because this service is designed to sit behind
+	// a trusted reverse proxy (nginx — see deploy/) that overwrites the header;
+	// direct exposure to untrusted networks is not a supported deployment.
+	// TODO(security): replace with a trusted-proxy-aware RealIP once a
+	// trusted_proxies config knob lands.
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019: trusted-proxy deployment, see note above
 	r.Use(middleware.Logging)
 	r.Use(middleware.Metrics)
 	r.Use(chimw.Recoverer)

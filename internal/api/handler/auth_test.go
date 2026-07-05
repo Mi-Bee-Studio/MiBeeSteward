@@ -149,7 +149,7 @@ func setupCSRFTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019 deprecated; mirrors production chain
 	r.Use(chimw.Recoverer)
 	r.Use(middleware.CSRF) // CSRF middleware applied
 
@@ -275,7 +275,7 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019 deprecated; mirrors production chain
 	r.Use(chimw.Recoverer)
 	r.Use(loginLimiter.Middleware)
 
