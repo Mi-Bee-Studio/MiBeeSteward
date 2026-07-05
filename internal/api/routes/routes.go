@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
@@ -88,7 +89,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Middleware chain: RequestID → RealIP → Logging → Metrics → Recoverer → SecurityHeaders
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	// RealIP is deprecated in chi (IP-spoofing risk: it trusts X-Forwarded-For
+	// unconditionally). We keep it because this service is designed to sit behind
+	// a trusted reverse proxy (nginx — see deploy/) that overwrites the header;
+	// direct exposure to untrusted networks is not a supported deployment.
+	// TODO(security): replace with a trusted-proxy-aware RealIP once a
+	// trusted_proxies config knob lands.
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019: trusted-proxy deployment, see note above
 	r.Use(middleware.Logging)
 	r.Use(middleware.Metrics)
 	r.Use(chimw.Recoverer)
@@ -155,7 +162,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Construct the v2 engine: probes/classifiers/handlers + persistence + eBPF observer.
 	scannerPortSpec := "22,80,443,8080,8443,8000,554,8554,9090,9100,9104,9113,9121,9187,161"
-	v2Engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.EngineConfig{
+	v2Engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
 		PortSpec:           scannerPortSpec,
 		MaxConcurrentHosts: cfg.Scanner.MaxConcurrentHosts,
 		MaxConcurrentScans: cfg.Scanner.MaxConcurrentScans,

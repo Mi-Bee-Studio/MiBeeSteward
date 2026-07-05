@@ -16,7 +16,7 @@ type SNMPProber struct {
 }
 
 // Probe connects to the target via SNMP v2c and performs a Get request on the configured OID.
-func (p *SNMPProber) Probe(ctx context.Context, target string, timeout time.Duration) (*ProbeResult, error) {
+func (p *SNMPProber) Probe(_ context.Context, target string, timeout time.Duration) (*Result, error) {
 	community := p.Community
 	if community == "" {
 		community = "public"
@@ -40,7 +40,7 @@ func (p *SNMPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	if err != nil {
 		elapsed := time.Since(start)
 		slog.Error("probe failed", "method", "snmp", "target", target, "error", err)
-		return &ProbeResult{
+		return &Result{
 			Success:      false,
 			Latency:      elapsed,
 			ErrorMessage: fmt.Sprintf("SNMP connect failed: %v", err),
@@ -53,7 +53,7 @@ func (p *SNMPProber) Probe(ctx context.Context, target string, timeout time.Dura
 
 	if err != nil {
 		slog.Error("probe failed", "method", "snmp", "target", target, "error", err)
-		return &ProbeResult{
+		return &Result{
 			Success:      false,
 			Latency:      elapsed,
 			ErrorMessage: fmt.Sprintf("SNMP get failed: %v", err),
@@ -61,7 +61,7 @@ func (p *SNMPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	}
 
 	slog.Debug("probe executed", "method", "snmp", "target", target, "success", true, "latency", elapsed)
-	return &ProbeResult{
+	return &Result{
 		Success: true,
 		Latency: elapsed,
 	}, nil

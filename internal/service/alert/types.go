@@ -2,19 +2,9 @@ package alert
 
 import (
 	"context"
+
 	"mibee-steward/internal/db"
 )
-
-// AlertContext provides the context for evaluating alert rules.
-type AlertContext struct {
-	DeviceID     int64
-	ConfigID     *int64
-	OldStatus    string
-	NewStatus    string
-	ResultStatus *string
-	FailCount    int
-	TimeoutCount int
-}
 
 // RuleMatchResult describes the outcome of evaluating a single rule against an event.
 type RuleMatchResult struct {

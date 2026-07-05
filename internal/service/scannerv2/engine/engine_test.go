@@ -9,8 +9,8 @@ import (
 func TestParseScanTargets_Formats(t *testing.T) {
 	cases := []struct {
 		in      string
-		min     int  // expected minimum count
-		exact   int  // if >0, expect exact count
+		min     int // expected minimum count
+		exact   int // if >0, expect exact count
 		wantErr bool
 	}{
 		{"192.168.1.5", 1, 1, false},
@@ -44,7 +44,7 @@ func TestParseScanTargets_Formats(t *testing.T) {
 func TestNewEngine_AssemblesAllLayers(t *testing.T) {
 	// Construct an engine with a nil DB (no persistence) and verify the
 	// registry contains the default probes/classifiers/handlers.
-	e, err := NewEngine(nil, EngineConfig{
+	e, err := NewEngine(nil, Config{
 		PortSpec:           "22,80",
 		MaxConcurrentHosts: 10,
 		PerHostTimeout:     0, // default applied

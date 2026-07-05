@@ -7,11 +7,11 @@ import (
 
 // Sender defines the interface for sending notifications through a specific channel.
 type Sender interface {
-	Send(ctx context.Context, payload NotificationPayload) SendResult
+	Send(ctx context.Context, payload Payload) SendResult
 }
 
-// NotificationPayload contains the message data to be delivered.
-type NotificationPayload struct {
+// Payload contains the message data to be delivered.
+type Payload struct {
 	Subject   string          `json:"subject"`
 	Body      string          `json:"body"`
 	Recipient string          `json:"recipient"`

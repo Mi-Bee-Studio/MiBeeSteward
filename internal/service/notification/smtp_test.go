@@ -72,9 +72,9 @@ func TestSMTPSenderFromConfig(t *testing.T) {
 
 func TestIsRetryable(t *testing.T) {
 	tests := []struct {
-		name    string
-		result  SendResult
-		want    bool
+		name   string
+		result SendResult
+		want   bool
 	}{
 		{"success", SendResult{Success: true}, false},
 		{"connection refused", SendResult{Success: false, Error: "connection refused"}, true},
@@ -123,7 +123,7 @@ func TestSMTPSenderSendInvalidServer(t *testing.T) {
 		Password: "pass",
 	}
 
-	result := sender.Send(context.Background(), NotificationPayload{
+	result := sender.Send(context.Background(), Payload{
 		Subject:   "test",
 		Body:      "test body",
 		Recipient: "recipient@example.com",

@@ -30,7 +30,7 @@ func (r *DeviceSystemRepository) Create(ctx context.Context, deviceID int64, req
 		tags = "{}"
 	}
 
-	var metricsEnabled int64 = 0
+	var metricsEnabled int64
 	if req.MetricsEnabled {
 		metricsEnabled = 1
 	}

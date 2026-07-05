@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/testutil"
@@ -43,9 +44,9 @@ func TestMergeLabels(t *testing.T) {
 		{
 			name: "static only",
 			static: map[string]string{
-				"env":     "production",
-				"team":    "infra",
-				"region":  "us-east",
+				"env":    "production",
+				"team":   "infra",
+				"region": "us-east",
 			},
 			dynamic:   map[string]string{},
 			perDevice: map[string]string{},
@@ -58,11 +59,11 @@ func TestMergeLabels(t *testing.T) {
 		{
 			name: "dynamic overrides static",
 			static: map[string]string{
-				"env":   "production",
-				"team":  "infra",
+				"env":  "production",
+				"team": "infra",
 			},
 			dynamic: map[string]string{
-				"team":          "networking",
+				"team":           "networking",
 				"scan_task_name": "daily-scan",
 			},
 			perDevice: map[string]string{},
@@ -85,7 +86,7 @@ func TestMergeLabels(t *testing.T) {
 				"scan_task_name": "daily-scan",
 			},
 			perDevice: map[string]string{
-				"team":        "storage",
+				"team":         "storage",
 				"custom_label": "special",
 			},
 			expected: map[string]string{
@@ -143,8 +144,8 @@ func TestBuildScannerTargets(t *testing.T) {
 
 	// Create a device with per-device prometheus_labels.
 	devLabels, _ := json.Marshal(map[string]string{
-		"team":     "storage",
-		"tier":     "gold",
+		"team": "storage",
+		"tier": "gold",
 	})
 	_, err = d.Exec(
 		`INSERT INTO devices (name, type, ip_address, status, prometheus_labels)
@@ -382,4 +383,3 @@ func TestExtractDiscoveredServices(t *testing.T) {
 		})
 	}
 }
-

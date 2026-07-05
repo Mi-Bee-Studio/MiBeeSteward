@@ -14,6 +14,7 @@ import (
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
+
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/repository"
@@ -127,7 +128,7 @@ func (s *TOTPService) Enable(ctx context.Context, userID int64, code string) err
 			UserID:       &userID,
 			Action:       "admin.user.2fa.enable",
 			ResourceType: "user",
-			ResourceID:    fmt.Sprintf("%d", userID),
+			ResourceID:   fmt.Sprintf("%d", userID),
 			Details:      "2FA enabled via TOTP",
 		})
 	}
@@ -216,7 +217,7 @@ func (s *TOTPService) Disable(ctx context.Context, userID int64, password string
 			UserID:       &userID,
 			Action:       "admin.user.2fa.disable",
 			ResourceType: "user",
-			ResourceID:    fmt.Sprintf("%d", userID),
+			ResourceID:   fmt.Sprintf("%d", userID),
 			Details:      "2FA disabled",
 		})
 	}
@@ -249,9 +250,9 @@ func (s *TOTPService) GetStatus(ctx context.Context, userID int64) (*domain.TOTP
 		return nil, fmt.Errorf("failed to get TOTP status")
 	}
 	return &domain.TOTPStatusResponse{
-		Enabled:  totpRecord.Enabled == 1,
-		Verified: totpRecord.Verified == 1,
-		CreateAt: totpRecord.CreatedAt,
+		Enabled:   totpRecord.Enabled == 1,
+		Verified:  totpRecord.Verified == 1,
+		CreateAt:  totpRecord.CreatedAt,
 		UpdatedAt: totpRecord.UpdatedAt,
 	}, nil
 }

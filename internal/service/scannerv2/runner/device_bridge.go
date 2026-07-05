@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log/slog"
-	"strings"
 	"time"
 
 	"mibee-steward/internal/service/scannerv2"
@@ -33,8 +32,8 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	err := rn.dbConn.QueryRowContext(ctx,
 		`SELECT id FROM devices WHERE ip_address = ? LIMIT 1`, rep.IP).Scan(&existingID)
 
-	switch {
-	case err == sql.ErrNoRows:
+	switch err {
+	case sql.ErrNoRows:
 		devID, derr := rn.createDevice(ctx, inferredType, inferredBrand, inferredDescr, inferredLoc, rep)
 		if derr != nil {
 			rn.logger.Warn("device bridge: create device failed", "ip", rep.IP, "error", derr)
@@ -48,7 +47,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		}
 		return true, false
 
-	case err == nil:
+	case nil:
 		if _, uerr := rn.dbConn.ExecContext(ctx, buildExistingUpdate(inferredType, inferredBrand, inferredDescr, inferredLoc, rep),
 			existingUpdateArgs(existingID, inferredType, inferredBrand, inferredDescr, inferredLoc, rep)...); uerr != nil {
 			rn.logger.Warn("device bridge: update device failed", "ip", rep.IP, "error", uerr)
@@ -96,7 +95,11 @@ func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, locat
 
 // buildExistingUpdate returns an UPDATE statement that fills only empty/
 // "unknown" fields on the existing device, then always refreshes scan metadata.
-func buildExistingUpdate(inferredType, brand, descr, location string, rep scannerv2.HostReport) string {
+// buildExistingUpdate returns the static UPDATE statement for an existing
+// device. The positional args are assembled separately in existingUpdateArgs;
+// the parameters here are kept for signature symmetry/readability but unused
+// in the (static) SQL body.
+func buildExistingUpdate(_, _, _, _ string, _ scannerv2.HostReport) string {
 	return `
 		UPDATE devices SET
 		    name = CASE WHEN (name = '' OR name = ip_address) THEN ? ELSE name END,
@@ -131,10 +134,6 @@ func existingUpdateArgs(id int64, inferredType, brand, descr, location string, r
 		neURL, neURL,
 		rep.RTTMs, now, now, id,
 	}
-}
-
-func isUnknown(s string) bool {
-	return s == "" || strings.EqualFold(s, "unknown")
 }
 
 // deviceScanInfoJSON returns the open_ports + detected_services JSON for the

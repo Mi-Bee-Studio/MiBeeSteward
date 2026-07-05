@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
@@ -203,7 +204,7 @@ func (s *PasswordResetService) sendResetEmail(ctx context.Context, email, token 
 		return
 	}
 
-	payload := notification.NotificationPayload{
+	payload := notification.Payload{
 		Subject:   "Password Reset Request",
 		Body:      fmt.Sprintf("You requested a password reset. Use this token to reset your password: %s\n\nThis token expires in 1 hour.", token),
 		Recipient: email,

@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/service"
 )
@@ -171,7 +172,7 @@ func (h *DashboardHandler) Query(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	_, _ = w.Write(body)
 }
 
 // QueryRange handles GET /api/v1/dashboard/query_range — proxies range PromQL queries.
@@ -202,5 +203,5 @@ func (h *DashboardHandler) QueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	_, _ = w.Write(body)
 }

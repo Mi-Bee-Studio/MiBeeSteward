@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/stretchr/testify/require"
+
 	"mibee-steward/internal/api/middleware"
 )
 
@@ -20,23 +21,23 @@ func setupScanRateLimitTestServer(t *testing.T, limit int) *httptest.Server {
 
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019 deprecated; mirrors production chain
 	r.Use(chimw.Recoverer)
 
 	r.Route("/api/v1/scanner", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(scanLimiter.Middleware)
-			r.Post("/scan", func(w http.ResponseWriter, r *http.Request) {
+			r.Post("/scan", func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte(`{"status":"scan started"}`))
 			})
-			r.Post("/tasks/{id}/trigger", func(w http.ResponseWriter, r *http.Request) {
+			r.Post("/tasks/{id}/trigger", func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte(`{"status":"triggered"}`))
 			})
 		})
 		// Non-rate-limited routes
-		r.Get("/tasks", func(w http.ResponseWriter, r *http.Request) {
+		r.Get("/tasks", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"tasks":[]}`))
 		})

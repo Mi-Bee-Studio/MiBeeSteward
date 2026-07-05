@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 )
 
@@ -9,7 +10,11 @@ import (
 func JSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		// The client may have disconnected mid-write; nothing to recover here,
+		// but surface it so connection issues are visible.
+		slog.Debug("json response encode failed", "error", err)
+	}
 }
 
 // Success writes a 200 OK JSON response.

@@ -243,7 +243,7 @@ func TestDeviceSystemService_Update_Partial(t *testing.T) {
 	require.Equal(t, "Updated", updated.Name)
 	require.Equal(t, "Updated description", updated.Description)
 	require.Equal(t, created.EntryURL, updated.EntryURL) // unchanged
-	require.Equal(t, created.Category, updated.Category)  // unchanged
+	require.Equal(t, created.Category, updated.Category) // unchanged
 	require.Equal(t, created.ID, updated.ID)
 }
 

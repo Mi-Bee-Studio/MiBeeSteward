@@ -80,7 +80,6 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-
 	resp := make([]domain.ScanResultResponse, 0, len(results))
 	for _, r := range results {
 		resp = append(resp, toScanResultResponse(r))
@@ -279,7 +278,7 @@ func (h *ScannerResultHandler) ExportScanResults(w http.ResponseWriter, r *http.
 
 // extractSNMPFields parses snmp_data JSON to extract individual fields.
 // Falls back to enrichment from snmp_data if present.
-func extractSNMPFields(snmpData, ip string) (name, descr, brand, devType, location string) {
+func extractSNMPFields(snmpData, _ string) (name, descr, brand, devType, location string) {
 	if snmpData == "" {
 		return
 	}

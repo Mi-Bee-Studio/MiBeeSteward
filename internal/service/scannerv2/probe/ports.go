@@ -10,7 +10,6 @@
 package probe
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"net"
@@ -30,7 +29,7 @@ var DefaultFingerprintPorts = []int{
 	22, 80, 443, 8080, 8443, 8000, // common web/admin
 	554, 8554, // RTSP (cameras)
 	9090, 9100, 9104, 9113, 9121, 9187, // prometheus family
-	161, // SNMP
+	161,        // SNMP
 	3306, 5432, // databases
 }
 
@@ -240,12 +239,4 @@ func joinInts(in []int) string {
 	return strings.Join(parts, ",")
 }
 
-// readLine reads one line from a buffered reader; returns "" on any error.
-// Used by protocol probes (RTSP/ONVIF) below.
-func readLine(r *bufio.Reader) string {
-	line, err := r.ReadString('\n')
-	if err != nil {
-		return strings.TrimRight(line, "\r\n")
-	}
-	return strings.TrimRight(line, "\r\n")
-}
+// readLine was removed (unused); protocol probes read banners inline.

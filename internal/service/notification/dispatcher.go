@@ -13,17 +13,17 @@ import (
 )
 
 const (
-	defaultWorkers   = 3
-	channelBuffer    = 100
-	maxRetries       = 3
-	retryBaseDelay   = 1 * time.Second
+	defaultWorkers = 3
+	channelBuffer  = 100
+	maxRetries     = 3
+	retryBaseDelay = 1 * time.Second
 )
 
 // Dispatcher manages async notification delivery via a worker pool.
 // Jobs are dispatched non-blocking onto a buffered channel.
 type Dispatcher struct {
 	channel       chan dispatchJob
-	db            NotificationLogCreator
+	db            LogCreator
 	logger        *slog.Logger
 	wg            sync.WaitGroup
 	cancel        context.CancelFunc
@@ -35,20 +35,20 @@ type dispatchJob struct {
 	ctx       context.Context
 	channel   domain.ChannelType
 	config    json.RawMessage
-	payload   NotificationPayload
+	payload   Payload
 	ruleID    *int64
 	channelID int64
 }
 
-// NotificationLogCreator abstracts the DB create call for testability.
-type NotificationLogCreator interface {
+// LogCreator abstracts the DB create call for testability.
+type LogCreator interface {
 	CreateNotificationLog(ctx context.Context, arg db.CreateNotificationLogParams) (db.NotificationLog, error)
 }
 
 // SenderFactory creates a Sender for the given channel type and config.
 type SenderFactory func(channelType domain.ChannelType, config json.RawMessage) (Sender, error)
 
-func NewDispatcher(db NotificationLogCreator, logger *slog.Logger) *Dispatcher {
+func NewDispatcher(db LogCreator, logger *slog.Logger) *Dispatcher {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -72,6 +72,7 @@ func (d *Dispatcher) getSenderFactory() SenderFactory {
 	}
 	return defaultSenderFactory
 }
+
 // defaultSenderFactory creates a Sender for the given channel type and config.
 
 func defaultSenderFactory(channelType domain.ChannelType, config json.RawMessage) (Sender, error) {
@@ -107,7 +108,7 @@ func (d *Dispatcher) Stop() {
 
 // Dispatch sends a job to the worker pool. Non-blocking — returns immediately.
 // If the channel is full, the job is dropped and logged.
-func (d *Dispatcher) Dispatch(ctx context.Context, channelType domain.ChannelType, config json.RawMessage, payload NotificationPayload, ruleID *int64, channelID int64) {
+func (d *Dispatcher) Dispatch(ctx context.Context, channelType domain.ChannelType, config json.RawMessage, payload Payload, ruleID *int64, channelID int64) {
 	job := dispatchJob{
 		ctx:       ctx,
 		channel:   channelType,
@@ -126,7 +127,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, channelType domain.ChannelTyp
 	}
 }
 
-func (d *Dispatcher) worker(ctx context.Context, id int) {
+func (d *Dispatcher) worker(ctx context.Context, _ int) {
 	defer d.wg.Done()
 
 	for {
@@ -164,7 +165,7 @@ func (d *Dispatcher) processJob(job dispatchJob) {
 			}
 		}
 
-		result := sendWithSender(sender, job.ctx, job.payload, job.config)
+		result := sendWithSender(job.ctx, sender, job.payload, job.config)
 		lastResult = result
 
 		if result.Success {
@@ -186,7 +187,7 @@ func (d *Dispatcher) processJob(job dispatchJob) {
 }
 
 // sendWithSender calls the appropriate send method based on channel type.
-func sendWithSender(sender Sender, ctx context.Context, payload NotificationPayload, config json.RawMessage) SendResult {
+func sendWithSender(ctx context.Context, sender Sender, payload Payload, config json.RawMessage) SendResult {
 	// If sender is a WebhookSender, use SendWithConfig for the config-aware path
 	if ws, ok := sender.(*WebhookSender); ok {
 		return ws.SendWithConfig(ctx, payload, config)
@@ -194,7 +195,7 @@ func sendWithSender(sender Sender, ctx context.Context, payload NotificationPayl
 	return sender.Send(ctx, payload)
 }
 
-func (d *Dispatcher) logResult(ctx context.Context, ruleID *int64, channelID int64, status string, payload NotificationPayload, errMsg string) {
+func (d *Dispatcher) logResult(ctx context.Context, ruleID *int64, channelID int64, status string, payload Payload, errMsg string) {
 	payloadJSON, _ := json.Marshal(payload)
 
 	_, err := d.db.CreateNotificationLog(ctx, db.CreateNotificationLogParams{

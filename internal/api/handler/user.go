@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/jwtauth/v5"
+
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/domain"
@@ -176,6 +177,7 @@ func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	Created(w, resp)
 }
+
 // Logout handles POST /api/v1/auth/logout
 func (h *UserHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	// Extract and blacklist the token if present

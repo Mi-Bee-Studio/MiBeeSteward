@@ -112,7 +112,9 @@ func parseIPRange(s string) ([]string, error) {
 	startU := uint32(start4[0])<<24 | uint32(start4[1])<<16 | uint32(start4[2])<<8 | uint32(start4[3])
 	endU := uint32(end4[0])<<24 | uint32(end4[1])<<16 | uint32(end4[2])<<8 | uint32(end4[3])
 	if startU > endU {
-		start4, end4 = end4, start4
+		// Swap so start <= end. end4 itself is unused after this point (only
+		// start4 seeds the iteration below), so it is intentionally not swapped.
+		start4 = end4
 		startU, endU = endU, startU
 	}
 

@@ -36,9 +36,7 @@ func CSRF(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if strings.HasPrefix(referer, "http://"+host) || strings.HasPrefix(referer, "https://"+host) {
-				// Valid Referer, proceed to token check
-			} else {
+			if !strings.HasPrefix(referer, "http://"+host) && !strings.HasPrefix(referer, "https://"+host) {
 				slog.Warn("CSRF: rejected request with no Origin and mismatched Referer",
 					"referer", referer,
 					"host", host,
@@ -112,5 +110,5 @@ func generateCSRFToken() string {
 func csrfReject(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
-	w.Write([]byte(`{"error":"forbidden origin"}`))
+	_, _ = w.Write([]byte(`{"error":"forbidden origin"}`))
 }

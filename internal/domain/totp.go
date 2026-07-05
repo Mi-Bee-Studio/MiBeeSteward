@@ -35,9 +35,9 @@ type TOTPSetupResponse struct {
 }
 
 type TOTPStatusResponse struct {
-	Enabled  bool      `json:"enabled"`
-	Verified bool      `json:"verified"`
-	CreateAt time.Time `json:"created_at"`
+	Enabled   bool      `json:"enabled"`
+	Verified  bool      `json:"verified"`
+	CreateAt  time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -45,5 +45,5 @@ type TOTPStatusResponse struct {
 // It does NOT contain the JWT token.
 type TOTPLoginChallengeResponse struct {
 	Require2FA bool         `json:"require_2fa"`
-	User      UserResponse `json:"user"`
+	User       UserResponse `json:"user"`
 }

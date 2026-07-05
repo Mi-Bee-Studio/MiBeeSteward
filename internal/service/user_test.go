@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
+
 	"mibee-steward/internal/domain"
 )
 
@@ -199,7 +200,7 @@ func TestLogin_AccountLockout(t *testing.T) {
 	// Fail 5 times to trigger lockout
 	for i := 0; i < 5; i++ {
 		_, err := svc.Login(context.Background(), "lockme", "WrongPass1!")
-			require.True(t, errors.Is(err, ErrInvalidCredentials))
+		require.True(t, errors.Is(err, ErrInvalidCredentials))
 	}
 
 	// 6th attempt with correct password should be locked
@@ -215,7 +216,7 @@ func TestLogin_ResetsAttemptsOnSuccess(t *testing.T) {
 	// Fail 3 times
 	for i := 0; i < 3; i++ {
 		_, err := svc.Login(context.Background(), "resetme", "WrongPass1!")
-			require.True(t, errors.Is(err, ErrInvalidCredentials))
+		require.True(t, errors.Is(err, ErrInvalidCredentials))
 	}
 
 	// Succeed — resets counter
@@ -225,7 +226,7 @@ func TestLogin_ResetsAttemptsOnSuccess(t *testing.T) {
 	// Fail 3 more times — should NOT be locked (counter was reset)
 	for i := 0; i < 3; i++ {
 		_, err := svc.Login(context.Background(), "resetme", "WrongPass1!")
-			require.True(t, errors.Is(err, ErrInvalidCredentials))
+		require.True(t, errors.Is(err, ErrInvalidCredentials))
 	}
 
 	// 4th correct login should still work (only 3 fails after reset)

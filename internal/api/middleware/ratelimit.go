@@ -73,7 +73,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			w.Header().Set("Retry-After", "60")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"error":"rate limit exceeded"}`))
+			_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
 			return
 		}
 
@@ -163,7 +163,7 @@ func (srl *ScanRateLimiter) Middleware(next http.Handler) http.Handler {
 			w.Header().Set("Retry-After", "60")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"error":"scan rate limit exceeded, retry after 60 seconds"}`))
+			_, _ = w.Write([]byte(`{"error":"scan rate limit exceeded, retry after 60 seconds"}`))
 			return
 		}
 

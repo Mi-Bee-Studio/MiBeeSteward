@@ -34,11 +34,12 @@ cd web && npx vitest run src/__tests__/validation.test.ts
 
 All of the following must pass before a PR can merge (enforced by `.github/workflows/ci.yml`):
 
+- Frontend build (`npm ci && npm run build`) — produces the `web/dist/` artifact the `go` job embeds.
 - `go vet ./...`
-- `golangci-lint run` (config in `.golangci.yml`)
+- `golangci-lint run` (v2, config in `.golangci.yml`)
 - `go test -race -coverprofile=cover.out -covermode=atomic ./...`
-- `npm ci && npm test && npm run build` (frontend)
-- `sqlc verify`
+- Frontend tests (`npm ci && npm test`)
+- `sqlc compile` (validates queries against the schema; no sqlc Cloud required)
 
 Coverage is **reported** (artifact uploaded), not hard-gated.
 
