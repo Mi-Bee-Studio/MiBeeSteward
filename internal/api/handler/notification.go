@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/repository"
@@ -188,7 +189,7 @@ func (h *NotificationHandler) TestChannel(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	payload := notification.NotificationPayload{
+	payload := notification.Payload{
 		Subject:   "Test Notification",
 		Body:      "This is a test notification from MiBee Steward",
 		Recipient: "test",

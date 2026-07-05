@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	ErrBatchEmptyIDs         = errors.New("no IDs provided")
-	ErrBatchSelfDelete       = errors.New("cannot delete yourself")
-	ErrBatchInvalidStatus    = errors.New("invalid device status")
-	ErrBatchPartialDelete     = errors.New("some IDs were not found")
+	ErrBatchEmptyIDs      = errors.New("no IDs provided")
+	ErrBatchSelfDelete    = errors.New("cannot delete yourself")
+	ErrBatchInvalidStatus = errors.New("invalid device status")
+	ErrBatchPartialDelete = errors.New("some IDs were not found")
 )
 
 // BatchService handles batch operations for devices and users.
@@ -41,7 +41,7 @@ func (s *BatchService) DeleteDevices(ctx context.Context, ids []int64, userID in
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // rollback errors (sql.ErrTxDone after commit) are expected
 
 	q := db.New(tx).WithTx(tx)
 	var totalDeleted int64
@@ -90,7 +90,7 @@ func (s *BatchService) UpdateDeviceStatuses(ctx context.Context, ids []int64, st
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // rollback errors (sql.ErrTxDone after commit) are expected
 
 	// Use raw SQL for batch status update — more efficient than looping UpdateDevice
 	// since we only change one field
@@ -152,7 +152,7 @@ func (s *BatchService) DeleteUsers(ctx context.Context, ids []int64, currentUser
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // rollback errors (sql.ErrTxDone after commit) are expected
 
 	q := db.New(tx).WithTx(tx)
 	var totalDeleted int64

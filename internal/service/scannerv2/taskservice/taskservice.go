@@ -50,7 +50,7 @@ func (s *Service) CreateTask(ctx context.Context, req domain.ScanTaskRequest) (d
 		CronExpr:        req.CronExpr,
 		PipelineConfig:  string(cfgJSON),
 		GlobalLabels:    req.GlobalLabels,
-		Timeout: int64(req.Timeout),
+		Timeout:         int64(req.Timeout),
 		ConcurrentHosts: int64(req.ConcurrentHosts),
 	})
 	if err != nil {

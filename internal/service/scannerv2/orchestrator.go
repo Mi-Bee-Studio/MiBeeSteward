@@ -11,11 +11,11 @@ import (
 // The orchestrator returns one per scanned IP. The persistence layer (Phase 1)
 // consumes it; the API handler translates it into domain.ScanResponse.
 type HostReport struct {
-	IP        string
-	Alive     bool
-	RTTMs     int64
-	Evidence  []Evidence
-	Services  []ServiceIdentity
+	IP         string
+	Alive      bool
+	RTTMs      int64
+	Evidence   []Evidence
+	Services   []ServiceIdentity
 	Heartbeats []HeartbeatSpec
 	// Device is the enriched device view after all handlers ran.
 	Device DeviceRef
@@ -64,9 +64,9 @@ func (c *OrchestratorConfig) applyDefaults() {
 //     GenerateHeartbeat, following Triggers up to MaxCascadeDepth
 //  6. persist ③: record heartbeats + enriched device
 type Orchestrator struct {
-	reg    *Registry
-	repo   Repository // may be nil (no persistence)
-	cfg    OrchestratorConfig
+	reg  *Registry
+	repo Repository // may be nil (no persistence)
+	cfg  OrchestratorConfig
 	// cfgMu guards the mutable tuning fields (PerHostTimeout, MaxConcurrentHosts)
 	// which SetTimeouts writes from one goroutine (the task runner / sync-scan
 	// handler) while Run/ScanTargets read them from many. The rest of cfg is
@@ -194,7 +194,7 @@ func (o *Orchestrator) gather(ctx context.Context, ip string, hint ProbeHint) []
 // triggers up to MaxCascadeDepth, and accumulates heartbeats + collected data +
 // device enrichment into the report. Cycle-safe via a visited set keyed by
 // service@port.
-func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, hint ProbeHint) {
+func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ ProbeHint) {
 	// Seed device ref for handlers to mutate.
 	if report.Device.IP == "" {
 		report.Device = DeviceRef{IP: report.IP, Fields: map[string]string{}}

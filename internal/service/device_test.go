@@ -340,8 +340,8 @@ func TestDevice_List_TotalIsRealCount(t *testing.T) {
 	// Request page with limit=2
 	list, err := svc.List(ctx, domain.DeviceFilter{Limit: 2, Offset: 0})
 	require.NoError(t, err)
-	require.Len(t, list.Devices, 2)  // page has 2 items
-	require.Equal(t, 7, list.Total)   // but total is 7
+	require.Len(t, list.Devices, 2) // page has 2 items
+	require.Equal(t, 7, list.Total) // but total is 7
 
 	// Second page also has correct total
 	list2, err := svc.List(ctx, domain.DeviceFilter{Limit: 2, Offset: 2})

@@ -36,13 +36,13 @@ type ChangePasswordRequest struct {
 // Response types
 
 type UserResponse struct {
-	ID                  int64     `json:"id"`
-	Username            string    `json:"username"`
-	Email               string    `json:"email"`
-	Role                string    `json:"role"`
-	MustChangePassword  bool      `json:"must_change_password"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                 int64     `json:"id"`
+	Username           string    `json:"username"`
+	Email              string    `json:"email"`
+	Role               string    `json:"role"`
+	MustChangePassword bool      `json:"must_change_password"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 type LoginResponse struct {

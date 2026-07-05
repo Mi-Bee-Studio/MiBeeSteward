@@ -24,11 +24,11 @@ func TestParsePortSpec(t *testing.T) {
 		{"80,22,80", []int{22, 80}, false}, // dedup + sort
 		{"100-103", []int{100, 101, 102, 103}, false},
 		{"22,100-102,80", []int{22, 80, 100, 101, 102}, false},
-		{"0", nil, true},         // out of range
-		{"70000", nil, true},     // out of range
-		{"1-70000", nil, true},   // range too big
-		{"abc", nil, true},       // not a number
-		{"", []int{}, false},     // empty → empty
+		{"0", nil, true},       // out of range
+		{"70000", nil, true},   // out of range
+		{"1-70000", nil, true}, // range too big
+		{"abc", nil, true},     // not a number
+		{"", []int{}, false},   // empty → empty
 		{" 22 , 80 ", []int{22, 80}, false},
 	}
 	for _, c := range cases {
@@ -92,7 +92,7 @@ func TestPortSpecProbe_OpenPortAndBanner(t *testing.T) {
 		// Proactively send the SSH banner (server-volunteers style), then read
 		// until the probe closes (keep conn alive while the probe reads).
 		_, _ = conn.Write([]byte("SSH-2.0-OpenSSH_9.0\r\n"))
-		io_ReadUntilClosed(conn)
+		ioReadUntilClosed(conn)
 	}()
 
 	p := NewPortSpecProbe(itoa(port), nil)
@@ -156,7 +156,7 @@ func TestRTSPProbe_DetectsRTSPServer(t *testing.T) {
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _ = conn.Read(buf)
 		_, _ = conn.Write([]byte("RTSP/1.0 200 OK\r\nCSeq: 1\r\nServer: Hikvision\r\n\r\n"))
-		io_ReadUntilClosed(conn)
+		ioReadUntilClosed(conn)
 	}()
 
 	p := NewRTSPProbe()
@@ -194,7 +194,7 @@ func TestRTSPProbe_RejectsNonRTSP(t *testing.T) {
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _ = conn.Read(buf)
 		_, _ = conn.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
-		io_ReadUntilClosed(conn)
+		ioReadUntilClosed(conn)
 	}()
 
 	p := NewRTSPProbe()
@@ -232,7 +232,7 @@ func TestONVIFProbe_DetectsGenuineONVIF(t *testing.T) {
 
 func TestONVIFProbe_RejectsNonONVIFBody(t *testing.T) {
 	// nginx-style 200 with HTML body — must NOT match.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)
 		w.Write([]byte(`<html><body>Welcome to nginx</body></html>`))
 	}))
@@ -248,7 +248,7 @@ func TestONVIFProbe_RejectsNonONVIFBody(t *testing.T) {
 
 func TestONVIFProbe_Accepts401WithONVIFBody(t *testing.T) {
 	// ONVIF devices often require auth; the body still carries the namespace.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Digest realm="ONVIF"`)
 		w.WriteHeader(401)
 		w.Write([]byte(`<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Body><td:NotAuthorized xmlns:td="http://www.onvif.org/ver10/device/wsdl"/></s:Body></s:Envelope>`))
@@ -291,7 +291,7 @@ func TestHTTPMetricsProbe_PrometheusContent(t *testing.T) {
 }
 
 func TestHTTPMetricsProbe_NodeExporterContent(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)
 		w.Write([]byte("# HELP node_exporter_build_info\nnode_exporter_build_info{version=\"1.6.1\"} 1\nnode_cpu_seconds_total{cpu=\"0\"} 1.23\nnode_memory_MemTotal_bytes 8.59e+09\n"))
 	}))
@@ -310,7 +310,7 @@ func TestHTTPMetricsProbe_NodeExporterContent(t *testing.T) {
 }
 
 func TestHTTPMetricsProbe_NoMetricsEndpoint(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(404) // no /metrics
 	}))
 	defer srv.Close()
@@ -359,10 +359,10 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-// io_ReadUntilClosed blocks the goroutine reading from conn until conn is
+// ioReadUntilClosed blocks the goroutine reading from conn until conn is
 // closed by the peer (probe finishes). Keeps mock servers alive long enough
 // for the probe to complete its read. Returns on read error or deadline.
-func io_ReadUntilClosed(conn net.Conn) {
+func ioReadUntilClosed(conn net.Conn) {
 	buf := make([]byte, 64)
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	for {

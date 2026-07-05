@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register the pure-Go SQLite driver for database/sql
 )
 
 // SetupTestDB creates an in-memory SQLite database and executes the given schema.
@@ -62,9 +62,9 @@ func ReadSchemaFile() (string, error) {
 
 	// filename is /abs/path/to/project/internal/testutil/testutil.go
 	// Project root is 3 directories up from the file's directory
-	dir := filepath.Dir(filename)                // internal/testutil
-	dir = filepath.Dir(dir)                      // internal
-	dir = filepath.Dir(dir)                      // project root
+	dir := filepath.Dir(filename) // internal/testutil
+	dir = filepath.Dir(dir)       // internal
+	dir = filepath.Dir(dir)       // project root
 
 	schemaPath := filepath.Join(dir, "db", "schema.sql")
 	data, err := os.ReadFile(schemaPath)

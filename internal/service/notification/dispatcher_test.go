@@ -34,10 +34,9 @@ func (m *mockLogCreator) count() int {
 type mockSender struct {
 	sendCount atomic.Int32
 	result    SendResult
-	mu        atomic.Int32 // tracks retries
 }
 
-func (m *mockSender) Send(_ context.Context, payload NotificationPayload) SendResult {
+func (m *mockSender) Send(_ context.Context, _ Payload) SendResult {
 	m.sendCount.Add(1)
 	return m.result
 }
@@ -57,7 +56,7 @@ func TestDispatchNonBlocking(t *testing.T) {
 	// Dispatch should return immediately
 	start := time.Now()
 	for i := 0; i < 10; i++ {
-		d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), NotificationPayload{
+		d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), Payload{
 			Subject:   "test",
 			Body:      "body",
 			Recipient: "http://localhost",
@@ -85,7 +84,7 @@ func TestWorkerProcessesJob(t *testing.T) {
 	d.Start(ctx)
 	defer d.Stop()
 
-	d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), NotificationPayload{
+	d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), Payload{
 		Subject:   "test subject",
 		Body:      "test body",
 		Recipient: "test@example.com",
@@ -109,7 +108,7 @@ func TestRetryOnFailure(t *testing.T) {
 	d := NewDispatcher(logMock, nil)
 	d.WithSenderFactory(func(_ domain.ChannelType, _ json.RawMessage) (Sender, error) {
 		// Fail first 2 attempts, succeed on 3rd
-		return SenderFunc(func(_ context.Context, _ NotificationPayload) SendResult {
+		return SenderFunc(func(_ context.Context, _ Payload) SendResult {
 			n := callCount.Add(1)
 			if n < 3 {
 				return SendResult{Success: false, Error: "connection refused"}
@@ -124,7 +123,7 @@ func TestRetryOnFailure(t *testing.T) {
 	d.Start(ctx)
 	defer d.Stop()
 
-	d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), NotificationPayload{
+	d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), Payload{
 		Subject: "retry test",
 		Body:    "should retry",
 	}, nil, 1)
@@ -143,7 +142,7 @@ func TestMaxRetriesExhausted(t *testing.T) {
 	d := NewDispatcher(logMock, nil)
 	d.WithSenderFactory(func(_ domain.ChannelType, _ json.RawMessage) (Sender, error) {
 		// Always fail with retryable error
-		return SenderFunc(func(_ context.Context, _ NotificationPayload) SendResult {
+		return SenderFunc(func(_ context.Context, _ Payload) SendResult {
 			callCount.Add(1)
 			return SendResult{Success: false, Error: "connection refused"}
 		}), nil
@@ -154,7 +153,7 @@ func TestMaxRetriesExhausted(t *testing.T) {
 	d.Start(ctx)
 	defer d.Stop()
 
-	d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), NotificationPayload{
+	d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), Payload{
 		Subject: "max retry test",
 	}, nil, 2)
 
@@ -172,7 +171,7 @@ func TestPermanentErrorNoRetry(t *testing.T) {
 
 	d := NewDispatcher(logMock, nil)
 	d.WithSenderFactory(func(_ domain.ChannelType, _ json.RawMessage) (Sender, error) {
-		return SenderFunc(func(_ context.Context, _ NotificationPayload) SendResult {
+		return SenderFunc(func(_ context.Context, _ Payload) SendResult {
 			callCount.Add(1)
 			return SendResult{Success: false, Error: "535 authentication failed"}
 		}), nil
@@ -183,7 +182,7 @@ func TestPermanentErrorNoRetry(t *testing.T) {
 	d.Start(ctx)
 	defer d.Stop()
 
-	d.Dispatch(ctx, domain.ChannelTypeEmail, json.RawMessage(`{}`), NotificationPayload{
+	d.Dispatch(ctx, domain.ChannelTypeEmail, json.RawMessage(`{}`), Payload{
 		Subject: "permanent error test",
 	}, nil, 3)
 
@@ -199,7 +198,7 @@ func TestDispatchDropsWhenFull(t *testing.T) {
 	d := NewDispatcher(logMock, nil)
 	d.WithSenderFactory(func(_ domain.ChannelType, _ json.RawMessage) (Sender, error) {
 		// Use a slow sender that never completes
-		return SenderFunc(func(ctx context.Context, _ NotificationPayload) SendResult {
+		return SenderFunc(func(ctx context.Context, _ Payload) SendResult {
 			<-ctx.Done()
 			return SendResult{Success: false, Error: "cancelled"}
 		}), nil
@@ -212,7 +211,7 @@ func TestDispatchDropsWhenFull(t *testing.T) {
 
 	// Fill the channel buffer (100)
 	for i := 0; i < 200; i++ {
-		d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), NotificationPayload{
+		d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), Payload{
 			Subject: "overflow test",
 		}, nil, int64(i))
 	}
@@ -239,17 +238,18 @@ func TestStopWaitsForWorkers(t *testing.T) {
 
 	d := NewDispatcher(logMock, nil)
 	d.WithSenderFactory(func(_ domain.ChannelType, _ json.RawMessage) (Sender, error) {
-		return SenderFunc(func(_ context.Context, _ NotificationPayload) SendResult {
+		return SenderFunc(func(_ context.Context, _ Payload) SendResult {
 			close(started)
 			<-block // block until we release
 			return SendResult{Success: true}
 		}), nil
 	})
 
-	ctx, _ := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	d.Start(ctx)
 
-	d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), NotificationPayload{
+	d.Dispatch(ctx, domain.ChannelTypeWebhook, json.RawMessage(`{}`), Payload{
 		Subject: "stop test",
 	}, nil, 1)
 
@@ -282,8 +282,8 @@ func TestStopWaitsForWorkers(t *testing.T) {
 }
 
 // SenderFunc is a helper to create a Sender from a function.
-type SenderFunc func(ctx context.Context, payload NotificationPayload) SendResult
+type SenderFunc func(ctx context.Context, payload Payload) SendResult
 
-func (f SenderFunc) Send(ctx context.Context, payload NotificationPayload) SendResult {
+func (f SenderFunc) Send(ctx context.Context, payload Payload) SendResult {
 	return f(ctx, payload)
 }

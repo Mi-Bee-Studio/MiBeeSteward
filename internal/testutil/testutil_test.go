@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	_ "modernc.org/sqlite"
+
 	"mibee-steward/internal/testutil"
 )
 

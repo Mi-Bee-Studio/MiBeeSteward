@@ -11,10 +11,10 @@ import (
 type HTTPProber struct{}
 
 // Probe performs an HTTP GET to the target URL and checks the status code.
-func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Duration) (*ProbeResult, error) {
+func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Duration) (*Result, error) {
 	client := &http.Client{
 		Timeout: timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return http.ErrUseLastResponse
 			}
@@ -25,7 +25,7 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		slog.Error("probe failed", "method", "http", "target", target, "error", err)
-		return &ProbeResult{
+		return &Result{
 			Success:      false,
 			ErrorMessage: err.Error(),
 		}, nil
@@ -37,7 +37,7 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 
 	if err != nil {
 		slog.Error("probe failed", "method", "http", "target", target, "error", err)
-		return &ProbeResult{
+		return &Result{
 			Success:      false,
 			Latency:      elapsed,
 			ErrorMessage: err.Error(),
@@ -48,14 +48,14 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	latency := elapsed
 	if success := resp.StatusCode < 400; success {
 		slog.Debug("probe executed", "method", "http", "target", target, "success", true, "latency", latency)
-		return &ProbeResult{
+		return &Result{
 			Success: true,
 			Latency: latency,
 		}, nil
 	}
 
 	slog.Debug("probe executed", "method", "http", "target", target, "success", false, "latency", latency)
-	return &ProbeResult{
+	return &Result{
 		Success:      false,
 		Latency:      latency,
 		ErrorMessage: http.StatusText(resp.StatusCode),

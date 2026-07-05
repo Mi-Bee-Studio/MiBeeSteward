@@ -31,10 +31,10 @@ type Repository interface {
 // persistence is wired (e.g. unit tests, ad-hoc CLI scans).
 type NoopRepository struct{}
 
-func (NoopRepository) RecordEvidence(context.Context, []Evidence) error                  { return nil }
-func (NoopRepository) RecordServices(context.Context, string, []ServiceIdentity) error   { return nil }
-func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error             { return nil }
-func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error   { return nil }
+func (NoopRepository) RecordEvidence(context.Context, []Evidence) error                { return nil }
+func (NoopRepository) RecordServices(context.Context, string, []ServiceIdentity) error { return nil }
+func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error           { return nil }
+func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error { return nil }
 
 // Compile-time check that NoopRepository satisfies Repository.
 var _ Repository = NoopRepository{}

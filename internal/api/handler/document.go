@@ -7,14 +7,15 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"mibee-steward/internal/domain"
-	"mibee-steward/internal/service"
+
 	"mibee-steward/internal/api/middleware"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/repository"
+	"mibee-steward/internal/service"
 )
 
 // DocumentHandler handles HTTP requests for document endpoints.

@@ -14,9 +14,9 @@ import (
 // DashboardService handles dashboard config CRUD and Prometheus/VM query proxying.
 type DashboardService struct {
 	queries        *db.Queries
-	prometheusURL string
+	prometheusURL  string
 	dataSourceType string
-	client        *http.Client
+	client         *http.Client
 }
 
 // NewDashboardService creates a new DashboardService.
@@ -25,7 +25,7 @@ func NewDashboardService(dbConn db.DBTX, cfg *config.Config) *DashboardService {
 		queries:        db.New(dbConn),
 		prometheusURL:  cfg.Dashboard.PrometheusURL,
 		dataSourceType: cfg.Dashboard.DataSourceType,
-		client:        &http.Client{Timeout: 30 * time.Second},
+		client:         &http.Client{Timeout: 30 * time.Second},
 	}
 }
 

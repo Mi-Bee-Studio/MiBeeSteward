@@ -16,9 +16,9 @@ import (
 
 // TOTPHandler handles HTTP requests for 2FA/TOTP endpoints.
 type TOTPHandler struct {
-	svc    *service.TOTPService
-	userSvc *service.UserService
-	cfg     *config.Config
+	svc       *service.TOTPService
+	userSvc   *service.UserService
+	cfg       *config.Config
 	auditRepo *repository.AuditRepository
 }
 

@@ -83,7 +83,7 @@ func TestHTTPHandler_CascadeToPrometheusWhenMetricsFound(t *testing.T) {
 }
 
 func TestHTTPHandler_NoCascadeWithoutMetrics(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(404) // no /metrics
 	}))
 	defer srv.Close()

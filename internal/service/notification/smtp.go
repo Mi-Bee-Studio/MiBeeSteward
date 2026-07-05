@@ -58,7 +58,7 @@ func NewSMTPSenderFromConfig(raw json.RawMessage) (*SMTPSender, error) {
 }
 
 // Send delivers an email notification. The payload.Recipient must be a valid email address.
-func (s *SMTPSender) Send(ctx context.Context, payload NotificationPayload) SendResult {
+func (s *SMTPSender) Send(_ context.Context, payload Payload) SendResult {
 	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
 
 	subject := payload.Subject
@@ -67,10 +67,10 @@ func (s *SMTPSender) Send(ctx context.Context, payload NotificationPayload) Send
 	}
 
 	var msg bytes.Buffer
-	msg.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
 	msg.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
-	msg.WriteString(fmt.Sprintf("From: %s\r\n", s.From))
-	msg.WriteString(fmt.Sprintf("To: %s\r\n", payload.Recipient))
+	fmt.Fprintf(&msg, "From: %s\r\n", s.From)
+	fmt.Fprintf(&msg, "To: %s\r\n", payload.Recipient)
 	msg.WriteString("MIME-Version: 1.0\r\n")
 	msg.WriteString("\r\n")
 	msg.WriteString(payload.Body)

@@ -60,7 +60,6 @@ func (h *stubHandler) GenerateHeartbeat(_ ServiceContext) *HeartbeatSpec {
 }
 func (h *stubHandler) Collect(_ context.Context, svc ServiceContext) (CollectedData, []Trigger, error) {
 	h.collects = append(h.collects, svc.Identity.Service)
-	type d struct{ s string }
 	cd := concreteData{s: svc.Identity.Service}
 	return cd, h.triggers, nil
 }

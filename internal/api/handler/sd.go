@@ -221,14 +221,14 @@ func BuildScannerTargets(ctx context.Context, queries *db.Queries) []SDTarget {
 		if taskErr != nil {
 			slog.Warn("failed to get scan task for SD labels", "task_id", result.TaskID, "error", taskErr)
 		} else {
-		staticLabels = ParseJSONLabels(task.GlobalLabels)
+			staticLabels = ParseJSONLabels(task.GlobalLabels)
 			taskName = task.Name
 		}
 
 		// Layer 2: dynamic labels from scan data.
 		dynamicLabels := map[string]string{
 			"scan_task_name": taskName,
-			"__source": "scanner",
+			"__source":       "scanner",
 		}
 		if result.NodeExporterDetected == 1 {
 			dynamicLabels["has_node_exporter"] = "true"
@@ -238,12 +238,10 @@ func BuildScannerTargets(ctx context.Context, queries *db.Queries) []SDTarget {
 		}
 
 		// Layer 3: per-device override labels from devices.prometheus_labels.
+		// Device-not-found is OK — the scanner may have discovered unregistered devices.
 		var perDeviceLabels map[string]string
-		device, devErr := queries.GetDeviceByIP(ctx, ip)
-		if devErr != nil {
-			// Device not found is OK — scanner may have discovered unregistered devices.
-		} else {
-		perDeviceLabels = ParseJSONLabels(device.PrometheusLabels)
+		if device, devErr := queries.GetDeviceByIP(ctx, ip); devErr == nil {
+			perDeviceLabels = ParseJSONLabels(device.PrometheusLabels)
 			// Enrich dynamic with device_type if available.
 			if device.Type != "" {
 				dynamicLabels["device_type"] = device.Type
