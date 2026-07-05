@@ -100,11 +100,11 @@ func TestUpdateChannelRequest_JSONTags(t *testing.T) {
 func TestCreateAlertRuleRequest_JSONTags(t *testing.T) {
 	enabled := true
 	req := CreateAlertRuleRequest{
-		Name:           "Offline Alert",
-		ConditionType:  ConditionDeviceOffline,
-		Threshold:      3,
-		ChannelID:      1,
-		Enabled:        &enabled,
+		Name:            "Offline Alert",
+		ConditionType:   ConditionDeviceOffline,
+		Threshold:       3,
+		ChannelID:       1,
+		Enabled:         &enabled,
 		CooldownSeconds: 300,
 	}
 
@@ -178,15 +178,15 @@ func TestChannelResponse_JSONTags(t *testing.T) {
 
 func TestAlertRuleResponse_JSONTags(t *testing.T) {
 	resp := AlertRuleResponse{
-		ID:            1,
-		Name:          "Test Rule",
-		ConditionType: "device_offline",
-		Threshold:     3,
-		ChannelID:     1,
-		Enabled:       true,
+		ID:              1,
+		Name:            "Test Rule",
+		ConditionType:   "device_offline",
+		Threshold:       3,
+		ChannelID:       1,
+		Enabled:         true,
 		CooldownSeconds: 300,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	data, err := json.Marshal(resp)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/service/scannerv2"
@@ -110,6 +111,8 @@ func setupHeartbeatTest(t *testing.T) (*HeartbeatService, *sql.DB, *db.Queries) 
 }
 
 // insertTestDevice inserts a device via raw queries and returns its ID.
+//
+//nolint:revive // test helper: t *testing.T is conventionally first for helpers
 func insertTestDevice(t *testing.T, q *db.Queries, ctx context.Context, name, ipAddr string) int64 {
 	t.Helper()
 	device, err := q.CreateDevice(ctx, db.CreateDeviceParams{
@@ -124,6 +127,8 @@ func insertTestDevice(t *testing.T, q *db.Queries, ctx context.Context, name, ip
 }
 
 // insertTestConfig inserts a heartbeat config via raw queries and returns it.
+//
+//nolint:revive // test helper: t *testing.T is conventionally first for helpers
 func insertTestConfig(t *testing.T, q *db.Queries, ctx context.Context, deviceID int64, method, target string, enabled int64) db.HeartbeatConfig {
 	t.Helper()
 	cfg, err := q.CreateHeartbeatConfig(ctx, db.CreateHeartbeatConfigParams{

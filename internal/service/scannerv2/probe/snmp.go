@@ -51,7 +51,7 @@ func (p *SNMPProbe) Name() string { return "active:snmp" }
 
 // Probe queries ip:161. hint.Community overrides the default "public";
 // hint.Timeout bounds the SNMP Get.
-func (p *SNMPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
+func (p *SNMPProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
 	community := hint.Community
 	if community == "" {
 		community = "public"

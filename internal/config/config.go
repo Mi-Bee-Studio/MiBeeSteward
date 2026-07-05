@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/knadh/koanf/v2"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/v2"
 )
 
 // Config is the root configuration struct.
@@ -52,9 +52,8 @@ type SQLiteConfig struct {
 	Path string `koanf:"path"`
 }
 
-
 type AuthConfig struct {
-	JWTSecret           string `koanf:"jwt_secret"`
+	JWTSecret            string `koanf:"jwt_secret"`
 	TokenExpiry          string `koanf:"token_expiry"`
 	InitialAdminPassword string `koanf:"initial_admin_password"`
 	CookieDomain         string `koanf:"cookie_domain"`
@@ -70,7 +69,7 @@ type HeartbeatConfig struct {
 }
 
 type PrometheusConfig struct {
-	Enabled    bool   `koanf:"enabled"`
+	Enabled     bool   `koanf:"enabled"`
 	MetricsPath string `koanf:"metrics_path"`
 }
 
@@ -108,21 +107,21 @@ type SMTPConfig struct {
 }
 
 type ScannerConfig struct {
-	Enabled            bool                  `koanf:"enabled"`
-	MaxConcurrentScans int                   `koanf:"max_concurrent_scans"`
-	DefaultTimeout     int                   `koanf:"default_timeout"`
-	MaxConcurrentHosts int                   `koanf:"max_concurrent_hosts"`
+	Enabled            bool `koanf:"enabled"`
+	MaxConcurrentScans int  `koanf:"max_concurrent_scans"`
+	DefaultTimeout     int  `koanf:"default_timeout"`
+	MaxConcurrentHosts int  `koanf:"max_concurrent_hosts"`
 	// PerProbeTimeout bounds a SINGLE probe attempt (one SNMP Get, one TCP dial,
 	// one HTTP fetch) in seconds. Distinct from default_timeout (which bounds
 	// the whole per-host pipeline). Default 3s — keeps /24 scans fast even when
 	// many hosts are unresponsive (each dead host fails in seconds, not minutes).
-	PerProbeTimeout    int                   `koanf:"per_probe_timeout"`
-	RetentionDays      int                   `koanf:"retention_days"`
-	DefaultCronExpr    string                `koanf:"default_cron_expr"`
+	PerProbeTimeout    int                    `koanf:"per_probe_timeout"`
+	RetentionDays      int                    `koanf:"retention_days"`
+	DefaultCronExpr    string                 `koanf:"default_cron_expr"`
 	PipelineDefaults   PipelineDefaultsConfig `koanf:"pipeline_defaults"`
-	Engine             string                `koanf:"engine"`     // "v1" (legacy) or "v2" (new); default "v1" during transition
-	PersistRawEvidence bool                  `koanf:"persist_raw_evidence"`
-	EBPF               EBPFConfig            `koanf:"ebpf"`
+	Engine             string                 `koanf:"engine"` // "v1" (legacy) or "v2" (new); default "v1" during transition
+	PersistRawEvidence bool                   `koanf:"persist_raw_evidence"`
+	EBPF               EBPFConfig             `koanf:"ebpf"`
 }
 
 // EBPFConfig controls the passive eBPF observer (v2 engine only). Even with

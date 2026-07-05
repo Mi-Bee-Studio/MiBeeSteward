@@ -169,7 +169,7 @@ func (rn *Runner) failRun(ctx context.Context, runID, taskID int64, duration tim
 
 // persistHost writes the per-host scan_result, then upserts the device and (for
 // new devices) seeds heartbeat configs. Returns (isNew, wasUpdated).
-func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scannerv2.HostReport, persistRawEvidence bool) (bool, bool) {
+func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scannerv2.HostReport, _ bool) (bool, bool) {
 	// Write the scan_results row.
 	ports, services, snmpData := reportJSONFields(rep)
 	promURL, neURL, neData := reportPromFields(rep)

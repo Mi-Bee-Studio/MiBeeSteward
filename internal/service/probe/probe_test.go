@@ -12,7 +12,7 @@ import (
 
 // mockResult is a single pre-programmed result for mockProber.
 type mockResult struct {
-	result *ProbeResult
+	result *Result
 	err    error
 }
 
@@ -22,7 +22,7 @@ type mockProber struct {
 	calls   int
 }
 
-func (m *mockProber) Probe(_ context.Context, _ string, _ time.Duration) (*ProbeResult, error) {
+func (m *mockProber) Probe(_ context.Context, _ string, _ time.Duration) (*Result, error) {
 	idx := m.calls
 	m.calls++
 	if idx >= len(m.results) {
@@ -35,7 +35,7 @@ func (m *mockProber) Probe(_ context.Context, _ string, _ time.Duration) (*Probe
 func TestRetryProber_SuccessOnFirstTry(t *testing.T) {
 	mock := &mockProber{
 		results: []mockResult{
-			{result: &ProbeResult{Success: true, Latency: 10 * time.Millisecond}, err: nil},
+			{result: &Result{Success: true, Latency: 10 * time.Millisecond}, err: nil},
 		},
 	}
 	rp := NewRetryProber(mock, 3, 10*time.Millisecond)
@@ -57,7 +57,7 @@ func TestRetryProber_SuccessAfterRetries(t *testing.T) {
 		results: []mockResult{
 			{result: nil, err: errors.New("network error")},
 			{result: nil, err: errors.New("network error")},
-			{result: &ProbeResult{Success: true, Latency: 5 * time.Millisecond}, err: nil},
+			{result: &Result{Success: true, Latency: 5 * time.Millisecond}, err: nil},
 		},
 	}
 	rp := NewRetryProber(mock, 3, 10*time.Millisecond)

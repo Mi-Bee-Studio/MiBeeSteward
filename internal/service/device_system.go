@@ -140,7 +140,7 @@ func (s *DeviceSystemService) Update(ctx context.Context, id int64, req domain.U
 		params.MetricsUrl = *req.MetricsURL
 	}
 	if req.MetricsEnabled != nil {
-		var val int64 = 0
+		var val int64
 		if *req.MetricsEnabled {
 			val = 1
 		}

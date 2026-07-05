@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
+
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 

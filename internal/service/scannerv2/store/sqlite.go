@@ -26,13 +26,13 @@ import (
 // persistRawEvidence gates writing to service_evidence (off by default to
 // avoid storage bloat — see config scanner.persist_raw_evidence).
 type SQLiteRepository struct {
-	db                  *sql.DB
-	logger              *slog.Logger
-	persistRawEvidence  bool
-	defaultHBInterval   int // seconds, 0 → leave config default
-	defaultHBTimeout    int // seconds
+	db                   *sql.DB
+	logger               *slog.Logger
+	persistRawEvidence   bool
+	defaultHBInterval    int // seconds, 0 → leave config default
+	defaultHBTimeout     int // seconds
 	defaultSNMPCommunity string
-	defaultSNMPOID      string
+	defaultSNMPOID       string
 }
 
 // Options configures the SQLiteRepository.
@@ -205,7 +205,8 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 		devType = "other"
 	}
 
-	if err == sql.ErrNoRows {
+	switch err {
+	case sql.ErrNoRows:
 		// Insert a minimal device row, tagged scan_source='scanner_v2'.
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO devices (name, type, brand, model, ip_address, status, scan_source,
@@ -214,12 +215,12 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 			VALUES (?, ?, ?, ?, ?, 'unknown', 'scanner_v2', ?, ?, ?, ?, ?, ?, ?, ?)`,
 			name, devType, brand, model, ip, openPorts, detectedServices, promURL, neURL,
 			string(extraJSON), now, now, now)
-			if err != nil {
-				r.logger.Warn("insert device failed", "ip", ip, "error", err)
-			}
-		} else if err == nil {
-			// Update existing device: only touch v2-managed columns.
-			_, err = tx.ExecContext(ctx, `
+		if err != nil {
+			r.logger.Warn("insert device failed", "ip", ip, "error", err)
+		}
+	case nil:
+		// Update existing device: only touch v2-managed columns.
+		_, err = tx.ExecContext(ctx, `
 				UPDATE devices SET
 				    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
 				    model = CASE WHEN ? != '' THEN ? ELSE model END,
@@ -232,14 +233,14 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 				    last_scanned_at = ?,
 				    updated_at = ?
 				WHERE id = ?`,
-				brand, brand, model, model, devType, devType,
-				openPorts, detectedServices, promURL, neURL, string(extraJSON), now, now, existingID)
-			if err != nil {
-				r.logger.Warn("update device failed", "ip", ip, "error", err)
-			}
-		} else {
-			r.logger.Warn("lookup device failed", "ip", ip, "error", err)
+			brand, brand, model, model, devType, devType,
+			openPorts, detectedServices, promURL, neURL, string(extraJSON), now, now, existingID)
+		if err != nil {
+			r.logger.Warn("update device failed", "ip", ip, "error", err)
 		}
+	default:
+		r.logger.Warn("lookup device failed", "ip", ip, "error", err)
+	}
 
 	return tx.Commit()
 }

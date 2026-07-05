@@ -109,13 +109,13 @@ func (s *ExportService) HeartbeatResults(ctx context.Context, deviceID int64, fo
 	if format == "json" {
 		return s.streamJSON(ctx, w, func(offset int64) ([]map[string]interface{}, error) {
 			rows, err := s.db.ListHeartbeatResultsByDevice(ctx, db.ListHeartbeatResultsByDeviceParams{
-				DeviceID:  deviceID,
-				Column2:   "",
-				CheckedAt: noFilter,
-				Column4:   "",
+				DeviceID:    deviceID,
+				Column2:     "",
+				CheckedAt:   noFilter,
+				Column4:     "",
 				CheckedAt_2: noFilter,
-				Limit:     exportChunkSize,
-				Offset:    offset,
+				Limit:       exportChunkSize,
+				Offset:      offset,
 			})
 			if err != nil {
 				return nil, err
@@ -191,15 +191,15 @@ func (s *ExportService) AuditLogs(ctx context.Context, format string, w io.Write
 			result := make([]map[string]interface{}, len(rows))
 			for i, a := range rows {
 				m := map[string]interface{}{
-					"id":             a.ID,
-					"user_id":        nilIfNil(a.UserID),
-					"action":         a.Action,
-					"resource_type":  a.ResourceType,
-					"resource_id":    nilIfNil(a.ResourceID),
-					"ip_address":     nilIfNil(a.IpAddress),
-					"user_agent":     nilIfNil(a.UserAgent),
-					"details":        nilIfNil(a.Details),
-					"created_at":     nilIfTimeNil(a.CreatedAt),
+					"id":            a.ID,
+					"user_id":       nilIfNil(a.UserID),
+					"action":        a.Action,
+					"resource_type": a.ResourceType,
+					"resource_id":   nilIfNil(a.ResourceID),
+					"ip_address":    nilIfNil(a.IpAddress),
+					"user_agent":    nilIfNil(a.UserAgent),
+					"details":       nilIfNil(a.Details),
+					"created_at":    nilIfTimeNil(a.CreatedAt),
 				}
 				result[i] = m
 			}
@@ -308,7 +308,7 @@ func (s *ExportService) streamJSON(ctx context.Context, w io.Writer, fetch func(
 		select {
 		case <-ctx.Done():
 			// Close the array before returning
-			w.Write([]byte("]"))
+			_, _ = w.Write([]byte("]"))
 			return ctx.Err()
 		default:
 		}

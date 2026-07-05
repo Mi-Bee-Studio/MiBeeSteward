@@ -92,8 +92,6 @@ func TestLoadFromYAML(t *testing.T) {
 	}
 }
 
-
-
 func TestValidationValidSQLite(t *testing.T) {
 	cfg := &Config{
 		Auth: AuthConfig{
@@ -105,4 +103,3 @@ func TestValidationValidSQLite(t *testing.T) {
 		t.Errorf("Validate failed: %v", err)
 	}
 }
-

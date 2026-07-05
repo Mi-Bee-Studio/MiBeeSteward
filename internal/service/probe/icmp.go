@@ -13,11 +13,11 @@ import (
 type ICMPProber struct{}
 
 // Probe sends a single ICMP ping to the target and returns the result.
-func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Duration) (*ProbeResult, error) {
+func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Duration) (*Result, error) {
 	pinger, err := probing.NewPinger(target)
 	if err != nil {
 		slog.Error("probe failed", "method", "icmp", "target", target, "error", err)
-		return &ProbeResult{
+		return &Result{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("failed to create pinger: %v", err),
 		}, nil
@@ -33,7 +33,7 @@ func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Dura
 
 	if err != nil {
 		slog.Error("probe failed", "method", "icmp", "target", target, "error", err)
-		return &ProbeResult{
+		return &Result{
 			Success:      false,
 			Latency:      elapsed,
 			ErrorMessage: err.Error(),
@@ -43,14 +43,14 @@ func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	stats := pinger.Statistics()
 	if stats.PacketsRecv > 0 {
 		slog.Debug("probe executed", "method", "icmp", "target", target, "success", true, "latency", stats.AvgRtt)
-		return &ProbeResult{
+		return &Result{
 			Success: true,
 			Latency: stats.AvgRtt,
 		}, nil
 	}
 
 	slog.Debug("probe executed", "method", "icmp", "target", target, "success", false, "latency", elapsed)
-	return &ProbeResult{
+	return &Result{
 		Success:      false,
 		Latency:      elapsed,
 		ErrorMessage: "no response received",

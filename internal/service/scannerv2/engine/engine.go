@@ -44,9 +44,9 @@ type Engine struct {
 	scanSem chan struct{}
 }
 
-// EngineConfig carries the v2 engine tuning. It is derived from config.Config
+// Config carries the v2 engine tuning. It is derived from config.Config
 // in the API/routes layer (so scannerv2 stays free of config imports).
-type EngineConfig struct {
+type Config struct {
 	// PortSpec is the TCP port range to scan (e.g. "22,80,443,8080,554,8554,9090,9100").
 	// Empty → fingerprint ports only.
 	PortSpec string
@@ -78,7 +78,7 @@ type EngineConfig struct {
 // NewEngine constructs the full v2 engine: registry populated with the default
 // probe/classifier/handler sets + the eBPF observer, an orchestrator, and a
 // SQLite-backed repository. db may be nil for a no-persistence engine (tests).
-func NewEngine(db *sql.DB, cfg EngineConfig, logger *slog.Logger) (*Engine, error) {
+func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}

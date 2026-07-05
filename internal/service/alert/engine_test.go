@@ -18,7 +18,7 @@ import (
 
 // --- Mocks ---
 
-// mockRuleStore implements RuleStore + notification.NotificationLogCreator.
+// mockRuleStore implements RuleStore + notification.LogCreator.
 type mockRuleStore struct {
 	rules    []db.AlertRule
 	channels map[int64]db.NotificationChannel
@@ -43,7 +43,7 @@ func (m *mockRuleStore) UpdateAlertRule(_ context.Context, arg db.UpdateAlertRul
 	return db.AlertRule{ID: arg.ID}, nil
 }
 
-// CreateNotificationLog implements notification.NotificationLogCreator for the dispatcher.
+// CreateNotificationLog implements notification.LogCreator for the dispatcher.
 func (m *mockRuleStore) CreateNotificationLog(_ context.Context, _ db.CreateNotificationLogParams) (db.NotificationLog, error) {
 	m.logs.Add(1)
 	return db.NotificationLog{ID: 1}, nil
@@ -53,17 +53,17 @@ func (m *mockRuleStore) updateCount() int { return int(m.updated.Load()) }
 func (m *mockRuleStore) logCount() int    { return int(m.logs.Load()) }
 
 // testSenderFunc implements notification.Sender.
-type testSenderFunc func(ctx context.Context, payload notification.NotificationPayload) notification.SendResult
+type testSenderFunc func(ctx context.Context, payload notification.Payload) notification.SendResult
 
-func (f testSenderFunc) Send(ctx context.Context, payload notification.NotificationPayload) notification.SendResult {
+func (f testSenderFunc) Send(ctx context.Context, payload notification.Payload) notification.SendResult {
 	return f(ctx, payload)
 }
 
 // newEngineWithRealDispatcher creates a real dispatcher with a fast mock sender.
-func newEngineWithRealDispatcher(store *mockRuleStore) (*AlertEngine, *notification.Dispatcher) {
+func newEngineWithRealDispatcher(store *mockRuleStore) (*Engine, *notification.Dispatcher) {
 	realDisp := notification.NewDispatcher(store, slog.Default())
 	realDisp.WithSenderFactory(func(_ domain.ChannelType, _ json.RawMessage) (notification.Sender, error) {
-		return testSenderFunc(func(_ context.Context, _ notification.NotificationPayload) notification.SendResult {
+		return testSenderFunc(func(_ context.Context, _ notification.Payload) notification.SendResult {
 			return notification.SendResult{Success: true}
 		}), nil
 	})
@@ -71,7 +71,7 @@ func newEngineWithRealDispatcher(store *mockRuleStore) (*AlertEngine, *notificat
 	ctx := context.Background()
 	realDisp.Start(ctx)
 
-	e := NewAlertEngine(store, realDisp)
+	e := NewEngine(store, realDisp)
 	e.WithLogger(slog.Default())
 
 	return e, realDisp
@@ -419,7 +419,7 @@ func TestHeartbeatFailDoesNotTriggerTimeoutRule(t *testing.T) {
 
 func TestRuleMatchesCondition_DeviceOffline(t *testing.T) {
 	store := &mockRuleStore{}
-	e := NewAlertEngine(store, nil)
+	e := NewEngine(store, nil)
 
 	tests := []struct {
 		name string
@@ -443,7 +443,7 @@ func TestRuleMatchesCondition_DeviceOffline(t *testing.T) {
 
 func TestRuleMatchesCondition_HeartbeatFail(t *testing.T) {
 	store := &mockRuleStore{}
-	e := NewAlertEngine(store, nil)
+	e := NewEngine(store, nil)
 
 	tests := []struct {
 		name      string
@@ -471,7 +471,7 @@ func TestRuleMatchesCondition_HeartbeatFail(t *testing.T) {
 
 func TestRuleMatchesCondition_HeartbeatTimeout(t *testing.T) {
 	store := &mockRuleStore{}
-	e := NewAlertEngine(store, nil)
+	e := NewEngine(store, nil)
 
 	tests := []struct {
 		name         string
@@ -497,7 +497,7 @@ func TestRuleMatchesCondition_HeartbeatTimeout(t *testing.T) {
 
 func TestRuleAppliesToDevice(t *testing.T) {
 	store := &mockRuleStore{}
-	e := NewAlertEngine(store, nil)
+	e := NewEngine(store, nil)
 
 	global := globalOfflineRule(1, 10, 0)
 	device42 := deviceOfflineRule(2, 42, 10, 0)
@@ -510,7 +510,7 @@ func TestRuleAppliesToDevice(t *testing.T) {
 
 func TestInCooldown(t *testing.T) {
 	store := &mockRuleStore{}
-	e := NewAlertEngine(store, nil)
+	e := NewEngine(store, nil)
 	now := time.Now()
 
 	tests := []struct {

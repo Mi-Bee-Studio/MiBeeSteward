@@ -34,16 +34,16 @@ type ScanFunc func(ctx context.Context, taskID int64, targets string, timeout ti
 
 // Scheduler manages cron-driven scan tasks.
 type Scheduler struct {
-	scheduler   gocron.Scheduler
-	queries     *db.Queries
-	dbConn      *sql.DB
-	scanFunc    ScanFunc
-	logger      *slog.Logger
-	mu          sync.Mutex
-	jobMap      map[int64]gocron.Job
-	cancelFuncs map[int64]context.CancelFunc
-	started     bool
-	stopCh      chan struct{} // closed by Stop to terminate the stale-run sweeper
+	scheduler          gocron.Scheduler
+	queries            *db.Queries
+	dbConn             *sql.DB
+	scanFunc           ScanFunc
+	logger             *slog.Logger
+	mu                 sync.Mutex
+	jobMap             map[int64]gocron.Job
+	cancelFuncs        map[int64]context.CancelFunc
+	started            bool
+	stopCh             chan struct{} // closed by Stop to terminate the stale-run sweeper
 	staleSweepInterval time.Duration
 }
 
@@ -274,4 +274,3 @@ func (s *Scheduler) staleRunLoop() {
 		}
 	}
 }
-

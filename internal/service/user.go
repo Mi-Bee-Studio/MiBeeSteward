@@ -7,21 +7,23 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"time"
 
 	"github.com/go-chi/jwtauth/v5"
 	"golang.org/x/crypto/bcrypt"
+
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 )
 
 var (
-	ErrUserNotFound      = errors.New("user not found")
+	ErrUserNotFound       = errors.New("user not found")
 	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrUserExists        = errors.New("user already exists")
-	ErrSamePassword      = errors.New("new password must be different")
-	ErrAccountLocked     = errors.New("account is locked due to too many failed login attempts")
+	ErrUserExists         = errors.New("user already exists")
+	ErrSamePassword       = errors.New("new password must be different")
+	ErrAccountLocked      = errors.New("account is locked due to too many failed login attempts")
 )
 
 var (
@@ -127,16 +129,20 @@ func (s *UserService) Login(ctx context.Context, username, password string) (*do
 			lockTime := time.Now().Add(30 * time.Minute)
 			lockedUntil = &lockTime
 		}
-		s.queries.UpdateLoginAttempts(ctx, db.UpdateLoginAttemptsParams{
+		if err := s.queries.UpdateLoginAttempts(ctx, db.UpdateLoginAttemptsParams{
 			FailedLoginAttempts: attempts,
 			LockedUntil:         lockedUntil,
 			ID:                  user.ID,
-		})
+		}); err != nil {
+			slog.Warn("failed to update login attempts", "user_id", user.ID, "error", err)
+		}
 		return nil, ErrInvalidCredentials
 	}
 
 	// Reset failed login attempts on success
-	s.queries.ResetLoginAttempts(ctx, user.ID)
+	if err := s.queries.ResetLoginAttempts(ctx, user.ID); err != nil {
+		slog.Warn("failed to reset login attempts", "user_id", user.ID, "error", err)
+	}
 
 	// Check if 2FA is enabled
 	if s.totpSvc != nil {
@@ -144,8 +150,8 @@ func (s *UserService) Login(ctx context.Context, username, password string) (*do
 		if err == nil && enabled {
 			// Return 2FA challenge instead of token
 			return &domain.LoginResponse{
-				Token: "",
-				User:  toUserResponse(user),
+				Token:             "",
+				User:              toUserResponse(user),
 				TwoFactorRequired: true,
 			}, nil
 		}

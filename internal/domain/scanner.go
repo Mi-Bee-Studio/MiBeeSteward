@@ -18,6 +18,7 @@ const (
 	minConcurrentHosts = 1
 	maxConcurrentHosts = 200
 )
+
 // ScanRequest is the input for a network scan operation.
 type ScanRequest struct {
 	Targets   string `json:"targets"`
@@ -27,21 +28,21 @@ type ScanRequest struct {
 
 // ScanHost represents a single host result from a network scan.
 type ScanHost struct {
-	IP          string `json:"ip"`
-	Alive       bool   `json:"alive"`
-	RTTMs       int64  `json:"rtt_ms"`
-	SNMPName    string `json:"snmp_name,omitempty"`
-	SNMPDescr   string `json:"snmp_descr,omitempty"`
-	SNMPSuccess bool   `json:"snmp_success"`
+	IP           string `json:"ip"`
+	Alive        bool   `json:"alive"`
+	RTTMs        int64  `json:"rtt_ms"`
+	SNMPName     string `json:"snmp_name,omitempty"`
+	SNMPDescr    string `json:"snmp_descr,omitempty"`
+	SNMPSuccess  bool   `json:"snmp_success"`
 	SNMPObjID    string `json:"snmp_obj_id,omitempty"`
-	SNMPLocation  string `json:"snmp_location,omitempty"`
-	SNMPContact   string `json:"snmp_contact,omitempty"`
+	SNMPLocation string `json:"snmp_location,omitempty"`
+	SNMPContact  string `json:"snmp_contact,omitempty"`
 	SNMPUptime   int64  `json:"snmp_uptime,omitempty"`
 	SNMPServices int    `json:"snmp_services,omitempty"`
 	SNMPIfCount  int    `json:"snmp_if_count,omitempty"`
 	// Enriched fields (inferred from scan data)
 	InferredBrand       string `json:"inferred_brand,omitempty"`
-	InferredType       string `json:"inferred_type,omitempty"`
+	InferredType        string `json:"inferred_type,omitempty"`
 	InferredDescription string `json:"inferred_description,omitempty"`
 	InferredLocation    string `json:"inferred_location,omitempty"`
 }
@@ -72,19 +73,19 @@ type ServiceInfo struct {
 
 // AddDeviceItem represents a single device to add from scan results.
 type AddDeviceItem struct {
-	IP   string `json:"ip"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	IP          string                 `json:"ip"`
+	Name        string                 `json:"name"`
+	Type        string                 `json:"type"`
 	Description string                 `json:"description,omitempty"`
-	Brand      string                 `json:"brand,omitempty"`
-	Model      string                 `json:"model,omitempty"`
-	Location   string                 `json:"location,omitempty"`
-	SNMPData   map[string]interface{} `json:"snmp_data,omitempty"`
-	Ports       []PortInfo    `json:"ports,omitempty"`
-	Services    []ServiceInfo `json:"services,omitempty"`
-	PromURL     string        `json:"prometheus_url,omitempty"`
-	NEURL       string        `json:"node_exporter_url,omitempty"`
-	RTTMs       int64         `json:"rtt_ms,omitempty"`
+	Brand       string                 `json:"brand,omitempty"`
+	Model       string                 `json:"model,omitempty"`
+	Location    string                 `json:"location,omitempty"`
+	SNMPData    map[string]interface{} `json:"snmp_data,omitempty"`
+	Ports       []PortInfo             `json:"ports,omitempty"`
+	Services    []ServiceInfo          `json:"services,omitempty"`
+	PromURL     string                 `json:"prometheus_url,omitempty"`
+	NEURL       string                 `json:"node_exporter_url,omitempty"`
+	RTTMs       int64                  `json:"rtt_ms,omitempty"`
 }
 
 // AddDevicesRequest is the input for adding discovered devices.

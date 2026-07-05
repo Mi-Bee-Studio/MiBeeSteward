@@ -29,6 +29,8 @@ func HealthHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			slog.Debug("health response encode failed", "error", err)
+		}
 	}
 }

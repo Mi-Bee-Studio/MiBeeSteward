@@ -12,16 +12,16 @@ import (
 	"mibee-steward/internal/service/notification"
 )
 
-// AlertEngine evaluates alert rules against device events and dispatches notifications.
-type AlertEngine struct {
+// Engine evaluates alert rules against device events and dispatches notifications.
+type Engine struct {
 	store      RuleStore
 	dispatcher *notification.Dispatcher
 	logger     *slog.Logger
 }
 
-// NewAlertEngine creates a new AlertEngine.
-func NewAlertEngine(store RuleStore, d *notification.Dispatcher) *AlertEngine {
-	return &AlertEngine{
+// NewEngine creates a new Engine.
+func NewEngine(store RuleStore, d *notification.Dispatcher) *Engine {
+	return &Engine{
 		store:      store,
 		dispatcher: d,
 		logger:     slog.Default(),
@@ -29,14 +29,14 @@ func NewAlertEngine(store RuleStore, d *notification.Dispatcher) *AlertEngine {
 }
 
 // WithLogger sets a custom logger (for testing).
-func (e *AlertEngine) WithLogger(logger *slog.Logger) *AlertEngine {
+func (e *Engine) WithLogger(logger *slog.Logger) *Engine {
 	e.logger = logger
 	return e
 }
 
 // EvaluateDeviceStatus checks if any alert rules should fire based on a device status change.
 // Called from heartbeat service when a device's status transitions.
-func (e *AlertEngine) EvaluateDeviceStatus(ctx context.Context, deviceID int64, oldStatus, newStatus string) error {
+func (e *Engine) EvaluateDeviceStatus(ctx context.Context, deviceID int64, oldStatus, newStatus string) error {
 	if oldStatus == newStatus {
 		return nil // no actual transition
 	}
@@ -79,7 +79,7 @@ func (e *AlertEngine) EvaluateDeviceStatus(ctx context.Context, deviceID int64, 
 }
 
 // EvaluateHeartbeatResult checks if heartbeat failure patterns trigger alerts.
-func (e *AlertEngine) EvaluateHeartbeatResult(ctx context.Context, configID int64, result *db.HeartbeatResult, failCount int, timeoutCount int) error {
+func (e *Engine) EvaluateHeartbeatResult(ctx context.Context, configID int64, result *db.HeartbeatResult, failCount int, timeoutCount int) error {
 	rules, err := e.store.ListEnabledAlertRules(ctx)
 	if err != nil {
 		e.logger.Error("alert: failed to list rules for heartbeat", "error", err)
@@ -124,12 +124,12 @@ func (e *AlertEngine) EvaluateHeartbeatResult(ctx context.Context, configID int6
 }
 
 // ruleAppliesToDevice returns true if the rule is global (device_id IS NULL) or targets this specific device.
-func (e *AlertEngine) ruleAppliesToDevice(rule db.AlertRule, deviceID int64) bool {
+func (e *Engine) ruleAppliesToDevice(rule db.AlertRule, deviceID int64) bool {
 	return rule.DeviceID == nil || *rule.DeviceID == deviceID
 }
 
 // matchesCondition checks if the rule's condition type matches the event.
-func (e *AlertEngine) matchesCondition(rule db.AlertRule, deviceID int64, oldStatus, newStatus string, resultStatus *string, failCount, timeoutCount int) bool {
+func (e *Engine) matchesCondition(rule db.AlertRule, _ int64, _, newStatus string, resultStatus *string, failCount, timeoutCount int) bool {
 	ct := domain.ConditionType(rule.ConditionType)
 
 	switch ct {
@@ -154,7 +154,7 @@ func (e *AlertEngine) matchesCondition(rule db.AlertRule, deviceID int64, oldSta
 }
 
 // inCooldown checks if the rule's cooldown period has not elapsed since last trigger.
-func (e *AlertEngine) inCooldown(rule db.AlertRule, now time.Time) bool {
+func (e *Engine) inCooldown(rule db.AlertRule, now time.Time) bool {
 	if rule.LastTriggeredAt == nil || rule.CooldownSeconds <= 0 {
 		return false
 	}
@@ -164,7 +164,7 @@ func (e *AlertEngine) inCooldown(rule db.AlertRule, now time.Time) bool {
 
 // dispatchAlert sends a notification via the dispatcher.
 // Returns false if dispatch was skipped (channel not found/disabled).
-func (e *AlertEngine) dispatchAlert(ctx context.Context, rule db.AlertRule, deviceID int64, status string) bool {
+func (e *Engine) dispatchAlert(ctx context.Context, rule db.AlertRule, deviceID int64, status string) bool {
 	channel, err := e.store.GetChannelByID(ctx, rule.ChannelID)
 	if err != nil {
 		e.logger.Error("alert: failed to get channel", "channel_id", rule.ChannelID, "error", err)
@@ -187,7 +187,7 @@ func (e *AlertEngine) dispatchAlert(ctx context.Context, rule db.AlertRule, devi
 	e.dispatcher.Dispatch(ctx,
 		domain.ChannelType(channel.Type),
 		json.RawMessage(channel.Config),
-		notification.NotificationPayload{
+		notification.Payload{
 			Subject:  fmt.Sprintf("Alert: %s", rule.Name),
 			Body:     fmt.Sprintf("Device %d status changed to '%s', triggering rule '%s'", deviceID, status, rule.Name),
 			Metadata: metadata,
@@ -200,7 +200,7 @@ func (e *AlertEngine) dispatchAlert(ctx context.Context, rule db.AlertRule, devi
 
 // dispatchAlertForHeartbeat sends a notification for heartbeat failures.
 // Returns false if dispatch was skipped.
-func (e *AlertEngine) dispatchAlertForHeartbeat(ctx context.Context, rule db.AlertRule, deviceID, configID int64, resultStatus string) bool {
+func (e *Engine) dispatchAlertForHeartbeat(ctx context.Context, rule db.AlertRule, deviceID, configID int64, resultStatus string) bool {
 	channel, err := e.store.GetChannelByID(ctx, rule.ChannelID)
 	if err != nil {
 		e.logger.Error("alert: failed to get channel for heartbeat", "channel_id", rule.ChannelID, "error", err)
@@ -224,9 +224,9 @@ func (e *AlertEngine) dispatchAlertForHeartbeat(ctx context.Context, rule db.Ale
 	e.dispatcher.Dispatch(ctx,
 		domain.ChannelType(channel.Type),
 		json.RawMessage(channel.Config),
-		notification.NotificationPayload{
-			Subject: fmt.Sprintf("Alert: %s", rule.Name),
-			Body:    fmt.Sprintf("Device %d heartbeat %s (config %d), triggering rule '%s'", deviceID, resultStatus, configID, rule.Name),
+		notification.Payload{
+			Subject:  fmt.Sprintf("Alert: %s", rule.Name),
+			Body:     fmt.Sprintf("Device %d heartbeat %s (config %d), triggering rule '%s'", deviceID, resultStatus, configID, rule.Name),
 			Metadata: metadata,
 		},
 		&ruleID,
@@ -236,7 +236,7 @@ func (e *AlertEngine) dispatchAlertForHeartbeat(ctx context.Context, rule db.Ale
 }
 
 // updateLastTriggered sets the last_triggered_at timestamp on a rule.
-func (e *AlertEngine) updateLastTriggered(ctx context.Context, rule db.AlertRule, now time.Time) {
+func (e *Engine) updateLastTriggered(ctx context.Context, rule db.AlertRule, now time.Time) {
 	_, err := e.store.UpdateAlertRule(ctx, db.UpdateAlertRuleParams{
 		Name:            rule.Name,
 		DeviceID:        rule.DeviceID,

@@ -38,7 +38,7 @@ func NewWebhookSenderFromConfig(_ json.RawMessage) (*WebhookSender, error) {
 
 // Send delivers a notification via HTTP POST to the URL specified in the channel config.
 // The config JSON must contain: {"url": "https://...", "headers": {"X-Custom": "value"}}
-func (w *WebhookSender) Send(ctx context.Context, payload NotificationPayload) SendResult {
+func (w *WebhookSender) Send(_ context.Context, _ Payload) SendResult {
 	// config is embedded in payload metadata as a workaround — but actually
 	// the dispatcher handles config parsing. This method receives payload only.
 	// The actual URL and headers come from the dispatcher via the webhook-specific send.
@@ -46,7 +46,7 @@ func (w *WebhookSender) Send(ctx context.Context, payload NotificationPayload) S
 }
 
 // SendWithConfig delivers a notification via HTTP POST using the provided webhook config.
-func (w *WebhookSender) SendWithConfig(ctx context.Context, payload NotificationPayload, config json.RawMessage) SendResult {
+func (w *WebhookSender) SendWithConfig(ctx context.Context, payload Payload, config json.RawMessage) SendResult {
 	var cfg WebhookConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return SendResult{Success: false, Error: fmt.Sprintf("invalid webhook config: %v", err)}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
 	"mibee-steward/internal/domain"
 )
 
@@ -151,12 +152,12 @@ func TestAlertRule_CRUD(t *testing.T) {
 
 	// Create alert rule
 	createBody := map[string]interface{}{
-		"name":              "Device Offline Alert",
-		"condition_type":    "device_offline",
-		"threshold":         3,
-		"channel_id":         channel["id"],
-		"cooldown_seconds":   300,
-		"enabled":           true,
+		"name":             "Device Offline Alert",
+		"condition_type":   "device_offline",
+		"threshold":        3,
+		"channel_id":       channel["id"],
+		"cooldown_seconds": 300,
+		"enabled":          true,
 	}
 	bodyBytes, _ := json.Marshal(createBody)
 	resp = authPost(t, server.URL+"/api/v1/alert-rules", token, string(bodyBytes))
@@ -408,12 +409,12 @@ func TestAlertRule_UpdatePreservesFields(t *testing.T) {
 
 	// Create rule with all fields
 	createBody := map[string]interface{}{
-		"name":            "Full Rule",
-		"condition_type":  "heartbeat_fail",
-		"threshold":       5,
-		"channel_id":      channel["id"],
+		"name":             "Full Rule",
+		"condition_type":   "heartbeat_fail",
+		"threshold":        5,
+		"channel_id":       channel["id"],
 		"cooldown_seconds": 600,
-		"enabled":        true,
+		"enabled":          true,
 	}
 	bodyBytes, _ := json.Marshal(createBody)
 	resp = authPost(t, server.URL+"/api/v1/alert-rules", token, string(bodyBytes))
@@ -456,4 +457,3 @@ func TestAlertRule_InvalidJSON(t *testing.T) {
 	defer resp.Body.Close()
 	require.Equal(t, 400, resp.StatusCode)
 }
-

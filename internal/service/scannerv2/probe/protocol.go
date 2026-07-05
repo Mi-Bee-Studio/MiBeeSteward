@@ -192,7 +192,7 @@ func onvifProbePort(ctx context.Context, ip string, port int, timeout time.Durat
 </s:Envelope>`
 
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout:       timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))

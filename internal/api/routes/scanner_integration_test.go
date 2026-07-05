@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"mibee-steward/internal/config"
 	_ "modernc.org/sqlite"
+
+	"mibee-steward/internal/config"
 )
 
 func newTestConfig() *config.Config {

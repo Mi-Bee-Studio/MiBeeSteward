@@ -17,8 +17,8 @@ const (
 type ConditionType string
 
 const (
-	ConditionDeviceOffline   ConditionType = "device_offline"
-	ConditionHeartbeatFail   ConditionType = "heartbeat_fail"
+	ConditionDeviceOffline    ConditionType = "device_offline"
+	ConditionHeartbeatFail    ConditionType = "heartbeat_fail"
 	ConditionHeartbeatTimeout ConditionType = "heartbeat_timeout"
 )
 
@@ -39,22 +39,22 @@ type UpdateChannelRequest struct {
 }
 
 type CreateAlertRuleRequest struct {
-	Name           string        `json:"name"`
-	DeviceID       *int64        `json:"device_id,omitempty"`
-	ConditionType  ConditionType `json:"condition_type"`
-	Threshold      int64         `json:"threshold"`
-	ChannelID      int64         `json:"channel_id"`
-	Enabled        *bool         `json:"enabled,omitempty"`
+	Name            string        `json:"name"`
+	DeviceID        *int64        `json:"device_id,omitempty"`
+	ConditionType   ConditionType `json:"condition_type"`
+	Threshold       int64         `json:"threshold"`
+	ChannelID       int64         `json:"channel_id"`
+	Enabled         *bool         `json:"enabled,omitempty"`
 	CooldownSeconds int64         `json:"cooldown_seconds"`
 }
 
 type UpdateAlertRuleRequest struct {
-	Name           *string        `json:"name,omitempty"`
-	DeviceID       *int64         `json:"device_id,omitempty"`
-	ConditionType  *ConditionType `json:"condition_type,omitempty"`
-	Threshold      *int64         `json:"threshold,omitempty"`
-	ChannelID      *int64         `json:"channel_id,omitempty"`
-	Enabled        *bool          `json:"enabled,omitempty"`
+	Name            *string        `json:"name,omitempty"`
+	DeviceID        *int64         `json:"device_id,omitempty"`
+	ConditionType   *ConditionType `json:"condition_type,omitempty"`
+	Threshold       *int64         `json:"threshold,omitempty"`
+	ChannelID       *int64         `json:"channel_id,omitempty"`
+	Enabled         *bool          `json:"enabled,omitempty"`
 	CooldownSeconds *int64         `json:"cooldown_seconds,omitempty"`
 }
 
@@ -78,7 +78,7 @@ type AlertRuleResponse struct {
 	Threshold       int64      `json:"threshold"`
 	ChannelID       int64      `json:"channel_id"`
 	Enabled         bool       `json:"enabled"`
-	CooldownSeconds  int64      `json:"cooldown_seconds"`
+	CooldownSeconds int64      `json:"cooldown_seconds"`
 	LastTriggeredAt *time.Time `json:"last_triggered_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
@@ -106,5 +106,5 @@ type AlertRuleListResponse struct {
 
 type NotificationLogListResponse struct {
 	Logs  []NotificationLogResponse `json:"logs"`
-	Total int                        `json:"total"`
+	Total int                       `json:"total"`
 }

@@ -52,13 +52,13 @@ func (s *UploadService) SaveFile(file io.Reader, header string, size int64) (fil
 
 	// Allowed MIME types whitelist
 	var allowedMIMETypes = map[string]bool{
-		"image/jpeg": true,
-		"image/png":  true,
-		"image/gif":  true,
-		"application/pdf": true,
+		"image/jpeg":         true,
+		"image/png":          true,
+		"image/gif":          true,
+		"application/pdf":    true,
 		"application/msword": true,
-		"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
-		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": true,
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document":   true,
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":         true,
 		"application/vnd.openxmlformats-officedocument.presentationml.presentation": true,
 	}
 

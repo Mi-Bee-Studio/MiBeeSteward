@@ -105,10 +105,10 @@ func schemeFor(port int) string {
 // === node_exporter metric parsers ===
 
 var (
-	reMemTotal  = regexp.MustCompile(`node_memory_MemTotal_bytes\s+([0-9.e+]+)`)
-	reCPUCount  = regexp.MustCompile(`node_cpu_seconds_total\{cpu="(\d+)"`)
-	reKernel    = regexp.MustCompile(`node_uname_info\{[^}]*release="([^"]+)"`)
-	reOSType    = regexp.MustCompile(`node_uname_info\{[^}]*sysname="([^"]+)"`)
+	reMemTotal = regexp.MustCompile(`node_memory_MemTotal_bytes\s+([0-9.e+]+)`)
+	reCPUCount = regexp.MustCompile(`node_cpu_seconds_total\{cpu="(\d+)"`)
+	reKernel   = regexp.MustCompile(`node_uname_info\{[^}]*release="([^"]+)"`)
+	reOSType   = regexp.MustCompile(`node_uname_info\{[^}]*sysname="([^"]+)"`)
 )
 
 // parseNodeExporterSample extracts hardware attrs from a node_exporter /metrics sample.

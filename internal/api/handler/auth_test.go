@@ -14,6 +14,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/stretchr/testify/require"
+
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
@@ -130,9 +131,9 @@ func setupCSRFTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	t.Cleanup(func() { db.Close() })
 
 	cfg := &config.Config{
-		Server:   config.ServerConfig{Port: 0},
-		Auth:     config.AuthConfig{JWTSecret: "test-secret-key-for-tests", TokenExpiry: "1h"},
-		Storage:  config.StorageConfig{UploadPath: t.TempDir(), MaxFileSize: 1024 * 1024},
+		Server:  config.ServerConfig{Port: 0},
+		Auth:    config.AuthConfig{JWTSecret: "test-secret-key-for-tests", TokenExpiry: "1h"},
+		Storage: config.StorageConfig{UploadPath: t.TempDir(), MaxFileSize: 1024 * 1024},
 	}
 
 	middleware.SetJWTAuth(cfg.Auth.JWTSecret)
@@ -148,7 +149,7 @@ func setupCSRFTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019 deprecated; mirrors production chain
 	r.Use(chimw.Recoverer)
 	r.Use(middleware.CSRF) // CSRF middleware applied
 
@@ -257,9 +258,9 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 	t.Cleanup(func() { db.Close() })
 
 	cfg := &config.Config{
-		Server:   config.ServerConfig{Port: 0},
-		Auth:     config.AuthConfig{JWTSecret: "test-secret-key-for-tests", TokenExpiry: "1h"},
-		Storage:  config.StorageConfig{UploadPath: t.TempDir(), MaxFileSize: 1024 * 1024},
+		Server:  config.ServerConfig{Port: 0},
+		Auth:    config.AuthConfig{JWTSecret: "test-secret-key-for-tests", TokenExpiry: "1h"},
+		Storage: config.StorageConfig{UploadPath: t.TempDir(), MaxFileSize: 1024 * 1024},
 	}
 
 	middleware.SetJWTAuth(cfg.Auth.JWTSecret)
@@ -274,7 +275,7 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019 deprecated; mirrors production chain
 	r.Use(chimw.Recoverer)
 	r.Use(loginLimiter.Middleware)
 

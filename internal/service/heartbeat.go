@@ -1,6 +1,6 @@
 package service
 
-	import (
+import (
 	"context"
 	"fmt"
 	"log/slog"
@@ -14,14 +14,16 @@ package service
 	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/service/scannerv2"
 )
+
 // HeartbeatService manages heartbeat scheduling and result processing.
 type HeartbeatService struct {
 	queries      *db.Queries
 	cfg          config.HeartbeatConfig
 	cancel       context.CancelFunc
+	cancelMu     sync.Mutex    // guards cancel (written by Start, read by Stop)
 	failCounts   map[int64]int // deviceID -> consecutive failure count
 	failCountsMu sync.Mutex
-	alertEngine  *alert.AlertEngine
+	alertEngine  *alert.Engine
 }
 
 // NewHeartbeatService creates a new HeartbeatService.
@@ -30,13 +32,18 @@ func NewHeartbeatService(dbConn db.DBTX, cfg *config.Config) *HeartbeatService {
 		queries:    db.New(dbConn),
 		cfg:        cfg.Heartbeat,
 		failCounts: make(map[int64]int),
-}
+	}
 }
 
 // Start begins the heartbeat scheduler loop in the background.
 func (s *HeartbeatService) Start(ctx context.Context) {
-	ctx, s.cancel = context.WithCancel(ctx)
-	defer s.cancel()
+	// Bound the loop with a cancellable context; store the cancel func under
+	// the mutex so Stop() (called from another goroutine) can read it safely.
+	ctx, cancel := context.WithCancel(ctx)
+	s.cancelMu.Lock()
+	s.cancel = cancel
+	s.cancelMu.Unlock()
+	defer cancel()
 
 	// Cleanup old results on start
 	s.cleanupOldResults(ctx)
@@ -59,6 +66,8 @@ func (s *HeartbeatService) Start(ctx context.Context) {
 
 // Stop cancels the scheduler context.
 func (s *HeartbeatService) Stop() {
+	s.cancelMu.Lock()
+	defer s.cancelMu.Unlock()
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -70,23 +79,23 @@ func (s *HeartbeatService) GetQueries() *db.Queries {
 }
 
 // SetAlertEngine sets the alert engine for evaluating device status changes.
-func (s *HeartbeatService) SetAlertEngine(eng *alert.AlertEngine) {
+func (s *HeartbeatService) SetAlertEngine(eng *alert.Engine) {
 	s.alertEngine = eng
 }
 
-	// CreateDefaultConfig creates a default ICMP heartbeat config for a device.
-	// target = device IP, method = icmp, interval = 30s, timeout = 5s, enabled = true.
-	func (s *HeartbeatService) CreateDefaultConfig(ctx context.Context, deviceID int64, target string) error {
-		_, err := s.queries.CreateHeartbeatConfig(ctx, db.CreateHeartbeatConfigParams{
-			DeviceID:        deviceID,
-			Method:          "icmp",
-			Target:          target,
-			IntervalSeconds: 30,
-			TimeoutSeconds:  5,
-			SnmpCommunity:   "public",
-			SnmpOid:         "1.3.6.1.2.1.1.3.0",
-			Enabled:         1,
-			})
+// CreateDefaultConfig creates a default ICMP heartbeat config for a device.
+// target = device IP, method = icmp, interval = 30s, timeout = 5s, enabled = true.
+func (s *HeartbeatService) CreateDefaultConfig(ctx context.Context, deviceID int64, target string) error {
+	_, err := s.queries.CreateHeartbeatConfig(ctx, db.CreateHeartbeatConfigParams{
+		DeviceID:        deviceID,
+		Method:          "icmp",
+		Target:          target,
+		IntervalSeconds: 30,
+		TimeoutSeconds:  5,
+		SnmpCommunity:   "public",
+		SnmpOid:         "1.3.6.1.2.1.1.3.0",
+		Enabled:         1,
+	})
 
 	return err
 }
@@ -118,7 +127,8 @@ func (s *HeartbeatService) CreateConfigs(ctx context.Context, deviceID int64, co
 		}
 	}
 	return nil
-	}
+}
+
 // GetProber returns the appropriate Prober for the given method.
 func GetProber(method, community, oid string) probe.Prober {
 	switch method {
@@ -137,7 +147,6 @@ func GetProber(method, community, oid string) probe.Prober {
 		return &probe.ICMPProber{}
 	}
 }
-
 
 func (s *HeartbeatService) runChecks(ctx context.Context) {
 	configs, err := s.queries.ListEnabledConfigs(ctx)
@@ -252,7 +261,9 @@ func (s *HeartbeatService) safeEvaluateDeviceStatus(ctx context.Context, deviceI
 			slog.Error("alert engine panic recovered", "device_id", deviceID, "panic", r)
 		}
 	}()
-	s.alertEngine.EvaluateDeviceStatus(ctx, deviceID, oldStatus, newStatus)
+	if err := s.alertEngine.EvaluateDeviceStatus(ctx, deviceID, oldStatus, newStatus); err != nil {
+		slog.Error("alert engine failed to evaluate device status", "device_id", deviceID, "error", err)
+	}
 }
 
 func (s *HeartbeatService) setDeviceStatus(ctx context.Context, deviceID int64, device db.Device, newStatus string) {
@@ -288,10 +299,6 @@ func (s *HeartbeatService) cleanupOldResults(ctx context.Context) {
 	}
 }
 
-func (s *HeartbeatService) listEnabledConfigs(ctx context.Context) ([]db.HeartbeatConfig, error) {
-	return s.queries.ListEnabledConfigs(ctx)
-}
-
 func (s *HeartbeatService) isDue(ctx context.Context, cfg db.HeartbeatConfig) bool {
 	interval := time.Duration(cfg.IntervalSeconds) * time.Second
 	if interval <= 0 {
@@ -320,19 +327,19 @@ func (s *HeartbeatService) GetHistory(ctx context.Context, deviceID int64, from,
 	}
 
 	results, err := s.queries.ListHeartbeatResultsByTimeRange(ctx, db.ListHeartbeatResultsByTimeRangeParams{
-		DeviceID:   deviceID,
-		CheckedAt:  from,
+		DeviceID:    deviceID,
+		CheckedAt:   from,
 		CheckedAt_2: to,
-		Limit:      int64(limit),
-		Offset:     int64(offset),
+		Limit:       int64(limit),
+		Offset:      int64(offset),
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	total, err := s.queries.CountHeartbeatResultsByTimeRange(ctx, db.CountHeartbeatResultsByTimeRangeParams{
-		DeviceID:   deviceID,
-		CheckedAt:  from,
+		DeviceID:    deviceID,
+		CheckedAt:   from,
 		CheckedAt_2: to,
 	})
 	if err != nil {
@@ -353,8 +360,8 @@ func (s *HeartbeatService) GetHistory(ctx context.Context, deviceID int64, from,
 // GetStats returns aggregated heartbeat statistics for a device within a time range.
 func (s *HeartbeatService) GetStats(ctx context.Context, deviceID int64, from, to time.Time) (*domain.HeartbeatStatsResponse, error) {
 	stats, err := s.queries.GetHeartbeatStats(ctx, db.GetHeartbeatStatsParams{
-		DeviceID:   deviceID,
-		CheckedAt:  from,
+		DeviceID:    deviceID,
+		CheckedAt:   from,
 		CheckedAt_2: to,
 	})
 	if err != nil {

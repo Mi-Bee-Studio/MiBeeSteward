@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	ErrChannelNotFound = errors.New("notification channel not found")
+	ErrChannelNotFound   = errors.New("notification channel not found")
 	ErrAlertRuleNotFound = errors.New("alert rule not found")
 )
 

@@ -201,12 +201,12 @@ func TestAddDeviceItem_NewFields_OmitEmpty(t *testing.T) {
 
 func TestAddDeviceItem_RoundTrip(t *testing.T) {
 	snmpData := map[string]interface{}{
-		"obj_id":    "1.3.6.1.4.1.9.1.123",
-		"uptime":    123456,
-		"if_count":  48,
-		"services":  72,
-		"contact":   "noc@company.com",
-		"location":  "Floor 1",
+		"obj_id":   "1.3.6.1.4.1.9.1.123",
+		"uptime":   123456,
+		"if_count": 48,
+		"services": 72,
+		"contact":  "noc@company.com",
+		"location": "Floor 1",
 	}
 	item := AddDeviceItem{
 		IP:          "192.168.1.100",

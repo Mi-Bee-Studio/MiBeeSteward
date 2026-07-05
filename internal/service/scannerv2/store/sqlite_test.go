@@ -67,7 +67,7 @@ func TestRecordEvidence_SampledByDefault(t *testing.T) {
 	if err := repo.RecordEvidence(ctx, ev); err != nil {
 		t.Fatalf("record evidence: %v", err)
 	}
-	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM service_evidence`, ); cnt != 0 {
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM service_evidence`); cnt != 0 {
 		t.Fatalf("expected 0 evidence rows when sampling off, got %d", cnt)
 	}
 
@@ -91,9 +91,9 @@ func TestRecordDevice_InsertThenUpdate(t *testing.T) {
 		Type:  "server",
 		Brand: "Dell",
 		Fields: map[string]string{
-			"open_ports":        "[22,80]",
-			"prometheus_url":    "http://10.0.0.3:9090",
-			"os":                "linux",
+			"open_ports":     "[22,80]",
+			"prometheus_url": "http://10.0.0.3:9090",
+			"os":             "linux",
 		},
 	}
 	if err := repo.RecordDevice(ctx, ip, d); err != nil {

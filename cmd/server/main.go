@@ -14,11 +14,12 @@ import (
 	"syscall"
 	"time"
 
+	_ "modernc.org/sqlite"
+
 	dbsql "mibee-steward/db"
 	"mibee-steward/internal/api/routes"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/service"
-	_ "modernc.org/sqlite"
 )
 
 var (
@@ -102,7 +103,6 @@ func main() {
 	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
 	seedAdminUser(userSvc, cfg.Auth.InitialAdminPassword)
 
-
 	// Create router
 	router, heartbeatSvc, shutdownScanner := routes.NewRouter(db, cfg)
 
@@ -157,14 +157,16 @@ func main() {
 	shutdownScanner()
 	slog.Info("scanner services stopped")
 
-
-	// Shutdown HTTP server with 15s timeout
+	// Shutdown HTTP server with 15s timeout.
+	// cancel is called explicitly (not deferred) because os.Exit below would
+	// skip any deferred calls, leaking the timeout context's resources.
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
+		cancel()
 		slog.Error("server forced to shutdown", "error", err)
 		os.Exit(1)
 	}
+	cancel()
 
 	// Close database
 	db.Close()

@@ -51,24 +51,24 @@ import (
 //
 //	struct event { __u32 src_ip; __u16 port; __u16 proto; __u8 kind; __u8 server[64]; };
 const (
-	eventLen     = 74 // 4 + 2 + 2 + 1 + 1(padding) + 64
-	kindSSH      = 1
-	kindRTSP     = 2
-	kindHTTP     = 3
+	eventLen        = 74 // 4 + 2 + 2 + 1 + 1(padding) + 64
+	kindSSH         = 1
+	kindRTSP        = 2
+	kindHTTP        = 3
 	kindWSDiscovery = 4
 )
 
 // observerState holds the live TC links and the ring-buffer reader goroutine.
 type observerState struct {
-	mu       sync.Mutex
-	links    []link.Link
-	objects  *tcIngressObjects
-	reader   *ringbuf.Reader
-	stop     chan struct{}
+	mu      sync.Mutex
+	links   []link.Link
+	objects *tcIngressObjects
+	reader  *ringbuf.Reader
+	stop    chan struct{}
 	// recent buffers the most recent evidence per IP so Probe() can return it
 	// when the orchestrator polls. This decouples the asynchronous ring-buffer
 	// drain from the synchronous Probe() call model.
-	recent   map[string][]scannerv2.Evidence
+	recent map[string][]scannerv2.Evidence
 }
 
 var state observerState

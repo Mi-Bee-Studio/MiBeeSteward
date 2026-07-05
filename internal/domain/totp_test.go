@@ -53,7 +53,7 @@ func TestTOTPVerifyRequest_JSONTags(t *testing.T) {
 func TestTOTPEnableRequest_JSONTags(t *testing.T) {
 	req := TOTPEnableRequest{
 		UserID: 1,
-		Code: "123456",
+		Code:   "123456",
 	}
 
 	data, err := json.Marshal(req)

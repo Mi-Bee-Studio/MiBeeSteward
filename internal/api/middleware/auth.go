@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/jwtauth/v5"
+
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 )
