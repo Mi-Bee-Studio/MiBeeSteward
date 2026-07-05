@@ -1,18 +1,51 @@
+version: "2"
+
 run:
   go: "1.26"
   timeout: 5m
 
 linters:
+  default: none
   enable:
     - errcheck
     - govet
     - staticcheck
     - ineffassign
     - unused
-    - misspell
+    - gocritic
+    - revive
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Ignore unchecked errors in tests; test helpers routinely discard them.
+      - linters:
+          - errcheck
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - mibee-steward
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
+  max-issues-per-linter: 0
+  max-same-issues: 0
