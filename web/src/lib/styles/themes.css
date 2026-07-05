@@ -1,0 +1,426 @@
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────────────────────
+   MiBee Steward — Design System
+   Layers: design tokens → @theme (Tailwind bridge) → components
+   ────────────────────────────────────────────────────────────── */
+
+/* Variable fonts — sans for UI body, mono for data/code/IP */
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource-variable/jetbrains-mono/index.css";
+
+/* ════════════ 1. Design tokens (CSS variables) ════════════ */
+
+/* Dark theme (default) */
+:root,
+:root[data-theme='dark'] {
+	/* neutrals — near-black bg, layered surfaces */
+	--color-bg: #09090b;
+	--color-surface: #18181b;
+	--color-surface-2: #1f1f23; /* raised surface (hover, nested) */
+	--color-border: #27272a;
+	--color-border-strong: #3f3f46;
+
+	/* text */
+	--color-text: #fafafa;
+	--color-text-muted: #a1a1aa;
+
+	/* brand / accent — indigo primary */
+	--color-primary: #6366f1;
+	--color-primary-hover: #4f46e5;
+	--color-primary-soft: #818cf8;
+	--color-accent: #818cf8;
+	--color-accent-purple: #a78bfa;
+	--color-accent-cyan: #67e8f9;
+
+	/* semantic status */
+	--color-error: #ef4444;
+	--color-error-soft: #fca5a5;
+	--color-warning: #f59e0b;
+	--color-success: #10b981;
+	--color-info: #38bdf8; /* distinct from primary (sky-blue) */
+
+	/* inversions */
+	--color-text-inverse: #fafafa;
+
+	/* typography */
+	--font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+
+	/* radius scale */
+	--radius-sm: 0.375rem;
+	--radius-md: 0.5rem;
+	--radius-lg: 0.75rem;
+	--radius-xl: 1rem;
+
+	/* elevation (tokenized shadows — replace hardcoded rgba) */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+	--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+	--shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+	--overlay-scrim: rgba(0, 0, 0, 0.6);
+
+	/* decorative glow (login) */
+	--glow-primary: 0 0 24px rgba(99, 102, 241, 0.25);
+}
+
+/* Light theme */
+:root[data-theme='light'] {
+	--color-bg: #f4f4f5;
+	--color-surface: #ffffff;
+	--color-surface-2: #f9fafb;
+	--color-border: #e4e4e7;
+	--color-border-strong: #d4d4d8;
+
+	--color-text: #18181b;
+	--color-text-muted: #71717a;
+
+	--color-primary: #6366f1;
+	--color-primary-hover: #4f46e5;
+	--color-primary-soft: #6366f1;
+	--color-accent: #6366f1;
+	--color-accent-purple: #8b5cf6;
+	--color-accent-cyan: #06b6d4;
+
+	--color-error: #ef4444;
+	--color-error-soft: #dc2626;
+	--color-warning: #d97706;
+	--color-success: #059669;
+	--color-info: #0284c7;
+
+	--color-text-inverse: #ffffff;
+
+	--font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+
+	--radius-sm: 0.375rem;
+	--radius-md: 0.5rem;
+	--radius-lg: 0.75rem;
+	--radius-xl: 1rem;
+
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+	--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+	--shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+	--overlay-scrim: rgba(9, 9, 11, 0.5);
+
+	--glow-primary: 0 0 16px rgba(99, 102, 241, 0.18);
+}
+
+/* Pre-JS flash prevention via media query (before data-theme is set) */
+@media (prefers-color-scheme: light) {
+	:root:not([data-theme]) {
+		--color-bg: #f4f4f5;
+		--color-surface: #ffffff;
+		--color-surface-2: #f9fafb;
+		--color-border: #e4e4e7;
+		--color-border-strong: #d4d4d8;
+		--color-text: #18181b;
+		--color-text-muted: #71717a;
+		--color-primary: #6366f1;
+		--color-primary-hover: #4f46e5;
+		--color-primary-soft: #6366f1;
+		--color-accent: #6366f1;
+		--color-accent-purple: #8b5cf6;
+		--color-accent-cyan: #06b6d4;
+		--color-error: #ef4444;
+		--color-error-soft: #dc2626;
+		--color-warning: #d97706;
+		--color-success: #059669;
+		--color-info: #0284c7;
+		--color-text-inverse: #ffffff;
+		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+		--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+		--shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+		--overlay-scrim: rgba(9, 9, 11, 0.5);
+		--glow-primary: 0 0 16px rgba(99, 102, 241, 0.18);
+	}
+}
+
+/* ════════════ 2. Tailwind theme bridge ════════════ */
+/* Maps every token to a Tailwind utility so we can write `bg-surface`
+   instead of the arbitrary `bg-[var(--color-surface)]` escape hatch. */
+@theme inline {
+	--color-bg: var(--color-bg);
+	--color-surface: var(--color-surface);
+	--color-surface-2: var(--color-surface-2);
+	--color-border: var(--color-border);
+	--color-border-strong: var(--color-border-strong);
+
+	--color-text: var(--color-text);
+	--color-muted: var(--color-text-muted);
+
+	--color-primary: var(--color-primary);
+	--color-primary-hover: var(--color-primary-hover);
+	--color-primary-soft: var(--color-primary-soft);
+	--color-accent: var(--color-accent);
+	--color-accent-purple: var(--color-accent-purple);
+	--color-accent-cyan: var(--color-accent-cyan);
+
+	--color-error: var(--color-error);
+	--color-error-soft: var(--color-error-soft);
+	--color-warning: var(--color-warning);
+	--color-success: var(--color-success);
+	--color-info: var(--color-info);
+
+	--color-text-inverse: var(--color-text-inverse);
+
+	--font-sans: var(--font-sans);
+	--font-mono: var(--font-mono);
+
+	--radius-sm: var(--radius-sm);
+	--radius-md: var(--radius-md);
+	--radius-lg: var(--radius-lg);
+	--radius-xl: var(--radius-xl);
+
+	/* backward-compat aliases (legacy `text-default` etc.) */
+	--color-default: var(--color-text);
+	--color-inverse: var(--color-text-inverse);
+}
+
+/* ════════════ 3. Base styles ════════════ */
+body {
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular/data context — apply `.font-mono` where needed (IP, MAC, code). */
+
+/* Smooth theme + state transitions */
+* {
+	transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+*:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
+/* ════════════ 4. Semantic component classes ════════════ */
+/* Single source of truth for repeated patterns. Use these in markup
+   instead of re-typing the full utility string 13×. */
+@layer components {
+	/* ── Buttons ── */
+	.btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		padding: 0.5rem 1rem;
+		font-size: 0.875rem;
+		font-weight: 600;
+		line-height: 1.25rem;
+		border-radius: var(--radius-md);
+		cursor: pointer;
+		transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+		border: 1px solid transparent;
+		white-space: nowrap;
+	}
+	.btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.btn-primary {
+		background: var(--color-primary);
+		color: var(--color-text-inverse);
+	}
+	.btn-primary:hover:not(:disabled) {
+		background: var(--color-primary-hover);
+	}
+
+	.btn-secondary {
+		background: var(--color-surface);
+		border-color: var(--color-border);
+		color: var(--color-text-muted);
+	}
+	.btn-secondary:hover:not(:disabled) {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+	}
+
+	.btn-danger {
+		background: color-mix(in srgb, var(--color-error) 12%, transparent);
+		border-color: color-mix(in srgb, var(--color-error) 24%, transparent);
+		color: var(--color-error);
+	}
+	.btn-danger:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--color-error) 20%, transparent);
+	}
+
+	.btn-ghost {
+		background: transparent;
+		color: var(--color-text-muted);
+	}
+	.btn-ghost:hover:not(:disabled) {
+		background: var(--color-surface-2);
+		color: var(--color-text);
+	}
+
+	/* Square icon-only button */
+	.btn-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.25rem;
+		height: 2.25rem;
+		border-radius: var(--radius-md);
+		color: var(--color-text-muted);
+		transition: background-color 0.15s ease, color 0.15s ease;
+		cursor: pointer;
+	}
+	.btn-icon:hover:not(:disabled) {
+		background: var(--color-surface-2);
+		color: var(--color-text);
+	}
+
+	/* ── Form controls ── */
+	.input,
+	.select,
+	.textarea {
+		width: 100%;
+		padding: 0.5rem 0.75rem;
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		font-size: 0.875rem;
+		color: var(--color-text);
+		transition: border-color 0.15s ease;
+	}
+	.input::placeholder,
+	.textarea::placeholder {
+		color: color-mix(in srgb, var(--color-text-muted) 60%, transparent);
+	}
+	.input:focus,
+	.select:focus,
+	.textarea:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 1px var(--color-primary);
+	}
+	.input:disabled,
+	.select:disabled,
+	.textarea:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+	/* validation error state — pair with `!input-error` or apply directly */
+	.input-error,
+	.select-error {
+		border-color: var(--color-error);
+	}
+
+	.label {
+		display: block;
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-muted);
+		margin-bottom: 0.25rem;
+	}
+
+	.form-error {
+		margin-top: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--color-error);
+	}
+
+	/* ── Surfaces ── */
+	.card {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+	}
+	.card-header {
+		padding: 0.75rem 1rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+	.card-body {
+		padding: 1.5rem;
+	}
+
+	/* ── Stat cards (devices page summary) ── */
+	.stat-card {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		padding: 1rem;
+	}
+	.stat-label {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+	.stat-value {
+		font-size: 1.5rem;
+		font-weight: 700;
+		line-height: 2rem;
+		margin-top: 0.25rem;
+	}
+
+	/* ── Badges ── */
+	.badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		padding: 0.125rem 0.5rem;
+		border-radius: var(--radius-sm);
+		background: var(--color-surface-2);
+		color: var(--color-text-muted);
+	}
+	.badge-success {
+		background: color-mix(in srgb, var(--color-success) 14%, transparent);
+		color: var(--color-success);
+	}
+	.badge-error {
+		background: color-mix(in srgb, var(--color-error) 14%, transparent);
+		color: var(--color-error);
+	}
+	.badge-warning {
+		background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+		color: var(--color-warning);
+	}
+	.badge-info {
+		background: color-mix(in srgb, var(--color-info) 14%, transparent);
+		color: var(--color-info);
+	}
+	.badge-primary {
+		background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+		color: var(--color-primary);
+	}
+
+	/* ── Tabs (devices sub-nav) ── */
+	.tab {
+		padding: 0.75rem 1.25rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		white-space: nowrap;
+		color: var(--color-text-muted);
+		border-bottom: 2px solid transparent;
+		transition: color 0.15s ease, border-color 0.15s ease;
+	}
+	.tab:hover {
+		color: var(--color-text);
+	}
+	.tab-active {
+		color: var(--color-primary);
+		border-bottom-color: var(--color-primary);
+	}
+}
+
+/* ════════════ 5. Utilities ════════════ */
+.glow-border {
+	box-shadow: var(--glow-primary);
+	border: 1px solid var(--color-primary);
+}
+
+/* Online/offline status indicator pulses */
+@keyframes pulse-green {
+	0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 70%, transparent); }
+	50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-success) 0%, transparent); }
+}
+@keyframes pulse-red {
+	0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-error) 70%, transparent); }
+	50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-error) 0%, transparent); }
+}
+.animate-pulse-green { animation: pulse-green 2s infinite; }
+.animate-pulse-red { animation: pulse-red 1.5s infinite; }

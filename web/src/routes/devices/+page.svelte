@@ -1,0 +1,1064 @@
+<script lang="ts">
+	import { api } from '$lib/api/client';
+	import { m } from '$lib/i18n-paraglide';
+	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
+	import { addToast } from '$lib/stores/toast';
+	import { getErrorMessage } from '$lib/utils/error';
+	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
+	import type { Device, LinkedDoc } from '$lib/types';
+	import { auth } from '$lib/stores/auth';
+	import { ChevronDown, ChevronRight, Download, Upload, Plus } from '@lucide/svelte';
+
+	import Modal from '$lib/components/Modal.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import DataTable from '$lib/components/DataTable.svelte';
+	import Pagination from '$lib/components/Pagination.svelte';
+	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import HeartbeatExpandableRow from '$lib/components/HeartbeatExpandableRow.svelte';
+
+interface Stats {
+    by_status: Record<string, number>;
+    by_type: Record<string, number>;
+}
+
+	// --- Core state ---
+	let devices = $state<Device[]>([]);
+	let stats = $state<Stats>({ by_status: {}, by_type: {} });
+	let total = $state(0);
+	let loading = $state(true);
+	let error = $state('');
+
+	// --- Filters ---
+	let statusFilter = $state('');
+	let typeFilter = $state('');
+	let dateFrom = $state('');
+	let dateTo = $state('');
+	let offset = $state(0);
+	const limit = 20;
+	let showAdvanced = $state(false);
+
+	// --- Form modal ---
+	let formOpen = $state(false);
+	let editingDevice = $state<Device | null>(null);
+	let formError = $state('');
+	let formLoading = $state(false);
+
+	let formName = $state('');
+	let formType = $state('pc');
+	let formBrand = $state('');
+	let formModel = $state('');
+	let formLocation = $state('');
+	let formPurpose = $state('');
+	let formIpAddress = $state('');
+	let formMacAddress = $state('');
+	let formSerialNumber = $state('');
+	let formPurchaseDate = $state('');
+	let formWarrantyExpiry = $state('');
+	let formTags = $state('');
+
+	// --- Inline validation ---
+	let fieldErrors = $state<Record<string, string>>({});
+
+	// --- Delete confirmation ---
+	let deleteOpen = $state(false);
+	let deleteTarget = $state<Device | null>(null);
+
+	// --- Expandable heartbeat row ---
+	let expandedDeviceId = $state<number | null>(null);
+
+	// --- Link document modal ---
+	let linkOpen = $state(false);
+	let linkDeviceId = $state<number | null>(null);
+	let linkDeviceName = $state('');
+	let linkedDocs = $state<LinkedDoc[]>([]);
+	let allDocs = $state<LinkedDoc[]>([]);
+	let selectedDocId = $state<number | null>(null);
+	let linkLoading = $state(false);
+	let linkError = $state('');
+
+	// --- Bulk operations ---
+	let selectedIds = $state<Set<number>>(new Set());
+	let batchDeleteOpen = $state(false);
+	let batchStatusOpen = $state(false);
+	let batchStatusValue = $state('online');
+	let batchLoading = $state(false);
+
+	// --- CSV Import ---
+	let importOpen = $state(false);
+	let importLoading = $state(false);
+	let csvFile = $state<File | null>(null);
+	let csvPreviewRows = $state<{ ip: string; name: string; type: string }[]>([]);
+
+	// --- Lifecycle ---
+	onMount(fetchDevices);
+
+	// --- Data fetching ---
+	async function fetchDevices() {
+		loading = true;
+		error = '';
+		try {
+			const params = new URLSearchParams();
+			if (statusFilter) params.set('status', statusFilter);
+			if (typeFilter) params.set('type', typeFilter);
+			if (dateFrom) params.set('created_from', dateFrom);
+			if (dateTo) params.set('created_to', dateTo);
+			params.set('limit', String(limit));
+			params.set('offset', String(offset));
+			const res = await api.get<{ devices: Device[]; total: number }>(`/devices?${params}`);
+			devices = res.devices || [];
+			total = res.total || 0;
+
+		try {
+			stats = await api.get<Stats>('/devices/stats');
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+			// Fallback: compute stats from device list
+			const by_status: Record<string, number> = {};
+			const by_type: Record<string, number> = {};
+			devices.forEach((d) => {
+				by_status[d.status] = (by_status[d.status] || 0) + 1;
+				by_type[d.type] = (by_type[d.type] || 0) + 1;
+			});
+			stats = { by_status, by_type };
+		}
+		} catch (err: unknown) {
+			error = getErrorMessage(err);
+		} finally {
+			loading = false;
+		}
+	}
+
+	function applyFilters() {
+		offset = 0;
+		expandedDeviceId = null;
+		selectedIds = new Set();
+		fetchDevices();
+	}
+
+	// --- Export ---
+	async function exportDevices(format: string) {
+		try {
+			let token: string | null = null;
+			const unsub = auth.subscribe((s) => { token = s.token; });
+			unsub();
+			const res = await fetch(`/api/v1/devices/export?format=${format}`, {
+				headers: { 'Authorization': `Bearer ${token}` },
+				credentials: 'include'
+			});
+			if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`);
+			const blob = await res.blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `devices.${format}`;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
+	// --- Bulk operations ---
+	function toggleSelect(id: number) {
+		const next = new Set(selectedIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+		}
+		selectedIds = next;
+	}
+
+	function toggleSelectAll() {
+		if (selectedIds.size === devices.length) {
+			selectedIds = new Set();
+		} else {
+			selectedIds = new Set(devices.map((d) => d.id));
+		}
+	}
+
+	async function confirmBatchDelete() {
+		if (selectedIds.size === 0) return;
+		batchLoading = true;
+		try {
+			await api.post('/devices/batch-delete', { ids: Array.from(selectedIds) });
+			addToast('success', m['devices.Batch Delete Success']().replace('{count}', String(selectedIds.size)));
+			selectedIds = new Set();
+			fetchDevices();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			batchLoading = false;
+			batchDeleteOpen = false;
+		}
+	}
+
+	async function confirmBatchStatus() {
+		if (selectedIds.size === 0) return;
+		batchLoading = true;
+		try {
+			await api.post('/devices/batch-update-status', { ids: Array.from(selectedIds), status: batchStatusValue });
+			addToast('success', m['devices.Batch Status Success']().replace('{count}', String(selectedIds.size)));
+			selectedIds = new Set();
+			fetchDevices();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			batchLoading = false;
+			batchStatusOpen = false;
+		}
+	}
+
+	// --- CSV Import ---
+	function handleCsvFileSelect(e: Event) {
+		const el = e.target as HTMLInputElement;
+		csvFile = el.files?.[0] || null;
+		csvPreviewRows = [];
+		if (!csvFile) return;
+		const reader = new FileReader();
+		reader.onload = () => {
+			const text = reader.result as string;
+			csvPreviewRows = parseCsv(text);
+		};
+		reader.readAsText(csvFile);
+	}
+
+	function parseCsv(text: string): { ip: string; name: string; type: string }[] {
+		const lines = text.split(/\r?\n/).filter((l) => l.trim());
+		if (lines.length < 2) return [];
+		// Skip header row, parse remaining
+		const results: { ip: string; name: string; type: string }[] = [];
+		for (let i = 1; i < lines.length; i++) {
+			const cols = splitCsvLine(lines[i]);
+			if (cols.length < 2) continue;
+			results.push({
+				ip: (cols[0] || '').trim(),
+				name: (cols[1] || '').trim(),
+				type: (cols[2] || 'other').trim().toLowerCase()
+			});
+		}
+		return results;
+	}
+
+	function splitCsvLine(line: string): string[] {
+		const result: string[] = [];
+		let current = '';
+		let inQuotes = false;
+		for (let i = 0; i < line.length; i++) {
+			const ch = line[i];
+			if (inQuotes) {
+				if (ch === '"') {
+					if (i + 1 < line.length && line[i + 1] === '"') {
+						current += '"';
+						i++;
+					} else {
+						inQuotes = false;
+					}
+				} else {
+					current += ch;
+				}
+			} else {
+				if (ch === '"') {
+					inQuotes = true;
+				} else if (ch === ',') {
+					result.push(current);
+					current = '';
+				} else {
+					current += ch;
+				}
+			}
+		}
+		result.push(current);
+		return result;
+	}
+
+	async function confirmImport() {
+		if (csvPreviewRows.length === 0) return;
+		importLoading = true;
+		try {
+			await api.post('/scanner/add-devices', { devices: csvPreviewRows });
+			addToast('success', m['scanner.Added N Devices']().replace('{count}', String(csvPreviewRows.length)));
+			importOpen = false;
+			csvFile = null;
+			csvPreviewRows = [];
+			fetchDevices();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			importLoading = false;
+		}
+	}
+
+	// --- Form helpers ---
+	function resetForm() {
+		formName = '';
+		formType = 'pc';
+		formBrand = '';
+		formModel = '';
+		formLocation = '';
+		formPurpose = '';
+		formIpAddress = '';
+		formMacAddress = '';
+		formSerialNumber = '';
+		formPurchaseDate = '';
+		formWarrantyExpiry = '';
+		formTags = '';
+		formError = '';
+		fieldErrors = {};
+		editingDevice = null;
+	}
+
+	function openCreate() {
+		resetForm();
+		formOpen = true;
+	}
+
+	function openEdit(device: Device) {
+		editingDevice = device;
+		formName = device.name;
+		formType = device.type || 'pc';
+		formBrand = device.brand || '';
+		formModel = device.model || '';
+		formLocation = device.location || '';
+		formPurpose = device.purpose || '';
+		formIpAddress = device.ip_address || '';
+		formMacAddress = device.mac_address || '';
+		formSerialNumber = device.serial_number || '';
+		formPurchaseDate = device.purchase_date || '';
+		formWarrantyExpiry = device.warranty_expiry || '';
+		formTags = device.tags || '';
+		formError = '';
+		fieldErrors = {};
+		formOpen = true;
+	}
+
+	function handleBlur(field: string, value: string) {
+		const result = validateField(deviceSchema, field as keyof typeof deviceSchema._type, value);
+		if (result.valid) {
+			const { [field]: _, ...rest } = fieldErrors;
+			fieldErrors = rest;
+		} else {
+			fieldErrors = { ...fieldErrors, [field]: result.error! };
+		}
+	}
+
+	async function handleSubmit(e: Event) {
+		e.preventDefault();
+		formLoading = true;
+		formError = '';
+
+		const body = {
+			name: formName,
+			type: formType,
+			brand: formBrand,
+			model: formModel,
+			location: formLocation,
+			purpose: formPurpose,
+			ip_address: formIpAddress,
+			mac_address: formMacAddress,
+			serial_number: formSerialNumber,
+			purchase_date: formPurchaseDate,
+			warranty_expiry: formWarrantyExpiry,
+			tags: formTags
+		};
+
+		const validation = validateForm(deviceSchema, body);
+		if (!validation.valid) {
+			fieldErrors = validation.errors;
+			formLoading = false;
+			return;
+		}
+
+		try {
+			if (editingDevice) {
+				await api.put(`/devices/${editingDevice.id}`, body);
+				addToast('success', m['devices.Updated']());
+			} else {
+				await api.post('/devices', body);
+				addToast('success', m['devices.Created']());
+			}
+			formOpen = false;
+			resetForm();
+			fetchDevices();
+		} catch (err: unknown) {
+			const msg = getErrorMessage(err);
+			formError = msg;
+			addToast('error', msg);
+		} finally {
+			formLoading = false;
+		}
+	}
+
+	// --- Delete ---
+	function openDelete(device: Device) {
+		deleteTarget = device;
+		deleteOpen = true;
+	}
+
+	async function confirmDelete() {
+		if (!deleteTarget) return;
+		try {
+			await api.delete(`/devices/${deleteTarget.id}`);
+			addToast('success', m['devices.Deleted']());
+			deleteTarget = null;
+			fetchDevices();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
+	// --- Document linking ---
+	async function openLinkModal(device: Device) {
+		linkDeviceId = device.id;
+		linkDeviceName = device.name;
+		linkError = '';
+		selectedDocId = null;
+		linkLoading = false;
+		linkOpen = true;
+		await Promise.all([fetchLinkedDocs(device.id), fetchAllDocs()]);
+	}
+
+	async function fetchLinkedDocs(deviceId: number) {
+		try {
+			const res = await api.get<{ documents: LinkedDoc[] }>(`/devices/${deviceId}/documents`);
+			linkedDocs = res.documents || [];
+		} catch (err: unknown) {
+			console.error('devices: fetch linked docs failed', err);
+			linkedDocs = [];
+		}
+	}
+
+	async function fetchAllDocs() {
+		try {
+			const res = await api.get<{ documents: LinkedDoc[] }>('/documents?limit=200');
+			allDocs = res.documents || [];
+		} catch (err: unknown) {
+			console.error('devices: fetch all docs failed', err);
+			allDocs = [];
+		}
+	}
+
+	async function linkDoc() {
+		if (!linkDeviceId || !selectedDocId) return;
+		linkLoading = true;
+		linkError = '';
+		try {
+			await api.post(`/devices/${linkDeviceId}/documents`, { document_id: selectedDocId });
+			selectedDocId = null;
+			await fetchLinkedDocs(linkDeviceId);
+		} catch (err: unknown) {
+			linkError = getErrorMessage(err);
+		} finally {
+			linkLoading = false;
+		}
+	}
+
+	async function unlinkDoc(docId: number) {
+		if (!linkDeviceId) return;
+		try {
+			await api.delete(`/devices/${linkDeviceId}/documents/${docId}`);
+			await fetchLinkedDocs(linkDeviceId);
+		} catch (err: unknown) {
+			linkError = getErrorMessage(err);
+		}
+	}
+
+	// --- DataTable columns ---
+	const typeLabel: Record<string, string> = {
+		pc: m['devices.PC'](),
+		embedded: m['devices.Embedded'](),
+		iot: m['devices.IoT'](),
+		other: m['devices.Other']()
+	};
+
+	function statusDotClass(status: string): string {
+		if (status === 'online') return 'bg-success animate-pulse-green';
+		if (status === 'offline') return 'bg-error animate-pulse-red';
+		return 'bg-muted';
+	}
+
+	let columns = $derived([
+		{
+			key: '_select',
+			label: '',
+			sortable: false,
+			render: (row: Record<string, unknown>) => {
+				const id = row.id as number;
+				const checked = selectedIds.has(id);
+				return `<input type="checkbox" data-action="select" data-id="${id}" ${checked ? 'checked' : ''}
+					class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer" />`;
+			}
+		},
+		{
+			key: '_expand',
+			label: '',
+			sortable: false,
+			render: (row: Record<string, unknown>) => {
+				const id = row.id;
+				const isExpanded = expandedDeviceId === id;
+				return `<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-muted">`
+					+ `<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
+					+ `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
+			}
+		},
+		{
+			key: 'status',
+			label: m['devices.Status'](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const s = String(row.status ?? 'unknown');
+				return `<span class="inline-block w-2.5 h-2.5 rounded-full ${statusDotClass(s)}"></span>`;
+			}
+		},
+		{ key: 'name', label: m['devices.Device Name'](), sortable: true },
+		{
+			key: 'type',
+			label: m['devices.Type'](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const t = String(row.type ?? 'other');
+				return typeLabel[t] || typeLabel['other']!;
+			}
+		},
+		{
+			key: 'ip_address',
+			label: m['devices.IP Address'](),
+			render: (row: Record<string, unknown>) =>
+				row.ip_address ? `<span class="font-mono">${row.ip_address}</span>` : '-'
+		},
+		{
+			key: 'location',
+			label: m['devices.Location'](),
+			render: (row: Record<string, unknown>) => (row.location ? String(row.location) : '-')
+		},
+		{
+			key: 'actions',
+			label: m['common.Actions'](),
+			render: (row: Record<string, unknown>) => {
+				const id = row.id;
+				const name = String(row.name ?? '');
+				return `<div class="flex gap-2">`
+					+ `<button data-action="edit" data-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
+					+ `<button data-action="link" data-id="${id}" data-name="${name}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['documents.Link Document']()}</button>`
+					+ `<button data-action="delete" data-id="${id}" data-name="${name}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10">${m['common.Delete']()}</button>`
+					+ `</div>`;
+			}
+		}
+	]);
+
+	function handleTableClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		// Handle checkbox clicks
+		const checkbox = target.closest('input[data-action="select"]') as HTMLInputElement | null;
+		if (checkbox) {
+			e.stopPropagation();
+			const id = Number(checkbox.dataset.id);
+			toggleSelect(id);
+			return;
+		}
+		const btn = target.closest('button[data-action]') as HTMLElement | null;
+		if (!btn) return;
+		const action = btn.dataset.action;
+		const id = Number(btn.dataset.id);
+		const name = btn.dataset.name ?? '';
+		if (action === 'expand') {
+			expandedDeviceId = expandedDeviceId === id ? null : id;
+			return;
+		}
+		if (action === 'edit') {
+			const device = devices.find((d) => d.id === id);
+			if (device) openEdit(device);
+		} else if (action === 'link') {
+			const device = devices.find((d) => d.id === id);
+			if (device) openLinkModal(device);
+		} else if (action === 'delete') {
+			const device = devices.find((d) => d.id === id) ?? { id, name } as Device;
+			openDelete(device);
+		}
+	}
+</script>
+
+<div class="p-6">
+	<!-- Header -->
+	<div class="flex items-center justify-between mb-6">
+		<h2 class="text-2xl font-bold text-primary">{m['devices.Device List']()}</h2>
+		<div class="flex gap-2">
+			<button onclick={openCreate} class="btn btn-primary">
+				<Plus class="w-4 h-4" />
+				{m['devices.Create Device']()}
+			</button>
+		</div>
+	</div>
+
+	<!-- Stats bar (responsive) -->
+	<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+		<div class="stat-card">
+			<p class="stat-label">{m['common.Total']()}</p>
+			<p class="stat-value text-primary">{Object.values(stats.by_status).reduce((a, b) => a + b, 0)}</p>
+		</div>
+		<div class="stat-card">
+			<p class="stat-label">{m['devices.Online']()}</p>
+			<p class="stat-value text-success">{stats.by_status?.online ?? 0}</p>
+		</div>
+		<div class="stat-card">
+			<p class="stat-label">{m['devices.Offline']()}</p>
+			<p class="stat-value text-error">{stats.by_status?.offline ?? 0}</p>
+		</div>
+		<div class="stat-card">
+			<p class="stat-label">{m['devices.Unknown']()}</p>
+			<p class="stat-value text-muted">{stats.by_status?.unknown ?? 0}</p>
+		</div>
+	</div>
+
+	<!-- Filters + Actions bar -->
+	<div class="flex flex-wrap gap-3 mb-4 items-center">
+		<select
+			bind:value={statusFilter}
+			onchange={applyFilters}
+			class="input"
+		>
+			<option value="">{m['devices.All Status']()}</option>
+			<option value="online">{m['devices.Online']()}</option>
+			<option value="offline">{m['devices.Offline']()}</option>
+			<option value="unknown">{m['devices.Unknown']()}</option>
+		</select>
+		<select
+			bind:value={typeFilter}
+			onchange={applyFilters}
+			class="input"
+		>
+			<option value="">{m['devices.All Types']()}</option>
+			<option value="pc">{m['devices.PC']()}</option>
+			<option value="embedded">{m['devices.Embedded']()}</option>
+			<option value="iot">{m['devices.IoT']()}</option>
+			<option value="other">{m['devices.Other']()}</option>
+		</select>
+
+		<!-- Advanced filters toggle -->
+		<button
+			onclick={() => (showAdvanced = !showAdvanced)}
+			class="btn btn-secondary"
+		>
+			{m['devices.Advanced Filters']()}
+			<ChevronDown class="w-3 h-3 transition-transform {showAdvanced ? 'rotate-180' : ''}" />
+		</button>
+
+		<div class="flex-1"></div>
+
+		<!-- Export dropdown -->
+		<div class="relative group">
+			<button class="btn btn-secondary">
+				<Download class="w-4 h-4" />
+				{m['devices.Export']()}
+			</button>
+			<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg
+				opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[120px]"
+				style="box-shadow: var(--shadow-md);">
+				<button onclick={() => exportDevices('csv')}
+					class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-t-lg">
+					{m['devices.Export CSV']()}
+				</button>
+				<button onclick={() => exportDevices('json')}
+					class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-b-lg">
+					{m['devices.Export JSON']()}
+				</button>
+			</div>
+		</div>
+
+		<!-- Import CSV button -->
+		<button
+			onclick={() => { csvFile = null; csvPreviewRows = []; importOpen = true; }}
+			class="btn btn-secondary"
+		>
+			<Upload class="w-4 h-4" />
+			{m['devices.Import CSV']()}
+		</button>
+	</div>
+
+	<!-- Advanced filters panel -->
+	{#if showAdvanced}
+		<div class="mb-4 p-4 bg-surface border border-border rounded-lg">
+			<div class="flex flex-wrap gap-3 items-end">
+				<div>
+					<label class="block text-xs text-muted mb-1">{m['devices.Date From']()}</label>
+					<input type="date" bind:value={dateFrom}
+						class="input" />
+				</div>
+				<div>
+					<label class="block text-xs text-muted mb-1">{m['devices.Date To']()}</label>
+					<input type="date" bind:value={dateTo}
+						class="input" />
+				</div>
+				<button onclick={applyFilters} class="btn btn-primary">
+					{m['common.Filter']()}
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Bulk action bar -->
+	{#if selectedIds.size > 0}
+		<div class="mb-4 px-4 py-3 bg-primary/10 border border-primary/30 rounded-lg flex items-center gap-3">
+			<div class="flex items-center gap-2">
+				<input type="checkbox" checked onchange={toggleSelectAll}
+					class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer" />
+				<span class="text-sm font-medium text-primary">
+					{m['devices.Selected Count']().replace('{count}', String(selectedIds.size))}
+				</span>
+			</div>
+			<div class="flex-1"></div>
+			<button
+				onclick={() => (batchDeleteOpen = true)}
+				class="btn btn-danger text-xs py-1.5"
+			>
+				{m['devices.Batch Delete']()}
+			</button>
+			<div class="relative">
+				<button
+					onclick={() => (batchStatusOpen = !batchStatusOpen)}
+					class="btn btn-primary text-xs py-1.5"
+				>
+					{m['devices.Batch Update Status']()}
+					<ChevronDown class="w-3 h-3" />
+				</button>
+				{#if batchStatusOpen}
+					<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg z-10 min-w-[140px]" style="box-shadow: var(--shadow-md);">
+						{#each ['online', 'offline', 'unknown'] as status}
+							<button
+								onclick={() => { batchStatusValue = status; batchStatusOpen = false; confirmBatchStatus(); }}
+								class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 last:rounded-b-lg first:rounded-t-lg"
+							>
+								<span class="inline-block w-2 h-2 rounded-full mr-2 {statusDotClass(status)}"></span>
+								{status === 'online' ? m['devices.Online']() : status === 'offline' ? m['devices.Offline']() : m['devices.Unknown']()}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	<!-- Error -->
+	{#if error}
+		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error" aria-live="polite">
+			{error}
+		</div>
+	{/if}
+
+	{#snippet expandedRow(row)}
+		{@const device = devices.find((d) => d.id === row.id)}
+		<div class="border-t border-border bg-bg/50">
+			{#if device}
+				<div class="flex items-center gap-2 px-4 py-2 bg-surface/50 border-b border-border">
+					<button
+						onclick={() => (expandedDeviceId = null)}
+						class="p-1 rounded hover:bg-surface-2 transition-colors text-muted"
+						aria-label="Collapse row"
+					>
+						<ChevronRight class="w-3.5 h-3.5 rotate-90" />
+					</button>
+					<span class="text-sm font-medium text-primary">{device.name}</span>
+					<span class="text-xs text-muted">— Heartbeat</span>
+				</div>
+			{/if}
+			<HeartbeatExpandableRow deviceId={row.id as number} expanded={true} />
+		</div>
+	{/snippet}
+
+	<!-- Loading skeleton -->
+	{#if loading}
+		<PageSkeleton type="table" />
+	{:else}
+		<!-- Device table with expandable heartbeat rows -->
+		<div onclick={handleTableClick}>
+			<DataTable
+				{columns}
+				rows={devices as unknown as Record<string, unknown>[]}
+				searchPlaceholder={m['devices.Search Devices']()}
+				searchableKeys={['name', 'ip_address']}
+				initialSearch={$page.url.searchParams.get('search') ?? ''}
+				emptyTitle={m['devices.No Devices']()}
+				emptyDescription={m['devices.No Devices Desc']()}
+				emptyAction={openCreate}
+				emptyActionLabel={m['devices.Create Device']()}
+				expandedRowId={expandedDeviceId}
+				expandedContent={expandedRow}
+			/>
+		</div>
+
+		<!-- Pagination -->
+		<Pagination {total} {limit} {offset} onPageChange={(o) => { offset = o; expandedDeviceId = null; selectedIds = new Set(); fetchDevices(); }} />
+	{/if}
+</div>
+
+<!-- Create/Edit Modal -->
+<Modal bind:open={formOpen} title={editingDevice ? m['devices.Edit Device']() : m['devices.Create Device']()} maxWidth="42rem" onClose={resetForm}>
+	{#if formError}
+		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
+			{formError}
+		</div>
+	{/if}
+
+	<form onsubmit={handleSubmit} class="grid grid-cols-2 gap-4">
+		<!-- Name -->
+		<div class="col-span-2">
+			<label class="block text-xs text-muted mb-1">{m['devices.Device Name']()} *</label>
+			<input
+				bind:value={formName}
+				onblur={() => handleBlur('name', formName)}
+				required
+				class="input {fieldErrors.name ? '!border-error' : ''}"
+			/>
+			{#if fieldErrors.name}
+				<p class="text-xs text-error mt-1">{fieldErrors.name}</p>
+			{/if}
+		</div>
+
+		<!-- Type -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Type']()} *</label>
+			<select
+				bind:value={formType}
+				onblur={() => handleBlur('type', formType)}
+				class="input"
+			>
+				<option value="pc">{m['devices.PC']()}</option>
+				<option value="embedded">{m['devices.Embedded']()}</option>
+				<option value="iot">{m['devices.IoT']()}</option>
+				<option value="other">{m['devices.Other']()}</option>
+			</select>
+			{#if fieldErrors.type}
+				<p class="text-xs text-error mt-1">{fieldErrors.type}</p>
+			{/if}
+		</div>
+
+		<!-- Brand -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Brand']()}</label>
+			<input bind:value={formBrand}
+				class="input" />
+		</div>
+
+		<!-- Model -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Model']()}</label>
+			<input bind:value={formModel}
+				class="input" />
+		</div>
+
+		<!-- Location -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Location']()}</label>
+			<input bind:value={formLocation}
+				class="input" />
+		</div>
+
+		<!-- Purpose -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Purpose']()}</label>
+			<input bind:value={formPurpose}
+				class="input" />
+		</div>
+
+		<!-- IP Address -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.IP Address']()}</label>
+			<input
+				bind:value={formIpAddress}
+				onblur={() => handleBlur('ip_address', formIpAddress)}
+				placeholder="192.168.1.100"
+				class="input font-mono {fieldErrors.ip_address ? '!border-error' : ''}"
+			/>
+			{#if fieldErrors.ip_address}
+				<p class="text-xs text-error mt-1">{fieldErrors.ip_address}</p>
+			{/if}
+		</div>
+
+		<!-- MAC Address -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.MAC Address']()}</label>
+			<input
+				bind:value={formMacAddress}
+				onblur={() => handleBlur('mac_address', formMacAddress)}
+				placeholder="AA:BB:CC:DD:EE:FF"
+				class="input font-mono {fieldErrors.mac_address ? '!border-error' : ''}"
+			/>
+			{#if fieldErrors.mac_address}
+				<p class="text-xs text-error mt-1">{fieldErrors.mac_address}</p>
+			{/if}
+		</div>
+
+		<!-- Serial Number -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Serial Number']()}</label>
+			<input bind:value={formSerialNumber}
+				class="input font-mono" />
+		</div>
+
+		<!-- Purchase Date -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Purchase Date']()}</label>
+			<input type="date" bind:value={formPurchaseDate}
+				class="input" />
+		</div>
+
+		<!-- Warranty Expiry -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Warranty Expiry']()}</label>
+			<input type="date" bind:value={formWarrantyExpiry}
+				class="input" />
+		</div>
+
+		<!-- Tags -->
+		<div class="col-span-2">
+			<label class="block text-xs text-muted mb-1">{m['devices.Tags']()}</label>
+			<input bind:value={formTags} placeholder="server,production,rack-a"
+				class="input" />
+		</div>
+
+		<!-- Submit -->
+		<div class="col-span-2 flex gap-3 pt-2">
+			<button type="submit" disabled={formLoading} class="btn btn-primary">
+				{formLoading ? '...' : m['common.Save']()}
+			</button>
+			<button type="button" onclick={() => { formOpen = false; resetForm(); }} class="btn btn-secondary">
+				{m['common.Cancel']()}
+			</button>
+		</div>
+	</form>
+</Modal>
+
+<!-- Delete confirmation -->
+<ConfirmDialog
+	bind:open={deleteOpen}
+	title={m['devices.Delete Device']()}
+	message={`${m['common.Are you sure?']()} "${deleteTarget?.name ?? ''}"`}
+	confirmLabel={m['common.Delete']()}
+	confirmVariant="danger"
+	onConfirm={confirmDelete}
+	onCancel={() => { deleteTarget = null; }}
+/>
+
+<!-- Batch Delete confirmation -->
+<ConfirmDialog
+	bind:open={batchDeleteOpen}
+	title={m['devices.Batch Delete']()}
+	message={m['devices.Batch Delete Confirm']()}
+	confirmLabel={m['common.Delete']()}
+	confirmVariant="danger"
+	onConfirm={confirmBatchDelete}
+	onCancel={() => { batchDeleteOpen = false; }}
+/>
+
+<!-- CSV Import Modal -->
+<Modal bind:open={importOpen} title={m['devices.Import Devices']()} maxWidth="48rem" onClose={() => { importOpen = false; }}>
+	<div class="space-y-4">
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Import CSV']()}</label>
+			<input type="file" accept=".csv" onchange={handleCsvFileSelect}
+				class="input" />
+			<p class="text-xs text-muted mt-1">CSV format: ip,name,type (header row required)</p>
+		</div>
+
+		{#if csvPreviewRows.length > 0}
+			<div>
+				<h4 class="text-sm font-medium text-text mb-2">{m['devices.Import Preview']()} ({csvPreviewRows.length} rows)</h4>
+				<div class="overflow-x-auto border border-border rounded-lg max-h-60">
+					<table class="w-full text-sm">
+						<thead>
+							<tr class="bg-surface border-b border-border text-left text-xs text-muted">
+								<th class="px-3 py-2">IP</th>
+								<th class="px-3 py-2">{m['devices.Device Name']()}</th>
+								<th class="px-3 py-2">{m['devices.Type']()}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each csvPreviewRows as row, i}
+								<tr class="border-b border-border last:border-b-0 hover:bg-border/30">
+									<td class="px-3 py-2 font-mono">{row.ip}</td>
+									<td class="px-3 py-2">{row.name}</td>
+									<td class="px-3 py-2">{row.type}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</div>
+			<div class="flex justify-end gap-3">
+				<button onclick={() => { importOpen = false; }} class="btn btn-secondary">
+					{m['common.Cancel']()}
+				</button>
+				<button onclick={confirmImport} disabled={importLoading} class="btn btn-primary">
+					{importLoading ? '...' : m['devices.Import Confirm']()}
+				</button>
+			</div>
+		{/if}
+	</div>
+</Modal>
+
+<!-- Link Document Modal -->
+<Modal bind:open={linkOpen} title={m['documents.Link Document']()} maxWidth="32rem" onClose={() => { linkOpen = false; }}>
+	<p class="text-xs text-muted mb-4">{linkDeviceName}</p>
+
+	{#if linkError}
+		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
+			{linkError}
+		</div>
+	{/if}
+
+	<!-- Linked documents -->
+	<div class="mb-4">
+		<h4 class="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+			{m['documents.Linked Documents']()}
+		</h4>
+		{#if linkedDocs.length === 0}
+			<p class="text-xs text-muted">{m['documents.No Documents Linked']()}</p>
+		{:else}
+			<div class="space-y-2">
+				{#each linkedDocs as doc}
+					<div class="flex items-center justify-between px-3 py-2 bg-bg border border-border rounded-lg">
+						<div class="flex items-center gap-2 min-w-0">
+							<span class="text-xs px-1.5 py-0.5 rounded
+								{doc.type === 'url' ? 'bg-accent/10 text-accent' : 'bg-primary/10 text-primary'}">
+								{doc.type === 'url' ? 'URL' : 'File'}
+							</span>
+							<span class="text-sm text-text truncate">{doc.title}</span>
+						</div>
+						<button onclick={() => unlinkDoc(doc.id)}
+							class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 shrink-0">
+							{m['common.Unlink']()}
+						</button>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+
+	<!-- Add new link -->
+	<div class="border-t border-border pt-4">
+		<h4 class="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+			{m['documents.Select Document']()}
+		</h4>
+		<div class="flex gap-2">
+			<select bind:value={selectedDocId} class="input flex-1">
+				<option value={null}>-- {m['documents.Select Document']()} --</option>
+				{#each allDocs.filter((d) => !linkedDocs.some((ld) => ld.id === d.id)) as doc}
+					<option value={doc.id}>{doc.title} ({doc.type})</option>
+				{/each}
+			</select>
+			<button onclick={linkDoc} disabled={!selectedDocId || linkLoading}
+				class="btn btn-primary shrink-0">
+				{linkLoading ? '...' : m['common.Link']()}
+			</button>
+		</div>
+	</div>
+
+	<div class="flex justify-end mt-4 pt-3 border-t border-border">
+		<button onclick={() => (linkOpen = false)} class="btn btn-secondary">
+			{m['common.Close']()}
+		</button>
+	</div>
+</Modal>

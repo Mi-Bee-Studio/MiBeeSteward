@@ -1,0 +1,96 @@
+server:
+  port: 8080
+  host: "0.0.0.0"
+  # HTTP server timeouts. write_timeout MUST exceed the slowest synchronous
+  # endpoint — primarily POST /scanner/scan on large CIDRs. The server
+  # auto-raises write_timeout to scanner.default_timeout×2+30s if configured
+  # lower, so synchronous scans are never truncated by a too-tight timeout.
+  # For very large ranges (>/24) prefer the async task API.
+  read_timeout: "15s"
+  write_timeout: "5m"
+  idle_timeout: "120s"
+
+database:
+  sqlite:
+    path: "./data/mibee.db"
+
+
+auth:
+  jwt_secret: "change-me-in-production"  # REQUIRED — must change, minimum 32 characters
+  token_expiry: "24h"
+  initial_admin_password: "change-me"  # REQUIRED — must change for production
+  cookie_domain: ""             # Domain for auth cookie (empty = current domain)
+  cookie_secure: true          # Set false only for local development without HTTPS
+  cookie_same_site: "strict"   # "strict" or "lax"
+  cookie_max_age: "24h"           # Cookie MaxAge (defaults to token_expiry if not set)
+cors:
+  allowed_origins:
+    - "https://your-domain.com"  # Replace with your actual domain
+    # Remove localhost origins for production
+
+heartbeat:
+  default_interval: 30
+  timeout: 5
+  retention_days: 30
+
+prometheus:
+  enabled: true
+  metrics_path: "/metrics"
+
+dashboard:
+  data_source_type: "prometheus"
+  prometheus_url: "http://localhost:9090"
+
+storage:
+  upload_path: "./data/uploads"
+  max_file_size: 104857600  # 100MB
+
+# Log configuration
+# level: debug, info, warn, error (default: info)
+# format: json, text (default: text)
+log:
+  level: "info"
+  format: "text"
+
+rate_limit:
+  login_per_minute: 10
+  global_per_minute: 100
+  scan_per_minute: 10           # per-IP cap on /scan + /tasks/{id}/trigger
+
+# SMTP configuration for email notifications
+smtp:
+  host: ""
+  port: 587
+  username: ""
+  password: ""
+  from_address: "noreply@mibee-steward.local"
+
+# Scanner configuration for network discovery
+scanner:
+  enabled: true
+  max_concurrent_scans: 3
+  default_timeout: 300        # seconds, per-host pipeline timeout (upper bound for ALL probes + handlers on one host)
+  per_probe_timeout: 3        # seconds, single probe attempt (one SNMP Get / TCP dial / HTTP fetch). Keep small so dead hosts fail fast.
+  max_concurrent_hosts: 50
+  retention_days: 30
+  default_cron_expr: "0 */6 * * *"
+  # v2 engine tuning (the legacy v1 engine has been removed).
+  # engine is retained for compatibility but only "v2" is supported.
+  engine: "v2"
+  # persist_raw_evidence writes every probe observation to service_evidence.
+  # Off by default — raw evidence can be voluminous; enable for debugging.
+  persist_raw_evidence: false
+  pipeline_defaults:
+    icmp_enabled: true
+    snmp_enabled: true
+    port_scan_enabled: true
+    default_ports: "22,80,443,8080,8443,8000,554,8554,9090,9100,9104,9113,9121,9187,161"
+    service_detection_enabled: true
+    prometheus_check_enabled: true
+    node_exporter_enabled: true
+  # eBPF passive observer (TC ingress). No-op unless the binary was built
+  # with `make build-with-ebpf` (WITH_EBPF tag). Requires Linux ≥5.8 + BTF
+  # and CAP_BPF/CAP_NET_ADMIN at runtime. Empty interfaces → all non-loopback.
+  ebpf:
+    enabled: false
+    interfaces: []

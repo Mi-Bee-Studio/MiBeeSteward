@@ -1,0 +1,57 @@
+# MiBee Steward 生产环境配置模板
+# 请根据实际环境修改以下配置
+
+server:
+  port: 8080
+  host: "0.0.0.0"  # 监听所有接口，配合反向代理使用
+
+# 数据库配置
+database:
+  sqlite:
+    path: "./data/mibee.db"  # SQLite 数据库文件路径
+
+# 认证配置
+auth:
+  jwt_secret: "CHANGE_THIS — generate with: openssl rand -base64 32"  # JWT 签名密钥，生产环境必须更改
+  token_expiry: "1h"  # JWT 令牌过期时间
+  initial_admin_password: "CHANGE_THIS — first-run admin password"  # 首次运行的管理员密码，生产环境必须更改
+  cookie_domain: ""  # 认证 Cookie 的域名（空表示当前域名）
+  cookie_secure: true  # 在生产环境中设为 true（需要 HTTPS）
+  cookie_same_site: "strict"  # Cookie 安全策略："strict" 或 "lax"
+
+# CORS 配置（由于 SPA 是嵌入式嵌入的，只允许同源请求）
+cors:
+  allowed_origins: []  # 空数组表示只允许同源请求，因为 SPA 是嵌入式的
+
+# 心跳监控配置
+heartbeat:
+  default_interval: 30  # 默认心跳检查间隔（秒）
+  timeout: 5  # 心跳检查超时时间（秒）
+  retention_days: 30  # 心跳数据保留天数
+
+# Prometheus 监控配置
+prometheus:
+  enabled: true  # 启用 Prometheus 指标收集
+  metrics_path: "/metrics"  # 指标端点路径
+
+# 仪表板配置
+dashboard:
+  data_source_type: "prometheus"  # 数据源类型
+  prometheus_url: "http://localhost:9090"  # Prometheus 服务器 URL
+
+# 存储配置
+storage:
+  upload_path: "./data/uploads"  # 文件上传目录
+  max_file_size: 104857600  # 最大文件上传大小（100MB）
+
+# 日志配置
+# level: debug, info, warn, error (默认: info)
+# format: json, text (默认: text)
+log:
+  level: "info"  # 日志级别
+  format: "json"  # 日志格式（JSON 格式便于日志收集）
+
+# 速率限制配置
+rate_limit:
+  login_per_minute: 10  # 每分钟最大登录尝试次数
+  global_per_minute: 100  # 每分钟最大全局请求次数

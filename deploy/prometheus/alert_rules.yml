@@ -1,0 +1,67 @@
+# MiBee Steward Alert Rules
+# Prometheus alerting rules for MiBee Steward monitoring
+groups:
+  - name: mibee-steward
+    interval: 30s
+    rules:
+      - alert: MiBeeStewardDown
+        expr: absent(up{job="mibee-steward"} == 1)
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MiBee Steward instance is down"
+          description: "MiBee Steward instance {{ $labels.instance }} has been unreachable for more than 1 minute."
+
+      - alert: HighErrorRate
+        # The application exposes mibee_api_requests_total{status="..."} at /metrics
+        # (see internal/api/middleware/metrics.go). There is no http_requests_total.
+        expr: |
+          (
+            sum(rate(mibee_api_requests_total{job="mibee-steward", status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(mibee_api_requests_total{job="mibee-steward"}[5m])), 1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP 5xx error rate"
+          description: "HTTP 5xx error rate on {{ $labels.instance }} is {{ $value | humanizePercentage }} over the last 5 minutes (threshold: 5%)."
+
+      - alert: HeartbeatFailures
+        # mibee_heartbeat_checks_total carries a status label: success | fail | timeout.
+        # There is no mibee_heartbeat_failures_total counter.
+        expr: |
+          (
+            sum(rate(mibee_heartbeat_checks_total{job="mibee-steward", status=~"fail|timeout"}[5m]))
+            /
+            clamp_min(sum(rate(mibee_heartbeat_checks_total{job="mibee-steward"}[5m])), 1)
+          ) > 0.30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High heartbeat failure rate"
+          description: "Device heartbeat failure rate is {{ $value | humanizePercentage }} over the last 5 minutes (threshold: 30%)."
+
+      - alert: DatabaseLocked
+        # No dedicated DB-busy counter exists; proxy via a sustained 5xx burst, which
+        # is the user-visible symptom of SQLite write contention. Tuned tighter than
+        # HighErrorRate (10s vs 5m) so transient write spikes surface distinctly.
+        expr: rate(mibee_api_requests_total{job="mibee-steward", status=~"5.."}[10s]) > 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained 5xx burst (possible SQLite contention)"
+          description: "MiBee Steward on {{ $labels.instance }} is returning >1 5xx/s for over a minute — likely SQLite busy/locked errors."
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes{job="mibee-steward"} > 524288000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "MiBee Steward process memory usage is {{ $value | humanize }} (threshold: 500MB)."

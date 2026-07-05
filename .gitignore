@@ -1,0 +1,54 @@
+# === Frontend ===
+web/.svelte-kit/
+web/dist/
+web/node_modules/
+web/static/map/
+
+# === Build outputs ===
+bin/
+/server
+*.exe
+*.test
+handler.test
+
+# === Data & Runtime ===
+data/*.db
+data/uploads/
+uploads/
+docs/private/
+*.db
+
+# === Environment ===
+.env
+.env.*
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# === Agent tools ===
+.omo/
+.codegraph/
+.sisyphus/
+tmp/
+
+# === Docs (generated) ===
+AGENTS.md
+
+# === Test artifacts ====
+web/src/routes/test-derived/
+
+# === eBPF build artifacts ===
+# vmlinux.h is machine-specific (generated from running kernel's BTF).
+# bpf2go-generated *.go bindings and compiled *.o are produced by `make build-with-ebpf`.
+bpf/vmlinux.h
+bpf/*.o
+internal/service/scannerv2/ebpf/tcIngress_*.go
+internal/service/scannerv2/ebpf/tcIngress*.o

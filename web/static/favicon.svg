@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+	<defs>
+		<linearGradient id="mibee-hex" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#6366f1"/>
+			<stop offset="1" stop-color="#a78bfa"/>
+		</linearGradient>
+	</defs>
+	<!-- Honeycomb hexagon — the "hive / bee" mark, scaled for legibility at favicon size -->
+	<path d="M32 4 L56 18 L56 46 L32 60 L8 46 L8 18 Z" fill="url(#mibee-hex)"/>
+	<!-- Heartbeat pulse — the product's core (device heartbeat monitoring) -->
+	<path d="M14 34 L24 34 L28 23 L33 45 L38 34 L50 34"
+		stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

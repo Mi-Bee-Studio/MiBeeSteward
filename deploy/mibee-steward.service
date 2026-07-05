@@ -1,0 +1,36 @@
+[Unit]
+Description=MiBee Steward - Device Management & Monitoring
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mibee
+Group=mibee
+WorkingDirectory=/opt/mibee-steward
+ExecStart=/opt/mibee-steward/mibee-steward
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=1000
+MemoryMax=1G
+
+# Optional environment overrides via /etc/default/mibee-steward
+EnvironmentFile=-/etc/default/mibee-steward
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mibee-steward/data
+PrivateTmp=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

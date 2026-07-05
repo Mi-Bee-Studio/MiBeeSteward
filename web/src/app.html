@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/favicon.svg" />
+		<title>MiBee Steward</title>
+		<script>
+			(function() {
+				try {
+					var theme = localStorage.getItem('theme');
+					if (theme) {
+						document.documentElement.setAttribute('data-theme', theme);
+					} else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+						document.documentElement.setAttribute('data-theme', 'light');
+					} else {
+						document.documentElement.setAttribute('data-theme', 'dark');
+					}
+				} catch(e) {
+					document.documentElement.setAttribute('data-theme', 'dark');
+				}
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body class="min-h-screen bg-bg text-text">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

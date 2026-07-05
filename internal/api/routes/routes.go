@@ -1,0 +1,440 @@
+package routes
+
+import (
+	"context"
+	"database/sql"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
+	"mibee-steward/internal/api/handler"
+	"mibee-steward/internal/api/middleware"
+	"mibee-steward/internal/config"
+	"mibee-steward/internal/db"
+	"mibee-steward/internal/repository"
+	"mibee-steward/internal/service"
+	"mibee-steward/internal/service/notification"
+	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
+	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
+	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
+	scannerv2runner "mibee-steward/internal/service/scannerv2/runner"
+	scannerv2scheduler "mibee-steward/internal/service/scannerv2/scheduler"
+	scannerv2task "mibee-steward/internal/service/scannerv2/taskservice"
+)
+
+// NewRouter creates and returns the main HTTP router with all routes registered.
+// It requires the database connection and configuration to set up auth and user routes.
+func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.HeartbeatService, func()) {
+	r := chi.NewMux()
+
+	// Initialize JWT auth
+	middleware.SetJWTAuth(cfg.Auth.JWTSecret)
+	// Initialize token blacklist for JWT revocation
+	tokenBlacklist := service.NewTokenBlacklist()
+	tokenBlacklist.StartCleanup()
+	middleware.SetTokenBlacklist(tokenBlacklist)
+
+	// Parse token expiry, default to 24h
+	expiry := 24 * time.Hour
+	if cfg.Auth.TokenExpiry != "" {
+		if d, err := time.ParseDuration(cfg.Auth.TokenExpiry); err == nil {
+			expiry = d
+		}
+	}
+
+	// User service and handler
+	userSvc := service.NewUserService(dbConn, cfg.Auth.JWTSecret, expiry)
+	// Audit logging
+	auditRepo := repository.NewAuditRepository(dbConn)
+
+	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, tokenBlacklist)
+
+	// TOTP service and handler
+	totpSvc := service.NewTOTPService(dbConn, auditRepo)
+	userSvc.SetTOTPService(totpSvc)
+	totpHandler := handler.NewTOTPHandler(totpSvc, userSvc, cfg, auditRepo)
+
+	// Audit service and handler
+	auditSvc := service.NewAuditService(dbConn)
+	auditHandler := handler.NewAuditHandler(auditSvc)
+
+	// Batch service and handler
+	batchSvc := service.NewBatchService(dbConn, auditRepo)
+	batchHandler := handler.NewBatchHandler(batchSvc)
+
+	// Password reset service and handler
+	passwordResetSvc := service.NewPasswordResetService(db.New(dbConn), nil, &cfg.SMTP, auditRepo)
+	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetSvc)
+	// Export handler
+	exportHandler := handler.NewExportHandler(service.NewExportService(db.New(dbConn)))
+	// Rate limiters
+	loginRate := cfg.RateLimit.LoginPerMinute
+	if loginRate <= 0 {
+		loginRate = 10
+	}
+	globalRate := cfg.RateLimit.GlobalPerMinute
+	if globalRate <= 0 {
+		globalRate = 100
+	}
+	loginLimiter := middleware.NewRateLimiter(loginRate/60.0, int(loginRate))
+	globalLimiter := middleware.NewRateLimiter(globalRate/60.0, int(globalRate))
+	scanRate := cfg.RateLimit.ScanPerMinute
+	if scanRate <= 0 {
+		scanRate = 10
+	}
+	scanLimiter := middleware.NewScanRateLimiter(int(scanRate))
+
+	// Middleware chain: RequestID → RealIP → Logging → Metrics → Recoverer → SecurityHeaders
+	r.Use(chimw.RequestID)
+	r.Use(chimw.RealIP)
+	r.Use(middleware.Logging)
+	r.Use(middleware.Metrics)
+	r.Use(chimw.Recoverer)
+	r.Use(middleware.CORS(cfg.CORS.AllowedOrigins))
+	r.Use(middleware.SecurityHeaders)
+	r.Use(middleware.CSRF)
+	r.Use(globalLimiter.Middleware)
+
+	// API routes (public: health, login, metrics, sd)
+	r.Get("/api/v1/health", handler.HealthHandler(dbConn))
+
+	r.Route("/api/v1/auth", func(r chi.Router) {
+		r.Use(loginLimiter.Middleware)
+		r.Mount("/", userHandler.Routes())
+		// 2FA routes (public verify + protected setup/enable/disable/status)
+		r.Route("/2fa", func(r chi.Router) {
+			r.Post("/verify", totpHandler.Verify)
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireAuth)
+				r.Post("/setup", totpHandler.Setup)
+				r.Post("/enable", totpHandler.Enable)
+				r.Post("/disable", totpHandler.Disable)
+				r.Get("/status", totpHandler.Status)
+			})
+		})
+		// Password reset routes (public)
+		r.Post("/forgot-password", passwordResetHandler.ForgotPassword)
+		r.Post("/reset-password", passwordResetHandler.ResetPassword)
+		r.Get("/reset-password/validate", passwordResetHandler.ValidateToken)
+	})
+
+	// Admin-only user list
+	r.Route("/api/v1/users", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Get("/", userHandler.ListUsers)
+		r.Post("/batch-delete", batchHandler.BatchDeleteUsers)
+	})
+	// Heartbeat service (created before device service for auto-config dependency)
+	heartbeatSvc := service.NewHeartbeatService(dbConn, cfg)
+
+	// Device routes
+	deviceRepo := repository.NewDeviceRepository(dbConn)
+	deviceSvc := service.NewDeviceService(deviceRepo, heartbeatSvc)
+	deviceHandler := handler.NewDeviceHandler(deviceSvc)
+	r.Route("/api/v1/devices", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth)
+			r.Get("/export", exportHandler.ExportDevices)
+			r.Get("/", deviceHandler.List)
+			r.Get("/stats", deviceHandler.GetStats)
+			r.Get("/{id}", deviceHandler.Get)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdmin)
+			r.Post("/", deviceHandler.Create)
+			r.Put("/{id}", deviceHandler.Update)
+			r.Delete("/{id}", deviceHandler.Delete)
+			r.Post("/batch-delete", batchHandler.BatchDeleteDevices)
+			r.Post("/batch-update-status", batchHandler.BatchUpdateDeviceStatus)
+		})
+	})
+	// Scanner routes (v2 engine)
+	scanQueries := db.New(dbConn)
+
+	// Construct the v2 engine: probes/classifiers/handlers + persistence + eBPF observer.
+	scannerPortSpec := "22,80,443,8080,8443,8000,554,8554,9090,9100,9104,9113,9121,9187,161"
+	v2Engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.EngineConfig{
+		PortSpec:           scannerPortSpec,
+		MaxConcurrentHosts: cfg.Scanner.MaxConcurrentHosts,
+		MaxConcurrentScans: cfg.Scanner.MaxConcurrentScans,
+		PerHostTimeout:     time.Duration(cfg.Scanner.DefaultTimeout) * time.Second,
+		PerProbeTimeout:    time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
+		PersistRawEvidence: cfg.Scanner.PersistRawEvidence,
+		HeartbeatInterval:  cfg.Heartbeat.DefaultInterval,
+		HeartbeatTimeout:   cfg.Heartbeat.Timeout,
+		EBPF: scannerv2ebpf.Config{
+			Enabled:    cfg.Scanner.EBPF.Enabled,
+			Interfaces: cfg.Scanner.EBPF.Interfaces,
+		},
+	}, slog.Default())
+	if engineErr != nil {
+		slog.Error("failed to init scannerv2 engine", "error", engineErr)
+	}
+
+	// Runner: connects the engine to run/result persistence + the device bridge.
+	scanRunner := scannerv2runner.New(v2Engine, scanQueries, dbConn, heartbeatSvc, slog.Default())
+
+	// Scheduler: cron-driven scan tasks. The ScanFunc delegates to the runner.
+	scanScheduler, schedErr := scannerv2scheduler.New(scanQueries, dbConn,
+		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int) {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("scan_func_panic", "task_id", taskID, "panic", r)
+				}
+			}()
+			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence)
+		}, slog.Default())
+	if schedErr != nil {
+		slog.Error("failed to create scan scheduler", "error", schedErr)
+		scanScheduler = nil
+	}
+
+	scanTaskService := scannerv2task.New(scanQueries, scanScheduler)
+	scannerHandler := handler.NewScannerHandler(v2Engine, scanRunner)
+	scannerTaskHandler := handler.NewScannerTaskHandler(scanTaskService)
+	scannerResultHandler := handler.NewScannerResultHandler(scanQueries)
+	r.Route("/api/v1/scanner", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		// Rate-limited scan trigger endpoints (per-IP, 10/min default)
+		r.Group(func(r chi.Router) {
+			r.Use(scanLimiter.Middleware)
+			r.Post("/scan", scannerHandler.Scan)
+			r.Post("/tasks/{id}/trigger", scannerTaskHandler.TriggerTask)
+		})
+		// Non-rate-limited scanner routes
+		r.Post("/add-devices", scannerHandler.AddDevices)
+		// Task CRUD
+		r.Post("/tasks", scannerTaskHandler.CreateTask)
+		r.Get("/tasks", scannerTaskHandler.ListTasks)
+		r.Get("/tasks/{id}", scannerTaskHandler.GetTask)
+		r.Put("/tasks/{id}", scannerTaskHandler.UpdateTask)
+		r.Delete("/tasks/{id}", scannerTaskHandler.DeleteTask)
+		r.Get("/tasks/{id}/runs", scannerTaskHandler.GetTaskRuns)
+		r.Get("/tasks/{id}/results", scannerTaskHandler.GetTaskResults)
+		r.Post("/tasks/{id}/cancel", scannerTaskHandler.CancelScanTask)
+		// Results & runs
+		r.Get("/results", scannerResultHandler.ListResults)
+		r.Get("/results/{id}", scannerResultHandler.GetResult)
+		r.Get("/runs", scannerResultHandler.ListRuns)
+		r.Get("/runs/{id}", scannerResultHandler.GetRun)
+		r.Get("/results/export", scannerResultHandler.ExportScanResults)
+		r.Delete("/results", scannerResultHandler.BulkDeleteResults)
+	})
+
+	// --- Scanner background services (v2) ---
+	retentionDays := cfg.Scanner.RetentionDays
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+	cleanupSvc := scannerv2cleanup.New(scanQueries, retentionDays, 24*time.Hour)
+	cleanupSvc.Start(context.Background())
+
+	if scanScheduler != nil {
+		scanScheduler.Start(context.Background())
+	}
+	// Audit log routes (admin only)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Get("/api/v1/audit-logs", auditHandler.List)
+		r.Get("/api/v1/audit-logs/export", exportHandler.ExportAuditLogs)
+	})
+
+	// Device system routes
+	deviceSystemRepo := repository.NewDeviceSystemRepository(dbConn)
+	deviceSystemSvc := service.NewDeviceSystemService(deviceSystemRepo)
+	deviceSystemHandler := handler.NewDeviceSystemHandler(deviceSystemSvc)
+	r.Route("/api/v1/devices/{id}/systems", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth)
+			r.Get("/", deviceSystemHandler.ListByDevice)
+			r.Get("/{systemId}", deviceSystemHandler.Get)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdmin)
+			r.Post("/", deviceSystemHandler.Create)
+			r.Put("/{systemId}", deviceSystemHandler.Update)
+			r.Delete("/{systemId}", deviceSystemHandler.Delete)
+		})
+	})
+
+	// Document routes
+	uploadPath := cfg.Storage.UploadPath
+	if uploadPath == "" {
+		uploadPath = "./data/uploads"
+	}
+	maxFileSize := cfg.Storage.MaxFileSize
+	if maxFileSize <= 0 {
+		maxFileSize = 10485760
+	}
+	uploadSvc := service.NewUploadService(uploadPath, maxFileSize)
+	docSvc := service.NewDocumentService(dbConn, uploadSvc)
+	docHandler := handler.NewDocumentHandler(docSvc, uploadPath, auditRepo)
+	r.Route("/api/v1/documents", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth)
+			r.Get("/", docHandler.List)
+			r.Get("/{id}", docHandler.Get)
+			r.Get("/{id}/download", docHandler.Download)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdmin)
+			r.Post("/", docHandler.CreateURL)
+			r.Post("/upload", docHandler.UploadFile)
+			r.Put("/{id}", docHandler.Update)
+			r.Delete("/{id}", docHandler.Delete)
+		})
+	})
+
+	// Heartbeat routes
+	go heartbeatSvc.Start(context.Background())
+	heartbeatHandler := handler.NewHeartbeatHandler(heartbeatSvc)
+
+	// Device heartbeat configs
+	r.Route("/api/v1/devices/{id}/heartbeat-configs", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth)
+			r.Get("/", heartbeatHandler.ListConfigs)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdmin)
+			r.Post("/", heartbeatHandler.CreateConfig)
+		})
+	})
+
+	// Heartbeat config CRUD
+	r.Route("/api/v1/heartbeat-configs", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Put("/{id}", heartbeatHandler.UpdateConfig)
+		r.Delete("/{id}", heartbeatHandler.DeleteConfig)
+	})
+
+	// Heartbeat results
+	r.Route("/api/v1/devices/{id}/heartbeat-results", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/export", exportHandler.ExportHeartbeatResults)
+		r.Get("/", heartbeatHandler.ListResults)
+	})
+
+	// Heartbeat history and stats
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/api/v1/devices/{id}/heartbeat-history", heartbeatHandler.ListHistory)
+		r.Get("/api/v1/devices/{id}/heartbeat-stats", heartbeatHandler.GetStats)
+	})
+	// Dashboard routes
+	dashSvc := service.NewDashboardService(dbConn, cfg)
+	dashHandler := handler.NewDashboardHandler(dashSvc)
+	r.Route("/api/v1/dashboard", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth)
+			r.Get("/configs", dashHandler.ListConfigs)
+			r.Get("/query", dashHandler.Query)
+			r.Get("/query_range", dashHandler.QueryRange)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdmin)
+			r.Post("/configs", dashHandler.CreateConfig)
+			r.Put("/configs/{id}", dashHandler.UpdateConfig)
+			r.Delete("/configs/{id}", dashHandler.DeleteConfig)
+		})
+	})
+
+	// Device-Document linking routes
+	linkHandler := handler.NewLinkHandler(dbConn, auditRepo)
+	r.Route("/api/v1/devices/{id}/documents", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth)
+			r.Get("/", linkHandler.GetDeviceDocuments)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdmin)
+			r.Post("/", linkHandler.LinkDocument)
+			r.Delete("/{docId}", linkHandler.UnlinkDocument)
+		})
+	})
+	r.Route("/api/v1/documents/{id}/devices", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", linkHandler.GetDocumentDevices)
+	})
+
+	// Notification service, dispatcher, and handler
+	notificationSvc := service.NewNotificationService(db.New(dbConn))
+	notificationDispatcher := notification.NewDispatcher(db.New(dbConn), nil)
+	notificationDispatcher.Start(context.Background())
+	notificationHandler := handler.NewNotificationHandler(notificationSvc, notificationDispatcher, auditRepo)
+
+	// Notification channel routes (admin only)
+	r.Route("/api/v1/notification/channels", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/", notificationHandler.CreateChannel)
+		r.Get("/", notificationHandler.ListChannels)
+		r.Get("/{id}", notificationHandler.GetChannel)
+		r.Put("/{id}", notificationHandler.UpdateChannel)
+		r.Delete("/{id}", notificationHandler.DeleteChannel)
+		r.Post("/{id}/test", notificationHandler.TestChannel)
+	})
+
+	// Alert rule routes (admin only)
+	r.Route("/api/v1/alert-rules", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/", notificationHandler.CreateAlertRule)
+		r.Get("/", notificationHandler.ListAlertRules)
+		r.Get("/{id}", notificationHandler.GetAlertRule)
+		r.Put("/{id}", notificationHandler.UpdateAlertRule)
+		r.Delete("/{id}", notificationHandler.DeleteAlertRule)
+	})
+
+	// Notification log routes (admin only)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Get("/api/v1/notification/logs", notificationHandler.ListNotificationLogs)
+	})
+
+	// Prometheus metrics (admin only)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Handle("/metrics", handler.MetricsHandler())
+	})
+
+	// Prometheus HTTP Service Discovery (admin only)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		sdHandler := handler.NewSDHandler(dbConn, deviceSystemRepo)
+		r.Get("/sd", sdHandler.ServeHTTP)
+	})
+
+	// Seed initial device metrics
+	go handler.UpdateDeviceMetrics(context.Background(), dbConn)
+	// SPA handler — serves embedded frontend
+	spaHandler := handler.NewSPAHandler()
+	r.Mount("/", spaHandler)
+
+	return r, heartbeatSvc, func() {
+		if scanScheduler != nil {
+			scanScheduler.Stop()
+		}
+		cleanupSvc.Stop()
+		// Stop the notification dispatcher's worker goroutines too. Without
+		// this, the 3 workers (and their *db.Queries handle) outlive graceful
+		// shutdown and race against db.Close() in main.go.
+		notificationDispatcher.Stop()
+	}
+}
+
+// chunkSlice splits a slice into chunks of the given size.
+func chunkSlice[S any](items []S, batchSize int) [][]S {
+	if batchSize <= 0 {
+		return [][]S{items}
+	}
+	var chunks [][]S
+	for i := 0; i < len(items); i += batchSize {
+		end := i + batchSize
+		if end > len(items) {
+			end = len(items)
+		}
+		chunks = append(chunks, items[i:end])
+	}
+	return chunks
+}

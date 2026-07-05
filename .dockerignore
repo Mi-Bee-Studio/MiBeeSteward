@@ -1,0 +1,15 @@
+node_modules/
+web/node_modules/
+web/.svelte-kit/
+web/dist/
+data/
+.git/
+.gitignore
+.sisyphus/
+tmp/
+*.db
+Dockerfile
+docker-compose.yml
+.dockerignore
+Makefile
+README.md
