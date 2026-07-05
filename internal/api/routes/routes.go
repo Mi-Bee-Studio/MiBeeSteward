@@ -399,18 +399,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/api/v1/notification/logs", notificationHandler.ListNotificationLogs)
 	})
 
-	// Prometheus metrics (admin only)
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
-		r.Handle("/metrics", handler.MetricsHandler())
-	})
-
-	// Prometheus HTTP Service Discovery (admin only)
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
-		sdHandler := handler.NewSDHandler(dbConn, deviceSystemRepo)
-		r.Get("/sd", sdHandler.ServeHTTP)
-	})
+	// Prometheus metrics + HTTP service discovery are PUBLIC: Prometheus
+	// scrapes these endpoints without credentials, and they leak no secrets
+	// (metrics are aggregate counters; SD exposes only device IPs/labels
+	// that the scanner already published). Keep them out of RequireAuth/Admin.
+	r.Handle("/metrics", handler.MetricsHandler())
+	sdHandler := handler.NewSDHandler(dbConn, deviceSystemRepo)
+	r.Get("/sd", sdHandler.ServeHTTP)
 
 	// Seed initial device metrics
 	go handler.UpdateDeviceMetrics(context.Background(), dbConn)
