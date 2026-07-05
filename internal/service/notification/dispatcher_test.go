@@ -3,6 +3,7 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,19 +16,35 @@ import (
 )
 
 // mockLogCreator records notification log calls without a real DB.
+// Called concurrently from dispatcher workers, so logs is mutex-guarded
+// (count uses an atomic for lock-free reads).
 type mockLogCreator struct {
-	logs []db.CreateNotificationLogParams
-	mu   atomic.Int32
+	logsMu sync.Mutex
+	logs   []db.CreateNotificationLogParams
+	mu     atomic.Int32
 }
 
 func (m *mockLogCreator) CreateNotificationLog(_ context.Context, arg db.CreateNotificationLogParams) (db.NotificationLog, error) {
 	m.mu.Add(1)
+	m.logsMu.Lock()
 	m.logs = append(m.logs, arg)
-	return db.NotificationLog{ID: int64(len(m.logs))}, nil
+	id := int64(len(m.logs))
+	m.logsMu.Unlock()
+	return db.NotificationLog{ID: id}, nil
 }
 
 func (m *mockLogCreator) count() int {
 	return int(m.mu.Load())
+}
+
+// snapshot returns a copy of the recorded logs; safe to call concurrently
+// with CreateNotificationLog.
+func (m *mockLogCreator) snapshot() []db.CreateNotificationLogParams {
+	m.logsMu.Lock()
+	defer m.logsMu.Unlock()
+	out := make([]db.CreateNotificationLogParams, len(m.logs))
+	copy(out, m.logs)
+	return out
 }
 
 // mockSender records calls and returns configurable results.
@@ -95,7 +112,7 @@ func TestWorkerProcessesJob(t *testing.T) {
 	assert.True(t, called.Load() == false || logMock.count() >= 1, "job should be processed")
 	require.Equal(t, 1, logMock.count())
 
-	log := logMock.logs[0]
+	log := logMock.snapshot()[0]
 	assert.Equal(t, "sent", log.Status)
 	assert.Contains(t, log.Payload, "test subject")
 	assert.Equal(t, int64(1), *log.ChannelID)
@@ -132,7 +149,7 @@ func TestRetryOnFailure(t *testing.T) {
 	time.Sleep(4 * time.Second)
 	assert.Equal(t, 3, int(callCount.Load()), "should have attempted 3 times")
 	require.Equal(t, 1, logMock.count())
-	assert.Equal(t, "sent", logMock.logs[0].Status)
+	assert.Equal(t, "sent", logMock.snapshot()[0].Status)
 }
 
 func TestMaxRetriesExhausted(t *testing.T) {
@@ -161,8 +178,9 @@ func TestMaxRetriesExhausted(t *testing.T) {
 	time.Sleep(4 * time.Second)
 	assert.Equal(t, 3, int(callCount.Load()), "should attempt 3 times total")
 	require.Equal(t, 1, logMock.count())
-	assert.Equal(t, "failed", logMock.logs[0].Status)
-	assert.Contains(t, logMock.logs[0].ErrorMessage, "connection refused")
+	snap := logMock.snapshot()[0]
+	assert.Equal(t, "failed", snap.Status)
+	assert.Contains(t, snap.ErrorMessage, "connection refused")
 }
 
 func TestPermanentErrorNoRetry(t *testing.T) {
@@ -190,7 +208,7 @@ func TestPermanentErrorNoRetry(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	assert.Equal(t, 1, int(callCount.Load()), "should only attempt once for permanent errors")
 	require.Equal(t, 1, logMock.count())
-	assert.Equal(t, "failed", logMock.logs[0].Status)
+	assert.Equal(t, "failed", logMock.snapshot()[0].Status)
 }
 
 func TestDispatchDropsWhenFull(t *testing.T) {
@@ -219,7 +237,7 @@ func TestDispatchDropsWhenFull(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	// Some should be dropped
 	droppedCount := 0
-	for _, log := range logMock.logs {
+	for _, log := range logMock.snapshot() {
 		if log.ErrorMessage == "dispatch queue full" {
 			droppedCount++
 		}

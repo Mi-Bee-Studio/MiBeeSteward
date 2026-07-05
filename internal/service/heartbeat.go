@@ -20,6 +20,7 @@ type HeartbeatService struct {
 	queries      *db.Queries
 	cfg          config.HeartbeatConfig
 	cancel       context.CancelFunc
+	cancelMu     sync.Mutex    // guards cancel (written by Start, read by Stop)
 	failCounts   map[int64]int // deviceID -> consecutive failure count
 	failCountsMu sync.Mutex
 	alertEngine  *alert.Engine
@@ -36,8 +37,13 @@ func NewHeartbeatService(dbConn db.DBTX, cfg *config.Config) *HeartbeatService {
 
 // Start begins the heartbeat scheduler loop in the background.
 func (s *HeartbeatService) Start(ctx context.Context) {
-	ctx, s.cancel = context.WithCancel(ctx)
-	defer s.cancel()
+	// Bound the loop with a cancellable context; store the cancel func under
+	// the mutex so Stop() (called from another goroutine) can read it safely.
+	ctx, cancel := context.WithCancel(ctx)
+	s.cancelMu.Lock()
+	s.cancel = cancel
+	s.cancelMu.Unlock()
+	defer cancel()
 
 	// Cleanup old results on start
 	s.cleanupOldResults(ctx)
@@ -60,6 +66,8 @@ func (s *HeartbeatService) Start(ctx context.Context) {
 
 // Stop cancels the scheduler context.
 func (s *HeartbeatService) Stop() {
+	s.cancelMu.Lock()
+	defer s.cancelMu.Unlock()
 	if s.cancel != nil {
 		s.cancel()
 	}
