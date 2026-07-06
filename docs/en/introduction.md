@@ -2,9 +2,9 @@
 
 ## What is MiBee Steward
 
-MiBee Steward is a comprehensive device management and monitoring system designed for network administrators and DevOps teams. Built with a Go backend featuring the Chi web framework and SQLite database, it includes an embedded SvelteKit single-page application that provides a modern web interface. The system offers real-time monitoring capabilities across multiple protocols including SNMP v2c, ICMP ping, TCP connect checks, and HTTP GET requests. Its single binary deployment architecture makes it easy to deploy and manage across various environments.
+MiBee Steward is a **device/network-layer asset discovery, identification, and registry** tool — CMDB-lite for network and IoT assets. It automatically discovers what devices are on a network (via ICMP, TCP portscan, SNMP, HTTP, RTSP, ONVIF, mDNS, WS-Discovery probing, plus an optional eBPF passive observer), infers what they are (device type, brand, model via protocol fingerprints), and registers/tracks them over time with heartbeat-based freshness. Built with a Go backend (Chi + SQLite, CGO-free) and an embedded SvelteKit single-page application, it deploys as a single zero-dependency binary.
 
-The system operates on a heartbeat monitoring principle where devices are probed at configurable intervals. If a device fails to respond after three consecutive attempts, its status is automatically updated to indicate an outage. This approach provides reliable, automated monitoring without requiring manual intervention. The entire application can be deployed as a single executable with just a configuration file, simplifying distribution and maintenance.
+Heartbeat probing keeps the asset registry fresh: devices are probed at configurable intervals, and after three consecutive failures the device status is automatically marked offline (recovery is auto-detected when the device responds again). This produces the online/offline history, latency, and availability stats that make the registry a living record rather than a one-time snapshot. Asset state is also exposed to the Prometheus ecosystem via `/metrics` and `/sd` — **alerting and visualization are intentionally left to Alertmanager and Grafana**, which consume those endpoints natively. See [Product Scope & Boundary](product-scope.md) for what MiBee Steward does and does not build.
 
 ## Key Features
 
@@ -56,17 +56,17 @@ The system operates on a heartbeat monitoring principle where devices are probed
 
 ## Use Cases
 
-### Network Monitoring
-MiBee Steward excels at monitoring network infrastructure including routers, switches, and firewalls. IT administrators can track device availability, response times, and service availability across their entire network. The SNMP probing capability allows monitoring of network statistics, interface counters, and system health metrics for comprehensive network visibility.
+### Network Asset Inventory
+Automatically discover and catalog what's on your network — routers, switches, access points, servers, IoT — with brand/model identification via protocol fingerprints. Replaces manual spreadsheet-based asset tracking with a continuously-fresh registry.
 
-### IoT Device Management
-Perfect for managing Internet of Things devices such as smart sensors, cameras, and industrial controllers. The system supports custom probe intervals and protocols specific to IoT devices, allowing monitoring of proprietary protocols via HTTP endpoints. Device grouping helps organize large numbers of IoT devices by location, function, or importance.
+### IoT / Camera Fleet Discovery
+Identify IP cameras, sensors, controllers, and other IoT devices by brand and model. Camera detection (RTSP + ONVIF + camera classifiers) is a current priority scenario because the fingerprints are crisp and demand is concrete — not because MiBee Steward is camera-specific. The same identification pipeline applies to any device type.
 
-### Server Farm Monitoring
-Ideal for monitoring server availability and service health in data centers. TCP connect checks ensure critical services are running, while HTTP GET probes verify web applications are responding correctly. The system can monitor servers across multiple availability zones and provide early warning of performance issues before they impact users.
+### Branch / SOHO Network Mapping
+Lightweight enough for small/branch networks where LibreNMS or Zabbix is overkill. Deploy a single binary, scan the subnet, get a structured asset portrait without standing up a database, message broker, or container stack.
 
-### Lab Equipment Tracking
-Essential for managing research laboratory equipment, test rigs, and measurement devices. The flexible probe configuration allows monitoring of custom equipment with specific protocols and intervals. Automatic failure detection ensures that expensive lab equipment issues are identified promptly, minimizing downtime and research delays.
+### Lab / Edge Asset Tracking
+Track research lab equipment, test rigs, measurement devices, and edge nodes with flexible per-device probe configurations. Heartbeat-based freshness ensures the asset registry reflects reality, not a stale snapshot.
 
 ## System Requirements
 
