@@ -242,6 +242,57 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		"ALTER TABLE scan_results ADD COLUMN node_exporter_detected INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE scan_results ADD COLUMN node_exporter_url TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE scan_results ADD COLUMN node_exporter_data TEXT NOT NULL DEFAULT '{}'",
+		// Dual JSON layer (scan_attributes + user_attributes). Generated columns
+		// (scan_vendor/scan_mac/scan_os/scan_hostname) can't be added via ALTER
+		// on existing DBs — those are only present on fresh installs. For
+		// upgraded DBs we add expression indexes below so the json_extract
+		// queries work without the generated columns.
+		"ALTER TABLE devices ADD COLUMN scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes))",
+		"ALTER TABLE devices ADD COLUMN user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes))",
+	}
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil {
+			// Ignore "duplicate column" errors — column already exists
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("failed to run migration %q: %w", m, err)
+			}
+		}
+	}
+
+	// Backfill scan_attributes from the legacy scan-info columns on existing
+	// rows that haven't been touched by the v2 engine yet (scan_attributes is
+	// still the empty default '{}'). Idempotent: once a row's scan_attributes
+	// is non-empty, the engine owns it and this merge won't run again.
+	if _, err := db.Exec(`UPDATE devices
+		SET scan_attributes = json_object(
+			'open_ports',         json(open_ports),
+			'detected_services',  json(detected_services),
+			'prometheus',         json_object(
+				'url',               prometheus_url,
+				'node_exporter_url', node_exporter_url,
+				'labels',            json(prometheus_labels)
+			),
+			'scan_source',        scan_source,
+			'last_scan_rtt_ms',   last_scan_rtt_ms,
+			'last_scanned_at',    COALESCE(strftime('%Y-%m-%dT%H:%M:%SZ', last_scanned_at), '')
+		)
+		WHERE scan_attributes = '{}'`); err != nil {
+		// Non-fatal: legacy rows just won't be back-filled; new scans populate
+		// scan_attributes directly. Log and continue.
+		slog.Warn("scan_attributes backfill failed", "error", err)
+	}
+
+	// Expression indexes (work on existing DBs without the generated columns).
+	// Safe to re-run via IF NOT EXISTS.
+	for _, idx := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_devices_scan_mac_expr    ON devices(json_extract(scan_attributes, '$.mac'))`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_scan_vendor_expr ON devices(json_extract(scan_attributes, '$.vendor'))`,
+	} {
+		if _, err := db.Exec(idx); err != nil {
+			// Some SQLite builds gate expression indexes behind a compile flag;
+			// absence just means slower MAC/vendor lookups, not a failure.
+			slog.Warn("scan_attributes expression index creation skipped", "index", idx, "error", err)
+		}
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
@@ -268,7 +319,132 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		return fmt.Errorf("scan_task_runs status migration: %w", err)
 	}
 
+	// Add the scan_attributes generated columns (scan_vendor/scan_mac/scan_os/
+	// scan_hostname) to existing DBs. SQLite can't ALTER ADD COLUMN with a
+	// non-constant expression, so a table rebuild is required. Fresh installs
+	// already get them from schema.sql; this is a no-op there.
+	if err := addDevicesGeneratedColumns(context.Background(), db); err != nil {
+		return fmt.Errorf("devices generated-columns migration: %w", err)
+	}
+
 	slog.Info("database schema applied")
+	return nil
+}
+
+// addDevicesGeneratedColumns adds the scan_attributes-derived generated columns
+// (scan_vendor/scan_mac/scan_os/scan_hostname) to existing DBs via SQLite's
+// 12-step table rebuild. SQLite disallows ALTER TABLE ADD COLUMN with a
+// non-constant generated expression, so the rebuild is the only path.
+//
+// Idempotent: if scan_mac already exists (fresh install, or already rebuilt),
+// this is a no-op. FK references to devices(id) in heartbeat_configs,
+// device_systems, and device_documents are preserved by name through the
+// rename (SQLite resolves FK by table name, not by internal rootpage).
+func addDevicesGeneratedColumns(ctx context.Context, db *sql.DB) error {
+	// Idempotency probe: does scan_mac already exist? Note that the older
+	// pragma_table_info HIDES generated columns — pragma_table_xinfo is the
+	// only pragma that surfaces them. Use it here so the rebuild doesn't run
+	// on every startup.
+	var ignore string
+	err := db.QueryRowContext(ctx,
+		`SELECT name FROM pragma_table_xinfo('devices') WHERE name = 'scan_mac' LIMIT 1`,
+	).Scan(&ignore)
+	if err == nil {
+		// Column already present — nothing to do.
+		return nil
+	}
+	if !strings.Contains(err.Error(), "no rows") {
+		return fmt.Errorf("probe devices.scan_mac: %w", err)
+	}
+
+	slog.Info("rebuilding devices table to add scan_attributes generated columns")
+
+	// Rebuild preserving the FULL current column set plus the 4 new generated
+	// columns. We list every column from schema.sql's CREATE TABLE so the copy
+	// is shape-identical (no data loss, no type drift). GENERATED ALWAYS AS
+	// columns are NOT copied explicitly — SQLite derives them on insert from
+	// the scan_attributes value being copied.
+	stmts := []string{
+		`CREATE TABLE devices_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL DEFAULT 'other' CHECK(type IN ('pc', 'embedded', 'iot', 'other', 'server', 'switch', 'router', 'firewall', 'nas', 'camera')),
+			brand TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			location TEXT NOT NULL DEFAULT '',
+			purpose TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'unknown' CHECK(status IN ('online', 'offline', 'unknown')),
+			ip_address TEXT NOT NULL DEFAULT '',
+			mac_address TEXT NOT NULL DEFAULT '',
+			serial_number TEXT NOT NULL DEFAULT '',
+			purchase_date TEXT NOT NULL DEFAULT '',
+			warranty_expiry TEXT NOT NULL DEFAULT '',
+			tags TEXT NOT NULL DEFAULT '{}',
+			scan_source TEXT NOT NULL DEFAULT 'manual',
+			prometheus_labels TEXT NOT NULL DEFAULT '{}',
+			last_scanned_at TIMESTAMP,
+			last_scan_task_id INTEGER,
+			open_ports TEXT NOT NULL DEFAULT '[]',
+			detected_services TEXT NOT NULL DEFAULT '[]',
+			prometheus_url TEXT NOT NULL DEFAULT '',
+			node_exporter_url TEXT NOT NULL DEFAULT '',
+			last_scan_rtt_ms INTEGER NOT NULL DEFAULT 0,
+			scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes)),
+			user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes)),
+			scan_vendor   TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.vendor')) STORED,
+			scan_mac      TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.mac')) STORED,
+			scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
+			scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT INTO devices_new (id, name, type, brand, model, location, purpose, description,
+			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
+			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
+			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
+			scan_attributes, user_attributes, created_at, updated_at)
+		SELECT id, name, type, brand, model, location, purpose, description,
+			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
+			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
+			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
+			scan_attributes, user_attributes, created_at, updated_at FROM devices`,
+		`DROP TABLE devices`,
+		`ALTER TABLE devices_new RENAME TO devices`,
+		// Re-create the indexes that existed on the original devices table.
+		`CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(type)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_ip_address ON devices(ip_address)`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_scan_mac_expr    ON devices(json_extract(scan_attributes, '$.mac'))`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_scan_vendor_expr ON devices(json_extract(scan_attributes, '$.vendor'))`,
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin devices rebuild tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// FK enforcement off for the rebuild (we're recreating the parent table;
+	// child rows in heartbeat_configs/device_systems/device_documents would
+	// otherwise fail the FK check mid-rebuild because the parent briefly
+	// doesn't exist). Re-enabled when the connection's next transaction opens
+	// (SQLite resets it per-transaction under WAL).
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable FKs for rebuild: %w", err)
+	}
+	for _, s := range stmts {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
+			return fmt.Errorf("devices rebuild step failed: %w (stmt: %s)", err, s)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("re-enable FKs after rebuild: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit devices rebuild: %w", err)
+	}
+	slog.Info("devices table rebuilt with scan_attributes generated columns")
 	return nil
 }
 

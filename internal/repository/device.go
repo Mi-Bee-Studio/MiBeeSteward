@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 
 	"mibee-steward/internal/db"
@@ -30,6 +32,11 @@ func (r *DeviceRepository) Create(ctx context.Context, req domain.CreateDeviceRe
 		tags = "{}"
 	}
 
+	userAttrs, err := domain.MarshalUserAttributes(req.UserAttributes)
+	if err != nil {
+		return db.Device{}, fmt.Errorf("failed to marshal user_attributes: %w", err)
+	}
+
 	device, err := r.queries.CreateDevice(ctx, db.CreateDeviceParams{
 		Name:           req.Name,
 		Type:           deviceType,
@@ -45,11 +52,54 @@ func (r *DeviceRepository) Create(ctx context.Context, req domain.CreateDeviceRe
 		PurchaseDate:   req.PurchaseDate,
 		WarrantyExpiry: req.WarrantyExpiry,
 		Tags:           tags,
+		UserAttributes: userAttrs,
 	})
 	if err != nil {
 		return db.Device{}, fmt.Errorf("failed to create device: %w", err)
 	}
 	return device, nil
+}
+
+// UpdateUserAttributes replaces the user_attributes JSON document for a device.
+func (r *DeviceRepository) UpdateUserAttributes(ctx context.Context, id int64, attrs domain.UserAttributes) error {
+	raw, err := domain.MarshalUserAttributes(attrs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal user_attributes: %w", err)
+	}
+	return r.queries.UpdateUserAttributes(ctx, db.UpdateUserAttributesParams{
+		UserAttributes: raw,
+		ID:             id,
+	})
+}
+
+// UpdateScanAttributes replaces the engine-owned scan_attributes JSON
+// document for a device. Only the scanner engine should call this.
+func (r *DeviceRepository) UpdateScanAttributes(ctx context.Context, id int64, attrs domain.ScanAttributes) error {
+	raw, err := domain.MarshalScanAttributes(attrs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scan_attributes: %w", err)
+	}
+	return r.queries.UpdateScanAttributes(ctx, db.UpdateScanAttributesParams{
+		ScanAttributes: raw,
+		ID:             id,
+	})
+}
+
+// GetByMAC looks up a device by its normalized scan MAC via the scan_attributes
+// JSON field (covered by idx_devices_scan_mac_expr). Returns the device and
+// whether a match existed.
+func (r *DeviceRepository) GetByMAC(ctx context.Context, mac string) (db.Device, bool, error) {
+	if mac == "" {
+		return db.Device{}, false, nil
+	}
+	device, err := r.queries.GetDeviceByMAC(ctx, mac)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return db.Device{}, false, nil
+		}
+		return db.Device{}, false, fmt.Errorf("failed to get device by MAC: %w", err)
+	}
+	return device, true, nil
 }
 
 // GetByID retrieves a device by its ID.

@@ -20,6 +20,7 @@ import (
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
+	scannerv2probe "mibee-steward/internal/service/scannerv2/probe"
 	scannerv2runner "mibee-steward/internal/service/scannerv2/runner"
 	scannerv2scheduler "mibee-steward/internal/service/scannerv2/scheduler"
 	scannerv2task "mibee-steward/internal/service/scannerv2/taskservice"
@@ -161,7 +162,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	scanQueries := db.New(dbConn)
 
 	// Construct the v2 engine: probes/classifiers/handlers + persistence + eBPF observer.
-	scannerPortSpec := "22,80,443,8080,8443,8000,554,8554,9090,9100,9104,9113,9121,9187,161"
+	// Port spec: prefer the configured default_ports (config.yaml
+	// scanner.pipeline_defaults.default_ports) and fall back to the v2 default
+	// set if unset. The default set covers web/admin + cameras + prometheus +
+	// databases + mail + remote-access so the common inventory cases are caught
+	// out of the box.
+	scannerPortSpec := cfg.Scanner.PipelineDefaults.DefaultPorts
+	if scannerPortSpec == "" {
+		scannerPortSpec = "22,21,23,25,53,80,110,143,389,443,445,554,631,636,8554,1433," +
+			"3306,3389,5432,5900,6379,8000,8080,8081,8443,8888,9000,9090,9100,9104," +
+			"9113,9121,9187,9200,9443,11211,27017,161"
+	}
 	v2Engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
 		PortSpec:           scannerPortSpec,
 		MaxConcurrentHosts: cfg.Scanner.MaxConcurrentHosts,
@@ -169,8 +180,15 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		PerHostTimeout:     time.Duration(cfg.Scanner.DefaultTimeout) * time.Second,
 		PerProbeTimeout:    time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
 		PersistRawEvidence: cfg.Scanner.PersistRawEvidence,
-		HeartbeatInterval:  cfg.Heartbeat.DefaultInterval,
-		HeartbeatTimeout:   cfg.Heartbeat.Timeout,
+		OUIPath:            cfg.Scanner.OUIPath,
+		SNMPCommunity:      cfg.Scanner.SNMPCommunity,
+		RouterARP: scannerv2probe.RouterARPConfig{
+			Routers:   cfg.Scanner.RouterARP.Routers,
+			Community: routerCommunity(cfg.Scanner),
+			Timeout:   time.Duration(routerTimeout(cfg.Scanner)) * time.Second,
+		},
+		HeartbeatInterval: cfg.Heartbeat.DefaultInterval,
+		HeartbeatTimeout:  cfg.Heartbeat.Timeout,
 		EBPF: scannerv2ebpf.Config{
 			Enabled:    cfg.Scanner.EBPF.Enabled,
 			Interfaces: cfg.Scanner.EBPF.Interfaces,
@@ -439,4 +457,24 @@ func chunkSlice[S any](items []S, batchSize int) [][]S {
 		chunks = append(chunks, items[i:end])
 	}
 	return chunks
+}
+
+// routerCommunity resolves the SNMP community for cross-subnet ARP walks:
+// prefer the dedicated router_arp.community, fall back to the global snmp_community.
+func routerCommunity(cfg config.ScannerConfig) string {
+	if cfg.RouterARP.Community != "" {
+		return cfg.RouterARP.Community
+	}
+	if cfg.SNMPCommunity != "" {
+		return cfg.SNMPCommunity
+	}
+	return "public"
+}
+
+// routerTimeout resolves the per-router ARP-walk timeout in seconds (default 4).
+func routerTimeout(cfg config.ScannerConfig) int {
+	if cfg.RouterARP.Timeout > 0 {
+		return cfg.RouterARP.Timeout
+	}
+	return 4
 }

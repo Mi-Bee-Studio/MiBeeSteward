@@ -51,6 +51,12 @@ func setupHeartbeatTest(t *testing.T) (*HeartbeatService, *sql.DB, *db.Queries) 
 			prometheus_url TEXT NOT NULL DEFAULT '',
 			node_exporter_url TEXT NOT NULL DEFAULT '',
 			last_scan_rtt_ms INTEGER NOT NULL DEFAULT 0,
+			scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes)),
+			user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes)),
+			scan_vendor   TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.vendor')) STORED,
+			scan_mac      TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.mac')) STORED,
+			scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
+			scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
@@ -116,11 +122,12 @@ func setupHeartbeatTest(t *testing.T) (*HeartbeatService, *sql.DB, *db.Queries) 
 func insertTestDevice(t *testing.T, q *db.Queries, ctx context.Context, name, ipAddr string) int64 {
 	t.Helper()
 	device, err := q.CreateDevice(ctx, db.CreateDeviceParams{
-		Name:      name,
-		Type:      "other",
-		Status:    "unknown",
-		IpAddress: ipAddr,
-		Tags:      "{}",
+		Name:           name,
+		Type:           "other",
+		Status:         "unknown",
+		IpAddress:      ipAddr,
+		Tags:           "{}",
+		UserAttributes: "{}",
 	})
 	require.NoError(t, err)
 	return device.ID
