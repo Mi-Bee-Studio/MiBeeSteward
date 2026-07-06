@@ -2,7 +2,7 @@
 
 ## 系统概述
 
-MiBee Steward 是一个设备管理和监控系统，构建为具有嵌入式 Web 界面的单二进制部署。系统由使用 Chi Web 框架和 SQLite 数据库的 Go 后端，以及通过 Go 的 `go:embed` 功能嵌入的 SvelteKit 5 前端组成。系统提供 SNMP/ICMP/TCP/HTTP 探测能力、Prometheus 指标集成和全面的心跳监控。
+MiBee Steward 是一个**设备/网络层的资产发现、识别与登记**工具，构建为具有嵌入式 Web 界面的单二进制部署。系统由使用 Chi Web 框架和 SQLite 数据库的 Go 后端，以及通过 Go 的 `go:embed` 功能嵌入的 SvelteKit 5 前端组成。系统通过 SNMP/ICMP/TCP/HTTP/RTSP/ONVIF 等协议自动发现设备并推断其身份，通过心跳保持资产登记鲜活，并通过 `/metrics` 与 `/sd` 将资产状态暴露给 Prometheus 生态（告警与可视化留给 Alertmanager/Grafana）。详见[产品范围与边界](product-scope.md)。
 
 ## 分层架构
 

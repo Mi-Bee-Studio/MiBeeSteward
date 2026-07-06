@@ -1,6 +1,6 @@
 # MiBee Steward API 参考文档
 # 
-# MiBee Steward 设备管理与监控系统的完整 REST API 文档。
+# MiBee Steward 设备/网络层资产发现与登记系统的完整 REST API 文档。
 
 ## 目录
 - [认证](#认证)
@@ -149,7 +149,7 @@
 
 ## 设备
 
-具有多协议监控功能的设备管理。
+具有多协议自动发现与身份识别能力的设备登记与管理。
 
 ### GET /api/v1/devices
 列出设备，支持过滤和分页。
