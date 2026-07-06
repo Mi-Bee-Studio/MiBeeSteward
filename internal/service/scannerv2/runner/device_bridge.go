@@ -79,13 +79,15 @@ func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, locat
 	promURL := rep.Device.Fields["prometheus_url"]
 	neURL := rep.Device.Fields["node_exporter_url"]
 	tags := buildDeviceTags(devType, brand, rep)
+	scanAttrs := marshalScanAttributes(buildScanAttributes(rep))
 	now := time.Now().UTC()
 	res, err := rn.dbConn.ExecContext(ctx, `
 		INSERT INTO devices (name, type, brand, ip_address, status, scan_source, description, location,
 		                     open_ports, detected_services, prometheus_url, node_exporter_url,
+		                     scan_attributes,
 		                     tags, last_scan_rtt_ms, last_scanned_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'online', 'scanner_v2', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		name, devType, brand, rep.IP, descr, location, ports, services, promURL, neURL, tags, rep.RTTMs, now, now, now)
+		VALUES (?, ?, ?, ?, 'online', 'scanner_v2', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		name, devType, brand, rep.IP, descr, location, ports, services, promURL, neURL, scanAttrs, tags, rep.RTTMs, now, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -111,6 +113,7 @@ func buildExistingUpdate(_, _, _, _ string, _ scannerv2.HostReport) string {
 		    detected_services = ?,
 		    prometheus_url = CASE WHEN ? != '' THEN ? ELSE prometheus_url END,
 		    node_exporter_url = CASE WHEN ? != '' THEN ? ELSE node_exporter_url END,
+		    scan_attributes = ?,
 		    last_scan_rtt_ms = ?,
 		    last_scanned_at = ?,
 		    updated_at = ?
@@ -123,6 +126,7 @@ func existingUpdateArgs(id int64, inferredType, brand, descr, location string, r
 	ports, services := deviceScanInfoJSON(rep)
 	promURL := rep.Device.Fields["prometheus_url"]
 	neURL := rep.Device.Fields["node_exporter_url"]
+	scanAttrs := marshalScanAttributes(buildScanAttributes(rep))
 	now := time.Now().UTC()
 	return []any{
 		rep.IP, inferredType, inferredType,
@@ -132,6 +136,7 @@ func existingUpdateArgs(id int64, inferredType, brand, descr, location string, r
 		ports, services,
 		promURL, promURL,
 		neURL, neURL,
+		scanAttrs,
 		rep.RTTMs, now, now, id,
 	}
 }

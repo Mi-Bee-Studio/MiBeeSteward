@@ -260,3 +260,44 @@ func containsStr(s []string, v string) bool {
 	}
 	return false
 }
+
+func TestSSDPServerToBrand_ShortHeaders(t *testing.T) {
+	// Regression: a SERVER header with fewer than 3 whitespace tokens must not
+	// panic (previously tokens[2:] sliced out of bounds).
+	cases := []string{
+		"",                                // empty
+		"Linux/4.4",                       // single token
+		"Linux/4.4 UPnP/1.1",              // two tokens
+		"Linux/4.4 UPnP/1.1 MyDevice/1.0", // full (3 tokens)
+	}
+	// None of these should panic.
+	for _, c := range cases {
+		_ = ssdpServerToBrand(c)
+		_ = ssdpServerToOS(c)
+	}
+	// The full header should yield "MyDevice".
+	if got := ssdpServerToBrand("Linux/4.4 UPnP/1.1 MyDevice/1.0"); got != "MyDevice" {
+		t.Errorf("full header brand = %q, want MyDevice", got)
+	}
+	// The OS prefix should be extracted.
+	if got := ssdpServerToOS("Linux/4.4 UPnP/1.1 MyDevice/1.0"); got != "Linux" {
+		t.Errorf("OS = %q, want Linux", got)
+	}
+	// Short headers yield empty brand.
+	if got := ssdpServerToBrand("Linux/4.4"); got != "" {
+		t.Errorf("short header brand = %q, want empty", got)
+	}
+}
+
+func TestIndexByteAndSplitWS(t *testing.T) {
+	if indexByte("abc", 'b') != 1 {
+		t.Error("indexByte")
+	}
+	if indexByte("abc", 'z') != -1 {
+		t.Error("indexByte miss")
+	}
+	got := splitWS("a  b\tc")
+	if len(got) != 3 || got[0] != "a" || got[2] != "c" {
+		t.Errorf("splitWS = %v", got)
+	}
+}

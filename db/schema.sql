@@ -43,6 +43,19 @@ CREATE TABLE IF NOT EXISTS devices (
     prometheus_url TEXT NOT NULL DEFAULT '',
     node_exporter_url TEXT NOT NULL DEFAULT '',
     last_scan_rtt_ms INTEGER NOT NULL DEFAULT 0,
+    -- Dual JSON layer: scan_attributes (engine-written discovery aggregation)
+    -- and user_attributes (free-form user-edited key/value map). See
+    -- internal/domain/device_attributes.go for the typed structs.
+    scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes)),
+    user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes)),
+    -- Hot-path generated columns extracted from scan_attributes for filtering/
+    -- indexing. STORED so they can be indexed directly. Added via ALTER on
+    -- existing DBs (see cmd/server/main.go rebuild migration); defined inline
+    -- here so fresh installs get them automatically.
+    scan_vendor   TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.vendor')) STORED,
+    scan_mac      TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.mac')) STORED,
+    scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
+    scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -139,6 +152,11 @@ CREATE TABLE IF NOT EXISTS device_systems (
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
 CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(type);
+-- NOTE: scan_attributes expression indexes are created in
+-- cmd/server/main.go (runMigrations) AFTER the ALTER TABLE that adds the
+-- scan_attributes column. They cannot live here because schema replay runs
+-- before the ALTER on existing DBs and would fail with "no such column".
+-- (Fresh installs get them via the same migration step, which is idempotent.)
 CREATE INDEX IF NOT EXISTS idx_heartbeat_results_device ON heartbeat_results(device_id, checked_at);
 CREATE INDEX IF NOT EXISTS idx_heartbeat_results_checked_at ON heartbeat_results(checked_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);

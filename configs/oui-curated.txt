@@ -1,0 +1,41 @@
+# MiBee curated OUI subset — common vendor prefixes for the test environment.
+# Format: <6-hex-prefix>\t<vendor>. Covers cameras, printers, networking, and
+# consumer gear likely on the 192.168.62/63 test subnets. Replace with the full
+# IEEE list via scripts/fetch-oui.sh for production coverage.
+# Camera / NVR vendors
+BCAD28	Hikvision Digital Technology
+54E4BD	Hikvision Digital Technology
+EC7129	Hikvision Digital Technology
+4C11BF	Hikvision Digital Technology
+3CEFFB	Hikvision Digital Technology
+A04CB1	Dahua Technology
+C8147D	Dahua Technology
+14A7EC	Dahua Technology
+38AF29	Dahua Technology
+ACCC0E	Axis Communications
+00408F	Axis Communications
+B8A44F	Axis Communications
+# Printers
+002A4A	Epson
+B85ACF	Epson
+0021B7	Hewlett-Packard
+002258	Hewlett-Packard
+# Networking
+005056	VMware
+000C29	VMware
+080027	PCS Systemtechnik (VirtualBox)
+B827EB	Raspberry Pi Foundation
+DCA632	Raspberry Pi Trading
+E45F01	Raspberry Pi Trading
+00E04C	Realtek
+# Consumer / general
+001122	Google
+F09FC2	Apple
+ACDE48	Apple
+ACBC32	Apple
+001F5B	Apple
+A4B10C	Apple
+# Generic NAS / consumer routers
+001122	Synology
+00011D	Synology
+002211	QNAP Systems

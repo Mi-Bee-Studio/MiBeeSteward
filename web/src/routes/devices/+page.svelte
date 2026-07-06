@@ -530,6 +530,38 @@ interface Stats {
 				row.ip_address ? `<span class="font-mono">${row.ip_address}</span>` : '-'
 		},
 		{
+			// Vendor: prefer scan_attributes.vendor (OUI/SNMP-derived), fall back
+			// to the top-level brand column (user/manual). Nested lookup needs a
+			// render fn — DataTable only resolves flat keys.
+			key: 'vendor',
+			label: m['devices.Vendor'](),
+			render: (row: Record<string, unknown>) => {
+				const sa = row.scan_attributes as { vendor?: string } | undefined;
+				const v = sa?.vendor || (row.brand ? String(row.brand) : '');
+				return v ? `<span class="text-text">${v}</span>` : '-';
+			}
+		},
+		{
+			// MAC from scan_attributes.mac (the scan-discovered L2 address).
+			key: 'mac',
+			label: m['devices.MAC Address'](),
+			render: (row: Record<string, unknown>) => {
+				const sa = row.scan_attributes as { mac?: string } | undefined;
+				const mac = sa?.mac || (row.mac_address ? String(row.mac_address) : '');
+				return mac ? `<span class="font-mono text-xs">${mac}</span>` : '-';
+			}
+		},
+		{
+			// Hostname from scan_attributes.hostname (rDNS / mDNS / NetBIOS / SNMP).
+			key: 'hostname',
+			label: m['devices.Hostname'](),
+			render: (row: Record<string, unknown>) => {
+				const sa = row.scan_attributes as { hostname?: string } | undefined;
+				const h = sa?.hostname;
+				return h ? `<span class="font-mono text-xs">${h}</span>` : '-';
+			}
+		},
+		{
 			key: 'location',
 			label: m['devices.Location'](),
 			render: (row: Record<string, unknown>) => (row.location ? String(row.location) : '-')

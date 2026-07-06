@@ -19,6 +19,63 @@ export type DocumentType = 'url' | 'file';
 // Device
 // ---------------------------------------------------------------------------
 
+/** Structured view of the engine-written scan_attributes JSON document.
+ *  Mirrors internal/domain.ScanAttributes. Fields are optional because the
+ *  engine fills them progressively; an unknown field key should not break
+ *  parsing — use [key: string]: unknown as the safety net. */
+export interface SNMPDiscovery {
+	sys_descr?: string;
+	sys_object_id?: string;
+	sys_name?: string;
+	sys_location?: string;
+	sys_contact?: string;
+	sys_services?: number;
+}
+
+export interface OpenPortEntry {
+	port: number;
+	service?: string;
+}
+
+export interface ServiceEntry {
+	port: number;
+	name: string;
+	protocol?: string;
+	version?: string;
+}
+
+export interface PrometheusInfo {
+	url?: string;
+	node_exporter_url?: string;
+	labels?: Record<string, string>;
+}
+
+export interface ScanAttributes {
+	vendor?: string;
+	mac?: string;
+	hostname?: string;
+	os?: string;
+	os_version?: string;
+	kernel_version?: string;
+	firmware_version?: string;
+	cpu_count?: number;
+	cpu_model?: string;
+	memory_total_bytes?: number;
+	uptime_seconds?: number;
+	ttl?: number;
+	last_scan_rtt_ms?: number;
+	scan_source?: string;
+	last_scanned_at?: string;
+	inferred_type?: string;
+	inferred_description?: string;
+	snmp?: SNMPDiscovery;
+	open_ports?: OpenPortEntry[];
+	detected_services?: ServiceEntry[];
+	prometheus?: PrometheusInfo;
+	extras?: Record<string, string>;
+	[key: string]: unknown;
+}
+
 export interface Device {
 	id: number;
 	name: string;
@@ -46,6 +103,12 @@ export interface Device {
 	prometheus_url?: string;
 	node_exporter_url?: string;
 	last_scan_rtt_ms?: number;
+	// Dual JSON layer: scan_attributes (engine-written, typed object) +
+	// user_attributes (free-form user key/value map). The legacy string
+	// fields above remain populated for backwards compatibility; the UI
+	// prefers scan_attributes when present.
+	scan_attributes?: ScanAttributes;
+	user_attributes?: Record<string, string>;
 }
 // ---------------------------------------------------------------------------
 // Linked Document (used in device-document linking modal)

@@ -108,9 +108,9 @@ const createDevice = `-- name: CreateDevice :one
 INSERT INTO devices (
     name, type, brand, model, location, purpose, description,
     status, ip_address, mac_address, serial_number,
-    purchase_date, warranty_expiry, tags
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, created_at, updated_at
+    purchase_date, warranty_expiry, tags, user_attributes
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
 `
 
 type CreateDeviceParams struct {
@@ -128,6 +128,7 @@ type CreateDeviceParams struct {
 	PurchaseDate   string `json:"purchase_date"`
 	WarrantyExpiry string `json:"warranty_expiry"`
 	Tags           string `json:"tags"`
+	UserAttributes string `json:"user_attributes"`
 }
 
 func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Device, error) {
@@ -146,6 +147,7 @@ func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Dev
 		arg.PurchaseDate,
 		arg.WarrantyExpiry,
 		arg.Tags,
+		arg.UserAttributes,
 	)
 	var i Device
 	err := row.Scan(
@@ -173,6 +175,12 @@ func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Dev
 		&i.PrometheusUrl,
 		&i.NodeExporterUrl,
 		&i.LastScanRttMs,
+		&i.ScanAttributes,
+		&i.UserAttributes,
+		&i.ScanVendor,
+		&i.ScanMac,
+		&i.ScanOs,
+		&i.ScanHostname,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -193,7 +201,7 @@ func (q *Queries) DeleteDevice(ctx context.Context, id int64) (int64, error) {
 }
 
 const getDevice = `-- name: GetDevice :one
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, created_at, updated_at
+SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
 FROM devices
 WHERE id = ?
 `
@@ -226,6 +234,12 @@ func (q *Queries) GetDevice(ctx context.Context, id int64) (Device, error) {
 		&i.PrometheusUrl,
 		&i.NodeExporterUrl,
 		&i.LastScanRttMs,
+		&i.ScanAttributes,
+		&i.UserAttributes,
+		&i.ScanVendor,
+		&i.ScanMac,
+		&i.ScanOs,
+		&i.ScanHostname,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -233,7 +247,7 @@ func (q *Queries) GetDevice(ctx context.Context, id int64) (Device, error) {
 }
 
 const getDeviceByIP = `-- name: GetDeviceByIP :one
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, created_at, updated_at
+SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
 FROM devices
 WHERE ip_address = ?
 LIMIT 1
@@ -267,30 +281,71 @@ func (q *Queries) GetDeviceByIP(ctx context.Context, ipAddress string) (Device, 
 		&i.PrometheusUrl,
 		&i.NodeExporterUrl,
 		&i.LastScanRttMs,
+		&i.ScanAttributes,
+		&i.UserAttributes,
+		&i.ScanVendor,
+		&i.ScanMac,
+		&i.ScanOs,
+		&i.ScanHostname,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const updateDeviceStatus = `-- name: UpdateDeviceStatus :exec
-UPDATE devices
-SET status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
+const getDeviceByMAC = `-- name: GetDeviceByMAC :one
+SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
+FROM devices
+WHERE json_extract(scan_attributes, '$.mac') = ?
+LIMIT 1
 `
 
-type UpdateDeviceStatusParams struct {
-	Status string `json:"status"`
-	ID     int64  `json:"id"`
-}
-
-func (q *Queries) UpdateDeviceStatus(ctx context.Context, arg UpdateDeviceStatusParams) error {
-	_, err := q.db.ExecContext(ctx, updateDeviceStatus, arg.Status, arg.ID)
-	return err
+// Looks up by normalized scan MAC. Uses json_extract so the query works on
+// both fresh installs (which have the scan_mac generated column) and upgraded
+// DBs (which have an expression index on json_extract instead). The expression
+// index idx_devices_scan_mac_expr covers this WHERE clause on either shape.
+func (q *Queries) GetDeviceByMAC(ctx context.Context, scanAttributes string) (Device, error) {
+	row := q.db.QueryRowContext(ctx, getDeviceByMAC, scanAttributes)
+	var i Device
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Type,
+		&i.Brand,
+		&i.Model,
+		&i.Location,
+		&i.Purpose,
+		&i.Description,
+		&i.Status,
+		&i.IpAddress,
+		&i.MacAddress,
+		&i.SerialNumber,
+		&i.PurchaseDate,
+		&i.WarrantyExpiry,
+		&i.Tags,
+		&i.ScanSource,
+		&i.PrometheusLabels,
+		&i.LastScannedAt,
+		&i.LastScanTaskID,
+		&i.OpenPorts,
+		&i.DetectedServices,
+		&i.PrometheusUrl,
+		&i.NodeExporterUrl,
+		&i.LastScanRttMs,
+		&i.ScanAttributes,
+		&i.UserAttributes,
+		&i.ScanVendor,
+		&i.ScanMac,
+		&i.ScanOs,
+		&i.ScanHostname,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const listDevices = `-- name: ListDevices :many
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, created_at, updated_at
+SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
 FROM devices
 WHERE (? = '' OR status = ?)
   AND (? = '' OR type = ?)
@@ -348,6 +403,12 @@ func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Dev
 			&i.PrometheusUrl,
 			&i.NodeExporterUrl,
 			&i.LastScanRttMs,
+			&i.ScanAttributes,
+			&i.UserAttributes,
+			&i.ScanVendor,
+			&i.ScanMac,
+			&i.ScanOs,
+			&i.ScanHostname,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -370,7 +431,7 @@ SET name = ?, type = ?, brand = ?, model = ?, location = ?, purpose = ?, descrip
     status = ?, ip_address = ?, mac_address = ?, serial_number = ?,
     purchase_date = ?, warranty_expiry = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, created_at, updated_at
+RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
 `
 
 type UpdateDeviceParams struct {
@@ -391,6 +452,9 @@ type UpdateDeviceParams struct {
 	ID             int64  `json:"id"`
 }
 
+// Note: scan_attributes is engine-owned and intentionally NOT updated here.
+// user_attributes is updated via UpdateUserAttributes so the full-row update
+// can't race the user-edit path.
 func (q *Queries) UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (Device, error) {
 	row := q.db.QueryRowContext(ctx, updateDevice,
 		arg.Name,
@@ -435,6 +499,12 @@ func (q *Queries) UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (Dev
 		&i.PrometheusUrl,
 		&i.NodeExporterUrl,
 		&i.LastScanRttMs,
+		&i.ScanAttributes,
+		&i.UserAttributes,
+		&i.ScanVendor,
+		&i.ScanMac,
+		&i.ScanOs,
+		&i.ScanHostname,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -473,5 +543,55 @@ func (q *Queries) UpdateDeviceScanInfo(ctx context.Context, arg UpdateDeviceScan
 		arg.LastScanRttMs,
 		arg.ID,
 	)
+	return err
+}
+
+const updateDeviceStatus = `-- name: UpdateDeviceStatus :exec
+UPDATE devices
+SET status = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id
+`
+
+type UpdateDeviceStatusParams struct {
+	Status string `json:"status"`
+	ID     int64  `json:"id"`
+}
+
+// Updates ONLY the status column (and updated_at). Used by the heartbeat
+// service so a status transition doesn't clobber other columns (name, tags,
+// location, …) that may have been edited between the GetDevice read and this
+// write — the full-row UpdateDevice path is racy in that window.
+func (q *Queries) UpdateDeviceStatus(ctx context.Context, arg UpdateDeviceStatusParams) error {
+	_, err := q.db.ExecContext(ctx, updateDeviceStatus, arg.Status, arg.ID)
+	return err
+}
+
+const updateScanAttributes = `-- name: UpdateScanAttributes :exec
+UPDATE devices SET scan_attributes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type UpdateScanAttributesParams struct {
+	ScanAttributes string `json:"scan_attributes"`
+	ID             int64  `json:"id"`
+}
+
+// Engine-only: replaces the full scan_attributes document. Device bridge and
+// store/sqlite call this with the freshly-marshalled JSON after a scan run.
+func (q *Queries) UpdateScanAttributes(ctx context.Context, arg UpdateScanAttributesParams) error {
+	_, err := q.db.ExecContext(ctx, updateScanAttributes, arg.ScanAttributes, arg.ID)
+	return err
+}
+
+const updateUserAttributes = `-- name: UpdateUserAttributes :exec
+UPDATE devices SET user_attributes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type UpdateUserAttributesParams struct {
+	UserAttributes string `json:"user_attributes"`
+	ID             int64  `json:"id"`
+}
+
+func (q *Queries) UpdateUserAttributes(ctx context.Context, arg UpdateUserAttributesParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserAttributes, arg.UserAttributes, arg.ID)
 	return err
 }
