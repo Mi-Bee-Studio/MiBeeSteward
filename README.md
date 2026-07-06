@@ -9,7 +9,7 @@
 
 **English** | [中文](README.zh-CN.md)
 
-Device management & monitoring system with embedded web interface. Built with Go backend and SvelteKit frontend for single binary deployment.
+**Device/network-layer asset discovery, identification, and registry** — CMDB-lite for network and IoT assets. Automatically discovers what's on your network, infers what it is (brand/model via protocol fingerprints), and tracks it over time. Single zero-dependency binary; asset state flows to Prometheus via `/metrics` + `/sd`. Alerting/visualization are intentionally left to Alertmanager/Grafana. Built with Go + SvelteKit.
 
 ## Features
 
