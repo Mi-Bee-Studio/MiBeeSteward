@@ -100,9 +100,9 @@ func TestRecordDevice_InsertThenUpdate(t *testing.T) {
 		t.Fatalf("record device (insert): %v", err)
 	}
 	var id int64
-	var scanSource, brand, openPorts, promURL, labels string
-	if err := repo.db.QueryRow(`SELECT id, scan_source, brand, open_ports, prometheus_url, prometheus_labels FROM devices WHERE ip_address=?`, ip).
-		Scan(&id, &scanSource, &brand, &openPorts, &promURL, &labels); err != nil {
+	var scanSource, brand, openPorts, promURL, scanAttrs string
+	if err := repo.db.QueryRow(`SELECT id, scan_source, brand, open_ports, prometheus_url, scan_attributes FROM devices WHERE ip_address=?`, ip).
+		Scan(&id, &scanSource, &brand, &openPorts, &promURL, &scanAttrs); err != nil {
 		t.Fatalf("query device: %v", err)
 	}
 	if scanSource != "scanner_v2" {
@@ -114,13 +114,18 @@ func TestRecordDevice_InsertThenUpdate(t *testing.T) {
 	if openPorts != "[22,80]" {
 		t.Errorf("open_ports = %q", openPorts)
 	}
-	// "os" is an experimental field → folded into prometheus_labels JSON.
-	var extra map[string]string
-	if err := json.Unmarshal([]byte(labels), &extra); err != nil {
-		t.Fatal(err)
+	// "os" is a discovery field → folded into scan_attributes.extras JSON
+	// (previously prometheus_labels; moved when scan_attributes was added).
+	var attr map[string]any
+	if err := json.Unmarshal([]byte(scanAttrs), &attr); err != nil {
+		t.Fatalf("unmarshal scan_attributes: %v (raw=%q)", err, scanAttrs)
 	}
-	if extra["os"] != "linux" {
-		t.Errorf("experimental field 'os' not preserved: %v", extra)
+	extras, _ := attr["extras"].(map[string]any)
+	if extras == nil {
+		t.Fatalf("scan_attributes.extras missing or wrong type: %v", attr)
+	}
+	if extras["os"] != "linux" {
+		t.Errorf("experimental field 'os' not preserved in scan_attributes.extras: %v", extras)
 	}
 
 	// Second scan: device exists → update only v2-managed cols, preserve unknown.

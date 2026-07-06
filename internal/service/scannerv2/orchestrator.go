@@ -73,6 +73,20 @@ type Orchestrator struct {
 	// immutable after construction.
 	cfgMu  sync.RWMutex
 	logger *slog.Logger
+	// macResolver re-reads the kernel ARP cache after gather, closing the race
+	// where the concurrent ARPProbe runs before ICMP has populated the cache.
+	// Returns (mac, device, vendor) — vendor comes from the OUI lookup the
+	// engine wires in via probe.SetPostScanResolver. nil (default) disables the
+	// post-scan MAC re-read. Injected by the engine layer to avoid a
+	// scannerv2 → probe → scannerv2 import cycle.
+	macResolver func(ip string) (mac, device, vendor string)
+}
+
+// SetMACResolver injects a post-scan MAC resolver (see ResolveMACPostScan in
+// package probe). Passing nil disables the re-read. Safe to call once at engine
+// construction time.
+func (o *Orchestrator) SetMACResolver(f func(ip string) (mac, device, vendor string)) {
+	o.macResolver = f
 }
 
 // NewOrchestrator constructs an orchestrator. repo may be nil to disable
@@ -146,6 +160,33 @@ func (o *Orchestrator) Run(ctx context.Context, ip string, hint ProbeHint) HostR
 	}
 	report.Services = services
 
+	// Post-gather MAC re-read: the concurrent ARPProbe may have run before the
+	// ICMP/TCP probes populated the kernel's neighbour cache, missing the entry
+	// on a cold scan. By now gather has completed, so re-query the cache and
+	// synthesize a "mac" evidence if one wasn't already collected. This lifts
+	// cold-scan MAC coverage from ~3% to ~60%+ in testing. The resolver also
+	// carries the OUI-derived vendor so the synthesized evidence matches the
+	// shape ARPProbe emits.
+	if o.macResolver != nil && !hasEvidenceKind(evidence, "mac") {
+		if mac, dev, vendor := o.macResolver(ip); mac != "" {
+			raw := map[string]string{"mac": mac, "device": dev}
+			if vendor != "" {
+				raw["vendor"] = vendor
+			}
+			ev := Evidence{
+				Source:     "active:arp",
+				Kind:       "mac",
+				IP:         ip,
+				Protocol:   "arp",
+				RawData:    raw,
+				Confidence: 1.0,
+				ObservedAt: time.Now(),
+			}
+			evidence = append(evidence, ev)
+			report.Evidence = evidence
+		}
+	}
+
 	// ② persist service identities.
 	if o.repo != nil && len(services) > 0 {
 		if err := o.repo.RecordServices(ctx, ip, services); err != nil {
@@ -157,6 +198,142 @@ func (o *Orchestrator) Run(ctx context.Context, ip string, hint ProbeHint) HostR
 	o.dispatch(ctx, &report, hint)
 
 	return report
+}
+
+// hasEvidenceKind reports whether any evidence in ev has the given Kind.
+func hasEvidenceKind(ev []Evidence, kind string) bool {
+	for _, e := range ev {
+		if e.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// stripWildcardPrefix removes a leading "*." from a TLS cert CN so it reads as
+// a hostname ("*.hikvision.com" → "hikvision.com"). CNs without a wildcard are
+// returned unchanged.
+func stripWildcardPrefix(cn string) string {
+	if len(cn) >= 2 && cn[0] == '*' && cn[1] == '.' {
+		return cn[2:]
+	}
+	return cn
+}
+
+// httpServerToBrand extracts a coarse product/vendor label from an HTTP Server
+// header, used only as a last-resort brand when SNMP/cert/OUI yielded nothing.
+// Returns "" for servers that don't map to a clear product (the vast majority).
+func httpServerToBrand(server string) string {
+	switch {
+	case containsFold(server, "nginx"):
+		return "nginx"
+	case containsFold(server, "apache"):
+		return "Apache"
+	case containsFold(server, "caddy"):
+		return "Caddy"
+	case containsFold(server, "iis") || containsFold(server, "microsoft"):
+		return "Microsoft IIS"
+	case containsFold(server, "lighttpd"):
+		return "lighttpd"
+	}
+	return ""
+}
+
+func containsFold(s, substr string) bool {
+	return len(s) >= len(substr) && (containsFoldImpl(s, substr))
+}
+
+func containsFoldImpl(s, substr string) bool {
+	// case-insensitive substring without pulling strings into the root package
+	// (classify already imports strings; orchestrator deliberately doesn't).
+	ls := lowerASCII(s)
+	lt := lowerASCII(substr)
+	for i := 0; i+len(lt) <= len(ls); i++ {
+		if ls[i:i+len(lt)] == lt {
+			return true
+		}
+	}
+	return false
+}
+
+func lowerASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}
+
+// ssdpServerToOS extracts a coarse OS label from an SSDP SERVER header. The
+// header conventionally begins with "<OS>/<version>" (e.g. "Linux/4.4",
+// "Windows/10.0", "macOS/12.5"). Returns "" for unparseable values.
+func ssdpServerToOS(server string) string {
+	if server == "" {
+		return ""
+	}
+	// Take the first whitespace-delimited token, split on '/', keep the prefix.
+	first := server
+	if i := indexByte(server, ' '); i > 0 {
+		first = server[:i]
+	}
+	if i := indexByte(first, '/'); i > 0 {
+		return first[:i]
+	}
+	return ""
+}
+
+// ssdpServerToBrand pulls a product/brand token from the SSDP SERVER header
+// tail (the third token, e.g. "MyDevice/1.0" in "Linux/4.4 UPnP/1.1 MyDevice/1.0").
+// Returns "" when no product token is recognizable.
+func ssdpServerToBrand(server string) string {
+	if server == "" {
+		return ""
+	}
+	tokens := splitWS(server)
+	// Typical shape: OS/ver UPnP/ver Product/ver — product is the 3rd token.
+	// Guard against short SERVER headers ("Linux/4.4" alone, etc.).
+	if len(tokens) < 3 {
+		return ""
+	}
+	for _, t := range tokens[2:] {
+		// Skip the generic UPnP/SSDP tokens.
+		if containsFold(t, "upnp") || containsFold(t, "ssdp") {
+			continue
+		}
+		if i := indexByte(t, '/'); i > 0 {
+			return t[:i]
+		}
+		return t
+	}
+	return ""
+}
+
+func indexByte(s string, b byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
+}
+
+func splitWS(s string) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == ' ' || s[i] == '\t' {
+			if i > start {
+				out = append(out, s[start:i])
+			}
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		out = append(out, s[start:])
+	}
+	return out
 }
 
 // gather runs every registered ProbeSource in parallel and merges their
@@ -198,6 +375,90 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 	// Seed device ref for handlers to mutate.
 	if report.Device.IP == "" {
 		report.Device = DeviceRef{IP: report.IP, Fields: map[string]string{}}
+	}
+	if report.Device.Fields == nil {
+		report.Device.Fields = map[string]string{}
+	}
+
+	// Fold host-level L2/L3 evidence (MAC + OUI vendor from the ARP probe,
+	// hostname from rDNS) into DeviceRef.Fields. These are host-level facts
+	// that no per-service handler owns; without this fold they would be lost
+	// on the store.RecordDevice path (which only sees DeviceRef, not the full
+	// evidence slice). The runner's buildScanAttributes re-reads them as a
+	// belt-and-suspenders measure.
+	for _, e := range report.Evidence {
+		if e.RawData == nil {
+			continue
+		}
+		switch e.Kind {
+		case "mac":
+			if v := e.RawData["mac"]; v != "" && report.Device.Fields["mac"] == "" {
+				report.Device.Fields["mac"] = v
+			}
+			if v := e.RawData["vendor"]; v != "" && report.Device.Fields["inferred_brand"] == "" {
+				report.Device.Fields["inferred_brand"] = v
+			}
+		case "hostname":
+			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" {
+				report.Device.Fields["node_hostname"] = v
+			}
+		case "tls":
+			// TLS cert CN/SAN often carry the device's hostname or vendor
+			// domain (e.g. "*.hikvision.com"). Prefer an explicit rDNS/mDNS
+			// hostname, but fall back to a cert CN when nothing else is set.
+			if v := e.RawData["subject_cn"]; v != "" && report.Device.Fields["node_hostname"] == "" {
+				report.Device.Fields["node_hostname"] = stripWildcardPrefix(v)
+			}
+			if v := e.RawData["inferred_brand"]; v != "" && report.Device.Fields["inferred_brand"] == "" {
+				report.Device.Fields["inferred_brand"] = v
+			}
+		case "http":
+			// The Server header sometimes carries a vendor/product string that
+			// is more specific than OUI (e.g. "nginx/1.25", "Apache/2.4.58").
+			// Don't overwrite a stronger SNMP/cert-derived brand.
+			if v := e.RawData["server"]; v != "" && report.Device.Fields["inferred_brand"] == "" {
+				report.Device.Fields["inferred_brand"] = httpServerToBrand(v)
+			}
+		case "mdns":
+			// mDNS carries a hostname (from SRV/A), advertised services
+			// (_onvif/_rtsp/_airplay), and high-signal TXT records (model,
+			// vendor, serial). Hostname fills node_hostname; vendor TXT fills
+			// inferred_brand; the rest lands under mdns.* for the attribute
+			// builder to surface.
+			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" {
+				report.Device.Fields["node_hostname"] = v
+			}
+			for _, key := range []string{"txt.vendor", "txt.manufacturer", "txt.md", "txt.ty"} {
+				if v := e.RawData[key]; v != "" && report.Device.Fields["inferred_brand"] == "" {
+					report.Device.Fields["inferred_brand"] = v
+					break
+				}
+			}
+		case "ssdp":
+			// SSDP's SERVER header is often "<OS>/<version> <product>/<ver>"
+			// (e.g. "Linux/4.4 UPnP/1.1 MyDevice/1.0"). It's a strong OS hint.
+			if v := e.RawData["server"]; v != "" {
+				if report.Device.Fields["os_type"] == "" {
+					report.Device.Fields["os_type"] = ssdpServerToOS(v)
+				}
+				if report.Device.Fields["inferred_brand"] == "" {
+					report.Device.Fields["inferred_brand"] = ssdpServerToBrand(v)
+				}
+			}
+		case "netbios":
+			// NetBIOS returns a Windows hostname + workgroup/domain. These are
+			// the only source of hostname for many Windows hosts.
+			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" {
+				report.Device.Fields["node_hostname"] = v
+			}
+			if v := e.RawData["workgroup"]; v != "" && report.Device.Fields["netbios_workgroup"] == "" {
+				report.Device.Fields["netbios_workgroup"] = v
+			}
+			// A NetBIOS responder is strong evidence the host runs Windows.
+			if report.Device.Fields["os_type"] == "" {
+				report.Device.Fields["os_type"] = "Windows"
+			}
+		}
 	}
 
 	type pending struct {

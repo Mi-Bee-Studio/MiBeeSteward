@@ -23,6 +23,7 @@ import (
 	"mibee-steward/internal/service/scannerv2/handler"
 	"mibee-steward/internal/service/scannerv2/probe"
 	"mibee-steward/internal/service/scannerv2/store"
+	"mibee-steward/internal/service/scannerv2/vendor"
 )
 
 // Engine bundles everything the API layer needs to run a v2 scan: the
@@ -36,6 +37,9 @@ type Engine struct {
 	// via ProbeHint.Timeout). Stored on Engine so ScanTargets can read it
 	// without re-deriving. <=0 falls back to 3s at use time.
 	perProbeTimeout time.Duration
+	// snmpCommunity is the default SNMP community string, passed to the SNMP
+	// probe via ProbeHint.Community. Empty → probe defaults to "public".
+	snmpCommunity string
 	// scanSem caps the number of concurrent top-level scans (sync POST /scan +
 	// cron-triggered task runs). Caps total resource use across the process;
 	// per-host parallelism within a scan is governed by Orchestrator config.
@@ -68,6 +72,17 @@ type Config struct {
 	MaxConcurrentScans int
 	// PersistRawEvidence toggles writing raw evidence rows (default off).
 	PersistRawEvidence bool
+	// OUIPath is the path to the IEEE OUI vendor-mapping file (optional). When
+	// empty or missing, the ARP probe still records MAC addresses but skips the
+	// vendor lookup. The path is overridable via MIBEE_SCANNER_OUI_PATH.
+	OUIPath string
+	// SNMPCommunity is the default community string passed to the SNMP probe
+	// via ProbeHint.Community (default "public" if empty).
+	SNMPCommunity string
+	// RouterARP enables cross-subnet MAC resolution by walking routers' SNMP
+	// ARP tables (ipNetToMediaPhysAddress). Empty routers → cross-subnet MAC is
+	// disabled and the scanner falls back to /proc/net/arp (local subnet only).
+	RouterARP probe.RouterARPConfig
 	// HeartbeatInterval/Timeout are the defaults applied to generated configs.
 	HeartbeatInterval int
 	HeartbeatTimeout  int
@@ -85,8 +100,26 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 
 	reg := scannerv2.NewRegistry()
 
+	// Load the OUI vendor table once (silent degradation if the file is absent
+	// — the ARP probe still records MAC addresses, just without vendor).
+	oui := vendor.New()
+	if cfg.OUIPath != "" {
+		if err := oui.Load(cfg.OUIPath); err != nil {
+			logger.Warn("scannerv2: OUI file load failed; vendor lookup disabled",
+				"path", cfg.OUIPath, "error", err)
+		} else if oui.Loaded() {
+			logger.Info("scannerv2: OUI vendor table loaded",
+				"path", cfg.OUIPath, "entries", oui.Size())
+		} else {
+			logger.Info("scannerv2: OUI file not present; vendor lookup disabled (MAC still recorded)",
+				"path", cfg.OUIPath)
+		}
+	} else {
+		logger.Info("scannerv2: no OUI path configured; vendor lookup disabled (MAC still recorded)")
+	}
+
 	// ① Probes: active set + optional passive eBPF observer.
-	for _, p := range probe.DefaultProbeSources(cfg.PortSpec) {
+	for _, p := range probe.DefaultProbeSources(cfg.PortSpec, oui) {
 		reg.RegisterProbe(p)
 	}
 	observer := ebpf.New(cfg.EBPF)
@@ -121,6 +154,36 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 		MaxConcurrentHosts: cfg.MaxConcurrentHosts,
 		PerHostTimeout:     cfg.PerHostTimeout,
 	}, logger)
+	// Inject the post-scan MAC resolver so cold scans still capture MAC after the
+	// ICMP/TCP probes have populated the kernel ARP cache. The engine (not the
+	// scannerv2 root package) wires this to avoid an import cycle. The closure
+	// carries the OUI table so the synthesized evidence includes the vendor.
+	//
+	// Resolution order: (1) /proc/net/arp (local subnet, populated by the ICMP
+	// probe during gather); (2) when that misses AND routers are configured,
+	// walk the router's SNMP ARP table (cross-subnet). The first hit wins.
+	routerCfg := cfg.RouterARP
+	probe.SetPostScanResolver(func(ip string) (mac, device, vendor string) {
+		m, d := probe.LookupMACPostScan(ip)
+		if m == "" && len(routerCfg.Routers) > 0 {
+			// Cross-subnet: ask the router. The OUI lookup happens below on
+			// whichever MAC we end up with.
+			ctx, cancel := context.WithTimeout(context.Background(), routerCfg.Timeout)
+			if rm, ok := probe.LookupMACViaRouters(ctx, routerCfg, ip); ok {
+				m = rm
+			}
+			cancel()
+		}
+		if m == "" {
+			return "", "", ""
+		}
+		v := ""
+		if oui != nil {
+			v = oui.Lookup(m)
+		}
+		return m, d, v
+	})
+	orch.SetMACResolver(probe.ResolveMACPostScan)
 
 	logger.Info("scannerv2 engine ready", "registry", reg.String())
 	e := &Engine{Orchestrator: orch, Registry: reg, Repository: repo}
@@ -130,7 +193,11 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	if e.perProbeTimeout <= 0 {
 		e.perProbeTimeout = 3 * time.Second
 	}
+	e.snmpCommunity = cfg.SNMPCommunity
 	logger.Info("scannerv2: per-probe timeout", "timeout", e.perProbeTimeout)
+	if e.snmpCommunity != "" && e.snmpCommunity != "public" {
+		logger.Info("scannerv2: SNMP community override configured", "community", e.snmpCommunity)
+	}
 	if cfg.MaxConcurrentScans > 0 {
 		e.scanSem = make(chan struct{}, cfg.MaxConcurrentScans)
 		logger.Info("scannerv2: concurrent-scan cap enabled", "max", cfg.MaxConcurrentScans)
@@ -179,7 +246,7 @@ func (e *Engine) ScanTargets(ctx context.Context, targets string, fastScan bool)
 	// this long. A dead host fails in seconds across all its probes rather than
 	// blocking the full PerHostTimeout on each. The per-host pipeline ceiling
 	// is enforced separately by the hostCtx deadline below.
-	hint := scannerv2.ProbeHint{Timeout: e.perProbeTimeout}
+	hint := scannerv2.ProbeHint{Timeout: e.perProbeTimeout, Community: e.snmpCommunity}
 
 	reports := make([]scannerv2.HostReport, len(ips))
 	sem := make(chan struct{}, maxConc)

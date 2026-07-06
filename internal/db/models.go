@@ -71,6 +71,12 @@ type Device struct {
 	PrometheusUrl    string     `json:"prometheus_url"`
 	NodeExporterUrl  string     `json:"node_exporter_url"`
 	LastScanRttMs    int64      `json:"last_scan_rtt_ms"`
+	ScanAttributes   string     `json:"scan_attributes"`
+	UserAttributes   string     `json:"user_attributes"`
+	ScanVendor       *string    `json:"scan_vendor"`
+	ScanMac          *string    `json:"scan_mac"`
+	ScanOs           *string    `json:"scan_os"`
+	ScanHostname     *string    `json:"scan_hostname"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
@@ -130,6 +136,17 @@ type HeartbeatResult struct {
 	LatencyMs    float64   `json:"latency_ms"`
 	ErrorMessage string    `json:"error_message"`
 	CheckedAt    time.Time `json:"checked_at"`
+}
+
+type HostService struct {
+	ID         int64     `json:"id"`
+	Ip         string    `json:"ip"`
+	Service    string    `json:"service"`
+	Port       int64     `json:"port"`
+	Protocol   string    `json:"protocol"`
+	Confidence float64   `json:"confidence"`
+	Metadata   string    `json:"metadata"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type NotificationChannel struct {
@@ -209,6 +226,18 @@ type ScanTaskRun struct {
 	StartedAt    *time.Time `json:"started_at"`
 	FinishedAt   *time.Time `json:"finished_at"`
 	CreatedAt    time.Time  `json:"created_at"`
+}
+
+type ServiceEvidence struct {
+	ID         int64     `json:"id"`
+	Ip         string    `json:"ip"`
+	Source     string    `json:"source"`
+	Kind       string    `json:"kind"`
+	Port       int64     `json:"port"`
+	Protocol   string    `json:"protocol"`
+	RawData    string    `json:"raw_data"`
+	Confidence float64   `json:"confidence"`
+	ObservedAt time.Time `json:"observed_at"`
 }
 
 type User struct {

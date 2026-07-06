@@ -16,7 +16,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log/slog"
+	"strconv"
 	"time"
+
+	"mibee-steward/internal/domain"
 
 	"mibee-steward/internal/service/scannerv2"
 )
@@ -151,9 +154,9 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 // matched by ip_address; if none match, it inserts a minimal row.
 func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scannerv2.DeviceRef) error {
 	// The devices table has many columns; v2 touches a known subset. Unknown
-	// Fields keys are serialized into prometheus_labels as a JSON extension to
+	// Fields keys are serialized into scan_attributes as a JSON extension to
 	// avoid schema churn for experimental attributes. Stable keys map to
-	// dedicated columns.
+	// dedicated columns (and to top-level ScanAttributes fields below).
 	extra := map[string]string{}
 	openPorts := ""
 	detectedServices := ""
@@ -179,7 +182,13 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	if detectedServices == "" {
 		detectedServices = "[]"
 	}
-	extraJSON, _ := json.Marshal(extra)
+	// Minimal scan_attributes built from the DeviceRef Fields. The runner's
+	// device_bridge.go produces the full ScanAttributes (with OpenPorts/
+	// DetectedServices/SNMP structured sub-objects); this store path runs
+	// in parallel and carries the same key set so the two writers agree on
+	// the JSON shape. The unknown/extra keys land under "extras".
+	scanAttrs := buildStoreScanAttributes(d, extra, openPorts, detectedServices, promURL, neURL)
+	scanAttrsJSON, _ := domain.MarshalScanAttributes(scanAttrs)
 
 	// Upsert by ip_address. INSERT ... ON CONFLICT requires a unique index on
 	// ip_address, which the existing schema does NOT guarantee. Use a manual
@@ -211,10 +220,11 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO devices (name, type, brand, model, ip_address, status, scan_source,
 			                     open_ports, detected_services, prometheus_url, node_exporter_url,
-			                     prometheus_labels, last_scanned_at, created_at, updated_at)
+			                     scan_attributes,
+			                     last_scanned_at, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, 'unknown', 'scanner_v2', ?, ?, ?, ?, ?, ?, ?, ?)`,
 			name, devType, brand, model, ip, openPorts, detectedServices, promURL, neURL,
-			string(extraJSON), now, now, now)
+			string(scanAttrsJSON), now, now, now)
 		if err != nil {
 			r.logger.Warn("insert device failed", "ip", ip, "error", err)
 		}
@@ -229,12 +239,12 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 				    detected_services = ?,
 				    prometheus_url = ?,
 				    node_exporter_url = ?,
-				    prometheus_labels = ?,
+				    scan_attributes = ?,
 				    last_scanned_at = ?,
 				    updated_at = ?
 				WHERE id = ?`,
 			brand, brand, model, model, devType, devType,
-			openPorts, detectedServices, promURL, neURL, string(extraJSON), now, now, existingID)
+			openPorts, detectedServices, promURL, neURL, string(scanAttrsJSON), now, now, existingID)
 		if err != nil {
 			r.logger.Warn("update device failed", "ip", ip, "error", err)
 		}
@@ -243,6 +253,101 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	}
 
 	return tx.Commit()
+}
+
+// buildStoreScanAttributes builds the engine-written scan_attributes document
+// from a DeviceRef. It constructs a domain.ScanAttributes struct (NOT a loose
+// map) so the JSON shape round-trips cleanly through UnmarshalScanAttributes —
+// stringified numbers in the previous map made the API layer's int64-typed
+// struct fields fail to deserialize, producing empty scan_attributes in
+// responses even when the DB held data.
+//
+// Because the store path only sees a DeviceRef (no Evidence/Services arrays),
+// structured sub-objects are best-effort: OpenPorts/DetectedServices are parsed
+// from the raw JSON the caller captured, and any field not yet promoted to a
+// typed ScanAttributes field lands under Extras.
+//
+// NOTE: keep the field mapping in sync with runner.buildScanAttributes when
+// adding fields.
+func buildStoreScanAttributes(d scannerv2.DeviceRef, extra map[string]string, openPorts, detectedServices, promURL, neURL string) domain.ScanAttributes {
+	// Vendor: DeviceRef.Brand is set by some handlers, but the orchestrator's
+	// evidence fold (OUI/cert-derived vendor) lands in Fields["inferred_brand"].
+	// Prefer the explicit Brand, then fall back to the inferred value.
+	vendor := d.Brand
+	if vendor == "" {
+		vendor = extra["inferred_brand"]
+	}
+	attr := domain.ScanAttributes{
+		ScanSource:          "scanner_v2",
+		InferredType:        d.Type,
+		Vendor:              vendor,
+		InferredDescription: extra["inferred_description"],
+		OS:                  extra["os_type"],
+		OSVersion:           extra["os_version"],
+		KernelVersion:       extra["kernel_version"],
+		FirmwareVersion:     extra["firmware_version"],
+		Hostname:            firstNonEmptyStore(extra["node_hostname"], extra["sys_name"]),
+		MAC:                 extra["mac"],
+	}
+	// Numeric fields must be real numbers (not strings) so the typed struct
+	// deserializes on read.
+	if v, err := strconv.ParseInt(extra["memory_total_bytes"], 10, 64); err == nil && v > 0 {
+		attr.MemoryTotalBytes = v
+	}
+	if v, err := strconv.Atoi(extra["cpu_count"]); err == nil && v > 0 {
+		attr.CPUCount = v
+	}
+	if v, err := strconv.ParseInt(extra["uptime_seconds"], 10, 64); err == nil && v > 0 {
+		attr.UptimeSeconds = v
+	}
+
+	// Pass through the JSON arrays the caller captured. They may already be
+	// valid JSON ("[{...}]") or empty. Decode into the typed element slices.
+	if openPorts != "" && openPorts != "[]" {
+		var arr []domain.OpenPortEntry
+		if json.Unmarshal([]byte(openPorts), &arr) == nil {
+			attr.OpenPorts = arr
+		}
+	}
+	if detectedServices != "" && detectedServices != "[]" {
+		var arr []domain.ServiceEntry
+		if json.Unmarshal([]byte(detectedServices), &arr) == nil {
+			attr.DetectedServices = arr
+		}
+	}
+	if promURL != "" || neURL != "" {
+		attr.Prometheus = &domain.PrometheusInfo{URL: promURL, NodeExporterURL: neURL}
+	}
+
+	// Anything else the handler set that isn't a known key lands under extras,
+	// preserving the previous "prometheus_labels JSON extension" intent but
+	// moved to scan_attributes.extras so it's visibly scan data, not labels.
+	known := map[string]bool{
+		"inferred_type": true, "inferred_brand": true, "inferred_description": true,
+		"os_type": true, "os_version": true, "kernel_version": true, "firmware_version": true,
+		"node_hostname": true, "sys_name": true, "mac": true,
+		"memory_total_bytes": true, "cpu_count": true, "uptime_seconds": true,
+		"inferred_location": true,
+	}
+	extras := map[string]string{}
+	for k, v := range extra {
+		if !known[k] && v != "" {
+			extras[k] = v
+		}
+	}
+	if len(extras) > 0 {
+		attr.Extras = extras
+	}
+	return attr
+}
+
+func firstNonEmptyStore(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // RecordHeartbeats reconciles generated heartbeat specs with existing

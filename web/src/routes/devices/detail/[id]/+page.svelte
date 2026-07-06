@@ -94,10 +94,47 @@
 		}
 	}
 
+	// --- User attributes state (free-form key/value map) ---
+	let userAttrSaving = $state(false);
+
+	async function handleSaveUserAttributes(attrs: Record<string, string>) {
+		userAttrSaving = true;
+		try {
+			// Send the full desired map as a patch. The backend merges: keys
+			// present here are set/overwritten; empty-string values delete.
+			// scan_attributes is engine-owned and not touched.
+			await api.put(`/devices/${deviceId}`, { user_attributes: attrs });
+			addToast('success', m['userfields.Attributes Saved']());
+			fetchDevice();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			userAttrSaving = false;
+		}
+	}
+
 	function formatTimestamp(iso: string | null | undefined): string {
 		if (!iso) return '-';
 		try { return new Date(iso).toLocaleString(); }
 			catch { return iso; }
+	}
+
+	function formatBytes(bytes: number | undefined | null): string {
+		if (!bytes || bytes <= 0) return '-';
+		const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+		let v = bytes, i = 0;
+		while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+		return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
+	}
+
+	function formatDuration(seconds: number | undefined | null): string {
+		if (!seconds || seconds <= 0) return '-';
+		const d = Math.floor(seconds / 86400);
+		const h = Math.floor((seconds % 86400) / 3600);
+		const min = Math.floor((seconds % 3600) / 60);
+		if (d > 0) return `${d}d ${h}h`;
+		if (h > 0) return `${h}h ${min}m`;
+		return `${min}m`;
 	}
 
 
@@ -582,6 +619,62 @@
 					onSave={handleSaveLabels}
 				/>
 			</div>
+		</div>
+	{/if}
+
+	<!-- Scan Discovery Attributes (from scan_attributes JSON) -->
+	{#if device?.scan_attributes}
+		{@const sa = device.scan_attributes}
+		{@const extras = (sa.extras ?? {}) as Record<string, string>}
+		{@const hasDiscoveryData = Boolean(
+			sa.vendor || sa.mac || sa.hostname || sa.os || sa.os_version ||
+			sa.kernel_version || sa.firmware_version || sa.cpu_count ||
+			sa.memory_total_bytes || sa.uptime_seconds || sa.inferred_type ||
+			sa.inferred_description || (sa.snmp && (sa.snmp.sys_descr || sa.snmp.sys_object_id)) ||
+			extras['mdns_services'] || extras['mdns_model'] || extras['mdns_vendor'] ||
+			extras['ssdp_server'] || extras['ssdp_location'] || extras['netbios_workgroup']
+		)}
+		{#if hasDiscoveryData}
+			<div class="scan-info-panel mt-4">
+				<h3 class="scan-info-title">
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1.06 6.7 2.82L21 8"/><path d="M21 3v5h-5"/></svg>
+					{m['scanfields.Discovery']()}
+				</h3>
+				<div class="scan-info-grid">
+					{#if sa.vendor}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Vendor']()}</span><span class="scan-info-value">{sa.vendor}</span></div>{/if}
+					{#if sa.mac}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.MAC']()}</span><span class="scan-info-value font-mono text-xs">{sa.mac}</span></div>{/if}
+					{#if sa.hostname}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Hostname']()}</span><span class="scan-info-value">{sa.hostname}</span></div>{/if}
+					{#if sa.os || sa.os_version}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.OS']()}</span><span class="scan-info-value">{[sa.os, sa.os_version].filter(Boolean).join(' ')}</span></div>{/if}
+					{#if sa.kernel_version}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Kernel']()}</span><span class="scan-info-value font-mono text-xs">{sa.kernel_version}</span></div>{/if}
+					{#if sa.firmware_version}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Firmware']()}</span><span class="scan-info-value">{sa.firmware_version}</span></div>{/if}
+					{#if sa.cpu_count}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.CPU']()}</span><span class="scan-info-value">{m['scanfields.CPU Value']({ count: sa.cpu_count })}</span></div>{/if}
+					{#if sa.memory_total_bytes}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Memory']()}</span><span class="scan-info-value">{formatBytes(sa.memory_total_bytes)}</span></div>{/if}
+					{#if sa.uptime_seconds}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Uptime']()}</span><span class="scan-info-value">{formatDuration(sa.uptime_seconds)}</span></div>{/if}
+					{#if sa.inferred_type}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Inferred Type']()}</span><span class="scan-info-value">{sa.inferred_type}</span></div>{/if}
+					{#if sa.inferred_description}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Description']()}</span><span class="scan-info-value">{sa.inferred_description}</span></div>{/if}
+					{#if sa.snmp && (sa.snmp.sys_descr || sa.snmp.sys_object_id)}
+						<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_name ? sa.snmp.sys_name + ' — ' : ''}{sa.snmp.sys_descr ?? sa.snmp.sys_object_id ?? ''}</span></div>
+					{/if}
+					{#if extras['mdns_services']}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.mDNS Services']()}</span><span class="scan-info-value text-xs">{extras['mdns_services']}</span></div>{/if}
+					{#if extras['mdns_model'] || extras['mdns_md']}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Model']()}</span><span class="scan-info-value text-xs">{extras['mdns_model'] ?? extras['mdns_md']}</span></div>{/if}
+					{#if extras['ssdp_server']}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SSDP']()}</span><span class="scan-info-value text-xs">{extras['ssdp_server']}</span></div>{/if}
+					{#if extras['netbios_workgroup']}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Workgroup']()}</span><span class="scan-info-value text-xs">{extras['netbios_workgroup']}</span></div>{/if}
+				</div>
+			</div>
+		{/if}
+	{/if}
+
+	<!-- User Attributes (free-form key/value, user-editable) -->
+	{#if device}
+		<div class="scan-info-panel mt-4">
+			<h3 class="scan-info-title">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+				{m['userfields.Custom Attributes']()}
+			</h3>
+			<LabelEditor
+				labels={device.user_attributes ?? {}}
+				onSave={handleSaveUserAttributes}
+			/>
 		</div>
 	{/if}
 

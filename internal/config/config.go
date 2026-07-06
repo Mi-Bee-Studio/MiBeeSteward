@@ -121,7 +121,28 @@ type ScannerConfig struct {
 	PipelineDefaults   PipelineDefaultsConfig `koanf:"pipeline_defaults"`
 	Engine             string                 `koanf:"engine"` // "v1" (legacy) or "v2" (new); default "v1" during transition
 	PersistRawEvidence bool                   `koanf:"persist_raw_evidence"`
-	EBPF               EBPFConfig             `koanf:"ebpf"`
+	// OUIPath points to the IEEE OUI vendor-mapping file used by the ARP probe
+	// to derive a vendor from a MAC address. Optional; when empty or missing,
+	// the MAC is still recorded but no vendor is attached. Override with the
+	// MIBEE_SCANNER_OUI_PATH env var.
+	OUIPath string `koanf:"oui_path"`
+	// SNMPCommunity is the default community string for the SNMP probe
+	// (default "public" if empty). Override with MIBEE_SCANNER_SNMP_COMMUNITY.
+	SNMPCommunity string `koanf:"snmp_community"`
+	// RouterARP enables cross-subnet MAC resolution. When populated, the scanner
+	// walks these routers' SNMP ARP tables (ipNetToMediaPhysAddress) to find MACs
+	// for hosts the scanner can't reach at L2. The community defaults to
+	// SNMPCommunity when empty.
+	RouterARP RouterARPConfig `koanf:"router_arp"`
+	EBPF      EBPFConfig      `koanf:"ebpf"`
+}
+
+// RouterARPConfig configures cross-subnet MAC resolution via SNMP ARP walks of
+// routers on the target subnets.
+type RouterARPConfig struct {
+	Routers   []string `koanf:"routers"`
+	Community string   `koanf:"community"`
+	Timeout   int      `koanf:"timeout"` // seconds; default 4
 }
 
 // EBPFConfig controls the passive eBPF observer (v2 engine only). Even with

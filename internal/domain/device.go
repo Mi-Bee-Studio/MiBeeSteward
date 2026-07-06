@@ -29,19 +29,20 @@ const (
 // Request types
 
 type CreateDeviceRequest struct {
-	Name           string `json:"name"`
-	Type           string `json:"type"`
-	Brand          string `json:"brand"`
-	Model          string `json:"model"`
-	Location       string `json:"location"`
-	Purpose        string `json:"purpose"`
-	Description    string `json:"description"`
-	IPAddress      string `json:"ip_address"`
-	MACAddress     string `json:"mac_address"`
-	SerialNumber   string `json:"serial_number"`
-	PurchaseDate   string `json:"purchase_date"`
-	WarrantyExpiry string `json:"warranty_expiry"`
-	Tags           string `json:"tags"`
+	Name           string         `json:"name"`
+	Type           string         `json:"type"`
+	Brand          string         `json:"brand"`
+	Model          string         `json:"model"`
+	Location       string         `json:"location"`
+	Purpose        string         `json:"purpose"`
+	Description    string         `json:"description"`
+	IPAddress      string         `json:"ip_address"`
+	MACAddress     string         `json:"mac_address"`
+	SerialNumber   string         `json:"serial_number"`
+	PurchaseDate   string         `json:"purchase_date"`
+	WarrantyExpiry string         `json:"warranty_expiry"`
+	Tags           string         `json:"tags"`
+	UserAttributes UserAttributes `json:"user_attributes,omitempty"`
 }
 
 type UpdateDeviceRequest struct {
@@ -58,6 +59,10 @@ type UpdateDeviceRequest struct {
 	PurchaseDate   *string `json:"purchase_date,omitempty"`
 	WarrantyExpiry *string `json:"warranty_expiry,omitempty"`
 	Tags           *string `json:"tags,omitempty"`
+	// UserAttributesPatch is merged into the existing user_attributes map.
+	// Empty-string values delete keys. scan_attributes is engine-owned and
+	// cannot be set through this request.
+	UserAttributesPatch UserAttributes `json:"user_attributes,omitempty"`
 }
 
 type DeviceFilter struct {
@@ -96,6 +101,12 @@ type DeviceResponse struct {
 	PrometheusURL    string     `json:"prometheus_url"`
 	NodeExporterURL  string     `json:"node_exporter_url"`
 	LastScanRttMs    int64      `json:"last_scan_rtt_ms"`
+	// Dual JSON layer. ScanAttributes is the typed view of the engine-written
+	// discovery document; UserAttributes is the free-form user map. The legacy
+	// JSON-string fields above (open_ports, detected_services, prometheus_labels)
+	// remain populated for backwards compatibility — frontend may read either.
+	ScanAttributes ScanAttributes `json:"scan_attributes"`
+	UserAttributes UserAttributes `json:"user_attributes"`
 }
 
 type DeviceListResponse struct {

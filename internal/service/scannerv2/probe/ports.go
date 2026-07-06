@@ -133,9 +133,13 @@ func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pro
 }
 
 // dialAndGrab connects (TCP), and on success attempts a passive banner read.
-// Many servers (SSH, RTSP, FTP, SMTP, redis) send a greeting immediately;
-// others (HTTP) stay silent until a request and return "" banner. Returns
-// (open, banner).
+// Many servers (SSH, RTSP, FTP, SMTP, redis) send a greeting immediately. If
+// the passive read returns nothing AND the port has a known active probe
+// string (e.g. HTTP "GET / HTTP/1.0"), the probe is sent and the response is
+// read — this is what lets the port scan classify HTTP on ports where the
+// server waits silently for a request.
+//
+// Returns (open, banner).
 func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration) (bool, string) {
 	dialer := net.Dialer{Timeout: timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip, strconv.Itoa(port)))
@@ -145,12 +149,26 @@ func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration
 	defer conn.Close()
 
 	// Passive banner read: don't send anything; wait briefly for a server
-	// greeting. This avoids confusing request-then-response protocols and
-	// keeps the probe pure ("what does the server volunteer?").
+	// greeting. Catches SSH/FTP/SMTP/RTSP/redis/etc. that volunteer a banner.
 	_ = conn.SetReadDeadline(time.Now().Add(bannerReadTimeout))
 	buf := make([]byte, bannerReadSize)
 	n, _ := conn.Read(buf)
-	return true, strings.TrimRight(string(buf[:n]), "\r\n\x00")
+	if n > 0 {
+		return true, strings.TrimRight(string(buf[:n]), "\r\n\x00")
+	}
+
+	// No passive greeting: try the active probe for this port (if any). This
+	// elicits a response from request/response services like HTTP.
+	if probe := probeForPort(port); probe != nil {
+		_ = conn.SetWriteDeadline(time.Now().Add(bannerReadTimeout))
+		if _, werr := conn.Write(probe); werr != nil {
+			return true, ""
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(bannerReadTimeout))
+		n, _ = conn.Read(buf)
+		return true, strings.TrimRight(string(buf[:n]), "\r\n\x00")
+	}
+	return true, ""
 }
 
 // priorityPortList orders ports with fingerprint ports first (in fingerprint

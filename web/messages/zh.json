@@ -72,6 +72,8 @@
 		"Status": "状态",
 		"IP Address": "IP 地址",
 		"MAC Address": "MAC 地址",
+		"Vendor": "厂商",
+		"Hostname": "主机名",
 		"Serial Number": "序列号",
 		"Purchase Date": "购买日期",
 		"Warranty Expiry": "保修期限",
@@ -460,6 +462,31 @@
 		"Scan RTT Value": "{rtt} 毫秒",
 		"No Ports": "未检测到开放端口",
 		"No Services": "未检测到服务"
+	},
+	"scanfields": {
+		"Discovery": "扫描发现",
+		"Vendor": "厂商",
+		"MAC": "MAC 地址",
+		"Hostname": "主机名",
+		"OS": "操作系统",
+		"Kernel": "内核版本",
+		"Firmware": "固件版本",
+		"CPU": "CPU 核心",
+		"CPU Value": "{count} 核",
+		"Memory": "内存",
+		"Uptime": "运行时长",
+		"Inferred Type": "推断类型",
+		"Description": "描述",
+		"SNMP": "SNMP",
+		"Model": "型号",
+		"mDNS Services": "mDNS 服务",
+		"SSDP": "SSDP / UPnP",
+		"Workgroup": "工作组",
+		"No Discovery Data": "无扫描发现数据"
+	},
+	"userfields": {
+		"Custom Attributes": "自定义属性",
+		"Attributes Saved": "自定义属性已保存"
 	},
 	"errors": {
 		"Unauthorized": "未登录",

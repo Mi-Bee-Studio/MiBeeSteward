@@ -176,6 +176,25 @@ func (s *DeviceService) Update(ctx context.Context, id int64, req domain.UpdateD
 		return nil, fmt.Errorf("failed to update device: %w", err)
 	}
 
+	// Apply user_attributes patch (merged with existing; empty values delete).
+	// scan_attributes is engine-owned and never touched here. We re-read the
+	// freshly updated row so the merge base reflects concurrent engine writes.
+	if len(req.UserAttributesPatch) > 0 {
+		base, err := domain.UnmarshalUserAttributes(device.UserAttributes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse existing user_attributes: %w", err)
+		}
+		merged := domain.MergeUserAttributes(base, req.UserAttributesPatch)
+		if err := s.repo.UpdateUserAttributes(ctx, id, merged); err != nil {
+			return nil, fmt.Errorf("failed to update user_attributes: %w", err)
+		}
+		// Re-fetch so the response reflects the merged map.
+		device, err = s.repo.GetByID(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to re-read device after user_attributes update: %w", err)
+		}
+	}
+
 	resp := toDeviceResponse(device)
 	return &resp, nil
 }
@@ -222,6 +241,16 @@ func (s *DeviceService) GetStats(ctx context.Context) (*domain.DeviceStatsRespon
 
 // toDeviceResponse converts a db.Device to domain.DeviceResponse.
 func toDeviceResponse(d db.Device) domain.DeviceResponse {
+	scanAttrs, err := domain.UnmarshalScanAttributes(d.ScanAttributes)
+	if err != nil {
+		slog.Warn("invalid scan_attributes JSON on device; defaulting to empty",
+			"device_id", d.ID, "ip", d.IpAddress, "error", err)
+	}
+	userAttrs, err := domain.UnmarshalUserAttributes(d.UserAttributes)
+	if err != nil {
+		slog.Warn("invalid user_attributes JSON on device; defaulting to empty",
+			"device_id", d.ID, "ip", d.IpAddress, "error", err)
+	}
 	return domain.DeviceResponse{
 		ID:               d.ID,
 		Name:             d.Name,
@@ -248,5 +277,7 @@ func toDeviceResponse(d db.Device) domain.DeviceResponse {
 		PrometheusURL:    d.PrometheusUrl,
 		NodeExporterURL:  d.NodeExporterUrl,
 		LastScanRttMs:    d.LastScanRttMs,
+		ScanAttributes:   scanAttrs,
+		UserAttributes:   userAttrs,
 	}
 }

@@ -72,6 +72,8 @@
 		"Status": "Status",
 		"IP Address": "IP Address",
 		"MAC Address": "MAC Address",
+		"Vendor": "Vendor",
+		"Hostname": "Hostname",
 		"Serial Number": "Serial Number",
 		"Purchase Date": "Purchase Date",
 		"Warranty Expiry": "Warranty Expiry",
@@ -460,6 +462,31 @@
 		"Scan RTT Value": "{rtt} ms",
 		"No Ports": "No open ports detected",
 		"No Services": "No services detected"
+	},
+	"scanfields": {
+		"Discovery": "Scan Discovery",
+		"Vendor": "Vendor",
+		"MAC": "MAC Address",
+		"Hostname": "Hostname",
+		"OS": "Operating System",
+		"Kernel": "Kernel",
+		"Firmware": "Firmware",
+		"CPU": "CPU Cores",
+		"CPU Value": "{count} cores",
+		"Memory": "Memory",
+		"Uptime": "Uptime",
+		"Inferred Type": "Inferred Type",
+		"Description": "Description",
+		"SNMP": "SNMP",
+		"Model": "Model",
+		"mDNS Services": "mDNS Services",
+		"SSDP": "SSDP / UPnP",
+		"Workgroup": "Workgroup",
+		"No Discovery Data": "No scan discovery data available"
+	},
+	"userfields": {
+		"Custom Attributes": "Custom Attributes",
+		"Attributes Saved": "Custom attributes saved"
 	},
 	"errors": {
 		"Unauthorized": "Not Logged In",

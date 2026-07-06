@@ -15,5 +15,11 @@ func DefaultClassifiers() []scannerv2.ServiceClassifier {
 		PrometheusClassifier{},
 		SNMPClassifier{},
 		CameraClassifier{},
+		DatabaseClassifier{},
+		MailClassifier{},
+		RemoteAccessClassifier{},
+		WebClassifier{},
+		TLSClassifier{},
+		MiscClassifier{},
 	}
 }

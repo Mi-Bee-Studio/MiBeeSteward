@@ -48,6 +48,12 @@ func setupDeviceSystemTestDB(t *testing.T) (*DeviceSystemRepository, *sql.DB, in
 			prometheus_url TEXT NOT NULL DEFAULT '',
 			node_exporter_url TEXT NOT NULL DEFAULT '',
 			last_scan_rtt_ms INTEGER NOT NULL DEFAULT 0,
+			scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes)),
+			user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes)),
+			scan_vendor   TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.vendor')) STORED,
+			scan_mac      TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.mac')) STORED,
+			scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
+			scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
