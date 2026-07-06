@@ -9,7 +9,7 @@
 
 [English](README.md) | **中文**
 
-设备管理与监控系统，内嵌 Web 界面。Go 后端 + SvelteKit 前端，编译为单个二进制文件部署。
+**设备/网络层的资产发现、识别与登记** —— 面向网络与 IoT 资产的轻量 CMDB。自动发现网络上的设备，通过协议指纹识别品牌/型号，并持续跟踪。单个零依赖二进制；资产状态通过 `/metrics` + `/sd` 流向 Prometheus 生态。告警/可视化有意留给 Alertmanager/Grafana。Go 后端 + SvelteKit 前端。
 
 ## 功能特性
 
