@@ -12,11 +12,13 @@ import (
 )
 
 var (
-	ErrChannelNotFound   = errors.New("notification channel not found")
-	ErrAlertRuleNotFound = errors.New("alert rule not found")
+	ErrChannelNotFound = errors.New("notification channel not found")
 )
 
-// NotificationService handles notification channel, alert rule, and log business logic.
+// NotificationService handles notification channel and log business logic.
+// (Alert-rule CRUD was removed: MiBee Steward does not build alerting — see
+// AGENTS.md product vision. Notification channels are retained as neutral
+// infrastructure for future non-alert dispatch use cases.)
 type NotificationService struct {
 	q *db.Queries
 }
@@ -141,146 +143,6 @@ func (s *NotificationService) DeleteChannel(ctx context.Context, id int64) error
 	return nil
 }
 
-// --- Alert Rule CRUD ---
-
-// CreateAlertRule validates and creates a new alert rule.
-func (s *NotificationService) CreateAlertRule(ctx context.Context, req domain.CreateAlertRuleRequest) (*domain.AlertRuleResponse, error) {
-	if req.Name == "" {
-		return nil, fmt.Errorf("rule name is required")
-	}
-	if req.ChannelID <= 0 {
-		return nil, fmt.Errorf("valid channel ID is required")
-	}
-	if req.CooldownSeconds <= 0 {
-		return nil, fmt.Errorf("cooldown seconds must be positive")
-	}
-
-	enabled := int64(1)
-	if req.Enabled != nil && !*req.Enabled {
-		enabled = 0
-	}
-
-	rule, err := s.q.CreateAlertRule(ctx, db.CreateAlertRuleParams{
-		Name:            req.Name,
-		DeviceID:        req.DeviceID,
-		ConditionType:   string(req.ConditionType),
-		Threshold:       req.Threshold,
-		ChannelID:       req.ChannelID,
-		Enabled:         enabled,
-		CooldownSeconds: req.CooldownSeconds,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create alert rule: %w", err)
-	}
-
-	resp := toAlertRuleResponse(rule)
-	return &resp, nil
-}
-
-// GetAlertRule retrieves an alert rule by ID.
-func (s *NotificationService) GetAlertRule(ctx context.Context, id int64) (*domain.AlertRuleResponse, error) {
-	rule, err := s.q.GetAlertRuleByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrAlertRuleNotFound
-		}
-		return nil, fmt.Errorf("failed to get alert rule: %w", err)
-	}
-
-	resp := toAlertRuleResponse(rule)
-	return &resp, nil
-}
-
-// ListAlertRules returns all alert rules.
-func (s *NotificationService) ListAlertRules(ctx context.Context) ([]domain.AlertRuleResponse, error) {
-	rules, err := s.q.ListAlertRules(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list alert rules: %w", err)
-	}
-
-	result := make([]domain.AlertRuleResponse, len(rules))
-	for i, rule := range rules {
-		result[i] = toAlertRuleResponse(rule)
-	}
-	return result, nil
-}
-
-// UpdateAlertRule updates an existing alert rule. Preserves existing values for unset fields.
-func (s *NotificationService) UpdateAlertRule(ctx context.Context, id int64, req domain.UpdateAlertRuleRequest) (*domain.AlertRuleResponse, error) {
-	existing, err := s.q.GetAlertRuleByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrAlertRuleNotFound
-		}
-		return nil, fmt.Errorf("failed to get alert rule: %w", err)
-	}
-
-	name := existing.Name
-	if req.Name != nil {
-		name = *req.Name
-	}
-
-	deviceID := existing.DeviceID
-	if req.DeviceID != nil {
-		deviceID = req.DeviceID
-	}
-
-	conditionType := existing.ConditionType
-	if req.ConditionType != nil {
-		conditionType = string(*req.ConditionType)
-	}
-
-	threshold := existing.Threshold
-	if req.Threshold != nil {
-		threshold = *req.Threshold
-	}
-
-	channelID := existing.ChannelID
-	if req.ChannelID != nil {
-		channelID = *req.ChannelID
-	}
-
-	enabled := existing.Enabled
-	if req.Enabled != nil {
-		enabled = int64(0)
-		if *req.Enabled {
-			enabled = 1
-		}
-	}
-
-	cooldownSeconds := existing.CooldownSeconds
-	if req.CooldownSeconds != nil {
-		cooldownSeconds = *req.CooldownSeconds
-	}
-
-	rule, err := s.q.UpdateAlertRule(ctx, db.UpdateAlertRuleParams{
-		Name:            name,
-		DeviceID:        deviceID,
-		ConditionType:   conditionType,
-		Threshold:       threshold,
-		ChannelID:       channelID,
-		Enabled:         enabled,
-		CooldownSeconds: cooldownSeconds,
-		LastTriggeredAt: existing.LastTriggeredAt,
-		ID:              id,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to update alert rule: %w", err)
-	}
-
-	resp := toAlertRuleResponse(rule)
-	return &resp, nil
-}
-
-// DeleteAlertRule deletes an alert rule by ID.
-func (s *NotificationService) DeleteAlertRule(ctx context.Context, id int64) error {
-	err := s.q.DeleteAlertRule(ctx, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete alert rule: %w", err)
-	}
-	return nil
-}
-
 // --- Notification Logs ---
 
 // ListNotificationLogs returns notification logs with pagination.
@@ -323,22 +185,6 @@ func toChannelResponse(ch db.NotificationChannel) domain.ChannelResponse {
 		Enabled:   ch.Enabled == 1,
 		CreatedAt: ch.CreatedAt,
 		UpdatedAt: ch.UpdatedAt,
-	}
-}
-
-func toAlertRuleResponse(rule db.AlertRule) domain.AlertRuleResponse {
-	return domain.AlertRuleResponse{
-		ID:              rule.ID,
-		Name:            rule.Name,
-		DeviceID:        rule.DeviceID,
-		ConditionType:   rule.ConditionType,
-		Threshold:       rule.Threshold,
-		ChannelID:       rule.ChannelID,
-		Enabled:         rule.Enabled == 1,
-		CooldownSeconds: rule.CooldownSeconds,
-		LastTriggeredAt: rule.LastTriggeredAt,
-		CreatedAt:       rule.CreatedAt,
-		UpdatedAt:       rule.UpdatedAt,
 	}
 }
 

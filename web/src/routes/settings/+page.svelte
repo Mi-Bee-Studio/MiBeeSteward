@@ -7,6 +7,7 @@
 	import { m, getLocale, setLocale } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
 	import { Sun, Moon, Copy, Check } from '@lucide/svelte';
+	import { goto } from '$app/navigation';
 	import QRCode from 'qrcode';
 	import Modal from '$lib/components/Modal.svelte';
 
@@ -417,6 +418,16 @@ function handleCancel2FASetup() {
                 </div>
             {/if}
         </div>
+
+		<!-- Notification settings section -->
+		<button
+			type="button"
+			onclick={() => goto('/settings/notifications')}
+			class="w-full text-left bg-surface border border-border rounded-xl p-6 mb-6 flex items-center justify-between hover:border-primary transition-colors"
+		>
+			<h3 class="text-lg font-semibold text-text">{m["notifications.Notification Settings"]()}</h3>
+			<span class="text-sm text-muted">›</span>
+		</button>
 
 		<!-- Language section -->
 		<div class="bg-surface border border-border rounded-xl p-6">

@@ -22,14 +22,14 @@ import (
 // Service is the unified retention sweeper. One ticker drives pruning across
 // every high-volume detail table; each table's window comes from RetentionConfig.
 type Service struct {
-	queries           *db.Queries // main DB (scan_results, scan_task_runs, audit_logs, notification_log, service_evidence)
-	heartbeatQueries  *db.Queries // dedicated heartbeat DB (heartbeat_results lives in a separate file)
-	cfg               config.RetentionConfig
-	interval          time.Duration
-	batch             int64
-	logger            *slog.Logger
-	cancel            context.CancelFunc
-	done              chan struct{}
+	queries          *db.Queries // main DB (scan_results, scan_task_runs, audit_logs, notification_log, service_evidence)
+	heartbeatQueries *db.Queries // dedicated heartbeat DB (heartbeat_results lives in a separate file)
+	cfg              config.RetentionConfig
+	interval         time.Duration
+	batch            int64
+	logger           *slog.Logger
+	cancel           context.CancelFunc
+	done             chan struct{}
 }
 
 // New constructs the retention sweeper from config. heartbeatQueries is the

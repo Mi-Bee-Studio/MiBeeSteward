@@ -1,6 +1,6 @@
 BINARY_NAME=mibee-steward
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS=-s -w -X main.Version=$(VERSION)
+LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
 .PHONY: all build build-all build-frontend build-server build-with-ebpf clean test dev migrate-up
@@ -46,4 +46,4 @@ dev:
 	CGO_ENABLED=0 go run ./cmd/server/
 
 migrate-up:
-	@echo "Run migrations via the server binary or manually apply db/migrations/*.sql"
+	@echo "Migrations run automatically on server startup via the embedded db/schema.sql (see db/embed.go). No manual step required."

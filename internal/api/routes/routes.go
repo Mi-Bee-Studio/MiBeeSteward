@@ -68,9 +68,6 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	batchSvc := service.NewBatchService(dbConn, auditRepo)
 	batchHandler := handler.NewBatchHandler(batchSvc)
 
-	// Password reset service and handler
-	passwordResetSvc := service.NewPasswordResetService(db.New(dbConn), nil, &cfg.SMTP, auditRepo)
-	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetSvc)
 	// NOTE: export handler is constructed after the heartbeat store opens below,
 	// so heartbeat-results export can read from the dedicated store. See comment there.
 	// Rate limiters
@@ -124,10 +121,6 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 				r.Get("/status", totpHandler.Status)
 			})
 		})
-		// Password reset routes (public)
-		r.Post("/forgot-password", passwordResetHandler.ForgotPassword)
-		r.Post("/reset-password", passwordResetHandler.ResetPassword)
-		r.Get("/reset-password/validate", passwordResetHandler.ValidateToken)
 	})
 
 	// Admin-only user list
@@ -135,6 +128,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Use(middleware.RequireAdmin)
 		r.Get("/", userHandler.ListUsers)
 		r.Post("/batch-delete", batchHandler.BatchDeleteUsers)
+		r.Post("/{id}/reset-password", userHandler.AdminResetPassword)
 	})
 	// Heartbeat service + its dedicated time-series store. heartbeat_results
 	// lives in a separate SQLite file (data/heartbeat.db) so its high write
@@ -416,16 +410,6 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Put("/{id}", notificationHandler.UpdateChannel)
 		r.Delete("/{id}", notificationHandler.DeleteChannel)
 		r.Post("/{id}/test", notificationHandler.TestChannel)
-	})
-
-	// Alert rule routes (admin only)
-	r.Route("/api/v1/alert-rules", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
-		r.Post("/", notificationHandler.CreateAlertRule)
-		r.Get("/", notificationHandler.ListAlertRules)
-		r.Get("/{id}", notificationHandler.GetAlertRule)
-		r.Put("/{id}", notificationHandler.UpdateAlertRule)
-		r.Delete("/{id}", notificationHandler.DeleteAlertRule)
 	})
 
 	// Notification log routes (admin only)

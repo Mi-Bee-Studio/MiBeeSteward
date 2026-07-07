@@ -177,25 +177,12 @@ CREATE TABLE IF NOT EXISTS notification_channels (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Alert rules
-CREATE TABLE IF NOT EXISTS alert_rules (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    device_id INTEGER,
-    condition_type TEXT NOT NULL CHECK(condition_type IN ('device_offline', 'heartbeat_fail', 'heartbeat_timeout')),
-    threshold INTEGER NOT NULL DEFAULT 3,
-    channel_id INTEGER NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    cooldown_seconds INTEGER NOT NULL DEFAULT 300,
-    last_triggered_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Notification log
+-- rule_id is kept as a plain nullable integer (no FK) for historical rows
+-- produced before the alert_rules table was removed. New rows insert NULL.
 CREATE TABLE IF NOT EXISTS notification_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    rule_id INTEGER REFERENCES alert_rules(id) ON DELETE SET NULL,
+    rule_id INTEGER,
     channel_id INTEGER REFERENCES notification_channels(id) ON DELETE SET NULL,
     status TEXT NOT NULL CHECK(status IN ('sent', 'failed')),
     payload TEXT NOT NULL DEFAULT '{}',
@@ -215,22 +202,8 @@ CREATE TABLE IF NOT EXISTS user_totp (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Password reset tokens
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token TEXT NOT NULL UNIQUE,
-    expires_at TIMESTAMP NOT NULL,
-    used_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Indexes for new tables
 CREATE INDEX IF NOT EXISTS idx_notification_log_sent_at ON notification_log(sent_at);
-CREATE INDEX IF NOT EXISTS idx_alert_rules_device_id ON alert_rules(device_id);
-CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled ON alert_rules(enabled);
-CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
-CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_reset_tokens(expires_at);
 
 -- Scan task schedules
 CREATE TABLE IF NOT EXISTS scan_tasks (

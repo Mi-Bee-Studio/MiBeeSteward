@@ -105,15 +105,15 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			// (because no service was identified on any scan), so they show
 			// "no heartbeat" forever. Only act when the device has ZERO configs
 			// to avoid duplicating configs on devices that already have some.
-			if rn.deviceHasHeartbeatConfig(ctx, existingID) {
-				// already monitored — nothing to backfill
-			} else if len(rep.Heartbeats) > 0 {
-				if herr := rn.heartbeat.CreateConfigs(ctx, existingID, rep.Heartbeats); herr != nil {
-					rn.logger.Warn("device bridge: backfill heartbeats failed", "ip", rep.IP, "error", herr)
-				}
-			} else {
-				if herr := rn.heartbeat.CreateDefaultConfig(ctx, existingID, rep.IP); herr != nil {
-					rn.logger.Warn("device bridge: backfill ICMP fallback heartbeat failed", "ip", rep.IP, "error", herr)
+			if !rn.deviceHasHeartbeatConfig(ctx, existingID) {
+				if len(rep.Heartbeats) > 0 {
+					if herr := rn.heartbeat.CreateConfigs(ctx, existingID, rep.Heartbeats); herr != nil {
+						rn.logger.Warn("device bridge: backfill heartbeats failed", "ip", rep.IP, "error", herr)
+					}
+				} else {
+					if herr := rn.heartbeat.CreateDefaultConfig(ctx, existingID, rep.IP); herr != nil {
+						rn.logger.Warn("device bridge: backfill ICMP fallback heartbeat failed", "ip", rep.IP, "error", herr)
+					}
 				}
 			}
 		}

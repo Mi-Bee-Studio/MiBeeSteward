@@ -8,20 +8,6 @@ import (
 	"time"
 )
 
-type AlertRule struct {
-	ID              int64      `json:"id"`
-	Name            string     `json:"name"`
-	DeviceID        *int64     `json:"device_id"`
-	ConditionType   string     `json:"condition_type"`
-	Threshold       int64      `json:"threshold"`
-	ChannelID       int64      `json:"channel_id"`
-	Enabled         int64      `json:"enabled"`
-	CooldownSeconds int64      `json:"cooldown_seconds"`
-	LastTriggeredAt *time.Time `json:"last_triggered_at"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-}
-
 type AuditLog struct {
 	ID           int64      `json:"id"`
 	UserID       *int64     `json:"user_id"`
@@ -167,15 +153,6 @@ type NotificationLog struct {
 	Payload      string    `json:"payload"`
 	ErrorMessage string    `json:"error_message"`
 	SentAt       time.Time `json:"sent_at"`
-}
-
-type PasswordResetToken struct {
-	ID        int64      `json:"id"`
-	UserID    int64      `json:"user_id"`
-	Token     string     `json:"token"`
-	ExpiresAt time.Time  `json:"expires_at"`
-	UsedAt    *time.Time `json:"used_at"`
-	CreatedAt time.Time  `json:"created_at"`
 }
 
 type ScanResult struct {

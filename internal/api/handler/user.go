@@ -361,6 +361,54 @@ func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	Success(w, resp)
 }
 
+// AdminResetPassword handles POST /api/v1/users/{id}/reset-password (admin only).
+// An administrator resets another user's password. The target user is forced to
+// change it again on next login (MustChangePassword=true), and any login
+// lockout is cleared. This replaces the removed public forgot/reset-password
+// flow: password recovery is an admin action, not a self-service email flow.
+func (h *UserHandler) AdminResetPassword(w http.ResponseWriter, r *http.Request) {
+	targetID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || targetID <= 0 {
+		Error(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
+
+	var req struct {
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.NewPassword == "" {
+		Error(w, http.StatusBadRequest, "new_password is required")
+		return
+	}
+
+	if err := h.svc.AdminResetPassword(r.Context(), targetID, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			Error(w, http.StatusNotFound, "user not found")
+			return
+		}
+		Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	adminID, _, ok := middleware.GetUserFromContext(r)
+	if ok {
+		h.auditRepo.Log(r.Context(), repository.AuditLog{
+			UserID:       &adminID,
+			Action:       "admin.user.reset_password",
+			ResourceType: "user",
+			ResourceID:   strconv.FormatInt(targetID, 10),
+			IPAddress:    r.RemoteAddr,
+			UserAgent:    r.UserAgent(),
+		})
+	}
+
+	Success(w, map[string]string{"message": "password reset successfully"})
+}
+
 // cookieMaxAge returns the cookie MaxAge in seconds.
 // Precedence: CookieMaxAge config → TokenExpiry config → 86400 (24h default).
 func (h *UserHandler) cookieMaxAge() int {

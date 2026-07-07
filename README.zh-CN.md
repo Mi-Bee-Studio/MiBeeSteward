@@ -72,6 +72,24 @@ make build
 make build-all
 ```
 
+### 重置管理员密码
+
+如果丢失管理员密码，可用 CLI 子命令重置：
+
+```bash
+# 交互式（提示输入密码）
+./mibee-steward reset-admin-password -config configs/config.yaml
+
+# 非交互式（通过 flag 或环境变量传密码）
+./mibee-steward reset-admin-password -config configs/config.yaml -password 'newpass'
+MIBEE_RESET_PASSWORD=newpass ./mibee-steward reset-admin-password -config configs/config.yaml
+```
+
+查看构建版本：
+```bash
+./mibee-steward -version
+```
+
 ### 首次运行
 1. 应用会在 `./data/mibee.db` 创建 SQLite 数据库
 2. 通过配置中的 `auth.initial_admin_password` 设置强管理员密码（生产环境必需）
