@@ -424,3 +424,14 @@ body {
 }
 .animate-pulse-green { animation: pulse-green 2s infinite; }
 .animate-pulse-red { animation: pulse-red 1.5s infinite; }
+
+/* Indeterminate progress sweep for "running" scan tasks. A scan's real
+ * progress is unknown until completion, so we animate a short bar sweeping
+ * across the track instead of a static fake percentage. */
+@keyframes scan-sweep {
+	0%   { left: -33%; }
+	100% { left: 100%; }
+}
+.scan-progress-sweep {
+	animation: scan-sweep 1.1s ease-in-out infinite;
+}

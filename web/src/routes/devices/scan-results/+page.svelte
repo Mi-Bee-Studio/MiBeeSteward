@@ -170,22 +170,19 @@
 		if (debouncedIp) {
 			params.set('ip', `%${debouncedIp}%`);
 		}
+		// alive filter is now applied server-side (the backend CountScanResults
+		// mirrors it too), so resultsTotal stays correct and pagination doesn't
+		// desync. Previously this was a client-side filter over one page slice,
+		// which made the "Showing X–Y of N" line and page counts wrong.
+		if (aliveFilter === 'alive') params.set('alive', '1');
+		else if (aliveFilter === 'dead') params.set('alive', '0');
 		params.set('limit', String(limit));
 		params.set('offset', String(resultsOffset));
 
 		const res = await api.get<{ results: ScanResult[]; total: number }>(`/scanner/results?${params}`);
-		let filtered = res.results || [];
+		results = res.results || [];
 		resultsTotal = res.total || 0;
-
-		// Client-side alive/dead filter (API doesn't support it)
-		if (aliveFilter === 'alive') {
-			filtered = filtered.filter((r) => r.alive);
-		} else if (aliveFilter === 'dead') {
-			filtered = filtered.filter((r) => !r.alive);
-		}
-
-		results = filtered;
-}
+	}
 
 	async function fetchRuns() {
 		const params = new URLSearchParams();

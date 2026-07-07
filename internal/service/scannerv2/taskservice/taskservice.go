@@ -328,12 +328,12 @@ func (s *Service) GetTaskResults(ctx context.Context, taskID, limit, offset int)
 		limit = 100
 	}
 	results, err := s.queries.ListScanResults(ctx, db.ListScanResultsParams{
-		Column1: int64(taskID), TaskID: int64(taskID), Column3: "", Ip: "", Limit: int64(limit), Offset: int64(offset),
+		Column1: int64(taskID), TaskID: int64(taskID), Column3: "", Ip: "", Column5: -1, Alive: 0, Limit: int64(limit), Offset: int64(offset),
 	})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.queries.CountScanResults(ctx, db.CountScanResultsParams{Column1: int64(taskID), TaskID: int64(taskID)})
+	total, err := s.queries.CountScanResults(ctx, db.CountScanResultsParams{Column1: int64(taskID), TaskID: int64(taskID), Column3: "", Ip: "", Column5: -1, Alive: 0})
 	if err != nil {
 		return nil, 0, err
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -87,8 +88,25 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 	filter := domain.DeviceFilter{
 		Status: q.Get("status"),
 		Type:   q.Get("type"),
+		Search: q.Get("search"),
+		SortBy: q.Get("sort"),
+		Order:  q.Get("order"),
 		Limit:  limit,
 		Offset: offset,
+	}
+
+	// created_from / created_to — inclusive created_at range. The frontend has
+	// been sending these for a while; the handler used to silently drop them.
+	// Accept both bare dates (YYYY-MM-DD) and full timestamps.
+	if v := q.Get("created_from"); v != "" {
+		if t, ok := parseFlexibleTime(v); ok {
+			filter.CreatedAtFrom = &t
+		}
+	}
+	if v := q.Get("created_to"); v != "" {
+		if t, ok := parseFlexibleTime(v); ok {
+			filter.CreatedAtTo = &t
+		}
 	}
 
 	resp, err := h.svc.List(r.Context(), filter)
@@ -98,6 +116,19 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	Success(w, resp)
+}
+
+// parseFlexibleTime accepts either a full timestamp ("2006-01-02 15:04:05") or
+// a bare calendar date ("2006-01-02", treated as start-of-day local). Returns
+// ok=false on unparseable input rather than 400-ing — a malformed range bound
+// is treated as "no bound" so a typo doesn't hide every device.
+func parseFlexibleTime(s string) (time.Time, bool) {
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05", time.RFC3339, "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // Update handles PUT /api/v1/devices/{id}

@@ -25,11 +25,21 @@ import (
 	"mibee-steward/internal/service/scannerv2/engine"
 )
 
-// HeartbeatCreator creates heartbeat configs for newly-discovered devices.
+// HeartbeatCreator creates heartbeat configs for newly-discovered devices and
+// exposes the heartbeat service's device-level state reset.
 // Implemented by *service.HeartbeatService; defined here to break the import
 // cycle (runner can't import service, which imports scannerv2).
 type HeartbeatCreator interface {
 	CreateConfigs(ctx context.Context, deviceID int64, configs []scannerv2.HeartbeatSpec) error
+	// CreateDefaultConfig seeds a single ICMP heartbeat config for a device.
+	// Used as a fallback when a host was discovered alive but no service could
+	// be identified (no open ports, or ports the classifiers don't recognize) —
+	// so every discovered host gets at least liveness monitoring.
+	CreateDefaultConfig(ctx context.Context, deviceID int64, target string) error
+	// ResetFailures clears the device's in-memory failure counter. Called when a
+	// scan confirms the host is alive and sets status=online, so a stale counter
+	// from a prior flapping window can't immediately drag it back to offline.
+	ResetFailures(deviceID int64)
 }
 
 // Runner executes scan tasks via the v2 engine and persists outcomes.

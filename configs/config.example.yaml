@@ -113,3 +113,21 @@ scanner:
   ebpf:
     enabled: false
     interfaces: []
+# ── Retention (data-volume management) ─────────────────────────────────────
+# The retention sweeper runs every sweep_interval_hours and prunes each
+# high-volume detail table in batches of batch_size rows (batching avoids
+# locking the database on a single giant DELETE). A field of 0 means "use the
+# documented default", NOT "keep forever" — these tables are never retained
+# indefinitely.
+#
+# Defaults: heartbeat 7d, scan_results/runs 30d, audit 90d, notifications 30d,
+# service_evidence 14d, sweep every 6h, batches of 5000.
+retention:
+  heartbeat_results_days: 7
+  scan_results_days: 30
+  scan_task_runs_days: 30
+  audit_logs_days: 90
+  notification_log_days: 30
+  service_evidence_days: 14
+  sweep_interval_hours: 6
+  batch_size: 5000

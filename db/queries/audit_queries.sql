@@ -16,3 +16,17 @@ WHERE (? = 0 OR user_id = ?)
   AND (? = '' OR resource_type = ?)
   AND (? = '' OR created_at >= ?)
   AND (? = '' OR created_at <= ?);
+
+-- name: DeleteAuditLogsOlderThan :execrows
+-- Retention sweep: prune audit rows older than the cutoff. Batched deletion is
+-- done in Go (DELETE rowid IN (SELECT ... LIMIT ?)) to avoid a single giant
+-- transaction; this plain form is kept for small/fallback use.
+DELETE FROM audit_logs WHERE created_at < ?;
+
+-- name: DeleteAuditLogsOlderThanBatched :execrows
+-- Batched form: deletes up to ? rows (by rowid) older than the cutoff. The
+-- sweeper loops this until the affected-row count drops below the batch size.
+DELETE FROM audit_logs
+WHERE rowid IN (
+    SELECT rowid FROM audit_logs WHERE audit_logs.created_at < ? LIMIT ?
+);

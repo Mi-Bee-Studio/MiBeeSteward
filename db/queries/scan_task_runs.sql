@@ -32,3 +32,10 @@ WHERE (? = 0 OR task_id = ?);
 SELECT id, task_id, status, total_hosts, alive_hosts, new_hosts, updated_hosts, duration_ms, error_message, started_at, finished_at, created_at
 FROM scan_task_runs
 WHERE id = ?;
+
+-- name: DeleteScanTaskRunsOlderThanBatched :execrows
+-- Retention sweep (batched): deletes up to ? runs older than the cutoff.
+DELETE FROM scan_task_runs
+WHERE rowid IN (
+    SELECT rowid FROM scan_task_runs WHERE scan_task_runs.created_at < ? LIMIT ?
+);

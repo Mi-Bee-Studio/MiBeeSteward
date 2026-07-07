@@ -22,6 +22,13 @@
 		id,
 		expandedRowId,
 		expandedContent,
+		// Controlled sorting: when onSortChange is provided, the table runs in
+		// "server-side sort" mode — column clicks call back instead of sorting the
+		// in-memory rows (which would only reorder the current page and disagree
+		// with server-side pagination). externalSortKey/Dir drive the arrow display.
+		externalSortKey = null,
+		externalSortDirection = 'none',
+		onSortChange,
 	}: {
 		columns: Column[];
 		rows: Record<string, unknown>[];
@@ -35,6 +42,9 @@
 		id?: string;
 		expandedRowId?: number | null;
 		expandedContent?: Snippet<[Record<string, unknown>]>;
+		externalSortKey?: string | null;
+		externalSortDirection?: 'asc' | 'desc' | 'none';
+		onSortChange?: (key: string, direction: 'asc' | 'desc') => void;
 	} = $props();
 
 	let sortKey = $state<string | null>(null);
@@ -44,6 +54,11 @@
 	let searchQuery = $state(initialSearch);
 	let debouncedQuery = $state(initialSearch);
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// When sorting is server-controlled, mirror the external state so the arrow
+	// indicators follow what the server actually returned (not local clicks).
+	const displaySortKey = $derived(onSortChange ? externalSortKey : sortKey);
+	const displaySortDir = $derived(onSortChange ? externalSortDirection : sortDirection);
 
 	$effect(() => {
 		if (debounceTimer) clearTimeout(debounceTimer);
@@ -56,6 +71,10 @@
 	});
 
 	const filteredRows = $derived(() => {
+		// When sorting is delegated to the server, don't re-filter client-side —
+		// the search box is also server-driven by the page, and re-filtering the
+		// already-filtered page slice would double-narrow the results.
+		if (onSortChange) return rows;
 		if (!debouncedQuery || searchableKeys.length === 0) return rows;
 		const q = debouncedQuery.toLowerCase();
 		return rows.filter((row) =>
@@ -68,6 +87,8 @@
 
 	const sortedRows = $derived(() => {
 		const data = filteredRows();
+		// Server-side sort: rows already come back ordered; don't reshuffle.
+		if (onSortChange) return data;
 		if (!sortKey || sortDirection === 'none') return data;
 
 		return [...data].sort((a, b) => {
@@ -89,6 +110,15 @@
 	const isTotallyEmpty = $derived(rows.length === 0);
 
 	function handleSort(key: string) {
+		if (onSortChange) {
+			// Server-side sort: cycle asc → desc (no "none" — a server-backed list
+			// always has an order), and hand the decision up.
+			const nextDir: 'asc' | 'desc' =
+				externalSortKey === key && externalSortDirection === 'asc' ? 'desc' : 'asc';
+			onSortChange(key, nextDir);
+			return;
+		}
+		// Local three-state sort (unchanged behaviour for callers not opting in).
 		if (sortKey === key) {
 			sortDirection = sortDirection === 'asc' ? 'desc' : sortDirection === 'desc' ? 'none' : 'asc';
 		} else {
@@ -140,9 +170,9 @@
 										onclick={() => handleSort(col.key)}
 									>
 										{col.label}
-										<span class="inline-flex flex-col ml-0.5 text-[0.6rem] leading-none">
-											<ChevronUp class="w-3 h-2.5 {sortKey === col.key && sortDirection === 'asc' ? 'text-primary' : 'opacity-30'}" />
-											<ChevronDown class="w-3 h-2.5 -mt-0.5 {sortKey === col.key && sortDirection === 'desc' ? 'text-primary' : 'opacity-30'}" />
+								<span class="inline-flex flex-col ml-0.5 text-[0.6rem] leading-none">
+												<ChevronUp class="w-3 h-2.5 {displaySortKey === col.key && displaySortDir === 'asc' ? 'text-primary' : 'opacity-30'}" />
+												<ChevronDown class="w-3 h-2.5 -mt-0.5 {displaySortKey === col.key && displaySortDir === 'desc' ? 'text-primary' : 'opacity-30'}" />
 										</span>
 									</button>
 								{:else}

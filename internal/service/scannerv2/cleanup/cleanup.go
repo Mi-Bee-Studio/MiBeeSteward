@@ -1,50 +1,74 @@
-// Package cleanup prunes aged-out scan results on a fixed interval. It is the
-// v2 replacement for the legacy scanner.CleanupService, reusing the same
-// DeleteScanResultsOlderThan sqlc query and the same retention-days semantics.
+// Package cleanup runs the periodic retention sweep that prunes high-volume
+// detail tables so they don't grow unbounded.
+//
+// History: this used to delete only scan_results. The real data-volume problem
+// is broader — heartbeat_results alone accumulates ~270k rows/day, and
+// scan_task_runs / audit_logs / notification_log / service_evidence had no
+// pruning at all. The sweep now covers all six detail tables, each with its
+// own retention window, and deletes in batches to avoid locking the database
+// for long stretches on large tables (a single DELETE on a million-row table
+// holds the write lock far too long and bloats WAL).
 package cleanup
 
 import (
 	"context"
 	"log/slog"
-	"strconv"
 	"time"
 
+	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 )
 
-// Service deletes scan_results rows older than a retention window, on a ticker.
+// Service is the unified retention sweeper. One ticker drives pruning across
+// every high-volume detail table; each table's window comes from RetentionConfig.
 type Service struct {
-	queries       *db.Queries
-	retentionDays int
-	interval      time.Duration
-	logger        *slog.Logger
-	cancel        context.CancelFunc
-	done          chan struct{}
+	queries           *db.Queries // main DB (scan_results, scan_task_runs, audit_logs, notification_log, service_evidence)
+	heartbeatQueries  *db.Queries // dedicated heartbeat DB (heartbeat_results lives in a separate file)
+	cfg               config.RetentionConfig
+	interval          time.Duration
+	batch             int64
+	logger            *slog.Logger
+	cancel            context.CancelFunc
+	done              chan struct{}
 }
 
-// New constructs a cleanup service. retentionDays<=0 → 30; interval<=0 → 24h.
-func New(queries *db.Queries, retentionDays int, interval time.Duration) *Service {
-	if retentionDays <= 0 {
-		retentionDays = 30
-	}
+// New constructs the retention sweeper from config. heartbeatQueries is the
+// sqlc Queries bound to the dedicated heartbeat.db (nil ⇒ heartbeat pruning
+// is skipped, for tests/main-DB-only contexts). SweepIntervalHours<=0 and
+// BatchSize<=0 are defended in config.normalizeRetention.
+func New(queries *db.Queries, heartbeatQueries *db.Queries, cfg config.RetentionConfig) *Service {
+	interval := time.Duration(cfg.SweepIntervalHours) * time.Hour
 	if interval <= 0 {
-		interval = 24 * time.Hour
+		interval = 6 * time.Hour
+	}
+	batch := int64(cfg.BatchSize)
+	if batch <= 0 {
+		batch = 5000
 	}
 	return &Service{
-		queries:       queries,
-		retentionDays: retentionDays,
-		interval:      interval,
-		logger:        slog.Default(),
-		done:          make(chan struct{}),
+		queries:          queries,
+		heartbeatQueries: heartbeatQueries,
+		cfg:              cfg,
+		interval:         interval,
+		batch:            batch,
+		logger:           slog.Default(),
+		done:             make(chan struct{}),
 	}
 }
 
-// Start runs one cleanup immediately, then on every interval tick, until Stop.
+// Start runs one sweep immediately, then on every interval tick, until Stop.
 func (s *Service) Start(ctx context.Context) {
 	ctx, s.cancel = context.WithCancel(ctx)
 	go func() {
 		defer close(s.done)
-		s.runOnce(ctx)
+		s.logger.Info("retention sweeper starting",
+			"interval", s.interval,
+			"batch", s.batch,
+			"heartbeat_days", s.cfg.HeartbeatResultsDays,
+			"scan_results_days", s.cfg.ScanResultsDays,
+			"audit_days", s.cfg.AuditLogsDays,
+		)
+		s.runOnce(ctx) // sweep on startup so a long-stopped server catches up immediately
 		t := time.NewTicker(s.interval)
 		defer t.Stop()
 		for {
@@ -58,7 +82,7 @@ func (s *Service) Start(ctx context.Context) {
 	}()
 }
 
-// Stop signals the cleanup loop to exit and waits for it.
+// Stop signals the sweep loop to exit and waits for it.
 func (s *Service) Stop() {
 	if s.cancel != nil {
 		s.cancel()
@@ -66,14 +90,121 @@ func (s *Service) Stop() {
 	<-s.done
 }
 
+// runOnce prunes every detail table whose retention window is configured.
+// Each table is independent: a failure on one (e.g. a missing column) is logged
+// and skipped so the sweep still cleans the others.
 func (s *Service) runOnce(ctx context.Context) {
-	days := strconv.Itoa(s.retentionDays)
-	rows, err := s.queries.DeleteScanResultsOlderThan(ctx, &days)
-	if err != nil {
-		s.logger.Warn("cleanup: delete old scan results failed", "error", err)
-		return
+	s.pruneHeartbeatResults(ctx)
+	s.pruneScanResults(ctx)
+	s.pruneScanTaskRuns(ctx)
+	s.pruneAuditLogs(ctx)
+	s.pruneNotificationLogs(ctx)
+	s.pruneServiceEvidence(ctx)
+}
+
+// cutoff returns now - retentionDays, or a zero time if days<=0 (which would
+// otherwise delete EVERYTHING). config.normalizeRetention fills defaults, but
+// this guard keeps a misconfigured sweep from wiping a table.
+func cutoff(days int) time.Time {
+	if days <= 0 {
+		return time.Time{} // zero time matches nothing (all rows are after 0001-01-01... except real ones)
 	}
-	if rows > 0 {
-		s.logger.Info("cleanup: pruned old scan results", "count", rows, "retention_days", s.retentionDays)
+	return time.Now().AddDate(0, 0, -days)
+}
+
+// sweepBatched loops the batched DELETE until a batch affects fewer rows than
+// batchSize — the signal that the backlog for this cutoff is exhausted. Returns
+// the total rows deleted across all batches.
+func (s *Service) sweepBatched(ctx context.Context, table string, days int, del func(cutoff time.Time, limit int64) (int64, error)) int64 {
+	cut := cutoff(days)
+	if cut.IsZero() {
+		// days<=0 means "not configured" — leave the table alone, never delete-all.
+		return 0
 	}
+	var total int64
+	for {
+		if ctx.Err() != nil {
+			s.logger.Info("cleanup: sweep cancelled mid-table", "table", table, "deleted_so_far", total)
+			return total
+		}
+		n, err := del(cut, s.batch)
+		if err != nil {
+			s.logger.Warn("cleanup: batched delete failed", "table", table, "error", err, "deleted_so_far", total)
+			return total
+		}
+		total += n
+		if n < s.batch {
+			break // under batch size ⇒ nothing older left for this cutoff
+		}
+	}
+	if total > 0 {
+		s.logger.Info("cleanup: pruned old rows", "table", table, "count", total, "retention_days", days)
+	} else {
+		s.logger.Debug("cleanup: nothing to prune", "table", table, "retention_days", days)
+	}
+	return total
+}
+
+func (s *Service) pruneHeartbeatResults(ctx context.Context) {
+	if s.heartbeatQueries == nil {
+		return // no heartbeat store configured (tests/main-DB-only)
+	}
+	days := s.cfg.HeartbeatResultsDays
+	s.sweepBatched(ctx, "heartbeat_results", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.heartbeatQueries.DeleteOlderThanBatched(ctx, db.DeleteOlderThanBatchedParams{
+			CheckedAt: cut,
+			Limit:     limit,
+		})
+	})
+}
+
+func (s *Service) pruneScanResults(ctx context.Context) {
+	days := s.cfg.ScanResultsDays
+	s.sweepBatched(ctx, "scan_results", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteScanResultsOlderThanBatched(ctx, db.DeleteScanResultsOlderThanBatchedParams{
+			ScannedAt: cut,
+			Limit:     limit,
+		})
+	})
+}
+
+func (s *Service) pruneScanTaskRuns(ctx context.Context) {
+	days := s.cfg.ScanTaskRunsDays
+	s.sweepBatched(ctx, "scan_task_runs", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteScanTaskRunsOlderThanBatched(ctx, db.DeleteScanTaskRunsOlderThanBatchedParams{
+			CreatedAt: cut,
+			Limit:     limit,
+		})
+	})
+}
+
+func (s *Service) pruneAuditLogs(ctx context.Context) {
+	days := s.cfg.AuditLogsDays
+	s.sweepBatched(ctx, "audit_logs", days, func(cut time.Time, limit int64) (int64, error) {
+		// audit_logs.created_at is a nullable DATETIME, so sqlc emits *time.Time.
+		return s.queries.DeleteAuditLogsOlderThanBatched(ctx, db.DeleteAuditLogsOlderThanBatchedParams{
+			CreatedAt: &cut,
+			Limit:     limit,
+		})
+	})
+}
+
+func (s *Service) pruneNotificationLogs(ctx context.Context) {
+	days := s.cfg.NotificationLogDays
+	s.sweepBatched(ctx, "notification_log", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteNotificationLogsOlderThanBatched(ctx, db.DeleteNotificationLogsOlderThanBatchedParams{
+			SentAt: cut,
+			Limit:  limit,
+		})
+	})
+}
+
+func (s *Service) pruneServiceEvidence(ctx context.Context) {
+	days := s.cfg.ServiceEvidenceDays
+	s.sweepBatched(ctx, "service_evidence", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteServiceEvidenceOlderThanBatched(ctx, db.DeleteServiceEvidenceOlderThanBatchedParams{
+			ObservedAt: cut,
+			Limit:      limit,
+		})
+	})
 }

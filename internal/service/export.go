@@ -16,12 +16,15 @@ const exportChunkSize = 1000
 
 // ExportService handles data export for devices, heartbeat results, and audit logs.
 type ExportService struct {
-	db *db.Queries
+	db  *db.Queries // main DB (devices, audit logs)
+	hb  *db.Queries // dedicated heartbeat store (heartbeat_results) — nil falls back to db
 }
 
-// NewExportService creates a new ExportService.
-func NewExportService(db *db.Queries) *ExportService {
-	return &ExportService{db: db}
+// NewExportService creates a new ExportService bound to the main DB.
+// Heartbeat results are read from hb when set (the dedicated heartbeat store);
+// if hb is nil, heartbeat export falls back to the main DB (legacy behavior).
+func NewExportService(db *db.Queries, hb *db.Queries) *ExportService {
+	return &ExportService{db: db, hb: hb}
 }
 
 // Devices streams all device data in the specified format (csv or json).
@@ -104,16 +107,25 @@ func (s *ExportService) Devices(ctx context.Context, format string, w io.Writer)
 func (s *ExportService) HeartbeatResults(ctx context.Context, deviceID int64, format string, w io.Writer) error {
 	headers := []string{"id", "device_id", "config_id", "status", "latency_ms", "error_message", "checked_at"}
 
-	noFilter := time.Time{}
+	// Read from the dedicated heartbeat store when wired; fall back to the main
+	// DB for older deployments where the store isn't injected. The main DB's
+	// heartbeat_results is a stale leftover (no longer written to after the
+	// store migration), so without the store the export would dump frozen data.
+	hq := s.hb
+	if hq == nil {
+		hq = s.db
+	}
+	// ListHeartbeatResultsByDevice's time filters use checked_at >= ? AND <= ?;
+	// a zero time would wrongly bound the range, so open it wide.
+	from := time.Unix(0, 0)
+	to := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	if format == "json" {
 		return s.streamJSON(ctx, w, func(offset int64) ([]map[string]interface{}, error) {
-			rows, err := s.db.ListHeartbeatResultsByDevice(ctx, db.ListHeartbeatResultsByDeviceParams{
+			rows, err := hq.ListHeartbeatResultsByTimeRange(ctx, db.ListHeartbeatResultsByTimeRangeParams{
 				DeviceID:    deviceID,
-				Column2:     "",
-				CheckedAt:   noFilter,
-				Column4:     "",
-				CheckedAt_2: noFilter,
+				CheckedAt:   from,
+				CheckedAt_2: to,
 				Limit:       exportChunkSize,
 				Offset:      offset,
 			})
@@ -137,12 +149,10 @@ func (s *ExportService) HeartbeatResults(ctx context.Context, deviceID int64, fo
 	}
 
 	return s.streamCSV(ctx, w, headers, func(offset int64) ([][]string, error) {
-		rows, err := s.db.ListHeartbeatResultsByDevice(ctx, db.ListHeartbeatResultsByDeviceParams{
+		rows, err := hq.ListHeartbeatResultsByTimeRange(ctx, db.ListHeartbeatResultsByTimeRangeParams{
 			DeviceID:    deviceID,
-			Column2:     "",
-			CheckedAt:   noFilter,
-			Column4:     "",
-			CheckedAt_2: noFilter,
+			CheckedAt:   from,
+			CheckedAt_2: to,
 			Limit:       exportChunkSize,
 			Offset:      offset,
 		})

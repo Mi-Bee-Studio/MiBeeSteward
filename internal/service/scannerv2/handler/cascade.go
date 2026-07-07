@@ -46,8 +46,79 @@ func (HTTPHandler) EnrichDevice(svc scannerv2.ServiceContext, data scannerv2.Col
 	if hd, ok := data.(HTTPData); ok && hd.MetricsFound {
 		setDeviceField(svc, "prometheus_url", hd.MetricsURL)
 	}
+	// Infer device type from the web server / page title / hostname before
+	// falling back to the generic "server". Many network devices and NAS/IoT
+	// appliances expose a web UI whose Server header, <title>, or hostname
+	// names the product (e.g. "RouterOS", "Synology DiskStation", "NanoPi").
+	// preserveExisting keeps a stronger signal already set by another handler
+	// (e.g. SNMP-classified router, RTSP camera).
+	if t := webTypeFromHints(svc); t != "" {
+		preserveExisting(svc, "inferred_type", t)
+		return
+	}
 	// A plain web server implies "server" device type (low confidence).
 	preserveExisting(svc, "inferred_type", "server")
+}
+
+// webTypeFromHints inspects the HTTP Server header, page <title>, and the
+// device's discovered hostname for product names that indicate a non-server
+// device class (router / NAS / firewall / IoT-embedded). Returns "" when no
+// hint matches (caller falls back to "server").
+func webTypeFromHints(svc scannerv2.ServiceContext) string {
+	server := lowercase(svc.Identity.Metadata["server"])
+	title := lowercase(svc.Identity.Metadata["title"])
+	// node_hostname is a device-level field (populated by mDNS/rDNS/SNMP), not
+	// service metadata — read from the device fields.
+	host := lowercase(svc.Device.Fields["node_hostname"])
+	combined := server + " " + title + " " + host
+
+	switch {
+	// Routers / router-OS web UIs.
+	case containsAny(combined, "routeros", "mikrotik", "tp-link", "tp link",
+		"asuswrt", "openwrt", "padavan", "asus router", "edgeos", "edgemax",
+		"unifi", "ubnt", "router"):
+		return "router"
+	// NAS appliances.
+	case containsAny(combined, "diskstation", "synology", "qnap", "readynas",
+		"teramaster", "asustor", "nas"):
+		return "nas"
+	// Firewalls.
+	case containsAny(combined, "fortigate", "palo alto", "pfsense", "opnsense",
+		"sonicwall", "firewall"):
+		return "firewall"
+	// Switches with a management web UI.
+	case containsAny(combined, "procurve", "cisco catalyst", "switch"):
+		return "switch"
+	// Single-board / embedded Linux hosts (NanoPi, BananaPi, Raspberry Pi,
+	// Orange Pi) — these are common in home labs and would otherwise default to
+	// "server", but "embedded" is a more honest classification.
+	case containsAny(combined, "nanopi", "bananapi", "raspberry pi", "orangepi",
+		"rockpi", "radxa"):
+		return "embedded"
+	}
+	return ""
+}
+
+// lowercase is an ASCII lowercase helper (the hints above are ASCII).
+func lowercase(s string) string {
+	b := []byte(s)
+	for i := range b {
+		if b[i] >= 'A' && b[i] <= 'Z' {
+			b[i] += 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
+// containsAny reports whether s contains any of subs (ASCII, case-insensitive
+// when called on an already-lowercased s + lowercased subs).
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // PrometheusHandler inspects the metrics sample carried by its trigger (from

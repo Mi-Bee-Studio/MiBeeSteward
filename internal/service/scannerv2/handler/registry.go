@@ -15,5 +15,14 @@ func DefaultHandlers() []scannerv2.ServiceHandler {
 		ONVIFHandler{},
 		SNMPHandler{},
 		CameraHandler{},
+		// Services that classifiers identify but previously had no handler, so
+		// hosts whose only service was one of these dropped to type "other".
+		// Each marks the host as a server (see handler/services.go).
+		MySQLHandler{}, PostgreSQLHandler{}, RedisHandler{}, MongoDBHandler{},
+		MSSQLHandler{}, MemcachedHandler{},
+		SMTPHandler{}, POP3Handler{}, IMAPHandler{},
+		VNCHandler{}, RDPHandler{},
+		LDAPHandler{}, SMBHandler{},
+		HTTPSHandler{},
 	}
 }

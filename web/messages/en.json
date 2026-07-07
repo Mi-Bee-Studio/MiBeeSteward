@@ -127,7 +127,10 @@
 		"Tab Device List": "Devices",
 		"Tab Scanner": "Scanner",
 		"Tab Scan Tasks": "Scan Tasks",
-		"Tab Scan Results": "Scan Results"
+		"Tab Scan Results": "Scan Results",
+		"Camera": "Camera",
+		"Search placeholder": "Search name / IP / MAC…",
+		"Alive": "Alive"
 	},
 	"systems": {
 		"System Management": "System Management",
@@ -263,7 +266,13 @@
 		"Bar": "Bar",
 		"Pie": "Pie",
 		"Default Layout": "Default Layout",
-		"No Widgets": "No Widgets"
+		"No Widgets": "No Widgets",
+		"Scan Activity": "Scan Activity",
+		"Last Discovery": "Last discovery",
+		"No Scan Activity": "No scan activity yet.",
+		"Offline Devices": "Offline Devices",
+		"View All": "View all",
+		"No Offline Devices": "All devices online"
 	},
 	"common": {
 		"Save": "Save",
@@ -291,7 +300,9 @@
 		"unsaved_changes_desc": "You have unsaved changes. Are you sure you want to close?",
 		"discard": "Discard",
 		"Undo": "Undo",
-		"Upload Progress": "Uploading..."
+		"Upload Progress": "Uploading...",
+		"Clear": "Clear",
+		"Status": "Status"
 	},
 	"scanner": {
 		"Scanner": "Network Scanner",
@@ -429,7 +440,12 @@
 			"stages_enabled": "{count} stages enabled",
 			"expand_config": "Configure",
 			"collapse_config": "Collapse"
-		}
+		},
+		"Running": "Running",
+		"Cancelled": "Cancelled",
+		"Failed": "Failed",
+		"Run": "Run",
+		"New": "New"
 	},
 	"labels": {
 		"Per Device Labels": "Per-Device Labels",

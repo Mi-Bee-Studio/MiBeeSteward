@@ -26,6 +26,33 @@ type Config struct {
 	RateLimit  RateLimitConfig  `koanf:"rate_limit"`
 	SMTP       SMTPConfig       `koanf:"smtp"`
 	Scanner    ScannerConfig    `koanf:"scanner"`
+	// Retention governs the periodic background sweep that prunes high-volume
+	// detail tables (heartbeat_results, scan_results, …). Without it these
+	// tables grow unbounded — heartbeat_results alone accumulates ~270k rows/day.
+	Retention RetentionConfig `koanf:"retention"`
+}
+
+// RetentionConfig holds per-table retention windows and sweep tuning. A field
+// of 0 means "use the documented default" (applied in Normalize), NOT "keep
+// forever" — keeping forever is never the intent for these detail tables.
+type RetentionConfig struct {
+	// Per-table retention windows (days). Defaults reflect each table's mix of
+	// troubleshooting value vs. volume: heartbeat is high-volume/low-value (7d),
+	// audit is low-volume/high-value (90d).
+	HeartbeatResultsDays int `koanf:"heartbeat_results_days"`
+	ScanResultsDays      int `koanf:"scan_results_days"`
+	ScanTaskRunsDays     int `koanf:"scan_task_runs_days"`
+	AuditLogsDays        int `koanf:"audit_logs_days"`
+	NotificationLogDays  int `koanf:"notification_log_days"`
+	ServiceEvidenceDays  int `koanf:"service_evidence_days"`
+	// SweepIntervalHours is how often the retention sweeper runs across all
+	// tables. Default 6h — frequent enough that no table drifts far past its
+	// window, rare enough to be negligible overhead.
+	SweepIntervalHours int `koanf:"sweep_interval_hours"`
+	// BatchSize caps rows deleted per single DELETE statement. Large one-shot
+	// deletes on million-row tables hold the write lock too long and bloat WAL;
+	// batching keeps each transaction small so WAL can checkpoint between batches.
+	BatchSize int `koanf:"batch_size"`
 }
 
 type ServerConfig struct {
@@ -187,12 +214,61 @@ func Load(configPath string) (*Config, error) {
 		return nil, err
 	}
 
+	// Apply retention defaults (and the scanner.retention_days back-compat
+	// fallback for scan_results) before validation.
+	normalizeRetention(&cfg)
+
 	// Validate
 	if err := Validate(&cfg); err != nil {
 		return nil, err
 	}
 
 	return &cfg, nil
+}
+
+// normalizeRetention fills in default retention windows for any field left at
+// 0 by the config. A 0 in the YAML means "use the default", NOT "keep forever"
+// — these detail tables are never meant to be retained indefinitely.
+//
+// Back-compat: the legacy scanner.retention_days (and heartbeat.retention_days)
+// settings still drive their respective tables if the new retention.* key isn't
+// set, so existing deployments keep their configured behavior on upgrade.
+func normalizeRetention(cfg *Config) {
+	r := &cfg.Retention
+	if r.HeartbeatResultsDays <= 0 {
+		// Fall back to legacy heartbeat.retention_days if set, else default 7.
+		if cfg.Heartbeat.RetentionDays > 0 {
+			r.HeartbeatResultsDays = cfg.Heartbeat.RetentionDays
+		} else {
+			r.HeartbeatResultsDays = 7
+		}
+	}
+	if r.ScanResultsDays <= 0 {
+		// Fall back to legacy scanner.retention_days if set, else default 30.
+		if cfg.Scanner.RetentionDays > 0 {
+			r.ScanResultsDays = cfg.Scanner.RetentionDays
+		} else {
+			r.ScanResultsDays = 30
+		}
+	}
+	if r.ScanTaskRunsDays <= 0 {
+		r.ScanTaskRunsDays = 30
+	}
+	if r.AuditLogsDays <= 0 {
+		r.AuditLogsDays = 90
+	}
+	if r.NotificationLogDays <= 0 {
+		r.NotificationLogDays = 30
+	}
+	if r.ServiceEvidenceDays <= 0 {
+		r.ServiceEvidenceDays = 14
+	}
+	if r.SweepIntervalHours <= 0 {
+		r.SweepIntervalHours = 6
+	}
+	if r.BatchSize <= 0 {
+		r.BatchSize = 5000
+	}
 }
 
 // Validate checks the configuration for errors.

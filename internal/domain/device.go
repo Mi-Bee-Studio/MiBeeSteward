@@ -24,6 +24,7 @@ const (
 	TypeRouter   DeviceType = "router"
 	TypeFirewall DeviceType = "firewall"
 	TypeNAS      DeviceType = "nas"
+	TypeCamera   DeviceType = "camera" // present in schema CHECK + validDeviceTypes; keep aligned
 )
 
 // Request types
@@ -70,6 +71,19 @@ type DeviceFilter struct {
 	Type   string `json:"type,omitempty"`
 	Limit  int64  `json:"limit,omitempty"`
 	Offset int64  `json:"offset,omitempty"`
+	// Search performs a substring match across name / ip_address / mac_address /
+	// serial_number. Empty string disables search. Pushed to the backend so it
+	// works across all pages (the previous client-side filter only searched the
+	// current 20-row page, so anything beyond was unfindable).
+	Search string `json:"search,omitempty"`
+	// CreatedAtFrom/To filter by created_at (inclusive). The frontend already
+	// sent created_from/created_to but the handler ignored them.
+	CreatedAtFrom *time.Time `json:"created_from,omitempty"`
+	CreatedAtTo   *time.Time `json:"created_to,omitempty"`
+	// SortBy is validated against a whitelist in the repository layer (never
+	// interpolated raw into SQL). Order is "asc" or "desc" (default "asc").
+	SortBy string `json:"sort_by,omitempty"`
+	Order  string `json:"order,omitempty"`
 }
 
 // Response types
@@ -117,4 +131,75 @@ type DeviceListResponse struct {
 type DeviceStatsResponse struct {
 	ByStatus map[string]int64 `json:"by_status"`
 	ByType   map[string]int64 `json:"by_type"`
+}
+
+// DashboardOverviewResponse is the single aggregated payload behind the default
+// dashboard. It replaces the old approach where the frontend pulled
+// /devices?limit=200 and computed pie charts client-side (which both capped at
+// 200 devices and skewed the distribution). Everything here is computed
+// server-side over the full dataset.
+type DashboardOverviewResponse struct {
+	Devices   OverviewDevices    `json:"devices"`
+	Scanning  OverviewScanning   `json:"scanning"`
+	Abnormal  []OverviewDevice   `json:"abnormal"`  // offline devices (top N), clickable targets for the UI
+	Generated time.Time          `json:"generated"`
+}
+
+// OverviewDevices holds the device-population totals and distributions.
+type OverviewDevices struct {
+	Total       int64            `json:"total"`
+	Online      int64            `json:"online"`
+	Offline     int64            `json:"offline"`
+	Unknown     int64            `json:"unknown"`
+	OnlineRate  float64          `json:"online_rate"` // 0..1, online/total (0 when total==0)
+	ByType      map[string]int64 `json:"by_type"`     // full-population GROUP BY (not a 200-row sample)
+	ByLocation  map[string]int64 `json:"by_location"` // GROUP BY location (empty location bucketed as "unknown")
+}
+
+// OverviewScanning summarises recent scan activity so the dashboard reflects
+// "discovery" — the system's core job — rather than only device counts.
+type OverviewScanning struct {
+	TasksTotal      int64                 `json:"tasks_total"`
+	RunsTotal       int64                 `json:"runs_total"`
+	RecentTasks     []OverviewScanTask    `json:"recent_tasks"` // last N tasks
+	RecentRuns      []OverviewScanRun     `json:"recent_runs"`  // last N runs across all tasks
+	RunsByStatus    map[string]int64      `json:"runs_by_status"`
+	LastDiscovery   *OverviewScanRun      `json:"last_discovery,omitempty"` // most recent completed run
+}
+
+// OverviewScanTask is a lightweight task projection for the dashboard (no
+// pipeline config / cron details — those live on the scan-tasks page).
+type OverviewScanTask struct {
+	ID            int64      `json:"id"`
+	Name          string     `json:"name"`
+	Targets       string     `json:"targets"`
+	Enabled       bool       `json:"enabled"`
+	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
+	LastRunStatus string     `json:"last_run_status,omitempty"`
+}
+
+// OverviewScanRun is a lightweight run projection: status + discovered-host
+// counts, enough for an activity feed / "last discovery" card.
+type OverviewScanRun struct {
+	ID           int64      `json:"id"`
+	TaskID       int64      `json:"task_id"`
+	Status       string     `json:"status"`
+	TotalHosts   int64      `json:"total_hosts"`
+	AliveHosts   int64      `json:"alive_hosts"`
+	NewHosts     int64      `json:"new_hosts"`
+	DurationMs   int64      `json:"duration_ms"`
+	ErrorMessage string     `json:"error_message,omitempty"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+}
+
+// OverviewDevice is a compact device projection for the abnormal-device list:
+// enough to identify and link to it, without the full scan document.
+type OverviewDevice struct {
+	ID            int64      `json:"id"`
+	Name          string     `json:"name"`
+	IPAddress     string     `json:"ip_address"`
+	Type          string     `json:"type"`
+	Status        string     `json:"status"`
+	LastScannedAt *time.Time `json:"last_scanned_at,omitempty"`
 }

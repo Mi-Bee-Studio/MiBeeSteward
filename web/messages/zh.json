@@ -127,7 +127,10 @@
 		"Tab Device List": "设备列表",
 		"Tab Scanner": "网络扫描",
 		"Tab Scan Tasks": "扫描任务",
-		"Tab Scan Results": "扫描结果"
+		"Tab Scan Results": "扫描结果",
+		"Camera": "摄像头",
+		"Search placeholder": "搜索名称 / IP / MAC…",
+		"Alive": "存活"
 	},
 	"systems": {
 		"System Management": "系统管理",
@@ -263,7 +266,13 @@
 		"Bar": "柱状",
 		"Pie": "饼图",
 		"Default Layout": "默认布局",
-		"No Widgets": "无组件"
+		"No Widgets": "无组件",
+		"Scan Activity": "扫描活动",
+		"Last Discovery": "上次发现",
+		"No Scan Activity": "暂无扫描活动。",
+		"Offline Devices": "离线设备",
+		"View All": "查看全部",
+		"No Offline Devices": "全部设备在线"
 	},
 	"common": {
 		"Save": "保存",
@@ -291,7 +300,9 @@
 		"unsaved_changes_desc": "您有未保存的更改。确定要关闭吗？",
 		"discard": "放弃",
 		"Undo": "撤销",
-		"Upload Progress": "上传中..."
+		"Upload Progress": "上传中...",
+		"Clear": "清除",
+		"Status": "状态"
 	},
 	"scanner": {
 		"Scanner": "网络扫描器",
@@ -429,7 +440,12 @@
 			"stages_enabled": "已启用 {count} 个阶段",
 			"expand_config": "配置",
 			"collapse_config": "收起"
-		}
+		},
+		"Running": "运行中",
+		"Cancelled": "已取消",
+		"Failed": "失败",
+		"Run": "运行",
+		"New": "新增"
 	},
 	"labels": {
 		"Per Device Labels": "设备级标签",

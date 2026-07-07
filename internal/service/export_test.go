@@ -97,7 +97,7 @@ func setupExportTest(t *testing.T) (*ExportService, *sql.DB) {
 	require.NoError(t, err)
 
 	queries := db.New(dbConn)
-	svc := NewExportService(queries)
+	svc := NewExportService(queries, nil) // nil hb → falls back to main DB (test uses one DB)
 	return svc, dbConn
 }
 
