@@ -25,26 +25,6 @@ func TestChannelTypeConstants(t *testing.T) {
 	}
 }
 
-func TestConditionTypeConstants(t *testing.T) {
-	tests := []struct {
-		name     string
-		actual   ConditionType
-		expected ConditionType
-	}{
-		{"ConditionDeviceOffline", ConditionDeviceOffline, "device_offline"},
-		{"ConditionHeartbeatFail", ConditionHeartbeatFail, "heartbeat_fail"},
-		{"ConditionHeartbeatTimeout", ConditionHeartbeatTimeout, "heartbeat_timeout"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.actual != tt.expected {
-				t.Errorf("ConditionType = %q, want %q", tt.actual, tt.expected)
-			}
-		})
-	}
-}
-
 func TestCreateChannelRequest_JSONTags(t *testing.T) {
 	enabled := true
 	req := CreateChannelRequest{
@@ -97,56 +77,6 @@ func TestUpdateChannelRequest_JSONTags(t *testing.T) {
 	}
 }
 
-func TestCreateAlertRuleRequest_JSONTags(t *testing.T) {
-	enabled := true
-	req := CreateAlertRuleRequest{
-		Name:            "Offline Alert",
-		ConditionType:   ConditionDeviceOffline,
-		Threshold:       3,
-		ChannelID:       1,
-		Enabled:         &enabled,
-		CooldownSeconds: 300,
-	}
-
-	data, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("failed to marshal CreateAlertRuleRequest: %v", err)
-	}
-
-	var decoded map[string]interface{}
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	expectedFields := []string{"name", "condition_type", "threshold", "channel_id", "enabled", "cooldown_seconds"}
-	for _, field := range expectedFields {
-		if _, ok := decoded[field]; !ok {
-			t.Errorf("missing JSON field %q in CreateAlertRuleRequest", field)
-		}
-	}
-}
-
-func TestUpdateAlertRuleRequest_JSONTags(t *testing.T) {
-	name := "Updated Alert"
-	req := UpdateAlertRuleRequest{
-		Name: &name,
-	}
-
-	data, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("failed to marshal UpdateAlertRuleRequest: %v", err)
-	}
-
-	var decoded map[string]interface{}
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if _, ok := decoded["name"]; !ok {
-		t.Error("missing JSON field \"name\" in UpdateAlertRuleRequest")
-	}
-}
-
 func TestChannelResponse_JSONTags(t *testing.T) {
 	resp := ChannelResponse{
 		ID:        1,
@@ -172,37 +102,6 @@ func TestChannelResponse_JSONTags(t *testing.T) {
 	for _, field := range expectedFields {
 		if _, ok := decoded[field]; !ok {
 			t.Errorf("missing JSON field %q in ChannelResponse", field)
-		}
-	}
-}
-
-func TestAlertRuleResponse_JSONTags(t *testing.T) {
-	resp := AlertRuleResponse{
-		ID:              1,
-		Name:            "Test Rule",
-		ConditionType:   "device_offline",
-		Threshold:       3,
-		ChannelID:       1,
-		Enabled:         true,
-		CooldownSeconds: 300,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-	}
-
-	data, err := json.Marshal(resp)
-	if err != nil {
-		t.Fatalf("failed to marshal AlertRuleResponse: %v", err)
-	}
-
-	var decoded map[string]interface{}
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	expectedFields := []string{"id", "name", "condition_type", "threshold", "channel_id", "enabled", "cooldown_seconds", "created_at", "updated_at"}
-	for _, field := range expectedFields {
-		if _, ok := decoded[field]; !ok {
-			t.Errorf("missing JSON field %q in AlertRuleResponse", field)
 		}
 	}
 }

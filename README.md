@@ -72,6 +72,24 @@ make build
 make build-all
 ```
 
+### Reset admin password
+
+If you lose the admin password, reset it with the CLI subcommand:
+
+```bash
+# Interactive (prompts for password)
+./mibee-steward reset-admin-password -config configs/config.yaml
+
+# Non-interactive (password via flag or env)
+./mibee-steward reset-admin-password -config configs/config.yaml -password 'newpass'
+MIBEE_RESET_PASSWORD=newpass ./mibee-steward reset-admin-password -config configs/config.yaml
+```
+
+Check the build version:
+```bash
+./mibee-steward -version
+```
+
 ### First Run
 1. The application creates a SQLite database at `./data/mibee.db`
 2. Set a strong admin password via `auth.initial_admin_password` in your config (required for production)

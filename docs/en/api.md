@@ -112,12 +112,13 @@ System health check with database status.
 **Response**:
 ```json
 {
-  "status": "healthy",
-  "database": "healthy", 
-  "version": "1.0.0",
-  "timestamp": "2023-01-01T00:00:00Z"
+  "status": "ok",
+  "db": "ok",
+  "version": "v0.1.0"
 }
 ```
+
+`status` is `ok` or `degraded` (when the database ping fails). `db` is `ok` or `error`. `version` is the build version injected via ldflags (`dev` for untagged builds).
 
 ## Users
 
@@ -146,6 +147,28 @@ List all users.
     }
   ],
   "total": 1
+}
+```
+
+### Reset User Password
+
+**Admin only**
+
+`POST /api/v1/users/{id}/reset-password`
+
+Resets a user's password. The target user is forced to change the password on next login. Any login lockout is cleared.
+
+**Request**:
+```json
+{
+  "new_password": "new-secure-password"
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "message": "password reset successfully"
 }
 ```
 

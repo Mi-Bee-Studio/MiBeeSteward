@@ -44,6 +44,13 @@
 	let deleteTarget = $state<User | null>(null);
 	let formLoading = $state(false);
 
+	// Reset password state
+	let resetTarget = $state<User | null>(null);
+	let resetDialogOpen = $state(false);
+	let resetPassword = $state('');
+	let resetConfirmPassword = $state('');
+	let resetLoading = $state(false);
+
 	// Form fields
 	let formUsername = $state('');
 	let formEmail = $state('');
@@ -158,6 +165,38 @@
 		}
 	}
 
+	function openReset(user: User) {
+		resetTarget = user;
+		resetPassword = '';
+		resetConfirmPassword = '';
+		resetDialogOpen = true;
+	}
+
+	async function confirmResetPassword() {
+		if (!resetTarget) return;
+		if (!resetPassword) {
+			addToast('error', m["users.Password Required"]());
+			return;
+		}
+		if (resetPassword !== resetConfirmPassword) {
+			addToast('error', m["users.Passwords Do Not Match"]());
+			return;
+		}
+		resetLoading = true;
+		try {
+			await api.post(`/users/${resetTarget.id}/reset-password`, { new_password: resetPassword });
+			resetTarget = null;
+			resetPassword = '';
+			resetConfirmPassword = '';
+			resetDialogOpen = false;
+			addToast('success', m["users.Password Reset Success"]());
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			resetLoading = false;
+		}
+	}
+
 	function formatTime(iso: string): string {
 		if (!iso) return '-';
 		try {
@@ -215,7 +254,10 @@
 			label: m["common.Actions"](),
 			render: (row: Record<string, unknown>) => {
 				const userId = row.id;
-				return `<button data-delete-id="${userId}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>`;
+				return `<div class="flex items-center gap-2">
+					<button data-reset-id="${userId}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["users.Reset Password"]()}</button>
+					<button data-delete-id="${userId}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>
+				</div>`;
 			}
 		}
 	]);
@@ -269,11 +311,17 @@
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<div onclick={(e) => {
 					const target = e.target as HTMLElement;
-					const btn = target.closest('[data-delete-id]') as HTMLElement | null;
-					if (btn) {
-						const id = Number(btn.dataset.deleteId);
+					const deleteBtn = target.closest('[data-delete-id]') as HTMLElement | null;
+					if (deleteBtn) {
+						const id = Number(deleteBtn.dataset.deleteId);
 						const user = users.find((u) => u.id === id);
 						if (user) openDelete(user);
+					}
+					const resetBtn = target.closest('[data-reset-id]') as HTMLElement | null;
+					if (resetBtn) {
+						const id = Number(resetBtn.dataset.resetId);
+						const user = users.find((u) => u.id === id);
+						if (user) openReset(user);
 					}
 				}}>
 					<DataTable
@@ -382,3 +430,51 @@
 	onConfirm={confirmDelete}
 	onCancel={() => { deleteTarget = null; }}
 />
+
+<!-- Reset password Modal -->
+<Modal bind:open={resetDialogOpen} title={m["users.Reset Password"]()}>
+	<form onsubmit={(e) => { e.preventDefault(); confirmResetPassword(); }} class="space-y-4">
+		<!-- New password -->
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["users.New Password"]()} *</label>
+			<input
+				type="password"
+				bind:value={resetPassword}
+				required
+				class="input"
+			/>
+		</div>
+
+		<!-- Confirm password -->
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["users.Confirm Password"]()} *</label>
+			<input
+				type="password"
+				bind:value={resetConfirmPassword}
+				required
+				class="input"
+			/>
+			{#if resetConfirmPassword && resetPassword !== resetConfirmPassword}
+				<p class="mt-1 text-xs text-error">{m["users.Passwords Do Not Match"]()}</p>
+			{/if}
+		</div>
+
+		<!-- Actions -->
+		<div class="flex gap-3 pt-2">
+			<button
+				type="submit"
+				disabled={resetLoading}
+				class="btn btn-primary"
+			>
+				{resetLoading ? '...' : m["users.Reset Password"]()}
+			</button>
+			<button
+				type="button"
+				onclick={() => { resetDialogOpen = false; resetTarget = null; }}
+				class="btn btn-secondary"
+			>
+				{m["common.Cancel"]()}
+			</button>
+		</div>
+	</form>
+</Modal>

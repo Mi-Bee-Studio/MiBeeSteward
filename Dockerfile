@@ -22,7 +22,6 @@ RUN apk add --no-cache ca-certificates tzdata curl
 # Create non-root user
 RUN addgroup -S mibee && adduser -S mibee -G mibee
 COPY --from=builder /mibee-steward /usr/local/bin/mibee-steward
-COPY --from=builder /app/db/migrations ./db/migrations
 WORKDIR /app
 EXPOSE 8080
 VOLUME ["/data"]

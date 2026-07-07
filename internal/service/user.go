@@ -290,6 +290,48 @@ func (s *UserService) ForceChangePassword(ctx context.Context, userID int64, new
 	return nil
 }
 
+// AdminResetPassword resets a user's password as an administrator. Unlike
+// ForceChangePassword (which clears the must-change flag for first-login flow),
+// this sets MustChangePassword=true so the affected user is forced to pick
+// their own password on next login. It also clears any login lockout and
+// failure counter so a locked-out user can be immediately unblocked.
+func (s *UserService) AdminResetPassword(ctx context.Context, userID int64, newPassword string) error {
+	user, err := s.queries.GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrUserNotFound
+		}
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if err := validatePassword(newPassword, user.Username); err != nil {
+		return err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	now := time.Now()
+	_, err = s.queries.UpdateUser(ctx, db.UpdateUserParams{
+		Username:            user.Username,
+		Email:               user.Email,
+		PasswordHash:        string(hash),
+		Role:                user.Role,
+		FailedLoginAttempts: 0,    // clear failure counter
+		LockedUntil:         nil,  // unlock account
+		MustChangePassword:  true, // force user to pick a new password next login
+		PasswordChangedAt:   &now,
+		ID:                  user.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	return nil
+}
+
 // ListUsers returns a paginated list of users.
 func (s *UserService) ListUsers(ctx context.Context, limit, offset int64) (*domain.ListUsersResponse, error) {
 	users, err := s.queries.ListUsers(ctx, db.ListUsersParams{

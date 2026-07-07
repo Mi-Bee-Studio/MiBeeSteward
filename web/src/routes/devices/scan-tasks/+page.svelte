@@ -212,7 +212,7 @@
 		triggeringId = task.id;
 		try {
 			await api.post(`/scanner/tasks/${task.id}/trigger`, {});
-			addToast('info', `Scan triggered: ${task.name}`);
+			addToast('info', m['scanner.Scan Triggered']({ name: task.name }));
 			// Start polling for run status
 			const stubRun: ScanRun = {
 				id: 0, task_id: task.id, status: 'running',
@@ -244,11 +244,11 @@
 						activeRuns.set(taskId, run);
 						activeRuns = new Map(activeRuns);
 						if (run.status === 'completed') {
-							addToast('success', `Scan done: ${run.alive_hosts}/${run.total_hosts} alive, ${run.new_hosts} new (${run.duration_ms}ms)`);
+							addToast('success', m['scanner.Scan Done']({ alive: run.alive_hosts, total: run.total_hosts, new: run.new_hosts, duration: run.duration_ms }));
 						} else if (run.status === 'cancelled') {
-							addToast('info', 'Scan cancelled');
+							addToast('info', m['scanner.Scan Cancelled']());
 						} else {
-							addToast('error', `Scan failed: ${run.error_message || 'unknown error'}`);
+							addToast('error', m['scanner.Scan Failed']({ error: run.error_message || 'unknown error' }));
 						}
 						setTimeout(() => {
 							activeRuns.delete(taskId);
@@ -268,7 +268,7 @@
 					// path is rarer), but a scheduler that never picked up the
 					// trigger can still land here — point the user at the runs list
 					// / server logs rather than claiming the scheduler is unwired.
-					addToast('warning', 'Scan triggered but no run appeared — check the Runs list or server logs.');
+					addToast('warning', m['scanner.Scan No Run']());
 					fetchTasks();
 				}
 			} catch {
@@ -324,7 +324,7 @@
 		cancellingId = taskId;
 		try {
 			await api.post(`/scanner/tasks/${taskId}/cancel`, {});
-			addToast('success', 'Scan cancelled');
+			addToast('success', m['scanner.Scan Cancelled']());
 			stopPolling(taskId);
 			activeRuns.delete(taskId);
 			activeRuns = new Map(activeRuns);
@@ -346,10 +346,10 @@
 			const diffMin = Math.floor(diffMs / 60000);
 			const diffHr = Math.floor(diffMs / 3600000);
 			const diffDay = Math.floor(diffMs / 86400000);
-			if (diffMin < 1) return 'just now';
-			if (diffMin < 60) return `${diffMin}m ago`;
-			if (diffHr < 24) return `${diffHr}h ago`;
-			return `${diffDay}d ago`;
+			if (diffMin < 1) return m['scanner.Just Now']();
+			if (diffMin < 60) return m['scanner.Minutes Ago']({ n: diffMin });
+			if (diffHr < 24) return m['scanner.Hours Ago']({ n: diffHr });
+			return m['scanner.Days Ago']({ n: diffDay });
 		} catch {
 			return iso;
 		}
@@ -406,7 +406,7 @@
 		<!-- Empty state -->
 		{#if filteredTasks.length === 0 && tasks.length > 0}
 			<div class="flex flex-col items-center justify-center py-12 text-center">
-				<p class="text-sm text-text-muted">No tasks match "{searchQuery}"</p>
+				<p class="text-sm text-text-muted">{m['scanner.No Tasks Match']({ query: searchQuery })}</p>
 			</div>
 		{:else if tasks.length === 0}
 			<div class="flex flex-col items-center justify-center py-16 text-center">
@@ -519,7 +519,7 @@
 													class="text-xs px-2 py-1 rounded text-error hover:bg-error/10
 														transition-colors disabled:opacity-50"
 												>
-													{cancellingId === task.id ? '...' : '✕ Cancel'}
+													{cancellingId === task.id ? '...' : `✕ ${m['common.Cancel']()}`}
 												</button>
 											{/if}
 										<button

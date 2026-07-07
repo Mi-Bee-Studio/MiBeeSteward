@@ -145,14 +145,6 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		r.Delete("/{id}", notificationHandler.DeleteChannel)
 		r.Post("/{id}/test", notificationHandler.TestChannel)
 	})
-	r.Route("/api/v1/alert-rules", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
-		r.Post("/", notificationHandler.CreateAlertRule)
-		r.Get("/", notificationHandler.ListAlertRules)
-		r.Get("/{id}", notificationHandler.GetAlertRule)
-		r.Put("/{id}", notificationHandler.UpdateAlertRule)
-		r.Delete("/{id}", notificationHandler.DeleteAlertRule)
-	})
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAdmin)
 		r.Get("/api/v1/notification/logs", notificationHandler.ListNotificationLogs)

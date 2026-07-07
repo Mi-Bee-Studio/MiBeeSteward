@@ -21,49 +21,6 @@ func (q *Queries) CountNotificationLogs(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const createAlertRule = `-- name: CreateAlertRule :one
-INSERT INTO alert_rules (name, device_id, condition_type, threshold, channel_id, enabled, cooldown_seconds)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, device_id, condition_type, threshold, channel_id, enabled, cooldown_seconds, last_triggered_at, created_at, updated_at
-`
-
-type CreateAlertRuleParams struct {
-	Name            string `json:"name"`
-	DeviceID        *int64 `json:"device_id"`
-	ConditionType   string `json:"condition_type"`
-	Threshold       int64  `json:"threshold"`
-	ChannelID       int64  `json:"channel_id"`
-	Enabled         int64  `json:"enabled"`
-	CooldownSeconds int64  `json:"cooldown_seconds"`
-}
-
-func (q *Queries) CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams) (AlertRule, error) {
-	row := q.db.QueryRowContext(ctx, createAlertRule,
-		arg.Name,
-		arg.DeviceID,
-		arg.ConditionType,
-		arg.Threshold,
-		arg.ChannelID,
-		arg.Enabled,
-		arg.CooldownSeconds,
-	)
-	var i AlertRule
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.DeviceID,
-		&i.ConditionType,
-		&i.Threshold,
-		&i.ChannelID,
-		&i.Enabled,
-		&i.CooldownSeconds,
-		&i.LastTriggeredAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const createChannel = `-- name: CreateChannel :one
 INSERT INTO notification_channels (name, type, config, enabled)
 VALUES (?, ?, ?, ?)
@@ -132,15 +89,6 @@ func (q *Queries) CreateNotificationLog(ctx context.Context, arg CreateNotificat
 	return i, err
 }
 
-const deleteAlertRule = `-- name: DeleteAlertRule :exec
-DELETE FROM alert_rules WHERE id = ?
-`
-
-func (q *Queries) DeleteAlertRule(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteAlertRule, id)
-	return err
-}
-
 const deleteChannel = `-- name: DeleteChannel :exec
 DELETE FROM notification_channels WHERE id = ?
 `
@@ -169,29 +117,6 @@ func (q *Queries) DeleteNotificationLogsOlderThanBatched(ctx context.Context, ar
 		return 0, err
 	}
 	return result.RowsAffected()
-}
-
-const getAlertRuleByID = `-- name: GetAlertRuleByID :one
-SELECT id, name, device_id, condition_type, threshold, channel_id, enabled, cooldown_seconds, last_triggered_at, created_at, updated_at FROM alert_rules WHERE id = ?
-`
-
-func (q *Queries) GetAlertRuleByID(ctx context.Context, id int64) (AlertRule, error) {
-	row := q.db.QueryRowContext(ctx, getAlertRuleByID, id)
-	var i AlertRule
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.DeviceID,
-		&i.ConditionType,
-		&i.Threshold,
-		&i.ChannelID,
-		&i.Enabled,
-		&i.CooldownSeconds,
-		&i.LastTriggeredAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const getChannelByID = `-- name: GetChannelByID :one
@@ -232,84 +157,6 @@ func (q *Queries) GetNotificationLogByID(ctx context.Context, id int64) (Notific
 	return i, err
 }
 
-const listAlertRules = `-- name: ListAlertRules :many
-SELECT id, name, device_id, condition_type, threshold, channel_id, enabled, cooldown_seconds, last_triggered_at, created_at, updated_at FROM alert_rules ORDER BY created_at DESC
-`
-
-func (q *Queries) ListAlertRules(ctx context.Context) ([]AlertRule, error) {
-	rows, err := q.db.QueryContext(ctx, listAlertRules)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AlertRule{}
-	for rows.Next() {
-		var i AlertRule
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.DeviceID,
-			&i.ConditionType,
-			&i.Threshold,
-			&i.ChannelID,
-			&i.Enabled,
-			&i.CooldownSeconds,
-			&i.LastTriggeredAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listAlertRulesByDevice = `-- name: ListAlertRulesByDevice :many
-SELECT id, name, device_id, condition_type, threshold, channel_id, enabled, cooldown_seconds, last_triggered_at, created_at, updated_at FROM alert_rules WHERE device_id = ? ORDER BY created_at DESC
-`
-
-func (q *Queries) ListAlertRulesByDevice(ctx context.Context, deviceID *int64) ([]AlertRule, error) {
-	rows, err := q.db.QueryContext(ctx, listAlertRulesByDevice, deviceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AlertRule{}
-	for rows.Next() {
-		var i AlertRule
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.DeviceID,
-			&i.ConditionType,
-			&i.Threshold,
-			&i.ChannelID,
-			&i.Enabled,
-			&i.CooldownSeconds,
-			&i.LastTriggeredAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listChannels = `-- name: ListChannels :many
 SELECT id, name, type, config, enabled, created_at, updated_at FROM notification_channels ORDER BY created_at DESC
 `
@@ -329,45 +176,6 @@ func (q *Queries) ListChannels(ctx context.Context) ([]NotificationChannel, erro
 			&i.Type,
 			&i.Config,
 			&i.Enabled,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listEnabledAlertRules = `-- name: ListEnabledAlertRules :many
-SELECT id, name, device_id, condition_type, threshold, channel_id, enabled, cooldown_seconds, last_triggered_at, created_at, updated_at FROM alert_rules WHERE enabled = 1 ORDER BY created_at DESC
-`
-
-func (q *Queries) ListEnabledAlertRules(ctx context.Context) ([]AlertRule, error) {
-	rows, err := q.db.QueryContext(ctx, listEnabledAlertRules)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AlertRule{}
-	for rows.Next() {
-		var i AlertRule
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.DeviceID,
-			&i.ConditionType,
-			&i.Threshold,
-			&i.ChannelID,
-			&i.Enabled,
-			&i.CooldownSeconds,
-			&i.LastTriggeredAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -492,55 +300,6 @@ func (q *Queries) ListNotificationLogsByRule(ctx context.Context, ruleID *int64)
 		return nil, err
 	}
 	return items, nil
-}
-
-const updateAlertRule = `-- name: UpdateAlertRule :one
-UPDATE alert_rules
-SET name = ?, device_id = ?, condition_type = ?, threshold = ?, channel_id = ?,
-    enabled = ?, cooldown_seconds = ?, last_triggered_at = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING id, name, device_id, condition_type, threshold, channel_id, enabled, cooldown_seconds, last_triggered_at, created_at, updated_at
-`
-
-type UpdateAlertRuleParams struct {
-	Name            string     `json:"name"`
-	DeviceID        *int64     `json:"device_id"`
-	ConditionType   string     `json:"condition_type"`
-	Threshold       int64      `json:"threshold"`
-	ChannelID       int64      `json:"channel_id"`
-	Enabled         int64      `json:"enabled"`
-	CooldownSeconds int64      `json:"cooldown_seconds"`
-	LastTriggeredAt *time.Time `json:"last_triggered_at"`
-	ID              int64      `json:"id"`
-}
-
-func (q *Queries) UpdateAlertRule(ctx context.Context, arg UpdateAlertRuleParams) (AlertRule, error) {
-	row := q.db.QueryRowContext(ctx, updateAlertRule,
-		arg.Name,
-		arg.DeviceID,
-		arg.ConditionType,
-		arg.Threshold,
-		arg.ChannelID,
-		arg.Enabled,
-		arg.CooldownSeconds,
-		arg.LastTriggeredAt,
-		arg.ID,
-	)
-	var i AlertRule
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.DeviceID,
-		&i.ConditionType,
-		&i.Threshold,
-		&i.ChannelID,
-		&i.Enabled,
-		&i.CooldownSeconds,
-		&i.LastTriggeredAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const updateChannel = `-- name: UpdateChannel :one

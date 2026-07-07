@@ -61,7 +61,7 @@
 		'scanner.scan',
 		'scanner.add_devices'
 	];
-	const resourceTypes = ['user', 'device', 'document', 'system', 'heartbeat_config', 'notification_channel', 'alert_rule'];
+	const resourceTypes = ['user', 'device', 'document', 'system', 'heartbeat_config', 'notification_channel'];
 
 	onMount(() => {
 		const unsub = auth.subscribe((v) => {
