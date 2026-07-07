@@ -1,0 +1,90 @@
+name: Release
+
+# Builds amd64 + arm64 binaries on tag push and publishes a GitHub Release
+# with the binaries attached. The frontend is built once and embedded via
+# go:embed all:dist (CGO-free, SQLite via modernc.org/sqlite).
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write  # required by softprops/action-gh-release to create the release
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: web/dist
+
+  release:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # web/dist/ is gitignored but go:embed all:dist requires it at build time.
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: web/dist
+      - name: Build binary
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        # Inject the git tag (e.g. v0.1.0) as the version string.
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          go build -ldflags "-s -w -X mibee-steward/internal/version.Version=${VERSION}" \
+            -o mibee-steward-${GOOS}-${GOARCH} ./cmd/server/
+      - name: Verify version
+        run: ./mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }} -version
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            mibee-steward-linux-amd64
+            mibee-steward-linux-arm64
