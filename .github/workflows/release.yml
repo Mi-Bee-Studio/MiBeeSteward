@@ -61,8 +61,12 @@ jobs:
           VERSION=${GITHUB_REF_NAME}
           go build -ldflags "-s -w -X mibee-steward/internal/version.Version=${VERSION}" \
             -o mibee-steward-${GOOS}-${GOARCH} ./cmd/server/
-      - name: Verify version
+      - name: Verify version (amd64 only)
+        if: matrix.goarch == 'amd64'
         run: ./mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }} -version
+      - name: Verify binary (arm64 — file check, can't execute on amd64 runner)
+        if: matrix.goarch == 'arm64'
+        run: file mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
