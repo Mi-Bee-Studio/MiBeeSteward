@@ -286,7 +286,7 @@ func (s *HeartbeatService) checkDevice(ctx context.Context, deviceID int64, cfgs
 			anySuccess = true
 		}
 	}
-	s.applyDeviceVerdict(ctx, deviceID, anySuccess)
+	s.applyDeviceVerdict(deviceID, anySuccess)
 }
 
 // probeAndRecord runs a single config (with retry), writes the result row, and
@@ -347,8 +347,8 @@ func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg db.HeartbeatC
 // It does NOT touch the main DB — that's syncStatusLoop's job (sole writer).
 // This eliminates the SQLite WAL read-isolation race that caused fleet-wide
 // flapping when concurrent goroutines read+wrote devices.status.
-func (s *HeartbeatService) applyDeviceVerdict(ctx context.Context, deviceID int64, anySuccess bool) {
-	// Read current in-memory status (for alert change detection).
+func (s *HeartbeatService) applyDeviceVerdict(deviceID int64, anySuccess bool) {
+	// Read current in-memory status (for change detection / logging).
 	s.statusCacheMu.RLock()
 	oldStatus := s.statusCache[deviceID]
 	s.statusCacheMu.RUnlock()

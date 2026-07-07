@@ -89,47 +89,58 @@ func resetAdminPasswordSubcommand(args []string) {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)
 	}
-	defer db.Close()
 
-	for _, p := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA busy_timeout=5000",
-	} {
-		if _, err := db.Exec(p); err != nil {
-			slog.Error("failed to set pragma", "pragma", p, "error", err)
-			os.Exit(1)
-		}
-	}
+	// runReset wraps the DB-touching logic so we can defer db.Close() and still
+	// os.Exit on error without tripping gocritic's exitAfterDefer (deferred
+	// calls are skipped by os.Exit). runReset returns the exit code.
+	exitCode := func() int {
+		defer db.Close()
 
-	if err := runMigrations(db, dbPath); err != nil {
-		slog.Error("failed to run migrations", "error", err)
-		os.Exit(1)
-	}
-
-	// ForceChangePassword does not need a valid JWT secret/expiry to set a
-	// password, but NewUserService requires both params.
-	expiry := 24 * time.Hour
-	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
-
-	// admin user id is 1 — seedAdminUser creates it on first server start. If
-	// the server has never been started, the admin user does not exist yet;
-	// seed it now with the new password so the operator can log in.
-	ctx := context.Background()
-	const adminID int64 = 1
-	if err := userSvc.ForceChangePassword(ctx, adminID, password); err != nil {
-		if err == service.ErrUserNotFound {
-			slog.Info("admin user not found; seeding with the new password")
-			if _, err := userSvc.Register(ctx, "admin", "admin@localhost", password, "admin"); err != nil {
-				slog.Error("failed to seed admin user", "error", err)
-				os.Exit(1)
+		for _, p := range []string{
+			"PRAGMA journal_mode=WAL",
+			"PRAGMA busy_timeout=5000",
+		} {
+			if _, err := db.Exec(p); err != nil {
+				slog.Error("failed to set pragma", "pragma", p, "error", err)
+				return 1
 			}
-		} else {
-			slog.Error("failed to reset admin password", "error", err)
-			os.Exit(1)
 		}
-	}
 
-	slog.Info("admin password reset successfully", "username", "admin")
+		if err := runMigrations(db, dbPath); err != nil {
+			slog.Error("failed to run migrations", "error", err)
+			return 1
+		}
+
+		// ForceChangePassword does not need a valid JWT secret/expiry to set a
+		// password, but NewUserService requires both params.
+		expiry := 24 * time.Hour
+		userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
+
+		// admin user id is 1 — seedAdminUser creates it on first server start. If
+		// the server has never been started, the admin user does not exist yet;
+		// seed it now with the new password so the operator can log in.
+		ctx := context.Background()
+		const adminID int64 = 1
+		if err := userSvc.ForceChangePassword(ctx, adminID, password); err != nil {
+			if err == service.ErrUserNotFound {
+				slog.Info("admin user not found; seeding with the new password")
+				if _, err := userSvc.Register(ctx, "admin", "admin@localhost", password, "admin"); err != nil {
+					slog.Error("failed to seed admin user", "error", err)
+					return 1
+				}
+			} else {
+				slog.Error("failed to reset admin password", "error", err)
+				return 1
+			}
+		}
+
+		slog.Info("admin password reset successfully", "username", "admin")
+		return 0
+	}()
+
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 	fmt.Fprintln(os.Stderr, "Admin password reset successfully. You can now log in as 'admin'.")
 }
 

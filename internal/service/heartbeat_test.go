@@ -475,7 +475,7 @@ func TestHeartbeat_UpdateDeviceStatus_Success(t *testing.T) {
 	svc.initStatusCache(ctx)
 
 	// Successful probe → should set online
-	svc.applyDeviceVerdict(ctx, deviceID, true)
+	svc.applyDeviceVerdict(deviceID, true)
 
 	require.Equal(t, "online", svc.cachedStatus(deviceID))
 }
@@ -500,16 +500,16 @@ func TestHeartbeat_UpdateDeviceStatus_FailureThreshold(t *testing.T) {
 	svc.initStatusCache(ctx)
 
 	// Failures 1-4 → still online (threshold is 5)
-	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
 	require.Equal(t, "online", svc.cachedStatus(deviceID), "still online after 1 failure")
 
-	svc.applyDeviceVerdict(ctx, deviceID, false)
-	svc.applyDeviceVerdict(ctx, deviceID, false)
-	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
 	require.Equal(t, "online", svc.cachedStatus(deviceID), "still online after 4 failures")
 
 	// Failure 5 → threshold reached → offline
-	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
 	require.Equal(t, "offline", svc.cachedStatus(deviceID), "offline after 5 consecutive failures")
 }
 
@@ -555,22 +555,22 @@ func TestHeartbeat_UpdateDeviceStatus_SuccessResetsFailCounter(t *testing.T) {
 	svc.initStatusCache(ctx)
 
 	// 2 failures
-	svc.applyDeviceVerdict(ctx, deviceID, false)
-	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
 
 	// 1 success → resets counter
-	svc.applyDeviceVerdict(ctx, deviceID, true)
+	svc.applyDeviceVerdict(deviceID, true)
 
 	// 4 more failures → counter is now 4, should NOT trigger offline (threshold 5)
-	svc.applyDeviceVerdict(ctx, deviceID, false)
-	svc.applyDeviceVerdict(ctx, deviceID, false)
-	svc.applyDeviceVerdict(ctx, deviceID, false)
-	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
 
 	require.Equal(t, "online", svc.cachedStatus(deviceID), "device should remain online — failure counter was reset")
 
 	// 5th failure → offline
-	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(deviceID, false)
 	require.Equal(t, "offline", svc.cachedStatus(deviceID), "offline after 5 consecutive failures post-reset")
 }
 
