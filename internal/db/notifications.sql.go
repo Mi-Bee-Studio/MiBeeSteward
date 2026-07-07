@@ -150,6 +150,27 @@ func (q *Queries) DeleteChannel(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteNotificationLogsOlderThanBatched = `-- name: DeleteNotificationLogsOlderThanBatched :execrows
+DELETE FROM notification_log
+WHERE rowid IN (
+    SELECT rowid FROM notification_log WHERE notification_log.sent_at < ? LIMIT ?
+)
+`
+
+type DeleteNotificationLogsOlderThanBatchedParams struct {
+	SentAt time.Time `json:"sent_at"`
+	Limit  int64     `json:"limit"`
+}
+
+// Retention sweep (batched): deletes up to ? rows older than the cutoff.
+func (q *Queries) DeleteNotificationLogsOlderThanBatched(ctx context.Context, arg DeleteNotificationLogsOlderThanBatchedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNotificationLogsOlderThanBatched, arg.SentAt, arg.Limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getAlertRuleByID = `-- name: GetAlertRuleByID :one
 SELECT id, name, device_id, condition_type, threshold, channel_id, enabled, cooldown_seconds, last_triggered_at, created_at, updated_at FROM alert_rules WHERE id = ?
 `

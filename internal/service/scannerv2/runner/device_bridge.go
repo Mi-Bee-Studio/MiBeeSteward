@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"mibee-steward/internal/service/scannerv2"
@@ -20,6 +21,25 @@ import (
 // adapter from the in-memory report to the devices/heartbeat_configs tables.
 func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport) (bool, bool) {
 	inferredType := rep.Device.Fields["inferred_type"]
+	// A service handler may have set a generic "server"/"pc" type from a single
+	// open port (ssh, smb, mysql, …). That's a weak signal — routers, NAS, and
+	// cameras all run ssh/smb too. If the hostname/vendor carries a STRONGER,
+	// device-specific signal (an explicit router/camera/nas/printer/embedded
+	// model name), let the heuristic override the generic verdict. We still
+	// trust handler-set specialized types (camera/router/switch/…) as-is: those
+	// come from SNMP sysObjectID or protocol detection and are authoritative.
+	if inferredType == "" || inferredType == "server" || inferredType == "pc" {
+		if t := heuristicDeviceType(rep); t != "" && t != "server" && t != "pc" {
+			// Specialized heuristic verdict (router/camera/nas/…) beats the
+			// generic handler verdict.
+			inferredType = t
+		} else if inferredType == "" {
+			// No handler verdict and no specialized heuristic — take whatever
+			// the heuristic offers (including "" → falls to "other" below, or a
+			// heuristic "server" from ssh+exporter).
+			inferredType = t
+		}
+	}
 	if inferredType == "" {
 		inferredType = "other"
 	}
@@ -39,10 +59,28 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			rn.logger.Warn("device bridge: create device failed", "ip", rep.IP, "error", derr)
 			return false, false
 		}
+		// A freshly-discovered alive host starts online; make sure the heartbeat
+		// service holds no stale failure state for it before configs are seeded.
+		if rn.heartbeat != nil {
+			rn.heartbeat.ResetFailures(devID)
+		}
 		// Seed heartbeat configs (new devices only, matching v1 behavior).
-		if rn.heartbeat != nil && len(rep.Heartbeats) > 0 {
-			if herr := rn.heartbeat.CreateConfigs(ctx, devID, rep.Heartbeats); herr != nil {
-				rn.logger.Warn("device bridge: seed heartbeats failed", "ip", rep.IP, "error", herr)
+		if rn.heartbeat != nil {
+			if len(rep.Heartbeats) > 0 {
+				if herr := rn.heartbeat.CreateConfigs(ctx, devID, rep.Heartbeats); herr != nil {
+					rn.logger.Warn("device bridge: seed heartbeats failed", "ip", rep.IP, "error", herr)
+				}
+			} else {
+				// No service was identified (no open ports, or ports the classifiers
+				// don't recognize). Without a heartbeat config this device would be
+				// discovered once and then never probed again — it would show
+				// "no heartbeat" forever even though we just proved it's alive.
+				// Fall back to an ICMP config so every discovered host gets at least
+				// liveness monitoring. The device already has an IP (rep.IP) and was
+				// reached by the scan, so ICMP is always a valid probe target.
+				if herr := rn.heartbeat.CreateDefaultConfig(ctx, devID, rep.IP); herr != nil {
+					rn.logger.Warn("device bridge: seed ICMP fallback heartbeat failed", "ip", rep.IP, "error", herr)
+				}
 			}
 		}
 		return true, false
@@ -56,12 +94,50 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		now := time.Now().UTC()
 		_, _ = rn.dbConn.ExecContext(ctx, `UPDATE devices SET status='online', last_scanned_at=?, updated_at=? WHERE id=?`,
 			now, now, existingID)
+		// Clear the heartbeat service's failure counter for this device: the
+		// scan just proved it's alive, so a stale counter from a prior flapping
+		// window must not pull it back to offline on the next heartbeat tick.
+		if rn.heartbeat != nil {
+			rn.heartbeat.ResetFailures(existingID)
+			// Backfill heartbeat configs for pre-existing devices that were
+			// discovered before the "always seed at least ICMP" fallback existed.
+			// These hosts have been scanned repeatedly but never got a config
+			// (because no service was identified on any scan), so they show
+			// "no heartbeat" forever. Only act when the device has ZERO configs
+			// to avoid duplicating configs on devices that already have some.
+			if rn.deviceHasHeartbeatConfig(ctx, existingID) {
+				// already monitored — nothing to backfill
+			} else if len(rep.Heartbeats) > 0 {
+				if herr := rn.heartbeat.CreateConfigs(ctx, existingID, rep.Heartbeats); herr != nil {
+					rn.logger.Warn("device bridge: backfill heartbeats failed", "ip", rep.IP, "error", herr)
+				}
+			} else {
+				if herr := rn.heartbeat.CreateDefaultConfig(ctx, existingID, rep.IP); herr != nil {
+					rn.logger.Warn("device bridge: backfill ICMP fallback heartbeat failed", "ip", rep.IP, "error", herr)
+				}
+			}
+		}
 		return false, true
 
 	default:
 		rn.logger.Warn("device bridge: lookup failed", "ip", rep.IP, "error", err)
 		return false, false
 	}
+}
+
+// deviceHasHeartbeatConfig reports whether the device already has any row in
+// heartbeat_configs. Used by the existing-device branch to decide whether to
+// backfill a config: only seed when zero exist, so we never duplicate.
+func (rn *Runner) deviceHasHeartbeatConfig(ctx context.Context, deviceID int64) bool {
+	var n int
+	err := rn.dbConn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM heartbeat_configs WHERE device_id = ?`, deviceID).Scan(&n)
+	if err != nil {
+		// On query error, assume it has configs so we don't risk duplicating.
+		rn.logger.Warn("device bridge: heartbeat_configs count failed", "device_id", deviceID, "error", err)
+		return true
+	}
+	return n > 0
 }
 
 // createDevice inserts a new device row derived from the report.
@@ -219,6 +295,131 @@ func buildDeviceTags(devType, brand string, rep scannerv2.HostReport) string {
 	}
 	b, _ := json.Marshal(out)
 	return string(b)
+}
+
+// heuristicDeviceType is the last-resort type inference run in the device
+// bridge when no ServiceHandler set inferred_type. It uses signals that are
+// host-level rather than service-level:
+//   - hostname (rDNS/mDNS/NetBIOS/SNMP sysName) — single-board hosts often
+//     name themselves "rpi4b-4g", "nanopineo2", "bananapi...".
+//   - MAC-OUI vendor (inferred_brand) — Espressif/Tuya/Realtek → IoT chips;
+//     Raspberry Pi Trading → embedded; Proxmox/server vendors → server.
+//   - open-port shape — 22+9100 (ssh+exporter) without web ⇒ server-class host.
+//
+// Returns "" when no hint matches (caller falls back to "other").
+func heuristicDeviceType(rep scannerv2.HostReport) string {
+	host := strings.ToLower(rep.Device.Fields["node_hostname"])
+	if host == "" {
+		host = strings.ToLower(rep.Device.Fields["sys_name"])
+	}
+	brand := strings.ToLower(rep.Device.Fields["inferred_brand"])
+	osType := strings.ToLower(rep.Device.Fields["os_type"])
+	hint := host + " " + brand + " " + osType
+
+	switch {
+	// Single-board / embedded Linux (Raspberry Pi, NanoPi, BananaPi, OrangePi).
+	case containsAny(hint, "rasp", "rpi", "nanopi", "bananapi", "orangepi",
+		"rockpi", "radxa", "pine64"):
+		return "embedded"
+	// IoT chips / smart-home vendors (Espressif = ESP32, Tuya, Xiaomi gateways).
+	case containsAny(hint, "espressif", "tuya", "lumi-gateway", "xiaomi",
+		"shelly", "sonoff", "tasmota", "gledopto", "ikea"):
+		return "iot"
+	// Cameras by hostname/brand/model keyword. Covers Hikvision (DS-/Z4S-/IPC-),
+	// Dahua, and generic "cam"/"ipc"/"dvr"/"nvr" naming. Many cameras expose a
+	// hostname like "Z4S-2PSE" or "IPC-123" via rDNS even when SNMP/ONVIF are
+	// blocked cross-subnet.
+	case containsAny(host, "ipc", "-cam", "cam-", "camera", "hik", "hikvision",
+		"dahua", "dvr", "nvr", "z4s", "ds-2", "ipcam") ||
+		containsAny(brand, "hikvision", "dahua", "axis", "reolink", "foscam", "vivotek"):
+		return "camera"
+	// NAS appliances by hostname/brand. Synology uses "DS-"/"DiskStation", QNAP
+	// "TS-", plus the OUI vendor names.
+	case containsAny(host, "nas", "synology", "diskstation", "ds-", "qnap", "ts-",
+		"teramaster", "readynas", "asustor") ||
+		containsAny(brand, "synology", "qnap", "asustor"):
+		return "nas"
+	// Printers by hostname/brand.
+	case containsAny(host, "printer", "hp-", "canon-", "epson-", "brother-",
+		"ricoh-", "xerox-") ||
+		containsAny(brand, "epson", "canon", "brother", "ricoh"):
+		return "printer"
+	// Routers / APs by hostname or vendor. Covers the Softether/FriendlyARM
+	// NanoPi-R2S/R4S/R6S/R68S family, OpenWrt, RouterOS/Mikrotik, and common
+	// consumer router hostnames (miwifi, asus, tplink, huawei). These names
+	// show up in rDNS even cross-subnet, so this catches a lot of gateways.
+	case containsAny(host, "router", "gateway", "openwrt", "padavan", "asuswrt",
+		"routeros", "mikrotik", "r2s", "r4s", "r6s", "r68s", "nanopi-r",
+		"miwifi", "xiaomi-router", "tplink", "tp-link", "ap-", "-ap", "ac68",
+		"ac88", "ax1800", "ax3000", "ax6000", "k2p", "unifi", "edgeos") ||
+		containsAny(brand, "mikrotik", "ubiquiti", "tp-link", "tplink"):
+		return "router"
+	// Hostname explicitly says server/iot/proxmox.
+	case strings.Contains(host, "server") || strings.Contains(host, "proxmox"):
+		return "server"
+	case strings.Contains(host, "iot"):
+		return "iot"
+	// NAS vendors by MAC OUI without other signal.
+	case containsAny(brand, "synology", "qnap"):
+		return "nas"
+	// OS indicates a general-purpose host.
+	case strings.Contains(osType, "windows"):
+		return "pc"
+	case strings.Contains(osType, "linux") || strings.Contains(osType, "freebsd"):
+		return "server"
+	}
+
+	// Port-shape fallback when no hostname/brand/os signal matched. This is the
+	// common case cross-subnet (ARP/mDNS/SSDP all fail, leaving only ICMP + rDNS
+	// + whatever TCP ports survived the scan). We infer from the port set:
+	//   - RTSP (554/8554) without a clearer signal  ⇒ camera
+	//   - raw 9100 (JetDirect/IPP)                  ⇒ printer
+	//   - ssh + node_exporter/prometheus            ⇒ monitored server
+	//   - ssh alone (22)                            ⇒ server-class host
+	// These are deliberately conservative — a single ambiguous web port (80/443)
+	// is NOT enough to guess, since it's on almost everything.
+	svcSet := make(map[string]bool, len(rep.Services))
+	for _, s := range rep.Services {
+		svcSet[s.Service] = true
+	}
+	switch {
+	case svcSet["rtsp"] || svcSet["onvif"] || svcSet["camera"]:
+		return "camera"
+	case svcSet["ssh"] && (svcSet["node_exporter"] || svcSet["prometheus"]):
+		return "server"
+	}
+	// Final port-number fallback (services may not have been classified even
+	// when the port was seen open, e.g. banner timed out cross-subnet).
+	hasPort := func(ports ...int) bool {
+		for _, s := range rep.Services {
+			for _, p := range ports {
+				if s.Port == p {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	switch {
+	case hasPort(554, 8554, 3702):
+		return "camera"
+	case hasPort(9100):
+		return "printer"
+	case hasPort(22) && !hasPort(80, 443):
+		// SSH with no web — likely a server/appliance shell.
+		return "server"
+	}
+	return ""
+}
+
+// containsAny reports whether s contains any of subs.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // keep slog referenced for the warn logs above when this file is the only user

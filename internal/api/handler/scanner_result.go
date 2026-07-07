@@ -51,17 +51,31 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 	if q.Get("ip") != "" {
 		ipFilter = q.Get("ip")
 	}
+	// alive filter: "1" ⇒ only alive hosts, "0" ⇒ only dead, absent ⇒ both.
+	// Encoded as a sentinel (-1 = no filter) for the SQL `(? < 0 OR alive = ?)`.
+	aliveSentinel := int64(-1)
+	aliveVal := int64(0)
+	switch q.Get("alive") {
+	case "1", "true":
+		aliveSentinel = 1
+		aliveVal = 1
+	case "0", "false":
+		aliveSentinel = 1
+		aliveVal = 0
+	}
 
 	results, err := h.queries.ListScanResults(r.Context(), db.ListScanResultsParams{
 		Column1: taskID,
 		TaskID:  taskID,
 		Column3: ipFilter,
 		Ip:      ipFilter,
+		Column5: aliveSentinel,
+		Alive:   aliveVal,
 		Limit:   limit,
 		Offset:  offset,
 	})
 	if err != nil {
-		slog.Error("ListScanResults failed", "task_id", taskID, "ip", ipFilter, "limit", limit, "offset", offset, "error", err)
+		slog.Error("ListScanResults failed", "task_id", taskID, "ip", ipFilter, "alive", q.Get("alive"), "limit", limit, "offset", offset, "error", err)
 		Error(w, http.StatusInternalServerError, "failed to list scan results")
 		return
 	}
@@ -70,9 +84,15 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 		results = []db.ScanResult{}
 	}
 
+	// CountScanResults now mirrors the same WHERE (task_id + ip + alive) so the
+	// page total reflects the active filters instead of the whole task.
 	total, err := h.queries.CountScanResults(r.Context(), db.CountScanResultsParams{
 		Column1: taskID,
 		TaskID:  taskID,
+		Column3: ipFilter,
+		Ip:      ipFilter,
+		Column5: aliveSentinel,
+		Alive:   aliveVal,
 	})
 	if err != nil {
 		slog.Error("CountScanResults failed", "task_id", taskID, "error", err)
@@ -231,6 +251,8 @@ func (h *ScannerResultHandler) ExportScanResults(w http.ResponseWriter, r *http.
 		TaskID:  taskID,
 		Column3: "",
 		Ip:      "",
+		Column5: -1, // no alive filter on full export
+		Alive:   0,
 		Limit:   100000,
 		Offset:  0,
 	})

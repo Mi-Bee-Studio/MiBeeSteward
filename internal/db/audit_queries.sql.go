@@ -50,6 +50,43 @@ func (q *Queries) CountAuditLogs(ctx context.Context, arg CountAuditLogsParams) 
 	return count, err
 }
 
+const deleteAuditLogsOlderThan = `-- name: DeleteAuditLogsOlderThan :execrows
+DELETE FROM audit_logs WHERE created_at < ?
+`
+
+// Retention sweep: prune audit rows older than the cutoff. Batched deletion is
+// done in Go (DELETE rowid IN (SELECT ... LIMIT ?)) to avoid a single giant
+// transaction; this plain form is kept for small/fallback use.
+func (q *Queries) DeleteAuditLogsOlderThan(ctx context.Context, createdAt *time.Time) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAuditLogsOlderThan, createdAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteAuditLogsOlderThanBatched = `-- name: DeleteAuditLogsOlderThanBatched :execrows
+DELETE FROM audit_logs
+WHERE rowid IN (
+    SELECT rowid FROM audit_logs WHERE audit_logs.created_at < ? LIMIT ?
+)
+`
+
+type DeleteAuditLogsOlderThanBatchedParams struct {
+	CreatedAt *time.Time `json:"created_at"`
+	Limit     int64      `json:"limit"`
+}
+
+// Batched form: deletes up to ? rows (by rowid) older than the cutoff. The
+// sweeper loops this until the affected-row count drops below the batch size.
+func (q *Queries) DeleteAuditLogsOlderThanBatched(ctx context.Context, arg DeleteAuditLogsOlderThanBatchedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAuditLogsOlderThanBatched, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const listAuditLogs = `-- name: ListAuditLogs :many
 SELECT id, user_id, action, resource_type, resource_id, ip_address, user_agent, details, created_at
 FROM audit_logs

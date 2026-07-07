@@ -12,8 +12,7 @@ bin/
 handler.test
 
 # === Data & Runtime ===
-data/*.db
-data/uploads/
+data/
 uploads/
 docs/private/
 *.db

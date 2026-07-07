@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -110,7 +111,15 @@ func setupHeartbeatTest(t *testing.T) (*HeartbeatService, *sql.DB, *db.Queries) 
 		},
 	}
 
-	svc := NewHeartbeatService(dbConn, cfg)
+	// Heartbeat results now live in a dedicated store (separate DB). Use a
+	// temp file so the test exercises the real batched-write path.
+	hbStore, err := OpenHeartbeatStore(filepath.Join(t.TempDir(), "hb_test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { hbStore.Close() })
+	hbStore.Start(context.Background())
+
+	svc := NewHeartbeatService(dbConn, hbStore, cfg)
+	svc.initStatusCache(context.Background())
 	queries := db.New(dbConn)
 
 	return svc, dbConn, queries
@@ -463,13 +472,12 @@ func TestHeartbeat_UpdateDeviceStatus_Success(t *testing.T) {
 		Tags:      "{}",
 	})
 	require.NoError(t, err)
+	svc.initStatusCache(ctx)
 
 	// Successful probe → should set online
-	svc.updateDeviceStatus(ctx, deviceID, true)
+	svc.applyDeviceVerdict(ctx, deviceID, true)
 
-	device, err := queries.GetDevice(ctx, deviceID)
-	require.NoError(t, err)
-	require.Equal(t, "online", device.Status)
+	require.Equal(t, "online", svc.cachedStatus(deviceID))
 }
 
 // 13. updateDeviceStatus: failure threshold (3 consecutive) → device goes offline
@@ -489,20 +497,20 @@ func TestHeartbeat_UpdateDeviceStatus_FailureThreshold(t *testing.T) {
 		Tags:      "{}",
 	})
 	require.NoError(t, err)
+	svc.initStatusCache(ctx)
 
-	// Failures 1 and 2 → still online
-	svc.updateDeviceStatus(ctx, deviceID, false)
-	device, _ := queries.GetDevice(ctx, deviceID)
-	require.Equal(t, "online", device.Status, "still online after 1 failure")
+	// Failures 1-4 → still online (threshold is 5)
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	require.Equal(t, "online", svc.cachedStatus(deviceID), "still online after 1 failure")
 
-	svc.updateDeviceStatus(ctx, deviceID, false)
-	device, _ = queries.GetDevice(ctx, deviceID)
-	require.Equal(t, "online", device.Status, "still online after 2 failures")
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	require.Equal(t, "online", svc.cachedStatus(deviceID), "still online after 4 failures")
 
-	// Failure 3 → threshold reached → offline
-	svc.updateDeviceStatus(ctx, deviceID, false)
-	device, _ = queries.GetDevice(ctx, deviceID)
-	require.Equal(t, "offline", device.Status, "offline after 3 consecutive failures")
+	// Failure 5 → threshold reached → offline
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	require.Equal(t, "offline", svc.cachedStatus(deviceID), "offline after 5 consecutive failures")
 }
 
 // 14. GetProber returns correct prober types
@@ -544,26 +552,26 @@ func TestHeartbeat_UpdateDeviceStatus_SuccessResetsFailCounter(t *testing.T) {
 		Tags:      "{}",
 	})
 	require.NoError(t, err)
+	svc.initStatusCache(ctx)
 
 	// 2 failures
-	svc.updateDeviceStatus(ctx, deviceID, false)
-	svc.updateDeviceStatus(ctx, deviceID, false)
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(ctx, deviceID, false)
 
 	// 1 success → resets counter
-	svc.updateDeviceStatus(ctx, deviceID, true)
+	svc.applyDeviceVerdict(ctx, deviceID, true)
 
-	// 2 more failures → counter is now 2, should NOT trigger offline
-	svc.updateDeviceStatus(ctx, deviceID, false)
-	svc.updateDeviceStatus(ctx, deviceID, false)
+	// 4 more failures → counter is now 4, should NOT trigger offline (threshold 5)
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	svc.applyDeviceVerdict(ctx, deviceID, false)
 
-	device, err := queries.GetDevice(ctx, deviceID)
-	require.NoError(t, err)
-	require.Equal(t, "online", device.Status, "device should remain online — failure counter was reset")
+	require.Equal(t, "online", svc.cachedStatus(deviceID), "device should remain online — failure counter was reset")
 
-	// 3rd failure → offline
-	svc.updateDeviceStatus(ctx, deviceID, false)
-	device, _ = queries.GetDevice(ctx, deviceID)
-	require.Equal(t, "offline", device.Status, "offline after 3 consecutive failures post-reset")
+	// 5th failure → offline
+	svc.applyDeviceVerdict(ctx, deviceID, false)
+	require.Equal(t, "offline", svc.cachedStatus(deviceID), "offline after 5 consecutive failures post-reset")
 }
 
 // 16. GetHistory returns paginated results within time range
@@ -575,9 +583,10 @@ func TestHeartbeat_GetHistory(t *testing.T) {
 	cfg := insertTestConfig(t, queries, ctx, deviceID, "icmp", "192.168.20.1", 1)
 
 	now := time.Now()
-	// Insert 3 results at different times
+	// Insert results into the heartbeat store (separate DB).
+	hq := svc.Store().Queries()
 	for i := 0; i < 3; i++ {
-		_, err := queries.CreateResult(ctx, db.CreateResultParams{
+		_, err := hq.CreateResult(ctx, db.CreateResultParams{
 			DeviceID:     deviceID,
 			ConfigID:     cfg.ID,
 			Status:       "success",
@@ -613,8 +622,9 @@ func TestHeartbeat_GetHistoryPagination(t *testing.T) {
 	cfg := insertTestConfig(t, queries, ctx, deviceID, "icmp", "192.168.20.2", 1)
 
 	now := time.Now()
+	hq := svc.Store().Queries()
 	for i := 0; i < 5; i++ {
-		_, err := queries.CreateResult(ctx, db.CreateResultParams{
+		_, err := hq.CreateResult(ctx, db.CreateResultParams{
 			DeviceID:     deviceID,
 			ConfigID:     cfg.ID,
 			Status:       "success",
@@ -659,8 +669,11 @@ func TestHeartbeat_GetStats(t *testing.T) {
 		{"success", 30.0},
 	}
 
+	// Insert results into the heartbeat STORE (separate DB), since that's where
+	// GetStats reads from now.
+	hq := svc.Store().Queries()
 	for _, s := range statuses {
-		_, err := queries.CreateResult(ctx, db.CreateResultParams{
+		_, err := hq.CreateResult(ctx, db.CreateResultParams{
 			DeviceID:     deviceID,
 			ConfigID:     cfg.ID,
 			Status:       s.status,

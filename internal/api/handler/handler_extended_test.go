@@ -1,9 +1,11 @@
 package handler_test
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,7 +41,14 @@ func setupExtendedTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	auditRepo := repository.NewAuditRepository(db)
 	docHandler := handler.NewDocumentHandler(docSvc, uploadPath, auditRepo)
 
-	heartbeatSvc := service.NewHeartbeatService(db, cfg)
+	// HeartbeatService needs its dedicated store; use a temp file.
+	hbStore, err := service.OpenHeartbeatStore(filepath.Join(t.TempDir(), "hb.db"))
+	if err != nil {
+		t.Fatalf("open heartbeat store: %v", err)
+	}
+	t.Cleanup(func() { hbStore.Close() })
+	hbStore.Start(context.Background())
+	heartbeatSvc := service.NewHeartbeatService(db, hbStore, cfg)
 	heartbeatHandler := handler.NewHeartbeatHandler(heartbeatSvc)
 
 	deviceRepo := repository.NewDeviceRepository(db)

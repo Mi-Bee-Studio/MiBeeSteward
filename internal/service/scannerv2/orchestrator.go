@@ -454,10 +454,13 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			if v := e.RawData["workgroup"]; v != "" && report.Device.Fields["netbios_workgroup"] == "" {
 				report.Device.Fields["netbios_workgroup"] = v
 			}
-			// A NetBIOS responder is strong evidence the host runs Windows.
-			if report.Device.Fields["os_type"] == "" {
-				report.Device.Fields["os_type"] = "Windows"
-			}
+			// NOTE: do NOT infer os_type from a NetBIOS response. Samba, OpenWrt,
+			// Synology DSM, and many routers/NAS appliances all run an SMB stack
+			// that answers NetBIOS, so "responded to NetBIOS" is NOT evidence of
+			// Windows — it was mislabeling Linux routers (e.g. an R68S running
+			// dropbear + samba) as Windows. OS is now derived from stronger
+			// signals only: SNMP sysDescr (osFromSysDescr), node_exporter, SSDP,
+			// or SSH banner.
 		}
 	}
 

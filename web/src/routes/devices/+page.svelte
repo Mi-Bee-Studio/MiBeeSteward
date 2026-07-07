@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
-	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { onMount, onDestroy } from 'svelte';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { escapeHtml, escapeAttr } from '$lib/utils';
 	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
 	import type { Device, LinkedDoc } from '$lib/types';
 	import { auth } from '$lib/stores/auth';
@@ -29,14 +29,34 @@ interface Stats {
 	let loading = $state(true);
 	let error = $state('');
 
+	// Request sequencing: every fetch (initial, poll, filter, page) bumps this
+	// counter and captures its value. When a response returns, it's discarded
+	// unless it's from the LATEST request. This kills the page-count flapping
+	// caused by an in-flight background poll landing AFTER a newer user-triggered
+	// fetch (search/page/filter change) and overwriting total with a stale value
+	// computed for a different offset/filter. Plain boolean "loading" guards
+	// don't help here because the poll intentionally runs without setting loading.
+	let fetchSeq = 0;
+
 	// --- Filters ---
 	let statusFilter = $state('');
 	let typeFilter = $state('');
 	let dateFrom = $state('');
 	let dateTo = $state('');
 	let offset = $state(0);
-	const limit = 20;
+	// Per-page size is user-adjustable (was a const 20). Backed by the URL so a
+	// page reload / shared link preserves the chosen density.
+	let limit = $state(20);
 	let showAdvanced = $state(false);
+	// Server-side search term (name / ip / mac / serial). The previous page only
+	// filtered the current 20-row slice client-side, so any device past page 1
+	// was effectively unfindable. This is now pushed to the backend.
+	let searchInput = $state('');
+	let searchQuery = $state('');
+	let searchTimer: ReturnType<typeof setTimeout> | null = null;
+	// Server-side sort. empty sortKey ⇒ default server ordering (by id).
+	let sortKey = $state('');
+	let sortDir = $state<'asc' | 'desc'>('asc');
 
 	// --- Form modal ---
 	let formOpen = $state(false);
@@ -91,27 +111,144 @@ interface Stats {
 	let csvPreviewRows = $state<{ ip: string; name: string; type: string }[]>([]);
 
 	// --- Lifecycle ---
-	onMount(fetchDevices);
+	// Polling: device online/offline status is driven by the heartbeat service
+	// server-side; without polling the list is a snapshot at mount time and any
+	// status transition during the visit is invisible. Background-refresh every
+	// 30s without the loading skeleton (avoids flicker) and skips while the user
+	// is mid-interaction (a modal/CSV/bulk dialog open) so their state isn't
+	// clobbered.
+	const POLL_MS = 30_000;
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+	onMount(() => {
+		// Hydrate filter/sort/page state from the URL so links (e.g. the scan
+		// results "View Device" deep link) and reloads land on the right view.
+		hydrateFromUrl();
+		fetchDevices();
+		pollTimer = setInterval(() => {
+			if (!formOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !importOpen && !linkOpen) {
+				void refreshDevicesSilent();
+			}
+		}, POLL_MS);
+	});
+
+	onDestroy(() => {
+		if (pollTimer) clearInterval(pollTimer);
+		if (searchTimer) clearTimeout(searchTimer);
+	});
+
+	// buildParams assembles the backend query for the current view state. Shared
+	// by the initial fetch and the silent background poll so they never diverge.
+	function buildParams(): URLSearchParams {
+		const params = new URLSearchParams();
+		if (statusFilter) params.set('status', statusFilter);
+		if (typeFilter) params.set('type', typeFilter);
+		if (searchQuery) params.set('search', searchQuery);
+		if (dateFrom) params.set('created_from', dateFrom);
+		if (dateTo) params.set('created_to', dateTo);
+		if (sortKey) {
+			params.set('sort', sortKey);
+			params.set('order', sortDir);
+		}
+		params.set('limit', String(limit));
+		params.set('offset', String(offset));
+		return params;
+	}
+
+	// syncUrl replaces ?… on the address bar with the current view state, without
+	// adding a history entry (replaceState). Enables shareable/reloadable views.
+	function syncUrl() {
+		const params = buildParams();
+		const qs = params.toString();
+		history.replaceState(null, '', qs ? `?${qs}` : '?');
+	}
+
+	// hydrateFromUrl reads filter/sort/page params back from location on mount.
+	function hydrateFromUrl() {
+		const sp = new URLSearchParams(window.location.search);
+		if (sp.get('status')) statusFilter = sp.get('status')!;
+		if (sp.get('type')) typeFilter = sp.get('type')!;
+		if (sp.get('search')) {
+			searchQuery = sp.get('search')!;
+			searchInput = searchQuery;
+		}
+		if (sp.get('sort')) sortKey = sp.get('sort')!;
+		const ord = sp.get('order');
+		if (ord === 'asc' || ord === 'desc') sortDir = ord;
+		const lim = parseInt(sp.get('limit') ?? '', 10);
+		if ([10, 20, 50, 100].includes(lim)) limit = lim;
+		const off = parseInt(sp.get('offset') ?? '', 10);
+		if (!Number.isNaN(off) && off >= 0) offset = off;
+	}
+
+	// onSearchInput debounces the search box: 400ms after the last keystroke the
+	// term is committed to searchQuery and a backend fetch fires. Resetting to
+	// empty fires immediately so "clear" feels responsive.
+	function onSearchInput() {
+		if (searchTimer) clearTimeout(searchTimer);
+		const v = searchInput.trim();
+		if (v === '') {
+			searchQuery = '';
+			offset = 0;
+			fetchDevices();
+			return;
+		}
+		searchTimer = setTimeout(() => {
+			searchQuery = v;
+			offset = 0;
+			fetchDevices();
+		}, 400);
+	}
+
+	// onSortChange is the DataTable's server-side sort callback: clicking a
+	// sortable column header commits the new sort and refetches from page 0.
+	function onSortChange(key: string, dir: 'asc' | 'desc') {
+		sortKey = key;
+		sortDir = dir;
+		offset = 0;
+		fetchDevices();
+	}
+
+	// Silent refresh: same fetch as fetchDevices but no loading skeleton and no
+	// error toast — background polling failures shouldn't disrupt the user.
+	async function refreshDevicesSilent() {
+		// Tag this poll with a sequence number; discard the result if a newer
+		// request (user search/page/filter change) has superseded it by the time
+		// the response arrives. Without this, a slow poll landing after a fast
+		// user fetch overwrites `total` with a value for the wrong filter/offset,
+		// which is exactly the "page count flaps on refresh" symptom.
+		const seq = ++fetchSeq;
+		try {
+			const res = await api.get<{ devices: Device[]; total: number }>(`/devices?${buildParams()}`);
+			if (seq !== fetchSeq) return; // superseded — drop stale result
+			devices = res.devices || [];
+			total = res.total || 0;
+			const s = await api.get<Stats>('/devices/stats');
+			if (seq !== fetchSeq) return;
+			stats = s;
+		} catch {
+			// Swallow: background poll errors are not actionable for the user.
+		}
+	}
 
 	// --- Data fetching ---
 	async function fetchDevices() {
 		loading = true;
 		error = '';
+		syncUrl();
+		const seq = ++fetchSeq;
 		try {
-			const params = new URLSearchParams();
-			if (statusFilter) params.set('status', statusFilter);
-			if (typeFilter) params.set('type', typeFilter);
-			if (dateFrom) params.set('created_from', dateFrom);
-			if (dateTo) params.set('created_to', dateTo);
-			params.set('limit', String(limit));
-			params.set('offset', String(offset));
-			const res = await api.get<{ devices: Device[]; total: number }>(`/devices?${params}`);
+			const res = await api.get<{ devices: Device[]; total: number }>(`/devices?${buildParams()}`);
+			if (seq !== fetchSeq) return; // superseded — a newer fetch owns the state
 			devices = res.devices || [];
 			total = res.total || 0;
 
 		try {
-			stats = await api.get<Stats>('/devices/stats');
+			const s = await api.get<Stats>('/devices/stats');
+			if (seq !== fetchSeq) return;
+			stats = s;
 		} catch (err: unknown) {
+			if (seq !== fetchSeq) return;
 			addToast('error', getErrorMessage(err));
 			// Fallback: compute stats from device list
 			const by_status: Record<string, number> = {};
@@ -123,13 +260,23 @@ interface Stats {
 			stats = { by_status, by_type };
 		}
 		} catch (err: unknown) {
-			error = getErrorMessage(err);
+			if (seq === fetchSeq) error = getErrorMessage(err);
 		} finally {
-			loading = false;
+			if (seq === fetchSeq) loading = false;
 		}
 	}
 
 	function applyFilters() {
+		offset = 0;
+		expandedDeviceId = null;
+		selectedIds = new Set();
+		fetchDevices();
+	}
+
+	// Changing page size resets to page 0 (offset N of a larger page no longer
+	// maps cleanly) and refetches.
+	function onPageSizeChange(newLimit: number) {
+		limit = newLimit;
 		offset = 0;
 		expandedDeviceId = null;
 		selectedIds = new Set();
@@ -471,6 +618,12 @@ interface Stats {
 		pc: m['devices.PC'](),
 		embedded: m['devices.Embedded'](),
 		iot: m['devices.IoT'](),
+		server: m['devices.Server']?.() ?? 'server',
+		switch: m['devices.Switch']?.() ?? 'switch',
+		router: m['devices.Router']?.() ?? 'router',
+		firewall: m['devices.Firewall']?.() ?? 'firewall',
+		nas: m['devices.NAS']?.() ?? 'nas',
+		camera: m['devices.Camera']?.() ?? 'camera',
 		other: m['devices.Other']()
 	};
 
@@ -527,7 +680,7 @@ interface Stats {
 			key: 'ip_address',
 			label: m['devices.IP Address'](),
 			render: (row: Record<string, unknown>) =>
-				row.ip_address ? `<span class="font-mono">${row.ip_address}</span>` : '-'
+				row.ip_address ? `<span class="font-mono">${escapeHtml(String(row.ip_address))}</span>` : '-'
 		},
 		{
 			// Vendor: prefer scan_attributes.vendor (OUI/SNMP-derived), fall back
@@ -538,7 +691,7 @@ interface Stats {
 			render: (row: Record<string, unknown>) => {
 				const sa = row.scan_attributes as { vendor?: string } | undefined;
 				const v = sa?.vendor || (row.brand ? String(row.brand) : '');
-				return v ? `<span class="text-text">${v}</span>` : '-';
+				return v ? `<span class="text-text">${escapeHtml(v)}</span>` : '-';
 			}
 		},
 		{
@@ -548,7 +701,7 @@ interface Stats {
 			render: (row: Record<string, unknown>) => {
 				const sa = row.scan_attributes as { mac?: string } | undefined;
 				const mac = sa?.mac || (row.mac_address ? String(row.mac_address) : '');
-				return mac ? `<span class="font-mono text-xs">${mac}</span>` : '-';
+				return mac ? `<span class="font-mono text-xs">${escapeHtml(mac)}</span>` : '-';
 			}
 		},
 		{
@@ -558,20 +711,20 @@ interface Stats {
 			render: (row: Record<string, unknown>) => {
 				const sa = row.scan_attributes as { hostname?: string } | undefined;
 				const h = sa?.hostname;
-				return h ? `<span class="font-mono text-xs">${h}</span>` : '-';
+				return h ? `<span class="font-mono text-xs">${escapeHtml(h)}</span>` : '-';
 			}
 		},
 		{
 			key: 'location',
 			label: m['devices.Location'](),
-			render: (row: Record<string, unknown>) => (row.location ? String(row.location) : '-')
+			render: (row: Record<string, unknown>) => (row.location ? escapeHtml(String(row.location)) : '-')
 		},
 		{
 			key: 'actions',
 			label: m['common.Actions'](),
 			render: (row: Record<string, unknown>) => {
 				const id = row.id;
-				const name = String(row.name ?? '');
+				const name = escapeAttr(String(row.name ?? ''));
 				return `<div class="flex gap-2">`
 					+ `<button data-action="edit" data-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
 					+ `<button data-action="link" data-id="${id}" data-name="${name}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['documents.Link Document']()}</button>`
@@ -666,8 +819,34 @@ interface Stats {
 			<option value="pc">{m['devices.PC']()}</option>
 			<option value="embedded">{m['devices.Embedded']()}</option>
 			<option value="iot">{m['devices.IoT']()}</option>
+			<option value="server">{m['devices.Server']?.() ?? 'server'}</option>
+			<option value="switch">{m['devices.Switch']?.() ?? 'switch'}</option>
+			<option value="router">{m['devices.Router']?.() ?? 'router'}</option>
+			<option value="firewall">{m['devices.Firewall']?.() ?? 'firewall'}</option>
+			<option value="nas">{m['devices.NAS']?.() ?? 'nas'}</option>
+			<option value="camera">{m['devices.Camera']?.() ?? 'camera'}</option>
 			<option value="other">{m['devices.Other']()}</option>
 		</select>
+
+		<!-- Server-side search (name / ip / mac / serial). 400ms debounce. -->
+		<div class="relative flex-1 min-w-[180px] max-w-xs">
+			<input
+				type="text"
+				bind:value={searchInput}
+				oninput={onSearchInput}
+				placeholder={m['devices.Search placeholder']?.() ?? 'Search name / IP / MAC…'}
+				class="input pr-9"
+			/>
+			{#if searchInput}
+				<button
+					onclick={() => { searchInput = ''; onSearchInput(); }}
+					class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors"
+					aria-label={m['common.Clear']?.() ?? 'Clear'}
+				>✕</button>
+			{:else}
+				<span class="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none text-sm">⌕</span>
+			{/if}
+		</div>
 
 		<!-- Advanced filters toggle -->
 		<button
@@ -809,20 +988,20 @@ interface Stats {
 			<DataTable
 				{columns}
 				rows={devices as unknown as Record<string, unknown>[]}
-				searchPlaceholder={m['devices.Search Devices']()}
-				searchableKeys={['name', 'ip_address']}
-				initialSearch={$page.url.searchParams.get('search') ?? ''}
 				emptyTitle={m['devices.No Devices']()}
 				emptyDescription={m['devices.No Devices Desc']()}
 				emptyAction={openCreate}
 				emptyActionLabel={m['devices.Create Device']()}
 				expandedRowId={expandedDeviceId}
 				expandedContent={expandedRow}
+				externalSortKey={sortKey || null}
+				externalSortDirection={sortKey ? sortDir : 'none'}
+				onSortChange={onSortChange}
 			/>
 		</div>
 
 		<!-- Pagination -->
-		<Pagination {total} {limit} {offset} onPageChange={(o) => { offset = o; expandedDeviceId = null; selectedIds = new Set(); fetchDevices(); }} />
+		<Pagination {total} {limit} {offset} onPageChange={(o) => { offset = o; expandedDeviceId = null; selectedIds = new Set(); fetchDevices(); }} onPageSizeChange={onPageSizeChange} />
 	{/if}
 </div>
 

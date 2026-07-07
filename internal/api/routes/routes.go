@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -69,8 +71,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Password reset service and handler
 	passwordResetSvc := service.NewPasswordResetService(db.New(dbConn), nil, &cfg.SMTP, auditRepo)
 	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetSvc)
-	// Export handler
-	exportHandler := handler.NewExportHandler(service.NewExportService(db.New(dbConn)))
+	// NOTE: export handler is constructed after the heartbeat store opens below,
+	// so heartbeat-results export can read from the dedicated store. See comment there.
 	// Rate limiters
 	loginRate := cfg.RateLimit.LoginPerMinute
 	if loginRate <= 0 {
@@ -134,8 +136,21 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/", userHandler.ListUsers)
 		r.Post("/batch-delete", batchHandler.BatchDeleteUsers)
 	})
-	// Heartbeat service (created before device service for auto-config dependency)
-	heartbeatSvc := service.NewHeartbeatService(dbConn, cfg)
+	// Heartbeat service + its dedicated time-series store. heartbeat_results
+	// lives in a separate SQLite file (data/heartbeat.db) so its high write
+	// volume (~270k rows/day) doesn't contend with the main DB's CRUD writers.
+	heartbeatDBPath := heartbeatDBPathFor(cfg)
+	hbStore, err := service.OpenHeartbeatStore(heartbeatDBPath)
+	if err != nil {
+		slog.Error("failed to open heartbeat store", "path", heartbeatDBPath, "error", err)
+		os.Exit(1)
+	}
+	heartbeatSvc := service.NewHeartbeatService(dbConn, hbStore, cfg)
+
+	// Export handler — bound to the main DB for devices/audit, and to the
+	// dedicated heartbeat store for heartbeat_results (which lives in
+	// heartbeat.db after the time-series split; the main DB's copy is stale).
+	exportHandler := handler.NewExportHandler(service.NewExportService(db.New(dbConn), hbStore.Queries()))
 
 	// Device routes
 	deviceRepo := repository.NewDeviceRepository(dbConn)
@@ -249,11 +264,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 
 	// --- Scanner background services (v2) ---
-	retentionDays := cfg.Scanner.RetentionDays
-	if retentionDays <= 0 {
-		retentionDays = 30
-	}
-	cleanupSvc := scannerv2cleanup.New(scanQueries, retentionDays, 24*time.Hour)
+	// Retention sweeper prunes all high-volume detail tables (heartbeat_results,
+	// scan_results, scan_task_runs, audit_logs, notification_log,
+	// service_evidence) on a single ticker, each with its own retention window.
+	// Defaults & scanner.retention_days back-compat are applied in
+	// config.normalizeRetention, so cfg.Retention is fully populated here.
+	cleanupSvc := scannerv2cleanup.New(scanQueries, hbStore.Queries(), cfg.Retention)
 	cleanupSvc.Start(context.Background())
 
 	if scanScheduler != nil {
@@ -355,6 +371,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth)
 			r.Get("/configs", dashHandler.ListConfigs)
+			r.Get("/overview", dashHandler.Overview)
 			r.Get("/query", dashHandler.Query)
 			r.Get("/query_range", dashHandler.QueryRange)
 		})
@@ -477,4 +494,15 @@ func routerTimeout(cfg config.ScannerConfig) int {
 		return cfg.RouterARP.Timeout
 	}
 	return 4
+}
+
+// heartbeatDBPathFor derives the heartbeat.db path from the main DB path:
+// same directory, filename "heartbeat.db". This keeps the time-series store
+// alongside the main database (e.g. ./data/heartbeat.db next to ./data/mibee.db).
+func heartbeatDBPathFor(cfg *config.Config) string {
+	mainPath := cfg.Database.SQLite.Path
+	if mainPath == "" {
+		mainPath = "./data/mibee.db"
+	}
+	return filepath.Join(filepath.Dir(mainPath), "heartbeat.db")
 }

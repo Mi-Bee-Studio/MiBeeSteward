@@ -32,6 +32,18 @@ func (h *DashboardHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
 	Success(w, configs)
 }
 
+// Overview handles GET /api/v1/dashboard/overview — the aggregated payload that
+// powers the default dashboard (device totals/distributions, recent scan
+// activity, offline-device list). Computed server-side over the full dataset.
+func (h *DashboardHandler) Overview(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.svc.Overview(r.Context())
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to load dashboard overview")
+		return
+	}
+	Success(w, resp)
+}
+
 // CreateConfig handles POST /api/v1/dashboard/configs
 func (h *DashboardHandler) CreateConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {

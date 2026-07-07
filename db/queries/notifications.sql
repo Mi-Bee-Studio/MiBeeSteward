@@ -64,3 +64,10 @@ SELECT * FROM notification_log WHERE channel_id = ? ORDER BY sent_at DESC;
 
 -- name: CountNotificationLogs :one
 SELECT COUNT(*) FROM notification_log;
+
+-- name: DeleteNotificationLogsOlderThanBatched :execrows
+-- Retention sweep (batched): deletes up to ? rows older than the cutoff.
+DELETE FROM notification_log
+WHERE rowid IN (
+    SELECT rowid FROM notification_log WHERE notification_log.sent_at < ? LIMIT ?
+);

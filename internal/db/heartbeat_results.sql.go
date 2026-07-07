@@ -78,6 +78,28 @@ func (q *Queries) DeleteOlderThan(ctx context.Context, checkedAt time.Time) (int
 	return result.RowsAffected()
 }
 
+const deleteOlderThanBatched = `-- name: DeleteOlderThanBatched :execrows
+DELETE FROM heartbeat_results
+WHERE rowid IN (
+    SELECT rowid FROM heartbeat_results WHERE heartbeat_results.checked_at < ? LIMIT ?
+)
+`
+
+type DeleteOlderThanBatchedParams struct {
+	CheckedAt time.Time `json:"checked_at"`
+	Limit     int64     `json:"limit"`
+}
+
+// Retention sweep (batched): deletes up to ? rows older than the cutoff.
+// The sweeper loops this until affected < batch size.
+func (q *Queries) DeleteOlderThanBatched(ctx context.Context, arg DeleteOlderThanBatchedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteOlderThanBatched, arg.CheckedAt, arg.Limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getHeartbeatStats = `-- name: GetHeartbeatStats :one
 SELECT
     CAST(COALESCE(AVG(latency_ms), 0.0) AS REAL) as avg_latency_ms,

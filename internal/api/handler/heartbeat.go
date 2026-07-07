@@ -263,22 +263,14 @@ func (h *HeartbeatHandler) ListResults(w http.ResponseWriter, r *http.Request) {
 		endTime, _ = time.Parse(time.RFC3339, endDate)
 	}
 
-	results, err := h.svc.GetQueries().ListHeartbeatResultsByDevice(r.Context(), db.ListHeartbeatResultsByDeviceParams{
-		DeviceID:    deviceID,
-		Column2:     startDate,
-		CheckedAt:   startTime,
-		Column4:     endDate,
-		CheckedAt_2: endTime,
-		Limit:       limit,
-		Offset:      offset,
-	})
+	// Read from the dedicated heartbeat store (separate DB) via the service
+	// layer — NOT h.svc.GetQueries(), which is bound to the main DB whose
+	// heartbeat_results table is a stale leftover from before the store
+	// migration (no longer written to → frozen timestamps).
+	results, err := h.svc.ListResults(r.Context(), deviceID, startTime, endTime, int32(limit), int32(offset))
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to list heartbeat results")
 		return
-	}
-
-	if results == nil {
-		results = []db.HeartbeatResult{}
 	}
 
 	Success(w, domain.HeartbeatResultListResponse{

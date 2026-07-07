@@ -1,20 +1,33 @@
 <script lang="ts">
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 
-	let { total, limit, offset, onPageChange }: {
+	let {
+		total,
+		limit,
+		offset,
+		onPageChange,
+		pageSizeOptions = [10, 20, 50, 100],
+		onPageSizeChange
+	}: {
 		total: number;
 		limit: number;
 		offset: number;
 		onPageChange: (offset: number) => void;
+		/** Optional: show a per-page size selector. When provided, the bar renders
+		 *  even for small datasets so the user can still change page size. */
+		pageSizeOptions?: number[];
+		onPageSizeChange?: (limit: number) => void;
 	} = $props();
 
 	let jumpInput = $state('');
 
-	const totalPages = $derived(Math.ceil(total / limit));
+	const totalPages = $derived(Math.max(1, Math.ceil(total / limit)));
 	const currentPage = $derived(Math.floor(offset / limit) + 1);
-	const start = $derived(offset + 1);
+	const start = $derived(total === 0 ? 0 : offset + 1);
 	const end = $derived(Math.min(offset + limit, total));
 	const showJumpInput = $derived(totalPages > 5);
+	// Render the bar when there's anything to paginate OR a page-size selector.
+	const showBar = $derived(total > 0 && (total > limit || onPageSizeChange));
 
 	function goPrev() {
 		if (offset > 0) onPageChange(Math.max(0, offset - limit));
@@ -33,14 +46,40 @@
 			jumpInput = '';
 		}
 	}
+
+	function handlePageSizeChange(e: Event) {
+		const select = e.currentTarget as HTMLSelectElement;
+		const newSize = parseInt(select.value, 10);
+		if (onPageSizeChange && newSize > 0) {
+			onPageSizeChange(newSize);
+		}
+	}
 </script>
 
-{#if total > limit}
-	<div class="flex items-center justify-between gap-4 px-1 py-2">
-		<!-- Range display -->
-		<span class="text-xs text-muted whitespace-nowrap">
-			Showing {start}–{end} of {total}
-		</span>
+{#if showBar}
+	<div class="flex flex-wrap items-center justify-between gap-3 px-1 py-2">
+		<!-- Range display + page-size selector -->
+		<div class="flex items-center gap-3">
+			<span class="text-xs text-muted whitespace-nowrap tabular-nums">
+				{total === 0 ? '0' : start}–{end} <span class="opacity-60">/</span> {total}
+			</span>
+			{#if onPageSizeChange}
+				<div class="flex items-center gap-1.5">
+					<span class="text-xs text-muted">{''}</span>
+					<select
+						value={limit}
+						onchange={handlePageSizeChange}
+						class="px-1.5 py-1 text-xs bg-surface border border-border rounded-md text-text
+							focus:outline-none focus:border-primary transition-colors cursor-pointer"
+						aria-label="Rows per page"
+					>
+						{#each pageSizeOptions as opt}
+							<option value={opt}>{opt} / page</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
+		</div>
 
 		<!-- Controls -->
 		<div class="flex items-center gap-2">

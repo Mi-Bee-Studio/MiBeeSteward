@@ -79,8 +79,16 @@ func (s *DeviceService) List(ctx context.Context, filter domain.DeviceFilter) (*
 	if filter.Limit > 100 {
 		filter.Limit = 100
 	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
 
-	devices, err := s.repo.List(ctx, filter)
+	// Fetch the page and its total in ONE read transaction so they share a
+	// snapshot. Two separate queries (list, then count) could observe different
+	// snapshots because devices is written every ~30-60s (heartbeat status
+	// sync) and in bursts during scans — a write landing between the queries
+	// made the list and its total disagree, surfacing as page-count flapping.
+	devices, total, err := s.repo.ListFilteredWithCount(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list devices: %w", err)
 	}
@@ -88,10 +96,6 @@ func (s *DeviceService) List(ctx context.Context, filter domain.DeviceFilter) (*
 	resp := make([]domain.DeviceResponse, 0, len(devices))
 	for _, d := range devices {
 		resp = append(resp, toDeviceResponse(d))
-	}
-	total, err := s.repo.Count(ctx, filter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count devices: %w", err)
 	}
 
 	return &domain.DeviceListResponse{
@@ -207,6 +211,14 @@ func (s *DeviceService) Delete(ctx context.Context, id int64) error {
 			return ErrDeviceNotFound
 		}
 		return fmt.Errorf("failed to delete device: %w", err)
+	}
+	// heartbeat_results lives in a separate DB (no cross-DB foreign key), so
+	// cascade-delete its rows explicitly. Best-effort: a dangling history row
+	// for a deleted device is harmless (retention sweep cleans it up).
+	if s.heartbeatSvc != nil && s.heartbeatSvc.Store() != nil {
+		if hbErr := s.heartbeatSvc.Store().DeleteByDevice(ctx, id); hbErr != nil {
+			slog.Warn("delete heartbeat results for device failed", "device_id", id, "error", hbErr)
+		}
 	}
 	return nil
 }

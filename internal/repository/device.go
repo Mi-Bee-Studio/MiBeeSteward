@@ -13,11 +13,12 @@ import (
 // DeviceRepository wraps sqlc queries for device operations.
 type DeviceRepository struct {
 	queries *db.Queries
+	dbConn  db.DBTX // raw connection for the flexible ListFiltered query (sqlc can't express dynamic ORDER BY)
 }
 
 // NewDeviceRepository creates a new DeviceRepository.
 func NewDeviceRepository(dbConn db.DBTX) *DeviceRepository {
-	return &DeviceRepository{queries: db.New(dbConn)}
+	return &DeviceRepository{queries: db.New(dbConn), dbConn: dbConn}
 }
 
 // Create inserts a new device.
@@ -198,4 +199,235 @@ func (r *DeviceRepository) CountByType(ctx context.Context) ([]db.CountDevicesBy
 		return nil, fmt.Errorf("failed to count devices by type: %w", err)
 	}
 	return rows, nil
+}
+
+// sortWhitelist maps a client-supplied sort token to the real column name. Any
+// token not in this map falls back to "id". This is the SQL-injection guard:
+// only these literals ever reach ORDER BY, never raw user input.
+var sortWhitelist = map[string]string{
+	"id":              "id",
+	"name":            "name",
+	"ip_address":      "ip_address",
+	"status":          "status",
+	"type":            "type",
+	"last_scanned_at": "last_scanned_at",
+	"created_at":      "created_at",
+}
+
+// escapeLike escapes the SQL LIKE wildcards (\, %, _) in a search term so a
+// user searching for a literal "10.0.0.1" or a name containing "_" matches the
+// text itself. Caller selects the escape char via ESCAPE '\'.
+func escapeLike(s string) string {
+	out := make([]byte, 0, len(s)+4)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\\' || c == '%' || c == '_' {
+			out = append(out, '\\')
+		}
+		out = append(out, c)
+	}
+	return string(out)
+}
+
+// ListFiltered is the flexible device list used by the device page: server-side
+// search (name/ip/mac/serial LIKE), created_at range, and a whitelisted sort.
+// It intentionally lives outside sqlc — sqlc cannot express a dynamic ORDER BY,
+// and the device list is the one query that genuinely needs per-request
+// sorting. The sort column is taken from sortWhitelist (never raw input), and
+// the search term is parameterized with ESCAPE, so there is no injection surface.
+func (r *DeviceRepository) ListFiltered(ctx context.Context, f domain.DeviceFilter) ([]db.Device, error) {
+	col := sortWhitelist[f.SortBy]
+	if col == "" {
+		col = "id"
+	}
+	dir := "ASC"
+	if f.Order == "desc" {
+		dir = "DESC"
+	}
+	// Runs outside a transaction; for a snapshot-consistent list+count pair use
+	// ListFilteredWithCount instead.
+	return listFilteredOn(ctx, r.dbConn, f, col, dir)
+}
+
+// CountFiltered mirrors ListFiltered's WHERE so the page total reflects the
+// active search/range filters (the old CountDevices ignored search entirely,
+// so filtered totals were wrong).
+//
+// Runs outside a transaction; for a snapshot-consistent list+count pair use
+// ListFilteredWithCount instead.
+func (r *DeviceRepository) CountFiltered(ctx context.Context, f domain.DeviceFilter) (int64, error) {
+	return countFilteredOn(ctx, r.dbConn, f)
+}
+
+func strPtr(s string) *string { return &s }
+
+// ListFilteredWithCount runs the filtered list query and the matching count in
+// a single read transaction so both see the same snapshot.
+//
+// Why: ListFiltered + CountFiltered used to be two independent queries against
+// the connection pool, which under WAL can land on two different connections
+// and observe two different snapshots. The devices table is written to every
+// ~30-60s (heartbeat status sync) and in bursts during scans, so a device
+// insert/status change landing between the two queries made the page list and
+// its total disagree — the visible symptom was the page count flapping on
+// refresh (sometimes 2 pages, sometimes 5). Running both inside one
+// read-only tx (BEGIN ... COMMIT) pins them to one snapshot. The tx is opened
+// read-only so it never blocks writers and is eligible for WAL's concurrent
+// reader optimization.
+//
+// It returns the device page and the total matching the filter.
+func (r *DeviceRepository) ListFilteredWithCount(ctx context.Context, f domain.DeviceFilter) ([]db.Device, int64, error) {
+	// Resolve sort column once (shared by list + the tx wrapper).
+	col := sortWhitelist[f.SortBy]
+	if col == "" {
+		col = "id"
+	}
+	dir := "ASC"
+	if f.Order == "desc" {
+		dir = "DESC"
+	}
+
+	tx, err := r.dbConnAsDB().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, 0, fmt.Errorf("begin read tx for list+count: %w", err)
+	}
+	defer tx.Rollback() // safe to roll back a committed tx (no-op)
+
+	list, err := listFilteredOn(ctx, tx, f, col, dir)
+	if err != nil {
+		return nil, 0, err
+	}
+	count, err := countFilteredOn(ctx, tx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, 0, fmt.Errorf("commit read tx for list+count: %w", err)
+	}
+	return list, count, nil
+}
+
+// dbConnAsDB unwraps the repository's dbConn to a *sql.DB for BeginTx.
+// dbConn is typed as db.DBTX (the sqlc interface) to accept both *sql.DB and
+// *sql.Tx, but in production it is always a *sql.DB (set in NewDeviceRepository
+// from routes.go). This panics if someone wires a Tx in, which is desirable —
+// we'd want to know.
+func (r *DeviceRepository) dbConnAsDB() *sql.DB {
+	if db, ok := r.dbConn.(*sql.DB); ok {
+		return db
+	}
+	panic("DeviceRepository.dbConn is not a *sql.DB; ListFilteredWithCount requires a pool to open a read tx")
+}
+
+// listFilteredOn is the list query body parameterized over the DBTX it runs on,
+// so it can execute inside the caller's read transaction.
+func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, dir string) ([]db.Device, error) {
+	var (
+		args               []any
+		statusVal          = f.Status
+		typeVal            = f.Type
+		searchVal          = f.Search
+		likeVal            = "%" + escapeLike(f.Search) + "%"
+		createdFrom string // "" disables the bound
+		createdTo   string
+		createdFromArg *string
+	)
+	if f.CreatedAtFrom != nil {
+		createdFrom = "1"
+		createdFromArg = strPtr(f.CreatedAtFrom.Format("2006-01-02 15:04:05"))
+	}
+	createdToArg := (*string)(nil)
+	if f.CreatedAtTo != nil {
+		createdTo = "1"
+		createdToArg = strPtr(f.CreatedAtTo.Format("2006-01-02 15:04:05"))
+	}
+
+	query := `SELECT id, name, type, brand, model, location, purpose, description, status, ip_address,
+		mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels,
+		last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url,
+		last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname,
+		created_at, updated_at
+	FROM devices
+	WHERE (? = '' OR status = ?)
+	  AND (? = '' OR type = ?)
+	  AND (? = '' OR name LIKE ? ESCAPE '\' OR ip_address LIKE ? ESCAPE '\' OR mac_address LIKE ? ESCAPE '\' OR serial_number LIKE ? ESCAPE '\')
+	  AND (? = '' OR created_at >= ?)
+	  AND (? = '' OR created_at <= ?)
+	ORDER BY ` + col + " " + dir + `
+	LIMIT ? OFFSET ?`
+
+	args = append(args,
+		statusVal, statusVal,
+		typeVal, typeVal,
+		searchVal, likeVal, likeVal, likeVal, likeVal,
+		createdFrom, createdFromArg,
+		createdTo, createdToArg,
+		f.Limit, f.Offset,
+	)
+
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list devices (filtered): %w", err)
+	}
+	defer rows.Close()
+
+	var out []db.Device
+	for rows.Next() {
+		var d db.Device
+		if err := rows.Scan(
+			&d.ID, &d.Name, &d.Type, &d.Brand, &d.Model, &d.Location, &d.Purpose, &d.Description, &d.Status, &d.IpAddress,
+			&d.MacAddress, &d.SerialNumber, &d.PurchaseDate, &d.WarrantyExpiry, &d.Tags, &d.ScanSource, &d.PrometheusLabels,
+			&d.LastScannedAt, &d.LastScanTaskID, &d.OpenPorts, &d.DetectedServices, &d.PrometheusUrl, &d.NodeExporterUrl,
+			&d.LastScanRttMs, &d.ScanAttributes, &d.UserAttributes, &d.ScanVendor, &d.ScanMac, &d.ScanOs, &d.ScanHostname,
+			&d.CreatedAt, &d.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan device row: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// countFilteredOn is the count query body parameterized over the DBTX it runs on.
+func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int64, error) {
+	var (
+		args               []any
+		statusVal          = f.Status
+		typeVal            = f.Type
+		searchVal          = f.Search
+		likeVal            = "%" + escapeLike(f.Search) + "%"
+		createdFrom string
+		createdTo   string
+	)
+	createdFromArg := (*string)(nil)
+	if f.CreatedAtFrom != nil {
+		createdFrom = "1"
+		createdFromArg = strPtr(f.CreatedAtFrom.Format("2006-01-02 15:04:05"))
+	}
+	createdToArg := (*string)(nil)
+	if f.CreatedAtTo != nil {
+		createdTo = "1"
+		createdToArg = strPtr(f.CreatedAtTo.Format("2006-01-02 15:04:05"))
+	}
+
+	query := `SELECT COUNT(*) FROM devices
+	WHERE (? = '' OR status = ?)
+	  AND (? = '' OR type = ?)
+	  AND (? = '' OR name LIKE ? ESCAPE '\' OR ip_address LIKE ? ESCAPE '\' OR mac_address LIKE ? ESCAPE '\' OR serial_number LIKE ? ESCAPE '\')
+	  AND (? = '' OR created_at >= ?)
+	  AND (? = '' OR created_at <= ?)`
+
+	args = append(args,
+		statusVal, statusVal,
+		typeVal, typeVal,
+		searchVal, likeVal, likeVal, likeVal, likeVal,
+		createdFrom, createdFromArg,
+		createdTo, createdToArg,
+	)
+
+	var count int64
+	if err := q.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count devices (filtered): %w", err)
+	}
+	return count, nil
 }

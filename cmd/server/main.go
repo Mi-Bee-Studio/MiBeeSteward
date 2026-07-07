@@ -59,9 +59,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Configure connection pool
-	db.SetMaxOpenConns(2) // WAL mode supports concurrent reads
-	db.SetMaxIdleConns(2)
+	// Configure connection pool. Was 2 (a common SQLite default), but the
+	// heartbeat service's concurrent verdict writes (GetDevice + UpdateDeviceStatus
+	// for up to 16 devices at once) starved on 2 connections: a verdict goroutine
+	// holding failCountsMu would block on a DB read while the other connection was
+	// busy writing — leaving devices stuck on offline. 16 gives the probe pool
+	// enough connections to read device state without blocking the writer.
+	// WAL mode keeps reads from blocking the single writer, so this is safe.
+	db.SetMaxOpenConns(16)
+	db.SetMaxIdleConns(4)
 
 	// Optimize SQLite with WAL mode
 	pragmas := []string{

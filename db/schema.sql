@@ -290,6 +290,9 @@ CREATE INDEX IF NOT EXISTS idx_scan_results_scanned_at ON scan_results(scanned_a
 CREATE UNIQUE INDEX IF NOT EXISTS idx_scan_results_task_ip ON scan_results(task_id, ip);
 CREATE INDEX IF NOT EXISTS idx_scan_task_runs_task ON scan_task_runs(task_id);
 CREATE INDEX IF NOT EXISTS idx_scan_task_runs_status ON scan_task_runs(status);
+-- created_at index backs the retention-sweeper DELETE (WHERE created_at < cutoff);
+-- without it the prune scans the whole table.
+CREATE INDEX IF NOT EXISTS idx_scan_task_runs_created_at ON scan_task_runs(created_at);
 
 -- NOTE: the UNIQUE indexes on devices(ip_address) and
 -- heartbeat_configs(device_id, method) are NOT created here. They're created

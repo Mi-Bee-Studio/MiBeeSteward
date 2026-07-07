@@ -38,3 +38,11 @@ SELECT
     CAST(COALESCE(SUM(CASE WHEN status = 'timeout' THEN 1 ELSE 0 END), 0) AS INTEGER) as timeout_count
 FROM heartbeat_results
 WHERE device_id = ? AND checked_at >= ? AND checked_at <= ?;
+
+-- name: DeleteOlderThanBatched :execrows
+-- Retention sweep (batched): deletes up to ? rows older than the cutoff.
+-- The sweeper loops this until affected < batch size.
+DELETE FROM heartbeat_results
+WHERE rowid IN (
+    SELECT rowid FROM heartbeat_results WHERE heartbeat_results.checked_at < ? LIMIT ?
+);

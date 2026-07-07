@@ -472,11 +472,13 @@
 														<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
 														<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 													</svg>
-													Running...
+													{m['scanner.Running']()}
 												</span>
-												<!-- Progress bar (animated/pulsing) -->
-												<div class="mt-1.5 w-full max-w-[120px] h-1.5 bg-border rounded-full overflow-hidden">
-													<div class="h-full bg-accent rounded-full animate-pulse" style="width: 60%"></div>
+												<!-- Indeterminate progress bar: a scan's true progress isn't known until
+												     it finishes, so we show an animated sweep rather than a fake "60%"
+												     that misleads users into thinking completion is near. -->
+												<div class="mt-1.5 w-full max-w-[120px] h-1.5 bg-border rounded-full overflow-hidden relative">
+													<div class="absolute inset-y-0 left-0 w-1/3 bg-accent rounded-full scan-progress-sweep"></div>
 												</div>
 											</div>
 										{:else if run?.status === 'completed'}
@@ -485,10 +487,10 @@
 											</span>
 										{:else if run?.status === 'cancelled'}
 											<span class="inline-flex items-center gap-1 text-text-muted">
-												⊘ Cancelled
+												⊘ {m['scanner.Cancelled']()}
 											</span>
 										{:else if run?.status === 'failed'}
-											<span class="text-error">✗ {run.error_message || 'Failed'}</span>
+											<span class="text-error">✗ {run.error_message || m['scanner.Failed']()}</span>
 										{/if}
 									{:else}
 										{formatRelative(task.last_run_at)}

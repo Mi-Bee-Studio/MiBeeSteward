@@ -59,6 +59,27 @@ func (q *Queries) CreateScanTaskRun(ctx context.Context, arg CreateScanTaskRunPa
 	return i, err
 }
 
+const deleteScanTaskRunsOlderThanBatched = `-- name: DeleteScanTaskRunsOlderThanBatched :execrows
+DELETE FROM scan_task_runs
+WHERE rowid IN (
+    SELECT rowid FROM scan_task_runs WHERE scan_task_runs.created_at < ? LIMIT ?
+)
+`
+
+type DeleteScanTaskRunsOlderThanBatchedParams struct {
+	CreatedAt time.Time `json:"created_at"`
+	Limit     int64     `json:"limit"`
+}
+
+// Retention sweep (batched): deletes up to ? runs older than the cutoff.
+func (q *Queries) DeleteScanTaskRunsOlderThanBatched(ctx context.Context, arg DeleteScanTaskRunsOlderThanBatchedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteScanTaskRunsOlderThanBatched, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getLatestRun = `-- name: GetLatestRun :one
 SELECT id, task_id, status, total_hosts, alive_hosts, new_hosts, updated_hosts, duration_ms, error_message, started_at, finished_at, created_at
 FROM scan_task_runs

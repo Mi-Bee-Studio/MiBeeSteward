@@ -55,3 +55,12 @@ log:
 rate_limit:
   login_per_minute: 10  # 每分钟最大登录尝试次数
   global_per_minute: 100  # 每分钟最大全局请求次数
+retention:
+  heartbeat_results_days: 7
+  scan_results_days: 30
+  scan_task_runs_days: 30
+  audit_logs_days: 90
+  notification_log_days: 30
+  service_evidence_days: 14
+  sweep_interval_hours: 6
+  batch_size: 5000

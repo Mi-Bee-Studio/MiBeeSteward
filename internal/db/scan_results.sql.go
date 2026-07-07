@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 )
 
 const batchInsertScanResults = `-- name: BatchInsertScanResults :exec
@@ -53,15 +54,31 @@ const countScanResults = `-- name: CountScanResults :one
 SELECT COUNT(*)
 FROM scan_results
 WHERE (? = 0 OR task_id = ?)
+  AND (? = '' OR ip LIKE ?)
+  AND (? < 0 OR alive = ?)
 `
 
 type CountScanResultsParams struct {
 	Column1 interface{} `json:"column_1"`
 	TaskID  int64       `json:"task_id"`
+	Column3 interface{} `json:"column_3"`
+	Ip      string      `json:"ip"`
+	Column5 interface{} `json:"column_5"`
+	Alive   int64       `json:"alive"`
 }
 
+// The WHERE mirrors ListScanResults (task_id + ip + alive) so the page total
+// reflects active filters. The previous version only counted by task_id, which
+// made the total and pagination wrong whenever ip or alive filters were set.
 func (q *Queries) CountScanResults(ctx context.Context, arg CountScanResultsParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countScanResults, arg.Column1, arg.TaskID)
+	row := q.db.QueryRowContext(ctx, countScanResults,
+		arg.Column1,
+		arg.TaskID,
+		arg.Column3,
+		arg.Ip,
+		arg.Column5,
+		arg.Alive,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -133,6 +150,30 @@ WHERE scanned_at < datetime('now', '-' || ? || ' days')
 
 func (q *Queries) DeleteScanResultsOlderThan(ctx context.Context, dollar_1 *string) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteScanResultsOlderThan, dollar_1)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteScanResultsOlderThanBatched = `-- name: DeleteScanResultsOlderThanBatched :execrows
+DELETE FROM scan_results
+WHERE rowid IN (
+    SELECT rowid FROM scan_results WHERE scan_results.scanned_at < ? LIMIT ?
+)
+`
+
+type DeleteScanResultsOlderThanBatchedParams struct {
+	ScannedAt time.Time `json:"scanned_at"`
+	Limit     int64     `json:"limit"`
+}
+
+// Retention sweep (batched): deletes up to ? rows older than the cutoff
+// timestamp. The legacy DeleteScanResultsOlderThan takes a days-string and
+// deletes in one shot; this batched cutoff form is what the sweeper uses to
+// avoid a single giant transaction on large result sets.
+func (q *Queries) DeleteScanResultsOlderThanBatched(ctx context.Context, arg DeleteScanResultsOlderThanBatchedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteScanResultsOlderThanBatched, arg.ScannedAt, arg.Limit)
 	if err != nil {
 		return 0, err
 	}
@@ -245,6 +286,7 @@ SELECT id, task_id, run_id, ip, alive, rtt_ms, ports, services, snmp_data, prome
 FROM scan_results
 WHERE (? = 0 OR task_id = ?)
   AND (? = '' OR ip LIKE ?)
+  AND (? < 0 OR alive = ?)
 ORDER BY scanned_at DESC
 LIMIT ? OFFSET ?
 `
@@ -254,6 +296,8 @@ type ListScanResultsParams struct {
 	TaskID  int64       `json:"task_id"`
 	Column3 interface{} `json:"column_3"`
 	Ip      string      `json:"ip"`
+	Column5 interface{} `json:"column_5"`
+	Alive   int64       `json:"alive"`
 	Limit   int64       `json:"limit"`
 	Offset  int64       `json:"offset"`
 }
@@ -264,6 +308,8 @@ func (q *Queries) ListScanResults(ctx context.Context, arg ListScanResultsParams
 		arg.TaskID,
 		arg.Column3,
 		arg.Ip,
+		arg.Column5,
+		arg.Alive,
 		arg.Limit,
 		arg.Offset,
 	)

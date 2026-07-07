@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { writable } from 'svelte/store';
 	import Chart from '$lib/components/Chart.svelte';
 	import DashboardWidget from '$lib/components/DashboardWidget.svelte';
 	import WidgetPicker from '$lib/components/WidgetPicker.svelte';
@@ -29,6 +30,35 @@
 	interface DevicesResponse {
 		devices: Device[];
 		total: number;
+	}
+
+	// Overview mirrors GET /dashboard/overview — the aggregated payload that
+	// feeds the type/location distributions (full population, not a 200-row
+	// sample), scan activity, and the offline-device list.
+	interface OverviewScanRun {
+		id: number; task_id: number; status: string;
+		total_hosts: number; alive_hosts: number; new_hosts: number;
+		duration_ms: number; error_message?: string;
+		started_at?: string; finished_at?: string;
+	}
+	interface OverviewDevice {
+		id: number; name: string; ip_address: string;
+		type: string; status: string; last_scanned_at?: string;
+	}
+	interface OverviewResponse {
+		devices: {
+			total: number; online: number; offline: number; unknown: number; online_rate: number;
+			by_type: Record<string, number>;
+			by_location: Record<string, number>;
+		};
+		scanning: {
+			tasks_total: number; runs_total: number;
+			recent_runs: OverviewScanRun[];
+			runs_by_status: Record<string, number>;
+			last_discovery?: OverviewScanRun;
+		};
+		abnormal: OverviewDevice[];
+		generated: string;
 	}
 
 	interface DashboardConfig {
@@ -62,14 +92,30 @@
 		updated_at: string;
 	}
 
-	let loading = $state(true);
+	// loading is a writable store (not $state). A bare {#if loading} backed by
+	// $state failed to re-evaluate under prerender hydration — the {#if}'s
+	// dependency subscription never fired on the true→false transition, even
+	// though the assignment happened (verified via console). Other $state vars
+	// (overview/stats) in the same component updated fine, so this is specific
+	// to the {#if <state-var>} re-evaluation path. A store with the $ prefix
+	// ($loading) uses Svelte's long-stable auto-subscription, which reliably
+	// re-renders. (devices/+page.svelte uses $state loading and works — the
+	// difference is unrooted in Svelte 5 runes hydration; the store sidesteps it.)
+	const loading = writable(true);
 	let refreshing = $state(false);
 	let lastUpdated = $state<Date | null>(null);
 	let stats = $state<DeviceStats | null>(null);
 	let devices = $state<Device[]>([]);
+	let overview = $state<OverviewResponse | null>(null);
 	let widgets = $state<WidgetState[]>([]);
 	let useCustomLayout = $state(false);
-	let isAdmin = $state(false);
+	// isAdmin is derived from the $auth store. The previous implementation kept
+	// it as a $state updated by a top-level auth.subscribe() that never
+	// unsubscribed — that subscription during component init poisoned Svelte 5's
+	// effect scheduler under hydration and froze the DOM on the loading skeleton
+	// (data loaded, $state set, but no re-render). Deriving from $auth directly
+	// aligns with how +layout.svelte already consumes the store.
+	let isAdmin = $derived($auth.user?.role === 'admin');
 
 	let pickerOpen = $state(false);
 	let editingWidget = $state<DashboardConfig | null>(null);
@@ -169,33 +215,48 @@
 		};
 	}
 
-	function buildTypePie(devs: Device[]): EChartsOption {
-		const counts: Record<string, number> = {};
-		const typeLabels: Record<string, string> = {
+	function buildTypePie(byType: Record<string, number>): EChartsOption {
+		// Color map keyed on the RAW type token (pc/embedded/...), NOT the
+		// translated label. The old version keyed on the translated label, which
+		// broke under i18n (zh label "嵌入式" never matched the "Embedded" key, so
+		// every non-PC slice fell back to cyan).
+		const primary = getPrimaryColor();
+		const colorByType: Record<string, string> = {
+			pc: primary,
+			embedded: getCSSVar('--color-accent', '#818cf8'),
+			iot: getCSSVar('--color-accent-purple', '#a78bfa'),
+			server: getCSSVar('--color-success', '#22c55e'),
+			camera: getCSSVar('--color-accent-cyan', '#67e8f9'),
+			switch: '#f59e0b',
+			router: '#ec4899',
+			firewall: '#ef4444',
+			nas: '#14b8a6',
+			other: getCSSVar('--color-accent-cyan', '#67e8f9'),
+			unknown: getCSSVar('--color-accent-cyan', '#67e8f9')
+		};
+		const typeLabel: Record<string, string> = {
 			pc: m["devices.PC"](),
 			embedded: m["devices.Embedded"](),
 			iot: m["devices.IoT"](),
-			other: m["devices.Other"]()
+			server: m["devices.Server"]?.() ?? 'server',
+			camera: m["devices.Camera"]?.() ?? 'camera',
+			switch: m["devices.Switch"]?.() ?? 'switch',
+			router: m["devices.Router"]?.() ?? 'router',
+			firewall: m["devices.Firewall"]?.() ?? 'firewall',
+			nas: m["devices.NAS"]?.() ?? 'nas',
+			other: m["devices.Other"](),
+			unknown: m["devices.Other"]()
 		};
-		for (const d of devs) {
-			const label = typeLabels[d.type] || d.type || m["devices.Other"]();
-			counts[label] = (counts[label] || 0) + 1;
-		}
-		const primary = getPrimaryColor();
-		const colorMap: Record<string, string> = {
-			[m["devices.PC"]()]: primary,
-			[m["devices.Embedded"]()]: getCSSVar('--color-accent', '#818cf8'),
-			[m["devices.IoT"]()]: getCSSVar('--color-accent-purple', '#a78bfa'),
-			[m["devices.Other"]()]: getCSSVar('--color-accent-cyan', '#67e8f9'),
-			PC: primary,
-			Embedded: '#818cf8',
-			IoT: '#a78bfa',
-			Other: '#67e8f9'
-		};
-		const pieData = Object.entries(counts).map(([name, value]) => ({
+		// Prefer the full-population overview.by_type when available; fall back to
+		// the 200-row device sample so the chart still renders if overview failed.
+		const source = (overview?.devices.by_type && Object.keys(overview.devices.by_type).length > 0)
+			? overview.devices.by_type
+			: byType;
+		const entries = Object.entries(source).sort((a, b) => b[1] - a[1]);
+		const pieData = entries.map(([type, value]) => ({
 			value,
-			name,
-			itemStyle: { color: colorMap[name] || '#67e8f9' }
+			name: typeLabel[type] ?? type,
+			itemStyle: { color: colorByType[type] ?? getCSSVar('--color-accent-cyan', '#67e8f9') }
 		}));
 		return {
 			backgroundColor: 'transparent',
@@ -224,12 +285,16 @@
 	}
 
 	function buildLocationBar(devs: Device[]): EChartsOption {
-		const counts: Record<string, number> = {};
+		// Prefer full-population overview.by_location; fall back to the sample.
+		const sample: Record<string, number> = {};
 		for (const d of devs) {
 			const loc = d.location || 'N/A';
-			counts[loc] = (counts[loc] || 0) + 1;
+			sample[loc] = (sample[loc] || 0) + 1;
 		}
-		const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+		const source = (overview?.devices.by_location && Object.keys(overview.devices.by_location).length > 0)
+			? overview.devices.by_location
+			: sample;
+		const entries = Object.entries(source).sort((a, b) => b[1] - a[1]);
 		const border = getBorderColor();
 		const primary = getPrimaryColor();
 		if (entries.length === 0) {
@@ -454,6 +519,9 @@
 	}
 
 	async function fetchDefaultData() {
+		// stats (status pie + gauge) + overview (full-population type/location
+		// distributions, scan activity, offline list) load in parallel. overview
+		// is in its own try so a failure there doesn't blank the legacy charts.
 		try {
 			const [statsRes, devsRes] = await Promise.all([
 				api.get<DeviceStats>('/devices/stats'),
@@ -466,14 +534,37 @@
 			stats = { by_status: { online: 0, offline: 0, unknown: 0 } };
 			devices = [];
 		}
+		try {
+			overview = await api.get<OverviewResponse>('/dashboard/overview');
+		} catch {
+			// Non-fatal: legacy charts still render; type/location pies fall back
+			// to the 200-row sample, scan/offline sections render empty.
+			overview = null;
+		}
 	}
 
+	// loadAll is async and toggles loading itself (in finally). The caller
+	// (onMount) fires it WITHOUT await: under prerender hydration, an awaited
+	// async onMount's post-await $state writes (e.g. loading=false) didn't
+	// re-render the {#if loading} block — the await moves the write out of
+	// Svelte's effect-scheduling context. Mirrors the working devices-page
+	// pattern (sync onMount + fire-and-forget fetch with internal loading toggle).
 	async function loadAll() {
-		await fetchCustomWidgets();
-		if (!useCustomLayout) {
-			await fetchDefaultData();
+		// Re-assert loading=true at the start of every load. devices-page does
+		// the same in fetchDevices — the explicit write (even when already true)
+		// is what establishes Svelte's dependency subscription for the {#if}
+		// block under prerender hydration; without it the initial true→false
+		// transition didn't re-render.
+		loading.set(true);
+		try {
+			await fetchCustomWidgets();
+			if (!useCustomLayout) {
+				await fetchDefaultData();
+			}
+			lastUpdated = new Date();
+		} finally {
+			loading.set(false);
 		}
-		lastUpdated = new Date();
 	}
 
 	function setupRefreshTimers() {
@@ -590,14 +681,13 @@
 	}
 
 	// ── Lifecycle ──
+	// (The top-level auth.subscribe that used to live here was removed — see the
+	// note above isAdmin. The $auth store is consumed directly in the markup.)
 
-	auth.subscribe((state) => {
-		isAdmin = state.user?.role === 'admin';
-	});
-
-	onMount(async () => {
-		await loadAll();
-		loading = false;
+	onMount(() => {
+		// Fire-and-forget: loadAll toggles loading=false in its own finally so the
+		// {#if loading} block re-renders correctly under hydration.
+		void loadAll();
 		setupRefreshTimers();
 		return clearRefreshTimers;
 	});
@@ -644,9 +734,7 @@
 		</div>
 	</div>
 
-	{#if loading}
-		<PageSkeleton type="dashboard" />
-	{:else if useCustomLayout}
+	{#if useCustomLayout}
 		<!-- Custom widget layout with drag-and-drop -->
 		{#if widgets.length === 0}
 			<EmptyState
@@ -709,7 +797,7 @@
 					<h3 class="text-sm font-semibold text-text">{m["dashboard.Device Type Distribution"]()}</h3>
 				</div>
 				<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-					<Chart option={buildTypePie(devices)} height="100%" />
+					<Chart option={buildTypePie(overview?.devices.by_type ?? {})} height="100%" />
 				</div>
 			</div>
 
@@ -720,6 +808,83 @@
 				</div>
 				<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
 					<Chart option={buildLocationBar(devices)} height="100%" />
+				</div>
+			</div>
+
+			<!-- Scan Activity — reflects "discovery", the system's core job -->
+			<div class="bg-surface border border-border rounded-lg overflow-hidden md:col-span-2">
+				<div class="px-4 py-3 border-b border-border flex items-center justify-between">
+					<h3 class="text-sm font-semibold text-text">{m["dashboard.Scan Activity"]()}</h3>
+					{#if overview?.scanning.last_discovery}
+						<span class="text-xs text-muted">
+							{m["dashboard.Last Discovery"]()}:
+							<strong class="text-success ml-1">{overview.scanning.last_discovery.alive_hosts}/{overview.scanning.last_discovery.total_hosts}</strong>
+						</span>
+					{/if}
+				</div>
+				<div class="p-4">
+					{#if overview?.scanning.recent_runs.length}
+						<div class="overflow-x-auto">
+							<table class="w-full text-sm">
+								<thead>
+									<tr class="text-left text-xs text-muted border-b border-border">
+										<th class="py-2 pr-3">#</th>
+										<th class="py-2 pr-3">{m["common.Status"]()}</th>
+										<th class="py-2 pr-3 tabular-nums">{m["devices.Alive"]()}</th>
+										<th class="py-2 pr-3 tabular-nums">{m["scanner.New"]()}</th>
+										<th class="py-2 pr-3 tabular-nums">{m["scanner.Duration"]()}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each overview.scanning.recent_runs as run}
+										<tr class="border-b border-border/50 last:border-0">
+											<td class="py-2 pr-3 font-mono text-xs">#{run.id}</td>
+											<td class="py-2 pr-3">
+												<span class="inline-flex items-center gap-1 {run.status === 'completed' ? 'text-success' : run.status === 'failed' ? 'text-error' : 'text-accent'}">
+													{run.status === 'completed' ? '✓' : run.status === 'failed' ? '✗' : '◌'} {run.status}
+												</span>
+											</td>
+											<td class="py-2 pr-3 tabular-nums">{run.alive_hosts}/{run.total_hosts}</td>
+											<td class="py-2 pr-3 tabular-nums">{run.new_hosts}</td>
+											<td class="py-2 pr-3 tabular-nums text-muted">{run.duration_ms}ms</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{:else}
+						<p class="text-sm text-muted py-4 text-center">{m["dashboard.No Scan Activity"]()}</p>
+					{/if}
+				</div>
+			</div>
+
+			<!-- Abnormal Devices — offline list, clickable to the device page -->
+			<div class="bg-surface border border-border rounded-lg overflow-hidden md:col-span-2">
+				<div class="px-4 py-3 border-b border-border flex items-center justify-between">
+					<h3 class="text-sm font-semibold text-text">{m["dashboard.Offline Devices"]()}</h3>
+					<a href="/devices?status=offline" class="text-xs text-primary hover:underline">
+						{m["dashboard.View All"]()} →
+					</a>
+				</div>
+				<div class="p-2">
+					{#if overview?.abnormal.length}
+						<div class="divide-y divide-border/50">
+							{#each overview.abnormal as dev}
+								<a href="/devices?search={dev.ip_address}" class="flex items-center justify-between px-2 py-2 hover:bg-surface-2 rounded transition-colors">
+									<div class="flex items-center gap-2 min-w-0">
+										<span class="inline-block w-2 h-2 rounded-full bg-error shrink-0"></span>
+										<span class="text-sm truncate">{dev.name || dev.ip_address}</span>
+										<span class="text-xs text-muted font-mono truncate">{dev.ip_address}</span>
+									</div>
+									<span class="text-xs text-muted shrink-0 ml-2">{dev.type || '-'}</span>
+								</a>
+							{/each}
+						</div>
+					{:else}
+						<p class="text-sm text-muted py-4 text-center">
+							{m["dashboard.No Offline Devices"]()}
+						</p>
+					{/if}
 				</div>
 			</div>
 		</div>

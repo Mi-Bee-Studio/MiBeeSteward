@@ -180,12 +180,16 @@ func ExtractDiscoveredServices(servicesJSON string) string {
 // and builds SDTargets with 3-layer merged labels.
 func BuildScannerTargets(ctx context.Context, queries *db.Queries) []SDTarget {
 	// Get all scan results, filter prometheus_detected=1 in Go
-	// (no dedicated sqlc query for this filter).
+	// (no dedicated sqlc query for this filter). Column5=-1 disables the alive
+	// filter (sentinel: ? < 0 ⇒ no clause) — without it the zero-value Alive
+	// field would silently restrict to dead hosts only.
 	results, err := queries.ListScanResults(ctx, db.ListScanResultsParams{
 		Column1: 0, // no task filter
 		TaskID:  0,
 		Column3: "", // no IP filter
 		Ip:      "",
+		Column5: -1, // no alive filter
+		Alive:   0,
 		Limit:   10000,
 		Offset:  0,
 	})

@@ -140,6 +140,12 @@ func (SNMPHandler) EnrichDevice(svc scannerv2.ServiceContext, _ scannerv2.Collec
 	if d, ok := svc.Identity.Metadata["sys_descr"]; ok && d != "" {
 		setDeviceField(svc, "inferred_description", d)
 	}
+	// OS parsed from sysDescr (e.g. "Linux 5.x", "RouterOS", "Windows"). Parsed
+	// by osFromSysDescr in the SNMP classifier; without this the scan_os column
+	// was empty for almost every SNMP-reachable device.
+	if os, ok := svc.Identity.Metadata["os_type"]; ok && os != "" {
+		setDeviceField(svc, "os_type", os)
+	}
 }
 
 // === field helpers ===
