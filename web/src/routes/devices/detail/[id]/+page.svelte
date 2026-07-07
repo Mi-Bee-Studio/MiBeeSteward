@@ -62,6 +62,12 @@
 	let heartbeatConfigs = $state<Array<{ id: number; method: string; target: string; interval_seconds: number; timeout_seconds: number; enabled: number }>>([]);
 	let heartbeatConfigLoading = $state(false);
 	let creatingHeartbeat = $state(false);
+
+	// --- Heartbeat config edit/delete state ---
+	let editingConfig = $state<typeof heartbeatConfigs[0] | null>(null);
+	let editConfigLoading = $state(false);
+	let deletingConfigId = $state<number | null>(null);
+	let deleteConfigLoading = $state(false);
 	// --- Label state ---
 	let labelSaving = $state(false);
 
@@ -168,29 +174,72 @@
 		}
 	}
 
-	async function createDefaultHeartbeatConfig() {
-		creatingHeartbeat = true;
-		try {
-			const target = device?.ip_address || '';
-			if (!target) {
-				addToast('error', 'Device has no IP address');
-				return;
+		async function createDefaultHeartbeatConfig() {
+			creatingHeartbeat = true;
+			try {
+				const target = device?.ip_address || '';
+				if (!target) {
+					addToast('error', 'Device has no IP address');
+					return;
+				}
+				await api.post(`/devices/${deviceId}/heartbeat-configs`, {
+					method: 'icmp',
+					target,
+					interval_seconds: 30,
+					timeout_seconds: 5,
+					enabled: 1
+				});
+				addToast('success', m['heartbeat.Config Created']());
+				await fetchHeartbeatConfigs();
+			} catch (err: unknown) {
+				addToast('error', getErrorMessage(err));
+			} finally {
+				creatingHeartbeat = false;
 			}
-			await api.post(`/devices/${deviceId}/heartbeat-configs`, {
-				method: 'icmp',
-				target,
-				interval_seconds: 30,
-				timeout_seconds: 5,
-				enabled: 1
-			});
-			addToast('success', m['heartbeat.Config Created']());
-			await fetchHeartbeatConfigs();
-		} catch (err: unknown) {
-			addToast('error', getErrorMessage(err));
-		} finally {
-			creatingHeartbeat = false;
 		}
-	}
+
+		// Edit a heartbeat config: open the modal with a copy of the config so
+		// the form edits a draft without mutating the list entry directly.
+		function openEditConfig(cfg: typeof heartbeatConfigs[0]) {
+			editingConfig = { ...cfg };
+		}
+
+		async function saveEditConfig(e: Event) {
+			e.preventDefault();
+			if (!editingConfig) return;
+			editConfigLoading = true;
+			try {
+				await api.put(`/heartbeat-configs/${editingConfig.id}`, {
+					method: editingConfig.method,
+					target: editingConfig.target,
+					interval_seconds: editingConfig.interval_seconds,
+					timeout_seconds: editingConfig.timeout_seconds,
+					enabled: editingConfig.enabled
+				});
+				addToast('success', m['heartbeat.Config Updated']());
+				editingConfig = null;
+				await fetchHeartbeatConfigs();
+			} catch (err: unknown) {
+				addToast('error', getErrorMessage(err));
+			} finally {
+				editConfigLoading = false;
+			}
+		}
+
+		async function deleteConfig(cfg: typeof heartbeatConfigs[0]) {
+			deleteConfigLoading = true;
+			try {
+				await api.delete(`/heartbeat-configs/${cfg.id}`);
+				addToast('success', m['heartbeat.Config Deleted']());
+				deletingConfigId = null;
+				await fetchHeartbeatConfigs();
+			} catch (err: unknown) {
+				addToast('error', getErrorMessage(err));
+			} finally {
+				deleteConfigLoading = false;
+			}
+		}
+
 
 	async function fetchSystems() {
 		loading = true;
@@ -787,6 +836,26 @@
 									{/if}
 								</div>
 							</div>
+							<div class="shrink-0 flex items-center gap-1 mt-0.5">
+								<button
+									type="button"
+									onclick={() => openEditConfig(cfg)}
+									class="p-1 rounded text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+									aria-label={m['heartbeat.Edit Config']()}
+									title={m['heartbeat.Edit Config']()}
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+								</button>
+								<button
+									type="button"
+									onclick={() => { deletingConfigId = cfg.id; }}
+									class="p-1 rounded text-muted hover:text-error hover:bg-error/10 transition-colors"
+									aria-label={m['heartbeat.Delete Config']()}
+									title={m['heartbeat.Delete Config']()}
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+								</button>
+							</div>
 						</div>
 					{/each}
 				</div>
@@ -1001,6 +1070,87 @@
 	confirmVariant="danger"
 	onConfirm={confirmDelete}
 	onCancel={() => { deleteTarget = null; }}
+/>
+
+<!-- Heartbeat config edit modal -->
+<Modal
+	open={editingConfig !== null}
+	title={m['heartbeat.Edit Config']()}
+	maxWidth="32rem"
+	onClose={() => { editingConfig = null; }}
+>
+	{#if editingConfig}
+		<form onsubmit={saveEditConfig} class="space-y-4">
+			<!-- Method -->
+			<div>
+				<label class="block text-xs text-muted mb-1">{m['heartbeat.Method']()}</label>
+				<select bind:value={editingConfig.method} class="input">
+					<option value="icmp">icmp</option>
+					<option value="tcp">tcp</option>
+					<option value="http">http</option>
+					<option value="snmp">snmp</option>
+				</select>
+			</div>
+
+			<!-- Target -->
+			<div>
+				<label class="block text-xs text-muted mb-1">{m['heartbeat.Target']()}</label>
+				<input bind:value={editingConfig.target} required class="input" />
+			</div>
+
+			<!-- Interval seconds -->
+			<div>
+				<label class="block text-xs text-muted mb-1">{m['heartbeat.Interval Seconds']()}</label>
+				<input type="number" min="1" bind:value={editingConfig.interval_seconds} required class="input" />
+			</div>
+
+			<!-- Timeout seconds -->
+			<div>
+				<label class="block text-xs text-muted mb-1">{m['heartbeat.Timeout Seconds']()}</label>
+				<input type="number" min="1" bind:value={editingConfig.timeout_seconds} required class="input" />
+			</div>
+
+			<!-- Enabled -->
+			<div class="flex items-center gap-2">
+				<input
+					type="checkbox"
+					checked={editingConfig.enabled !== 0}
+					onchange={(e) => { editingConfig!.enabled = e.currentTarget.checked ? 1 : 0; }}
+					id="config-enabled"
+					class="w-4 h-4 rounded border-border text-primary focus:ring-primary accent-primary"
+				/>
+				<label for="config-enabled" class="text-sm text-text">{m['heartbeat.Enabled Toggle']()}</label>
+			</div>
+
+			<!-- Actions -->
+			<div class="flex gap-3 pt-2">
+				<button type="submit" disabled={editConfigLoading} class="btn btn-primary">
+					{editConfigLoading ? '...' : m['common.Save']()}
+				</button>
+				<button type="button" onclick={() => { editingConfig = null; }}
+					class="px-6 py-2 border border-border text-muted rounded-lg
+						hover:border-primary transition-colors text-sm">
+					{m['common.Cancel']()}
+				</button>
+			</div>
+		</form>
+	{/if}
+</Modal>
+
+<!-- Heartbeat config delete confirmation -->
+<ConfirmDialog
+	open={deletingConfigId !== null}
+	title={m['heartbeat.Delete Config']()}
+	message={m['heartbeat.Delete Confirm']()}
+	confirmLabel={m['common.Delete']()}
+	confirmVariant="danger"
+	onConfirm={() => {
+		if (deletingConfigId !== null) {
+			const cfg = heartbeatConfigs.find((c) => c.id === deletingConfigId);
+			if (cfg) deleteConfig(cfg);
+		}
+	}}
+	onCancel={() => { deletingConfigId = null; }}
 />
 
 <style>

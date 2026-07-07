@@ -20,15 +20,29 @@ import (
 	"mibee-steward/internal/api/routes"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/service"
+	"mibee-steward/internal/version"
 )
 
 var (
-	configPath = flag.String("config", "configs/config.example.yaml", "Path to config file")
-	Version    = "dev"
+	configPath  = flag.String("config", "configs/config.example.yaml", "Path to config file")
+	showVersion = flag.Bool("version", false, "Print the build version and exit")
 )
 
 func main() {
+	// Subcommand dispatch: `mibee-steward reset-admin-password` runs the admin
+	// password recovery flow instead of starting the server. Must be checked
+	// before flag.Parse so the subcommand owns its own flag set.
+	if len(os.Args) > 1 && os.Args[1] == "reset-admin-password" {
+		resetAdminPasswordSubcommand(os.Args[2:])
+		return
+	}
+
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("mibee-steward", version.Version)
+		return
+	}
 
 	// Load configuration first (before slog init)
 	cfg, err := config.Load(*configPath)
@@ -40,7 +54,7 @@ func main() {
 	// Initialize structured logger
 	initLogger(cfg.Log)
 
-	slog.Info("starting MiBee Steward", "version", Version)
+	slog.Info("starting MiBee Steward", "version", version.Version)
 
 	// Ensure data directory exists
 	dbPath := cfg.Database.SQLite.Path

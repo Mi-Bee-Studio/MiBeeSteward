@@ -6,6 +6,7 @@
 
 	let status = $derived($page.status);
 	let message = $derived($page.error?.message || '');
+	let Icon = $derived(errorCode(status));
 
 	function errorTitle(code: number): string {
 		switch (code) {
@@ -39,7 +40,7 @@
 <div class="flex items-center justify-center min-h-[70vh] p-6">
 	<div class="text-center max-w-md">
 		<!-- Error icon -->
-		<svelte:component this={errorCode(status)} class="w-20 h-20 mx-auto mb-6 text-muted opacity-80" strokeWidth={1.25} />
+		<Icon class="w-20 h-20 mx-auto mb-6 text-muted opacity-80" strokeWidth={1.25} />
 
 		<!-- Status code -->
 		<div class="inline-block px-3 py-1 rounded-full bg-error/10 border border-error/20 mb-4">

@@ -139,32 +139,32 @@ type DeviceStatsResponse struct {
 // 200 devices and skewed the distribution). Everything here is computed
 // server-side over the full dataset.
 type DashboardOverviewResponse struct {
-	Devices   OverviewDevices    `json:"devices"`
-	Scanning  OverviewScanning   `json:"scanning"`
-	Abnormal  []OverviewDevice   `json:"abnormal"`  // offline devices (top N), clickable targets for the UI
-	Generated time.Time          `json:"generated"`
+	Devices   OverviewDevices  `json:"devices"`
+	Scanning  OverviewScanning `json:"scanning"`
+	Abnormal  []OverviewDevice `json:"abnormal"` // offline devices (top N), clickable targets for the UI
+	Generated time.Time        `json:"generated"`
 }
 
 // OverviewDevices holds the device-population totals and distributions.
 type OverviewDevices struct {
-	Total       int64            `json:"total"`
-	Online      int64            `json:"online"`
-	Offline     int64            `json:"offline"`
-	Unknown     int64            `json:"unknown"`
-	OnlineRate  float64          `json:"online_rate"` // 0..1, online/total (0 when total==0)
-	ByType      map[string]int64 `json:"by_type"`     // full-population GROUP BY (not a 200-row sample)
-	ByLocation  map[string]int64 `json:"by_location"` // GROUP BY location (empty location bucketed as "unknown")
+	Total      int64            `json:"total"`
+	Online     int64            `json:"online"`
+	Offline    int64            `json:"offline"`
+	Unknown    int64            `json:"unknown"`
+	OnlineRate float64          `json:"online_rate"` // 0..1, online/total (0 when total==0)
+	ByType     map[string]int64 `json:"by_type"`     // full-population GROUP BY (not a 200-row sample)
+	ByLocation map[string]int64 `json:"by_location"` // GROUP BY location (empty location bucketed as "unknown")
 }
 
 // OverviewScanning summarises recent scan activity so the dashboard reflects
 // "discovery" — the system's core job — rather than only device counts.
 type OverviewScanning struct {
-	TasksTotal      int64                 `json:"tasks_total"`
-	RunsTotal       int64                 `json:"runs_total"`
-	RecentTasks     []OverviewScanTask    `json:"recent_tasks"` // last N tasks
-	RecentRuns      []OverviewScanRun     `json:"recent_runs"`  // last N runs across all tasks
-	RunsByStatus    map[string]int64      `json:"runs_by_status"`
-	LastDiscovery   *OverviewScanRun      `json:"last_discovery,omitempty"` // most recent completed run
+	TasksTotal    int64              `json:"tasks_total"`
+	RunsTotal     int64              `json:"runs_total"`
+	RecentTasks   []OverviewScanTask `json:"recent_tasks"` // last N tasks
+	RecentRuns    []OverviewScanRun  `json:"recent_runs"`  // last N runs across all tasks
+	RunsByStatus  map[string]int64   `json:"runs_by_status"`
+	LastDiscovery *OverviewScanRun   `json:"last_discovery,omitempty"` // most recent completed run
 }
 
 // OverviewScanTask is a lightweight task projection for the dashboard (no

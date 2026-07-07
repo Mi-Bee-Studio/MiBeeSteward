@@ -255,7 +255,9 @@ func TestExtended_HealthCheck_WithDB(t *testing.T) {
 
 	version, ok := result["version"].(string)
 	require.True(t, ok)
-	require.Equal(t, "0.1.0", version)
+	// Tests build without ldflags, so version.Version is the default "dev".
+	// Release builds inject the real version via -ldflags "-X .../version.Version=v0.1.0".
+	require.Equal(t, "dev", version)
 }
 
 func TestExtended_DocumentPagination(t *testing.T) {

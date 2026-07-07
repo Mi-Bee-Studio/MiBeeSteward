@@ -335,8 +335,11 @@ sudo systemctl status mibee-steward
 # 查看详细错误日志
 sudo journalctl -u mibee-steward --no-pager -n 100
 
-# 检查配置文件语法
-sudo -u mibee /opt/mibee-steward/mibee-steward --check-config
+# 直接启动验证配置（配置错误会在启动日志中报出并退出）
+sudo -u mibee /opt/mibee-steward/mibee-steward -config /opt/mibee-steward/configs/config.yaml
+
+# 或验证二进制可执行
+sudo -u mibee /opt/mibee-steward/mibee-steward -version
 ```
 
 #### 2. 数据库连接失败
