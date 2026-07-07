@@ -11,16 +11,15 @@ import (
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/service/alert"
 	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/service/scannerv2"
 )
 
 // HeartbeatService manages heartbeat scheduling and result processing.
 type HeartbeatService struct {
-	queries      *db.Queries       // MAIN db — for config CRUD + status sync (NOT per-tick writes)
-	mainDB       *sql.DB           // raw main DB conn (for initStatusCache + syncStatus batch writes)
-	store        *HeartbeatStore   // dedicated heartbeat_results store (separate file)
+	queries      *db.Queries     // MAIN db — for config CRUD + status sync (NOT per-tick writes)
+	mainDB       *sql.DB         // raw main DB conn (for initStatusCache + syncStatus batch writes)
+	store        *HeartbeatStore // dedicated heartbeat_results store (separate file)
 	cfg          config.HeartbeatConfig
 	cancel       context.CancelFunc
 	cancelMu     sync.Mutex    // guards cancel (written by Start, read by Stop)
@@ -40,7 +39,6 @@ type HeartbeatService struct {
 	// this instead of querying the (async, batched) heartbeat store.
 	lastProbe   map[int64]time.Time // configID -> last probe time
 	lastProbeMu sync.RWMutex
-	alertEngine *alert.Engine
 }
 
 // NewHeartbeatService creates a new HeartbeatService. mainDB is the main CRUD
@@ -48,14 +46,14 @@ type HeartbeatService struct {
 // time-series store (separate SQLite file, batched writes).
 func NewHeartbeatService(mainDB *sql.DB, store *HeartbeatStore, cfg *config.Config) *HeartbeatService {
 	return &HeartbeatService{
-		queries:      db.New(mainDB),
-		mainDB:       mainDB,
-		store:        store,
-		cfg:          cfg.Heartbeat,
-		failCounts:   make(map[int64]int),
-		statusCache:  make(map[int64]string),
-		lastSynced:   make(map[int64]string),
-		lastProbe:    make(map[int64]time.Time),
+		queries:     db.New(mainDB),
+		mainDB:      mainDB,
+		store:       store,
+		cfg:         cfg.Heartbeat,
+		failCounts:  make(map[int64]int),
+		statusCache: make(map[int64]string),
+		lastSynced:  make(map[int64]string),
+		lastProbe:   make(map[int64]time.Time),
 	}
 }
 
@@ -131,11 +129,6 @@ func (s *HeartbeatService) Stop() {
 // GetQueries returns the underlying sqlc queries for handler use.
 func (s *HeartbeatService) GetQueries() *db.Queries {
 	return s.queries
-}
-
-// SetAlertEngine sets the alert engine for evaluating device status changes.
-func (s *HeartbeatService) SetAlertEngine(eng *alert.Engine) {
-	s.alertEngine = eng
 }
 
 // CreateDefaultConfig creates a default ICMP heartbeat config for a device.
@@ -385,9 +378,6 @@ func (s *HeartbeatService) applyDeviceVerdict(ctx context.Context, deviceID int6
 		s.statusCache[deviceID] = newStatus
 		s.statusCacheMu.Unlock()
 		slog.Info("device status changed (memory)", "device_id", deviceID, "status", newStatus)
-		if s.alertEngine != nil {
-			go s.safeEvaluateDeviceStatus(ctx, deviceID, oldStatus, newStatus)
-		}
 	}
 }
 
@@ -503,28 +493,18 @@ func (s *HeartbeatService) syncStatus(ctx context.Context) {
 	slog.Info("synced device statuses to DB", "changed", len(changed))
 }
 
-// safeEvaluateDeviceStatus wraps alertEngine.EvaluateDeviceStatus with panic
-// recovery. These run as fire-and-forget goroutines from the heartbeat tick;
-// a panic inside the alert engine would otherwise crash the whole process.
-func (s *HeartbeatService) safeEvaluateDeviceStatus(ctx context.Context, deviceID int64, oldStatus, newStatus string) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("alert engine panic recovered", "device_id", deviceID, "panic", r)
-		}
-	}()
-	if err := s.alertEngine.EvaluateDeviceStatus(ctx, deviceID, oldStatus, newStatus); err != nil {
-		slog.Error("alert engine failed to evaluate device status", "device_id", deviceID, "error", err)
-	}
-}
-
-// (cleanupOldResults was removed: heartbeat_results pruning is now handled by
-// the unified retention sweeper in cleanup.Service, so there's a single source
-// of truth for the retention window across all detail tables.)
+// safeEvaluateDeviceStatus was removed: the alert engine has been deleted (the
+// product does not build alerting — see AGENTS.md product vision). Device
+// status changes are still recorded in the status cache and synced to the DB
+// by syncStatusLoop; they just no longer fire alert-rule evaluation.
+// (cleanupOldResults was also removed: heartbeat_results pruning is now handled
+// by the unified retention sweeper in cleanup.Service, so there's a single
+// source of truth for the retention window across all detail tables.)
 // (setDeviceStatus was inlined into applyDeviceVerdict so the entire
 // read-modify-write of device status is under one mutex — the previous split
 // had GetDevice/setDeviceStatus outside the lock, racing under concurrency.)
 
-func (s *HeartbeatService) isDue(ctx context.Context, cfg db.HeartbeatConfig) bool {
+func (s *HeartbeatService) isDue(_ context.Context, cfg db.HeartbeatConfig) bool {
 	interval := time.Duration(cfg.IntervalSeconds) * time.Second
 	if interval <= 0 {
 		interval = 30 * time.Second

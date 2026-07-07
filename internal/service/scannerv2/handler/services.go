@@ -53,11 +53,11 @@ type MSSQLHandler struct{}
 type MemcachedHandler struct{}
 
 func (MySQLHandler) Service() string      { return "mysql" }
-func (RedisHandler) Service() string       { return "redis" }
-func (PostgreSQLHandler) Service() string  { return "postgresql" }
-func (MongoDBHandler) Service() string     { return "mongodb" }
-func (MSSQLHandler) Service() string       { return "mssql" }
-func (MemcachedHandler) Service() string   { return "memcached" }
+func (RedisHandler) Service() string      { return "redis" }
+func (PostgreSQLHandler) Service() string { return "postgresql" }
+func (MongoDBHandler) Service() string    { return "mongodb" }
+func (MSSQLHandler) Service() string      { return "mssql" }
+func (MemcachedHandler) Service() string  { return "memcached" }
 
 func (h MySQLHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
 	return serverServiceHandler{name: "mysql"}.GenerateHeartbeat(svc)

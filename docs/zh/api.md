@@ -110,12 +110,13 @@
 **响应**：
 ```json
 {
-  "status": "healthy",
-  "database": "healthy", 
-  "version": "1.0.0",
-  "timestamp": "2023-01-01T00:00:00Z"
+  "status": "ok",
+  "db": "ok",
+  "version": "v0.1.0"
 }
 ```
+
+`status` 为 `ok` 或 `degraded`（数据库 ping 失败时）。`db` 为 `ok` 或 `error`。`version` 为通过 ldflags 注入的构建版本（未打 tag 的构建为 `dev`）。
 
 ## 用户
 
@@ -144,6 +145,28 @@
     }
   ],
   "total": 1
+}
+```
+
+### 重置用户密码
+
+**仅管理员**
+
+`POST /api/v1/users/{id}/reset-password`
+
+重置指定用户的密码。目标用户下次登录时需要修改密码，同时清除登录锁定状态。
+
+**请求**：
+```json
+{
+  "new_password": "new-secure-password"
+}
+```
+
+**响应**：`200 OK`
+```json
+{
+  "message": "password reset successfully"
 }
 ```
 

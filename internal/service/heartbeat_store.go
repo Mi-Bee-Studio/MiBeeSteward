@@ -28,8 +28,8 @@ import (
 // Reads (history, stats, isDue) go through the same *sql.DB via sqlc Queries,
 // so the read path is unchanged from the caller's perspective.
 type HeartbeatStore struct {
-	db      *sql.DB      // dedicated connection to heartbeat.db
-	queries *db.Queries  // sqlc queries bound to the dedicated connection
+	db      *sql.DB     // dedicated connection to heartbeat.db
+	queries *db.Queries // sqlc queries bound to the dedicated connection
 	ch      chan resultRow
 	cancel  context.CancelFunc
 	done    chan struct{}
@@ -202,7 +202,7 @@ func (s *HeartbeatStore) commitBatch(ctx context.Context, rows []resultRow) erro
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Build "INSERT INTO heartbeat_results (device_id, config_id, status,
 	// latency_ms, error_message, checked_at) VALUES (?),(?),..." with len(rows)

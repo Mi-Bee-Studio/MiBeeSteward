@@ -291,7 +291,7 @@ func (r *DeviceRepository) ListFilteredWithCount(ctx context.Context, f domain.D
 	if err != nil {
 		return nil, 0, fmt.Errorf("begin read tx for list+count: %w", err)
 	}
-	defer tx.Rollback() // safe to roll back a committed tx (no-op)
+	defer func() { _ = tx.Rollback() }() // safe to roll back a committed tx (no-op)
 
 	list, err := listFilteredOn(ctx, tx, f, col, dir)
 	if err != nil {
@@ -323,13 +323,13 @@ func (r *DeviceRepository) dbConnAsDB() *sql.DB {
 // so it can execute inside the caller's read transaction.
 func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, dir string) ([]db.Device, error) {
 	var (
-		args               []any
-		statusVal          = f.Status
-		typeVal            = f.Type
-		searchVal          = f.Search
-		likeVal            = "%" + escapeLike(f.Search) + "%"
-		createdFrom string // "" disables the bound
-		createdTo   string
+		args           []any
+		statusVal      = f.Status
+		typeVal        = f.Type
+		searchVal      = f.Search
+		likeVal        = "%" + escapeLike(f.Search) + "%"
+		createdFrom    string // "" disables the bound
+		createdTo      string
 		createdFromArg *string
 	)
 	if f.CreatedAtFrom != nil {
@@ -391,11 +391,11 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, 
 // countFilteredOn is the count query body parameterized over the DBTX it runs on.
 func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int64, error) {
 	var (
-		args               []any
-		statusVal          = f.Status
-		typeVal            = f.Type
-		searchVal          = f.Search
-		likeVal            = "%" + escapeLike(f.Search) + "%"
+		args        []any
+		statusVal   = f.Status
+		typeVal     = f.Type
+		searchVal   = f.Search
+		likeVal     = "%" + escapeLike(f.Search) + "%"
 		createdFrom string
 		createdTo   string
 	)

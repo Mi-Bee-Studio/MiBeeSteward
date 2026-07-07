@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+
+	"mibee-steward/internal/version"
 )
 
 func HealthHandler(db *sql.DB) http.HandlerFunc {
@@ -25,7 +27,7 @@ func HealthHandler(db *sql.DB) http.HandlerFunc {
 		resp := map[string]string{
 			"status":  status,
 			"db":      dbStatus,
-			"version": "0.1.0",
+			"version": version.Version,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
