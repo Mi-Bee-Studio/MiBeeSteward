@@ -52,7 +52,22 @@ type Runner struct {
 	// networkID tags discovered devices with their origin network
 	// (devices.network_id). 0 = unresolved/legacy (NULL). See store.NetworkID.
 	networkID sql.NullInt64
+	// reportSink, when set, receives the alive HostReports from each scan so an
+	// agent can forward them to its center. nil on the center/standalone path
+	// (no upstream reporting) — the hook is a no-op there.
+	reportSink ReportSink
 }
+
+// ReportSink consumes a batch of alive HostReports at the end of a scan. The
+// agent wires a reporter implementation that POSTs them upstream; the center
+// leaves it nil. Errors are the sink's concern (it retries/buffers); the runner
+// never blocks on reporting.
+type ReportSink func(ctx context.Context, taskID int64, reports []scannerv2.HostReport)
+
+// SetReportSink wires the agent's upstream-reporting sink. nil clears it
+// (center/standalone mode). Must be called before Run; not safe to swap
+// concurrently with a running scan.
+func (rn *Runner) SetReportSink(s ReportSink) { rn.reportSink = s }
 
 // New constructs a Runner. engine may be nil (the runner will log and no-op on
 // each Run), letting the scheduler stay alive even if the engine failed to init.
@@ -159,6 +174,19 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 		if upd {
 			updatedHosts++
 		}
+	}
+
+	// 3b. Forward alive reports to the agent's upstream sink (no-op on the
+	//     center, where reportSink is nil). Run on a fresh context so a
+	//     request/server shutdown mid-scan doesn't abort the report flush.
+	if rn.reportSink != nil && aliveHosts > 0 {
+		alive := make([]scannerv2.HostReport, 0, aliveHosts)
+		for _, rep := range reports {
+			if rep.Alive {
+				alive = append(alive, rep)
+			}
+		}
+		rn.reportSink(context.Background(), taskID, alive)
 	}
 
 	// 4. Finalize the run.
