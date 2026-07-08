@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"time"
 
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/engine"
@@ -56,6 +57,10 @@ type Runner struct {
 	// agent can forward them to its center. nil on the center/standalone path
 	// (no upstream reporting) — the hook is a no-op there.
 	reportSink ReportSink
+	// changeRecorder, when set, receives device_added/device_changed events from
+	// applyDeviceBridge (and device_lost from detectLost). nil on the agent
+	// (change detection is a center concern). See internal/changedetect.
+	changeRecorder changedetect.ChangeRecorder
 }
 
 // ReportSink consumes a batch of alive HostReports at the end of a scan. The
@@ -68,6 +73,11 @@ type ReportSink func(ctx context.Context, taskID int64, reports []scannerv2.Host
 // (center/standalone mode). Must be called before Run; not safe to swap
 // concurrently with a running scan.
 func (rn *Runner) SetReportSink(s ReportSink) { rn.reportSink = s }
+
+// SetChangeRecorder wires the center's change-detection recorder (writes
+// change_log + pushes Watcher subscribers). nil clears it (agent mode, where
+// change detection is deferred to the center). Must be called before Run.
+func (rn *Runner) SetChangeRecorder(r changedetect.ChangeRecorder) { rn.changeRecorder = r }
 
 // New constructs a Runner. engine may be nil (the runner will log and no-op on
 // each Run), letting the scheduler stay alive even if the engine failed to init.
@@ -89,7 +99,7 @@ func New(engine *engine.Engine, queries *db.Queries, dbConn *sql.DB, heartbeat H
 // and seeding heartbeat configs for new devices. Used by the AddDevices API.
 // Returns (isNew, error).
 func (rn *Runner) PersistManualDevice(ctx context.Context, rep scannerv2.HostReport) (bool, error) {
-	isNew, _ := rn.applyDeviceBridge(ctx, rep, rn.networkID)
+	isNew, _ := rn.applyDeviceBridge(ctx, rep, rn.networkID, "")
 	return isNew, nil
 }
 
@@ -98,9 +108,10 @@ func (rn *Runner) PersistManualDevice(ctx context.Context, rep scannerv2.HostRep
 // center's ingestion entry point: one center runner merges reports from many
 // agents, each scoped to the agent's own network (resolved from its token and
 // passed here per-call), so the device-bridge identity logic (MAC-primary →
-// (ip, network_id) fallback) partitions correctly per agent.
-func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64) (bool, bool, error) {
-	isNew, updated := rn.applyDeviceBridge(ctx, rep, networkID)
+// (ip, network_id) fallback) partitions correctly per agent. agentID carries
+// through to change_log provenance (empty for the local-scan path).
+func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string) (bool, bool, error) {
+	isNew, updated := rn.applyDeviceBridge(ctx, rep, networkID, agentID)
 	return isNew, updated, nil
 }
 
@@ -255,7 +266,7 @@ func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scan
 	}
 
 	// Device bridge.
-	return rn.applyDeviceBridge(ctx, rep, rn.networkID)
+	return rn.applyDeviceBridge(ctx, rep, rn.networkID, "")
 }
 
 // reportJSONFields serializes a HostReport's ports/services/snmp into the JSON

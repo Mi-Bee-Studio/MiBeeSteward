@@ -453,3 +453,28 @@ CREATE TABLE IF NOT EXISTS agent_tokens (
     revoked_at DATETIME               -- non-NULL = revoked (auth fails)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_tokens_network ON agent_tokens(network_id);
+
+-- === Change detection (Phase 3) ===
+-- scan_snapshots tracks, per network+IP, the last-seen state and a miss counter
+-- used to detect device_lost with a grace period (a device must be absent from
+-- N consecutive scans before being declared lost — single missed scans from ICMP
+-- drop / network jitter must not flap a device offline). This is NOT a full
+-- per-scan snapshot; it's the minimal "known alive set + miss count" needed to
+-- compute the alive-vs-known set difference after each scan.
+--   - A device PRESENT in a scan → miss_count reset to 0, last_seen_at refreshed.
+--   - A device ABSENT from a scan → miss_count incremented.
+--   - miss_count >= lost_threshold AND devices.status='online' → device_lost.
+-- See docs/private/architecture-future.md §8 (grace period / 去抖动).
+CREATE TABLE IF NOT EXISTS scan_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+    task_id INTEGER,                       -- which scan task last touched it (NULL = agent report)
+    ip TEXT NOT NULL,
+    mac TEXT NOT NULL DEFAULT '',          -- MAC-primary identity key (empty when unknown)
+    miss_count INTEGER NOT NULL DEFAULT 0, -- consecutive scans this IP was absent
+    last_seen_at DATETIME NOT NULL,        -- last time this IP appeared alive in a scan
+    UNIQUE(network_id, ip)
+);
+CREATE INDEX IF NOT EXISTS idx_scan_snapshots_network ON scan_snapshots(network_id);
+CREATE INDEX IF NOT EXISTS idx_scan_snapshots_miss ON scan_snapshots(miss_count);
+

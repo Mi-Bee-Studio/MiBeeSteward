@@ -52,7 +52,7 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The agent's network comes from its token (RequireAgentToken), not the body.
-	_, networkID, ok := middleware.GetAgentFromContext(r)
+	agentID, networkID, ok := middleware.GetAgentFromContext(r)
 	if !ok || networkID == nil {
 		// A token without a bound network can't be attributed — reject rather
 		// than silently tagging devices with NULL (which would collide with the
@@ -69,7 +69,7 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		hr := runner.ReportedHostToReport(host)
-		isNew, wasUpdated, err := h.runner.ApplyReport(r.Context(), hr, nid)
+		isNew, wasUpdated, err := h.runner.ApplyReport(r.Context(), hr, nid, agentID)
 		if err != nil {
 			slog.Warn("agent report: apply failed", "agent_id", rep.AgentID, "ip", host.IP, "error", err)
 			skipped++

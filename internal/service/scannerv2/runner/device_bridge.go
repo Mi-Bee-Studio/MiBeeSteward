@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/store"
 )
@@ -34,7 +35,7 @@ import (
 // The v2 HostReport already carries enriched device fields (set by
 // ServiceHandlers) and generated heartbeats, so this function is a thin
 // adapter from the in-memory report to the devices/heartbeat_configs tables.
-func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64) (bool, bool) {
+func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string) (bool, bool) {
 	inferredType := rep.Device.Fields["inferred_type"]
 	// A service handler may have set a generic "server"/"pc" type from a single
 	// open port (ssh, smb, mysql, …). That's a weak signal — routers, NAS, and
@@ -109,6 +110,8 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			rn.logger.Warn("device bridge: create device failed", "ip", rep.IP, "mac", mac, "error", derr)
 			return false, false
 		}
+		// Change detection: a brand-new device is a device_added event.
+		rn.recordDeviceAdded(ctx, devID, networkID, agentID)
 		// A freshly-discovered alive host starts online; make sure the heartbeat
 		// service holds no stale failure state for it before configs are seeded.
 		if rn.heartbeat != nil {
@@ -136,6 +139,10 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		return true, false
 
 	case nil:
+		// Change detection: capture the BEFORE snapshot before any UPDATE
+		// mutates the row. Read the full device row (the identity SELECT above
+		// only fetched id).
+		before := rn.snapshotDevice(ctx, existingID)
 		if _, uerr := rn.dbConn.ExecContext(ctx, buildExistingUpdate(),
 			existingUpdateArgs(existingID, inferredType, inferredBrand, inferredDescr, inferredLoc, rep, mac)...); uerr != nil {
 			rn.logger.Warn("device bridge: update device failed", "ip", rep.IP, "mac", mac, "error", uerr)
@@ -150,6 +157,20 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			    last_seen = COALESCE(last_seen, ?),
 			    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 			mac, mac, now, now, now, existingID)
+		// Change detection: re-read the AFTER snapshot and diff. Only emit
+		// device_changed when a tracked field actually differs — this replaces
+		// the old "wasUpdated is always true" heuristic that fired on every
+		// rescan regardless of whether anything changed.
+		changed := false
+		if before != nil {
+			after := rn.snapshotDevice(ctx, existingID)
+			if after != nil {
+				if diff := changedetect.Diff(*before, *after); diff != nil {
+					rn.recordDeviceChanged(ctx, existingID, networkID, agentID, *before, diff)
+					changed = true
+				}
+			}
+		}
 		// Clear the heartbeat service's failure counter for this device: the
 		// scan just proved it's alive, so a stale counter from a prior flapping
 		// window must not pull it back to offline on the next heartbeat tick.
@@ -173,12 +194,73 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				}
 			}
 		}
-		return false, true
+		return false, changed
 
 	default:
 		rn.logger.Warn("device bridge: lookup failed", "ip", rep.IP, "mac", mac, "error", err)
 		return false, false
 	}
+}
+
+// snapshotDevice reads the full device row for change-detection diffing. Returns
+// nil on lookup error (the caller treats nil as "skip diff"). Uses rn.queries
+// (sqlc) so the snapshot matches the schema-typed view changedetect expects.
+func (rn *Runner) snapshotDevice(ctx context.Context, deviceID int64) *changedetect.DeviceSnapshot {
+	d, err := rn.queries.GetDevice(ctx, deviceID)
+	if err != nil {
+		return nil
+	}
+	s := changedetect.SnapshotFromDevice(d)
+	return &s
+}
+
+// recordDeviceAdded emits a device_added event (after_data = the new row). The
+// snapshot is read back after createDevice so after_data reflects the persisted
+// state, not just the in-memory report.
+func (rn *Runner) recordDeviceAdded(ctx context.Context, deviceID int64, networkID sql.NullInt64, agentID string) {
+	if rn.changeRecorder == nil {
+		return
+	}
+	var after *changedetect.DeviceSnapshot
+	if s := rn.snapshotDevice(ctx, deviceID); s != nil {
+		after = s
+	}
+	var nidPtr *int64
+	if networkID.Valid {
+		v := networkID.Int64
+		nidPtr = &v
+	}
+	rn.changeRecorder.Record(ctx, changedetect.ChangeEvent{
+		ChangeType: changedetect.ChangeTypeDeviceAdded,
+		EntityType: changedetect.EntityTypeDevice,
+		DeviceID:   deviceID,
+		NetworkID:  nidPtr,
+		AgentID:    agentID,
+		Before:     nil, // added has no before
+		After:      after,
+	})
+}
+
+// recordDeviceChanged emits a device_changed event with before_data (full
+// snapshot) + after_data (the field-level diff map: {field: [old, new]}).
+func (rn *Runner) recordDeviceChanged(ctx context.Context, deviceID int64, networkID sql.NullInt64, agentID string, before changedetect.DeviceSnapshot, diff map[string][2]string) {
+	if rn.changeRecorder == nil {
+		return
+	}
+	var nidPtr *int64
+	if networkID.Valid {
+		v := networkID.Int64
+		nidPtr = &v
+	}
+	rn.changeRecorder.Record(ctx, changedetect.ChangeEvent{
+		ChangeType: changedetect.ChangeTypeDeviceChanged,
+		EntityType: changedetect.EntityTypeDevice,
+		DeviceID:   deviceID,
+		NetworkID:  nidPtr,
+		AgentID:    agentID,
+		Before:     before,
+		After:      diff,
+	})
 }
 
 // reportMAC extracts and canonicalizes the MAC from a HostReport. It checks the

@@ -223,6 +223,16 @@ type ScanResult struct {
 	ScannedAt            time.Time `json:"scanned_at"`
 }
 
+type ScanSnapshot struct {
+	ID         int64     `json:"id"`
+	NetworkID  int64     `json:"network_id"`
+	TaskID     *int64    `json:"task_id"`
+	Ip         string    `json:"ip"`
+	Mac        string    `json:"mac"`
+	MissCount  int64     `json:"miss_count"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+}
+
 type ScanTask struct {
 	ID              int64      `json:"id"`
 	Name            string     `json:"name"`
