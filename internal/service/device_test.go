@@ -20,6 +20,14 @@ func setupDeviceService(t *testing.T) (*DeviceService, *sql.DB) {
 	t.Cleanup(func() { db.Close() })
 
 	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS networks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			cidr TEXT, site TEXT, agent_id TEXT,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
 		CREATE TABLE IF NOT EXISTS devices (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
@@ -51,6 +59,9 @@ func setupDeviceService(t *testing.T) (*DeviceService, *sql.DB) {
 			scan_mac      TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.mac')) STORED,
 			scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
 			scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
+			network_id INTEGER,
+			first_seen TIMESTAMP,
+			last_seen TIMESTAMP,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
@@ -236,7 +247,7 @@ func TestDevice_GetStats(t *testing.T) {
 	_, err = db.Exec("UPDATE devices SET status = 'offline' WHERE name = 'Dev-B'")
 	require.NoError(t, err)
 
-	stats, err := svc.GetStats(ctx)
+	stats, err := svc.GetStats(ctx, nil)
 	require.NoError(t, err)
 	require.NotNil(t, stats)
 

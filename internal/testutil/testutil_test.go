@@ -49,23 +49,30 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 	// Verify all expected tables exist
 	tables := listTables(t, db)
 	expected := []string{
+		"agent_tokens",
 		"audit_logs",
+		"change_log",
 		"dashboard_configs",
 		"device_documents",
+		"device_neighbors",
 		"device_systems",
 		"devices",
 		"documents",
 		"heartbeat_configs",
 		"heartbeat_results",
 		"host_services",
+		"networks",
 		"notification_channels",
 		"notification_log",
 		"scan_results",
 		"scan_task_runs",
 		"scan_tasks",
 		"service_evidence",
+		"subnets",
+		"topology_edges",
 		"user_totp",
 		"users",
+		"vlans",
 	}
 	require.Equal(t, expected, tables)
 }
@@ -75,12 +82,12 @@ func TestSetupTestDBFromSchema_Reusable(t *testing.T) {
 	db1, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db1.Close()
-	require.Len(t, listTables(t, db1), 17)
+	require.Len(t, listTables(t, db1), 24)
 
 	db2, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db2.Close()
-	require.Len(t, listTables(t, db2), 17)
+	require.Len(t, listTables(t, db2), 24)
 }
 
 func TestSetupTestDB_WithPragmas(t *testing.T) {

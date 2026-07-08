@@ -44,6 +44,48 @@ func (q *Queries) CountByStatus(ctx context.Context) ([]CountByStatusRow, error)
 	return items, nil
 }
 
+const countByStatusForNetwork = `-- name: CountByStatusForNetwork :many
+SELECT status, COUNT(*) AS count
+FROM devices
+WHERE (? = 0 OR network_id = ?)
+GROUP BY status
+`
+
+type CountByStatusForNetworkParams struct {
+	Column1   interface{} `json:"column_1"`
+	NetworkID *int64      `json:"network_id"`
+}
+
+type CountByStatusForNetworkRow struct {
+	Status string `json:"status"`
+	Count  int64  `json:"count"`
+}
+
+// Filters to a single network before grouping (multi-LAN dashboards).
+// Column1=0 disables the filter (matches all networks incl. NULL-network).
+func (q *Queries) CountByStatusForNetwork(ctx context.Context, arg CountByStatusForNetworkParams) ([]CountByStatusForNetworkRow, error) {
+	rows, err := q.db.QueryContext(ctx, countByStatusForNetwork, arg.Column1, arg.NetworkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountByStatusForNetworkRow{}
+	for rows.Next() {
+		var i CountByStatusForNetworkRow
+		if err := rows.Scan(&i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countDevices = `-- name: CountDevices :one
 SELECT COUNT(*)
 FROM devices
@@ -104,13 +146,53 @@ func (q *Queries) CountDevicesByType(ctx context.Context) ([]CountDevicesByTypeR
 	return items, nil
 }
 
+const countDevicesByTypeForNetwork = `-- name: CountDevicesByTypeForNetwork :many
+SELECT type, COUNT(*) AS count
+FROM devices
+WHERE (? = 0 OR network_id = ?)
+GROUP BY type
+`
+
+type CountDevicesByTypeForNetworkParams struct {
+	Column1   interface{} `json:"column_1"`
+	NetworkID *int64      `json:"network_id"`
+}
+
+type CountDevicesByTypeForNetworkRow struct {
+	Type  string `json:"type"`
+	Count int64  `json:"count"`
+}
+
+func (q *Queries) CountDevicesByTypeForNetwork(ctx context.Context, arg CountDevicesByTypeForNetworkParams) ([]CountDevicesByTypeForNetworkRow, error) {
+	rows, err := q.db.QueryContext(ctx, countDevicesByTypeForNetwork, arg.Column1, arg.NetworkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountDevicesByTypeForNetworkRow{}
+	for rows.Next() {
+		var i CountDevicesByTypeForNetworkRow
+		if err := rows.Scan(&i.Type, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createDevice = `-- name: CreateDevice :one
 INSERT INTO devices (
     name, type, brand, model, location, purpose, description,
     status, ip_address, mac_address, serial_number,
     purchase_date, warranty_expiry, tags, user_attributes
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
+RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 `
 
 type CreateDeviceParams struct {
@@ -181,6 +263,9 @@ func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Dev
 		&i.ScanMac,
 		&i.ScanOs,
 		&i.ScanHostname,
+		&i.NetworkID,
+		&i.FirstSeen,
+		&i.LastSeen,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -201,7 +286,7 @@ func (q *Queries) DeleteDevice(ctx context.Context, id int64) (int64, error) {
 }
 
 const getDevice = `-- name: GetDevice :one
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
+SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 FROM devices
 WHERE id = ?
 `
@@ -240,6 +325,9 @@ func (q *Queries) GetDevice(ctx context.Context, id int64) (Device, error) {
 		&i.ScanMac,
 		&i.ScanOs,
 		&i.ScanHostname,
+		&i.NetworkID,
+		&i.FirstSeen,
+		&i.LastSeen,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -247,7 +335,7 @@ func (q *Queries) GetDevice(ctx context.Context, id int64) (Device, error) {
 }
 
 const getDeviceByIP = `-- name: GetDeviceByIP :one
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
+SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 FROM devices
 WHERE ip_address = ?
 LIMIT 1
@@ -287,6 +375,9 @@ func (q *Queries) GetDeviceByIP(ctx context.Context, ipAddress string) (Device, 
 		&i.ScanMac,
 		&i.ScanOs,
 		&i.ScanHostname,
+		&i.NetworkID,
+		&i.FirstSeen,
+		&i.LastSeen,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -294,7 +385,7 @@ func (q *Queries) GetDeviceByIP(ctx context.Context, ipAddress string) (Device, 
 }
 
 const getDeviceByMAC = `-- name: GetDeviceByMAC :one
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
+SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 FROM devices
 WHERE json_extract(scan_attributes, '$.mac') = ?
 LIMIT 1
@@ -338,6 +429,9 @@ func (q *Queries) GetDeviceByMAC(ctx context.Context, scanAttributes string) (De
 		&i.ScanMac,
 		&i.ScanOs,
 		&i.ScanHostname,
+		&i.NetworkID,
+		&i.FirstSeen,
+		&i.LastSeen,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -345,7 +439,7 @@ func (q *Queries) GetDeviceByMAC(ctx context.Context, scanAttributes string) (De
 }
 
 const listDevices = `-- name: ListDevices :many
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
+SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 FROM devices
 WHERE (? = '' OR status = ?)
   AND (? = '' OR type = ?)
@@ -409,6 +503,9 @@ func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Dev
 			&i.ScanMac,
 			&i.ScanOs,
 			&i.ScanHostname,
+			&i.NetworkID,
+			&i.FirstSeen,
+			&i.LastSeen,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -431,7 +528,7 @@ SET name = ?, type = ?, brand = ?, model = ?, location = ?, purpose = ?, descrip
     status = ?, ip_address = ?, mac_address = ?, serial_number = ?,
     purchase_date = ?, warranty_expiry = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, created_at, updated_at
+RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 `
 
 type UpdateDeviceParams struct {
@@ -505,6 +602,9 @@ func (q *Queries) UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (Dev
 		&i.ScanMac,
 		&i.ScanOs,
 		&i.ScanHostname,
+		&i.NetworkID,
+		&i.FirstSeen,
+		&i.LastSeen,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

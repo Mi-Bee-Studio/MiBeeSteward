@@ -108,6 +108,14 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 			filter.CreatedAtTo = &t
 		}
 	}
+	// network_id — filter to a single logical network (multi-LAN). Absent =
+	// all networks. 0 (or unparseable) is treated as absent so the default
+	// device list still spans every network.
+	if v := q.Get("network_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil && id > 0 {
+			filter.NetworkID = &id
+		}
+	}
 
 	resp, err := h.svc.List(r.Context(), filter)
 	if err != nil {
@@ -181,9 +189,16 @@ func (h *DeviceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	Success(w, map[string]string{"message": "device deleted"})
 }
 
-// GetStats handles GET /api/v1/devices/stats
+// GetStats handles GET /api/v1/devices/stats. Accepts an optional ?network_id=
+// query to scope counts to a single network (multi-LAN dashboards).
 func (h *DeviceHandler) GetStats(w http.ResponseWriter, r *http.Request) {
-	resp, err := h.svc.GetStats(r.Context())
+	var networkID *int64
+	if v := r.URL.Query().Get("network_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil && id > 0 {
+			networkID = &id
+		}
+	}
+	resp, err := h.svc.GetStats(r.Context(), networkID)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to get device stats")
 		return
