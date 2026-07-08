@@ -14,8 +14,25 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"mibee-steward/internal/db"
 )
+
+// changesTotal is the Prometheus counter for emitted change events, labeled by
+// change_type (device_added/changed/lost). Registered once at package init so
+// /metrics exposes the change rate (a healthy network sees few changes; a burst
+// signals a real topology shift or a scan outage).
+var changesTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "mibee_changes_total",
+		Help: "Total device change events emitted by the change-detection engine",
+	},
+	[]string{"type"},
+)
+
+func init() {
+	prometheus.MustRegister(changesTotal)
+}
 
 // ChangeType enumerates the device-level change events. The pattern is
 // {entity}_{added|lost|changed}; service/neighbor variants are reserved for
@@ -153,6 +170,7 @@ func NewDBRecorder(queries *db.Queries, watcher *Watcher, logger *slog.Logger) *
 
 // Record writes the event to change_log + pushes Watcher subscribers.
 func (r *DBRecorder) Record(ctx context.Context, ev ChangeEvent) {
+	changesTotal.WithLabelValues(ev.ChangeType).Inc()
 	beforeJSON, _ := marshalSnapshot(ev.Before)
 	afterJSON, _ := marshalSnapshot(ev.After)
 	now := time.Now().UTC()
