@@ -95,7 +95,7 @@ func (s *DeviceService) List(ctx context.Context, filter domain.DeviceFilter) (*
 
 	resp := make([]domain.DeviceResponse, 0, len(devices))
 	for _, d := range devices {
-		resp = append(resp, toDeviceResponse(d))
+		resp = append(resp, toDeviceResponseWithNetwork(d))
 	}
 
 	return &domain.DeviceListResponse{
@@ -223,21 +223,46 @@ func (s *DeviceService) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// GetStats returns device statistics grouped by status and type.
-func (s *DeviceService) GetStats(ctx context.Context) (*domain.DeviceStatsResponse, error) {
-	statusRows, err := s.repo.CountByStatus(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get device stats: %w", err)
+// GetStats returns device statistics grouped by status and type. When networkID
+// is non-nil the counts are scoped to that network (multi-LAN dashboards); nil
+// spans all networks.
+func (s *DeviceService) GetStats(ctx context.Context, networkID *int64) (*domain.DeviceStatsResponse, error) {
+	var (
+		statusRows []db.CountByStatusRow
+		typeRows   []db.CountDevicesByTypeRow
+		err        error
+	)
+	if networkID != nil {
+		sRows, sErr := s.repo.CountByStatusForNetwork(ctx, networkID)
+		if sErr != nil {
+			return nil, fmt.Errorf("failed to get device stats: %w", sErr)
+		}
+		tRows, tErr := s.repo.CountByTypeForNetwork(ctx, networkID)
+		if tErr != nil {
+			return nil, fmt.Errorf("failed to get device stats by type: %w", tErr)
+		}
+		// Normalize the network-scoped row types into the global shapes so the
+		// response assembly below is identical.
+		for _, r := range sRows {
+			statusRows = append(statusRows, db.CountByStatusRow{Status: r.Status, Count: r.Count})
+		}
+		for _, r := range tRows {
+			typeRows = append(typeRows, db.CountDevicesByTypeRow{Type: r.Type, Count: r.Count})
+		}
+	} else {
+		statusRows, err = s.repo.CountByStatus(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get device stats: %w", err)
+		}
+		typeRows, err = s.repo.CountByType(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get device stats by type: %w", err)
+		}
 	}
 
 	byStatus := make(map[string]int64)
 	for _, row := range statusRows {
 		byStatus[row.Status] = row.Count
-	}
-
-	typeRows, err := s.repo.CountByType(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get device stats by type: %w", err)
 	}
 
 	byType := make(map[string]int64)
@@ -281,6 +306,7 @@ func toDeviceResponse(d db.Device) domain.DeviceResponse {
 		Tags:             d.Tags,
 		CreatedAt:        d.CreatedAt,
 		ScanSource:       d.ScanSource,
+		NetworkID:        d.NetworkID,
 		PrometheusLabels: d.PrometheusLabels,
 		LastScannedAt:    d.LastScannedAt,
 		LastScanTaskID:   d.LastScanTaskID,
@@ -292,4 +318,13 @@ func toDeviceResponse(d db.Device) domain.DeviceResponse {
 		ScanAttributes:   scanAttrs,
 		UserAttributes:   userAttrs,
 	}
+}
+
+// toDeviceResponseWithNetwork extends toDeviceResponse with the joined network
+// name (available on the list path via LEFT JOIN networks). NetworkID is set
+// from the device row regardless; NetworkName only when the join resolved one.
+func toDeviceResponseWithNetwork(dw repository.DeviceWithNetwork) domain.DeviceResponse {
+	resp := toDeviceResponse(dw.Device)
+	resp.NetworkName = dw.NetworkName
+	return resp
 }

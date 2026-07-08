@@ -169,6 +169,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 	// Scanner routes (v2 engine)
 	scanQueries := db.New(dbConn)
+	// Wire the DB querier for agent-token verification (RequireAgentToken). Done
+	// here so the ingestion routes (registered below) can authenticate agents.
+	middleware.SetAgentQueries(scanQueries)
+
+	// Resolve this instance's network identity (networks.id) so discovered
+	// devices can be tagged with their origin. Done here (not in migrations)
+	// because the value comes from config `network.name`.
+	networkID := resolveNetworkID(dbConn, cfg)
 
 	// Construct the v2 engine: probes/classifiers/handlers + persistence + eBPF observer.
 	// Port spec: prefer the configured default_ports (config.yaml
@@ -198,6 +206,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		},
 		HeartbeatInterval: cfg.Heartbeat.DefaultInterval,
 		HeartbeatTimeout:  cfg.Heartbeat.Timeout,
+		NetworkID:         networkID,
 		EBPF: scannerv2ebpf.Config{
 			Enabled:    cfg.Scanner.EBPF.Enabled,
 			Interfaces: cfg.Scanner.EBPF.Interfaces,
@@ -208,7 +217,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}
 
 	// Runner: connects the engine to run/result persistence + the device bridge.
-	scanRunner := scannerv2runner.New(v2Engine, scanQueries, dbConn, heartbeatSvc, slog.Default())
+	scanRunner := scannerv2runner.New(v2Engine, scanQueries, dbConn, heartbeatSvc, networkID, slog.Default())
 
 	// Scheduler: cron-driven scan tasks. The ScanFunc delegates to the runner.
 	scanScheduler, schedErr := scannerv2scheduler.New(scanQueries, dbConn,
@@ -255,6 +264,19 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/runs/{id}", scannerResultHandler.GetRun)
 		r.Get("/results/export", scannerResultHandler.ExportScanResults)
 		r.Delete("/results", scannerResultHandler.BulkDeleteResults)
+	})
+
+	// --- Agent token management (distributed phase) ---
+	// Admin-only CRUD for discovery-agent bearer tokens. The ingestion endpoints
+	// (/agents/report, /agents/heartbeat — Step 3) authenticate via
+	// RequireAgentToken against this table; this block is the management surface.
+	agentAdminHandler := handler.NewAgentAdminHandler(scanQueries)
+	r.Route("/api/v1/agents", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/tokens", agentAdminHandler.Create)
+		r.Get("/tokens", agentAdminHandler.List)
+		r.Post("/tokens/{id}/revoke", agentAdminHandler.Revoke)
+		r.Delete("/tokens/{id}", agentAdminHandler.Delete)
 	})
 
 	// --- Scanner background services (v2) ---
@@ -489,4 +511,60 @@ func heartbeatDBPathFor(cfg *config.Config) string {
 		mainPath = "./data/mibee.db"
 	}
 	return filepath.Join(filepath.Dir(mainPath), "heartbeat.db")
+}
+
+// resolveNetworkID upserts the networks row for this instance's configured
+// network (config `network.name`/cidr/site) and returns its id. The returned id
+// is stamped onto every device this instance discovers (devices.network_id) so
+// multiple instances on different LANs can coexist without IP-key collisions.
+//
+// Empty/missing name resolves to "default" so single-instance deployments still
+// tag their devices (network_id non-NULL), which keeps the (ip, network_id)
+// composite-unique index deterministic. Returns 0 only on a hard DB error
+// (logged; devices then fall back to NULL network_id and the legacy IP path).
+func resolveNetworkID(dbConn *sql.DB, cfg *config.Config) int64 {
+	name := cfg.Network.Name
+	if name == "" {
+		name = "default"
+	}
+	// Upsert by name: update cidr/site if the row exists, else insert.
+	res, err := dbConn.Exec(`
+		INSERT INTO networks (name, cidr, site)
+		VALUES (?, ?, ?)
+		ON CONFLICT(name) DO NOTHING`,
+		name, cfg.Network.CIDR, cfg.Network.Site)
+	if err != nil {
+		slog.Error("resolve network id: upsert networks failed; devices will have NULL network_id",
+			"name", name, "error", err)
+		return 0
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// Row already existed — refresh its cidr/site in case the config changed.
+		_, _ = dbConn.Exec(`UPDATE networks SET cidr = ?, site = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?`,
+			cfg.Network.CIDR, cfg.Network.Site, name)
+	}
+	var id int64
+	if err := dbConn.QueryRow(`SELECT id FROM networks WHERE name = ?`, name).Scan(&id); err != nil {
+		slog.Error("resolve network id: lookup failed; devices will have NULL network_id",
+			"name", name, "error", err)
+		return 0
+	}
+
+	// Backfill: tag every pre-existing device that has no network_id with this
+	// instance's network. Without this, a rescan of a legacy (network_id NULL)
+	// device would create a DUPLICATE row keyed on (ip, <resolved network_id>)
+	// instead of updating the original — the (ip, NULL) and (ip, N) composite
+	// keys are distinct in the unique index. This is only safe for the
+	// single-instance default; a true multi-agent deployment would reconcile via
+	// the center, not backfill blindly.
+	if res, err := dbConn.Exec(`UPDATE devices SET network_id = ? WHERE network_id IS NULL`, id); err != nil {
+		slog.Warn("resolve network id: device backfill failed; legacy devices keep NULL network_id",
+			"network_id", id, "error", err)
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		slog.Info("network identity resolved; tagged pre-existing devices", "id", id, "name", name, "cidr", cfg.Network.CIDR, "devices_tagged", n)
+		return id
+	}
+
+	slog.Info("network identity resolved", "id", id, "name", name, "cidr", cfg.Network.CIDR)
+	return id
 }

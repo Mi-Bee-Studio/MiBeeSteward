@@ -80,6 +80,11 @@ type DeviceFilter struct {
 	// sent created_from/created_to but the handler ignored them.
 	CreatedAtFrom *time.Time `json:"created_from,omitempty"`
 	CreatedAtTo   *time.Time `json:"created_to,omitempty"`
+	// NetworkID filters by devices.network_id (the logical network an agent
+	// discovered the device on). nil = all networks (no filter); non-nil =
+	// devices on that network only. NULL-network (legacy/unresolved) devices
+	// are excluded when this is set — they have no network to match.
+	NetworkID *int64 `json:"network_id,omitempty"`
 	// SortBy is validated against a whitelist in the repository layer (never
 	// interpolated raw into SQL). Order is "asc" or "desc" (default "asc").
 	SortBy string `json:"sort_by,omitempty"`
@@ -107,6 +112,12 @@ type DeviceResponse struct {
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	ScanSource       string     `json:"scan_source"`
+	// NetworkID/NetworkName identify the logical network this device was
+	// discovered on (distributed/multi-LAN). NetworkID is nil for legacy
+	// unresolved devices; NetworkName is the human label from the networks table
+	// (resolved by the repository via JOIN, empty when NetworkID is nil).
+	NetworkID        *int64     `json:"network_id,omitempty"`
+	NetworkName      string     `json:"network_name,omitempty"`
 	PrometheusLabels string     `json:"prometheus_labels"`
 	LastScannedAt    *time.Time `json:"last_scanned_at,omitempty"`
 	LastScanTaskID   *int64     `json:"last_scan_task_id,omitempty"`

@@ -62,4 +62,10 @@ type contextKey string
 const (
 	ContextKeyUserID contextKey = "user_id"
 	ContextKeyRole   contextKey = "role"
+	// ContextKeyAgentID / ContextKeyAgentNetworkID are set by the agent-token
+	// middleware (RequireAgentToken) for machine-to-machine ingestion requests.
+	// Distinct from the user JWT keys so a request is either a user session OR
+	// an agent, never both.
+	ContextKeyAgentID       contextKey = "agent_id"
+	ContextKeyAgentNetworkID contextKey = "agent_network_id"
 )
