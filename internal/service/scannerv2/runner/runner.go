@@ -200,6 +200,12 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 		rn.reportSink(context.Background(), taskID, alive)
 	}
 
+	// 3c. Device-lost detection: compare this scan's alive set against the
+	//     network's known-online devices. Devices absent for >= lostThreshold
+	//     consecutive scans are declared lost + marked offline. Runs on a fresh
+	//     context so a server shutdown mid-finalize doesn't skip it.
+	rn.DetectLost(context.Background(), rn.networkID, taskID, reports, "")
+
 	// 4. Finalize the run.
 	finish := time.Now()
 	if err := rn.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{

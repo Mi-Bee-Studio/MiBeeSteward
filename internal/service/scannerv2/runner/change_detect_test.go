@@ -114,3 +114,79 @@ func TestChangeDetect_TypeChangeEmitsChanged(t *testing.T) {
 	require.NotNil(t, after)
 	require.Contains(t, *after, "type")
 }
+
+// TestDetectLost_GracePeriod confirms a device absent for 1 scan is NOT lost
+// (miss_count=1 < threshold 2), but absent for 2 consecutive scans IS lost
+// (status→offline + device_lost event). Devices are created via applyDeviceBridge
+// first (DetectLost only updates existing devices + snapshots them).
+func TestDetectLost_GracePeriod(t *testing.T) {
+	rn, queries, conn := setupChangeDetectDB(t)
+	ctx := context.Background()
+	netID := rn.networkID
+
+	// Create two devices via applyDeviceBridge (so device rows exist + are online).
+	rn.applyDeviceBridge(ctx, reportFor("10.0.0.10", "server", "", "aa:bb:cc:dd:ee:10"), netID, "")
+	rn.applyDeviceBridge(ctx, reportFor("10.0.0.11", "server", "", "aa:bb:cc:dd:ee:11"), netID, "")
+
+	// Scan 1: both alive → snapshotted, miss_count=0.
+	rn.DetectLost(ctx, netID, 1, []scannerv2.HostReport{
+		reportFor("10.0.0.10", "server", "", "aa:bb:cc:dd:ee:10"),
+		reportFor("10.0.0.11", "server", "", "aa:bb:cc:dd:ee:11"),
+	}, "")
+
+	// Scan 2: only 10.0.0.10. 10.0.0.11 absent once → miss_count=1 < threshold → NOT lost.
+	rn.DetectLost(ctx, netID, 1, []scannerv2.HostReport{
+		reportFor("10.0.0.10", "server", "", "aa:bb:cc:dd:ee:10"),
+	}, "")
+	var status11 string
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='10.0.0.11'`).Scan(&status11)
+	require.Equal(t, "online", status11, "absent once should NOT be lost (grace period)")
+	lostEvents, _ := queries.ListChangeLog(ctx, db.ListChangeLogParams{
+		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_lost",
+		Column5: 1, EntityType: "device", Limit: 100, Offset: 0,
+	})
+	require.Len(t, lostEvents, 0, "no device_lost after single absence")
+
+	// Scan 3: still only 10.0.0.10. 10.0.0.11 now miss_count=2 >= threshold → LOST.
+	rn.DetectLost(ctx, netID, 1, []scannerv2.HostReport{
+		reportFor("10.0.0.10", "server", "", "aa:bb:cc:dd:ee:10"),
+	}, "")
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='10.0.0.11'`).Scan(&status11)
+	require.Equal(t, "offline", status11, "absent twice should be lost")
+	lostEvents, _ = queries.ListChangeLog(ctx, db.ListChangeLogParams{
+		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_lost",
+		Column5: 1, EntityType: "device", Limit: 100, Offset: 0,
+	})
+	require.Len(t, lostEvents, 1, "one device_lost event")
+
+	// Scan 4: 10.0.0.11 reappears → miss_count resets to 0 (no false-lost next time).
+	rn.DetectLost(ctx, netID, 1, []scannerv2.HostReport{
+		reportFor("10.0.0.11", "server", "", "aa:bb:cc:dd:ee:11"),
+	}, "")
+	var miss int64
+	conn.QueryRow(`SELECT miss_count FROM scan_snapshots WHERE ip='10.0.0.11'`).Scan(&miss)
+	require.Equal(t, int64(0), miss, "reappearance resets miss_count")
+}
+
+// TestDetectLost_ReappearanceResets confirms a device that comes back before
+// crossing the threshold has its miss_count reset (no false lost).
+func TestDetectLost_ReappearanceResets(t *testing.T) {
+	rn, _, conn := setupChangeDetectDB(t)
+	ctx := context.Background()
+	netID := rn.networkID
+
+	rn.applyDeviceBridge(ctx, reportFor("10.0.0.20", "server", "", "aa:bb:cc:dd:ee:20"), netID, "")
+	// Scan 1: alive → snapshotted.
+	rn.DetectLost(ctx, netID, 1, []scannerv2.HostReport{
+		reportFor("10.0.0.20", "server", "", "aa:bb:cc:dd:ee:20"),
+	}, "")
+	// Scan 2: absent (miss_count=1).
+	rn.DetectLost(ctx, netID, 1, nil, "")
+	// Scan 3: reappears (miss_count→0).
+	rn.DetectLost(ctx, netID, 1, []scannerv2.HostReport{
+		reportFor("10.0.0.20", "server", "", "aa:bb:cc:dd:ee:20"),
+	}, "")
+	var miss int64
+	conn.QueryRow(`SELECT miss_count FROM scan_snapshots WHERE ip='10.0.0.20'`).Scan(&miss)
+	require.Equal(t, int64(0), miss, "reappearance after 1 miss resets to 0")
+}
