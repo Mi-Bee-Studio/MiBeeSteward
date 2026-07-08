@@ -36,6 +36,7 @@ Thumbs.db
 .omo/
 .codegraph/
 .sisyphus/
+.zcode/
 tmp/
 
 # === Docs (generated) ===

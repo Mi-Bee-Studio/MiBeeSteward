@@ -49,15 +49,24 @@ type Runner struct {
 	dbConn    *sql.DB          // raw connection for the device-bridge upserts (sqlc has no per-IP device lookup)
 	heartbeat HeartbeatCreator // may be nil (heartbeat config creation skipped)
 	logger    *slog.Logger
+	// networkID tags discovered devices with their origin network
+	// (devices.network_id). 0 = unresolved/legacy (NULL). See store.NetworkID.
+	networkID sql.NullInt64
 }
 
 // New constructs a Runner. engine may be nil (the runner will log and no-op on
 // each Run), letting the scheduler stay alive even if the engine failed to init.
-func New(engine *engine.Engine, queries *db.Queries, dbConn *sql.DB, heartbeat HeartbeatCreator, logger *slog.Logger) *Runner {
+// networkID is the networks.id this runner tags discovered devices with (0/NULL
+// for the legacy single-instance path).
+func New(engine *engine.Engine, queries *db.Queries, dbConn *sql.DB, heartbeat HeartbeatCreator, networkID int64, logger *slog.Logger) *Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Runner{engine: engine, queries: queries, dbConn: dbConn, heartbeat: heartbeat, logger: logger}
+	var nid sql.NullInt64
+	if networkID > 0 {
+		nid = sql.NullInt64{Int64: networkID, Valid: true}
+	}
+	return &Runner{engine: engine, queries: queries, dbConn: dbConn, heartbeat: heartbeat, networkID: nid, logger: logger}
 }
 
 // PersistManualDevice runs a single HostReport (synthesized for a manually-

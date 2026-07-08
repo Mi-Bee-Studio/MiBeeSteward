@@ -30,6 +30,23 @@ type Config struct {
 	// detail tables (heartbeat_results, scan_results, …). Without it these
 	// tables grow unbounded — heartbeat_results alone accumulates ~270k rows/day.
 	Retention RetentionConfig `koanf:"retention"`
+	// Network identifies the logical network this instance is responsible for.
+	// Used to resolve devices.network_id (seeded into the networks table at
+	// startup). Single-instance default name is "default"; in a distributed
+	// deployment each agent sets a distinct name (e.g. "lan-63", "branch-bj").
+	Network NetworkConfig `koanf:"network"`
+}
+
+// NetworkConfig describes the logical network this instance scans/owns.
+type NetworkConfig struct {
+	// Name is the human-readable network identifier (resolved to a networks.id
+	// at startup). Empty is treated as "default" at resolve time.
+	Name string `koanf:"name"`
+	// CIDR is the advisory network range (e.g. "192.168.63.0/24"). Not enforced;
+	// recorded on the networks row for display and future subnet inference.
+	CIDR string `koanf:"cidr"`
+	// Site is an optional site label (branch / datacenter / cloud).
+	Site string `koanf:"site"`
 }
 
 // RetentionConfig holds per-table retention windows and sweep tuning. A field

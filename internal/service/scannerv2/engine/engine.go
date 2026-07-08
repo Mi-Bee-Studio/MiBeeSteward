@@ -86,6 +86,10 @@ type Config struct {
 	// HeartbeatInterval/Timeout are the defaults applied to generated configs.
 	HeartbeatInterval int
 	HeartbeatTimeout  int
+	// NetworkID is the networks.id this engine tags discovered devices with
+	// (devices.network_id). 0 leaves network_id NULL (legacy/unresolved).
+	// Resolved from config `network` at startup; enables multi-LAN coexistence.
+	NetworkID int64
 	// EBPF controls the passive observer (no-op when disabled or stub build).
 	EBPF ebpf.Config
 }
@@ -147,6 +151,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 			PersistRawEvidence:       cfg.PersistRawEvidence,
 			DefaultHeartbeatInterval: cfg.HeartbeatInterval,
 			DefaultHeartbeatTimeout:  cfg.HeartbeatTimeout,
+			NetworkID:                cfg.NetworkID,
 		}, logger)
 	}
 

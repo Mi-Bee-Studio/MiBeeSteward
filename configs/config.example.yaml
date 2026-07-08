@@ -14,6 +14,16 @@ database:
   sqlite:
     path: "./data/mibee.db"
 
+# Network this instance is responsible for. Resolved to a `networks` table row
+# at startup; discovered devices are tagged with its id (devices.network_id) so
+# multiple instances on different LANs can coexist without IP collisions.
+#   - Single instance: leave at default ("default") — devices get network_id set.
+#   - Distributed: each agent sets a distinct name (e.g. "lan-63", "branch-bj").
+network:
+  name: "default"
+  cidr: ""        # e.g. "192.168.63.0/24" — advisory, not enforced
+  site: ""        # e.g. "hq" / "datacenter-1"
+
 
 auth:
   jwt_secret: "change-me-in-production"  # REQUIRED — must change, minimum 32 characters
