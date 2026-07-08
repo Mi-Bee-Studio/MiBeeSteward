@@ -14,6 +14,7 @@ import (
 
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/repository"
@@ -218,6 +219,15 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Runner: connects the engine to run/result persistence + the device bridge.
 	scanRunner := scannerv2runner.New(v2Engine, scanQueries, dbConn, heartbeatSvc, networkID, slog.Default())
+
+	// Change detection (Phase 3): the center records device_added/changed/lost
+	// events to change_log + pushes in-process Watcher subscribers. The agent
+	// does NOT set this (change detection is a center concern; agents only
+	// forward raw HostReports). The watcher is the foundation for a future
+	// /watch SSE endpoint (Step 4 surfaces a query API on top of change_log).
+	changeWatcher := changedetect.NewWatcher(slog.Default())
+	changeRecorder := changedetect.NewDBRecorder(scanQueries, changeWatcher, slog.Default())
+	scanRunner.SetChangeRecorder(changeRecorder)
 
 	// Scheduler: cron-driven scan tasks. The ScanFunc delegates to the runner.
 	scanScheduler, schedErr := scannerv2scheduler.New(scanQueries, dbConn,

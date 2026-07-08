@@ -81,6 +81,10 @@ type RetentionConfig struct {
 	AuditLogsDays        int `koanf:"audit_logs_days"`
 	NotificationLogDays  int `koanf:"notification_log_days"`
 	ServiceEvidenceDays  int `koanf:"service_evidence_days"`
+	// ChangeLogDays is the retention window for change_log (device_added /
+	// changed / lost events). Default 30 (high value for asset-history audits,
+	// but change_log grows fast — one row per real change per scan).
+	ChangeLogDays int `koanf:"change_log_days"`
 	// SweepIntervalHours is how often the retention sweeper runs across all
 	// tables. Default 6h — frequent enough that no table drifts far past its
 	// window, rare enough to be negligible overhead.
@@ -298,6 +302,9 @@ func normalizeRetention(cfg *Config) {
 	}
 	if r.ServiceEvidenceDays <= 0 {
 		r.ServiceEvidenceDays = 14
+	}
+	if r.ChangeLogDays <= 0 {
+		r.ChangeLogDays = 30
 	}
 	if r.SweepIntervalHours <= 0 {
 		r.SweepIntervalHours = 6
