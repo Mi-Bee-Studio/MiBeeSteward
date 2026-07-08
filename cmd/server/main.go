@@ -269,6 +269,13 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		// queries work without the generated columns.
 		"ALTER TABLE devices ADD COLUMN scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes))",
 		"ALTER TABLE devices ADD COLUMN user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes))",
+		// Distributed/topology groundwork: device origin (network_id) + online
+		// freshness timestamps (first_seen/last_seen). See db/schema.sql and
+		// docs/private/architecture-future.md §6. network_id resolves to a
+		// networks row seeded at startup (routes) from config `network`.
+		"ALTER TABLE devices ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL",
+		"ALTER TABLE devices ADD COLUMN first_seen TIMESTAMP",
+		"ALTER TABLE devices ADD COLUMN last_seen TIMESTAMP",
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
@@ -342,9 +349,21 @@ func runMigrations(db *sql.DB, dbPath string) error {
 	// Add the scan_attributes generated columns (scan_vendor/scan_mac/scan_os/
 	// scan_hostname) to existing DBs. SQLite can't ALTER ADD COLUMN with a
 	// non-constant expression, so a table rebuild is required. Fresh installs
-	// already get them from schema.sql; this is a no-op there.
+	// already get them from schema.sql; this is a no-op there. The rebuild
+	// DROPs and recreates the devices table, which wipes ALL indexes — so the
+	// distributed-identity index migration MUST run after this.
 	if err := addDevicesGeneratedColumns(context.Background(), db); err != nil {
 		return fmt.Errorf("devices generated-columns migration: %w", err)
+	}
+
+	// Distributed-identity index migration: replace the legacy global-unique
+	// devices(ip_address) index with the (ip_address, network_id) composite +
+	// MAC lookup index. Runs LAST (after the devices rebuild) so the indexes
+	// survive on the final table shape. The rebuild already drops the legacy
+	// idx_devices_ip_address; the DROP IF EXISTS here is a belt-and-suspenders
+	// for fresh installs that never rebuilt.
+	if err := applyIdentityIndexMigrations(context.Background(), db); err != nil {
+		return fmt.Errorf("identity-index migrations: %w", err)
 	}
 
 	slog.Info("database schema applied")
@@ -416,6 +435,9 @@ func addDevicesGeneratedColumns(ctx context.Context, db *sql.DB) error {
 			scan_mac      TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.mac')) STORED,
 			scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
 			scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
+			network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+			first_seen TIMESTAMP,
+			last_seen TIMESTAMP,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -423,18 +445,21 @@ func addDevicesGeneratedColumns(ctx context.Context, db *sql.DB) error {
 			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
 			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
 			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
-			scan_attributes, user_attributes, created_at, updated_at)
+			scan_attributes, user_attributes, network_id, first_seen, last_seen, created_at, updated_at)
 		SELECT id, name, type, brand, model, location, purpose, description,
 			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
 			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
 			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
-			scan_attributes, user_attributes, created_at, updated_at FROM devices`,
+			scan_attributes, user_attributes, network_id, first_seen, last_seen, created_at, updated_at FROM devices`,
 		`DROP TABLE devices`,
 		`ALTER TABLE devices_new RENAME TO devices`,
 		// Re-create the indexes that existed on the original devices table.
+		// NOTE: the old global-unique idx_devices_ip_address is intentionally NOT
+		// recreated here — applyIdentityIndexMigrations replaces it with the
+		// (ip_address, network_id) composite-unique index needed for distributed
+		// (multi-LAN) deployments. See applyIdentityIndexMigrations.
 		`CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(type)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_ip_address ON devices(ip_address)`,
 		`CREATE INDEX IF NOT EXISTS idx_devices_scan_mac_expr    ON devices(json_extract(scan_attributes, '$.mac'))`,
 		`CREATE INDEX IF NOT EXISTS idx_devices_scan_vendor_expr ON devices(json_extract(scan_attributes, '$.vendor'))`,
 	}
@@ -469,26 +494,13 @@ func addDevicesGeneratedColumns(ctx context.Context, db *sql.DB) error {
 }
 
 // applyUniqueIndexMigrations de-duplicates rows then creates UNIQUE indexes on
-// devices(ip_address) and heartbeat_configs(device_id, method). Safe to re-run.
+// heartbeat_configs(device_id, method). Safe to re-run.
+//
+// NOTE: the old devices(ip_address) global-unique index was replaced by
+// applyIdentityIndexMigrations (composite (ip_address, network_id) + MAC index)
+// to support distributed multi-LAN deployments. This function now only owns the
+// heartbeat_configs index.
 func applyUniqueIndexMigrations(ctx context.Context, db *sql.DB) error {
-	// devices.ip_address — keep the lowest id per ip_address, delete the rest.
-	// Empty ip_address ('') is treated as "no IP" and left alone (many rows may
-	// legitimately have no IP, e.g. manually-added devices without one).
-	if _, err := db.ExecContext(ctx, `DELETE FROM devices WHERE id NOT IN (
-		SELECT MIN(id) FROM devices WHERE ip_address != '' GROUP BY ip_address
-	) AND ip_address != '' AND ip_address IN (
-		SELECT ip_address FROM devices WHERE ip_address != ''
-		GROUP BY ip_address HAVING COUNT(*) > 1
-	)`); err != nil {
-		// Non-fatal: log and continue; the index creation below will surface a
-		// hard failure if dupes actually remain.
-		slog.Warn("devices ip_address de-dup sweep failed", "error", err)
-	}
-	if _, err := db.ExecContext(ctx,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_ip_address ON devices(ip_address)`); err != nil {
-		return fmt.Errorf("create idx_devices_ip_address: %w", err)
-	}
-
 	// heartbeat_configs(device_id, method) — keep the lowest id per pair.
 	if _, err := db.ExecContext(ctx, `DELETE FROM heartbeat_configs WHERE id NOT IN (
 		SELECT MIN(id) FROM heartbeat_configs GROUP BY device_id, method
@@ -498,6 +510,76 @@ func applyUniqueIndexMigrations(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_heartbeat_configs_device_method ON heartbeat_configs(device_id, method)`); err != nil {
 		return fmt.Errorf("create idx_heartbeat_configs_device_method: %w", err)
+	}
+	return nil
+}
+
+// applyIdentityIndexMigrations replaces the legacy global-unique
+// devices(ip_address) index with the distributed-ready identity model:
+//
+//  1. DROP idx_devices_ip_address (the old global-unique IP index) so the same
+//     private IP can coexist across two networks (e.g. both LANs have a .1).
+//  2. De-duplicate by (ip_address, network_id) keeping the lowest id, then
+//     CREATE UNIQUE INDEX idx_devices_ip_network ON (ip_address, network_id).
+//     NULL network_id is allowed multiple times — SQLite treats each NULL as
+//     distinct in a UNIQUE index, so legacy single-instance rows (network_id
+//     still NULL) don't collide. When network_id is set it partitions by network.
+//  3. CREATE INDEX idx_devices_mac_address ON (mac_address) to back the
+//     MAC-primary device lookup (the scanner upserts by MAC when available so a
+//     roaming/re-DHCP device stays one asset across networks).
+//
+// Safe to re-run: the DROP errors harmlessly when the index is already gone
+// (legacy fresh installs never had it), and the CREATEs are IF NOT EXISTS.
+func applyIdentityIndexMigrations(ctx context.Context, db *sql.DB) error {
+	// 1. Drop the old global-unique IP index. Harmless no-op if it doesn't exist.
+	if _, err := db.ExecContext(ctx, `DROP INDEX IF EXISTS idx_devices_ip_address`); err != nil {
+		return fmt.Errorf("drop idx_devices_ip_address: %w", err)
+	}
+
+	// 2. De-duplicate by (ip_address, network_id), keeping the lowest id per
+	//    pair. Only consider non-empty ip_address ('' = no IP, many rows legit).
+	//    Rows with NULL network_id are grouped as a single partition (SQLite
+	//    GROUP BY treats NULLs as equal). This prevents the composite-unique
+	//    index creation from failing on legacy dupes.
+	if _, err := db.ExecContext(ctx, `DELETE FROM devices WHERE id NOT IN (
+		SELECT MIN(id) FROM devices
+		WHERE ip_address != ''
+		GROUP BY ip_address, network_id
+	) AND ip_address != '' AND id IN (
+		SELECT d.id FROM devices d
+		JOIN (
+			SELECT ip_address, network_id FROM devices
+			WHERE ip_address != ''
+			GROUP BY ip_address, network_id HAVING COUNT(*) > 1
+		) dup ON d.ip_address = dup.ip_address
+		       AND (d.network_id IS dup.network_id OR (d.network_id IS NULL AND dup.network_id IS NULL))
+	)`); err != nil {
+		// Non-fatal: log and continue; the index creation below surfaces a hard
+		// failure if dupes actually remain.
+		slog.Warn("devices (ip_address, network_id) de-dup sweep failed", "error", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_ip_network ON devices(ip_address, network_id)`); err != nil {
+		return fmt.Errorf("create idx_devices_ip_network: %w", err)
+	}
+
+	// 3. MAC-primary lookup index. mac_address may be empty for many rows
+	//    (legacy/manual devices), but a plain (non-unique) index is fine: the
+	//    upsert filters `WHERE mac_address = ? AND mac_address != ''` so empty
+	//    rows are never matched.
+	if _, err := db.ExecContext(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_devices_mac_address ON devices(mac_address)`); err != nil {
+		return fmt.Errorf("create idx_devices_mac_address: %w", err)
+	}
+
+	// networks.name unique — backs resolveNetworkID's ON CONFLICT(name) upsert.
+	// Fresh installs get it from the UNIQUE constraint in schema.sql; this index
+	// covers upgraded DBs that created the table before the constraint existed.
+	if _, err := db.ExecContext(ctx,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_networks_name ON networks(name)`); err != nil {
+		// Non-fatal: a dupe-name row would only arise if an operator manually
+		// inserted one; log and let the upsert path surface it.
+		slog.Warn("networks name unique index creation skipped", "error", err)
 	}
 	return nil
 }
