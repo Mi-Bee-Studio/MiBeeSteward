@@ -74,9 +74,25 @@ func New(engine *engine.Engine, queries *db.Queries, dbConn *sql.DB, heartbeat H
 // and seeding heartbeat configs for new devices. Used by the AddDevices API.
 // Returns (isNew, error).
 func (rn *Runner) PersistManualDevice(ctx context.Context, rep scannerv2.HostReport) (bool, error) {
-	isNew, _ := rn.applyDeviceBridge(ctx, rep)
+	isNew, _ := rn.applyDeviceBridge(ctx, rep, rn.networkID)
 	return isNew, nil
 }
+
+// ApplyReport runs a single HostReport through the device bridge using an
+// explicit networkID, returning (isNew, wasUpdated, error). This is the
+// center's ingestion entry point: one center runner merges reports from many
+// agents, each scoped to the agent's own network (resolved from its token and
+// passed here per-call), so the device-bridge identity logic (MAC-primary →
+// (ip, network_id) fallback) partitions correctly per agent.
+func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64) (bool, bool, error) {
+	isNew, updated := rn.applyDeviceBridge(ctx, rep, networkID)
+	return isNew, updated, nil
+}
+
+// NetworkID returns the runner's own network identity (the instance's network
+// on the local-scan path). Exposed so callers building a HostReport for the
+// local scan path can pass it back through ApplyReport if needed.
+func (rn *Runner) NetworkID() sql.NullInt64 { return rn.networkID }
 
 // Run executes one scan task: creates a run record, runs the engine over
 // targets, persists per-host results, applies the device bridge, and finalizes
@@ -211,7 +227,7 @@ func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scan
 	}
 
 	// Device bridge.
-	return rn.applyDeviceBridge(ctx, rep)
+	return rn.applyDeviceBridge(ctx, rep, rn.networkID)
 }
 
 // reportJSONFields serializes a HostReport's ports/services/snmp into the JSON

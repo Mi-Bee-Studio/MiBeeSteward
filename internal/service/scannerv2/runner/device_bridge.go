@@ -20,7 +20,21 @@ import (
 // The v2 HostReport already carries enriched device fields (set by
 // ServiceHandlers) and generated heartbeats, so this function is a thin
 // adapter from the in-memory report to the devices/heartbeat_configs tables.
-func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport) (bool, bool) {
+// applyDeviceBridge mirrors v1's DeviceManager.CreateOrUpdate: for an alive
+// host, create or update the devices row (filling only empty/"unknown" fields
+// on update) and — for newly-created devices — seed heartbeat configs derived
+// from the report's heartbeats. Returns (isNew, wasUpdated).
+//
+// networkID is the per-call origin network (devices.network_id). The local
+// scan path passes rn.networkID (the instance's own network); the center's
+// ingestion path passes the agent's network resolved from its token, so one
+// center runner can merge reports from many networks without per-agent
+// construction.
+//
+// The v2 HostReport already carries enriched device fields (set by
+// ServiceHandlers) and generated heartbeats, so this function is a thin
+// adapter from the in-memory report to the devices/heartbeat_configs tables.
+func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64) (bool, bool) {
 	inferredType := rep.Device.Fields["inferred_type"]
 	// A service handler may have set a generic "server"/"pc" type from a single
 	// open port (ssh, smb, mysql, …). That's a weak signal — routers, NAS, and
@@ -66,10 +80,10 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		// scan (e.g. after an ARP walk). Match it back so we fill the existing
 		// row's mac_address instead of creating a duplicate. Mirrors store.
 		if err == sql.ErrNoRows {
-			if rn.networkID.Valid {
+			if networkID.Valid {
 				err = rn.dbConn.QueryRowContext(ctx,
 					`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND mac_address = '' LIMIT 1`,
-					rep.IP, rn.networkID.Int64).Scan(&existingID)
+					rep.IP, networkID.Int64).Scan(&existingID)
 			} else {
 				err = rn.dbConn.QueryRowContext(ctx,
 					`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' LIMIT 1`,
@@ -77,10 +91,10 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			}
 		}
 	default:
-		if rn.networkID.Valid {
+		if networkID.Valid {
 			err = rn.dbConn.QueryRowContext(ctx,
 				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
-				rep.IP, rn.networkID.Int64).Scan(&existingID)
+				rep.IP, networkID.Int64).Scan(&existingID)
 		} else {
 			err = rn.dbConn.QueryRowContext(ctx,
 				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
@@ -90,7 +104,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 
 	switch err {
 	case sql.ErrNoRows:
-		devID, derr := rn.createDevice(ctx, inferredType, inferredBrand, inferredDescr, inferredLoc, rep, mac)
+		devID, derr := rn.createDevice(ctx, inferredType, inferredBrand, inferredDescr, inferredLoc, rep, mac, networkID)
 		if derr != nil {
 			rn.logger.Warn("device bridge: create device failed", "ip", rep.IP, "mac", mac, "error", derr)
 			return false, false
@@ -199,8 +213,10 @@ func (rn *Runner) deviceHasHeartbeatConfig(ctx context.Context, deviceID int64) 
 	return n > 0
 }
 
-// createDevice inserts a new device row derived from the report.
-func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, location string, rep scannerv2.HostReport, mac string) (int64, error) {
+// createDevice inserts a new device row derived from the report. networkID is
+// the per-call origin network (the agent's network on the center ingestion
+// path, the instance's own network on the local scan path).
+func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, location string, rep scannerv2.HostReport, mac string, networkID sql.NullInt64) (int64, error) {
 	name := rep.IP
 	if h := rep.Device.Fields["node_hostname"]; h != "" {
 		name = h
@@ -217,13 +233,21 @@ func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, locat
 	scanAttrs := marshalScanAttributes(buildScanAttributes(rep))
 	now := time.Now().UTC()
 	res, err := rn.dbConn.ExecContext(ctx, `
-		INSERT INTO devices (name, type, brand, ip_address, mac_address, status, scan_source, description, location,
+		INSERT INTO devices (name, type, brand, ip_address, mac_address,
+		                     status, scan_source, description, location,
 		                     open_ports, detected_services, prometheus_url, node_exporter_url,
 		                     scan_attributes, network_id, first_seen, last_seen,
 		                     tags, last_scan_rtt_ms, last_scanned_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'online', 'scanner_v2', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		name, devType, brand, rep.IP, mac, descr, location, ports, services, promURL, neURL, scanAttrs,
-		rn.networkID, now, now, tags, rep.RTTMs, now, now, now)
+		VALUES (?, ?, ?, ?, ?,
+		        'online', 'scanner_v2', ?, ?,
+		        ?, ?, ?, ?,
+		        ?, ?, ?, ?,
+		        ?, ?, ?, ?, ?)`,
+		name, devType, brand, rep.IP, mac,
+		descr, location,
+		ports, services, promURL, neURL,
+		scanAttrs, networkID, now, now,
+		tags, rep.RTTMs, now, now, now)
 	if err != nil {
 		return 0, err
 	}

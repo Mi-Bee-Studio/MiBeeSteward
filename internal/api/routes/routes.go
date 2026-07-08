@@ -267,16 +267,30 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 
 	// --- Agent token management (distributed phase) ---
-	// Admin-only CRUD for discovery-agent bearer tokens. The ingestion endpoints
-	// (/agents/report, /agents/heartbeat — Step 3) authenticate via
-	// RequireAgentToken against this table; this block is the management surface.
+	// Admin-only CRUD for discovery-agent bearer tokens. The ingestion endpoint
+	// (/agents/report below) authenticates via RequireAgentToken against this
+	// table; this block is the management surface.
 	agentAdminHandler := handler.NewAgentAdminHandler(scanQueries)
-	r.Route("/api/v1/agents", func(r chi.Router) {
+	r.Route("/api/v1/agents/tokens", func(r chi.Router) {
 		r.Use(middleware.RequireAdmin)
-		r.Post("/tokens", agentAdminHandler.Create)
-		r.Get("/tokens", agentAdminHandler.List)
-		r.Post("/tokens/{id}/revoke", agentAdminHandler.Revoke)
-		r.Delete("/tokens/{id}", agentAdminHandler.Delete)
+		r.Post("/", agentAdminHandler.Create)
+		r.Get("/", agentAdminHandler.List)
+		r.Post("/{id}/revoke", agentAdminHandler.Revoke)
+		r.Delete("/{id}", agentAdminHandler.Delete)
+	})
+
+	// --- Agent ingestion (distributed phase) ---
+	// The report endpoint is the center-side counterpart to an agent's reporter:
+	// remote agents POST their scan results here. Auth is the machine-to-machine
+	// RequireAgentToken path (NOT the admin/user JWT above) — the agent's token
+	// binds the request to an agent_id + network_id, and every reported device is
+	// tagged with that network so multi-LAN data coexists without collision.
+	// Routed on the top-level mux (separate from /agents/tokens) so the two auth
+	// regimes don't interfere.
+	agentReportHandler := handler.NewAgentReportHandler(scanRunner)
+	r.Route("/api/v1/agents", func(r chi.Router) {
+		r.Use(middleware.RequireAgentToken)
+		r.Post("/report", agentReportHandler.Report)
 	})
 
 	// --- Scanner background services (v2) ---
