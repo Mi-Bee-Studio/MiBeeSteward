@@ -303,6 +303,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Post("/report", agentReportHandler.Report)
 	})
 
+	// --- Change history query (Phase 3) ---
+	// GET /api/v1/changes returns the device_added/changed/lost event stream
+	// written by the change-detection engine. Auth-gated (any logged-in user);
+	// filterable by network_id / change_type / entity_type. This is the
+	// queryable view on top of change_log; the in-process Watcher (changeWatcher
+	// above) is the foundation for a future /watch SSE push endpoint.
+	changeLogHandler := handler.NewChangeLogHandler(scanQueries)
+	r.Route("/api/v1/changes", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", changeLogHandler.List)
+	})
+
 	// --- Scanner background services (v2) ---
 	// Retention sweeper prunes all high-volume detail tables (heartbeat_results,
 	// scan_results, scan_task_runs, audit_logs, notification_log,
