@@ -9,30 +9,33 @@ ON CONFLICT(network_id, ip) DO UPDATE SET
     miss_count = 0,
     last_seen_at = excluded.last_seen_at;
 
--- name: IncrementSnapshotMisses :execrows
--- Bump miss_count for every snapshot on this network whose ip is NOT in the
--- seen-set (the alive IPs from the scan that just ran). This is the set
--- difference that drives device_lost detection. The placeholders (?, ?, ...)
--- are expanded inline by the caller (not via sqlc params) because IN-lists
--- can't be parameterized directly in sqlite — built in Go as a quoted literal
--- list of IPs. Never interpolates user data directly: the IPs are the
--- scan's own output, validated as IPs before use.
--- NOTE: this query is hand-written SQL executed via dbConn.Exec (not sqlc)
--- because of the dynamic IN-list. Kept here for documentation/discoverability.
+-- name: ListSnapshotsForNetwork :many
+-- All snapshots for a network (the known alive set). Used to compute the set
+-- difference: which of these did NOT appear in the current scan, then
+-- increment their miss_count (done in Go since the IN-list is dynamic).
+SELECT id, network_id, task_id, ip, mac, miss_count, last_seen_at
+FROM scan_snapshots
+WHERE network_id = ?;
 
 -- name: ListLostSnapshots :many
--- Snapshots whose miss_count has crossed the lost threshold, joined to devices
+-- Snapshots whose miss_count crossed the lost threshold, joined to devices
 -- to filter to currently-online ones (a device already offline was already
--- declared lost — don't re-emit). The grace period (miss_count >= threshold)
+-- declared lost, so do not re-emit). The grace period (miss_count >= threshold)
 -- prevents single-scan jitter from flapping a device offline.
-SELECT s.id, s.network_id, s.task_id, s.ip, s.mac, s.miss_count, s.last_seen_at,
-       d.id AS device_id, d.name, d.type, d.status
+SELECT
+    s.id AS id, s.network_id AS network_id, s.task_id AS task_id,
+    s.ip AS ip, s.mac AS mac, s.miss_count AS miss_count, s.last_seen_at AS last_seen_at,
+    d.id AS device_id, d.name AS device_name, d.type AS device_type, d.status AS device_status
 FROM scan_snapshots s
 JOIN devices d ON d.ip_address = s.ip AND (d.network_id = s.network_id OR d.network_id IS NULL)
 WHERE s.network_id = ?
   AND s.miss_count >= ?
-  AND d.status = 'online'
-ORDER BY s.ip;
+  AND d.status = 'online';
+
+-- name: IncrementSnapshotMiss :exec
+-- Bump miss_count for ONE snapshot (by id). Called per missing device from Go
+-- after computing the set difference.
+UPDATE scan_snapshots SET miss_count = miss_count + 1 WHERE id = ?;
 
 -- name: DeleteScanSnapshotsForNetwork :execrows
 -- Remove all snapshots for a network (e.g. when a network is deleted).

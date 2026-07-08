@@ -11,9 +11,7 @@ import (
 )
 
 const deleteScanSnapshotsForNetwork = `-- name: DeleteScanSnapshotsForNetwork :execrows
-.ip;
-
-DELETE FROM scan_snapshots WHERE network_id
+DELETE FROM scan_snapshots WHERE network_id = ?
 `
 
 // Remove all snapshots for a network (e.g. when a network is deleted).
@@ -25,42 +23,125 @@ func (q *Queries) DeleteScanSnapshotsForNetwork(ctx context.Context, networkID i
 	return result.RowsAffected()
 }
 
-const incrementSnapshotMisses = `-- name: IncrementSnapshotMisses :execrows
+const incrementSnapshotMiss = `-- name: IncrementSnapshotMiss :exec
+UPDATE scan_snapshots SET miss_count = miss_count + 1 WHERE id = ?
+`
 
-SELECT s.id, s.network_id, s.task_id, s.ip, s.mac, s.miss_count, s.last_seen_at,
-       d.id AS device_id, d.name, d.type, d.status
+// Bump miss_count for ONE snapshot (by id). Called per missing device from Go
+// after computing the set difference.
+func (q *Queries) IncrementSnapshotMiss(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, incrementSnapshotMiss, id)
+	return err
+}
+
+const listLostSnapshots = `-- name: ListLostSnapshots :many
+SELECT
+    s.id AS id, s.network_id AS network_id, s.task_id AS task_id,
+    s.ip AS ip, s.mac AS mac, s.miss_count AS miss_count, s.last_seen_at AS last_seen_at,
+    d.id AS device_id, d.name AS device_name, d.type AS device_type, d.status AS device_status
 FROM scan_snapshots s
 JOIN devices d ON d.ip_address = s.ip AND (d.network_id = s.network_id OR d.network_id IS NULL)
 WHERE s.network_id = ?
   AND s.miss_count >= ?
   AND d.status = 'online'
-ORDER BY
 `
 
-type IncrementSnapshotMissesParams struct {
+type ListLostSnapshotsParams struct {
 	NetworkID int64 `json:"network_id"`
 	MissCount int64 `json:"miss_count"`
 }
 
-// Bump miss_count for every snapshot on this network whose ip is NOT in the
-// seen-set (the alive IPs from the scan that just ran). This is the set
-// difference that drives device_lost detection. The placeholders (?, ?, ...)
-// are expanded inline by the caller (not via sqlc params) because IN-lists
-// can't be parameterized directly in sqlite — built in Go as a quoted literal
-// list of IPs. Never interpolates user data directly: the IPs are the
-// scan's own output, validated as IPs before use.
-// NOTE: this query is hand-written SQL executed via dbConn.Exec (not sqlc)
-// because of the dynamic IN-list. Kept here for documentation/discoverability.
-// Snapshots whose miss_count has crossed the lost threshold, joined to devices
+type ListLostSnapshotsRow struct {
+	ID           int64     `json:"id"`
+	NetworkID    int64     `json:"network_id"`
+	TaskID       *int64    `json:"task_id"`
+	Ip           string    `json:"ip"`
+	Mac          string    `json:"mac"`
+	MissCount    int64     `json:"miss_count"`
+	LastSeenAt   time.Time `json:"last_seen_at"`
+	DeviceID     int64     `json:"device_id"`
+	DeviceName   string    `json:"device_name"`
+	DeviceType   string    `json:"device_type"`
+	DeviceStatus string    `json:"device_status"`
+}
+
+// Snapshots whose miss_count crossed the lost threshold, joined to devices
 // to filter to currently-online ones (a device already offline was already
-// declared lost — don't re-emit). The grace period (miss_count >= threshold)
+// declared lost, so do not re-emit). The grace period (miss_count >= threshold)
 // prevents single-scan jitter from flapping a device offline.
-func (q *Queries) IncrementSnapshotMisses(ctx context.Context, arg IncrementSnapshotMissesParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, incrementSnapshotMisses, arg.NetworkID, arg.MissCount)
+func (q *Queries) ListLostSnapshots(ctx context.Context, arg ListLostSnapshotsParams) ([]ListLostSnapshotsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLostSnapshots, arg.NetworkID, arg.MissCount)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected()
+	defer rows.Close()
+	items := []ListLostSnapshotsRow{}
+	for rows.Next() {
+		var i ListLostSnapshotsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.NetworkID,
+			&i.TaskID,
+			&i.Ip,
+			&i.Mac,
+			&i.MissCount,
+			&i.LastSeenAt,
+			&i.DeviceID,
+			&i.DeviceName,
+			&i.DeviceType,
+			&i.DeviceStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSnapshotsForNetwork = `-- name: ListSnapshotsForNetwork :many
+SELECT id, network_id, task_id, ip, mac, miss_count, last_seen_at
+FROM scan_snapshots
+WHERE network_id = ?
+`
+
+// All snapshots for a network (the known alive set). Used to compute the set
+// difference: which of these did NOT appear in the current scan, then
+// increment their miss_count (done in Go since the IN-list is dynamic).
+func (q *Queries) ListSnapshotsForNetwork(ctx context.Context, networkID int64) ([]ScanSnapshot, error) {
+	rows, err := q.db.QueryContext(ctx, listSnapshotsForNetwork, networkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScanSnapshot{}
+	for rows.Next() {
+		var i ScanSnapshot
+		if err := rows.Scan(
+			&i.ID,
+			&i.NetworkID,
+			&i.TaskID,
+			&i.Ip,
+			&i.Mac,
+			&i.MissCount,
+			&i.LastSeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertScanSnapshot = `-- name: UpsertScanSnapshot :exec

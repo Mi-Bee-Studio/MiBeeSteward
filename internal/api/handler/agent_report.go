@@ -8,6 +8,7 @@ import (
 
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/runner"
 )
 
@@ -63,6 +64,7 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	nid := sql.NullInt64{Int64: *networkID, Valid: true}
 
 	added, updated, skipped := 0, 0, 0
+	appliedReports := make([]scannerv2.HostReport, 0, len(rep.Hosts))
 	for _, host := range rep.Hosts {
 		if !host.Alive || host.IP == "" {
 			skipped++
@@ -80,7 +82,12 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		} else if wasUpdated {
 			updated++
 		}
+		appliedReports = append(appliedReports, hr)
 	}
+	// Device-lost detection for this agent's network: a device the agent no
+	// longer reports (absent for >= threshold consecutive reports) is declared
+	// lost. Same grace period as the local-scan path.
+	h.runner.DetectLost(r.Context(), nid, 0, appliedReports, agentID)
 	slog.Info("agent report received",
 		"agent_id", rep.AgentID, "network_id", *networkID,
 		"hosts", len(rep.Hosts), "added", added, "updated", updated, "skipped", skipped)
