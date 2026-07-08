@@ -35,6 +35,25 @@ type Config struct {
 	// startup). Single-instance default name is "default"; in a distributed
 	// deployment each agent sets a distinct name (e.g. "lan-63", "branch-bj").
 	Network NetworkConfig `koanf:"network"`
+	// Center configures a discovery AGENT's upstream aggregation center. When
+	// URL is non-empty the binary runs in agent mode: it runs the scannerv2
+	// engine locally and reports results to this center via POST /agents/report
+	// (auth: AuthToken, a long-lived agent token minted on the center). Empty
+	// URL = center/standalone mode (serve API + SPA, no upstream reporting).
+	Center CenterConfig `koanf:"center"`
+}
+
+// CenterConfig configures an agent's upstream center.
+type CenterConfig struct {
+	// URL is the center's base URL (e.g. "http://192.168.63.101:8080"). Empty =
+	// standalone/center mode (no upstream reporting).
+	URL string `koanf:"url"`
+	// AuthToken is the agent's bearer token (minted on the center via
+	// POST /api/v1/agents/tokens). Presented on every report.
+	AuthToken string `koanf:"auth_token"`
+	// ReportInterval is how often to flush buffered scan results upstream when
+	// the buffer isn't full. Default 30s. Errors retry with exponential backoff.
+	ReportInterval string `koanf:"report_interval"`
 }
 
 // NetworkConfig describes the logical network this instance scans/owns.
@@ -290,8 +309,20 @@ func normalizeRetention(cfg *Config) {
 
 // Validate checks the configuration for errors.
 func Validate(cfg *Config) error {
+	// Agent mode (center URL set) doesn't serve users/SPA, so it has no JWT,
+	// no admin seed, no auth cookie surface. Validate the agent-specific bits
+	// instead and skip the center-only checks below.
+	if cfg.Center.URL != "" {
+		if cfg.Center.AuthToken == "" {
+			return errors.New("center.auth_token is required in agent mode (mint one on the center via POST /api/v1/agents/tokens)")
+		}
+		if cfg.Network.Name == "" {
+			return errors.New("network.name is required in agent mode (must match the network the token is bound to)")
+		}
+		return nil
+	}
 
-	// Validate JWT secret
+	// Center / standalone mode: validate JWT secret
 	if cfg.Auth.JWTSecret == "" {
 		return errors.New("auth.jwt_secret is required")
 	}

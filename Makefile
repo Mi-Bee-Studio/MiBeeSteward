@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-with-ebpf clean test dev migrate-up
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf clean test dev migrate-up
 
 all: build
 
@@ -12,6 +12,11 @@ build-frontend:
 
 build-server:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
+
+# Discovery agent (distributed mode): lightweight scan + report binary. No
+# frontend, no SPA — just the scannerv2 engine + upstream reporter.
+build-agent:
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent ./cmd/agent/
 
 build: build-frontend build-server
 
