@@ -160,8 +160,13 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusServiceUnavailable, "change watcher not initialized")
 		return
 	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	// Use http.ResponseController so Flush traverses middleware wrappers
+	// (metricsResponseWriter / responseWriter) via their Unwrap() method to
+	// reach the server's real http.Flusher. A direct w.(http.Flusher) cast
+	// fails because those wrappers don't implement Flusher themselves, which
+	// previously made this endpoint return 500 "streaming not supported".
+	rc := http.NewResponseController(w)
+	if err := rc.Flush(); err != nil {
 		Error(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
@@ -172,7 +177,7 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
 	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
+	rc.Flush()
 
 	// Subscribe to the Watcher; unsubscribe + drain on exit to avoid leaking
 	// the channel (a dropped subscriber would buffer-overflow the Watcher).
@@ -200,7 +205,7 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
 				return
 			}
-			flusher.Flush()
+			rc.Flush()
 		case row, ok := <-sub:
 			if !ok {
 				// Channel closed (server shutting down).
@@ -225,7 +230,7 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 			if _, err := fmt.Fprintf(w, "event: change\ndata: %s\n\n", data); err != nil {
 				return // write failed — client likely gone
 			}
-			flusher.Flush()
+			rc.Flush()
 		}
 	}
 }
