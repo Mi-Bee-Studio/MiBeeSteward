@@ -2,6 +2,8 @@ package classify
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"mibee-steward/internal/service/scannerv2"
@@ -15,10 +17,29 @@ import (
 // Parity = same {service, port, protocol, confidence (within 1e-9), metadata}.
 // We load from the repo's configs/fingerprints/ dir (the real rule files).
 
-func loadTestRules(t *testing.T) *RuleClassifier {
+// loadBuiltinRules loads ONLY the hand-authored builtin rule files (not
+// third-party imports like recog-imported.yaml) into a temp dir. Parity tests
+// compare the RuleClassifier against the original code classifiers, so they
+// must be isolated from additive third-party rules that emit overlapping
+// identities. The production engine loads everything; these tests load builtin-only.
+func loadBuiltinRules(t *testing.T) *RuleClassifier {
 	t.Helper()
+	srcDir := "../../../../configs/fingerprints"
+	tmp, err := os.MkdirTemp("", "mibee-fp-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"banner.yaml", "http-tls.yaml", "ports.yaml"} {
+		b, err := os.ReadFile(filepath.Join(srcDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tmp, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rc := &RuleClassifier{}
-	if err := rc.LoadFromDir("../../../../configs/fingerprints"); err != nil {
+	if err := rc.LoadFromDir(tmp); err != nil {
 		t.Fatalf("LoadFromDir: %v", err)
 	}
 	if !rc.Loaded() {
@@ -28,15 +49,26 @@ func loadTestRules(t *testing.T) *RuleClassifier {
 }
 
 func TestRuleClassifier_LoadsAllRules(t *testing.T) {
-	rc := loadTestRules(t)
-	// banner.yaml: 7 (ssh, http, rtsp, ftp, http-lowconf, smtp, pop3, imap) = 8
-	// http-tls.yaml: 7 (rtsp, onvif, web, tls, node_exporter, prometheus)
-	// ports.yaml: 6
-	// total = 8 + 6 + 6 = 20  (snmp-data.yaml has no `rules:`)
-	if rc.RuleCount() < 18 {
-		t.Errorf("expected ≥18 rules loaded, got %d", rc.RuleCount())
+	rc := loadBuiltinRules(t)
+	// builtin-only (recog-imported.yaml excluded — tested via loadFullRules).
+	// banner.yaml=8 + http-tls.yaml=6 + ports.yaml=6 = 20
+	if rc.RuleCount() != 20 {
+		t.Errorf("expected 20 builtin rules, got %d", rc.RuleCount())
 	}
-	t.Logf("loaded %d rules", rc.RuleCount())
+}
+
+// TestRuleClassifier_LoadsWithRecog verifies the full fingerprint dir (including
+// third-party Recog imports) loads without error. The production engine loads
+// everything; this confirms the Recog regex patterns all compile under RE2.
+func TestRuleClassifier_LoadsWithRecog(t *testing.T) {
+	rc := &RuleClassifier{}
+	if err := rc.LoadFromDir("../../../../configs/fingerprints"); err != nil {
+		t.Fatalf("LoadFromDir with recog: %v", err)
+	}
+	if rc.RuleCount() < 1000 {
+		t.Errorf("expected ≥1000 rules with recog, got %d", rc.RuleCount())
+	}
+	t.Logf("loaded %d rules (builtin + recog)", rc.RuleCount())
 }
 
 // assertIdentityEqual compares two ServiceIdentity slices for behavioral parity.
@@ -85,7 +117,7 @@ func assertIdentityEqual(t *testing.T, want, got []scannerv2.ServiceIdentity, ct
 // ── BannerClassifier parity ──────────────────────────────────────────────
 
 func TestRuleClassifier_BannerSSH(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "banner", IP: "10.0.0.1", Port: 22, Confidence: 0.9, RawData: map[string]string{"banner": "SSH-2.0-OpenSSH_9.0"}},
 	}
@@ -103,7 +135,7 @@ func TestRuleClassifier_BannerSSH(t *testing.T) {
 }
 
 func TestRuleClassifier_BannerRTSPAndHTTP(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "banner", Port: 554, Confidence: 0.9, RawData: map[string]string{"banner": "RTSP/1.0 200 OK"}},
 		{Kind: "banner", Port: 80, Confidence: 0.9, RawData: map[string]string{"banner": "HTTP/1.1 200 OK"}},
@@ -116,7 +148,7 @@ func TestRuleClassifier_BannerRTSPAndHTTP(t *testing.T) {
 }
 
 func TestRuleClassifier_BannerFTP(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "banner", Port: 21, Confidence: 0.9, RawData: map[string]string{"banner": "220-FTP server ready"}},
 	}
@@ -128,7 +160,7 @@ func TestRuleClassifier_BannerFTP(t *testing.T) {
 // ── MailClassifier parity (compound + trim + exclusive group) ────────────
 
 func TestRuleClassifier_SMTP(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "banner", Port: 25, Confidence: 0.9, RawData: map[string]string{"banner": "220 mail.example.com ESMTP Postfix"}},
 	}
@@ -139,7 +171,7 @@ func TestRuleClassifier_SMTP(t *testing.T) {
 }
 
 func TestRuleClassifier_POP3ByPort(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	// "+OK" with no "pop3" keyword, but port 110 → matches via port_eq.
 	ev := []scannerv2.Evidence{
 		{Kind: "banner", Port: 110, Confidence: 0.9, RawData: map[string]string{"banner": "+OK Dovecot ready"}},
@@ -150,7 +182,7 @@ func TestRuleClassifier_POP3ByPort(t *testing.T) {
 }
 
 func TestRuleClassifier_IMAP(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "banner", Port: 143, Confidence: 0.9, RawData: map[string]string{"banner": "* OK [CAPABILITY IMAP4rev1]"}},
 	}
@@ -162,7 +194,7 @@ func TestRuleClassifier_IMAP(t *testing.T) {
 // ── PrometheusClassifier parity (exclusive group: node wins) ─────────────
 
 func TestRuleClassifier_NodeExporterPreferred(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "metric", Port: 9100, Confidence: 0.9, RawData: map[string]string{
 			"content_sample": "node_exporter_build_info{version=\"1.6\"} 1\nprometheus_build_info 1\n",
@@ -181,7 +213,7 @@ func TestRuleClassifier_NodeExporterPreferred(t *testing.T) {
 }
 
 func TestRuleClassifier_PlainPrometheus(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "metric", Port: 9090, Confidence: 0.9, RawData: map[string]string{
 			"content_sample": "prometheus_build_info{version=\"2.45\"} 1\n",
@@ -196,7 +228,7 @@ func TestRuleClassifier_PlainPrometheus(t *testing.T) {
 // ── WebClassifier / TLSClassifier parity ─────────────────────────────────
 
 func TestRuleClassifier_WebVersionExtract(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "http", Port: 80, Confidence: 0.9, RawData: map[string]string{"server": "nginx/1.25.3", "title": "Test"}},
 	}
@@ -211,7 +243,7 @@ func TestRuleClassifier_WebVersionExtract(t *testing.T) {
 }
 
 func TestRuleClassifier_TLSBrandFromCertCN(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "tls", Port: 443, Confidence: 0.9, RawData: map[string]string{"subject_cn": "device.hikvision.com"}},
 	}
@@ -228,7 +260,7 @@ func TestRuleClassifier_TLSBrandFromCertCN(t *testing.T) {
 // ── RTSPClassifier / ONVIFClassifier parity (kind_presence + brand map) ─
 
 func TestRuleClassifier_RTSPBrand(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "rtsp_banner", Port: 554, Confidence: 0.95, RawData: map[string]string{"server": "Dahua"}},
 	}
@@ -238,7 +270,7 @@ func TestRuleClassifier_RTSPBrand(t *testing.T) {
 }
 
 func TestRuleClassifier_ONVIFAuthRequired(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "onvif_response", Port: 80, Confidence: 0.9, RawData: map[string]string{"server": "Hikvision-ONVIF", "auth_required": "true"}},
 	}
@@ -255,7 +287,7 @@ func TestRuleClassifier_ONVIFAuthRequired(t *testing.T) {
 // ── MiscClassifier parity (port-only fallback) ───────────────────────────
 
 func TestRuleClassifier_PortFallbacks(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	// Open ports 389, 636, 445, 53 with port_open evidence.
 	ev := []scannerv2.Evidence{
 		{Kind: "port_open", Port: 389, Protocol: "tcp", Confidence: 0.9},
@@ -271,7 +303,7 @@ func TestRuleClassifier_PortFallbacks(t *testing.T) {
 // ── No-match cases (must emit nothing, not panic) ────────────────────────
 
 func TestRuleClassifier_NoMatch(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	ev := []scannerv2.Evidence{
 		{Kind: "banner", Port: 9999, Confidence: 0.9, RawData: map[string]string{"banner": "UNKNOWN-GARBAGE"}},
 	}
@@ -285,7 +317,7 @@ func TestRuleClassifier_NoMatch(t *testing.T) {
 }
 
 func TestRuleClassifier_EmptyEvidence(t *testing.T) {
-	rc := loadTestRules(t)
+	rc := loadBuiltinRules(t)
 	if got := rc.Classify(nil); len(got) != 0 {
 		t.Errorf("nil evidence should yield nothing, got %+v", got)
 	}
