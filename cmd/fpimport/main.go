@@ -128,31 +128,37 @@ type recogParam struct {
 type recogFingerprints struct {
 	XMLName      xml.Name           `xml:"fingerprints"`
 	Matches      string             `xml:"matches,attr"`
+	Protocol     string             `xml:"protocol,attr"`
 	Preference   string             `xml:"preference,attr"`
 	Fingerprints []recogFingerprint `xml:"fingerprint"`
 }
 
 // recogTarget maps a Recog match target to our evidence model.
 // field = the RawData key; serviceHint = the nominal service for the rule id.
-// anchored=false means the Recog pattern expects pre-stripped input (banner
-// without the response code / SSH prefix), so we wrap it as a substring search
-// rather than a from-start anchor.
+// stripPrefix = if non-empty, the rule's match gets a transform that strips
+// this prefix from the field value before regex-matching (Recog banner patterns
+// expect the part after "SSH-x.x-" / "220 " / etc., but our evidence carries
+// the full greeting).
 type recogTarget struct {
-	supported  bool
-	field      string // RawData key to match against
+	supported   bool
+	field       string // RawData key to match against
 	serviceHint string // nominal service for rule-id naming
+	stripPrefix string // prefix to strip before matching ("" = match full field)
+	stripKind   string // "ssh" = strip "SSH-x.y-", "respcode" = strip "NNN "
 }
 
 var recogTargetMap = map[string]recogTarget{
-	"ssh.banner":         {true, "banner", "ssh"},
-	"http_header.server": {true, "server", "http"},
-	"ftp.banner":         {true, "banner", "ftp"},
-	"smtp.banner":        {true, "banner", "smtp"},
-	"pop3.banner":        {true, "banner", "pop3"},
-	"imap.banners":       {true, "banner", "imap"},
-	"rtsp_header.server": {true, "server", "rtsp"},
-	"mysql.banners":      {true, "banner", "mysql"},
-	"mysql.error":        {true, "banner", "mysql"},
+	"ssh.banner":         {true, "banner", "ssh", "", "ssh"},
+	"http_header.server": {true, "server", "http", "", ""},
+	"html_title":         {true, "title", "http", "", ""},
+	"ftp.banner":         {true, "banner", "ftp", "", "respcode"},
+	"smtp.banner":        {true, "banner", "smtp", "", "respcode"},
+	"pop3.banner":        {true, "banner", "pop3", "", "respcode"},
+	"imap.banners":       {true, "banner", "imap", "", "respcode"},
+	"telnet.banner":      {true, "banner", "telnet", "", ""},
+	"rtsp_header.server": {true, "server", "rtsp", "", ""},
+	"mysql.banners":      {true, "banner", "mysql", "", ""},
+	"mysql.error":        {true, "banner", "mysql", "", ""},
 }
 
 func importRecog(srcDir, outPath string) error {
@@ -175,7 +181,13 @@ func importRecog(srcDir, outPath string) error {
 			fmt.Fprintf(os.Stderr, "warn: parse %s: %v (skipped)\n", ent.Name(), err)
 			continue
 		}
-		tgt, ok := recogTargetMap[rf.Matches]
+		matchKey := rf.Matches
+		// Fallback: some Recog files (telnet) omit matches= and use protocol=
+		// instead. Derive "<protocol>.banner" as the match key.
+		if matchKey == "" && rf.Protocol != "" {
+			matchKey = rf.Protocol + ".banner"
+		}
+		tgt, ok := recogTargetMap[matchKey]
 		if !ok || !tgt.supported {
 			unsupportedFiles++
 			continue // silently skip unsupported match targets
@@ -258,15 +270,25 @@ func convertRecogFP(fp recogFingerprint, source string, tgt recogTarget, conf fl
 	// RuleClassifier's regex extractor can reference groups. We keep the Recog
 	// pattern as-is (it's already anchored with ^...$ in most cases); the rule
 	// matcher does a regexp.MatchString which handles the anchors.
+	match := map[string]any{
+		"field": tgt.field,
+		"op":    "regex",
+		"value": fp.Pattern,
+		"ci":    ci,
+	}
+	// Banner-strip transform: Recog's ssh/ftp/smtp patterns expect the part
+	// AFTER "SSH-x.y-" or the "NNN " response code. Our evidence carries the
+	// full greeting. Emit a transform so the RuleClassifier strips the prefix
+	// before applying the regex.
+	if tgt.stripKind == "ssh" {
+		match["transform"] = "strip_ssh_prefix"
+	} else if tgt.stripKind == "respcode" {
+		match["transform"] = "strip_resp_code"
+	}
 	rule := map[string]any{
 		"id":     "recog-" + tgt.serviceHint + "-" + hashShort(fp.Pattern),
 		"source": "recog",
-		"match": map[string]any{
-			"field": tgt.field,
-			"op":    "regex",
-			"value": fp.Pattern,
-			"ci":    ci,
-		},
+		"match":  match,
 		"service":    tgt.serviceHint,
 		"protocol":   "tcp",
 		"confidence": conf,

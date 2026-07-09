@@ -110,6 +110,21 @@ combine sub-matches.
 `field` defaults to `"banner"`. `trim: true` trims the field value before
 testing (mail rules trim the banner; banner rules do not).
 
+### Transforms (`transform:`)
+
+A `transform` pre-processes the field value before the op tests it. Used by
+third-party-imported rules whose patterns expect pre-stripped input:
+
+| transform | semantics | example |
+|---|---|---|
+| `strip_ssh_prefix` | removes `"SSH-x.y-"` prefix, leaving the software string | `"SSH-2.0-OpenSSH_9.0 Debian-7"` → `"OpenSSH_9.0 Debian-7"` |
+| `strip_resp_code` | removes leading `"NNN "` response code | `"220 foo.bar ESMTP Postfix"` → `"foo.bar ESMTP Postfix"` |
+
+Recog's `ssh.banner` patterns match the software string after `SSH-x.y-`, and
+its `ftp.banner`/`smtp.banner` patterns match the greeting after the `NNN `
+response code. Without these transforms, Recog rules don't match our full-banner
+evidence.
+
 ### Composite ops
 
 | op | field | semantics |
