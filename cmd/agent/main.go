@@ -97,6 +97,7 @@ func main() {
 		PerProbeTimeout:    time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
 		PersistRawEvidence: cfg.Scanner.PersistRawEvidence,
 		OUIPath:            cfg.Scanner.OUIPath,
+		FingerprintPath:    cfg.Scanner.FingerprintPath,
 		SNMPCommunity:      cfg.Scanner.SNMPCommunity,
 		RouterARP: scannerv2probe.RouterARPConfig{
 			Routers:   cfg.Scanner.RouterARP.Routers,

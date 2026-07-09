@@ -516,7 +516,7 @@ func heuristicDeviceType(rep scannerv2.HostReport) string {
 		"routeros", "mikrotik", "r2s", "r4s", "r6s", "r68s", "nanopi-r",
 		"miwifi", "xiaomi-router", "tplink", "tp-link", "ap-", "-ap", "ac68",
 		"ac88", "ax1800", "ax3000", "ax6000", "k2p", "unifi", "edgeos") ||
-		containsAny(brand, "mikrotik", "ubiquiti", "tp-link", "tplink"):
+		containsAny(brand, "mikrotik", "ubiquiti", "tp-link", "tplink", "xdr"):
 		return "router"
 	// Hostname explicitly says server/iot/proxmox.
 	case strings.Contains(host, "server") || strings.Contains(host, "proxmox"):

@@ -193,6 +193,11 @@ type ScannerConfig struct {
 	// the MAC is still recorded but no vendor is attached. Override with the
 	// MIBEE_SCANNER_OUI_PATH env var.
 	OUIPath string `koanf:"oui_path"`
+	// FingerprintPath points to a directory of fingerprint YAML rule files
+	// (see configs/fingerprints/ + docs/fingerprint-spec.md). When empty, the
+	// engine uses the rules embedded in the binary (zero-config). Override with
+	// MIBEE_SCANNER_FINGERPRINT_PATH.
+	FingerprintPath string `koanf:"fingerprint_path"`
 	// SNMPCommunity is the default community string for the SNMP probe
 	// (default "public" if empty). Override with MIBEE_SCANNER_SNMP_COMMUNITY.
 	SNMPCommunity string `koanf:"snmp_community"`

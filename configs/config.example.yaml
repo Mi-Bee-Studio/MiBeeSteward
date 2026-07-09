@@ -96,6 +96,12 @@ scanner:
   # runtime with MIBEE_SCANNER_OUI_PATH. Fetch the canonical list with
   # scripts/fetch-oui.sh (downloads from standardeee.org).
   oui_path: ""
+  # fingerprint_path points to a directory of fingerprint YAML rule files (see
+  # configs/fingerprints/ + docs/fingerprint-spec.md). When empty, the engine
+  # uses the fingerprint rules embedded in the binary (zero-config). Override at
+  # runtime with MIBEE_SCANNER_FINGERPRINT_PATH. Point this at a custom rule
+  # directory to extend device/service identification without recompiling.
+  fingerprint_path: ""
   # snmp_community overrides the default SNMP community ("public") used by the
   # SNMP probe. Override at runtime with MIBEE_SCANNER_SNMP_COMMUNITY.
   snmp_community: "public"
