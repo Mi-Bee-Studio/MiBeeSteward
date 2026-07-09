@@ -10,7 +10,8 @@
 		"Users": "用户",
 		"Scanner": "扫描器",
 		"AuditLogs": "审计日志",
-		"Changes": "变更"
+		"Changes": "变更",
+		"Agents": "采集器"
 	},
 	"auth": {
 		"Username": "用户名",
@@ -648,5 +649,36 @@
 		"All Events": "全部事件",
 		"No Changes": "暂无变更",
 		"No Changes Desc": "扫描检测到设备新增、变更或离线时,事件将在此显示。"
+	},
+	"agents": {
+		"Title": "采集器管理",
+		"Create Token": "创建令牌",
+		"Agent ID": "采集器 ID",
+		"Name": "名称",
+		"Network": "网络",
+		"Status": "状态",
+		"Active": "在线",
+		"Idle": "空闲",
+		"Revoked": "已吊销",
+		"Last Used": "最后使用",
+		"Created At": "创建时间",
+		"Actions": "操作",
+		"Trigger Scan": "触发扫描",
+		"Revoke": "吊销",
+		"No Tokens": "暂无采集器令牌",
+		"No Tokens Desc": "创建采集器令牌以允许远程采集器上报发现结果。",
+		"Token Created": "采集器令牌创建成功",
+		"Token Revoked": "采集器令牌已吊销",
+		"Scan Triggered": "扫描命令已排队: {agentId}",
+		"Token Warning": "此令牌仅显示一次,请立即复制 — 之后无法再次获取。",
+		"Copy Token": "复制令牌",
+		"Copied": "已复制到剪贴板",
+		"Scan Targets": "扫描目标",
+		"Scan Targets Placeholder": "例如 192.168.62.0/24",
+		"Timeout": "超时 (秒)",
+		"Revoke Confirm": "确定要吊销此采集器令牌吗?该采集器将立即失去访问权限。",
+		"Agent ID Required": "采集器 ID 为必填项",
+		"Network Required": "网络为必填项",
+		"Targets Required": "扫描目标为必填项"
 	}
 }

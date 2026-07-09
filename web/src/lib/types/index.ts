@@ -356,3 +356,39 @@ export interface ChangeLogEntry {
 	after_data?: string;
 	detected_at: string;
 }
+
+// ---------------------------------------------------------------------------
+// Agent Token (distributed: discovery-agent bearer tokens)
+// ---------------------------------------------------------------------------
+
+export interface AgentToken {
+	id: number;
+	agent_id: string;
+	network_id?: number;
+	name?: string;
+	created_at: string;
+	last_used_at?: string | null;
+	revoked_at?: string | null;
+}
+
+/** Returned only on token creation — includes the plaintext token (once). */
+export interface AgentTokenCreated extends AgentToken {
+	token: string;
+}
+
+// ---------------------------------------------------------------------------
+// Agent Command (center → agent command queue)
+// ---------------------------------------------------------------------------
+
+export type AgentCommandStatus = 'pending' | 'acknowledged' | 'done' | 'failed';
+
+export interface AgentCommand {
+	id: number;
+	agent_id: string;
+	command: string;
+	payload: string;
+	status: AgentCommandStatus;
+	created_at: string;
+	acknowledged_at?: string | null;
+	result?: string | null;
+}
