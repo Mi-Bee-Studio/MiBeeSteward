@@ -10,7 +10,8 @@
 		"Users": "Users",
 		"Scanner": "Scanner",
 		"AuditLogs": "Audit Logs",
-		"Changes": "Changes"
+		"Changes": "Changes",
+		"Agents": "Agents"
 	},
 	"auth": {
 		"Username": "Username",
@@ -648,5 +649,36 @@
 		"All Events": "All Events",
 		"No Changes": "No changes yet",
 		"No Changes Desc": "Device changes will appear here once scans detect additions, modifications, or losses."
+	},
+	"agents": {
+		"Title": "Agent Management",
+		"Create Token": "Create Token",
+		"Agent ID": "Agent ID",
+		"Name": "Name",
+		"Network": "Network",
+		"Status": "Status",
+		"Active": "Active",
+		"Idle": "Idle",
+		"Revoked": "Revoked",
+		"Last Used": "Last Used",
+		"Created At": "Created At",
+		"Actions": "Actions",
+		"Trigger Scan": "Trigger Scan",
+		"Revoke": "Revoke",
+		"No Tokens": "No agent tokens",
+		"No Tokens Desc": "Create an agent token to allow a remote agent to report discoveries.",
+		"Token Created": "Agent token created successfully",
+		"Token Revoked": "Agent token revoked",
+		"Scan Triggered": "Scan command queued for {agentId}",
+		"Token Warning": "This token is shown only once. Copy it now — it cannot be retrieved later.",
+		"Copy Token": "Copy Token",
+		"Copied": "Copied to clipboard",
+		"Scan Targets": "Scan Targets",
+		"Scan Targets Placeholder": "e.g. 192.168.62.0/24",
+		"Timeout": "Timeout (seconds)",
+		"Revoke Confirm": "Are you sure you want to revoke this agent token? The agent will immediately lose access.",
+		"Agent ID Required": "Agent ID is required",
+		"Network Required": "Network is required",
+		"Targets Required": "Scan targets are required"
 	}
 }

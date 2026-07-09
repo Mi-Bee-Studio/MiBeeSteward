@@ -20,7 +20,8 @@
 		LogOut,
 		Menu,
 		X,
-		History
+		History,
+		Bot
 	} from '@lucide/svelte';
 	import type { Component } from 'svelte';
 
@@ -46,6 +47,7 @@
 		{ path: '/dashboard', label: m['navigation.Dashboard'](), icon: LayoutDashboard },
 		{ path: '/devices', label: m['navigation.Devices'](), icon: Server },
 		{ path: '/changes', label: m['navigation.Changes']?.() ?? 'Changes', icon: History },
+		{ path: '/agents', label: m['navigation.Agents']?.() ?? 'Agents', icon: Bot, adminOnly: true },
 		{ path: '/documents', label: m['navigation.Documents'](), icon: FileText },
 		{ path: '/users', label: m['navigation.Users'](), icon: Users, adminOnly: true },
 		{ path: '/audit', label: m['navigation.AuditLogs'](), icon: ScrollText, adminOnly: true },
