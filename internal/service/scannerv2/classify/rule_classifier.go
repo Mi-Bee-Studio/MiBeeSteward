@@ -63,14 +63,15 @@ type rule struct {
 // matchSpec is a recursive matcher. Exactly one of the leaf fields (or
 // `compound`/`or` for composites) is set per node.
 type matchSpec struct {
-	Kind   string   `yaml:"kind"`   // evidence Kind to scope to (advisory; op may ignore)
-	Field  string   `yaml:"field"`  // RawData key to test (default "banner")
-	Op     string   `yaml:"op"`     // prefix_ci|prefix|contains|contains_any|equals|regex|kind_presence|port|port_eq|compound|or
-	Value  any      `yaml:"value"`  // string | []string | int (port)
-	CI     bool     `yaml:"ci"`     // case-insensitive (for contains/equals)
-	Trim   bool     `yaml:"trim"`   // trim the field value before testing (mail rules)
-	And    []matchSpec `yaml:"and"` // compound: ALL must match
-	Any    []matchSpec `yaml:"any"` // or: ANY must match
+	Kind      string     `yaml:"kind"`      // evidence Kind to scope to (advisory; op may ignore)
+	Field     string     `yaml:"field"`     // RawData key to test (default "banner")
+	Op        string     `yaml:"op"`        // prefix_ci|prefix|contains|contains_any|equals|regex|kind_presence|port|port_eq|compound|or
+	Value     any        `yaml:"value"`     // string | []string | int (port)
+	CI        bool       `yaml:"ci"`        // case-insensitive (for contains/equals)
+	Trim      bool       `yaml:"trim"`      // trim the field value before testing (mail rules)
+	Transform string     `yaml:"transform"` // strip_ssh_prefix|strip_resp_code — transform field before matching
+	And       []matchSpec `yaml:"and"`      // compound: ALL must match
+	Any       []matchSpec `yaml:"any"`      // or: ANY must match
 }
 
 type extractSpec struct {
@@ -394,7 +395,7 @@ func compileMatch(s matchSpec) (matcher, bool, int, error) {
 			return nil, false, 0, fmt.Errorf("regex %q: %w", pat, err)
 		}
 		return func(e scannerv2.Evidence, _ evidenceIndex) bool {
-			return re.MatchString(fieldOf(e, s.Field, s.Trim))
+			return re.MatchString(fieldOfTransformed(e, s.Field, s.Transform))
 		}, false, 0, nil
 	case "compound":
 		subs := make([]matcher, 0, len(s.And))
@@ -446,6 +447,44 @@ func fieldOf(e scannerv2.Evidence, field string, trim bool) string {
 	v := e.RawData[field]
 	if trim {
 		v = strings.TrimSpace(v)
+	}
+	return v
+}
+
+// applyTransform applies a named transform to a field value before matching.
+// Used by Recog-imported rules whose patterns expect pre-stripped input:
+//   - strip_ssh_prefix: "SSH-2.0-OpenSSH_9.0 Debian-7" → "OpenSSH_9.0 Debian-7"
+//     (removes the "SSH-x.y-" protocol prefix, leaving the software string that
+//     Recog's ssh.banner patterns match against).
+//   - strip_resp_code: "220 foo.bar ESMTP Postfix" → "foo.bar ESMTP Postfix"
+//     (removes the leading "NNN " response code that FTP/SMTP/POP3/IMAP banners
+//     start with, leaving the greeting text Recog patterns match against).
+func applyTransform(v, transform string) string {
+	switch transform {
+	case "strip_ssh_prefix":
+		// "SSH-2.0-..." → strip through the 2nd "-" (SplitN(s,"-",3)[2]).
+		parts := strings.SplitN(v, "-", 3)
+		if len(parts) >= 3 {
+			return parts[2]
+		}
+		return v
+	case "strip_resp_code":
+		// "220 foo bar" → "foo bar" (strip leading "NNN " response code).
+		if len(v) > 4 && v[3] == ' ' && v[0] >= '0' && v[0] <= '9' &&
+			v[1] >= '0' && v[1] <= '9' && v[2] >= '0' && v[2] <= '9' {
+			return v[4:]
+		}
+		return v
+	}
+	return v
+}
+
+// fieldOfTransformed reads RawData[field] and applies a transform. Used by
+// matchers that need pre-stripped input (Recog banner rules).
+func fieldOfTransformed(e scannerv2.Evidence, field, transform string) string {
+	v := fieldOf(e, field, false)
+	if transform != "" {
+		v = applyTransform(v, transform)
 	}
 	return v
 }
