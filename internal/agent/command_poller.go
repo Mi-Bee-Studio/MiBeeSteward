@@ -86,10 +86,17 @@ func (p *CommandPoller) Stop() {
 }
 
 // pendingCommand mirrors the center's agent_commands row (subset the poller needs).
+// Payload is the raw TEXT column value (a JSON string like
+// `{"targets":"192.168.62.0/24","timeout":300}`). The center stores it as TEXT
+// and serializes it as a JSON string in the HTTP response, so the poller decodes
+// it into a Go string here and unmarshals the string body into a typed struct in
+// execute(). Using json.RawMessage would fail: the response carries a JSON string
+// literal, not a bare object, so RawMessage would hold the quoted form and the
+// subsequent Unmarshal into a struct would hit "cannot unmarshal string".
 type pendingCommand struct {
-	ID      int64           `json:"id"`
-	Command string          `json:"command"`
-	Payload json.RawMessage `json:"payload"`
+	ID      int64  `json:"id"`
+	Command string `json:"command"`
+	Payload string `json:"payload"`
 }
 
 // scanPayload is the JSON payload of a "scan" command.
@@ -152,7 +159,7 @@ func (p *CommandPoller) execute(ctx context.Context, cmd pendingCommand) {
 	switch cmd.Command {
 	case "scan":
 		var sp scanPayload
-		if err := json.Unmarshal(cmd.Payload, &sp); err != nil {
+		if err := json.Unmarshal([]byte(cmd.Payload), &sp); err != nil {
 			result = fmt.Sprintf(`{"error":"bad payload: %s"}`, err.Error())
 			status = "failed"
 			break
