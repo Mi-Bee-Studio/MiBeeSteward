@@ -18,10 +18,13 @@
 - **设备系统管理**：每台设备可挂载多个已安装系统（含入口 URL），以带分类徽章的卡片网格展示
 - **网络扫描器（v2）**：基于插件的 5 层架构（探测 → 分类 → 处理 → 持久化 → 编排），支持级联深度采集。可识别 SSH/HTTP/RTSP/ONVIF/SNMP/Prometheus/node_exporter，并推断设备类型与品牌（例如根据 RTSP+ONVIF 识别为摄像头）。扩展方式：注册一个 Classifier + 一个 Handler 即可接入新协议
 - **eBPF 被动观测器**：可选的 TC ingress 程序，嗅探 ONVIF WS-Discovery 组播与 TCP 特征字节，作为旁证数据源（构建标签门控；默认构建无此依赖）
+- **分布式发现**：在远程局域网部署轻量采集器，跨网络发现设备。采集器通过拉取模型 HTTPS 上报到中心，bearer 令牌认证、断线补报、MAC 优先设备身份（同设备跨网络保持单一资产）。[分布式指南](docs/zh/distributed-guide.md)
+- **变化检测**：每次扫描自动检测设备新增/变更/离线，带 grace period 防止抖动误报。可查询历史（`GET /changes`）和实时 SSE 推送（`GET /changes/watch`）。
+- **拓扑发现**：Bridge-MIB SNMP 探针遍历交换机转发表，学习 L2 邻接关系（哪个 MAC 在哪个端口后面）。[架构文档](docs/zh/architecture.md#分布式架构)
 - **心跳监控**：可配置探测间隔，自动失败检测
 - **Prometheus 集成**：`/metrics` 指标端点用于监控，`/sd` HTTP 服务发现用于自动发现
-- **内嵌 Web 界面**：SvelteKit SPA，实时仪表盘
-- **JWT 认证**：基于角色的访问控制（admin / user）
+- **内嵌 Web 界面**：SvelteKit SPA，实时仪表盘、多 LAN 设备筛选、变更历史、采集器管理界面
+- **JWT 认证**：基于角色的访问控制（admin / user）+ 机器到机器的采集器令牌认证
 - **多语言支持**：中英双语，基于 @inlang/paraglide-js
 - **审计日志**：完整的操作追踪
 - **单二进制部署**：前端通过 go:embed 嵌入
