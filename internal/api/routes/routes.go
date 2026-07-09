@@ -305,10 +305,25 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Routed on the top-level mux (separate from /agents/tokens) so the two auth
 	// regimes don't interfere.
 	agentReportHandler := handler.NewAgentReportHandler(scanRunner)
+	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries)
 	r.Route("/api/v1/agents", func(r chi.Router) {
 		r.Use(middleware.RequireAgentToken)
 		r.Post("/report", agentReportHandler.Report)
+		// Agent command channel (Phase 5c): the agent polls pending commands
+		// (GET /commands), acknowledges (POST /commands/{id}/ack), executes, and
+		// reports the result (POST /commands/{id}/complete). Pull model.
+		r.Get("/commands", agentCommandHandler.Poll)
+		r.Post("/commands/{id}/ack", agentCommandHandler.Ack)
+		r.Post("/commands/{id}/complete", agentCommandHandler.Complete)
 	})
+
+	// Admin-side command management: enqueue a command for an agent (POST) +
+	// view all commands (GET). Separate route group (RequireAdmin, not agent token).
+	r.Route("/api/v1/agents/{agentId}/commands", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/", agentCommandHandler.Create)
+	})
+	r.With(middleware.RequireAdmin).Get("/api/v1/agents/commands/all", agentCommandHandler.ListAll)
 
 	// --- Change history query (Phase 3) ---
 	// GET /api/v1/changes returns the device_added/changed/lost event stream
