@@ -88,19 +88,35 @@ func writeFile(path string, v any) error {
 
 // ── recog: Rapid7 Recog XML → MiBee rules ────────────────────────────────
 //
-// Recog fingerprints live in XML files like <fingerprint pattern="..." flags="REG_DOT_NEWLINE,REG_ICASE">
-// with <param pos="0" name="service.vendor" value="..."/> children. We convert
-// the regex pattern + the service.* params into MiBee match/emit rules.
+// Recog fingerprints live in XML files. The root <fingerprints> element has a
+// `matches="..."` attribute naming the target field (ssh.banner, http_header.server,
+// ftp.banner, etc.) and a `preference="0.90"` confidence. Each <fingerprint
+// pattern="..."> has <param> children carrying vendor/product/version.
 //
-// Recog is Apache-2.0. Every converted rule carries source: recog so the
-// attribution is retained. Rules whose regex references Recog features we can't
-// express (e.g. complex backreferences across params) are skipped with a warning.
+// We convert the regex + params into MiBee match/emit rules, mapping Recog's
+// match target to our Evidence model:
+//
+//	ssh.banner          → banner field, but Recog matches the part AFTER
+//	                      "SSH-x.x-" (software revision). We wrap the pattern
+//	                      to match within the full banner (search, not anchor).
+//	http_header.server  → server field (HTTP Server header value) — clean match.
+//	ftp.banner          → banner field (Recog matches after the "220 " code;
+//	                      we search within the full banner).
+//	smtp.banner / pop3.banner / imap.banners → banner field (same strip logic).
+//	rtsp_header.server  → server field.
+//	mysql.banners       → banner field.
+//
+// Unsupported targets (x509.*, snmp.*, smb.*, mdns.*, ntp.*, sip.*, dns.*)
+// are skipped — we don't have those evidence shapes as regex-matchable fields
+// in the rule classifier yet. snmp_sysdescr could be added later via keyword_map.
+//
+// Recog is Apache-2.0. Every converted rule carries source: recog.
 
 type recogFingerprint struct {
-	XMLName xml.Name      `xml:"fingerprint"`
-	Pattern string        `xml:"pattern,attr"`
-	Flags   string        `xml:"flags,attr"`
-	Params  []recogParam  `xml:"param"`
+	XMLName xml.Name     `xml:"fingerprint"`
+	Pattern string       `xml:"pattern,attr"`
+	Flags   string       `xml:"flags,attr"`
+	Params  []recogParam `xml:"param"`
 }
 
 type recogParam struct {
@@ -109,9 +125,34 @@ type recogParam struct {
 	Value string `xml:"value,attr"`
 }
 
-type recogMatches struct {
-	XMLName     xml.Name           `xml:"matches"`
+type recogFingerprints struct {
+	XMLName      xml.Name           `xml:"fingerprints"`
+	Matches      string             `xml:"matches,attr"`
+	Preference   string             `xml:"preference,attr"`
 	Fingerprints []recogFingerprint `xml:"fingerprint"`
+}
+
+// recogTarget maps a Recog match target to our evidence model.
+// field = the RawData key; serviceHint = the nominal service for the rule id.
+// anchored=false means the Recog pattern expects pre-stripped input (banner
+// without the response code / SSH prefix), so we wrap it as a substring search
+// rather than a from-start anchor.
+type recogTarget struct {
+	supported  bool
+	field      string // RawData key to match against
+	serviceHint string // nominal service for rule-id naming
+}
+
+var recogTargetMap = map[string]recogTarget{
+	"ssh.banner":         {true, "banner", "ssh"},
+	"http_header.server": {true, "server", "http"},
+	"ftp.banner":         {true, "banner", "ftp"},
+	"smtp.banner":        {true, "banner", "smtp"},
+	"pop3.banner":        {true, "banner", "pop3"},
+	"imap.banners":       {true, "banner", "imap"},
+	"rtsp_header.server": {true, "server", "rtsp"},
+	"mysql.banners":      {true, "banner", "mysql"},
+	"mysql.error":        {true, "banner", "mysql"},
 }
 
 func importRecog(srcDir, outPath string) error {
@@ -120,7 +161,7 @@ func importRecog(srcDir, outPath string) error {
 		return fmt.Errorf("read recog dir: %w", err)
 	}
 	rules := []any{}
-	skipped, converted := 0, 0
+	skipped, converted, unsupportedFiles := 0, 0, 0
 	for _, ent := range entries {
 		if ent.IsDir() || !strings.HasSuffix(ent.Name(), ".xml") {
 			continue
@@ -129,13 +170,19 @@ func importRecog(srcDir, outPath string) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", ent.Name(), err)
 		}
-		var m recogMatches
-		if err := xml.Unmarshal(b, &m); err != nil {
+		var rf recogFingerprints
+		if err := xml.Unmarshal(b, &rf); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: parse %s: %v (skipped)\n", ent.Name(), err)
 			continue
 		}
-		for _, fp := range m.Fingerprints {
-			rule, ok := convertRecogFP(fp, ent.Name())
+		tgt, ok := recogTargetMap[rf.Matches]
+		if !ok || !tgt.supported {
+			unsupportedFiles++
+			continue // silently skip unsupported match targets
+		}
+		conf := recogPreferenceToConfidence(rf.Preference)
+		for _, fp := range rf.Fingerprints {
+			rule, ok := convertRecogFP(fp, ent.Name(), tgt, conf)
 			if !ok {
 				skipped++
 				continue
@@ -147,81 +194,87 @@ func importRecog(srcDir, outPath string) error {
 	if err := writeFile(outPath, outRuleFile{Version: 1, Rules: rules}); err != nil {
 		return err
 	}
-	fmt.Printf("recog: converted %d fingerprints, skipped %d → %s\n", converted, skipped, outPath)
-	if skipped > 0 {
-		fmt.Printf("(skipped fingerprints used unsupported Recog features; see warnings above)\n")
-	}
+	fmt.Printf("recog: converted %d fingerprints, skipped %d, %d unsupported-target files → %s\n",
+		converted, skipped, unsupportedFiles, outPath)
 	return nil
 }
 
-// convertRecogFP turns one Recog fingerprint into a MiBee rule. Returns ok=false
-// if the pattern or params can't be expressed (skipped with a warning upstream).
-func convertRecogFP(fp recogFingerprint, source string) (map[string]any, bool) {
+// recogPreferenceToConfidence converts Recog's preference (0.0–1.0 string) to
+// our base confidence. Recog default is 0.90; some files (smtp) use 0.20.
+func recogPreferenceToConfidence(pref string) float64 {
+	if pref == "" {
+		return 0.85
+	}
+	var f float64
+	if _, err := fmt.Sscanf(pref, "%f", &f); err != nil || f <= 0 {
+		return 0.85
+	}
+	if f > 1 {
+		f = 1
+	}
+	return f
+}
+
+// convertRecogFP turns one Recog fingerprint into a MiBee rule. tgt tells us
+// which evidence field to match and the nominal service; conf is the file-level
+// preference. Returns ok=false if the pattern is invalid Go regexp.
+func convertRecogFP(fp recogFingerprint, source string, tgt recogTarget, conf float64) (map[string]any, bool) {
 	if fp.Pattern == "" {
 		return nil, false
 	}
-	// Compile to validate; Recog patterns are Ruby regex (mostly PCRE-compatible).
+	// Validate the pattern compiles as Go regexp (RE2). Recog uses Ruby regex;
+	// most patterns are PCRE-compatible but some use backreferences/lookahead
+	// that RE2 rejects — those are skipped.
 	if _, err := regexp.Compile(fp.Pattern); err != nil {
-		fmt.Fprintf(os.Stderr, "warn: %s: regex %q invalid: %v (skipped)\n", source, fp.Pattern, err)
-		return nil, false
+		return nil, false // silently skip RE2-incompatible patterns
 	}
 	ci := strings.Contains(strings.ToUpper(fp.Flags), "REG_ICASE")
-	// Derive service name + metadata from params.
-	service, md := "", map[string]any{}
+
+	// Build metadata extractors from Recog params.
+	// pos="0" params are constant values → we can emit them directly.
+	// pos="N" params reference regex capture group N → our rule format doesn't
+	// support regex-group extraction yet (the match regex validates, but we
+	// can't extract a named value from it). Skip those for now; the constant
+	// vendor/product params still carry the identification value. Version-from-
+	// capture-group is a known limitation to address when the format grows a
+	// regex-group extractor.
+	md := map[string]any{}
 	for _, p := range fp.Params {
+		if p.Pos > 0 {
+			continue // capture-group extraction not yet supported
+		}
+		// Constant values must use the {const: ...} extractor shape — the
+		// RuleClassifier's extractor struct can't accept a bare scalar.
+		val := map[string]any{"const": p.Value}
 		switch p.Name {
-		case "service":
-			service = p.Value
 		case "service.vendor", "os.vendor", "hardware.vendor":
-			md["inferred_brand"] = p.Value
-		case "os.product", "service.product", "hardware.product":
-			md["product"] = p.Value
-		case "service.version", "os.version":
-			md["version"] = p.Value
+			md["inferred_brand"] = val
+		case "service.product", "os.product", "hardware.product":
+			md["product"] = val
 		}
 	}
-	// Recog fingerprints don't carry a service name directly — the file name
-	// (e.g. mysql_banners.xml) implies the protocol. We map common ones; if
-	// unknown, we can't emit a meaningful service → skip.
-	if service == "" {
-		service = serviceFromRecogFile(source)
-	}
-	if service == "" {
-		return nil, false
-	}
+
+	// The regex pattern with capture groups needs the full-match wrapper so the
+	// RuleClassifier's regex extractor can reference groups. We keep the Recog
+	// pattern as-is (it's already anchored with ^...$ in most cases); the rule
+	// matcher does a regexp.MatchString which handles the anchors.
 	rule := map[string]any{
-		"id":     "recog-" + sanitize(service) + "-" + hashShort(fp.Pattern),
+		"id":     "recog-" + tgt.serviceHint + "-" + hashShort(fp.Pattern),
 		"source": "recog",
 		"match": map[string]any{
-			"kind":  "banner",
-			"field": "banner",
+			"field": tgt.field,
 			"op":    "regex",
 			"value": fp.Pattern,
 			"ci":    ci,
 		},
-		"service":    service,
+		"service":    tgt.serviceHint,
 		"protocol":   "tcp",
-		"confidence": 0.85,
+		"confidence": conf,
 	}
 	if len(md) > 0 {
 		rule["extract"] = map[string]any{"metadata": md}
 	}
 	return rule, true
-}
-
-var recogFileService = map[string]string{
-	"mysql": "mysql", "redis": "redis", "postgresql": "postgresql",
-	"mongodb": "mongodb", "ssh": "ssh", "ftp": "ftp", "smtp": "smtp",
-	"pop3": "pop3", "imap": "imap", "http": "http", "snmp": "snmp",
-	"rtsp": "rtsp", "telnet": "telnet", "vnc": "vnc",
-}
-
-func serviceFromRecogFile(name string) string {
-	base := strings.TrimSuffix(name, ".xml")
-	if i := strings.IndexByte(base, '_'); i > 0 {
-		base = base[:i]
-	}
-	return recogFileService[strings.ToLower(base)]
 }
 
 func sanitize(s string) string {

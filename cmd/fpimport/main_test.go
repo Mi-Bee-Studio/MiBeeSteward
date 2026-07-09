@@ -10,13 +10,14 @@ import (
 // output YAML has one rule with source: recog.
 func TestImportRecog_Smoke(t *testing.T) {
 	dir := t.TempDir()
-	xml := `<?xml version="1.0"?>
-<matches>
-  <fingerprint pattern="SSH-2\.0-OpenSSH_(\S+)" flags="REG_ICASE">
-    <param pos="0" name="service" value="ssh"/>
-    <param pos="1" name="service.version" value=""/>
+	xml := `<?xml version='1.0' encoding='UTF-8'?>
+<fingerprints matches="ssh.banner" protocol="ssh" database_type="service" preference="0.90">
+  <fingerprint pattern="^RomSShell_([\d\.]+)$">
+    <description>Allegro RomSShell SSH</description>
+    <param pos="0" name="service.vendor" value="Allegro Software"/>
+    <param pos="0" name="service.product" value="RomSShell"/>
   </fingerprint>
-</matches>`
+</fingerprints>`
 	if err := os.WriteFile(filepath.Join(dir, "ssh_banners.xml"), []byte(xml), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -34,6 +35,9 @@ func TestImportRecog_Smoke(t *testing.T) {
 	}
 	if !contains(s, "service: ssh") {
 		t.Errorf("output missing service: ssh\n%s", s)
+	}
+	if !contains(s, "Allegro Software") {
+		t.Errorf("output missing vendor param\n%s", s)
 	}
 }
 
