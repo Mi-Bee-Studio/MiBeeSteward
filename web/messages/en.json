@@ -9,7 +9,8 @@
 		"Profile": "Profile",
 		"Users": "Users",
 		"Scanner": "Scanner",
-		"AuditLogs": "Audit Logs"
+		"AuditLogs": "Audit Logs",
+		"Changes": "Changes"
 	},
 	"auth": {
 		"Username": "Username",
@@ -130,7 +131,8 @@
 		"Tab Scan Results": "Scan Results",
 		"Camera": "Camera",
 		"Search placeholder": "Search name / IP / MAC…",
-		"Alive": "Alive"
+		"Alive": "Alive",
+		"All Networks": "All Networks"
 	},
 	"systems": {
 		"System Management": "System Management",
@@ -631,5 +633,20 @@
 		"Date To": "Date To",
 		"Reset": "Reset",
 		"No Logs Desc": "No audit log entries found."
+	},
+	"changes": {
+		"Change History": "Change History",
+		"Timestamp": "Time",
+		"Change Type": "Event",
+		"Device ID": "Device",
+		"Network": "Network",
+		"Agent": "Agent",
+		"Details": "Details",
+		"Event Added": "Device Added",
+		"Event Changed": "Device Changed",
+		"Event Lost": "Device Lost",
+		"All Events": "All Events",
+		"No Changes": "No changes yet",
+		"No Changes Desc": "Device changes will appear here once scans detect additions, modifications, or losses."
 	}
 }

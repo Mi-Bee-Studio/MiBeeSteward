@@ -19,7 +19,8 @@
 		Settings,
 		LogOut,
 		Menu,
-		X
+		X,
+		History
 	} from '@lucide/svelte';
 	import type { Component } from 'svelte';
 
@@ -44,6 +45,7 @@
 	const allNavItems: { path: string; label: string; icon: Component; adminOnly?: boolean }[] = [
 		{ path: '/dashboard', label: m['navigation.Dashboard'](), icon: LayoutDashboard },
 		{ path: '/devices', label: m['navigation.Devices'](), icon: Server },
+		{ path: '/changes', label: m['navigation.Changes']?.() ?? 'Changes', icon: History },
 		{ path: '/documents', label: m['navigation.Documents'](), icon: FileText },
 		{ path: '/users', label: m['navigation.Users'](), icon: Users, adminOnly: true },
 		{ path: '/audit', label: m['navigation.AuditLogs'](), icon: ScrollText, adminOnly: true },

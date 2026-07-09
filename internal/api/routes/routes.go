@@ -174,6 +174,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// here so the ingestion routes (registered below) can authenticate agents.
 	middleware.SetAgentQueries(scanQueries)
 
+	// Network registry — feeds the device-list + change-history network filters.
+	networkHandler := handler.NewNetworkHandler(scanQueries)
+	r.Route("/api/v1/networks", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", networkHandler.List)
+	})
+
 	// Resolve this instance's network identity (networks.id) so discovered
 	// devices can be tagged with their origin. Done here (not in migrations)
 	// because the value comes from config `network.name`.

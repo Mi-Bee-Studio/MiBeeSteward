@@ -6,7 +6,7 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { escapeHtml, escapeAttr } from '$lib/utils';
 	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
-	import type { Device, LinkedDoc } from '$lib/types';
+	import type { Device, LinkedDoc, Network } from '$lib/types';
 	import { auth } from '$lib/stores/auth';
 	import { ChevronDown, ChevronRight, Download, Upload, Plus } from '@lucide/svelte';
 
@@ -43,6 +43,10 @@ interface Stats {
 	let typeFilter = $state('');
 	let dateFrom = $state('');
 	let dateTo = $state('');
+	// Network filter (distributed): empty = all networks. Populated from
+	// GET /networks on mount.
+	let networkFilter = $state('');
+	let networks = $state<Network[]>([]);
 	let offset = $state(0);
 	// Per-page size is user-adjustable (was a const 20). Backed by the URL so a
 	// page reload / shared link preserves the chosen density.
@@ -125,6 +129,9 @@ interface Stats {
 		// results "View Device" deep link) and reloads land on the right view.
 		hydrateFromUrl();
 		fetchDevices();
+		// Load the network registry for the filter dropdown (best-effort; a
+		// failure just leaves the dropdown empty — the list still works).
+		api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
 		pollTimer = setInterval(() => {
 			if (!formOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !importOpen && !linkOpen) {
 				void refreshDevicesSilent();
@@ -143,6 +150,7 @@ interface Stats {
 		const params = new URLSearchParams();
 		if (statusFilter) params.set('status', statusFilter);
 		if (typeFilter) params.set('type', typeFilter);
+		if (networkFilter) params.set('network_id', networkFilter);
 		if (searchQuery) params.set('search', searchQuery);
 		if (dateFrom) params.set('created_from', dateFrom);
 		if (dateTo) params.set('created_to', dateTo);
@@ -168,6 +176,7 @@ interface Stats {
 		const sp = new URLSearchParams(window.location.search);
 		if (sp.get('status')) statusFilter = sp.get('status')!;
 		if (sp.get('type')) typeFilter = sp.get('type')!;
+		if (sp.get('network_id')) networkFilter = sp.get('network_id')!;
 		if (sp.get('search')) {
 			searchQuery = sp.get('search')!;
 			searchInput = searchQuery;
@@ -223,7 +232,7 @@ interface Stats {
 			if (seq !== fetchSeq) return; // superseded — drop stale result
 			devices = res.devices || [];
 			total = res.total || 0;
-			const s = await api.get<Stats>('/devices/stats');
+			const s = await api.get<Stats>(`/devices/stats${networkFilter ? '?network_id=' + networkFilter : ''}`);
 			if (seq !== fetchSeq) return;
 			stats = s;
 		} catch {
@@ -244,7 +253,7 @@ interface Stats {
 			total = res.total || 0;
 
 		try {
-			const s = await api.get<Stats>('/devices/stats');
+			const s = await api.get<Stats>(`/devices/stats${networkFilter ? '?network_id=' + networkFilter : ''}`);
 			if (seq !== fetchSeq) return;
 			stats = s;
 		} catch (err: unknown) {
@@ -827,6 +836,18 @@ interface Stats {
 			<option value="camera">{m['devices.Camera']?.() ?? 'camera'}</option>
 			<option value="other">{m['devices.Other']()}</option>
 		</select>
+		{#if networks.length > 0}
+			<select
+				bind:value={networkFilter}
+				onchange={applyFilters}
+				class="input"
+			>
+				<option value="">{m['devices.All Networks']?.() ?? 'All Networks'}</option>
+				{#each networks as net}
+					<option value={net.id}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
+				{/each}
+			</select>
+		{/if}
 
 		<!-- Server-side search (name / ip / mac / serial). 400ms debounce. -->
 		<div class="relative flex-1 min-w-[180px] max-w-xs">
