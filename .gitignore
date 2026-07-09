@@ -20,11 +20,6 @@ docs/private/
 # === Environment ===
 .env
 .env.*
-# Local-only configs (contain secrets — tokens, JWT keys, admin passwords).
-# Only .example.yaml / .production.yaml are committed.
-configs/config.yaml
-configs/agent.yaml
-configs/config-center.yaml
 
 # === OS ===
 .DS_Store
