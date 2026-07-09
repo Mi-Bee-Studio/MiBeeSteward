@@ -9,7 +9,8 @@
 		"Profile": "个人资料",
 		"Users": "用户",
 		"Scanner": "扫描器",
-		"AuditLogs": "审计日志"
+		"AuditLogs": "审计日志",
+		"Changes": "变更"
 	},
 	"auth": {
 		"Username": "用户名",
@@ -130,7 +131,8 @@
 		"Tab Scan Results": "扫描结果",
 		"Camera": "摄像头",
 		"Search placeholder": "搜索名称 / IP / MAC…",
-		"Alive": "存活"
+		"Alive": "存活",
+		"All Networks": "所有网络"
 	},
 	"systems": {
 		"System Management": "系统管理",
@@ -631,5 +633,20 @@
 		"Date To": "结束日期",
 		"Reset": "重置",
 		"No Logs Desc": "暂无审计日志记录。"
+	},
+	"changes": {
+		"Change History": "变更历史",
+		"Timestamp": "时间",
+		"Change Type": "事件",
+		"Device ID": "设备",
+		"Network": "网络",
+		"Agent": "采集器",
+		"Details": "详情",
+		"Event Added": "设备新增",
+		"Event Changed": "设备变更",
+		"Event Lost": "设备离线",
+		"All Events": "全部事件",
+		"No Changes": "暂无变更",
+		"No Changes Desc": "扫描检测到设备新增、变更或离线时,事件将在此显示。"
 	}
 }

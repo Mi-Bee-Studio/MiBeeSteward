@@ -109,6 +109,9 @@ export interface Device {
 	// prefers scan_attributes when present.
 	scan_attributes?: ScanAttributes;
 	user_attributes?: Record<string, string>;
+	// Distributed: the logical network this device was discovered on.
+	network_id?: number;
+	network_name?: string;
 }
 // ---------------------------------------------------------------------------
 // Linked Document (used in device-document linking modal)
@@ -322,4 +325,34 @@ export interface ScanRun {
 	started_at?: string;
 	finished_at?: string;
 	created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Network (distributed: logical network an agent discovers for)
+// ---------------------------------------------------------------------------
+
+export interface Network {
+	id: number;
+	name: string;
+	cidr?: string;
+	site?: string;
+	agent_id?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Change Log (device_added / device_changed / device_lost events)
+// ---------------------------------------------------------------------------
+
+export type ChangeType = 'device_added' | 'device_changed' | 'device_lost';
+
+export interface ChangeLogEntry {
+	id: number;
+	agent_id?: string;
+	network_id?: number;
+	change_type: ChangeType;
+	entity_type: string;
+	entity_id?: number;
+	before_data?: string;
+	after_data?: string;
+	detected_at: string;
 }
