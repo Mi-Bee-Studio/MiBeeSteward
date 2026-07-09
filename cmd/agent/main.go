@@ -149,6 +149,32 @@ func main() {
 		slog.Info("agent scan scheduler started")
 	}
 
+	// Command poller: fetches ad-hoc scan commands from the center (Phase 5c).
+	// The runScan callback wraps the runner so this package doesn't import runner
+	// directly (avoids an import cycle). Commands are best-effort — the agent's
+	// own cron scheduler is the primary scan driver.
+	cmdPoller := agent.NewCommandPoller(cfg.Center.URL, cfg.Center.AuthToken, 60*time.Second,
+		func(ctx context.Context, targets string, timeoutSec int) (string, error) {
+			if scanRunner == nil {
+				return "", fmt.Errorf("scan engine not initialized")
+			}
+			to := time.Duration(timeoutSec) * time.Second
+			if to <= 0 {
+				to = time.Duration(cfg.Scanner.DefaultTimeout) * time.Second
+			}
+			// Create a transient local task row so the run is recorded in the
+			// agent's mini-DB (run history). taskID=0 → a throwaway row.
+			run, err := queries.CreateScanTaskRun(ctx, db.CreateScanTaskRunParams{
+				TaskID: 0, StartedAt: ptrTime(time.Now()),
+			})
+			if err != nil {
+				return "", fmt.Errorf("create run: %w", err)
+			}
+			scanRunner.Run(ctx, run.ID, targets, to, cfg.Scanner.MaxConcurrentHosts, cfg.Scanner.PersistRawEvidence)
+			return fmt.Sprintf(`{"run_id":%d,"targets":"%s"}`, run.ID, targets), nil
+		}, slog.Default())
+	cmdPoller.Start(ctxBg)
+
 	slog.Info("mibee-agent running", "center", cfg.Center.URL, "flush_interval", flush)
 
 	// Wait for interrupt.
@@ -157,12 +183,15 @@ func main() {
 	<-quit
 	slog.Info("shutting down mibee-agent...")
 	cancel()
+	cmdPoller.Stop()
 	if scanScheduler != nil {
 		scanScheduler.Stop()
 	}
 	reporter.Stop() // final best-effort flush
 	slog.Info("mibee-agent stopped")
 }
+
+func ptrTime(t time.Time) *time.Time { return &t }
 
 // openAgentDB opens a local SQLite file with WAL + the mini schema the runner
 // and scheduler need (scan_tasks, scan_task_runs, scan_results, devices + the

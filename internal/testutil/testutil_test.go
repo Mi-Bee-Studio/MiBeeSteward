@@ -49,6 +49,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 	// Verify all expected tables exist
 	tables := listTables(t, db)
 	expected := []string{
+		"agent_commands",
 		"agent_tokens",
 		"audit_logs",
 		"change_log",
@@ -83,12 +84,12 @@ func TestSetupTestDBFromSchema_Reusable(t *testing.T) {
 	db1, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db1.Close()
-	require.Len(t, listTables(t, db1), 25)
+	require.Len(t, listTables(t, db1), 26)
 
 	db2, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db2.Close()
-	require.Len(t, listTables(t, db2), 25)
+	require.Len(t, listTables(t, db2), 26)
 }
 
 func TestSetupTestDB_WithPragmas(t *testing.T) {

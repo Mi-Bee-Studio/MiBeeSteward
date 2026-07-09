@@ -8,6 +8,17 @@ import (
 	"time"
 )
 
+type AgentCommand struct {
+	ID             int64      `json:"id"`
+	AgentID        string     `json:"agent_id"`
+	Command        string     `json:"command"`
+	Payload        string     `json:"payload"`
+	Status         string     `json:"status"`
+	CreatedAt      time.Time  `json:"created_at"`
+	AcknowledgedAt *time.Time `json:"acknowledged_at"`
+	Result         *string    `json:"result"`
+}
+
 type AgentToken struct {
 	ID         int64      `json:"id"`
 	AgentID    string     `json:"agent_id"`

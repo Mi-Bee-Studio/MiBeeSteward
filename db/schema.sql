@@ -478,3 +478,22 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
 CREATE INDEX IF NOT EXISTS idx_scan_snapshots_network ON scan_snapshots(network_id);
 CREATE INDEX IF NOT EXISTS idx_scan_snapshots_miss ON scan_snapshots(miss_count);
 
+-- === Agent command queue (Phase 5c) ===
+-- agent_commands holds ad-hoc commands the center wants a specific agent to
+-- execute (currently: "scan these targets now"). The agent polls
+-- GET /api/v1/agents/commands on each report cycle and pops its pending
+-- commands. This is the center→agent command channel — a pull model (the agent
+-- fetches; no inbound connection needed from the center, which fits the
+-- agent-behind-NAT deployment shape).
+CREATE TABLE IF NOT EXISTS agent_commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,              -- which agent should run this (agent_tokens.agent_id)
+    command TEXT NOT NULL,               -- "scan" (extensible)
+    payload TEXT NOT NULL DEFAULT '{}',  -- JSON: {"targets": "192.168.62.0/24", "timeout": 120}
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'acknowledged', 'done', 'failed')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    acknowledged_at DATETIME,
+    result TEXT                          -- JSON result/err from the agent (optional)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_commands_agent_status ON agent_commands(agent_id, status);
+

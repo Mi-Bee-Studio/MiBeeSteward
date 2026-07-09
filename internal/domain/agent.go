@@ -38,3 +38,9 @@ type AgentTokenCreatedResponse struct {
 	// Token is the plaintext bearer token. Shown ONCE — store it securely.
 	Token string `json:"token"`
 }
+
+// AgentCommandListResponse is the admin view of all agent commands.
+type AgentCommandListResponse struct {
+	Commands any `json:"commands"` // []db.AgentCommand (sqlc row, JSON-tagged)
+	Total    int `json:"total"`
+}
