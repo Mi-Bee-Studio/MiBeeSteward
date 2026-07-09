@@ -110,6 +110,18 @@ type HeartbeatSpec struct {
 	SNMPOID         string `json:"snmp_oid,omitempty"`
 }
 
+// NeighborSpec describes one L2 adjacency edge discovered via LLDP / CDP /
+// Bridge-MIB / ARP. The persistence layer resolves ip → device_id and upserts
+// on (device_id, neighbor_mac, protocol). NeighborMAC is the cross-agent merge
+// key (a device seen as a neighbor before it's scanned itself gets a NULL
+// neighbor_device_id until reconciled).
+type NeighborSpec struct {
+	NeighborMAC string // canonical "aa:bb:cc:dd:ee:ff" (the merge key)
+	Protocol    string // "LLDP" | "CDP" | "Bridge-MIB" | "ARP"
+	LocalPort   string // local port label (ifIndex / port name)
+	RemotePort  string // remote port label
+}
+
 // Trigger requests the orchestrator to invoke another ServiceHandler. This is
 // the cascade mechanism: e.g. an HTTP handler that finds a Prometheus endpoint
 // returns a Trigger{Service:"prometheus", Port:...} so the Prometheus handler

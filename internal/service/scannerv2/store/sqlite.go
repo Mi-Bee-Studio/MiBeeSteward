@@ -564,3 +564,72 @@ func (r *SQLiteRepository) legacyUpsertHeartbeats(ctx context.Context, tx *sql.T
 	}
 	return tx.Commit()
 }
+
+// RecordNeighbors persists L2 adjacency edges (LLDP/CDP/Bridge-MIB/ARP) for the
+// device at ip. It resolves ip → device_id (MAC-primary, then (ip, network_id)
+// fallback — same identity rule as RecordDevice), then upserts each neighbor on
+// (device_id, neighbor_mac, protocol). The neighbor's MAC is the cross-agent
+// merge key; neighbor_device_id is left NULL (reconciled later when/if the
+// neighbor is scanned). Best-effort: failures are logged, never abort a scan.
+func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip string, neighbors []scannerv2.NeighborSpec) error {
+	if len(neighbors) == 0 {
+		return nil
+	}
+	deviceID, err := r.resolveDeviceID(ctx, ip)
+	if err != nil || deviceID == 0 {
+		// Device not yet persisted (the orchestrator may call RecordNeighbors
+		// before RecordDevice lands). Skip — the next scan re-discovers.
+		r.logger.Debug("record neighbors: device not found", "ip", ip)
+		return nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	now := time.Now().UTC()
+	var networkID sql.NullInt64
+	_ = tx.QueryRowContext(ctx, `SELECT network_id FROM devices WHERE id = ?`, deviceID).Scan(&networkID)
+
+	for _, n := range neighbors {
+		if n.NeighborMAC == "" || n.Protocol == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO device_neighbors (device_id, neighbor_mac, protocol, local_port, remote_port, network_id, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(device_id, neighbor_mac, protocol) DO UPDATE SET
+				local_port = CASE WHEN excluded.local_port != '' THEN excluded.local_port ELSE device_neighbors.local_port END,
+				remote_port = CASE WHEN excluded.remote_port != '' THEN excluded.remote_port ELSE device_neighbors.remote_port END,
+				last_seen = excluded.last_seen`,
+			deviceID, n.NeighborMAC, n.Protocol, n.LocalPort, n.RemotePort, networkID, now, now); err != nil {
+			r.logger.Debug("upsert neighbor failed", "ip", ip, "neighbor_mac", n.NeighborMAC, "error", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// resolveDeviceID finds the devices.id for an IP using the MAC-primary →
+// (ip, network_id) identity rule. Returns 0 if the device doesn't exist yet.
+func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int64, error) {
+	// Try by IP + this repo's network first (the common case — the device was
+	// upserted by RecordDevice on this scan or a prior one).
+	if r.networkID.Valid {
+		var id int64
+		err := r.db.QueryRowContext(ctx,
+			`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`, ip, r.networkID.Int64).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+	}
+	// Fall back to IP alone (legacy NULL-network or cross-network match).
+	var id int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
