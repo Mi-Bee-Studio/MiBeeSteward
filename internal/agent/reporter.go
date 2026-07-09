@@ -27,6 +27,13 @@ import (
 // network identity (network_id) is NOT sent in the body — the center resolves
 // it from the agent's bearer token (authenticity + scoping live there). The
 // reporter just ships the discovery payload + the agent_id label.
+//
+// Disconnect recovery: when the center is unreachable, failed batches are held
+// in an in-memory pending queue (not dropped). The flush loop drains pending
+// first on each tick, so once the center recovers, the backlog is delivered in
+// order. The queue is bounded (maxPendingBatches); oldest batches are dropped
+// if it overflows (extreme outage — the center's change-detection reconciles
+// state across scans, so data loss here degrades to "stale" not "corrupt").
 type Reporter struct {
 	centerURL  string // base URL, e.g. "http://192.168.63.101:8080"
 	authToken  string // agent bearer token (minted on the center)
@@ -34,10 +41,12 @@ type Reporter struct {
 	client     *http.Client
 	logger     *slog.Logger
 
-	mu     sync.Mutex
-	buf    []domain.ReportedHost // buffered hosts awaiting the next flush
-	flush  time.Duration         // max time between flushes (ReportInterval)
-	maxBuf int                   // max hosts buffered before an early flush
+	mu       sync.Mutex
+	buf      []domain.ReportedHost // buffered hosts awaiting the next flush
+	pending  [][]byte              // failed batches awaiting retry (JSON-encoded payloads)
+	flush    time.Duration         // max time between flushes (ReportInterval)
+	maxBuf   int                   // max hosts buffered before an early flush
+	maxPending int                 // max failed batches held for retry
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -58,13 +67,14 @@ func NewReporter(centerURL, authToken, agentID string, flush time.Duration, maxB
 		maxBuf = 256
 	}
 	return &Reporter{
-		centerURL: centerURL,
-		authToken: authToken,
-		agentID:   agentID,
-		client:    &http.Client{Timeout: 30 * time.Second},
-		logger:    logger,
-		flush:     flush,
-		maxBuf:    maxBuf,
+		centerURL:  centerURL,
+		authToken:  authToken,
+		agentID:    agentID,
+		client:     &http.Client{Timeout: 30 * time.Second},
+		logger:     logger,
+		flush:      flush,
+		maxBuf:     maxBuf,
+		maxPending: 100, // bounded: ~100 scans of backlog before oldest is dropped
 	}
 }
 
@@ -94,7 +104,9 @@ func (r *Reporter) Report(_ context.Context, _ int64, reports []scannerv2.HostRe
 	}
 }
 
-// Start launches the periodic flush loop. Call once; stop with Stop.
+// Start launches the periodic flush loop. On each tick it first drains any
+// pending (previously-failed) batches, then flushes the current buffer. This
+// ordering delivers the backlog in order once the center recovers.
 func (r *Reporter) Start(ctx context.Context) {
 	ctx, r.cancel = context.WithCancel(ctx)
 	r.wg.Add(1)
@@ -107,6 +119,9 @@ func (r *Reporter) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				// Drain pending backlog first (a recovered center should get the
+				// oldest undelivered data before the newest).
+				r.flushPending(ctx)
 				r.flushOnce(ctx)
 			}
 		}
@@ -114,7 +129,8 @@ func (r *Reporter) Start(ctx context.Context) {
 }
 
 // Stop cancels the flush loop and does a final best-effort flush of any buffered
-// hosts (so a graceful agent shutdown doesn't drop the last scan batch).
+// hosts + pending backlog (so a graceful agent shutdown delivers as much as
+// possible rather than dropping in-flight data).
 func (r *Reporter) Stop() {
 	if r.cancel != nil {
 		r.cancel()
@@ -122,13 +138,14 @@ func (r *Reporter) Stop() {
 	r.wg.Wait()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	r.flushPending(ctx)
 	r.flushOnce(ctx)
 }
 
 // flushOnce drains the buffer and POSTs it to the center with exponential
-// backoff on failure. Logs + drops on terminal failure (the next scan refills;
-// this is best-effort eventual delivery, not durable — change-detection at the
-// center reconciles state across scans).
+// backoff on failure. On exhaustion (4 attempts) the batch is enqueued to the
+// pending retry queue instead of dropped — so a center outage doesn't lose
+// data. The flush loop drains pending first on the next tick.
 func (r *Reporter) flushOnce(ctx context.Context) {
 	r.mu.Lock()
 	if len(r.buf) == 0 {
@@ -149,15 +166,74 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 		r.logger.Warn("agent reporter: marshal failed, dropping batch", "hosts", len(hosts), "error", err)
 		return
 	}
-	url := r.centerURL + "/api/v1/agents/report"
+	if !r.postWithRetry(ctx, body, len(hosts)) {
+		// Exhausted retries — enqueue for later delivery instead of dropping.
+		r.enqueuePending(body)
+	}
+}
 
-	// Exponential backoff: 1s, 2s, 4s, 8s — then give up this batch.
+// flushPending drains the failed-batch queue, oldest first. Each batch gets a
+// single attempt (no inline backoff — the next tick retries again). This keeps
+// the backlog draining without blocking the flush loop on a still-down center.
+func (r *Reporter) flushPending(ctx context.Context) {
+	r.mu.Lock()
+	if len(r.pending) == 0 {
+		r.mu.Unlock()
+		return
+	}
+	batches := r.pending
+	r.pending = nil
+	r.mu.Unlock()
+
+	remaining := batches[:0]
+	for _, body := range batches {
+		if r.postWithRetry(ctx, body, -1) { // -1 = pending batch (count unknown)
+			continue
+		}
+		remaining = append(remaining, body)
+	}
+	if len(remaining) > 0 {
+		r.mu.Lock()
+		// Prepend remaining back (oldest first) preserving order.
+		r.pending = append(remaining, r.pending...)
+		r.mu.Unlock()
+	}
+}
+
+// enqueuePending appends a failed batch to the retry queue, dropping the oldest
+// if the queue is full (bounded memory; extreme outage).
+func (r *Reporter) enqueuePending(body []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.pending) >= r.maxPending {
+		// Drop oldest — the center's change-detection reconciles state across
+		// scans, so losing the oldest stale batch degrades to "less history",
+		// not corruption.
+		r.pending = r.pending[1:]
+		r.logger.Warn("agent reporter: pending queue full, dropping oldest batch", "max", r.maxPending)
+	}
+	r.pending = append(r.pending, body)
+	r.logger.Warn("agent reporter: batch enqueued for retry", "pending", len(r.pending))
+}
+
+// FlushPendingForTest exposes flushPending for tests (to simulate a center
+// recovery mid-test without waiting for the ticker). Not for production use.
+func (r *Reporter) FlushPendingForTest() {
+	r.flushPending(context.Background())
+}
+
+// postWithRetry sends one JSON body to the center with up to 4 attempts
+// (1s/2s/4s/8s backoff). Returns true on success, false if exhausted/cancelled.
+// 4xx (except 429) is terminal-failure (bad token) — returns true to avoid
+// re-queueing an unrecoverable payload.
+func (r *Reporter) postWithRetry(ctx context.Context, body []byte, hostCount int) bool {
+	url := r.centerURL + "/api/v1/agents/report"
 	backoff := time.Second
 	for attempt := 1; ; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			r.logger.Warn("agent reporter: request build failed", "error", err)
-			return
+			return false
 		}
 		req.Header.Set("Authorization", "Bearer "+r.authToken)
 		req.Header.Set("Content-Type", "application/json")
@@ -166,25 +242,28 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				r.logger.Info("agent reporter: report accepted", "hosts", len(hosts), "attempt", attempt)
-				return
+				if hostCount >= 0 {
+					r.logger.Info("agent reporter: report accepted", "hosts", hostCount, "attempt", attempt)
+				} else {
+					r.logger.Info("agent reporter: pending batch delivered", "attempt", attempt)
+				}
+				return true
 			}
 			// 4xx (except 429) is terminal — retrying won't help (bad token, bad
-			// payload). 5xx / 429 → backoff and retry.
+			// payload). Don't re-queue.
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 429 {
-				r.logger.Warn("agent reporter: center rejected report (terminal)", "status", resp.StatusCode, "hosts", len(hosts))
-				return
+				r.logger.Warn("agent reporter: center rejected report (terminal)", "status", resp.StatusCode)
+				return true
 			}
 			err = errRejected{status: resp.StatusCode}
 		}
 		if attempt >= 4 {
-			r.logger.Warn("agent reporter: giving up after retries, dropping batch", "hosts", len(hosts), "last_error", err)
-			return
+			return false
 		}
 		r.logger.Warn("agent reporter: report failed, retrying", "attempt", attempt, "error", err, "backoff", backoff)
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-time.After(backoff):
 		}
 		backoff *= 2

@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 )
 
@@ -123,4 +127,105 @@ func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	Success(w, ChangeLogResponse{Changes: out, Total: int(total)})
+}
+
+// ChangeWatchHandler streams change events to clients via Server-Sent Events
+// (SSE). It subscribes to the in-process Watcher and forwards each change_log
+// row as an SSE "change" event. This is the external consumer for the Watcher
+// (architecture-future.md §8) — a dashboard or external integration can listen
+// for real-time device_added/changed/lost events without polling.
+//
+// Connection lifecycle: the stream stays open until the client disconnects
+// (ctx.Done) or the server shuts down. A heartbeat comment (":keepalive") is
+// sent every 15s so proxies don't idle-timeout the connection. The Watcher
+// drops events to a full subscriber buffer (best-effort; the client can
+// backfill from GET /changes).
+type ChangeWatchHandler struct {
+	watcher *changedetect.Watcher
+	logger  *slog.Logger
+}
+
+// NewChangeWatchHandler constructs the SSE handler. watcher is the center's
+// in-process change-event fan-out (the same one DBRecorder pushes to).
+func NewChangeWatchHandler(watcher *changedetect.Watcher, logger *slog.Logger) *ChangeWatchHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &ChangeWatchHandler{watcher: watcher, logger: logger}
+}
+
+// Watch handles GET /api/v1/changes/watch (SSE stream).
+func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
+	if h.watcher == nil {
+		Error(w, http.StatusServiceUnavailable, "change watcher not initialized")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		Error(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	// SSE headers: text/event-stream, no buffering, long-lived connection.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// Subscribe to the Watcher; unsubscribe + drain on exit to avoid leaking
+	// the channel (a dropped subscriber would buffer-overflow the Watcher).
+	sub := h.watcher.Subscribe()
+	defer func() {
+		h.watcher.Unsubscribe(sub)
+		// Drain any remaining events so the channel isn't GC-blocked.
+		for range sub {
+		}
+	}()
+
+	// Keepalive ticker: send an SSE comment every 15s so idle proxies/CDNs
+	// don't close the connection between events.
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected.
+			return
+		case <-ticker.C:
+			// SSE comment line (ignored by EventSource clients, keeps connection alive).
+			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case row, ok := <-sub:
+			if !ok {
+				// Channel closed (server shutting down).
+				return
+			}
+			data, err := json.Marshal(ChangeLogEntry{
+				ID:         row.ID,
+				AgentID:    row.AgentID,
+				NetworkID:  row.NetworkID,
+				ChangeType: row.ChangeType,
+				EntityType: row.EntityType,
+				EntityID:   row.EntityID,
+				BeforeData: row.BeforeData,
+				AfterData:  row.AfterData,
+				DetectedAt: row.DetectedAt,
+			})
+			if err != nil {
+				h.logger.Warn("change watch: marshal failed", "change_id", row.ID, "error", err)
+				continue
+			}
+			// SSE event: "event: change\ndata: {json}\n\n"
+			if _, err := fmt.Fprintf(w, "event: change\ndata: %s\n\n", data); err != nil {
+				return // write failed — client likely gone
+			}
+			flusher.Flush()
+		}
+	}
 }

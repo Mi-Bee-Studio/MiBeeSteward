@@ -317,9 +317,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// queryable view on top of change_log; the in-process Watcher (changeWatcher
 	// above) is the foundation for a future /watch SSE push endpoint.
 	changeLogHandler := handler.NewChangeLogHandler(scanQueries)
+	changeWatchHandler := handler.NewChangeWatchHandler(changeWatcher, slog.Default())
 	r.Route("/api/v1/changes", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
 		r.Get("/", changeLogHandler.List)
+		r.Get("/watch", changeWatchHandler.Watch)
 	})
 
 	// --- Scanner background services (v2) ---
