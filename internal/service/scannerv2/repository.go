@@ -25,6 +25,13 @@ type Repository interface {
 	// RecordHeartbeats persists heartbeat specs generated for the IP.
 	// Implementations reconcile with existing configs (update vs insert).
 	RecordHeartbeats(ctx context.Context, ip string, specs []HeartbeatSpec) error
+
+	// RecordNeighbors persists L2 adjacency (LLDP/CDP/Bridge-MIB/ARP) for the
+	// device at ip. Each NeighborSpec is one edge: the neighbor's MAC (the merge
+	// key), the discovery protocol, and optional local/remote port labels.
+	// Implementations upsert on (device_id, neighbor_mac, protocol), refreshing
+	// last_seen without losing first_seen.
+	RecordNeighbors(ctx context.Context, ip string, neighbors []NeighborSpec) error
 }
 
 // NoopRepository is a Repository that does nothing. It is the default when no
@@ -35,6 +42,7 @@ func (NoopRepository) RecordEvidence(context.Context, []Evidence) error         
 func (NoopRepository) RecordServices(context.Context, string, []ServiceIdentity) error { return nil }
 func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error           { return nil }
 func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error { return nil }
+func (NoopRepository) RecordNeighbors(context.Context, string, []NeighborSpec) error   { return nil }
 
 // Compile-time check that NoopRepository satisfies Repository.
 var _ Repository = NoopRepository{}

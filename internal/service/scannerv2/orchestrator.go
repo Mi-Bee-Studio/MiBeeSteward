@@ -555,12 +555,51 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		if err := o.repo.RecordHeartbeats(ctx, report.IP, report.Heartbeats); err != nil {
 			o.logger.Debug("record heartbeats failed", "ip", report.IP, "error", err)
 		}
+		// Persist L2 neighbors (Phase 4): extract "neighbor"-kind evidence
+		// (from the Bridge-MIB / LLDP / CDP probes) into NeighborSpecs and
+		// record them. The store resolves ip→device_id and upserts edges.
+		if neighbors := extractNeighbors(report.Evidence); len(neighbors) > 0 {
+			if err := o.repo.RecordNeighbors(ctx, report.IP, neighbors); err != nil {
+				o.logger.Debug("record neighbors failed", "ip", report.IP, "error", err)
+			}
+		}
 	}
 }
 
 // cascadeKey is the dedup key for the cycle guard: service@port.
 func cascadeKey(s ServiceIdentity) string {
 	return s.Service + "@" + itoa(s.Port)
+}
+
+// extractNeighbors pulls L2 adjacency edges from "neighbor"-kind evidence
+// (emitted by the Bridge-MIB / LLDP / CDP probes). Each evidence piece's
+// RawData carries neighbor_mac + protocol + optional local/remote_port. The MAC
+// is normalized (the store's RecordNeighbors expects canonical form).
+func extractNeighbors(evidence []Evidence) []NeighborSpec {
+	var out []NeighborSpec
+	seen := map[string]bool{} // dedup (neighbor_mac, protocol) within one host
+	for _, e := range evidence {
+		if e.Kind != "neighbor" || e.RawData == nil {
+			continue
+		}
+		mac := e.RawData["neighbor_mac"]
+		protocol := e.RawData["protocol"]
+		if mac == "" || protocol == "" {
+			continue
+		}
+		key := mac + "|" + protocol
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, NeighborSpec{
+			NeighborMAC: mac,
+			Protocol:    protocol,
+			LocalPort:   e.RawData["local_port"],
+			RemotePort:  e.RawData["remote_port"],
+		})
+	}
+	return out
 }
 
 // itoa avoids strconv import in this file.
