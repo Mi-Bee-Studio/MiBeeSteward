@@ -114,3 +114,36 @@ func TestReporter_DoesNotRetryOn4xx(t *testing.T) {
 	r.Stop()
 	require.Equal(t, int32(1), atomic.LoadInt32(&attempts), "4xx should be terminal — exactly one attempt")
 }
+
+// TestReporter_DisconnectRecovery verifies a batch that fails while the center
+// is down is held in the pending queue and delivered once the center recovers.
+// This is the断线补报 (disconnect backfill) guarantee.
+func TestReporter_DisconnectRecovery(t *testing.T) {
+	// Phase 1: center is DOWN (return 503 on every request).
+	down := int32(1)
+	var received int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.LoadInt32(&down) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		atomic.AddInt32(&received, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	r := agent.NewReporter(srv.URL, "tok", "a", time.Minute, 1, nil) // maxBuf=1 → immediate flush
+	r.Start(context.Background())
+	// Report while center is down → batch fails + retries exhaust → enqueued to pending.
+	r.Report(context.Background(), 1, []scannerv2.HostReport{{IP: "9.9.9.9", Alive: true, Device: scannerv2.DeviceRef{IP: "9.9.9.9"}}})
+
+	// Wait for the initial flush attempts to exhaust (4 retries × backoff).
+	time.Sleep(20 * time.Second)
+
+	// Phase 2: center recovers. Manually trigger a pending flush.
+	atomic.StoreInt32(&down, 0)
+	r.FlushPendingForTest()
+
+	require.GreaterOrEqual(t, atomic.LoadInt32(&received), int32(1), "pending batch should be delivered after recovery")
+	r.Stop()
+}
