@@ -239,6 +239,19 @@ func httpServerToBrand(server string) string {
 	return ""
 }
 
+// hasCameraEvidence reports whether the host produced RTSP-banner or ONVIF
+// response evidence — i.e. it is (very likely) a camera. Used to suppress
+// using the HTTP Server header (nginx/Apache reverse proxy) as the device
+// brand, since that software is not the camera's vendor.
+func hasCameraEvidence(ev []Evidence) bool {
+	for _, e := range ev {
+		if e.Kind == "rtsp_banner" || e.Kind == "onvif_response" {
+			return true
+		}
+	}
+	return false
+}
+
 func containsFold(s, substr string) bool {
 	return len(s) >= len(substr) && (containsFoldImpl(s, substr))
 }
@@ -415,8 +428,12 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		case "http":
 			// The Server header sometimes carries a vendor/product string that
 			// is more specific than OUI (e.g. "nginx/1.25", "Apache/2.4.58").
-			// Don't overwrite a stronger SNMP/cert-derived brand.
-			if v := e.RawData["server"]; v != "" && report.Device.Fields["inferred_brand"] == "" {
+			// Don't overwrite a stronger SNMP/cert-derived brand. Also skip when
+			// the host has RTSP/ONVIF evidence: cameras commonly front their web
+			// UI with nginx/Apache, and the web-server software is NOT the camera
+			// vendor — setting "nginx" as the brand of a Hikvision camera is
+			// misleading. Let the OUI/cert/ONVIF brand (or empty) win instead.
+			if v := e.RawData["server"]; v != "" && report.Device.Fields["inferred_brand"] == "" && !hasCameraEvidence(report.Evidence) {
 				report.Device.Fields["inferred_brand"] = httpServerToBrand(v)
 			}
 		case "mdns":

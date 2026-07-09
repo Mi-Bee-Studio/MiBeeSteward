@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf clean test dev migrate-up
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf clean test dev migrate-up sync-fingerprints fpimport
 
 all: build
 
@@ -52,3 +52,17 @@ dev:
 
 migrate-up:
 	@echo "Migrations run automatically on server startup via the embedded db/schema.sql (see db/embed.go). No manual step required."
+
+# sync-fingerprints copies configs/fingerprints/*.yaml into the classify
+# package's embed directory so they ship in the binary (//go:embed). Run this
+# before building whenever fingerprint rules change. The configs/ dir is the
+# source of truth; this target keeps the embed copy in sync.
+sync-fingerprints:
+	@mkdir -p internal/service/scannerv2/classify/fingerprint-assets
+	@cp -v configs/fingerprints/*.yaml internal/service/scannerv2/classify/fingerprint-assets/
+	@echo "fingerprints synced to embed dir"
+
+# fpimport converts third-party fingerprint databases into the MiBee rule format.
+# See cmd/fpimport/ and docs/fingerprint-spec.md for supported sources.
+fpimport:
+	@go run ./cmd/fpimport/ $(ARGS)
