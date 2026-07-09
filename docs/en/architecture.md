@@ -244,3 +244,102 @@ The dashboard service integrates with Prometheus for monitoring data collection.
 - **Service Discovery**: Extended `/sd` endpoint to auto-discover systems with `metrics_enabled=true`
 - **Frontend**: Card grid UI in device detail pages with category badges (web_app, database, middleware, custom)
 - **Labels**: Systems appear in service discovery with labels (device_name, system_name, category, device_type, location)
+
+## Distributed Architecture
+
+MiBee Steward supports a distributed deployment model: a **center** (the main
+binary, `cmd/server`) aggregates device data from multiple **agents**
+(lightweight binaries, `cmd/agent`), each deployed on a different LAN segment.
+This enables cross-network device discovery without requiring the center to have
+direct L3 reachability to every subnet.
+
+```
+[Network A: 192.168.63.0/24]           [Network B: 192.168.62.0/24]
+  ┌──────────────────────┐               ┌──────────────────────┐
+  │ Center (cmd/server)  │               │ Agent (cmd/agent)     │
+  │  - API + SPA         │   HTTPS       │  - scannerv2 engine   │
+  │  - Device registry   │◄─────────────│  - Reporter (POST)    │
+  │  - Change detection  │   Bearer tok  │  - Command poller     │
+  │  - Scanner (local)   │──────────────►│  - Scheduler (cron)   │
+  │  - Heartbeat service │   Commands    │  - Mini SQLite        │
+  └──────────────────────┘               └──────────────────────┘
+```
+
+### Roles
+
+| Role | Binary | Responsibilities |
+|---|---|---|
+| **Center** | `cmd/server` | Aggregation hub: API, SPA, device registry, change detection, heartbeat, ingestion, agent management |
+| **Agent** | `cmd/agent` | Lightweight scanner: runs scannerv2 locally, reports results upstream, polls for commands |
+
+### Agent ↔ Center Protocol
+
+**Pull model** — the agent initiates all connections (works behind NAT):
+
+1. **Report** (`POST /api/v1/agents/report`): Agent batches alive HostReports and
+   POSTs them to the center. The center authenticates via the agent's bearer
+   token and merges devices through the MAC-primary identity model.
+2. **Command poll** (`GET /api/v1/agents/commands`): Agent polls for ad-hoc
+   commands (e.g. "scan these targets now") every 60s.
+3. **Disconnect recovery**: Failed report batches are held in an in-memory
+   pending queue (bounded at 100 batches). The flush loop drains pending
+   oldest-first once the center recovers.
+
+### Identity Model (MAC-Primary)
+
+Devices are identified by **MAC address first** (a roaming device stays one
+asset across networks), falling back to `(ip_address, network_id)` when no MAC
+is known. This means:
+
+- The same private IP (e.g. `192.168.1.10`) on two different LANs is **two
+  distinct devices** (partitioned by `network_id`).
+- A device that moves between subnets (same MAC, different IP) stays **one asset**.
+- The `(ip_address, network_id)` composite unique index backs this partitioning.
+
+### Agent Authentication
+
+Agent tokens are SHA-256-hashed opaque bearer tokens stored in `agent_tokens`.
+The plaintext is returned **once** at creation; only the hash is persisted.
+Tokens are bound to a `network_id` — every device the agent reports is tagged
+with that network. Revocation is a soft delete (`revoked_at`); revoked tokens
+immediately fail authentication.
+
+Two auth regimes, never mixed:
+- **Admin JWT** (cookie/Bearer): human users via the SPA.
+- **Agent token** (`RequireAgentToken` middleware): machine-to-machine ingestion.
+
+### Change Detection Engine
+
+The center runs a change-detection engine that diffs each scan against the
+known device state and emits events to `change_log`:
+
+- **device_added**: A new device appears in a scan.
+- **device_changed**: A tracked field (type, brand, MAC, ports, services,
+  scan_attributes) differs from the prior state. The old `wasUpdated` always-true
+  heuristic is replaced with a real field-by-field comparison.
+- **device_lost**: A device absent from `lostThreshold` (2) consecutive scans is
+  declared lost and marked offline. The grace period prevents single-scan jitter
+  (ICMP drop, brief downtime) from flapping.
+
+Events are queryable via `GET /api/v1/changes` and streamable via SSE at
+`GET /api/v1/changes/watch`. A Prometheus counter (`mibee_changes_total{type}`)
+tracks the change rate.
+
+### Topology Discovery (Bridge-MIB)
+
+The Bridge-MIB probe walks `dot1dTpFdbTable` (1.3.6.1.2.1.17.4.3) on
+SNMP-capable switches to learn L2 adjacency (which MACs are behind which port).
+Discovered neighbors are persisted to `device_neighbors` via
+`Repository.RecordNeighbors`. LLDP/CDP probes follow the same path.
+
+### Distributed Schema
+
+| Table | Purpose |
+|---|---|
+| `networks` | Logical network registry (one row per LAN an agent discovers) |
+| `agent_tokens` | Agent bearer tokens (SHA-256 hash + network binding) |
+| `agent_commands` | Center→agent command queue (pull model) |
+| `scan_snapshots` | Per-network miss counter for device_lost grace period |
+| `change_log` | device_added/changed/lost event stream |
+| `device_neighbors` | L2 adjacency edges (LLDP/CDP/Bridge-MIB) |
+| `topology_edges` | Higher-level device-to-device edges (derived) |
