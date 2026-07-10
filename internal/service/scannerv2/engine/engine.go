@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	fp "mibee-fingerprints-go"
+
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/classify"
 	"mibee-steward/internal/service/scannerv2/ebpf"
@@ -141,13 +143,12 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 			"note", "active only if binary built with WITH_EBPF tag")
 	}
 
-	// ② Classifiers. The RuleClassifier loads data-driven fingerprint rules
-	// (banner/rtsp/onvif/web/tls/prometheus/port-fallbacks). When a
-	// FingerprintPath is configured it loads from there; otherwise it falls back
-	// to the rules embedded in the binary (zero-config). Hand-written logic
-	// classifiers (SNMP bitmask heuristic, Camera cross-evidence fusion) run
-	// alongside — transitional coexistence until the rule set fully covers them.
-	rc := &classify.RuleClassifier{}
+	// ② Classifiers. The RuleClassifier comes from the standalone fingerprint
+	// library (mibee-fingerprints-go). It loads data-driven YAML rules — from
+	// FingerprintPath when configured, else from the rules embedded in the
+	// library binary (zero-config). Hand-written logic classifiers (SNMP bitmask
+	// heuristic, Camera cross-evidence fusion) run alongside.
+	rc := &fp.RuleClassifier{}
 	if cfg.FingerprintPath != "" {
 		if err := rc.LoadFromDir(cfg.FingerprintPath); err != nil {
 			logger.Error("scannerv2: fingerprint dir load failed; falling back to embedded rules",

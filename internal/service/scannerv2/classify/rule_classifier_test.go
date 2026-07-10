@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	fp "mibee-fingerprints-go"
+
 	"mibee-steward/internal/service/scannerv2"
 )
 
@@ -22,7 +24,7 @@ import (
 // compare the RuleClassifier against the original code classifiers, so they
 // must be isolated from additive third-party rules that emit overlapping
 // identities. The production engine loads everything; these tests load builtin-only.
-func loadBuiltinRules(t *testing.T) *RuleClassifier {
+func loadBuiltinRules(t *testing.T) *fp.RuleClassifier {
 	t.Helper()
 	srcDir := "../../../../configs/fingerprints"
 	tmp, err := os.MkdirTemp("", "mibee-fp-test-*")
@@ -38,7 +40,7 @@ func loadBuiltinRules(t *testing.T) *RuleClassifier {
 			t.Fatal(err)
 		}
 	}
-	rc := &RuleClassifier{}
+	rc := &fp.RuleClassifier{}
 	if err := rc.LoadFromDir(tmp); err != nil {
 		t.Fatalf("LoadFromDir: %v", err)
 	}
@@ -61,7 +63,7 @@ func TestRuleClassifier_LoadsAllRules(t *testing.T) {
 // third-party Recog imports) loads without error. The production engine loads
 // everything; this confirms the Recog regex patterns all compile under RE2.
 func TestRuleClassifier_LoadsWithRecog(t *testing.T) {
-	rc := &RuleClassifier{}
+	rc := &fp.RuleClassifier{}
 	if err := rc.LoadFromDir("../../../../configs/fingerprints"); err != nil {
 		t.Fatalf("LoadFromDir with recog: %v", err)
 	}
@@ -326,7 +328,7 @@ func TestRuleClassifier_EmptyEvidence(t *testing.T) {
 // ── Missing directory = silent degradation ───────────────────────────────
 
 func TestRuleClassifier_MissingDir(t *testing.T) {
-	rc := &RuleClassifier{}
+	rc := &fp.RuleClassifier{}
 	if err := rc.LoadFromDir("/nonexistent/fingerprints"); err != nil {
 		t.Errorf("missing dir should be silent, got error: %v", err)
 	}
