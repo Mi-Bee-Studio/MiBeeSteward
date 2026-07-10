@@ -180,6 +180,31 @@ func TestHandle_KnownHostIsNotProcessed(t *testing.T) {
 	}
 }
 
+// TestHandle_KnownMACDifferentIP_NoIdentify guards the DHCP-churn regression:
+// a device recorded as .143 (MAC aa:..) that next appears as .144 (same MAC,
+// new lease) must NOT be treated as new. Without the MAC-primary pre-check it
+// would trigger a full identify scan every poll cycle — a feedback loop that
+// destabilized the memory-constrained test VM (75 restarts observed).
+func TestHandle_KnownMACDifferentIP_NoIdentify(t *testing.T) {
+	svc, sink, ident, dbConn := newTestService(t, true)
+	// Device known under a DIFFERENT IP but SAME MAC as the discovery event.
+	_, err := dbConn.Exec(`INSERT INTO devices (name, ip_address, mac_address, status) VALUES ('roamer', '10.0.0.50', 'aa:bb:cc:dd:ee:ff', 'online')`)
+	if err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	// Discovery reports the SAME MAC on a NEW IP — must be recognized as known.
+	svc.Emit(NewHostEvent{IP: "10.0.0.99", MAC: "aa:bb:cc:dd:ee:ff", Source: "arp_cache"})
+	time.Sleep(150 * time.Millisecond)
+
+	if sink.count() != 0 {
+		t.Errorf("expected no Apply for a known MAC under a new IP, got %d", sink.count())
+	}
+	if ident.calls != 0 {
+		t.Errorf("expected no Identify call for a known MAC, got %d", ident.calls)
+	}
+}
+
+
 func TestHandle_NewHost_TriggersIdentifyAndApply(t *testing.T) {
 	svc, sink, ident, _ := newTestService(t, true)
 	ident.alive["10.0.0.10"] = true
