@@ -149,8 +149,35 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 	}
 	defer stmt.Close()
 
-	now := time.Now().UTC()
+	// Deduplicate by (service, port): when multiple identities share the same
+	// key (e.g. builtin http-presence + Recog http_header.server both emit
+	// http/80), merge their metadata and keep the highest confidence. Without
+	// this, the UNIQUE(ip,service,port) constraint causes 50+ warnings per scan.
+	type svcKey struct{ service string; port int }
+	merged := make(map[svcKey]scannerv2.ServiceIdentity)
 	for _, s := range services {
+		k := svcKey{s.Service, s.Port}
+		if existing, ok := merged[k]; ok {
+			// Merge metadata: existing values win (first-write), add new keys.
+			if existing.Metadata == nil {
+				existing.Metadata = map[string]string{}
+			}
+			for mk, mv := range s.Metadata {
+				if _, has := existing.Metadata[mk]; !has {
+					existing.Metadata[mk] = mv
+				}
+			}
+			if s.Confidence > existing.Confidence {
+				existing.Confidence = s.Confidence
+			}
+			merged[k] = existing
+		} else {
+			merged[k] = s
+		}
+	}
+
+	now := time.Now().UTC()
+	for _, s := range merged {
 		meta, err := json.Marshal(s.Metadata)
 		if err != nil {
 			meta = []byte("{}")
