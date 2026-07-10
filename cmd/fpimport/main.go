@@ -143,22 +143,25 @@ type recogTarget struct {
 	supported   bool
 	field       string // RawData key to match against
 	serviceHint string // nominal service for rule-id naming
-	stripPrefix string // prefix to strip before matching ("" = match full field)
 	stripKind   string // "ssh" = strip "SSH-x.y-", "respcode" = strip "NNN "
+	kind        string // evidence Kind to scope to (e.g. "snmp" — prevents sysDescr patterns matching banners)
 }
 
 var recogTargetMap = map[string]recogTarget{
-	"ssh.banner":         {true, "banner", "ssh", "", "ssh"},
-	"http_header.server": {true, "server", "http", "", ""},
-	"html_title":         {true, "title", "http", "", ""},
-	"ftp.banner":         {true, "banner", "ftp", "", "respcode"},
-	"smtp.banner":        {true, "banner", "smtp", "", "respcode"},
-	"pop3.banner":        {true, "banner", "pop3", "", "respcode"},
-	"imap.banners":       {true, "banner", "imap", "", "respcode"},
-	"telnet.banner":      {true, "banner", "telnet", "", ""},
-	"rtsp_header.server": {true, "server", "rtsp", "", ""},
-	"mysql.banners":      {true, "banner", "mysql", "", ""},
-	"mysql.error":        {true, "banner", "mysql", "", ""},
+	"ssh.banner":          {true, "banner", "ssh", "ssh", "banner"},
+	"http_header.server":  {true, "server", "http", "", "http"},
+	"html_title":          {true, "title", "http", "", "http"},
+	"ftp.banner":          {true, "banner", "ftp", "respcode", "banner"},
+	"smtp.banner":         {true, "banner", "smtp", "respcode", "banner"},
+	"pop3.banner":         {true, "banner", "pop3", "respcode", "banner"},
+	"imap.banners":        {true, "banner", "imap", "respcode", "banner"},
+	"telnet.banner":       {true, "banner", "telnet", "", "banner"},
+	"rtsp_header.server":  {true, "server", "rtsp", "", "rtsp_banner"},
+	"mysql.banners":       {true, "banner", "mysql", "", "banner"},
+	"mysql.error":         {true, "banner", "mysql", "", "banner"},
+	"snmp.sys_description": {true, "sys_descr", "snmp", "", "snmp"},
+	"snmp.sys_object_id":  {true, "sys_object_id", "snmp", "", "snmp"},
+	"smb.native_os":       {true, "os", "smb", "", "smb"},
 }
 
 func importRecog(srcDir, outPath string) error {
@@ -274,6 +277,11 @@ func convertRecogFP(fp recogFingerprint, source string, tgt recogTarget, conf fl
 		"value": fp.Pattern,
 		"ci":    ci,
 	}
+	// Kind scoping: restrict the rule to evidence of this Kind so sysDescr
+	// patterns don't match TCP banners (critical for snmp rules).
+	if tgt.kind != "" {
+		match["kind"] = tgt.kind
+	}
 	// Banner-strip transform: Recog's ssh/ftp/smtp patterns expect the part
 	// AFTER "SSH-x.y-" or the "NNN " response code. Our evidence carries the
 	// full greeting. Emit a transform so the RuleClassifier strips the prefix
@@ -283,12 +291,17 @@ func convertRecogFP(fp recogFingerprint, source string, tgt recogTarget, conf fl
 	} else if tgt.stripKind == "respcode" {
 		match["transform"] = "strip_resp_code"
 	}
+	// SNMP is UDP, not TCP.
+	proto := "tcp"
+	if tgt.kind == "snmp" {
+		proto = "udp"
+	}
 	rule := map[string]any{
 		"id":     "recog-" + tgt.serviceHint + "-" + hashShort(fp.Pattern),
 		"source": "recog",
 		"match":  match,
 		"service":    tgt.serviceHint,
-		"protocol":   "tcp",
+		"protocol":   proto,
 		"confidence": conf,
 	}
 	if len(md) > 0 {

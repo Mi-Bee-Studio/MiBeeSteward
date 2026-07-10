@@ -342,6 +342,29 @@ func (r *RuleClassifier) LoadFromDir(dir string) error {
 // ── matcher compilation ──────────────────────────────────────────────────
 
 func compileMatch(s matchSpec) (matcher, bool, int, error) {
+	m, hostScoped, port, err := compileMatchInner(s)
+	if err != nil {
+		return nil, false, 0, err
+	}
+	// Kind-scoping guard: when a match node specifies `kind`, the rule only
+	// fires on evidence of that Kind. This is critical for Recog snmp rules
+	// (sysDescr patterns must not match TCP banners). kind_presence already
+	// handles kind internally, so it doesn't need the wrapper.
+	if s.Kind != "" && s.Op != "kind_presence" && s.Op != "port" {
+		kind := s.Kind
+		inner := m
+		m = func(e scannerv2.Evidence, idx evidenceIndex) bool {
+			if e.Kind != kind {
+				return false
+			}
+			return inner(e, idx)
+		}
+	}
+	return m, hostScoped, port, nil
+}
+
+// compileMatchInner is the raw op→matcher switch (no kind-scoping wrapper).
+func compileMatchInner(s matchSpec) (matcher, bool, int, error) {
 	switch s.Op {
 	case "kind_presence":
 		kind := s.Kind
@@ -420,7 +443,7 @@ func compileMatch(s matchSpec) (matcher, bool, int, error) {
 	case "compound":
 		subs := make([]matcher, 0, len(s.And))
 		for _, c := range s.And {
-			m, _, _, err := compileMatch(c)
+			m, _, _, err := compileMatchInner(c)
 			if err != nil {
 				return nil, false, 0, err
 			}
@@ -437,7 +460,7 @@ func compileMatch(s matchSpec) (matcher, bool, int, error) {
 	case "or":
 		subs := make([]matcher, 0, len(s.Any))
 		for _, c := range s.Any {
-			m, _, _, err := compileMatch(c)
+			m, _, _, err := compileMatchInner(c)
 			if err != nil {
 				return nil, false, 0, err
 			}
