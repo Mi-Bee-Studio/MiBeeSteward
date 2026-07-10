@@ -5,11 +5,20 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=mibee
-Group=mibee
+# Use the NUMERIC uid/gid, not the username. On Arch/systemd ≥256 with
+# `passwd: files systemd` in nsswitch.conf, systemd resolves User= via its own
+# nss-systemd module, which intermittently fails with "Unknown user" (status
+# 217/USER) for perfectly valid local users right after a daemon-reload. The
+# numeric form bypasses NSS entirely. 1000 = the mibee service account.
+User=1000
+Group=1000
 WorkingDirectory=/opt/mibee-steward
-ExecStart=/opt/mibee-steward/mibee-steward
-Restart=on-failure
+ExecStart=/opt/mibee-steward/mibee-steward -config configs/config.yaml
+# always (not on-failure): a monitoring daemon should come back after ANY exit,
+# including a clean one (e.g. an unexpected SIGTERM from outside). `systemctl
+# stop` is still honored — systemd won't restart after an admin stop. Without
+# this, a graceful exit leaves the service down for good.
+Restart=always
 RestartSec=5
 StartLimitBurst=3
 StartLimitIntervalSec=60

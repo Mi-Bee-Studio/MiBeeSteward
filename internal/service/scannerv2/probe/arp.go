@@ -19,6 +19,33 @@ import (
 //	192.168.63.1 0x1       0x2     bc:ad:28:11:22:33     *      enp3s0
 const arpTablePath = "/proc/net/arp"
 
+// ARPEntry is one row of the kernel ARP cache (IP → MAC + iface).
+type ARPEntry struct {
+	IP     string
+	MAC    string
+	Device string
+}
+
+// ReadARPTable reads and parses the kernel's live ARP cache (/proc/net/arp),
+// returning one ARPEntry per resolved neighbour. It bypasses the 1s process-wide
+// read cache so callers see the freshest table. Entries with an incomplete
+// (zero) MAC are skipped. Safe to call from any goroutine.
+//
+// This is the exported counterpart to readARPTable: the long-running passive
+// discovery service uses it to diff the cache and spot newly-resolved hosts,
+// independent of the per-scan probe path.
+func ReadARPTable() ([]ARPEntry, error) {
+	entries, err := parseARPFile(arpTablePath)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ARPEntry, 0, len(entries))
+	for ip, e := range entries {
+		out = append(out, ARPEntry{IP: ip, MAC: e.mac, Device: e.device})
+	}
+	return out, nil
+}
+
 // LookupMACPostScan is a single-shot ARP cache lookup meant to be called AFTER
 // the gather phase (which is when the ICMP/TCP probes have populated the
 // kernel's neighbour table). The ARPProbe that runs concurrently during gather

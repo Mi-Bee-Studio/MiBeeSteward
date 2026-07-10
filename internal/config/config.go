@@ -207,6 +207,12 @@ type ScannerConfig struct {
 	// SNMPCommunity when empty.
 	RouterARP RouterARPConfig `koanf:"router_arp"`
 	EBPF      EBPFConfig      `koanf:"ebpf"`
+	// Discovery enables the long-running passive discovery service that spots
+	// newly-appeared hosts without a full subnet scan. It periodically walks a
+	// router's SNMP ARP table + diffs the local /proc/net/arp cache + passively
+	// listens for mDNS/SSDP, and feeds new hosts into the runner's device bridge
+	// (so they get change-detection + heartbeat seeding). See DiscoveryConfig.
+	Discovery DiscoveryConfig `koanf:"discovery"`
 }
 
 // RouterARPConfig configures cross-subnet MAC resolution via SNMP ARP walks of
@@ -223,6 +229,42 @@ type RouterARPConfig struct {
 type EBPFConfig struct {
 	Enabled    bool     `koanf:"enabled"`
 	Interfaces []string `koanf:"interfaces"`
+}
+
+// DiscoveryConfig controls the long-running passive discovery service. Unlike
+// the cron-driven full-subnet scan, this service runs continuously with near-
+// zero active traffic: it diffs router/local ARP tables and passively listens
+// for mDNS/SSDP, feeding newly-seen hosts into the runner's device bridge so
+// they get device_added events + heartbeat seeding without waiting for the next
+// scheduled scan. Each source can be toggled independently.
+type DiscoveryConfig struct {
+	// Enabled gates the whole service. When false, no passive discovery runs.
+	Enabled bool `koanf:"enabled"`
+	// Interval is the polling cadence (seconds) for the ARP-based sources.
+	// Default 60. The multicast source is event-driven (listens continuously),
+	// so this only affects router_arp + arp_cache.
+	Interval int `koanf:"interval"`
+	// TriggerIdentify, when true, runs a single-IP full identification scan
+	// (the existing probe set) against each newly-discovered host so it gets a
+	// type + services immediately. When false, the host is recorded with
+	// inferred_type="unknown" and a bare ICMP heartbeat. Default true.
+	TriggerIdentify bool `koanf:"trigger_identify"`
+	// RouterARP walks scanner.router_arp.routers' SNMP ARP tables (the widest-
+	// coverage source — a gateway knows every host that talks through it).
+	// No-op when scanner.router_arp.routers is empty.
+	RouterARP DiscoverySourceToggle `koanf:"router_arp"`
+	// ARPCache diffs the local /proc/net/arp kernel cache. Zero network
+	// traffic; only covers hosts the scanner host has talked to.
+	ARPCache DiscoverySourceToggle `koanf:"arp_cache"`
+	// Multicast passively listens on mDNS (224.0.0.251:5353) + SSDP
+	// (239.255.255.250:1900) WITHOUT sending queries. Covers hosts that
+	// self-advertise (cameras/printers/IoT/Mac/UPnP).
+	Multicast DiscoverySourceToggle `koanf:"multicast"`
+}
+
+// DiscoverySourceToggle is the per-source on/off switch for DiscoveryConfig.
+type DiscoverySourceToggle struct {
+	Enabled bool `koanf:"enabled"`
 }
 
 type PipelineDefaultsConfig struct {
@@ -262,6 +304,9 @@ func Load(configPath string) (*Config, error) {
 	// Apply retention defaults (and the scanner.retention_days back-compat
 	// fallback for scan_results) before validation.
 	normalizeRetention(&cfg)
+	// Apply passive-discovery defaults (interval, trigger_identify, per-source
+	// toggles). Done before validation so the service sees a fully-populated cfg.
+	normalizeDiscovery(&cfg)
 
 	// Validate
 	if err := Validate(&cfg); err != nil {
@@ -316,6 +361,22 @@ func normalizeRetention(cfg *Config) {
 	}
 	if r.BatchSize <= 0 {
 		r.BatchSize = 5000
+	}
+}
+
+// normalizeDiscovery fills in passive-discovery defaults for any field left at
+// its zero value. Only Interval is normalized here (0 → 60s). The boolean
+// fields (Enabled, TriggerIdentify, the per-source toggles) keep their Go zero
+// value (false) when unset, so the recommended defaults are surfaced through
+// configs/config.example.yaml rather than silently applied — this respects a
+// user's explicit `false` instead of clobbering it.
+func normalizeDiscovery(cfg *Config) {
+	d := &cfg.Scanner.Discovery
+	if !d.Enabled {
+		return
+	}
+	if d.Interval <= 0 {
+		d.Interval = 60
 	}
 }
 

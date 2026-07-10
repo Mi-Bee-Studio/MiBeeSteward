@@ -21,6 +21,7 @@ import (
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
+	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
 	scannerv2probe "mibee-steward/internal/service/scannerv2/probe"
@@ -236,6 +237,61 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	changeWatcher := changedetect.NewWatcher(slog.Default())
 	changeRecorder := changedetect.NewDBRecorder(scanQueries, changeWatcher, slog.Default())
 	scanRunner.SetChangeRecorder(changeRecorder)
+
+	// Passive discovery service: a long-running, near-zero-traffic watcher that
+	// spots newly-appeared hosts between scheduled scans by diffing router/local
+	// ARP tables and passively listening for mDNS/SSDP. New hosts are fed through
+	// the SAME device bridge as scans (so they get device_added events + heartbeat
+	// seeding). Sources are enabled per config; the coordinator is always
+	// constructed so the config surface is stable, but its goroutine + sources
+	// only start when scanner.discovery.enabled is true. Stopped in the cleanup
+	// closure below before db.Close().
+	discSvc := scannerv2discovery.New(
+		scannerv2discovery.Config{
+			Interval:        time.Duration(cfg.Scanner.Discovery.Interval) * time.Second,
+			TriggerIdentify: cfg.Scanner.Discovery.TriggerIdentify,
+		},
+		scannerv2discovery.SinkAdapter{Runner: scanRunner},
+		scannerv2discovery.IdentifierAdapter(v2Engine),
+		dbConn, networkID, slog.Default(),
+	)
+	var discCancel context.CancelFunc
+	if cfg.Scanner.Discovery.Enabled {
+		discCtx, cancel := context.WithCancel(context.Background())
+		discCancel = cancel
+		discSvc.Start(discCtx)
+		interval := time.Duration(cfg.Scanner.Discovery.Interval) * time.Second
+		if interval <= 0 {
+			interval = 60 * time.Second
+		}
+		// router_arp: the widest-coverage source. One SNMP Walk per router per
+		// interval; no-op when no routers are configured.
+		if cfg.Scanner.Discovery.RouterARP.Enabled {
+			routerARPSrc := scannerv2discovery.NewRouterARPSource(
+				cfg.Scanner.RouterARP.Routers,
+				routerCommunity(cfg.Scanner),
+				time.Duration(routerTimeout(cfg.Scanner))*time.Second,
+				interval, discSvc, slog.Default(),
+			)
+			routerARPSrc.Start(discCtx)
+		}
+		// arp_cache: free byproduct of normal operation (reads /proc/net/arp).
+		if cfg.Scanner.Discovery.ARPCache.Enabled {
+			arpCacheSrc := scannerv2discovery.NewARPCacheSource(interval, discSvc, slog.Default())
+			arpCacheSrc.Start(discCtx)
+		}
+		// multicast: passive mDNS/SSDP listener (zero outbound traffic).
+		if cfg.Scanner.Discovery.Multicast.Enabled {
+			mcastSrc := scannerv2discovery.NewMulticastSource(discSvc, slog.Default())
+			mcastSrc.Start(discCtx)
+		}
+		slog.Info("scannerv2 passive discovery ready",
+			"interval", interval.String(),
+			"router_arp", cfg.Scanner.Discovery.RouterARP.Enabled,
+			"arp_cache", cfg.Scanner.Discovery.ARPCache.Enabled,
+			"multicast", cfg.Scanner.Discovery.Multicast.Enabled,
+			"trigger_identify", cfg.Scanner.Discovery.TriggerIdentify)
+	}
 
 	// Scheduler: cron-driven scan tasks. The ScanFunc delegates to the runner.
 	scanScheduler, schedErr := scannerv2scheduler.New(scanQueries, dbConn,
@@ -519,6 +575,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		if scanScheduler != nil {
 			scanScheduler.Stop()
 		}
+		// Stop the passive discovery sources + coordinator BEFORE the DB close —
+		// the coordinator's known-host pre-check and the sources' walks hold
+		// open DB/SNMP handles that must not race db.Close().
+		if discCancel != nil {
+			discCancel()
+		}
+		discSvc.Stop()
 		cleanupSvc.Stop()
 		// Stop the notification dispatcher's worker goroutines too. Without
 		// this, the 3 workers (and their *db.Queries handle) outlive graceful
