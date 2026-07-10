@@ -22,21 +22,10 @@ type ProbeSource interface {
 	Probe(ctx context.Context, ip string, hint ProbeHint) ([]Evidence, error)
 }
 
-// ServiceClassifier is the ② Classifier layer interface. One implementation
-// per protocol family. It consumes the full evidence set for a host and emits
-// zero or more ServiceIdentities it is confident about.
-//
-// Classifiers must be pure and side-effect-free: the same evidence always
-// yields the same identities. Persistence is the orchestrator's job.
-type ServiceClassifier interface {
-	// Service is the canonical service name this classifier emits (e.g. "ssh").
-	// Used for registration lookup and deduplication.
-	Service() string
-
-	// Classify inspects evidence and returns identities it can assert. It must
-	// not error on unrecognized evidence — it simply returns nothing.
-	Classify(evidence []Evidence) []ServiceIdentity
-}
+// ServiceClassifier is now a type alias to fp.ServiceClassifier (defined in
+// evidence.go). The RuleClassifier from mibee-fingerprints-go satisfies it.
+// Hand-written logic classifiers (SNMPClassifier, CameraClassifier, ...) also
+// satisfy it via the same Service()/Classify() method signature.
 
 // ServiceHandler is the ③ per-service customization layer. For each
 // identified service it (a) generates an adapted heartbeat, (b) optionally
