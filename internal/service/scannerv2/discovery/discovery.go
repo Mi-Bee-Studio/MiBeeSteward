@@ -210,7 +210,7 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 	// re-enter; a genuine re-appearance after dedupTTL will be re-evaluated.
 	s.markSeen(ev.IP)
 
-	known, err := s.isKnownHost(ctx, ev.IP)
+	known, err := s.isKnownHost(ctx, ev.IP, ev.MAC)
 	if err != nil {
 		// On query error, assume known to avoid a noisy identify storm — the next
 		// scheduled full scan will reconcile. Log for visibility.
@@ -247,11 +247,35 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 	}
 }
 
-// isKnownHost reports whether ip already has a device row in this network.
-func (s *Service) isKnownHost(ctx context.Context, ip string) (bool, error) {
+// isKnownHost reports whether the host is already tracked. The lookup mirrors
+// applyDeviceBridge's MAC-primary identity rule so the two stay in agreement:
+//
+//  1. When a MAC is known, match it GLOBALLY (across all networks/IPs) first.
+//     This is the critical case for roaming/DHCP-churned hosts: a device that
+//     was recorded as .143 may next appear in the ARP cache as .144 (same MAC,
+//     new lease). Without this MAC check, the IP-only lookup below would miss
+//     it, the coordinator would treat it as "new", and trigger an expensive
+//     full single-IP identify scan — every poll cycle, forever. On a
+//     memory-constrained host that scan loop can become a stability hazard.
+//  2. Fall back to (ip, network_id), the identity rule for MAC-less sightings.
+func (s *Service) isKnownHost(ctx context.Context, ip, mac string) (bool, error) {
 	if s.db == nil {
 		return false, nil
 	}
+	// 1. MAC-primary: a known MAC is a known host regardless of which IP it
+	//    currently holds. (Empty MAC → skip, fall through to IP lookup.)
+	if mac != "" {
+		var macID int64
+		err := s.db.QueryRowContext(ctx,
+			`SELECT id FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&macID)
+		if err == nil {
+			return true, nil
+		}
+		if err != sql.ErrNoRows {
+			return false, err
+		}
+	}
+	// 2. IP + network_id fallback.
 	var id int64
 	var err error
 	if s.nid.Valid {
