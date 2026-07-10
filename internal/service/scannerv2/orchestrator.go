@@ -252,6 +252,51 @@ func hasCameraEvidence(ev []Evidence) bool {
 	return false
 }
 
+// isWebServerName reports whether a brand string is a generic web-server
+// software name (nginx, Apache, Caddy, etc.) rather than a real device vendor.
+// Used by the TLS evidence fold to decide whether a cert-derived brand should
+// override the HTTP Server header brand.
+func isWebServerName(brand string) bool {
+	switch lowerASCII(brand) {
+	case "nginx", "apache", "caddy", "lighttpd", "microsoft iis":
+		return true
+	}
+	return false
+}
+
+// certCNToBrand extracts a vendor name from a TLS certificate's subject CN.
+// Mirrors the classifier's vendorFromCertCN keyword matching, but runs in the
+// orchestrator's evidence fold so the brand reaches Device.Fields (the path
+// the device record reads from). Without this, TLS-derived brands (OpenWrt,
+// GL.iNet, Hikvision, etc.) stay in identity metadata and never reach the
+// device's scan_attributes.brand.
+func certCNToBrand(cn string) string {
+	lower := lowerASCII(cn)
+	switch {
+	case containsFold(lower, "hikvision") || containsFold(lower, "hik"):
+		return "Hikvision"
+	case containsFold(lower, "dahua"):
+		return "Dahua"
+	case containsFold(lower, "axis"):
+		return "Axis"
+	case containsFold(lower, "unifi") || containsFold(lower, "ubiquiti"):
+		return "Ubiquiti"
+	case containsFold(lower, "synology"):
+		return "Synology"
+	case containsFold(lower, "qnap"):
+		return "QNAP"
+	case containsFold(lower, "cisco"):
+		return "Cisco"
+	case containsFold(lower, "fortinet") || containsFold(lower, "fortigate"):
+		return "Fortinet"
+	case containsFold(lower, "openwrt"):
+		return "OpenWrt"
+	case containsFold(lower, "gl-inet") || containsFold(lower, "glinet"):
+		return "GL.iNet"
+	}
+	return ""
+}
+
 func containsFold(s, substr string) bool {
 	return len(s) >= len(substr) && (containsFoldImpl(s, substr))
 }
@@ -422,8 +467,16 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			if v := e.RawData["subject_cn"]; v != "" && report.Device.Fields["node_hostname"] == "" {
 				report.Device.Fields["node_hostname"] = stripWildcardPrefix(v)
 			}
-			if v := e.RawData["inferred_brand"]; v != "" && report.Device.Fields["inferred_brand"] == "" {
-				report.Device.Fields["inferred_brand"] = v
+			// Derive brand from the cert CN. TLS cert vendor (OpenWrt, GL.iNet,
+			// Hikvision) is a STRONGER signal than the HTTP Server header
+			// (nginx/Apache), so override when the current brand looks like a
+			// generic web-server name. Only set when empty for genuine device
+			// brands that don't conflict.
+			if cnBrand := certCNToBrand(e.RawData["subject_cn"]); cnBrand != "" {
+				current := report.Device.Fields["inferred_brand"]
+				if current == "" || isWebServerName(current) {
+					report.Device.Fields["inferred_brand"] = cnBrand
+				}
 			}
 		case "http":
 			// The Server header sometimes carries a vendor/product string that
