@@ -23,6 +23,7 @@ func DefaultProbeSources(portSpec string, oui *vendor.OUI) []scannerv2.ProbeSour
 		NewHTTPMetricsProbe(),
 		NewHTTPProbe(),
 		NewTLSProbe(),
+		NewSMBProbe(0),
 		NewARPProbe(oui),
 		NewRDNSProbe(),
 		NewMDNSProbe(),
