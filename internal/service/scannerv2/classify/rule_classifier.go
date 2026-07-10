@@ -81,7 +81,8 @@ type extractSpec struct {
 
 // extractor: exactly one variant set. `const` emits a fixed string;
 // `passthrough` copies RawData[field]; `split`/`substring_after`/`keyword_map`
-// /`when_equals` derive a value.
+// /`when_equals` derive a value; `regex_capture` extracts capture group N from
+// the rule's match regex (needs the compiled regex passed via applyExtractCtx).
 type extractor struct {
 	Const         string           `yaml:"const"`
 	Passthrough   string           `yaml:"passthrough"`
@@ -89,6 +90,7 @@ type extractor struct {
 	SubstringAfter *substringExtract `yaml:"substring_after"`
 	KeywordMap    *keywordMap      `yaml:"keyword_map"`
 	WhenEquals    *whenEquals      `yaml:"when_equals"`
+	RegexCapture  *int             `yaml:"regex_capture"` // group index (1-based)
 }
 
 type splitExtract struct {
@@ -140,16 +142,19 @@ type sysDescrKwEntry struct {
 // compiledRule is a rule with its matchSpec turned into a matcher closure.
 type compiledRule struct {
 	id         string
-	service    string
-	protocol   string
-	conf       float64
-	literal    bool
-	priority   int
-	group      string // exclusive_group: only the highest-priority matching rule fires per evidence
-	hostScoped bool   // op:port — fires once per host (not per evidence), attaches idx.byPort[port]
-	port       int    // the port this host-scoped rule asserts (0 for per-evidence rules)
-	matcher    matcher
-	extract    extractSpec
+	service     string
+	protocol    string
+	conf        float64
+	literal     bool
+	priority    int
+	group       string // exclusive_group: only the highest-priority matching rule fires per evidence
+	hostScoped  bool   // op:port — fires once per host (not per evidence), attaches idx.byPort[port]
+	port        int    // the port this host-scoped rule asserts (0 for per-evidence rules)
+	matcher     matcher
+	extract     extractSpec
+	matchRegex  *regexp.Regexp // compiled match regex (for regex_capture extraction), nil if not regex
+	matchField  string         // the field the regex matched (for regex_capture extraction)
+	matchXform  string         // transform applied before matching (for regex_capture to redo)
 }
 
 // matcher tests one evidence piece + the host's evidence index. Returns true
@@ -238,7 +243,7 @@ func (r *RuleClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceId
 			if !rl.literal {
 				conf = fuseConfidence(e.Confidence, rl.conf)
 			}
-			md := applyExtract(rl.extract, e)
+			md := applyExtract(rl.extract, e, rl.matchRegex, rl.matchField, rl.matchXform)
 			out = append(out, scannerv2.ServiceIdentity{
 				Service:    rl.service,
 				Port:       e.Port,
@@ -297,11 +302,26 @@ func (r *RuleClassifier) LoadFromDir(dir string) error {
 			if err != nil {
 				return fmt.Errorf("fingerprint %s rule %q: %w", ent.Name(), rl.ID, err)
 			}
+			// Capture the compiled regex + field for regex_capture extractors.
+			// Only regex-op rules carry this; others leave matchRegex nil.
+			var mre *regexp.Regexp
+			mfield := rl.Match.Field
+			if rl.Match.Field == "" {
+				mfield = "banner"
+			}
+			if rl.Match.Op == "regex" {
+				if pat, ok := rl.Match.Value.(string); ok {
+					if re, rerr := regexp.Compile(pat); rerr == nil {
+						mre = re
+					}
+				}
+			}
 			loaded = append(loaded, compiledRule{
 				id: rl.ID, service: rl.Service, protocol: rl.Protocol,
 				conf: rl.Confidence, literal: rl.LiteralConf, priority: rl.Priority,
 				group: rl.ExclusiveGroup, hostScoped: hostScoped, port: port,
 				matcher: m, extract: rl.Extract,
+				matchRegex: mre, matchField: mfield, matchXform: rl.Match.Transform,
 			})
 		}
 	}
@@ -522,8 +542,10 @@ func toInt(v any) (int, error) {
 // ── extraction ───────────────────────────────────────────────────────────
 
 // applyExtract builds the metadata map for a fired rule. Mirrors each original
-// classifier's metadata construction exactly.
-func applyExtract(spec extractSpec, e scannerv2.Evidence) map[string]string {
+// classifier's metadata construction exactly. The rlRe/rlField/rlXform carry
+// the rule's compiled match regex (for regex_capture extraction); nil when the
+// rule isn't a regex match or doesn't use regex_capture.
+func applyExtract(spec extractSpec, e scannerv2.Evidence, rlRe *regexp.Regexp, rlField, rlXform string) map[string]string {
 	md := map[string]string{}
 	// metadata_all: passthrough every RawData key (WebClassifier / TLSClassifier).
 	if spec.MetadataAll && e.RawData != nil {
@@ -532,7 +554,7 @@ func applyExtract(spec extractSpec, e scannerv2.Evidence) map[string]string {
 		}
 	}
 	for key, ex := range spec.Metadata {
-		if v := evalExtractor(ex, e); v != "" {
+		if v := evalExtractor(ex, e, rlRe, rlField, rlXform); v != "" {
 			md[key] = v
 		} else if ex.WhenEquals != nil {
 			// when_equals sets a flag value (may be "true" even when the field
@@ -556,9 +578,23 @@ func applyExtract(spec extractSpec, e scannerv2.Evidence) map[string]string {
 // evalExtractor evaluates one non-when_equals extractor. Returns "" when no
 // value is derivable (caller skips empty — mirrors original classifiers which
 // only set a metadata key when non-empty).
-func evalExtractor(ex extractor, e scannerv2.Evidence) string {
+func evalExtractor(ex extractor, e scannerv2.Evidence, rlRe *regexp.Regexp, rlField, rlXform string) string {
 	if ex.WhenEquals != nil {
 		return "" // handled by the when_equals pass in applyExtract
+	}
+	if ex.RegexCapture != nil {
+		// Extract capture group N from the rule's match regex, re-applied to the
+		// (transformed) match field. Used by Recog-imported rules whose patterns
+		// have capture groups for version/product extraction.
+		if rlRe == nil {
+			return ""
+		}
+		val := fieldOfTransformed(e, rlField, rlXform)
+		m := rlRe.FindStringSubmatch(val)
+		if len(m) > *ex.RegexCapture {
+			return m[*ex.RegexCapture]
+		}
+		return ""
 	}
 	// const wins regardless of evidence (e.g. content_kind: "node_exporter").
 	if ex.Const != "" {

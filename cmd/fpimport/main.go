@@ -243,26 +243,24 @@ func convertRecogFP(fp recogFingerprint, source string, tgt recogTarget, conf fl
 	ci := strings.Contains(strings.ToUpper(fp.Flags), "REG_ICASE")
 
 	// Build metadata extractors from Recog params.
-	// pos="0" params are constant values → we can emit them directly.
-	// pos="N" params reference regex capture group N → our rule format doesn't
-	// support regex-group extraction yet (the match regex validates, but we
-	// can't extract a named value from it). Skip those for now; the constant
-	// vendor/product params still carry the identification value. Version-from-
-	// capture-group is a known limitation to address when the format grows a
-	// regex-group extractor.
+	// pos="0" params are constant values → {const: ...} extractor.
+	// pos="N" params reference regex capture group N → {regex_capture: N}
+	// extractor (the RuleClassifier re-applies the match regex and extracts group N).
 	md := map[string]any{}
 	for _, p := range fp.Params {
+		var val any
 		if p.Pos > 0 {
-			continue // capture-group extraction not yet supported
+			val = map[string]any{"regex_capture": p.Pos}
+		} else {
+			val = map[string]any{"const": p.Value}
 		}
-		// Constant values must use the {const: ...} extractor shape — the
-		// RuleClassifier's extractor struct can't accept a bare scalar.
-		val := map[string]any{"const": p.Value}
 		switch p.Name {
 		case "service.vendor", "os.vendor", "hardware.vendor":
 			md["inferred_brand"] = val
 		case "service.product", "os.product", "hardware.product":
 			md["product"] = val
+		case "service.version", "os.version":
+			md["version"] = val
 		}
 	}
 
