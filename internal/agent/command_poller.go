@@ -48,7 +48,7 @@ func NewCommandPoller(centerURL, authToken string, pollEvery time.Duration, runS
 	return &CommandPoller{
 		centerURL: centerURL,
 		authToken: authToken,
-		client:    &http.Client{Timeout: 15 * time.Second},
+		client:    newCenterClient(15 * time.Second),
 		pollEvery: pollEvery,
 		runScan:   runScan,
 		logger:    logger,
@@ -169,7 +169,21 @@ func (p *CommandPoller) execute(ctx context.Context, cmd pendingCommand) {
 			status = "failed"
 			break
 		}
-		summary, err := p.runScan(context.Background(), sp.Targets, sp.Timeout)
+		// Bound the scan with a hard deadline so a stuck probe (e.g. an HTTP
+		// read that hangs on an unresponsive host) can't block the execute
+		// goroutine forever. sp.Timeout is the per-host pipeline timeout; the
+		// scan fans out across hosts concurrently so we allow generous headroom
+		// beyond it. Previously this used context.Background() (no deadline),
+		// which meant one hung TCP read on a misbehaving camera left the command
+		// in "acknowledged" forever — the device fleet then went offline as
+		// leases expired with no fresh reports.
+		deadline := 15 * time.Minute
+		if sp.Timeout > 0 {
+			deadline = time.Duration(sp.Timeout*2+60) * time.Second
+		}
+		scanCtx, cancel := context.WithTimeout(context.Background(), deadline)
+		defer cancel()
+		summary, err := p.runScan(scanCtx, sp.Targets, sp.Timeout)
 		if err != nil {
 			result = fmt.Sprintf(`{"error":"%s"}`, err.Error())
 			status = "failed"

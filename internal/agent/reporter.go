@@ -73,7 +73,7 @@ func NewReporter(centerURL, authToken, agentID string, flush time.Duration, maxB
 		centerURL:  centerURL,
 		authToken:  authToken,
 		agentID:    agentID,
-		client:     &http.Client{Timeout: 30 * time.Second},
+		client:     newCenterClient(30 * time.Second),
 		logger:     logger,
 		flush:      flush,
 		maxBuf:     maxBuf,
