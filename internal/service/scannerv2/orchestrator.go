@@ -291,10 +291,22 @@ func certCNToBrand(cn string) string {
 		return "Fortinet"
 	case containsFold(lower, "openwrt"):
 		return "OpenWrt"
+	case containsFold(lower, "istoreos"):
+		return "iStoreOS"
 	case containsFold(lower, "gl-inet") || containsFold(lower, "glinet"):
 		return "GL.iNet"
 	}
 	return ""
+}
+
+// certFieldsToBrand checks both subject_cn and issuer_org for vendor keywords.
+// Some devices (iStoreOS routers) put the product name in subject_cn and
+// "OpenWrt" in issuer_org — checking both maximizes coverage.
+func certFieldsToBrand(subjectCN, issuerOrg string) string {
+	if b := certCNToBrand(subjectCN); b != "" {
+		return b
+	}
+	return certCNToBrand(issuerOrg)
 }
 
 func containsFold(s, substr string) bool {
@@ -472,7 +484,8 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			// (nginx/Apache), so override when the current brand looks like a
 			// generic web-server name. Only set when empty for genuine device
 			// brands that don't conflict.
-			if cnBrand := certCNToBrand(e.RawData["subject_cn"]); cnBrand != "" {
+			cnBrand := certFieldsToBrand(e.RawData["subject_cn"], e.RawData["issuer_org"])
+			if cnBrand != "" {
 				current := report.Device.Fields["inferred_brand"]
 				if current == "" || isWebServerName(current) {
 					report.Device.Fields["inferred_brand"] = cnBrand
