@@ -19,9 +19,16 @@ ExecStart=/opt/mibee-steward/mibee-steward -config configs/config.yaml
 # stop` is still honored — systemd won't restart after an admin stop. Without
 # this, a graceful exit leaves the service down for good.
 Restart=always
-RestartSec=5
-StartLimitBurst=3
-StartLimitIntervalSec=60
+# 10s (not the default 5s) gives the kernel time to release the previous
+# process's TCP socket (TIME_WAIT) before the restart attempt — without it the
+# new process hits "bind: address already in use" and the cycle repeats. The
+# in-process bind retry (listenAndServeWithRetry in main.go) is the primary
+# guard; this is defense-in-depth.
+RestartSec=10
+# No StartLimitBurst: a monitoring daemon must NOT be rate-limited into
+# permanent "failed" state by a transient bind storm — that leaves it down
+# until manual intervention. Restart=always with no burst cap means systemd
+# keeps trying indefinitely (backed off by RestartSec).
 LimitNOFILE=65536
 StandardOutput=journal
 StandardError=journal
