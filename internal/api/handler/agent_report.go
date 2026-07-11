@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/domain"
@@ -19,14 +21,30 @@ import (
 // fed through the runner's device bridge so identity rules (MAC-primary →
 // (ip, network_id) fallback) and heartbeat seeding are identical to a local
 // scan. This is what makes one center merge portraits from many networks.
+//
+// Anti-entropy: agents send an X-Network-State-Hash header (a digest of the
+// alive set). When the hash matches the last one seen for this agent's
+// network, the network is unchanged and the handler skips the expensive
+// per-host device bridge — it only refreshes leases (RecordAliveSnapshots) so
+// the lease sweeper's staleness clock keeps ticking. Lost detection for agent
+// networks is handled by the background LeaseSweeper, NOT per-report (the old
+// DetectLost call was O(whole network) on every POST).
 type AgentReportHandler struct {
 	runner *runner.Runner
+
+	hashMu      sync.Mutex
+	lastHash    map[int64]string    // network_id → most-recent state hash
+	lastHashAt  map[int64]time.Time // network_id → when that hash was first seen
 }
 
 // NewAgentReportHandler constructs the handler. runner is the center's scan
 // runner (reused as-is — applyDeviceBridge takes the agent's network per-call).
 func NewAgentReportHandler(rn *runner.Runner) *AgentReportHandler {
-	return &AgentReportHandler{runner: rn}
+	return &AgentReportHandler{
+		runner:     rn,
+		lastHash:   make(map[int64]string),
+		lastHashAt: make(map[int64]time.Time),
+	}
 }
 
 // Report handles POST /api/v1/agents/report.
@@ -46,11 +64,6 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "invalid report body")
 		return
 	}
-	if len(rep.Hosts) == 0 {
-		// An empty report is valid (an agent may have found nothing alive); ack it.
-		Success(w, reportAck{Accepted: 0})
-		return
-	}
 
 	// The agent's network comes from its token (RequireAgentToken), not the body.
 	agentID, networkID, ok := middleware.GetAgentFromContext(r)
@@ -63,8 +76,32 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	}
 	nid := sql.NullInt64{Int64: *networkID, Valid: true}
 
+	if len(rep.Hosts) == 0 {
+		// An empty report is valid (an agent may have found nothing alive); ack it.
+		Success(w, reportAck{Accepted: 0})
+		return
+	}
+
+	// Anti-entropy: when the agent's state hash matches the last one we saw for
+	// this network, the alive set is unchanged. Skip the per-host device bridge
+	// entirely and only refresh leases (cheap, indexed upserts) so the lease
+	// sweeper's staleness clock keeps ticking. This is the steady-state fast
+	// path: most scan cycles on a stable network change nothing.
+	stateHash := r.Header.Get("X-Network-State-Hash")
+	if stateHash != "" {
+		h.hashMu.Lock()
+		prev := h.lastHash[*networkID]
+		h.hashMu.Unlock()
+		if prev == stateHash {
+			h.runner.RecordAliveSnapshots(r.Context(), nid, 0, hostReportsForLease(rep.Hosts))
+			slog.Debug("agent report: stable network, skipped device bridge",
+				"agent_id", rep.AgentID, "network_id", *networkID, "hosts", len(rep.Hosts))
+			Success(w, reportAck{Accepted: 0, Stable: true})
+			return
+		}
+	}
+
 	added, updated, skipped := 0, 0, 0
-	appliedReports := make([]scannerv2.HostReport, 0, len(rep.Hosts))
 	for _, host := range rep.Hosts {
 		if !host.Alive || host.IP == "" {
 			skipped++
@@ -82,12 +119,23 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		} else if wasUpdated {
 			updated++
 		}
-		appliedReports = append(appliedReports, hr)
 	}
-	// Device-lost detection for this agent's network: a device the agent no
-	// longer reports (absent for >= threshold consecutive reports) is declared
-	// lost. Same grace period as the local-scan path.
-	h.runner.DetectLost(r.Context(), nid, 0, appliedReports, agentID)
+	// Refresh leases for the alive set (resets miss_count, stamps last_seen_at).
+	// Lost detection for agent networks is NO LONGER done per-report (the old
+	// DetectLost call was O(whole network) each time) — the background
+	// LeaseSweeper expires stale agent devices on its own slow ticker.
+	h.runner.RecordAliveSnapshots(r.Context(), nid, 0, hostReportsForLease(rep.Hosts))
+
+	// Cache the hash so the next report can short-circuit if nothing changed.
+	if stateHash != "" {
+		h.hashMu.Lock()
+		h.lastHash[*networkID] = stateHash
+		if h.lastHashAt[*networkID].IsZero() {
+			h.lastHashAt[*networkID] = time.Now().UTC()
+		}
+		h.hashMu.Unlock()
+	}
+
 	slog.Info("agent report received",
 		"agent_id", rep.AgentID, "network_id", *networkID,
 		"hosts", len(rep.Hosts), "added", added, "updated", updated, "skipped", skipped)
@@ -95,10 +143,26 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	Success(w, reportAck{Accepted: added + updated, Added: added, Updated: updated, Skipped: skipped})
 }
 
+// hostReportsForLease converts ReportedHosts to the HostReport slice
+// RecordAliveSnapshots expects. Only the IP/Alive/MAC fields matter for lease
+// refresh (the snapshot upsert keys on (network_id, ip)), so the lightweight
+// conversion in ReportedHostToReport is sufficient.
+func hostReportsForLease(hosts []domain.ReportedHost) []scannerv2.HostReport {
+	out := make([]scannerv2.HostReport, 0, len(hosts))
+	for _, host := range hosts {
+		if !host.Alive || host.IP == "" {
+			continue
+		}
+		out = append(out, runner.ReportedHostToReport(host))
+	}
+	return out
+}
+
 // reportAck is the response to a successful report submission.
 type reportAck struct {
-	Accepted int `json:"accepted"` // added + updated (hosts the center acted on)
-	Added    int `json:"added"`
-	Updated  int `json:"updated"`
-	Skipped  int `json:"skipped"` // dead hosts, missing IP, or apply errors
+	Accepted int  `json:"accepted"` // added + updated (hosts the center acted on)
+	Added    int  `json:"added"`
+	Updated  int  `json:"updated"`
+	Skipped  int  `json:"skipped"` // dead hosts, missing IP, or apply errors
+	Stable   bool `json:"stable"`  // true = state hash matched, device bridge skipped
 }

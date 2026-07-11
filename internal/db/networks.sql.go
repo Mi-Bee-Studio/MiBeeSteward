@@ -96,3 +96,25 @@ func (q *Queries) ListNetworks(ctx context.Context) ([]Network, error) {
 	}
 	return items, nil
 }
+
+const setNetworkAgentID = `-- name: SetNetworkAgentID :exec
+UPDATE networks SET agent_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetNetworkAgentIDParams struct {
+	AgentID *string `json:"agent_id"`
+	ID      int64   `json:"id"`
+}
+
+// Stamp (or clear) the discovering-agent id on a network. Called by the agent-
+// token admin handler: when an admin mints a token bound to a network, the
+// network is marked agent-managed so the center's heartbeat excludes it (the
+// agent's reports ARE the liveness signal) and the lease sweeper scopes to it.
+// Passing an empty string CLEARS the agent_id (used on token revoke/delete).
+// Note: the value is a bind parameter (not a SQL literal), so this is safe from
+// the sqlc SQLite empty-string-literal truncation bug that affects heartbeat.go
+// and lease_sweeper.go (those use raw SQL for that reason).
+func (q *Queries) SetNetworkAgentID(ctx context.Context, arg SetNetworkAgentIDParams) error {
+	_, err := q.db.ExecContext(ctx, setNetworkAgentID, arg.AgentID, arg.ID)
+	return err
+}

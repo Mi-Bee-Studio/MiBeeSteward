@@ -238,6 +238,19 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	changeRecorder := changedetect.NewDBRecorder(scanQueries, changeWatcher, slog.Default())
 	scanRunner.SetChangeRecorder(changeRecorder)
 
+	// Lease sweeper: background expiration of agent-managed devices whose
+	// snapshots have gone stale (the agent stopped reporting them). This
+	// replaces the per-report DetectLost that used to run on every agent POST
+	// (O(whole network) each time). Center-only; scope is agent networks
+	// (networks.agent_id non-empty) — the center's own network keeps using
+	// the local-scan DetectLost path + heartbeat. Stopped in the cleanup
+	// closure below before db.Close().
+	leaseTTL := parseDurationOrDefault(cfg.Scanner.AgentLeaseTTL, 5*time.Minute)
+	leaseSweepInterval := parseDurationOrDefault(cfg.Scanner.LeaseSweepInterval, 60*time.Second)
+	leaseSweepCtx, leaseSweepCancel := context.WithCancel(context.Background())
+	leaseSweeper := scannerv2runner.NewLeaseSweeper(scanRunner, leaseSweepInterval, leaseTTL, slog.Default())
+	leaseSweeper.Start(leaseSweepCtx)
+
 	// Passive discovery service: a long-running, near-zero-traffic watcher that
 	// spots newly-appeared hosts between scheduled scans by diffing router/local
 	// ARP tables and passively listening for mDNS/SSDP. New hosts are fed through
@@ -575,6 +588,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		if scanScheduler != nil {
 			scanScheduler.Stop()
 		}
+		// Stop the lease sweeper BEFORE the DB close — its sweepOnce runs
+		// UPDATE devices + recordDeviceLost (change_log INSERT) and must not
+		// race db.Close().
+		leaseSweepCancel()
 		// Stop the passive discovery sources + coordinator BEFORE the DB close —
 		// the coordinator's known-host pre-check and the sources' walks hold
 		// open DB/SNMP handles that must not race db.Close().
@@ -604,6 +621,19 @@ func chunkSlice[S any](items []S, batchSize int) [][]S {
 		chunks = append(chunks, items[i:end])
 	}
 	return chunks
+}
+
+// parseDurationOrDefault parses a Go duration string, returning def on empty or
+// parse error. Used for optional background-loop timing config keys.
+func parseDurationOrDefault(s string, def time.Duration) time.Duration {
+	if s == "" {
+		return def
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return def
+	}
+	return d
 }
 
 // routerCommunity resolves the SNMP community for cross-subnet ARP walks:

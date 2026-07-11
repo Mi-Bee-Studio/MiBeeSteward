@@ -213,6 +213,15 @@ type ScannerConfig struct {
 	// listens for mDNS/SSDP, and feeds new hosts into the runner's device bridge
 	// (so they get change-detection + heartbeat seeding). See DiscoveryConfig.
 	Discovery DiscoveryConfig `koanf:"discovery"`
+	// AgentLeaseTTL is how long an agent-managed device's snapshot may stay
+	// stale (no agent report refreshing it) before the lease sweeper declares
+	// it lost. Go duration string (e.g. "5m"). Default "5m" — ~10 missed
+	// reports at the agent's 30s cadence, absorbing agent restarts/splits.
+	AgentLeaseTTL string `koanf:"agent_lease_ttl"`
+	// LeaseSweepInterval is how often the background lease sweeper runs the
+	// expiration pass over agent-managed networks. Go duration string. Default
+	// "60s". Center-only; the agent does not run a sweeper.
+	LeaseSweepInterval string `koanf:"lease_sweep_interval"`
 }
 
 // RouterARPConfig configures cross-subnet MAC resolution via SNMP ARP walks of

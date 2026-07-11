@@ -147,3 +147,47 @@ func TestReporter_DisconnectRecovery(t *testing.T) {
 	require.GreaterOrEqual(t, atomic.LoadInt32(&received), int32(1), "pending batch should be delivered after recovery")
 	r.Stop()
 }
+
+// TestReporter_SendsStateHashHeader verifies the reporter computes and sends the
+// X-Network-State-Hash header so the center can anti-entropy skip unchanged
+// networks. Two reports with identical alive sets must produce the SAME hash.
+func TestReporter_SendsStateHashHeader(t *testing.T) {
+	var gotHash string
+	var gotHash2 string
+	var count int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&count, 1)
+		h := r.Header.Get("X-Network-State-Hash")
+		if n == 1 {
+			gotHash = h
+		} else {
+			gotHash2 = h
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	r := agent.NewReporter(srv.URL, "tok", "a", 50*time.Millisecond, 256, nil) // short ticker → reliable flush
+	r.Start(context.Background())
+	hosts := []scannerv2.HostReport{
+		{IP: "10.0.0.5", Alive: true, Device: scannerv2.DeviceRef{IP: "10.0.0.5",
+			Fields: map[string]string{"inferred_type": "camera", "mac": "aa:bb:cc:dd:ee:05"}}},
+	}
+	// Two identical reports → same hash.
+	r.Report(context.Background(), 1, hosts)
+	time.Sleep(120 * time.Millisecond) // let the first ticker flush land
+	r.Report(context.Background(), 1, hosts)
+
+	deadline := time.After(3 * time.Second)
+	for atomic.LoadInt32(&count) < 2 {
+		select {
+		case <-deadline:
+			t.Fatalf("reporter did not flush twice (got %d)", atomic.LoadInt32(&count))
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	r.Stop()
+
+	require.NotEmpty(t, gotHash, "hash header must be sent")
+	require.Equal(t, gotHash, gotHash2, "identical alive sets must produce the same hash")
+}

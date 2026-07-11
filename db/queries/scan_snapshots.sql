@@ -40,3 +40,10 @@ UPDATE scan_snapshots SET miss_count = miss_count + 1 WHERE id = ?;
 -- name: DeleteScanSnapshotsForNetwork :execrows
 -- Remove all snapshots for a network (e.g. when a network is deleted).
 DELETE FROM scan_snapshots WHERE network_id = ?;
+
+-- NOTE: ListStaleAgentSnapshots is intentionally NOT a sqlc query — sqlc's
+-- SQLite parser truncates this query's trailing bytes when it contains a
+-- JOIN on networks + an empty-string literal in the WHERE clause. The query
+-- is defined as raw SQL in internal/service/scannerv2/runner/lease_sweeper.go
+-- (staleAgentSnapshotsSQL) and executed via dbConn.QueryContext, matching the
+-- device_bridge.go pattern for queries sqlc can't handle cleanly.
