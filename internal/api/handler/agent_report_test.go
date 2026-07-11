@@ -70,12 +70,22 @@ func setupAgentIngestServer(t *testing.T) (srv *httptest.Server, db *sql.DB, tok
 
 func postReport(t *testing.T, srv *httptest.Server, token string, body interface{}) (int, map[string]interface{}) {
 	t.Helper()
+	return postReportWithHeader(t, srv, token, "", "", body)
+}
+
+// postReportWithHeader is postReport with an extra header set (used to send
+// X-Network-State-Hash for the anti-entropy hash-skip tests).
+func postReportWithHeader(t *testing.T, srv *httptest.Server, token, header, headerVal string, body interface{}) (int, map[string]interface{}) {
+	t.Helper()
 	b, err := json.Marshal(body)
 	require.NoError(t, err)
 	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/agents/report", bytes.NewReader(b))
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	if header != "" {
+		req.Header.Set(header, headerVal)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -179,4 +189,72 @@ func TestAgentReport_SkipsDeadAndEmptyIP(t *testing.T) {
 	var n int
 	_ = db.QueryRow(`SELECT COUNT(*) FROM devices`).Scan(&n)
 	require.Equal(t, 0, n, "no devices should be inserted for skipped hosts")
+}
+
+// TestAgentReport_HashSkip_StableNetwork verifies the anti-entropy fast path:
+// when the same X-Network-State-Hash arrives twice, the second report skips the
+// device bridge entirely (accepted=0, stable=true) — only the lease is refreshed.
+func TestAgentReport_HashSkip_StableNetwork(t *testing.T) {
+	srv, db, token, _ := setupAgentIngestServer(t)
+	host := domain.ReportedHost{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"}
+	hash := "stable-hash-abc"
+
+	// First report with the hash → full processing (device created).
+	status, out := postReportWithHeader(t, srv, token, "X-Network-State-Hash", hash, domain.AgentReport{
+		AgentID: "agent-62", Hosts: []domain.ReportedHost{host},
+	})
+	require.Equal(t, http.StatusOK, status, "body=%v", out)
+	require.Equal(t, float64(1), out["added"], "first report adds the device")
+
+	// Second report, SAME hash → should skip (stable=true, accepted=0).
+	status2, out2 := postReportWithHeader(t, srv, token, "X-Network-State-Hash", hash, domain.AgentReport{
+		AgentID: "agent-62", Hosts: []domain.ReportedHost{host},
+	})
+	require.Equal(t, http.StatusOK, status2, "body=%v", out2)
+	require.Equal(t, true, out2["stable"], "second identical-hash report should be marked stable")
+	require.Equal(t, float64(0), out2["accepted"], "stable report should skip the device bridge")
+
+	// Still exactly one device (no duplicate created).
+	var n int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address='192.168.62.41'`).Scan(&n)
+	require.Equal(t, 1, n, "stable report must not create a duplicate device")
+}
+
+// TestAgentReport_HashSkip_ChangedNetwork verifies that when the hash CHANGES
+// (network state changed), the handler does full processing and caches the new hash.
+func TestAgentReport_HashSkip_ChangedNetwork(t *testing.T) {
+	srv, db, token, _ := setupAgentIngestServer(t)
+
+	// First report: one host, hash A.
+	postReportWithHeader(t, srv, token, "X-Network-State-Hash", "hash-A", domain.AgentReport{
+		AgentID: "agent-62",
+		Hosts:   []domain.ReportedHost{{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"}},
+	})
+
+	// Second report: a NEW host appears → hash B (different). Full processing.
+	status, out := postReportWithHeader(t, srv, token, "X-Network-State-Hash", "hash-B", domain.AgentReport{
+		AgentID: "agent-62",
+		Hosts: []domain.ReportedHost{
+			{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"},
+			{IP: "192.168.62.42", Alive: true, MAC: "aa:bb:cc:dd:ee:42", InferredType: "server"},
+		},
+	})
+	require.Equal(t, http.StatusOK, status, "body=%v", out)
+	require.Equal(t, float64(1), out["added"], "changed network should process fully (new host 42 added)")
+	require.NotEqual(t, true, out["stable"], "changed network should NOT be marked stable")
+
+	// Third report: same hash B → now stable skip.
+	_, out3 := postReportWithHeader(t, srv, token, "X-Network-State-Hash", "hash-B", domain.AgentReport{
+		AgentID: "agent-62",
+		Hosts: []domain.ReportedHost{
+			{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"},
+			{IP: "192.168.62.42", Alive: true, MAC: "aa:bb:cc:dd:ee:42", InferredType: "server"},
+		},
+	})
+	require.Equal(t, true, out3["stable"], "same hash again → stable skip")
+
+	// Two devices total.
+	var n int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM devices`).Scan(&n)
+	require.Equal(t, 2, n, "exactly two devices after changed-network sequence")
 }

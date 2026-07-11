@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -63,6 +64,19 @@ func (h *AgentAdminHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Mark the network as agent-managed: this is the wiring that makes the
+	// center's heartbeat exclusion (no cross-subnet probing of agent devices)
+	// and the lease sweeper scope engage automatically — without it an admin
+	// would have to run manual SQL. Best-effort: a failure here leaves the
+	// token functional (reports still work); the network just isn't scoped.
+	agentIDStr := req.AgentID
+	if err := h.queries.SetNetworkAgentID(r.Context(), db.SetNetworkAgentIDParams{
+		AgentID: &agentIDStr,
+		ID:      req.NetworkID,
+	}); err != nil {
+		// Log but don't fail — the token is created and usable.
+	}
+
 	Created(w, domain.AgentTokenCreatedResponse{
 		AgentTokenResponse: domain.AgentTokenResponse{
 			ID:         row.ID,
@@ -102,10 +116,17 @@ func (h *AgentAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Revoke handles POST /api/v1/agents/tokens/{id}/revoke — soft-revoke (sets
 // revoked_at). The token immediately fails auth. Kept as a soft delete so the
-// audit trail (last_used_at, created_at) survives.
+// audit trail (last_used_at, created_at) survives. Also clears the network's
+// agent_id so the center resumes local probing (the agent is no longer reporting).
 func (h *AgentAdminHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	id, err := parseAgentID(w, r)
 	if err != nil {
+		return
+	}
+	// Fetch the token first so we can clear its network's agent_id after.
+	tok, err := h.queries.GetAgentToken(r.Context(), id)
+	if err != nil {
+		Error(w, http.StatusNotFound, "agent token not found")
 		return
 	}
 	n, err := h.queries.RevokeAgentToken(r.Context(), id)
@@ -117,14 +138,21 @@ func (h *AgentAdminHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusNotFound, "agent token not found or already revoked")
 		return
 	}
+	h.clearNetworkAgentID(r.Context(), tok)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // Delete handles DELETE /api/v1/agents/tokens/{id} — hard delete. Prefer
-// Revoke for auditability; Delete is for cleanup of test/mistake tokens.
+// Revoke for auditability; Delete is for cleanup of test/mistake tokens. Also
+// clears the network's agent_id.
 func (h *AgentAdminHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := parseAgentID(w, r)
 	if err != nil {
+		return
+	}
+	tok, err := h.queries.GetAgentToken(r.Context(), id)
+	if err != nil {
+		Error(w, http.StatusNotFound, "agent token not found")
 		return
 	}
 	n, err := h.queries.DeleteAgentToken(r.Context(), id)
@@ -136,7 +164,32 @@ func (h *AgentAdminHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusNotFound, "agent token not found")
 		return
 	}
+	h.clearNetworkAgentID(r.Context(), tok)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// clearNetworkAgentID nulls out the agent_id on the token's bound network,
+// but ONLY if it matches the token's own agent_id (so revoking a stale token
+// doesn't clobber a newer token that re-uses the network). Best-effort: a
+// failure here doesn't undo the revoke/delete.
+func (h *AgentAdminHandler) clearNetworkAgentID(ctx context.Context, tok db.AgentToken) {
+	if tok.NetworkID == nil {
+		return
+	}
+	net, err := h.queries.GetNetwork(ctx, *tok.NetworkID)
+	if err != nil {
+		return
+	}
+	// Only clear if the network's agent_id matches THIS token's agent_id — a
+	// different agent_id means a newer token has since claimed the network.
+	if net.AgentID == nil || *net.AgentID != tok.AgentID {
+		return
+	}
+	empty := ""
+	_ = h.queries.SetNetworkAgentID(ctx, db.SetNetworkAgentIDParams{
+		AgentID: &empty,
+		ID:      *tok.NetworkID,
+	})
 }
 
 // parseAgentID extracts the {id} path param as a positive int64.

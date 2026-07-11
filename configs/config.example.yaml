@@ -159,6 +159,15 @@ scanner:
     # port is unavailable the source disables itself without crashing.
     multicast:
       enabled: true
+  # ── Agent lease (distributed model) ───────────────────────────────────────
+  # Agent-managed devices (networks with agent_id set) are kept online by their
+  # agent's reports — the center does NOT probe them locally (cross-subnet ICMP
+  # would always fail and flap them offline). The report refreshes a per-device
+  # lease; if an agent stops reporting a host, the lease sweeper below expires
+  # it (marks offline + emits device_lost). Only agent networks are swept; the
+  # center's own network uses the local-scan DetectLost path + heartbeat.
+  agent_lease_ttl: "5m"        # how long a snapshot may be stale before expiring
+  lease_sweep_interval: "60s"  # how often the expiration sweep runs
 # ── Retention (data-volume management) ─────────────────────────────────────
 # The retention sweeper runs every sweep_interval_hours and prunes each
 # high-volume detail table in batches of batch_size rows (batching avoids

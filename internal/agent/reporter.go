@@ -8,9 +8,12 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -166,7 +169,13 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 		r.logger.Warn("agent reporter: marshal failed, dropping batch", "hosts", len(hosts), "error", err)
 		return
 	}
-	if !r.postWithRetry(ctx, body, len(hosts)) {
+	// Anti-entropy: a digest of the alive set's identity+classification fields.
+	// The center compares it to the last hash it saw for this agent; when they
+	// match the network is stable and the center skips the expensive per-host
+	// device bridge (it still refreshes leases). The field set mirrors
+	// changedetect.DeviceSnapshot so "nothing changed" == "same hash".
+	hash := networkStateHash(hosts)
+	if !r.postWithRetry(ctx, body, len(hosts), hash) {
 		// Exhausted retries — enqueue for later delivery instead of dropping.
 		r.enqueuePending(body)
 	}
@@ -187,7 +196,7 @@ func (r *Reporter) flushPending(ctx context.Context) {
 
 	remaining := batches[:0]
 	for _, body := range batches {
-		if r.postWithRetry(ctx, body, -1) { // -1 = pending batch (count unknown)
+		if r.postWithRetry(ctx, body, -1, "") { // -1 = pending batch (count unknown, no hash)
 			continue
 		}
 		remaining = append(remaining, body)
@@ -223,10 +232,16 @@ func (r *Reporter) FlushPendingForTest() {
 }
 
 // postWithRetry sends one JSON body to the center with up to 4 attempts
-// (1s/2s/4s/8s backoff). Returns true on success, false if exhausted/cancelled.
+// (1s/2s/4s/8s backoff). stateHash, when non-empty, is sent as the
+// X-Network-State-Hash header so the center can skip the expensive per-host
+// device bridge when the network is unchanged since the last report. Pending
+// batches (retries of previously-failed posts) pass an empty hash: a stale
+// hash could mask a state change that happened between the original attempt
+// and the retry, so re-delivery always forces full processing (conservative).
+// Returns true on success, false if exhausted/cancelled.
 // 4xx (except 429) is terminal-failure (bad token) — returns true to avoid
 // re-queueing an unrecoverable payload.
-func (r *Reporter) postWithRetry(ctx context.Context, body []byte, hostCount int) bool {
+func (r *Reporter) postWithRetry(ctx context.Context, body []byte, hostCount int, stateHash string) bool {
 	url := r.centerURL + "/api/v1/agents/report"
 	backoff := time.Second
 	for attempt := 1; ; attempt++ {
@@ -237,6 +252,9 @@ func (r *Reporter) postWithRetry(ctx context.Context, body []byte, hostCount int
 		}
 		req.Header.Set("Authorization", "Bearer "+r.authToken)
 		req.Header.Set("Content-Type", "application/json")
+		if stateHash != "" {
+			req.Header.Set("X-Network-State-Hash", stateHash)
+		}
 
 		resp, err := r.client.Do(req)
 		if err == nil {
@@ -326,6 +344,47 @@ func firstNonEmptyStr(vs ...string) string {
 		}
 	}
 	return ""
+}
+
+// networkStateHash computes a SHA-256 digest of the alive set's
+// identity+classification fields. It is the anti-entropy digest the center
+// compares across reports: when the hash is unchanged the network is stable
+// and the center skips the per-host device bridge, refreshing only leases.
+//
+// Field set mirrors changedetect.DeviceSnapshot (the fields the center's
+// change detector treats as "a real change"): identity (ip+mac), inferred
+// type/brand/description/location, hostname, and the raw service/port JSON.
+// Deliberately excludes scanned_at (changes every report) and rtt_ms (jitters).
+// Hosts are sorted by IP so the hash is order-independent.
+func networkStateHash(hosts []domain.ReportedHost) string {
+	if len(hosts) == 0 {
+		return ""
+	}
+	sorted := make([]domain.ReportedHost, len(hosts))
+	copy(sorted, hosts)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].IP < sorted[j].IP })
+	h := sha256.New()
+	for _, host := range sorted {
+		h.Write([]byte(host.IP))
+		h.Write([]byte{0})
+		h.Write([]byte(host.MAC))
+		h.Write([]byte{0})
+		h.Write([]byte(host.InferredType))
+		h.Write([]byte{0})
+		h.Write([]byte(host.InferredBrand))
+		h.Write([]byte{0})
+		h.Write([]byte(host.InferredDescription))
+		h.Write([]byte{0})
+		h.Write([]byte(host.InferredLocation))
+		h.Write([]byte{0})
+		h.Write([]byte(host.Hostname))
+		h.Write([]byte{0})
+		h.Write([]byte(host.OpenPorts))
+		h.Write([]byte{0})
+		h.Write([]byte(host.DetectedServices))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Compile-time check that Reporter satisfies the runner.ReportSink signature.

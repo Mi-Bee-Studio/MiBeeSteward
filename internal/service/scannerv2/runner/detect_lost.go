@@ -43,31 +43,10 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 		return
 	}
 	netID := networkID.Int64
-	now := time.Now().UTC()
 
-	// 1. Build the alive IP set + upsert snapshots for alive hosts.
-	aliveIPs := make(map[string]bool, len(reports))
-	for _, rep := range reports {
-		if !rep.Alive || rep.IP == "" {
-			continue
-		}
-		aliveIPs[rep.IP] = true
-		mac := reportMAC(rep)
-		var taskIDPtr *int64
-		if taskID > 0 {
-			t := taskID
-			taskIDPtr = &t
-		}
-		if err := rn.queries.UpsertScanSnapshot(ctx, db.UpsertScanSnapshotParams{
-			NetworkID:  netID,
-			TaskID:     taskIDPtr,
-			Ip:         rep.IP,
-			Mac:        mac,
-			LastSeenAt: now,
-		}); err != nil {
-			rn.logger.Warn("detect-lost: upsert snapshot failed", "ip", rep.IP, "error", err)
-		}
-	}
+	// 1. Upsert snapshots for alive hosts (resets miss_count, refreshes
+	//    last_seen_at) and build the alive IP set for the set difference.
+	aliveIPs := rn.RecordAliveSnapshots(ctx, networkID, taskID, reports)
 
 	// 2. Increment miss_count for snapshots NOT in the alive set.
 	snaps, err := rn.queries.ListSnapshotsForNetwork(ctx, netID)
@@ -96,6 +75,7 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 	if len(lost) == 0 {
 		return
 	}
+	now := time.Now().UTC()
 	nid := netID
 	var nidPtr *int64
 	{
@@ -117,6 +97,48 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 		slog.Info("detect-lost: devices declared lost",
 			"network_id", netID, "count", len(lost), "threshold", lostThreshold)
 	}
+}
+
+// RecordAliveSnapshots upserts a scan snapshot for every alive host in reports
+// (resets miss_count to 0, refreshes last_seen_at) and returns the set of alive
+// IPs for the caller's set-difference. It is step 1 of DetectLost, extracted so
+// the agent-report ingestion path can refresh leases WITHOUT running the
+// expensive O(whole-network) miss-counting + lost-emission that DetectLost does.
+//
+// On the agent→center path the handler calls this directly (cheap: one indexed
+// upsert per alive host) and defers lost detection to the background lease
+// sweeper (lease_sweeper.go). The local-scan path still calls DetectLost, which
+// internally delegates here for step 1.
+//
+// Returns nil (no-op) when networkID is invalid — mirrors DetectLost's guard.
+func (rn *Runner) RecordAliveSnapshots(ctx context.Context, networkID sql.NullInt64, taskID int64, reports []scannerv2.HostReport) map[string]bool {
+	aliveIPs := make(map[string]bool, len(reports))
+	if !networkID.Valid {
+		return aliveIPs
+	}
+	now := time.Now().UTC()
+	for _, rep := range reports {
+		if !rep.Alive || rep.IP == "" {
+			continue
+		}
+		aliveIPs[rep.IP] = true
+		mac := reportMAC(rep)
+		var taskIDPtr *int64
+		if taskID > 0 {
+			t := taskID
+			taskIDPtr = &t
+		}
+		if err := rn.queries.UpsertScanSnapshot(ctx, db.UpsertScanSnapshotParams{
+			NetworkID:  networkID.Int64,
+			TaskID:     taskIDPtr,
+			Ip:         rep.IP,
+			Mac:        mac,
+			LastSeenAt: now,
+		}); err != nil {
+			rn.logger.Warn("record-alive-snapshots: upsert failed", "ip", rep.IP, "error", err)
+		}
+	}
+	return aliveIPs
 }
 
 // recordDeviceLost emits a device_lost event (before_data = device snapshot,
