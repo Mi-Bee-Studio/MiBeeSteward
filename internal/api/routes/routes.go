@@ -269,7 +269,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		dbConn, networkID, slog.Default(),
 	)
 	var discCancel context.CancelFunc
+	// discSvcForStatus carries the discovery service to the status endpoint.
+	// nil when the service was never started (discovery disabled) — the handler
+	// then reports enabled=false. Declared here so the route registration below
+	// (outside the if-block) can reference it.
+	var discSvcForStatus *scannerv2discovery.Service
 	if cfg.Scanner.Discovery.Enabled {
+		discSvcForStatus = discSvc
 		discCtx, cancel := context.WithCancel(context.Background())
 		discCancel = cancel
 		discSvc.Start(discCtx)
@@ -277,6 +283,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		if interval <= 0 {
 			interval = 60 * time.Second
 		}
+		var activeSources []string
 		// router_arp: the widest-coverage source. One SNMP Walk per router per
 		// interval; no-op when no routers are configured.
 		if cfg.Scanner.Discovery.RouterARP.Enabled {
@@ -287,22 +294,24 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 				interval, discSvc, slog.Default(),
 			)
 			routerARPSrc.Start(discCtx)
+			activeSources = append(activeSources, "router_arp")
 		}
 		// arp_cache: free byproduct of normal operation (reads /proc/net/arp).
 		if cfg.Scanner.Discovery.ARPCache.Enabled {
 			arpCacheSrc := scannerv2discovery.NewARPCacheSource(interval, discSvc, slog.Default())
 			arpCacheSrc.Start(discCtx)
+			activeSources = append(activeSources, "arp_cache")
 		}
 		// multicast: passive mDNS/SSDP listener (zero outbound traffic).
 		if cfg.Scanner.Discovery.Multicast.Enabled {
 			mcastSrc := scannerv2discovery.NewMulticastSource(discSvc, slog.Default())
 			mcastSrc.Start(discCtx)
+			activeSources = append(activeSources, "multicast")
 		}
+		discSvc.SetSources(activeSources)
 		slog.Info("scannerv2 passive discovery ready",
 			"interval", interval.String(),
-			"router_arp", cfg.Scanner.Discovery.RouterARP.Enabled,
-			"arp_cache", cfg.Scanner.Discovery.ARPCache.Enabled,
-			"multicast", cfg.Scanner.Discovery.Multicast.Enabled,
+			"sources", activeSources,
 			"trigger_identify", cfg.Scanner.Discovery.TriggerIdentify)
 	}
 
@@ -407,6 +416,15 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Use(middleware.RequireAuth)
 		r.Get("/", changeLogHandler.List)
 		r.Get("/watch", changeWatchHandler.Watch)
+	})
+
+	// Passive discovery status: runtime counters (events received, dedup hits,
+	// identify triggers, devices recorded) + the last few discovery outcomes +
+	// which sources are active. Auth-gated (any logged-in user). Returns
+	// enabled=false when discovery is off or the service was never started.
+	r.Route("/api/v1/discovery", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/status", handler.DiscoveryStatusHandler(discSvcForStatus))
 	})
 
 	// --- Scanner background services (v2) ---

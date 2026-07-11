@@ -112,7 +112,40 @@ type Service struct {
 	// already handled this IP in the last few minutes?".
 	recent   map[string]time.Time
 	recentMu sync.Mutex
+
+	// Observable runtime counters (atomic — read by the status endpoint from a
+	// different goroutine than the consumer loop that writes them). These make
+	// the service's internal behavior queryable without scraping logs.
+	stats      statsSnapshot
+	statsMu    sync.RWMutex
+	startedAt  time.Time
+	lastEvents []recentEvent // ring of the most-recent handled events (status endpoint)
+	sources    []string      // names of active discovery sources (for status endpoint)
 }
+
+// statsSnapshot holds the cumulative counters surfaced by Status(). They are
+// written under statsMu (handle runs on the single consumer goroutine) and read
+// by the status endpoint, so a RWMutex is sufficient — no atomics needed.
+type statsSnapshot struct {
+	EventsReceived   int64 // total events pushed into the consumer
+	SuppressedRecent int64 // dropped by the 5-min memory dedup
+	KnownHostSkipped int64 // dropped by the DB pre-check (already tracked)
+	IdentifyTriggered int64 // single-IP identify scan ran
+	IdentifyAlive    int64 // identify scan found the host alive
+	IdentifyDead     int64 // identify scan found host unresponsive (synthesized instead)
+	DeviceRecorded   int64 // sink.Apply created a new device
+}
+
+// recentEvent is one entry in the status endpoint's "last N discoveries" ring.
+type recentEvent struct {
+	IP        string    `json:"ip"`
+	MAC       string    `json:"mac,omitempty"`
+	Source    string    `json:"source"`
+	Outcome   string    `json:"outcome"` // "recorded" | "skipped_known" | "skipped_recent" | "identify_failed"
+	At        time.Time `json:"at"`
+}
+
+const maxRecentEvents = 20
 
 const dedupTTL = 5 * time.Minute
 
@@ -149,6 +182,7 @@ func (s *Service) Start(ctx context.Context) {
 	}
 	ctx, s.cancel = context.WithCancel(ctx)
 	s.done = make(chan struct{})
+	s.startedAt = time.Now()
 	go s.loop(ctx)
 }
 
@@ -198,12 +232,21 @@ func (s *Service) loop(ctx context.Context) {
 
 // handle processes one event: dedup against recent memory + the device DB, then
 // either run a single-IP identify scan or synthesize a minimal report, and feed
-// it to the sink.
+// it to the sink. Each decision point increments an observable counter so the
+// status endpoint can explain what the service is doing without log scraping.
 func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 	if ev.IP == "" {
 		return
 	}
+	s.statsMu.Lock()
+	s.stats.EventsReceived++
+	s.statsMu.Unlock()
+
 	if s.seenRecently(ev.IP) {
+		s.statsMu.Lock()
+		s.stats.SuppressedRecent++
+		s.statsMu.Unlock()
+		s.recordEvent(ev, "skipped_recent")
 		return
 	}
 	// Mark as recently-handled regardless of outcome so a repeated burst doesn't
@@ -215,9 +258,14 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 		// On query error, assume known to avoid a noisy identify storm — the next
 		// scheduled full scan will reconcile. Log for visibility.
 		s.logger.Warn("discovery: known-host pre-check failed; skipping", "ip", ev.IP, "error", err)
+		s.recordEvent(ev, "skipped_known")
 		return
 	}
 	if known {
+		s.statsMu.Lock()
+		s.stats.KnownHostSkipped++
+		s.statsMu.Unlock()
+		s.recordEvent(ev, "skipped_known")
 		return // already in the device DB — not new
 	}
 
@@ -225,6 +273,9 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 
 	var rep scannerv2.HostReport
 	if s.cfg.TriggerIdentify && s.ident != nil {
+		s.statsMu.Lock()
+		s.stats.IdentifyTriggered++
+		s.statsMu.Unlock()
 		if r, alive := s.ident.Identify(ctx, ev.IP); alive {
 			rep = r
 			// If the source carried a MAC the identify scan might not have
@@ -232,19 +283,92 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 			// matches across roamers.
 			rep = foldMAC(rep, ev.MAC)
 			rep = foldHints(rep, ev.Hints)
+			s.statsMu.Lock()
+			s.stats.IdentifyAlive++
+			s.statsMu.Unlock()
 		} else {
 			// Host was ARP-seen but didn't respond to the active probes (firewalled
 			// ICMP, scan raced ahead of boot). Record it minimally so it's at least
 			// tracked, rather than silently dropping the sighting.
 			rep = synthesizeReport(ev)
+			s.statsMu.Lock()
+			s.stats.IdentifyDead++
+			s.statsMu.Unlock()
 		}
 	} else {
 		rep = synthesizeReport(ev)
 	}
 
-	if isNew := s.sink.Apply(ctx, rep); isNew {
+	isNew := s.sink.Apply(ctx, rep)
+	if isNew {
+		s.statsMu.Lock()
+		s.stats.DeviceRecorded++
+		s.statsMu.Unlock()
 		s.logger.Info("discovery: device recorded", "ip", ev.IP, "source", ev.Source)
+		s.recordEvent(ev, "recorded")
+	} else {
+		s.recordEvent(ev, "identify_failed")
 	}
+}
+
+// StatusResponse is the JSON shape returned by the status endpoint. It makes
+// the discovery service's internal behavior observable: which sources are
+// running, what they've found, and how the dedup/identify pipeline is
+// performing — without requiring log scraping.
+type StatusResponse struct {
+	Enabled        bool         `json:"enabled"`
+	StartedAt      time.Time    `json:"started_at"`
+	Uptime         string       `json:"uptime"`
+	Config         Config       `json:"config"`
+	Sources        []string     `json:"sources"`
+	Stats          statsSnapshot `json:"stats"`
+	RecentDiscoveries []recentEvent `json:"recent_discoveries"`
+}
+
+// Status returns a snapshot of the service's runtime state for the status
+// endpoint. Safe to call from any goroutine (RWMutex-guarded).
+func (s *Service) Status() StatusResponse {
+	s.statsMu.RLock()
+	defer s.statsMu.RUnlock()
+	resp := StatusResponse{
+		Enabled:           s.cancel != nil,
+		StartedAt:         s.startedAt,
+		Config:            s.cfg,
+		Stats:             s.stats,
+		Sources:           append([]string(nil), s.sources...),
+		RecentDiscoveries: append([]recentEvent(nil), s.lastEvents...),
+	}
+	if !s.startedAt.IsZero() {
+		resp.Uptime = time.Since(s.startedAt).Round(time.Second).String()
+	}
+	return resp
+}
+
+// recordEvent appends to the recent-events ring (for the status endpoint).
+// Called only from the single consumer goroutine, but guarded by statsMu for
+// the concurrent Status() read.
+func (s *Service) recordEvent(ev NewHostEvent, outcome string) {
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+	s.lastEvents = append(s.lastEvents, recentEvent{
+		IP:      ev.IP,
+		MAC:     ev.MAC,
+		Source:  ev.Source,
+		Outcome: outcome,
+		At:      time.Now(),
+	})
+	// Trim to the ring size, keeping the most recent.
+	if len(s.lastEvents) > maxRecentEvents {
+		s.lastEvents = s.lastEvents[len(s.lastEvents)-maxRecentEvents:]
+	}
+}
+
+// SetSources records which discovery sources are active, for the status
+// endpoint. Called by the wiring layer (routes.go) after starting sources.
+func (s *Service) SetSources(names []string) {
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+	s.sources = append([]string(nil), names...)
 }
 
 // isKnownHost reports whether the host is already tracked. The lookup mirrors

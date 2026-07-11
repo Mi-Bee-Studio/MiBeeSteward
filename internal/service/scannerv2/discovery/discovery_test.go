@@ -349,3 +349,61 @@ func TestParseSSDPHints(t *testing.T) {
 		})
 	}
 }
+
+// --- Status endpoint counters ---
+
+func TestStatus_CountersTrackPipeline(t *testing.T) {
+	svc, sink, _, dbConn := newTestService(t, false)
+	svc.SetSources([]string{"router_arp", "arp_cache"})
+
+	// Emit a known host → should bump KnownHostSkipped.
+	_, _ = dbConn.Exec(`INSERT INTO devices (name, ip_address, mac_address, status) VALUES ('known', '10.0.0.30', 'aa:bb:cc:dd:ee:ff', 'online')`)
+	svc.Emit(NewHostEvent{IP: "10.0.0.30", MAC: "aa:bb:cc:dd:ee:ff", Source: "router_arp"})
+	time.Sleep(150 * time.Millisecond)
+
+	// Emit the same known host again → recent-dedup should bump SuppressedRecent.
+	svc.Emit(NewHostEvent{IP: "10.0.0.30", MAC: "aa:bb:cc:dd:ee:ff", Source: "arp_cache"})
+	time.Sleep(150 * time.Millisecond)
+
+	// Emit a genuinely new host → should bump DeviceRecorded.
+	svc.Emit(NewHostEvent{IP: "10.0.0.40", MAC: "11:22:33:44:55:66", Source: "arp_cache"})
+	time.Sleep(150 * time.Millisecond)
+
+	st := svc.Status()
+	if st.Stats.KnownHostSkipped != 1 {
+		t.Errorf("KnownHostSkipped: expected 1, got %d", st.Stats.KnownHostSkipped)
+	}
+	if st.Stats.SuppressedRecent != 1 {
+		t.Errorf("SuppressedRecent: expected 1, got %d", st.Stats.SuppressedRecent)
+	}
+	if st.Stats.DeviceRecorded != 1 {
+		t.Errorf("DeviceRecorded: expected 1, got %d", st.Stats.DeviceRecorded)
+	}
+	if st.Stats.EventsReceived < 3 {
+		t.Errorf("EventsReceived: expected ≥3, got %d", st.Stats.EventsReceived)
+	}
+	// Sources should reflect what SetSources recorded.
+	if len(st.Sources) != 2 || st.Sources[0] != "router_arp" {
+		t.Errorf("Sources: expected [router_arp arp_cache], got %v", st.Sources)
+	}
+	// Recent discoveries ring should have entries (recorded + skipped).
+	if len(st.RecentDiscoveries) == 0 {
+		t.Error("RecentDiscoveries: expected non-empty, got 0")
+	}
+	// sink count: only the genuinely-new host applied (known + dedup skipped).
+	if sink.count() != 1 {
+		t.Errorf("sink Apply: expected 1 (only new host), got %d", sink.count())
+	}
+}
+
+func TestStatus_DisabledServiceReturnsEnabledFalse(t *testing.T) {
+	// A Service that was constructed but never Started should report enabled=false.
+	svc := New(Config{Interval: time.Second}, &fakeSink{}, nil, nil, 0, nil)
+	st := svc.Status()
+	if st.Enabled {
+		t.Error("expected Enabled=false for a never-started service")
+	}
+	if st.Uptime != "" {
+		t.Errorf("expected empty Uptime for unstarted service, got %q", st.Uptime)
+	}
+}
