@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -153,10 +154,17 @@ func main() {
 	}
 	slog.Info("http server timeouts", "read", readTO, "write", writeTO, "idle", idleTO)
 
-	// Start server in goroutine
+	// Start server in goroutine. A bare ListenAndServe that exits on bind error
+	// is dangerous under systemd Restart=always: if the previous process's TCP
+	// socket hasn't fully released (TIME_WAIT / kernel cleanup lag — common right
+	// after a crash or SIGTERM), the new process hits "bind: address already in
+	// use", exits 1, systemd restarts it 5s later, it fails again, and the cycle
+	// repeats hundreds of times (observed 625 restarts on the test VM). A short
+	// retry window lets the port release so one transient failure doesn't become
+	// a restart storm.
 	go func() {
 		slog.Info("listening", "address", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := listenAndServeWithRetry(srv); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "error", err)
 			os.Exit(1)
 		}
@@ -684,4 +692,55 @@ func parseDurationOrDefault(s string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// listenAndServeWithRetry wraps http.Server.ListenAndServe with a bounded retry
+// for the "address already in use" error. Under systemd Restart=always, a bare
+// ListenAndServe that exits on bind failure causes a restart storm: the
+// previous process's socket lingers in TIME_WAIT, each new attempt fails within
+// milliseconds, and systemd dutifully restarts it every RestartSec — hundreds
+// of cycles before the kernel finally releases the port. The retry holds the
+// process alive for up to bindRetryDeadline (spanning several RestartSec windows
+// is unnecessary because the retry itself buys the time) so the port can
+// release in-process, converting a storm into a single delayed start.
+//
+// Only EADDRINUSE is retried — other errors (bad config, permission denied) are
+// real failures that should surface immediately.
+func listenAndServeWithRetry(srv *http.Server) error {
+	const (
+		bindRetryDeadline = 30 * time.Second
+		bindRetryInterval = 1 * time.Second
+	)
+	deadline := time.Now().Add(bindRetryDeadline)
+	for {
+		err := srv.ListenAndServe()
+		if err == http.ErrServerClosed {
+			return err
+		}
+		if err == nil {
+			return nil
+		}
+		// Retry only on "address already in use" — the one transient bind error
+		// that resolves itself as the kernel releases the lingering socket.
+		if !isAddrInUse(err) {
+			return err
+		}
+		if time.Now().After(deadline) {
+			slog.Error("server: bind retry deadline exceeded", "addr", srv.Addr, "error", err)
+			return err
+		}
+		slog.Warn("server: bind failed (address in use), retrying",
+			"addr", srv.Addr, "retry_in", bindRetryInterval, "error", err)
+		time.Sleep(bindRetryInterval)
+	}
+}
+
+// isAddrInUse reports whether err is an "address already in use" bind error.
+// On Linux this surfaces as syscall.EADDRINUSE inside a *net.OpError.
+func isAddrInUse(err error) bool {
+	var sysErr *os.SyscallError
+	if errors.As(err, &sysErr) {
+		return sysErr.Err == syscall.EADDRINUSE
+	}
+	return false
 }
