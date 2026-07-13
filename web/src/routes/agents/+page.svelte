@@ -2,8 +2,7 @@
 	import { api } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
 	import { m } from '$lib/i18n-paraglide';
-	import { onMount } from 'svelte';
-	import { get } from 'svelte/store';
+	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { addToast } from '$lib/stores/toast';
 
@@ -14,7 +13,7 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { Bot as BotIcon } from '@lucide/svelte';
 
-	import type { AgentToken, AgentTokenCreated, Network } from '$lib/types';
+	import type { AgentToken, AgentTokenCreated, AgentCommand, Network } from '$lib/types';
 
 	// --- State ---
 	let tokens = $state<AgentToken[]>([]);
@@ -22,12 +21,15 @@
 	let loading = $state(true);
 	let error = $state('');
 
-	// Auth
-	let authState = $state<{ user: { username: string; role: string } | null; token: string | null }>({
-		user: null,
-		token: null
-	});
-	let isAdmin = $derived(authState.user?.role === 'admin');
+	// --- Command history ---
+	let commands = $state<AgentCommand[]>([]);
+	let commandsTotal = $state(0);
+	let commandsLoading = $state(false);
+	let commandsExpandedId = $state<number | null>(null);
+	let commandPollTimer: ReturnType<typeof setInterval> | null = null;
+
+	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
+	let isAdmin = $derived($auth.user?.role === 'admin');
 
 	// Network name lookup map
 	let networkNames = $derived.by(() => {
@@ -57,13 +59,30 @@
 	let scanLoading = $state(false);
 
 	onMount(() => {
-		const unsub = auth.subscribe((v) => { authState = v; });
-		if (get(auth).token) {
-			fetchTokens();
-			fetchNetworks();
-		}
-		return unsub;
+		fetchTokens();
+		fetchNetworks();
+		fetchCommands();
+		// Poll the command queue so the admin sees status transitions
+		// (pending → acknowledged → done/failed) without a manual refresh.
+		commandPollTimer = setInterval(fetchCommands, 10000);
 	});
+
+	onDestroy(() => {
+		if (commandPollTimer) clearInterval(commandPollTimer);
+	});
+
+	async function fetchCommands() {
+		commandsLoading = true;
+		try {
+			const res = await api.get<{ commands: AgentCommand[]; total: number }>('/agents/commands/all?limit=30');
+			commands = res.commands || [];
+			commandsTotal = res.total || 0;
+		} catch {
+			// Non-critical — the command panel just stays empty.
+		} finally {
+			commandsLoading = false;
+		}
+	}
 
 	async function fetchTokens() {
 		loading = true;
@@ -156,11 +175,12 @@
 		scanLoading = true;
 		try {
 			await api.post(`/agents/${scanAgentId}/commands/`, {
-				command: 'scan',
-				payload: { targets: scanTargets, timeout: scanTimeout }
-			});
-			scanModalOpen = false;
-			addToast('success', (m['agents.Scan Triggered']?.() ?? 'Scan command queued for {agentId}').replace('{agentId}', scanAgentId));
+					command: 'scan',
+					payload: { targets: scanTargets, timeout: scanTimeout }
+				});
+				scanModalOpen = false;
+				addToast('success', (m['agents.Scan Triggered']?.() ?? 'Scan command queued for {agentId}').replace('{agentId}', scanAgentId));
+				fetchCommands();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
 		} finally {
@@ -270,9 +290,82 @@
 			}
 		}
 	]);
+
+	// --- Command status helper ---
+	function commandStatusBadge(status: string): { label: string; cls: string } {
+		switch (status) {
+			case 'pending': return { label: 'Pending', cls: 'bg-warning/10 text-warning' };
+			case 'acknowledged': return { label: 'Acknowledged', cls: 'bg-accent/10 text-accent' };
+			case 'done': return { label: 'Done', cls: 'bg-success/10 text-success' };
+			case 'failed': return { label: 'Failed', cls: 'bg-error/10 text-error' };
+			default: return { label: status, cls: 'bg-surface text-text-muted border border-border' };
+		}
+	}
+
+	function prettyJson(raw: string | null | undefined): string {
+		if (!raw) return '';
+		try {
+			return JSON.stringify(JSON.parse(raw), null, 2);
+		} catch {
+			return raw;
+		}
+	}
+
+	// --- Command history columns ---
+	const commandColumns = $derived([
+		{
+			key: '_expand',
+			label: '',
+			sortable: false,
+			render: (row: Record<string, unknown>) => {
+				const id = row.id as number;
+				const isOpen = commandsExpandedId === id;
+				return `<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
+					+ `<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
+					+ `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
+			}
+		},
+		{
+			key: 'agent_id',
+			label: m['agents.Agent ID']?.() ?? 'Agent',
+			sortable: true,
+			render: (row: Record<string, unknown>) =>
+				`<span class="font-mono text-xs text-text">${String(row.agent_id)}</span>`
+		},
+		{
+			key: 'command',
+			label: 'Command',
+			render: (row: Record<string, unknown>) =>
+				`<span class="font-mono text-xs text-text">${String(row.command)}</span>`
+		},
+		{
+			key: 'status',
+			label: 'Status',
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const s = commandStatusBadge(String(row.status));
+				return `<span class="text-xs px-2 py-0.5 rounded-full font-mono ${s.cls}">${s.label}</span>`;
+			}
+		},
+		{
+			key: 'created_at',
+			label: 'Created',
+			sortable: true,
+			render: (row: Record<string, unknown>) =>
+				`<span class="text-text-muted text-xs">${formatTime(row.created_at as string)}</span>`
+		},
+		{
+			key: 'acknowledged_at',
+			label: 'Acknowledged',
+			render: (row: Record<string, unknown>) => {
+				const v = row.acknowledged_at as string | null | undefined;
+				return `<span class="text-text-muted text-xs">${v ? formatTime(v) : '-'}</span>`;
+			}
+		}
+	]);
 </script>
 
-{#if !authState.token}
+{#if !$auth.token}
 	<div class="p-6 text-center text-text-muted">
 		<p>{m["errors.Unauthorized Desc"]()}</p>
 		<a href="/login" class="text-primary hover:underline text-sm mt-2 inline-block">{m["navigation.Login"]()}</a>
@@ -332,9 +425,68 @@
 					emptyTitle={m['agents.No Tokens']?.() ?? 'No agent tokens'}
 				/>
 			</div>
+			</div>
+		{/if}
+
+		<!-- Command History (center → agent command queue) -->
+		<div class="mt-8">
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="text-lg font-semibold text-text">
+					{m['agents.Command History']?.() ?? 'Command History'}
+					<span class="text-text-muted font-normal text-sm">({commandsTotal})</span>
+				</h3>
+				<button
+					onclick={fetchCommands}
+					class="px-3 py-1.5 border border-border text-text-muted rounded-lg
+						hover:border-primary hover:text-primary transition-colors text-xs"
+				>
+					{m["dashboard.Refresh"]()}
+				</button>
+			</div>
+
+			{#if commands.length === 0 && !commandsLoading}
+				<div class="bg-surface border border-border rounded-lg p-4 text-center">
+					<p class="text-sm text-text-muted">{m['agents.No Commands']?.() ?? 'No commands sent. Trigger a scan on an agent above to enqueue one.'}</p>
+				</div>
+			{:else}
+				<div class="bg-surface border border-border rounded-lg p-4">
+					<div onclick={(e) => {
+						const btn = (e.target as HTMLElement).closest('[data-action="expand"]') as HTMLElement | null;
+						if (btn) {
+							const id = Number(btn.dataset.id);
+							commandsExpandedId = commandsExpandedId === id ? null : id;
+						}
+					}}>
+						<DataTable
+							columns={commandColumns}
+							rows={commands as unknown as Record<string, unknown>[]}
+							searchableKeys={['agent_id', 'command', 'status']}
+							emptyTitle={m['agents.No Commands']?.() ?? 'No commands'}
+							expandedRowId={commandsExpandedId ?? undefined}
+						>
+							{#snippet expandedContent(row)}
+								{@const cmd = commands.find((c) => c.id === row.id)}
+								<div class="border-t border-border bg-bg/40 px-6 py-4 space-y-3">
+									{#if cmd?.payload}
+										<div>
+											<span class="text-[10px] text-text-muted uppercase tracking-wide">Payload</span>
+											<pre class="text-xs text-text bg-bg/50 border border-border rounded p-2 mt-1 overflow-x-auto whitespace-pre-wrap break-all max-h-40">{prettyJson(cmd.payload)}</pre>
+										</div>
+									{/if}
+									{#if cmd?.result}
+										<div>
+											<span class="text-[10px] text-text-muted uppercase tracking-wide">Result</span>
+											<pre class="text-xs text-text bg-bg/50 border border-border rounded p-2 mt-1 overflow-x-auto whitespace-pre-wrap break-all max-h-40">{prettyJson(cmd.result)}</pre>
+										</div>
+									{/if}
+								</div>
+							{/snippet}
+						</DataTable>
+					</div>
+				</div>
+			{/if}
 		</div>
-	{/if}
-</div>
+	</div>
 {/if}
 
 <!-- Create Token Modal -->

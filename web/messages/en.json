@@ -11,6 +11,8 @@
 		"Scanner": "Scanner",
 		"AuditLogs": "Audit Logs",
 		"Changes": "Changes",
+		"Discovery": "Discovery",
+		"Networks": "Networks",
 		"Agents": "Agents"
 	},
 	"auth": {
@@ -80,6 +82,14 @@
 		"Purchase Date": "Purchase Date",
 		"Warranty Expiry": "Warranty Expiry",
 		"Tags": "Tags",
+		"Columns": "Columns",
+		"Network": "Network",
+		"Last Scanned": "Last Scanned",
+		"RTT": "RTT (ms)",
+		"Inferred Type": "Inferred Type",
+		"OS": "OS",
+		"Details": "Details",
+		"View Details": "View details",
 		"Online": "Online",
 		"Offline": "Offline",
 		"Unknown": "Unknown",
@@ -633,7 +643,9 @@
 		"Date From": "Date From",
 		"Date To": "Date To",
 		"Reset": "Reset",
-		"No Logs Desc": "No audit log entries found."
+		"No Logs Desc": "No audit log entries found.",
+		"Details": "Details",
+		"No Details": "No detail payload."
 	},
 	"changes": {
 		"Change History": "Change History",
@@ -679,6 +691,42 @@
 		"Revoke Confirm": "Are you sure you want to revoke this agent token? The agent will immediately lose access.",
 		"Agent ID Required": "Agent ID is required",
 		"Network Required": "Network is required",
-		"Targets Required": "Scan targets are required"
+		"Targets Required": "Scan targets are required",
+		"Command History": "Command History",
+		"No Commands": "No commands sent. Trigger a scan on an agent above to enqueue one."
+	},
+	"networks": {
+		"Title": "Networks",
+		"Create": "Create Network",
+		"Edit": "Edit Network",
+		"Delete": "Delete Network",
+		"Name": "Name",
+		"Name Required": "Name is required",
+		"Name Help": "Unique identifier (e.g. lan-62, datacenter-fra)",
+		"Cidr Help": "Advisory — used for display, not enforcement",
+		"Site": "Site",
+		"Agent": "Agent",
+		"Agent Managed Hint": "Agent-managed — deleting clears the agent binding",
+		"Help": "Logical networks are the subnets devices are discovered on. The center's own network is auto-resolved from config; create additional networks here to bind remote discovery agents to them.",
+		"Empty": "No networks defined",
+		"Empty Desc": "Create a network to bind a discovery agent to it.",
+		"Created": "Network created",
+		"Updated": "Network updated",
+		"Deleted": "Network deleted",
+		"Delete Confirm": "Delete network",
+		"Delete Warning": "Devices on this network will have their network binding cleared."
+	},
+	"discovery": {
+		"Enabled": "Enabled",
+		"Disabled": "Passive discovery is disabled",
+		"Disabled Desc": "Enable passive discovery in the scanner config to watch for newly-appeared hosts between scheduled scans.",
+		"Uptime": "Uptime",
+		"Started At": "Started",
+		"Sources": "Active sources",
+		"Interval": "Interval",
+		"Trigger Identify": "Identify",
+		"Pipeline": "Discovery Pipeline",
+		"Recent": "Recent Discoveries",
+		"No Recent": "No recent discoveries. New hosts detected by the passive sources will appear here."
 	}
 }

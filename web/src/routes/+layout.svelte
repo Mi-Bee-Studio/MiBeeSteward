@@ -21,7 +21,9 @@
 		Menu,
 		X,
 		History,
-		Bot
+		Bot,
+		Radar,
+		Network
 	} from '@lucide/svelte';
 	import type { Component } from 'svelte';
 
@@ -47,6 +49,8 @@
 		{ path: '/dashboard', label: m['navigation.Dashboard'](), icon: LayoutDashboard },
 		{ path: '/devices', label: m['navigation.Devices'](), icon: Server },
 		{ path: '/changes', label: m['navigation.Changes']?.() ?? 'Changes', icon: History },
+		{ path: '/discovery', label: m['navigation.Discovery']?.() ?? 'Discovery', icon: Radar },
+		{ path: '/networks', label: m['navigation.Networks']?.() ?? 'Networks', icon: Network, adminOnly: true },
 		{ path: '/agents', label: m['navigation.Agents']?.() ?? 'Agents', icon: Bot, adminOnly: true },
 		{ path: '/documents', label: m['navigation.Documents'](), icon: FileText },
 		{ path: '/users', label: m['navigation.Users'](), icon: Users, adminOnly: true },
