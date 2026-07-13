@@ -185,8 +185,8 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		h.watcher.Unsubscribe(sub)
 		// Drain any remaining events so the channel isn't GC-blocked.
-		for range sub {
-			// discard
+		for evt := range sub {
+			_ = evt // discard; iterating to close is the point
 		}
 	}()
 
