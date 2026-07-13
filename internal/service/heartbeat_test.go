@@ -27,6 +27,14 @@ func setupHeartbeatTest(t *testing.T) (*HeartbeatService, *sql.DB, *db.Queries) 
 
 	// Create devices table (matches migration schema)
 	_, err = dbConn.Exec(`
+		CREATE TABLE IF NOT EXISTS networks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			cidr TEXT, site TEXT, agent_id TEXT,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
 		CREATE TABLE IF NOT EXISTS devices (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
@@ -58,6 +66,9 @@ func setupHeartbeatTest(t *testing.T) (*HeartbeatService, *sql.DB, *db.Queries) 
 			scan_mac      TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.mac')) STORED,
 			scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
 			scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
+			network_id INTEGER,
+			first_seen TIMESTAMP,
+			last_seen TIMESTAMP,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
@@ -828,4 +839,42 @@ func TestCreateConfigs_InvalidMethod(t *testing.T) {
 	rows, err := queries.ListHeartbeatConfigsByDevice(ctx, deviceID)
 	require.NoError(t, err)
 	require.Len(t, rows, 0)
+}
+
+// TestHeartbeat_ListEnabledConfigs_ExcludesAgentNetwork confirms the center does
+// NOT probe devices on agent-managed networks (networks.agent_id non-empty) —
+// those devices' liveness comes from agent reports, not local ICMP/TCP probes.
+// This is the fix for the cross-subnet false-offline bug.
+func TestHeartbeat_ListEnabledConfigs_ExcludesAgentNetwork(t *testing.T) {
+	svc, dbConn, queries := setupHeartbeatTest(t)
+	ctx := context.Background()
+
+	// Create a center network (agent_id empty) + an agent network (agent_id set).
+	centerNet, err := queries.CreateNetwork(ctx, db.CreateNetworkParams{Name: "center"})
+	require.NoError(t, err)
+	_, err = dbConn.ExecContext(ctx,
+		`INSERT INTO networks (name, agent_id, metadata) VALUES ('agent-net', 'agent-62', '{}')`)
+	require.NoError(t, err)
+	var agentNetID int64
+	dbConn.QueryRowContext(ctx, `SELECT id FROM networks WHERE name = 'agent-net'`).Scan(&agentNetID)
+
+	// Center device: network_id = centerNet.ID (agent_id empty → probed).
+	centerDev := insertTestDevice(t, queries, ctx, "center-device", "192.168.63.50")
+	_, err = dbConn.ExecContext(ctx, `UPDATE devices SET network_id = ? WHERE id = ?`, centerNet.ID, centerDev)
+	require.NoError(t, err)
+	insertTestConfig(t, queries, ctx, centerDev, "icmp", "192.168.63.50", 1)
+
+	// Agent device: network_id = agentNetID (agent_id set → excluded from probing).
+	agentDev := insertTestDevice(t, queries, ctx, "agent-device", "192.168.62.41")
+	_, err = dbConn.ExecContext(ctx, `UPDATE devices SET network_id = ? WHERE id = ?`, agentNetID, agentDev)
+	require.NoError(t, err)
+	insertTestConfig(t, queries, ctx, agentDev, "icmp", "192.168.62.41", 1)
+
+	q := svc // same package: call the private method directly
+	enabled, err := q.listLocalProbeConfigs(ctx)
+	require.NoError(t, err)
+
+	// Only the center device's config should appear.
+	require.Len(t, enabled, 1, "agent-network config must be excluded")
+	require.Equal(t, centerDev, enabled[0].DeviceID, "only center-network device probed")
 }

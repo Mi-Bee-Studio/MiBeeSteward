@@ -9,7 +9,20 @@
 // ---------------------------------------------------------------------------
 
 export type DeviceStatus = 'online' | 'offline' | 'unknown';
-export type DeviceType = 'pc' | 'embedded' | 'iot' | 'other';
+// Full set mirrors internal/domain validDeviceTypes (10 values). The type filter
+// dropdown and the device form already surface all 10, so the type must too —
+// the previous 4-value union silently mistyped 6 device categories.
+export type DeviceType =
+	| 'pc'
+	| 'embedded'
+	| 'iot'
+	| 'server'
+	| 'switch'
+	| 'router'
+	| 'firewall'
+	| 'nas'
+	| 'camera'
+	| 'other';
 export type UserRole = 'admin' | 'user';
 export type ProbeMethod = 'ICMP' | 'TCP' | 'HTTP' | 'SNMP';
 export type ProbeResultStatus = 'success' | 'fail' | 'unknown';
@@ -109,6 +122,9 @@ export interface Device {
 	// prefers scan_attributes when present.
 	scan_attributes?: ScanAttributes;
 	user_attributes?: Record<string, string>;
+	// Distributed: the logical network this device was discovered on.
+	network_id?: number;
+	network_name?: string;
 }
 // ---------------------------------------------------------------------------
 // Linked Document (used in device-document linking modal)
@@ -247,6 +263,23 @@ export interface LoginResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Audit Log
+// ---------------------------------------------------------------------------
+
+export interface AuditLog {
+	id: number;
+	user_id: number;
+	username: string;
+	action: string;
+	resource_type: string;
+	resource_id: string;
+	ip_address: string;
+	user_agent: string;
+	details: string;
+	created_at: string;
+}
+
+// ---------------------------------------------------------------------------
 // Scanner Pipeline Config
 // ---------------------------------------------------------------------------
 
@@ -322,4 +355,107 @@ export interface ScanRun {
 	started_at?: string;
 	finished_at?: string;
 	created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Network (distributed: logical network an agent discovers for)
+// ---------------------------------------------------------------------------
+
+export interface Network {
+	id: number;
+	name: string;
+	cidr?: string;
+	site?: string;
+	agent_id?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Change Log (device_added / device_changed / device_lost events)
+// ---------------------------------------------------------------------------
+
+export type ChangeType = 'device_added' | 'device_changed' | 'device_lost';
+
+export interface ChangeLogEntry {
+	id: number;
+	agent_id?: string;
+	network_id?: number;
+	change_type: ChangeType;
+	entity_type: string;
+	entity_id?: number;
+	before_data?: string;
+	after_data?: string;
+	detected_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Discovery Status (passive discovery runtime counters + recent discoveries)
+// ---------------------------------------------------------------------------
+
+export interface DiscoveryConfig {
+	Interval?: number;
+	TriggerIdentify?: boolean;
+}
+
+export interface DiscoveryStats {
+	EventsReceived?: number;
+	SuppressedRecent?: number;
+	KnownHostSkipped?: number;
+	IdentifyTriggered?: number;
+	IdentifyAlive?: number;
+	IdentifyDead?: number;
+	DeviceRecorded?: number;
+}
+
+export interface RecentDiscovery {
+	ip: string;
+	mac?: string;
+	source: string;
+	outcome: string;
+	at: string;
+}
+
+export interface DiscoveryStatus {
+	enabled: boolean;
+	started_at?: string;
+	uptime?: string;
+	config?: DiscoveryConfig;
+	sources?: string[];
+	stats?: DiscoveryStats;
+	recent_discoveries?: RecentDiscovery[];
+}
+
+// ---------------------------------------------------------------------------
+// Agent Token (distributed: discovery-agent bearer tokens)
+// ---------------------------------------------------------------------------
+
+export interface AgentToken {
+	id: number;
+	agent_id: string;
+	network_id?: number;
+	name?: string;
+	created_at: string;
+	last_used_at?: string | null;
+	revoked_at?: string | null;
+}
+
+/** Returned only on token creation — includes the plaintext token (once). */
+export interface AgentTokenCreated extends AgentToken {
+	token: string;
+}
+
+// ---------------------------------------------------------------------------
+// Agent Command (center → agent command queue)
+// ---------------------------------------------------------------------------
+
+export type AgentCommandStatus = 'pending' | 'acknowledged' | 'done' | 'failed';
+
+export interface AgentCommand {
+	id: number;
+	agent_id: string;
+	command: string;
+	payload: string;
+	status: AgentCommandStatus;
+	created_at: string;
+	acknowledged_at?: string | null;
+	result?: string | null;
 }

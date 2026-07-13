@@ -1,0 +1,38 @@
+# MiBee Steward Agent — USER-LEVEL systemd unit (not system-level).
+#
+# Install under the agent account's user manager (no root needed to install,
+# but linger must be enabled once so the service survives logout):
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/mibee-agent.service ~/.config/systemd/user/mibee-agent.service
+#   sudo loginctl enable-linger mickey        # one-time, needs root
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now mibee-agent.service
+#
+# Logs: journalctl --user -u mibee-agent.service
+#
+# Why user-level: the test agent host (62.174) requires a sudo password for
+# system-level units, but any user can manage their own user-level units. With
+# enable-linger, a user service runs at boot and survives logout just like a
+# system one. No User=/Group= here — a user unit already runs as its owner.
+
+[Unit]
+Description=MiBee Steward Agent - Distributed Discovery Agent
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/mickey/mibee-agent
+ExecStart=/home/mickey/mibee-agent/mibee-agent -config configs/agent.yaml
+# always (not on-failure): the agent should come back after ANY exit, including
+# a clean SIGTERM, so it self-heals without manual intervention. `systemctl --user
+# stop` is still honored.
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+LimitNOFILE=65536
+
+[Install]
+WantedBy=default.target

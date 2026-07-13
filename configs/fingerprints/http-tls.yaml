@@ -1,0 +1,163 @@
+# Kind-presence + structured-evidence fingerprints.
+#
+# These rules match on Evidence.Kind (presence of a structured probe response)
+# rather than raw banner text. They cover RTSPClassifier, ONVIFClassifier,
+# WebClassifier, TLSClassifier, and PrometheusClassifier (the data-driven parts).
+#
+# Extract semantics mirrored from the original Go code:
+#   - serverVersion() (WebClassifier): find first '/', take substring after it,
+#     stop at first ' ' or '('.  → substring_after { delim: "/", until: [" ", "("] }
+#   - brandFromServerHeader (RTSP/ONVIF): ordered CI-contains keyword list → enum.
+#   - vendorFromCertCN (TLS): ordered CI-contains keyword list (with OR pairs) → enum.
+#   - Prometheus: ordered, first-match-wins (node_ before prometheus_).
+
+version: 1
+
+rules:
+  # ── RTSPClassifier (kind="rtsp_banner") ────────────────────────────────
+  - id: rtsp-presence
+    source: builtin
+    match:
+      kind: rtsp_banner
+      op: kind_presence
+    service: rtsp
+    protocol: tcp
+    confidence: 0.95
+    extract:
+      metadata:
+        server: { passthrough: server }
+        status: { passthrough: status }
+        inferred_brand:
+          keyword_map:
+            field: server
+            ci: true
+            entries:
+              - { contains: "Hikvision", set: "Hikvision" }
+              - { contains: "Dahua", set: "Dahua" }
+              - { contains: "Axis", set: "Axis" }
+              - { contains: "Bosch", set: "Bosch" }
+              - { contains: "Sony", set: "Sony" }
+              - { contains: "Hanwha", set: "Hanwha" }
+              - { contains: "Vivotek", set: "Vivotek" }
+              - { contains: "Reolink", set: "Reolink" }
+              - { contains: "Uniview", set: "Uniview" }
+              - { contains: "Honeywell", set: "Honeywell" }
+              - { contains: "FLIR", set: "FLIR" }
+
+  # ── ONVIFClassifier (kind="onvif_response") ────────────────────────────
+  - id: onvif-presence
+    source: builtin
+    match:
+      kind: onvif_response
+      op: kind_presence
+    service: onvif
+    protocol: tcp
+    confidence: 0.85
+    extract:
+      metadata:
+        server: { passthrough: server }
+        # auth_required is a flag: set metadata "true" iff RawData["auth_required"]=="true".
+        auth_required:
+          when_equals: { field: auth_required, value: "true", set: "true" }
+        inferred_brand:
+          keyword_map:
+            field: server
+            ci: true
+            entries:
+              - { contains: "Hikvision", set: "Hikvision" }
+              - { contains: "Dahua", set: "Dahua" }
+              - { contains: "Axis", set: "Axis" }
+              - { contains: "Bosch", set: "Bosch" }
+              - { contains: "Sony", set: "Sony" }
+              - { contains: "Hanwha", set: "Hanwha" }
+              - { contains: "Vivotek", set: "Vivotek" }
+              - { contains: "Reolink", set: "Reolink" }
+              - { contains: "Uniview", set: "Uniview" }
+              - { contains: "Honeywell", set: "Honeywell" }
+              - { contains: "FLIR", set: "FLIR" }
+
+  # ── WebClassifier (kind="http") ────────────────────────────────────────
+  # Copies ALL RawData keys into metadata, then derives version from Server.
+  - id: web-presence
+    source: builtin
+    match:
+      kind: http
+      op: kind_presence
+    service: http
+    protocol: tcp
+    confidence: 0.85
+    extract:
+      metadata_all: true   # passthrough every RawData key
+      metadata:
+        version:
+          substring_after:
+            field: server
+            delim: "/"
+            until: [" ", "("]
+
+  # ── TLSClassifier (kind="tls" → "https") ───────────────────────────────
+  - id: tls-presence
+    source: builtin
+    match:
+      kind: tls
+      op: kind_presence
+    service: https
+    protocol: tcp
+    confidence: 0.9
+    extract:
+      metadata_all: true
+      metadata:
+        inferred_brand:
+          keyword_map:
+            field: subject_cn
+            ci: true
+            entries:
+              - { contains_any: ["hikvision", "hik"], set: "Hikvision" }
+              - { contains: "dahua", set: "Dahua" }
+              - { contains: "axis", set: "Axis" }
+              - { contains_any: ["unifi", "ubiquiti"], set: "Ubiquiti" }
+              - { contains: "synology", set: "Synology" }
+              - { contains: "qnap", set: "QNAP" }
+              - { contains: "cisco", set: "Cisco" }
+              - { contains_any: ["fortinet", "fortigate"], set: "Fortinet" }
+
+  # ── PrometheusClassifier (kind="metric", ordered first-match) ──────────
+  # node_exporter is checked FIRST (high-value). Mirrors the original switch
+  # with isNode before isProm. Both rules share exclusive_group "prometheus"
+  # so when node_exporter matches, the prometheus rule is suppressed for the
+  # same evidence piece (the original switch fires only one case).
+  - id: metric-node-exporter
+    source: builtin
+    match:
+      kind: metric
+      field: content_sample
+      op: contains_any
+      ci: true
+      value: ["node_", "node_exporter_build_info"]
+    service: node_exporter
+    protocol: tcp
+    confidence: 0.95
+    priority: 10
+    exclusive_group: prometheus
+    extract:
+      metadata:
+        metrics_url: { passthrough: url }
+        content_kind: { const: "node_exporter" }
+
+  - id: metric-prometheus
+    source: builtin
+    match:
+      kind: metric
+      field: content_sample
+      op: contains_any
+      ci: true
+      value: ["prometheus_", "prometheus_build_info"]
+    service: prometheus
+    protocol: tcp
+    confidence: 0.9
+    priority: 5
+    exclusive_group: prometheus
+    extract:
+      metadata:
+        metrics_url: { passthrough: url }
+        content_kind: { const: "prometheus" }

@@ -16,41 +16,30 @@
 // engine is wired into the API. See Phase 5 of the rebuild plan.
 package scannerv2
 
-import "time"
+import (
+	"time"
 
-// Evidence is the universal unit produced by every probe — active or passive.
-// It is deliberately domain-agnostic: it carries raw observed data and a
-// confidence score, nothing about devices or services. Classifiers interpret it.
-type Evidence struct {
-	// Source identifies the probe that produced this evidence, namespaced by
-	// paradigm: "active:tcp", "active:snmp", "passive:ebpf:tc". Used for
-	// deduplication, fusion, and debugging.
-	Source string `json:"source"`
+	fp "github.com/Mi-Bee-Studio/mibee-fingerprints-go"
+)
 
-	// Kind categorizes the evidence shape: "port_open", "banner", "snmp",
-	// "wsdiscovery", "metric", "magic_bytes". Classifiers key off this.
-	Kind string `json:"kind"`
+// Evidence and ServiceIdentity are now type aliases to the standalone
+// fingerprint library (github.com/Mi-Bee-Studio/mibee-fingerprints-go). This
+// makes them compile-time
+// identical to fp.Evidence / fp.ServiceIdentity — no conversion needed at the
+// integration boundary. The RuleClassifier in the fingerprint library operates
+// directly on these types.
+//
+// The canonical type definitions live in the fingerprint library's
+// fingerprint.go. This alias exists so the scannerv2 package (probes, handlers,
+// orchestrator) can reference Evidence/ServiceIdentity without importing the
+// library at every use site.
+type Evidence = fp.Evidence
 
-	// IP is the target host address (always populated).
-	IP string `json:"ip"`
+// ServiceIdentity is a classified assertion (type alias → fp.ServiceIdentity).
+type ServiceIdentity = fp.ServiceIdentity
 
-	// Port is the L4 port (0 when not applicable, e.g. ICMP).
-	Port int `json:"port,omitempty"`
-
-	// Protocol is the transport: "tcp", "udp", "" (icmp/unknown).
-	Protocol string `json:"protocol,omitempty"`
-
-	// RawData carries protocol-specific payload: banner text, magic bytes,
-	// SNMP varbinds, SNI, SOAP body fragments, metric prefixes, etc.
-	RawData map[string]string `json:"raw_data,omitempty"`
-
-	// Confidence is this evidence's standalone reliability, in [0,1].
-	// Classifiers combine confidences from multiple pieces of evidence.
-	Confidence float64 `json:"confidence"`
-
-	// ObservedAt is when the evidence was gathered (wall clock).
-	ObservedAt time.Time `json:"observed_at"`
-}
+// ServiceClassifier is the interface a classifier implements (type alias).
+type ServiceClassifier = fp.ServiceClassifier
 
 // ProbeHint carries context a probe may use to focus its work. It is advisory:
 // probes may ignore it. For example, an active TCP probe given known open ports
@@ -62,32 +51,6 @@ type ProbeHint struct {
 	Community string `json:"community,omitempty"`
 	// Timeout per individual probe attempt.
 	Timeout time.Duration `json:"timeout,omitempty"`
-}
-
-// ServiceIdentity is a classified assertion: "this IP:Port is running <Service>,
-// with confidence X, backed by these evidence pieces".
-type ServiceIdentity struct {
-	// Service is the canonical service name: "ssh", "http", "https", "rtsp",
-	// "onvif", "snmp", "prometheus", "node_exporter", "camera", etc.
-	Service string `json:"service"`
-
-	// Port is the port the service lives on (0 for host-level identities like
-	// SNMP-derived device type).
-	Port int `json:"port,omitempty"`
-
-	// Protocol is the transport ("tcp"/"udp").
-	Protocol string `json:"protocol,omitempty"`
-
-	// Confidence is the fused confidence across all supporting evidence.
-	Confidence float64 `json:"confidence"`
-
-	// Evidence references the evidence pieces that backed this identity.
-	// Kept for auditability and re-classification.
-	Evidence []Evidence `json:"evidence,omitempty"`
-
-	// Metadata holds derived attributes: inferred brand, version, server header,
-	// node_exporter kernel, etc. ServiceHandlers read and extend this.
-	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // CollectedData is the opaque result of a ServiceHandler.Collect call. It is
@@ -108,6 +71,18 @@ type HeartbeatSpec struct {
 	TimeoutSeconds  int    `json:"timeout_seconds"`  // 0 → use default
 	SNMPCommunity   string `json:"snmp_community,omitempty"`
 	SNMPOID         string `json:"snmp_oid,omitempty"`
+}
+
+// NeighborSpec describes one L2 adjacency edge discovered via LLDP / CDP /
+// Bridge-MIB / ARP. The persistence layer resolves ip → device_id and upserts
+// on (device_id, neighbor_mac, protocol). NeighborMAC is the cross-agent merge
+// key (a device seen as a neighbor before it's scanned itself gets a NULL
+// neighbor_device_id until reconciled).
+type NeighborSpec struct {
+	NeighborMAC string // canonical "aa:bb:cc:dd:ee:ff" (the merge key)
+	Protocol    string // "LLDP" | "CDP" | "Bridge-MIB" | "ARP"
+	LocalPort   string // local port label (ifIndex / port name)
+	RemotePort  string // remote port label
 }
 
 // Trigger requests the orchestrator to invoke another ServiceHandler. This is

@@ -57,8 +57,11 @@ func TestNewEngine_AssemblesAllLayers(t *testing.T) {
 	if got := len(e.Registry.Probes()); got < 6 {
 		t.Errorf("expected ≥6 probes, got %d", got)
 	}
-	if got := len(e.Registry.Classifiers()); got < 6 {
-		t.Errorf("expected ≥6 classifiers, got %d", got)
+	// Classifiers: RuleClassifier (data-driven, embedded defaults) + 4 logic-
+	// retained (SNMP bitmask, Camera cross-evidence, Database, RemoteAccess).
+	// The pure-data classifiers are now rule files, not registered as code.
+	if got := len(e.Registry.Classifiers()); got < 5 {
+		t.Errorf("expected ≥5 classifiers, got %d", got)
 	}
 	if got := len(e.Registry.Handlers()); got < 7 {
 		t.Errorf("expected ≥7 handlers, got %d", got)

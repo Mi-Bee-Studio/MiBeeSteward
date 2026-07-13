@@ -184,7 +184,7 @@ func TestDefaultClassifiers_CoversCamera(t *testing.T) {
 		{Kind: "onvif_response", IP: "10.0.0.9", Port: 80, Confidence: 0.9, RawData: map[string]string{"server": "Hikvision-ONVIF"}},
 	}
 	var services []scannerv2.ServiceIdentity
-	for _, c := range DefaultClassifiers() {
+	for _, c := range DefaultClassifiers(nil) {
 		services = append(services, c.Classify(all)...)
 	}
 	names := servicesOf(services)

@@ -21,6 +21,14 @@ docs/private/
 .env
 .env.*
 
+# === Local configs (only .example.yaml / .production.yaml are committed) ===
+configs/config.yaml
+configs/agent.yaml
+configs/config-center.yaml
+
+# === Stray build artifacts ===
+/fpimport
+
 # === OS ===
 .DS_Store
 Thumbs.db
@@ -36,6 +44,7 @@ Thumbs.db
 .omo/
 .codegraph/
 .sisyphus/
+.zcode/
 tmp/
 
 # === Docs (generated) ===

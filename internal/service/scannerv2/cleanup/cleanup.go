@@ -100,6 +100,7 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneAuditLogs(ctx)
 	s.pruneNotificationLogs(ctx)
 	s.pruneServiceEvidence(ctx)
+	s.pruneChangeLog(ctx)
 }
 
 // cutoff returns now - retentionDays, or a zero time if days<=0 (which would
@@ -204,6 +205,19 @@ func (s *Service) pruneServiceEvidence(ctx context.Context) {
 	s.sweepBatched(ctx, "service_evidence", days, func(cut time.Time, limit int64) (int64, error) {
 		return s.queries.DeleteServiceEvidenceOlderThanBatched(ctx, db.DeleteServiceEvidenceOlderThanBatchedParams{
 			ObservedAt: cut,
+			Limit:      limit,
+		})
+	})
+}
+
+// pruneChangeLog prunes change-detection events (device_added/changed/lost)
+// older than the retention window. change_log grows ~one row per real change
+// per scan, so it accumulates faster than audit but slower than heartbeat.
+func (s *Service) pruneChangeLog(ctx context.Context) {
+	days := s.cfg.ChangeLogDays
+	s.sweepBatched(ctx, "change_log", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteChangeLogOlderThanBatched(ctx, db.DeleteChangeLogOlderThanBatchedParams{
+			DetectedAt: cut,
 			Limit:      limit,
 		})
 	})

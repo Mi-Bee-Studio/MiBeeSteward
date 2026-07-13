@@ -86,6 +86,13 @@ func webTypeFromHints(svc scannerv2.ServiceContext) string {
 	case containsAny(combined, "fortigate", "palo alto", "pfsense", "opnsense",
 		"sonicwall", "firewall"):
 		return "firewall"
+	// Cameras / NVRs with a web UI. Many IP cameras expose a branded login or
+	// dashboard page whose <title> names the product ("Hikvision", "Dahua",
+	// "MiBee Cam 仪表盘", "IP Camera", "Web Components"). Without this, a
+	// camera that blocks RTSP/ONVIF cross-subnet falls through to "server".
+	case containsAny(combined, "hikvision", "dahua", "ip camera", "ipc-",
+		"network camera", "mibee cam", "dvr", "nvr", "web components"):
+		return "camera"
 	// Switches with a management web UI.
 	case containsAny(combined, "procurve", "cisco catalyst", "switch"):
 		return "switch"

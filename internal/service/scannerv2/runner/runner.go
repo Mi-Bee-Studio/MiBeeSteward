@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"time"
 
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/engine"
@@ -49,15 +50,48 @@ type Runner struct {
 	dbConn    *sql.DB          // raw connection for the device-bridge upserts (sqlc has no per-IP device lookup)
 	heartbeat HeartbeatCreator // may be nil (heartbeat config creation skipped)
 	logger    *slog.Logger
+	// networkID tags discovered devices with their origin network
+	// (devices.network_id). 0 = unresolved/legacy (NULL). See store.NetworkID.
+	networkID sql.NullInt64
+	// reportSink, when set, receives the alive HostReports from each scan so an
+	// agent can forward them to its center. nil on the center/standalone path
+	// (no upstream reporting) — the hook is a no-op there.
+	reportSink ReportSink
+	// changeRecorder, when set, receives device_added/device_changed events from
+	// applyDeviceBridge (and device_lost from detectLost). nil on the agent
+	// (change detection is a center concern). See internal/changedetect.
+	changeRecorder changedetect.ChangeRecorder
 }
+
+// ReportSink consumes a batch of alive HostReports at the end of a scan. The
+// agent wires a reporter implementation that POSTs them upstream; the center
+// leaves it nil. Errors are the sink's concern (it retries/buffers); the runner
+// never blocks on reporting.
+type ReportSink func(ctx context.Context, taskID int64, reports []scannerv2.HostReport)
+
+// SetReportSink wires the agent's upstream-reporting sink. nil clears it
+// (center/standalone mode). Must be called before Run; not safe to swap
+// concurrently with a running scan.
+func (rn *Runner) SetReportSink(s ReportSink) { rn.reportSink = s }
+
+// SetChangeRecorder wires the center's change-detection recorder (writes
+// change_log + pushes Watcher subscribers). nil clears it (agent mode, where
+// change detection is deferred to the center). Must be called before Run.
+func (rn *Runner) SetChangeRecorder(r changedetect.ChangeRecorder) { rn.changeRecorder = r }
 
 // New constructs a Runner. engine may be nil (the runner will log and no-op on
 // each Run), letting the scheduler stay alive even if the engine failed to init.
-func New(engine *engine.Engine, queries *db.Queries, dbConn *sql.DB, heartbeat HeartbeatCreator, logger *slog.Logger) *Runner {
+// networkID is the networks.id this runner tags discovered devices with (0/NULL
+// for the legacy single-instance path).
+func New(engine *engine.Engine, queries *db.Queries, dbConn *sql.DB, heartbeat HeartbeatCreator, networkID int64, logger *slog.Logger) *Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Runner{engine: engine, queries: queries, dbConn: dbConn, heartbeat: heartbeat, logger: logger}
+	var nid sql.NullInt64
+	if networkID > 0 {
+		nid = sql.NullInt64{Int64: networkID, Valid: true}
+	}
+	return &Runner{engine: engine, queries: queries, dbConn: dbConn, heartbeat: heartbeat, networkID: nid, logger: logger}
 }
 
 // PersistManualDevice runs a single HostReport (synthesized for a manually-
@@ -65,9 +99,26 @@ func New(engine *engine.Engine, queries *db.Queries, dbConn *sql.DB, heartbeat H
 // and seeding heartbeat configs for new devices. Used by the AddDevices API.
 // Returns (isNew, error).
 func (rn *Runner) PersistManualDevice(ctx context.Context, rep scannerv2.HostReport) (bool, error) {
-	isNew, _ := rn.applyDeviceBridge(ctx, rep)
+	isNew, _ := rn.applyDeviceBridge(ctx, rep, rn.networkID, "")
 	return isNew, nil
 }
+
+// ApplyReport runs a single HostReport through the device bridge using an
+// explicit networkID, returning (isNew, wasUpdated, error). This is the
+// center's ingestion entry point: one center runner merges reports from many
+// agents, each scoped to the agent's own network (resolved from its token and
+// passed here per-call), so the device-bridge identity logic (MAC-primary →
+// (ip, network_id) fallback) partitions correctly per agent. agentID carries
+// through to change_log provenance (empty for the local-scan path).
+func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string) (bool, bool, error) {
+	isNew, updated := rn.applyDeviceBridge(ctx, rep, networkID, agentID)
+	return isNew, updated, nil
+}
+
+// NetworkID returns the runner's own network identity (the instance's network
+// on the local-scan path). Exposed so callers building a HostReport for the
+// local scan path can pass it back through ApplyReport if needed.
+func (rn *Runner) NetworkID() sql.NullInt64 { return rn.networkID }
 
 // Run executes one scan task: creates a run record, runs the engine over
 // targets, persists per-host results, applies the device bridge, and finalizes
@@ -136,6 +187,25 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 		}
 	}
 
+	// 3b. Forward alive reports to the agent's upstream sink (no-op on the
+	//     center, where reportSink is nil). Run on a fresh context so a
+	//     request/server shutdown mid-scan doesn't abort the report flush.
+	if rn.reportSink != nil && aliveHosts > 0 {
+		alive := make([]scannerv2.HostReport, 0, aliveHosts)
+		for _, rep := range reports {
+			if rep.Alive {
+				alive = append(alive, rep)
+			}
+		}
+		rn.reportSink(context.Background(), taskID, alive)
+	}
+
+	// 3c. Device-lost detection: compare this scan's alive set against the
+	//     network's known-online devices. Devices absent for >= lostThreshold
+	//     consecutive scans are declared lost + marked offline. Runs on a fresh
+	//     context so a server shutdown mid-finalize doesn't skip it.
+	rn.DetectLost(context.Background(), rn.networkID, taskID, reports, "")
+
 	// 4. Finalize the run.
 	finish := time.Now()
 	if err := rn.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
@@ -202,7 +272,7 @@ func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scan
 	}
 
 	// Device bridge.
-	return rn.applyDeviceBridge(ctx, rep)
+	return rn.applyDeviceBridge(ctx, rep, rn.networkID, "")
 }
 
 // reportJSONFields serializes a HostReport's ports/services/snmp into the JSON

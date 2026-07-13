@@ -2,6 +2,32 @@
 -- Generated from 000001_init_schema, 000002_audit_logs, 000005_device_systems
 -- with ALTER TABLE columns from 000003_account_lockout and 000004_force_password merged in.
 
+-- === Topology container tables (must precede devices: devices.network_id and
+-- === vlans/subnets reference networks, and SQLite validates FK target tables
+-- === exist at CREATE TABLE time.) Empty in the single-instance phase; exist so
+-- === topology data can be added later without a migration on a populated DB.
+CREATE TABLE IF NOT EXISTS networks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,    -- natural key; one row per named network (resolveNetworkID upserts on it)
+    cidr TEXT,                    -- "192.168.63.0/24" (advisory; not enforced)
+    site TEXT,                    -- site label (branch / datacenter / cloud)
+    agent_id TEXT,                -- discovering agent id (distributed phase)
+    metadata TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(metadata)),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS vlans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vlan_tag INTEGER NOT NULL,    -- 802.1Q tag (1-4094)
+    name TEXT,
+    description TEXT,
+    network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+    first_seen DATETIME,
+    last_seen DATETIME,
+    UNIQUE(vlan_tag, network_id)
+);
+
 -- Users table (includes columns added by 000003 and 000004)
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,6 +82,18 @@ CREATE TABLE IF NOT EXISTS devices (
     scan_mac      TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.mac')) STORED,
     scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
     scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
+    -- network_id ties a device to the logical network that discovered it
+    -- (distributed/multi-LAN support). NULL = single-instance / unknown origin;
+    -- the (ip_address, network_id) composite unique index is created in
+    -- cmd/server/main.go (applyIdentityIndexMigrations) so existing rows can be
+    -- de-duplicated first.
+    network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+    -- first_seen / last_seen record when the device was first/last observed
+    -- ONLINE by a scan (distinct from created_at/updated_at which track the
+    -- row's own lifetime and bump on any write). Needed for asset-freshness
+    -- across distributed instances.
+    first_seen TIMESTAMP,
+    last_seen TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -312,3 +350,150 @@ CREATE TABLE IF NOT EXISTS host_services (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_host_services_ip_svc_port ON host_services(ip, service, port);
 CREATE INDEX IF NOT EXISTS idx_host_services_service ON host_services(service);
+
+-- === Topology / relationship / change layer ===
+-- Schema groundwork for cross-network distributed discovery (see
+-- docs/private/architecture-future.md §6). These tables are empty in the
+-- single-instance phase; they exist so that topology/change data can be added
+-- later WITHOUT a schema migration on a populated DB. The networks/subnets/
+-- vlans tables are the container layer (agent deployment boundaries),
+-- device_neighbors/topology_edges are the edge layer (LLDP/CDP/ARP "who-connects-
+-- to-whom"), and change_log is the event stream produced by the change-detection
+-- engine. All are CREATE TABLE IF NOT EXISTS — safe on existing installs.
+-- (networks + vlans are defined near the top of this file because devices and
+-- subnets reference them and SQLite validates FK targets at CREATE TABLE time.)
+
+-- subnets: IP subnets within a network. One network may span several
+-- subnets/VLANs (router-on-a-stick, multi-VLAN topology).
+CREATE TABLE IF NOT EXISTS subnets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+    cidr TEXT NOT NULL,
+    vlan_id INTEGER REFERENCES vlans(id) ON DELETE SET NULL,
+    gateway TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(metadata)),
+    first_seen DATETIME,
+    last_seen DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_subnets_network ON subnets(network_id);
+
+-- device_neighbors: L2 adjacency discovered via LLDP / CDP / Bridge-MIB / ARP.
+-- The neighbor may not yet be a known device (neighbor_device_id NULL); it is
+-- keyed by MAC so cross-agent topology merge can reconcile edges.
+CREATE TABLE IF NOT EXISTS device_neighbors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,      -- local end
+    neighbor_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,     -- remote end (NULL = unidentified)
+    neighbor_mac TEXT NOT NULL,                                               -- remote MAC (merge key)
+    protocol TEXT NOT NULL,                                                   -- LLDP / CDP / ARP / Bridge-MIB
+    local_port TEXT,
+    remote_port TEXT,
+    network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+    first_seen DATETIME,
+    last_seen DATETIME,
+    UNIQUE(device_id, neighbor_mac, protocol)
+);
+CREATE INDEX IF NOT EXISTS idx_device_neighbors_device ON device_neighbors(device_id);
+CREATE INDEX IF NOT EXISTS idx_device_neighbors_neighbor_mac ON device_neighbors(neighbor_mac);
+CREATE INDEX IF NOT EXISTS idx_device_neighbors_network ON device_neighbors(network_id);
+
+-- topology_edges: higher-level device-to-device edges (physical / l2 / l3).
+-- Can be derived from device_neighbors or discovered independently (e.g. route
+-- tables). confidence rises when multiple protocols corroborate an edge.
+CREATE TABLE IF NOT EXISTS topology_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    to_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    edge_type TEXT NOT NULL,        -- physical / l2 / l3
+    via_protocol TEXT,              -- LLDP / CDP / route-table
+    confidence REAL,                -- 0.0-1.0
+    metadata TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(metadata)),
+    first_seen DATETIME,
+    last_seen DATETIME,
+    UNIQUE(from_device_id, to_device_id, edge_type)
+);
+CREATE INDEX IF NOT EXISTS idx_topology_edges_from ON topology_edges(from_device_id);
+CREATE INDEX IF NOT EXISTS idx_topology_edges_to ON topology_edges(to_device_id);
+
+-- change_log: the event stream produced by the change-detection engine
+-- (added / lost / changed for devices, services, neighbors, topology edges).
+-- Carries agent_id + network_id provenance so a future aggregation center can
+-- reconcile changes from multiple agents. Populated from Phase 3 onward.
+CREATE TABLE IF NOT EXISTS change_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT,
+    network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+    change_type TEXT NOT NULL,      -- device_added / device_lost / device_changed /
+                                    -- service_added / ... / neighbor_added / ...
+    entity_type TEXT NOT NULL,      -- device / service / neighbor / topology_edge
+    entity_id INTEGER,
+    before_data TEXT,               -- JSON snapshot (lost/changed)
+    after_data TEXT,                -- JSON snapshot (added/changed)
+    detected_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_change_log_type_time ON change_log(change_type, detected_at);
+CREATE INDEX IF NOT EXISTS idx_change_log_entity ON change_log(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_change_log_detected_at ON change_log(detected_at);
+
+-- === Agent authentication (distributed phase) ===
+-- agent_tokens holds the long-lived opaque bearer tokens discovery agents
+-- present to the center's ingestion endpoints (POST /api/v1/agents/report).
+-- Only the SHA-256 hash is stored; the plaintext is returned once at creation
+-- time. An admin creates a token per network/agent and hands it to the agent
+-- operator. Revocation = setting revoked_at. This is the machine-auth path —
+-- distinct from the human user JWT flow (users.role CHECK is admin/user only).
+CREATE TABLE IF NOT EXISTS agent_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL UNIQUE,    -- stable identifier the agent reports as
+    token_hash TEXT NOT NULL UNIQUE,  -- sha256(plaintext), hex-encoded
+    network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+    name TEXT NOT NULL DEFAULT '',    -- human label for the admin UI
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at DATETIME,
+    revoked_at DATETIME               -- non-NULL = revoked (auth fails)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_tokens_network ON agent_tokens(network_id);
+
+-- === Change detection (Phase 3) ===
+-- scan_snapshots tracks, per network+IP, the last-seen state and a miss counter
+-- used to detect device_lost with a grace period (a device must be absent from
+-- N consecutive scans before being declared lost — single missed scans from ICMP
+-- drop / network jitter must not flap a device offline). This is NOT a full
+-- per-scan snapshot; it's the minimal "known alive set + miss count" needed to
+-- compute the alive-vs-known set difference after each scan.
+--   - A device PRESENT in a scan → miss_count reset to 0, last_seen_at refreshed.
+--   - A device ABSENT from a scan → miss_count incremented.
+--   - miss_count >= lost_threshold AND devices.status='online' → device_lost.
+-- See docs/private/architecture-future.md §8 (grace period / 去抖动).
+CREATE TABLE IF NOT EXISTS scan_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+    task_id INTEGER,                       -- which scan task last touched it (NULL = agent report)
+    ip TEXT NOT NULL,
+    mac TEXT NOT NULL DEFAULT '',          -- MAC-primary identity key (empty when unknown)
+    miss_count INTEGER NOT NULL DEFAULT 0, -- consecutive scans this IP was absent
+    last_seen_at DATETIME NOT NULL,        -- last time this IP appeared alive in a scan
+    UNIQUE(network_id, ip)
+);
+CREATE INDEX IF NOT EXISTS idx_scan_snapshots_network ON scan_snapshots(network_id);
+CREATE INDEX IF NOT EXISTS idx_scan_snapshots_miss ON scan_snapshots(miss_count);
+
+-- === Agent command queue (Phase 5c) ===
+-- agent_commands holds ad-hoc commands the center wants a specific agent to
+-- execute (currently: "scan these targets now"). The agent polls
+-- GET /api/v1/agents/commands on each report cycle and pops its pending
+-- commands. This is the center→agent command channel — a pull model (the agent
+-- fetches; no inbound connection needed from the center, which fits the
+-- agent-behind-NAT deployment shape).
+CREATE TABLE IF NOT EXISTS agent_commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,              -- which agent should run this (agent_tokens.agent_id)
+    command TEXT NOT NULL,               -- "scan" (extensible)
+    payload TEXT NOT NULL DEFAULT '{}',  -- JSON: {"targets": "192.168.62.0/24", "timeout": 120}
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'acknowledged', 'done', 'failed')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    acknowledged_at DATETIME,
+    result TEXT                          -- JSON result/err from the agent (optional)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_commands_agent_status ON agent_commands(agent_id, status);
+

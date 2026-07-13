@@ -43,11 +43,7 @@
 	// Theme
 	let theme = $state<'dark' | 'light'>('dark');
 
-	// Auth state
-	let authState = $state<{ user: { username: string; role: string } | null; token: string | null }>({
-		user: null,
-		token: null
-	});
+	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
 
 	// 2FA state
 	let twoFAEnabled = $state(false);
@@ -72,7 +68,6 @@
 	}
 
 onMount(() => {
-    const unsub = auth.subscribe((v) => { authState = v; });
     theme = detectTheme();
     applyTheme(theme);
 
@@ -92,8 +87,6 @@ onMount(() => {
     api.get<{ enabled: boolean }>('/auth/2fa/status')
         .then((res) => { twoFAEnabled = res.enabled; })
         .catch(() => {});
-
-    return unsub;
 });
 
 	function handleFieldBlur(field: 'currentPassword' | 'newPassword' | 'confirmPassword') {

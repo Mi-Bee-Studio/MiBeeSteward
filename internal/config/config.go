@@ -30,6 +30,42 @@ type Config struct {
 	// detail tables (heartbeat_results, scan_results, …). Without it these
 	// tables grow unbounded — heartbeat_results alone accumulates ~270k rows/day.
 	Retention RetentionConfig `koanf:"retention"`
+	// Network identifies the logical network this instance is responsible for.
+	// Used to resolve devices.network_id (seeded into the networks table at
+	// startup). Single-instance default name is "default"; in a distributed
+	// deployment each agent sets a distinct name (e.g. "lan-63", "branch-bj").
+	Network NetworkConfig `koanf:"network"`
+	// Center configures a discovery AGENT's upstream aggregation center. When
+	// URL is non-empty the binary runs in agent mode: it runs the scannerv2
+	// engine locally and reports results to this center via POST /agents/report
+	// (auth: AuthToken, a long-lived agent token minted on the center). Empty
+	// URL = center/standalone mode (serve API + SPA, no upstream reporting).
+	Center CenterConfig `koanf:"center"`
+}
+
+// CenterConfig configures an agent's upstream center.
+type CenterConfig struct {
+	// URL is the center's base URL (e.g. "http://192.168.63.101:8080"). Empty =
+	// standalone/center mode (no upstream reporting).
+	URL string `koanf:"url"`
+	// AuthToken is the agent's bearer token (minted on the center via
+	// POST /api/v1/agents/tokens). Presented on every report.
+	AuthToken string `koanf:"auth_token"`
+	// ReportInterval is how often to flush buffered scan results upstream when
+	// the buffer isn't full. Default 30s. Errors retry with exponential backoff.
+	ReportInterval string `koanf:"report_interval"`
+}
+
+// NetworkConfig describes the logical network this instance scans/owns.
+type NetworkConfig struct {
+	// Name is the human-readable network identifier (resolved to a networks.id
+	// at startup). Empty is treated as "default" at resolve time.
+	Name string `koanf:"name"`
+	// CIDR is the advisory network range (e.g. "192.168.63.0/24"). Not enforced;
+	// recorded on the networks row for display and future subnet inference.
+	CIDR string `koanf:"cidr"`
+	// Site is an optional site label (branch / datacenter / cloud).
+	Site string `koanf:"site"`
 }
 
 // RetentionConfig holds per-table retention windows and sweep tuning. A field
@@ -45,6 +81,10 @@ type RetentionConfig struct {
 	AuditLogsDays        int `koanf:"audit_logs_days"`
 	NotificationLogDays  int `koanf:"notification_log_days"`
 	ServiceEvidenceDays  int `koanf:"service_evidence_days"`
+	// ChangeLogDays is the retention window for change_log (device_added /
+	// changed / lost events). Default 30 (high value for asset-history audits,
+	// but change_log grows fast — one row per real change per scan).
+	ChangeLogDays int `koanf:"change_log_days"`
 	// SweepIntervalHours is how often the retention sweeper runs across all
 	// tables. Default 6h — frequent enough that no table drifts far past its
 	// window, rare enough to be negligible overhead.
@@ -153,6 +193,11 @@ type ScannerConfig struct {
 	// the MAC is still recorded but no vendor is attached. Override with the
 	// MIBEE_SCANNER_OUI_PATH env var.
 	OUIPath string `koanf:"oui_path"`
+	// FingerprintPath points to a directory of fingerprint YAML rule files
+	// (see configs/fingerprints/ + docs/fingerprint-spec.md). When empty, the
+	// engine uses the rules embedded in the binary (zero-config). Override with
+	// MIBEE_SCANNER_FINGERPRINT_PATH.
+	FingerprintPath string `koanf:"fingerprint_path"`
 	// SNMPCommunity is the default community string for the SNMP probe
 	// (default "public" if empty). Override with MIBEE_SCANNER_SNMP_COMMUNITY.
 	SNMPCommunity string `koanf:"snmp_community"`
@@ -162,6 +207,21 @@ type ScannerConfig struct {
 	// SNMPCommunity when empty.
 	RouterARP RouterARPConfig `koanf:"router_arp"`
 	EBPF      EBPFConfig      `koanf:"ebpf"`
+	// Discovery enables the long-running passive discovery service that spots
+	// newly-appeared hosts without a full subnet scan. It periodically walks a
+	// router's SNMP ARP table + diffs the local /proc/net/arp cache + passively
+	// listens for mDNS/SSDP, and feeds new hosts into the runner's device bridge
+	// (so they get change-detection + heartbeat seeding). See DiscoveryConfig.
+	Discovery DiscoveryConfig `koanf:"discovery"`
+	// AgentLeaseTTL is how long an agent-managed device's snapshot may stay
+	// stale (no agent report refreshing it) before the lease sweeper declares
+	// it lost. Go duration string (e.g. "5m"). Default "5m" — ~10 missed
+	// reports at the agent's 30s cadence, absorbing agent restarts/splits.
+	AgentLeaseTTL string `koanf:"agent_lease_ttl"`
+	// LeaseSweepInterval is how often the background lease sweeper runs the
+	// expiration pass over agent-managed networks. Go duration string. Default
+	// "60s". Center-only; the agent does not run a sweeper.
+	LeaseSweepInterval string `koanf:"lease_sweep_interval"`
 }
 
 // RouterARPConfig configures cross-subnet MAC resolution via SNMP ARP walks of
@@ -178,6 +238,42 @@ type RouterARPConfig struct {
 type EBPFConfig struct {
 	Enabled    bool     `koanf:"enabled"`
 	Interfaces []string `koanf:"interfaces"`
+}
+
+// DiscoveryConfig controls the long-running passive discovery service. Unlike
+// the cron-driven full-subnet scan, this service runs continuously with near-
+// zero active traffic: it diffs router/local ARP tables and passively listens
+// for mDNS/SSDP, feeding newly-seen hosts into the runner's device bridge so
+// they get device_added events + heartbeat seeding without waiting for the next
+// scheduled scan. Each source can be toggled independently.
+type DiscoveryConfig struct {
+	// Enabled gates the whole service. When false, no passive discovery runs.
+	Enabled bool `koanf:"enabled"`
+	// Interval is the polling cadence (seconds) for the ARP-based sources.
+	// Default 60. The multicast source is event-driven (listens continuously),
+	// so this only affects router_arp + arp_cache.
+	Interval int `koanf:"interval"`
+	// TriggerIdentify, when true, runs a single-IP full identification scan
+	// (the existing probe set) against each newly-discovered host so it gets a
+	// type + services immediately. When false, the host is recorded with
+	// inferred_type="unknown" and a bare ICMP heartbeat. Default true.
+	TriggerIdentify bool `koanf:"trigger_identify"`
+	// RouterARP walks scanner.router_arp.routers' SNMP ARP tables (the widest-
+	// coverage source — a gateway knows every host that talks through it).
+	// No-op when scanner.router_arp.routers is empty.
+	RouterARP DiscoverySourceToggle `koanf:"router_arp"`
+	// ARPCache diffs the local /proc/net/arp kernel cache. Zero network
+	// traffic; only covers hosts the scanner host has talked to.
+	ARPCache DiscoverySourceToggle `koanf:"arp_cache"`
+	// Multicast passively listens on mDNS (224.0.0.251:5353) + SSDP
+	// (239.255.255.250:1900) WITHOUT sending queries. Covers hosts that
+	// self-advertise (cameras/printers/IoT/Mac/UPnP).
+	Multicast DiscoverySourceToggle `koanf:"multicast"`
+}
+
+// DiscoverySourceToggle is the per-source on/off switch for DiscoveryConfig.
+type DiscoverySourceToggle struct {
+	Enabled bool `koanf:"enabled"`
 }
 
 type PipelineDefaultsConfig struct {
@@ -217,6 +313,9 @@ func Load(configPath string) (*Config, error) {
 	// Apply retention defaults (and the scanner.retention_days back-compat
 	// fallback for scan_results) before validation.
 	normalizeRetention(&cfg)
+	// Apply passive-discovery defaults (interval, trigger_identify, per-source
+	// toggles). Done before validation so the service sees a fully-populated cfg.
+	normalizeDiscovery(&cfg)
 
 	// Validate
 	if err := Validate(&cfg); err != nil {
@@ -263,6 +362,9 @@ func normalizeRetention(cfg *Config) {
 	if r.ServiceEvidenceDays <= 0 {
 		r.ServiceEvidenceDays = 14
 	}
+	if r.ChangeLogDays <= 0 {
+		r.ChangeLogDays = 30
+	}
 	if r.SweepIntervalHours <= 0 {
 		r.SweepIntervalHours = 6
 	}
@@ -271,10 +373,38 @@ func normalizeRetention(cfg *Config) {
 	}
 }
 
+// normalizeDiscovery fills in passive-discovery defaults for any field left at
+// its zero value. Only Interval is normalized here (0 → 60s). The boolean
+// fields (Enabled, TriggerIdentify, the per-source toggles) keep their Go zero
+// value (false) when unset, so the recommended defaults are surfaced through
+// configs/config.example.yaml rather than silently applied — this respects a
+// user's explicit `false` instead of clobbering it.
+func normalizeDiscovery(cfg *Config) {
+	d := &cfg.Scanner.Discovery
+	if !d.Enabled {
+		return
+	}
+	if d.Interval <= 0 {
+		d.Interval = 60
+	}
+}
+
 // Validate checks the configuration for errors.
 func Validate(cfg *Config) error {
+	// Agent mode (center URL set) doesn't serve users/SPA, so it has no JWT,
+	// no admin seed, no auth cookie surface. Validate the agent-specific bits
+	// instead and skip the center-only checks below.
+	if cfg.Center.URL != "" {
+		if cfg.Center.AuthToken == "" {
+			return errors.New("center.auth_token is required in agent mode (mint one on the center via POST /api/v1/agents/tokens)")
+		}
+		if cfg.Network.Name == "" {
+			return errors.New("network.name is required in agent mode (must match the network the token is bound to)")
+		}
+		return nil
+	}
 
-	// Validate JWT secret
+	// Center / standalone mode: validate JWT secret
 	if cfg.Auth.JWTSecret == "" {
 		return errors.New("auth.jwt_secret is required")
 	}

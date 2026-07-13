@@ -8,6 +8,28 @@ import (
 	"time"
 )
 
+type AgentCommand struct {
+	ID             int64      `json:"id"`
+	AgentID        string     `json:"agent_id"`
+	Command        string     `json:"command"`
+	Payload        string     `json:"payload"`
+	Status         string     `json:"status"`
+	CreatedAt      time.Time  `json:"created_at"`
+	AcknowledgedAt *time.Time `json:"acknowledged_at"`
+	Result         *string    `json:"result"`
+}
+
+type AgentToken struct {
+	ID         int64      `json:"id"`
+	AgentID    string     `json:"agent_id"`
+	TokenHash  string     `json:"token_hash"`
+	NetworkID  *int64     `json:"network_id"`
+	Name       string     `json:"name"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	RevokedAt  *time.Time `json:"revoked_at"`
+}
+
 type AuditLog struct {
 	ID           int64      `json:"id"`
 	UserID       *int64     `json:"user_id"`
@@ -18,6 +40,18 @@ type AuditLog struct {
 	UserAgent    *string    `json:"user_agent"`
 	Details      *string    `json:"details"`
 	CreatedAt    *time.Time `json:"created_at"`
+}
+
+type ChangeLog struct {
+	ID         int64     `json:"id"`
+	AgentID    *string   `json:"agent_id"`
+	NetworkID  *int64    `json:"network_id"`
+	ChangeType string    `json:"change_type"`
+	EntityType string    `json:"entity_type"`
+	EntityID   *int64    `json:"entity_id"`
+	BeforeData *string   `json:"before_data"`
+	AfterData  *string   `json:"after_data"`
+	DetectedAt time.Time `json:"detected_at"`
 }
 
 type DashboardConfig struct {
@@ -63,6 +97,9 @@ type Device struct {
 	ScanMac          *string    `json:"scan_mac"`
 	ScanOs           *string    `json:"scan_os"`
 	ScanHostname     *string    `json:"scan_hostname"`
+	NetworkID        *int64     `json:"network_id"`
+	FirstSeen        *time.Time `json:"first_seen"`
+	LastSeen         *time.Time `json:"last_seen"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
@@ -71,6 +108,19 @@ type DeviceDocument struct {
 	DeviceID   int64     `json:"device_id"`
 	DocumentID int64     `json:"document_id"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type DeviceNeighbor struct {
+	ID               int64      `json:"id"`
+	DeviceID         int64      `json:"device_id"`
+	NeighborDeviceID *int64     `json:"neighbor_device_id"`
+	NeighborMac      string     `json:"neighbor_mac"`
+	Protocol         string     `json:"protocol"`
+	LocalPort        *string    `json:"local_port"`
+	RemotePort       *string    `json:"remote_port"`
+	NetworkID        *int64     `json:"network_id"`
+	FirstSeen        *time.Time `json:"first_seen"`
+	LastSeen         *time.Time `json:"last_seen"`
 }
 
 type DeviceSystem struct {
@@ -135,6 +185,17 @@ type HostService struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+type Network struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Cidr      *string   `json:"cidr"`
+	Site      *string   `json:"site"`
+	AgentID   *string   `json:"agent_id"`
+	Metadata  string    `json:"metadata"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type NotificationChannel struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
@@ -171,6 +232,16 @@ type ScanResult struct {
 	NodeExporterUrl      string    `json:"node_exporter_url"`
 	NodeExporterData     string    `json:"node_exporter_data"`
 	ScannedAt            time.Time `json:"scanned_at"`
+}
+
+type ScanSnapshot struct {
+	ID         int64     `json:"id"`
+	NetworkID  int64     `json:"network_id"`
+	TaskID     *int64    `json:"task_id"`
+	Ip         string    `json:"ip"`
+	Mac        string    `json:"mac"`
+	MissCount  int64     `json:"miss_count"`
+	LastSeenAt time.Time `json:"last_seen_at"`
 }
 
 type ScanTask struct {
@@ -217,6 +288,29 @@ type ServiceEvidence struct {
 	ObservedAt time.Time `json:"observed_at"`
 }
 
+type Subnet struct {
+	ID        int64      `json:"id"`
+	NetworkID int64      `json:"network_id"`
+	Cidr      string     `json:"cidr"`
+	VlanID    *int64     `json:"vlan_id"`
+	Gateway   *string    `json:"gateway"`
+	Metadata  string     `json:"metadata"`
+	FirstSeen *time.Time `json:"first_seen"`
+	LastSeen  *time.Time `json:"last_seen"`
+}
+
+type TopologyEdge struct {
+	ID           int64      `json:"id"`
+	FromDeviceID int64      `json:"from_device_id"`
+	ToDeviceID   int64      `json:"to_device_id"`
+	EdgeType     string     `json:"edge_type"`
+	ViaProtocol  *string    `json:"via_protocol"`
+	Confidence   *float64   `json:"confidence"`
+	Metadata     string     `json:"metadata"`
+	FirstSeen    *time.Time `json:"first_seen"`
+	LastSeen     *time.Time `json:"last_seen"`
+}
+
 type User struct {
 	ID                  int64      `json:"id"`
 	Username            string     `json:"username"`
@@ -240,4 +334,14 @@ type UserTotp struct {
 	Enabled     int64     `json:"enabled"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type Vlan struct {
+	ID          int64      `json:"id"`
+	VlanTag     int64      `json:"vlan_tag"`
+	Name        *string    `json:"name"`
+	Description *string    `json:"description"`
+	NetworkID   *int64     `json:"network_id"`
+	FirstSeen   *time.Time `json:"first_seen"`
+	LastSeen    *time.Time `json:"last_seen"`
 }

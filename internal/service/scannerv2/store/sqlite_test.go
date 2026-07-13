@@ -228,3 +228,152 @@ func countRows(t *testing.T, db *sql.DB, q string, args ...any) int {
 	}
 	return n
 }
+
+// TestNormalizeMAC verifies the canonicalization used as the device-identity key
+// across the store and runner upsert paths. Both must agree on the MAC form or
+// a device stored as "AA-BB..." would never match "aa:bb...".
+func TestNormalizeMAC(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"AA:BB:CC:DD:EE:FF", "aa:bb:cc:dd:ee:ff"},
+		{"AA-BB-CC-DD-EE-FF", "aa:bb:cc:dd:ee:ff"},
+		{"aabbccddeeff", "aa:bb:cc:dd:ee:ff"},
+		{"AABB.CCDD.EEFF", "aa:bb:cc:dd:ee:ff"},
+		{"  aa:bb:cc:dd:ee:ff  ", "aa:bb:cc:dd:ee:ff"},
+		{"", ""},
+		{"not-a-mac", ""},
+		{"aa:bb:cc:dd:ee", ""},    // too short
+		{"aa:bb:cc:dd:ee:gg", ""}, // non-hex
+	}
+	for _, c := range cases {
+		if got := NormalizeMAC(c.in); got != c.want {
+			t.Errorf("NormalizeMAC(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestRecordDevice_MACPrimaryDedup verifies the MAC-primary identity rule: a
+// device observed at two different IPs with the SAME MAC resolves to a single
+// asset row (roaming / re-DHCP / seen on two LANs). The row's ip stays the
+// first-seen value (updated only when empty) and mac_address is set.
+func TestRecordDevice_MACPrimaryDedup(t *testing.T) {
+	repo, ctx := newRepo(t, Options{NetworkID: 1})
+	mac := "AA:BB:CC:DD:EE:01"
+
+	// First sighting: 192.168.63.10, MAC aa:bb:...
+	d1 := scannerv2.DeviceRef{
+		IP: "192.168.63.10", Type: "camera",
+		Fields: map[string]string{"mac": mac},
+	}
+	if err := repo.RecordDevice(ctx, "192.168.63.10", d1); err != nil {
+		t.Fatalf("record (1): %v", err)
+	}
+
+	// Second sighting: DIFFERENT IP (roamed to 62 subnet), SAME MAC.
+	d2 := scannerv2.DeviceRef{
+		IP: "192.168.62.10", Type: "camera",
+		Fields: map[string]string{"mac": mac},
+	}
+	if err := repo.RecordDevice(ctx, "192.168.62.10", d2); err != nil {
+		t.Fatalf("record (2): %v", err)
+	}
+
+	// Exactly ONE device row — MAC matched globally, not inserted twice.
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices WHERE mac_address=?`, NormalizeMAC(mac)); cnt != 1 {
+		t.Fatalf("expected 1 row for roaming MAC, got %d", cnt)
+	}
+}
+
+// TestRecordDevice_NetworkPartitioning verifies the no-MAC fallback identity:
+// (ip, network_id). The same IP on two different networks is two distinct
+// devices; the same IP + same network updates the existing row.
+func TestRecordDevice_NetworkPartitioning(t *testing.T) {
+	repo, ctx := newRepo(t, Options{NetworkID: 1}) // LAN-A (network 1)
+	ip := "10.0.0.1"
+
+	// LAN-A sees 10.0.0.1 (no MAC).
+	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "router"}); err != nil {
+		t.Fatalf("record lanA: %v", err)
+	}
+
+	// Simulate LAN-B (network 2) on the SAME underlying DB: a second repo with
+	// NetworkID=2. Same IP, no MAC → must be a separate row.
+	repoB := NewSQLiteRepository(repo.db, Options{NetworkID: 2}, nil)
+	if err := repoB.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "router"}); err != nil {
+		t.Fatalf("record lanB: %v", err)
+	}
+
+	// Two rows: one per (ip, network).
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices WHERE ip_address=?`, ip); cnt != 2 {
+		t.Fatalf("expected 2 partitioned rows for same IP different network, got %d", cnt)
+	}
+
+	// LAN-A re-scans the same IP + same network → UPDATE, not insert (still 2 rows).
+	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "router", Brand: "Mikrotik"}); err != nil {
+		t.Fatalf("record lanA rescan: %v", err)
+	}
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices WHERE ip_address=?`, ip); cnt != 2 {
+		t.Fatalf("expected 2 rows after same-network rescan (update, not insert), got %d", cnt)
+	}
+	// The LAN-A row got the brand enrichment.
+	var brand string
+	if err := repo.db.QueryRow(`SELECT brand FROM devices WHERE ip_address=? AND network_id=1`, ip).Scan(&brand); err != nil {
+		t.Fatal(err)
+	}
+	if brand != "Mikrotik" {
+		t.Errorf("LAN-A row brand = %q, want Mikrotik", brand)
+	}
+}
+
+// TestRecordDevice_LegacyNullNetwork verifies the single-instance default path:
+// networkID=0 (NULL) → devices match by (ip, network_id IS NULL). A rescan of
+// the same IP updates the existing row rather than creating duplicates.
+func TestRecordDevice_LegacyNullNetwork(t *testing.T) {
+	repo, ctx := newRepo(t, Options{NetworkID: 0}) // unresolved → NULL
+	ip := "192.168.1.50"
+
+	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "nas"}); err != nil {
+		t.Fatalf("record (1): %v", err)
+	}
+	// Rescan same IP → update, still one row.
+	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "nas", Brand: "Synology"}); err != nil {
+		t.Fatalf("record (2): %v", err)
+	}
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices WHERE ip_address=? AND network_id IS NULL`, ip); cnt != 1 {
+		t.Fatalf("expected 1 legacy NULL-network row after rescan, got %d", cnt)
+	}
+}
+
+// TestRecordDevice_MACFillsOnRescan verifies that a device first seen WITHOUT a
+// MAC (matched by ip+network) gets its mac_address filled on a later scan that
+// resolves the MAC (e.g. after an ARP walk), and subsequent scans then key off
+// the MAC globally.
+func TestRecordDevice_MACFillsOnRescan(t *testing.T) {
+	repo, ctx := newRepo(t, Options{NetworkID: 1})
+	ip := "192.168.63.20"
+
+	// First scan: no MAC → row created, mac_address empty.
+	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "embedded"}); err != nil {
+		t.Fatalf("record (1): %v", err)
+	}
+	var mac string
+	if err := repo.db.QueryRow(`SELECT mac_address FROM devices WHERE ip_address=?`, ip).Scan(&mac); err != nil {
+		t.Fatal(err)
+	}
+	if mac != "" {
+		t.Fatalf("expected empty mac after first scan, got %q", mac)
+	}
+
+	// Second scan: MAC resolved → existing row updated, mac_address filled.
+	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{
+		IP: ip, Type: "embedded",
+		Fields: map[string]string{"mac": "AA-BB-CC-DD-EE-02"},
+	}); err != nil {
+		t.Fatalf("record (2): %v", err)
+	}
+	if err := repo.db.QueryRow(`SELECT mac_address FROM devices WHERE ip_address=?`, ip).Scan(&mac); err != nil {
+		t.Fatal(err)
+	}
+	if mac != "aa:bb:cc:dd:ee:02" {
+		t.Errorf("mac_address not filled/normalized: got %q", mac)
+	}
+}

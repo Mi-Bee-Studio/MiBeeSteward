@@ -239,6 +239,76 @@ func httpServerToBrand(server string) string {
 	return ""
 }
 
+// hasCameraEvidence reports whether the host produced RTSP-banner or ONVIF
+// response evidence — i.e. it is (very likely) a camera. Used to suppress
+// using the HTTP Server header (nginx/Apache reverse proxy) as the device
+// brand, since that software is not the camera's vendor.
+func hasCameraEvidence(ev []Evidence) bool {
+	for _, e := range ev {
+		if e.Kind == "rtsp_banner" || e.Kind == "onvif_response" {
+			return true
+		}
+	}
+	return false
+}
+
+// isWebServerName reports whether a brand string is a generic web-server
+// software name (nginx, Apache, Caddy, etc.) rather than a real device vendor.
+// Used by the TLS evidence fold to decide whether a cert-derived brand should
+// override the HTTP Server header brand.
+func isWebServerName(brand string) bool {
+	switch lowerASCII(brand) {
+	case "nginx", "apache", "caddy", "lighttpd", "microsoft iis":
+		return true
+	}
+	return false
+}
+
+// certCNToBrand extracts a vendor name from a TLS certificate's subject CN.
+// Mirrors the classifier's vendorFromCertCN keyword matching, but runs in the
+// orchestrator's evidence fold so the brand reaches Device.Fields (the path
+// the device record reads from). Without this, TLS-derived brands (OpenWrt,
+// GL.iNet, Hikvision, etc.) stay in identity metadata and never reach the
+// device's scan_attributes.brand.
+func certCNToBrand(cn string) string {
+	lower := lowerASCII(cn)
+	switch {
+	case containsFold(lower, "hikvision") || containsFold(lower, "hik"):
+		return "Hikvision"
+	case containsFold(lower, "dahua"):
+		return "Dahua"
+	case containsFold(lower, "axis"):
+		return "Axis"
+	case containsFold(lower, "unifi") || containsFold(lower, "ubiquiti"):
+		return "Ubiquiti"
+	case containsFold(lower, "synology"):
+		return "Synology"
+	case containsFold(lower, "qnap"):
+		return "QNAP"
+	case containsFold(lower, "cisco"):
+		return "Cisco"
+	case containsFold(lower, "fortinet") || containsFold(lower, "fortigate"):
+		return "Fortinet"
+	case containsFold(lower, "openwrt"):
+		return "OpenWrt"
+	case containsFold(lower, "istoreos"):
+		return "iStoreOS"
+	case containsFold(lower, "gl-inet") || containsFold(lower, "glinet"):
+		return "GL.iNet"
+	}
+	return ""
+}
+
+// certFieldsToBrand checks both subject_cn and issuer_org for vendor keywords.
+// Some devices (iStoreOS routers) put the product name in subject_cn and
+// "OpenWrt" in issuer_org — checking both maximizes coverage.
+func certFieldsToBrand(subjectCN, issuerOrg string) string {
+	if b := certCNToBrand(subjectCN); b != "" {
+		return b
+	}
+	return certCNToBrand(issuerOrg)
+}
+
 func containsFold(s, substr string) bool {
 	return len(s) >= len(substr) && (containsFoldImpl(s, substr))
 }
@@ -409,14 +479,27 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			if v := e.RawData["subject_cn"]; v != "" && report.Device.Fields["node_hostname"] == "" {
 				report.Device.Fields["node_hostname"] = stripWildcardPrefix(v)
 			}
-			if v := e.RawData["inferred_brand"]; v != "" && report.Device.Fields["inferred_brand"] == "" {
-				report.Device.Fields["inferred_brand"] = v
+			// Derive brand from the cert CN. TLS cert vendor (OpenWrt, GL.iNet,
+			// Hikvision) is a STRONGER signal than the HTTP Server header
+			// (nginx/Apache), so override when the current brand looks like a
+			// generic web-server name. Only set when empty for genuine device
+			// brands that don't conflict.
+			cnBrand := certFieldsToBrand(e.RawData["subject_cn"], e.RawData["issuer_org"])
+			if cnBrand != "" {
+				current := report.Device.Fields["inferred_brand"]
+				if current == "" || isWebServerName(current) {
+					report.Device.Fields["inferred_brand"] = cnBrand
+				}
 			}
 		case "http":
 			// The Server header sometimes carries a vendor/product string that
 			// is more specific than OUI (e.g. "nginx/1.25", "Apache/2.4.58").
-			// Don't overwrite a stronger SNMP/cert-derived brand.
-			if v := e.RawData["server"]; v != "" && report.Device.Fields["inferred_brand"] == "" {
+			// Don't overwrite a stronger SNMP/cert-derived brand. Also skip when
+			// the host has RTSP/ONVIF evidence: cameras commonly front their web
+			// UI with nginx/Apache, and the web-server software is NOT the camera
+			// vendor — setting "nginx" as the brand of a Hikvision camera is
+			// misleading. Let the OUI/cert/ONVIF brand (or empty) win instead.
+			if v := e.RawData["server"]; v != "" && report.Device.Fields["inferred_brand"] == "" && !hasCameraEvidence(report.Evidence) {
 				report.Device.Fields["inferred_brand"] = httpServerToBrand(v)
 			}
 		case "mdns":
@@ -555,12 +638,51 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		if err := o.repo.RecordHeartbeats(ctx, report.IP, report.Heartbeats); err != nil {
 			o.logger.Debug("record heartbeats failed", "ip", report.IP, "error", err)
 		}
+		// Persist L2 neighbors (Phase 4): extract "neighbor"-kind evidence
+		// (from the Bridge-MIB / LLDP / CDP probes) into NeighborSpecs and
+		// record them. The store resolves ip→device_id and upserts edges.
+		if neighbors := extractNeighbors(report.Evidence); len(neighbors) > 0 {
+			if err := o.repo.RecordNeighbors(ctx, report.IP, neighbors); err != nil {
+				o.logger.Debug("record neighbors failed", "ip", report.IP, "error", err)
+			}
+		}
 	}
 }
 
 // cascadeKey is the dedup key for the cycle guard: service@port.
 func cascadeKey(s ServiceIdentity) string {
 	return s.Service + "@" + itoa(s.Port)
+}
+
+// extractNeighbors pulls L2 adjacency edges from "neighbor"-kind evidence
+// (emitted by the Bridge-MIB / LLDP / CDP probes). Each evidence piece's
+// RawData carries neighbor_mac + protocol + optional local/remote_port. The MAC
+// is normalized (the store's RecordNeighbors expects canonical form).
+func extractNeighbors(evidence []Evidence) []NeighborSpec {
+	var out []NeighborSpec
+	seen := map[string]bool{} // dedup (neighbor_mac, protocol) within one host
+	for _, e := range evidence {
+		if e.Kind != "neighbor" || e.RawData == nil {
+			continue
+		}
+		mac := e.RawData["neighbor_mac"]
+		protocol := e.RawData["protocol"]
+		if mac == "" || protocol == "" {
+			continue
+		}
+		key := mac + "|" + protocol
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, NeighborSpec{
+			NeighborMAC: mac,
+			Protocol:    protocol,
+			LocalPort:   e.RawData["local_port"],
+			RemotePort:  e.RawData["remote_port"],
+		})
+	}
+	return out
 }
 
 // itoa avoids strconv import in this file.

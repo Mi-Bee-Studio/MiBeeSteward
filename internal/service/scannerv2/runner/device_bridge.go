@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/service/scannerv2"
+	"mibee-steward/internal/service/scannerv2/store"
 )
 
 // applyDeviceBridge mirrors v1's DeviceManager.CreateOrUpdate: for an alive
@@ -19,7 +21,21 @@ import (
 // The v2 HostReport already carries enriched device fields (set by
 // ServiceHandlers) and generated heartbeats, so this function is a thin
 // adapter from the in-memory report to the devices/heartbeat_configs tables.
-func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport) (bool, bool) {
+// applyDeviceBridge mirrors v1's DeviceManager.CreateOrUpdate: for an alive
+// host, create or update the devices row (filling only empty/"unknown" fields
+// on update) and — for newly-created devices — seed heartbeat configs derived
+// from the report's heartbeats. Returns (isNew, wasUpdated).
+//
+// networkID is the per-call origin network (devices.network_id). The local
+// scan path passes rn.networkID (the instance's own network); the center's
+// ingestion path passes the agent's network resolved from its token, so one
+// center runner can merge reports from many networks without per-agent
+// construction.
+//
+// The v2 HostReport already carries enriched device fields (set by
+// ServiceHandlers) and generated heartbeats, so this function is a thin
+// adapter from the in-memory report to the devices/heartbeat_configs tables.
+func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string) (bool, bool) {
 	inferredType := rep.Device.Fields["inferred_type"]
 	// A service handler may have set a generic "server"/"pc" type from a single
 	// open port (ssh, smb, mysql, …). That's a weak signal — routers, NAS, and
@@ -47,18 +63,55 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	inferredDescr := rep.Device.Fields["inferred_description"]
 	inferredLoc := rep.Device.Fields["inferred_location"]
 
-	// Look up existing device by IP.
+	// MAC-primary identity: when a MAC is known, match across ALL networks so a
+	// device that roams between subnets (or was seen by another instance) stays
+	// a single asset. Without a MAC, fall back to (ip, network_id) — same IP on
+	// two different networks is two distinct devices. This mirrors the store's
+	// RecordDevice lookup so both upsert writers agree on identity.
+	mac := reportMAC(rep)
+
 	var existingID int64
-	err := rn.dbConn.QueryRowContext(ctx,
-		`SELECT id FROM devices WHERE ip_address = ? LIMIT 1`, rep.IP).Scan(&existingID)
+	var err error
+	switch {
+	case mac != "":
+		err = rn.dbConn.QueryRowContext(ctx,
+			`SELECT id FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&existingID)
+		// Fall back to (ip, network_id) when the MAC lookup misses: the device
+		// may have been first seen WITHOUT a MAC and only resolved one on this
+		// scan (e.g. after an ARP walk). Match it back so we fill the existing
+		// row's mac_address instead of creating a duplicate. Mirrors store.
+		if err == sql.ErrNoRows {
+			if networkID.Valid {
+				err = rn.dbConn.QueryRowContext(ctx,
+					`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND mac_address = '' LIMIT 1`,
+					rep.IP, networkID.Int64).Scan(&existingID)
+			} else {
+				err = rn.dbConn.QueryRowContext(ctx,
+					`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' LIMIT 1`,
+					rep.IP).Scan(&existingID)
+			}
+		}
+	default:
+		if networkID.Valid {
+			err = rn.dbConn.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+				rep.IP, networkID.Int64).Scan(&existingID)
+		} else {
+			err = rn.dbConn.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+				rep.IP).Scan(&existingID)
+		}
+	}
 
 	switch err {
 	case sql.ErrNoRows:
-		devID, derr := rn.createDevice(ctx, inferredType, inferredBrand, inferredDescr, inferredLoc, rep)
+		devID, derr := rn.createDevice(ctx, inferredType, inferredBrand, inferredDescr, inferredLoc, rep, mac, networkID)
 		if derr != nil {
-			rn.logger.Warn("device bridge: create device failed", "ip", rep.IP, "error", derr)
+			rn.logger.Warn("device bridge: create device failed", "ip", rep.IP, "mac", mac, "error", derr)
 			return false, false
 		}
+		// Change detection: a brand-new device is a device_added event.
+		rn.recordDeviceAdded(ctx, devID, networkID, agentID)
 		// A freshly-discovered alive host starts online; make sure the heartbeat
 		// service holds no stale failure state for it before configs are seeded.
 		if rn.heartbeat != nil {
@@ -86,14 +139,38 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		return true, false
 
 	case nil:
-		if _, uerr := rn.dbConn.ExecContext(ctx, buildExistingUpdate(inferredType, inferredBrand, inferredDescr, inferredLoc, rep),
-			existingUpdateArgs(existingID, inferredType, inferredBrand, inferredDescr, inferredLoc, rep)...); uerr != nil {
-			rn.logger.Warn("device bridge: update device failed", "ip", rep.IP, "error", uerr)
+		// Change detection: capture the BEFORE snapshot before any UPDATE
+		// mutates the row. Read the full device row (the identity SELECT above
+		// only fetched id).
+		before := rn.snapshotDevice(ctx, existingID)
+		if _, uerr := rn.dbConn.ExecContext(ctx, buildExistingUpdate(),
+			existingUpdateArgs(existingID, inferredType, inferredBrand, inferredDescr, inferredLoc, rep, mac)...); uerr != nil {
+			rn.logger.Warn("device bridge: update device failed", "ip", rep.IP, "mac", mac, "error", uerr)
 		}
-		// Always set status=online for alive hosts (matches v1).
+		// Always set status=online for alive hosts (matches v1). Also refresh
+		// last_seen (online freshness) and stamp mac/network when newly resolved
+		// (a re-scan may have filled a previously-empty MAC after an ARP walk).
 		now := time.Now().UTC()
-		_, _ = rn.dbConn.ExecContext(ctx, `UPDATE devices SET status='online', last_scanned_at=?, updated_at=? WHERE id=?`,
-			now, now, existingID)
+		_, _ = rn.dbConn.ExecContext(ctx, `
+			UPDATE devices SET status='online',
+			    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
+			    last_seen = COALESCE(last_seen, ?),
+			    last_scanned_at = ?, updated_at = ? WHERE id=?`,
+			mac, mac, now, now, now, existingID)
+		// Change detection: re-read the AFTER snapshot and diff. Only emit
+		// device_changed when a tracked field actually differs — this replaces
+		// the old "wasUpdated is always true" heuristic that fired on every
+		// rescan regardless of whether anything changed.
+		changed := false
+		if before != nil {
+			after := rn.snapshotDevice(ctx, existingID)
+			if after != nil {
+				if diff := changedetect.Diff(*before, *after); diff != nil {
+					rn.recordDeviceChanged(ctx, existingID, networkID, agentID, *before, diff)
+					changed = true
+				}
+			}
+		}
 		// Clear the heartbeat service's failure counter for this device: the
 		// scan just proved it's alive, so a stale counter from a prior flapping
 		// window must not pull it back to offline on the next heartbeat tick.
@@ -117,12 +194,90 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				}
 			}
 		}
-		return false, true
+		return false, changed
 
 	default:
-		rn.logger.Warn("device bridge: lookup failed", "ip", rep.IP, "error", err)
+		rn.logger.Warn("device bridge: lookup failed", "ip", rep.IP, "mac", mac, "error", err)
 		return false, false
 	}
+}
+
+// snapshotDevice reads the full device row for change-detection diffing. Returns
+// nil on lookup error (the caller treats nil as "skip diff"). Uses rn.queries
+// (sqlc) so the snapshot matches the schema-typed view changedetect expects.
+func (rn *Runner) snapshotDevice(ctx context.Context, deviceID int64) *changedetect.DeviceSnapshot {
+	d, err := rn.queries.GetDevice(ctx, deviceID)
+	if err != nil {
+		return nil
+	}
+	s := changedetect.SnapshotFromDevice(d)
+	return &s
+}
+
+// recordDeviceAdded emits a device_added event (after_data = the new row). The
+// snapshot is read back after createDevice so after_data reflects the persisted
+// state, not just the in-memory report.
+func (rn *Runner) recordDeviceAdded(ctx context.Context, deviceID int64, networkID sql.NullInt64, agentID string) {
+	if rn.changeRecorder == nil {
+		return
+	}
+	var after *changedetect.DeviceSnapshot
+	if s := rn.snapshotDevice(ctx, deviceID); s != nil {
+		after = s
+	}
+	var nidPtr *int64
+	if networkID.Valid {
+		v := networkID.Int64
+		nidPtr = &v
+	}
+	rn.changeRecorder.Record(ctx, changedetect.ChangeEvent{
+		ChangeType: changedetect.ChangeTypeDeviceAdded,
+		EntityType: changedetect.EntityTypeDevice,
+		DeviceID:   deviceID,
+		NetworkID:  nidPtr,
+		AgentID:    agentID,
+		Before:     nil, // added has no before
+		After:      after,
+	})
+}
+
+// recordDeviceChanged emits a device_changed event with before_data (full
+// snapshot) + after_data (the field-level diff map: {field: [old, new]}).
+func (rn *Runner) recordDeviceChanged(ctx context.Context, deviceID int64, networkID sql.NullInt64, agentID string, before changedetect.DeviceSnapshot, diff map[string][2]string) {
+	if rn.changeRecorder == nil {
+		return
+	}
+	var nidPtr *int64
+	if networkID.Valid {
+		v := networkID.Int64
+		nidPtr = &v
+	}
+	rn.changeRecorder.Record(ctx, changedetect.ChangeEvent{
+		ChangeType: changedetect.ChangeTypeDeviceChanged,
+		EntityType: changedetect.EntityTypeDevice,
+		DeviceID:   deviceID,
+		NetworkID:  nidPtr,
+		AgentID:    agentID,
+		Before:     before,
+		After:      diff,
+	})
+}
+
+// reportMAC extracts and canonicalizes the MAC from a HostReport. It checks the
+// device Fields first (handler-enriched), then falls back to mac-kind evidence
+// (ARP/router-ARP probe output). Returns "" when no MAC was observed.
+func reportMAC(rep scannerv2.HostReport) string {
+	if m := store.NormalizeMAC(rep.Device.Fields["mac"]); m != "" {
+		return m
+	}
+	for _, e := range rep.Evidence {
+		if e.Kind == "mac" {
+			if m := store.NormalizeMAC(e.RawData["mac"]); m != "" {
+				return m
+			}
+		}
+	}
+	return ""
 }
 
 // deviceHasHeartbeatConfig reports whether the device already has any row in
@@ -140,8 +295,10 @@ func (rn *Runner) deviceHasHeartbeatConfig(ctx context.Context, deviceID int64) 
 	return n > 0
 }
 
-// createDevice inserts a new device row derived from the report.
-func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, location string, rep scannerv2.HostReport) (int64, error) {
+// createDevice inserts a new device row derived from the report. networkID is
+// the per-call origin network (the agent's network on the center ingestion
+// path, the instance's own network on the local scan path).
+func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, location string, rep scannerv2.HostReport, mac string, networkID sql.NullInt64) (int64, error) {
 	name := rep.IP
 	if h := rep.Device.Fields["node_hostname"]; h != "" {
 		name = h
@@ -158,12 +315,21 @@ func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, locat
 	scanAttrs := marshalScanAttributes(buildScanAttributes(rep))
 	now := time.Now().UTC()
 	res, err := rn.dbConn.ExecContext(ctx, `
-		INSERT INTO devices (name, type, brand, ip_address, status, scan_source, description, location,
+		INSERT INTO devices (name, type, brand, ip_address, mac_address,
+		                     status, scan_source, description, location,
 		                     open_ports, detected_services, prometheus_url, node_exporter_url,
-		                     scan_attributes,
+		                     scan_attributes, network_id, first_seen, last_seen,
 		                     tags, last_scan_rtt_ms, last_scanned_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'online', 'scanner_v2', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		name, devType, brand, rep.IP, descr, location, ports, services, promURL, neURL, scanAttrs, tags, rep.RTTMs, now, now, now)
+		VALUES (?, ?, ?, ?, ?,
+		        'online', 'scanner_v2', ?, ?,
+		        ?, ?, ?, ?,
+		        ?, ?, ?, ?,
+		        ?, ?, ?, ?, ?)`,
+		name, devType, brand, rep.IP, mac,
+		descr, location,
+		ports, services, promURL, neURL,
+		scanAttrs, networkID, now, now,
+		tags, rep.RTTMs, now, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -171,13 +337,9 @@ func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, locat
 	return id, nil
 }
 
-// buildExistingUpdate returns an UPDATE statement that fills only empty/
-// "unknown" fields on the existing device, then always refreshes scan metadata.
 // buildExistingUpdate returns the static UPDATE statement for an existing
-// device. The positional args are assembled separately in existingUpdateArgs;
-// the parameters here are kept for signature symmetry/readability but unused
-// in the (static) SQL body.
-func buildExistingUpdate(_, _, _, _ string, _ scannerv2.HostReport) string {
+// device. The positional args are assembled separately in existingUpdateArgs.
+func buildExistingUpdate() string {
 	return `
 		UPDATE devices SET
 		    name = CASE WHEN (name = '' OR name = ip_address) THEN ? ELSE name END,
@@ -197,8 +359,10 @@ func buildExistingUpdate(_, _, _, _ string, _ scannerv2.HostReport) string {
 }
 
 // existingUpdateArgs builds the positional args matching buildExistingUpdate's
-// placeholder order.
-func existingUpdateArgs(id int64, inferredType, brand, descr, location string, rep scannerv2.HostReport) []any {
+// placeholder order. (MAC/network_id/last_seen are stamped in a separate UPDATE
+// in applyDeviceBridge so the identity fields update on every scan, not just
+// when the CASE-when-empty conditions in this statement happen to fire.)
+func existingUpdateArgs(id int64, inferredType, brand, descr, location string, rep scannerv2.HostReport, _ string) []any {
 	ports, services := deviceScanInfoJSON(rep)
 	promURL := rep.Device.Fields["prometheus_url"]
 	neURL := rep.Device.Fields["node_exporter_url"]
@@ -352,7 +516,7 @@ func heuristicDeviceType(rep scannerv2.HostReport) string {
 		"routeros", "mikrotik", "r2s", "r4s", "r6s", "r68s", "nanopi-r",
 		"miwifi", "xiaomi-router", "tplink", "tp-link", "ap-", "-ap", "ac68",
 		"ac88", "ax1800", "ax3000", "ax6000", "k2p", "unifi", "edgeos") ||
-		containsAny(brand, "mikrotik", "ubiquiti", "tp-link", "tplink"):
+		containsAny(brand, "mikrotik", "ubiquiti", "tp-link", "tplink", "xdr"):
 		return "router"
 	// Hostname explicitly says server/iot/proxmox.
 	case strings.Contains(host, "server") || strings.Contains(host, "proxmox"):

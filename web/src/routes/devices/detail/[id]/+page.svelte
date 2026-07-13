@@ -143,6 +143,24 @@
 		return `${min}m`;
 	}
 
+	// Export the device's heartbeat results (CSV/JSON) via the unified api client.
+	async function exportHeartbeatResults(format: 'csv' | 'json') {
+		try {
+			const blob = await api.download(`/devices/${deviceId}/heartbeat-results/export?format=${format}`);
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `heartbeat-${deviceId}.${format}`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+			addToast('success', m['devices.Export']?.() ?? 'Exported');
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
 
 	// --- Lifecycle ---
 	onMount(() => {
@@ -362,6 +380,12 @@
 		pc: m['devices.PC'](),
 		embedded: m['devices.Embedded'](),
 		iot: m['devices.IoT'](),
+		server: m['devices.Server']?.() ?? 'server',
+		switch: m['devices.Switch']?.() ?? 'switch',
+		router: m['devices.Router']?.() ?? 'router',
+		firewall: m['devices.Firewall']?.() ?? 'firewall',
+		nas: m['devices.NAS']?.() ?? 'nas',
+		camera: m['devices.Camera']?.() ?? 'camera',
 		other: m['devices.Other']()
 	};
 
@@ -547,13 +571,30 @@
 
 	<!-- Device info header -->
 	{#if device}
+		{@const sa = device.scan_attributes}
+		{@const mac = sa?.mac || device.mac_address}
 		<div class="device-info-header">
-			<div class="flex items-center gap-3">
-				<span class="inline-block w-3 h-3 rounded-full {statusDotClass(device.status)}"></span>
-				<h2 class="text-xl font-bold text-primary">{device.name}</h2>
-				<span class="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
-					{typeLabel[device.type] || typeLabel['other']!}
-				</span>
+			<div class="flex items-center justify-between gap-3 flex-wrap">
+				<div class="flex items-center gap-3">
+					<span class="inline-block w-3 h-3 rounded-full {statusDotClass(device.status)}"></span>
+					<h2 class="text-xl font-bold text-primary">{device.name}</h2>
+					<span class="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+						{typeLabel[device.type] || typeLabel['other']!}
+					</span>
+					{#if sa?.inferred_type && sa.inferred_type !== device.type}
+						<span class="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-medium" title={m['scanfields.Inferred Type']()}>
+							{m['scanfields.Inferred Type']()}: {sa.inferred_type}
+						</span>
+					{/if}
+					{#if device.network_name}
+						<span class="text-xs px-2 py-0.5 rounded-full bg-surface-2 text-muted font-medium">
+							{device.network_name}
+						</span>
+					{/if}
+				</div>
+				<a href="/devices" class="text-xs text-accent hover:underline">
+					← {m['navigation.Devices']?.() ?? 'Devices'}
+				</a>
 			</div>
 			<div class="device-meta">
 				{#if device.ip_address}
@@ -562,14 +603,83 @@
 						<span class="font-mono">{device.ip_address}</span>
 					</span>
 				{/if}
+				{#if mac}
+					<span class="device-meta-item">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+						<span class="font-mono text-xs">{mac}</span>
+					</span>
+				{/if}
 				{#if device.location}
 					<span class="device-meta-item">
 						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
 						{device.location}
 					</span>
 				{/if}
+				{#if device.serial_number}
+					<span class="device-meta-item">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+						<span class="font-mono text-xs">{device.serial_number}</span>
+					</span>
+				{/if}
 			</div>
 		</div>
+	{/if}
+
+	<!-- Asset Information (form fields surfaced as read-only display) -->
+	{#if device}
+		{@const hasAssetInfo = device.brand || device.model || device.purchase_date ||
+			device.warranty_expiry || device.purpose || device.description || device.tags}
+		{#if hasAssetInfo}
+			{@const tags = parseLabels(device.tags)}
+			<div class="scan-info-panel mt-4">
+				<h3 class="scan-info-title">
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+					{m['assetinfo.Title']?.() ?? 'Asset Information'}
+				</h3>
+				<div class="scan-info-grid">
+					{#if device.brand || device.model}
+						<div class="scan-info-field">
+							<span class="scan-info-label">{m['devices.Brand']?.() ?? 'Brand'} / {m['devices.Model']?.() ?? 'Model'}</span>
+							<span class="scan-info-value">{[device.brand, device.model].filter(Boolean).join(' · ') || '-'}</span>
+						</div>
+					{/if}
+					{#if device.purchase_date}
+						<div class="scan-info-field">
+							<span class="scan-info-label">{m['devices.Purchase Date']?.() ?? 'Purchase Date'}</span>
+							<span class="scan-info-value">{device.purchase_date}</span>
+						</div>
+					{/if}
+					{#if device.warranty_expiry}
+						<div class="scan-info-field">
+							<span class="scan-info-label">{m['devices.Warranty Expiry']?.() ?? 'Warranty Expiry'}</span>
+							<span class="scan-info-value">{device.warranty_expiry}</span>
+						</div>
+					{/if}
+					{#if device.purpose}
+						<div class="scan-info-field">
+							<span class="scan-info-label">{m['devices.Purpose']?.() ?? 'Purpose'}</span>
+							<span class="scan-info-value">{device.purpose}</span>
+						</div>
+					{/if}
+					{#if device.description}
+						<div class="scan-info-field">
+							<span class="scan-info-label">{m['common.Description']?.() ?? 'Description'}</span>
+							<span class="scan-info-value">{device.description}</span>
+						</div>
+					{/if}
+					{#if Object.keys(tags).length > 0}
+						<div class="scan-info-field">
+							<span class="scan-info-label">{m['common.Tags']?.() ?? 'Tags'}</span>
+							<div class="flex flex-wrap gap-1 mt-1">
+								{#each Object.entries(tags) as [k, v]}
+									<span class="service-badge">{k}: {v}</span>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</div>
+			</div>
+		{/if}
 	{/if}
 
 	<!-- Scan Info + Prometheus Labels -->
@@ -677,11 +787,13 @@
 		{@const extras = (sa.extras ?? {}) as Record<string, string>}
 		{@const hasDiscoveryData = Boolean(
 			sa.vendor || sa.mac || sa.hostname || sa.os || sa.os_version ||
-			sa.kernel_version || sa.firmware_version || sa.cpu_count ||
-			sa.memory_total_bytes || sa.uptime_seconds || sa.inferred_type ||
-			sa.inferred_description || (sa.snmp && (sa.snmp.sys_descr || sa.snmp.sys_object_id)) ||
-			extras['mdns_services'] || extras['mdns_model'] || extras['mdns_vendor'] ||
-			extras['ssdp_server'] || extras['ssdp_location'] || extras['netbios_workgroup']
+			sa.kernel_version || sa.firmware_version || sa.cpu_count || sa.cpu_model ||
+			sa.memory_total_bytes || sa.uptime_seconds || sa.ttl || sa.inferred_type ||
+			sa.inferred_description || (sa.snmp && (sa.snmp.sys_descr || sa.snmp.sys_object_id || sa.snmp.sys_location || sa.snmp.sys_contact)) ||
+			(sa.prometheus && (sa.prometheus.url || sa.prometheus.node_exporter_url)) ||
+			(sa.open_ports && sa.open_ports.length > 0) ||
+			(sa.detected_services && sa.detected_services.length > 0) ||
+			Object.keys(extras).length > 0
 		)}
 		{#if hasDiscoveryData}
 			<div class="scan-info-panel mt-4">
@@ -696,19 +808,68 @@
 					{#if sa.os || sa.os_version}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.OS']()}</span><span class="scan-info-value">{[sa.os, sa.os_version].filter(Boolean).join(' ')}</span></div>{/if}
 					{#if sa.kernel_version}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Kernel']()}</span><span class="scan-info-value font-mono text-xs">{sa.kernel_version}</span></div>{/if}
 					{#if sa.firmware_version}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Firmware']()}</span><span class="scan-info-value">{sa.firmware_version}</span></div>{/if}
-					{#if sa.cpu_count}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.CPU']()}</span><span class="scan-info-value">{m['scanfields.CPU Value']({ count: sa.cpu_count })}</span></div>{/if}
+					{#if sa.cpu_count || sa.cpu_model}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.CPU']()}</span><span class="scan-info-value">{sa.cpu_model ? sa.cpu_model : m['scanfields.CPU Value']({ count: sa.cpu_count ?? 0 })}{#if sa.cpu_model && sa.cpu_count} ({sa.cpu_count} vCPU){/if}</span></div>{/if}
 					{#if sa.memory_total_bytes}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Memory']()}</span><span class="scan-info-value">{formatBytes(sa.memory_total_bytes)}</span></div>{/if}
 					{#if sa.uptime_seconds}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Uptime']()}</span><span class="scan-info-value">{formatDuration(sa.uptime_seconds)}</span></div>{/if}
+					{#if sa.ttl}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.TTL']?.() ?? 'ICMP TTL'}</span><span class="scan-info-value font-mono text-xs">{sa.ttl}</span></div>{/if}
 					{#if sa.inferred_type}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Inferred Type']()}</span><span class="scan-info-value">{sa.inferred_type}</span></div>{/if}
 					{#if sa.inferred_description}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Description']()}</span><span class="scan-info-value">{sa.inferred_description}</span></div>{/if}
-					{#if sa.snmp && (sa.snmp.sys_descr || sa.snmp.sys_object_id)}
-						<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_name ? sa.snmp.sys_name + ' — ' : ''}{sa.snmp.sys_descr ?? sa.snmp.sys_object_id ?? ''}</span></div>
-					{/if}
-					{#if extras['mdns_services']}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.mDNS Services']()}</span><span class="scan-info-value text-xs">{extras['mdns_services']}</span></div>{/if}
-					{#if extras['mdns_model'] || extras['mdns_md']}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Model']()}</span><span class="scan-info-value text-xs">{extras['mdns_model'] ?? extras['mdns_md']}</span></div>{/if}
-					{#if extras['ssdp_server']}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SSDP']()}</span><span class="scan-info-value text-xs">{extras['ssdp_server']}</span></div>{/if}
-					{#if extras['netbios_workgroup']}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Workgroup']()}</span><span class="scan-info-value text-xs">{extras['netbios_workgroup']}</span></div>{/if}
 				</div>
+
+				<!-- SNMP sub-card -->
+				{#if sa.snmp && (sa.snmp.sys_descr || sa.snmp.sys_object_id || sa.snmp.sys_location || sa.snmp.sys_contact || sa.snmp.sys_services != null)}
+					<div class="mt-3 pt-3 border-t border-border">
+						<h4 class="scan-info-label mb-2">SNMP</h4>
+						<div class="scan-info-grid">
+							{#if sa.snmp.sys_name}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Name']?.() ?? 'sysName'}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_name}</span></div>{/if}
+							{#if sa.snmp.sys_descr}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Descr']?.() ?? 'sysDescr'}</span><span class="scan-info-value text-xs">{sa.snmp.sys_descr}</span></div>{/if}
+							{#if sa.snmp.sys_object_id}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP OID']?.() ?? 'sysObjectID'}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_object_id}</span></div>{/if}
+							{#if sa.snmp.sys_location}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Location']?.() ?? 'sysLocation'}</span><span class="scan-info-value text-xs">{sa.snmp.sys_location}</span></div>{/if}
+							{#if sa.snmp.sys_contact}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Contact']?.() ?? 'sysContact'}</span><span class="scan-info-value text-xs">{sa.snmp.sys_contact}</span></div>{/if}
+							{#if sa.snmp.sys_services != null}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Services']?.() ?? 'sysServices'}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_services}</span></div>{/if}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Services & ports (prefer typed scan_attributes) -->
+				{#if (sa.detected_services && sa.detected_services.length > 0) || (sa.open_ports && sa.open_ports.length > 0)}
+					<div class="mt-3 pt-3 border-t border-border">
+						<h4 class="scan-info-label mb-2">{m['scaninfo.Detected Services']?.() ?? 'Detected Services'}</h4>
+						<div class="flex flex-wrap gap-1">
+							{#each sa.detected_services ?? [] as svc}
+								<span class="service-badge">{svc.port}/{svc.name}{svc.protocol ? ' · ' + svc.protocol : ''}{svc.version ? ' ' + svc.version : ''}</span>
+							{/each}
+							{#each sa.open_ports ?? [] as p}
+								{#if !(sa.detected_services ?? []).some((s) => s.port === p.port)}
+									<span class="service-badge opacity-70">{p.port}{p.service ? '/' + p.service : ''}</span>
+								{/if}
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Monitoring endpoints (from scan_attributes.prometheus) -->
+				{#if sa.prometheus && (sa.prometheus.url || sa.prometheus.node_exporter_url)}
+					<div class="mt-3 pt-3 border-t border-border">
+						<h4 class="scan-info-label mb-2">{m['scanfields.Monitoring']?.() ?? 'Monitoring'}</h4>
+						<div class="scan-info-grid">
+							{#if sa.prometheus.url}<div class="scan-info-field"><span class="scan-info-label">Prometheus</span><a href={sa.prometheus.url} target="_blank" rel="noopener" class="text-primary hover:underline font-mono text-xs">{sa.prometheus.url}</a></div>{/if}
+							{#if sa.prometheus.node_exporter_url}<div class="scan-info-field"><span class="scan-info-label">Node Exporter</span><a href={sa.prometheus.node_exporter_url} target="_blank" rel="noopener" class="text-primary hover:underline font-mono text-xs">{sa.prometheus.node_exporter_url}</a></div>{/if}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Discovery extras (grouped by dotted namespace) -->
+				{#if Object.keys(extras).length > 0}
+					<div class="mt-3 pt-3 border-t border-border">
+						<h4 class="scan-info-label mb-2">{m['scanfields.Extras']?.() ?? 'Discovery Extras'}</h4>
+						<div class="scan-info-grid">
+							{#each Object.entries(extras).sort(([a], [b]) => a.localeCompare(b)) as [k, v]}
+								<div class="scan-info-field"><span class="scan-info-label font-mono">{k}</span><span class="scan-info-value text-xs">{v}</span></div>
+							{/each}
+						</div>
+					</div>
+				{/if}
 			</div>
 		{/if}
 	{/if}
@@ -792,15 +953,35 @@
 				<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 inline-block mr-1.5 text-primary align-text-bottom" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
 				{m['heartbeat.Trend Title']()}
 			</h3>
-			{#if !heartbeatConfigLoading && heartbeatConfigs.length === 0 && device?.ip_address}
-				<button
-					onclick={createDefaultHeartbeatConfig}
-					disabled={creatingHeartbeat}
-					class="btn btn-primary"
-				>
-					{creatingHeartbeat ? '...' : m['heartbeat.Create Config']()}
-				</button>
-			{/if}
+			<div class="flex items-center gap-2">
+				<div class="relative group">
+					<button class="px-3 py-1.5 border border-border text-text-muted rounded-lg
+						hover:border-primary hover:text-primary transition-colors text-xs">
+						{m['devices.Export']?.() ?? 'Export'}
+					</button>
+					<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg
+						opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[100px]"
+						style="box-shadow: var(--shadow-md);">
+						<button onclick={() => exportHeartbeatResults('csv')}
+							class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-t-lg">
+							CSV
+						</button>
+						<button onclick={() => exportHeartbeatResults('json')}
+							class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-b-lg">
+							JSON
+						</button>
+					</div>
+				</div>
+				{#if !heartbeatConfigLoading && heartbeatConfigs.length === 0 && device?.ip_address}
+					<button
+						onclick={createDefaultHeartbeatConfig}
+						disabled={creatingHeartbeat}
+						class="btn btn-primary"
+					>
+						{creatingHeartbeat ? '...' : m['heartbeat.Create Config']()}
+					</button>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Heartbeat Configs (discovered by the scanner) -->

@@ -1,6 +1,8 @@
 package probe
 
 import (
+	"log/slog"
+
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/vendor"
 )
@@ -21,10 +23,12 @@ func DefaultProbeSources(portSpec string, oui *vendor.OUI) []scannerv2.ProbeSour
 		NewHTTPMetricsProbe(),
 		NewHTTPProbe(),
 		NewTLSProbe(),
+		NewSMBProbe(0),
 		NewARPProbe(oui),
 		NewRDNSProbe(),
 		NewMDNSProbe(),
 		NewSSDPProbe(),
 		NewNetBIOSProbe(),
+		NewBridgeMIBProbe(slog.Default()),
 	}
 }

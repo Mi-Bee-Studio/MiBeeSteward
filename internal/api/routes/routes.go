@@ -14,12 +14,14 @@ import (
 
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
+	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
 	scannerv2probe "mibee-steward/internal/service/scannerv2/probe"
@@ -169,6 +171,26 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 	// Scanner routes (v2 engine)
 	scanQueries := db.New(dbConn)
+	// Wire the DB querier for agent-token verification (RequireAgentToken). Done
+	// here so the ingestion routes (registered below) can authenticate agents.
+	middleware.SetAgentQueries(scanQueries)
+
+	// Network registry — feeds the device-list + change-history network filters
+	// and the Networks admin page. Read (List) is any logged-in user; create/
+	// update/delete are admin-only.
+	networkHandler := handler.NewNetworkHandler(scanQueries, dbConn)
+	r.Route("/api/v1/networks", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", networkHandler.List)
+		r.With(middleware.RequireAdmin).Post("/", networkHandler.Create)
+		r.With(middleware.RequireAdmin).Put("/{id}", networkHandler.Update)
+		r.With(middleware.RequireAdmin).Delete("/{id}", networkHandler.Delete)
+	})
+
+	// Resolve this instance's network identity (networks.id) so discovered
+	// devices can be tagged with their origin. Done here (not in migrations)
+	// because the value comes from config `network.name`.
+	networkID := resolveNetworkID(dbConn, cfg)
 
 	// Construct the v2 engine: probes/classifiers/handlers + persistence + eBPF observer.
 	// Port spec: prefer the configured default_ports (config.yaml
@@ -190,6 +212,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		PerProbeTimeout:    time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
 		PersistRawEvidence: cfg.Scanner.PersistRawEvidence,
 		OUIPath:            cfg.Scanner.OUIPath,
+		FingerprintPath:    cfg.Scanner.FingerprintPath,
 		SNMPCommunity:      cfg.Scanner.SNMPCommunity,
 		RouterARP: scannerv2probe.RouterARPConfig{
 			Routers:   cfg.Scanner.RouterARP.Routers,
@@ -198,6 +221,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		},
 		HeartbeatInterval: cfg.Heartbeat.DefaultInterval,
 		HeartbeatTimeout:  cfg.Heartbeat.Timeout,
+		NetworkID:         networkID,
 		EBPF: scannerv2ebpf.Config{
 			Enabled:    cfg.Scanner.EBPF.Enabled,
 			Interfaces: cfg.Scanner.EBPF.Interfaces,
@@ -208,7 +232,93 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}
 
 	// Runner: connects the engine to run/result persistence + the device bridge.
-	scanRunner := scannerv2runner.New(v2Engine, scanQueries, dbConn, heartbeatSvc, slog.Default())
+	scanRunner := scannerv2runner.New(v2Engine, scanQueries, dbConn, heartbeatSvc, networkID, slog.Default())
+
+	// Change detection (Phase 3): the center records device_added/changed/lost
+	// events to change_log + pushes in-process Watcher subscribers. The agent
+	// does NOT set this (change detection is a center concern; agents only
+	// forward raw HostReports). The watcher is the foundation for a future
+	// /watch SSE endpoint (Step 4 surfaces a query API on top of change_log).
+	changeWatcher := changedetect.NewWatcher(slog.Default())
+	changeRecorder := changedetect.NewDBRecorder(scanQueries, changeWatcher, slog.Default())
+	scanRunner.SetChangeRecorder(changeRecorder)
+
+	// Lease sweeper: background expiration of agent-managed devices whose
+	// snapshots have gone stale (the agent stopped reporting them). This
+	// replaces the per-report DetectLost that used to run on every agent POST
+	// (O(whole network) each time). Center-only; scope is agent networks
+	// (networks.agent_id non-empty) — the center's own network keeps using
+	// the local-scan DetectLost path + heartbeat. Stopped in the cleanup
+	// closure below before db.Close().
+	leaseTTL := parseDurationOrDefault(cfg.Scanner.AgentLeaseTTL, 5*time.Minute)
+	leaseSweepInterval := parseDurationOrDefault(cfg.Scanner.LeaseSweepInterval, 60*time.Second)
+	leaseSweepCtx, leaseSweepCancel := context.WithCancel(context.Background())
+	leaseSweeper := scannerv2runner.NewLeaseSweeper(scanRunner, leaseSweepInterval, leaseTTL, slog.Default())
+	leaseSweeper.Start(leaseSweepCtx)
+
+	// Passive discovery service: a long-running, near-zero-traffic watcher that
+	// spots newly-appeared hosts between scheduled scans by diffing router/local
+	// ARP tables and passively listening for mDNS/SSDP. New hosts are fed through
+	// the SAME device bridge as scans (so they get device_added events + heartbeat
+	// seeding). Sources are enabled per config; the coordinator is always
+	// constructed so the config surface is stable, but its goroutine + sources
+	// only start when scanner.discovery.enabled is true. Stopped in the cleanup
+	// closure below before db.Close().
+	discSvc := scannerv2discovery.New(
+		scannerv2discovery.Config{
+			Interval:        time.Duration(cfg.Scanner.Discovery.Interval) * time.Second,
+			TriggerIdentify: cfg.Scanner.Discovery.TriggerIdentify,
+		},
+		scannerv2discovery.SinkAdapter{Runner: scanRunner},
+		scannerv2discovery.IdentifierAdapter(v2Engine),
+		dbConn, networkID, slog.Default(),
+	)
+	var discCancel context.CancelFunc
+	// discSvcForStatus carries the discovery service to the status endpoint.
+	// nil when the service was never started (discovery disabled) — the handler
+	// then reports enabled=false. Declared here so the route registration below
+	// (outside the if-block) can reference it.
+	var discSvcForStatus *scannerv2discovery.Service
+	if cfg.Scanner.Discovery.Enabled {
+		discSvcForStatus = discSvc
+		discCtx, cancel := context.WithCancel(context.Background())
+		discCancel = cancel
+		discSvc.Start(discCtx)
+		interval := time.Duration(cfg.Scanner.Discovery.Interval) * time.Second
+		if interval <= 0 {
+			interval = 60 * time.Second
+		}
+		var activeSources []string
+		// router_arp: the widest-coverage source. One SNMP Walk per router per
+		// interval; no-op when no routers are configured.
+		if cfg.Scanner.Discovery.RouterARP.Enabled {
+			routerARPSrc := scannerv2discovery.NewRouterARPSource(
+				cfg.Scanner.RouterARP.Routers,
+				routerCommunity(cfg.Scanner),
+				time.Duration(routerTimeout(cfg.Scanner))*time.Second,
+				interval, discSvc, slog.Default(),
+			)
+			routerARPSrc.Start(discCtx)
+			activeSources = append(activeSources, "router_arp")
+		}
+		// arp_cache: free byproduct of normal operation (reads /proc/net/arp).
+		if cfg.Scanner.Discovery.ARPCache.Enabled {
+			arpCacheSrc := scannerv2discovery.NewARPCacheSource(interval, discSvc, slog.Default())
+			arpCacheSrc.Start(discCtx)
+			activeSources = append(activeSources, "arp_cache")
+		}
+		// multicast: passive mDNS/SSDP listener (zero outbound traffic).
+		if cfg.Scanner.Discovery.Multicast.Enabled {
+			mcastSrc := scannerv2discovery.NewMulticastSource(discSvc, slog.Default())
+			mcastSrc.Start(discCtx)
+			activeSources = append(activeSources, "multicast")
+		}
+		discSvc.SetSources(activeSources)
+		slog.Info("scannerv2 passive discovery ready",
+			"interval", interval.String(),
+			"sources", activeSources,
+			"trigger_identify", cfg.Scanner.Discovery.TriggerIdentify)
+	}
 
 	// Scheduler: cron-driven scan tasks. The ScanFunc delegates to the runner.
 	scanScheduler, schedErr := scannerv2scheduler.New(scanQueries, dbConn,
@@ -255,6 +365,71 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/runs/{id}", scannerResultHandler.GetRun)
 		r.Get("/results/export", scannerResultHandler.ExportScanResults)
 		r.Delete("/results", scannerResultHandler.BulkDeleteResults)
+	})
+
+	// --- Agent token management (distributed phase) ---
+	// Admin-only CRUD for discovery-agent bearer tokens. The ingestion endpoint
+	// (/agents/report below) authenticates via RequireAgentToken against this
+	// table; this block is the management surface.
+	agentAdminHandler := handler.NewAgentAdminHandler(scanQueries)
+	r.Route("/api/v1/agents/tokens", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/", agentAdminHandler.Create)
+		r.Get("/", agentAdminHandler.List)
+		r.Post("/{id}/revoke", agentAdminHandler.Revoke)
+		r.Delete("/{id}", agentAdminHandler.Delete)
+	})
+
+	// --- Agent ingestion (distributed phase) ---
+	// The report endpoint is the center-side counterpart to an agent's reporter:
+	// remote agents POST their scan results here. Auth is the machine-to-machine
+	// RequireAgentToken path (NOT the admin/user JWT above) — the agent's token
+	// binds the request to an agent_id + network_id, and every reported device is
+	// tagged with that network so multi-LAN data coexists without collision.
+	// Routed on the top-level mux (separate from /agents/tokens) so the two auth
+	// regimes don't interfere.
+	agentReportHandler := handler.NewAgentReportHandler(scanRunner)
+	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries)
+	r.Route("/api/v1/agents", func(r chi.Router) {
+		r.Use(middleware.RequireAgentToken)
+		r.Post("/report", agentReportHandler.Report)
+		// Agent command channel (Phase 5c): the agent polls pending commands
+		// (GET /commands), acknowledges (POST /commands/{id}/ack), executes, and
+		// reports the result (POST /commands/{id}/complete). Pull model.
+		r.Get("/commands", agentCommandHandler.Poll)
+		r.Post("/commands/{id}/ack", agentCommandHandler.Ack)
+		r.Post("/commands/{id}/complete", agentCommandHandler.Complete)
+	})
+
+	// Admin-side command management: enqueue a command for an agent (POST) +
+	// view all commands (GET). Separate route group (RequireAdmin, not agent token).
+	r.Route("/api/v1/agents/{agentId}/commands", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/", agentCommandHandler.Create)
+	})
+	r.With(middleware.RequireAdmin).Get("/api/v1/agents/commands/all", agentCommandHandler.ListAll)
+
+	// --- Change history query (Phase 3) ---
+	// GET /api/v1/changes returns the device_added/changed/lost event stream
+	// written by the change-detection engine. Auth-gated (any logged-in user);
+	// filterable by network_id / change_type / entity_type. This is the
+	// queryable view on top of change_log; the in-process Watcher (changeWatcher
+	// above) is the foundation for a future /watch SSE push endpoint.
+	changeLogHandler := handler.NewChangeLogHandler(scanQueries)
+	changeWatchHandler := handler.NewChangeWatchHandler(changeWatcher, slog.Default())
+	r.Route("/api/v1/changes", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", changeLogHandler.List)
+		r.Get("/watch", changeWatchHandler.Watch)
+	})
+
+	// Passive discovery status: runtime counters (events received, dedup hits,
+	// identify triggers, devices recorded) + the last few discovery outcomes +
+	// which sources are active. Auth-gated (any logged-in user). Returns
+	// enabled=false when discovery is off or the service was never started.
+	r.Route("/api/v1/discovery", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/status", handler.DiscoveryStatusHandler(discSvcForStatus))
 	})
 
 	// --- Scanner background services (v2) ---
@@ -436,6 +611,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		if scanScheduler != nil {
 			scanScheduler.Stop()
 		}
+		// Stop the lease sweeper BEFORE the DB close — its sweepOnce runs
+		// UPDATE devices + recordDeviceLost (change_log INSERT) and must not
+		// race db.Close().
+		leaseSweepCancel()
+		// Stop the passive discovery sources + coordinator BEFORE the DB close —
+		// the coordinator's known-host pre-check and the sources' walks hold
+		// open DB/SNMP handles that must not race db.Close().
+		if discCancel != nil {
+			discCancel()
+		}
+		discSvc.Stop()
 		cleanupSvc.Stop()
 		// Stop the notification dispatcher's worker goroutines too. Without
 		// this, the 3 workers (and their *db.Queries handle) outlive graceful
@@ -458,6 +644,19 @@ func chunkSlice[S any](items []S, batchSize int) [][]S {
 		chunks = append(chunks, items[i:end])
 	}
 	return chunks
+}
+
+// parseDurationOrDefault parses a Go duration string, returning def on empty or
+// parse error. Used for optional background-loop timing config keys.
+func parseDurationOrDefault(s string, def time.Duration) time.Duration {
+	if s == "" {
+		return def
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return def
+	}
+	return d
 }
 
 // routerCommunity resolves the SNMP community for cross-subnet ARP walks:
@@ -489,4 +688,60 @@ func heartbeatDBPathFor(cfg *config.Config) string {
 		mainPath = "./data/mibee.db"
 	}
 	return filepath.Join(filepath.Dir(mainPath), "heartbeat.db")
+}
+
+// resolveNetworkID upserts the networks row for this instance's configured
+// network (config `network.name`/cidr/site) and returns its id. The returned id
+// is stamped onto every device this instance discovers (devices.network_id) so
+// multiple instances on different LANs can coexist without IP-key collisions.
+//
+// Empty/missing name resolves to "default" so single-instance deployments still
+// tag their devices (network_id non-NULL), which keeps the (ip, network_id)
+// composite-unique index deterministic. Returns 0 only on a hard DB error
+// (logged; devices then fall back to NULL network_id and the legacy IP path).
+func resolveNetworkID(dbConn *sql.DB, cfg *config.Config) int64 {
+	name := cfg.Network.Name
+	if name == "" {
+		name = "default"
+	}
+	// Upsert by name: update cidr/site if the row exists, else insert.
+	res, err := dbConn.Exec(`
+		INSERT INTO networks (name, cidr, site)
+		VALUES (?, ?, ?)
+		ON CONFLICT(name) DO NOTHING`,
+		name, cfg.Network.CIDR, cfg.Network.Site)
+	if err != nil {
+		slog.Error("resolve network id: upsert networks failed; devices will have NULL network_id",
+			"name", name, "error", err)
+		return 0
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// Row already existed — refresh its cidr/site in case the config changed.
+		_, _ = dbConn.Exec(`UPDATE networks SET cidr = ?, site = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?`,
+			cfg.Network.CIDR, cfg.Network.Site, name)
+	}
+	var id int64
+	if err := dbConn.QueryRow(`SELECT id FROM networks WHERE name = ?`, name).Scan(&id); err != nil {
+		slog.Error("resolve network id: lookup failed; devices will have NULL network_id",
+			"name", name, "error", err)
+		return 0
+	}
+
+	// Backfill: tag every pre-existing device that has no network_id with this
+	// instance's network. Without this, a rescan of a legacy (network_id NULL)
+	// device would create a DUPLICATE row keyed on (ip, <resolved network_id>)
+	// instead of updating the original — the (ip, NULL) and (ip, N) composite
+	// keys are distinct in the unique index. This is only safe for the
+	// single-instance default; a true multi-agent deployment would reconcile via
+	// the center, not backfill blindly.
+	if res, err := dbConn.Exec(`UPDATE devices SET network_id = ? WHERE network_id IS NULL`, id); err != nil {
+		slog.Warn("resolve network id: device backfill failed; legacy devices keep NULL network_id",
+			"network_id", id, "error", err)
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		slog.Info("network identity resolved; tagged pre-existing devices", "id", id, "name", name, "cidr", cfg.Network.CIDR, "devices_tagged", n)
+		return id
+	}
+
+	slog.Info("network identity resolved", "id", id, "name", name, "cidr", cfg.Network.CIDR)
+	return id
 }

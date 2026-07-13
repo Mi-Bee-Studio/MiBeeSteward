@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	fp "github.com/Mi-Bee-Studio/mibee-fingerprints-go"
+
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/classify"
 	"mibee-steward/internal/service/scannerv2/ebpf"
@@ -76,6 +78,13 @@ type Config struct {
 	// empty or missing, the ARP probe still records MAC addresses but skips the
 	// vendor lookup. The path is overridable via MIBEE_SCANNER_OUI_PATH.
 	OUIPath string
+	// FingerprintPath is the directory of fingerprint YAML files (see
+	// configs/fingerprints/ + docs/fingerprint-spec.md). When set, the
+	// RuleClassifier loads rules from it. When empty, the engine falls back to
+	// the fingerprint rules embedded in the binary (fingerprint-assets/), so
+	// data-driven classification works with zero config. Overridable via
+	// MIBEE_SCANNER_FINGERPRINT_PATH.
+	FingerprintPath string
 	// SNMPCommunity is the default community string passed to the SNMP probe
 	// via ProbeHint.Community (default "public" if empty).
 	SNMPCommunity string
@@ -86,6 +95,10 @@ type Config struct {
 	// HeartbeatInterval/Timeout are the defaults applied to generated configs.
 	HeartbeatInterval int
 	HeartbeatTimeout  int
+	// NetworkID is the networks.id this engine tags discovered devices with
+	// (devices.network_id). 0 leaves network_id NULL (legacy/unresolved).
+	// Resolved from config `network` at startup; enables multi-LAN coexistence.
+	NetworkID int64
 	// EBPF controls the passive observer (no-op when disabled or stub build).
 	EBPF ebpf.Config
 }
@@ -130,8 +143,35 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 			"note", "active only if binary built with WITH_EBPF tag")
 	}
 
-	// ② Classifiers.
-	for _, c := range classify.DefaultClassifiers() {
+	// ② Classifiers. The RuleClassifier comes from the standalone fingerprint
+	// library (github.com/Mi-Bee-Studio/mibee-fingerprints-go). It loads data-driven YAML rules — from
+	// FingerprintPath when configured, else from the rules embedded in the
+	// library binary (zero-config). Hand-written logic classifiers (SNMP bitmask
+	// heuristic, Camera cross-evidence fusion) run alongside.
+	rc := &fp.RuleClassifier{}
+	if cfg.FingerprintPath != "" {
+		if err := rc.LoadFromDir(cfg.FingerprintPath); err != nil {
+			logger.Error("scannerv2: fingerprint dir load failed; falling back to embedded rules",
+				"path", cfg.FingerprintPath, "error", err)
+			_ = rc.LoadEmbeddedDefaults()
+		} else if rc.Loaded() {
+			logger.Info("scannerv2: fingerprints loaded from dir",
+				"path", cfg.FingerprintPath, "rules", rc.RuleCount())
+		} else {
+			logger.Info("scannerv2: fingerprint dir empty; falling back to embedded rules",
+				"path", cfg.FingerprintPath)
+			_ = rc.LoadEmbeddedDefaults()
+		}
+	} else {
+		if err := rc.LoadEmbeddedDefaults(); err != nil {
+			logger.Warn("scannerv2: embedded fingerprint load failed; data-driven rules disabled",
+				"error", err)
+		}
+	}
+	if rc.Loaded() {
+		logger.Info("scannerv2: fingerprint rules active", "rules", rc.RuleCount())
+	}
+	for _, c := range classify.DefaultClassifiers(rc) {
 		reg.RegisterClassifier(c)
 	}
 
@@ -147,6 +187,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 			PersistRawEvidence:       cfg.PersistRawEvidence,
 			DefaultHeartbeatInterval: cfg.HeartbeatInterval,
 			DefaultHeartbeatTimeout:  cfg.HeartbeatTimeout,
+			NetworkID:                cfg.NetworkID,
 		}, logger)
 	}
 
