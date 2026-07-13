@@ -27,11 +27,11 @@ import (
 
 // lldpEdge is defined in lldp_types.go (shared across build variants).
 
-// lldpFrameSource passively listens for LLDPDU broadcasts on one or more NICs.
+// LLDPFrameSource passively listens for LLDPDU broadcasts on one or more NICs.
 // On each frame it parses the TLV chain and (a) emits a NewHostEvent for the
 // remote chassis (host discovery) and (b) pushes a neighbor edge via the
 // neighborSink closure (topology). Both outputs use the same parsed data.
-type lldpFrameSource struct {
+type LLDPFrameSource struct {
 	interfaces   []string
 	svc          *Service
 	neighborSink func(localMAC string, neighbors []lldpEdge)
@@ -42,7 +42,7 @@ type lldpFrameSource struct {
 // NewLLDPFrameSource constructs the listener. interfaces is the list of NIC
 // names to listen on (empty = all non-loopback UP interfaces). svc is the
 // discovery coordinator (host events); neighborSink receives neighbor edges.
-func NewLLDPFrameSource(interfaces []string, svc *Service, neighborSink func(localMAC string, neighbors []lldpEdge), logger *slog.Logger) *lldpFrameSource {
+func NewLLDPFrameSource(interfaces []string, svc *Service, neighborSink func(localMAC string, neighbors []lldpEdge), logger *slog.Logger) *LLDPFrameSource {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -59,7 +59,7 @@ func NewLLDPFrameSource(interfaces []string, svc *Service, neighborSink func(loc
 			macs[name] = mac
 		}
 	}
-	return &lldpFrameSource{
+	return &LLDPFrameSource{
 		interfaces:   interfaces,
 		svc:          svc,
 		neighborSink: neighborSink,
@@ -68,11 +68,11 @@ func NewLLDPFrameSource(interfaces []string, svc *Service, neighborSink func(loc
 	}
 }
 
-func (s *lldpFrameSource) Name() string { return "lldp_frame" }
+func (s *LLDPFrameSource) Name() string { return "lldp_frame" }
 
 // Start opens one AF_PACKET raw socket per interface (ethertype 0x88cc) and
 // reads LLDPDUs until ctx is cancelled. Blocking; run in its own goroutine.
-func (s *lldpFrameSource) Start(ctx context.Context) {
+func (s *LLDPFrameSource) Start(ctx context.Context) {
 	var wg sync.WaitGroup
 	for _, name := range s.interfaces {
 		wg.Add(1)
@@ -84,7 +84,7 @@ func (s *lldpFrameSource) Start(ctx context.Context) {
 	wg.Wait()
 }
 
-func (s *lldpFrameSource) listen(ctx context.Context, iface string) {
+func (s *LLDPFrameSource) listen(ctx context.Context, iface string) {
 	sock, err := openLLDPSocket(iface)
 	if err != nil {
 		s.logger.Warn("lldp_frame: open socket failed", "iface", iface, "error", err)
