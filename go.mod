@@ -2,9 +2,8 @@ module mibee-steward
 
 go 1.26.3
 
-replace mibee-fingerprints-go => ../mibee-fingerprints-go
-
 require (
+	github.com/Mi-Bee-Studio/mibee-fingerprints-go v0.1.0
 	github.com/cilium/ebpf v0.22.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-chi/jwtauth/v5 v5.4.0
@@ -62,7 +61,6 @@ require (
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	mibee-fingerprints-go v0.0.0-00010101000000-000000000000 // indirect
 	modernc.org/libc v1.73.5 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect

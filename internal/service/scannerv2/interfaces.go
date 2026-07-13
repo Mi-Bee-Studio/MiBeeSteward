@@ -23,7 +23,7 @@ type ProbeSource interface {
 }
 
 // ServiceClassifier is now a type alias to fp.ServiceClassifier (defined in
-// evidence.go). The RuleClassifier from mibee-fingerprints-go satisfies it.
+// evidence.go). The RuleClassifier from github.com/Mi-Bee-Studio/mibee-fingerprints-go satisfies it.
 // Hand-written logic classifiers (SNMPClassifier, CameraClassifier, ...) also
 // satisfy it via the same Service()/Classify() method signature.
 
