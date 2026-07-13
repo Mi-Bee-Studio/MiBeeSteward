@@ -201,6 +201,33 @@ func (r *DeviceRepository) CountByType(ctx context.Context) ([]db.CountDevicesBy
 	return rows, nil
 }
 
+// CountByStatusForNetwork returns device counts grouped by status, scoped to a
+// single network. networkID=nil disables the filter (all networks). Used by the
+// dashboard's per-LAN stats.
+func (r *DeviceRepository) CountByStatusForNetwork(ctx context.Context, networkID *int64) ([]db.CountByStatusForNetworkRow, error) {
+	rows, err := r.queries.CountByStatusForNetwork(ctx, db.CountByStatusForNetworkParams{
+		Column1:   networkID != nil, // 1 enables the filter, 0 disables
+		NetworkID: networkID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to count devices by status (network): %w", err)
+	}
+	return rows, nil
+}
+
+// CountByTypeForNetwork returns device counts grouped by type, scoped to a
+// single network. networkID=nil disables the filter.
+func (r *DeviceRepository) CountByTypeForNetwork(ctx context.Context, networkID *int64) ([]db.CountDevicesByTypeForNetworkRow, error) {
+	rows, err := r.queries.CountDevicesByTypeForNetwork(ctx, db.CountDevicesByTypeForNetworkParams{
+		Column1:   networkID != nil,
+		NetworkID: networkID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to count devices by type (network): %w", err)
+	}
+	return rows, nil
+}
+
 // sortWhitelist maps a client-supplied sort token to the real column name. Any
 // token not in this map falls back to "id". This is the SQL-injection guard:
 // only these literals ever reach ORDER BY, never raw user input.
@@ -235,7 +262,7 @@ func escapeLike(s string) string {
 // and the device list is the one query that genuinely needs per-request
 // sorting. The sort column is taken from sortWhitelist (never raw input), and
 // the search term is parameterized with ESCAPE, so there is no injection surface.
-func (r *DeviceRepository) ListFiltered(ctx context.Context, f domain.DeviceFilter) ([]db.Device, error) {
+func (r *DeviceRepository) ListFiltered(ctx context.Context, f domain.DeviceFilter) ([]DeviceWithNetwork, error) {
 	col := sortWhitelist[f.SortBy]
 	if col == "" {
 		col = "id"
@@ -276,7 +303,7 @@ func strPtr(s string) *string { return &s }
 // reader optimization.
 //
 // It returns the device page and the total matching the filter.
-func (r *DeviceRepository) ListFilteredWithCount(ctx context.Context, f domain.DeviceFilter) ([]db.Device, int64, error) {
+func (r *DeviceRepository) ListFilteredWithCount(ctx context.Context, f domain.DeviceFilter) ([]DeviceWithNetwork, int64, error) {
 	// Resolve sort column once (shared by list + the tx wrapper).
 	col := sortWhitelist[f.SortBy]
 	if col == "" {
@@ -321,7 +348,15 @@ func (r *DeviceRepository) dbConnAsDB() *sql.DB {
 
 // listFilteredOn is the list query body parameterized over the DBTX it runs on,
 // so it can execute inside the caller's read transaction.
-func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, dir string) ([]db.Device, error) {
+// DeviceWithNetwork pairs a device row with its network's human name (resolved
+// via LEFT JOIN on networks). NetworkName is "" when the device has no
+// network_id (legacy/unresolved).
+type DeviceWithNetwork struct {
+	Device      db.Device
+	NetworkName string
+}
+
+func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, dir string) ([]DeviceWithNetwork, error) {
 	var (
 		args           []any
 		statusVal      = f.Status
@@ -341,19 +376,31 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, 
 		createdTo = "1"
 		createdToArg = strPtr(f.CreatedAtTo.Format("2006-01-02 15:04:05"))
 	}
+	// network filter: nil = no filter (all networks incl. NULL-network legacy);
+	// non-nil = devices on that network only. 0 disables (matches all), 1 enables.
+	networkFilterEnabled := 0
+	var networkIDArg int64
+	if f.NetworkID != nil {
+		networkFilterEnabled = 1
+		networkIDArg = *f.NetworkID
+	}
 
-	query := `SELECT id, name, type, brand, model, location, purpose, description, status, ip_address,
-		mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels,
-		last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url,
-		last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname,
-		created_at, updated_at
-	FROM devices
-	WHERE (? = '' OR status = ?)
-	  AND (? = '' OR type = ?)
-	  AND (? = '' OR name LIKE ? ESCAPE '\' OR ip_address LIKE ? ESCAPE '\' OR mac_address LIKE ? ESCAPE '\' OR serial_number LIKE ? ESCAPE '\')
-	  AND (? = '' OR created_at >= ?)
-	  AND (? = '' OR created_at <= ?)
-	ORDER BY ` + col + " " + dir + `
+	query := `SELECT d.id, d.name, d.type, d.brand, d.model, d.location, d.purpose, d.description, d.status, d.ip_address,
+		d.mac_address, d.serial_number, d.purchase_date, d.warranty_expiry, d.tags, d.scan_source, d.prometheus_labels,
+		d.last_scanned_at, d.last_scan_task_id, d.open_ports, d.detected_services, d.prometheus_url, d.node_exporter_url,
+		d.last_scan_rtt_ms, d.scan_attributes, d.user_attributes, d.scan_vendor, d.scan_mac, d.scan_os, d.scan_hostname,
+		d.network_id, d.first_seen, d.last_seen,
+		d.created_at, d.updated_at,
+		n.name
+	FROM devices d
+	LEFT JOIN networks n ON n.id = d.network_id
+	WHERE (? = '' OR d.status = ?)
+	  AND (? = '' OR d.type = ?)
+	  AND (? = '' OR d.name LIKE ? ESCAPE '\' OR d.ip_address LIKE ? ESCAPE '\' OR d.mac_address LIKE ? ESCAPE '\' OR d.serial_number LIKE ? ESCAPE '\')
+	  AND (? = '' OR d.created_at >= ?)
+	  AND (? = '' OR d.created_at <= ?)
+	  AND (? = 0 OR d.network_id = ?)
+	ORDER BY d.` + col + " " + dir + `
 	LIMIT ? OFFSET ?`
 
 	args = append(args,
@@ -362,6 +409,7 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, 
 		searchVal, likeVal, likeVal, likeVal, likeVal,
 		createdFrom, createdFromArg,
 		createdTo, createdToArg,
+		networkFilterEnabled, networkIDArg,
 		f.Limit, f.Offset,
 	)
 
@@ -371,19 +419,24 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, 
 	}
 	defer rows.Close()
 
-	var out []db.Device
+	var out []DeviceWithNetwork
 	for rows.Next() {
-		var d db.Device
+		var (
+			d           db.Device
+			networkName sql.NullString
+		)
 		if err := rows.Scan(
 			&d.ID, &d.Name, &d.Type, &d.Brand, &d.Model, &d.Location, &d.Purpose, &d.Description, &d.Status, &d.IpAddress,
 			&d.MacAddress, &d.SerialNumber, &d.PurchaseDate, &d.WarrantyExpiry, &d.Tags, &d.ScanSource, &d.PrometheusLabels,
 			&d.LastScannedAt, &d.LastScanTaskID, &d.OpenPorts, &d.DetectedServices, &d.PrometheusUrl, &d.NodeExporterUrl,
 			&d.LastScanRttMs, &d.ScanAttributes, &d.UserAttributes, &d.ScanVendor, &d.ScanMac, &d.ScanOs, &d.ScanHostname,
+			&d.NetworkID, &d.FirstSeen, &d.LastSeen,
 			&d.CreatedAt, &d.UpdatedAt,
+			&networkName,
 		); err != nil {
 			return nil, fmt.Errorf("scan device row: %w", err)
 		}
-		out = append(out, d)
+		out = append(out, DeviceWithNetwork{Device: d, NetworkName: networkName.String})
 	}
 	return out, rows.Err()
 }
@@ -409,13 +462,21 @@ func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int
 		createdTo = "1"
 		createdToArg = strPtr(f.CreatedAtTo.Format("2006-01-02 15:04:05"))
 	}
+	// network filter must mirror listFilteredOn exactly so the count matches.
+	networkFilterEnabled := 0
+	var networkIDArg int64
+	if f.NetworkID != nil {
+		networkFilterEnabled = 1
+		networkIDArg = *f.NetworkID
+	}
 
 	query := `SELECT COUNT(*) FROM devices
 	WHERE (? = '' OR status = ?)
 	  AND (? = '' OR type = ?)
 	  AND (? = '' OR name LIKE ? ESCAPE '\' OR ip_address LIKE ? ESCAPE '\' OR mac_address LIKE ? ESCAPE '\' OR serial_number LIKE ? ESCAPE '\')
 	  AND (? = '' OR created_at >= ?)
-	  AND (? = '' OR created_at <= ?)`
+	  AND (? = '' OR created_at <= ?)
+	  AND (? = 0 OR network_id = ?)`
 
 	args = append(args,
 		statusVal, statusVal,
@@ -423,6 +484,7 @@ func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int
 		searchVal, likeVal, likeVal, likeVal, likeVal,
 		createdFrom, createdFromArg,
 		createdTo, createdToArg,
+		networkFilterEnabled, networkIDArg,
 	)
 
 	var count int64

@@ -60,6 +60,21 @@ func LookupMACViaRouter(ctx context.Context, router, community string, timeout t
 	return "", false
 }
 
+// WalkRouterARPTable walks a single router's SNMP ARP table (ipNetToMediaPhysAddress,
+// falling back to the RFC 4293 ipNetToPhysicalPhysAddress) and returns the full
+// ip→lowercased-MAC map. It is the exported counterpart to the unexported
+// walkRouterARP used internally for per-host MAC resolution: the long-running
+// passive discovery service walks the WHOLE table (once per router, on a timer)
+// to diff against its previous snapshot and spot newly-seen hosts.
+//
+// Returns a non-nil empty map only when the router answered but had no entries;
+// returns nil when the router is unreachable, doesn't speak SNMP, or neither OID
+// yielded anything. ctx is currently unused (gosnmp's Walk takes no context); the
+// timeout bounds the walk.
+func WalkRouterARPTable(ctx context.Context, router, community string, timeout time.Duration) map[string]string {
+	return walkRouterARP(ctx, router, community, timeout)
+}
+
 // LookupMACViaRouters tries each router in turn until one returns a MAC for ip.
 // This is the convenience wrapper the engine wires into the orchestrator's MAC
 // resolver: it lets a deployment list several candidate routers and the first

@@ -27,7 +27,15 @@ func (SSHHandler) Collect(_ context.Context, _ scannerv2.ServiceContext) (scanne
 func (SSHHandler) EnrichDevice(svc scannerv2.ServiceContext, _ scannerv2.CollectedData) {
 	// SSH banner "Windows" → device type PC (the legacy heuristic). Otherwise no change.
 	if v, ok := svc.Identity.Metadata["version"]; ok && containsFold(v, "Windows") {
-		setDeviceField(svc, "inferred_type", "pc")
+		preserveExisting(svc, "inferred_type", "pc")
+	}
+	// OS extracted from the SSH banner suffix (e.g. "Debian-7+deb13u4",
+	// "Ubuntu-5ubuntu1.1", "for_Windows"). The RuleClassifier's banner-ssh rule
+	// emits os_type in identity metadata; propagate it to the device record so
+	// scan_attributes.os is populated for SSH-reachable hosts (most hosts).
+	// preserveExisting so a stronger SNMP/node_exporter OS verdict wins.
+	if os, ok := svc.Identity.Metadata["os_type"]; ok && os != "" {
+		preserveExisting(svc, "os_type", os)
 	}
 }
 

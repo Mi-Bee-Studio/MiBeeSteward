@@ -3,7 +3,6 @@
 	import { auth } from '$lib/stores/auth';
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
-	import { get } from 'svelte/store';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { addToast } from '$lib/stores/toast';
 
@@ -38,11 +37,7 @@
 	let loading = $state(true);
 	let error = $state('');
 
-	// Auth
-	let authState = $state<{ user: { username: string; role: string } | null; token: string | null }>({
-		user: null,
-		token: null
-	});
+	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
 
 	// Modal state
 	let modalOpen = $state(false);
@@ -69,13 +64,7 @@
 	let formToAddress = $state('');
 
 	onMount(() => {
-		const unsub = auth.subscribe((v) => {
-			authState = v;
-		});
-		if (get(auth).token) {
-			fetchChannels();
-		}
-		return unsub;
+		fetchChannels();
 	});
 
 	async function fetchChannels() {
@@ -262,7 +251,7 @@
 		}
 	}
 
-	let isAdmin = $derived(authState.user?.role === 'admin');
+	let isAdmin = $derived($auth.user?.role === 'admin');
 
 	const columns = $derived([
 		{
@@ -317,7 +306,7 @@
 	]);
 </script>
 
-{#if !authState.token}
+{#if !$auth.token}
 	<div class="p-6 text-center text-text-muted">
 		<p>{m["errors.Unauthorized Desc"]()}</p>
 		<a href="/login" class="text-primary hover:underline text-sm mt-2 inline-block">{m["navigation.Login"]()}</a>

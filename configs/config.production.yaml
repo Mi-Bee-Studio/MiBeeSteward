@@ -98,6 +98,9 @@ scanner:
   ebpf:
     enabled: false  # 需 make build-with-ebpf 构建 + 运行时 CAP_BPF/CAP_NET_ADMIN
     interfaces: []
+  # Agent lease — agent 网络设备的存活续期。agent 停止上报后，lease sweeper 按超时判定离线。
+  agent_lease_ttl: "5m"
+  lease_sweep_interval: "60s"
 retention:
   heartbeat_results_days: 7
   scan_results_days: 30

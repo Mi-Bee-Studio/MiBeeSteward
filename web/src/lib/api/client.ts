@@ -45,6 +45,28 @@ export const api = {
 	put: <T>(path: string, body: unknown) =>
 		request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
 	delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+	// download fetches a binary (CSV/JSON export, file download) and returns it
+	// as a Blob. Goes through the same auth/CSRF/401 handling as request(), so
+	// exports no longer bypass the client via raw fetch (which dropped CSRF).
+	download: async (path: string): Promise<Blob> => {
+		const csrfToken = getCSRFToken();
+		const headers: Record<string, string> = {};
+		if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+		const res = await fetch(`${API_BASE}${path}`, {
+			credentials: 'include',
+			headers
+		});
+		if (res.status === 401) {
+			auth.logout();
+			goto('/login');
+			throw new Error('Session expired');
+		}
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({ error: 'Download failed' }));
+			throw new Error(err.error || `HTTP ${res.status}`);
+		}
+		return res.blob();
+	},
 	upload: <T>(path: string, formData: FormData, onProgress?: (percent: number) => void): Promise<T> => {
 		return new Promise((resolve, reject) => {
 			const xhr = new XMLHttpRequest();

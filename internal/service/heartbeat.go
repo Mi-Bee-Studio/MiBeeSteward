@@ -205,12 +205,54 @@ func GetProber(method, community, oid string) probe.Prober {
 // oscillated online/offline every tick. Any list snapshot then showed a large
 // fraction "offline" purely by bad timing.
 //
+// listLocalProbeConfigsSQL selects enabled heartbeat configs EXCLUDING those
+// whose device belongs to an agent-managed network (networks.agent_id non-empty).
+// Agent devices' liveness comes from their agent's reports — the center must not
+// cross-subnet-probe them (ICMP/TCP would always fail and flap them offline).
+// LEFT JOIN so legacy devices with no network_id (d.network_id NULL → n NULL)
+// are still probed by the center.
+//
+// Defined as raw SQL (not sqlc) because sqlc's SQLite parser truncates queries
+// whose WHERE clause contains an empty-string literal (”) — see the NOTE in
+// db/queries/heartbeat_configs.sql.
+const listLocalProbeConfigsSQL = `SELECT hc.id, hc.device_id, hc.method, hc.target,
+       hc.interval_seconds, hc.timeout_seconds, hc.snmp_community, hc.snmp_oid,
+       hc.enabled, hc.created_at, hc.updated_at
+FROM heartbeat_configs hc
+JOIN devices d ON d.id = hc.device_id
+LEFT JOIN networks n ON n.id = d.network_id
+WHERE hc.enabled = 1
+  AND (n.agent_id IS NULL OR n.agent_id = '')`
+
+// listLocalProbeConfigs returns the enabled heartbeat configs the center should
+// probe locally this tick (excludes agent-managed-network devices).
+func (s *HeartbeatService) listLocalProbeConfigs(ctx context.Context) ([]db.HeartbeatConfig, error) {
+	rows, err := s.mainDB.QueryContext(ctx, listLocalProbeConfigsSQL)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []db.HeartbeatConfig
+	for rows.Next() {
+		var c db.HeartbeatConfig
+		if err := rows.Scan(
+			&c.ID, &c.DeviceID, &c.Method, &c.Target,
+			&c.IntervalSeconds, &c.TimeoutSeconds, &c.SnmpCommunity, &c.SnmpOid,
+			&c.Enabled, &c.CreatedAt, &c.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // The new model groups all due configs by device, runs them, and applies ONE
 // aggregated decision per device per tick: any-success ⇒ online; all-fail ⇒
 // advance a device-level failure counter, only transitioning to offline at the
 // threshold.
 func (s *HeartbeatService) runChecks(ctx context.Context) {
-	configs, err := s.queries.ListEnabledConfigs(ctx)
+	configs, err := s.listLocalProbeConfigs(ctx)
 	if err != nil {
 		slog.Error("heartbeat error listing configs", "error", err)
 		return

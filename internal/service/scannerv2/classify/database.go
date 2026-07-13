@@ -48,8 +48,12 @@ func (DatabaseClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceI
 		// (binary), but the version string follows as ASCII terminated by 0x00.
 		// Look for a MariaDB/MySQL version substring which is robust to the
 		// binary framing. Also catches Percona.
+		// IMPORTANT: the version-shape regex alone is too broad — it matches
+		// any X.Y.Z string including HTTP Server headers (nginx/1.26.1). Only
+		// apply it when the banner explicitly names mysql/mariadb OR the port
+		// is the canonical MySQL port 3306.
 		if strings.Contains(lower, "mariadb") || strings.Contains(lower, "mysql") ||
-			mysqlVersionRE.MatchString(b) {
+			(e.Port == 3306 && mysqlVersionRE.MatchString(b)) {
 			out = append(out, scannerv2.ServiceIdentity{
 				Service: "mysql", Port: e.Port, Protocol: "tcp",
 				Confidence: fuseConfidence(e.Confidence, 0.9),

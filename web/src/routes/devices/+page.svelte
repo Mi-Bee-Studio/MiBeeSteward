@@ -2,11 +2,12 @@
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { escapeHtml, escapeAttr } from '$lib/utils';
 	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
-	import type { Device, LinkedDoc } from '$lib/types';
+	import type { Device, LinkedDoc, Network } from '$lib/types';
 	import { auth } from '$lib/stores/auth';
 	import { ChevronDown, ChevronRight, Download, Upload, Plus } from '@lucide/svelte';
 
@@ -16,6 +17,7 @@
 	import Pagination from '$lib/components/Pagination.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import HeartbeatExpandableRow from '$lib/components/HeartbeatExpandableRow.svelte';
+	import ColumnPicker from '$lib/components/ColumnPicker.svelte';
 
 interface Stats {
     by_status: Record<string, number>;
@@ -43,6 +45,10 @@ interface Stats {
 	let typeFilter = $state('');
 	let dateFrom = $state('');
 	let dateTo = $state('');
+	// Network filter (distributed): empty = all networks. Populated from
+	// GET /networks on mount.
+	let networkFilter = $state('');
+	let networks = $state<Network[]>([]);
 	let offset = $state(0);
 	// Per-page size is user-adjustable (was a const 20). Backed by the URL so a
 	// page reload / shared link preserves the chosen density.
@@ -125,6 +131,9 @@ interface Stats {
 		// results "View Device" deep link) and reloads land on the right view.
 		hydrateFromUrl();
 		fetchDevices();
+		// Load the network registry for the filter dropdown (best-effort; a
+		// failure just leaves the dropdown empty — the list still works).
+		api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
 		pollTimer = setInterval(() => {
 			if (!formOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !importOpen && !linkOpen) {
 				void refreshDevicesSilent();
@@ -143,6 +152,7 @@ interface Stats {
 		const params = new URLSearchParams();
 		if (statusFilter) params.set('status', statusFilter);
 		if (typeFilter) params.set('type', typeFilter);
+		if (networkFilter) params.set('network_id', networkFilter);
 		if (searchQuery) params.set('search', searchQuery);
 		if (dateFrom) params.set('created_from', dateFrom);
 		if (dateTo) params.set('created_to', dateTo);
@@ -168,6 +178,7 @@ interface Stats {
 		const sp = new URLSearchParams(window.location.search);
 		if (sp.get('status')) statusFilter = sp.get('status')!;
 		if (sp.get('type')) typeFilter = sp.get('type')!;
+		if (sp.get('network_id')) networkFilter = sp.get('network_id')!;
 		if (sp.get('search')) {
 			searchQuery = sp.get('search')!;
 			searchInput = searchQuery;
@@ -223,7 +234,7 @@ interface Stats {
 			if (seq !== fetchSeq) return; // superseded — drop stale result
 			devices = res.devices || [];
 			total = res.total || 0;
-			const s = await api.get<Stats>('/devices/stats');
+			const s = await api.get<Stats>(`/devices/stats${networkFilter ? '?network_id=' + networkFilter : ''}`);
 			if (seq !== fetchSeq) return;
 			stats = s;
 		} catch {
@@ -244,7 +255,7 @@ interface Stats {
 			total = res.total || 0;
 
 		try {
-			const s = await api.get<Stats>('/devices/stats');
+			const s = await api.get<Stats>(`/devices/stats${networkFilter ? '?network_id=' + networkFilter : ''}`);
 			if (seq !== fetchSeq) return;
 			stats = s;
 		} catch (err: unknown) {
@@ -633,6 +644,74 @@ interface Stats {
 		return 'bg-muted';
 	}
 
+	// --- Optional columns (user-toggleable via ColumnPicker) ---
+	// Keys are persisted to localStorage; NEVER rename them. New columns
+	// default ON so existing users see the improvement (they can opt out).
+	const optionalColumns = [
+		{ key: 'vendor', label: () => m['devices.Vendor']() },
+		{ key: 'mac', label: () => m['devices.MAC Address']() },
+		{ key: 'hostname', label: () => m['devices.Hostname']() },
+		{ key: 'location', label: () => m['devices.Location']() },
+		{ key: 'network_name', label: () => m['devices.Network']?.() ?? 'Network' },
+		{ key: 'last_scanned_at', label: () => m['devices.Last Scanned']?.() ?? 'Last Scanned' },
+		{ key: 'last_scan_rtt_ms', label: () => m['devices.RTT']?.() ?? 'RTT (ms)' },
+		{ key: 'inferred_type', label: () => m['devices.Inferred Type']?.() ?? 'Inferred Type' },
+		{ key: 'os', label: () => m['devices.OS']?.() ?? 'OS' },
+		{ key: 'serial_number', label: () => m['devices.Serial Number']?.() ?? 'Serial Number' },
+		{ key: 'purchase_date', label: () => m['devices.Purchase Date']?.() ?? 'Purchase Date' },
+		{ key: 'purpose', label: () => m['devices.Purpose']?.() ?? 'Purpose' }
+	];
+	const defaultColumns = ['vendor', 'mac', 'hostname', 'location', 'network_name'];
+	let selectedColumnKeys = $state(new Set<string>(defaultColumns));
+
+	// Render functions for each optional column (read from scan_attributes
+	// where the engine writes the rich data, falling back to top-level fields).
+	function renderOptionalColumn(key: string, row: Record<string, unknown>): string {
+		const sa = row.scan_attributes as Record<string, unknown> | undefined;
+		switch (key) {
+			case 'vendor': {
+				const v = (sa?.vendor as string) || (row.brand ? String(row.brand) : '');
+				return v ? `<span class="text-text">${escapeHtml(v)}</span>` : '-';
+			}
+			case 'mac': {
+				const mac = (sa?.mac as string) || (row.mac_address ? String(row.mac_address) : '');
+				return mac ? `<span class="font-mono text-xs">${escapeHtml(mac)}</span>` : '-';
+			}
+			case 'hostname': {
+				const h = sa?.hostname as string | undefined;
+				return h ? `<span class="font-mono text-xs">${escapeHtml(h)}</span>` : '-';
+			}
+			case 'location':
+				return row.location ? escapeHtml(String(row.location)) : '-';
+			case 'network_name':
+				return row.network_name ? escapeHtml(String(row.network_name)) : '-';
+			case 'last_scanned_at': {
+				const t = (sa?.last_scanned_at as string) || row.last_scanned_at;
+				return t ? escapeHtml(new Date(String(t)).toLocaleString()) : '-';
+			}
+			case 'last_scan_rtt_ms': {
+				const rtt = (sa?.last_scan_rtt_ms as number) ?? row.last_scan_rtt_ms;
+				return rtt != null ? `<span class="font-mono text-xs">${Number(rtt)}</span>` : '-';
+			}
+			case 'inferred_type': {
+				const t = (sa?.inferred_type as string) || (row.scan_attributes as { inferred_type?: string } | undefined)?.inferred_type;
+				return t ? `<span class="text-text">${escapeHtml(t)}</span>` : '-';
+			}
+			case 'os': {
+				const os = sa?.os as string | undefined;
+				return os ? escapeHtml(os) : '-';
+			}
+			case 'serial_number':
+				return row.serial_number ? `<span class="font-mono text-xs">${escapeHtml(String(row.serial_number))}</span>` : '-';
+			case 'purchase_date':
+				return row.purchase_date ? escapeHtml(String(row.purchase_date)) : '-';
+			case 'purpose':
+				return row.purpose ? escapeHtml(String(row.purpose)) : '-';
+			default:
+				return '-';
+		}
+	}
+
 	let columns = $derived([
 		{
 			key: '_select',
@@ -666,7 +745,18 @@ interface Stats {
 				return `<span class="inline-block w-2.5 h-2.5 rounded-full ${statusDotClass(s)}"></span>`;
 			}
 		},
-		{ key: 'name', label: m['devices.Device Name'](), sortable: true },
+		{
+			// Device name is a link to the full detail page — the detail page is
+			// where every scan_attributes field lives, so this is the primary entry.
+			key: 'name',
+			label: m['devices.Device Name'](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const id = row.id;
+				const name = escapeHtml(String(row.name ?? ''));
+				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']?.() ?? 'View details'}">${name}</button>`;
+			}
+		},
 		{
 			key: 'type',
 			label: m['devices.Type'](),
@@ -682,43 +772,16 @@ interface Stats {
 			render: (row: Record<string, unknown>) =>
 				row.ip_address ? `<span class="font-mono">${escapeHtml(String(row.ip_address))}</span>` : '-'
 		},
-		{
-			// Vendor: prefer scan_attributes.vendor (OUI/SNMP-derived), fall back
-			// to the top-level brand column (user/manual). Nested lookup needs a
-			// render fn — DataTable only resolves flat keys.
-			key: 'vendor',
-			label: m['devices.Vendor'](),
-			render: (row: Record<string, unknown>) => {
-				const sa = row.scan_attributes as { vendor?: string } | undefined;
-				const v = sa?.vendor || (row.brand ? String(row.brand) : '');
-				return v ? `<span class="text-text">${escapeHtml(v)}</span>` : '-';
-			}
-		},
-		{
-			// MAC from scan_attributes.mac (the scan-discovered L2 address).
-			key: 'mac',
-			label: m['devices.MAC Address'](),
-			render: (row: Record<string, unknown>) => {
-				const sa = row.scan_attributes as { mac?: string } | undefined;
-				const mac = sa?.mac || (row.mac_address ? String(row.mac_address) : '');
-				return mac ? `<span class="font-mono text-xs">${escapeHtml(mac)}</span>` : '-';
-			}
-		},
-		{
-			// Hostname from scan_attributes.hostname (rDNS / mDNS / NetBIOS / SNMP).
-			key: 'hostname',
-			label: m['devices.Hostname'](),
-			render: (row: Record<string, unknown>) => {
-				const sa = row.scan_attributes as { hostname?: string } | undefined;
-				const h = sa?.hostname;
-				return h ? `<span class="font-mono text-xs">${escapeHtml(h)}</span>` : '-';
-			}
-		},
-		{
-			key: 'location',
-			label: m['devices.Location'](),
-			render: (row: Record<string, unknown>) => (row.location ? escapeHtml(String(row.location)) : '-')
-		},
+		// Optional (user-toggleable) columns — included only if selected in the
+		// ColumnPicker. Order follows the optionalColumns definition so toggling
+		// keeps a stable, predictable column layout.
+		...optionalColumns
+			.filter((c) => selectedColumnKeys.has(c.key))
+			.map((c) => ({
+				key: c.key,
+				label: c.label(),
+				render: (row: Record<string, unknown>) => renderOptionalColumn(c.key, row)
+			})),
 		{
 			key: 'actions',
 			label: m['common.Actions'](),
@@ -726,6 +789,7 @@ interface Stats {
 				const id = row.id;
 				const name = escapeAttr(String(row.name ?? ''));
 				return `<div class="flex gap-2">`
+					+ `<button data-action="detail" data-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['devices.Details']?.() ?? 'Details'}</button>`
 					+ `<button data-action="edit" data-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
 					+ `<button data-action="link" data-id="${id}" data-name="${name}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['documents.Link Document']()}</button>`
 					+ `<button data-action="delete" data-id="${id}" data-name="${name}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10">${m['common.Delete']()}</button>`
@@ -751,6 +815,12 @@ interface Stats {
 		const name = btn.dataset.name ?? '';
 		if (action === 'expand') {
 			expandedDeviceId = expandedDeviceId === id ? null : id;
+			return;
+		}
+		if (action === 'detail') {
+			// Navigate to the full detail page — the only place every device
+			// field (scan_attributes, SNMP, services, monitoring, extras) is shown.
+			goto(`/devices/detail/${id}`);
 			return;
 		}
 		if (action === 'edit') {
@@ -827,6 +897,18 @@ interface Stats {
 			<option value="camera">{m['devices.Camera']?.() ?? 'camera'}</option>
 			<option value="other">{m['devices.Other']()}</option>
 		</select>
+		{#if networks.length > 0}
+			<select
+				bind:value={networkFilter}
+				onchange={applyFilters}
+				class="input"
+			>
+				<option value="">{m['devices.All Networks']?.() ?? 'All Networks'}</option>
+				{#each networks as net}
+					<option value={net.id}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
+				{/each}
+			</select>
+		{/if}
 
 		<!-- Server-side search (name / ip / mac / serial). 400ms debounce. -->
 		<div class="relative flex-1 min-w-[180px] max-w-xs">
@@ -856,6 +938,14 @@ interface Stats {
 			{m['devices.Advanced Filters']()}
 			<ChevronDown class="w-3 h-3 transition-transform {showAdvanced ? 'rotate-180' : ''}" />
 		</button>
+
+		<ColumnPicker
+			columns={optionalColumns.map((c) => ({ key: c.key, label: c.label() }))}
+			bind:selected={selectedColumnKeys}
+			storageKey="device-columns"
+			defaults={defaultColumns}
+			label={m['devices.Columns']?.() ?? 'Columns'}
+		/>
 
 		<div class="flex-1"></div>
 

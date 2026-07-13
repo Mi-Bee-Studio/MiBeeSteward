@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"mibee-steward/internal/domain"
@@ -36,6 +37,11 @@ type SQLiteRepository struct {
 	defaultHBTimeout     int // seconds
 	defaultSNMPCommunity string
 	defaultSNMPOID       string
+	// networkID tags every device this repository upserts with its origin
+	// network (devices.network_id). 0 = unresolved/legacy (treated as NULL).
+	// Two instances on different LANs thus keep their data partitioned even
+	// when private IPs overlap. Resolved from config `network` at startup.
+	networkID sql.NullInt64
 }
 
 // Options configures the SQLiteRepository.
@@ -52,6 +58,9 @@ type Options struct {
 	DefaultSNMPCommunity string
 	// DefaultSNMPOID is applied to SNMP heartbeats that don't set one.
 	DefaultSNMPOID string
+	// NetworkID is the networks.id this repository tags discovered devices
+	// with. 0 leaves devices.network_id NULL (single-instance / unresolved).
+	NetworkID int64
 }
 
 // NewSQLiteRepository constructs the repository. db must already have the
@@ -62,6 +71,10 @@ func NewSQLiteRepository(db *sql.DB, opts Options, logger *slog.Logger) *SQLiteR
 	if logger == nil {
 		logger = slog.Default()
 	}
+	var nid sql.NullInt64
+	if opts.NetworkID > 0 {
+		nid = sql.NullInt64{Int64: opts.NetworkID, Valid: true}
+	}
 	return &SQLiteRepository{
 		db:                   db,
 		logger:               logger,
@@ -70,6 +83,7 @@ func NewSQLiteRepository(db *sql.DB, opts Options, logger *slog.Logger) *SQLiteR
 		defaultHBTimeout:     opts.DefaultHeartbeatTimeout,
 		defaultSNMPCommunity: opts.DefaultSNMPCommunity,
 		defaultSNMPOID:       opts.DefaultSNMPOID,
+		networkID:            nid,
 	}
 }
 
@@ -135,8 +149,38 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 	}
 	defer stmt.Close()
 
-	now := time.Now().UTC()
+	// Deduplicate by (service, port): when multiple identities share the same
+	// key (e.g. builtin http-presence + Recog http_header.server both emit
+	// http/80), merge their metadata and keep the highest confidence. Without
+	// this, the UNIQUE(ip,service,port) constraint causes 50+ warnings per scan.
+	type svcKey struct {
+		service string
+		port    int
+	}
+	merged := make(map[svcKey]scannerv2.ServiceIdentity)
 	for _, s := range services {
+		k := svcKey{s.Service, s.Port}
+		if existing, ok := merged[k]; ok {
+			// Merge metadata: existing values win (first-write), add new keys.
+			if existing.Metadata == nil {
+				existing.Metadata = map[string]string{}
+			}
+			for mk, mv := range s.Metadata {
+				if _, has := existing.Metadata[mk]; !has {
+					existing.Metadata[mk] = mv
+				}
+			}
+			if s.Confidence > existing.Confidence {
+				existing.Confidence = s.Confidence
+			}
+			merged[k] = existing
+		} else {
+			merged[k] = s
+		}
+	}
+
+	now := time.Now().UTC()
+	for _, s := range merged {
 		meta, err := json.Marshal(s.Metadata)
 		if err != nil {
 			meta = []byte("{}")
@@ -190,9 +234,12 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	scanAttrs := buildStoreScanAttributes(d, extra, openPorts, detectedServices, promURL, neURL)
 	scanAttrsJSON, _ := domain.MarshalScanAttributes(scanAttrs)
 
-	// Upsert by ip_address. INSERT ... ON CONFLICT requires a unique index on
-	// ip_address, which the existing schema does NOT guarantee. Use a manual
-	// check-then-insert/update inside a tx for safety.
+	// MAC-primary identity: when a MAC is known, match across ALL networks so a
+	// device that roams between subnets (or was discovered by another instance)
+	// stays a single asset. Without a MAC, fall back to (ip, network_id): same
+	// IP on two different networks is two distinct devices.
+	mac := NormalizeMAC(extra["mac"])
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -200,7 +247,42 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	defer tx.Rollback() //nolint:errcheck
 
 	var existingID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&existingID)
+	switch {
+	case mac != "":
+		// MAC present → global identity. A device discovered on LAN-A and LAN-B
+		// resolves to the same row. (idx_devices_mac_address backs this lookup.)
+		err = tx.QueryRowContext(ctx,
+			`SELECT id FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&existingID)
+		// Fall back to (ip, network_id) when the MAC lookup misses: the device
+		// may have been first seen WITHOUT a MAC (ARP hadn't resolved yet) and
+		// only picked one up on this scan. Matching it back avoids creating a
+		// second row — we want to fill the existing row's mac_address instead.
+		if err == sql.ErrNoRows {
+			if r.networkID.Valid {
+				err = tx.QueryRowContext(ctx,
+					`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND mac_address = '' LIMIT 1`,
+					ip, r.networkID.Int64).Scan(&existingID)
+			} else {
+				err = tx.QueryRowContext(ctx,
+					`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' LIMIT 1`,
+					ip).Scan(&existingID)
+			}
+		}
+	default:
+		// No MAC → identity is (ip, network_id). On the legacy single-instance
+		// path network_id is NULL, and SQLite treats each NULL as distinct in a
+		// UNIQUE index, so the first NULL-network row for an IP is matched here
+		// via the `IS NULL` predicate. With a resolved network_id it partitions.
+		if r.networkID.Valid {
+			err = tx.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+				ip, r.networkID.Int64).Scan(&existingID)
+		} else {
+			err = tx.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+				ip).Scan(&existingID)
+		}
+	}
 	now := time.Now().UTC()
 
 	name := d.Name
@@ -216,43 +298,87 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 
 	switch err {
 	case sql.ErrNoRows:
-		// Insert a minimal device row, tagged scan_source='scanner_v2'.
+		// Insert a minimal device row, tagged scan_source='scanner_v2' and
+		// stamped with this repository's network_id (origin) + MAC (when known).
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO devices (name, type, brand, model, ip_address, status, scan_source,
+			INSERT INTO devices (name, type, brand, model, ip_address, mac_address,
+			                     status, scan_source,
 			                     open_ports, detected_services, prometheus_url, node_exporter_url,
-			                     scan_attributes,
+			                     scan_attributes, network_id, first_seen, last_seen,
 			                     last_scanned_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, 'unknown', 'scanner_v2', ?, ?, ?, ?, ?, ?, ?, ?)`,
-			name, devType, brand, model, ip, openPorts, detectedServices, promURL, neURL,
-			string(scanAttrsJSON), now, now, now)
+			VALUES (?, ?, ?, ?, ?, ?,
+			        'unknown', 'scanner_v2',
+			        ?, ?, ?, ?,
+			        ?, ?, ?, ?,
+			        ?, ?, ?)`,
+			name, devType, brand, model, ip, mac,
+			openPorts, detectedServices, promURL, neURL,
+			string(scanAttrsJSON), r.networkID, now, now,
+			now, now, now)
 		if err != nil {
-			r.logger.Warn("insert device failed", "ip", ip, "error", err)
+			r.logger.Warn("insert device failed", "ip", ip, "mac", mac, "error", err)
 		}
 	case nil:
-		// Update existing device: only touch v2-managed columns.
+		// Update existing device: only touch v2-managed columns. Refresh MAC,
+		// network_id, ip (a re-scan may have resolved a previously-empty MAC or
+		// seen the asset on a different IP), and online-freshness timestamps.
 		_, err = tx.ExecContext(ctx, `
 				UPDATE devices SET
 				    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
 				    model = CASE WHEN ? != '' THEN ? ELSE model END,
 				    type = CASE WHEN ? != '' THEN ? ELSE type END,
+				    mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
+				    ip_address = CASE WHEN ip_address = '' THEN ? ELSE ip_address END,
 				    open_ports = ?,
 				    detected_services = ?,
 				    prometheus_url = ?,
 				    node_exporter_url = ?,
 				    scan_attributes = ?,
+				    last_seen = COALESCE(last_seen, ?),
 				    last_scanned_at = ?,
 				    updated_at = ?
 				WHERE id = ?`,
 			brand, brand, model, model, devType, devType,
-			openPorts, detectedServices, promURL, neURL, string(scanAttrsJSON), now, now, existingID)
+			mac, mac, ip,
+			openPorts, detectedServices, promURL, neURL, string(scanAttrsJSON),
+			now, now, now, existingID)
 		if err != nil {
-			r.logger.Warn("update device failed", "ip", ip, "error", err)
+			r.logger.Warn("update device failed", "ip", ip, "mac", mac, "error", err)
 		}
 	default:
-		r.logger.Warn("lookup device failed", "ip", ip, "error", err)
+		r.logger.Warn("lookup device failed", "ip", ip, "mac", mac, "error", err)
 	}
 
 	return tx.Commit()
+}
+
+// NormalizeMAC canonicalizes a MAC address for storage and lookup: lowercased
+// with colon separators (aa:bb:cc:dd:ee:ff). Empty/invalid input returns "".
+// Shared by the store and runner so both upsert paths agree on the MAC key —
+// without this, a MAC stored as "AA-BB..." would never match "aa:bb...".
+func NormalizeMAC(s string) string {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return ""
+	}
+	// Accept colon/dash/space-separated and bare hex; normalize to colon form.
+	hex := strings.NewReplacer(":", "", "-", "", " ", "", ".", "").Replace(s)
+	if len(hex) != 12 {
+		return ""
+	}
+	for _, c := range hex {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return ""
+		}
+	}
+	var b strings.Builder
+	for i := 0; i < 12; i += 2 {
+		if i > 0 {
+			b.WriteByte(':')
+		}
+		b.WriteString(hex[i : i+2])
+	}
+	return b.String()
 }
 
 // buildStoreScanAttributes builds the engine-written scan_attributes document
@@ -467,4 +593,73 @@ func (r *SQLiteRepository) legacyUpsertHeartbeats(ctx context.Context, tx *sql.T
 		}
 	}
 	return tx.Commit()
+}
+
+// RecordNeighbors persists L2 adjacency edges (LLDP/CDP/Bridge-MIB/ARP) for the
+// device at ip. It resolves ip → device_id (MAC-primary, then (ip, network_id)
+// fallback — same identity rule as RecordDevice), then upserts each neighbor on
+// (device_id, neighbor_mac, protocol). The neighbor's MAC is the cross-agent
+// merge key; neighbor_device_id is left NULL (reconciled later when/if the
+// neighbor is scanned). Best-effort: failures are logged, never abort a scan.
+func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip string, neighbors []scannerv2.NeighborSpec) error {
+	if len(neighbors) == 0 {
+		return nil
+	}
+	deviceID, err := r.resolveDeviceID(ctx, ip)
+	if err != nil || deviceID == 0 {
+		// Device not yet persisted (the orchestrator may call RecordNeighbors
+		// before RecordDevice lands). Skip — the next scan re-discovers.
+		r.logger.Debug("record neighbors: device not found", "ip", ip)
+		return nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	now := time.Now().UTC()
+	var networkID sql.NullInt64
+	_ = tx.QueryRowContext(ctx, `SELECT network_id FROM devices WHERE id = ?`, deviceID).Scan(&networkID)
+
+	for _, n := range neighbors {
+		if n.NeighborMAC == "" || n.Protocol == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO device_neighbors (device_id, neighbor_mac, protocol, local_port, remote_port, network_id, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(device_id, neighbor_mac, protocol) DO UPDATE SET
+				local_port = CASE WHEN excluded.local_port != '' THEN excluded.local_port ELSE device_neighbors.local_port END,
+				remote_port = CASE WHEN excluded.remote_port != '' THEN excluded.remote_port ELSE device_neighbors.remote_port END,
+				last_seen = excluded.last_seen`,
+			deviceID, n.NeighborMAC, n.Protocol, n.LocalPort, n.RemotePort, networkID, now, now); err != nil {
+			r.logger.Debug("upsert neighbor failed", "ip", ip, "neighbor_mac", n.NeighborMAC, "error", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// resolveDeviceID finds the devices.id for an IP using the MAC-primary →
+// (ip, network_id) identity rule. Returns 0 if the device doesn't exist yet.
+func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int64, error) {
+	// Try by IP + this repo's network first (the common case — the device was
+	// upserted by RecordDevice on this scan or a prior one).
+	if r.networkID.Valid {
+		var id int64
+		err := r.db.QueryRowContext(ctx,
+			`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`, ip, r.networkID.Int64).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+	}
+	// Fall back to IP alone (legacy NULL-network or cross-network match).
+	var id int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
 }

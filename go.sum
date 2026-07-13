@@ -1,3 +1,5 @@
+github.com/Mi-Bee-Studio/mibee-fingerprints-go v0.1.0 h1:pHd4ybOp23DnBiIU7+N4G50JDRFIOFlCf+umaOKucdY=
+github.com/Mi-Bee-Studio/mibee-fingerprints-go v0.1.0/go.mod h1:o1UimfbmI5pDxvvi7TMD7+pROFPXtwroADQS1bOKNxE=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=

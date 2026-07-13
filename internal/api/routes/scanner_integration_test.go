@@ -51,6 +51,9 @@ func newTestDB(t *testing.T) *sql.DB {
 			purchase_date TEXT DEFAULT '',
 			warranty_expiry TEXT DEFAULT '',
 			tags TEXT DEFAULT '',
+			network_id INTEGER,
+			first_seen TIMESTAMP,
+			last_seen TIMESTAMP,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);

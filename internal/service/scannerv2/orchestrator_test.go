@@ -108,6 +108,10 @@ func (r *recordRepo) RecordHeartbeats(_ context.Context, ip string, specs []Hear
 	return nil
 }
 
+func (r *recordRepo) RecordNeighbors(_ context.Context, _ string, _ []NeighborSpec) error {
+	return nil
+}
+
 func TestOrchestrator_GatherClassifyDispatch(t *testing.T) {
 	// Two probes, one classifier per evidence kind, two handlers with a
 	// cascade from http → prometheus.

@@ -14,6 +14,16 @@ database:
   sqlite:
     path: "./data/mibee.db"
 
+# Network this instance is responsible for. Resolved to a `networks` table row
+# at startup; discovered devices are tagged with its id (devices.network_id) so
+# multiple instances on different LANs can coexist without IP collisions.
+#   - Single instance: leave at default ("default") — devices get network_id set.
+#   - Distributed: each agent sets a distinct name (e.g. "lan-63", "branch-bj").
+network:
+  name: "default"
+  cidr: ""        # e.g. "192.168.63.0/24" — advisory, not enforced
+  site: ""        # e.g. "hq" / "datacenter-1"
+
 
 auth:
   jwt_secret: "change-me-in-production"  # REQUIRED — must change, minimum 32 characters
@@ -86,6 +96,12 @@ scanner:
   # runtime with MIBEE_SCANNER_OUI_PATH. Fetch the canonical list with
   # scripts/fetch-oui.sh (downloads from standardeee.org).
   oui_path: ""
+  # fingerprint_path points to a directory of fingerprint YAML rule files (see
+  # configs/fingerprints/ + docs/fingerprint-spec.md). When empty, the engine
+  # uses the fingerprint rules embedded in the binary (zero-config). Override at
+  # runtime with MIBEE_SCANNER_FINGERPRINT_PATH. Point this at a custom rule
+  # directory to extend device/service identification without recompiling.
+  fingerprint_path: ""
   # snmp_community overrides the default SNMP community ("public") used by the
   # SNMP probe. Override at runtime with MIBEE_SCANNER_SNMP_COMMUNITY.
   snmp_community: "public"
@@ -113,6 +129,45 @@ scanner:
   ebpf:
     enabled: false
     interfaces: []
+  # Passive discovery service — spots newly-appeared hosts BETWEEN scheduled
+  # scans with near-zero active traffic. It diffs router/local ARP tables and
+  # passively listens for mDNS/SSDP (never sends queries), then feeds new hosts
+  # through the same device bridge as scans (device_added events + heartbeat
+  # seeding). This shrinks the discovery-to-record gap from "next 6h scan" to
+  # ~1 minute. Disabled by default; enable when you want quasi-realtime
+  # onboarding of new devices.
+  discovery:
+    enabled: false
+    interval: 60          # seconds — poll cadence for the ARP-based sources
+    trigger_identify: true # run a single-IP full identification scan on each
+                           # new host so it gets a type + services immediately
+                           # (recommended; set false to record as "unknown")
+    # router_arp: walks scanner.router_arp.routers' SNMP ARP tables. Widest
+    # coverage — a gateway knows every host that talks through it. One SNMP Walk
+    # per router per interval; no end-host traffic. No-op without routers.
+    router_arp:
+      enabled: true
+    # arp_cache: diffs the local /proc/net/arp kernel cache. Zero network
+    # traffic; covers hosts the scanner host has communicated with (including
+    # those populated by the scheduled scan's ICMP/TCP probes).
+    arp_cache:
+      enabled: true
+    # multicast: passively listens on mDNS (224.0.0.251:5353) + SSDP
+    # (239.255.255.250:1900) for self-advertising devices (cameras/printers/
+    # IoT/Mac/UPnP). Zero outbound traffic; supplemental coverage only.
+    # Binds with SO_REUSEADDR to coexist with avahi/systemd-resolved; if the
+    # port is unavailable the source disables itself without crashing.
+    multicast:
+      enabled: true
+  # ── Agent lease (distributed model) ───────────────────────────────────────
+  # Agent-managed devices (networks with agent_id set) are kept online by their
+  # agent's reports — the center does NOT probe them locally (cross-subnet ICMP
+  # would always fail and flap them offline). The report refreshes a per-device
+  # lease; if an agent stops reporting a host, the lease sweeper below expires
+  # it (marks offline + emits device_lost). Only agent networks are swept; the
+  # center's own network uses the local-scan DetectLost path + heartbeat.
+  agent_lease_ttl: "5m"        # how long a snapshot may be stale before expiring
+  lease_sweep_interval: "60s"  # how often the expiration sweep runs
 # ── Retention (data-volume management) ─────────────────────────────────────
 # The retention sweeper runs every sweep_interval_hours and prunes each
 # high-volume detail table in batches of batch_size rows (batching avoids

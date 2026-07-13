@@ -237,3 +237,91 @@ Prober 接口 → ICMP/TCP/HTTP/SNMP 实现 → RetryProber 装饰器
 **指标类型**：各种系统指标的计数器、仪表盘和直方图
 
 仪表板服务配置为使用 Prometheus 后端进行监控数据查询。
+
+## 分布式架构
+
+MiBee Steward 支持分布式部署：**中心**（主二进制 `cmd/server`）汇聚多个
+**采集器**（轻量二进制 `cmd/agent`）的设备数据，每个采集器部署在不同的局域网段。
+这实现了跨网络设备发现，无需中心直接 L3 可达每个子网。
+
+```
+[网络 A: 192.168.63.0/24]              [网络 B: 192.168.62.0/24]
+  ┌──────────────────────┐               ┌──────────────────────┐
+  │ 中心 (cmd/server)     │   HTTPS       │ 采集器 (cmd/agent)    │
+  │  - API + SPA         │◄─────────────│  - scannerv2 引擎     │
+  │  - 设备注册表         │   Bearer 令牌  │  - 上报器 (POST)      │
+  │  - 变化检测           │──────────────►│  - 命令轮询器          │
+  │  - 扫描器 (本地)      │   下发命令     │  - 调度器 (cron)      │
+  │  - 心跳服务           │               │  - 迷你 SQLite        │
+  └──────────────────────┘               └──────────────────────┘
+```
+
+### 角色
+
+| 角色 | 二进制 | 职责 |
+|---|---|---|
+| **中心** | `cmd/server` | 汇聚枢纽：API、SPA、设备注册表、变化检测、心跳、接收上报、采集器管理 |
+| **采集器** | `cmd/agent` | 轻量扫描器：本地运行 scannerv2、上报结果、轮询命令 |
+
+### 采集器 ↔ 中心协议
+
+**拉取模型** — 采集器发起所有连接（适配 NAT 后部署）：
+
+1. **上报** (`POST /api/v1/agents/report`)：采集器批量 POST 存活设备的 HostReport。
+   中心通过 bearer 令牌认证，用 MAC 优先身份模型合并设备。
+2. **命令轮询** (`GET /api/v1/agents/commands`)：采集器每 60 秒轮询临时命令
+   （如"立即扫描这些目标"）。
+3. **断线补报**：失败的 report 批次保存在内存 pending 队列中（上限 100 批）。
+   中心恢复后按序补报。
+
+### 身份模型（MAC 优先）
+
+设备首先按 **MAC 地址** 去重（漫游设备跨网络保持单一资产），无 MAC 时退回
+`(ip_address, network_id)` 复合键。这意味着：
+
+- 两个不同 LAN 上的相同私网 IP（如 `192.168.1.10`）是 **两个不同设备**
+  （按 `network_id` 分区）。
+- 一个在子网间移动的设备（相同 MAC，不同 IP）保持 **单一资产**。
+- `(ip_address, network_id)` 复合唯一索引支撑此分区逻辑。
+
+### 采集器认证
+
+采集器令牌是 SHA-256 哈希的不透明 bearer 令牌，存储在 `agent_tokens` 表。
+明文仅在创建时返回一次，只存哈希。令牌绑定 `network_id` — 采集器上报的每个
+设备都标记该网络。吊销是软删除（`revoked_at`）；已吊销令牌立即认证失败。
+
+两种认证机制，互不混淆：
+- **管理员 JWT**（cookie/Bearer）：人类用户通过 SPA。
+- **采集器令牌**（`RequireAgentToken` 中间件）：机器到机器上报。
+
+### 变化检测引擎
+
+中心运行变化检测引擎，对每次扫描与已知设备状态做差分，产生事件写入 `change_log`：
+
+- **device_added**：扫描中发现新设备。
+- **device_changed**：被追踪字段（type、brand、MAC、端口、服务、scan_attributes）
+  与之前状态不同。逐字段比较替换了旧的"wasUpdated 永远为 true"假信号。
+- **device_lost**：设备连续 `lostThreshold`（2）次扫描未出现，判定离线。
+  grace period 防止单次扫描抖动（ICMP 丢包、短暂宕机）导致的误报。
+
+事件可通过 `GET /api/v1/changes` 查询，通过 SSE `GET /api/v1/changes/watch`
+实时推送。Prometheus 计数器 `mibee_changes_total{type}` 追踪变化速率。
+
+### 拓扑发现（Bridge-MIB）
+
+Bridge-MIB 探针在支持 SNMP 的交换机上 walk `dot1dTpFdbTable`
+（1.3.6.1.2.1.17.4.3），学习 L2 邻接关系（哪些 MAC 在哪个端口后面）。
+发现的邻居通过 `Repository.RecordNeighbors` 持久化到 `device_neighbors`。
+LLDP/CDP 探针走同一路径。
+
+### 分布式相关数据表
+
+| 表 | 用途 |
+|---|---|
+| `networks` | 逻辑网络注册表（每个采集器发现的 LAN 一行） |
+| `agent_tokens` | 采集器 bearer 令牌（SHA-256 哈希 + 网络绑定） |
+| `agent_commands` | 中心→采集器命令队列（拉取模型） |
+| `scan_snapshots` | 每网络 miss 计数器（device_lost grace period） |
+| `change_log` | device_added/changed/lost 事件流 |
+| `device_neighbors` | L2 邻接边（LLDP/CDP/Bridge-MIB） |
+| `topology_edges` | 高层设备间边（可推导） |

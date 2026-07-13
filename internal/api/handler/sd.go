@@ -34,6 +34,31 @@ func (h *SDHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	statusFilter := r.URL.Query().Get("status")
 
+	// Load the network registry once so each target can carry a `network`/`site`
+	// label. In a multi-LAN center these labels let Prometheus scrape configs
+	// route/relabel per network; without them two LANs' targets are
+	// indistinguishable (and the scanner-target dedup below would collapse them).
+	nets, _ := h.queries.ListNetworks(ctx)
+	netName := map[int64]string{}
+	netSite := map[int64]string{}
+	for _, n := range nets {
+		netName[n.ID] = n.Name
+		if n.Site != nil {
+			netSite[n.ID] = *n.Site
+		}
+	}
+	addNetworkLabels := func(labels map[string]string, networkID *int64) {
+		if networkID == nil {
+			return
+		}
+		if name := netName[*networkID]; name != "" {
+			labels["network"] = name
+		}
+		if site := netSite[*networkID]; site != "" {
+			labels["site"] = site
+		}
+	}
+
 	// List all devices (no filter on type, large limit to get all).
 	devices, err := h.queries.ListDevices(ctx, db.ListDevicesParams{
 		Column1: "",
@@ -75,6 +100,7 @@ func (h *SDHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					"location":    d.Location,
 				},
 			}
+			addNetworkLabels(t.Labels, d.NetworkID)
 			targets = append(targets, t)
 		}
 	}
@@ -252,6 +278,19 @@ func BuildScannerTargets(ctx context.Context, queries *db.Queries) []SDTarget {
 			}
 			if device.Name != "" {
 				dynamicLabels["device_name"] = device.Name
+			}
+			// Network/site labels for multi-LAN centers (the device's own
+			// network_id resolves which LAN saw it). Fetched here because
+			// scan_results has no network_id column yet.
+			if device.NetworkID != nil {
+				if net, nErr := queries.GetNetwork(ctx, *device.NetworkID); nErr == nil {
+					if net.Name != "" {
+						dynamicLabels["network"] = net.Name
+					}
+					if net.Site != nil && *net.Site != "" {
+						dynamicLabels["site"] = *net.Site
+					}
+				}
 			}
 		}
 

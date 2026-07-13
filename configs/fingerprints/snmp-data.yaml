@@ -1,0 +1,115 @@
+# SNMP data tables — the DATA part of SNMPClassifier.
+#
+# This file holds the pure-data lookup tables that SNMPClassifier (snmp.go)
+# uses. The bitmask + numeric-compare device-type heuristic (inferTypeFromSNMP
+# stage 3: sysServices bit tests × ifNumber comparisons) CANNOT be expressed as
+# declarative rules and stays as Go code — see docs/fingerprint-spec.md
+# §"Logic plugins" for its input/output contract.
+#
+# Three tables here mirror the original Go functions verbatim:
+#   1. oid_prefixes      — enterpriseOIDPrefix: OID prefix → {brand, type}
+#   2. sysdescr_types    — typeFromSysDescr: ordered contains_any → device type
+#   3. sysdescr_brands   — inferBrand keyword list (sysDescr contains → brand)
+#   4. sysdescr_os       — osFromSysDescr: ordered contains → OS label
+#
+# Ordering matters for the keyword tables (first-match-wins). The OID table is
+# longest-prefix-first in the original (it iterates and returns on first HasPrefix
+# hit, so earlier/more-specific entries win).
+
+version: 1
+
+# ── 1. Enterprise OID prefix → {brand, type} ────────────────────────────
+# From enterpriseOIDPrefix in snmp.go. `type` may be empty (OID alone can't tell,
+# e.g. Net-SNMP 8072 runs on anything). Order: more-specific prefixes BEFORE
+# their general parent (e.g. 9.1.300 before 9.1 before 9).
+oid_prefixes:
+  # Cisco: 9.1.x routers/L3; 9.1.300+/5xx/7xx/9xx Catalyst/Nexus switches.
+  - { prefix: "1.3.6.1.4.1.9.1.300.", brand: Cisco,    type: switch }
+  - { prefix: "1.3.6.1.4.1.9.1.5",     brand: Cisco,    type: switch }  # 5xx Catalyst
+  - { prefix: "1.3.6.1.4.1.9.1.7",     brand: Cisco,    type: switch }  # 7xx Catalyst
+  - { prefix: "1.3.6.1.4.1.9.1.9",     brand: Cisco,    type: switch }  # 9xx Nexus
+  - { prefix: "1.3.6.1.4.1.9.1.",      brand: Cisco,    type: router }  # default Cisco = router
+  - { prefix: "1.3.6.1.4.1.9.",        brand: Cisco,    type: router }
+  # HP: 11.2.3.7.11.x ProCurve/Aruba switches; 11.2.3.2 ProLiant servers.
+  - { prefix: "1.3.6.1.4.1.11.2.3.7.11.", brand: HP,    type: switch }
+  - { prefix: "1.3.6.1.4.1.11.2.3.2.",   brand: HP,    type: server }
+  - { prefix: "1.3.6.1.4.1.11.",         brand: HP,    type: "" }
+  - { prefix: "1.3.6.1.4.1.674.10892.",  brand: Dell,  type: server }  # iDRAC/PowerEdge
+  - { prefix: "1.3.6.1.4.1.674.",        brand: Dell,  type: "" }
+  # Huawei: 2011.2.22 VRP routers/switches; lean router.
+  - { prefix: "1.3.6.1.4.1.2011.2.22.",  brand: Huawei, type: router }
+  - { prefix: "1.3.6.1.4.1.2011.",       brand: Huawei, type: "" }
+  - { prefix: "1.3.6.1.4.1.2636.",       brand: Juniper, type: router }   # JUNOS
+  - { prefix: "1.3.6.1.4.1.14823.",      brand: Aruba,   type: switch }
+  - { prefix: "1.3.6.1.4.1.30065.",      brand: Mikrotik, type: router }
+  - { prefix: "1.3.6.1.4.1.8072.",       brand: NetSNMP, type: "" }        # generic net-snmp
+  - { prefix: "1.3.6.1.4.1.39165.",      brand: Hikvision, type: camera }
+  - { prefix: "1.3.6.1.4.1.100484.",     brand: Dahua,   type: camera }
+  - { prefix: "1.3.6.1.4.1.368.",        brand: Axis,    type: camera }
+  - { prefix: "1.3.6.1.4.1.12325.",      brand: Synology, type: nas }
+  - { prefix: "1.3.6.1.4.1.24681.",      brand: QNAP,    type: nas }
+  - { prefix: "1.3.6.1.4.1.41112.",      brand: Ubiquiti, type: router }   # UniFi/EdgeSwitch
+  - { prefix: "1.3.6.1.4.1.25506.",      brand: H3C,     type: switch }
+  - { prefix: "1.3.6.1.4.1.11863.",      brand: TP-Link, type: router }
+  - { prefix: "1.3.6.1.4.1.4526.",       brand: Netgear, type: router }
+  - { prefix: "1.3.6.1.4.1.3375.",       brand: F5,      type: firewall }  # BIG-IP
+
+# ── 2. sysDescr keyword → device type (ordered, first-match) ────────────
+# From typeFromSysDescr. Each entry: contains_any keywords → type. Lowercase
+# match (the original lowercases sysDescr first). Order is the original switch
+# order; first hit wins.
+sysdescr_types:
+  - { keywords: ["fortigate", "palo alto", "checkpoint", "sonicwall", "pfsense", "opnsense", "juniper-srx", "cisco asa", "srx", "watchguard"], type: firewall }
+  - { keywords: ["synology", "diskstation", "dsm ", "qnap", "readynas", "teramaster", "asustor", "thecus"], type: nas }
+  - { keywords: ["routeros", "mikrotik", "routeros rb", "openwrt", "padavan", "asuswrt", "tomato", "edgeos", "edgemax", "ubnt", "unifi"], type: router }
+  - { keywords: ["procurve", "cisco ios", "catos", "comware", "h3c ", "vrp", "arubaos", "junos", "alliedware"], type: switch }
+  - { keywords: ["router", "cisco ios xr"], type: router }
+  - { keywords: ["switch"], type: switch }
+  - { keywords: ["hikvision", "dahua", "ip camera"], type: camera }
+  - { keywords: ["linux", "windows", "freebsd", "vmware", "xen"], type: server }
+
+# ── 3. sysDescr keyword → brand (inferBrand keyword list) ───────────────
+# Case-insensitive contains. First hit wins. Falls back to OID table in code.
+sysdescr_brands:
+  - { keyword: Cisco,       brand: Cisco }
+  - { keyword: Juniper,     brand: Juniper }
+  - { keyword: HP,          brand: HP }
+  - { keyword: Dell,        brand: Dell }
+  - { keyword: Aruba,       brand: Aruba }
+  - { keyword: Mikrotik,    brand: Mikrotik }
+  - { keyword: Ubiquiti,    brand: Ubiquiti }
+  - { keyword: Fortinet,    brand: Fortinet }
+  - { keyword: "Palo Alto", brand: "Palo Alto" }
+  - { keyword: Synology,    brand: Synology }
+  - { keyword: QNAP,        brand: QNAP }
+  - { keyword: Arista,      brand: Arista }
+  - { keyword: Huawei,      brand: Huawei }
+  - { keyword: EPSON,       brand: EPSON }
+  - { keyword: Canon,       brand: Canon }
+  - { keyword: Brother,     brand: Brother }
+  - { keyword: Hikvision,   brand: Hikvision }
+  - { keyword: Dahua,       brand: Dahua }
+  - { keyword: Axis,        brand: Axis }
+  - { keyword: Bosch,       brand: Bosch }
+  - { keyword: Sony,        brand: Sony }
+  - { keyword: Hanwha,      brand: Hanwha }
+  - { keyword: Vivotek,     brand: Vivotek }
+  - { keyword: Reolink,     brand: Reolink }
+  - { keyword: Uniview,     brand: Uniview }
+  - { keyword: Honeywell,   brand: Honeywell }
+  - { keyword: FLIR,        brand: FLIR }
+
+# ── 4. sysDescr keyword → OS label (osFromSysDescr, ordered) ────────────
+sysdescr_os:
+  - { keywords: ["routeros", "mikrotik"],     os: "RouterOS" }
+  - { keywords: ["openwrt"],                  os: "OpenWrt" }
+  - { keywords: ["padavan", "asuswrt"],       os: "Linux" }
+  - { keywords: ["pfsense", "opnsense"],      os: "pfSense/OPNsense" }
+  - { keywords: ["synology", "dsm ", "diskstation"], os: "DSM" }
+  - { keywords: ["qnap", "qts"],              os: "QTS" }
+  - { keywords: ["vmware", "esxi"],           os: "VMware ESXi" }
+  - { keywords: ["windows"],                  os: "Windows" }
+  - { keywords: ["freebsd"],                  os: "FreeBSD" }
+  - { keywords: ["darwin", "macos", "mac os"], os: "macOS" }
+  - { keywords: ["linux"],                    os: "Linux" }
+  - { keywords: ["android"],                  os: "Android" }

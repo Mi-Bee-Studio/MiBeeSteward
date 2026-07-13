@@ -10,6 +10,7 @@
 package probe
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -36,7 +37,7 @@ var DefaultFingerprintPorts = []int{
 const (
 	maxConcurrentDials = 100
 	bannerReadSize     = 1024
-	bannerReadTimeout  = 2 * time.Second
+	bannerReadTimeout  = 3 * time.Second
 )
 
 // PortSpecProbe scans a TCP port spec ("22,80,100-200") with priority ports
@@ -148,11 +149,25 @@ func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration
 	}
 	defer conn.Close()
 
-	// Passive banner read: don't send anything; wait briefly for a server
-	// greeting. Catches SSH/FTP/SMTP/RTSP/redis/etc. that volunteer a banner.
+	// Passive banner read: don't send anything; wait for a server greeting.
+	// Catches SSH/FTP/SMTP/RTSP/redis/etc. that volunteer a banner on connect.
+	// Loop until we get a newline (most greetings end with \r\n) or the read
+	// deadline fires — handles slow servers (ProFTPD ident check) and segmented
+	// greetings that arrive across TCP segments.
 	_ = conn.SetReadDeadline(time.Now().Add(bannerReadTimeout))
 	buf := make([]byte, bannerReadSize)
-	n, _ := conn.Read(buf)
+	n := 0
+	for n < len(buf) {
+		cn, err := conn.Read(buf[n:])
+		n += cn
+		if err != nil || cn == 0 {
+			break
+		}
+		// Most banner greetings end with \r\n — stop after the first line.
+		if bytes.ContainsRune(buf[:n], '\n') {
+			break
+		}
+	}
 	if n > 0 {
 		return true, strings.TrimRight(string(buf[:n]), "\r\n\x00")
 	}

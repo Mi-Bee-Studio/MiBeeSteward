@@ -18,10 +18,13 @@
 - **Device Systems Management**: Each device can have multiple installed systems with entry URLs, displayed as card grid UI with category badges
 - **Network Scanner (v2)**: Plugin-based 5-layer architecture (probe → classify → handler → persist → orchestrate) with cascading deep collection. Detects SSH/HTTP/RTSP/ONVIF/SNMP/Prometheus/node_exporter and infers device type/brand (e.g. cameras from RTSP+ONVIF). Extensible: add a protocol by registering one classifier + one handler.
 - **eBPF Passive Observer**: Optional TC ingress program sniffs ONVIF WS-Discovery multicast + TCP magic bytes as a corroborating evidence source (build-tag gated; default build is dependency-free).
+- **Distributed Discovery**: Deploy lightweight agents on remote LANs to discover devices across networks. Agents report to a central hub via pull-model HTTPS with bearer-token auth, disconnect recovery, and MAC-primary device identity (same device stays one asset across networks). [Distributed Guide](docs/en/distributed-guide.md)
+- **Change Detection**: Automatic device_added / device_changed / device_lost detection on every scan, with a grace period to prevent jitter-induced false alarms. Queryable history (`GET /changes`) and real-time SSE stream (`GET /changes/watch`).
+- **Topology Discovery**: Bridge-MIB SNMP probe walks switch forwarding databases to learn L2 adjacency (which MAC is behind which port). [Architecture](docs/en/architecture.md#distributed-architecture)
 - **Heartbeat Monitoring**: Configurable intervals with automatic failure detection
 - **Prometheus Integration**: Metrics endpoint at `/metrics` for monitoring, HTTP SD at `/sd` for auto-discovery
-- **Embedded Web Interface**: SvelteKit SPA with real-time dashboards
-- **JWT Authentication**: Role-based access control (admin/user)
+- **Embedded Web Interface**: SvelteKit SPA with real-time dashboards, multi-LAN device filtering, change history, and agent management UI
+- **JWT Authentication**: Role-based access control (admin/user) + machine-to-machine agent token auth
 - **Multi-Language Support**: English and Chinese with @inlang/paraglide-js
 - **Audit Logging**: Comprehensive action tracking
 - **Single Binary Deployment**: Frontend embedded via go:embed
