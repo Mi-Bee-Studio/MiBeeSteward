@@ -13,7 +13,8 @@
 		"Changes": "变更",
 		"Discovery": "被动发现",
 		"Networks": "网络",
-		"Agents": "采集器"
+		"Agents": "采集器",
+		"Topology": "拓扑"
 	},
 	"auth": {
 		"Username": "用户名",
@@ -728,5 +729,22 @@
 		"Pipeline": "发现流水线",
 		"Recent": "最近发现",
 		"No Recent": "暂无最近发现。被动来源检测到的新主机将显示在此。"
+	},
+	"topology": {
+		"Title": "网络拓扑",
+		"All Networks": "全部网络",
+		"Nodes": "台设备",
+		"Edges": "条邻接",
+		"Unidentified": "未识别邻居",
+		"Empty": "暂无拓扑数据",
+		"Empty Desc": "L2 邻居边(Bridge-MIB / LLDP)在扫描交换机时生成。请运行一次包含可网管交换机的扫描。",
+		"Click Hint": "点击设备节点打开详情页。拖拽可重排,滚轮缩放。",
+		"Neighbors": "L2 邻居",
+		"Neighbors Desc": "与本设备在二层相邻的设备(Bridge-MIB / LLDP)。",
+		"No Neighbors": "该设备暂无 L2 邻居记录。",
+		"Neighbor Device": "邻居设备",
+		"Local Port": "本地端口",
+		"Remote Port": "远端端口",
+		"Unidentified Neighbor": "未识别(仅 MAC)"
 	}
 }

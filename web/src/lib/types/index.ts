@@ -225,6 +225,54 @@ export interface Document {
 // System (device subsystem)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Topology / Neighbors (L2 adjacency — device_neighbors table)
+// ---------------------------------------------------------------------------
+
+// One neighbor edge as returned by GET /devices/{id}/neighbors. The
+// neighbor_* fields are present only when the neighbor MAC matches a scanned
+// device (LEFT JOIN); absent when the neighbor is unidentified.
+export interface DeviceNeighbor {
+	id: number;
+	device_id: number;
+	neighbor_device_id?: number | null;
+	neighbor_mac: string;
+	protocol: string; // 'LLDP' | 'Bridge-MIB' | 'CDP' | 'ARP'
+	local_port?: string | null;
+	remote_port?: string | null;
+	neighbor_name?: string | null;
+	neighbor_ip?: string | null;
+	neighbor_type?: string | null;
+	neighbor_status?: string | null;
+	first_seen?: string | null;
+	last_seen?: string | null;
+}
+
+// Topology graph node (one device) + edge (one L2 adjacency).
+export interface TopoNode {
+	id: number;
+	name: string;
+	ip_address: string;
+	mac_address: string;
+	type: string;
+	status: string;
+	inferred_type: string;
+	brand: string;
+}
+
+export interface TopoEdge {
+	from_device_id: number;
+	to_device_id?: number | null; // null = unidentified neighbor (dashed edge)
+	to_mac: string;
+	protocol: string;
+	local_port?: string | null;
+}
+
+export interface TopologyGraph {
+	nodes: TopoNode[];
+	edges: TopoEdge[];
+}
+
 export interface System {
 	id: number;
 	device_id: number;

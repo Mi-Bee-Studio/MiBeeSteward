@@ -13,7 +13,8 @@
 		"Changes": "Changes",
 		"Discovery": "Discovery",
 		"Networks": "Networks",
-		"Agents": "Agents"
+		"Agents": "Agents",
+		"Topology": "Topology"
 	},
 	"auth": {
 		"Username": "Username",
@@ -728,5 +729,22 @@
 		"Pipeline": "Discovery Pipeline",
 		"Recent": "Recent Discoveries",
 		"No Recent": "No recent discoveries. New hosts detected by the passive sources will appear here."
+	},
+	"topology": {
+		"Title": "Network Topology",
+		"All Networks": "All networks",
+		"Nodes": "devices",
+		"Edges": "adjacencies",
+		"Unidentified": "unidentified neighbor",
+		"Empty": "No topology data yet",
+		"Empty Desc": "L2 neighbor edges (Bridge-MIB / LLDP) are populated when switches are scanned. Run a scan that includes managed switches.",
+		"Click Hint": "Click a device node to open its detail page. Drag to rearrange; scroll to zoom.",
+		"Neighbors": "L2 Neighbors",
+		"Neighbors Desc": "Devices adjacent to this one at Layer 2 (Bridge-MIB / LLDP).",
+		"No Neighbors": "No L2 neighbors recorded for this device yet.",
+		"Neighbor Device": "Neighbor",
+		"Local Port": "Local Port",
+		"Remote Port": "Remote Port",
+		"Unidentified Neighbor": "Unidentified (MAC only)"
 	}
 }
