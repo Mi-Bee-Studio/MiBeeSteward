@@ -32,6 +32,7 @@ import (
 	scannerv2probe "mibee-steward/internal/service/scannerv2/probe"
 	scannerv2runner "mibee-steward/internal/service/scannerv2/runner"
 	scannerv2scheduler "mibee-steward/internal/service/scannerv2/scheduler"
+	"mibee-steward/internal/version"
 )
 
 var (
@@ -42,7 +43,7 @@ var (
 func main() {
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("mibee-agent")
+		fmt.Println("mibee-agent", version.Version)
 		return
 	}
 
@@ -61,6 +62,7 @@ func main() {
 	}
 	initLogger(cfg.Log)
 	slog.Info("starting mibee-agent",
+		"version", version.Version,
 		"center", cfg.Center.URL, "network", cfg.Network.Name, "agent_id_label", cfg.Network.Name)
 
 	// Local mini-DB: the scheduler reads scan_tasks and the runner writes
