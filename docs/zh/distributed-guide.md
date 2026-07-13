@@ -45,7 +45,15 @@ network:
 ```
 
 对于每个**远程**网络（采集器将覆盖的），需要在中心创建 `networks` 行。
-目前没有"创建网络"API，直接插入：
+在 **网络**（Networks，左侧导航，仅管理员可见）页面创建，或通过 API：
+
+```bash
+curl -X POST http://localhost:8080/api/v1/networks \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"lan-62","cidr":"192.168.62.0/24","site":"分支机构"}'
+```
+
+也可直接写入 SQLite（高级用法）：
 
 ```bash
 sqlite3 /opt/mibee-steward/data/mibee.db \

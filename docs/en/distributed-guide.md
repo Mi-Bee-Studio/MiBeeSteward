@@ -51,7 +51,16 @@ network:
 ```
 
 For each **remote** network an agent will cover, you need a `networks` row on the
-center. There is no "create network" API yet, so insert it directly:
+center. Create it from the **Networks** admin page (left sidebar, admin-only) or
+via the API:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/networks \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"lan-62","cidr":"192.168.62.0/24","site":"branch-office"}'
+```
+
+You can also insert it directly into SQLite (advanced):
 
 ```bash
 sqlite3 /opt/mibee-steward/data/mibee.db \
