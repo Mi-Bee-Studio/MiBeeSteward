@@ -106,8 +106,8 @@ LIMIT 1;
 -- name: UpdateDeviceStatus :exec
 -- Updates ONLY the status column (and updated_at). Used by the heartbeat
 -- service so a status transition doesn't clobber other columns (name, tags,
--- location, …) that may have been edited between the GetDevice read and this
--- write — the full-row UpdateDevice path is racy in that window.
+-- location, ...) that may have been edited between the GetDevice read and this
+-- write -- the full-row UpdateDevice path is racy in that window.
 UPDATE devices
 SET status = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;

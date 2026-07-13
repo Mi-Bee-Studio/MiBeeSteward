@@ -713,7 +713,7 @@ func (q *Queries) UpdateDeviceScanInfo(ctx context.Context, arg UpdateDeviceScan
 const updateDeviceStatus = `-- name: UpdateDeviceStatus :exec
 UPDATE devices
 SET status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id
+WHERE id = ?
 `
 
 type UpdateDeviceStatusParams struct {
@@ -723,8 +723,8 @@ type UpdateDeviceStatusParams struct {
 
 // Updates ONLY the status column (and updated_at). Used by the heartbeat
 // service so a status transition doesn't clobber other columns (name, tags,
-// location, …) that may have been edited between the GetDevice read and this
-// write — the full-row UpdateDevice path is racy in that window.
+// location, ...) that may have been edited between the GetDevice read and this
+// write -- the full-row UpdateDevice path is racy in that window.
 func (q *Queries) UpdateDeviceStatus(ctx context.Context, arg UpdateDeviceStatusParams) error {
 	_, err := q.db.ExecContext(ctx, updateDeviceStatus, arg.Status, arg.ID)
 	return err
