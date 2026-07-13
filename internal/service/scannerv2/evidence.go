@@ -19,11 +19,12 @@ package scannerv2
 import (
 	"time"
 
-	fp "mibee-fingerprints-go"
+	fp "github.com/Mi-Bee-Studio/mibee-fingerprints-go"
 )
 
 // Evidence and ServiceIdentity are now type aliases to the standalone
-// fingerprint library (mibee-fingerprints-go). This makes them compile-time
+// fingerprint library (github.com/Mi-Bee-Studio/mibee-fingerprints-go). This
+// makes them compile-time
 // identical to fp.Evidence / fp.ServiceIdentity — no conversion needed at the
 // integration boundary. The RuleClassifier in the fingerprint library operates
 // directly on these types.

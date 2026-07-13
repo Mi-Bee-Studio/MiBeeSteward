@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	fp "mibee-fingerprints-go"
+	fp "github.com/Mi-Bee-Studio/mibee-fingerprints-go"
 
 	"mibee-steward/internal/service/scannerv2"
 )

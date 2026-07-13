@@ -1,7 +1,7 @@
 package classify
 
 import (
-	fp "mibee-fingerprints-go"
+	fp "github.com/Mi-Bee-Studio/mibee-fingerprints-go"
 
 	"mibee-steward/internal/service/scannerv2"
 )
@@ -10,9 +10,9 @@ import (
 // register into a scannerv2.Registry.
 //
 // The data-driven RuleClassifier comes from the standalone fingerprint library
-// (mibee-fingerprints-go). When loaded, it replaces the 9 pure-data code
-// classifiers (Banner/HTTP/RTSP/ONVIF/Prometheus/Mail/Web/TLS/Misc) which are
-// now YAML rules in the mibee-fingerprints data repo.
+// (github.com/Mi-Bee-Studio/mibee-fingerprints-go). When loaded, it replaces
+// the 9 pure-data code classifiers (Banner/HTTP/RTSP/ONVIF/Prometheus/Mail/Web/
+// TLS/Misc) which are now YAML rules in the mibee-fingerprints data repo.
 //
 // The logic-retained classifiers (SNMP bitmask heuristic, Camera cross-evidence
 // fusion, Database byte-offset/dedup, RemoteAccess byte-offset/dedup) stay as
