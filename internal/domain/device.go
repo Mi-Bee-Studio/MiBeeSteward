@@ -94,24 +94,24 @@ type DeviceFilter struct {
 // Response types
 
 type DeviceResponse struct {
-	ID               int64      `json:"id"`
-	Name             string     `json:"name"`
-	Type             string     `json:"type"`
-	Brand            string     `json:"brand"`
-	Model            string     `json:"model"`
-	Location         string     `json:"location"`
-	Purpose          string     `json:"purpose"`
-	Description      string     `json:"description"`
-	Status           string     `json:"status"`
-	IPAddress        string     `json:"ip_address"`
-	MACAddress       string     `json:"mac_address"`
-	SerialNumber     string     `json:"serial_number"`
-	PurchaseDate     string     `json:"purchase_date"`
-	WarrantyExpiry   string     `json:"warranty_expiry"`
-	Tags             string     `json:"tags"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-	ScanSource       string     `json:"scan_source"`
+	ID             int64     `json:"id"`
+	Name           string    `json:"name"`
+	Type           string    `json:"type"`
+	Brand          string    `json:"brand"`
+	Model          string    `json:"model"`
+	Location       string    `json:"location"`
+	Purpose        string    `json:"purpose"`
+	Description    string    `json:"description"`
+	Status         string    `json:"status"`
+	IPAddress      string    `json:"ip_address"`
+	MACAddress     string    `json:"mac_address"`
+	SerialNumber   string    `json:"serial_number"`
+	PurchaseDate   string    `json:"purchase_date"`
+	WarrantyExpiry string    `json:"warranty_expiry"`
+	Tags           string    `json:"tags"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	ScanSource     string    `json:"scan_source"`
 	// NetworkID/NetworkName identify the logical network this device was
 	// discovered on (distributed/multi-LAN). NetworkID is nil for legacy
 	// unresolved devices; NetworkName is the human label from the networks table

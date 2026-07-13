@@ -123,4 +123,3 @@ func GenerateAgentToken() (plaintext, hash string) {
 	hash = HashAgentToken(plaintext)
 	return plaintext, hash
 }
-

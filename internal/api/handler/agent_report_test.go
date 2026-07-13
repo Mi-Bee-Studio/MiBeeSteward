@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	sqldb "mibee-steward/internal/db"
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
+	sqldb "mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	scannerv2runner "mibee-steward/internal/service/scannerv2/runner"
 	"mibee-steward/internal/testutil"
@@ -181,7 +181,7 @@ func TestAgentReport_SkipsDeadAndEmptyIP(t *testing.T) {
 	srv, db, token, _ := setupAgentIngestServer(t)
 	_, out := postReport(t, srv, token, domain.AgentReport{
 		Hosts: []domain.ReportedHost{
-			{IP: "", Alive: true},             // no IP → skip
+			{IP: "", Alive: true},               // no IP → skip
 			{IP: "192.168.62.99", Alive: false}, // dead → skip
 		},
 	})

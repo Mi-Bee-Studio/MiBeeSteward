@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	sqldb "mibee-steward/internal/db"
 	"mibee-steward/internal/api/handler"
+	sqldb "mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/testutil"
 )

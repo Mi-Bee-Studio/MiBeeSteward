@@ -13,7 +13,7 @@ import (
 // and the endpoint reports enabled=false rather than 404, so the UI can show a
 // consistent "disabled" state.
 func DiscoveryStatusHandler(svc *scannerv2discovery.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		resp := scannerv2discovery.StatusResponse{Enabled: false}
 		if svc != nil {
 			resp = svc.Status()

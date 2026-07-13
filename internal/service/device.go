@@ -244,10 +244,10 @@ func (s *DeviceService) GetStats(ctx context.Context, networkID *int64) (*domain
 		// Normalize the network-scoped row types into the global shapes so the
 		// response assembly below is identical.
 		for _, r := range sRows {
-			statusRows = append(statusRows, db.CountByStatusRow{Status: r.Status, Count: r.Count})
+			statusRows = append(statusRows, db.CountByStatusRow(r))
 		}
 		for _, r := range tRows {
-			typeRows = append(typeRows, db.CountDevicesByTypeRow{Type: r.Type, Count: r.Count})
+			typeRows = append(typeRows, db.CountDevicesByTypeRow(r))
 		}
 	} else {
 		statusRows, err = s.repo.CountByStatus(ctx)

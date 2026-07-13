@@ -17,11 +17,11 @@ func TestMacIndexToMAC(t *testing.T) {
 		{"170.187.204.221.238.255", "aa:bb:cc:dd:ee:ff"},
 		{"0.1.2.3.4.5", "00:01:02:03:04:05"},
 		{"255.255.255.255.255.255", "ff:ff:ff:ff:ff:ff"},
-		{"1.2.3.4.5", ""},          // too few octets
-		{"1.2.3.4.5.6.7", ""},      // too many
-		{"1.2.3.4.5.256", ""},      // octet > 255
-		{"", ""},                   // empty
-		{"abc", ""},                // non-numeric
+		{"1.2.3.4.5", ""},     // too few octets
+		{"1.2.3.4.5.6.7", ""}, // too many
+		{"1.2.3.4.5.256", ""}, // octet > 255
+		{"", ""},              // empty
+		{"abc", ""},           // non-numeric
 	}
 	for _, c := range cases {
 		got := macIndexToMAC(c.suffix)

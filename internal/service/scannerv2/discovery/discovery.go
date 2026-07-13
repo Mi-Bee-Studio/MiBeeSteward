@@ -37,10 +37,10 @@ import (
 // clues (e.g. an mDNS _onvif._tcp service → camera hint) the coordinator can
 // attach to the synthesized report.
 type NewHostEvent struct {
-	IP    string
-	MAC   string
+	IP     string
+	MAC    string
 	Source string
-	Hints map[string]string
+	Hints  map[string]string
 }
 
 // HostSink is the coordinator's outlet: it hands a synthesized HostReport to
@@ -127,22 +127,22 @@ type Service struct {
 // written under statsMu (handle runs on the single consumer goroutine) and read
 // by the status endpoint, so a RWMutex is sufficient — no atomics needed.
 type statsSnapshot struct {
-	EventsReceived   int64 // total events pushed into the consumer
-	SuppressedRecent int64 // dropped by the 5-min memory dedup
-	KnownHostSkipped int64 // dropped by the DB pre-check (already tracked)
+	EventsReceived    int64 // total events pushed into the consumer
+	SuppressedRecent  int64 // dropped by the 5-min memory dedup
+	KnownHostSkipped  int64 // dropped by the DB pre-check (already tracked)
 	IdentifyTriggered int64 // single-IP identify scan ran
-	IdentifyAlive    int64 // identify scan found the host alive
-	IdentifyDead     int64 // identify scan found host unresponsive (synthesized instead)
-	DeviceRecorded   int64 // sink.Apply created a new device
+	IdentifyAlive     int64 // identify scan found the host alive
+	IdentifyDead      int64 // identify scan found host unresponsive (synthesized instead)
+	DeviceRecorded    int64 // sink.Apply created a new device
 }
 
 // recentEvent is one entry in the status endpoint's "last N discoveries" ring.
 type recentEvent struct {
-	IP        string    `json:"ip"`
-	MAC       string    `json:"mac,omitempty"`
-	Source    string    `json:"source"`
-	Outcome   string    `json:"outcome"` // "recorded" | "skipped_known" | "skipped_recent" | "identify_failed"
-	At        time.Time `json:"at"`
+	IP      string    `json:"ip"`
+	MAC     string    `json:"mac,omitempty"`
+	Source  string    `json:"source"`
+	Outcome string    `json:"outcome"` // "recorded" | "skipped_known" | "skipped_recent" | "identify_failed"
+	At      time.Time `json:"at"`
 }
 
 const maxRecentEvents = 20
@@ -316,12 +316,12 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 // running, what they've found, and how the dedup/identify pipeline is
 // performing — without requiring log scraping.
 type StatusResponse struct {
-	Enabled        bool         `json:"enabled"`
-	StartedAt      time.Time    `json:"started_at"`
-	Uptime         string       `json:"uptime"`
-	Config         Config       `json:"config"`
-	Sources        []string     `json:"sources"`
-	Stats          statsSnapshot `json:"stats"`
+	Enabled           bool          `json:"enabled"`
+	StartedAt         time.Time     `json:"started_at"`
+	Uptime            string        `json:"uptime"`
+	Config            Config        `json:"config"`
+	Sources           []string      `json:"sources"`
+	Stats             statsSnapshot `json:"stats"`
 	RecentDiscoveries []recentEvent `json:"recent_discoveries"`
 }
 

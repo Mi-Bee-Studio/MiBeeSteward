@@ -17,15 +17,15 @@ import (
 // (before_data = full device snapshot for changed/lost; after_data = the new
 // snapshot for added, or a {field: [old,new]} diff map for changed).
 type ChangeLogEntry struct {
-	ID          int64      `json:"id"`
-	AgentID     *string    `json:"agent_id,omitempty"`
-	NetworkID   *int64     `json:"network_id,omitempty"`
-	ChangeType  string     `json:"change_type"`
-	EntityType  string     `json:"entity_type"`
-	EntityID    *int64     `json:"entity_id,omitempty"`
-	BeforeData  *string    `json:"before_data,omitempty"`
-	AfterData   *string    `json:"after_data,omitempty"`
-	DetectedAt  time.Time  `json:"detected_at"`
+	ID         int64     `json:"id"`
+	AgentID    *string   `json:"agent_id,omitempty"`
+	NetworkID  *int64    `json:"network_id,omitempty"`
+	ChangeType string    `json:"change_type"`
+	EntityType string    `json:"entity_type"`
+	EntityID   *int64    `json:"entity_id,omitempty"`
+	BeforeData *string   `json:"before_data,omitempty"`
+	AfterData  *string   `json:"after_data,omitempty"`
+	DetectedAt time.Time `json:"detected_at"`
 }
 
 // ChangeLogResponse is the paginated change-history payload.
@@ -186,6 +186,7 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 		h.watcher.Unsubscribe(sub)
 		// Drain any remaining events so the channel isn't GC-blocked.
 		for range sub {
+			// discard
 		}
 	}()
 
