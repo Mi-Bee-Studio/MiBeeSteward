@@ -1,8 +1,8 @@
 name: Release
 
-# Builds amd64 + arm64 binaries on tag push and publishes a GitHub Release
-# with the binaries attached. The frontend is built once and embedded via
-# go:embed all:dist (CGO-free, SQLite via modernc.org/sqlite).
+# Builds amd64 + arm64 binaries for both the center (cmd/server, embeds the
+# frontend) and the discovery agent (cmd/agent, no SPA), and publishes a GitHub
+# Release with all four binaries attached. CGO-free; SQLite via modernc.org/sqlite.
 on:
   push:
     tags:
@@ -67,11 +67,30 @@ jobs:
       - name: Verify binary (arm64 — file check, can't execute on amd64 runner)
         if: matrix.goarch == 'arm64'
         run: file mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
+      # Discovery agent (cmd/agent): no SPA, no frontend artifact needed. Same
+      # version ldflags so `mibee-agent -version` reports the release tag.
+      - name: Build agent binary
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          go build -ldflags "-s -w -X mibee-steward/internal/version.Version=${VERSION}" \
+            -o mibee-agent-${GOOS}-${GOARCH} ./cmd/agent/
+      - name: Verify agent version (amd64 only)
+        if: matrix.goarch == 'amd64'
+        run: ./mibee-agent-${{ matrix.goos }}-${{ matrix.goarch }} -version
+      - name: Verify agent binary (arm64 — file check, can't execute on amd64 runner)
+        if: matrix.goarch == 'arm64'
+        run: file mibee-agent-${{ matrix.goos }}-${{ matrix.goarch }}
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
+            mibee-agent-${{ matrix.goos }}-${{ matrix.goarch }}
 
   publish:
     needs: release
@@ -92,3 +111,5 @@ jobs:
           files: |
             mibee-steward-linux-amd64
             mibee-steward-linux-arm64
+            mibee-agent-linux-amd64
+            mibee-agent-linux-arm64
