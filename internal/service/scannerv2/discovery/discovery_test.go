@@ -43,15 +43,36 @@ func (f *fakeSink) count() int {
 	return len(f.applied)
 }
 
+// snapshot returns a copy of the applied reports (thread-safe — Apply runs on
+// the discovery loop goroutine, assertions read it from the test goroutine).
+func (f *fakeSink) snapshot() []scannerv2.HostReport {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]scannerv2.HostReport, len(f.applied))
+	copy(out, f.applied)
+	return out
+}
+
 type fakeIdentifier struct {
+	mu      sync.Mutex
 	reports map[string]scannerv2.HostReport
 	alive   map[string]bool
 	calls   int
 }
 
 func (f *fakeIdentifier) Identify(_ context.Context, ip string) (scannerv2.HostReport, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls++
 	return f.reports[ip], f.alive[ip]
+}
+
+// callCount returns the number of Identify invocations (thread-safe — Identify
+// runs on the discovery loop goroutine, assertions read it from the test goroutine).
+func (f *fakeIdentifier) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
 }
 
 // --- synthesizeReport ---
@@ -175,8 +196,8 @@ func TestHandle_KnownHostIsNotProcessed(t *testing.T) {
 	if sink.count() != 0 {
 		t.Errorf("expected no Apply for a known host, got %d", sink.count())
 	}
-	if ident.calls != 0 {
-		t.Errorf("expected no Identify call for a known host, got %d", ident.calls)
+	if ident.callCount() != 0 {
+		t.Errorf("expected no Identify call for a known host, got %d", ident.callCount())
 	}
 }
 
@@ -199,8 +220,8 @@ func TestHandle_KnownMACDifferentIP_NoIdentify(t *testing.T) {
 	if sink.count() != 0 {
 		t.Errorf("expected no Apply for a known MAC under a new IP, got %d", sink.count())
 	}
-	if ident.calls != 0 {
-		t.Errorf("expected no Identify call for a known MAC, got %d", ident.calls)
+	if ident.callCount() != 0 {
+		t.Errorf("expected no Identify call for a known MAC, got %d", ident.callCount())
 	}
 }
 
@@ -214,14 +235,14 @@ func TestHandle_NewHost_TriggersIdentifyAndApply(t *testing.T) {
 	svc.Emit(NewHostEvent{IP: "10.0.0.10", MAC: "11:22:33:44:55:66", Source: "router_arp"})
 	time.Sleep(150 * time.Millisecond)
 
-	if ident.calls != 1 {
-		t.Errorf("expected 1 Identify call, got %d", ident.calls)
+	if ident.callCount() != 1 {
+		t.Errorf("expected 1 Identify call, got %d", ident.callCount())
 	}
 	if sink.count() != 1 {
 		t.Fatalf("expected 1 Apply, got %d", sink.count())
 	}
 	// The identify report should carry the source MAC folded in.
-	applied := sink.applied[0]
+	applied := sink.snapshot()[0]
 	if applied.Device.Fields["mac"] != "11:22:33:44:55:66" {
 		t.Errorf("expected folded mac on identified report, got %q", applied.Device.Fields["mac"])
 	}
@@ -232,14 +253,15 @@ func TestHandle_NewHost_TriggerIdentifyFalse_SynthesizesOnly(t *testing.T) {
 	svc.Emit(NewHostEvent{IP: "10.0.0.11", MAC: "aa:bb:cc:dd:ee:ff", Source: "arp_cache"})
 	time.Sleep(150 * time.Millisecond)
 
-	if ident.calls != 0 {
-		t.Errorf("expected no Identify when TriggerIdentify=false, got %d", ident.calls)
+	if ident.callCount() != 0 {
+		t.Errorf("expected no Identify when TriggerIdentify=false, got %d", ident.callCount())
 	}
 	if sink.count() != 1 {
 		t.Fatalf("expected 1 synthesized Apply, got %d", sink.count())
 	}
-	if sink.applied[0].Device.Fields["inferred_type"] != "unknown" {
-		t.Errorf("expected unknown type, got %q", sink.applied[0].Device.Fields["inferred_type"])
+	first := sink.snapshot()[0]
+	if first.Device.Fields["inferred_type"] != "unknown" {
+		t.Errorf("expected unknown type, got %q", first.Device.Fields["inferred_type"])
 	}
 }
 
@@ -253,7 +275,7 @@ func TestHandle_RecentDedupSuppressesBurst(t *testing.T) {
 	if sink.count() != 1 {
 		t.Errorf("expected dedup to collapse burst to 1 Apply, got %d", sink.count())
 	}
-	if ident.calls != 0 {
+	if ident.callCount() != 0 {
 		t.Errorf("expected no identify calls in no-identify mode")
 	}
 }
