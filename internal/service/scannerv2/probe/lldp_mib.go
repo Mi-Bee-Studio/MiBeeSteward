@@ -25,9 +25,9 @@ import (
 //	lldpRemSysName          ...1.4.1.1.9   (remote system name)
 const (
 	oidLldpRemTable      = "1.0.8802.1.1.2.1.4.1"
-	oidLldpRemChassisId  = "1.0.8802.1.1.2.1.4.1.1.5" // chassis id payload (octet string)
+	oidLldpRemChassisID  = "1.0.8802.1.1.2.1.4.1.1.5" // chassis id payload (octet string)
 	oidLldpRemChassisSub = "1.0.8802.1.1.2.1.4.1.1.4" // chassis id subtype (int)
-	oidLldpRemPortId     = "1.0.8802.1.1.2.1.4.1.1.7" // remote port id (octet string)
+	oidLldpRemPortID     = "1.0.8802.1.1.2.1.4.1.1.7" // remote port id (octet string)
 	oidLldpRemPortDesc   = "1.0.8802.1.1.2.1.4.1.1.8" // remote port description (string)
 )
 
@@ -101,8 +101,8 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 		return nil, nil // SNMP failed or LLDP-MIB unsupported — no topology data
 	}
 	payloadByIndex := map[string][]byte{}
-	_ = snmp.Walk(oidLldpRemChassisId, func(pdu gosnmp.SnmpPDU) error {
-		if s := indexSuffix(pdu.Name, oidLldpRemChassisId); s != "" {
+	_ = snmp.Walk(oidLldpRemChassisID, func(pdu gosnmp.SnmpPDU) error {
+		if s := indexSuffix(pdu.Name, oidLldpRemChassisID); s != "" {
 			if b, ok := pdu.Value.([]byte); ok {
 				payloadByIndex[s] = b
 			}
@@ -110,8 +110,8 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 		return nil
 	})
 	portIDByIndex := map[string]string{}
-	_ = snmp.Walk(oidLldpRemPortId, func(pdu gosnmp.SnmpPDU) error {
-		if s := indexSuffix(pdu.Name, oidLldpRemPortId); s != "" {
+	_ = snmp.Walk(oidLldpRemPortID, func(pdu gosnmp.SnmpPDU) error {
+		if s := indexSuffix(pdu.Name, oidLldpRemPortID); s != "" {
 			if b, ok := pdu.Value.([]byte); ok {
 				portIDByIndex[s] = string(b)
 			}
