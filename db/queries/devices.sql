@@ -19,6 +19,15 @@ WHERE (? = '' OR status = ?)
 ORDER BY id
 LIMIT ? OFFSET ?;
 
+-- name: ListTopologyDevices :many
+-- Lightweight node projection for the topology graph: only the columns the
+-- graph needs (id/name/ip/mac/type/status + inferred type/brand from scan_*).
+-- network_id <= 0 means "all networks".
+SELECT id, name, ip_address, mac_address, type, status, scan_vendor, scan_mac, scan_os, scan_hostname, network_id
+FROM devices
+WHERE (? <= 0 OR network_id = ?)
+ORDER BY id;
+
 -- name: UpdateDevice :one
 -- Note: scan_attributes is engine-owned and intentionally NOT updated here.
 -- user_attributes is updated via UpdateUserAttributes so the full-row update

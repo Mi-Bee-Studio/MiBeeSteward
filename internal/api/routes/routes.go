@@ -187,6 +187,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.With(middleware.RequireAdmin).Delete("/{id}", networkHandler.Delete)
 	})
 
+	// L2 topology — neighbors per device (detail page) + the whole-network
+	// topology graph (nodes + edges). Read-only; any logged-in user.
+	neighborHandler := handler.NewNeighborHandler(scanQueries)
+	topologyHandler := handler.NewTopologyHandler(scanQueries)
+
 	// Resolve this instance's network identity (networks.id) so discovered
 	// devices can be tagged with their origin. Done here (not in migrations)
 	// because the value comes from config `network.name`.
@@ -467,6 +472,20 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			r.Put("/{systemId}", deviceSystemHandler.Update)
 			r.Delete("/{systemId}", deviceSystemHandler.Delete)
 		})
+	})
+
+	// Device L2 neighbors (Bridge-MIB / LLDP / CDP / ARP) — read-only, any
+	// logged-in user. Feeds the detail-page Neighbors panel.
+	r.Route("/api/v1/devices/{id}/neighbors", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", neighborHandler.ListByDevice)
+	})
+
+	// Network-level topology graph — all devices (nodes) + all neighbor edges.
+	// Read-only, any logged-in user. Feeds the /topology page.
+	r.Route("/api/v1/topology", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", topologyHandler.Graph)
 	})
 
 	// Document routes
