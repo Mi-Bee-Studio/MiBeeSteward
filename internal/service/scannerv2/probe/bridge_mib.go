@@ -25,8 +25,8 @@ import (
 // dot1dTpFdbPort tells us which bridge port that MAC lives behind. Combined
 // with dot1dBasePortIfIndex we can name the local interface.
 const (
-	oidDot1dTpFdbAddress = "1.3.6.1.2.1.17.4.3.1.1" // MAC address (octet string)
-	oidDot1dTpFdbPort    = "1.3.6.1.2.1.17.4.3.1.2" // bridge port number (int)
+	oidDot1dTpFdbAddress    = "1.3.6.1.2.1.17.4.3.1.1" // MAC address (octet string)
+	oidDot1dTpFdbPort       = "1.3.6.1.2.1.17.4.3.1.2" // bridge port number (int)
 	oidDot1dBasePortIfIndex = "1.3.6.1.2.1.17.1.4.1.2" // port → ifIndex
 )
 
@@ -58,7 +58,7 @@ func NewBridgeMIBProbe(logger *slog.Logger) *BridgeMIBProbe {
 func (p *BridgeMIBProbe) Name() string { return "active:bridge_mib" }
 
 // Probe walks dot1dTpFdbTable on ip:161. hint.Community/hint.Timeout apply.
-func (p *BridgeMIBProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
+func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
 	community := hint.Community
 	if community == "" {
 		community = "public"
@@ -84,10 +84,6 @@ func (p *BridgeMIBProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pr
 	// Walk the FDB: collect {MAC-octet-index → port-number}.
 	// The OID index for dot1dTpFdbTable is the MAC itself (6 octet subidentifiers),
 	// so pdu.Name ends in the MAC as dotted decimal (e.g. ...1.170.187.204.221.238.255).
-	type fdbEntry struct {
-		mac  string
-		port int
-	}
 	portByMacIdx := map[string]int{}
 	var macIndices []string
 

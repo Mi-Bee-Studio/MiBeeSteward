@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
 	"mibee-steward/internal/db"
 )
 
@@ -175,14 +176,14 @@ func (r *DBRecorder) Record(ctx context.Context, ev ChangeEvent) {
 	afterJSON, _ := marshalSnapshot(ev.After)
 	now := time.Now().UTC()
 	row, err := r.queries.CreateChangeLog(ctx, db.CreateChangeLogParams{
-		AgentID:     ptrString(ev.AgentID),
-		NetworkID:   ev.NetworkID,
-		ChangeType:  ev.ChangeType,
-		EntityType:  ev.EntityType,
-		EntityID:    ptrInt64(ev.DeviceID),
-		BeforeData:  beforeJSON,
-		AfterData:   afterJSON,
-		DetectedAt:  now,
+		AgentID:    ptrString(ev.AgentID),
+		NetworkID:  ev.NetworkID,
+		ChangeType: ev.ChangeType,
+		EntityType: ev.EntityType,
+		EntityID:   ptrInt64(ev.DeviceID),
+		BeforeData: beforeJSON,
+		AfterData:  afterJSON,
+		DetectedAt: now,
 	})
 	if err != nil {
 		r.logger.Warn("change recorder: write change_log failed", "type", ev.ChangeType, "device_id", ev.DeviceID, "error", err)

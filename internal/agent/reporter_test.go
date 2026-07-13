@@ -46,10 +46,7 @@ func TestReporter_FlushesToCenter(t *testing.T) {
 
 	// Wait for the ticker flush (≤ ~80ms with 20ms interval).
 	deadline := time.After(500 * time.Millisecond)
-	for {
-		if atomic.LoadInt32(&requests) > 0 {
-			break
-		}
+	for atomic.LoadInt32(&requests) == 0 {
 		select {
 		case <-deadline:
 			t.Fatal("reporter did not flush within deadline")
@@ -70,7 +67,7 @@ func TestReporter_FlushesToCenter(t *testing.T) {
 // center returns a 5xx, then succeeds once the center recovers.
 func TestReporter_RetriesOn5xx(t *testing.T) {
 	var attempts int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		n := atomic.AddInt32(&attempts, 1)
 		if n < 3 {
 			w.WriteHeader(http.StatusBadGateway) // first two fail
@@ -100,7 +97,7 @@ func TestReporter_RetriesOn5xx(t *testing.T) {
 // terminal — retrying won't fix a bad token, so the batch is dropped.
 func TestReporter_DoesNotRetryOn4xx(t *testing.T) {
 	var attempts int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&attempts, 1)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -122,7 +119,7 @@ func TestReporter_DisconnectRecovery(t *testing.T) {
 	// Phase 1: center is DOWN (return 503 on every request).
 	down := int32(1)
 	var received int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if atomic.LoadInt32(&down) == 1 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return

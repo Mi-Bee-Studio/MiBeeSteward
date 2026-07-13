@@ -25,9 +25,9 @@ func memoryDB(t *testing.T) *sql.DB {
 // --- fake sink + identifier for coordinator tests ---
 
 type fakeSink struct {
-	mu       sync.Mutex
-	applied  []scannerv2.HostReport
-	isNew    bool
+	mu      sync.Mutex
+	applied []scannerv2.HostReport
+	isNew   bool
 }
 
 func (f *fakeSink) Apply(_ context.Context, rep scannerv2.HostReport) bool {
@@ -91,9 +91,9 @@ func TestSynthesizeReport_WithMAC_AddsEvidenceAndField(t *testing.T) {
 
 func TestSynthesizeReport_FoldsHints(t *testing.T) {
 	ev := NewHostEvent{
-		IP:    "10.0.0.6",
+		IP:     "10.0.0.6",
 		Source: "mdns",
-		Hints: map[string]string{"inferred_type": "camera", "discovery_note": "onvif"},
+		Hints:  map[string]string{"inferred_type": "camera", "discovery_note": "onvif"},
 	}
 	rep := synthesizeReport(ev)
 
@@ -203,7 +203,6 @@ func TestHandle_KnownMACDifferentIP_NoIdentify(t *testing.T) {
 		t.Errorf("expected no Identify call for a known MAC, got %d", ident.calls)
 	}
 }
-
 
 func TestHandle_NewHost_TriggersIdentifyAndApply(t *testing.T) {
 	svc, sink, ident, _ := newTestService(t, true)

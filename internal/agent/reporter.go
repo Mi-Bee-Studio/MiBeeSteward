@@ -38,18 +38,18 @@ import (
 // if it overflows (extreme outage — the center's change-detection reconciles
 // state across scans, so data loss here degrades to "stale" not "corrupt").
 type Reporter struct {
-	centerURL  string // base URL, e.g. "http://192.168.63.101:8080"
-	authToken  string // agent bearer token (minted on the center)
-	agentID    string // advisory label echoed in the report body
-	client     *http.Client
-	logger     *slog.Logger
+	centerURL string // base URL, e.g. "http://192.168.63.101:8080"
+	authToken string // agent bearer token (minted on the center)
+	agentID   string // advisory label echoed in the report body
+	client    *http.Client
+	logger    *slog.Logger
 
-	mu       sync.Mutex
-	buf      []domain.ReportedHost // buffered hosts awaiting the next flush
-	pending  [][]byte              // failed batches awaiting retry (JSON-encoded payloads)
-	flush    time.Duration         // max time between flushes (ReportInterval)
-	maxBuf   int                   // max hosts buffered before an early flush
-	maxPending int                 // max failed batches held for retry
+	mu         sync.Mutex
+	buf        []domain.ReportedHost // buffered hosts awaiting the next flush
+	pending    [][]byte              // failed batches awaiting retry (JSON-encoded payloads)
+	flush      time.Duration         // max time between flushes (ReportInterval)
+	maxBuf     int                   // max hosts buffered before an early flush
+	maxPending int                   // max failed batches held for retry
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -160,9 +160,9 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 	r.mu.Unlock()
 
 	payload := domain.AgentReport{
-		AgentID:    r.agentID,
-		ScannedAt:  time.Now().UTC(),
-		Hosts:      hosts,
+		AgentID:   r.agentID,
+		ScannedAt: time.Now().UTC(),
+		Hosts:     hosts,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

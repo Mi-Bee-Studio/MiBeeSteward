@@ -153,7 +153,10 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 	// key (e.g. builtin http-presence + Recog http_header.server both emit
 	// http/80), merge their metadata and keep the highest confidence. Without
 	// this, the UNIQUE(ip,service,port) constraint causes 50+ warnings per scan.
-	type svcKey struct{ service string; port int }
+	type svcKey struct {
+		service string
+		port    int
+	}
 	merged := make(map[svcKey]scannerv2.ServiceIdentity)
 	for _, s := range services {
 		k := svcKey{s.Service, s.Port}
@@ -364,7 +367,7 @@ func NormalizeMAC(s string) string {
 		return ""
 	}
 	for _, c := range hex {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return ""
 		}
 	}

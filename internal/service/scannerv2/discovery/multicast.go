@@ -18,7 +18,7 @@ import (
 // systemd-resolved) that already holds :5353 / :1900. It deliberately does NOT
 // set SO_REUSEPORT: that would split incoming datagrams between us and the
 // system resolver, halving both our coverage. REUSEADDR alone lets us co-listen.
-func reuseControl(network, address string, c syscall.RawConn) error {
+func reuseControl(_, _ string, c syscall.RawConn) error {
 	var sockErr error
 	err := c.Control(func(fd uintptr) {
 		sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)

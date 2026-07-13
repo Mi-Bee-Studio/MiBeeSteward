@@ -36,7 +36,7 @@ import (
 )
 
 var (
-	configPath = flag.String("config", "configs/agent.yaml", "Path to agent config file")
+	configPath  = flag.String("config", "configs/agent.yaml", "Path to agent config file")
 	showVersion = flag.Bool("version", false, "Print the build version and exit")
 )
 

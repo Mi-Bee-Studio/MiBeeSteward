@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-	"strconv"
 	"time"
 
 	"mibee-steward/internal/service/scannerv2"
@@ -43,7 +42,7 @@ func NewSMBProbe(timeout time.Duration) *SMBProbe {
 
 func (p *SMBProbe) Name() string { return "active:smb" }
 
-func (p *SMBProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
+func (p *SMBProbe) Probe(ctx context.Context, ip string, _ scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
 	dialer := net.Dialer{Timeout: p.timeout}
 	addr := net.JoinHostPort(ip, "445")
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
@@ -120,14 +119,14 @@ func smb2NegotiateRequest() []byte {
 	// Capabilities=0, ClientGuid=0, NegotiateContextOffset=0,
 	// NegotiateContextCount=0, Reserved2=0.
 	body := make([]byte, 36)
-	binary.LittleEndian.PutUint16(body[0:2], 36)        // StructureSize
+	binary.LittleEndian.PutUint16(body[0:2], 36)                    // StructureSize
 	binary.LittleEndian.PutUint16(body[2:4], uint16(len(dialects))) // DialectCount
-	binary.LittleEndian.PutUint16(body[4:6], 1)          // SecurityMode (NEGOTIATE_SIGNING_ENABLED)
+	binary.LittleEndian.PutUint16(body[4:6], 1)                     // SecurityMode (NEGOTIATE_SIGNING_ENABLED)
 	// 6:8 Reserved = 0
-	binary.LittleEndian.PutUint32(body[8:12], 0)         // Capabilities
+	binary.LittleEndian.PutUint32(body[8:12], 0) // Capabilities
 	// 12:28 ClientGuid = 0 (16 bytes)
-	binary.LittleEndian.PutUint32(body[28:32], 0)        // NegotiateContextOffset
-	binary.LittleEndian.PutUint16(body[32:34], 0)        // NegotiateContextCount
+	binary.LittleEndian.PutUint32(body[28:32], 0) // NegotiateContextOffset
+	binary.LittleEndian.PutUint16(body[32:34], 0) // NegotiateContextCount
 	// 34:36 Reserved2 = 0
 
 	pkt := make([]byte, 0, 4+64+36+dialectsLen)
@@ -140,7 +139,7 @@ func smb2NegotiateRequest() []byte {
 
 	// SMB2 header.
 	hdr := make([]byte, 64)
-	hdr[0] = 0xFE                                          // ProtocolId
+	hdr[0] = 0xFE // ProtocolId
 	hdr[1] = 'S'
 	hdr[2] = 'M'
 	hdr[3] = 'B'
@@ -153,7 +152,7 @@ func smb2NegotiateRequest() []byte {
 	binary.LittleEndian.PutUint32(hdr[20:24], 0)          // NextCommand
 	binary.LittleEndian.PutUint64(hdr[24:32], 0)          // MessageId
 	// 32:40 Reserved + TreeId
-	binary.LittleEndian.PutUint64(hdr[40:48], 1)          // SessionId
+	binary.LittleEndian.PutUint64(hdr[40:48], 1) // SessionId
 	// 48:64 Signature = 0
 
 	pkt = append(pkt, hdr...)
@@ -280,6 +279,3 @@ func parseSMB1OS(resp []byte) string {
 	}
 	return string(rest)
 }
-
-// formatInt is used by some callers; kept for compatibility.
-func formatInt(n int) string { return strconv.Itoa(n) }

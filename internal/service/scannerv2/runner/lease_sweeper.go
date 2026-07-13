@@ -10,7 +10,7 @@ import (
 type staleAgentSnapshot struct {
 	ID         int64
 	NetworkID  int64
-	Ip         string
+	IP         string
 	Mac        string
 	LastSeenAt time.Time
 	DeviceID   int64
@@ -45,7 +45,7 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
 // Scope: ONLY agent-managed networks (networks.agent_id non-empty). The
 // center's own network keeps using the local-scan DetectLost path + the
 // heartbeat service; this sweeper never touches it (the query filters on
-// n.agent_id != '').
+// n.agent_id != ”).
 //
 // TTL semantics: a snapshot is stale when last_seen_at < now - ttl. With the
 // agent's default 30s report cadence, a 5min TTL tolerates ~10 missed reports
@@ -103,7 +103,7 @@ func (s *LeaseSweeper) sweepOnce(ctx context.Context) {
 	var stale []staleAgentSnapshot
 	for rows.Next() {
 		var r staleAgentSnapshot
-		if err := rows.Scan(&r.ID, &r.NetworkID, &r.Ip, &r.Mac, &r.LastSeenAt, &r.DeviceID); err != nil {
+		if err := rows.Scan(&r.ID, &r.NetworkID, &r.IP, &r.Mac, &r.LastSeenAt, &r.DeviceID); err != nil {
 			rows.Close()
 			s.logger.Warn("lease sweeper: scan failed", "error", err)
 			return
@@ -125,7 +125,7 @@ func (s *LeaseSweeper) sweepOnce(ctx context.Context) {
 		// Mark the device offline (same best-effort UPDATE DetectLost uses).
 		if _, err := s.runner.dbConn.ExecContext(ctx,
 			`UPDATE devices SET status='offline', updated_at=? WHERE id=?`, now, l.DeviceID); err != nil {
-			s.logger.Warn("lease sweeper: mark offline failed", "device_id", l.DeviceID, "ip", l.Ip, "error", err)
+			s.logger.Warn("lease sweeper: mark offline failed", "device_id", l.DeviceID, "ip", l.IP, "error", err)
 		}
 		// Emit device_lost (change_log + Watcher). No-op when changeRecorder
 		// is nil (agent mode — but the sweeper only runs on the center anyway).

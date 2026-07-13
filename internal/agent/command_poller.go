@@ -101,9 +101,9 @@ type pendingCommand struct {
 
 // scanPayload is the JSON payload of a "scan" command.
 type scanPayload struct {
-	Targets   string `json:"targets"`
-	Timeout   int    `json:"timeout"`
-	Concurrent int   `json:"concurrent"`
+	Targets    string `json:"targets"`
+	Timeout    int    `json:"timeout"`
+	Concurrent int    `json:"concurrent"`
 }
 
 func (p *CommandPoller) pollOnce(ctx context.Context) {

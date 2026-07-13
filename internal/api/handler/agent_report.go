@@ -32,9 +32,9 @@ import (
 type AgentReportHandler struct {
 	runner *runner.Runner
 
-	hashMu      sync.Mutex
-	lastHash    map[int64]string    // network_id → most-recent state hash
-	lastHashAt  map[int64]time.Time // network_id → when that hash was first seen
+	hashMu     sync.Mutex
+	lastHash   map[int64]string    // network_id → most-recent state hash
+	lastHashAt map[int64]time.Time // network_id → when that hash was first seen
 }
 
 // NewAgentReportHandler constructs the handler. runner is the center's scan

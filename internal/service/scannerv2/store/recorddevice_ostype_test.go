@@ -35,8 +35,8 @@ func TestRecordDevice_OSType_Propagation(t *testing.T) {
 	// Second scan: SSH banner classified, SSHHandler set os_type=Windows in
 	// Device.Fields. The re-scan carries the same MAC.
 	d2 := scannerv2.DeviceRef{
-		IP:    ip,
-		Type:  "server",
+		IP:   ip,
+		Type: "server",
 		Fields: map[string]string{
 			"mac":     mac,
 			"os_type": "Windows",
@@ -99,8 +99,8 @@ func TestRecordDevice_OSType_WithCrossNetworkDuplicate(t *testing.T) {
 	// Center scan: discovers .9 with MAC + os_type (from SSH classifier).
 	mac := "04:7c:16:19:22:0e"
 	d := scannerv2.DeviceRef{
-		IP:    ip,
-		Type:  "server",
+		IP:   ip,
+		Type: "server",
 		Fields: map[string]string{
 			"mac":     mac,
 			"os_type": "Windows",

@@ -70,12 +70,13 @@ func (h *AgentAdminHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// would have to run manual SQL. Best-effort: a failure here leaves the
 	// token functional (reports still work); the network just isn't scoped.
 	agentIDStr := req.AgentID
-	if err := h.queries.SetNetworkAgentID(r.Context(), db.SetNetworkAgentIDParams{
+	// Best-effort: a failure here leaves the token functional (reports still
+	// work); the network just isn't scoped for heartbeat exclusion. The error
+	// is intentionally discarded — see the comment above.
+	_ = h.queries.SetNetworkAgentID(r.Context(), db.SetNetworkAgentIDParams{
 		AgentID: &agentIDStr,
 		ID:      req.NetworkID,
-	}); err != nil {
-		// Log but don't fail — the token is created and usable.
-	}
+	})
 
 	Created(w, domain.AgentTokenCreatedResponse{
 		AgentTokenResponse: domain.AgentTokenResponse{

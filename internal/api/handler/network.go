@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
 	"mibee-steward/internal/db"
 )
 
@@ -170,4 +171,3 @@ func trimPtr(s *string) *string {
 func isUniqueConstraintErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
-

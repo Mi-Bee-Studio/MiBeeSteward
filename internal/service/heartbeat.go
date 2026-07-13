@@ -213,7 +213,7 @@ func GetProber(method, community, oid string) probe.Prober {
 // are still probed by the center.
 //
 // Defined as raw SQL (not sqlc) because sqlc's SQLite parser truncates queries
-// whose WHERE clause contains an empty-string literal ('') — see the NOTE in
+// whose WHERE clause contains an empty-string literal (”) — see the NOTE in
 // db/queries/heartbeat_configs.sql.
 const listLocalProbeConfigsSQL = `SELECT hc.id, hc.device_id, hc.method, hc.target,
        hc.interval_seconds, hc.timeout_seconds, hc.snmp_community, hc.snmp_oid,

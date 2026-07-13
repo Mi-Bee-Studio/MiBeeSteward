@@ -54,7 +54,7 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	runScan := func(ctx context.Context, targets string, timeoutSec int) (string, error) {
+	runScan := func(_ context.Context, targets string, timeoutSec int) (string, error) {
 		gotTargets = targets
 		gotTimeout = timeoutSec
 		return `{"run_id":1}`, nil
@@ -64,10 +64,7 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	defer p.Stop()
 
 	deadline := time.After(2 * time.Second)
-	for {
-		if atomic.LoadInt32(&executed) == 1 {
-			break
-		}
+	for atomic.LoadInt32(&executed) != 1 {
 		select {
 		case <-deadline:
 			t.Fatal("poller did not execute the scan command within deadline")

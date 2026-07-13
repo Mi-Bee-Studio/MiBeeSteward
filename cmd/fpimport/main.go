@@ -64,8 +64,8 @@ subcommands:
 // ── shared output types (subset of the rule format) ──────────────────────
 
 type outRuleFile struct {
-	Version int      `yaml:"version"`
-	Rules   []any    `yaml:"rules,omitempty"`
+	Version int   `yaml:"version"`
+	Rules   []any `yaml:"rules,omitempty"`
 	// PEN/OID tables reuse the snmp-data.yaml shape.
 	OIDPrefixes []oidPrefixOut `yaml:"oid_prefixes,omitempty"`
 }
@@ -148,20 +148,20 @@ type recogTarget struct {
 }
 
 var recogTargetMap = map[string]recogTarget{
-	"ssh.banner":          {true, "banner", "ssh", "ssh", "banner"},
-	"http_header.server":  {true, "server", "http", "", "http"},
-	"html_title":          {true, "title", "http", "", "http"},
-	"ftp.banner":          {true, "banner", "ftp", "respcode", "banner"},
-	"smtp.banner":         {true, "banner", "smtp", "respcode", "banner"},
-	"pop3.banner":         {true, "banner", "pop3", "respcode", "banner"},
-	"imap.banners":        {true, "banner", "imap", "respcode", "banner"},
-	"telnet.banner":       {true, "banner", "telnet", "", "banner"},
-	"rtsp_header.server":  {true, "server", "rtsp", "", "rtsp_banner"},
-	"mysql.banners":       {true, "banner", "mysql", "", "banner"},
-	"mysql.error":         {true, "banner", "mysql", "", "banner"},
+	"ssh.banner":           {true, "banner", "ssh", "ssh", "banner"},
+	"http_header.server":   {true, "server", "http", "", "http"},
+	"html_title":           {true, "title", "http", "", "http"},
+	"ftp.banner":           {true, "banner", "ftp", "respcode", "banner"},
+	"smtp.banner":          {true, "banner", "smtp", "respcode", "banner"},
+	"pop3.banner":          {true, "banner", "pop3", "respcode", "banner"},
+	"imap.banners":         {true, "banner", "imap", "respcode", "banner"},
+	"telnet.banner":        {true, "banner", "telnet", "", "banner"},
+	"rtsp_header.server":   {true, "server", "rtsp", "", "rtsp_banner"},
+	"mysql.banners":        {true, "banner", "mysql", "", "banner"},
+	"mysql.error":          {true, "banner", "mysql", "", "banner"},
 	"snmp.sys_description": {true, "sys_descr", "snmp", "", "snmp"},
-	"snmp.sys_object_id":  {true, "sys_object_id", "snmp", "", "snmp"},
-	"smb.native_os":       {true, "os", "smb", "", "smb"},
+	"snmp.sys_object_id":   {true, "sys_object_id", "snmp", "", "snmp"},
+	"smb.native_os":        {true, "os", "smb", "", "smb"},
 }
 
 func importRecog(srcDir, outPath string) error {
@@ -233,7 +233,7 @@ func recogPreferenceToConfidence(pref string) float64 {
 // convertRecogFP turns one Recog fingerprint into a MiBee rule. tgt tells us
 // which evidence field to match and the nominal service; conf is the file-level
 // preference. Returns ok=false if the pattern is invalid Go regexp.
-func convertRecogFP(fp recogFingerprint, source string, tgt recogTarget, conf float64) (map[string]any, bool) {
+func convertRecogFP(fp recogFingerprint, _ string, tgt recogTarget, conf float64) (map[string]any, bool) {
 	if fp.Pattern == "" {
 		return nil, false
 	}
@@ -286,9 +286,10 @@ func convertRecogFP(fp recogFingerprint, source string, tgt recogTarget, conf fl
 	// AFTER "SSH-x.y-" or the "NNN " response code. Our evidence carries the
 	// full greeting. Emit a transform so the RuleClassifier strips the prefix
 	// before applying the regex.
-	if tgt.stripKind == "ssh" {
+	switch tgt.stripKind {
+	case "ssh":
 		match["transform"] = "strip_ssh_prefix"
-	} else if tgt.stripKind == "respcode" {
+	case "respcode":
 		match["transform"] = "strip_resp_code"
 	}
 	// SNMP is UDP, not TCP.
@@ -297,9 +298,9 @@ func convertRecogFP(fp recogFingerprint, source string, tgt recogTarget, conf fl
 		proto = "udp"
 	}
 	rule := map[string]any{
-		"id":     "recog-" + tgt.serviceHint + "-" + hashShort(fp.Pattern),
-		"source": "recog",
-		"match":  match,
+		"id":         "recog-" + tgt.serviceHint + "-" + hashShort(fp.Pattern),
+		"source":     "recog",
+		"match":      match,
 		"service":    tgt.serviceHint,
 		"protocol":   proto,
 		"confidence": conf,
@@ -308,12 +309,6 @@ func convertRecogFP(fp recogFingerprint, source string, tgt recogTarget, conf fl
 		rule["extract"] = map[string]any{"metadata": md}
 	}
 	return rule, true
-}
-
-func sanitize(s string) string {
-	s = strings.ToLower(s)
-	r := strings.NewReplacer(" ", "-", "/", "-", ".", "-")
-	return r.Replace(s)
 }
 
 func hashShort(s string) string {
