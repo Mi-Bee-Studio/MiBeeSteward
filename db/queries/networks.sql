@@ -23,3 +23,15 @@ ORDER BY id;
 -- the sqlc SQLite empty-string-literal truncation bug that affects heartbeat.go
 -- and lease_sweeper.go (those use raw SQL for that reason).
 UPDATE networks SET agent_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
+
+-- name: DeleteNetwork :exec
+-- Delete a logical network. All FK references are ON DELETE SET NULL or
+-- CASCADE, so this is safe at the DB level.
+DELETE FROM networks WHERE id = ?;
+
+-- name: UpdateNetworkRaw
+-- NOTE: this query is intentionally NOT a sqlc-managed query. sqlc v1.31.1
+-- truncates the generated string for multi-bind UPDATE statements (drops the
+-- trailing `?`), so UpdateNetwork is implemented with raw database/sql in
+-- network.go (handler), reusing GetNetwork to read the updated row back.
+

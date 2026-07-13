@@ -3,7 +3,6 @@
 	import { auth } from '$lib/stores/auth';
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
-	import { get } from 'svelte/store';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { addToast } from '$lib/stores/toast';
 	import { userSchema, validateField, validateForm } from '$lib/utils/validation';
@@ -32,11 +31,7 @@
 	let offset = $state(0);
 	const limit = 20;
 
-	// Auth check
-	let authState = $state<{ user: { username: string; role: string } | null; token: string | null }>({
-		user: null,
-		token: null
-	});
+	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
 
 	// Modal state
 	let createModalOpen = $state(false);
@@ -63,13 +58,7 @@
 	let touched = $state<Record<string, boolean>>({});
 
 	onMount(() => {
-		const unsub = auth.subscribe((v) => {
-			authState = v;
-		});
-		if (get(auth).token) {
-			fetchUsers();
-		}
-		return unsub;
+		fetchUsers();
 	});
 
 	async function fetchUsers() {
@@ -212,7 +201,7 @@
 	}
 
 	// Admin-only guard
-	let isAdmin = $derived(authState.user?.role === 'admin');
+	let isAdmin = $derived($auth.user?.role === 'admin');
 
 	// DataTable columns
 	const columns = $derived([
@@ -263,7 +252,7 @@
 	]);
 </script>
 
-{#if !authState.token}
+{#if !$auth.token}
 	<div class="p-6 text-center text-text-muted">
 		<p>{m["errors.Unauthorized Desc"]()}</p>
 		<a href="/login" class="text-primary hover:underline text-sm mt-2 inline-block">{m["navigation.Login"]()}</a>

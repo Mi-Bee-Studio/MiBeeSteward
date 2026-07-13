@@ -2,14 +2,14 @@
 	import { api } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
 	import { m } from '$lib/i18n-paraglide';
-	import { onMount } from 'svelte';
-	import { get } from 'svelte/store';
+	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { addToast } from '$lib/stores/toast';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import ChangeDiff from '$lib/components/ChangeDiff.svelte';
 	import type { ChangeLogEntry, ChangeType, Network } from '$lib/types';
 
 	let changes = $state<ChangeLogEntry[]>([]);
@@ -19,29 +19,55 @@
 	let offset = $state(0);
 	const limit = 50;
 
-	// Auth
-	let authState = $state<{ user: { username: string; role: string } | null; token: string | null }>({
-		user: null,
-		token: null
-	});
+	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
 
 	// Filters
 	let filterNetwork = $state('');
 	let filterChangeType = $state('');
 	let networks = $state<Network[]>([]);
 
+	// Expanded row (diff viewer) — the entity_id of the open row, or null.
+	let expandedId = $state<number | null>(null);
+
+	// SSE live updates (EventSource on /changes/watch). Falls back silently to
+	// the manual refresh if SSE is unavailable (disabled / network error).
+	let evtSource: EventSource | null = null;
+
 	const changeTypes: ChangeType[] = ['device_added', 'device_changed', 'device_lost'];
 
 	onMount(() => {
-		const unsub = auth.subscribe((v) => {
-			authState = v;
-		});
-		if (get(auth).token) {
-			fetchChanges();
-			// Best-effort: populate the network filter dropdown.
-			api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
+		fetchChanges();
+		// Best-effort: populate the network filter dropdown.
+		api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
+		// SSE: push-prepend new change events so the feed feels live. EventSource
+		// auto-reconnects; on error it just stops updating (manual refresh still works).
+		try {
+			evtSource = new EventSource('/api/v1/changes/watch');
+			evtSource.addEventListener('change', (e: MessageEvent) => {
+				try {
+					const entry = JSON.parse(e.data) as ChangeLogEntry;
+					// Prepend only if not already at the top (dedup by id). Respect the
+					// current filter loosely — if a filter is active, just refresh to
+					// avoid mismatched views; if unfiltered, prepend for instant feedback.
+					if (!filterNetwork && !filterChangeType) {
+						changes = [entry, ...changes.filter((c) => c.id !== entry.id)].slice(0, limit);
+						total += 1;
+						addToast('info', `${changeTypeLabel(entry.change_type)}${entry.entity_id ? ' #' + entry.entity_id : ''}`);
+					}
+				} catch {
+					// Malformed payload — ignore (keepalive comments also land here).
+				}
+			});
+		} catch {
+			// EventSource unsupported — SSE is best-effort; polling/refresh still works.
 		}
-		return unsub;
+	});
+
+	onDestroy(() => {
+		if (evtSource) {
+			evtSource.close();
+			evtSource = null;
+		}
 	});
 
 	async function fetchChanges() {
@@ -125,6 +151,18 @@
 
 	const columns = $derived([
 		{
+			key: '_expand',
+			label: '',
+			sortable: false,
+			render: (row: Record<string, unknown>) => {
+				const id = row.id as number;
+				const isOpen = expandedId === id;
+				return `<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
+					+ `<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
+					+ `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
+			}
+		},
+		{
 			key: 'detected_at',
 			label: m['changes.Timestamp']?.() ?? 'Time',
 			sortable: true,
@@ -184,7 +222,7 @@
 	}
 </script>
 
-{#if !authState.token}
+{#if !$auth.token}
 	<div class="p-6 text-center text-text-muted">
 		<p>{m["errors.Unauthorized Desc"]?.() ?? 'Please log in.'}</p>
 		<a href="/login" class="text-primary hover:underline text-sm mt-2 inline-block">{m["navigation.Login"]()}</a>
@@ -274,13 +312,40 @@
 		/>
 	{:else}
 		<div class="bg-surface border border-border rounded-lg p-4">
-			<DataTable
-				{columns}
-				rows={changes as unknown as Record<string, unknown>[]}
-				searchPlaceholder="{m['common.Search']?.() ?? 'Search'}..."
-				searchableKeys={['change_type', 'agent_id', 'entity_id']}
-				emptyTitle={m['changes.No Changes']?.() ?? 'No changes'}
-			/>
+				<div onclick={(e) => {
+					const btn = (e.target as HTMLElement).closest('[data-action="expand"]') as HTMLElement | null;
+					if (btn) {
+						const id = Number(btn.dataset.id);
+						expandedId = expandedId === id ? null : id;
+					}
+				}}>
+				<DataTable
+					{columns}
+					rows={changes as unknown as Record<string, unknown>[]}
+					searchPlaceholder="{m['common.Search']?.() ?? 'Search'}..."
+					searchableKeys={['change_type', 'agent_id', 'entity_id']}
+					emptyTitle={m['changes.No Changes']?.() ?? 'No changes'}
+					expandedRowId={expandedId ?? undefined}
+				>
+					{#snippet expandedContent(row)}
+						{@const change = changes.find((c) => c.id === row.id)}
+						<div class="border-t border-border bg-bg/40 px-6 py-4">
+							<div class="flex items-center gap-2 mb-3">
+								<span class="text-xs font-medium text-text-muted">{m['changes.Diff Title']?.() ?? 'Change Details'}</span>
+							</div>
+							{#if change}
+								<ChangeDiff
+									changeType={change.change_type}
+									beforeData={change.before_data}
+									afterData={change.after_data}
+								/>
+							{:else}
+								<p class="text-xs text-text-muted italic">Data unavailable.</p>
+							{/if}
+						</div>
+					{/snippet}
+				</DataTable>
+				</div>
 
 			<div class="mt-4">
 				<Pagination {total} {limit} {offset} onPageChange={handlePageChange} />

@@ -37,6 +37,17 @@ func (q *Queries) CreateNetwork(ctx context.Context, arg CreateNetworkParams) (N
 	return i, err
 }
 
+const deleteNetwork = `-- name: DeleteNetwork :exec
+DELETE FROM networks WHERE id = ?
+`
+
+// Delete a logical network. All FK references are ON DELETE SET NULL or
+// CASCADE, so this is safe at the DB level.
+func (q *Queries) DeleteNetwork(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteNetwork, id)
+	return err
+}
+
 const getNetwork = `-- name: GetNetwork :one
 SELECT id, name, cidr, site, agent_id, metadata, created_at, updated_at
 FROM networks

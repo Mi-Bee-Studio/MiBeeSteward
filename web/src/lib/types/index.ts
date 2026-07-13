@@ -9,7 +9,20 @@
 // ---------------------------------------------------------------------------
 
 export type DeviceStatus = 'online' | 'offline' | 'unknown';
-export type DeviceType = 'pc' | 'embedded' | 'iot' | 'other';
+// Full set mirrors internal/domain validDeviceTypes (10 values). The type filter
+// dropdown and the device form already surface all 10, so the type must too —
+// the previous 4-value union silently mistyped 6 device categories.
+export type DeviceType =
+	| 'pc'
+	| 'embedded'
+	| 'iot'
+	| 'server'
+	| 'switch'
+	| 'router'
+	| 'firewall'
+	| 'nas'
+	| 'camera'
+	| 'other';
 export type UserRole = 'admin' | 'user';
 export type ProbeMethod = 'ICMP' | 'TCP' | 'HTTP' | 'SNMP';
 export type ProbeResultStatus = 'success' | 'fail' | 'unknown';
@@ -250,6 +263,23 @@ export interface LoginResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Audit Log
+// ---------------------------------------------------------------------------
+
+export interface AuditLog {
+	id: number;
+	user_id: number;
+	username: string;
+	action: string;
+	resource_type: string;
+	resource_id: string;
+	ip_address: string;
+	user_agent: string;
+	details: string;
+	created_at: string;
+}
+
+// ---------------------------------------------------------------------------
 // Scanner Pipeline Config
 // ---------------------------------------------------------------------------
 
@@ -355,6 +385,43 @@ export interface ChangeLogEntry {
 	before_data?: string;
 	after_data?: string;
 	detected_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Discovery Status (passive discovery runtime counters + recent discoveries)
+// ---------------------------------------------------------------------------
+
+export interface DiscoveryConfig {
+	Interval?: number;
+	TriggerIdentify?: boolean;
+}
+
+export interface DiscoveryStats {
+	EventsReceived?: number;
+	SuppressedRecent?: number;
+	KnownHostSkipped?: number;
+	IdentifyTriggered?: number;
+	IdentifyAlive?: number;
+	IdentifyDead?: number;
+	DeviceRecorded?: number;
+}
+
+export interface RecentDiscovery {
+	ip: string;
+	mac?: string;
+	source: string;
+	outcome: string;
+	at: string;
+}
+
+export interface DiscoveryStatus {
+	enabled: boolean;
+	started_at?: string;
+	uptime?: string;
+	config?: DiscoveryConfig;
+	sources?: string[];
+	stats?: DiscoveryStats;
+	recent_discoveries?: RecentDiscovery[];
 }
 
 // ---------------------------------------------------------------------------

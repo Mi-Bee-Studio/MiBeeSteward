@@ -175,11 +175,16 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// here so the ingestion routes (registered below) can authenticate agents.
 	middleware.SetAgentQueries(scanQueries)
 
-	// Network registry — feeds the device-list + change-history network filters.
-	networkHandler := handler.NewNetworkHandler(scanQueries)
+	// Network registry — feeds the device-list + change-history network filters
+	// and the Networks admin page. Read (List) is any logged-in user; create/
+	// update/delete are admin-only.
+	networkHandler := handler.NewNetworkHandler(scanQueries, dbConn)
 	r.Route("/api/v1/networks", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
 		r.Get("/", networkHandler.List)
+		r.With(middleware.RequireAdmin).Post("/", networkHandler.Create)
+		r.With(middleware.RequireAdmin).Put("/{id}", networkHandler.Update)
+		r.With(middleware.RequireAdmin).Delete("/{id}", networkHandler.Delete)
 	})
 
 	// Resolve this instance's network identity (networks.id) so discovered
