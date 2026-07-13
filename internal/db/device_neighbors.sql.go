@@ -11,9 +11,7 @@ import (
 )
 
 const countDeviceNeighbors = `-- name: CountDeviceNeighbors :one
-.id;
-
-SELECT COUNT(*) FROM device_neigh
+SELECT COUNT(*) FROM device_neighbors
 `
 
 func (q *Queries) CountDeviceNeighbors(ctx context.Context) (int64, error) {
@@ -24,13 +22,34 @@ func (q *Queries) CountDeviceNeighbors(ctx context.Context) (int64, error) {
 }
 
 const deleteDeviceNeighborsForDevice = `-- name: DeleteDeviceNeighborsForDevice :execrows
-ors;
-
-DELETE FROM device_neighbors WHERE device_id
+DELETE FROM device_neighbors WHERE device_id = ?
 `
 
 func (q *Queries) DeleteDeviceNeighborsForDevice(ctx context.Context, deviceID int64) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteDeviceNeighborsForDevice, deviceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteDeviceNeighborsOlderThanBatched = `-- name: DeleteDeviceNeighborsOlderThanBatched :execrows
+DELETE FROM device_neighbors
+WHERE id IN (
+    SELECT sub.id FROM device_neighbors AS sub WHERE sub.last_seen < ? LIMIT ?
+)
+`
+
+type DeleteDeviceNeighborsOlderThanBatchedParams struct {
+	LastSeen *time.Time `json:"last_seen"`
+	Limit    int64      `json:"limit"`
+}
+
+// Retention sweep (batched) for device_neighbors. Removes edges whose
+// last_seen is older than the cutoff, in batches to avoid holding the write
+// lock on large tables (mirrors the other retention deletes).
+func (q *Queries) DeleteDeviceNeighborsOlderThanBatched(ctx context.Context, arg DeleteDeviceNeighborsOlderThanBatchedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteDeviceNeighborsOlderThanBatched, arg.LastSeen, arg.Limit)
 	if err != nil {
 		return 0, err
 	}
@@ -122,8 +141,15 @@ func (q *Queries) ListDeviceNeighbors(ctx context.Context, deviceID int64) ([]De
 
 const listDeviceNeighborsWithDevice = `-- name: ListDeviceNeighborsWithDevice :many
 SELECT
-    device_neighbors.id, device_neighbors.device_id, device_neighbors.neighbor_device_id, device_neighbors.neighbor_mac, device_neighbors.protocol, device_neighbors.local_port, device_neighbors.remote_port, device_neighbors.network_id, device_neighbors.first_seen, device_neighbors.last_seen,
-    d.id   AS neighbor_device_id,
+    device_neighbors.id AS id,
+    device_neighbors.device_id AS device_id,
+    device_neighbors.neighbor_mac AS neighbor_mac,
+    device_neighbors.protocol AS protocol,
+    device_neighbors.local_port AS local_port,
+    device_neighbors.remote_port AS remote_port,
+    device_neighbors.first_seen AS first_seen,
+    device_neighbors.last_seen AS last_seen,
+    d.id   AS resolved_device_id,
     d.name AS neighbor_name,
     d.ip_address AS neighbor_ip,
     d.type AS neighbor_type,
@@ -135,18 +161,27 @@ ORDER BY device_neighbors.protocol, device_neighbors.neighbor_mac
 `
 
 type ListDeviceNeighborsWithDeviceRow struct {
-	DeviceNeighbor   DeviceNeighbor `json:"device_neighbor"`
-	NeighborDeviceID *int64         `json:"neighbor_device_id"`
-	NeighborName     *string        `json:"neighbor_name"`
-	NeighborIp       *string        `json:"neighbor_ip"`
-	NeighborType     *string        `json:"neighbor_type"`
-	NeighborStatus   *string        `json:"neighbor_status"`
+	ID               int64      `json:"id"`
+	DeviceID         int64      `json:"device_id"`
+	NeighborMac      string     `json:"neighbor_mac"`
+	Protocol         string     `json:"protocol"`
+	LocalPort        *string    `json:"local_port"`
+	RemotePort       *string    `json:"remote_port"`
+	FirstSeen        *time.Time `json:"first_seen"`
+	LastSeen         *time.Time `json:"last_seen"`
+	ResolvedDeviceID *int64     `json:"resolved_device_id"`
+	NeighborName     *string    `json:"neighbor_name"`
+	NeighborIp       *string    `json:"neighbor_ip"`
+	NeighborType     *string    `json:"neighbor_type"`
+	NeighborStatus   *string    `json:"neighbor_status"`
 }
 
 // Like ListDeviceNeighbors, but LEFT JOINs devices on neighbor_mac so the
 // caller can show the neighbor's name/IP/type (not just its MAC) when the
 // neighbor has itself been scanned. The neighbor_* fields are NULL when the
 // neighbor device is not in the registry yet (unidentified neighbor).
+// Columns listed explicitly: sqlc v1.27.0's sqlc.embed() corrupts sibling
+// query generation, so it is avoided here.
 func (q *Queries) ListDeviceNeighborsWithDevice(ctx context.Context, deviceID int64) ([]ListDeviceNeighborsWithDeviceRow, error) {
 	rows, err := q.db.QueryContext(ctx, listDeviceNeighborsWithDevice, deviceID)
 	if err != nil {
@@ -157,17 +192,15 @@ func (q *Queries) ListDeviceNeighborsWithDevice(ctx context.Context, deviceID in
 	for rows.Next() {
 		var i ListDeviceNeighborsWithDeviceRow
 		if err := rows.Scan(
-			&i.DeviceNeighbor.ID,
-			&i.DeviceNeighbor.DeviceID,
-			&i.DeviceNeighbor.NeighborDeviceID,
-			&i.DeviceNeighbor.NeighborMac,
-			&i.DeviceNeighbor.Protocol,
-			&i.DeviceNeighbor.LocalPort,
-			&i.DeviceNeighbor.RemotePort,
-			&i.DeviceNeighbor.NetworkID,
-			&i.DeviceNeighbor.FirstSeen,
-			&i.DeviceNeighbor.LastSeen,
-			&i.NeighborDeviceID,
+			&i.ID,
+			&i.DeviceID,
+			&i.NeighborMac,
+			&i.Protocol,
+			&i.LocalPort,
+			&i.RemotePort,
+			&i.FirstSeen,
+			&i.LastSeen,
+			&i.ResolvedDeviceID,
 			&i.NeighborName,
 			&i.NeighborIp,
 			&i.NeighborType,
@@ -194,7 +227,7 @@ SELECT
 FROM device_neighbors dn
 LEFT JOIN devices d ON dn.neighbor_mac = d.mac_address
 WHERE (? <= 0 OR dn.network_id = ?)
-ORDER BY d
+ORDER BY dn.id
 `
 
 type ListTopologyEdgesParams struct {
@@ -215,8 +248,8 @@ type ListTopologyEdgesRow struct {
 }
 
 // Every neighbor edge across all devices, JOINed to resolve the neighbor's
-// device_id (so the topology graph can draw device→device edges as solid and
-// device→unidentified-MAC edges as dashed). network_id <= 0 means all networks.
+// device_id (so the topology graph can draw device-to-device edges as solid and
+// device-to-unidentified-MAC edges as dashed). network_id <= 0 means all networks.
 func (q *Queries) ListTopologyEdges(ctx context.Context, arg ListTopologyEdgesParams) ([]ListTopologyEdgesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTopologyEdges, arg.Column1, arg.NetworkID)
 	if err != nil {

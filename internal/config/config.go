@@ -85,6 +85,15 @@ type RetentionConfig struct {
 	// changed / lost events). Default 30 (high value for asset-history audits,
 	// but change_log grows fast — one row per real change per scan).
 	ChangeLogDays int `koanf:"change_log_days"`
+	// DeviceNeighborsDays is the retention window for device_neighbors (L2
+	// adjacency edges — Bridge-MIB / LLDP). Default 90 (low write volume — one
+	// row per real adjacency, refreshed by upsert — and high value for topology
+	// history).
+	DeviceNeighborsDays int `koanf:"device_neighbors_days"`
+	// HostServicesDays is the retention window for host_services (classified
+	// service identities). host_services is upserted, not appended, but rows
+	// for gone-silent hosts linger. Default 30.
+	HostServicesDays int `koanf:"host_services_days"`
 	// SweepIntervalHours is how often the retention sweeper runs across all
 	// tables. Default 6h — frequent enough that no table drifts far past its
 	// window, rare enough to be negligible overhead.
@@ -364,6 +373,12 @@ func normalizeRetention(cfg *Config) {
 	}
 	if r.ChangeLogDays <= 0 {
 		r.ChangeLogDays = 30
+	}
+	if r.DeviceNeighborsDays <= 0 {
+		r.DeviceNeighborsDays = 90
+	}
+	if r.HostServicesDays <= 0 {
+		r.HostServicesDays = 30
 	}
 	if r.SweepIntervalHours <= 0 {
 		r.SweepIntervalHours = 6

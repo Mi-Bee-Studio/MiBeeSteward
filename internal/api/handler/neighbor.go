@@ -57,21 +57,20 @@ func (h *NeighborHandler) ListByDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]neighborResponseEntry, 0, len(rows))
 	for _, row := range rows {
-		n := row.DeviceNeighbor
 		out = append(out, neighborResponseEntry{
-			ID:               n.ID,
-			DeviceID:         n.DeviceID,
-			NeighborDeviceID: row.NeighborDeviceID, // JOIN result — non-nil when the neighbor MAC matches a scanned device
-			NeighborMAC:      n.NeighborMac,
-			Protocol:         n.Protocol,
-			LocalPort:        n.LocalPort,
-			RemotePort:       n.RemotePort,
+			ID:               row.ID,
+			DeviceID:         row.DeviceID,
+			NeighborDeviceID: row.ResolvedDeviceID, // JOIN result — non-nil when the neighbor MAC matches a scanned device
+			NeighborMAC:      row.NeighborMac,
+			Protocol:         row.Protocol,
+			LocalPort:        row.LocalPort,
+			RemotePort:       row.RemotePort,
 			NeighborName:     row.NeighborName,
 			NeighborIP:       row.NeighborIp,
 			NeighborType:     row.NeighborType,
 			NeighborStatus:   row.NeighborStatus,
-			FirstSeen:        timeStr(n.FirstSeen),
-			LastSeen:         timeStr(n.LastSeen),
+			FirstSeen:        timeStr(row.FirstSeen),
+			LastSeen:         timeStr(row.LastSeen),
 		})
 	}
 	Success(w, map[string]any{"neighbors": out, "total": len(out)})

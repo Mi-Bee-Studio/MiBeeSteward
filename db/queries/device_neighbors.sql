@@ -19,9 +19,18 @@ SELECT * FROM device_neighbors WHERE device_id = ? ORDER BY protocol, neighbor_m
 -- caller can show the neighbor's name/IP/type (not just its MAC) when the
 -- neighbor has itself been scanned. The neighbor_* fields are NULL when the
 -- neighbor device is not in the registry yet (unidentified neighbor).
+-- Columns listed explicitly: sqlc v1.27.0's sqlc.embed() corrupts sibling
+-- query generation, so it is avoided here.
 SELECT
-    sqlc.embed(device_neighbors),
-    d.id   AS neighbor_device_id,
+    device_neighbors.id AS id,
+    device_neighbors.device_id AS device_id,
+    device_neighbors.neighbor_mac AS neighbor_mac,
+    device_neighbors.protocol AS protocol,
+    device_neighbors.local_port AS local_port,
+    device_neighbors.remote_port AS remote_port,
+    device_neighbors.first_seen AS first_seen,
+    device_neighbors.last_seen AS last_seen,
+    d.id   AS resolved_device_id,
     d.name AS neighbor_name,
     d.ip_address AS neighbor_ip,
     d.type AS neighbor_type,
@@ -37,8 +46,8 @@ SELECT * FROM device_neighbors ORDER BY id DESC LIMIT ? OFFSET ?;
 
 -- name: ListTopologyEdges :many
 -- Every neighbor edge across all devices, JOINed to resolve the neighbor's
--- device_id (so the topology graph can draw device→device edges as solid and
--- device→unidentified-MAC edges as dashed). network_id <= 0 means all networks.
+-- device_id (so the topology graph can draw device-to-device edges as solid and
+-- device-to-unidentified-MAC edges as dashed). network_id <= 0 means all networks.
 SELECT
     dn.id, dn.device_id, dn.neighbor_mac, dn.protocol, dn.local_port, dn.remote_port,
     dn.first_seen, dn.last_seen,
@@ -50,6 +59,15 @@ ORDER BY dn.id;
 
 -- name: CountDeviceNeighbors :one
 SELECT COUNT(*) FROM device_neighbors;
+
+-- name: DeleteDeviceNeighborsOlderThanBatched :execrows
+-- Retention sweep (batched) for device_neighbors. Removes edges whose
+-- last_seen is older than the cutoff, in batches to avoid holding the write
+-- lock on large tables (mirrors the other retention deletes).
+DELETE FROM device_neighbors
+WHERE id IN (
+    SELECT sub.id FROM device_neighbors AS sub WHERE sub.last_seen < ? LIMIT ?
+);
 
 -- name: DeleteDeviceNeighborsForDevice :execrows
 DELETE FROM device_neighbors WHERE device_id = ?;
