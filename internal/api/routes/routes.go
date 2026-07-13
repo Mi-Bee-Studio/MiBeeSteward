@@ -318,6 +318,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			mcastSrc.Start(discCtx)
 			activeSources = append(activeSources, "multicast")
 		}
+		// lldp_frame: passive LLDPDU frame listener (ethertype 0x88cc). Only
+		// available in WITH_LLDP builds (needs CAP_NET_RAW); NewLLDPFrameSource
+		// returns nil in the default build, so this is a no-op there. Wiring the
+		// neighbor-edge sink needs a MAC-keyed device resolver (RecordNeighbors
+		// is IP-keyed); deferred until that lands. The host-event path works.
+		if lldpSrc := scannerv2discovery.NewLLDPFrameSource(
+			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
+		); lldpSrc != nil {
+			lldpSrc.Start(discCtx)
+			activeSources = append(activeSources, "lldp_frame")
+		}
 		discSvc.SetSources(activeSources)
 		slog.Info("scannerv2 passive discovery ready",
 			"interval", interval.String(),

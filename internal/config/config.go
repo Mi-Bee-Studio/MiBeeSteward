@@ -278,6 +278,10 @@ type DiscoveryConfig struct {
 	// (239.255.255.250:1900) WITHOUT sending queries. Covers hosts that
 	// self-advertise (cameras/printers/IoT/Mac/UPnP).
 	Multicast DiscoverySourceToggle `koanf:"multicast"`
+	// LLDPInterfaces is the list of NIC names for the raw-frame LLDPDU listener
+	// (ethertype 0x88cc). Empty = all UP non-loopback interfaces. Only active in
+	// WITH_LLDP builds (needs CAP_NET_RAW); no-op in the default build.
+	LLDPInterfaces []string `koanf:"lldp_interfaces"`
 }
 
 // DiscoverySourceToggle is the per-source on/off switch for DiscoveryConfig.
