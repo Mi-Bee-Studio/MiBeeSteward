@@ -755,6 +755,14 @@
 		"List View": "List",
 		"Graph View": "Graph",
 		"Graph Disabled": "No L2 edges — graph needs adjacency data",
-		"No Search Results": "No devices match your search."
+		"No Search Results": "No devices match your search.",
+		"Subnet View": "Subnets",
+		"Star View": "Gateway Star",
+		"Gateway": "Gateway",
+		"Inferred Edge": "Inferred (same subnet)",
+		"Star Disclaimer": "Logical topology inferred from subnet - not actual L2 adjacency",
+		"Subnets": "subnets",
+		"Online": "online",
+		"No Subnet": "Unknown subnet"
 	}
 }

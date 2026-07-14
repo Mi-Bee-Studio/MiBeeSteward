@@ -755,6 +755,14 @@
 		"List View": "列表",
 		"Graph View": "图形",
 		"Graph Disabled": "无 L2 边——图形需要邻接数据",
-		"No Search Results": "没有匹配的设备。"
+		"No Search Results": "没有匹配的设备。",
+		"Subnet View": "子网",
+		"Star View": "网关星型",
+		"Gateway": "网关",
+		"Inferred Edge": "推导(同子网)",
+		"Star Disclaimer": "基于子网推导的逻辑拓扑,非真实 L2 邻接",
+		"Subnets": "个子网",
+		"Online": "在线",
+		"No Subnet": "未知子网"
 	}
 }

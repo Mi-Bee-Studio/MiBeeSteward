@@ -258,6 +258,7 @@ export interface TopoNode {
 	status: string;
 	inferred_type: string;
 	brand: string;
+	network_id?: number | null;
 }
 
 export interface TopoEdge {

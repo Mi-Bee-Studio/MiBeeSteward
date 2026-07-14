@@ -30,6 +30,7 @@ type topoNode struct {
 	Status       string `json:"status"`        // online/offline/unknown
 	InferredType string `json:"inferred_type"` // from scan_vendor/scan_os — richer than type
 	Brand        string `json:"brand"`
+	NetworkID    *int64 `json:"network_id"` // origin network (for subnet grouping)
 }
 
 // topoEdge is one L2 adjacency: a device sees a neighbor (by MAC) via a
@@ -68,6 +69,7 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 			Status:       d.Status,
 			InferredType: ptrString(d.ScanVendor),
 			Brand:        ptrString(d.ScanVendor),
+			NetworkID:    d.NetworkID,
 		})
 	}
 
