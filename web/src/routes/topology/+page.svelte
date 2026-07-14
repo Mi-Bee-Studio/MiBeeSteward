@@ -307,8 +307,6 @@
 				<button
 					onclick={() => (viewMode = 'graph')}
 					class="px-3 py-2 text-sm flex items-center gap-1.5 transition-colors {viewMode === 'graph' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
-					disabled={!hasEdges}
-					title={hasEdges ? '' : (m['topology.Graph Disabled']?.() ?? 'No L2 edges — graph needs adjacency data')}
 				>
 					<GraphIcon class="w-4 h-4" />
 					{m['topology.Graph View']?.() ?? 'Graph'}
