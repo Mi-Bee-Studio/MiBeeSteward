@@ -82,10 +82,22 @@
 	// Build the ECharts graph option. Nodes = devices; edges = L2 adjacencies.
 	// Edges to an unidentified neighbor (to_device_id null) render dashed + point
 	// at a synthetic "MAC" node so the relationship is still visible.
+	//
+	// Layout strategy:
+	//   - Has edges → force layout (edges pull connected nodes, repulsion spreads
+	//     them). Repulsion scales with node count so dense graphs don't collapse.
+	//   - No edges (or all isolated) → circular layout (force with no edges piles
+	//     every node in the center; circular spreads them evenly around a ring).
+	// Labels: hidden when node count is high (> 50, they'd overlap) — hover/tap
+	// a node to see its name via tooltip.
 	let topologyOption = $derived<EChartsOption | null>(buildOption(graph));
 
 	function buildOption(g: TopologyGraph | null): EChartsOption | null {
-		if (!g || (g.nodes.length === 0 && g.edges.length === 0)) return null;
+		if (!g || g.nodes.length === 0) return null;
+
+		const hasEdges = g.edges.length > 0;
+		const nodeCount = g.nodes.length;
+		const showLabels = nodeCount <= 50;
 
 		// Identify MACs that appear as a neighbor but have no matching node —
 		// render them as synthetic "unidentified" nodes (dashed-edge targets).
@@ -97,23 +109,48 @@
 			}
 		}
 
+		// Circular layout for isolated/island-heavy graphs: spread nodes around a
+		// ring so they don't collapse into the center (force needs edges to pull
+		// nodes apart; without them gravity wins and piles everything up).
+		let positions: Record<string, [number, number]> | null = null;
+		if (!hasEdges) {
+			positions = {};
+			const ringNodes = g.nodes;
+			const radius = 320; // ring radius in px (graph is zoomable)
+			ringNodes.forEach((n, i) => {
+				const angle = (2 * Math.PI * i) / ringNodes.length;
+				positions![String(n.id)] = [
+					Math.cos(angle) * radius,
+					Math.sin(angle) * radius
+				];
+			});
+		}
+
 		const echartsNodes = [
-			...g.nodes.map((n) => ({
-				id: String(n.id),
-				name: n.name || n.ip_address || `#${n.id}`,
-				category: nodeCategory(n),
-				symbolSize: 40,
-				value: n,
-				itemStyle: { color: typeColors[nodeCategory(n)] ?? typeColors.other },
-				label: { show: true }
-			})),
+			...g.nodes.map((n) => {
+				const node: Record<string, unknown> = {
+					id: String(n.id),
+					name: n.name || n.ip_address || `#${n.id}`,
+					category: nodeCategory(n),
+					symbolSize: nodeCount > 100 ? 18 : nodeCount > 50 ? 26 : 36,
+					value: n,
+					itemStyle: { color: typeColors[nodeCategory(n)] ?? typeColors.other },
+					label: { show: showLabels, position: 'right', fontSize: 10, color: '#e2e8f0' }
+				};
+				if (positions && positions[String(n.id)]) {
+					node.x = positions[String(n.id)][0];
+					node.y = positions[String(n.id)][1];
+					node.fixed = true; // keep the circular layout stable
+				}
+				return node;
+			}),
 			...[...syntheticNodes.values()].map((s) => ({
 				id: `mac:${s.mac}`,
 				name: s.mac,
 				category: 'other',
-				symbolSize: 24,
+				symbolSize: 22,
 				itemStyle: { color: typeColors.other, opacity: 0.5 },
-				label: { show: true, fontSize: 9, color: '#94a3b8' }
+				label: { show: showLabels, fontSize: 9, color: '#94a3b8' }
 			}))
 		];
 
@@ -132,6 +169,11 @@
 				value: e
 			};
 		});
+
+		// Force params: repulsion scales with node count (more nodes need more
+		// space). gravity near-zero when there are edges (let repulsion dominate);
+		// not used at all for the circular layout (nodes are fixed).
+		const repulsion = Math.max(120, nodeCount * 6);
 
 		return {
 			tooltip: {
@@ -152,20 +194,34 @@
 				textStyle: { color: '#cbd5e1' },
 				top: 10
 			},
+			animationDuration: 800,
+			animationEasingUpdate: 'cubicOut',
 			series: [
 				{
 					type: 'graph',
+					// Always 'force': when there are no edges we pre-place nodes in a
+					// ring and mark them fixed, so force keeps them in place (layout
+					// 'none' ignores x/y in some ECharts versions).
 					layout: 'force',
 					roam: true,
-					draggable: true,
-					label: { show: true, position: 'right', fontSize: 10, color: '#e2e8f0' },
-					force: { repulsion: 200, edgeLength: [80, 200], gravity: 0.05 },
+					draggable: hasEdges, // allow drag only when edges exist to rearrange
+					label: { show: showLabels, position: 'right', fontSize: 10, color: '#e2e8f0' },
+					force: {
+						repulsion: hasEdges ? repulsion : 1,     // no repulsion war when fixed
+						edgeLength: [80, 200],
+						gravity: hasEdges ? 0.01 : 0,            // no gravity pull when fixed
+						layoutAnimation: hasEdges
+					},
 					categories: typeCategories.map((c) => ({ name: c })),
 					data: echartsNodes,
 					links: echartsEdges,
 					edgeSymbol: ['none', 'arrow'],
 					edgeSymbolSize: 6,
-					emphasis: { focus: 'adjacency', lineStyle: { width: 3 } }
+					emphasis: {
+						focus: 'adjacency',
+						lineStyle: { width: 3 },
+						label: { show: true } // always show label on hover, even if globally hidden
+					}
 				}
 			]
 		};
@@ -229,6 +285,11 @@
 		<div class="flex flex-wrap items-center gap-4 mb-3 text-xs text-text-muted">
 			<span>{(graph?.nodes.length ?? 0)} {m['topology.Nodes']?.() ?? 'devices'}</span>
 			<span>{(graph?.edges.length ?? 0)} {m['topology.Edges']?.() ?? 'adjacencies'}</span>
+			{#if (graph?.edges.length ?? 0) === 0}
+				<span class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400">
+					{m['topology.No Edges Hint']?.() ?? 'No L2 edges yet — scan managed switches to populate adjacency'}
+				</span>
+			{/if}
 			<span class="flex items-center gap-1.5">
 				<span class="inline-block w-6 h-0.5" style="background:#3b82f6"></span>LLDP
 			</span>
