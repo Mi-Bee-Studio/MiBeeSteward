@@ -745,6 +745,12 @@
 		"Neighbor Device": "Neighbor",
 		"Local Port": "Local Port",
 		"Remote Port": "Remote Port",
-		"Unidentified Neighbor": "Unidentified (MAC only)"
+		"Unidentified Neighbor": "Unidentified (MAC only)",
+		"No Edges Title": "No L2 adjacency discovered yet",
+		"No Edges Desc": "There are devices in this network, but no L2 neighbor edges (Bridge-MIB / LLDP). Run a scan that includes managed switches to populate the topology graph.",
+		"No Edges Devices": "in this network",
+		"Search Placeholder": "Find device...",
+		"No Neighbors Yet": "No L2 neighbors recorded",
+		"No Neighbors Hint": "Run a scan including managed switches to discover L2 adjacency (Bridge-MIB / LLDP)."
 	}
 }

@@ -745,6 +745,12 @@
 		"Neighbor Device": "邻居设备",
 		"Local Port": "本地端口",
 		"Remote Port": "远端端口",
-		"Unidentified Neighbor": "未识别(仅 MAC)"
+		"Unidentified Neighbor": "未识别(仅 MAC)",
+		"No Edges Title": "尚未发现 L2 邻接",
+		"No Edges Desc": "此网络中有设备,但未发现 L2 邻居边(Bridge-MIB / LLDP)。运行一次包含可网管交换机的扫描以填充拓扑图。",
+		"No Edges Devices": "在此网络中",
+		"Search Placeholder": "查找设备...",
+		"No Neighbors Yet": "暂无 L2 邻居记录",
+		"No Neighbors Hint": "运行包含可网管交换机的扫描以发现 L2 邻接(Bridge-MIB / LLDP)。"
 	}
 }

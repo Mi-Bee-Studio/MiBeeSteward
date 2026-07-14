@@ -889,56 +889,65 @@
 		{/if}
 	{/if}
 
-	<!-- L2 Neighbors (Bridge-MIB / LLDP adjacency) -->
-	{#if device && neighbors.length > 0}
+	<!-- L2 Neighbors (Bridge-MIB / LLDP adjacency) — always shown so users know
+	     this section exists; empty state explains how to populate it. -->
+	{#if device}
 		<div class="scan-info-panel mt-4">
 			<h3 class="scan-info-title">
 				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6"/><path d="M6 9v6"/><path d="M18 9v6"/></svg>
 				{m['topology.Neighbors']?.() ?? 'L2 Neighbors'}
 			</h3>
 			<p class="text-xs text-text-muted mb-3">{m['topology.Neighbors Desc']?.() ?? 'Devices adjacent to this one at Layer 2 (Bridge-MIB / LLDP).'}</p>
-			<div class="overflow-x-auto">
-				<table class="w-full text-left border border-border rounded-lg overflow-hidden">
-					<thead class="bg-bg/50 border-b border-border">
-						<tr>
-							<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Neighbor Device']?.() ?? 'Neighbor'}</th>
-							<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">MAC</th>
-							<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Protocol</th>
-							<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Local Port']?.() ?? 'Local Port'}</th>
-							<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Remote Port']?.() ?? 'Remote Port'}</th>
-							<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Last Seen</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each neighbors as nb}
-							<tr class="border-b border-border/50 last:border-b-0">
-								<td class="px-3 py-2 text-sm">
-									{#if nb.neighbor_device_id}
-										<a href={`/devices/detail/${nb.neighbor_device_id}`} class="text-primary hover:underline font-medium">
-											{nb.neighbor_name ?? nb.neighbor_ip ?? nb.neighbor_mac}
-										</a>
-										{#if nb.neighbor_ip && nb.neighbor_name}
-											<span class="block text-xs text-text-muted font-mono">{nb.neighbor_ip}</span>
-										{/if}
-										{#if nb.neighbor_type}
-											<span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{nb.neighbor_type}</span>
-										{/if}
-									{:else}
-										<span class="text-text-muted italic text-xs">{m['topology.Unidentified Neighbor']?.() ?? 'Unidentified (MAC only)'}</span>
-									{/if}
-								</td>
-								<td class="px-3 py-2 font-mono text-xs text-text-muted">{nb.neighbor_mac}</td>
-								<td class="px-3 py-2">
-									<span class="text-xs px-2 py-0.5 rounded-full font-mono {nb.protocol === 'LLDP' ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}">{nb.protocol}</span>
-								</td>
-								<td class="px-3 py-2 font-mono text-xs text-text">{nb.local_port ?? '-'}</td>
-								<td class="px-3 py-2 font-mono text-xs text-text">{nb.remote_port ?? '-'}</td>
-								<td class="px-3 py-2 text-xs text-text-muted">{nb.last_seen ? new Date(nb.last_seen).toLocaleString() : '-'}</td>
+			{#if neighbors.length > 0}
+				<div class="overflow-x-auto">
+					<table class="w-full text-left border border-border rounded-lg overflow-hidden">
+						<thead class="bg-bg/50 border-b border-border">
+							<tr>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Neighbor Device']?.() ?? 'Neighbor'}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">MAC</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Protocol</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Local Port']?.() ?? 'Local Port'}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Remote Port']?.() ?? 'Remote Port'}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Last Seen</th>
 							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+						</thead>
+						<tbody>
+							{#each neighbors as nb}
+								<tr class="border-b border-border/50 last:border-b-0">
+									<td class="px-3 py-2 text-sm">
+										{#if nb.neighbor_device_id}
+											<a href={`/devices/detail/${nb.neighbor_device_id}`} class="text-primary hover:underline font-medium">
+												{nb.neighbor_name ?? nb.neighbor_ip ?? nb.neighbor_mac}
+											</a>
+											{#if nb.neighbor_ip && nb.neighbor_name}
+												<span class="block text-xs text-text-muted font-mono">{nb.neighbor_ip}</span>
+											{/if}
+											{#if nb.neighbor_type}
+												<span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{nb.neighbor_type}</span>
+											{/if}
+										{:else}
+											<span class="text-text-muted italic text-xs">{m['topology.Unidentified Neighbor']?.() ?? 'Unidentified (MAC only)'}</span>
+										{/if}
+									</td>
+									<td class="px-3 py-2 font-mono text-xs text-text-muted">{nb.neighbor_mac}</td>
+									<td class="px-3 py-2">
+										<span class="text-xs px-2 py-0.5 rounded-full font-mono {nb.protocol === 'LLDP' ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}">{nb.protocol}</span>
+									</td>
+									<td class="px-3 py-2 font-mono text-xs text-text">{nb.local_port ?? '-'}</td>
+									<td class="px-3 py-2 font-mono text-xs text-text">{nb.remote_port ?? '-'}</td>
+									<td class="px-3 py-2 text-xs text-text-muted">{nb.last_seen ? new Date(nb.last_seen).toLocaleString() : '-'}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<!-- Empty state: explain how to populate, so the panel isn't a mystery. -->
+				<div class="border border-dashed border-border rounded-lg p-4 text-center">
+					<p class="text-sm text-text-muted">{m['topology.No Neighbors Yet']?.() ?? 'No L2 neighbors recorded'}</p>
+					<p class="text-xs text-text-muted mt-1">{m['topology.No Neighbors Hint']?.() ?? 'Run a scan including managed switches to discover L2 adjacency (Bridge-MIB / LLDP).'}</p>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
