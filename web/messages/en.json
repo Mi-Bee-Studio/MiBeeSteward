@@ -751,6 +751,10 @@
 		"No Edges Devices": "in this network",
 		"Search Placeholder": "Find device...",
 		"No Neighbors Yet": "No L2 neighbors recorded",
-		"No Neighbors Hint": "Run a scan including managed switches to discover L2 adjacency (Bridge-MIB / LLDP)."
+		"No Neighbors Hint": "Run a scan including managed switches to discover L2 adjacency (Bridge-MIB / LLDP).",
+		"List View": "List",
+		"Graph View": "Graph",
+		"Graph Disabled": "No L2 edges — graph needs adjacency data",
+		"No Search Results": "No devices match your search."
 	}
 }

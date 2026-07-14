@@ -101,13 +101,13 @@
 		"Device Details": "设备详情",
 		"PC": "PC",
 		"Embedded": "嵌入式",
-		"IoT": "物联网",
+		"IoT": "IoT",
 		"Other": "其他",
 		"Server": "服务器",
 		"Switch": "交换机",
 		"Router": "路由器",
 		"Firewall": "防火墙",
-		"NAS": "网络存储",
+		"NAS": "NAS",
 		"Created": "设备创建成功",
 		"Updated": "设备更新成功",
 		"Deleted": "设备删除成功",
@@ -751,6 +751,10 @@
 		"No Edges Devices": "在此网络中",
 		"Search Placeholder": "查找设备...",
 		"No Neighbors Yet": "暂无 L2 邻居记录",
-		"No Neighbors Hint": "运行包含可网管交换机的扫描以发现 L2 邻接(Bridge-MIB / LLDP)。"
+		"No Neighbors Hint": "运行包含可网管交换机的扫描以发现 L2 邻接(Bridge-MIB / LLDP)。",
+		"List View": "列表",
+		"Graph View": "图形",
+		"Graph Disabled": "无 L2 边——图形需要邻接数据",
+		"No Search Results": "没有匹配的设备。"
 	}
 }
