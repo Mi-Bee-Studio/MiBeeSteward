@@ -738,7 +738,7 @@
 		"Unidentified": "unidentified neighbor",
 		"Empty": "No topology data yet",
 		"Empty Desc": "L2 neighbor edges (Bridge-MIB / LLDP) are populated when switches are scanned. Run a scan that includes managed switches.",
-		"Click Hint": "Click a device node to open its detail page. Drag to rearrange; scroll to zoom.",
+		"Click Hint": "Click to collapse/expand subtree; double-click to open device detail. Scroll to zoom, drag to pan.",
 		"Neighbors": "L2 Neighbors",
 		"Neighbors Desc": "Devices adjacent to this one at Layer 2 (Bridge-MIB / LLDP).",
 		"No Neighbors": "No L2 neighbors recorded for this device yet.",
@@ -753,17 +753,15 @@
 		"No Neighbors Yet": "No L2 neighbors recorded",
 		"No Neighbors Hint": "Run a scan including managed switches to discover L2 adjacency (Bridge-MIB / LLDP).",
 		"List View": "List",
-		"Graph View": "Graph",
-		"Graph Disabled": "No L2 edges — graph needs adjacency data",
+		"Graph View": "Topology Tree",
+		"Graph Disabled": "No adjacency data — tree needs at least one device",
 		"No Search Results": "No devices match your search.",
 		"Subnet View": "Subnets",
-		"Star View": "Gateway Star",
 		"Gateway": "Gateway",
-		"Inferred Edge": "Inferred (same subnet)",
-		"ARP Edge": "ARP (gateway)",
-		"Star Disclaimer": "Logical topology inferred from subnet - not actual L2 adjacency",
 		"Subnets": "subnets",
 		"Online": "online",
-		"No Subnet": "Unknown subnet"
+		"No Subnet": "Unknown subnet",
+		"Disconnected": "disconnected",
+		"Downstream": "Downstream"
 	}
 }

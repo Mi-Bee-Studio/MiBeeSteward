@@ -738,7 +738,7 @@
 		"Unidentified": "未识别邻居",
 		"Empty": "暂无拓扑数据",
 		"Empty Desc": "L2 邻居边(Bridge-MIB / LLDP)在扫描交换机时生成。请运行一次包含可网管交换机的扫描。",
-		"Click Hint": "点击设备节点打开详情页。拖拽可重排,滚轮缩放。",
+		"Click Hint": "单击折叠/展开子树;双击打开设备详情。滚轮缩放,拖拽平移。",
 		"Neighbors": "L2 邻居",
 		"Neighbors Desc": "与本设备在二层相邻的设备(Bridge-MIB / LLDP)。",
 		"No Neighbors": "该设备暂无 L2 邻居记录。",
@@ -753,17 +753,15 @@
 		"No Neighbors Yet": "暂无 L2 邻居记录",
 		"No Neighbors Hint": "运行包含可网管交换机的扫描以发现 L2 邻接(Bridge-MIB / LLDP)。",
 		"List View": "列表",
-		"Graph View": "图形",
-		"Graph Disabled": "无 L2 边——图形需要邻接数据",
+		"Graph View": "拓扑树",
+		"Graph Disabled": "无邻接数据,至少需要一台设备",
 		"No Search Results": "没有匹配的设备。",
 		"Subnet View": "子网",
-		"Star View": "网关星型",
 		"Gateway": "网关",
-		"Inferred Edge": "推导(同子网)",
-		"ARP Edge": "ARP(网关)",
-		"Star Disclaimer": "基于子网推导的逻辑拓扑,非真实 L2 邻接",
 		"Subnets": "个子网",
 		"Online": "在线",
-		"No Subnet": "未知子网"
+		"No Subnet": "未知子网",
+		"Disconnected": "未连接",
+		"Downstream": "下挂设备"
 	}
 }
