@@ -316,12 +316,18 @@
 				label: { show: showLabels, fontSize: 9, color: '#94a3b8' }
 			}))
 		];
-		const echartsEdges = g.edges.map((e, i) => ({
-			id: `e${i}`, source: String(e.from_device_id),
-			target: e.to_device_id ? String(e.to_device_id) : `mac:${e.to_mac}`,
-			lineStyle: { color: e.protocol === 'LLDP' ? '#3b82f6' : '#10b981', width: e.protocol === 'LLDP' ? 2 : 1, type: e.to_device_id ? 'solid' : 'dashed', opacity: 0.6 },
-			value: e
-		}));
+		const echartsEdges = g.edges.map((e, i) => {
+			let color: string, width: number, dash: 'solid' | 'dashed';
+			if (e.protocol === 'LLDP') { color = '#3b82f6'; width = 2; dash = 'solid'; }
+			else if (e.protocol === 'Bridge-MIB') { color = '#10b981'; width = 1; dash = 'solid'; }
+			else { color = '#94a3b8'; width = 1; dash = 'dashed'; } // ARP = logical adjacency
+			return {
+				id: `e${i}`, source: String(e.from_device_id),
+				target: e.to_device_id ? String(e.to_device_id) : `mac:${e.to_mac}`,
+				lineStyle: { color, width, type: e.to_device_id ? dash : 'dashed', opacity: 0.6 },
+				value: e
+			};
+		});
 		return {
 			tooltip: {
 				formatter: (p: any) => {
@@ -510,7 +516,8 @@
 				<span>{(graph?.edges.length ?? 0)} {m['topology.Edges']?.() ?? 'adjacencies'}</span>
 				<span class="flex items-center gap-1.5"><span class="inline-block w-6 h-0.5" style="background:#3b82f6"></span>LLDP</span>
 				<span class="flex items-center gap-1.5"><span class="inline-block w-6 h-0.5" style="background:#10b981"></span>Bridge-MIB</span>
-				<span class="flex items-center gap-1.5"><span class="inline-block w-6 h-0 border-t border-dashed border-text-muted"></span>{m['topology.Unidentified']?.() ?? 'unidentified neighbor'}</span>
+				<span class="flex items-center gap-1.5"><span class="inline-block w-6 h-0 border-t border-dashed" style="border-color:#94a3b8"></span>{m['topology.ARP Edge']?.() ?? 'ARP (gateway)'}</span>
+				<span class="flex items-center gap-1.5"><span class="inline-block w-6 h-0 border-t border-dashed border-text-muted"></span>{m['topology.Unidentified']?.() ?? 'unidentified'}</span>
 			</div>
 			<div class="bg-surface border border-border rounded-lg p-2">
 				<Chart option={topologyOption} height="70vh" onclick={(p) => onChartClick(p as unknown as { dataType: string; data: { value?: TopoNode } })} />
