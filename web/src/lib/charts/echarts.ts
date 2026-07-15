@@ -5,7 +5,8 @@ import {
 	BarChart,
 	PieChart,
 	ScatterChart,
-	GraphChart
+	GraphChart,
+	TreeChart
 } from 'echarts/charts';
 import {
 	TitleComponent,
@@ -23,6 +24,7 @@ echarts.use([
 	PieChart,
 	ScatterChart,
 	GraphChart,
+	TreeChart,
 	TitleComponent,
 	TooltipComponent,
 	GridComponent,
