@@ -396,6 +396,7 @@ CREATE TABLE IF NOT EXISTS device_neighbors (
 CREATE INDEX IF NOT EXISTS idx_device_neighbors_device ON device_neighbors(device_id);
 CREATE INDEX IF NOT EXISTS idx_device_neighbors_neighbor_mac ON device_neighbors(neighbor_mac);
 CREATE INDEX IF NOT EXISTS idx_device_neighbors_network ON device_neighbors(network_id);
+CREATE INDEX IF NOT EXISTS idx_device_neighbors_last_seen ON device_neighbors(last_seen);
 
 -- topology_edges: higher-level device-to-device edges (physical / l2 / l3).
 -- Can be derived from device_neighbors or discovered independently (e.g. route

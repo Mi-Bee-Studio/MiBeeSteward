@@ -19,6 +19,15 @@ WHERE (? = '' OR status = ?)
 ORDER BY id
 LIMIT ? OFFSET ?;
 
+-- name: ListTopologyDevices :many
+-- Lightweight node projection for the topology graph: only the columns the
+-- graph needs (id/name/ip/mac/type/status + inferred type/brand from scan_*).
+-- network_id <= 0 means "all networks".
+SELECT id, name, ip_address, mac_address, type, status, scan_vendor, scan_mac, scan_os, scan_hostname, network_id
+FROM devices
+WHERE (? <= 0 OR network_id = ?)
+ORDER BY id;
+
 -- name: UpdateDevice :one
 -- Note: scan_attributes is engine-owned and intentionally NOT updated here.
 -- user_attributes is updated via UpdateUserAttributes so the full-row update
@@ -97,8 +106,8 @@ LIMIT 1;
 -- name: UpdateDeviceStatus :exec
 -- Updates ONLY the status column (and updated_at). Used by the heartbeat
 -- service so a status transition doesn't clobber other columns (name, tags,
--- location, …) that may have been edited between the GetDevice read and this
--- write — the full-row UpdateDevice path is racy in that window.
+-- location, ...) that may have been edited between the GetDevice read and this
+-- write -- the full-row UpdateDevice path is racy in that window.
 UPDATE devices
 SET status = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;

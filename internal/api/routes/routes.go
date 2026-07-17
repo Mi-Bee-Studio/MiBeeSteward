@@ -187,6 +187,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.With(middleware.RequireAdmin).Delete("/{id}", networkHandler.Delete)
 	})
 
+	// L2 topology — neighbors per device (detail page) + the whole-network
+	// topology graph (nodes + edges). Read-only; any logged-in user.
+	neighborHandler := handler.NewNeighborHandler(scanQueries)
+	topologyHandler := handler.NewTopologyHandler(scanQueries)
+
 	// Resolve this instance's network identity (networks.id) so discovered
 	// devices can be tagged with their origin. Done here (not in migrations)
 	// because the value comes from config `network.name`.
@@ -313,6 +318,29 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			mcastSrc.Start(discCtx)
 			activeSources = append(activeSources, "multicast")
 		}
+		// lldp_frame: passive LLDPDU frame listener (ethertype 0x88cc). Only
+		// available in WITH_LLDP builds (needs CAP_NET_RAW); NewLLDPFrameSource
+		// returns nil in the default build, so this is a no-op there. Wiring the
+		// neighbor-edge sink needs a MAC-keyed device resolver (RecordNeighbors
+		// is IP-keyed); deferred until that lands. The host-event path works.
+		if lldpSrc := scannerv2discovery.NewLLDPFrameSource(
+			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
+		); lldpSrc != nil {
+			lldpSrc.Start(discCtx)
+			activeSources = append(activeSources, "lldp_frame")
+		}
+		// cdp_frame: passive CDP frame listener (ethertype 0x2000). Only
+		// available in WITH_CDP builds (needs CAP_NET_RAW); NewCDPFrameSource
+		// returns nil in the default build, so this is a no-op there. Uses the
+		// same interface list as LLDP. The host-event path works; neighbor-edge
+		// sink deferred until a MAC-keyed device resolver lands.
+		if cdpSrc := scannerv2discovery.NewCDPFrameSource(
+			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
+		); cdpSrc != nil {
+			cdpSrc.Start(discCtx)
+			activeSources = append(activeSources, "cdp_frame")
+		}
+
 		discSvc.SetSources(activeSources)
 		slog.Info("scannerv2 passive discovery ready",
 			"interval", interval.String(),
@@ -467,6 +495,20 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			r.Put("/{systemId}", deviceSystemHandler.Update)
 			r.Delete("/{systemId}", deviceSystemHandler.Delete)
 		})
+	})
+
+	// Device L2 neighbors (Bridge-MIB / LLDP / CDP / ARP) — read-only, any
+	// logged-in user. Feeds the detail-page Neighbors panel.
+	r.Route("/api/v1/devices/{id}/neighbors", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", neighborHandler.ListByDevice)
+	})
+
+	// Network-level topology graph — all devices (nodes) + all neighbor edges.
+	// Read-only, any logged-in user. Feeds the /topology page.
+	r.Route("/api/v1/topology", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", topologyHandler.Graph)
 	})
 
 	// Document routes

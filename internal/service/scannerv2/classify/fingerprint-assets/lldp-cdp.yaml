@@ -1,0 +1,342 @@
+# CDP/LLDP neighbor identity fingerprints.
+#
+# Matches evidence synthesized by the neighbor-identity enrichment pipeline
+# (engine.go SetNeighborIdentityInfer callback) from CDP platform and LLDP
+# sysDesc strings. RawData carries "platform" (CDP device-ID / platform), "sys_desc"
+# (LLDP system description), and optionally "sys_name".
+#
+# The inference callback sets kind="cdp" for ALL evidence (both CDP and LLDP
+# sources are folded into the same kind so rules don't need to duplicate).
+# Rules below match on RawData["platform"] (CDP) or RawData["sys_desc"] (LLDP).
+#
+# Confidence 0.9: CDP/LLDP are explicit protocol-discovered identities from a
+# directly-connected neighbor — far more reliable than banner heuristics.
+
+version: 1
+
+rules:
+  # ── CDP platform-based identification (kind: cdp, field: platform) ───
+  # These fire on CDP Device-ID / Platform strings like:
+  #   "cisco WS-C2960S-24TS-L", "cisco ISR4331/K9", "cisco ASA5525",
+  #   "Aruba 2930F", "Juniper EX3300"
+
+  # Cisco devices — brand is constant; model is the second word; type from
+  # model-prefix keywords (Catalyst → switch, ASA → firewall, ISR → router).
+  - id: cdp-cisco
+    source: builtin
+    match:
+      kind: cdp
+      field: platform
+      op: contains
+      ci: true
+      value: "cisco"
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    extract:
+      metadata:
+        inferred_brand: { const: "Cisco" }
+        inferred_model:
+          passthrough: platform
+        device_type:
+          keyword_map:
+            field: platform
+            ci: true
+            entries:
+              # Switch keywords (model prefixes + explicit labels)
+              - { contains: "WS-C", set: "switch" }
+              - { contains: "C29", set: "switch" }
+              - { contains: "C92", set: "switch" }
+              - { contains: "C93", set: "switch" }
+              - { contains: "C95", set: "switch" }
+              - { contains: "C96", set: "switch" }
+              - { contains: "C85", set: "switch" }
+              - { contains: "Catalyst", set: "switch" }
+              - { contains: "Nexus", set: "switch" }
+              - { contains: "Switch", set: "switch" }
+              # ASA security appliance
+              - { contains: "ASA", set: "firewall" }
+              # Router keywords
+              - { contains: "ISR", set: "router" }
+              - { contains: "Router", set: "router" }
+              - { contains: "C8", set: "router" }
+              # Wireless AP
+              - { contains: "AP", set: "ap" }
+              - { contains: "Aironet", set: "ap" }
+
+  # HP / Aruba / ProCurve via CDP platform
+  - id: cdp-hp-aruba
+    source: builtin
+    match:
+      kind: cdp
+      field: platform
+      op: contains_any
+      ci: true
+      value: ["procurve", "aruba", "hp"]
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 20
+    exclusive_group: cdp-platform
+    extract:
+      metadata:
+        inferred_brand:
+          keyword_map:
+            field: platform
+            ci: true
+            entries:
+              - { contains: "Aruba", set: "Aruba" }
+              - { contains: "ProCurve", set: "HP" }
+              - { contains: "HP", set: "HP" }
+        inferred_model:
+          split: { delim: " ", index: 1 }
+        device_type: { const: "switch" }
+
+  # Ubiquiti via CDP platform (UBNT product strings)
+  - id: cdp-ubiquiti
+    source: builtin
+    match:
+      kind: cdp
+      field: platform
+      op: contains_any
+      ci: true
+      value: ["ubiquiti", "ubnt"]
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 15
+    exclusive_group: cdp-platform
+    extract:
+      metadata:
+        inferred_brand: { const: "Ubiquiti" }
+        inferred_model:
+          split: { delim: " ", index: 1 }
+        device_type:
+          keyword_map:
+            field: platform
+            ci: true
+            entries:
+              - { contains: "AP", set: "ap" }
+              - { contains: "Switch", set: "switch" }
+              - { contains: "Router", set: "router" }
+
+  # MikroTik via CDP platform
+  - id: cdp-mikrotik
+    source: builtin
+    match:
+      kind: cdp
+      field: platform
+      op: contains_any
+      ci: true
+      value: ["mikrotik", "routerboard"]
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 10
+    exclusive_group: cdp-platform
+    extract:
+      metadata:
+        inferred_brand: { const: "MikroTik" }
+        inferred_model:
+          split: { delim: " ", index: 1 }
+        device_type: { const: "router" }
+
+  # Juniper via CDP platform
+  - id: cdp-juniper
+    source: builtin
+    match:
+      kind: cdp
+      field: platform
+      op: contains
+      ci: true
+      value: "juniper"
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 5
+    exclusive_group: cdp-platform
+    extract:
+      metadata:
+        inferred_brand: { const: "Juniper" }
+        inferred_model:
+          split: { delim: " ", index: 1 }
+        device_type:
+          keyword_map:
+            field: platform
+            ci: true
+            entries:
+              - { contains: "EX", set: "switch" }
+              - { contains: "Switch", set: "switch" }
+              - { contains: "Router", set: "router" }
+              - { contains: "SRX", set: "firewall" }
+
+  # ── LLDP sysDesc-based identification (kind: cdp, field: sys_desc) ──
+  # These fire on LLDP system-description strings like:
+  #   "Cisco IOS Software, C2960 Software (C2960-LXRE)"
+  #   "Hikvision DS-2CD2142WD-I3 6.0.0 build 210115"
+  #   "MikroTik RouterOS 7.x"
+
+  # Cisco via sysDesc (catches LLDP-only scenarios where no CDP platform)
+  - id: lldp-cisco
+    source: builtin
+    match:
+      kind: cdp
+      field: sys_desc
+      op: contains_any
+      ci: true
+      value: ["cisco ios", "cisco nx-os", "ios-xe", "ios software"]
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 25
+    exclusive_group: lldp-sysdesc
+    extract:
+      metadata:
+        inferred_brand: { const: "Cisco" }
+        device_type:
+          keyword_map:
+            field: sys_desc
+            ci: true
+            entries:
+              - { contains: "NX-OS", set: "switch" }
+              - { contains: "IOS-XE", set: "switch" }
+              - { contains: "IOS", set: "switch" }
+              - { contains: "C29", set: "switch" }
+              - { contains: "Switch", set: "switch" }
+              - { contains: "Router", set: "router" }
+              - { contains: "ASA", set: "firewall" }
+              - { contains: "ISR", set: "router" }
+
+  # Hikvision via sysDesc (LLDP camera identification)
+  - id: lldp-hikvision
+    source: builtin
+    match:
+      kind: cdp
+      field: sys_desc
+      op: contains
+      ci: true
+      value: "hikvision"
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 20
+    exclusive_group: lldp-sysdesc
+    extract:
+      metadata:
+        inferred_brand: { const: "Hikvision" }
+        device_type: { const: "camera" }
+
+  # Ubiquiti via sysDesc (LLDP-only, e.g. UniFi APs)
+  - id: lldp-ubiquiti
+    source: builtin
+    match:
+      kind: cdp
+      field: sys_desc
+      op: contains
+      ci: true
+      value: "ubiquiti"
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 15
+    exclusive_group: lldp-sysdesc
+    extract:
+      metadata:
+        inferred_brand: { const: "Ubiquiti" }
+        device_type: { const: "ap" }
+
+  # Aruba via sysDesc
+  - id: lldp-aruba
+    source: builtin
+    match:
+      kind: cdp
+      field: sys_desc
+      op: contains
+      ci: true
+      value: "aruba"
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 10
+    exclusive_group: lldp-sysdesc
+    extract:
+      metadata:
+        inferred_brand: { const: "Aruba" }
+        device_type: { const: "switch" }
+
+  # MikroTik via sysDesc
+  - id: lldp-mikrotik
+    source: builtin
+    match:
+      kind: cdp
+      field: sys_desc
+      op: contains
+      ci: true
+      value: "mikrotik"
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 5
+    exclusive_group: lldp-sysdesc
+    extract:
+      metadata:
+        inferred_brand: { const: "MikroTik" }
+        device_type: { const: "router" }
+
+  # Juniper via sysDesc
+  - id: lldp-juniper
+    source: builtin
+    match:
+      kind: cdp
+      field: sys_desc
+      op: contains
+      ci: true
+      value: "juniper"
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 3
+    exclusive_group: lldp-sysdesc
+    extract:
+      metadata:
+        inferred_brand: { const: "Juniper" }
+        device_type: { const: "switch" }
+
+  # ── Model extraction via regex ──────────────────────────────────────
+  # Broad regex for Cisco Catalyst / small-business switch model numbers
+  # (WS-Cxxx, SGxxx). Fires on platform field when it contains a switch
+  # model pattern, extracting the full platform as the model label.
+  - id: cdp-platform-model-switch
+    source: builtin
+    match:
+      kind: cdp
+      field: platform
+      op: regex
+      ci: true
+      value: "(?i)WS-C[A-Z0-9\\-]+"
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 1
+    extract:
+      metadata:
+        inferred_model:
+          passthrough: platform
+
+  # Broad regex for router model numbers (ISR, C800 series)
+  - id: cdp-platform-model-router
+    source: builtin
+    match:
+      kind: cdp
+      field: platform
+      op: regex
+      ci: true
+      value: "(?i)(ISR|C[0-9]{4})[A-Z0-9\\-/K]*"
+    service: neighbor-identity
+    protocol: ""
+    confidence: 0.9
+    priority: 1
+    extract:
+      metadata:
+        inferred_model:
+          passthrough: platform

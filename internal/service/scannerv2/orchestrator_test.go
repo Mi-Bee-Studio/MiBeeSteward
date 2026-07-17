@@ -112,6 +112,10 @@ func (r *recordRepo) RecordNeighbors(_ context.Context, _ string, _ []NeighborSp
 	return nil
 }
 
+func (r *recordRepo) EnrichDeviceByMAC(_ context.Context, _ string, _ map[string]string) error {
+	return nil
+}
+
 func TestOrchestrator_GatherClassifyDispatch(t *testing.T) {
 	// Two probes, one classifier per evidence kind, two handlers with a
 	// cascade from http → prometheus.
