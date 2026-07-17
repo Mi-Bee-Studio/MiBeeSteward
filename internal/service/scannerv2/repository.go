@@ -32,17 +32,24 @@ type Repository interface {
 	// Implementations upsert on (device_id, neighbor_mac, protocol), refreshing
 	// last_seen without losing first_seen.
 	RecordNeighbors(ctx context.Context, ip string, neighbors []NeighborSpec) error
+
+	// EnrichDeviceByMAC updates vendor/model/type/hostname fields for a device
+	// identified by MAC address. Only updates existing devices — no insert
+	// (enrich-existing-only). Unknown keys go to scan_attributes JSON.
+	// Returns nil if no device matches the MAC (not an error).
+	EnrichDeviceByMAC(ctx context.Context, mac string, fields map[string]string) error
 }
 
 // NoopRepository is a Repository that does nothing. It is the default when no
 // persistence is wired (e.g. unit tests, ad-hoc CLI scans).
 type NoopRepository struct{}
 
-func (NoopRepository) RecordEvidence(context.Context, []Evidence) error                { return nil }
-func (NoopRepository) RecordServices(context.Context, string, []ServiceIdentity) error { return nil }
-func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error           { return nil }
-func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error { return nil }
-func (NoopRepository) RecordNeighbors(context.Context, string, []NeighborSpec) error   { return nil }
+func (NoopRepository) RecordEvidence(context.Context, []Evidence) error                   { return nil }
+func (NoopRepository) RecordServices(context.Context, string, []ServiceIdentity) error    { return nil }
+func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error              { return nil }
+func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error    { return nil }
+func (NoopRepository) RecordNeighbors(context.Context, string, []NeighborSpec) error      { return nil }
+func (NoopRepository) EnrichDeviceByMAC(context.Context, string, map[string]string) error { return nil }
 
 // Compile-time check that NoopRepository satisfies Repository.
 var _ Repository = NoopRepository{}

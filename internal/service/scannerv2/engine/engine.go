@@ -226,6 +226,50 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	})
 	orch.SetMACResolver(probe.ResolveMACPostScan)
 
+	// Wire neighbor identity inference: when LLDP/CDP probes capture neighbor identity
+	// (sys_name, sys_desc, platform), synthesize a classifiable Evidence, run it
+	// through the RuleClassifier, and enrich the neighbor device by MAC.
+	orch.SetNeighborIdentityInfer(func(_, _, sysName, sysDesc, platform string) map[string]string {
+		if rc == nil || !rc.Loaded() {
+			return nil
+		}
+		// Build synthetic evidence for classification.
+		ev := scannerv2.Evidence{
+			Kind:       "cdp",
+			RawData:    make(map[string]string),
+			Confidence: 0.9,
+		}
+		if platform != "" {
+			ev.RawData["platform"] = platform
+		}
+		if sysDesc != "" {
+			ev.RawData["sys_desc"] = sysDesc
+		}
+		if sysName != "" {
+			ev.RawData["sys_name"] = sysName
+		}
+		// Run the rule classifier on this synthetic evidence.
+		identities := rc.Classify([]scannerv2.Evidence{ev})
+		if len(identities) == 0 {
+			return nil
+		}
+		// Map the first identity's metadata to enrichment fields.
+		fields := make(map[string]string)
+		id := identities[0]
+		if md := id.Metadata; md != nil {
+			if v, ok := md["inferred_brand"]; ok && v != "" {
+				fields["vendor"] = v
+			}
+			if v, ok := md["inferred_model"]; ok && v != "" {
+				fields["model"] = v
+			}
+			if v, ok := md["device_type"]; ok && v != "" {
+				fields["type"] = v
+			}
+		}
+		return fields
+	})
+
 	logger.Info("scannerv2 engine ready", "registry", reg.String())
 	e := &Engine{Orchestrator: orch, Registry: reg, Repository: repo}
 	// Per-probe timeout: bound each probe attempt so a dead host fails in

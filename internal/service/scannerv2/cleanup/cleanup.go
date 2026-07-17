@@ -101,6 +101,8 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneNotificationLogs(ctx)
 	s.pruneServiceEvidence(ctx)
 	s.pruneChangeLog(ctx)
+	s.pruneDeviceNeighbors(ctx)
+	s.pruneHostServices(ctx)
 }
 
 // cutoff returns now - retentionDays, or a zero time if days<=0 (which would
@@ -219,6 +221,36 @@ func (s *Service) pruneChangeLog(ctx context.Context) {
 		return s.queries.DeleteChangeLogOlderThanBatched(ctx, db.DeleteChangeLogOlderThanBatchedParams{
 			DetectedAt: cut,
 			Limit:      limit,
+		})
+	})
+}
+
+// pruneDeviceNeighbors prunes L2-adjacency edges (Bridge-MIB / LLDP) older than
+// the retention window. device_neighbors is low-volume (one row per real
+// adjacency, refreshed by upsert) but edges for gone-silent adjacencies linger;
+// the longer default (90d) reflects its topology-history value.
+func (s *Service) pruneDeviceNeighbors(ctx context.Context) {
+	days := s.cfg.DeviceNeighborsDays
+	s.sweepBatched(ctx, "device_neighbors", days, func(cut time.Time, limit int64) (int64, error) {
+		// last_seen is nullable; pass &cut (a *time.Time) so the bound is the
+		// cutoff and NULL last_seen rows are left alone (SQL NULL < x is unknown).
+		return s.queries.DeleteDeviceNeighborsOlderThanBatched(ctx, db.DeleteDeviceNeighborsOlderThanBatchedParams{
+			LastSeen: &cut,
+			Limit:    limit,
+		})
+	})
+}
+
+// pruneHostServices prunes classified service identities for hosts that haven't
+// been seen within the retention window. host_services is upserted (not
+// appended), so it doesn't grow per-scan — but rows for gone-silent hosts are
+// never refreshed and linger; this reclaims them.
+func (s *Service) pruneHostServices(ctx context.Context) {
+	days := s.cfg.HostServicesDays
+	s.sweepBatched(ctx, "host_services", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteHostServicesStaleBatched(ctx, db.DeleteHostServicesStaleBatchedParams{
+			UpdatedAt: cut,
+			Limit:     limit,
 		})
 	})
 }

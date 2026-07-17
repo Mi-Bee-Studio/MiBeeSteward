@@ -1,0 +1,22 @@
+# Port-shape-only fallback fingerprints (MiscClassifier).
+#
+# These assert a service from an open port ALONE when no banner/structured
+# evidence identified it. They are intentionally LOW confidence (0.5) — port
+# number is a weak signal. Mirrors MiscClassifier exactly:
+#   - fires when ANY evidence with Kind="port_open" exists for the port
+#   - confidence is a LITERAL 0.5 (not fused — no evidence confidence to fuse)
+#   - attaches ALL evidence for that port (idx.byPort[port])
+#
+# Note: the original MiscClassifier uses a Go map (non-deterministic iteration
+# order), but since each rule is independent and emits a distinct service, order
+# does not affect the result set — only the slice enumeration order.
+
+version: 1
+
+rules:
+  - { id: port-ldap,   source: builtin, match: { op: port, value: 389 },  service: ldap,    protocol: tcp, confidence: 0.5, literal_confidence: true }
+  - { id: port-ldaps,  source: builtin, match: { op: port, value: 636 },  service: ldaps,   protocol: tcp, confidence: 0.5, literal_confidence: true }
+  - { id: port-smb,    source: builtin, match: { op: port, value: 445 },  service: smb,     protocol: tcp, confidence: 0.5, literal_confidence: true }
+  - { id: port-telnet, source: builtin, match: { op: port, value: 23 },   service: telnet,  protocol: tcp, confidence: 0.5, literal_confidence: true }
+  - { id: port-ftp,    source: builtin, match: { op: port, value: 21 },   service: ftp,     protocol: tcp, confidence: 0.5, literal_confidence: true }
+  - { id: port-dns,    source: builtin, match: { op: port, value: 53 },   service: dns-tcp, protocol: tcp, confidence: 0.5, literal_confidence: true }

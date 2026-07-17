@@ -80,6 +80,12 @@ type Orchestrator struct {
 	// post-scan MAC re-read. Injected by the engine layer to avoid a
 	// scannerv2 → probe → scannerv2 import cycle.
 	macResolver func(ip string) (mac, device, vendor string)
+	// neighborIdentityInfer is called during the neighbor enrichment pass to infer
+	// device identity (vendor/model/type) from neighbor evidence carrying identity
+	// keys (sys_name, sys_desc, platform, version). Returns a map of fields to
+	// enrich on the neighbor device, or nil if no inference can be made. nil
+	// (default) disables enrichment.
+	neighborIdentityInfer func(localMAC, neighborMAC, sysName, sysDesc, platform string) map[string]string
 }
 
 // SetMACResolver injects a post-scan MAC resolver (see ResolveMACPostScan in
@@ -87,6 +93,13 @@ type Orchestrator struct {
 // construction time.
 func (o *Orchestrator) SetMACResolver(f func(ip string) (mac, device, vendor string)) {
 	o.macResolver = f
+}
+
+// SetNeighborIdentityInfer injects a neighbor identity inference callback used
+// during the enrichment pass after RecordNeighbors. nil (default) disables
+// enrichment. Safe to call once at engine construction time.
+func (o *Orchestrator) SetNeighborIdentityInfer(f func(localMAC, neighborMAC, sysName, sysDesc, platform string) map[string]string) {
+	o.neighborIdentityInfer = f
 }
 
 // NewOrchestrator constructs an orchestrator. repo may be nil to disable
@@ -644,6 +657,32 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		if neighbors := extractNeighbors(report.Evidence); len(neighbors) > 0 {
 			if err := o.repo.RecordNeighbors(ctx, report.IP, neighbors); err != nil {
 				o.logger.Debug("record neighbors failed", "ip", report.IP, "error", err)
+			}
+		}
+		// Neighbor-identity enrichment: for each "neighbor"-kind evidence carrying
+		// identity keys (sys_name, sys_desc, platform), infer fields and enrich the
+		// neighbor device by MAC. Only runs when a callback is configured.
+		if o.neighborIdentityInfer != nil {
+			for _, e := range report.Evidence {
+				if e.Kind != "neighbor" || e.RawData == nil {
+					continue
+				}
+				neighborMAC := e.RawData["neighbor_mac"]
+				if neighborMAC == "" {
+					continue
+				}
+				sysName := e.RawData["sys_name"]
+				sysDesc := e.RawData["sys_desc"]
+				platform := e.RawData["platform"]
+				if sysName == "" && sysDesc == "" && platform == "" {
+					continue // no identity to enrich
+				}
+				fields := o.neighborIdentityInfer("", neighborMAC, sysName, sysDesc, platform)
+				if len(fields) > 0 {
+					if err := o.repo.EnrichDeviceByMAC(ctx, neighborMAC, fields); err != nil {
+						o.logger.Debug("enrich device by MAC failed", "neighbor_mac", neighborMAC, "error", err)
+					}
+				}
 			}
 		}
 	}

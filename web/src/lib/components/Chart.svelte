@@ -5,17 +5,25 @@
 	let {
 		option = $bindable(),
 		width = '100%',
-		height = '300px'
+		height = '300px',
+		onclick,
+		ondblclick
 	}: {
 		option: EChartsOption;
 		width?: string;
 		height?: string;
+		// onclick fires for ECharts series clicks (node/edge). The payload is the
+		// raw ECharts event object; inspect dataType ('node'|'edge') + data.value.
+		onclick?: (params: Record<string, unknown>) => void;
+		// ondblclick fires for ECharts series double-clicks (node/edge).
+		ondblclick?: (params: Record<string, unknown>) => void;
 	} = $props();
 
 	let container: HTMLDivElement | undefined = $state();
 	let instance: ReturnType<typeof echarts.init> | undefined = $state();
-let chartError = $state(false);
-function initChart() {
+	let chartError = $state(false);
+
+	function initChart() {
 		if (!container) return;
 		if (instance) {
 			instance.dispose();
@@ -55,6 +63,32 @@ function initChart() {
 		if (instance && option && !chartError) {
 			instance.setOption(option);
 		}
+	});
+
+	// Bind the click handler whenever it or the instance changes. ECharts
+	// 'click' events carry the series payload (node/edge data) — distinct from
+	// DOM clicks, which is why we forward via the instance API.
+	$effect(() => {
+		if (!instance) return;
+		const handler = onclick;
+		if (!handler) return;
+		const fn = (params: Record<string, unknown>) => handler(params);
+		instance.on('click', fn);
+		return () => {
+			instance.off('click', fn);
+		};
+	});
+
+	// Bind the double-click handler whenever it or the instance changes.
+	$effect(() => {
+		if (!instance) return;
+		const handler = ondblclick;
+		if (!handler) return;
+		const fn = (params: Record<string, unknown>) => handler(params);
+		instance.on('dblclick', fn);
+		return () => {
+			instance.off('dblclick', fn);
+		};
 	});
 </script>
 

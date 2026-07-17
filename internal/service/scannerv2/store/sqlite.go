@@ -641,6 +641,83 @@ func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip string, neigh
 	return tx.Commit()
 }
 
+// EnrichDeviceByMAC updates vendor/model/type/hostname fields for a device
+// identified by MAC address. Only non-empty fields are applied; existing values
+// are preserved for empty-string keys. Unknown keys are merged into
+// scan_attributes.extras. Returns nil when no device matches the MAC.
+func (r *SQLiteRepository) EnrichDeviceByMAC(ctx context.Context, mac string, fields map[string]string) error {
+	mac = NormalizeMAC(mac)
+	if mac == "" || len(fields) == 0 {
+		return nil
+	}
+
+	// Look up device by MAC; return nil if not found (enrich-existing-only).
+	var deviceID int64
+	var scanAttrsRaw string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, COALESCE(scan_attributes, '{}') FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&deviceID, &scanAttrsRaw)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	// Parse known and unknown fields.
+	vendor := fields["vendor"]
+	model := fields["model"]
+	devType := fields["type"]
+	name := fields["hostname"]
+	if name == "" {
+		name = fields["sys_name"]
+	}
+
+	// Remaining unknown keys go into scan_attributes.extras.
+	unknown := make(map[string]string)
+	known := map[string]bool{"vendor": true, "model": true, "type": true, "hostname": true, "sys_name": true}
+	for k, v := range fields {
+		if !known[k] && v != "" {
+			unknown[k] = v
+		}
+	}
+
+	// Merge unknown keys into existing scan_attributes.extras.
+	var scanAttrsJSON string
+	if len(unknown) > 0 {
+		attrs, err := domain.UnmarshalScanAttributes(scanAttrsRaw)
+		if err != nil {
+			attrs = domain.ScanAttributes{}
+		}
+		if attrs.Extras == nil {
+			attrs.Extras = make(map[string]string)
+		}
+		for k, v := range unknown {
+			attrs.Extras[k] = v
+		}
+		out, err := domain.MarshalScanAttributes(attrs)
+		if err != nil {
+			return err
+		}
+		scanAttrsJSON = out
+	} else {
+		scanAttrsJSON = scanAttrsRaw // unchanged
+	}
+
+	now := time.Now().UTC()
+	_, err = r.db.ExecContext(ctx, `
+		UPDATE devices SET
+		    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
+		    model = CASE WHEN ? != '' THEN ? ELSE model END,
+		    type = CASE WHEN ? != '' THEN ? ELSE type END,
+		    name = CASE WHEN ? != '' THEN ? ELSE name END,
+		    scan_attributes = ?,
+		    updated_at = ?
+		WHERE id = ?`,
+		vendor, vendor, model, model, devType, devType, name, name,
+		scanAttrsJSON, now, deviceID)
+	return err
+}
+
 // resolveDeviceID finds the devices.id for an IP using the MAC-primary →
 // (ip, network_id) identity rule. Returns 0 if the device doesn't exist yet.
 func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int64, error) {

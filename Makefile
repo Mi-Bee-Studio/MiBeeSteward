@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf clean test dev migrate-up sync-fingerprints fpimport
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp clean test dev migrate-up sync-fingerprints fpimport
 
 all: build
 
@@ -38,6 +38,11 @@ build-linux-arm64:
 build-with-ebpf: build-frontend
 	cd bpf && $(MAKE) tc_ingress.o
 	CGO_ENABLED=0 go build -tags WITH_EBPF -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
+
+# Build with the raw-frame LLDPDU listener enabled (needs CAP_NET_RAW at runtime;
+# default build ships a no-op stub so it stays unprivileged).
+build-with-lldp: build-frontend
+	CGO_ENABLED=0 go build -tags WITH_LLDP -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
 
 clean:
 	rm -rf $(BUILD_DIR) web/dist web/.svelte-kit

@@ -206,6 +206,13 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	//     context so a server shutdown mid-finalize doesn't skip it.
 	rn.DetectLost(context.Background(), rn.networkID, taskID, reports, "")
 
+	// 3d. ARP-derived topology edges: walk the local kernel's ARP cache once
+	//     and write device→gateway edges (protocol="ARP") to device_neighbors.
+	//     This is the ONLY topology source when no device speaks SNMP — it
+	//     makes the L2 graph useful on home/SOHO networks. Runs on a fresh
+	//     context so a shutdown mid-finalize doesn't skip it.
+	rn.injectARPTopology(context.Background(), rn.networkID, reports)
+
 	// 4. Finalize the run.
 	finish := time.Now()
 	if err := rn.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
