@@ -79,7 +79,7 @@ func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Prob
 	if err := snmp.Connect(); err != nil {
 		return nil, nil // unreachable — not an error, just no topology data
 	}
-	defer snmp.Conn.Close()
+	// Note: we keep the connection open for the port-name resolution walk below
 
 	// Walk the FDB: collect {MAC-octet-index → port-number}.
 	// The OID index for dot1dTpFdbTable is the MAC itself (6 octet subidentifiers),
@@ -103,8 +103,13 @@ func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Prob
 		return nil
 	})
 	if walkErr != nil || len(macIndices) == 0 {
+		snmp.Conn.Close()
 		return nil, nil // not a bridge, or no FDB — no topology data
 	}
+
+	// Resolve port names via IF-MIB (bridge port → ifIndex → ifName).
+	// This is best-effort: if it fails, we fall back to numeric port numbers.
+	portNames := ResolvePortNames(snmp, p.logger)
 
 	// Build the evidence: one "neighbor" per MAC, carrying the MAC + local port.
 	var evidence []scannerv2.Evidence
@@ -114,6 +119,11 @@ func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Prob
 			continue
 		}
 		port := portByMacIdx[macIdx]
+		// Use human-readable port name if available, else fall back to numeric.
+		localPort := strconv.Itoa(port)
+		if name, ok := portNames[port]; ok && name != "" {
+			localPort = name
+		}
 		evidence = append(evidence, scannerv2.Evidence{
 			Source:     "active:bridge_mib",
 			Kind:       "neighbor",
@@ -123,10 +133,11 @@ func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Prob
 			RawData: map[string]string{
 				"neighbor_mac": mac,
 				"protocol":     "Bridge-MIB",
-				"local_port":   strconv.Itoa(port),
+				"local_port":   localPort,
 			},
 		})
 	}
+	snmp.Conn.Close()
 	return evidence, nil
 }
 

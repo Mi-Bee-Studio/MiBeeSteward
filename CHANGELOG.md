@@ -5,6 +5,44 @@ All notable changes to MiBee Steward are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Topology probe breadth** — extends v0.3.0's LLDP coverage with the remaining
+L2-discovery MIBs so switch-centric networks are fully mapped regardless of
+vendor or VLAN configuration.
+
+### Added
+- **CDP-MIB probe** (`active:cdp_mib`): walks CISCO-CDP-MIB `cdpCacheTable` on
+  Cisco/CDP-speaking switches to discover Cisco Discovery Protocol neighbors
+  (device id, platform, software version, remote port). Cisco-proprietary
+  counterpart to LLDP-MIB; uses the device id as the neighbor merge key (CDP-MIB
+  does not expose the neighbor MAC). Emits `protocol:"CDP"` neighbor edges.
+- **Q-BRIDGE-MIB probe** (`active:q_bridge_mib`): walks IEEE 802.1Q
+  `dot1qTpFdbPort` for VLAN-aware MAC→port forwarding entries — the successor to
+  BRIDGE-MIB's single-VLAN `dot1dTpFdbPort`. Recovers L2 adjacency on
+  tagged/inter-VLAN topologies that BRIDGE-MIB misses. Emits
+  `protocol:"Q-BRIDGE"` edges with ifName-resolved port names.
+- **STP-MIB probe** (`active:stp_mib`): walks BRIDGE-MIB `dot1dStp` to recover
+  Spanning Tree facts (root bridge, designated port, port role/state). Topology
+  metadata that explains blocked links and orients the root. Emits
+  `protocol:"STP"` evidence.
+- **IF-MIB ifName resolution** (`probe.ResolvePortNames`): shared helper that
+  walks `ifName` (1.3.6.1.2.1.31.1.1.1.1) to turn numeric ifIndex/port values
+  from the topology probes into human-readable interface names (e.g.
+  `GigabitEthernet0/1`). Used by CDP/Q-BRIDGE probes for neighbor `local_port`.
+
+### Changed
+- **Neighbor identity inference**: the orchestrator now runs a pluggable
+  `NeighborIdentityInfer` callback (set by the engine) that takes neighbor
+  evidence (sysName/sysDesc/platform) and returns enrichment fields. The engine
+  wires this to the RuleClassifier so CDP/LLDP neighbors get vendor/model/type
+  inferred from their platform string — the same fingerprint library used for
+  discovered hosts, now applied to topology neighbors.
+- **`EnrichDeviceByMAC`** on the SQLite repository: enriches a device's
+  vendor/model/type/hostname/extras fields by MAC (the neighbor merge key),
+  preserving existing non-empty values. This is how inferred neighbor identity
+  lands on the device portrait.
+
 ## [0.3.0] - 2026-07-14
 
 **Topology Visible** — surfaces the L2-adjacency data v0.2.0 collected but

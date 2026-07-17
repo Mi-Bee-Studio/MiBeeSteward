@@ -25,10 +25,12 @@ import (
 //	lldpRemSysName          ...1.4.1.1.9   (remote system name)
 const (
 	oidLldpRemTable      = "1.0.8802.1.1.2.1.4.1"
-	oidLldpRemChassisID  = "1.0.8802.1.1.2.1.4.1.1.5" // chassis id payload (octet string)
-	oidLldpRemChassisSub = "1.0.8802.1.1.2.1.4.1.1.4" // chassis id subtype (int)
-	oidLldpRemPortID     = "1.0.8802.1.1.2.1.4.1.1.7" // remote port id (octet string)
-	oidLldpRemPortDesc   = "1.0.8802.1.1.2.1.4.1.1.8" // remote port description (string)
+	oidLldpRemChassisID  = "1.0.8802.1.1.2.1.4.1.1.5"  // chassis id payload (octet string)
+	oidLldpRemChassisSub = "1.0.8802.1.1.2.1.4.1.1.4"  // chassis id subtype (int)
+	oidLldpRemPortID     = "1.0.8802.1.1.2.1.4.1.1.7"  // remote port id (octet string)
+	oidLldpRemPortDesc   = "1.0.8802.1.1.2.1.4.1.1.8"  // remote port description (string)
+	oidLldpRemSysName    = "1.0.8802.1.1.2.1.4.1.1.9"  // remote system name (string)
+	oidLldpRemSysDesc    = "1.0.8802.1.1.2.1.4.1.1.10" // remote system description (string)
 )
 
 // LLDPMIBProbe walks the LLDP-MIB lldpRemTable on switches/APs that speak SNMP
@@ -87,7 +89,7 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 	}
 	defer snmp.Conn.Close()
 
-	// Walk three columns of lldpRemTable, keyed by the index suffix. The index
+	// Walk five columns of lldpRemTable, keyed by the index suffix. The index
 	// is "<timeMark>.<localPort>.<remIndex>" — localPort (2nd sub-identifier) is
 	// the surveyed device's port facing the neighbor. lldpRemChassisId is the
 	// densest column (one row per remote system); its presence drives the loop.
@@ -118,6 +120,24 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 		}
 		return nil
 	})
+	sysNameByIndex := map[string]string{}
+	_ = snmp.Walk(oidLldpRemSysName, func(pdu gosnmp.SnmpPDU) error {
+		if s := indexSuffix(pdu.Name, oidLldpRemSysName); s != "" {
+			if v, ok := pdu.Value.(string); ok {
+				sysNameByIndex[s] = v
+			}
+		}
+		return nil
+	})
+	sysDescByIndex := map[string]string{}
+	_ = snmp.Walk(oidLldpRemSysDesc, func(pdu gosnmp.SnmpPDU) error {
+		if s := indexSuffix(pdu.Name, oidLldpRemSysDesc); s != "" {
+			if v, ok := pdu.Value.(string); ok {
+				sysDescByIndex[s] = v
+			}
+		}
+		return nil
+	})
 	if len(payloadByIndex) == 0 {
 		return nil, nil // no LLDP neighbors
 	}
@@ -143,6 +163,8 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 				"protocol":     "LLDP",
 				"local_port":   lldpLocalPortFromIndex(suffix),
 				"remote_port":  portIDByIndex[suffix],
+				"sys_name":     sysNameByIndex[suffix],
+				"sys_desc":     sysDescByIndex[suffix],
 			},
 		})
 	}

@@ -329,6 +329,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			lldpSrc.Start(discCtx)
 			activeSources = append(activeSources, "lldp_frame")
 		}
+		// cdp_frame: passive CDP frame listener (ethertype 0x2000). Only
+		// available in WITH_CDP builds (needs CAP_NET_RAW); NewCDPFrameSource
+		// returns nil in the default build, so this is a no-op there. Uses the
+		// same interface list as LLDP. The host-event path works; neighbor-edge
+		// sink deferred until a MAC-keyed device resolver lands.
+		if cdpSrc := scannerv2discovery.NewCDPFrameSource(
+			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
+		); cdpSrc != nil {
+			cdpSrc.Start(discCtx)
+			activeSources = append(activeSources, "cdp_frame")
+		}
+
 		discSvc.SetSources(activeSources)
 		slog.Info("scannerv2 passive discovery ready",
 			"interval", interval.String(),

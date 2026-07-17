@@ -31,7 +31,7 @@ func loadBuiltinRules(t *testing.T) *fp.RuleClassifier {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"banner.yaml", "http-tls.yaml", "ports.yaml"} {
+	for _, name := range []string{"banner.yaml", "http-tls.yaml", "ports.yaml", "lldp-cdp.yaml"} {
 		b, err := os.ReadFile(filepath.Join(srcDir, name))
 		if err != nil {
 			t.Fatal(err)
@@ -54,8 +54,9 @@ func TestRuleClassifier_LoadsAllRules(t *testing.T) {
 	rc := loadBuiltinRules(t)
 	// builtin-only (recog-imported.yaml excluded — tested via loadFullRules).
 	// banner.yaml=8 + http-tls.yaml=6 + ports.yaml=6 = 20
-	if rc.RuleCount() != 20 {
-		t.Errorf("expected 20 builtin rules, got %d", rc.RuleCount())
+	// banner.yaml=8 + http-tls.yaml=6 + ports.yaml=6 + lldp-cdp.yaml=13 = 33
+	if rc.RuleCount() != 33 {
+		t.Errorf("expected 33 builtin rules, got %d", rc.RuleCount())
 	}
 }
 
@@ -338,4 +339,182 @@ func TestRuleClassifier_MissingDir(t *testing.T) {
 	if got := rc.Classify([]scannerv2.Evidence{{Kind: "banner", Port: 22}}); len(got) != 0 {
 		t.Errorf("unloaded classifier should emit nothing, got %+v", got)
 	}
+}
+
+// ── LLDP-CDP identity inference parity ────────────────────────────────
+//
+// These tests verify that CDP platform and LLDP sysDesc strings produce the
+// expected neighbor-identity metadata via the RuleClassifier. They exercise
+// the same pipeline the engine.SetNeighborIdentityInfer callback uses.
+
+// hasMetadataInAny is true when at least one identity carries ALL the
+// key→value pairs in wantMD.
+func hasMetadataInAny(out []scannerv2.ServiceIdentity, wantMD map[string]string) bool {
+	for _, id := range out {
+		if id.Metadata == nil {
+			continue
+		}
+		allMatch := true
+		for k, v := range wantMD {
+			if id.Metadata[k] != v {
+				allMatch = false
+				break
+			}
+		}
+		if allMatch {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRuleClassifier_LLDPCDP_CiscoSwitchPlatform(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// CDP platform: "cisco WS-C2960S-24TS-L"
+	// Expect: brand=Cisco, model=WS-C2960S-24TS-L, type=switch
+	ev := []scannerv2.Evidence{
+		{Kind: "cdp", Confidence: 0.9, RawData: map[string]string{"platform": "cisco WS-C2960S-24TS-L"}},
+	}
+	got := rc.Classify(ev)
+	if !hasMetadataInAny(got, map[string]string{"inferred_brand": "Cisco", "device_type": "switch"}) {
+		t.Errorf("Cisco switch not identified; got %+v", identitiesMetadata(got))
+	}
+	// Model passthrough carries the full platform string on matching rules.
+	// Verify that at least one identity set a model.
+	foundModel := false
+	for _, id := range got {
+		if id.Metadata["inferred_model"] != "" {
+			foundModel = true
+			break
+		}
+	}
+	if !foundModel {
+		t.Errorf("Cisco switch model not set; got %+v", identitiesMetadata(got))
+	}
+}
+
+func TestRuleClassifier_LLDPCDP_CiscoIOSSwitch(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// LLDP sysDesc: "Cisco IOS Software, C2960 Software (C2960-LXRE)"
+	// Expect: brand=Cisco, type=switch
+	ev := []scannerv2.Evidence{
+		{Kind: "cdp", Confidence: 0.9, RawData: map[string]string{
+			"sys_desc": "Cisco IOS Software, C2960 Software (C2960-LXRE)",
+		}},
+	}
+	got := rc.Classify(ev)
+	if !hasMetadataInAny(got, map[string]string{"inferred_brand": "Cisco", "device_type": "switch"}) {
+		t.Errorf("Cisco IOS switch not identified; got %+v", identitiesMetadata(got))
+	}
+}
+
+func TestRuleClassifier_LLDPCDP_HikvisionCamera(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// LLDP sysDesc: "Hikvision DS-2CD2142WD-I3 6.0.0 build 210115"
+	// Expect: brand=Hikvision, type=camera
+	ev := []scannerv2.Evidence{
+		{Kind: "cdp", Confidence: 0.9, RawData: map[string]string{
+			"sys_desc": "Hikvision DS-2CD2142WD-I3 6.0.0 build 210115",
+		}},
+	}
+	got := rc.Classify(ev)
+	if !hasMetadataInAny(got, map[string]string{"inferred_brand": "Hikvision", "device_type": "camera"}) {
+		t.Errorf("Hikvision camera not identified; got %+v", identitiesMetadata(got))
+	}
+}
+
+func TestRuleClassifier_LLDPCDP_UbiquitiAP(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// CDP platform: "Ubiquiti UAP-AC-Pro"
+	// Expect: brand=Ubiquiti, type=ap
+	ev := []scannerv2.Evidence{
+		{Kind: "cdp", Confidence: 0.9, RawData: map[string]string{"platform": "Ubiquiti UAP-AC-Pro"}},
+	}
+	got := rc.Classify(ev)
+	if !hasMetadataInAny(got, map[string]string{"inferred_brand": "Ubiquiti", "device_type": "ap"}) {
+		t.Errorf("Ubiquiti AP not identified; got %+v", identitiesMetadata(got))
+	}
+}
+
+func TestRuleClassifier_LLDPCDP_MikroTikRouter(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// LLDP sysDesc: "MikroTik RouterOS 7.x"
+	// Expect: brand=MikroTik, type=router
+	ev := []scannerv2.Evidence{
+		{Kind: "cdp", Confidence: 0.9, RawData: map[string]string{
+			"sys_desc": "MikroTik RouterOS 7.x",
+		}},
+	}
+	got := rc.Classify(ev)
+	if !hasMetadataInAny(got, map[string]string{"inferred_brand": "MikroTik", "device_type": "router"}) {
+		t.Errorf("MikroTik router not identified; got %+v", identitiesMetadata(got))
+	}
+}
+
+func TestRuleClassifier_LLDPCDP_ArubaSwitchSysDesc(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// LLDP sysDesc: "Aruba 2930F Switch"
+	// Expect: brand=Aruba, type=switch
+	ev := []scannerv2.Evidence{
+		{Kind: "cdp", Confidence: 0.9, RawData: map[string]string{
+			"sys_desc": "Aruba 2930F Switch",
+		}},
+	}
+	got := rc.Classify(ev)
+	if !hasMetadataInAny(got, map[string]string{"inferred_brand": "Aruba", "device_type": "switch"}) {
+		t.Errorf("Aruba switch not identified; got %+v", identitiesMetadata(got))
+	}
+}
+
+func TestRuleClassifier_LLDPCDP_JuniperSwitchPlatform(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// CDP platform: "Juniper EX3300-48P"
+	// Expect: brand=Juniper, type=switch
+	ev := []scannerv2.Evidence{
+		{Kind: "cdp", Confidence: 0.9, RawData: map[string]string{"platform": "Juniper EX3300-48P"}},
+	}
+	got := rc.Classify(ev)
+	if !hasMetadataInAny(got, map[string]string{"inferred_brand": "Juniper", "device_type": "switch"}) {
+		t.Errorf("Juniper switch not identified; got %+v", identitiesMetadata(got))
+	}
+}
+
+func TestRuleClassifier_LLDPCDP_NexusSwitchPlatform(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// CDP platform: "cisco Nexus 9000"
+	// Expect: brand=Cisco, type=switch
+	ev := []scannerv2.Evidence{
+		{Kind: "cdp", Confidence: 0.9, RawData: map[string]string{"platform": "cisco Nexus 9000"}},
+	}
+	got := rc.Classify(ev)
+	if !hasMetadataInAny(got, map[string]string{"inferred_brand": "Cisco", "device_type": "switch"}) {
+		t.Errorf("Nexus switch not identified; got %+v", identitiesMetadata(got))
+	}
+}
+
+func TestRuleClassifier_LLDPCDP_NoMatch(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// Unknown platform/sysDesc should not produce neighbor-identity matches.
+	ev := []scannerv2.Evidence{
+		{Kind: "cdp", Confidence: 0.9, RawData: map[string]string{
+			"platform": "Unknown-Device-Model-1234",
+			"sys_desc": "Some random description without any known vendor",
+		}},
+	}
+	got := rc.Classify(ev)
+	// No lldp-cdp identity should have inferred_brand.
+	for _, id := range got {
+		if id.Metadata != nil && id.Metadata["inferred_brand"] != "" {
+			t.Errorf("unexpected brand inference for unknown device: %+v", id.Metadata)
+		}
+	}
+}
+
+// identitiesMetadata returns a human-readable summary of the metadata in classify output.
+func identitiesMetadata(out []scannerv2.ServiceIdentity) []map[string]string {
+	var result []map[string]string
+	for _, id := range out {
+		result = append(result, id.Metadata)
+	}
+	return result
 }

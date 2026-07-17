@@ -31,5 +31,8 @@ func DefaultProbeSources(portSpec string, oui *vendor.OUI) []scannerv2.ProbeSour
 		NewNetBIOSProbe(),
 		NewBridgeMIBProbe(slog.Default()),
 		NewLLDPMIBProbe(slog.Default()),
+		NewQBridgeMIBProbe(slog.Default()),
+		NewCDPMIBProbe(slog.Default()),
+		NewSTPMIBProbe(slog.Default()),
 	}
 }

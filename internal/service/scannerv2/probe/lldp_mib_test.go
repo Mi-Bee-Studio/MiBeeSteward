@@ -42,10 +42,32 @@ func TestLldpChassisToMAC(t *testing.T) {
 }
 
 // TestLldpEvidenceShape is a shape contract test: a subtype-4 chassis id
+// produces a "neighbor" Evidence with protocol "LLDP" and the six RawData keys
+// (neighbor_mac, protocol, local_port, remote_port, sys_name, sys_desc)
+// the orchestrator's extractNeighbors reads. This guards against a refactor
+// silently changing the contract the store depends on.
 // produces a "neighbor" Evidence with protocol "LLDP" and the four RawData keys
 // the orchestrator's extractNeighbors reads. This guards against a refactor
 // silently changing the contract the store depends on.
 func TestLldpEvidenceShape(t *testing.T) {
 	p := NewLLDPMIBProbe(nil)
 	require.Equal(t, "active:lldp_mib", p.Name())
+}
+
+// TestLldpIndexSuffix verifies indexSuffix with the new LLDP-MIB OID prefixes
+// for lldpRemSysName and lldpRemSysDesc. The index format is
+// "<timeMark>.<localPort>.<remIndex>" — same as the other lldpRemTable columns.
+func TestLldpIndexSuffix(t *testing.T) {
+	cases := []struct {
+		full, prefix, want string
+	}{
+		{".1.0.8802.1.1.2.1.4.1.1.9.0.5.1", "1.0.8802.1.1.2.1.4.1.1.9", "0.5.1"},
+		{".1.0.8802.1.1.2.1.4.1.1.10.0.101.42", "1.0.8802.1.1.2.1.4.1.1.10", "0.101.42"},
+		{".1.0.8802.1.1.2.1.4.1.1.9", "1.0.8802.1.1.2.1.4.1.1.9", ""},        // no suffix
+		{".1.0.8802.1.1.2.1.4.1.1.10.0.5.1", "1.0.8802.1.1.2.1.4.1.1.9", ""}, // wrong prefix
+	}
+	for _, c := range cases {
+		got := indexSuffix(c.full, c.prefix)
+		require.Equal(t, c.want, got, "indexSuffix(%q, %q)", c.full, c.prefix)
+	}
 }
