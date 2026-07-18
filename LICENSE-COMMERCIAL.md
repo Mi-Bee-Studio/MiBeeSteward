@@ -43,7 +43,7 @@ Commercial licenses are priced per deployment and tailored to your use case. To 
 2. Indicate your deployment scale (number of networks, devices, sites).
 3. Mention any support, SLA, or customization requirements.
 
-**Contact:** commercial@mibee.studio
+**Contact:** mickey_zzc@163.com
 
 We aim to respond to commercial inquiries within 2 business days.
 
