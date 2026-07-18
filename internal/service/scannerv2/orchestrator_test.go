@@ -220,7 +220,7 @@ func TestOrchestrator_PersistsTLSCerts(t *testing.T) {
 
 	// HTTPS handler that emits a 2-cert chain via TLSCertCollected.
 	reg.RegisterHandler(&stubHandler{
-		service:  "https",
+		service: "https",
 		tlsCerts: []TLSCertRecord{
 			{CertIndex: 0, SubjectCN: "device.example.com", PEM: "leaf-pem"},
 			{CertIndex: 1, SubjectCN: "ca.example.com", PEM: "issuer-pem"},

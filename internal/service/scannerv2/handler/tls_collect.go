@@ -61,7 +61,7 @@ func (h tlsCollectHandler) heartbeat(svc scannerv2.ServiceContext) *scannerv2.He
 
 // enrich delegates to the server-type assignment so hosts with only TLS-wrapped
 // services still get inferred_type=server.
-func (h tlsCollectHandler) enrich(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
+func (h tlsCollectHandler) enrich(svc scannerv2.ServiceContext, _ scannerv2.CollectedData) {
 	preserveExisting(svc, "inferred_type", "server")
 }
 
@@ -75,76 +75,76 @@ func (h tlsCollectHandler) enrich(svc scannerv2.ServiceContext, d scannerv2.Coll
 // HTTPSHandler — emitted by TLSClassifier for any TLS handshake.
 type HTTPSHandler struct{ tlsCollectHandler }
 
-func NewHTTPSHandler() HTTPSHandler { return HTTPSHandler{tlsCollectHandler{name: "https"}} }
+func NewHTTPSHandler() HTTPSHandler  { return HTTPSHandler{tlsCollectHandler{name: "https"}} }
 func (HTTPSHandler) Service() string { return "https" }
 func (h HTTPSHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return h.tlsCollectHandler.heartbeat(svc)
+	return h.heartbeat(svc)
 }
 func (h HTTPSHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return h.tlsCollectHandler.collectCerts(ctx, svc)
+	return h.collectCerts(ctx, svc)
 }
 func (h HTTPSHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	h.tlsCollectHandler.enrich(svc, d)
+	h.enrich(svc, d)
 }
 
 // LDAPSHhandler — MiscClassifier port-shape for 636.
 type LDAPSHandler struct{ tlsCollectHandler }
 
-func NewLDAPSHandler() LDAPSHandler { return LDAPSHandler{tlsCollectHandler{name: "ldaps"}} }
+func NewLDAPSHandler() LDAPSHandler  { return LDAPSHandler{tlsCollectHandler{name: "ldaps"}} }
 func (LDAPSHandler) Service() string { return "ldaps" }
 func (h LDAPSHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return h.tlsCollectHandler.heartbeat(svc)
+	return h.heartbeat(svc)
 }
 func (h LDAPSHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return h.tlsCollectHandler.collectCerts(ctx, svc)
+	return h.collectCerts(ctx, svc)
 }
 func (h LDAPSHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	h.tlsCollectHandler.enrich(svc, d)
+	h.enrich(svc, d)
 }
 
 // SMTPSHhandler — 465.
 type SMTPSHandler struct{ tlsCollectHandler }
 
-func NewSMTPSHandler() SMTPSHandler { return SMTPSHandler{tlsCollectHandler{name: "smtps"}} }
+func NewSMTPSHandler() SMTPSHandler  { return SMTPSHandler{tlsCollectHandler{name: "smtps"}} }
 func (SMTPSHandler) Service() string { return "smtps" }
 func (h SMTPSHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return h.tlsCollectHandler.heartbeat(svc)
+	return h.heartbeat(svc)
 }
 func (h SMTPSHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return h.tlsCollectHandler.collectCerts(ctx, svc)
+	return h.collectCerts(ctx, svc)
 }
 func (h SMTPSHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	h.tlsCollectHandler.enrich(svc, d)
+	h.enrich(svc, d)
 }
 
 // IMAPSHhandler — 993.
 type IMAPSHandler struct{ tlsCollectHandler }
 
-func NewIMAPSHandler() IMAPSHandler { return IMAPSHandler{tlsCollectHandler{name: "imaps"}} }
+func NewIMAPSHandler() IMAPSHandler  { return IMAPSHandler{tlsCollectHandler{name: "imaps"}} }
 func (IMAPSHandler) Service() string { return "imaps" }
 func (h IMAPSHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return h.tlsCollectHandler.heartbeat(svc)
+	return h.heartbeat(svc)
 }
 func (h IMAPSHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return h.tlsCollectHandler.collectCerts(ctx, svc)
+	return h.collectCerts(ctx, svc)
 }
 func (h IMAPSHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	h.tlsCollectHandler.enrich(svc, d)
+	h.enrich(svc, d)
 }
 
 // POP3SHhandler — 995.
 type POP3SHandler struct{ tlsCollectHandler }
 
-func NewPOP3SHandler() POP3SHandler { return POP3SHandler{tlsCollectHandler{name: "pop3s"}} }
+func NewPOP3SHandler() POP3SHandler  { return POP3SHandler{tlsCollectHandler{name: "pop3s"}} }
 func (POP3SHandler) Service() string { return "pop3s" }
 func (h POP3SHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return h.tlsCollectHandler.heartbeat(svc)
+	return h.heartbeat(svc)
 }
 func (h POP3SHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return h.tlsCollectHandler.collectCerts(ctx, svc)
+	return h.collectCerts(ctx, svc)
 }
 func (h POP3SHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	h.tlsCollectHandler.enrich(svc, d)
+	h.enrich(svc, d)
 }
 
 // FTPSHhandler — 990 (control). ftps-data (989) is rarely used standalone and
@@ -152,44 +152,44 @@ func (h POP3SHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.Col
 // below.
 type FTPSHandler struct{ tlsCollectHandler }
 
-func NewFTPSHandler() FTPSHandler { return FTPSHandler{tlsCollectHandler{name: "ftps"}} }
+func NewFTPSHandler() FTPSHandler   { return FTPSHandler{tlsCollectHandler{name: "ftps"}} }
 func (FTPSHandler) Service() string { return "ftps" }
 func (h FTPSHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return h.tlsCollectHandler.heartbeat(svc)
+	return h.heartbeat(svc)
 }
 func (h FTPSHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return h.tlsCollectHandler.collectCerts(ctx, svc)
+	return h.collectCerts(ctx, svc)
 }
 func (h FTPSHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	h.tlsCollectHandler.enrich(svc, d)
+	h.enrich(svc, d)
 }
 
 // IRCSSHandler — 994.
 type IRCSSHandler struct{ tlsCollectHandler }
 
-func NewIRCSSHandler() IRCSSHandler { return IRCSSHandler{tlsCollectHandler{name: "ircs"}} }
+func NewIRCSSHandler() IRCSSHandler  { return IRCSSHandler{tlsCollectHandler{name: "ircs"}} }
 func (IRCSSHandler) Service() string { return "ircs" }
 func (h IRCSSHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return h.tlsCollectHandler.heartbeat(svc)
+	return h.heartbeat(svc)
 }
 func (h IRCSSHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return h.tlsCollectHandler.collectCerts(ctx, svc)
+	return h.collectCerts(ctx, svc)
 }
 func (h IRCSSHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	h.tlsCollectHandler.enrich(svc, d)
+	h.enrich(svc, d)
 }
 
 // TelnetSSHandler — 992.
 type TelnetSSHandler struct{ tlsCollectHandler }
 
 func NewTelnetSSHandler() TelnetSSHandler { return TelnetSSHandler{tlsCollectHandler{name: "telnets"}} }
-func (TelnetSSHandler) Service() string { return "telnets" }
+func (TelnetSSHandler) Service() string   { return "telnets" }
 func (h TelnetSSHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return h.tlsCollectHandler.heartbeat(svc)
+	return h.heartbeat(svc)
 }
 func (h TelnetSSHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return h.tlsCollectHandler.collectCerts(ctx, svc)
+	return h.collectCerts(ctx, svc)
 }
 func (h TelnetSSHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	h.tlsCollectHandler.enrich(svc, d)
+	h.enrich(svc, d)
 }

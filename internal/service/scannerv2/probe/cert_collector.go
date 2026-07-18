@@ -142,12 +142,12 @@ func buildCertRecord(ip string, port, idx int, cert *x509.Certificate) scannerv2
 		SanIP:    strings.Join(ipStrings(cert.IPAddresses), ", "),
 		SanEmail: strings.Join(cert.EmailAddresses, ", "),
 
-		Serial:     cert.SerialNumber.String(),
-		NotBefore:  cert.NotBefore.UTC().Format(time.RFC3339),
-		NotAfter:   cert.NotAfter.UTC().Format(time.RFC3339),
+		Serial:       cert.SerialNumber.String(),
+		NotBefore:    cert.NotBefore.UTC().Format(time.RFC3339),
+		NotAfter:     cert.NotAfter.UTC().Format(time.RFC3339),
 		SigAlgorithm: cert.SignatureAlgorithm.String(),
-		IsCA:       cert.IsCA,
-		SelfSigned: cert.Subject.String() == cert.Issuer.String(),
+		IsCA:         cert.IsCA,
+		SelfSigned:   cert.Subject.String() == cert.Issuer.String(),
 	}
 
 	// Key algorithm + bit size. RSA: N.BitLen; ECDSA: curve.Params().BitSize;
