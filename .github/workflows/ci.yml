@@ -110,10 +110,24 @@ jobs:
       - name: Smoke-test the built image
         run: |
           # Boot it, wait for /health, then shut down. Confirms the binary
-          # runs as the non-root USER and the DB volume is writable.
-          docker run -d --name mibee-ci -p 18080:8080 mibee-steward:ci
+          # runs as the non-root USER and the DB volume is writable. We mount
+          # a minimal config — the CMD looks for /app/configs/config.yaml and
+          # the binary refuses to start without one.
+          mkdir -p /tmp/ci-config
+          cat > /tmp/ci-config/config.yaml <<'YAML'
+          server: {port: 8080, host: "0.0.0.0"}
+          database: {sqlite: {path: "/data/mibee.db"}}
+          auth:
+            jwt_secret: "ci-smoke-test-secret-not-for-production-use-32chars"
+            initial_admin_password: "CiSmokeTest@2026"
+            cookie_secure: false
+          scanner: {enabled: false}
+          YAML
+          docker run -d --name mibee-ci -p 18080:8080 \
+            -v /tmp/ci-config/config.yaml:/app/configs/config.yaml:ro \
+            mibee-steward:ci
           trap 'docker rm -f mibee-ci' EXIT
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             if curl -sf http://localhost:18080/api/v1/health; then echo; echo "healthy after ${i}s"; exit 0; fi
             sleep 1
           done
