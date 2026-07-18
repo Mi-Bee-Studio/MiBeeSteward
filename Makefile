@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp clean test dev migrate-up sync-fingerprints fpimport
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp clean test dev migrate-up sync-fingerprints fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -71,3 +71,46 @@ sync-fingerprints:
 # See cmd/fpimport/ and docs/fingerprint-spec.md for supported sources.
 fpimport:
 	@go run ./cmd/fpimport/ $(ARGS)
+
+# ---- Docker targets -------------------------------------------------------
+# Pick the network profile that matches your deployment intent. The scanner's
+# ICMP/ARP/MAC discovery is network-namespace-sensitive — see docker-compose.yml
+# header comment and docs/zh/deployment.md "Docker 网络模式选型".
+#
+# Recommended for real scanning: host profile (shares host netns, sees the LAN).
+#   make docker-up            # = docker-up-host (builds + starts --profile host)
+#
+# Demo / UI-only: bridge profile (NAT'd, ICMP/ARP/MAC degraded).
+#   make docker-up-bridge
+#
+# Container-as-LAN-device: macvlan profile (own LAN IP; set MIBEE_MACVLAN_*).
+#   make docker-up-macvlan
+
+# Default image = unprivileged (LLDP/CDP/eBPF compiled as stubs).
+docker-build:
+	docker compose --profile host build
+
+# Privileged image variant — bakes in the raw-frame LLDP/CDP listeners and the
+# eBPF TC observer. Still needs runtime caps (cap_add NET_RAW/NET_ADMIN/BPF).
+docker-build-priv:
+	BUILD_TAGS=WITH_LLDP,WITH_CDP,WITH_EBPF docker compose --profile host build
+
+# Default: host profile (recommended). Builds first if needed.
+docker-up: docker-build
+	docker compose --profile host up -d
+
+docker-up-host: docker-up
+
+docker-up-bridge:
+	docker compose --profile bridge up -d --build
+
+docker-up-macvlan:
+	docker compose --profile macvlan up -d --build
+
+docker-down:
+	docker compose --profile host down
+	docker compose --profile bridge down
+	docker compose --profile macvlan down
+
+docker-logs:
+	docker compose --profile host logs -f
