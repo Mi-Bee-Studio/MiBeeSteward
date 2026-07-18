@@ -62,6 +62,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"heartbeat_configs",
 		"heartbeat_results",
 		"host_services",
+		"host_tls_certs",
 		"networks",
 		"notification_channels",
 		"notification_log",
@@ -84,12 +85,12 @@ func TestSetupTestDBFromSchema_Reusable(t *testing.T) {
 	db1, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db1.Close()
-	require.Len(t, listTables(t, db1), 26)
+	require.Len(t, listTables(t, db1), 27)
 
 	db2, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db2.Close()
-	require.Len(t, listTables(t, db2), 26)
+	require.Len(t, listTables(t, db2), 27)
 }
 
 func TestSetupTestDB_WithPragmas(t *testing.T) {

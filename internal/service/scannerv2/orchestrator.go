@@ -651,6 +651,16 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		if err := o.repo.RecordHeartbeats(ctx, report.IP, report.Heartbeats); err != nil {
 			o.logger.Debug("record heartbeats failed", "ip", report.IP, "error", err)
 		}
+		// Persist TLS certificate chains: every TLS-wrapped service handler
+		// (https, ldaps, imaps, pop3s, smtps, ftps, ircs, telnets) returns a
+		// TLSCertCollected payload from Collect(). We type-assert it out of the
+		// Collected map and hand the records to the repo in one batch. Records
+		// are best-effort like everything else here.
+		if certs := extractTLSCerts(report.Collected); len(certs) > 0 {
+			if err := o.repo.RecordTLSCerts(ctx, report.IP, certs); err != nil {
+				o.logger.Debug("record tls certs failed", "ip", report.IP, "error", err)
+			}
+		}
 		// Persist L2 neighbors (Phase 4): extract "neighbor"-kind evidence
 		// (from the Bridge-MIB / LLDP / CDP probes) into NeighborSpecs and
 		// record them. The store resolves ip→device_id and upserts edges.
@@ -720,6 +730,24 @@ func extractNeighbors(evidence []Evidence) []NeighborSpec {
 			LocalPort:   e.RawData["local_port"],
 			RemotePort:  e.RawData["remote_port"],
 		})
+	}
+	return out
+}
+
+// extractTLSCerts pulls every TLSCertCollected payload out of the dispatch
+// result map and flattens its certificate records into a single slice for
+// persistence. Multiple TLS ports on one host (e.g. https/443 + ldaps/636)
+// produce multiple Collected entries; we concat them so the repo gets one batch.
+// Records carrying only an Error are still forwarded — the UI uses them to show
+// "we tried this port".
+func extractTLSCerts(collected map[string]CollectedData) []TLSCertRecord {
+	var out []TLSCertRecord
+	for _, data := range collected {
+		tls, ok := data.(TLSCertCollected)
+		if !ok {
+			continue
+		}
+		out = append(out, tls.Certs...)
 	}
 	return out
 }

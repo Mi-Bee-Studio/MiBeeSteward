@@ -191,6 +191,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// topology graph (nodes + edges). Read-only; any logged-in user.
 	neighborHandler := handler.NewNeighborHandler(scanQueries)
 	topologyHandler := handler.NewTopologyHandler(scanQueries)
+	// TLS certificates per device (detail page TLS sub-panel + Modal). Read-only;
+	// any logged-in user. Same *db.Queries as the neighbors handler.
+	tlsCertHandler := handler.NewTLSCertHandler(scanQueries)
 
 	// Resolve this instance's network identity (networks.id) so discovered
 	// devices can be tagged with their origin. Done here (not in migrations)
@@ -502,6 +505,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Route("/api/v1/devices/{id}/neighbors", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
 		r.Get("/", neighborHandler.ListByDevice)
+	})
+
+	// Device TLS certificates (https/ldaps/imaps/etc) — read-only, any logged-in
+	// user. Feeds the detail-page TLS Certificates sub-panel and the per-port
+	// certificate Modal (full chain + PEM).
+	r.Route("/api/v1/devices/{id}/certificates", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", tlsCertHandler.ListByDevice)
 	})
 
 	// Network-level topology graph — all devices (nodes) + all neighbor edges.

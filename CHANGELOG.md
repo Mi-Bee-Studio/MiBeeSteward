@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**TLS certificate inventory** — collects the full certificate chain (leaf + issuers) from every TLS-wrapped service on each device, with Subject/Issuer/SAN/validity/signature/key/fingerprint + PEM, surfaced in a device-detail sub-panel and a per-port certificate Modal.
+
+### Added
+- **TLS cert collection** (`probe/cert_collector.go`): single source of truth for cert collection — `CollectCertChain(ctx, ip, port, timeout)` performs a TLS handshake (InsecureSkipVerify for inventory) and extracts the full peer chain. Per-cert: Subject/Issuer/SAN (DNS/IP/email)/serial/validity (ISO 8601)/sig algorithm/key algorithm + bits (RSA/ECDSA/Ed25519)/is_ca/self_signed/SHA-256 fingerprint/PEM; per-handshake: TLS version, cipher suite, best-effort trust verdict. Failure path returns an error record (still persisted) so the UI can show "we tried this port".
+- **TLS-wrapped service handlers** (`handler/tls_collect.go`): 8 handlers (`https`, `ldaps`, `smtps`, `imaps`, `pop3s`, `ftps`, `ircs`, `telnets`) sharing one `tlsCollectHandler` core — each `Collect()` calls `probe.CollectCertChain` and returns a `TLSCertCollected` payload. Registered in `handler.DefaultHandlers()` (handler count 21 → 29).
+- **Extended MiscClassifier** (`classify/mail_remote.go`): the well-known TLS-wrapped service ports (465/989/990/992/993/994/995) are now asserted as service identities (`smtps`/`ftps-data`/`ftps`/`telnets`/`imaps`/`ircs`/`pop3s`) so the cert-collect handler runs for them. `ldaps` (636) was already classified.
+- **Extended TLSProbe** (`probe/tls.go`): default port set expanded from 4 (443/8443/9443/4443) to 12 (+ 465/636/989/990/992/993/994/995) so their certs land as early classification evidence. Refactored to delegate cert extraction to the shared `CollectCertChain` and to emit richer evidence fields (`not_before`/`not_after`/`sig_algorithm`/`key_algorithm`/`fingerprint_sha256`/`san_email`) alongside the existing CN/Issuer/SAN.
+- **`host_tls_certs` table** (`db/schema.sql` + `db/queries/host_tls_certs.sql`): one row per cert in each port's chain (cert_index 0 = leaf, 1..N = issuers); PEM + typed columns; indexed on `(ip, port)` and `not_after` (for expiry sweeps). Replaced wholesale per `(ip, port)` on each scan via `Repository.RecordTLSCerts` (orchestrator dispatch path).
+- **Read API** `GET /api/v1/devices/{id}/certificates`: per-port grouping with leaf + chain; status-coloring metadata (TLS version, cipher suite, trust verdict, error). Read-only, any logged-in user.
+- **Frontend TLS sub-panel** (`web/src/routes/devices/detail/[id]/+page.svelte`): new "TLS 证书" panel under Scan Discovery — one clickable row per port with status-colored left border (green=valid / amber=expiring <15d / red=expired), day-count badge, self-signed/trusted tags. Empty state explains how to populate.
+- **`CertificateModal.svelte`** (`web/src/lib/components/`): full-chain viewer — status header (shield + days-to-expiry), summary field grid (Subject/Issuer/Validity/SAN/algorithms/fingerprint), collapsible chain entries (leaf + intermediates + root), PEM block with copy-to-clipboard.
+- **Retention** `retention.host_tls_certs_days` (default 30): swept by the existing `cleanupSvc` via `DeleteHostTLSCertsStaleBatched`.
+- **i18n**: new `certificates` section (34 keys, EN + ZH) covering every label in the panel + Modal.
+
 **Topology probe breadth** — extends v0.3.0's LLDP coverage with the remaining
 L2-discovery MIBs so switch-centric networks are fully mapped regardless of
 vendor or VLAN configuration.

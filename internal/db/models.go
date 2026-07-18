@@ -185,6 +185,37 @@ type HostService struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+type HostTlsCert struct {
+	ID                int64     `json:"id"`
+	Ip                string    `json:"ip"`
+	Port              int64     `json:"port"`
+	CertIndex         int64     `json:"cert_index"`
+	SubjectCn         string    `json:"subject_cn"`
+	SubjectOrg        string    `json:"subject_org"`
+	Subject           string    `json:"subject"`
+	IssuerCn          string    `json:"issuer_cn"`
+	IssuerOrg         string    `json:"issuer_org"`
+	Issuer            string    `json:"issuer"`
+	SanDns            string    `json:"san_dns"`
+	SanIp             string    `json:"san_ip"`
+	SanEmail          string    `json:"san_email"`
+	Serial            string    `json:"serial"`
+	NotBefore         string    `json:"not_before"`
+	NotAfter          string    `json:"not_after"`
+	SigAlgorithm      string    `json:"sig_algorithm"`
+	KeyAlgorithm      string    `json:"key_algorithm"`
+	KeyBits           int64     `json:"key_bits"`
+	IsCa              int64     `json:"is_ca"`
+	SelfSigned        int64     `json:"self_signed"`
+	FingerprintSha256 string    `json:"fingerprint_sha256"`
+	Pem               string    `json:"pem"`
+	TlsVersion        string    `json:"tls_version"`
+	CipherSuite       string    `json:"cipher_suite"`
+	Trusted           int64     `json:"trusted"`
+	Error             string    `json:"error"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
 type Network struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`

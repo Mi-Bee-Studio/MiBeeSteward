@@ -52,6 +52,11 @@ type stubHandler struct {
 	triggers  []Trigger // emitted on every Collect
 	collects  []string  // record of services collected
 	heartbeat *HeartbeatSpec
+	// tlsCerts, when non-nil, is returned from Collect as a TLSCertCollected
+	// payload so the orchestrator exercises the TLS-persistence path. The
+	// per-record IP/Port are filled from the service context so callers only
+	// need to specify the cert content.
+	tlsCerts []TLSCertRecord
 }
 
 func (h *stubHandler) Service() string { return h.service }
@@ -60,6 +65,16 @@ func (h *stubHandler) GenerateHeartbeat(_ ServiceContext) *HeartbeatSpec {
 }
 func (h *stubHandler) Collect(_ context.Context, svc ServiceContext) (CollectedData, []Trigger, error) {
 	h.collects = append(h.collects, svc.Identity.Service)
+	if h.tlsCerts != nil {
+		// Stamp IP/Port from the service context so test setup is concise.
+		certs := make([]TLSCertRecord, len(h.tlsCerts))
+		for i, c := range h.tlsCerts {
+			c.IP = svc.IP
+			c.Port = svc.Identity.Port
+			certs[i] = c
+		}
+		return TLSCertCollected{ServiceName: h.service, Port: svc.Identity.Port, Certs: certs}, h.triggers, nil
+	}
 	cd := concreteData{s: svc.Identity.Service}
 	return cd, h.triggers, nil
 }
@@ -81,6 +96,7 @@ type recordRepo struct {
 	services   map[string][]ServiceIdentity
 	devices    map[string]DeviceRef
 	heartbeats map[string][]HeartbeatSpec
+	tlsCerts   map[string][]TLSCertRecord
 }
 
 func newRecordRepo() *recordRepo {
@@ -88,6 +104,7 @@ func newRecordRepo() *recordRepo {
 		services:   map[string][]ServiceIdentity{},
 		devices:    map[string]DeviceRef{},
 		heartbeats: map[string][]HeartbeatSpec{},
+		tlsCerts:   map[string][]TLSCertRecord{},
 	}
 }
 
@@ -113,6 +130,11 @@ func (r *recordRepo) RecordNeighbors(_ context.Context, _ string, _ []NeighborSp
 }
 
 func (r *recordRepo) EnrichDeviceByMAC(_ context.Context, _ string, _ map[string]string) error {
+	return nil
+}
+
+func (r *recordRepo) RecordTLSCerts(_ context.Context, ip string, certs []TLSCertRecord) error {
+	r.tlsCerts[ip] = append(r.tlsCerts[ip], certs...)
 	return nil
 }
 
@@ -181,6 +203,67 @@ func TestOrchestrator_GatherClassifyDispatch(t *testing.T) {
 	if repo.devices["10.0.0.1"].IP == "" {
 		t.Errorf("repo did not record device")
 	}
+}
+
+// TestOrchestrator_PersistsTLSCerts verifies the dispatch → RecordTLSCerts
+// path: a handler that returns a TLSCertCollected payload drives the
+// orchestrator's persistence branch, and the cert records land in the repo
+// keyed by IP. This is the unit-level proof that the new feature is wired
+// end-to-end through the orchestrator (independent of the probe/handler impl).
+func TestOrchestrator_PersistsTLSCerts(t *testing.T) {
+	repo := newRecordRepo()
+	reg := NewRegistry()
+	reg.RegisterProbe(stubProbe{name: "active:tcp", ev: []Evidence{
+		{Kind: "port_open", IP: "10.0.0.5", Port: 443, Protocol: "tcp"},
+	}})
+	reg.RegisterClassifier(kindClassifier{service: "https", kind: "port_open"})
+
+	// HTTPS handler that emits a 2-cert chain via TLSCertCollected.
+	reg.RegisterHandler(&stubHandler{
+		service: "https",
+		tlsCerts: []TLSCertRecord{
+			{CertIndex: 0, SubjectCN: "device.example.com", PEM: "leaf-pem"},
+			{CertIndex: 1, SubjectCN: "ca.example.com", PEM: "issuer-pem"},
+		},
+	})
+
+	orch := NewOrchestrator(reg, repo, OrchestratorConfig{MaxCascadeDepth: 5}, nil)
+	report := orch.Run(context.Background(), "10.0.0.5", ProbeHint{Timeout: time.Second})
+
+	// The collected cert bundle should surface on the report.
+	if _, ok := report.Collected["https"]; !ok {
+		t.Fatalf("expected https Collected entry, got %v", keysOf(report.Collected))
+	}
+	// And the records should have been handed to the repository.
+	recorded := repo.tlsCerts["10.0.0.5"]
+	if len(recorded) != 2 {
+		t.Fatalf("expected 2 cert records persisted, got %d", len(recorded))
+	}
+	// Records are stamped with IP/Port from the service context.
+	for _, c := range recorded {
+		if c.IP != "10.0.0.5" {
+			t.Errorf("cert IP = %q, want 10.0.0.5", c.IP)
+		}
+		if c.Port != 443 {
+			t.Errorf("cert Port = %d, want 443", c.Port)
+		}
+	}
+	// Leaf first, then issuer.
+	if recorded[0].SubjectCN != "device.example.com" {
+		t.Errorf("leaf SubjectCN = %q, want device.example.com", recorded[0].SubjectCN)
+	}
+	if recorded[1].SubjectCN != "ca.example.com" {
+		t.Errorf("issuer SubjectCN = %q, want ca.example.com", recorded[1].SubjectCN)
+	}
+}
+
+// keysOf returns the keys of a CollectedData map (test helper).
+func keysOf(m map[string]CollectedData) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func TestOrchestrator_CycleGuard(t *testing.T) {
