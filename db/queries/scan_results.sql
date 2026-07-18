@@ -1,3 +1,12 @@
+-- SPDX-License-Identifier: AGPL-3.0-or-later
+--
+-- Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+--
+-- This file is part of MiBee Steward, distributed under the GNU Affero General
+-- Public License v3.0 or later. You may use, modify, and redistribute it under
+-- those terms; see LICENSE for the full text. A commercial license is available
+-- for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+
 -- name: CreateScanResult :one
 INSERT INTO scan_results (task_id, run_id, ip, alive, rtt_ms, ports, services, snmp_data, prometheus_detected, prometheus_url, node_exporter_detected, node_exporter_url, node_exporter_data)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
