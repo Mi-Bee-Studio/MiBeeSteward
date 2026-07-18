@@ -192,6 +192,28 @@ docker compose --profile host build
 
 Makefile 封装了常用流程：`make docker-up`（= host profile，推荐）、`make docker-up-bridge`（演示）、`make docker-up-macvlan`、`make docker-build-priv`（特权变体镜像）。
 
+#### 使用预构建镜像（GHCR）
+
+从 release tag（v0.4.0 起）起，每个版本会自动发布多架构（amd64 + arm64）容器镜像到 GitHub Container Registry，无需本地构建：
+
+```bash
+# 拉取最新版
+docker pull ghcr.io/mi-bee-studio/mibee-steward:latest
+
+# 或锁定具体版本
+docker pull ghcr.io/mi-bee-studio/mibee-steward:0.4.0
+
+# 用 host profile 直接运行（修改 image 字段，去掉 build）
+docker run -d --name mibee \
+  --network host \
+  --cap-add NET_RAW --cap-add NET_ADMIN \
+  -v mibee-data:/data \
+  -v "$PWD/configs/config.yaml:/app/configs/config.yaml:ro" \
+  ghcr.io/mi-bee-studio/mibee-steward:latest
+```
+
+预构建镜像是**非特权变体**（LLDP/CDP/eBPF 编译为 stub）。如需这些被动探测能力，用源码 + `make docker-build-priv` 自行构建（见上文）。compose 里也可以把 `image:` 直接指向 GHCR，省去本地 `build:`——见 `docker-compose.yml` 注释。
+
 ### 3. Nginx 反向代理
 
 #### 配置

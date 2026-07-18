@@ -192,6 +192,28 @@ docker compose --profile host build
 
 The Makefile wraps common flows: `make docker-up` (= host profile, recommended), `make docker-up-bridge` (demo), `make docker-up-macvlan`, `make docker-build-priv` (privileged image variant).
 
+#### Using the prebuilt image (GHCR)
+
+From release tags on, each release publishes a multi-arch (amd64 + arm64) container image to GitHub Container Registry, so you don't need to build locally:
+
+```bash
+# Pull latest
+docker pull ghcr.io/mi-bee-studio/mibee-steward:latest
+
+# Or pin a specific version
+docker pull ghcr.io/mi-bee-studio/mibee-steward:0.4.0
+
+# Run directly with the host profile (override image:, drop build:)
+docker run -d --name mibee \
+  --network host \
+  --cap-add NET_RAW --cap-add NET_ADMIN \
+  -v mibee-data:/data \
+  -v "$PWD/configs/config.yaml:/app/configs/config.yaml:ro" \
+  ghcr.io/mi-bee-studio/mibee-steward:latest
+```
+
+The prebuilt image is the **unprivileged variant** (LLDP/CDP/eBPF compiled as stubs). For those passive probes, build from source with `make docker-build-priv` (see above). You can also point compose's `image:` straight at GHCR and drop `build:` — see the `docker-compose.yml` header comment.
+
 ### 3. Nginx Reverse Proxy
 
 #### Configuration
