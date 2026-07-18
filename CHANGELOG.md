@@ -7,60 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**TLS certificate inventory** — collects the full certificate chain (leaf + issuers) from every TLS-wrapped service on each device, with Subject/Issuer/SAN/validity/signature/key/fingerprint + PEM, surfaced in a device-detail sub-panel and a per-port certificate Modal.
+## [0.3.0] - 2026-07-18
 
-### Added
-- **TLS cert collection** (`probe/cert_collector.go`): single source of truth for cert collection — `CollectCertChain(ctx, ip, port, timeout)` performs a TLS handshake (InsecureSkipVerify for inventory) and extracts the full peer chain. Per-cert: Subject/Issuer/SAN (DNS/IP/email)/serial/validity (ISO 8601)/sig algorithm/key algorithm + bits (RSA/ECDSA/Ed25519)/is_ca/self_signed/SHA-256 fingerprint/PEM; per-handshake: TLS version, cipher suite, best-effort trust verdict. Failure path returns an error record (still persisted) so the UI can show "we tried this port".
-- **TLS-wrapped service handlers** (`handler/tls_collect.go`): 8 handlers (`https`, `ldaps`, `smtps`, `imaps`, `pop3s`, `ftps`, `ircs`, `telnets`) sharing one `tlsCollectHandler` core — each `Collect()` calls `probe.CollectCertChain` and returns a `TLSCertCollected` payload. Registered in `handler.DefaultHandlers()` (handler count 21 → 29).
-- **Extended MiscClassifier** (`classify/mail_remote.go`): the well-known TLS-wrapped service ports (465/989/990/992/993/994/995) are now asserted as service identities (`smtps`/`ftps-data`/`ftps`/`telnets`/`imaps`/`ircs`/`pop3s`) so the cert-collect handler runs for them. `ldaps` (636) was already classified.
-- **Extended TLSProbe** (`probe/tls.go`): default port set expanded from 4 (443/8443/9443/4443) to 12 (+ 465/636/989/990/992/993/994/995) so their certs land as early classification evidence. Refactored to delegate cert extraction to the shared `CollectCertChain` and to emit richer evidence fields (`not_before`/`not_after`/`sig_algorithm`/`key_algorithm`/`fingerprint_sha256`/`san_email`) alongside the existing CN/Issuer/SAN.
-- **`host_tls_certs` table** (`db/schema.sql` + `db/queries/host_tls_certs.sql`): one row per cert in each port's chain (cert_index 0 = leaf, 1..N = issuers); PEM + typed columns; indexed on `(ip, port)` and `not_after` (for expiry sweeps). Replaced wholesale per `(ip, port)` on each scan via `Repository.RecordTLSCerts` (orchestrator dispatch path).
-- **Read API** `GET /api/v1/devices/{id}/certificates`: per-port grouping with leaf + chain; status-coloring metadata (TLS version, cipher suite, trust verdict, error). Read-only, any logged-in user.
-- **Frontend TLS sub-panel** (`web/src/routes/devices/detail/[id]/+page.svelte`): new "TLS 证书" panel under Scan Discovery — one clickable row per port with status-colored left border (green=valid / amber=expiring <15d / red=expired), day-count badge, self-signed/trusted tags. Empty state explains how to populate.
-- **`CertificateModal.svelte`** (`web/src/lib/components/`): full-chain viewer — status header (shield + days-to-expiry), summary field grid (Subject/Issuer/Validity/SAN/algorithms/fingerprint), collapsible chain entries (leaf + intermediates + root), PEM block with copy-to-clipboard.
-- **Retention** `retention.host_tls_certs_days` (default 30): swept by the existing `cleanupSvc` via `DeleteHostTLSCertsStaleBatched`.
-- **i18n**: new `certificates` section (34 keys, EN + ZH) covering every label in the panel + Modal.
+**Full L2 topology + TLS certificate inventory** — v0.3.0 completes the
+topology story started in v0.2.0 (CDP/Q-BRIDGE/STP probes, radial visualization,
+neighbor identity inference) and adds a TLS certificate inventory that collects
+the full cert chain from every TLS-wrapped service on each device.
 
-**Topology probe breadth** — extends v0.3.0's LLDP coverage with the remaining
-L2-discovery MIBs so switch-centric networks are fully mapped regardless of
-vendor or VLAN configuration.
+### TLS certificate inventory
+- **TLS cert collection** (`probe/cert_collector.go`): single source of truth —
+  `CollectCertChain(ctx, ip, port, timeout)` performs a TLS handshake
+  (InsecureSkipVerify for inventory) and extracts the full peer chain. Per-cert:
+  Subject/Issuer/SAN (DNS/IP/email)/serial/validity/sig algorithm/key algorithm
+  + bits (RSA/ECDSA/Ed25519)/is_ca/self_signed/SHA-256 fingerprint/PEM;
+  per-handshake: TLS version, cipher suite, best-effort trust verdict. Failure
+  path returns an error record (still persisted) so the UI can show "we tried
+  this port".
+- **TLS-wrapped service handlers** (`handler/tls_collect.go`): 8 handlers
+  (`https`, `ldaps`, `smtps`, `imaps`, `pop3s`, `ftps`, `ircs`, `telnets`)
+  sharing one `tlsCollectHandler` core — each `Collect()` calls
+  `probe.CollectCertChain` and returns a `TLSCertCollected` payload. Handler
+  count 21 → 29.
+- **Extended MiscClassifier**: TLS-wrapped service ports (465/989/990/992/993/994/995)
+  now asserted as service identities so the cert-collect handler runs for them.
+- **Extended TLSProbe**: default port set expanded from 4 to 12 (+ 465/636/989/
+  990/992/993/994/995). Refactored to emit richer evidence fields (`not_before`/
+  `not_after`/`sig_algorithm`/`key_algorithm`/`fingerprint_sha256`/`san_email`).
+- **`host_tls_certs` table**: one row per cert in each port's chain (cert_index
+  0 = leaf, 1..N = issuers); PEM + typed columns; indexed on `(ip, port)` and
+  `not_after` (for expiry sweeps).
+- **Read API** `GET /api/v1/devices/{id}/certificates`: per-port grouping with
+  leaf + chain; status-coloring metadata (TLS version, cipher suite, trust
+  verdict, error).
+- **Frontend TLS sub-panel**: new "TLS 证书" panel under Scan Discovery — one
+  clickable row per port with status-colored left border (green=valid / amber=
+  expiring <15d / red=expired), day-count badge, self-signed/trusted tags.
+- **`CertificateModal.svelte`**: full-chain viewer — status header, summary field
+  grid (Subject/Issuer/Validity/SAN/algorithms/fingerprint), collapsible chain
+  entries, PEM block with copy-to-clipboard.
+- **Retention** `retention.host_tls_certs_days` (default 30).
+- **i18n**: new `certificates` section (34 keys, EN + ZH).
 
-### Added
-- **CDP-MIB probe** (`active:cdp_mib`): walks CISCO-CDP-MIB `cdpCacheTable` on
-  Cisco/CDP-speaking switches to discover Cisco Discovery Protocol neighbors
-  (device id, platform, software version, remote port). Cisco-proprietary
-  counterpart to LLDP-MIB; uses the device id as the neighbor merge key (CDP-MIB
-  does not expose the neighbor MAC). Emits `protocol:"CDP"` neighbor edges.
+### Topology probe breadth
+- **CDP-MIB probe** (`active:cdp_mib`): walks CISCO-CDP-MIB `cdpCacheTable`
+  on Cisco/CDP-speaking switches. Uses device id as the neighbor merge key.
+  Emits `protocol:"CDP"` neighbor edges.
 - **Q-BRIDGE-MIB probe** (`active:q_bridge_mib`): walks IEEE 802.1Q
-  `dot1qTpFdbPort` for VLAN-aware MAC→port forwarding entries — the successor to
-  BRIDGE-MIB's single-VLAN `dot1dTpFdbPort`. Recovers L2 adjacency on
-  tagged/inter-VLAN topologies that BRIDGE-MIB misses. Emits
-  `protocol:"Q-BRIDGE"` edges with ifName-resolved port names.
-- **STP-MIB probe** (`active:stp_mib`): walks BRIDGE-MIB `dot1dStp` to recover
-  Spanning Tree facts (root bridge, designated port, port role/state). Topology
-  metadata that explains blocked links and orients the root. Emits
+  `dot1qTpFdbPort` for VLAN-aware MAC→port forwarding entries. Recovers L2
+  adjacency on tagged/inter-VLAN topologies. Emits `protocol:"Q-BRIDGE"` edges
+  with ifName-resolved port names.
+- **STP-MIB probe** (`active:stp_mib`): walks BRIDGE-MIB `dot1dStp` for
+  Spanning Tree facts (root bridge, designated port, port role/state). Emits
   `protocol:"STP"` evidence.
 - **IF-MIB ifName resolution** (`probe.ResolvePortNames`): shared helper that
-  walks `ifName` (1.3.6.1.2.1.31.1.1.1.1) to turn numeric ifIndex/port values
-  from the topology probes into human-readable interface names (e.g.
-  `GigabitEthernet0/1`). Used by CDP/Q-BRIDGE probes for neighbor `local_port`.
+  turns numeric ifIndex/port values into human-readable interface names (e.g.
+  `GigabitEthernet0/1`). Used by CDP/Q-BRIDGE probes.
 
-### Changed
-- **Neighbor identity inference**: the orchestrator now runs a pluggable
-  `NeighborIdentityInfer` callback (set by the engine) that takes neighbor
-  evidence (sysName/sysDesc/platform) and returns enrichment fields. The engine
-  wires this to the RuleClassifier so CDP/LLDP neighbors get vendor/model/type
-  inferred from their platform string — the same fingerprint library used for
-  discovered hosts, now applied to topology neighbors.
-- **`EnrichDeviceByMAC`** on the SQLite repository: enriches a device's
-  vendor/model/type/hostname/extras fields by MAC (the neighbor merge key),
-  preserving existing non-empty values. This is how inferred neighbor identity
-  lands on the device portrait.
+### Topology visualization
+- **Network topology page** (`/topology`): full-network radial tree view
+  (ECharts TreeChart, newly tree-shaken in) of devices as nodes and
+  `device_neighbors` as edges. Node color by device type; edge color by protocol;
+  dashed edges for unidentified neighbors. Network filter + 60s auto-refresh;
+  click a node to open its detail page.
+- **Device-detail Neighbors panel**: table of a device's L2 neighbors with
+  neighbor name/IP/type (resolved via device JOIN) and link to detail page.
 
-## [0.3.0] - 2026-07-14
+### LLDP discovery
+- **SNMP LLDP-MIB probe** (`active:lldp_mib`): walks `lldpRemTable` on
+  SNMP-speaking switches/APs — the cross-vendor standard. Emits
+  `protocol:"LLDP"` neighbor edges. Unprivileged (UDP/161).
+- **Raw-frame LLDPDU listener** (`WITH_LLDP` build-tag, default OFF): captures
+  ethertype 0x88cc frames via AF_PACKET to see LLDP-broadcasting endpoints.
+  `make build-with-lldp` to enable.
 
-**Topology Visible** — surfaces the L2-adjacency data v0.2.0 collected but
-never exposed, adds LLDP coverage, and hardens retention + tests.
+### Neighbor identity inference
+- Orchestrator gains pluggable `NeighborIdentityInfer` callback wired to the
+  RuleClassifier — CDP/LLDP neighbors get vendor/model/type inferred from their
+  platform string.
+- **`EnrichDeviceByMAC`**: enriches a device's vendor/model/type/hostname by MAC
+  (the neighbor merge key), preserving existing non-empty values.
+
+### Retention hardening
+- `device_neighbors` and `host_services` now have retention sweepers (they grew
+  unbounded in v0.2.0). Defaults: 90d neighbors, 30d host_services.
+
+### Test coverage
+- **taskservice** (scan-task state machine): CRUD, validation, pagination, nil-
+  scheduler behavior.
+- **Fingerprint golden test**: quality regression guard (real-world evidence
+  samples → expected service/metadata).
+
+### Fingerprint library
+- Extended `snmp-data.yaml` with consumer/SMB networking sysObjectID prefixes.
+- New `lldp-cdp.yaml` rules for CDP/LLDP device identification.
 
 ### Topology visualization
 - **Network topology page** (`/topology`): a full-network force-directed graph
