@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] - 2026-07-18
 
-**Full L2 topology + TLS certificate inventory** — v0.3.0 completes the
-topology story started in v0.2.0 (CDP/Q-BRIDGE/STP probes, radial visualization,
-neighbor identity inference) and adds a TLS certificate inventory that collects
-the full cert chain from every TLS-wrapped service on each device.
+**Full L2 topology + TLS certificate inventory + container images** — v0.3.0
+completes the topology story started in v0.2.0 (CDP/Q-BRIDGE/STP probes, radial
+visualization, neighbor identity inference), adds a TLS certificate inventory
+that collects the full cert chain from every TLS-wrapped service on each device,
+and introduces official multi-arch container images on GHCR.
 
 ### TLS certificate inventory
 - **TLS cert collection** (`probe/cert_collector.go`): single source of truth —
@@ -64,46 +65,8 @@ the full cert chain from every TLS-wrapped service on each device.
   `GigabitEthernet0/1`). Used by CDP/Q-BRIDGE probes.
 
 ### Topology visualization
-- **Network topology page** (`/topology`): full-network radial tree view
-  (ECharts TreeChart, newly tree-shaken in) of devices as nodes and
-  `device_neighbors` as edges. Node color by device type; edge color by protocol;
-  dashed edges for unidentified neighbors. Network filter + 60s auto-refresh;
-  click a node to open its detail page.
-- **Device-detail Neighbors panel**: table of a device's L2 neighbors with
-  neighbor name/IP/type (resolved via device JOIN) and link to detail page.
-
-### LLDP discovery
-- **SNMP LLDP-MIB probe** (`active:lldp_mib`): walks `lldpRemTable` on
-  SNMP-speaking switches/APs — the cross-vendor standard. Emits
-  `protocol:"LLDP"` neighbor edges. Unprivileged (UDP/161).
-- **Raw-frame LLDPDU listener** (`WITH_LLDP` build-tag, default OFF): captures
-  ethertype 0x88cc frames via AF_PACKET to see LLDP-broadcasting endpoints.
-  `make build-with-lldp` to enable.
-
-### Neighbor identity inference
-- Orchestrator gains pluggable `NeighborIdentityInfer` callback wired to the
-  RuleClassifier — CDP/LLDP neighbors get vendor/model/type inferred from their
-  platform string.
-- **`EnrichDeviceByMAC`**: enriches a device's vendor/model/type/hostname by MAC
-  (the neighbor merge key), preserving existing non-empty values.
-
-### Retention hardening
-- `device_neighbors` and `host_services` now have retention sweepers (they grew
-  unbounded in v0.2.0). Defaults: 90d neighbors, 30d host_services.
-
-### Test coverage
-- **taskservice** (scan-task state machine): CRUD, validation, pagination, nil-
-  scheduler behavior.
-- **Fingerprint golden test**: quality regression guard (real-world evidence
-  samples → expected service/metadata).
-
-### Fingerprint library
-- Extended `snmp-data.yaml` with consumer/SMB networking sysObjectID prefixes.
-- New `lldp-cdp.yaml` rules for CDP/LLDP device identification.
-
-### Topology visualization
-- **Network topology page** (`/topology`): a full-network force-directed graph
-  (ECharts `graph` series, newly tree-shaken in) of devices as nodes and
+- **Network topology page** (`/topology`): a full-network radial tree view
+  (ECharts `tree` series, newly tree-shaken in) of devices as nodes and
   `device_neighbors` as edges. Node color by device type; edge color by protocol
   (LLDP blue / Bridge-MIB green); dashed edges point at unidentified neighbors.
   Network filter + 60s auto-refresh; click a node to open its detail page.
@@ -121,6 +84,42 @@ the full cert chain from every TLS-wrapped service on each device.
   LLDP-broadcasting endpoints (IP phones, APs, NAS) that don't run SNMP LLDP-MIB.
   Mirrors the eBPF observer's build-tag pattern — the default build ships a
   no-op stub so it stays unprivileged (`make build-with-lldp` to enable).
+
+### Neighbor identity inference
+- Orchestrator gains pluggable `NeighborIdentityInfer` callback wired to the
+  RuleClassifier — CDP/LLDP neighbors get vendor/model/type inferred from their
+  platform string.
+- **`EnrichDeviceByMAC`**: enriches a device's vendor/model/type/hostname by MAC
+  (the neighbor merge key), preserving existing non-empty values.
+
+### Container images & deployment profiles
+- **GHCR publishing**: every `v*` tag now builds a multi-arch (linux/amd64 +
+  linux/arm64) image at `ghcr.io/mi-bee-studio/mibeesteward`, tagged
+  `:latest` / `:<version>` / `:<major>.<minor>` / `:sha-<short>`. The release
+  workflow's `publish` job waits on `[release, docker]` so a GitHub Release is
+  only created when both binaries and image succeed. Image is the unprivileged
+  variant (LLDP/CDP/eBPF compiled as stubs).
+- **Docker network-mode profiles**: three compose profiles so the deployment
+  shape matches the intent — `bridge` (default, NAT'd, MAC/ARP degraded),
+  `host` (recommended, ≈ bare-metal probe fidelity), `macvlan` (own LAN IP).
+  Measured on the test LAN: the default docker bridge found 0/26 device MACs vs
+  30/31 with host networking (the container's `/proc/net/arp` only sees the
+  bridge gateway). See `docs/{en,zh}/deployment.md` § "Docker network mode".
+- **Dockerfile**: `BUILD_TAGS` arg (WITH_LLDP/CDP/EBPF opt-in), opt-in `SETCAP`
+  (file caps break exec() when the cap isn't in the bounding set, so default
+  off), `NPM_REGISTRY`/`GOPROXY` args for restricted-network builds,
+  `NODE_OPTIONS` for the vite heap, `/data` pre-owned by the non-root user.
+- **Makefile**: `docker-build` / `-priv` / `-up` / `-up-bridge` /
+  `-up-macvlan` / `-down` / `-logs` targets.
+- **`configs/config.docker.yaml`**: container template (network.cidr, /data
+  paths, bridge-mode router_arp guidance).
+
+### CI
+- **`docker-build` smoke-test job** (ci.yml): on every PR, builds the image
+  (amd64 only, no push) and boots it with a minimal config, waiting up to 30s
+  for `/health` — catches Dockerfile/compose regressions before a tag.
+- **Node.js 20 deprecation**: actions still target Node 20; GitHub is forcing
+  Node 24 (warning, not failure). Upgrade pending.
 
 ### Retention hardening
 - `device_neighbors` and `host_services` now have retention sweepers (they grew
@@ -143,6 +142,11 @@ the full cert chain from every TLS-wrapped service on each device.
 - Extended `snmp-data.yaml` with consumer/SMB networking sysObjectID prefixes
   underrepresented vs the enterprise-heavy table (ASUS, D-Link, Zyxel, Tenda,
   DrayTek, alternate TP-Link/Mikrotik subtypes). Each is one YAML entry.
+- New `lldp-cdp.yaml` rules for CDP/LLDP device identification.
+
+### Fixes
+- Removed deprecated `tls.VersionSSL30` (staticcheck SA1019).
+- gofmt + golangci-lint cleanup (QF1008, unused params, embedded selectors).
 
 ## [0.2.0] - 2026-07-13
 
