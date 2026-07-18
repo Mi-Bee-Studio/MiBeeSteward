@@ -35,7 +35,7 @@ Open an issue with the title `CLA: <Your Name>` (or `CLA: <Company Name>` for
 corporate) and paste the filled-in agreement from the relevant section below.
 A maintainer will record it and close the issue.
 
-Alternatively, email the completed agreement to commercial@mibee.studio.
+Alternatively, email the completed agreement to mickey_zzc@163.com.
 
 ---
 
