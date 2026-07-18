@@ -4,7 +4,8 @@
 [![Go Reference](https://pkg.go.dev/badge/mibee-steward.svg)](https://pkg.go.dev/mibee-steward)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Mi-Bee-Studio/MiBeeSteward)](https://goreportcard.com/report/github.com/Mi-Bee-Studio/MiBeeSteward)
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-blue)](https://polyformproject.org/licenses/noncommercial/1.0.0)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue)](https://www.gnu.org/licenses/agpl-3.0)
+[![Discussions](https://img.shields.io/github/discussions/Mi-Bee-Studio/MiBeeSteward?logo=github&label=Discussions)](https://github.com/Mi-Bee-Studio/MiBeeSteward/discussions)
 [![Frontend: SvelteKit 5](https://img.shields.io/badge/Frontend-SvelteKit%205-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev)
 
 [English](README.md) | **中文**
@@ -171,7 +172,7 @@ make test
 
 ## 许可证
 
-本项目基于 [PolyForm Noncommercial License v1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) 授权 —— 不允许商业使用。详见 [LICENSE](LICENSE)。
+MiBee Steward 采用 [GNU AGPLv3](https://www.gnu.org/licenses/agpl-3.0) 授权，另提供[商业许可](LICENSE-COMMERCIAL.md)，适用于闭源衍生或不想开源修改的 SaaS 场景。指纹语料库（`configs/fingerprints/`）采用 [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) 授权。详见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。
 
 ## 支持
 
