@@ -53,10 +53,9 @@ func loadBuiltinRules(t *testing.T) *fp.RuleClassifier {
 func TestRuleClassifier_LoadsAllRules(t *testing.T) {
 	rc := loadBuiltinRules(t)
 	// builtin-only (recog-imported.yaml excluded — tested via loadFullRules).
-	// banner.yaml=8 + http-tls.yaml=6 + ports.yaml=6 = 20
-	// banner.yaml=8 + http-tls.yaml=6 + ports.yaml=6 + lldp-cdp.yaml=13 = 33
-	if rc.RuleCount() != 33 {
-		t.Errorf("expected 33 builtin rules, got %d", rc.RuleCount())
+	// banner.yaml=8 + http-tls.yaml=12 (6 kind-presence + 6 http-server-*) + ports.yaml=7 (6 port + 1 smb-version) + lldp-cdp.yaml=13 = 40
+	if rc.RuleCount() != 40 {
+		t.Errorf("expected 40 builtin rules, got %d", rc.RuleCount())
 	}
 }
 
@@ -232,8 +231,13 @@ func TestRuleClassifier_PlainPrometheus(t *testing.T) {
 
 func TestRuleClassifier_WebVersionExtract(t *testing.T) {
 	rc := loadBuiltinRules(t)
+	// Use a fictitious server string that has a real version pattern (so version
+	// extraction is exercised) but matches no http-server-* product rule — those
+	// rules are a RuleClassifier enhancement beyond the hand-written WebClassifier
+	// and would otherwise make `want` (WebClassifier output) and `got` diverge in
+	// identity count. This keeps the test focused on version extraction parity.
 	ev := []scannerv2.Evidence{
-		{Kind: "http", Port: 80, Confidence: 0.9, RawData: map[string]string{"server": "nginx/1.25.3", "title": "Test"}},
+		{Kind: "http", Port: 80, Confidence: 0.9, RawData: map[string]string{"server": "MyApp/1.25.3", "title": "Test"}},
 	}
 	want := WebClassifier{}.Classify(ev)
 	got := rc.Classify(ev)
