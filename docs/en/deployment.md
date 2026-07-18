@@ -139,6 +139,59 @@ docker compose logs -f
 - `MIBEE_AUTH_JWT_SECRET`: JWT secret (required)
 - `MIBEE_AUTH_INITIAL_ADMIN_PASSWORD`: Admin password (required)
 
+#### Docker Network Mode Selection (Important)
+
+MiBee Steward's scanner operates at the network-namespace level, so **the container's network mode directly determines probe effectiveness**. `docker-compose.yml` ships three profiles — pick one by deployment intent:
+
+| Profile | Start command | Probe effectiveness | Use case | Limitations |
+|---|---|---|---|---|
+| `bridge` (default) | `docker compose --profile bridge up` | Only TCP/SNMP/HTTP/TLS/RTSP/ONVIF reliable; **ICMP and ARP/MAC discovery severely degraded** | UI demo, dev, admin panel | Can't see the real LAN; device MACs are mostly lost |
+| `host` (**recommended**) | `docker compose --profile host up` | ≈ bare-metal, full probe fidelity (ICMP, `/proc/net/arp`, multicast) | **Production scanning** | Takes the host's port 8080; needs `cap_add: NET_RAW,NET_ADMIN` |
+| `macvlan` | `docker compose --profile macvlan up` | Container gets its own LAN IP; ARP/MAC work | When the container must appear on the LAN as its own device | Host↔container is unrouted by default (needs a manual macvlan shim interface) |
+
+> ⚠️ **Why bridge mode can't be used for real inventory**
+> The default Docker bridge places the container behind NAT. Consequences:
+> 1. **ARP/MAC broken**: `/proc/net/arp` inside the container only sees the bridge gateway entry; LAN device MACs are essentially unrecoverable (`ARPProbe`, `ARPCacheSource`, `LookupMACPostScan` all read this file).
+> 2. **ICMP broken**: ping replies crossing NAT are often dropped, so the heartbeat's 30s active probe falsely marks LAN devices offline.
+> 3. **Passive multicast broken**: the bridge doesn't forward 224/239 multicast, so mDNS/SSDP listeners self-disable.
+>
+> Partial workaround: in bridge mode, list your gateway router IPs in `scanner.router_arp.routers` so the scanner can SNMP-walk the router's ARP table for MACs — but this only recovers MACs, not ICMP or multicast.
+
+**Full host-mode example** (production):
+
+```bash
+# 1. Prepare config (from the container template)
+cp configs/config.docker.yaml configs/config.yaml
+#    Edit jwt_secret / initial_admin_password / network.cidr
+
+# 2. Build and start (host profile — container shares the host netns)
+docker compose --profile host up -d --build
+
+# 3. Verify
+curl -s http://localhost:8080/api/v1/health
+```
+
+To enable the raw-frame LLDP/CDP listeners or the eBPF passive observer (compiled out by default), pass build tags and grant the matching runtime caps:
+
+```bash
+# Build (bakes raw-frame LLDP/CDP + eBPF into the binary)
+BUILD_TAGS=WITH_LLDP,WITH_CDP,WITH_EBPF docker compose --profile host build
+
+# Runtime (eBPF additionally needs cap_add: BPF, kernel >=5.8 + BTF).
+# The host profile in docker-compose.yml already declares NET_RAW + NET_ADMIN;
+# append `- BPF` to cap_add if you enable eBPF.
+```
+
+**Building behind a restricted network** (when registry.npmjs.org / proxy.golang.org are unreachable):
+
+```bash
+NPM_REGISTRY=https://registry.npmmirror.com \
+GOPROXY=https://goproxy.cn,direct \
+docker compose --profile host build
+```
+
+The Makefile wraps common flows: `make docker-up` (= host profile, recommended), `make docker-up-bridge` (demo), `make docker-up-macvlan`, `make docker-build-priv` (privileged image variant).
+
 ### 3. Nginx Reverse Proxy
 
 #### Configuration
