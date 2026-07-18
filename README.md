@@ -4,7 +4,8 @@
 [![Go Reference](https://pkg.go.dev/badge/mibee-steward.svg)](https://pkg.go.dev/mibee-steward)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Mi-Bee-Studio/MiBeeSteward)](https://goreportcard.com/report/github.com/Mi-Bee-Studio/MiBeeSteward)
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-blue)](https://polyformproject.org/licenses/noncommercial/1.0.0)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue)](https://www.gnu.org/licenses/agpl-3.0)
+[![Discussions](https://img.shields.io/github/discussions/Mi-Bee-Studio/MiBeeSteward?logo=github&label=Discussions)](https://github.com/Mi-Bee-Studio/MiBeeSteward/discussions)
 [![Frontend: SvelteKit 5](https://img.shields.io/badge/Frontend-SvelteKit%205-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev)
 
 **English** | [中文](README.zh-CN.md)
@@ -171,7 +172,7 @@ make test
 
 ## License
 
-This project is licensed under the [PolyForm Noncommercial License v1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) — commercial use is not permitted. See [LICENSE](LICENSE).
+MiBee Steward is licensed under the [GNU AGPLv3](https://www.gnu.org/licenses/agpl-3.0), with a [commercial license](LICENSE-COMMERCIAL.md) available for closed-source derivatives or SaaS use without open-sourcing modifications. The fingerprint corpus (`configs/fingerprints/`) is licensed under [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). See [LICENSE](LICENSE) and [NOTICE](NOTICE) for details.
 
 ## Support
 

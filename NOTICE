@@ -1,0 +1,66 @@
+MiBee Steward
+Copyright (c) 2026 Mi-Bee Studio
+
+Licensed under the GNU Affero General Public License v3.0 or later
+(SPDX-License-Identifier: AGPL-3.0-or-later). See LICENSE for the full text.
+
+A commercial license is available for use cases not accommodated by the AGPLv3
+(closed-source derivatives, SaaS without open-sourcing modifications). See
+LICENSE-COMMERCIAL.md for details.
+
+========================================================================
+
+This product includes software and data developed by third parties.
+The following attributions are provided in accordance with each project's
+license terms.
+
+== Third-party Go dependencies ==
+
+(MIT License)
+- github.com/go-chi/chi/v5
+- github.com/go-chi/jwtauth/v5
+- github.com/go-co-op/gocron/v2
+- github.com/cilium/ebpf
+- github.com/knadh/koanf/v2 and related koanf subpackages
+- github.com/stretchr/testify
+
+(BSD-2-Clause / BSD-3-Clause License)
+- github.com/gosnmp/gosnmp
+- github.com/google/uuid
+- golang.org/x/crypto, golang.org/x/time
+- modernc.org/sqlite
+
+(Apache License 2.0)
+- github.com/pquerna/otp
+- github.com/prometheus-community/pro-bing
+- github.com/prometheus/client_golang
+- gopkg.in/yaml.v3
+
+All of the above are permissive licenses compatible with AGPLv3. No GPL or
+AGPL-licensed third-party code is linked into the binary, so the copyleft
+obligation does not extend beyond MiBee Steward's own source.
+
+== Fingerprint corpus (identification rules) ==
+
+The fingerprint YAML rules in configs/fingerprints/ and in the companion module
+github.com/Mi-Bee-Studio/mibee-fingerprints-go are licensed under
+Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0).
+See configs/fingerprints/README.md for corpus attribution and provenance.
+
+Provenance of imported identification data:
+- Rapid7 Recog fingerprints     — Apache-2.0 (imported via cmd/fpimport)
+- IEEE OUI registry             — factual data, freely redistributable
+- IANA Private Enterprise Numbers — factual data, freely redistributable
+
+== Explicitly NOT included ==
+
+This product does NOT contain or derive from nmap-service-probes. The nmap
+service fingerprint database is licensed under the Nmap Public Source License
+(NPSL), which is incompatible with this project's licenses. Identification
+behaviors inspired by nmap are implemented via clean-room reference only.
+
+========================================================================
+
+For the avoidance of doubt: this NOTICE file provides attribution as required
+by the licenses of third-party components. It does not modify or override the
+terms of the AGPLv3 under which MiBee Steward is distributed.
