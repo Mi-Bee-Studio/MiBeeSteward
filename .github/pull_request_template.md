@@ -8,7 +8,8 @@ Brief description of the changes.
 - [ ] `make test` passes
 - [ ] `cd web && npm test` passes
 - [ ] No secrets / private IPs committed
-- [ ] LICENSE-compatible (PolyForm NC)
+- [ ] [CLA](../CLA.md) signed (one-time) and all commits carry `Signed-off-by` (DCO)
+- [ ] LICENSE-compatible (AGPLv3; fingerprints CC-BY-SA-4.0)
 - [ ] sqlc regenerated if schema/queries changed
 
 ## Description
