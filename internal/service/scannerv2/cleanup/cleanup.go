@@ -103,6 +103,7 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneChangeLog(ctx)
 	s.pruneDeviceNeighbors(ctx)
 	s.pruneHostServices(ctx)
+	s.pruneHostTLSCerts(ctx)
 }
 
 // cutoff returns now - retentionDays, or a zero time if days<=0 (which would
@@ -249,6 +250,21 @@ func (s *Service) pruneHostServices(ctx context.Context) {
 	days := s.cfg.HostServicesDays
 	s.sweepBatched(ctx, "host_services", days, func(cut time.Time, limit int64) (int64, error) {
 		return s.queries.DeleteHostServicesStaleBatched(ctx, db.DeleteHostServicesStaleBatchedParams{
+			UpdatedAt: cut,
+			Limit:     limit,
+		})
+	})
+}
+
+// pruneHostTLSCerts prunes the TLS certificate chain rows for hosts that haven't
+// been seen within the retention window. host_tls_certs is replaced per
+// (ip, port) on each successful scan, but a gone-silent host leaves its last
+// cert chain behind; this reclaims those stale rows. PEM payload is a few KB
+// per row, so this also bounds storage growth from cert rotation history.
+func (s *Service) pruneHostTLSCerts(ctx context.Context) {
+	days := s.cfg.HostTLSCertsDays
+	s.sweepBatched(ctx, "host_tls_certs", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteHostTLSCertsStaleBatched(ctx, db.DeleteHostTLSCertsStaleBatchedParams{
 			UpdatedAt: cut,
 			Limit:     limit,
 		})

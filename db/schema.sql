@@ -351,6 +351,52 @@ CREATE TABLE IF NOT EXISTS host_services (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_host_services_ip_svc_port ON host_services(ip, service, port);
 CREATE INDEX IF NOT EXISTS idx_host_services_service ON host_services(service);
 
+-- host_tls_certs stores TLS/SSL certificates collected from TLS-speaking
+-- services. The scanner probes the default TLS ports (443/8443/9443/4443 and
+-- the well-known TLS-wrapped service ports 465/636/989/990/992/993/994/995)
+-- and any port a classifier identifies as a TLS service. Each successful
+-- handshake yields one or more rows here: one row per certificate in the
+-- server's chain (cert_index 0 is the leaf/server cert, 1..N are issuers up
+-- the chain). The full PEM is stored for the "view/export certificate" use
+-- case; the typed columns support queryability (expiry sweeps, self-signed
+-- inventory, etc.).
+CREATE TABLE IF NOT EXISTS host_tls_certs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip TEXT NOT NULL,
+    port INTEGER NOT NULL DEFAULT 0,
+    cert_index INTEGER NOT NULL DEFAULT 0,        -- 0 = leaf/server cert, 1..N = chain issuers
+    -- Identity
+    subject_cn TEXT NOT NULL DEFAULT '',
+    subject_org TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',             -- full RFC 4514 distinguished name
+    issuer_cn TEXT NOT NULL DEFAULT '',
+    issuer_org TEXT NOT NULL DEFAULT '',
+    issuer TEXT NOT NULL DEFAULT '',
+    san_dns TEXT NOT NULL DEFAULT '',             -- comma-separated DNS names
+    san_ip TEXT NOT NULL DEFAULT '',              -- comma-separated IP addresses
+    san_email TEXT NOT NULL DEFAULT '',           -- comma-separated email addresses
+    serial TEXT NOT NULL DEFAULT '',              -- decimal string (x509.SerialNumber.Text)
+    -- Validity, ISO 8601 UTC for queryability (parsed from cert.NotBefore/NotAfter)
+    not_before TEXT NOT NULL DEFAULT '',
+    not_after TEXT NOT NULL DEFAULT '',
+    -- Crypto details
+    sig_algorithm TEXT NOT NULL DEFAULT '',       -- e.g. SHA256-RSA, ECDSA-SHA256
+    key_algorithm TEXT NOT NULL DEFAULT '',       -- RSA, ECDSA, Ed25519
+    key_bits INTEGER NOT NULL DEFAULT 0,          -- RSA modulus bits / ECDSA curve order bits
+    is_ca INTEGER NOT NULL DEFAULT 0,             -- 1 if BasicConstraints CA=true
+    self_signed INTEGER NOT NULL DEFAULT 0,       -- 1 if Subject == Issuer (cheap heuristic)
+    fingerprint_sha256 TEXT NOT NULL DEFAULT '',  -- uppercase hex of SHA-256(cert.Raw)
+    pem TEXT NOT NULL DEFAULT '',                 -- full PEM ("-----BEGIN CERTIFICATE-----" ...)
+    -- TLS handshake metadata (only meaningful for cert_index=0; empty for chain certs)
+    tls_version TEXT NOT NULL DEFAULT '',         -- e.g. TLS 1.3
+    cipher_suite TEXT NOT NULL DEFAULT '',        -- e.g. TLS_AES_128_GCM_SHA256
+    trusted INTEGER NOT NULL DEFAULT 0,           -- 1 if chains to system roots (best-effort)
+    error TEXT NOT NULL DEFAULT '',               -- non-empty when the handshake failed; port column still set
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_host_tls_certs_ip_port ON host_tls_certs(ip, port);
+CREATE INDEX IF NOT EXISTS idx_host_tls_certs_expiring ON host_tls_certs(not_after);
+
 -- === Topology / relationship / change layer ===
 -- Schema groundwork for cross-network distributed discovery (see
 -- docs/private/architecture-future.md §6). These tables are empty in the

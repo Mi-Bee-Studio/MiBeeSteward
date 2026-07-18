@@ -7,6 +7,7 @@
 - [健康检查](#健康检查)
 - [用户](#用户)
 - [设备](#设备)
+- [设备证书](#设备证书)
 - [文档](#文档)
 - [心跳监控](#心跳监控)
 - [仪表板](#仪表板)
@@ -241,6 +242,65 @@
 **需要认证**
 
 **响应**：与 GET /api/v1/devices 相同，但为单个设备对象
+
+## 设备证书
+
+由 v2 扫描器从设备上 TLS 包装的服务（HTTPS、LDAPS、SMTPS、IMAPS、POP3S、FTPS、IRCS、TelnetS）采集的 TLS/SSL 证书链。每个端口的证书链中每张证书一行（`cert_index` 0 = 叶/服务器证书，1..N = 上级颁发者）。由 `probe.CollectCertChain` 采集并写入 `host_tls_certs` 表；每次扫描时该端口的链被整体替换。按 `retention.host_tls_certs_days`（默认 30 天）保留。
+
+### GET /api/v1/devices/{id}/certificates
+列出从设备上每个 TLS 端口采集的证书链，按端口分组。
+
+**需要认证**（任意登录用户；只读）
+
+**响应**：
+```json
+{
+  "certificates": [
+    {
+      "port": 990,
+      "tls_version": "TLS 1.2",
+      "cipher_suite": "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+      "trusted": false,
+      "error": "",
+      "updated_at": "2026-07-17T23:38:33Z",
+      "leaf": {
+        "cert_index": 0,
+        "subject_cn": "device.example.com",
+        "subject_org": "Example Org",
+        "subject": "CN=device.example.com,O=Example Org",
+        "issuer_cn": "Example CA",
+        "issuer_org": "Example CA Ltd",
+        "issuer": "CN=Example CA,O=Example CA Ltd,C=US",
+        "san_dns": "device.example.com, alt.example.com",
+        "san_ip": "192.168.63.112",
+        "san_email": "",
+        "serial": "665071982890971409216315924781532514095376553279",
+        "not_before": "2023-10-29T02:38:14Z",
+        "not_after": "2033-10-26T02:38:14Z",
+        "sig_algorithm": "SHA256-RSA",
+        "key_algorithm": "RSA",
+        "key_bits": 2048,
+        "is_ca": false,
+        "self_signed": false,
+        "fingerprint_sha256": "B8A72EE7DF38217D2C037C8927E687921FD8D31B9A0AF2E4E22779B60671F278",
+        "pem": "-----BEGIN CERTIFICATE-----\nMIIC4zCCAcsCFHR+...\n-----END CERTIFICATE-----\n"
+      },
+      "chain": [
+        { "cert_index": 0, "subject_cn": "device.example.com", "...": "..." },
+        { "cert_index": 1, "subject_cn": "Example CA", "is_ca": true, "...": "..." }
+      ]
+    }
+  ],
+  "total": 1
+}
+```
+
+**字段说明**：
+- `tls_version` / `cipher_suite` / `trusted` 是握手元数据，在同一端口链中的每个条目上都相同（描述的是同一次握手）。
+- `leaf` 即 `chain[0]`，单独暴露以便一览式渲染；当 `error` 非空时省略。
+- `error` 在 TLS 握手失败时非空（如 `not TLS`、`handshake failure`）。这类行仍然返回，便于 UI 显示"已尝试过此端口"而非默默省略。此时 `leaf` 与 `chain` 为空。
+- `trusted` 是最佳努力的判定（对系统根证书池做一次验证握手得出），仅用于 UI 徽章，**不影响采集**（自签名证书总会被采集）。
+- 设备未记录任何 TLS 端口时返回空 `certificates` 数组，HTTP 仍为 200 —— 应渲染空状态，而非 404。
 
 ### POST /api/v1/devices
 创建新设备。

@@ -57,6 +57,58 @@ export interface ServiceEntry {
 	version?: string;
 }
 
+// ---------------------------------------------------------------------------
+// TLS certificates (host_tls_certs via GET /devices/{id}/certificates)
+// ---------------------------------------------------------------------------
+
+/** One certificate in a port's chain. cert_index 0 is the leaf/server cert. */
+export interface CertificateInfo {
+	cert_index: number;
+	subject_cn: string;
+	subject_org: string;
+	subject: string;
+	issuer_cn: string;
+	issuer_org: string;
+	issuer: string;
+	san_dns: string;
+	san_ip: string;
+	san_email: string;
+	serial: string;
+	/** ISO 8601 UTC, e.g. "2026-07-18T12:34:56Z" */
+	not_before: string;
+	/** ISO 8601 UTC */
+	not_after: string;
+	sig_algorithm: string;
+	key_algorithm: string;
+	key_bits: number;
+	is_ca: boolean;
+	self_signed: boolean;
+	fingerprint_sha256: string;
+	/** Full PEM (BEGIN CERTIFICATE / END CERTIFICATE). */
+	pem: string;
+}
+
+/** One TLS-speaking port on a device: the handshake metadata + the chain. */
+export interface TLSPortCerts {
+	port: number;
+	tls_version: string;
+	cipher_suite: string;
+	trusted: boolean;
+	/** Non-empty when the handshake failed; leaf/chain are empty in that case. */
+	error?: string;
+	updated_at: string;
+	/** Leaf (cert_index 0); absent when error is set. */
+	leaf?: CertificateInfo;
+	/** Ordered chain (leaf first). Empty when error is set. */
+	chain: CertificateInfo[];
+}
+
+/** Response envelope for GET /devices/{id}/certificates. */
+export interface DeviceCertificatesResponse {
+	certificates: TLSPortCerts[];
+	total: number;
+}
+
 export interface PrometheusInfo {
 	url?: string;
 	node_exporter_url?: string;

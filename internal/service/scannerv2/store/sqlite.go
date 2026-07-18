@@ -192,6 +192,77 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 	return tx.Commit()
 }
 
+// RecordTLSCerts persists the TLS certificate chains collected for an IP. The
+// prior set of rows for each (ip, port) is replaced wholesale (delete + insert
+// in a tx) so a server that rotated its cert doesn't show stale data. Rows for
+// ports not present in this call are left untouched (a partial scan of a 20-port
+// host shouldn't wipe the other 18 ports' certs).
+//
+// Records carrying an Error are still inserted (with the typed columns empty) so
+// the UI can render "we tried this port and the handshake failed" — this is the
+// difference between "port scanned, no TLS" and "port not scanned at all".
+func (r *SQLiteRepository) RecordTLSCerts(ctx context.Context, ip string, certs []scannerv2.TLSCertRecord) error {
+	if len(certs) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Collect the distinct ports in this batch; delete prior rows for each.
+	ports := make(map[int]struct{}, len(certs))
+	for _, c := range certs {
+		ports[c.Port] = struct{}{}
+	}
+	for port := range ports {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM host_tls_certs WHERE ip = ? AND port = ?`, ip, port); err != nil {
+			return err
+		}
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO host_tls_certs (
+			ip, port, cert_index,
+			subject_cn, subject_org, subject, issuer_cn, issuer_org, issuer,
+			san_dns, san_ip, san_email, serial,
+			not_before, not_after,
+			sig_algorithm, key_algorithm, key_bits, is_ca, self_signed,
+			fingerprint_sha256, pem,
+			tls_version, cipher_suite, trusted, error, updated_at
+		) VALUES (?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	now := time.Now().UTC()
+	for _, c := range certs {
+		if _, err := stmt.ExecContext(ctx,
+			ip, c.Port, c.CertIndex,
+			c.SubjectCN, c.SubjectOrg, c.Subject, c.IssuerCN, c.IssuerOrg, c.Issuer,
+			c.SanDNS, c.SanIP, c.SanEmail, c.Serial,
+			c.NotBefore, c.NotAfter,
+			c.SigAlgorithm, c.KeyAlgorithm, c.KeyBits, boolToInt(c.IsCA), boolToInt(c.SelfSigned),
+			c.FingerprintSHA256, c.PEM,
+			c.TLSVersion, c.CipherSuite, boolToInt(c.Trusted), c.Error, now,
+		); err != nil {
+			r.logger.Warn("insert host_tls_certs row failed", "ip", ip, "port", c.Port, "error", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// boolToInt converts a bool to the integer encoding used by the schema's
+// INTEGER columns (is_ca, self_signed, trusted). SQLite has no native bool.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // RecordDevice upserts device fields discovered by the pipeline. The v2 engine
 // only enriches; it does not create device identities from scratch (the legacy
 // add-devices flow or manual creation does). So this updates existing rows

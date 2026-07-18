@@ -208,18 +208,7 @@ func (h SMBHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.Colle
 	serverServiceHandler{}.EnrichDevice(svc, d)
 }
 
-// HTTPS handler — TLSClassifier emits "https" but there was no handler, so a
-// host with only TLS web still dropped to "other". Treat like HTTP → server.
-type HTTPSHandler struct{}
-
-func (HTTPSHandler) Service() string { return "https" }
-
-func (h HTTPSHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "https"}.GenerateHeartbeat(svc)
-}
-func (h HTTPSHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h HTTPSHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
+// NOTE: HTTPSHandler used to live here as a type-only stub (no cert
+// collection). It moved to handler/tls_collect.go where it now performs the
+// full certificate chain grab via probe.CollectCertChain. Do NOT re-add an
+// HTTPSHandler type here — it would collide with the one in tls_collect.go.

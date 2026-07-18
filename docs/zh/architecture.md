@@ -221,11 +221,13 @@ Prober 接口 → ICMP/TCP/HTTP/SNMP 实现 → RetryProber 装饰器
 
 **扩展检测能力**：新增协议只需实现一个 `ServiceClassifier` 和一个 `ServiceHandler`，然后在 `classify.DefaultClassifiers()` / `handler.DefaultHandlers()` 中注册。编排层和持久化层无需改动。
 
-**开箱即用的服务识别**：SSH、HTTP/HTTPS、RTSP、ONVIF、SNMP、Prometheus、node_exporter，以及主机级的 **camera** 元身份（由 RTSP + ONVIF 证据融合得出，支持从 Server 头 / SNMP sysDescr / 企业 OID 推断品牌）。
+**开箱即用的服务识别**：SSH、HTTP/HTTPS、RTSP、ONVIF、SNMP、Prometheus、node_exporter、邮件（SMTP/POP3/IMAP）、远程访问（VNC/RDP/Telnet）、目录与文件共享（LDAP/SMB）、DNS、TLS 包装的服务家族（LDAPS、SMTPS、IMAPS、POP3S、FTPS、IRCS、TelnetS），以及主机级的 **camera** 元身份（由 RTSP + ONVIF 证据融合得出，支持从 Server 头 / SNMP sysDescr / 企业 OID / TLS 证书 CN 推断品牌）。
+
+**TLS 证书清点**：任何被分类为 TLS 服务的端口（默认端口 443/8443/9443/4443 + 知名 TLS 包装服务端口 465/636/989/990/992/993/994/995，以及分类器识别出的任意端口）都会通过 `probe.CollectCertChain` 采集完整证书链并写入 `host_tls_certs` —— Subject/Issuer/SAN/有效期/签名/密钥/指纹 + PEM，链中每张证书一行（叶 + 上级颁发者）。通过 `GET /api/v1/devices/{id}/certificates` 和设备详情页 TLS 子面板对外展示。
 
 **eBPF 被动观测器**：可选的 TC ingress 程序（`bpf/tc_ingress.c`），嗅探 ONVIF WS-Discovery 多播（239.255.255.250:3702）和 TCP 魔术字节（SSH-/RTSP/HTTP/）。它产出置信度 0.6 的辅助 Evidence，与主动探测结果融合。仅通过 `make build-with-ebpf` 编译（需要 clang/llvm/bpftool + 内核 BTF ≥5.8）；默认构建使用 no-op stub，二进制无内核依赖。
 
-**持久化表**（v2 新增）：`service_evidence`（原始探测观测，受采样控制）和 `host_services`（每主机的已分类服务身份）。设备 upsert 写入既有 `devices` 表；心跳配置写入 `heartbeat_configs`。
+**持久化表**（v2 新增）：`service_evidence`（原始探测观测，受采样控制）、`host_services`（每主机的已分类服务身份）、`host_tls_certs`（每 `(ip, port)` 的 TLS 证书链，链中每张证书一行；PEM + 类型化列以便查询；`not_after` 建索引用于过期扫描）。设备 upsert 写入既有 `devices` 表；心跳配置写入 `heartbeat_configs`。
 
 ## Prometheus 集成
 

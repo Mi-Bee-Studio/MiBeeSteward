@@ -94,6 +94,12 @@ type RetentionConfig struct {
 	// service identities). host_services is upserted, not appended, but rows
 	// for gone-silent hosts linger. Default 30.
 	HostServicesDays int `koanf:"host_services_days"`
+	// HostTLSCertsDays is the retention window for host_tls_certs (the TLS
+	// certificate chain rows). host_tls_certs is replaced per (ip, port) on
+	// each successful scan, but a host that drops offline leaves its stale
+	// cert chain behind. PEM payload is a few KB per row, so we default tighter
+	// than host_services. Default 30.
+	HostTLSCertsDays int `koanf:"host_tls_certs_days"`
 	// SweepIntervalHours is how often the retention sweeper runs across all
 	// tables. Default 6h — frequent enough that no table drifts far past its
 	// window, rare enough to be negligible overhead.
@@ -383,6 +389,9 @@ func normalizeRetention(cfg *Config) {
 	}
 	if r.HostServicesDays <= 0 {
 		r.HostServicesDays = 30
+	}
+	if r.HostTLSCertsDays <= 0 {
+		r.HostTLSCertsDays = 30
 	}
 	if r.SweepIntervalHours <= 0 {
 		r.SweepIntervalHours = 6

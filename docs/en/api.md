@@ -9,6 +9,7 @@ Complete REST API documentation for the MiBee Steward device management and moni
 - [Users](#users)
 - [Devices](#devices)
 - [Device Systems](#device-systems)
+- [Device Certificates](#device-certificates)
 - [Documents](#documents)
 - [Heartbeat](#heartbeat)
 - [Dashboard](#dashboard)
@@ -243,6 +244,65 @@ Get device details by ID.
 **RequireAuth**
 
 **Response**: Same as GET /api/v1/devices but single device object
+
+## Device Certificates
+
+TLS/SSL certificate chains collected by the v2 scanner from TLS-wrapped services on the device (HTTPS, LDAPS, SMTPS, IMAPS, POP3S, FTPS, IRCS, TelnetS). One certificate row per cert in each port's chain (`cert_index` 0 = leaf/server cert, 1..N = issuers). Collected by `probe.CollectCertChain` and persisted to the `host_tls_certs` table; the chain for a port is replaced wholesale on each scan. Retained per `retention.host_tls_certs_days` (default 30 days).
+
+### GET /api/v1/devices/{id}/certificates
+List the TLS certificate chains collected from every TLS-speaking port on the device, grouped by port.
+
+**RequireAuth** (any logged-in user; read-only)
+
+**Response**:
+```json
+{
+  "certificates": [
+    {
+      "port": 990,
+      "tls_version": "TLS 1.2",
+      "cipher_suite": "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+      "trusted": false,
+      "error": "",
+      "updated_at": "2026-07-17T23:38:33Z",
+      "leaf": {
+        "cert_index": 0,
+        "subject_cn": "device.example.com",
+        "subject_org": "Example Org",
+        "subject": "CN=device.example.com,O=Example Org",
+        "issuer_cn": "Example CA",
+        "issuer_org": "Example CA Ltd",
+        "issuer": "CN=Example CA,O=Example CA Ltd,C=US",
+        "san_dns": "device.example.com, alt.example.com",
+        "san_ip": "192.168.63.112",
+        "san_email": "",
+        "serial": "665071982890971409216315924781532514095376553279",
+        "not_before": "2023-10-29T02:38:14Z",
+        "not_after": "2033-10-26T02:38:14Z",
+        "sig_algorithm": "SHA256-RSA",
+        "key_algorithm": "RSA",
+        "key_bits": 2048,
+        "is_ca": false,
+        "self_signed": false,
+        "fingerprint_sha256": "B8A72EE7DF38217D2C037C8927E687921FD8D31B9A0AF2E4E22779B60671F278",
+        "pem": "-----BEGIN CERTIFICATE-----\nMIIC4zCCAcsCFHR+...\n-----END CERTIFICATE-----\n"
+      },
+      "chain": [
+        { "cert_index": 0, "subject_cn": "device.example.com", "...": "..." },
+        { "cert_index": 1, "subject_cn": "Example CA", "is_ca": true, "...": "..." }
+      ]
+    }
+  ],
+  "total": 1
+}
+```
+
+**Field notes**:
+- `tls_version` / `cipher_suite` / `trusted` are handshake metadata and are identical across every entry of a port's chain (they describe the one handshake).
+- `leaf` is `chain[0]` surfaced separately for at-a-glance rendering; omit it when `error` is non-empty.
+- `error` is non-empty when the TLS handshake failed (e.g. `not TLS`, `handshake failure`). Such rows are still returned so the UI can show "we tried this port" instead of silently omitting it. In that case `leaf` and `chain` are empty.
+- `trusted` is a best-effort verdict computed by a verifying handshake against the system root pool; it informs the UI badge but does NOT gate collection (self-signed certs are always inventoried).
+- An empty `certificates` array is returned with HTTP 200 when the device has no TLS ports recorded — render an empty state, not a 404.
 
 ### POST /api/v1/devices
 Create new device.
