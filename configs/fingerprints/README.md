@@ -23,17 +23,26 @@ load the same files via the adapter spec.
 
 ## License & provenance
 
+**The fingerprint corpus is licensed under
+[CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).** Anyone is
+free to use and adapt it, but derivative fingerprint corpora must be released
+under the same (CC-BY-SA) license — the copyleft applies to the data itself,
+separately from the AGPLv3 that covers the MiBee Steward source code.
+
 Every rule carries a `source` field for attribution:
 
-- `builtin` — authored for MiBee, Apache-2.0.
-- `recog` — converted from [Rapid7 Recog](https://github.com/rapid7/recog) (Apache-2.0).
+- `builtin` — authored for MiBee (CC-BY-SA 4.0 within this corpus).
+- `recog` — converted from [Rapid7 Recog](https://github.com/rapid7/recog)
+  (upstream Apache-2.0; redistributed here under CC-BY-SA, which Apache-2.0
+  permits because CC-BY-SA is at least as restrictive for the resulting
+  derivative work).
 - `ieee-oui` — IEEE OUI assignment list (factual registry; cite IEEE).
 - `iana-pen` — IANA Private Enterprise Numbers (factual registry; cite IANA).
 
 **nmap-service-probes is NOT imported.** It is NPSL-licensed (GPL-derived +
 OEM/redistribution restrictions, not OSI-free). nmap's match patterns may be
 read for format-design reference only (clean-room); its data file is never
-copied into this corpus. The corpus stays Apache-clean.
+copied into this corpus.
 
 ## Two rule shapes
 

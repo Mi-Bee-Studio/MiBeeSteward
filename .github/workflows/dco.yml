@@ -1,0 +1,37 @@
+name: DCO
+
+# Verifies that every commit in a pull request carries a valid
+# Signed-off-by trailer (Developer Certificate of Origin). Required by
+# CONTRIBUTING.md and CLA.md. See .github/DCO.md for details.
+#
+# Two deployment options:
+#   1. (Recommended) The Probot DCO GitHub App — https://github.com/apps/dco
+#      Install it on this repo, then DELETE this workflow file. The App
+#      requires no CI minutes and is the de facto standard (Linux kernel style).
+#   2. (This file) The CI-based check below — works out of the box with no
+#      repo-level App installation, costs ~10 CI seconds per PR.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dco:
+    name: DCO check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out head and base
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so every PR commit is visible
+      - name: Verify Signed-off-by on all PR commits
+        uses: christophebedard/dco-check@0.5.1
+        with:
+          args: --verbose
+        env:
+          # Required by dco-check to read the PR commit list via the API.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

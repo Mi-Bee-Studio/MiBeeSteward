@@ -1,8 +1,15 @@
 # Contributing to MiBee Steward
 
-Thank you for your interest in contributing to MiBee Steward! This project is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0). All contributions come back under the same license.
+Thank you for your interest in contributing to MiBee Steward!
 
-By submitting a pull request, you certify that you have the right to submit the work and you agree to the project's licensing (DCO-lite sign-off).
+## Licensing your contribution
+
+MiBee Steward is distributed under a **dual license**: the open-source [GNU AGPLv3](./LICENSE) plus a separate [commercial license](./LICENSE-COMMERCIAL.md). For this dual licensing to remain possible, every contribution must be covered by two things:
+
+1. **A signed [Contributor License Agreement (CLA)](./CLA.md)** — one-time per contributor (ICLA for individuals, CCLA for companies). The CLA grants Mi-Bee Studio the right to release your contribution under both the AGPLv3 and the commercial license. You keep your copyright.
+2. **A per-commit `Signed-off-by` (DCO)** — certifies the *origin* of every commit. Pass `-s` to `git commit`, or see [`.github/DCO.md`](./.github/DCO.md). A CI check (`.github/workflows/dco.yml`) blocks any PR with an unsigned commit.
+
+A pull request cannot be merged until both are in place. See the linked docs for signing instructions.
 
 ## Development Workflow — TDD
 
