@@ -29,7 +29,7 @@ jobs:
         with:
           fetch-depth: 0  # full history so every PR commit is visible
       - name: Verify Signed-off-by on all PR commits
-        uses: christophebedard/dco-check@0.5.2
+        uses: christophebedard/dco-check@0.5.1
         with:
           args: --verbose
         env:
