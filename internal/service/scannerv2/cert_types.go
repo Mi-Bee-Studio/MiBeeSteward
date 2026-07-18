@@ -36,16 +36,16 @@ type TLSCertRecord struct {
 	NotAfter  string `json:"not_after"`
 
 	// Crypto details
-	SigAlgorithm      string `json:"sig_algorithm"`       // SHA256-RSA, ECDSA-SHA256
-	KeyAlgorithm      string `json:"key_algorithm"`       // RSA, ECDSA, Ed25519
-	KeyBits           int    `json:"key_bits"`            // modulus/curve-order bits
+	SigAlgorithm      string `json:"sig_algorithm"` // SHA256-RSA, ECDSA-SHA256
+	KeyAlgorithm      string `json:"key_algorithm"` // RSA, ECDSA, Ed25519
+	KeyBits           int    `json:"key_bits"`      // modulus/curve-order bits
 	IsCA              bool   `json:"is_ca"`
 	SelfSigned        bool   `json:"self_signed"`
 	FingerprintSHA256 string `json:"fingerprint_sha256"` // uppercase hex
 	PEM               string `json:"pem"`
 
 	// Handshake metadata (leaf only; zero on chain certs)
-	TLSVersion string `json:"tls_version"` // "TLS 1.3"
+	TLSVersion  string `json:"tls_version"` // "TLS 1.3"
 	CipherSuite string `json:"cipher_suite"`
 	Trusted     bool   `json:"trusted"`
 
@@ -60,9 +60,9 @@ type TLSCertRecord struct {
 // all certs collected for the service's port (one host:port → one handshake →
 // one chain). Implements scannerv2.CollectedData.
 type TLSCertCollected struct {
-	ServiceName string           `json:"service"` // service name of the triggering handler
-	Port        int              `json:"port"`
-	Certs       []TLSCertRecord  `json:"certs"`
+	ServiceName string          `json:"service"` // service name of the triggering handler
+	Port        int             `json:"port"`
+	Certs       []TLSCertRecord `json:"certs"`
 }
 
 // Service returns the canonical service name (matches the handler).

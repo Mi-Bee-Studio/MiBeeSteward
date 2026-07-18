@@ -59,13 +59,13 @@ type certificateInfo struct {
 // (cert_index=0) is surfaced separately for the panel's at-a-glance summary;
 // `chain` is the full ordered list (leaf first) for the Modal.
 type tlsPortCerts struct {
-	Port        int              `json:"port"`
-	TLSVersion  string           `json:"tls_version"`
-	CipherSuite string           `json:"cipher_suite"`
-	Trusted     bool             `json:"trusted"`
-	Error       string           `json:"error,omitempty"`
-	UpdatedAt   string           `json:"updated_at"`
-	Leaf        *certificateInfo `json:"leaf,omitempty"`
+	Port        int               `json:"port"`
+	TLSVersion  string            `json:"tls_version"`
+	CipherSuite string            `json:"cipher_suite"`
+	Trusted     bool              `json:"trusted"`
+	Error       string            `json:"error,omitempty"`
+	UpdatedAt   string            `json:"updated_at"`
+	Leaf        *certificateInfo  `json:"leaf,omitempty"`
 	Chain       []certificateInfo `json:"chain"`
 }
 

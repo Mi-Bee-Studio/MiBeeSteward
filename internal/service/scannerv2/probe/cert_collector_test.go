@@ -35,13 +35,13 @@ func startTLSServer(t *testing.T, sanDNS []string) (net.Listener, *x509.Certific
 			CommonName:   "test-leaf.example.com",
 			Organization: []string{"MiBee Test Org"},
 		},
-		DNSNames:                sanDNS,
-		NotBefore:               time.Now().Add(-time.Hour),
-		NotAfter:                time.Now().Add(90 * 24 * time.Hour), // 90 days out
-		KeyUsage:                x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:             []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:             []net.IP{net.IPv4(127, 0, 0, 1)},
-		BasicConstraintsValid:   true,
+		DNSNames:              sanDNS,
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(90 * 24 * time.Hour), // 90 days out
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1)},
+		BasicConstraintsValid: true,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
 	if err != nil {

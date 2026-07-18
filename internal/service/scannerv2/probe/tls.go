@@ -90,12 +90,12 @@ func (p *TLSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHin
 		}
 		leaf := records[0]
 		evs = append(evs, scannerv2.Evidence{
-			Source:   "active:tls",
-			Kind:     "tls",
-			IP:       ip,
-			Port:     port,
-			Protocol: "tcp",
-			RawData:  leafEvidence(leaf),
+			Source:     "active:tls",
+			Kind:       "tls",
+			IP:         ip,
+			Port:       port,
+			Protocol:   "tcp",
+			RawData:    leafEvidence(leaf),
 			Confidence: 0.95,
 			ObservedAt: time.Now(),
 		})
