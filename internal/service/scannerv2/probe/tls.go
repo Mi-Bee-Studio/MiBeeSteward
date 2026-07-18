@@ -2,11 +2,6 @@ package probe
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"net"
-	"strconv"
-	"strings"
 	"time"
 
 	"mibee-steward/internal/service/scannerv2"
@@ -16,14 +11,34 @@ import (
 // want the cert chain, not a full session.
 const tlsProbeTimeout = 4 * time.Second
 
-// tlsProbePorts are the ports we attempt a TLS handshake on for cert
-// inspection. 443/8443 are the obvious ones; we also try a few well-known
-// TLS-speaking admin ports.
+// DefaultTLSTimeout exposes the probe's per-attempt TLS timeout so callers
+// outside package probe (the TLS-wrapped service handlers) can reuse the same
+// bound without hardcoding the value.
+func DefaultTLSTimeout() time.Duration { return tlsProbeTimeout }
+
+// tlsProbePorts are the ports we attempt a TLS handshake on for the
+// classification-time evidence. This is the "fast path" that feeds the TLS
+// classifier (and lets the orchestrator emit an `https` identity even before
+// the handler-level full-chain collection runs). The full chain + PEM is
+// collected separately by the TLS-wrapped service handlers (see handler/
+// tls_collect.go) which are dispatched for every port a classifier flags as
+// TLS-speaking — so coverage is NOT limited to this set.
+//
+// Includes the well-known TLS-wrapped service ports so their certs land as
+// early evidence (subject_cn / issuer_cn / san are strong brand signals).
 var tlsProbePorts = map[int]bool{
-	443:  true,
-	8443: true,
-	9443: true,
-	4443: true,
+	443:  true, // https
+	8443: true, // https (alt)
+	9443: true, // https (alt)
+	4443: true, // https (alt)
+	465:  true, // smtps
+	636:  true, // ldaps
+	989:  true, // ftps (data, often TLS-wrapped)
+	990:  true, // ftps (control)
+	992:  true, // telnets
+	993:  true, // imaps
+	994:  true, // ircs
+	995:  true, // pop3s
 }
 
 // TLSProbe dials the well-known TLS ports and reads the server's certificate
@@ -32,8 +47,11 @@ var tlsProbePorts = map[int]bool{
 // (e.g. "*.hikvision.com"), and the issuer can identify a self-signed embedded
 // device vs. a public-CA-validated server.
 //
-// The probe is read-only and does not validate the chain (we set
-// InsecureSkipVerify so we can inventory self-signed devices).
+// The probe emits a lightweight "tls" evidence (CN/Issuer/SAN/validity/algos)
+// used for classification and device-enrichment. The full chain + PEM is
+// collected at handler time (collectCertChain in cert_collector.go) and
+// persisted to host_tls_certs — this probe deliberately stays cheap so it
+// doesn't block the gather phase.
 //
 // Name: "active:tls".
 type TLSProbe struct{}
@@ -44,8 +62,11 @@ func NewTLSProbe() *TLSProbe { return &TLSProbe{} }
 func (p *TLSProbe) Name() string { return "active:tls" }
 
 // Probe attempts a TLS handshake on each candidate port and, on success, emits
-// a "tls" evidence with the leaf cert's CN/Issuer/SAN. Closed ports or non-TLS
-// services contribute no evidence.
+// a "tls" evidence with the leaf cert's CN/Issuer/SAN/validity/signature.
+// Closed ports or non-TLS services contribute no evidence (CollectCertChain
+// returns an error record but the probe suppresses those here — error records
+// are persisted at handler time, not in the evidence stream, to keep the
+// evidence slice focused on positive signal).
 func (p *TLSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
 	timeout := tlsProbeTimeout
 	if hint.Timeout > 0 && hint.Timeout < timeout {
@@ -58,83 +79,59 @@ func (p *TLSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHin
 			return evs, ctx.Err()
 		default:
 		}
-		if ev := p.dialOne(ctx, ip, port, timeout); ev != nil {
-			evs = append(evs, *ev)
+		// CollectCertChain always returns ≥1 record (success → chain records;
+		// failure → one error record with IP/Port/Error). For the evidence
+		// stream we only want the leaf (cert_index 0) and only when there was
+		// no error — error records are persisted later by the handler, not
+		// flowed as classification evidence.
+		records := CollectCertChain(ctx, ip, port, timeout)
+		if len(records) == 0 || records[0].Error != "" {
+			continue
 		}
+		leaf := records[0]
+		evs = append(evs, scannerv2.Evidence{
+			Source:   "active:tls",
+			Kind:     "tls",
+			IP:       ip,
+			Port:     port,
+			Protocol: "tcp",
+			RawData:  leafEvidence(leaf),
+			Confidence: 0.95,
+			ObservedAt: time.Now(),
+		})
 	}
 	return evs, nil
 }
 
-// dialOne performs one TLS handshake and extracts cert fields. Returns nil on
-// any failure (port closed, not TLS, handshake error).
-func (p *TLSProbe) dialOne(ctx context.Context, ip string, port int, timeout time.Duration) *scannerv2.Evidence {
-	addr := net.JoinHostPort(ip, strconv.Itoa(port))
-	dctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	// tls.Dial doesn't take a context in stdlib; use DialContext via a Dialer
-	// so the per-port attempt respects cancellation.
-	dialer := tls.Dialer{
-		Config: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // inventory, not auth
-		},
-		NetDialer: &net.Dialer{Timeout: timeout},
-	}
-	conn, err := dialer.DialContext(dctx, "tcp", addr)
-	if err != nil {
-		return nil
-	}
-	defer conn.Close()
-	tlsConn, ok := conn.(*tls.Conn)
-	if !ok {
-		return nil
-	}
-	state := tlsConn.ConnectionState()
-	if len(state.PeerCertificates) == 0 {
-		return nil
-	}
-	leaf := state.PeerCertificates[0]
+// leafEvidence builds the flat map[string]string evidence payload from a leaf
+// cert record. Keys are kept stable (subject_cn, issuer_cn, san_dns, ...) so the
+// existing TLSClassifier / orchestrator fold / fingerprint rules continue to
+// work unchanged. New keys (not_before, not_after, sig_algorithm,
+// key_algorithm, fingerprint_sha256, san_email) are added for richer identity;
+// downstream code that doesn't know about them simply ignores them. Empty
+// values are omitted so evidence stays compact.
+func leafEvidence(leaf scannerv2.TLSCertRecord) map[string]string {
 	raw := map[string]string{
-		"subject_cn":  leaf.Subject.CommonName,
-		"issuer_cn":   leaf.Issuer.CommonName,
-		"issuer_org":  strings.Join(leaf.Issuer.Organization, ", "),
-		"san_dns":     strings.Join(leaf.DNSNames, ", "),
-		"san_ip":      strings.Join(sanIPStrings(leaf.IPAddresses), ", "),
-		"serial":      leaf.SerialNumber.String(),
-		"self_signed": boolStr(certIsSelfSigned(leaf)),
+		"subject_cn":         leaf.SubjectCN,
+		"issuer_cn":          leaf.IssuerCN,
+		"issuer_org":         leaf.IssuerOrg,
+		"san_dns":            leaf.SanDNS,
+		"san_ip":             leaf.SanIP,
+		"san_email":          leaf.SanEmail,
+		"serial":             leaf.Serial,
+		"not_before":         leaf.NotBefore,
+		"not_after":          leaf.NotAfter,
+		"sig_algorithm":      leaf.SigAlgorithm,
+		"key_algorithm":      leaf.KeyAlgorithm,
+		"fingerprint_sha256": leaf.FingerprintSHA256,
+		"self_signed":        boolStr(leaf.SelfSigned),
 	}
 	for k, v := range raw {
 		if v == "" {
 			delete(raw, k)
 		}
 	}
-	if len(raw) == 0 {
-		return nil
-	}
-	return &scannerv2.Evidence{
-		Source:     "active:tls",
-		Kind:       "tls",
-		IP:         ip,
-		Port:       port,
-		Protocol:   "tcp",
-		RawData:    raw,
-		Confidence: 0.95,
-		ObservedAt: time.Now(),
-	}
-}
-
-// sanIPStrings formats a list of net.IP values as their canonical strings.
-func sanIPStrings(ips []net.IP) []string {
-	out := make([]string, 0, len(ips))
-	for _, ip := range ips {
-		out = append(out, ip.String())
-	}
-	return out
-}
-
-// certIsSelfSigned reports whether the subject equals the issuer — the cheap
-// heuristic that catches most embedded-device self-signed certs.
-func certIsSelfSigned(c *x509.Certificate) bool {
-	return c.Subject.String() == c.Issuer.String()
+	return raw
 }
 
 func boolStr(b bool) string {

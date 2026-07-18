@@ -5,7 +5,7 @@
 	import { page } from '$app/stores';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
-	import type { Device, System, DeviceNeighbor } from '$lib/types';
+	import type { Device, System, DeviceNeighbor, TLSPortCerts } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { Monitor, BarChart3 } from '@lucide/svelte';
 
@@ -17,6 +17,7 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Chart from '$lib/components/Chart.svelte';
 	import LabelEditor from '$lib/components/scanner/LabelEditor.svelte';
+	import CertificateModal from '$lib/components/CertificateModal.svelte';
 
 	// --- Route param ---
 	let deviceId = $derived(Number($page.params.id));
@@ -28,6 +29,11 @@
 	let neighbors = $state<DeviceNeighbor[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+
+	// --- TLS certificates (host_tls_certs) — drives the TLS sub-panel + Modal ---
+	let tlsCerts = $state<TLSPortCerts[]>([]);
+	let certModalOpen = $state(false);
+	let certModalPort = $state<TLSPortCerts | null>(null);
 
 	// --- Filters ---
 	let categoryFilter = $state('');
@@ -168,6 +174,7 @@
 		fetchDevice();
 		fetchSystems();
 		fetchNeighbors();
+		fetchTLSCerts();
 		fetchHeartbeatConfigs();
 		fetchHeartbeatTrend();
 	});
@@ -298,6 +305,48 @@
 		} catch {
 			neighbors = [];
 		}
+	}
+
+	// TLS certificates (host_tls_certs) — read-only. Drives the device-detail TLS
+	// sub-panel and the per-port certificate Modal (full chain + PEM). Failures
+	// are silent (the panel shows the empty state).
+	async function fetchTLSCerts() {
+		try {
+			const res = await api.get<{ certificates: TLSPortCerts[]; total: number }>(
+				`/devices/${deviceId}/certificates`
+			);
+			tlsCerts = res.certificates || [];
+		} catch {
+			tlsCerts = [];
+		}
+	}
+
+	// Open the certificate Modal for a specific port. Defensive: the row is only
+	// clickable when portCerts is non-null, but guard anyway.
+	function openCertModal(port: TLSPortCerts) {
+		certModalPort = port;
+		certModalOpen = true;
+	}
+
+	// Expiry classification — shared between the sub-panel row and (mirrored in
+	// the Modal). Returns 'expired' | 'expiring' | 'valid' | 'error'.
+	function certStatus(port: TLSPortCerts): 'expired' | 'expiring' | 'valid' | 'error' {
+		if (port.error || !port.leaf) return 'error';
+		const after = Date.parse(port.leaf.not_after);
+		if (Number.isNaN(after)) return 'error';
+		const now = Date.now();
+		if (after < now) return 'expired';
+		if (after - now < 15 * 24 * 3600 * 1000) return 'expiring';
+		return 'valid';
+	}
+
+	// Compact day-delta badge text for the sub-panel (e.g. "23d" / "-3d").
+	function certDayShort(port: TLSPortCerts): string {
+		if (!port.leaf) return '';
+		const t = Date.parse(port.leaf.not_after);
+		if (Number.isNaN(t)) return '';
+		const days = Math.ceil((t - Date.now()) / (24 * 3600 * 1000));
+		return m['certificates.DaysShort']({ days });
 	}
 
 	// --- Form helpers ---
@@ -951,6 +1000,70 @@
 		</div>
 	{/if}
 
+	<!-- TLS Certificates (host_tls_certs) — per-port rows; click a row to open
+	     the certificate Modal with the full chain + PEM. Always shown so users
+	     know the section exists; empty state explains how to populate it. -->
+	{#if device}
+		<div class="scan-info-panel mt-4">
+			<h3 class="scan-info-title">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+				{m['certificates.Title']()}
+				{#if tlsCerts.length > 0}
+					<span class="text-xs text-text-muted font-normal ml-1">({tlsCerts.length})</span>
+				{/if}
+			</h3>
+			<p class="text-xs text-text-muted mb-3">{m['certificates.NoCertificatesHint']()}</p>
+			{#if tlsCerts.length > 0}
+				<div class="tls-cert-list">
+					{#each tlsCerts as portCerts (portCerts.port)}
+						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+						<div
+							class="tls-cert-row"
+							data-status={certStatus(portCerts)}
+							role="button"
+							tabindex="0"
+							onclick={() => openCertModal(portCerts)}
+							onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCertModal(portCerts); } }}
+						>
+							<div class="tls-cert-port">
+								<span class="tls-cert-port-num">:{portCerts.port}</span>
+								{#if portCerts.tls_version}
+									<span class="tls-cert-tls">{portCerts.tls_version}</span>
+								{/if}
+							</div>
+							<div class="tls-cert-identity">
+								{#if portCerts.error}
+									<span class="tls-cert-cn text-text-muted italic">{m['certificates.CollectionError']()}</span>
+								{:else if portCerts.leaf}
+									<span class="tls-cert-cn">{portCerts.leaf.subject_cn || portCerts.leaf.subject}</span>
+									<span class="tls-cert-issuer">{m['certificates.Issuer']()}: {portCerts.leaf.issuer_cn || portCerts.leaf.issuer_org}</span>
+								{/if}
+							</div>
+							<div class="tls-cert-meta">
+								{#if !portCerts.error && portCerts.leaf}
+									<span class="tls-cert-day" data-status={certStatus(portCerts)}>
+										{certDayShort(portCerts)}
+									</span>
+								{/if}
+								{#if portCerts.leaf?.self_signed}
+									<span class="tls-tag tls-tag-self">{m['certificates.SelfSigned']()}</span>
+								{/if}
+								{#if portCerts.trusted}
+									<span class="tls-tag tls-tag-trusted">{m['certificates.Trusted']()}</span>
+								{/if}
+								<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<div class="border border-dashed border-border rounded-lg p-4 text-center">
+					<p class="text-sm text-text-muted">{m['certificates.NoCertificates']()}</p>
+				</div>
+			{/if}
+		</div>
+	{/if}
+
 	<!-- User Attributes (free-form key/value, user-editable) -->
 	{#if device}
 		<div class="scan-info-panel mt-4">
@@ -1411,6 +1524,13 @@
 	onCancel={() => { deletingConfigId = null; }}
 />
 
+<!-- TLS certificate Modal: full chain + PEM for the selected port. -->
+<CertificateModal
+	bind:open={certModalOpen}
+	portCerts={certModalPort}
+	onClose={() => { certModalPort = null; }}
+/>
+
 <style>
 	.device-info-header {
 		display: flex;
@@ -1553,6 +1673,124 @@
 		background: rgba(99, 102, 241, 0.12);
 		color: var(--color-accent);
 		border: 1px solid rgba(99, 102, 241, 0.2);
+	}
+
+	/* TLS certificate sub-panel: one clickable row per port. */
+	.tls-cert-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+	.tls-cert-row {
+		display: flex;
+		align-items: center;
+		gap: 0.875rem;
+		padding: 0.625rem 0.75rem;
+		border: 1px solid var(--color-border);
+		border-left-width: 3px;
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		transition: background 0.15s ease, border-color 0.15s ease;
+		background: var(--color-surface);
+	}
+	.tls-cert-row:hover {
+		background: var(--color-surface-2);
+		border-color: var(--color-primary);
+	}
+	.tls-cert-row:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 1px;
+	}
+	/* Left-border color signals the cert status at a glance. */
+	.tls-cert-row[data-status='valid'] { border-left-color: var(--color-success); }
+	.tls-cert-row[data-status='expiring'] { border-left-color: var(--color-warning); }
+	.tls-cert-row[data-status='expired'],
+	.tls-cert-row[data-status='error'] { border-left-color: var(--color-error); }
+
+	.tls-cert-port {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.125rem;
+		min-width: 3.5rem;
+		flex-shrink: 0;
+	}
+	.tls-cert-port-num {
+		font-family: var(--font-mono, monospace);
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	.tls-cert-tls {
+		font-size: 0.625rem;
+		font-family: var(--font-mono, monospace);
+		color: var(--color-text-muted);
+	}
+
+	.tls-cert-identity {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+	}
+	.tls-cert-cn {
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.tls-cert-issuer {
+		font-size: 0.6875rem;
+		color: var(--color-text-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.tls-cert-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		flex-shrink: 0;
+	}
+	.tls-cert-day {
+		font-size: 0.6875rem;
+		font-weight: 600;
+		font-family: var(--font-mono, monospace);
+		padding: 0.125rem 0.4375rem;
+		border-radius: var(--radius-sm);
+	}
+	.tls-cert-day[data-status='valid'] {
+		background: color-mix(in srgb, var(--color-success) 14%, transparent);
+		color: var(--color-success);
+	}
+	.tls-cert-day[data-status='expiring'] {
+		background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+		color: var(--color-warning);
+	}
+	.tls-cert-day[data-status='expired'],
+	.tls-cert-day[data-status='error'] {
+		background: color-mix(in srgb, var(--color-error) 14%, transparent);
+		color: var(--color-error);
+	}
+	.tls-tag {
+		font-size: 0.625rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.02em;
+		padding: 0.125rem 0.4375rem;
+		border-radius: 9999px;
+	}
+	.tls-tag-self {
+		background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+		color: var(--color-warning);
+	}
+	.tls-tag-trusted {
+		background: color-mix(in srgb, var(--color-success) 16%, transparent);
+		color: var(--color-success);
 	}
 
 </style>

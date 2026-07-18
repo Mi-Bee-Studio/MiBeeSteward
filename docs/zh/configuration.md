@@ -292,6 +292,34 @@ scanner:
     interfaces: []       # 空 = 所有非环回口
 ```
 
+## 11. 保留期配置
+
+保留期清理器（`internal/service/scannerv2/cleanup/`）周期性地修剪高流量明细表，防止无限增长。单个 ticker 驱动所有表的修剪；每张表的窗口独立配置。删除按批（`batch_size`，默认 5000）进行，避免在大表上长时间持有 SQLite 写锁。
+
+```yaml
+retention:
+  heartbeat_results_days: 7       # heartbeat_results（心跳库）
+  scan_results_days: 30           # scan_results（v1 每次扫描主机行）
+  scan_task_runs_days: 30         # scan_task_runs
+  audit_logs_days: 90             # audit_logs
+  notification_log_days: 30       # notification_log
+  service_evidence_days: 14       # service_evidence（v2 原始探测证据，受采样控制）
+  change_log_days: 30             # change_log（设备新增/变更/离线）
+  device_neighbors_days: 90       # device_neighbors（L2 拓扑边）
+  host_services_days: 30          # host_services（v2 已分类服务身份）
+  host_tls_certs_days: 30         # host_tls_certs（v2 TLS 证书链；PEM 单行 KB 级）
+  sweep_interval_hours: 6         # 清理器跨所有表运行的频率
+  batch_size: 5000                # 单条 DELETE 语句最大删除行数
+```
+
+| 键 | 默认值 | 说明 |
+|----|--------|------|
+| 各表 `*_days` | 见上 | 字段为 0 表示**使用默认值**，**不是**"永久保留"。这些明细表从不意图永久保留。 |
+| `sweep_interval_hours` | `6` | 频繁到没有表会显著滞后于其窗口；稀疏到开销可忽略。清理器在启动时立即运行一次，以便长时间停机的服务器能立刻追上进度。 |
+| `batch_size` | `5000` | 限制单次 DELETE 的行数，使 WAL 能在大表的批次之间执行 checkpoint。 |
+
+**注意**：旧字段 `heartbeat.retention_days`（位于 `heartbeat.*`）和 `scanner.retention_days`（位于 `scanner.*`）是各自子系统独立的旧字段，**不是**上述统一的 `retention.*` 块。
+
 ## 完整配置示例
 
 ```yaml
