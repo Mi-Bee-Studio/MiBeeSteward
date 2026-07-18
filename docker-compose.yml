@@ -1,14 +1,132 @@
+# MiBee Steward — Docker Compose.
+#
+# The scanner's network probes are network-namespace-sensitive. Three profiles
+# are provided; pick by intent. Only ONE profile should be active at a time.
+#
+#   --profile bridge   DEMO ONLY. Only the Web/API surface works reliably.
+#                      ICMP/ARP/MAC discovery is severely degraded because the
+#                      container sits behind Docker's NAT. Fine for kicking the
+#                      tires on the UI, NOT for real inventory. Also the default
+#                      when no --profile is passed.
+#
+#   --profile host     RECOMMENDED for production scanning. Shares the host's
+#                      network namespace so probes see the real LAN: ARP/MAC
+#                      via /proc/net/arp, ICMP at L3, multicast discovery.
+#                      Requires cap_add NET_ADMIN + NET_RAW. The host port
+#                      8080 is taken directly (no publish mapping needed).
+#
+#   --profile macvlan  Gives the container its own LAN IP (separate from the
+#                      host's). Probes see the real L2 segment, so ARP/MAC work.
+#                      Caveat: host <-> container L3 is blocked by default (no
+#                      route back through the macvlan parent); add a shim
+#                      macvlan interface on the host if you need host->container.
+#                      Set: MIBEE_MACVLAN_PARENT, MIBEE_MACVLAN_IP,
+#                      MIBEE_MACVLAN_SUBNET, MIBEE_MACVLAN_GW on the host.
+#
+# Privileged probes (LLDP/CDP raw frames, eBPF TC observer) are NOT in the
+# default image. Build with:
+#     docker compose --profile host build --build-arg BUILD_TAGS=WITH_LLDP,WITH_CDP,WITH_EBPF
+# and (for eBPF) add cap_add BPF on a kernel >=5.8 with BTF.
+#
+# Quick start (recommended):
+#     docker compose --profile host build
+#     docker compose --profile host up -d
+
+# Common build definition. All three services reference this image so we only
+# build once; pick the service that matches your --profile.
+x-build: &build
+  context: .
+  args:
+    # Pass through to Dockerfile's ARG BUILD_TAGS. Default "" = unprivileged
+    # build (LLDP/CDP/eBPF compiled as stubs). Override at build time:
+    #   BUILD_TAGS=WITH_LLDP,WITH_CDP,WITH_EBPF docker compose --profile host build
+    BUILD_TAGS: ${BUILD_TAGS:-}
+    # npm registry override for builds behind a slow/restricted network.
+    # Default empty = official registry; set NPM_REGISTRY=https://registry.npmmirror.com in CN.
+    NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+    # Go module proxy override (e.g. https://goproxy.cn in CN).
+    GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    # setcap on the binary (lets non-root USER use raw sockets granted via
+    # cap_add). Default 0: the unprivileged bridge image runs anywhere.
+    SETCAP: ${SETCAP:-0}
+
+# Privileged build args — used by the host/macvlan profiles below so a single
+# `docker compose --profile host build` produces an image whose non-root user
+# can actually open the raw sockets cap_add grants.
+x-build-priv: &build-priv
+  <<: *build
+  args:
+    BUILD_TAGS: ${BUILD_TAGS:-WITH_LLDP,WITH_CDP}
+    SETCAP: "1"
+
+x-mibee-common: &mibee-common
+  image: mibee-steward:latest
+  restart: unless-stopped
+  volumes:
+    - mibee-data:/data
+    - ./configs/config.yaml:/app/configs/config.yaml:ro
+  environment:
+    - MIBEE_SERVER_PORT=8080
+
 services:
+  # ---- Profile: bridge (default, demo only) -------------------------------
+  # Plain NAT bridge. Web/API works; ICMP/ARP/MAC discovery is degraded.
+  # Activate explicitly with `--profile bridge`, or just `up` (this service is
+  # always loaded — profiles: ["", "bridge"] keeps it available with no flag).
   mibee-steward:
-    build: .
+    <<: *mibee-common
+    build: *build
+    profiles: ["", "bridge"]
     ports:
       - "8080:8080"
-    volumes:
-      - mibee-data:/data
-      - ./configs/config.yaml:/app/configs/config.yaml:ro
-    environment:
-      - MIBEE_SERVER_PORT=8080
-    restart: unless-stopped
+
+  # ---- Profile: host (recommended for real scanning) ----------------------
+  # Container shares the host netns; no ports mapping (host ports are taken
+  # directly). cap_add grants the raw sockets /proc/net/arp (read-only) does
+  # NOT need, but AF_PACKET (LLDP/CDP) and any future privileged ICMP path do.
+  # Uses the priv image (setcap'd binary) so the non-root USER can actually
+  # open the sockets cap_add places in the bounding set.
+  # no-new-privileges preserves the systemd-style hardening posture.
+  mibee-steward-host:
+    <<: *mibee-common
+    image: mibee-steward:priv
+    build: *build-priv
+    profiles: ["host"]
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+
+  # ---- Profile: macvlan (container gets its own LAN IP) -------------------
+  # Container appears on the LAN as its own device. Probes see the real L2
+  # segment. Override the MIBEE_MACVLAN_* vars to match your LAN. Uses the priv
+  # image for the same setcap reason as the host profile.
+  mibee-steward-macvlan:
+    <<: *mibee-common
+    image: mibee-steward:priv
+    build: *build-priv
+    profiles: ["macvlan"]
+    networks:
+      lan:
+        ipv4_address: ${MIBEE_MACVLAN_IP:-192.168.63.250}
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  lan:
+    driver: macvlan
+    driver_opts:
+      parent: ${MIBEE_MACVLAN_PARENT:-eth0}
+      mode: bridge
+    ipam:
+      config:
+        - subnet: ${MIBEE_MACVLAN_SUBNET:-192.168.63.0/24}
+          gateway: ${MIBEE_MACVLAN_GW:-192.168.63.1}
 
 volumes:
   mibee-data:

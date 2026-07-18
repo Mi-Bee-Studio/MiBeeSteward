@@ -139,6 +139,81 @@ docker compose logs -f
 - `MIBEE_AUTH_JWT_SECRET`: JWT 密钥（必需）
 - `MIBEE_AUTH_INITIAL_ADMIN_PASSWORD`: 管理员密码（必需）
 
+#### Docker 网络模式选型（重要）
+
+MiBee Steward 的扫描器在网络命名空间层面工作，**容器的网络模式直接决定探测效果**。`docker-compose.yml` 提供三个 profile，按部署意图选择其一：
+
+| Profile | 启动命令 | 探测效果 | 适用场景 | 限制 |
+|---|---|---|---|---|
+| `bridge`（默认） | `docker compose --profile bridge up` | 仅 TCP/SNMP/HTTP/TLS/RTSP/ONVIF 可靠；**ICMP、ARP/MAC 发现严重缺失** | UI 演示、开发、管理面板 | 看不到真实 LAN，设备 MAC 基本拿不到 |
+| `host`（**推荐**） | `docker compose --profile host up` | ≈ 裸机部署，探测完整（ICMP、`/proc/net/arp`、多播） | **生产环境扫描** | 占用宿主机 8080 端口；需 `cap_add: NET_RAW,NET_ADMIN` |
+| `macvlan` | `docker compose --profile macvlan up` | 容器独占一个 LAN IP，ARP/MAC 可用 | 需要容器以独立设备身份出现在 LAN | 宿主机↔容器默认不可达（需手动加 macvlan shim 接口） |
+
+> ⚠️ **为什么 bridge 模式不能用于真实盘点**
+> Docker 默认 bridge 把容器放在 NAT 后面。后果：
+> 1. **ARP/MAC 失效**：容器读 `/proc/net/arp` 只能看到 bridge 网关一条记录，LAN 设备的 MAC 几乎全拿不到（`ARPProbe`、`ARPCacheSource`、`LookupMACPostScan` 都依赖这个文件）。
+> 2. **ICMP 失效**：跨 NAT 的 ping 回包常被丢弃，心跳的 30s 主动探测会把 LAN 设备误判为离线。
+> 3. **被动多播失效**：bridge 不转发 224/239 多播，mDNS/SSDP 监听源会自禁用。
+>
+> 补救：bridge 模式下在 `scanner.router_arp.routers` 里列出网关路由器 IP，让扫描器通过 SNMP walk 路由器的 ARP 表补 MAC；但这只能补 MAC，救不了 ICMP/多播。
+
+**host 模式完整示例**（生产推荐）：
+
+```bash
+# 1. 准备配置（基于容器模板）
+cp configs/config.docker.yaml configs/config.yaml
+#    编辑 jwt_secret / initial_admin_password / network.cidr
+
+# 2. 构建并启动（host profile，容器共享宿主机网络命名空间）
+docker compose --profile host up -d --build
+
+# 3. 验证
+curl -s http://localhost:8080/api/v1/health
+```
+
+如需 LLDP/CDP 原始帧监听或 eBPF 被动观察者（默认镜像是 no-op stub），构建时加 build tag，运行时再加对应 cap：
+
+```bash
+# 构建（把 raw-frame LLDP/CDP + eBPF 编进二进制）
+BUILD_TAGS=WITH_LLDP,WITH_CDP,WITH_EBPF docker compose --profile host build
+
+# 运行时（eBPF 额外需要 cap_add: BPF，内核 ≥5.8 + BTF）
+# docker-compose.yml 的 host profile 已声明 NET_RAW + NET_ADMIN；
+# 如启用 eBPF，在 compose 里追加 `- BPF` 到 cap_add 列表。
+```
+
+**国内网络构建加速**（registry.npmjs.org / proxy.golang.org 受限时）：
+
+```bash
+NPM_REGISTRY=https://registry.npmmirror.com \
+GOPROXY=https://goproxy.cn,direct \
+docker compose --profile host build
+```
+
+Makefile 封装了常用流程：`make docker-up`（= host profile，推荐）、`make docker-up-bridge`（演示）、`make docker-up-macvlan`、`make docker-build-priv`（特权变体镜像）。
+
+#### 使用预构建镜像（GHCR）
+
+从 release tag（v0.4.0 起）起，每个版本会自动发布多架构（amd64 + arm64）容器镜像到 GitHub Container Registry，无需本地构建：
+
+```bash
+# 拉取最新版
+docker pull ghcr.io/mi-bee-studio/mibee-steward:latest
+
+# 或锁定具体版本
+docker pull ghcr.io/mi-bee-studio/mibee-steward:0.4.0
+
+# 用 host profile 直接运行（修改 image 字段，去掉 build）
+docker run -d --name mibee \
+  --network host \
+  --cap-add NET_RAW --cap-add NET_ADMIN \
+  -v mibee-data:/data \
+  -v "$PWD/configs/config.yaml:/app/configs/config.yaml:ro" \
+  ghcr.io/mi-bee-studio/mibee-steward:latest
+```
+
+预构建镜像是**非特权变体**（LLDP/CDP/eBPF 编译为 stub）。如需这些被动探测能力，用源码 + `make docker-build-priv` 自行构建（见上文）。compose 里也可以把 `image:` 直接指向 GHCR，省去本地 `build:`——见 `docker-compose.yml` 注释。
+
 ### 3. Nginx 反向代理
 
 #### 配置

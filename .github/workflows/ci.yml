@@ -87,3 +87,50 @@ jobs:
       # `sqlc compile` validates queries against the schema locally without
       # requiring a sqlc Cloud project (which `sqlc verify` does).
       - run: sqlc compile
+
+  # Validate that the container image builds (build only, no push). Catches
+  # Dockerfile/docker-compose regressions before they hit a release tag — the
+  # actual publish happens in release.yml on v* tags. Single-platform (amd64)
+  # to keep CI fast; the release workflow does the full multi-arch build.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: mibee-steward:ci
+          build-args: |
+            BUILD_TAGS=
+      - name: Smoke-test the built image
+        run: |
+          # Boot it, wait for /health, then shut down. Confirms the binary
+          # runs as the non-root USER and the DB volume is writable. We mount
+          # a minimal config — the CMD looks for /app/configs/config.yaml and
+          # the binary refuses to start without one.
+          mkdir -p /tmp/ci-config
+          cat > /tmp/ci-config/config.yaml <<'YAML'
+          server: {port: 8080, host: "0.0.0.0"}
+          database: {sqlite: {path: "/data/mibee.db"}}
+          auth:
+            jwt_secret: "ci-smoke-test-secret-not-for-production-use-32chars"
+            initial_admin_password: "CiSmokeTest@2026"
+            cookie_secure: false
+          scanner: {enabled: false}
+          YAML
+          docker run -d --name mibee-ci -p 18080:8080 \
+            -v /tmp/ci-config/config.yaml:/app/configs/config.yaml:ro \
+            mibee-steward:ci
+          trap 'docker rm -f mibee-ci' EXIT
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:18080/api/v1/health; then echo; echo "healthy after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "health check timed out" >&2
+          docker logs mibee-ci
+          exit 1

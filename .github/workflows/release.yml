@@ -1,8 +1,9 @@
 name: Release
 
 # Builds amd64 + arm64 binaries for both the center (cmd/server, embeds the
-# frontend) and the discovery agent (cmd/agent, no SPA), and publishes a GitHub
-# Release with all four binaries attached. CGO-free; SQLite via modernc.org/sqlite.
+# frontend) and the discovery agent (cmd/agent, no SPA), publishes a GitHub
+# Release with all four binaries attached, AND publishes a multi-arch container
+# image to GHCR (ghcr.io/<owner>/<repo>). CGO-free; SQLite via modernc.org/sqlite.
 on:
   push:
     tags:
@@ -10,6 +11,7 @@ on:
 
 permissions:
   contents: write  # required by softprops/action-gh-release to create the release
+  packages: write  # required to push the container image to GHCR
 
 jobs:
   build-frontend:
@@ -92,8 +94,53 @@ jobs:
             mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
             mibee-agent-${{ matrix.goos }}-${{ matrix.goarch }}
 
+  # Multi-arch container image → GHCR. The Dockerfile rebuilds the frontend
+  # itself (Stage 1), so this job does NOT depend on build-frontend — it runs
+  # fully self-contained. Only the unprivileged variant is published
+  # (LLDP/CDP/eBPF stay as stubs); users who need those probes build locally
+  # with `make docker-build-priv` (see docs/zh/deployment.md).
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      # GHCR image names must be lowercase; github.repository is "Owner/Repo"
+      # (mixed case here) — compute a lowercase full image name once.
+      - name: Resolve lowercase image name
+        id: repo
+        run: echo "image=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.repo.outputs.image }}
+          tags: |
+            type=raw,value=latest
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_TAGS=
+
   publish:
-    needs: release
+    # Needs both the binaries AND the image, so a Release is only created when
+    # all artifacts (binaries + container image) have succeeded.
+    needs: [release, docker]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
