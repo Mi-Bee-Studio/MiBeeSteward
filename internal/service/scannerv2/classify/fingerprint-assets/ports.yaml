@@ -1,6 +1,6 @@
 # License: CC-BY-SA 4.0 (fingerprint corpus).
 # Derivative fingerprint corpora must be released under the same license.
-# See configs/fingerprints/README.md for attribution & provenance.
+# See README.md for attribution & provenance.
 
 # Port-shape-only fallback fingerprints (MiscClassifier).
 #
@@ -14,13 +14,35 @@
 # Note: the original MiscClassifier uses a Go map (non-deterministic iteration
 # order), but since each rule is independent and emits a distinct service, order
 # does not affect the result set — only the slice enumeration order.
+#
+# The smb-version rule fires when the dedicated SMB probe captured a Negotiate
+# Response (Kind="smb_negotiate"), extracting the SMB dialect version. It shares
+# exclusive_group "smb" with the port-smb fallback so the version-carrying
+# identity wins when the probe ran.
 
 version: 1
 
 rules:
+  # SMB version (from SMB2/SMB1 Negotiate probe). Higher priority than the port
+  # fallback — carries dialect + OS info.
+  - id: smb-version
+    source: builtin
+    priority: 10
+    match:
+      kind: smb_negotiate
+      op: kind_presence
+    service: smb
+    protocol: tcp
+    confidence: 0.9
+    exclusive_group: smb
+    extract:
+      metadata:
+        version: { passthrough: dialect }
+        os: { passthrough: os }
+  # Port-shape-only fallbacks.
   - { id: port-ldap,   source: builtin, match: { op: port, value: 389 },  service: ldap,    protocol: tcp, confidence: 0.5, literal_confidence: true }
   - { id: port-ldaps,  source: builtin, match: { op: port, value: 636 },  service: ldaps,   protocol: tcp, confidence: 0.5, literal_confidence: true }
-  - { id: port-smb,    source: builtin, match: { op: port, value: 445 },  service: smb,     protocol: tcp, confidence: 0.5, literal_confidence: true }
+  - { id: port-smb,    source: builtin, match: { op: port, value: 445 },  service: smb,     protocol: tcp, confidence: 0.5, literal_confidence: true, priority: 0, exclusive_group: smb }
   - { id: port-telnet, source: builtin, match: { op: port, value: 23 },   service: telnet,  protocol: tcp, confidence: 0.5, literal_confidence: true }
   - { id: port-ftp,    source: builtin, match: { op: port, value: 21 },   service: ftp,     protocol: tcp, confidence: 0.5, literal_confidence: true }
   - { id: port-dns,    source: builtin, match: { op: port, value: 53 },   service: dns-tcp, protocol: tcp, confidence: 0.5, literal_confidence: true }
