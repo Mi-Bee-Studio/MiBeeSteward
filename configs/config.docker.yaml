@@ -1,0 +1,120 @@
+# MiBee Steward — Docker 容器部署专用配置模板
+#
+# 与 config.production.yaml 的差异：
+#   1. 显式 network 段（容器需要知道自己扫描哪个 LAN）
+#   2. 注释强调网络模式对探测效果的影响
+#   3. JWT 密钥 / admin 密码仍需通过环境变量或挂载覆盖
+#
+# ⚠️ 网络模式选择（决定探测效果）：
+#   - bridge（默认）：仅 Web/API 可靠，ICMP/ARP/MAC 严重缺失
+#   - host（推荐）：探测效果≈裸机，能读到宿主机 /proc/net/arp
+#   - macvlan：容器独占 LAN IP，ARP/MAC 可用
+#
+# 使用方式：
+#   cp configs/config.docker.yaml configs/config.yaml  # 然后改 jwt_secret / 密码 / network.cidr
+#   docker compose --profile host up -d
+
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: "15s"
+  write_timeout: "5m"
+  idle_timeout: "120s"
+
+network:
+  name: "lan-63"        # 改成你的网络名（多实例分布式部署时唯一标识）
+  cidr: "192.168.63.0/24"  # ⚠️ 必须改成宿主机所在 LAN 的 CIDR
+  site: "default"
+
+database:
+  sqlite:
+    path: "/data/mibee.db"  # 容器内挂载点（VOLUME ["/data"]）
+
+auth:
+  jwt_secret: "CHANGE_THIS — generate with: openssl rand -base64 32"
+  token_expiry: "1h"
+  initial_admin_password: "CHANGE_THIS — first-run admin password"
+  cookie_domain: ""
+  cookie_secure: false     # 容器内若无 TLS 终止，置 false；上游 nginx 终止 TLS 时由 nginx 设置 Secure
+  cookie_same_site: "lax"  # 容器场景下通常用 lax（反代跨端口）
+
+cors:
+  allowed_origins: []
+
+heartbeat:
+  default_interval: 30
+  timeout: 5
+  retention_days: 30
+
+prometheus:
+  enabled: true
+  metrics_path: "/metrics"
+
+dashboard:
+  data_source_type: "prometheus"
+  prometheus_url: "http://localhost:9090"
+
+storage:
+  upload_path: "/data/uploads"  # 容器内路径
+  max_file_size: 104857600
+
+log:
+  level: "info"
+  format: "json"
+
+rate_limit:
+  login_per_minute: 10
+  global_per_minute: 100
+  scan_per_minute: 10
+
+smtp:
+  host: ""
+  port: 587
+  username: ""
+  password: ""
+  from_address: "noreply@example.com"
+
+scanner:
+  enabled: true
+  max_concurrent_scans: 3
+  default_timeout: 300
+  per_probe_timeout: 3
+  max_concurrent_hosts: 50
+  retention_days: 30
+  default_cron_expr: "0 */6 * * *"
+  engine: "v2"
+  persist_raw_evidence: false
+  oui_path: ""              # 容器内若需厂商映射，挂载 oui.txt 并填此路径
+  snmp_community: "public"
+  router_arp:
+    # ⚠️ bridge 模式下 /proc/net/arp 读不到 LAN 设备 MAC，强烈建议在此列出
+    # 网关路由器 IP，让 scanner 通过 SNMP walk 路由器的 ARP 表补 MAC。
+    # host 模式下 /proc/net/arp 直接可用，此项可空。
+    routers: []
+    community: "public"
+    timeout: 4
+  pipeline_defaults:
+    icmp_enabled: true
+    snmp_enabled: true
+    port_scan_enabled: true
+    default_ports: "22,21,23,25,53,80,110,143,389,443,445,554,631,636,8554,1433,3306,3389,5432,5900,6379,8000,8080,8081,8443,8888,9000,9090,9100,9104,9113,9121,9187,9200,9443,11211,27017,161"
+    service_detection_enabled: true
+    prometheus_check_enabled: true
+    node_exporter_enabled: true
+  ebpf:
+    # 需要 docker compose --profile host build --build-arg BUILD_TAGS=WITH_EBPF
+    # 且运行时 cap_add: BPF + NET_ADMIN，内核≥5.8 + BTF。
+    enabled: false
+    interfaces: []
+  agent_lease_ttl: "5m"
+  lease_sweep_interval: "60s"
+retention:
+  heartbeat_results_days: 7
+  scan_results_days: 30
+  scan_task_runs_days: 30
+  audit_logs_days: 90
+  notification_log_days: 30
+  service_evidence_days: 14
+  host_tls_certs_days: 30
+  sweep_interval_hours: 6
+  batch_size: 5000

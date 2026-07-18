@@ -177,6 +177,19 @@ sudo crontab -e
 
 ## 方案 B: Docker 部署
 
+> ⚠️ **网络模式决定探测效果**。MiBee Steward 的扫描器在网络命名空间层面工作，
+> Docker 默认的 bridge 网络会让 ICMP、ARP/MAC 发现严重失效（容器在 NAT 后面，
+> 看不到真实 LAN）。**生产环境扫描请用 `--profile host`**。
+> 完整的三模式选型表与原理见 `docs/zh/deployment.md` 的「Docker 网络模式选型」一节。
+
+### 0. 选择网络模式
+
+| 命令 | 用途 |
+|---|---|
+| `docker compose --profile bridge up` | 默认，仅 UI/管理面板演示（探测降级） |
+| `docker compose --profile host up` | **推荐**，探测效果≈裸机 |
+| `docker compose --profile macvlan up` | 容器独占 LAN IP（设置 `MIBEE_MACVLAN_*` 环境变量） |
+
 ### 1. 准备配置文件
 
 ```bash
@@ -205,14 +218,17 @@ nano docker-compose.yml
 
 ```bash
 # 构建 Docker 镜像
-docker compose build
+docker compose --profile host build
 
-# 启动服务
-docker compose up -d
+# 启动服务（host 模式，推荐用于真实扫描）
+docker compose --profile host up -d
+
+# 或仅做 UI 演示（bridge，探测会降级）
+docker compose --profile bridge up -d
 
 # 检查服务状态
-docker compose ps
-docker compose logs -f
+docker compose --profile host ps
+docker compose --profile host logs -f
 ```
 
 ### 4. 配置 Nginx 反向代理（同方案 A）
