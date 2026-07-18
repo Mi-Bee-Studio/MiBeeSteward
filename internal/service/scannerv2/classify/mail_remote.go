@@ -129,7 +129,14 @@ func (RemoteAccessClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.Serv
 // intentionally low-confidence because they're port-shape-only, but they make
 // the device record far more useful than a bare "open port".
 //
-// Service names emitted: "ldap", "ldaps", "smb", "ntp", "dns-tcp".
+// The well-known TLS-wrapped service ports (465/989/990/992/993/994/995) are
+// also asserted here so the TLS-cert-collect handler runs for them and grabs
+// their full certificate chain. ldaps (636) was always here; the others join
+// it for symmetry. Each emits a distinct service name so the dispatch routes
+// to the matching cert-collect handler.
+//
+// Service names emitted: "ldap", "ldaps", "smb", "ntp", "dns-tcp",
+// "smtps", "ftps-data", "ftps", "telnets", "imaps", "ircs", "pop3s".
 type MiscClassifier struct{}
 
 func (MiscClassifier) Service() string { return "misc" }
@@ -144,6 +151,14 @@ func (MiscClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceIdent
 		23:  "telnet", // in case the IAC banner wasn't captured
 		21:  "ftp",    // in case the 220 banner wasn't captured
 		53:  "dns-tcp",
+		// TLS-wrapped service ports (assert so the cert-collect handler runs).
+		465: "smtps",
+		989: "ftps-data",
+		990: "ftps",
+		992: "telnets",
+		993: "imaps",
+		994: "ircs",
+		995: "pop3s",
 	} {
 		if portHasOpen(idx, port) {
 			out = append(out, scannerv2.ServiceIdentity{

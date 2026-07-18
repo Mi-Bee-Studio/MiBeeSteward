@@ -23,6 +23,18 @@ func DefaultHandlers() []scannerv2.ServiceHandler {
 		SMTPHandler{}, POP3Handler{}, IMAPHandler{},
 		VNCHandler{}, RDPHandler{},
 		LDAPHandler{}, SMBHandler{},
-		HTTPSHandler{},
+		// TLS-wrapped service handlers — each performs the full certificate
+		// chain grab (leaf + issuers) in Collect() and persists via the
+		// orchestrator's RecordTLSCerts path. https covers any TLS port the
+		// TLSClassifier flags; the rest are the well-known TLS-wrapped service
+		// ports asserted by MiscClassifier.
+		NewHTTPSHandler(),
+		NewLDAPSHandler(),
+		NewSMTPSHandler(),
+		NewIMAPSHandler(),
+		NewPOP3SHandler(),
+		NewFTPSHandler(),
+		NewIRCSSHandler(),
+		NewTelnetSSHandler(),
 	}
 }

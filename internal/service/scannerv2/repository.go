@@ -38,6 +38,16 @@ type Repository interface {
 	// (enrich-existing-only). Unknown keys go to scan_attributes JSON.
 	// Returns nil if no device matches the MAC (not an error).
 	EnrichDeviceByMAC(ctx context.Context, mac string, fields map[string]string) error
+
+	// RecordTLSCerts persists the TLS certificate chain(s) collected for a
+	// host:port during dispatch. Multiple ports produce one call with all rows;
+	// within a (ip, port) pair the prior chain is replaced wholesale (delete +
+	// insert in a tx) so stale certs don't linger when a server rotates.
+	// Records carrying only an Error (handshake failed) are still persisted so
+	// the UI can distinguish "we tried this port" from "port not scanned".
+	// Best-effort like the other Record methods: persistence failures are
+	// logged but never abort a scan.
+	RecordTLSCerts(ctx context.Context, ip string, certs []TLSCertRecord) error
 }
 
 // NoopRepository is a Repository that does nothing. It is the default when no
@@ -50,6 +60,7 @@ func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error    
 func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error    { return nil }
 func (NoopRepository) RecordNeighbors(context.Context, string, []NeighborSpec) error      { return nil }
 func (NoopRepository) EnrichDeviceByMAC(context.Context, string, map[string]string) error { return nil }
+func (NoopRepository) RecordTLSCerts(context.Context, string, []TLSCertRecord) error      { return nil }
 
 // Compile-time check that NoopRepository satisfies Repository.
 var _ Repository = NoopRepository{}

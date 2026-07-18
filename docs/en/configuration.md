@@ -289,6 +289,34 @@ scanner:
     interfaces: []       # empty = all non-loopback
 ```
 
+## 11. Retention Configuration
+
+The retention sweeper (`internal/service/scannerv2/cleanup/`) periodically prunes high-volume detail tables so they don't grow unbounded. One ticker drives pruning across every table; each table's window is configured independently. Deletes happen in batches (`batch_size`, default 5000) to avoid holding the SQLite write lock on large tables.
+
+```yaml
+retention:
+  heartbeat_results_days: 7       # heartbeat_results (heartbeat DB)
+  scan_results_days: 30           # scan_results (v1 per-run host rows)
+  scan_task_runs_days: 30         # scan_task_runs
+  audit_logs_days: 90             # audit_logs
+  notification_log_days: 30       # notification_log
+  service_evidence_days: 14       # service_evidence (v2 raw probe evidence, sampling-controlled)
+  change_log_days: 30             # change_log (device_added/changed/lost)
+  device_neighbors_days: 90       # device_neighbors (L2 topology edges)
+  host_services_days: 30          # host_services (v2 classified service identities)
+  host_tls_certs_days: 30         # host_tls_certs (v2 TLS cert chains; PEM is KB-scale per row)
+  sweep_interval_hours: 6         # how often the sweeper runs across all tables
+  batch_size: 5000                # max rows deleted per single DELETE statement
+```
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `*_days` per-table | see above | A field of 0 means **use the default**, NOT "keep forever". Keeping forever is never the intent for these detail tables. |
+| `sweep_interval_hours` | `6` | Frequent enough that no table drifts far past its window; rare enough to be negligible overhead. The sweeper runs once on startup so a long-stopped server catches up immediately. |
+| `batch_size` | `5000` | Caps rows per DELETE so WAL can checkpoint between batches on large tables. |
+
+**Note**: the legacy `heartbeat.retention_days` (in `heartbeat.*`) and `scanner.retention_days` (in `scanner.*`) are separate, older fields for their specific subsystems — they are NOT the unified `retention.*` block above.
+
 ## Complete Configuration Example
 
 ```yaml

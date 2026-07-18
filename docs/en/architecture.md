@@ -221,11 +221,13 @@ The scanner is a **plugin-based, 5-layer architecture** that decouples detection
 
 **Extending detection**: to add a new protocol, implement a `ServiceClassifier` and a `ServiceHandler`, then register them in `classify.DefaultClassifiers()` / `handler.DefaultHandlers()`. No orchestrator or persistence changes are required.
 
-**Detected services** (out of the box): SSH, HTTP/HTTPS, RTSP, ONVIF, SNMP, Prometheus, node_exporter, and a host-level **camera** meta-identity (fused from RTSP + ONVIF evidence, with brand inference from Server headers / SNMP sysDescr / enterprise OID).
+**Detected services** (out of the box): SSH, HTTP/HTTPS, RTSP, ONVIF, SNMP, Prometheus, node_exporter, mail (SMTP/POP3/IMAP), remote-access (VNC/RDP/Telnet), directory & file-share (LDAP/SMB), DNS, the TLS-wrapped service family (LDAPS, SMTPS, IMAPS, POP3S, FTPS, IRCS, TelnetS), and a host-level **camera** meta-identity (fused from RTSP + ONVIF evidence, with brand inference from Server headers / SNMP sysDescr / enterprise OID / TLS cert CN).
+
+**TLS certificate inventory**: any port classified as TLS-speaking (default ports 443/8443/9443/4443 + the well-known TLS-wrapped service ports 465/636/989/990/992/993/994/995, plus any port a classifier flags) has its full certificate chain collected via `probe.CollectCertChain` and persisted to `host_tls_certs` — Subject/Issuer/SAN/validity/signature/key/fingerprint + PEM, one row per cert in the chain (leaf + issuers). Surfaced per-device via `GET /api/v1/devices/{id}/certificates` and the device-detail TLS sub-panel.
 
 **eBPF passive observer**: an optional TC ingress program (`bpf/tc_ingress.c`) sniffs ONVIF WS-Discovery multicast (239.255.255.250:3702) and TCP magic bytes (SSH-/RTSP/HTTP/). It emits corroborating Evidence at confidence 0.6, fused with active-probe results. Built only with `make build-with-ebpf` (needs clang/llvm/bpftool + kernel BTF ≥5.8); the default build uses a no-op stub so the binary stays dependency-free.
 
-**Persistence tables** (added by v2): `service_evidence` (raw probe observations, sampling-controlled) and `host_services` (classified service identities per host). Device upserts go to the existing `devices` table; heartbeat configs to `heartbeat_configs`.
+**Persistence tables** (added by v2): `service_evidence` (raw probe observations, sampling-controlled), `host_services` (classified service identities per host), and `host_tls_certs` (TLS certificate chains per `(ip, port)`, one row per cert; PEM + typed columns for queryability; `not_after` indexed for expiry sweeps). Device upserts go to the existing `devices` table; heartbeat configs to `heartbeat_configs`.
 
 ## Prometheus Integration
 
