@@ -1,3 +1,7 @@
+# License: CC-BY-SA 4.0 (fingerprint corpus).
+# Derivative fingerprint corpora must be released under the same license.
+# See configs/fingerprints/README.md for attribution & provenance.
+
 # TCP banner greeting fingerprints.
 #
 # Matches evidence with Kind="banner", RawData["banner"]=<greeting line>.
