@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+#
+# This file is part of MiBee Steward, distributed under the GNU Affero General
+# Public License v3.0 or later. You may use, modify, and redistribute it under
+# those terms; see LICENSE for the full text. A commercial license is available
+# for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+
 # MiBee Steward — SQLite Backup Script
 # Usage: ./scripts/backup.sh [DB_PATH] [BACKUP_DIR] [RETENTION_DAYS]
 # Cron example: 0 2 * * * /opt/mibee-steward/scripts/backup.sh
