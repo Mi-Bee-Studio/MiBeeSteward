@@ -94,16 +94,37 @@
 		fetchTopology();
 	}
 
+	// Read a computed CSS variable value (with literal fallback) so ECharts —
+	// which renders to canvas and can't resolve var(...) — follows the theme.
+	function cssVar(name: string, fallback: string): string {
+		const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+		return v || fallback;
+	}
+
+	// Semantic type→token map (resolved at render via cssVar, so theme-aware).
+	// Falls back to the previous literal hex if the var is unset.
+	function typeColor(type: string): string {
+		const tokenByType: Record<string, [string, string]> = {
+			switch: ['--color-info', '#3b82f6'],
+			router: ['--color-accent-purple', '#8b5cf6'],
+			firewall: ['--color-error', '#ef4444'],
+			server: ['--color-success', '#10b981'],
+			nas: ['--color-warning', '#f59e0b'],
+			camera: ['--color-accent-cyan', '#ec4899'],
+			pc: ['--color-accent-cyan', '#06b6d4'],
+			embedded: ['--color-muted', '#64748b'],
+			iot: ['--color-success', '#84cc16'],
+			other: ['--color-muted', '#94a3b8']
+		};
+		const [token, fallback] = tokenByType[type] ?? ['--color-muted', '#94a3b8'];
+		return cssVar(token, fallback);
+	}
+
 	// --- type → color + label mapping ---
 	const typeCategories = [
 		'switch', 'router', 'firewall', 'server', 'nas', 'camera',
 		'pc', 'embedded', 'iot', 'other'
 	];
-	const typeColors: Record<string, string> = {
-		switch: '#3b82f6', router: '#8b5cf6', firewall: '#ef4444',
-		server: '#10b981', nas: '#f59e0b', camera: '#ec4899',
-		pc: '#06b6d4', embedded: '#64748b', iot: '#84cc16', other: '#94a3b8'
-	};
 	const typeDotClass: Record<string, string> = {
 		switch: 'bg-blue-500', router: 'bg-violet-500', firewall: 'bg-red-500',
 		server: 'bg-emerald-500', nas: 'bg-amber-500', camera: 'bg-pink-500',
@@ -216,14 +237,14 @@
 				children: node.children.map(mapNode),
 				symbolSize: size,
 				itemStyle: {
-					color: typeColors[cat] ?? typeColors.other,
+					color: typeColor(cat),
 					opacity: dimmed ? 0.2 : 1
 				},
 				label: {
 					show: true,
 					position: 'radial' as const,
 					fontSize: 10,
-					color: dimmed ? '#475569' : '#e2e8f0',
+					color: dimmed ? cssVar('--color-muted', '#475569') : cssVar('--color-text', '#e2e8f0'),
 					formatter: () => n.name || n.ip_address || `#${n.id}`
 				}
 			};
@@ -259,7 +280,7 @@
 					return '';
 				}
 			},
-			legend: { data: activeCategories, textStyle: { color: '#cbd5e1' }, top: 10 },
+			legend: { data: activeCategories, textStyle: { color: cssVar('--color-text-muted', '#cbd5e1') }, top: 10 },
 			animationDuration: 600,
 			series: [{
 				type: 'tree',
@@ -267,12 +288,12 @@
 				layout: 'radial',
 				symbol: 'circle',
 				roam: true,
-				label: { show: false, position: 'radial', fontSize: 10, color: '#e2e8f0' },
-				leaves: { label: { position: 'radial', fontSize: 10, color: '#e2e8f0' } },
+			label: { show: false, position: 'radial', fontSize: 10, color: cssVar('--color-text', '#e2e8f0') },
+			leaves: { label: { position: 'radial', fontSize: 10, color: cssVar('--color-text', '#e2e8f0') } },
 				emphasis: { focus: 'descendant', lineStyle: { width: 2 } },
 				expandAndCollapse: true,
 				initialTreeDepth: -1,
-				lineStyle: { curveness: 0.5, color: '#64748b', width: 1 },
+				lineStyle: { curveness: 0.5, color: cssVar('--color-border-strong', '#64748b'), width: 1 },
 			}]
 		};
 	}

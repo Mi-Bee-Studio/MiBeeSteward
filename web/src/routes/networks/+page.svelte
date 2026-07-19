@@ -18,6 +18,7 @@
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
+	import LoadingButton from '$lib/components/LoadingButton.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
@@ -65,8 +66,8 @@
 			const res = await api.get<Network[]>('/networks');
 			networks = res || [];
 		} catch (err: unknown) {
+			// Inline banner only on initial load (parallel toast was noisy).
 			error = getErrorMessage(err);
-			addToast('error', error);
 		} finally {
 			loading = false;
 		}
@@ -295,9 +296,7 @@
 
 		<!-- Actions -->
 		<div class="flex gap-3 pt-2">
-			<button type="submit" disabled={formLoading} class="btn btn-primary">
-				{formLoading ? '...' : m['common.Save']?.() ?? 'Save'}
-			</button>
+			<LoadingButton type="submit" loading={formLoading} variant="primary" label={m['common.Save']?.() ?? 'Save'} />
 			<button type="button" onclick={() => { formOpen = false; resetForm(); }} class="btn btn-secondary">
 				{m['common.Cancel']?.() ?? 'Cancel'}
 			</button>

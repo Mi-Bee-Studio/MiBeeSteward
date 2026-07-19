@@ -21,6 +21,7 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import { LoaderCircle } from '@lucide/svelte';
 
 	interface ChannelConfig {
 		url?: string;
@@ -84,8 +85,8 @@
 			const res = await api.get<{ channels: Channel[]; total: number }>('/notification/channels');
 			channels = res.channels || [];
 		} catch (err: unknown) {
+			// Inline banner only on initial load (parallel toast was noisy).
 			error = getErrorMessage(err);
-			addToast('error', error);
 		} finally {
 			loading = false;
 		}
@@ -339,7 +340,7 @@
 		</div>
 		<button
 			onclick={openCreate}
-			class="px-4 py-2 bg-primary text-bg font-semibold rounded-lg
+			class="px-4 py-2 bg-primary text-text-inverse font-semibold rounded-lg
 				hover:bg-primary-hover transition-colors text-sm"
 		>
 			+ {m["notifications.Create Channel"]()}
@@ -546,10 +547,11 @@
 			<button
 				type="submit"
 				disabled={formLoading}
-				class="px-6 py-2 bg-primary text-bg font-semibold rounded-lg
-					hover:bg-primary-hover transition-colors disabled:opacity-50 text-sm"
+				class="px-6 py-2 bg-primary text-text-inverse font-semibold rounded-lg
+					hover:bg-primary-hover transition-colors disabled:opacity-50 text-sm inline-flex items-center gap-2"
 			>
-				{formLoading ? '...' : m["common.Save"]()}
+				{#if formLoading}<LoaderCircle class="w-4 h-4 animate-spin" aria-hidden="true" />{/if}
+				<span>{m["common.Save"]()}</span>
 			</button>
 			<button
 				type="button"
