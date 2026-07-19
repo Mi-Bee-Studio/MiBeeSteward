@@ -18,14 +18,20 @@
 		title,
 		maxWidth = '32rem',
 		onClose,
-		onBeforeClose,
+		confirmDiscard,
 		children
 	}: {
 		open?: boolean;
 		title: string;
 		maxWidth?: string;
 		onClose?: () => void;
-		onBeforeClose?: () => boolean;
+		/**
+		 * Return `true` to block the close and instead show the "unsaved
+		 * changes" discard confirmation. The previous name `onBeforeClose`
+		 * read as "return true to allow close" — the opposite of the actual
+		 * contract — so it was renamed for clarity.
+		 */
+		confirmDiscard?: () => boolean;
 		children: import('svelte').Snippet;
 	} = $props();
 
@@ -75,7 +81,14 @@
 	}
 
 	function close() {
-		if (onBeforeClose?.()) {
+		// If the discard-confirm overlay is already up, a backdrop click just
+		// dismisses the overlay (back to the open modal) instead of re-running
+		// confirmDiscard and re-showing it — that flickery loop was the old bug.
+		if (showConfirm) {
+			showConfirm = false;
+			return;
+		}
+		if (confirmDiscard?.()) {
 			showConfirm = true;
 			return;
 		}
