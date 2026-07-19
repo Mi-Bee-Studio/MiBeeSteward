@@ -20,6 +20,7 @@
 	import { goto } from '$app/navigation';
 	import QRCode from 'qrcode';
 	import Modal from '$lib/components/Modal.svelte';
+	import LoadingButton from '$lib/components/LoadingButton.svelte';
 
 	interface Profile {
 		id: number;
@@ -447,16 +448,16 @@ function handleCancel2FASetup() {
 		</div>
 
         <!-- 2FA disable modal -->
-        <Modal bind:open={show2FADisableModal} title={m["auth.2fa_disable"]()} maxWidth="24rem" onclose={() => { twoFADisablePassword = ''; }}>
+        <Modal bind:open={show2FADisableModal} title={m["auth.2fa_disable"]()} maxWidth="24rem" onClose={() => { twoFADisablePassword = ''; }}>
             <p class="text-sm text-muted mb-4">{m["auth.2fa_disable_confirm"]()}</p>
             <form onsubmit={handle2FADisable}>
-                <input type="password" bind:value={twoFADisablePassword} placeholder="Current password"
+                <input type="password" bind:value={twoFADisablePassword} placeholder={m["auth.Old Password"]()}
                     class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text mb-3 focus:border-primary focus:outline-none" required />
                 <div class="flex gap-2 justify-end">
                     <button type="button" onclick={() => show2FADisableModal = false}
                         class="px-3 py-1.5 border border-border text-muted rounded-lg text-sm">{m["common.Cancel"]()}</button>
-                    <button type="submit" disabled={twoFADisableLoading}
-                        class="px-3 py-1.5 bg-error text-text-inverse rounded-lg text-sm font-medium disabled:opacity-50">{twoFADisableLoading ? '...' : m["common.Delete"]()}</button>
+                    <LoadingButton type="submit" loading={twoFADisableLoading} variant="danger"
+                        class="px-3 py-1.5 rounded-lg text-sm">{m["common.Delete"]()}</LoadingButton>
                 </div>
             </form>
         </Modal>

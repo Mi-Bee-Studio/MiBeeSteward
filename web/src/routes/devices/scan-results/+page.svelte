@@ -18,6 +18,8 @@
 
 	import Pagination from '$lib/components/Pagination.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import { ClipboardList, History } from '@lucide/svelte';
 
 	// --- Types ---
 	interface ScanTask {
@@ -84,10 +86,10 @@
 	// --- Expandable rows ---
 	let expandedResultId = $state<number | null>(null);
 	// --- Sorting ---
-	let sortColumn = $state<'ip' | 'status' | 'rtt' | null>(null);
+	let sortColumn = $state<'ip' | 'status' | 'ports' | null>(null);
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 
-	function toggleSort(column: 'ip' | 'status' | 'rtt') {
+	function toggleSort(column: 'ip' | 'status' | 'ports') {
 		if (sortColumn === column) {
 			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
 		} else {
@@ -104,8 +106,14 @@
 				cmp = a.ip.localeCompare(b.ip);
 			} else if (sortColumn === 'status') {
 				cmp = Number(a.alive) - Number(b.alive);
-			} else if (sortColumn === 'rtt') {
-				cmp = a.rtt_ms - b.rtt_ms;
+			} else if (sortColumn === 'ports') {
+				// The column is labelled "Ports Count" and renders ports.length,
+				// so sort by that — previously this keyed on 'rtt' and sorted by
+				// rtt_ms, disagreeing with both the header label and the primary
+				// cell value the user sees.
+				const countA = parseJSON<PortEntry[]>(a.ports)?.length ?? 0;
+				const countB = parseJSON<PortEntry[]>(b.ports)?.length ?? 0;
+				cmp = countA - countB;
 			}
 			return sortDirection === 'asc' ? cmp : -cmp;
 		});
@@ -425,16 +433,13 @@
 		<PageSkeleton type="table" />
 	{:else if activeTab === 'results'}
 		<!-- Results table -->
-		{#if results.length === 0}
-			<div class="flex flex-col items-center justify-center py-16 text-center">
-				<svg class="w-12 h-12 mb-3 text-text-muted opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-						d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-				</svg>
-				<h3 class="text-sm font-medium text-text mb-1">{m['scanner.No Results']()}</h3>
-				<p class="text-xs text-text-muted">{m['scanner.No Results Desc']()}</p>
-			</div>
-		{:else}
+			{#if results.length === 0}
+				<EmptyState
+					icon={ClipboardList}
+					title={m['scanner.No Results']()}
+					description={m['scanner.No Results Desc']()}
+				/>
+			{:else}
 			<div class="overflow-x-auto rounded-lg border border-border">
 				<table class="w-full">
 					<thead>
@@ -460,10 +465,10 @@
 									{/if}
 								</span>
 							</th>
-							<th class="px-3 py-3 cursor-pointer select-none hover:text-text transition-colors" onclick={() => toggleSort('rtt')}>
+							<th class="px-3 py-3 cursor-pointer select-none hover:text-text transition-colors" onclick={() => toggleSort('ports')}>
 								<span class="inline-flex items-center gap-1">
 									{m['scanner.Ports Count']()}
-									{#if sortColumn === 'rtt'}
+									{#if sortColumn === 'ports'}
 										<span class="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
 									{:else}
 										<span class="opacity-30">↕</span>
@@ -685,16 +690,13 @@
 		{/if}
 	{:else}
 		<!-- Runs table -->
-		{#if runs.length === 0}
-			<div class="flex flex-col items-center justify-center py-16 text-center">
-				<svg class="w-12 h-12 mb-3 text-text-muted opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-						d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-				</svg>
-				<h3 class="text-sm font-medium text-text mb-1">{m['scanner.No Results']()}</h3>
-				<p class="text-xs text-text-muted">{m['scanner.No Results Desc']()}</p>
-			</div>
-		{:else}
+			{#if runs.length === 0}
+				<EmptyState
+					icon={History}
+					title={m['scanner.No Runs']()}
+					description={m['scanner.No Runs Desc']()}
+				/>
+			{:else}
 			<div class="overflow-x-auto rounded-lg border border-border">
 				<table class="w-full">
 					<thead>

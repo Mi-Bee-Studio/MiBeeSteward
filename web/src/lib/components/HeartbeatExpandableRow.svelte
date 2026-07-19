@@ -88,12 +88,34 @@
 		}
 	}
 
+	// ECharts renders to canvas, which does NOT resolve CSS custom properties —
+	// `lineStyle.color: 'var(--color-accent)'` renders transparent/black. Read
+	// the computed value from :root so the sparkline actually shows and follows
+	// the theme. Falls back to a literal so an unset var still draws something.
+	function cssVar(name: string, fallback: string): string {
+		const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+		return v || fallback;
+	}
+
+	// Convert a hex (#rrggbb / #rgb) to an "r,g,b" triplet for rgba() stops.
+	// ECharts accepts hex directly for line color, but the area gradient stops
+	// below need rgba with explicit alpha, so we normalise once.
+	function hexToRgb(hex: string): [number, number, number] {
+		let h = hex.replace('#', '').trim();
+		if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+		const n = parseInt(h, 16);
+		return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+	}
+
 	function buildSparkline() {
 		const points = results
 			.slice(0, 30)
 			.reverse()
 			.map((r) => r.latency_ms);
 		if (points.length === 0) return;
+
+		const accentHex = cssVar('--color-accent', '#818cf8');
+		const [r, g, b] = hexToRgb(accentHex);
 
 		sparklineOption = {
 			animation: false,
@@ -106,14 +128,14 @@
 					data: points,
 					smooth: true,
 					symbol: 'none',
-					lineStyle: { width: 1.5, color: 'var(--color-accent)' },
+					lineStyle: { width: 1.5, color: accentHex },
 					areaStyle: {
 						color: {
 							type: 'linear',
 							x: 0, y: 0, x2: 0, y2: 1,
 							colorStops: [
-								{ offset: 0, color: 'rgba(129,140,248,0.3)' },
-								{ offset: 1, color: 'rgba(129,140,248,0)' }
+								{ offset: 0, color: `rgba(${r},${g},${b},0.3)` },
+								{ offset: 1, color: `rgba(${r},${g},${b},0)` }
 							]
 						}
 					}

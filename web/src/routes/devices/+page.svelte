@@ -119,6 +119,9 @@ interface Stats {
 	let batchStatusOpen = $state(false);
 	let batchStatusValue = $state('online');
 	let batchLoading = $state(false);
+	// Export dropdown — click-toggle (not hover) so keyboard/touch users can
+	// reach it. group-hover:opacity-100 was invisible without a mouse.
+	let exportOpen = $state(false);
 
 	// --- CSV Import ---
 	let importOpen = $state(false);
@@ -959,24 +962,39 @@ interface Stats {
 
 		<div class="flex-1"></div>
 
-		<!-- Export dropdown -->
-		<div class="relative group">
-			<button class="btn btn-secondary">
+		<!-- Export dropdown (click-toggle — accessible to keyboard/touch) -->
+		<div class="relative">
+			<button
+				onclick={() => (exportOpen = !exportOpen)}
+				class="btn btn-secondary"
+				aria-expanded={exportOpen}
+				aria-haspopup="menu"
+			>
 				<Download class="w-4 h-4" />
 				{m['devices.Export']()}
 			</button>
-			<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg
-				opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[120px]"
-				style="box-shadow: var(--shadow-md);">
-				<button onclick={() => exportDevices('csv')}
-					class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-t-lg">
-					{m['devices.Export CSV']()}
-				</button>
-				<button onclick={() => exportDevices('json')}
-					class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-b-lg">
-					{m['devices.Export JSON']()}
-				</button>
-			</div>
+			{#if exportOpen}
+				<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+				<div class="fixed inset-0 z-10" onclick={() => (exportOpen = false)} role="presentation"></div>
+				<div
+					class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg z-20 min-w-[120px]"
+					style="box-shadow: var(--shadow-md);"
+					role="menu"
+				>
+					<button
+						onclick={() => { exportDevices('csv'); exportOpen = false; }}
+						role="menuitem"
+						class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-t-lg">
+						{m['devices.Export CSV']()}
+					</button>
+					<button
+						onclick={() => { exportDevices('json'); exportOpen = false; }}
+						role="menuitem"
+						class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-b-lg">
+						{m['devices.Export JSON']()}
+					</button>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Import CSV button -->

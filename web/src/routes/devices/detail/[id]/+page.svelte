@@ -80,6 +80,11 @@
 	let heartbeatConfigLoading = $state(false);
 	let creatingHeartbeat = $state(false);
 
+	// Heartbeat export dropdown — click-toggle (not hover), so keyboard and
+	// touch users can reach it. The previous group-hover:opacity-100 made it
+	// invisible to everyone without a mouse.
+	let heartbeatExportOpen = $state(false);
+
 	// --- Heartbeat config edit/delete state ---
 	let editingConfig = $state<typeof heartbeatConfigs[0] | null>(null);
 	let editConfigLoading = $state(false);
@@ -1154,24 +1159,43 @@
 				{m['heartbeat.Trend Title']()}
 			</h3>
 			<div class="flex items-center gap-2">
-				<div class="relative group">
-					<button class="px-3 py-1.5 border border-border text-text-muted rounded-lg
-						hover:border-primary hover:text-primary transition-colors text-xs">
-						{m['devices.Export']?.() ?? 'Export'}
-					</button>
-					<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg
-						opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[100px]"
-						style="box-shadow: var(--shadow-md);">
-						<button onclick={() => exportHeartbeatResults('csv')}
-							class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-t-lg">
-							CSV
+					<div class="relative">
+						<button
+							onclick={() => (heartbeatExportOpen = !heartbeatExportOpen)}
+							aria-expanded={heartbeatExportOpen}
+							aria-haspopup="menu"
+							class="px-3 py-1.5 border border-border text-text-muted rounded-lg
+								hover:border-primary hover:text-primary transition-colors text-xs"
+						>
+							{m['devices.Export']?.() ?? 'Export'}
 						</button>
-						<button onclick={() => exportHeartbeatResults('json')}
-							class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-b-lg">
-							JSON
-						</button>
+						{#if heartbeatExportOpen}
+							<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+							<div
+								class="fixed inset-0 z-10"
+								onclick={() => (heartbeatExportOpen = false)}
+								role="presentation"
+							></div>
+							<div
+								class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg z-20 min-w-[100px]"
+								style="box-shadow: var(--shadow-md);"
+								role="menu"
+							>
+								<button
+									onclick={() => { exportHeartbeatResults('csv'); heartbeatExportOpen = false; }}
+									role="menuitem"
+									class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-t-lg">
+									CSV
+								</button>
+								<button
+									onclick={() => { exportHeartbeatResults('json'); heartbeatExportOpen = false; }}
+									role="menuitem"
+									class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-b-lg">
+									JSON
+								</button>
+							</div>
+						{/if}
 					</div>
-				</div>
 				{#if !heartbeatConfigLoading && heartbeatConfigs.length === 0 && device?.ip_address}
 					<button
 						onclick={createDefaultHeartbeatConfig}
