@@ -643,12 +643,12 @@ interface Stats {
 		pc: m['devices.PC'](),
 		embedded: m['devices.Embedded'](),
 		iot: m['devices.IoT'](),
-		server: m['devices.Server']?.() ?? 'server',
-		switch: m['devices.Switch']?.() ?? 'switch',
-		router: m['devices.Router']?.() ?? 'router',
-		firewall: m['devices.Firewall']?.() ?? 'firewall',
-		nas: m['devices.NAS']?.() ?? 'nas',
-		camera: m['devices.Camera']?.() ?? 'camera',
+		server: m['devices.Server'](),
+		switch: m['devices.Switch'](),
+		router: m['devices.Router'](),
+		firewall: m['devices.Firewall'](),
+		nas: m['devices.NAS'](),
+		camera: m['devices.Camera'](),
 		other: m['devices.Other']()
 	};
 
@@ -666,14 +666,14 @@ interface Stats {
 		{ key: 'mac', label: () => m['devices.MAC Address']() },
 		{ key: 'hostname', label: () => m['devices.Hostname']() },
 		{ key: 'location', label: () => m['devices.Location']() },
-		{ key: 'network_name', label: () => m['devices.Network']?.() ?? 'Network' },
-		{ key: 'last_scanned_at', label: () => m['devices.Last Scanned']?.() ?? 'Last Scanned' },
-		{ key: 'last_scan_rtt_ms', label: () => m['devices.RTT']?.() ?? 'RTT (ms)' },
-		{ key: 'inferred_type', label: () => m['devices.Inferred Type']?.() ?? 'Inferred Type' },
-		{ key: 'os', label: () => m['devices.OS']?.() ?? 'OS' },
-		{ key: 'serial_number', label: () => m['devices.Serial Number']?.() ?? 'Serial Number' },
-		{ key: 'purchase_date', label: () => m['devices.Purchase Date']?.() ?? 'Purchase Date' },
-		{ key: 'purpose', label: () => m['devices.Purpose']?.() ?? 'Purpose' }
+		{ key: 'network_name', label: () => m['devices.Network']() },
+		{ key: 'last_scanned_at', label: () => m['devices.Last Scanned']() },
+		{ key: 'last_scan_rtt_ms', label: () => m['devices.RTT']() },
+		{ key: 'inferred_type', label: () => m['devices.Inferred Type']() },
+		{ key: 'os', label: () => m['devices.OS']() },
+		{ key: 'serial_number', label: () => m['devices.Serial Number']() },
+		{ key: 'purchase_date', label: () => m['devices.Purchase Date']() },
+		{ key: 'purpose', label: () => m['devices.Purpose']() }
 	];
 	const defaultColumns = ['vendor', 'mac', 'hostname', 'location', 'network_name'];
 	let selectedColumnKeys = $state(new Set<string>(defaultColumns));
@@ -768,7 +768,7 @@ interface Stats {
 			render: (row: Record<string, unknown>) => {
 				const id = row.id;
 				const name = escapeHtml(String(row.name ?? ''));
-				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']?.() ?? 'View details'}">${name}</button>`;
+				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']()}">${name}</button>`;
 			}
 		},
 		{
@@ -803,7 +803,7 @@ interface Stats {
 				const id = row.id;
 				const name = escapeAttr(String(row.name ?? ''));
 				return `<div class="flex gap-2">`
-					+ `<button data-action="detail" data-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['devices.Details']?.() ?? 'Details'}</button>`
+					+ `<button data-action="detail" data-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['devices.Details']()}</button>`
 					+ `<button data-action="edit" data-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
 					+ `<button data-action="link" data-id="${id}" data-name="${name}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['documents.Link Document']()}</button>`
 					+ `<button data-action="delete" data-id="${id}" data-name="${name}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10">${m['common.Delete']()}</button>`
@@ -903,12 +903,12 @@ interface Stats {
 			<option value="pc">{m['devices.PC']()}</option>
 			<option value="embedded">{m['devices.Embedded']()}</option>
 			<option value="iot">{m['devices.IoT']()}</option>
-			<option value="server">{m['devices.Server']?.() ?? 'server'}</option>
-			<option value="switch">{m['devices.Switch']?.() ?? 'switch'}</option>
-			<option value="router">{m['devices.Router']?.() ?? 'router'}</option>
-			<option value="firewall">{m['devices.Firewall']?.() ?? 'firewall'}</option>
-			<option value="nas">{m['devices.NAS']?.() ?? 'nas'}</option>
-			<option value="camera">{m['devices.Camera']?.() ?? 'camera'}</option>
+			<option value="server">{m['devices.Server']()}</option>
+			<option value="switch">{m['devices.Switch']()}</option>
+			<option value="router">{m['devices.Router']()}</option>
+			<option value="firewall">{m['devices.Firewall']()}</option>
+			<option value="nas">{m['devices.NAS']()}</option>
+			<option value="camera">{m['devices.Camera']()}</option>
 			<option value="other">{m['devices.Other']()}</option>
 		</select>
 		{#if networks.length > 0}
@@ -917,7 +917,7 @@ interface Stats {
 				onchange={applyFilters}
 				class="input"
 			>
-				<option value="">{m['devices.All Networks']?.() ?? 'All Networks'}</option>
+				<option value="">{m['devices.All Networks']()}</option>
 				{#each networks as net}
 					<option value={net.id}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
 				{/each}
@@ -930,14 +930,14 @@ interface Stats {
 				type="text"
 				bind:value={searchInput}
 				oninput={onSearchInput}
-				placeholder={m['devices.Search placeholder']?.() ?? 'Search name / IP / MAC…'}
+				placeholder={m['devices.Search placeholder']()}
 				class="input pr-9"
 			/>
 			{#if searchInput}
 				<button
 					onclick={() => { searchInput = ''; onSearchInput(); }}
 					class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors"
-					aria-label={m['common.Clear']?.() ?? 'Clear'}
+					aria-label={m['common.Clear']()}
 				>✕</button>
 			{:else}
 				<span class="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none text-sm">⌕</span>
@@ -958,7 +958,7 @@ interface Stats {
 			bind:selected={selectedColumnKeys}
 			storageKey="device-columns"
 			defaults={defaultColumns}
-			label={m['devices.Columns']?.() ?? 'Columns'}
+			label={m['devices.Columns']()}
 		/>
 
 		<div class="flex-1"></div>

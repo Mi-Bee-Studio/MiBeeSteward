@@ -10,6 +10,7 @@
 
 <script lang="ts">
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import { m } from '$lib/i18n-paraglide';
 
 	let {
 		total,
@@ -81,7 +82,7 @@
 						onchange={handlePageSizeChange}
 						class="px-1.5 py-1 text-xs bg-surface border border-border rounded-md text-text
 							focus:outline-none focus:border-primary transition-colors cursor-pointer"
-						aria-label="Rows per page"
+						aria-label={m['common.Rows per page']()}
 					>
 						{#each pageSizeOptions as opt}
 							<option value={opt}>{opt} / page</option>
@@ -97,13 +98,14 @@
 			<button
 				onclick={goPrev}
 				disabled={offset === 0}
+				aria-label={m['common.Previous']()}
 				class="flex items-center gap-1 px-3 py-1.5 text-sm bg-surface border border-border rounded-md
 					text-muted hover:border-primary hover:text-primary
 					disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:text-muted
 					transition-colors"
 			>
 				<ChevronLeft class="w-3.5 h-3.5" />
-				Previous
+				{m['common.Previous']()}
 			</button>
 
 			<!-- Page indicator -->
@@ -115,19 +117,20 @@
 			<button
 				onclick={goNext}
 				disabled={offset + limit >= total}
+				aria-label={m['common.Next']()}
 				class="flex items-center gap-1 px-3 py-1.5 text-sm bg-surface border border-border rounded-md
 					text-muted hover:border-primary hover:text-primary
 					disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:text-muted
 					transition-colors"
 			>
-				Next
+				{m['common.Next']()}
 				<ChevronRight class="w-3.5 h-3.5" />
 			</button>
 
 			<!-- Jump to page (shown for large datasets) -->
 			{#if showJumpInput}
 				<div class="flex items-center gap-1.5 ml-2 pl-2 border-l border-border">
-					<span class="text-xs text-muted">Jump to</span>
+					<span class="text-xs text-muted">{m['common.Jump to page']()}</span>
 					<input
 						type="number"
 						bind:value={jumpInput}

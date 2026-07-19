@@ -424,7 +424,7 @@ function handleCancel2FASetup() {
 
 		<!-- Language section -->
 		<div class="bg-surface border border-border rounded-xl p-6">
-			<h3 class="text-lg font-semibold text-text mb-4">Language / 语言</h3>
+			<h3 class="text-lg font-semibold text-text mb-4">{m["settings.Language"]()}</h3>
 			<div class="flex items-center gap-4">
 				<select bind:value={lang} onchange={handleLangChange}
 					class="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
@@ -432,7 +432,7 @@ function handleCancel2FASetup() {
 					<option value="zh">中文</option>
 					<option value="en">English</option>
 				</select>
-				<span class="text-sm text-muted">Current: {lang === 'zh' ? '中文' : 'English'}</span>
+				<span class="text-sm text-muted">{m["settings.Current Language"]({ lang: lang === 'zh' ? '中文' : 'English' })}</span>
 			</div>
 		</div>
 

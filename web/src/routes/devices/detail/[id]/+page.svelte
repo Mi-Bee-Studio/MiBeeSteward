@@ -178,7 +178,7 @@
 			a.click();
 			a.remove();
 			URL.revokeObjectURL(url);
-			addToast('success', m['devices.Export']?.() ?? 'Exported');
+			addToast('success', m['devices.Export']());
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
 		}
@@ -453,12 +453,12 @@
 		pc: m['devices.PC'](),
 		embedded: m['devices.Embedded'](),
 		iot: m['devices.IoT'](),
-		server: m['devices.Server']?.() ?? 'server',
-		switch: m['devices.Switch']?.() ?? 'switch',
-		router: m['devices.Router']?.() ?? 'router',
-		firewall: m['devices.Firewall']?.() ?? 'firewall',
-		nas: m['devices.NAS']?.() ?? 'nas',
-		camera: m['devices.Camera']?.() ?? 'camera',
+		server: m['devices.Server'](),
+		switch: m['devices.Switch'](),
+		router: m['devices.Router'](),
+		firewall: m['devices.Firewall'](),
+		nas: m['devices.NAS'](),
+		camera: m['devices.Camera'](),
 		other: m['devices.Other']()
 	};
 
@@ -666,7 +666,7 @@
 					{/if}
 				</div>
 				<a href="/devices" class="text-xs text-accent hover:underline">
-					← {m['navigation.Devices']?.() ?? 'Devices'}
+					← {m['navigation.Devices']()}
 				</a>
 			</div>
 			<div class="device-meta">
@@ -707,42 +707,42 @@
 			<div class="scan-info-panel mt-4">
 				<h3 class="scan-info-title">
 					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
-					{m['assetinfo.Title']?.() ?? 'Asset Information'}
+					{m['assetinfo.Title']()}
 				</h3>
 				<div class="scan-info-grid">
 					{#if device.brand || device.model}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['devices.Brand']?.() ?? 'Brand'} / {m['devices.Model']?.() ?? 'Model'}</span>
+							<span class="scan-info-label">{m['devices.Brand']()} / {m['devices.Model']()}</span>
 							<span class="scan-info-value">{[device.brand, device.model].filter(Boolean).join(' · ') || '-'}</span>
 						</div>
 					{/if}
 					{#if device.purchase_date}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['devices.Purchase Date']?.() ?? 'Purchase Date'}</span>
+							<span class="scan-info-label">{m['devices.Purchase Date']()}</span>
 							<span class="scan-info-value">{device.purchase_date}</span>
 						</div>
 					{/if}
 					{#if device.warranty_expiry}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['devices.Warranty Expiry']?.() ?? 'Warranty Expiry'}</span>
+							<span class="scan-info-label">{m['devices.Warranty Expiry']()}</span>
 							<span class="scan-info-value">{device.warranty_expiry}</span>
 						</div>
 					{/if}
 					{#if device.purpose}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['devices.Purpose']?.() ?? 'Purpose'}</span>
+							<span class="scan-info-label">{m['devices.Purpose']()}</span>
 							<span class="scan-info-value">{device.purpose}</span>
 						</div>
 					{/if}
 					{#if device.description}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['common.Description']?.() ?? 'Description'}</span>
+							<span class="scan-info-label">{m['common.Description']()}</span>
 							<span class="scan-info-value">{device.description}</span>
 						</div>
 					{/if}
 					{#if Object.keys(tags).length > 0}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['common.Tags']?.() ?? 'Tags'}</span>
+							<span class="scan-info-label">{m['common.Tags']()}</span>
 							<div class="flex flex-wrap gap-1 mt-1">
 								{#each Object.entries(tags) as [k, v]}
 									<span class="service-badge">{k}: {v}</span>
@@ -884,7 +884,7 @@
 					{#if sa.cpu_count || sa.cpu_model}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.CPU']()}</span><span class="scan-info-value">{sa.cpu_model ? sa.cpu_model : m['scanfields.CPU Value']({ count: sa.cpu_count ?? 0 })}{#if sa.cpu_model && sa.cpu_count} ({sa.cpu_count} vCPU){/if}</span></div>{/if}
 					{#if sa.memory_total_bytes}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Memory']()}</span><span class="scan-info-value">{formatBytes(sa.memory_total_bytes)}</span></div>{/if}
 					{#if sa.uptime_seconds}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Uptime']()}</span><span class="scan-info-value">{formatDuration(sa.uptime_seconds)}</span></div>{/if}
-					{#if sa.ttl}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.TTL']?.() ?? 'ICMP TTL'}</span><span class="scan-info-value font-mono text-xs">{sa.ttl}</span></div>{/if}
+					{#if sa.ttl}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.TTL']()}</span><span class="scan-info-value font-mono text-xs">{sa.ttl}</span></div>{/if}
 					{#if sa.inferred_type}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Inferred Type']()}</span><span class="scan-info-value">{sa.inferred_type}</span></div>{/if}
 					{#if sa.inferred_description}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Description']()}</span><span class="scan-info-value">{sa.inferred_description}</span></div>{/if}
 				</div>
@@ -894,12 +894,12 @@
 					<div class="mt-3 pt-3 border-t border-border">
 						<h4 class="scan-info-label mb-2">SNMP</h4>
 						<div class="scan-info-grid">
-							{#if sa.snmp.sys_name}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Name']?.() ?? 'sysName'}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_name}</span></div>{/if}
-							{#if sa.snmp.sys_descr}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Descr']?.() ?? 'sysDescr'}</span><span class="scan-info-value text-xs">{sa.snmp.sys_descr}</span></div>{/if}
-							{#if sa.snmp.sys_object_id}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP OID']?.() ?? 'sysObjectID'}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_object_id}</span></div>{/if}
-							{#if sa.snmp.sys_location}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Location']?.() ?? 'sysLocation'}</span><span class="scan-info-value text-xs">{sa.snmp.sys_location}</span></div>{/if}
-							{#if sa.snmp.sys_contact}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Contact']?.() ?? 'sysContact'}</span><span class="scan-info-value text-xs">{sa.snmp.sys_contact}</span></div>{/if}
-							{#if sa.snmp.sys_services != null}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Services']?.() ?? 'sysServices'}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_services}</span></div>{/if}
+							{#if sa.snmp.sys_name}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Name']()}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_name}</span></div>{/if}
+							{#if sa.snmp.sys_descr}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Descr']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_descr}</span></div>{/if}
+							{#if sa.snmp.sys_object_id}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP OID']()}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_object_id}</span></div>{/if}
+							{#if sa.snmp.sys_location}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Location']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_location}</span></div>{/if}
+							{#if sa.snmp.sys_contact}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Contact']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_contact}</span></div>{/if}
+							{#if sa.snmp.sys_services != null}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Services']()}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_services}</span></div>{/if}
 						</div>
 					</div>
 				{/if}
@@ -907,7 +907,7 @@
 				<!-- Services & ports (prefer typed scan_attributes) -->
 				{#if (sa.detected_services && sa.detected_services.length > 0) || (sa.open_ports && sa.open_ports.length > 0)}
 					<div class="mt-3 pt-3 border-t border-border">
-						<h4 class="scan-info-label mb-2">{m['scaninfo.Detected Services']?.() ?? 'Detected Services'}</h4>
+						<h4 class="scan-info-label mb-2">{m['scaninfo.Detected Services']()}</h4>
 						<div class="flex flex-wrap gap-1">
 							{#each sa.detected_services ?? [] as svc}
 								<span class="service-badge">{svc.port}/{svc.name}{svc.protocol ? ' · ' + svc.protocol : ''}{svc.version ? ' ' + svc.version : ''}</span>
@@ -924,7 +924,7 @@
 				<!-- Monitoring endpoints (from scan_attributes.prometheus) -->
 				{#if sa.prometheus && (sa.prometheus.url || sa.prometheus.node_exporter_url)}
 					<div class="mt-3 pt-3 border-t border-border">
-						<h4 class="scan-info-label mb-2">{m['scanfields.Monitoring']?.() ?? 'Monitoring'}</h4>
+						<h4 class="scan-info-label mb-2">{m['scanfields.Monitoring']()}</h4>
 						<div class="scan-info-grid">
 							{#if sa.prometheus.url}<div class="scan-info-field"><span class="scan-info-label">Prometheus</span><a href={sa.prometheus.url} target="_blank" rel="noopener" class="text-primary hover:underline font-mono text-xs">{sa.prometheus.url}</a></div>{/if}
 							{#if sa.prometheus.node_exporter_url}<div class="scan-info-field"><span class="scan-info-label">Node Exporter</span><a href={sa.prometheus.node_exporter_url} target="_blank" rel="noopener" class="text-primary hover:underline font-mono text-xs">{sa.prometheus.node_exporter_url}</a></div>{/if}
@@ -935,7 +935,7 @@
 				<!-- Discovery extras (grouped by dotted namespace) -->
 				{#if Object.keys(extras).length > 0}
 					<div class="mt-3 pt-3 border-t border-border">
-						<h4 class="scan-info-label mb-2">{m['scanfields.Extras']?.() ?? 'Discovery Extras'}</h4>
+						<h4 class="scan-info-label mb-2">{m['scanfields.Extras']()}</h4>
 						<div class="scan-info-grid">
 							{#each Object.entries(extras).sort(([a], [b]) => a.localeCompare(b)) as [k, v]}
 								<div class="scan-info-field"><span class="scan-info-label font-mono">{k}</span><span class="scan-info-value text-xs">{v}</span></div>
@@ -953,19 +953,19 @@
 		<div class="scan-info-panel mt-4">
 			<h3 class="scan-info-title">
 				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6"/><path d="M6 9v6"/><path d="M18 9v6"/></svg>
-				{m['topology.Neighbors']?.() ?? 'L2 Neighbors'}
+				{m['topology.Neighbors']()}
 			</h3>
-			<p class="text-xs text-text-muted mb-3">{m['topology.Neighbors Desc']?.() ?? 'Devices adjacent to this one at Layer 2 (Bridge-MIB / LLDP).'}</p>
+			<p class="text-xs text-text-muted mb-3">{m['topology.Neighbors Desc']()}</p>
 			{#if neighbors.length > 0}
 				<div class="overflow-x-auto">
 					<table class="w-full text-left border border-border rounded-lg overflow-hidden">
 						<thead class="bg-bg/50 border-b border-border">
 							<tr>
-								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Neighbor Device']?.() ?? 'Neighbor'}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Neighbor Device']()}</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">MAC</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Protocol</th>
-								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Local Port']?.() ?? 'Local Port'}</th>
-								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Remote Port']?.() ?? 'Remote Port'}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Local Port']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Remote Port']()}</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Last Seen</th>
 							</tr>
 						</thead>
@@ -984,7 +984,7 @@
 												<span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{nb.neighbor_type}</span>
 											{/if}
 										{:else}
-											<span class="text-text-muted italic text-xs">{m['topology.Unidentified Neighbor']?.() ?? 'Unidentified (MAC only)'}</span>
+											<span class="text-text-muted italic text-xs">{m['topology.Unidentified Neighbor']()}</span>
 										{/if}
 									</td>
 									<td class="px-3 py-2 font-mono text-xs text-text-muted">{nb.neighbor_mac}</td>
@@ -1002,8 +1002,8 @@
 			{:else}
 				<!-- Empty state: explain how to populate, so the panel isn't a mystery. -->
 				<div class="border border-dashed border-border rounded-lg p-4 text-center">
-					<p class="text-sm text-text-muted">{m['topology.No Neighbors Yet']?.() ?? 'No L2 neighbors recorded'}</p>
-					<p class="text-xs text-text-muted mt-1">{m['topology.No Neighbors Hint']?.() ?? 'Run a scan including managed switches to discover L2 adjacency (Bridge-MIB / LLDP).'}</p>
+					<p class="text-sm text-text-muted">{m['topology.No Neighbors Yet']()}</p>
+					<p class="text-xs text-text-muted mt-1">{m['topology.No Neighbors Hint']()}</p>
 				</div>
 			{/if}
 		</div>
@@ -1161,7 +1161,7 @@
 							class="px-3 py-1.5 border border-border text-text-muted rounded-lg
 								hover:border-primary hover:text-primary transition-colors text-xs"
 						>
-							{m['devices.Export']?.() ?? 'Export'}
+							{m['devices.Export']()}
 						</button>
 						{#if heartbeatExportOpen}
 							<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->

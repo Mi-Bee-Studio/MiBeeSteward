@@ -339,7 +339,10 @@
 		"Copy": "复制",
 		"Copied": "已复制",
 		"Test": "测试",
-		"All": "全部"
+		"All": "全部",
+		"Description": "描述",
+		"Tags": "标签",
+		"Chart Unavailable": "图表不可用"
 	},
 	"scanner": {
 		"Scanner": "网络扫描器",
@@ -547,7 +550,16 @@
 		"mDNS Services": "mDNS 服务",
 		"SSDP": "SSDP / UPnP",
 		"Workgroup": "工作组",
-		"No Discovery Data": "无扫描发现数据"
+		"No Discovery Data": "无扫描发现数据",
+		"Extras": "发现扩展字段",
+		"Monitoring": "监控",
+		"SNMP Contact": "sysContact",
+		"SNMP Descr": "sysDescr",
+		"SNMP Location": "sysLocation",
+		"SNMP Name": "sysName",
+		"SNMP OID": "sysObjectID",
+		"SNMP Services": "sysServices",
+		"TTL": "ICMP TTL"
 	},
 	"userfields": {
 		"Custom Attributes": "自定义属性",
@@ -569,7 +581,9 @@
 	"settings": {
 		"Appearance": "外观",
 		"Dark Mode": "深色模式",
-		"Light Mode": "浅色模式"
+		"Light Mode": "浅色模式",
+		"Language": "语言",
+		"Current Language": "当前: {lang}"
 	},
 	"users": {
 		"User List": "用户管理",
@@ -678,7 +692,8 @@
 		"Event Lost": "设备离线",
 		"All Events": "全部事件",
 		"No Changes": "暂无变更",
-		"No Changes Desc": "扫描检测到设备新增、变更或离线时,事件将在此显示。"
+		"No Changes Desc": "扫描检测到设备新增、变更或离线时,事件将在此显示。",
+		"Diff Title": "变更详情"
 	},
 	"agents": {
 		"Title": "采集器管理",
@@ -713,7 +728,13 @@
 		"Network Required": "网络为必填项",
 		"Targets Required": "扫描目标为必填项",
 		"Command History": "命令历史",
-		"No Commands": "暂无命令。在上方对采集器触发扫描即可入队一条命令。"
+		"No Commands": "暂无命令。在上方对采集器触发扫描即可入队一条命令。",
+		"Command": "命令",
+		"Created": "创建时间",
+		"Acknowledged": "已确认",
+		"Pending": "待处理",
+		"Done": "完成",
+		"Failed": "失败"
 	},
 	"networks": {
 		"Title": "网络",
@@ -724,6 +745,7 @@
 		"Name Required": "名称为必填项",
 		"Name Help": "唯一标识符(如 lan-62、datacenter-fra)",
 		"Cidr Help": "仅供参考 — 仅用于显示,不做强制校验",
+		"CIDR": "CIDR",
 		"Site": "站点",
 		"Agent": "采集器",
 		"Agent Managed Hint": "采集器托管 — 删除将解除采集器绑定",
@@ -818,5 +840,8 @@
 		"ShowChain": "展开完整证书链 ({count})",
 		"HideChain": "收起证书链",
 		"DaysShort": "{days}天"
+	},
+	"assetinfo": {
+		"Title": "资产信息"
 	}
 }

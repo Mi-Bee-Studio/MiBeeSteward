@@ -140,16 +140,16 @@
 
 	function typeLabel(t: string): string {
 		const labels: Record<string, string> = {
-			switch: m['devices.Switch']?.() ?? 'Switch',
-			router: m['devices.Router']?.() ?? 'Router',
-			firewall: m['devices.Firewall']?.() ?? 'Firewall',
-			server: m['devices.Server']?.() ?? 'Server',
-			nas: m['devices.NAS']?.() ?? 'NAS',
-			camera: m['devices.Camera']?.() ?? 'Camera',
-			pc: m['devices.PC']?.() ?? 'PC',
-			embedded: m['devices.Embedded']?.() ?? 'Embedded',
-			iot: m['devices.IoT']?.() ?? 'IoT',
-			other: m['devices.Other']?.() ?? 'Other'
+			switch: m['devices.Switch'](),
+			router: m['devices.Router'](),
+			firewall: m['devices.Firewall'](),
+			server: m['devices.Server'](),
+			nas: m['devices.NAS'](),
+			camera: m['devices.Camera'](),
+			pc: m['devices.PC'](),
+			embedded: m['devices.Embedded'](),
+			iot: m['devices.IoT'](),
+			other: m['devices.Other']()
 		};
 		return labels[t] ?? t;
 	}
@@ -192,13 +192,13 @@
 	function subnetKey(ip: string): string {
 		const parts = ip.split('.');
 		if (parts.length === 4) return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
-		return m['topology.No Subnet']?.() ?? 'Unknown subnet';
+		return m['topology.No Subnet']();
 	}
 
 	let groupedBySubnet = $derived.by(() => {
 		const subnets = new Map<string, TopoNode[]>();
 		for (const n of filteredNodes) {
-			const key = n.ip_address ? subnetKey(n.ip_address) : (m['topology.No Subnet']?.() ?? 'Unknown subnet');
+			const key = n.ip_address ? subnetKey(n.ip_address) : (m['topology.No Subnet']());
 			const arr = subnets.get(key) ?? [];
 			arr.push(n);
 			subnets.set(key, arr);
@@ -271,7 +271,7 @@
 						const v = p.data.value as TreeNode | undefined;
 						if (!v || !v.value) return '';
 						const n = v.value;
-						const gw = v.isRoot ? ` ⭐ ${escapeHtml(m['topology.Gateway']?.() ?? 'Gateway')}` : '';
+						const gw = v.isRoot ? ` ⭐ ${escapeHtml(m['topology.Gateway']())}` : '';
 						const portInfo = v.parentPort
 							? `<br/>Via: ${escapeHtml(v.edgeProtocol ?? '')}${v.parentPort ? ' · port ' + escapeHtml(v.parentPort) : ''}`
 							: '';
@@ -303,26 +303,26 @@
 	}
 
 	const viewButtons = $derived([
-		{ mode: 'list' as const, icon: ListIcon, label: m['topology.List View']?.() ?? 'List' },
-		{ mode: 'subnet' as const, icon: SubnetIcon, label: m['topology.Subnet View']?.() ?? 'Subnets' },
-		{ mode: 'tree' as const, icon: GraphIcon, label: m['topology.Graph View']?.() ?? 'Topology Tree' }
+		{ mode: 'list' as const, icon: ListIcon, label: m['topology.List View']() },
+		{ mode: 'subnet' as const, icon: SubnetIcon, label: m['topology.Subnet View']() },
+		{ mode: 'tree' as const, icon: GraphIcon, label: m['topology.Graph View']() }
 	]);
 </script>
 
 {#if !$auth.token}
 	<div class="p-6 text-center text-text-muted">
-		<p>{m['errors.Unauthorized Desc']?.() ?? 'Please log in.'}</p>
+		<p>{m['errors.Unauthorized Desc']()}</p>
 		<a href="/login" class="text-primary hover:underline text-sm mt-2 inline-block">{m['navigation.Login']()}</a>
 	</div>
 {:else}
 <div class="p-4 sm:p-6">
 	<!-- Header -->
 	<div class="flex items-center justify-between mb-6 flex-wrap gap-3">
-		<h2 class="text-2xl font-bold text-primary">{m['topology.Title']?.() ?? 'Network Topology'}</h2>
+		<h2 class="text-2xl font-bold text-primary">{m['topology.Title']()}</h2>
 		<div class="flex items-center gap-3 flex-wrap">
 			<select bind:value={selectedNetwork} onchange={onNetworkChange}
 				class="px-3 py-2 bg-surface border border-border rounded-lg text-sm text-text">
-				<option value={null}>{m['topology.All Networks']?.() ?? 'All networks'}</option>
+				<option value={null}>{m['topology.All Networks']()}</option>
 				{#each networks as net}
 					<option value={net.id}>{net.name}{net.site ? ` · ${net.site}` : ''}</option>
 				{/each}
@@ -341,7 +341,7 @@
 				{/each}
 			</div>
 			<input type="text" bind:value={searchQuery}
-				placeholder={m['topology.Search Placeholder']?.() ?? 'Find device...'}
+				placeholder={m['topology.Search Placeholder']()}
 				class="px-3 py-2 bg-surface border border-border rounded-lg text-sm text-text w-44" />
 			<button onclick={() => fetchTopology()}
 				class="px-4 py-2 border border-border text-text-muted rounded-lg hover:border-primary hover:text-primary transition-colors text-sm">
@@ -358,13 +358,13 @@
 		<PageSkeleton type="table" />
 	{:else if !hasNodes}
 		<EmptyState icon={TopologyIcon}
-			title={m['topology.Empty']?.() ?? 'No topology data yet'}
-			description={m['topology.Empty Desc']?.() ?? 'L2 neighbor edges (Bridge-MIB / LLDP) are populated when switches are scanned. Run a scan that includes managed switches.'} />
+			title={m['topology.Empty']()}
+			description={m['topology.Empty Desc']()} />
 	{:else if viewMode === 'list'}
 		<!-- VIEW 1: List grouped by type -->
 		<div class="flex flex-wrap items-center gap-4 mb-4 text-xs text-text-muted">
-			<span>{filteredNodes.length} / {(graph?.nodes.length ?? 0)} {m['topology.Nodes']?.() ?? 'devices'}</span>
-			<span>{(graph?.edges.length ?? 0)} {m['topology.Edges']?.() ?? 'adjacencies'}</span>
+			<span>{filteredNodes.length} / {(graph?.nodes.length ?? 0)} {m['topology.Nodes']()}</span>
+			<span>{(graph?.edges.length ?? 0)} {m['topology.Edges']()}</span>
 		</div>
 		<div class="space-y-4">
 			{#each groupedNodes as group}
@@ -387,15 +387,15 @@
 				</div>
 			{:else}
 				<div class="bg-surface border border-border rounded-lg p-6 text-center text-sm text-text-muted">
-					{m['topology.No Search Results']?.() ?? 'No devices match your search.'}
+					{m['topology.No Search Results']()}
 				</div>
 			{/each}
 		</div>
 	{:else if viewMode === 'subnet'}
 		<!-- VIEW 2: Subnet grouping -->
 		<div class="flex flex-wrap items-center gap-4 mb-4 text-xs text-text-muted">
-			<span>{filteredNodes.length} / {(graph?.nodes.length ?? 0)} {m['topology.Nodes']?.() ?? 'devices'}</span>
-			<span>{groupedBySubnet.length} {m['topology.Subnets']?.() ?? 'subnets'}</span>
+			<span>{filteredNodes.length} / {(graph?.nodes.length ?? 0)} {m['topology.Nodes']()}</span>
+			<span>{groupedBySubnet.length} {m['topology.Subnets']()}</span>
 		</div>
 		<div class="space-y-4">
 			{#each groupedBySubnet as group}
@@ -403,8 +403,8 @@
 					<div class="flex items-center gap-2 px-4 py-2.5 bg-bg/50 border-b border-border">
 						<SubnetIcon class="w-4 h-4 text-primary" />
 						<span class="text-sm font-semibold font-mono text-text">{group.subnet}</span>
-						<span class="text-xs text-text-muted">{group.devices.length} {m['topology.Nodes']?.() ?? 'devices'}</span>
-						<span class="text-xs text-success">{group.online} {m['topology.Online']?.() ?? 'online'}</span>
+						<span class="text-xs text-text-muted">{group.devices.length} {m['topology.Nodes']()}</span>
+						<span class="text-xs text-success">{group.online} {m['topology.Online']()}</span>
 					</div>
 					<div class="divide-y divide-border/50">
 						{#each group.devices as dev}
@@ -422,19 +422,19 @@
 	{:else if viewMode === 'tree'}
 		<!-- VIEW: Radial topology tree -->
 		<div class="flex flex-wrap items-center gap-4 mb-3 text-xs text-text-muted">
-			<span>{(graph?.nodes.length ?? 0)} {m['topology.Nodes']?.() ?? 'devices'}</span>
-			<span>{(graph?.edges.length ?? 0)} {m['topology.Edges']?.() ?? 'adjacencies'}</span>
+			<span>{(graph?.nodes.length ?? 0)} {m['topology.Nodes']()}</span>
+			<span>{(graph?.edges.length ?? 0)} {m['topology.Edges']()}</span>
 		</div>
 		<div class="bg-surface border border-border rounded-lg p-2">
 			{#if treeOption}
 				<Chart option={treeOption} height="70vh" ondblclick={(p: any) => onNodeDblClick(p as { dataType: string; data: { value?: TreeNode } })} />
 			{:else}
 				<EmptyState icon={TopologyIcon}
-					title={m['topology.No Edges Title']?.() ?? 'No L2 adjacency discovered yet'}
-					description={m['topology.No Edges Desc']?.() ?? 'Run a scan to discover device adjacencies.'} />
+					title={m['topology.No Edges Title']()}
+					description={m['topology.No Edges Desc']()} />
 			{/if}
 		</div>
-		<p class="text-xs text-text-muted mt-2">{m['topology.Click Hint']?.() ?? 'Click to collapse/expand subtree; double-click to open device detail.'}</p>
+		<p class="text-xs text-text-muted mt-2">{m['topology.Click Hint']()}</p>
 	{/if}
 </div>
 {/if}
