@@ -324,7 +324,22 @@
 		"Undo": "撤销",
 		"Upload Progress": "上传中...",
 		"Clear": "清除",
-		"Status": "状态"
+		"Status": "状态",
+		"Reset": "重置",
+		"Apply": "应用",
+		"Columns": "列",
+		"Rows per page": "每页行数",
+		"Jump to page": "跳转到页",
+		"Page": "第",
+		"of": "页，共",
+		"Dismiss": "关闭通知",
+		"Retry": "重试",
+		"Refresh": "刷新",
+		"No Data": "暂无数据",
+		"Copy": "复制",
+		"Copied": "已复制",
+		"Test": "测试",
+		"All": "全部"
 	},
 	"scanner": {
 		"Scanner": "网络扫描器",

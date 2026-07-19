@@ -324,7 +324,22 @@
 		"Undo": "Undo",
 		"Upload Progress": "Uploading...",
 		"Clear": "Clear",
-		"Status": "Status"
+		"Status": "Status",
+		"Reset": "Reset",
+		"Apply": "Apply",
+		"Columns": "Columns",
+		"Rows per page": "Rows per page",
+		"Jump to page": "Jump to page",
+		"Page": "Page",
+		"of": "of",
+		"Dismiss": "Dismiss",
+		"Retry": "Retry",
+		"Refresh": "Refresh",
+		"No Data": "No data",
+		"Copy": "Copy",
+		"Copied": "Copied",
+		"Test": "Test",
+		"All": "All"
 	},
 	"scanner": {
 		"Scanner": "Network Scanner",
