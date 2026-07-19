@@ -24,6 +24,7 @@
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import SystemCard from '$lib/components/SystemCard.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Chart from '$lib/components/Chart.svelte';
@@ -185,14 +186,72 @@
 	}
 
 
+	// --- In-page tab navigation ---
+	// The detail page is a single 1800-line vertical scroll by default; the tab
+	// bar splits it into 5 focused panes (Overview / Scan Discovery / Network &
+	// Certs / Systems / Heartbeat) so a user can jump straight to the question
+	// they're asking ("is this healthy?" → Overview; "what services?" →
+	// Discovery) instead of scrolling past unrelated sections.
+	type Tab = 'overview' | 'discovery' | 'network' | 'systems' | 'heartbeat';
+	let activeTab = $state<Tab>('overview');
+
+	// Sync the active tab to ?tab= so links/reloads land on the right pane.
+	function hydrateTabFromUrl(): Tab {
+		if (typeof window === 'undefined') return 'overview';
+		const sp = new URLSearchParams(window.location.search);
+		const t = sp.get('tab');
+		return (t === 'overview' || t === 'discovery' || t === 'network' || t === 'systems' || t === 'heartbeat')
+			? t : 'overview';
+	}
+	function setTab(t: Tab) {
+		activeTab = t;
+		const sp = new URLSearchParams(window.location.search);
+		sp.set('tab', t);
+		history.replaceState(null, '', `?${sp.toString()}`);
+		// When the user first opens the heartbeat / network tab, make sure the
+		// supporting data has been fetched (it's lazy now, not all loaded up
+		// front).
+		if (t === 'heartbeat') {
+			if (!heartbeatConfigs.length && !heartbeatConfigLoading) fetchHeartbeatConfigs();
+			if (!trendStats && !trendLoading) fetchHeartbeatTrend();
+		}
+		if (t === 'network') {
+			if (!tlsCerts.length) fetchTLSCerts();
+			if (!neighbors.length) fetchNeighbors();
+		}
+	}
+
+	// --- Health summary (rolled up across the page's disparate sections) ---
+	// Earliest-expiring cert across all ports, for the health banner.
+	let soonestCertDays = $derived.by<number | null>(() => {
+		if (!tlsCerts.length) return null;
+		let soonest = Infinity;
+		for (const pc of tlsCerts) {
+			if (!pc.leaf) continue;
+			const t = Date.parse(pc.leaf.not_after);
+			if (Number.isNaN(t)) continue;
+			const days = Math.ceil((t - Date.now()) / (24 * 3600 * 1000));
+			if (days < soonest) soonest = days;
+		}
+		return Number.isFinite(soonest) ? soonest : null;
+	});
+
+	// Heartbeat success rate from the trend stats (null = not configured / no data).
+	let heartbeatRate = $derived.by<number | null>(() => {
+		if (!trendStats) return null;
+		const total = trendStats.success_count + trendStats.fail_count + trendStats.timeout_count;
+		if (total === 0) return null;
+		return Math.round((trendStats.success_count / total) * 100);
+	});
+
 	// --- Lifecycle ---
 	onMount(() => {
+		activeTab = hydrateTabFromUrl();
 		fetchDevice();
+		// Only the Overview + Systems panes are needed up front; Discovery uses
+		// the same `device` fetch, Network/Heartbeat fetch on first open via
+		// setTab. This cuts the initial load from 6 parallel requests to 2.
 		fetchSystems();
-		fetchNeighbors();
-		fetchTLSCerts();
-		fetchHeartbeatConfigs();
-		fetchHeartbeatTrend();
 	});
 
 	// --- Data fetching ---
@@ -636,10 +695,10 @@
 
 <div class="p-6">
 	<!-- Breadcrumb -->
-	<nav class="flex items-center gap-2 text-sm text-muted mb-6">
+	<nav class="flex items-center gap-2 text-sm text-muted mb-6" aria-label="Breadcrumb">
 		<a href="/devices" class="hover:text-primary transition-colors">{m['navigation.Devices']()}</a>
 		<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-		<span class="text-text">{device?.name ?? '...'}</span>
+		<span class="text-text" aria-current="page">{device?.name ?? '...'}</span>
 	</nav>
 
 	<!-- Device info header -->
@@ -649,8 +708,9 @@
 		<div class="device-info-header">
 			<div class="flex items-center justify-between gap-3 flex-wrap">
 				<div class="flex items-center gap-3">
-					<span class="inline-block w-3 h-3 rounded-full {statusDotClass(device.status)}"></span>
+					<span class="inline-block w-3 h-3 rounded-full {statusDotClass(device.status)}" aria-hidden="true"></span>
 					<h2 class="text-2xl font-bold text-primary">{device.name}</h2>
+					<span class="sr-only">{device.status}</span>
 					<span class="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
 						{typeLabel[device.type] || typeLabel['other']!}
 					</span>
@@ -665,38 +725,94 @@
 						</span>
 					{/if}
 				</div>
-				<a href="/devices" class="text-xs text-accent hover:underline">
-					← {m['navigation.Devices']()}
-				</a>
 			</div>
-			<div class="device-meta">
-				{#if device.ip_address}
-					<span class="device-meta-item">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
-						<span class="font-mono">{device.ip_address}</span>
-					</span>
-				{/if}
-				{#if mac}
-					<span class="device-meta-item">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-						<span class="font-mono text-xs">{mac}</span>
-					</span>
-				{/if}
-				{#if device.location}
-					<span class="device-meta-item">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-						{device.location}
-					</span>
-				{/if}
-				{#if device.serial_number}
-					<span class="device-meta-item">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
-						<span class="font-mono text-xs">{device.serial_number}</span>
-					</span>
-				{/if}
+				<div class="device-meta">
+					{#if device.ip_address}
+						<span class="device-meta-item">
+							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
+							<span class="font-mono">{device.ip_address}</span>
+						</span>
+					{/if}
+					{#if mac}
+						<span class="device-meta-item">
+							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+							<span class="font-mono text-xs">{mac}</span>
+						</span>
+					{/if}
+					{#if device.location}
+						<span class="device-meta-item">
+							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+							{device.location}
+						</span>
+					{/if}
+					{#if device.serial_number}
+						<span class="device-meta-item">
+							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+							<span class="font-mono text-xs">{device.serial_number}</span>
+						</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+	<!-- Health summary banner — rolls up status + heartbeat + soonest cert
+	     expiry so a user can answer "is this device healthy?" at a glance
+	     instead of scrolling to three separate sections. -->
+	{#if device}
+		<div class="health-banner mt-4">
+			<div class="health-item">
+				<span class="health-label">{m['devicedetail.Health Status']()}</span>
+				<span class="health-value">
+					<span class="inline-block w-2 h-2 rounded-full {statusDotClass(device.status)}" aria-hidden="true"></span>
+					{device.status}
+				</span>
+			</div>
+			<div class="health-item">
+				<span class="health-label">{m['devicedetail.Health Heartbeat']()}</span>
+				<span class="health-value">
+					{#if heartbeatRate !== null}
+						<span class="font-mono {heartbeatRate >= 90 ? 'text-success' : heartbeatRate >= 50 ? 'text-warning' : 'text-error'}">
+							{m['devicedetail.Health Success Rate']({ rate: heartbeatRate })}
+						</span>
+					{:else}
+						<span class="text-muted">{m['devicedetail.Health Not Configured']()}</span>
+					{/if}
+				</span>
+			</div>
+			<div class="health-item">
+				<span class="health-label">{m['devicedetail.Health Certificates']()}</span>
+				<span class="health-value">
+					{#if soonestCertDays === null}
+						<span class="text-muted">{m['devicedetail.Health No Certs']()}</span>
+					{:else if soonestCertDays < 0}
+						<span class="text-error font-mono">{m['certificates.DaysShort']({ days: soonestCertDays })}</span>
+					{:else if soonestCertDays < 15}
+						<span class="text-warning font-mono">{m['certificates.DaysShort']({ days: soonestCertDays })}</span>
+					{:else}
+						<span class="text-success font-mono">{m['certificates.DaysShort']({ days: soonestCertDays })}</span>
+					{/if}
+				</span>
 			</div>
 		</div>
 	{/if}
+
+	<!-- Sticky in-page tab bar -->
+	<div class="tab-bar" role="tablist" aria-label={m['navigation.Devices']()}>
+		{#each [['overview', m['devicedetail.Tab Overview']()], ['discovery', m['devicedetail.Tab Discovery']()], ['network', m['devicedetail.Tab Network']()], ['systems', m['devicedetail.Tab Systems']()], ['heartbeat', m['devicedetail.Tab Heartbeat']()]] as [key, label] (key)}
+			<button
+				role="tab"
+				aria-selected={activeTab === key}
+				aria-controls="tab-panel-{key}"
+				id="tab-btn-{key}"
+				onclick={() => setTab(key as Tab)}
+				class="tab-btn {activeTab === key ? 'tab-btn-active' : ''}"
+			>{label}</button>
+		{/each}
+	</div>
+
+	<!-- ── OVERVIEW TAB ── -->
+	{#if activeTab === 'overview'}
+	<div id="tab-panel-overview" role="tabpanel" aria-labelledby="tab-btn-overview">
 
 	<!-- Asset Information (form fields surfaced as read-only display) -->
 	{#if device}
@@ -854,6 +970,13 @@
 		</div>
 	{/if}
 
+	</div><!-- /overview tabpanel -->
+	{/if}<!-- /overview tab -->
+
+	<!-- ── DISCOVERY TAB ── -->
+	{#if activeTab === 'discovery'}
+	<div id="tab-panel-discovery" role="tabpanel" aria-labelledby="tab-btn-discovery">
+
 	<!-- Scan Discovery Attributes (from scan_attributes JSON) -->
 	{#if device?.scan_attributes}
 		{@const sa = device.scan_attributes}
@@ -946,6 +1069,28 @@
 			</div>
 		{/if}
 	{/if}
+
+	<!-- User Attributes (free-form key/value, user-editable) — lives in the
+	     Discovery tab alongside the other inferred/scanned data. -->
+	{#if device}
+		<div class="scan-info-panel mt-4">
+			<h3 class="scan-info-title">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+				{m['userfields.Custom Attributes']()}
+			</h3>
+			<LabelEditor
+				labels={device.user_attributes ?? {}}
+				onSave={handleSaveUserAttributes}
+			/>
+		</div>
+	{/if}
+
+	</div><!-- /discovery tabpanel -->
+	{/if}<!-- /discovery tab -->
+
+	<!-- ── NETWORK TAB ── -->
+	{#if activeTab === 'network'}
+	<div id="tab-panel-network" role="tabpanel" aria-labelledby="tab-btn-network">
 
 	<!-- L2 Neighbors (Bridge-MIB / LLDP adjacency) — always shown so users know
 	     this section exists; empty state explains how to populate it. -->
@@ -1073,20 +1218,12 @@
 		</div>
 	{/if}
 
-	<!-- User Attributes (free-form key/value, user-editable) -->
-	{#if device}
-		<div class="scan-info-panel mt-4">
-			<h3 class="scan-info-title">
-				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-				{m['userfields.Custom Attributes']()}
-			</h3>
-			<LabelEditor
-				labels={device.user_attributes ?? {}}
-				onSave={handleSaveUserAttributes}
-			/>
-		</div>
-	{/if}
+	</div><!-- /network tabpanel -->
+	{/if}<!-- /network tab -->
 
+	<!-- ── SYSTEMS TAB ── -->
+	{#if activeTab === 'systems'}
+	<div id="tab-panel-systems" role="tabpanel" aria-labelledby="tab-btn-systems">
 
 	<!-- Systems section header -->
 	<div class="flex items-center justify-between mb-4 mt-8">
@@ -1144,6 +1281,13 @@
 
 		<Pagination {total} {limit} {offset} onPageChange={(o) => { offset = o; fetchSystems(); }} />
 	{/if}
+
+	</div><!-- /systems tabpanel -->
+	{/if}<!-- /systems tab -->
+
+	<!-- ── HEARTBEAT TAB ── -->
+	{#if activeTab === 'heartbeat'}
+	<div id="tab-panel-heartbeat" role="tabpanel" aria-labelledby="tab-btn-heartbeat">
 
 	<!-- Heartbeat Trend Section -->
 	<div class="mt-10">
@@ -1341,10 +1485,11 @@
 		{/if}
 
 		<!-- Chart -->
-
-		<!-- Chart -->
 		{#if trendLoading}
-			<PageSkeleton type="table" />
+			<!-- Single chart: a table skeleton was misleading; use a chart-shaped rect. -->
+			<div class="bg-surface border border-border rounded-xl p-4" role="status" aria-busy="true">
+				<Skeleton variant="rect" width="100%" height="320px" />
+			</div>
 		{:else if Object.keys(trendOption).length > 0}
 			<div class="bg-surface border border-border rounded-xl p-4">
 				<Chart option={trendOption} height="320px" />
@@ -1357,7 +1502,11 @@
 			/>
 		{/if}
 	</div>
-</div>
+
+	</div><!-- /heartbeat tabpanel -->
+	{/if}<!-- /heartbeat tab -->
+
+</div><!-- /p-6 page wrapper -->
 
 <!-- Create/Edit Modal -->
 <Modal bind:open={formOpen} title={editingSystem ? m['systems.Edit System']() : m['systems.Create System']()} maxWidth="36rem" onClose={resetForm}>
@@ -1370,8 +1519,9 @@
 	<form onsubmit={handleSubmit} class="space-y-4">
 		<!-- Name -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.System Name']()} *</label>
+			<label for="sys-form-name" class="block text-xs text-muted mb-1">{m['systems.System Name']()} *</label>
 			<input
+				id="sys-form-name"
 				bind:value={formName}
 				required
 				class="input"
@@ -1380,8 +1530,9 @@
 
 		<!-- Entry URL -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Entry URL']()}</label>
+			<label for="sys-form-entry-url" class="block text-xs text-muted mb-1">{m['systems.Entry URL']()}</label>
 			<input
+				id="sys-form-entry-url"
 				bind:value={formEntryUrl}
 				type="url"
 				placeholder="https://..."
@@ -1391,8 +1542,9 @@
 
 		<!-- Description -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Description']()}</label>
+			<label for="sys-form-desc" class="block text-xs text-muted mb-1">{m['systems.Description']()}</label>
 			<textarea
+				id="sys-form-desc"
 				bind:value={formDescription}
 				rows="2"
 				class="input resize-y"
@@ -1401,8 +1553,9 @@
 
 		<!-- Category -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Category']()}</label>
+			<label for="sys-form-category" class="block text-xs text-muted mb-1">{m['systems.Category']()}</label>
 			<select
+				id="sys-form-category"
 				bind:value={formCategory}
 				class="input"
 			>
@@ -1415,8 +1568,9 @@
 
 		<!-- Metrics URL -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Metrics URL']()}</label>
+			<label for="sys-form-metrics-url" class="block text-xs text-muted mb-1">{m['systems.Metrics URL']()}</label>
 			<input
+				id="sys-form-metrics-url"
 				bind:value={formMetricsUrl}
 				type="url"
 				placeholder="https://..."
@@ -1437,8 +1591,9 @@
 
 		<!-- Tags -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Tags']()}</label>
+			<label for="sys-form-tags" class="block text-xs text-muted mb-1">{m['systems.Tags']()}</label>
 			<input
+				id="sys-form-tags"
 				bind:value={formTags}
 				placeholder="monitoring,production"
 				class="input"
@@ -1482,8 +1637,8 @@
 		<form onsubmit={saveEditConfig} class="space-y-4">
 			<!-- Method -->
 			<div>
-				<label class="block text-xs text-muted mb-1">{m['heartbeat.Method']()}</label>
-				<select bind:value={editingConfig.method} class="input">
+				<label for="hb-cfg-method" class="block text-xs text-muted mb-1">{m['heartbeat.Method']()}</label>
+				<select id="hb-cfg-method" bind:value={editingConfig.method} class="input">
 					<option value="icmp">icmp</option>
 					<option value="tcp">tcp</option>
 					<option value="http">http</option>
@@ -1493,20 +1648,20 @@
 
 			<!-- Target -->
 			<div>
-				<label class="block text-xs text-muted mb-1">{m['heartbeat.Target']()}</label>
-				<input bind:value={editingConfig.target} required class="input" />
+				<label for="hb-cfg-target" class="block text-xs text-muted mb-1">{m['heartbeat.Target']()}</label>
+				<input id="hb-cfg-target" bind:value={editingConfig.target} required class="input" />
 			</div>
 
 			<!-- Interval seconds -->
 			<div>
-				<label class="block text-xs text-muted mb-1">{m['heartbeat.Interval Seconds']()}</label>
-				<input type="number" min="1" bind:value={editingConfig.interval_seconds} required class="input" />
+				<label for="hb-cfg-interval" class="block text-xs text-muted mb-1">{m['heartbeat.Interval Seconds']()}</label>
+				<input id="hb-cfg-interval" type="number" min="1" bind:value={editingConfig.interval_seconds} required class="input" />
 			</div>
 
 			<!-- Timeout seconds -->
 			<div>
-				<label class="block text-xs text-muted mb-1">{m['heartbeat.Timeout Seconds']()}</label>
-				<input type="number" min="1" bind:value={editingConfig.timeout_seconds} required class="input" />
+				<label for="hb-cfg-timeout" class="block text-xs text-muted mb-1">{m['heartbeat.Timeout Seconds']()}</label>
+				<input id="hb-cfg-timeout" type="number" min="1" bind:value={editingConfig.timeout_seconds} required class="input" />
 			</div>
 
 			<!-- Enabled -->
@@ -1560,6 +1715,76 @@
 />
 
 <style>
+	/* Health summary banner — rolls up status + heartbeat + cert expiry. */
+	.health-banner {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+		gap: 1rem;
+		padding: 0.875rem 1.25rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+	}
+	.health-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+	.health-label {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+		font-weight: 600;
+	}
+	.health-value {
+		font-size: 0.95rem;
+		color: var(--color-text);
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	/* Sticky in-page tab bar. */
+	.tab-bar {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		display: flex;
+		gap: 0.25rem;
+		padding: 0.5rem 0;
+		margin-top: 1rem;
+		margin-bottom: 0.5rem;
+		background: var(--color-bg);
+		border-bottom: 1px solid var(--color-border);
+		overflow-x: auto;
+	}
+	.tab-btn {
+		padding: 0.5rem 0.875rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text-muted);
+		background: transparent;
+		border: none;
+		border-bottom: 2px solid transparent;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: color 0.15s ease, border-color 0.15s ease;
+	}
+	.tab-btn:hover {
+		color: var(--color-text);
+	}
+	.tab-btn-active {
+		color: var(--color-primary);
+		border-bottom-color: var(--color-primary);
+	}
+	.tab-btn:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
+		border-radius: var(--radius-sm);
+	}
+
 	.device-info-header {
 		display: flex;
 		flex-direction: column;
