@@ -126,6 +126,16 @@
 		createdToken = null;
 	}
 
+	// The one-time token (createdToken) is unrecoverable — once the modal
+	// closes it's gone forever. confirmDiscard gates the close on the
+	// existing "unsaved changes" overlay so Esc / backdrop / X all warn first
+	// instead of silently discarding the token. Returning true when a token
+	// is showing pops the discard confirmation; the user must click Discard
+	// to actually close.
+	function confirmTokenDiscard(): boolean {
+		return createdToken !== null;
+	}
+
 	function openCreate() {
 		resetForm();
 		createModalOpen = true;
@@ -500,7 +510,14 @@
 {/if}
 
 <!-- Create Token Modal -->
-<Modal bind:open={createModalOpen} title={m['agents.Create Token']?.() ?? 'Create Token'} onClose={resetForm}>
+<Modal
+	bind:open={createModalOpen}
+	title={m['agents.Create Token']?.() ?? 'Create Token'}
+	onClose={resetForm}
+	confirmDiscard={confirmTokenDiscard}
+	discardTitle={m['agents.Token Discard Title']?.() ?? 'Discard this token?'}
+	discardMessage={m['agents.Token Discard Message']?.() ?? 'You haven\'t copied this token yet. Closing now means it\'s gone forever.'}
+>
 	{#if createdToken}
 		<!-- One-time token display view (after successful creation) -->
 		<div class="space-y-4">

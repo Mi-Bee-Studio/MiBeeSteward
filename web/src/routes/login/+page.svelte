@@ -19,6 +19,8 @@
 	import { fly } from 'svelte/transition';
 	import { addToast } from '$lib/stores/toast';
 	import { Lock, Eye, EyeOff } from '@lucide/svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import LoadingButton from '$lib/components/LoadingButton.svelte';
 
 	let username = $state('');
 	let password = $state('');
@@ -75,7 +77,7 @@
 			if (res.user.must_change_password) {
 				showForceDialog = true;
 			} else {
-				goto('/');
+				goto('/dashboard');
 			}
 		} catch (err: unknown) {
 			const msg = getErrorMessage(err);
@@ -110,7 +112,7 @@
 		try {
 			await api.put('/auth/force-password', { new_password: forceNewPassword });
 			showForceDialog = false;
-			goto('/');
+			goto('/dashboard');
 		} catch (err: unknown) {
 			forceError = getErrorMessage(err);
 		} finally {
@@ -218,7 +220,6 @@
 								class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-text transition-colors"
 								aria-label={showPassword ? m['auth.hide_password']() : m['auth.show_password']()}
 								title={showPassword ? m['auth.hide_password']() : m['auth.show_password']()}
-								tabindex="-1"
 							>
 								{#if showPassword}
 									<EyeOff class="w-5 h-5" />
@@ -248,52 +249,41 @@
 	</div>
 </div>
 
-<!-- Force password change dialog -->
-{#if showForceDialog}
-	<div class="fixed inset-0 z-50 flex items-center justify-center" style="background: var(--overlay-scrim); backdrop-filter: blur(2px);">
-		<div class="w-full max-w-md mx-4 bg-surface border border-border rounded-xl p-8" style="box-shadow: var(--shadow-lg);">
-			<h2 class="text-xl font-semibold text-text mb-2">{m["auth.Change Password"]()}</h2>
-			<p class="text-sm text-warning mb-6">{m["auth.force_change_password"]()}</p>
+<!-- Force password change dialog (uses Modal for focus trap / Escape / focus restore) -->
+<Modal bind:open={showForceDialog} title={m["auth.Change Password"]()} maxWidth="28rem">
+	<p class="text-sm text-warning mb-6">{m["auth.force_change_password"]()}</p>
 
-			{#if forceError}
-				<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error" aria-live="polite" transition:fly={{ y: -10, duration: 200 }}>
-					{forceError}
-				</div>
-			{/if}
-
-			<form onsubmit={handleForcePasswordChange}>
-				<div class="mb-4">
-					<label class="block text-sm text-muted mb-2" for="force-new-password">{m["auth.new_password"]()}</label>
-					<input
-						type="password"
-						id="force-new-password"
-						bind:value={forceNewPassword}
-						class="input py-2.5 focus:ring-1 focus:ring-primary"
-						placeholder="••••••••"
-						required
-						autocomplete="new-password"
-					/>
-				</div>
-				<div class="mb-6">
-					<label class="block text-sm text-muted mb-2" for="force-confirm-password">{m["auth.confirm_password"]()}</label>
-					<input
-						type="password"
-						id="force-confirm-password"
-						bind:value={forceConfirmPassword}
-						class="input py-2.5 focus:ring-1 focus:ring-primary"
-						placeholder="••••••••"
-						required
-						autocomplete="new-password"
-					/>
-				</div>
-				<button
-					type="submit"
-					disabled={forceLoading}
-					class="btn btn-primary w-full py-2.5"
-				>
-					{forceLoading ? '...' : m["auth.Change Password"]()}
-				</button>
-			</form>
+	{#if forceError}
+		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error" aria-live="polite" transition:fly={{ y: -10, duration: 200 }}>
+			{forceError}
 		</div>
-	</div>
-{/if}
+	{/if}
+
+	<form onsubmit={handleForcePasswordChange}>
+		<div class="mb-4">
+			<label class="block text-sm text-muted mb-2" for="force-new-password">{m["auth.new_password"]()}</label>
+			<input
+				type="password"
+				id="force-new-password"
+				bind:value={forceNewPassword}
+				class="input py-2.5 focus:ring-1 focus:ring-primary"
+				placeholder="••••••••"
+				required
+				autocomplete="new-password"
+			/>
+		</div>
+		<div class="mb-6">
+			<label class="block text-sm text-muted mb-2" for="force-confirm-password">{m["auth.confirm_password"]()}</label>
+			<input
+				type="password"
+				id="force-confirm-password"
+				bind:value={forceConfirmPassword}
+				class="input py-2.5 focus:ring-1 focus:ring-primary"
+				placeholder="••••••••"
+				required
+				autocomplete="new-password"
+			/>
+		</div>
+		<LoadingButton type="submit" loading={forceLoading} label={m["auth.Change Password"]()} class="w-full py-2.5" />
+	</form>
+</Modal>
