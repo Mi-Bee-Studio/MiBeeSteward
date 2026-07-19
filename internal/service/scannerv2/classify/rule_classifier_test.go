@@ -522,3 +522,175 @@ func identitiesMetadata(out []scannerv2.ServiceIdentity) []map[string]string {
 	}
 	return result
 }
+
+// findIdentityByProduct returns the first identity whose metadata["product"]
+// equals the wanted value, or false. Used to locate the specific identity
+// emitted by an http-server-* rule, since multiple rules (and the hand-written
+// WebClassifier) can emit service="http" for the same evidence — product is
+// the discriminator unique to the data-driven product rules.
+func findIdentityByProduct(out []scannerv2.ServiceIdentity, product string) (scannerv2.ServiceIdentity, bool) {
+	for _, id := range out {
+		if id.Metadata != nil && id.Metadata["product"] == product {
+			return id, true
+		}
+	}
+	return scannerv2.ServiceIdentity{}, false
+}
+
+// TestRuleClassifier_HTTPServerProducts covers the http-server-* rules added
+// from the mibee-fingerprints-go corpus sync. These rules match structured
+// http evidence (Server header / page title) and emit product metadata — an
+// enhancement beyond the hand-written WebClassifier, which is why they can't
+// use the assertIdentityEqual vs-WebClassifier pattern. Each case verifies both
+// a positive match (the rule's target string) and that the rule's product
+// metadata is actually emitted.
+func TestRuleClassifier_HTTPServerProducts(t *testing.T) {
+	rc := loadBuiltinRules(t)
+
+	tests := []struct {
+		name        string
+		rawData     map[string]string // evidence RawData for kind=http
+		wantProduct string            // expected metadata["product"]
+		wantBrand   string            // expected metadata["inferred_brand"] ("" if not set)
+		wantVersion string            // expected metadata["version"] ("" if not set)
+	}{
+		{
+			name:        "llamacpp in Server header",
+			rawData:     map[string]string{"server": "llama.cpp/0.8.0"},
+			wantProduct: "llama.cpp",
+			wantBrand:   "llama.cpp",
+		},
+		{
+			name:        "uhttpd (OpenWrt) in Server header",
+			rawData:     map[string]string{"server": "uhttpd/1.0.0"},
+			wantProduct: "OpenWrt uHTTPd",
+			wantBrand:   "OpenWrt",
+		},
+		{
+			name:        "MiBee Steward in page title (not Server header)",
+			rawData:     map[string]string{"server": "nginx", "title": "MiBee Steward Dashboard"},
+			wantProduct: "MiBee Steward",
+			wantBrand:   "MiBee",
+		},
+		{
+			name:        "Dropbear in Server header",
+			rawData:     map[string]string{"server": "Dropbear SSH"},
+			wantProduct: "Dropbear",
+			wantBrand:   "", // dropbear rule sets product only, no inferred_brand
+		},
+		{
+			name:        "Apache with version",
+			rawData:     map[string]string{"server": "Apache/2.4.58 (Debian)"},
+			wantProduct: "Apache HTTPD",
+			wantBrand:   "Apache",
+			wantVersion: "2.4.58", // substring_after "/", until " " or "("
+		},
+		{
+			name:        "nginx with version",
+			rawData:     map[string]string{"server": "nginx/1.26.1"},
+			wantProduct: "nginx",
+			wantBrand:   "nginx",
+			wantVersion: "1.26.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := []scannerv2.Evidence{
+				{Kind: "http", Port: 80, Confidence: 0.9, RawData: tt.rawData},
+			}
+			got := rc.Classify(ev)
+
+			id, ok := findIdentityByProduct(got, tt.wantProduct)
+			if !ok {
+				t.Fatalf("no identity with product=%q; got metadata: %+v",
+					tt.wantProduct, identitiesMetadata(got))
+			}
+			if tt.wantBrand != "" && id.Metadata["inferred_brand"] != tt.wantBrand {
+				t.Errorf("inferred_brand want=%q got=%q", tt.wantBrand, id.Metadata["inferred_brand"])
+			}
+			if tt.wantVersion != "" && id.Metadata["version"] != tt.wantVersion {
+				t.Errorf("version want=%q got=%q", tt.wantVersion, id.Metadata["version"])
+			}
+		})
+	}
+}
+
+// TestRuleClassifier_HTTPServerProducts_NoMatch verifies the http-server-*
+// rules do not fire on evidence that should not match them — the negative
+// counterpart to TestRuleClassifier_HTTPServerProducts. A generic server string
+// with no known product keyword should produce no product metadata at all.
+func TestRuleClassifier_HTTPServerProducts_NoMatch(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	ev := []scannerv2.Evidence{
+		{Kind: "http", Port: 80, Confidence: 0.9, RawData: map[string]string{"server": "CustomApp/2.0", "title": "Hello"}},
+	}
+	got := rc.Classify(ev)
+	for _, id := range got {
+		if id.Metadata != nil && id.Metadata["product"] != "" {
+			t.Errorf("unexpected product metadata for generic server; got product=%q in %+v",
+				id.Metadata["product"], id.Metadata)
+		}
+	}
+}
+
+// TestRuleClassifier_SMBVersion covers the smb-version rule (kind=smb_negotiate)
+// added from the mibee-fingerprints-go corpus sync. It extracts dialect + os
+// via passthrough from the SMB probe's evidence, and wins over the port-smb
+// fallback via exclusive_group "smb" (priority 10 vs 0).
+func TestRuleClassifier_SMBVersion(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	ev := []scannerv2.Evidence{
+		{
+			Kind:       "smb_negotiate",
+			IP:         "10.0.0.5",
+			Port:       445,
+			Confidence: 0.9,
+			RawData: map[string]string{
+				"dialect": "SMB 3.1.1",
+				"os":      "Windows 10",
+			},
+		},
+	}
+	got := rc.Classify(ev)
+
+	// The smb-version identity must be present with dialect + os passthrough.
+	svc, ok := hasService(got, "smb")
+	if !ok {
+		t.Fatalf("no smb identity; got: %+v", identitiesMetadata(got))
+	}
+	if svc.Metadata["version"] != "SMB 3.1.1" {
+		t.Errorf("smb version want=%q got=%q", "SMB 3.1.1", svc.Metadata["version"])
+	}
+	if svc.Metadata["os"] != "Windows 10" {
+		t.Errorf("smb os want=%q got=%q", "Windows 10", svc.Metadata["os"])
+	}
+
+	// exclusive_group "smb" means smb-version (priority 10) wins and the
+	// port-smb fallback (priority 0) should NOT also produce an smb identity.
+	// The slice should contain exactly one smb identity.
+	smbCount := 0
+	for _, id := range got {
+		if id.Service == "smb" {
+			smbCount++
+		}
+	}
+	if smbCount != 1 {
+		t.Errorf("exclusive_group should yield exactly 1 smb identity, got %d (smb-version should win over port-smb)", smbCount)
+	}
+}
+
+// TestRuleClassifier_SMBPortFallback verifies that without smb_negotiate
+// evidence, the port-smb fallback still fires on port 445 — i.e. adding the
+// smb-version rule did not break the existing fallback path.
+func TestRuleClassifier_SMBPortFallback(t *testing.T) {
+	rc := loadBuiltinRules(t)
+	// No smb_negotiate evidence — just a port_open hint on 445.
+	ev := []scannerv2.Evidence{
+		{Kind: "port_open", Port: 445, Protocol: "tcp", Confidence: 0.9},
+	}
+	got := rc.Classify(ev)
+	if _, ok := hasService(got, "smb"); !ok {
+		t.Errorf("port-smb fallback should fire on port 445 without smb_negotiate evidence; got: %+v", identitiesMetadata(got))
+	}
+}
