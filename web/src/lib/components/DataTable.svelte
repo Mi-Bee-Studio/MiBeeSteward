@@ -11,6 +11,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { Search, X, ChevronUp, ChevronDown, Inbox } from '@lucide/svelte';
+	import { m } from '$lib/i18n-paraglide';
 
 	interface Column {
 		key: string;
@@ -22,7 +23,7 @@
 	let {
 		columns,
 		rows,
-		searchPlaceholder = 'Search...',
+		searchPlaceholder = m['common.Search']() + '...',
 		searchableKeys = [],
 		initialSearch = '',
 		emptyTitle = 'No data',
@@ -198,7 +199,7 @@
 							<td colspan={columns.length} class="px-4 py-8 text-center text-sm text-muted">
 								<div class="flex flex-col items-center gap-1">
 									<Search class="w-7 h-7 mb-1 opacity-40" />
-									<span>No results found</span>
+									<span>{m['common.No Results']()}</span>
 								</div>
 							</td>
 						</tr>

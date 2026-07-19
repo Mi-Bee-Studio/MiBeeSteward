@@ -18,6 +18,8 @@
 	 * selection UI + persistence. Bind `selected` for two-way binding.
 	 */
 
+	import { m } from '$lib/i18n-paraglide';
+
 	interface OptionalColumn {
 		/** Stable key persisted to localStorage. Never rename (breaks storage). */
 		key: string;
@@ -40,7 +42,7 @@
 		selected = $bindable(new Set<string>()),
 		storageKey,
 		defaults,
-		label = 'Columns'
+		label = m['common.Columns']()
 	}: Props = $props();
 
 	let open = $state(false);
@@ -123,7 +125,7 @@
 					type="button"
 					class="text-xs text-accent hover:underline"
 					onclick={reset}
-				>Reset</button>
+				>{m['common.Reset']()}</button>
 			</div>
 			<ul class="max-h-64 overflow-y-auto py-1">
 				{#each columns as col (col.key)}

@@ -79,14 +79,14 @@
 
 {#if !$auth.token}
 	<div class="p-6 text-center text-text-muted">
-		<p>{m['errors.Unauthorized Desc']?.() ?? 'Please log in.'}</p>
+		<p>{m['errors.Unauthorized Desc']()}</p>
 		<a href="/login" class="text-primary hover:underline text-sm mt-2 inline-block">{m['navigation.Login']()}</a>
 	</div>
 {:else}
 <div class="p-4 sm:p-6">
 	<!-- Header -->
 	<div class="flex items-center justify-between mb-6">
-		<h2 class="text-2xl font-bold text-primary">{m['navigation.Discovery']?.() ?? 'Passive Discovery'}</h2>
+		<h2 class="text-2xl font-bold text-primary">{m['navigation.Discovery']()}</h2>
 		<button
 			onclick={fetchStatus}
 			class="px-4 py-2 border border-border text-text-muted rounded-lg
@@ -108,8 +108,8 @@
 		<!-- Disabled state -->
 		<EmptyState
 			icon={RadarIcon}
-			title={m['discovery.Disabled']?.() ?? 'Passive discovery is disabled'}
-			description={m['discovery.Disabled Desc']?.() ?? 'Enable passive discovery in the scanner config to watch for newly-appeared hosts between scheduled scans.'}
+			title={m['discovery.Disabled']()}
+			description={m['discovery.Disabled Desc']()}
 		/>
 	{:else}
 		<!-- Status overview card -->
@@ -117,24 +117,24 @@
 			<div class="flex flex-wrap items-center gap-4">
 				<div class="flex items-center gap-2">
 					<span class="inline-block w-2.5 h-2.5 rounded-full bg-success animate-pulse-green"></span>
-					<span class="text-sm font-medium text-success">{m['discovery.Enabled']?.() ?? 'Enabled'}</span>
+					<span class="text-sm font-medium text-success">{m['discovery.Enabled']()}</span>
 				</div>
 				{#if status.uptime}
 					<div class="flex items-center gap-1.5">
-						<span class="text-xs text-text-muted">{m['discovery.Uptime']?.() ?? 'Uptime'}</span>
+						<span class="text-xs text-text-muted">{m['discovery.Uptime']()}</span>
 						<span class="text-sm font-mono text-text">{status.uptime}</span>
 					</div>
 				{/if}
 				{#if status.started_at}
 					<div class="flex items-center gap-1.5">
-						<span class="text-xs text-text-muted">{m['discovery.Started At']?.() ?? 'Started'}</span>
+						<span class="text-xs text-text-muted">{m['discovery.Started At']()}</span>
 						<span class="text-sm text-text">{formatTime(status.started_at)}</span>
 					</div>
 				{/if}
 			</div>
 			{#if status.sources && status.sources.length > 0}
 				<div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-border">
-					<span class="text-xs text-text-muted">{m['discovery.Sources']?.() ?? 'Active sources'}</span>
+					<span class="text-xs text-text-muted">{m['discovery.Sources']()}</span>
 					{#each status.sources as src}
 						<span class="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono">{src}</span>
 					{/each}
@@ -142,15 +142,15 @@
 			{/if}
 			{#if status.config}
 				<div class="flex flex-wrap items-center gap-4 mt-2 text-xs text-text-muted">
-					<span>{m['discovery.Interval']?.() ?? 'Interval'}: <span class="font-mono text-text">{(status.config.Interval ?? 0) / 1e9}s</span></span>
-					<span>{m['discovery.Trigger Identify']?.() ?? 'Identify'}: <span class="font-mono text-text">{status.config.TriggerIdentify ? 'on' : 'off'}</span></span>
+					<span>{m['discovery.Interval']()}: <span class="font-mono text-text">{(status.config.Interval ?? 0) / 1e9}s</span></span>
+					<span>{m['discovery.Trigger Identify']()}: <span class="font-mono text-text">{status.config.TriggerIdentify ? 'on' : 'off'}</span></span>
 				</div>
 			{/if}
 		</div>
 
 		<!-- Pipeline funnel counters -->
 		<div class="mb-4">
-			<h3 class="text-sm font-semibold text-text mb-3">{m['discovery.Pipeline']?.() ?? 'Discovery Pipeline'}</h3>
+			<h3 class="text-sm font-semibold text-text mb-3">{m['discovery.Pipeline']()}</h3>
 			<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
 				{#each funnel as stage}
 					<div class="bg-surface border border-border rounded-lg p-3 text-center">
@@ -163,7 +163,7 @@
 
 		<!-- Recent discoveries -->
 		<div>
-			<h3 class="text-sm font-semibold text-text mb-3">{m['discovery.Recent']?.() ?? 'Recent Discoveries'}</h3>
+			<h3 class="text-sm font-semibold text-text mb-3">{m['discovery.Recent']()}</h3>
 			{#if status.recent_discoveries && status.recent_discoveries.length > 0}
 				<div class="bg-surface border border-border rounded-lg overflow-hidden">
 					<table class="w-full text-left">
@@ -193,7 +193,7 @@
 				</div>
 			{:else}
 				<div class="bg-surface border border-border rounded-lg p-6 text-center">
-					<p class="text-sm text-text-muted">{m['discovery.No Recent']?.() ?? 'No recent discoveries. New hosts detected by the passive sources will appear here.'}</p>
+					<p class="text-sm text-text-muted">{m['discovery.No Recent']()}</p>
 				</div>
 			{/if}
 		</div>

@@ -339,7 +339,10 @@
 		"Copy": "Copy",
 		"Copied": "Copied",
 		"Test": "Test",
-		"All": "All"
+		"All": "All",
+		"Description": "Description",
+		"Tags": "Tags",
+		"Chart Unavailable": "Chart unavailable"
 	},
 	"scanner": {
 		"Scanner": "Network Scanner",
@@ -547,7 +550,16 @@
 		"mDNS Services": "mDNS Services",
 		"SSDP": "SSDP / UPnP",
 		"Workgroup": "Workgroup",
-		"No Discovery Data": "No scan discovery data available"
+		"No Discovery Data": "No scan discovery data available",
+		"Extras": "Discovery Extras",
+		"Monitoring": "Monitoring",
+		"SNMP Contact": "sysContact",
+		"SNMP Descr": "sysDescr",
+		"SNMP Location": "sysLocation",
+		"SNMP Name": "sysName",
+		"SNMP OID": "sysObjectID",
+		"SNMP Services": "sysServices",
+		"TTL": "ICMP TTL"
 	},
 	"userfields": {
 		"Custom Attributes": "Custom Attributes",
@@ -569,7 +581,9 @@
 	"settings": {
 		"Appearance": "Appearance",
 		"Dark Mode": "Dark mode",
-		"Light Mode": "Light mode"
+		"Light Mode": "Light mode",
+		"Language": "Language",
+		"Current Language": "Current: {lang}"
 	},
 	"users": {
 		"User List": "User Management",
@@ -678,7 +692,8 @@
 		"Event Lost": "Device Lost",
 		"All Events": "All Events",
 		"No Changes": "No changes yet",
-		"No Changes Desc": "Device changes will appear here once scans detect additions, modifications, or losses."
+		"No Changes Desc": "Device changes will appear here once scans detect additions, modifications, or losses.",
+		"Diff Title": "Change Details"
 	},
 	"agents": {
 		"Title": "Agent Management",
@@ -713,7 +728,13 @@
 		"Network Required": "Network is required",
 		"Targets Required": "Scan targets are required",
 		"Command History": "Command History",
-		"No Commands": "No commands sent. Trigger a scan on an agent above to enqueue one."
+		"No Commands": "No commands sent. Trigger a scan on an agent above to enqueue one.",
+		"Command": "Command",
+		"Created": "Created",
+		"Acknowledged": "Acknowledged",
+		"Pending": "Pending",
+		"Done": "Done",
+		"Failed": "Failed"
 	},
 	"networks": {
 		"Title": "Networks",
@@ -724,6 +745,7 @@
 		"Name Required": "Name is required",
 		"Name Help": "Unique identifier (e.g. lan-62, datacenter-fra)",
 		"Cidr Help": "Advisory — used for display, not enforcement",
+		"CIDR": "CIDR",
 		"Site": "Site",
 		"Agent": "Agent",
 		"Agent Managed Hint": "Agent-managed — deleting clears the agent binding",
@@ -818,5 +840,8 @@
 		"ShowChain": "Show full chain ({count})",
 		"HideChain": "Hide chain",
 		"DaysShort": "{days}d"
+	},
+	"assetinfo": {
+		"Title": "Asset Information"
 	}
 }
