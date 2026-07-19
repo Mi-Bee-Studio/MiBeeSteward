@@ -22,6 +22,7 @@
 	import { ChevronDown, ChevronRight, Download, Upload, Plus } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
+	import LoadingButton from '$lib/components/LoadingButton.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -1250,9 +1251,7 @@ interface Stats {
 
 		<!-- Submit -->
 		<div class="col-span-2 flex gap-3 pt-2">
-			<button type="submit" disabled={formLoading} class="btn btn-primary">
-				{formLoading ? '...' : m['common.Save']()}
-			</button>
+		<LoadingButton type="submit" loading={formLoading} variant="primary" label={m['common.Save']()} />
 			<button type="button" onclick={() => { formOpen = false; resetForm(); }} class="btn btn-secondary">
 				{m['common.Cancel']()}
 			</button>
@@ -1320,9 +1319,7 @@ interface Stats {
 				<button onclick={() => { importOpen = false; }} class="btn btn-secondary">
 					{m['common.Cancel']()}
 				</button>
-				<button onclick={confirmImport} disabled={importLoading} class="btn btn-primary">
-					{importLoading ? '...' : m['devices.Import Confirm']()}
-				</button>
+				<LoadingButton onclick={confirmImport} loading={importLoading} variant="primary" label={m['devices.Import Confirm']()} />
 			</div>
 		{/if}
 	</div>
@@ -1378,10 +1375,7 @@ interface Stats {
 					<option value={doc.id}>{doc.title} ({doc.type})</option>
 				{/each}
 			</select>
-			<button onclick={linkDoc} disabled={!selectedDocId || linkLoading}
-				class="btn btn-primary shrink-0">
-				{linkLoading ? '...' : m['common.Link']()}
-			</button>
+			<LoadingButton onclick={linkDoc} loading={linkLoading} disabled={!selectedDocId} variant="primary" label={m['common.Link']()} class="shrink-0" />
 		</div>
 	</div>
 

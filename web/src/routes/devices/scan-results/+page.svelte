@@ -330,7 +330,7 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between mb-6">
 		<div>
-			<h2 class="text-2xl font-bold text-text">{m['scanner.Results Title']()}</h2>
+			<h2 class="text-2xl font-bold text-primary">{m['scanner.Results Title']()}</h2>
 			<p class="text-sm text-text-muted mt-1">{m['scanner.Results Subtitle']()}</p>
 		</div>
 		{#if taskIdFilter}

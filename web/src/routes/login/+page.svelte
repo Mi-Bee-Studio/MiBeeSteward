@@ -169,10 +169,8 @@
                             class="input py-3 text-center text-2xl font-mono tracking-[0.5em]"
                             placeholder="000000" />
                     </div>
-                    <button type="submit" disabled={twoFactorLoading || twoFactorCode.length !== 6}
-                        class="btn btn-primary w-full py-2.5">
-                        {twoFactorLoading ? '...' : m["auth.2fa_submit"]()}
-                    </button>
+                    <LoadingButton type="submit" loading={twoFactorLoading} disabled={twoFactorCode.length !== 6}
+                        variant="primary" label={m["auth.2fa_submit"]()} class="w-full py-2.5" />
                 </form>
                 <button onclick={backToLogin} class="w-full mt-3 text-sm text-muted hover:text-text transition-colors">
                     &larr; {m["auth.2fa_back_to_login"]()}
@@ -232,13 +230,13 @@
 						<p class="text-error text-xs mt-1">{errors.password}</p>
 					{/if}
 				</div>
-				<button
+				<LoadingButton
 					type="submit"
-					disabled={loading}
-					class="btn btn-primary w-full py-2.5"
-				>
-					{loading ? '...' : m["auth.Login"]()}
-				</button>
+					loading={loading}
+					variant="primary"
+					label={m["auth.Login"]()}
+					class="w-full py-2.5"
+				/>
 			</form>
 
 			<p class="text-xs text-muted mt-4 text-center">

@@ -17,6 +17,7 @@
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
+	import LoadingButton from '$lib/components/LoadingButton.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
@@ -571,9 +572,7 @@
 
 			<!-- Actions -->
 			<div class="flex gap-3 pt-2">
-				<button type="submit" disabled={formLoading} class="btn btn-primary">
-					{formLoading ? '...' : m['common.Save']?.() ?? 'Create'}
-				</button>
+				<LoadingButton type="submit" loading={formLoading} variant="primary" label={m['common.Save']?.() ?? 'Create'} />
 				<button type="button" onclick={() => { createModalOpen = false; resetForm(); }} class="btn btn-secondary">
 					{m['common.Cancel']?.() ?? 'Cancel'}
 				</button>
@@ -610,9 +609,7 @@
 
 		<!-- Actions -->
 		<div class="flex gap-3 pt-2">
-			<button type="submit" disabled={scanLoading} class="btn btn-primary">
-				{scanLoading ? '...' : m['agents.Trigger Scan']?.() ?? 'Trigger Scan'}
-			</button>
+			<LoadingButton type="submit" loading={scanLoading} variant="primary" label={m['agents.Trigger Scan']?.() ?? 'Trigger Scan'} />
 			<button type="button" onclick={() => { scanModalOpen = false; }} class="btn btn-secondary">
 				{m['common.Cancel']?.() ?? 'Cancel'}
 			</button>

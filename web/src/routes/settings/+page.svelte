@@ -21,6 +21,7 @@
 	import QRCode from 'qrcode';
 	import Modal from '$lib/components/Modal.svelte';
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
+	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 
 	interface Profile {
 		id: number;
@@ -242,7 +243,7 @@ function handleCancel2FASetup() {
 	<h2 class="text-2xl font-bold text-primary mb-6">{m["navigation.Settings"]()}</h2>
 
 	{#if loading}
-		<div class="text-muted">{m["common.Loading"]()}...</div>
+		<PageSkeleton type="form" />
 	{:else if error && !profile}
 		<div class="px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
 			{error}
@@ -275,10 +276,7 @@ function handleCancel2FASetup() {
 						class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-muted
 							cursor-not-allowed opacity-60" />
 				</div>
-				<button type="submit" disabled={profileLoading}
-					class="btn btn-primary">
-					{profileLoading ? '...' : m["common.Save"]()}
-				</button>
+				<LoadingButton type="submit" loading={profileLoading} variant="primary" label={m["common.Save"]()} />
 			</form>
 		</div>
 
@@ -313,10 +311,7 @@ function handleCancel2FASetup() {
 						<p class="mt-1 text-xs text-error">{fieldErrors.confirmPassword}</p>
 					{/if}
 				</div>
-				<button type="submit" disabled={passwordLoading}
-					class="btn btn-primary">
-					{passwordLoading ? '...' : m["auth.Change Password"]()}
-				</button>
+				<LoadingButton type="submit" loading={passwordLoading} variant="primary" label={m["auth.Change Password"]()} />
 			</form>
 		</div>
 
@@ -394,10 +389,7 @@ function handleCancel2FASetup() {
                             class="btn btn-secondary">
                             {m["common.Cancel"]()}
                         </button>
-                        <button type="submit" disabled={twoFAVerifyLoading}
-                            class="btn btn-primary">
-                            {twoFAVerifyLoading ? '...' : m["auth.2fa_confirm_enable"]()}
-                        </button>
+                        <LoadingButton type="submit" loading={twoFAVerifyLoading} variant="primary" label={m["auth.2fa_confirm_enable"]()} />
                     </form>
                 </div>
             {:else if twoFAEnabled}
@@ -415,10 +407,7 @@ function handleCancel2FASetup() {
                 <!-- Disabled state -->
                 <div class="flex items-center justify-between">
                     <p class="text-sm text-muted">{m["auth.2fa_disabled"]()}</p>
-                    <button onclick={handle2FASetup} disabled={twoFALoading}
-                        class="btn btn-primary">
-                        {twoFALoading ? '...' : m["auth.2fa_enable"]()}
-                    </button>
+                    <LoadingButton onclick={handle2FASetup} loading={twoFALoading} variant="primary" label={m["auth.2fa_enable"]()} />
                 </div>
             {/if}
         </div>

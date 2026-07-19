@@ -237,10 +237,10 @@
 			iot: getCSSVar('--color-accent-purple', '#a78bfa'),
 			server: getCSSVar('--color-success', '#22c55e'),
 			camera: getCSSVar('--color-accent-cyan', '#67e8f9'),
-			switch: '#f59e0b',
-			router: '#ec4899',
-			firewall: '#ef4444',
-			nas: '#14b8a6',
+			switch: getCSSVar('--color-warning', '#f59e0b'),
+			router: getCSSVar('--color-accent-purple', '#ec4899'),
+			firewall: getCSSVar('--color-error', '#ef4444'),
+			nas: getCSSVar('--color-info', '#14b8a6'),
 			other: getCSSVar('--color-accent-cyan', '#67e8f9'),
 			unknown: getCSSVar('--color-accent-cyan', '#67e8f9')
 		};
@@ -437,7 +437,16 @@
 				title: { text: m["dashboard.No Data"](), left: 'center', top: 'center', textStyle: { color: getTextMutedColor(), fontSize: 14 } }
 			};
 		}
-		const palette = ['#6366f1', '#818cf8', '#a78bfa', '#67e8f9', '#f59e0b', '#ef4444', '#10b981'];
+		// Theme-aware palette (resolved from CSS vars so the pie follows dark/light).
+		const palette = [
+			getCSSVar('--color-primary', '#6366f1'),
+			getCSSVar('--color-accent', '#818cf8'),
+			getCSSVar('--color-accent-purple', '#a78bfa'),
+			getCSSVar('--color-accent-cyan', '#67e8f9'),
+			getCSSVar('--color-warning', '#f59e0b'),
+			getCSSVar('--color-error', '#ef4444'),
+			getCSSVar('--color-success', '#10b981')
+		];
 		const pieData = results.map((r: { metric: { [key: string]: string }; value: [number, string] }, i: number) => ({
 			value: parseFloat(r.value[1]),
 			name: r.metric.__name__ || r.metric.job || `${widgetName} ${i + 1}`,
@@ -744,7 +753,13 @@
 		</div>
 	</div>
 
-	{#if useCustomLayout}
+	{#if $loading}
+		<!-- Top-level skeleton: previously the dashboard rendered nothing at all
+		     while stats/overview/widgets loaded — no feedback that work was
+		     happening. The $loading store path (vs a bare $state) is required
+		     under prerender hydration (see the note above loadAll). -->
+		<PageSkeleton type="dashboard" />
+	{:else if useCustomLayout}
 		<!-- Custom widget layout with drag-and-drop -->
 		{#if widgets.length === 0}
 			<EmptyState

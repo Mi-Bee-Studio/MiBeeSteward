@@ -17,6 +17,7 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import type { Device, System, DeviceNeighbor, TLSPortCerts } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
+	import { certStatus } from '$lib/utils/certs';
 	import { Monitor, BarChart3 } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -345,15 +346,8 @@
 
 	// Expiry classification — shared between the sub-panel row and (mirrored in
 	// the Modal). Returns 'expired' | 'expiring' | 'valid' | 'error'.
-	function certStatus(port: TLSPortCerts): 'expired' | 'expiring' | 'valid' | 'error' {
-		if (port.error || !port.leaf) return 'error';
-		const after = Date.parse(port.leaf.not_after);
-		if (Number.isNaN(after)) return 'error';
-		const now = Date.now();
-		if (after < now) return 'expired';
-		if (after - now < 15 * 24 * 3600 * 1000) return 'expiring';
-		return 'valid';
-	}
+	// certStatus is shared via $lib/utils/certs so the detail page and the
+	// CertificateModal can't drift on the 15-day warning window or error cases.
 
 	// Compact day-delta badge text for the sub-panel (e.g. "23d" / "-3d").
 	function certDayShort(port: TLSPortCerts): string {
@@ -656,7 +650,7 @@
 			<div class="flex items-center justify-between gap-3 flex-wrap">
 				<div class="flex items-center gap-3">
 					<span class="inline-block w-3 h-3 rounded-full {statusDotClass(device.status)}"></span>
-					<h2 class="text-xl font-bold text-primary">{device.name}</h2>
+					<h2 class="text-2xl font-bold text-primary">{device.name}</h2>
 					<span class="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
 						{typeLabel[device.type] || typeLabel['other']!}
 					</span>
