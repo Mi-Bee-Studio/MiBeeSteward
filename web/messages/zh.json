@@ -843,5 +843,20 @@
 	},
 	"assetinfo": {
 		"Title": "资产信息"
+	},
+	"devicedetail": {
+		"Tab Overview": "概览",
+		"Tab Discovery": "扫描发现",
+		"Tab Network": "网络与证书",
+		"Tab Systems": "系统",
+		"Tab Heartbeat": "心跳",
+		"Health Title": "健康状态",
+		"Health Status": "状态",
+		"Health Heartbeat": "心跳",
+		"Health Certificates": "证书",
+		"Health No Certs": "无",
+		"Health Not Configured": "未配置",
+		"Health Success Rate": "成功率 {rate}%",
+		"Health Check Certs": "查看证书"
 	}
 }

@@ -843,5 +843,20 @@
 	},
 	"assetinfo": {
 		"Title": "Asset Information"
+	},
+	"devicedetail": {
+		"Tab Overview": "Overview",
+		"Tab Discovery": "Scan Discovery",
+		"Tab Network": "Network & Certificates",
+		"Tab Systems": "Systems",
+		"Tab Heartbeat": "Heartbeat",
+		"Health Title": "Health",
+		"Health Status": "Status",
+		"Health Heartbeat": "Heartbeat",
+		"Health Certificates": "Certificates",
+		"Health No Certs": "None",
+		"Health Not Configured": "Not configured",
+		"Health Success Rate": "{rate}% success",
+		"Health Check Certs": "View certificates"
 	}
 }
