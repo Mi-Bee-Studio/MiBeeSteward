@@ -19,7 +19,8 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
-	import { Plus, RotateCw, Puzzle, BarChart3 } from '@lucide/svelte';
+	import { Plus, RotateCw, Puzzle, BarChart3, AlertTriangle, CheckCircle2, Radar } from '@lucide/svelte';
+	import { goto } from '$app/navigation';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { auth } from '$lib/stores/auth';
@@ -753,6 +754,50 @@
 		</div>
 	</div>
 
+	{#if !$loading}
+		<!-- Attention banner + primary action. Answers the two questions a user
+		     opens the dashboard for: (1) is anything wrong right now? (2) what
+		     should I do first? Empty-data state turns into onboarding. -->
+		{@const offCount = overview?.devices.offline ?? stats?.by_status.offline ?? 0}
+		{@const lastNew = overview?.scanning.last_discovery?.new_hosts ?? 0}
+		{@const totalDevices = overview?.devices.total ?? Object.values(stats?.by_status ?? {}).reduce((a, b) => a + b, 0)}
+		<div class="attention-banner {totalDevices === 0 ? 'attention-empty' : offCount > 0 ? 'attention-warn' : 'attention-ok'} mb-6">
+			<div class="flex items-center gap-3 min-w-0 flex-1">
+				{#if totalDevices === 0}
+					<Radar class="w-5 h-5 shrink-0 text-primary" />
+					<div class="min-w-0">
+						<p class="font-medium text-text">{m['dashboard.Empty Title']()}</p>
+						<p class="text-sm text-muted">{m['dashboard.Empty Desc']()}</p>
+					</div>
+				{:else if offCount > 0}
+					<AlertTriangle class="w-5 h-5 shrink-0 text-warning" />
+					<div class="min-w-0">
+						<p class="font-medium text-text">
+							{m['dashboard.Attention Title']()}
+							<span class="text-warning ml-1">{m['dashboard.Attention Offline']({ count: offCount })}</span>
+							{#if lastNew > 0}
+								<span class="text-muted mx-1">·</span>
+								<span class="text-success">{m['dashboard.Attention New']({ count: lastNew })}</span>
+							{/if}
+						</p>
+					</div>
+				{:else}
+					<CheckCircle2 class="w-5 h-5 shrink-0 text-success" />
+					<p class="font-medium text-text">{m['dashboard.Attention All Good']()}</p>
+				{/if}
+			</div>
+			{#if isAdmin}
+				<button
+					onclick={() => goto('/devices/scan-tasks')}
+					class="btn btn-primary shrink-0"
+				>
+					<Radar class="w-4 h-4" />
+					{m['dashboard.Scan Network']()}
+				</button>
+			{/if}
+		</div>
+	{/if}
+
 	{#if $loading}
 		<!-- Top-level skeleton: previously the dashboard rendered nothing at all
 		     while stats/overview/widgets loaded — no feedback that work was
@@ -937,5 +982,30 @@
 		.widget-grid {
 			grid-template-columns: 1fr;
 		}
+	}
+
+	/* Attention banner — sits between the header and the charts. Three states:
+	 * - attention-empty: no devices yet (onboarding, primary-tinted)
+	 * - attention-warn:  devices offline (warning-tinted)
+	 * - attention-ok:    all healthy (success-tinted, subdued) */
+	.attention-banner {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		padding: 0.875rem 1.25rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+	}
+	.attention-empty {
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+		background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+	}
+	.attention-warn {
+		border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+		background: color-mix(in srgb, var(--color-warning) 8%, var(--color-surface));
+	}
+	.attention-ok {
+		border-color: color-mix(in srgb, var(--color-success) 25%, transparent);
 	}
 </style>

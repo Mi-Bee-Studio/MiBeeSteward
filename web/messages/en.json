@@ -259,6 +259,13 @@
 	},
 	"dashboard": {
 		"Dashboard": "Dashboard",
+		"Attention Title": "Needs attention",
+		"Attention Offline": "{count} offline",
+		"Attention New": "{count} new in last scan",
+		"Attention All Good": "All devices healthy",
+		"Empty Title": "No devices yet",
+		"Empty Desc": "Run your first scan to discover what's on your network.",
+		"Scan Network": "Scan Network",
 		"Gauge": "Gauge",
 		"Line Chart": "Line Chart",
 		"Bar Chart": "Bar Chart",
