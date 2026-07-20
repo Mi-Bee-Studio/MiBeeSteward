@@ -14,7 +14,10 @@
 		"Discovery": "被动发现",
 		"Networks": "网络",
 		"Agents": "采集器",
-		"Topology": "拓扑"
+		"Topology": "拓扑",
+		"Group Core": "核心",
+		"Group Library": "资料库",
+		"Group Admin": "管理"
 	},
 	"auth": {
 		"Username": "用户名",
@@ -138,9 +141,12 @@
 		"Advanced Filters": "高级筛选",
 		"No Selection": "未选择设备",
 		"Tab Device List": "设备列表",
-		"Tab Scanner": "网络扫描",
+		"Tab Scanner": "快速扫描",
 		"Tab Scan Tasks": "扫描任务",
 		"Tab Scan Results": "扫描结果",
+		"Tab Passive Discovery": "被动发现",
+		"View List": "列表",
+		"View Topology": "拓扑",
 		"Camera": "摄像头",
 		"Search placeholder": "搜索名称 / IP / MAC…",
 		"Alive": "存活",
@@ -253,6 +259,13 @@
 	},
 	"dashboard": {
 		"Dashboard": "仪表盘",
+		"Attention Title": "需要关注",
+		"Attention Offline": "{count} 台离线",
+		"Attention New": "最近扫描新增 {count} 台",
+		"Attention All Good": "所有设备健康",
+		"Empty Title": "还没有设备",
+		"Empty Desc": "运行第一次扫描,发现你的网络上有哪些设备。",
+		"Scan Network": "扫描网络",
 		"Gauge": "仪表",
 		"Line Chart": "折线图",
 		"Bar Chart": "柱状图",
@@ -324,7 +337,25 @@
 		"Undo": "撤销",
 		"Upload Progress": "上传中...",
 		"Clear": "清除",
-		"Status": "状态"
+		"Status": "状态",
+		"Reset": "重置",
+		"Apply": "应用",
+		"Columns": "列",
+		"Rows per page": "每页行数",
+		"Jump to page": "跳转到页",
+		"Page": "第",
+		"of": "页，共",
+		"Dismiss": "关闭通知",
+		"Retry": "重试",
+		"Refresh": "刷新",
+		"No Data": "暂无数据",
+		"Copy": "复制",
+		"Copied": "已复制",
+		"Test": "测试",
+		"All": "全部",
+		"Description": "描述",
+		"Tags": "标签",
+		"Chart Unavailable": "图表不可用"
 	},
 	"scanner": {
 		"Scanner": "网络扫描器",
@@ -427,6 +458,8 @@
 		"Detail NodeExporter Memory": "内存",
 		"Run History": "执行历史",
 		"Run Status": "状态",
+		"No Runs": "暂无扫描记录",
+		"No Runs Desc": "任务被触发后,扫描记录会出现在这里。",
 		"Run Duration": "耗时",
 		"Run Hosts": "主机数",
 		"Run New": "新增",
@@ -530,7 +563,16 @@
 		"mDNS Services": "mDNS 服务",
 		"SSDP": "SSDP / UPnP",
 		"Workgroup": "工作组",
-		"No Discovery Data": "无扫描发现数据"
+		"No Discovery Data": "无扫描发现数据",
+		"Extras": "发现扩展字段",
+		"Monitoring": "监控",
+		"SNMP Contact": "sysContact",
+		"SNMP Descr": "sysDescr",
+		"SNMP Location": "sysLocation",
+		"SNMP Name": "sysName",
+		"SNMP OID": "sysObjectID",
+		"SNMP Services": "sysServices",
+		"TTL": "ICMP TTL"
 	},
 	"userfields": {
 		"Custom Attributes": "自定义属性",
@@ -552,7 +594,9 @@
 	"settings": {
 		"Appearance": "外观",
 		"Dark Mode": "深色模式",
-		"Light Mode": "浅色模式"
+		"Light Mode": "浅色模式",
+		"Language": "语言",
+		"Current Language": "当前: {lang}"
 	},
 	"users": {
 		"User List": "用户管理",
@@ -661,7 +705,8 @@
 		"Event Lost": "设备离线",
 		"All Events": "全部事件",
 		"No Changes": "暂无变更",
-		"No Changes Desc": "扫描检测到设备新增、变更或离线时,事件将在此显示。"
+		"No Changes Desc": "扫描检测到设备新增、变更或离线时,事件将在此显示。",
+		"Diff Title": "变更详情"
 	},
 	"agents": {
 		"Title": "采集器管理",
@@ -684,6 +729,8 @@
 		"Token Revoked": "采集器令牌已吊销",
 		"Scan Triggered": "扫描命令已排队: {agentId}",
 		"Token Warning": "此令牌仅显示一次,请立即复制 — 之后无法再次获取。",
+		"Token Discard Title": "放弃此令牌?",
+		"Token Discard Message": "你尚未复制此令牌。现在关闭它将永久丢失,之后无法再获取。",
 		"Copy Token": "复制令牌",
 		"Copied": "已复制到剪贴板",
 		"Scan Targets": "扫描目标",
@@ -694,7 +741,13 @@
 		"Network Required": "网络为必填项",
 		"Targets Required": "扫描目标为必填项",
 		"Command History": "命令历史",
-		"No Commands": "暂无命令。在上方对采集器触发扫描即可入队一条命令。"
+		"No Commands": "暂无命令。在上方对采集器触发扫描即可入队一条命令。",
+		"Command": "命令",
+		"Created": "创建时间",
+		"Acknowledged": "已确认",
+		"Pending": "待处理",
+		"Done": "完成",
+		"Failed": "失败"
 	},
 	"networks": {
 		"Title": "网络",
@@ -705,6 +758,7 @@
 		"Name Required": "名称为必填项",
 		"Name Help": "唯一标识符(如 lan-62、datacenter-fra)",
 		"Cidr Help": "仅供参考 — 仅用于显示,不做强制校验",
+		"CIDR": "CIDR",
 		"Site": "站点",
 		"Agent": "采集器",
 		"Agent Managed Hint": "采集器托管 — 删除将解除采集器绑定",
@@ -719,6 +773,7 @@
 	},
 	"discovery": {
 		"Enabled": "已启用",
+		"Subtitle": "被动监听状态 —— 通过 ARP/DHCP 在网络上看到的主机,无需主动扫描。",
 		"Disabled": "被动发现已禁用",
 		"Disabled Desc": "在扫描器配置中启用被动发现,以在计划扫描之间监测新出现的主机。",
 		"Uptime": "运行时长",
@@ -799,5 +854,23 @@
 		"ShowChain": "展开完整证书链 ({count})",
 		"HideChain": "收起证书链",
 		"DaysShort": "{days}天"
+	},
+	"assetinfo": {
+		"Title": "资产信息"
+	},
+	"devicedetail": {
+		"Tab Overview": "概览",
+		"Tab Discovery": "扫描发现",
+		"Tab Network": "网络与证书",
+		"Tab Systems": "系统",
+		"Tab Heartbeat": "心跳",
+		"Health Title": "健康状态",
+		"Health Status": "状态",
+		"Health Heartbeat": "心跳",
+		"Health Certificates": "证书",
+		"Health No Certs": "无",
+		"Health Not Configured": "未配置",
+		"Health Success Rate": "成功率 {rate}%",
+		"Health Check Certs": "查看证书"
 	}
 }

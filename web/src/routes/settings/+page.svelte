@@ -20,6 +20,8 @@
 	import { goto } from '$app/navigation';
 	import QRCode from 'qrcode';
 	import Modal from '$lib/components/Modal.svelte';
+	import LoadingButton from '$lib/components/LoadingButton.svelte';
+	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 
 	interface Profile {
 		id: number;
@@ -241,7 +243,7 @@ function handleCancel2FASetup() {
 	<h2 class="text-2xl font-bold text-primary mb-6">{m["navigation.Settings"]()}</h2>
 
 	{#if loading}
-		<div class="text-muted">{m["common.Loading"]()}...</div>
+		<PageSkeleton type="form" />
 	{:else if error && !profile}
 		<div class="px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
 			{error}
@@ -274,10 +276,7 @@ function handleCancel2FASetup() {
 						class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-muted
 							cursor-not-allowed opacity-60" />
 				</div>
-				<button type="submit" disabled={profileLoading}
-					class="btn btn-primary">
-					{profileLoading ? '...' : m["common.Save"]()}
-				</button>
+				<LoadingButton type="submit" loading={profileLoading} variant="primary" label={m["common.Save"]()} />
 			</form>
 		</div>
 
@@ -312,10 +311,7 @@ function handleCancel2FASetup() {
 						<p class="mt-1 text-xs text-error">{fieldErrors.confirmPassword}</p>
 					{/if}
 				</div>
-				<button type="submit" disabled={passwordLoading}
-					class="btn btn-primary">
-					{passwordLoading ? '...' : m["auth.Change Password"]()}
-				</button>
+				<LoadingButton type="submit" loading={passwordLoading} variant="primary" label={m["auth.Change Password"]()} />
 			</form>
 		</div>
 
@@ -393,10 +389,7 @@ function handleCancel2FASetup() {
                             class="btn btn-secondary">
                             {m["common.Cancel"]()}
                         </button>
-                        <button type="submit" disabled={twoFAVerifyLoading}
-                            class="btn btn-primary">
-                            {twoFAVerifyLoading ? '...' : m["auth.2fa_confirm_enable"]()}
-                        </button>
+                        <LoadingButton type="submit" loading={twoFAVerifyLoading} variant="primary" label={m["auth.2fa_confirm_enable"]()} />
                     </form>
                 </div>
             {:else if twoFAEnabled}
@@ -414,10 +407,7 @@ function handleCancel2FASetup() {
                 <!-- Disabled state -->
                 <div class="flex items-center justify-between">
                     <p class="text-sm text-muted">{m["auth.2fa_disabled"]()}</p>
-                    <button onclick={handle2FASetup} disabled={twoFALoading}
-                        class="btn btn-primary">
-                        {twoFALoading ? '...' : m["auth.2fa_enable"]()}
-                    </button>
+                    <LoadingButton onclick={handle2FASetup} loading={twoFALoading} variant="primary" label={m["auth.2fa_enable"]()} />
                 </div>
             {/if}
         </div>
@@ -434,7 +424,7 @@ function handleCancel2FASetup() {
 
 		<!-- Language section -->
 		<div class="bg-surface border border-border rounded-xl p-6">
-			<h3 class="text-lg font-semibold text-text mb-4">Language / 语言</h3>
+			<h3 class="text-lg font-semibold text-text mb-4">{m["settings.Language"]()}</h3>
 			<div class="flex items-center gap-4">
 				<select bind:value={lang} onchange={handleLangChange}
 					class="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
@@ -442,21 +432,21 @@ function handleCancel2FASetup() {
 					<option value="zh">中文</option>
 					<option value="en">English</option>
 				</select>
-				<span class="text-sm text-muted">Current: {lang === 'zh' ? '中文' : 'English'}</span>
+				<span class="text-sm text-muted">{m["settings.Current Language"]({ lang: lang === 'zh' ? '中文' : 'English' })}</span>
 			</div>
 		</div>
 
         <!-- 2FA disable modal -->
-        <Modal bind:open={show2FADisableModal} title={m["auth.2fa_disable"]()} maxWidth="24rem" onclose={() => { twoFADisablePassword = ''; }}>
+        <Modal bind:open={show2FADisableModal} title={m["auth.2fa_disable"]()} maxWidth="24rem" onClose={() => { twoFADisablePassword = ''; }}>
             <p class="text-sm text-muted mb-4">{m["auth.2fa_disable_confirm"]()}</p>
             <form onsubmit={handle2FADisable}>
-                <input type="password" bind:value={twoFADisablePassword} placeholder="Current password"
+                <input type="password" bind:value={twoFADisablePassword} placeholder={m["auth.Old Password"]()}
                     class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text mb-3 focus:border-primary focus:outline-none" required />
                 <div class="flex gap-2 justify-end">
                     <button type="button" onclick={() => show2FADisableModal = false}
                         class="px-3 py-1.5 border border-border text-muted rounded-lg text-sm">{m["common.Cancel"]()}</button>
-                    <button type="submit" disabled={twoFADisableLoading}
-                        class="px-3 py-1.5 bg-error text-text-inverse rounded-lg text-sm font-medium disabled:opacity-50">{twoFADisableLoading ? '...' : m["common.Delete"]()}</button>
+                    <LoadingButton type="submit" loading={twoFADisableLoading} variant="danger"
+                        class="px-3 py-1.5 rounded-lg text-sm">{m["common.Delete"]()}</LoadingButton>
                 </div>
             </form>
         </Modal>

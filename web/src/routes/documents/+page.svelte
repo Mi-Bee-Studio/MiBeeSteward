@@ -19,6 +19,7 @@
 	import Pagination from '$lib/components/Pagination.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import { LoaderCircle } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	interface Document {
@@ -442,8 +443,9 @@
 		<div class="flex gap-3 pt-2">
 			<button type="submit" disabled={formLoading}
 				class="px-6 py-2 bg-primary text-text-inverse font-semibold rounded-lg
-					hover:bg-primary-hover disabled:opacity-50 text-sm">
-				{formLoading ? '...' : m["common.Save"]()}
+					hover:bg-primary-hover disabled:opacity-50 text-sm inline-flex items-center gap-2">
+				{#if formLoading}<LoaderCircle class="w-4 h-4 animate-spin" aria-hidden="true" />{/if}
+				<span>{m["common.Save"]()}</span>
 			</button>
 			<button type="button" onclick={() => { urlModalOpen = false; editingDocument = null; }}
 				class="px-6 py-2 border border-border text-text-muted rounded-lg
@@ -491,8 +493,9 @@
 		<div class="flex gap-3 pt-2">
 			<button type="submit" disabled={formLoading}
 				class="px-6 py-2 bg-primary text-text-inverse font-semibold rounded-lg
-					hover:bg-primary-hover disabled:opacity-50 text-sm">
-				{formLoading ? '...' : m["documents.Upload"]()}
+					hover:bg-primary-hover disabled:opacity-50 text-sm inline-flex items-center gap-2">
+				{#if formLoading}<LoaderCircle class="w-4 h-4 animate-spin" aria-hidden="true" />{/if}
+				<span>{m["documents.Upload"]()}</span>
 			</button>
 			<button type="button" onclick={() => { fileModalOpen = false; editingDocument = null; }}
 				class="px-6 py-2 border border-border text-text-muted rounded-lg

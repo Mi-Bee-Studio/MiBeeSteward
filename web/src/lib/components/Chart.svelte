@@ -11,6 +11,7 @@
 <script lang="ts">
 	import { echarts, type EChartsOption } from '$lib/charts/echarts';
 	import { onMount } from 'svelte';
+	import { m } from '$lib/i18n-paraglide';
 
 	let {
 		option = $bindable(),
@@ -104,7 +105,7 @@
 
 {#if chartError}
 	<div class="flex items-center justify-center rounded-lg border border-error/30 bg-error/10 text-error text-sm" style="width: {width}; height: {height};">
-		<span>Chart unavailable</span>
+		<span>{m['common.Chart Unavailable']()}</span>
 	</div>
 {:else}
 	<div bind:this={container} class="echarts-container" style="width: {width}; height: {height};"></div>

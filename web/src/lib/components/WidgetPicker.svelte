@@ -10,6 +10,7 @@
 
 <script lang="ts">
 	import Modal from './Modal.svelte';
+	import LoadingButton from './LoadingButton.svelte';
 	import { m } from '$lib/i18n-paraglide';
 	import { addToast } from '$lib/stores/toast';
 	import { api } from '$lib/api/client';
@@ -157,9 +158,7 @@
 				<button type="button" class="btn btn-secondary" onclick={() => open = false}>
 					{m["common.Cancel"]()}
 				</button>
-				<button type="submit" class="btn btn-primary" disabled={saving}>
-					{saving ? m["common.Loading"]() + '...' : (isEditing ? m["common.Save"]() : m["common.Create"]())}
-				</button>
+				<LoadingButton type="submit" loading={saving} variant="primary" label={isEditing ? m["common.Save"]() : m["common.Create"]()} />
 			</div>
 		</form>
 	</Modal>

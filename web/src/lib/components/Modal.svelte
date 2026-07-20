@@ -18,16 +18,31 @@
 		title,
 		maxWidth = '32rem',
 		onClose,
-		onBeforeClose,
+		confirmDiscard,
+		discardTitle,
+		discardMessage,
 		children
 	}: {
 		open?: boolean;
 		title: string;
 		maxWidth?: string;
 		onClose?: () => void;
-		onBeforeClose?: () => boolean;
+		/**
+		 * Return `true` to block the close and instead show the "unsaved
+		 * changes" discard confirmation. The previous name `onBeforeClose`
+		 * read as "return true to allow close" — the opposite of the actual
+		 * contract — so it was renamed for clarity.
+		 */
+		confirmDiscard?: () => boolean;
+		/** Override the discard-confirm title (defaults to "Unsaved Changes"). */
+		discardTitle?: string;
+		/** Override the discard-confirm message. */
+		discardMessage?: string;
 		children: import('svelte').Snippet;
 	} = $props();
+
+	const resolvedDiscardTitle = $derived(discardTitle ?? m['common.unsaved_changes']());
+	const resolvedDiscardMessage = $derived(discardMessage ?? m['common.unsaved_changes_desc']());
 
 	let dialogRef: HTMLDivElement | undefined = $state();
 	let previouslyFocused: HTMLElement | undefined = $state();
@@ -75,7 +90,14 @@
 	}
 
 	function close() {
-		if (onBeforeClose?.()) {
+		// If the discard-confirm overlay is already up, a backdrop click just
+		// dismisses the overlay (back to the open modal) instead of re-running
+		// confirmDiscard and re-showing it — that flickery loop was the old bug.
+		if (showConfirm) {
+			showConfirm = false;
+			return;
+		}
+		if (confirmDiscard?.()) {
 			showConfirm = true;
 			return;
 		}
@@ -160,8 +182,8 @@
 				<div class="modal-confirm-overlay" onclick={() => (showConfirm = false)}>
 					<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 					<div class="modal-confirm-card" onclick={(e) => e.stopPropagation()}>
-						<h3 class="modal-confirm-title">{m['common.unsaved_changes']()}</h3>
-						<p class="modal-confirm-desc">{m['common.unsaved_changes_desc']()}</p>
+						<h3 class="modal-confirm-title">{resolvedDiscardTitle}</h3>
+						<p class="modal-confirm-desc">{resolvedDiscardMessage}</p>
 						<div class="modal-confirm-actions">
 							<button class="confirm-btn confirm-cancel" onclick={() => (showConfirm = false)}>{m['common.Cancel']()}</button>
 							<button class="confirm-btn confirm-discard" onclick={doClose}>{m['common.discard']()}</button>

@@ -18,6 +18,7 @@
 	import { userSchema, validateField, validateForm } from '$lib/utils/validation';
 
 	import Modal from '$lib/components/Modal.svelte';
+	import LoadingButton from '$lib/components/LoadingButton.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -82,8 +83,9 @@
 			users = res.users || [];
 			total = res.total || 0;
 		} catch (err: unknown) {
+			// Inline banner only on initial load — a parallel toast here was
+			// noisy double-notification for a single failure.
 			error = getErrorMessage(err);
-			addToast('error', error);
 		} finally {
 			loading = false;
 		}
@@ -401,13 +403,7 @@
 
 		<!-- Actions -->
 		<div class="flex gap-3 pt-2">
-			<button
-				type="submit"
-				disabled={formLoading}
-				class="btn btn-primary"
-			>
-				{formLoading ? '...' : m["common.Save"]()}
-			</button>
+			<LoadingButton type="submit" loading={formLoading} variant="primary" label={m["common.Save"]()} />
 			<button
 				type="button"
 				onclick={() => { createModalOpen = false; resetForm(); }}
@@ -460,13 +456,7 @@
 
 		<!-- Actions -->
 		<div class="flex gap-3 pt-2">
-			<button
-				type="submit"
-				disabled={resetLoading}
-				class="btn btn-primary"
-			>
-				{resetLoading ? '...' : m["users.Reset Password"]()}
-			</button>
+			<LoadingButton type="submit" loading={resetLoading} variant="primary" label={m["users.Reset Password"]()} />
 			<button
 				type="button"
 				onclick={() => { resetDialogOpen = false; resetTarget = null; }}

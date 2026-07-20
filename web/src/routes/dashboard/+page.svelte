@@ -19,7 +19,8 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
-	import { Plus, RotateCw, Puzzle, BarChart3 } from '@lucide/svelte';
+	import { Plus, RotateCw, Puzzle, BarChart3, AlertTriangle, CheckCircle2, Radar } from '@lucide/svelte';
+	import { goto } from '$app/navigation';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { auth } from '$lib/stores/auth';
@@ -237,10 +238,10 @@
 			iot: getCSSVar('--color-accent-purple', '#a78bfa'),
 			server: getCSSVar('--color-success', '#22c55e'),
 			camera: getCSSVar('--color-accent-cyan', '#67e8f9'),
-			switch: '#f59e0b',
-			router: '#ec4899',
-			firewall: '#ef4444',
-			nas: '#14b8a6',
+			switch: getCSSVar('--color-warning', '#f59e0b'),
+			router: getCSSVar('--color-accent-purple', '#ec4899'),
+			firewall: getCSSVar('--color-error', '#ef4444'),
+			nas: getCSSVar('--color-info', '#14b8a6'),
 			other: getCSSVar('--color-accent-cyan', '#67e8f9'),
 			unknown: getCSSVar('--color-accent-cyan', '#67e8f9')
 		};
@@ -437,7 +438,16 @@
 				title: { text: m["dashboard.No Data"](), left: 'center', top: 'center', textStyle: { color: getTextMutedColor(), fontSize: 14 } }
 			};
 		}
-		const palette = ['#6366f1', '#818cf8', '#a78bfa', '#67e8f9', '#f59e0b', '#ef4444', '#10b981'];
+		// Theme-aware palette (resolved from CSS vars so the pie follows dark/light).
+		const palette = [
+			getCSSVar('--color-primary', '#6366f1'),
+			getCSSVar('--color-accent', '#818cf8'),
+			getCSSVar('--color-accent-purple', '#a78bfa'),
+			getCSSVar('--color-accent-cyan', '#67e8f9'),
+			getCSSVar('--color-warning', '#f59e0b'),
+			getCSSVar('--color-error', '#ef4444'),
+			getCSSVar('--color-success', '#10b981')
+		];
 		const pieData = results.map((r: { metric: { [key: string]: string }; value: [number, string] }, i: number) => ({
 			value: parseFloat(r.value[1]),
 			name: r.metric.__name__ || r.metric.job || `${widgetName} ${i + 1}`,
@@ -744,7 +754,57 @@
 		</div>
 	</div>
 
-	{#if useCustomLayout}
+	{#if !$loading}
+		<!-- Attention banner + primary action. Answers the two questions a user
+		     opens the dashboard for: (1) is anything wrong right now? (2) what
+		     should I do first? Empty-data state turns into onboarding. -->
+		{@const offCount = overview?.devices.offline ?? stats?.by_status.offline ?? 0}
+		{@const lastNew = overview?.scanning.last_discovery?.new_hosts ?? 0}
+		{@const totalDevices = overview?.devices.total ?? Object.values(stats?.by_status ?? {}).reduce((a, b) => a + b, 0)}
+		<div class="attention-banner {totalDevices === 0 ? 'attention-empty' : offCount > 0 ? 'attention-warn' : 'attention-ok'} mb-6">
+			<div class="flex items-center gap-3 min-w-0 flex-1">
+				{#if totalDevices === 0}
+					<Radar class="w-5 h-5 shrink-0 text-primary" />
+					<div class="min-w-0">
+						<p class="font-medium text-text">{m['dashboard.Empty Title']()}</p>
+						<p class="text-sm text-muted">{m['dashboard.Empty Desc']()}</p>
+					</div>
+				{:else if offCount > 0}
+					<AlertTriangle class="w-5 h-5 shrink-0 text-warning" />
+					<div class="min-w-0">
+						<p class="font-medium text-text">
+							{m['dashboard.Attention Title']()}
+							<span class="text-warning ml-1">{m['dashboard.Attention Offline']({ count: offCount })}</span>
+							{#if lastNew > 0}
+								<span class="text-muted mx-1">·</span>
+								<span class="text-success">{m['dashboard.Attention New']({ count: lastNew })}</span>
+							{/if}
+						</p>
+					</div>
+				{:else}
+					<CheckCircle2 class="w-5 h-5 shrink-0 text-success" />
+					<p class="font-medium text-text">{m['dashboard.Attention All Good']()}</p>
+				{/if}
+			</div>
+			{#if isAdmin}
+				<button
+					onclick={() => goto('/devices/scan-tasks')}
+					class="btn btn-primary shrink-0"
+				>
+					<Radar class="w-4 h-4" />
+					{m['dashboard.Scan Network']()}
+				</button>
+			{/if}
+		</div>
+	{/if}
+
+	{#if $loading}
+		<!-- Top-level skeleton: previously the dashboard rendered nothing at all
+		     while stats/overview/widgets loaded — no feedback that work was
+		     happening. The $loading store path (vs a bare $state) is required
+		     under prerender hydration (see the note above loadAll). -->
+		<PageSkeleton type="dashboard" />
+	{:else if useCustomLayout}
 		<!-- Custom widget layout with drag-and-drop -->
 		{#if widgets.length === 0}
 			<EmptyState
@@ -922,5 +982,30 @@
 		.widget-grid {
 			grid-template-columns: 1fr;
 		}
+	}
+
+	/* Attention banner — sits between the header and the charts. Three states:
+	 * - attention-empty: no devices yet (onboarding, primary-tinted)
+	 * - attention-warn:  devices offline (warning-tinted)
+	 * - attention-ok:    all healthy (success-tinted, subdued) */
+	.attention-banner {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		padding: 0.875rem 1.25rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+	}
+	.attention-empty {
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+		background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+	}
+	.attention-warn {
+		border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+		background: color-mix(in srgb, var(--color-warning) 8%, var(--color-surface));
+	}
+	.attention-ok {
+		border-color: color-mix(in srgb, var(--color-success) 25%, transparent);
 	}
 </style>

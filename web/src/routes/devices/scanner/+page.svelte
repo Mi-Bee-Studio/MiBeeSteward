@@ -15,7 +15,8 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { validateScanTarget } from '$lib/utils/validation';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import { LoaderCircle } from '@lucide/svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import { LoaderCircle, Radar } from '@lucide/svelte';
 
 	// All 9 device types matching internal/domain/device.go
 	const DEVICE_TYPES = ['pc', 'embedded', 'iot', 'other', 'server', 'switch', 'router', 'firewall', 'nas'] as const;
@@ -55,6 +56,10 @@
 	// Results state
 	let scanning = $state(false);
 	let result = $state<ScanResponse | null>(null);
+	// Inline error for a failed whole-scan run. Previously a scan failure only
+	// surfaced as a corner toast and the result pane stayed silently empty —
+	// easy to miss and indistinguishable from "no alive hosts".
+	let scanError = $state('');
 	let selectedIps = $state<Set<string>>(new Set());
 	let adding = $state(false);
 	// Expand/collapse unreachable hosts
@@ -106,6 +111,7 @@
 
 		scanning = true;
 		result = null;
+		scanError = '';
 		selectedIps = new Set();
 		deviceTypes = {};
 		deviceNames = {};
@@ -168,7 +174,10 @@
 
 			addToast('success', m['scanner.Scan Complete']());
 		} catch (err) {
-			addToast('error', getErrorMessage(err));
+			// Inline banner so the user sees the failure in context (not just a
+			// corner toast) — the result pane stays empty otherwise.
+			scanError = getErrorMessage(err);
+			addToast('error', scanError);
 		} finally {
 			scanning = false;
 		}
@@ -192,14 +201,22 @@
 		selectedIps = new Set();
 	}
 
-	async function addSelected() {
+	// addSelected is the entry point from the "Add Selected" button. For
+	// selections >10 it opens the confirm dialog and stops; the actual add is
+	// done by performAdd when the user confirms. Previously both paths went
+	// through one function guarded by `!confirmAddOpen`, which any future
+	// caller of addSelected() could trip to bypass the confirm gate. Splitting
+	// the two intents makes the confirm unavoidable.
+	function addSelected() {
 		if (selectedIps.size === 0) return;
-
-		// Show confirmation dialog for >10 hosts
-		if (selectedIps.size > 10 && !confirmAddOpen) {
+		if (selectedIps.size > 10) {
 			confirmAddOpen = true;
 			return;
 		}
+		performAdd();
+	}
+
+	async function performAdd() {
 		confirmAddOpen = false;
 		adding = true;
 		try {
@@ -302,7 +319,11 @@
 	</div>
 
 	<!-- Results -->
-	{#if result}
+	{#if scanError}
+		<div class="px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error mb-4" aria-live="polite">
+			{scanError}
+		</div>
+	{:else if result}
 		<!-- Summary -->
 		<div class="grid grid-cols-3 gap-4">
 			<div class="stat-card text-center">
@@ -512,23 +533,26 @@
 				</table>
 			</div>
 		{:else}
-			<div class="bg-surface border border-border rounded-lg p-8 text-center">
-				<p class="text-lg text-muted">{m['scanner.No Alive Hosts']()}</p>
-				<p class="text-sm text-muted mt-1">{m['scanner.No Alive Hosts Desc']()}</p>
+			<div class="bg-surface border border-border rounded-lg">
+				<EmptyState
+					icon={Radar}
+					title={m['scanner.No Alive Hosts']()}
+					description={m['scanner.No Alive Hosts Desc']()}
+				/>
 			</div>
 		{/if}
 	{/if}
 </div>
 
 <!-- Confirm bulk add dialog -->
-<ConfirmDialog
-	bind:open={confirmAddOpen}
-	title={m['scanner.Confirm Add Title']()}
-	message={m['scanner.Confirm Add Message']().replace('{count}', String(selectedIps.size))}
-	confirmLabel={m['scanner.Add Selected']()}
-	onConfirm={addSelected}
-	onCancel={() => { confirmAddOpen = false; }}
-/>
+	<ConfirmDialog
+		bind:open={confirmAddOpen}
+		title={m['scanner.Confirm Add Title']()}
+		message={m['scanner.Confirm Add Message']().replace('{count}', String(selectedIps.size))}
+		confirmLabel={m['scanner.Add Selected']()}
+		onConfirm={performAdd}
+		onCancel={() => { confirmAddOpen = false; }}
+	/>
 
 <style>
 	.auto-badge {

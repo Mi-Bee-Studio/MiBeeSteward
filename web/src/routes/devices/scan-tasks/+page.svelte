@@ -21,7 +21,9 @@
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PipelineConfigEditor from '$lib/components/scanner/PipelineConfigEditor.svelte';
+	import { Radar, LoaderCircle } from '@lucide/svelte';
 
 	// --- Core state ---
 	let tasks = $state<ScannerTask[]>([]);
@@ -374,7 +376,7 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between mb-6">
 		<div>
-			<h2 class="text-2xl font-bold text-text">{m['scanner.Task Title']()}</h2>
+			<h2 class="text-2xl font-bold text-primary">{m['scanner.Task Title']()}</h2>
 		</div>
 		<button
 			onclick={openCreate}
@@ -414,20 +416,20 @@
 		<PageSkeleton type="table" />
 	{:else}
 		<!-- Empty state -->
-		{#if filteredTasks.length === 0 && tasks.length > 0}
-			<div class="flex flex-col items-center justify-center py-12 text-center">
-				<p class="text-sm text-text-muted">{m['scanner.No Tasks Match']({ query: searchQuery })}</p>
-			</div>
-		{:else if tasks.length === 0}
-			<div class="flex flex-col items-center justify-center py-16 text-center">
-				<svg class="w-12 h-12 mb-3 text-text-muted opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-						d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-				</svg>
-				<h3 class="text-sm font-medium text-text mb-1">{m['scanner.No Tasks']()}</h3>
-				<p class="text-xs text-text-muted">{m['scanner.No Tasks Desc']()}</p>
-			</div>
-		{:else}
+			{#if filteredTasks.length === 0 && tasks.length > 0}
+				<EmptyState
+					title={m['common.No Results']()}
+					description={m['scanner.No Tasks Match']({ query: searchQuery })}
+				/>
+			{:else if tasks.length === 0}
+				<EmptyState
+					icon={Radar}
+					title={m['scanner.No Tasks']()}
+					description={m['scanner.No Tasks Desc']()}
+					actionLabel={m['scanner.New Task']()}
+					onAction={openCreate}
+				/>
+			{:else}
 			<!-- Task table -->
 			<div class="overflow-x-auto rounded-lg border border-border">
 				<table class="w-full">
@@ -527,9 +529,10 @@
 													onclick={() => cancelTask(task.id)}
 													disabled={cancellingId === task.id}
 													class="text-xs px-2 py-1 rounded text-error hover:bg-error/10
-														transition-colors disabled:opacity-50"
+														transition-colors disabled:opacity-50 inline-flex items-center gap-1"
 												>
-													{cancellingId === task.id ? '...' : `✕ ${m['common.Cancel']()}`}
+													{#if cancellingId === task.id}<LoaderCircle class="w-3 h-3 animate-spin" aria-hidden="true" />{/if}
+													<span>✕ {m['common.Cancel']()}</span>
 												</button>
 											{/if}
 										<button
@@ -662,8 +665,9 @@
 		<div class="flex gap-3 pt-2 border-t border-border">
 			<button type="submit" disabled={formLoading}
 				class="px-6 py-2 bg-primary text-text-inverse font-semibold rounded-lg
-					hover:bg-primary-hover transition-colors disabled:opacity-50 text-sm">
-				{formLoading ? '...' : m['common.Save']()}
+					hover:bg-primary-hover transition-colors disabled:opacity-50 text-sm inline-flex items-center gap-2">
+				{#if formLoading}<LoaderCircle class="w-4 h-4 animate-spin" aria-hidden="true" />{/if}
+				<span>{m['common.Save']()}</span>
 			</button>
 			<button type="button" onclick={() => { formOpen = false; resetForm(); }}
 				class="px-6 py-2 border border-border text-text-muted rounded-lg

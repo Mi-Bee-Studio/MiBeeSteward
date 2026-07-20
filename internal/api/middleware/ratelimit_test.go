@@ -176,3 +176,45 @@ func TestScanRateLimiter_Allow(t *testing.T) {
 	// 4th should be blocked
 	require.False(t, limiter.Allow("10.0.0.1"))
 }
+
+// TestGlobalRateLimiter_BypassesStaticAssets verifies the global limiter
+// exempts SPA static assets (the SvelteKit /_app/* bundle, favicons, the
+// index.html fallback) so the 40-60-chunk first-load burst isn't throttled.
+// Regression test for the 429 storm that bricked the SPA on page load.
+func TestGlobalRateLimiter_BypassesStaticAssets(t *testing.T) {
+	// Aggressive limit — burst of 1 means a single API request exhausts it,
+	// so any static request that ISN'T bypassed would get 429'd.
+	limiter := middleware.NewRateLimiter(1.0/60.0, 1)
+
+	ok := func() http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }
+	}
+	handler := limiter.Middleware(http.HandlerFunc(ok()))
+
+	staticPaths := []string{
+		"/",
+		"/index.html",
+		"/favicon.svg",
+		"/_app/immutable/chunks/abc123.js",
+		"/_app/immutable/assets/inter-latin.woff2",
+		"/_app/version.json",
+	}
+	for _, p := range staticPaths {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, "static path %s should bypass rate limit", p)
+	}
+
+	// A real API path should still be rate-limited: first request OK, second 429.
+	apiHandler := limiter.Middleware(http.HandlerFunc(ok()))
+	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/devices", nil)
+	rec1 := httptest.NewRecorder()
+	apiHandler.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusOK, rec1.Code, "first API request should pass")
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/devices", nil)
+	rec2 := httptest.NewRecorder()
+	apiHandler.ServeHTTP(rec2, req2)
+	require.Equal(t, http.StatusTooManyRequests, rec2.Code, "second API request should be rate-limited")
+}

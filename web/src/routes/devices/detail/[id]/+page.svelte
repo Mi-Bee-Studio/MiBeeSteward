@@ -17,12 +17,14 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import type { Device, System, DeviceNeighbor, TLSPortCerts } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
+	import { certStatus } from '$lib/utils/certs';
 	import { Monitor, BarChart3 } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import SystemCard from '$lib/components/SystemCard.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Chart from '$lib/components/Chart.svelte';
@@ -79,6 +81,11 @@
 	let heartbeatConfigs = $state<Array<{ id: number; method: string; target: string; interval_seconds: number; timeout_seconds: number; enabled: number }>>([]);
 	let heartbeatConfigLoading = $state(false);
 	let creatingHeartbeat = $state(false);
+
+	// Heartbeat export dropdown — click-toggle (not hover), so keyboard and
+	// touch users can reach it. The previous group-hover:opacity-100 made it
+	// invisible to everyone without a mouse.
+	let heartbeatExportOpen = $state(false);
 
 	// --- Heartbeat config edit/delete state ---
 	let editingConfig = $state<typeof heartbeatConfigs[0] | null>(null);
@@ -172,21 +179,79 @@
 			a.click();
 			a.remove();
 			URL.revokeObjectURL(url);
-			addToast('success', m['devices.Export']?.() ?? 'Exported');
+			addToast('success', m['devices.Export']());
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
 		}
 	}
 
 
+	// --- In-page tab navigation ---
+	// The detail page is a single 1800-line vertical scroll by default; the tab
+	// bar splits it into 5 focused panes (Overview / Scan Discovery / Network &
+	// Certs / Systems / Heartbeat) so a user can jump straight to the question
+	// they're asking ("is this healthy?" → Overview; "what services?" →
+	// Discovery) instead of scrolling past unrelated sections.
+	type Tab = 'overview' | 'discovery' | 'network' | 'systems' | 'heartbeat';
+	let activeTab = $state<Tab>('overview');
+
+	// Sync the active tab to ?tab= so links/reloads land on the right pane.
+	function hydrateTabFromUrl(): Tab {
+		if (typeof window === 'undefined') return 'overview';
+		const sp = new URLSearchParams(window.location.search);
+		const t = sp.get('tab');
+		return (t === 'overview' || t === 'discovery' || t === 'network' || t === 'systems' || t === 'heartbeat')
+			? t : 'overview';
+	}
+	function setTab(t: Tab) {
+		activeTab = t;
+		const sp = new URLSearchParams(window.location.search);
+		sp.set('tab', t);
+		history.replaceState(null, '', `?${sp.toString()}`);
+		// When the user first opens the heartbeat / network tab, make sure the
+		// supporting data has been fetched (it's lazy now, not all loaded up
+		// front).
+		if (t === 'heartbeat') {
+			if (!heartbeatConfigs.length && !heartbeatConfigLoading) fetchHeartbeatConfigs();
+			if (!trendStats && !trendLoading) fetchHeartbeatTrend();
+		}
+		if (t === 'network') {
+			if (!tlsCerts.length) fetchTLSCerts();
+			if (!neighbors.length) fetchNeighbors();
+		}
+	}
+
+	// --- Health summary (rolled up across the page's disparate sections) ---
+	// Earliest-expiring cert across all ports, for the health banner.
+	let soonestCertDays = $derived.by<number | null>(() => {
+		if (!tlsCerts.length) return null;
+		let soonest = Infinity;
+		for (const pc of tlsCerts) {
+			if (!pc.leaf) continue;
+			const t = Date.parse(pc.leaf.not_after);
+			if (Number.isNaN(t)) continue;
+			const days = Math.ceil((t - Date.now()) / (24 * 3600 * 1000));
+			if (days < soonest) soonest = days;
+		}
+		return Number.isFinite(soonest) ? soonest : null;
+	});
+
+	// Heartbeat success rate from the trend stats (null = not configured / no data).
+	let heartbeatRate = $derived.by<number | null>(() => {
+		if (!trendStats) return null;
+		const total = trendStats.success_count + trendStats.fail_count + trendStats.timeout_count;
+		if (total === 0) return null;
+		return Math.round((trendStats.success_count / total) * 100);
+	});
+
 	// --- Lifecycle ---
 	onMount(() => {
+		activeTab = hydrateTabFromUrl();
 		fetchDevice();
+		// Only the Overview + Systems panes are needed up front; Discovery uses
+		// the same `device` fetch, Network/Heartbeat fetch on first open via
+		// setTab. This cuts the initial load from 6 parallel requests to 2.
 		fetchSystems();
-		fetchNeighbors();
-		fetchTLSCerts();
-		fetchHeartbeatConfigs();
-		fetchHeartbeatTrend();
 	});
 
 	// --- Data fetching ---
@@ -340,15 +405,8 @@
 
 	// Expiry classification — shared between the sub-panel row and (mirrored in
 	// the Modal). Returns 'expired' | 'expiring' | 'valid' | 'error'.
-	function certStatus(port: TLSPortCerts): 'expired' | 'expiring' | 'valid' | 'error' {
-		if (port.error || !port.leaf) return 'error';
-		const after = Date.parse(port.leaf.not_after);
-		if (Number.isNaN(after)) return 'error';
-		const now = Date.now();
-		if (after < now) return 'expired';
-		if (after - now < 15 * 24 * 3600 * 1000) return 'expiring';
-		return 'valid';
-	}
+	// certStatus is shared via $lib/utils/certs so the detail page and the
+	// CertificateModal can't drift on the 15-day warning window or error cases.
 
 	// Compact day-delta badge text for the sub-panel (e.g. "23d" / "-3d").
 	function certDayShort(port: TLSPortCerts): string {
@@ -454,12 +512,12 @@
 		pc: m['devices.PC'](),
 		embedded: m['devices.Embedded'](),
 		iot: m['devices.IoT'](),
-		server: m['devices.Server']?.() ?? 'server',
-		switch: m['devices.Switch']?.() ?? 'switch',
-		router: m['devices.Router']?.() ?? 'router',
-		firewall: m['devices.Firewall']?.() ?? 'firewall',
-		nas: m['devices.NAS']?.() ?? 'nas',
-		camera: m['devices.Camera']?.() ?? 'camera',
+		server: m['devices.Server'](),
+		switch: m['devices.Switch'](),
+		router: m['devices.Router'](),
+		firewall: m['devices.Firewall'](),
+		nas: m['devices.NAS'](),
+		camera: m['devices.Camera'](),
 		other: m['devices.Other']()
 	};
 
@@ -637,10 +695,10 @@
 
 <div class="p-6">
 	<!-- Breadcrumb -->
-	<nav class="flex items-center gap-2 text-sm text-muted mb-6">
+	<nav class="flex items-center gap-2 text-sm text-muted mb-6" aria-label="Breadcrumb">
 		<a href="/devices" class="hover:text-primary transition-colors">{m['navigation.Devices']()}</a>
 		<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-		<span class="text-text">{device?.name ?? '...'}</span>
+		<span class="text-text" aria-current="page">{device?.name ?? '...'}</span>
 	</nav>
 
 	<!-- Device info header -->
@@ -650,8 +708,9 @@
 		<div class="device-info-header">
 			<div class="flex items-center justify-between gap-3 flex-wrap">
 				<div class="flex items-center gap-3">
-					<span class="inline-block w-3 h-3 rounded-full {statusDotClass(device.status)}"></span>
-					<h2 class="text-xl font-bold text-primary">{device.name}</h2>
+					<span class="inline-block w-3 h-3 rounded-full {statusDotClass(device.status)}" aria-hidden="true"></span>
+					<h2 class="text-2xl font-bold text-primary">{device.name}</h2>
+					<span class="sr-only">{device.status}</span>
 					<span class="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
 						{typeLabel[device.type] || typeLabel['other']!}
 					</span>
@@ -666,38 +725,94 @@
 						</span>
 					{/if}
 				</div>
-				<a href="/devices" class="text-xs text-accent hover:underline">
-					← {m['navigation.Devices']?.() ?? 'Devices'}
-				</a>
 			</div>
-			<div class="device-meta">
-				{#if device.ip_address}
-					<span class="device-meta-item">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
-						<span class="font-mono">{device.ip_address}</span>
-					</span>
-				{/if}
-				{#if mac}
-					<span class="device-meta-item">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-						<span class="font-mono text-xs">{mac}</span>
-					</span>
-				{/if}
-				{#if device.location}
-					<span class="device-meta-item">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-						{device.location}
-					</span>
-				{/if}
-				{#if device.serial_number}
-					<span class="device-meta-item">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
-						<span class="font-mono text-xs">{device.serial_number}</span>
-					</span>
-				{/if}
+				<div class="device-meta">
+					{#if device.ip_address}
+						<span class="device-meta-item">
+							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
+							<span class="font-mono">{device.ip_address}</span>
+						</span>
+					{/if}
+					{#if mac}
+						<span class="device-meta-item">
+							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+							<span class="font-mono text-xs">{mac}</span>
+						</span>
+					{/if}
+					{#if device.location}
+						<span class="device-meta-item">
+							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+							{device.location}
+						</span>
+					{/if}
+					{#if device.serial_number}
+						<span class="device-meta-item">
+							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+							<span class="font-mono text-xs">{device.serial_number}</span>
+						</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+	<!-- Health summary banner — rolls up status + heartbeat + soonest cert
+	     expiry so a user can answer "is this device healthy?" at a glance
+	     instead of scrolling to three separate sections. -->
+	{#if device}
+		<div class="health-banner mt-4">
+			<div class="health-item">
+				<span class="health-label">{m['devicedetail.Health Status']()}</span>
+				<span class="health-value">
+					<span class="inline-block w-2 h-2 rounded-full {statusDotClass(device.status)}" aria-hidden="true"></span>
+					{device.status}
+				</span>
+			</div>
+			<div class="health-item">
+				<span class="health-label">{m['devicedetail.Health Heartbeat']()}</span>
+				<span class="health-value">
+					{#if heartbeatRate !== null}
+						<span class="font-mono {heartbeatRate >= 90 ? 'text-success' : heartbeatRate >= 50 ? 'text-warning' : 'text-error'}">
+							{m['devicedetail.Health Success Rate']({ rate: heartbeatRate })}
+						</span>
+					{:else}
+						<span class="text-muted">{m['devicedetail.Health Not Configured']()}</span>
+					{/if}
+				</span>
+			</div>
+			<div class="health-item">
+				<span class="health-label">{m['devicedetail.Health Certificates']()}</span>
+				<span class="health-value">
+					{#if soonestCertDays === null}
+						<span class="text-muted">{m['devicedetail.Health No Certs']()}</span>
+					{:else if soonestCertDays < 0}
+						<span class="text-error font-mono">{m['certificates.DaysShort']({ days: soonestCertDays })}</span>
+					{:else if soonestCertDays < 15}
+						<span class="text-warning font-mono">{m['certificates.DaysShort']({ days: soonestCertDays })}</span>
+					{:else}
+						<span class="text-success font-mono">{m['certificates.DaysShort']({ days: soonestCertDays })}</span>
+					{/if}
+				</span>
 			</div>
 		</div>
 	{/if}
+
+	<!-- Sticky in-page tab bar -->
+	<div class="tab-bar" role="tablist" aria-label={m['navigation.Devices']()}>
+		{#each [['overview', m['devicedetail.Tab Overview']()], ['discovery', m['devicedetail.Tab Discovery']()], ['network', m['devicedetail.Tab Network']()], ['systems', m['devicedetail.Tab Systems']()], ['heartbeat', m['devicedetail.Tab Heartbeat']()]] as [key, label] (key)}
+			<button
+				role="tab"
+				aria-selected={activeTab === key}
+				aria-controls="tab-panel-{key}"
+				id="tab-btn-{key}"
+				onclick={() => setTab(key as Tab)}
+				class="tab-btn {activeTab === key ? 'tab-btn-active' : ''}"
+			>{label}</button>
+		{/each}
+	</div>
+
+	<!-- ── OVERVIEW TAB ── -->
+	{#if activeTab === 'overview'}
+	<div id="tab-panel-overview" role="tabpanel" aria-labelledby="tab-btn-overview">
 
 	<!-- Asset Information (form fields surfaced as read-only display) -->
 	{#if device}
@@ -708,42 +823,42 @@
 			<div class="scan-info-panel mt-4">
 				<h3 class="scan-info-title">
 					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
-					{m['assetinfo.Title']?.() ?? 'Asset Information'}
+					{m['assetinfo.Title']()}
 				</h3>
 				<div class="scan-info-grid">
 					{#if device.brand || device.model}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['devices.Brand']?.() ?? 'Brand'} / {m['devices.Model']?.() ?? 'Model'}</span>
+							<span class="scan-info-label">{m['devices.Brand']()} / {m['devices.Model']()}</span>
 							<span class="scan-info-value">{[device.brand, device.model].filter(Boolean).join(' · ') || '-'}</span>
 						</div>
 					{/if}
 					{#if device.purchase_date}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['devices.Purchase Date']?.() ?? 'Purchase Date'}</span>
+							<span class="scan-info-label">{m['devices.Purchase Date']()}</span>
 							<span class="scan-info-value">{device.purchase_date}</span>
 						</div>
 					{/if}
 					{#if device.warranty_expiry}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['devices.Warranty Expiry']?.() ?? 'Warranty Expiry'}</span>
+							<span class="scan-info-label">{m['devices.Warranty Expiry']()}</span>
 							<span class="scan-info-value">{device.warranty_expiry}</span>
 						</div>
 					{/if}
 					{#if device.purpose}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['devices.Purpose']?.() ?? 'Purpose'}</span>
+							<span class="scan-info-label">{m['devices.Purpose']()}</span>
 							<span class="scan-info-value">{device.purpose}</span>
 						</div>
 					{/if}
 					{#if device.description}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['common.Description']?.() ?? 'Description'}</span>
+							<span class="scan-info-label">{m['common.Description']()}</span>
 							<span class="scan-info-value">{device.description}</span>
 						</div>
 					{/if}
 					{#if Object.keys(tags).length > 0}
 						<div class="scan-info-field">
-							<span class="scan-info-label">{m['common.Tags']?.() ?? 'Tags'}</span>
+							<span class="scan-info-label">{m['common.Tags']()}</span>
 							<div class="flex flex-wrap gap-1 mt-1">
 								{#each Object.entries(tags) as [k, v]}
 									<span class="service-badge">{k}: {v}</span>
@@ -855,6 +970,13 @@
 		</div>
 	{/if}
 
+	</div><!-- /overview tabpanel -->
+	{/if}<!-- /overview tab -->
+
+	<!-- ── DISCOVERY TAB ── -->
+	{#if activeTab === 'discovery'}
+	<div id="tab-panel-discovery" role="tabpanel" aria-labelledby="tab-btn-discovery">
+
 	<!-- Scan Discovery Attributes (from scan_attributes JSON) -->
 	{#if device?.scan_attributes}
 		{@const sa = device.scan_attributes}
@@ -885,7 +1007,7 @@
 					{#if sa.cpu_count || sa.cpu_model}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.CPU']()}</span><span class="scan-info-value">{sa.cpu_model ? sa.cpu_model : m['scanfields.CPU Value']({ count: sa.cpu_count ?? 0 })}{#if sa.cpu_model && sa.cpu_count} ({sa.cpu_count} vCPU){/if}</span></div>{/if}
 					{#if sa.memory_total_bytes}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Memory']()}</span><span class="scan-info-value">{formatBytes(sa.memory_total_bytes)}</span></div>{/if}
 					{#if sa.uptime_seconds}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Uptime']()}</span><span class="scan-info-value">{formatDuration(sa.uptime_seconds)}</span></div>{/if}
-					{#if sa.ttl}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.TTL']?.() ?? 'ICMP TTL'}</span><span class="scan-info-value font-mono text-xs">{sa.ttl}</span></div>{/if}
+					{#if sa.ttl}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.TTL']()}</span><span class="scan-info-value font-mono text-xs">{sa.ttl}</span></div>{/if}
 					{#if sa.inferred_type}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Inferred Type']()}</span><span class="scan-info-value">{sa.inferred_type}</span></div>{/if}
 					{#if sa.inferred_description}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Description']()}</span><span class="scan-info-value">{sa.inferred_description}</span></div>{/if}
 				</div>
@@ -895,12 +1017,12 @@
 					<div class="mt-3 pt-3 border-t border-border">
 						<h4 class="scan-info-label mb-2">SNMP</h4>
 						<div class="scan-info-grid">
-							{#if sa.snmp.sys_name}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Name']?.() ?? 'sysName'}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_name}</span></div>{/if}
-							{#if sa.snmp.sys_descr}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Descr']?.() ?? 'sysDescr'}</span><span class="scan-info-value text-xs">{sa.snmp.sys_descr}</span></div>{/if}
-							{#if sa.snmp.sys_object_id}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP OID']?.() ?? 'sysObjectID'}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_object_id}</span></div>{/if}
-							{#if sa.snmp.sys_location}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Location']?.() ?? 'sysLocation'}</span><span class="scan-info-value text-xs">{sa.snmp.sys_location}</span></div>{/if}
-							{#if sa.snmp.sys_contact}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Contact']?.() ?? 'sysContact'}</span><span class="scan-info-value text-xs">{sa.snmp.sys_contact}</span></div>{/if}
-							{#if sa.snmp.sys_services != null}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Services']?.() ?? 'sysServices'}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_services}</span></div>{/if}
+							{#if sa.snmp.sys_name}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Name']()}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_name}</span></div>{/if}
+							{#if sa.snmp.sys_descr}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Descr']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_descr}</span></div>{/if}
+							{#if sa.snmp.sys_object_id}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP OID']()}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_object_id}</span></div>{/if}
+							{#if sa.snmp.sys_location}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Location']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_location}</span></div>{/if}
+							{#if sa.snmp.sys_contact}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Contact']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_contact}</span></div>{/if}
+							{#if sa.snmp.sys_services != null}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Services']()}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_services}</span></div>{/if}
 						</div>
 					</div>
 				{/if}
@@ -908,7 +1030,7 @@
 				<!-- Services & ports (prefer typed scan_attributes) -->
 				{#if (sa.detected_services && sa.detected_services.length > 0) || (sa.open_ports && sa.open_ports.length > 0)}
 					<div class="mt-3 pt-3 border-t border-border">
-						<h4 class="scan-info-label mb-2">{m['scaninfo.Detected Services']?.() ?? 'Detected Services'}</h4>
+						<h4 class="scan-info-label mb-2">{m['scaninfo.Detected Services']()}</h4>
 						<div class="flex flex-wrap gap-1">
 							{#each sa.detected_services ?? [] as svc}
 								<span class="service-badge">{svc.port}/{svc.name}{svc.protocol ? ' · ' + svc.protocol : ''}{svc.version ? ' ' + svc.version : ''}</span>
@@ -925,7 +1047,7 @@
 				<!-- Monitoring endpoints (from scan_attributes.prometheus) -->
 				{#if sa.prometheus && (sa.prometheus.url || sa.prometheus.node_exporter_url)}
 					<div class="mt-3 pt-3 border-t border-border">
-						<h4 class="scan-info-label mb-2">{m['scanfields.Monitoring']?.() ?? 'Monitoring'}</h4>
+						<h4 class="scan-info-label mb-2">{m['scanfields.Monitoring']()}</h4>
 						<div class="scan-info-grid">
 							{#if sa.prometheus.url}<div class="scan-info-field"><span class="scan-info-label">Prometheus</span><a href={sa.prometheus.url} target="_blank" rel="noopener" class="text-primary hover:underline font-mono text-xs">{sa.prometheus.url}</a></div>{/if}
 							{#if sa.prometheus.node_exporter_url}<div class="scan-info-field"><span class="scan-info-label">Node Exporter</span><a href={sa.prometheus.node_exporter_url} target="_blank" rel="noopener" class="text-primary hover:underline font-mono text-xs">{sa.prometheus.node_exporter_url}</a></div>{/if}
@@ -936,7 +1058,7 @@
 				<!-- Discovery extras (grouped by dotted namespace) -->
 				{#if Object.keys(extras).length > 0}
 					<div class="mt-3 pt-3 border-t border-border">
-						<h4 class="scan-info-label mb-2">{m['scanfields.Extras']?.() ?? 'Discovery Extras'}</h4>
+						<h4 class="scan-info-label mb-2">{m['scanfields.Extras']()}</h4>
 						<div class="scan-info-grid">
 							{#each Object.entries(extras).sort(([a], [b]) => a.localeCompare(b)) as [k, v]}
 								<div class="scan-info-field"><span class="scan-info-label font-mono">{k}</span><span class="scan-info-value text-xs">{v}</span></div>
@@ -948,25 +1070,47 @@
 		{/if}
 	{/if}
 
+	<!-- User Attributes (free-form key/value, user-editable) — lives in the
+	     Discovery tab alongside the other inferred/scanned data. -->
+	{#if device}
+		<div class="scan-info-panel mt-4">
+			<h3 class="scan-info-title">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+				{m['userfields.Custom Attributes']()}
+			</h3>
+			<LabelEditor
+				labels={device.user_attributes ?? {}}
+				onSave={handleSaveUserAttributes}
+			/>
+		</div>
+	{/if}
+
+	</div><!-- /discovery tabpanel -->
+	{/if}<!-- /discovery tab -->
+
+	<!-- ── NETWORK TAB ── -->
+	{#if activeTab === 'network'}
+	<div id="tab-panel-network" role="tabpanel" aria-labelledby="tab-btn-network">
+
 	<!-- L2 Neighbors (Bridge-MIB / LLDP adjacency) — always shown so users know
 	     this section exists; empty state explains how to populate it. -->
 	{#if device}
 		<div class="scan-info-panel mt-4">
 			<h3 class="scan-info-title">
 				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6"/><path d="M6 9v6"/><path d="M18 9v6"/></svg>
-				{m['topology.Neighbors']?.() ?? 'L2 Neighbors'}
+				{m['topology.Neighbors']()}
 			</h3>
-			<p class="text-xs text-text-muted mb-3">{m['topology.Neighbors Desc']?.() ?? 'Devices adjacent to this one at Layer 2 (Bridge-MIB / LLDP).'}</p>
+			<p class="text-xs text-text-muted mb-3">{m['topology.Neighbors Desc']()}</p>
 			{#if neighbors.length > 0}
 				<div class="overflow-x-auto">
 					<table class="w-full text-left border border-border rounded-lg overflow-hidden">
 						<thead class="bg-bg/50 border-b border-border">
 							<tr>
-								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Neighbor Device']?.() ?? 'Neighbor'}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Neighbor Device']()}</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">MAC</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Protocol</th>
-								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Local Port']?.() ?? 'Local Port'}</th>
-								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Remote Port']?.() ?? 'Remote Port'}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Local Port']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Remote Port']()}</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Last Seen</th>
 							</tr>
 						</thead>
@@ -985,7 +1129,7 @@
 												<span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{nb.neighbor_type}</span>
 											{/if}
 										{:else}
-											<span class="text-text-muted italic text-xs">{m['topology.Unidentified Neighbor']?.() ?? 'Unidentified (MAC only)'}</span>
+											<span class="text-text-muted italic text-xs">{m['topology.Unidentified Neighbor']()}</span>
 										{/if}
 									</td>
 									<td class="px-3 py-2 font-mono text-xs text-text-muted">{nb.neighbor_mac}</td>
@@ -1003,8 +1147,8 @@
 			{:else}
 				<!-- Empty state: explain how to populate, so the panel isn't a mystery. -->
 				<div class="border border-dashed border-border rounded-lg p-4 text-center">
-					<p class="text-sm text-text-muted">{m['topology.No Neighbors Yet']?.() ?? 'No L2 neighbors recorded'}</p>
-					<p class="text-xs text-text-muted mt-1">{m['topology.No Neighbors Hint']?.() ?? 'Run a scan including managed switches to discover L2 adjacency (Bridge-MIB / LLDP).'}</p>
+					<p class="text-sm text-text-muted">{m['topology.No Neighbors Yet']()}</p>
+					<p class="text-xs text-text-muted mt-1">{m['topology.No Neighbors Hint']()}</p>
 				</div>
 			{/if}
 		</div>
@@ -1074,20 +1218,12 @@
 		</div>
 	{/if}
 
-	<!-- User Attributes (free-form key/value, user-editable) -->
-	{#if device}
-		<div class="scan-info-panel mt-4">
-			<h3 class="scan-info-title">
-				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-				{m['userfields.Custom Attributes']()}
-			</h3>
-			<LabelEditor
-				labels={device.user_attributes ?? {}}
-				onSave={handleSaveUserAttributes}
-			/>
-		</div>
-	{/if}
+	</div><!-- /network tabpanel -->
+	{/if}<!-- /network tab -->
 
+	<!-- ── SYSTEMS TAB ── -->
+	{#if activeTab === 'systems'}
+	<div id="tab-panel-systems" role="tabpanel" aria-labelledby="tab-btn-systems">
 
 	<!-- Systems section header -->
 	<div class="flex items-center justify-between mb-4 mt-8">
@@ -1146,6 +1282,13 @@
 		<Pagination {total} {limit} {offset} onPageChange={(o) => { offset = o; fetchSystems(); }} />
 	{/if}
 
+	</div><!-- /systems tabpanel -->
+	{/if}<!-- /systems tab -->
+
+	<!-- ── HEARTBEAT TAB ── -->
+	{#if activeTab === 'heartbeat'}
+	<div id="tab-panel-heartbeat" role="tabpanel" aria-labelledby="tab-btn-heartbeat">
+
 	<!-- Heartbeat Trend Section -->
 	<div class="mt-10">
 		<div class="flex items-center justify-between mb-4">
@@ -1154,24 +1297,43 @@
 				{m['heartbeat.Trend Title']()}
 			</h3>
 			<div class="flex items-center gap-2">
-				<div class="relative group">
-					<button class="px-3 py-1.5 border border-border text-text-muted rounded-lg
-						hover:border-primary hover:text-primary transition-colors text-xs">
-						{m['devices.Export']?.() ?? 'Export'}
-					</button>
-					<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg
-						opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[100px]"
-						style="box-shadow: var(--shadow-md);">
-						<button onclick={() => exportHeartbeatResults('csv')}
-							class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-t-lg">
-							CSV
+					<div class="relative">
+						<button
+							onclick={() => (heartbeatExportOpen = !heartbeatExportOpen)}
+							aria-expanded={heartbeatExportOpen}
+							aria-haspopup="menu"
+							class="px-3 py-1.5 border border-border text-text-muted rounded-lg
+								hover:border-primary hover:text-primary transition-colors text-xs"
+						>
+							{m['devices.Export']()}
 						</button>
-						<button onclick={() => exportHeartbeatResults('json')}
-							class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-b-lg">
-							JSON
-						</button>
+						{#if heartbeatExportOpen}
+							<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+							<div
+								class="fixed inset-0 z-10"
+								onclick={() => (heartbeatExportOpen = false)}
+								role="presentation"
+							></div>
+							<div
+								class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg z-20 min-w-[100px]"
+								style="box-shadow: var(--shadow-md);"
+								role="menu"
+							>
+								<button
+									onclick={() => { exportHeartbeatResults('csv'); heartbeatExportOpen = false; }}
+									role="menuitem"
+									class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-t-lg">
+									CSV
+								</button>
+								<button
+									onclick={() => { exportHeartbeatResults('json'); heartbeatExportOpen = false; }}
+									role="menuitem"
+									class="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-surface-2 rounded-b-lg">
+									JSON
+								</button>
+							</div>
+						{/if}
 					</div>
-				</div>
 				{#if !heartbeatConfigLoading && heartbeatConfigs.length === 0 && device?.ip_address}
 					<button
 						onclick={createDefaultHeartbeatConfig}
@@ -1323,10 +1485,11 @@
 		{/if}
 
 		<!-- Chart -->
-
-		<!-- Chart -->
 		{#if trendLoading}
-			<PageSkeleton type="table" />
+			<!-- Single chart: a table skeleton was misleading; use a chart-shaped rect. -->
+			<div class="bg-surface border border-border rounded-xl p-4" role="status" aria-busy="true">
+				<Skeleton variant="rect" width="100%" height="320px" />
+			</div>
 		{:else if Object.keys(trendOption).length > 0}
 			<div class="bg-surface border border-border rounded-xl p-4">
 				<Chart option={trendOption} height="320px" />
@@ -1339,7 +1502,11 @@
 			/>
 		{/if}
 	</div>
-</div>
+
+	</div><!-- /heartbeat tabpanel -->
+	{/if}<!-- /heartbeat tab -->
+
+</div><!-- /p-6 page wrapper -->
 
 <!-- Create/Edit Modal -->
 <Modal bind:open={formOpen} title={editingSystem ? m['systems.Edit System']() : m['systems.Create System']()} maxWidth="36rem" onClose={resetForm}>
@@ -1352,8 +1519,9 @@
 	<form onsubmit={handleSubmit} class="space-y-4">
 		<!-- Name -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.System Name']()} *</label>
+			<label for="sys-form-name" class="block text-xs text-muted mb-1">{m['systems.System Name']()} *</label>
 			<input
+				id="sys-form-name"
 				bind:value={formName}
 				required
 				class="input"
@@ -1362,8 +1530,9 @@
 
 		<!-- Entry URL -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Entry URL']()}</label>
+			<label for="sys-form-entry-url" class="block text-xs text-muted mb-1">{m['systems.Entry URL']()}</label>
 			<input
+				id="sys-form-entry-url"
 				bind:value={formEntryUrl}
 				type="url"
 				placeholder="https://..."
@@ -1373,8 +1542,9 @@
 
 		<!-- Description -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Description']()}</label>
+			<label for="sys-form-desc" class="block text-xs text-muted mb-1">{m['systems.Description']()}</label>
 			<textarea
+				id="sys-form-desc"
 				bind:value={formDescription}
 				rows="2"
 				class="input resize-y"
@@ -1383,8 +1553,9 @@
 
 		<!-- Category -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Category']()}</label>
+			<label for="sys-form-category" class="block text-xs text-muted mb-1">{m['systems.Category']()}</label>
 			<select
+				id="sys-form-category"
 				bind:value={formCategory}
 				class="input"
 			>
@@ -1397,8 +1568,9 @@
 
 		<!-- Metrics URL -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Metrics URL']()}</label>
+			<label for="sys-form-metrics-url" class="block text-xs text-muted mb-1">{m['systems.Metrics URL']()}</label>
 			<input
+				id="sys-form-metrics-url"
 				bind:value={formMetricsUrl}
 				type="url"
 				placeholder="https://..."
@@ -1419,8 +1591,9 @@
 
 		<!-- Tags -->
 		<div>
-			<label class="block text-xs text-muted mb-1">{m['systems.Tags']()}</label>
+			<label for="sys-form-tags" class="block text-xs text-muted mb-1">{m['systems.Tags']()}</label>
 			<input
+				id="sys-form-tags"
 				bind:value={formTags}
 				placeholder="monitoring,production"
 				class="input"
@@ -1464,8 +1637,8 @@
 		<form onsubmit={saveEditConfig} class="space-y-4">
 			<!-- Method -->
 			<div>
-				<label class="block text-xs text-muted mb-1">{m['heartbeat.Method']()}</label>
-				<select bind:value={editingConfig.method} class="input">
+				<label for="hb-cfg-method" class="block text-xs text-muted mb-1">{m['heartbeat.Method']()}</label>
+				<select id="hb-cfg-method" bind:value={editingConfig.method} class="input">
 					<option value="icmp">icmp</option>
 					<option value="tcp">tcp</option>
 					<option value="http">http</option>
@@ -1475,20 +1648,20 @@
 
 			<!-- Target -->
 			<div>
-				<label class="block text-xs text-muted mb-1">{m['heartbeat.Target']()}</label>
-				<input bind:value={editingConfig.target} required class="input" />
+				<label for="hb-cfg-target" class="block text-xs text-muted mb-1">{m['heartbeat.Target']()}</label>
+				<input id="hb-cfg-target" bind:value={editingConfig.target} required class="input" />
 			</div>
 
 			<!-- Interval seconds -->
 			<div>
-				<label class="block text-xs text-muted mb-1">{m['heartbeat.Interval Seconds']()}</label>
-				<input type="number" min="1" bind:value={editingConfig.interval_seconds} required class="input" />
+				<label for="hb-cfg-interval" class="block text-xs text-muted mb-1">{m['heartbeat.Interval Seconds']()}</label>
+				<input id="hb-cfg-interval" type="number" min="1" bind:value={editingConfig.interval_seconds} required class="input" />
 			</div>
 
 			<!-- Timeout seconds -->
 			<div>
-				<label class="block text-xs text-muted mb-1">{m['heartbeat.Timeout Seconds']()}</label>
-				<input type="number" min="1" bind:value={editingConfig.timeout_seconds} required class="input" />
+				<label for="hb-cfg-timeout" class="block text-xs text-muted mb-1">{m['heartbeat.Timeout Seconds']()}</label>
+				<input id="hb-cfg-timeout" type="number" min="1" bind:value={editingConfig.timeout_seconds} required class="input" />
 			</div>
 
 			<!-- Enabled -->
@@ -1542,6 +1715,76 @@
 />
 
 <style>
+	/* Health summary banner — rolls up status + heartbeat + cert expiry. */
+	.health-banner {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+		gap: 1rem;
+		padding: 0.875rem 1.25rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+	}
+	.health-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+	.health-label {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+		font-weight: 600;
+	}
+	.health-value {
+		font-size: 0.95rem;
+		color: var(--color-text);
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	/* Sticky in-page tab bar. */
+	.tab-bar {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		display: flex;
+		gap: 0.25rem;
+		padding: 0.5rem 0;
+		margin-top: 1rem;
+		margin-bottom: 0.5rem;
+		background: var(--color-bg);
+		border-bottom: 1px solid var(--color-border);
+		overflow-x: auto;
+	}
+	.tab-btn {
+		padding: 0.5rem 0.875rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text-muted);
+		background: transparent;
+		border: none;
+		border-bottom: 2px solid transparent;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: color 0.15s ease, border-color 0.15s ease;
+	}
+	.tab-btn:hover {
+		color: var(--color-text);
+	}
+	.tab-btn-active {
+		color: var(--color-primary);
+		border-bottom-color: var(--color-primary);
+	}
+	.tab-btn:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
+		border-radius: var(--radius-sm);
+	}
+
 	.device-info-header {
 		display: flex;
 		flex-direction: column;

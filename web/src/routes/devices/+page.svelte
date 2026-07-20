@@ -19,9 +19,11 @@
 	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
 	import type { Device, LinkedDoc, Network } from '$lib/types';
 	import { auth } from '$lib/stores/auth';
-	import { ChevronDown, ChevronRight, Download, Upload, Plus } from '@lucide/svelte';
+	import { ChevronDown, ChevronRight, Download, Upload, Plus, List, Share2 } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
+	import LoadingButton from '$lib/components/LoadingButton.svelte';
+	import DeviceTopologyView from '$lib/components/DeviceTopologyView.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -64,6 +66,11 @@ interface Stats {
 	// page reload / shared link preserves the chosen density.
 	let limit = $state(20);
 	let showAdvanced = $state(false);
+	// View toggle: 'list' (device table) vs 'topology' (radial L2 graph).
+	// /topology used to be a separate top-level route; it's now a view here
+	// because list/subnet views were just alternate groupings of this same
+	// table — only the radial graph (needs /topology API edges) is unique.
+	let viewMode = $state<'list' | 'topology'>('list');
 	// Server-side search term (name / ip / mac / serial). The previous page only
 	// filtered the current 20-row slice client-side, so any device past page 1
 	// was effectively unfindable. This is now pushed to the backend.
@@ -119,6 +126,9 @@ interface Stats {
 	let batchStatusOpen = $state(false);
 	let batchStatusValue = $state('online');
 	let batchLoading = $state(false);
+	// Export dropdown — click-toggle (not hover) so keyboard/touch users can
+	// reach it. group-hover:opacity-100 was invisible without a mouse.
+	let exportOpen = $state(false);
 
 	// --- CSV Import ---
 	let importOpen = $state(false);
@@ -172,6 +182,7 @@ interface Stats {
 		}
 		params.set('limit', String(limit));
 		params.set('offset', String(offset));
+		if (viewMode === 'topology') params.set('view', 'topology');
 		return params;
 	}
 
@@ -200,6 +211,7 @@ interface Stats {
 		if ([10, 20, 50, 100].includes(lim)) limit = lim;
 		const off = parseInt(sp.get('offset') ?? '', 10);
 		if (!Number.isNaN(off) && off >= 0) offset = off;
+		if (sp.get('view') === 'topology') viewMode = 'topology';
 	}
 
 	// onSearchInput debounces the search box: 400ms after the last keystroke the
@@ -302,6 +314,14 @@ interface Stats {
 		expandedDeviceId = null;
 		selectedIds = new Set();
 		fetchDevices();
+	}
+
+	// View toggle (list vs topology). Syncs to the URL so a topology view is
+	// shareable/reloadable. No refetch — list data is already loaded, and the
+	// topology component fetches /topology itself on mount.
+	function switchView(mode: 'list' | 'topology') {
+		viewMode = mode;
+		syncUrl();
 	}
 
 	// --- Export ---
@@ -639,12 +659,12 @@ interface Stats {
 		pc: m['devices.PC'](),
 		embedded: m['devices.Embedded'](),
 		iot: m['devices.IoT'](),
-		server: m['devices.Server']?.() ?? 'server',
-		switch: m['devices.Switch']?.() ?? 'switch',
-		router: m['devices.Router']?.() ?? 'router',
-		firewall: m['devices.Firewall']?.() ?? 'firewall',
-		nas: m['devices.NAS']?.() ?? 'nas',
-		camera: m['devices.Camera']?.() ?? 'camera',
+		server: m['devices.Server'](),
+		switch: m['devices.Switch'](),
+		router: m['devices.Router'](),
+		firewall: m['devices.Firewall'](),
+		nas: m['devices.NAS'](),
+		camera: m['devices.Camera'](),
 		other: m['devices.Other']()
 	};
 
@@ -662,14 +682,14 @@ interface Stats {
 		{ key: 'mac', label: () => m['devices.MAC Address']() },
 		{ key: 'hostname', label: () => m['devices.Hostname']() },
 		{ key: 'location', label: () => m['devices.Location']() },
-		{ key: 'network_name', label: () => m['devices.Network']?.() ?? 'Network' },
-		{ key: 'last_scanned_at', label: () => m['devices.Last Scanned']?.() ?? 'Last Scanned' },
-		{ key: 'last_scan_rtt_ms', label: () => m['devices.RTT']?.() ?? 'RTT (ms)' },
-		{ key: 'inferred_type', label: () => m['devices.Inferred Type']?.() ?? 'Inferred Type' },
-		{ key: 'os', label: () => m['devices.OS']?.() ?? 'OS' },
-		{ key: 'serial_number', label: () => m['devices.Serial Number']?.() ?? 'Serial Number' },
-		{ key: 'purchase_date', label: () => m['devices.Purchase Date']?.() ?? 'Purchase Date' },
-		{ key: 'purpose', label: () => m['devices.Purpose']?.() ?? 'Purpose' }
+		{ key: 'network_name', label: () => m['devices.Network']() },
+		{ key: 'last_scanned_at', label: () => m['devices.Last Scanned']() },
+		{ key: 'last_scan_rtt_ms', label: () => m['devices.RTT']() },
+		{ key: 'inferred_type', label: () => m['devices.Inferred Type']() },
+		{ key: 'os', label: () => m['devices.OS']() },
+		{ key: 'serial_number', label: () => m['devices.Serial Number']() },
+		{ key: 'purchase_date', label: () => m['devices.Purchase Date']() },
+		{ key: 'purpose', label: () => m['devices.Purpose']() }
 	];
 	const defaultColumns = ['vendor', 'mac', 'hostname', 'location', 'network_name'];
 	let selectedColumnKeys = $state(new Set<string>(defaultColumns));
@@ -764,7 +784,7 @@ interface Stats {
 			render: (row: Record<string, unknown>) => {
 				const id = row.id;
 				const name = escapeHtml(String(row.name ?? ''));
-				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']?.() ?? 'View details'}">${name}</button>`;
+				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']()}">${name}</button>`;
 			}
 		},
 		{
@@ -799,7 +819,7 @@ interface Stats {
 				const id = row.id;
 				const name = escapeAttr(String(row.name ?? ''));
 				return `<div class="flex gap-2">`
-					+ `<button data-action="detail" data-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['devices.Details']?.() ?? 'Details'}</button>`
+					+ `<button data-action="detail" data-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['devices.Details']()}</button>`
 					+ `<button data-action="edit" data-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
 					+ `<button data-action="link" data-id="${id}" data-name="${name}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['documents.Link Document']()}</button>`
 					+ `<button data-action="delete" data-id="${id}" data-name="${name}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10">${m['common.Delete']()}</button>`
@@ -848,14 +868,41 @@ interface Stats {
 
 <div class="p-6">
 	<!-- Header -->
-	<div class="flex items-center justify-between mb-6">
-		<h2 class="text-2xl font-bold text-primary">{m['devices.Device List']()}</h2>
-		<div class="flex gap-2">
-			<button onclick={openCreate} class="btn btn-primary">
-				<Plus class="w-4 h-4" />
-				{m['devices.Create Device']()}
-			</button>
+	<div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
+		<div class="flex items-center gap-3 flex-wrap">
+			<h2 class="text-2xl font-bold text-primary">{m['devices.Device List']()}</h2>
+			<!-- View toggle: list (table) vs topology (radial graph). Pill style to
+			     distinguish from the route-level sub-tab bar above (which is
+			     underline-style). Topology view reuses the same network filter. -->
+			<div class="flex border border-border rounded-lg overflow-hidden text-sm" role="group" aria-label={m['navigation.Topology']()}>
+				<button
+					onclick={() => switchView('list')}
+					aria-pressed={viewMode === 'list'}
+					class="px-3 py-1.5 flex items-center gap-1.5 transition-colors
+						{viewMode === 'list' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
+				>
+					<List class="w-4 h-4" />
+					<span class="hidden sm:inline">{m['devices.View List']()}</span>
+				</button>
+				<button
+					onclick={() => switchView('topology')}
+					aria-pressed={viewMode === 'topology'}
+					class="px-3 py-1.5 flex items-center gap-1.5 border-l border-border transition-colors
+						{viewMode === 'topology' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
+				>
+					<Share2 class="w-4 h-4" />
+					<span class="hidden sm:inline">{m['devices.View Topology']()}</span>
+				</button>
+			</div>
 		</div>
+		{#if viewMode === 'list'}
+			<div class="flex gap-2">
+				<button onclick={openCreate} class="btn btn-primary">
+					<Plus class="w-4 h-4" />
+					{m['devices.Create Device']()}
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Stats bar (responsive) -->
@@ -878,6 +925,7 @@ interface Stats {
 		</div>
 	</div>
 
+	{#if viewMode === 'list'}
 	<!-- Filters + Actions bar -->
 	<div class="flex flex-wrap gap-3 mb-4 items-center">
 		<select
@@ -899,12 +947,12 @@ interface Stats {
 			<option value="pc">{m['devices.PC']()}</option>
 			<option value="embedded">{m['devices.Embedded']()}</option>
 			<option value="iot">{m['devices.IoT']()}</option>
-			<option value="server">{m['devices.Server']?.() ?? 'server'}</option>
-			<option value="switch">{m['devices.Switch']?.() ?? 'switch'}</option>
-			<option value="router">{m['devices.Router']?.() ?? 'router'}</option>
-			<option value="firewall">{m['devices.Firewall']?.() ?? 'firewall'}</option>
-			<option value="nas">{m['devices.NAS']?.() ?? 'nas'}</option>
-			<option value="camera">{m['devices.Camera']?.() ?? 'camera'}</option>
+			<option value="server">{m['devices.Server']()}</option>
+			<option value="switch">{m['devices.Switch']()}</option>
+			<option value="router">{m['devices.Router']()}</option>
+			<option value="firewall">{m['devices.Firewall']()}</option>
+			<option value="nas">{m['devices.NAS']()}</option>
+			<option value="camera">{m['devices.Camera']()}</option>
 			<option value="other">{m['devices.Other']()}</option>
 		</select>
 		{#if networks.length > 0}
@@ -913,7 +961,7 @@ interface Stats {
 				onchange={applyFilters}
 				class="input"
 			>
-				<option value="">{m['devices.All Networks']?.() ?? 'All Networks'}</option>
+				<option value="">{m['devices.All Networks']()}</option>
 				{#each networks as net}
 					<option value={net.id}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
 				{/each}
@@ -926,14 +974,14 @@ interface Stats {
 				type="text"
 				bind:value={searchInput}
 				oninput={onSearchInput}
-				placeholder={m['devices.Search placeholder']?.() ?? 'Search name / IP / MAC…'}
+				placeholder={m['devices.Search placeholder']()}
 				class="input pr-9"
 			/>
 			{#if searchInput}
 				<button
 					onclick={() => { searchInput = ''; onSearchInput(); }}
 					class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors"
-					aria-label={m['common.Clear']?.() ?? 'Clear'}
+					aria-label={m['common.Clear']()}
 				>✕</button>
 			{:else}
 				<span class="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none text-sm">⌕</span>
@@ -954,29 +1002,44 @@ interface Stats {
 			bind:selected={selectedColumnKeys}
 			storageKey="device-columns"
 			defaults={defaultColumns}
-			label={m['devices.Columns']?.() ?? 'Columns'}
+			label={m['devices.Columns']()}
 		/>
 
 		<div class="flex-1"></div>
 
-		<!-- Export dropdown -->
-		<div class="relative group">
-			<button class="btn btn-secondary">
+		<!-- Export dropdown (click-toggle — accessible to keyboard/touch) -->
+		<div class="relative">
+			<button
+				onclick={() => (exportOpen = !exportOpen)}
+				class="btn btn-secondary"
+				aria-expanded={exportOpen}
+				aria-haspopup="menu"
+			>
 				<Download class="w-4 h-4" />
 				{m['devices.Export']()}
 			</button>
-			<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg
-				opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[120px]"
-				style="box-shadow: var(--shadow-md);">
-				<button onclick={() => exportDevices('csv')}
-					class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-t-lg">
-					{m['devices.Export CSV']()}
-				</button>
-				<button onclick={() => exportDevices('json')}
-					class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-b-lg">
-					{m['devices.Export JSON']()}
-				</button>
-			</div>
+			{#if exportOpen}
+				<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+				<div class="fixed inset-0 z-10" onclick={() => (exportOpen = false)} role="presentation"></div>
+				<div
+					class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg z-20 min-w-[120px]"
+					style="box-shadow: var(--shadow-md);"
+					role="menu"
+				>
+					<button
+						onclick={() => { exportDevices('csv'); exportOpen = false; }}
+						role="menuitem"
+						class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-t-lg">
+						{m['devices.Export CSV']()}
+					</button>
+					<button
+						onclick={() => { exportDevices('json'); exportOpen = false; }}
+						role="menuitem"
+						class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-b-lg">
+						{m['devices.Export JSON']()}
+					</button>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Import CSV button -->
@@ -1102,6 +1165,11 @@ interface Stats {
 
 		<!-- Pagination -->
 		<Pagination {total} {limit} {offset} onPageChange={(o) => { offset = o; expandedDeviceId = null; selectedIds = new Set(); fetchDevices(); }} onPageSizeChange={onPageSizeChange} />
+	{/if}
+	{:else}
+		<!-- Topology view: radial L2 graph. Shares the network filter (above
+		     in the stats row) so picking a network scopes the graph too. -->
+		<DeviceTopologyView networkId={networkFilter} />
 	{/if}
 </div>
 
@@ -1232,9 +1300,7 @@ interface Stats {
 
 		<!-- Submit -->
 		<div class="col-span-2 flex gap-3 pt-2">
-			<button type="submit" disabled={formLoading} class="btn btn-primary">
-				{formLoading ? '...' : m['common.Save']()}
-			</button>
+		<LoadingButton type="submit" loading={formLoading} variant="primary" label={m['common.Save']()} />
 			<button type="button" onclick={() => { formOpen = false; resetForm(); }} class="btn btn-secondary">
 				{m['common.Cancel']()}
 			</button>
@@ -1302,9 +1368,7 @@ interface Stats {
 				<button onclick={() => { importOpen = false; }} class="btn btn-secondary">
 					{m['common.Cancel']()}
 				</button>
-				<button onclick={confirmImport} disabled={importLoading} class="btn btn-primary">
-					{importLoading ? '...' : m['devices.Import Confirm']()}
-				</button>
+				<LoadingButton onclick={confirmImport} loading={importLoading} variant="primary" label={m['devices.Import Confirm']()} />
 			</div>
 		{/if}
 	</div>
@@ -1360,10 +1424,7 @@ interface Stats {
 					<option value={doc.id}>{doc.title} ({doc.type})</option>
 				{/each}
 			</select>
-			<button onclick={linkDoc} disabled={!selectedDocId || linkLoading}
-				class="btn btn-primary shrink-0">
-				{linkLoading ? '...' : m['common.Link']()}
-			</button>
+			<LoadingButton onclick={linkDoc} loading={linkLoading} disabled={!selectedDocId} variant="primary" label={m['common.Link']()} class="shrink-0" />
 		</div>
 	</div>
 

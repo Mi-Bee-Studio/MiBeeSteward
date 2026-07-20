@@ -14,7 +14,10 @@
 		"Discovery": "Discovery",
 		"Networks": "Networks",
 		"Agents": "Agents",
-		"Topology": "Topology"
+		"Topology": "Topology",
+		"Group Core": "Core",
+		"Group Library": "Library",
+		"Group Admin": "Administration"
 	},
 	"auth": {
 		"Username": "Username",
@@ -138,9 +141,12 @@
 		"Batch Delete Confirm": "Are you sure you want to delete the selected devices?",
 		"Batch Delete": "Batch Delete",
 		"Tab Device List": "Devices",
-		"Tab Scanner": "Scanner",
+		"Tab Scanner": "Quick Scan",
 		"Tab Scan Tasks": "Scan Tasks",
 		"Tab Scan Results": "Scan Results",
+		"Tab Passive Discovery": "Passive Discovery",
+		"View List": "List",
+		"View Topology": "Topology",
 		"Camera": "Camera",
 		"Search placeholder": "Search name / IP / MAC…",
 		"Alive": "Alive",
@@ -253,6 +259,13 @@
 	},
 	"dashboard": {
 		"Dashboard": "Dashboard",
+		"Attention Title": "Needs attention",
+		"Attention Offline": "{count} offline",
+		"Attention New": "{count} new in last scan",
+		"Attention All Good": "All devices healthy",
+		"Empty Title": "No devices yet",
+		"Empty Desc": "Run your first scan to discover what's on your network.",
+		"Scan Network": "Scan Network",
 		"Gauge": "Gauge",
 		"Line Chart": "Line Chart",
 		"Bar Chart": "Bar Chart",
@@ -324,7 +337,25 @@
 		"Undo": "Undo",
 		"Upload Progress": "Uploading...",
 		"Clear": "Clear",
-		"Status": "Status"
+		"Status": "Status",
+		"Reset": "Reset",
+		"Apply": "Apply",
+		"Columns": "Columns",
+		"Rows per page": "Rows per page",
+		"Jump to page": "Jump to page",
+		"Page": "Page",
+		"of": "of",
+		"Dismiss": "Dismiss",
+		"Retry": "Retry",
+		"Refresh": "Refresh",
+		"No Data": "No data",
+		"Copy": "Copy",
+		"Copied": "Copied",
+		"Test": "Test",
+		"All": "All",
+		"Description": "Description",
+		"Tags": "Tags",
+		"Chart Unavailable": "Chart unavailable"
 	},
 	"scanner": {
 		"Scanner": "Network Scanner",
@@ -427,6 +458,8 @@
 		"Detail NodeExporter Memory": "Memory",
 		"Run History": "Run History",
 		"Run Status": "Status",
+		"No Runs": "No scan runs yet",
+		"No Runs Desc": "Runs appear here once a task has been triggered.",
 		"Run Duration": "Duration",
 		"Run Hosts": "Hosts",
 		"Run New": "New",
@@ -530,7 +563,16 @@
 		"mDNS Services": "mDNS Services",
 		"SSDP": "SSDP / UPnP",
 		"Workgroup": "Workgroup",
-		"No Discovery Data": "No scan discovery data available"
+		"No Discovery Data": "No scan discovery data available",
+		"Extras": "Discovery Extras",
+		"Monitoring": "Monitoring",
+		"SNMP Contact": "sysContact",
+		"SNMP Descr": "sysDescr",
+		"SNMP Location": "sysLocation",
+		"SNMP Name": "sysName",
+		"SNMP OID": "sysObjectID",
+		"SNMP Services": "sysServices",
+		"TTL": "ICMP TTL"
 	},
 	"userfields": {
 		"Custom Attributes": "Custom Attributes",
@@ -552,7 +594,9 @@
 	"settings": {
 		"Appearance": "Appearance",
 		"Dark Mode": "Dark mode",
-		"Light Mode": "Light mode"
+		"Light Mode": "Light mode",
+		"Language": "Language",
+		"Current Language": "Current: {lang}"
 	},
 	"users": {
 		"User List": "User Management",
@@ -661,7 +705,8 @@
 		"Event Lost": "Device Lost",
 		"All Events": "All Events",
 		"No Changes": "No changes yet",
-		"No Changes Desc": "Device changes will appear here once scans detect additions, modifications, or losses."
+		"No Changes Desc": "Device changes will appear here once scans detect additions, modifications, or losses.",
+		"Diff Title": "Change Details"
 	},
 	"agents": {
 		"Title": "Agent Management",
@@ -684,6 +729,8 @@
 		"Token Revoked": "Agent token revoked",
 		"Scan Triggered": "Scan command queued for {agentId}",
 		"Token Warning": "This token is shown only once. Copy it now — it cannot be retrieved later.",
+		"Token Discard Title": "Discard this token?",
+		"Token Discard Message": "You haven't copied this token yet. Closing now means it's gone forever — there is no way to retrieve it.",
 		"Copy Token": "Copy Token",
 		"Copied": "Copied to clipboard",
 		"Scan Targets": "Scan Targets",
@@ -694,7 +741,13 @@
 		"Network Required": "Network is required",
 		"Targets Required": "Scan targets are required",
 		"Command History": "Command History",
-		"No Commands": "No commands sent. Trigger a scan on an agent above to enqueue one."
+		"No Commands": "No commands sent. Trigger a scan on an agent above to enqueue one.",
+		"Command": "Command",
+		"Created": "Created",
+		"Acknowledged": "Acknowledged",
+		"Pending": "Pending",
+		"Done": "Done",
+		"Failed": "Failed"
 	},
 	"networks": {
 		"Title": "Networks",
@@ -705,6 +758,7 @@
 		"Name Required": "Name is required",
 		"Name Help": "Unique identifier (e.g. lan-62, datacenter-fra)",
 		"Cidr Help": "Advisory — used for display, not enforcement",
+		"CIDR": "CIDR",
 		"Site": "Site",
 		"Agent": "Agent",
 		"Agent Managed Hint": "Agent-managed — deleting clears the agent binding",
@@ -719,6 +773,7 @@
 	},
 	"discovery": {
 		"Enabled": "Enabled",
+		"Subtitle": "Passive listener status — hosts seen on the network via ARP/DHCP, without an active scan.",
 		"Disabled": "Passive discovery is disabled",
 		"Disabled Desc": "Enable passive discovery in the scanner config to watch for newly-appeared hosts between scheduled scans.",
 		"Uptime": "Uptime",
@@ -799,5 +854,23 @@
 		"ShowChain": "Show full chain ({count})",
 		"HideChain": "Hide chain",
 		"DaysShort": "{days}d"
+	},
+	"assetinfo": {
+		"Title": "Asset Information"
+	},
+	"devicedetail": {
+		"Tab Overview": "Overview",
+		"Tab Discovery": "Scan Discovery",
+		"Tab Network": "Network & Certificates",
+		"Tab Systems": "Systems",
+		"Tab Heartbeat": "Heartbeat",
+		"Health Title": "Health",
+		"Health Status": "Status",
+		"Health Heartbeat": "Heartbeat",
+		"Health Certificates": "Certificates",
+		"Health No Certs": "None",
+		"Health Not Configured": "Not configured",
+		"Health Success Rate": "{rate}% success",
+		"Health Check Certs": "View certificates"
 	}
 }
