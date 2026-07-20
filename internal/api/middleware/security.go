@@ -17,7 +17,11 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-XSS-Protection", "0")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
+		// font-src 'self' data: — the @fontsource inter/jetbrains-mono bundle is
+		// served from /_app/immutable/assets/*.woff2 ('self'), and some libs
+		// inline fonts as data: URIs. Without an explicit font-src, data: fonts
+		// fall back to default-src 'self' and get blocked.
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:")
 		next.ServeHTTP(w, r)
 	})
 }
