@@ -74,6 +74,18 @@ func (rl *RateLimiter) cleanup() {
 // Middleware returns an HTTP middleware that rate limits requests per IP.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Static SPA assets (the embedded SvelteKit bundle) are fetched in a
+		// tight parallel burst on first load — a single page can fire 40-60
+		// concurrent GETs for /_app/immutable/chunks/*. The global limiter is
+		// meant to protect the API (auth, scans, writes), not to throttle
+		// stateless public assets, so bypass it for these paths. Without this
+		// the first page load blows the token bucket and the rest of the
+		// chunks come back 429, bricking the SPA.
+		if isStaticAsset(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		ip := extractIP(r)
 		limiter := rl.getVisitor(ip)
 
@@ -88,6 +100,20 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isStaticAsset reports whether the path serves a static, public, stateless
+// SPA asset that should be exempt from the global API rate limit. Covers the
+// SvelteKit immutable bundle, fonts, favicons, and the SPA fallback HTML.
+func isStaticAsset(path string) bool {
+	if path == "/" || path == "/index.html" || path == "/favicon.svg" {
+		return true
+	}
+	// /_app/* — the entire SvelteKit build output (chunks, assets, nodes, entries).
+	if strings.HasPrefix(path, "/_app/") {
+		return true
+	}
+	return false
 }
 
 // --- ScanRateLimiter: per-IP sliding window for scan endpoints ---
