@@ -145,6 +145,8 @@
 		"Tab Scan Tasks": "扫描任务",
 		"Tab Scan Results": "扫描结果",
 		"Tab Passive Discovery": "被动发现",
+		"View List": "列表",
+		"View Topology": "拓扑",
 		"Camera": "摄像头",
 		"Search placeholder": "搜索名称 / IP / MAC…",
 		"Alive": "存活",
