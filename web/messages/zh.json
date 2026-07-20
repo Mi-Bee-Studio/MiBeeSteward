@@ -259,6 +259,13 @@
 	},
 	"dashboard": {
 		"Dashboard": "仪表盘",
+		"Attention Title": "需要关注",
+		"Attention Offline": "{count} 台离线",
+		"Attention New": "最近扫描新增 {count} 台",
+		"Attention All Good": "所有设备健康",
+		"Empty Title": "还没有设备",
+		"Empty Desc": "运行第一次扫描,发现你的网络上有哪些设备。",
+		"Scan Network": "扫描网络",
 		"Gauge": "仪表",
 		"Line Chart": "折线图",
 		"Bar Chart": "柱状图",
