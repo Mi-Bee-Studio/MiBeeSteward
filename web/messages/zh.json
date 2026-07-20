@@ -14,7 +14,10 @@
 		"Discovery": "被动发现",
 		"Networks": "网络",
 		"Agents": "采集器",
-		"Topology": "拓扑"
+		"Topology": "拓扑",
+		"Group Core": "核心",
+		"Group Library": "资料库",
+		"Group Admin": "管理"
 	},
 	"auth": {
 		"Username": "用户名",
@@ -138,9 +141,10 @@
 		"Advanced Filters": "高级筛选",
 		"No Selection": "未选择设备",
 		"Tab Device List": "设备列表",
-		"Tab Scanner": "网络扫描",
+		"Tab Scanner": "快速扫描",
 		"Tab Scan Tasks": "扫描任务",
 		"Tab Scan Results": "扫描结果",
+		"Tab Passive Discovery": "被动发现",
 		"Camera": "摄像头",
 		"Search placeholder": "搜索名称 / IP / MAC…",
 		"Alive": "存活",
@@ -760,6 +764,7 @@
 	},
 	"discovery": {
 		"Enabled": "已启用",
+		"Subtitle": "被动监听状态 —— 通过 ARP/DHCP 在网络上看到的主机,无需主动扫描。",
 		"Disabled": "被动发现已禁用",
 		"Disabled Desc": "在扫描器配置中启用被动发现,以在计划扫描之间监测新出现的主机。",
 		"Uptime": "运行时长",

@@ -19,11 +19,17 @@
 
 	const tabs = $derived([
 		{ path: '/devices', label: m['devices.Tab Device List'](), exact: true },
+		// Scan center: all "find devices" entry points consolidated as tabs.
+		// Order is daily-use → occasional: scheduled tasks first, then their
+		// results, then the ad-hoc quick scan, then the passive listener.
+		// Previously /discovery was a separate top-level route and /devices/scanner
+		// was labeled just "Scanner" (vague) — now both live here with clearer names.
 		...(isAdmin
 			? [
-				{ path: '/devices/scanner', label: m['devices.Tab Scanner'](), exact: false },
 				{ path: '/devices/scan-tasks', label: m['devices.Tab Scan Tasks'](), exact: false },
-				{ path: '/devices/scan-results', label: m['devices.Tab Scan Results'](), exact: false }
+				{ path: '/devices/scan-results', label: m['devices.Tab Scan Results'](), exact: false },
+				{ path: '/devices/scanner', label: m['devices.Tab Scanner'](), exact: false },
+				{ path: '/devices/discovery', label: m['devices.Tab Passive Discovery'](), exact: false }
 			]
 			: [])
 	]);
