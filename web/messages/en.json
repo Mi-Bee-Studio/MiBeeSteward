@@ -14,7 +14,10 @@
 		"Discovery": "Discovery",
 		"Networks": "Networks",
 		"Agents": "Agents",
-		"Topology": "Topology"
+		"Topology": "Topology",
+		"Group Core": "Core",
+		"Group Library": "Library",
+		"Group Admin": "Administration"
 	},
 	"auth": {
 		"Username": "Username",
@@ -138,9 +141,10 @@
 		"Batch Delete Confirm": "Are you sure you want to delete the selected devices?",
 		"Batch Delete": "Batch Delete",
 		"Tab Device List": "Devices",
-		"Tab Scanner": "Scanner",
+		"Tab Scanner": "Quick Scan",
 		"Tab Scan Tasks": "Scan Tasks",
 		"Tab Scan Results": "Scan Results",
+		"Tab Passive Discovery": "Passive Discovery",
 		"Camera": "Camera",
 		"Search placeholder": "Search name / IP / MAC…",
 		"Alive": "Alive",
@@ -760,6 +764,7 @@
 	},
 	"discovery": {
 		"Enabled": "Enabled",
+		"Subtitle": "Passive listener status — hosts seen on the network via ARP/DHCP, without an active scan.",
 		"Disabled": "Passive discovery is disabled",
 		"Disabled Desc": "Enable passive discovery in the scanner config to watch for newly-appeared hosts between scheduled scans.",
 		"Uptime": "Uptime",
