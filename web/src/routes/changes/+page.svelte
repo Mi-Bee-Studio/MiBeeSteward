@@ -130,9 +130,9 @@
 	// back to the raw value if the i18n key is absent (pre-paraglide-regen).
 	function changeTypeLabel(t: string): string {
 		switch (t) {
-			case 'device_added': return m['changes.Event Added']?.() ?? 'Device Added';
-			case 'device_changed': return m['changes.Event Changed']?.() ?? 'Device Changed';
-			case 'device_lost': return m['changes.Event Lost']?.() ?? 'Device Lost';
+			case 'device_added': return m['changes.Event Added']();
+			case 'device_changed': return m['changes.Event Changed']();
+			case 'device_lost': return m['changes.Event Lost']();
 			default: return t;
 		}
 	}
@@ -174,14 +174,14 @@
 		},
 		{
 			key: 'detected_at',
-			label: m['changes.Timestamp']?.() ?? 'Time',
+			label: m['changes.Timestamp'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
 				`<span class="font-mono text-xs text-text-muted">${formatTime(String(row.detected_at))}</span>`
 		},
 		{
 			key: 'change_type',
-			label: m['changes.Change Type']?.() ?? 'Event',
+			label: m['changes.Change Type'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const t = String(row.change_type);
@@ -190,13 +190,13 @@
 		},
 		{
 			key: 'entity_id',
-			label: m['changes.Device ID']?.() ?? 'Device',
+			label: m['changes.Device ID'](),
 			render: (row: Record<string, unknown>) =>
 				`<span class="font-mono text-xs text-text-muted">${row.entity_id ? '#' + row.entity_id : '-'}</span>`
 		},
 		{
 			key: 'network_id',
-			label: m['changes.Network']?.() ?? 'Network',
+			label: m['changes.Network'](),
 			render: (row: Record<string, unknown>) => {
 				const nid = row.network_id as number | undefined;
 				if (!nid) return `<span class="text-xs text-text-muted">-</span>`;
@@ -206,13 +206,13 @@
 		},
 		{
 			key: 'agent_id',
-			label: m['changes.Agent']?.() ?? 'Agent',
+			label: m['changes.Agent'](),
 			render: (row: Record<string, unknown>) =>
 				`<span class="font-mono text-xs text-text-muted">${row.agent_id ? String(row.agent_id) : '-'}</span>`
 		},
 		{
 			key: 'after_data',
-			label: m['changes.Details']?.() ?? 'Details',
+			label: m['changes.Details'](),
 			render: (row: Record<string, unknown>) => {
 				const after = row.after_data ? formatData(String(row.after_data)) : '';
 				const before = row.before_data ? formatData(String(row.before_data)) : '';
@@ -241,7 +241,7 @@
 <div class="p-4 sm:p-6">
 	<!-- Header -->
 	<div class="flex items-center justify-between mb-6">
-		<h2 class="text-2xl font-bold text-primary">{m['changes.Change History']?.() ?? 'Change History'}</h2>
+		<h2 class="text-2xl font-bold text-primary">{m['changes.Change History']()}</h2>
 		<button
 			onclick={fetchChanges}
 			class="px-4 py-2 border border-border text-text-muted rounded-lg
@@ -256,13 +256,13 @@
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
 			<!-- Network filter -->
 			<div>
-				<label class="block text-xs text-text-muted mb-1">{m['changes.Network']?.() ?? 'Network'}</label>
+				<label class="block text-xs text-text-muted mb-1">{m['changes.Network']()}</label>
 				<select
 					bind:value={filterNetwork}
 					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
 						focus:border-primary focus:outline-none"
 				>
-					<option value="">{m['devices.All Networks']?.() ?? 'All Networks'}</option>
+					<option value="">{m['devices.All Networks']()}</option>
 					{#each networks as net}
 						<option value={String(net.id)}>{net.name}</option>
 					{/each}
@@ -271,13 +271,13 @@
 
 			<!-- Change type filter -->
 			<div>
-				<label class="block text-xs text-text-muted mb-1">{m['changes.Change Type']?.() ?? 'Event'}</label>
+				<label class="block text-xs text-text-muted mb-1">{m['changes.Change Type']()}</label>
 				<select
 					bind:value={filterChangeType}
 					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
 						focus:border-primary focus:outline-none"
 				>
-					<option value="">{m['changes.All Events']?.() ?? 'All Events'}</option>
+					<option value="">{m['changes.All Events']()}</option>
 					{#each changeTypes as ct}
 						<option value={ct}>{changeTypeLabel(ct)}</option>
 					{/each}
@@ -317,8 +317,8 @@
 	{:else if changes.length === 0}
 		<EmptyState
 			icon="📊"
-			title={m['changes.No Changes']?.() ?? 'No changes yet'}
-			description={m['changes.No Changes Desc']?.() ?? 'Device changes will appear here once scans detect additions, modifications, or losses.'}
+			title={m['changes.No Changes']()}
+			description={m['changes.No Changes Desc']()}
 		/>
 	{:else}
 		<div class="bg-surface border border-border rounded-lg p-4">
@@ -332,16 +332,16 @@
 				<DataTable
 					{columns}
 					rows={changes as unknown as Record<string, unknown>[]}
-					searchPlaceholder="{m['common.Search']?.() ?? 'Search'}..."
+					searchPlaceholder="{m['common.Search']()}..."
 					searchableKeys={['change_type', 'agent_id', 'entity_id']}
-					emptyTitle={m['changes.No Changes']?.() ?? 'No changes'}
+					emptyTitle={m['changes.No Changes']()}
 					expandedRowId={expandedId ?? undefined}
 				>
 					{#snippet expandedContent(row)}
 						{@const change = changes.find((c) => c.id === row.id)}
 						<div class="border-t border-border bg-bg/40 px-6 py-4">
 							<div class="flex items-center gap-2 mb-3">
-								<span class="text-xs font-medium text-text-muted">{m['changes.Diff Title']?.() ?? 'Change Details'}</span>
+								<span class="text-xs font-medium text-text-muted">{m['changes.Diff Title']()}</span>
 							</div>
 							{#if change}
 								<ChangeDiff

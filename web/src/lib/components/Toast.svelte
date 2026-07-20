@@ -9,9 +9,10 @@
 -->
 
 <script lang="ts">
-	import { toasts, removeToast, invokeUndo, type ToastType } from '$lib/stores/toast';
+	import { toasts, removeToast, invokeUndo, type ToastType, type Toast } from '$lib/stores/toast';
 	import { fly } from 'svelte/transition';
 	import { CheckCircle2, XCircle, AlertTriangle, Info, X } from '@lucide/svelte';
+	import { m } from '$lib/i18n-paraglide';
 	import type { Component } from 'svelte';
 
 	const typeConfig: Record<ToastType, { icon: Component; color: string }> = {
@@ -20,19 +21,47 @@
 		warning: { icon: AlertTriangle, color: 'var(--color-warning)' },
 		info: { icon: Info, color: 'var(--color-info)' }
 	};
+
+	// Hover-to-pause: stop the dismiss timer while the user is interacting
+	// with a toast (reading it, about to click undo). Per-toast state tracks
+	// whether the auto-dismiss should fire.
+	let hoveredId: number | null = $state(null);
+	const dismissLabel = $derived(m['common.Dismiss']());
+
+	function onEnter(toast: Toast) {
+		hoveredId = toast.id;
+	}
+	function onLeave() {
+		hoveredId = null;
+	}
 </script>
 
-<div class="toast-container" aria-live="polite">
+<!--
+  Two live regions: errors are assertive (interrupt), the rest polite (announce
+  when idle). Splitting by severity avoids every success toast interrupting SR
+  users. Both share the same visual stack via the grid below.
+-->
+<div class="sr-only" aria-live="assertive" aria-atomic="true">
+	{#each $toasts as toast (toast.id)}
+		{#if toast.type === 'error'}{toast.message}{/if}
+	{/each}
+</div>
+
+<div class="toast-stack" aria-live="polite">
 	{#each $toasts as toast (toast.id)}
 		{@const cfg = typeConfig[toast.type]}
 		<div
 			class="toast-item"
+			class:hovered={hoveredId === toast.id}
 			style="border-left-color: {cfg.color}"
+			role={toast.type === 'error' ? 'alert' : 'status'}
 			transition:fly={{ y: 20, duration: 300 }}
+			onmouseenter={() => onEnter(toast)}
+			onmouseleave={onLeave}
 		>
 			<div class="toast-body">
 				<span class="toast-icon" style="color: {cfg.color}">
-					<cfg.icon class="w-[18px] h-[18px]" />
+					<cfg.icon class="w-[18px] h-[18px]" aria-hidden="true" />
 				</span>
 				<span class="toast-message">{toast.message}</span>
 				{#if toast.undo}
@@ -46,9 +75,9 @@
 				<button
 					class="toast-dismiss"
 					onclick={() => removeToast(toast.id)}
-					aria-label="Dismiss notification"
+					aria-label={dismissLabel}
 				>
-					<X class="w-4 h-4" />
+					<X class="w-4 h-4" aria-hidden="true" />
 				</button>
 			</div>
 			{#if toast.undo}
@@ -57,9 +86,14 @@
 					style="background: {cfg.color}; animation-duration: {toast.undo.timeout}ms"
 				></div>
 			{:else}
+				<!--
+					Explicit 5000ms matches the store's default dismiss timeout —
+					without this the CSS fell back to its own 5s, which happened to
+					match, but the coupling was implicit. Hovering freezes the bar.
+				-->
 				<div
 					class="toast-progress"
-					style="background: {cfg.color}"
+					style="background: {cfg.color}; animation-duration: 5000ms"
 				></div>
 			{/if}
 		</div>
@@ -67,7 +101,7 @@
 </div>
 
 <style>
-	.toast-container {
+	.toast-stack {
 		position: fixed;
 		bottom: 1rem;
 		right: 1rem;
@@ -130,6 +164,12 @@
 		color: var(--color-text-inverse);
 	}
 
+	.toast-undo:focus-visible,
+	.toast-dismiss:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
+	}
+
 	.toast-dismiss {
 		flex-shrink: 0;
 		background: transparent;
@@ -151,11 +191,25 @@
 
 	.toast-progress {
 		height: 3px;
+		/* Default duration; callers override via inline style. Hovering the
+		 * toast pauses the bar so the user can finish reading / clicking undo
+		 * before it dismisses itself. */
 		animation: toast-progress 5s linear forwards;
+	}
+
+	.toast-item.hovered .toast-progress {
+		animation-play-state: paused;
 	}
 
 	@keyframes toast-progress {
 		from { width: 100%; }
 		to { width: 0%; }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.toast-progress {
+			animation: none;
+			opacity: 0.4;
+		}
 	}
 </style>

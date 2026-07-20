@@ -17,6 +17,7 @@
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
+	import LoadingButton from '$lib/components/LoadingButton.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
@@ -126,6 +127,16 @@
 		createdToken = null;
 	}
 
+	// The one-time token (createdToken) is unrecoverable — once the modal
+	// closes it's gone forever. confirmDiscard gates the close on the
+	// existing "unsaved changes" overlay so Esc / backdrop / X all warn first
+	// instead of silently discarding the token. Returning true when a token
+	// is showing pops the discard confirmation; the user must click Discard
+	// to actually close.
+	function confirmTokenDiscard(): boolean {
+		return createdToken !== null;
+	}
+
 	function openCreate() {
 		resetForm();
 		createModalOpen = true;
@@ -133,8 +144,8 @@
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
-		if (!formAgentId) { addToast('error', m['agents.Agent ID Required']?.() ?? 'Agent ID is required'); return; }
-		if (!formNetworkId) { addToast('error', m['agents.Network Required']?.() ?? 'Network is required'); return; }
+		if (!formAgentId) { addToast('error', m['agents.Agent ID Required']()); return; }
+		if (!formNetworkId) { addToast('error', m['agents.Network Required']()); return; }
 		formLoading = true;
 		try {
 			const res = await api.post<AgentTokenCreated>('/agents/tokens/', {
@@ -144,7 +155,7 @@
 			});
 			// Show the one-time token instead of closing the modal.
 			createdToken = res.token;
-			addToast('success', m['agents.Token Created']?.() ?? 'Agent token created');
+			addToast('success', m['agents.Token Created']());
 			fetchTokens();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
@@ -164,7 +175,7 @@
 		try {
 			await api.post(`/agents/tokens/${revokeTarget.id}/revoke`, {});
 			revokeTarget = null;
-			addToast('success', m['agents.Token Revoked']?.() ?? 'Agent token revoked');
+			addToast('success', m['agents.Token Revoked']());
 			fetchTokens();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
@@ -181,7 +192,7 @@
 
 	async function handleScanSubmit(e: Event) {
 		e.preventDefault();
-		if (!scanTargets) { addToast('error', m['agents.Targets Required']?.() ?? 'Scan targets are required'); return; }
+		if (!scanTargets) { addToast('error', m['agents.Targets Required']()); return; }
 		scanLoading = true;
 		try {
 			await api.post(`/agents/${scanAgentId}/commands/`, {
@@ -189,7 +200,7 @@
 					payload: { targets: scanTargets, timeout: scanTimeout }
 				});
 				scanModalOpen = false;
-				addToast('success', (m['agents.Scan Triggered']?.() ?? 'Scan command queued for {agentId}').replace('{agentId}', scanAgentId));
+				addToast('success', (m['agents.Scan Triggered']()).replace('{agentId}', scanAgentId));
 				fetchCommands();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
@@ -218,19 +229,19 @@
 	}
 
 	function tokenStatus(t: AgentToken): { label: string; cls: string } {
-		if (t.revoked_at) return { label: m['agents.Revoked']?.() ?? 'Revoked', cls: 'bg-error/10 text-error' };
+		if (t.revoked_at) return { label: m['agents.Revoked'](), cls: 'bg-error/10 text-error' };
 		if (t.last_used_at) {
 			const age = Date.now() - new Date(t.last_used_at).getTime();
-			if (age < 5 * 60 * 1000) return { label: m['agents.Active']?.() ?? 'Active', cls: 'bg-success/10 text-success' };
+			if (age < 5 * 60 * 1000) return { label: m['agents.Active'](), cls: 'bg-success/10 text-success' };
 		}
-		return { label: m['agents.Idle']?.() ?? 'Idle', cls: 'bg-surface text-text-muted border border-border' };
+		return { label: m['agents.Idle'](), cls: 'bg-surface text-text-muted border border-border' };
 	}
 
 	async function copyToken() {
 		if (!createdToken) return;
 		try {
 			await navigator.clipboard.writeText(createdToken);
-			addToast('success', m['agents.Copied']?.() ?? 'Copied to clipboard');
+			addToast('success', m['agents.Copied']());
 		} catch {
 			addToast('error', 'Failed to copy');
 		}
@@ -240,20 +251,20 @@
 	const columns = $derived([
 		{
 			key: 'agent_id',
-			label: m['agents.Agent ID']?.() ?? 'Agent ID',
+			label: m['agents.Agent ID'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
 				`<span class="font-medium text-text font-mono text-sm">${String(row.agent_id)}</span>`
 		},
 		{
 			key: 'name',
-			label: m['agents.Name']?.() ?? 'Name',
+			label: m['agents.Name'](),
 			render: (row: Record<string, unknown>) =>
 				`<span class="text-text-muted">${row.name ? String(row.name) : '-'}</span>`
 		},
 		{
 			key: 'network',
-			label: m['agents.Network']?.() ?? 'Network',
+			label: m['agents.Network'](),
 			render: (row: Record<string, unknown>) => {
 				const nid = row.network_id as number | undefined;
 				const name = nid ? (networkNames[nid] ?? `#${nid}`) : '-';
@@ -262,7 +273,7 @@
 		},
 		{
 			key: 'status',
-			label: m['agents.Status']?.() ?? 'Status',
+			label: m['agents.Status'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const t = row as unknown as AgentToken;
@@ -272,7 +283,7 @@
 		},
 		{
 			key: 'last_used_at',
-			label: m['agents.Last Used']?.() ?? 'Last Used',
+			label: m['agents.Last Used'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const v = row.last_used_at as string | null | undefined;
@@ -282,20 +293,20 @@
 		},
 		{
 			key: 'created_at',
-			label: m['agents.Created At']?.() ?? 'Created At',
+			label: m['agents.Created At'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
 				`<span class="text-text-muted text-xs">${formatTime(row.created_at as string)}</span>`
 		},
 		{
 			key: 'actions',
-			label: m['common.Actions']?.() ?? 'Actions',
+			label: m['common.Actions'](),
 			render: (row: Record<string, unknown>) => {
 				const agentId = String(row.agent_id);
 				const tokenId = row.id;
 				const isRevoked = !!row.revoked_at;
-				const scanBtn = isRevoked ? '' : `<button data-scan-id="${agentId}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m['agents.Trigger Scan']?.() ?? 'Scan'}</button>`;
-				const revokeBtn = isRevoked ? '' : `<button data-revoke-id="${tokenId}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m['agents.Revoke']?.() ?? 'Revoke'}</button>`;
+				const scanBtn = isRevoked ? '' : `<button data-scan-id="${agentId}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m['agents.Trigger Scan']()}</button>`;
+				const revokeBtn = isRevoked ? '' : `<button data-revoke-id="${tokenId}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m['agents.Revoke']()}</button>`;
 				return `<div class="flex items-center gap-2">${scanBtn}${revokeBtn}</div>`;
 			}
 		}
@@ -304,10 +315,10 @@
 	// --- Command status helper ---
 	function commandStatusBadge(status: string): { label: string; cls: string } {
 		switch (status) {
-			case 'pending': return { label: 'Pending', cls: 'bg-warning/10 text-warning' };
-			case 'acknowledged': return { label: 'Acknowledged', cls: 'bg-accent/10 text-accent' };
-			case 'done': return { label: 'Done', cls: 'bg-success/10 text-success' };
-			case 'failed': return { label: 'Failed', cls: 'bg-error/10 text-error' };
+			case 'pending': return { label: m['agents.Pending'](), cls: 'bg-warning/10 text-warning' };
+			case 'acknowledged': return { label: m['agents.Acknowledged'](), cls: 'bg-accent/10 text-accent' };
+			case 'done': return { label: m['agents.Done'](), cls: 'bg-success/10 text-success' };
+			case 'failed': return { label: m['agents.Failed'](), cls: 'bg-error/10 text-error' };
 			default: return { label: status, cls: 'bg-surface text-text-muted border border-border' };
 		}
 	}
@@ -337,20 +348,20 @@
 		},
 		{
 			key: 'agent_id',
-			label: m['agents.Agent ID']?.() ?? 'Agent',
+			label: m['agents.Agent ID'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
 				`<span class="font-mono text-xs text-text">${String(row.agent_id)}</span>`
 		},
 		{
 			key: 'command',
-			label: 'Command',
+			label: m['agents.Command'](),
 			render: (row: Record<string, unknown>) =>
 				`<span class="font-mono text-xs text-text">${String(row.command)}</span>`
 		},
 		{
 			key: 'status',
-			label: 'Status',
+			label: m['agents.Status'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const s = commandStatusBadge(String(row.status));
@@ -359,14 +370,14 @@
 		},
 		{
 			key: 'created_at',
-			label: 'Created',
+			label: m['agents.Created'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
 				`<span class="text-text-muted text-xs">${formatTime(row.created_at as string)}</span>`
 		},
 		{
 			key: 'acknowledged_at',
-			label: 'Acknowledged',
+			label: m['agents.Acknowledged'](),
 			render: (row: Record<string, unknown>) => {
 				const v = row.acknowledged_at as string | null | undefined;
 				return `<span class="text-text-muted text-xs">${v ? formatTime(v) : '-'}</span>`;
@@ -388,9 +399,9 @@
 <div class="p-6">
 	<!-- Header -->
 	<div class="flex items-center justify-between mb-6">
-		<h2 class="text-2xl font-bold text-primary">{m['agents.Title']?.() ?? 'Agent Management'}</h2>
+		<h2 class="text-2xl font-bold text-primary">{m['agents.Title']()}</h2>
 		<button onclick={openCreate} class="btn btn-primary">
-			+ {m['agents.Create Token']?.() ?? 'Create Token'}
+			+ {m['agents.Create Token']()}
 		</button>
 	</div>
 
@@ -407,9 +418,9 @@
 	{:else if tokens.length === 0}
 		<EmptyState
 			icon={BotIcon}
-			title={m['agents.No Tokens']?.() ?? 'No agent tokens'}
-			description={m['agents.No Tokens Desc']?.() ?? 'Create an agent token to allow a remote agent to report discoveries.'}
-			actionLabel={m['agents.Create Token']?.() ?? 'Create Token'}
+			title={m['agents.No Tokens']()}
+			description={m['agents.No Tokens Desc']()}
+			actionLabel={m['agents.Create Token']()}
 			onAction={openCreate}
 		/>
 	{:else}
@@ -430,9 +441,9 @@
 				<DataTable
 					{columns}
 					rows={tokens as unknown as Record<string, unknown>[]}
-					searchPlaceholder={(m['common.Search']?.() ?? 'Search') + '...'}
+					searchPlaceholder={(m['common.Search']()) + '...'}
 					searchableKeys={['agent_id', 'name']}
-					emptyTitle={m['agents.No Tokens']?.() ?? 'No agent tokens'}
+					emptyTitle={m['agents.No Tokens']()}
 				/>
 			</div>
 			</div>
@@ -442,7 +453,7 @@
 		<div class="mt-8">
 			<div class="flex items-center justify-between mb-4">
 				<h3 class="text-lg font-semibold text-text">
-					{m['agents.Command History']?.() ?? 'Command History'}
+					{m['agents.Command History']()}
 					<span class="text-text-muted font-normal text-sm">({commandsTotal})</span>
 				</h3>
 				<button
@@ -456,7 +467,7 @@
 
 			{#if commands.length === 0 && !commandsLoading}
 				<div class="bg-surface border border-border rounded-lg p-4 text-center">
-					<p class="text-sm text-text-muted">{m['agents.No Commands']?.() ?? 'No commands sent. Trigger a scan on an agent above to enqueue one.'}</p>
+					<p class="text-sm text-text-muted">{m['agents.No Commands']()}</p>
 				</div>
 			{:else}
 				<div class="bg-surface border border-border rounded-lg p-4">
@@ -471,7 +482,7 @@
 							columns={commandColumns}
 							rows={commands as unknown as Record<string, unknown>[]}
 							searchableKeys={['agent_id', 'command', 'status']}
-							emptyTitle={m['agents.No Commands']?.() ?? 'No commands'}
+							emptyTitle={m['agents.No Commands']()}
 							expandedRowId={commandsExpandedId ?? undefined}
 						>
 							{#snippet expandedContent(row)}
@@ -500,19 +511,26 @@
 {/if}
 
 <!-- Create Token Modal -->
-<Modal bind:open={createModalOpen} title={m['agents.Create Token']?.() ?? 'Create Token'} onClose={resetForm}>
+<Modal
+	bind:open={createModalOpen}
+	title={m['agents.Create Token']()}
+	onClose={resetForm}
+	confirmDiscard={confirmTokenDiscard}
+	discardTitle={m['agents.Token Discard Title']()}
+	discardMessage={m['agents.Token Discard Message']()}
+>
 	{#if createdToken}
 		<!-- One-time token display view (after successful creation) -->
 		<div class="space-y-4">
 			<div class="px-4 py-3 bg-warning/10 border border-warning/30 rounded-lg text-sm text-warning">
-				⚠️ {m['agents.Token Warning']?.() ?? 'This token is shown only once. Copy it now.'}
+				⚠️ {m['agents.Token Warning']()}
 			</div>
 			<div>
 				<label class="block text-xs text-text-muted mb-1">Token</label>
 				<div class="flex gap-2">
 					<input readonly value={createdToken} class="input font-mono text-xs" />
 					<button onclick={copyToken} class="btn btn-secondary whitespace-nowrap">
-						{m['agents.Copy Token']?.() ?? 'Copy'}
+						{m['agents.Copy Token']()}
 					</button>
 				</div>
 			</div>
@@ -522,7 +540,7 @@
 					onclick={() => { createModalOpen = false; resetForm(); }}
 					class="btn btn-primary"
 				>
-					{m['common.Close']?.() ?? 'Close'}
+					{m['common.Close']()}
 				</button>
 			</div>
 		</div>
@@ -531,15 +549,15 @@
 		<form onsubmit={handleSubmit} class="space-y-4">
 			<!-- Agent ID -->
 			<div>
-				<label class="block text-xs text-text-muted mb-1">{m['agents.Agent ID']?.() ?? 'Agent ID'} *</label>
+				<label class="block text-xs text-text-muted mb-1">{m['agents.Agent ID']()} *</label>
 				<input bind:value={formAgentId} required placeholder="e.g. agent-lan-62" class="input" />
 			</div>
 
 			<!-- Network -->
 			<div>
-				<label class="block text-xs text-text-muted mb-1">{m['agents.Network']?.() ?? 'Network'} *</label>
+				<label class="block text-xs text-text-muted mb-1">{m['agents.Network']()} *</label>
 				<select bind:value={formNetworkId} required class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none">
-					<option value="">{m['devices.All Networks']?.() ?? 'Select...'}</option>
+					<option value="">{m['devices.All Networks']()}</option>
 					{#each networks as net}
 						<option value={String(net.id)}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
 					{/each}
@@ -548,17 +566,15 @@
 
 			<!-- Name (optional) -->
 			<div>
-				<label class="block text-xs text-text-muted mb-1">{m['agents.Name']?.() ?? 'Name'}</label>
+				<label class="block text-xs text-text-muted mb-1">{m['agents.Name']()}</label>
 				<input bind:value={formName} placeholder="e.g. Branch Beijing LAN-62" class="input" />
 			</div>
 
 			<!-- Actions -->
 			<div class="flex gap-3 pt-2">
-				<button type="submit" disabled={formLoading} class="btn btn-primary">
-					{formLoading ? '...' : m['common.Save']?.() ?? 'Create'}
-				</button>
+				<LoadingButton type="submit" loading={formLoading} variant="primary" label={m['common.Save']()} />
 				<button type="button" onclick={() => { createModalOpen = false; resetForm(); }} class="btn btn-secondary">
-					{m['common.Cancel']?.() ?? 'Cancel'}
+					{m['common.Cancel']()}
 				</button>
 			</div>
 		</form>
@@ -568,36 +584,34 @@
 <!-- Revoke ConfirmDialog -->
 <ConfirmDialog
 	bind:open={revokeDialogOpen}
-	title={m['agents.Revoke']?.() ?? 'Revoke Token'}
-	message={revokeTarget ? (m['agents.Revoke Confirm']?.() ?? 'Are you sure?') : ''}
-	confirmLabel={m['agents.Revoke']?.() ?? 'Revoke'}
+	title={m['agents.Revoke']()}
+	message={revokeTarget ? (m['agents.Revoke Confirm']()) : ''}
+	confirmLabel={m['agents.Revoke']()}
 	confirmVariant="danger"
 	onConfirm={confirmRevoke}
 	onCancel={() => { revokeTarget = null; }}
 />
 
 <!-- Trigger Scan Modal -->
-<Modal bind:open={scanModalOpen} title={`${m['agents.Trigger Scan']?.() ?? 'Trigger Scan'}: ${scanAgentId}`}>
+<Modal bind:open={scanModalOpen} title={`${m['agents.Trigger Scan']()}: ${scanAgentId}`}>
 	<form onsubmit={handleScanSubmit} class="space-y-4">
 		<!-- Targets -->
 		<div>
-			<label class="block text-xs text-text-muted mb-1">{m['agents.Scan Targets']?.() ?? 'Scan Targets'} *</label>
-			<input bind:value={scanTargets} required placeholder={m['agents.Scan Targets Placeholder']?.() ?? 'e.g. 192.168.62.0/24'} class="input" />
+			<label class="block text-xs text-text-muted mb-1">{m['agents.Scan Targets']()} *</label>
+			<input bind:value={scanTargets} required placeholder={m['agents.Scan Targets Placeholder']()} class="input" />
 		</div>
 
 		<!-- Timeout -->
 		<div>
-			<label class="block text-xs text-text-muted mb-1">{m['agents.Timeout']?.() ?? 'Timeout (seconds)'}</label>
+			<label class="block text-xs text-text-muted mb-1">{m['agents.Timeout']()}</label>
 			<input type="number" bind:value={scanTimeout} min="10" max="600" class="input" />
 		</div>
 
 		<!-- Actions -->
 		<div class="flex gap-3 pt-2">
-			<button type="submit" disabled={scanLoading} class="btn btn-primary">
-				{scanLoading ? '...' : m['agents.Trigger Scan']?.() ?? 'Trigger Scan'}
-			</button>
+			<LoadingButton type="submit" loading={scanLoading} variant="primary" label={m['agents.Trigger Scan']()} />
 			<button type="button" onclick={() => { scanModalOpen = false; }} class="btn btn-secondary">
-				{m['common.Cancel']?.() ?? 'Cancel'}
+				{m['common.Cancel']()}
 			</button>
 		</div>
 	</form>

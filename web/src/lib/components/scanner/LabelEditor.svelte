@@ -10,7 +10,7 @@
 
 <script lang="ts">
 	import { m } from '$lib/i18n-paraglide';
-	import { X, Plus } from '@lucide/svelte';
+	import { X, Plus, LoaderCircle } from '@lucide/svelte';
 
 	let {
 		labels = {},
@@ -203,9 +203,10 @@
 				disabled={!hasChanges || saving}
 				class="px-5 py-2 bg-primary text-inverse font-semibold rounded-lg
 					hover:bg-primary-hover transition-colors disabled:opacity-40
-					disabled:cursor-not-allowed text-sm"
+					disabled:cursor-not-allowed text-sm inline-flex items-center gap-2"
 			>
-				{saving ? '...' : m['common.Save']()}
+				{#if saving}<LoaderCircle class="w-4 h-4 animate-spin" aria-hidden="true" />{/if}
+				<span>{m['common.Save']()}</span>
 			</button>
 		</div>
 	{/if}

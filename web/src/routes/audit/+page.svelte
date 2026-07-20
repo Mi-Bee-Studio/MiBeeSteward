@@ -154,7 +154,7 @@
 			a.click();
 			a.remove();
 			URL.revokeObjectURL(url);
-			addToast('success', m['devices.Export']?.() ?? 'Exported');
+			addToast('success', m['devices.Export']());
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
 		}
@@ -228,7 +228,7 @@
 		},
 		{
 			key: 'details',
-			label: m['audit.Details']?.() ?? 'Details',
+			label: m['audit.Details'](),
 			render: (row: Record<string, unknown>) => {
 				const d = row.details ? String(row.details) : '';
 				if (!d) return `<span class="text-xs text-text-muted">-</span>`;
@@ -261,18 +261,18 @@
 			<div class="relative group">
 				<button class="px-4 py-2 border border-border text-text-muted rounded-lg
 					hover:border-primary hover:text-primary transition-colors text-sm">
-					{m['devices.Export']?.() ?? 'Export'}
+					{m['devices.Export']()}
 				</button>
 				<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg
 					opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[120px]"
 					style="box-shadow: var(--shadow-md);">
 					<button onclick={() => exportAuditLogs('csv')}
 						class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-t-lg">
-						{m['devices.Export CSV']?.() ?? 'Export CSV'}
+						{m['devices.Export CSV']()}
 					</button>
 					<button onclick={() => exportAuditLogs('json')}
 						class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-b-lg">
-						{m['devices.Export JSON']?.() ?? 'Export JSON'}
+						{m['devices.Export JSON']()}
 					</button>
 				</div>
 			</div>
@@ -424,7 +424,7 @@
 									<pre class="text-xs text-text bg-bg/50 border border-border rounded p-2 mt-1 overflow-x-auto whitespace-pre-wrap break-all max-h-48">{formatDetails(log.details)}</pre>
 								</div>
 							{:else}
-								<p class="text-xs text-text-muted italic">{m['audit.No Details']?.() ?? 'No detail payload.'}</p>
+								<p class="text-xs text-text-muted italic">{m['audit.No Details']()}</p>
 							{/if}
 						</div>
 					{/snippet}

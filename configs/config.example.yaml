@@ -64,7 +64,7 @@ log:
 
 rate_limit:
   login_per_minute: 10
-  global_per_minute: 100
+  global_per_minute: 600  # per-IP cap on all API routes. 600/min leaves headroom for background polling (dashboard/devices ~5/min each) + multi-tab + normal clicking; SPA static assets under /_app/* are exempt. Raise for NAT-shared-IP deployments.
   scan_per_minute: 10           # per-IP cap on /scan + /tasks/{id}/trigger
 
 # SMTP configuration for email notifications

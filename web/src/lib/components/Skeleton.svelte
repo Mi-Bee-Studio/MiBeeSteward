@@ -54,8 +54,17 @@
 		border-radius: 9999px;
 	}
 
+	/* Stronger contrast in the pulse (0.25↔0.65 vs the old 0.3↔0.6) so it's
+	 * actually perceptible, and respect reduced-motion users by freezing it. */
 	@keyframes sk-pulse {
-		0%, 100% { opacity: 0.3; }
-		50% { opacity: 0.6; }
+		0%, 100% { opacity: 0.25; }
+		50% { opacity: 0.65; }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.skeleton {
+			animation: none;
+			opacity: 0.4;
+		}
 	}
 </style>

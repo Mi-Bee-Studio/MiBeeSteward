@@ -13,6 +13,9 @@
 	import { m } from '$lib/i18n-paraglide';
 	import type { TLSPortCerts, CertificateInfo } from '$lib/types';
 	import { ShieldCheck, ShieldAlert, ShieldX, Copy, Check, ChevronDown } from '@lucide/svelte';
+	import { certStatus as statusOf, certDayDelta as dayDelta, fmtFingerprint } from '$lib/utils/certs';
+
+	type Status = ReturnType<typeof statusOf>;
 
 	let {
 		open = $bindable(false),
@@ -56,28 +59,9 @@
 		}
 	}
 
-	// Expiry classification for the status badge.
-	type Status = 'expired' | 'expiring' | 'valid' | 'error';
-	function statusOf(port: TLSPortCerts | null): Status {
-		if (!port) return 'error';
-		if (port.error) return 'error';
-		if (!port.leaf) return 'error';
-		const now = Date.now();
-		const after = Date.parse(port.leaf.not_after);
-		if (Number.isNaN(after)) return 'error';
-		if (after < now) return 'expired';
-		// 15-day warning window — short enough to be actionable, long enough to
-		// catch monthly rotations.
-		if (after - now < 15 * 24 * 3600 * 1000) return 'expiring';
-		return 'valid';
-	}
-
-	// Signed day delta (positive = expires in N days; negative = expired N days ago).
-	function dayDelta(iso: string): number {
-		const t = Date.parse(iso);
-		if (Number.isNaN(t)) return 0;
-		return Math.ceil((t - Date.now()) / (24 * 3600 * 1000));
-	}
+	// Expiry classification (statusOf) and day-delta (dayDelta) come from
+	// $lib/utils/certs so the detail-page TLS sub-panel and this modal share
+	// one source of truth for the 15-day warning window + error cases.
 
 	// Format an ISO 8601 string as a locale-friendly YYYY-MM-DD for display.
 	function fmtDate(iso: string): string {
@@ -117,13 +101,7 @@
 		return parts.join(', ') || '—';
 	}
 
-	// Group the fingerprint into colon-separated bytes for readability, matching
-	// the openssl-format convention operators expect. Input is uppercase hex
-	// without separators (e.g. "AB12CD...") — we want "AB:12:CD:...".
-	function fmtFingerprint(fp: string): string {
-		if (!fp) return '—';
-		return fp.replace(/(.{2})/g, '$1:').replace(/:$/, '');
-	}
+	// fmtFingerprint comes from $lib/utils/certs (shared with the detail page).
 
 	let status = $derived(statusOf(portCerts));
 </script>
