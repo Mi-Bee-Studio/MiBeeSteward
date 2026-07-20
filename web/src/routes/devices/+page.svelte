@@ -19,10 +19,11 @@
 	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
 	import type { Device, LinkedDoc, Network } from '$lib/types';
 	import { auth } from '$lib/stores/auth';
-	import { ChevronDown, ChevronRight, Download, Upload, Plus } from '@lucide/svelte';
+	import { ChevronDown, ChevronRight, Download, Upload, Plus, List, Share2 } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
+	import DeviceTopologyView from '$lib/components/DeviceTopologyView.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -65,6 +66,11 @@ interface Stats {
 	// page reload / shared link preserves the chosen density.
 	let limit = $state(20);
 	let showAdvanced = $state(false);
+	// View toggle: 'list' (device table) vs 'topology' (radial L2 graph).
+	// /topology used to be a separate top-level route; it's now a view here
+	// because list/subnet views were just alternate groupings of this same
+	// table — only the radial graph (needs /topology API edges) is unique.
+	let viewMode = $state<'list' | 'topology'>('list');
 	// Server-side search term (name / ip / mac / serial). The previous page only
 	// filtered the current 20-row slice client-side, so any device past page 1
 	// was effectively unfindable. This is now pushed to the backend.
@@ -176,6 +182,7 @@ interface Stats {
 		}
 		params.set('limit', String(limit));
 		params.set('offset', String(offset));
+		if (viewMode === 'topology') params.set('view', 'topology');
 		return params;
 	}
 
@@ -204,6 +211,7 @@ interface Stats {
 		if ([10, 20, 50, 100].includes(lim)) limit = lim;
 		const off = parseInt(sp.get('offset') ?? '', 10);
 		if (!Number.isNaN(off) && off >= 0) offset = off;
+		if (sp.get('view') === 'topology') viewMode = 'topology';
 	}
 
 	// onSearchInput debounces the search box: 400ms after the last keystroke the
@@ -306,6 +314,14 @@ interface Stats {
 		expandedDeviceId = null;
 		selectedIds = new Set();
 		fetchDevices();
+	}
+
+	// View toggle (list vs topology). Syncs to the URL so a topology view is
+	// shareable/reloadable. No refetch — list data is already loaded, and the
+	// topology component fetches /topology itself on mount.
+	function switchView(mode: 'list' | 'topology') {
+		viewMode = mode;
+		syncUrl();
 	}
 
 	// --- Export ---
@@ -852,14 +868,41 @@ interface Stats {
 
 <div class="p-6">
 	<!-- Header -->
-	<div class="flex items-center justify-between mb-6">
-		<h2 class="text-2xl font-bold text-primary">{m['devices.Device List']()}</h2>
-		<div class="flex gap-2">
-			<button onclick={openCreate} class="btn btn-primary">
-				<Plus class="w-4 h-4" />
-				{m['devices.Create Device']()}
-			</button>
+	<div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
+		<div class="flex items-center gap-3 flex-wrap">
+			<h2 class="text-2xl font-bold text-primary">{m['devices.Device List']()}</h2>
+			<!-- View toggle: list (table) vs topology (radial graph). Pill style to
+			     distinguish from the route-level sub-tab bar above (which is
+			     underline-style). Topology view reuses the same network filter. -->
+			<div class="flex border border-border rounded-lg overflow-hidden text-sm" role="group" aria-label={m['navigation.Topology']()}>
+				<button
+					onclick={() => switchView('list')}
+					aria-pressed={viewMode === 'list'}
+					class="px-3 py-1.5 flex items-center gap-1.5 transition-colors
+						{viewMode === 'list' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
+				>
+					<List class="w-4 h-4" />
+					<span class="hidden sm:inline">{m['devices.View List']()}</span>
+				</button>
+				<button
+					onclick={() => switchView('topology')}
+					aria-pressed={viewMode === 'topology'}
+					class="px-3 py-1.5 flex items-center gap-1.5 border-l border-border transition-colors
+						{viewMode === 'topology' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
+				>
+					<Share2 class="w-4 h-4" />
+					<span class="hidden sm:inline">{m['devices.View Topology']()}</span>
+				</button>
+			</div>
 		</div>
+		{#if viewMode === 'list'}
+			<div class="flex gap-2">
+				<button onclick={openCreate} class="btn btn-primary">
+					<Plus class="w-4 h-4" />
+					{m['devices.Create Device']()}
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Stats bar (responsive) -->
@@ -882,6 +925,7 @@ interface Stats {
 		</div>
 	</div>
 
+	{#if viewMode === 'list'}
 	<!-- Filters + Actions bar -->
 	<div class="flex flex-wrap gap-3 mb-4 items-center">
 		<select
@@ -1121,6 +1165,11 @@ interface Stats {
 
 		<!-- Pagination -->
 		<Pagination {total} {limit} {offset} onPageChange={(o) => { offset = o; expandedDeviceId = null; selectedIds = new Set(); fetchDevices(); }} onPageSizeChange={onPageSizeChange} />
+	{/if}
+	{:else}
+		<!-- Topology view: radial L2 graph. Shares the network filter (above
+		     in the stats row) so picking a network scopes the graph too. -->
+		<DeviceTopologyView networkId={networkFilter} />
 	{/if}
 </div>
 
