@@ -64,7 +64,7 @@ log:
 
 rate_limit:
   login_per_minute: 10
-  global_per_minute: 100
+  global_per_minute: 600
   scan_per_minute: 10
 
 smtp:
