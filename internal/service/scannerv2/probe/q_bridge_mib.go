@@ -100,6 +100,11 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 	// The OID index for dot1qTpFdbTable is <VLAN>.<MAC-octets> (e.g. 1.170.187.204.221.238.255),
 	// where VLAN is 1-2 octets and MAC is 6 octets. We skip the VLAN prefix to extract the MAC.
 	portByMacIdx := map[string]int{}
+	// vlanByMacIdx captures the first VLAN tag observed for each MAC. A MAC can
+	// appear on multiple VLANs; we keep the first one so the downstream pipeline
+	// (extractNeighbors → vlans table) gets at least one VLAN assignment without
+	// exploding one-MAC-per-VLAN evidence rows. MAC dedup below still applies.
+	vlanByMacIdx := map[string]string{}
 	var macIndices []string
 
 	walkErr := snmp.Walk(oidDot1qTpFdbPort, func(pdu gosnmp.SnmpPDU) error {
@@ -119,6 +124,12 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 			return nil
 		}
 		portByMacIdx[macIdx] = port
+		// Record the VLAN tag (the prefix before the 6 MAC octets) for this MAC.
+		// extractVLANFromIndex returns "" when it can't parse — then we just
+		// omit vlan_tag from the evidence RawData.
+		if vlanByMacIdx[macIdx] == "" {
+			vlanByMacIdx[macIdx] = extractVLANFromIndex(fullIndex)
+		}
 		macIndices = append(macIndices, macIdx)
 		return nil
 	})
@@ -152,17 +163,24 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 		if name, ok := portNames[port]; ok && name != "" {
 			localPort = name
 		}
+		rawData := map[string]string{
+			"neighbor_mac": mac,
+			"protocol":     "Q-BRIDGE-MIB",
+			"local_port":   localPort,
+		}
+		// Carry the VLAN tag through the pipeline so the runner can populate the
+		// vlans table + link subnets to VLANs. Previously this was discarded at
+		// the MAC-extraction step, leaving the vlans table permanently empty.
+		if vlan := vlanByMacIdx[macIdx]; vlan != "" {
+			rawData["vlan_tag"] = vlan
+		}
 		evidence = append(evidence, scannerv2.Evidence{
 			Source:     "active:q_bridge_mib",
 			Kind:       "neighbor",
 			IP:         ip,
 			Confidence: 0.75,
 			ObservedAt: time.Now().UTC(),
-			RawData: map[string]string{
-				"neighbor_mac": mac,
-				"protocol":     "Q-BRIDGE-MIB",
-				"local_port":   localPort,
-			},
+			RawData:    rawData,
 		})
 	}
 	snmp.Conn.Close()
@@ -183,4 +201,34 @@ func extractMACFromVLANIndex(fullIndex string) string {
 	// VLAN can be 1 or 2 octets; the last 6 elements are always the MAC.
 	macParts := parts[len(parts)-6:]
 	return strings.Join(macParts, ".")
+}
+
+// extractVLANFromIndex extracts the VLAN tag (1-4094) as a decimal string from
+// a Q-BRIDGE-MIB OID index of the form "<VLAN>.<MAC-octets>". The VLAN prefix
+// is everything before the last 6 octets; when 2 octets long (high VLANs) the
+// first octet is the high byte. Returns "" when the index is too short or the
+// VLAN octets don't form a valid 1-4094 tag, so the caller can omit vlan_tag.
+// E.g. "1.170.187.204.221.238.255"   → "1"
+// E.g. "16.0.10.0.1.2.3.4.5"         → "4096" (16<<8 | 0)
+func extractVLANFromIndex(fullIndex string) string {
+	parts := strings.Split(fullIndex, ".")
+	if len(parts) < 7 {
+		return ""
+	}
+	vlanParts := parts[:len(parts)-6]
+	if len(vlanParts) > 2 {
+		return "" // Q-BRIDGE-MIB VLAN index is at most 2 octets; more = malformed
+	}
+	var tag int
+	for _, p := range vlanParts {
+		octet, err := strconv.Atoi(p)
+		if err != nil || octet < 0 || octet > 255 {
+			return ""
+		}
+		tag = tag<<8 | octet
+	}
+	if tag < 1 || tag > 4094 {
+		return ""
+	}
+	return strconv.Itoa(tag)
 }

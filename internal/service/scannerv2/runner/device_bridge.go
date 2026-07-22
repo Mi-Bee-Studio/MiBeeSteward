@@ -175,7 +175,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			after := rn.snapshotDevice(ctx, existingID)
 			if after != nil {
 				if diff := changedetect.Diff(*before, *after); diff != nil {
-					rn.recordDeviceChanged(ctx, existingID, networkID, agentID, *before, diff)
+					rn.recordDeviceChanged(ctx, existingID, networkID, agentID, *before, *after, diff)
 					changed = true
 				}
 			}
@@ -250,9 +250,14 @@ func (rn *Runner) recordDeviceAdded(ctx context.Context, deviceID int64, network
 	})
 }
 
-// recordDeviceChanged emits a device_changed event with before_data (full
-// snapshot) + after_data (the field-level diff map: {field: [old, new]}).
-func (rn *Runner) recordDeviceChanged(ctx context.Context, deviceID int64, networkID sql.NullInt64, agentID string, before changedetect.DeviceSnapshot, diff map[string][2]string) {
+// recordDeviceChanged emits a device_changed event with before_data + after_data
+// both as full DeviceSnapshot JSON (consistent with device_added/device_lost).
+// The field-level diff is logged at debug level for operator insight but is NOT
+// stored as after_data — storing the diff map there previously produced a
+// confusing after_data where scan_attributes was a [old,new] string array
+// rather than a snapshot object, and it diverged from the added/lost shape.
+// Consumers wanting the delta derive it by diffing before_data vs after_data.
+func (rn *Runner) recordDeviceChanged(ctx context.Context, deviceID int64, networkID sql.NullInt64, agentID string, before, after changedetect.DeviceSnapshot, diff map[string][2]string) {
 	if rn.changeRecorder == nil {
 		return
 	}
@@ -261,6 +266,13 @@ func (rn *Runner) recordDeviceChanged(ctx context.Context, deviceID int64, netwo
 		v := networkID.Int64
 		nidPtr = &v
 	}
+	if rn.logger.Enabled(ctx, slog.LevelDebug) {
+		fields := make([]any, 0, len(diff)*2)
+		for k, v := range diff {
+			fields = append(fields, k+"_old", v[0], k+"_new", v[1])
+		}
+		rn.logger.Debug("device bridge: device_changed", fields...)
+	}
 	rn.changeRecorder.Record(ctx, changedetect.ChangeEvent{
 		ChangeType: changedetect.ChangeTypeDeviceChanged,
 		EntityType: changedetect.EntityTypeDevice,
@@ -268,7 +280,7 @@ func (rn *Runner) recordDeviceChanged(ctx context.Context, deviceID int64, netwo
 		NetworkID:  nidPtr,
 		AgentID:    agentID,
 		Before:     before,
-		After:      diff,
+		After:      after,
 	})
 }
 
@@ -404,43 +416,38 @@ func existingUpdateArgs(id int64, inferredType, brand, descr, location string, r
 // undefined for every element, so the Scan Info panel rendered nothing — the
 // scan had enriched the device but the user couldn't see it on the web.
 func deviceScanInfoJSON(rep scannerv2.HostReport) (string, string) {
-	// open_ports: deduped port list, each annotated with the matching service
-	// name (if any classifier identified a service on that port).
-	portToService := map[int]string{}
-	for _, s := range rep.Services {
-		if s.Port > 0 && s.Service != "" {
-			if _, ok := portToService[s.Port]; !ok {
-				portToService[s.Port] = s.Service
-			}
-		}
-	}
-	ports := uniqueOpenPorts(rep.Evidence)
+	// Both arrays are derived from the SAME deduped source as scan_attributes
+	// (serviceArrays): open_ports is deduped-by-port, detected_services is
+	// deduped-by-(port,name) with the richest version kept. Reusing that source
+	// here keeps the two storage locations (devices.detected_services and
+	// scan_attributes.detected_services) consistent and prevents the unbounded
+	// duplication that happened when this path appended every raw
+	// ServiceIdentity without dedup (port 80 appeared 6× on one test-env host).
+	openPorts, svcs := serviceArrays(rep)
+
 	type portEntry struct {
 		Port    int    `json:"port"`
 		Service string `json:"service,omitempty"`
 	}
-	portEntries := make([]portEntry, 0, len(ports))
-	for _, p := range ports {
-		portEntries = append(portEntries, portEntry{Port: p, Service: portToService[p]})
+	portEntries := make([]portEntry, 0, len(openPorts))
+	for _, p := range openPorts {
+		portEntries = append(portEntries, portEntry{Port: p.Port, Service: p.Service})
 	}
 	portsJSON := "[]"
 	if b, err := json.Marshal(portEntries); err == nil {
 		portsJSON = string(b)
 	}
 
-	// detected_services: one entry per classified ServiceIdentity, carrying
-	// port + canonical name + protocol so the UI can render "80/http" style
-	// badges instead of bare strings with no port context.
 	type svcEntry struct {
 		Port     int    `json:"port"`
 		Name     string `json:"name"`
 		Protocol string `json:"protocol,omitempty"`
 	}
-	svcEntries := make([]svcEntry, 0, len(rep.Services))
-	for _, s := range rep.Services {
+	svcEntries := make([]svcEntry, 0, len(svcs))
+	for _, s := range svcs {
 		svcEntries = append(svcEntries, svcEntry{
 			Port:     s.Port,
-			Name:     s.Service,
+			Name:     s.Name,
 			Protocol: s.Protocol,
 		})
 	}

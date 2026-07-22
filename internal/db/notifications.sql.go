@@ -22,6 +22,7 @@ func (q *Queries) CountNotificationLogs(ctx context.Context) (int64, error) {
 }
 
 const createChannel = `-- name: CreateChannel :one
+
 INSERT INTO notification_channels (name, type, config, enabled)
 VALUES (?, ?, ?, ?)
 RETURNING id, name, type, config, enabled, created_at, updated_at
@@ -34,6 +35,14 @@ type CreateChannelParams struct {
 	Enabled int64  `json:"enabled"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateChannel(ctx context.Context, arg CreateChannelParams) (NotificationChannel, error) {
 	row := q.db.QueryRowContext(ctx, createChannel,
 		arg.Name,

@@ -144,11 +144,13 @@ export MIBEE_CORS_ALLOWED_ORIGINS="https://example.com,https://app.example.com"
 | `heartbeat.default_interval` | int | 30 | 默认设备检查间隔（秒） |
 | `heartbeat.timeout` | int | 5 | 设备探测超时（秒） |
 | `heartbeat.retention_days` | int | 30 | 结果保留期（天） |
+| `heartbeat.offline_backoff_ticks` | int | 10 | 离线设备每 N 个 tick 探测一次而非每 tick（30s ticker 下 N=10 约 5 分钟一次）。避免对不会响应的设备持续写入超时记录。扫描恢复设备时会立即清除失败计数，因此退避不会延迟恢复检测。0 禁用退避。 |
 
 **环境变量：**
 - `MIBEE_HEARTBEAT_DEFAULT_INTERVAL`
 - `MIBEE_HEARTBEAT_TIMEOUT`
 - `MIBEE_HEARTBEAT_RETENTION_DAYS`
+- `MIBEE_HEARTBEAT_OFFLINE_BACKOFF_TICKS`
 
 **示例：**
 ```yaml
@@ -156,6 +158,7 @@ heartbeat:
   default_interval: 30
   timeout: 5
   retention_days: 30
+  offline_backoff_ticks: 10
 
 # 环境变量覆盖
 export MIBEE_HEARTBEAT_DEFAULT_INTERVAL=60

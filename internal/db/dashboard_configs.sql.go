@@ -10,6 +10,7 @@ import (
 )
 
 const createDashboardConfig = `-- name: CreateDashboardConfig :one
+
 INSERT INTO dashboard_configs (name, type, data_source, query, refresh_interval, position)
 VALUES (?, ?, ?, ?, ?, ?)
 RETURNING id, name, type, data_source, query, refresh_interval, position, created_at, updated_at
@@ -24,6 +25,14 @@ type CreateDashboardConfigParams struct {
 	Position        string `json:"position"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateDashboardConfig(ctx context.Context, arg CreateDashboardConfigParams) (DashboardConfig, error) {
 	row := q.db.QueryRowContext(ctx, createDashboardConfig,
 		arg.Name,

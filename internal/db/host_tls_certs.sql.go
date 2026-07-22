@@ -98,11 +98,20 @@ func (q *Queries) ListTLSCertsByDeviceID(ctx context.Context, id int64) ([]HostT
 }
 
 const listTLSCertsByIP = `-- name: ListTLSCertsByIP :many
+
 SELECT id, ip, port, cert_index, subject_cn, subject_org, subject, issuer_cn, issuer_org, issuer, san_dns, san_ip, san_email, serial, not_before, not_after, sig_algorithm, key_algorithm, key_bits, is_ca, self_signed, fingerprint_sha256, pem, tls_version, cipher_suite, trusted, error, updated_at FROM host_tls_certs
 WHERE ip = ?
 ORDER BY port ASC, cert_index ASC
 `
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) ListTLSCertsByIP(ctx context.Context, ip string) ([]HostTlsCert, error) {
 	rows, err := q.db.QueryContext(ctx, listTLSCertsByIP, ip)
 	if err != nil {

@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
-	"time"
 
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
@@ -130,9 +129,14 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 
 	// Services → OpenPorts + DetectedServices arrays.
 	attr.OpenPorts, attr.DetectedServices = serviceArrays(rep)
-	if rep.Alive {
-		attr.LastScannedAt = time.Now().UTC().Format(time.RFC3339)
-	}
+	// NOTE: scan_attributes intentionally does NOT carry last_scanned_at. That
+	// timestamp lives on the top-level devices.last_scanned_at column (the
+	// runner stamps it in the UPDATE). Embedding it here would make the whole
+	// scan_attributes string differ on every rescan, which poisons change-detect
+	// diffing (changedetect.Diff compares scan_attributes as a string) and floods
+	// change_log with bogus device_changed events. The frontend already falls
+	// back to devices.last_scanned_at when scan_attributes.last_scanned_at is
+	// absent (devices/+page.svelte).
 
 	// UDP-discovery detail (mDNS/SSDP/NetBIOS) lands under Extras so the typed
 	// struct doesn't have to model every TXT/SSDP field. NetBIOS workgroup is
@@ -213,29 +217,56 @@ func serviceArrays(rep scannerv2.HostReport) ([]domain.OpenPortEntry, []domain.S
 		openEntries = append(openEntries, domain.OpenPortEntry{Port: p, Service: portSvc[p]})
 	}
 
-	// Detected services: stable sort by (port, name).
-	svcs := make([]scannerv2.ServiceIdentity, len(rep.Services))
-	copy(svcs, rep.Services)
-	sort.Slice(svcs, func(i, j int) bool {
-		if svcs[i].Port != svcs[j].Port {
-			return svcs[i].Port < svcs[j].Port
-		}
-		return svcs[i].Service < svcs[j].Service
-	})
-	svcEntries := make([]domain.ServiceEntry, 0, len(svcs))
-	for _, s := range svcs {
+	// Detected services: deduped by (port, name), then stable-sorted.
+	// Multiple evidence sources (e.g. a banner HTTP probe + a richer HTTP probe
+	// that also parsed a version) can emit the same (port, name) pair; without
+	// dedup the array grew unbounded on every rescan (the test env showed port
+	// 80 appearing 6× and 8080 appearing 5× for one host). When two entries
+	// collide, the one carrying the richer Version string wins.
+	type svcKey struct {
+		port int
+		name string
+	}
+	best := map[svcKey]domain.ServiceEntry{}
+	for _, s := range rep.Services {
 		var version string
 		if s.Metadata != nil {
 			version = s.Metadata["version"]
 		}
-		svcEntries = append(svcEntries, domain.ServiceEntry{
+		key := svcKey{port: s.Port, name: s.Service}
+		entry := domain.ServiceEntry{
 			Port:     s.Port,
 			Name:     s.Service,
 			Protocol: s.Protocol,
 			Version:  version,
-		})
+		}
+		if existing, ok := best[key]; !ok || richerVersion(entry.Version, existing.Version) {
+			best[key] = entry
+		}
 	}
+	svcEntries := make([]domain.ServiceEntry, 0, len(best))
+	for _, e := range best {
+		svcEntries = append(svcEntries, e)
+	}
+	sort.Slice(svcEntries, func(i, j int) bool {
+		if svcEntries[i].Port != svcEntries[j].Port {
+			return svcEntries[i].Port < svcEntries[j].Port
+		}
+		return svcEntries[i].Name < svcEntries[j].Name
+	})
 	return openEntries, svcEntries
+}
+
+// richerVersion reports whether candidate is a more informative version string
+// than current (non-empty beats empty; longer beats shorter when both non-empty).
+func richerVersion(candidate, current string) bool {
+	if candidate == "" {
+		return false
+	}
+	if current == "" {
+		return true
+	}
+	return len(candidate) > len(current)
 }
 
 func firstNonEmpty(values ...string) string {

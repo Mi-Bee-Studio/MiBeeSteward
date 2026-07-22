@@ -157,6 +157,16 @@ type HeartbeatConfig struct {
 	DefaultInterval int `koanf:"default_interval"`
 	Timeout         int `koanf:"timeout"`
 	RetentionDays   int `koanf:"retention_days"`
+	// OfflineBackoffTicks throttles probing of devices already marked offline.
+	// A value of N means an offline device is probed once every N ticks instead
+	// of every tick (default 10 → on a 30s ticker that's ~5min between probes
+	// for known-dead hosts vs 30s for live ones). This stops the steady write
+	// of timeout rows into heartbeat_results for devices that won't answer
+	// (the test env had 81 offline devices still probed every 30s). A scan that
+	// revives a host clears its failure count + flips status back to online, so
+	// backoff never delays real recovery detection. 0 disables backoff (probe
+	// every tick, the old behavior).
+	OfflineBackoffTicks int `koanf:"offline_backoff_ticks"`
 }
 
 type PrometheusConfig struct {

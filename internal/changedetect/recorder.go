@@ -144,7 +144,7 @@ func Diff(before, after DeviceSnapshot) map[string][2]string {
 		{"detected_services", func(s DeviceSnapshot) string { return s.DetectedServices }},
 		{"prometheus_url", func(s DeviceSnapshot) string { return s.PrometheusURL }},
 		{"node_exporter_url", func(s DeviceSnapshot) string { return s.NodeExporterURL }},
-		{"scan_attributes", func(s DeviceSnapshot) string { return s.ScanAttributes }},
+		{"scan_attributes", func(s DeviceSnapshot) string { return normalizeScanAttrs(s.ScanAttributes) }},
 	}
 	changed := map[string][2]string{}
 	for _, f := range fields {
@@ -157,6 +157,39 @@ func Diff(before, after DeviceSnapshot) map[string][2]string {
 		return nil
 	}
 	return changed
+}
+
+// volatileScanAttrKeys are scan_attributes JSON keys that change every scan by
+// nature (timestamps, transient counters). They are stripped before diffing so
+// they can never single-handedly trip a device_changed event. The canonical
+// timestamp lives on the top-level devices.last_scanned_at column; embedding a
+// copy inside scan_attributes is a known foot-gun (it once generated 53k bogus
+// device_changed rows in 2 days on the test env). This normalization is a
+// defense-in-depth backstop — the scanner no longer writes last_scanned_at into
+// scan_attributes, but legacy rows / future regressions are neutralized here.
+var volatileScanAttrKeys = []string{"last_scanned_at", "last_scan_rtt_ms"}
+
+// normalizeScanAttrs parses a scan_attributes JSON string, drops the volatile
+// keys, and re-marshals with sorted object keys so two snapshots that differ
+// ONLY in key order or volatile fields compare equal. Returns the input
+// unchanged (not "") when it is not a JSON object (malformed/empty) — those
+// cases still surface as a real diff, which is the safe failure mode.
+func normalizeScanAttrs(s string) string {
+	if s == "" || s[0] != '{' {
+		return s
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		return s
+	}
+	for _, k := range volatileScanAttrKeys {
+		delete(m, k)
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return s
+	}
+	return string(b)
 }
 
 // DBRecorder is the center's ChangeRecorder: writes each event to change_log

@@ -11,6 +11,7 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
+
 INSERT INTO users (username, email, password_hash, role, failed_login_attempts, locked_until, must_change_password)
 VALUES (?, ?, ?, ?, 0, NULL, ?)
 RETURNING id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
@@ -24,6 +25,14 @@ type CreateUserParams struct {
 	MustChangePassword bool   `json:"must_change_password"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRowContext(ctx, createUser,
 		arg.Username,

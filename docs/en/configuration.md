@@ -140,11 +140,13 @@ export MIBEE_CORS_ALLOWED_ORIGINS="https://example.com,https://app.example.com"
 | `heartbeat.default_interval` | int | 30 | Default device check interval (seconds) |
 | `heartbeat.timeout` | int | 5 | Device probe timeout (seconds) |
 | `heartbeat.retention_days` | int | 30 | Result retention period (days) |
+| `heartbeat.offline_backoff_ticks` | int | 10 | Probe offline devices once every N ticks instead of every tick (on a 30s ticker, N=10 ≈ 5min between probes for known-dead hosts). Stops the steady write of timeout rows for devices that won't answer. A scan that revives a host clears its failure count immediately, so backoff never delays recovery. 0 disables backoff. |
 
 **Environment Variables:**
 - `MIBEE_HEARTBEAT_DEFAULT_INTERVAL`
 - `MIBEE_HEARTBEAT_TIMEOUT`
 - `MIBEE_HEARTBEAT_RETENTION_DAYS`
+- `MIBEE_HEARTBEAT_OFFLINE_BACKOFF_TICKS`
 
 **Example:**
 ```yaml
@@ -152,6 +154,7 @@ heartbeat:
   default_interval: 30
   timeout: 5
   retention_days: 30
+  offline_backoff_ticks: 10
 
 # Environment overrides
 export MIBEE_HEARTBEAT_DEFAULT_INTERVAL=60

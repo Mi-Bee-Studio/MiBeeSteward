@@ -42,6 +42,7 @@ func (q *Queries) CountChangeLog(ctx context.Context, arg CountChangeLogParams) 
 }
 
 const createChangeLog = `-- name: CreateChangeLog :one
+
 INSERT INTO change_log (agent_id, network_id, change_type, entity_type, entity_id, before_data, after_data, detected_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, agent_id, network_id, change_type, entity_type, entity_id, before_data, after_data, detected_at
@@ -58,6 +59,14 @@ type CreateChangeLogParams struct {
 	DetectedAt time.Time `json:"detected_at"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateChangeLog(ctx context.Context, arg CreateChangeLogParams) (ChangeLog, error) {
 	row := q.db.QueryRowContext(ctx, createChangeLog,
 		arg.AgentID,

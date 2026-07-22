@@ -24,6 +24,7 @@ func (q *Queries) CountDeviceSystemsByDevice(ctx context.Context, deviceID int64
 }
 
 const createDeviceSystem = `-- name: CreateDeviceSystem :one
+
 INSERT INTO device_systems (
     device_id, name, entry_url, description, category,
     metrics_url, metrics_enabled, tags
@@ -42,6 +43,14 @@ type CreateDeviceSystemParams struct {
 	Tags           string `json:"tags"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateDeviceSystem(ctx context.Context, arg CreateDeviceSystemParams) (DeviceSystem, error) {
 	row := q.db.QueryRowContext(ctx, createDeviceSystem,
 		arg.DeviceID,

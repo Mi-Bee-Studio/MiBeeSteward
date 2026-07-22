@@ -224,7 +224,15 @@ func (s *HeartbeatStore) commitBatch(ctx context.Context, rows []resultRow) erro
 			b.WriteByte(',')
 		}
 		b.WriteString("(?,?,?,?,?,?)")
-		args = append(args, r.DeviceID, r.ConfigID, r.Status, r.LatencyMs, r.ErrorMessage, r.CheckedAt)
+		// Format checked_at as RFC3339 rather than passing a time.Time directly.
+		// modernc.org/sqlite serializes time.Time via Time.String(), which
+		// appends a monotonic clock reading ("... +0000 UTC m=+45450.82...").
+		// That suffix breaks SQLite's date()/time() functions (they return NULL),
+		// making per-day aggregates and retention sweeps rely on substr hacks.
+		// A plain UTC RFC3339 string parses cleanly and sorts correctly. Legacy
+		// rows age out via the 7-day retention sweeper.
+		args = append(args, r.DeviceID, r.ConfigID, r.Status, r.LatencyMs, r.ErrorMessage,
+			r.CheckedAt.UTC().Format(time.RFC3339))
 	}
 	if _, err := tx.ExecContext(ctx, b.String(), args...); err != nil {
 		return fmt.Errorf("batch insert: %w", err)
