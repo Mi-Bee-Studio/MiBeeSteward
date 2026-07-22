@@ -8,9 +8,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestServiceArrays_DedupesByPortName is the regression test for the
@@ -23,11 +24,11 @@ func TestServiceArrays_DedupesByPortName(t *testing.T) {
 	rep := scannerv2.HostReport{
 		Services: []scannerv2.ServiceIdentity{
 			{Port: 80, Service: "http", Protocol: "tcp", Metadata: map[string]string{"version": "1.12.2"}},
-			{Port: 80, Service: "http", Protocol: "tcp"},                   // dup, no version → dropped
-			{Port: 80, Service: "http", Protocol: "tcp", Metadata: map[string]string{"version": "1.12.2"}}, // dup, same version
-			{Port: 8080, Service: "http", Protocol: "tcp"},                 // distinct port, kept
+			{Port: 80, Service: "http", Protocol: "tcp"},                                                     // dup, no version → dropped
+			{Port: 80, Service: "http", Protocol: "tcp", Metadata: map[string]string{"version": "1.12.2"}},   // dup, same version
+			{Port: 8080, Service: "http", Protocol: "tcp"},                                                   // distinct port, kept
 			{Port: 8080, Service: "http", Protocol: "tcp", Metadata: map[string]string{"version": "1.12.2"}}, // dup, richer → wins
-			{Port: 443, Service: "https", Protocol: "tcp"},                 // distinct, kept
+			{Port: 443, Service: "https", Protocol: "tcp"},                                                   // distinct, kept
 		},
 	}
 

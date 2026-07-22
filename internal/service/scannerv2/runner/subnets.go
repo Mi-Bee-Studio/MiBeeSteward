@@ -64,8 +64,8 @@ func (rn *Runner) recordSubnets(ctx context.Context, networkID sql.NullInt64) {
 		return
 	}
 	// Not present — insert.
-	var vlanID *int64        // NULL until Q-BRIDGE-MIB VLAN linkage is wired
-	var gatewayPtr *string  // NULL when no default route resolved
+	var vlanID *int64      // NULL until Q-BRIDGE-MIB VLAN linkage is wired
+	var gatewayPtr *string // NULL when no default route resolved
 	if gateway != "" {
 		gatewayPtr = strPtr(gateway)
 	}

@@ -8,8 +8,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"mibee-steward/internal/db"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestDiff_NoChangeWhenOnlyVolatileKeysDiffer is the regression test for the

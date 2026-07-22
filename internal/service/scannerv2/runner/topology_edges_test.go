@@ -16,9 +16,9 @@ import (
 // with lower confidence.
 func TestEdgeSemantics(t *testing.T) {
 	cases := []struct {
-		protocol   string
-		wantType   string
-		minConf    float64 // confidence must be >= this
+		protocol string
+		wantType string
+		minConf  float64 // confidence must be >= this
 	}{
 		{"LLDP", "l2", 0.8},
 		{"CDP", "l2", 0.75},
@@ -40,11 +40,12 @@ func TestEdgeSemantics(t *testing.T) {
 }
 
 // TestEdgeMetadata confirms the port-context JSON is well-formed and omits
-// empty fields.
+// empty fields. The protocol field is always included when non-empty.
 func TestEdgeMetadata(t *testing.T) {
-	require.Equal(t, "{}", edgeMetadata("", "", "LLDP"))
-	require.JSONEq(t, `{"local_port":"Gi0/1","remote_port":"Gi1/2"}`,
+	require.Equal(t, "{}", edgeMetadata("", "", ""))
+	require.JSONEq(t, `{"protocol":"LLDP"}`, edgeMetadata("", "", "LLDP"))
+	require.JSONEq(t, `{"local_port":"Gi0/1","remote_port":"Gi1/2","protocol":"LLDP"}`,
 		edgeMetadata("Gi0/1", "Gi1/2", "LLDP"))
-	require.JSONEq(t, `{"local_port":"Gi0/1"}`,
+	require.JSONEq(t, `{"local_port":"Gi0/1","protocol":"Bridge-MIB"}`,
 		edgeMetadata("Gi0/1", "", "Bridge-MIB"))
 }

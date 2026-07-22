@@ -60,9 +60,9 @@ func (rn *Runner) deriveTopologyEdges(ctx context.Context, networkID sql.NullInt
 	}
 
 	type candidate struct {
-		fromID, toID              int64
-		protocol, localPort      string
-		remotePort                string
+		fromID, toID        int64
+		protocol, localPort string
+		remotePort          string
 	}
 	var candidates []candidate
 	for rows.Next() {
@@ -153,6 +153,9 @@ func edgeMetadata(localPort, remotePort, protocol string) string {
 	}
 	if remotePort != "" {
 		m["remote_port"] = remotePort
+	}
+	if protocol != "" {
+		m["protocol"] = protocol
 	}
 	if len(m) == 0 {
 		return "{}"

@@ -174,10 +174,10 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		if before != nil {
 			after := rn.snapshotDevice(ctx, existingID)
 			if after != nil {
-					if diff := changedetect.Diff(*before, *after); diff != nil {
-						rn.recordDeviceChanged(ctx, existingID, networkID, agentID, *before, *after, diff)
-						changed = true
-					}
+				if diff := changedetect.Diff(*before, *after); diff != nil {
+					rn.recordDeviceChanged(ctx, existingID, networkID, agentID, *before, *after, diff)
+					changed = true
+				}
 			}
 		}
 		// Clear the heartbeat service's failure counter for this device: the

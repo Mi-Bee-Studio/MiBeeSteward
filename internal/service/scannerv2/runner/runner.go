@@ -386,5 +386,3 @@ func boolToInt(b bool) int64 {
 }
 
 func strPtr(s string) *string { return &s }
-
-func float64Ptr(v float64) *float64 { return &v }
