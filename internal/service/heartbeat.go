@@ -48,17 +48,30 @@ type HeartbeatService struct {
 	// this instead of querying the (async, batched) heartbeat store.
 	lastProbe   map[int64]time.Time // configID -> last probe time
 	lastProbeMu sync.RWMutex
+	// tickCount counts runChecks passes (incremented each tick). It drives
+	// offline-device backoff: a device whose statusCache entry is "offline" is
+	// only probed when tickCount % offlineBackoff == 0, so known-dead hosts are
+	// checked at a fraction of the live-host cadence instead of every tick.
+	tickCount uint64
 }
 
 // NewHeartbeatService creates a new HeartbeatService. mainDB is the main CRUD
 // connection (for device status writes); store is the dedicated heartbeat_results
 // time-series store (separate SQLite file, batched writes).
 func NewHeartbeatService(mainDB *sql.DB, store *HeartbeatStore, cfg *config.Config) *HeartbeatService {
+	hcfg := cfg.Heartbeat
+	// Default offline backoff: 10 ticks. With the 30s ticker that means a
+	// known-offline device is probed every ~5min instead of every 30s. 0 in
+	// config is treated as "unset → use default" (consistent with the rest of
+	// the heartbeat config). A negative value is clamped to 0 (no backoff).
+	if hcfg.OfflineBackoffTicks == 0 {
+		hcfg.OfflineBackoffTicks = 10
+	}
 	return &HeartbeatService{
 		queries:     db.New(mainDB),
 		mainDB:      mainDB,
 		store:       store,
-		cfg:         cfg.Heartbeat,
+		cfg:         hcfg,
 		failCounts:  make(map[int64]int),
 		statusCache: make(map[int64]string),
 		lastSynced:  make(map[int64]string),
@@ -283,10 +296,31 @@ func (s *HeartbeatService) runChecks(ctx context.Context) {
 		}
 	}
 	byDevice := make(map[int64][]db.HeartbeatConfig)
+	// Offline-device backoff: a device already marked offline in the in-memory
+	// statusCache is probed only every offlineBackoff ticks (not every tick).
+	// This stops known-dead hosts from generating a steady stream of timeout
+	// rows + log noise every 30s. A device revived by a scan has its status
+	// flipped back to online (and fail count reset) before the next tick, so
+	// backoff never delays recovery detection — it only dampens the futile
+	// polling of hosts confirmed dead. offlineBackoff==0 disables backoff.
+	offlineBackoff := s.cfg.OfflineBackoffTicks
+	if offlineBackoff < 0 {
+		offlineBackoff = 0
+	}
+	s.tickCount++ // counts ticks even when backoff is off (cheap, aids debugging)
 	for devID, cfgs := range allByDevice {
-		if deviceDue[devID] {
-			byDevice[devID] = cfgs
+		if !deviceDue[devID] {
+			continue
 		}
+		if offlineBackoff > 0 {
+			s.statusCacheMu.RLock()
+			st := s.statusCache[devID]
+			s.statusCacheMu.RUnlock()
+			if st == "offline" && s.tickCount%uint64(offlineBackoff) != 0 {
+				continue
+			}
+		}
+		byDevice[devID] = cfgs
 	}
 
 	// Probe devices CONCURRENTLY. The previous serial loop (one device after

@@ -10,6 +10,7 @@ import (
 )
 
 const createHeartbeatConfig = `-- name: CreateHeartbeatConfig :one
+
 INSERT INTO heartbeat_configs (device_id, method, target, interval_seconds, timeout_seconds, snmp_community, snmp_oid, enabled)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, device_id, method, target, interval_seconds, timeout_seconds, snmp_community, snmp_oid, enabled, created_at, updated_at
@@ -26,6 +27,14 @@ type CreateHeartbeatConfigParams struct {
 	Enabled         int64  `json:"enabled"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateHeartbeatConfig(ctx context.Context, arg CreateHeartbeatConfigParams) (HeartbeatConfig, error) {
 	row := q.db.QueryRowContext(ctx, createHeartbeatConfig,
 		arg.DeviceID,

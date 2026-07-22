@@ -222,6 +222,15 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	//     context so a shutdown mid-finalize doesn't skip it.
 	rn.injectARPTopology(context.Background(), rn.networkID, reports)
 
+	// 3e. Topology materialization: derive device↔device edges (topology_edges)
+	//     from the raw device_neighbors rows, and record the scanned subnet(s).
+	//     These populate the topology tables that the graph view reads (the
+	//     device_neighbors table alone can't express fully-resolved links or
+	//     subnet anchors). Runs after ARP injection so the gateway is known.
+	rn.deriveTopologyEdges(context.Background(), rn.networkID)
+	rn.recordSubnets(context.Background(), rn.networkID)
+	rn.recordVLANs(context.Background(), rn.networkID, reports)
+
 	// 4. Finalize the run.
 	finish := time.Now()
 	if err := rn.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
@@ -377,3 +386,5 @@ func boolToInt(b bool) int64 {
 }
 
 func strPtr(s string) *string { return &s }
+
+func float64Ptr(v float64) *float64 { return &v }

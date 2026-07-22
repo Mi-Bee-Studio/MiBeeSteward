@@ -187,6 +187,7 @@ func (q *Queries) CountDevicesByTypeForNetwork(ctx context.Context, arg CountDev
 }
 
 const createDevice = `-- name: CreateDevice :one
+
 INSERT INTO devices (
     name, type, brand, model, location, purpose, description,
     status, ip_address, mac_address, serial_number,
@@ -213,6 +214,14 @@ type CreateDeviceParams struct {
 	UserAttributes string `json:"user_attributes"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Device, error) {
 	row := q.db.QueryRowContext(ctx, createDevice,
 		arg.Name,
