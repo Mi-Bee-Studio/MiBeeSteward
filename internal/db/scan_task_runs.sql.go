@@ -29,6 +29,7 @@ func (q *Queries) CountScanTaskRuns(ctx context.Context, arg CountScanTaskRunsPa
 }
 
 const createScanTaskRun = `-- name: CreateScanTaskRun :one
+
 INSERT INTO scan_task_runs (task_id, status, total_hosts, alive_hosts, new_hosts, updated_hosts, duration_ms, error_message, started_at)
 VALUES (?, 'running', 0, 0, 0, 0, 0, '', ?)
 RETURNING id, task_id, status, total_hosts, alive_hosts, new_hosts, updated_hosts, duration_ms, error_message, started_at, finished_at, created_at
@@ -39,6 +40,14 @@ type CreateScanTaskRunParams struct {
 	StartedAt *time.Time `json:"started_at"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateScanTaskRun(ctx context.Context, arg CreateScanTaskRunParams) (ScanTaskRun, error) {
 	row := q.db.QueryRowContext(ctx, createScanTaskRun, arg.TaskID, arg.StartedAt)
 	var i ScanTaskRun

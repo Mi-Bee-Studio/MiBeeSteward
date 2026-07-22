@@ -159,9 +159,10 @@ Key frontend patterns:
 The system runs background services in separate goroutines:
 
 **HeartbeatService**:
-- 10-second ticker interval
+- 30-second ticker interval
 - Configurable `isDue()` checks based on monitoring intervals
-- 3-failure threshold for device detection
+- 5-failure threshold for device detection (`offlineThreshold=5`)
+- Offline-device backoff: known-dead hosts are probed once every `offline_backoff_ticks` ticks (default 10, ~5min on a 30s ticker) instead of every tick, to stop the steady write of timeout rows for devices that won't answer
 - Orchestrates probe execution across all devices
 - Graceful shutdown coordination via returned service reference
 
@@ -318,7 +319,12 @@ known device state and emits events to `change_log`:
 - **device_added**: A new device appears in a scan.
 - **device_changed**: A tracked field (type, brand, MAC, ports, services,
   scan_attributes) differs from the prior state. The old `wasUpdated` always-true
-  heuristic is replaced with a real field-by-field comparison.
+  heuristic is replaced with a real field-by-field comparison. `scan_attributes`
+  is normalized before diffing — volatile keys (`last_scanned_at`,
+  `last_scan_rtt_ms`) are stripped and key order is canonicalized, so a pure
+  timestamp refresh no longer fires a spurious `device_changed`. The
+  `after_data` payload is the full post-change device snapshot (not a field-level
+  diff map), so consumers can render the new state without a follow-up fetch.
 - **device_lost**: A device absent from `lostThreshold` (2) consecutive scans is
   declared lost and marked offline. The grace period prevents single-scan jitter
   (ICMP drop, brief downtime) from flapping.
@@ -327,12 +333,23 @@ Events are queryable via `GET /api/v1/changes` and streamable via SSE at
 `GET /api/v1/changes/watch`. A Prometheus counter (`mibee_changes_total{type}`)
 tracks the change rate.
 
-### Topology Discovery (Bridge-MIB)
+### Topology Discovery (L2 + Derived)
 
 The Bridge-MIB probe walks `dot1dTpFdbTable` (1.3.6.1.2.1.17.4.3) on
 SNMP-capable switches to learn L2 adjacency (which MACs are behind which port).
 Discovered neighbors are persisted to `device_neighbors` via
-`Repository.RecordNeighbors`. LLDP/CDP probes follow the same path.
+`Repository.RecordNeighbors`. LLDP/CDP probes follow the same path. When no
+device speaks SNMP, the kernel ARP cache is walked post-scan to write
+gateway-centric `device_neighbors` edges (protocol `"ARP"`) as a fallback.
+
+**Derived topology tables**: after each scan the runner derives three
+higher-level tables from `device_neighbors` — `topology_edges` (materialized
+device↔device edges via `deriveTopologyEdges`, where both endpoints must be known
+devices; LLDP/CDP/Bridge-MIB → `l2` with high confidence, ARP → `l3` lower),
+`subnets` (per-network CIDR + gateway via `recordSubnets`), and `vlans` (802.1Q
+tags via `recordVLANs`). VLAN tags are extracted from Q-BRIDGE-MIB OID indices
+by `extractVLANFromIndex` and carried on `NeighborSpec.VLANTag`.
+(`vlans.name`/`description` and `subnets.vlan_id` linkage are still TODO.)
 
 ### Distributed Schema
 
@@ -343,5 +360,7 @@ Discovered neighbors are persisted to `device_neighbors` via
 | `agent_commands` | Center→agent command queue (pull model) |
 | `scan_snapshots` | Per-network miss counter for device_lost grace period |
 | `change_log` | device_added/changed/lost event stream |
-| `device_neighbors` | L2 adjacency edges (LLDP/CDP/Bridge-MIB) |
-| `topology_edges` | Higher-level device-to-device edges (derived) |
+| `device_neighbors` | L2 adjacency edges (LLDP/CDP/Bridge-MIB/Q-BRIDGE-MIB/ARP) |
+| `topology_edges` | Materialized device↔device edges (derived from device_neighbors) |
+| `subnets` | Per-network CIDR + gateway observed during scans |
+| `vlans` | 802.1Q VLAN tags extracted from Q-BRIDGE-MIB |

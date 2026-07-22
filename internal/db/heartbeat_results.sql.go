@@ -29,6 +29,7 @@ func (q *Queries) CountHeartbeatResultsByTimeRange(ctx context.Context, arg Coun
 }
 
 const createResult = `-- name: CreateResult :one
+
 INSERT INTO heartbeat_results (device_id, config_id, status, latency_ms, error_message, checked_at)
 VALUES (?, ?, ?, ?, ?, ?)
 RETURNING id, device_id, config_id, status, latency_ms, error_message, checked_at
@@ -43,6 +44,14 @@ type CreateResultParams struct {
 	CheckedAt    time.Time `json:"checked_at"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateResult(ctx context.Context, arg CreateResultParams) (HeartbeatResult, error) {
 	row := q.db.QueryRowContext(ctx, createResult,
 		arg.DeviceID,

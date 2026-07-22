@@ -284,6 +284,7 @@ func (q *Queries) ListTopologyEdges(ctx context.Context, arg ListTopologyEdgesPa
 }
 
 const upsertDeviceNeighbor = `-- name: UpsertDeviceNeighbor :exec
+
 INSERT INTO device_neighbors (device_id, neighbor_mac, protocol, local_port, remote_port, network_id, first_seen, last_seen)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(device_id, neighbor_mac, protocol) DO UPDATE SET
@@ -304,6 +305,14 @@ type UpsertDeviceNeighborParams struct {
 	LastSeen    *time.Time `json:"last_seen"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 // Insert or refresh a neighbor edge. ON CONFLICT updates last_seen (and ports
 // if they changed) without losing first_seen. The UNIQUE(device_id, neighbor_mac,
 // protocol) constraint backs the conflict target.

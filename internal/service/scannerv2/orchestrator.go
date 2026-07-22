@@ -738,6 +738,7 @@ func extractNeighbors(evidence []Evidence) []NeighborSpec {
 			Protocol:    protocol,
 			LocalPort:   e.RawData["local_port"],
 			RemotePort:  e.RawData["remote_port"],
+			VLANTag:     e.RawData["vlan_tag"],
 		})
 	}
 	return out

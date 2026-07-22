@@ -42,6 +42,10 @@ heartbeat:
   default_interval: 30
   timeout: 5
   retention_days: 30
+  # Probe an already-offline device once every N ticks instead of every tick
+  # (default 10 → ~5min on a 30s ticker for known-dead hosts vs 30s for live
+  # ones). 0 = use default. A scan that revives a host clears this immediately.
+  offline_backoff_ticks: 10
 
 prometheus:
   enabled: true

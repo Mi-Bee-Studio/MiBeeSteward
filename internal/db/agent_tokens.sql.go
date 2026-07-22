@@ -10,6 +10,7 @@ import (
 )
 
 const createAgentToken = `-- name: CreateAgentToken :one
+
 INSERT INTO agent_tokens (agent_id, token_hash, network_id, name)
 VALUES (?, ?, ?, ?)
 RETURNING id, agent_id, token_hash, network_id, name, created_at, last_used_at, revoked_at
@@ -22,6 +23,14 @@ type CreateAgentTokenParams struct {
 	Name      string `json:"name"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateAgentToken(ctx context.Context, arg CreateAgentTokenParams) (AgentToken, error) {
 	row := q.db.QueryRowContext(ctx, createAgentToken,
 		arg.AgentID,

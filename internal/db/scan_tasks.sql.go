@@ -23,6 +23,7 @@ func (q *Queries) CountScanTasks(ctx context.Context) (int64, error) {
 }
 
 const createScanTask = `-- name: CreateScanTask :one
+
 INSERT INTO scan_tasks (name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, enabled)
 VALUES (?, ?, ?, ?, ?, ?, ?, 1)
 RETURNING id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
@@ -38,6 +39,14 @@ type CreateScanTaskParams struct {
 	ConcurrentHosts int64  `json:"concurrent_hosts"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateScanTask(ctx context.Context, arg CreateScanTaskParams) (ScanTask, error) {
 	row := q.db.QueryRowContext(ctx, createScanTask,
 		arg.Name,

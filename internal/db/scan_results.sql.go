@@ -85,6 +85,7 @@ func (q *Queries) CountScanResults(ctx context.Context, arg CountScanResultsPara
 }
 
 const createScanResult = `-- name: CreateScanResult :one
+
 INSERT INTO scan_results (task_id, run_id, ip, alive, rtt_ms, ports, services, snmp_data, prometheus_detected, prometheus_url, node_exporter_detected, node_exporter_url, node_exporter_data)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, task_id, run_id, ip, alive, rtt_ms, ports, services, snmp_data, prometheus_detected, prometheus_url, node_exporter_detected, node_exporter_url, node_exporter_data, scanned_at
@@ -106,6 +107,14 @@ type CreateScanResultParams struct {
 	NodeExporterData     string `json:"node_exporter_data"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) CreateScanResult(ctx context.Context, arg CreateScanResultParams) (ScanResult, error) {
 	row := q.db.QueryRowContext(ctx, createScanResult,
 		arg.TaskID,

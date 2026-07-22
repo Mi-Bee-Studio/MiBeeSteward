@@ -89,9 +89,10 @@ type HeartbeatSpec struct {
 // neighbor_device_id until reconciled).
 type NeighborSpec struct {
 	NeighborMAC string // canonical "aa:bb:cc:dd:ee:ff" (the merge key)
-	Protocol    string // "LLDP" | "CDP" | "Bridge-MIB" | "ARP"
+	Protocol    string // "LLDP" | "CDP" | "Bridge-MIB" | "Q-BRIDGE-MIB" | "ARP"
 	LocalPort   string // local port label (ifIndex / port name)
 	RemotePort  string // remote port label
+	VLANTag     string // 802.1Q tag as decimal string ("1".."4094"); "" when unknown (LLDP/CDP/ARP don't carry it)
 }
 
 // Trigger requests the orchestrator to invoke another ServiceHandler. This is

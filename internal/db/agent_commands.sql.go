@@ -49,6 +49,7 @@ func (q *Queries) CountAgentCommands(ctx context.Context) (int64, error) {
 }
 
 const createAgentCommand = `-- name: CreateAgentCommand :one
+
 INSERT INTO agent_commands (agent_id, command, payload)
 VALUES (?, ?, ?)
 RETURNING id, agent_id, command, payload, status, created_at, acknowledged_at, result
@@ -60,6 +61,14 @@ type CreateAgentCommandParams struct {
 	Payload string `json:"payload"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 // Center enqueues a command for an agent. status=pending until the agent polls.
 func (q *Queries) CreateAgentCommand(ctx context.Context, arg CreateAgentCommandParams) (AgentCommand, error) {
 	row := q.db.QueryRowContext(ctx, createAgentCommand, arg.AgentID, arg.Command, arg.Payload)

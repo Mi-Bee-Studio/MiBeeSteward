@@ -88,6 +88,7 @@ func (q *Queries) DeleteAuditLogsOlderThanBatched(ctx context.Context, arg Delet
 }
 
 const listAuditLogs = `-- name: ListAuditLogs :many
+
 SELECT id, user_id, action, resource_type, resource_id, ip_address, user_agent, details, created_at
 FROM audit_logs
 WHERE (? = 0 OR user_id = ?)
@@ -114,6 +115,14 @@ type ListAuditLogsParams struct {
 	Offset       int64       `json:"offset"`
 }
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
 	rows, err := q.db.QueryContext(ctx, listAuditLogs,
 		arg.Column1,
