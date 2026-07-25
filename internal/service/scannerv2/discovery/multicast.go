@@ -12,6 +12,7 @@ package discovery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -22,20 +23,126 @@ import (
 	"time"
 )
 
-// reuseControl is a ListenConfig.Control that sets SO_REUSEADDR on the socket so
-// the multicast listener can bind alongside a system resolver (avahi,
-// systemd-resolved) that already holds :5353 / :1900. It deliberately does NOT
-// set SO_REUSEPORT: that would split incoming datagrams between us and the
-// system resolver, halving both our coverage. REUSEADDR alone lets us co-listen.
-func reuseControl(_, _ string, c syscall.RawConn) error {
-	var sockErr error
-	err := c.Control(func(fd uintptr) {
-		sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
-	})
-	if err != nil {
-		return err
+// reuseJoinControl is a ListenConfig.Control that sets SO_REUSEADDR AND joins
+// the multicast group via IP_ADD_MEMBERSHIP. SO_REUSEADDR lets the listener bind
+// alongside a system resolver (avahi, systemd-resolved) that already holds
+// :5353 / :1900; it deliberately does NOT set SO_REUSEPORT (that would split
+// incoming datagrams between us and the resolver, halving both our coverage).
+//
+// The IP_ADD_MEMBERSHIP is the critical part that was missing before: binding to
+// a multicast address (or to 0.0.0.0:port) does NOT by itself cause the kernel
+// to deliver multicast packets to the socket. The kernel only forwards packets
+// sent to a group to sockets that have explicitly joined that group. Without the
+// join, the listener opens successfully and the read loop runs forever — but
+// receives nothing, because the kernel never hands it any multicast traffic.
+// This was the root cause of the multicast source emitting zero events despite
+// devices broadcasting on the link.
+//
+// ifaceName selects the interface to join on (empty = the first up,
+// multicast-capable, non-loopback interface, which is the common single-NIC
+// case). Joining on a specific interface is required for IP_ADD_MEMBERSHIP to
+// receive link-local multicast (224.0.0.251) — the kernel needs to know which
+// L2 segment to listen on.
+func reuseJoinControl(group, ifaceName string) func(network, address string, c syscall.RawConn) error {
+	ifi, ifiErr := multicastInterface(ifaceName)
+	return func(_, _ string, c syscall.RawConn) error {
+		var sockErr error
+		err := c.Control(func(fd uintptr) {
+			sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+			if sockErr != nil {
+				return
+			}
+			if ifiErr != nil {
+				sockErr = ifiErr
+				return
+			}
+			mreq := syscall.IPMreq{}
+			copy(mreq.Multiaddr[:], net.ParseIP(group).To4())
+			// Bind membership to the interface's IPv4 address (INADDR_ANY +
+			// imr_interface = kernel picks the default-route iface, but pinning
+			// it makes the choice deterministic and works when there is no
+			// default route, e.g. on a host with only a link-local config).
+			if ifi != nil && len(ifi.Addr) >= 4 {
+				copy(mreq.Interface[:], ifi.Addr[:4])
+			}
+			sockErr = syscall.SetsockoptIPMreq(int(fd), syscall.IPPROTO_IP,
+				syscall.IP_ADD_MEMBERSHIP, &mreq)
+		})
+		if err != nil {
+			return err
+		}
+		return sockErr
 	}
-	return sockErr
+}
+
+// multicastInterface resolves the interface to join multicast groups on. When
+// name is non-empty it must name an up, multicast-capable interface; otherwise
+// the first up, multicast-capable, non-loopback interface with an IPv4 address
+// is used (skips lo, docker0, etc.). Returns the interface with its primary IPv4
+// address in a small struct so the caller can pin IP_ADD_MEMBERSHIP to it.
+func multicastInterface(name string) (*ipv4If, error) {
+	ifis, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	// Named interface: resolve and validate, but don't fall through to auto.
+	if name != "" {
+		for _, ifi := range ifis {
+			if ifi.Name != name {
+				continue
+			}
+			return ipv4FromInterface(ifi)
+		}
+		return nil, fmt.Errorf("interface %q not found", name)
+	}
+	// Auto: first up + multicast + non-loopback with an IPv4 address.
+	for _, ifi := range ifis {
+		if ifi.Flags&net.FlagUp == 0 || ifi.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if ifi.Flags&net.FlagMulticast == 0 {
+			continue
+		}
+		if v4 := ipv4FromInterfaceOrNil(ifi); v4 != nil {
+			return v4, nil
+		}
+	}
+	return nil, errors.New("no up, multicast-capable, non-loopback interface with an IPv4 address")
+}
+
+// ipv4If carries an interface index plus its primary IPv4 address, used to pin
+// an IP_ADD_MEMBERSHIP request to a specific interface.
+type ipv4If struct {
+	Index int
+	Addr  net.IP
+}
+
+func ipv4FromInterface(ifi net.Interface) (*ipv4If, error) {
+	v4 := ipv4FromInterfaceOrNil(ifi)
+	if v4 == nil {
+		return nil, fmt.Errorf("interface %q has no IPv4 address", ifi.Name)
+	}
+	return v4, nil
+}
+
+func ipv4FromInterfaceOrNil(ifi net.Interface) *ipv4If {
+	addrs, err := ifi.Addrs()
+	if err != nil {
+		return nil
+	}
+	for _, a := range addrs {
+		var ip net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip4 := ip.To4(); ip4 != nil {
+			return &ipv4If{Index: ifi.Index, Addr: ip4}
+		}
+	}
+	return nil
 }
 
 // MulticastSource passively listens for mDNS (224.0.0.251:5353) and SSDP
@@ -119,9 +226,16 @@ type multicastListener interface {
 // --- mDNS (224.0.0.251:5353) ---
 
 const (
-	mdnsGroup = "224.0.0.251:5353"
-	ssdpGroup = "239.255.255.250:1900"
-	readBuf   = 65536
+	// mDNS/SSDP multicast group IPs and ports. The listeners bind 0.0.0.0:port
+	// (so the kernel routes multicast packets to them once they JOIN the group)
+	// rather than the group address itself — binding the group address does not
+	// imply group membership and yields zero delivered packets (see
+	// reuseJoinControl). These group IPs are passed to IP_ADD_MEMBERSHIP.
+	mdnsGroupIP = "224.0.0.251"
+	mdnsPort    = "5353"
+	ssdpGroupIP = "239.255.255.250"
+	ssdpPort    = "1900"
+	readBuf     = 65536
 )
 
 type mdnsListener struct {
@@ -136,13 +250,14 @@ func newMDNSListener(svc *Service, logger *slog.Logger) multicastListener {
 func (m *mdnsListener) proto() string { return "mdns" }
 
 func (m *mdnsListener) listen() (net.PacketConn, error) {
-	// SO_REUSEADDR lets us share :5353 with avahi/systemd-resolved. We do NOT
-	// set SO_REUSEPORT here because that would split datagrams between us and
-	// the system resolver — REUSEADDR alone is enough to bind alongside it.
+	// Bind 0.0.0.0:5353 and JOIN the 224.0.0.251 group. The join is what makes
+	// the kernel deliver mDNS multicast to us — see reuseJoinControl. SO_REUSEADDR
+	// lets us coexist with avahi/systemd-resolved; we do NOT use SO_REUSEPORT
+	// (that would split datagrams between us and the resolver).
 	lc := net.ListenConfig{
-		Control: reuseControl,
+		Control: reuseJoinControl(mdnsGroupIP, ""),
 	}
-	conn, err := lc.ListenPacket(context.Background(), "udp4", mdnsGroup)
+	conn, err := lc.ListenPacket(context.Background(), "udp4", "0.0.0.0:"+mdnsPort)
 	if err != nil {
 		return nil, err
 	}
@@ -229,10 +344,12 @@ func newSSDPListener(svc *Service, logger *slog.Logger) multicastListener {
 func (s *ssdpListener) proto() string { return "ssdp" }
 
 func (s *ssdpListener) listen() (net.PacketConn, error) {
+	// Bind 0.0.0.0:1900 and JOIN the 239.255.255.250 group (UPnP/SSDP). Same
+	// rationale as the mDNS listener: the join is what delivers multicast.
 	lc := net.ListenConfig{
-		Control: reuseControl,
+		Control: reuseJoinControl(ssdpGroupIP, ""),
 	}
-	conn, err := lc.ListenPacket(context.Background(), "udp4", ssdpGroup)
+	conn, err := lc.ListenPacket(context.Background(), "udp4", "0.0.0.0:"+ssdpPort)
 	if err != nil {
 		return nil, err
 	}

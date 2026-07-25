@@ -240,7 +240,14 @@ type ScannerConfig struct {
 	// for hosts the scanner can't reach at L2. The community defaults to
 	// SNMPCommunity when empty.
 	RouterARP RouterARPConfig `koanf:"router_arp"`
-	EBPF      EBPFConfig      `koanf:"ebpf"`
+	// ARPScan is the active ARP-sweep source: it broadcasts ARP who-has requests
+	// for every IP in the local subnet and emits a NewHostEvent for each reply.
+	// Unlike router_arp (needs SNMP) or arp_cache (passive read), this needs no
+	// router access and covers the whole broadcast domain — every host MUST
+	// answer ARP. Needs CAP_NET_RAW + the WITH_ARPSCAN build tag; the toggle in
+	// Discovery.ARPScan gates it, but it remains a no-op in the default build.
+	ARPScan ARPScanConfig `koanf:"arp_scan"`
+	EBPF    EBPFConfig    `koanf:"ebpf"`
 	// Discovery enables the long-running passive discovery service that spots
 	// newly-appeared hosts without a full subnet scan. It periodically walks a
 	// router's SNMP ARP table + diffs the local /proc/net/arp cache + passively
@@ -264,6 +271,15 @@ type RouterARPConfig struct {
 	Routers   []string `koanf:"routers"`
 	Community string   `koanf:"community"`
 	Timeout   int      `koanf:"timeout"` // seconds; default 4
+}
+
+// ARPScanConfig configures the active ARP-sweep discovery source. Interface is
+// the NIC to send who-has frames on (empty = auto-select the interface whose
+// IPv4 falls inside the center's network CIDR). The sweep cadence reuses
+// Discovery.Interval (no separate interval here) so all ARP sources stay in
+// lockstep.
+type ARPScanConfig struct {
+	Interface string `koanf:"interface"`
 }
 
 // EBPFConfig controls the passive eBPF observer (v2 engine only). Even with
@@ -303,6 +319,12 @@ type DiscoveryConfig struct {
 	// (239.255.255.250:1900) WITHOUT sending queries. Covers hosts that
 	// self-advertise (cameras/printers/IoT/Mac/UPnP).
 	Multicast DiscoverySourceToggle `koanf:"multicast"`
+	// ARPScan actively broadcasts ARP who-has requests for every host in the
+	// center's network CIDR and emits a NewHostEvent per reply. The widest-
+	// coverage source that needs NO router access (every host must answer ARP).
+	// No-op in default builds (needs WITH_ARPSCAN + CAP_NET_RAW); the toggle has
+	// effect only in a WITH_ARPSCAN build.
+	ARPScan DiscoverySourceToggle `koanf:"arp_scan"`
 	// LLDPInterfaces is the list of NIC names for the raw-frame LLDPDU listener
 	// (ethertype 0x88cc). Empty = all UP non-loopback interfaces. Only active in
 	// WITH_LLDP builds (needs CAP_NET_RAW); no-op in the default build.
