@@ -31,7 +31,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 )
 
 // lldpEdge is defined in lldp_types.go (shared across build variants).
@@ -203,42 +202,8 @@ func openLLDPSocket(iface string) (int, error) {
 	return sock, nil
 }
 
-// htons converts a uint16 to network byte order (AF_PACKET protocols are passed
-// in network order on Linux).
-func htons(v uint16) uint16 {
-	var b [2]byte
-	binary.BigEndian.PutUint16(b[:], v)
-	return *(*uint16)(unsafe.Pointer(&b[0]))
-}
-
-// allUpInterfaces returns the names of all non-loopback, UP interfaces.
-func allUpInterfaces(logger *slog.Logger) []string {
-	ifs, err := net.Interfaces()
-	if err != nil {
-		logger.Warn("lldp_frame: enumerate interfaces failed", "error", err)
-		return nil
-	}
-	var out []string
-	for _, ifi := range ifs {
-		if ifi.Flags&net.FlagUp == 0 || ifi.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		out = append(out, ifi.Name)
-	}
-	return out
-}
-
-// ifaceMAC returns the hardware address of an interface as a canonical string.
-func ifaceMAC(name string) (string, error) {
-	ifi, err := net.InterfaceByName(name)
-	if err != nil {
-		return "", err
-	}
-	if ifi.HardwareAddr == nil {
-		return "", nil
-	}
-	return ifi.HardwareAddr.String(), nil
-}
+// htons, allUpInterfaces, and ifaceMAC are shared helpers defined in
+// frame_helpers.go (used by LLDP/CDP/ARP-scan raw-frame sources alike).
 
 // time import kept for future read-deadline variants; harmless.
 var _ = time.Second

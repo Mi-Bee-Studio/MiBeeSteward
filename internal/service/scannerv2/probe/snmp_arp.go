@@ -11,6 +11,7 @@ package probe
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -71,17 +72,31 @@ func LookupMACViaRouter(ctx context.Context, router, community string, timeout t
 
 // WalkRouterARPTable walks a single router's SNMP ARP table (ipNetToMediaPhysAddress,
 // falling back to the RFC 4293 ipNetToPhysicalPhysAddress) and returns the full
-// ip→lowercased-MAC map. It is the exported counterpart to the unexported
-// walkRouterARP used internally for per-host MAC resolution: the long-running
-// passive discovery service walks the WHOLE table (once per router, on a timer)
-// to diff against its previous snapshot and spot newly-seen hosts.
+// ip→lowercased-MAC map. It is the best-effort variant used by the per-scan MAC
+// enrichment path (cross-subnet MAC resolution): the long-running passive
+// discovery service instead uses WalkRouterARPTableWithErr so it can log WHY a
+// router yields nothing, and diff against its previous snapshot to spot
+// newly-seen hosts.
 //
 // Returns a non-nil empty map only when the router answered but had no entries;
 // returns nil when the router is unreachable, doesn't speak SNMP, or neither OID
-// yielded anything. ctx is currently unused (gosnmp's Walk takes no context); the
-// timeout bounds the walk.
+// yielded anything. The failure reason is NOT surfaced (use
+// WalkRouterARPTableWithErr when observability matters); this variant keeps the
+// best-effort contract the per-scan MAC-enrichment path relies on. ctx is
+// currently unused (gosnmp's Walk takes no context); the timeout bounds the walk.
 func WalkRouterARPTable(ctx context.Context, router, community string, timeout time.Duration) map[string]string {
-	return walkRouterARP(ctx, router, community, timeout)
+	table, _ := walkRouterARPTable(ctx, router, community, timeout)
+	return table
+}
+
+// WalkRouterARPTableWithErr is the observable variant of WalkRouterARPTable: it
+// returns the same ip→mac map plus the error (if any) that caused the walk to
+// fail or come back empty. Callers that need to log why a router yields nothing
+// (e.g. the passive discovery source, which otherwise fails silently every poll)
+// should prefer this. The map is non-nil-empty only on a successful walk that
+// found zero entries; on any error it is nil.
+func WalkRouterARPTableWithErr(ctx context.Context, router, community string, timeout time.Duration) (map[string]string, error) {
+	return walkRouterARPTable(ctx, router, community, timeout)
 }
 
 // LookupMACViaRouters tries each router in turn until one returns a MAC for ip.
@@ -130,7 +145,7 @@ func (s *routerARPStore) get(ctx context.Context, router, community string, time
 		time.Since(s.at) < routerARPCacheTTL && s.table != nil {
 		return s.table
 	}
-	table := walkRouterARP(ctx, router, community, timeout)
+	table, _ := walkRouterARPTable(ctx, router, community, timeout)
 	if table == nil {
 		return nil
 	}
@@ -141,11 +156,13 @@ func (s *routerARPStore) get(ctx context.Context, router, community string, time
 	return table
 }
 
-// walkRouterARP walks both the legacy and RFC4293 ARP OIDs on router, returning
-// a map of ip→lowercased-MAC. Returns nil if neither OID yields anything. The
-// caller's context bounds nothing here (gosnmp Walk has no context support);
-// the snmp.Timeout on the client caps the walk.
-func walkRouterARP(_ context.Context, router, community string, timeout time.Duration) map[string]string {
+// walkRouterARPTable walks both the legacy and RFC4293 ARP OIDs on router,
+// returning a map of ip→lowercased-MAC plus the error (if any) that explains a
+// nil/empty result. The map is nil on any error (connect failure, walk error);
+// it is a non-nil empty map only when the router answered both OIDs cleanly but
+// had zero entries. The caller's context bounds nothing here (gosnmp Walk has
+// no context support); the snmp.Timeout on the client caps the walk.
+func walkRouterARPTable(_ context.Context, router, community string, timeout time.Duration) (map[string]string, error) {
 	snmp := &gosnmp.GoSNMP{
 		Target:    router,
 		Port:      161,
@@ -155,32 +172,39 @@ func walkRouterARP(_ context.Context, router, community string, timeout time.Dur
 		Retries:   1,
 	}
 	if err := snmp.Connect(); err != nil {
-		return nil
+		return nil, fmt.Errorf("snmp connect %s:161: %w", router, err)
 	}
 	defer snmp.Conn.Close()
 
 	table := map[string]string{}
 	// Try the legacy OID first (universally implemented on SNMP routers).
-	walkInto(snmp, oidIPNetToMediaPhysAddress, func(ip, mac string) {
+	if err := walkInto(snmp, oidIPNetToMediaPhysAddress, func(ip, mac string) {
 		if ip != "" && mac != "" {
 			table[ip] = mac
 		}
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("snmp walk %s %s: %w", router, oidIPNetToMediaPhysAddress, err)
+	}
 	// Fall back to / supplement with the RFC 4293 OID (covers IPv6 + newer
 	// stacks). Don't overwrite legacy entries.
 	if len(table) == 0 {
-		walkInto(snmp, oidIPNetToPhysicalAddress, func(ip, mac string) {
+		if err := walkInto(snmp, oidIPNetToPhysicalAddress, func(ip, mac string) {
 			if ip != "" && mac != "" {
 				if _, exists := table[ip]; !exists {
 					table[ip] = mac
 				}
 			}
-		})
+		}); err != nil {
+			return nil, fmt.Errorf("snmp walk %s %s: %w", router, oidIPNetToPhysicalAddress, err)
+		}
 	}
 	if len(table) == 0 {
-		return nil
+		// Router answered but neither OID yielded entries — not an error, just
+		// an empty neighbour table. Return the (empty, non-nil) map so callers
+		// can distinguish "answered, nothing to report" from "failed".
+		return table, nil
 	}
-	return table
+	return table, nil
 }
 
 // walkInto runs a Walk on oid and calls emit for each (ip, mac) pair. The OID
@@ -188,10 +212,12 @@ func walkRouterARP(_ context.Context, router, community string, timeout time.Dur
 // either an IPv4 (4 decimal octets) or a length-prefixed address octet string.
 // gosnmp hands us pdu.Name as the full dotted path including the index.
 //
+// Returns the walk error instead of swallowing it: a connection-refused or
+// timeout surfaces here so callers can log WHY a router yields nothing.
 // The caller's context is intentionally not forwarded: gosnmp's Walk doesn't
 // accept one, and the snmp.Timeout set on the client bounds the run.
-func walkInto(snmp *gosnmp.GoSNMP, oid string, emit func(ip, mac string)) {
-	walkErr := snmp.Walk(oid, func(pdu gosnmp.SnmpPDU) error {
+func walkInto(snmp *gosnmp.GoSNMP, oid string, emit func(ip, mac string)) error {
+	return snmp.Walk(oid, func(pdu gosnmp.SnmpPDU) error {
 		ip := indexToIP(pdu.Name, oid)
 		mac := snmpOctetsToMAC(pdu.Value)
 		if ip != "" && mac != "" {
@@ -199,7 +225,6 @@ func walkInto(snmp *gosnmp.GoSNMP, oid string, emit func(ip, mac string)) {
 		}
 		return nil
 	})
-	_ = walkErr
 }
 
 // indexToIP extracts the IPv4 address from a varbind name like

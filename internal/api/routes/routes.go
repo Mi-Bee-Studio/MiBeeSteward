@@ -330,6 +330,21 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			mcastSrc.Start(discCtx)
 			activeSources = append(activeSources, "multicast")
 		}
+		// arp_scan: active ARP who-has sweep of the whole network CIDR. The only
+		// source that covers the entire broadcast domain with NO router access
+		// (every host must answer ARP — even firewalled ones). Needs the
+		// WITH_ARPSCAN build tag + CAP_NET_RAW; NewARPScanSource returns nil in the
+		// default build or when raw sockets are unavailable (no CAP_NET_RAW), so the
+		// nil guard skips it silently in those cases.
+		if cfg.Scanner.Discovery.ARPScan.Enabled {
+			if arpScanSrc := scannerv2discovery.NewARPScanSource(
+				cfg.Network.CIDR, interval, cfg.Scanner.ARPScan.Interface,
+				discSvc, slog.Default(),
+			); arpScanSrc != nil {
+				arpScanSrc.Start(discCtx)
+				activeSources = append(activeSources, "arp_scan")
+			}
+		}
 		// lldp_frame: passive LLDPDU frame listener (ethertype 0x88cc). Only
 		// available in WITH_LLDP builds (needs CAP_NET_RAW); NewLLDPFrameSource
 		// returns nil in the default build, so this is a no-op there. Wiring the
