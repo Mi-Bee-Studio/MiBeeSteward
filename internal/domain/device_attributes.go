@@ -52,6 +52,7 @@ type ScanAttributes struct {
 
 	// Scanner classification summary
 	InferredType        string `json:"inferred_type,omitempty"`
+	InferredTypeSource  string `json:"inferred_type_source,omitempty"` // "protocol" (SNMP/RTSP/ONVIF/mDNS evidence — trustworthy) | "heuristic" (hostname/brand keyword guess — spoofable) | "" (legacy/unknown)
 	InferredDescription string `json:"inferred_description,omitempty"`
 
 	// Discovery surfaces (kept struct-shaped where stable, free-form otherwise)

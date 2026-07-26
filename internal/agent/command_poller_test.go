@@ -59,7 +59,9 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 		gotTimeout = timeoutSec
 		return `{"run_id":1}`, nil
 	}
-	p := agent.NewCommandPoller(srv.URL, "test-token", 10*time.Millisecond, runScan, nil)
+	// networkCIDR matches the command's targets so the Layer 2-agent boundary
+	// check (issue #19) allows the scan through.
+	p := agent.NewCommandPoller(srv.URL, "test-token", 10*time.Millisecond, "192.168.62.0/24", runScan, nil)
 	p.Start(context.Background())
 	defer p.Stop()
 
@@ -74,4 +76,144 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	}
 	require.Equal(t, "192.168.62.0/24", gotTargets)
 	require.Equal(t, 300, gotTimeout)
+}
+
+// TestCommandPoller_BoundaryCheck_Layer2 covers the agent-side CIDR gate
+// (issue #19 Layer 2-agent): a scan command whose targets fall outside this
+// agent's own network is rejected before execution — runScan is never called
+// and the command completes as "failed".
+func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
+	t.Run("out-of-network command rejected, runScan not called", func(t *testing.T) {
+		var executed int32
+		var completeStatus, completeResult string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/api/v1/agents/commands" && r.Method == http.MethodGet:
+				// The exact issue-#19 mis-dispatch: targets=192.168.63.0/24 to an
+				// agent whose network is 192.168.62.0/24.
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`[{"id":1,"command":"scan","payload":"{\"targets\":\"192.168.63.0/24\",\"timeout\":60}"}]`))
+			case r.URL.Path == "/api/v1/agents/commands/1/ack" && r.Method == http.MethodPost:
+				w.WriteHeader(http.StatusNoContent)
+			case r.URL.Path == "/api/v1/agents/commands/1/complete" && r.Method == http.MethodPost:
+				var req struct {
+					Status string `json:"status"`
+					Result string `json:"result"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&req)
+				completeStatus = req.Status
+				completeResult = req.Result
+				atomic.StoreInt32(&executed, 1)
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer srv.Close()
+
+		runScan := func(context.Context, string, int) (string, error) {
+			t.Fatal("runScan must NOT be called for an out-of-network command")
+			return "", nil
+		}
+		p := agent.NewCommandPoller(srv.URL, "test-token", 10*time.Millisecond,
+			"192.168.62.0/24", runScan, nil)
+		p.Start(context.Background())
+		defer p.Stop()
+
+		deadline := time.After(2 * time.Second)
+		for atomic.LoadInt32(&executed) != 1 {
+			select {
+			case <-deadline:
+				t.Fatal("poller did not complete the command within deadline")
+			default:
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+		require.Equal(t, "failed", completeStatus)
+		require.Contains(t, completeResult, "out of network")
+	})
+
+	t.Run("mixed targets rejected as a whole", func(t *testing.T) {
+		var executed int32
+		var completeStatus string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/api/v1/agents/commands" && r.Method == http.MethodGet:
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`[{"id":2,"command":"scan","payload":"{\"targets\":\"192.168.62.5,192.168.63.5\",\"timeout\":60}"}]`))
+			case r.URL.Path == "/api/v1/agents/commands/2/ack" && r.Method == http.MethodPost:
+				w.WriteHeader(http.StatusNoContent)
+			case r.URL.Path == "/api/v1/agents/commands/2/complete" && r.Method == http.MethodPost:
+				var req struct {
+					Status string `json:"status"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&req)
+				completeStatus = req.Status
+				atomic.StoreInt32(&executed, 1)
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer srv.Close()
+
+		runScan := func(context.Context, string, int) (string, error) {
+			t.Fatal("runScan must NOT be called when any target is out of network")
+			return "", nil
+		}
+		p := agent.NewCommandPoller(srv.URL, "test-token", 10*time.Millisecond,
+			"192.168.62.0/24", runScan, nil)
+		p.Start(context.Background())
+		defer p.Stop()
+
+		deadline := time.After(2 * time.Second)
+		for atomic.LoadInt32(&executed) != 1 {
+			select {
+			case <-deadline:
+				t.Fatal("poller did not complete the command within deadline")
+			default:
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+		require.Equal(t, "failed", completeStatus)
+	})
+
+	t.Run("no cidr configured → degrade open (scan proceeds)", func(t *testing.T) {
+		// An agent without a configured cidr must not lock itself out — the
+		// center's Layer 2 check authorizes. Empty cidr → check disabled.
+		var executed int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/api/v1/agents/commands" && r.Method == http.MethodGet:
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`[{"id":3,"command":"scan","payload":"{\"targets\":\"10.0.0.1\",\"timeout\":60}"}]`))
+			case r.URL.Path == "/api/v1/agents/commands/3/ack" && r.Method == http.MethodPost:
+				w.WriteHeader(http.StatusNoContent)
+			case r.URL.Path == "/api/v1/agents/commands/3/complete" && r.Method == http.MethodPost:
+				atomic.StoreInt32(&executed, 1)
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer srv.Close()
+
+		runScan := func(context.Context, string, int) (string, error) {
+			return `{"run_id":3}`, nil // actually invoked
+		}
+		// Empty cidr → boundary check disabled.
+		p := agent.NewCommandPoller(srv.URL, "test-token", 10*time.Millisecond, "", runScan, nil)
+		p.Start(context.Background())
+		defer p.Stop()
+
+		deadline := time.After(2 * time.Second)
+		for atomic.LoadInt32(&executed) != 1 {
+			select {
+			case <-deadline:
+				t.Fatal("poller did not complete the command within deadline")
+			default:
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+	})
 }

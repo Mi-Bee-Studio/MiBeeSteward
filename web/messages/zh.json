@@ -72,6 +72,7 @@
 	"devices": {
 		"Device Name": "设备名称",
 		"Type": "类型",
+		"Inferred Type Hint": "类型仅由主机名推测(无协议证据),可能不准确,请手动核实。",
 		"Brand": "品牌",
 		"Model": "型号",
 		"Location": "位置",
@@ -148,6 +149,8 @@
 		"View List": "列表",
 		"View Topology": "拓扑",
 		"Camera": "摄像头",
+		"Phone": "手机",
+		"Printer": "打印机",
 		"Search placeholder": "搜索名称 / IP / MAC…",
 		"Alive": "存活",
 		"All Networks": "所有网络"

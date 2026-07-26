@@ -161,3 +161,67 @@ func TestLeaseSweeper_IgnoresAlreadyOffline(t *testing.T) {
 	})
 	require.Len(t, lost, 0, "already-offline device must not be re-emitted")
 }
+
+// TestLeaseSweeper_RecoversFreshOfflineAgentDevice is the symmetric counterpart
+// of TestLeaseSweeper_ExpiresStaleAgentDevice: a device the sweeper previously
+// marked offline, whose snapshot lease is now FRESH again (the agent resumed
+// reporting it), must be flipped back online — closing the recovery gap the
+// stable-hash fast path (agent_report.go) opens, where leases refresh but the
+// devices row is never touched. The recovery emits a device_changed event
+// (status is a tracked Diff field), NOT device_lost.
+func TestLeaseSweeper_RecoversFreshOfflineAgentDevice(t *testing.T) {
+	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
+	ctx := context.Background()
+	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
+
+	// Create the device + a FRESH snapshot (RecordAliveSnapshots stamps now).
+	rn.applyDeviceBridge(ctx, reportFor("192.168.62.41", "pc", "", "aa:bb:cc:dd:ee:41"), nid, "agent-62")
+	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{
+		reportFor("192.168.62.41", "pc", "", "aa:bb:cc:dd:ee:41"),
+	})
+	// Simulate the stuck state: the sweeper marked it offline earlier, but the
+	// agent is actively reporting it alive again (snapshot stays fresh).
+	_, err := conn.ExecContext(ctx,
+		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.62.41'`)
+	require.NoError(t, err)
+
+	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
+	sweeper.sweepOnce(ctx)
+
+	var status string
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.62.41'`).Scan(&status)
+	require.Equal(t, "online", status, "fresh-lease agent device stuck offline should be recovered")
+
+	// Recovery emits device_changed (offline→online), not device_lost.
+	changed, _ := queries.ListChangeLog(ctx, db.ListChangeLogParams{
+		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_changed",
+		Column5: 1, EntityType: "device", Limit: 100, Offset: 0,
+	})
+	require.Len(t, changed, 1, "one device_changed (recovery) event emitted")
+}
+
+// TestLeaseSweeper_NoRecoverOnCenterNetwork confirms the recovery path — like
+// the expiry path — is scoped to agent networks only. A center-network device
+// that is offline with a fresh snapshot must NOT be touched by the sweeper
+// (the center has its own applyDeviceBridge recovery path via local scans).
+func TestLeaseSweeper_NoRecoverOnCenterNetwork(t *testing.T) {
+	rn, _, conn, centerNetID, _ := setupLeaseTestDB(t)
+	ctx := context.Background()
+	cnid := sql.NullInt64{Int64: centerNetID, Valid: true}
+
+	rn.applyDeviceBridge(ctx, reportFor("192.168.63.50", "server", "", "aa:bb:cc:dd:ee:50"), cnid, "")
+	rn.RecordAliveSnapshots(ctx, cnid, 0, []scannerv2.HostReport{
+		reportFor("192.168.63.50", "server", "", "aa:bb:cc:dd:ee:50"),
+	})
+	// Offline but fresh lease — the recovery candidate shape, on the CENTER net.
+	_, err := conn.ExecContext(ctx,
+		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.63.50'`)
+	require.NoError(t, err)
+
+	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
+	sweeper.sweepOnce(ctx)
+
+	var status string
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.63.50'`).Scan(&status)
+	require.Equal(t, "offline", status, "center-network device must not be recovered by the lease sweeper")
+}

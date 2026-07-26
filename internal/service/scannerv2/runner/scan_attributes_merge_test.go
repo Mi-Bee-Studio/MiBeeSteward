@@ -1,0 +1,141 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+//
+// This file is part of MiBee Steward, distributed under the GNU Affero General
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+
+package runner
+
+import (
+	"context"
+	"database/sql"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/changedetect"
+	"mibee-steward/internal/db"
+	"mibee-steward/internal/service/scannerv2"
+	"mibee-steward/internal/testutil"
+)
+
+// setupScanAttrsTestDB mirrors setupTypeTestDB but lives here to keep the
+// scan_attributes merge tests self-contained.
+func setupScanAttrsTestDB(t *testing.T) (*Runner, *sql.DB) {
+	t.Helper()
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	queries := db.New(conn)
+	net, err := queries.CreateNetwork(context.Background(), db.CreateNetworkParams{Name: "merge-test-net"})
+	require.NoError(t, err)
+	nid := sql.NullInt64{Int64: net.ID, Valid: true}
+	rn := New(nil, queries, conn, nil, 0, nil)
+	rn.networkID = nid
+	rn.SetChangeRecorder(changedetect.NewDBRecorder(queries, nil, nil))
+	return rn, conn
+}
+
+// reportWith builds a HostReport with the given Fields + Evidence, alive.
+func reportWith(ip string, fields map[string]string, evidence ...scannerv2.Evidence) scannerv2.HostReport {
+	rep := scannerv2.HostReport{IP: ip, Alive: true}
+	rep.Device.Fields = fields
+	rep.Evidence = evidence
+	return rep
+}
+
+// TestScanAttributes_MergePreservesHostname is the core regression guard for
+// issue #20 candidate fix C: a SHALLOW active scan (one that collected no
+// hostname this cycle) must NOT erase a hostname an EARLIER scan (or passive
+// discovery) wrote into scan_attributes. Pre-fix the UPDATE was
+// `scan_attributes = ?` (blind overwrite); now it's json_patch, so omitted keys
+// in the new blob survive.
+func TestScanAttributes_MergePreservesHostname(t *testing.T) {
+	rn, conn := setupScanAttrsTestDB(t)
+	ctx := context.Background()
+	const ip = "192.168.63.20"
+
+	// Scan 1: a deep scan that collected a hostname via mDNS + vendor + ports.
+	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+		map[string]string{"node_hostname": "MICKEYBEESSD", "inferred_brand": "Apache"},
+		scannerv2.Evidence{Kind: "mdns", RawData: map[string]string{"hostname": "MICKEYBEESSD"}},
+	), rn.networkID, "")
+
+	var attrs1 string
+	require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE ip_address=?`, ip).Scan(&attrs1))
+	require.Contains(t, attrs1, `"hostname":"MICKEYBEESSD"`, "deep scan wrote the hostname")
+
+	// Scan 2: a SHALLOW scan that found the host alive but collected NO hostname
+	// (no mDNS response, no rDNS, SNMP off). This is the scenario that used to
+	// wipe scan_attributes.hostname. Fields intentionally carry only a brand.
+	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+		map[string]string{"inferred_brand": "Apache"}, // no node_hostname, no sys_name
+		// no evidence at all
+	), rn.networkID, "")
+
+	var attrs2 string
+	require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE ip_address=?`, ip).Scan(&attrs2))
+	require.Contains(t, attrs2, `"hostname":"MICKEYBEESSD"`,
+		"shallow scan must NOT erase the hostname collected earlier (json_patch preserves omitted keys)")
+
+	// And the deep scan's vendor is preserved too (it was omitted from scan 2).
+	require.Contains(t, attrs2, `"vendor"`, "vendor from the deep scan survives the shallow overwrite")
+}
+
+// TestScanAttributes_MergeUpdatesPresentFields confirms the merge isn't
+// purely additive: a field the new scan DID collect overwrites the old value
+// (so a hostname change, a port closing, etc. is reflected). Without this the
+// merge would freeze stale data.
+func TestScanAttributes_MergeUpdatesPresentFields(t *testing.T) {
+	rn, conn := setupScanAttrsTestDB(t)
+	ctx := context.Background()
+	const ip = "192.168.63.30"
+
+	// Scan 1: hostname = OLD-NAME.
+	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+		map[string]string{"node_hostname": "OLD-NAME"},
+	), rn.networkID, "")
+
+	// Scan 2: hostname changed to NEW-NAME (device was renamed).
+	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+		map[string]string{"node_hostname": "NEW-NAME"},
+	), rn.networkID, "")
+
+	var attrs string
+	require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE ip_address=?`, ip).Scan(&attrs))
+	require.Contains(t, attrs, `"hostname":"NEW-NAME"`, "a present field in the new scan overwrites the old")
+	require.NotContains(t, attrs, "OLD-NAME", "the stale value is gone, not merged in alongside")
+}
+
+// TestScanAttributes_OpenPortsReplaceNotUnion guards the slice semantics at the
+// devices.open_ports column (independent of scan_attributes JSON): open_ports is
+// whole-replaced each scan (buildExistingUpdate `open_ports = ?`), so a port
+// absent from the latest scan must not linger from an earlier one.
+func TestScanAttributes_OpenPortsReplaceNotUnion(t *testing.T) {
+	rn, conn := setupScanAttrsTestDB(t)
+	ctx := context.Background()
+	const ip = "192.168.63.40"
+
+	// Scan 1: ports 80 + 22 in the evidence.
+	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+		map[string]string{},
+		scannerv2.Evidence{Kind: "port", Port: 80, RawData: map[string]string{"service": "http"}},
+		scannerv2.Evidence{Kind: "port", Port: 22, RawData: map[string]string{"service": "ssh"}},
+	), rn.networkID, "")
+
+	// Scan 2: only port 80.
+	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+		map[string]string{},
+		scannerv2.Evidence{Kind: "port", Port: 80, RawData: map[string]string{"service": "http"}},
+	), rn.networkID, "")
+
+	var openPorts string
+	require.NoError(t, conn.QueryRow(`SELECT open_ports FROM devices WHERE ip_address=?`, ip).Scan(&openPorts))
+	// Port 22 was only in scan 1. Whatever scan 2 wrote, 22 must NOT appear —
+	// the column tracks the latest scan, not a union.
+	require.NotContains(t, openPorts, `"port":22`,
+		"a port absent from the latest scan must not linger from an earlier scan (replace, not union)")
+}

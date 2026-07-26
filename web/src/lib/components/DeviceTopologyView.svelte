@@ -110,6 +110,8 @@
 			nas: ['--color-warning', '#f59e0b'],
 			camera: ['--color-accent-cyan', '#ec4899'],
 			pc: ['--color-accent-cyan', '#06b6d4'],
+			phone: ['--color-accent-cyan', '#f97316'],
+			printer: ['--color-info', '#0ea5e9'],
 			embedded: ['--color-muted', '#64748b'],
 			iot: ['--color-success', '#84cc16'],
 			other: ['--color-muted', '#94a3b8']
@@ -134,6 +136,8 @@
 			firewall: m['devices.Firewall'](),
 			nas: m['devices.NAS'](),
 			camera: m['devices.Camera'](),
+			phone: m['devices.Phone'](),
+			printer: m['devices.Printer'](),
 			other: m['devices.Other']()
 		};
 		return labels[type] ?? type;

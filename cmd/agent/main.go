@@ -130,7 +130,7 @@ func main() {
 	// center. The agent's network identity is encoded in its token (resolved on
 	// the center); the reporter just ships the discovery payload.
 	flush := parseDurationOrDefault(cfg.Center.ReportInterval, 30*time.Second)
-	reporter := agent.NewReporter(cfg.Center.URL, cfg.Center.AuthToken, cfg.Network.Name, flush, 256, slog.Default())
+	reporter := agent.NewReporter(cfg.Center.URL, cfg.Center.AuthToken, cfg.Network.Name, cfg.Network.CIDR, flush, 256, slog.Default())
 	ctxBg, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	reporter.Start(ctxBg)
@@ -165,7 +165,7 @@ func main() {
 	// The runScan callback wraps the runner so this package doesn't import runner
 	// directly (avoids an import cycle). Commands are best-effort — the agent's
 	// own cron scheduler is the primary scan driver.
-	cmdPoller := agent.NewCommandPoller(cfg.Center.URL, cfg.Center.AuthToken, 60*time.Second,
+	cmdPoller := agent.NewCommandPoller(cfg.Center.URL, cfg.Center.AuthToken, 60*time.Second, cfg.Network.CIDR,
 		func(ctx context.Context, targets string, timeoutSec int) (string, error) {
 			if scanRunner == nil {
 				return "", fmt.Errorf("scan engine not initialized")

@@ -240,6 +240,18 @@ type ScannerConfig struct {
 	// for hosts the scanner can't reach at L2. The community defaults to
 	// SNMPCommunity when empty.
 	RouterARP RouterARPConfig `koanf:"router_arp"`
+	// RDNS tunes the reverse-DNS probe (active:rdns). By default the probe uses
+	// the system resolver (/etc/resolv.conf), which on a center box often points
+	// at a public DNS with no view into the LAN's DHCP-synthesized PTR records —
+	// so hostnames are missed for devices that DO have a PTR on the local DNS.
+	// Populating RDNS.DNSServers (e.g. the router/LAN DNS IP) makes the probe
+	// query those servers directly for PTR records, dramatically improving
+	// hostname coverage on networks where the local DNS knows the hosts but the
+	// center's system resolver doesn't. Issue #20.
+	RDNS RDNSConfig `koanf:"rdns"`
+	// MDNS tunes the mDNS probe (active:mdns). UnicastQueries reaches devices
+	// that answer unicast mDNS but not multicast. Issue #20.
+	MDNS MDNSConfig `koanf:"mdns"`
 	// ARPScan is the active ARP-sweep source: it broadcasts ARP who-has requests
 	// for every IP in the local subnet and emits a NewHostEvent for each reply.
 	// Unlike router_arp (needs SNMP) or arp_cache (passive read), this needs no
@@ -263,6 +275,12 @@ type ScannerConfig struct {
 	// expiration pass over agent-managed networks. Go duration string. Default
 	// "60s". Center-only; the agent does not run a sweeper.
 	LeaseSweepInterval string `koanf:"lease_sweep_interval"`
+	// ReconcileInterval is how often the background network-attribution
+	// reconciliation job runs (issue #19 Layer 3). The job detects devices whose
+	// IP falls outside their stamped network's CIDR — the bottom-line defense
+	// that catches drift the Layer 1/2 boundary checks miss. Go duration string.
+	// Default "1h" (it's a low-frequency audit, not a hot path). Center-only.
+	ReconcileInterval string `koanf:"reconcile_interval"`
 }
 
 // RouterARPConfig configures cross-subnet MAC resolution via SNMP ARP walks of
@@ -271,6 +289,24 @@ type RouterARPConfig struct {
 	Routers   []string `koanf:"routers"`
 	Community string   `koanf:"community"`
 	Timeout   int      `koanf:"timeout"` // seconds; default 4
+}
+
+// RDNSConfig tunes the reverse-DNS probe. DNSServers (optional) overrides the
+// system resolver: when set, the rDNS probe queries ONLY these servers (typical
+// use: the LAN's router/DNS that holds DHCP-synthesized PTR records the center's
+// /etc/resolv.conf can't reach). Empty = use the system resolver (current
+// behavior). Each entry is host or host:port (port defaults to 53). Issue #20.
+type RDNSConfig struct {
+	DNSServers []string `koanf:"dns_servers"`
+	// Timeout is the per-lookup deadline in seconds. Default 2.
+	Timeout int `koanf:"timeout"`
+}
+
+// MDNSConfig tunes the mDNS probe. UnicastQueries makes the probe also send a
+// unicast mDNS query to each target's 5353 port (in addition to the multicast
+// query), reaching devices that answer unicast but not multicast. Issue #20.
+type MDNSConfig struct {
+	UnicastQueries bool `koanf:"unicast_queries"`
 }
 
 // ARPScanConfig configures the active ARP-sweep discovery source. Interface is

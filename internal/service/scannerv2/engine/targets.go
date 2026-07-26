@@ -16,6 +16,15 @@ import (
 	"strings"
 )
 
+// ParseScanTargets is the exported form of parseScanTargets, exposed so other
+// packages (notably internal/cidrutil's parity test) can reference the same
+// expansion logic without duplicating it. It is a thin alias; the canonical
+// implementation stays in parseScanTargets so the engine's call sites read
+// naturally.
+func ParseScanTargets(targets string) ([]string, error) {
+	return parseScanTargets(targets)
+}
+
 // parseScanTargets expands a target spec into a list of IP strings.
 // Supported formats (single or comma-separated):
 //   - CIDR: "192.168.1.0/24"

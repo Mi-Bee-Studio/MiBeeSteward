@@ -30,6 +30,7 @@ import (
 	"mibee-steward/internal/api/routes"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/service"
+	scannerv2reconcile "mibee-steward/internal/service/scannerv2/reconcile"
 	"mibee-steward/internal/version"
 )
 
@@ -110,6 +111,23 @@ func main() {
 	if err := runMigrations(db, dbPath); err != nil {
 		slog.Error("failed to run migrations", "error", err)
 		os.Exit(1)
+	}
+
+	// One-time ghost cleanup (issue #19 Layer 4): detect devices whose IP has
+	// drifted outside their stamped network's CIDR, and delete the ones that
+	// are proven duplicates (a canonical copy exists in the correct network, or
+	// the same MAC lives elsewhere). Runs AFTER the pre-migration VACUUM INTO
+	// backup (taken inside runMigrations), so the pre-cleanup state is
+	// recoverable. Idempotent — a steady-state instance finds nothing here.
+	// Skipped for a fresh DB (no networks/devices) since Reconcile returns empty.
+	{
+		cleanupSvc := scannerv2reconcile.New(db, 0, nil, slog.Default())
+		if stats, err := cleanupSvc.CleanupGhosts(context.Background()); err != nil {
+			slog.Warn("startup ghost cleanup failed (continuing)", "error", err)
+		} else if stats.Mismatches > 0 {
+			slog.Info("startup ghost cleanup complete",
+				"mismatches", stats.Mismatches, "rehomed", stats.Rehomed, "unresolved", stats.Unresolved)
+		}
 	}
 
 	// Ensure upload directory exists
@@ -373,6 +391,16 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		return fmt.Errorf("devices generated-columns migration: %w", err)
 	}
 
+	// Extend devices.type CHECK to include 'phone' and 'printer' (new device
+	// types). SQLite can't ALTER a CHECK in place, so on existing DBs we rebuild
+	// the table; fresh installs already get the wider CHECK from schema.sql.
+	// Idempotent: skips the rebuild if 'phone' is already allowed. MUST run after
+	// addDevicesGeneratedColumns (same table) and before applyIdentityIndexMigrations
+	// (which recreates the composite-unique index the rebuild drops).
+	if err := extendDevicesTypeCheck(context.Background(), db); err != nil {
+		return fmt.Errorf("devices type-check migration: %w", err)
+	}
+
 	// Distributed-identity index migration: replace the legacy global-unique
 	// devices(ip_address) index with the (ip_address, network_id) composite +
 	// MAC lookup index. Runs LAST (after the devices rebuild) so the indexes
@@ -424,7 +452,7 @@ func addDevicesGeneratedColumns(ctx context.Context, db *sql.DB) error {
 		`CREATE TABLE devices_new (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
-			type TEXT NOT NULL DEFAULT 'other' CHECK(type IN ('pc', 'embedded', 'iot', 'other', 'server', 'switch', 'router', 'firewall', 'nas', 'camera')),
+			type TEXT NOT NULL DEFAULT 'other' CHECK(type IN ('pc', 'embedded', 'iot', 'other', 'server', 'switch', 'router', 'firewall', 'nas', 'camera', 'phone', 'printer')),
 			brand TEXT NOT NULL DEFAULT '',
 			model TEXT NOT NULL DEFAULT '',
 			location TEXT NOT NULL DEFAULT '',
@@ -507,6 +535,128 @@ func addDevicesGeneratedColumns(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("commit devices rebuild: %w", err)
 	}
 	slog.Info("devices table rebuilt with scan_attributes generated columns")
+	return nil
+}
+
+// extendDevicesTypeCheck widens the devices.type CHECK constraint to include
+// 'phone' and 'printer' (device types added after the original schema). SQLite
+// cannot ALTER a CHECK in place, so on existing DBs the table is rebuilt with
+// the new constraint; fresh installs already get the wider CHECK from
+// schema.sql. The rebuild is shape-identical to the current table (only the
+// CHECK clause differs) — same columns, same generated columns, same indexes
+// (minus the legacy global-unique ip index that applyIdentityIndexMigrations
+// recreates as the composite-unique (ip_address, network_id)).
+//
+// Idempotent: probes whether 'phone' is already accepted by the CHECK (sentinel
+// INSERT + rollback); if so, the rebuild is a no-op. This mirrors the
+// extendScanRunStatusCheck probe pattern.
+func extendDevicesTypeCheck(ctx context.Context, db *sql.DB) error {
+	// Probe: can the current CHECK accept 'phone'? Insert a sentinel row in a
+	// rolled-back transaction; a CHECK violation means the migration is needed.
+	probe, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin type-check probe tx: %w", err)
+	}
+	probeErr := func() error {
+		if _, err := probe.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+			return err
+		}
+		_, err := probe.ExecContext(ctx,
+			`INSERT INTO devices (name, type) VALUES ('__type_probe__', 'phone')`)
+		return err
+	}()
+	_ = probe.Rollback()
+	if probeErr == nil {
+		// CHECK already permits 'phone' — nothing to do.
+		return nil
+	}
+	if !strings.Contains(probeErr.Error(), "CHECK constraint failed") {
+		return fmt.Errorf("probe devices type CHECK: %w", probeErr)
+	}
+
+	slog.Info("rebuilding devices table to widen type CHECK (add phone, printer)")
+
+	// Rebuild preserving the FULL current column set — only the CHECK clause on
+	// `type` differs (now includes 'phone', 'printer'). GENERATED ALWAYS AS
+	// columns are derived on insert, not copied explicitly.
+	stmts := []string{
+		`CREATE TABLE devices_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL DEFAULT 'other' CHECK(type IN ('pc', 'embedded', 'iot', 'other', 'server', 'switch', 'router', 'firewall', 'nas', 'camera', 'phone', 'printer')),
+			brand TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			location TEXT NOT NULL DEFAULT '',
+			purpose TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'unknown' CHECK(status IN ('online', 'offline', 'unknown')),
+			ip_address TEXT NOT NULL DEFAULT '',
+			mac_address TEXT NOT NULL DEFAULT '',
+			serial_number TEXT NOT NULL DEFAULT '',
+			purchase_date TEXT NOT NULL DEFAULT '',
+			warranty_expiry TEXT NOT NULL DEFAULT '',
+			tags TEXT NOT NULL DEFAULT '{}',
+			scan_source TEXT NOT NULL DEFAULT 'manual',
+			prometheus_labels TEXT NOT NULL DEFAULT '{}',
+			last_scanned_at TIMESTAMP,
+			last_scan_task_id INTEGER,
+			open_ports TEXT NOT NULL DEFAULT '[]',
+			detected_services TEXT NOT NULL DEFAULT '[]',
+			prometheus_url TEXT NOT NULL DEFAULT '',
+			node_exporter_url TEXT NOT NULL DEFAULT '',
+			last_scan_rtt_ms INTEGER NOT NULL DEFAULT 0,
+			scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes)),
+			user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes)),
+			scan_vendor   TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.vendor')) STORED,
+			scan_mac      TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.mac')) STORED,
+			scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
+			scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
+			network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+			first_seen TIMESTAMP,
+			last_seen TIMESTAMP,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT INTO devices_new (id, name, type, brand, model, location, purpose, description,
+			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
+			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
+			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
+			scan_attributes, user_attributes, network_id, first_seen, last_seen, created_at, updated_at)
+		SELECT id, name, type, brand, model, location, purpose, description,
+			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
+			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
+			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
+			scan_attributes, user_attributes, network_id, first_seen, last_seen, created_at, updated_at FROM devices`,
+		`DROP TABLE devices`,
+		`ALTER TABLE devices_new RENAME TO devices`,
+		// Recreate the non-identity indexes (the composite-unique ip+network_id
+		// index is recreated by applyIdentityIndexMigrations, which runs after).
+		`CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(type)`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_scan_mac_expr    ON devices(json_extract(scan_attributes, '$.mac'))`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_scan_vendor_expr ON devices(json_extract(scan_attributes, '$.vendor'))`,
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin type-check rebuild tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable FKs for type-check rebuild: %w", err)
+	}
+	for _, s := range stmts {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
+			return fmt.Errorf("type-check rebuild step failed: %w (stmt: %s)", err, s)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("re-enable FKs after type-check rebuild: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit type-check rebuild: %w", err)
+	}
+	slog.Info("devices type CHECK widened (phone, printer added)")
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,8 +16,9 @@ func TestRecordNeighbors_InsertsEdges(t *testing.T) {
 	repo, ctx := newRepo(t, Options{})
 	ip := "10.0.0.50"
 
-	// Create the device first (RecordNeighbors needs it to resolve device_id).
-	require.NoError(t, repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "switch"}))
+	// Seed the device first (RecordDevice no longer creates identities;
+	// RecordNeighbors needs the row to resolve device_id).
+	seedDeviceRow(t, repo.db, ip, "", sql.NullInt64{})
 
 	neighbors := []scannerv2.NeighborSpec{
 		{NeighborMAC: "aa:bb:cc:dd:ee:01", Protocol: "Bridge-MIB", LocalPort: "5"},
@@ -34,7 +36,7 @@ func TestRecordNeighbors_InsertsEdges(t *testing.T) {
 func TestRecordNeighbors_DedupOnConflict(t *testing.T) {
 	repo, ctx := newRepo(t, Options{})
 	ip := "10.0.0.51"
-	repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "switch"})
+	seedDeviceRow(t, repo.db, ip, "", sql.NullInt64{})
 
 	neighbors := []scannerv2.NeighborSpec{
 		{NeighborMAC: "aa:bb:cc:dd:ee:03", Protocol: "Bridge-MIB", LocalPort: "7"},

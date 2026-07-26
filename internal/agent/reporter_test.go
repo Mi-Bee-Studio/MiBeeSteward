@@ -35,7 +35,7 @@ func TestReporter_FlushesToCenter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := agent.NewReporter(srv.URL, "test-token", "agent-x", 20*time.Millisecond, 256, nil)
+	r := agent.NewReporter(srv.URL, "test-token", "agent-x", "", 20*time.Millisecond, 256, nil)
 	r.Start(context.Background())
 	// Feed one alive host via the ReportSink hook.
 	r.Report(context.Background(), 1, []scannerv2.HostReport{
@@ -77,7 +77,7 @@ func TestReporter_RetriesOn5xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := agent.NewReporter(srv.URL, "tok", "a", time.Minute, 1, nil) // maxBuf=1 → immediate flush
+	r := agent.NewReporter(srv.URL, "tok", "a", "", time.Minute, 1, nil) // maxBuf=1 → immediate flush
 	r.Start(context.Background())
 	r.Report(context.Background(), 1, []scannerv2.HostReport{{IP: "1.1.1.1", Alive: true, Device: scannerv2.DeviceRef{IP: "1.1.1.1"}}})
 
@@ -103,7 +103,7 @@ func TestReporter_DoesNotRetryOn4xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := agent.NewReporter(srv.URL, "bad", "a", time.Minute, 1, nil)
+	r := agent.NewReporter(srv.URL, "bad", "a", "", time.Minute, 1, nil)
 	r.Start(context.Background())
 	r.Report(context.Background(), 1, []scannerv2.HostReport{{IP: "2.2.2.2", Alive: true, Device: scannerv2.DeviceRef{IP: "2.2.2.2"}}})
 
@@ -129,7 +129,7 @@ func TestReporter_DisconnectRecovery(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := agent.NewReporter(srv.URL, "tok", "a", time.Minute, 1, nil) // maxBuf=1 → immediate flush
+	r := agent.NewReporter(srv.URL, "tok", "a", "", time.Minute, 1, nil) // maxBuf=1 → immediate flush
 	r.Start(context.Background())
 	// Report while center is down → batch fails + retries exhaust → enqueued to pending.
 	r.Report(context.Background(), 1, []scannerv2.HostReport{{IP: "9.9.9.9", Alive: true, Device: scannerv2.DeviceRef{IP: "9.9.9.9"}}})
@@ -164,7 +164,7 @@ func TestReporter_SendsStateHashHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := agent.NewReporter(srv.URL, "tok", "a", 50*time.Millisecond, 256, nil) // short ticker → reliable flush
+	r := agent.NewReporter(srv.URL, "tok", "a", "", 50*time.Millisecond, 256, nil) // short ticker → reliable flush
 	r.Start(context.Background())
 	hosts := []scannerv2.HostReport{
 		{IP: "10.0.0.5", Alive: true, Device: scannerv2.DeviceRef{IP: "10.0.0.5",
