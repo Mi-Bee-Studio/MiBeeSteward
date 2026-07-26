@@ -72,6 +72,7 @@
 	"devices": {
 		"Device Name": "Device Name",
 		"Type": "Type",
+		"Inferred Type Hint": "Type inferred from hostname only (no protocol evidence) — may be inaccurate. Verify manually.",
 		"Brand": "Brand",
 		"Model": "Model",
 		"Location": "Location",
@@ -148,6 +149,8 @@
 		"View List": "List",
 		"View Topology": "Topology",
 		"Camera": "Camera",
+		"Phone": "Phone",
+		"Printer": "Printer",
 		"Search placeholder": "Search name / IP / MAC…",
 		"Alive": "Alive",
 		"All Networks": "All Networks"

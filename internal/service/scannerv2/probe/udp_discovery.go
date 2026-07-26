@@ -63,6 +63,17 @@ func readUDPMulticastResponses(conn *net.UDPConn, timeout time.Duration) []udpPa
 // mdnsAddr is the mDNS IPv4 multicast group + port.
 var mdnsAddr = &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
 
+// MDNSConfig tunes the mDNS probe. It mirrors config but lives in the probe
+// package to avoid an import cycle.
+type MDNSConfig struct {
+	// UnicastQueries makes the probe ALSO send a unicast mDNS query directly to
+	// each target's 5353 port (in addition to the standard multicast query).
+	// Some devices (certain cameras, embedded stacks) answer unicast mDNS but
+	// don't reliably answer multicast — this reaches them. Default false (multicast
+	// only) for backward compatibility + to avoid extra per-host traffic. Issue #20.
+	UnicastQueries bool
+}
+
 // MDNSProbe sends a multicast DNS query for common service types and listens
 // for unicast responses from devices on the local segment. mDNS is how most
 // cameras/IoT printers/Apple devices publish their name + services without
@@ -73,11 +84,21 @@ var mdnsAddr = &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
 // _http._tcp, _airplay._tcp, _googlecast._tcp). Responses that originate from
 // the target IP yield an "mdns" evidence with the discovered hostname/service.
 //
+// When cfg.UnicastQueries is set, the probe additionally sends each query
+// directly to the target's 5353 port — reaching devices that answer unicast
+// mDNS but not multicast. Issue #20.
+//
 // Name: "active:mdns".
-type MDNSProbe struct{}
+type MDNSProbe struct{ unicast bool }
 
-// NewMDNSProbe returns an mDNS probe.
-func NewMDNSProbe() *MDNSProbe { return &MDNSProbe{} }
+// NewMDNSProbe returns an mDNS probe (multicast-only, backward compatible).
+func NewMDNSProbe() *MDNSProbe { return NewMDNSProbeWithConfig(MDNSConfig{}) }
+
+// NewMDNSProbeWithConfig returns an mDNS probe; when cfg.UnicastQueries is set
+// the probe also sends unicast queries to each target. Issue #20.
+func NewMDNSProbeWithConfig(cfg MDNSConfig) *MDNSProbe {
+	return &MDNSProbe{unicast: cfg.UnicastQueries}
+}
 
 func (p *MDNSProbe) Name() string { return "active:mdns" }
 
@@ -119,6 +140,14 @@ func (p *MDNSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	for _, qname := range mdnsQueryTypes {
 		msg := buildMDNSQuery(qname)
 		_, _ = conn.WriteToUDP(msg, mdnsAddr)
+		// Unicast fallback (issue #20-B): also send the query directly to the
+		// target's 5353 port. Some devices answer unicast mDNS but don't reliably
+		// answer multicast (their multicast responder is off or filtered). The
+		// unicast reply still arrives at our socket and is filtered by source IP
+		// below, so cross-talk stays bounded. Cheap: one extra packet per query.
+		if p.unicast {
+			_, _ = conn.WriteToUDP(msg, &net.UDPAddr{IP: net.ParseIP(ip), Port: 5353})
+		}
 	}
 
 	// Collect responses for the timeout window. CRITICAL: filter to packets

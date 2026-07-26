@@ -242,6 +242,8 @@
 			router: getCSSVar('--color-accent-purple', '#ec4899'),
 			firewall: getCSSVar('--color-error', '#ef4444'),
 			nas: getCSSVar('--color-info', '#14b8a6'),
+			phone: getCSSVar('--color-warning', '#f97316'),
+			printer: getCSSVar('--color-info', '#0ea5e9'),
 			other: getCSSVar('--color-accent-cyan', '#67e8f9'),
 			unknown: getCSSVar('--color-accent-cyan', '#67e8f9')
 		};
@@ -255,6 +257,8 @@
 			router: m["devices.Router"]?.() ?? 'router',
 			firewall: m["devices.Firewall"]?.() ?? 'firewall',
 			nas: m["devices.NAS"]?.() ?? 'nas',
+			phone: m["devices.Phone"]?.() ?? 'phone',
+			printer: m["devices.Printer"]?.() ?? 'printer',
 			other: m["devices.Other"](),
 			unknown: m["devices.Other"]()
 		};

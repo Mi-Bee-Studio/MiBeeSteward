@@ -33,7 +33,9 @@ const (
 	TypeRouter   DeviceType = "router"
 	TypeFirewall DeviceType = "firewall"
 	TypeNAS      DeviceType = "nas"
-	TypeCamera   DeviceType = "camera" // present in schema CHECK + validDeviceTypes; keep aligned
+	TypeCamera   DeviceType = "camera"  // present in schema CHECK + validDeviceTypes; keep aligned
+	TypePhone    DeviceType = "phone"   // present in schema CHECK + validDeviceTypes; keep aligned
+	TypePrinter  DeviceType = "printer" // present in schema CHECK + validDeviceTypes; keep aligned
 )
 
 // Request types

@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
@@ -34,6 +35,7 @@ import (
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
 	scannerv2probe "mibee-steward/internal/service/scannerv2/probe"
+	scannerv2reconcile "mibee-steward/internal/service/scannerv2/reconcile"
 	scannerv2runner "mibee-steward/internal/service/scannerv2/runner"
 	scannerv2scheduler "mibee-steward/internal/service/scannerv2/scheduler"
 	scannerv2task "mibee-steward/internal/service/scannerv2/taskservice"
@@ -236,6 +238,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			Community: routerCommunity(cfg.Scanner),
 			Timeout:   time.Duration(routerTimeout(cfg.Scanner)) * time.Second,
 		},
+		RDNS: scannerv2probe.RDNSConfig{
+			DNSServers: cfg.Scanner.RDNS.DNSServers,
+			Timeout:    time.Duration(rdnsTimeout(cfg.Scanner)) * time.Second,
+		},
+		MDNS: scannerv2probe.MDNSConfig{
+			UnicastQueries: cfg.Scanner.MDNS.UnicastQueries,
+		},
 		HeartbeatInterval: cfg.Heartbeat.DefaultInterval,
 		HeartbeatTimeout:  cfg.Heartbeat.Timeout,
 		NetworkID:         networkID,
@@ -272,6 +281,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	leaseSweepCtx, leaseSweepCancel := context.WithCancel(context.Background())
 	leaseSweeper := scannerv2runner.NewLeaseSweeper(scanRunner, leaseSweepInterval, leaseTTL, slog.Default())
 	leaseSweeper.Start(leaseSweepCtx)
+
+	// Network-attribution reconciliation (issue #19 Layer 3): a slow background
+	// audit that detects devices whose IP has drifted outside their stamped
+	// network's CIDR. This is the bottom-line defense — it catches drift the
+	// Layer 1 (dispatch) + Layer 2 (ingestion) boundary checks miss (e.g. a
+	// network without a cidr, or a future code path that bypasses them).
+	// Detect-and-surface only; correction stays a human decision (Layer 4).
+	// Center-only; stopped in the cleanup closure below before db.Close().
+	reconcileInterval := parseDurationOrDefault(cfg.Scanner.ReconcileInterval, time.Hour)
+	reconcileCtx, reconcileCancel := context.WithCancel(context.Background())
+	reconciler := scannerv2reconcile.New(dbConn, reconcileInterval, prometheus.DefaultRegisterer, slog.Default())
+	reconciler.Start(reconcileCtx)
 
 	// Passive discovery service: a long-running, near-zero-traffic watcher that
 	// spots newly-appeared hosts between scheduled scans by diffing router/local
@@ -443,7 +464,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// tagged with that network so multi-LAN data coexists without collision.
 	// Routed on the top-level mux (separate from /agents/tokens) so the two auth
 	// regimes don't interfere.
-	agentReportHandler := handler.NewAgentReportHandler(scanRunner)
+	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn)
 	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries)
 	r.Route("/api/v1/agents", func(r chi.Router) {
 		r.Use(middleware.RequireAgentToken)
@@ -692,6 +713,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// UPDATE devices + recordDeviceLost (change_log INSERT) and must not
 		// race db.Close().
 		leaseSweepCancel()
+		// Stop the reconciliation job BEFORE the DB close — its scan reads
+		// devices/networks and must not race db.Close().
+		reconcileCancel()
+		reconciler.Stop()
 		// Stop the passive discovery sources + coordinator BEFORE the DB close —
 		// the coordinator's known-host pre-check and the sources' walks hold
 		// open DB/SNMP handles that must not race db.Close().
@@ -754,6 +779,14 @@ func routerTimeout(cfg config.ScannerConfig) int {
 		return cfg.RouterARP.Timeout
 	}
 	return 4
+}
+
+// rdnsTimeout returns the configured rDNS lookup deadline (seconds), default 2.
+func rdnsTimeout(cfg config.ScannerConfig) int {
+	if cfg.RDNS.Timeout > 0 {
+		return cfg.RDNS.Timeout
+	}
+	return 2
 }
 
 // heartbeatDBPathFor derives the heartbeat.db path from the main DB path:

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Device persistence: single-writer funnel + device replacement
+**Architecture fix** — eliminates the dual-write fissure where the `devices` row
+was written by two independent paths (`store.RecordDevice` and
+`runner.applyDeviceBridge`) with inconsistent field semantics. The most visible
+symptom was that a synchronous `POST /scanner/scan` left the row `status=
+'unknown'` (only the store wrote it), while a scheduled scan flipped it to
+`online` (the runner's write). A device-replacement case (router swap) exposed a
+worse failure: the new device's data landed on a stale IP while the live gateway
+row kept showing the dead old device, because the two writers disagreed on
+identity + which fields to overwrite.
+
+- **Single device writer**: `runner.applyDeviceBridge` is now the sole authority
+  for the `devices` row lifecycle (identity creation, display name, `status`,
+  heartbeat seeding, change-detection, device-replacement detection). The sync
+  scan API (`scanner.go` `Scan`) now persists alive hosts through
+  `runner.ApplyReport` — the SAME path async scan tasks use — so a sync scan and
+  a scheduled scan leave identical rows.
+- **`store.RecordDevice` reduced to enrichment-only**: it no longer INSERTs
+  identities, sets `name`/`status`, or detects replacement. It only enriches an
+  already-existing matched row (mac/type/brand/scan_attributes) as a best-effort
+  pre-write inside the orchestrator; it cannot conflict with the runner.
+- **Device replacement detection** (`resolveDeviceIdentity` in
+  `device_bridge.go`): when a scan's MAC matches a device on a different IP and
+  that IP is held by a different-MAC device (router/asset swap), the IP-holder
+  wins, its identity fields are force-overwritten with the new device's, and the
+  prior MAC-matched row is marked offline. The before/after change-detection
+  diff records the old→new identity in `change_log`.
+
 ## [0.3.0] - 2026-07-18
 
 **Full L2 topology + TLS certificate inventory + container images** — v0.3.0

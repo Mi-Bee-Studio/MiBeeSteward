@@ -21,6 +21,26 @@ func newRepo(t *testing.T, opts Options) (*SQLiteRepository, context.Context) {
 	return NewSQLiteRepository(db, opts, nil), context.Background()
 }
 
+// seedDeviceRow inserts a device row directly (bypassing RecordDevice, which no
+// longer creates identities). Used by tests that need a pre-existing row before
+// exercising RecordDevice's enrichment path or RecordHeartbeats/RecordNeighbors.
+// Returns the inserted row id.
+func seedDeviceRow(t *testing.T, db *sql.DB, ip, mac string, networkID sql.NullInt64) int64 {
+	t.Helper()
+	now := time.Now().UTC()
+	res, err := db.Exec(`
+		INSERT INTO devices (name, type, ip_address, mac_address, status, scan_source,
+		                     scan_attributes, network_id, first_seen, last_seen,
+		                     last_scanned_at, created_at, updated_at)
+		VALUES (?, 'other', ?, ?, 'online', 'scanner_v2', '{}', ?, ?, ?, ?, ?, ?)`,
+		ip, ip, mac, networkID, now, now, now, now, now)
+	if err != nil {
+		t.Fatalf("seed device row: %v", err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
 func TestRecordServices_ReplaceOnRescan(t *testing.T) {
 	repo, ctx := newRepo(t, Options{})
 	ip := "10.0.0.1"
@@ -85,7 +105,11 @@ func TestRecordDevice_InsertThenUpdate(t *testing.T) {
 	repo, ctx := newRepo(t, Options{})
 	ip := "10.0.0.3"
 
-	// First scan: no device exists → insert minimal row.
+	// RecordDevice no longer creates identities; seed the row first (the runner
+	// is the identity creator in production).
+	seedDeviceRow(t, repo.db, ip, "", sql.NullInt64{})
+
+	// First RecordDevice: enrich the seeded row with scan data.
 	d := scannerv2.DeviceRef{
 		IP:    ip,
 		Type:  "server",
@@ -97,7 +121,7 @@ func TestRecordDevice_InsertThenUpdate(t *testing.T) {
 		},
 	}
 	if err := repo.RecordDevice(ctx, ip, d); err != nil {
-		t.Fatalf("record device (insert): %v", err)
+		t.Fatalf("record device (enrich): %v", err)
 	}
 	var id int64
 	var scanSource, brand, openPorts, promURL, scanAttrs string
@@ -161,10 +185,8 @@ func TestRecordHeartbeats_InsertAndUpdate(t *testing.T) {
 	})
 	ip := "10.0.0.4"
 
-	// RecordDevice must run first so the IP has a device row.
-	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "other"}); err != nil {
-		t.Fatal(err)
-	}
+	// Seed a device row (RecordDevice no longer creates identities).
+	seedDeviceRow(t, repo.db, ip, "", sql.NullInt64{})
 
 	specs := []scannerv2.HeartbeatSpec{
 		{Method: "tcp", Target: ip + ":22"},
@@ -251,129 +273,51 @@ func TestNormalizeMAC(t *testing.T) {
 	}
 }
 
-// TestRecordDevice_MACPrimaryDedup verifies the MAC-primary identity rule: a
-// device observed at two different IPs with the SAME MAC resolves to a single
-// asset row (roaming / re-DHCP / seen on two LANs). The row's ip stays the
-// first-seen value (updated only when empty) and mac_address is set.
-func TestRecordDevice_MACPrimaryDedup(t *testing.T) {
-	repo, ctx := newRepo(t, Options{NetworkID: 1})
-	mac := "AA:BB:CC:DD:EE:01"
-
-	// First sighting: 192.168.63.10, MAC aa:bb:...
-	d1 := scannerv2.DeviceRef{
-		IP: "192.168.63.10", Type: "camera",
-		Fields: map[string]string{"mac": mac},
-	}
-	if err := repo.RecordDevice(ctx, "192.168.63.10", d1); err != nil {
-		t.Fatalf("record (1): %v", err)
-	}
-
-	// Second sighting: DIFFERENT IP (roamed to 62 subnet), SAME MAC.
-	d2 := scannerv2.DeviceRef{
-		IP: "192.168.62.10", Type: "camera",
-		Fields: map[string]string{"mac": mac},
-	}
-	if err := repo.RecordDevice(ctx, "192.168.62.10", d2); err != nil {
-		t.Fatalf("record (2): %v", err)
-	}
-
-	// Exactly ONE device row — MAC matched globally, not inserted twice.
-	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices WHERE mac_address=?`, NormalizeMAC(mac)); cnt != 1 {
-		t.Fatalf("expected 1 row for roaming MAC, got %d", cnt)
-	}
-}
-
-// TestRecordDevice_NetworkPartitioning verifies the no-MAC fallback identity:
-// (ip, network_id). The same IP on two different networks is two distinct
-// devices; the same IP + same network updates the existing row.
-func TestRecordDevice_NetworkPartitioning(t *testing.T) {
-	repo, ctx := newRepo(t, Options{NetworkID: 1}) // LAN-A (network 1)
-	ip := "10.0.0.1"
-
-	// LAN-A sees 10.0.0.1 (no MAC).
-	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "router"}); err != nil {
-		t.Fatalf("record lanA: %v", err)
-	}
-
-	// Simulate LAN-B (network 2) on the SAME underlying DB: a second repo with
-	// NetworkID=2. Same IP, no MAC → must be a separate row.
-	repoB := NewSQLiteRepository(repo.db, Options{NetworkID: 2}, nil)
-	if err := repoB.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "router"}); err != nil {
-		t.Fatalf("record lanB: %v", err)
-	}
-
-	// Two rows: one per (ip, network).
-	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices WHERE ip_address=?`, ip); cnt != 2 {
-		t.Fatalf("expected 2 partitioned rows for same IP different network, got %d", cnt)
-	}
-
-	// LAN-A re-scans the same IP + same network → UPDATE, not insert (still 2 rows).
-	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "router", Brand: "Mikrotik"}); err != nil {
-		t.Fatalf("record lanA rescan: %v", err)
-	}
-	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices WHERE ip_address=?`, ip); cnt != 2 {
-		t.Fatalf("expected 2 rows after same-network rescan (update, not insert), got %d", cnt)
-	}
-	// The LAN-A row got the brand enrichment.
-	var brand string
-	if err := repo.db.QueryRow(`SELECT brand FROM devices WHERE ip_address=? AND network_id=1`, ip).Scan(&brand); err != nil {
-		t.Fatal(err)
-	}
-	if brand != "Mikrotik" {
-		t.Errorf("LAN-A row brand = %q, want Mikrotik", brand)
-	}
-}
-
-// TestRecordDevice_LegacyNullNetwork verifies the single-instance default path:
-// networkID=0 (NULL) → devices match by (ip, network_id IS NULL). A rescan of
-// the same IP updates the existing row rather than creating duplicates.
-func TestRecordDevice_LegacyNullNetwork(t *testing.T) {
-	repo, ctx := newRepo(t, Options{NetworkID: 0}) // unresolved → NULL
-	ip := "192.168.1.50"
-
-	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "nas"}); err != nil {
-		t.Fatalf("record (1): %v", err)
-	}
-	// Rescan same IP → update, still one row.
-	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "nas", Brand: "Synology"}); err != nil {
-		t.Fatalf("record (2): %v", err)
-	}
-	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices WHERE ip_address=? AND network_id IS NULL`, ip); cnt != 1 {
-		t.Fatalf("expected 1 legacy NULL-network row after rescan, got %d", cnt)
-	}
-}
-
-// TestRecordDevice_MACFillsOnRescan verifies that a device first seen WITHOUT a
-// MAC (matched by ip+network) gets its mac_address filled on a later scan that
-// resolves the MAC (e.g. after an ARP walk), and subsequent scans then key off
-// the MAC globally.
-func TestRecordDevice_MACFillsOnRescan(t *testing.T) {
+// TestRecordDevice_DoesNotCreateIdentity verifies the single-writer contract:
+// RecordDevice ENRICHES existing rows but never CREATES a device identity (no
+// INSERT). Device creation is the sole responsibility of runner.applyDeviceBridge.
+// This is what eliminates the dual-write fissure — there is only one identity
+// creator, so identity rules (MAC-primary, replacement) live in exactly one place.
+//
+// The MAC-primary-dedup, network-partitioning, MAC-fills-on-rescan, and
+// device-replacement semantics these tests previously asserted at the store
+// layer are now covered by runner/device_bridge_test.go (the single writer).
+func TestRecordDevice_DoesNotCreateIdentity(t *testing.T) {
 	repo, ctx := newRepo(t, Options{NetworkID: 1})
 	ip := "192.168.63.20"
+	mac := "aa:bb:cc:dd:ee:02"
 
-	// First scan: no MAC → row created, mac_address empty.
-	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{IP: ip, Type: "embedded"}); err != nil {
-		t.Fatalf("record (1): %v", err)
-	}
-	var mac string
-	if err := repo.db.QueryRow(`SELECT mac_address FROM devices WHERE ip_address=?`, ip).Scan(&mac); err != nil {
-		t.Fatal(err)
-	}
-	if mac != "" {
-		t.Fatalf("expected empty mac after first scan, got %q", mac)
-	}
-
-	// Second scan: MAC resolved → existing row updated, mac_address filled.
+	// No device row exists yet → RecordDevice is a no-op (must NOT insert).
 	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{
-		IP: ip, Type: "embedded",
-		Fields: map[string]string{"mac": "AA-BB-CC-DD-EE-02"},
+		IP: ip, Type: "embedded", Brand: "Synology",
+		Fields: map[string]string{"mac": mac},
 	}); err != nil {
-		t.Fatalf("record (2): %v", err)
+		t.Fatalf("record device on empty db: %v", err)
 	}
-	if err := repo.db.QueryRow(`SELECT mac_address FROM devices WHERE ip_address=?`, ip).Scan(&mac); err != nil {
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices`); cnt != 0 {
+		t.Fatalf("RecordDevice created a row (%d) — it must NOT create identities", cnt)
+	}
+
+	// Now seed a row (as the runner would) and confirm RecordDevice enriches it.
+	seedDeviceRow(t, repo.db, ip, "", sql.NullInt64{Int64: 1, Valid: true})
+	if err := repo.RecordDevice(ctx, ip, scannerv2.DeviceRef{
+		IP: ip, Type: "nas", Brand: "Synology",
+		Fields: map[string]string{"mac": mac},
+	}); err != nil {
+		t.Fatalf("record device (enrich): %v", err)
+	}
+	// Still exactly one row (enriched, not duplicated).
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices WHERE ip_address=?`, ip); cnt != 1 {
+		t.Fatalf("expected 1 row after enrich, got %d", cnt)
+	}
+	var brand, devMAC string
+	if err := repo.db.QueryRow(`SELECT brand, mac_address FROM devices WHERE ip_address=?`, ip).Scan(&brand, &devMAC); err != nil {
 		t.Fatal(err)
 	}
-	if mac != "aa:bb:cc:dd:ee:02" {
-		t.Errorf("mac_address not filled/normalized: got %q", mac)
+	if brand != "Synology" {
+		t.Errorf("brand not enriched: %q", brand)
+	}
+	if devMAC != mac {
+		t.Errorf("mac not enriched: %q", devMAC)
 	}
 }

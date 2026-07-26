@@ -120,6 +120,8 @@ var validDeviceTypes = map[string]bool{
 	"firewall": true,
 	"nas":      true,
 	"camera":   true,
+	"phone":    true,
+	"printer":  true,
 }
 
 // ValidateDeviceType returns a valid device type, defaulting to "other".

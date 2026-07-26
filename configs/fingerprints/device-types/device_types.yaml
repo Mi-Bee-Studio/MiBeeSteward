@@ -1,0 +1,163 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+#
+# Device-type inference data table — hostname / brand / os / port-shape →
+# device type. This is the DATA half of heuristicDeviceType (device_bridge.go);
+# the Go side is a generic, write-once priority-matching engine that consumes
+# this file. Adding a new device signature = adding a keyword here, NOT editing
+# Go code. Mirrors the data-driven pattern of configs/fingerprints/snmp-data.yaml.
+#
+# This file lives in a SUBDIRECTORY of configs/fingerprints/ so the fingerprint
+# RuleClassifier's LoadFromDir (which scans the top-level *.yaml non-recursively
+# and would choke on this different schema) safely ignores it. A Makefile
+# `sync-device-types` target copies it into internal/service/scannerv2/runner/
+# at build time for //go:embed (Go embed cannot reach outside the package dir).
+#
+# `source` field: the confidence classification for UI display.
+#   "heuristic" — keyword/hostname-based; spoofable (any DHCP client can rename).
+#                 The UI marks these with a "?" badge so users know to verify.
+#   All rules here are heuristic by nature (they key off hostnames/ports, which
+#   are guesses, not cryptographic identity). The "protocol" confidence label is
+#   applied in Go code (device_bridge.go) when a service handler — not this table
+#   — set the type from real protocol evidence (SNMP sysObjectID, RTSP/ONVIF
+#   banner, mDNS service type).
+#
+# Evaluation order (first match wins, mirroring the old switch semantics):
+#   1. rules      — host/brand keyword match (host before brand; the `field`
+#                   selects which). PC/NAS rules run BEFORE camera/phone so a
+#                   laptop named "redmi-notebook" wins pc over a phone keyword
+#                   "redmi-". Order WITHIN this list is the priority.
+#   2. os_rules   — os_type label (from SSH/SNMP banner) when no host/brand hit.
+#   3. port_rules — service/port-shape fallback (cross-subnet common case).
+# All matching is case-insensitive (the engine lowercases inputs).
+
+version: 1
+
+# ── 1. hostname / brand keyword → type (ordered, first-match) ───────────
+# field: "host" matches the rDNS hostname (node_hostname/sys_name);
+#        "brand" matches inferred_brand (HTTP Server header / SNMP / cert CN);
+#        "hint" matches the composite host+" "+brand+" "+os (broadest).
+# Order matters: put more-specific / higher-priority types FIRST.
+rules:
+  # ── 嵌入式 SBC / 单板机 (Raspberry Pi, NanoPi, OrangePi, Jetson) ──
+  - type: embedded
+    field: host
+    source: heuristic
+    keywords: [rasp, rpi, nanopi, bananapi, orangepi, rockpi, radxa, pine64, jetson]
+
+  # ── IoT 芯片 / 智能家居平台 ──
+  - type: iot
+    field: hint
+    source: heuristic
+    keywords: [espressif, tuya, lumi-gateway, shelly, sonoff, tasmota, gledopto,
+               ikea, esp32, esp8266]
+
+  # ── 小米 IoT 家电生态 (viomi/zhimi/chunmi/mijia/midjd7/XiaoAi) ──
+  # 小米生态链设备的 mDNS/rDNS hostname 带厂商前缀,是强 IoT 信号。
+  - type: iot
+    field: host
+    source: heuristic
+    keywords: [viomi-, zhimi-, chunmi-, mijia-, midjd7, xiaoaitongxue, xiaoai,
+               xiaomi-aircondition, xiaomi-gateway, mi-appliance, mibt, miap]
+
+  # ── PC / 笔记本 ──
+  # MUST come before phone/camera: a laptop named "redmi-notebook" contains
+  # both "notebook" (pc) and "redmi-" (phone); pc wins by rule order.
+  - type: pc
+    field: host
+    source: heuristic
+    keywords: [notebook, laptop, thinkpad, macbook, ideapad, -pc, precision,
+               elitebook, latitude, xps, surface, popos]
+
+  # ── NAS (Synology/QNAP/极空间 Z4S/绿联 UGREEN/MiniDLNA) ──
+  # MUST come before camera: consumer NAS stream media over RTSP (极影视/Video
+  # Station/MiniDLNA) and would otherwise be mis-typed camera from rtsp:554.
+  # NOTE: bare "ds-" is NOT used — it collides with the Hikvision DS-2CD camera
+  # series (matched below as "ds-2"). Synology uses "diskstation"/"synology".
+  - type: nas
+    field: host
+    source: heuristic
+    keywords: [nas, synology, diskstation, qnap, ts-, terramaster, readynas,
+               asustor, zspace, z4s, z2c, z6, ugreen, dxp]
+  - type: nas
+    field: brand
+    source: heuristic
+    keywords: [synology, qnap, asustor, minidlna, readymedia, zspace, ugreen]
+
+  # ── 摄像头 (Hikvision DS-2CD/Dahua/IPC/chuangmi) ──
+  # "ds-2" (not bare "ds-") is the Hikvision DS-2CD series. "chuangmi" covers
+  # the Xiaomi chuangmi_camera_* IP cameras.
+  - type: camera
+    field: host
+    source: heuristic
+    keywords: [ipc, -cam, cam-, camera, hik, hikvision, dahua, dvr, nvr, ds-2,
+               ipcam, chuangmi]
+  - type: camera
+    field: brand
+    source: heuristic
+    keywords: [hikvision, dahua, axis, reolink, foscam, vivotek]
+
+  # ── 打印机 ──
+  - type: printer
+    field: host
+    source: heuristic
+    keywords: [printer, hp-, canon-, epson-, brother-, ricoh-, xerox-]
+  - type: printer
+    field: brand
+    source: heuristic
+    keywords: [epson, canon, brother, ricoh]
+
+  # ── 路由器 / AP (NanoPi R2S/R4S/R6S/R68S/OpenWrt/MiWiFi/TP-Link) ──
+  - type: router
+    field: host
+    source: heuristic
+    keywords: [router, gateway, openwrt, padavan, asuswrt, routeros, mikrotik,
+               r2s, r4s, r6s, r68s, nanopi-r, miwifi, xiaomi-router, tplink,
+               tp-link, ap-, -ap, ac68, ac88, ax1800, ax3000, ax6000, k2p,
+               unifi, edgeos]
+  - type: router
+    field: brand
+    source: heuristic
+    keywords: [mikrotik, ubiquiti, tp-link, tplink, xdr]
+
+  # ── 手机 (Mi-10/Redmi-15R/华为 -AL00 型号码/MickeyPhone) ──
+  # MUST come after pc (notebook beats redmi-15). Phone model codes: Huawei
+  # uses "-AL00"/"-AL10" suffixes; Redmi phones are "redmi-15r-5g". The generic
+  # "phone" keyword catches MickeyPhone etc. Note redmi-notebook (a laptop) is
+  # NOT matched here because the pc rule's "notebook" already won it above.
+  - type: phone
+    field: host
+    source: heuristic
+    keywords: [phone, mi-10, redmi-15, -al00, -al10, -an00, 2109119bc,
+               honor-, oneplus, galaxy, pixel-, iphone]
+
+# ── 2. os_type label → type (ordered, when no host/brand rule matched) ──
+# SSH banners yield the distro NAME (e.g. "Ubuntu"), SNMP yields "Windows"/
+# "Android". Run after host/brand so a hostname signal wins over a bare OS.
+os_rules:
+  - { keywords: [windows],                       type: pc,    source: heuristic }
+  - { keywords: [ubuntu, debian, macos, darwin], type: pc,    source: heuristic }
+  - { keywords: [android],                       type: phone, source: heuristic }
+  - { keywords: [linux, freebsd],                type: server, source: heuristic }
+
+# ── 3. port-shape fallback (ordered, when no host/brand/os signal) ─────
+# Cross-subnet scans often yield only ICMP + rDNS + surviving TCP ports
+# (ARP/mDNS/SSDP fail). Infer from the port set.
+#   service:        matched against classified service name (ssh/smb/rtsp/...)
+#   port:           a single port number (banner may have timed out, leaving
+#                   the port open but the service unclassified)
+#   port_any:       any of these ports open
+#   require:        additional service names that MUST also be present (AND)
+#   exclude_ports:  ports that must NOT be open (e.g. ssh-only ⇒ server)
+port_rules:
+  - { service: smb,   type: nas,    source: heuristic }
+  - { service: rtsp,  type: camera, source: heuristic }
+  - { service: onvif, type: camera, source: heuristic }
+  - { service: camera, type: camera, source: heuristic }
+  - { service: ssh, require: [node_exporter, prometheus], type: server, source: heuristic }
+  # port-number fallback (service may be unclassified when banner timed out)
+  - { port: 445,                  type: nas,    source: heuristic }
+  - { port_any: [554, 8554, 3702], type: camera, source: heuristic }
+  - { port: 9100,                 type: printer, source: heuristic }
+  - { port: 22, exclude_ports: [80, 443], type: server, source: heuristic }

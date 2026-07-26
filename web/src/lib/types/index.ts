@@ -33,6 +33,8 @@ export type DeviceType =
 	| 'firewall'
 	| 'nas'
 	| 'camera'
+	| 'phone'
+	| 'printer'
 	| 'other';
 export type UserRole = 'admin' | 'user';
 export type ProbeMethod = 'ICMP' | 'TCP' | 'HTTP' | 'SNMP';
@@ -143,6 +145,7 @@ export interface ScanAttributes {
 	scan_source?: string;
 	last_scanned_at?: string;
 	inferred_type?: string;
+	inferred_type_source?: string; // 'protocol' (trustworthy) | 'heuristic' (hostname guess, spoofable) | ''
 	inferred_description?: string;
 	snmp?: SNMPDiscovery;
 	open_ports?: OpenPortEntry[];

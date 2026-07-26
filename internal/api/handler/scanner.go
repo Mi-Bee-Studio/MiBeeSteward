@@ -40,9 +40,12 @@ func NewScannerHandler(eng *engine.Engine, rn *runner.Runner) *ScannerHandler {
 
 // Scan handles POST /api/v1/scanner/scan.
 // Runs the v2 engine synchronously over the requested targets and returns the
-// per-host results (with v2-inferred type/brand/services). The synchronous scan
-// does not persist; cron-driven scans (task scheduler) and manual device
-// additions (AddDevices) go through the persistence path.
+// per-host results (with v2-inferred type/brand/services). Alive hosts are
+// persisted through the runner's device bridge — the SAME single writer the
+// async scan-task path uses — so a sync scan and a scheduled scan leave
+// identical device rows (status online, change-detection recorded, device
+// replacement honored). This is what makes the runner the sole authority over
+// the devices table; the store's in-pipeline RecordDevice only pre-enriches.
 func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	var req domain.ScanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -112,6 +115,15 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	for _, rep := range reports {
 		if rep.Alive {
 			aliveCount++
+			// Persist through the single device-bridge writer (same path as the
+			// async scan tasks): create/update the devices row, seed heartbeats,
+			// record change-detection events, honor device replacement. The store
+			// has already pre-enriched the row inside ScanTargets; this is the
+			// authoritative write. Errors are logged by the runner and never
+			// affect the HTTP response (the scan itself succeeded).
+			if h.runner != nil {
+				_, _, _ = h.runner.ApplyReport(r.Context(), rep, h.runner.NetworkID(), "")
+			}
 		}
 		hosts = append(hosts, reportToHost(rep))
 	}

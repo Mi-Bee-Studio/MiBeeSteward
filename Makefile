@@ -3,32 +3,32 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan clean test dev migrate-up sync-fingerprints fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan clean test dev migrate-up sync-fingerprints sync-device-types fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
 build-frontend:
 	cd web && npm run build
 
-build-server:
+build-server: sync-device-types
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
 
 # Discovery agent (distributed mode): lightweight scan + report binary. No
 # frontend, no SPA — just the scannerv2 engine + upstream reporter.
-build-agent:
+build-agent: sync-device-types
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent ./cmd/agent/
 
 build: build-frontend build-server
 
-build-all: build-frontend
+build-all: build-frontend sync-device-types
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/server/
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/server/
 
-build-linux-amd64:
+build-linux-amd64: sync-device-types
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/server/
 
-build-linux-arm64:
+build-linux-arm64: sync-device-types
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/server/
 
 # Build with the eBPF passive observer enabled. Requires clang/llvm/bpftool
@@ -72,6 +72,19 @@ sync-fingerprints:
 	@mkdir -p internal/service/scannerv2/classify/fingerprint-assets
 	@cp -v configs/fingerprints/*.yaml internal/service/scannerv2/classify/fingerprint-assets/
 	@echo "fingerprints synced to embed dir"
+
+# sync-device-types copies the device-type inference table (the DATA half of
+# heuristicDeviceType) from its source-of-truth location under
+# configs/fingerprints/device-types/ into the runner package dir, where it is
+# picked up by //go:embed (Go embed cannot reference files outside the package
+# dir, so a build-time copy is required). The source lives in a SUBDIRECTORY of
+# configs/fingerprints/ so the fingerprint RuleClassifier's LoadFromDir (which
+# scans top-level *.yaml and would reject this different schema) ignores it.
+# All build-* targets depend on this. Run `make build` (not raw `go build`) so
+# the sync happens; a stale copy under runner/ will silently use old keywords.
+sync-device-types:
+	@cp -v configs/fingerprints/device-types/device_types.yaml internal/service/scannerv2/runner/device_types.yaml
+	@echo "device_types.yaml synced to runner embed dir"
 
 # fpimport converts third-party fingerprint databases into the MiBee rule format.
 # See cmd/fpimport/ and docs/fingerprint-spec.md for supported sources.

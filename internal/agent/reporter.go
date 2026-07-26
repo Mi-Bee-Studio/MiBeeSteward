@@ -47,11 +47,12 @@ import (
 // if it overflows (extreme outage — the center's change-detection reconciles
 // state across scans, so data loss here degrades to "stale" not "corrupt").
 type Reporter struct {
-	centerURL string // base URL, e.g. "http://192.168.63.101:8080"
-	authToken string // agent bearer token (minted on the center)
-	agentID   string // advisory label echoed in the report body
-	client    *http.Client
-	logger    *slog.Logger
+	centerURL   string // base URL, e.g. "http://192.168.63.101:8080"
+	authToken   string // agent bearer token (minted on the center)
+	agentID     string // advisory label echoed in the report body
+	networkCIDR string // this agent's configured cidr, shipped so the center can backfill networks.cidr (issue #19 前置工作)
+	client      *http.Client
+	logger      *slog.Logger
 
 	mu         sync.Mutex
 	buf        []domain.ReportedHost // buffered hosts awaiting the next flush
@@ -65,10 +66,12 @@ type Reporter struct {
 }
 
 // NewReporter constructs a Reporter. centerURL is the center base URL,
-// authToken the agent's bearer token, agentID the advisory label, flush the
-// max interval between flushes (≤0 → 30s), maxBuf the buffer size that triggers
-// an early flush (≤0 → 256).
-func NewReporter(centerURL, authToken, agentID string, flush time.Duration, maxBuf int, logger *slog.Logger) *Reporter {
+// authToken the agent's bearer token, agentID the advisory label, networkCIDR
+// this agent's configured cidr (shipped in every report so the center can
+// backfill networks.cidr — issue #19 前置工作), flush the max interval between
+// flushes (≤0 → 30s), maxBuf the buffer size that triggers an early flush (≤0 →
+// 256).
+func NewReporter(centerURL, authToken, agentID, networkCIDR string, flush time.Duration, maxBuf int, logger *slog.Logger) *Reporter {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -79,14 +82,15 @@ func NewReporter(centerURL, authToken, agentID string, flush time.Duration, maxB
 		maxBuf = 256
 	}
 	return &Reporter{
-		centerURL:  centerURL,
-		authToken:  authToken,
-		agentID:    agentID,
-		client:     newCenterClient(30 * time.Second),
-		logger:     logger,
-		flush:      flush,
-		maxBuf:     maxBuf,
-		maxPending: 100, // bounded: ~100 scans of backlog before oldest is dropped
+		centerURL:   centerURL,
+		authToken:   authToken,
+		agentID:     agentID,
+		networkCIDR: networkCIDR,
+		client:      newCenterClient(30 * time.Second),
+		logger:      logger,
+		flush:       flush,
+		maxBuf:      maxBuf,
+		maxPending:  100, // bounded: ~100 scans of backlog before oldest is dropped
 	}
 }
 
@@ -169,9 +173,10 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 	r.mu.Unlock()
 
 	payload := domain.AgentReport{
-		AgentID:   r.agentID,
-		ScannedAt: time.Now().UTC(),
-		Hosts:     hosts,
+		AgentID:     r.agentID,
+		NetworkCIDR: r.networkCIDR,
+		ScannedAt:   time.Now().UTC(),
+		Hosts:       hosts,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -314,6 +319,7 @@ func hostToReported(rep scannerv2.HostReport) domain.ReportedHost {
 		RTTMs:               rep.RTTMs,
 		MAC:                 f["mac"],
 		InferredType:        f["inferred_type"],
+		InferredTypeSource:  f["inferred_type_source"],
 		InferredBrand:       f["inferred_brand"],
 		InferredDescription: f["inferred_description"],
 		InferredLocation:    f["inferred_location"],
