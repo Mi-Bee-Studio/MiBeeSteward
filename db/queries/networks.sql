@@ -17,6 +17,18 @@ SELECT id, name, cidr, site, agent_id, metadata, created_at, updated_at
 FROM networks
 WHERE id = ?;
 
+-- name: GetNetworkByAgentID :one
+-- Resolve the network a discovering agent is bound to (via networks.agent_id).
+-- Used by the agent-command dispatch path to enforce the boundary invariant
+-- (issue #19): before enqueueing a scan command we check the requested targets
+-- fall inside THIS agent's network. An agent_id maps to at most one network
+-- because SetNetworkAgentID is 1:1 (a token is bound to one network, and the
+-- token's network gets stamped here on mint).
+SELECT id, name, cidr, site, agent_id, metadata, created_at, updated_at
+FROM networks
+WHERE agent_id = ?
+LIMIT 1;
+
 -- name: ListNetworks :many
 SELECT id, name, cidr, site, agent_id, metadata, created_at, updated_at
 FROM networks

@@ -101,6 +101,15 @@ type Config struct {
 	// ARP tables (ipNetToMediaPhysAddress). Empty routers → cross-subnet MAC is
 	// disabled and the scanner falls back to /proc/net/arp (local subnet only).
 	RouterARP probe.RouterARPConfig
+	// RDNS configures the reverse-DNS probe. DNSServers overrides the system
+	// resolver so the probe can reach a LAN DNS that holds DHCP-PTR records the
+	// center's /etc/resolv.conf can't. Issue #20.
+	RDNS probe.RDNSConfig
+	// MDNS configures the mDNS probe. UnicastQueries makes the probe also send
+	// a unicast mDNS query to each target's 5353 port (in addition to the
+	// multicast query), reaching devices that answer unicast but not multicast.
+	// Issue #20.
+	MDNS probe.MDNSConfig
 	// HeartbeatInterval/Timeout are the defaults applied to generated configs.
 	HeartbeatInterval int
 	HeartbeatTimeout  int
@@ -141,7 +150,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	}
 
 	// ① Probes: active set + optional passive eBPF observer.
-	for _, p := range probe.DefaultProbeSources(cfg.PortSpec, oui) {
+	for _, p := range probe.DefaultProbeSources(cfg.PortSpec, oui, cfg.RDNS, cfg.MDNS) {
 		reg.RegisterProbe(p)
 	}
 	observer := ebpf.New(cfg.EBPF)

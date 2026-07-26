@@ -665,6 +665,8 @@ interface Stats {
 		firewall: m['devices.Firewall'](),
 		nas: m['devices.NAS'](),
 		camera: m['devices.Camera'](),
+		phone: m['devices.Phone'](),
+		printer: m['devices.Printer'](),
 		other: m['devices.Other']()
 	};
 
@@ -793,7 +795,19 @@ interface Stats {
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const t = String(row.type ?? 'other');
-				return typeLabel[t] || typeLabel['other']!;
+				const label = typeLabel[t] || typeLabel['other']!;
+				// A device's type is only as trustworthy as its evidence. Types
+				// derived from protocol evidence (SNMP sysObjectID, RTSP/ONVIF,
+				// mDNS) are authoritative; types inferred from a hostname keyword
+				// (device_types.yaml) are guesses that any DHCP client could
+				// spoof. Mark heuristic-confidence types with a dimmed "?" so the
+				// user can tell which classifications to trust. scan_attributes
+				// rides in row.scan_attributes; legacy rows have no source key.
+				const sa = row.scan_attributes as { inferred_type_source?: string } | undefined;
+				if (sa?.inferred_type_source === 'heuristic') {
+					return `<span class="text-muted" title="${m['devices.Inferred Type Hint']()}">${escapeHtml(label)}<span class="ml-0.5 text-muted/60">?</span></span>`;
+				}
+				return escapeHtml(label);
 			}
 		},
 		{
@@ -951,9 +965,11 @@ interface Stats {
 			<option value="switch">{m['devices.Switch']()}</option>
 			<option value="router">{m['devices.Router']()}</option>
 			<option value="firewall">{m['devices.Firewall']()}</option>
-			<option value="nas">{m['devices.NAS']()}</option>
-			<option value="camera">{m['devices.Camera']()}</option>
-			<option value="other">{m['devices.Other']()}</option>
+		<option value="nas">{m['devices.NAS']()}</option>
+		<option value="camera">{m['devices.Camera']()}</option>
+		<option value="phone">{m['devices.Phone']()}</option>
+		<option value="printer">{m['devices.Printer']()}</option>
+		<option value="other">{m['devices.Other']()}</option>
 		</select>
 		{#if networks.length > 0}
 			<select
@@ -1207,6 +1223,14 @@ interface Stats {
 				<option value="pc">{m['devices.PC']()}</option>
 				<option value="embedded">{m['devices.Embedded']()}</option>
 				<option value="iot">{m['devices.IoT']()}</option>
+				<option value="server">{m['devices.Server']()}</option>
+				<option value="switch">{m['devices.Switch']()}</option>
+				<option value="router">{m['devices.Router']()}</option>
+				<option value="firewall">{m['devices.Firewall']()}</option>
+				<option value="nas">{m['devices.NAS']()}</option>
+				<option value="camera">{m['devices.Camera']()}</option>
+				<option value="phone">{m['devices.Phone']()}</option>
+				<option value="printer">{m['devices.Printer']()}</option>
 				<option value="other">{m['devices.Other']()}</option>
 			</select>
 			{#if fieldErrors.type}

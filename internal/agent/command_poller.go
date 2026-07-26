@@ -13,10 +13,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"time"
+
+	"mibee-steward/internal/cidrutil"
 )
 
 // CommandPoller periodically fetches pending commands from the center and
@@ -35,6 +40,15 @@ type CommandPoller struct {
 	pollEvery time.Duration
 	logger    *slog.Logger
 
+	// networkCIDR is this agent's own configured network (cfg.Network.CIDR), used
+	// for the agent-side boundary check (issue #19 Layer 2-agent). When non-nil,
+	// a scan command whose targets fall outside it is rejected before execution
+	// (complete = failed) — a friendly early failure that saves a wasted cross-
+	// subnet scan and the bogus host data it would produce. nil (empty/invalid
+	// config) → degrade-open: the center's Layer 2 check is the authoritative
+	// backstop, so the agent skipping its own check doesn't weaken the system.
+	networkCIDR *net.IPNet
+
 	// runScan executes a "scan" command's payload (targets/timeout) and returns
 	// a result summary or error. Injected by cmd/agent so the poller doesn't
 	// depend on the runner package (avoids an import cycle: runner → store, and
@@ -47,21 +61,31 @@ type CommandPoller struct {
 
 // NewCommandPoller constructs the poller. runScan is the scan-execution callback
 // (the agent wires its scanRunner.Run into this). pollEvery ≤0 → 60s.
-func NewCommandPoller(centerURL, authToken string, pollEvery time.Duration, runScan func(context.Context, string, int) (string, error), logger *slog.Logger) *CommandPoller {
+// networkCIDR is this agent's own network (cfg.Network.CIDR); empty/invalid
+// disables the agent-side boundary check (degrade-open).
+func NewCommandPoller(centerURL, authToken string, pollEvery time.Duration, networkCIDR string, runScan func(context.Context, string, int) (string, error), logger *slog.Logger) *CommandPoller {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if pollEvery <= 0 {
 		pollEvery = 60 * time.Second
 	}
+	var parsed *net.IPNet
+	if ipNet, err := cidrutil.ParseNetwork(networkCIDR); err == nil && ipNet != nil {
+		parsed = ipNet
+	} else if err != nil && !errors.Is(err, cidrutil.ErrEmptyCIDR) {
+		logger.Warn("agent command poller: invalid network cidr in config; boundary check disabled",
+			"cidr", networkCIDR, "error", err)
+	}
 	return &CommandPoller{
-		centerURL: centerURL,
-		authToken: authToken,
-		client:    newCenterClient(15 * time.Second),
-		pollEvery: pollEvery,
-		runScan:   runScan,
-		logger:    logger,
-		done:      make(chan struct{}),
+		centerURL:   centerURL,
+		authToken:   authToken,
+		client:      newCenterClient(15 * time.Second),
+		pollEvery:   pollEvery,
+		networkCIDR: parsed,
+		runScan:     runScan,
+		logger:      logger,
+		done:        make(chan struct{}),
 	}
 }
 
@@ -177,6 +201,33 @@ func (p *CommandPoller) execute(ctx context.Context, cmd pendingCommand) {
 			result = `{"error":"missing targets"}`
 			status = "failed"
 			break
+		}
+		// Agent-side boundary check (issue #19 Layer 2-agent): refuse to scan
+		// targets outside this agent's own network. This is the friendly mirror
+		// of the center's Layer 1 (dispatch) + Layer 2 (ingestion) checks — it
+		// fails the command HERE rather than burning a cross-subnet scan whose
+		// results the center would just drop. Degraded to a no-op (scan proceeds)
+		// when no CIDR is configured, since the center's check still authorizes.
+		if p.networkCIDR != nil {
+			in, out, perr := cidrutil.PartitionTargets(sp.Targets, p.networkCIDR)
+			if perr != nil {
+				result = fmt.Sprintf(`{"error":"invalid targets: %s"}`, perr.Error())
+				status = "failed"
+				break
+			}
+			if len(out) > 0 {
+				sample := out
+				const maxSample = 8
+				if len(sample) > maxSample {
+					sample = append(append([]string{}, out[:maxSample]...), "...")
+				}
+				p.logger.Warn("agent command poller: rejected out-of-network scan command",
+					"id", cmd.ID, "in", len(in), "out", len(out), "sample", sample)
+				result = fmt.Sprintf(`{"error":"targets outside agent network: %s (%d of %d IPs out of network)"}`,
+					strings.Join(sample, ","), len(out), len(in)+len(out))
+				status = "failed"
+				break
+			}
 		}
 		// Bound the scan with a hard deadline so a stuck probe (e.g. an HTTP
 		// read that hangs on an unresponsive host) can't block the execute

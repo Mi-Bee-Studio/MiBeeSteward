@@ -29,6 +29,13 @@ type AgentReport struct {
 	// NetworkName is the human network name (e.g. "lan-62"). Advisory — the
 	// center resolves network_id from the agent's token, not from this string.
 	NetworkName string `json:"network_name,omitempty"`
+	// NetworkCIDR is the agent's configured network CIDR (e.g. "192.168.62.0/24").
+	// Advisory source of truth for the boundary check (issue #19): the center
+	// backfills networks.cidr from this when its own row lacks one (agent
+	// networks are created via the admin API without a cidr today), so the Layer
+	// 1/2 CIDR gates can authoritatively enforce the subnet boundary. The token
+	// still binds network_id; this field only supplies the cidr geometry.
+	NetworkCIDR string `json:"network_cidr,omitempty"`
 	// ScannedAt is when the agent ran this scan batch.
 	ScannedAt time.Time `json:"scanned_at"`
 	// Hosts is the set of alive hosts discovered in this batch. Dead hosts are
@@ -51,6 +58,7 @@ type ReportedHost struct {
 	// InferredType / InferredBrand / InferredDescription / InferredLocation are
 	// the handler/heuristic verdicts for the device (camera, router, …).
 	InferredType        string `json:"inferred_type,omitempty"`
+	InferredTypeSource  string `json:"inferred_type_source,omitempty"` // "protocol" (evidence-backed) | "heuristic" (hostname guess) — carried so the center's UI confidence badge is accurate for agent-reported devices, not lost in the wire hop
 	InferredBrand       string `json:"inferred_brand,omitempty"`
 	InferredDescription string `json:"inferred_description,omitempty"`
 	InferredLocation    string `json:"inferred_location,omitempty"`

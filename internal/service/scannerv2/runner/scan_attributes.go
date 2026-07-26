@@ -34,6 +34,7 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 	attr := domain.ScanAttributes{
 		Vendor:              f["inferred_brand"],
 		InferredType:        f["inferred_type"],
+		InferredTypeSource:  f["inferred_type_source"],
 		InferredDescription: f["inferred_description"],
 		OS:                  f["os_type"],
 		OSVersion:           f["os_version"],

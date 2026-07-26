@@ -46,6 +46,30 @@ import (
 // adapter from the in-memory report to the devices/heartbeat_configs tables.
 func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string) (bool, bool) {
 	inferredType := rep.Device.Fields["inferred_type"]
+	// typeSource records HOW inferredType was determined, for confidence display:
+	//   "protocol"  — a service handler set it from real protocol evidence
+	//                 (SNMP sysObjectID, RTSP/ONVIF banner, mDNS service type,
+	//                 node_exporter). Trustworthy — not spoofable by a hostname.
+	//   "heuristic" — the hostname/brand keyword table (device_types.yaml) set
+	//                 or overrode it. Spoofable: any DHCP client can name itself
+	//                 "viomi-…" or "nas-box". The UI marks these as "inferred".
+	//   ""          — fell through to the "other" default; unknown/legacy.
+	// The source follows the FINAL value, not the original: a handler-set camera
+	// overridden to "pc" by isStrongPcSignal is now heuristic-confidence, because
+	// the deciding factor was the hostname keyword, not the protocol evidence.
+	typeSource := ""
+	if inferredType != "" {
+		// An agent report may carry the source the agent's own applyDeviceBridge
+		// computed (it ran the same engine remotely). Trust it when present so a
+		// hostname-guessed type (heuristic) stays marked heuristic across the wire
+		// hop — otherwise the center would default it to "protocol" and the UI
+		// confidence badge would lie. For the LOCAL scan path no source is carried
+		// (handlers set inferred_type directly), so default to "protocol" then.
+		typeSource = rep.Device.Fields["inferred_type_source"]
+		if typeSource == "" {
+			typeSource = "protocol"
+		}
+	}
 	// A service handler may have set a generic "server"/"pc" type from a single
 	// open port (ssh, smb, mysql, …). That's a weak signal — routers, NAS, and
 	// cameras all run ssh/smb too. If the hostname/vendor carries a STRONGER,
@@ -53,21 +77,51 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	// model name), let the heuristic override the generic verdict. We still
 	// trust handler-set specialized types (camera/router/switch/…) as-is: those
 	// come from SNMP sysObjectID or protocol detection and are authoritative.
-	if inferredType == "" || inferredType == "server" || inferredType == "pc" {
-		if t := heuristicDeviceType(rep); t != "" && t != "server" && t != "pc" {
+	//
+	// One exception: a "camera" verdict that came purely from an RTSP/ONVIF
+	// port can misfire on devices that expose RTSP for non-camera reasons — a
+	// laptop/desktop running a media/dev RTSP server (port 8554), or a NAS using
+	// RTSP for media streaming (e.g. 极空间/ZSpace Z4S runs gortsplib for its
+	// 极影视 feature, Synology/QNAP expose RTSP-wrapping web UIs). When the host
+	// shows a strong PC signal (notebook/laptop hostname or a desktop OS) OR a
+	// strong NAS signal (MiniDLNA/ReadyMedia vendor, smb file-sharing service,
+	// or a NAS hostname/brand), that beats the port-derived camera guess. Generic
+	// server signals do NOT override camera (routers/NVRs also expose RTSP).
+	switch inferredType {
+	case "camera":
+		if isStrongPcSignal(rep) {
+			inferredType = "pc"
+			typeSource = sourceForType("pc") // overridden by hostname keyword
+		} else if isStrongNasSignal(rep) {
+			inferredType = "nas"
+			typeSource = sourceForType("nas") // overridden by hostname keyword / smb
+		}
+	case "", "server", "pc":
+		if t, src := heuristicDeviceType(rep); t != "" && t != "server" && t != "pc" {
 			// Specialized heuristic verdict (router/camera/nas/…) beats the
-			// generic handler verdict.
+			// generic handler verdict. Source comes from the matched YAML rule.
 			inferredType = t
+			typeSource = src
 		} else if inferredType == "" {
 			// No handler verdict and no specialized heuristic — take whatever
 			// the heuristic offers (including "" → falls to "other" below, or a
 			// heuristic "server" from ssh+exporter).
 			inferredType = t
+			if t != "" {
+				typeSource = src
+			}
 		}
 	}
 	if inferredType == "" {
 		inferredType = "other"
+		typeSource = "" // unknown / no signal at all
 	}
+	// Write the RESOLVED type + its source back into Fields so buildScanAttributes
+	// persists both into scan_attributes → API → frontend. inferredType may differ
+	// from the handler's original Fields["inferred_type"] (the heuristic or an
+	// override branch may have changed it), so we must sync the field here.
+	rep.Device.Fields["inferred_type"] = inferredType
+	rep.Device.Fields["inferred_type_source"] = typeSource
 	inferredBrand := rep.Device.Fields["inferred_brand"]
 	inferredDescr := rep.Device.Fields["inferred_description"]
 	inferredLoc := rep.Device.Fields["inferred_location"]
@@ -77,40 +131,16 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	// a single asset. Without a MAC, fall back to (ip, network_id) — same IP on
 	// two different networks is two distinct devices. This mirrors the store's
 	// RecordDevice lookup so both upsert writers agree on identity.
+	//
+	// resolveDeviceIdentity also handles device REPLACEMENT: when a MAC matches a
+	// device that sits on a DIFFERENT ip than the one being scanned, and that
+	// scanned ip is currently held by a different-MAC device, the ip-holder wins
+	// (it is the current authority for that network location) and the old
+	// MAC-matched row is marked offline. This is the router-swap case: the new
+	// router's MAC was first seen on a transient DHCP ip (.100), then the device
+	// took over the gateway ip (.1) which a prior router still occupied.
 	mac := reportMAC(rep)
-
-	var existingID int64
-	var err error
-	switch {
-	case mac != "":
-		err = rn.dbConn.QueryRowContext(ctx,
-			`SELECT id FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&existingID)
-		// Fall back to (ip, network_id) when the MAC lookup misses: the device
-		// may have been first seen WITHOUT a MAC and only resolved one on this
-		// scan (e.g. after an ARP walk). Match it back so we fill the existing
-		// row's mac_address instead of creating a duplicate. Mirrors store.
-		if err == sql.ErrNoRows {
-			if networkID.Valid {
-				err = rn.dbConn.QueryRowContext(ctx,
-					`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND mac_address = '' LIMIT 1`,
-					rep.IP, networkID.Int64).Scan(&existingID)
-			} else {
-				err = rn.dbConn.QueryRowContext(ctx,
-					`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' LIMIT 1`,
-					rep.IP).Scan(&existingID)
-			}
-		}
-	default:
-		if networkID.Valid {
-			err = rn.dbConn.QueryRowContext(ctx,
-				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
-				rep.IP, networkID.Int64).Scan(&existingID)
-		} else {
-			err = rn.dbConn.QueryRowContext(ctx,
-				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
-				rep.IP).Scan(&existingID)
-		}
-	}
+	existingID, replacedID, err := rn.resolveDeviceIdentity(ctx, mac, rep.IP, networkID)
 
 	switch err {
 	case sql.ErrNoRows:
@@ -150,22 +180,53 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	case nil:
 		// Change detection: capture the BEFORE snapshot before any UPDATE
 		// mutates the row. Read the full device row (the identity SELECT above
-		// only fetched id).
+		// only fetched id). In a replacement the before-snapshot is the OLD
+		// device's identity — exactly what we want the device_changed diff to
+		// record (e.g. name NanoPiR4S → GL-MT3000).
 		before := rn.snapshotDevice(ctx, existingID)
-		if _, uerr := rn.dbConn.ExecContext(ctx, buildExistingUpdate(),
+		// Pick the UPDATE variant: replacement force-overwrites identity fields
+		// (name/type/brand/...) because a new physical device took over the ip;
+		// a normal re-scan only fills empty/unknown fields (richer earlier scans
+		// win over shallower new ones).
+		updateSQL := buildExistingUpdate()
+		if replacedID != 0 {
+			updateSQL = buildReplacementUpdate()
+		}
+		if _, uerr := rn.dbConn.ExecContext(ctx, updateSQL,
 			existingUpdateArgs(existingID, inferredType, inferredBrand, inferredDescr, inferredLoc, rep, mac)...); uerr != nil {
 			rn.logger.Warn("device bridge: update device failed", "ip", rep.IP, "mac", mac, "error", uerr)
 		}
 		// Always set status=online for alive hosts (matches v1). Also refresh
 		// last_seen (online freshness) and stamp mac/network when newly resolved
 		// (a re-scan may have filled a previously-empty MAC after an ARP walk).
+		// In a device-replacement scenario (replacedID != 0) the target is the
+		// ip-holder whose OWN mac differs from the scanned one — overwrite it so
+		// the row reflects the device that now physically occupies that ip.
 		now := time.Now().UTC()
-		_, _ = rn.dbConn.ExecContext(ctx, `
-			UPDATE devices SET status='online',
-			    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
-			    last_seen = COALESCE(last_seen, ?),
-			    last_scanned_at = ?, updated_at = ? WHERE id=?`,
-			mac, mac, now, now, now, existingID)
+		if replacedID != 0 {
+			// Replacement: force-overwrite mac on the ip-holder (it now belongs to
+			// the scanned device), and mark the prior mac-matched row offline.
+			_, _ = rn.dbConn.ExecContext(ctx, `
+				UPDATE devices SET status='online',
+				    mac_address = ?,
+				    last_seen = COALESCE(last_seen, ?),
+				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
+				mac, now, now, now, existingID)
+			_, _ = rn.dbConn.ExecContext(ctx,
+				`UPDATE devices SET status='offline', updated_at=? WHERE id=?`,
+				now, replacedID)
+			rn.logger.Warn("device bridge: device replaced (router/asset swap detected)",
+				"ip", rep.IP, "scanned_mac", mac, "replaced_device_id", replacedID,
+				"target_device_id", existingID,
+				"action", "ip-holder updated with new mac; prior mac-matched row marked offline")
+		} else {
+			_, _ = rn.dbConn.ExecContext(ctx, `
+				UPDATE devices SET status='online',
+				    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
+				    last_seen = COALESCE(last_seen, ?),
+				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
+				mac, mac, now, now, now, existingID)
+		}
 		// Change detection: re-read the AFTER snapshot and diff. Only emit
 		// device_changed when a tracked field actually differs — this replaces
 		// the old "wasUpdated is always true" heuristic that fired on every
@@ -284,6 +345,115 @@ func (rn *Runner) recordDeviceChanged(ctx context.Context, deviceID int64, netwo
 	})
 }
 
+// resolveDeviceIdentity decides which existing devices row a scan should update,
+// or whether a new row must be created. It returns the target device id (valid
+// when err == nil), the id of a row superseded by a device replacement (0 when
+// no replacement happened), and err (sql.ErrNoRows means "create a new row").
+//
+// Identity rules, mirroring store.SQLiteRepository.RecordDevice so the two
+// upsert writers agree:
+//
+//  1. MAC-primary: when a MAC is known, match it GLOBALLY across all networks so
+//     a roaming device stays a single asset. Without a MAC, fall back to
+//     (ip, network_id) — same IP on two networks is two devices.
+//  2. MAC fallback to (ip, network_id) with mac_address=”: a device first seen
+//     without a MAC (ARP not yet resolved) is matched back so its mac gets filled
+//     instead of creating a duplicate.
+//  3. Device REPLACEMENT (router/asset swap): if the MAC matches a device whose
+//     ip differs from the scanned ip, AND the scanned ip is currently held by a
+//     different-MAC device, the ip-holder is the target (it is the authority for
+//     that network location) and the MAC-matched row is returned as replacedID
+//     so the caller can mark it offline. This avoids a "device split" where the
+//     new asset's data lands on a stale ip while the live ip shows the old asset.
+//
+// Rule 3 only fires when the ip-holder has its OWN non-empty mac that differs
+// from the scanned mac — this protects rule 2 (a MAC-less placeholder row should
+// get the mac filled, not be treated as a replacement conflict).
+func (rn *Runner) resolveDeviceIdentity(ctx context.Context, mac, ip string, networkID sql.NullInt64) (targetID int64, replacedID int64, err error) {
+	if mac == "" {
+		// No MAC → identity is (ip, network_id).
+		if networkID.Valid {
+			err = rn.dbConn.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+				ip, networkID.Int64).Scan(&targetID)
+		} else {
+			err = rn.dbConn.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+				ip).Scan(&targetID)
+		}
+		return targetID, 0, err
+	}
+
+	// MAC present → global identity lookup.
+	err = rn.dbConn.QueryRowContext(ctx,
+		`SELECT id FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&targetID)
+	if err == sql.ErrNoRows {
+		// MAC not seen before. Fall back to (ip, network_id) with empty mac so a
+		// device first seen MAC-less gets its mac filled on this scan.
+		if networkID.Valid {
+			err = rn.dbConn.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND mac_address = '' LIMIT 1`,
+				ip, networkID.Int64).Scan(&targetID)
+		} else {
+			err = rn.dbConn.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' LIMIT 1`,
+				ip).Scan(&targetID)
+		}
+		return targetID, 0, err
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// MAC matched a row. Check whether it sits on the scanned ip; if so, this is
+	// the normal update path (no replacement).
+	var macRowIP string
+	var macRowMAC string
+	if qerr := rn.dbConn.QueryRowContext(ctx,
+		`SELECT ip_address, mac_address FROM devices WHERE id = ?`, targetID).Scan(&macRowIP, &macRowMAC); qerr != nil {
+		// Failing to read the row's ip is unexpected; proceed with the plain match.
+		return targetID, 0, nil
+	}
+	if macRowIP == ip {
+		return targetID, 0, nil // same ip — normal update, nothing replaced.
+	}
+
+	// MAC matched a device on a DIFFERENT ip than the one being scanned. Check
+	// whether the scanned ip is held by another device with its own different
+	// mac: that signals a device replacement (the new device took over an ip a
+	// prior device occupied).
+	var ipHolderID int64
+	var ipHolderMAC string
+	var ipLookErr error
+	if networkID.Valid {
+		ipLookErr = rn.dbConn.QueryRowContext(ctx,
+			`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+			ip, networkID.Int64).Scan(&ipHolderID, &ipHolderMAC)
+	} else {
+		ipLookErr = rn.dbConn.QueryRowContext(ctx,
+			`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+			ip).Scan(&ipHolderID, &ipHolderMAC)
+	}
+	if ipLookErr == sql.ErrNoRows {
+		// Scanned ip is free → roaming: keep the MAC-matched row as target (it
+		// stays one asset; the caller fills fields without relocating the ip).
+		return targetID, 0, nil
+	}
+	if ipLookErr != nil {
+		// Lookup error → don't speculate; fall back to the plain MAC match.
+		return targetID, 0, nil
+	}
+	// Replacement requires the ip-holder to have its OWN mac differing from the
+	// scanned one. An empty-mac ip-holder is a MAC-less placeholder (rule 2):
+	// leave it to be filled, do not treat as a replacement conflict.
+	if ipHolderMAC == "" || ipHolderMAC == mac {
+		return targetID, 0, nil
+	}
+	// Device replacement: the ip-holder becomes the target, the MAC-matched row
+	// (the prior asset now sitting on a stale ip) is superseded.
+	return ipHolderID, targetID, nil
+}
+
 // reportMAC extracts and canonicalizes the MAC from a HostReport. It checks the
 // device Fields first (handler-enriched), then falls back to mac-kind evidence
 // (ARP/router-ARP probe output). Returns "" when no MAC was observed.
@@ -316,16 +486,37 @@ func (rn *Runner) deviceHasHeartbeatConfig(ctx context.Context, deviceID int64) 
 	return n > 0
 }
 
+// deviceDisplayName picks the value stored in devices.name (the primary display
+// field shown in lists, not the separate scan_attributes.hostname). Priority:
+// the report's node_hostname/sys_name Fields (set early by the orchestrator from
+// TLS-cert CN / mDNS / rDNS), THEN the fully-merged scan_attributes.Hostname
+// (which buildScanAttributes enriches further with SNMP sysName + evidence
+// hostnames that may arrive after the Fields were set), finally the IP.
+//
+// The merged-attributes fallback is the fix for the case where a scan collects a
+// hostname via SNMP/mDNS but doesn't surface it in Device.Fields (different
+// probes populate different stores): without it, devices.name degenerates to the
+// IP even though scan_attributes.hostname carries the real name. See issue #19
+// follow-up (the "62 scan looked more complete than 63" report — root cause was
+// devices.name showing IP while hostname lived only in scan_attributes).
+func deviceDisplayName(rep scannerv2.HostReport) string {
+	if h := rep.Device.Fields["node_hostname"]; h != "" {
+		return h
+	}
+	if h := rep.Device.Fields["sys_name"]; h != "" {
+		return h
+	}
+	if h := buildScanAttributes(rep).Hostname; h != "" {
+		return h
+	}
+	return rep.IP
+}
+
 // createDevice inserts a new device row derived from the report. networkID is
 // the per-call origin network (the agent's network on the center ingestion
 // path, the instance's own network on the local scan path).
 func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, location string, rep scannerv2.HostReport, mac string, networkID sql.NullInt64) (int64, error) {
-	name := rep.IP
-	if h := rep.Device.Fields["node_hostname"]; h != "" {
-		name = h
-	} else if h := rep.Device.Fields["sys_name"]; h != "" {
-		name = h
-	}
+	name := deviceDisplayName(rep)
 	if devType == "" {
 		devType = "other"
 	}
@@ -360,6 +551,15 @@ func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, locat
 
 // buildExistingUpdate returns the static UPDATE statement for an existing
 // device. The positional args are assembled separately in existingUpdateArgs.
+//
+// scan_attributes uses json_patch (not a blind overwrite) so a SHALLOW scan
+// can't erase fields a DEEPER earlier scan (or passive discovery) collected:
+// json_patch(old, new) keeps old's keys that new omits. Because every field on
+// ScanAttributes is `omitempty`, a scan that didn't collect (say) a hostname
+// emits a JSON object WITHOUT a hostname key, and the patch preserves the prior
+// value. Slice fields (open_ports/detected_services) are still whole-replaced
+// when present — they reflect "what THIS scan saw open", not a union across
+// scans (a port that closed should drop off). Issue #20.
 func buildExistingUpdate() string {
 	return `
 		UPDATE devices SET
@@ -372,7 +572,38 @@ func buildExistingUpdate() string {
 		    detected_services = ?,
 		    prometheus_url = CASE WHEN ? != '' THEN ? ELSE prometheus_url END,
 		    node_exporter_url = CASE WHEN ? != '' THEN ? ELSE node_exporter_url END,
-		    scan_attributes = ?,
+		    scan_attributes = json_patch(scan_attributes, ?),
+		    last_scan_rtt_ms = ?,
+		    last_scanned_at = ?,
+		    updated_at = ?
+		WHERE id = ?`
+}
+
+// buildReplacementUpdate returns the UPDATE for the device-REPLACEMENT case (a
+// different physical device now occupies this ip). Unlike buildExistingUpdate it
+// FORCE-OVERWRITES name/type/brand/description/location — the CASE "only fill
+// empty/unknown" guards that protect a re-scan from clobbering a richer earlier
+// scan would be WRONG here: this is a brand-new device, so its identity fields
+// must fully replace the prior device's. The before/after change-detection diff
+// captures the old→new values as a device_changed event (that is where the
+// historical "what it was" lives), so the device row itself always reflects the
+// current truth.
+//
+// Shares the SAME positional arg order as buildExistingUpdate, so it reuses
+// existingUpdateArgs.
+func buildReplacementUpdate() string {
+	return `
+		UPDATE devices SET
+		    name = ?,
+		    type = CASE WHEN ? != '' THEN ? ELSE type END,
+		    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
+		    description = CASE WHEN ? != '' THEN ? ELSE description END,
+		    location = CASE WHEN ? != '' THEN ? ELSE location END,
+		    open_ports = ?,
+		    detected_services = ?,
+		    prometheus_url = CASE WHEN ? != '' THEN ? ELSE prometheus_url END,
+		    node_exporter_url = CASE WHEN ? != '' THEN ? ELSE node_exporter_url END,
+		    scan_attributes = json_patch(scan_attributes, ?),
 		    last_scan_rtt_ms = ?,
 		    last_scanned_at = ?,
 		    updated_at = ?
@@ -383,6 +614,9 @@ func buildExistingUpdate() string {
 // placeholder order. (MAC/network_id/last_seen are stamped in a separate UPDATE
 // in applyDeviceBridge so the identity fields update on every scan, not just
 // when the CASE-when-empty conditions in this statement happen to fire.)
+//
+// The SAME arg order also matches buildReplacementUpdate — both statements share
+// the placeholder layout for the columns they have in common.
 func existingUpdateArgs(id int64, inferredType, brand, descr, location string, rep scannerv2.HostReport, _ string) []any {
 	ports, services := deviceScanInfoJSON(rep)
 	promURL := rep.Device.Fields["prometheus_url"]
@@ -390,7 +624,7 @@ func existingUpdateArgs(id int64, inferredType, brand, descr, location string, r
 	scanAttrs := marshalScanAttributes(buildScanAttributes(rep))
 	now := time.Now().UTC()
 	return []any{
-		rep.IP, inferredType, inferredType,
+		deviceDisplayName(rep), inferredType, inferredType,
 		brand, brand,
 		descr, descr,
 		location, location,
@@ -478,118 +712,80 @@ func buildDeviceTags(devType, brand string, rep scannerv2.HostReport) string {
 }
 
 // heuristicDeviceType is the last-resort type inference run in the device
-// bridge when no ServiceHandler set inferred_type. It uses signals that are
-// host-level rather than service-level:
-//   - hostname (rDNS/mDNS/NetBIOS/SNMP sysName) — single-board hosts often
-//     name themselves "rpi4b-4g", "nanopineo2", "bananapi...".
-//   - MAC-OUI vendor (inferred_brand) — Espressif/Tuya/Realtek → IoT chips;
-//     Raspberry Pi Trading → embedded; Proxmox/server vendors → server.
-//   - open-port shape — 22+9100 (ssh+exporter) without web ⇒ server-class host.
+// bridge when no ServiceHandler set inferred_type, or to upgrade a generic
+// handler verdict ("server"/"pc"). It is a thin wrapper over matchDeviceType:
+// the keyword/port tables live in device_types.yaml (data, not code) and the
+// matching engine is the generic priority matcher in device_type_rules.go. Add
+// device signatures by editing the YAML, not this function. Returns (type,
+// source) where source is the confidence label from the matched YAML rule
+// ("heuristic" for all table rules). ("", "") when no hint matches.
+func heuristicDeviceType(rep scannerv2.HostReport) (string, string) {
+	return matchDeviceType(rep)
+}
+
+// isStrongPcSignal reports whether the report carries a strong, explicit
+// "this is a personal computer / laptop" signal: a PC hostname keyword
+// (notebook/laptop/thinkpad/macbook/…) or a desktop OS label
+// (ubuntu/debian/macos/darwin/windows) from an SSH/SNMP banner. It is the gate
+// for overriding a handler-set "camera" verdict (applyDeviceBridge): only an
+// unambiguous PC wins here — a generic "server" signal does NOT, because
+// routers/NAS/NVRs also run RTSP-wrapping web UIs and would be mis-typed.
 //
-// Returns "" when no hint matches (caller falls back to "other").
-func heuristicDeviceType(rep scannerv2.HostReport) string {
+// The keyword set is sourced from device_types.yaml via keywordsForType("pc")
+// — the SAME table matchDeviceType uses — so the override gate and the main
+// inference engine can never drift (the three-independent-keyword-list bug that
+// caused the earlier "z4s" mis-classification is structurally impossible now).
+func isStrongPcSignal(rep scannerv2.HostReport) bool {
+	return strongTypeSignal(rep, "pc")
+}
+
+// isStrongNasSignal reports whether the report carries a strong, explicit
+// "this is a NAS / file server / media server" signal: a NAS hostname/brand
+// keyword (synology/diskstation/qnap/z4s/zspace/minidlna/readymedia/ugreen/…),
+// or an SMB file-sharing service on port 445. It is the gate for overriding a
+// handler-set "camera" verdict (applyDeviceBridge): consumer NAS boxes stream
+// media over RTSP (极空间 极影视, Synology Video Station, MiniDLNA), so an RTSP
+// port alone mis-types them as cameras — but SMB + a NAS vendor is unambiguous.
+// A generic server signal does NOT pass this gate (would mis-type routers/NVRs).
+// Keywords come from device_types.yaml via keywordsForType("nas").
+func isStrongNasSignal(rep scannerv2.HostReport) bool {
+	return strongTypeSignal(rep, "nas")
+}
+
+// strongTypeSignal is the shared implementation behind isStrongPcSignal /
+// isStrongNasSignal: true when the report's host/brand/hint contains a keyword
+// from device_types.yaml's host/brand rules for the given type, OR its os_type
+// matches an os_rule for that type, OR (for nas only) an smb:445 service.
+// Centralized so both gates read the SAME data source as matchDeviceType — the
+// override gate and the main engine can never drift.
+func strongTypeSignal(rep scannerv2.HostReport, wantType string) bool {
 	host := strings.ToLower(rep.Device.Fields["node_hostname"])
 	if host == "" {
 		host = strings.ToLower(rep.Device.Fields["sys_name"])
 	}
 	brand := strings.ToLower(rep.Device.Fields["inferred_brand"])
 	osType := strings.ToLower(rep.Device.Fields["os_type"])
-	hint := host + " " + brand + " " + osType
-
-	switch {
-	// Single-board / embedded Linux (Raspberry Pi, NanoPi, BananaPi, OrangePi).
-	case containsAny(hint, "rasp", "rpi", "nanopi", "bananapi", "orangepi",
-		"rockpi", "radxa", "pine64"):
-		return "embedded"
-	// IoT chips / smart-home vendors (Espressif = ESP32, Tuya, Xiaomi gateways).
-	case containsAny(hint, "espressif", "tuya", "lumi-gateway", "xiaomi",
-		"shelly", "sonoff", "tasmota", "gledopto", "ikea"):
-		return "iot"
-	// Cameras by hostname/brand/model keyword. Covers Hikvision (DS-/Z4S-/IPC-),
-	// Dahua, and generic "cam"/"ipc"/"dvr"/"nvr" naming. Many cameras expose a
-	// hostname like "Z4S-2PSE" or "IPC-123" via rDNS even when SNMP/ONVIF are
-	// blocked cross-subnet.
-	case containsAny(host, "ipc", "-cam", "cam-", "camera", "hik", "hikvision",
-		"dahua", "dvr", "nvr", "z4s", "ds-2", "ipcam") ||
-		containsAny(brand, "hikvision", "dahua", "axis", "reolink", "foscam", "vivotek"):
-		return "camera"
-	// NAS appliances by hostname/brand. Synology uses "DS-"/"DiskStation", QNAP
-	// "TS-", plus the OUI vendor names.
-	case containsAny(host, "nas", "synology", "diskstation", "ds-", "qnap", "ts-",
-		"teramaster", "readynas", "asustor") ||
-		containsAny(brand, "synology", "qnap", "asustor"):
-		return "nas"
-	// Printers by hostname/brand.
-	case containsAny(host, "printer", "hp-", "canon-", "epson-", "brother-",
-		"ricoh-", "xerox-") ||
-		containsAny(brand, "epson", "canon", "brother", "ricoh"):
-		return "printer"
-	// Routers / APs by hostname or vendor. Covers the Softether/FriendlyARM
-	// NanoPi-R2S/R4S/R6S/R68S family, OpenWrt, RouterOS/Mikrotik, and common
-	// consumer router hostnames (miwifi, asus, tplink, huawei). These names
-	// show up in rDNS even cross-subnet, so this catches a lot of gateways.
-	case containsAny(host, "router", "gateway", "openwrt", "padavan", "asuswrt",
-		"routeros", "mikrotik", "r2s", "r4s", "r6s", "r68s", "nanopi-r",
-		"miwifi", "xiaomi-router", "tplink", "tp-link", "ap-", "-ap", "ac68",
-		"ac88", "ax1800", "ax3000", "ax6000", "k2p", "unifi", "edgeos") ||
-		containsAny(brand, "mikrotik", "ubiquiti", "tp-link", "tplink", "xdr"):
-		return "router"
-	// Hostname explicitly says server/iot/proxmox.
-	case strings.Contains(host, "server") || strings.Contains(host, "proxmox"):
-		return "server"
-	case strings.Contains(host, "iot"):
-		return "iot"
-	// NAS vendors by MAC OUI without other signal.
-	case containsAny(brand, "synology", "qnap"):
-		return "nas"
-	// OS indicates a general-purpose host.
-	case strings.Contains(osType, "windows"):
-		return "pc"
-	case strings.Contains(osType, "linux") || strings.Contains(osType, "freebsd"):
-		return "server"
+	// host/brand keyword rules (keywordsForType reads the `rules:` table).
+	if containsAny(host+" "+brand, keywordsForType(wantType)...) {
+		return true
 	}
-
-	// Port-shape fallback when no hostname/brand/os signal matched. This is the
-	// common case cross-subnet (ARP/mDNS/SSDP all fail, leaving only ICMP + rDNS
-	// + whatever TCP ports survived the scan). We infer from the port set:
-	//   - RTSP (554/8554) without a clearer signal  ⇒ camera
-	//   - raw 9100 (JetDirect/IPP)                  ⇒ printer
-	//   - ssh + node_exporter/prometheus            ⇒ monitored server
-	//   - ssh alone (22)                            ⇒ server-class host
-	// These are deliberately conservative — a single ambiguous web port (80/443)
-	// is NOT enough to guess, since it's on almost everything.
-	svcSet := make(map[string]bool, len(rep.Services))
-	for _, s := range rep.Services {
-		svcSet[s.Service] = true
+	// os_rules table — a desktop OS label (ubuntu/debian/macos/windows) is a
+	// strong PC signal; android is a strong phone signal.
+	for _, r := range deviceTypeRules.OSRules {
+		if r.Type == wantType && containsAny(osType, r.Keywords...) {
+			return true
+		}
 	}
-	switch {
-	case svcSet["rtsp"] || svcSet["onvif"] || svcSet["camera"]:
-		return "camera"
-	case svcSet["ssh"] && (svcSet["node_exporter"] || svcSet["prometheus"]):
-		return "server"
-	}
-	// Final port-number fallback (services may not have been classified even
-	// when the port was seen open, e.g. banner timed out cross-subnet).
-	hasPort := func(ports ...int) bool {
+	// SMB file sharing is an extra NAS-specific strong signal (not a hostname
+	// keyword). Only applies to the nas gate.
+	if wantType == "nas" {
 		for _, s := range rep.Services {
-			for _, p := range ports {
-				if s.Port == p {
-					return true
-				}
+			if s.Service == "smb" || s.Port == 445 {
+				return true
 			}
 		}
-		return false
 	}
-	switch {
-	case hasPort(554, 8554, 3702):
-		return "camera"
-	case hasPort(9100):
-		return "printer"
-	case hasPort(22) && !hasPort(80, 443):
-		// SSH with no web — likely a server/appliance shell.
-		return "server"
-	}
-	return ""
+	return false
 }
 
 // containsAny reports whether s contains any of subs.

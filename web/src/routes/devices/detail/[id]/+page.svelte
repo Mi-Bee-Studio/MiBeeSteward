@@ -518,6 +518,8 @@
 		firewall: m['devices.Firewall'](),
 		nas: m['devices.NAS'](),
 		camera: m['devices.Camera'](),
+		phone: m['devices.Phone'](),
+		printer: m['devices.Printer'](),
 		other: m['devices.Other']()
 	};
 

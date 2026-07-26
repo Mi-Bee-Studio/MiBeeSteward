@@ -31,6 +31,7 @@ func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 	mac := store.NormalizeMAC(h.MAC)
 	fields := map[string]string{
 		"inferred_type":        h.InferredType,
+		"inferred_type_source": h.InferredTypeSource,
 		"inferred_brand":       h.InferredBrand,
 		"inferred_description": h.InferredDescription,
 		"inferred_location":    h.InferredLocation,

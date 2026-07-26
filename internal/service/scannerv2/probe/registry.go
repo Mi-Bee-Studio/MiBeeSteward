@@ -19,10 +19,12 @@ import (
 // DefaultProbeSources returns the standard set of active ProbeSources, ready to
 // register into a scannerv2.Registry. The portSpec configures the TCP port
 // scan; pass "" to scan only the fingerprint ports. oui enables MAC→vendor
-// lookup in the ARP probe (may be nil — vendor is then simply omitted).
+// lookup in the ARP probe (may be nil — vendor is then simply omitted). rdns
+// and mdns tune the reverse-DNS and mDNS hostname probes (pass zero values for
+// the backward-compatible system-resolver / multicast-only behavior). Issue #20.
 //
 // Order matters only for determinism (the registry sorts by Name anyway).
-func DefaultProbeSources(portSpec string, oui *vendor.OUI) []scannerv2.ProbeSource {
+func DefaultProbeSources(portSpec string, oui *vendor.OUI, rdns RDNSConfig, mdns MDNSConfig) []scannerv2.ProbeSource {
 	return []scannerv2.ProbeSource{
 		NewICMPProbe(),
 		NewPortSpecProbe(portSpec, nil),
@@ -34,8 +36,8 @@ func DefaultProbeSources(portSpec string, oui *vendor.OUI) []scannerv2.ProbeSour
 		NewTLSProbe(),
 		NewSMBProbe(0),
 		NewARPProbe(oui),
-		NewRDNSProbe(),
-		NewMDNSProbe(),
+		NewRDNSProbeWithConfig(rdns),
+		NewMDNSProbeWithConfig(mdns),
 		NewSSDPProbe(),
 		NewNetBIOSProbe(),
 		NewBridgeMIBProbe(slog.Default()),

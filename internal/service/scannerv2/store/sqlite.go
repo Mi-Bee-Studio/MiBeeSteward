@@ -272,10 +272,22 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// RecordDevice upserts device fields discovered by the pipeline. The v2 engine
-// only enriches; it does not create device identities from scratch (the legacy
-// add-devices flow or manual creation does). So this updates existing rows
-// matched by ip_address; if none match, it inserts a minimal row.
+// RecordDevice enriches an EXISTING device row with fields discovered by the
+// pipeline. It deliberately does NOT create device identities, set status, set
+// the display name, or detect device replacement — all of those are the
+// responsibility of the single authoritative writer, runner.applyDeviceBridge.
+//
+// Why a "best-effort enrichment only" path exists alongside the runner: the
+// orchestrator runs inside engine.ScanTargets (every caller: sync handler, the
+// async runner, passive discovery). Persisting freshly-classified scan data
+// here means it lands even on the paths that don't subsequently re-write the
+// device. But because this never INSERTs, never writes name/status, and never
+// does identity resolution that could conflict with the runner, it CANNOT
+// produce the dual-write inconsistencies (unknown-status orphans, name
+// clobbering, divergent scan_attributes shapes) that arose when it also owned
+// device creation. The runner remains the sole authority for row lifecycle.
+//
+// If no existing row matches, this is a no-op (the runner will create the row).
 func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scannerv2.DeviceRef) error {
 	// The devices table has many columns; v2 touches a known subset. Unknown
 	// Fields keys are serialized into scan_attributes as a JSON extension to
@@ -306,19 +318,22 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	if detectedServices == "" {
 		detectedServices = "[]"
 	}
-	// Minimal scan_attributes built from the DeviceRef Fields. The runner's
-	// device_bridge.go produces the full ScanAttributes (with OpenPorts/
-	// DetectedServices/SNMP structured sub-objects); this store path runs
-	// in parallel and carries the same key set so the two writers agree on
-	// the JSON shape. The unknown/extra keys land under "extras".
+	// scan_attributes built from the DeviceRef Fields. The runner's
+	// device_bridge.go produces the authoritative full ScanAttributes (with
+	// OpenPorts/DetectedServices/SNMP structured sub-objects) via json_patch;
+	// this store path runs first as pre-enrichment.
 	scanAttrs := buildStoreScanAttributes(d, extra, openPorts, detectedServices, promURL, neURL)
 	scanAttrsJSON, _ := domain.MarshalScanAttributes(scanAttrs)
 
-	// MAC-primary identity: when a MAC is known, match across ALL networks so a
-	// device that roams between subnets (or was discovered by another instance)
-	// stays a single asset. Without a MAC, fall back to (ip, network_id): same
-	// IP on two different networks is two distinct devices.
+	// Resolve an EXISTING row to enrich. MAC-primary (global), else (ip,
+	// network_id). No INSERT on miss — device creation is the runner's job.
 	mac := NormalizeMAC(extra["mac"])
+	devType := d.Type
+	brand := d.Brand
+	model := d.Model
+	if devType == "" {
+		devType = "other"
+	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -329,30 +344,22 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	var existingID int64
 	switch {
 	case mac != "":
-		// MAC present → global identity. A device discovered on LAN-A and LAN-B
-		// resolves to the same row. (idx_devices_mac_address backs this lookup.)
 		err = tx.QueryRowContext(ctx,
 			`SELECT id FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&existingID)
-		// Fall back to (ip, network_id) when the MAC lookup misses: the device
-		// may have been first seen WITHOUT a MAC (ARP hadn't resolved yet) and
-		// only picked one up on this scan. Matching it back avoids creating a
-		// second row — we want to fill the existing row's mac_address instead.
 		if err == sql.ErrNoRows {
+			// No global MAC match → try (ip, network_id) so a device first seen
+			// MAC-less (matched by IP) still gets enriched here.
 			if r.networkID.Valid {
 				err = tx.QueryRowContext(ctx,
-					`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND mac_address = '' LIMIT 1`,
+					`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
 					ip, r.networkID.Int64).Scan(&existingID)
 			} else {
 				err = tx.QueryRowContext(ctx,
-					`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' LIMIT 1`,
+					`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
 					ip).Scan(&existingID)
 			}
 		}
 	default:
-		// No MAC → identity is (ip, network_id). On the legacy single-instance
-		// path network_id is NULL, and SQLite treats each NULL as distinct in a
-		// UNIQUE index, so the first NULL-network row for an IP is matched here
-		// via the `IS NULL` predicate. With a resolved network_id it partitions.
 		if r.networkID.Valid {
 			err = tx.QueryRowContext(ctx,
 				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
@@ -363,70 +370,43 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 				ip).Scan(&existingID)
 		}
 	}
+
+	// No existing row → nothing to enrich. The runner will create the device.
+	if err == sql.ErrNoRows {
+		return tx.Commit()
+	}
+	if err != nil {
+		r.logger.Warn("lookup device for enrichment failed", "ip", ip, "mac", mac, "error", err)
+		return tx.Commit()
+	}
+
+	// Enrich the matched row. Only v2-managed enrichment columns: type/brand/
+	// model (force-overwrite when non-empty — a re-scan's classification is
+	// authoritative), mac (fill when newly resolved), open_ports/
+	// detected_services/prometheus/node_exporter, scan_attributes, freshness
+	// timestamps. NOTE: name, status, description, location, tags, and device
+	// replacement are intentionally NOT handled here — the runner owns them.
 	now := time.Now().UTC()
-
-	name := d.Name
-	devType := d.Type
-	brand := d.Brand
-	model := d.Model
-	if name == "" {
-		name = ip // default name to IP if unknown
-	}
-	if devType == "" {
-		devType = "other"
-	}
-
-	switch err {
-	case sql.ErrNoRows:
-		// Insert a minimal device row, tagged scan_source='scanner_v2' and
-		// stamped with this repository's network_id (origin) + MAC (when known).
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO devices (name, type, brand, model, ip_address, mac_address,
-			                     status, scan_source,
-			                     open_ports, detected_services, prometheus_url, node_exporter_url,
-			                     scan_attributes, network_id, first_seen, last_seen,
-			                     last_scanned_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?,
-			        'unknown', 'scanner_v2',
-			        ?, ?, ?, ?,
-			        ?, ?, ?, ?,
-			        ?, ?, ?)`,
-			name, devType, brand, model, ip, mac,
-			openPorts, detectedServices, promURL, neURL,
-			string(scanAttrsJSON), r.networkID, now, now,
-			now, now, now)
-		if err != nil {
-			r.logger.Warn("insert device failed", "ip", ip, "mac", mac, "error", err)
-		}
-	case nil:
-		// Update existing device: only touch v2-managed columns. Refresh MAC,
-		// network_id, ip (a re-scan may have resolved a previously-empty MAC or
-		// seen the asset on a different IP), and online-freshness timestamps.
-		_, err = tx.ExecContext(ctx, `
-				UPDATE devices SET
-				    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
-				    model = CASE WHEN ? != '' THEN ? ELSE model END,
-				    type = CASE WHEN ? != '' THEN ? ELSE type END,
-				    mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
-				    ip_address = CASE WHEN ip_address = '' THEN ? ELSE ip_address END,
-				    open_ports = ?,
-				    detected_services = ?,
-				    prometheus_url = ?,
-				    node_exporter_url = ?,
-				    scan_attributes = ?,
-				    last_seen = COALESCE(last_seen, ?),
-				    last_scanned_at = ?,
-				    updated_at = ?
-				WHERE id = ?`,
-			brand, brand, model, model, devType, devType,
-			mac, mac, ip,
-			openPorts, detectedServices, promURL, neURL, string(scanAttrsJSON),
-			now, now, now, existingID)
-		if err != nil {
-			r.logger.Warn("update device failed", "ip", ip, "mac", mac, "error", err)
-		}
-	default:
-		r.logger.Warn("lookup device failed", "ip", ip, "mac", mac, "error", err)
+	if _, err = tx.ExecContext(ctx, `
+			UPDATE devices SET
+			    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
+			    model = CASE WHEN ? != '' THEN ? ELSE model END,
+			    type = CASE WHEN ? != '' THEN ? ELSE type END,
+			    mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
+			    open_ports = ?,
+			    detected_services = ?,
+			    prometheus_url = ?,
+			    node_exporter_url = ?,
+			    scan_attributes = ?,
+			    last_seen = COALESCE(last_seen, ?),
+			    last_scanned_at = ?,
+			    updated_at = ?
+			WHERE id = ?`,
+		brand, brand, model, model, devType, devType,
+		mac, mac,
+		openPorts, detectedServices, promURL, neURL, string(scanAttrsJSON),
+		now, now, now, existingID); err != nil {
+		r.logger.Warn("enrich device failed", "ip", ip, "mac", mac, "error", err)
 	}
 
 	return tx.Commit()
