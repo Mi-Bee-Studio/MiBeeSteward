@@ -326,8 +326,25 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			interval = 60 * time.Second
 		}
 		var activeSources []string
-		// router_arp: the widest-coverage source. One SNMP Walk per router per
-		// interval; no-op when no routers are configured.
+		// router_arp exists for the case where the center is NOT on the gateway
+		// — it walks a router's SNMP ARP table from across the subnet to recover
+		// cross-subnet MACs the center can't see at L2. When the center runs ON
+		// the gateway (form C, deploy/openwrt/) the router's OWN sources cover the
+		// same hosts authoritatively (and more — dhcp_leases, conntrack, hostapd),
+		// so router_arp is redundant and just adds SNMP traffic to the router. The
+		// same applies to a router-resident agent (form B) reporting into this
+		// center for that network: the agent's own arp_cache/dhcp_leases are
+		// upstream and router_arp is duplicative. Warn when both are on so the
+		// operator knows to disable router_arp; we don't force-disable because the
+		// operator may have a reason (e.g. transitional overlap during migration).
+		if cfg.Scanner.Discovery.RouterARP.Enabled && routerResidentSourcesOn(cfg.Scanner.Discovery) {
+			slog.Warn("discovery: router_arp is enabled alongside router-resident sources " +
+				"(arp_cache/dhcp_leases/conntrack) — router_arp is redundant when the center " +
+				"(or an agent) runs on the gateway. Disable scanner.discovery.router_arp " +
+				"to avoid the redundant SNMP walk.")
+		}
+		// router_arp: the widest-coverage source for a NON-router-resident center.
+		// One SNMP Walk per router per interval; no-op when no routers configured.
 		if cfg.Scanner.Discovery.RouterARP.Enabled {
 			routerARPSrc := scannerv2discovery.NewRouterARPSource(
 				cfg.Scanner.RouterARP.Routers,
@@ -786,6 +803,15 @@ func parseDurationOrDefault(s string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// routerResidentSourcesOn reports whether any of the discovery sources that
+// only yield data when the host IS the gateway are enabled. When true AND
+// router_arp is also on, router_arp is redundant (the gateway's own
+// arp_cache/dhcp_leases/conntrack cover the same hosts authoritatively, without
+// an extra SNMP walk) — used to emit the redundancy warning at startup.
+func routerResidentSourcesOn(d config.DiscoveryConfig) bool {
+	return d.ARPCache.Enabled || d.DHCPLeases.Enabled || d.Conntrack.Enabled
 }
 
 // routerCommunity resolves the SNMP community for cross-subnet ARP walks:
