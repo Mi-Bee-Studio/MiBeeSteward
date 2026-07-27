@@ -8,6 +8,7 @@
     "prebuild": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide",
     "build": "vite build",
     "preview": "vite preview",
+    "pretest": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide",
     "test": "vitest run"
   },
   "devDependencies": {

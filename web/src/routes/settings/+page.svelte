@@ -13,7 +13,7 @@
 	import { auth } from '$lib/stores/auth';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils';
-	import { settingsSchema, validateField } from '$lib/utils/validation';
+	import { settingsSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { m, getLocale, setLocale } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
 	import { Sun, Moon, Copy, Check } from '@lucide/svelte';
@@ -110,7 +110,7 @@ onMount(() => {
 
 		// For confirmPassword, also check match against newPassword
 		if (field === 'confirmPassword' && newPassword !== confirmPassword) {
-			fieldErrors[field] = 'Passwords do not match';
+			fieldErrors[field] = m['validation.Passwords Do Not Match']();
 			return;
 		}
 
@@ -123,21 +123,16 @@ onMount(() => {
 	}
 
 	function validatePasswordForm(): boolean {
-		const result = settingsSchema.safeParse({
+		const result = validateForm(settingsSchema, {
 			currentPassword,
 			newPassword,
 			confirmPassword
 		});
-		if (result.success) {
+		if (result.valid) {
 			fieldErrors = {};
 			return true;
 		}
-		const errors: Record<string, string> = {};
-		for (const issue of result.error.issues) {
-			const key = issue.path.join('.');
-			if (!errors[key]) errors[key] = issue.message;
-		}
-		fieldErrors = errors;
+		fieldErrors = result.errors;
 		// Mark all touched
 		touched = { currentPassword: true, newPassword: true, confirmPassword: true };
 		return false;
