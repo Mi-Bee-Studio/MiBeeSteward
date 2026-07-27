@@ -24,7 +24,7 @@ import (
 	"mibee-steward/internal/service/notification"
 )
 
-// NotificationHandler handles HTTP requests for notification channel, alert rule, and log endpoints.
+// NotificationHandler handles HTTP requests for notification channel and log endpoints.
 type NotificationHandler struct {
 	svc        *service.NotificationService
 	dispatcher *notification.Dispatcher

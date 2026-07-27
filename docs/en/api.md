@@ -72,7 +72,7 @@ Authenticate user and return JWT token.
 #### POST /api/v1/auth/register
 Register new user (admin only).
 
-**Public** • **10 req/min rate limit**
+**RequireAdmin** • **10 req/min rate limit**
 
 **Request**:
 ```json
@@ -99,7 +99,7 @@ Register new user (admin only).
 #### POST /api/v1/auth/logout
 Logout user (clear cookie).
 
-**Public** • **10 req/min rate limit**
+**RequireAuth** • **10 req/min rate limit**
 
 **Response**: `204 No Content`
 
@@ -938,7 +938,7 @@ Paginated responses include:
 ### Rate Limiting
 
 Global rate limits apply:
-- **Global**: 100 requests per minute per IP
+- **Global**: 600 requests per minute per IP
 - **Login endpoints**: 10 requests per minute per IP
 
 Rate limit headers:
