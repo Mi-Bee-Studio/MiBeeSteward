@@ -34,26 +34,49 @@
 		confirmVariant?: 'primary' | 'danger';
 		/** When true, the confirm button shows a spinner and is disabled. */
 		loading?: boolean;
-		onConfirm: () => void;
+		/** May be async — the dialog stays open (with a spinner) until it resolves,
+		 *  closes on success, stays open on rejection so the user can retry. */
+		onConfirm: () => unknown;
 		onCancel?: () => void;
 	} = $props();
 
 	const resolvedConfirmLabel = $derived(confirmLabel ?? m['common.Confirm']());
 	const resolvedCancelLabel = $derived(cancelLabel ?? m['common.Cancel']());
 
-	function handleConfirm() {
-		if (loading) return;
-		onConfirm();
-		open = false;
+	// Internal in-flight flag driven while `onConfirm` is awaiting. OR-ed with
+	// the caller-supplied `loading` prop so both light up the spinner / disable
+	// the buttons / block Modal close paths.
+	let busy = $state(false);
+	const pending = $derived(busy || loading);
+
+	async function handleConfirm() {
+		if (pending) return;
+		busy = true;
+		try {
+			await onConfirm();
+			// On success, close. If the caller's onConfirm rejects AND the
+			// caller does NOT swallow it internally, the catch below keeps
+			// the dialog open so the user can retry. (Most callers do their
+			// own try/catch + toast, in which case the promise resolves and
+			// we close here — they can re-open the dialog to retry.)
+			open = false;
+		} catch {
+			// Caller let the error bubble (did not try/catch inside onConfirm).
+			// Keep the dialog open + busy=false so the user can fix input and
+			// retry. The caller is expected to surface its own error toast.
+		} finally {
+			busy = false;
+		}
 	}
 
 	function handleCancel() {
+		if (pending) return;
 		onCancel?.();
 		open = false;
 	}
 </script>
 
-	<Modal bind:open {title} maxWidth="24rem" onClose={handleCancel}>
+	<Modal bind:open {title} maxWidth="24rem" onClose={handleCancel} closable={!pending}>
 		<div
 			class="confirm-content"
 			role="alertdialog"
@@ -67,7 +90,7 @@
 				<button
 					class="cd-btn cd-cancel"
 					onclick={handleCancel}
-					disabled={loading}
+					disabled={pending}
 				>
 					{resolvedCancelLabel}
 				</button>
@@ -75,10 +98,10 @@
 					class="cd-btn cd-confirm"
 					class:cd-confirm-danger={confirmVariant === 'danger'}
 					onclick={handleConfirm}
-					disabled={loading}
-					aria-busy={loading ? 'true' : undefined}
+					disabled={pending}
+					aria-busy={pending ? 'true' : undefined}
 				>
-					{#if loading}
+					{#if pending}
 						<LoaderCircle class="w-4 h-4 animate-spin" aria-hidden="true" />
 					{/if}
 					<span>{resolvedConfirmLabel}</span>
