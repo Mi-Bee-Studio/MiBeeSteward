@@ -17,6 +17,7 @@ import (
 
 	"github.com/gosnmp/gosnmp"
 
+	"mibee-steward/internal/config"
 	"mibee-steward/internal/service/scannerv2"
 )
 
@@ -25,7 +26,7 @@ import (
 var snmpOIDs = []string{
 	"1.3.6.1.2.1.1.1.0", // sysDescr
 	"1.3.6.1.2.1.1.2.0", // sysObjectID
-	"1.3.6.1.2.1.1.3.0", // sysUpTime
+	config.SysUpTimeOID, // sysUpTime
 	"1.3.6.1.2.1.1.4.0", // sysContact
 	"1.3.6.1.2.1.1.5.0", // sysName
 	"1.3.6.1.2.1.1.6.0", // sysLocation
