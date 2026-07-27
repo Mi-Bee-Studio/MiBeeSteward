@@ -70,6 +70,12 @@ type Runner struct {
 	// applyDeviceBridge (and device_lost from detectLost). nil on the agent
 	// (change detection is a center concern). See internal/changedetect.
 	changeRecorder changedetect.ChangeRecorder
+	// lostThreshold is the number of consecutive scans a device must be absent
+	// from the alive set before being declared "lost" by DetectLost. Default 2
+	// (single missed scans must not flap a device offline). Configurable via
+	// scanner.lost_threshold; SetLostThreshold applies the config value. See
+	// detect_lost.go. int64 to match scan_snapshots.miss_count's sqlc type.
+	lostThreshold int64
 }
 
 // ReportSink consumes a batch of alive HostReports at the end of a scan. The
@@ -100,7 +106,34 @@ func New(engine *engine.Engine, queries *db.Queries, dbConn *sql.DB, heartbeat H
 	if networkID > 0 {
 		nid = sql.NullInt64{Int64: networkID, Valid: true}
 	}
-	return &Runner{engine: engine, queries: queries, dbConn: dbConn, heartbeat: heartbeat, networkID: nid, logger: logger}
+	return &Runner{
+		engine:        engine,
+		queries:       queries,
+		dbConn:        dbConn,
+		heartbeat:     heartbeat,
+		networkID:     nid,
+		logger:        logger,
+		lostThreshold: 2, // default; override via SetLostThreshold from scanner.lost_threshold
+	}
+}
+
+// SetLostThreshold configures the consecutive-absence count before DetectLost
+// declares a device lost (scanner.lost_threshold config key, default 2). Values
+// <= 0 are ignored (the default of 2 is retained). Must be called before Run;
+// not safe to swap concurrently with a running scan.
+func (rn *Runner) SetLostThreshold(n int) {
+	if n > 0 {
+		rn.lostThreshold = int64(n)
+	}
+}
+
+// LostThreshold returns the configured consecutive-absence count for DetectLost.
+// Exposed for diagnostics + tests.
+func (rn *Runner) LostThreshold() int64 {
+	if rn.lostThreshold > 0 {
+		return rn.lostThreshold
+	}
+	return 2
 }
 
 // PersistManualDevice runs a single HostReport (synthesized for a manually-

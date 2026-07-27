@@ -20,12 +20,6 @@ import (
 	"mibee-steward/internal/service/scannerv2"
 )
 
-// lostThreshold is the number of consecutive scans a device must be absent
-// before being declared lost. Single missed scans (ICMP drop, brief host
-// downtime, network jitter) must not flap a device offline — see
-// architecture-future.md §8 note 3 (去抖动/grace period).
-const lostThreshold = 2
-
 // DetectLost runs the device_lost detection for one scan's outcome on one
 // network. It is the post-scan set-difference:
 //
@@ -35,6 +29,11 @@ const lostThreshold = 2
 //     set: increment its miss_count.
 //  3. Emit device_lost + mark status='offline' for snapshots whose miss_count
 //     has crossed the threshold AND whose device is still online.
+//
+// The threshold is the runner's lostThreshold (scanner.lost_threshold config
+// key, default 2). Single missed scans (ICMP drop, brief host downtime, network
+// jitter) must not flap a device offline — see architecture-future.md §8 note 3
+// (去抖动/grace period).
 //
 // agentID threads through to change_log provenance (empty on the local-scan
 // path). taskID is the scan that produced these reports (0/nil for agent
@@ -73,9 +72,10 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 	}
 
 	// 3. Emit device_lost for snapshots past the threshold that are still online.
+	threshold := rn.LostThreshold()
 	lost, err := rn.queries.ListLostSnapshots(ctx, db.ListLostSnapshotsParams{
 		NetworkID: netID,
-		MissCount: lostThreshold,
+		MissCount: threshold,
 	})
 	if err != nil {
 		rn.logger.Warn("detect-lost: list lost snapshots failed", "network_id", netID, "error", err)
@@ -104,7 +104,7 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 	}
 	if rn.logger != nil {
 		slog.Info("detect-lost: devices declared lost",
-			"network_id", netID, "count", len(lost), "threshold", lostThreshold)
+			"network_id", netID, "count", len(lost), "threshold", threshold)
 	}
 }
 
