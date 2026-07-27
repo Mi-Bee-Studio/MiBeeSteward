@@ -403,6 +403,18 @@ type DiscoveryConfig struct {
 	// it doesn't emit a row per public IP a device talks to. No-op when the
 	// nf_conntrack module isn't loaded or /proc/net/nf_conntrack is absent.
 	Conntrack DiscoverySourceToggle `koanf:"conntrack"`
+	// Hostapd enumerates the WiFi STAs associated to the local AP(s) via the
+	// hostapd control socket (/var/run/hostapd/<phy>), falling back to
+	// `iw station dump`. A Tier-1 router/AP-only signal: signal dBm, connect
+	// time, SSID are GOLD for device tracking and completely unavailable to a
+	// wired host-based scanner. No-op on a host without WiFi / hostapd / iw.
+	Hostapd HostapdDiscoveryConfig `koanf:"hostapd"`
+	// DNSLog tails a dnsmasq query log (--log-queries output) and emits the
+	// querying host per DNS query — a powerful passive fingerprint (devices that
+	// block all inbound probes still make outbound DNS). A Tier-1 router signal:
+	// the gateway is typically the LAN's recursive resolver. No-op when dnsmasq
+	// query logging isn't configured (no log file at the conventional paths).
+	DNSLog DNSLogDiscoveryConfig `koanf:"dns_log"`
 	// LLDPInterfaces is the list of NIC names for the raw-frame LLDPDU listener
 	// (ethertype 0x88cc). Empty = all UP non-loopback interfaces. Only active in
 	// WITH_LLDP builds (needs CAP_NET_RAW); no-op in the default build.
@@ -412,6 +424,25 @@ type DiscoveryConfig struct {
 // DiscoverySourceToggle is the per-source on/off switch for DiscoveryConfig.
 type DiscoverySourceToggle struct {
 	Enabled bool `koanf:"enabled"`
+}
+
+// HostapdDiscoveryConfig configures the WiFi STA enumeration source. Interfaces
+// is the list of wlan names to poll (e.g. ["wlan0", "wlan1"]); when empty the
+// source autodetects (probes /var/run/hostapd/* sockets, falls back to "wlan0"
+// for the iw station-dump path).
+type HostapdDiscoveryConfig struct {
+	Enabled    bool     `koanf:"enabled"`
+	Interfaces []string `koanf:"interfaces"`
+}
+
+// DNSLogDiscoveryConfig configures the dnsmasq query-log tail source. Path
+// overrides the log file location (dnsmasq --log-facility output); when empty
+// the source probes the conventional paths (/var/log/dnsmasq.log, /tmp/dnsmasq.log,
+// syslog). The operator must enable dnsmasq query logging (UCI:
+// `uci set dhcp.@dnsmasq[0].logqueries=1`).
+type DNSLogDiscoveryConfig struct {
+	Enabled bool   `koanf:"enabled"`
+	Path    string `koanf:"path"`
 }
 
 type PipelineDefaultsConfig struct {
