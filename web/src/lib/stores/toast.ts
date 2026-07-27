@@ -10,6 +10,7 @@
  */
 
 import { writable } from 'svelte/store';
+import { m } from '$lib/i18n-paraglide';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -34,7 +35,7 @@ function createToastStore() {
 		const id = nextId++;
 		const undoConfig = undo ? {
 			callback: undo.callback,
-			label: undo.label || 'Undo',
+			label: undo.label || m['common.Undo'](),
 			timeout: undo.timeout || 10000
 		} : undefined;
 		update((current) => {

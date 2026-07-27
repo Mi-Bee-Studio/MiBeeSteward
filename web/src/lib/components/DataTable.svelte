@@ -26,7 +26,7 @@
 		searchPlaceholder = m['common.Search']() + '...',
 		searchableKeys = [],
 		initialSearch = '',
-		emptyTitle = 'No data',
+		emptyTitle = m['common.No Data'](),
 		emptyDescription = '',
 		emptyAction,
 		emptyActionLabel,
@@ -158,7 +158,7 @@
 					<button
 						onclick={() => (searchQuery = '')}
 						class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors"
-						aria-label="Clear search"
+						aria-label={m['common.Clear Search']()}
 					>
 						<X class="w-4 h-4" />
 					</button>

@@ -17,8 +17,23 @@ function getCSRFToken(): string {
 import { goto } from '$app/navigation';
 import { auth } from '$lib/stores/auth';
 import { getErrorMessage } from '$lib/utils/error';
+import { m } from '$lib/i18n-paraglide';
 
 const API_BASE = '/api/v1';
+
+/**
+ * Thrown by all three request paths (request / download / upload) on HTTP 401,
+ * after the user has been logged out and redirected to /login. Callers that
+ * need to distinguish "session expired" from other errors must check
+ * `err instanceof SessionExpiredError` — NOT string-match on the message
+ * (the message is localized and varies by locale).
+ */
+export class SessionExpiredError extends Error {
+	constructor() {
+		super(m['api.Session Expired']());
+		this.name = 'SessionExpiredError';
+	}
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -36,11 +51,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 		if (res.status === 401) {
 			auth.logout();
 			goto('/login');
-			throw new Error('Session expired');
+			throw new SessionExpiredError();
 		}
 		if (!res.ok) {
-			const err = await res.json().catch(() => ({ error: 'Request failed' }));
-			throw new Error(err.error || `HTTP ${res.status}`);
+			const err = await res.json().catch(() => ({ error: m['api.Request Failed']() }));
+			throw new Error(err.error || m['api.HTTP Error']({ status: String(res.status) }));
 		}
 		if (res.status === 204) return undefined as T;
 		return res.json();
@@ -70,11 +85,11 @@ export const api = {
 		if (res.status === 401) {
 			auth.logout();
 			goto('/login');
-			throw new Error('Session expired');
+			throw new SessionExpiredError();
 		}
 		if (!res.ok) {
-			const err = await res.json().catch(() => ({ error: 'Download failed' }));
-			throw new Error(err.error || `HTTP ${res.status}`);
+			const err = await res.json().catch(() => ({ error: m['api.Download Failed']() }));
+			throw new Error(err.error || m['api.HTTP Error']({ status: String(res.status) }));
 		}
 		return res.blob();
 	},
@@ -97,15 +112,15 @@ export const api = {
 				if (xhr.status === 401) {
 					auth.logout();
 					goto('/login');
-					reject(new Error('Session expired'));
+					reject(new SessionExpiredError());
 					return;
 				}
 				if (xhr.status >= 400) {
 					try {
 						const err = JSON.parse(xhr.responseText);
-						reject(new Error(err.error || `HTTP ${xhr.status}`));
+						reject(new Error(err.error || m['api.HTTP Error']({ status: String(xhr.status) })));
 					} catch {
-						reject(new Error(`HTTP ${xhr.status}`));
+						reject(new Error(m['api.HTTP Error']({ status: String(xhr.status) })));
 					}
 					return;
 				}
@@ -115,8 +130,8 @@ export const api = {
 					resolve(undefined as T);
 				}
 			};
-			xhr.onerror = () => reject(new Error('Upload failed'));
-			xhr.ontimeout = () => reject(new Error('Upload timed out'));
+			xhr.onerror = () => reject(new Error(m['api.Upload Failed']()));
+			xhr.ontimeout = () => reject(new Error(m['api.Upload Timed Out']()));
 			xhr.send(formData);
 		});
 	}

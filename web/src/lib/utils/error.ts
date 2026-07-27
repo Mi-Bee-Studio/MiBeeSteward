@@ -1,13 +1,14 @@
 /**
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+ * Copyright (c) 2026 MiBee Studio. All rights reserved.
  *
  * This file is part of MiBee Steward, distributed under the GNU Affero General
- * Public License v3.0 or later. You may use, modify, and redistribute it under
- * those terms; see LICENSE for the full text. A commercial license is available
- * for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+ * Public License v3.0 or later. A commercial license is available for use cases
+ * the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
  */
+
+import { m } from '$lib/i18n-paraglide';
 
 /**
  * Safely extracts a human-readable error message from an unknown error value.
@@ -34,5 +35,5 @@ export function getErrorMessage(err: unknown): string {
 		}
 	}
 
-	return 'An unexpected error occurred';
+	return m['errors.Unknown Error Desc']();
 }
