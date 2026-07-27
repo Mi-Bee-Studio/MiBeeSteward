@@ -66,6 +66,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"networks",
 		"notification_channels",
 		"notification_log",
+		"notification_read_states",
 		"scan_results",
 		"scan_snapshots",
 		"scan_task_runs",
@@ -85,12 +86,12 @@ func TestSetupTestDBFromSchema_Reusable(t *testing.T) {
 	db1, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db1.Close()
-	require.Len(t, listTables(t, db1), 27)
+	require.Len(t, listTables(t, db1), 28)
 
 	db2, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db2.Close()
-	require.Len(t, listTables(t, db2), 27)
+	require.Len(t, listTables(t, db2), 28)
 }
 
 func TestSetupTestDB_WithPragmas(t *testing.T) {

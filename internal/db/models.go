@@ -247,6 +247,12 @@ type NotificationLog struct {
 	SentAt       time.Time `json:"sent_at"`
 }
 
+type NotificationReadState struct {
+	UserID            int64     `json:"user_id"`
+	NotificationLogID int64     `json:"notification_log_id"`
+	ReadAt            time.Time `json:"read_at"`
+}
+
 type ScanResult struct {
 	ID                   int64     `json:"id"`
 	TaskID               int64     `json:"task_id"`

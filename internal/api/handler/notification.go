@@ -212,13 +212,25 @@ func (h *NotificationHandler) TestChannel(w http.ResponseWriter, r *http.Request
 // --- Notification Log Endpoints ---
 
 // ListNotificationLogs handles GET /api/v1/notification/logs
+//
+// Returns the most recent logs for the requesting user with a per-user
+// is_read flag, and a "total" field that is the user's UNREAD count (not the
+// total row count) — this is what the header bell needs for the badge. The
+// legacy system-wide view is available via the service layer but not exposed
+// over HTTP (no current consumer needs it).
 func (h *NotificationHandler) ListNotificationLogs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
 	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
 
-	logs, total, err := h.svc.ListNotificationLogs(r.Context(), limit, offset)
+	userID, _, ok := middleware.GetUserFromContext(r)
+	if !ok {
+		Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	logs, unread, err := h.svc.ListNotificationLogsForUser(r.Context(), userID, limit, offset)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to list notification logs")
 		return
@@ -226,8 +238,29 @@ func (h *NotificationHandler) ListNotificationLogs(w http.ResponseWriter, r *htt
 
 	Success(w, domain.NotificationLogListResponse{
 		Logs:  logs,
-		Total: int(total),
+		Total: int(unread),
 	})
+}
+
+// MarkAllNotificationLogsRead handles POST /api/v1/notification/logs/read
+//
+// Marks every currently-unread notification log as read for the requesting
+// user (idempotent). The header bell calls this when its dropdown is opened,
+// clearing the unread badge.
+func (h *NotificationHandler) MarkAllNotificationLogsRead(w http.ResponseWriter, r *http.Request) {
+	userID, _, ok := middleware.GetUserFromContext(r)
+	if !ok {
+		Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	n, err := h.svc.MarkAllNotificationLogsRead(r.Context(), userID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to mark notification logs as read")
+		return
+	}
+
+	Success(w, domain.MarkAllReadResponse{Marked: n})
 }
 
 // --- Helpers ---

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	"mibee-steward/internal/domain"
 )
@@ -137,6 +138,10 @@ func TestNotificationChannel_NotFound(t *testing.T) {
 // --- Alert Rule Tests removed: MiBee Steward does not build alerting. ---
 
 // --- Notification Log Tests ---
+//
+// Note: the "total" field in GET /notification/logs responses is the
+// requesting user's UNREAD count (not the total row count) — the header bell
+// consumes it for the badge. The tests below assert unread semantics.
 
 func TestNotificationLogs_List(t *testing.T) {
 	server, db := setupTestServer(t)
@@ -169,7 +174,7 @@ func TestNotificationLogs_Pagination(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Default pagination
+	// Default pagination — 5 unread for admin (total == unread count)
 	resp := authGet(t, server.URL+"/api/v1/notification/logs", token)
 	require.Equal(t, 200, resp.StatusCode)
 	var result map[string]interface{}
@@ -178,8 +183,12 @@ func TestNotificationLogs_Pagination(t *testing.T) {
 	logList, ok := result["logs"].([]interface{})
 	require.True(t, ok)
 	require.Len(t, logList, 5)
+	// Each log carries a per-user is_read flag (all unread here).
+	firstLog, ok := logList[0].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, false, firstLog["is_read"])
 
-	// Limit 2
+	// Limit 2 — unread count is still 5 (pagination doesn't change the badge)
 	resp = authGet(t, server.URL+"/api/v1/notification/logs?limit=2&offset=0", token)
 	require.Equal(t, 200, resp.StatusCode)
 	var paginated map[string]interface{}
@@ -197,6 +206,142 @@ func TestNotificationLogs_Pagination(t *testing.T) {
 	offsetList, ok := offsetResult["logs"].([]interface{})
 	require.True(t, ok)
 	require.Len(t, offsetList, 2)
+}
+
+// TestNotificationLogs_MarkAllRead verifies the bell's core flow: unread count
+// reflects new logs, drops to 0 after mark-all-read, and stays 0 on refresh.
+func TestNotificationLogs_MarkAllRead(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	// Insert 3 notification logs
+	for i := 0; i < 3; i++ {
+		_, err := db.Exec(
+			"INSERT INTO notification_log (status, payload, error_message) VALUES (?, ?, ?)",
+			"sent", `{"subject":"test"}`, "",
+		)
+		require.NoError(t, err)
+	}
+
+	// GET /logs → unread count = 3, all logs is_read=false
+	resp := authGet(t, server.URL+"/api/v1/notification/logs", token)
+	require.Equal(t, 200, resp.StatusCode)
+	var before map[string]interface{}
+	decodeJSON(t, resp, &before)
+	require.Equal(t, float64(3), before["total"])
+
+	// POST /logs/read → mark all read
+	resp = authPost(t, server.URL+"/api/v1/notification/logs/read", token, "")
+	require.Equal(t, 200, resp.StatusCode)
+	var markResult map[string]interface{}
+	decodeJSON(t, resp, &markResult)
+	require.Equal(t, float64(3), markResult["marked"])
+
+	// GET /logs again → unread count = 0, all logs is_read=true
+	resp = authGet(t, server.URL+"/api/v1/notification/logs", token)
+	require.Equal(t, 200, resp.StatusCode)
+	var after map[string]interface{}
+	decodeJSON(t, resp, &after)
+	require.Equal(t, float64(0), after["total"])
+	logList, ok := after["logs"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, logList, 3) // list still shows all logs, just marked read
+	firstLog, ok := logList[0].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, true, firstLog["is_read"])
+
+	// POST /logs/read again → idempotent, 0 newly-marked
+	resp = authPost(t, server.URL+"/api/v1/notification/logs/read", token, "")
+	require.Equal(t, 200, resp.StatusCode)
+	var markResult2 map[string]interface{}
+	decodeJSON(t, resp, &markResult2)
+	require.Equal(t, float64(0), markResult2["marked"])
+}
+
+// TestNotificationLogs_PerUserIsolation verifies each user has an independent
+// read water mark — user A marking read does NOT clear user B's badge.
+func TestNotificationLogs_PerUserIsolation(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	adminToken := loginAsAdmin(t, server)
+
+	// Create a second (non-admin) user
+	hash, err := bcrypt.GenerateFromPassword([]byte("user123"), bcrypt.DefaultCost)
+	require.NoError(t, err)
+	_, err = db.Exec(
+		"INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
+		"alice", "alice@test.com", string(hash), "user",
+	)
+	require.NoError(t, err)
+	aliceToken := loginAs(t, server, "alice", "user123")
+
+	// Insert 2 notification logs
+	for i := 0; i < 2; i++ {
+		_, err := db.Exec(
+			"INSERT INTO notification_log (status, payload, error_message) VALUES (?, ?, ?)",
+			"sent", `{"subject":"test"}`, "",
+		)
+		require.NoError(t, err)
+	}
+
+	// Both users start with 2 unread
+	for _, tok := range []string{adminToken, aliceToken} {
+		resp := authGet(t, server.URL+"/api/v1/notification/logs", tok)
+		require.Equal(t, 200, resp.StatusCode)
+		var r map[string]interface{}
+		decodeJSON(t, resp, &r)
+		require.Equal(t, float64(2), r["total"], "both users should see 2 unread initially")
+	}
+
+	// Admin marks all read
+	resp := authPost(t, server.URL+"/api/v1/notification/logs/read", adminToken, "")
+	require.Equal(t, 200, resp.StatusCode)
+
+	// Admin now has 0 unread, Alice STILL has 2 (independent water marks)
+	resp = authGet(t, server.URL+"/api/v1/notification/logs", adminToken)
+	require.Equal(t, 200, resp.StatusCode)
+	var adminAfter map[string]interface{}
+	decodeJSON(t, resp, &adminAfter)
+	require.Equal(t, float64(0), adminAfter["total"], "admin should have 0 unread after marking")
+
+	resp = authGet(t, server.URL+"/api/v1/notification/logs", aliceToken)
+	require.Equal(t, 200, resp.StatusCode)
+	var aliceAfter map[string]interface{}
+	decodeJSON(t, resp, &aliceAfter)
+	require.Equal(t, float64(2), aliceAfter["total"], "alice should still have 2 unread (independent water mark)")
+}
+
+// TestNotificationLogs_RequireAuthNotAdmin verifies the route was widened from
+// RequireAdmin to RequireAuth: a regular (non-admin) user can now read logs
+// and mark them read, because the bell renders for every authenticated user.
+func TestNotificationLogs_RequireAuthNotAdmin(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+
+	// Create a non-admin user
+	hash, err := bcrypt.GenerateFromPassword([]byte("user123"), bcrypt.DefaultCost)
+	require.NoError(t, err)
+	_, err = db.Exec(
+		"INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
+		"bob", "bob@test.com", string(hash), "user",
+	)
+	require.NoError(t, err)
+	bobToken := loginAs(t, server, "bob", "user123")
+
+	// Non-admin can GET /logs (would have been 403 under the old RequireAdmin)
+	resp := authGet(t, server.URL+"/api/v1/notification/logs", bobToken)
+	require.Equal(t, 200, resp.StatusCode)
+
+	// Non-admin can POST /logs/read
+	resp = authPost(t, server.URL+"/api/v1/notification/logs/read", bobToken, "")
+	require.Equal(t, 200, resp.StatusCode)
+
+	// Unauthenticated is still rejected
+	resp, err = server.Client().Get(server.URL + "/api/v1/notification/logs")
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, 401, resp.StatusCode)
 }
 
 // --- Test Channel Endpoint ---

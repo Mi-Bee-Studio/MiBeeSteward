@@ -155,6 +155,9 @@ func (s *NotificationService) DeleteChannel(ctx context.Context, id int64) error
 // --- Notification Logs ---
 
 // ListNotificationLogs returns notification logs with pagination.
+// NOTE: this is the legacy system-wide view (no per-user read state). The
+// header bell uses ListNotificationLogsForUser instead; this is kept for any
+// future admin/audit consumer that wants the raw delivery log.
 func (s *NotificationService) ListNotificationLogs(ctx context.Context, limit, offset int64) ([]domain.NotificationLogResponse, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -178,9 +181,65 @@ func (s *NotificationService) ListNotificationLogs(ctx context.Context, limit, o
 
 	result := make([]domain.NotificationLogResponse, len(logs))
 	for i, log := range logs {
-		result[i] = toNotificationLogResponse(log)
+		// Legacy view has no per-user read state; treat all as read.
+		result[i] = toNotificationLogResponse(log, true)
 	}
 	return result, total, nil
+}
+
+// ListNotificationLogsForUser returns the most recent notification logs for a
+// user, each annotated with that user's is_read flag, plus the user's unread
+// count. This is what the header bell consumes: the list for the dropdown and
+// the unread count for the badge.
+func (s *NotificationService) ListNotificationLogsForUser(ctx context.Context, userID, limit, offset int64) ([]domain.NotificationLogResponse, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	unread, err := s.q.CountUnreadNotificationLogsForUser(ctx, userID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count unread notification logs: %w", err)
+	}
+
+	rows, err := s.q.ListNotificationLogsForUser(ctx, db.ListNotificationLogsForUserParams{
+		UserID: userID,
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list notification logs for user: %w", err)
+	}
+
+	result := make([]domain.NotificationLogResponse, len(rows))
+	for i, row := range rows {
+		result[i] = domain.NotificationLogResponse{
+			ID:           row.ID,
+			RuleID:       row.RuleID,
+			ChannelID:    row.ChannelID,
+			Status:       row.Status,
+			Payload:      row.Payload,
+			ErrorMessage: row.ErrorMessage,
+			SentAt:       row.SentAt,
+			IsRead:       row.IsRead,
+		}
+	}
+	return result, unread, nil
+}
+
+// MarkAllNotificationLogsRead marks every currently-unread notification log as
+// read for the user (idempotent). Returns the number of logs newly marked.
+func (s *NotificationService) MarkAllNotificationLogsRead(ctx context.Context, userID int64) (int64, error) {
+	n, err := s.q.MarkAllNotificationLogsRead(ctx, db.MarkAllNotificationLogsReadParams{
+		UserID:   userID,
+		UserID_2: userID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to mark notification logs as read: %w", err)
+	}
+	return n, nil
 }
 
 // --- Response transformers ---
@@ -197,7 +256,7 @@ func toChannelResponse(ch db.NotificationChannel) domain.ChannelResponse {
 	}
 }
 
-func toNotificationLogResponse(log db.NotificationLog) domain.NotificationLogResponse {
+func toNotificationLogResponse(log db.NotificationLog, isRead bool) domain.NotificationLogResponse {
 	return domain.NotificationLogResponse{
 		ID:           log.ID,
 		RuleID:       log.RuleID,
@@ -206,5 +265,6 @@ func toNotificationLogResponse(log db.NotificationLog) domain.NotificationLogRes
 		Payload:      log.Payload,
 		ErrorMessage: log.ErrorMessage,
 		SentAt:       log.SentAt,
+		IsRead:       isRead,
 	}
 }
