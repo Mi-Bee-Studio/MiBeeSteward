@@ -108,25 +108,13 @@ type AddDevicesResponse struct {
 	Errors []string `json:"errors,omitempty"`
 }
 
-// validDeviceTypes maps allowed device type strings.
-var validDeviceTypes = map[string]bool{
-	"pc":       true,
-	"embedded": true,
-	"iot":      true,
-	"other":    true,
-	"server":   true,
-	"switch":   true,
-	"router":   true,
-	"firewall": true,
-	"nas":      true,
-	"camera":   true,
-	"phone":    true,
-	"printer":  true,
-}
-
-// ValidateDeviceType returns a valid device type, defaulting to "other".
+// ValidateDeviceType returns a valid device type, defaulting to "other". The
+// canonical list of valid types is ValidDeviceTypes in device.go (the single
+// source of truth); isValidDeviceType iterates that slice. The schema's
+// devices.type CHECK must agree; TestDevicesTypeCHECK_InSyncWithDomain guards
+// against drift.
 func ValidateDeviceType(t string) string {
-	if validDeviceTypes[t] {
+	if isValidDeviceType(t) {
 		return t
 	}
 	return "other"
