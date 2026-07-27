@@ -58,6 +58,9 @@ type NotificationLogResponse struct {
 	Payload      string    `json:"payload"`
 	ErrorMessage string    `json:"error_message"`
 	SentAt       time.Time `json:"sent_at"`
+	// IsRead is per-user (the bell renders for every authenticated user, each
+	// with an independent unread water mark). Drives unread styling + count.
+	IsRead bool `json:"is_read"`
 }
 
 type ChannelListResponse struct {
@@ -66,6 +69,15 @@ type ChannelListResponse struct {
 }
 
 type NotificationLogListResponse struct {
-	Logs  []NotificationLogResponse `json:"logs"`
-	Total int                       `json:"total"`
+	Logs []NotificationLogResponse `json:"logs"`
+	// Total is the requesting user's UNREAD count (not the total log row count).
+	// The field name is kept for backwards-compat with the existing frontend
+	// NotificationBell consumer; the bell only ever needed the unread count.
+	Total int `json:"total"`
+}
+
+// MarkAllReadResponse is returned by POST /notification/logs/read.
+type MarkAllReadResponse struct {
+	// Marked is the number of logs newly marked as read for the user.
+	Marked int64 `json:"marked"`
 }

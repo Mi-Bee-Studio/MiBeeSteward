@@ -729,10 +729,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Post("/{id}/test", notificationHandler.TestChannel)
 	})
 
-	// Notification log routes (admin only)
+	// Notification log routes — every authenticated user sees the header bell
+	// and has their own per-user read state, so logs + mark-as-read are
+	// RequireAuth (NOT RequireAdmin). Channel CRUD above stays admin-only.
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireAuth)
 		r.Get("/api/v1/notification/logs", notificationHandler.ListNotificationLogs)
+		r.Post("/api/v1/notification/logs/read", notificationHandler.MarkAllNotificationLogsRead)
 	})
 
 	// Prometheus metrics + HTTP service discovery are PUBLIC: Prometheus
