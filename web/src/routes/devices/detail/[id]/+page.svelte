@@ -91,6 +91,7 @@
 	let editingConfig = $state<typeof heartbeatConfigs[0] | null>(null);
 	let editConfigLoading = $state(false);
 	let deletingConfigId = $state<number | null>(null);
+	let heartbeatDeleteOpen = $state(false);
 	let deleteConfigLoading = $state(false);
 	// --- Label state ---
 	let labelSaving = $state(false);
@@ -334,6 +335,7 @@
 				await api.delete(`/heartbeat-configs/${cfg.id}`);
 				addToast('success', m['heartbeat.Config Deleted']());
 				deletingConfigId = null;
+				heartbeatDeleteOpen = false;
 				await fetchHeartbeatConfigs();
 			} catch (err: unknown) {
 				addToast('error', getErrorMessage(err));
@@ -1393,7 +1395,7 @@
 								</button>
 								<button
 									type="button"
-									onclick={() => { deletingConfigId = cfg.id; }}
+									onclick={() => { deletingConfigId = cfg.id; heartbeatDeleteOpen = true; }}
 									class="p-1 rounded text-muted hover:text-error hover:bg-error/10 transition-colors"
 									aria-label={m['heartbeat.Delete Config']()}
 									title={m['heartbeat.Delete Config']()}
@@ -1695,7 +1697,7 @@
 
 <!-- Heartbeat config delete confirmation -->
 <ConfirmDialog
-	open={deletingConfigId !== null}
+	bind:open={heartbeatDeleteOpen}
 	title={m['heartbeat.Delete Config']()}
 	message={m['heartbeat.Delete Confirm']()}
 	confirmLabel={m['common.Delete']()}
@@ -1703,7 +1705,7 @@
 	onConfirm={() => {
 		if (deletingConfigId !== null) {
 			const cfg = heartbeatConfigs.find((c) => c.id === deletingConfigId);
-			if (cfg) deleteConfig(cfg);
+			if (cfg) return deleteConfig(cfg);
 		}
 	}}
 	onCancel={() => { deletingConfigId = null; }}
