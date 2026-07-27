@@ -259,6 +259,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Runner: connects the engine to run/result persistence + the device bridge.
 	scanRunner := scannerv2runner.New(v2Engine, scanQueries, dbConn, heartbeatSvc, networkID, slog.Default())
+	scanRunner.SetLostThreshold(cfg.Scanner.LostThreshold) // scanner.lost_threshold (default 2; <=0 keeps default)
 
 	// Change detection (Phase 3): the center records device_added/changed/lost
 	// events to change_log + pushes in-process Watcher subscribers. The agent

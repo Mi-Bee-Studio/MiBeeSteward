@@ -140,6 +140,7 @@ func main() {
 	// the center tags its copies with the agent's network from the token.
 	scanRunner := scannerv2runner.New(engine, queries, dbConn, nil, 0, slog.Default())
 	scanRunner.SetReportSink(reporter.Report)
+	scanRunner.SetLostThreshold(cfg.Scanner.LostThreshold) // scanner.lost_threshold (default 2; <=0 keeps default)
 
 	// Scheduler: cron-driven local scans. The agent's scan_tasks live in its own
 	// mini-DB (seeded manually or via the task API on the center in a later

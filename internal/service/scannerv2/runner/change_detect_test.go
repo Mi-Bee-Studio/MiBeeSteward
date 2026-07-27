@@ -190,3 +190,47 @@ func TestDetectLost_ReappearanceResets(t *testing.T) {
 	conn.QueryRow(`SELECT miss_count FROM scan_snapshots WHERE ip='10.0.0.20'`).Scan(&miss)
 	require.Equal(t, int64(0), miss, "reappearance after 1 miss resets to 0")
 }
+
+// TestDetectLost_SetLostThreshold confirms scanner.lost_threshold (applied via
+// SetLostThreshold) is honored: with threshold=3 a device absent twice (which
+// WOULD be lost at the default threshold of 2) is still online, and only flips
+// to offline on the third consecutive absence. This is the regression guard for
+// the config key that replaced the hardcoded `const lostThreshold = 2`.
+func TestDetectLost_SetLostThreshold(t *testing.T) {
+	rn, _, conn := setupChangeDetectDB(t)
+	rn.SetLostThreshold(3)
+	require.Equal(t, int64(3), rn.LostThreshold(), "SetLostThreshold must apply")
+	ctx := context.Background()
+	netID := rn.networkID
+
+	rn.applyDeviceBridge(ctx, reportFor("10.0.0.30", "server", "", "aa:bb:cc:dd:ee:30"), netID, "")
+	// Scan 1: alive → snapshotted.
+	rn.DetectLost(ctx, netID, 1, []scannerv2.HostReport{
+		reportFor("10.0.0.30", "server", "", "aa:bb:cc:dd:ee:30"),
+	}, "")
+	// Scans 2 + 3: absent twice → miss_count=2 < threshold 3 → still online.
+	rn.DetectLost(ctx, netID, 1, nil, "")
+	rn.DetectLost(ctx, netID, 1, nil, "")
+	var status string
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='10.0.0.30'`).Scan(&status)
+	require.Equal(t, "online", status, "absent twice at threshold=3 should NOT be lost")
+
+	// Scan 4: third absence → miss_count=3 >= threshold → LOST.
+	rn.DetectLost(ctx, netID, 1, nil, "")
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='10.0.0.30'`).Scan(&status)
+	require.Equal(t, "offline", status, "absent three times at threshold=3 should be lost")
+}
+
+// TestSetLostThreshold_IgnoresNonPositive confirms SetLostThreshold rejects
+// non-positive values (keeps the constructor default of 2 — 0 means "unset →
+// use default", matching the config convention).
+func TestSetLostThreshold_IgnoresNonPositive(t *testing.T) {
+	rn, _, _ := setupChangeDetectDB(t)
+	require.Equal(t, int64(2), rn.LostThreshold(), "constructor default is 2")
+	rn.SetLostThreshold(0)
+	require.Equal(t, int64(2), rn.LostThreshold(), "0 is rejected (keeps default)")
+	rn.SetLostThreshold(-1)
+	require.Equal(t, int64(2), rn.LostThreshold(), "negative is rejected (keeps default)")
+	rn.SetLostThreshold(5)
+	require.Equal(t, int64(5), rn.LostThreshold(), "positive is applied")
+}
