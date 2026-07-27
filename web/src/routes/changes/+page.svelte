@@ -332,7 +332,7 @@
 				<DataTable
 					{columns}
 					rows={changes as unknown as Record<string, unknown>[]}
-					searchPlaceholder="{m['common.Search']()}..."
+					searchPlaceholder={m['common.Search']() + '...'}
 					searchableKeys={['change_type', 'agent_id', 'entity_id']}
 					emptyTitle={m['changes.No Changes']()}
 					expandedRowId={expandedId ?? undefined}

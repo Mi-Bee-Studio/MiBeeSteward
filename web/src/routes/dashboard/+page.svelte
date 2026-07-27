@@ -221,7 +221,7 @@
 					offsetCenter: [0, '40%'],
 					formatter: '{value}%'
 				},
-				data: [{ value: rate, name: m["heartbeat.Success"]() + ' Rate' }]
+				data: [{ value: rate, name: m["heartbeat.Success Rate"]() }]
 			}]
 		};
 	}

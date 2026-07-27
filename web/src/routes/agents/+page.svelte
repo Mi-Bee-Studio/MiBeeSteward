@@ -200,7 +200,7 @@
 					payload: { targets: scanTargets, timeout: scanTimeout }
 				});
 				scanModalOpen = false;
-				addToast('success', (m['agents.Scan Triggered']()).replace('{agentId}', scanAgentId));
+				addToast('success', m['agents.Scan Triggered']({ agentId: scanAgentId }));
 				fetchCommands();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
