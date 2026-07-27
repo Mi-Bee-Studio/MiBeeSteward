@@ -146,8 +146,12 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		r.Post("/{id}/test", notificationHandler.TestChannel)
 	})
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		// Notification logs + mark-as-read are RequireAuth (the header bell
+		// renders for every authenticated user, each with per-user read state).
+		// Channel CRUD above stays admin-only.
+		r.Use(middleware.RequireAuth)
 		r.Get("/api/v1/notification/logs", notificationHandler.ListNotificationLogs)
+		r.Post("/api/v1/notification/logs/read", notificationHandler.MarkAllNotificationLogsRead)
 	})
 
 	// Prometheus metrics
@@ -175,7 +179,15 @@ func insertTestAdmin(t *testing.T, db *sql.DB) {
 // loginAsAdmin logs in with the seeded admin and returns the JWT token.
 func loginAsAdmin(t *testing.T, server *httptest.Server) string {
 	t.Helper()
-	body := `{"username":"admin","password":"admin123"}`
+	return loginAs(t, server, "admin", "admin123")
+}
+
+// loginAs logs in with an arbitrary username/password and returns the JWT
+// token. Use insertTestAdmin + loginAsAdmin for the admin, or insert a user
+// row directly then call this for non-admin test users.
+func loginAs(t *testing.T, server *httptest.Server, username, password string) string {
+	t.Helper()
+	body := `{"username":"` + username + `","password":"` + password + `"}`
 	resp, err := http.Post(server.URL+"/api/v1/auth/login", "application/json", bytes.NewBufferString(body))
 	require.NoError(t, err)
 	defer resp.Body.Close()

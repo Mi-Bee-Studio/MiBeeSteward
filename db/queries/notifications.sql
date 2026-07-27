@@ -53,3 +53,34 @@ DELETE FROM notification_log
 WHERE rowid IN (
     SELECT rowid FROM notification_log WHERE notification_log.sent_at < ? LIMIT ?
 );
+
+-- name: ListNotificationLogsForUser :many
+-- Recent notification logs with a per-user is_read flag (drives the bell's
+-- unread styling).notification_log is system-wide; read state is per-user.
+SELECT l.id, l.rule_id, l.channel_id, l.status, l.payload, l.error_message, l.sent_at,
+       EXISTS(
+           SELECT 1 FROM notification_read_states s
+           WHERE s.user_id = ? AND s.notification_log_id = l.id
+       ) AS is_read
+FROM notification_log l
+ORDER BY l.sent_at DESC
+LIMIT ? OFFSET ?;
+
+-- name: CountUnreadNotificationLogsForUser :one
+-- Unread count for a user (logs with no matching read_state row).
+SELECT COUNT(*) FROM notification_log l
+WHERE NOT EXISTS(
+    SELECT 1 FROM notification_read_states s
+    WHERE s.user_id = ? AND s.notification_log_id = l.id
+);
+
+-- name: MarkAllNotificationLogsRead :execrows
+-- Idempotently mark all currently-unread notification logs as read for a
+-- user (INSERT OR IGNORE skips any pair already present). Returns the number
+-- of rows inserted (i.e. newly-read logs).
+INSERT OR IGNORE INTO notification_read_states (user_id, notification_log_id)
+SELECT ?, l.id FROM notification_log l
+WHERE NOT EXISTS(
+    SELECT 1 FROM notification_read_states s
+    WHERE s.user_id = ? AND s.notification_log_id = l.id
+);

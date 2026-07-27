@@ -17,34 +17,39 @@
 
 	interface NotificationLog {
 		id: number;
-		rule_name: string;
-		channel_name: string;
-		channel_type: string;
 		status: string;
 		payload: string;
 		error_message: string;
 		sent_at: string;
+		is_read: boolean;
 	}
 
 	interface NotificationLogsResponse {
 		logs: NotificationLog[];
+		// "total" is the requesting user's UNREAD count (server semantics), used
+		// directly as the bell badge value.
 		total: number;
+	}
+
+	interface MarkAllReadResponse {
+		marked: number;
 	}
 
 	let notifications = $state<NotificationLog[]>([]);
 	let unreadCount = $state(0);
 	let showDropdown = $state(false);
 	let loading = $state(false);
+	let marking = $state(false);
 	let containerRef: HTMLDivElement | undefined = $state();
 
 	async function fetchNotifications() {
 		try {
 			loading = true;
 			const res = await api.get<NotificationLogsResponse>(
-				'/notification/logs?status=sent&limit=10'
+				'/notification/logs?limit=10'
 			);
 			notifications = res.logs ?? [];
-			unreadCount = Math.min(res.total ?? 0, 99);
+			unreadCount = res.total ?? 0;
 		} catch {
 			// Silently fail — non-critical UI
 		} finally {
@@ -52,8 +57,46 @@
 		}
 	}
 
-	function toggleDropdown() {
+	async function markAllRead() {
+		if (marking || unreadCount === 0) return;
+		marking = true;
+		try {
+			await api.post<MarkAllReadResponse>('/notification/logs/read', {});
+			// Clear the badge + flip each visible item's is_read flag in place
+			// (index mutation, not array reassignment — reassigning the $state
+			// array while the dropdown's {#each} is mounted tears Svelte 5's
+			// effect graph and snaps the panel shut under hydration).
+			unreadCount = 0;
+			for (let i = 0; i < notifications.length; i++) {
+				notifications[i].is_read = true;
+			}
+		} catch {
+			// Silently fail — the badge will re-sync on the next poll.
+		} finally {
+			marking = false;
+		}
+	}
+
+	async function toggleDropdown() {
 		showDropdown = !showDropdown;
+		// Opening the dropdown marks everything read (clears the badge). This
+		// matches the common bell pattern (open == acknowledge all).
+		if (showDropdown) {
+			await markAllRead();
+		}
+	}
+
+	// Extract a human-readable subject from the notification payload JSON.
+	// The dispatcher stores { subject, body, recipient } — fall back to the
+	// delivery status if no subject is present.
+	function subject(payload: string, status: string): string {
+		try {
+			const parsed = JSON.parse(payload) as { subject?: string };
+			if (parsed.subject) return parsed.subject;
+		} catch {
+			// payload isn't JSON — fall through
+		}
+		return status === 'sent' ? m['notifications.Sent']() : m['notifications.Failed']();
 	}
 
 	function handleClickOutside(e: MouseEvent) {
@@ -91,7 +134,8 @@
 		<button
 			onclick={toggleDropdown}
 			class="btn-icon relative"
-			aria-label={m["notifications.Notification"]()}
+			aria-label={m["notifications.Notification"]()
+				+ (unreadCount > 0 ? ` (${unreadCount} ${m['notifications.Unread']()})` : '')}
 		>
 			<Bell class="w-5 h-5" />
 
@@ -136,36 +180,44 @@
 					{:else}
 						{#each notifications as notif}
 							<div
-								class="px-4 py-3 border-b border-border last:border-b-0
-									hover:bg-surface-2 transition-colors cursor-default"
+								class="flex gap-2 px-4 py-3 border-b border-border last:border-b-0
+									hover:bg-surface-2 transition-colors cursor-default
+									{notif.is_read ? 'opacity-60' : ''}"
 							>
-								<div class="flex items-start justify-between gap-2">
-									<p class="text-sm text-text font-medium truncate">
-										{notif.rule_name}
-									</p>
-									<span
-										class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium
+								<!-- Unread dot (left rail) — only renders for unread items -->
+								<span
+									class="shrink-0 mt-1.5 w-2 h-2 rounded-full
+										{notif.is_read ? 'bg-transparent' : 'bg-primary'}"
+									aria-label={notif.is_read ? undefined : m['notifications.Unread']()}
+								></span>
+								<div class="min-w-0 flex-1">
+									<div class="flex items-start justify-between gap-2">
+										<p class="text-sm text-text truncate {notif.is_read ? 'font-normal' : 'font-medium'}">
+											{subject(notif.payload, notif.status)}
+										</p>
+										<span
+											class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium
+												{notif.status === 'sent'
+												? 'bg-success/15 text-success'
+												: notif.status === 'failed'
+													? 'bg-error/15 text-error'
+													: 'bg-surface-2 text-muted'}"
+										>
 											{notif.status === 'sent'
-											? 'bg-success/15 text-success'
-											: notif.status === 'failed'
-												? 'bg-error/15 text-error'
-												: 'bg-surface-2 text-muted'}"
-									>
-										{notif.status === 'sent'
-											? m["notifications.Sent"]()
-											: notif.status === 'failed'
-												? m["notifications.Failed"]()
-												: notif.status}
-									</span>
-								</div>
-								<div class="flex items-center gap-2 mt-1">
-									<span class="text-xs text-muted truncate">
-										{notif.channel_name}
-									</span>
-									<span class="text-border-strong">·</span>
-									<span class="text-xs text-muted">
-										{formatTime(notif.sent_at)}
-									</span>
+												? m["notifications.Sent"]()
+												: notif.status === 'failed'
+													? m["notifications.Failed"]()
+													: notif.status}
+										</span>
+									</div>
+									{#if notif.error_message}
+										<p class="text-xs text-error mt-1 truncate">{notif.error_message}</p>
+									{/if}
+									<div class="flex items-center gap-2 mt-1">
+										<span class="text-xs text-muted">
+											{formatTime(notif.sent_at)}
+										</span>
+									</div>
 								</div>
 							</div>
 						{/each}

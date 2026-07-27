@@ -21,6 +21,22 @@ func (q *Queries) CountNotificationLogs(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countUnreadNotificationLogsForUser = `-- name: CountUnreadNotificationLogsForUser :one
+SELECT COUNT(*) FROM notification_log l
+WHERE NOT EXISTS(
+    SELECT 1 FROM notification_read_states s
+    WHERE s.user_id = ? AND s.notification_log_id = l.id
+)
+`
+
+// Unread count for a user (logs with no matching read_state row).
+func (q *Queries) CountUnreadNotificationLogsForUser(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUnreadNotificationLogsForUser, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createChannel = `-- name: CreateChannel :one
 
 INSERT INTO notification_channels (name, type, config, enabled)
@@ -309,6 +325,93 @@ func (q *Queries) ListNotificationLogsByRule(ctx context.Context, ruleID *int64)
 		return nil, err
 	}
 	return items, nil
+}
+
+const listNotificationLogsForUser = `-- name: ListNotificationLogsForUser :many
+SELECT l.id, l.rule_id, l.channel_id, l.status, l.payload, l.error_message, l.sent_at,
+       EXISTS(
+           SELECT 1 FROM notification_read_states s
+           WHERE s.user_id = ? AND s.notification_log_id = l.id
+       ) AS is_read
+FROM notification_log l
+ORDER BY l.sent_at DESC
+LIMIT ? OFFSET ?
+`
+
+type ListNotificationLogsForUserParams struct {
+	UserID int64 `json:"user_id"`
+	Limit  int64 `json:"limit"`
+	Offset int64 `json:"offset"`
+}
+
+type ListNotificationLogsForUserRow struct {
+	ID           int64     `json:"id"`
+	RuleID       *int64    `json:"rule_id"`
+	ChannelID    *int64    `json:"channel_id"`
+	Status       string    `json:"status"`
+	Payload      string    `json:"payload"`
+	ErrorMessage string    `json:"error_message"`
+	SentAt       time.Time `json:"sent_at"`
+	IsRead       bool      `json:"is_read"`
+}
+
+// Recent notification logs with a per-user is_read flag (drives the bell's
+// unread styling).notification_log is system-wide; read state is per-user.
+func (q *Queries) ListNotificationLogsForUser(ctx context.Context, arg ListNotificationLogsForUserParams) ([]ListNotificationLogsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listNotificationLogsForUser, arg.UserID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNotificationLogsForUserRow{}
+	for rows.Next() {
+		var i ListNotificationLogsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RuleID,
+			&i.ChannelID,
+			&i.Status,
+			&i.Payload,
+			&i.ErrorMessage,
+			&i.SentAt,
+			&i.IsRead,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markAllNotificationLogsRead = `-- name: MarkAllNotificationLogsRead :execrows
+INSERT OR IGNORE INTO notification_read_states (user_id, notification_log_id)
+SELECT ?, l.id FROM notification_log l
+WHERE NOT EXISTS(
+    SELECT 1 FROM notification_read_states s
+    WHERE s.user_id = ? AND s.notification_log_id = l.id
+)
+`
+
+type MarkAllNotificationLogsReadParams struct {
+	UserID   int64 `json:"user_id"`
+	UserID_2 int64 `json:"user_id_2"`
+}
+
+// Idempotently mark all currently-unread notification logs as read for a
+// user (INSERT OR IGNORE skips any pair already present). Returns the number
+// of rows inserted (i.e. newly-read logs).
+func (q *Queries) MarkAllNotificationLogsRead(ctx context.Context, arg MarkAllNotificationLogsReadParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markAllNotificationLogsRead, arg.UserID, arg.UserID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateChannel = `-- name: UpdateChannel :one

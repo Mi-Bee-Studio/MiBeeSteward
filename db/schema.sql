@@ -237,6 +237,17 @@ CREATE TABLE IF NOT EXISTS notification_log (
     sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Per-user notification read state. notification_log is system-wide (no
+-- recipient concept — it's a delivery log), so a separate join table tracks
+-- which (user_id, notification_log_id) pairs each user has read. This lets
+-- the header bell show a per-user unread count and clear on dropdown open.
+CREATE TABLE IF NOT EXISTS notification_read_states (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    notification_log_id INTEGER NOT NULL REFERENCES notification_log(id) ON DELETE CASCADE,
+    read_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, notification_log_id)
+);
+
 -- User TOTP (2FA)
 CREATE TABLE IF NOT EXISTS user_totp (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
