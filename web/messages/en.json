@@ -359,7 +359,9 @@
 		"Description": "Description",
 		"Tags": "Tags",
 		"Chart Unavailable": "Chart unavailable",
-		"Clear Search": "Clear search"
+		"Clear Search": "Clear search",
+		"On": "on",
+		"Off": "off"
 	},
 	"scanner": {
 		"Scanner": "Network Scanner",
@@ -514,7 +516,9 @@
 		"Cancelled": "Cancelled",
 		"Failed": "Failed",
 		"Run": "Run",
-		"New": "New"
+		"New": "New",
+		"Completed": "Completed",
+		"Status Triggered": "Triggered"
 	},
 	"labels": {
 		"Per Device Labels": "Per-Device Labels",
@@ -787,7 +791,11 @@
 		"Trigger Identify": "Identify",
 		"Pipeline": "Discovery Pipeline",
 		"Recent": "Recent Discoveries",
-		"No Recent": "No recent discoveries. New hosts detected by the passive sources will appear here."
+		"No Recent": "No recent discoveries. New hosts detected by the passive sources will appear here.",
+		"Recorded": "Recorded",
+		"Skipped Known": "Known (skipped)",
+		"Skipped Recent": "Suppressed (recent)",
+		"Identify Failed": "Identify failed"
 	},
 	"topology": {
 		"Title": "Network Topology",
