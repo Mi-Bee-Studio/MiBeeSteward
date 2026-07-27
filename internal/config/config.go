@@ -387,6 +387,22 @@ type DiscoveryConfig struct {
 	// No-op in default builds (needs WITH_ARPSCAN + CAP_NET_RAW); the toggle has
 	// effect only in a WITH_ARPSCAN build.
 	ARPScan DiscoverySourceToggle `koanf:"arp_scan"`
+	// DHCPLeases reads the local DHCP server's lease table (dnsmasq's
+	// /tmp/dhcp.leases on OpenWrt / /var/lib/misc/dnsmasq.leases on Debian). A
+	// Tier-1 router-resident signal: the gateway is the DHCP authority, so its
+	// lease table is the authoritative hostname↔MAC↔IP map — covering devices
+	// (sleeping IoT, firewalled hosts) that never answer SNMP/ICMP/rDNS. No-op
+	// on a host that isn't the LAN's DHCP server (file absent → source skips).
+	DHCPLeases DiscoverySourceToggle `koanf:"dhcp_leases"`
+	// Conntrack reads the kernel conntrack table (/proc/net/nf_conntrack) and
+	// emits the LAN-side endpoint of every ESTABLISHED/ASSURED flow. A Tier-1
+	// router-resident signal: the gateway is the NAT choke point, so its
+	// conntrack table is the authoritative "who is talking RIGHT NOW" view — a
+	// liveness + discovery source for hosts that don't answer active probes but
+	// maintain outbound flows. Filters to the local LAN CIDR (network.cidr) so
+	// it doesn't emit a row per public IP a device talks to. No-op when the
+	// nf_conntrack module isn't loaded or /proc/net/nf_conntrack is absent.
+	Conntrack DiscoverySourceToggle `koanf:"conntrack"`
 	// LLDPInterfaces is the list of NIC names for the raw-frame LLDPDU listener
 	// (ethertype 0x88cc). Empty = all UP non-loopback interfaces. Only active in
 	// WITH_LLDP builds (needs CAP_NET_RAW); no-op in the default build.
