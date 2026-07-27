@@ -42,6 +42,18 @@ heartbeat:
   default_interval: 30
   timeout: 5
   retention_days: 30
+  # Cadence of the heartbeat probing loop in seconds (default 30). The loop
+  # polls every device whose per-device interval is due and writes verdicts to
+  # an in-memory cache. Lower = faster liveness detection + more probe load;
+  # higher = the opposite. 0 = use default (30). Large fleets or tight RTT
+  # budgets may want to tune this. MIBEE_HEARTBEAT_TICK_INTERVAL_SECONDS.
+  tick_interval_seconds: 30
+  # Number of consecutive probe failures before a device flips to "offline"
+  # (default 5). This is the heartbeat-side (probe-based) death sensitivity;
+  # scanner.lost_threshold is the scan-side (absence-based) one. Lower = more
+  # responsive but more flap-prone; higher = more stable but slower to declare.
+  # 0 = use default (5). MIBEE_HEARTBEAT_OFFLINE_THRESHOLD.
+  offline_threshold: 5
   # Probe an already-offline device once every N ticks instead of every tick
   # (default 10 → ~5min on a 30s ticker for known-dead hosts vs 30s for live
   # ones). 0 = use default. A scan that revives a host clears this immediately.
@@ -86,6 +98,12 @@ scanner:
   default_timeout: 300        # seconds, per-host pipeline timeout (upper bound for ALL probes + handlers on one host)
   per_probe_timeout: 3        # seconds, single probe attempt (one SNMP Get / TCP dial / HTTP fetch). Keep small so dead hosts fail fast.
   max_concurrent_hosts: 50
+  # Number of consecutive scans a device must be absent from the alive set
+  # before being declared "lost" (default 2). Single missed scans (ICMP drop,
+  # brief downtime, jitter) must not flap a device offline. This is the
+  # scan-side (absence-based) death sensitivity; heartbeat.offline_threshold
+  # is the probe-based one. 0 = use default (2). MIBEE_SCANNER_LOST_THRESHOLD.
+  lost_threshold: 2
   retention_days: 30
   default_cron_expr: "0 */6 * * *"
   # v2 engine tuning (the legacy v1 engine has been removed).

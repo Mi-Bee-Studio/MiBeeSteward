@@ -60,10 +60,18 @@ type HeartbeatService struct {
 // time-series store (separate SQLite file, batched writes).
 func NewHeartbeatService(mainDB *sql.DB, store *HeartbeatStore, cfg *config.Config) *HeartbeatService {
 	hcfg := cfg.Heartbeat
-	// Default offline backoff: 10 ticks. With the 30s ticker that means a
-	// known-offline device is probed every ~5min instead of every 30s. 0 in
-	// config is treated as "unset → use default" (consistent with the rest of
-	// the heartbeat config). A negative value is clamped to 0 (no backoff).
+	// Defaults: tick=30s, offline threshold=5 failures, offline backoff=10
+	// ticks. 0 in config is treated as "unset → use default" (consistent with
+	// the rest of the heartbeat config). Negative values are clamped to the
+	// nearest sane bound.
+	if hcfg.TickIntervalSeconds <= 0 {
+		hcfg.TickIntervalSeconds = 30
+	}
+	if hcfg.OfflineThreshold <= 0 {
+		hcfg.OfflineThreshold = 5
+	}
+	// With the 30s ticker a 10-tick backoff means a known-offline device is
+	// probed every ~5min instead of every 30s.
 	if hcfg.OfflineBackoffTicks == 0 {
 		hcfg.OfflineBackoffTicks = 10
 	}
@@ -111,10 +119,15 @@ func (s *HeartbeatService) Start(ctx context.Context) {
 	// main DB. Probes write to statusCache (memory); this loop syncs every 30s.
 	go s.syncStatusLoop(ctx)
 
-	// 30s ticker for probing. Probes write results to the store (separate DB)
-	// and verdicts to statusCache (memory) — neither touches the main DB, so
-	// concurrent probing is safe (no SQLite race).
-	ticker := time.NewTicker(30 * time.Second)
+	// Probing ticker. Probes write results to the store (separate DB) and
+	// verdicts to statusCache (memory) — neither touches the main DB, so
+	// concurrent probing is safe (no SQLite race). Cadence is configurable via
+	// heartbeat.tick_interval_seconds (default 30s).
+	tickInterval := time.Duration(s.cfg.TickIntervalSeconds) * time.Second
+	if tickInterval <= 0 {
+		tickInterval = 30 * time.Second
+	}
+	ticker := time.NewTicker(tickInterval)
 	defer ticker.Stop()
 
 	slog.Info("heartbeat scheduler started")
@@ -450,8 +463,10 @@ func (s *HeartbeatService) applyDeviceVerdict(deviceID int64, anySuccess bool) {
 		count := s.failCounts[deviceID]
 		s.failCountsMu.Unlock()
 
-		const offlineThreshold = 5
-		if count < offlineThreshold {
+		// Offline threshold is configurable (heartbeat.offline_threshold,
+		// default 5). A device must fail this many consecutive probes before
+		// flipping to offline.
+		if count < s.cfg.OfflineThreshold {
 			return // not yet at threshold, keep current status
 		}
 		newStatus = "offline"
@@ -513,12 +528,18 @@ func (s *HeartbeatService) initStatusCache(ctx context.Context) {
 }
 
 // syncStatusLoop is the SOLE writer of devices.status to the main DB. It runs
-// every 30s, diffing the in-memory statusCache against lastSynced and writing
-// only the changes. In steady state (no status changes), this is zero writes.
+// at the configured tick cadence (heartbeat.tick_interval_seconds, default
+// 30s), diffing the in-memory statusCache against lastSynced and writing only
+// the changes. In steady state (no status changes), this is zero writes.
 // Probes never touch devices.status — they only update statusCache — so there's
-// no concurrent-write race on the main DB.
+// no concurrent-write race on the main DB. The sync cadence tracks the probe
+// ticker so status writes keep up with probe verdicts at any configured tick.
 func (s *HeartbeatService) syncStatusLoop(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	tickInterval := time.Duration(s.cfg.TickIntervalSeconds) * time.Second
+	if tickInterval <= 0 {
+		tickInterval = 30 * time.Second
+	}
+	ticker := time.NewTicker(tickInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -592,7 +613,13 @@ func (s *HeartbeatService) syncStatus(ctx context.Context) {
 func (s *HeartbeatService) isDue(_ context.Context, cfg db.HeartbeatConfig) bool {
 	interval := time.Duration(cfg.IntervalSeconds) * time.Second
 	if interval <= 0 {
-		interval = 30 * time.Second
+		// Per-device interval unset → fall back to the configured tick cadence
+		// (heartbeat.tick_interval_seconds, default 30s) so the device is probed
+		// once per tick.
+		interval = time.Duration(s.cfg.TickIntervalSeconds) * time.Second
+		if interval <= 0 {
+			interval = 30 * time.Second
+		}
 	}
 
 	// Read the last probe time from the in-memory map — NOT from the heartbeat

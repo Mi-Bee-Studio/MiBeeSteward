@@ -157,6 +157,23 @@ type HeartbeatConfig struct {
 	DefaultInterval int `koanf:"default_interval"`
 	Timeout         int `koanf:"timeout"`
 	RetentionDays   int `koanf:"retention_days"`
+	// TickIntervalSeconds is the cadence of the heartbeat probing loop in
+	// seconds (default 30). The loop polls every device whose heartbeat config
+	// is due and writes verdicts to the in-memory status cache. Distinct from
+	// DefaultInterval (which is the per-device probe interval stored in
+	// heartbeat_configs.interval_seconds and feeds the isDue window) — that
+	// value is also defaulted to TickIntervalSeconds when 0, so out of the box
+	// a device is probed once per tick. Operators with large fleets or tight
+	// RTT budgets can lower the tick for faster liveness detection or raise it
+	// to reduce probe load. 0 means "use the default" (30s).
+	TickIntervalSeconds int `koanf:"tick_interval_seconds"`
+	// OfflineThreshold is the number of consecutive probe failures before a
+	// device flips to "offline" (default 5). Together with scanner.lost_threshold
+	// it defines the full death-detection behavior: this knob is the
+	// heartbeat-side (probe-based) sensitivity, lost_threshold is the scan-side
+	// (absence-based) sensitivity. Lower = more responsive but more flap-prone;
+	// higher = more stable but slower to declare dead. 0 means "use the default".
+	OfflineThreshold int `koanf:"offline_threshold"`
 	// OfflineBackoffTicks throttles probing of devices already marked offline.
 	// A value of N means an offline device is probed once every N ticks instead
 	// of every tick (default 10 → on a 30s ticker that's ~5min between probes
@@ -212,6 +229,15 @@ type ScannerConfig struct {
 	MaxConcurrentScans int  `koanf:"max_concurrent_scans"`
 	DefaultTimeout     int  `koanf:"default_timeout"`
 	MaxConcurrentHosts int  `koanf:"max_concurrent_hosts"`
+	// LostThreshold is the number of consecutive scans a device must be absent
+	// from the alive set before being declared "lost" (default 2). Single
+	// missed scans (ICMP drop, brief host downtime, network jitter) must not
+	// flap a device offline — see architecture-future.md §8 note 3 (去抖动/grace
+	// period). This is the scan-side (absence-based) death sensitivity; the
+	// heartbeat-side (probe-based) sensitivity is heartbeat.offline_threshold.
+	// 0 means "use the default" (2). Applied by DetectLost (runner), shared by
+	// the local scan path + the agent→center ingestion path + the lease sweeper.
+	LostThreshold int `koanf:"lost_threshold"`
 	// PerProbeTimeout bounds a SINGLE probe attempt (one SNMP Get, one TCP dial,
 	// one HTTP fetch) in seconds. Distinct from default_timeout (which bounds
 	// the whole per-host pipeline). Default 3s — keeps /24 scans fast even when
