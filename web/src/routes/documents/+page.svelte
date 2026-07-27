@@ -403,7 +403,7 @@
 				{columns}
 				rows={documents as unknown as Record<string, unknown>[]}
 				searchableKeys={['title', 'description', 'type']}
-				searchPlaceholder="{m["common.Search"]()}..."
+				searchPlaceholder={m["common.Search"]() + '...'}
 				emptyTitle={m["common.No Results"]()}
 			/>
 		</div>

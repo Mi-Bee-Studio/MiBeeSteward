@@ -13,7 +13,6 @@
  * Paraglide i18n wrapper.
  *
  * Provides type-safe message functions compiled by @inlang/paraglide-js.
- * Coexists with the legacy i18n.ts — no breaking changes.
  *
  * Usage:
  *   import { m, getLocale, setLocale } from '$lib/i18n-paraglide';
@@ -80,23 +79,4 @@ export function setLocale(
  */
 export function getLocale(): string {
 	return pgGetLocale() as string;
-}
-
-/**
- * Legacy-compatible translation helper.
- *
- * Mirrors the `t(section, key)` signature from the old i18n.ts so consumers
- * can switch incrementally. Resolves `{section}_{key}` from the paraglide
- * message map.
- *
- * @example
- *   t('navigation', 'Dashboard')  // → m["navigation.Dashboard"]()
- */
-export function t(section: string, key: string): string {
-	const flatKey = `${section}.${key}` as keyof typeof m;
-	const fn = (m as any)[flatKey];
-	if (typeof fn === 'function') return fn();
-	// Fallback to the legacy resolver so transitional code still works.
-	const { default: { t: legacyT } = {} as any } = {} as any;
-	return key;
 }

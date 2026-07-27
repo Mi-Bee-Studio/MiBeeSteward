@@ -11,7 +11,7 @@
 <script lang="ts">
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { validateScanTarget, validateCronExpr } from '$lib/utils/validation';
@@ -84,6 +84,16 @@
 
 	// --- Lifecycle ---
 	onMount(fetchTasks);
+
+	// Clear all in-flight poll timers on unmount so navigating away mid-run
+	// does not keep firing requests (and writing toasts/state) against a
+	// destroyed component. Each timer otherwise self-reschedules for up to ~5min.
+	onDestroy(() => {
+		for (const timer of pollingTimers.values()) {
+			clearTimeout(timer);
+		}
+		pollingTimers.clear();
+	});
 
 	// --- Data fetching ---
 	async function fetchTasks() {
