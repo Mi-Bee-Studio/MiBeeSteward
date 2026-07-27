@@ -36,6 +36,7 @@ import (
 	"mibee-steward/internal/agent"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
+	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
 	scannerv2probe "mibee-steward/internal/service/scannerv2/probe"
@@ -160,6 +161,99 @@ func main() {
 		slog.Info("agent scan scheduler started")
 	}
 
+	// Passive discovery service — the SAME wiring the center uses
+	// (internal/api/routes/routes.go), so the agent gets the passive ARP-cache +
+	// multicast + router_arp sources for free. This is Phase A of the
+	// router-agent roadmap: a router-resident agent (or a center deployed on a
+	// router, form C) sees a far richer broadcast domain than a random LAN host,
+	// and the existing discovery/ sources capture that choke-point value without
+	// new code. The discovery config block (scanner.discovery.*) is shared with
+	// the center; an operator enables the same sources in agent.yaml.
+	//
+	// The sources write through the runner's device bridge → reportSink →
+	// upstream reporter, so passively-discovered hosts reach the center via the
+	// same path as actively-scanned ones. discCancel is invoked on shutdown.
+	var discCancel context.CancelFunc
+	if cfg.Scanner.Discovery.Enabled {
+		discSvc := scannerv2discovery.New(
+			scannerv2discovery.Config{
+				Interval:        time.Duration(cfg.Scanner.Discovery.Interval) * time.Second,
+				TriggerIdentify: cfg.Scanner.Discovery.TriggerIdentify,
+			},
+			scannerv2discovery.SinkAdapter{Runner: scanRunner},
+			scannerv2discovery.IdentifierAdapter(engine),
+			dbConn, 0, slog.Default(),
+		)
+		discCtx, cancel := context.WithCancel(ctxBg)
+		discCancel = cancel
+		discSvc.Start(discCtx)
+		interval := time.Duration(cfg.Scanner.Discovery.Interval) * time.Second
+		if interval <= 0 {
+			interval = 60 * time.Second
+		}
+		var activeSources []string
+		// router_arp: widest coverage — one SNMP Walk per configured router.
+		if cfg.Scanner.Discovery.RouterARP.Enabled {
+			routerCommunity := cfg.Scanner.SNMPCommunity
+			if cfg.Scanner.RouterARP.Community != "" {
+				routerCommunity = cfg.Scanner.RouterARP.Community
+			}
+			routerTimeout := time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second
+			if routerTimeout <= 0 {
+				routerTimeout = 3 * time.Second
+			}
+			routerARPSrc := scannerv2discovery.NewRouterARPSource(
+				cfg.Scanner.RouterARP.Routers, routerCommunity, routerTimeout,
+				interval, discSvc, slog.Default(),
+			)
+			routerARPSrc.Start(discCtx)
+			activeSources = append(activeSources, "router_arp")
+		}
+		// arp_cache: free byproduct of normal operation (reads /proc/net/arp).
+		if cfg.Scanner.Discovery.ARPCache.Enabled {
+			arpCacheSrc := scannerv2discovery.NewARPCacheSource(interval, discSvc, slog.Default())
+			arpCacheSrc.Start(discCtx)
+			activeSources = append(activeSources, "arp_cache")
+		}
+		// multicast: passive mDNS/SSDP listener (zero outbound traffic).
+		if cfg.Scanner.Discovery.Multicast.Enabled {
+			mcastSrc := scannerv2discovery.NewMulticastSource(discSvc, slog.Default())
+			mcastSrc.Start(discCtx)
+			activeSources = append(activeSources, "multicast")
+		}
+		// arp_scan: WITH_ARPSCAN build only; NewARPScanSource returns nil
+		// otherwise (or without CAP_NET_RAW) — nil guard skips it silently.
+		if cfg.Scanner.Discovery.ARPScan.Enabled {
+			if arpScanSrc := scannerv2discovery.NewARPScanSource(
+				cfg.Network.CIDR, interval, cfg.Scanner.ARPScan.Interface,
+				discSvc, slog.Default(),
+			); arpScanSrc != nil {
+				arpScanSrc.Start(discCtx)
+				activeSources = append(activeSources, "arp_scan")
+			}
+		}
+		// lldp_frame / cdp_frame: WITH_LLDP / WITH_CDP builds only; the New*
+		// constructors return nil in the default build → skipped silently.
+		if lldpSrc := scannerv2discovery.NewLLDPFrameSource(
+			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
+		); lldpSrc != nil {
+			lldpSrc.Start(discCtx)
+			activeSources = append(activeSources, "lldp_frame")
+		}
+		if cdpSrc := scannerv2discovery.NewCDPFrameSource(
+			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
+		); cdpSrc != nil {
+			cdpSrc.Start(discCtx)
+			activeSources = append(activeSources, "cdp_frame")
+		}
+
+		discSvc.SetSources(activeSources)
+		slog.Info("agent passive discovery ready",
+			"interval", interval.String(),
+			"sources", activeSources,
+			"trigger_identify", cfg.Scanner.Discovery.TriggerIdentify)
+	}
+
 	// Command poller: fetches ad-hoc scan commands from the center (Phase 5c).
 	// The runScan callback wraps the runner so this package doesn't import runner
 	// directly (avoids an import cycle). Commands are best-effort — the agent's
@@ -194,6 +288,9 @@ func main() {
 	<-quit
 	slog.Info("shutting down mibee-agent...")
 	cancel()
+	if discCancel != nil {
+		discCancel() // stop passive-discovery sources before the runner goes away
+	}
 	cmdPoller.Stop()
 	if scanScheduler != nil {
 		scanScheduler.Stop()
