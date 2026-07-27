@@ -380,7 +380,6 @@ interface Stats {
 			addToast('error', getErrorMessage(err));
 		} finally {
 			batchLoading = false;
-			batchDeleteOpen = false;
 		}
 	}
 

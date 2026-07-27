@@ -217,7 +217,6 @@
 	}
 
 	async function performAdd() {
-		confirmAddOpen = false;
 		adding = true;
 		try {
 			const devices = getAliveHosts()

@@ -218,7 +218,6 @@
 				label: m["common.Undo"](),
 				timeout: 10000
 			});
-			deleteOpen = false;
 			deleteTarget = null;
 			fetchDocuments();
 		} catch (err: unknown) {
