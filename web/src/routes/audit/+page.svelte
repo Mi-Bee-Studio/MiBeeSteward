@@ -404,7 +404,7 @@
 				<DataTable
 					{columns}
 					rows={logs as unknown as Record<string, unknown>[]}
-					searchPlaceholder="{m["common.Search"]()}..."
+					searchPlaceholder={m["common.Search"]() + '...'}
 					searchableKeys={['username', 'action', 'resource_type', 'ip_address']}
 					emptyTitle={m["common.No Results"]()}
 					expandedRowId={expandedId ?? undefined}
