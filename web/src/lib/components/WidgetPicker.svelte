@@ -130,7 +130,7 @@
 			</div>
 
 			<div class="form-group">
-				<label class="label" for="widget-query">{m["dashboard.Query"]} (PromQL)</label>
+				<label class="label" for="widget-query">{m["dashboard.Query (PromQL)"]()}</label>
 				<input
 					id="widget-query"
 					type="text"
@@ -142,7 +142,7 @@
 			</div>
 
 			<div class="form-group">
-				<label class="label" for="widget-refresh">{m["dashboard.Refresh Interval"]} (s)</label>
+				<label class="label" for="widget-refresh">{m["dashboard.Refresh Interval (s)"]()}</label>
 				<input
 					id="widget-refresh"
 					type="number"

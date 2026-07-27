@@ -85,7 +85,7 @@
 						aria-label={m['common.Rows per page']()}
 					>
 						{#each pageSizeOptions as opt}
-							<option value={opt}>{opt} / page</option>
+							<option value={opt}>{m['common.Rows Per Page Option']({ n: String(opt) })}</option>
 						{/each}
 					</select>
 				</div>
