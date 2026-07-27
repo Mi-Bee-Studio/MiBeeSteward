@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS heartbeat_configs (
     interval_seconds INTEGER NOT NULL DEFAULT 30,
     timeout_seconds INTEGER NOT NULL DEFAULT 5,
     snmp_community TEXT NOT NULL DEFAULT 'public',
-    snmp_oid TEXT NOT NULL DEFAULT '1.3.6.1.2.1.1.3.0',
+    snmp_oid TEXT NOT NULL DEFAULT '1.3.6.1.2.1.1.3.0', -- sysUpTimeInstance; keep in sync with config.SysUpTimeOID (DDL can't reference the Go const)
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
