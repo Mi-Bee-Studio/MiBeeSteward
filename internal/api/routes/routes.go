@@ -219,9 +219,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// out of the box.
 	scannerPortSpec := cfg.Scanner.PipelineDefaults.DefaultPorts
 	if scannerPortSpec == "" {
-		scannerPortSpec = "22,21,23,25,53,80,110,143,389,443,445,554,631,636,8554,1433," +
-			"3306,3389,5432,5900,6379,8000,8080,8081,8443,8888,9000,9090,9100,9104," +
-			"9113,9121,9187,9200,9443,11211,27017,161"
+		scannerPortSpec = config.DefaultScanPortSpec
 	}
 	v2Engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
 		PortSpec:           scannerPortSpec,

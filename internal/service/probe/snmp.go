@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/gosnmp/gosnmp"
+
+	"mibee-steward/internal/config"
 )
 
 // SNMPProber performs SNMP v2c basic connectivity checks.
@@ -33,7 +35,7 @@ func (p *SNMPProber) Probe(_ context.Context, target string, timeout time.Durati
 
 	oid := p.OID
 	if oid == "" {
-		oid = "1.3.6.1.2.1.1.3.0"
+		oid = config.SysUpTimeOID
 	}
 
 	snmp := &gosnmp.GoSNMP{

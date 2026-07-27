@@ -96,9 +96,7 @@ func main() {
 	// concerns. dbConn lets the engine's store write the local shadow devices.
 	scannerPortSpec := cfg.Scanner.PipelineDefaults.DefaultPorts
 	if scannerPortSpec == "" {
-		scannerPortSpec = "22,21,23,25,53,80,110,143,389,443,445,554,631,636,8554,1433," +
-			"3306,3389,5432,5900,6379,8000,8080,8081,8443,8888,9000,9090,9100,9104," +
-			"9113,9121,9187,9200,9443,11211,27017,161"
+		scannerPortSpec = config.DefaultScanPortSpec
 	}
 	engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
 		PortSpec:           scannerPortSpec,
@@ -286,7 +284,7 @@ CREATE TABLE IF NOT EXISTS heartbeat_configs (
 	device_id INTEGER NOT NULL, method TEXT NOT NULL CHECK(method IN ('icmp','http','tcp','snmp')),
 	target TEXT NOT NULL, interval_seconds INTEGER NOT NULL DEFAULT 30,
 	timeout_seconds INTEGER NOT NULL DEFAULT 5, snmp_community TEXT NOT NULL DEFAULT 'public',
-	snmp_oid TEXT NOT NULL DEFAULT '1.3.6.1.2.1.1.3.0', enabled INTEGER NOT NULL DEFAULT 1,
+	snmp_oid TEXT NOT NULL DEFAULT '1.3.6.1.2.1.1.3.0', enabled INTEGER NOT NULL DEFAULT 1, -- sysUpTimeInstance; keep in sync with config.SysUpTimeOID (raw-string DDL can't reference the const)
 	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

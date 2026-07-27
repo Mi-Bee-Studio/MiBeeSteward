@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 
+	"mibee-steward/internal/config"
 	"mibee-steward/internal/service/scannerv2"
 )
 
@@ -139,7 +140,7 @@ func (SNMPHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.He
 		Method:        "snmp",
 		Target:        svc.IP,
 		SNMPCommunity: community,
-		SNMPOID:       "1.3.6.1.2.1.1.3.0", // sysUpTime
+		SNMPOID:       config.SysUpTimeOID, // sysUpTime
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
@@ -84,7 +85,7 @@ func (h *HeartbeatHandler) CreateConfig(w http.ResponseWriter, r *http.Request) 
 	}
 	oid := req.SnmpOid
 	if oid == "" {
-		oid = "1.3.6.1.2.1.1.3.0"
+		oid = config.SysUpTimeOID
 	}
 	enabled := int64(1)
 	if req.Enabled != nil {
