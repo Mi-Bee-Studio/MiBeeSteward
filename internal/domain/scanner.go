@@ -108,21 +108,17 @@ type AddDevicesResponse struct {
 	Errors []string `json:"errors,omitempty"`
 }
 
-// validDeviceTypes maps allowed device type strings.
-var validDeviceTypes = map[string]bool{
-	"pc":       true,
-	"embedded": true,
-	"iot":      true,
-	"other":    true,
-	"server":   true,
-	"switch":   true,
-	"router":   true,
-	"firewall": true,
-	"nas":      true,
-	"camera":   true,
-	"phone":    true,
-	"printer":  true,
-}
+// validDeviceTypes is derived from ValidDeviceTypes (device.go) so the canonical
+// list of device types has ONE source of truth. Scanner-side validation and
+// the schema's devices.type CHECK must agree; TestDevicesTypeCHECK_InSyncWithDomain
+// guards against drift.
+var validDeviceTypes = func() map[string]bool {
+	m := make(map[string]bool, len(ValidDeviceTypes))
+	for _, t := range ValidDeviceTypes {
+		m[string(t)] = true
+	}
+	return m
+}()
 
 // ValidateDeviceType returns a valid device type, defaulting to "other".
 func ValidateDeviceType(t string) string {
