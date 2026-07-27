@@ -10,10 +10,102 @@
 package classify
 
 import (
+	_ "embed"
+	"log/slog"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 
 	"mibee-steward/internal/service/scannerv2"
 )
+
+// snmpDataYAML is the data half of SNMPClassifier (the logic half is the Go
+// functions below). It mirrors configs/fingerprints/snmp-data.yaml via the
+// sync-fingerprints make target (copied to fingerprint-assets/ at build time).
+// Editing this YAML — not Go code — is how new vendor OIDs, sysDescr keywords,
+// brand keywords, or OS labels are added. This is the same data-driven pattern
+// runner/device_type_rules.go uses for device-type inference.
+//
+// Before this refactor the same data lived as Go literals (enterpriseOIDPrefix,
+// the typeFromSysDescr switch, etc.) AND as this YAML, with the YAML a dead
+// copy — so the two had already drifted (the YAML's oid_prefixes table has 13
+// more consumer/SMB vendors than the old Go table did). The YAML is now the
+// single source of truth.
+//
+//go:embed fingerprint-assets/snmp-data.yaml
+var snmpDataYAML string
+
+// snmpData is the parsed snmp-data.yaml, populated once by init(). Package-level
+// because the tables are immutable after load and shared by every SNMPClassifier
+// call. All keyword matching is case-insensitive (keywords and inputs are
+// lowercased once at load/match time).
+var snmpData snmpDataTables
+
+type snmpDataTables struct {
+	OIDPrefixes    []oidPrefixRule     `yaml:"oid_prefixes"`
+	SysdescrTypes  []sysdescrTypeRule  `yaml:"sysdescr_types"`
+	SysdescrBrands []sysdescrBrandRule `yaml:"sysdescr_brands"`
+	SysdescrOS     []sysdescrOSRule    `yaml:"sysdescr_os"`
+}
+
+// oidPrefixRule maps a sysObjectID enterprise OID prefix to a brand and (optionally)
+// a device type. Order matters: more-specific prefixes must precede their general
+// parent (e.g. 9.1.300 before 9.1 before 9) — typeFromOID returns on the first
+// HasPrefix hit. `type` may be empty when the OID alone can't tell (e.g. Net-SNMP
+// 8072 runs on anything).
+type oidPrefixRule struct {
+	Prefix string `yaml:"prefix"`
+	Brand  string `yaml:"brand"`
+	Type   string `yaml:"type"`
+}
+
+// sysdescrTypeRule matches a sysDescr substring keyword (case-insensitive) to a
+// device type. Ordered — first match wins. Mirrors the original typeFromSysDescr
+// switch order.
+type sysdescrTypeRule struct {
+	Keywords []string `yaml:"keywords"`
+	Type     string   `yaml:"type"`
+}
+
+// sysdescrBrandRule matches a sysDescr substring keyword to a vendor brand.
+// Case-insensitive contains; first hit wins; falls back to the OID table.
+type sysdescrBrandRule struct {
+	Keyword string `yaml:"keyword"`
+	Brand   string `yaml:"brand"`
+}
+
+// sysdescrOSRule matches a sysDescr substring keyword to a normalized OS family
+// label. Ordered — first match wins.
+type sysdescrOSRule struct {
+	Keywords []string `yaml:"keywords"`
+	OS       string   `yaml:"os"`
+}
+
+func init() {
+	if err := yaml.Unmarshal([]byte(snmpDataYAML), &snmpData); err != nil {
+		// A malformed embedded table is a build-time authoring error, not a
+		// runtime condition — log loudly and fall back to empty tables (which
+		// makes the SNMP classifier return no type/brand/OS, degrading
+		// gracefully rather than panicking on startup).
+		slog.Error("snmp-data.yaml parse failed; SNMP type/brand/os inference disabled", "error", err)
+		snmpData = snmpDataTables{}
+		return
+	}
+	// Lowercase all keywords once so match-time comparison is allocation-free.
+	for i := range snmpData.SysdescrTypes {
+		for j := range snmpData.SysdescrTypes[i].Keywords {
+			snmpData.SysdescrTypes[i].Keywords[j] = strings.ToLower(snmpData.SysdescrTypes[i].Keywords[j])
+		}
+	}
+	for i := range snmpData.SysdescrBrands {
+		snmpData.SysdescrBrands[i].Keyword = strings.ToLower(snmpData.SysdescrBrands[i].Keyword)
+	}
+	for i := range snmpData.SysdescrOS {
+		for j := range snmpData.SysdescrOS[i].Keywords {
+			snmpData.SysdescrOS[i].Keywords[j] = strings.ToLower(snmpData.SysdescrOS[i].Keywords[j])
+		}
+	}
+}
 
 // SNMPClassifier turns SNMP evidence (sysObject group) into a host-level
 // "snmp" service identity plus inferred device type/brand in metadata.
@@ -90,6 +182,11 @@ func (SNMPClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceIdent
 // missed the wide real-world variation (vendors report 72/74/78/200+ for
 // switches) and ignored sysObjectID entirely, so most network devices fell
 // through to "" → "other".
+//
+// Stages 1 and 2 are data-driven (snmp-data.yaml's oid_prefixes +
+// sysdescr_types tables). Stage 3 is the documented logic-plugin — the bitmask
+// × ifNumber heuristic CANNOT be expressed as declarative rules (see
+// docs/fingerprint-spec.md §"Logic plugins") and stays as Go code.
 func inferTypeFromSNMP(servicesStr, descr, objID, ifNumberStr string) string {
 	lower := strings.ToLower(descr)
 
@@ -131,90 +228,47 @@ func inferTypeFromSNMP(servicesStr, descr, objID, ifNumberStr string) string {
 	return ""
 }
 
-// typeFromOID maps a sysObjectID enterprise prefix to a device type. Vendor OIDs
-// encode device class far more reliably than sysServices — e.g. Cisco routers
-// live under 9.1.1, Catalyst switches under 9.1.300+, HP ProCurve under
-// 11.2.3.7.11. Returns "" for unknown/generic OIDs (e.g. Net-SNMP 8072).
+// typeFromOID maps a sysObjectID enterprise prefix to a device type, loaded from
+// snmp-data.yaml's oid_prefixes table. Vendor OIDs encode device class far more
+// reliably than sysServices — e.g. Cisco routers live under 9.1.1, Catalyst
+// switches under 9.1.300+, HP ProCurve under 11.2.3.7.11. Returns "" for
+// unknown/generic OIDs (e.g. Net-SNMP 8072). Iterates the table in declared
+// order; more-specific prefixes must precede their general parent.
 func typeFromOID(objID string) string {
 	if objID == "" {
 		return ""
 	}
-	for _, e := range enterpriseOIDPrefix {
-		if strings.HasPrefix(objID, e.prefix) {
-			return e.typ
+	for _, e := range snmpData.OIDPrefixes {
+		if strings.HasPrefix(objID, e.Prefix) {
+			return e.Type
 		}
 	}
 	return ""
 }
 
-// typeFromSysDescr matches known OS/product strings in sysDescr to a type.
-// Covers the common network-OS and NAS/appliance descriptors that the old
-// minimal set (firewall/nas/synology/qnap/linux/windows) missed.
+// typeFromSysDescr matches known OS/product strings in sysDescr to a type,
+// loaded from snmp-data.yaml's sysdescr_types table (ordered, first-match-wins,
+// case-insensitive). Covers the common network-OS and NAS/appliance descriptors.
 func typeFromSysDescr(lower string) string {
-	switch {
-	// Firewalls / security appliances.
-	case containsAny(lower, "fortigate", "palo alto", "checkpoint", "sonicwall",
-		"pfsense", "opnsense", "juniper-srx", "cisco asa", "srx", "watchguard"):
-		return "firewall"
-	// NAS appliances.
-	case containsAny(lower, "synology", "diskstation", "dsm ", "qnap",
-		"readynas", "teramaster", "asustor", "thecus"):
-		return "nas"
-	// Wireless routers / APs with router OS.
-	case containsAny(lower, "routeros", "mikrotik", "routeros rb", "openwrt",
-		"padavan", "asuswrt", "tomato", "edgeos", "edgemax", "ubnt", "unifi"):
-		return "router"
-	// Switches (managed).
-	case containsAny(lower, "procurve", "cisco ios", "catos", "comware",
-		"h3c ", "vrp", "arubaos", "junos", "alliedware"):
-		return "switch"
-	// Generic routers.
-	case containsAny(lower, "router", "cisco ios xr"):
-		return "router"
-	case containsAny(lower, "switch"):
-		return "switch"
-	// Cameras.
-	case containsAny(lower, "hikvision", "dahua", "ip camera"):
-		return "camera"
-	// Generic hosts.
-	case containsAny(lower, "linux", "windows", "freebsd", "vmware", "xen"):
-		return "server"
+	for _, r := range snmpData.SysdescrTypes {
+		if containsAny(lower, r.Keywords...) {
+			return r.Type
+		}
 	}
 	return ""
 }
 
-// osFromSysDescr extracts a normalized OS family string from the sysDescr text.
-// It reuses the same keyword families as typeFromSysDescr but returns an OS
-// label ("linux"/"windows"/"routeros"/...) rather than a device type, because
-// the OS is orthogonal to type (a Linux box could be a server, a camera, or a
-// router). The result feeds scan_attributes.os so SNMP-reachable devices get a
-// populated OS even when no node_exporter/SSDP/NetBIOS signal exists.
+// osFromSysDescr extracts a normalized OS family string from the sysDescr text,
+// loaded from snmp-data.yaml's sysdescr_os table (ordered, first-match-wins,
+// case-insensitive). The OS is orthogonal to type (a Linux box could be a
+// server, a camera, or a router); the result feeds scan_attributes.os so
+// SNMP-reachable devices get a populated OS even when no
+// node_exporter/SSDP/NetBIOS signal exists.
 func osFromSysDescr(lower string) string {
-	switch {
-	case containsAny(lower, "routeros", "mikrotik"):
-		return "RouterOS"
-	case containsAny(lower, "openwrt"):
-		return "OpenWrt"
-	case containsAny(lower, "padavan", "asuswrt"):
-		return "Linux"
-	case containsAny(lower, "pfsense", "opnsense"):
-		return "pfSense/OPNsense"
-	case containsAny(lower, "synology", "dsm ", "diskstation"):
-		return "DSM"
-	case containsAny(lower, "qnap", "qts"):
-		return "QTS"
-	case containsAny(lower, "vmware", "esxi"):
-		return "VMware ESXi"
-	case containsAny(lower, "windows"):
-		return "Windows"
-	case containsAny(lower, "freebsd"):
-		return "FreeBSD"
-	case containsAny(lower, "darwin", "macos", "mac os"):
-		return "macOS"
-	case containsAny(lower, "linux"):
-		return "Linux"
-	case containsAny(lower, "android"):
-		return "Android"
+	for _, r := range snmpData.SysdescrOS {
+		if containsAny(lower, r.Keywords...) {
+			return r.OS
+		}
 	}
 	return ""
 }
@@ -230,84 +284,29 @@ func containsAny(s string, subs ...string) bool {
 	return false
 }
 
-// inferBrand extracts a vendor name from sysDescr keywords or the enterprise
-// OID prefix in sysObjectID.
+// inferBrand extracts a vendor name from sysDescr keywords (snmp-data.yaml's
+// sysdescr_brands table, case-insensitive) or, failing that, the enterprise OID
+// prefix in sysObjectID (the oid_prefixes table).
 func inferBrand(descr, objID string) string {
-	known := []string{
-		// General IT
-		"Cisco", "Juniper", "HP", "Dell", "Aruba", "Mikrotik", "Ubiquiti",
-		"Fortinet", "Palo Alto", "Synology", "QNAP", "Arista", "Huawei",
-		// Printer/storage
-		"EPSON", "Canon", "Brother",
-		// Camera
-		"Hikvision", "Dahua", "Axis", "Bosch", "Sony", "Hanwha", "Vivotek",
-		"Reolink", "Uniview", "Honeywell", "FLIR",
-	}
 	lower := strings.ToLower(descr)
-	for _, b := range known {
-		if strings.Contains(lower, strings.ToLower(b)) {
-			return b
+	for _, r := range snmpData.SysdescrBrands {
+		if strings.Contains(lower, r.Keyword) {
+			return r.Brand
 		}
 	}
 	// Enterprise OID prefix lookup.
 	return brandFromOID(objID)
 }
 
-// enterpriseOIDPrefix maps the enterprise OID (1.3.6.1.4.1.<ent>) to a brand
-// AND a device type. The type is the strongest signal inferTypeFromSNMP has —
-// vendor OIDs encode device class (Cisco routers under 9.1., Catalyst switches
-// under 9.1.300+, etc.). `typ` may be empty when the OID alone can't tell
-// (e.g. Net-SNMP 8072 runs on anything); those fall through to sysDescr/sysServices.
-var enterpriseOIDPrefix = []struct {
-	prefix string
-	brand  string
-	typ    string
-}{
-	// Cisco: 9.1.x are routers/L3, 9.1.300+/9.1.5xxx+ are Catalyst/Nexus switches.
-	// Coarse split: 9.1. → router, 9.1.3/9.1.5/9.1.7/9.1.9 (300-999 & 5000+) → switch.
-	{"1.3.6.1.4.1.9.1.300.", "Cisco", "switch"},
-	{"1.3.6.1.4.1.9.1.5", "Cisco", "switch"}, // 5xx Catalyst
-	{"1.3.6.1.4.1.9.1.7", "Cisco", "switch"}, // 7xx Catalyst
-	{"1.3.6.1.4.1.9.1.9", "Cisco", "switch"}, // 9xx Nexus
-	{"1.3.6.1.4.1.9.1.", "Cisco", "router"},  // default Cisco = router
-	{"1.3.6.1.4.1.9.", "Cisco", "router"},
-	// HP: 11.2.3.7.11.x = ProCurve/Aruba switches; 11.2.3.2 = ProLiant servers.
-	{"1.3.6.1.4.1.11.2.3.7.11.", "HP", "switch"},
-	{"1.3.6.1.4.1.11.2.3.2.", "HP", "server"},
-	{"1.3.6.1.4.1.11.", "HP", ""},
-	{"1.3.6.1.4.1.674.10892.", "Dell", "server"}, // Dell iDRAC/PowerEdge
-	{"1.3.6.1.4.1.674.", "Dell", ""},
-	// Huawei: 2011.2.22 = routers/switches (VRP). Lean router without finer split.
-	{"1.3.6.1.4.1.2011.2.22.", "Huawei", "router"},
-	{"1.3.6.1.4.1.2011.", "Huawei", ""},
-	{"1.3.6.1.4.1.2636.", "Juniper", "router"}, // JUNOS = router/L3
-	{"1.3.6.1.4.1.14823.", "Aruba", "switch"},  // Aruba = switches/APs
-	{"1.3.6.1.4.1.30065.", "Mikrotik", "router"},
-	{"1.3.6.1.4.1.8072.", "NetSNMP", ""}, // generic — host runs net-snmp, type unknown here
-	{"1.3.6.1.4.1.39165.", "Hikvision", "camera"},
-	{"1.3.6.1.4.1.100484.", "Dahua", "camera"},
-	{"1.3.6.1.4.1.368.", "Axis", "camera"},
-	{"1.3.6.1.4.1.12325.", "Synology", "nas"},
-	{"1.3.6.1.4.1.24681.", "QNAP", "nas"},
-	// Ubiquiti: 41112 UniFi/EdgeSwitch.
-	{"1.3.6.1.4.1.41112.", "Ubiquiti", "router"},
-	// H3C/Comware.
-	{"1.3.6.1.4.1.25506.", "H3C", "switch"},
-	// TP-Link.
-	{"1.3.6.1.4.1.11863.", "TP-Link", "router"},
-	// Netgear routers/switches.
-	{"1.3.6.1.4.1.4526.", "Netgear", "router"},
-	// F5 BIG-IP load balancers (often act as firewall/gateway).
-	{"1.3.6.1.4.1.3375.", "F5", "firewall"},
-}
-
+// brandFromOID maps a sysObjectID enterprise prefix to a brand via the
+// oid_prefixes table. Returns "" for unknown OIDs.
 func brandFromOID(objID string) string {
 	if objID == "" {
 		return ""
 	}
-	for _, e := range enterpriseOIDPrefix {
-		if strings.HasPrefix(objID, e.prefix) {
-			return e.brand
+	for _, e := range snmpData.OIDPrefixes {
+		if strings.HasPrefix(objID, e.Prefix) {
+			return e.Brand
 		}
 	}
 	return ""
