@@ -149,17 +149,15 @@ func TestReporter_DisconnectRecovery(t *testing.T) {
 // X-Network-State-Hash header so the center can anti-entropy skip unchanged
 // networks. Two reports with identical alive sets must produce the SAME hash.
 func TestReporter_SendsStateHashHeader(t *testing.T) {
-	var gotHash string
-	var gotHash2 string
-	var count int32
+	// Each received hash is sent on hashCh by the handler goroutine and read
+	// here. This establishes the necessary happens-before edge: previously the
+	// handler wrote gotHash/gotHash2 to bare variables that the test goroutine
+	// read right after the count crossed the threshold — a data race AND a
+	// logic race (the count increment happened before the hash field was set,
+	// so the test could observe count==2 with gotHash2 still "").
+	hashCh := make(chan string, 4)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&count, 1)
-		h := r.Header.Get("X-Network-State-Hash")
-		if n == 1 {
-			gotHash = h
-		} else {
-			gotHash2 = h
-		}
+		hashCh <- r.Header.Get("X-Network-State-Hash")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -175,16 +173,20 @@ func TestReporter_SendsStateHashHeader(t *testing.T) {
 	time.Sleep(120 * time.Millisecond) // let the first ticker flush land
 	r.Report(context.Background(), 1, hosts)
 
+	// Collect both hashes with a generous deadline (the flush ticker is 50ms).
+	recv := make([]string, 0, 2)
 	deadline := time.After(3 * time.Second)
-	for atomic.LoadInt32(&count) < 2 {
+	for len(recv) < 2 {
 		select {
+		case h := <-hashCh:
+			recv = append(recv, h)
 		case <-deadline:
-			t.Fatalf("reporter did not flush twice (got %d)", atomic.LoadInt32(&count))
-		case <-time.After(10 * time.Millisecond):
+			t.Fatalf("reporter did not flush twice (got %d)", len(recv))
 		}
 	}
 	r.Stop()
 
+	gotHash, gotHash2 := recv[0], recv[1]
 	require.NotEmpty(t, gotHash, "hash header must be sent")
 	require.Equal(t, gotHash, gotHash2, "identical alive sets must produce the same hash")
 }
