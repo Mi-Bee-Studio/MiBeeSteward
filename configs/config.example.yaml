@@ -197,6 +197,24 @@ scanner:
     # nf_conntrack module isn't loaded. Enable on a router/gateway.
     conntrack:
       enabled: false
+    # hostapd: Tier-1 ROUTER/AP signal. Enumerates the WiFi STAs associated to
+    # the local AP via the hostapd control socket (/var/run/hostapd/<phy>),
+    # falling back to `iw station dump`. Captures signal dBm / connect time /
+    # SSID — gold for device tracking, unavailable to a wired host. interfaces
+    # lists the wlan names to poll (e.g. ["wlan0"]); empty = autodetect. No-op
+    # on a host without WiFi/hostapd/iw.
+    hostapd:
+      enabled: false
+      interfaces: []  # e.g. ["wlan0", "wlan1"]; empty probes /var/run/hostapd/*
+    # dns_log: Tier-1 ROUTER signal. Tails the dnsmasq query log (--log-queries
+    # output) and emits each querying host + the domain — a powerful passive
+    # fingerprint (devices that block inbound probes still do outbound DNS).
+    # Operator MUST enable dnsmasq query logging (UCI: `uci set
+    # dhcp.@dnsmasq[0].logqueries=1`). path overrides the log file location;
+    # empty probes the conventional paths. No-op when no log file is found.
+    dns_log:
+      enabled: false
+      path: ""  # e.g. /var/log/dnsmasq.log; empty probes conventional paths
   # ── Agent lease (distributed model) ───────────────────────────────────────
   # Agent-managed devices (networks with agent_id set) are kept online by their
   # agent's reports — the center does NOT probe them locally (cross-subnet ICMP

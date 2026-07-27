@@ -364,6 +364,20 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			conntrackSrc.Start(discCtx)
 			activeSources = append(activeSources, "conntrack")
 		}
+		// hostapd: Tier-1 router/AP signal — WiFi STA associations (signal dBm,
+		// connect time, SSID). hostapd ctrl socket first, iw station dump fallback.
+		if cfg.Scanner.Discovery.Hostapd.Enabled {
+			hostapdSrc := scannerv2discovery.NewHostapdSource(cfg.Scanner.Discovery.Hostapd.Interfaces, interval, discSvc, slog.Default())
+			hostapdSrc.Start(discCtx)
+			activeSources = append(activeSources, "hostapd")
+		}
+		// dns_log: Tier-1 router signal — tails the dnsmasq query log for passive
+		// DNS fingerprinting (devices that block inbound probes still do DNS).
+		if cfg.Scanner.Discovery.DNSLog.Enabled {
+			dnsLogSrc := scannerv2discovery.NewDNSLogSource(interval, cfg.Scanner.Discovery.DNSLog.Path, discSvc, slog.Default())
+			dnsLogSrc.Start(discCtx)
+			activeSources = append(activeSources, "dns_log")
+		}
 		// arp_scan: active ARP who-has sweep of the whole network CIDR. The only
 		// source that covers the entire broadcast domain with NO router access
 		// (every host must answer ARP — even firewalled ones). Needs the
