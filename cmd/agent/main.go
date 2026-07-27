@@ -221,6 +221,20 @@ func main() {
 			mcastSrc.Start(discCtx)
 			activeSources = append(activeSources, "multicast")
 		}
+		// dhcp_leases: Tier-1 router signal — the DHCP authority's hostname↔MAC↔IP
+		// map. No-op on a host that isn't the LAN's DHCP server (file absent).
+		if cfg.Scanner.Discovery.DHCPLeases.Enabled {
+			dhcpSrc := scannerv2discovery.NewDHCPLeasesSource(interval, "", discSvc, slog.Default())
+			dhcpSrc.Start(discCtx)
+			activeSources = append(activeSources, "dhcp_leases")
+		}
+		// conntrack: Tier-1 router signal — the NAT choke point's "who is talking
+		// RIGHT NOW" view. Filters to the agent's own LAN CIDR.
+		if cfg.Scanner.Discovery.Conntrack.Enabled {
+			conntrackSrc := scannerv2discovery.NewConntrackSource(cfg.Network.CIDR, interval, discSvc, slog.Default())
+			conntrackSrc.Start(discCtx)
+			activeSources = append(activeSources, "conntrack")
+		}
 		// arp_scan: WITH_ARPSCAN build only; NewARPScanSource returns nil
 		// otherwise (or without CAP_NET_RAW) — nil guard skips it silently.
 		if cfg.Scanner.Discovery.ARPScan.Enabled {

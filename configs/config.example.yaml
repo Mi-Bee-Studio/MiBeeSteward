@@ -181,6 +181,22 @@ scanner:
     # port is unavailable the source disables itself without crashing.
     multicast:
       enabled: true
+    # dhcp_leases: Tier-1 ROUTER signal. Reads the local DHCP server's lease
+    # table (dnsmasq /tmp/dhcp.leases on OpenWrt, /var/lib/misc/dnsmasq.leases
+    # on Debian) — the authoritative hostname↔MAC↔IP map, covering devices
+    # (sleeping IoT, firewalled hosts) that never answer SNMP/ICMP/rDNS. No-op
+    # on a host that isn't the LAN's DHCP server (file absent → source skips).
+    # Enable when the center/agent runs ON the gateway (router form).
+    dhcp_leases:
+      enabled: false
+    # conntrack: Tier-1 ROUTER signal. Reads /proc/net/nf_conntrack and emits
+    # the LAN-side endpoint of every ESTABLISHED/ASSURED flow — the NAT choke
+    # point's "who is talking RIGHT NOW" view. Liveness + discovery for hosts
+    # that don't answer active probes but maintain outbound flows. Filters to
+    # network.cidr so it doesn't emit a row per public IP. No-op when the
+    # nf_conntrack module isn't loaded. Enable on a router/gateway.
+    conntrack:
+      enabled: false
   # ── Agent lease (distributed model) ───────────────────────────────────────
   # Agent-managed devices (networks with agent_id set) are kept online by their
   # agent's reports — the center does NOT probe them locally (cross-subnet ICMP
