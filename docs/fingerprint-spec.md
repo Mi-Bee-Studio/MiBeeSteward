@@ -1,6 +1,6 @@
 # MiBee Fingerprint Library — Adapter Specification
 
-**Version:** 1 · **Status:** Stable · **License:** Apache-2.0 (corpus) + factual registries (IEEE/IANA, cited)
+**Version:** 1 · **Status:** Stable · **License:** CC-BY-SA 4.0 (corpus) + factual registries (IEEE/IANA, cited)
 
 This document is the normative specification for the MiBee fingerprint library:
 a language-agnostic, data-driven identification rule format. Any runtime (Go,
@@ -268,8 +268,8 @@ Every rule carries a `source` field for attribution:
 
 | source | origin | license | importable? |
 |---|---|---|---|
-| `builtin` | authored for MiBee | Apache-2.0 | yes (project's own) |
-| `recog` | Rapid7 Recog | Apache-2.0 | yes — convert via `fpimport recog` |
+| `builtin` | authored for MiBee | CC-BY-SA 4.0 | yes (project's own corpus license) |
+| `recog` | Rapid7 Recog | Apache-2.0 (upstream) | yes — convert via `fpimport recog`; converted rules adopt the corpus CC-BY-SA 4.0, upstream Apache-2.0 attribution retained via `source: recog` |
 | `ieee-oui` | IEEE OUI registry | factual registry | yes — cite IEEE |
 | `iana-pen` | IANA Private Enterprise Numbers | factual registry | yes — cite IANA |
 
@@ -278,15 +278,16 @@ Every rule carries a `source` field for attribution:
 nmap's `nmap-service-probes` is **NPSL**-licensed (GPL-derived + OEM/
 redistribution restrictions; not OSI-free). Its match patterns may be read for
 **format-design reference only** (clean-room). Its data file is never copied
-into this corpus. The corpus stays Apache-clean.
+into this corpus. The corpus stays CC-BY-SA-4.0-clean.
 
 ### Data vs code distinction
 
 Importing a *database* of facts (MAC→vendor, OID→vendor) does not force the
 importing project to the source's license when the data is factual (not a
 creative expression). IEEE OUI and IANA PEN are factual registries. Recog's
-regex fingerprints are a creative expression → Apache-2.0 attribution is
-retained on every converted rule (`source: recog`).
+regex fingerprints are a creative expression → upstream Apache-2.0
+attribution is retained on every converted rule (`source: recog`); the converted
+rule itself adopts the corpus's CC-BY-SA 4.0 license.
 
 ## 9. Reference implementation
 

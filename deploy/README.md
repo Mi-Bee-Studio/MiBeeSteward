@@ -274,7 +274,7 @@ echo "0 2 * * * /home/$(whoami)/backup-mibee-docker.sh" | crontab -
 | `storage.upload_path` | 上传目录 | `./data/uploads` |
 | `storage.max_file_size` | 最大文件大小 | `104857600` (100MB) |
 | `rate_limit.login_per_minute` | 登录限制 | `10` |
-| `rate_limit.global_per_minute` | 全局限制 | `100` |
+| `rate_limit.global_per_minute` | 全局限制 | `600` |
 
 ### 环境变量配置
 
@@ -319,7 +319,7 @@ sudo systemctl start mibee-steward
 ```bash
 # 检查服务状态
 curl -s http://localhost:8080/api/v1/health
-# 响应: {"status":"ok","db":"ok","version":"0.1.0"}
+# 响应: {"status":"ok","db":"ok","version":"<build-dependent, see -ldflags -X ...version.Version>"}
 ```
 
 ### Prometheus 指标
