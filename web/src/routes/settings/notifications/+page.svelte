@@ -14,6 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { channelTypeBadge } from '$lib/utils/badges';
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -278,8 +279,8 @@
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const t = String(row.type);
-				const color = t === 'webhook' ? 'var(--color-accent)' : 'var(--color-primary)';
-				return `<span class="text-xs px-2 py-0.5 rounded font-mono" style="background: ${color}10; color: ${color}">${t}</span>`;
+				const b = channelTypeBadge(t);
+				return `<span class="text-xs px-2 py-0.5 rounded font-mono ${b.cls}">${b.label}</span>`;
 			}
 		},
 		{

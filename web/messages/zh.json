@@ -359,7 +359,9 @@
 		"Description": "描述",
 		"Tags": "标签",
 		"Chart Unavailable": "图表不可用",
-		"Clear Search": "清除搜索"
+		"Clear Search": "清除搜索",
+		"On": "开",
+		"Off": "关"
 	},
 	"scanner": {
 		"Scanner": "网络扫描器",
@@ -514,7 +516,9 @@
 		"Cancelled": "已取消",
 		"Failed": "失败",
 		"Run": "运行",
-		"New": "新增"
+		"New": "新增",
+		"Completed": "已完成",
+		"Status Triggered": "已触发"
 	},
 	"labels": {
 		"Per Device Labels": "设备级标签",
@@ -787,7 +791,11 @@
 		"Trigger Identify": "识别",
 		"Pipeline": "发现流水线",
 		"Recent": "最近发现",
-		"No Recent": "暂无最近发现。被动来源检测到的新主机将显示在此。"
+		"No Recent": "暂无最近发现。被动来源检测到的新主机将显示在此。",
+		"Recorded": "已记录",
+		"Skipped Known": "已知（跳过）",
+		"Skipped Recent": "已抑制（近期）",
+		"Identify Failed": "识别失败"
 	},
 	"topology": {
 		"Title": "网络拓扑",

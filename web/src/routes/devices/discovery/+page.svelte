@@ -16,6 +16,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { discoveryOutcomeBadge, onOffBadge } from '$lib/utils/badges';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { Radar as RadarIcon } from '@lucide/svelte';
@@ -48,16 +49,6 @@
 	function formatTime(iso?: string): string {
 		if (!iso) return '-';
 		try { return new Date(iso).toLocaleString(); } catch { return iso; }
-	}
-
-	function outcomeBadge(outcome: string): string {
-		switch (outcome) {
-			case 'recorded': return 'bg-success/10 text-success';
-			case 'skipped_known': return 'bg-surface text-text-muted border border-border';
-			case 'skipped_recent': return 'bg-accent/10 text-accent';
-			case 'identify_failed': return 'bg-error/10 text-error';
-			default: return 'bg-surface text-text-muted border border-border';
-		}
 	}
 
 	let stats = $derived(status?.stats ?? {});
@@ -135,7 +126,7 @@
 			{#if status.config}
 				<div class="flex flex-wrap items-center gap-4 mt-2 text-xs text-text-muted">
 					<span>{m['discovery.Interval']()}: <span class="font-mono text-text">{(status.config.Interval ?? 0) / 1e9}s</span></span>
-					<span>{m['discovery.Trigger Identify']()}: <span class="font-mono text-text">{status.config.TriggerIdentify ? 'on' : 'off'}</span></span>
+					<span>{m['discovery.Trigger Identify']()}: <span class="font-mono text-text">{onOffBadge(status.config.TriggerIdentify).label}</span></span>
 				</div>
 			{/if}
 		</div>
@@ -170,12 +161,13 @@
 						</thead>
 						<tbody>
 							{#each [...status.recent_discoveries].reverse() as ev}
+								{@const ob = discoveryOutcomeBadge(ev.outcome)}
 								<tr class="border-b border-border/50 last:border-b-0">
 									<td class="px-4 py-2 font-mono text-xs text-text">{ev.ip}</td>
 									<td class="px-4 py-2 font-mono text-xs text-text-muted">{ev.mac ?? '-'}</td>
 									<td class="px-4 py-2 font-mono text-xs text-text-muted">{ev.source}</td>
 									<td class="px-4 py-2">
-										<span class="text-xs px-2 py-0.5 rounded-full font-mono {outcomeBadge(ev.outcome)}">{ev.outcome}</span>
+									<span class="text-xs px-2 py-0.5 rounded-full font-mono {ob.cls}">{ob.label}</span>
 									</td>
 									<td class="px-4 py-2 text-xs text-text-muted">{formatTime(ev.at)}</td>
 								</tr>

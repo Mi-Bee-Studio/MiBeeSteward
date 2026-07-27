@@ -23,6 +23,7 @@
 	import { goto } from '$app/navigation';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { scanRunStatusBadge } from '$lib/utils/badges';
 	import { auth } from '$lib/stores/auth';
 	import type { EChartsOption } from '$lib/charts/echarts';
 
@@ -911,11 +912,12 @@
 								</thead>
 								<tbody>
 									{#each overview.scanning.recent_runs as run}
+										{@const s = scanRunStatusBadge(run.status)}
 										<tr class="border-b border-border/50 last:border-0">
 											<td class="py-2 pr-3 font-mono text-xs">#{run.id}</td>
 											<td class="py-2 pr-3">
-												<span class="inline-flex items-center gap-1 {run.status === 'completed' ? 'text-success' : run.status === 'failed' ? 'text-error' : 'text-accent'}">
-													{run.status === 'completed' ? '✓' : run.status === 'failed' ? '✗' : '◌'} {run.status}
+												<span class="inline-flex items-center gap-1 {s.cls}">
+													{s.label}
 												</span>
 											</td>
 											<td class="py-2 pr-3 tabular-nums">{run.alive_hosts}/{run.total_hosts}</td>
