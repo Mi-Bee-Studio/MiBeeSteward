@@ -14,6 +14,7 @@
 	import { onMount } from 'svelte';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { scanRunStatusBadge } from '$lib/utils/badges';
 	import { goto } from '$app/navigation';
 
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -308,19 +309,6 @@
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
 		return `${(bytes / 1048576).toFixed(1)} MB`;
-	}
-
-	function runStatusClass(status: string): string {
-		switch (status) {
-			case 'completed':
-				return 'text-success bg-success/10';
-			case 'running':
-				return 'text-warning bg-warning/10';
-			case 'failed':
-				return 'text-error bg-error/10';
-			default:
-				return 'text-text-muted bg-border';
-		}
 	}
 </script>
 
@@ -711,14 +699,15 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each runs as run}
-							<tr class="border-b border-border last:border-b-0 hover:bg-border/30 transition-colors">
-								<td class="px-4 py-3 text-sm font-mono text-text-muted">#{run.id}</td>
-								<td class="px-4 py-3">
-									<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize {runStatusClass(run.status)}">
-										{run.status}
-									</span>
-								</td>
+							{#each runs as run}
+								{@const s = scanRunStatusBadge(run.status)}
+								<tr class="border-b border-border last:border-b-0 hover:bg-border/30 transition-colors">
+									<td class="px-4 py-3 text-sm font-mono text-text-muted">#{run.id}</td>
+									<td class="px-4 py-3">
+										<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {s.cls}">
+											{s.label}
+										</span>
+									</td>
 								<td class="px-4 py-3 text-sm text-text">{formatDuration(run.duration_ms)}</td>
 								<td class="px-4 py-3 text-sm text-text">
 									<span class="text-success">{run.alive_hosts}</span>

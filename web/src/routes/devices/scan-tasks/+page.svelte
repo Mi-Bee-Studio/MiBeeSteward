@@ -505,7 +505,7 @@
 											</div>
 										{:else if run?.status === 'completed'}
 											<span class="inline-flex items-center gap-1 text-success">
-												✓ {run.alive_hosts}/{run.total_hosts} alive ({run.duration_ms}ms)
+												✓ {m['scanner.Scan Done']({ alive: run.alive_hosts, total: run.total_hosts, new: run.new_hosts, duration: run.duration_ms })}
 											</span>
 										{:else if run?.status === 'cancelled'}
 											<span class="inline-flex items-center gap-1 text-text-muted">
