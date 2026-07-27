@@ -21,11 +21,17 @@ import (
 // value of type agent.scanPayload". This is a regression guard for the fix that
 // changed pendingCommand.Payload from json.RawMessage to string.
 func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
-	var (
-		gotTargets string
-		gotTimeout int
-		executed   int32
-	)
+	// scanResult carries the runScan callback's captured args back to the test
+	// goroutine via a channel. This is required (not a bare variable + atomic
+	// flag) because runScan executes on the poller's internal goroutine — a
+	// bare gotTargets/gotTimeout write read here without synchronization is a
+	// data race the -race detector flags (CI caught it; local timing hid it).
+	type scanResult struct {
+		targets    string
+		timeoutSec int
+	}
+	scanCh := make(chan scanResult, 1)
+	var executed int32
 	// The center's Poll handler returns []AgentCommand where Payload is a Go
 	// string; encoding/json serializes a string field as a JSON string literal
 	// (double-quoted), e.g. "payload":"{\"targets\":\"192.168.62.0/24\",\"timeout\":300}".
@@ -55,8 +61,7 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	defer srv.Close()
 
 	runScan := func(_ context.Context, targets string, timeoutSec int) (string, error) {
-		gotTargets = targets
-		gotTimeout = timeoutSec
+		scanCh <- scanResult{targets: targets, timeoutSec: timeoutSec}
 		return `{"run_id":1}`, nil
 	}
 	// networkCIDR matches the command's targets so the Layer 2-agent boundary
@@ -65,17 +70,13 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	p.Start(context.Background())
 	defer p.Stop()
 
-	deadline := time.After(2 * time.Second)
-	for atomic.LoadInt32(&executed) != 1 {
-		select {
-		case <-deadline:
-			t.Fatal("poller did not execute the scan command within deadline")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
+	select {
+	case res := <-scanCh:
+		require.Equal(t, "192.168.62.0/24", res.targets)
+		require.Equal(t, 300, res.timeoutSec)
+	case <-time.After(2 * time.Second):
+		t.Fatal("poller did not execute the scan command within deadline")
 	}
-	require.Equal(t, "192.168.62.0/24", gotTargets)
-	require.Equal(t, 300, gotTimeout)
 }
 
 // TestCommandPoller_BoundaryCheck_Layer2 covers the agent-side CIDR gate
