@@ -108,21 +108,13 @@ type AddDevicesResponse struct {
 	Errors []string `json:"errors,omitempty"`
 }
 
-// validDeviceTypes is derived from ValidDeviceTypes (device.go) so the canonical
-// list of device types has ONE source of truth. Scanner-side validation and
-// the schema's devices.type CHECK must agree; TestDevicesTypeCHECK_InSyncWithDomain
-// guards against drift.
-var validDeviceTypes = func() map[string]bool {
-	m := make(map[string]bool, len(ValidDeviceTypes))
-	for _, t := range ValidDeviceTypes {
-		m[string(t)] = true
-	}
-	return m
-}()
-
-// ValidateDeviceType returns a valid device type, defaulting to "other".
+// ValidateDeviceType returns a valid device type, defaulting to "other". The
+// canonical list of valid types is ValidDeviceTypes in device.go (the single
+// source of truth); isValidDeviceType iterates that slice. The schema's
+// devices.type CHECK must agree; TestDevicesTypeCHECK_InSyncWithDomain guards
+// against drift.
 func ValidateDeviceType(t string) string {
-	if validDeviceTypes[t] {
+	if isValidDeviceType(t) {
 		return t
 	}
 	return "other"
