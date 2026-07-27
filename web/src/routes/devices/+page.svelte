@@ -18,7 +18,6 @@
 	import { escapeHtml, escapeAttr } from '$lib/utils';
 	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
 	import type { Device, LinkedDoc, Network } from '$lib/types';
-	import { auth } from '$lib/stores/auth';
 	import { ChevronDown, ChevronRight, Download, Upload, Plus, List, Share2 } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -327,15 +326,11 @@ interface Stats {
 	// --- Export ---
 	async function exportDevices(format: string) {
 		try {
-			let token: string | null = null;
-			const unsub = auth.subscribe((s) => { token = s.token; });
-			unsub();
-			const res = await fetch(`/api/v1/devices/export?format=${format}`, {
-				headers: { 'Authorization': `Bearer ${token}` },
-				credentials: 'include'
-			});
-			if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`);
-			const blob = await res.blob();
+			// Go through api.download() so CSRF + cookie auth + 401 handling
+			// match every other request. The previous raw fetch() bypass dropped
+			// the X-CSRF-Token header and manually extracted a Bearer token —
+			// both deviations from the client contract.
+			const blob = await api.download(`/devices/export?format=${format}`);
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;

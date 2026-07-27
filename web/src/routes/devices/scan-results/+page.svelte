@@ -234,14 +234,12 @@
 		if (!taskIdFilter) return;
 		exporting = true;
 		try {
-			const res = await fetch(`/api/v1/scanner/results/export?task_id=${taskIdFilter}`, {
-				credentials: 'include'
-			});
-			if (!res.ok) {
-				const err = await res.json().catch(() => ({ error: 'Export failed' }));
-				throw new Error(err.error || `HTTP ${res.status}`);
-			}
-			const blob = await res.blob();
+			// Use api.download() so the request carries the CSRF token and
+			// shares the client's 401/logout handling. The previous raw fetch()
+			// sent only `credentials: 'include'` — no CSRF header, no auth
+			// fallback — which would break under CSRF enforcement and bypass
+			// the unified auth path.
+			const blob = await api.download(`/scanner/results/export?task_id=${taskIdFilter}`);
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
