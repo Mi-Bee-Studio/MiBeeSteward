@@ -10,7 +10,7 @@
 
 <script lang="ts">
 	import { m } from '$lib/i18n-paraglide';
-	import { api } from '$lib/api/client';
+	import { api, SessionExpiredError } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
 	import type { LoginResponse } from '$lib/types';
 	import { getErrorMessage } from '$lib/utils/error.js';
@@ -80,16 +80,20 @@
 				goto('/dashboard');
 			}
 		} catch (err: unknown) {
-			const msg = getErrorMessage(err);
-			if (msg === 'Session expired') {
-					error = m['auth.error.invalid_credentials']();
-				} else if (msg.includes('temporarily locked') || msg.includes('Too Many Requests')) {
+			// SessionExpiredError is thrown by the API client on 401 — distinguish
+			// it via type, not by string-matching the (now localized) message.
+			if (err instanceof SessionExpiredError) {
+				error = m['auth.error.invalid_credentials']();
+			} else {
+				const msg = getErrorMessage(err);
+				if (msg.includes('temporarily locked') || msg.includes('Too Many Requests')) {
 					error = m['auth.error.too_many_attempts']();
 				} else if (err instanceof TypeError) {
 					error = m['auth.error.network_error']();
 				} else {
 					error = m['auth.error.server_error']();
 				}
+			}
 		} finally {
 			loading = false;
 		}

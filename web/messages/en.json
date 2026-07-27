@@ -358,7 +358,8 @@
 		"All": "All",
 		"Description": "Description",
 		"Tags": "Tags",
-		"Chart Unavailable": "Chart unavailable"
+		"Chart Unavailable": "Chart unavailable",
+		"Clear Search": "Clear search"
 	},
 	"scanner": {
 		"Scanner": "Network Scanner",
@@ -907,5 +908,13 @@
 		"Cron Field Count": "Cron expression must have exactly 5 fields (minute hour day month weekday)",
 		"Cron All Asterisks": "Cron expression must have at least one specific field (cannot be all *)",
 		"Invalid Cron Field": "Invalid cron {field} field: \"{value}\""
+	},
+	"api": {
+		"Session Expired": "Session expired",
+		"Request Failed": "Request failed",
+		"HTTP Error": "HTTP {status}",
+		"Download Failed": "Download failed",
+		"Upload Failed": "Upload failed",
+		"Upload Timed Out": "Upload timed out"
 	}
 }
