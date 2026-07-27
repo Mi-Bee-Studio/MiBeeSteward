@@ -21,6 +21,22 @@ const (
 )
 
 // DeviceType represents the category of a device.
+//
+// The set of valid types is defined ONCE here (via the TypeXxx constants +
+// ValidDeviceTypes below) and is the single source of truth consumed by:
+//   - ValidateDeviceType (scanner.go) — derives its map from ValidDeviceTypes
+//   - db/schema.sql's devices.type CHECK — must list the same values (verified
+//     by TestDevicesTypeCHECK_InSyncWithDomain in device_test.go at runtime via
+//     a SQLite probe; if you add a type here, also add it to the schema CHECK)
+//
+// To add a device type: add a TypeXxx constant + append it to ValidDeviceTypes
+// + add the same string to db/schema.sql's devices.type CHECK. The test then
+// guards against drift. (The deeper ergonomic fix — a device_types lookup table
+// + FK so adding a type is one INSERT not a table rebuild — is tracked in #38
+// and deferred until a concrete need; this single-source + sync-test is the
+// low-risk improvement that removes the silent-drift risk today. The agent's
+// mini-schema intentionally has NO CHECK on type — it's a permissive shadow —
+// so only the center schema needs the type list.)
 type DeviceType string
 
 const (
@@ -33,10 +49,34 @@ const (
 	TypeRouter   DeviceType = "router"
 	TypeFirewall DeviceType = "firewall"
 	TypeNAS      DeviceType = "nas"
-	TypeCamera   DeviceType = "camera"  // present in schema CHECK + validDeviceTypes; keep aligned
-	TypePhone    DeviceType = "phone"   // present in schema CHECK + validDeviceTypes; keep aligned
-	TypePrinter  DeviceType = "printer" // present in schema CHECK + validDeviceTypes; keep aligned
+	TypeCamera   DeviceType = "camera"
+	TypePhone    DeviceType = "phone"
+	TypePrinter  DeviceType = "printer"
 )
+
+// ValidDeviceTypes is the canonical list of allowed device types. The TypeXxx
+// constants above are the single source of truth — this slice aggregates them
+// so callers (ValidateDeviceType, future schema-sync tooling) iterate one place
+// rather than maintaining a parallel map. Order is the declared const order
+// (cosmetic; ValidateDeviceType treats it as a set).
+//
+// When you add a TypeXxx constant, append it here AND to db/schema.sql's
+// devices.type CHECK (see the test that verifies the two stay in sync).
+var ValidDeviceTypes = []DeviceType{
+	TypePC, TypeEmbedded, TypeIoT, TypeOther, TypeServer, TypeSwitch,
+	TypeRouter, TypeFirewall, TypeNAS, TypeCamera, TypePhone, TypePrinter,
+}
+
+// isValidDeviceType reports whether t is one of ValidDeviceTypes. Used by
+// ValidateDeviceType; kept unexported (ValidateDeviceType is the public API).
+func isValidDeviceType(t string) bool {
+	for _, v := range ValidDeviceTypes {
+		if string(v) == t {
+			return true
+		}
+	}
+	return false
+}
 
 // Request types
 
