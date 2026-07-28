@@ -850,7 +850,19 @@
 		"Recorded": "已记录",
 		"Skipped Known": "已知（跳过）",
 		"Skipped Recent": "已抑制（近期）",
-		"Identify Failed": "识别失败"
+		"Identify Failed": "识别失败",
+		"Funnel Events Received": "收到事件",
+		"Funnel Suppressed Recent": "已抑制（近期）",
+		"Funnel Known Skipped": "已知（跳过）",
+		"Funnel Identify Triggered": "触发识别",
+		"Funnel Identify Alive": "识别存活",
+		"Funnel Identify Dead": "识别失败（离线）",
+		"Funnel Devices Recorded": "已记录设备",
+		"Col IP": "IP",
+		"Col MAC": "MAC",
+		"Col Source": "来源",
+		"Col Outcome": "结果",
+		"Col Time": "时间"
 	},
 	"topology": {
 		"Title": "网络拓扑",

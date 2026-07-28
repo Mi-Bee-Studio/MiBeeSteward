@@ -78,13 +78,13 @@
 
 	let stats = $derived(status?.stats ?? {});
 	let funnel = $derived([
-		{ label: 'Events Received', value: stats.EventsReceived ?? 0, cls: 'text-text' },
-		{ label: 'Suppressed (recent)', value: stats.SuppressedRecent ?? 0, cls: 'text-accent' },
-		{ label: 'Known (skipped)', value: stats.KnownHostSkipped ?? 0, cls: 'text-text-muted' },
-		{ label: 'Identify Triggered', value: stats.IdentifyTriggered ?? 0, cls: 'text-primary' },
-		{ label: 'Identify Alive', value: stats.IdentifyAlive ?? 0, cls: 'text-success' },
-		{ label: 'Identify Dead', value: stats.IdentifyDead ?? 0, cls: 'text-error' },
-		{ label: 'Devices Recorded', value: stats.DeviceRecorded ?? 0, cls: 'text-success font-semibold' }
+		{ label: m['discovery.Funnel Events Received'](), value: stats.EventsReceived ?? 0, cls: 'text-text' },
+		{ label: m['discovery.Funnel Suppressed Recent'](), value: stats.SuppressedRecent ?? 0, cls: 'text-accent' },
+		{ label: m['discovery.Funnel Known Skipped'](), value: stats.KnownHostSkipped ?? 0, cls: 'text-text-muted' },
+		{ label: m['discovery.Funnel Identify Triggered'](), value: stats.IdentifyTriggered ?? 0, cls: 'text-primary' },
+		{ label: m['discovery.Funnel Identify Alive'](), value: stats.IdentifyAlive ?? 0, cls: 'text-success' },
+		{ label: m['discovery.Funnel Identify Dead'](), value: stats.IdentifyDead ?? 0, cls: 'text-error' },
+		{ label: m['discovery.Funnel Devices Recorded'](), value: stats.DeviceRecorded ?? 0, cls: 'text-success font-semibold' }
 	]);
 </script>
 
@@ -179,11 +179,11 @@
 					<table class="w-full text-left">
 						<thead class="bg-bg/50 border-b border-border">
 							<tr>
-								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">IP</th>
-								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">MAC</th>
-								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Source</th>
-								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Outcome</th>
-								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Time</th>
+								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['discovery.Col IP']()}</th>
+								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['discovery.Col MAC']()}</th>
+								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['discovery.Col Source']()}</th>
+								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['discovery.Col Outcome']()}</th>
+								<th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['discovery.Col Time']()}</th>
 							</tr>
 						</thead>
 						<tbody>
