@@ -19,7 +19,11 @@ import { auth } from '$lib/stores/auth';
 import { getErrorMessage } from '$lib/utils/error';
 import { m } from '$lib/i18n-paraglide';
 
-const API_BASE = '/api/v1';
+// API base path. Defaults to the same-origin /api/v1 prefix (the SPA is served
+// by the Go binary, so same-origin is the norm). Override with
+// VITE_API_BASE when the frontend talks to a different origin (e.g. local dev
+// against a remote backend). Opt-in: unset → /api/v1, preserving existing behavior.
+const API_BASE = import.meta.env.VITE_API_BASE ?? '/api/v1';
 
 /**
  * Thrown by all three request paths (request / download / upload) on HTTP 401,
@@ -55,37 +59,98 @@ export class ApiError extends Error {
 	}
 }
 
+/**
+ * Shared 401 handling: logs the user out, redirects to /login, and returns a
+ * SessionExpiredError for the caller to throw (request/download) or reject
+ * with (upload's XHR callback can't throw across the async boundary).
+ *
+ * This was previously copy-pasted in request(), download(), and upload() —
+ * three identical logout+goto+throw/reject triplets. Centralizing it keeps the
+ * session-expiry contract (logout BEFORE redirect, typed error after) in one
+ * place.
+ */
+function handleUnauthorized(): SessionExpiredError {
+	auth.logout();
+	goto('/login');
+	return new SessionExpiredError();
+}
+
+// Retry config for transient failures. Only idempotent GET requests retry —
+// POST/PUT/PATCH/DELETE are never retried (a retried write could double-apply).
+// A retry happens on: HTTP 5xx (server-side, likely transient) or a network-
+// level failure (fetch rejected — DNS/connection drop). 4xx, 401, and
+// AbortError (explicit cancel / timeout) are NOT retried.
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 150;
+
+function isRetryableMethod(method?: string): boolean {
+	// GET (and HEAD/OPTIONS) are safe/idempotent. Default (no method) is GET.
+	return !method || method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((r) => setTimeout(r, ms));
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 	const csrfToken = getCSRFToken();
 	if (csrfToken && options?.method && options.method !== 'GET') {
 		headers['X-CSRF-Token'] = csrfToken;
 	}
-	try {
-		const res = await fetch(`${API_BASE}${path}`, {
-			...options,
-			signal: AbortSignal.timeout(30000),
-			credentials: 'include',
-			headers: { ...headers, ...(options?.headers as Record<string, string>) }
-		});
-		if (res.status === 401) {
-			auth.logout();
-			goto('/login');
-			throw new SessionExpiredError();
+
+	const method = options?.method;
+	const canRetry = isRetryableMethod(method);
+	let lastError: unknown;
+
+	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+		try {
+			const res = await fetch(`${API_BASE}${path}`, {
+				...options,
+				signal: AbortSignal.timeout(30000),
+				credentials: 'include',
+				headers: { ...headers, ...(options?.headers as Record<string, string>) }
+			});
+			if (res.status === 401) {
+				throw handleUnauthorized();
+			}
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({ error: m['api.Request Failed']() }));
+				const apiErr = new ApiError(res.status, err.error || m['api.HTTP Error']({ status: String(res.status) }));
+				// 5xx on a GET is worth one more shot; anything else (4xx) is final.
+				if (canRetry && res.status >= 500 && attempt < MAX_RETRIES) {
+					lastError = apiErr;
+					await sleep(RETRY_BASE_DELAY_MS * Math.pow(2, attempt));
+					continue;
+				}
+				throw apiErr;
+			}
+			if (res.status === 204) return undefined as T;
+			return res.json();
+		} catch (err: unknown) {
+			// Typed errors we created (SessionExpiredError / ApiError) propagate
+			// as-is. A retryable ApiError (5xx GET) was already handled above
+			// via `continue`; if it reaches here the retry budget is exhausted.
+			if (err instanceof SessionExpiredError) throw err;
+			if (err instanceof ApiError) throw err;
+			// Anything else is a network/abort/parse failure. Distinguish:
+			//  - AbortError (timeout/explicit cancel): never retry, surface now.
+			//  - network TypeError on a GET: retry, then surface if exhausted.
+			const isAbort = err instanceof DOMException && err.name === 'AbortError';
+			if (canRetry && !isAbort && attempt < MAX_RETRIES) {
+				lastError = err;
+				await sleep(RETRY_BASE_DELAY_MS * Math.pow(2, attempt));
+				continue;
+			}
+			// Wrap the genuine network/abort/parse error (no HTTP status) into a
+			// plain Error. Callers distinguish it from ApiError via instanceof.
+			throw new Error(getErrorMessage(err));
 		}
-		if (!res.ok) {
-			const err = await res.json().catch(() => ({ error: m['api.Request Failed']() }));
-			throw new ApiError(res.status, err.error || m['api.HTTP Error']({ status: String(res.status) }));
-		}
-		if (res.status === 204) return undefined as T;
-		return res.json();
-	} catch (err: unknown) {
-		// Preserve typed errors (SessionExpiredError / ApiError) so callers can
-		// branch on `instanceof` / `.status`. Only wrap genuine network/abort/
-		// parse errors (which have no HTTP status) into a plain Error.
-		if (err instanceof SessionExpiredError || err instanceof ApiError) throw err;
-		throw new Error(getErrorMessage(err));
 	}
+	// Retry budget exhausted — surface the last error.
+	throw lastError instanceof Error
+		? lastError
+		: new Error(getErrorMessage(lastError));
 }
 
 export const api = {
@@ -113,9 +178,7 @@ export const api = {
 			signal: AbortSignal.timeout(60000)
 		});
 		if (res.status === 401) {
-			auth.logout();
-			goto('/login');
-			throw new SessionExpiredError();
+			throw handleUnauthorized();
 		}
 		if (!res.ok) {
 			const err = await res.json().catch(() => ({ error: m['api.Download Failed']() }));
@@ -140,9 +203,7 @@ export const api = {
 			xhr.timeout = 30000;
 			xhr.onload = () => {
 				if (xhr.status === 401) {
-					auth.logout();
-					goto('/login');
-					reject(new SessionExpiredError());
+					reject(handleUnauthorized());
 					return;
 				}
 				if (xhr.status >= 400) {
