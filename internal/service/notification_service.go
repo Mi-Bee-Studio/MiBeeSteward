@@ -143,6 +143,37 @@ func (s *NotificationService) UpdateChannel(ctx context.Context, id int64, req d
 	return &resp, nil
 }
 
+// SetChannelEnabled toggles a channel's enabled flag via a single-field UPDATE
+// (no name/type/config are rewritten). This is the backend for the dedicated
+// PATCH /channels/{id} endpoint, used by the UI toggle — it keeps the toggle
+// path from ever re-writing the masked SMTP password back to the DB.
+func (s *NotificationService) SetChannelEnabled(ctx context.Context, id int64, enabled bool) (*domain.ChannelResponse, error) {
+	// Probe existence first so the caller gets the same ErrChannelNotFound → 404
+	// semantics as UpdateChannel (SetChannelEnabled SQL would otherwise return
+	// sql.ErrNoRows on the RETURNING scan, indistinguishable from a generic error).
+	if _, err := s.q.GetChannelByID(ctx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrChannelNotFound
+		}
+		return nil, fmt.Errorf("failed to get channel: %w", err)
+	}
+
+	enabledInt := int64(0)
+	if enabled {
+		enabledInt = 1
+	}
+	ch, err := s.q.SetChannelEnabled(ctx, db.SetChannelEnabledParams{
+		Enabled: enabledInt,
+		ID:      id,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to set channel enabled: %w", err)
+	}
+
+	resp := toChannelResponse(ch)
+	return &resp, nil
+}
+
 // DeleteChannel deletes a notification channel by ID.
 func (s *NotificationService) DeleteChannel(ctx context.Context, id int64) error {
 	err := s.q.DeleteChannel(ctx, id)

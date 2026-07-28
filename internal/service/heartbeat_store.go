@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"mibee-steward/internal/db"
@@ -37,11 +38,12 @@ import (
 // Reads (history, stats, isDue) go through the same *sql.DB via sqlc Queries,
 // so the read path is unchanged from the caller's perspective.
 type HeartbeatStore struct {
-	db      *sql.DB     // dedicated connection to heartbeat.db
-	queries *db.Queries // sqlc queries bound to the dedicated connection
-	ch      chan resultRow
-	cancel  context.CancelFunc
-	done    chan struct{}
+	db       *sql.DB     // dedicated connection to heartbeat.db
+	queries  *db.Queries // sqlc queries bound to the dedicated connection
+	ch       chan resultRow
+	cancelMu sync.Mutex
+	cancel   context.CancelFunc
+	done     chan struct{}
 }
 
 // resultRow is one heartbeat probe result pending a batched write.
@@ -130,9 +132,16 @@ func OpenHeartbeatStore(dbPath string) (*HeartbeatStore, error) {
 }
 
 // Start launches the background flush goroutine that batches buffered results
-// into periodic multi-row INSERTs.
+// into periodic multi-row INSERTs. The cancel func is assigned synchronously
+// (before the goroutine launches) under the mutex, so a concurrent Close() —
+// which NewRouter's caller (e.g. a test invoking Stop() right after NewRouter
+// returns) may issue while this Start() is still racing onto its goroutine —
+// never observes an unset cancel. Mirrors HeartbeatService.Start's pattern.
 func (s *HeartbeatStore) Start(ctx context.Context) {
-	ctx, s.cancel = context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	s.cancelMu.Lock()
+	s.cancel = cancel
+	s.cancelMu.Unlock()
 	go s.flushLoop(ctx)
 }
 
@@ -243,8 +252,11 @@ func (s *HeartbeatStore) commitBatch(ctx context.Context, rows []resultRow) erro
 // Close cancels the flush loop, waits for it to finish (including the final
 // drain), then closes the DB connection.
 func (s *HeartbeatStore) Close() error {
-	if s.cancel != nil {
-		s.cancel()
+	s.cancelMu.Lock()
+	cancel := s.cancel
+	s.cancelMu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 	<-s.done // wait for flushLoop to exit (does its final drain)
 	return s.db.Close()

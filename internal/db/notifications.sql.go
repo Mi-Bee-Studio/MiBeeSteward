@@ -414,6 +414,36 @@ func (q *Queries) MarkAllNotificationLogsRead(ctx context.Context, arg MarkAllNo
 	return result.RowsAffected()
 }
 
+const setChannelEnabled = `-- name: SetChannelEnabled :one
+UPDATE notification_channels
+SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, name, type, config, enabled, created_at, updated_at
+`
+
+type SetChannelEnabledParams struct {
+	Enabled int64 `json:"enabled"`
+	ID      int64 `json:"id"`
+}
+
+// Single-field UPDATE for the dedicated PATCH /channels/{id} toggle endpoint.
+// Writing only `enabled` (not the full row) makes the intent explicit and
+// avoids any GET-then-write race on name/type/config. See service.SetChannelEnabled.
+func (q *Queries) SetChannelEnabled(ctx context.Context, arg SetChannelEnabledParams) (NotificationChannel, error) {
+	row := q.db.QueryRowContext(ctx, setChannelEnabled, arg.Enabled, arg.ID)
+	var i NotificationChannel
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Type,
+		&i.Config,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateChannel = `-- name: UpdateChannel :one
 UPDATE notification_channels
 SET name = ?, type = ?, config = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
