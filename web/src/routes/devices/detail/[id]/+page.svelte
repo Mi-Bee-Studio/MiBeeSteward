@@ -39,8 +39,21 @@
 	let systems = $state<System[]>([]);
 	let total = $state(0);
 	let neighbors = $state<DeviceNeighbor[]>([]);
+	// `loading`/`error` here are owned by fetchSystems (the Systems tab). The
+	// page-level device fetch has its own pair below so a fetchDevice failure
+	// doesn't get silently swallowed on non-Systems tabs.
 	let loading = $state(true);
 	let error = $state('');
+	// Page-level device fetch state. deviceLoading gates the initial skeleton;
+	// deviceError renders a page-level EmptyState + retry (covers all tabs).
+	let deviceLoading = $state(true);
+	let deviceError = $state('');
+	// Per-section fetch errors. Each sub-fetch (neighbors/TLS/heartbeat-configs)
+	// records its own error instead of masking a server failure as an empty
+	// list (which would mislead users into e.g. recreating a config that exists).
+	let neighborsError = $state('');
+	let tlsCertsError = $state('');
+	let heartbeatConfigError = $state('');
 
 	// --- TLS certificates (host_tls_certs) — drives the TLS sub-panel + Modal ---
 	let tlsCerts = $state<TLSPortCerts[]>([]);
@@ -257,21 +270,31 @@
 
 	// --- Data fetching ---
 	async function fetchDevice() {
+		deviceLoading = true;
+		deviceError = '';
 		try {
 			device = await api.get<Device>(`/devices/${deviceId}`);
 		} catch (err: unknown) {
-			error = getErrorMessage(err);
-			addToast('error', error);
+			// Page-level error: surfaces an EmptyState + retry across ALL tabs
+			// (the per-tab {#if device} blocks would otherwise render blank).
+			deviceError = getErrorMessage(err);
+			addToast('error', deviceError);
+		} finally {
+			deviceLoading = false;
 		}
 	}
 
 	async function fetchHeartbeatConfigs() {
 		heartbeatConfigLoading = true;
+		heartbeatConfigError = '';
 		try {
 			const res = await api.get<{ configs: typeof heartbeatConfigs; total: number }>(`/devices/${deviceId}/heartbeat-configs`);
 			heartbeatConfigs = res.configs || [];
-		} catch {
-			heartbeatConfigs = [];
+		} catch (err: unknown) {
+			// Don't clear heartbeatConfigs (keep last good data); record the
+			// error so the section shows a banner instead of the misleading
+			// "create config" empty-state CTA.
+			heartbeatConfigError = getErrorMessage(err);
 		} finally {
 			heartbeatConfigLoading = false;
 		}
@@ -374,27 +397,30 @@
 	// L2 neighbors (Bridge-MIB / LLDP) — read-only enrichment for the detail
 	// page. Failures are silent (the panel just shows "no neighbors").
 	async function fetchNeighbors() {
+		neighborsError = '';
 		try {
 			const res = await api.get<{ neighbors: DeviceNeighbor[]; total: number }>(
 				`/devices/${deviceId}/neighbors`
 			);
 			neighbors = res.neighbors || [];
-		} catch {
-			neighbors = [];
+		} catch (err: unknown) {
+			// Keep last good neighbors list; record error for the section banner.
+			neighborsError = getErrorMessage(err);
 		}
 	}
 
 	// TLS certificates (host_tls_certs) — read-only. Drives the device-detail TLS
-	// sub-panel and the per-port certificate Modal (full chain + PEM). Failures
-	// are silent (the panel shows the empty state).
+	// sub-panel and the per-port certificate Modal (full chain + PEM).
 	async function fetchTLSCerts() {
+		tlsCertsError = '';
 		try {
 			const res = await api.get<{ certificates: TLSPortCerts[]; total: number }>(
 				`/devices/${deviceId}/certificates`
 			);
 			tlsCerts = res.certificates || [];
-		} catch {
-			tlsCerts = [];
+		} catch (err: unknown) {
+			// Keep last good certs list; record error for the section banner.
+			tlsCertsError = getErrorMessage(err);
 		}
 	}
 
@@ -800,6 +826,21 @@
 		</div>
 	{/if}
 
+	<!-- Page-level device-loading-or-error guard: while the device hasn't loaded
+	     (or failed to load), show a skeleton / error+retry INSTEAD of the tab bar
+	     + tab panels. Without this, a fetchDevice failure leaves every non-Systems
+	     tab blank because their content is gated on {#if device}. -->
+	{#if deviceLoading && !device}
+		<PageSkeleton type="detail" />
+	{:else if deviceError && !device}
+		<EmptyState
+			icon="⚠"
+			title={m["common.Error"]()}
+			description={deviceError}
+			actionLabel={m["common.Retry"]()}
+			onAction={fetchDevice}
+		/>
+	{:else}
 	<!-- Sticky in-page tab bar -->
 	<div class="tab-bar" role="tablist" aria-label={m['navigation.Devices']()}>
 		{#each [['overview', m['devicedetail.Tab Overview']()], ['discovery', m['devicedetail.Tab Discovery']()], ['network', m['devicedetail.Tab Network']()], ['systems', m['devicedetail.Tab Systems']()], ['heartbeat', m['devicedetail.Tab Heartbeat']()]] as [key, label] (key)}
@@ -1105,7 +1146,12 @@
 				{m['topology.Neighbors']()}
 			</h3>
 			<p class="text-xs text-text-muted mb-3">{m['topology.Neighbors Desc']()}</p>
-			{#if neighbors.length > 0}
+			{#if neighborsError}
+				<div class="mb-3 px-4 py-2 bg-error/10 border border-error/30 rounded-lg text-sm text-error flex items-center justify-between gap-2">
+					<span>{neighborsError}</span>
+					<button class="btn btn-sm btn-ghost" onclick={fetchNeighbors}>{m['common.Retry']()}</button>
+				</div>
+			{:else if neighbors.length > 0}
 				<div class="overflow-x-auto">
 					<table class="w-full text-left border border-border rounded-lg overflow-hidden">
 						<thead class="bg-bg/50 border-b border-border">
@@ -1171,7 +1217,12 @@
 				{/if}
 			</h3>
 			<p class="text-xs text-text-muted mb-3">{m['certificates.NoCertificatesHint']()}</p>
-			{#if tlsCerts.length > 0}
+			{#if tlsCertsError}
+				<div class="mb-3 px-4 py-2 bg-error/10 border border-error/30 rounded-lg text-sm text-error flex items-center justify-between gap-2">
+					<span>{tlsCertsError}</span>
+					<button class="btn btn-sm btn-ghost" onclick={fetchTLSCerts}>{m['common.Retry']()}</button>
+				</div>
+			{:else if tlsCerts.length > 0}
 				<div class="tls-cert-list">
 					{#each tlsCerts as portCerts (portCerts.port)}
 						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -1255,7 +1306,8 @@
 		</div>
 	</div>
 
-	<!-- Error -->
+	<!-- Systems-only error (device loaded OK but the systems fetch failed).
+	     A device-level fetch failure is handled by the page-level guard above. -->
 	{#if error}
 		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error" aria-live="polite">
 			{error}
@@ -1338,7 +1390,12 @@
 							</div>
 						{/if}
 					</div>
-				{#if !heartbeatConfigLoading && heartbeatConfigs.length === 0 && device?.ip_address}
+				{#if heartbeatConfigError}
+					<div class="px-4 py-2 bg-error/10 border border-error/30 rounded-lg text-sm text-error flex items-center justify-between gap-2">
+						<span>{heartbeatConfigError}</span>
+						<button class="btn btn-sm btn-ghost" onclick={fetchHeartbeatConfigs}>{m['common.Retry']()}</button>
+					</div>
+				{:else if !heartbeatConfigLoading && heartbeatConfigs.length === 0 && device?.ip_address}
 					<button
 						onclick={createDefaultHeartbeatConfig}
 						disabled={creatingHeartbeat}
@@ -1471,8 +1528,9 @@
 			</div>
 		{/if}
 
-		<!-- No config warning -->
-		{#if !heartbeatConfigLoading && heartbeatConfigs.length === 0 && !trendLoading}
+		<!-- No config warning (suppressed when the config fetch itself failed —
+		     otherwise a server error would masquerade as "no config" here too). -->
+		{#if !heartbeatConfigLoading && !heartbeatConfigError && heartbeatConfigs.length === 0 && !trendLoading}
 			<div class="mb-4 px-4 py-3 bg-warning/10 border border-warning/30 rounded-lg text-sm text-warning">
 				{m['heartbeat.NoConfig']()}: {m['heartbeat.NoConfigDesc']()}
 				{#if device?.ip_address}
@@ -1509,6 +1567,7 @@
 
 	</div><!-- /heartbeat tabpanel -->
 	{/if}<!-- /heartbeat tab -->
+{/if}<!-- /page-level device-loading-or-error guard -->
 
 </div><!-- /p-6 page wrapper -->
 
