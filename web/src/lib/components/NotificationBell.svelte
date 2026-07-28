@@ -92,7 +92,14 @@
 	}
 
 	function formatTime(iso: string): string {
-		return new Date(iso).toLocaleString();
+		if (!iso) return '-';
+		try {
+			return new Date(iso).toLocaleString();
+		} catch {
+			// A malformed sent_at would otherwise throw inside the {#each} and
+			// crash the whole dropdown. Fall back to the raw value.
+			return iso;
+		}
 	}
 
 	onMount(() => {

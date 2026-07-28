@@ -49,6 +49,14 @@
 	let busy = $state(false);
 	const pending = $derived(busy || loading);
 
+	// Per-instance ids so two concurrent ConfirmDialogs (or a ConfirmDialog
+	// alongside a Modal) don't collide on aria-labelledby/describedby targets.
+	const idBase = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+		? crypto.randomUUID()
+		: Math.random().toString(36).slice(2);
+	const confirmTitleId = `confirm-title-${idBase}`;
+	const confirmMessageId = `confirm-message-${idBase}`;
+
 	async function handleConfirm() {
 		if (pending) return;
 		busy = true;
@@ -81,11 +89,11 @@
 			class="confirm-content"
 			role="alertdialog"
 			aria-modal="true"
-			aria-labelledby="confirm-title"
-			aria-describedby="confirm-message"
+			aria-labelledby={confirmTitleId}
+			aria-describedby={confirmMessageId}
 		>
-			<h3 id="confirm-title" class="sr-only">{title}</h3>
-			<p id="confirm-message" class="confirm-message">{message}</p>
+			<h3 id={confirmTitleId} class="sr-only">{title}</h3>
+			<p id={confirmMessageId} class="confirm-message">{message}</p>
 			<div class="confirm-actions">
 				<button
 					class="cd-btn cd-cancel"

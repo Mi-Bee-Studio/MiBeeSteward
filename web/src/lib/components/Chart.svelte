@@ -12,18 +12,24 @@
 	import { echarts, type EChartsOption } from '$lib/charts/echarts';
 	import { onMount } from 'svelte';
 	import { m } from '$lib/i18n-paraglide';
+	import { LoaderCircle } from '@lucide/svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let {
 		option = $bindable(),
 		width = '100%',
 		height = '300px',
+		loading = false,
 		onclick,
 		ondblclick
 	}: {
 		option: EChartsOption;
 		width?: string;
 		height?: string;
+		// When true, the chart shows a spinner overlay on top of the canvas.
+		// Parent components toggle this during refetches so the chart doesn't
+		// visually freeze on stale data while waiting for the next payload.
+		loading?: boolean;
 		// onclick fires for ECharts series clicks (node/edge). The payload is the
 		// raw ECharts event object; inspect dataType ('node'|'edge') + data.value.
 		onclick?: (params: Record<string, unknown>) => void;
@@ -68,6 +74,16 @@
 		const handleResize = () => instance?.resize();
 		window.addEventListener('resize', handleResize);
 
+		// Watch the container's size directly. A window 'resize' listener alone
+		// misses cases where the container changes size without the window
+		// resizing — e.g. an accordion expanding, a modal opening, or a sidebar
+		// collapsing — which left the chart squeezed into its old (often 0-width)
+		// box. ResizeObserver fires on those layout transitions.
+		const resizeObserver = new ResizeObserver(() => {
+			instance?.resize();
+		});
+		if (container) resizeObserver.observe(container);
+
 		// Watch for theme changes (data-theme attribute on <html>)
 		const observer = new MutationObserver(() => {
 			initChart();
@@ -79,6 +95,7 @@
 
 		return () => {
 			window.removeEventListener('resize', handleResize);
+			resizeObserver.disconnect();
 			observer.disconnect();
 			instance?.dispose();
 			instance = undefined;
@@ -90,6 +107,11 @@
 			instance.setOption(option);
 		}
 	});
+
+	// Loading overlay: parent sets `loading` while refetching. We render a CSS
+	// overlay rather than ECharts' built-in showLoading() to avoid pulling in the
+	// (unregistered here) LoadingComponent and to keep the spinner consistent
+	// with the rest of the app's LoaderCircle icon.
 
 	// Bind the click handler whenever it or the instance changes. ECharts
 	// 'click' events carry the series payload (node/edge data) — distinct from
@@ -127,5 +149,13 @@
 		<EmptyState title={m['common.No Data']()} />
 	</div>
 {:else}
-	<div bind:this={container} class="echarts-container" style="width: {width}; height: {height};"></div>
+	<div class="relative" style="width: {width}; height: {height};">
+		<div bind:this={container} class="echarts-container" style="width: 100%; height: 100%;"></div>
+		{#if loading}
+			<div class="absolute inset-0 flex items-center justify-center bg-surface/60 backdrop-blur-sm rounded-lg">
+				<LoaderCircle class="w-6 h-6 animate-spin text-primary" aria-hidden="true" />
+				<span class="sr-only">{m['common.Loading']()}</span>
+			</div>
+		{/if}
+	</div>
 {/if}

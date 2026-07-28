@@ -174,6 +174,7 @@
 					oninput={() => onSearchChange?.(searchQuery)}
 					placeholder={searchPlaceholder}
 					data-search-shortcut
+					aria-label={searchPlaceholder}
 					class="input pl-10 pr-10"
 				/>
 				{#if searchQuery}
@@ -196,7 +197,16 @@
 				<thead>
 					<tr class="border-b border-border text-left text-xs text-muted bg-surface">
 						{#each columns as col}
-							<th scope="col" class="px-4 py-3 {col.sortable ? 'cursor-pointer select-none hover:text-text' : ''}" class:whitespace-nowrap={true}>
+							<th
+								scope="col"
+								class="px-4 py-3 {col.sortable ? 'cursor-pointer select-none hover:text-text' : ''}"
+								class:whitespace-nowrap={true}
+								aria-sort={col.sortable
+									? (displaySortKey === col.key
+										? (displaySortDir === 'asc' ? 'ascending' : displaySortDir === 'desc' ? 'descending' : 'none')
+										: 'none')
+									: undefined}
+							>
 								{#if col.sortable}
 									<button
 										class="inline-flex items-center gap-1.5"

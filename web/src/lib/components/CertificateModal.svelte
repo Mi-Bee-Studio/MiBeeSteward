@@ -11,6 +11,7 @@
 <script lang="ts">
 	import Modal from './Modal.svelte';
 	import { m } from '$lib/i18n-paraglide';
+	import { addToast } from '$lib/stores/toast';
 	import type { TLSPortCerts, CertificateInfo } from '$lib/types';
 	import { ShieldCheck, ShieldAlert, ShieldX, Copy, Check, ChevronDown } from '@lucide/svelte';
 	import { certStatus as statusOf, certDayDelta as dayDelta, fmtFingerprint } from '$lib/utils/certs';
@@ -54,8 +55,11 @@
 				if (copiedIndex === idx) copiedIndex = null;
 			}, 1500);
 		} catch {
-			// Clipboard API may be unavailable (insecure context); fall back to
-			// selecting the <pre> text. We don't auto-select to avoid jarring UX.
+			// Clipboard API is unavailable (e.g. insecure HTTP context). The copy
+			// silently did nothing — surface it so the user isn't left guessing
+			// whether the PEM was copied. The PEM text remains visible in the
+			// <pre> below for manual selection + Ctrl/Cmd+C.
+			addToast('error', m['agents.Failed to Copy']());
 		}
 	}
 
