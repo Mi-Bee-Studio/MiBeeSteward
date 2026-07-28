@@ -217,8 +217,14 @@
 	}
 
 	async function toggleEnabled(channel: Channel) {
+		// Dedicated PATCH endpoint — writes only `enabled` (single-field UPDATE),
+		// so name/type/config (and any SMTP password) are never rewritten. The
+		// generic PUT is reserved for the edit form, which intentionally replaces
+		// the full body.
+		const target = !channel.enabled;
 		try {
-			await api.put(`/notification/channels/${channel.id}`, { enabled: !channel.enabled });
+			await api.patch(`/notification/channels/${channel.id}`, { enabled: target });
+			addToast('success', target ? m["notifications.Channel Enabled"]() : m["notifications.Channel Disabled"]());
 			fetchChannels();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));

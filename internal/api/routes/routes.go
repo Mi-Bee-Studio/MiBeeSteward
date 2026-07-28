@@ -725,6 +725,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/", notificationHandler.ListChannels)
 		r.Get("/{id}", notificationHandler.GetChannel)
 		r.Put("/{id}", notificationHandler.UpdateChannel)
+		r.Patch("/{id}", notificationHandler.SetChannelEnabled)
 		r.Delete("/{id}", notificationHandler.DeleteChannel)
 		r.Post("/{id}/test", notificationHandler.TestChannel)
 	})

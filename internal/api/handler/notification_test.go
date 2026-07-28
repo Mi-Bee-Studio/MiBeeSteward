@@ -106,6 +106,84 @@ func TestNotificationChannel_EmailPasswordMasked(t *testing.T) {
 	require.Equal(t, "smtp.example.com", configResp["host"])
 }
 
+// TestNotificationChannel_SetEnabled exercises the dedicated PATCH toggle
+// endpoint. The contract this guards: toggling `enabled` via PATCH must NOT
+// rewrite name/type/config — in particular the masked SMTP password must stay
+// the real value in the DB, never the `"*****"` mask that would be written if
+// someone naively did a GET-then-full-PUT round-trip. This is the data
+// corruption #53 was worried about; the dedicated endpoint sidesteps it.
+func TestNotificationChannel_SetEnabled(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	// --- Webhook channel: toggle should leave config.url untouched ---
+	whBody := `{"name":"WH","type":"webhook","config":{"url":"https://hooks.example/x"},"enabled":true}`
+	resp := authPost(t, server.URL+"/api/v1/notification/channels", token, whBody)
+	require.Equal(t, 201, resp.StatusCode)
+	var whCreated map[string]interface{}
+	decodeJSON(t, resp, &whCreated)
+	whID := idToString(whCreated["id"])
+
+	// Toggle off then back on via PATCH.
+	resp = authPatch(t, server.URL+"/api/v1/notification/channels/"+whID, token, `{"enabled":false}`)
+	require.Equal(t, 200, resp.StatusCode)
+	var off map[string]interface{}
+	decodeJSON(t, resp, &off)
+	require.Equal(t, false, off["enabled"])
+	require.Equal(t, "WH", off["name"], "name must survive a toggle")
+
+	resp = authPatch(t, server.URL+"/api/v1/notification/channels/"+whID, token, `{"enabled":true}`)
+	require.Equal(t, 200, resp.StatusCode)
+	var back map[string]interface{}
+	decodeJSON(t, resp, &back)
+	require.Equal(t, true, back["enabled"])
+
+	// DB ground truth: config.url unchanged after two toggles.
+	var whConfig string
+	err := db.QueryRow("SELECT config FROM notification_channels WHERE id = ?", whCreated["id"]).Scan(&whConfig)
+	require.NoError(t, err)
+	require.Contains(t, whConfig, "https://hooks.example/x", "webhook url must survive toggles")
+
+	// PATCH a missing channel → 404 (ErrChannelNotFound, not 500).
+	resp = authPatch(t, server.URL+"/api/v1/notification/channels/9999", token, `{"enabled":true}`)
+	require.Equal(t, 404, resp.StatusCode)
+
+	// --- Email channel: the real corruption-risk path ---
+	// A GET-then-PUT full-body round-trip would write the masked password
+	// ("*****") back over the real one. The dedicated PATCH must NOT do that.
+	emailConfig := map[string]string{
+		"host": "smtp.example.com", "port": "587", "username": "u@example.com",
+		"password": "supersecret", "from": "n@example.com", "to": "a@example.com",
+	}
+	cfgJSON, _ := json.Marshal(emailConfig)
+	emailBody, _ := json.Marshal(map[string]interface{}{
+		"name": "Email", "type": "email", "config": json.RawMessage(cfgJSON), "enabled": true,
+	})
+	resp = authPost(t, server.URL+"/api/v1/notification/channels", token, string(emailBody))
+	require.Equal(t, 201, resp.StatusCode)
+	var emCreated map[string]interface{}
+	decodeJSON(t, resp, &emCreated)
+
+	// Toggle the email channel off.
+	resp = authPatch(t, server.URL+"/api/v1/notification/channels/"+idToString(emCreated["id"]), token, `{"enabled":false}`)
+	require.Equal(t, 200, resp.StatusCode)
+
+	// DB ground truth: the REAL password must still be in the DB (not "*****").
+	var emConfig string
+	err = db.QueryRow("SELECT config FROM notification_channels WHERE id = ?", emCreated["id"]).Scan(&emConfig)
+	require.NoError(t, err)
+	require.Contains(t, emConfig, "supersecret", "real SMTP password must survive an enabled toggle")
+	require.NotContains(t, emConfig, `"*****"`, "masked placeholder must never be written back to the DB")
+
+	// And the API response masks it (defense-in-depth check).
+	var toggled map[string]interface{}
+	decodeJSON(t, resp, &toggled)
+	emRespCfg, ok := toggled["config"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "*****", emRespCfg["password"], "API still masks the password in responses")
+}
+
 func TestNotificationChannel_CreateMissingName(t *testing.T) {
 	server, db := setupTestServer(t)
 	insertTestAdmin(t, db)

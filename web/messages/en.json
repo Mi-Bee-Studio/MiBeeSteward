@@ -645,6 +645,8 @@
 		"Channel Created": "Notification channel created successfully",
 		"Channel Updated": "Notification channel updated successfully",
 		"Channel Deleted": "Notification channel deleted successfully",
+		"Channel Enabled": "Notification channel enabled",
+		"Channel Disabled": "Notification channel disabled",
 		"Channel Not Found": "Notification channel not found",
 		"Test Dispatched": "Test notification dispatched",
 		"Test Disabled": "Cannot test a disabled channel",
