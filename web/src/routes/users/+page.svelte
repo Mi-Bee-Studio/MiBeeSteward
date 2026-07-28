@@ -14,6 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { html } from '$lib/utils/index';
 	import { addToast } from '$lib/stores/toast';
 	import { userSchema, validateField, validateForm } from '$lib/utils/validation';
 
@@ -222,14 +223,14 @@
 			label: m["users.Username"](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-medium text-text">${String(row.username)}</span>`
+				html`<span class="font-medium text-text">${row.username}</span>`
 		},
 		{
 			key: 'email',
 			label: m["users.Email"](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="text-text-muted">${row.email ? String(row.email) : '-'}</span>`
+				html`<span class="text-text-muted">${row.email ? row.email : '-'}</span>`
 		},
 		{
 			key: 'role',
@@ -238,9 +239,9 @@
 			render: (row: Record<string, unknown>) => {
 				const role = String(row.role);
 				if (role === 'admin') {
-					return `<span class="text-xs px-2 py-0.5 rounded font-mono bg-accent/10 text-accent">${role}</span>`;
+					return html`<span class="text-xs px-2 py-0.5 rounded font-mono bg-accent/10 text-accent">${role}</span>`;
 				}
-				return `<span class="text-xs px-2 py-0.5 rounded font-mono bg-surface text-text-muted border border-border">${role}</span>`;
+				return html`<span class="text-xs px-2 py-0.5 rounded font-mono bg-surface text-text-muted border border-border">${role}</span>`;
 			}
 		},
 		{
@@ -248,14 +249,14 @@
 			label: m["users.Created At"](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="text-text-muted">${formatTime(String(row.created_at))}</span>`
+				html`<span class="text-text-muted">${formatTime(String(row.created_at))}</span>`
 		},
 		{
 			key: 'actions',
 			label: m["common.Actions"](),
 			render: (row: Record<string, unknown>) => {
 				const userId = row.id;
-				return `<div class="flex items-center gap-2">
+				return html`<div class="flex items-center gap-2">
 					<button data-reset-id="${userId}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["users.Reset Password"]()}</button>
 					<button data-delete-id="${userId}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>
 				</div>`;

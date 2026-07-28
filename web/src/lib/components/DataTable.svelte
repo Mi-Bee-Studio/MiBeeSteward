@@ -17,6 +17,20 @@
 		key: string;
 		label: string;
 		sortable?: boolean;
+		/**
+		 * Custom cell renderer. The returned string is injected via `{@html}`, so
+		 * the caller is responsible for escaping EVERY user-controlled value
+		 * (device name, username, MAC, URL, …) — otherwise a value containing
+		 * `<` is an XSS vector.
+		 *
+		 * Build the string with the `html` tagged-template helper
+		 * (`$lib/utils/index`): it auto-escapes interpolations while leaving
+		 * markup intact, so the safe default is also the easy one:
+		 *   render: (row) => html`<span class="font-medium">${row.name}</span>`
+		 * Raw string concatenation is allowed only if the caller escapes each
+		 * user-controlled interpolation with `escapeHtml`/`escapeAttr` (see
+		 * `devices/+page.svelte` for the manual pattern).
+		 */
 		render?: (row: Record<string, unknown>) => string;
 	}
 
