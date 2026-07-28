@@ -22,6 +22,27 @@ func (q *Queries) CountScanTasks(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countScanTasksSearch = `-- name: CountScanTasksSearch :one
+SELECT COUNT(*)
+FROM scan_tasks
+WHERE (? = '' OR INSTR(lower(name), lower(?)) > 0 OR INSTR(lower(targets), lower(?)) > 0)
+`
+
+type CountScanTasksSearchParams struct {
+	Column1 interface{} `json:"column_1"`
+	LOWER   string      `json:"LOWER"`
+	LOWER_2 string      `json:"LOWER_2"`
+}
+
+// Mirrors ListScanTasksSearch's WHERE clause so the pagination total reflects
+// the active search (not the unfiltered row count).
+func (q *Queries) CountScanTasksSearch(ctx context.Context, arg CountScanTasksSearchParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countScanTasksSearch, arg.Column1, arg.LOWER, arg.LOWER_2)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createScanTask = `-- name: CreateScanTask :one
 
 INSERT INTO scan_tasks (name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, enabled)
@@ -176,6 +197,72 @@ type ListScanTasksParams struct {
 
 func (q *Queries) ListScanTasks(ctx context.Context, arg ListScanTasksParams) ([]ScanTask, error) {
 	rows, err := q.db.QueryContext(ctx, listScanTasks, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScanTask{}
+	for rows.Next() {
+		var i ScanTask
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Targets,
+			&i.CronExpr,
+			&i.PipelineConfig,
+			&i.GlobalLabels,
+			&i.Timeout,
+			&i.ConcurrentHosts,
+			&i.Enabled,
+			&i.LastRunAt,
+			&i.NextRunAt,
+			&i.LastRunStatus,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScanTasksSearch = `-- name: ListScanTasksSearch :many
+SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+FROM scan_tasks
+WHERE (? = '' OR INSTR(lower(name), lower(?)) > 0 OR INSTR(lower(targets), lower(?)) > 0)
+ORDER BY id
+LIMIT ? OFFSET ?
+`
+
+type ListScanTasksSearchParams struct {
+	Column1 interface{} `json:"column_1"`
+	LOWER   string      `json:"LOWER"`
+	LOWER_2 string      `json:"LOWER_2"`
+	Limit   int64       `json:"limit"`
+	Offset  int64       `json:"offset"`
+}
+
+// Optional case-insensitive substring search over name + targets. The first
+// param is the raw search term; when it is ” the (? = ”) short-circuits to
+// TRUE so this behaves like ListScanTasks (no filter). INSTR() is used instead
+// of LIKE so the search term needs no escaping (literal %/_ are not wildcards)
+// and we pass the same value to both columns + the empty-check.
+// CountScanTasksSearch below MUST use the same WHERE clause so totals match.
+func (q *Queries) ListScanTasksSearch(ctx context.Context, arg ListScanTasksSearchParams) ([]ScanTask, error) {
+	rows, err := q.db.QueryContext(ctx, listScanTasksSearch,
+		arg.Column1,
+		arg.LOWER,
+		arg.LOWER_2,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}

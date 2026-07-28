@@ -105,17 +105,76 @@ func TestListTasks_PaginationClamping(t *testing.T) {
 		require.NoError(t, err)
 	}
 	// total reflects all 3 regardless of limit/offset.
-	tasks, total, err := svc.ListTasks(ctx, 5, 0) // limit<20 → clamped to 20
+	tasks, total, err := svc.ListTasks(ctx, "", 5, 0) // limit<20 → clamped to 20
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Len(t, tasks, 3)
 	// offset beyond the set → empty page, total unchanged.
-	tasks, total, err = svc.ListTasks(ctx, 20, 100)
+	tasks, total, err = svc.ListTasks(ctx, "", 20, 100)
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Empty(t, tasks)
 	// the seeding also sanity-checks CreateScanTask isn't dropping rows
 	_ = queries
+}
+
+// TestListTasks_Search verifies server-side substring search over name + targets:
+// a non-empty search narrows both the returned page and the total count, an
+// empty search disables the filter, and the match is case-insensitive + works
+// against either column.
+func TestListTasks_Search(t *testing.T) {
+	svc, _ := setupSvc(t)
+	ctx := context.Background()
+
+	// Seed tasks with distinct names + targets so each search term hits exactly one.
+	reqs := []domain.ScanTaskRequest{
+		{Name: "nightly-lan", Targets: "192.168.1.0/24", CronExpr: "0 2 * * *", Timeout: 60, ConcurrentHosts: 16, PipelineConfig: domain.PipelineConfig{ICMP: domain.ICMPConfig{Enabled: true, Timeout: 2}}},
+		{Name: "weekly-cameras", Targets: "10.0.0.0/24", CronExpr: "0 3 * * 0", Timeout: 60, ConcurrentHosts: 16, PipelineConfig: domain.PipelineConfig{ICMP: domain.ICMPConfig{Enabled: true, Timeout: 2}}},
+		{Name: "iot-sweep", Targets: "172.16.0.0/24", CronExpr: "0 4 * * *", Timeout: 60, ConcurrentHosts: 16, PipelineConfig: domain.PipelineConfig{ICMP: domain.ICMPConfig{Enabled: true, Timeout: 2}}},
+	}
+	for _, r := range reqs {
+		_, err := svc.CreateTask(ctx, r)
+		require.NoError(t, err)
+	}
+
+	// Empty search → all 3 (filter disabled).
+	tasks, total, err := svc.ListTasks(ctx, "", 20, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, tasks, 3)
+
+	// Search by name substring → 1 match, total=1.
+	tasks, total, err = svc.ListTasks(ctx, "cameras", 20, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, tasks, 1)
+	require.Equal(t, "weekly-cameras", tasks[0].Name)
+
+	// Search by targets substring → 1 match (the 172.16 row).
+	tasks, total, err = svc.ListTasks(ctx, "172.16", 20, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, tasks, 1)
+	require.Equal(t, "iot-sweep", tasks[0].Name)
+
+	// Case-insensitive: "LAN" matches "nightly-lan".
+	tasks, total, err = svc.ListTasks(ctx, "LAN", 20, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, tasks, 1)
+	require.Equal(t, "nightly-lan", tasks[0].Name)
+
+	// No match → empty page, total=0.
+	tasks, total, err = svc.ListTasks(ctx, "nonexistent-term", 20, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), total)
+	require.Empty(t, tasks)
+
+	// A term matching MULTIPLE columns/rows ("0.0/24" is in two targets) → total=2.
+	tasks, total, err = svc.ListTasks(ctx, "0.0/24", 20, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, tasks, 2)
 }
 
 // TestDeleteTask verifies deletion and that the deleted ID is then not-found.

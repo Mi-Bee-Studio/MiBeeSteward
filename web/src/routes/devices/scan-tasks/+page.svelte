@@ -34,16 +34,33 @@
 	// --- Pagination ---
 	let offset = $state(0);
 	const limit = 20;
-	// --- Search ---
+	// --- Search (server-side) ---
+	// searchInput is the live textbox value; searchQuery is the term committed to
+	// the backend after a 400ms debounce. The old client-side filter only searched
+	// the current 20-row page, so tasks on other pages were unreachable. Server-
+	// side search matches how devices/+page.svelte does it.
+	let searchInput = $state('');
 	let searchQuery = $state('');
+	let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-	let filteredTasks = $derived.by<ScannerTask[]>(() => {
-		if (!searchQuery.trim()) return tasks;
-		const q = searchQuery.toLowerCase();
-		return tasks.filter(t =>
-			t.name.toLowerCase().includes(q) || t.targets.toLowerCase().includes(q)
-		);
-	});
+	// onSearchInput debounces the search box: 400ms after the last keystroke the
+	// term is committed to searchQuery and a backend fetch fires. Clearing the
+	// box commits an empty search immediately so "clear" feels responsive.
+	function onSearchInput() {
+		if (searchTimer) clearTimeout(searchTimer);
+		const v = searchInput.trim();
+		if (v === '') {
+			searchQuery = '';
+			offset = 0;
+			fetchTasks();
+			return;
+		}
+		searchTimer = setTimeout(() => {
+			searchQuery = v;
+			offset = 0;
+			fetchTasks();
+		}, 400);
+	}
 
 	// --- Form modal ---
 	let formOpen = $state(false);
@@ -93,6 +110,7 @@
 			clearTimeout(timer);
 		}
 		pollingTimers.clear();
+		if (searchTimer) clearTimeout(searchTimer);
 	});
 
 	// --- Data fetching ---
@@ -100,8 +118,12 @@
 		loading = true;
 		error = '';
 		try {
+			const params = new URLSearchParams();
+			if (searchQuery) params.set('search', searchQuery);
+			params.set('limit', String(limit));
+			params.set('offset', String(offset));
 			const res = await api.get<{ tasks: ScannerTask[]; total: number }>(
-				`/scanner/tasks?limit=${limit}&offset=${offset}`
+				`/scanner/tasks?${params}`
 			);
 			tasks = res.tasks || [];
 			total = res.total || 0;
@@ -396,8 +418,9 @@
 			+ {m['scanner.New Task']()}
 		</button>
 	</div>
-	<!-- Search -->
-	{#if tasks.length > 0}
+	<!-- Search (server-side). Keep the box visible while a search is active even
+	     if the current page is empty, so the user can edit/clear the query. -->
+	{#if tasks.length > 0 || searchQuery}
 	<div class="relative mb-4">
 		<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none"
 			fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -406,7 +429,8 @@
 		</svg>
 		<input
 			type="text"
-			bind:value={searchQuery}
+			bind:value={searchInput}
+			oninput={onSearchInput}
 			placeholder={m['scanner.Search Tasks']()}
 			class="pl-10 pr-4 py-2 w-full max-w-sm bg-surface border border-border rounded-lg text-sm text-text
 				placeholder:text-text-muted/40 focus:border-primary focus:outline-none"
@@ -426,7 +450,7 @@
 		<PageSkeleton type="table" />
 	{:else}
 		<!-- Empty state -->
-			{#if filteredTasks.length === 0 && tasks.length > 0}
+			{#if tasks.length === 0 && searchQuery}
 				<EmptyState
 					title={m['common.No Results']()}
 					description={m['scanner.No Tasks Match']({ query: searchQuery })}
@@ -454,7 +478,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each filteredTasks as task}
+						{#each tasks as task}
 							<tr class="border-b border-border last:border-b-0 hover:bg-border/30 transition-colors">
 								<!-- Name -->
 								<td class="px-4 py-3 text-sm font-medium text-text">{task.name}</td>
