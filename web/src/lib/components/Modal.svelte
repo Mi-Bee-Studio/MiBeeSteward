@@ -52,6 +52,13 @@
 	let previouslyFocused: HTMLElement | undefined = $state();
 	let showConfirm = $state(false);
 
+	// Unique id for this instance's title element so aria-labelledby resolves
+	// correctly even when multiple Modals (or a Modal + ConfirmDialog) are open
+	// at once. Hardcoded "modal-title" collided across concurrent instances.
+	const titleId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+		? `modal-title-${crypto.randomUUID()}`
+		: `modal-title-${Math.random().toString(36).slice(2)}`;
+
 	const FOCUSABLE =
 		'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
@@ -128,19 +135,26 @@
 			previouslyFocused = document.activeElement as HTMLElement;
 			document.body.style.overflow = 'hidden';
 
-			// Focus first focusable element after render
-			const timeout = setTimeout(() => {
-				if (!dialogRef) return;
-				const focusable = getFocusable();
-				if (focusable.length > 0) {
-					focusable[0].focus();
-				} else {
-					dialogRef!.focus();
-				}
-			}, 50);
+			// Focus first focusable element after the dialog's scale transition
+			// paints. requestAnimationFrame (chained once to land on the post-paint
+			// frame) is more reliable than a fixed setTimeout(50), which raced the
+			// transition and occasionally focused before the dialog was interactive.
+			let raf2 = 0;
+			const raf1 = requestAnimationFrame(() => {
+				raf2 = requestAnimationFrame(() => {
+					if (!dialogRef) return;
+					const focusable = getFocusable();
+					if (focusable.length > 0) {
+						focusable[0].focus();
+					} else {
+						dialogRef!.focus();
+					}
+				});
+			});
 
 			return () => {
-				clearTimeout(timeout);
+				cancelAnimationFrame(raf1);
+				cancelAnimationFrame(raf2);
 			};
 		} else {
 			document.body.style.overflow = '';
@@ -166,11 +180,11 @@
 			transition:scale={{ duration: 200, start: 0.95 }}
 			role="dialog"
 			aria-modal="true"
-			aria-labelledby="modal-title"
+			aria-labelledby={titleId}
 			tabindex="-1"
 		>
 			<header class="modal-header">
-				<h2 id="modal-title" class="modal-title">{title}</h2>
+				<h2 id={titleId} class="modal-title">{title}</h2>
 				<button
 					class="modal-close"
 					onclick={close}

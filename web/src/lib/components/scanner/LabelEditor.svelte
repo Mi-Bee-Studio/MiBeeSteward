@@ -145,6 +145,7 @@
 							<input
 								type="text"
 								placeholder="key"
+								aria-label="Label key"
 								value={entry.key}
 								oninput={(e) => updateKey(entry.id, (e.target as HTMLInputElement).value)}
 								class="label-input"
@@ -153,6 +154,7 @@
 							<input
 								type="text"
 								placeholder="value"
+								aria-label="Label value"
 								value={entry.value}
 								oninput={(e) => updateValue(entry.id, (e.target as HTMLInputElement).value)}
 								class="label-input"
