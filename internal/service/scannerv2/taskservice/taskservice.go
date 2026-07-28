@@ -90,8 +90,11 @@ func (s *Service) GetTask(ctx context.Context, id int64) (domain.ScanTaskRespons
 	return toTaskResponse(task), nil
 }
 
-// ListTasks returns a page of tasks + total count.
-func (s *Service) ListTasks(ctx context.Context, limit, offset int) ([]domain.ScanTaskResponse, int64, error) {
+// ListTasks returns a page of tasks + total count, optionally filtered by a
+// case-insensitive substring search over name + targets. An empty search
+// string disables the filter (matches the old behaviour) — both the list and
+// the count use the same search term so pagination totals stay consistent.
+func (s *Service) ListTasks(ctx context.Context, search string, limit, offset int) ([]domain.ScanTaskResponse, int64, error) {
 	if limit < 20 {
 		limit = 20
 	}
@@ -101,11 +104,21 @@ func (s *Service) ListTasks(ctx context.Context, limit, offset int) ([]domain.Sc
 	if offset < 0 {
 		offset = 0
 	}
-	tasks, err := s.queries.ListScanTasks(ctx, db.ListScanTasksParams{Limit: int64(limit), Offset: int64(offset)})
+	tasks, err := s.queries.ListScanTasksSearch(ctx, db.ListScanTasksSearchParams{
+		Column1: search, // raw search term, used for the (? = '' OR ...) short-circuit
+		LOWER:   search, // substring matched against lower(name)
+		LOWER_2: search, // substring matched against lower(targets)
+		Limit:   int64(limit),
+		Offset:  int64(offset),
+	})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.queries.CountScanTasks(ctx)
+	total, err := s.queries.CountScanTasksSearch(ctx, db.CountScanTasksSearchParams{
+		Column1: search,
+		LOWER:   search,
+		LOWER_2: search,
+	})
 	if err != nil {
 		return nil, 0, err
 	}
