@@ -15,6 +15,7 @@
 	import { onMount } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { html } from '$lib/utils/index';
+	import { networkSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -41,6 +42,7 @@
 	let formSite = $state('');
 	let formError = $state('');
 	let formLoading = $state(false);
+	let fieldErrors = $state<Record<string, string>>({});
 
 	// --- Delete confirm ---
 	let deleteOpen = $state(false);
@@ -89,23 +91,32 @@
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
-		if (!formName.trim()) {
-			formError = m['networks.Name Required']();
-			return;
-		}
-		formLoading = true;
 		formError = '';
 		const body = {
 			name: formName.trim(),
-			cidr: formCidr.trim() || undefined,
+			cidr: formCidr.trim() || '',
 			site: formSite.trim() || undefined
+		};
+		// Validate name (required) + cidr (format, when supplied) via networkSchema.
+		// cidr is advisory so empty is allowed; a malformed value now flags inline.
+		const validation = validateForm(networkSchema, body);
+		if (!validation.valid) {
+			fieldErrors = validation.errors;
+			return;
+		}
+		fieldErrors = {};
+		formLoading = true;
+		const payload = {
+			name: body.name,
+			cidr: body.cidr || undefined,
+			site: body.site
 		};
 		try {
 			if (editingId !== null) {
-				await api.put(`/networks/${editingId}`, body);
+				await api.put(`/networks/${editingId}`, payload);
 				addToast('success', m['networks.Updated']());
 			} else {
-				await api.post('/networks', body);
+				await api.post('/networks', payload);
 				addToast('success', m['networks.Created']());
 			}
 			formOpen = false;
@@ -276,15 +287,35 @@
 		<!-- Name -->
 		<div>
 			<label class="block text-xs text-text-muted mb-1">{m['networks.Name']()} *</label>
-			<input bind:value={formName} required placeholder={m['networks.Name Placeholder']()} class="input" />
+			<input bind:value={formName} required placeholder={m['networks.Name Placeholder']()}
+				onblur={() => {
+					const r = validateField(networkSchema, 'name', formName.trim());
+					fieldErrors = r.valid
+						? (() => { const { name: _, ...rest } = fieldErrors; return rest; })()
+						: { ...fieldErrors, name: r.error ?? '' };
+				}}
+				class="input {fieldErrors.name ? '!border-error' : ''}" />
 			<p class="text-xs text-text-muted mt-1">{m['networks.Name Help']()}</p>
+			{#if fieldErrors.name}
+				<p class="text-xs text-error mt-1">{fieldErrors.name}</p>
+			{/if}
 		</div>
 
 		<!-- CIDR -->
 		<div>
 			<label class="block text-xs text-text-muted mb-1">CIDR</label>
-			<input bind:value={formCidr} placeholder={m['networks.Cidr Placeholder']()} class="input font-mono" />
+			<input bind:value={formCidr} placeholder={m['networks.Cidr Placeholder']()}
+				onblur={() => {
+					const r = validateField(networkSchema, 'cidr', formCidr.trim());
+					fieldErrors = r.valid
+						? (() => { const { cidr: _, ...rest } = fieldErrors; return rest; })()
+						: { ...fieldErrors, cidr: r.error ?? '' };
+				}}
+				class="input font-mono {fieldErrors.cidr ? '!border-error' : ''}" />
 			<p class="text-xs text-text-muted mt-1">{m['networks.Cidr Help']()}</p>
+			{#if fieldErrors.cidr}
+				<p class="text-xs text-error mt-1">{fieldErrors.cidr}</p>
+			{/if}
 		</div>
 
 		<!-- Site -->

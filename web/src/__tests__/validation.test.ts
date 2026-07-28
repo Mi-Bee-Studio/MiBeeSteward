@@ -17,6 +17,13 @@ import {
 	documentUrlSchema,
 	loginSchema,
 	settingsSchema,
+	profileSchema,
+	resetPasswordSchema,
+	twoFactorCodeSchema,
+	networkSchema,
+	agentTokenSchema,
+	notificationChannelSchema,
+	scannerTaskSchema,
 	validateField,
 	validateForm,
 	validateScanTarget,
@@ -529,5 +536,225 @@ describe('validateCronExpr', () => {
 
 	it('rejects invalid characters in field', () => {
 		expect(validateCronExpr('abc * * * *')).toContain('Invalid cron minute field');
+	});
+});
+
+// --- profileSchema (#66) ---
+
+describe('profileSchema', () => {
+	it('accepts a valid email', () => {
+		expect(profileSchema.safeParse({ email: 'admin@example.com' }).success).toBe(true);
+	});
+
+	it('accepts an empty email (optional)', () => {
+		expect(profileSchema.safeParse({ email: '' }).success).toBe(true);
+	});
+
+	it('rejects a malformed email', () => {
+		const result = profileSchema.safeParse({ email: 'not-an-email' });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0].message).toBe('validation.Invalid Email');
+		}
+	});
+});
+
+// --- resetPasswordSchema (#66) ---
+
+describe('resetPasswordSchema', () => {
+	const valid = { new_password: 'newpass123', confirm: 'newpass123' };
+
+	it('accepts matching passwords of sufficient length', () => {
+		expect(resetPasswordSchema.safeParse(valid).success).toBe(true);
+	});
+
+	it('rejects a short password', () => {
+		const result = resetPasswordSchema.safeParse({ new_password: 'short', confirm: 'short' });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues.some((i) => i.message === 'validation.Password Min Length')).toBe(true);
+		}
+	});
+
+	it('rejects mismatched passwords, attaching to confirm', () => {
+		const result = resetPasswordSchema.safeParse({ new_password: 'newpass123', confirm: 'different' });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues.some((i) => i.path[0] === 'confirm' && i.message === 'validation.Passwords Do Not Match')).toBe(true);
+		}
+	});
+});
+
+// --- twoFactorCodeSchema (#66) ---
+
+describe('twoFactorCodeSchema', () => {
+	it('accepts exactly 6 digits', () => {
+		expect(twoFactorCodeSchema.safeParse({ code: '123456' }).success).toBe(true);
+	});
+
+	it('rejects 5 digits', () => {
+		expect(twoFactorCodeSchema.safeParse({ code: '12345' }).success).toBe(false);
+	});
+
+	it('rejects 6 chars with a trailing space', () => {
+		expect(twoFactorCodeSchema.safeParse({ code: '12345 ' }).success).toBe(false);
+	});
+
+	it('rejects 6 letters', () => {
+		expect(twoFactorCodeSchema.safeParse({ code: 'abcdef' }).success).toBe(false);
+	});
+});
+
+// --- networkSchema (#66) ---
+
+describe('networkSchema', () => {
+	it('accepts a name with no cidr (cidr optional)', () => {
+		expect(networkSchema.safeParse({ name: 'lan-62' }).success).toBe(true);
+	});
+
+	it('accepts a valid CIDR', () => {
+		expect(networkSchema.safeParse({ name: 'lan-62', cidr: '192.168.62.0/24' }).success).toBe(true);
+	});
+
+	it('rejects an empty name', () => {
+		const result = networkSchema.safeParse({ name: '' });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0].message).toBe('validation.Name Required');
+		}
+	});
+
+	it('rejects a malformed CIDR (missing prefix)', () => {
+		const result = networkSchema.safeParse({ name: 'lan-62', cidr: '192.168.62.0' });
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects a CIDR with out-of-range octets', () => {
+		const result = networkSchema.safeParse({ name: 'lan-62', cidr: '999.1.1.1/24' });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues.some((i) => i.message === 'validation.Invalid CIDR Octets')).toBe(true);
+		}
+	});
+});
+
+// --- agentTokenSchema (#66) ---
+
+describe('agentTokenSchema', () => {
+	it('accepts a valid agent_id + network_id', () => {
+		expect(agentTokenSchema.safeParse({ agent_id: 'agent-62', network_id: 5 }).success).toBe(true);
+	});
+
+	it('rejects an empty agent_id', () => {
+		const result = agentTokenSchema.safeParse({ agent_id: '', network_id: 5 });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0].message).toBe('validation.Agent ID Required');
+		}
+	});
+
+	it('rejects a missing/zero network_id', () => {
+		const result = agentTokenSchema.safeParse({ agent_id: 'agent-62', network_id: 0 });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues.some((i) => i.message === 'validation.Network Required')).toBe(true);
+		}
+	});
+});
+
+// --- notificationChannelSchema (#66) ---
+
+describe('notificationChannelSchema', () => {
+	it('accepts a valid webhook channel', () => {
+		expect(
+			notificationChannelSchema.safeParse({
+				name: 'Hook',
+				type: 'webhook',
+				webhook_url: 'https://hooks.example.com/x'
+			}).success
+		).toBe(true);
+	});
+
+	it('accepts a valid email channel', () => {
+		expect(
+			notificationChannelSchema.safeParse({
+				name: 'Mail',
+				type: 'email',
+				smtp_host: 'smtp.example.com',
+				smtp_port: 587,
+				smtp_from: 'a@x.com',
+				smtp_to: 'b@x.com'
+			}).success
+		).toBe(true);
+	});
+
+	it('rejects an empty name', () => {
+		const result = notificationChannelSchema.safeParse({ name: '', type: 'webhook', webhook_url: 'https://x.com' });
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects a webhook channel with no URL', () => {
+		const result = notificationChannelSchema.safeParse({ name: 'Hook', type: 'webhook', webhook_url: '' });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues.some((i) => i.path[0] === 'webhook_url' && i.message === 'validation.Webhook URL Required')).toBe(true);
+		}
+	});
+
+	it('rejects an email channel missing host/from/to', () => {
+		const result = notificationChannelSchema.safeParse({ name: 'Mail', type: 'email', smtp_host: '', smtp_from: '', smtp_to: '' });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const paths = result.error.issues.map((i) => i.path[0]);
+			expect(paths).toEqual(expect.arrayContaining(['smtp_host', 'smtp_from', 'smtp_to']));
+		}
+	});
+
+	it('does not require webhook_url for an email channel', () => {
+		expect(
+			notificationChannelSchema.safeParse({
+				name: 'Mail',
+				type: 'email',
+				smtp_host: 'smtp.example.com',
+				smtp_from: 'a@x.com',
+				smtp_to: 'b@x.com'
+			}).success
+		).toBe(true);
+	});
+
+	it('rejects an out-of-range SMTP port', () => {
+		const result = notificationChannelSchema.safeParse({
+			name: 'Mail',
+			type: 'email',
+			smtp_host: 'smtp.example.com',
+			smtp_port: 99999,
+			smtp_from: 'a@x.com',
+			smtp_to: 'b@x.com'
+		});
+		expect(result.success).toBe(false);
+	});
+});
+
+// --- scannerTaskSchema (#66) ---
+
+describe('scannerTaskSchema', () => {
+	it('accepts a valid name + timeout', () => {
+		expect(scannerTaskSchema.safeParse({ name: 'nightly', timeout: 300 }).success).toBe(true);
+	});
+
+	it('rejects an empty name', () => {
+		const result = scannerTaskSchema.safeParse({ name: '', timeout: 300 });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0].message).toBe('validation.Task Name Required');
+		}
+	});
+
+	it('rejects a timeout over 3600', () => {
+		const result = scannerTaskSchema.safeParse({ name: 'nightly', timeout: 5000 });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues.some((i) => i.message === 'validation.Timeout Range Task')).toBe(true);
+		}
 	});
 });

@@ -1015,7 +1015,19 @@
 		"Cron Required": "Cron 表达式为必填项",
 		"Cron Field Count": "Cron 表达式必须为 5 个字段（分 时 日 月 周）",
 		"Cron All Asterisks": "Cron 表达式至少需有一个具体字段（不能全部为 *）",
-		"Invalid Cron Field": "Cron 的 {field} 字段无效：\"{value}\""
+		"Invalid Cron Field": "Cron 的 {field} 字段无效：\"{value}\"",
+		"Two Factor Code Length": "请输入身份验证器 App 中显示的 6 位数字",
+		"Invalid CIDR Format": "CIDR 格式无效（应为 x.x.x.x/n，例如 192.168.1.0/24）",
+		"Invalid CIDR Octets": "CIDR 无效：每个 IP 段必须为 0-255",
+		"Agent ID Required": "采集器 ID 为必填项",
+		"Network Required": "网络为必填项",
+		"Invalid Port": "端口必须为 1-65535",
+		"Webhook URL Required": "Webhook URL 为必填项",
+		"SMTP Host Required": "SMTP 主机为必填项",
+		"SMTP From Required": "发件地址为必填项",
+		"SMTP To Required": "收件地址为必填项",
+		"Task Name Required": "任务名称为必填项",
+		"Timeout Range Task": "超时时间必须为 1-3600 秒"
 	},
 	"api": {
 		"Session Expired": "会话已过期",

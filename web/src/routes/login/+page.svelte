@@ -175,11 +175,14 @@
                 </div>
                 <form onsubmit={handle2FAVerify}>
                     <div class="mb-4">
-                        <input type="text" maxlength="6" bind:value={twoFactorCode} autofocus
+                        <input type="text" inputmode="numeric" maxlength="6" bind:value={twoFactorCode} autofocus
                             class="input py-3 text-center text-2xl font-mono tracking-[0.5em]"
                             placeholder="000000" />
+                        {#if twoFactorCode.length > 0 && !/^\d{6}$/.test(twoFactorCode)}
+                            <p class="mt-2 text-xs text-error text-center">{m["validation.Two Factor Code Length"]()}</p>
+                        {/if}
                     </div>
-                    <LoadingButton type="submit" loading={twoFactorLoading} disabled={twoFactorCode.length !== 6}
+                    <LoadingButton type="submit" loading={twoFactorLoading} disabled={!/^\d{6}$/.test(twoFactorCode)}
                         variant="primary" label={m["auth.2fa_submit"]()} class="w-full py-2.5" />
                 </form>
                 <button onclick={backToLogin} class="w-full mt-3 text-sm text-muted hover:text-text transition-colors">
