@@ -23,6 +23,7 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Pagination from '$lib/components/Pagination.svelte';
 	import { Bot as BotIcon } from '@lucide/svelte';
 
 	import type { AgentToken, AgentTokenCreated, AgentCommand, Network } from '$lib/types';
@@ -39,6 +40,11 @@
 	let commandsLoading = $state(false);
 	let commandsExpandedId = $state<number | null>(null);
 	let commandPollTimer: ReturnType<typeof setInterval> | null = null;
+	// Server-side pagination for the command history (backend supports
+	// limit+offset on /agents/commands/all, returns {commands, total}). Without
+	// this, only the first 30 commands were ever reachable (#72).
+	let commandsLimit = $state(10);
+	let commandsOffset = $state(0);
 
 	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
 	let isAdmin = $derived($auth.user?.role === 'admin');
@@ -86,7 +92,9 @@
 	async function fetchCommands() {
 		commandsLoading = true;
 		try {
-			const res = await api.get<{ commands: AgentCommand[]; total: number }>('/agents/commands/all?limit=30');
+			const res = await api.get<{ commands: AgentCommand[]; total: number }>(
+				`/agents/commands/all?limit=${commandsLimit}&offset=${commandsOffset}`
+			);
 			commands = res.commands || [];
 			commandsTotal = res.total || 0;
 		} catch {
@@ -94,6 +102,12 @@
 		} finally {
 			commandsLoading = false;
 		}
+	}
+
+	function handleCommandsPage(page: number) {
+		commandsOffset = (page - 1) * commandsLimit;
+		commandsExpandedId = null;
+		fetchCommands();
 	}
 
 	async function fetchTokens() {
@@ -510,10 +524,20 @@
 									{/if}
 								</div>
 							{/snippet}
-						</DataTable>
+							</DataTable>
+							{#if commandsTotal > commandsLimit}
+								<div class="mt-4">
+									<Pagination
+										total={commandsTotal}
+										limit={commandsLimit}
+										offset={commandsOffset}
+										onPageChange={handleCommandsPage}
+									/>
+								</div>
+							{/if}
+						</div>
 					</div>
-				</div>
-			{/if}
+				{/if}
 		</div>
 	</div>
 {/if}

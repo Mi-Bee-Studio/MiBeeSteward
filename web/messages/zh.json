@@ -912,6 +912,8 @@
 		"Name Required": "名称为必填项",
 		"Type Required": "类型为必填项",
 		"Invalid IP Format": "IP 地址格式无效",
+		"Invalid ID": "无效的设备 ID",
+		"Invalid ID Desc": "URL 中的设备 ID 不是有效的数字。",
 		"IP Octet Range": "每个 IP 段必须为 0-255",
 		"Invalid MAC Format": "MAC 地址无效（请用 AA:BB:CC:DD:EE:FF 或 AA-BB-CC-DD-EE-FF）",
 		"Username Min Length": "用户名至少需要 3 个字符",

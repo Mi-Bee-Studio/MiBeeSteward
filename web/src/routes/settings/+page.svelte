@@ -15,7 +15,7 @@
 	import { getErrorMessage } from '$lib/utils';
 	import { settingsSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { m, getLocale, setLocale } from '$lib/i18n-paraglide';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { Sun, Moon, Copy, Check } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import QRCode from 'qrcode';
@@ -101,6 +101,15 @@ onMount(() => {
         .catch(() => {});
 });
 
+// Clear 2FA setup material (secret + QR + backup codes + verify input) when the
+// page unmounts, so sensitive credentials don't linger in the JS heap after the
+// user navigates away. Mirrors handleCancel2FASetup's clear logic (#72).
+onDestroy(() => {
+    twoFASetupData = null;
+    twoFAQRDataUrl = '';
+    twoFAVerifyCode = '';
+});
+
 	function handleFieldBlur(field: 'currentPassword' | 'newPassword' | 'confirmPassword') {
 		touched[field] = true;
 		let value: string;
@@ -182,7 +191,6 @@ onMount(() => {
 
 	function handleLangChange() {
 		setLocale(lang);
-		window.dispatchEvent(new CustomEvent('lang-change', { detail: lang }));
 	}
 
 	function handleThemeToggle() {

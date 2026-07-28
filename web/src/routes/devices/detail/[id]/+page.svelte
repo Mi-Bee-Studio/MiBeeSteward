@@ -36,6 +36,9 @@
 
 	// --- Route param ---
 	let deviceId = $derived(Number($page.params.id));
+	// A non-numeric :id (e.g. /devices/abc) yields NaN; guard it so we render a
+	// friendly EmptyState instead of firing /devices/NaN requests that 404.
+	let invalidId = $derived(!Number.isFinite(deviceId));
 
 	// --- Core state ---
 	let device = $state<Device | null>(null);
@@ -283,6 +286,11 @@
 
 	// --- Data fetching ---
 	async function fetchDevice() {
+		// Non-numeric :id — never hit the API; the EmptyState below handles it.
+		if (invalidId) {
+			deviceLoading = false;
+			return;
+		}
 		deviceLoading = true;
 		deviceError = '';
 		try {
@@ -869,7 +877,16 @@
 	     (or failed to load), show a skeleton / error+retry INSTEAD of the tab bar
 	     + tab panels. Without this, a fetchDevice failure leaves every non-Systems
 	     tab blank because their content is gated on {#if device}. -->
-	{#if deviceLoading && !device}
+	{#if invalidId}
+		<!-- Non-numeric :id — never reached the API. Offer a way back to the list. -->
+		<EmptyState
+			icon="⚠"
+			title={m["devices.Invalid ID"]()}
+			description={m["devices.Invalid ID Desc"]()}
+			actionLabel={m["navigation.Devices"]()}
+			onAction={() => goto('/devices')}
+		/>
+	{:else if deviceLoading && !device}
 		<PageSkeleton type="detail" />
 	{:else if deviceError && !device}
 		<EmptyState

@@ -163,6 +163,13 @@ function isValidOctets(ip: string): boolean {
 	return octets.length === 4 && octets.every(o => o >= 0 && o <= 255);
 }
 
+/** isValidIP checks a single IPv4 address (no CIDR/range/list). Reused by
+ *  validateScanTarget below and exported for callers that validate one IP at
+ *  a time — e.g. the CSV import preview flagging malformed rows. */
+export function isValidIP(ip: string): boolean {
+	return ipv4OctetPattern.test(ip.trim()) && isValidOctets(ip.trim());
+}
+
 /**
  * Validates scan target(s) input.
  * Accepts: single IP, CIDR notation, comma-separated list, IP ranges (1.1.1.1-10).
