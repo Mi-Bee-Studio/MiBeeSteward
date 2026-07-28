@@ -568,6 +568,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAdmin)
 		r.Get("/api/v1/audit-logs", auditHandler.List)
+		r.Get("/api/v1/audit-logs/facets", auditHandler.Facets)
 		r.Get("/api/v1/audit-logs/export", exportHandler.ExportAuditLogs)
 	})
 

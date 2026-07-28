@@ -96,6 +96,65 @@ func (q *Queries) DeleteAuditLogsOlderThanBatched(ctx context.Context, arg Delet
 	return result.RowsAffected()
 }
 
+const distinctAuditActions = `-- name: DistinctAuditActions :many
+SELECT DISTINCT action FROM audit_logs ORDER BY action
+`
+
+// Facets for the audit page filter dropdowns. Distinct values are pulled
+// straight from the table (rather than a hardcoded list in the frontend) so a
+// new action emitted by the backend shows up automatically. idx_audit_logs_action
+// makes the DISTINCT scan cheap; resource_type is unindexed but the table is
+// retention-bounded (90d default) so the scan is bounded too.
+func (q *Queries) DistinctAuditActions(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, distinctAuditActions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var action string
+		if err := rows.Scan(&action); err != nil {
+			return nil, err
+		}
+		items = append(items, action)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const distinctAuditResourceTypes = `-- name: DistinctAuditResourceTypes :many
+SELECT DISTINCT resource_type FROM audit_logs ORDER BY resource_type
+`
+
+func (q *Queries) DistinctAuditResourceTypes(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, distinctAuditResourceTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var resource_type string
+		if err := rows.Scan(&resource_type); err != nil {
+			return nil, err
+		}
+		items = append(items, resource_type)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAuditLogs = `-- name: ListAuditLogs :many
 
 SELECT id, user_id, action, resource_type, resource_id, ip_address, user_agent, details, created_at

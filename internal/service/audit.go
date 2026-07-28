@@ -138,6 +138,32 @@ func (s *AuditService) List(ctx context.Context, filter domain.AuditLogFilter) (
 	}, nil
 }
 
+// Facets returns the distinct action and resource_type values currently
+// present in audit_logs, for populating the audit page filter dropdowns.
+// Both lists come back empty (not an error) when the table has no rows.
+func (s *AuditService) Facets(ctx context.Context) (*domain.AuditFacetsResponse, error) {
+	actions, err := s.queries.DistinctAuditActions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resourceTypes, err := s.queries.DistinctAuditResourceTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// sqlc returns a non-nil empty slice for `:many` with no rows, but be
+	// defensive so the JSON encodes as [] not null.
+	if actions == nil {
+		actions = []string{}
+	}
+	if resourceTypes == nil {
+		resourceTypes = []string{}
+	}
+	return &domain.AuditFacetsResponse{
+		Actions:       actions,
+		ResourceTypes: resourceTypes,
+	}, nil
+}
+
 // toAuditLogResponse converts a db.AuditLog to a domain.AuditLogResponse.
 func toAuditLogResponse(log db.AuditLog) domain.AuditLogResponse {
 	createdAt := time.Time{}
