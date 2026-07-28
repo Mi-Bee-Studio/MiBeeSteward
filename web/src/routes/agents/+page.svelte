@@ -258,7 +258,7 @@
 			await navigator.clipboard.writeText(createdToken);
 			addToast('success', m['agents.Copied']());
 		} catch {
-			addToast('error', 'Failed to copy');
+			addToast('error', m['agents.Failed to Copy']());
 		}
 	}
 
@@ -512,13 +512,13 @@
 								<div class="border-t border-border bg-bg/40 px-6 py-4 space-y-3">
 									{#if cmd?.payload}
 										<div>
-											<span class="text-[10px] text-text-muted uppercase tracking-wide">Payload</span>
+											<span class="text-[10px] text-text-muted uppercase tracking-wide">{m['agents.Payload']()}</span>
 											<pre class="text-xs text-text bg-bg/50 border border-border rounded p-2 mt-1 overflow-x-auto whitespace-pre-wrap break-all max-h-40">{prettyJson(cmd.payload)}</pre>
 										</div>
 									{/if}
 									{#if cmd?.result}
 										<div>
-											<span class="text-[10px] text-text-muted uppercase tracking-wide">Result</span>
+											<span class="text-[10px] text-text-muted uppercase tracking-wide">{m['agents.Result']()}</span>
 											<pre class="text-xs text-text bg-bg/50 border border-border rounded p-2 mt-1 overflow-x-auto whitespace-pre-wrap break-all max-h-40">{prettyJson(cmd.result)}</pre>
 										</div>
 									{/if}
@@ -582,7 +582,7 @@
 			<!-- Agent ID -->
 			<div>
 				<label class="block text-xs text-text-muted mb-1">{m['agents.Agent ID']()} *</label>
-				<input bind:value={formAgentId} required placeholder="e.g. agent-lan-62" class="input" />
+				<input bind:value={formAgentId} required placeholder={m['agents.Agent ID Placeholder']()} class="input" />
 			</div>
 
 			<!-- Network -->
@@ -599,7 +599,7 @@
 			<!-- Name (optional) -->
 			<div>
 				<label class="block text-xs text-text-muted mb-1">{m['agents.Name']()}</label>
-				<input bind:value={formName} placeholder="e.g. Branch Beijing LAN-62" class="input" />
+				<input bind:value={formName} placeholder={m['agents.Agent Name Placeholder']()} class="input" />
 			</div>
 
 			<!-- Actions -->

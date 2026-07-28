@@ -439,7 +439,7 @@
 					bind:value={formUrl}
 					type="url"
 					required
-					placeholder="https://hooks.example.com/..."
+					placeholder={m["notifications.Webhook URL Placeholder"]()}
 					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
 						focus:outline-none focus:border-primary transition-colors"
 				/>
@@ -448,19 +448,19 @@
 				<div class="flex items-center justify-between mb-1">
 					<label class="text-xs text-text-muted">{m["notifications.Headers"]()}</label>
 					<button type="button" onclick={addHeaderRow}
-						class="text-xs text-primary hover:underline">+ Add</button>
+						class="text-xs text-primary hover:underline">{m['notifications.Add Header']()}</button>
 				</div>
 				{#each formHeaders as hdr, i}
 					<div class="flex gap-2 mb-2">
 						<input
 							bind:value={formHeaders[i].key}
-							placeholder="Key"
+							placeholder={m["notifications.Header Key Placeholder"]()}
 							class="flex-1 px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
 								focus:outline-none focus:border-primary transition-colors"
 						/>
 						<input
 							bind:value={formHeaders[i].value}
-							placeholder="Value"
+							placeholder={m["notifications.Header Value Placeholder"]()}
 							class="flex-1 px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
 								focus:outline-none focus:border-primary transition-colors"
 						/>

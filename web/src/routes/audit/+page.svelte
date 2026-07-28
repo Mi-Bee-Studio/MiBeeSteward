@@ -475,13 +475,13 @@
 						<div class="border-t border-border bg-bg/40 px-6 py-4 space-y-3">
 							{#if log?.user_agent}
 								<div>
-									<span class="text-[10px] text-text-muted uppercase tracking-wide">User Agent</span>
+									<span class="text-[10px] text-text-muted uppercase tracking-wide">{m['audit.User Agent']()}</span>
 									<p class="font-mono text-xs text-text mt-0.5 break-all">{log.user_agent}</p>
 								</div>
 							{/if}
 							{#if log?.details}
 								<div>
-									<span class="text-[10px] text-text-muted uppercase tracking-wide">Details</span>
+									<span class="text-[10px] text-text-muted uppercase tracking-wide">{m['audit.Details']()}</span>
 									<pre class="text-xs text-text bg-bg/50 border border-border rounded p-2 mt-1 overflow-x-auto whitespace-pre-wrap break-all max-h-48">{formatDetails(log.details)}</pre>
 								</div>
 							{:else}

@@ -71,7 +71,8 @@
 		"error.invalid_credentials": "Invalid username or password. Please try again.",
 		"error.too_many_attempts": "Too many login attempts. Please try again later.",
 		"error.network_error": "Network error. Please check your connection and try again.",
-		"error.server_error": "Server error. Please try again later."
+		"error.server_error": "Server error. Please try again later.",
+		"Username Placeholder": "admin"
 	},
 	"devices": {
 		"Device Name": "Device Name",
@@ -157,7 +158,10 @@
 		"Printer": "Printer",
 		"Search placeholder": "Search name / IP / MAC…",
 		"Alive": "Alive",
-		"All Networks": "All Networks"
+		"All Networks": "All Networks",
+		"Collapse Row": "Collapse row",
+		"CSV Format Help": "CSV format: ip,name,type (header row required)",
+		"CSV Col IP": "IP"
 	},
 	"systems": {
 		"System Management": "System Management",
@@ -215,7 +219,9 @@
 		"no_file_selected": "No file selected",
 		"Preview": "Preview",
 		"Preview File": "Preview File",
-		"Preview Not Available": "Preview not available for this file type"
+		"Preview Not Available": "Preview not available for this file type",
+		"Restore Failed": "Restore failed",
+		"URL Placeholder": "https://..."
 	},
 	"heartbeat": {
 		"Success": "Success",
@@ -267,7 +273,7 @@
 	},
 	"dashboard": {
 		"Dashboard": "Dashboard",
-		"Drag to Reorder": "Drag to reorder (or focus + ↑/↓ to move)",
+		"Drag to Reorder": "Drag widgets to reorder",
 		"Attention Title": "Needs attention",
 		"Attention Offline": "{count} offline",
 		"Attention New": "{count} new in last scan",
@@ -306,7 +312,6 @@
 		"Add Widgets": "Add Widgets",
 		"No Widgets Desc": "Add your first widget to customize the dashboard.",
 		"Config": "Config",
-		"Drag to Reorder": "Drag widgets to reorder",
 		"Seconds": "Seconds",
 		"Line": "Line",
 		"Bar": "Bar",
@@ -378,7 +383,8 @@
 		"Switch Language": "Switch language",
 		"Close Dialog": "Close dialog",
 		"Edit Widget": "Edit widget",
-		"Remove Widget": "Remove widget"
+		"Remove Widget": "Remove widget",
+		"File": "File"
 	},
 	"scanner": {
 		"Scanner": "Network Scanner",
@@ -713,7 +719,11 @@
 		"Sent": "sent",
 		"Failed": "failed",
 		"Unread": "unread",
-		"Mark Read": "Mark as Read"
+		"Mark Read": "Mark as Read",
+		"Webhook URL Placeholder": "https://hooks.example.com/...",
+		"Header Key Placeholder": "Key",
+		"Header Value Placeholder": "Value",
+		"Add Header": "+ Add"
 	},
 	"audit": {
 		"Audit Logs": "Audit Logs",
@@ -731,7 +741,8 @@
 		"Reset": "Reset",
 		"No Logs Desc": "No audit log entries found.",
 		"Details": "Details",
-		"No Details": "No detail payload."
+		"No Details": "No detail payload.",
+		"User Agent": "User Agent"
 	},
 	"changes": {
 		"Change History": "Change History",
@@ -755,7 +766,8 @@
 		"Diff After": "After",
 		"Diff No Field Changes": "No field-level differences recorded.",
 		"Diff No Snapshot": "No snapshot data.",
-		"Diff No Data": "No data available."
+		"Diff No Data": "No data available.",
+		"Data Unavailable": "Data unavailable."
 	},
 	"changefields": {
 		"name": "Name",
@@ -810,7 +822,12 @@
 		"Acknowledged": "Acknowledged",
 		"Pending": "Pending",
 		"Done": "Done",
-		"Failed": "Failed"
+		"Failed": "Failed",
+		"Failed to Copy": "Failed to copy",
+		"Payload": "Payload",
+		"Result": "Result",
+		"Agent ID Placeholder": "e.g. agent-lan-62",
+		"Agent Name Placeholder": "e.g. Branch Beijing LAN-62"
 	},
 	"networks": {
 		"Title": "Networks",
@@ -832,7 +849,10 @@
 		"Updated": "Network updated",
 		"Deleted": "Network deleted",
 		"Delete Confirm": "Delete network",
-		"Delete Warning": "Devices on this network will have their network binding cleared."
+		"Delete Warning": "Devices on this network will have their network binding cleared.",
+		"Name Placeholder": "e.g. lan-beijing-62",
+		"Cidr Placeholder": "e.g. 192.168.62.0/24",
+		"Site Placeholder": "e.g. Beijing branch / datacenter / cloud"
 	},
 	"discovery": {
 		"Enabled": "Enabled",
@@ -957,7 +977,11 @@
 		"Health No Certs": "None",
 		"Health Not Configured": "Not configured",
 		"Health Success Rate": "{rate}% success",
-		"Health Check Certs": "View certificates"
+		"Health Check Certs": "View certificates",
+		"No IP Address": "Device has no IP address",
+		"Col MAC": "MAC",
+		"Col Protocol": "Protocol",
+		"Col Last Seen": "Last Seen"
 	},
 	"validation": {
 		"Name Required": "Name is required",

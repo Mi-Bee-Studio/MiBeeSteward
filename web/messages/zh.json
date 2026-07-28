@@ -71,7 +71,8 @@
 		"error.invalid_credentials": "用户名或密码错误，请重试。",
 		"error.too_many_attempts": "登录尝试次数过多，请稍后再试。",
 		"error.network_error": "网络错误，请检查连接后重试。",
-		"error.server_error": "服务器错误，请稍后重试。"
+		"error.server_error": "服务器错误，请稍后重试。",
+		"Username Placeholder": "admin"
 	},
 	"devices": {
 		"Device Name": "设备名称",
@@ -157,7 +158,10 @@
 		"Printer": "打印机",
 		"Search placeholder": "搜索名称 / IP / MAC…",
 		"Alive": "存活",
-		"All Networks": "所有网络"
+		"All Networks": "所有网络",
+		"Collapse Row": "折叠行",
+		"CSV Format Help": "CSV 格式：ip,name,type（需要表头行）",
+		"CSV Col IP": "IP"
 	},
 	"systems": {
 		"System Management": "系统管理",
@@ -215,7 +219,9 @@
 		"no_file_selected": "未选择文件",
 		"Preview": "预览",
 		"Preview File": "预览文件",
-		"Preview Not Available": "此文件类型不支持预览"
+		"Preview Not Available": "此文件类型不支持预览",
+		"Restore Failed": "恢复失败",
+		"URL Placeholder": "https://..."
 	},
 	"heartbeat": {
 		"Success": "成功",
@@ -267,7 +273,7 @@
 	},
 	"dashboard": {
 		"Dashboard": "仪表盘",
-		"Drag to Reorder": "拖动重新排序（或聚焦后用 ↑/↓ 移动）",
+		"Drag to Reorder": "拖拽组件以调整顺序",
 		"Attention Title": "需要关注",
 		"Attention Offline": "{count} 台离线",
 		"Attention New": "最近扫描新增 {count} 台",
@@ -306,7 +312,6 @@
 		"Add Widgets": "添加组件",
 		"No Widgets Desc": "添加第一个组件来自定义仪表盘。",
 		"Config": "配置",
-		"Drag to Reorder": "拖拽组件以调整顺序",
 		"Seconds": "秒",
 		"Line": "折线",
 		"Bar": "柱状",
@@ -378,7 +383,8 @@
 		"Switch Language": "切换语言",
 		"Close Dialog": "关闭对话框",
 		"Edit Widget": "编辑组件",
-		"Remove Widget": "移除组件"
+		"Remove Widget": "移除组件",
+		"File": "文件"
 	},
 	"scanner": {
 		"Scanner": "网络扫描器",
@@ -713,7 +719,11 @@
 		"Sent": "已发送",
 		"Failed": "失败",
 		"Unread": "未读",
-		"Mark Read": "标记已读"
+		"Mark Read": "标记已读",
+		"Webhook URL Placeholder": "https://hooks.example.com/...",
+		"Header Key Placeholder": "键名",
+		"Header Value Placeholder": "键值",
+		"Add Header": "+ 添加"
 	},
 	"audit": {
 		"Audit Logs": "审计日志",
@@ -731,7 +741,8 @@
 		"Reset": "重置",
 		"No Logs Desc": "暂无审计日志记录。",
 		"Details": "详情",
-		"No Details": "无详情数据。"
+		"No Details": "无详情数据。",
+		"User Agent": "用户代理"
 	},
 	"changes": {
 		"Change History": "变更历史",
@@ -755,7 +766,8 @@
 		"Diff After": "新值",
 		"Diff No Field Changes": "未记录字段级差异。",
 		"Diff No Snapshot": "无快照数据。",
-		"Diff No Data": "无可用数据。"
+		"Diff No Data": "无可用数据。",
+		"Data Unavailable": "数据不可用。"
 	},
 	"changefields": {
 		"name": "名称",
@@ -810,7 +822,12 @@
 		"Acknowledged": "已确认",
 		"Pending": "待处理",
 		"Done": "完成",
-		"Failed": "失败"
+		"Failed": "失败",
+		"Failed to Copy": "复制失败",
+		"Payload": "载荷",
+		"Result": "结果",
+		"Agent ID Placeholder": "例如 agent-lan-62",
+		"Agent Name Placeholder": "例如 北京分公司 LAN-62"
 	},
 	"networks": {
 		"Title": "网络",
@@ -832,7 +849,10 @@
 		"Updated": "网络已更新",
 		"Deleted": "网络已删除",
 		"Delete Confirm": "删除网络",
-		"Delete Warning": "该网络上的设备将清除其网络绑定。"
+		"Delete Warning": "该网络上的设备将清除其网络绑定。",
+		"Name Placeholder": "例如 lan-beijing-62",
+		"Cidr Placeholder": "例如 192.168.62.0/24",
+		"Site Placeholder": "例如 北京分支 / 数据中心 / 云端"
 	},
 	"discovery": {
 		"Enabled": "已启用",
@@ -957,7 +977,11 @@
 		"Health No Certs": "无",
 		"Health Not Configured": "未配置",
 		"Health Success Rate": "成功率 {rate}%",
-		"Health Check Certs": "查看证书"
+		"Health Check Certs": "查看证书",
+		"No IP Address": "该设备没有 IP 地址",
+		"Col MAC": "MAC",
+		"Col Protocol": "协议",
+		"Col Last Seen": "最近发现"
 	},
 	"validation": {
 		"Name Required": "名称为必填项",
