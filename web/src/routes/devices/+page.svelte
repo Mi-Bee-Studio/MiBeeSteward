@@ -16,6 +16,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { escapeHtml, escapeAttr } from '$lib/utils';
+	import { isValidIP } from '$lib/utils/validation';
 	import type { Device, LinkedDoc, Network } from '$lib/types';
 	import { ChevronDown, ChevronRight, Download, Upload, Plus, List, Share2 } from '@lucide/svelte';
 
@@ -102,7 +103,7 @@ interface AddDevicesResponse {
 
 	// --- Delete confirmation ---
 	let deleteOpen = $state(false);
-	let deleteTarget = $state<Device | null>(null);
+	let deleteTarget = $state<Pick<Device, 'id' | 'name'> | null>(null);
 
 	// --- Expandable heartbeat row ---
 	let expandedDeviceId = $state<number | null>(null);
@@ -161,6 +162,20 @@ interface AddDevicesResponse {
 	onDestroy(() => {
 		if (pollTimer) clearInterval(pollTimer);
 		if (searchTimer) clearTimeout(searchTimer);
+	});
+
+	// Esc closes any open dropdown menu (Export / batch-status). The global
+	// +layout.svelte Escape handler only targets .modal-backdrop, so these
+	// click-toggle menus need their own listener. Click-outside is already
+	// handled by each menu's fixed inset-0 overlay.
+	$effect(() => {
+		function onKeydown(e: KeyboardEvent) {
+			if (e.key !== 'Escape') return;
+			if (exportOpen) { exportOpen = false; e.stopPropagation(); }
+			else if (batchStatusOpen) { batchStatusOpen = false; e.stopPropagation(); }
+		}
+		window.addEventListener('keydown', onKeydown);
+		return () => window.removeEventListener('keydown', onKeydown);
 	});
 
 	// buildParams assembles the backend query for the current view state. Shared
@@ -498,7 +513,7 @@ interface AddDevicesResponse {
 
 
 	// --- Delete ---
-	function openDelete(device: Device) {
+	function openDelete(device: Pick<Device, 'id' | 'name'>) {
 		deleteTarget = device;
 		deleteOpen = true;
 	}
@@ -791,7 +806,7 @@ interface AddDevicesResponse {
 			const device = devices.find((d) => d.id === id);
 			if (device) openLinkModal(device);
 		} else if (action === 'delete') {
-			const device = devices.find((d) => d.id === id) ?? { id, name } as Device;
+			const device = devices.find((d) => d.id === id) ?? { id, name };
 			openDelete(device);
 		}
 	}
@@ -1033,15 +1048,20 @@ interface AddDevicesResponse {
 				<button
 					onclick={() => (batchStatusOpen = !batchStatusOpen)}
 					class="btn btn-primary text-xs py-1.5"
+					aria-expanded={batchStatusOpen}
+					aria-haspopup="menu"
 				>
 					{m['devices.Batch Update Status']()}
 					<ChevronDown class="w-3 h-3" />
 				</button>
 				{#if batchStatusOpen}
-					<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg z-10 min-w-[140px]" style="box-shadow: var(--shadow-md);">
+					<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+					<div class="fixed inset-0 z-10" onclick={() => (batchStatusOpen = false)} role="presentation"></div>
+					<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg z-20 min-w-[140px]" style="box-shadow: var(--shadow-md);" role="menu">
 						{#each ['online', 'offline', 'unknown'] as status}
 							<button
 								onclick={() => { batchStatusValue = status; batchStatusOpen = false; confirmBatchStatus(); }}
+								role="menuitem"
 								class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 last:rounded-b-lg first:rounded-t-lg"
 							>
 								<span class="inline-block w-2 h-2 rounded-full mr-2 {statusDotClass(status)}"></span>
@@ -1150,8 +1170,14 @@ interface AddDevicesResponse {
 		</div>
 
 		{#if csvPreviewRows.length > 0}
+			{@const invalidIpCount = csvPreviewRows.filter((r) => !isValidIP(r.ip)).length}
 			<div>
 				<h4 class="text-sm font-medium text-text mb-2">{m['devices.Import Preview']()} ({csvPreviewRows.length} rows)</h4>
+				{#if invalidIpCount > 0}
+					<p class="text-xs text-error mb-2">
+						{m['devices.Invalid IP Format']()} — {invalidIpCount}
+					</p>
+				{/if}
 				<div class="overflow-x-auto border border-border rounded-lg max-h-60">
 					<table class="w-full text-sm">
 						<thead>
@@ -1162,9 +1188,11 @@ interface AddDevicesResponse {
 							</tr>
 						</thead>
 						<tbody>
-							{#each csvPreviewRows as row, i}
+							{#each csvPreviewRows as row, i (i)}
 								<tr class="border-b border-border last:border-b-0 hover:bg-border/30">
-									<td class="px-3 py-2 font-mono">{row.ip}</td>
+									<td class="px-3 py-2 font-mono {isValidIP(row.ip) ? '' : 'text-error'}" title={isValidIP(row.ip) ? undefined : m['devices.Invalid IP Format']()}>
+										{row.ip}
+									</td>
 									<td class="px-3 py-2">{row.name}</td>
 									<td class="px-3 py-2">{row.type}</td>
 								</tr>

@@ -178,7 +178,7 @@
 				if (agentManaged) {
 					return html`<div class="flex gap-2">`
 						+ html`<button data-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
-						+ html`<button data-delete-id="${id}" title="${m['networks.Agent Managed Hint']()}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10">${m['common.Delete']()}</button>`
+						+ html`<button data-delete-id="${id}" disabled title="${m['networks.Agent Managed Hint']()}" class="text-xs px-2 py-1 rounded text-error opacity-40 cursor-not-allowed">${m['common.Delete']()}</button>`
 						+ html`</div>`;
 				}
 				return html`<div class="flex gap-2">`
@@ -246,7 +246,7 @@
 					return;
 				}
 				const delBtn = target.closest('[data-delete-id]') as HTMLElement | null;
-				if (delBtn) {
+				if (delBtn && !(delBtn as HTMLButtonElement).disabled) {
 					const id = Number(delBtn.dataset.deleteId);
 					const net = networks.find((n) => n.id === id);
 					if (net) { deleteTarget = net; deleteOpen = true; }

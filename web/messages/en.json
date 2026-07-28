@@ -912,6 +912,8 @@
 		"Name Required": "Name is required",
 		"Type Required": "Type is required",
 		"Invalid IP Format": "Invalid IP address format",
+		"Invalid ID": "Invalid Device ID",
+		"Invalid ID Desc": "The device ID in the URL is not a valid number.",
 		"IP Octet Range": "Each IP octet must be 0-255",
 		"Invalid MAC Format": "Invalid MAC address (use AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)",
 		"Username Min Length": "Username must be at least 3 characters",

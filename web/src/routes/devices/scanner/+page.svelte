@@ -134,7 +134,7 @@
 				const detected = new Set<string>();
 
 				// Device type
-				if (host.inferred_type && DEVICE_TYPES.includes(host.inferred_type as any)) {
+				if (host.inferred_type && (DEVICE_TYPES as readonly string[]).includes(host.inferred_type)) {
 					deviceTypes[host.ip] = host.inferred_type;
 					detected.add('type');
 				} else {

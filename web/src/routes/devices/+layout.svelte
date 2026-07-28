@@ -12,8 +12,9 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { page } from '$app/stores';
 	import { auth } from '$lib/stores/auth';
+	import type { Snippet } from 'svelte';
 
-	let { children } = $props<{ children: () => void }>();
+	let { children } = $props<{ children: Snippet }>();
 
 	const isAdmin = $derived($auth.user?.role === 'admin');
 

@@ -24,26 +24,51 @@
 
 	let status = $state<DiscoveryStatus | null>(null);
 	let loading = $state(true);
+	let refreshing = $state(false);
 	let error = $state('');
-	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	// Poll loop uses setTimeout recursion (not setInterval) so the next delay
+	// can adapt: on repeated failure the interval backs off (up to 2min) so a
+	// dead backend isn't hammered every 30s; on success it resets to 30s.
+	let pollTimer: ReturnType<typeof setTimeout> | null = null;
+	let consecutiveErrors = 0;
+	const BASE_POLL_MS = 30_000;
+	const MAX_POLL_MS = 120_000;
 
 	onMount(() => {
 		fetchStatus();
-		pollTimer = setInterval(fetchStatus, 30000);
 	});
 
 	onDestroy(() => {
-		if (pollTimer) clearInterval(pollTimer);
+		if (pollTimer) clearTimeout(pollTimer);
 	});
 
 	async function fetchStatus() {
+		// First load shows the PageSkeleton via `loading`; subsequent refreshes
+		// (manual button or poll) toggle `refreshing` so the user gets feedback
+		// without the skeleton flashing on every tick.
+		if (status) refreshing = true;
 		try {
 			status = await api.get<DiscoveryStatus>('/discovery/status');
+			error = '';
+			consecutiveErrors = 0;
 		} catch (err: unknown) {
 			error = getErrorMessage(err);
+			consecutiveErrors++;
 		} finally {
 			loading = false;
+			refreshing = false;
+			schedulePoll();
 		}
+	}
+
+	function schedulePoll() {
+		if (pollTimer) clearTimeout(pollTimer);
+		// Backoff: double the base per consecutive error, capped at MAX_POLL_MS.
+		// 0 errors → 30s, 1 → 60s, 2+ → 120s.
+		const delay = error
+			? Math.min(BASE_POLL_MS * Math.pow(2, consecutiveErrors), MAX_POLL_MS)
+			: BASE_POLL_MS;
+		pollTimer = setTimeout(fetchStatus, delay);
 	}
 
 	function formatTime(iso?: string): string {
@@ -72,10 +97,12 @@
 		</div>
 		<button
 			onclick={fetchStatus}
+			disabled={refreshing}
 			class="px-4 py-2 border border-border text-text-muted rounded-lg
-				hover:border-primary hover:text-primary transition-colors text-sm"
+				hover:border-primary hover:text-primary transition-colors text-sm
+				disabled:opacity-60 disabled:cursor-not-allowed"
 		>
-			{m['dashboard.Refresh']()}
+			{m['dashboard.Refresh']()}{#if refreshing}…{/if}
 		</button>
 	</div>
 

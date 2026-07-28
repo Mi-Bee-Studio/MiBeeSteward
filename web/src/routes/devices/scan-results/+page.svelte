@@ -497,7 +497,7 @@
 										<span class="text-text-muted ml-1">({result.rtt_ms}{m['scanner.ms']()})</span>
 									{/if}
 								</td>
-								<td class="px-3 py-3 text-sm text-text-muted max-w-[200px] truncate">
+								<td class="px-3 py-3 text-sm text-text-muted max-w-[200px] truncate" title={Array.isArray(services) ? services.map((s) => s.service).join(', ') : undefined}>
 									{Array.isArray(services) ? services.map((s) => s.service).join(', ') || '-' : '-'}
 								</td>
 								<td class="px-3 py-3">
@@ -708,7 +708,7 @@
 								<td class="px-4 py-3 text-sm text-text-muted">{run.updated_hosts}</td>
 								<td class="px-4 py-3 text-xs text-text-muted whitespace-nowrap">{formatTime(run.started_at)}</td>
 								<td class="px-4 py-3 text-xs text-text-muted whitespace-nowrap">{formatTime(run.finished_at)}</td>
-								<td class="px-4 py-3 text-xs text-error max-w-[200px] truncate">
+								<td class="px-4 py-3 text-xs text-error max-w-[200px] truncate" title={run.error_message || ''}>
 									{run.error_message || '-'}
 								</td>
 							</tr>
