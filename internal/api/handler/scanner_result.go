@@ -10,6 +10,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -28,11 +29,25 @@ import (
 // ScannerResultHandler handles HTTP requests for scan result and run queries.
 type ScannerResultHandler struct {
 	queries *db.Queries
+	conn    db.DBTX
+	// conn is the raw connection used by listResultsSorted — sqlc can't express
+	// the dynamic ORDER BY the sort-aware list needs, so that one query is raw
+	// SQL with a whitelist-controlled column (mirrors repository/device.go).
 }
 
 // NewScannerResultHandler creates a new ScannerResultHandler.
-func NewScannerResultHandler(queries *db.Queries) *ScannerResultHandler {
-	return &ScannerResultHandler{queries: queries}
+func NewScannerResultHandler(queries *db.Queries, conn db.DBTX) *ScannerResultHandler {
+	return &ScannerResultHandler{queries: queries, conn: conn}
+}
+
+// scanResultSortWhitelist maps a client-supplied sort token to the real column
+// (or SQL expression) used in ORDER BY. Any token not in this map falls back to
+// "scanned_at". This is the SQL-injection guard: only these literals ever reach
+// ORDER BY, never raw user input (mirrors repository/device.go sortWhitelist).
+var scanResultSortWhitelist = map[string]string{
+	"ip":     "ip",
+	"status": "alive",                    // the "Status" column reflects the alive flag
+	"ports":  "json_array_length(ports)", // the "Ports Count" column renders ports.length
 }
 
 // ListResults handles GET /api/v1/scanner/results
@@ -73,18 +88,34 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 		aliveVal = 0
 	}
 
-	results, err := h.queries.ListScanResults(r.Context(), db.ListScanResultsParams{
-		Column1: taskID,
-		TaskID:  taskID,
-		Column3: ipFilter,
-		Ip:      ipFilter,
-		Column5: aliveSentinel,
-		Alive:   aliveVal,
-		Limit:   limit,
-		Offset:  offset,
-	})
+	// Server-side sort. With no sort token the query keeps its default
+	// (scanned_at DESC) via the sqlc ListScanResults path — zero behavior
+	// change. With a sort token we route through listResultsSorted (raw SQL),
+	// which sorts the WHOLE filtered set before LIMIT/OFFSET, so a header click
+	// reorders globally rather than just the visible page slice (#55).
+	sortBy := q.Get("sort")
+	order := q.Get("order")
+
+	var (
+		results []db.ScanResult
+		err     error
+	)
+	if sortBy != "" {
+		results, err = h.listResultsSorted(r.Context(), taskID, ipFilter, aliveSentinel, aliveVal, sortBy, order, limit, offset)
+	} else {
+		results, err = h.queries.ListScanResults(r.Context(), db.ListScanResultsParams{
+			Column1: taskID,
+			TaskID:  taskID,
+			Column3: ipFilter,
+			Ip:      ipFilter,
+			Column5: aliveSentinel,
+			Alive:   aliveVal,
+			Limit:   limit,
+			Offset:  offset,
+		})
+	}
 	if err != nil {
-		slog.Error("ListScanResults failed", "task_id", taskID, "ip", ipFilter, "alive", q.Get("alive"), "limit", limit, "offset", offset, "error", err)
+		slog.Error("ListScanResults failed", "task_id", taskID, "ip", ipFilter, "alive", q.Get("alive"), "sort", sortBy, "order", order, "limit", limit, "offset", offset, "error", err)
 		Error(w, http.StatusInternalServerError, "failed to list scan results")
 		return
 	}
@@ -118,6 +149,74 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 		Results: resp,
 		Total:   int(total),
 	})
+}
+
+// listResultsSorted runs the same WHERE/LIMIT/OFFSET as ListScanResults but
+// with a whitelist-controlled ORDER BY, so a sort applies across the whole
+// filtered set (not just the visible page slice). sqlc can't express the
+// dynamic ORDER BY, hence the raw SQL — the column is resolved from
+// scanResultSortWhitelist (never interpolated raw from user input), and every
+// user value (task_id/ip/alive/limit/offset) is still bound as a `?` param.
+// The SELECT column order MUST match db.ScanResult's Scan order (see
+// ListScanResults in internal/db/scan_results.sql.go).
+func (h *ScannerResultHandler) listResultsSorted(
+	ctx context.Context,
+	taskID int64, ipFilter string, aliveSentinel, aliveVal int64,
+	sortBy, order string, limit, offset int64,
+) ([]db.ScanResult, error) {
+	col := scanResultSortWhitelist[sortBy]
+	if col == "" {
+		col = "scanned_at"
+	}
+	dir := "ASC"
+	if order == "desc" {
+		dir = "DESC"
+	}
+
+	query := `SELECT id, task_id, run_id, ip, alive, rtt_ms, ports, services, snmp_data, prometheus_detected, prometheus_url, node_exporter_detected, node_exporter_url, node_exporter_data, scanned_at
+		FROM scan_results
+		WHERE (? = 0 OR task_id = ?)
+		  AND (? = '' OR ip LIKE ?)
+		  AND (? < 0 OR alive = ?)
+		ORDER BY ` + col + " " + dir + `
+		LIMIT ? OFFSET ?`
+
+	rows, err := h.conn.QueryContext(ctx, query,
+		taskID, taskID,
+		ipFilter, ipFilter,
+		aliveSentinel, aliveVal,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []db.ScanResult{}
+	for rows.Next() {
+		var i db.ScanResult
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.RunID,
+			&i.Ip,
+			&i.Alive,
+			&i.RttMs,
+			&i.Ports,
+			&i.Services,
+			&i.SnmpData,
+			&i.PrometheusDetected,
+			&i.PrometheusUrl,
+			&i.NodeExporterDetected,
+			&i.NodeExporterUrl,
+			&i.NodeExporterData,
+			&i.ScannedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
 }
 
 // GetResult handles GET /api/v1/scanner/results/{id}

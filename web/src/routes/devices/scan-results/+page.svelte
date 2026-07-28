@@ -86,7 +86,11 @@
 
 	// --- Expandable rows ---
 	let expandedResultId = $state<number | null>(null);
-	// --- Sorting ---
+	// --- Sorting (server-side) ---
+	// The sort is applied by the backend across the WHOLE filtered set, not
+	// just the visible page slice — a header click refetches from page 0 with
+	// ?sort=&order= so the global order is correct and pagination stays in sync
+	// (#55). Mirrors devices/+page.svelte's onSortChange.
 	let sortColumn = $state<'ip' | 'status' | 'ports' | null>(null);
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 
@@ -97,29 +101,9 @@
 			sortColumn = column;
 			sortDirection = 'asc';
 		}
+		resultsOffset = 0;
+		fetchResults();
 	}
-
-	let sortedResults = $derived.by<ScanResult[]>(() => {
-		if (!sortColumn) return results;
-		const sorted = [...results].sort((a, b) => {
-			let cmp = 0;
-			if (sortColumn === 'ip') {
-				cmp = a.ip.localeCompare(b.ip);
-			} else if (sortColumn === 'status') {
-				cmp = Number(a.alive) - Number(b.alive);
-			} else if (sortColumn === 'ports') {
-				// The column is labelled "Ports Count" and renders ports.length,
-				// so sort by that — previously this keyed on 'rtt' and sorted by
-				// rtt_ms, disagreeing with both the header label and the primary
-				// cell value the user sees.
-				const countA = parseJSON<PortEntry[]>(a.ports)?.length ?? 0;
-				const countB = parseJSON<PortEntry[]>(b.ports)?.length ?? 0;
-				cmp = countA - countB;
-			}
-			return sortDirection === 'asc' ? cmp : -cmp;
-		});
-		return sorted;
-	});
 
 	// --- Tab ---
 	let activeTab = $state<'results' | 'runs'>('results');
@@ -195,6 +179,12 @@
 		// which made the "Showing X–Y of N" line and page counts wrong.
 		if (aliveFilter === 'alive') params.set('alive', '1');
 		else if (aliveFilter === 'dead') params.set('alive', '0');
+		// Server-side sort: the backend reorders the whole filtered set before
+		// pagination, so a column sort is global (not just the visible slice).
+		if (sortColumn) {
+			params.set('sort', sortColumn);
+			params.set('order', sortDirection);
+		}
 		params.set('limit', String(limit));
 		params.set('offset', String(resultsOffset));
 
@@ -469,7 +459,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each sortedResults as result}
+						{#each results as result}
 							{@const ports = parseJSON<PortEntry[]>(result.ports)}
 							{@const services = parseJSON<ServiceEntry[]>(result.services)}
 							{@const snmp = parseJSON<SNMPEntry>(result.snmp_data)}

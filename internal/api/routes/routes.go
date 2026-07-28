@@ -458,7 +458,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	scanTaskService := scannerv2task.New(scanQueries, scanScheduler)
 	scannerHandler := handler.NewScannerHandler(v2Engine, scanRunner)
 	scannerTaskHandler := handler.NewScannerTaskHandler(scanTaskService)
-	scannerResultHandler := handler.NewScannerResultHandler(scanQueries)
+	scannerResultHandler := handler.NewScannerResultHandler(scanQueries, dbConn)
 	r.Route("/api/v1/scanner", func(r chi.Router) {
 		r.Use(middleware.RequireAdmin)
 		// Rate-limited scan trigger endpoints (per-IP, 10/min default)
