@@ -11,7 +11,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { m } from '$lib/i18n-paraglide';
-	import { FileQuestion, Lock, Ban, ServerCrash, AlertTriangle, ArrowLeft } from '@lucide/svelte';
+	import { FileQuestion, Lock, Ban, ServerCrash, AlertTriangle, TimerReset, ArrowLeft } from '@lucide/svelte';
 	import type { Component } from 'svelte';
 
 	let status = $derived($page.status);
@@ -20,20 +20,32 @@
 
 	function errorTitle(code: number): string {
 		switch (code) {
+			case 400: return m["errors.BadRequest"]();
 			case 401: return m["errors.Unauthorized"]();
 			case 403: return m["errors.Forbidden"]();
 			case 404: return m["errors.Not Found"]();
+			case 422: return m["errors.Validation Failed"]();
+			case 429: return m["errors.Rate Limited"]();
 			case 500: return m["errors.Server Error"]();
+			case 502: return m["errors.Bad Gateway"]();
+			case 503: return m["errors.Service Unavailable"]();
+			case 504: return m["errors.Gateway Timeout"]();
 			default: return m["errors.Something Went Wrong"]();
 		}
 	}
 
 	function errorDescription(code: number): string {
 		switch (code) {
+			case 400: return m["errors.BadRequest Desc"]();
 			case 401: return m["errors.Unauthorized Desc"]();
 			case 403: return m["errors.Forbidden Desc"]();
 			case 404: return m["errors.Not Found Desc"]();
+			case 422: return m["errors.Validation Failed Desc"]();
+			case 429: return m["errors.Rate Limited Desc"]();
 			case 500: return m["errors.Server Error Desc"]();
+			case 502: return m["errors.Bad Gateway Desc"]();
+			case 503: return m["errors.Service Unavailable Desc"]();
+			case 504: return m["errors.Gateway Timeout Desc"]();
 			default: return m["errors.Unknown Error Desc"]();
 		}
 	}
@@ -42,6 +54,7 @@
 		if (code === 404) return FileQuestion;
 		if (code === 401) return Lock;
 		if (code === 403) return Ban;
+		if (code === 429) return TimerReset;
 		if (code >= 500) return ServerCrash;
 		return AlertTriangle;
 	}
