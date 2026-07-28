@@ -378,7 +378,7 @@
 				}
 				btns += html`<button data-action="edit" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors">${m["common.Edit"]()}</button>`;
 				if (doc.type !== 'url' && doc.file_path) {
-					btns += html`<a href="/api/v1/documents/${doc.id}/download" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["documents.Download"]()}</a>`;
+					btns += html`<button data-action="download" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["documents.Download"]()}</button>`;
 				}
 				btns += html`<button data-action="delete" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>`;
 				return html`<div class="flex gap-2">${btns}</div>`;
@@ -387,6 +387,27 @@
 	]);
 
 	// Since DataTable uses @html, button clicks need event delegation
+	// Downloads go through api.download() so the X-CSRF-Token header + cookie
+	// auth + 401 handling match every other request. The previous raw <a href>
+	// bypassed the client (no CSRF) and relied on the browser's plain-GET cookie
+	// behavior (#72). Mirrors devices/+page.svelte exportDevices.
+	async function downloadDocument(doc: Document) {
+		if (!doc.file_path) return;
+		try {
+			const blob = await api.download(`/documents/${doc.id}/download`);
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = doc.title || `document-${doc.id}`;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
 	function handleTableClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
 		const btn = target.closest('[data-action]') as HTMLElement | null;
@@ -398,6 +419,7 @@
 		if (action === 'edit') openEdit(doc);
 		if (action === 'delete') requestDelete(doc);
 		if (action === 'preview') openPreview(doc);
+		if (action === 'download') downloadDocument(doc);
 	}
 </script>
 
@@ -573,7 +595,15 @@
 			></iframe>
 		{:else}
 			<div class="text-center py-8 text-text-muted">
-				{m["documents.Preview Not Available"]()}
+				<p class="mb-3">{m["documents.Preview Not Available"]()}</p>
+				{#if previewDoc.file_path}
+					<button
+						onclick={() => downloadDocument(previewDoc!)}
+						class="px-3 py-1.5 text-xs rounded text-primary hover:bg-primary/10 transition-colors border border-primary/30"
+					>
+						{m["documents.Download"]()}
+					</button>
+				{/if}
 			</div>
 		{/if}
 	{/if}
