@@ -14,6 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { html } from '$lib/utils/index';
 	import { channelTypeBadge } from '$lib/utils/badges';
 	import { addToast } from '$lib/stores/toast';
 
@@ -271,7 +272,7 @@
 			label: m["notifications.Channel Name"](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-medium text-text">${String(row.name)}</span>`
+				html`<span class="font-medium text-text">${row.name}</span>`
 		},
 		{
 			key: 'type',
@@ -280,7 +281,7 @@
 			render: (row: Record<string, unknown>) => {
 				const t = String(row.type);
 				const b = channelTypeBadge(t);
-				return `<span class="text-xs px-2 py-0.5 rounded font-mono ${b.cls}">${b.label}</span>`;
+				return html`<span class="text-xs px-2 py-0.5 rounded font-mono ${b.cls}">${b.label}</span>`;
 			}
 		},
 		{
@@ -290,7 +291,7 @@
 			render: (row: Record<string, unknown>) => {
 				const enabled = row.enabled;
 				const id = row.id;
-				return `<button data-toggle-id="${id}" class="text-xs px-2 py-0.5 rounded cursor-pointer transition-colors ${enabled
+				return html`<button data-toggle-id="${id}" class="text-xs px-2 py-0.5 rounded cursor-pointer transition-colors ${enabled
 					? 'bg-success/15 text-success hover:bg-success/25'
 					: 'bg-border/30 text-text-muted hover:bg-border/50'
 				}">${enabled ? m["notifications.Enabled"]() : m["notifications.Disabled"]()}</button>`;
@@ -301,14 +302,14 @@
 			label: m["users.Created At"](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="text-text-muted">${formatTime(String(row.created_at))}</span>`
+				html`<span class="text-text-muted">${formatTime(String(row.created_at))}</span>`
 		},
 		{
 			key: 'actions',
 			label: m["common.Actions"](),
 			render: (row: Record<string, unknown>) => {
 				const id = row.id;
-				return `<div class="flex items-center gap-2">
+				return html`<div class="flex items-center gap-2">
 					<button data-test-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["notifications.Test Channel"]()}</button>
 					<button data-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors">${m["common.Edit"]()}</button>
 					<button data-delete-id="${id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>

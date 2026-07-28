@@ -14,6 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { html } from '$lib/utils/index';
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -139,14 +140,14 @@
 			label: m['networks.Name'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-medium text-text">${String(row.name)}</span>`
+				html`<span class="font-medium text-text">${row.name}</span>`
 		},
 		{
 			key: 'cidr',
 			label: m['networks.CIDR'](),
 			render: (row: Record<string, unknown>) => {
 				const v = row.cidr as string | null | undefined;
-				return v ? `<span class="font-mono text-xs text-text-muted">${v}</span>` : '<span class="text-text-muted">-</span>';
+				return v ? html`<span class="font-mono text-xs text-text-muted">${v}</span>` : '<span class="text-text-muted">-</span>';
 			}
 		},
 		{
@@ -154,7 +155,7 @@
 			label: m['networks.Site'](),
 			render: (row: Record<string, unknown>) => {
 				const v = row.site as string | null | undefined;
-				return v ? `<span class="text-text-muted">${v}</span>` : '<span class="text-text-muted">-</span>';
+				return v ? html`<span class="text-text-muted">${v}</span>` : '<span class="text-text-muted">-</span>';
 			}
 		},
 		{
@@ -163,7 +164,7 @@
 			render: (row: Record<string, unknown>) => {
 				const v = row.agent_id as string | null | undefined;
 				if (!v) return '<span class="text-text-muted text-xs">-</span>';
-				return `<span class="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-mono">${v}</span>`;
+				return html`<span class="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-mono">${v}</span>`;
 			}
 		},
 		{
@@ -172,11 +173,18 @@
 			render: (row: Record<string, unknown>) => {
 				const id = row.id;
 				const agentManaged = !!row.agent_id;
-				const revokeHint = agentManaged ? ` title="${m['networks.Agent Managed Hint']()}"` : '';
-				return `<div class="flex gap-2">`
-					+ `<button data-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
-					+ `<button data-delete-id="${id}"${revokeHint} class="text-xs px-2 py-1 rounded text-error hover:bg-error/10">${m['common.Delete']()}</button>`
-					+ `</div>`;
+				// Build the title attribute inline (escaped) when agent-managed,
+				// rather than a pre-built attribute string that html would double-escape.
+				if (agentManaged) {
+					return html`<div class="flex gap-2">`
+						+ html`<button data-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
+						+ html`<button data-delete-id="${id}" title="${m['networks.Agent Managed Hint']()}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10">${m['common.Delete']()}</button>`
+						+ html`</div>`;
+				}
+				return html`<div class="flex gap-2">`
+					+ html`<button data-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
+					+ html`<button data-delete-id="${id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10">${m['common.Delete']()}</button>`
+					+ html`</div>`;
 			}
 		}
 	]);

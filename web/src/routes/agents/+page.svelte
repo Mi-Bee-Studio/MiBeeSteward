@@ -14,6 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { html } from '$lib/utils/index';
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -254,13 +255,13 @@
 			label: m['agents.Agent ID'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-medium text-text font-mono text-sm">${String(row.agent_id)}</span>`
+				html`<span class="font-medium text-text font-mono text-sm">${row.agent_id}</span>`
 		},
 		{
 			key: 'name',
 			label: m['agents.Name'](),
 			render: (row: Record<string, unknown>) =>
-				`<span class="text-text-muted">${row.name ? String(row.name) : '-'}</span>`
+				html`<span class="text-text-muted">${row.name ? row.name : '-'}</span>`
 		},
 		{
 			key: 'network',
@@ -268,7 +269,7 @@
 			render: (row: Record<string, unknown>) => {
 				const nid = row.network_id as number | undefined;
 				const name = nid ? (networkNames[nid] ?? `#${nid}`) : '-';
-				return `<span class="text-text-muted">${name}</span>`;
+				return html`<span class="text-text-muted">${name}</span>`;
 			}
 		},
 		{
@@ -278,7 +279,7 @@
 			render: (row: Record<string, unknown>) => {
 				const t = row as unknown as AgentToken;
 				const s = tokenStatus(t);
-				return `<span class="text-xs px-2 py-0.5 rounded-full font-mono ${s.cls}">${s.label}</span>`;
+				return html`<span class="text-xs px-2 py-0.5 rounded-full font-mono ${s.cls}">${s.label}</span>`;
 			}
 		},
 		{
@@ -287,8 +288,8 @@
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const v = row.last_used_at as string | null | undefined;
-				if (!v) return `<span class="text-text-muted">-</span>`;
-				return `<span class="text-text-muted text-xs">${timeAgo(v)}</span>`;
+				if (!v) return html`<span class="text-text-muted">-</span>`;
+				return html`<span class="text-text-muted text-xs">${timeAgo(v)}</span>`;
 			}
 		},
 		{
@@ -296,7 +297,7 @@
 			label: m['agents.Created At'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="text-text-muted text-xs">${formatTime(row.created_at as string)}</span>`
+				html`<span class="text-text-muted text-xs">${formatTime(row.created_at as string)}</span>`
 		},
 		{
 			key: 'actions',
@@ -305,9 +306,16 @@
 				const agentId = String(row.agent_id);
 				const tokenId = row.id;
 				const isRevoked = !!row.revoked_at;
-				const scanBtn = isRevoked ? '' : `<button data-scan-id="${agentId}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m['agents.Trigger Scan']()}</button>`;
-				const revokeBtn = isRevoked ? '' : `<button data-revoke-id="${tokenId}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m['agents.Revoke']()}</button>`;
-				return `<div class="flex items-center gap-2">${scanBtn}${revokeBtn}</div>`;
+				// Build segments with `html` (escapes agentId into the data-scan-id
+				// attribute — previously an attribute-injection XSS vector), then
+				// concatenate the already-safe HtmlStrings. No further escaping.
+				let out = html`<div class="flex items-center gap-2">`;
+				if (!isRevoked) {
+					out += html`<button data-scan-id="${agentId}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m['agents.Trigger Scan']()}</button>`;
+					out += html`<button data-revoke-id="${tokenId}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m['agents.Revoke']()}</button>`;
+				}
+				out += html`</div>`;
+				return out;
 			}
 		}
 	]);
@@ -341,9 +349,9 @@
 			render: (row: Record<string, unknown>) => {
 				const id = row.id as number;
 				const isOpen = commandsExpandedId === id;
-				return `<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
-					+ `<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
-					+ `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
+				return html`<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
+					+ html`<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
+					+ html`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
 			}
 		},
 		{
@@ -351,13 +359,13 @@
 			label: m['agents.Agent ID'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-mono text-xs text-text">${String(row.agent_id)}</span>`
+				html`<span class="font-mono text-xs text-text">${row.agent_id}</span>`
 		},
 		{
 			key: 'command',
 			label: m['agents.Command'](),
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-mono text-xs text-text">${String(row.command)}</span>`
+				html`<span class="font-mono text-xs text-text">${row.command}</span>`
 		},
 		{
 			key: 'status',
@@ -365,7 +373,7 @@
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const s = commandStatusBadge(String(row.status));
-				return `<span class="text-xs px-2 py-0.5 rounded-full font-mono ${s.cls}">${s.label}</span>`;
+				return html`<span class="text-xs px-2 py-0.5 rounded-full font-mono ${s.cls}">${s.label}</span>`;
 			}
 		},
 		{
@@ -373,14 +381,14 @@
 			label: m['agents.Created'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="text-text-muted text-xs">${formatTime(row.created_at as string)}</span>`
+				html`<span class="text-text-muted text-xs">${formatTime(row.created_at as string)}</span>`
 		},
 		{
 			key: 'acknowledged_at',
 			label: m['agents.Acknowledged'](),
 			render: (row: Record<string, unknown>) => {
 				const v = row.acknowledged_at as string | null | undefined;
-				return `<span class="text-text-muted text-xs">${v ? formatTime(v) : '-'}</span>`;
+				return html`<span class="text-text-muted text-xs">${v ? formatTime(v) : '-'}</span>`;
 			}
 		}
 	]);
