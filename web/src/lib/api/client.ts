@@ -35,6 +35,26 @@ export class SessionExpiredError extends Error {
 	}
 }
 
+/**
+ * Thrown by all three request paths (request / download / upload) on any non-2xx
+ * response OTHER than 401 (401 has its own SessionExpiredError). Carries the
+ * HTTP status code so callers can branch on `err.status` instead of
+ * string-matching the (localized, locale-dependent) message. Subclass of Error
+ * so existing `getErrorMessage(err)` / generic `catch` handlers are unaffected.
+ *
+ * Note: network failures (TypeError), aborts, and parse errors have no HTTP
+ * status — those are still thrown as plain Error and are distinguishable from
+ * ApiError via `instanceof ApiError`.
+ */
+export class ApiError extends Error {
+	readonly status: number;
+	constructor(status: number, message: string) {
+		super(message);
+		this.name = 'ApiError';
+		this.status = status;
+	}
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 	const csrfToken = getCSRFToken();
@@ -55,11 +75,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 		}
 		if (!res.ok) {
 			const err = await res.json().catch(() => ({ error: m['api.Request Failed']() }));
-			throw new Error(err.error || m['api.HTTP Error']({ status: String(res.status) }));
+			throw new ApiError(res.status, err.error || m['api.HTTP Error']({ status: String(res.status) }));
 		}
 		if (res.status === 204) return undefined as T;
 		return res.json();
 	} catch (err: unknown) {
+		// Preserve typed errors (SessionExpiredError / ApiError) so callers can
+		// branch on `instanceof` / `.status`. Only wrap genuine network/abort/
+		// parse errors (which have no HTTP status) into a plain Error.
+		if (err instanceof SessionExpiredError || err instanceof ApiError) throw err;
 		throw new Error(getErrorMessage(err));
 	}
 }
@@ -91,7 +115,7 @@ export const api = {
 		}
 		if (!res.ok) {
 			const err = await res.json().catch(() => ({ error: m['api.Download Failed']() }));
-			throw new Error(err.error || m['api.HTTP Error']({ status: String(res.status) }));
+			throw new ApiError(res.status, err.error || m['api.HTTP Error']({ status: String(res.status) }));
 		}
 		return res.blob();
 	},
@@ -120,9 +144,9 @@ export const api = {
 				if (xhr.status >= 400) {
 					try {
 						const err = JSON.parse(xhr.responseText);
-						reject(new Error(err.error || m['api.HTTP Error']({ status: String(xhr.status) })));
+						reject(new ApiError(xhr.status, err.error || m['api.HTTP Error']({ status: String(xhr.status) })));
 					} catch {
-						reject(new Error(m['api.HTTP Error']({ status: String(xhr.status) })));
+						reject(new ApiError(xhr.status, m['api.HTTP Error']({ status: String(xhr.status) })));
 					}
 					return;
 				}

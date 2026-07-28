@@ -40,12 +40,39 @@
 
 	let sidebarOpen = $state(false);
 
-	onMount(() => {
-		// Redirect to login if not authenticated and not already on login page
-		const path = window.location.pathname;
-		if (!$auth.token && path !== '/login') {
-			goto('/login');
+	// Reactive auth gate: redirect to /login whenever the token disappears.
+	// Unlike a one-shot onMount check, this catches in-tab logout (the user
+	// clicks Logout here, or a 401 from any API call fires auth.logout()) the
+	// instant the store updates — no need to wait for the next navigation to
+	// hit a 401.
+	$effect(() => {
+		if (!$auth.token) {
+			const path = window.location.pathname;
+			if (path !== '/login') goto('/login');
 		}
+	});
+
+	// Cross-tab sync: a `storage` event fires in OTHER tabs when this tab (or
+	// another) writes/removes the `auth` localStorage key. Mirror the change
+	// into this tab's auth store so the reactive gate above fires here too.
+	// (storage events do NOT fire in the tab that made the change — that path
+	// is already covered by the in-tab store update + $effect above.)
+	onMount(() => {
+		const onStorage = (e: StorageEvent) => {
+			if (e.key !== 'auth') return;
+			try {
+				const parsed = e.newValue ? JSON.parse(e.newValue) : null;
+				if (parsed?.token && parsed.user) {
+					auth.login(parsed.user, parsed.token);
+				} else {
+					auth.logout();
+				}
+			} catch {
+				// Malformed payload — ignore; the reactive gate handles a missing token.
+			}
+		};
+		window.addEventListener('storage', onStorage);
+		return () => window.removeEventListener('storage', onStorage);
 	});
 
 
