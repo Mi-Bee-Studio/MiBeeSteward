@@ -622,7 +622,7 @@
 		// needed for drop to fire
 	}
 
-	function handleDrop(_e: DragEvent, targetId: string) {
+	async function handleDrop(_e: DragEvent, targetId: string) {
 		if (!draggedId || draggedId === targetId) return;
 
 		const fromIdx = widgets.findIndex((w) => w.id === draggedId);
@@ -638,12 +638,18 @@
 		// Update positions
 		widgets = updated.map((w, i) => ({ ...w, position: i }));
 
-		// Persist positions
+		// Persist positions. Wait for all puts and, on failure, toast + re-sync
+		// from the server so the UI doesn't show an order that wasn't saved
+		// (which a reload would silently snap back — #65).
 		if (isAdmin) {
-			for (const w of widgets) {
-				api.put(`/dashboard/configs/${w.id}`, { position: w.position }).catch(() => {
-					// silent fail — positions are best-effort
-				});
+			try {
+				await Promise.all(
+					widgets.map((w) => api.put(`/dashboard/configs/${w.id}`, { position: w.position }))
+				);
+			} catch (err: unknown) {
+				addToast('error', getErrorMessage(err));
+				// Re-sync: the server has the truth; reload discards the unsaved swap.
+				await loadAll();
 			}
 		}
 

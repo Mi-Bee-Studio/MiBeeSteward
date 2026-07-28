@@ -276,11 +276,18 @@
 	function pollRunStatus(taskId: number) {
 		if (pollingTimers.has(taskId)) return;
 		let pollCount = 0;
+		// Track consecutive poll failures so a dead backend doesn't leave the
+		// spinner sweeping silently — after a few in a row, surface a warning
+		// (once, not per failure). Reset on any successful poll (#65).
+		let consecutiveErrors = 0;
+		let errorToasted = false;
 		const maxPolls = 100; // ~300s with 3s interval
 		const poll = async () => {
 			pollCount++;
 			try {
 				const res = await api.get<{ runs: ScanRun[]; total: number }>(`/scanner/tasks/${taskId}/runs?limit=1`);
+				consecutiveErrors = 0;
+				errorToasted = false;
 				if (res.runs && res.runs.length > 0) {
 					const run = res.runs[0];
 					if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
@@ -315,8 +322,15 @@
 					addToast('warning', m['scanner.Scan No Run']());
 					fetchTasks();
 				}
-			} catch {
-				// Poll errors are non-critical, keep trying
+			} catch (err: unknown) {
+				// Poll errors are non-critical — keep trying — but after several in
+				// a row the live-progress spinner is lying to the user. Surface one
+				// warning so they know to refresh manually (the loop keeps running).
+				consecutiveErrors++;
+				if (consecutiveErrors >= 3 && !errorToasted) {
+					errorToasted = true;
+					addToast('warning', getErrorMessage(err));
+				}
 			}
 			if (pollingTimers.has(taskId)) {
 				pollingTimers.set(taskId, setTimeout(poll, 3000));
