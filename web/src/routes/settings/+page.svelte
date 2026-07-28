@@ -13,7 +13,7 @@
 	import { auth } from '$lib/stores/auth';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils';
-	import { settingsSchema, validateField, validateForm } from '$lib/utils/validation';
+	import { settingsSchema, profileSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { m, getLocale, setLocale } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
 	import { Sun, Moon, Copy, Check } from '@lucide/svelte';
@@ -37,6 +37,7 @@
 	// Profile form
 	let email = $state('');
 	let profileLoading = $state(false);
+	let profileFieldErrors = $state<Record<string, string>>({});
 
 	// Password form
 	let currentPassword = $state('');
@@ -151,6 +152,17 @@ onDestroy(() => {
 		e.preventDefault();
 		profileLoading = true;
 		error = '';
+
+		// Validate email before hitting the API (#66). Only `email` is editable
+		// (username/role are read-only), so profileSchema is a single field.
+		const validation = validateForm(profileSchema, { email });
+		if (!validation.valid) {
+			profileFieldErrors = validation.errors;
+			profileLoading = false;
+			return;
+		}
+		profileFieldErrors = {};
+
 		try {
 			const res = await api.put<Profile>('/auth/profile', { email });
 			profile = res;
@@ -271,7 +283,16 @@ function handleCancel2FASetup() {
 				<div>
 				<label class="block text-xs text-muted mb-1">{m["auth.Email"]()}</label>
 					<input bind:value={email} type="email"
-						class="input" />
+						onblur={() => {
+							const r = validateField(profileSchema, 'email', email);
+							profileFieldErrors = r.valid
+								? (() => { const { email: _, ...rest } = profileFieldErrors; return rest; })()
+								: { ...profileFieldErrors, email: r.error ?? '' };
+						}}
+						class="input {profileFieldErrors.email ? '!border-error' : ''}" />
+					{#if profileFieldErrors.email}
+						<p class="text-xs text-error mt-1">{profileFieldErrors.email}</p>
+					{/if}
 				</div>
 				<div>
 				<label class="block text-xs text-muted mb-1">{m["users.Role"]()}</label>

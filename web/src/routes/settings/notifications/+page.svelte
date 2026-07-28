@@ -16,6 +16,7 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { html } from '$lib/utils/index';
 	import { channelTypeBadge } from '$lib/utils/badges';
+	import { notificationChannelSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -58,6 +59,7 @@
 	let deleteDialogOpen = $state(false);
 	let deleteTarget = $state<Channel | null>(null);
 	let formLoading = $state(false);
+	let fieldErrors = $state<Record<string, string>>({});
 
 	// Form fields
 	let formName = $state('');
@@ -182,6 +184,24 @@
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
+
+		// Validate the channel via notificationChannelSchema. The schema is flat
+		// (form state is flat); type-conditional required fields (webhook url /
+		// email host+from+to) are enforced by the refine on full-form validation.
+		const validation = validateForm(notificationChannelSchema, {
+			name: formName,
+			type: formType,
+			webhook_url: formUrl,
+			smtp_host: formSmtpHost,
+			smtp_port: formSmtpPort,
+			smtp_from: formFromAddress,
+			smtp_to: formToAddress
+		});
+		if (!validation.valid) {
+			fieldErrors = validation.errors;
+			return;
+		}
+		fieldErrors = {};
 		formLoading = true;
 
 		const body = {
@@ -440,9 +460,18 @@
 					type="url"
 					required
 					placeholder={m["notifications.Webhook URL Placeholder"]()}
+					onblur={() => {
+						const r = validateField(notificationChannelSchema, 'webhook_url', formUrl);
+						fieldErrors = r.valid
+							? (() => { const { webhook_url: _, ...rest } = fieldErrors; return rest; })()
+							: { ...fieldErrors, webhook_url: r.error ?? '' };
+					}}
 					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
-						focus:outline-none focus:border-primary transition-colors"
+						focus:outline-none focus:border-primary transition-colors {fieldErrors.webhook_url ? '!border-error' : ''}"
 				/>
+				{#if fieldErrors.webhook_url}
+					<p class="mt-1 text-xs text-error">{fieldErrors.webhook_url}</p>
+				{/if}
 			</div>
 			<div>
 				<div class="flex items-center justify-between mb-1">
@@ -481,9 +510,18 @@
 					<input
 						bind:value={formSmtpHost}
 						required
+						onblur={() => {
+							const r = validateField(notificationChannelSchema, 'smtp_host', formSmtpHost);
+							fieldErrors = r.valid
+								? (() => { const { smtp_host: _, ...rest } = fieldErrors; return rest; })()
+								: { ...fieldErrors, smtp_host: r.error ?? '' };
+						}}
 						class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
-							focus:outline-none focus:border-primary transition-colors"
+							focus:outline-none focus:border-primary transition-colors {fieldErrors.smtp_host ? '!border-error' : ''}"
 					/>
+					{#if fieldErrors.smtp_host}
+						<p class="mt-1 text-xs text-error">{fieldErrors.smtp_host}</p>
+					{/if}
 				</div>
 				<div>
 					<label class="block text-xs text-text-muted mb-1">{m["notifications.SMTP Port"]()}</label>
@@ -519,25 +557,43 @@
 				{/if}
 			</div>
 			<div>
-				<label class="block text-xs text-text-muted mb-1">{m["notifications.From Address"]()} *</label>
-				<input
-					bind:value={formFromAddress}
-					type="email"
-					required
-					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
-						focus:outline-none focus:border-primary transition-colors"
-				/>
-			</div>
-			<div>
-				<label class="block text-xs text-text-muted mb-1">{m["notifications.To Address"]()} *</label>
-				<input
-					bind:value={formToAddress}
-					type="email"
-					required
-					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
-						focus:outline-none focus:border-primary transition-colors"
-				/>
-			</div>
+					<label class="block text-xs text-text-muted mb-1">{m["notifications.From Address"]()} *</label>
+					<input
+						bind:value={formFromAddress}
+						type="email"
+						required
+						onblur={() => {
+							const r = validateField(notificationChannelSchema, 'smtp_from', formFromAddress);
+							fieldErrors = r.valid
+								? (() => { const { smtp_from: _, ...rest } = fieldErrors; return rest; })()
+								: { ...fieldErrors, smtp_from: r.error ?? '' };
+						}}
+						class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+							focus:outline-none focus:border-primary transition-colors {fieldErrors.smtp_from ? '!border-error' : ''}"
+					/>
+					{#if fieldErrors.smtp_from}
+						<p class="mt-1 text-xs text-error">{fieldErrors.smtp_from}</p>
+					{/if}
+				</div>
+				<div>
+					<label class="block text-xs text-text-muted mb-1">{m["notifications.To Address"]()} *</label>
+					<input
+						bind:value={formToAddress}
+						type="email"
+						required
+						onblur={() => {
+							const r = validateField(notificationChannelSchema, 'smtp_to', formToAddress);
+							fieldErrors = r.valid
+								? (() => { const { smtp_to: _, ...rest } = fieldErrors; return rest; })()
+								: { ...fieldErrors, smtp_to: r.error ?? '' };
+						}}
+						class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+							focus:outline-none focus:border-primary transition-colors {fieldErrors.smtp_to ? '!border-error' : ''}"
+					/>
+					{#if fieldErrors.smtp_to}
+						<p class="mt-1 text-xs text-error">{fieldErrors.smtp_to}</p>
+					{/if}
+				</div>
 		{/if}
 
 		<!-- Enabled -->
