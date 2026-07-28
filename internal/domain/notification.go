@@ -38,6 +38,16 @@ type UpdateChannelRequest struct {
 	Enabled *bool            `json:"enabled,omitempty"`
 }
 
+// SetChannelEnabledRequest is the body of the dedicated
+// PATCH /notification/channels/{id} toggle endpoint. Unlike the generic PUT
+// (UpdateChannelRequest), it changes only `enabled` — server-side this routes
+// to a single-field UPDATE so name/type/config are never touched. This avoids
+// the data-corruption footgun where a client GET-then-PUT with a full body
+// would write the masked SMTP password (`"*****"`) back over the real one.
+type SetChannelEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
 // Response types
 
 type ChannelResponse struct {

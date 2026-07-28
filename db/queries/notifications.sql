@@ -24,6 +24,15 @@ SET name = ?, type = ?, config = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING *;
 
+-- name: SetChannelEnabled :one
+-- Single-field UPDATE for the dedicated PATCH /channels/{id} toggle endpoint.
+-- Writing only `enabled` (not the full row) makes the intent explicit and
+-- avoids any GET-then-write race on name/type/config. See service.SetChannelEnabled.
+UPDATE notification_channels
+SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
 -- name: DeleteChannel :exec
 DELETE FROM notification_channels WHERE id = ?;
 

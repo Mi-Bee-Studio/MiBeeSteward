@@ -148,6 +148,48 @@ func (h *NotificationHandler) UpdateChannel(w http.ResponseWriter, r *http.Reque
 	Success(w, h.maskChannelPassword(resp))
 }
 
+// SetChannelEnabled handles PATCH /api/v1/notification/channels/{id}.
+// Dedicated toggle endpoint: the UI's on/off switch sends only {enabled},
+// and the service routes it to a single-field UPDATE so name/type/config
+// (and the masked SMTP password) are never rewritten. Contrast with PUT,
+// which the edit form uses to replace the full channel body.
+func (h *NotificationHandler) SetChannelEnabled(w http.ResponseWriter, r *http.Request) {
+	id, err := h.parseID(w, r)
+	if err != nil {
+		return
+	}
+
+	var req domain.SetChannelEnabledRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.svc.SetChannelEnabled(r.Context(), id, req.Enabled)
+	if err != nil {
+		if errors.Is(err, service.ErrChannelNotFound) {
+			Error(w, http.StatusNotFound, "notification channel not found")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed to update notification channel")
+		return
+	}
+
+	userID, _, ok := middleware.GetUserFromContext(r)
+	if ok {
+		h.auditRepo.Log(r.Context(), repository.AuditLog{
+			UserID:       &userID,
+			Action:       "admin.notification.channel.enable",
+			ResourceType: "notification_channel",
+			ResourceID:   strconv.FormatInt(id, 10),
+			IPAddress:    r.RemoteAddr,
+			UserAgent:    r.UserAgent(),
+		})
+	}
+
+	Success(w, h.maskChannelPassword(resp))
+}
+
 // DeleteChannel handles DELETE /api/v1/notification/channels/{id}
 func (h *NotificationHandler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 	id, err := h.parseID(w, r)

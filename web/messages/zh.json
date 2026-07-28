@@ -645,6 +645,8 @@
 		"Channel Created": "通知渠道创建成功",
 		"Channel Updated": "通知渠道更新成功",
 		"Channel Deleted": "通知渠道删除成功",
+		"Channel Enabled": "通知渠道已启用",
+		"Channel Disabled": "通知渠道已禁用",
 		"Channel Not Found": "通知渠道未找到",
 		"Test Dispatched": "测试通知已发送",
 		"Test Disabled": "无法测试已禁用的渠道",

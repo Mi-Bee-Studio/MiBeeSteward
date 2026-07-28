@@ -142,6 +142,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		r.Get("/", notificationHandler.ListChannels)
 		r.Get("/{id}", notificationHandler.GetChannel)
 		r.Put("/{id}", notificationHandler.UpdateChannel)
+		r.Patch("/{id}", notificationHandler.SetChannelEnabled)
 		r.Delete("/{id}", notificationHandler.DeleteChannel)
 		r.Post("/{id}/test", notificationHandler.TestChannel)
 	})
@@ -234,6 +235,18 @@ func authPost(t *testing.T, url, token, body string) *http.Response {
 func authPut(t *testing.T, url, token, body string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest("PUT", url, bytes.NewBufferString(body))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+// authPatch performs an authenticated PATCH request with JSON body.
+func authPatch(t *testing.T, url, token, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest("PATCH", url, bytes.NewBufferString(body))
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
