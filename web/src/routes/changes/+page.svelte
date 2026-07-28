@@ -406,7 +406,7 @@
 									afterData={change.after_data}
 								/>
 							{:else}
-								<p class="text-xs text-text-muted italic">Data unavailable.</p>
+								<p class="text-xs text-text-muted italic">{m['changes.Data Unavailable']()}</p>
 							{/if}
 						</div>
 					{/snippet}

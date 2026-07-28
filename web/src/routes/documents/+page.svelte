@@ -251,7 +251,7 @@
 						await api.post(`/documents/${target.id}/restore`, {});
 						fetchDocuments();
 					} catch {
-						addToast('error', 'Restore failed');
+						addToast('error', m['documents.Restore Failed']());
 					}
 				},
 				label: m["common.Undo"](),
@@ -342,7 +342,7 @@
 			render: (row: Record<string, unknown>) => {
 				const doc = row as unknown as Document;
 				const isUrl = doc.type === 'url';
-				const label = isUrl ? 'URL' : m["documents.File"]();
+				const label = isUrl ? m["documents.URL"]() : m["documents.File"]();
 				const cls = isUrl
 					? 'text-accent'
 					: 'text-primary';
@@ -499,7 +499,7 @@
 		</div>
 		<div>
 			<label class="block text-xs text-text-muted mb-1">{m["documents.URL"]()} *</label>
-			<input bind:value={formUrl} required type="url" placeholder="https://..."
+			<input bind:value={formUrl} required type="url" placeholder={m['documents.URL Placeholder']()}
 				class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
 					focus:border-primary focus:outline-none font-mono" />
 		</div>

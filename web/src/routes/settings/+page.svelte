@@ -327,10 +327,10 @@ function handleCancel2FASetup() {
 				<button onclick={handleThemeToggle} class="btn btn-secondary">
 					{#if theme === 'dark'}
 						<Moon class="w-4 h-4" />
-						Dark
+						{m["settings.Dark Mode"]()}
 					{:else}
 						<Sun class="w-4 h-4" />
-						Light
+						{m["settings.Light Mode"]()}
 					{/if}
 				</button>
 				<span class="text-sm text-muted">

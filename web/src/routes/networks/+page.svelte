@@ -276,21 +276,21 @@
 		<!-- Name -->
 		<div>
 			<label class="block text-xs text-text-muted mb-1">{m['networks.Name']()} *</label>
-			<input bind:value={formName} required placeholder="e.g. lan-beijing-62" class="input" />
+			<input bind:value={formName} required placeholder={m['networks.Name Placeholder']()} class="input" />
 			<p class="text-xs text-text-muted mt-1">{m['networks.Name Help']()}</p>
 		</div>
 
 		<!-- CIDR -->
 		<div>
 			<label class="block text-xs text-text-muted mb-1">CIDR</label>
-			<input bind:value={formCidr} placeholder="e.g. 192.168.62.0/24" class="input font-mono" />
+			<input bind:value={formCidr} placeholder={m['networks.Cidr Placeholder']()} class="input font-mono" />
 			<p class="text-xs text-text-muted mt-1">{m['networks.Cidr Help']()}</p>
 		</div>
 
 		<!-- Site -->
 		<div>
 			<label class="block text-xs text-text-muted mb-1">{m['networks.Site']()}</label>
-			<input bind:value={formSite} placeholder="e.g. Beijing branch / datacenter / cloud" class="input" />
+			<input bind:value={formSite} placeholder={m['networks.Site Placeholder']()} class="input" />
 		</div>
 
 		<!-- Actions -->
