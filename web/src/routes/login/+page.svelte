@@ -10,7 +10,7 @@
 
 <script lang="ts">
 	import { m } from '$lib/i18n-paraglide';
-	import { api, SessionExpiredError } from '$lib/api/client';
+	import { api, ApiError, SessionExpiredError } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
 	import type { LoginResponse } from '$lib/types';
 	import { getErrorMessage } from '$lib/utils/error.js';
@@ -80,19 +80,25 @@
 				goto('/dashboard');
 			}
 		} catch (err: unknown) {
-			// SessionExpiredError is thrown by the API client on 401 — distinguish
-			// it via type, not by string-matching the (now localized) message.
+			// Classify by error TYPE / HTTP status, never by message text — the
+			// message is localized and would break classification if the locale
+			// or backend wording changes.
 			if (err instanceof SessionExpiredError) {
+				// 401 from /auth/login = bad credentials (the api client treats
+				// every 401 as session-expired; on the login endpoint that maps
+				// to "invalid username or password").
 				error = m['auth.error.invalid_credentials']();
+			} else if (err instanceof ApiError && err.status === 429) {
+				error = m['auth.error.too_many_attempts']();
+			} else if (err instanceof TypeError) {
+				// fetch() throws TypeError on network failure / DNS / CORS.
+				error = m['auth.error.network_error']();
+			} else if (err instanceof ApiError && err.status >= 500) {
+				error = m['auth.error.server_error']();
 			} else {
-				const msg = getErrorMessage(err);
-				if (msg.includes('temporarily locked') || msg.includes('Too Many Requests')) {
-					error = m['auth.error.too_many_attempts']();
-				} else if (err instanceof TypeError) {
-					error = m['auth.error.network_error']();
-				} else {
-					error = m['auth.error.server_error']();
-				}
+				// 4xx other than 401/429 (e.g. 400/403/422) — surface the
+				// backend's own message, which is already user-facing.
+				error = getErrorMessage(err);
 			}
 		} finally {
 			loading = false;
