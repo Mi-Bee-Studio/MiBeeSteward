@@ -16,12 +16,12 @@
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { escapeHtml, escapeAttr } from '$lib/utils';
-	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
 	import type { Device, LinkedDoc, Network } from '$lib/types';
 	import { ChevronDown, ChevronRight, Download, Upload, Plus, List, Share2 } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
+	import DeviceEditModal from '$lib/components/DeviceEditModal.svelte';
 	import DeviceTopologyView from '$lib/components/DeviceTopologyView.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
@@ -89,26 +89,12 @@ interface AddDevicesResponse {
 	let sortDir = $state<'asc' | 'desc'>('asc');
 
 	// --- Form modal ---
-	let formOpen = $state(false);
-	let editingDevice = $state<Device | null>(null);
-	let formError = $state('');
-	let formLoading = $state(false);
+	// The device create/edit form lives in <DeviceEditModal> (shared with the
+	// detail page). This page just toggles `editOpen` and supplies the device to
+	// edit (null ⇒ create mode). onSaved refreshes the list after a save.
+	let editOpen = $state(false);
+	let editTarget = $state<Device | null>(null);
 
-	let formName = $state('');
-	let formType = $state('pc');
-	let formBrand = $state('');
-	let formModel = $state('');
-	let formLocation = $state('');
-	let formPurpose = $state('');
-	let formIpAddress = $state('');
-	let formMacAddress = $state('');
-	let formSerialNumber = $state('');
-	let formPurchaseDate = $state('');
-	let formWarrantyExpiry = $state('');
-	let formTags = $state('');
-
-	// --- Inline validation ---
-	let fieldErrors = $state<Record<string, string>>({});
 
 	// --- Delete confirmation ---
 	let deleteOpen = $state(false);
@@ -162,7 +148,7 @@ interface AddDevicesResponse {
 		// failure just leaves the dropdown empty — the list still works).
 		api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
 		pollTimer = setInterval(() => {
-			if (!formOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !importOpen && !linkOpen) {
+			if (!editOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !importOpen && !linkOpen) {
 				void refreshDevicesSilent();
 			}
 		}, POLL_MS);
@@ -493,104 +479,19 @@ interface AddDevicesResponse {
 	}
 
 	// --- Form helpers ---
-	function resetForm() {
-		formName = '';
-		formType = 'pc';
-		formBrand = '';
-		formModel = '';
-		formLocation = '';
-		formPurpose = '';
-		formIpAddress = '';
-		formMacAddress = '';
-		formSerialNumber = '';
-		formPurchaseDate = '';
-		formWarrantyExpiry = '';
-		formTags = '';
-		formError = '';
-		fieldErrors = {};
-		editingDevice = null;
-	}
-
+	// The form state/validation/submit moved into <DeviceEditModal>. These two
+	// wrappers keep the existing call sites (openCreate/openEdit) unchanged:
+	// they just toggle the shared modal open with the right target.
 	function openCreate() {
-		resetForm();
-		formOpen = true;
+		editTarget = null;
+		editOpen = true;
 	}
 
 	function openEdit(device: Device) {
-		editingDevice = device;
-		formName = device.name;
-		formType = device.type || 'pc';
-		formBrand = device.brand || '';
-		formModel = device.model || '';
-		formLocation = device.location || '';
-		formPurpose = device.purpose || '';
-		formIpAddress = device.ip_address || '';
-		formMacAddress = device.mac_address || '';
-		formSerialNumber = device.serial_number || '';
-		formPurchaseDate = device.purchase_date || '';
-		formWarrantyExpiry = device.warranty_expiry || '';
-		formTags = device.tags || '';
-		formError = '';
-		fieldErrors = {};
-		formOpen = true;
+		editTarget = device;
+		editOpen = true;
 	}
 
-	function handleBlur(field: string, value: string) {
-		const result = validateField(deviceSchema, field as keyof typeof deviceSchema._type, value);
-		if (result.valid) {
-			const { [field]: _, ...rest } = fieldErrors;
-			fieldErrors = rest;
-		} else {
-			fieldErrors = { ...fieldErrors, [field]: result.error! };
-		}
-	}
-
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-		formLoading = true;
-		formError = '';
-
-		const body = {
-			name: formName,
-			type: formType,
-			brand: formBrand,
-			model: formModel,
-			location: formLocation,
-			purpose: formPurpose,
-			ip_address: formIpAddress,
-			mac_address: formMacAddress,
-			serial_number: formSerialNumber,
-			purchase_date: formPurchaseDate,
-			warranty_expiry: formWarrantyExpiry,
-			tags: formTags
-		};
-
-		const validation = validateForm(deviceSchema, body);
-		if (!validation.valid) {
-			fieldErrors = validation.errors;
-			formLoading = false;
-			return;
-		}
-
-		try {
-			if (editingDevice) {
-				await api.put(`/devices/${editingDevice.id}`, body);
-				addToast('success', m['devices.Updated']());
-			} else {
-				await api.post('/devices', body);
-				addToast('success', m['devices.Created']());
-			}
-			formOpen = false;
-			resetForm();
-			fetchDevices();
-		} catch (err: unknown) {
-			const msg = getErrorMessage(err);
-			formError = msg;
-			addToast('error', msg);
-		} finally {
-			formLoading = false;
-		}
-	}
 
 	// --- Delete ---
 	function openDelete(device: Device) {
@@ -1201,148 +1102,10 @@ interface AddDevicesResponse {
 	{/if}
 </div>
 
-<!-- Create/Edit Modal -->
-<Modal bind:open={formOpen} title={editingDevice ? m['devices.Edit Device']() : m['devices.Create Device']()} maxWidth="42rem" onClose={resetForm}>
-	{#if formError}
-		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
-			{formError}
-		</div>
-	{/if}
-
-	<form onsubmit={handleSubmit} class="grid grid-cols-2 gap-4">
-		<!-- Name -->
-		<div class="col-span-2">
-			<label class="block text-xs text-muted mb-1">{m['devices.Device Name']()} *</label>
-			<input
-				bind:value={formName}
-				onblur={() => handleBlur('name', formName)}
-				required
-				class="input {fieldErrors.name ? '!border-error' : ''}"
-			/>
-			{#if fieldErrors.name}
-				<p class="text-xs text-error mt-1">{fieldErrors.name}</p>
-			{/if}
-		</div>
-
-		<!-- Type -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.Type']()} *</label>
-			<select
-				bind:value={formType}
-				onblur={() => handleBlur('type', formType)}
-				class="input"
-			>
-				<option value="pc">{m['devices.PC']()}</option>
-				<option value="embedded">{m['devices.Embedded']()}</option>
-				<option value="iot">{m['devices.IoT']()}</option>
-				<option value="server">{m['devices.Server']()}</option>
-				<option value="switch">{m['devices.Switch']()}</option>
-				<option value="router">{m['devices.Router']()}</option>
-				<option value="firewall">{m['devices.Firewall']()}</option>
-				<option value="nas">{m['devices.NAS']()}</option>
-				<option value="camera">{m['devices.Camera']()}</option>
-				<option value="phone">{m['devices.Phone']()}</option>
-				<option value="printer">{m['devices.Printer']()}</option>
-				<option value="other">{m['devices.Other']()}</option>
-			</select>
-			{#if fieldErrors.type}
-				<p class="text-xs text-error mt-1">{fieldErrors.type}</p>
-			{/if}
-		</div>
-
-		<!-- Brand -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.Brand']()}</label>
-			<input bind:value={formBrand}
-				class="input" />
-		</div>
-
-		<!-- Model -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.Model']()}</label>
-			<input bind:value={formModel}
-				class="input" />
-		</div>
-
-		<!-- Location -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.Location']()}</label>
-			<input bind:value={formLocation}
-				class="input" />
-		</div>
-
-		<!-- Purpose -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.Purpose']()}</label>
-			<input bind:value={formPurpose}
-				class="input" />
-		</div>
-
-		<!-- IP Address -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.IP Address']()}</label>
-			<input
-				bind:value={formIpAddress}
-				onblur={() => handleBlur('ip_address', formIpAddress)}
-				placeholder="192.168.1.100"
-				class="input font-mono {fieldErrors.ip_address ? '!border-error' : ''}"
-			/>
-			{#if fieldErrors.ip_address}
-				<p class="text-xs text-error mt-1">{fieldErrors.ip_address}</p>
-			{/if}
-		</div>
-
-		<!-- MAC Address -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.MAC Address']()}</label>
-			<input
-				bind:value={formMacAddress}
-				onblur={() => handleBlur('mac_address', formMacAddress)}
-				placeholder="AA:BB:CC:DD:EE:FF"
-				class="input font-mono {fieldErrors.mac_address ? '!border-error' : ''}"
-			/>
-			{#if fieldErrors.mac_address}
-				<p class="text-xs text-error mt-1">{fieldErrors.mac_address}</p>
-			{/if}
-		</div>
-
-		<!-- Serial Number -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.Serial Number']()}</label>
-			<input bind:value={formSerialNumber}
-				class="input font-mono" />
-		</div>
-
-		<!-- Purchase Date -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.Purchase Date']()}</label>
-			<input type="date" bind:value={formPurchaseDate}
-				class="input" />
-		</div>
-
-		<!-- Warranty Expiry -->
-		<div>
-			<label class="block text-xs text-muted mb-1">{m['devices.Warranty Expiry']()}</label>
-			<input type="date" bind:value={formWarrantyExpiry}
-				class="input" />
-		</div>
-
-		<!-- Tags -->
-		<div class="col-span-2">
-			<label class="block text-xs text-muted mb-1">{m['devices.Tags']()}</label>
-			<input bind:value={formTags} placeholder="server,production,rack-a"
-				class="input" />
-		</div>
-
-		<!-- Submit -->
-		<div class="col-span-2 flex gap-3 pt-2">
-		<LoadingButton type="submit" loading={formLoading} variant="primary" label={m['common.Save']()} />
-			<button type="button" onclick={() => { formOpen = false; resetForm(); }} class="btn btn-secondary">
-				{m['common.Cancel']()}
-			</button>
-		</div>
-	</form>
-</Modal>
+<!-- Create/Edit Modal — the form lives in the shared DeviceEditModal component
+     (also used by the device detail page). This page toggles it open with a
+     target device (null ⇒ create) and refreshes the list on save. -->
+<DeviceEditModal bind:open={editOpen} device={editTarget} onSaved={fetchDevices} />
 
 <!-- Delete confirmation -->
 <ConfirmDialog
