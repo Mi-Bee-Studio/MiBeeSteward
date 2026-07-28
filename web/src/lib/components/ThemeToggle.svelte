@@ -10,6 +10,7 @@
 
 <script lang="ts">
 	import { Sun, Moon } from '@lucide/svelte';
+	import { browser } from '$app/environment';
 
 	function getInitialDark(): boolean {
 		const stored = localStorage.getItem('theme');
@@ -19,7 +20,10 @@
 		return !window.matchMedia('(prefers-color-scheme: light)').matches;
 	}
 
-	let dark = $state(getInitialDark());
+	// Guard the localStorage/matchMedia access for SSR/prerender — those APIs
+	// only exist in the browser. Without this, server-side rendering throws
+	// "localStorage is not defined" at component init (#71).
+	let dark = $state(browser ? getInitialDark() : false);
 
 	function toggle() {
 		dark = !dark;

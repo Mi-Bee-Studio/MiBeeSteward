@@ -26,6 +26,7 @@
 	import { scanRunStatusBadge } from '$lib/utils/badges';
 	import { auth } from '$lib/stores/auth';
 	import type { EChartsOption } from '$lib/charts/echarts';
+	import type { DashboardWidgetConfig } from '$lib/types';
 
 	interface DeviceStats {
 		by_status: { online: number; offline: number; unknown: number };
@@ -73,35 +74,19 @@
 		generated: string;
 	}
 
-	interface DashboardConfig {
-		id: string;
-		name: string;
-		type: string;
-		data_source: string;
-		query: string;
-		refresh_interval: number;
-		position: number;
-		created_at: string;
-		updated_at: string;
-	}
+	// DashboardConfig is the shared API shape (from $lib/types). The route
+	// keeps a local alias so the DashboardConfigsResponse + editingWidget types
+	// read naturally, and WidgetState extends it with runtime UI fields (#71).
+	type DashboardConfig = DashboardWidgetConfig;
 
 	interface DashboardConfigsResponse {
 		configs: DashboardConfig[];
 		total: number;
 	}
 
-	interface WidgetState {
-		id: string;
-		name: string;
-		type: string;
-		data_source: string;
-		query: string;
-		refresh_interval: number;
-		position: number;
+	interface WidgetState extends DashboardConfig {
 		chartOption: EChartsOption;
 		loading: boolean;
-		created_at: string;
-		updated_at: string;
 	}
 
 	// loading is a writable store (not $state). A bare {#if loading} backed by
@@ -656,6 +641,33 @@
 		draggedId = null;
 	}
 
+	// Keyboard reorder: move a widget up/down by one slot (mirrors the drag
+	// swap). Wired to the drag handle's arrow-key handler so keyboard users can
+	// reorder without dragging (#71).
+	async function handleMoveWidget(id: string, direction: 'up' | 'down') {
+		const fromIdx = widgets.findIndex((w) => w.id === id);
+		if (fromIdx < 0) return;
+		const toIdx = direction === 'up' ? fromIdx - 1 : fromIdx + 1;
+		if (toIdx < 0 || toIdx >= widgets.length) return;
+
+		const updated = [...widgets];
+		const temp = updated[fromIdx];
+		updated[fromIdx] = updated[toIdx];
+		updated[toIdx] = temp;
+		widgets = updated.map((w, i) => ({ ...w, position: i }));
+
+		if (isAdmin) {
+			try {
+				await Promise.all(
+					widgets.map((w) => api.put(`/dashboard/configs/${w.id}`, { position: w.position }))
+				);
+			} catch (err: unknown) {
+				addToast('error', getErrorMessage(err));
+				await loadAll();
+			}
+		}
+	}
+
 	// ── Widget actions ──
 
 	function handleAddWidget() {
@@ -835,6 +847,7 @@
 						{widget}
 						onEdit={handleEditWidget}
 						onRemove={handleRemoveWidget}
+						onMove={handleMoveWidget}
 						ondragstart={handleDragStart}
 						ondragover={handleDragOver}
 						ondrop={handleDrop}

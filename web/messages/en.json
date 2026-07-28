@@ -263,6 +263,7 @@
 	},
 	"dashboard": {
 		"Dashboard": "Dashboard",
+		"Drag to Reorder": "Drag to reorder (or focus + ↑/↓ to move)",
 		"Attention Title": "Needs attention",
 		"Attention Offline": "{count} offline",
 		"Attention New": "{count} new in last scan",
@@ -356,6 +357,7 @@
 		"Retry": "Retry",
 		"Refresh": "Refresh",
 		"No Data": "No data",
+		"Pagination": "Pagination",
 		"Copy": "Copy",
 		"Copied": "Copied",
 		"Test": "Test",

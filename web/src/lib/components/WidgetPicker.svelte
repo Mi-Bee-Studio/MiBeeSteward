@@ -15,18 +15,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import { api } from '$lib/api/client';
 	import { getErrorMessage } from '$lib/utils/error';
-
-	interface DashboardConfig {
-		id: string;
-		name: string;
-		type: string;
-		data_source: string;
-		query: string;
-		refresh_interval: number;
-		position: number;
-		created_at: string;
-		updated_at: string;
-	}
+	import type { DashboardWidgetConfig } from '$lib/types';
 
 	let {
 		open = $bindable(false),
@@ -34,7 +23,7 @@
 		onSaved
 	}: {
 		open?: boolean;
-		editWidget?: DashboardConfig | null;
+		editWidget?: DashboardWidgetConfig | null;
 		onSaved: () => void;
 	} = $props();
 

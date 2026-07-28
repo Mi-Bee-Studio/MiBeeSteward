@@ -88,7 +88,7 @@
 
 	// --- Stages definition ---
 	interface StageDef {
-		key: string;
+		key: keyof PipelineConfig;
 		nameKey: string;
 		descKey: string;
 		icon: string;
@@ -103,12 +103,12 @@
 		{ key: 'node_exporter', nameKey: 'scanner.pipeline.stage_node_exporter', descKey: 'scanner.pipeline.stage_node_exporter_desc', icon: 'node' }
 	];
 
-	function isStageEnabled(key: string): boolean {
-		return (config as any)[key]?.enabled ?? false;
+	function isStageEnabled(key: keyof PipelineConfig): boolean {
+		return config[key]?.enabled ?? false;
 	}
 
-	function toggleStage(key: string) {
-		const stage = (config as any)[key];
+	function toggleStage(key: keyof PipelineConfig) {
+		const stage = config[key];
 		if (stage) {
 			stage.enabled = !stage.enabled;
 		}

@@ -104,9 +104,13 @@ export const api = {
 		const csrfToken = getCSRFToken();
 		const headers: Record<string, string> = {};
 		if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+		// 60s timeout — more generous than request()'s 30s since downloads
+		// (CSV/JSON exports, file downloads) can be larger. Without this a hung
+		// or very slow response would leave the fetch pending forever (#71).
 		const res = await fetch(`${API_BASE}${path}`, {
 			credentials: 'include',
-			headers
+			headers,
+			signal: AbortSignal.timeout(60000)
 		});
 		if (res.status === 401) {
 			auth.logout();
