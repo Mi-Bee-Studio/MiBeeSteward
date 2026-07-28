@@ -37,6 +37,10 @@ type AuditLogFilter struct {
 	ResourceType *string
 	DateFrom     *time.Time
 	DateTo       *time.Time
-	Limit        int32
-	Offset       int32
+	// Search is a substring match across action/resource_type/ip_address
+	// (empty = no search filter). Distinct from Action/ResourceType which are
+	// exact-match equality filters.
+	Search string
+	Limit  int32
+	Offset int32
 }

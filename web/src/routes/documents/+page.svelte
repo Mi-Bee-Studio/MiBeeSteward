@@ -41,6 +41,21 @@
 	let offset = $state(0);
 	const limit = 20;
 
+	// Server-side search (searchInput = live box, searchQuery = committed).
+	let searchInput = $state('');
+	let searchQuery = $state('');
+	let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+	function onSearchInput(value: string) {
+		searchInput = value;
+		if (searchDebounce) clearTimeout(searchDebounce);
+		searchDebounce = setTimeout(() => {
+			searchQuery = value;
+			offset = 0;
+			fetchDocuments();
+		}, 400);
+	}
+
 	// URL form modal
 	let urlModalOpen = $state(false);
 	let formTitle = $state('');
@@ -67,7 +82,10 @@
 	let previewOpen = $state(false);
 	let previewDoc = $state<Document | null>(null);
 
-	onMount(fetchDocuments);
+	onMount(() => {
+		hydrateFromUrl();
+		fetchDocuments();
+	});
 
 	async function fetchDocuments() {
 		loading = true;
@@ -76,15 +94,36 @@
 			const params = new URLSearchParams();
 			params.set('limit', String(limit));
 			params.set('offset', String(offset));
+			if (searchQuery) params.set('search', searchQuery);
 			const res = await api.get<{ documents: Document[]; total: number }>(`/documents?${params}`);
 			documents = res.documents || [];
 			total = res.total || 0;
+			syncUrl();
 		} catch (err: unknown) {
 			error = getErrorMessage(err);
 			addToast('error', error);
 		} finally {
 			loading = false;
 		}
+	}
+
+	function syncUrl() {
+		const params = new URLSearchParams();
+		if (searchQuery) params.set('search', searchQuery);
+		params.set('offset', String(offset));
+		const qs = params.toString();
+		history.replaceState(null, '', qs ? `?${qs}` : '?');
+	}
+
+	function hydrateFromUrl() {
+		const sp = new URLSearchParams(window.location.search);
+		const s = sp.get('search');
+		if (s) {
+			searchInput = s;
+			searchQuery = s;
+		}
+		const o = Number(sp.get('offset'));
+		if (!Number.isNaN(o) && o >= 0) offset = o;
 	}
 
 	// --- URL form ---
@@ -410,6 +449,8 @@
 				rows={documents as unknown as Record<string, unknown>[]}
 				searchableKeys={['title', 'description', 'type']}
 				searchPlaceholder={m["common.Search"]() + '...'}
+				initialSearch={searchInput}
+				onSearchChange={onSearchInput}
 				emptyTitle={m["common.No Results"]()}
 			/>
 		</div>

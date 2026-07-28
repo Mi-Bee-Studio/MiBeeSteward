@@ -72,6 +72,7 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 		ResourceType: resourceType,
 		DateFrom:     dateFrom,
 		DateTo:       dateTo,
+		Search:       r.URL.Query().Get("search"),
 		Limit:        int32(limit),
 		Offset:       int32(offset),
 	}

@@ -43,6 +43,22 @@
 	let offset = $state(0);
 	const limit = 20;
 
+	// Server-side search: searchInput (live box) vs searchQuery (committed,
+	// sent to backend). Split + debounce so typing doesn't refetch per keystroke.
+	let searchInput = $state('');
+	let searchQuery = $state('');
+	let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+	function onSearchInput(value: string) {
+		searchInput = value;
+		if (searchDebounce) clearTimeout(searchDebounce);
+		searchDebounce = setTimeout(() => {
+			searchQuery = value;
+			offset = 0;
+			fetchUsers();
+		}, 400);
+	}
+
 	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
 
 	// Modal state
@@ -70,6 +86,7 @@
 	let touched = $state<Record<string, boolean>>({});
 
 	onMount(() => {
+		hydrateFromUrl();
 		fetchUsers();
 	});
 
@@ -80,9 +97,11 @@
 			const params = new URLSearchParams();
 			params.set('limit', String(limit));
 			params.set('offset', String(offset));
+			if (searchQuery) params.set('search', searchQuery);
 			const res = await api.get<{ users: User[]; total: number }>(`/users?${params}`);
 			users = res.users || [];
 			total = res.total || 0;
+			syncUrl();
 		} catch (err: unknown) {
 			// Inline banner only on initial load — a parallel toast here was
 			// noisy double-notification for a single failure.
@@ -90,6 +109,25 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	function syncUrl() {
+		const params = new URLSearchParams();
+		if (searchQuery) params.set('search', searchQuery);
+		params.set('offset', String(offset));
+		const qs = params.toString();
+		history.replaceState(null, '', qs ? `?${qs}` : '?');
+	}
+
+	function hydrateFromUrl() {
+		const sp = new URLSearchParams(window.location.search);
+		const s = sp.get('search');
+		if (s) {
+			searchInput = s;
+			searchQuery = s;
+		}
+		const o = Number(sp.get('offset'));
+		if (!Number.isNaN(o) && o >= 0) offset = o;
 	}
 
 	function resetForm() {
@@ -331,6 +369,8 @@
 						rows={users as unknown as Record<string, unknown>[]}
 						searchPlaceholder={m["common.Search"]() + '...'}
 						searchableKeys={['username', 'email', 'role']}
+						initialSearch={searchInput}
+						onSearchChange={onSearchInput}
 						emptyTitle={m["common.No Results"]()}
 					/>
 				</div>

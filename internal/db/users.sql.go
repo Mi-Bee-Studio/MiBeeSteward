@@ -10,6 +10,26 @@ import (
 	"time"
 )
 
+const countUsers = `-- name: CountUsers :one
+SELECT COUNT(*) FROM users
+WHERE (? = '' OR INSTR(lower(username), lower(?)) > 0 OR INSTR(lower(email), lower(?)) > 0)
+`
+
+type CountUsersParams struct {
+	Column1 interface{} `json:"column_1"`
+	LOWER   string      `json:"LOWER"`
+	LOWER_2 string      `json:"LOWER_2"`
+}
+
+// Mirrors the ListUsers WHERE so the page total reflects the active search
+// (previously Total was len(page) = page size, which broke pagination counts).
+func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUsers, arg.Column1, arg.LOWER, arg.LOWER_2)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :one
 
 INSERT INTO users (username, email, password_hash, role, failed_login_attempts, locked_until, must_change_password)
@@ -149,17 +169,31 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 const listUsers = `-- name: ListUsers :many
 SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
 FROM users
+WHERE (? = '' OR INSTR(lower(username), lower(?)) > 0 OR INSTR(lower(email), lower(?)) > 0)
 ORDER BY id
 LIMIT ? OFFSET ?
 `
 
 type ListUsersParams struct {
-	Limit  int64 `json:"limit"`
-	Offset int64 `json:"offset"`
+	Column1 interface{} `json:"column_1"`
+	LOWER   string      `json:"LOWER"`
+	LOWER_2 string      `json:"LOWER_2"`
+	Limit   int64       `json:"limit"`
+	Offset  int64       `json:"offset"`
 }
 
+// Search is a substring match across username/email (case-insensitive). The
+// sentinel pattern (? = ” OR ...) means an empty search returns all rows.
+// INSTR(lower(...), lower(?)) is used because sqlc's SQLite parser rejects
+// `LIKE ? ESCAPE '\' (see scan_tasks.sql for the same pattern).
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
-	rows, err := q.db.QueryContext(ctx, listUsers, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, listUsers,
+		arg.Column1,
+		arg.LOWER,
+		arg.LOWER_2,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}

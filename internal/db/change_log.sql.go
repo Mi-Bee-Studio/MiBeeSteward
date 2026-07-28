@@ -16,6 +16,7 @@ FROM change_log
 WHERE (? = 0 OR network_id = ?)
   AND (? = '' OR change_type = ?)
   AND (? = '' OR entity_type = ?)
+  AND (? = '' OR INSTR(lower(change_type), lower(?)) > 0 OR INSTR(lower(entity_type), lower(?)) > 0)
 `
 
 type CountChangeLogParams struct {
@@ -25,6 +26,9 @@ type CountChangeLogParams struct {
 	ChangeType string      `json:"change_type"`
 	Column5    interface{} `json:"column_5"`
 	EntityType string      `json:"entity_type"`
+	Column7    interface{} `json:"column_7"`
+	LOWER      string      `json:"LOWER"`
+	LOWER_2    string      `json:"LOWER_2"`
 }
 
 func (q *Queries) CountChangeLog(ctx context.Context, arg CountChangeLogParams) (int64, error) {
@@ -35,6 +39,9 @@ func (q *Queries) CountChangeLog(ctx context.Context, arg CountChangeLogParams) 
 		arg.ChangeType,
 		arg.Column5,
 		arg.EntityType,
+		arg.Column7,
+		arg.LOWER,
+		arg.LOWER_2,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -121,6 +128,7 @@ FROM change_log
 WHERE (? = 0 OR network_id = ?)
   AND (? = '' OR change_type = ?)
   AND (? = '' OR entity_type = ?)
+  AND (? = '' OR INSTR(lower(change_type), lower(?)) > 0 OR INSTR(lower(entity_type), lower(?)) > 0)
 ORDER BY detected_at DESC
 LIMIT ? OFFSET ?
 `
@@ -132,6 +140,9 @@ type ListChangeLogParams struct {
 	ChangeType string      `json:"change_type"`
 	Column5    interface{} `json:"column_5"`
 	EntityType string      `json:"entity_type"`
+	Column7    interface{} `json:"column_7"`
+	LOWER      string      `json:"LOWER"`
+	LOWER_2    string      `json:"LOWER_2"`
 	Limit      int64       `json:"limit"`
 	Offset     int64       `json:"offset"`
 }
@@ -144,6 +155,9 @@ func (q *Queries) ListChangeLog(ctx context.Context, arg ListChangeLogParams) ([
 		arg.ChangeType,
 		arg.Column5,
 		arg.EntityType,
+		arg.Column7,
+		arg.LOWER,
+		arg.LOWER_2,
 		arg.Limit,
 		arg.Offset,
 	)
