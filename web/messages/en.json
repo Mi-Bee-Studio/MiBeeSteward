@@ -390,6 +390,7 @@
 		"Deselect All": "Deselect All",
 		"Add Selected": "Add Selected to Devices",
 		"Added N Devices": "{count} devices added successfully",
+		"Import N Failed": "{count} row(s) failed: {reason}",
 		"No Alive Hosts": "No alive hosts found",
 		"No Alive Hosts Desc": "Try a different IP range or check network connectivity.",
 		"Invalid Range": "Please enter a valid IP address or CIDR range",

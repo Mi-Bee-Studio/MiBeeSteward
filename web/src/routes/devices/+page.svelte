@@ -35,6 +35,14 @@ interface Stats {
     by_type: Record<string, number>;
 }
 
+// AddDevicesResponse mirrors backend domain.AddDevicesResponse — the CSV import
+// must read {added, errors} from it rather than assuming every preview row
+// succeeded (#58: partial failures used to be silently miscounted).
+interface AddDevicesResponse {
+	added: number;
+	errors: string[];
+}
+
 	// --- Core state ---
 	let devices = $state<Device[]>([]);
 	let stats = $state<Stats>({ by_status: {}, by_type: {} });
@@ -461,12 +469,22 @@ interface Stats {
 		if (csvPreviewRows.length === 0) return;
 		importLoading = true;
 		try {
-			await api.post('/scanner/add-devices', { devices: csvPreviewRows });
-			addToast('success', m['scanner.Added N Devices']().replace('{count}', String(csvPreviewRows.length)));
-			importOpen = false;
-			csvFile = null;
-			csvPreviewRows = [];
-			fetchDevices();
+			// Read the backend's {added, errors} instead of assuming every preview
+			// row succeeded — partial failures (duplicate IP, bad format) used to be
+			// silently miscounted as successes (#58).
+			const res = await api.post<AddDevicesResponse>('/scanner/add-devices', { devices: csvPreviewRows });
+			if (res.errors && res.errors.length > 0) {
+				// Summary warning with the first error reason, rather than a toast
+				// per failure (noisy when many rows fail).
+				addToast('warning', m['scanner.Import N Failed']().replace('{count}', String(res.errors.length)).replace('{reason}', res.errors[0]));
+			}
+			if (res.added > 0) {
+				addToast('success', m['scanner.Added N Devices']().replace('{count}', String(res.added)));
+				importOpen = false;
+				csvFile = null;
+				csvPreviewRows = [];
+				fetchDevices();
+			}
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
 		} finally {
