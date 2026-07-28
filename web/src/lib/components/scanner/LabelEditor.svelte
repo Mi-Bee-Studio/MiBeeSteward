@@ -11,6 +11,8 @@
 <script lang="ts">
 	import { m } from '$lib/i18n-paraglide';
 	import { X, Plus, LoaderCircle } from '@lucide/svelte';
+	import { addToast } from '$lib/stores/toast';
+	import { getErrorMessage } from '$lib/utils/error';
 
 	let {
 		labels = {},
@@ -22,7 +24,7 @@
 		labels: Record<string, string>;
 		staticLabels?: Record<string, string>;
 		dynamicLabels?: Record<string, string>;
-		onSave: (labels: Record<string, string>) => void;
+		onSave: (labels: Record<string, string>) => Promise<void> | void;
 		readonly?: boolean;
 	} = $props();
 
@@ -102,6 +104,10 @@
 		try {
 			await onSave(result);
 			hasChanges = false;
+		} catch (err: unknown) {
+			// Without this catch a rejecting onSave bubbled up uncaught — no
+			// toast, no feedback, just a console error. Surface it to the user.
+			addToast('error', getErrorMessage(err));
 		} finally {
 			saving = false;
 		}

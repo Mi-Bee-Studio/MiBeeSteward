@@ -12,6 +12,7 @@
 	import { echarts, type EChartsOption } from '$lib/charts/echarts';
 	import { onMount } from 'svelte';
 	import { m } from '$lib/i18n-paraglide';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let {
 		option = $bindable(),
@@ -33,6 +34,20 @@
 	let container: HTMLDivElement | undefined = $state();
 	let instance: ReturnType<typeof echarts.init> | undefined = $state();
 	let chartError = $state(false);
+
+	// Detect an empty dataset so we can show an EmptyState instead of a blank
+	// canvas. An option is "empty" when it has no series, or every series has an
+	// empty/nonexistent data array. A blank canvas with no explanation was
+	// confusing when a query returned no rows (#71).
+	let isEmpty = $derived.by(() => {
+		const series = option?.series;
+		if (!series) return true;
+		const arr = Array.isArray(series) ? series : [series];
+		if (arr.length === 0) return true;
+		return arr.every(
+			(s) => !s || (s as { data?: unknown }).data == null || ((s as { data?: unknown[] }).data?.length ?? 0) === 0
+		);
+	});
 
 	function initChart() {
 		if (!container) return;
@@ -106,6 +121,10 @@
 {#if chartError}
 	<div class="flex items-center justify-center rounded-lg border border-error/30 bg-error/10 text-error text-sm" style="width: {width}; height: {height};">
 		<span>{m['common.Chart Unavailable']()}</span>
+	</div>
+{:else if isEmpty}
+	<div class="flex items-center justify-center" style="width: {width}; height: {height};">
+		<EmptyState title={m['common.No Data']()} />
 	</div>
 {:else}
 	<div bind:this={container} class="echarts-container" style="width: {width}; height: {height};"></div>

@@ -17,27 +17,7 @@
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { m } from '$lib/i18n-paraglide';
 	import { LoaderCircle, HeartPulse } from '@lucide/svelte';
-
-	interface HeartbeatConfig {
-		id: number;
-		device_id: number;
-		method: string;
-		target: string;
-		interval: number;
-		timeout: number;
-		enabled: boolean;
-		snmp_community: string;
-		snmp_oid: string;
-		expected_status: number;
-	}
-
-	interface HeartbeatResult {
-		id: number;
-		config_id: number;
-		status: string;
-		latency_ms: number;
-		checked_at: string;
-	}
+	import type { HeartbeatConfig, HeartbeatResult, ProbeResultStatus } from '$lib/types';
 
 	let {
 		deviceId,
@@ -146,11 +126,18 @@
 	}
 
 	function latestForConfig(configId: number): HeartbeatResult | null {
-		const r = results.find((r) => r.config_id === configId);
-		return r ?? null;
+		// Explicitly sort by checked_at descending rather than relying on the API
+		// returning results newest-first — find() returned the first array
+		// element, which was only "latest" by implicit ordering assumption (#71).
+		// RFC3339 strings sort lexicographically = chronologically.
+		return (
+			results
+				.filter((r) => r.config_id === configId)
+				.sort((a, b) => b.checked_at.localeCompare(a.checked_at))[0] ?? null
+		);
 	}
 
-	function statusColor(status: string): string {
+	function statusColor(status: ProbeResultStatus): string {
 		if (status === 'success') return 'text-success';
 		if (status === 'fail') return 'text-error';
 		return 'text-muted';

@@ -437,6 +437,25 @@ export interface PipelineConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Dashboard Widget (Prometheus-backed dashboard cards). The API shape is shared
+// across WidgetPicker (create/edit form), DashboardWidget (rendered card), and
+// the dashboard route's widget state. Defined once here to avoid the three-way
+// drift that existed when each file declared its own copy (#71).
+// ---------------------------------------------------------------------------
+
+export interface DashboardWidgetConfig {
+	id: string;
+	name: string;
+	type: string;
+	data_source: string;
+	query: string;
+	refresh_interval: number;
+	position: number;
+	created_at: string;
+	updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
 // Scanner Task
 // ---------------------------------------------------------------------------
 
