@@ -865,7 +865,13 @@
 		"Online": "online",
 		"No Subnet": "Unknown subnet",
 		"Disconnected": "disconnected",
-		"Downstream": "Downstream"
+		"Downstream": "Downstream",
+		"Tooltip Via": "Via: {proto} · port {port}",
+		"Tooltip IP": "IP",
+		"Tooltip MAC": "MAC",
+		"Tooltip Type": "Type",
+		"Tooltip Status": "Status",
+		"Tooltip Downstream": "Downstream: {count} devices"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",
