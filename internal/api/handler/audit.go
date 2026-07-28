@@ -85,3 +85,15 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	Success(w, resp)
 }
+
+// Facets handles GET /api/v1/audit-logs/facets — returns the distinct action
+// and resource_type values currently in the table, for the audit page filter
+// dropdowns (so the dropdowns always match what the backend actually emits).
+func (h *AuditHandler) Facets(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.svc.Facets(r.Context())
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to load audit facets")
+		return
+	}
+	Success(w, resp)
+}

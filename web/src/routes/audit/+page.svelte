@@ -56,29 +56,22 @@
 	let filterDateFrom = $state('');
 	let filterDateTo = $state('');
 
-	// Available filter options (fetched from API or hardcoded)
+	// Available filter options, pulled from the API so the dropdowns always
+	// reflect what the backend actually emits (a new action appears here
+	// automatically — previously the list was hardcoded and drifted out of sync).
 	let users = $state<{ id: number; username: string }[]>([]);
-	const commonActions = [
-		'auth.login.success',
-		'auth.login.failure',
-		'auth.logout',
-		'auth.password.change',
-		'admin.user.create',
-		'admin.user.delete',
-		'device.create',
-		'device.update',
-		'device.delete',
-		'file.upload',
-		'file.delete',
-		'scanner.scan',
-		'scanner.add_devices'
-	];
-	const resourceTypes = ['user', 'device', 'document', 'system', 'heartbeat_config', 'notification_channel'];
+	let actions = $state<string[]>([]);
+	let resourceTypes = $state<string[]>([]);
+
+	// Export dropdown (click-toggle so it's reachable by keyboard/touch — the
+	// old group-hover:opacity-100 version was mouse-only).
+	let exportOpen = $state(false);
 
 	onMount(() => {
 		hydrateFromUrl();
 		fetchAuditLogs();
 		fetchUsers();
+		fetchFacets();
 	});
 
 	async function fetchUsers() {
@@ -87,6 +80,19 @@
 			users = res.users || [];
 		} catch {
 			// Non-critical — filter dropdown just won't populate
+		}
+	}
+
+	async function fetchFacets() {
+		// Best-effort: populate the action / resource-type dropdowns from the
+		// distinct values currently in audit_logs. On failure the dropdowns are
+		// just empty (search + the other filters still work), so stay silent.
+		try {
+			const res = await api.get<{ actions: string[]; resource_types: string[] }>('/audit-logs/facets');
+			actions = res.actions || [];
+			resourceTypes = res.resource_types || [];
+		} catch {
+			// Non-critical — dropdowns stay empty.
 		}
 	}
 
@@ -195,6 +201,8 @@
 			addToast('success', m['devices.Export']());
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
+		} finally {
+			exportOpen = false;
 		}
 	}
 
@@ -292,23 +300,40 @@
 	<div class="flex items-center justify-between mb-6">
 		<h2 class="text-2xl font-bold text-primary">{m["audit.Audit Logs"]()}</h2>
 		<div class="flex items-center gap-2">
-			<div class="relative group">
-				<button class="px-4 py-2 border border-border text-text-muted rounded-lg
-					hover:border-primary hover:text-primary transition-colors text-sm">
+			<!-- Export dropdown (click-toggle — accessible to keyboard/touch;
+			     mirrors the pattern in devices/+page.svelte). -->
+			<div class="relative">
+				<button
+					onclick={() => (exportOpen = !exportOpen)}
+					class="px-4 py-2 border border-border text-text-muted rounded-lg
+						hover:border-primary hover:text-primary transition-colors text-sm"
+					aria-expanded={exportOpen}
+					aria-haspopup="menu"
+				>
 					{m['devices.Export']()}
 				</button>
-				<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg
-					opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[120px]"
-					style="box-shadow: var(--shadow-md);">
-					<button onclick={() => exportAuditLogs('csv')}
-						class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-t-lg">
-						{m['devices.Export CSV']()}
-					</button>
-					<button onclick={() => exportAuditLogs('json')}
-						class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-b-lg">
-						{m['devices.Export JSON']()}
-					</button>
-				</div>
+				{#if exportOpen}
+					<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+					<div class="fixed inset-0 z-10" onclick={() => (exportOpen = false)} role="presentation"></div>
+					<div
+						class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg z-20 min-w-[120px]"
+						style="box-shadow: var(--shadow-md);"
+						role="menu"
+					>
+						<button
+							onclick={() => exportAuditLogs('csv')}
+							role="menuitem"
+							class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-t-lg">
+							{m['devices.Export CSV']()}
+						</button>
+						<button
+							onclick={() => exportAuditLogs('json')}
+							role="menuitem"
+							class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 rounded-b-lg">
+							{m['devices.Export JSON']()}
+						</button>
+					</div>
+				{/if}
 			</div>
 			<button
 				onclick={fetchAuditLogs}
@@ -347,7 +372,7 @@
 						focus:border-primary focus:outline-none"
 				>
 					<option value="">{m["audit.All Actions"]()}</option>
-					{#each commonActions as a}
+					{#each actions as a}
 						<option value={a}>{a}</option>
 					{/each}
 				</select>

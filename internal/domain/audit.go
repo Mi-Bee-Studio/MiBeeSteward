@@ -30,6 +30,15 @@ type AuditLogListResponse struct {
 	Total     int                `json:"total"`
 }
 
+// AuditFacetsResponse holds the distinct values currently present in the
+// audit_logs table, used to populate the audit page's action / resource-type
+// filter dropdowns. Sourced from the DB (not a hardcoded list) so newly emitted
+// actions appear without a frontend change.
+type AuditFacetsResponse struct {
+	Actions       []string `json:"actions"`
+	ResourceTypes []string `json:"resource_types"`
+}
+
 // AuditLogFilter represents filtering parameters for audit log queries.
 type AuditLogFilter struct {
 	UserID       *int64

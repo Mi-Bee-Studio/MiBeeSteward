@@ -240,3 +240,37 @@ func TestAudit_EmptyResult(t *testing.T) {
 	require.Len(t, resp.AuditLogs, 0)
 	require.Equal(t, 0, resp.Total)
 }
+
+// 8. Facets: distinct + sorted actions and resource_types for the dropdowns.
+func TestAudit_Facets(t *testing.T) {
+	svc, dbConn, _ := setupAuditTest(t)
+	ctx := context.Background()
+
+	now := time.Now()
+	uid := int64(1)
+	insertAuditLog(t, dbConn, &uid, "device.delete", "device", "1", now)
+	insertAuditLog(t, dbConn, &uid, "device.create", "device", "2", now) // dup resource_type, new action
+	insertAuditLog(t, dbConn, &uid, "auth.login.success", "auth", "3", now)
+	insertAuditLog(t, dbConn, &uid, "device.create", "device", "4", now) // dup both — must be deduped
+
+	resp, err := svc.Facets(ctx)
+	require.NoError(t, err)
+	// Actions deduped (3 distinct) and sorted ascending.
+	require.Equal(t, []string{"auth.login.success", "device.create", "device.delete"}, resp.Actions)
+	// Resource types deduped (2 distinct) and sorted.
+	require.Equal(t, []string{"auth", "device"}, resp.ResourceTypes)
+}
+
+// 8b. Facets on an empty table returns empty slices (not nil), so JSON
+// encodes as [] rather than null — keeps the dropdown logic simple.
+func TestAudit_Facets_EmptyTable(t *testing.T) {
+	svc, _, _ := setupAuditTest(t)
+	ctx := context.Background()
+
+	resp, err := svc.Facets(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp.Actions)
+	require.NotNil(t, resp.ResourceTypes)
+	require.Empty(t, resp.Actions)
+	require.Empty(t, resp.ResourceTypes)
+}
