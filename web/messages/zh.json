@@ -390,6 +390,7 @@
 		"Deselect All": "取消全选",
 		"Add Selected": "添加选中到设备列表",
 		"Added N Devices": "成功添加 {count} 台设备",
+		"Import N Failed": "{count} 行导入失败：{reason}",
 		"No Alive Hosts": "未发现存活主机",
 		"No Alive Hosts Desc": "请尝试其他 IP 范围或检查网络连接。",
 		"Invalid Range": "请输入有效的 IP 地址或 CIDR 范围",
