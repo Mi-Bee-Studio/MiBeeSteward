@@ -68,6 +68,10 @@ interface AddDevicesResponse {
 	// GET /networks on mount.
 	let networkFilter = $state('');
 	let networks = $state<Network[]>([]);
+	// networksError tracks a /networks fetch failure so the network-filter
+	// dropdown shows a small "failed to load" indicator instead of silently
+	// vanishing (which a user could mistake for "no networks configured").
+	let networksError = $state(false);
 	let offset = $state(0);
 	// Per-page size is user-adjustable (was a const 20). Backed by the URL so a
 	// page reload / shared link preserves the chosen density.
@@ -146,7 +150,7 @@ interface AddDevicesResponse {
 		fetchDevices();
 		// Load the network registry for the filter dropdown (best-effort; a
 		// failure just leaves the dropdown empty — the list still works).
-		api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
+		api.get<Network[]>('/networks').then((n) => { networks = n || []; networksError = false; }).catch(() => { networksError = true; });
 		pollTimer = setInterval(() => {
 			if (!editOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !importOpen && !linkOpen) {
 				void refreshDevicesSilent();
@@ -895,6 +899,12 @@ interface AddDevicesResponse {
 					<option value={net.id}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
 				{/each}
 			</select>
+		{:else if networksError}
+			<!-- The /networks fetch failed — show a small indicator instead of
+			     silently dropping the filter (which would look like "no networks"). -->
+			<span class="text-xs text-warning px-2 py-1 border border-warning/30 rounded" title={m['devices.Networks Load Failed']()}>
+				{m['devices.Networks Load Failed']()}
+			</span>
 		{/if}
 
 		<!-- Server-side search (name / ip / mac / serial). 400ms debounce. -->

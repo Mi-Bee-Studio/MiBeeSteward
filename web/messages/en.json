@@ -236,6 +236,7 @@
 		"Last 7d": "7d",
 		"Last 30d": "30d",
 		"No Data": "No heartbeat data for this period",
+		"Trend Load Failed": "Failed to load heartbeat trend",
 		"Success Status": "Success",
 		"Fail Status": "Fail",
 		"Timeout Status": "Timeout",
@@ -721,6 +722,8 @@
 		"All Events": "All Events",
 		"No Changes": "No changes yet",
 		"No Changes Desc": "Device changes will appear here once scans detect additions, modifications, or losses.",
+		"SSE Disconnected": "Live updates disconnected",
+		"SSE Disconnected Desc": "Real-time updates paused — refresh to see the latest.",
 		"Diff Title": "Change Details"
 	},
 	"agents": {
@@ -807,6 +810,7 @@
 	"topology": {
 		"Title": "Network Topology",
 		"All Networks": "All networks",
+		"Networks Load Failed": "Networks failed to load",
 		"Nodes": "devices",
 		"Edges": "adjacencies",
 		"Unidentified": "unidentified neighbor",
