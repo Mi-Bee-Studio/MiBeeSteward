@@ -749,7 +749,27 @@
 		"No Changes Desc": "扫描检测到设备新增、变更或离线时,事件将在此显示。",
 		"SSE Disconnected": "实时更新已断开",
 		"SSE Disconnected Desc": "实时更新已暂停——刷新以查看最新内容。",
-		"Diff Title": "变更详情"
+		"Diff Title": "变更详情",
+		"Diff Field": "字段",
+		"Diff Before": "原值",
+		"Diff After": "新值",
+		"Diff No Field Changes": "未记录字段级差异。",
+		"Diff No Snapshot": "无快照数据。",
+		"Diff No Data": "无可用数据。"
+	},
+	"changefields": {
+		"name": "名称",
+		"type": "类型",
+		"brand": "品牌",
+		"model": "型号",
+		"mac_address": "MAC",
+		"ip_address": "IP",
+		"status": "状态",
+		"open_ports": "开放端口",
+		"detected_services": "识别到的服务",
+		"prometheus_url": "Prometheus 地址",
+		"node_exporter_url": "Node Exporter 地址",
+		"scan_attributes": "扫描属性"
 	},
 	"agents": {
 		"Title": "采集器管理",

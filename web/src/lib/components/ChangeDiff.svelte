@@ -22,6 +22,8 @@
 	 * pretty-printed for readability.
 	 */
 
+	import { m } from '$lib/i18n-paraglide';
+
 	interface Props {
 		changeType: string;
 		beforeData?: string;
@@ -80,24 +82,26 @@
 		return fmt(v).length > 40 || fmt(v).includes('\n');
 	}
 
-	// Friendly labels for the diff field keys (the DeviceSnapshot field names).
-	const fieldLabels: Record<string, string> = {
-		name: 'Name',
-		type: 'Type',
-		brand: 'Brand',
-		model: 'Model',
-		mac_address: 'MAC',
-		ip_address: 'IP',
-		status: 'Status',
-		open_ports: 'Open Ports',
-		detected_services: 'Detected Services',
-		prometheus_url: 'Prometheus URL',
-		node_exporter_url: 'Node Exporter URL',
-		scan_attributes: 'Scan Attributes'
-	};
-
+	// Friendly labels for the diff field keys (the DeviceSnapshot field names),
+	// backed by the changefields.* i18n section so they localize. Unknown keys
+	// fall back to the raw field name rather than disappearing. The map is
+	// rebuilt on each call so a locale switch reflects immediately.
 	function labelFor(key: string): string {
-		return fieldLabels[key] ?? key;
+		const labels: Record<string, string> = {
+			name: m['changefields.name'](),
+			type: m['changefields.type'](),
+			brand: m['changefields.brand'](),
+			model: m['changefields.model'](),
+			mac_address: m['changefields.mac_address'](),
+			ip_address: m['changefields.ip_address'](),
+			status: m['changefields.status'](),
+			open_ports: m['changefields.open_ports'](),
+			detected_services: m['changefields.detected_services'](),
+			prometheus_url: m['changefields.prometheus_url'](),
+			node_exporter_url: m['changefields.node_exporter_url'](),
+			scan_attributes: m['changefields.scan_attributes']()
+		};
+		return labels[key] ?? key;
 	}
 </script>
 
@@ -105,14 +109,14 @@
 	{#if diff}
 		<!-- device_changed: field-by-field old → new comparison -->
 		{#if Object.keys(diff).length === 0}
-			<p class="text-text-muted italic text-xs">No field-level differences recorded.</p>
+			<p class="text-text-muted italic text-xs">{m['changes.Diff No Field Changes']()}</p>
 		{:else}
 			<table class="w-full text-left border-collapse">
 				<thead>
 					<tr class="border-b border-border">
-						<th class="py-1.5 pr-3 text-xs font-medium text-text-muted uppercase tracking-wide w-1/4">Field</th>
-						<th class="py-1.5 pr-3 text-xs font-medium text-text-muted uppercase tracking-wide">Before</th>
-						<th class="py-1.5 text-xs font-medium text-text-muted uppercase tracking-wide">After</th>
+						<th class="py-1.5 pr-3 text-xs font-medium text-text-muted uppercase tracking-wide w-1/4">{m['changes.Diff Field']()}</th>
+						<th class="py-1.5 pr-3 text-xs font-medium text-text-muted uppercase tracking-wide">{m['changes.Diff Before']()}</th>
+						<th class="py-1.5 text-xs font-medium text-text-muted uppercase tracking-wide">{m['changes.Diff After']()}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -145,7 +149,7 @@
 	{:else if snapshot}
 		<!-- device_added / device_lost: full snapshot property table -->
 		{#if Object.keys(snapshot).length === 0}
-			<p class="text-text-muted italic text-xs">No snapshot data.</p>
+			<p class="text-text-muted italic text-xs">{m['changes.Diff No Snapshot']()}</p>
 		{:else}
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
 				{#each Object.entries(snapshot) as [field, value]}
@@ -161,6 +165,6 @@
 			</div>
 		{/if}
 	{:else}
-		<p class="text-text-muted italic text-xs">No data available.</p>
+		<p class="text-text-muted italic text-xs">{m['changes.Diff No Data']()}</p>
 	{/if}
 </div>

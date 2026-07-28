@@ -749,7 +749,27 @@
 		"No Changes Desc": "Device changes will appear here once scans detect additions, modifications, or losses.",
 		"SSE Disconnected": "Live updates disconnected",
 		"SSE Disconnected Desc": "Real-time updates paused — refresh to see the latest.",
-		"Diff Title": "Change Details"
+		"Diff Title": "Change Details",
+		"Diff Field": "Field",
+		"Diff Before": "Before",
+		"Diff After": "After",
+		"Diff No Field Changes": "No field-level differences recorded.",
+		"Diff No Snapshot": "No snapshot data.",
+		"Diff No Data": "No data available."
+	},
+	"changefields": {
+		"name": "Name",
+		"type": "Type",
+		"brand": "Brand",
+		"model": "Model",
+		"mac_address": "MAC",
+		"ip_address": "IP",
+		"status": "Status",
+		"open_ports": "Open Ports",
+		"detected_services": "Detected Services",
+		"prometheus_url": "Prometheus URL",
+		"node_exporter_url": "Node Exporter URL",
+		"scan_attributes": "Scan Attributes"
 	},
 	"agents": {
 		"Title": "Agent Management",
