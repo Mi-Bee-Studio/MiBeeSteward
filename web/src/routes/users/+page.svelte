@@ -16,7 +16,7 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { html } from '$lib/utils/index';
 	import { addToast } from '$lib/stores/toast';
-	import { userSchema, validateField, validateForm } from '$lib/utils/validation';
+	import { userSchema, resetPasswordSchema, validateField, validateForm } from '$lib/utils/validation';
 
 	import Modal from '$lib/components/Modal.svelte';
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
@@ -73,6 +73,7 @@
 	let resetPassword = $state('');
 	let resetConfirmPassword = $state('');
 	let resetLoading = $state(false);
+	let resetFieldErrors = $state<Record<string, string>>({});
 
 	// Form fields
 	let formUsername = $state('');
@@ -214,14 +215,18 @@
 
 	async function confirmResetPassword() {
 		if (!resetTarget) return;
-		if (!resetPassword) {
-			addToast('error', m["users.Password Required"]());
+
+		// Validate via resetPasswordSchema (min length + match) → inline field
+		// errors instead of toasts (#66). The match refine attaches to `confirm`.
+		const validation = validateForm(resetPasswordSchema, {
+			new_password: resetPassword,
+			confirm: resetConfirmPassword
+		});
+		if (!validation.valid) {
+			resetFieldErrors = validation.errors;
 			return;
 		}
-		if (resetPassword !== resetConfirmPassword) {
-			addToast('error', m["users.Passwords Do Not Match"]());
-			return;
-		}
+		resetFieldErrors = {};
 		resetLoading = true;
 		try {
 			await api.post(`/users/${resetTarget.id}/reset-password`, { new_password: resetPassword });
@@ -476,9 +481,18 @@
 			<input
 				type="password"
 				bind:value={resetPassword}
+				onblur={() => {
+					const r = validateField(resetPasswordSchema, 'new_password', resetPassword);
+					resetFieldErrors = r.valid
+						? (() => { const { new_password: _, ...rest } = resetFieldErrors; return rest; })()
+						: { ...resetFieldErrors, new_password: r.error ?? '' };
+				}}
 				required
-				class="input"
+				class="input {resetFieldErrors.new_password ? '!border-error' : ''}"
 			/>
+			{#if resetFieldErrors.new_password}
+				<p class="mt-1 text-xs text-error">{resetFieldErrors.new_password}</p>
+			{/if}
 		</div>
 
 		<!-- Confirm password -->
@@ -487,11 +501,21 @@
 			<input
 				type="password"
 				bind:value={resetConfirmPassword}
+				onblur={() => {
+					// Re-validate the match against newPassword on blur of confirm.
+					const v = validateForm(resetPasswordSchema, {
+						new_password: resetPassword,
+						confirm: resetConfirmPassword
+					});
+					resetFieldErrors = v.valid
+						? (() => { const { confirm: _, ...rest } = resetFieldErrors; return rest; })()
+						: { ...resetFieldErrors, confirm: v.errors.confirm ?? '' };
+				}}
 				required
-				class="input"
+				class="input {resetFieldErrors.confirm ? '!border-error' : ''}"
 			/>
-			{#if resetConfirmPassword && resetPassword !== resetConfirmPassword}
-				<p class="mt-1 text-xs text-error">{m["users.Passwords Do Not Match"]()}</p>
+			{#if resetFieldErrors.confirm}
+				<p class="mt-1 text-xs text-error">{resetFieldErrors.confirm}</p>
 			{/if}
 		</div>
 

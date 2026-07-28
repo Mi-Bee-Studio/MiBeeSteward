@@ -1015,7 +1015,19 @@
 		"Cron Required": "Cron expression is required",
 		"Cron Field Count": "Cron expression must have exactly 5 fields (minute hour day month weekday)",
 		"Cron All Asterisks": "Cron expression must have at least one specific field (cannot be all *)",
-		"Invalid Cron Field": "Invalid cron {field} field: \"{value}\""
+		"Invalid Cron Field": "Invalid cron {field} field: \"{value}\"",
+		"Two Factor Code Length": "Enter the 6-digit code from your authenticator app",
+		"Invalid CIDR Format": "Invalid CIDR format (use x.x.x.x/n, e.g. 192.168.1.0/24)",
+		"Invalid CIDR Octets": "Invalid CIDR: each IP octet must be 0-255",
+		"Agent ID Required": "Agent ID is required",
+		"Network Required": "Network is required",
+		"Invalid Port": "Port must be between 1 and 65535",
+		"Webhook URL Required": "Webhook URL is required",
+		"SMTP Host Required": "SMTP host is required",
+		"SMTP From Required": "From address is required",
+		"SMTP To Required": "To address is required",
+		"Task Name Required": "Task name is required",
+		"Timeout Range Task": "Timeout must be between 1 and 3600 seconds"
 	},
 	"api": {
 		"Session Expired": "Session expired",

@@ -14,7 +14,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
-	import { validateScanTarget, validateCronExpr } from '$lib/utils/validation';
+	import { validateScanTarget, validateCronExpr, scannerTaskSchema, validateField, validateForm } from '$lib/utils/validation';
 	import type { ScannerTask, PipelineConfig, ScanRun } from '$lib/types';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -77,6 +77,7 @@
 	let formPipelineConfig = $state<PipelineConfig>(defaultPipeline());
 	let formTargetsError = $state('');
 	let formCronError = $state('');
+	let fieldErrors = $state<Record<string, string>>({});
 
 	// --- Delete confirmation ---
 	let deleteOpen = $state(false);
@@ -211,10 +212,13 @@
 		formTargetsError = '';
 		formCronError = '';
 
-		// Validate before submit
+		// Validate targets + cron via the standalone validators (return localized
+		// strings, wired to onblur). Then name + timeout range via scannerTaskSchema.
 		const targetsErr = validateTargets();
 		const cronErr = validateCron();
-		if (targetsErr || cronErr) {
+		const taskValidation = validateForm(scannerTaskSchema, { name: formName, timeout: formTimeout });
+		if (!taskValidation.valid) fieldErrors = taskValidation.errors; else fieldErrors = {};
+		if (targetsErr || cronErr || !taskValidation.valid) {
 			return;
 		}
 
@@ -622,9 +626,18 @@
 					bind:value={formName}
 					required
 					placeholder={m['scanner.Task Name Placeholder']()}
+					onblur={() => {
+						const r = validateField(scannerTaskSchema, 'name', formName);
+						fieldErrors = r.valid
+							? (() => { const { name: _, ...rest } = fieldErrors; return rest; })()
+							: { ...fieldErrors, name: r.error ?? '' };
+					}}
 					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
-						focus:border-primary focus:outline-none"
+						focus:border-primary focus:outline-none {fieldErrors.name ? '!border-error' : ''}"
 				/>
+				{#if fieldErrors.name}
+					<p class="mt-1 text-xs text-error">{fieldErrors.name}</p>
+				{/if}
 			</div>
 
 			<!-- Targets -->
@@ -668,9 +681,19 @@
 					type="number"
 					bind:value={formTimeout}
 					min="1"
+					max="3600"
+					onblur={() => {
+						const r = validateField(scannerTaskSchema, 'timeout', formTimeout);
+						fieldErrors = r.valid
+							? (() => { const { timeout: _, ...rest } = fieldErrors; return rest; })()
+							: { ...fieldErrors, timeout: r.error ?? '' };
+					}}
 					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
-						focus:border-primary focus:outline-none"
+						focus:border-primary focus:outline-none {fieldErrors.timeout ? '!border-error' : ''}"
 				/>
+				{#if fieldErrors.timeout}
+					<p class="mt-1 text-xs text-error">{fieldErrors.timeout}</p>
+				{/if}
 			</div>
 
 			<!-- Community -->

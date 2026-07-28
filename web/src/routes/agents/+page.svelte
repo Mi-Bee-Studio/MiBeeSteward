@@ -15,6 +15,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { html } from '$lib/utils/index';
+	import { agentTokenSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -62,6 +63,7 @@
 	let formNetworkId = $state('');
 	let formName = $state('');
 	let formLoading = $state(false);
+	let fieldErrors = $state<Record<string, string>>({});
 	// After creation, show the one-time plaintext token
 	let createdToken = $state<string | null>(null);
 
@@ -159,8 +161,18 @@
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
-		if (!formAgentId) { addToast('error', m['agents.Agent ID Required']()); return; }
-		if (!formNetworkId) { addToast('error', m['agents.Network Required']()); return; }
+		// Validate agent_id (required) + network_id (required, positive int).
+		// The <select> value is a string; coerce to Number for the schema.
+		const validation = validateForm(agentTokenSchema, {
+			agent_id: formAgentId,
+			network_id: Number(formNetworkId),
+			name: formName
+		});
+		if (!validation.valid) {
+			fieldErrors = validation.errors;
+			return;
+		}
+		fieldErrors = {};
 		formLoading = true;
 		try {
 			const res = await api.post<AgentTokenCreated>('/agents/tokens/', {
@@ -582,18 +594,38 @@
 			<!-- Agent ID -->
 			<div>
 				<label class="block text-xs text-text-muted mb-1">{m['agents.Agent ID']()} *</label>
-				<input bind:value={formAgentId} required placeholder={m['agents.Agent ID Placeholder']()} class="input" />
+				<input bind:value={formAgentId} required placeholder={m['agents.Agent ID Placeholder']()}
+					onblur={() => {
+						const r = validateField(agentTokenSchema, 'agent_id', formAgentId);
+						fieldErrors = r.valid
+							? (() => { const { agent_id: _, ...rest } = fieldErrors; return rest; })()
+							: { ...fieldErrors, agent_id: r.error ?? '' };
+					}}
+					class="input {fieldErrors.agent_id ? '!border-error' : ''}" />
+				{#if fieldErrors.agent_id}
+					<p class="mt-1 text-xs text-error">{fieldErrors.agent_id}</p>
+				{/if}
 			</div>
 
 			<!-- Network -->
 			<div>
 				<label class="block text-xs text-text-muted mb-1">{m['agents.Network']()} *</label>
-				<select bind:value={formNetworkId} required class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none">
+				<select bind:value={formNetworkId} required
+					onblur={() => {
+						const r = validateField(agentTokenSchema, 'network_id', Number(formNetworkId));
+						fieldErrors = r.valid
+							? (() => { const { network_id: _, ...rest } = fieldErrors; return rest; })()
+							: { ...fieldErrors, network_id: r.error ?? '' };
+					}}
+					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none {fieldErrors.network_id ? '!border-error' : ''}">
 					<option value="">{m['devices.All Networks']()}</option>
 					{#each networks as net}
 						<option value={String(net.id)}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
 					{/each}
 				</select>
+				{#if fieldErrors.network_id}
+					<p class="mt-1 text-xs text-error">{fieldErrors.network_id}</p>
+				{/if}
 			</div>
 
 			<!-- Name (optional) -->

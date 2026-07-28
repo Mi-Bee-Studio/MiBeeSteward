@@ -111,6 +111,104 @@ export const settingsSchema = z
 		path: ['confirmPassword'],
 	});
 
+// --- Profile form (settings page) ---
+// Only `email` is editable (username/role are read-only), so the schema is a
+// single optional-email field. Reuses the Invalid Email code.
+export const profileSchema = z.object({
+	email: z.string().email('validation.Invalid Email').optional().or(z.literal('')),
+});
+
+// --- Reset-password form (users page) ---
+// Like settingsSchema but without currentPassword — the admin resets another
+// user's password by token. The match refine attaches the error to `confirm`.
+export const resetPasswordSchema = z
+	.object({
+		new_password: z.string().min(8, 'validation.Password Min Length'),
+		confirm: z.string().min(1, 'validation.Confirm Password Required'),
+	})
+	.refine((data) => data.new_password === data.confirm, {
+		message: 'validation.Passwords Do Not Match',
+		path: ['confirm'],
+	});
+
+// --- 2FA verify code (login page) ---
+// Exactly 6 digits. Used for the verify hint; the disabled-button gate stays
+// in the markup.
+export const twoFactorCodeSchema = z.object({
+	code: z.string().regex(/^\d{6}$/, 'validation.Two Factor Code Length'),
+});
+
+// --- Network create/edit form (networks page) ---
+// cidr is advisory (display-only per networks.Cidr Help), but when supplied it
+// must be a well-formed x.x.x.x/n with valid octets and a 0-32 prefix.
+const cidrRegex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/;
+export const networkSchema = z.object({
+	name: z.string().min(1, 'validation.Name Required'),
+	cidr: z
+		.string()
+		.regex(cidrRegex, 'validation.Invalid CIDR Format')
+		.refine(
+			(val) => {
+				const [ip, prefix] = val.split('/');
+				return isValidOctets(ip) && Number(prefix) >= 0 && Number(prefix) <= 32;
+			},
+			{ message: 'validation.Invalid CIDR Octets' }
+		)
+		.optional()
+		.or(z.literal('')),
+	site: z.string().optional(),
+});
+
+// --- Agent token create form (agents page) ---
+// network_id is a number (the <select> value is coerced via Number()).
+export const agentTokenSchema = z.object({
+	agent_id: z.string().min(1, 'validation.Agent ID Required'),
+	network_id: z.number().int().positive('validation.Network Required'),
+	name: z.string().optional(),
+});
+
+// --- Notification channel form (settings/notifications page) ---
+// A flat schema (form state is flat: formUrl, formSmtpHost, ...) with a refine
+// enforcing type-conditional required fields — simpler than a Zod
+// discriminated union and keeps per-field blur validation working.
+export const notificationChannelSchema = z
+	.object({
+		name: z.string().min(1, 'validation.Name Required'),
+		type: z.enum(['webhook', 'email']),
+		webhook_url: z.string().url('validation.Invalid URL').optional().or(z.literal('')),
+		smtp_host: z.string().optional().or(z.literal('')),
+		smtp_port: z.number().int().min(1).max(65535, 'validation.Invalid Port').optional(),
+		smtp_from: z.string().optional().or(z.literal('')),
+		smtp_to: z.string().optional().or(z.literal('')),
+	})
+	.refine((data) => data.type !== 'webhook' || !!data.webhook_url, {
+		message: 'validation.Webhook URL Required',
+		path: ['webhook_url'],
+	})
+	.refine((data) => data.type !== 'email' || !!data.smtp_host, {
+		message: 'validation.SMTP Host Required',
+		path: ['smtp_host'],
+	})
+	.refine((data) => data.type !== 'email' || !!data.smtp_from, {
+		message: 'validation.SMTP From Required',
+		path: ['smtp_from'],
+	})
+	.refine((data) => data.type !== 'email' || !!data.smtp_to, {
+		message: 'validation.SMTP To Required',
+		path: ['smtp_to'],
+	});
+
+// --- Scanner task form (devices/scan-tasks page) ---
+// targets + cron are validated by the standalone validateScanTarget /
+// validateCronExpr functions (kept as-is — they return localized strings and
+// are already wired to onblur). This schema covers name + timeout range only;
+// pipeline_config is deliberately not validated (complex nested object, the
+// backend accepts any shape).
+export const scannerTaskSchema = z.object({
+	name: z.string().min(1, 'validation.Task Name Required'),
+	timeout: z.number().int().min(1).max(3600, 'validation.Timeout Range Task'),
+});
+
 // --- Inferred types ---
 
 export type DeviceFormData = z.infer<typeof deviceSchema>;
@@ -119,6 +217,13 @@ export type HeartbeatConfigFormData = z.infer<typeof heartbeatConfigSchema>;
 export type DocumentUrlFormData = z.infer<typeof documentUrlSchema>;
 export type LoginFormData = z.infer<typeof loginSchema>;
 export type SettingsFormData = z.infer<typeof settingsSchema>;
+export type ProfileFormData = z.infer<typeof profileSchema>;
+export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
+export type TwoFactorCodeFormData = z.infer<typeof twoFactorCodeSchema>;
+export type NetworkFormData = z.infer<typeof networkSchema>;
+export type AgentTokenFormData = z.infer<typeof agentTokenSchema>;
+export type NotificationChannelFormData = z.infer<typeof notificationChannelSchema>;
+export type ScannerTaskFormData = z.infer<typeof scannerTaskSchema>;
 
 // --- Helper functions ---
 
