@@ -13,7 +13,9 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { addToast } from '$lib/stores/toast';
+	import { auth } from '$lib/stores/auth';
 	import { getErrorMessage } from '$lib/utils/error';
 	import type { Device, System, DeviceNeighbor, TLSPortCerts } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
@@ -22,6 +24,7 @@
 
 	import Modal from '$lib/components/Modal.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import DeviceEditModal from '$lib/components/DeviceEditModal.svelte';
 	import SystemCard from '$lib/components/SystemCard.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
@@ -79,9 +82,16 @@
 	let formMetricsEnabled = $state(false);
 	let formTags = $state('');
 
-	// --- Delete state ---
+	// --- Delete state (device-systems) ---
 	let deleteOpen = $state(false);
 	let deleteTarget = $state<System | null>(null);
+
+	// --- Device edit/delete (the device itself, in the header) ---
+	// Edit reuses the shared <DeviceEditModal> (same form as the list page);
+	// delete uses a ConfirmDialog then returns to the list. Admin-only (#57).
+	let editOpen = $state(false);
+	let deviceDeleteOpen = $state(false);
+	let isAdmin = $derived($auth.user?.role === 'admin');
 
 	// --- Heartbeat trend state ---
 	let trendLoading = $state(false);
@@ -529,6 +539,18 @@
 		}
 	}
 
+	// Delete the device itself (header "Delete" button). On success the device
+	// is gone, so navigate back to the list rather than refreshing this page.
+	async function confirmDeviceDelete() {
+		try {
+			await api.delete(`/devices/${deviceId}`);
+			addToast('success', m['devices.Deleted']());
+			goto('/devices');
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
 	// --- Helpers ---
 	function statusDotClass(status: string): string {
 		if (status === 'online') return 'bg-success animate-pulse-green';
@@ -755,6 +777,16 @@
 						</span>
 					{/if}
 				</div>
+				{#if isAdmin}
+					<div class="flex items-center gap-2">
+						<button onclick={() => editOpen = true} class="btn btn-secondary text-sm">
+							{m['common.Edit']()}
+						</button>
+						<button onclick={() => deviceDeleteOpen = true} class="btn text-sm text-error hover:bg-error/10 border border-error/30">
+							{m['common.Delete']()}
+						</button>
+					</div>
+				{/if}
 			</div>
 				<div class="device-meta">
 					{#if device.ip_address}
@@ -1775,6 +1807,17 @@
 	bind:open={certModalOpen}
 	portCerts={certModalPort}
 	onClose={() => { certModalPort = null; }}
+/>
+
+<!-- Device edit (shared form with the list page) + delete. Header buttons (#57). -->
+<DeviceEditModal bind:open={editOpen} device={device} onSaved={fetchDevice} />
+<ConfirmDialog
+	bind:open={deviceDeleteOpen}
+	title={m['devices.Delete Device']()}
+	message={`${m['common.Are you sure?']()} "${device?.name ?? ''}"`}
+	confirmLabel={m['common.Delete']()}
+	confirmVariant="danger"
+	onConfirm={confirmDeviceDelete}
 />
 
 <style>
