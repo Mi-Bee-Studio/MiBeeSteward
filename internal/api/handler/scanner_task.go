@@ -54,8 +54,9 @@ func (h *ScannerTaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 
 	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
 	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	search := q.Get("search")
 
-	tasks, total, err := h.service.ListTasks(r.Context(), int(limit), int(offset))
+	tasks, total, err := h.service.ListTasks(r.Context(), search, int(limit), int(offset))
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to list scan tasks")
 		return
