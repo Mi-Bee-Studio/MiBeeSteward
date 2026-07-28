@@ -104,8 +104,9 @@ func (h *DocumentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
 	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	search := q.Get("search")
 
-	resp, err := h.svc.List(r.Context(), limit, offset)
+	resp, err := h.svc.List(r.Context(), search, limit, offset)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to list documents")
 		return

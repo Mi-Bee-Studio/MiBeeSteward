@@ -364,7 +364,7 @@ func TestListUsers(t *testing.T) {
 	registerTestUser(t, svc, "bob", "bob@example.com")
 	registerTestUser(t, svc, "charlie", "charlie@example.com")
 
-	resp, err := svc.ListUsers(context.Background(), 10, 0)
+	resp, err := svc.ListUsers(context.Background(), "", 10, 0)
 	require.NoError(t, err)
 	require.Len(t, resp.Users, 3)
 	require.Equal(t, 3, resp.Total)
@@ -377,16 +377,49 @@ func TestListUsers_Pagination(t *testing.T) {
 	registerTestUser(t, svc, "bob", "bob@example.com")
 	registerTestUser(t, svc, "charlie", "charlie@example.com")
 
-	// Get first page of 2
-	resp, err := svc.ListUsers(context.Background(), 2, 0)
+	// Get first page of 2 — Total is now the real match count (3), not the page
+	// size, so pagination counts are correct across pages.
+	resp, err := svc.ListUsers(context.Background(), "", 2, 0)
 	require.NoError(t, err)
 	require.Len(t, resp.Users, 2)
-	require.Equal(t, 2, resp.Total) // Total is len of returned users, not total count
+	require.Equal(t, 3, resp.Total)
 
 	// Get second page
-	resp, err = svc.ListUsers(context.Background(), 2, 2)
+	resp, err = svc.ListUsers(context.Background(), "", 2, 2)
 	require.NoError(t, err)
 	require.Len(t, resp.Users, 1)
+}
+
+func TestListUsers_Search(t *testing.T) {
+	svc, _ := setupUserService(t)
+
+	registerTestUser(t, svc, "alice", "alice@example.com")
+	registerTestUser(t, svc, "bob", "bob@example.com")
+	registerTestUser(t, svc, "charlie", "charlie@example.com")
+
+	// Substring match on username — "ali" matches only alice.
+	resp, err := svc.ListUsers(context.Background(), "ali", 10, 0)
+	require.NoError(t, err)
+	require.Len(t, resp.Users, 1)
+	require.Equal(t, "alice", resp.Users[0].Username)
+	require.Equal(t, 1, resp.Total)
+
+	// Substring match on email — "example" matches all three.
+	resp, err = svc.ListUsers(context.Background(), "example", 10, 0)
+	require.NoError(t, err)
+	require.Len(t, resp.Users, 3)
+	require.Equal(t, 3, resp.Total)
+
+	// Case-insensitive.
+	resp, err = svc.ListUsers(context.Background(), "ALICE", 10, 0)
+	require.NoError(t, err)
+	require.Len(t, resp.Users, 1)
+
+	// No match.
+	resp, err = svc.ListUsers(context.Background(), "zzz", 10, 0)
+	require.NoError(t, err)
+	require.Len(t, resp.Users, 0)
+	require.Equal(t, 0, resp.Total)
 }
 
 func TestRegister_AdminRole(t *testing.T) {

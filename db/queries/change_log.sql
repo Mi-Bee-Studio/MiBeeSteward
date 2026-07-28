@@ -18,6 +18,7 @@ FROM change_log
 WHERE (? = 0 OR network_id = ?)
   AND (? = '' OR change_type = ?)
   AND (? = '' OR entity_type = ?)
+  AND (? = '' OR INSTR(lower(change_type), lower(?)) > 0 OR INSTR(lower(entity_type), lower(?)) > 0)
 ORDER BY detected_at DESC
 LIMIT ? OFFSET ?;
 
@@ -26,7 +27,8 @@ SELECT COUNT(*)
 FROM change_log
 WHERE (? = 0 OR network_id = ?)
   AND (? = '' OR change_type = ?)
-  AND (? = '' OR entity_type = ?);
+  AND (? = '' OR entity_type = ?)
+  AND (? = '' OR INSTR(lower(change_type), lower(?)) > 0 OR INSTR(lower(entity_type), lower(?)) > 0);
 
 -- name: DeleteChangeLogOlderThanBatched :execrows
 -- Retention sweep. Deletes rows older than the cutoff in batches to avoid

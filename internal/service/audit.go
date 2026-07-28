@@ -80,6 +80,11 @@ func (s *AuditService) List(ctx context.Context, filter domain.AuditLogFilter) (
 		dateToVal = filter.DateTo
 	}
 
+	// Search sentinel: empty string ⇒ no substring filter (the (? = '' OR ...)
+	// clause short-circuits). The search term is bound once per searched column
+	// (action/resource_type/ip_address) — see ListAuditLogs SQL.
+	searchVal := filter.Search
+
 	logs, err := s.queries.ListAuditLogs(ctx, db.ListAuditLogsParams{
 		Column1:      userIDSentinel,
 		UserID:       userIDVal,
@@ -91,6 +96,10 @@ func (s *AuditService) List(ctx context.Context, filter domain.AuditLogFilter) (
 		CreatedAt:    dateFromVal,
 		Column9:      dateToSentinel,
 		CreatedAt_2:  dateToVal,
+		Column11:     searchVal,
+		LOWER:        searchVal,
+		LOWER_2:      searchVal,
+		LOWER_3:      searchVal,
 		Limit:        int64(limit),
 		Offset:       int64(offset),
 	})
@@ -109,6 +118,10 @@ func (s *AuditService) List(ctx context.Context, filter domain.AuditLogFilter) (
 		CreatedAt:    dateFromVal,
 		Column9:      dateToSentinel,
 		CreatedAt_2:  dateToVal,
+		Column11:     searchVal,
+		LOWER:        searchVal,
+		LOWER_2:      searchVal,
+		LOWER_3:      searchVal,
 	})
 	if err != nil {
 		return nil, err

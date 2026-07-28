@@ -353,6 +353,7 @@ func (h *UserHandler) ForceChangePassword(w http.ResponseWriter, r *http.Request
 func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 64)
 	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
+	search := r.URL.Query().Get("search")
 
 	if limit <= 0 {
 		limit = 20
@@ -361,7 +362,7 @@ func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
-	resp, err := h.svc.ListUsers(r.Context(), limit, offset)
+	resp, err := h.svc.ListUsers(r.Context(), search, limit, offset)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to list users")
 		return

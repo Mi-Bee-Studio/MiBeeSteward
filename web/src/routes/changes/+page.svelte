@@ -30,6 +30,21 @@
 	let offset = $state(0);
 	const limit = 50;
 
+	// Server-side search (searchInput = live box, searchQuery = committed).
+	let searchInput = $state('');
+	let searchQuery = $state('');
+	let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+	function onSearchInput(value: string) {
+		searchInput = value;
+		if (searchDebounce) clearTimeout(searchDebounce);
+		searchDebounce = setTimeout(() => {
+			searchQuery = value;
+			offset = 0;
+			fetchChanges();
+		}, 400);
+	}
+
 	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
 
 	// Filters
@@ -47,6 +62,7 @@
 	const changeTypes: ChangeType[] = ['device_added', 'device_changed', 'device_lost'];
 
 	onMount(() => {
+		hydrateFromUrl();
 		fetchChanges();
 		// Best-effort: populate the network filter dropdown.
 		api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
@@ -90,15 +106,36 @@
 			params.set('offset', String(offset));
 			if (filterNetwork) params.set('network_id', filterNetwork);
 			if (filterChangeType) params.set('change_type', filterChangeType);
+			if (searchQuery) params.set('search', searchQuery);
 			const res = await api.get<{ changes: ChangeLogEntry[]; total: number }>(`/changes?${params}`);
 			changes = res.changes || [];
 			total = res.total || 0;
+			syncUrl();
 		} catch (err: unknown) {
 			error = getErrorMessage(err);
 			addToast('error', error);
 		} finally {
 			loading = false;
 		}
+	}
+
+	function syncUrl() {
+		const params = new URLSearchParams();
+		if (searchQuery) params.set('search', searchQuery);
+		params.set('offset', String(offset));
+		const qs = params.toString();
+		history.replaceState(null, '', qs ? `?${qs}` : '?');
+	}
+
+	function hydrateFromUrl() {
+		const sp = new URLSearchParams(window.location.search);
+		const s = sp.get('search');
+		if (s) {
+			searchInput = s;
+			searchQuery = s;
+		}
+		const o = Number(sp.get('offset'));
+		if (!Number.isNaN(o) && o >= 0) offset = o;
 	}
 
 	function applyFilters() {
@@ -331,6 +368,8 @@
 					rows={changes as unknown as Record<string, unknown>[]}
 					searchPlaceholder={m['common.Search']() + '...'}
 					searchableKeys={['change_type', 'agent_id', 'entity_id']}
+					initialSearch={searchInput}
+					onSearchChange={onSearchInput}
 					emptyTitle={m['changes.No Changes']()}
 					expandedRowId={expandedId ?? undefined}
 				>
