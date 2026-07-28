@@ -173,6 +173,7 @@
 					bind:value={searchQuery}
 					oninput={() => onSearchChange?.(searchQuery)}
 					placeholder={searchPlaceholder}
+					data-search-shortcut
 					class="input pl-10 pr-10"
 				/>
 				{#if searchQuery}

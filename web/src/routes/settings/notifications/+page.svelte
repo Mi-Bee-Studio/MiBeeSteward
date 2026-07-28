@@ -163,8 +163,11 @@
 		if (formType === 'webhook') {
 			const headers: Record<string, string> = {};
 			for (const h of formHeaders) {
-				if (h.key.trim()) {
-					headers[h.key.trim()] = h.value;
+				// Only include headers where both key and value are non-empty;
+				// an empty-value header is a half-typed row the user didn't
+				// finish and shouldn't be sent to the webhook target.
+				if (h.key.trim() && h.value.trim()) {
+					headers[h.key.trim()] = h.value.trim();
 				}
 			}
 			return { url: formUrl, headers };

@@ -141,10 +141,11 @@
 
 			if (e.key === '/') {
 				e.preventDefault();
-				// Focus search input on table pages
-				const searchInput = document.querySelector<HTMLInputElement>(
-					'input[placeholder*="earch"], input[placeholder*="搜索"]'
-				);
+				// Focus the search input on table pages. Use an explicit
+				// data-search-shortcut attribute rather than a placeholder
+				// substring match, which broke the moment a new search box was
+				// added without "earch"/"搜索" in its placeholder.
+				const searchInput = document.querySelector<HTMLInputElement>('[data-search-shortcut]');
 				searchInput?.focus();
 			}
 		}
@@ -214,7 +215,7 @@
 				{/if}
 				<p class="nav-group-label">{m[group.labelKey]()}</p>
 				{#each group.items as item (item.path)}
-					{@const active = $page.url.pathname === item.path || (item.path !== '/' && $page.url.pathname.startsWith(item.path))}
+					{@const active = $page.url.pathname === item.path || (item.path !== '/' && $page.url.pathname.startsWith(item.path + '/'))}
 					<a
 						href={item.path}
 						class="flex items-center gap-3 px-3 py-2.5 rounded-md mb-0.5 text-sm transition-colors

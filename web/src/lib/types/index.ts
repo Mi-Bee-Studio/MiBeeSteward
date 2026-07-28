@@ -593,3 +593,27 @@ export interface AgentCommand {
 	acknowledged_at?: string | null;
 	result?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Notification log (notification_log table — outbound dispatch history)
+// ---------------------------------------------------------------------------
+
+export interface NotificationLog {
+	id: number;
+	status: string;
+	payload: string;
+	error_message: string;
+	sent_at: string;
+	is_read: boolean;
+}
+
+export interface NotificationLogsResponse {
+	logs: NotificationLog[];
+	// "total" is the requesting user's UNREAD count (server semantics), used
+	// directly as the bell badge value.
+	total: number;
+}
+
+export interface MarkAllReadResponse {
+	marked: number;
+}
