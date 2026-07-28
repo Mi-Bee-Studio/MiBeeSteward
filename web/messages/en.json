@@ -850,7 +850,19 @@
 		"Recorded": "Recorded",
 		"Skipped Known": "Known (skipped)",
 		"Skipped Recent": "Suppressed (recent)",
-		"Identify Failed": "Identify failed"
+		"Identify Failed": "Identify failed",
+		"Funnel Events Received": "Events Received",
+		"Funnel Suppressed Recent": "Suppressed (recent)",
+		"Funnel Known Skipped": "Known (skipped)",
+		"Funnel Identify Triggered": "Identify Triggered",
+		"Funnel Identify Alive": "Identify Alive",
+		"Funnel Identify Dead": "Identify Dead",
+		"Funnel Devices Recorded": "Devices Recorded",
+		"Col IP": "IP",
+		"Col MAC": "MAC",
+		"Col Source": "Source",
+		"Col Outcome": "Outcome",
+		"Col Time": "Time"
 	},
 	"topology": {
 		"Title": "Network Topology",
