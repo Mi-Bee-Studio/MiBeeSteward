@@ -466,6 +466,7 @@
 		"Search IP": "Search IP address...",
 		"Show All Unreachable": "Show all {count} unreachable hosts",
 		"Show Less Unreachable": "Show less",
+		"Large Range Hint": "Large range — results are paginated. For ranges this wide, consider a scan task (async) instead of a quick scan.",
 		"Unreachable Hosts": "Unreachable Hosts ({count})",
 		"Confirm Add Title": "Confirm Bulk Add",
 		"Confirm Add Message": "You are about to add {count} devices. Continue?",

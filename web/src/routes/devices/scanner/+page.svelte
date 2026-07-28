@@ -16,6 +16,7 @@
 	import { validateScanTarget } from '$lib/utils/validation';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Pagination from '$lib/components/Pagination.svelte';
 	import { LoaderCircle, Radar } from '@lucide/svelte';
 
 	// All 9 device types matching internal/domain/device.go
@@ -64,6 +65,13 @@
 	let adding = $state(false);
 	// Expand/collapse unreachable hosts
 	let showAllUnreachable = $state(false);
+	// Client-side pagination of the alive-hosts table. The alive table renders
+	// a heavy row (4 bound inputs + a 9-option select + 4 conditional badges),
+	// so an unbounded /22+ (1k+ hosts) thrashes the DOM. Form state is kept in
+	// Record<ip, value> maps keyed by IP, so slicing the rendered rows loses no
+	// edits when paging — the maps survive independent of which slice is shown.
+	let aliveOffset = $state(0);
+	let aliveLimit = $state(50);
 	// Confirm dialog for bulk add
 	let confirmAddOpen = $state(false);
 
@@ -120,6 +128,7 @@
 		deviceLocations = {};
 		autoDetectedFields = {};
 		showAllUnreachable = false;
+		aliveOffset = 0;
 
 		try {
 			const res = await api.post<ScanResponse>('/scanner/scan', {
@@ -389,7 +398,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each getAliveHosts() as host (host.ip)}
+						{#each getAliveHosts().slice(aliveOffset, aliveOffset + aliveLimit) as host (host.ip)}
 							{@const autoFields = autoDetectedFields[host.ip] || new Set<string>()}
 							<tr class="border-b border-border hover:bg-bg/50 transition-colors">
 								<td class="px-3 py-2">
@@ -529,8 +538,20 @@
 								</tr>
 							{/if}
 					</tbody>
-				</table>
-			</div>
+					</table>
+				</div>
+
+				{#if getAliveHosts().length > aliveLimit}
+					<p class="text-xs text-muted italic mt-1 mb-1">{m['scanner.Large Range Hint']()}</p>
+				{/if}
+
+				<Pagination
+					total={getAliveHosts().length}
+					limit={aliveLimit}
+					offset={aliveOffset}
+					onPageChange={(o) => (aliveOffset = o)}
+					onPageSizeChange={(n) => { aliveLimit = n; aliveOffset = 0; }}
+				/>
 		{:else}
 			<div class="bg-surface border border-border rounded-lg">
 				<EmptyState
