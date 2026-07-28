@@ -202,7 +202,7 @@
 						id="username"
 						bind:value={username}
 						class="input py-2.5 focus:ring-1 focus:ring-primary"
-						placeholder="admin"
+						placeholder={m['auth.Username Placeholder']()}
 						required
 						autocomplete="username"
 					/>

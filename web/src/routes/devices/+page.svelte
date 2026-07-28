@@ -1089,7 +1089,7 @@ interface AddDevicesResponse {
 					<button
 						onclick={() => (expandedDeviceId = null)}
 						class="p-1 rounded hover:bg-surface-2 transition-colors text-muted"
-						aria-label="Collapse row"
+						aria-label={m['devices.Collapse Row']()}
 					>
 						<ChevronRight class="w-3.5 h-3.5 rotate-90" />
 					</button>
@@ -1166,7 +1166,7 @@ interface AddDevicesResponse {
 			<label class="block text-xs text-muted mb-1">{m['devices.Import CSV']()}</label>
 			<input type="file" accept=".csv" onchange={handleCsvFileSelect}
 				class="input" />
-			<p class="text-xs text-muted mt-1">CSV format: ip,name,type (header row required)</p>
+			<p class="text-xs text-muted mt-1">{m['devices.CSV Format Help']()}</p>
 		</div>
 
 		{#if csvPreviewRows.length > 0}
@@ -1182,7 +1182,7 @@ interface AddDevicesResponse {
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="bg-surface border-b border-border text-left text-xs text-muted">
-								<th class="px-3 py-2">IP</th>
+								<th class="px-3 py-2">{m['devices.CSV Col IP']()}</th>
 								<th class="px-3 py-2">{m['devices.Device Name']()}</th>
 								<th class="px-3 py-2">{m['devices.Type']()}</th>
 							</tr>
@@ -1235,7 +1235,7 @@ interface AddDevicesResponse {
 						<div class="flex items-center gap-2 min-w-0">
 							<span class="text-xs px-1.5 py-0.5 rounded
 								{doc.type === 'url' ? 'bg-accent/10 text-accent' : 'bg-primary/10 text-primary'}">
-								{doc.type === 'url' ? 'URL' : 'File'}
+								{doc.type === 'url' ? m['documents.URL']() : m['common.File']()}
 							</span>
 							<span class="text-sm text-text truncate">{doc.title}</span>
 						</div>

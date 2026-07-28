@@ -326,7 +326,7 @@
 			try {
 				const target = device?.ip_address || '';
 				if (!target) {
-					addToast('error', 'Device has no IP address');
+					addToast('error', m['devicedetail.No IP Address']());
 					return;
 				}
 				await api.post(`/devices/${deviceId}/heartbeat-configs`, {
@@ -1213,11 +1213,11 @@
 						<thead class="bg-bg/50 border-b border-border">
 							<tr>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Neighbor Device']()}</th>
-								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">MAC</th>
-								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Protocol</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['devicedetail.Col MAC']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['devicedetail.Col Protocol']()}</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Local Port']()}</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Remote Port']()}</th>
-								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">Last Seen</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['devicedetail.Col Last Seen']()}</th>
 							</tr>
 						</thead>
 						<tbody>
