@@ -11,7 +11,7 @@
 <script lang="ts">
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
-	import { getErrorMessage } from '$lib/utils';
+	import { getErrorMessage, html, sanitizeUrl } from '$lib/utils';
 	import { addToast } from '$lib/stores/toast';
 	import Modal from '$lib/components/Modal.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -284,9 +284,16 @@
 			render: (row: Record<string, unknown>) => {
 				const doc = row as unknown as Document;
 				if (doc.type === 'url') {
-					return `<a href="${doc.url}" target="_blank" rel="noopener" class="hover:text-primary transition-colors">${doc.title} ↗</a>`;
+					// sanitizeUrl drops javascript:/data:/vbscript: schemes (escapeHtml
+					// alone can't stop a javascript: URL from running on click).
+					const safeHref = sanitizeUrl(doc.url ?? '');
+					if (safeHref) {
+						return html`<a href="${safeHref}" target="_blank" rel="noopener" class="hover:text-primary transition-colors">${doc.title} ↗</a>`;
+					}
+					// Unsafe URL: render the title as plain (escaped) text, no link.
+					return html`<span>${doc.title}</span>`;
 				}
-				return doc.title;
+				return html`<span>${doc.title}</span>`;
 			}
 		},
 		{
@@ -300,7 +307,7 @@
 				const cls = isUrl
 					? 'text-accent'
 					: 'text-primary';
-				return `<span class="text-xs px-2 py-0.5 rounded-full ${isUrl ? 'bg-accent/10' : 'bg-primary/10'} ${cls}">${label}</span>`;
+				return html`<span class="text-xs px-2 py-0.5 rounded-full ${isUrl ? 'bg-accent/10' : 'bg-primary/10'} ${cls}">${label}</span>`;
 			}
 		},
 		{
@@ -308,7 +315,7 @@
 			label: m["documents.Description"](),
 			render: (row: Record<string, unknown>) => {
 				const desc = (row as unknown as Document).description;
-				return `<span class="text-text-muted">${desc || '-'}</span>`;
+				return html`<span class="text-text-muted">${desc || '-'}</span>`;
 			}
 		},
 		{
@@ -317,7 +324,7 @@
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const size = (row as unknown as Document).file_size;
-				return `<span class="font-mono text-text-muted">${formatSize(size)}</span>`;
+				return html`<span class="font-mono text-text-muted">${formatSize(size)}</span>`;
 			}
 		},
 		{
@@ -328,14 +335,14 @@
 				let btns = '';
 				// Preview button for previewable files
 				if (doc.type !== 'url' && isPreviewable(doc)) {
-					btns += `<button data-action="preview" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-success hover:bg-success/10 transition-colors">${m["documents.Preview"]()}</button>`;
+					btns += html`<button data-action="preview" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-success hover:bg-success/10 transition-colors">${m["documents.Preview"]()}</button>`;
 				}
-				btns += `<button data-action="edit" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors">${m["common.Edit"]()}</button>`;
+				btns += html`<button data-action="edit" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors">${m["common.Edit"]()}</button>`;
 				if (doc.type !== 'url' && doc.file_path) {
-					btns += `<a href="/api/v1/documents/${doc.id}/download" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["documents.Download"]()}</a>`;
+					btns += html`<a href="/api/v1/documents/${doc.id}/download" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["documents.Download"]()}</a>`;
 				}
-				btns += `<button data-action="delete" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>`;
-				return `<div class="flex gap-2">${btns}</div>`;
+				btns += html`<button data-action="delete" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>`;
+				return html`<div class="flex gap-2">${btns}</div>`;
 			}
 		}
 	]);

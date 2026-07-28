@@ -14,6 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { html } from '$lib/utils/index';
 	import { addToast } from '$lib/stores/toast';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -167,9 +168,9 @@
 			render: (row: Record<string, unknown>) => {
 				const id = row.id as number;
 				const isOpen = expandedId === id;
-				return `<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
-					+ `<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
-					+ `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
+				return html`<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
+					+ html`<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
+					+ html`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
 			}
 		},
 		{
@@ -177,7 +178,7 @@
 			label: m['changes.Timestamp'](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-mono text-xs text-text-muted">${formatTime(String(row.detected_at))}</span>`
+				html`<span class="font-mono text-xs text-text-muted">${formatTime(String(row.detected_at))}</span>`
 		},
 		{
 			key: 'change_type',
@@ -185,30 +186,30 @@
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const t = String(row.change_type);
-				return `<span class="text-xs px-2 py-0.5 rounded-full font-mono ${changeTypeBadge(t)}">${changeTypeLabel(t)}</span>`;
+				return html`<span class="text-xs px-2 py-0.5 rounded-full font-mono ${changeTypeBadge(t)}">${changeTypeLabel(t)}</span>`;
 			}
 		},
 		{
 			key: 'entity_id',
 			label: m['changes.Device ID'](),
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-mono text-xs text-text-muted">${row.entity_id ? '#' + row.entity_id : '-'}</span>`
+				html`<span class="font-mono text-xs text-text-muted">${row.entity_id ? '#' + row.entity_id : '-'}</span>`
 		},
 		{
 			key: 'network_id',
 			label: m['changes.Network'](),
 			render: (row: Record<string, unknown>) => {
 				const nid = row.network_id as number | undefined;
-				if (!nid) return `<span class="text-xs text-text-muted">-</span>`;
+				if (!nid) return html`<span class="text-xs text-text-muted">-</span>`;
 				const net = networks.find((n) => n.id === nid);
-				return `<span class="text-xs text-text-muted">${net ? net.name : '#' + nid}</span>`;
+				return html`<span class="text-xs text-text-muted">${net ? net.name : '#' + nid}</span>`;
 			}
 		},
 		{
 			key: 'agent_id',
 			label: m['changes.Agent'](),
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-mono text-xs text-text-muted">${row.agent_id ? String(row.agent_id) : '-'}</span>`
+				html`<span class="font-mono text-xs text-text-muted">${row.agent_id ? row.agent_id : '-'}</span>`
 		},
 		{
 			key: 'after_data',
@@ -216,20 +217,16 @@
 			render: (row: Record<string, unknown>) => {
 				const after = row.after_data ? formatData(String(row.after_data)) : '';
 				const before = row.before_data ? formatData(String(row.before_data)) : '';
-				if (!after && !before) return `<span class="text-xs text-text-muted">-</span>`;
+				if (!after && !before) return html`<span class="text-xs text-text-muted">-</span>`;
 				// Show a truncated preview; full JSON available in the row expand.
+				// `html` escapes the preview for BOTH the title attribute and the
+				// text content (escapeHtml handles quotes), replacing the old local
+				// escapeHtmlSimple/escapeAttrSimple pair.
 				const preview = (after || before).slice(0, 80);
-				return `<span class="font-mono text-xs text-text-muted" title="${escapeAttrSimple(preview)}">${escapeHtmlSimple(preview)}${(after || before).length > 80 ? '…' : ''}</span>`;
+				return html`<span class="font-mono text-xs text-text-muted" title="${preview}">${preview}${(after || before).length > 80 ? '…' : ''}</span>`;
 			}
 		}
 	]);
-
-	function escapeHtmlSimple(s: string): string {
-		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-	}
-	function escapeAttrSimple(s: string): string {
-		return escapeHtmlSimple(s).replace(/"/g, '&quot;');
-	}
 </script>
 
 {#if !$auth.token}

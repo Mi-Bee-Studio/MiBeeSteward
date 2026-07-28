@@ -14,6 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { html } from '$lib/utils/index';
 	import { addToast } from '$lib/stores/toast';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -170,9 +171,9 @@
 			render: (row: Record<string, unknown>) => {
 				const id = row.id as number;
 				const isOpen = expandedId === id;
-				return `<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
-					+ `<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
-					+ `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
+				return html`<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
+					+ html`<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
+					+ html`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
 			}
 		},
 		{
@@ -180,14 +181,14 @@
 			label: m["audit.Timestamp"](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-mono text-xs text-text-muted">${formatTime(String(row.created_at))}</span>`
+				html`<span class="font-mono text-xs text-text-muted">${formatTime(String(row.created_at))}</span>`
 		},
 		{
 			key: 'username',
 			label: m["audit.User"](),
 			sortable: true,
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-medium text-text">${String(row.username)}</span>`
+				html`<span class="font-medium text-text">${row.username}</span>`
 		},
 		{
 			key: 'action',
@@ -202,7 +203,7 @@
 					: isAdminAction
 						? 'bg-error/10 text-error'
 						: 'bg-primary/10 text-primary';
-				return `<span class="text-xs px-2 py-0.5 rounded-full font-mono ${cls}">${action}</span>`;
+				return html`<span class="text-xs px-2 py-0.5 rounded-full font-mono ${cls}">${action}</span>`;
 			}
 		},
 		{
@@ -211,37 +212,33 @@
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const rt = String(row.resource_type || '-');
-				return `<span class="text-xs px-2 py-0.5 rounded bg-surface border border-border text-text-muted">${rt}</span>`;
+				return html`<span class="text-xs px-2 py-0.5 rounded bg-surface border border-border text-text-muted">${rt}</span>`;
 			}
 		},
 		{
 			key: 'resource_id',
 			label: m["audit.Resource ID"](),
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-mono text-xs text-text-muted">${row.resource_id ? String(row.resource_id) : '-'}</span>`
+				html`<span class="font-mono text-xs text-text-muted">${row.resource_id ? row.resource_id : '-'}</span>`
 		},
 		{
 			key: 'ip_address',
 			label: m["audit.IP Address"](),
 			render: (row: Record<string, unknown>) =>
-				`<span class="font-mono text-xs text-text-muted">${row.ip_address ? String(row.ip_address) : '-'}</span>`
+				html`<span class="font-mono text-xs text-text-muted">${row.ip_address ? row.ip_address : '-'}</span>`
 		},
 		{
 			key: 'details',
 			label: m['audit.Details'](),
 			render: (row: Record<string, unknown>) => {
 				const d = row.details ? String(row.details) : '';
-				if (!d) return `<span class="text-xs text-text-muted">-</span>`;
+				if (!d) return html`<span class="text-xs text-text-muted">-</span>`;
 				const preview = d.slice(0, 60);
-				return `<span class="font-mono text-xs text-text-muted">${escapeHtmlSimple(preview)}${d.length > 60 ? '…' : ''}</span>`;
+				return html`<span class="font-mono text-xs text-text-muted">${preview}${d.length > 60 ? '…' : ''}</span>`;
 			}
 		}
 	]);
-
-	function escapeHtmlSimple(s: string): string {
-		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-	}
-</script>
+	</script>
 
 {#if !$auth.token}
 	<div class="p-6 text-center text-text-muted">
