@@ -28,6 +28,17 @@ WHERE (? = 0 OR user_id = ?)
   AND (? = '' OR created_at <= ?)
   AND (? = '' OR INSTR(lower(action), lower(?)) > 0 OR INSTR(lower(resource_type), lower(?)) > 0 OR INSTR(lower(ip_address), lower(?)) > 0);
 
+-- name: DistinctAuditActions :many
+-- Facets for the audit page filter dropdowns. Distinct values are pulled
+-- straight from the table (rather than a hardcoded list in the frontend) so a
+-- new action emitted by the backend shows up automatically. idx_audit_logs_action
+-- makes the DISTINCT scan cheap; resource_type is unindexed but the table is
+-- retention-bounded (90d default) so the scan is bounded too.
+SELECT DISTINCT action FROM audit_logs ORDER BY action;
+
+-- name: DistinctAuditResourceTypes :many
+SELECT DISTINCT resource_type FROM audit_logs ORDER BY resource_type;
+
 -- name: DeleteAuditLogsOlderThan :execrows
 -- Retention sweep: prune audit rows older than the cutoff. Batched deletion is
 -- done in Go (DELETE rowid IN (SELECT ... LIMIT ?)) to avoid a single giant
