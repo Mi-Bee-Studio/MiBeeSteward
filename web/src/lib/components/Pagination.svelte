@@ -68,7 +68,7 @@
 </script>
 
 {#if showBar}
-	<div class="flex flex-wrap items-center justify-between gap-3 px-1 py-2">
+	<nav class="flex flex-wrap items-center justify-between gap-3 px-1 py-2" aria-label={m['common.Pagination']()}>
 		<!-- Range display + page-size selector -->
 		<div class="flex items-center gap-3">
 			<span class="text-xs text-muted whitespace-nowrap tabular-nums">
@@ -146,5 +146,5 @@
 				</div>
 			{/if}
 		</div>
-	</div>
+	</nav>
 {/if}

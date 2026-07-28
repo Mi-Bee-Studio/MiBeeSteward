@@ -11,26 +11,23 @@
 <script lang="ts">
 	import Chart from './Chart.svelte';
 	import type { EChartsOption } from '$lib/charts/echarts';
+	import { m } from '$lib/i18n-paraglide';
 	import { GripVertical, Pencil, Trash2 } from '@lucide/svelte';
+	import type { DashboardWidgetConfig } from '$lib/types';
 
-	interface WidgetState {
-		id: string;
-		name: string;
-		type: string;
-		data_source: string;
-		query: string;
-		refresh_interval: number;
-		position: number;
+	// Extends the shared API shape with runtime-only UI state (the ECharts
+	// option + a loading flag). Was a full re-declaration of the 10 API fields
+	// — deduped against the canonical type (#71).
+	interface WidgetState extends DashboardWidgetConfig {
 		chartOption: EChartsOption;
 		loading?: boolean;
-		created_at: string;
-		updated_at: string;
 	}
 
 	let {
 		widget,
 		onEdit,
 		onRemove,
+		onMove,
 		ondragstart,
 		ondragover,
 		ondrop
@@ -38,6 +35,7 @@
 		widget: WidgetState;
 		onEdit: (id: string) => void;
 		onRemove: (id: string) => void;
+		onMove: (id: string, direction: 'up' | 'down') => void;
 		ondragstart: (e: DragEvent, id: string) => void;
 		ondragover: (e: DragEvent) => void;
 		ondrop: (e: DragEvent, id: string) => void;
@@ -77,7 +75,26 @@
 	ondrop={handleDrop}
 >
 	<div class="widget-header">
-		<div class="widget-drag-handle" title="Drag to reorder">
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<div
+			class="widget-drag-handle"
+			role="button"
+			tabindex="0"
+			aria-label={m['dashboard.Drag to Reorder']()}
+			title={m['dashboard.Drag to Reorder']()}
+			onkeydown={(e) => {
+				// ArrowUp/ArrowDown move the widget one slot; mirrors the drag swap
+				// so keyboard users can reorder without a pointer (#71).
+				if (e.key === 'ArrowUp') {
+					e.preventDefault();
+					onMove(widget.id, 'up');
+				} else if (e.key === 'ArrowDown') {
+					e.preventDefault();
+					onMove(widget.id, 'down');
+				}
+			}}
+		>
 			<GripVertical class="w-[14px] h-[14px]" />
 		</div>
 		<h3 class="widget-title">{widget.name}</h3>

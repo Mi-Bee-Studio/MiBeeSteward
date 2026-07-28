@@ -263,6 +263,7 @@
 	},
 	"dashboard": {
 		"Dashboard": "仪表盘",
+		"Drag to Reorder": "拖动重新排序（或聚焦后用 ↑/↓ 移动）",
 		"Attention Title": "需要关注",
 		"Attention Offline": "{count} 台离线",
 		"Attention New": "最近扫描新增 {count} 台",
@@ -356,6 +357,7 @@
 		"Retry": "重试",
 		"Refresh": "刷新",
 		"No Data": "暂无数据",
+		"Pagination": "分页",
 		"Copy": "复制",
 		"Copied": "已复制",
 		"Test": "测试",
