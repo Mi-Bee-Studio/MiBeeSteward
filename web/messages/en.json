@@ -17,7 +17,11 @@
 		"Topology": "Topology",
 		"Group Core": "Core",
 		"Group Library": "Library",
-		"Group Admin": "Administration"
+		"Group Admin": "Administration",
+		"Brand Subtitle": "Device Management",
+		"Brand Logo Alt": "MiBee logo",
+		"Skip to Content": "Skip to content",
+		"Toggle Sidebar": "Toggle sidebar"
 	},
 	"auth": {
 		"Username": "Username",
@@ -367,7 +371,14 @@
 		"Chart Unavailable": "Chart unavailable",
 		"Clear Search": "Clear search",
 		"On": "on",
-		"Off": "off"
+		"Off": "off",
+		"Switch to Light Theme": "Switch to light theme",
+		"Switch to Dark Theme": "Switch to dark theme",
+		"Toggle Theme": "Toggle theme",
+		"Switch Language": "Switch language",
+		"Close Dialog": "Close dialog",
+		"Edit Widget": "Edit widget",
+		"Remove Widget": "Remove widget"
 	},
 	"scanner": {
 		"Scanner": "Network Scanner",

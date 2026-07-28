@@ -99,10 +99,10 @@
 		</div>
 		<h3 class="widget-title">{widget.name}</h3>
 		<div class="widget-actions">
-			<button class="widget-action-btn" onclick={() => onEdit(widget.id)} title="Edit widget" aria-label="Edit widget">
+			<button class="widget-action-btn" onclick={() => onEdit(widget.id)} title={m['common.Edit Widget']()} aria-label={m['common.Edit Widget']()}>
 				<Pencil class="w-[14px] h-[14px]" />
 			</button>
-			<button class="widget-action-btn widget-action-danger" onclick={() => onRemove(widget.id)} title="Remove widget" aria-label="Remove widget">
+			<button class="widget-action-btn widget-action-danger" onclick={() => onRemove(widget.id)} title={m['common.Remove Widget']()} aria-label={m['common.Remove Widget']()}>
 				<Trash2 class="w-[14px] h-[14px]" />
 			</button>
 		</div>

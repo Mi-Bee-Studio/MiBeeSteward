@@ -161,7 +161,7 @@
 		focus:px-4 focus:py-2 focus:bg-primary focus:text-text-inverse focus:rounded-lg
 		focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary"
 >
-	Skip to content
+	{m['navigation.Skip to Content']()}
 </a>
 
 <div class="flex h-screen overflow-hidden relative">
@@ -170,7 +170,7 @@
 	<button
 		onclick={() => sidebarOpen = !sidebarOpen}
 		class="btn-icon fixed top-4 left-4 z-50 md:hidden bg-surface border border-border"
-		aria-label="Toggle sidebar"
+		aria-label={m['navigation.Toggle Sidebar']()}
 	>
 		{#if sidebarOpen}
 			<X class="w-5 h-5" />
@@ -200,10 +200,10 @@
 	>
 		<div class="p-4 border-b border-border">
 			<div class="flex items-center gap-3">
-				<img src={logo} alt="MiBee" class="w-9 h-9 shrink-0" />
+				<img src={logo} alt={m['navigation.Brand Logo Alt']()} class="w-9 h-9 shrink-0" />
 				<div>
 					<h1 class="text-xl font-bold text-primary tracking-tight leading-tight">MiBee Steward</h1>
-					<p class="text-xs text-muted">Device Management</p>
+					<p class="text-xs text-muted">{m['navigation.Brand Subtitle']()}</p>
 				</div>
 			</div>
 		</div>

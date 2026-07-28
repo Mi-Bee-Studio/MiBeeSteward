@@ -174,7 +174,7 @@
 				<button
 					class="modal-close"
 					onclick={close}
-					aria-label="Close dialog"
+					aria-label={m['common.Close Dialog']()}
 				>
 					<X class="w-5 h-5" />
 				</button>

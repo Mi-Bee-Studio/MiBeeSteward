@@ -11,6 +11,7 @@
 <script lang="ts">
 	import { Sun, Moon } from '@lucide/svelte';
 	import { browser } from '$app/environment';
+	import { m } from '$lib/i18n-paraglide';
 
 	function getInitialDark(): boolean {
 		const stored = localStorage.getItem('theme');
@@ -36,8 +37,8 @@
 <button
 	onclick={toggle}
 	class="btn-icon"
-	title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-	aria-label="Toggle theme"
+		title={dark ? m['common.Switch to Light Theme']() : m['common.Switch to Dark Theme']()}
+		aria-label={m['common.Toggle Theme']()}
 >
 	{#if dark}
 		<Sun class="w-[18px] h-[18px]" />
