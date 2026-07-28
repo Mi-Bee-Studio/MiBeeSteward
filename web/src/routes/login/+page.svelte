@@ -152,6 +152,10 @@
 		twoFactorRequired = false;
 		twoFactorUserId = null;
 		twoFactorCode = '';
+		// Clear a stale error left over from the failed login that pushed us
+		// into the 2FA flow; otherwise it resurfaces on the username/password
+		// view. Username/password are intentionally kept (convenience).
+		error = '';
 	}
 </script>
 

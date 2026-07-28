@@ -280,7 +280,7 @@
 
 {#if !$auth.token}
 	<div class="p-6 text-center text-text-muted">
-		<p>{m["errors.Unauthorized Desc"]?.() ?? 'Please log in.'}</p>
+		<p>{m["errors.Unauthorized Desc"]()}</p>
 		<a href="/login" class="text-primary hover:underline text-sm mt-2 inline-block">{m["navigation.Login"]()}</a>
 	</div>
 {:else}
