@@ -466,6 +466,7 @@
 		"Search IP": "搜索 IP 地址...",
 		"Show All Unreachable": "显示全部 {count} 台不可达主机",
 		"Show Less Unreachable": "收起",
+		"Large Range Hint": "扫描范围较大——结果已分页。如此大的范围建议改用扫描任务（异步）而非快速扫描。",
 		"Unreachable Hosts": "不可达主机（{count}）",
 		"Confirm Add Title": "确认批量添加",
 		"Confirm Add Message": "即将添加 {count} 台设备，是否继续？",
