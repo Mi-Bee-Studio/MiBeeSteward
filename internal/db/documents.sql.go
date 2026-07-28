@@ -9,6 +9,31 @@ import (
 	"context"
 )
 
+const countDocuments = `-- name: CountDocuments :one
+SELECT COUNT(*) FROM documents
+WHERE (? = '' OR INSTR(lower(title), lower(?)) > 0 OR INSTR(lower(description), lower(?)) > 0 OR INSTR(lower(type), lower(?)) > 0)
+`
+
+type CountDocumentsParams struct {
+	Column1 interface{} `json:"column_1"`
+	LOWER   string      `json:"LOWER"`
+	LOWER_2 string      `json:"LOWER_2"`
+	LOWER_3 string      `json:"LOWER_3"`
+}
+
+// Mirrors ListDocuments WHERE so the page total reflects the active search.
+func (q *Queries) CountDocuments(ctx context.Context, arg CountDocumentsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countDocuments,
+		arg.Column1,
+		arg.LOWER,
+		arg.LOWER_2,
+		arg.LOWER_3,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createDocument = `-- name: CreateDocument :one
 
 INSERT INTO documents (title, type, url, file_path, file_size, mime_type, description)
@@ -100,17 +125,31 @@ func (q *Queries) GetDocument(ctx context.Context, id int64) (Document, error) {
 const listDocuments = `-- name: ListDocuments :many
 SELECT id, title, type, url, file_path, file_size, mime_type, description, created_at, updated_at
 FROM documents
+WHERE (? = '' OR INSTR(lower(title), lower(?)) > 0 OR INSTR(lower(description), lower(?)) > 0 OR INSTR(lower(type), lower(?)) > 0)
 ORDER BY id
 LIMIT ? OFFSET ?
 `
 
 type ListDocumentsParams struct {
-	Limit  int64 `json:"limit"`
-	Offset int64 `json:"offset"`
+	Column1 interface{} `json:"column_1"`
+	LOWER   string      `json:"LOWER"`
+	LOWER_2 string      `json:"LOWER_2"`
+	LOWER_3 string      `json:"LOWER_3"`
+	Limit   int64       `json:"limit"`
+	Offset  int64       `json:"offset"`
 }
 
+// Search is a substring match across title/description/type (case-insensitive).
+// INSTR pattern (see ListUsers for rationale).
 func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]Document, error) {
-	rows, err := q.db.QueryContext(ctx, listDocuments, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, listDocuments,
+		arg.Column1,
+		arg.LOWER,
+		arg.LOWER_2,
+		arg.LOWER_3,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -18,10 +18,18 @@ FROM documents
 WHERE id = ?;
 
 -- name: ListDocuments :many
+-- Search is a substring match across title/description/type (case-insensitive).
+-- INSTR pattern (see ListUsers for rationale).
 SELECT id, title, type, url, file_path, file_size, mime_type, description, created_at, updated_at
 FROM documents
+WHERE (? = '' OR INSTR(lower(title), lower(?)) > 0 OR INSTR(lower(description), lower(?)) > 0 OR INSTR(lower(type), lower(?)) > 0)
 ORDER BY id
 LIMIT ? OFFSET ?;
+
+-- name: CountDocuments :one
+-- Mirrors ListDocuments WHERE so the page total reflects the active search.
+SELECT COUNT(*) FROM documents
+WHERE (? = '' OR INSTR(lower(title), lower(?)) > 0 OR INSTR(lower(description), lower(?)) > 0 OR INSTR(lower(type), lower(?)) > 0);
 
 -- name: UpdateDocument :one
 UPDATE documents

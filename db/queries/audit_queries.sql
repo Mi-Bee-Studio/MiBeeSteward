@@ -15,6 +15,7 @@ WHERE (? = 0 OR user_id = ?)
   AND (? = '' OR resource_type = ?)
   AND (? = '' OR created_at >= ?)
   AND (? = '' OR created_at <= ?)
+  AND (? = '' OR INSTR(lower(action), lower(?)) > 0 OR INSTR(lower(resource_type), lower(?)) > 0 OR INSTR(lower(ip_address), lower(?)) > 0)
 ORDER BY created_at DESC
 LIMIT ? OFFSET ?;
 
@@ -24,7 +25,8 @@ WHERE (? = 0 OR user_id = ?)
   AND (? = '' OR action = ?)
   AND (? = '' OR resource_type = ?)
   AND (? = '' OR created_at >= ?)
-  AND (? = '' OR created_at <= ?);
+  AND (? = '' OR created_at <= ?)
+  AND (? = '' OR INSTR(lower(action), lower(?)) > 0 OR INSTR(lower(resource_type), lower(?)) > 0 OR INSTR(lower(ip_address), lower(?)) > 0);
 
 -- name: DeleteAuditLogsOlderThan :execrows
 -- Retention sweep: prune audit rows older than the cutoff. Batched deletion is

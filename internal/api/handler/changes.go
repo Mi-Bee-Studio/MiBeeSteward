@@ -93,6 +93,8 @@ func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 	if entityType != "" {
 		entitySentinel = "1"
 	}
+	// Search: substring across change_type/entity_type. Empty ⇒ no filter.
+	searchVal := q.Get("search")
 
 	rows, err := h.queries.ListChangeLog(r.Context(), db.ListChangeLogParams{
 		Column1:    netSentinel,
@@ -101,6 +103,9 @@ func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 		ChangeType: changeType,
 		Column5:    entitySentinel,
 		EntityType: entityType,
+		Column7:    searchVal,
+		LOWER:      searchVal,
+		LOWER_2:    searchVal,
 		Limit:      limit,
 		Offset:     offset,
 	})
@@ -115,6 +120,9 @@ func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 		ChangeType: changeType,
 		Column5:    entitySentinel,
 		EntityType: entityType,
+		Column7:    searchVal,
+		LOWER:      searchVal,
+		LOWER_2:    searchVal,
 	})
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to count changes")

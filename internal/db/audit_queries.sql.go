@@ -17,6 +17,7 @@ WHERE (? = 0 OR user_id = ?)
   AND (? = '' OR resource_type = ?)
   AND (? = '' OR created_at >= ?)
   AND (? = '' OR created_at <= ?)
+  AND (? = '' OR INSTR(lower(action), lower(?)) > 0 OR INSTR(lower(resource_type), lower(?)) > 0 OR INSTR(lower(ip_address), lower(?)) > 0)
 `
 
 type CountAuditLogsParams struct {
@@ -30,6 +31,10 @@ type CountAuditLogsParams struct {
 	CreatedAt    *time.Time  `json:"created_at"`
 	Column9      interface{} `json:"column_9"`
 	CreatedAt_2  *time.Time  `json:"created_at_2"`
+	Column11     interface{} `json:"column_11"`
+	LOWER        string      `json:"LOWER"`
+	LOWER_2      string      `json:"LOWER_2"`
+	LOWER_3      string      `json:"LOWER_3"`
 }
 
 func (q *Queries) CountAuditLogs(ctx context.Context, arg CountAuditLogsParams) (int64, error) {
@@ -44,6 +49,10 @@ func (q *Queries) CountAuditLogs(ctx context.Context, arg CountAuditLogsParams) 
 		arg.CreatedAt,
 		arg.Column9,
 		arg.CreatedAt_2,
+		arg.Column11,
+		arg.LOWER,
+		arg.LOWER_2,
+		arg.LOWER_3,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -96,6 +105,7 @@ WHERE (? = 0 OR user_id = ?)
   AND (? = '' OR resource_type = ?)
   AND (? = '' OR created_at >= ?)
   AND (? = '' OR created_at <= ?)
+  AND (? = '' OR INSTR(lower(action), lower(?)) > 0 OR INSTR(lower(resource_type), lower(?)) > 0 OR INSTR(lower(ip_address), lower(?)) > 0)
 ORDER BY created_at DESC
 LIMIT ? OFFSET ?
 `
@@ -111,6 +121,10 @@ type ListAuditLogsParams struct {
 	CreatedAt    *time.Time  `json:"created_at"`
 	Column9      interface{} `json:"column_9"`
 	CreatedAt_2  *time.Time  `json:"created_at_2"`
+	Column11     interface{} `json:"column_11"`
+	LOWER        string      `json:"LOWER"`
+	LOWER_2      string      `json:"LOWER_2"`
+	LOWER_3      string      `json:"LOWER_3"`
 	Limit        int64       `json:"limit"`
 	Offset       int64       `json:"offset"`
 }
@@ -135,6 +149,10 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 		arg.CreatedAt,
 		arg.Column9,
 		arg.CreatedAt_2,
+		arg.Column11,
+		arg.LOWER,
+		arg.LOWER_2,
+		arg.LOWER_3,
 		arg.Limit,
 		arg.Offset,
 	)

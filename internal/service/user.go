@@ -342,10 +342,13 @@ func (s *UserService) AdminResetPassword(ctx context.Context, userID int64, newP
 }
 
 // ListUsers returns a paginated list of users.
-func (s *UserService) ListUsers(ctx context.Context, limit, offset int64) (*domain.ListUsersResponse, error) {
+func (s *UserService) ListUsers(ctx context.Context, search string, limit, offset int64) (*domain.ListUsersResponse, error) {
 	users, err := s.queries.ListUsers(ctx, db.ListUsersParams{
-		Limit:  limit,
-		Offset: offset,
+		Column1: search,
+		LOWER:   search,
+		LOWER_2: search,
+		Limit:   limit,
+		Offset:  offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
@@ -356,9 +359,20 @@ func (s *UserService) ListUsers(ctx context.Context, limit, offset int64) (*doma
 		resp = append(resp, toUserResponse(u))
 	}
 
+	// Total is the real match count (previously len(page), which capped at the
+	// page size and broke pagination when more than one page matched).
+	total, err := s.queries.CountUsers(ctx, db.CountUsersParams{
+		Column1: search,
+		LOWER:   search,
+		LOWER_2: search,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to count users: %w", err)
+	}
+
 	return &domain.ListUsersResponse{
 		Users: resp,
-		Total: len(resp),
+		Total: int(total),
 	}, nil
 }
 

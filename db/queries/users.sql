@@ -28,10 +28,21 @@ FROM users
 WHERE username = ?;
 
 -- name: ListUsers :many
+-- Search is a substring match across username/email (case-insensitive). The
+-- sentinel pattern (? = '' OR ...) means an empty search returns all rows.
+-- INSTR(lower(...), lower(?)) is used because sqlc's SQLite parser rejects
+-- `LIKE ? ESCAPE '\' (see scan_tasks.sql for the same pattern).
 SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
 FROM users
+WHERE (? = '' OR INSTR(lower(username), lower(?)) > 0 OR INSTR(lower(email), lower(?)) > 0)
 ORDER BY id
 LIMIT ? OFFSET ?;
+
+-- name: CountUsers :one
+-- Mirrors the ListUsers WHERE so the page total reflects the active search
+-- (previously Total was len(page) = page size, which broke pagination counts).
+SELECT COUNT(*) FROM users
+WHERE (? = '' OR INSTR(lower(username), lower(?)) > 0 OR INSTR(lower(email), lower(?)) > 0);
 
 -- name: UpdateUser :one
 UPDATE users

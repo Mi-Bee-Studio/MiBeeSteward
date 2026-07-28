@@ -54,6 +54,11 @@
 		externalSortKey = null,
 		externalSortDirection = 'none',
 		onSortChange,
+		// Controlled search: when onSearchChange is provided, the search box calls
+		// back to the parent (which refetches filtered from the server) instead of
+		// filtering the in-memory page slice. Mirrors the onSortChange server-side
+		// pattern. Without it, search stays client-side (backward-compatible).
+		onSearchChange,
 	}: {
 		columns: Column[];
 		rows: Record<string, unknown>[];
@@ -70,6 +75,7 @@
 		externalSortKey?: string | null;
 		externalSortDirection?: 'asc' | 'desc' | 'none';
 		onSortChange?: (key: string, direction: 'asc' | 'desc') => void;
+		onSearchChange?: (query: string) => void;
 	} = $props();
 
 	let sortKey = $state<string | null>(null);
@@ -96,10 +102,10 @@
 	});
 
 	const filteredRows = $derived(() => {
-		// When sorting is delegated to the server, don't re-filter client-side —
-		// the search box is also server-driven by the page, and re-filtering the
-		// already-filtered page slice would double-narrow the results.
-		if (onSortChange) return rows;
+		// Server-driven search/sort: rows already come back filtered/ordered from
+		// the backend, so don't re-filter the page slice client-side (it would
+		// double-narrow results). Mirrors the onSortChange guard.
+		if (onSortChange || onSearchChange) return rows;
 		if (!debouncedQuery || searchableKeys.length === 0) return rows;
 		const q = debouncedQuery.toLowerCase();
 		return rows.filter((row) =>
@@ -165,12 +171,13 @@
 				<input
 					type="text"
 					bind:value={searchQuery}
+					oninput={() => onSearchChange?.(searchQuery)}
 					placeholder={searchPlaceholder}
 					class="input pl-10 pr-10"
 				/>
 				{#if searchQuery}
 					<button
-						onclick={() => (searchQuery = '')}
+						onclick={() => { searchQuery = ''; onSearchChange?.(''); }}
 						class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors"
 						aria-label={m['common.Clear Search']()}
 					>

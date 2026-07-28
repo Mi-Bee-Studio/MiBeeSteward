@@ -103,7 +103,7 @@ func (s *DocumentService) Get(ctx context.Context, id int64) (*domain.DocumentRe
 }
 
 // List returns documents with pagination.
-func (s *DocumentService) List(ctx context.Context, limit int64, offset int64) (*domain.DocumentListResponse, error) {
+func (s *DocumentService) List(ctx context.Context, search string, limit int64, offset int64) (*domain.DocumentListResponse, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -112,8 +112,12 @@ func (s *DocumentService) List(ctx context.Context, limit int64, offset int64) (
 	}
 
 	docs, err := s.queries.ListDocuments(ctx, db.ListDocumentsParams{
-		Limit:  limit,
-		Offset: offset,
+		Column1: search,
+		LOWER:   search,
+		LOWER_2: search,
+		LOWER_3: search,
+		Limit:   limit,
+		Offset:  offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list documents: %w", err)
@@ -124,9 +128,20 @@ func (s *DocumentService) List(ctx context.Context, limit int64, offset int64) (
 		resp = append(resp, toDocumentResponse(d))
 	}
 
+	// Total is the real match count (previously len(page)).
+	total, err := s.queries.CountDocuments(ctx, db.CountDocumentsParams{
+		Column1: search,
+		LOWER:   search,
+		LOWER_2: search,
+		LOWER_3: search,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to count documents: %w", err)
+	}
+
 	return &domain.DocumentListResponse{
 		Documents: resp,
-		Total:     len(resp),
+		Total:     int(total),
 	}, nil
 }
 
