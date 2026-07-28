@@ -42,7 +42,9 @@
 	let marking = $state(false);
 	let containerRef: HTMLDivElement | undefined = $state();
 
-	async function fetchNotifications() {
+	// Returns true on success, false on failure — the poll loop uses this to
+	// back off when the backend is unreachable (avoids hammering a dead server).
+	async function fetchNotifications(): Promise<boolean> {
 		try {
 			loading = true;
 			const res = await api.get<NotificationLogsResponse>(
@@ -50,8 +52,11 @@
 			);
 			notifications = res.logs ?? [];
 			unreadCount = res.total ?? 0;
+			return true;
 		} catch {
-			// Silently fail — non-critical UI
+			// Silently fail — non-critical UI (the poll loop backs off, and the
+			// next user interaction retries).
+			return false;
 		} finally {
 			loading = false;
 		}
@@ -110,19 +115,51 @@
 	}
 
 	onMount(() => {
-		if ($auth.token) {
-			fetchNotifications();
-		}
+		const BASE_INTERVAL = 60_000; // normal cadence when the server is healthy
+		const BACKOFF_INTERVAL = 5 * 60_000; // back off after consecutive failures
+		let consecutiveFailures = 0;
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+		let stopped = false;
 
-		const interval = setInterval(() => {
+		const scheduleNext = () => {
+			if (stopped) return;
+			// Back off on repeated failures so a down backend isn't hammered every
+			// 60s; reset to the base cadence as soon as a fetch succeeds.
+			const delay = consecutiveFailures > 0 ? BACKOFF_INTERVAL : BASE_INTERVAL;
+			timeoutId = setTimeout(poll, delay);
+		};
+
+		const poll = async () => {
 			if ($auth.token) {
-				fetchNotifications();
+				const ok = await fetchNotifications();
+				consecutiveFailures = ok ? 0 : consecutiveFailures + 1;
 			}
-		}, 60_000);
+			scheduleNext();
+		};
 
+		// Pause polling while the tab is hidden (no point fetching notifications
+		// the user can't see), and refresh immediately on return so the badge is
+		// current when they focus the tab again.
+		const onVisibilityChange = () => {
+			if (document.visibilityState === 'visible') {
+				if (timeoutId) clearTimeout(timeoutId);
+				consecutiveFailures = 0; // give the server a fresh chance on focus
+				poll();
+			} else if (timeoutId) {
+				clearTimeout(timeoutId);
+				timeoutId = null;
+			}
+		};
+
+		if ($auth.token) {
+			poll();
+		}
+		document.addEventListener('visibilitychange', onVisibilityChange);
 		document.addEventListener('click', handleClickOutside);
 		return () => {
-			clearInterval(interval);
+			stopped = true;
+			if (timeoutId) clearTimeout(timeoutId);
+			document.removeEventListener('visibilitychange', onVisibilityChange);
 			document.removeEventListener('click', handleClickOutside);
 		};
 	});
