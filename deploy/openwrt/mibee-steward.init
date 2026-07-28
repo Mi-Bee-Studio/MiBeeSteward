@@ -44,7 +44,6 @@
 USE_PROCD=1
 
 START=95  # after network + dnsmasq (START=60) so the center sees a populated ARP table at boot
-USE_PROCD=1
 
 BINARY=/usr/bin/mibee-steward
 CONFIG=/etc/mibee/config.yaml

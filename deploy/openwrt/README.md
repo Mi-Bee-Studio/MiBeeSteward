@@ -35,6 +35,17 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 
 `GOARCH=arm` (32-bit, GOARM=7) also works for older ARM boards. `GOARCH=mips*` does **not** (see above).
 
+The repo's Makefile has cross-compile targets for all three supported archs —
+prefer these over the raw `go build` above (they run the device-type sync the
+embed step needs):
+
+```bash
+make build-linux-amd64   # x86_64 (generic Linux host)
+make build-linux-arm64   # ARMv8 (GL.iNet MT3000, ipq807x, mt798x)
+make build-linux-arm     # ARMv7 32-bit (older ARM boards)
+make build-all           # all three at once (server binary each)
+```
+
 ## Install (form B — agent → remote center)
 
 ```bash
