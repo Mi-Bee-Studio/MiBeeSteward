@@ -11,7 +11,8 @@
 <script lang="ts">
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
-	import { getErrorMessage, html, sanitizeUrl } from '$lib/utils';
+	import { html, sanitizeUrl } from '$lib/utils';
+	import { getErrorMessage } from '$lib/utils/error';
 	import { addToast } from '$lib/stores/toast';
 	import Modal from '$lib/components/Modal.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';

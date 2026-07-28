@@ -27,6 +27,7 @@ import {
 	overwriteGetLocale,
 	overwriteSetLocale
 } from '../paraglide/runtime.js';
+import type { Locale } from '../paraglide/runtime.js';
 
 export { baseLocale };
 
@@ -56,8 +57,9 @@ function resolveLocale(): string {
 	return baseLocale;
 }
 
-// Install custom locale resolution.
-overwriteGetLocale(() => resolveLocale() as any);
+// Install custom locale resolution. resolveLocale() is narrowed to 'en' | 'zh'
+// (matching baseLocale) above, so this is a safe Locale cast — not an `as any`.
+overwriteGetLocale(() => resolveLocale() as Locale);
 
 /**
  * Set the locale persistently.
@@ -70,7 +72,9 @@ export function setLocale(
 	): void {
 	if (newLocale !== 'en' && newLocale !== 'zh') return;
 	localStorage.setItem(STORAGE_KEY, newLocale);
-	pgSetLocale(newLocale as any, { reload: false });
+	// newLocale is now guaranteed 'en' | 'zh' — cast to Locale (the runtime
+	// accepts the full Locale union which both satisfy), not `as any`.
+	pgSetLocale(newLocale as Locale, { reload: false });
 	window.location.reload();
 }
 

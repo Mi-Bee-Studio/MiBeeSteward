@@ -14,26 +14,7 @@
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
 	import { Bell } from '@lucide/svelte';
-
-	interface NotificationLog {
-		id: number;
-		status: string;
-		payload: string;
-		error_message: string;
-		sent_at: string;
-		is_read: boolean;
-	}
-
-	interface NotificationLogsResponse {
-		logs: NotificationLog[];
-		// "total" is the requesting user's UNREAD count (server semantics), used
-		// directly as the bell badge value.
-		total: number;
-	}
-
-	interface MarkAllReadResponse {
-		marked: number;
-	}
+	import type { NotificationLog, NotificationLogsResponse, MarkAllReadResponse } from '$lib/types';
 
 	let notifications = $state<NotificationLog[]>([]);
 	let unreadCount = $state(0);

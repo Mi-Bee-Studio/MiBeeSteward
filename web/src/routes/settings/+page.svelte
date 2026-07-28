@@ -12,7 +12,7 @@
 	import { api } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
 	import { addToast } from '$lib/stores/toast';
-	import { getErrorMessage } from '$lib/utils';
+	import { getErrorMessage } from '$lib/utils/error';
 	import { settingsSchema, profileSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { m, getLocale, setLocale } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
@@ -211,6 +211,9 @@ onDestroy(() => {
 	}
 
 async function handle2FASetup() {
+    // Clear any code left from a previous verify attempt, so re-entering
+    // setup after cancel→reopen doesn't show a stale value in the input.
+    twoFAVerifyCode = '';
     twoFALoading = true;
     try {
         const res = await api.post<{ secret: string; qr_url: string; backup_codes: string[] }>('/auth/2fa/setup', {});
