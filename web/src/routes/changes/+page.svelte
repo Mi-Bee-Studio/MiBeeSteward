@@ -58,6 +58,10 @@
 	// SSE live updates (EventSource on /changes/watch). Falls back silently to
 	// the manual refresh if SSE is unavailable (disabled / network error).
 	let evtSource: EventSource | null = null;
+	// sseDisconnected is set when the EventSource gives up reconnecting
+	// (readyState CLOSED) so the page can show a "live updates paused" banner
+	// instead of freezing the feed silently. A fresh change event clears it.
+	let sseDisconnected = $state(false);
 
 	const changeTypes: ChangeType[] = ['device_added', 'device_changed', 'device_lost'];
 
@@ -67,12 +71,15 @@
 		// Best-effort: populate the network filter dropdown.
 		api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
 		// SSE: push-prepend new change events so the feed feels live. EventSource
-		// auto-reconnects; on error it just stops updating (manual refresh still works).
+		// auto-reconnects; on a hard failure (readyState CLOSED) we surface a
+		// banner so the user knows the feed froze (manual refresh still works).
 		try {
 			evtSource = new EventSource('/api/v1/changes/watch');
 			evtSource.addEventListener('change', (e: MessageEvent) => {
 				try {
 					const entry = JSON.parse(e.data) as ChangeLogEntry;
+					// A received event means the stream is healthy again.
+					sseDisconnected = false;
 					// Prepend only if not already at the top (dedup by id). Respect the
 					// current filter loosely — if a filter is active, just refresh to
 					// avoid mismatched views; if unfiltered, prepend for instant feedback.
@@ -85,6 +92,11 @@
 					// Malformed payload — ignore (keepalive comments also land here).
 				}
 			});
+			// Distinguish CONNECTING (auto-retry in progress — stay quiet) from
+			// CLOSED (gave up — tell the user the feed is no longer live).
+			evtSource.onerror = () => {
+				sseDisconnected = evtSource?.readyState === EventSource.CLOSED;
+			};
 		} catch {
 			// EventSource unsupported — SSE is best-effort; polling/refresh still works.
 		}
@@ -284,6 +296,14 @@
 			{m["dashboard.Refresh"]()}
 		</button>
 	</div>
+
+	<!-- SSE disconnected banner: the live feed gave up reconnecting. -->
+	{#if sseDisconnected}
+		<div class="mb-4 px-4 py-2 bg-warning/10 border border-warning/30 rounded-lg text-sm text-warning flex items-center justify-between gap-2">
+			<span>{m['changes.SSE Disconnected']()} — {m['changes.SSE Disconnected Desc']()}</span>
+			<button onclick={fetchChanges} class="btn btn-sm btn-ghost text-warning">{m["dashboard.Refresh"]()}</button>
+		</div>
+	{/if}
 
 	<!-- Filters -->
 	<div class="bg-surface border border-border rounded-lg p-4 mb-4">

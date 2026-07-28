@@ -236,6 +236,7 @@
 		"Last 7d": "7天",
 		"Last 30d": "30天",
 		"No Data": "该时段暂无心跳数据",
+		"Trend Load Failed": "心跳趋势加载失败",
 		"Success Status": "成功",
 		"Fail Status": "失败",
 		"Timeout Status": "超时",
@@ -721,6 +722,8 @@
 		"All Events": "全部事件",
 		"No Changes": "暂无变更",
 		"No Changes Desc": "扫描检测到设备新增、变更或离线时,事件将在此显示。",
+		"SSE Disconnected": "实时更新已断开",
+		"SSE Disconnected Desc": "实时更新已暂停——刷新以查看最新内容。",
 		"Diff Title": "变更详情"
 	},
 	"agents": {
@@ -807,6 +810,7 @@
 	"topology": {
 		"Title": "网络拓扑",
 		"All Networks": "全部网络",
+		"Networks Load Failed": "网络列表加载失败",
 		"Nodes": "台设备",
 		"Edges": "条邻接",
 		"Unidentified": "未识别邻居",

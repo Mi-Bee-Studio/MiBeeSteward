@@ -100,6 +100,9 @@
 	let trendTo = $state('');
 	let trendOption = $state<EChartsOption>({});
 	let trendStats = $state<{ avg_latency_ms: number; success_count: number; fail_count: number; timeout_count: number } | null>(null);
+	// trendError is set when the trend/stats fetch fails so the chart shows an
+	// error banner (with retry) instead of disguising the failure as "No Data".
+	let trendError = $state('');
 	// --- Heartbeat config state ---
 	let heartbeatConfigs = $state<Array<{ id: number; method: string; target: string; interval_seconds: number; timeout_seconds: number; enabled: number }>>([]);
 	let heartbeatConfigLoading = $state(false);
@@ -597,6 +600,7 @@
 
 	async function fetchHeartbeatTrend() {
 		trendLoading = true;
+		trendError = '';
 		let from: string;
 		let to: string;
 		if (trendPreset === 'custom' && trendFrom && trendTo) {
@@ -618,9 +622,12 @@
 			]);
 			trendStats = statsRes;
 			buildTrendChart(historyRes.heartbeat_results || []);
-		} catch {
+		} catch (err: unknown) {
+			// Record the failure so the chart shows an error banner + retry
+			// instead of the misleading "No Data" empty-state (#65).
 			trendStats = null;
 			trendOption = {};
+			trendError = getErrorMessage(err);
 		} finally {
 			trendLoading = false;
 		}
@@ -1579,7 +1586,12 @@
 		{/if}
 
 		<!-- Chart -->
-		{#if trendLoading}
+		{#if trendError}
+			<div class="mb-3 px-4 py-2 bg-error/10 border border-error/30 rounded-lg text-sm text-error flex items-center justify-between gap-2">
+				<span>{trendError}</span>
+				<button class="btn btn-sm btn-ghost" onclick={fetchHeartbeatTrend}>{m['common.Retry']()}</button>
+			</div>
+		{:else if trendLoading}
 			<!-- Single chart: a table skeleton was misleading; use a chart-shaped rect. -->
 			<div class="bg-surface border border-border rounded-xl p-4" role="status" aria-busy="true">
 				<Skeleton variant="rect" width="100%" height="320px" />
