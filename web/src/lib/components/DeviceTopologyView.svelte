@@ -199,10 +199,20 @@
 						if (!v || !v.value) return '';
 						const n = v.value;
 						const gw = v.isRoot ? ` ⭐ ${escapeHtml(m['topology.Gateway']())}` : '';
+						// Tooltip labels are localized; dynamic values stay escapeHtml-wrapped
+						// (XSS-safe even though this is an {@html}-equivalent HTML string).
+						const ipLabel = escapeHtml(m['topology.Tooltip IP']());
+						const macLabel = escapeHtml(m['topology.Tooltip MAC']());
+						const typeLabelStr = escapeHtml(m['topology.Tooltip Type']());
+						const statusLabel = escapeHtml(m['topology.Tooltip Status']());
 						const portInfo = v.parentPort
-							? `<br/>Via: ${escapeHtml(v.edgeProtocol ?? '')}${v.parentPort ? ' · port ' + escapeHtml(v.parentPort) : ''}`
+							? '<br/>' + escapeHtml(m['topology.Tooltip Via']({
+								proto: String(v.edgeProtocol ?? ''),
+								port: String(v.parentPort)
+							}))
 							: '';
-						return `<b>${escapeHtml(n.name)}</b>${gw}<br/>IP: ${escapeHtml(n.ip_address || '-')}<br/>MAC: ${escapeHtml(n.mac_address || '-')}<br/>Type: ${escapeHtml(typeLabel(nodeCategory(n)))}<br/>Status: ${escapeHtml(n.status || '-')}${portInfo}<br/>Downstream: ${v.childCount} devices`;
+						const downstream = escapeHtml(m['topology.Tooltip Downstream']({ count: v.childCount }));
+						return `<b>${escapeHtml(n.name)}</b>${gw}<br/>${ipLabel}: ${escapeHtml(n.ip_address || '-')}<br/>${macLabel}: ${escapeHtml(n.mac_address || '-')}<br/>${typeLabelStr}: ${escapeHtml(typeLabel(nodeCategory(n)))}<br/>${statusLabel}: ${escapeHtml(n.status || '-')}${portInfo}<br/>${downstream}`;
 					}
 					return '';
 				}

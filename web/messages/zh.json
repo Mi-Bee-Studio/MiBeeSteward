@@ -865,7 +865,13 @@
 		"Online": "在线",
 		"No Subnet": "未知子网",
 		"Disconnected": "未连接",
-		"Downstream": "下挂设备"
+		"Downstream": "下挂设备",
+		"Tooltip Via": "经由：{proto} · 端口 {port}",
+		"Tooltip IP": "IP",
+		"Tooltip MAC": "MAC",
+		"Tooltip Type": "类型",
+		"Tooltip Status": "状态",
+		"Tooltip Downstream": "下挂：{count} 台设备"
 	},
 	"certificates": {
 		"Title": "TLS 证书",
