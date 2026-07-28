@@ -76,7 +76,6 @@
 			</span>
 			{#if onPageSizeChange}
 				<div class="flex items-center gap-1.5">
-					<span class="text-xs text-muted">{''}</span>
 					<select
 						value={limit}
 						onchange={handlePageSizeChange}
