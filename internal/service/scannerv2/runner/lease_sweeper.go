@@ -11,11 +11,8 @@ package runner
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"time"
-
-	"mibee-steward/internal/changedetect"
 )
 
 // staleAgentSnapshot is one row from either the stale- or recoverable-snapshot
@@ -172,6 +169,13 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 		// Emit device_lost (change_log + Watcher). No-op when changeRecorder
 		// is nil (agent mode — but the sweeper only runs on the center anyway).
 		s.runner.recordDeviceLost(ctx, l.DeviceID, nidPtr, "lease")
+		// Sample the offline verdict to the liveness series. The lease sweeper
+		// is the SOLE liveness signal for agent-managed networks (they're
+		// excluded from center-side heartbeat probing), so it must sample the
+		// verdict itself rather than rely on the heartbeat tick loop.
+		if s.runner.heartbeat != nil {
+			s.runner.heartbeat.SampleLiveness(l.DeviceID, "offline", "lease")
+		}
 	}
 	return len(stale)
 }
@@ -195,7 +199,7 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 	now := time.Now().UTC()
 	for _, l := range recoverable {
 		// Capture the BEFORE snapshot while the row is still 'offline' so the
-		// device_changed event's before_data is faithful (recordDeviceLost has
+		// device_recovered event's before_data is faithful (recordDeviceLost has
 		// the opposite bug — it reads after the UPDATE).
 		before := s.runner.snapshotDevice(ctx, l.DeviceID)
 		if _, err := s.runner.dbConn.ExecContext(ctx,
@@ -204,16 +208,17 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 			s.logger.Warn("lease sweeper: recover online failed", "device_id", l.DeviceID, "ip", l.IP, "error", err)
 			continue
 		}
-		// Emit device_changed only when the status actually flipped — a no-op
+		// Sample the online verdict to the liveness series (agent-managed
+		// networks have no heartbeat tick sampling them).
+		if s.runner.heartbeat != nil {
+			s.runner.heartbeat.SampleLiveness(l.DeviceID, "online", "lease")
+		}
+		// Emit device_recovered only when the status actually flipped — a no-op
 		// recovery (race: row flipped online between query and UPDATE) must not
 		// emit noise. No-op when changeRecorder is nil.
-		if before != nil {
-			if after := s.runner.snapshotDevice(ctx, l.DeviceID); after != nil {
-				if diff := changedetect.Diff(*before, *after); diff != nil {
-					nid := sql.NullInt64{Int64: l.NetworkID, Valid: true}
-					s.runner.recordDeviceChanged(ctx, l.DeviceID, nid, "lease", *before, *after, diff)
-				}
-			}
+		if before != nil && before.Status == "offline" {
+			nid := l.NetworkID
+			s.runner.recordDeviceRecovered(ctx, l.DeviceID, &nid, "lease", before)
 		}
 	}
 	return len(recoverable)

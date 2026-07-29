@@ -227,15 +227,39 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 				mac, mac, now, now, now, existingID)
 		}
-		// Change detection: re-read the AFTER snapshot and diff. Only emit
-		// device_changed when a tracked field actually differs — this replaces
-		// the old "wasUpdated is always true" heuristic that fired on every
-		// rescan regardless of whether anything changed.
+		// Change detection: re-read the AFTER snapshot and apply the TIERED
+		// model. Two separate judgments, so liveness and identity never conflate:
+		//   (a) device_recovered — a status flip offline→online. This is the
+		//       symmetric counterpart of device_lost. It fires ONLY on the
+		//       recovery transition (a scan revives a device DetectLost/lease
+		//       sweeper had marked offline), NOT on every rescan of a healthy
+		//       device (those have before.status==online already).
+		//   (b) device_changed — an IDENTITY field changed (name/type/brand/
+		//       model/mac/ip). status is deliberately excluded from this gate
+		//       (it is a liveness signal, owned by device_lost/recovered); so is
+		//       classification-field wobble (open_ports/services/scan_attributes)
+		//       which is recorded in before/after_data but doesn't trip the gate.
+		// This replaces the old all-fields Diff that fired a device_changed on
+		// every status flip — the root cause of the 70k+ noise-row storm.
 		changed := false
 		if before != nil {
 			after := rn.snapshotDevice(ctx, existingID)
 			if after != nil {
-				if diff := changedetect.Diff(*before, *after); diff != nil {
+				// (a) Recovery: offline→online. Emit device_recovered (not
+				// device_changed). The before snapshot was captured at :186
+				// BEFORE the status UPDATE, so before.Status is the faithful
+				// pre-recovery value.
+				if before.Status == "offline" && after.Status == "online" {
+					var nidPtr *int64
+					if networkID.Valid {
+						v := networkID.Int64
+						nidPtr = &v
+					}
+					rn.recordDeviceRecovered(ctx, existingID, nidPtr, agentID, before)
+					changed = true
+				}
+				// (b) Identity change: only identity-tier fields gate device_changed.
+				if diff := changedetect.DiffIdentity(*before, *after); diff != nil {
 					rn.recordDeviceChanged(ctx, existingID, networkID, agentID, *before, *after, diff)
 					changed = true
 				}

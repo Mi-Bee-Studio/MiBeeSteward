@@ -36,7 +36,7 @@ import (
 )
 
 // HeartbeatCreator creates heartbeat configs for newly-discovered devices and
-// exposes the heartbeat service's device-level state reset.
+// exposes the heartbeat service's device-level state reset + liveness sampling.
 // Implemented by *service.HeartbeatService; defined here to break the import
 // cycle (runner can't import service, which imports scannerv2).
 type HeartbeatCreator interface {
@@ -50,6 +50,13 @@ type HeartbeatCreator interface {
 	// scan confirms the host is alive and sets status=online, so a stale counter
 	// from a prior flapping window can't immediately drag it back to offline.
 	ResetFailures(deviceID int64)
+	// SampleLiveness enqueues one device_liveness verdict sample for the change
+	// engine's multi-period judgment. Called by scan/detect-lost/lease paths that
+	// set devices.status OUTSIDE the heartbeat tick loop — the heartbeat path is
+	// the primary sampler (every tick), but agent-managed networks are excluded
+	// from center-side probing, so the lease sweeper is their only liveness
+	// signal and must sample directly. Best-effort (drops are tolerated).
+	SampleLiveness(deviceID int64, status, source string)
 }
 
 // Runner executes scan tasks via the v2 engine and persists outcomes.

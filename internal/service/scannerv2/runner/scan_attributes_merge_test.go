@@ -35,7 +35,7 @@ func setupScanAttrsTestDB(t *testing.T) (*Runner, *sql.DB) {
 	nid := sql.NullInt64{Int64: net.ID, Valid: true}
 	rn := New(nil, queries, conn, nil, 0, nil)
 	rn.networkID = nid
-	rn.SetChangeRecorder(changedetect.NewDBRecorder(queries, nil, nil))
+	rn.SetChangeRecorder(changedetect.NewDBRecorder(queries, nil, 0, nil))
 	return rn, conn
 }
 

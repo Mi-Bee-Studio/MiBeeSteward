@@ -154,6 +154,24 @@ CREATE TABLE IF NOT EXISTS heartbeat_results (
     checked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Device liveness verdict series. NOTE: this table is DECLARED here so sqlc can
+-- generate query code against it, but it LIVES in the dedicated heartbeat.db
+-- (alongside heartbeat_results) — see internal/service/heartbeat_store.go for
+-- the authoritative DDL (no FKs, since cross-DB FKs are impossible in SQLite).
+-- It stores the per-device online/offline VERDICT (one row per tick), not the
+-- per-config probe results. It is a DISPOSABLE derived cache: devices.status is
+-- the source of truth; this series can be dropped and rebuilt. Consumed by the
+-- change-detection engine's multi-period jitter-vs-transition judgment.
+CREATE TABLE IF NOT EXISTS device_liveness (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'unknown')),
+    source TEXT NOT NULL,
+    checked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_device_liveness_device ON device_liveness(device_id, checked_at);
+CREATE INDEX IF NOT EXISTS idx_device_liveness_checked_at ON device_liveness(checked_at);
+
 -- Dashboard configurations
 CREATE TABLE IF NOT EXISTS dashboard_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -30,7 +30,7 @@ func setupChangeDetectDB(t *testing.T) (*Runner, *db.Queries, *sql.DB) {
 
 	rn := New(nil, queries, conn, nil, 0, nil)
 	rn.networkID = nid
-	recorder := changedetect.NewDBRecorder(queries, nil, nil)
+	recorder := changedetect.NewDBRecorder(queries, nil, 0, nil)
 	rn.SetChangeRecorder(recorder)
 	return rn, queries, conn
 }
@@ -93,26 +93,31 @@ func TestChangeDetect_NoChangeNoEvent(t *testing.T) {
 	require.Len(t, events, 0, "no device_changed event on identical rescan")
 }
 
-// TestChangeDetect_TypeChangeEmitsChanged confirms changing a tracked field
-// (type) emits a device_changed event with before/after data.
-func TestChangeDetect_TypeChangeEmitsChanged(t *testing.T) {
+// TestChangeDetect_IdentityChangeEmitsChanged confirms a REAL identity change
+// emits a device_changed event under the tiered model. Identity fields are
+// name/type/brand/model/mac/ip — a change to any of these is the gate for
+// device_changed (status is excluded; it flows through lost/recovered).
+//
+// The cleanest identity change the scan path produces is a MAC fill-in: a device
+// first seen with no MAC, then resolved to a MAC on a later scan. Under the
+// CASE-when-empty guard this rewrites the mac_address column, so the before/after
+// identity diff fires. (A same-MAC type "reclassification" does NOT change
+// devices.type — the guard keeps the deeper earlier verdict — so it correctly
+// emits nothing; see TestChangeDetect_NoChangeNoEvent for the no-op case.)
+func TestChangeDetect_IdentityChangeEmitsChanged(t *testing.T) {
 	rn, queries, _ := setupChangeDetectDB(t)
 	ctx := context.Background()
-	// First scan: camera.
-	rn.applyDeviceBridge(ctx, reportFor("10.0.0.7", "camera", "hikvision", "aa:bb:cc:dd:ee:07"), rn.networkID, "")
-	// Second scan: SAME MAC, but type reclassified to "server".
-	_, changed := rn.applyDeviceBridge(ctx, reportFor("10.0.0.7", "server", "hikvision", "aa:bb:cc:dd:ee:07"), rn.networkID, "")
-	require.True(t, changed, "type change should be detected")
+	// First scan: camera, NO mac yet.
+	rn.applyDeviceBridge(ctx, reportFor("10.0.0.7", "camera", "hikvision", ""), rn.networkID, "")
+	// Second scan: SAME device, MAC now resolved.
+	_, changed := rn.applyDeviceBridge(ctx, reportFor("10.0.0.7", "camera", "hikvision", "aa:bb:cc:dd:ee:07"), rn.networkID, "")
+	require.True(t, changed, "mac_address fill-in is an identity change")
 
 	events, _ := queries.ListChangeLog(ctx, db.ListChangeLogParams{
 		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_changed",
 		Column5: 1, EntityType: "device", Limit: 100, Offset: 0,
 	})
-	require.Len(t, events, 1, "one device_changed event")
-	// after_data should carry the type field diff.
-	after := events[0].AfterData
-	require.NotNil(t, after)
-	require.Contains(t, *after, "type")
+	require.Len(t, events, 1, "one device_changed event for the identity change")
 }
 
 // TestDetectLost_GracePeriod confirms a device absent for 1 scan is NOT lost

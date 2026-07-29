@@ -110,6 +110,14 @@ type DeviceDocument struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type DeviceLiveness struct {
+	ID        int64     `json:"id"`
+	DeviceID  int64     `json:"device_id"`
+	Status    string    `json:"status"`
+	Source    string    `json:"source"`
+	CheckedAt time.Time `json:"checked_at"`
+}
+
 type DeviceNeighbor struct {
 	ID               int64      `json:"id"`
 	DeviceID         int64      `json:"device_id"`

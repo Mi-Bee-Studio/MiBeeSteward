@@ -101,6 +101,12 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 		}
 		// Emit device_lost (before_data = the device's pre-lost snapshot).
 		rn.recordDeviceLost(ctx, l.DeviceID, nidPtr, agentID)
+		// Sample the offline verdict to the liveness series immediately (the
+		// heartbeat tick would sample it too, but sampling here avoids a window
+		// gap right at the transition the change engine judges on).
+		if rn.heartbeat != nil {
+			rn.heartbeat.SampleLiveness(l.DeviceID, "offline", "scan")
+		}
 	}
 	if rn.logger != nil {
 		slog.Info("detect-lost: devices declared lost",
@@ -169,5 +175,32 @@ func (rn *Runner) recordDeviceLost(ctx context.Context, deviceID int64, networkI
 		AgentID:    agentID,
 		Before:     before,
 		After:      nil, // lost has no after
+	})
+}
+
+// recordDeviceRecovered emits a device_recovered event — the symmetric
+// counterpart of device_lost. A device previously declared lost (status=offline
+// via DetectLost or the lease sweeper) has reappeared alive (status=online via a
+// scan or a fresh lease). before_data = the offline snapshot (caller captures it
+// BEFORE the online UPDATE, mirroring recoverFresh), after_data = the online
+// snapshot. This replaces the old practice of reporting an offline→online flip
+// as a generic device_changed, which buried real identity changes under status
+// noise. Recovery is a liveness/topology event, not an identity change.
+func (rn *Runner) recordDeviceRecovered(ctx context.Context, deviceID int64, networkID *int64, agentID string, before *changedetect.DeviceSnapshot) {
+	if rn.changeRecorder == nil {
+		return
+	}
+	var after *changedetect.DeviceSnapshot
+	if s := rn.snapshotDevice(ctx, deviceID); s != nil {
+		after = s
+	}
+	rn.changeRecorder.Record(ctx, changedetect.ChangeEvent{
+		ChangeType: changedetect.ChangeTypeDeviceRecovered,
+		EntityType: changedetect.EntityTypeDevice,
+		DeviceID:   deviceID,
+		NetworkID:  networkID,
+		AgentID:    agentID,
+		Before:     before,
+		After:      after,
 	})
 }

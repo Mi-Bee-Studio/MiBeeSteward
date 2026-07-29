@@ -21,6 +21,7 @@ package cleanup
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 type Service struct {
 	queries          *db.Queries // main DB (scan_results, scan_task_runs, audit_logs, notification_log, service_evidence)
 	heartbeatQueries *db.Queries // dedicated heartbeat DB (heartbeat_results lives in a separate file)
+	heartbeatDB      *sql.DB     // raw conn to heartbeat.db, for device_liveness RFC3339-bound deletes (sqlc passes time.Time which sorts wrong vs stored RFC3339 text)
 	cfg              config.RetentionConfig
 	interval         time.Duration
 	batch            int64
@@ -43,9 +45,10 @@ type Service struct {
 
 // New constructs the retention sweeper from config. heartbeatQueries is the
 // sqlc Queries bound to the dedicated heartbeat.db (nil ⇒ heartbeat pruning
-// is skipped, for tests/main-DB-only contexts). SweepIntervalHours<=0 and
-// BatchSize<=0 are defended in config.normalizeRetention.
-func New(queries *db.Queries, heartbeatQueries *db.Queries, cfg config.RetentionConfig) *Service {
+// is skipped, for tests/main-DB-only contexts). heartbeatDB is the raw
+// connection for the RFC3339-bound device_liveness delete (nil ⇒ skipped).
+// SweepIntervalHours<=0 and BatchSize<=0 are defended in config.normalizeRetention.
+func New(queries *db.Queries, heartbeatQueries *db.Queries, heartbeatDB *sql.DB, cfg config.RetentionConfig) *Service {
 	interval := time.Duration(cfg.SweepIntervalHours) * time.Hour
 	if interval <= 0 {
 		interval = 6 * time.Hour
@@ -57,6 +60,7 @@ func New(queries *db.Queries, heartbeatQueries *db.Queries, cfg config.Retention
 	return &Service{
 		queries:          queries,
 		heartbeatQueries: heartbeatQueries,
+		heartbeatDB:      heartbeatDB,
 		cfg:              cfg,
 		interval:         interval,
 		batch:            batch,
@@ -104,6 +108,7 @@ func (s *Service) Stop() {
 // and skipped so the sweep still cleans the others.
 func (s *Service) runOnce(ctx context.Context) {
 	s.pruneHeartbeatResults(ctx)
+	s.pruneDeviceLiveness(ctx)
 	s.pruneScanResults(ctx)
 	s.pruneScanTaskRuns(ctx)
 	s.pruneAuditLogs(ctx)
@@ -168,6 +173,34 @@ func (s *Service) pruneHeartbeatResults(ctx context.Context) {
 			CheckedAt: cut,
 			Limit:     limit,
 		})
+	})
+}
+
+// pruneDeviceLiveness prunes the per-device verdict series. It lives in the
+// same heartbeat.db as heartbeat_results, so it shares the heartbeatQueries
+// binding. The series is disposable (devices.status is source of truth), so the
+// window can be tight; it mirrors heartbeat_results (7d) to cover the longest
+// multi-period window the change engine queries.
+//
+// The cutoff is formatted as RFC3339 (not passed as time.Time via sqlc) because
+// device_liveness.checked_at is stored as RFC3339 TEXT: a time.Time arg
+// serializes via modernc to a different string shape that compares wrong. The
+// raw SQL mirrors the sqlc query but formats the bound in Go.
+func (s *Service) pruneDeviceLiveness(ctx context.Context) {
+	if s.heartbeatQueries == nil {
+		return
+	}
+	days := s.cfg.DeviceLivenessDays
+	s.sweepBatched(ctx, "device_liveness", days, func(cut time.Time, limit int64) (int64, error) {
+		cutStr := cut.UTC().Format(time.RFC3339)
+		res, err := s.heartbeatDB.ExecContext(ctx,
+			`DELETE FROM device_liveness WHERE rowid IN (
+				SELECT rowid FROM device_liveness WHERE checked_at < ? LIMIT ?)`,
+			cutStr, limit)
+		if err != nil {
+			return 0, err
+		}
+		return res.RowsAffected()
 	})
 }
 
