@@ -543,15 +543,14 @@
 
 				{#if getAliveHosts().length > aliveLimit}
 					<p class="text-xs text-muted italic mt-1 mb-1">{m['scanner.Large Range Hint']()}</p>
+					<Pagination
+						total={getAliveHosts().length}
+						limit={aliveLimit}
+						offset={aliveOffset}
+						onPageChange={(o) => (aliveOffset = o)}
+						onPageSizeChange={(n) => { aliveLimit = n; aliveOffset = 0; }}
+					/>
 				{/if}
-
-				<Pagination
-					total={getAliveHosts().length}
-					limit={aliveLimit}
-					offset={aliveOffset}
-					onPageChange={(o) => (aliveOffset = o)}
-					onPageSizeChange={(n) => { aliveLimit = n; aliveOffset = 0; }}
-				/>
 		{:else}
 			<div class="bg-surface border border-border rounded-lg">
 				<EmptyState
