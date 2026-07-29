@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-29
+
+**Router-resident discovery + OpenWrt deployment + device-persistence rewrite.**
+v0.4.0's headline is a new **router form factor**: when the center or agent runs
+ON the gateway, it gains four Tier-1 passive discovery sources (DHCP leases,
+conntrack, hostapd, dnsmasq query log) that see hosts active probing can't —
+sleeping IoT, firewalled hosts, WiFi-only clients. This ships with first-class
+**OpenWrt** deployment (procd init scripts for both binaries) and a
+**single-writer device-persistence rewrite** that eliminates a long-standing
+dual-write fissure. Rounded out by a frontend IA restructure, server-side
+search/sort that survives pagination, per-user notification read state, Zod form
+validation, and a DataTable XSS hardening pass.
+
+### Router-resident discovery sources (Phase A/B)
+The discovery engine (`internal/service/scannerv2/discovery/`) gains four
+Tier-1 sources that only work when the host IS the LAN's gateway/AP — the NAT
+choke point that sees every flow. All are opt-in (default off) and no-op where
+their backing file/socket is absent, so a host-based deployment degrades
+gracefully.
+
+- **`dhcp_leases`**: reads the local DHCP server's lease table (dnsmasq
+  `/tmp/dhcp.leases` on OpenWrt, `/var/lib/misc/dnsmasq.leases` on Debian) — the
+  authoritative hostname↔MAC↔IP map, covering devices that never answer
+  SNMP/ICMP/rDNS.
+- **`conntrack`**: reads `/proc/net/nf_conntrack` and emits the LAN-side
+  endpoint of every ESTABLISHED/ASSURED flow — the "who is talking RIGHT NOW"
+  view. Liveness + discovery for hosts that don't answer active probes but
+  maintain outbound flows. Filters to `network.cidr`.
+- **`hostapd`**: enumerates WiFi STAs via the hostapd control socket
+  (`/var/run/hostapd/<phy>`), falling back to `iw station dump`. Captures signal
+  dBm / connect time / SSID — unavailable to a wired host. `interfaces` lists
+  wlan names; empty = autodetect.
+- **`dns_log`**: tails the dnsmasq query log (`--log-queries` output) and emits
+  each querying host + the domain — a powerful passive fingerprint (devices that
+  block inbound probes still do outbound DNS). Operator must enable query
+  logging (UCI: `uci set dhcp.@dnsmasq[0].logqueries=1`).
+- **`arp_scan` active source** (`discovery/arp_scan_*`): active ARP-sweep source
+  (CAP_NET_RAW, build-tag stub when unavailable) — complements the existing
+  passive `arp_cache`/`multicast`/`router_arp` sources.
+- **Passive-source wiring on the agent** (Phase A): the agent binary now runs
+  the discovery engine, so a router-form agent reports its LAN's passive
+  discoveries into the center alongside scan results.
+- **Multicast / `router_arp` silent-failure fix**: these sources no longer fail
+  silently — they disable themselves with a logged reason when their socket /
+  SNMP walk is unavailable, instead of appearing healthy while emitting nothing.
+  A new warning fires when `router_arp` is redundant to a router-resident
+  source already covering the same hosts.
+
+### OpenWrt deployment (Form C router-center)
+First-class support for running the center or agent directly on an OpenWrt
+router — the natural home for the router-resident sources above.
+
+- **procd init scripts**: `deploy/openwrt/mibee-steward.init` and
+  `mibee-agent.init` — UCI-configured services that start on boot, restart on
+  crash, and run as an unprivileged user. README documents install, config, and
+  the CAP_NET_RAW story.
+- **ARMv7 build target** + init-script dedup: the release matrix and OpenWrt
+  packaging were polished for the common low-power-router target (ARMv7), and
+  the two init scripts were de-duplicated.
+
 ### Device persistence: single-writer funnel + device replacement
 **Architecture fix** — eliminates the dual-write fissure where the `devices` row
 was written by two independent paths (`store.RecordDevice` and
@@ -34,6 +94,113 @@ identity + which fields to overwrite.
   wins, its identity fields are force-overwritten with the new device's, and the
   prior MAC-matched row is marked offline. The before/after change-detection
   diff records the old→new identity in `change_log`.
+
+### Network reconciliation (drift detection)
+- **`internal/service/scannerv2/reconcile/`**: a background job that finds
+  devices whose IP has drifted outside their stamped `networks.cidr` (e.g. a
+  roaming laptop that picked up a new subnet's DHCP) and surfaces them for
+  operator correction. **Detect-and-surface, not auto-fix** — automatically
+  re-homing a device is destructive (changes identity, breaks historical
+  linkage, can flap on overlapping IP space), so correction stays a human
+  decision. Findings are exposed via structured `slog` warnings (rate-limited),
+  a `mibee_network_mismatches` Prometheus gauge per network, and the
+  `Reconcile()` return value (a future admin endpoint). Backed by the new
+  `internal/cidrutil` package.
+
+### Configurability
+- **Detection thresholds + heartbeat cadence now configurable** (were
+  hard-coded): `scanner.lost_threshold` (consecutive-scan absence count before
+  "lost", default 2), `heartbeat.tick_interval_seconds` (probe-loop cadence,
+  default 30), `heartbeat.offline_threshold` (probe failures before offline,
+  default 5), `heartbeat.offline_backoff_ticks` (probe an already-offline host
+  once every N ticks, default 10 → ~5min on a 30s ticker). All carry `MIBEE_*`
+  env overrides; `0` means "use default". See `internal/config/defaults.go`.
+- **Rate limit raised** `rate_limit.global_per_minute` 100 → 600, with SPA
+  static assets (`/_app/*`) exempted and `data:` fonts allowed in CSP — the old
+  100/min starved multi-tab + background-polling sessions.
+- **Shared constants extracted** (`config.SysUpTimeOID`,
+  `config.DefaultScanPortSpec`): the sysUpTime OID (copied across 6 sites) and
+  the curated scan port set are now single-source constants, killing the
+  duplication that invited drift.
+
+### Domain: device types
+- **`phone` and `printer` device types** added to the type union
+  (`internal/domain/device.go`) and the `devices.type` CHECK constraint — both
+  the schema and the Go enum are the single source of truth, guarded by a
+  schema-sync drift test. The hostname/brand/port → type inference table
+  (`configs/fingerprints/device-types/device_types.yaml`) is fully data-driven
+  (adding a signature = one YAML entry, not a Go `case`).
+
+### Management UI restructure
+- **Information architecture overhaul**: sidebar regrouped, scan entry points
+  consolidated, **topology merged into the Devices page as a view toggle**
+  (radial graph ↔ table), and a dashboard **attention banner** with a primary
+  action surfacing what needs an operator's eye.
+- **Device-detail restructure**: health banner + 5-tab navigation (overview /
+  services / TLS certs / neighbors / changes).
+- **Device edit/delete** via a shared `DeviceEditModal.svelte` reachable from
+  both the list and detail pages.
+- **Shared primitives**: `PageHeader` / `PageShell` / `LoadingButton` extracted
+  and adopted across pages for consistent loading + layout.
+
+### Server-side search, sort, and pagination
+A batch of correctness fixes where client-side filtering silently lost results
+once a list grew past one page — search/sort now runs on the server so it spans
+the full dataset:
+- **Server-side search** on users / audit / changes / documents / scan-tasks /
+  scan-results (`fix(web,api)` #54, #55, #64, #86).
+- **Scan-results sort** server-side so ordering holds across pages (#55).
+- **Dedicated `PATCH /channels/{id}`** for the channel enabled-toggle (#53) —
+  writes only `enabled`, avoiding a GET-then-write race.
+- **CSV import** reads the backend `{added, errors}` result instead of the
+  preview count, so the post-import tally matches reality (#58).
+
+### Notifications
+- **Per-user unread tracking** (`notification_read_states` table): the header
+  bell now shows a per-user unread count and clears on dropdown open. Previously
+  the bell was system-wide (no recipient concept).
+- **NotificationBell** pauses polling in background tabs and backs off on
+  failure — stops hammering the API from idle tabs (#67).
+
+### Frontend hardening
+- **DataTable XSS fix** (`lib/utils/html.ts`): a tagged-template `html()`
+  helper that escapes interpolated values, with all rich-text callers migrated
+  off string concatenation (#50, #87).
+- **Zod schema validation** added to 7 forms (login, register, device edit,
+  network, channel, scan, CSV import) — client-side validation now mirrors the
+  backend rules (#66, #106).
+- **Error-state honesty**: pages no longer disguise server errors as empty
+  states — a failed fetch shows an error + retry UI instead of a blank "no data"
+  panel (#65); device-detail shows error + skeleton states instead of blank
+  (#56).
+- **API client hardening**: GET retry on transient 5xx, env-based base URL, and
+  a unified 401 handler that routes session-expiry to re-login (#73, #109).
+- **i18n completeness**: localized scattered hardcoded English across 9+ pages,
+  the discovery funnel, topology tooltips, ChangeDiff labels, and layout/a11y
+  labels; API error messages + form-validation messages now go through the i18n
+  boundary (#40–#63, #101–#105).
+- **a11y + component cleanup**: ARIA ids, focus management, Escape-to-close on
+  click-toggle menus, chart resize handling, scanner alive-hosts table
+  **pagination for large (/22+) ranges** with the bar hidden when results fit
+  one page (#74, #100, #108, #110, #112).
+- **Misc P2/P3 batches**: lib/components, agents/settings/networks/documents,
+  and devices subtrees got consolidated correctness / type-safety / a11y passes.
+
+### Operations
+- **`change_log` noise reduction**: service-evidence dedup + offline-backoff cut
+  the steady write of timeout rows for dead hosts.
+- **`agent` race fixes**: `TestCommandPoller_ScanPayload_StringQuoted` and
+  `TestReporter_SendsStateHashHeader` data/logic races fixed (CI runs `-race`).
+- **Fingerprint corpus sync** from `mibee-fingerprints-go` (http-tls + ports
+  rules), with golden tests covering the synced http-server-* + smb-version
+  rules.
+
+### License
+- **AGPLv3 + commercial dual-licensing** applied project-wide (supersedes the
+  earlier PolyForm NC): full AGPL-3.0 `LICENSE`, `LICENSE-COMMERCIAL.md`,
+  `NOTICE` third-party attributions, `CLA.md` + `.github/DCO.md` + DCO CI check,
+  and `SPDX-License-Identifier: AGPL-3.0-or-later` headers on all `.go`/`.ts`/
+  `.svelte`/`.c`/`.sql` source; fingerprint YAMLs carry CC-BY-SA 4.0 headers.
 
 ## [0.3.0] - 2026-07-18
 
