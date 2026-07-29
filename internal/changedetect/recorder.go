@@ -91,13 +91,13 @@ const (
 // ChangeEvent is one detected change. Before/After are JSON snapshots of the
 // device row (nil for added's before / lost's after). DeviceID is the devices.id
 // the change concerns; NetworkID + AgentID carry provenance. Severity is the
-// UI-triage tier (identity/liveness/enrichment); callers that omit it get
-// SeverityIdentity for the discrete add/lost/recovered events and
-// SeverityEnrichment for classification-only device_changed.
+// UI-triage tier (identity/liveness/enrichment) — reserved for a future
+// change_log.severity column + frontend tier filter; not persisted yet, so
+// callers may leave it empty.
 type ChangeEvent struct {
 	ChangeType string
 	EntityType string
-	Severity   string // "" → inferred from ChangeType in Record
+	Severity   string // reserved (not yet persisted); see ChangeEvent doc
 	DeviceID   int64
 	NetworkID  *int64
 	AgentID    string
@@ -356,14 +356,9 @@ func NewDBRecorder(queries *db.Queries, watcher *Watcher, cooldown time.Duration
 	return r
 }
 
-// Record writes the event to change_log + pushes Watcher subscribers. It infers
-// a severity tier when the caller didn't set one, and applies cooldown dedup to
-// device_changed/device_recovered.
+// Record writes the event to change_log + pushes Watcher subscribers. It applies
+// cooldown dedup to device_changed/device_recovered.
 func (r *DBRecorder) Record(ctx context.Context, ev ChangeEvent) {
-	severity := ev.Severity
-	if severity == "" {
-		severity = severityFor(ev.ChangeType)
-	}
 	if !r.shouldEmit(ev.DeviceID, ev.ChangeType) {
 		// Suppressed by cooldown dedup. The devices row already reflects the
 		// current state; change_log records transitions, not every observation.
@@ -425,17 +420,6 @@ func (r *DBRecorder) markEmitted(deviceID int64, changeType string, now time.Tim
 	r.lastEmittedMu.Lock()
 	defer r.lastEmittedMu.Unlock()
 	r.lastEmitted[dedupKey{deviceID: deviceID, kind: changeType}] = now
-}
-
-// severityFor infers the UI-triage tier from the change type when the caller
-// didn't set one explicitly.
-func severityFor(changeType string) string {
-	switch changeType {
-	case ChangeTypeDeviceAdded, ChangeTypeDeviceLost, ChangeTypeDeviceRecovered:
-		return SeverityIdentity
-	default:
-		return SeverityEnrichment
-	}
 }
 
 // marshalSnapshot marshals a snapshot/diff to its JSON string form (nil → NULL).

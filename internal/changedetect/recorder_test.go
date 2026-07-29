@@ -150,7 +150,7 @@ func TestDBRecorder_CooldownDedup(t *testing.T) {
 		ChangeType: ChangeTypeDeviceChanged, EntityType: EntityTypeDevice,
 		DeviceID: dev.ID, Before: DeviceSnapshot{Name: "d1"}, After: DeviceSnapshot{Name: "d1x"},
 	})
-	count := countChangeLog(t, queries)
+	count := countChangeLog(t)
 	require.Equal(t, 1, count, "first device_changed should emit")
 
 	// Second device_changed within cooldown is suppressed.
@@ -158,14 +158,14 @@ func TestDBRecorder_CooldownDedup(t *testing.T) {
 		ChangeType: ChangeTypeDeviceChanged, EntityType: EntityTypeDevice,
 		DeviceID: dev.ID, Before: DeviceSnapshot{Name: "d1x"}, After: DeviceSnapshot{Name: "d1y"},
 	})
-	require.Equal(t, 1, countChangeLog(t, queries), "second device_changed within cooldown suppressed")
+	require.Equal(t, 1, countChangeLog(t), "second device_changed within cooldown suppressed")
 
 	// device_lost is NOT throttled — always emits.
 	rec.Record(ctx, ChangeEvent{
 		ChangeType: ChangeTypeDeviceLost, EntityType: EntityTypeDevice,
 		DeviceID: dev.ID, Before: DeviceSnapshot{Name: "d1y"},
 	})
-	require.Equal(t, 2, countChangeLog(t, queries), "device_lost must always emit")
+	require.Equal(t, 2, countChangeLog(t), "device_lost must always emit")
 }
 
 func snapshotWithAttrs(t *testing.T, attrs string) DeviceSnapshot {
@@ -185,14 +185,12 @@ func setupTestDB(t *testing.T) (*sql.DB, *db.Queries) {
 	return conn, db.New(conn)
 }
 
-// countChangeLog returns the total change_log row count via a raw COUNT query,
-// sidestepping the sentinel params of the sqlc CountChangeLog query (whose
-// interface{} sentinels interact unpredictably with the driver's NULL handling).
-func countChangeLog(t *testing.T, queries *db.Queries) int {
+// countChangeLog returns the total change_log row count via a raw COUNT query on
+// the test's connection, sidestepping the sentinel params of the sqlc
+// CountChangeLog query (whose interface{} sentinels interact unpredictably with
+// the driver's NULL handling).
+func countChangeLog(t *testing.T) int {
 	t.Helper()
-	// Access the underlying connection via a one-shot query through the Queries'
-	// DB. sqlc doesn't expose DB(), so query through a fresh helper: CountChangeLog
-	// with all match-all sentinels is unreliable here; use the test's own conn.
 	row := testDBConn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM change_log")
 	var n int
 	require.NoError(t, row.Scan(&n))
