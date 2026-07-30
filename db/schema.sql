@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Devices table
 CREATE TABLE IF NOT EXISTS devices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_uuid TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL,
     type TEXT NOT NULL DEFAULT 'other' CHECK(type IN ('pc', 'embedded', 'iot', 'other', 'server', 'switch', 'router', 'firewall', 'nas', 'camera', 'phone', 'printer')),
     brand TEXT NOT NULL DEFAULT '',
@@ -362,6 +363,7 @@ CREATE INDEX IF NOT EXISTS idx_scan_task_runs_created_at ON scan_task_runs(creat
 CREATE TABLE IF NOT EXISTS service_evidence (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ip TEXT NOT NULL,
+    device_uuid TEXT NOT NULL DEFAULT '',  -- stable device identity (backfilled); empty = unresolved at write time
     source TEXT NOT NULL,         -- e.g. "active:tcp", "passive:ebpf:tc"
     kind TEXT NOT NULL,           -- e.g. "banner", "port_open", "snmp"
     port INTEGER NOT NULL DEFAULT 0,
@@ -379,6 +381,7 @@ CREATE INDEX IF NOT EXISTS idx_service_evidence_observed ON service_evidence(obs
 CREATE TABLE IF NOT EXISTS host_services (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ip TEXT NOT NULL,
+    device_uuid TEXT NOT NULL DEFAULT '',  -- stable device identity (replaces ip as the key once backfilled)
     service TEXT NOT NULL,        -- "ssh", "http", "rtsp", "onvif", ...
     port INTEGER NOT NULL DEFAULT 0,
     protocol TEXT NOT NULL DEFAULT '',
@@ -401,6 +404,7 @@ CREATE INDEX IF NOT EXISTS idx_host_services_service ON host_services(service);
 CREATE TABLE IF NOT EXISTS host_tls_certs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ip TEXT NOT NULL,
+    device_uuid TEXT NOT NULL DEFAULT '',  -- stable device identity (replaces ip in the device join once backfilled)
     port INTEGER NOT NULL DEFAULT 0,
     cert_index INTEGER NOT NULL DEFAULT 0,        -- 0 = leaf/server cert, 1..N = chain issuers
     -- Identity
@@ -556,6 +560,7 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
     task_id INTEGER,                       -- which scan task last touched it (NULL = agent report)
     ip TEXT NOT NULL,
     mac TEXT NOT NULL DEFAULT '',          -- MAC-primary identity key (empty when unknown)
+    device_uuid TEXT NOT NULL DEFAULT '',  -- stable device identity (replaces ip as the lost-detection key once backfilled); empty during transition
     miss_count INTEGER NOT NULL DEFAULT 0, -- consecutive scans this IP was absent
     last_seen_at DATETIME NOT NULL,        -- last time this IP appeared alive in a scan
     flap_count INTEGER NOT NULL DEFAULT 0, -- liveness transitions (lost+recovered) — used by the lease sweeper's flap state-machine to debounce intermittently-seen agent devices

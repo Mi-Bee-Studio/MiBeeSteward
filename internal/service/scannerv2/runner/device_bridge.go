@@ -245,13 +245,38 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			if roamed {
 				ipClause = "ip_address = ?"
 			}
-			_, _ = rn.dbConn.ExecContext(ctx, `
+			_, err = rn.dbConn.ExecContext(ctx, `
 				UPDATE devices SET status='online',
 				    `+ipClause+`,
 				    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
 				    last_seen = COALESCE(last_seen, ?),
 				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 				argsForRoamUpdate(roamed, rep.IP, mac, now, existingID)...)
+			if err != nil && roamed {
+				// The roam UPDATE can fail the (ip_address, network_id) unique
+				// constraint when a mac='' placeholder row occupies the target IP
+				// (the device-split scenario). Rather than silently swallowing the
+				// error (the prior bug — the roam was lost and the device stayed on
+				// its stale IP), evict the placeholder then retry. The placeholder
+				// is a mac-less stale discovery at this IP; the real device (with
+				// this MAC) is taking over, so removing it is correct.
+				rn.logger.Warn("device bridge: roam update failed, evicting ip-holder placeholder and retrying",
+					"ip", rep.IP, "device_id", existingID, "error", err)
+				if netClause, netArg := networkClause(networkID); netClause != "" {
+					_, _ = rn.dbConn.ExecContext(ctx,
+						`DELETE FROM devices WHERE ip_address = ? AND `+netClause+` AND mac_address = '' AND id != ?`,
+						append([]any{rep.IP}, append(netArg, existingID)...)...)
+				}
+				_, err = rn.dbConn.ExecContext(ctx, `
+					UPDATE devices SET status='online', ip_address = ?,
+					    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
+					    last_seen = COALESCE(last_seen, ?),
+					    last_scanned_at = ?, updated_at = ? WHERE id=?`,
+					rep.IP, mac, mac, now, now, now, existingID)
+				if err != nil {
+					rn.logger.Warn("device bridge: roam retry failed", "ip", rep.IP, "device_id", existingID, "error", err)
+				}
+			}
 		}
 		// Change detection: re-read the AFTER snapshot and apply the TIERED
 		// model. Two separate judgments, so liveness and identity never conflate:
@@ -332,6 +357,16 @@ func (rn *Runner) snapshotDevice(ctx context.Context, deviceID int64) *changedet
 	}
 	s := changedetect.SnapshotFromDevice(d)
 	return &s
+}
+
+// networkClause returns a SQL fragment + arg for a network_id condition matching
+// the resolveDeviceIdentity pattern: "network_id = ?" when valid, or
+// "network_id IS NULL" when not (empty fragment + nil arg means "no constraint").
+func networkClause(networkID sql.NullInt64) (string, []any) {
+	if networkID.Valid {
+		return "network_id = ?", []any{networkID.Int64}
+	}
+	return "network_id IS NULL", nil
 }
 
 // argsForRoamUpdate builds the positional args for the normal-rescan status

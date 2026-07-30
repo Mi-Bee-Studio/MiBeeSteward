@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 
 	dbsql "mibee-steward/db"
@@ -302,6 +303,16 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		// them out after a stable period. See db/schema.sql scan_snapshots.
 		"ALTER TABLE scan_snapshots ADD COLUMN flap_count INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE scan_snapshots ADD COLUMN last_flap_at DATETIME",
+		// Synthetic device identity (device_uuid): a stable, IP-independent key so
+		// satellite tables can follow a device across DHCP roams. Added nullable
+		// (DEFAULT ''); backfilled + indexed in a later migration step, then the
+		// IP-keyed satellite tables are re-keyed onto device_uuid. See the device
+		// identity rearchitecture plan.
+		"ALTER TABLE devices ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE scan_snapshots ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE host_services ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE service_evidence ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE host_tls_certs ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
 		// Dual JSON layer (scan_attributes + user_attributes). Generated columns
 		// (scan_vendor/scan_mac/scan_os/scan_hostname) can't be added via ALTER
 		// on existing DBs — those are only present on fresh installs. For
@@ -368,6 +379,33 @@ func runMigrations(db *sql.DB, dbPath string) error {
 				return fmt.Errorf("failed to run migration %q: %w", m, err)
 			}
 		}
+	}
+
+	// Backfill device_uuid on existing devices rows (synthetic stable identity).
+	// Fresh installs get device_uuid from schema.sql's DEFAULT '' but it stays
+	// empty until this runs; new device creation also generates one going forward.
+	// Must run BEFORE applyUniqueIndexMigrations so the UUID unique index has no
+	// empty-string collisions.
+	if err := backfillDeviceUUIDs(context.Background(), db); err != nil {
+		return fmt.Errorf("backfill device_uuid: %w", err)
+	}
+
+	// One-shot IP-join backfill of device_uuid on the IP-keyed satellite tables.
+	// At migration time every satellite row's IP matches its device's current IP
+	// (both written by the same scan), so the IP-join is reliable HERE even though
+	// it's exactly what breaks on DHCP roam. After this, future writes use the
+	// new device-keyed upsert paths. Unmatched rows (no device) keep '' and age
+	// out via retention sweeps.
+	if err := backfillSatelliteUUIDs(context.Background(), db); err != nil {
+		return fmt.Errorf("backfill satellite device_uuid: %w", err)
+	}
+
+	// Merge duplicate-MAC device rows (the device-split symptom): when the same
+	// MAC ended up in multiple devices rows (created via the mac='' placeholder
+	// hole or manual add), collapse them into one canonical row and re-point the
+	// child tables. Runs at startup; idempotent (no-op once merged).
+	if err := mergeDuplicateMACDevices(context.Background(), db); err != nil {
+		return fmt.Errorf("merge duplicate-MAC devices: %w", err)
 	}
 
 	// Idempotent constraint/index migrations. These enforce uniqueness invariants
@@ -682,6 +720,202 @@ func applyUniqueIndexMigrations(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_heartbeat_configs_device_method ON heartbeat_configs(device_id, method)`); err != nil {
 		return fmt.Errorf("create idx_heartbeat_configs_device_method: %w", err)
+	}
+	return nil
+}
+
+// backfillDeviceUUIDs assigns a stable device_uuid to every devices row that
+// lacks one, then creates the UUID unique index. This is the synthetic-identity
+// foundation: a stable, IP-independent key the satellite tables will reference so
+// they follow a device across DHCP roams (replacing the IP-keyed lookups that
+// broke when a device's address changed). Runs at every startup; idempotent
+// (only fills empty/NULL uuids; the index is IF NOT EXISTS).
+//
+// UUIDs are Go-generated (uuid.NewString, RFC 4122 hyphenated) for format
+// consistency with new device creation. Device counts are modest (LAN tool,
+// hundreds to low thousands), so a row loop is fine.
+func backfillDeviceUUIDs(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `SELECT id FROM devices WHERE device_uuid IS NULL OR device_uuid = ''`)
+	if err != nil {
+		return fmt.Errorf("select devices without uuid: %w", err)
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan device id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate devices without uuid: %w", err)
+	}
+	for _, id := range ids {
+		if _, err := db.ExecContext(ctx,
+			`UPDATE devices SET device_uuid = ? WHERE id = ?`, uuid.NewString(), id); err != nil {
+			return fmt.Errorf("set device_uuid for id %d: %w", id, err)
+		}
+	}
+	if len(ids) > 0 {
+		slog.Info("device_uuid backfill", "devices_assigned", len(ids))
+	}
+	// Unique index on device_uuid. Empty-string default rows are all backfilled
+	// above, so no collision on ''. Idempotent.
+	if _, err := db.ExecContext(ctx,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_uuid ON devices(device_uuid)`); err != nil {
+		return fmt.Errorf("create idx_devices_uuid: %w", err)
+	}
+	return nil
+}
+
+// backfillSatelliteUUIDs populates device_uuid on the IP-keyed satellite tables
+// via a one-shot IP-join to devices. Reliable at migration time (IPs are
+// consistent — same scan wrote both). After this, the application code switches
+// the satellite writes to device-keyed upserts (PR-B), retiring the IP-join.
+// Each statement is best-effort: a failure (e.g. a table not yet having the
+// column on a partial upgrade) is logged, not fatal, since these are additive.
+func backfillSatelliteUUIDs(ctx context.Context, db *sql.DB) error {
+	// The device JOIN mirrors ListLostSnapshots: (ip, network_id) with a NULL
+	// network_id fallback. host_services/service_evidence/host_tls_certs don't
+	// carry network_id, so they join on IP alone (a device's IP is unique within
+	// its network; cross-network IP collisions are rare on a LAN tool).
+	stmts := []string{
+		`UPDATE scan_snapshots SET device_uuid = COALESCE((
+			SELECT d.device_uuid FROM devices d
+			WHERE d.ip_address = scan_snapshots.ip
+			  AND (d.network_id = scan_snapshots.network_id OR d.network_id IS NULL)
+			LIMIT 1), '') WHERE device_uuid = ''`,
+		`UPDATE host_services SET device_uuid = COALESCE((
+			SELECT d.device_uuid FROM devices d WHERE d.ip_address = host_services.ip LIMIT 1), '')
+			WHERE device_uuid = ''`,
+		`UPDATE service_evidence SET device_uuid = COALESCE((
+			SELECT d.device_uuid FROM devices d WHERE d.ip_address = service_evidence.ip LIMIT 1), '')
+			WHERE device_uuid = ''`,
+		`UPDATE host_tls_certs SET device_uuid = COALESCE((
+			SELECT d.device_uuid FROM devices d WHERE d.ip_address = host_tls_certs.ip LIMIT 1), '')
+			WHERE device_uuid = ''`,
+	}
+	for _, s := range stmts {
+		if _, err := db.ExecContext(ctx, s); err != nil {
+			// Best-effort: a missing column on a partial upgrade is recoverable on
+			// the next start once the ALTER has run. Log and continue.
+			slog.Warn("satellite device_uuid backfill statement failed", "error", err)
+		}
+	}
+	return nil
+}
+
+// mergeDuplicateMACDevices collapses rows that share the same non-empty MAC into
+// a single canonical row, re-pointing child tables. This heals the device-split
+// symptom (same MAC in multiple devices rows, created via the mac=” placeholder
+// hole or an unguarded manual add). Idempotent: no-op when there are no dupes.
+//
+// Canonical selection: prefer an 'online' row (has the freshest data), else the
+// lowest id (oldest, most-referenced). The canonical keeps its id + uuid; ghosts
+// (the losing rows) are deleted after their children are re-pointed. Child tables
+// in the main DB use ON DELETE CASCADE, so re-pointing then deleting is safe.
+// Child tables in the separate heartbeat.db (heartbeat_results/device_liveness)
+// can't be touched cross-DB here; their orphaned-by-deleted-ghost rows age out
+// via retention (the ghost's device_id no longer exists; reads JOIN-skip them).
+func mergeDuplicateMACDevices(ctx context.Context, db *sql.DB) error {
+	// Find MACs with >1 row.
+	rows, err := db.QueryContext(ctx,
+		`SELECT mac_address, count(*) FROM devices WHERE mac_address != '' GROUP BY mac_address HAVING count(*) > 1`)
+	if err != nil {
+		return fmt.Errorf("find duplicate-MAC groups: %w", err)
+	}
+	var macs []string
+	for rows.Next() {
+		var mac string
+		var n int64
+		if err := rows.Scan(&mac, &n); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan duplicate-MAC group: %w", err)
+		}
+		macs = append(macs, mac)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate duplicate-MAC groups: %w", err)
+	}
+	if len(macs) == 0 {
+		return nil
+	}
+
+	// Child tables whose device_id must be re-pointed from each ghost to the
+	// canonical. change_log.entity_id is polymorphic (no FK) but carries device
+	// ids for device events — re-point it too so history follows the device.
+	childDeviceIDCols := []struct{ table, col string }{
+		{"heartbeat_configs", "device_id"},
+		{"device_documents", "device_id"},
+		{"device_systems", "device_id"},
+		{"device_neighbors", "device_id"},
+		{"device_neighbors", "neighbor_device_id"},
+		{"topology_edges", "from_device_id"},
+		{"topology_edges", "to_device_id"},
+		{"change_log", "entity_id"},
+	}
+
+	var totalMerged int
+	for _, mac := range macs {
+		// Pick canonical: online first, then lowest id.
+		var canonicalID int64
+		if err := db.QueryRowContext(ctx,
+			`SELECT id FROM devices WHERE mac_address = ? ORDER BY CASE status WHEN 'online' THEN 0 ELSE 1 END, id LIMIT 1`,
+			mac).Scan(&canonicalID); err != nil {
+			slog.Warn("merge dup-MAC: pick canonical failed", "mac", mac, "error", err)
+			continue
+		}
+		// Ghosts = the other rows.
+		gRows, err := db.QueryContext(ctx, `SELECT id FROM devices WHERE mac_address = ? AND id != ?`, mac, canonicalID)
+		if err != nil {
+			slog.Warn("merge dup-MAC: list ghosts failed", "mac", mac, "error", err)
+			continue
+		}
+		var ghostIDs []int64
+		for gRows.Next() {
+			var gid int64
+			if err := gRows.Scan(&gid); err == nil {
+				ghostIDs = append(ghostIDs, gid)
+			}
+		}
+		gRows.Close()
+
+		for _, gid := range ghostIDs {
+			// Re-point children from ghost → canonical.
+			for _, c := range childDeviceIDCols {
+				if _, err := db.ExecContext(ctx,
+					`UPDATE `+c.table+` SET `+c.col+` = ? WHERE `+c.col+` = ?`, canonicalID, gid); err != nil {
+					slog.Warn("merge dup-MAC: re-point child failed", "table", c.table, "col", c.col, "ghost", gid, "error", err)
+				}
+			}
+			// Re-point satellite device_uuid rows (host_services/host_tls_certs/
+			// service_evidence/scan_snapshots) that were IP-joined to the ghost's
+			// IP — they should follow the canonical device_uuid instead. The ghost's
+			// uuid is now orphaned; rows carrying it move to the canonical's uuid.
+			var canonicalUUID string
+			if err := db.QueryRowContext(ctx, `SELECT device_uuid FROM devices WHERE id = ?`, canonicalID).Scan(&canonicalUUID); err == nil && canonicalUUID != "" {
+				var ghostUUID string
+				if err := db.QueryRowContext(ctx, `SELECT device_uuid FROM devices WHERE id = ?`, gid).Scan(&ghostUUID); err == nil && ghostUUID != "" && ghostUUID != canonicalUUID {
+					for _, t := range []string{"host_services", "service_evidence", "host_tls_certs", "scan_snapshots"} {
+						if _, err := db.ExecContext(ctx, `UPDATE `+t+` SET device_uuid = ? WHERE device_uuid = ?`, canonicalUUID, ghostUUID); err != nil {
+							slog.Warn("merge dup-MAC: re-point satellite uuid failed", "table", t, "error", err)
+						}
+					}
+				}
+			}
+			// Delete the ghost (CASCADE cleans up any FK children not re-pointed).
+			if _, err := db.ExecContext(ctx, `DELETE FROM devices WHERE id = ?`, gid); err != nil {
+				slog.Warn("merge dup-MAC: delete ghost failed", "ghost", gid, "error", err)
+			} else {
+				totalMerged++
+			}
+		}
+	}
+	if totalMerged > 0 {
+		slog.Info("duplicate-MAC merge", "ghosts_removed", totalMerged, "mac_groups", len(macs))
 	}
 	return nil
 }
