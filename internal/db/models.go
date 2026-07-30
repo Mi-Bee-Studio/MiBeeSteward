@@ -68,6 +68,7 @@ type DashboardConfig struct {
 
 type Device struct {
 	ID               int64      `json:"id"`
+	DeviceUuid       string     `json:"device_uuid"`
 	Name             string     `json:"name"`
 	Type             string     `json:"type"`
 	Brand            string     `json:"brand"`
@@ -185,6 +186,7 @@ type HeartbeatResult struct {
 type HostService struct {
 	ID         int64     `json:"id"`
 	Ip         string    `json:"ip"`
+	DeviceUuid string    `json:"device_uuid"`
 	Service    string    `json:"service"`
 	Port       int64     `json:"port"`
 	Protocol   string    `json:"protocol"`
@@ -196,6 +198,7 @@ type HostService struct {
 type HostTlsCert struct {
 	ID                int64     `json:"id"`
 	Ip                string    `json:"ip"`
+	DeviceUuid        string    `json:"device_uuid"`
 	Port              int64     `json:"port"`
 	CertIndex         int64     `json:"cert_index"`
 	SubjectCn         string    `json:"subject_cn"`
@@ -280,13 +283,16 @@ type ScanResult struct {
 }
 
 type ScanSnapshot struct {
-	ID         int64     `json:"id"`
-	NetworkID  int64     `json:"network_id"`
-	TaskID     *int64    `json:"task_id"`
-	Ip         string    `json:"ip"`
-	Mac        string    `json:"mac"`
-	MissCount  int64     `json:"miss_count"`
-	LastSeenAt time.Time `json:"last_seen_at"`
+	ID         int64      `json:"id"`
+	NetworkID  int64      `json:"network_id"`
+	TaskID     *int64     `json:"task_id"`
+	Ip         string     `json:"ip"`
+	Mac        string     `json:"mac"`
+	DeviceUuid string     `json:"device_uuid"`
+	MissCount  int64      `json:"miss_count"`
+	LastSeenAt time.Time  `json:"last_seen_at"`
+	FlapCount  int64      `json:"flap_count"`
+	LastFlapAt *time.Time `json:"last_flap_at"`
 }
 
 type ScanTask struct {
@@ -324,6 +330,7 @@ type ScanTaskRun struct {
 type ServiceEvidence struct {
 	ID         int64     `json:"id"`
 	Ip         string    `json:"ip"`
+	DeviceUuid string    `json:"device_uuid"`
 	Source     string    `json:"source"`
 	Kind       string    `json:"kind"`
 	Port       int64     `json:"port"`

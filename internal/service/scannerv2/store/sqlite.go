@@ -101,10 +101,22 @@ var _ scannerv2.Repository = (*SQLiteRepository)(nil)
 
 // RecordEvidence inserts raw evidence rows. Sampling: when persistRawEvidence
 // is false, the method is a no-op. Batches inserts in a single tx.
+//
+// device_uuid is resolved best-effort (the engine runs this BEFORE the runner
+// persists the device row, so on first discovery the device may not exist yet —
+// the row lands with device_uuid=” and is healed on the next scan / by the
+// backfill migration). Steady-state scans (the common case) find the device.
 func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.Evidence) error {
 	if !r.persistRawEvidence || len(evs) == 0 {
 		return nil
 	}
+	// Resolve once per call: all rows in a batch share the same IP, so a single
+	// lookup is enough. '' when unresolved (see method doc).
+	var uuid string
+	if len(evs) > 0 {
+		uuid, _ = r.resolveDeviceUUID(ctx, evs[0].IP)
+	}
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -112,8 +124,8 @@ func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.E
 	defer tx.Rollback() //nolint:errcheck
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO service_evidence (ip, source, kind, port, protocol, raw_data, confidence, observed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+		INSERT INTO service_evidence (ip, device_uuid, source, kind, port, protocol, raw_data, confidence, observed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -128,7 +140,7 @@ func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.E
 		if ts.IsZero() {
 			ts = time.Now()
 		}
-		if _, err := stmt.ExecContext(ctx, e.IP, e.Source, e.Kind, e.Port, e.Protocol, string(raw), e.Confidence, ts.UTC()); err != nil {
+		if _, err := stmt.ExecContext(ctx, e.IP, uuid, e.Source, e.Kind, e.Port, e.Protocol, string(raw), e.Confidence, ts.UTC()); err != nil {
 			r.logger.Debug("insert evidence row failed", "error", err)
 		}
 	}
@@ -136,23 +148,41 @@ func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.E
 }
 
 // RecordServices replaces the host's service-identity set atomically.
+//
+// Keyed by device_uuid (resolved from IP) so the service list follows a device
+// across a DHCP roam instead of stranding on the old IP. On first discovery the
+// device row may not exist yet (the engine runs before the runner persists the
+// device); the rows land with device_uuid=” and are healed on the next scan.
+// The DELETE keeps an IP guard as a belt-and-suspenders so a not-yet-uuid'd row
+// set is still replaced rather than accumulated while the uuid is unresolved.
 func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, services []scannerv2.ServiceIdentity) error {
+	uuid, _ := r.resolveDeviceUUID(ctx, ip)
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM host_services WHERE ip = ?`, ip); err != nil {
-		return err
+	// Replace the host's prior service set. When we have a uuid, scope the delete
+	// to it (the stable identity); otherwise fall back to IP so unresolved hosts
+	// still get a clean replace instead of unbounded row growth.
+	if uuid != "" {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM host_services WHERE device_uuid = ?`, uuid); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM host_services WHERE ip = ? AND device_uuid = ?`, ip, ""); err != nil {
+			return err
+		}
 	}
 	if len(services) == 0 {
 		return tx.Commit()
 	}
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO host_services (ip, service, port, protocol, confidence, metadata, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`)
+		INSERT INTO host_services (ip, device_uuid, service, port, protocol, confidence, metadata, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -194,7 +224,7 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 		if err != nil {
 			meta = []byte("{}")
 		}
-		if _, err := stmt.ExecContext(ctx, ip, s.Service, s.Port, s.Protocol, s.Confidence, string(meta), now); err != nil {
+		if _, err := stmt.ExecContext(ctx, ip, uuid, s.Service, s.Port, s.Protocol, s.Confidence, string(meta), now); err != nil {
 			r.logger.Warn("insert host_service row failed", "ip", ip, "service", s.Service, "error", err)
 		}
 	}
@@ -214,6 +244,8 @@ func (r *SQLiteRepository) RecordTLSCerts(ctx context.Context, ip string, certs 
 	if len(certs) == 0 {
 		return nil
 	}
+	uuid, _ := r.resolveDeviceUUID(ctx, ip)
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -221,26 +253,34 @@ func (r *SQLiteRepository) RecordTLSCerts(ctx context.Context, ip string, certs 
 	defer tx.Rollback() //nolint:errcheck
 
 	// Collect the distinct ports in this batch; delete prior rows for each.
+	// Keyed by device_uuid when resolved (follows the device across a roam),
+	// else falls back to IP (unresolved first-discovery host).
 	ports := make(map[int]struct{}, len(certs))
 	for _, c := range certs {
 		ports[c.Port] = struct{}{}
 	}
 	for port := range ports {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM host_tls_certs WHERE ip = ? AND port = ?`, ip, port); err != nil {
-			return err
+		if uuid != "" {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM host_tls_certs WHERE device_uuid = ? AND port = ?`, uuid, port); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM host_tls_certs WHERE ip = ? AND device_uuid = ? AND port = ?`, ip, "", port); err != nil {
+				return err
+			}
 		}
 	}
 
 	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO host_tls_certs (
-			ip, port, cert_index,
+			ip, device_uuid, port, cert_index,
 			subject_cn, subject_org, subject, issuer_cn, issuer_org, issuer,
 			san_dns, san_ip, san_email, serial,
 			not_before, not_after,
 			sig_algorithm, key_algorithm, key_bits, is_ca, self_signed,
 			fingerprint_sha256, pem,
 			tls_version, cipher_suite, trusted, error, updated_at
-		) VALUES (?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, ?)`)
+		) VALUES (?, ?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -249,7 +289,7 @@ func (r *SQLiteRepository) RecordTLSCerts(ctx context.Context, ip string, certs 
 	now := time.Now().UTC()
 	for _, c := range certs {
 		if _, err := stmt.ExecContext(ctx,
-			ip, c.Port, c.CertIndex,
+			ip, uuid, c.Port, c.CertIndex,
 			c.SubjectCN, c.SubjectOrg, c.Subject, c.IssuerCN, c.IssuerOrg, c.Issuer,
 			c.SanDNS, c.SanIP, c.SanEmail, c.Serial,
 			c.NotBefore, c.NotAfter,
@@ -801,4 +841,38 @@ func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int6
 		return 0, err
 	}
 	return id, nil
+}
+
+// resolveDeviceUUID returns the stable device_uuid for an IP using the same
+// identity rule as resolveDeviceID (network-scoped IP match, then global IP).
+// Returns "" when no device matches — the caller writes "" into the satellite
+// row and it is healed on the next scan (or by the backfill migration). The
+// empty-string sentinel is safe because devices.device_uuid is always populated
+// (non-empty) once a row exists — backfillDeviceUUIDs guarantees it.
+//
+// Used by the satellite-table writers (RecordServices/RecordEvidence/RecordTLSCerts)
+// so those rows key on the stable identity instead of the roaming-prone IP.
+func (r *SQLiteRepository) resolveDeviceUUID(ctx context.Context, ip string) (string, error) {
+	var q string
+	var args []any
+	if r.networkID.Valid {
+		q = `SELECT device_uuid FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`
+		args = []any{ip, r.networkID.Int64}
+	} else {
+		q = `SELECT device_uuid FROM devices WHERE ip_address = ? AND (network_id IS NULL OR network_id = (SELECT MIN(network_id) FROM devices WHERE ip_address = ?)) LIMIT 1`
+		args = []any{ip, ip}
+	}
+	var u string
+	err := r.db.QueryRowContext(ctx, q, args...).Scan(&u)
+	if err == sql.ErrNoRows || err != nil {
+		// Fall back to any device with this IP (cross-network / NULL-network).
+		if r.networkID.Valid {
+			err = r.db.QueryRowContext(ctx,
+				`SELECT device_uuid FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&u)
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	return u, nil
 }

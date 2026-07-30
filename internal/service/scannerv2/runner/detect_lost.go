@@ -143,13 +143,13 @@ func (rn *Runner) RecordAliveSnapshots(ctx context.Context, networkID sql.NullIn
 			t := taskID
 			taskIDPtr = &t
 		}
-		if err := rn.queries.UpsertScanSnapshot(ctx, db.UpsertScanSnapshotParams{
-			NetworkID:  networkID.Int64,
-			TaskID:     taskIDPtr,
-			Ip:         rep.IP,
-			Mac:        mac,
-			LastSeenAt: now,
-		}); err != nil {
+		// Resolve the device's stable uuid so the snapshot row follows the device,
+		// not the IP. DetectLost runs AFTER applyDeviceBridge persisted the device
+		// (Run step 3 → step 3c), so the device row exists on the local-scan path;
+		// on the agent→center lease path a prior report already created it. An empty
+		// uuid (device somehow still absent) is healed on the next scan.
+		devUUID := rn.resolveDeviceUUIDForIP(ctx, rep.IP, networkID)
+		if err := rn.upsertScanSnapshot(ctx, networkID.Int64, taskIDPtr, rep.IP, mac, devUUID, now); err != nil {
 			rn.logger.Warn("record-alive-snapshots: upsert failed", "ip", rep.IP, "error", err)
 		}
 	}
@@ -203,4 +203,63 @@ func (rn *Runner) recordDeviceRecovered(ctx context.Context, deviceID int64, net
 		Before:     before,
 		After:      after,
 	})
+}
+
+// resolveDeviceUUIDForIP returns the stable device_uuid for an IP, scoped to
+// networkID when valid (mirrors the store's resolveDeviceUUID identity rule).
+// Returns "" on miss (the snapshot row gets device_uuid=” and is healed next
+// scan). Used by RecordAliveSnapshots so a scan_snapshots lease row keys on the
+// device's stable identity rather than its roaming-prone IP.
+func (rn *Runner) resolveDeviceUUIDForIP(ctx context.Context, ip string, networkID sql.NullInt64) string {
+	if rn.dbConn == nil {
+		return ""
+	}
+	var u string
+	var err error
+	if networkID.Valid {
+		err = rn.dbConn.QueryRowContext(ctx,
+			`SELECT device_uuid FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+			ip, networkID.Int64).Scan(&u)
+		if err != nil {
+			// Fall back to any device with this IP (NULL-network / cross-network).
+			err = rn.dbConn.QueryRowContext(ctx,
+				`SELECT device_uuid FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&u)
+		}
+	} else {
+		err = rn.dbConn.QueryRowContext(ctx,
+			`SELECT device_uuid FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&u)
+	}
+	if err != nil {
+		return ""
+	}
+	return u
+}
+
+// upsertScanSnapshotRawSQL is the device_uuid-writing scan-snapshot upsert,
+// implemented as raw SQL because sqlc's SQLite parser truncates the trailing
+// bytes of the ON CONFLICT DO UPDATE clause when it contains a CASE WHEN on
+// excluded.device_uuid (the same documented parser bug that forced
+// ListStaleAgentSnapshots to raw SQL in lease_sweeper.go). The query is
+// otherwise identical to the sqlc UpsertScanSnapshot, plus the device_uuid
+// write + the CASE that preserves an existing uuid when the caller passes ”.
+//
+// CONFLICT target stays (network_id, ip): a DHCP roam (same network, new IP)
+// inserts a fresh row with miss_count 0, and lost detection + the lease sweeper
+// join through devices to follow the device by uuid, so the IP-keyed conflict
+// target is the correct choice here.
+func (rn *Runner) upsertScanSnapshot(ctx context.Context, networkID int64, taskID *int64, ip, mac, devUUID string, lastSeen time.Time) error {
+	if rn.dbConn == nil {
+		return nil
+	}
+	_, err := rn.dbConn.ExecContext(ctx, `
+		INSERT INTO scan_snapshots (network_id, task_id, ip, mac, device_uuid, miss_count, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, 0, ?)
+		ON CONFLICT(network_id, ip) DO UPDATE SET
+			task_id = excluded.task_id,
+			mac = CASE WHEN excluded.mac != '' THEN excluded.mac ELSE scan_snapshots.mac END,
+			device_uuid = CASE WHEN excluded.device_uuid != '' THEN excluded.device_uuid ELSE scan_snapshots.device_uuid END,
+			miss_count = 0,
+			last_seen_at = excluded.last_seen_at`,
+		networkID, taskID, ip, mac, devUUID, lastSeen)
+	return err
 }

@@ -24,6 +24,7 @@ func setupDeviceSystemService(t *testing.T) (*DeviceSystemService, *sql.DB, int6
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS devices (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			device_uuid TEXT NOT NULL DEFAULT '',
 			name TEXT NOT NULL,
 			type TEXT NOT NULL DEFAULT 'other' CHECK(type IN ('pc', 'embedded', 'iot', 'other', 'server', 'switch', 'router', 'firewall', 'nas')),
 			brand TEXT NOT NULL DEFAULT '',

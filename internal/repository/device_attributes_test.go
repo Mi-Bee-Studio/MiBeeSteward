@@ -23,6 +23,7 @@ func setupAttributesTestDB(t *testing.T) (*DeviceRepository, *sql.DB, int64) {
 	_, err = conn.Exec(`
 		CREATE TABLE IF NOT EXISTS devices (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			device_uuid TEXT NOT NULL DEFAULT '',
 			name TEXT NOT NULL,
 			type TEXT NOT NULL DEFAULT 'other',
 			brand TEXT NOT NULL DEFAULT '',
@@ -147,6 +148,7 @@ func TestCreateDeviceRejectsInvalidUserAttributes(t *testing.T) {
 	_, err = conn.Exec(`
 		CREATE TABLE devices (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			device_uuid TEXT NOT NULL DEFAULT '',
 			name TEXT NOT NULL,
 			type TEXT NOT NULL DEFAULT 'other',
 			status TEXT NOT NULL DEFAULT 'unknown',
