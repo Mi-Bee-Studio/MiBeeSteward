@@ -11,6 +11,7 @@ package runner
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"time"
 )
@@ -26,6 +27,8 @@ type staleAgentSnapshot struct {
 	Mac        string
 	LastSeenAt time.Time
 	DeviceID   int64
+	FlapCount  int64
+	LastFlapAt sql.NullTime
 }
 
 // staleAgentSnapshotsSQL selects snapshots in agent-managed networks whose
@@ -39,7 +42,7 @@ type staleAgentSnapshot struct {
 //
 // Defined as raw SQL (not sqlc) because sqlc's SQLite parser truncates this
 // query's trailing bytes — see the NOTE in db/queries/scan_snapshots.sql.
-const staleAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id
+const staleAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id, s.flap_count, s.last_flap_at
 FROM scan_snapshots s
 JOIN devices d ON d.ip_address = s.ip AND (d.network_id = s.network_id OR d.network_id IS NULL)
 JOIN networks n ON n.id = s.network_id
@@ -58,7 +61,7 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
 // stuck rows so sweepOnce can flip them back to online — closing the recovery
 // gap the stable-hash optimization opened. Same agent-only scope; the center's
 // own network recovers online via its own applyDeviceBridge scan path.
-const recoverableAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id
+const recoverableAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id, s.flap_count, s.last_flap_at
 FROM scan_snapshots s
 JOIN devices d ON d.ip_address = s.ip AND (d.network_id = s.network_id OR d.network_id IS NULL)
 JOIN networks n ON n.id = s.network_id
@@ -100,6 +103,18 @@ type LeaseSweeper struct {
 	ttl      time.Duration // staleness threshold (last_seen older than now-ttl)
 	logger   *slog.Logger
 }
+
+// Flap-debounce constants for the lease sweeper. An agent device that bounces
+// online/offline (a flaky-WiFi IoT device the agent sees intermittently) would
+// otherwise emit a device_lost/device_recovered storm. Once a device has crossed
+// flapThreshold liveness transitions, further transitions within flapStablePeriod
+// update devices.status but do NOT emit change_log events — the device is
+// recognized as flapping. When it stays continuously online past flapStablePeriod,
+// flap_count resets and normal event recording resumes.
+const (
+	flapThreshold    = int64(4)         // transitions before a device is considered flapping
+	flapStablePeriod = 30 * time.Minute // how long stable-online before flap_count resets
+)
 
 // NewLeaseSweeper constructs a sweeper. interval ≤0 → 60s, ttl ≤0 → 5min.
 func NewLeaseSweeper(rn *Runner, interval, ttl time.Duration, logger *slog.Logger) *LeaseSweeper {
@@ -152,6 +167,12 @@ func (s *LeaseSweeper) sweepOnce(ctx context.Context) {
 
 // expireStale marks agent devices offline when their snapshot lease is older than
 // the cutoff. Returns the number of devices expired.
+//
+// Flap debouncing: a device whose flap_count has crossed flapThreshold is
+// recognized as flapping — its status is still updated (so the registry reflects
+// current liveness) but NO device_lost event is emitted, stopping the lost storm
+// an intermittently-seen IoT device would otherwise generate. Each transition
+// increments flap_count; recoverFresh resets it after a stable-online period.
 func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 	stale := s.querySnapshots(ctx, staleAgentSnapshotsSQL, cutoff, "list stale")
 	if len(stale) == 0 {
@@ -159,20 +180,31 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 	}
 	now := time.Now().UTC()
 	for _, l := range stale {
-		nid := l.NetworkID
-		nidPtr := &nid
-		// Mark the device offline (same best-effort UPDATE DetectLost uses).
+		// Increment flap_count + stamp last_flap_at for every transition (this
+		// UPDATE is independent of whether we emit, so the flap counter advances
+		// even while suppressed — keeping the "how flaky is this device" signal
+		// accurate for the stable-period reset decision).
+		if _, err := s.runner.dbConn.ExecContext(ctx,
+			`UPDATE scan_snapshots SET flap_count = flap_count + 1, last_flap_at = ? WHERE id = ?`,
+			now, l.ID); err != nil {
+			s.logger.Warn("lease sweeper: flap_count increment failed", "snapshot_id", l.ID, "error", err)
+		}
+		// Mark the device offline (always — the registry must reflect liveness
+		// regardless of event suppression).
 		if _, err := s.runner.dbConn.ExecContext(ctx,
 			`UPDATE devices SET status='offline', updated_at=? WHERE id=?`, now, l.DeviceID); err != nil {
 			s.logger.Warn("lease sweeper: mark offline failed", "device_id", l.DeviceID, "ip", l.IP, "error", err)
 		}
-		// Emit device_lost (change_log + Watcher). No-op when changeRecorder
-		// is nil (agent mode — but the sweeper only runs on the center anyway).
-		s.runner.recordDeviceLost(ctx, l.DeviceID, nidPtr, "lease")
-		// Sample the offline verdict to the liveness series. The lease sweeper
-		// is the SOLE liveness signal for agent-managed networks (they're
-		// excluded from center-side heartbeat probing), so it must sample the
-		// verdict itself rather than rely on the heartbeat tick loop.
+		// Flap suppression: once past the threshold, stop emitting. The device is
+		// known-unstable; recording every disappearance floods change_log. The
+		// status column still tracks it for the device list / dashboard.
+		flapping := l.FlapCount+1 >= flapThreshold // +1 for this transition
+		if !flapping {
+			nid := l.NetworkID
+			s.runner.recordDeviceLost(ctx, l.DeviceID, &nid, "lease")
+		}
+		// Sample the offline verdict to the liveness series (always — the series
+		// tracks actual liveness, independent of event suppression).
 		if s.runner.heartbeat != nil {
 			s.runner.heartbeat.SampleLiveness(l.DeviceID, "offline", "lease")
 		}
@@ -182,15 +214,13 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 
 // recoverFresh marks agent devices back online when their snapshot lease is
 // within the TTL window but their devices row is stuck 'offline'. This closes
-// the recovery gap the stable-hash fast path (agent_report.go) opens: on a
-// stable network the fast path only refreshes leases and never touches the
-// devices table, so a device the sweeper previously marked offline would stay
-// offline indefinitely even as the agent actively reports it alive. The UPDATE
-// mirrors applyDeviceBridge's online write (status + last_seen +
-// last_scanned_at + updated_at). A device_changed event is emitted for each
-// recovery (status is a tracked Diff field → before=offline/after=online),
-// symmetric with how the scan path reports recovery. Returns the count
-// recovered.
+// the recovery gap the stable-hash fast path (agent_report.go) opens.
+//
+// Flap debouncing mirrors expireStale: a flapping device's status is updated but
+// no device_recovered event is emitted. Additionally, if the device has been
+// stable-online long enough (last_flap_at older than flapStablePeriod), its
+// flap_count resets to 0 — returning it to normal event recording once it stops
+// bouncing.
 func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 	recoverable := s.querySnapshots(ctx, recoverableAgentSnapshotsSQL, cutoff, "list recoverable")
 	if len(recoverable) == 0 {
@@ -198,9 +228,7 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 	}
 	now := time.Now().UTC()
 	for _, l := range recoverable {
-		// Capture the BEFORE snapshot while the row is still 'offline' so the
-		// device_recovered event's before_data is faithful (recordDeviceLost has
-		// the opposite bug — it reads after the UPDATE).
+		// Capture the BEFORE snapshot while the row is still 'offline'.
 		before := s.runner.snapshotDevice(ctx, l.DeviceID)
 		if _, err := s.runner.dbConn.ExecContext(ctx,
 			`UPDATE devices SET status='online', last_seen=?, last_scanned_at=?, updated_at=? WHERE id=?`,
@@ -208,17 +236,35 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 			s.logger.Warn("lease sweeper: recover online failed", "device_id", l.DeviceID, "ip", l.IP, "error", err)
 			continue
 		}
-		// Sample the online verdict to the liveness series (agent-managed
-		// networks have no heartbeat tick sampling them).
+		// Flap-count maintenance. If the device has been stable past the stable
+		// period since its last flap, RESET flap_count (it has earned back normal
+		// event recording by staying online). Otherwise this recovery is itself a
+		// flap transition — increment it.
+		stable := l.LastFlapAt.Valid && now.Sub(l.LastFlapAt.Time) >= flapStablePeriod
+		if stable {
+			if _, err := s.runner.dbConn.ExecContext(ctx,
+				`UPDATE scan_snapshots SET flap_count = 0 WHERE id = ?`, l.ID); err != nil {
+				s.logger.Warn("lease sweeper: flap_count reset failed", "snapshot_id", l.ID, "error", err)
+			}
+		} else if _, err := s.runner.dbConn.ExecContext(ctx,
+			`UPDATE scan_snapshots SET flap_count = flap_count + 1, last_flap_at = ? WHERE id = ?`,
+			now, l.ID); err != nil {
+			s.logger.Warn("lease sweeper: flap_count increment failed", "snapshot_id", l.ID, "error", err)
+		}
+		// Sample the online verdict to the liveness series (always).
 		if s.runner.heartbeat != nil {
 			s.runner.heartbeat.SampleLiveness(l.DeviceID, "online", "lease")
 		}
-		// Emit device_recovered only when the status actually flipped — a no-op
-		// recovery (race: row flipped online between query and UPDATE) must not
-		// emit noise. No-op when changeRecorder is nil.
+		// Emit device_recovered only on a genuine offline→online flip AND when not
+		// suppressed by flapping. A reset-from-flapping recovery (stable==true)
+		// DOES emit — it marks the device's return to normal. A still-flapping
+		// recovery (stable==false, flap_count past threshold) is suppressed.
 		if before != nil && before.Status == "offline" {
-			nid := l.NetworkID
-			s.runner.recordDeviceRecovered(ctx, l.DeviceID, &nid, "lease", before)
+			flapping := !stable && l.FlapCount+1 >= flapThreshold
+			if !flapping {
+				nid := l.NetworkID
+				s.runner.recordDeviceRecovered(ctx, l.DeviceID, &nid, "lease", before)
+			}
 		}
 	}
 	return len(recoverable)
@@ -236,7 +282,7 @@ func (s *LeaseSweeper) querySnapshots(ctx context.Context, query string, cutoff 
 	var out []staleAgentSnapshot
 	for rows.Next() {
 		var r staleAgentSnapshot
-		if err := rows.Scan(&r.ID, &r.NetworkID, &r.IP, &r.Mac, &r.LastSeenAt, &r.DeviceID); err != nil {
+		if err := rows.Scan(&r.ID, &r.NetworkID, &r.IP, &r.Mac, &r.LastSeenAt, &r.DeviceID, &r.FlapCount, &r.LastFlapAt); err != nil {
 			rows.Close()
 			s.logger.Warn("lease sweeper: scan failed", "error", err)
 			return nil

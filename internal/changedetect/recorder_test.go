@@ -150,8 +150,7 @@ func TestDBRecorder_CooldownDedup(t *testing.T) {
 		ChangeType: ChangeTypeDeviceChanged, EntityType: EntityTypeDevice,
 		DeviceID: dev.ID, Before: DeviceSnapshot{Name: "d1"}, After: DeviceSnapshot{Name: "d1x"},
 	})
-	count := countChangeLog(t)
-	require.Equal(t, 1, count, "first device_changed should emit")
+	require.Equal(t, 1, countChangeLog(t), "first device_changed should emit")
 
 	// Second device_changed within cooldown is suppressed.
 	rec.Record(ctx, ChangeEvent{
@@ -160,12 +159,35 @@ func TestDBRecorder_CooldownDedup(t *testing.T) {
 	})
 	require.Equal(t, 1, countChangeLog(t), "second device_changed within cooldown suppressed")
 
-	// device_lost is NOT throttled — always emits.
+	// device_lost is the FIRST liveness event for this device → emits (count 2).
 	rec.Record(ctx, ChangeEvent{
 		ChangeType: ChangeTypeDeviceLost, EntityType: EntityTypeDevice,
 		DeviceID: dev.ID, Before: DeviceSnapshot{Name: "d1y"},
 	})
-	require.Equal(t, 2, countChangeLog(t), "device_lost must always emit")
+	require.Equal(t, 2, countChangeLog(t), "first device_lost emits (liveness key unused)")
+
+	// device_recovered immediately after — same liveness key, within cooldown →
+	// SUPPRESSED. This is the flap fix: a rapid lost→recovered bounce collapses
+	// to one recorded transition, not a storm.
+	rec.Record(ctx, ChangeEvent{
+		ChangeType: ChangeTypeDeviceRecovered, EntityType: EntityTypeDevice,
+		DeviceID: dev.ID, Before: DeviceSnapshot{Name: "d1y"}, After: DeviceSnapshot{Name: "d1y"},
+	})
+	require.Equal(t, 2, countChangeLog(t), "device_recovered within cooldown of device_lost is suppressed (shared liveness key)")
+
+	// Another device_lost within the same cooldown window → still suppressed.
+	rec.Record(ctx, ChangeEvent{
+		ChangeType: ChangeTypeDeviceLost, EntityType: EntityTypeDevice,
+		DeviceID: dev.ID, Before: DeviceSnapshot{Name: "d1y"},
+	})
+	require.Equal(t, 2, countChangeLog(t), "subsequent device_lost within cooldown suppressed (flap debounced)")
+
+	// device_added is NEVER throttled (always meaningful) → emits regardless.
+	rec.Record(ctx, ChangeEvent{
+		ChangeType: ChangeTypeDeviceAdded, EntityType: EntityTypeDevice,
+		DeviceID: dev.ID, After: DeviceSnapshot{Name: "d1z"},
+	})
+	require.Equal(t, 3, countChangeLog(t), "device_added is never throttled")
 }
 
 func snapshotWithAttrs(t *testing.T, attrs string) DeviceSnapshot {

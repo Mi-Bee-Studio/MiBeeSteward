@@ -388,22 +388,27 @@ func (r *DBRecorder) Record(ctx context.Context, ev ChangeEvent) {
 	}
 }
 
-// shouldEmit applies the cooldown dedup. device_added/device_lost always emit
-// (discrete topology events). device_changed/device_recovered emit only if no
-// event of the same type for the same device was recorded within the cooldown.
+// shouldEmit applies the cooldown dedup. device_added always emits (a genuinely
+// new device is always meaningful). device_changed is throttled per-type. The
+// liveness pair device_lost/device_recovered shares a SINGLE "liveness" key per
+// device: this is the flap fix — an intermittently-seen IoT device that bounces
+// online/offline every few minutes would otherwise emit a device_lost storm (it
+// was previously never throttled) plus an asymmetric device_recovered. With a
+// shared key, a full lost→recovered cycle within the cooldown is collapsed: the
+// first lost + first recovered in the window record, subsequent bounces are
+// suppressed until the window expires. The lease sweeper's flap state-machine is
+// the primary debouncer; this is the defense-in-depth backstop.
 func (r *DBRecorder) shouldEmit(deviceID int64, changeType string) bool {
 	if r.cooldown <= 0 {
 		return true
 	}
-	switch changeType {
-	case ChangeTypeDeviceChanged, ChangeTypeDeviceRecovered:
-		// throttleable
-	default:
-		return true // device_added/device_lost always record
+	kind := dedupKind(changeType)
+	if kind == "" {
+		return true // device_added: never throttle
 	}
 	r.lastEmittedMu.Lock()
 	defer r.lastEmittedMu.Unlock()
-	key := dedupKey{deviceID: deviceID, kind: changeType}
+	key := dedupKey{deviceID: deviceID, kind: kind}
 	if last, ok := r.lastEmitted[key]; ok {
 		if time.Since(last) < r.cooldown {
 			return false
@@ -412,14 +417,33 @@ func (r *DBRecorder) shouldEmit(deviceID int64, changeType string) bool {
 	return true
 }
 
-// markEmitted records the emit time for cooldown tracking.
+// dedupKind maps a change type to its cooldown bucket. "" means never throttle.
+// lost/recovered collapse to one "liveness" bucket so a flap cycle is debounced
+// as a unit; device_changed has its own bucket.
+func dedupKind(changeType string) string {
+	switch changeType {
+	case ChangeTypeDeviceLost, ChangeTypeDeviceRecovered:
+		return "liveness"
+	case ChangeTypeDeviceChanged:
+		return ChangeTypeDeviceChanged
+	default:
+		return "" // device_added etc. — never throttle
+	}
+}
+
+// markEmitted records the emit time for cooldown tracking, using the same
+// dedupKind bucket as shouldEmit (so lost/recovered share one timestamp).
 func (r *DBRecorder) markEmitted(deviceID int64, changeType string, now time.Time) {
 	if r.cooldown <= 0 {
 		return
 	}
+	kind := dedupKind(changeType)
+	if kind == "" {
+		return
+	}
 	r.lastEmittedMu.Lock()
 	defer r.lastEmittedMu.Unlock()
-	r.lastEmitted[dedupKey{deviceID: deviceID, kind: changeType}] = now
+	r.lastEmitted[dedupKey{deviceID: deviceID, kind: kind}] = now
 }
 
 // marshalSnapshot marshals a snapshot/diff to its JSON string form (nil → NULL).

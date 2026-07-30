@@ -297,6 +297,11 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		"ALTER TABLE scan_results ADD COLUMN node_exporter_detected INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE scan_results ADD COLUMN node_exporter_url TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE scan_results ADD COLUMN node_exporter_data TEXT NOT NULL DEFAULT '{}'",
+		// scan_snapshots flap state (lease-sweeper debounce for intermittently-seen
+		// agent devices). flap_count counts liveness transitions; last_flap_at ages
+		// them out after a stable period. See db/schema.sql scan_snapshots.
+		"ALTER TABLE scan_snapshots ADD COLUMN flap_count INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE scan_snapshots ADD COLUMN last_flap_at DATETIME",
 		// Dual JSON layer (scan_attributes + user_attributes). Generated columns
 		// (scan_vendor/scan_mac/scan_os/scan_hostname) can't be added via ALTER
 		// on existing DBs — those are only present on fresh installs. For

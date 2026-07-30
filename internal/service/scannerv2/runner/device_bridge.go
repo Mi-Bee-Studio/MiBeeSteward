@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"mibee-steward/internal/changedetect"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/store"
 )
@@ -184,6 +185,18 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		// device's identity — exactly what we want the device_changed diff to
 		// record (e.g. name NanoPiR4S → GL-MT3000).
 		before := rn.snapshotDevice(ctx, existingID)
+		// Evidence stickiness (type only upgrades, never downgrades). A protocol-
+		// derived type (SNMP sysObjectID, RTSP/ONVIF) is authoritative and must
+		// NOT be reverted to a heuristic/"other" verdict on a later scan where the
+		// probe timed out — that re-derivation is the other↔router type-flap root
+		// cause. Trust ranking: protocol > heuristic > unknown. Only apply on a
+		// normal re-scan (replacedID==0); a device replacement force-overwrites
+		// identity (the new device's type wins), so stickiness must not hold there.
+		if replacedID == 0 && before != nil {
+			inferredType, typeSource = applyTypeStickiness(before, inferredType, typeSource)
+			rep.Device.Fields["inferred_type"] = inferredType
+			rep.Device.Fields["inferred_type_source"] = typeSource
+		}
 		// Pick the UPDATE variant: replacement force-overwrites identity fields
 		// (name/type/brand/...) because a new physical device took over the ip;
 		// a normal re-scan only fills empty/unknown fields (richer earlier scans
@@ -306,6 +319,49 @@ func (rn *Runner) snapshotDevice(ctx context.Context, deviceID int64) *changedet
 	}
 	s := changedetect.SnapshotFromDevice(d)
 	return &s
+}
+
+// applyTypeStickiness enforces "type only upgrades, never downgrades" against
+// the stored verdict, returning the (type, source) to actually persist. Trust
+// ranking: protocol (SNMP/RTSP/ONVIF evidence — authoritative) > heuristic
+// (hostname keyword — spoofable) > unknown (no signal → "other").
+//
+// The rule: if the STORED type came from a protocol source, do not let this
+// scan's verdict downgrade it. This is what stops a router (protocol-derived via
+// SNMP sysObjectID) from flapping back to "other"/"embedded" on the next scan
+// where SNMP timed out — the timed-out scan produced only a heuristic or no
+// signal, which must not overwrite the authoritative protocol verdict. Upgrades
+// (unknown→protocol, heuristic→protocol) and same-tier changes (protocol→
+// protocol when SNMP re-identifies differently) are still accepted.
+//
+// newType/newSource are this scan's freshly-computed verdict (from the merge
+// switch in applyDeviceBridge). before is the device's pre-UPDATE snapshot
+// (carries the stored scan_attributes with the prior inferred_type_source).
+func applyTypeStickiness(before *changedetect.DeviceSnapshot, newType, newSource string) (string, string) {
+	stored, err := domain.UnmarshalScanAttributes(before.ScanAttributes)
+	if err != nil {
+		// Can't read stored source — can't judge stickiness; accept the new verdict.
+		return newType, newSource
+	}
+	storedSource := stored.InferredTypeSource
+	// Stickiness only protects a PROTOCOL-derived stored type. A heuristic
+	// stored type may be refined by a later heuristic match, and an unknown
+	// stored type ("other"/"") should accept any new signal.
+	if storedSource != "protocol" {
+		return newType, newSource
+	}
+	// Stored type is protocol-authoritative. If this scan ALSO has protocol
+	// evidence (newSource=="protocol"), accept the new verdict (SNMP may have
+	// re-identified the device, or a different protocol handler fired) — that's a
+	// legitimate same-or-higher-tier change, not a downgrade.
+	if newSource == "protocol" {
+		return newType, newSource
+	}
+	// This scan has NO protocol evidence (probe timed out → newSource is heuristic
+	// or ""). Preserve the stored protocol type instead of downgrading. This is
+	// the core flap fix: a single missed SNMP poll must not erase an authoritative
+	// sysObjectID-derived type.
+	return stored.InferredType, "protocol"
 }
 
 // recordDeviceAdded emits a device_added event (after_data = the new row). The

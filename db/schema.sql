@@ -558,6 +558,8 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
     mac TEXT NOT NULL DEFAULT '',          -- MAC-primary identity key (empty when unknown)
     miss_count INTEGER NOT NULL DEFAULT 0, -- consecutive scans this IP was absent
     last_seen_at DATETIME NOT NULL,        -- last time this IP appeared alive in a scan
+    flap_count INTEGER NOT NULL DEFAULT 0, -- liveness transitions (lost+recovered) — used by the lease sweeper's flap state-machine to debounce intermittently-seen agent devices
+    last_flap_at DATETIME,                 -- when flap_count was last incremented; NULL never. Used to age-out flapping after a stable period.
     UNIQUE(network_id, ip)
 );
 CREATE INDEX IF NOT EXISTS idx_scan_snapshots_network ON scan_snapshots(network_id);
