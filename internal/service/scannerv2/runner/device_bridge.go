@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
@@ -656,17 +658,17 @@ func (rn *Runner) createDevice(ctx context.Context, devType, brand, descr, locat
 	scanAttrs := marshalScanAttributes(buildScanAttributes(rep))
 	now := time.Now().UTC()
 	res, err := rn.dbConn.ExecContext(ctx, `
-		INSERT INTO devices (name, type, brand, ip_address, mac_address,
+		INSERT INTO devices (device_uuid, name, type, brand, ip_address, mac_address,
 		                     status, scan_source, description, location,
 		                     open_ports, detected_services, prometheus_url, node_exporter_url,
 		                     scan_attributes, network_id, first_seen, last_seen,
 		                     tags, last_scan_rtt_ms, last_scanned_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?,
 		        'online', 'scanner_v2', ?, ?,
 		        ?, ?, ?, ?,
 		        ?, ?, ?, ?,
 		        ?, ?, ?, ?, ?)`,
-		name, devType, brand, rep.IP, mac,
+		uuid.NewString(), name, devType, brand, rep.IP, mac,
 		descr, location,
 		ports, services, promURL, neURL,
 		scanAttrs, networkID, now, now,

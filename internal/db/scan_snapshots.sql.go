@@ -110,18 +110,28 @@ FROM scan_snapshots
 WHERE network_id = ?
 `
 
+type ListSnapshotsForNetworkRow struct {
+	ID         int64     `json:"id"`
+	NetworkID  int64     `json:"network_id"`
+	TaskID     *int64    `json:"task_id"`
+	Ip         string    `json:"ip"`
+	Mac        string    `json:"mac"`
+	MissCount  int64     `json:"miss_count"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+}
+
 // All snapshots for a network (the known alive set). Used to compute the set
 // difference: which of these did NOT appear in the current scan, then
 // increment their miss_count (done in Go since the IN-list is dynamic).
-func (q *Queries) ListSnapshotsForNetwork(ctx context.Context, networkID int64) ([]ScanSnapshot, error) {
+func (q *Queries) ListSnapshotsForNetwork(ctx context.Context, networkID int64) ([]ListSnapshotsForNetworkRow, error) {
 	rows, err := q.db.QueryContext(ctx, listSnapshotsForNetwork, networkID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ScanSnapshot{}
+	items := []ListSnapshotsForNetworkRow{}
 	for rows.Next() {
-		var i ScanSnapshot
+		var i ListSnapshotsForNetworkRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.NetworkID,

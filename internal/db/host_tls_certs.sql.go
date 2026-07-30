@@ -35,7 +35,7 @@ func (q *Queries) DeleteHostTLSCertsStaleBatched(ctx context.Context, arg Delete
 }
 
 const listTLSCertsByDeviceID = `-- name: ListTLSCertsByDeviceID :many
-SELECT c.id, c.ip, c.port, c.cert_index, c.subject_cn, c.subject_org, c.subject, c.issuer_cn, c.issuer_org, c.issuer, c.san_dns, c.san_ip, c.san_email, c.serial, c.not_before, c.not_after, c.sig_algorithm, c.key_algorithm, c.key_bits, c.is_ca, c.self_signed, c.fingerprint_sha256, c.pem, c.tls_version, c.cipher_suite, c.trusted, c.error, c.updated_at
+SELECT c.id, c.ip, c.device_uuid, c.port, c.cert_index, c.subject_cn, c.subject_org, c.subject, c.issuer_cn, c.issuer_org, c.issuer, c.san_dns, c.san_ip, c.san_email, c.serial, c.not_before, c.not_after, c.sig_algorithm, c.key_algorithm, c.key_bits, c.is_ca, c.self_signed, c.fingerprint_sha256, c.pem, c.tls_version, c.cipher_suite, c.trusted, c.error, c.updated_at
 FROM host_tls_certs AS c
 JOIN devices AS d ON d.ip_address = c.ip
 WHERE d.id = ?
@@ -57,6 +57,7 @@ func (q *Queries) ListTLSCertsByDeviceID(ctx context.Context, id int64) ([]HostT
 		if err := rows.Scan(
 			&i.ID,
 			&i.Ip,
+			&i.DeviceUuid,
 			&i.Port,
 			&i.CertIndex,
 			&i.SubjectCn,
@@ -99,7 +100,7 @@ func (q *Queries) ListTLSCertsByDeviceID(ctx context.Context, id int64) ([]HostT
 
 const listTLSCertsByIP = `-- name: ListTLSCertsByIP :many
 
-SELECT id, ip, port, cert_index, subject_cn, subject_org, subject, issuer_cn, issuer_org, issuer, san_dns, san_ip, san_email, serial, not_before, not_after, sig_algorithm, key_algorithm, key_bits, is_ca, self_signed, fingerprint_sha256, pem, tls_version, cipher_suite, trusted, error, updated_at FROM host_tls_certs
+SELECT id, ip, device_uuid, port, cert_index, subject_cn, subject_org, subject, issuer_cn, issuer_org, issuer, san_dns, san_ip, san_email, serial, not_before, not_after, sig_algorithm, key_algorithm, key_bits, is_ca, self_signed, fingerprint_sha256, pem, tls_version, cipher_suite, trusted, error, updated_at FROM host_tls_certs
 WHERE ip = ?
 ORDER BY port ASC, cert_index ASC
 `
@@ -124,6 +125,7 @@ func (q *Queries) ListTLSCertsByIP(ctx context.Context, ip string) ([]HostTlsCer
 		if err := rows.Scan(
 			&i.ID,
 			&i.Ip,
+			&i.DeviceUuid,
 			&i.Port,
 			&i.CertIndex,
 			&i.SubjectCn,
