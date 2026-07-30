@@ -445,6 +445,15 @@ func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg db.HeartbeatC
 // It does NOT touch the main DB — that's syncStatusLoop's job (sole writer).
 // This eliminates the SQLite WAL read-isolation race that caused fleet-wide
 // flapping when concurrent goroutines read+wrote devices.status.
+//
+// Every verdict (online / offline / unchanged) is also sampled to the
+// device_liveness time series via the HeartbeatStore. The series is the storage
+// back-end for the change-detection engine's multi-period jitter-vs-transition
+// judgment — a continuous sample stream lets "online ratio over the last N
+// minutes" be computed, which a single missed-scan count cannot express. The
+// sample is the RESOLVED verdict (current effective status), so a device still
+// within the offline grace period (fail count < threshold) samples as its
+// current status, not as a premature "offline".
 func (s *HeartbeatService) applyDeviceVerdict(deviceID int64, anySuccess bool) {
 	// Read current in-memory status (for change detection / logging).
 	s.statusCacheMu.RLock()
@@ -467,7 +476,12 @@ func (s *HeartbeatService) applyDeviceVerdict(deviceID int64, anySuccess bool) {
 		// default 5). A device must fail this many consecutive probes before
 		// flipping to offline.
 		if count < s.cfg.OfflineThreshold {
-			return // not yet at threshold, keep current status
+			// Not yet at threshold — keep current status. Still sample the
+			// (unchanged) verdict so the liveness series has a continuous point
+			// for this tick (an online device with a transient probe failure
+			// must not leave a gap that would depress its online-ratio).
+			s.SampleLiveness(deviceID, oldStatus, "heartbeat")
+			return
 		}
 		newStatus = "offline"
 	}
@@ -479,6 +493,30 @@ func (s *HeartbeatService) applyDeviceVerdict(deviceID int64, anySuccess bool) {
 		s.statusCacheMu.Unlock()
 		slog.Info("device status changed (memory)", "device_id", deviceID, "status", newStatus)
 	}
+	// Sample the resolved verdict to the liveness series (online or offline;
+	// covers both the "changed" and "unchanged-but-at-threshold" cases).
+	s.SampleLiveness(deviceID, newStatus, "heartbeat")
+}
+
+// SampleLiveness enqueues one device_liveness verdict sample to the time series.
+// It implements runner.HeartbeatCreator so the scan/detect-lost/lease paths can
+// sample verdicts they set OUTSIDE the heartbeat tick loop (notably the lease
+// sweeper for agent-managed networks, which have no center-side heartbeat
+// probing). It is best-effort: the store's EnqueueLiveness is non-blocking
+// (drops on buffer-full), and a dropped sample never affects devices.status
+// (source of truth) — it only leaves a gap the multi-period judgment tolerates.
+// An empty store (nil) is a no-op (tests / agent contexts without a heartbeat
+// store).
+func (s *HeartbeatService) SampleLiveness(deviceID int64, status, source string) {
+	if s.store == nil || status == "" {
+		return
+	}
+	s.store.EnqueueLiveness(livenessRow{
+		DeviceID:  deviceID,
+		Status:    status,
+		Source:    source,
+		CheckedAt: time.Now(),
+	})
 }
 
 // ResetFailures clears the in-memory device-level failure counter for a device.

@@ -277,6 +277,6 @@ func setupTypeTestDB(t *testing.T) (*Runner, *db.Queries, *sql.DB) {
 
 	rn := New(nil, queries, conn, nil, 0, nil)
 	rn.networkID = nid
-	rn.SetChangeRecorder(changedetect.NewDBRecorder(queries, nil, nil))
+	rn.SetChangeRecorder(changedetect.NewDBRecorder(queries, nil, 0, nil))
 	return rn, queries, conn
 }

@@ -36,7 +36,7 @@ func setupLeaseTestDB(t *testing.T) (*Runner, *db.Queries, *sql.DB, int64, int64
 	require.NoError(t, err)
 
 	rn := New(nil, queries, conn, nil, 0, nil)
-	recorder := changedetect.NewDBRecorder(queries, nil, nil)
+	recorder := changedetect.NewDBRecorder(queries, nil, 0, nil)
 	rn.SetChangeRecorder(recorder)
 	return rn, queries, conn, centerNet.ID, agentNet.ID
 }
@@ -167,8 +167,9 @@ func TestLeaseSweeper_IgnoresAlreadyOffline(t *testing.T) {
 // marked offline, whose snapshot lease is now FRESH again (the agent resumed
 // reporting it), must be flipped back online — closing the recovery gap the
 // stable-hash fast path (agent_report.go) opens, where leases refresh but the
-// devices row is never touched. The recovery emits a device_changed event
-// (status is a tracked Diff field), NOT device_lost.
+// devices row is never touched. The recovery emits a device_recovered event (the
+// symmetric counterpart of device_lost), NOT device_changed — status is a
+// liveness signal, excluded from the identity-diff gate.
 func TestLeaseSweeper_RecoversFreshOfflineAgentDevice(t *testing.T) {
 	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
@@ -192,12 +193,19 @@ func TestLeaseSweeper_RecoversFreshOfflineAgentDevice(t *testing.T) {
 	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.62.41'`).Scan(&status)
 	require.Equal(t, "online", status, "fresh-lease agent device stuck offline should be recovered")
 
-	// Recovery emits device_changed (offline→online), not device_lost.
+	// Recovery emits device_recovered (offline→online), not device_changed.
+	recovered, _ := queries.ListChangeLog(ctx, db.ListChangeLogParams{
+		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_recovered",
+		Column5: 1, EntityType: "device", Limit: 100, Offset: 0,
+	})
+	require.Len(t, recovered, 1, "one device_recovered event emitted")
+	// And NO device_changed from the status flip (status is excluded from the
+	// identity gate).
 	changed, _ := queries.ListChangeLog(ctx, db.ListChangeLogParams{
 		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_changed",
 		Column5: 1, EntityType: "device", Limit: 100, Offset: 0,
 	})
-	require.Len(t, changed, 1, "one device_changed (recovery) event emitted")
+	require.Len(t, changed, 0, "recovery must not emit device_changed (status is not an identity field)")
 }
 
 // TestLeaseSweeper_NoRecoverOnCenterNetwork confirms the recovery path — like

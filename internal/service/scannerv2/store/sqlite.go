@@ -328,12 +328,15 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	// Resolve an EXISTING row to enrich. MAC-primary (global), else (ip,
 	// network_id). No INSERT on miss — device creation is the runner's job.
 	mac := NormalizeMAC(extra["mac"])
-	devType := d.Type
 	brand := d.Brand
 	model := d.Model
-	if devType == "" {
-		devType = "other"
-	}
+	// NOTE: type is intentionally NOT enriched here. For local scans DeviceRef.Type
+	// is always empty (handlers mutate Fields, not the Type field), so writing it
+	// would force-overwrite the runner's authoritative type (set by
+	// applyDeviceBridge's evidence-stickiness merge) back to a default on every
+	// scan — the double-writer conflict that caused the other↔router type flap.
+	// The runner (applyDeviceBridge) is the sole authority for devices.type;
+	// this store path is best-effort enrichment only (see the package doc).
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -380,18 +383,19 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 		return tx.Commit()
 	}
 
-	// Enrich the matched row. Only v2-managed enrichment columns: type/brand/
-	// model (force-overwrite when non-empty — a re-scan's classification is
-	// authoritative), mac (fill when newly resolved), open_ports/
-	// detected_services/prometheus/node_exporter, scan_attributes, freshness
-	// timestamps. NOTE: name, status, description, location, tags, and device
-	// replacement are intentionally NOT handled here — the runner owns them.
+	// Enrich the matched row. Only v2-managed enrichment columns: brand/model
+	// (force-overwrite when non-empty), mac (fill when newly resolved),
+	// open_ports/detected_services/prometheus/node_exporter, scan_attributes,
+	// freshness timestamps. NOTE: name, type, status, description, location,
+	// tags, and device replacement are intentionally NOT handled here — the
+	// runner owns them. In particular type MUST stay out: this store path runs
+	// BEFORE applyDeviceBridge, and writing type here defeated the runner's
+	// CASE-WHEN guard (the type-flap root cause).
 	now := time.Now().UTC()
 	if _, err = tx.ExecContext(ctx, `
 			UPDATE devices SET
 			    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
 			    model = CASE WHEN ? != '' THEN ? ELSE model END,
-			    type = CASE WHEN ? != '' THEN ? ELSE type END,
 			    mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
 			    open_ports = ?,
 			    detected_services = ?,
@@ -402,7 +406,7 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 			    last_scanned_at = ?,
 			    updated_at = ?
 			WHERE id = ?`,
-		brand, brand, model, model, devType, devType,
+		brand, brand, model, model,
 		mac, mac,
 		openPorts, detectedServices, promURL, neURL, string(scanAttrsJSON),
 		now, now, now, existingID); err != nil {
@@ -726,7 +730,6 @@ func (r *SQLiteRepository) EnrichDeviceByMAC(ctx context.Context, mac string, fi
 	// Parse known and unknown fields.
 	vendor := fields["vendor"]
 	model := fields["model"]
-	devType := fields["type"]
 	name := fields["hostname"]
 	if name == "" {
 		name = fields["sys_name"]
@@ -768,12 +771,11 @@ func (r *SQLiteRepository) EnrichDeviceByMAC(ctx context.Context, mac string, fi
 		UPDATE devices SET
 		    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
 		    model = CASE WHEN ? != '' THEN ? ELSE model END,
-		    type = CASE WHEN ? != '' THEN ? ELSE type END,
 		    name = CASE WHEN ? != '' THEN ? ELSE name END,
 		    scan_attributes = ?,
 		    updated_at = ?
 		WHERE id = ?`,
-		vendor, vendor, model, model, devType, devType, name, name,
+		vendor, vendor, model, model, name, name,
 		scanAttrsJSON, now, deviceID)
 	return err
 }
