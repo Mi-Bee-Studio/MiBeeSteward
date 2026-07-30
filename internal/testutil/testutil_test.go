@@ -55,6 +55,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"change_log",
 		"dashboard_configs",
 		"device_documents",
+		"device_liveness",
 		"device_neighbors",
 		"device_systems",
 		"devices",
@@ -86,12 +87,12 @@ func TestSetupTestDBFromSchema_Reusable(t *testing.T) {
 	db1, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db1.Close()
-	require.Len(t, listTables(t, db1), 28)
+	require.Len(t, listTables(t, db1), 29)
 
 	db2, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db2.Close()
-	require.Len(t, listTables(t, db2), 28)
+	require.Len(t, listTables(t, db2), 29)
 }
 
 func TestSetupTestDB_WithPragmas(t *testing.T) {

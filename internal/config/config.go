@@ -85,11 +85,17 @@ type RetentionConfig struct {
 	// troubleshooting value vs. volume: heartbeat is high-volume/low-value (7d),
 	// audit is low-volume/high-value (90d).
 	HeartbeatResultsDays int `koanf:"heartbeat_results_days"`
-	ScanResultsDays      int `koanf:"scan_results_days"`
-	ScanTaskRunsDays     int `koanf:"scan_task_runs_days"`
-	AuditLogsDays        int `koanf:"audit_logs_days"`
-	NotificationLogDays  int `koanf:"notification_log_days"`
-	ServiceEvidenceDays  int `koanf:"service_evidence_days"`
+	// DeviceLivenessDays is the retention window for device_liveness (the
+	// per-device online/offline verdict series). It must be long enough to cover
+	// the longest multi-period window the change engine queries (24h trend), so
+	// the default matches heartbeat_results (7d). The series is disposable
+	// (devices.status is source of truth), so a tight window is fine.
+	DeviceLivenessDays  int `koanf:"device_liveness_days"`
+	ScanResultsDays     int `koanf:"scan_results_days"`
+	ScanTaskRunsDays    int `koanf:"scan_task_runs_days"`
+	AuditLogsDays       int `koanf:"audit_logs_days"`
+	NotificationLogDays int `koanf:"notification_log_days"`
+	ServiceEvidenceDays int `koanf:"service_evidence_days"`
 	// ChangeLogDays is the retention window for change_log (device_added /
 	// changed / lost events). Default 30 (high value for asset-history audits,
 	// but change_log grows fast — one row per real change per scan).
@@ -510,6 +516,12 @@ func normalizeRetention(cfg *Config) {
 		} else {
 			r.HeartbeatResultsDays = 7
 		}
+	}
+	if r.DeviceLivenessDays <= 0 {
+		// Mirror heartbeat_results: the liveness series needs to cover the
+		// longest multi-period window the change engine queries (24h trend), so
+		// 7d is plenty. Default to the heartbeat window when unset.
+		r.DeviceLivenessDays = r.HeartbeatResultsDays
 	}
 	if r.ScanResultsDays <= 0 {
 		// Fall back to legacy scanner.retention_days if set, else default 30.

@@ -265,7 +265,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// forward raw HostReports). The watcher is the foundation for a future
 	// /watch SSE endpoint (Step 4 surfaces a query API on top of change_log).
 	changeWatcher := changedetect.NewWatcher(slog.Default())
-	changeRecorder := changedetect.NewDBRecorder(scanQueries, changeWatcher, slog.Default())
+	// Cooldown dedup: a device_changed/device_recovered for the same device
+	// within 15 minutes is suppressed (the devices row already reflects the
+	// current state; change_log records transitions, not every observation).
+	// device_added/device_lost are never throttled. See changedetect.DBRecorder.
+	changeRecorder := changedetect.NewDBRecorder(scanQueries, changeWatcher, 15*time.Minute, slog.Default())
 	scanRunner.SetChangeRecorder(changeRecorder)
 
 	// Lease sweeper: background expiration of agent-managed devices whose
@@ -558,7 +562,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// service_evidence) on a single ticker, each with its own retention window.
 	// Defaults & scanner.retention_days back-compat are applied in
 	// config.normalizeRetention, so cfg.Retention is fully populated here.
-	cleanupSvc := scannerv2cleanup.New(scanQueries, hbStore.Queries(), cfg.Retention)
+	cleanupSvc := scannerv2cleanup.New(scanQueries, hbStore.Queries(), hbStore.DB(), cfg.Retention)
 	cleanupSvc.Start(context.Background())
 
 	if scanScheduler != nil {

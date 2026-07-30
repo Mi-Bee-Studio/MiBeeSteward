@@ -63,7 +63,7 @@
 	// instead of freezing the feed silently. A fresh change event clears it.
 	let sseDisconnected = $state(false);
 
-	const changeTypes: ChangeType[] = ['device_added', 'device_changed', 'device_lost'];
+	const changeTypes: ChangeType[] = ['device_added', 'device_changed', 'device_lost', 'device_recovered'];
 
 	onMount(() => {
 		hydrateFromUrl();
@@ -183,17 +183,20 @@
 			case 'device_added': return m['changes.Event Added']();
 			case 'device_changed': return m['changes.Event Changed']();
 			case 'device_lost': return m['changes.Event Lost']();
+			case 'device_recovered': return m['changes.Event Recovered']();
 			default: return t;
 		}
 	}
 
 	// changeTypeBadge returns the Tailwind color classes for a change type:
-	// added=success(green), changed=accent(blue), lost=error(red).
+	// added=success(green), changed=accent(blue), lost=error(red),
+	// recovered=success(green, symmetric with added — a device came back).
 	function changeTypeBadge(t: string): string {
 		switch (t) {
 			case 'device_added': return 'bg-success/10 text-success';
 			case 'device_changed': return 'bg-accent/10 text-accent';
 			case 'device_lost': return 'bg-error/10 text-error';
+			case 'device_recovered': return 'bg-success/10 text-success';
 			default: return 'bg-surface border border-border text-text-muted';
 		}
 	}

@@ -158,8 +158,10 @@ func TestApplyDeviceBridge_RoamingNotReplacement(t *testing.T) {
 	after := fetchDevice(t, conn, roamingID)
 	require.Equal(t, "aa:bb:cc:dd:ee:10", after.MAC)
 	require.Equal(t, "online", after.Status, "roaming device stays online")
-	// The first-seen ip is preserved (ip is not relocated — documented behavior).
-	require.Equal(t, "192.168.63.10", after.IP, "roaming does not relocate ip")
+	// The device ROAMED to a new IP — the registry must reflect the CURRENT IP,
+	// not the first-seen one. (Prior behavior kept the stale IP; that left a NAS
+	// that renewed its DHCP lease showing an address days out of date.)
+	require.Equal(t, "192.168.63.20", after.IP, "roaming relocates ip_address to the scanned ip")
 }
 
 // TestApplyDeviceBridge_MACFirstResolveNotReplacement guards the "MAC fills on

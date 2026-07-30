@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"mibee-steward/internal/changedetect"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/store"
 )
@@ -140,7 +141,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	// router's MAC was first seen on a transient DHCP ip (.100), then the device
 	// took over the gateway ip (.1) which a prior router still occupied.
 	mac := reportMAC(rep)
-	existingID, replacedID, err := rn.resolveDeviceIdentity(ctx, mac, rep.IP, networkID)
+	existingID, replacedID, roamed, err := rn.resolveDeviceIdentity(ctx, mac, rep.IP, networkID)
 
 	switch err {
 	case sql.ErrNoRows:
@@ -184,6 +185,18 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		// device's identity — exactly what we want the device_changed diff to
 		// record (e.g. name NanoPiR4S → GL-MT3000).
 		before := rn.snapshotDevice(ctx, existingID)
+		// Evidence stickiness (type only upgrades, never downgrades). A protocol-
+		// derived type (SNMP sysObjectID, RTSP/ONVIF) is authoritative and must
+		// NOT be reverted to a heuristic/"other" verdict on a later scan where the
+		// probe timed out — that re-derivation is the other↔router type-flap root
+		// cause. Trust ranking: protocol > heuristic > unknown. Only apply on a
+		// normal re-scan (replacedID==0); a device replacement force-overwrites
+		// identity (the new device's type wins), so stickiness must not hold there.
+		if replacedID == 0 && before != nil {
+			inferredType, typeSource = applyTypeStickiness(before, inferredType, typeSource)
+			rep.Device.Fields["inferred_type"] = inferredType
+			rep.Device.Fields["inferred_type_source"] = typeSource
+		}
 		// Pick the UPDATE variant: replacement force-overwrites identity fields
 		// (name/type/brand/...) because a new physical device took over the ip;
 		// a normal re-scan only fills empty/unknown fields (richer earlier scans
@@ -220,22 +233,84 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				"target_device_id", existingID,
 				"action", "ip-holder updated with new mac; prior mac-matched row marked offline")
 		} else {
-			_, _ = rn.dbConn.ExecContext(ctx, `
+			// Normal re-scan of an existing alive device. When the device ROAMED
+			// (same MAC, new free IP — DHCP renewal), relocate ip_address to the
+			// scanned IP so the registry reflects its current address. The prior
+			// behavior of never relocating left devices stuck on stale IPs (a NAS
+			// that renewed its lease showed an IP days out of date). The before
+			// snapshot (read at :186) still holds the old IP, so the DiffIdentity
+			// check below catches ip_address as a change → emits device_changed,
+			// recording the relocation as the identity event it is.
+			ipClause := "ip_address = ip_address"
+			if roamed {
+				ipClause = "ip_address = ?"
+			}
+			_, err = rn.dbConn.ExecContext(ctx, `
 				UPDATE devices SET status='online',
+				    `+ipClause+`,
 				    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
 				    last_seen = COALESCE(last_seen, ?),
 				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
-				mac, mac, now, now, now, existingID)
+				argsForRoamUpdate(roamed, rep.IP, mac, now, existingID)...)
+			if err != nil && roamed {
+				// The roam UPDATE can fail the (ip_address, network_id) unique
+				// constraint when a mac='' placeholder row occupies the target IP
+				// (the device-split scenario). Rather than silently swallowing the
+				// error (the prior bug — the roam was lost and the device stayed on
+				// its stale IP), evict the placeholder then retry. The placeholder
+				// is a mac-less stale discovery at this IP; the real device (with
+				// this MAC) is taking over, so removing it is correct.
+				rn.logger.Warn("device bridge: roam update failed, evicting ip-holder placeholder and retrying",
+					"ip", rep.IP, "device_id", existingID, "error", err)
+				if netClause, netArg := networkClause(networkID); netClause != "" {
+					_, _ = rn.dbConn.ExecContext(ctx,
+						`DELETE FROM devices WHERE ip_address = ? AND `+netClause+` AND mac_address = '' AND id != ?`,
+						append([]any{rep.IP}, append(netArg, existingID)...)...)
+				}
+				_, err = rn.dbConn.ExecContext(ctx, `
+					UPDATE devices SET status='online', ip_address = ?,
+					    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
+					    last_seen = COALESCE(last_seen, ?),
+					    last_scanned_at = ?, updated_at = ? WHERE id=?`,
+					rep.IP, mac, mac, now, now, now, existingID)
+				if err != nil {
+					rn.logger.Warn("device bridge: roam retry failed", "ip", rep.IP, "device_id", existingID, "error", err)
+				}
+			}
 		}
-		// Change detection: re-read the AFTER snapshot and diff. Only emit
-		// device_changed when a tracked field actually differs — this replaces
-		// the old "wasUpdated is always true" heuristic that fired on every
-		// rescan regardless of whether anything changed.
+		// Change detection: re-read the AFTER snapshot and apply the TIERED
+		// model. Two separate judgments, so liveness and identity never conflate:
+		//   (a) device_recovered — a status flip offline→online. This is the
+		//       symmetric counterpart of device_lost. It fires ONLY on the
+		//       recovery transition (a scan revives a device DetectLost/lease
+		//       sweeper had marked offline), NOT on every rescan of a healthy
+		//       device (those have before.status==online already).
+		//   (b) device_changed — an IDENTITY field changed (name/type/brand/
+		//       model/mac/ip). status is deliberately excluded from this gate
+		//       (it is a liveness signal, owned by device_lost/recovered); so is
+		//       classification-field wobble (open_ports/services/scan_attributes)
+		//       which is recorded in before/after_data but doesn't trip the gate.
+		// This replaces the old all-fields Diff that fired a device_changed on
+		// every status flip — the root cause of the 70k+ noise-row storm.
 		changed := false
 		if before != nil {
 			after := rn.snapshotDevice(ctx, existingID)
 			if after != nil {
-				if diff := changedetect.Diff(*before, *after); diff != nil {
+				// (a) Recovery: offline→online. Emit device_recovered (not
+				// device_changed). The before snapshot was captured at :186
+				// BEFORE the status UPDATE, so before.Status is the faithful
+				// pre-recovery value.
+				if before.Status == "offline" && after.Status == "online" {
+					var nidPtr *int64
+					if networkID.Valid {
+						v := networkID.Int64
+						nidPtr = &v
+					}
+					rn.recordDeviceRecovered(ctx, existingID, nidPtr, agentID, before)
+					changed = true
+				}
+				// (b) Identity change: only identity-tier fields gate device_changed.
+				if diff := changedetect.DiffIdentity(*before, *after); diff != nil {
 					rn.recordDeviceChanged(ctx, existingID, networkID, agentID, *before, *after, diff)
 					changed = true
 				}
@@ -282,6 +357,72 @@ func (rn *Runner) snapshotDevice(ctx context.Context, deviceID int64) *changedet
 	}
 	s := changedetect.SnapshotFromDevice(d)
 	return &s
+}
+
+// networkClause returns a SQL fragment + arg for a network_id condition matching
+// the resolveDeviceIdentity pattern: "network_id = ?" when valid, or
+// "network_id IS NULL" when not (empty fragment + nil arg means "no constraint").
+func networkClause(networkID sql.NullInt64) (string, []any) {
+	if networkID.Valid {
+		return "network_id = ?", []any{networkID.Int64}
+	}
+	return "network_id IS NULL", nil
+}
+
+// argsForRoamUpdate builds the positional args for the normal-rescan status
+// UPDATE. When roamed is true the SQL has an extra `ip_address = ?` clause (the
+// scanned IP comes first); otherwise ip_address is left unchanged (the SQL uses
+// `ip_address = ip_address` with no placeholder for it).
+func argsForRoamUpdate(roamed bool, ip, mac string, now time.Time, existingID int64) []any {
+	if roamed {
+		// order matches: ip_address=?, mac_address CASE ?/?, last_seen=?, last_scanned_at=?, updated_at=?, id=?
+		return []any{ip, mac, mac, now, now, now, existingID}
+	}
+	// order matches: mac_address CASE ?/?, last_seen=?, last_scanned_at=?, updated_at=?, id=?
+	return []any{mac, mac, now, now, now, existingID}
+}
+
+// applyTypeStickiness enforces "type only upgrades, never downgrades" against
+// the stored verdict, returning the (type, source) to actually persist. Trust
+// ranking: protocol (SNMP/RTSP/ONVIF evidence — authoritative) > heuristic
+// (hostname keyword — spoofable) > unknown (no signal → "other").
+//
+// The rule: if the STORED type came from a protocol source, do not let this
+// scan's verdict downgrade it. This is what stops a router (protocol-derived via
+// SNMP sysObjectID) from flapping back to "other"/"embedded" on the next scan
+// where SNMP timed out — the timed-out scan produced only a heuristic or no
+// signal, which must not overwrite the authoritative protocol verdict. Upgrades
+// (unknown→protocol, heuristic→protocol) and same-tier changes (protocol→
+// protocol when SNMP re-identifies differently) are still accepted.
+//
+// newType/newSource are this scan's freshly-computed verdict (from the merge
+// switch in applyDeviceBridge). before is the device's pre-UPDATE snapshot
+// (carries the stored scan_attributes with the prior inferred_type_source).
+func applyTypeStickiness(before *changedetect.DeviceSnapshot, newType, newSource string) (string, string) {
+	stored, err := domain.UnmarshalScanAttributes(before.ScanAttributes)
+	if err != nil {
+		// Can't read stored source — can't judge stickiness; accept the new verdict.
+		return newType, newSource
+	}
+	storedSource := stored.InferredTypeSource
+	// Stickiness only protects a PROTOCOL-derived stored type. A heuristic
+	// stored type may be refined by a later heuristic match, and an unknown
+	// stored type ("other"/"") should accept any new signal.
+	if storedSource != "protocol" {
+		return newType, newSource
+	}
+	// Stored type is protocol-authoritative. If this scan ALSO has protocol
+	// evidence (newSource=="protocol"), accept the new verdict (SNMP may have
+	// re-identified the device, or a different protocol handler fired) — that's a
+	// legitimate same-or-higher-tier change, not a downgrade.
+	if newSource == "protocol" {
+		return newType, newSource
+	}
+	// This scan has NO protocol evidence (probe timed out → newSource is heuristic
+	// or ""). Preserve the stored protocol type instead of downgrading. This is
+	// the core flap fix: a single missed SNMP poll must not erase an authoritative
+	// sysObjectID-derived type.
+	return stored.InferredType, "protocol"
 }
 
 // recordDeviceAdded emits a device_added event (after_data = the new row). The
@@ -346,30 +487,16 @@ func (rn *Runner) recordDeviceChanged(ctx context.Context, deviceID int64, netwo
 }
 
 // resolveDeviceIdentity decides which existing devices row a scan should update,
-// or whether a new row must be created. It returns the target device id (valid
-// when err == nil), the id of a row superseded by a device replacement (0 when
-// no replacement happened), and err (sql.ErrNoRows means "create a new row").
-//
-// Identity rules, mirroring store.SQLiteRepository.RecordDevice so the two
-// upsert writers agree:
-//
-//  1. MAC-primary: when a MAC is known, match it GLOBALLY across all networks so
-//     a roaming device stays a single asset. Without a MAC, fall back to
-//     (ip, network_id) — same IP on two networks is two devices.
-//  2. MAC fallback to (ip, network_id) with mac_address=”: a device first seen
-//     without a MAC (ARP not yet resolved) is matched back so its mac gets filled
-//     instead of creating a duplicate.
-//  3. Device REPLACEMENT (router/asset swap): if the MAC matches a device whose
-//     ip differs from the scanned ip, AND the scanned ip is currently held by a
-//     different-MAC device, the ip-holder is the target (it is the authority for
-//     that network location) and the MAC-matched row is returned as replacedID
-//     so the caller can mark it offline. This avoids a "device split" where the
-//     new asset's data lands on a stale ip while the live ip shows the old asset.
-//
-// Rule 3 only fires when the ip-holder has its OWN non-empty mac that differs
-// from the scanned mac — this protects rule 2 (a MAC-less placeholder row should
-// get the mac filled, not be treated as a replacement conflict).
-func (rn *Runner) resolveDeviceIdentity(ctx context.Context, mac, ip string, networkID sql.NullInt64) (targetID int64, replacedID int64, err error) {
+// or whether a new row must be created. It returns:
+//   - targetID: the devices.id to update (valid when err == nil)
+//   - replacedID: id of a row superseded by a device replacement (0 when none)
+//   - roamed: true when the MAC-matched device moved to a NEW free IP (DHCP
+//     roaming). The caller must relocate the row's ip_address to the scanned ip
+//     so the registry reflects the device's current address (the prior behavior
+//     of NOT relocating left devices stuck on stale IPs — a real-world bug where
+//     a NAS that renewed its DHCP lease showed an IP days out of date).
+//   - err: sql.ErrNoRows means "create a new row".
+func (rn *Runner) resolveDeviceIdentity(ctx context.Context, mac, ip string, networkID sql.NullInt64) (targetID int64, replacedID int64, roamed bool, err error) {
 	if mac == "" {
 		// No MAC → identity is (ip, network_id).
 		if networkID.Valid {
@@ -381,7 +508,7 @@ func (rn *Runner) resolveDeviceIdentity(ctx context.Context, mac, ip string, net
 				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
 				ip).Scan(&targetID)
 		}
-		return targetID, 0, err
+		return targetID, 0, false, err
 	}
 
 	// MAC present → global identity lookup.
@@ -399,10 +526,10 @@ func (rn *Runner) resolveDeviceIdentity(ctx context.Context, mac, ip string, net
 				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' LIMIT 1`,
 				ip).Scan(&targetID)
 		}
-		return targetID, 0, err
+		return targetID, 0, false, err
 	}
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 
 	// MAC matched a row. Check whether it sits on the scanned ip; if so, this is
@@ -412,10 +539,10 @@ func (rn *Runner) resolveDeviceIdentity(ctx context.Context, mac, ip string, net
 	if qerr := rn.dbConn.QueryRowContext(ctx,
 		`SELECT ip_address, mac_address FROM devices WHERE id = ?`, targetID).Scan(&macRowIP, &macRowMAC); qerr != nil {
 		// Failing to read the row's ip is unexpected; proceed with the plain match.
-		return targetID, 0, nil
+		return targetID, 0, false, nil
 	}
 	if macRowIP == ip {
-		return targetID, 0, nil // same ip — normal update, nothing replaced.
+		return targetID, 0, false, nil // same ip — normal update, nothing replaced.
 	}
 
 	// MAC matched a device on a DIFFERENT ip than the one being scanned. Check
@@ -435,23 +562,25 @@ func (rn *Runner) resolveDeviceIdentity(ctx context.Context, mac, ip string, net
 			ip).Scan(&ipHolderID, &ipHolderMAC)
 	}
 	if ipLookErr == sql.ErrNoRows {
-		// Scanned ip is free → roaming: keep the MAC-matched row as target (it
-		// stays one asset; the caller fills fields without relocating the ip).
-		return targetID, 0, nil
+		// Scanned ip is free → roaming: the MAC-matched device moved to a new IP
+		// (DHCP renewal/re-lease). Keep it as one asset (targetID), but signal
+		// roamed=true so the caller relocates ip_address to the scanned ip. The
+		// old behavior of NOT relocating left devices stuck on stale IPs.
+		return targetID, 0, true, nil
 	}
 	if ipLookErr != nil {
 		// Lookup error → don't speculate; fall back to the plain MAC match.
-		return targetID, 0, nil
+		return targetID, 0, false, nil
 	}
 	// Replacement requires the ip-holder to have its OWN mac differing from the
 	// scanned one. An empty-mac ip-holder is a MAC-less placeholder (rule 2):
 	// leave it to be filled, do not treat as a replacement conflict.
 	if ipHolderMAC == "" || ipHolderMAC == mac {
-		return targetID, 0, nil
+		return targetID, 0, false, nil
 	}
 	// Device replacement: the ip-holder becomes the target, the MAC-matched row
 	// (the prior asset now sitting on a stale ip) is superseded.
-	return ipHolderID, targetID, nil
+	return ipHolderID, targetID, false, nil
 }
 
 // reportMAC extracts and canonicalizes the MAC from a HostReport. It checks the

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Devices table
 CREATE TABLE IF NOT EXISTS devices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_uuid TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL,
     type TEXT NOT NULL DEFAULT 'other' CHECK(type IN ('pc', 'embedded', 'iot', 'other', 'server', 'switch', 'router', 'firewall', 'nas', 'camera', 'phone', 'printer')),
     brand TEXT NOT NULL DEFAULT '',
@@ -153,6 +154,24 @@ CREATE TABLE IF NOT EXISTS heartbeat_results (
     error_message TEXT NOT NULL DEFAULT '',
     checked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Device liveness verdict series. NOTE: this table is DECLARED here so sqlc can
+-- generate query code against it, but it LIVES in the dedicated heartbeat.db
+-- (alongside heartbeat_results) — see internal/service/heartbeat_store.go for
+-- the authoritative DDL (no FKs, since cross-DB FKs are impossible in SQLite).
+-- It stores the per-device online/offline VERDICT (one row per tick), not the
+-- per-config probe results. It is a DISPOSABLE derived cache: devices.status is
+-- the source of truth; this series can be dropped and rebuilt. Consumed by the
+-- change-detection engine's multi-period jitter-vs-transition judgment.
+CREATE TABLE IF NOT EXISTS device_liveness (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'unknown')),
+    source TEXT NOT NULL,
+    checked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_device_liveness_device ON device_liveness(device_id, checked_at);
+CREATE INDEX IF NOT EXISTS idx_device_liveness_checked_at ON device_liveness(checked_at);
 
 -- Dashboard configurations
 CREATE TABLE IF NOT EXISTS dashboard_configs (
@@ -344,6 +363,7 @@ CREATE INDEX IF NOT EXISTS idx_scan_task_runs_created_at ON scan_task_runs(creat
 CREATE TABLE IF NOT EXISTS service_evidence (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ip TEXT NOT NULL,
+    device_uuid TEXT NOT NULL DEFAULT '',  -- stable device identity (backfilled); empty = unresolved at write time
     source TEXT NOT NULL,         -- e.g. "active:tcp", "passive:ebpf:tc"
     kind TEXT NOT NULL,           -- e.g. "banner", "port_open", "snmp"
     port INTEGER NOT NULL DEFAULT 0,
@@ -361,6 +381,7 @@ CREATE INDEX IF NOT EXISTS idx_service_evidence_observed ON service_evidence(obs
 CREATE TABLE IF NOT EXISTS host_services (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ip TEXT NOT NULL,
+    device_uuid TEXT NOT NULL DEFAULT '',  -- stable device identity (replaces ip as the key once backfilled)
     service TEXT NOT NULL,        -- "ssh", "http", "rtsp", "onvif", ...
     port INTEGER NOT NULL DEFAULT 0,
     protocol TEXT NOT NULL DEFAULT '',
@@ -383,6 +404,7 @@ CREATE INDEX IF NOT EXISTS idx_host_services_service ON host_services(service);
 CREATE TABLE IF NOT EXISTS host_tls_certs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ip TEXT NOT NULL,
+    device_uuid TEXT NOT NULL DEFAULT '',  -- stable device identity (replaces ip in the device join once backfilled)
     port INTEGER NOT NULL DEFAULT 0,
     cert_index INTEGER NOT NULL DEFAULT 0,        -- 0 = leaf/server cert, 1..N = chain issuers
     -- Identity
@@ -538,8 +560,11 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
     task_id INTEGER,                       -- which scan task last touched it (NULL = agent report)
     ip TEXT NOT NULL,
     mac TEXT NOT NULL DEFAULT '',          -- MAC-primary identity key (empty when unknown)
+    device_uuid TEXT NOT NULL DEFAULT '',  -- stable device identity (replaces ip as the lost-detection key once backfilled); empty during transition
     miss_count INTEGER NOT NULL DEFAULT 0, -- consecutive scans this IP was absent
     last_seen_at DATETIME NOT NULL,        -- last time this IP appeared alive in a scan
+    flap_count INTEGER NOT NULL DEFAULT 0, -- liveness transitions (lost+recovered) — used by the lease sweeper's flap state-machine to debounce intermittently-seen agent devices
+    last_flap_at DATETIME,                 -- when flap_count was last incremented; NULL never. Used to age-out flapping after a stable period.
     UNIQUE(network_id, ip)
 );
 CREATE INDEX IF NOT EXISTS idx_scan_snapshots_network ON scan_snapshots(network_id);
