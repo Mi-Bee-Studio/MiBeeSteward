@@ -121,13 +121,15 @@ type LeaseSweeper struct {
 // Flap-debounce constants for the lease sweeper. An agent device that bounces
 // online/offline (a flaky-WiFi IoT device the agent sees intermittently) would
 // otherwise emit a device_lost/device_recovered storm. Once a device has crossed
-// flapThreshold liveness transitions, further transitions within flapStablePeriod
-// update devices.status but do NOT emit change_log events — the device is
-// recognized as flapping. When it stays continuously online past flapStablePeriod,
-// flap_count resets and normal event recording resumes.
+// flapThreshold liveness transitions, further transitions update devices.status
+// but do NOT emit change_log events — the device is recognized as flapping. The
+// counter DECAYS (halves) once a stable window (flapStablePeriod) passes with no
+// flap, so a device that genuinely stops bouncing earns its way back to normal
+// event recording across a few stable periods; a periodic device that keeps
+// bouncing never clears the counter and stays suppressed.
 const (
 	flapThreshold    = int64(4)         // transitions before a device is considered flapping
-	flapStablePeriod = 30 * time.Minute // how long stable-online before flap_count resets
+	flapStablePeriod = 30 * time.Minute // how long quiet before a decay pass halves flap_count
 )
 
 // NewLeaseSweeper constructs a sweeper. interval ≤0 → 60s, ttl ≤0 → 5min.
@@ -186,7 +188,9 @@ func (s *LeaseSweeper) sweepOnce(ctx context.Context) {
 // recognized as flapping — its status is still updated (so the registry reflects
 // current liveness) but NO device_lost event is emitted, stopping the lost storm
 // an intermittently-seen IoT device would otherwise generate. Each transition
-// increments flap_count; recoverFresh resets it after a stable-online period.
+// increments flap_count; recoverFresh DECAYS it (halves, not resets) after a
+// stable-online window so a periodic device can't clear its counter on every
+// cycle (see recoverFresh for the full rationale).
 func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 	stale := s.querySnapshots(ctx, staleAgentSnapshotsSQL, cutoff, "list stale")
 	if len(stale) == 0 {
@@ -231,10 +235,15 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 // the recovery gap the stable-hash fast path (agent_report.go) opens.
 //
 // Flap debouncing mirrors expireStale: a flapping device's status is updated but
-// no device_recovered event is emitted. Additionally, if the device has been
-// stable-online long enough (last_flap_at older than flapStablePeriod), its
-// flap_count resets to 0 — returning it to normal event recording once it stops
-// bouncing.
+// no device_recovered event is emitted while its flap_count is at/above the
+// threshold. The counter DECAYS (halves) once last_flap_at is older than
+// flapStablePeriod — NOT a hard reset to 0. The decay-only design is deliberate:
+// a hard reset let periodic WiFi-IoT devices (wake every ~35min > flapStablePeriod)
+// clear their counter on every cycle and re-emit device_recovered forever,
+// flooding change_log. With decay, a device must stay quiet across SEVERAL stable
+// periods to return to normal event recording; a device that keeps bouncing
+// never gives the counter room to clear, so it stays suppressed. See the inline
+// state-machine comment in the loop body for the full rationale.
 func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 	recoverable := s.querySnapshots(ctx, recoverableAgentSnapshotsSQL, cutoff, "list recoverable")
 	if len(recoverable) == 0 {
@@ -250,31 +259,59 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 			s.logger.Warn("lease sweeper: recover online failed", "device_id", l.DeviceID, "ip", l.IP, "error", err)
 			continue
 		}
-		// Flap-count maintenance. If the device has been stable past the stable
-		// period since its last flap, RESET flap_count (it has earned back normal
-		// event recording by staying online). Otherwise this recovery is itself a
-		// flap transition — increment it.
-		stable := l.LastFlapAt.Valid && now.Sub(l.LastFlapAt.Time) >= flapStablePeriod
-		if stable {
+		// Flap-count maintenance. This is the debounce state machine's heart. The
+		// goal: a device that genuinely stabilizes (stays continuously online) earns
+		// its flap_count back down to 0; a device still bouncing must NOT reset,
+		// because resetting lets it re-fire device_recovered on every cycle.
+		//
+		// The previous design reset to 0 whenever now-last_flap_at >= flapStablePeriod.
+		// That was WRONG for a periodic device (a WiFi-IoT device that wakes every
+		// ~35min): its last_flap_at is set by the *prior expire* ~35min ago, so every
+		// recovery looked "stable" and reset the counter — the device never stayed
+		// suppressed, and change_log filled with device_recovered storms.
+		//
+		// Correct semantics: "stable" means the device has been REPEATEDLY seen
+		// online over a long window with no expiry in between. We can't observe
+		// "continuously online" from a single sweep (the recover query only matches
+		// while status='offline'), so we use DECAY instead of hard reset:
+		//   - last_flap_at older than flapStablePeriod → halve flap_count (slow
+		//     recovery; a device must stay quiet for several stable periods to clear).
+		//   - otherwise (flap was recent) → increment (this recovery is another flap).
+		// A device that truly stops flapping decays to 0 within a few stable periods
+		// and resumes normal event recording. A periodic device that keeps bouncing
+		// never gives the counter room to clear, so it stays suppressed.
+		staleFlap := l.LastFlapAt.Valid && now.Sub(l.LastFlapAt.Time) >= flapStablePeriod
+		var effectiveFlapCount int64
+		if staleFlap {
+			// Decay: halve the counter, refresh last_flap_at to now (start a new
+			// stable window from this recovery).
+			effectiveFlapCount = l.FlapCount / 2
 			if _, err := s.runner.dbConn.ExecContext(ctx,
-				`UPDATE scan_snapshots SET flap_count = 0 WHERE id = ?`, l.ID); err != nil {
-				s.logger.Warn("lease sweeper: flap_count reset failed", "snapshot_id", l.ID, "error", err)
+				`UPDATE scan_snapshots SET flap_count = ?, last_flap_at = ? WHERE id = ?`,
+				effectiveFlapCount, now, l.ID); err != nil {
+				s.logger.Warn("lease sweeper: flap_count decay failed", "snapshot_id", l.ID, "error", err)
 			}
-		} else if _, err := s.runner.dbConn.ExecContext(ctx,
-			`UPDATE scan_snapshots SET flap_count = flap_count + 1, last_flap_at = ? WHERE id = ?`,
-			now, l.ID); err != nil {
-			s.logger.Warn("lease sweeper: flap_count increment failed", "snapshot_id", l.ID, "error", err)
+		} else {
+			// Flap was recent (within the stable window) → this recovery is another
+			// flap transition; increment and stamp last_flap_at.
+			effectiveFlapCount = l.FlapCount + 1
+			if _, err := s.runner.dbConn.ExecContext(ctx,
+				`UPDATE scan_snapshots SET flap_count = ?, last_flap_at = ? WHERE id = ?`,
+				effectiveFlapCount, now, l.ID); err != nil {
+				s.logger.Warn("lease sweeper: flap_count increment failed", "snapshot_id", l.ID, "error", err)
+			}
 		}
 		// Sample the online verdict to the liveness series (always).
 		if s.runner.heartbeat != nil {
 			s.runner.heartbeat.SampleLiveness(l.DeviceID, "online", "lease")
 		}
 		// Emit device_recovered only on a genuine offline→online flip AND when not
-		// suppressed by flapping. A reset-from-flapping recovery (stable==true)
-		// DOES emit — it marks the device's return to normal. A still-flapping
-		// recovery (stable==false, flap_count past threshold) is suppressed.
+		// suppressed by flapping. A device that has decayed back below the threshold
+		// (effectiveFlapCount < flapThreshold) DOES emit — it has earned back normal
+		// event recording by staying quiet long enough. A still-flapping device
+		// (effectiveFlapCount >= flapThreshold) is suppressed.
 		if before != nil && before.Status == "offline" {
-			flapping := !stable && l.FlapCount+1 >= flapThreshold
+			flapping := effectiveFlapCount >= flapThreshold
 			if !flapping {
 				nid := l.NetworkID
 				s.runner.recordDeviceRecovered(ctx, l.DeviceID, &nid, "lease", before)
