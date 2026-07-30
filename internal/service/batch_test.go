@@ -28,6 +28,7 @@ func setupBatchTestDB(t *testing.T) *sql.DB {
 const batchSchemaSQL = `
 CREATE TABLE IF NOT EXISTS devices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_uuid TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL DEFAULT '',
     type TEXT NOT NULL DEFAULT 'other',
     brand TEXT NOT NULL DEFAULT '',

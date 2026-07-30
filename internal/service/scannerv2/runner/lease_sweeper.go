@@ -40,11 +40,21 @@ type staleAgentSnapshot struct {
 // path + the heartbeat service. The device JOIN + status='online' filter
 // mirrors ListLostSnapshots so an already-lost device is not re-emitted.
 //
+// The device JOIN is device_uuid-aware: when the snapshot row carries a uuid we
+// match the device by (device_uuid, network_id), which means a device that
+// DHCP-roamed to a new IP is STILL found from its stale pre-roam snapshot row
+// (the device's uuid is unchanged across the roam) — so a roam can't strand a
+// device's lease on the old IP. Transition rows with empty device_uuid fall back
+// to the IP join.
+//
 // Defined as raw SQL (not sqlc) because sqlc's SQLite parser truncates this
 // query's trailing bytes — see the NOTE in db/queries/scan_snapshots.sql.
 const staleAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id, s.flap_count, s.last_flap_at
 FROM scan_snapshots s
-JOIN devices d ON d.ip_address = s.ip AND (d.network_id = s.network_id OR d.network_id IS NULL)
+JOIN devices d ON (
+	(s.device_uuid != '' AND d.device_uuid = s.device_uuid AND d.network_id = s.network_id)
+	OR (s.device_uuid = '' AND d.ip_address = s.ip AND (d.network_id = s.network_id OR d.network_id IS NULL))
+)
 JOIN networks n ON n.id = s.network_id
 WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
   AND s.last_seen_at < ?
@@ -60,10 +70,14 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
 // though the agent is actively reporting it alive again. This query finds those
 // stuck rows so sweepOnce can flip them back to online — closing the recovery
 // gap the stable-hash optimization opened. Same agent-only scope; the center's
-// own network recovers online via its own applyDeviceBridge scan path.
+// own network recovers online via its own applyDeviceBridge scan path. The
+// device_uuid-aware JOIN matches staleAgentSnapshotsSQL.
 const recoverableAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id, s.flap_count, s.last_flap_at
 FROM scan_snapshots s
-JOIN devices d ON d.ip_address = s.ip AND (d.network_id = s.network_id OR d.network_id IS NULL)
+JOIN devices d ON (
+	(s.device_uuid != '' AND d.device_uuid = s.device_uuid AND d.network_id = s.network_id)
+	OR (s.device_uuid = '' AND d.ip_address = s.ip AND (d.network_id = s.network_id OR d.network_id IS NULL))
+)
 JOIN networks n ON n.id = s.network_id
 WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
   AND s.last_seen_at >= ?

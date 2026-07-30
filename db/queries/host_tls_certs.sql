@@ -13,12 +13,16 @@ WHERE ip = ?
 ORDER BY port ASC, cert_index ASC;
 
 -- name: ListTLSCertsByDeviceID :many
--- Join through devices (composite-unique on (ip_address, network_id) means a
--- device's IP is its cert lookup key). Includes certs from every port on the
--- device, ordered for stable UI display (port, then chain order).
+-- Join through devices on device_uuid so certs follow the device across a DHCP
+-- roam (a device's IP is NOT stable, so the old ip-based join stranded the cert
+-- rows on the pre-roam IP). Transition rows with empty device_uuid fall back to
+-- the IP join. Ordered for stable UI display (port, then chain order).
 SELECT c.*
 FROM host_tls_certs AS c
-JOIN devices AS d ON d.ip_address = c.ip
+JOIN devices AS d ON (
+    (d.device_uuid != '' AND c.device_uuid = d.device_uuid)
+    OR (c.device_uuid = '' AND c.ip = d.ip_address)
+)
 WHERE d.id = ?
 ORDER BY c.port ASC, c.cert_index ASC;
 

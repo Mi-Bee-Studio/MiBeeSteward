@@ -37,14 +37,18 @@ func (q *Queries) DeleteHostTLSCertsStaleBatched(ctx context.Context, arg Delete
 const listTLSCertsByDeviceID = `-- name: ListTLSCertsByDeviceID :many
 SELECT c.id, c.ip, c.device_uuid, c.port, c.cert_index, c.subject_cn, c.subject_org, c.subject, c.issuer_cn, c.issuer_org, c.issuer, c.san_dns, c.san_ip, c.san_email, c.serial, c.not_before, c.not_after, c.sig_algorithm, c.key_algorithm, c.key_bits, c.is_ca, c.self_signed, c.fingerprint_sha256, c.pem, c.tls_version, c.cipher_suite, c.trusted, c.error, c.updated_at
 FROM host_tls_certs AS c
-JOIN devices AS d ON d.ip_address = c.ip
+JOIN devices AS d ON (
+    (d.device_uuid != '' AND c.device_uuid = d.device_uuid)
+    OR (c.device_uuid = '' AND c.ip = d.ip_address)
+)
 WHERE d.id = ?
 ORDER BY c.port ASC, c.cert_index ASC
 `
 
-// Join through devices (composite-unique on (ip_address, network_id) means a
-// device's IP is its cert lookup key). Includes certs from every port on the
-// device, ordered for stable UI display (port, then chain order).
+// Join through devices on device_uuid so certs follow the device across a DHCP
+// roam (a device's IP is NOT stable, so the old ip-based join stranded the cert
+// rows on the pre-roam IP). Transition rows with empty device_uuid fall back to
+// the IP join. Ordered for stable UI display (port, then chain order).
 func (q *Queries) ListTLSCertsByDeviceID(ctx context.Context, id int64) ([]HostTlsCert, error) {
 	rows, err := q.db.QueryContext(ctx, listTLSCertsByDeviceID, id)
 	if err != nil {
