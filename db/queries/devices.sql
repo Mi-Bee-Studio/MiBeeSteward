@@ -9,19 +9,19 @@
 
 -- name: CreateDevice :one
 INSERT INTO devices (
-    name, type, brand, model, location, purpose, description,
+    device_uuid, name, type, brand, model, location, purpose, description,
     status, ip_address, mac_address, serial_number,
     purchase_date, warranty_expiry, tags, user_attributes
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at;
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at;
 
 -- name: GetDevice :one
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
+SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 FROM devices
 WHERE id = ?;
 
 -- name: ListDevices :many
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
+SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 FROM devices
 WHERE (? = '' OR status = ?)
   AND (? = '' OR type = ?)
@@ -46,7 +46,7 @@ SET name = ?, type = ?, brand = ?, model = ?, location = ?, purpose = ?, descrip
     status = ?, ip_address = ?, mac_address = ?, serial_number = ?,
     purchase_date = ?, warranty_expiry = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at;
+RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at;
 
 -- name: UpdateUserAttributes :exec
 UPDATE devices SET user_attributes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
@@ -97,7 +97,7 @@ SET scan_source = ?, prometheus_labels = ?, last_scanned_at = ?, last_scan_task_
 WHERE id = ?;
 
 -- name: GetDeviceByIP :one
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
+SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 FROM devices
 WHERE ip_address = ?
 LIMIT 1;
@@ -107,7 +107,7 @@ LIMIT 1;
 -- both fresh installs (which have the scan_mac generated column) and upgraded
 -- DBs (which have an expression index on json_extract instead). The expression
 -- index idx_devices_scan_mac_expr covers this WHERE clause on either shape.
-SELECT id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
+SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, first_seen, last_seen, created_at, updated_at
 FROM devices
 WHERE json_extract(scan_attributes, '$.mac') = ?
 LIMIT 1;

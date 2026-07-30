@@ -15,6 +15,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 )
@@ -48,6 +50,7 @@ func (r *DeviceRepository) Create(ctx context.Context, req domain.CreateDeviceRe
 	}
 
 	device, err := r.queries.CreateDevice(ctx, db.CreateDeviceParams{
+		DeviceUuid:     uuid.NewString(),
 		Name:           req.Name,
 		Type:           deviceType,
 		Brand:          req.Brand,

@@ -28,6 +28,7 @@ func setupExportTest(t *testing.T) (*ExportService, *sql.DB) {
 	_, err = dbConn.Exec(`
 		CREATE TABLE IF NOT EXISTS devices (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			device_uuid TEXT NOT NULL DEFAULT '',
 			name TEXT NOT NULL DEFAULT '',
 			type TEXT NOT NULL DEFAULT '',
 			brand TEXT NOT NULL DEFAULT '',

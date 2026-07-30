@@ -14,6 +14,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -250,33 +252,52 @@ func GetProber(method, community, oid string) probe.Prober {
 // Defined as raw SQL (not sqlc) because sqlc's SQLite parser truncates queries
 // whose WHERE clause contains an empty-string literal (”) — see the NOTE in
 // db/queries/heartbeat_configs.sql.
+//
+// d.ip_address is selected so the prober can dereference the device's CURRENT IP
+// at probe time (see probeAndRecord): the config's target string embeds the IP
+// frozen at config-creation time, so without this a device that DHCP-roamed to a
+// new IP would be probed at its dead old address forever. The prober substitutes
+// the device's live ip_address into the target, so a roam is picked up on the
+// very next tick with no config rewrite needed.
 const listLocalProbeConfigsSQL = `SELECT hc.id, hc.device_id, hc.method, hc.target,
        hc.interval_seconds, hc.timeout_seconds, hc.snmp_community, hc.snmp_oid,
-       hc.enabled, hc.created_at, hc.updated_at
+       hc.enabled, hc.created_at, hc.updated_at,
+       d.ip_address AS device_ip
 FROM heartbeat_configs hc
 JOIN devices d ON d.id = hc.device_id
 LEFT JOIN networks n ON n.id = d.network_id
 WHERE hc.enabled = 1
   AND (n.agent_id IS NULL OR n.agent_id = '')`
 
+// probeConfig wraps a heartbeat config row with the device's CURRENT ip_address
+// (resolved fresh every tick from the devices table), so the prober targets the
+// live address instead of the IP frozen in hc.target at config-creation time.
+type probeConfig struct {
+	db.HeartbeatConfig
+	DeviceIP string
+}
+
 // listLocalProbeConfigs returns the enabled heartbeat configs the center should
 // probe locally this tick (excludes agent-managed-network devices).
-func (s *HeartbeatService) listLocalProbeConfigs(ctx context.Context) ([]db.HeartbeatConfig, error) {
+func (s *HeartbeatService) listLocalProbeConfigs(ctx context.Context) ([]probeConfig, error) {
 	rows, err := s.mainDB.QueryContext(ctx, listLocalProbeConfigsSQL)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []db.HeartbeatConfig
+	var out []probeConfig
 	for rows.Next() {
-		var c db.HeartbeatConfig
+		var c probeConfig
+		var deviceIP sql.NullString
 		if err := rows.Scan(
 			&c.ID, &c.DeviceID, &c.Method, &c.Target,
 			&c.IntervalSeconds, &c.TimeoutSeconds, &c.SnmpCommunity, &c.SnmpOid,
 			&c.Enabled, &c.CreatedAt, &c.UpdatedAt,
+			&deviceIP,
 		); err != nil {
 			return nil, err
 		}
+		c.DeviceIP = deviceIP.String
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -300,15 +321,15 @@ func (s *HeartbeatService) runChecks(ctx context.Context) {
 	// so per-config isDue would sometimes include only the failing config in a
 	// tick, making OR-aggregation see an all-fail that's really just one stale
 	// config. Device-level due + probe-all-configs keeps the OR verdict honest.
-	allByDevice := make(map[int64][]db.HeartbeatConfig)
+	allByDevice := make(map[int64][]probeConfig)
 	deviceDue := make(map[int64]bool)
 	for _, cfg := range configs {
 		allByDevice[cfg.DeviceID] = append(allByDevice[cfg.DeviceID], cfg)
-		if !deviceDue[cfg.DeviceID] && s.isDue(ctx, cfg) {
+		if !deviceDue[cfg.DeviceID] && s.isDue(ctx, cfg.HeartbeatConfig) {
 			deviceDue[cfg.DeviceID] = true
 		}
 	}
-	byDevice := make(map[int64][]db.HeartbeatConfig)
+	byDevice := make(map[int64][]probeConfig)
 	// Offline-device backoff: a device already marked offline in the in-memory
 	// statusCache is probed only every offlineBackoff ticks (not every tick).
 	// This stops known-dead hosts from generating a steady stream of timeout
@@ -354,7 +375,7 @@ func (s *HeartbeatService) runChecks(ctx context.Context) {
 	var wg sync.WaitGroup
 	for deviceID, cfgs := range byDevice {
 		wg.Add(1)
-		go func(deviceID int64, cfgs []db.HeartbeatConfig) {
+		go func(deviceID int64, cfgs []probeConfig) {
 			defer wg.Done()
 			select {
 			case sem <- struct{}{}:
@@ -377,7 +398,7 @@ func (s *HeartbeatService) runChecks(ctx context.Context) {
 // — the root cause of the persistent fleet-wide online/offline flapping.
 // Devices still run concurrently (maxConcurrency), so a fleet of 84 finishes in
 // ~2 batches; serializing 1-3 quick probes per device adds negligible latency.
-func (s *HeartbeatService) checkDevice(ctx context.Context, deviceID int64, cfgs []db.HeartbeatConfig) {
+func (s *HeartbeatService) checkDevice(ctx context.Context, deviceID int64, cfgs []probeConfig) {
 	anySuccess := false
 	for _, cfg := range cfgs {
 		if s.probeAndRecord(ctx, cfg) {
@@ -389,7 +410,13 @@ func (s *HeartbeatService) checkDevice(ctx context.Context, deviceID int64, cfgs
 
 // probeAndRecord runs a single config (with retry), writes the result row, and
 // reports whether the probe succeeded.
-func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg db.HeartbeatConfig) bool {
+//
+// DHCP-roam handling: the config's target was frozen at config-creation time
+// (it embeds the device's then-current IP). resolveLiveTarget substitutes the
+// device's CURRENT ip_address (cfg.DeviceIP, read fresh this tick) into the
+// target, so a device that roamed is probed at its live address on the very next
+// tick — no config rewrite, no roam hook.
+func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg probeConfig) bool {
 	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 5 * time.Second
@@ -406,7 +433,8 @@ func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg db.HeartbeatC
 	s.lastProbeMu.Lock()
 	s.lastProbe[cfg.ID] = time.Now()
 	s.lastProbeMu.Unlock()
-	result, err := prober.Probe(ctx, cfg.Target, timeout)
+	liveTarget := resolveLiveTarget(cfg.Target, cfg.DeviceIP)
+	result, err := prober.Probe(ctx, liveTarget, timeout)
 	if err != nil {
 		slog.Error("heartbeat probe error", "config_id", cfg.ID, "error", err)
 		// A transport-level error counts as a failure for aggregation.
@@ -792,4 +820,54 @@ func toHeartbeatResultResponse(r db.HeartbeatResult) domain.HeartbeatResultRespo
 		ErrorMessage: r.ErrorMessage,
 		CheckedAt:    r.CheckedAt,
 	}
+}
+
+// resolveLiveTarget substitutes the device's CURRENT ip_address into a frozen
+// heartbeat target string. The target was captured at config-creation time and
+// embeds the device's then-current IP; when the device DHCP-roams, the frozen IP
+// goes dead and the heartbeat would forever probe the wrong address. This makes
+// every tick use the device's live IP instead, with no config rewrite needed.
+//
+// Recognized target shapes (all produced by the scanner's heartbeat handlers):
+//   - bare host      : "192.168.1.10"              (icmp, snmp)
+//   - host:port      : "192.168.1.10:80"           (tcp)
+//   - scheme://h:p/..: "http://192.168.1.10:80/"   (http, onvif, cascade)
+//
+// When deviceIP is empty (the device somehow lost its IP — shouldn't happen for
+// an online device), the original frozen target is returned unchanged so the
+// probe at least attempts the old address rather than an empty string.
+//
+// The substitution preserves everything except the host: the port, scheme, path,
+// and query stay intact. For bare-host targets the whole string is replaced.
+func resolveLiveTarget(frozenTarget, deviceIP string) string {
+	if deviceIP == "" || frozenTarget == "" {
+		return frozenTarget
+	}
+	// scheme://host[:port]/...  → parse, swap Host, re-render.
+	if strings.Contains(frozenTarget, "://") {
+		u, err := url.Parse(frozenTarget)
+		if err != nil || u.Host == "" {
+			return frozenTarget
+		}
+		// Preserve the port if the original host had one.
+		port := u.Port()
+		if port == "" {
+			u.Host = deviceIP
+		} else {
+			u.Host = deviceIP + ":" + port
+		}
+		return u.String()
+	}
+	// host:port (tcp targets). Split on the LAST colon so IPv6 bare hosts (rare
+	// on a LAN tool) aren't mis-split; if neither side parses as host/port the
+	// original is returned.
+	if strings.Count(frozenTarget, ":") == 1 {
+		idx := strings.IndexByte(frozenTarget, ':')
+		port := frozenTarget[idx+1:]
+		if port != "" {
+			return deviceIP + ":" + port
+		}
+	}
+	// Bare host (icmp/snmp): replace wholesale.
+	return deviceIP
 }

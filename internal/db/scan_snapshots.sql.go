@@ -110,18 +110,28 @@ FROM scan_snapshots
 WHERE network_id = ?
 `
 
+type ListSnapshotsForNetworkRow struct {
+	ID         int64     `json:"id"`
+	NetworkID  int64     `json:"network_id"`
+	TaskID     *int64    `json:"task_id"`
+	Ip         string    `json:"ip"`
+	Mac        string    `json:"mac"`
+	MissCount  int64     `json:"miss_count"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+}
+
 // All snapshots for a network (the known alive set). Used to compute the set
 // difference: which of these did NOT appear in the current scan, then
 // increment their miss_count (done in Go since the IN-list is dynamic).
-func (q *Queries) ListSnapshotsForNetwork(ctx context.Context, networkID int64) ([]ScanSnapshot, error) {
+func (q *Queries) ListSnapshotsForNetwork(ctx context.Context, networkID int64) ([]ListSnapshotsForNetworkRow, error) {
 	rows, err := q.db.QueryContext(ctx, listSnapshotsForNetwork, networkID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ScanSnapshot{}
+	items := []ListSnapshotsForNetworkRow{}
 	for rows.Next() {
-		var i ScanSnapshot
+		var i ListSnapshotsForNetworkRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.NetworkID,
@@ -173,6 +183,16 @@ type UpsertScanSnapshotParams struct {
 // for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 // Mark an IP as seen in this scan: insert or reset miss_count to 0 + refresh
 // last_seen_at. Called for every alive host in a scan.
+//
+// NOTE: this query is intentionally a sqlc query ONLY in its simplest form.
+// The version that also writes device_uuid + CASE WHEN clauses in the ON
+// CONFLICT DO UPDATE is implemented as raw SQL in
+// internal/service/scannerv2/runner/detect_lost.go (Runner.upsertScanSnapshot),
+// because sqlc's SQLite parser truncates the trailing bytes of the ON CONFLICT
+// clause when it contains a CASE WHEN on excluded.device_uuid (the same
+// documented parser bug that forced ListStaleAgentSnapshots to raw SQL). The
+// raw-SQL path is what Runner.RecordAliveSnapshots calls; this sqlc query is
+// retained for any other caller but the device_uuid write is NOT done here.
 func (q *Queries) UpsertScanSnapshot(ctx context.Context, arg UpsertScanSnapshotParams) error {
 	_, err := q.db.ExecContext(ctx, upsertScanSnapshot,
 		arg.NetworkID,

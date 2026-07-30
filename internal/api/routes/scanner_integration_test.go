@@ -37,6 +37,7 @@ func newTestDB(t *testing.T) *sql.DB {
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS devices (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			device_uuid TEXT NOT NULL DEFAULT '',
 			name TEXT NOT NULL,
 			ip_address TEXT,
 			type TEXT DEFAULT 'unknown',
