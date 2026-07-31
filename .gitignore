@@ -25,6 +25,10 @@ docs/private/
 configs/config.yaml
 configs/agent.yaml
 configs/config-center.yaml
+# Full IEEE OUI/MA-S/MA-M vendor list downloaded by scripts/fetch-oui.sh.
+# The embedded curated table (internal/service/scannerv2/vendor/oui_curated.txt)
+# covers common vendors out-of-box; this full file is an optional override.
+configs/oui.txt
 
 # === Stray build artifacts ===
 /fpimport

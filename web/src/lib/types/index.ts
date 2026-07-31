@@ -140,6 +140,14 @@ export interface ScanAttributes {
 	/** multicast bit set — a real device should never source from such a MAC;
 	 *  observability flag only (no identity effect). */
 	mac_is_multicast?: boolean;
+	/** IEEE assignment block the MAC matched via longest-prefix lookup — 6 hex
+	 *  (MA-L /24), 7 hex (MA-M /28), or 9 hex (MA-S /36). Empty when no OUI
+	 *  table loaded or MAC unknown/locally administered. */
+	oui_prefix?: string;
+	/** IEEE-registered organization name for the OUI prefix (the NIC silicon
+	 *  vendor). Distinct from `vendor` (the device's self-declared brand) — the
+	 *  two differ in OEM/rebrand/virtualization cases. */
+	oui_vendor?: string;
 	hostname?: string;
 	os?: string;
 	os_version?: string;

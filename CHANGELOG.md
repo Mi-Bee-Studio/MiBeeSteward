@@ -31,6 +31,38 @@ keeping the bit as a neutral observability flag.
   issue #118 research comment for the full rationale (RFC 7042, license boundary
   for IEEE data, etc.).
 
+### OUI vendor inference: MA-S / MA-M / MA-L longest-prefix match
+**Deterministic MAC enrichment** — the OUI lookup now resolves a MAC to its
+IEEE-registered vendor via **longest-prefix-match** across the three registries:
+MA-S (/36, 9 hex, formerly IAB) → MA-M (/28, 7 hex) → MA-L (/24, 6 hex). This is
+mandatory because MA-S/MA-M sub-blocks are carved out of /24 OUIs owned by IEEE
+or another vendor — without longest-prefix, a MAC starting `8C1F64B14..` would
+be mislabelled "IEEE Registration Authority" instead of "Murata" (the MA-S
+sub-assignee).
+
+- **`vendor/oui.go`**: `Lookup` now does longest-prefix match; new `LookupFull`
+  returns `(vendor, prefix)` so callers can record which block matched. The
+  loader indexes prefixes of all three lengths (the 6-hex cap in
+  `NormalizeMACPrefix` is lifted via a new `normalizeHexPrefix`).
+- **New `scan_attributes` fields**: `oui_prefix` (the matched 6/7/9-hex block)
+  and `oui_vendor` (the IEEE organization name — the NIC silicon vendor). Kept
+  SEPARATE from the existing `vendor` (the device's self-declared brand via
+  SNMP/HTTP/TLS); the two differ in OEM/rebrand/virtualization cases.
+- **Out-of-box coverage**: the engine now auto-seeds from an EMBEDDED curated
+  CC-BY-SA table (`vendor/oui_curated.txt`, via `//go:embed`) when
+  `scanner.oui_path` is empty — a fresh install gets vendor inference for common
+  devices without any setup. A user-configured full IEEE file still overrides it.
+- **`scripts/fetch-oui.sh` rewritten**: fetches all three IEEE CSVs (MA-L/MA-M/
+  MA-S), merges into one `<prefix>\t<vendor>` file with Python CSV parsing
+  (vendor names contain commas/quotes). Also fixes a pre-existing typo in the
+  download URL (`standardeee.org` → `standards-oui.ieee.org`) — the old script
+  downloaded from a non-canonical mirror and would have failed.
+- **License boundary preserved**: the IEEE registries are "All rights reserved"
+  factual data — they are NOT folded into the CC-BY-SA fingerprint corpus (see
+  `docs/fingerprint-spec.md` §8 "Data vs code distinction"). The embedded
+  curated table is a hand-authored CC-BY-SA subset, not an IEEE reproduction;
+  the full IEEE set stays an optional runtime download.
+
 ## [0.4.0] - 2026-07-29
 
 **Router-resident discovery + OpenWrt deployment + device-persistence rewrite.**
