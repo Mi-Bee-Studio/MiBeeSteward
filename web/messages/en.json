@@ -577,7 +577,15 @@
 		"No Ports": "No open ports detected",
 		"No Services": "No services detected"
 	},
-	"scanfields": {
+	"liveness": {
+		"Title": "Liveness",
+		"Last Alive": "Last Confirmed Alive",
+		"Offline Since": "Offline Since",
+		"Cleanup Expiry": "Cleanup Expiry",
+		"In Window": "prunes in {remaining} (window: {threshold})",
+		"Prune Pending": "overdue — prune pending next sweep"
+	},
+		"scanfields": {
 		"Discovery": "Scan Discovery",
 		"Vendor": "Vendor",
 		"MAC": "MAC Address",

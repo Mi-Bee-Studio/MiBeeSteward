@@ -442,7 +442,7 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 			    prometheus_url = ?,
 			    node_exporter_url = ?,
 			    scan_attributes = ?,
-			    last_seen = COALESCE(last_seen, ?),
+			    last_seen = ?,
 			    last_scanned_at = ?,
 			    updated_at = ?
 			WHERE id = ?`,
