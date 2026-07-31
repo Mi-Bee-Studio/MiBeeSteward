@@ -1180,6 +1180,12 @@ interface AddDevicesResponse {
 								<span class="text-text truncate">{sa?.vendor || device.brand}</span>
 							</summary>
 						{/if}
+						{#if sa?.oui_vendor}
+							<summary class="flex flex-col gap-0.5 min-w-0" title={sa?.oui_prefix ? `IEEE block ${sa.oui_prefix}` : ''}>
+								<span class="text-muted">{m['devices.OUI Vendor']()}</span>
+								<span class="font-mono text-text truncate">{sa?.oui_vendor}</span>
+							</summary>
+						{/if}
 						{#if device.model}
 							<summary class="flex flex-col gap-0.5 min-w-0">
 								<span class="text-muted">{m['devices.Model']()}</span>

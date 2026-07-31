@@ -88,6 +88,7 @@
 		"IP Address": "IP Address",
 		"MAC Address": "MAC Address",
 		"Vendor": "Vendor",
+		"OUI Vendor": "OUI Vendor (NIC)",
 		"Hostname": "Hostname",
 		"Serial Number": "Serial Number",
 		"Purchase Date": "Purchase Date",
@@ -593,6 +594,7 @@
 		"scanfields": {
 		"Discovery": "Scan Discovery",
 		"Vendor": "Vendor",
+		"OUI Vendor": "OUI Vendor (NIC)",
 		"MAC": "MAC Address",
 		"Locally Administered MAC": "Locally Admin.",
 		"Locally Administered MAC Hint": "Locally-administered MAC (U/L bit set) — assigned locally, not from an IEEE OUI/MA-S/MA-M block. The bit is neutral fact: it cannot distinguish privacy randomization (unstable) from a locally fixed setting (stable, e.g. soft-router/hypervisor). Does not change device identity.",
