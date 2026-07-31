@@ -646,7 +646,22 @@ func (s *HeartbeatService) syncStatus(ctx context.Context) {
 		return
 	}
 	for _, c := range changed {
-		if _, err := tx.ExecContext(ctx, "UPDATE devices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", c.status, c.id); err != nil {
+		// Stamp offline_since on the online→offline flip and clear it on
+		// offline→online, so the silent-device retention sweep (issue #117) has
+		// an authoritative "how long has this device had no heartbeat" signal.
+		// The CASE evaluates against the row's CURRENT status, so a no-op write
+		// (status unchanged — shouldn't happen here, lastSynced guards it, but
+		// defensive) leaves offline_since untouched.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE devices SET
+				status = ?,
+				offline_since = CASE
+					WHEN ? = 'offline' AND status != 'offline' THEN CURRENT_TIMESTAMP
+					WHEN ? = 'online' THEN NULL
+					ELSE offline_since
+				END,
+				updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?`, c.status, c.status, c.status, c.id); err != nil {
 			slog.Error("syncStatus update failed", "device_id", c.id, "error", err)
 		}
 	}

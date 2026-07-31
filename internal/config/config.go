@@ -115,6 +115,20 @@ type RetentionConfig struct {
 	// cert chain behind. PEM payload is a few KB per row, so we default tighter
 	// than host_services. Default 30.
 	HostTLSCertsDays int `koanf:"host_tls_certs_days"`
+	// SilentDeviceDaysMAC is how long a scanner-discovered device WITH a MAC
+	// address can stay offline (no heartbeat — all probe configs failing) before
+	// the silent-device retention sweep physically deletes it (issue #117). MAC-
+	// bearing devices are real assets that may genuinely disappear for a while
+	// (laptop on a long trip, IoT device powered off), so the window is generous
+	// (7d). A device that comes back online (5 consecutive successful probe
+	// cycles) clears offline_since and the clock resets. Manual devices
+	// (scan_source != 'scanner_v2') are NEVER auto-deleted. 0 → default 7.
+	SilentDeviceDaysMAC int `koanf:"silent_device_days_mac"`
+	// SilentDeviceHoursNoMAC is the same window for scanner-discovered devices
+	// WITHOUT a MAC (mac_address=''). A mac-less device is an unreliable identity
+	// (could be a transient/duplicate discovery), so it's pruned much faster
+	// (24h) to keep the registry clean. 0 → default 24.
+	SilentDeviceHoursNoMAC int `koanf:"silent_device_hours_no_mac"`
 	// SweepIntervalHours is how often the retention sweeper runs across all
 	// tables. Default 6h — frequent enough that no table drifts far past its
 	// window, rare enough to be negligible overhead.
@@ -554,6 +568,12 @@ func normalizeRetention(cfg *Config) {
 	}
 	if r.HostTLSCertsDays <= 0 {
 		r.HostTLSCertsDays = 30
+	}
+	if r.SilentDeviceDaysMAC <= 0 {
+		r.SilentDeviceDaysMAC = 7
+	}
+	if r.SilentDeviceHoursNoMAC <= 0 {
+		r.SilentDeviceHoursNoMAC = 24
 	}
 	if r.SweepIntervalHours <= 0 {
 		r.SweepIntervalHours = 6

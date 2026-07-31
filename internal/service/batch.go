@@ -102,17 +102,26 @@ func (s *BatchService) UpdateDeviceStatuses(ctx context.Context, ids []int64, st
 	defer func() { _ = tx.Rollback() }() // rollback errors (sql.ErrTxDone after commit) are expected
 
 	// Use raw SQL for batch status update — more efficient than looping UpdateDevice
-	// since we only change one field
+	// since we only change one field. status is bound 3×: once for SET, twice for
+	// the offline_since CASE branches (flip-to-offline stamps, flip-to-online clears).
 	placeholders := make([]string, len(ids))
-	args := make([]interface{}, 0, len(ids)+1)
-	args = append(args, status)
+	args := make([]interface{}, 0, len(ids)+3)
+	args = append(args, status, status, status)
 	for i, id := range ids {
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
 
 	query := fmt.Sprintf(
-		"UPDATE devices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (%s)",
+		`UPDATE devices SET
+			status = ?,
+			offline_since = CASE
+				WHEN ? = 'offline' AND status != 'offline' THEN CURRENT_TIMESTAMP
+				WHEN ? = 'online' THEN NULL
+				ELSE offline_since
+			END,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id IN (%s)`,
 		strings.Join(placeholders, ","),
 	)
 

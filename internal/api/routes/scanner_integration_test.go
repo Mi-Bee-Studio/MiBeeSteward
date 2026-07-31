@@ -55,6 +55,7 @@ func newTestDB(t *testing.T) *sql.DB {
 			network_id INTEGER,
 			first_seen TIMESTAMP,
 			last_seen TIMESTAMP,
+			offline_since TIMESTAMP,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);

@@ -56,6 +56,7 @@ func setupAttributesTestDB(t *testing.T) (*DeviceRepository, *sql.DB, int64) {
 			network_id INTEGER,
 			first_seen TIMESTAMP,
 			last_seen TIMESTAMP,
+			offline_since TIMESTAMP,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
@@ -155,6 +156,8 @@ func TestCreateDeviceRejectsInvalidUserAttributes(t *testing.T) {
 			tags TEXT NOT NULL DEFAULT '{}',
 			scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes)),
 			user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes)),
+			last_seen TIMESTAMP,
+			offline_since TIMESTAMP,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`)

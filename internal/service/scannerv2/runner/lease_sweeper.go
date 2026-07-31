@@ -208,9 +208,13 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 			s.logger.Warn("lease sweeper: flap_count increment failed", "snapshot_id", l.ID, "error", err)
 		}
 		// Mark the device offline (always — the registry must reflect liveness
-		// regardless of event suppression).
+		// regardless of event suppression). Stamp offline_since on the flip (CASE
+		// guards so an already-offline device keeps its original stamp) for the
+		// silent-device retention sweep (issue #117).
 		if _, err := s.runner.dbConn.ExecContext(ctx,
-			`UPDATE devices SET status='offline', updated_at=? WHERE id=?`, now, l.DeviceID); err != nil {
+			`UPDATE devices SET status='offline',
+				offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
+				updated_at=? WHERE id=?`, now, now, l.DeviceID); err != nil {
 			s.logger.Warn("lease sweeper: mark offline failed", "device_id", l.DeviceID, "ip", l.IP, "error", err)
 		}
 		// Flap suppression: once past the threshold, stop emitting. The device is
@@ -254,7 +258,7 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 		// Capture the BEFORE snapshot while the row is still 'offline'.
 		before := s.runner.snapshotDevice(ctx, l.DeviceID)
 		if _, err := s.runner.dbConn.ExecContext(ctx,
-			`UPDATE devices SET status='online', last_seen=?, last_scanned_at=?, updated_at=? WHERE id=?`,
+			`UPDATE devices SET status='online', last_seen=?, last_scanned_at=?, offline_since=NULL, updated_at=? WHERE id=?`,
 			now, now, now, l.DeviceID); err != nil {
 			s.logger.Warn("lease sweeper: recover online failed", "device_id", l.DeviceID, "ip", l.IP, "error", err)
 			continue

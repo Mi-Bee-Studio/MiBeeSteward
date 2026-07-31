@@ -562,7 +562,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// service_evidence) on a single ticker, each with its own retention window.
 	// Defaults & scanner.retention_days back-compat are applied in
 	// config.normalizeRetention, so cfg.Retention is fully populated here.
-	cleanupSvc := scannerv2cleanup.New(scanQueries, hbStore.Queries(), hbStore.DB(), cfg.Retention)
+	cleanupSvc := scannerv2cleanup.New(scanQueries, hbStore.Queries(), hbStore.DB(), dbConn, cfg.Retention)
 	cleanupSvc.Start(context.Background())
 
 	if scanScheduler != nil {

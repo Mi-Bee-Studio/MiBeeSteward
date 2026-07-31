@@ -104,6 +104,15 @@ CREATE TABLE IF NOT EXISTS devices (
     -- across distributed instances.
     first_seen TIMESTAMP,
     last_seen TIMESTAMP,
+    -- offline_since is stamped when the device FLIPS to 'offline' (all heartbeat
+    -- configs failed past the offline_threshold, or scan lost-detection / lease
+    -- sweeper marked it gone) and cleared to NULL when it comes back online. It
+    -- is the signal for the silent-device retention sweep: a device whose
+    -- offline_since is older than the configured window (7d with a MAC, 24h
+    -- without) is auto-pruned. Distinct from last_seen (which is scan-derived
+    -- and not refreshed on heartbeat-online) — offline_since is the authoritative
+    -- "how long has this device had no heartbeat" timestamp.
+    offline_since TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
