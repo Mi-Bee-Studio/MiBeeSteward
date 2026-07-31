@@ -1194,7 +1194,12 @@ interface AddDevicesResponse {
 						{#if (sa?.mac || device.mac_address)}
 							<summary class="flex flex-col gap-0.5 min-w-0">
 								<span class="text-muted">{m['devices.MAC Address']()}</span>
-								<span class="font-mono text-text truncate">{sa?.mac || device.mac_address}</span>
+								<span class="font-mono text-text truncate inline-flex items-center gap-1.5">
+									{sa?.mac || device.mac_address}
+									{#if sa?.mac_is_randomized}
+										<span class="badge badge-warning shrink-0" title={m['devices.Randomized MAC Hint']()}>{m['scanfields.Randomized MAC']()}</span>
+									{/if}
+								</span>
 							</summary>
 						{/if}
 						{#if sa?.os}

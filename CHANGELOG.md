@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Device identity: randomized-MAC detection + identity downgrade
+**Correctness fix** — a MAC with the locally-administered (LAA) bit set
+(iOS/Android/Windows privacy randomization, hypervisor-assigned MACs) is not
+stable across scans, but the MAC-primary identity model treated it as one. Each
+randomized MAC was registered as a brand-new device, polluting the registry with
+ghost rows — and defeating the silent-device retention sweep (#117), which never
+sees such a device as "stale" because it is always "new".
+
+- **Identity downgrade** (`resolveDeviceIdentity` in `device_bridge.go`): when a
+  scan observes an LAA MAC, the device is identified by `(ip_address,
+  network_id)` instead of by MAC — the cross-network `mac_address = ?` lookup
+  (and thus the replacement/roam branches) is skipped entirely. The MAC is still
+  stored on the row as an observed attribute for display/OUI; only its role as
+  the identity anchor is dropped.
+- **New `scan_attributes` fields**: `mac_is_randomized` and `mac_is_multicast`
+  (both `omitempty` bools, JSON-only — no generated column). Derived from the
+  observed MAC after both MAC sources fold in.
+- **UI surfacing**: a ⚠ marker on the MAC in the device list (mirrors the
+  heuristic-type `?` badge), a warning-colored "Randomized" pill on the device
+  detail Discovery panel, and the same pill in the expand-row device summary —
+  so users can tell why a phone that roams shows as separate rows.
+- **Helpers**: `store.IsLocalMAC` / `store.IsMulticastMAC` (first-octet 0x02 /
+  0x01 bit checks on a canonical MAC), co-located with `NormalizeMAC`.
+- Out of scope (later phases of #118): OUI-prefix persistence, MA-S/MA-M
+  (oui36/IAB) precision, and `oui_vendor` vs `brand` semantic separation.
+
 ## [0.4.0] - 2026-07-29
 
 **Router-resident discovery + OpenWrt deployment + device-persistence rewrite.**
