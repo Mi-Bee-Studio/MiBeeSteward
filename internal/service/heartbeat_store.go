@@ -448,6 +448,32 @@ func (s *HeartbeatStore) OfflineDuration(ctx context.Context, deviceID int64) (t
 	return time.Since(last), true, nil
 }
 
+// LastOnlineAt returns the timestamp of the device's most recent 'online'
+// verdict sample — the authoritative "last confirmed alive" time, drawn from the
+// device_liveness series (written by heartbeat probing, scans, and the lease
+// sweeper). This is the most accurate liveness signal: unlike devices.last_seen
+// (scan-derived) it reflects ANY online verdict, including heartbeat ticks.
+// Returns (nil, nil) when the device has never been seen online (or its samples
+// aged out past retention) — callers then omit the field rather than guessing.
+// Mirrors OfflineDuration's query (same SELECT, returns the timestamp itself).
+func (s *HeartbeatStore) LastOnlineAt(ctx context.Context, deviceID int64) (*time.Time, error) {
+	var lastStr string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT checked_at FROM device_liveness WHERE device_id=? AND status='online' ORDER BY checked_at DESC LIMIT 1`,
+		deviceID).Scan(&lastStr)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // never seen online (or aged out)
+		}
+		return nil, err
+	}
+	last, err := time.Parse(time.RFC3339, lastStr)
+	if err != nil {
+		return nil, err
+	}
+	return &last, nil
+}
+
 // LivenessHistory returns the raw verdict samples for a device in [from, to],
 // newest-first. Used by the device-detail trend chart and for debugging the
 // multi-period judgment. Capped by limit (the caller pages). Bounds are

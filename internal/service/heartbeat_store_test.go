@@ -146,3 +146,42 @@ func TestHeartbeatStore_DeviceLiveness_RetentionSweep(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, hist, 2, "recent samples survive the sweep")
 }
+
+// TestHeartbeatStore_LastOnlineAt verifies the "last confirmed alive" lookup:
+// the most recent 'online' verdict timestamp. nil when never online; the
+// timestamp itself (not a duration) when online samples exist.
+func TestHeartbeatStore_LastOnlineAt(t *testing.T) {
+	store, _ := openTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	// Device never seen online → nil, nil.
+	last, err := store.LastOnlineAt(ctx, 999)
+	require.NoError(t, err)
+	require.Nil(t, last, "never-online device returns nil")
+
+	// Seed: online at -60s, online at -20s (← last online), offline at -10s.
+	now := time.Now().UTC()
+	for i, s := range []struct {
+		status string
+		at     time.Duration
+	}{
+		{"online", -60 * time.Second},
+		{"online", -20 * time.Second},
+		{"offline", -10 * time.Second},
+	} {
+		store.EnqueueLiveness(livenessRow{
+			DeviceID: 42, Status: s.status, Source: "heartbeat", CheckedAt: now.Add(s.at),
+		})
+		_ = i
+	}
+	store.Start(context.Background())
+	waitForFlush(t, store, 3) // 3 samples seeded
+
+	last, err = store.LastOnlineAt(ctx, 42)
+	require.NoError(t, err)
+	require.NotNil(t, last, "device with online samples returns a timestamp")
+	// Must be the -20s sample, NOT the newer -10s offline one.
+	require.WithinDuration(t, now.Add(-20*time.Second), *last, 2*time.Second,
+		"LastOnlineAt is the most recent ONLINE sample, ignoring later offline ones")
+}

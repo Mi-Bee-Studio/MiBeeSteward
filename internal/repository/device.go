@@ -401,7 +401,7 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, 
 		d.mac_address, d.serial_number, d.purchase_date, d.warranty_expiry, d.tags, d.scan_source, d.prometheus_labels,
 		d.last_scanned_at, d.last_scan_task_id, d.open_ports, d.detected_services, d.prometheus_url, d.node_exporter_url,
 		d.last_scan_rtt_ms, d.scan_attributes, d.user_attributes, d.scan_vendor, d.scan_mac, d.scan_os, d.scan_hostname,
-		d.network_id, d.first_seen, d.last_seen,
+		d.network_id, d.first_seen, d.last_seen, d.offline_since,
 		d.created_at, d.updated_at,
 		n.name
 	FROM devices d
@@ -442,7 +442,7 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, 
 			&d.MacAddress, &d.SerialNumber, &d.PurchaseDate, &d.WarrantyExpiry, &d.Tags, &d.ScanSource, &d.PrometheusLabels,
 			&d.LastScannedAt, &d.LastScanTaskID, &d.OpenPorts, &d.DetectedServices, &d.PrometheusUrl, &d.NodeExporterUrl,
 			&d.LastScanRttMs, &d.ScanAttributes, &d.UserAttributes, &d.ScanVendor, &d.ScanMac, &d.ScanOs, &d.ScanHostname,
-			&d.NetworkID, &d.FirstSeen, &d.LastSeen,
+			&d.NetworkID, &d.FirstSeen, &d.LastSeen, &d.OfflineSince,
 			&d.CreatedAt, &d.UpdatedAt,
 			&networkName,
 		); err != nil {

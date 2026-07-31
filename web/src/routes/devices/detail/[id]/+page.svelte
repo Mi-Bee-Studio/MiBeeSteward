@@ -179,6 +179,49 @@
 			catch { return iso; }
 	}
 
+	// Silent-device retention thresholds (must mirror retention.silent_device_*
+	// defaults in configs/config.example.yaml: 7d with a MAC, 24h without). Used
+	// only to display a cleanup-expiry hint on the detail page; the authoritative
+	// cutoff is computed server-side from the configured values.
+	const SILENT_DEVICE_DAYS_MAC = 7;
+	const SILENT_DEVICE_HOURS_NO_MAC = 24;
+
+	// formatDurationMs renders a Duration (ms) as a compact "2d 3h" / "4h 12m"
+	// string for the cleanup-countdown display. (Distinct from formatDuration
+	// above, which takes seconds for uptime.)
+	function formatDurationMs(ms: number): string {
+		if (ms <= 0) return '0m';
+		const min = Math.floor(ms / 60000);
+		const h = Math.floor(min / 60);
+		const d = Math.floor(h / 24);
+		if (d > 0) return `${d}d ${h % 24}h`;
+		if (h > 0) return `${h}h ${min % 60}m`;
+		return `${min}m`;
+	}
+
+	// cleanupExpiry returns {expiryMs, remainingMs, overdue} for a scanner_v2
+	// device that is offline: expiryMs = how long until prune from offline_since;
+	// remainingMs = ms left (negative = already overdue); overdue = prune pending.
+	// Returns null for manual devices or devices without offline_since.
+	function cleanupExpiry(dev: typeof device): { expiryLabel: string; remainingLabel: string; overdue: boolean } | null {
+		if (!dev) return null;
+		if (dev.scan_source === 'manual' || !dev.scan_source) return null;
+		if (dev.status !== 'offline' || !dev.offline_since) return null;
+		const since = new Date(dev.offline_since).getTime();
+		if (Number.isNaN(since)) return null;
+		const thresholdMs = dev.mac_address
+			? SILENT_DEVICE_DAYS_MAC * 24 * 3600_000
+			: SILENT_DEVICE_HOURS_NO_MAC * 3600_000;
+		const now = Date.now();
+		const expiryAt = since + thresholdMs;
+		const remaining = expiryAt - now;
+		return {
+			expiryLabel: formatDurationMs(thresholdMs),
+			remainingLabel: remaining > 0 ? formatDurationMs(remaining) : formatDurationMs(0),
+			overdue: remaining <= 0,
+		};
+	}
+
 	function formatBytes(bytes: number | undefined | null): string {
 		if (!bytes || bytes <= 0) return '-';
 		const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -1056,6 +1099,45 @@
 					<p class="text-xs text-muted italic">{m['scaninfo.Never Scanned']()}</p>
 				{/if}
 			</div>
+
+			<!-- Liveness Panel: last confirmed alive + silent-retention countdown.
+			     Surfaces offline_since (the prune clock) so an operator can judge
+			     whether the retention sweep is about to prune this device. -->
+			{#if device && (device.last_online_at || device.last_seen || device.offline_since)}
+				{@const expiry = cleanupExpiry(device)}
+				<div class="scan-info-panel">
+					<h3 class="scan-info-title">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+						{m['liveness.Title']()}
+					</h3>
+					<div class="scan-info-grid">
+						{#if device.last_online_at || device.last_seen}
+							<div class="scan-info-field">
+								<span class="scan-info-label">{m['liveness.Last Alive']()}</span>
+								<span class="scan-info-value">{formatTimestamp(device.last_online_at ?? device.last_seen)}</span>
+							</div>
+						{/if}
+						{#if device.status === 'offline' && device.offline_since}
+							<div class="scan-info-field">
+								<span class="scan-info-label">{m['liveness.Offline Since']()}</span>
+								<span class="scan-info-value">{formatTimestamp(device.offline_since)}</span>
+							</div>
+						{/if}
+						{#if expiry}
+							<div class="scan-info-field">
+								<span class="scan-info-label">{m['liveness.Cleanup Expiry']()}</span>
+								<span class="scan-info-value {expiry.overdue ? 'text-red-500 font-semibold' : ''}">
+									{#if expiry.overdue}
+										{m['liveness.Prune Pending']()}
+									{:else}
+										{m['liveness.In Window']({ threshold: expiry.expiryLabel, remaining: expiry.remainingLabel })}
+									{/if}
+								</span>
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
 
 			<!-- Prometheus Labels Panel -->
 			<div class="scan-info-panel">
