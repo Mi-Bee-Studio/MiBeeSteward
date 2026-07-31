@@ -22,7 +22,9 @@ package cleanup
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"mibee-steward/internal/config"
@@ -35,6 +37,7 @@ type Service struct {
 	queries          *db.Queries // main DB (scan_results, scan_task_runs, audit_logs, notification_log, service_evidence)
 	heartbeatQueries *db.Queries // dedicated heartbeat DB (heartbeat_results lives in a separate file)
 	heartbeatDB      *sql.DB     // raw conn to heartbeat.db, for device_liveness RFC3339-bound deletes (sqlc passes time.Time which sorts wrong vs stored RFC3339 text)
+	mainDB           *sql.DB     // raw conn to the main DB, for the device-pruning DELETE + change_log emit (sqlc has no batched device delete)
 	cfg              config.RetentionConfig
 	interval         time.Duration
 	batch            int64
@@ -47,8 +50,10 @@ type Service struct {
 // sqlc Queries bound to the dedicated heartbeat.db (nil ⇒ heartbeat pruning
 // is skipped, for tests/main-DB-only contexts). heartbeatDB is the raw
 // connection for the RFC3339-bound device_liveness delete (nil ⇒ skipped).
-// SweepIntervalHours<=0 and BatchSize<=0 are defended in config.normalizeRetention.
-func New(queries *db.Queries, heartbeatQueries *db.Queries, heartbeatDB *sql.DB, cfg config.RetentionConfig) *Service {
+// mainDB is the raw main-DB connection for the silent-device prune (nil ⇒
+// device pruning is skipped — tests that don't exercise it). SweepIntervalHours
+// <=0 and BatchSize<=0 are defended in config.normalizeRetention.
+func New(queries *db.Queries, heartbeatQueries *db.Queries, heartbeatDB, mainDB *sql.DB, cfg config.RetentionConfig) *Service {
 	interval := time.Duration(cfg.SweepIntervalHours) * time.Hour
 	if interval <= 0 {
 		interval = 6 * time.Hour
@@ -61,6 +66,7 @@ func New(queries *db.Queries, heartbeatQueries *db.Queries, heartbeatDB *sql.DB,
 		queries:          queries,
 		heartbeatQueries: heartbeatQueries,
 		heartbeatDB:      heartbeatDB,
+		mainDB:           mainDB,
 		cfg:              cfg,
 		interval:         interval,
 		batch:            batch,
@@ -118,6 +124,7 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneDeviceNeighbors(ctx)
 	s.pruneHostServices(ctx)
 	s.pruneHostTLSCerts(ctx)
+	s.pruneSilentDevices(ctx)
 }
 
 // cutoff returns now - retentionDays, or a zero time if days<=0 (which would
@@ -311,4 +318,207 @@ func (s *Service) pruneHostTLSCerts(ctx context.Context) {
 			Limit:     limit,
 		})
 	})
+}
+
+// silentDeviceCutoff returns the cutoff time for the "no heartbeat" silent-
+// device prune, keyed by MAC presence. macCutoff uses SilentDeviceDaysMAC
+// (default 7d); noMacCutoff uses SilentDeviceHoursNoMAC (default 24h). A field
+// of 0 means "use the default" (normalizeRetention fills them), never "disabled".
+func silentDeviceCutoffs(cfg config.RetentionConfig) (macCutoff, noMacCutoff time.Time) {
+	now := time.Now()
+	macDays := cfg.SilentDeviceDaysMAC
+	if macDays <= 0 {
+		macDays = 7
+	}
+	noMacHours := cfg.SilentDeviceHoursNoMAC
+	if noMacHours <= 0 {
+		noMacHours = 24
+	}
+	return now.AddDate(0, 0, -macDays), now.Add(time.Duration(-noMacHours) * time.Hour)
+}
+
+// pruneSilentDevices physically deletes scanner-discovered devices that have had
+// no heartbeat for longer than the configured window (issue #117). Two cases:
+//
+//  1. Silent device: a scanner_v2 device whose status is 'offline' and whose
+//     offline_since is older than the threshold — 7d if it has a MAC (a real
+//     asset that may be genuinely gone), 24h if it has no MAC (an unreliable
+//     mac-less identity that's likely a transient/duplicate discovery).
+//  2. Roamed orphan: a scanner_v2 device whose MAC also exists ONLINE in another
+//     network (it DHCP-roamed) AND whose offline_since is older than
+//     roamedOrphanWindow — the device has a live copy elsewhere, so this row is
+//     a stale old-network leftover. The window is tighter than the silent
+//     window (the online copy proves the asset still exists).
+//
+// Manual devices (scan_source != 'scanner_v2') are NEVER auto-deleted — a human
+// added them, a human removes them (CMDB semantics). Each deletion is logged to
+// change_log as device_removed (with a before snapshot + reason) BEFORE the
+// DELETE, so the audit trail survives the CASCADE. Skipped entirely when mainDB
+// is nil (tests that don't exercise device pruning).
+//
+// NOTE on cutoff formatting: offline_since is stored as RFC3339-ish TEXT (the
+// heartbeat/scan writers pass Go time.Time, which modernc serializes with a
+// space + monotonic suffix; the silent-device tests store RFC3339Nano). A
+// string-comparison `< ?` therefore needs the cutoff bound in a matching
+// RFC3339 shape, NOT a raw time.Time (which would sort wrong). Mirrors the
+// documented device_liveness prune (pruneDeviceLiveness). We use RFC3339Nano
+// for sub-second precision.
+func (s *Service) pruneSilentDevices(ctx context.Context) {
+	if s.mainDB == nil {
+		return
+	}
+	macCut, noMacCut := silentDeviceCutoffs(s.cfg)
+	// The roamed-orphan window: ~5 probe cycles at the 30s default tick ≈ 2.5min is
+	// too aggressive (a scan-in-progress could briefly show the old row offline).
+	// Use a safe floor (10min) so a genuine roam settles before the orphan is cut.
+	const roamedOrphanWindow = 10 * time.Minute
+	roamedCut := time.Now().Add(-roamedOrphanWindow)
+	// Format cutoffs as RFC3339Nano so the string `<` comparison against the
+	// stored offline_since TEXT sorts correctly (see the NOTE above).
+	macCutStr := macCut.UTC().Format(time.RFC3339Nano)
+	noMacCutStr := noMacCut.UTC().Format(time.RFC3339Nano)
+	roamedCutStr := roamedCut.UTC().Format(time.RFC3339Nano)
+
+	var totalDeleted int64
+	for {
+		if ctx.Err() != nil {
+			s.logger.Info("cleanup: silent-device sweep cancelled", "deleted_so_far", totalDeleted)
+			return
+		}
+		// Select one batch of candidate rows (id + identity for the change_log
+		// before-snapshot). The DELETE happens row-by-row after the log write so a
+		// failure on one row doesn't lose the audit trail for the others.
+		rows, err := s.mainDB.QueryContext(ctx, `
+			SELECT id, device_uuid, name, type, brand, model, mac_address, ip_address,
+			       network_id, offline_since,
+			   CASE
+			         WHEN mac_address != '' AND offline_since < ? THEN 'silent_mac'
+			         WHEN mac_address = ''  AND offline_since < ? THEN 'silent_no_mac'
+			         WHEN mac_address != '' AND offline_since < ? AND EXISTS (
+			           SELECT 1 FROM devices d2
+			           WHERE d2.mac_address = devices.mac_address
+			             AND d2.id != devices.id
+			             AND d2.status = 'online'
+			         ) THEN 'roamed_orphan'
+			       END AS reason
+			FROM devices
+			WHERE scan_source = 'scanner_v2'
+			  AND status = 'offline'
+			  AND offline_since IS NOT NULL
+			  AND reason IS NOT NULL
+			LIMIT ?`,
+			macCutStr, noMacCutStr, roamedCutStr, s.batch)
+		if err != nil {
+			s.logger.Warn("cleanup: silent-device select failed", "error", err)
+			return
+		}
+		type candidate struct {
+			id           int64
+			uuid         string
+			name         string
+			devType      string
+			brand, model string
+			mac, ip      string
+			networkID    sql.NullInt64
+			offlineSince sql.NullTime
+			reason       string
+		}
+		var batch []candidate
+		for rows.Next() {
+			var c candidate
+			var netID sql.NullInt64
+			if err := rows.Scan(&c.id, &c.uuid, &c.name, &c.devType, &c.brand, &c.model,
+				&c.mac, &c.ip, &netID, &c.offlineSince, &c.reason); err != nil {
+				s.logger.Warn("cleanup: silent-device scan failed", "error", err)
+				break
+			}
+			c.networkID = netID
+			batch = append(batch, c)
+		}
+		rows.Close()
+
+		for _, c := range batch {
+			s.logDeviceRemoved(ctx, c.id, c.uuid, c.name, c.devType, c.brand, c.model,
+				c.mac, c.ip, c.networkID, c.reason)
+			if err := s.execWithBusyRetry(ctx, `DELETE FROM devices WHERE id = ?`, c.id); err != nil {
+				s.logger.Warn("cleanup: silent-device delete failed",
+					"device_id", c.id, "ip", c.ip, "mac", c.mac, "reason", c.reason, "error", err)
+				continue
+			}
+			totalDeleted++
+		}
+
+		// Under batch size ⇒ no more candidates this pass.
+		if int64(len(batch)) < s.batch {
+			break
+		}
+	}
+	if totalDeleted > 0 {
+		s.logger.Info("cleanup: pruned silent devices",
+			"count", totalDeleted,
+			"silent_mac_days", s.cfg.SilentDeviceDaysMAC,
+			"silent_no_mac_hours", s.cfg.SilentDeviceHoursNoMAC)
+	}
+}
+
+// logDeviceRemoved writes a device_removed audit row to change_log BEFORE the
+// device row is deleted (so the before snapshot is captured while the row still
+// exists; CASCADE will then clean up FK children but leave this change_log row —
+// change_log.entity_id has no FK, intentionally, so device history survives the
+// device). Minimal JSON before_data (identity fields) — not the full snapshot,
+// since the device is being deleted anyway and the purpose is a "what got
+// pruned and why" trail, not a full restore record.
+func (s *Service) logDeviceRemoved(ctx context.Context, id int64, uuid, name, devType, brand, model, mac, ip string, networkID sql.NullInt64, reason string) {
+	before := fmt.Sprintf(
+		`{"name":%q,"type":%q,"brand":%q,"model":%q,"mac_address":%q,"ip_address":%q,"device_uuid":%q,"status":"offline"}`,
+		name, devType, brand, model, mac, ip, uuid)
+	var netID any
+	if networkID.Valid {
+		netID = networkID.Int64
+	}
+	if err := s.execWithBusyRetry(ctx, `
+		INSERT INTO change_log (agent_id, network_id, change_type, entity_type, entity_id, before_data, after_data, detected_at)
+		VALUES (?, ?, 'device_removed', 'device', ?, ?, NULL, CURRENT_TIMESTAMP)`,
+		reason, netID, id, before); err != nil {
+		s.logger.Warn("cleanup: log device_removed failed", "device_id", id, "error", err)
+	}
+}
+
+// execWithBusyRetry runs a write statement against mainDB, retrying on
+// SQLITE_BUSY with a short backoff. This stands in for the busy_timeout PRAGMA
+// that the connection pool does NOT reliably apply to every pooled connection
+// (Go's database/sql opens fresh connections with default pragmas, so a write
+// that lands on a fresh connection gets an immediate BUSY instead of waiting).
+// The cleanup sweeper writes many rows in sequence while the heartbeat
+// syncStatusLoop (30s) and scanner may hold the write lock; without retry, ~7%
+// of deletes fail on a busy sweep. Retries up to ~5s total (mirroring the
+// intended busy_timeout=5000). Non-BUSY errors are returned immediately.
+func (s *Service) execWithBusyRetry(ctx context.Context, query string, args ...any) error {
+	const (
+		maxAttempts = 6
+		initialWait = 100 * time.Millisecond
+	)
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		_, err := s.mainDB.ExecContext(ctx, query, args...)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		// Retry only on SQLITE_BUSY (code 5) / "database is locked". Other
+		// errors (constraint, syntax) fail fast.
+		if !strings.Contains(err.Error(), "busy") && !strings.Contains(err.Error(), "locked") {
+			return err
+		}
+		wait := initialWait * (1 << attempt) // 100ms, 200ms, 400ms, 800ms, 1.6s
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return lastErr
 }

@@ -313,6 +313,12 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		"ALTER TABLE host_services ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE service_evidence ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE host_tls_certs ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
+		// offline_since: stamped when a device flips to 'offline' (all heartbeat
+		// configs failed, or lost-detection/lease-sweeper marked it gone), cleared
+		// on recovery. Drives the silent-device retention sweep (issue #117). The
+		// backfill below approximates it for existing offline devices from
+		// updated_at (the last status write).
+		"ALTER TABLE devices ADD COLUMN offline_since TIMESTAMP",
 		// Dual JSON layer (scan_attributes + user_attributes). Generated columns
 		// (scan_vendor/scan_mac/scan_os/scan_hostname) can't be added via ALTER
 		// on existing DBs — those are only present on fresh installs. For
@@ -398,6 +404,15 @@ func runMigrations(db *sql.DB, dbPath string) error {
 	// out via retention sweeps.
 	if err := backfillSatelliteUUIDs(context.Background(), db); err != nil {
 		return fmt.Errorf("backfill satellite device_uuid: %w", err)
+	}
+
+	// Backfill offline_since for existing offline devices (issue #117). The column
+	// was just added (nullable, all-NULL). For rows already 'offline' we approximate
+	// the flip time from updated_at — the last status write, which is the closest
+	// available proxy for when the device went offline. Online/unknown rows stay
+	// NULL (they're not offline). Idempotent: only fills NULLs on offline rows.
+	if err := backfillOfflineSince(context.Background(), db); err != nil {
+		return fmt.Errorf("backfill offline_since: %w", err)
 	}
 
 	// Merge duplicate-MAC device rows (the device-split symptom): when the same
@@ -803,6 +818,27 @@ func backfillSatelliteUUIDs(ctx context.Context, db *sql.DB) error {
 			// the next start once the ALTER has run. Log and continue.
 			slog.Warn("satellite device_uuid backfill statement failed", "error", err)
 		}
+	}
+	return nil
+}
+
+// backfillOfflineSince populates devices.offline_since for rows that are already
+// 'offline' but have a NULL offline_since (the column was just added by the ALTER
+// above, so every existing row starts NULL). The flip time is approximated from
+// updated_at — the last write to the row, which for an offline device is the
+// status='offline' write itself (the closest available proxy for when it went
+// offline). Online/unknown rows keep NULL (they're not offline, so the silent-
+// device retention sweep correctly skips them). Idempotent: only touches NULLs on
+// offline rows, so a second run is a no-op.
+func backfillOfflineSince(ctx context.Context, db *sql.DB) error {
+	res, err := db.ExecContext(ctx,
+		`UPDATE devices SET offline_since = updated_at
+		 WHERE status = 'offline' AND offline_since IS NULL`)
+	if err != nil {
+		return fmt.Errorf("backfill offline devices: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		slog.Info("offline_since backfill", "offline_devices_approximated", n)
 	}
 	return nil
 }
