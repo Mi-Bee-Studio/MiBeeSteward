@@ -172,15 +172,21 @@ type DeviceResponse struct {
 	PrometheusLabels string     `json:"prometheus_labels"`
 	LastScannedAt    *time.Time `json:"last_scanned_at,omitempty"`
 	LastScanTaskID   *int64     `json:"last_scan_task_id,omitempty"`
-	// Liveness visibility (device-detail only). These let an operator judge
-	// whether the silent-device retention is about to prune a device.
+	// Liveness visibility. These let an operator judge whether the silent-device
+	// retention is about to prune a device.
 	//   - LastSeen: scan-derived "last observed online by a scan" (refreshed on
-	//     each alive re-scan).
+	//     each alive re-scan). Populated on BOTH list and detail rows (it's a
+	//     column on devices).
 	//   - LastOnlineAt: the authoritative "last confirmed alive" timestamp from
 	//     the device_liveness verdict series (heartbeat/scan/lease). nil when the
-	//     device was never seen online or the store is unavailable.
+	//     device was never seen online or the store is unavailable. Detail-only:
+	//     the verdict series lives in a separate SQLite file (heartbeat.db) that
+	//     cannot be JOINed into the list query, so it's filled by the service on
+	//     Get, not List.
 	//   - OfflineSince: when the device flipped to offline — the retention
 	//     clock's start. offline_since + threshold = prune expiry. nil when online.
+	//     Populated on BOTH list and detail rows (column on devices); the list uses
+	//     it for the "offline for Nd/Nh" hover on the status dot.
 	LastSeen         *time.Time `json:"last_seen,omitempty"`
 	LastOnlineAt     *time.Time `json:"last_online_at,omitempty"`
 	OfflineSince     *time.Time `json:"offline_since,omitempty"`
