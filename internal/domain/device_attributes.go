@@ -31,12 +31,15 @@ type ScanAttributes struct {
 	Vendor   string `json:"vendor,omitempty"`   // OUI lookup or SNMP/HTTP-derived vendor
 	MAC      string `json:"mac,omitempty"`      // normalized lowercase "aa:bb:cc:.."
 	Hostname string `json:"hostname,omitempty"` // rDNS / mDNS / TLS CN / SNMP sysName
-	// MacIsRandomized records that the observed MAC has the locally-administered
-	// (LAA) bit set — typically an iOS/Android/Windows privacy-randomized MAC or
-	// a hypervisor-assigned one. Such MACs are NOT stable, so the engine
-	// downgrades the device to (ip, network_id) identity instead of anchoring on
-	// the MAC; the MAC itself is still stored above as an observed attribute.
-	MacIsRandomized bool `json:"mac_is_randomized,omitempty"`
+	// MacIsLocallyAdministered records that the observed MAC has the
+	// locally-administered (U/L) bit set (IEEE 802 / RFC 7042): it was assigned
+	// locally rather than drawn from an IEEE OUI/MA-S/MA-M block. This is a
+	// neutral FACTUAL flag — the U/L bit alone CANNOT distinguish privacy
+	// randomization (iOS/Android/Windows, unstable) from a locally fixed setting
+	// (soft-router/hypervisor/manual, stable), so it is NOT a "randomized"
+	// verdict and does NOT change device identity. Surfaced for observability
+	// only (e.g. a UI badge that the MAC is not IEEE-registered).
+	MacIsLocallyAdministered bool `json:"mac_is_locally_administered,omitempty"`
 	// MacIsMulticast records that the observed MAC has the multicast bit set. A
 	// real device should never source frames from a multicast MAC, so this is a
 	// data-hygiene flag (kept for observability, not used for identity).

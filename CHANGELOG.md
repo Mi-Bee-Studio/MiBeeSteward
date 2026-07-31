@@ -7,31 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Device identity: randomized-MAC detection + identity downgrade
-**Correctness fix** — a MAC with the locally-administered (LAA) bit set
-(iOS/Android/Windows privacy randomization, hypervisor-assigned MACs) is not
-stable across scans, but the MAC-primary identity model treated it as one. Each
-randomized MAC was registered as a brand-new device, polluting the registry with
-ghost rows — and defeating the silent-device retention sweep (#117), which never
-sees such a device as "stale" because it is always "new".
+### MAC bit flags: locally-administered / multicast (neutralized from Phase 1)
+**Correction of #118 Phase 1 (PR #121)** — Phase 1 treated the
+locally-administered (U/L) bit as a "randomized MAC" verdict and downgraded such
+devices to `(ip, network_id)` identity. That was a semantic overreach: per IEEE
+802 / RFC 7042 the U/L bit only means "locally administered", and it **cannot**
+distinguish privacy randomization (iOS/Android, unstable) from a locally fixed
+setting (soft-router / hypervisor / manual, stable). On the test network this
+mislabelled 7 stable soft-routers/NASes and split one (R68s) across networks
+because of the identity downgrade. This change reverts the wrong behavior while
+keeping the bit as a neutral observability flag.
 
-- **Identity downgrade** (`resolveDeviceIdentity` in `device_bridge.go`): when a
-  scan observes an LAA MAC, the device is identified by `(ip_address,
-  network_id)` instead of by MAC — the cross-network `mac_address = ?` lookup
-  (and thus the replacement/roam branches) is skipped entirely. The MAC is still
-  stored on the row as an observed attribute for display/OUI; only its role as
-  the identity anchor is dropped.
-- **New `scan_attributes` fields**: `mac_is_randomized` and `mac_is_multicast`
-  (both `omitempty` bools, JSON-only — no generated column). Derived from the
-  observed MAC after both MAC sources fold in.
-- **UI surfacing**: a ⚠ marker on the MAC in the device list (mirrors the
-  heuristic-type `?` badge), a warning-colored "Randomized" pill on the device
-  detail Discovery panel, and the same pill in the expand-row device summary —
-  so users can tell why a phone that roams shows as separate rows.
-- **Helpers**: `store.IsLocalMAC` / `store.IsMulticastMAC` (first-octet 0x02 /
-  0x01 bit checks on a canonical MAC), co-located with `NormalizeMAC`.
-- Out of scope (later phases of #118): OUI-prefix persistence, MA-S/MA-M
-  (oui36/IAB) precision, and `oui_vendor` vs `brand` semantic separation.
+- **Identity downgrade reverted** (`resolveDeviceIdentity` in `device_bridge.go`):
+  the LAA-bit gate that forced `(ip, network_id)` identity is removed; device
+  identity is pure MAC-primary again (with the existing `(ip, network_id)`
+  fallback only when no MAC is known).
+- **Neutral naming**: the U/L bit is reported as **"locally administered"**, not
+  "randomized". Renamed: `scan_attributes.mac_is_randomized` →
+  `mac_is_locally_administered`; helper `store.IsLocalMAC` →
+  `IsLocallyAdministeredMAC`; UI badge label "Randomized" → "Locally Admin." with
+  a neutral tooltip stating the bit cannot tell random from fixed. `mac_is_multicast` / `IsMulticastMAC` unchanged (multicast bit is unambiguous).
+- The flag is observability-only — it does NOT change device identity. See
+  issue #118 research comment for the full rationale (RFC 7042, license boundary
+  for IEEE data, etc.).
 
 ## [0.4.0] - 2026-07-29
 

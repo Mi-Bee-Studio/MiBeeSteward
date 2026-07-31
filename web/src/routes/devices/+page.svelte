@@ -678,15 +678,16 @@ interface AddDevicesResponse {
 			case 'mac': {
 				const mac = (sa?.mac as string) || (row.mac_address ? String(row.mac_address) : '');
 				if (!mac) return '-';
-				// A randomized (locally-administered) MAC is not a stable device
-				// identifier — the engine downgrades such devices to (ip, network)
-				// identity. Surface it inline so users can tell why a phone that
-				// roams shows as separate rows. Mirrors the heuristic-type "?" badge.
-				const rand = sa?.mac_is_randomized === true;
-				const randBadge = rand
-					? `<span class="ml-0.5 text-warning/80" title="${m['devices.Randomized MAC Hint']()}">⚠</span>`
+				// A locally-administered (U/L bit set) MAC was assigned locally,
+				// not drawn from an IEEE OUI block. The bit is neutral fact — it
+				// cannot tell privacy randomization from a locally fixed setting —
+				// so this is an observability badge, not an identity verdict.
+				// Mirrors the heuristic-type "?" inline marker.
+				const laa = sa?.mac_is_locally_administered === true;
+				const laaBadge = laa
+					? `<span class="ml-0.5 text-warning/80" title="${m['devices.Locally Administered MAC Hint']()}">⚠</span>`
 					: '';
-				return `<span class="font-mono text-xs">${escapeHtml(mac)}</span>${randBadge}`;
+				return `<span class="font-mono text-xs">${escapeHtml(mac)}</span>${laaBadge}`;
 			}
 			case 'hostname': {
 				const h = sa?.hostname as string | undefined;
@@ -1196,8 +1197,8 @@ interface AddDevicesResponse {
 								<span class="text-muted">{m['devices.MAC Address']()}</span>
 								<span class="font-mono text-text truncate inline-flex items-center gap-1.5">
 									{sa?.mac || device.mac_address}
-									{#if sa?.mac_is_randomized}
-										<span class="badge badge-warning shrink-0" title={m['devices.Randomized MAC Hint']()}>{m['scanfields.Randomized MAC']()}</span>
+									{#if sa?.mac_is_locally_administered}
+										<span class="badge badge-warning shrink-0" title={m['devices.Locally Administered MAC Hint']()}>{m['scanfields.Locally Administered MAC']()}</span>
 									{/if}
 								</span>
 							</summary>

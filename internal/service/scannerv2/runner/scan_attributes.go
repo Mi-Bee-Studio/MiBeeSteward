@@ -101,12 +101,14 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 
 	// MAC bit flags (locally-administered / multicast). Computed once after both
 	// MAC sources (Fields["mac"] and mac-kind evidence) have been folded in, so
-	// they reflect the final attr.MAC. The LAA flag drives the identity downgrade
-	// in device_bridge; the multicast flag is observability-only. Both expect a
-	// canonical MAC — IsLocalMAC/IsMulticastMAC return false on non-canonical
-	// input, which also covers the empty case.
+	// they reflect the final attr.MAC. Both are neutral FACTUAL flags surfaced for
+	// observability — neither changes device identity. The locally-administered
+	// bit (U/L) cannot distinguish privacy randomization from a locally fixed
+	// setting, so it is reported as-is, not as a "randomized" verdict. Both expect
+	// a canonical MAC — IsLocallyAdministeredMAC/IsMulticastMAC return false on
+	// non-canonical input, which also covers the empty case.
 	if attr.MAC != "" {
-		attr.MacIsRandomized = store.IsLocalMAC(attr.MAC)
+		attr.MacIsLocallyAdministered = store.IsLocallyAdministeredMAC(attr.MAC)
 		attr.MacIsMulticast = store.IsMulticastMAC(attr.MAC)
 	}
 

@@ -504,18 +504,6 @@ func (rn *Runner) recordDeviceChanged(ctx context.Context, deviceID int64, netwo
 //     a NAS that renewed its DHCP lease showed an IP days out of date).
 //   - err: sql.ErrNoRows means "create a new row".
 func (rn *Runner) resolveDeviceIdentity(ctx context.Context, mac, ip string, networkID sql.NullInt64) (targetID int64, replacedID int64, roamed bool, err error) {
-	// Locally-administered (LAA) MACs — iOS/Android/Windows privacy-randomized
-	// MACs, hypervisor-assigned ones — are NOT stable across scans. Anchoring
-	// device identity on them would register each randomized MAC as a brand-new
-	// device, polluting the registry (the "ghost device" bug). Downgrade such
-	// MACs to (ip, network_id) identity here: skip the cross-network
-	// mac_address=? lookup entirely. The MAC is still stored (the caller writes
-	// the real mac to mac_address for display/OUI), just not used as the identity
-	// key. This also bypasses the replacement/roam branches below, which are
-	// only reachable via the global MAC match.
-	if mac != "" && store.IsLocalMAC(mac) {
-		mac = ""
-	}
 	if mac == "" {
 		// No MAC → identity is (ip, network_id).
 		if networkID.Valid {

@@ -141,24 +141,25 @@ func TestScanAttributes_OpenPortsReplaceNotUnion(t *testing.T) {
 }
 
 // TestScanAttributes_MACFlagsDerivedFromMAC verifies that the MAC bit flags
-// (mac_is_randomized / mac_is_multicast) are derived from the observed MAC and
-// persisted into scan_attributes. The flags are computed from attr.MAC AFTER
-// both the Fields["mac"] path and the mac-kind evidence path fold in, so they
-// reflect whichever MAC was actually recorded.
+// (mac_is_locally_administered / mac_is_multicast) are derived from the observed
+// MAC and persisted into scan_attributes. The flags are computed from attr.MAC
+// AFTER both the Fields["mac"] path and the mac-kind evidence path fold in, so
+// they reflect whichever MAC was actually recorded. Both flags are neutral
+// factual bit reads (IEEE 802 / RFC 7042); neither changes device identity.
 func TestScanAttributes_MACFlagsDerivedFromMAC(t *testing.T) {
 	rn, conn := setupScanAttrsTestDB(t)
 	ctx := context.Background()
 
 	cases := []struct {
-		name           string
-		mac            string
-		wantRandomized bool
-		wantMulticast  bool
+		name             string
+		mac              string
+		wantLocallyAdmin bool
+		wantMulticast    bool
 	}{
-		// LAA bit (0x02) set: low nibble of first octet has bit 0x2.
-		{"randomized 02", "02:11:22:33:44:55", true, false},
-		{"randomized 1a", "1a:bb:cc:dd:ee:ff", true, false},
-		// Universal (stable) OUIs: LAA bit clear.
+		// U/L bit (0x02) set: low nibble of first octet has bit 0x2 — locally administered.
+		{"locally administered 02", "02:11:22:33:44:55", true, false},
+		{"locally administered 1a", "1a:bb:cc:dd:ee:ff", true, false},
+		// Universally administered OUIs: U/L bit clear.
 		{"universal bcad28", "bc:ad:28:11:22:33", false, false},
 		// Multicast bit (0x01) set: low nibble odd.
 		{"multicast 01005e", "01:00:5e:00:00:01", false, true},
@@ -176,13 +177,13 @@ func TestScanAttributes_MACFlagsDerivedFromMAC(t *testing.T) {
 			var attrs string
 			require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE ip_address=?`, ip).Scan(&attrs))
 
-			if c.wantRandomized {
-				require.Contains(t, attrs, `"mac_is_randomized":true`,
-					"randomized MAC must set mac_is_randomized=true")
+			if c.wantLocallyAdmin {
+				require.Contains(t, attrs, `"mac_is_locally_administered":true`,
+					"locally-administered MAC must set mac_is_locally_administered=true")
 			} else {
 				// omitempty: a false bool is omitted from JSON entirely.
-				require.NotContains(t, attrs, `mac_is_randomized`,
-					"non-randomized MAC must omit mac_is_randomized (omitempty)")
+				require.NotContains(t, attrs, `mac_is_locally_administered`,
+					"universally-administered MAC must omit mac_is_locally_administered (omitempty)")
 			}
 			if c.wantMulticast {
 				require.Contains(t, attrs, `"mac_is_multicast":true`,
