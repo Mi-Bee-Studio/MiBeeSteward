@@ -3,39 +3,39 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm clean test dev migrate-up sync-fingerprints sync-device-types fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
 build-frontend:
 	cd web && npm run build
 
-build-server: sync-device-types
+build-server: sync-device-types sync-oui-curated
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
 
 # Discovery agent (distributed mode): lightweight scan + report binary. No
 # frontend, no SPA — just the scannerv2 engine + upstream reporter.
-build-agent: sync-device-types
+build-agent: sync-device-types sync-oui-curated
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent ./cmd/agent/
 
 build: build-frontend build-server
 
-build-all: build-frontend sync-device-types
+build-all: build-frontend sync-device-types sync-oui-curated
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/server/
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/server/
 	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./cmd/server/
 
-build-linux-amd64: sync-device-types
+build-linux-amd64: sync-device-types sync-oui-curated
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/server/
 
-build-linux-arm64: sync-device-types
+build-linux-arm64: sync-device-types sync-oui-curated
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/server/
 
 # ARM 32-bit (ARMv7) — targets older ARM routers/boards (GL.iNet AR300, etc.).
 # GOARM=7 is the modern soft-float baseline; the README's cross-compile section
 # documents this arch for OpenWrt form B/C. MIPS is NOT supported (modernc/libc).
-build-linux-arm: sync-device-types
+build-linux-arm: sync-device-types sync-oui-curated
 	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./cmd/server/
 
 # Build with the eBPF passive observer enabled. Requires clang/llvm/bpftool
@@ -92,6 +92,17 @@ sync-fingerprints:
 sync-device-types:
 	@cp -v configs/fingerprints/device-types/device_types.yaml internal/service/scannerv2/runner/device_types.yaml
 	@echo "device_types.yaml synced to runner embed dir"
+
+# sync-oui-curated copies the hand-maintained CC-BY-SA OUI table from configs/
+# into the vendor package dir so //go:embed picks it up (Go embed cannot reach
+# outside the package dir). The embedded table gives out-of-box vendor inference
+# for common devices when scanner.oui_path is empty; the full IEEE set is an
+# optional runtime download (scripts/fetch-oui.sh). All build-* targets depend
+# on this. Run `make build` (not raw `go build`) so the sync happens; a stale
+# copy under vendor/ will silently use old vendor mappings.
+sync-oui-curated:
+	@cp -v configs/oui-curated.txt internal/service/scannerv2/vendor/oui_curated.txt
+	@echo "oui_curated.txt synced to vendor embed dir"
 
 # fpimport converts third-party fingerprint databases into the MiBee rule format.
 # See cmd/fpimport/ and docs/fingerprint-spec.md for supported sources.

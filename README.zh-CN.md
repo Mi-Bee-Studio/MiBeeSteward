@@ -18,6 +18,7 @@
 - **多协议探测**：SNMP、ICMP、TCP、HTTP 监控
 - **设备系统管理**：每台设备可挂载多个已安装系统（含入口 URL），以带分类徽章的卡片网格展示
 - **网络扫描器（v2）**：基于插件的 5 层架构（探测 → 分类 → 处理 → 持久化 → 编排），支持级联深度采集。可识别 SSH/HTTP/RTSP/ONVIF/SNMP/Prometheus/node_exporter，并推断设备类型与品牌（例如根据 RTSP+ONVIF 识别为摄像头）。扩展方式：注册一个 Classifier + 一个 Handler 即可接入新协议
+- **MAC 厂商推断**：按最长前缀匹配将每个发现的 MAC 解析为 IEEE 注册厂商（MA-L / MA-M / MA-S 三档注册表），记为 `oui_prefix` + `oui_vendor`（NIC 芯片厂商，与设备自报品牌分开）。内置精简厂商表，开箱即用；完整 IEEE 数据集可按需下载。
 - **TLS 证书清点**：从 TLS 包装的服务（HTTPS、LDAPS、SMTPS、IMAPS、POP3S、FTPS、IRCS、TelnetS）采集完整证书链（叶证书 + 颁发者），含 Subject/Issuer/SAN/有效期/签名/密钥/指纹与 PEM，按端口/设备维度落地，并在设备详情页展示过期状态（有效/临近/已过期）与信任判定。数据保存在 `host_tls_certs` 表（默认保留 30 天）。
 - **eBPF 被动观测器**：可选的 TC ingress 程序，嗅探 ONVIF WS-Discovery 组播与 TCP 特征字节，作为旁证数据源（构建标签门控；默认构建无此依赖）
 - **分布式发现**：在远程局域网部署轻量采集器，跨网络发现设备。采集器通过拉取模型 HTTPS 上报到中心，bearer 令牌认证、断线补报、MAC 优先设备身份（同设备跨网络保持单一资产）。[分布式指南](docs/zh/distributed-guide.md)

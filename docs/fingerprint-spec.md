@@ -289,6 +289,16 @@ regex fingerprints are a creative expression → upstream Apache-2.0
 attribution is retained on every converted rule (`source: recog`); the converted
 rule itself adopts the corpus's CC-BY-SA 4.0 license.
 
+> **Where IEEE OUI/MA-S/MA-M data physically lives.** The IEEE registries are
+> "All rights reserved" factual data and are **NOT** folded into this CC-BY-SA
+> corpus (CC-BY-SA cannot warrant title over "All rights reserved" material). The
+> MAC→vendor lookup is handled by a SEPARATE loader (`internal/service/scannerv2/
+> vendor/oui.go`, longest-prefix match across MA-L/MA-M/MA-S), fed by either an
+> embedded hand-authored CC-BY-SA curated table (out-of-box subset) or an optional
+> runtime download of the full IEEE CSVs (`scripts/fetch-oui.sh`, cite IEEE). The
+> `source: ieee-oui` provenance tag is reserved for citation but carries no corpus
+> rules. This keeps the corpus's licensing chain clean.
+
 ## 9. Reference implementation
 
 The Go `RuleClassifier` (`internal/service/scannerv2/classify/rule_classifier.go`)

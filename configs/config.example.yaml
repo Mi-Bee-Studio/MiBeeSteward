@@ -112,11 +112,12 @@ scanner:
   # persist_raw_evidence writes every probe observation to service_evidence.
   # Off by default — raw evidence can be voluminous; enable for debugging.
   persist_raw_evidence: false
-  # oui_path points to the IEEE OUI vendor-mapping file. The ARP probe derives
-  # a vendor from each discovered MAC via this table. Optional — when empty or
-  # missing, MACs are still recorded but no vendor is attached. Override at
-  # runtime with MIBEE_SCANNER_OUI_PATH. Fetch the canonical list with
-  # scripts/fetch-oui.sh (downloads from standardeee.org).
+  # oui_path points to the IEEE OUI vendor-mapping file (MA-L + MA-M + MA-S,
+  # fetched by scripts/fetch-oui.sh). The ARP probe derives a vendor from each
+  # discovered MAC via longest-prefix-match across the three registries.
+  # When empty (default), the engine uses a small EMBEDDED curated table of
+  # common vendors (out-of-box coverage); set this to a full IEEE file for
+  # complete coverage. Override at runtime with MIBEE_SCANNER_OUI_PATH.
   oui_path: ""
   # fingerprint_path points to a directory of fingerprint YAML rule files (see
   # configs/fingerprints/ + docs/fingerprint-spec.md). When empty, the engine
