@@ -131,6 +131,12 @@ export interface PrometheusInfo {
 export interface ScanAttributes {
 	vendor?: string;
 	mac?: string;
+	/** LAA bit set — randomized/hypervisor MAC, not stable; engine downgrades such
+	 * devices to (ip, network_id) identity instead of anchoring on the MAC. */
+	mac_is_randomized?: boolean;
+	/** multicast bit set — a real device should never source from such a MAC;
+	 *  observability flag only (no identity effect). */
+	mac_is_multicast?: boolean;
 	hostname?: string;
 	os?: string;
 	os_version?: string;
@@ -177,12 +183,16 @@ export interface Device {
 	prometheus_labels?: string;
 	last_scanned_at?: string | null;
 	last_scan_task_id?: number | null;
-	// Liveness visibility (device-detail only). Lets an operator judge whether
-	// the silent-device retention is about to prune a device.
-	//   - last_seen: scan-derived "last observed online by a scan".
+	// Liveness visibility. Lets an operator judge whether the silent-device
+	// retention is about to prune a device.
+	//   - last_seen: scan-derived "last observed online by a scan". Populated on
+	//     list AND detail rows.
 	//   - last_online_at: authoritative "last confirmed alive" from the verdict
 	//     series (heartbeat/scan/lease). Preferred over last_seen when present.
+	//     Detail-only (verdict series lives in a separate DB file).
 	//   - offline_since: when the device flipped offline — retention clock start.
+	//     Populated on list AND detail rows; the list uses it for the "offline for
+	//     Nd/Nh" hover on the status dot.
 	last_seen?: string | null;
 	last_online_at?: string | null;
 	offline_since?: string | null;
