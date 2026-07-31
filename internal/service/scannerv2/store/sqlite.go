@@ -557,6 +557,8 @@ func buildStoreScanAttributes(d scannerv2.DeviceRef, extra map[string]string, op
 		ScanSource:          "scanner_v2",
 		InferredType:        d.Type,
 		Vendor:              vendor,
+		OUIPrefix:           extra["oui_prefix"],
+		OUIVendor:           extra["oui_vendor"],
 		InferredDescription: extra["inferred_description"],
 		OS:                  extra["os_type"],
 		OSVersion:           extra["os_version"],
@@ -602,6 +604,7 @@ func buildStoreScanAttributes(d scannerv2.DeviceRef, extra map[string]string, op
 		"inferred_type": true, "inferred_brand": true, "inferred_description": true,
 		"os_type": true, "os_version": true, "kernel_version": true, "firmware_version": true,
 		"node_hostname": true, "sys_name": true, "mac": true,
+		"oui_prefix": true, "oui_vendor": true,
 		"memory_total_bytes": true, "cpu_count": true, "uptime_seconds": true,
 		"inferred_location": true,
 	}
@@ -823,7 +826,13 @@ func (r *SQLiteRepository) EnrichDeviceByMAC(ctx context.Context, mac string, fi
 
 	// Remaining unknown keys go into scan_attributes.extras.
 	unknown := make(map[string]string)
-	known := map[string]bool{"vendor": true, "model": true, "type": true, "hostname": true, "sys_name": true}
+	// "known" lists Fields keys that map to typed scan_attributes columns (or are
+	// otherwise handled) and must NOT leak into the free-form Extras panel. Keep
+	// in sync with the ScanAttributes struct + the orchestrator's evidence fold.
+	known := map[string]bool{
+		"vendor": true, "model": true, "type": true, "hostname": true, "sys_name": true,
+		"mac": true, "oui_prefix": true, "oui_vendor": true,
+	}
 	for k, v := range fields {
 		if !known[k] && v != "" {
 			unknown[k] = v
