@@ -197,3 +197,41 @@ func TestScanAttributes_MACFlagsDerivedFromMAC(t *testing.T) {
 		})
 	}
 }
+
+// TestScanAttributes_OUIFieldsRecorded verifies that the OUI prefix + vendor
+// (factual IEEE registry data, kept SEPARATE from the device's self-declared
+// brand) flow from mac-kind evidence into scan_attributes. These are
+// unconditional factual fields — they are recorded even when a stronger
+// SNMP/HTTP-derived brand is present (the two have different semantics: NIC
+// silicon vendor vs device self-declared brand).
+func TestScanAttributes_OUIFieldsRecorded(t *testing.T) {
+	rn, conn := setupScanAttrsTestDB(t)
+	ctx := context.Background()
+	const ip = "192.168.63.60"
+
+	// A report where the mac evidence carries OUI data AND a self-declared brand
+	// (inferred_brand) — both should land in scan_attributes (different fields).
+	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+		map[string]string{
+			"mac":            "bc:ad:28:11:22:33",
+			"inferred_brand": "Hikvision (self-declared via SNMP)",
+		},
+		scannerv2.Evidence{Kind: "mac", RawData: map[string]string{
+			"mac":        "bc:ad:28:11:22:33",
+			"vendor":     "Hikvision Digital Technology",
+			"oui_prefix": "BCAD28",
+			"oui_vendor": "Hikvision Digital Technology",
+		}},
+	), rn.networkID, "")
+
+	var attrs string
+	require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE ip_address=?`, ip).Scan(&attrs))
+
+	// OUI prefix + vendor recorded (factual registry data).
+	require.Contains(t, attrs, `"oui_prefix":"BCAD28"`, "oui_prefix recorded from mac evidence")
+	require.Contains(t, attrs, `"oui_vendor":"Hikvision Digital Technology"`, "oui_vendor recorded from mac evidence")
+	// The self-declared brand wins for the top-level `vendor` field (it is
+	// non-empty), but both coexist — oui_vendor is the NIC-chip vendor.
+	require.Contains(t, attrs, `"vendor":"Hikvision (self-declared via SNMP)"`,
+		"self-declared brand wins for top-level vendor, separate from oui_vendor")
+}

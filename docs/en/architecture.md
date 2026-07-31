@@ -307,6 +307,21 @@ identity — in particular the U/L bit only means "locally administered" and
 **cannot** distinguish privacy randomization (unstable) from a locally fixed
 setting (stable), so it is surfaced as-is (a UI badge) rather than acted on.
 
+**OUI vendor inference.** The OUI loader (`internal/service/scannerv2/vendor/`)
+resolves a MAC to its IEEE-registered vendor via **longest-prefix-match** across
+three registries: MA-S (/36, 9 hex, formerly IAB) → MA-M (/28, 7 hex) → MA-L
+(/24, 6 hex). Longest-prefix is mandatory because MA-S/MA-M sub-blocks are
+carved out of /24 OUIs owned by IEEE or another vendor (a MAC starting
+`8C1F64B14..` is Murata's MA-S block, NOT its parent /24 owner "IEEE
+Registration Authority"). The result is recorded as `scan_attributes.oui_prefix`
+(the matched block) + `oui_vendor` (the IEEE organization — the NIC silicon
+vendor), kept SEPARATE from `vendor` (the device's self-declared brand via
+SNMP/HTTP/TLS). Out-of-box the engine seeds from an embedded curated CC-BY-SA
+table of common vendors; the full IEEE set is an optional runtime download via
+`scripts/fetch-oui.sh` (the IEEE registries are "All rights reserved" factual
+data — cited, NOT folded into the CC-BY-SA fingerprint corpus; see
+`docs/fingerprint-spec.md` §8).
+
 ### Agent Authentication
 
 Agent tokens are SHA-256-hashed opaque bearer tokens stored in `agent_tokens`.

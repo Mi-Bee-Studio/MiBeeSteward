@@ -77,23 +77,24 @@ func LookupMACPostScan(ip string) (mac, device string) {
 // orchestrator's synthesized "mac" evidence carries the same vendor field the
 // concurrent ARPProbe would have attached. Kept as a package-level func (not a
 // method) so the engine can wire it without an import cycle.
-var postScanMACResolver func(ip string) (mac, device, vendor string)
+var postScanMACResolver func(ip string) (mac, device, vendor, ouiPrefix string)
 
 // SetPostScanResolver installs the OUI-aware post-scan MAC resolver. The
 // engine calls this once at construction time with a closure over the loaded
 // OUI table. Passing nil reverts to the bare LookupMACPostScan behavior.
-func SetPostScanResolver(f func(ip string) (mac, device, vendor string)) {
+func SetPostScanResolver(f func(ip string) (mac, device, vendor, ouiPrefix string)) {
 	postScanMACResolver = f
 }
 
 // ResolveMACPostScan is the orchestrator-facing resolver: returns mac, device,
-// and vendor. When no OUI-aware resolver is installed (tests), vendor is "".
-func ResolveMACPostScan(ip string) (mac, device, vendor string) {
+// vendor, and the matched OUI prefix. When no OUI-aware resolver is installed
+// (tests), vendor and ouiPrefix are "".
+func ResolveMACPostScan(ip string) (mac, device, vendor, ouiPrefix string) {
 	if postScanMACResolver != nil {
 		return postScanMACResolver(ip)
 	}
 	mac, device = LookupMACPostScan(ip)
-	return mac, device, ""
+	return mac, device, "", ""
 }
 
 // ARPProbe resolves the target IP's MAC address from the kernel ARP cache and,
@@ -129,8 +130,14 @@ func (p *ARPProbe) Probe(ctx context.Context, ip string, _ scannerv2.ProbeHint) 
 		"device": dev,
 	}
 	if p.oui != nil {
-		if v := p.oui.Lookup(mac); v != "" {
+		// LookupFull returns (vendor, matched-prefix) so we also record which
+		// IEEE block (MA-L/MA-M/MA-S) the vendor was inferred from. The prefix
+		// + vendor are kept as oui_prefix/oui_vendor (factual registry data),
+		// separate from the device's self-declared brand — see scan_attributes.
+		if v, prefix := p.oui.LookupFull(mac); v != "" {
 			raw["vendor"] = v
+			raw["oui_prefix"] = prefix
+			raw["oui_vendor"] = v
 		}
 	}
 	return []scannerv2.Evidence{{

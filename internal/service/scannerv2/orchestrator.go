@@ -84,11 +84,11 @@ type Orchestrator struct {
 	logger *slog.Logger
 	// macResolver re-reads the kernel ARP cache after gather, closing the race
 	// where the concurrent ARPProbe runs before ICMP has populated the cache.
-	// Returns (mac, device, vendor) — vendor comes from the OUI lookup the
-	// engine wires in via probe.SetPostScanResolver. nil (default) disables the
-	// post-scan MAC re-read. Injected by the engine layer to avoid a
-	// scannerv2 → probe → scannerv2 import cycle.
-	macResolver func(ip string) (mac, device, vendor string)
+	// Returns (mac, device, vendor, ouiPrefix) — vendor + ouiPrefix come from
+	// the OUI lookup the engine wires in via probe.SetPostScanResolver. nil
+	// (default) disables the post-scan MAC re-read. Injected by the engine layer
+	// to avoid a scannerv2 → probe → scannerv2 import cycle.
+	macResolver func(ip string) (mac, device, vendor, ouiPrefix string)
 	// neighborIdentityInfer is called during the neighbor enrichment pass to infer
 	// device identity (vendor/model/type) from neighbor evidence carrying identity
 	// keys (sys_name, sys_desc, platform, version). Returns a map of fields to
@@ -100,7 +100,7 @@ type Orchestrator struct {
 // SetMACResolver injects a post-scan MAC resolver (see ResolveMACPostScan in
 // package probe). Passing nil disables the re-read. Safe to call once at engine
 // construction time.
-func (o *Orchestrator) SetMACResolver(f func(ip string) (mac, device, vendor string)) {
+func (o *Orchestrator) SetMACResolver(f func(ip string) (mac, device, vendor, ouiPrefix string)) {
 	o.macResolver = f
 }
 
@@ -190,10 +190,12 @@ func (o *Orchestrator) Run(ctx context.Context, ip string, hint ProbeHint) HostR
 	// carries the OUI-derived vendor so the synthesized evidence matches the
 	// shape ARPProbe emits.
 	if o.macResolver != nil && !hasEvidenceKind(evidence, "mac") {
-		if mac, dev, vendor := o.macResolver(ip); mac != "" {
+		if mac, dev, vendor, ouiPrefix := o.macResolver(ip); mac != "" {
 			raw := map[string]string{"mac": mac, "device": dev}
 			if vendor != "" {
 				raw["vendor"] = vendor
+				raw["oui_prefix"] = ouiPrefix
+				raw["oui_vendor"] = vendor
 			}
 			ev := Evidence{
 				Source:     "active:arp",
@@ -489,6 +491,16 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			}
 			if v := e.RawData["vendor"]; v != "" && report.Device.Fields["inferred_brand"] == "" {
 				report.Device.Fields["inferred_brand"] = v
+			}
+			// OUI prefix + vendor are factual registry data, kept separate from
+			// the device's self-declared brand. Unconditional (not "when empty"):
+			// the OUI lookup is deterministic, so a later evidence piece carrying
+			// a fresher OUI result should win over an earlier stale one.
+			if v := e.RawData["oui_prefix"]; v != "" {
+				report.Device.Fields["oui_prefix"] = v
+			}
+			if v := e.RawData["oui_vendor"]; v != "" {
+				report.Device.Fields["oui_vendor"] = v
 			}
 		case "hostname":
 			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" {

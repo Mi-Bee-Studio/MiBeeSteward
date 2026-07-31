@@ -34,6 +34,8 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 	f := rep.Device.Fields
 	attr := domain.ScanAttributes{
 		Vendor:              f["inferred_brand"],
+		OUIPrefix:           f["oui_prefix"],
+		OUIVendor:           f["oui_vendor"],
 		InferredType:        f["inferred_type"],
 		InferredTypeSource:  f["inferred_type_source"],
 		InferredDescription: f["inferred_description"],
@@ -91,6 +93,17 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 				if v := e.RawData["vendor"]; v != "" {
 					attr.Vendor = v
 				}
+			}
+			// OUI prefix + vendor are factual registry data (the NIC silicon
+			// vendor + the matched IEEE block). Unconditional: a fresher evidence
+			// piece with a newer OUI result should win over a stale earlier one.
+			// Kept separate from attr.Vendor (the device's self-declared brand) —
+			// the two differ in OEM/rebrand/virtualization cases.
+			if v := e.RawData["oui_prefix"]; v != "" {
+				attr.OUIPrefix = v
+			}
+			if v := e.RawData["oui_vendor"]; v != "" {
+				attr.OUIVendor = v
 			}
 		case "hostname":
 			if v := e.RawData["hostname"]; v != "" && attr.Hostname == "" {

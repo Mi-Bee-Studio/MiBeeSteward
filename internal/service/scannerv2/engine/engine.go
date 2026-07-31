@@ -131,22 +131,32 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 
 	reg := scannerv2.NewRegistry()
 
-	// Load the OUI vendor table once (silent degradation if the file is absent
-	// — the ARP probe still records MAC addresses, just without vendor).
+	// Load the OUI vendor table once. When a path is configured, load the full
+	// user-provided IEEE file (scripts/fetch-oui.sh produces MA-L+MA-M+MA-S);
+	// otherwise fall back to the embedded curated table (a small CC-BY-SA set
+	// of common vendor OUIs) so a fresh install gets vendor inference without
+	// any setup. Either way, missing/unreadable files degrade silently — the
+	// ARP probe still records MAC addresses, just without vendor.
 	oui := vendor.New()
 	if cfg.OUIPath != "" {
 		if err := oui.Load(cfg.OUIPath); err != nil {
-			logger.Warn("scannerv2: OUI file load failed; vendor lookup disabled",
+			logger.Warn("scannerv2: OUI file load failed; falling back to embedded curated table",
 				"path", cfg.OUIPath, "error", err)
+			oui.LoadEmbeddedCurated()
 		} else if oui.Loaded() {
 			logger.Info("scannerv2: OUI vendor table loaded",
 				"path", cfg.OUIPath, "entries", oui.Size())
 		} else {
-			logger.Info("scannerv2: OUI file not present; vendor lookup disabled (MAC still recorded)",
+			// Path set but file missing — degrade to the embedded curated table
+			// rather than silently disabling vendor lookup entirely.
+			logger.Info("scannerv2: OUI file not present; using embedded curated table",
 				"path", cfg.OUIPath)
+			oui.LoadEmbeddedCurated()
 		}
 	} else {
-		logger.Info("scannerv2: no OUI path configured; vendor lookup disabled (MAC still recorded)")
+		oui.LoadEmbeddedCurated()
+		logger.Info("scannerv2: no OUI path configured; using embedded curated table",
+			"entries", oui.Size())
 	}
 
 	// ① Probes: active set + optional passive eBPF observer.
@@ -222,7 +232,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	// probe during gather); (2) when that misses AND routers are configured,
 	// walk the router's SNMP ARP table (cross-subnet). The first hit wins.
 	routerCfg := cfg.RouterARP
-	probe.SetPostScanResolver(func(ip string) (mac, device, vendor string) {
+	probe.SetPostScanResolver(func(ip string) (mac, device, vendor, ouiPrefix string) {
 		m, d := probe.LookupMACPostScan(ip)
 		if m == "" && len(routerCfg.Routers) > 0 {
 			// Cross-subnet: ask the router. The OUI lookup happens below on
@@ -234,13 +244,13 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 			cancel()
 		}
 		if m == "" {
-			return "", "", ""
+			return "", "", "", ""
 		}
-		v := ""
+		v, p := "", ""
 		if oui != nil {
-			v = oui.Lookup(m)
+			v, p = oui.LookupFull(m)
 		}
-		return m, d, v
+		return m, d, v, p
 	})
 	orch.SetMACResolver(probe.ResolveMACPostScan)
 

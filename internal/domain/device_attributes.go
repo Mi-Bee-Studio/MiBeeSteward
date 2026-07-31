@@ -44,6 +44,17 @@ type ScanAttributes struct {
 	// real device should never source frames from a multicast MAC, so this is a
 	// data-hygiene flag (kept for observability, not used for identity).
 	MacIsMulticast bool `json:"mac_is_multicast,omitempty"`
+	// OUIPrefix is the IEEE assignment block that the MAC matched via the OUI
+	// loader's longest-prefix lookup — 6 hex (MA-L /24), 7 hex (MA-M /28), or 9
+	// hex (MA-S /36). Empty when no OUI table is loaded or the MAC is unknown /
+	// locally administered. Records which block the vendor below came from.
+	OUIPrefix string `json:"oui_prefix,omitempty"`
+	// OUIVendor is the IEEE-registered organization name for the OUI prefix
+	// above (the NIC silicon vendor). Distinct from Vendor (the device's
+	// SELF-DECLARED brand via SNMP/HTTP/TLS) — the two differ in OEM/rebrand/
+	// virtualization cases (e.g. a rebranded camera: SNMP reports the brand,
+	// OUI reports the contract manufacturer). Both are kept when present.
+	OUIVendor string `json:"oui_vendor,omitempty"`
 
 	// OS / firmware
 	OS              string `json:"os,omitempty"`             // "Linux", "Windows", "iOS", …

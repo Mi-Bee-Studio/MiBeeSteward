@@ -293,6 +293,17 @@ MiBee Steward 支持分布式部署：**中心**（主二进制 `cmd/server`）�
 ——尤其 U/L 位仅表示"本地管理",**无法**区分隐私随机化（不稳定）与本地固定设置
 （稳定），因此只作 UI 徽章如实展示,不据此采取动作。
 
+**OUI 厂商推断。** OUI 加载器（`internal/service/scannerv2/vendor/`）按**最长前缀
+匹配**解析三档 IEEE 注册表:MA-S（/36,9 hex,原 IAB）→ MA-M（/28,7 hex）→ MA-L
+（/24,6 hex）。最长前缀是强制的——MA-S/MA-M 子块是从 IEEE 或其它厂商拥有的 /24 OUI
+中切出来的（`8C1F64B14..` 开头的 MAC 属于村田的 MA-S 块,不是其 /24 父块的所有者
+"IEEE Registration Authority"）。结果记为 `scan_attributes.oui_prefix`（命中的块）
++ `oui_vendor`（IEEE 注册组织——NIC 芯片厂商）,与 `vendor`（设备自报品牌,经
+SNMP/HTTP/TLS）**分开**。开箱即用时引擎从一个内嵌的精简 CC-BY-SA 厂商表 seed;
+完整 IEEE 数据集是可选的运行时下载（`scripts/fetch-oui.sh`）——IEEE 注册表是
+"All rights reserved" 事实数据,**引用**,不入 CC-BY-SA 指纹库 corpus（见
+`docs/fingerprint-spec.md` §8）。
+
 ### 采集器认证
 
 采集器令牌是 SHA-256 哈希的不透明 bearer 令牌，存储在 `agent_tokens` 表。
