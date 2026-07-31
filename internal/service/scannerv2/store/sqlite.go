@@ -510,13 +510,16 @@ func macBitSet(mac string, mask byte) bool {
 	return n&mask != 0
 }
 
-// IsLocalMAC reports whether the MAC has the locally-administered (LAA) bit set
-// (first octet bit 1, 0x02). Such MACs are typically assigned by iOS/Android/
-// Windows privacy randomization or by hypervisors (VMware/VirtualBox) and are
-// NOT stable across scans or reboots, so they must not anchor cross-network
-// device identity — otherwise each randomized MAC would register as a new
-// device and pollute the registry. The input must be canonical (NormalizeMAC).
-func IsLocalMAC(mac string) bool {
+// IsLocallyAdministeredMAC reports whether the MAC has the
+// locally-administered (U/L) bit set (first octet bit 1, 0x02). This is a
+// neutral factual statement about the IEEE 802 / RFC 7042 U/L bit: when set,
+// the MAC was assigned locally rather than drawn from an IEEE OUI/MA-S/MA-M
+// block. Note the bit CANNOT distinguish the two real-world causes — privacy
+// randomization (iOS/Android/Windows; unstable across scans) vs. a locally
+// fixed setting (soft-router/manual/hypervisor; stable) — so callers must NOT
+// treat this as a "randomized" verdict or a stability/identity decision. The
+// input must be canonical (NormalizeMAC).
+func IsLocallyAdministeredMAC(mac string) bool {
 	return macBitSet(mac, 0x2)
 }
 

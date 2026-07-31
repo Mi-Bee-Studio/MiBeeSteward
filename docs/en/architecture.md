@@ -299,16 +299,13 @@ is known. This means:
 - A device that moves between subnets (same MAC, different IP) stays **one asset**.
 - The `(ip_address, network_id)` composite unique index backs this partitioning.
 
-**Randomized-MAC exception.** A MAC with the locally-administered (LAA) bit set
-(first octet `& 0x02`) is treated as **non-identity-bearing**: it falls back to
-the `(ip_address, network_id)` rule even though a MAC was observed. Such MACs —
-iOS/Android/Windows privacy randomization, hypervisor-assigned MACs — are not
-stable across scans, so anchoring identity on them would register each new
-random MAC as a ghost device. The MAC is still stored on the row as an observed
-attribute (and surfaced with a "Randomized" badge in the UI); only its role as
-the cross-network identity anchor is dropped. The two bit flags
-`scan_attributes.mac_is_randomized` / `mac_is_multicast` record the LAA and
-multicast bits of the observed MAC.
+**MAC bit flags (observability only).** Two IEEE 802 / RFC 7042 bits of the
+observed MAC are recorded as neutral factual flags in `scan_attributes`:
+`mac_is_locally_administered` (U/L bit, first octet `& 0x02`) and
+`mac_is_multicast` (I/G bit, first octet `& 0x01`). Neither changes device
+identity — in particular the U/L bit only means "locally administered" and
+**cannot** distinguish privacy randomization (unstable) from a locally fixed
+setting (stable), so it is surfaced as-is (a UI badge) rather than acted on.
 
 ### Agent Authentication
 
