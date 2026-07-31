@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS devices (
 			network_id INTEGER,
 			first_seen TIMESTAMP,
 			last_seen TIMESTAMP,
+			offline_since TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

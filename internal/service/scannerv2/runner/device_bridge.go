@@ -225,11 +225,14 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				UPDATE devices SET status='online',
 				    mac_address = ?,
 				    last_seen = COALESCE(last_seen, ?),
+				    offline_since=NULL,
 				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 				mac, now, now, now, existingID)
 			_, _ = rn.dbConn.ExecContext(ctx,
-				`UPDATE devices SET status='offline', updated_at=? WHERE id=?`,
-				now, replacedID)
+				`UPDATE devices SET status='offline',
+				    offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
+				    updated_at=? WHERE id=?`,
+				now, now, replacedID)
 			rn.logger.Warn("device bridge: device replaced (router/asset swap detected)",
 				"ip", rep.IP, "scanned_mac", mac, "replaced_device_id", replacedID,
 				"target_device_id", existingID,
@@ -252,6 +255,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				    `+ipClause+`,
 				    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
 				    last_seen = COALESCE(last_seen, ?),
+				    offline_since=NULL,
 				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 				argsForRoamUpdate(roamed, rep.IP, mac, now, existingID)...)
 			if err != nil && roamed {
@@ -273,6 +277,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 					UPDATE devices SET status='online', ip_address = ?,
 					    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
 					    last_seen = COALESCE(last_seen, ?),
+					    offline_since=NULL,
 					    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 					rep.IP, mac, mac, now, now, now, existingID)
 				if err != nil {

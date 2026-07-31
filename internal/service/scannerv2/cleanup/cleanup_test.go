@@ -31,7 +31,7 @@ func TestPruneDeviceNeighbors(t *testing.T) {
 	seedNeighbor(t, conn, 1, "aa:bb:cc:dd:ee:02", "Bridge-MIB", &now)
 
 	// Run with a 90-day window. The old edge should be removed; the fresh one kept.
-	svc := New(queries, nil, nil, config.RetentionConfig{
+	svc := New(queries, nil, nil, nil, config.RetentionConfig{
 		DeviceNeighborsDays: 90,
 		BatchSize:           1000,
 		SweepIntervalHours:  1,
@@ -56,7 +56,7 @@ func TestPruneDeviceNeighbors_ZeroDaysGuard(t *testing.T) {
 	require.NoError(t, createSwitch(t, queries, "switch-2"))
 	seedNeighbor(t, conn, 2, "aa:bb:cc:dd:ee:03", "LLDP", &old)
 
-	svc := New(queries, nil, nil, config.RetentionConfig{
+	svc := New(queries, nil, nil, nil, config.RetentionConfig{
 		DeviceNeighborsDays: 0, // not configured → guard: leave the table alone
 		BatchSize:           1000,
 		SweepIntervalHours:  1,

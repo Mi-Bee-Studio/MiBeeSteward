@@ -70,6 +70,7 @@ func setupHeartbeatTest(t *testing.T) (*HeartbeatService, *sql.DB, *db.Queries) 
 			network_id INTEGER,
 			first_seen TIMESTAMP,
 			last_seen TIMESTAMP,
+			offline_since TIMESTAMP,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
@@ -878,4 +879,57 @@ func TestHeartbeat_ListEnabledConfigs_ExcludesAgentNetwork(t *testing.T) {
 	// Only the center device's config should appear.
 	require.Len(t, enabled, 1, "agent-network config must be excluded")
 	require.Equal(t, centerDev, enabled[0].DeviceID, "only center-network device probed")
+}
+
+// TestSyncStatus_StampOfflineSince verifies the offline_since column is maintained
+// correctly across status flips in syncStatus (the center heartbeat path):
+//   - flipping online→offline stamps offline_since = now
+//   - a device already offline keeps its original offline_since (not re-stamped)
+//   - flipping offline→online clears offline_since to NULL
+//
+// This is the signal the silent-device retention sweep (issue #117) keys on.
+func TestSyncStatus_StampOfflineSince(t *testing.T) {
+	svc, dbConn, queries := setupHeartbeatTest(t)
+	ctx := context.Background()
+
+	// Create an ONLINE device via the repo so it has a valid row.
+	dev, err := queries.CreateDevice(ctx, db.CreateDeviceParams{
+		DeviceUuid: "flip-uuid", Name: "flip-test", Type: "server",
+		Status: "online", Tags: "{}", UserAttributes: "{}",
+	})
+	require.NoError(t, err)
+
+	// Flip it to offline via the in-memory cache + syncStatus.
+	svc.statusCacheMu.Lock()
+	svc.statusCache[dev.ID] = "offline"
+	svc.statusCacheMu.Unlock()
+	svc.syncStatus(ctx)
+
+	var offlineSince *time.Time
+	require.NoError(t, dbConn.QueryRowContext(ctx,
+		`SELECT offline_since FROM devices WHERE id = ?`, dev.ID).Scan(&offlineSince))
+	require.NotNil(t, offlineSince, "flipping online→offline must stamp offline_since")
+	firstStamp := *offlineSince
+
+	// Sync 'offline' AGAIN (no real change) — force a re-sync by desyncing
+	// lastSynced, but keep the status at 'offline'. offline_since must NOT move
+	// (the CASE guards: status was already 'offline', so the flip branch is skipped).
+	time.Sleep(10 * time.Millisecond)
+	svc.statusCacheMu.Lock()
+	svc.lastSynced[dev.ID] = "online" // pretend we haven't synced the offline yet
+	svc.statusCacheMu.Unlock()
+	svc.syncStatus(ctx)
+	require.NoError(t, dbConn.QueryRowContext(ctx,
+		`SELECT offline_since FROM devices WHERE id = ?`, dev.ID).Scan(&offlineSince))
+	require.Equal(t, firstStamp.Unix(), offlineSince.Unix(),
+		"already-offline device must keep its original offline_since (not re-stamped)")
+
+	// Flip it back to online — offline_since must clear to NULL.
+	svc.statusCacheMu.Lock()
+	svc.statusCache[dev.ID] = "online"
+	svc.statusCacheMu.Unlock()
+	svc.syncStatus(ctx)
+	require.NoError(t, dbConn.QueryRowContext(ctx,
+		`SELECT offline_since FROM devices WHERE id = ?`, dev.ID).Scan(&offlineSince))
+	require.Nil(t, offlineSince, "flipping offline→online must clear offline_since to NULL")
 }

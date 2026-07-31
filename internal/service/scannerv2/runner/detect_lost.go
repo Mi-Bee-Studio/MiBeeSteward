@@ -93,10 +93,15 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 	}
 	for _, l := range lost {
 		// Mark the device offline (scan-side lost; heartbeat has its own
-		// separate grace period for probe failures). Best-effort — a status
-		// write failure doesn't block the change_log emit.
+		// separate grace period for probe failures). Stamp offline_since so the
+		// silent-device retention sweep has the "how long gone" signal (issue
+		// #117). CASE guards so a device already offline keeps its original
+		// offline_since (the flip time, not re-stamped every lost-detection pass).
+		// Best-effort — a status write failure doesn't block the change_log emit.
 		if _, err := rn.dbConn.ExecContext(ctx,
-			`UPDATE devices SET status='offline', updated_at=? WHERE id=?`, now, l.DeviceID); err != nil {
+			`UPDATE devices SET status='offline',
+				offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
+				updated_at=? WHERE id=?`, now, now, l.DeviceID); err != nil {
 			rn.logger.Warn("detect-lost: mark offline failed", "device_id", l.DeviceID, "error", err)
 		}
 		// Emit device_lost (before_data = the device's pre-lost snapshot).

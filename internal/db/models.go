@@ -101,6 +101,7 @@ type Device struct {
 	NetworkID        *int64     `json:"network_id"`
 	FirstSeen        *time.Time `json:"first_seen"`
 	LastSeen         *time.Time `json:"last_seen"`
+	OfflineSince     *time.Time `json:"offline_since"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
