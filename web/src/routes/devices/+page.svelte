@@ -608,16 +608,50 @@ interface AddDevicesResponse {
 		return 'bg-muted';
 	}
 
+	// formatOfflineDuration renders "Nd Nh" / "Nh Nm" / "Nm" from an offline_since
+	// timestamp — the status-dot hover text so an operator can tell at a glance
+	// how long a device has been down (and how close it is to the retention
+	// prune threshold). offline_since is a column on devices and is already in
+	// the LIST payload, so this needs no extra fetch.
+	function formatOfflineDuration(offlineSince?: string | null): string {
+		if (!offlineSince) return '';
+		const then = Date.parse(offlineSince);
+		if (Number.isNaN(then)) return '';
+		const ms = Date.now() - then;
+		if (ms < 0) return ''; // clock skew / future timestamp — don't mislead
+		const min = Math.floor(ms / 60000);
+		const days = Math.floor(min / 1440);
+		const hours = Math.floor((min % 1440) / 60);
+		const mins = min % 60;
+		if (days > 0) return `${days}d ${hours}h`;
+		if (hours > 0) return `${hours}h ${mins}m`;
+		return `${mins}m`;
+	}
+
+	// statusDotTitle returns the hover title for the status dot. Online/unknown
+	// get a plain label; offline gets "已离线 Nd Nh" (the actionable bit).
+	function statusDotTitle(status: string, row: Record<string, unknown>): string {
+		if (status === 'offline') {
+			const dur = formatOfflineDuration((row.offline_since as string | null | undefined) ?? null);
+			return dur ? m['devices.Offline For']({ duration: dur }) : m['devices.Offline']();
+		}
+		if (status === 'online') return m['devices.Online']();
+		return m['devices.Unknown']();
+	}
+
 	// --- Optional columns (user-toggleable via ColumnPicker) ---
 	// Keys are persisted to localStorage; NEVER rename them. New columns
 	// default ON so existing users see the improvement (they can opt out).
 	const optionalColumns = [
-		{ key: 'vendor', label: () => m['devices.Vendor']() },
+		// `sortable` opts a column into server-side sort (the backend sortWhitelist
+		// must accept the key). vendor/hostname/network_name/last_scanned_at are now
+		// backend-supported; the rest are display-only.
+		{ key: 'vendor', label: () => m['devices.Vendor'](), sortable: true },
 		{ key: 'mac', label: () => m['devices.MAC Address']() },
-		{ key: 'hostname', label: () => m['devices.Hostname']() },
+		{ key: 'hostname', label: () => m['devices.Hostname'](), sortable: true },
 		{ key: 'location', label: () => m['devices.Location']() },
-		{ key: 'network_name', label: () => m['devices.Network']() },
-		{ key: 'last_scanned_at', label: () => m['devices.Last Scanned']() },
+		{ key: 'network_name', label: () => m['devices.Network'](), sortable: true },
+		{ key: 'last_scanned_at', label: () => m['devices.Last Scanned'](), sortable: true },
 		{ key: 'last_scan_rtt_ms', label: () => m['devices.RTT']() },
 		{ key: 'inferred_type', label: () => m['devices.Inferred Type']() },
 		{ key: 'os', label: () => m['devices.OS']() },
@@ -625,7 +659,11 @@ interface AddDevicesResponse {
 		{ key: 'purchase_date', label: () => m['devices.Purchase Date']() },
 		{ key: 'purpose', label: () => m['devices.Purpose']() }
 	];
-	const defaultColumns = ['vendor', 'mac', 'hostname', 'location', 'network_name'];
+	// The list defaults to a lean row (status/name/type/IP are fixed columns, plus
+	// network here). Vendor/hostname/location moved into the expand-panel's device
+	// summary — they're still available as columns via the ColumnPicker for users
+	// who want them back in the row.
+	const defaultColumns = ['network_name'];
 	let selectedColumnKeys = $state(new Set<string>(defaultColumns));
 
 	// Render functions for each optional column (read from scan_attributes
@@ -639,7 +677,16 @@ interface AddDevicesResponse {
 			}
 			case 'mac': {
 				const mac = (sa?.mac as string) || (row.mac_address ? String(row.mac_address) : '');
-				return mac ? `<span class="font-mono text-xs">${escapeHtml(mac)}</span>` : '-';
+				if (!mac) return '-';
+				// A randomized (locally-administered) MAC is not a stable device
+				// identifier — the engine downgrades such devices to (ip, network)
+				// identity. Surface it inline so users can tell why a phone that
+				// roams shows as separate rows. Mirrors the heuristic-type "?" badge.
+				const rand = sa?.mac_is_randomized === true;
+				const randBadge = rand
+					? `<span class="ml-0.5 text-warning/80" title="${m['devices.Randomized MAC Hint']()}">⚠</span>`
+					: '';
+				return `<span class="font-mono text-xs">${escapeHtml(mac)}</span>${randBadge}`;
 			}
 			case 'hostname': {
 				const h = sa?.hostname as string | undefined;
@@ -706,7 +753,11 @@ interface AddDevicesResponse {
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const s = String(row.status ?? 'unknown');
-				return `<span class="inline-block w-2.5 h-2.5 rounded-full ${statusDotClass(s)}"></span>`;
+				// title carries the offline duration (offline_since → "Nd Nh") so
+				// hovering the dot shows how long the device has been down without
+				// a round-trip — offline_since is already in the list payload.
+				const title = escapeAttr(statusDotTitle(s, row));
+				return `<span class="inline-block w-2.5 h-2.5 rounded-full ${statusDotClass(s)}" title="${title}"></span>`;
 			}
 		},
 		{
@@ -745,17 +796,21 @@ interface AddDevicesResponse {
 		{
 			key: 'ip_address',
 			label: m['devices.IP Address'](),
+			sortable: true,
 			render: (row: Record<string, unknown>) =>
 				row.ip_address ? `<span class="font-mono">${escapeHtml(String(row.ip_address))}</span>` : '-'
 		},
 		// Optional (user-toggleable) columns — included only if selected in the
 		// ColumnPicker. Order follows the optionalColumns definition so toggling
-		// keeps a stable, predictable column layout.
+		// keeps a stable, predictable column layout. sortable (where present) is
+		// forwarded so the header renders the sort affordance and the click routes
+		// through the server-side sort callback.
 		...optionalColumns
 			.filter((c) => selectedColumnKeys.has(c.key))
 			.map((c) => ({
 				key: c.key,
 				label: c.label(),
+				sortable: c.sortable ?? false,
 				render: (row: Record<string, unknown>) => renderOptionalColumn(c.key, row)
 			})),
 		{
@@ -1083,9 +1138,15 @@ interface AddDevicesResponse {
 
 	{#snippet expandedRow(row)}
 		{@const device = devices.find((d) => d.id === row.id)}
+		{@const sa = device?.scan_attributes}
 		<div class="border-t border-border bg-bg/50">
 			{#if device}
-				<div class="flex items-center gap-2 px-4 py-2 bg-surface/50 border-b border-border">
+				{@const t = String(device.type ?? 'other')}
+				{@const statusStr = String(device.status ?? 'unknown')}
+				<!-- Header: lean context strip. The row already shows the name, so the
+				     expand header surfaces the OTHER dimensions — IP, type badge,
+				     status badge — instead of repeating the name. -->
+				<div class="flex items-center gap-3 px-4 py-2 bg-surface/50 border-b border-border flex-wrap">
 					<button
 						onclick={() => (expandedDeviceId = null)}
 						class="p-1 rounded hover:bg-surface-2 transition-colors text-muted"
@@ -1093,8 +1154,91 @@ interface AddDevicesResponse {
 					>
 						<ChevronRight class="w-3.5 h-3.5 rotate-90" />
 					</button>
-					<span class="text-sm font-medium text-primary">{device.name}</span>
-					<span class="text-xs text-muted">— Heartbeat</span>
+					{#if device.ip_address}
+						<span class="font-mono text-xs text-muted">{device.ip_address}</span>
+					{/if}
+					<span class="text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent">{typeLabel[t] || typeLabel['other']!}</span>
+					<span class="text-xs inline-flex items-center gap-1.5 text-muted">
+						<span class="inline-block w-2 h-2 rounded-full {statusDotClass(statusStr)}"></span>
+						{statusStr === 'online' ? m['devices.Online']() : statusStr === 'offline' ? m['devices.Offline']() : m['devices.Unknown']()}
+					</span>
+				</div>
+
+				<!-- Device summary: the identity fields that used to crowd the list row
+				     (vendor/hostname/location/model/mac/os/inferred type/last scanned).
+				     Drawn from scan_attributes where the engine writes the rich data,
+				     falling back to top-level fields. Missing fields are omitted so a
+				     sparse device doesn't show a wall of '-'. One glance here spares a
+				     trip to the detail page for routine "what is this?" questions. -->
+				<div class="px-4 py-3 border-b border-border">
+					<div class="text-xs font-medium text-muted uppercase tracking-wide mb-2">{m['devices.Device Summary']()}</div>
+					<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2 text-xs">
+						{#if (sa?.vendor || device.brand)}
+							<summary class="flex flex-col gap-0.5 min-w-0">
+								<span class="text-muted">{m['devices.Vendor']()}</span>
+								<span class="text-text truncate">{sa?.vendor || device.brand}</span>
+							</summary>
+						{/if}
+						{#if device.model}
+							<summary class="flex flex-col gap-0.5 min-w-0">
+								<span class="text-muted">{m['devices.Model']()}</span>
+								<span class="text-text truncate">{device.model}</span>
+							</summary>
+						{/if}
+						{#if sa?.hostname}
+							<summary class="flex flex-col gap-0.5 min-w-0">
+								<span class="text-muted">{m['devices.Hostname']()}</span>
+								<span class="font-mono text-text truncate">{sa.hostname}</span>
+							</summary>
+						{/if}
+						{#if (sa?.mac || device.mac_address)}
+							<summary class="flex flex-col gap-0.5 min-w-0">
+								<span class="text-muted">{m['devices.MAC Address']()}</span>
+								<span class="font-mono text-text truncate inline-flex items-center gap-1.5">
+									{sa?.mac || device.mac_address}
+									{#if sa?.mac_is_randomized}
+										<span class="badge badge-warning shrink-0" title={m['devices.Randomized MAC Hint']()}>{m['scanfields.Randomized MAC']()}</span>
+									{/if}
+								</span>
+							</summary>
+						{/if}
+						{#if sa?.os}
+							<summary class="flex flex-col gap-0.5 min-w-0">
+								<span class="text-muted">{m['devices.OS']()}</span>
+								<span class="text-text truncate">{sa.os}</span>
+							</summary>
+						{/if}
+						{#if device.location}
+							<summary class="flex flex-col gap-0.5 min-w-0">
+								<span class="text-muted">{m['devices.Location']()}</span>
+								<span class="text-text truncate">{device.location}</span>
+							</summary>
+						{/if}
+						{#if sa?.inferred_type}
+							<summary class="flex flex-col gap-0.5 min-w-0">
+								<span class="text-muted">{m['devices.Inferred Type']()}</span>
+								<span class="text-text truncate inline-flex items-center gap-1">
+									{sa.inferred_type}
+									{#if sa.inferred_type_source === 'heuristic'}
+										<span class="text-muted/60" title={m['devices.Inferred Type Hint']()}>?</span>
+									{:else if sa.inferred_type_source === 'protocol'}
+										<span class="text-success text-[0.65rem] font-medium uppercase">{m['devices.Inferred Type Protocol']()}</span>
+									{/if}
+								</span>
+							</summary>
+						{/if}
+						{#if (sa?.last_scanned_at || device.last_scanned_at)}
+							<summary class="flex flex-col gap-0.5 min-w-0">
+								<span class="text-muted">{m['devices.Last Scanned']()}</span>
+								<span class="text-text truncate">{new Date(String(sa?.last_scanned_at || device.last_scanned_at)).toLocaleString()}</span>
+							</summary>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Heartbeat section. -->
+				<div class="px-4 py-2 flex items-center gap-2 border-b border-border">
+					<span class="text-xs font-medium text-muted uppercase tracking-wide">{m['heartbeat.Heartbeat']()}</span>
 				</div>
 			{/if}
 			<HeartbeatExpandableRow deviceId={row.id as number} expanded={true} />

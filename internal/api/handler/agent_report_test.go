@@ -122,9 +122,14 @@ func TestAgentReport_CreatesDeviceOnAgentNetwork(t *testing.T) {
 // TestAgentReport_MACPrimaryDedupAcrossNetworks confirms the center merges by
 // MAC: the SAME MAC reported under two different agent networks resolves to one
 // asset row (the first sighting wins). This is the multi-LAN coexistence rule.
+//
+// NOTE: the MAC must be a STABLE (universal, non-LAA) one — the locally-
+// administered bit (0x02) would trigger the randomized-MAC identity downgrade
+// (issue #118 Phase 1) and defeat this test's "one MAC = one asset" premise.
+// 08:00:27 is VirtualBox's OUI; its first octet's low nibble (8) is LAA-clear.
 func TestAgentReport_MACPrimaryDedupAcrossNetworks(t *testing.T) {
 	srv, db, token, networkID := setupAgentIngestServer(t)
-	mac := "aa:bb:cc:dd:ee:99"
+	mac := "08:00:27:bb:cc:99"
 
 	// First report: host 192.168.62.50 with this MAC on lan-62.
 	_, _ = postReport(t, srv, token, domain.AgentReport{

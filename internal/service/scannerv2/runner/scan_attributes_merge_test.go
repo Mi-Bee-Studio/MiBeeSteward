@@ -139,3 +139,60 @@ func TestScanAttributes_OpenPortsReplaceNotUnion(t *testing.T) {
 	require.NotContains(t, openPorts, `"port":22`,
 		"a port absent from the latest scan must not linger from an earlier scan (replace, not union)")
 }
+
+// TestScanAttributes_MACFlagsDerivedFromMAC verifies that the MAC bit flags
+// (mac_is_randomized / mac_is_multicast) are derived from the observed MAC and
+// persisted into scan_attributes. The flags are computed from attr.MAC AFTER
+// both the Fields["mac"] path and the mac-kind evidence path fold in, so they
+// reflect whichever MAC was actually recorded.
+func TestScanAttributes_MACFlagsDerivedFromMAC(t *testing.T) {
+	rn, conn := setupScanAttrsTestDB(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		name           string
+		mac            string
+		wantRandomized bool
+		wantMulticast  bool
+	}{
+		// LAA bit (0x02) set: low nibble of first octet has bit 0x2.
+		{"randomized 02", "02:11:22:33:44:55", true, false},
+		{"randomized 1a", "1a:bb:cc:dd:ee:ff", true, false},
+		// Universal (stable) OUIs: LAA bit clear.
+		{"universal bcad28", "bc:ad:28:11:22:33", false, false},
+		// Multicast bit (0x01) set: low nibble odd.
+		{"multicast 01005e", "01:00:5e:00:00:01", false, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ip := "192.168.63.50"
+			// Wipe devices between subtests so each MAC starts fresh.
+			_, _ = conn.Exec(`DELETE FROM devices WHERE ip_address=?`, ip)
+			_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+				map[string]string{"mac": c.mac},
+				scannerv2.Evidence{Kind: "mac", RawData: map[string]string{"mac": c.mac, "vendor": "testvendor"}},
+			), rn.networkID, "")
+
+			var attrs string
+			require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE ip_address=?`, ip).Scan(&attrs))
+
+			if c.wantRandomized {
+				require.Contains(t, attrs, `"mac_is_randomized":true`,
+					"randomized MAC must set mac_is_randomized=true")
+			} else {
+				// omitempty: a false bool is omitted from JSON entirely.
+				require.NotContains(t, attrs, `mac_is_randomized`,
+					"non-randomized MAC must omit mac_is_randomized (omitempty)")
+			}
+			if c.wantMulticast {
+				require.Contains(t, attrs, `"mac_is_multicast":true`,
+					"multicast MAC must set mac_is_multicast=true")
+			} else {
+				require.NotContains(t, attrs, `mac_is_multicast`,
+					"unicast MAC must omit mac_is_multicast (omitempty)")
+			}
+			// The MAC itself is always recorded regardless of the flags.
+			require.Contains(t, attrs, `"mac":"`+c.mac+`"`, "MAC stored as observed attribute")
+		})
+	}
+}

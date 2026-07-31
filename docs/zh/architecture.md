@@ -287,6 +287,14 @@ MiBee Steward 支持分布式部署：**中心**（主二进制 `cmd/server`）�
 - 一个在子网间移动的设备（相同 MAC，不同 IP）保持 **单一资产**。
 - `(ip_address, network_id)` 复合唯一索引支撑此分区逻辑。
 
+**随机化 MAC 例外。** 置位了本地管理位（首字节 `& 0x02`）的 MAC 被视为
+**不承载身份**：即使观测到了 MAC，也退回 `(ip_address, network_id)` 规则。这类
+MAC —— iOS/Android/Windows 隐私随机化 MAC、虚拟机分配的 MAC —— 跨扫描不稳定，用
+它们锚定身份会把每个新随机 MAC 都登记成幽灵设备。MAC 仍作为观测属性存入设备行
+（并在 UI 上以 "随机化" 徽章标出）；只是不再作为跨网络身份锚点。
+`scan_attributes.mac_is_randomized` / `mac_is_multicast` 两个标记记录观测 MAC 的
+LAA 位和 multicast 位。
+
 ### 采集器认证
 
 采集器令牌是 SHA-256 哈希的不透明 bearer 令牌，存储在 `agent_tokens` 表。
