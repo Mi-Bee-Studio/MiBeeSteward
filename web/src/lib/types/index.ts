@@ -131,9 +131,12 @@ export interface PrometheusInfo {
 export interface ScanAttributes {
 	vendor?: string;
 	mac?: string;
-	/** LAA bit set — randomized/hypervisor MAC, not stable; engine downgrades such
-	 * devices to (ip, network_id) identity instead of anchoring on the MAC. */
-	mac_is_randomized?: boolean;
+	/** Locally-administered (U/L) bit set — the MAC was assigned locally, not
+	 *  drawn from an IEEE OUI/MA-S/MA-M block. Neutral FACTUAL flag: the bit
+	 *  cannot distinguish privacy randomization (unstable) from a locally fixed
+	 *  setting (stable), so it is not a "randomized" verdict and does NOT change
+	 *  device identity. Observability badge only. */
+	mac_is_locally_administered?: boolean;
 	/** multicast bit set — a real device should never source from such a MAC;
 	 *  observability flag only (no identity effect). */
 	mac_is_multicast?: boolean;

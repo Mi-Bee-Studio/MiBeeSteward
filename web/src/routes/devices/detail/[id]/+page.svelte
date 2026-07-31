@@ -1182,7 +1182,7 @@
 				</h3>
 				<div class="scan-info-grid">
 					{#if sa.vendor}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Vendor']()}</span><span class="scan-info-value">{sa.vendor}</span></div>{/if}
-					{#if sa.mac}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.MAC']()}</span><span class="scan-info-value font-mono text-xs">{sa.mac}{#if sa.mac_is_randomized}<span class="badge badge-warning ml-2 align-middle" title={m['scanfields.Randomized MAC Hint']()}>{m['scanfields.Randomized MAC']()}</span>{/if}</span></div>{/if}
+					{#if sa.mac}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.MAC']()}</span><span class="scan-info-value font-mono text-xs">{sa.mac}{#if sa.mac_is_locally_administered}<span class="badge badge-warning ml-2 align-middle" title={m['scanfields.Locally Administered MAC Hint']()}>{m['scanfields.Locally Administered MAC']()}</span>{/if}</span></div>{/if}
 					{#if sa.hostname}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Hostname']()}</span><span class="scan-info-value">{sa.hostname}</span></div>{/if}
 					{#if sa.os || sa.os_version}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.OS']()}</span><span class="scan-info-value">{[sa.os, sa.os_version].filter(Boolean).join(' ')}</span></div>{/if}
 					{#if sa.kernel_version}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Kernel']()}</span><span class="scan-info-value font-mono text-xs">{sa.kernel_version}</span></div>{/if}

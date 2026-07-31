@@ -273,40 +273,41 @@ func TestNormalizeMAC(t *testing.T) {
 	}
 }
 
-// TestIsLocalMAC covers the locally-administered (LAA) bit check. The LAA bit
-// is bit 1 of the first octet (0x02); in a canonical MAC its value rides in the
-// LOW nibble of the first octet (mac[1]). Inputs are NormalizeMAC's canonical
-// output. Real-world LAA MACs: iOS/Android privacy randomization (02:.., 1a:..,
-// 6e:..) and hypervisor-assigned ones. Universal (stable) OUIs (bcad28=Hikvision,
-// 001a11=...) have the bit clear.
-func TestIsLocalMAC(t *testing.T) {
+// TestIsLocallyAdministeredMAC covers the locally-administered (U/L) bit check
+// (IEEE 802 / RFC 7042). The U/L bit is bit 1 of the first octet (0x02); in a
+// canonical MAC its value rides in the LOW nibble of the first octet (mac[1]).
+// Inputs are NormalizeMAC's canonical output. Note this is a NEUTRAL factual
+// bit: when set it means "locally administered" — it CANNOT, by itself, tell
+// privacy randomization (iOS/Android) from a locally fixed setting (soft-router,
+// hypervisor, manual). The test asserts the bit value only, not any "randomized"
+// interpretation.
+func TestIsLocallyAdministeredMAC(t *testing.T) {
 	cases := []struct {
 		name string
 		mac  string
 		want bool
 	}{
-		// LAA set (second hex digit of first octet has bit 0x2): 2,3,6,7,a,b,e,f
-		{"iOS privacy randomized", "02:11:22:33:44:55", true},
-		{"randomized 1a", "1a:bb:cc:dd:ee:ff", true},
-		{"randomized 6e", "6e:bb:cc:dd:ee:ff", true},
-		{"randomized 3b", "3b:bb:cc:dd:ee:ff", true},
-		{"randomized 5f", "5f:bb:cc:dd:ee:ff", true}, // low nibble f (1111) & 2 = true
-		// LAA clear (low nibble 0,1,4,5,8,9,c,d): 0,1,4,5,8,9,c,d
+		// U/L set (second hex digit of first octet has bit 0x2): 2,3,6,7,a,b,e,f
+		{"locally administered 02", "02:11:22:33:44:55", true},
+		{"locally administered 1a", "1a:bb:cc:dd:ee:ff", true},
+		{"locally administered 6e", "6e:bb:cc:dd:ee:ff", true},
+		{"locally administered 3b", "3b:bb:cc:dd:ee:ff", true},
+		{"locally administered 5f", "5f:bb:cc:dd:ee:ff", true}, // low nibble f (1111) & 2 = true
+		// U/L clear (low nibble 0,1,4,5,8,9,c,d): 0,1,4,5,8,9,c,d — universally administered
 		{"Hikvision universal OUI", "bc:ad:28:11:22:33", false}, // c -> 12 & 2 = 0
 		{"universal 00", "00:1a:11:22:33:44", false},
-		{"universal 08", "08:00:27:aa:bb:cc", false}, // VirtualBox OUI, but universal (not LAA)
+		{"universal 08", "08:00:27:aa:bb:cc", false}, // VirtualBox OUI, universally administered
 		{"universal 44", "44:65:0d:aa:bb:cc", false},
-		// Edge cases: non-canonical / empty must be false (never panic, never
-		// mis-flag a universal MAC as randomized).
+		// Edge cases: non-canonical / empty must be false (never panic).
 		{"empty", "", false},
 		{"too short", "aa:bb", false},
-		{"uppercase (non-canonical)", "AA:BB:CC:DD:EE:FF", false}, // IsLocalMAC expects canonical lowercase
+		{"uppercase (non-canonical)", "AA:BB:CC:DD:EE:FF", false}, // expects canonical lowercase
 		{"non-hex", "gg:bb:cc:dd:ee:ff", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := IsLocalMAC(c.mac); got != c.want {
-				t.Errorf("IsLocalMAC(%q) = %v, want %v", c.mac, got, c.want)
+			if got := IsLocallyAdministeredMAC(c.mac); got != c.want {
+				t.Errorf("IsLocallyAdministeredMAC(%q) = %v, want %v", c.mac, got, c.want)
 			}
 		})
 	}
