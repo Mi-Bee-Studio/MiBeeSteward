@@ -177,6 +177,15 @@ export interface Device {
 	prometheus_labels?: string;
 	last_scanned_at?: string | null;
 	last_scan_task_id?: number | null;
+	// Liveness visibility (device-detail only). Lets an operator judge whether
+	// the silent-device retention is about to prune a device.
+	//   - last_seen: scan-derived "last observed online by a scan".
+	//   - last_online_at: authoritative "last confirmed alive" from the verdict
+	//     series (heartbeat/scan/lease). Preferred over last_seen when present.
+	//   - offline_since: when the device flipped offline — retention clock start.
+	last_seen?: string | null;
+	last_online_at?: string | null;
+	offline_since?: string | null;
 	open_ports?: string;
 	detected_services?: string;
 	prometheus_url?: string;

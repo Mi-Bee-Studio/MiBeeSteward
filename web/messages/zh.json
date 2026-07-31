@@ -577,7 +577,15 @@
 		"No Ports": "未检测到开放端口",
 		"No Services": "未检测到服务"
 	},
-	"scanfields": {
+	"liveness": {
+		"Title": "存活状态",
+		"Last Alive": "上次确认存活",
+		"Offline Since": "离线起始",
+		"Cleanup Expiry": "清理到期",
+		"In Window": "{remaining} 后清理（窗口：{threshold}）",
+		"Prune Pending": "已超期 — 下次扫描将清理"
+	},
+		"scanfields": {
 		"Discovery": "扫描发现",
 		"Vendor": "厂商",
 		"MAC": "MAC 地址",

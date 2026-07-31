@@ -224,7 +224,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			_, _ = rn.dbConn.ExecContext(ctx, `
 				UPDATE devices SET status='online',
 				    mac_address = ?,
-				    last_seen = COALESCE(last_seen, ?),
+				    last_seen = ?,
 				    offline_since=NULL,
 				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 				mac, now, now, now, existingID)
@@ -254,7 +254,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				UPDATE devices SET status='online',
 				    `+ipClause+`,
 				    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
-				    last_seen = COALESCE(last_seen, ?),
+				    last_seen = ?,
 				    offline_since=NULL,
 				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 				argsForRoamUpdate(roamed, rep.IP, mac, now, existingID)...)
@@ -276,7 +276,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				_, err = rn.dbConn.ExecContext(ctx, `
 					UPDATE devices SET status='online', ip_address = ?,
 					    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
-					    last_seen = COALESCE(last_seen, ?),
+					    last_seen = ?,
 					    offline_since=NULL,
 					    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 					rep.IP, mac, mac, now, now, now, existingID)

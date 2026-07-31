@@ -77,6 +77,18 @@ func (s *DeviceService) Get(ctx context.Context, id int64) (*domain.DeviceRespon
 	}
 
 	resp := toDeviceResponse(device)
+	// Enrich with the authoritative "last confirmed alive" timestamp from the
+	// device_liveness series (cross-DB, heartbeat.db). Only the detail path pays
+	// this cost (one indexed query); the list path does not. Best-effort: a
+	// missing/empty store or query error leaves LastOnlineAt nil (the field is
+	// omitempty), never fails the whole request.
+	if s.heartbeatSvc != nil {
+		if lastOnline, err := s.heartbeatSvc.LastOnlineAt(ctx, id); err == nil {
+			resp.LastOnlineAt = lastOnline
+		} else {
+			slog.Warn("device detail: last_online_at lookup failed", "device_id", id, "error", err)
+		}
+	}
 	return &resp, nil
 }
 
@@ -319,6 +331,8 @@ func toDeviceResponse(d db.Device) domain.DeviceResponse {
 		PrometheusLabels: d.PrometheusLabels,
 		LastScannedAt:    d.LastScannedAt,
 		LastScanTaskID:   d.LastScanTaskID,
+		LastSeen:         d.LastSeen,
+		OfflineSince:     d.OfflineSince,
 		OpenPorts:        d.OpenPorts,
 		DetectedServices: d.DetectedServices,
 		PrometheusURL:    d.PrometheusUrl,

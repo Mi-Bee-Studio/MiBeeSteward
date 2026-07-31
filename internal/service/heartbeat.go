@@ -547,6 +547,19 @@ func (s *HeartbeatService) SampleLiveness(deviceID int64, status, source string)
 	})
 }
 
+// LastOnlineAt returns the device's most recent 'online' verdict timestamp from
+// the device_liveness series — the authoritative "last confirmed alive" signal.
+// Used by the device-detail API to surface liveness visibility (so an operator
+// can judge whether the silent-device retention is about to prune a device).
+// Returns nil when the store is unset (tests/agent) or the device was never seen
+// online. Proxies to HeartbeatStore.LastOnlineAt (heartbeat.db, cross-DB).
+func (s *HeartbeatService) LastOnlineAt(ctx context.Context, deviceID int64) (*time.Time, error) {
+	if s.store == nil {
+		return nil, nil
+	}
+	return s.store.LastOnlineAt(ctx, deviceID)
+}
+
 // ResetFailures clears the in-memory device-level failure counter for a device.
 // Called by the scanner's device bridge when a scan confirms the host is alive
 // and sets status=online — otherwise a stale counter from a prior flapping
