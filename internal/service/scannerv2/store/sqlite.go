@@ -485,6 +485,49 @@ func NormalizeMAC(s string) string {
 	return b.String()
 }
 
+// macBitSet reports whether the MAC's first-octet bit `mask` (0x02 for the
+// locally-administered bit, 0x01 for the multicast bit) is set. The input must
+// be in NormalizeMAC's canonical "aa:bb:cc:dd:ee:ff" form: bit 0 and bit 1 of
+// the first octet both live in its second hex digit (mac[1]), so a single nibble
+// parse is enough. Returns false for anything that isn't a canonical MAC.
+func macBitSet(mac string, mask byte) bool {
+	// A canonical MAC is exactly 17 chars ("aa:bb:cc:dd:ee:ff"); mac[1] is the
+	// low nibble of the first octet, which encodes both the multicast (0x01) and
+	// locally-administered (0x02) bits.
+	if len(mac) < 17 {
+		return false
+	}
+	d := mac[1]
+	var n byte
+	switch {
+	case d >= '0' && d <= '9':
+		n = d - '0'
+	case d >= 'a' && d <= 'f':
+		n = d - 'a' + 10
+	default:
+		return false
+	}
+	return n&mask != 0
+}
+
+// IsLocalMAC reports whether the MAC has the locally-administered (LAA) bit set
+// (first octet bit 1, 0x02). Such MACs are typically assigned by iOS/Android/
+// Windows privacy randomization or by hypervisors (VMware/VirtualBox) and are
+// NOT stable across scans or reboots, so they must not anchor cross-network
+// device identity — otherwise each randomized MAC would register as a new
+// device and pollute the registry. The input must be canonical (NormalizeMAC).
+func IsLocalMAC(mac string) bool {
+	return macBitSet(mac, 0x2)
+}
+
+// IsMulticastMAC reports whether the MAC has the multicast bit set (first octet
+// bit 0, 0x01). A unicast device should never transmit from a multicast source
+// MAC; flagging it is a data-hygiene signal, not an identity decision. The input
+// must be canonical (NormalizeMAC).
+func IsMulticastMAC(mac string) bool {
+	return macBitSet(mac, 0x1)
+}
+
 // buildStoreScanAttributes builds the engine-written scan_attributes document
 // from a DeviceRef. It constructs a domain.ScanAttributes struct (NOT a loose
 // map) so the JSON shape round-trips cleanly through UnmarshalScanAttributes —

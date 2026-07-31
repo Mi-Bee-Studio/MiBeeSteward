@@ -273,6 +273,73 @@ func TestNormalizeMAC(t *testing.T) {
 	}
 }
 
+// TestIsLocalMAC covers the locally-administered (LAA) bit check. The LAA bit
+// is bit 1 of the first octet (0x02); in a canonical MAC its value rides in the
+// LOW nibble of the first octet (mac[1]). Inputs are NormalizeMAC's canonical
+// output. Real-world LAA MACs: iOS/Android privacy randomization (02:.., 1a:..,
+// 6e:..) and hypervisor-assigned ones. Universal (stable) OUIs (bcad28=Hikvision,
+// 001a11=...) have the bit clear.
+func TestIsLocalMAC(t *testing.T) {
+	cases := []struct {
+		name string
+		mac  string
+		want bool
+	}{
+		// LAA set (second hex digit of first octet has bit 0x2): 2,3,6,7,a,b,e,f
+		{"iOS privacy randomized", "02:11:22:33:44:55", true},
+		{"randomized 1a", "1a:bb:cc:dd:ee:ff", true},
+		{"randomized 6e", "6e:bb:cc:dd:ee:ff", true},
+		{"randomized 3b", "3b:bb:cc:dd:ee:ff", true},
+		{"randomized 5f", "5f:bb:cc:dd:ee:ff", true}, // low nibble f (1111) & 2 = true
+		// LAA clear (low nibble 0,1,4,5,8,9,c,d): 0,1,4,5,8,9,c,d
+		{"Hikvision universal OUI", "bc:ad:28:11:22:33", false}, // c -> 12 & 2 = 0
+		{"universal 00", "00:1a:11:22:33:44", false},
+		{"universal 08", "08:00:27:aa:bb:cc", false}, // VirtualBox OUI, but universal (not LAA)
+		{"universal 44", "44:65:0d:aa:bb:cc", false},
+		// Edge cases: non-canonical / empty must be false (never panic, never
+		// mis-flag a universal MAC as randomized).
+		{"empty", "", false},
+		{"too short", "aa:bb", false},
+		{"uppercase (non-canonical)", "AA:BB:CC:DD:EE:FF", false}, // IsLocalMAC expects canonical lowercase
+		{"non-hex", "gg:bb:cc:dd:ee:ff", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsLocalMAC(c.mac); got != c.want {
+				t.Errorf("IsLocalMAC(%q) = %v, want %v", c.mac, got, c.want)
+			}
+		})
+	}
+}
+
+// TestIsMulticastMAC covers the multicast bit check (bit 0 of the first octet,
+// 0x01). A unicast device should never source frames from a multicast MAC.
+func TestIsMulticastMAC(t *testing.T) {
+	cases := []struct {
+		name string
+		mac  string
+		want bool
+	}{
+		// multicast set (low nibble odd): 1,3,5,7,9,b,d,f
+		{"multicast 01", "01:00:5e:00:00:01", true}, // classic IPv4 multicast
+		{"multicast 33", "33:33:00:00:00:01", true}, // IPv6 multicast
+		{"multicast b3", "b3:bb:cc:dd:ee:ff", true},
+		// unicast (low nibble even): 0,2,4,6,8,a,c,e
+		{"unicast bc", "bc:ad:28:11:22:33", false},
+		{"unicast 02", "02:11:22:33:44:55", false}, // LAA but unicast
+		{"empty", "", false},
+		{"too short", "aa", false},
+		{"non-hex", "zz:bb:cc:dd:ee:ff", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsMulticastMAC(c.mac); got != c.want {
+				t.Errorf("IsMulticastMAC(%q) = %v, want %v", c.mac, got, c.want)
+			}
+		})
+	}
+}
+
 // TestRecordDevice_DoesNotCreateIdentity verifies the single-writer contract:
 // RecordDevice ENRICHES existing rows but never CREATES a device identity (no
 // INSERT). Device creation is the sole responsibility of runner.applyDeviceBridge.
