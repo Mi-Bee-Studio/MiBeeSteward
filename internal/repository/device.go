@@ -14,6 +14,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -243,6 +244,17 @@ func (r *DeviceRepository) CountByTypeForNetwork(ctx context.Context, networkID 
 // sortWhitelist maps a client-supplied sort token to the real column name. Any
 // token not in this map falls back to "id". This is the SQL-injection guard:
 // only these literals ever reach ORDER BY, never raw user input.
+//
+// The values here are column names (or `table.col`), NOT arbitrary SQL — they
+// are concatenated into `ORDER BY d.<col> <dir>` only after passing through
+// resolveSortExpr, which for ip_address substitutes a numeric-expression that
+// sorts IPs by value (not lexically). Because every value is a code constant
+// here and user input only selects which constant via the map lookup, there is
+// no injection surface. Columns already present in the listFilteredOn SELECT /
+// JOIN: id/name/type/status/ip_address/last_scanned_at/created_at on `d`, plus
+// n.name (from the LEFT JOIN networks) and scan_vendor/scan_hostname (promoted
+// scan columns on `d`). network_id is included for completeness even though the
+// UI sorts by network_name (a human-meaningful order) — agents/tools may use it.
 var sortWhitelist = map[string]string{
 	"id":              "id",
 	"name":            "name",
@@ -251,6 +263,79 @@ var sortWhitelist = map[string]string{
 	"type":            "type",
 	"last_scanned_at": "last_scanned_at",
 	"created_at":      "created_at",
+	"network_id":      "network_id",
+	"network_name":    "n.name",
+	"vendor":          "scan_vendor",
+	"hostname":        "scan_hostname",
+}
+
+// resolveSortExpr returns the ORDER BY expression for a client sort token,
+// already qualified for the listFilteredOn query (FROM devices d LEFT JOIN
+// networks n): plain columns are returned as `d.<col>` / `n.<col>`, and
+// ip_address is special-cased. Storing IPv4 as TEXT means a naive
+// `ORDER BY d.ip_address` sorts lexically, so 192.168.0.10 wrongly precedes
+// 192.168.0.9; we instead ORDER BY the dotted-quad re-emitted with each octet
+// zero-padded to 3 digits (009 < 010), which sorts numerically while staying a
+// pure string compare. The expression is built by ipSortKeyExpr from one
+// trim-call per octet, so it is readable and fully fixed at compile time (no
+// user input is interpolated — the injection guarantee of the plain-column path
+// is preserved). Non-IPv4 values (IPv6, empty) collapse to all-zero octets and
+// group at one end, which is acceptable for a TEXT column. Returns ("", false)
+// when the token is unknown so the caller applies its "id" default.
+func resolveSortExpr(key string) (expr string, ok bool) {
+	col, ok := sortWhitelist[key]
+	if !ok {
+		return "", false
+	}
+	if key == "ip_address" {
+		return ipSortKeyExpr("d.ip_address"), true
+	}
+	// sortWhitelist values are either bare columns (live on `d`) or already
+	// qualified ("n.name"). Qualify the bare ones; leave "n.x"/"d.x" alone.
+	if !strings.Contains(col, ".") {
+		return "d." + col, true
+	}
+	return col, true
+}
+
+// resolveDeviceSortExpr is the convenience wrapper: the sort expression for a
+// device-list token, defaulting to "d.id" when the token is unknown/empty.
+func resolveDeviceSortExpr(key string) string {
+	if expr, ok := resolveSortExpr(key); ok {
+		return expr
+	}
+	return "d.id"
+}
+
+// octetExpr returns a SQL expression that extracts the Nth dot-separated segment
+// of `ipCol` (1-indexed) and casts it to INTEGER. It is built by walking the
+// string N times: after each `instr(ip,'.')` we trim off the consumed prefix via
+// `substr(ip, instr(...)+1)`, so octet 2 = first segment of the once-trimmed
+// string, octet 3 = first segment of the twice-trimmed string, etc. The final
+// octet has no trailing dot, so instr(...)=0 and `substr(rest,1,-1)` would yield
+// ” — the CASE falls back to the whole `rest` when no dot remains. Used only to
+// compose ipSortKeyExpr; kept here so the per-octet noise lives in one place.
+func octetExpr(ipCol string, n int) string {
+	// `rest` starts as the whole column and loses one `.<octet>` prefix per step.
+	rest := ipCol
+	for i := 1; i < n; i++ {
+		// advance past the i-th dot: substr(rest, instr(rest,'.')+1)
+		rest = "substr(" + rest + ", instr(" + rest + ", '.') + 1)"
+	}
+	// dot position in the current `rest` (0 when this is the final octet)
+	dotPos := "instr(" + rest + ", '.')"
+	upTo := "substr(" + rest + ", 1, " + dotPos + " - 1)"
+	segment := "CASE WHEN " + dotPos + " > 0 THEN " + upTo + " ELSE " + rest + " END"
+	return "CAST(" + segment + " AS INTEGER)"
+}
+
+// ipSortKeyExpr composes the zero-padded IPv4 sort key: printf('%03d.%03d.%03d.%03d', o1, o2, o3, o4).
+func ipSortKeyExpr(ipCol string) string {
+	return "printf('%03d.%03d.%03d.%03d', " +
+		octetExpr(ipCol, 1) + ", " +
+		octetExpr(ipCol, 2) + ", " +
+		octetExpr(ipCol, 3) + ", " +
+		octetExpr(ipCol, 4) + ")"
 }
 
 // escapeLike escapes the SQL LIKE wildcards (\, %, _) in a search term so a
@@ -275,17 +360,14 @@ func escapeLike(s string) string {
 // sorting. The sort column is taken from sortWhitelist (never raw input), and
 // the search term is parameterized with ESCAPE, so there is no injection surface.
 func (r *DeviceRepository) ListFiltered(ctx context.Context, f domain.DeviceFilter) ([]DeviceWithNetwork, error) {
-	col := sortWhitelist[f.SortBy]
-	if col == "" {
-		col = "id"
-	}
+	sortExpr := resolveDeviceSortExpr(f.SortBy)
 	dir := "ASC"
 	if f.Order == "desc" {
 		dir = "DESC"
 	}
 	// Runs outside a transaction; for a snapshot-consistent list+count pair use
 	// ListFilteredWithCount instead.
-	return listFilteredOn(ctx, r.dbConn, f, col, dir)
+	return listFilteredOn(ctx, r.dbConn, f, sortExpr, dir)
 }
 
 // CountFiltered mirrors ListFiltered's WHERE so the page total reflects the
@@ -316,11 +398,8 @@ func strPtr(s string) *string { return &s }
 //
 // It returns the device page and the total matching the filter.
 func (r *DeviceRepository) ListFilteredWithCount(ctx context.Context, f domain.DeviceFilter) ([]DeviceWithNetwork, int64, error) {
-	// Resolve sort column once (shared by list + the tx wrapper).
-	col := sortWhitelist[f.SortBy]
-	if col == "" {
-		col = "id"
-	}
+	// Resolve sort expression once (shared by list + the tx wrapper).
+	sortExpr := resolveDeviceSortExpr(f.SortBy)
 	dir := "ASC"
 	if f.Order == "desc" {
 		dir = "DESC"
@@ -332,7 +411,7 @@ func (r *DeviceRepository) ListFilteredWithCount(ctx context.Context, f domain.D
 	}
 	defer func() { _ = tx.Rollback() }() // safe to roll back a committed tx (no-op)
 
-	list, err := listFilteredOn(ctx, tx, f, col, dir)
+	list, err := listFilteredOn(ctx, tx, f, sortExpr, dir)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -368,7 +447,7 @@ type DeviceWithNetwork struct {
 	NetworkName string
 }
 
-func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, dir string) ([]DeviceWithNetwork, error) {
+func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortExpr, dir string) ([]DeviceWithNetwork, error) {
 	var (
 		args           []any
 		statusVal      = f.Status
@@ -412,7 +491,7 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, col, 
 	  AND (? = '' OR d.created_at >= ?)
 	  AND (? = '' OR d.created_at <= ?)
 	  AND (? = 0 OR d.network_id = ?)
-	ORDER BY d.` + col + " " + dir + `
+	ORDER BY ` + sortExpr + " " + dir + `
 	LIMIT ? OFFSET ?`
 
 	args = append(args,
