@@ -203,11 +203,24 @@ List devices with filtering and pagination.
       "description": "Primary web hosting server",
       "status": "online",
       "ip_address": "192.168.1.100",
-      "mac_address": "00:1A:2B:3C:4D:5E",
+      "mac_address": "00:1a:2b:3c:4d:5e",
       "serial_number": "DELL123456",
       "purchase_date": "2022-01-15",
       "warranty_expiry": "2025-01-15",
       "tags": "web,primary",
+      "scan_attributes": {
+        "vendor": "Dell Inc.",
+        "oui_prefix": "001A2B",
+        "oui_vendor": "Dell Inc.",
+        "mac": "00:1a:2b:3c:4d:5e",
+        "mac_is_locally_administered": false,
+        "mac_is_multicast": false,
+        "hostname": "server-01",
+        "os": "Linux",
+        "inferred_type": "server",
+        "inferred_type_source": "protocol",
+        "scan_source": "scanner_v2"
+      },
       "created_at": "2023-01-01T00:00:00Z",
       "updated_at": "2023-01-01T00:00:00Z"
     }
@@ -215,6 +228,17 @@ List devices with filtering and pagination.
   "total": 1
 }
 ```
+
+**`scan_attributes` (engine-written discovery aggregation)** — a JSON object on each device carrying what a scan discovered. MAC/OUI-relevant fields:
+
+| Field | Description |
+|-------|-------------|
+| `vendor` | Device's SELF-DECLARED brand (via SNMP sysObjectID / HTTP Server header / TLS cert CN); falls back to OUI vendor when none of those fired. |
+| `oui_prefix` | The IEEE assignment block the MAC matched via longest-prefix lookup — 6 hex (MA-L /24), 7 hex (MA-M /28), or 9 hex (MA-S /36). Empty when no OUI table loaded or MAC unknown/locally administered. |
+| `oui_vendor` | The IEEE-registered organization name for `oui_prefix` — the **NIC silicon vendor**, distinct from `vendor` (they differ in OEM/rebrand/virtualization cases). |
+| `mac` | Normalized lowercase MAC (`aa:bb:cc:..`). |
+| `mac_is_locally_administered` | Neutral factual flag: the U/L bit (first octet `& 0x02`) is set — MAC assigned locally, not from an IEEE block. The bit CANNOT distinguish privacy randomization (unstable) from a locally fixed setting (stable), so this is observability-only and does NOT change device identity. |
+| `mac_is_multicast` | The I/G bit (first octet `& 0x01`) is set — a real device should never source from a multicast MAC; data-hygiene flag. |
 
 ### GET /api/v1/devices/stats
 Get device statistics (counts by status and type).
