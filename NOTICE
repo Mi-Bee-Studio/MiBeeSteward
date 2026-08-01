@@ -47,9 +47,20 @@ github.com/Mi-Bee-Studio/mibee-fingerprints-go are licensed under
 Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0).
 See configs/fingerprints/README.md for corpus attribution and provenance.
 
+== Embedded curated OUI vendor table ==
+
+The hand-authored curated MAC→vendor table embedded in the binary
+(internal/service/scannerv2/vendor/oui_curated.txt, source configs/oui-curated.txt)
+is licensed CC-BY-SA-4.0. It is a MiBee-authored subset of well-known vendor
+OUI prefixes, NOT a reproduction of the IEEE registry. The full IEEE registry
+(MA-L/MA-M/MA-S) is an optional runtime download (scripts/fetch-oui.sh) and is
+NOT bundled — it is loaded from scanner.oui_path when configured, overriding the
+embedded subset.
+
 Provenance of imported identification data:
-- Rapid7 Recog fingerprints     — Apache-2.0 (imported via cmd/fpimport)
-- IEEE OUI registry             — factual data, freely redistributable
+- Rapid7 Recog fingerprints       — Apache-2.0 (imported via cmd/fpimport)
+- IEEE OUI/MA-S/MA-M registry     — factual data, "All rights reserved" (IEEE);
+                                    cited, NOT relicensed into the CC-BY-SA corpus
 - IANA Private Enterprise Numbers — factual data, freely redistributable
 
 == Explicitly NOT included ==

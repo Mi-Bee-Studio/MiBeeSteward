@@ -265,6 +265,8 @@ The network scanner uses a plugin-based 5-layer architecture (probe → classify
 | `scanner.persist_raw_evidence` | bool | false | Write every probe observation to `service_evidence` (voluminous — enable for debugging only) |
 | `scanner.ebpf.enabled` | bool | false | Enable the eBPF passive observer (no-op unless built with `make build-with-ebpf`) |
 | `scanner.ebpf.interfaces` | []string | [] | Interfaces to attach the TC program to (empty = all non-loopback) |
+| `scanner.oui_path` | string | "" | Path to an IEEE OUI vendor file (MA-L+MA-M+MA-S, produced by `scripts/fetch-oui.sh`). Empty = use the embedded curated CC-BY-SA table (out-of-box coverage of common vendors). Override: `MIBEE_SCANNER_OUI_PATH`. |
+| `scanner.fingerprint_path` | string | "" | Directory of fingerprint YAML rules (see `docs/fingerprint-spec.md`). Empty = rules embedded in the binary. |
 | `scanner.pipeline_defaults.*` | various | — | Per-stage enable flags + `default_ports` (expanded to include camera + prometheus ports) |
 
 **Synchronous scan limit**: `POST /scanner/scan` rejects targets >1024 IPs with HTTP 413. Use the async task API (`POST /scanner/tasks` + `/trigger`) for larger ranges.

@@ -63,6 +63,19 @@ sub-assignee).
   curated table is a hand-authored CC-BY-SA subset, not an IEEE reproduction;
   the full IEEE set stays an optional runtime download.
 
+### UI: OUI vendor (NIC silicon) surfaced in device views
+**Follow-up to the OUI vendor inference above** — the new `oui_vendor` /
+`oui_prefix` fields (Phase 2) are now visible in the UI, kept distinct from the
+device's self-declared `vendor` brand.
+
+- **Device detail Discovery panel**: a new "OUI Vendor (NIC)" row after Vendor,
+  showing `oui_vendor` with the matched IEEE block (`oui_prefix`) as a tooltip.
+- **Expand-row device summary**: the same field after Vendor.
+- **Extras-leak fix**: the store's `RecordDevice`/`buildStoreScanAttributes`
+  path was letting `oui_prefix`/`oui_vendor` (and `mac`) fall through into
+  `scan_attributes.extras` (visible as raw `OUI_PREFIX`/`OUI_VENDOR` keys in the
+  Extras panel). They're now mapped to the typed fields and kept out of Extras.
+
 ## [0.4.0] - 2026-07-29
 
 **Router-resident discovery + OpenWrt deployment + device-persistence rewrite.**

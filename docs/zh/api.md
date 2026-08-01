@@ -201,11 +201,24 @@
       "description": "主要 Web 托管服务器",
       "status": "online",
       "ip_address": "192.168.1.100",
-      "mac_address": "00:1A:2B:3C:4D:5E",
+      "mac_address": "00:1a:2b:3c:4d:5e",
       "serial_number": "DELL123456",
       "purchase_date": "2022-01-15",
       "warranty_expiry": "2025-01-15",
       "tags": "web,primary",
+      "scan_attributes": {
+        "vendor": "Dell Inc.",
+        "oui_prefix": "001A2B",
+        "oui_vendor": "Dell Inc.",
+        "mac": "00:1a:2b:3c:4d:5e",
+        "mac_is_locally_administered": false,
+        "mac_is_multicast": false,
+        "hostname": "server-01",
+        "os": "Linux",
+        "inferred_type": "server",
+        "inferred_type_source": "protocol",
+        "scan_source": "scanner_v2"
+      },
       "created_at": "2023-01-01T00:00:00Z",
       "updated_at": "2023-01-01T00:00:00Z"
     }
@@ -213,6 +226,17 @@
   "total": 1
 }
 ```
+
+**`scan_attributes`（引擎写入的扫描发现聚合）** — 每个设备上的 JSON 对象，承载扫描发现的信息。MAC/OUI 相关字段：
+
+| 字段 | 描述 |
+|-------|-------------|
+| `vendor` | 设备**自报**品牌（经 SNMP sysObjectID / HTTP Server 头 / TLS 证书 CN）；以上都未命中时回落到 OUI 厂商。 |
+| `oui_prefix` | MAC 经最长前缀匹配命中的 IEEE 分配块——6 hex（MA-L /24）、7 hex（MA-M /28）或 9 hex（MA-S /36）。未加载 OUI 表或 MAC 未知/本地管理时为空。 |
+| `oui_vendor` | `oui_prefix` 对应的 IEEE 注册组织名——**NIC 芯片厂商**，与 `vendor` 分开（OEM/贴牌/虚拟化场景下两者不同）。 |
+| `mac` | 规范化小写 MAC（`aa:bb:cc:..`）。 |
+| `mac_is_locally_administered` | 中性事实标记：U/L 位（首字节 `& 0x02`）置位——MAC 由本地分配，非 IEEE 块。该位**无法**区分隐私随机化（不稳定）与本地固定设置（稳定），因此仅作观测，**不改变设备身份**。 |
+| `mac_is_multicast` | I/G 位（首字节 `& 0x01`）置位——真实设备不应从多播 MAC 发出；数据卫生标记。 |
 
 ### GET /api/v1/devices/stats
 获取设备统计信息（按状态和类型的计数）。

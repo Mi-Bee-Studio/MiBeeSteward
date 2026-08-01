@@ -268,6 +268,8 @@ export MIBEE_LOG_FORMAT=json
 | `scanner.persist_raw_evidence` | bool | false | 将每次探测观测写入 `service_evidence`（数据量大——仅调试时开启） |
 | `scanner.ebpf.enabled` | bool | false | 启用 eBPF 被动观测器（除非用 `make build-with-ebpf` 构建否则为 no-op） |
 | `scanner.ebpf.interfaces` | []string | [] | 挂载 TC 程序的网卡（空 = 所有非环回口） |
+| `scanner.oui_path` | string | "" | IEEE OUI 厂商映射文件路径（MA-L+MA-M+MA-S，由 `scripts/fetch-oui.sh` 生成）。空 = 用内嵌精简 CC-BY-SA 表（开箱即用，覆盖常见厂商）。环境变量覆盖：`MIBEE_SCANNER_OUI_PATH`。 |
+| `scanner.fingerprint_path` | string | "" | 指纹 YAML 规则目录（见 `docs/fingerprint-spec.md`）。空 = 用二进制内嵌规则。 |
 | `scanner.pipeline_defaults.*` | various | — | 各阶段开关 + `default_ports`（已扩展含摄像头 + prometheus 端口） |
 
 **同步扫描限制**：`POST /scanner/scan` 对 >1024 IP 的目标返回 HTTP 413。更大范围请用异步任务 API（`POST /scanner/tasks` + `/trigger`）。
