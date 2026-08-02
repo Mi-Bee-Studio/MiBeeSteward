@@ -24,6 +24,17 @@ network:
   cidr: ""        # e.g. "192.168.63.0/24" — advisory, not enforced
   site: ""        # e.g. "hq" / "datacenter-1"
 
+# center configures a discovery AGENT's upstream aggregation center. When url
+# is non-empty the binary runs in AGENT mode: it runs the scannerv2 engine
+# locally and reports results to this center via POST /agents/report (auth:
+# auth_token, a long-lived agent token minted on the center via
+# POST /api/v1/agents/tokens, bound to a networks row whose agent_id matches).
+# Empty url = center/standalone mode (serve API + SPA, no upstream reporting).
+# Distributed model: see docs/{en,zh}/distributed-guide.md.
+center:
+  url: ""               # e.g. "http://192.168.63.101:8080"; empty = standalone
+  auth_token: ""        # agent bearer token from the center; REQUIRED when url set
+  report_interval: "30s" # flush buffered results when buffer not full; default 30s
 
 auth:
   jwt_secret: "change-me-in-production"  # REQUIRED — must change, minimum 32 characters
@@ -138,6 +149,28 @@ scanner:
     routers: []        # e.g. ["192.168.63.1", "192.168.62.1"]
     community: "public"
     timeout: 4         # seconds per router walk
+  # rdns tunes the reverse-DNS probe (active:rdns). By default it uses the
+  # system resolver (/etc/resolv.conf), which on a center box often points at
+  # a public DNS with no view into the LAN's DHCP-synthesized PTR records — so
+  # hostnames are missed for devices that DO have a PTR on the local DNS.
+  # Populating dns_servers (e.g. the router/LAN DNS IP) makes the probe query
+  # those servers directly for PTR records. Each entry is host or host:port.
+  # Empty = use the system resolver. Override with MIBEE_SCANNER_RDNS_DNS_SERVERS.
+  rdns:
+    dns_servers: []    # e.g. ["192.168.63.1"] (the LAN DNS / router)
+    timeout: 2         # seconds per lookup
+  # mdns tunes the mDNS probe (active:mdns). unicast_queries also sends a
+  # unicast query to each target's 5353 port (in addition to multicast),
+  # reaching devices that answer unicast but not multicast.
+  mdns:
+    unicast_queries: false
+  # arp_scan is the active ARP-sweep discovery SOURCE (distinct from the
+  # passive arp_cache above): it broadcasts ARP who-has for every IP in the
+  # local subnet and emits a host per reply. The cadence reuses
+  # discovery.interval (no separate knob here). Needs CAP_NET_RAW + the
+  # WITH_ARPSCAN build tag; remains a no-op in the default build.
+  arp_scan:
+    interface: ""      # NIC to send on; empty = auto-select by network.cidr
   pipeline_defaults:
     icmp_enabled: true
     snmp_enabled: true
@@ -225,6 +258,12 @@ scanner:
   # center's own network uses the local-scan DetectLost path + heartbeat.
   agent_lease_ttl: "5m"        # how long a snapshot may be stale before expiring
   lease_sweep_interval: "60s"  # how often the expiration sweep runs
+  # reconcile_interval is how often the background network-attribution
+  # reconciliation job runs. It detects devices whose IP falls OUTSIDE their
+  # stamped network's CIDR — the bottom-line defense that catches drift the
+  # Layer 1/2 boundary checks miss. Low-frequency audit, not a hot path.
+  # Center-only; the agent does not run reconciliation. 0 = default 1h.
+  reconcile_interval: "1h"
 # ── Retention (data-volume management) ─────────────────────────────────────
 # The retention sweeper runs every sweep_interval_hours and prunes each
 # high-volume detail table in batches of batch_size rows (batching avoids
@@ -245,11 +284,25 @@ scanner:
 # offline clock. Each deletion is logged to change_log as device_removed.
 retention:
   heartbeat_results_days: 7
+  # device_liveness: per-device online/offline verdict series (sampled every
+  # heartbeat tick + on scan/lease transitions). Must cover the longest window
+  # the change engine queries (24h trend), so it tracks heartbeat_results (7d).
+  # The series is disposable (devices.status is source of truth).
+  device_liveness_days: 7
   scan_results_days: 30
   scan_task_runs_days: 30
   audit_logs_days: 90
   notification_log_days: 30
   service_evidence_days: 14
+  # change_log: device_added / changed / lost / recovered events. High value
+  # for asset-history audits, but grows fast (one row per real change per scan).
+  change_log_days: 30
+  # device_neighbors: L2 adjacency edges (Bridge-MIB / LLDP / CDP). Low write
+  # volume (upserted, not appended) + high value for topology history.
+  device_neighbors_days: 90
+  # host_services: classified service identities (upserted per scan). Rows for
+  # gone-silent hosts linger; this prunes them.
+  host_services_days: 30
   host_tls_certs_days: 30
   silent_device_days_mac: 7
   silent_device_hours_no_mac: 24
