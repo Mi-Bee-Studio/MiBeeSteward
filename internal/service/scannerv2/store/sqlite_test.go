@@ -41,6 +41,25 @@ func seedDeviceRow(t *testing.T, db *sql.DB, ip, mac string, networkID sql.NullI
 	return id
 }
 
+// seedDeviceRowWithUUID is seedDeviceRow with an explicit device_uuid, mirroring
+// runner.createDevice which calls uuid.NewString(). Used by tests that need the
+// uuid-resolution path to succeed (the satellite uuid-transition regression).
+func seedDeviceRowWithUUID(t *testing.T, db *sql.DB, ip, mac string, networkID sql.NullInt64, devUUID string) int64 {
+	t.Helper()
+	now := time.Now().UTC()
+	res, err := db.Exec(`
+		INSERT INTO devices (name, type, ip_address, mac_address, status, scan_source,
+		                     scan_attributes, network_id, device_uuid,
+		                     first_seen, last_seen, last_scanned_at, created_at, updated_at)
+		VALUES (?, 'other', ?, ?, 'online', 'scanner_v2', '{}', ?, ?, ?, ?, ?, ?, ?)`,
+		ip, ip, mac, networkID, devUUID, now, now, now, now, now)
+	if err != nil {
+		t.Fatalf("seed device row (with uuid): %v", err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
 func TestRecordServices_ReplaceOnRescan(t *testing.T) {
 	repo, ctx := newRepo(t, Options{})
 	ip := "10.0.0.1"
@@ -76,6 +95,67 @@ func TestRecordServices_ReplaceOnRescan(t *testing.T) {
 	}
 	if m["server"] != "nginx/1.25" {
 		t.Errorf("metadata not updated: %v", m)
+	}
+}
+
+// TestRecordServices_ReplaceAcrossUUIDResolution reproduces the regression from
+// #115/#129: the engine writes satellite rows BEFORE the runner persists the
+// device row, so on first discovery resolveDeviceUUID returns "" and rows land
+// with device_uuid=”. On the next scan the device row exists and the uuid is
+// resolved — but a DELETE scoped to the resolved uuid does NOT remove the
+// prior scan's device_uuid=” rows, so the INSERT collides on the
+// UNIQUE(ip,service,port) index and the fresh data is silently dropped
+// (downgraded to a Warn), leaving the service list frozen at scan-1.
+//
+// This test asserts the second scan's data wins after uuid resolution.
+func TestRecordServices_ReplaceAcrossUUIDResolution(t *testing.T) {
+	repo, ctx := newRepo(t, Options{})
+	ip := "10.0.0.5"
+
+	// Scan 1: no device row yet → resolveDeviceUUID returns "". Rows land with
+	// device_uuid=''. Mirrors first discovery via the orchestrator path.
+	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
+		{Service: "http", Port: 80, Confidence: 0.9, Metadata: map[string]string{"server": "nginx-old"}},
+	}); err != nil {
+		t.Fatalf("record services (scan 1): %v", err)
+	}
+	// Sanity: the row landed with empty device_uuid.
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_services WHERE ip=? AND device_uuid=''`, ip); cnt != 1 {
+		t.Fatalf("scan 1: expected 1 row with empty device_uuid, got %d", cnt)
+	}
+
+	// Device row created between scans (by runner.applyDeviceBridge → createDevice,
+	// which generates a real uuid). Seed one to mirror that.
+	const devUUID = "dev-uuid-aaaaaaaa"
+	seedDeviceRowWithUUID(t, repo.db, ip, "aa:bb:cc:dd:ee:ff", sql.NullInt64{}, devUUID)
+
+	// Scan 2: same http service, refreshed metadata. uuid now resolves → must
+	// replace scan-1's device_uuid='' row, not collide with it.
+	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
+		{Service: "http", Port: 80, Confidence: 0.95, Metadata: map[string]string{"server": "nginx-new"}},
+	}); err != nil {
+		t.Fatalf("record services (scan 2): %v", err)
+	}
+
+	// Exactly ONE row for (ip, http, 80) — not two — and it carries the fresh data.
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_services WHERE ip=? AND service='http' AND port=80`, ip); cnt != 1 {
+		t.Fatalf("scan 2: expected 1 http row, got %d (uuid-transition collision left a stale row)", cnt)
+	}
+	var meta, rowUUID string
+	if err := repo.db.QueryRow(
+		`SELECT metadata, device_uuid FROM host_services WHERE ip=? AND service='http' AND port=80`, ip,
+	).Scan(&meta, &rowUUID); err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(meta), &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["server"] != "nginx-new" {
+		t.Errorf("scan 2 data did not win: metadata server=%q, want %q (scan-1 row survived the uuid transition)", m["server"], "nginx-new")
+	}
+	if rowUUID != devUUID {
+		t.Errorf("scan 2 row device_uuid=%q, want %q (heal did not run)", rowUUID, devUUID)
 	}
 }
 
