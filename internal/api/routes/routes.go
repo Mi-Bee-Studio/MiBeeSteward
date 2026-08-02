@@ -785,22 +785,6 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}
 }
 
-// chunkSlice splits a slice into chunks of the given size.
-func chunkSlice[S any](items []S, batchSize int) [][]S {
-	if batchSize <= 0 {
-		return [][]S{items}
-	}
-	var chunks [][]S
-	for i := 0; i < len(items); i += batchSize {
-		end := i + batchSize
-		if end > len(items) {
-			end = len(items)
-		}
-		chunks = append(chunks, items[i:end])
-	}
-	return chunks
-}
-
 // parseDurationOrDefault parses a Go duration string, returning def on empty or
 // parse error. Used for optional background-loop timing config keys.
 func parseDurationOrDefault(s string, def time.Duration) time.Duration {

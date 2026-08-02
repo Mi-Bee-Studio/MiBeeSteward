@@ -504,6 +504,3 @@ func (s *HeartbeatStore) LivenessHistory(ctx context.Context, deviceID int64, fr
 	}
 	return out, rows.Err()
 }
-
-// keep slog referenced for the warn/error logs above
-var _ = slog.Default
