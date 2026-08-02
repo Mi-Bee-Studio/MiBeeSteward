@@ -293,5 +293,3 @@ func addDeviceItemToReport(item domain.AddDeviceItem) scannerv2.HostReport {
 	}
 	return rep
 }
-
-var _ = errors.New
