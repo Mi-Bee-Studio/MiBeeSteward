@@ -210,7 +210,6 @@ func (s *TOTPService) Disable(ctx context.Context, userID int64, password string
 		slog.Error("failed to get user for 2FA disable", "user_id", userID, "error", err)
 		return fmt.Errorf("failed to verify password")
 	}
-	_ = user.ID // assigned by Scan
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return ErrTOTPInvalidPassword
 	}

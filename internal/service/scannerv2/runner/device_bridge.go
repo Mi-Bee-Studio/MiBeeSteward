@@ -933,6 +933,3 @@ func containsAny(s string, subs ...string) bool {
 	}
 	return false
 }
-
-// keep slog referenced for the warn logs above when this file is the only user
-var _ = slog.Default

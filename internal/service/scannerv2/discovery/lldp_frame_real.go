@@ -30,7 +30,6 @@ import (
 	"net"
 	"sync"
 	"syscall"
-	"time"
 )
 
 // lldpEdge is defined in lldp_types.go (shared across build variants).
@@ -204,6 +203,3 @@ func openLLDPSocket(iface string) (int, error) {
 
 // htons, allUpInterfaces, and ifaceMAC are shared helpers defined in
 // frame_helpers.go (used by LLDP/CDP/ARP-scan raw-frame sources alike).
-
-// time import kept for future read-deadline variants; harmless.
-var _ = time.Second
