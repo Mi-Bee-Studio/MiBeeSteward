@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
@@ -307,11 +308,16 @@ func (s *Service) CancelTask(ctx context.Context, id int64) error {
 		return ErrScanNotRunning
 	}
 	if run, err := s.queries.GetLatestRun(ctx, id); err == nil && run.Status == "running" {
-		_ = s.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
+		// best-effort: mark the in-flight run cancelled so the UI does not
+		// show "running" forever. Log on failure — without this the run row
+		// stays stuck and the user cannot tell cancel didn't take effect.
+		if uerr := s.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
 			Status:       "cancelled",
 			ErrorMessage: "cancelled by user",
 			ID:           run.ID,
-		})
+		}); uerr != nil {
+			slog.Debug("taskservice: cancel run-status update failed", "task_id", id, "run_id", run.ID, "error", uerr)
+		}
 	}
 	return nil
 }
