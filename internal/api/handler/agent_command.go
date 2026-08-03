@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -204,7 +205,14 @@ func (h *AgentCommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		Status string `json:"status"` // "done" or "failed"
 		Result string `json:"result"` // optional JSON detail
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	// Empty body is allowed (defaults to status="done"); a malformed body is
+	// NOT — silently defaulting would record a broken agent payload as a
+	// successful completion, hiding the real outcome (#130).
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		slog.Warn("agent command complete: malformed body", "command_id", id, "error", err)
+		Error(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
 	if req.Status != "done" && req.Status != "failed" {
 		req.Status = "done"
 	}
