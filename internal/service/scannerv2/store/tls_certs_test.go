@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"testing"
 
 	"mibee-steward/internal/service/scannerv2"
@@ -79,6 +80,63 @@ func TestRecordTLSCerts_PersistsErrorRow(t *testing.T) {
 	}
 	if cn != "" {
 		t.Errorf("error row subject_cn = %q, want empty", cn)
+	}
+}
+
+// TestRecordTLSCerts_ReplaceAcrossUUIDResolution is the TLS-side mirror of
+// TestRecordServices_ReplaceAcrossUUIDResolution. It guards the same #129
+// regression class on host_tls_certs: the first scan lands rows before the
+// device identity exists (device_uuid=”), and once the runner creates the
+// device row between scans the uuid resolves. The DELETE must key on IP+port
+// (not the now-resolved uuid) or the device_uuid=” row from scan 1 would
+// survive and the cert chain would appear stale/duplicated. Unlike
+// host_services, host_tls_certs has no UNIQUE constraint on (ip,port), so the
+// failure mode is accumulating duplicate stale rows rather than a silent
+// INSERT collision — this test catches both shapes.
+func TestRecordTLSCerts_ReplaceAcrossUUIDResolution(t *testing.T) {
+	repo, ctx := newRepo(t, Options{})
+	ip := "10.0.0.5"
+
+	// Scan 1: no device row yet → resolveDeviceUUID returns "". The 443 leaf
+	// lands with device_uuid=''. Mirrors first discovery via the orchestrator.
+	if err := repo.RecordTLSCerts(ctx, ip, []scannerv2.TLSCertRecord{
+		{IP: ip, Port: 443, CertIndex: 0, SubjectCN: "old.example.com", PEM: "old-leaf"},
+	}); err != nil {
+		t.Fatalf("RecordTLSCerts (scan 1): %v", err)
+	}
+	// Sanity: the row landed with empty device_uuid.
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_tls_certs WHERE ip=? AND device_uuid=''`, ip); cnt != 1 {
+		t.Fatalf("scan 1: expected 1 row with empty device_uuid, got %d", cnt)
+	}
+
+	// Device row created between scans (runner.applyDeviceBridge → createDevice
+	// generates a real uuid). Seed one to mirror that.
+	const devUUID = "dev-uuid-tls-aaaaaaaa"
+	seedDeviceRowWithUUID(t, repo.db, ip, "aa:bb:cc:dd:ee:ff", sql.NullInt64{}, devUUID)
+
+	// Scan 2: 443 cert rotated. uuid now resolves → the device_uuid='' row from
+	// scan 1 must be removed (DELETE keyed on ip+port), not left behind.
+	if err := repo.RecordTLSCerts(ctx, ip, []scannerv2.TLSCertRecord{
+		{IP: ip, Port: 443, CertIndex: 0, SubjectCN: "new.example.com", PEM: "new-leaf"},
+	}); err != nil {
+		t.Fatalf("RecordTLSCerts (scan 2): %v", err)
+	}
+
+	// Exactly ONE 443 row — not two — carrying scan-2 data + the resolved uuid.
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_tls_certs WHERE ip=? AND port=443`, ip); cnt != 1 {
+		t.Fatalf("scan 2: expected 1 row for 443, got %d (uuid-transition left a stale duplicate)", cnt)
+	}
+	var cn, rowUUID string
+	if err := repo.db.QueryRow(
+		`SELECT subject_cn, device_uuid FROM host_tls_certs WHERE ip=? AND port=443 AND cert_index=0`, ip,
+	).Scan(&cn, &rowUUID); err != nil {
+		t.Fatal(err)
+	}
+	if cn != "new.example.com" {
+		t.Errorf("scan 2 data did not win: subject_cn=%q, want %q (scan-1 row survived the uuid transition)", cn, "new.example.com")
+	}
+	if rowUUID != devUUID {
+		t.Errorf("scan 2 row device_uuid=%q, want %q (heal did not run)", rowUUID, devUUID)
 	}
 }
 
