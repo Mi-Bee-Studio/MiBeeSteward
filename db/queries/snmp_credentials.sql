@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: AGPL-3.0-or-later
+--
+-- Copyright (c) 2026 MiBee Studio. All rights reserved.
+--
+-- This file is part of MiBee Steward, distributed under the GNU Affero General
+-- Public License v3.0 or later. You may use, modify, and redistribute it under
+-- those terms; see LICENSE for the full text. A commercial license is available
+-- for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+
+-- IMPORTANT: there are NO sqlc queries in this file. sqlc v1.27/v1.31's SQLite
+-- parser corrupts EVERY query against the snmp_credentials table (truncates
+-- the last token of SELECT/INSERT/UPDATE/RETURNING clauses), producing invalid
+-- SQL at runtime. All snmp_credentials access is therefore raw database/sql
+-- in internal/service/scannerv2/credresolver/store.go. The table DDL still
+-- lives in db/schema.sql (applied via CREATE TABLE IF NOT EXISTS at startup).
+--
+-- If a future sqlc release fixes this, the queries can move back here.

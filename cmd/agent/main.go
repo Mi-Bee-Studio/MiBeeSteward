@@ -145,13 +145,19 @@ func main() {
 	// mini-DB (seeded manually or via the task API on the center in a later
 	// phase). For now an operator adds rows to scan_tasks directly.
 	scanScheduler, schedErr := scannerv2scheduler.New(queries, dbConn,
-		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int) {
+		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64) {
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("scan_func_panic", "task_id", taskID, "panic", r)
 				}
 			}()
-			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence)
+			// Agent-side v3 credential support is intentionally deferred (TODO
+			// issue #135): it requires the agent to hold its own credential DB
+			// + master key, which is a larger distributed-credentials design.
+			// For now the agent ignores credential_id and uses its global v1/v2c
+			// community. Passing 0 here preserves the existing behavior.
+			_ = credentialID
+			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence, 0)
 		}, slog.Default())
 	if schedErr != nil {
 		slog.Error("failed to create scan scheduler", "error", schedErr)
@@ -303,7 +309,7 @@ func main() {
 			if err != nil {
 				return "", fmt.Errorf("create run: %w", err)
 			}
-			scanRunner.Run(ctx, run.ID, targets, to, cfg.Scanner.MaxConcurrentHosts, cfg.Scanner.PersistRawEvidence)
+			scanRunner.Run(ctx, run.ID, targets, to, cfg.Scanner.MaxConcurrentHosts, cfg.Scanner.PersistRawEvidence, 0)
 			return fmt.Sprintf(`{"run_id":%d,"targets":"%s"}`, run.ID, targets), nil
 		}, slog.Default())
 	cmdPoller.Start(ctxBg)

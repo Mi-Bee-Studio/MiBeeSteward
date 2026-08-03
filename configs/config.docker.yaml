@@ -30,6 +30,14 @@ database:
   sqlite:
     path: "/data/mibee.db"  # 容器内挂载点（VOLUME ["/data"]）
 
+# security.master_key: encrypts SNMPv3 USM passphrases at rest (AES-256-GCM).
+# Optional; leave empty to disable v3 credential storage (v1/v2c scans work
+# without it). Must be exactly 32 bytes when set. Generate with:
+#   head -c 32 /dev/urandom | base64  (decode to 32 raw bytes, or paste 32 ASCII chars)
+# Runtime override: MIBEE_SECURITY_MASTER_KEY
+security:
+  master_key: ""
+
 auth:
   jwt_secret: "CHANGE_THIS — generate with: openssl rand -base64 32"
   token_expiry: "1h"

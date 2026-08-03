@@ -333,6 +333,11 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		"ALTER TABLE devices ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL",
 		"ALTER TABLE devices ADD COLUMN first_seen TIMESTAMP",
 		"ALTER TABLE devices ADD COLUMN last_seen TIMESTAMP",
+		// SNMPv3 support (issue #135): bind a scan task to an SNMP credential
+		// row. NULL = use the engine's global default (v1/v2c community). The
+		// snmp_credentials table itself is created via schema.sql's CREATE TABLE
+		// IF NOT EXISTS above (run before this loop), so the FK target exists.
+		"ALTER TABLE scan_tasks ADD COLUMN credential_id INTEGER REFERENCES snmp_credentials(id) ON DELETE SET NULL",
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {

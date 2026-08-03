@@ -73,6 +73,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"scan_task_runs",
 		"scan_tasks",
 		"service_evidence",
+		"snmp_credentials",
 		"subnets",
 		"topology_edges",
 		"user_totp",
@@ -87,12 +88,12 @@ func TestSetupTestDBFromSchema_Reusable(t *testing.T) {
 	db1, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db1.Close()
-	require.Len(t, listTables(t, db1), 29)
+	require.Len(t, listTables(t, db1), 30)
 
 	db2, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db2.Close()
-	require.Len(t, listTables(t, db2), 29)
+	require.Len(t, listTables(t, db2), 30)
 }
 
 func TestSetupTestDB_WithPragmas(t *testing.T) {
