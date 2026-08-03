@@ -153,6 +153,14 @@ type ServerConfig struct {
 	WriteTimeout string `koanf:"write_timeout"`
 	// IdleTimeout bounds keep-alive idle connections. Default "120s".
 	IdleTimeout string `koanf:"idle_timeout"`
+	// TrustedProxies is the list of CIDRs (or bare IPs) authorized to set
+	// X-Forwarded-For. When the TCP peer is inside one of these networks, the
+	// RealIP middleware takes the leftmost X-Forwarded-For entry as the client
+	// IP (for rate limiting / audit logs). Empty (default) = trust NO proxy:
+	// the TCP peer is the client — the safe default for direct exposure.
+	// Populate with your reverse proxy's source range when deployed behind
+	// nginx/another proxy (e.g. ["127.0.0.1/32"] for localhost nginx).
+	TrustedProxies []string `koanf:"trusted_proxies"`
 }
 
 type DatabaseConfig struct {

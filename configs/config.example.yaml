@@ -9,6 +9,14 @@ server:
   read_timeout: "15s"
   write_timeout: "5m"
   idle_timeout: "120s"
+  # trusted_proxies authorizes which source IPs may set X-Forwarded-For (used
+  # by rate limiting + audit logs to identify the real client behind a proxy).
+  # Empty (default) = trust NO proxy: the TCP peer IS the client — the safe
+  # default for direct exposure (a client cannot forge its IP). Deploy behind
+  # nginx/another proxy and set this to the proxy's source range so the real
+  # client IP is honored. Bare IPs are treated as /32 (v4) or /128 (v6).
+  # Override at runtime with MIBEE_SERVER_TRUSTED_PROXIES (comma-separated).
+  trusted_proxies: []  # e.g. ["127.0.0.1/32"] for a localhost nginx, or ["10.0.0.5/32"]
 
 database:
   sqlite:
