@@ -164,17 +164,15 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	// Replace the host's prior service set. When we have a uuid, scope the delete
-	// to it (the stable identity); otherwise fall back to IP so unresolved hosts
-	// still get a clean replace instead of unbounded row growth.
-	if uuid != "" {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM host_services WHERE device_uuid = ?`, uuid); err != nil {
-			return err
-		}
-	} else {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM host_services WHERE ip = ? AND device_uuid = ?`, ip, ""); err != nil {
-			return err
-		}
+	// Replace the host's prior service set. The rows belong to this IP regardless
+	// of their device_uuid state, so the DELETE keys on IP. This matters across
+	// the uuid-resolution transition: scan 1 (no device row yet) lands rows with
+	// device_uuid='', scan 2 (uuid resolved) must remove those rows — a DELETE
+	// scoped to the resolved uuid would miss the device_uuid='' rows and the
+	// subsequent INSERT would collide on UNIQUE(ip,service,port), silently
+	// dropping the fresh data (regression #129).
+	if _, err := tx.ExecContext(ctx, `DELETE FROM host_services WHERE ip = ?`, ip); err != nil {
+		return err
 	}
 	if len(services) == 0 {
 		return tx.Commit()
@@ -253,21 +251,18 @@ func (r *SQLiteRepository) RecordTLSCerts(ctx context.Context, ip string, certs 
 	defer tx.Rollback() //nolint:errcheck
 
 	// Collect the distinct ports in this batch; delete prior rows for each.
-	// Keyed by device_uuid when resolved (follows the device across a roam),
-	// else falls back to IP (unresolved first-discovery host).
+	// Keyed by IP (not device_uuid): the cert chain belongs to whatever device
+	// currently holds this IP, and across the uuid-resolution transition a
+	// uuid-scoped DELETE would leave device_uuid='' rows from the first scan
+	// behind, accumulating duplicates (the (ip,port) index is non-unique, so no
+	// conflict — just stale rows). Mirrors the RecordServices fix (#129).
 	ports := make(map[int]struct{}, len(certs))
 	for _, c := range certs {
 		ports[c.Port] = struct{}{}
 	}
 	for port := range ports {
-		if uuid != "" {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM host_tls_certs WHERE device_uuid = ? AND port = ?`, uuid, port); err != nil {
-				return err
-			}
-		} else {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM host_tls_certs WHERE ip = ? AND device_uuid = ? AND port = ?`, ip, "", port); err != nil {
-				return err
-			}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM host_tls_certs WHERE ip = ? AND port = ?`, ip, port); err != nil {
+			return err
 		}
 	}
 
