@@ -286,30 +286,38 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	}); err != nil {
 		rn.logger.Error("scan runner: finalize run failed", "run_id", runID, "error", err)
 	}
-	// 5. Update task last-run status (best-effort).
-	_ = rn.queries.UpdateScanTaskStatus(ctx, db.UpdateScanTaskStatusParams{
+	// 5. Update task last-run status (best-effort) — log on failure so a
+	// stale last_run_status (task UI stuck on "running") is observable.
+	if err := rn.queries.UpdateScanTaskStatus(ctx, db.UpdateScanTaskStatusParams{
 		LastRunAt:     &finish,
 		LastRunStatus: strPtr("completed"),
 		ID:            taskID,
-	})
+	}); err != nil {
+		rn.logger.Debug("scan runner: finalize task status update failed", "task_id", taskID, "run_id", runID, "error", err)
+	}
 }
 
 // failRun marks a run failed and updates the task's last-run status.
 func (rn *Runner) failRun(ctx context.Context, runID, taskID int64, duration time.Duration, msg string) {
 	rn.logger.Error("scan runner: run failed", "run_id", runID, "task_id", taskID, "error", msg)
 	finish := time.Now()
-	_ = rn.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
+	// best-effort: log on failure so the run/task status reflects reality.
+	if err := rn.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
 		Status:       "failed",
 		DurationMs:   duration.Milliseconds(),
 		ErrorMessage: msg,
 		FinishedAt:   &finish,
 		ID:           runID,
-	})
-	_ = rn.queries.UpdateScanTaskStatus(ctx, db.UpdateScanTaskStatusParams{
+	}); err != nil {
+		rn.logger.Debug("scan runner: failRun run-status update failed", "run_id", runID, "task_id", taskID, "error", err)
+	}
+	if err := rn.queries.UpdateScanTaskStatus(ctx, db.UpdateScanTaskStatusParams{
 		LastRunAt:     &finish,
 		LastRunStatus: strPtr("failed"),
 		ID:            taskID,
-	})
+	}); err != nil {
+		rn.logger.Debug("scan runner: failRun task-status update failed", "task_id", taskID, "run_id", runID, "error", err)
+	}
 }
 
 // persistHost writes the per-host scan_result, then upserts the device and (for
