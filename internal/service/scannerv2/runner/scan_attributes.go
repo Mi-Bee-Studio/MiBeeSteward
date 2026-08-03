@@ -105,6 +105,16 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 			if v := e.RawData["oui_vendor"]; v != "" {
 				attr.OUIVendor = v
 			}
+			// The local interface name (e.g. eth0, br-lan) that the ARP entry was
+			// learned on — the 6th column of /proc/net/arp, captured by the ARP
+			// probe (probe/arp.go) and the post-scan MAC resolver. Pure debugging
+			// signal: it tells you which NIC on the center/agent saw this device,
+			// which helps trace "why wasn't X discovered" and hints at network
+			// segmentation (br-lan vs eth1). Last-write-wins like the OUI fields —
+			// a fresher evidence piece carries the current view.
+			if v := e.RawData["device"]; v != "" {
+				ensureExtras(&attr)["arp_interface"] = v
+			}
 		case "hostname":
 			if v := e.RawData["hostname"]; v != "" && attr.Hostname == "" {
 				attr.Hostname = v
