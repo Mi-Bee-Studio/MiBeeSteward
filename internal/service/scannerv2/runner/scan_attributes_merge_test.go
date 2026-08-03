@@ -235,3 +235,55 @@ func TestScanAttributes_OUIFieldsRecorded(t *testing.T) {
 	require.Contains(t, attrs, `"vendor":"Hikvision (self-declared via SNMP)"`,
 		"self-declared brand wins for top-level vendor, separate from oui_vendor")
 }
+
+// TestScanAttributes_ArpInterfaceRecorded guards #127: the local interface name
+// that the ARP entry was learned on (/proc/net/arp column 6, captured by the ARP
+// probe + post-scan MAC resolver) is surfaced under scan_attributes.extras so
+// "which NIC on the center/agent saw this device" is answerable. It is a
+// debugging/segmentation hint, not an identity signal — hence extras, not a
+// typed top-level field.
+func TestScanAttributes_ArpInterfaceRecorded(t *testing.T) {
+	rn, conn := setupScanAttrsTestDB(t)
+	ctx := context.Background()
+	const ip = "192.168.63.61"
+
+	// A mac evidence carrying the local interface name (the field the ARP probe
+	// sets from /proc/net/arp's Device column).
+	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+		map[string]string{"mac": "bc:ad:28:11:22:44"},
+		scannerv2.Evidence{Kind: "mac", RawData: map[string]string{
+			"mac":    "bc:ad:28:11:22:44",
+			"device": "br-lan",
+		}},
+	), rn.networkID, "")
+
+	var attrs string
+	require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE ip_address=?`, ip).Scan(&attrs))
+
+	// arp_interface lands under extras (debugging signal, not a typed field).
+	require.Contains(t, attrs, `"arp_interface":"br-lan"`,
+		"local interface name from ARP evidence should be recorded under extras.arp_interface")
+}
+
+// TestScanAttributes_ArpInterfaceAbsentWhenNoDevice ensures the extras key is
+// NOT fabricated when the ARP evidence carries no device name (e.g. a
+// synthetic/mac-resolver-only evidence without a real /proc/net/arp row) —
+// absence must stay absent rather than emitting an empty-string extra.
+func TestScanAttributes_ArpInterfaceAbsentWhenNoDevice(t *testing.T) {
+	rn, conn := setupScanAttrsTestDB(t)
+	ctx := context.Background()
+	const ip = "192.168.63.62"
+
+	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
+		map[string]string{"mac": "bc:ad:28:11:22:55"},
+		scannerv2.Evidence{Kind: "mac", RawData: map[string]string{
+			"mac": "bc:ad:28:11:22:55",
+			// no "device" key — common when the resolver only returned a MAC.
+		}},
+	), rn.networkID, "")
+
+	var attrs string
+	require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE ip_address=?`, ip).Scan(&attrs))
+	require.NotContains(t, attrs, "arp_interface",
+		"arp_interface must not appear when the ARP evidence carried no device name")
+}
