@@ -212,3 +212,112 @@ func TestListFiltered_DefaultSortByID(t *testing.T) {
 	// id order == insertion order; an unknown sort key must NOT reorder.
 	require.Equal(t, []string{"192.168.0.10", "192.168.0.9", "10.0.0.1"}, ipsOf(rows))
 }
+
+// TestEscapeLike is a table-driven unit test for the LIKE-wildcard escaper
+// (device.go:344). The search path feeds user input through escapeLike before
+// splicing into a LIKE ... ESCAPE '\' clause, so each of \, %, _ must be
+// backslash-prefixed or a search term doubles as a wildcard (e.g. searching
+// "10_0" matches "10x0"). Plain text is returned verbatim.
+func TestEscapeLike(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain", "192.168.0.1", "192.168.0.1"},
+		{"empty", "", ""},
+		{"underscore", "device_10", `device\_10`},
+		{"percent", "100%", `100\%`},
+		{"backslash", `C:\Users`, `C:\\Users`},
+		{"all three", `a_b%c\d`, `a\_b\%c\\d`},
+		{"no-op for letters", "camera-01", "camera-01"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, escapeLike(tc.in))
+		})
+	}
+}
+
+// TestResolveSortExpr_RejectsUnknownToken asserts the sort whitelist (device.go:258)
+// gates the ORDER BY column. Only whitelisted tokens resolve to a real column
+// expression; anything else — including an SQL-injection attempt — returns
+// ok=false so the caller falls back to "d.id". This is the guarantee that user
+// sort input can never reach the ORDER BY clause unsanitized.
+func TestResolveSortExpr_RejectsUnknownToken(t *testing.T) {
+	// Every whitelisted token resolves.
+	for token := range sortWhitelist {
+		expr, ok := resolveSortExpr(token)
+		require.True(t, ok, "whitelisted token %q should resolve", token)
+		require.NotEmpty(t, expr, "whitelisted token %q should yield an expression", token)
+	}
+
+	// Unknown / injection tokens must be rejected (ok=false), regardless of shape.
+	for _, bad := range []string{
+		"", // empty
+		"'; DROP TABLE devices;--",
+		"name; --",
+		"password",
+		"1=1",
+		"random_column",
+	} {
+		_, ok := resolveSortExpr(bad)
+		require.False(t, ok, "unknown sort token %q must be rejected", bad)
+	}
+	// The public wrapper falls back to "d.id" rather than passing it through.
+	require.Equal(t, "d.id", resolveDeviceSortExpr("'; DROP TABLE devices;--"))
+	require.Equal(t, "d.id", resolveDeviceSortExpr(""))
+}
+
+// TestListFiltered_SearchEscapesWildcards is the end-to-end guard that
+// escapeLike actually takes effect inside the generated LIKE clause: a device
+// whose name literally contains an underscore must be matched by a search for
+// that underscore, NOT treated as the "any single character" wildcard. Without
+// escaping, "10_0" would also match "1010", "10A0", etc.
+func TestListFiltered_SearchEscapesWildcards(t *testing.T) {
+	repo, conn := setupSortTestDB(t)
+	ctx := context.Background()
+
+	// Device whose name has a literal underscore (the wildcard-attracting case).
+	_, err := repo.Create(ctx, domain.CreateDeviceRequest{
+		Name:      "sensor_10",
+		Type:      "iot",
+		IPAddress: "10.0.0.10",
+	})
+	require.NoError(t, err)
+	// A decoy that differs from sensor_10 only in the underscore position: if the
+	// underscore were NOT escaped, searching "10_0" against ip would wildcard-match
+	// "1010" too. We search by name, so give the decoy a name that would also match
+	// an unescaped "_" search of "sensor_10" (any char between sensor and 10).
+	_, err = repo.Create(ctx, domain.CreateDeviceRequest{
+		Name:      "sensorX10", // matches "sensor_10" only if _ is an unescaped wildcard
+		Type:      "iot",
+		IPAddress: "10.0.0.11",
+	})
+	require.NoError(t, err)
+
+	// Search the literal string "sensor_10". With escaping: 1 hit (the underscore
+	// device only). Without: 2 hits (X is matched by the wildcard _).
+	rows, _, err := repo.ListFilteredWithCount(ctx, domain.DeviceFilter{
+		Search: "sensor_10",
+		Limit:  100,
+	})
+	require.NoError(t, err)
+	names := make([]string, 0, len(rows))
+	for _, r := range rows {
+		names = append(names, r.Device.Name)
+	}
+	require.Equal(t, []string{"sensor_10"}, names,
+		"underscore in search must be literal, not a wildcard — escapeLike must run on the LIKE input")
+
+	// Same proof with % : a name with a literal % must only match a % search.
+	_, err = conn.Exec(`UPDATE devices SET name='load 100%' WHERE name='sensorX10'`)
+	require.NoError(t, err)
+	rows, _, err = repo.ListFilteredWithCount(ctx, domain.DeviceFilter{
+		Search: "100%",
+		Limit:  100,
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "percent in search must be literal, not a wildcard")
+	require.Equal(t, "load 100%", rows[0].Device.Name)
+}
