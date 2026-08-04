@@ -140,7 +140,8 @@ func seedDevice(t *testing.T, q *db.Queries, name, ip, uuid string) int64 {
 	t.Helper()
 	dev, err := q.CreateDevice(context.Background(), db.CreateDeviceParams{
 		DeviceUuid: uuid, Name: name, Type: "camera", IpAddress: ip, Status: "online",
-		UserAttributes: "{}", // CHECK(json_valid(user_attributes)) requires valid JSON
+		MacAddress:     "aa:bb:cc:00:00:01", // stable MAC — cooldown keys on this
+		UserAttributes: "{}",                // CHECK(json_valid(user_attributes)) requires valid JSON
 	})
 	require.NoError(t, err)
 	return dev.ID

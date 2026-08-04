@@ -47,7 +47,10 @@ type RuleEngine struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	// Per-(rule, device-uuid) cooldown: the last time a rule fired for a device.
+	// Per-(rule, device-mac) cooldown: the last time a rule fired for a device.
+	// Keyed on MAC (not device_uuid or entity_id) because MAC is stable across
+	// identity rescan/re-add — a device that is deleted then re-discovered gets
+	// a fresh random uuid.NewString() and a new devices.id, but the same MAC.
 	// In-memory only (lost on restart); the changedetect layer's own 15min
 	// event-level cooldown is the backstop against duplicate dispatches.
 	cooldownMu sync.Mutex
@@ -56,7 +59,7 @@ type RuleEngine struct {
 
 type cooldownKey struct {
 	ruleID int64
-	uuid   string
+	mac    string
 }
 
 // NewRuleEngine constructs a RuleEngine. watcher/dispatcher may outlive the
@@ -149,15 +152,15 @@ func (e *RuleEngine) handleEvent(ctx context.Context, row db.ChangeLog) {
 		if !e.scopeMatches(rule, row, dev) {
 			continue
 		}
-		devUUID := ""
+		devMAC := ""
 		if dev != nil {
-			devUUID = dev.DeviceUuid
+			devMAC = dev.MacAddress
 		}
-		if !e.cooldownAllows(rule.ID, devUUID, rule.CooldownMinutes) {
+		if !e.cooldownAllows(rule.ID, devMAC, rule.CooldownMinutes) {
 			continue
 		}
 		e.dispatch(ctx, rule, row, dev)
-		e.markFired(ctx, rule.ID, devUUID)
+		e.markFired(ctx, rule.ID, devMAC)
 	}
 }
 
@@ -185,15 +188,15 @@ func (e *RuleEngine) scopeMatches(rule db.NotificationRule, row db.ChangeLog, de
 }
 
 // cooldownAllows reports whether the (rule, device) pair is outside its
-// anti-flap window. uuid may be "" (unidentified device) — in that case the
-// cooldown is keyed on ruleID alone.
-func (e *RuleEngine) cooldownAllows(ruleID int64, uuid string, cooldownMinutes int64) bool {
+// anti-flap window. mac may be "" (unidentified device) — in that case the
+// cooldown is keyed on ruleID alone (all unidentified events share one bucket).
+func (e *RuleEngine) cooldownAllows(ruleID int64, mac string, cooldownMinutes int64) bool {
 	if cooldownMinutes <= 0 {
 		return true
 	}
 	e.cooldownMu.Lock()
 	defer e.cooldownMu.Unlock()
-	last, ok := e.lastSent[cooldownKey{ruleID, uuid}]
+	last, ok := e.lastSent[cooldownKey{ruleID, mac}]
 	if !ok {
 		return true
 	}
@@ -219,9 +222,9 @@ func (e *RuleEngine) dispatch(ctx context.Context, rule db.NotificationRule, row
 
 // markFired records the cooldown timestamp (in-memory) + bumps the rule's
 // last_triggered_at diagnostic column (best-effort, errors logged not fatal).
-func (e *RuleEngine) markFired(ctx context.Context, ruleID int64, uuid string) {
+func (e *RuleEngine) markFired(ctx context.Context, ruleID int64, mac string) {
 	e.cooldownMu.Lock()
-	e.lastSent[cooldownKey{ruleID, uuid}] = time.Now()
+	e.lastSent[cooldownKey{ruleID, mac}] = time.Now()
 	e.cooldownMu.Unlock()
 	if err := e.queries.MarkNotificationRuleTriggered(ctx, ruleID); err != nil {
 		e.logger.Debug("notification rule engine: mark triggered failed", "rule_id", ruleID, "error", err)
