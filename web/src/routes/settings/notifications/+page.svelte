@@ -16,8 +16,9 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { html } from '$lib/utils/index';
 	import { channelTypeBadge } from '$lib/utils/badges';
-	import { notificationChannelSchema, validateField, validateForm } from '$lib/utils/validation';
+	import { notificationChannelSchema, notificationRuleSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { addToast } from '$lib/stores/toast';
+	import type { NotificationRule, NotificationRuleRequest } from '$lib/types';
 
 	import Modal from '$lib/components/Modal.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -295,6 +296,266 @@
 
 	let isAdmin = $derived($auth.user?.role === 'admin');
 
+	// --- Rules tab (#139) ---
+	// In-page tab toggle (no route split — keeps the page self-contained). The
+	// channels view above stays the default; rules is a sibling view.
+	let tab = $state<'channels' | 'rules'>('channels');
+
+	let rules = $state<NotificationRule[]>([]);
+	let rulesLoading = $state(false);
+	// Networks + devices lists for the scope dropdowns (loaded on first rules open).
+	let networks = $state<{ id: number; name: string; cidr: string }[]>([]);
+	let devices = $state<{ id: number; name: string; ip_address: string; device_uuid: string }[]>([]);
+
+	// Rule modal state
+	let ruleModalOpen = $state(false);
+	let editingRule = $state<NotificationRule | null>(null);
+	let ruleDeleteDialogOpen = $state(false);
+	let ruleDeleteTarget = $state<NotificationRule | null>(null);
+	let ruleFormLoading = $state(false);
+	let ruleFieldErrors = $state<Record<string, string>>({});
+
+	// Rule form fields
+	let ruleName = $state('');
+	let ruleEventType = $state('device_lost');
+	let ruleScopeType = $state<'all' | 'network' | 'device'>('all');
+	let ruleScopeNetworkId = $state<number | null>(null);
+	let ruleScopeDeviceUuid = $state('');
+	let ruleChannelId = $state<number | null>(null);
+	let ruleCooldown = $state(30);
+
+	async function fetchRules() {
+		rulesLoading = true;
+		try {
+			const res = await api.get<{ rules: NotificationRule[]; total: number }>('/notification/rules');
+			rules = res.rules || [];
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			rulesLoading = false;
+		}
+	}
+
+	// Lazy-load the networks/devices/channels reference data the rule form needs.
+	// Done once on first switch to the rules tab (not on page load — channels-only
+	// users never pay this cost).
+	let refLoaded = $state(false);
+	async function ensureRefData() {
+		if (refLoaded) return;
+		refLoaded = true;
+		try {
+			const [nets, devs] = await Promise.all([
+				api.get<{ networks: { id: number; name: string; cidr: string }[] }>('/networks'),
+				api.get<{ devices: { id: number; name: string; ip_address: string; device_uuid: string }[] }>('/devices?limit=500')
+			]);
+			networks = nets.networks || [];
+			devices = devs.devices || [];
+		} catch {
+			// Non-fatal: the dropdowns will just be empty.
+		}
+	}
+
+	function switchTab(next: 'channels' | 'rules') {
+		tab = next;
+		if (next === 'rules') {
+			fetchRules();
+			ensureRefData();
+		}
+	}
+
+	function resetRuleForm() {
+		ruleName = '';
+		ruleEventType = 'device_lost';
+		ruleScopeType = 'all';
+		ruleScopeNetworkId = null;
+		ruleScopeDeviceUuid = '';
+		ruleChannelId = null;
+		ruleCooldown = 30;
+		editingRule = null;
+		ruleFieldErrors = {};
+	}
+
+	function openCreateRule() {
+		resetRuleForm();
+		ruleModalOpen = true;
+	}
+
+	function openEditRule(rule: NotificationRule) {
+		editingRule = rule;
+		ruleName = rule.name;
+		ruleEventType = rule.event_type;
+		ruleScopeType = rule.scope_type as 'all' | 'network' | 'device';
+		ruleScopeNetworkId = rule.scope_network_id ?? null;
+		ruleScopeDeviceUuid = rule.scope_device_uuid ?? '';
+		ruleChannelId = rule.channel_id;
+		ruleCooldown = rule.cooldown_minutes;
+		ruleFieldErrors = {};
+		ruleModalOpen = true;
+	}
+
+	function eventLabel(t: string): string {
+		switch (t) {
+			case 'device_lost': return m["notifications.Event Device Lost"]();
+			case 'device_recovered': return m["notifications.Event Device Recovered"]();
+			case 'device_added': return m["notifications.Event Device Added"]();
+			case 'device_changed': return m["notifications.Event Device Changed"]();
+		}
+		return t;
+	}
+
+	function scopeLabel(rule: NotificationRule): string {
+		switch (rule.scope_type) {
+			case 'all': return m["notifications.Scope All"]();
+			case 'network': {
+				const n = networks.find((x) => x.id === rule.scope_network_id);
+				return n ? `${m["notifications.Scope Network"]()}: ${n.name}` : m["notifications.Scope Network"]();
+			}
+			case 'device': {
+				const d = devices.find((x) => x.device_uuid === rule.scope_device_uuid);
+				return d ? `${m["notifications.Scope Device"]()}: ${d.name || d.ip_address}` : m["notifications.Scope Device"]();
+			}
+		}
+		return rule.scope_type;
+	}
+
+	function channelName(id: number): string {
+		const c = channels.find((x) => x.id === id);
+		return c ? c.name : `#${id}`;
+	}
+
+	async function handleRuleSubmit(e: Event) {
+		e.preventDefault();
+		const validation = validateForm(notificationRuleSchema, {
+			name: ruleName,
+			event_type: ruleEventType,
+			scope_type: ruleScopeType,
+			scope_network_id: ruleScopeNetworkId,
+			scope_device_uuid: ruleScopeDeviceUuid,
+			channel_id: ruleChannelId ?? 0,
+			cooldown_minutes: ruleCooldown
+		});
+		if (!validation.valid) {
+			ruleFieldErrors = validation.errors;
+			return;
+		}
+		ruleFieldErrors = {};
+		ruleFormLoading = true;
+		const body: NotificationRuleRequest = {
+			name: ruleName,
+			event_type: ruleEventType,
+			scope_type: ruleScopeType,
+			scope_network_id: ruleScopeType === 'network' ? ruleScopeNetworkId : null,
+			scope_device_uuid: ruleScopeType === 'device' ? ruleScopeDeviceUuid : '',
+			channel_id: ruleChannelId!,
+			cooldown_minutes: ruleCooldown
+		};
+		try {
+			if (editingRule) {
+				await api.put(`/notification/rules/${editingRule.id}`, body);
+				addToast('success', m["notifications.Rule Updated"]());
+			} else {
+				await api.post('/notification/rules', body);
+				addToast('success', m["notifications.Rule Created"]());
+			}
+			ruleModalOpen = false;
+			resetRuleForm();
+			fetchRules();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			ruleFormLoading = false;
+		}
+	}
+
+	async function toggleRuleEnabled(rule: NotificationRule) {
+		try {
+			await api.patch(`/notification/rules/${rule.id}`, { enabled: !rule.enabled });
+			addToast('success', rule.enabled ? m["notifications.Rule Disabled"]() : m["notifications.Rule Enabled"]());
+			fetchRules();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
+	function openDeleteRule(rule: NotificationRule) {
+		ruleDeleteTarget = rule;
+		ruleDeleteDialogOpen = true;
+	}
+
+	async function confirmDeleteRule() {
+		if (!ruleDeleteTarget) return;
+		try {
+			await api.delete(`/notification/rules/${ruleDeleteTarget.id}`);
+			ruleDeleteTarget = null;
+			addToast('success', m["notifications.Rule Deleted"]());
+			fetchRules();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
+	const ruleColumns = $derived([
+		{
+			key: 'name',
+			label: m["notifications.Rule Name"](),
+			sortable: true,
+			render: (row: Record<string, unknown>) =>
+				html`<span class="font-medium text-text">${row.name}</span>`
+		},
+		{
+			key: 'event_type',
+			label: m["notifications.Event Type"](),
+			sortable: true,
+			render: (row: Record<string, unknown>) =>
+				html`<span class="text-xs px-2 py-0.5 rounded bg-accent-purple/15 text-accent-purple font-mono">${eventLabel(String(row.event_type))}</span>`
+		},
+		{
+			key: 'scope',
+			label: m["notifications.Scope"](),
+			render: (row: Record<string, unknown>) => {
+				const r = rules.find((x) => x.id === row.id);
+				return html`<span class="text-xs text-text-muted">${r ? scopeLabel(r) : row.scope_type}</span>`;
+			}
+		},
+		{
+			key: 'channel_id',
+			label: m["notifications.Channel"](),
+			render: (row: Record<string, unknown>) =>
+				html`<span class="text-sm text-text">${channelName(Number(row.channel_id))}</span>`
+		},
+		{
+			key: 'cooldown_minutes',
+			label: m["notifications.Cooldown Minutes"](),
+			sortable: true,
+			render: (row: Record<string, unknown>) =>
+				html`<span class="text-text-muted">${row.cooldown_minutes}m</span>`
+		},
+		{
+			key: 'enabled',
+			label: m["notifications.Enabled"](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const enabled = row.enabled;
+				const id = row.id;
+				return html`<button data-rule-toggle-id="${id}" class="text-xs px-2 py-0.5 rounded cursor-pointer transition-colors ${enabled
+					? 'bg-success/15 text-success hover:bg-success/25'
+					: 'bg-border/30 text-text-muted hover:bg-border/50'
+				}">${enabled ? m["notifications.Enabled"]() : m["notifications.Disabled"]()}</button>`;
+			}
+		},
+		{
+			key: 'actions',
+			label: m["common.Actions"](),
+			render: (row: Record<string, unknown>) => {
+				const id = row.id;
+				return html`<div class="flex items-center gap-2">
+					<button data-rule-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors">${m["common.Edit"]()}</button>
+					<button data-rule-delete-id="${id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>
+				</div>`;
+			}
+		}
+	]);
+
 	const columns = $derived([
 		{
 			key: 'name',
@@ -360,68 +621,141 @@
 {:else}
 <div class="p-6">
 	<!-- Header -->
-	<div class="flex items-center justify-between mb-6">
+	<div class="flex items-center justify-between mb-4">
 		<div class="flex items-center gap-3">
 			<a href="/settings" class="text-text-muted hover:text-text transition-colors">
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
 				</svg>
 			</a>
-			<h2 class="text-2xl font-bold text-primary">{m["notifications.Channels"]()}</h2>
+			<h2 class="text-2xl font-bold text-primary">{m["notifications.Notification Settings"]()}</h2>
 		</div>
-		<button
-			onclick={openCreate}
-			class="px-4 py-2 bg-primary text-text-inverse font-semibold rounded-lg
-				hover:bg-primary-hover transition-colors text-sm"
-		>
-			+ {m["notifications.Create Channel"]()}
-		</button>
+		{#if tab === 'channels'}
+			<button
+				onclick={openCreate}
+				class="px-4 py-2 bg-primary text-text-inverse font-semibold rounded-lg
+					hover:bg-primary-hover transition-colors text-sm"
+			>
+				+ {m["notifications.Create Channel"]()}
+			</button>
+		{:else}
+			<button
+				onclick={openCreateRule}
+				class="px-4 py-2 bg-primary text-text-inverse font-semibold rounded-lg
+					hover:bg-primary-hover transition-colors text-sm"
+				disabled={channels.length === 0}
+				title={channels.length === 0 ? m["notifications.No Channels For Rules"]() : ''}
+			>
+				+ {m["notifications.Create Rule"]()}
+			</button>
+		{/if}
 	</div>
 
-	<!-- Error -->
-	{#if error}
-		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
-			{error}
-		</div>
-	{/if}
+	<!-- Tab switcher: Channels | Rules -->
+	<div class="flex border-b border-border mb-6">
+		<button
+			onclick={() => switchTab('channels')}
+			class="px-4 py-2 text-sm font-medium transition-colors border-b-2 {tab === 'channels'
+				? 'border-primary text-primary'
+				: 'border-transparent text-text-muted hover:text-text'}"
+		>{m["notifications.Channels"]()}</button>
+		<button
+			onclick={() => switchTab('rules')}
+			class="px-4 py-2 text-sm font-medium transition-colors border-b-2 {tab === 'rules'
+				? 'border-primary text-primary'
+				: 'border-transparent text-text-muted hover:text-text'}"
+		>{m["notifications.Rules"]()}</button>
+	</div>
 
-	<!-- Loading skeleton -->
-	{#if loading}
-		<PageSkeleton type="table" />
-	{:else if channels.length === 0}
-		<EmptyState
-			icon="🔔"
-			title={m["notifications.No Channels"]()}
-			description={m["notifications.No Channels Desc"]()}
-			actionLabel={m["notifications.Create Channel"]()}
-			onAction={openCreate}
-		/>
-	{:else}
-		<!-- Channel table -->
-		<div class="bg-surface border border-border rounded-lg p-4">
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<div onclick={(e) => {
-				const target = e.target as HTMLElement;
-				const btn = target.closest('[data-delete-id],[data-edit-id],[data-test-id],[data-toggle-id]') as HTMLElement | null;
-				if (!btn) return;
-				const id = Number(btn.dataset.deleteId || btn.dataset.editId || btn.dataset.testId || btn.dataset.toggleId);
-				const channel = channels.find((c) => c.id === id);
-				if (!channel) return;
-				if (btn.dataset.deleteId !== undefined) openDelete(channel);
-				else if (btn.dataset.editId !== undefined) openEdit(channel);
-				else if (btn.dataset.testId !== undefined) testChannel(channel);
-				else if (btn.dataset.toggleId !== undefined) toggleEnabled(channel);
-			}}>
-				<DataTable
-					{columns}
-					rows={channels as unknown as Record<string, unknown>[]}
-					searchPlaceholder={m["notifications.Search Channels"]()}
-					searchableKeys={['name', 'type']}
-					emptyTitle={m["common.No Results"]()}
-				/>
+	{#if tab === 'channels'}
+		<!-- Error -->
+		{#if error}
+			<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
+				{error}
 			</div>
-		</div>
+		{/if}
+
+		<!-- Loading skeleton -->
+		{#if loading}
+			<PageSkeleton type="table" />
+		{:else if channels.length === 0}
+			<EmptyState
+				icon="🔔"
+				title={m["notifications.No Channels"]()}
+				description={m["notifications.No Channels Desc"]()}
+				actionLabel={m["notifications.Create Channel"]()}
+				onAction={openCreate}
+			/>
+		{:else}
+			<!-- Channel table -->
+			<div class="bg-surface border border-border rounded-lg p-4">
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<div onclick={(e) => {
+					const target = e.target as HTMLElement;
+					const btn = target.closest('[data-delete-id],[data-edit-id],[data-test-id],[data-toggle-id]') as HTMLElement | null;
+					if (!btn) return;
+					const id = Number(btn.dataset.deleteId || btn.dataset.editId || btn.dataset.testId || btn.dataset.toggleId);
+					const channel = channels.find((c) => c.id === id);
+					if (!channel) return;
+					if (btn.dataset.deleteId !== undefined) openDelete(channel);
+					else if (btn.dataset.editId !== undefined) openEdit(channel);
+					else if (btn.dataset.testId !== undefined) testChannel(channel);
+					else if (btn.dataset.toggleId !== undefined) toggleEnabled(channel);
+				}}>
+					<DataTable
+						{columns}
+						rows={channels as unknown as Record<string, unknown>[]}
+						searchPlaceholder={m["notifications.Search Channels"]()}
+						searchableKeys={['name', 'type']}
+						emptyTitle={m["common.No Results"]()}
+					/>
+				</div>
+			</div>
+		{/if}
+	{:else}
+		<!-- Rules tab -->
+		{#if channels.length === 0}
+			<EmptyState
+				icon="🔔"
+				title={m["notifications.No Channels For Rules"]()}
+				description={m["notifications.No Channels For Rules Desc"]()}
+			/>
+		{:else if rulesLoading}
+			<PageSkeleton type="table" />
+		{:else if rules.length === 0}
+			<EmptyState
+				icon="📨"
+				title={m["notifications.No Rules"]()}
+				description={m["notifications.No Rules Desc"]()}
+				actionLabel={m["notifications.Create Rule"]()}
+				onAction={openCreateRule}
+			/>
+		{:else}
+			<div class="bg-surface border border-border rounded-lg p-4">
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<div onclick={(e) => {
+					const target = e.target as HTMLElement;
+					const btn = target.closest('[data-rule-delete-id],[data-rule-edit-id],[data-rule-toggle-id]') as HTMLElement | null;
+					if (!btn) return;
+					const id = Number(btn.dataset.ruleDeleteId || btn.dataset.ruleEditId || btn.dataset.ruleToggleId);
+					const rule = rules.find((r) => r.id === id);
+					if (!rule) return;
+					if (btn.dataset.ruleDeleteId !== undefined) openDeleteRule(rule);
+					else if (btn.dataset.ruleEditId !== undefined) openEditRule(rule);
+					else if (btn.dataset.ruleToggleId !== undefined) toggleRuleEnabled(rule);
+				}}>
+					<DataTable
+						columns={ruleColumns}
+						rows={rules as unknown as Record<string, unknown>[]}
+						searchPlaceholder={m["common.Search"]() + '…'}
+						searchableKeys={['name', 'event_type']}
+						emptyTitle={m["common.No Results"]()}
+					/>
+				</div>
+			</div>
+		{/if}
 	{/if}
 </div>
 {/if}
@@ -641,4 +975,101 @@
 	confirmVariant="danger"
 	onConfirm={confirmDelete}
 	onCancel={() => { deleteTarget = null; }}
+/>
+
+<!-- Rule create/edit modal (#139) -->
+<Modal bind:open={ruleModalOpen} title={editingRule ? m["notifications.Edit Rule"]() : m["notifications.Create Rule"]()} onClose={resetRuleForm} maxWidth="36rem">
+	<form onsubmit={handleRuleSubmit} class="space-y-4">
+		<!-- Name -->
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["notifications.Rule Name"]()} *</label>
+			<input bind:value={ruleName} required class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors" />
+		</div>
+
+		<!-- Event type -->
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["notifications.Event Type"]()}</label>
+			<select bind:value={ruleEventType} class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none">
+				<option value="device_lost">{m["notifications.Event Device Lost"]()}</option>
+				<option value="device_recovered">{m["notifications.Event Device Recovered"]()}</option>
+				<option value="device_added">{m["notifications.Event Device Added"]()}</option>
+				<option value="device_changed">{m["notifications.Event Device Changed"]()}</option>
+			</select>
+		</div>
+
+		<!-- Scope -->
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["notifications.Scope"]()}</label>
+			<select bind:value={ruleScopeType} class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none">
+				<option value="all">{m["notifications.Scope All"]()}</option>
+				<option value="network">{m["notifications.Scope Network"]()}</option>
+				<option value="device">{m["notifications.Scope Device"]()}</option>
+			</select>
+		</div>
+		{#if ruleScopeType === 'network'}
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m["notifications.Select Network"]()}</label>
+				<select bind:value={ruleScopeNetworkId} class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none {ruleFieldErrors.scope_network_id ? '!border-error' : ''}">
+					<option value={null}>{m["notifications.Select Network"]()}</option>
+					{#each networks as n}
+						<option value={n.id}>{n.name} ({n.cidr})</option>
+					{/each}
+				</select>
+				{#if ruleFieldErrors.scope_network_id}<p class="mt-1 text-xs text-error">{ruleFieldErrors.scope_network_id}</p>{/if}
+			</div>
+		{/if}
+		{#if ruleScopeType === 'device'}
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m["notifications.Select Device"]()}</label>
+				<select bind:value={ruleScopeDeviceUuid} class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none {ruleFieldErrors.scope_device_uuid ? '!border-error' : ''}">
+					<option value="">{m["notifications.Select Device"]()}</option>
+					{#each devices as d}
+						<option value={d.device_uuid}>{d.name || d.ip_address} ({d.ip_address})</option>
+					{/each}
+				</select>
+				{#if ruleFieldErrors.scope_device_uuid}<p class="mt-1 text-xs text-error">{ruleFieldErrors.scope_device_uuid}</p>{/if}
+			</div>
+		{/if}
+
+		<!-- Channel -->
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["notifications.Channel"]()} *</label>
+			<select bind:value={ruleChannelId} class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none {ruleFieldErrors.channel_id ? '!border-error' : ''}">
+				<option value={null}>{m["notifications.Select Channel"]()}</option>
+				{#each channels as c}
+					<option value={c.id}>{c.name} ({c.type})</option>
+				{/each}
+			</select>
+			{#if ruleFieldErrors.channel_id}<p class="mt-1 text-xs text-error">{ruleFieldErrors.channel_id}</p>{/if}
+		</div>
+
+		<!-- Cooldown -->
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["notifications.Cooldown Minutes"]()} *</label>
+			<input bind:value={ruleCooldown} type="number" min="1" max="10080" required class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors" />
+			<p class="mt-1 text-xs text-text-muted">{m["notifications.Cooldown Hint"]()}</p>
+		</div>
+
+		<!-- Actions -->
+		<div class="flex gap-3 pt-2">
+			<button type="submit" disabled={ruleFormLoading} class="px-6 py-2 bg-primary text-text-inverse font-semibold rounded-lg hover:bg-primary-hover transition-colors disabled:opacity-50 text-sm inline-flex items-center gap-2">
+				{#if ruleFormLoading}<LoaderCircle class="w-4 h-4 animate-spin" aria-hidden="true" />{/if}
+				<span>{m["common.Save"]()}</span>
+			</button>
+			<button type="button" onclick={() => { ruleModalOpen = false; resetRuleForm(); }} class="px-6 py-2 border border-border text-text-muted rounded-lg hover:border-primary transition-colors text-sm">
+				{m["common.Cancel"]()}
+			</button>
+		</div>
+	</form>
+</Modal>
+
+<!-- Rule delete confirmation -->
+<ConfirmDialog
+	bind:open={ruleDeleteDialogOpen}
+	title={m["notifications.Delete Rule"]()}
+	message={ruleDeleteTarget ? `${m["common.Are you sure?"]()} "${ruleDeleteTarget.name}"` : ''}
+	confirmLabel={m["common.Delete"]()}
+	confirmVariant="danger"
+	onConfirm={confirmDeleteRule}
+	onCancel={() => { ruleDeleteTarget = null; }}
 />

@@ -625,6 +625,40 @@ export interface AgentCommand {
 }
 
 // ---------------------------------------------------------------------------
+// Notification rule (notification_rules table — #139 event→channel bindings)
+// ---------------------------------------------------------------------------
+
+export interface NotificationRule {
+	id: number;
+	name: string;
+	event_type: string; // device_lost | device_recovered | device_added | device_changed
+	scope_type: string; // all | network | device
+	scope_network_id?: number | null;
+	scope_device_uuid?: string;
+	channel_id: number;
+	cooldown_minutes: number;
+	enabled: boolean;
+	last_triggered_at?: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface NotificationRuleRequest {
+	name: string;
+	event_type: string;
+	scope_type: string;
+	scope_network_id?: number | null;
+	scope_device_uuid?: string;
+	channel_id: number;
+	cooldown_minutes: number;
+}
+
+export interface NotificationRuleListResponse {
+	rules: NotificationRule[];
+	total: number;
+}
+
+// ---------------------------------------------------------------------------
 // Notification log (notification_log table — outbound dispatch history)
 // ---------------------------------------------------------------------------
 

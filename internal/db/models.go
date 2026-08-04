@@ -265,6 +265,21 @@ type NotificationReadState struct {
 	ReadAt            time.Time `json:"read_at"`
 }
 
+type NotificationRule struct {
+	ID              int64      `json:"id"`
+	Name            string     `json:"name"`
+	EventType       string     `json:"event_type"`
+	ScopeType       string     `json:"scope_type"`
+	ScopeNetworkID  *int64     `json:"scope_network_id"`
+	ScopeDeviceUuid string     `json:"scope_device_uuid"`
+	ChannelID       int64      `json:"channel_id"`
+	CooldownMinutes int64      `json:"cooldown_minutes"`
+	Enabled         int64      `json:"enabled"`
+	LastTriggeredAt *time.Time `json:"last_triggered_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
 type ScanResult struct {
 	ID                   int64     `json:"id"`
 	TaskID               int64     `json:"task_id"`

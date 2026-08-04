@@ -265,6 +265,26 @@ CREATE TABLE IF NOT EXISTS notification_log (
     sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Notification rules (#139): bind a change-detection event type to a delivery
+-- channel with an optional scope filter and per-rule cooldown. The RuleEngine
+-- subscribes to changedetect.Watcher, matches incoming db.ChangeLog rows
+-- against these rules, and dispatches via the existing notification.Dispatcher.
+-- rule_id on notification_log (above) is populated by rule-triggered dispatches.
+CREATE TABLE IF NOT EXISTS notification_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    event_type TEXT NOT NULL,                  -- device_lost|device_recovered|device_added|device_changed
+    scope_type TEXT NOT NULL DEFAULT 'all',    -- all|network|device
+    scope_network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+    scope_device_uuid TEXT NOT NULL DEFAULT '',-- device scope: device_uuid (stable across IP changes)
+    channel_id INTEGER NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
+    cooldown_minutes INTEGER NOT NULL DEFAULT 30, -- per-(rule,device) anti-flap window
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_triggered_at TIMESTAMP,               -- last dispatch by this rule (display + diagnostics)
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Per-user notification read state. notification_log is system-wide (no
 -- recipient concept — it's a delivery log), so a separate join table tracks
 -- which (user_id, notification_log_id) pairs each user has read. This lets
@@ -290,6 +310,7 @@ CREATE TABLE IF NOT EXISTS user_totp (
 
 -- Indexes for new tables
 CREATE INDEX IF NOT EXISTS idx_notification_log_sent_at ON notification_log(sent_at);
+CREATE INDEX IF NOT EXISTS idx_notification_rules_event ON notification_rules(event_type, enabled);
 
 -- Scan task schedules
 CREATE TABLE IF NOT EXISTS scan_tasks (

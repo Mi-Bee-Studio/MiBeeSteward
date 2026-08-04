@@ -183,6 +183,175 @@ func (s *NotificationService) DeleteChannel(ctx context.Context, id int64) error
 	return nil
 }
 
+// --- Notification Rule CRUD (#139) ---
+
+var ErrRuleNotFound = errors.New("notification rule not found")
+
+// CreateRule validates and creates a new notification rule. The caller
+// (handler) is responsible for verifying the channel exists; this method only
+// validates the rule's own fields.
+func (s *NotificationService) CreateRule(ctx context.Context, req domain.CreateRuleRequest) (*domain.RuleResponse, error) {
+	if err := validateRuleFields(req.EventType, req.ScopeType, req.Name, req.ChannelID, req.ScopeNetworkID, req.ScopeDeviceUUID); err != nil {
+		return nil, err
+	}
+	rule, err := s.q.CreateNotificationRule(ctx, db.CreateNotificationRuleParams{
+		Name:            req.Name,
+		EventType:       req.EventType,
+		ScopeType:       req.ScopeType,
+		ScopeNetworkID:  req.ScopeNetworkID,
+		ScopeDeviceUuid: req.ScopeDeviceUUID,
+		ChannelID:       req.ChannelID,
+		CooldownMinutes: normalizeCooldown(req.CooldownMinutes),
+		Enabled:         1,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create notification rule: %w", err)
+	}
+	resp := toRuleResponse(rule)
+	return &resp, nil
+}
+
+// GetRule retrieves a notification rule by ID.
+func (s *NotificationService) GetRule(ctx context.Context, id int64) (*domain.RuleResponse, error) {
+	rule, err := s.q.GetNotificationRule(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrRuleNotFound
+		}
+		return nil, fmt.Errorf("failed to get notification rule: %w", err)
+	}
+	resp := toRuleResponse(rule)
+	return &resp, nil
+}
+
+// ListRules returns all notification rules (newest first).
+func (s *NotificationService) ListRules(ctx context.Context) ([]domain.RuleResponse, error) {
+	rules, err := s.q.ListNotificationRules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list notification rules: %w", err)
+	}
+	out := make([]domain.RuleResponse, 0, len(rules))
+	for _, r := range rules {
+		out = append(out, toRuleResponse(r))
+	}
+	return out, nil
+}
+
+// UpdateRule replaces a rule's mutable fields (full-replace, like UpdateChannel).
+func (s *NotificationService) UpdateRule(ctx context.Context, id int64, req domain.UpdateRuleRequest) (*domain.RuleResponse, error) {
+	if err := validateRuleFields(req.EventType, req.ScopeType, req.Name, req.ChannelID, req.ScopeNetworkID, req.ScopeDeviceUUID); err != nil {
+		return nil, err
+	}
+	rule, err := s.q.UpdateNotificationRule(ctx, db.UpdateNotificationRuleParams{
+		Name:            req.Name,
+		EventType:       req.EventType,
+		ScopeType:       req.ScopeType,
+		ScopeNetworkID:  req.ScopeNetworkID,
+		ScopeDeviceUuid: req.ScopeDeviceUUID,
+		ChannelID:       req.ChannelID,
+		CooldownMinutes: normalizeCooldown(req.CooldownMinutes),
+		ID:              id,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrRuleNotFound
+		}
+		return nil, fmt.Errorf("failed to update notification rule: %w", err)
+	}
+	resp := toRuleResponse(rule)
+	return &resp, nil
+}
+
+// SetRuleEnabled toggles a rule's enabled flag (single-field UPDATE).
+func (s *NotificationService) SetRuleEnabled(ctx context.Context, id int64, enabled bool) (*domain.RuleResponse, error) {
+	en := int64(0)
+	if enabled {
+		en = 1
+	}
+	rule, err := s.q.SetNotificationRuleEnabled(ctx, db.SetNotificationRuleEnabledParams{Enabled: en, ID: id})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrRuleNotFound
+		}
+		return nil, fmt.Errorf("failed to toggle notification rule: %w", err)
+	}
+	resp := toRuleResponse(rule)
+	return &resp, nil
+}
+
+// DeleteRule removes a notification rule.
+func (s *NotificationService) DeleteRule(ctx context.Context, id int64) error {
+	if err := s.q.DeleteNotificationRule(ctx, id); err != nil {
+		return fmt.Errorf("failed to delete notification rule: %w", err)
+	}
+	return nil
+}
+
+// ListEnabledRulesByEventType loads enabled rules matching an event type. Used
+// by the RuleEngine hot path (change event → candidate rules).
+func (s *NotificationService) ListEnabledRulesByEventType(ctx context.Context, eventType string) ([]db.NotificationRule, error) {
+	return s.q.ListEnabledRulesByEventType(ctx, eventType)
+}
+
+// validateRuleFields checks the cross-field constraints shared by create/update.
+// Channel existence is NOT checked here (the handler does it so it can return a
+// 409/400 with a channel-specific message before touching the DB).
+func validateRuleFields(eventType, scopeType, name string, channelID int64, networkID *int64, deviceUUID string) error {
+	if name == "" {
+		return fmt.Errorf("rule name is required")
+	}
+	if !domain.IsValidRuleEventType(eventType) {
+		return fmt.Errorf("invalid event_type: %s", eventType)
+	}
+	if !domain.IsValidRuleScopeType(scopeType) {
+		return fmt.Errorf("invalid scope_type: %s", scopeType)
+	}
+	if channelID <= 0 {
+		return fmt.Errorf("channel_id is required")
+	}
+	switch scopeType {
+	case domain.RuleScopeNetwork:
+		if networkID == nil || *networkID <= 0 {
+			return fmt.Errorf("scope_network_id is required when scope_type=network")
+		}
+	case domain.RuleScopeDevice:
+		if deviceUUID == "" {
+			return fmt.Errorf("scope_device_uuid is required when scope_type=device")
+		}
+	}
+	return nil
+}
+
+// normalizeCooldown clamps cooldown to [1, 10080] minutes (1 min … 7 days).
+// 0 would mean "no cooldown" which defeats the anti-flap purpose; a very large
+// value effectively disables the rule.
+func normalizeCooldown(minutes int) int64 {
+	if minutes <= 0 {
+		return 30 // default
+	}
+	if minutes > 10080 {
+		return 10080
+	}
+	return int64(minutes)
+}
+
+func toRuleResponse(r db.NotificationRule) domain.RuleResponse {
+	return domain.RuleResponse{
+		ID:              r.ID,
+		Name:            r.Name,
+		EventType:       r.EventType,
+		ScopeType:       r.ScopeType,
+		ScopeNetworkID:  r.ScopeNetworkID,
+		ScopeDeviceUUID: r.ScopeDeviceUuid,
+		ChannelID:       r.ChannelID,
+		CooldownMinutes: int(r.CooldownMinutes),
+		Enabled:         r.Enabled == 1,
+		LastTriggeredAt: r.LastTriggeredAt,
+		CreatedAt:       r.CreatedAt,
+		UpdatedAt:       r.UpdatedAt,
+	}
+}
+
 // --- Notification Logs ---
 
 // ListNotificationLogs returns notification logs with pagination.
