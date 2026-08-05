@@ -363,6 +363,7 @@ export interface TopoEdge {
 	to_mac: string;
 	protocol: string;
 	local_port?: string | null;
+	remote_port?: string | null; // far-end ifName (LLDP/CDP only; empty for Bridge-MIB/ARP)
 }
 
 export interface TopologyGraph {

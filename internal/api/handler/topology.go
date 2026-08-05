@@ -45,12 +45,17 @@ type topoNode struct {
 // topoEdge is one L2 adjacency: a device sees a neighbor (by MAC) via a
 // discovery protocol. ToDeviceID is non-nil when the neighbor MAC matches a
 // scanned device (solid edge); nil = unidentified neighbor (dashed edge).
+//
+// LocalPort/RemotePort carry the human-readable ifName at each end of the link
+// (issue #136 port-level drill-down). RemotePort is empty for protocols that
+// don't report it (Bridge-MIB/ARP see only the local port; LLDP/CDP carry both).
 type topoEdge struct {
 	FromDeviceID int64   `json:"from_device_id"`
 	ToDeviceID   *int64  `json:"to_device_id"`
 	ToMAC        string  `json:"to_mac"`
 	Protocol     string  `json:"protocol"` // LLDP / CDP / Bridge-MIB / ARP
 	LocalPort    *string `json:"local_port"`
+	RemotePort   *string `json:"remote_port"`
 }
 
 // Graph handles GET /api/v1/topology?network_id=X — the full node + edge set
@@ -98,6 +103,7 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 			ToMAC:        e.NeighborMac,
 			Protocol:     e.Protocol,
 			LocalPort:    e.LocalPort,
+			RemotePort:   e.RemotePort,
 		})
 	}
 
