@@ -78,6 +78,9 @@
 	let formTargetsError = $state('');
 	let formCronError = $state('');
 	let fieldErrors = $state<Record<string, string>>({});
+	// SNMP credential binding (issue #135). null = use the global community.
+	let credentials = $state<Array<{ id: number; name: string; security_level: string }>>([]);
+	let formCredentialId = $state<number | null>(null);
 
 	// --- Delete confirmation ---
 	let deleteOpen = $state(false);
@@ -101,7 +104,17 @@
 	}
 
 	// --- Lifecycle ---
-	onMount(fetchTasks);
+	onMount(async () => {
+		// Best-effort load of SNMP credentials for the task-binding selector.
+		// Silently degrades (selector hidden) for non-admins or when v3 disabled.
+		try {
+			const res = await api.get<{ credentials: Array<{ id: number; name: string; security_level: string }> }>('/snmp-credentials');
+			credentials = res.credentials ?? [];
+		} catch {
+			// non-admin / disabled — leave empty
+		}
+		await fetchTasks();
+	});
 
 	// Clear all in-flight poll timers on unmount so navigating away mid-run
 	// does not keep firing requests (and writing toasts/state) against a
@@ -155,6 +168,7 @@
 		formCronExpr = '';
 		formTimeout = 300;
 		formCommunity = 'public';
+		formCredentialId = null;
 		formEnabled = true;
 		formPipelineConfig = defaultPipeline();
 		formError = '';
@@ -175,6 +189,7 @@
 		formCronExpr = task.cron_expr;
 		formTimeout = task.timeout;
 		formCommunity = task.community;
+		formCredentialId = task.credential_id ?? null;
 		formEnabled = task.enabled;
 		// Parse pipeline_config if it's a string
 		if (task.pipeline_config) {
@@ -231,6 +246,7 @@
 			cron_expr: formCronExpr,
 			timeout: formTimeout,
 			community: formCommunity,
+			credential_id: formCredentialId,
 			enabled: formEnabled,
 			pipeline_config: formPipelineConfig
 		};
@@ -702,10 +718,28 @@
 				<input
 					bind:value={formCommunity}
 					placeholder="public"
+					disabled={formCredentialId !== null}
 					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
-						focus:border-primary focus:outline-none"
+						focus:border-primary focus:outline-none disabled:opacity-60"
 				/>
 			</div>
+
+			<!-- SNMP credential (issue #135) — shown only when credentials exist -->
+			{#if credentials.length > 0}
+				<div>
+					<label class="block text-xs text-text-muted mb-1">{m['snmpCredentials.Title']()}</label>
+					<select
+						bind:value={formCredentialId}
+						class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+							focus:border-primary focus:outline-none"
+					>
+						<option value={null}>— {m['snmpCredentials.Community']()} —</option>
+						{#each credentials as c (c.id)}
+							<option value={c.id}>{c.name} ({c.security_level})</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 
 			<!-- Enabled toggle -->
 			<div class="flex items-end gap-2 pb-1">

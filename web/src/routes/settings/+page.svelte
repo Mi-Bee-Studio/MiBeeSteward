@@ -449,6 +449,16 @@ function handleCancel2FASetup() {
 			<span class="text-sm text-muted">›</span>
 		</button>
 
+		<!-- SNMP credentials section (issue #135 — SNMPv3) -->
+		<button
+			type="button"
+			onclick={() => goto('/settings/snmp-credentials')}
+			class="w-full text-left bg-surface border border-border rounded-xl p-6 mb-6 flex items-center justify-between hover:border-primary transition-colors"
+		>
+			<h3 class="text-lg font-semibold text-text">{m["snmpCredentials.Title"]()}</h3>
+			<span class="text-sm text-muted">›</span>
+		</button>
+
 		<!-- Language section -->
 		<div class="bg-surface border border-border rounded-xl p-6">
 			<h3 class="text-lg font-semibold text-text mb-4">{m["settings.Language"]()}</h3>
