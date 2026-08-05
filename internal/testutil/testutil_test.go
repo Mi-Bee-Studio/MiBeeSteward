@@ -74,6 +74,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"scan_task_runs",
 		"scan_tasks",
 		"service_evidence",
+		"snmp_credentials",
 		"subnets",
 		"topology_edges",
 		"user_totp",

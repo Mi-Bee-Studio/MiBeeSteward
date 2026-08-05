@@ -15,6 +15,13 @@ database:
   sqlite:
     path: "./data/mibee.db"  # SQLite 数据库文件路径
 
+# 安全配置：master_key 用于加密 SNMPv3 USM 凭据（auth/priv passphrase），AES-256-GCM。
+# 可选；留空则禁用 v3 凭据存储（v1/v2c 扫描不受影响）。必须恰好 32 字节。
+# 生成：head -c 32 /dev/urandom | base64（再取 32 字节原文，或直接填 32 个 ASCII 字符）。
+# 运行时覆盖：MIBEE_SECURITY_MASTER_KEY
+security:
+  master_key: ""
+
 # 认证配置
 auth:
   jwt_secret: "CHANGE_THIS — generate with: openssl rand -base64 32"  # JWT 签名密钥，生产环境必须更改

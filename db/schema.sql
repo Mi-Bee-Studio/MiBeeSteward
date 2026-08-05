@@ -312,6 +312,25 @@ CREATE TABLE IF NOT EXISTS user_totp (
 CREATE INDEX IF NOT EXISTS idx_notification_log_sent_at ON notification_log(sent_at);
 CREATE INDEX IF NOT EXISTS idx_notification_rules_event ON notification_rules(event_type, enabled);
 
+
+-- === SNMP credentials (issue #135 — SNMPv3 support) ===
+-- snmp_credentials stores per-credential SNMP authentication material.
+CREATE TABLE IF NOT EXISTS snmp_credentials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    security_level TEXT NOT NULL,
+    community TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL DEFAULT '',
+    auth_protocol TEXT NOT NULL DEFAULT '',
+    auth_passphrase_enc TEXT NOT NULL DEFAULT '',
+    priv_protocol TEXT NOT NULL DEFAULT '',
+    priv_passphrase_enc TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_snmp_credentials_name ON snmp_credentials(name);
+
 -- Scan task schedules
 CREATE TABLE IF NOT EXISTS scan_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -322,6 +341,12 @@ CREATE TABLE IF NOT EXISTS scan_tasks (
     global_labels TEXT NOT NULL DEFAULT '{}',
     timeout INTEGER NOT NULL DEFAULT 300,
     concurrent_hosts INTEGER NOT NULL DEFAULT 50,
+    -- credential_id optionally binds this task to an SNMPv3 (or v1/v2c)
+    -- credential row. NULL/0 = use the engine's global default (v1/v2c via
+    -- scanner.snmp_community). Set when the task should run with a specific
+    -- v3 credential. Added by issue #135 (SNMPv3); backfilled onto existing
+    -- DBs by the runMigrations ALTER TABLE below.
+    credential_id INTEGER REFERENCES snmp_credentials(id) ON DELETE SET NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
     last_run_at TIMESTAMP,
     next_run_at TIMESTAMP,
@@ -618,4 +643,3 @@ CREATE TABLE IF NOT EXISTS agent_commands (
     result TEXT                          -- JSON result/err from the agent (optional)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_commands_agent_status ON agent_commands(agent_id, status);
-

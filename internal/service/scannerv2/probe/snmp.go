@@ -66,21 +66,28 @@ func NewSNMPProbe() *SNMPProbe { return &SNMPProbe{} }
 
 func (p *SNMPProbe) Name() string { return "active:snmp" }
 
-// Probe queries ip:161. hint.Community overrides the default "public";
-// hint.Timeout bounds each SNMP Get attempt.
+// Probe queries ip:161. Credential selection:
+//   - hint carries an SNMPv3 credential → only SNMPv3 is attempted (the
+//     credential's security level / auth / priv is authoritative; falling back
+//     to v2c/v1 would defeat the point of a hardened target).
+//   - hint carries a v1/v2c credential OR no credential → legacy v2c→v1
+//     ladder (many embedded devices answer only v1).
+//
+// hint.Timeout bounds each SNMP Get attempt. Up to 2 retries per version with
+// a short backoff (UDP is lossy on busy networks; one dropped packet must not
+// produce a false "no SNMP" verdict).
 func (p *SNMPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
-	community := hint.Community
-	if community == "" {
-		community = "public"
-	}
-	timeout := hint.Timeout
-	if timeout <= 0 {
-		timeout = 3 * time.Second
+	// Build the version ladder. A v3 credential collapses it to [Version3];
+	// otherwise the legacy v2c→v1 pair (the common embedded-device case).
+	var versions []gosnmp.SnmpVersion
+	if hint.IsV3() {
+		versions = []gosnmp.SnmpVersion{gosnmp.Version3}
+	} else {
+		versions = []gosnmp.SnmpVersion{gosnmp.Version2c, gosnmp.Version1}
 	}
 
-	// Try v2c first, then v1. Many embedded devices answer only v1.
-	for _, version := range []gosnmp.SnmpVersion{gosnmp.Version2c, gosnmp.Version1} {
-		raw, usedVersion := p.trySNMP(ctx, ip, community, version, timeout)
+	for _, version := range versions {
+		raw, usedVersion := p.trySNMP(ctx, ip, hint, version)
 		if raw != nil {
 			raw["snmp_version"] = snmpVersionLabel(usedVersion)
 			if uptimeRaw := raw["sys_up_time"]; uptimeRaw != "" {
@@ -100,7 +107,8 @@ func (p *SNMPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 			}}, nil
 		}
 		// Bail out early if the host is unreachable at L3 (no point retrying v1
-		// if the UDP packets got ICMP-port-unreachable / timed out).
+		// if the UDP packets got ICMP-port-unreachable / timed out). v3 has no
+		// fallback so this only short-circuits the v2c→v1 ladder.
 		select {
 		case <-ctx.Done():
 			return nil, nil
@@ -110,9 +118,11 @@ func (p *SNMPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	return nil, nil
 }
 
-// trySNMP runs up to 2 attempts at the given SNMP version. Returns the parsed
-// varbinds (non-nil) on success, or (nil, version) on failure.
-func (p *SNMPProbe) trySNMP(ctx context.Context, ip, community string, version gosnmp.SnmpVersion, timeout time.Duration) (map[string]string, gosnmp.SnmpVersion) {
+// trySNMP runs up to 2 attempts at the given SNMP version, threading the
+// credential through connectSNMP. Returns the parsed varbinds (non-nil) on
+// success, or (nil, version) on failure. The per-attempt timeout comes from
+// hint.Timeout (read by connectSNMP), not a separate parameter.
+func (p *SNMPProbe) trySNMP(ctx context.Context, ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion) (map[string]string, gosnmp.SnmpVersion) {
 	backoff := 200 * time.Millisecond
 	for attempt := 0; attempt < 2; attempt++ {
 		select {
@@ -120,7 +130,7 @@ func (p *SNMPProbe) trySNMP(ctx context.Context, ip, community string, version g
 			return nil, version
 		default:
 		}
-		raw, ok := snmpGetOnce(ip, community, version, timeout)
+		raw, ok := snmpGetOnce(ip, hint, version)
 		if ok {
 			return raw, version
 		}
@@ -137,17 +147,11 @@ func (p *SNMPProbe) trySNMP(ctx context.Context, ip, community string, version g
 	return nil, version
 }
 
-// snmpGetOnce opens a connection, runs a single Get, and parses varbinds.
-func snmpGetOnce(ip, community string, version gosnmp.SnmpVersion, timeout time.Duration) (map[string]string, bool) {
-	snmp := &gosnmp.GoSNMP{
-		Target:    ip,
-		Port:      161,
-		Community: community,
-		Version:   version,
-		Timeout:   timeout,
-		Retries:   0, // we do our own retry loop above
-	}
-	if err := snmp.Connect(); err != nil {
+// snmpGetOnce opens a connection (via the shared connectSNMP so v3 / v1 / v2c
+// are all handled uniformly), runs a single Get, and parses varbinds.
+func snmpGetOnce(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion) (map[string]string, bool) {
+	snmp, err := connectSNMP(ip, hint, version)
+	if err != nil {
 		return nil, false // host may simply not run SNMP — no evidence
 	}
 	defer snmp.Conn.Close()

@@ -18,6 +18,7 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import { LoaderCircle, Radar } from '@lucide/svelte';
+	import { onMount } from 'svelte';
 
 	// All 9 device types matching internal/domain/device.go
 	const DEVICE_TYPES = ['pc', 'embedded', 'iot', 'other', 'server', 'switch', 'router', 'firewall', 'nas'] as const;
@@ -53,6 +54,22 @@
 	let community = $state('public');
 	let timeout = $state(2);
 	let targetsError = $state('');
+	// SNMP credential selection (issue #135). When set, overrides community and
+	// routes the scan through v3 USM (or the credential's own community).
+	let credentials = $state<Array<{ id: number; name: string; security_level: string }>>([]);
+	let selectedCredentialId = $state<number | null>(null);
+
+	// Best-effort credential list load (issue #135). Failures are silent — the
+	// community field still works as the fallback. Admin-only endpoint; non-admin
+	// users just see no selector and use community as before.
+	onMount(async () => {
+		try {
+			const res = await api.get<{ credentials: Array<{ id: number; name: string; security_level: string }> }>('/snmp-credentials');
+			credentials = res.credentials ?? [];
+		} catch {
+			// Non-admin or disabled — leave credentials empty; selector hidden.
+		}
+	});
 
 	// Results state
 	let scanning = $state(false);
@@ -134,7 +151,8 @@
 			const res = await api.post<ScanResponse>('/scanner/scan', {
 				targets: targets.trim(),
 				community: community || 'public',
-				timeout: timeout || 2
+				timeout: timeout || 2,
+				credential_id: selectedCredentialId ?? undefined
 			});
 			result = res;
 
@@ -295,9 +313,27 @@
 					bind:value={community}
 					placeholder="public"
 					class="input"
-					disabled={scanning}
+					disabled={scanning || selectedCredentialId !== null}
 				/>
+				{#if selectedCredentialId !== null}
+					<p class="text-xs text-text-muted mt-1">Overridden by selected credential</p>
+				{/if}
 			</div>
+			{#if credentials.length > 0}
+				<div>
+					<label class="label text-sm">{m['snmpCredentials.Title']()}</label>
+					<select
+						bind:value={selectedCredentialId}
+						class="input"
+						disabled={scanning}
+					>
+						<option value={null}>{m['snmpCredentials.Community']()} ({community || 'public'})</option>
+						{#each credentials as c (c.id)}
+							<option value={c.id}>{c.name} ({c.security_level})</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 			<div>
 				<label class="label text-sm">{m['scanner.Timeout']()}</label>
 				<input

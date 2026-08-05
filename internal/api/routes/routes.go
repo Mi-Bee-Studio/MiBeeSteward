@@ -26,11 +26,13 @@ import (
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/config"
+	"mibee-steward/internal/crypto"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
+	credresolver "mibee-steward/internal/service/scannerv2/credresolver"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
@@ -219,6 +221,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	if scannerPortSpec == "" {
 		scannerPortSpec = config.DefaultScanPortSpec
 	}
+
+	// SNMPv3 credential resolver (issue #135). Build the AES-GCM cipher from
+	// security.master_key, then a resolver that decrypts credential rows on
+	// demand. When the master key is unset/invalid, credResolver is nil and the
+	// engine falls back to the v1/v2c community path (existing deployments keep
+	// working). The handler layer also gets these for the credential CRUD API.
+	credCipher, credResolver := buildCredentialCipher(dbConn, cfg)
+
 	v2Engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
 		PortSpec:           scannerPortSpec,
 		MaxConcurrentHosts: cfg.Scanner.MaxConcurrentHosts,
@@ -229,6 +239,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		OUIPath:            cfg.Scanner.OUIPath,
 		FingerprintPath:    cfg.Scanner.FingerprintPath,
 		SNMPCommunity:      cfg.Scanner.SNMPCommunity,
+		CredResolver:       credResolver,
 		RouterARP: scannerv2probe.RouterARPConfig{
 			Routers:   cfg.Scanner.RouterARP.Routers,
 			Community: routerCommunity(cfg.Scanner),
@@ -444,13 +455,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Scheduler: cron-driven scan tasks. The ScanFunc delegates to the runner.
 	scanScheduler, schedErr := scannerv2scheduler.New(scanQueries, dbConn,
-		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int) {
+		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64) {
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("scan_func_panic", "task_id", taskID, "panic", r)
 				}
 			}()
-			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence)
+			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence, credentialID)
 		}, slog.Default())
 	if schedErr != nil {
 		slog.Error("failed to create scan scheduler", "error", schedErr)
@@ -487,6 +498,20 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/runs/{id}", scannerResultHandler.GetRun)
 		r.Get("/results/export", scannerResultHandler.ExportScanResults)
 		r.Delete("/results", scannerResultHandler.BulkDeleteResults)
+	})
+
+	// --- SNMP credential management (issue #135 — SNMPv3) ---
+	// Admin-only CRUD for SNMP credentials (v1/v2c community strings + v3 USM
+	// auth/priv). Passphrases are AES-GCM-encrypted at rest (security.master_key);
+	// the list/get responses never include the secrets (masked projection).
+	credentialHandler := handler.NewCredentialHandler(dbConn, credCipher, credResolver)
+	r.Route("/api/v1/snmp-credentials", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/", credentialHandler.Create)
+		r.Get("/", credentialHandler.List)
+		r.Get("/{id}", credentialHandler.Get)
+		r.Put("/{id}", credentialHandler.Update)
+		r.Delete("/{id}", credentialHandler.Delete)
 	})
 
 	// --- Agent token management (distributed phase) ---
@@ -845,6 +870,29 @@ func routerTimeout(cfg config.ScannerConfig) int {
 		return cfg.RouterARP.Timeout
 	}
 	return 4
+}
+
+// buildCredentialCipher constructs the AES-GCM cipher + credential resolver
+// from security.master_key. Returns (nil, nil) when the key is unset or
+// invalid (so the engine + handler gracefully degrade to v1/v2c). Logs the
+// reason on failure so the operator can see why v3 is unavailable.
+func buildCredentialCipher(dbConn *sql.DB, cfg *config.Config) (*crypto.Cipher, *credresolver.Resolver) {
+	if cfg.Security.MasterKey == "" {
+		return nil, nil
+	}
+	if len(cfg.Security.MasterKey) != crypto.MasterKeyLen {
+		slog.Error("security.master_key wrong length (must be exactly 32 bytes); SNMPv3 credential storage disabled",
+			"length", len(cfg.Security.MasterKey))
+		return nil, nil
+	}
+	c, err := crypto.NewCipher([]byte(cfg.Security.MasterKey))
+	if err != nil {
+		slog.Error("security.master_key invalid; SNMPv3 credential storage disabled", "error", err)
+		return nil, nil
+	}
+	slog.Info("SNMPv3 credential resolver enabled",
+		"master_key_fingerprint", c.KeyFingerprint([]byte(cfg.Security.MasterKey)))
+	return c, credresolver.New(dbConn, c)
 }
 
 // rdnsTimeout returns the configured rDNS lookup deadline (seconds), default 2.

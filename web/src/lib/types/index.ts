@@ -363,6 +363,7 @@ export interface TopoEdge {
 	to_mac: string;
 	protocol: string;
 	local_port?: string | null;
+	remote_port?: string | null; // far-end ifName (LLDP/CDP only; empty for Bridge-MIB/ARP)
 }
 
 export interface TopologyGraph {
@@ -438,6 +439,47 @@ export interface SNMPConfig {
 	community: string;
 }
 
+// ---------------------------------------------------------------------------
+// SNMP Credential (issue #135 — SNMPv3)
+// ---------------------------------------------------------------------------
+// Mirrors internal/api/handler/credential.go's masked projection. Passphrases
+// are NEVER included (encrypted or plaintext) — has_auth/has_priv derive from
+// the protocol fields. This is the LIST/GET response shape.
+
+export interface SNMPCredential {
+	id: number;
+	name: string;
+	security_level: 'v1v2c' | 'noAuthNoPriv' | 'authNoPriv' | 'authPriv';
+	community?: string;
+	username?: string;
+	auth_protocol?: string;
+	has_auth: boolean;
+	priv_protocol?: string;
+	has_priv: boolean;
+	notes?: string;
+}
+
+// SNMPCredentialRequest is the CREATE/UPDATE body. auth_passphrase /
+// priv_passphrase are plaintext (sent over TLS) and encrypted server-side.
+// On UPDATE, an empty passphrase field means "leave unchanged" so an admin
+// editing just the name doesn't need to retype the secret.
+export interface SNMPCredentialRequest {
+	name: string;
+	security_level: SNMPCredential['security_level'];
+	community?: string;
+	username?: string;
+	auth_protocol?: string;
+	auth_passphrase?: string;
+	priv_protocol?: string;
+	priv_passphrase?: string;
+	notes?: string;
+}
+
+export interface SNMPCredentialListResponse {
+	credentials: SNMPCredential[];
+	total: number;
+}
+
 export interface PortScanConfig {
 	enabled: boolean;
 	ports: string;
@@ -497,6 +539,10 @@ export interface ScannerTask {
 	enabled: boolean;
 	timeout: number;
 	community: string;
+	// credential_id (issue #135): bound SNMP credential. null = use the engine's
+	// global default community. When set, the task runs with that credential's
+	// auth (v3 USM or a specific v1/v2c community), overriding community.
+	credential_id: number | null;
 	pipeline_config: PipelineConfig | null;
 	last_run_at: string | null;
 	next_run_at: string | null;

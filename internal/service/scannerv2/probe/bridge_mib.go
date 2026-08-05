@@ -66,26 +66,11 @@ func NewBridgeMIBProbe(logger *slog.Logger) *BridgeMIBProbe {
 
 func (p *BridgeMIBProbe) Name() string { return "active:bridge_mib" }
 
-// Probe walks dot1dTpFdbTable on ip:161. hint.Community/hint.Timeout apply.
+// Probe walks dot1dTpFdbTable on ip:161. hint.Community/hint.Timeout apply,
+// and a bound v3 credential in hint.SNMPCredential routes the walk through v3.
 func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
-	community := hint.Community
-	if community == "" {
-		community = "public"
-	}
-	timeout := hint.Timeout
-	if timeout <= 0 {
-		timeout = 3 * time.Second
-	}
-
-	snmp := &gosnmp.GoSNMP{
-		Target:    ip,
-		Port:      161,
-		Community: community,
-		Version:   gosnmp.Version2c,
-		Timeout:   timeout,
-		Retries:   1,
-	}
-	if err := snmp.Connect(); err != nil {
+	snmp, err := connectSNMPWithRetries(ip, hint, gosnmp.Version2c, 1)
+	if err != nil {
 		return nil, nil // unreachable — not an error, just no topology data
 	}
 	// Note: we keep the connection open for the port-name resolution walk below

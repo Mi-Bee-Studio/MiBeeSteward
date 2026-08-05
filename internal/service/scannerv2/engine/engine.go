@@ -51,12 +51,28 @@ type Engine struct {
 	// snmpCommunity is the default SNMP community string, passed to the SNMP
 	// probe via ProbeHint.Community. Empty → probe defaults to "public".
 	snmpCommunity string
+	// credResolver turns a scan-task-bound credential_id into an in-process
+	// SNMPCredential (decrypting the v3 USM passphrases). nil = no v3 support
+	// (deployments without a master key); ScanTargets falls back to snmpCommunity.
+	credResolver CredentialResolver
 	// scanSem caps the number of concurrent top-level scans (sync POST /scan +
 	// cron-triggered task runs). Caps total resource use across the process;
 	// per-host parallelism within a scan is governed by Orchestrator config.
 	// A caller blocks on scanSem <- struct{}{} until a slot is free, releasing
 	// it when the scan returns. <=0 means unbounded.
 	scanSem chan struct{}
+}
+
+// CredentialResolver is the narrow interface the engine needs from the
+// credresolver package (kept here to avoid importing credresolver, which would
+// create a cycle: credresolver → scannerv2, engine → credresolver → scannerv2).
+// The concrete *credresolver.Resolver satisfies it.
+type CredentialResolver interface {
+	// ResolveByID returns the decrypted credential for id. Returning
+	// (nil, nil) means "no credential bound" — the engine falls back to the
+	// legacy community path. A non-nil error aborts the scan with that error
+	// (e.g. master key missing for an encrypted credential).
+	ResolveByID(ctx context.Context, id int64) (*scannerv2.SNMPCredential, error)
 }
 
 // Config carries the v2 engine tuning. It is derived from config.Config
@@ -97,6 +113,11 @@ type Config struct {
 	// SNMPCommunity is the default community string passed to the SNMP probe
 	// via ProbeHint.Community (default "public" if empty).
 	SNMPCommunity string
+	// CredResolver, when set, lets ScanTargets resolve a scan-task-bound
+	// credential_id into an SNMPCredential (v3 USM or a specific v1/v2c
+	// community). nil = no v3 credential support (v1/v2c scans still work
+	// via SNMPCommunity). Wired from routes.go when a master key is configured.
+	CredResolver CredentialResolver
 	// RouterARP enables cross-subnet MAC resolution by walking routers' SNMP
 	// ARP tables (ipNetToMediaPhysAddress). Empty routers → cross-subnet MAC is
 	// disabled and the scanner falls back to /proc/net/arp (local subnet only).
@@ -307,6 +328,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 		e.perProbeTimeout = 3 * time.Second
 	}
 	e.snmpCommunity = cfg.SNMPCommunity
+	e.credResolver = cfg.CredResolver
 	logger.Info("scannerv2: per-probe timeout", "timeout", e.perProbeTimeout)
 	if e.snmpCommunity != "" && e.snmpCommunity != "public" {
 		logger.Info("scannerv2: SNMP community override configured", "community", e.snmpCommunity)
@@ -334,7 +356,13 @@ func (e *Engine) EstimateTargetCount(targets string) (int, error) {
 // It parses the target spec, runs the orchestrator per host, and returns one
 // HostReport per alive host (dead hosts are omitted from the result but still
 // persisted as not-alive via Run's persistence path).
-func (e *Engine) ScanTargets(ctx context.Context, targets string, fastScan bool) ([]scannerv2.HostReport, error) {
+//
+// credentialID optionally binds this scan to an SNMP credential (v3 USM or a
+// specific v1/v2c community). 0 = use the engine's global default community.
+// When non-zero AND a CredResolver is configured, the credential is resolved
+// (decrypting passphrases in-process) and threaded into the ProbeHint so every
+// SNMP probe speaks v3 / the bound community instead of the global default.
+func (e *Engine) ScanTargets(ctx context.Context, targets string, fastScan bool, credentialID int64) ([]scannerv2.HostReport, error) {
 	ips, err := parseScanTargets(targets)
 	if err != nil {
 		return nil, err
@@ -360,6 +388,21 @@ func (e *Engine) ScanTargets(ctx context.Context, targets string, fastScan bool)
 	// blocking the full PerHostTimeout on each. The per-host pipeline ceiling
 	// is enforced separately by the hostCtx deadline below.
 	hint := scannerv2.ProbeHint{Timeout: e.perProbeTimeout, Community: e.snmpCommunity}
+
+	// Resolve a bound SNMP credential (issue #135). A credential overrides the
+	// global community for every SNMP probe in this scan. Resolution errors
+	// (e.g. missing master key, deleted credential) abort the scan rather than
+	// silently downgrading — a scan expecting v3 must not quietly fall back to
+	// a community string the hardened target rejects anyway.
+	if credentialID != 0 && e.credResolver != nil {
+		cred, err := e.credResolver.ResolveByID(ctx, credentialID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve snmp credential %d: %w", credentialID, err)
+		}
+		if cred != nil {
+			hint.SNMPCredential = cred
+		}
+	}
 
 	reports := make([]scannerv2.HostReport, len(ips))
 	sem := make(chan struct{}, maxConc)

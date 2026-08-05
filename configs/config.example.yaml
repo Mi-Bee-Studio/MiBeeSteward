@@ -44,6 +44,16 @@ center:
   auth_token: ""        # agent bearer token from the center; REQUIRED when url set
   report_interval: "30s" # flush buffered results when buffer not full; default 30s
 
+# security holds process-wide secret keying material. master_key protects
+# SNMPv3 USM auth/priv passphrases stored in SQLite (AES-256-GCM). Generate
+# one with: head -c 32 /dev/urandom | base64  (then base64-decode to 32 raw
+# bytes, OR paste 32 ASCII characters here directly). It MUST be exactly 32
+# bytes. OPTIONAL: leave empty to disable v3 credential storage (v1/v2c
+# scans work without it); required once any v3 credential exists. Override
+# at runtime with MIBEE_SECURITY_MASTER_KEY.
+security:
+  master_key: ""
+
 auth:
   jwt_secret: "change-me-in-production"  # REQUIRED — must change, minimum 32 characters
   token_expiry: "24h"
