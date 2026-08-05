@@ -79,7 +79,7 @@ func (e *engineIdentifier) Identify(ctx context.Context, ip string) (scannerv2.H
 	if e.engine == nil {
 		return scannerv2.HostReport{}, false
 	}
-	reports, err := e.engine.ScanTargets(ctx, ip, false)
+	reports, err := e.engine.ScanTargets(ctx, ip, false, 0)
 	if err != nil || len(reports) == 0 {
 		return scannerv2.HostReport{}, false
 	}

@@ -33,6 +33,11 @@ type ScanRequest struct {
 	Targets   string `json:"targets"`
 	Community string `json:"community"`
 	Timeout   int    `json:"timeout"`
+	// CredentialID optionally binds this scan to an SNMP credential (issue #135).
+	// 0 = use the engine's global default community. When set, the scan runs
+	// with that credential's auth (v3 USM or a specific v1/v2c community),
+	// overriding Community.
+	CredentialID int64 `json:"credential_id,omitempty"`
 }
 
 // ScanHost represents a single host result from a network scan.
@@ -180,23 +185,29 @@ type ScanTaskRequest struct {
 	GlobalLabels    string         `json:"global_labels"`
 	Timeout         int            `json:"timeout"`
 	ConcurrentHosts int            `json:"concurrent_hosts"`
+	// CredentialID optionally binds this task to an SNMP credential (issue #135).
+	// 0/nil = use the engine's global default community on each run.
+	CredentialID int64 `json:"credential_id,omitempty"`
 }
 
 type ScanTaskResponse struct {
-	ID              int64      `json:"id"`
-	Name            string     `json:"name"`
-	Targets         string     `json:"targets"`
-	CronExpr        string     `json:"cron_expr"`
-	PipelineConfig  string     `json:"pipeline_config"`
-	GlobalLabels    string     `json:"global_labels"`
-	Timeout         int        `json:"timeout"`
-	ConcurrentHosts int        `json:"concurrent_hosts"`
-	Enabled         bool       `json:"enabled"`
-	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
-	NextRunAt       *time.Time `json:"next_run_at,omitempty"`
-	LastRunStatus   string     `json:"last_run_status,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID              int64  `json:"id"`
+	Name            string `json:"name"`
+	Targets         string `json:"targets"`
+	CronExpr        string `json:"cron_expr"`
+	PipelineConfig  string `json:"pipeline_config"`
+	GlobalLabels    string `json:"global_labels"`
+	Timeout         int    `json:"timeout"`
+	ConcurrentHosts int    `json:"concurrent_hosts"`
+	// CredentialID is the bound SNMP credential (issue #135). nil = no credential
+	// bound (uses the engine's global default community).
+	CredentialID  *int64     `json:"credential_id,omitempty"`
+	Enabled       bool       `json:"enabled"`
+	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
+	NextRunAt     *time.Time `json:"next_run_at,omitempty"`
+	LastRunStatus string     `json:"last_run_status,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type UpdateScanTaskRequest struct {
@@ -208,6 +219,11 @@ type UpdateScanTaskRequest struct {
 	Timeout         *int            `json:"timeout,omitempty"`
 	ConcurrentHosts *int            `json:"concurrent_hosts,omitempty"`
 	Enabled         *bool           `json:"enabled,omitempty"`
+	// CredentialID, when non-nil, rebinds the task's SNMP credential (issue #135).
+	// Pass an explicit nil to CLEAR the binding (fall back to global community).
+	// A pointer is used (not int64) so nil = "leave unchanged" can be distinguished
+	// from 0 = "clear the binding". This matches the other optional fields above.
+	CredentialID *int64 `json:"credential_id,omitempty"`
 }
 
 type ScanTaskListResponse struct {

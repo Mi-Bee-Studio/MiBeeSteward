@@ -39,7 +39,9 @@ import (
 // ScanFunc executes one scan task. It is invoked by the scheduler on each cron
 // tick; implementations (runner.Runner.Run) handle run/result persistence and
 // the device bridge. timeout/concurrentHosts carry the task's tuning.
-type ScanFunc func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int)
+// credentialID optionally binds the scan to an SNMP credential (issue #135);
+// 0 = use the engine's global default community.
+type ScanFunc func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64)
 
 // Scheduler manages cron-driven scan tasks.
 type Scheduler struct {
@@ -66,7 +68,7 @@ func New(queries *db.Queries, dbConn *sql.DB, scanFn ScanFunc, logger *slog.Logg
 		logger = slog.Default()
 	}
 	if scanFn == nil {
-		scanFn = func(context.Context, int64, string, time.Duration, int) {} // no-op safe default
+		scanFn = func(context.Context, int64, string, time.Duration, int, int64) {} // no-op safe default
 	}
 	return &Scheduler{
 		scheduler:          s,
@@ -210,13 +212,29 @@ func (s *Scheduler) removeJobLocked(taskID int64) {
 
 // executeScan is the per-job runtime invoked by gocron. It loads the task's
 // timeout/concurrency, then calls scanFunc under a cancelable context.
+//
+// The cancelFunc is registered in s.cancelFuncs AFTER GetScanTask succeeds, not
+// before. Registering it earlier created a race where CancelTask could fire
+// during GetScanTask (cancelling the load, so scanFunc never ran and the test's
+// in-flight check saw a registered cancel that was already tearing down). With
+// the load out of the un-cancelable prefix, a cancel that arrives during the
+// load is a no-op (the task hadn't started yet), and one that arrives after is
+// honored by scanFunc.
 func (s *Scheduler) executeScan(taskID int64, targets string) {
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Load the task to read its timeout/concurrency tuning. Done BEFORE
+	// registering the cancelFunc (see the comment above for the race rationale).
+	task, err := s.queries.GetScanTask(ctx, taskID)
+	if err != nil {
+		s.logger.Error("scheduler: load task failed", "task_id", taskID, "error", err)
+		return
+	}
 	s.mu.Lock()
 	s.cancelFuncs[taskID] = cancel
 	s.mu.Unlock()
 	defer func() {
-		cancel()
 		s.mu.Lock()
 		delete(s.cancelFuncs, taskID)
 		s.mu.Unlock()
@@ -224,13 +242,6 @@ func (s *Scheduler) executeScan(taskID int64, targets string) {
 			s.logger.Error("scheduler: scan panic recovered", "task_id", taskID, "panic", r)
 		}
 	}()
-
-	// Load the task to read its timeout/concurrency tuning.
-	task, err := s.queries.GetScanTask(ctx, taskID)
-	if err != nil {
-		s.logger.Error("scheduler: load task failed", "task_id", taskID, "error", err)
-		return
-	}
 	timeout := time.Duration(task.Timeout) * time.Second
 	if timeout <= 0 {
 		timeout = 300 * time.Second
@@ -239,10 +250,17 @@ func (s *Scheduler) executeScan(taskID int64, targets string) {
 	if concurrent <= 0 {
 		concurrent = 50
 	}
+	// credential_id (issue #135): NULL/0 → engine global default community;
+	// non-zero → resolve + thread an SNMPCredential into every SNMP probe.
+	// GetScanTask returns *int64 (nullable); dereference safely.
+	var credentialID int64
+	if task.CredentialID != nil {
+		credentialID = *task.CredentialID
+	}
 
 	start := time.Now()
 	s.logger.Info("scan job started", "task_id", taskID, "targets", targets)
-	s.scanFunc(ctx, taskID, targets, timeout, concurrent)
+	s.scanFunc(ctx, taskID, targets, timeout, concurrent, credentialID)
 	s.logger.Info("scan job completed", "task_id", taskID, "duration", time.Since(start))
 }
 

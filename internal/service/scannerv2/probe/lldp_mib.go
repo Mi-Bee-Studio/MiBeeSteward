@@ -74,26 +74,13 @@ func NewLLDPMIBProbe(logger *slog.Logger) *LLDPMIBProbe {
 
 func (p *LLDPMIBProbe) Name() string { return "active:lldp_mib" }
 
-// Probe walks lldpRemTable on ip:161. hint.Community/hint.Timeout apply.
+// Probe walks lldpRemTable on ip:161. hint.Community/hint.Timeout apply, and a
+// bound v3 credential in hint.SNMPCredential routes the walk through SNMPv3.
 func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
-	community := hint.Community
-	if community == "" {
-		community = "public"
-	}
-	timeout := hint.Timeout
-	if timeout <= 0 {
-		timeout = 3 * time.Second
-	}
-
-	snmp := &gosnmp.GoSNMP{
-		Target:    ip,
-		Port:      161,
-		Community: community,
-		Version:   gosnmp.Version2c,
-		Timeout:   timeout,
-		Retries:   1,
-	}
-	if err := snmp.Connect(); err != nil {
+	// connectSNMPWithRetries threads v1/v2c/v3 credentials uniformly; Retries=1
+	// matches the previous behavior (gosnmp retransmits a dropped LLDP walk).
+	snmp, err := connectSNMPWithRetries(ip, hint, gosnmp.Version2c, 1)
+	if err != nil {
 		return nil, nil // unreachable — not an error, just no topology data
 	}
 	defer snmp.Conn.Close()

@@ -57,9 +57,18 @@ type ProbeHint struct {
 	// Ports are ports already believed open on the target (may be empty).
 	Ports []int `json:"ports,omitempty"`
 	// Community is the SNMP community string to try (default "public").
+	// Used ONLY when SNMPCredential is nil (the legacy v1/v2c path). When
+	// SNMPCredential is set, it takes precedence and Community is ignored.
 	Community string `json:"community,omitempty"`
 	// Timeout per individual probe attempt.
 	Timeout time.Duration `json:"timeout,omitempty"`
+	// SNMPCredential, when non-nil, routes every SNMP probe through v3 (or a
+	// specific v1/v2c community tied to this credential) instead of the
+	// engine's global default. Set by the engine when a scan task or scan
+	// request selects a credential; nil = use the legacy Community/default
+	// path. See credentials.go for the type and probe/snmp_conn.go for how
+	// probes consume it.
+	*SNMPCredential `json:"snmp_credential,omitempty"`
 }
 
 // CollectedData is the opaque result of a ServiceHandler.Collect call. It is

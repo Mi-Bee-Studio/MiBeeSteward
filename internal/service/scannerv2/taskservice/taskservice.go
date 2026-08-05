@@ -62,6 +62,7 @@ func (s *Service) CreateTask(ctx context.Context, req domain.ScanTaskRequest) (d
 		GlobalLabels:    req.GlobalLabels,
 		Timeout:         int64(req.Timeout),
 		ConcurrentHosts: int64(req.ConcurrentHosts),
+		CredentialID:    credentialIDPtr(req.CredentialID),
 	})
 	if err != nil {
 		return domain.ScanTaskResponse{}, err
@@ -181,6 +182,17 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 		pipelineCfg = string(b)
 	}
 
+	// CredentialID: nil in the request = leave unchanged (preserve existing);
+	// non-nil (incl. 0) = set/clear. We resolve this BEFORE the call so the
+	// UPDATE always writes a concrete value (UpdateScanTask has no partial-PATCH
+	// semantics — every field is rewritten).
+	var credentialID *int64
+	if req.CredentialID != nil {
+		credentialID = req.CredentialID // explicit set (or clear via 0)
+	} else {
+		credentialID = existing.CredentialID // preserve
+	}
+
 	task, err := s.queries.UpdateScanTask(ctx, db.UpdateScanTaskParams{
 		Name:            name,
 		Targets:         targets,
@@ -189,6 +201,7 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 		GlobalLabels:    globalLabels,
 		Timeout:         timeout,
 		ConcurrentHosts: concurrent,
+		CredentialID:    credentialID,
 		ID:              id,
 	})
 	if err != nil {
@@ -382,6 +395,7 @@ func toTaskResponse(t db.ScanTask) domain.ScanTaskResponse {
 		GlobalLabels:    t.GlobalLabels,
 		Timeout:         int(t.Timeout),
 		ConcurrentHosts: int(t.ConcurrentHosts),
+		CredentialID:    t.CredentialID,
 		Enabled:         t.Enabled == 1,
 		LastRunAt:       t.LastRunAt,
 		NextRunAt:       t.NextRunAt,
@@ -392,6 +406,16 @@ func toTaskResponse(t db.ScanTask) domain.ScanTaskResponse {
 		resp.LastRunStatus = *t.LastRunStatus
 	}
 	return resp
+}
+
+// credentialIDPtr converts the request's int64 credential_id to the nullable
+// *int64 the DB layer expects. 0 → nil (no binding / use global default); any
+// other value → pointer to that ID.
+func credentialIDPtr(id int64) *int64 {
+	if id == 0 {
+		return nil
+	}
+	return &id
 }
 
 func toRunResponse(r db.ScanTaskRun) domain.ScanRunResponse {

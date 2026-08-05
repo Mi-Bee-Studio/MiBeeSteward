@@ -73,6 +73,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"scan_task_runs",
 		"scan_tasks",
 		"service_evidence",
+		"snmp_credentials",
 		"subnets",
 		"topology_edges",
 		"user_totp",
@@ -83,16 +84,26 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 }
 
 func TestSetupTestDBFromSchema_Reusable(t *testing.T) {
-	// Verify the schema can be applied multiple times (idempotent)
+	// Verify the schema can be applied multiple times (idempotent). This test
+	// checks that re-application produces the same non-empty table set — it
+	// intentionally does NOT assert a specific table count, because that count
+	// is bumped by every schema-adding PR and the hard-coded number goes stale
+	// at the first merge of two such PRs (a merge-induced failure no single PR
+	// can catch). The canonical table list + exact count is validated by
+	// TestSetupTestDBFromSchema above (which auto-merges cleanly).
 	db1, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db1.Close()
-	require.Len(t, listTables(t, db1), 29)
+	tables1 := listTables(t, db1)
+	require.NotEmpty(t, tables1, "first setup must produce tables")
 
 	db2, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
 	defer db2.Close()
-	require.Len(t, listTables(t, db2), 29)
+	tables2 := listTables(t, db2)
+
+	// Idempotency: re-applying the schema yields the identical table set.
+	require.Equal(t, tables1, tables2, "re-applying schema must produce the same tables")
 }
 
 func TestSetupTestDB_WithPragmas(t *testing.T) {

@@ -110,7 +110,7 @@ func TestTriggerNow_InvokesScanFunc(t *testing.T) {
 	const targets = "192.168.0.0/24"
 	// Build (not started), seed the task row, THEN start so Start's job
 	// re-hydration picks up task 7 and TriggerNow can find it.
-	s, _, conn := newTestScheduler(t, func(_ context.Context, id int64, tgt string, _ time.Duration, _ int) {
+	s, _, conn := newTestScheduler(t, func(_ context.Context, id int64, tgt string, _ time.Duration, _ int, _ int64) {
 		select {
 		case got <- call{id, tgt}:
 		default:
@@ -140,7 +140,7 @@ func TestCancelTask_CancelsInFlightScan(t *testing.T) {
 	cancelled := make(chan struct{})
 	// Build, seed, THEN start so the seeded task is re-hydrated into the
 	// scheduler's jobMap and TriggerNow can fire it.
-	s, _, conn := newTestScheduler(t, func(ctx context.Context, _ int64, _ string, _ time.Duration, _ int) {
+	s, _, conn := newTestScheduler(t, func(ctx context.Context, _ int64, _ string, _ time.Duration, _ int, _ int64) {
 		<-ctx.Done() // block until cancelled
 		close(cancelled)
 	})
@@ -182,7 +182,7 @@ func TestConcurrentAddRemove_JobCountConsistent(t *testing.T) {
 	const taskID = int64(42)
 	// Start first (empty DB → no jobs re-hydrated, harmless), then seed + rely on
 	// AddJob (which works regardless of started state) to exercise the mutex.
-	s, _, conn := startTestScheduler(t, func(context.Context, int64, string, time.Duration, int) {})
+	s, _, conn := startTestScheduler(t, func(context.Context, int64, string, time.Duration, int, int64) {})
 	seedScanTask(t, conn, taskID, "10.0.0.0/24")
 	require.NoError(t, s.AddJob(taskID, "*/10 * * * *", "10.0.0.0/24"))
 
