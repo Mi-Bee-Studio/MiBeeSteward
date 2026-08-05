@@ -746,6 +746,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	notificationDispatcher.Start(context.Background())
 	notificationHandler := handler.NewNotificationHandler(notificationSvc, notificationDispatcher, auditRepo)
 
+	// Notification rule engine (#139): subscribes to changedetect.Watcher and
+	// dispatches matching rules via notificationDispatcher. Shares the same
+	// changeWatcher singleton as the /changes/watch SSE handler (independent
+	// subscriber channels). Started here; stopped in the shutdown cleanup below.
+	ruleEngine := notification.NewRuleEngine(scanQueries, changeWatcher, notificationDispatcher, slog.Default())
+	ruleEngine.Start(context.Background())
+
 	// Notification channel routes (admin only)
 	r.Route("/api/v1/notification/channels", func(r chi.Router) {
 		r.Use(middleware.RequireAdmin)
@@ -756,6 +763,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Patch("/{id}", notificationHandler.SetChannelEnabled)
 		r.Delete("/{id}", notificationHandler.DeleteChannel)
 		r.Post("/{id}/test", notificationHandler.TestChannel)
+	})
+
+	// Notification rule routes (admin only — rules are config, like channels).
+	r.Route("/api/v1/notification/rules", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/", notificationHandler.CreateRule)
+		r.Get("/", notificationHandler.ListRules)
+		r.Get("/{id}", notificationHandler.GetRule)
+		r.Put("/{id}", notificationHandler.UpdateRule)
+		r.Patch("/{id}", notificationHandler.SetRuleEnabled)
+		r.Delete("/{id}", notificationHandler.DeleteRule)
 	})
 
 	// Notification log routes — every authenticated user sees the header bell
@@ -801,6 +819,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		}
 		discSvc.Stop()
 		cleanupSvc.Stop()
+		// Stop the rule engine BEFORE the dispatcher — it holds a Watcher
+		// subscriber and calls dispatcher.Dispatch; stopping it first prevents
+		// in-flight dispatch attempts against a stopped dispatcher.
+		ruleEngine.Stop()
 		// Stop the notification dispatcher's worker goroutines too. Without
 		// this, the 3 workers (and their *db.Queries handle) outlive graceful
 		// shutdown and race against db.Close() in main.go.

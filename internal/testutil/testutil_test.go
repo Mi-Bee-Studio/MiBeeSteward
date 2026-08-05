@@ -68,6 +68,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"notification_channels",
 		"notification_log",
 		"notification_read_states",
+		"notification_rules",
 		"scan_results",
 		"scan_snapshots",
 		"scan_task_runs",

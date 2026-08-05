@@ -198,6 +198,28 @@ export const notificationChannelSchema = z
 		path: ['smtp_to'],
 	});
 
+// --- Notification rule form (settings/notifications rules tab, #139) ---
+// Validates name, event/scope enums, channel presence, and the scope-conditional
+// required field (network needs scope_network_id, device needs scope_device_uuid).
+export const notificationRuleSchema = z
+	.object({
+		name: z.string().min(1, 'validation.Name Required'),
+		event_type: z.enum(['device_lost', 'device_recovered', 'device_added', 'device_changed']),
+		scope_type: z.enum(['all', 'network', 'device']),
+		scope_network_id: z.union([z.number().int().positive(), z.null()]).optional(),
+		scope_device_uuid: z.string().optional().or(z.literal('')),
+		channel_id: z.number().int().positive('validation.Channel Required'),
+		cooldown_minutes: z.number().int().min(1, 'validation.Cooldown Min').max(10080),
+	})
+	.refine((data) => data.scope_type !== 'network' || (!!data.scope_network_id && data.scope_network_id > 0), {
+		message: 'validation.Network Required',
+		path: ['scope_network_id'],
+	})
+	.refine((data) => data.scope_type !== 'device' || !!data.scope_device_uuid, {
+		message: 'validation.Device Required',
+		path: ['scope_device_uuid'],
+	});
+
 // --- Scanner task form (devices/scan-tasks page) ---
 // targets + cron are validated by the standalone validateScanTarget /
 // validateCronExpr functions (kept as-is — they return localized strings and

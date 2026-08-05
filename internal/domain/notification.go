@@ -78,6 +78,98 @@ type ChannelListResponse struct {
 	Total    int               `json:"total"`
 }
 
+// --- Notification rules (#139) ---
+//
+// A rule binds a change-detection event type (device_lost/recovered/added/
+// changed) to a delivery channel with an optional scope filter and per-rule
+// cooldown. The RuleEngine subscribes to changedetect.Watcher and dispatches
+// matching rules via notification.Dispatcher.
+
+// RuleEventType enumerates the change_log.change_type values a rule may match.
+// These mirror changedetect.ChangeTypeDevice* constants (kept as strings here
+// so the API layer has no dependency on the changedetect package).
+const (
+	RuleEventTypeDeviceLost      = "device_lost"
+	RuleEventTypeDeviceRecovered = "device_recovered"
+	RuleEventTypeDeviceAdded     = "device_added"
+	RuleEventTypeDeviceChanged   = "device_changed"
+)
+
+// RuleScopeType controls which devices a rule applies to.
+const (
+	RuleScopeAll     = "all"     // every device (any network)
+	RuleScopeNetwork = "network" // devices in scope_network_id
+	RuleScopeDevice  = "device"  // the single device identified by scope_device_uuid
+)
+
+// IsValidRuleEventType reports whether t is a supported event_type value.
+func IsValidRuleEventType(t string) bool {
+	switch t {
+	case RuleEventTypeDeviceLost, RuleEventTypeDeviceRecovered,
+		RuleEventTypeDeviceAdded, RuleEventTypeDeviceChanged:
+		return true
+	}
+	return false
+}
+
+// IsValidRuleScopeType reports whether t is a supported scope_type value.
+func IsValidRuleScopeType(t string) bool {
+	switch t {
+	case RuleScopeAll, RuleScopeNetwork, RuleScopeDevice:
+		return true
+	}
+	return false
+}
+
+// CreateRuleRequest is the body of POST /notification/rules.
+type CreateRuleRequest struct {
+	Name            string `json:"name"`
+	EventType       string `json:"event_type"`
+	ScopeType       string `json:"scope_type"`
+	ScopeNetworkID  *int64 `json:"scope_network_id,omitempty"`
+	ScopeDeviceUUID string `json:"scope_device_uuid,omitempty"`
+	ChannelID       int64  `json:"channel_id"`
+	CooldownMinutes int    `json:"cooldown_minutes"`
+}
+
+// UpdateRuleRequest is the body of PUT /notification/rules/{id}. All fields
+// are required (full-replace, mirroring the channel PUT semantics).
+type UpdateRuleRequest struct {
+	Name            string `json:"name"`
+	EventType       string `json:"event_type"`
+	ScopeType       string `json:"scope_type"`
+	ScopeNetworkID  *int64 `json:"scope_network_id,omitempty"`
+	ScopeDeviceUUID string `json:"scope_device_uuid,omitempty"`
+	ChannelID       int64  `json:"channel_id"`
+	CooldownMinutes int    `json:"cooldown_minutes"`
+}
+
+// SetRuleEnabledRequest is the body of PATCH /notification/rules/{id}.
+type SetRuleEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// RuleResponse is the JSON shape returned by the rule endpoints.
+type RuleResponse struct {
+	ID              int64      `json:"id"`
+	Name            string     `json:"name"`
+	EventType       string     `json:"event_type"`
+	ScopeType       string     `json:"scope_type"`
+	ScopeNetworkID  *int64     `json:"scope_network_id,omitempty"`
+	ScopeDeviceUUID string     `json:"scope_device_uuid,omitempty"`
+	ChannelID       int64      `json:"channel_id"`
+	CooldownMinutes int        `json:"cooldown_minutes"`
+	Enabled         bool       `json:"enabled"`
+	LastTriggeredAt *time.Time `json:"last_triggered_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type RuleListResponse struct {
+	Rules []RuleResponse `json:"rules"`
+	Total int            `json:"total"`
+}
+
 type NotificationLogListResponse struct {
 	Logs []NotificationLogResponse `json:"logs"`
 	// Total is the requesting user's UNREAD count (not the total log row count).
