@@ -175,7 +175,9 @@ func (rn *Runner) NetworkID() sql.NullInt64 { return rn.networkID }
 // scheduler — failures are recorded on the run row and logged.
 //
 // timeout is the per-host pipeline timeout; concurrentHosts caps parallelism.
-func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, persistRawEvidence bool) {
+// credentialID optionally binds the scan to an SNMP credential (issue #135);
+// 0 = use the engine's global default community.
+func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, persistRawEvidence bool, credentialID int64) {
 	if rn.engine == nil {
 		// Engine failed to init at startup. Record a failed run so the operator
 		// can see (via the UI / runs API) that the task fired but couldn't run,
@@ -209,7 +211,7 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	// 2. Execute the engine. The engine's per-host timeout + concurrency are
 	//    applied via a transient reconfiguration; we just pass targets through.
 	rn.engine.Orchestrator.SetTimeouts(timeout, concurrentHosts)
-	reports, err := rn.engine.ScanTargets(ctx, targets, false)
+	reports, err := rn.engine.ScanTargets(ctx, targets, false, credentialID)
 	duration := time.Since(start)
 
 	if err != nil {

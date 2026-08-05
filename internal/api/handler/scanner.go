@@ -93,7 +93,7 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	h.engine.Orchestrator.SetTimeouts(perHost, h.engine.Orchestrator.MaxConcurrentHosts())
 
 	start := time.Now()
-	reports, err := h.engine.ScanTargets(r.Context(), req.Targets, false)
+	reports, err := h.engine.ScanTargets(r.Context(), req.Targets, false, req.CredentialID)
 	duration := time.Since(start)
 	if err != nil {
 		if isInvalidTargetError(err.Error()) {

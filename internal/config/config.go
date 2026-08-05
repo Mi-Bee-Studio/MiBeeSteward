@@ -50,6 +50,25 @@ type Config struct {
 	// (auth: AuthToken, a long-lived agent token minted on the center). Empty
 	// URL = center/standalone mode (serve API + SPA, no upstream reporting).
 	Center CenterConfig `koanf:"center"`
+	// Security holds process-wide secrets settings. Today this is the master
+	// key used to encrypt SNMPv3 USM passphrases at rest (see internal/crypto).
+	// Unlike auth.jwt_secret, the master key is OPTIONAL at startup: existing
+	// deployments without it keep working for v1/v2c scans; it only becomes
+	// required when the first SNMPv3 credential is created or read.
+	Security SecurityConfig `koanf:"security"`
+}
+
+// SecurityConfig carries the process-wide secret keying material. The master
+// key protects secrets stored in SQLite (SNMPv3 USM auth/priv passphrases).
+// Set it via the security.master_key YAML key or MIBEE_SECURITY_MASTER_KEY.
+type SecurityConfig struct {
+	// MasterKey is the raw AES-256 master key used by internal/crypto.Cipher.
+	// It MUST be exactly 32 bytes. It is held in memory only (never persisted).
+	// Leave empty to disable v3 credential storage (v1/v2c scans are unaffected).
+	// Once any v3 credential exists in the DB, this key becomes required: change
+	// it and the existing passphrases can no longer be decrypted (re-encrypt
+	// them first via the migration path).
+	MasterKey string `koanf:"master_key"`
 }
 
 // CenterConfig configures an agent's upstream center.
@@ -641,6 +660,22 @@ func Validate(cfg *Config) error {
 		if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
 			fmt.Fprintf(os.Stderr, "WARNING: CORS allowed_origins contains localhost (%s) — remove for production.\n", origin)
 		}
+	}
+
+	// security.master_key protects SNMPv3 USM passphrases at rest. It is
+	// OPTIONAL (so existing deployments keep working for v1/v2c) but MUST be
+	// exactly 32 bytes when set — a short key would silently weaken the
+	// encryption, and internal/crypto.NewCipher rejects anything other than 32.
+	// We warn here rather than fail so a config without v3 credentials isn't
+	// blocked at startup; the hard error surfaces at first v3 credential use.
+	if cfg.Security.MasterKey != "" && len(cfg.Security.MasterKey) != 32 {
+		fmt.Fprintf(os.Stderr,
+			"WARNING: security.master_key must be exactly 32 bytes long (got %d). "+
+				"SNMPv3 credential storage will be unavailable until it is corrected.\n",
+			len(cfg.Security.MasterKey))
+	}
+	if cfg.Security.MasterKey == "" {
+		fmt.Fprintf(os.Stderr, "NOTE: security.master_key is not set — SNMPv3 credential storage disabled (v1/v2c scans unaffected). Set it to a 32-byte value to enable v3.\n")
 	}
 
 	return nil

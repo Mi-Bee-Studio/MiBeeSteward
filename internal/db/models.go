@@ -305,6 +305,7 @@ type ScanTask struct {
 	GlobalLabels    string     `json:"global_labels"`
 	Timeout         int64      `json:"timeout"`
 	ConcurrentHosts int64      `json:"concurrent_hosts"`
+	CredentialID    *int64     `json:"credential_id"`
 	Enabled         int64      `json:"enabled"`
 	LastRunAt       *time.Time `json:"last_run_at"`
 	NextRunAt       *time.Time `json:"next_run_at"`
@@ -339,6 +340,21 @@ type ServiceEvidence struct {
 	RawData    string    `json:"raw_data"`
 	Confidence float64   `json:"confidence"`
 	ObservedAt time.Time `json:"observed_at"`
+}
+
+type SnmpCredential struct {
+	ID                int64     `json:"id"`
+	Name              string    `json:"name"`
+	SecurityLevel     string    `json:"security_level"`
+	Community         string    `json:"community"`
+	Username          string    `json:"username"`
+	AuthProtocol      string    `json:"auth_protocol"`
+	AuthPassphraseEnc string    `json:"auth_passphrase_enc"`
+	PrivProtocol      string    `json:"priv_protocol"`
+	PrivPassphraseEnc string    `json:"priv_passphrase_enc"`
+	Notes             string    `json:"notes"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type Subnet struct {
@@ -397,4 +413,17 @@ type Vlan struct {
 	NetworkID   *int64     `json:"network_id"`
 	FirstSeen   *time.Time `json:"first_seen"`
 	LastSeen    *time.Time `json:"last_seen"`
+}
+
+type ZzTestCred struct {
+	ID                int64  `json:"id"`
+	Name              string `json:"name"`
+	SecurityLevel     string `json:"security_level"`
+	Community         string `json:"community"`
+	Username          string `json:"username"`
+	AuthProtocol      string `json:"auth_protocol"`
+	AuthPassphraseEnc string `json:"auth_passphrase_enc"`
+	PrivProtocol      string `json:"priv_protocol"`
+	PrivPassphraseEnc string `json:"priv_passphrase_enc"`
+	Notes             string `json:"notes"`
 }
