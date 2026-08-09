@@ -147,6 +147,7 @@
 		"Select All": "Select All",
 		"Selected Count": "{count} selected",
 		"Batch Status Success": "{count} devices status updated",
+		"Batch Update Status Confirm": "Mark {count} selected device(s) as \"{status}\"?",
 		"Batch Delete Success": "{count} devices deleted successfully",
 		"Batch Update Status": "Batch Update Status",
 		"Batch Delete Confirm": "Are you sure you want to delete the selected devices?",

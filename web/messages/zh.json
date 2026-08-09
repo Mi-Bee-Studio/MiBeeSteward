@@ -144,6 +144,7 @@
 		"Batch Update Status": "批量更新状态",
 		"Batch Delete Success": "成功删除 {count} 台设备",
 		"Batch Status Success": "成功更新 {count} 台设备状态",
+		"Batch Update Status Confirm": "确定要将选中的 {count} 台设备标记为「{status}」吗？",
 		"Selected Count": "已选择 {count} 项",
 		"Select All": "全选",
 		"Deselect All": "取消全选",

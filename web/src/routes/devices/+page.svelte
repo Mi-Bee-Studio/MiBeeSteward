@@ -123,6 +123,12 @@ interface AddDevicesResponse {
 	let batchDeleteOpen = $state(false);
 	let batchStatusOpen = $state(false);
 	let batchStatusValue = $state('online');
+	// Batch status confirmation: the dropdown no longer fires the mutation
+	// directly — it stages the chosen status here, then a ConfirmDialog gates
+	// the actual API call. Prevents an accidental click from bulk-flipping
+	// dozens of devices to "offline" with no undo (#150).
+	let pendingBatchStatus = $state<string | null>(null);
+	let batchStatusConfirmOpen = $state(false);
 	let batchLoading = $state(false);
 	// Export dropdown — click-toggle (not hover) so keyboard/touch users can
 	// reach it. group-hover:opacity-100 was invisible without a mouse.
@@ -153,7 +159,7 @@ interface AddDevicesResponse {
 		// failure just leaves the dropdown empty — the list still works).
 		api.get<Network[]>('/networks').then((n) => { networks = n || []; networksError = false; }).catch(() => { networksError = true; });
 		pollTimer = setInterval(() => {
-			if (!editOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !importOpen && !linkOpen) {
+			if (!editOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !batchStatusConfirmOpen && !importOpen && !linkOpen) {
 				void refreshDevicesSilent();
 			}
 		}, POLL_MS);
@@ -171,6 +177,10 @@ interface AddDevicesResponse {
 	$effect(() => {
 		function onKeydown(e: KeyboardEvent) {
 			if (e.key !== 'Escape') return;
+			// The batch-status ConfirmDialog manages its own Escape via Modal; let
+			// it through (it sits on top of the dropdown) so the confirm closes
+			// before the dropdown does.
+			if (batchStatusConfirmOpen) return;
 			if (exportOpen) { exportOpen = false; e.stopPropagation(); }
 			else if (batchStatusOpen) { batchStatusOpen = false; e.stopPropagation(); }
 		}
@@ -392,11 +402,11 @@ interface AddDevicesResponse {
 	}
 
 	async function confirmBatchStatus() {
-		if (selectedIds.size === 0) return;
+		if (selectedIds.size === 0 || !pendingBatchStatus) return;
 		batchLoading = true;
 		try {
-			await api.post('/devices/batch-update-status', { ids: Array.from(selectedIds), status: batchStatusValue });
-			addToast('success', m['devices.Batch Status Success']().replace('{count}', String(selectedIds.size)));
+			await api.post('/devices/batch-update-status', { ids: Array.from(selectedIds), status: pendingBatchStatus });
+			addToast('success', m['devices.Batch Status Success']({ count: selectedIds.size }));
 			selectedIds = new Set();
 			fetchDevices();
 		} catch (err: unknown) {
@@ -404,7 +414,17 @@ interface AddDevicesResponse {
 		} finally {
 			batchLoading = false;
 			batchStatusOpen = false;
+			batchStatusConfirmOpen = false;
+			pendingBatchStatus = null;
 		}
+	}
+
+	// Map a status key to its localized display label, for the confirm dialog's
+	// human-readable message ("mark as offline" — not "mark as 'offline'").
+	function statusLabel(status: string): string {
+		if (status === 'online') return m['devices.Online']();
+		if (status === 'offline') return m['devices.Offline']();
+		return m['devices.Unknown']();
 	}
 
 	// --- CSV Import ---
@@ -1116,7 +1136,7 @@ interface AddDevicesResponse {
 					<div class="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg z-20 min-w-[140px]" style="box-shadow: var(--shadow-md);" role="menu">
 						{#each ['online', 'offline', 'unknown'] as status}
 							<button
-								onclick={() => { batchStatusValue = status; batchStatusOpen = false; confirmBatchStatus(); }}
+								onclick={() => { pendingBatchStatus = status; batchStatusValue = status; batchStatusOpen = false; batchStatusConfirmOpen = true; }}
 								role="menuitem"
 								class="w-full text-left px-4 py-2 text-sm text-text hover:bg-surface-2 last:rounded-b-lg first:rounded-t-lg"
 							>
@@ -1308,6 +1328,18 @@ interface AddDevicesResponse {
 	confirmVariant="danger"
 	onConfirm={confirmBatchDelete}
 	onCancel={() => { batchDeleteOpen = false; }}
+/>
+
+<!-- Batch status-update confirmation: the dropdown stages the chosen status
+     here, and only this confirm fires the mutation. Stops an accidental
+     click from bulk-flipping the selected devices (#150). -->
+<ConfirmDialog
+	bind:open={batchStatusConfirmOpen}
+	title={m['devices.Batch Update Status']()}
+	message={m['devices.Batch Update Status Confirm']({ count: selectedIds.size, status: pendingBatchStatus ? statusLabel(pendingBatchStatus) : '' })}
+	confirmLabel={m['common.Confirm']()}
+	onConfirm={confirmBatchStatus}
+	onCancel={() => { pendingBatchStatus = null; }}
 />
 
 <!-- CSV Import Modal -->
