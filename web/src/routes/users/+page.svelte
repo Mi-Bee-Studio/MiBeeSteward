@@ -180,7 +180,7 @@
 			await api.post('/auth/register', formData);
 			createModalOpen = false;
 			resetForm();
-			addToast('success', m["common.Success"]());
+			addToast('success', m["users.Created"]());
 			fetchUsers();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
@@ -199,7 +199,7 @@
 		try {
 			await api.delete(`/users/${deleteTarget.id}`);
 			deleteTarget = null;
-			addToast('success', m["common.Success"]());
+			addToast('success', m["users.Deleted"]());
 			fetchUsers();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
