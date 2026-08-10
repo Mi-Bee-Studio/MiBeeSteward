@@ -67,6 +67,14 @@
 		}
 	}
 
+	// Snapshot of form state captured on open; formDirty ($derived) detects
+	// unsaved edits so the Modal warns before discarding (Esc / backdrop / X). #151
+	let formSnapshot = $state('');
+	function snapshotForm(): string {
+		return JSON.stringify([formName, formCidr, formSite]);
+	}
+	const formDirty = $derived(formOpen && snapshotForm() !== formSnapshot);
+
 	function resetForm() {
 		formName = '';
 		formCidr = '';
@@ -77,6 +85,7 @@
 
 	function openCreate() {
 		resetForm();
+		formSnapshot = snapshotForm();
 		formOpen = true;
 	}
 
@@ -86,6 +95,7 @@
 		formCidr = net.cidr ?? '';
 		formSite = net.site ?? '';
 		formError = '';
+		formSnapshot = snapshotForm();
 		formOpen = true;
 	}
 
@@ -263,7 +273,7 @@
 {/if}
 
 <!-- Create/Edit Modal -->
-<Modal bind:open={formOpen} title={editingId !== null ? (m['networks.Edit']()) : (m['networks.Create']())} maxWidth="36rem" onClose={resetForm}>
+<Modal bind:open={formOpen} title={editingId !== null ? (m['networks.Edit']()) : (m['networks.Create']())} maxWidth="36rem" onClose={resetForm} confirmDiscard={() => formDirty}>
 	{#if formError}
 		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
 			{formError}

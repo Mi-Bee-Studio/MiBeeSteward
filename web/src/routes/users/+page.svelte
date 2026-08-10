@@ -131,6 +131,14 @@
 		if (!Number.isNaN(o) && o >= 0) offset = o;
 	}
 
+	// Snapshot of form state captured on open; formDirty ($derived) detects
+	// unsaved edits so the Modal warns before discarding (Esc / backdrop / X). #151
+	let formSnapshot = $state('');
+	function snapshotForm(): string {
+		return JSON.stringify([formUsername, formEmail, formPassword, formRole]);
+	}
+	const formDirty = $derived(createModalOpen && snapshotForm() !== formSnapshot);
+
 	function resetForm() {
 		formUsername = '';
 		formEmail = '';
@@ -142,6 +150,7 @@
 
 	function openCreate() {
 		resetForm();
+		formSnapshot = snapshotForm();
 		createModalOpen = true;
 	}
 
@@ -380,7 +389,7 @@
 {/if}
 
 <!-- Create User Modal -->
-<Modal bind:open={createModalOpen} title={m["users.Add User"]()} onClose={resetForm}>
+<Modal bind:open={createModalOpen} title={m["users.Add User"]()} onClose={resetForm} confirmDiscard={() => formDirty}>
 	<form onsubmit={handleSubmit} class="space-y-4">
 		<!-- Username -->
 		<div>
