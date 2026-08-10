@@ -65,10 +65,11 @@
 			const res = await api.post<LoginResponse>('/auth/login', { username, password });
 			loginResponse = res;
 
-			// Check if 2FA is required
-			if ((res as any).two_factor_required) {
+			// Check if 2FA is required. LoginResponse models these fields
+			// (two_factor_required / user_id) directly — no `as any` needed.
+			if (res.two_factor_required) {
 				twoFactorRequired = true;
-				twoFactorUserId = (res as any).user_id ?? null;
+				twoFactorUserId = res.user_id ?? null;
 				return; // Don't navigate yet
 			}
 
@@ -135,12 +136,24 @@
 		if (!twoFactorCode || twoFactorCode.length !== 6) return;
 		twoFactorLoading = true;
 		try {
-			const res = await api.post<{ token: string; user: { username: string; role: string; must_change_password: boolean } }>('/auth/2fa/verify', {
+			// The verify endpoint returns the same LoginResponse shape as
+			// /auth/login (Token + full User, including must_change_password).
+			const res = await api.post<LoginResponse>('/auth/2fa/verify', {
 				user_id: twoFactorUserId,
 				code: twoFactorCode
 			});
+			loginResponse = res;
 			auth.login(res.user, res.token);
-			goto(res.user.must_change_password ? '/settings' : '/dashboard');
+
+			// Keep the user on the login page and show the same focused
+			// force-password-change modal the non-2FA flow uses (#156) —
+			// previously this dumped them onto the generic /settings page.
+			if (res.user.must_change_password) {
+				twoFactorRequired = false;
+				showForceDialog = true;
+			} else {
+				goto('/dashboard');
+			}
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
 		} finally {
