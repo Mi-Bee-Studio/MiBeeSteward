@@ -300,7 +300,7 @@ func TestDevice_Create_EmptyName(t *testing.T) {
 		IPAddress: "10.0.0.1",
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "device name is required")
+	require.ErrorIs(t, err, ErrDeviceNameRequired)
 }
 
 // 14. List defaults — limit clamp

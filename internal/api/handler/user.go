@@ -169,6 +169,10 @@ func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusConflict, "user already exists")
 			return
 		}
+		if errors.Is(err, service.ErrWeakPassword) {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		Error(w, http.StatusInternalServerError, "registration failed")
 		return
 	}
@@ -307,6 +311,14 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) {
 			Error(w, http.StatusBadRequest, "incorrect current password")
+			return
+		}
+		if errors.Is(err, service.ErrSamePassword) {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrWeakPassword) {
+			Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		Error(w, http.StatusInternalServerError, "failed to change password")
