@@ -354,6 +354,8 @@
 		"Link": "Link",
 		"Unlink": "Unlink",
 		"Close": "Close",
+		"Expand": "Expand",
+		"Collapse": "Collapse",
 		"unsaved_changes": "Unsaved Changes",
 		"unsaved_changes_desc": "You have unsaved changes. Are you sure you want to close?",
 		"discard": "Discard",

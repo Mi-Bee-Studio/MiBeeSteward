@@ -232,7 +232,7 @@
 							<button
 								type="button"
 								onclick={() => showPassword = !showPassword}
-								class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-text transition-colors"
+								class="absolute right-1 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] flex items-center justify-center text-muted hover:text-text transition-colors"
 								aria-label={showPassword ? m['auth.hide_password']() : m['auth.show_password']()}
 								title={showPassword ? m['auth.hide_password']() : m['auth.show_password']()}
 							>

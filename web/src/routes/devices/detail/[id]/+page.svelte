@@ -1364,14 +1364,12 @@
 			{:else if tlsCerts.length > 0}
 				<div class="tls-cert-list">
 					{#each tlsCerts as portCerts (portCerts.port)}
-						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-						<div
+						<button
+							type="button"
 							class="tls-cert-row"
 							data-status={certStatus(portCerts)}
-							role="button"
-							tabindex="0"
 							onclick={() => openCertModal(portCerts)}
-							onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCertModal(portCerts); } }}
+							aria-label={m['certificates.ViewCert']?.() ?? `:${portCerts.port} TLS`}
 						>
 							<div class="tls-cert-port">
 								<span class="tls-cert-port-num">:{portCerts.port}</span>
@@ -1401,7 +1399,7 @@
 								{/if}
 								<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
 							</div>
-						</div>
+						</button>
 					{/each}
 				</div>
 			{:else}
@@ -2156,6 +2154,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.875rem;
+		width: 100%;
 		padding: 0.625rem 0.75rem;
 		border: 1px solid var(--color-border);
 		border-left-width: 3px;
@@ -2163,6 +2162,11 @@
 		cursor: pointer;
 		transition: background 0.15s ease, border-color 0.15s ease;
 		background: var(--color-surface);
+		/* <button> reset so it renders like the old <div> (full width, left-aligned,
+		   inherits text color/font — button defaults to centered/its own font). */
+		text-align: left;
+		font: inherit;
+		color: inherit;
 	}
 	.tls-cert-row:hover {
 		background: var(--color-surface-2);

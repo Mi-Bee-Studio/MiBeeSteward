@@ -75,12 +75,9 @@
 	ondrop={handleDrop}
 >
 	<div class="widget-header">
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-		<div
+		<button
+			type="button"
 			class="widget-drag-handle"
-			role="button"
-			tabindex="0"
 			aria-label={m['dashboard.Drag to Reorder']()}
 			title={m['dashboard.Drag to Reorder']()}
 			onkeydown={(e) => {
@@ -96,7 +93,7 @@
 			}}
 		>
 			<GripVertical class="w-[14px] h-[14px]" />
-		</div>
+		</button>
 		<h3 class="widget-title">{widget.name}</h3>
 		<div class="widget-actions">
 			<button class="widget-action-btn" onclick={() => onEdit(widget.id)} title={m['common.Edit Widget']()} aria-label={m['common.Edit Widget']()}>
@@ -151,10 +148,18 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		/* ≥44px touch target (WCAG 2.5.5) — the grip icon stays 14px, only the
+		   clickable area grows so it's reachable on touch / by shaky pointers. */
+		min-width: 2.75rem;
+		min-height: 2.75rem;
+		padding: 0;
+		border: none;
+		background: transparent;
 		color: var(--color-text-muted);
 		opacity: 0.4;
 		transition: opacity 0.15s ease;
 		flex-shrink: 0;
+		cursor: grab;
 	}
 
 	.widget-card:hover .widget-drag-handle {
@@ -190,8 +195,10 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.75rem;
-		height: 1.75rem;
+		/* ≥44×44px touch target (WCAG 2.5.5) — was 1.75rem (28px), too small
+		   for touch. The icon stays 14px; only the hit area grows. */
+		min-width: 2.75rem;
+		min-height: 2.75rem;
 		border-radius: var(--radius-sm);
 		border: none;
 		background: transparent;
