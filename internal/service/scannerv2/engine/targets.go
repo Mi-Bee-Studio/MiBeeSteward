@@ -10,10 +10,23 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
+)
+
+// Sentinel errors for target parsing. Callers (e.g. the scanner handler) use
+// errors.Is against these to distinguish user-supplied-bad-targets (HTTP 400)
+// from internal failures, rather than brittle string matching on error text.
+var (
+	ErrEmptyTargets         = errors.New("targets is empty")
+	ErrNoValidTargets       = errors.New("no valid targets")
+	ErrInvalidTarget        = errors.New("invalid target")
+	ErrInvalidIPRange       = errors.New("invalid IP range")
+	ErrIPv6RangeUnsupported = errors.New("IPv6 ranges unsupported")
+	ErrTargetRangeTooLarge  = errors.New("target range too large")
 )
 
 // ParseScanTargets is the exported form of parseScanTargets, exposed so other
@@ -37,7 +50,7 @@ func ParseScanTargets(targets string) ([]string, error) {
 func parseScanTargets(targets string) ([]string, error) {
 	targets = strings.TrimSpace(targets)
 	if targets == "" {
-		return nil, fmt.Errorf("targets is empty")
+		return nil, ErrEmptyTargets
 	}
 
 	// Comma-separated list of any of the above.
@@ -55,7 +68,7 @@ func parseScanTargets(targets string) ([]string, error) {
 			ips = append(ips, expanded...)
 		}
 		if len(ips) == 0 {
-			return nil, fmt.Errorf("no valid targets")
+			return nil, ErrNoValidTargets
 		}
 		return ips, nil
 	}
@@ -76,7 +89,7 @@ func parseSingleTarget(t string) ([]string, error) {
 	if strings.Contains(t, "-") {
 		return parseIPRange(t)
 	}
-	return nil, fmt.Errorf("invalid target: %s", t)
+	return nil, fmt.Errorf("%w: %s", ErrInvalidTarget, t)
 }
 
 func enumerateCIDR(ipNet *net.IPNet) []string {
@@ -94,17 +107,17 @@ func enumerateCIDR(ipNet *net.IPNet) []string {
 func parseIPRange(s string) ([]string, error) {
 	parts := strings.SplitN(s, "-", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid IP range: %s", s)
+		return nil, fmt.Errorf("%w: %s", ErrInvalidIPRange, s)
 	}
 	startStr := strings.TrimSpace(parts[0])
 	endStr := strings.TrimSpace(parts[1])
 	startIP := net.ParseIP(startStr)
 	if startIP == nil {
-		return nil, fmt.Errorf("invalid range start: %s", startStr)
+		return nil, fmt.Errorf("%w: invalid range start %s", ErrInvalidIPRange, startStr)
 	}
 	start4 := startIP.To4()
 	if start4 == nil {
-		return nil, fmt.Errorf("IPv6 ranges unsupported: %s", s)
+		return nil, fmt.Errorf("%w: %s", ErrIPv6RangeUnsupported, s)
 	}
 
 	var end4 net.IP
@@ -115,13 +128,13 @@ func parseIPRange(s string) ([]string, error) {
 		// Suffix range: "192.168.1.1-10" → replace last octet.
 		n, err := strconv.Atoi(endStr)
 		if err != nil || n < 0 || n > 255 {
-			return nil, fmt.Errorf("invalid range end: %s", endStr)
+			return nil, fmt.Errorf("%w: invalid range end %s", ErrInvalidIPRange, endStr)
 		}
 		end4 = append(net.IP{}, start4...)
 		end4[3] = byte(n)
 	}
 	if end4 == nil {
-		return nil, fmt.Errorf("invalid range end: %s", endStr)
+		return nil, fmt.Errorf("%w: invalid range end %s", ErrInvalidIPRange, endStr)
 	}
 
 	// Ensure start <= end by comparing the full 32-bit value. The previous code
@@ -143,7 +156,7 @@ func parseIPRange(s string) ([]string, error) {
 	const maxRangeIPs = 65536
 	count := int(endU-startU) + 1
 	if count > maxRangeIPs {
-		return nil, fmt.Errorf("range too large: %d IPs (max %d); use a CIDR with the async task API", count, maxRangeIPs)
+		return nil, fmt.Errorf("%w: %d IPs (max %d); use a CIDR with the async task API", ErrTargetRangeTooLarge, count, maxRangeIPs)
 	}
 
 	ips := make([]string, 0, count)
