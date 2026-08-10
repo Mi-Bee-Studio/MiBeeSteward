@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"strings"
 	"time"
 
 	"mibee-steward/internal/changedetect"
@@ -56,19 +57,11 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 	//    last_seen_at) and build the alive IP set for the set difference.
 	aliveIPs := rn.RecordAliveSnapshots(ctx, networkID, taskID, reports)
 
-	// 2. Increment miss_count for snapshots NOT in the alive set.
-	snaps, err := rn.queries.ListSnapshotsForNetwork(ctx, netID)
-	if err != nil {
-		rn.logger.Warn("detect-lost: list snapshots failed", "network_id", netID, "error", err)
-		return
-	}
-	for _, s := range snaps {
-		if aliveIPs[s.Ip] {
-			continue // seen this scan — miss_count already reset by the upsert
-		}
-		if err := rn.queries.IncrementSnapshotMiss(ctx, s.ID); err != nil {
-			rn.logger.Warn("detect-lost: increment miss failed", "snapshot_id", s.ID, "ip", s.Ip, "error", err)
-		}
+	// 2. Increment miss_count for snapshots NOT in the alive set — a single
+	// batch UPDATE replaces the previous one-UPDATE-per-missing-host loop
+	// (200 missing hosts = 200 individual UPDATEs → now 1). (#162)
+	if err := rn.batchIncrementMiss(ctx, netID, aliveIPs); err != nil {
+		rn.logger.Warn("detect-lost: batch increment miss failed", "network_id", netID, "error", err)
 	}
 
 	// 3. Emit device_lost for snapshots past the threshold that are still online.
@@ -117,6 +110,33 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 		slog.Info("detect-lost: devices declared lost",
 			"network_id", netID, "count", len(lost), "threshold", threshold)
 	}
+}
+
+// batchIncrementMiss bumps miss_count for every snapshot in the network whose
+// IP is NOT in the alive set, in a single UPDATE. This replaces the previous
+// per-snapshot IncrementSnapshotMiss loop (N missing hosts = N individual
+// UPDATEs → now 1 query). (#162)
+func (rn *Runner) batchIncrementMiss(ctx context.Context, netID int64, aliveIPs map[string]bool) error {
+	if len(aliveIPs) == 0 {
+		// No alive hosts at all — every snapshot in the network is missing.
+		_, err := rn.dbConn.ExecContext(ctx,
+			`UPDATE scan_snapshots SET miss_count = miss_count + 1 WHERE network_id = ?`, netID)
+		return err
+	}
+	// Build NOT IN (?,...) with one placeholder per alive IP. The scan target
+	// size is bounded (sync API rejects >1024 IPs), so the parameter count is
+	// always well within SQLite's limit.
+	placeholders := make([]string, 0, len(aliveIPs))
+	args := make([]any, 0, len(aliveIPs)+1)
+	args = append(args, netID)
+	for ip := range aliveIPs {
+		placeholders = append(placeholders, "?")
+		args = append(args, ip)
+	}
+	query := `UPDATE scan_snapshots SET miss_count = miss_count + 1 ` +
+		`WHERE network_id = ? AND ip NOT IN (` + strings.Join(placeholders, ",") + `)`
+	_, err := rn.dbConn.ExecContext(ctx, query, args...)
+	return err
 }
 
 // RecordAliveSnapshots upserts a scan snapshot for every alive host in reports

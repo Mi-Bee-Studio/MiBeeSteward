@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"mibee-steward/internal/domain"
@@ -51,6 +52,15 @@ type SQLiteRepository struct {
 	// Two instances on different LANs thus keep their data partitioned even
 	// when private IPs overlap. Resolved from config `network` at startup.
 	networkID sql.NullInt64
+	// uuidCache memoizes IP → device_uuid lookups within the repository's
+	// lifetime. UUIDs are stable device identity (they never change once
+	// assigned), so caching is correct; the set of IPs per network is bounded
+	// (a /24 = 254 hosts), so the map does not grow unbounded. Without this
+	// cache, a /24 scan with 50 alive hosts triggers ~200 DB round-trips just
+	// to resolve UUIDs (RecordEvidence + RecordServices + RecordTLSCerts each
+	// call resolveDeviceUUID per host). (#162)
+	uuidCache map[string]string
+	uuidMu    sync.Mutex
 }
 
 // Options configures the SQLiteRepository.
@@ -93,6 +103,7 @@ func NewSQLiteRepository(db *sql.DB, opts Options, logger *slog.Logger) *SQLiteR
 		defaultSNMPCommunity: opts.DefaultSNMPCommunity,
 		defaultSNMPOID:       opts.DefaultSNMPOID,
 		networkID:            nid,
+		uuidCache:            make(map[string]string),
 	}
 }
 
@@ -900,9 +911,19 @@ func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int6
 // empty-string sentinel is safe because devices.device_uuid is always populated
 // (non-empty) once a row exists — backfillDeviceUUIDs guarantees it.
 //
-// Used by the satellite-table writers (RecordServices/RecordEvidence/RecordTLSCerts)
-// so those rows key on the stable identity instead of the roaming-prone IP.
+// Results are memoized in r.uuidCache (IP → UUID). UUIDs are stable device
+// identity, so the cache is correct across calls; a /24 scan with 50 alive
+// hosts previously triggered ~200 DB round-trips here (one per Record* call per
+// host). The cache collapses that to ~50 (one per unique IP). (#162)
 func (r *SQLiteRepository) resolveDeviceUUID(ctx context.Context, ip string) (string, error) {
+	// Fast path: cache hit (includes cached "" for known-absent IPs).
+	r.uuidMu.Lock()
+	if u, ok := r.uuidCache[ip]; ok {
+		r.uuidMu.Unlock()
+		return u, nil
+	}
+	r.uuidMu.Unlock()
+
 	var q string
 	var args []any
 	if r.networkID.Valid {
@@ -921,8 +942,15 @@ func (r *SQLiteRepository) resolveDeviceUUID(ctx context.Context, ip string) (st
 				`SELECT device_uuid FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&u)
 		}
 		if err != nil {
+			// Do NOT cache the negative result ("") — a device may be created
+			// between scan passes (the heal scenario the tests verify), so a
+			// stale "" would block the UUID from ever resolving. Only non-empty
+			// results are cached (UUIDs are stable once assigned). (#162)
 			return "", err
 		}
 	}
+	r.uuidMu.Lock()
+	r.uuidCache[ip] = u
+	r.uuidMu.Unlock()
 	return u, nil
 }
