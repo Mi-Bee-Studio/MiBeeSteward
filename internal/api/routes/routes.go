@@ -805,8 +805,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		}
 		// Stop the lease sweeper BEFORE the DB close — its sweepOnce runs
 		// UPDATE devices + recordDeviceLost (change_log INSERT) and must not
-		// race db.Close().
+		// race db.Close(). Cancel unblocks an in-flight sweep's ctx-aware DB
+		// calls, then Stop() waits for the goroutine to fully exit. (#163)
 		leaseSweepCancel()
+		leaseSweeper.Stop()
 		// Stop the reconciliation job BEFORE the DB close — its scan reads
 		// devices/networks and must not race db.Close().
 		reconcileCancel()
@@ -827,6 +829,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// this, the 3 workers (and their *db.Queries handle) outlive graceful
 		// shutdown and race against db.Close() in main.go.
 		notificationDispatcher.Stop()
+		// Stop the rate-limiter cleanup goroutines (process-lifetime, but
+		// close cleanly instead of leaking). (#163)
+		loginLimiter.Stop()
+		globalLimiter.Stop()
+		scanLimiter.Stop()
 	}
 }
 

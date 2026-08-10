@@ -233,3 +233,23 @@ func TestLeaseSweeper_NoRecoverOnCenterNetwork(t *testing.T) {
 	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.63.50'`).Scan(&status)
 	require.Equal(t, "offline", status, "center-network device must not be recovered by the lease sweeper")
 }
+
+// TestLeaseSweeper_StopWaitsForGoroutine verifies the shutdown contract (#163):
+// after Stop() returns, the sweep goroutine has fully exited. We cancel the ctx
+// (which the loop selects on) then call Stop() — if Stop() did NOT wait (the
+// pre-fix bug), the goroutine could still be running and race setupLeaseTestDB's
+// t.Cleanup conn.Close(). The race detector makes this definitive: a leaked
+// goroutine touching conn after the cleanup close trips a data race.
+func TestLeaseSweeper_StopWaitsForGoroutine(t *testing.T) {
+	rn, _, _, _, _ := setupLeaseTestDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sweeper := NewLeaseSweeper(rn, 50*time.Millisecond, 5*time.Minute, nil)
+	sweeper.Start(ctx)
+
+	// Let at least one tick fire so the goroutine is actively sweeping.
+	time.Sleep(120 * time.Millisecond)
+
+	cancel()
+	sweeper.Stop() // must block until the goroutine exits before t.Cleanup closes conn
+}

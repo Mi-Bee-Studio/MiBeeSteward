@@ -148,7 +148,8 @@ func (o *Observer) start() error {
 }
 
 // drain reads ring-buffer events forever, translating each into Evidence and
-// buffering it under the source IP. Exits when state.stop closes.
+// buffering it under the source IP. Exits when state.stop closes or the ring
+// buffer reader is closed (Stop closes both).
 func (o *Observer) drain() {
 	for {
 		select {
@@ -177,6 +178,37 @@ func (o *Observer) drain() {
 			state.recent[ev.IP] = state.recent[ev.IP][len(state.recent[ev.IP])-100:]
 		}
 		state.mu.Unlock()
+	}
+}
+
+// Stop tears down the eBPF observer: closes the ring-buffer reader (which
+// unblocks the drain goroutine's Read), signals state.stop, detaches the TC
+// programs, and frees the BPF objects. Idempotent — safe to call when the
+// observer never started (state.stop is nil) or to call twice. (#163)
+func (o *Observer) Stop() {
+	// Closing the reader unblocks an in-flight drain Read() → ErrClosed exit.
+	if state.reader != nil {
+		_ = state.reader.Close()
+	}
+	// Signal state.stop so the drain's select also catches it (defense-in-depth
+	// for the case where Read already returned ErrClosed).
+	state.mu.Lock()
+	if state.stop != nil {
+		select {
+		case <-state.stop:
+		default:
+			close(state.stop)
+		}
+	}
+	// Detach TC programs + free BPF objects.
+	for _, l := range state.links {
+		_ = l.Close()
+	}
+	state.links = nil
+	state.mu.Unlock()
+	if state.objects != nil {
+		_ = state.objects.Close()
+		state.objects = nil
 	}
 }
 

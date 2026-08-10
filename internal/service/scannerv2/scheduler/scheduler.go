@@ -86,26 +86,41 @@ func New(queries *db.Queries, dbConn *sql.DB, scanFn ScanFunc, logger *slog.Logg
 // Start re-hydrates jobs from enabled scan_tasks and begins cron firing.
 func (s *Scheduler) Start(ctx context.Context) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.started {
+		s.mu.Unlock()
 		return
 	}
-	// Mark stale runs failed (>1h old "running").
+	s.started = true
+	s.mu.Unlock()
+
+	// DB I/O (stale-run cleanup + task listing) is done OUTSIDE s.mu. Holding
+	// the lock across these blocked AddJob/RemoveJob/TriggerNow/CancelTask for
+	// the duration of a SQLite BUSY / WAL stall, even though Start runs once at
+	// boot. The registration of jobs below is the only part that needs the lock
+	// (it mutates jobMap + the gocron scheduler). (#163)
 	s.cleanupStaleRuns(ctx)
 
 	tasks, err := s.queries.ListEnabledScanTasks(ctx)
 	if err != nil {
 		s.logger.Error("scheduler: list enabled tasks failed", "error", err)
 	} else {
+		s.mu.Lock()
 		for _, t := range tasks {
 			if err := s.registerJob(t.ID, t.CronExpr, t.Targets); err != nil {
 				s.logger.Error("scheduler: register job failed", "task_id", t.ID, "error", err)
 			}
 		}
+		s.scheduler.Start()
+		s.logger.Info("scheduler started", "jobs", len(s.jobMap))
+		s.mu.Unlock()
 	}
-	s.started = true
-	s.scheduler.Start()
-	s.logger.Info("scheduler started", "jobs", len(s.jobMap))
+
+	// If listing failed we still need to start gocron (empty) so Stop() works.
+	if err != nil {
+		s.mu.Lock()
+		s.scheduler.Start()
+		s.mu.Unlock()
+	}
 
 	// Periodic stale-run sweeper. Without this, a run that hangs (e.g. a probe
 	// stuck on an unresponsive host) stays status='running' forever, and because
