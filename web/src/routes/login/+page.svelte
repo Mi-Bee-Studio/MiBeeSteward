@@ -14,7 +14,7 @@
 	import { auth } from '$lib/stores/auth';
 	import type { LoginResponse } from '$lib/types';
 	import { getErrorMessage } from '$lib/utils/error.js';
-	import { loginSchema } from '$lib/utils/validation.js';
+	import { loginSchema, forcePasswordSchema, validateForm } from '$lib/utils/validation.js';
 	import { goto } from '$app/navigation';
 	import { fly } from 'svelte/transition';
 	import { addToast } from '$lib/stores/toast';
@@ -110,12 +110,18 @@
 		e.preventDefault();
 		forceError = '';
 
-		if (forceNewPassword.length < 8) {
-			forceError = m["auth.password_min_length"]();
-			return;
-		}
-		if (forceNewPassword !== forceConfirmPassword) {
-			forceError = m["auth.passwords_no_match"]();
+		// Validate via the shared forcePasswordSchema (8-char min + match) so the
+		// password policy lives in ONE place (#154 part 3) — previously these
+		// were hand-rolled length / mismatch checks that would silently drift
+		// from the users-page reset-password modal if the policy changed.
+		const validation = validateForm(forcePasswordSchema, {
+			new_password: forceNewPassword,
+			confirm: forceConfirmPassword
+		});
+		if (!validation.valid) {
+			// The schema attaches the error to `confirm` for a mismatch, or to
+			// `new_password` for the length rule — surface the first one.
+			forceError = validation.errors.new_password ?? validation.errors.confirm ?? '';
 			return;
 		}
 
