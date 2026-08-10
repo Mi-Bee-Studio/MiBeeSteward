@@ -33,6 +33,11 @@ var (
 	ErrUserExists         = errors.New("user already exists")
 	ErrSamePassword       = errors.New("new password must be different")
 	ErrAccountLocked      = errors.New("account is locked due to too many failed login attempts")
+	// ErrWeakPassword is the sentinel for every password-strength rule failure.
+	// validatePassword wraps the specific rule as detail, so handlers map the
+	// whole family to 400 via errors.Is(err, ErrWeakPassword) without checking
+	// each rule individually. (#165)
+	ErrWeakPassword = errors.New("password does not meet requirements")
 )
 
 var (
@@ -46,22 +51,22 @@ var (
 // and requires at least one uppercase, lowercase, digit, and special character.
 func validatePassword(password, username string) error {
 	if len(password) < 8 {
-		return fmt.Errorf("password must be at least 8 characters")
+		return fmt.Errorf("%w: must be at least 8 characters", ErrWeakPassword)
 	}
 	if password == username {
-		return fmt.Errorf("password must not equal username")
+		return fmt.Errorf("%w: must not equal username", ErrWeakPassword)
 	}
 	if !hasUppercase.MatchString(password) {
-		return fmt.Errorf("password must contain at least one uppercase letter")
+		return fmt.Errorf("%w: must contain at least one uppercase letter", ErrWeakPassword)
 	}
 	if !hasLowercase.MatchString(password) {
-		return fmt.Errorf("password must contain at least one lowercase letter")
+		return fmt.Errorf("%w: must contain at least one lowercase letter", ErrWeakPassword)
 	}
 	if !hasDigit.MatchString(password) {
-		return fmt.Errorf("password must contain at least one digit")
+		return fmt.Errorf("%w: must contain at least one digit", ErrWeakPassword)
 	}
 	if !hasSpecialChar.MatchString(password) {
-		return fmt.Errorf("password must contain at least one special character")
+		return fmt.Errorf("%w: must contain at least one special character", ErrWeakPassword)
 	}
 	return nil
 }

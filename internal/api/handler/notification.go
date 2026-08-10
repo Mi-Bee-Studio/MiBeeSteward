@@ -52,7 +52,11 @@ func (h *NotificationHandler) CreateChannel(w http.ResponseWriter, r *http.Reque
 
 	resp, err := h.svc.CreateChannel(r.Context(), req)
 	if err != nil {
-		Error(w, http.StatusBadRequest, err.Error())
+		if errors.Is(err, service.ErrInvalidChannelConfig) {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed to create notification channel")
 		return
 	}
 
@@ -127,6 +131,10 @@ func (h *NotificationHandler) UpdateChannel(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		if errors.Is(err, service.ErrChannelNotFound) {
 			Error(w, http.StatusNotFound, "notification channel not found")
+			return
+		}
+		if errors.Is(err, service.ErrInvalidChannelConfig) {
+			Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		Error(w, http.StatusInternalServerError, "failed to update notification channel")
