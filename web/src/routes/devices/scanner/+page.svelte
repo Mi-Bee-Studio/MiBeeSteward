@@ -9,7 +9,7 @@
 -->
 
 <script lang="ts">
-	import { api } from '$lib/api/client';
+	import { api, RequestCancelledError } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
@@ -17,7 +17,7 @@
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
-	import { LoaderCircle, Radar } from '@lucide/svelte';
+	import { LoaderCircle, Radar, CircleStop } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	// All 9 device types matching internal/domain/device.go
@@ -73,6 +73,10 @@
 
 	// Results state
 	let scanning = $state(false);
+	// AbortController for the in-flight scan request — lets the user cancel a
+	// long scan. The backend honors request-context cancellation (ScanTargets
+	// listens on ctx.Done), so aborting here actually stops the server scan.
+	let scanController: AbortController | null = null;
 	let result = $state<ScanResponse | null>(null);
 	// Inline error for a failed whole-scan run. Previously a scan failure only
 	// surfaced as a corner toast and the result pane stayed silently empty —
@@ -135,6 +139,7 @@
 		}
 
 		scanning = true;
+		scanController = new AbortController();
 		result = null;
 		scanError = '';
 		selectedIps = new Set();
@@ -153,7 +158,7 @@
 				community: community || 'public',
 				timeout: timeout || 2,
 				credential_id: selectedCredentialId ?? undefined
-			});
+			}, scanController?.signal);
 			result = res;
 
 			// Initialize form fields for alive hosts, pre-fill from enriched data
@@ -201,13 +206,26 @@
 
 			addToast('success', m['scanner.Scan Complete']());
 		} catch (err) {
+			// User-triggered cancel: the toast was already shown by cancelScan;
+			// don't also surface a generic error banner.
+			if (err instanceof RequestCancelledError) return;
 			// Inline banner so the user sees the failure in context (not just a
 			// corner toast) — the result pane stays empty otherwise.
 			scanError = getErrorMessage(err);
 			addToast('error', scanError);
 		} finally {
 			scanning = false;
+			scanController = null;
 		}
+	}
+
+	// Abort the in-flight scan. The backend honors request-context cancellation,
+	// so the server actually stops probing (#153).
+	function cancelScan() {
+		if (!scanController) return;
+		scanController.abort();
+		scanController = null;
+		addToast('info', m['scanner.Scan Cancelled']());
 	}
 
 	function toggleSelect(ip: string) {
@@ -359,6 +377,16 @@
 					{m['scanner.Start Scan']()}
 				{/if}
 			</button>
+			{#if scanning}
+				<button
+					onclick={cancelScan}
+					class="btn btn-danger"
+					title={m['common.Cancel']()}
+				>
+					<CircleStop class="w-4 h-4" />
+					{m['common.Cancel']()}
+				</button>
+			{/if}
 		</div>
 	</div>
 
