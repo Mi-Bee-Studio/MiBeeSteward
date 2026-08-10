@@ -164,6 +164,18 @@
 		}
 	}
 	// --- Form helpers ---
+	// Snapshot of the form state captured when the modal opens. Used by
+	// formDirty ($derived) to detect unsaved edits so the Modal can warn
+	// before discarding them (Esc / backdrop / X). #151.
+	let formSnapshot = $state('');
+
+	function snapshotForm(): string {
+		return JSON.stringify([formName, formTargets, formCronExpr, formTimeout,
+			formCommunity, formEnabled, formPipelineConfig, formCredentialId]);
+	}
+
+	const formDirty = $derived(formOpen && snapshotForm() !== formSnapshot);
+
 	function resetForm() {
 		formName = '';
 		formTargets = '';
@@ -180,6 +192,7 @@
 
 	function openCreate() {
 		resetForm();
+		formSnapshot = snapshotForm();
 		formOpen = true;
 	}
 
@@ -207,6 +220,7 @@
 			formPipelineConfig = defaultPipeline();
 		}
 		formError = '';
+		formSnapshot = snapshotForm();
 		formOpen = true;
 	}
 
@@ -632,7 +646,7 @@
 </div>
 
 <!-- Create/Edit Modal -->
-<Modal bind:open={formOpen} title={editingTask ? m['scanner.Edit Task']() : m['scanner.Create Task']()} maxWidth="48rem" onClose={resetForm}>
+<Modal bind:open={formOpen} title={editingTask ? m['scanner.Edit Task']() : m['scanner.Create Task']()} maxWidth="48rem" onClose={resetForm} confirmDiscard={() => formDirty}>
 	{#if formError}
 		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
 			{formError}

@@ -97,6 +97,17 @@
 		}
 	}
 
+	// Snapshot of channel form state captured on open; formDirty ($derived)
+	// detects unsaved edits so the Modal warns before discarding (Esc /
+	// backdrop / X). #151
+	let formSnapshot = $state('');
+	function snapshotForm(): string {
+		return JSON.stringify([formName, formType, formEnabled, formUrl, formHeaders,
+			formSmtpHost, formSmtpPort, formSmtpUsername, formSmtpPassword,
+			formFromAddress, formToAddress]);
+	}
+	const formDirty = $derived(modalOpen && snapshotForm() !== formSnapshot);
+
 	function resetForm() {
 		formName = '';
 		formType = 'webhook';
@@ -114,6 +125,7 @@
 
 	function openCreate() {
 		resetForm();
+		formSnapshot = snapshotForm();
 		modalOpen = true;
 	}
 
@@ -149,6 +161,7 @@
 			formHeaders = [{ key: '', value: '' }];
 		}
 
+		formSnapshot = snapshotForm();
 		modalOpen = true;
 	}
 
@@ -354,6 +367,16 @@
 		}
 	}
 
+	// Snapshot of rule form state captured on open; ruleFormDirty ($derived)
+	// detects unsaved edits so the Modal warns before discarding (Esc /
+	// backdrop / X). #151
+	let ruleFormSnapshot = $state('');
+	function snapshotRuleForm(): string {
+		return JSON.stringify([ruleName, ruleEventType, ruleScopeType,
+			ruleScopeNetworkId, ruleScopeDeviceUuid, ruleChannelId, ruleCooldown]);
+	}
+	const ruleFormDirty = $derived(ruleModalOpen && snapshotRuleForm() !== ruleFormSnapshot);
+
 	function resetRuleForm() {
 		ruleName = '';
 		ruleEventType = 'device_lost';
@@ -368,6 +391,7 @@
 
 	function openCreateRule() {
 		resetRuleForm();
+		ruleFormSnapshot = snapshotRuleForm();
 		ruleModalOpen = true;
 	}
 
@@ -381,6 +405,7 @@
 		ruleChannelId = rule.channel_id;
 		ruleCooldown = rule.cooldown_minutes;
 		ruleFieldErrors = {};
+		ruleFormSnapshot = snapshotRuleForm();
 		ruleModalOpen = true;
 	}
 
@@ -752,7 +777,7 @@
 {/if}
 
 <!-- Create/Edit Channel Modal -->
-<Modal bind:open={modalOpen} title={editingChannel ? m["notifications.Edit Channel"]() : m["notifications.Create Channel"]()} onClose={resetForm} maxWidth="36rem">
+<Modal bind:open={modalOpen} title={editingChannel ? m["notifications.Edit Channel"]() : m["notifications.Create Channel"]()} onClose={resetForm} maxWidth="36rem" confirmDiscard={() => formDirty}>
 	<form onsubmit={handleSubmit} class="space-y-4">
 		<!-- Name -->
 		<div>
@@ -969,7 +994,7 @@
 />
 
 <!-- Rule create/edit modal (#139) -->
-<Modal bind:open={ruleModalOpen} title={editingRule ? m["notifications.Edit Rule"]() : m["notifications.Create Rule"]()} onClose={resetRuleForm} maxWidth="36rem">
+<Modal bind:open={ruleModalOpen} title={editingRule ? m["notifications.Edit Rule"]() : m["notifications.Create Rule"]()} onClose={resetRuleForm} maxWidth="36rem" confirmDiscard={() => ruleFormDirty}>
 	<form onsubmit={handleRuleSubmit} class="space-y-4">
 		<!-- Name -->
 		<div>
