@@ -14,7 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
-	import { html } from '$lib/utils/index';
+	import { html, formatDateTime as formatTime } from '$lib/utils/index';
 	import { agentTokenSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { addToast } from '$lib/stores/toast';
 
@@ -237,11 +237,6 @@
 	}
 
 	// --- Helpers ---
-	function formatTime(iso?: string | null): string {
-		if (!iso) return '-';
-		try { return new Date(iso).toLocaleString(); } catch { return iso; }
-	}
-
 	function timeAgo(iso?: string | null): string {
 		if (!iso) return '-';
 		try {

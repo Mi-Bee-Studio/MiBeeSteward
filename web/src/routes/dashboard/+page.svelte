@@ -24,6 +24,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { scanRunStatusBadge } from '$lib/utils/badges';
+	import { formatTime } from '$lib/utils/index';
 	import { auth } from '$lib/stores/auth';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import type { DashboardWidgetConfig } from '$lib/types';
@@ -383,7 +384,7 @@
 			};
 		}
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const times = result.values.map((v: any) => new Date(v[0] * 1000).toLocaleTimeString());
+		const times = result.values.map((v: any) => formatTime(v[0] * 1000));
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const values = result.values.map((v: any) => parseFloat(v[1]));
 		return {
@@ -743,7 +744,7 @@
 			<h2 class="text-2xl font-bold text-primary">{m["dashboard.Dashboard"]()}</h2>
 			{#if lastUpdated}
 				<span class="text-xs text-muted whitespace-nowrap">
-					{lastUpdated.toLocaleTimeString()}
+					{formatTime(lastUpdated)}
 				</span>
 			{/if}
 			{#if useCustomLayout}

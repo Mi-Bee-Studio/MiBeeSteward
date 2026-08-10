@@ -17,6 +17,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import { auth } from '$lib/stores/auth';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { formatDateTime as formatTimestamp } from '$lib/utils/index';
 	import type { Device, System, DeviceNeighbor, TLSPortCerts } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
@@ -171,12 +172,6 @@
 		} finally {
 			userAttrSaving = false;
 		}
-	}
-
-	function formatTimestamp(iso: string | null | undefined): string {
-		if (!iso) return '-';
-		try { return new Date(iso).toLocaleString(); }
-			catch { return iso; }
 	}
 
 	// Silent-device retention thresholds (must mirror retention.silent_device_*
@@ -724,7 +719,7 @@
 				formatter(params: unknown) {
 					const items = params as Array<{ seriesName: string; data: [string, number]; color: string }>;
 					if (!Array.isArray(items) || items.length === 0) return '';
-					const time = new Date(items[0].data[0]).toLocaleString();
+					const time = formatTimestamp(items[0].data[0]);
 					let html = `<div style="margin-bottom:4px;font-weight:600">${time}</div>`;
 					for (const item of items) {
 						if (item.data[1] !== undefined) {
@@ -1327,7 +1322,7 @@
 									</td>
 									<td class="px-3 py-2 font-mono text-xs text-text">{nb.local_port ?? '-'}</td>
 									<td class="px-3 py-2 font-mono text-xs text-text">{nb.remote_port ?? '-'}</td>
-									<td class="px-3 py-2 text-xs text-text-muted">{nb.last_seen ? new Date(nb.last_seen).toLocaleString() : '-'}</td>
+									<td class="px-3 py-2 text-xs text-text-muted">{formatTimestamp(nb.last_seen)}</td>
 								</tr>
 							{/each}
 						</tbody>

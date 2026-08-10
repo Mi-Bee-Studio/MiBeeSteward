@@ -14,6 +14,7 @@
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
 	import { Bell } from '@lucide/svelte';
+	import { formatDateTime as formatTime } from '$lib/utils/index';
 	import type { NotificationLog, NotificationLogsResponse, MarkAllReadResponse } from '$lib/types';
 
 	let notifications = $state<NotificationLog[]>([]);
@@ -88,17 +89,6 @@
 	function handleClickOutside(e: MouseEvent) {
 		if (containerRef && !containerRef.contains(e.target as Node)) {
 			showDropdown = false;
-		}
-	}
-
-	function formatTime(iso: string): string {
-		if (!iso) return '-';
-		try {
-			return new Date(iso).toLocaleString();
-		} catch {
-			// A malformed sent_at would otherwise throw inside the {#each} and
-			// crash the whole dropdown. Fall back to the raw value.
-			return iso;
 		}
 	}
 
