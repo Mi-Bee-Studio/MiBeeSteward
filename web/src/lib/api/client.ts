@@ -59,6 +59,15 @@ export class ApiError extends Error {
 	}
 }
 
+/** Thrown when a request is aborted by the caller (user cancel), distinct
+ *  from a timeout or network failure so callers can skip the error toast. */
+export class RequestCancelledError extends Error {
+	constructor() {
+		super('request cancelled');
+		this.name = 'RequestCancelledError';
+	}
+}
+
 /**
  * Shared 401 handling: logs the user out, redirects to /login, and returns a
  * SessionExpiredError for the caller to throw (request/download) or reject
@@ -104,13 +113,35 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	let lastError: unknown;
 
 	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+		// Combine the caller's abort signal (user cancel) with a 30s timeout into
+		// a single controller. Manual combiner instead of AbortSignal.any() — the
+		// build target is es2020 and the repo has no prior usage of .any(), so a
+		// listener-based merge is the safe, dependency-free path (#153).
+		const ctrl = new AbortController();
+		const timer = setTimeout(
+			() => ctrl.abort(new DOMException('request timeout', 'TimeoutError')),
+			30000
+		);
+		const callerSignal = options?.signal;
+		const onCallerAbort = () => ctrl.abort(callerSignal?.reason);
+		if (callerSignal) {
+			if (callerSignal.aborted) {
+				ctrl.abort(callerSignal.reason);
+			} else {
+				callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+			}
+		}
 		try {
 			const res = await fetch(`${API_BASE}${path}`, {
 				...options,
-				signal: AbortSignal.timeout(30000),
+				signal: ctrl.signal,
 				credentials: 'include',
 				headers: { ...headers, ...(options?.headers as Record<string, string>) }
 			});
+			// A cancel that races with the response arriving: the server may have
+			// already written a (likely 500, context-cancelled) status, but the user
+			// cancelled — treat it as a cancel, not an error (#153).
+			if (callerSignal?.aborted) throw new RequestCancelledError();
 			if (res.status === 401) {
 				throw handleUnauthorized();
 			}
@@ -128,16 +159,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 			if (res.status === 204) return undefined as T;
 			return res.json();
 		} catch (err: unknown) {
+			// A user-triggered cancel (caller's signal aborted with AbortError)
+			// must propagate as a distinct, non-retryable error so callers can
+			// skip the error toast (#153). Timeout / network errors wrap as before.
+			if (callerSignal?.aborted) {
+				throw new RequestCancelledError();
+			}
 			// Typed errors we created (SessionExpiredError / ApiError) propagate
 			// as-is. A retryable ApiError (5xx GET) was already handled above
 			// via `continue`; if it reaches here the retry budget is exhausted.
 			if (err instanceof SessionExpiredError) throw err;
 			if (err instanceof ApiError) throw err;
 			// Anything else is a network/abort/parse failure. Distinguish:
-			//  - AbortError (timeout/explicit cancel): never retry, surface now.
+			//  - AbortError (timeout): never retry, surface now.
 			//  - network TypeError on a GET: retry, then surface if exhausted.
+			const isTimeout = err instanceof DOMException && err.name === 'TimeoutError';
 			const isAbort = err instanceof DOMException && err.name === 'AbortError';
-			if (canRetry && !isAbort && attempt < MAX_RETRIES) {
+			if (canRetry && !isAbort && !isTimeout && attempt < MAX_RETRIES) {
 				lastError = err;
 				await sleep(RETRY_BASE_DELAY_MS * Math.pow(2, attempt));
 				continue;
@@ -145,6 +183,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 			// Wrap the genuine network/abort/parse error (no HTTP status) into a
 			// plain Error. Callers distinguish it from ApiError via instanceof.
 			throw new Error(getErrorMessage(err));
+		} finally {
+			clearTimeout(timer);
+			callerSignal?.removeEventListener('abort', onCallerAbort);
 		}
 	}
 	// Retry budget exhausted — surface the last error.
@@ -155,8 +196,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
 	get: <T>(path: string) => request<T>(path),
-	post: <T>(path: string, body: unknown) =>
-		request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+	post: <T>(path: string, body: unknown, signal?: AbortSignal) =>
+		request<T>(path, { method: 'POST', body: JSON.stringify(body), signal }),
 	put: <T>(path: string, body: unknown) =>
 		request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
 	patch: <T>(path: string, body: unknown) =>
