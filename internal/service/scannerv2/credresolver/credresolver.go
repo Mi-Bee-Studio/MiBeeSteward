@@ -59,12 +59,12 @@ type cacheEntry struct {
 // ErrDisabled is returned by Resolve when the resolver has no cipher (master
 // key not configured). The engine treats this as "no v3 available" and falls
 // back to the legacy community path rather than failing the scan.
-var ErrDisabled = fmt.Errorf("credresolver: disabled (no master key configured)")
+var ErrDisabled = errors.New("credresolver: disabled (no master key configured)")
 
 // ErrNotFound is returned when no credential row exists for the requested ID.
 // Distinct from ErrDisabled so callers can tell "v3 disabled globally" from
 // "this specific credential was deleted".
-var ErrNotFound = fmt.Errorf("credresolver: credential not found")
+var ErrNotFound = errors.New("credresolver: credential not found")
 
 // New builds a resolver backed by the given *sql.DB + cipher. cipher may be
 // nil (→ Resolve returns ErrDisabled), which is how a deployment without a

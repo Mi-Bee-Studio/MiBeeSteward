@@ -27,9 +27,10 @@ import (
 
 // Sentinel errors (preserved verbatim from v1 so handler error mapping still works).
 var (
-	ErrScanTaskNotFound = errors.New("scan task not found")
-	ErrScanNotRunning   = errors.New("scan is not running")
-	ErrScanTaskDisabled = errors.New("scan task is disabled")
+	ErrScanTaskNotFound      = errors.New("scan task not found")
+	ErrScanNotRunning        = errors.New("scan is not running")
+	ErrScanTaskDisabled      = errors.New("scan task is disabled")
+	ErrSchedulerNotAvailable = errors.New("scheduler not available")
 )
 
 // Service manages scan tasks: CRUD + trigger/cancel, keeping the DB and the
@@ -296,7 +297,7 @@ func (s *Service) TriggerTask(ctx context.Context, id int64) (domain.ScanRunResp
 		return domain.ScanRunResponse{}, ErrScanTaskDisabled
 	}
 	if s.scheduler == nil {
-		return domain.ScanRunResponse{}, errors.New("scheduler not available")
+		return domain.ScanRunResponse{}, ErrSchedulerNotAvailable
 	}
 	if err := s.scheduler.TriggerNow(id); err != nil {
 		// Distinguish "task has no registered cron job" (e.g. scheduler never

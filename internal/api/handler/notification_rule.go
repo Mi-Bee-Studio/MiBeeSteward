@@ -46,7 +46,11 @@ func (h *NotificationHandler) CreateRule(w http.ResponseWriter, r *http.Request)
 
 	resp, err := h.svc.CreateRule(r.Context(), req)
 	if err != nil {
-		Error(w, http.StatusBadRequest, err.Error())
+		if errors.Is(err, service.ErrInvalidRuleConfig) {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed to create notification rule")
 		return
 	}
 
@@ -119,7 +123,11 @@ func (h *NotificationHandler) UpdateRule(w http.ResponseWriter, r *http.Request)
 			Error(w, http.StatusNotFound, "notification rule not found")
 			return
 		}
-		Error(w, http.StatusBadRequest, err.Error())
+		if errors.Is(err, service.ErrInvalidRuleConfig) {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed to update notification rule")
 		return
 	}
 

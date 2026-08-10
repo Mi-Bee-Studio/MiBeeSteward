@@ -60,6 +60,10 @@ func (h *DeviceHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusBadRequest, "invalid IP address format")
 			return
 		}
+		if errors.Is(err, service.ErrDeviceNameRequired) {
+			Error(w, http.StatusBadRequest, "device name is required")
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to create device")
 		return
 	}

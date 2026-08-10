@@ -22,6 +22,11 @@ import (
 
 var (
 	ErrChannelNotFound = errors.New("notification channel not found")
+	// ErrInvalidChannelConfig / ErrInvalidRuleConfig are category sentinels for
+	// channel/rule field validation. Each wraps the specific rule as detail so
+	// handlers map the whole family to 400 via errors.Is. (#165)
+	ErrInvalidChannelConfig = errors.New("invalid notification channel configuration")
+	ErrInvalidRuleConfig    = errors.New("invalid notification rule configuration")
 )
 
 // NotificationService handles notification channel and log business logic.
@@ -42,10 +47,10 @@ func NewNotificationService(q *db.Queries) *NotificationService {
 // CreateChannel validates and creates a new notification channel.
 func (s *NotificationService) CreateChannel(ctx context.Context, req domain.CreateChannelRequest) (*domain.ChannelResponse, error) {
 	if req.Name == "" {
-		return nil, fmt.Errorf("channel name is required")
+		return nil, fmt.Errorf("%w: name is required", ErrInvalidChannelConfig)
 	}
 	if req.Type != domain.ChannelTypeWebhook && req.Type != domain.ChannelTypeEmail {
-		return nil, fmt.Errorf("invalid channel type: %s", req.Type)
+		return nil, fmt.Errorf("%w: invalid type %q", ErrInvalidChannelConfig, req.Type)
 	}
 
 	enabled := int64(1)
@@ -298,25 +303,25 @@ func (s *NotificationService) ListEnabledRulesByEventType(ctx context.Context, e
 // 409/400 with a channel-specific message before touching the DB).
 func validateRuleFields(eventType, scopeType, name string, channelID int64, networkID *int64, deviceUUID string) error {
 	if name == "" {
-		return fmt.Errorf("rule name is required")
+		return fmt.Errorf("%w: name is required", ErrInvalidRuleConfig)
 	}
 	if !domain.IsValidRuleEventType(eventType) {
-		return fmt.Errorf("invalid event_type: %s", eventType)
+		return fmt.Errorf("%w: invalid event_type %q", ErrInvalidRuleConfig, eventType)
 	}
 	if !domain.IsValidRuleScopeType(scopeType) {
-		return fmt.Errorf("invalid scope_type: %s", scopeType)
+		return fmt.Errorf("%w: invalid scope_type %q", ErrInvalidRuleConfig, scopeType)
 	}
 	if channelID <= 0 {
-		return fmt.Errorf("channel_id is required")
+		return fmt.Errorf("%w: channel_id is required", ErrInvalidRuleConfig)
 	}
 	switch scopeType {
 	case domain.RuleScopeNetwork:
 		if networkID == nil || *networkID <= 0 {
-			return fmt.Errorf("scope_network_id is required when scope_type=network")
+			return fmt.Errorf("%w: scope_network_id is required when scope_type=network", ErrInvalidRuleConfig)
 		}
 	case domain.RuleScopeDevice:
 		if deviceUUID == "" {
-			return fmt.Errorf("scope_device_uuid is required when scope_type=device")
+			return fmt.Errorf("%w: scope_device_uuid is required when scope_type=device", ErrInvalidRuleConfig)
 		}
 	}
 	return nil

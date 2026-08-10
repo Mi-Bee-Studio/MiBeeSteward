@@ -23,8 +23,9 @@ import (
 )
 
 var (
-	ErrDeviceNotFound = errors.New("device not found")
-	ErrInvalidIP      = errors.New("invalid IP address")
+	ErrDeviceNotFound     = errors.New("device not found")
+	ErrInvalidIP          = errors.New("invalid IP address")
+	ErrDeviceNameRequired = errors.New("device name is required")
 )
 
 // DeviceService handles device management business logic.
@@ -41,7 +42,7 @@ func NewDeviceService(repo *repository.DeviceRepository, heartbeatSvc *Heartbeat
 // Create validates and creates a new device.
 func (s *DeviceService) Create(ctx context.Context, req domain.CreateDeviceRequest) (*domain.DeviceResponse, error) {
 	if req.Name == "" {
-		return nil, fmt.Errorf("device name is required")
+		return nil, ErrDeviceNameRequired
 	}
 
 	if req.IPAddress != "" {

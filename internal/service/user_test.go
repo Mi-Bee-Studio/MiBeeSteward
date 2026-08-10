@@ -106,6 +106,7 @@ func TestRegister_PasswordTooShort(t *testing.T) {
 
 	_, err := svc.Register(context.Background(), "charlie", "charlie@example.com", "Ab1!", "user")
 	require.Error(t, err)
+	require.ErrorIs(t, err, ErrWeakPassword)
 	require.Contains(t, err.Error(), "at least 8 characters")
 }
 
@@ -114,6 +115,7 @@ func TestRegister_PasswordMissingUppercase(t *testing.T) {
 
 	_, err := svc.Register(context.Background(), "dave", "dave@example.com", "lower123!@#", "user")
 	require.Error(t, err)
+	require.ErrorIs(t, err, ErrWeakPassword)
 	require.Contains(t, err.Error(), "uppercase")
 }
 
@@ -122,6 +124,7 @@ func TestRegister_PasswordMissingDigit(t *testing.T) {
 
 	_, err := svc.Register(context.Background(), "eve", "eve@example.com", "NoDigits!!", "user")
 	require.Error(t, err)
+	require.ErrorIs(t, err, ErrWeakPassword)
 	require.Contains(t, err.Error(), "digit")
 }
 
@@ -130,6 +133,7 @@ func TestRegister_PasswordMissingSpecial(t *testing.T) {
 
 	_, err := svc.Register(context.Background(), "frank", "frank@example.com", "NoSpecial123", "user")
 	require.Error(t, err)
+	require.ErrorIs(t, err, ErrWeakPassword)
 	require.Contains(t, err.Error(), "special")
 }
 

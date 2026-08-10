@@ -151,9 +151,12 @@ func (h *ScannerTaskHandler) TriggerTask(w http.ResponseWriter, r *http.Request)
 			Error(w, http.StatusConflict, "scan task is disabled; enable it before triggering")
 			return
 		}
-		// Surface the real cause (e.g. "scheduler not available",
-		// "no job registered for task N") instead of a generic 500 string so
-		// operators can diagnose scheduler/engine wiring failures.
+		if errors.Is(err, taskservice.ErrSchedulerNotAvailable) {
+			Error(w, http.StatusServiceUnavailable, "scanner scheduler is not available")
+			return
+		}
+		// Surface the real cause (e.g. "no job registered for task N") instead
+		// of a generic 500 string so operators can diagnose engine wiring failures.
 		Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
