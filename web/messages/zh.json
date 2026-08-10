@@ -344,6 +344,8 @@
 		"Error": "错误",
 		"Success": "成功",
 		"No Results": "无结果",
+		"No Results Desc": "没有匹配「{query}」的结果。试试其他关键词或清除筛选。",
+		"Clear Filters": "清除筛选",
 		"Confirm": "确认",
 		"Are you sure?": "确定吗？",
 		"Total": "总数",

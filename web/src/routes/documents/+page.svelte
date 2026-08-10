@@ -433,6 +433,14 @@
 			actionLabel={m["common.Back"]()}
 			onAction={fetchDocuments}
 		/>
+	{:else if documents.length === 0 && searchQuery}
+		<EmptyState
+			icon="🔍"
+			title={m["common.No Results"]()}
+			description={m['common.No Results Desc']({ query: searchQuery })}
+			actionLabel={m['common.Clear Search']()}
+			onAction={() => { searchQuery = ''; searchInput = ''; fetchDocuments(); }}
+		/>
 	{:else if documents.length === 0}
 		<EmptyState
 			icon="📄"
