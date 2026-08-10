@@ -344,6 +344,8 @@
 		"Error": "Error",
 		"Success": "Success",
 		"No Results": "No Results",
+		"No Results Desc": "No matches for \"{query}\". Try a different search or clear filters.",
+		"Clear Filters": "Clear filters",
 		"Confirm": "Confirm",
 		"Are you sure?": "Are you sure?",
 		"Total": "Total",

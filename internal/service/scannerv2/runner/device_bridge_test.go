@@ -201,3 +201,42 @@ func TestApplyDeviceBridge_MACFirstResolveNotReplacement(t *testing.T) {
 	require.Equal(t, "aa:bb:cc:dd:ee:20", filled.MAC, "mac filled on the existing row")
 	require.Equal(t, "online", filled.Status)
 }
+
+// TestApplyDeviceBridge_NameSelfHealsFromIP guards the name=ip_address
+// self-heal in buildExistingUpdate (#169 part d): when a device is first
+// discovered with NO resolvable hostname, its name falls back to the IP
+// (deviceDisplayName). A later scan that DOES resolve a hostname must
+// overwrite the IP-as-name — the SQL `name = CASE WHEN (name = ” OR name =
+// ip_address) THEN ? ELSE name END` covers exactly this. This is intentional
+// fallback behaviour (NOT a ghost to clean up); the test pins it so a future
+// refactor doesn't silently drop the self-heal and leave devices stuck
+// showing their IP as a name forever.
+func TestApplyDeviceBridge_NameSelfHealsFromIP(t *testing.T) {
+	rn, _, conn := setupChangeDetectDB(t)
+	ctx := context.Background()
+
+	// First scan: device at .190 with no hostname sources at all. deviceDisplayName
+	// falls through node_hostname / sys_name / scan_attributes.hostname → returns
+	// the IP, so devices.name = "192.168.63.190".
+	noName := reportFor("192.168.63.190", "other", "", "de:ad:be:ef:19:00")
+	_, _ = rn.applyDeviceBridge(ctx, noName, rn.networkID, "")
+
+	var id int64
+	require.NoError(t, conn.QueryRow(
+		`SELECT id FROM devices WHERE ip_address='192.168.63.190' AND network_id=?`, rn.networkID.Int64).Scan(&id))
+	require.Equal(t, "192.168.63.190", fetchDevice(t, conn, id).Name,
+		"first scan with no hostname: name falls back to the IP")
+
+	// Second scan of the same (ip, mac): now a hostname IS resolved (e.g. via
+	// rDNS / TLS CN / mDNS). The CASE in buildExistingUpdate sees name == ip_address
+	// and overwrites it with the resolved hostname.
+	withName := reportFor("192.168.63.190", "other", "", "de:ad:be:ef:19:00")
+	withName.Device.Fields["node_hostname"] = "sensor-living-room"
+	_, _ = rn.applyDeviceBridge(ctx, withName, rn.networkID, "")
+
+	require.Equal(t, 1, countDevices(t, conn), "rescan updates the existing row, no new device")
+	healed := fetchDevice(t, conn, id)
+	require.Equal(t, "sensor-living-room", healed.Name,
+		"name self-heals: IP-as-name overwritten once a hostname is resolved")
+	require.Equal(t, "192.168.63.190", healed.IP, "ip unchanged")
+}

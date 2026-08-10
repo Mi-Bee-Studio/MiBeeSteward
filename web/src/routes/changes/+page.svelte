@@ -365,6 +365,14 @@
 	<!-- Content -->
 	{#if loading}
 		<PageSkeleton type="table" />
+	{:else if changes.length === 0 && (searchQuery || filterNetwork || filterChangeType)}
+		<EmptyState
+			icon="🔍"
+			title={m['common.No Results']()}
+			description={m['common.No Results Desc']({ query: searchQuery || m['common.Clear Filters']() })}
+			actionLabel={m['common.Clear Filters']()}
+			onAction={() => { searchQuery = ''; searchInput = ''; filterNetwork = ''; filterChangeType = ''; fetchChanges(); }}
+		/>
 	{:else if changes.length === 0}
 		<EmptyState
 			icon="📊"

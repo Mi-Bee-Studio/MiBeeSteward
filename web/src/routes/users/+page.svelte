@@ -334,6 +334,14 @@
 	<!-- Loading skeleton -->
 	{#if loading}
 		<PageSkeleton type="table" />
+	{:else if users.length === 0 && searchQuery}
+		<EmptyState
+			icon="🔍"
+			title={m["common.No Results"]()}
+			description={m['common.No Results Desc']({ query: searchQuery })}
+			actionLabel={m['common.Clear Search']()}
+			onAction={() => { searchQuery = ''; searchInput = ''; fetchUsers(); }}
+		/>
 	{:else if users.length === 0}
 		<EmptyState
 			icon={UsersIcon}
