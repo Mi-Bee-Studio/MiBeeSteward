@@ -421,6 +421,7 @@
 		"Deselect All": "Deselect All",
 		"Add Selected": "Add Selected to Devices",
 		"Added N Devices": "{count} devices added successfully",
+		"Add N Failed": "{count} device(s) failed to add: {reason}",
 		"Import N Failed": "{count} row(s) failed: {reason}",
 		"No Alive Hosts": "No alive hosts found",
 		"No Alive Hosts Desc": "Try a different IP range or check network connectivity.",
@@ -683,7 +684,9 @@
 		"Confirm Password": "Confirm Password",
 		"Passwords Do Not Match": "Passwords do not match",
 		"Password Reset Success": "Password reset successfully. The user must change it on next login.",
-		"Password Required": "Password is required"
+		"Password Required": "Password is required",
+		"Created": "User created",
+		"Deleted": "User deleted"
 	},
 	"notifications": {
 		"Notifications": "Notifications",

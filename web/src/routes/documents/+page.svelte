@@ -101,8 +101,10 @@
 			total = res.total || 0;
 			syncUrl();
 		} catch (err: unknown) {
+			// Inline banner only on initial load — the parallel toast was
+			// noisy (double-notified on fetch failure, unlike every other
+			// list page). #152 part 2.
 			error = getErrorMessage(err);
-			addToast('error', error);
 		} finally {
 			loading = false;
 		}
