@@ -49,7 +49,7 @@ func (h *ExportHandler) ExportDevices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.Devices(r.Context(), format, w); err != nil {
-		http.Error(w, "export failed", http.StatusInternalServerError)
+		Error(w, http.StatusInternalServerError, "export failed")
 	}
 }
 
@@ -81,7 +81,7 @@ func (h *ExportHandler) ExportHeartbeatResults(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.svc.HeartbeatResults(r.Context(), id, format, w); err != nil {
-		http.Error(w, "export failed", http.StatusInternalServerError)
+		Error(w, http.StatusInternalServerError, "export failed")
 	}
 }
 
@@ -106,7 +106,7 @@ func (h *ExportHandler) ExportAuditLogs(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.svc.AuditLogs(r.Context(), format, w); err != nil {
-		http.Error(w, "export failed", http.StatusInternalServerError)
+		Error(w, http.StatusInternalServerError, "export failed")
 	}
 }
 

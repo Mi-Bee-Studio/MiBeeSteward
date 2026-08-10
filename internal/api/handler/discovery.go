@@ -30,7 +30,7 @@ func DiscoveryStatusHandler(svc *scannerv2discovery.Service) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			// Non-fatal: the client either gets partial JSON or an empty body.
-			http.Error(w, "failed to encode discovery status", http.StatusInternalServerError)
+			Error(w, http.StatusInternalServerError, "failed to encode discovery status")
 		}
 	}
 }
