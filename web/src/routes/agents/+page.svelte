@@ -15,7 +15,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { html, formatDateTime as formatTime } from '$lib/utils/index';
-	import { agentTokenSchema, validateField, validateForm } from '$lib/utils/validation';
+	import { agentTokenSchema, validateField, validateForm, validateScanTarget } from '$lib/utils/validation';
 	import { addToast } from '$lib/stores/toast';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -75,6 +75,7 @@
 	let scanModalOpen = $state(false);
 	let scanAgentId = $state('');
 	let scanTargets = $state('');
+	let scanTargetsError = $state('');
 	let scanTimeout = $state(120);
 	let scanLoading = $state(false);
 
@@ -213,13 +214,24 @@
 	function openScan(agentId: string) {
 		scanAgentId = agentId;
 		scanTargets = '';
+		scanTargetsError = '';
 		scanTimeout = 120;
 		scanModalOpen = true;
 	}
 
+	// Validate scan targets on blur (same validator the scanner page uses) —
+	// previously this modal only empty-checked at submit, so a user could enter
+	// an over-broad range like 192.168.0.0/16 (65k IPs) with no warning
+	// (#154 part 2).
+	function validateScanTargets() {
+		scanTargetsError = validateScanTarget(scanTargets) ?? '';
+	}
+
 	async function handleScanSubmit(e: Event) {
 		e.preventDefault();
-		if (!scanTargets) { addToast('error', m['agents.Targets Required']()); return; }
+		const targetsErr = validateScanTarget(scanTargets);
+		scanTargetsError = targetsErr ?? '';
+		if (targetsErr) return;
 		scanLoading = true;
 		try {
 			await api.post(`/agents/${scanAgentId}/commands/`, {
@@ -652,7 +664,16 @@
 		<!-- Targets -->
 		<div>
 			<label class="block text-xs text-text-muted mb-1">{m['agents.Scan Targets']()} *</label>
-			<input bind:value={scanTargets} required placeholder={m['agents.Scan Targets Placeholder']()} class="input" />
+			<input
+				bind:value={scanTargets}
+				required
+				placeholder={m['agents.Scan Targets Placeholder']()}
+				onblur={validateScanTargets}
+				class="input {scanTargetsError ? '!border-error' : ''}"
+			/>
+			{#if scanTargetsError}
+				<p class="text-error text-xs mt-1">{scanTargetsError}</p>
+			{/if}
 		</div>
 
 		<!-- Timeout -->
