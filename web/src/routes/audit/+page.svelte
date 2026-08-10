@@ -439,6 +439,14 @@
 	<!-- Content -->
 	{#if loading}
 		<PageSkeleton type="table" />
+	{:else if logs.length === 0 && (searchQuery || filterUser || filterAction || filterResourceType || filterDateFrom || filterDateTo)}
+		<EmptyState
+			icon="🔍"
+			title={m["common.No Results"]()}
+			description={m['common.No Results Desc']({ query: searchQuery || m['common.Clear Filters']() })}
+			actionLabel={m['common.Clear Filters']()}
+			onAction={() => { searchQuery = ''; searchInput = ''; filterUser = ''; filterAction = ''; filterResourceType = ''; filterDateFrom = ''; filterDateTo = ''; fetchLogs(); }}
+		/>
 	{:else if logs.length === 0}
 		<EmptyState
 			icon="📋"

@@ -409,7 +409,15 @@
 		<PageSkeleton type="table" />
 	{:else if activeTab === 'results'}
 		<!-- Results table -->
-			{#if results.length === 0}
+			{#if results.length === 0 && (debouncedIp || taskIdFilter || aliveFilter)}
+				<EmptyState
+					icon="🔍"
+					title={m['scanner.No Results']()}
+					description={m['common.No Results Desc']({ query: debouncedIp || m['common.Clear Filters']() })}
+					actionLabel={m['common.Clear Filters']()}
+					onAction={() => { ipSearch = ''; debouncedIp = ''; taskIdFilter = ''; aliveFilter = ''; fetchResults(); }}
+				/>
+			{:else if results.length === 0}
 				<EmptyState
 					icon={ClipboardList}
 					title={m['scanner.No Results']()}

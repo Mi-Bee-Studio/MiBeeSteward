@@ -67,6 +67,13 @@
 		// filtering the in-memory page slice. Mirrors the onSortChange server-side
 		// pattern. Without it, search stays client-side (backward-compatible).
 		onSearchChange,
+		// When non-empty, the caller is actively filtering on the server (search
+		// term and/or filter params). In that mode an empty `rows` array means
+		// "the filter returned nothing" rather than "nothing exists", so the
+		// table shows a no-results state (Search icon + clear) instead of the
+		// create-first-item CTA. Pass the current query string for the message
+		// (#169). For DataTable's own search box, this falls back to searchQuery.
+		serverFilterQuery = '',
 	}: {
 		columns: Column[];
 		rows: Record<string, unknown>[];
@@ -85,6 +92,7 @@
 		externalSortDirection?: 'asc' | 'desc' | 'none';
 		onSortChange?: (key: string, direction: 'asc' | 'desc') => void;
 		onSearchChange?: (query: string) => void;
+		serverFilterQuery?: string;
 	} = $props();
 
 	let sortKey = $state<string | null>(null);
@@ -148,6 +156,9 @@
 	const displayRows = $derived(sortedRows());
 	const isEmpty = $derived(displayRows.length === 0 && rows.length > 0);
 	const isTotallyEmpty = $derived(rows.length === 0);
+	// The active server-side query term: caller-provided (covers pages with an
+	// external search box like devices) falling back to DataTable's own box.
+	const activeQuery = $derived(serverFilterQuery || searchQuery);
 
 	function handleSort(key: string) {
 		if (onSortChange) {
@@ -275,17 +286,30 @@
 
 	<!-- Empty state — no rows at all -->
 	{#if isTotallyEmpty}
-		<div class="flex flex-col items-center justify-center py-12 px-4 text-center">
-			<Inbox class="w-12 h-12 mb-3 text-muted opacity-40" strokeWidth={1.5} />
-			<h3 class="text-sm font-medium text-text mb-1">{emptyTitle}</h3>
-			{#if emptyDescription}
-				<p class="text-xs text-muted mb-4">{emptyDescription}</p>
-			{/if}
-			{#if emptyAction && emptyActionLabel}
-				<button onclick={emptyAction} class="btn btn-primary">
-					{emptyActionLabel}
+		{#if activeQuery}
+			<!-- Server-side search returned nothing: NOT a "create first item" case.
+			     Show a no-results state with a clear-search affordance instead (#169). -->
+			<div class="flex flex-col items-center justify-center py-12 px-4 text-center">
+				<Search class="w-12 h-12 mb-3 text-muted opacity-40" strokeWidth={1.5} />
+				<h3 class="text-sm font-medium text-text mb-1">{m['common.No Results']()}</h3>
+				<p class="text-xs text-muted mb-4">{m['common.No Results Desc']({ query: activeQuery })}</p>
+				<button onclick={() => { searchQuery = ''; onSearchChange?.(''); }} class="btn btn-secondary">
+					{m['common.Clear Search']()}
 				</button>
-			{/if}
-		</div>
+			</div>
+		{:else}
+			<div class="flex flex-col items-center justify-center py-12 px-4 text-center">
+				<Inbox class="w-12 h-12 mb-3 text-muted opacity-40" strokeWidth={1.5} />
+				<h3 class="text-sm font-medium text-text mb-1">{emptyTitle}</h3>
+				{#if emptyDescription}
+					<p class="text-xs text-muted mb-4">{emptyDescription}</p>
+				{/if}
+				{#if emptyAction && emptyActionLabel}
+					<button onclick={emptyAction} class="btn btn-primary">
+						{emptyActionLabel}
+					</button>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </div>

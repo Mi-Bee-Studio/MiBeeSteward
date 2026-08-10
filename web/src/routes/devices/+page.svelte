@@ -1290,6 +1290,7 @@ interface AddDevicesResponse {
 				externalSortKey={sortKey || null}
 				externalSortDirection={sortKey ? sortDir : 'none'}
 				onSortChange={onSortChange}
+				serverFilterQuery={searchQuery}
 			/>
 		</div>
 
