@@ -328,21 +328,7 @@
 		{
 			key: 'actions',
 			label: m['common.Actions'](),
-			render: (row: Record<string, unknown>) => {
-				const agentId = String(row.agent_id);
-				const tokenId = row.id;
-				const isRevoked = !!row.revoked_at;
-				// Build segments with `html` (escapes agentId into the data-scan-id
-				// attribute — previously an attribute-injection XSS vector), then
-				// concatenate the already-safe HtmlStrings. No further escaping.
-				let out = html`<div class="flex items-center gap-2">`;
-				if (!isRevoked) {
-					out += html`<button data-scan-id="${agentId}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m['agents.Trigger Scan']()}</button>`;
-					out += html`<button data-revoke-id="${tokenId}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m['agents.Revoke']()}</button>`;
-				}
-				out += html`</div>`;
-				return out;
-			}
+			interactive: true
 		}
 	]);
 
@@ -372,13 +358,7 @@
 			key: '_expand',
 			label: '',
 			sortable: false,
-			render: (row: Record<string, unknown>) => {
-				const id = row.id as number;
-				const isOpen = commandsExpandedId === id;
-				return html`<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
-					+ html`<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
-					+ html`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
-			}
+			interactive: true
 		},
 		{
 			key: 'agent_id',
@@ -459,27 +439,34 @@
 		/>
 	{:else}
 		<div class="bg-surface border border-border rounded-lg p-4">
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<div onclick={(e) => {
-				const target = e.target as HTMLElement;
-				const scanBtn = target.closest('[data-scan-id]') as HTMLElement | null;
-				if (scanBtn) { openScan(String(scanBtn.dataset.scanId)); return; }
-				const revokeBtn = target.closest('[data-revoke-id]') as HTMLElement | null;
-				if (revokeBtn) {
-					const id = Number(revokeBtn.dataset.revokeId);
-					const token = tokens.find((t) => t.id === id);
-					if (token) openRevoke(token);
-				}
-			}}>
 				<DataTable
 					{columns}
 					rows={tokens as unknown as Record<string, unknown>[]}
 					searchPlaceholder={(m['common.Search']()) + '...'}
 					searchableKeys={['agent_id', 'name']}
 					emptyTitle={m['agents.No Tokens']()}
-				/>
-			</div>
+				>
+					{#snippet cell(row, col)}
+						{#if col.key === 'actions'}
+							{@const token = tokens.find((t) => t.id === row.id)}
+							{#if token}
+								{@const isRevoked = !!token.revoked_at}
+								{#if !isRevoked}
+									<div class="flex items-center gap-2">
+										<button
+											onclick={() => openScan(String(token.agent_id))}
+											class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+										>{m['agents.Trigger Scan']()}</button>
+										<button
+											onclick={() => openRevoke(token)}
+											class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors"
+										>{m['agents.Revoke']()}</button>
+									</div>
+								{/if}
+							{/if}
+						{/if}
+					{/snippet}
+				</DataTable>
 			</div>
 		{/if}
 
@@ -505,13 +492,6 @@
 				</div>
 			{:else}
 				<div class="bg-surface border border-border rounded-lg p-4">
-					<div onclick={(e) => {
-						const btn = (e.target as HTMLElement).closest('[data-action="expand"]') as HTMLElement | null;
-						if (btn) {
-							const id = Number(btn.dataset.id);
-							commandsExpandedId = commandsExpandedId === id ? null : id;
-						}
-					}}>
 						<DataTable
 							columns={commandColumns}
 							rows={commands as unknown as Record<string, unknown>[]}
@@ -519,6 +499,22 @@
 							emptyTitle={m['agents.No Commands']()}
 							expandedRowId={commandsExpandedId ?? undefined}
 						>
+							{#snippet cell(row, col)}
+								{#if col.key === '_expand'}
+									{@const id = row.id as number}
+									{@const isOpen = commandsExpandedId === id}
+									<button
+										onclick={() => { commandsExpandedId = commandsExpandedId === id ? null : id; }}
+										class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted"
+										aria-label={isOpen ? m['common.Collapse']() : m['common.Expand']()}
+										aria-expanded={isOpen}
+									>
+										<svg class="w-3.5 h-3.5 transition-transform duration-200 {isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+										</svg>
+									</button>
+								{/if}
+							{/snippet}
 							{#snippet expandedContent(row)}
 								{@const cmd = commands.find((c) => c.id === row.id)}
 								<div class="border-t border-border bg-bg/40 px-6 py-4 space-y-3">
@@ -536,21 +532,20 @@
 									{/if}
 								</div>
 							{/snippet}
-							</DataTable>
-							{#if commandsTotal > commandsLimit}
-								<div class="mt-4">
-									<Pagination
-										total={commandsTotal}
-										limit={commandsLimit}
-										offset={commandsOffset}
-										onPageChange={handleCommandsPage}
-									/>
-								</div>
-							{/if}
+								</DataTable>
+								{#if commandsTotal > commandsLimit}
+									<div class="mt-4">
+										<Pagination
+											total={commandsTotal}
+											limit={commandsLimit}
+											offset={commandsOffset}
+											onPageChange={handleCommandsPage}
+										/>
+									</div>
+								{/if}
 						</div>
-					</div>
-				{/if}
-		</div>
+					{/if}
+			</div>
 	</div>
 {/if}
 

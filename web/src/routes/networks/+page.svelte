@@ -181,22 +181,7 @@
 		{
 			key: 'actions',
 			label: m['common.Actions'](),
-			render: (row: Record<string, unknown>) => {
-				const id = row.id;
-				const agentManaged = !!row.agent_id;
-				// Build the title attribute inline (escaped) when agent-managed,
-				// rather than a pre-built attribute string that html would double-escape.
-				if (agentManaged) {
-					return html`<div class="flex gap-2">`
-						+ html`<button data-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
-						+ html`<button data-delete-id="${id}" disabled title="${m['networks.Agent Managed Hint']()}" class="text-xs px-2 py-1 rounded text-error opacity-40 cursor-not-allowed">${m['common.Delete']()}</button>`
-						+ html`</div>`;
-				}
-				return html`<div class="flex gap-2">`
-					+ html`<button data-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`
-					+ html`<button data-delete-id="${id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10">${m['common.Delete']()}</button>`
-					+ html`</div>`;
-			}
+			interactive: true
 		}
 	]);
 </script>
@@ -245,31 +230,33 @@
 		/>
 	{:else}
 		<div class="bg-surface border border-border rounded-lg p-4">
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<div onclick={(e) => {
-				const target = e.target as HTMLElement;
-				const editBtn = target.closest('[data-edit-id]') as HTMLElement | null;
-				if (editBtn) {
-					const id = Number(editBtn.dataset.editId);
-					const net = networks.find((n) => n.id === id);
-					if (net) openEdit(net);
-					return;
-				}
-				const delBtn = target.closest('[data-delete-id]') as HTMLElement | null;
-				if (delBtn && !(delBtn as HTMLButtonElement).disabled) {
-					const id = Number(delBtn.dataset.deleteId);
-					const net = networks.find((n) => n.id === id);
-					if (net) { deleteTarget = net; deleteOpen = true; }
-				}
-			}}>
 				<DataTable
 					{columns}
 					rows={networks as unknown as Record<string, unknown>[]}
 					searchableKeys={['name', 'site']}
 					emptyTitle={m['networks.Empty']()}
-				/>
-			</div>
+				>
+					{#snippet cell(row, col)}
+						{#if col.key === 'actions'}
+							{@const net = networks.find((n) => n.id === row.id)}
+							{#if net}
+								{@const agentManaged = !!net.agent_id}
+								<div class="flex gap-2">
+									<button
+										onclick={() => openEdit(net)}
+										class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10"
+									>{m['common.Edit']()}</button>
+									<button
+										onclick={() => { if (!agentManaged) { deleteTarget = net; deleteOpen = true; } }}
+										disabled={agentManaged}
+										title={agentManaged ? m['networks.Agent Managed Hint']() : undefined}
+										class="text-xs px-2 py-1 rounded text-error {agentManaged ? 'opacity-40 cursor-not-allowed' : 'hover:bg-error/10'}"
+									>{m['common.Delete']()}</button>
+								</div>
+							{/if}
+						{/if}
+					{/snippet}
+				</DataTable>
 		</div>
 	{/if}
 </div>

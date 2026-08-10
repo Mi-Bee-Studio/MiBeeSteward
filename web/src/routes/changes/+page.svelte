@@ -217,13 +217,7 @@
 			key: '_expand',
 			label: '',
 			sortable: false,
-			render: (row: Record<string, unknown>) => {
-				const id = row.id as number;
-				const isOpen = expandedId === id;
-				return html`<button data-action="expand" data-id="${id}" class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted">`
-					+ html`<svg class="w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">`
-					+ html`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>`;
-			}
+			interactive: true
 		},
 		{
 			key: 'detected_at',
@@ -379,13 +373,6 @@
 		/>
 	{:else}
 		<div class="bg-surface border border-border rounded-lg p-4">
-				<div onclick={(e) => {
-					const btn = (e.target as HTMLElement).closest('[data-action="expand"]') as HTMLElement | null;
-					if (btn) {
-						const id = Number(btn.dataset.id);
-						expandedId = expandedId === id ? null : id;
-					}
-				}}>
 				<DataTable
 					{columns}
 					rows={changes as unknown as Record<string, unknown>[]}
@@ -396,6 +383,22 @@
 					emptyTitle={m['changes.No Changes']()}
 					expandedRowId={expandedId ?? undefined}
 				>
+					{#snippet cell(row, col)}
+						{#if col.key === '_expand'}
+							{@const id = row.id as number}
+							{@const isOpen = expandedId === id}
+							<button
+								onclick={() => { expandedId = expandedId === id ? null : id; }}
+								class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted"
+								aria-label={isOpen ? m['common.Collapse']() : m['common.Expand']()}
+								aria-expanded={isOpen}
+							>
+								<svg class="w-3.5 h-3.5 transition-transform duration-200 {isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+								</svg>
+							</button>
+						{/if}
+					{/snippet}
 					{#snippet expandedContent(row)}
 						{@const change = changes.find((c) => c.id === row.id)}
 						<div class="border-t border-border bg-bg/40 px-6 py-4">
@@ -414,7 +417,6 @@
 						</div>
 					{/snippet}
 				</DataTable>
-				</div>
 
 			<div class="mt-4">
 				<Pagination {total} {limit} {offset} onPageChange={handlePageChange} />

@@ -176,7 +176,11 @@
 		border: none;
 		color: var(--color-text-muted);
 		cursor: pointer;
-		padding: 0.25rem;
+		/* ≥44×44px touch target (WCAG 2.5.5) — padding:0.25rem + 16px icon was
+		   ~24px, too small for touch. The icon stays 16px; only the hit area
+		   grows. */
+		min-width: 2.75rem;
+		min-height: 2.75rem;
 		border-radius: var(--radius-sm);
 		display: flex;
 		align-items: center;

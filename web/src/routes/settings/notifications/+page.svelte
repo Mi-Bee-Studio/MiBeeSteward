@@ -534,25 +534,12 @@
 			key: 'enabled',
 			label: m["notifications.Enabled"](),
 			sortable: true,
-			render: (row: Record<string, unknown>) => {
-				const enabled = row.enabled;
-				const id = row.id;
-				return html`<button data-rule-toggle-id="${id}" class="text-xs px-2 py-0.5 rounded cursor-pointer transition-colors ${enabled
-					? 'bg-success/15 text-success hover:bg-success/25'
-					: 'bg-border/30 text-text-muted hover:bg-border/50'
-				}">${enabled ? m["notifications.Enabled"]() : m["notifications.Disabled"]()}</button>`;
-			}
+			interactive: true
 		},
 		{
 			key: 'actions',
 			label: m["common.Actions"](),
-			render: (row: Record<string, unknown>) => {
-				const id = row.id;
-				return html`<div class="flex items-center gap-2">
-					<button data-rule-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors">${m["common.Edit"]()}</button>
-					<button data-rule-delete-id="${id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>
-				</div>`;
-			}
+			interactive: true
 		}
 	]);
 
@@ -578,14 +565,7 @@
 			key: 'enabled',
 			label: m["notifications.Enabled"](),
 			sortable: true,
-			render: (row: Record<string, unknown>) => {
-				const enabled = row.enabled;
-				const id = row.id;
-				return html`<button data-toggle-id="${id}" class="text-xs px-2 py-0.5 rounded cursor-pointer transition-colors ${enabled
-					? 'bg-success/15 text-success hover:bg-success/25'
-					: 'bg-border/30 text-text-muted hover:bg-border/50'
-				}">${enabled ? m["notifications.Enabled"]() : m["notifications.Disabled"]()}</button>`;
-			}
+			interactive: true
 		},
 		{
 			key: 'created_at',
@@ -597,14 +577,7 @@
 		{
 			key: 'actions',
 			label: m["common.Actions"](),
-			render: (row: Record<string, unknown>) => {
-				const id = row.id;
-				return html`<div class="flex items-center gap-2">
-					<button data-test-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["notifications.Test Channel"]()}</button>
-					<button data-edit-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors">${m["common.Edit"]()}</button>
-					<button data-delete-id="${id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>
-				</div>`;
-			}
+			interactive: true
 		}
 	]);
 </script>
@@ -689,28 +662,43 @@
 		{:else}
 			<!-- Channel table -->
 			<div class="bg-surface border border-border rounded-lg p-4">
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<div onclick={(e) => {
-					const target = e.target as HTMLElement;
-					const btn = target.closest('[data-delete-id],[data-edit-id],[data-test-id],[data-toggle-id]') as HTMLElement | null;
-					if (!btn) return;
-					const id = Number(btn.dataset.deleteId || btn.dataset.editId || btn.dataset.testId || btn.dataset.toggleId);
-					const channel = channels.find((c) => c.id === id);
-					if (!channel) return;
-					if (btn.dataset.deleteId !== undefined) openDelete(channel);
-					else if (btn.dataset.editId !== undefined) openEdit(channel);
-					else if (btn.dataset.testId !== undefined) testChannel(channel);
-					else if (btn.dataset.toggleId !== undefined) toggleEnabled(channel);
-				}}>
 					<DataTable
 						{columns}
 						rows={channels as unknown as Record<string, unknown>[]}
 						searchPlaceholder={m["notifications.Search Channels"]()}
 						searchableKeys={['name', 'type']}
 						emptyTitle={m["common.No Results"]()}
-					/>
-				</div>
+					>
+						{#snippet cell(row, col)}
+							{@const channel = channels.find((c) => c.id === row.id)}
+							{#if channel}
+								{#if col.key === 'enabled'}
+									<button
+										onclick={() => toggleEnabled(channel)}
+										class="text-xs px-2 py-0.5 rounded cursor-pointer transition-colors {channel.enabled
+											? 'bg-success/15 text-success hover:bg-success/25'
+											: 'bg-border/30 text-text-muted hover:bg-border/50'
+										}"
+									>{channel.enabled ? m["notifications.Enabled"]() : m["notifications.Disabled"]()}</button>
+								{:else if col.key === 'actions'}
+									<div class="flex items-center gap-2">
+										<button
+											onclick={() => testChannel(channel)}
+											class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+										>{m["notifications.Test Channel"]()}</button>
+										<button
+											onclick={() => openEdit(channel)}
+											class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors"
+										>{m["common.Edit"]()}</button>
+										<button
+											onclick={() => openDelete(channel)}
+											class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors"
+										>{m["common.Delete"]()}</button>
+									</div>
+								{/if}
+							{/if}
+						{/snippet}
+					</DataTable>
 			</div>
 		{/if}
 	{:else}
@@ -733,27 +721,39 @@
 			/>
 		{:else}
 			<div class="bg-surface border border-border rounded-lg p-4">
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<div onclick={(e) => {
-					const target = e.target as HTMLElement;
-					const btn = target.closest('[data-rule-delete-id],[data-rule-edit-id],[data-rule-toggle-id]') as HTMLElement | null;
-					if (!btn) return;
-					const id = Number(btn.dataset.ruleDeleteId || btn.dataset.ruleEditId || btn.dataset.ruleToggleId);
-					const rule = rules.find((r) => r.id === id);
-					if (!rule) return;
-					if (btn.dataset.ruleDeleteId !== undefined) openDeleteRule(rule);
-					else if (btn.dataset.ruleEditId !== undefined) openEditRule(rule);
-					else if (btn.dataset.ruleToggleId !== undefined) toggleRuleEnabled(rule);
-				}}>
 					<DataTable
 						columns={ruleColumns}
 						rows={rules as unknown as Record<string, unknown>[]}
 						searchPlaceholder={m["common.Search"]() + '…'}
 						searchableKeys={['name', 'event_type']}
 						emptyTitle={m["common.No Results"]()}
-					/>
-				</div>
+					>
+						{#snippet cell(row, col)}
+							{@const rule = rules.find((r) => r.id === row.id)}
+							{#if rule}
+								{#if col.key === 'enabled'}
+									<button
+										onclick={() => toggleRuleEnabled(rule)}
+										class="text-xs px-2 py-0.5 rounded cursor-pointer transition-colors {rule.enabled
+											? 'bg-success/15 text-success hover:bg-success/25'
+											: 'bg-border/30 text-text-muted hover:bg-border/50'
+										}"
+									>{rule.enabled ? m["notifications.Enabled"]() : m["notifications.Disabled"]()}</button>
+								{:else if col.key === 'actions'}
+									<div class="flex items-center gap-2">
+										<button
+											onclick={() => openEditRule(rule)}
+											class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors"
+										>{m["common.Edit"]()}</button>
+										<button
+											onclick={() => openDeleteRule(rule)}
+											class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors"
+										>{m["common.Delete"]()}</button>
+									</div>
+								{/if}
+							{/if}
+						{/snippet}
+					</DataTable>
 			</div>
 		{/if}
 	{/if}
