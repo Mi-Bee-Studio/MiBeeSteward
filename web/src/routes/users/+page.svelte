@@ -297,13 +297,7 @@
 		{
 			key: 'actions',
 			label: m["common.Actions"](),
-			render: (row: Record<string, unknown>) => {
-				const userId = row.id;
-				return html`<div class="flex items-center gap-2">
-					<button data-reset-id="${userId}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["users.Reset Password"]()}</button>
-					<button data-delete-id="${userId}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>
-				</div>`;
-			}
+			interactive: true
 		}
 	]);
 </script>
@@ -350,25 +344,7 @@
 		/>
 	{:else}
 		<!-- User table -->
-		<div class="bg-surface border border-border rounded-lg p-4">
-				<!-- Wrap DataTable + handle delete clicks -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<div onclick={(e) => {
-					const target = e.target as HTMLElement;
-					const deleteBtn = target.closest('[data-delete-id]') as HTMLElement | null;
-					if (deleteBtn) {
-						const id = Number(deleteBtn.dataset.deleteId);
-						const user = users.find((u) => u.id === id);
-						if (user) openDelete(user);
-					}
-					const resetBtn = target.closest('[data-reset-id]') as HTMLElement | null;
-					if (resetBtn) {
-						const id = Number(resetBtn.dataset.resetId);
-						const user = users.find((u) => u.id === id);
-						if (user) openReset(user);
-					}
-				}}>
+			<div class="bg-surface border border-border rounded-lg p-4">
 					<DataTable
 						{columns}
 						rows={users as unknown as Record<string, unknown>[]}
@@ -377,8 +353,25 @@
 						initialSearch={searchInput}
 						onSearchChange={onSearchInput}
 						emptyTitle={m["common.No Results"]()}
-					/>
-				</div>
+					>
+						{#snippet cell(row, col)}
+							{#if col.key === 'actions'}
+								{@const user = users.find((u) => u.id === row.id)}
+								{#if user}
+									<div class="flex items-center gap-2">
+										<button
+											onclick={() => openReset(user)}
+											class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+										>{m["users.Reset Password"]()}</button>
+										<button
+											onclick={() => openDelete(user)}
+											class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors"
+										>{m["common.Delete"]()}</button>
+									</div>
+								{/if}
+							{/if}
+						{/snippet}
+					</DataTable>
 
 			<!-- Pagination -->
 			<Pagination {total} {limit} {offset} onPageChange={handlePageChange} />

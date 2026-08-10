@@ -354,6 +354,8 @@
 		"Link": "关联",
 		"Unlink": "取消关联",
 		"Close": "关闭",
+		"Expand": "展开",
+		"Collapse": "折叠",
 		"unsaved_changes": "未保存的更改",
 		"unsaved_changes_desc": "您有未保存的更改。确定要关闭吗？",
 		"discard": "放弃",

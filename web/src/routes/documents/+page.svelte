@@ -370,20 +370,7 @@
 		{
 			key: 'actions',
 			label: m["common.Actions"](),
-			render: (row: Record<string, unknown>) => {
-				const doc = row as unknown as Document;
-				let btns = '';
-				// Preview button for previewable files
-				if (doc.type !== 'url' && isPreviewable(doc)) {
-					btns += html`<button data-action="preview" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-success hover:bg-success/10 transition-colors">${m["documents.Preview"]()}</button>`;
-				}
-				btns += html`<button data-action="edit" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors">${m["common.Edit"]()}</button>`;
-				if (doc.type !== 'url' && doc.file_path) {
-					btns += html`<button data-action="download" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors">${m["documents.Download"]()}</button>`;
-				}
-				btns += html`<button data-action="delete" data-id="${doc.id}" class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors">${m["common.Delete"]()}</button>`;
-				return html`<div class="flex gap-2">${btns}</div>`;
-			}
+			interactive: true
 		}
 	]);
 
@@ -409,19 +396,8 @@
 		}
 	}
 
-	function handleTableClick(e: MouseEvent) {
-		const target = e.target as HTMLElement;
-		const btn = target.closest('[data-action]') as HTMLElement | null;
-		if (!btn) return;
-		const action = btn.dataset.action;
-		const id = Number(btn.dataset.id);
-		const doc = documents.find((d) => d.id === id);
-		if (!doc) return;
-		if (action === 'edit') openEdit(doc);
-		if (action === 'delete') requestDelete(doc);
-		if (action === 'preview') openPreview(doc);
-		if (action === 'download') downloadDocument(doc);
-	}
+	// Actions-column dispatch moved to the `cell` snippet (real onclick handlers,
+	// no event delegation) — see the DataTable usage below (#167).
 </script>
 
 <div class="p-4 sm:p-6">
@@ -466,7 +442,7 @@
 			onAction={openUrlCreate}
 		/>
 	{:else}
-		<div onclick={handleTableClick}>
+		<div>
 			<DataTable
 				{columns}
 				rows={documents as unknown as Record<string, unknown>[]}
@@ -475,7 +451,37 @@
 				initialSearch={searchInput}
 				onSearchChange={onSearchInput}
 				emptyTitle={m["common.No Results"]()}
-			/>
+			>
+				{#snippet cell(row, col)}
+					{#if col.key === 'actions'}
+						{@const doc = documents.find((d) => d.id === row.id)}
+						{#if doc}
+							<div class="flex gap-2">
+								{#if doc.type !== 'url' && isPreviewable(doc)}
+									<button
+										onclick={() => openPreview(doc)}
+										class="text-xs px-2 py-1 rounded text-success hover:bg-success/10 transition-colors"
+									>{m["documents.Preview"]()}</button>
+								{/if}
+								<button
+									onclick={() => openEdit(doc)}
+									class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors"
+								>{m["common.Edit"]()}</button>
+								{#if doc.type !== 'url' && doc.file_path}
+									<button
+										onclick={() => downloadDocument(doc)}
+										class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+									>{m["documents.Download"]()}</button>
+								{/if}
+								<button
+									onclick={() => requestDelete(doc)}
+									class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors"
+								>{m["common.Delete"]()}</button>
+							</div>
+						{/if}
+					{/if}
+				{/snippet}
+			</DataTable>
 		</div>
 
 		<div class="mt-4">

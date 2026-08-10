@@ -17,6 +17,10 @@
 		key: string;
 		label: string;
 		sortable?: boolean;
+		/** Marks a column whose cells are rendered by the `cell` snippet (real
+		 * <button>/<input> with bound handlers) instead of `render`'s {@html}
+		 * string — the keyboard-accessible path (#167). */
+		interactive?: boolean;
 		/**
 		 * Custom cell renderer. The returned string is injected via `{@html}`, so
 		 * the caller is responsible for escaping EVERY user-controlled value
@@ -47,6 +51,10 @@
 		id,
 		expandedRowId,
 		expandedContent,
+		// Interactive-cell snippet: when a column has `interactive: true`, its
+		// cells render via {@render cell(row, col)} (real Svelte elements with
+		// bound handlers) instead of col.render's {@html} string (#167).
+		cell,
 		// Controlled sorting: when onSortChange is provided, the table runs in
 		// "server-side sort" mode — column clicks call back instead of sorting the
 		// in-memory rows (which would only reorder the current page and disagree
@@ -72,6 +80,7 @@
 		id?: string;
 		expandedRowId?: number | null;
 		expandedContent?: Snippet<[Record<string, unknown>]>;
+		cell?: Snippet<[Record<string, unknown>, Column]>;
 		externalSortKey?: string | null;
 		externalSortDirection?: 'asc' | 'desc' | 'none';
 		onSortChange?: (key: string, direction: 'asc' | 'desc') => void;
@@ -240,7 +249,9 @@
 							<tr class="border-b border-border last:border-b-0 hover:bg-surface-2 transition-colors">
 								{#each columns as col, colIndex}
 							<td class="px-4 py-3 text-sm" scope={colIndex === 0 ? 'row' : undefined}>
-								{#if col.render}
+								{#if col.interactive && cell}
+									{@render cell(row, col)}
+								{:else if col.render}
 									{@html col.render(row)}
 								{:else}
 									<span class="text-text">{row[col.key] != null ? String(row[col.key]) : '-'}</span>
