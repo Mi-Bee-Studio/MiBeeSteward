@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"mibee-steward/internal/domain"
@@ -69,7 +68,7 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	// (POST /scanner/tasks + /scanner/tasks/{id}/trigger + GET .../runs).
 	count, err := h.engine.EstimateTargetCount(req.Targets)
 	if err != nil {
-		if isInvalidTargetError(err.Error()) {
+		if isTargetError(err) {
 			Error(w, http.StatusBadRequest, "invalid IP address or CIDR range")
 			return
 		}
@@ -96,7 +95,7 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	reports, err := h.engine.ScanTargets(r.Context(), req.Targets, false, req.CredentialID)
 	duration := time.Since(start)
 	if err != nil {
-		if isInvalidTargetError(err.Error()) {
+		if isTargetError(err) {
 			Error(w, http.StatusBadRequest, "invalid IP address or CIDR range")
 			return
 		}
@@ -176,19 +175,23 @@ func (h *ScannerHandler) AddDevices(w http.ResponseWriter, r *http.Request) {
 	Success(w, resp)
 }
 
-// isInvalidTargetError recognizes target-parse failures from the engine so the
-// handler can map them to HTTP 400.
-func isInvalidTargetError(errMsg string) bool {
-	if errMsg == "" {
+// isTargetError reports whether err wraps one of the engine's target-parsing
+// sentinel errors (engine.ErrInvalidTarget, ErrInvalidIPRange, etc.). Such
+// errors are user-supplied-bad-targets and map to HTTP 400; everything else is
+// an internal/scan failure. Uses errors.Is rather than string matching so
+// wrapped sentinels are recognized regardless of detail text.
+func isTargetError(err error) bool {
+	switch {
+	case errors.Is(err, engine.ErrEmptyTargets),
+		errors.Is(err, engine.ErrNoValidTargets),
+		errors.Is(err, engine.ErrInvalidTarget),
+		errors.Is(err, engine.ErrInvalidIPRange),
+		errors.Is(err, engine.ErrIPv6RangeUnsupported),
+		errors.Is(err, engine.ErrTargetRangeTooLarge):
+		return true
+	default:
 		return false
 	}
-	lower := strings.ToLower(errMsg)
-	for _, frag := range []string{"invalid target", "no targets", "invalid ip", "invalid cidr", "invalid ip range", "invalid targets format", "invalid end ip", "invalid start ip"} {
-		if strings.Contains(lower, frag) {
-			return true
-		}
-	}
-	return false
 }
 
 // reportToHost converts a v2 HostReport into the API's domain.ScanHost,

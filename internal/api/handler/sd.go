@@ -78,7 +78,7 @@ func (h *SDHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Offset:  0,
 	})
 	if err != nil {
-		http.Error(w, "failed to list devices", http.StatusInternalServerError)
+		Error(w, http.StatusInternalServerError, "failed to list devices")
 		return
 	}
 
@@ -144,7 +144,7 @@ func (h *SDHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(targets); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		Error(w, http.StatusInternalServerError, "failed to encode response")
 		return
 	}
 }

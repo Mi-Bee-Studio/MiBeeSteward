@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -96,7 +97,8 @@ func (h *CredentialHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	authEnc, privEnc, err := h.encryptPassphrases(&req, "", "")
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "encrypt passphrases: "+err.Error())
+		slog.Error("encrypt passphrases", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to encrypt passphrases")
 		return
 	}
 
@@ -117,13 +119,15 @@ func (h *CredentialHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusConflict, "a credential with this name already exists")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "create credential: "+err.Error())
+		slog.Error("create credential", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to create credential")
 		return
 	}
 	// Re-fetch to populate timestamps for the response.
 	row, err := credresolver.GetSNMPCredential(r.Context(), h.db, id)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "fetch created credential: "+err.Error())
+		slog.Error("fetch created credential", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to fetch created credential")
 		return
 	}
 	Created(w, toCredentialResponse(row))
@@ -134,7 +138,8 @@ func (h *CredentialHandler) List(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parseListPaging(r)
 	rows, err := credresolver.ListSNMPCredentials(r.Context(), h.db, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "list credentials: "+err.Error())
+		slog.Error("list credentials", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to list credentials")
 		return
 	}
 	out := make([]snmpCredentialResponse, 0, len(rows))
@@ -157,7 +162,8 @@ func (h *CredentialHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "fetch credential: "+err.Error())
+		slog.Error("fetch credential", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to fetch credential")
 		return
 	}
 	Success(w, toCredentialResponse(row))
@@ -194,12 +200,14 @@ func (h *CredentialHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "fetch existing credential: "+err.Error())
+		slog.Error("fetch credential", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to fetch credential")
 		return
 	}
 	authEnc, privEnc, err := h.encryptPassphrases(&req, existing.AuthPassphraseEnc, existing.PrivPassphraseEnc)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "encrypt passphrases: "+err.Error())
+		slog.Error("encrypt passphrases", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to encrypt passphrases")
 		return
 	}
 
@@ -218,7 +226,8 @@ func (h *CredentialHandler) Update(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusConflict, "a credential with this name already exists")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "update credential: "+err.Error())
+		slog.Error("update credential", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to update credential")
 		return
 	}
 	// Invalidate the resolver cache so the next scan sees the new values
@@ -229,7 +238,8 @@ func (h *CredentialHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// Re-fetch for the response.
 	row, err := credresolver.GetSNMPCredential(r.Context(), h.db, id)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "fetch updated credential: "+err.Error())
+		slog.Error("fetch updated credential", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to fetch updated credential")
 		return
 	}
 	Success(w, toCredentialResponse(row))
@@ -243,7 +253,8 @@ func (h *CredentialHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	affected, err := credresolver.DeleteSNMPCredential(r.Context(), h.db, id)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "delete credential: "+err.Error())
+		slog.Error("delete credential", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to delete credential")
 		return
 	}
 	if affected == 0 {
