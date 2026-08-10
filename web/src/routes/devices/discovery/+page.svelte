@@ -17,6 +17,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { discoveryOutcomeBadge, onOffBadge } from '$lib/utils/badges';
+	import { formatDateTime as formatTime } from '$lib/utils/index';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { Radar as RadarIcon } from '@lucide/svelte';
@@ -69,11 +70,6 @@
 			? Math.min(BASE_POLL_MS * Math.pow(2, consecutiveErrors), MAX_POLL_MS)
 			: BASE_POLL_MS;
 		pollTimer = setTimeout(fetchStatus, delay);
-	}
-
-	function formatTime(iso?: string): string {
-		if (!iso) return '-';
-		try { return new Date(iso).toLocaleString(); } catch { return iso; }
 	}
 
 	let stats = $derived(status?.stats ?? {});

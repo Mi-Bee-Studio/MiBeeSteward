@@ -15,7 +15,7 @@
 	import { goto } from '$app/navigation';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
-	import { escapeHtml, escapeAttr } from '$lib/utils';
+	import { escapeHtml, escapeAttr, formatDateTime } from '$lib/utils';
 	import { isValidIP } from '$lib/utils/validation';
 	import type { Device, LinkedDoc, Network } from '$lib/types';
 	import { ChevronDown, ChevronRight, Download, Upload, Plus, List, Share2 } from '@lucide/svelte';
@@ -719,7 +719,7 @@ interface AddDevicesResponse {
 				return row.network_name ? escapeHtml(String(row.network_name)) : '-';
 			case 'last_scanned_at': {
 				const t = (sa?.last_scanned_at as string) || row.last_scanned_at;
-				return t ? escapeHtml(new Date(String(t)).toLocaleString()) : '-';
+				return escapeHtml(formatDateTime(t));
 			}
 			case 'last_scan_rtt_ms': {
 				const rtt = (sa?.last_scan_rtt_ms as number) ?? row.last_scan_rtt_ms;
@@ -1257,7 +1257,7 @@ interface AddDevicesResponse {
 						{#if (sa?.last_scanned_at || device.last_scanned_at)}
 							<summary class="flex flex-col gap-0.5 min-w-0">
 								<span class="text-muted">{m['devices.Last Scanned']()}</span>
-								<span class="text-text truncate">{new Date(String(sa?.last_scanned_at || device.last_scanned_at)).toLocaleString()}</span>
+								<span class="text-text truncate">{formatDateTime(sa?.last_scanned_at || device.last_scanned_at)}</span>
 							</summary>
 						{/if}
 					</div>

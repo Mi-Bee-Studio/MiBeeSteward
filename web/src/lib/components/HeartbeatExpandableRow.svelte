@@ -12,6 +12,7 @@
 	import { api } from '$lib/api/client';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { formatDateTime as formatTime } from '$lib/utils/index';
 	import Chart from '$lib/components/Chart.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import type { EChartsOption } from '$lib/charts/echarts';
@@ -146,15 +147,6 @@
 	function formatLatency(ms: number): string {
 		if (!ms && ms !== 0) return '-';
 		return `${ms}ms`;
-	}
-
-	function formatTime(iso: string): string {
-		if (!iso) return '-';
-		try {
-			return new Date(iso).toLocaleString();
-		} catch {
-			return iso;
-		}
 	}
 
 	function lastCheckTime(): string {

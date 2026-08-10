@@ -12,6 +12,7 @@
 export { getErrorMessage } from './error.js';
 export { html } from './html.js';
 export type { HtmlString } from './html.js';
+export { formatDateTime, formatTime } from './format.js';
 
 /** escapeHtml escapes a string for safe interpolation into an HTML context
  *  (element text or a single- or double-quoted attribute value). DataTable
