@@ -93,7 +93,9 @@ func main() {
 	// enough connections to read device state without blocking the writer.
 	// WAL mode keeps reads from blocking the single writer, so this is safe.
 	db.SetMaxOpenConns(16)
-	db.SetMaxIdleConns(4)
+	// Match MaxIdleConns to MaxOpenConns so the pool doesn't churn connections
+	// open/close under concurrent scanner + heartbeat load (was 4 << 16). (#162)
+	db.SetMaxIdleConns(16)
 
 	// Optimize SQLite with WAL mode
 	pragmas := []string{
@@ -101,6 +103,9 @@ func main() {
 		"PRAGMA busy_timeout=5000",
 		"PRAGMA synchronous=NORMAL",
 		"PRAGMA cache_size=-64000",
+		// temp_store=MEMORY keeps temp tables + B-trees in RAM instead of
+		// spilling to a temp file — free latency reduction for large scans. (#162)
+		"PRAGMA temp_store=MEMORY",
 	}
 	for _, p := range pragmas {
 		if _, err := db.Exec(p); err != nil {
