@@ -31,6 +31,7 @@ type RateLimiter struct {
 	mu       sync.RWMutex
 	rate     rate.Limit
 	burst    int
+	quit     chan struct{}
 }
 
 // NewRateLimiter creates a new RateLimiter with the given rate (requests per second) and burst.
@@ -39,9 +40,21 @@ func NewRateLimiter(r float64, burst int) *RateLimiter {
 		visitors: make(map[string]*visitor),
 		rate:     rate.Limit(r),
 		burst:    burst,
+		quit:     make(chan struct{}),
 	}
 	go rl.cleanup()
 	return rl
+}
+
+// Stop terminates the background cleanup goroutine. Safe to call multiple
+// times (closing a closed channel panics, so guard with the select). (#163)
+func (rl *RateLimiter) Stop() {
+	select {
+	case <-rl.quit:
+		// already closed
+	default:
+		close(rl.quit)
+	}
 }
 
 func (rl *RateLimiter) getVisitor(ip string) *rate.Limiter {
@@ -59,15 +72,21 @@ func (rl *RateLimiter) getVisitor(ip string) *rate.Limiter {
 }
 
 func (rl *RateLimiter) cleanup() {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
 	for {
-		time.Sleep(time.Minute)
-		rl.mu.Lock()
-		for ip, v := range rl.visitors {
-			if time.Since(v.lastSeen) > 3*time.Minute {
-				delete(rl.visitors, ip)
+		select {
+		case <-rl.quit:
+			return
+		case <-t.C:
+			rl.mu.Lock()
+			for ip, v := range rl.visitors {
+				if time.Since(v.lastSeen) > 3*time.Minute {
+					delete(rl.visitors, ip)
+				}
 			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
@@ -125,6 +144,7 @@ type ScanRateLimiter struct {
 	windows map[string][]time.Time // IP -> sliding window timestamps
 	limit   int                    // max requests per window
 	window  time.Duration          // sliding window duration
+	quit    chan struct{}
 }
 
 // NewScanRateLimiter creates a ScanRateLimiter with the given limit per minute.
@@ -136,9 +156,21 @@ func NewScanRateLimiter(limit int) *ScanRateLimiter {
 		windows: make(map[string][]time.Time),
 		limit:   limit,
 		window:  1 * time.Minute,
+		quit:    make(chan struct{}),
 	}
 	go srl.cleanup()
 	return srl
+}
+
+// Stop terminates the background cleanup goroutine. Safe to call multiple
+// times. (#163)
+func (srl *ScanRateLimiter) Stop() {
+	select {
+	case <-srl.quit:
+		// already closed
+	default:
+		close(srl.quit)
+	}
 }
 
 // Allow checks if the given IP is within the rate limit.
@@ -175,16 +207,22 @@ func (srl *ScanRateLimiter) Allow(ip string) bool {
 
 // cleanup periodically removes stale entries for IPs with no recent activity.
 func (srl *ScanRateLimiter) cleanup() {
+	t := time.NewTicker(2 * time.Minute)
+	defer t.Stop()
 	for {
-		time.Sleep(2 * time.Minute)
-		srl.mu.Lock()
-		cutoff := time.Now().Add(-2 * srl.window)
-		for ip, window := range srl.windows {
-			if len(window) > 0 && window[len(window)-1].Before(cutoff) {
-				delete(srl.windows, ip)
+		select {
+		case <-srl.quit:
+			return
+		case <-t.C:
+			srl.mu.Lock()
+			cutoff := time.Now().Add(-2 * srl.window)
+			for ip, window := range srl.windows {
+				if len(window) > 0 && window[len(window)-1].Before(cutoff) {
+					delete(srl.windows, ip)
+				}
 			}
+			srl.mu.Unlock()
 		}
-		srl.mu.Unlock()
 	}
 }
 

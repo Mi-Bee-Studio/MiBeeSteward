@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -116,6 +117,7 @@ type LeaseSweeper struct {
 	interval time.Duration // how often to sweep
 	ttl      time.Duration // staleness threshold (last_seen older than now-ttl)
 	logger   *slog.Logger
+	wg       sync.WaitGroup // tracks the sweep goroutine for clean shutdown
 }
 
 // Flap-debounce constants for the lease sweeper. An agent device that bounces
@@ -149,8 +151,12 @@ func NewLeaseSweeper(rn *Runner, interval, ttl time.Duration, logger *slog.Logge
 // Start launches the sweep loop. It returns immediately; the loop runs until
 // ctx is cancelled. One sweep runs immediately on start so a center restart
 // doesn't wait a full interval before reconciling stale agent devices.
+// Stop() waits for the goroutine to finish so a caller can be sure no sweep is
+// mid-DB-write before closing the database.
 func (s *LeaseSweeper) Start(ctx context.Context) {
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		s.sweepOnce(ctx)
 		t := time.NewTicker(s.interval)
 		defer t.Stop()
@@ -163,6 +169,14 @@ func (s *LeaseSweeper) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// Stop blocks until the sweep goroutine has exited. The caller is expected to
+// have cancelled the Start ctx first (which unblocks an in-flight sweepOnce's
+// ctx-aware DB calls). This closes the shutdown race where db.Close() could
+// fire while a sweep was mid-UPDATE. (#163)
+func (s *LeaseSweeper) Stop() {
+	s.wg.Wait()
 }
 
 // sweepOnce runs one reconciliation pass: it first expires agent devices whose

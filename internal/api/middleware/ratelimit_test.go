@@ -218,3 +218,26 @@ func TestGlobalRateLimiter_BypassesStaticAssets(t *testing.T) {
 	apiHandler.ServeHTTP(rec2, req2)
 	require.Equal(t, http.StatusTooManyRequests, rec2.Code, "second API request should be rate-limited")
 }
+
+// TestRateLimiter_StopIdempotent verifies Stop() terminates the cleanup
+// goroutine and is safe to call multiple times (no panic on double-close). #163
+func TestRateLimiter_StopIdempotent(t *testing.T) {
+	rl := middleware.NewRateLimiter(1, 1)
+	rl.Stop()
+	rl.Stop() // double Stop must not panic (channel-already-closed guard)
+	// Middleware must still work after Stop — exercise it via a request.
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	require.Equal(t, http.StatusOK, rec.Code, "Middleware must still work after Stop")
+}
+
+// TestScanRateLimiter_StopIdempotent verifies the scan limiter's Stop(). #163
+func TestScanRateLimiter_StopIdempotent(t *testing.T) {
+	srl := middleware.NewScanRateLimiter(10)
+	srl.Stop()
+	srl.Stop() // double Stop must not panic
+	require.True(t, srl.Allow("10.0.0.1"), "Allow must still work after Stop")
+}
