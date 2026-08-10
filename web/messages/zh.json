@@ -421,6 +421,7 @@
 		"Deselect All": "取消全选",
 		"Add Selected": "添加选中到设备列表",
 		"Added N Devices": "成功添加 {count} 台设备",
+		"Add N Failed": "{count} 台设备添加失败：{reason}",
 		"Import N Failed": "{count} 行导入失败：{reason}",
 		"No Alive Hosts": "未发现存活主机",
 		"No Alive Hosts Desc": "请尝试其他 IP 范围或检查网络连接。",
@@ -683,7 +684,9 @@
 		"Confirm Password": "确认密码",
 		"Passwords Do Not Match": "两次输入的密码不一致",
 		"Password Reset Success": "密码重置成功，用户下次登录时需要修改密码",
-		"Password Required": "密码为必填项"
+		"Password Required": "密码为必填项",
+		"Created": "用户已创建",
+		"Deleted": "用户已删除"
 	},
 	"notifications": {
 		"Notifications": "通知管理",

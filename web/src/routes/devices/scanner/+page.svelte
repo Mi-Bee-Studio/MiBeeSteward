@@ -281,9 +281,10 @@
 			const res = await api.post<AddDevicesResponse>('/scanner/add-devices', { devices });
 
 			if (res.errors && res.errors.length > 0) {
-				for (const err of res.errors) {
-					addToast('error', err);
-				}
+				// Single summary warning (count + first reason) instead of one
+				// toast per failure — floods the toast stack when many devices
+				// fail (e.g. duplicates). Matches the CSV-import path. #152 part 3.
+				addToast('warning', m['scanner.Add N Failed']().replace('{count}', String(res.errors.length)).replace('{reason}', res.errors[0]));
 			}
 
 			if (res.added > 0) {
