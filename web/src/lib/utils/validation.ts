@@ -131,6 +131,20 @@ export const resetPasswordSchema = z
 		path: ['confirm'],
 	});
 
+// --- Force-password-change form (login page) ---
+// Same policy as resetPasswordSchema (8-char min + match) but standalone so the
+// login flow validates via the shared schema instead of hand-rolled length /
+// mismatch checks (#154 part 3 — keeps the password policy in ONE place).
+export const forcePasswordSchema = z
+	.object({
+		new_password: z.string().min(8, 'validation.Password Min Length'),
+		confirm: z.string().min(1, 'validation.Confirm Password Required'),
+	})
+	.refine((data) => data.new_password === data.confirm, {
+		message: 'validation.Passwords Do Not Match',
+		path: ['confirm'],
+	});
+
 // --- 2FA verify code (login page) ---
 // Exactly 6 digits. Used for the verify hint; the disabled-button gate stays
 // in the markup.
@@ -241,6 +255,7 @@ export type LoginFormData = z.infer<typeof loginSchema>;
 export type SettingsFormData = z.infer<typeof settingsSchema>;
 export type ProfileFormData = z.infer<typeof profileSchema>;
 export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
+export type ForcePasswordFormData = z.infer<typeof forcePasswordSchema>;
 export type TwoFactorCodeFormData = z.infer<typeof twoFactorCodeSchema>;
 export type NetworkFormData = z.infer<typeof networkSchema>;
 export type AgentTokenFormData = z.infer<typeof agentTokenSchema>;

@@ -75,8 +75,10 @@
 	let formCommunity = $state('public');
 	let formEnabled = $state(true);
 	let formPipelineConfig = $state<PipelineConfig>(defaultPipeline());
-	let formTargetsError = $state('');
-	let formCronError = $state('');
+	// Unified field-error map for the whole form (targets / cron / name /
+	// timeout all read/write here — #154 part 1). Previously targets + cron
+	// used two dedicated state vars while name + timeout used fieldErrors,
+	// giving three different error-display patterns in one form.
 	let fieldErrors = $state<Record<string, string>>({});
 	// SNMP credential binding (issue #135). null = use the global community.
 	let credentials = $state<Array<{ id: number; name: string; security_level: string }>>([]);
@@ -172,8 +174,7 @@
 		formEnabled = true;
 		formPipelineConfig = defaultPipeline();
 		formError = '';
-		formTargetsError = '';
-		formCronError = '';
+		fieldErrors = {};
 		editingTask = null;
 	}
 
@@ -211,28 +212,33 @@
 
 	function validateTargets(): string | null {
 		const err = validateScanTarget(formTargets);
-		formTargetsError = err || '';
+		fieldErrors = err
+			? { ...fieldErrors, targets: err }
+			: (() => { const { targets: _, ...rest } = fieldErrors; return rest; })();
 		return err;
 	}
 
 	function validateCron(): string | null {
 		const err = validateCronExpr(formCronExpr);
-		formCronError = err || '';
+		fieldErrors = err
+			? { ...fieldErrors, cron: err }
+			: (() => { const { cron: _, ...rest } = fieldErrors; return rest; })();
 		return err;
 	}
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 
-		formTargetsError = '';
-		formCronError = '';
+		fieldErrors = {};
 
 		// Validate targets + cron via the standalone validators (return localized
 		// strings, wired to onblur). Then name + timeout range via scannerTaskSchema.
+		// All four fields now write to the same fieldErrors map (previously
+		// targets/cron used dedicated vars — #154 part 1).
 		const targetsErr = validateTargets();
 		const cronErr = validateCron();
 		const taskValidation = validateForm(scannerTaskSchema, { name: formName, timeout: formTimeout });
-		if (!taskValidation.valid) fieldErrors = taskValidation.errors; else fieldErrors = {};
+		fieldErrors = { ...fieldErrors, ...taskValidation.errors };
 		if (targetsErr || cronErr || !taskValidation.valid) {
 			return;
 		}
@@ -665,11 +671,11 @@
 					placeholder={m['scanner.Targets Placeholder']()}
 					class="w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text font-mono
 					focus:border-primary focus:outline-none
-					{formTargetsError ? 'border-error' : 'border-border'}"
+					{fieldErrors.targets ? 'border-error' : 'border-border'}"
 					onblur={validateTargets}
 				/>
-				{#if formTargetsError}
-					<p class="text-error text-xs mt-1">{formTargetsError}</p>
+				{#if fieldErrors.targets}
+					<p class="text-error text-xs mt-1">{fieldErrors.targets}</p>
 				{/if}
 			</div>
 
@@ -682,11 +688,11 @@
 					placeholder={m['scanner.Cron Placeholder']()}
 					class="w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text font-mono
 					focus:border-primary focus:outline-none
-					{formCronError ? 'border-error' : 'border-border'}"
+					{fieldErrors.cron ? 'border-error' : 'border-border'}"
 					onblur={validateCron}
 				/>
-				{#if formCronError}
-					<p class="text-error text-xs mt-1">{formCronError}</p>
+				{#if fieldErrors.cron}
+					<p class="text-error text-xs mt-1">{fieldErrors.cron}</p>
 				{/if}
 			</div>
 
