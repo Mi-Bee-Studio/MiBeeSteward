@@ -14,7 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
-	import { html } from '$lib/utils/index';
+	import { html, formatDateTime as formatTime } from '$lib/utils/index';
 	import { addToast } from '$lib/stores/toast';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -165,15 +165,6 @@
 	function handlePageChange(newOffset: number) {
 		offset = newOffset;
 		fetchChanges();
-	}
-
-	function formatTime(iso: string): string {
-		if (!iso) return '-';
-		try {
-			return new Date(iso).toLocaleString();
-		} catch {
-			return iso;
-		}
 	}
 
 	// changeTypeLabel returns the localized label for a change type, falling

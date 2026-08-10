@@ -15,6 +15,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { scanRunStatusBadge } from '$lib/utils/badges';
+	import { formatDateTime as formatTime } from '$lib/utils/index';
 	import { goto } from '$app/navigation';
 
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -284,15 +285,6 @@
 	function formatDuration(ms: number): string {
 		if (ms < 1000) return `${ms}ms`;
 		return `${(ms / 1000).toFixed(1)}s`;
-	}
-
-	function formatTime(iso: string | null | undefined): string {
-		if (!iso) return '-';
-		try {
-			return new Date(iso).toLocaleString();
-		} catch {
-			return iso;
-		}
 	}
 
 	function formatBytes(bytes: number): string {

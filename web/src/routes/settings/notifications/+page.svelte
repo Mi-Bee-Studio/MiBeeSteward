@@ -14,7 +14,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
-	import { html } from '$lib/utils/index';
+	import { html, formatDateTime as formatTime } from '$lib/utils/index';
 	import { channelTypeBadge } from '$lib/utils/badges';
 	import { notificationChannelSchema, notificationRuleSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { addToast } from '$lib/stores/toast';
@@ -282,15 +282,6 @@
 			fetchChannels();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
-		}
-	}
-
-	function formatTime(iso: string): string {
-		if (!iso) return '-';
-		try {
-			return new Date(iso).toLocaleString();
-		} catch {
-			return iso;
 		}
 	}
 
