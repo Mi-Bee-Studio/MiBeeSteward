@@ -3,9 +3,8 @@
 // Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
 //
 // This file is part of MiBee Steward, distributed under the GNU Affero General
-// Public License v3.0 or later. You may use, modify, and redistribute it under
-// those terms; see LICENSE for the full text. A commercial license is available
-// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+// Public License v3.0 or later. A commercial license is available for use cases
+// the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 
 package handler
 
@@ -21,17 +20,27 @@ import (
 // EnrichDevice for these services, so a host whose only detected service was
 // (say) mysql or smb ended up with an empty inferred_type → "other".
 //
-// Each handler below marks the device as a "server" (these services — DBs,
+// Each handler marks the device as a "server" (these services — DBs,
 // mail, remote-access, directory, file-sharing — all imply a server-class
 // host). The classification itself (port/banner → service name) is unchanged;
 // this only fills in the missing type-inference step.
+//
+// Data-driven registration (#158): a SINGLE serverServiceHandler type,
+// parameterized by name, replaces ~13 named stub types (MySQLHandler,
+// SMTPHandler, VNCHandler, …). The registry matches handlers by Service()
+// output, so one value-per-name is all the interface needs — adding a new
+// server-class service is now one entry in serverServiceNames, not a new type
+// + 4 method stubs.
 
-// serverServiceHandler is the shared implementation: a TCP heartbeat on the
-// service port + a server type assignment. Embedded by each named handler so
-// we don't repeat the 4-method boilerplate per service.
+// serverServiceHandler is the ONE handler for every server-class service. It
+// generates a TCP heartbeat on the service port and assigns inferred_type =
+// "server". The service name (returned by Service()) is the dispatch key the
+// registry uses to match it to a classifier's output.
 type serverServiceHandler struct {
 	name string
 }
+
+func (h serverServiceHandler) Service() string { return h.name }
 
 func (h serverServiceHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
 	return &scannerv2.HeartbeatSpec{
@@ -51,173 +60,27 @@ func (serverServiceHandler) EnrichDevice(svc scannerv2.ServiceContext, _ scanner
 	preserveExisting(svc, "inferred_type", "server")
 }
 
-// Per-service handlers. Service() returns the name a classifier emits; the
-// registry matches handlers by that name (handler/registry.go).
-
-type MySQLHandler struct{}
-type RedisHandler struct{}
-type PostgreSQLHandler struct{}
-type MongoDBHandler struct{}
-type MSSQLHandler struct{}
-type MemcachedHandler struct{}
-
-func (MySQLHandler) Service() string      { return "mysql" }
-func (RedisHandler) Service() string      { return "redis" }
-func (PostgreSQLHandler) Service() string { return "postgresql" }
-func (MongoDBHandler) Service() string    { return "mongodb" }
-func (MSSQLHandler) Service() string      { return "mssql" }
-func (MemcachedHandler) Service() string  { return "memcached" }
-
-func (h MySQLHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "mysql"}.GenerateHeartbeat(svc)
-}
-func (h MySQLHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h MySQLHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
+// serverServiceNames is the complete list of server-class service names a
+// classifier can emit. Each becomes a registered serverServiceHandler. Grouped
+// by family (database / mail / remote-access / directory & file-share) to
+// mirror how classifiers discover them.
+var serverServiceNames = []string{
+	// Databases.
+	"mysql", "postgresql", "redis", "mongodb", "mssql", "memcached",
+	// Mail.
+	"smtp", "pop3", "imap",
+	// Remote access (VNC/RDP imply a server/host offering GUI access).
+	"vnc", "rdp",
+	// Directory & file-share.
+	"ldap", "smb",
 }
 
-func (h RedisHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "redis"}.GenerateHeartbeat(svc)
+// newServerHandlers returns one serverServiceHandler per name in
+// serverServiceNames, ready to register.
+func newServerHandlers() []scannerv2.ServiceHandler {
+	handlers := make([]scannerv2.ServiceHandler, len(serverServiceNames))
+	for i, name := range serverServiceNames {
+		handlers[i] = serverServiceHandler{name: name}
+	}
+	return handlers
 }
-func (h RedisHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h RedisHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-
-func (h PostgreSQLHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "postgresql"}.GenerateHeartbeat(svc)
-}
-func (h PostgreSQLHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h PostgreSQLHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-
-func (h MongoDBHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "mongodb"}.GenerateHeartbeat(svc)
-}
-func (h MongoDBHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h MongoDBHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-
-func (h MSSQLHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "mssql"}.GenerateHeartbeat(svc)
-}
-func (h MSSQLHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h MSSQLHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-
-func (h MemcachedHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "memcached"}.GenerateHeartbeat(svc)
-}
-func (h MemcachedHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h MemcachedHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-
-// Mail handlers.
-type SMTPHandler struct{}
-type POP3Handler struct{}
-type IMAPHandler struct{}
-
-func (SMTPHandler) Service() string { return "smtp" }
-func (POP3Handler) Service() string { return "pop3" }
-func (IMAPHandler) Service() string { return "imap" }
-
-func (h SMTPHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "smtp"}.GenerateHeartbeat(svc)
-}
-func (h SMTPHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h SMTPHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-func (h POP3Handler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "pop3"}.GenerateHeartbeat(svc)
-}
-func (h POP3Handler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h POP3Handler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-func (h IMAPHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "imap"}.GenerateHeartbeat(svc)
-}
-func (h IMAPHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h IMAPHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-
-// Remote-access handlers (VNC/RDP imply a server/host offering GUI access).
-type VNCHandler struct{}
-type RDPHandler struct{}
-
-func (VNCHandler) Service() string { return "vnc" }
-func (RDPHandler) Service() string { return "rdp" }
-
-func (h VNCHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "vnc"}.GenerateHeartbeat(svc)
-}
-func (h VNCHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h VNCHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-func (h RDPHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "rdp"}.GenerateHeartbeat(svc)
-}
-func (h RDPHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h RDPHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-
-// Directory & file-share handlers.
-type LDAPHandler struct{}
-type SMBHandler struct{}
-
-func (LDAPHandler) Service() string { return "ldap" }
-func (SMBHandler) Service() string  { return "smb" }
-
-func (h LDAPHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "ldap"}.GenerateHeartbeat(svc)
-}
-func (h LDAPHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h LDAPHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-func (h SMBHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return serverServiceHandler{name: "smb"}.GenerateHeartbeat(svc)
-}
-func (h SMBHandler) Collect(ctx context.Context, svc scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
-	return serverServiceHandler{}.Collect(ctx, svc)
-}
-func (h SMBHandler) EnrichDevice(svc scannerv2.ServiceContext, d scannerv2.CollectedData) {
-	serverServiceHandler{}.EnrichDevice(svc, d)
-}
-
-// NOTE: HTTPSHandler used to live here as a type-only stub (no cert
-// collection). It moved to handler/tls_collect.go where it now performs the
-// full certificate chain grab via probe.CollectCertChain. Do NOT re-add an
-// HTTPSHandler type here — it would collide with the one in tls_collect.go.
