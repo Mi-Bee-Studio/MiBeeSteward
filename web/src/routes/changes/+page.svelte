@@ -192,15 +192,81 @@
 		}
 	}
 
-	// formatData pretty-prints the before_data/after_data JSON (the device
-	// snapshot for added/lost, or the {field:[old,new]} diff map for changed).
-	function formatData(s?: string): string {
-		if (!s) return '-';
+	// tryParse is a defensive JSON.parse (returns the raw string on failure).
+	function tryParse(s?: string): unknown {
+		if (!s) return null;
 		try {
-			return JSON.stringify(JSON.parse(s), null, 2);
+			return JSON.parse(s);
 		} catch {
-			return s;
+			return null;
 		}
+	}
+
+	// deviceLabel extracts a human-friendly device identity (name or IP) for the
+	// "Device" column. Three shapes:
+	//  - added:   after_data  = full DeviceSnapshot → use name / ip_address
+	//  - lost:    before_data = full DeviceSnapshot → use name / ip_address
+	//  - changed: after_data  = {field: [old, new]}  → name/ip old value (the
+	//             stable identity — new value is the diff, not the identity)
+	// Falls back to the entity_id ("#211") only if no snapshot/diff is present.
+	function deviceLabel(row: Record<string, unknown>): string {
+		const ct = String(row.change_type);
+		const eid = row.entity_id ? '#' + row.entity_id : '';
+		if (ct === 'device_changed') {
+			const diff = tryParse(String(row.after_data ?? '')) as
+				| Record<string, [unknown, unknown]>
+				| null;
+			// Prefer ip_address for a stable identity, then name.
+			const ip = diff?.ip_address?.[0];
+			const name = diff?.name?.[0];
+			return String(name ?? ip ?? eid ?? '');
+		}
+		const snap = tryParse(String(ct === 'device_added' ? row.after_data : row.before_data)) as
+			| Record<string, unknown>
+			| null;
+		// A device's display name is usually its name; fall back to IP so the
+		// row is still identifiable when name is empty/unset (common for scans).
+		return String(snap?.name ?? snap?.ip_address ?? eid ?? '');
+	}
+
+	// diffSummary produces a short, human-readable summary for the "Details"
+	// column (the full structured diff is in the row's expand via ChangeDiff).
+	//  - added/lost/recovered: a compact property list "type · brand · ip"
+	//  - changed: "field: old → new" for up to 2 changed fields (+count)
+	function diffSummary(row: Record<string, unknown>): string {
+		const ct = String(row.change_type);
+		if (ct === 'device_changed') {
+			const diff = tryParse(String(row.after_data ?? '')) as
+				| Record<string, [unknown, unknown]>
+				| null;
+			if (!diff) return '';
+			const fields = Object.keys(diff);
+			if (fields.length === 0) return '';
+			const parts = fields.slice(0, 2).map((f) => {
+				const [oldV, newV] = diff[f];
+				return `${f}: ${shortVal(oldV)} → ${shortVal(newV)}`;
+			});
+			const extra = fields.length > 2 ? ` (+${fields.length - 2})` : '';
+			return parts.join(', ') + extra;
+		}
+		// added / lost / recovered — snapshot.
+		const snap = tryParse(String(ct === 'device_added' || ct === 'device_recovered' ? row.after_data : row.before_data)) as
+			| Record<string, unknown>
+			| null;
+		if (!snap) return '';
+		return [snap.type, snap.brand, snap.model, snap.ip_address]
+			.filter((v) => v !== undefined && v !== null && v !== '')
+			.map((v) => shortVal(v))
+			.join(' · ');
+	}
+
+	// shortVal renders a single value compactly for the summary (truncate long
+	// strings, stringify scalars; objects/arrays become "<json>").
+	function shortVal(v: unknown): string {
+		if (v === null || v === undefined || v === '') return '-';
+		if (typeof v === 'string') return v.length > 24 ? v.slice(0, 23) + '…' : v;
+		if (typeof v === 'object') return '<json>';
+		return String(v);
 	}
 
 	const columns = $derived([
@@ -229,8 +295,10 @@
 		{
 			key: 'entity_id',
 			label: m['changes.Device ID'](),
-			render: (row: Record<string, unknown>) =>
-				html`<span class="font-mono text-xs text-text-muted">${row.entity_id ? '#' + row.entity_id : '-'}</span>`
+			render: (row: Record<string, unknown>) => {
+				const label = deviceLabel(row);
+				return html`<span class="text-xs text-text">${label || '-'}</span>`;
+			}
 		},
 		{
 			key: 'network_id',
@@ -252,15 +320,12 @@
 			key: 'after_data',
 			label: m['changes.Details'](),
 			render: (row: Record<string, unknown>) => {
-				const after = row.after_data ? formatData(String(row.after_data)) : '';
-				const before = row.before_data ? formatData(String(row.before_data)) : '';
-				if (!after && !before) return html`<span class="text-xs text-text-muted">-</span>`;
-				// Show a truncated preview; full JSON available in the row expand.
-				// `html` escapes the preview for BOTH the title attribute and the
-				// text content (escapeHtml handles quotes), replacing the old local
-				// escapeHtmlSimple/escapeAttrSimple pair.
-				const preview = (after || before).slice(0, 80);
-				return html`<span class="font-mono text-xs text-text-muted" title="${preview}">${preview}${(after || before).length > 80 ? '…' : ''}</span>`;
+				const summary = diffSummary(row);
+				if (!summary) return html`<span class="text-xs text-text-muted">-</span>`;
+				// Human-readable summary; the full structured before/after diff is
+				// in the row expand (ChangeDiff component). Render non-mono so the
+				// eye distinguishes the summary from raw-JSON debug output.
+				return html`<span class="text-xs text-text-muted" title="${summary}">${summary.length > 90 ? summary.slice(0, 89) + '…' : summary}</span>`;
 			}
 		}
 	]);
