@@ -177,24 +177,41 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusServiceUnavailable, "change watcher not initialized")
 		return
 	}
+	// SSE headers: text/event-stream, no buffering, long-lived connection.
+	// These MUST be set before any Flush/WriteHeader — Go's net/http commits
+	// the status line + headers on the first write or Flush, snapshotting the
+	// header map at that instant. A Flush before these Set() calls (the old
+	// capability check) committed 200 with an empty Content-Type, so the
+	// browser aborted the EventSource to CLOSED and the UI showed a permanent
+	// "已断开" banner (#195). The Flush below now both verifies streaming
+	// support AND sends the headers in the correct order.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
+
 	// Use http.ResponseController so Flush traverses middleware wrappers
 	// (metricsResponseWriter / responseWriter) via their Unwrap() method to
 	// reach the server's real http.Flusher. A direct w.(http.Flusher) cast
 	// fails because those wrappers don't implement Flusher themselves, which
 	// previously made this endpoint return 500 "streaming not supported".
 	rc := http.NewResponseController(w)
+
+	// SSE connections are long-lived; the server's WriteTimeout (default 5m,
+	// an absolute deadline from end-of-header-read) would otherwise kill every
+	// stream at 5 minutes. Clear the per-connection write deadline so the
+	// keepalive loop below governs liveness instead. Best-effort: if the
+	// underlying connection doesn't support SetWriteDeadline this is a no-op.
+	_ = rc.SetWriteDeadline(time.Time{})
+
+	w.WriteHeader(http.StatusOK)
 	if err := rc.Flush(); err != nil {
-		Error(w, http.StatusInternalServerError, "streaming not supported")
+		// Streaming genuinely unsupported by the transport (not just middleware
+		// wrappers) — nothing we can do; headers are already committed so we
+		// cannot switch to a JSON error. Log and end the request.
+		h.logger.Warn("change watch: streaming not supported", "error", err)
 		return
 	}
-
-	// SSE headers: text/event-stream, no buffering, long-lived connection.
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
-	w.WriteHeader(http.StatusOK)
-	rc.Flush()
 
 	// Subscribe to the Watcher; unsubscribe + drain on exit to avoid leaking
 	// the channel (a dropped subscriber would buffer-overflow the Watcher).
@@ -211,6 +228,14 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 	// don't close the connection between events.
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
+
+	// Send an initial comment immediately so the client knows the stream is
+	// live (the next line otherwise waits up to the 15s keepalive). Also gives
+	// downstream consumers — and tests — a fast connection-established signal.
+	if _, err := fmt.Fprintf(w, ": connected\n\n"); err != nil {
+		return
+	}
+	rc.Flush()
 
 	ctx := r.Context()
 	for {

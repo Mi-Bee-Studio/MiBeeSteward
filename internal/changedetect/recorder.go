@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"reflect"
 	"sync"
 	"time"
 
@@ -504,19 +505,36 @@ func (w *Watcher) Subscribe() <-chan db.ChangeLog {
 }
 
 // Unsubscribe removes a subscription and closes its channel. The argument is the
-// receive channel returned by Subscribe; channel identity is compared via the
-// any-conversion (a bidirectional chan and its <-chan view of the SAME channel
-// compare equal once both are boxed in an interface).
+// receive channel returned by Subscribe.
+//
+// Channel identity is compared by header pointer via reflect, NOT by boxing in
+// interface — a bidirectional chan and its <-chan view box to DIFFERENT dynamic
+// types and any(sub) == any(ch) returns false, so the old any-comparison never
+// matched and the channel was never closed (leaking the subscriber's drain
+// goroutine on every disconnect). Found via the SSE handler test for #195.
 func (w *Watcher) Unsubscribe(ch <-chan db.ChangeLog) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for sub := range w.subscribers {
-		if any(sub) == any(ch) {
+		if chanPtr(sub) == chanPtr(ch) {
 			delete(w.subscribers, sub)
 			close(sub)
 			return
 		}
 	}
+}
+
+// chanPtr returns the pointer to the underlying channel header so channels of
+// different directionality (chan T vs <-chan T) can be compared by identity.
+func chanPtr(ch any) uintptr {
+	return reflect.ValueOf(ch).Pointer()
+}
+
+// Push fans a change row to all subscribers (non-blocking). Exported so tests
+// and future non-DBRecorder event sources can drive the watcher without going
+// through the recorder. The DBRecorder still calls this on every recorded event.
+func (w *Watcher) Push(row db.ChangeLog) {
+	w.push(row)
 }
 
 // push fans a change row to all subscribers (non-blocking).
