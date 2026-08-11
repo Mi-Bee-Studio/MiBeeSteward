@@ -24,6 +24,7 @@
 	import type { Device } from '$lib/types';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
+	import { untrack } from 'svelte';
 
 	let {
 		open = $bindable(false),
@@ -111,8 +112,11 @@
 				resetForm();
 			}
 			// Capture the baseline after hydration so formDirty reflects only
-			// edits the user makes AFTER the form is populated. #170
-			formSnapshot = snapshotForm();
+			// edits the user makes AFTER the form is populated. untrack prevents
+			// the $state reads inside snapshotForm from becoming effect deps
+			// (which would re-run the effect on every keystroke, re-snapping the
+			// form and clearing formDirty). #170
+			formSnapshot = untrack(snapshotForm);
 		}
 	});
 
