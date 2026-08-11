@@ -56,6 +56,17 @@
 	// form mode is stable across re-renders even if the caller updates `device`.
 	let editing = $state<Device | null>(null);
 
+	// Snapshot of form state captured after the modal hydrates; formDirty
+	// ($derived) detects unsaved edits so the Modal warns before discarding
+	// (Esc / backdrop / X). #170 — same pattern as the list-page modals (#151).
+	let formSnapshot = $state('');
+	function snapshotForm(): string {
+		return JSON.stringify([formName, formType, formBrand, formModel, formLocation,
+			formPurpose, formIpAddress, formMacAddress, formSerialNumber,
+			formPurchaseDate, formWarrantyExpiry, formTags]);
+	}
+	const formDirty = $derived(open && snapshotForm() !== formSnapshot);
+
 	function resetForm() {
 		formName = '';
 		formType = 'pc';
@@ -99,6 +110,9 @@
 			} else {
 				resetForm();
 			}
+			// Capture the baseline after hydration so formDirty reflects only
+			// edits the user makes AFTER the form is populated. #170
+			formSnapshot = snapshotForm();
 		}
 	});
 
@@ -160,7 +174,7 @@
 	}
 </script>
 
-<Modal bind:open title={editing ? m['devices.Edit Device']() : m['devices.Create Device']()} maxWidth="42rem" onClose={resetForm}>
+<Modal bind:open title={editing ? m['devices.Edit Device']() : m['devices.Create Device']()} maxWidth="42rem" onClose={resetForm} confirmDiscard={() => formDirty}>
 	{#if formError}
 		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
 			{formError}
