@@ -18,7 +18,6 @@ import (
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 )
 
 var (
@@ -30,11 +29,11 @@ var (
 
 // DeviceSystemService handles device system management business logic.
 type DeviceSystemService struct {
-	repo *repository.DeviceSystemRepository
+	repo *DeviceSystemRepository
 }
 
 // NewDeviceSystemService creates a new DeviceSystemService.
-func NewDeviceSystemService(repo *repository.DeviceSystemRepository) *DeviceSystemService {
+func NewDeviceSystemService(repo *DeviceSystemRepository) *DeviceSystemService {
 	return &DeviceSystemService{repo: repo}
 }
 

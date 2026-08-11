@@ -18,7 +18,6 @@ import (
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
-	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/testutil"
 )
@@ -140,10 +139,10 @@ func setupCSRFTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 
 	expiry := 1 * time.Hour
 	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
-	auditRepo := repository.NewAuditRepository(db)
+	auditRepo := service.NewAuditRepository(db)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, nil)
 
-	deviceRepo := repository.NewDeviceRepository(db)
+	deviceRepo := service.NewDeviceRepository(db)
 	deviceSvc := service.NewDeviceService(deviceRepo, nil)
 	deviceHandler := handler.NewDeviceHandler(deviceSvc)
 
@@ -267,7 +266,7 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 
 	expiry := 1 * time.Hour
 	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
-	auditRepo := repository.NewAuditRepository(db)
+	auditRepo := service.NewAuditRepository(db)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, nil)
 
 	// Rate limiter matching production config: 10 req/min with burst 10

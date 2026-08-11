@@ -19,7 +19,6 @@ import (
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 )
 
 var (
@@ -30,12 +29,12 @@ var (
 
 // DeviceService handles device management business logic.
 type DeviceService struct {
-	repo         *repository.DeviceRepository
+	repo         *DeviceRepository
 	heartbeatSvc *HeartbeatService
 }
 
 // NewDeviceService creates a new DeviceService.
-func NewDeviceService(repo *repository.DeviceRepository, heartbeatSvc *HeartbeatService) *DeviceService {
+func NewDeviceService(repo *DeviceRepository, heartbeatSvc *HeartbeatService) *DeviceService {
 	return &DeviceService{repo: repo, heartbeatSvc: heartbeatSvc}
 }
 
@@ -347,7 +346,7 @@ func toDeviceResponse(d db.Device) domain.DeviceResponse {
 // toDeviceResponseWithNetwork extends toDeviceResponse with the joined network
 // name (available on the list path via LEFT JOIN networks). NetworkID is set
 // from the device row regardless; NetworkName only when the join resolved one.
-func toDeviceResponseWithNetwork(dw repository.DeviceWithNetwork) domain.DeviceResponse {
+func toDeviceResponseWithNetwork(dw DeviceWithNetwork) domain.DeviceResponse {
 	resp := toDeviceResponse(dw.Device)
 	resp.NetworkName = dw.NetworkName
 	return resp

@@ -23,7 +23,6 @@ import (
 
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 )
 
@@ -31,11 +30,11 @@ import (
 type DocumentHandler struct {
 	svc       *service.DocumentService
 	uploadDir string
-	auditRepo *repository.AuditRepository
+	auditRepo *service.AuditRepository
 }
 
 // NewDocumentHandler creates a new DocumentHandler.
-func NewDocumentHandler(svc *service.DocumentService, uploadDir string, auditRepo *repository.AuditRepository) *DocumentHandler {
+func NewDocumentHandler(svc *service.DocumentService, uploadDir string, auditRepo *service.AuditRepository) *DocumentHandler {
 	return &DocumentHandler{svc: svc, uploadDir: uploadDir, auditRepo: auditRepo}
 }
 
@@ -84,7 +83,7 @@ func (h *DocumentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "file.upload",
 			ResourceType: "document",
@@ -158,7 +157,7 @@ func (h *DocumentHandler) Download(w http.ResponseWriter, r *http.Request) {
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "file.download",
 			ResourceType: "document",
@@ -236,7 +235,7 @@ func (h *DocumentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "file.delete",
 			ResourceType: "document",
