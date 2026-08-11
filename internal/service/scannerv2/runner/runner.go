@@ -77,6 +77,12 @@ type Runner struct {
 	// applyDeviceBridge (and device_lost from detectLost). nil on the agent
 	// (change detection is a center concern). See internal/changedetect.
 	changeRecorder changedetect.ChangeRecorder
+	// repo is the scannerv2.Repository used by applyDeviceBridge for device
+	// identity resolution + upsert (ResolveDeviceIdentity / ApplyDeviceIdentity).
+	// Injected via SetRepo (mirrors SetChangeRecorder). May be NoopRepository in
+	// tests that don't exercise identity. dbConn remains for the non-identity
+	// raw-SQL paths (detect_lost, lease sweeper, topology, subnets).
+	repo scannerv2.Repository
 	// lostThreshold is the number of consecutive scans a device must be absent
 	// from the alive set before being declared "lost" by DetectLost. Default 2
 	// (single missed scans must not flap a device offline). Configurable via
@@ -100,6 +106,14 @@ func (rn *Runner) SetReportSink(s ReportSink) { rn.reportSink = s }
 // change_log + pushes Watcher subscribers). nil clears it (agent mode, where
 // change detection is deferred to the center). Must be called before Run.
 func (rn *Runner) SetChangeRecorder(r changedetect.ChangeRecorder) { rn.changeRecorder = r }
+
+// SetRepo wires the scannerv2.Repository used by applyDeviceBridge for device
+// identity resolution + upsert (the single authoritative identity writer). Must
+// be called before any scan/ApplyReport; not safe to swap concurrently with a
+// running scan. Tests construct the runner with New(nil, ...) and MUST call
+// SetRepo before exercising applyDeviceBridge (the engine is nil there, so the
+// repo can't be inferred from it).
+func (rn *Runner) SetRepo(r scannerv2.Repository) { rn.repo = r }
 
 // New constructs a Runner. engine may be nil (the runner will log and no-op on
 // each Run), letting the scheduler stay alive even if the engine failed to init.

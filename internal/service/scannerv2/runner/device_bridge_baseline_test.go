@@ -188,7 +188,8 @@ func TestApplyDeviceBridge_NullNetworkID(t *testing.T) {
 	queries := db.New(conn)
 	// Runner with NO network (mirrors standalone pre-network-config startup).
 	rn := New(nil, queries, conn, nil, 0, nil)
-	rn.networkID = sql.NullInt64{} // explicit: NULL network
+	rn.networkID = sql.NullInt64{}                                    // explicit: NULL network
+	rn.SetRepo(store.NewSQLiteRepository(conn, store.Options{}, nil)) // NULL-network identity repo
 	rn.SetChangeRecorder(changedetect.NewDBRecorder(queries, nil, 0, nil))
 	ctx := context.Background()
 
