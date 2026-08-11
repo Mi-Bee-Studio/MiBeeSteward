@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -93,7 +92,7 @@ func setupDeviceSystemService(t *testing.T) (*DeviceSystemService, *sql.DB, int6
 	).Scan(&deviceID)
 	require.NoError(t, err)
 
-	repo := repository.NewDeviceSystemRepository(db)
+	repo := NewDeviceSystemRepository(db)
 	svc := NewDeviceSystemService(repo)
 	return svc, db, deviceID
 }

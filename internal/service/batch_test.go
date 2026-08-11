@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"mibee-steward/internal/repository"
 )
 
 // setupBatchTestDB creates an in-memory SQLite DB with schema for batch tests.
@@ -131,7 +129,7 @@ func TestBatchService_DeleteDevices_EmptyIDs(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 
 	deleted, err := svc.DeleteDevices(context.Background(), nil, 1)
@@ -143,7 +141,7 @@ func TestBatchService_DeleteDevices_Single(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 	ctx := context.Background()
 
@@ -164,7 +162,7 @@ func TestBatchService_DeleteDevices_Multiple(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 	ctx := context.Background()
 
@@ -185,7 +183,7 @@ func TestBatchService_DeleteDevices_NonexistentIDs(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 
 	deleted, err := svc.DeleteDevices(context.Background(), []int64{9999, 10000}, 99)
@@ -197,7 +195,7 @@ func TestBatchService_DeleteDevices_Mixed(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 	ctx := context.Background()
 
@@ -214,7 +212,7 @@ func TestBatchService_DeleteDevices_AuditLog(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 	ctx := context.Background()
 
@@ -235,7 +233,7 @@ func TestBatchService_UpdateDeviceStatuses_EmptyIDs(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 
 	updated, err := svc.UpdateDeviceStatuses(context.Background(), nil, "online", 1)
@@ -247,7 +245,7 @@ func TestBatchService_UpdateDeviceStatuses_InvalidStatus(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 
 	updated, err := svc.UpdateDeviceStatuses(context.Background(), []int64{1}, "invalid", 1)
@@ -259,7 +257,7 @@ func TestBatchService_UpdateDeviceStatuses_Success(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 	ctx := context.Background()
 
@@ -282,7 +280,7 @@ func TestBatchService_UpdateDeviceStatuses_AllValidStatuses(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 	ctx := context.Background()
 
@@ -302,7 +300,7 @@ func TestBatchService_UpdateDeviceStatuses_AuditLog(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 	ctx := context.Background()
 
@@ -321,7 +319,7 @@ func TestBatchService_DeleteUsers_EmptyIDs(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 
 	deleted, err := svc.DeleteUsers(context.Background(), nil, 1)
@@ -333,7 +331,7 @@ func TestBatchService_DeleteUsers_SelfDelete(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 
 	deleted, err := svc.DeleteUsers(context.Background(), []int64{1, 2, 1}, 1)
@@ -345,7 +343,7 @@ func TestBatchService_DeleteUsers_Success(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 	ctx := context.Background()
 
@@ -367,7 +365,7 @@ func TestBatchService_DeleteUsers_AuditLog(t *testing.T) {
 	d := setupBatchTestDB(t)
 	defer d.Close()
 
-	auditRepo := repository.NewAuditRepository(d)
+	auditRepo := NewAuditRepository(d)
 	svc := NewBatchService(d, auditRepo)
 	ctx := context.Background()
 

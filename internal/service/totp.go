@@ -26,7 +26,6 @@ import (
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 )
 
 // TOTPIssuer is the issuer name used in TOTP URIs.
@@ -45,11 +44,11 @@ var (
 type TOTPService struct {
 	queries   *db.Queries
 	userDB    db.DBTX
-	auditRepo *repository.AuditRepository
+	auditRepo *AuditRepository
 }
 
 // NewTOTPService creates a new TOTPService.
-func NewTOTPService(dbConn db.DBTX, auditRepo *repository.AuditRepository) *TOTPService {
+func NewTOTPService(dbConn db.DBTX, auditRepo *AuditRepository) *TOTPService {
 	return &TOTPService{
 		queries:   db.New(dbConn),
 		userDB:    dbConn,
@@ -133,7 +132,7 @@ func (s *TOTPService) Enable(ctx context.Context, userID int64, code string) err
 
 	// Audit log
 	if s.auditRepo != nil {
-		s.auditRepo.Log(ctx, repository.AuditLog{
+		s.auditRepo.Log(ctx, AuditLog{
 			UserID:       &userID,
 			Action:       "admin.user.2fa.enable",
 			ResourceType: "user",
@@ -221,7 +220,7 @@ func (s *TOTPService) Disable(ctx context.Context, userID int64, password string
 
 	// Audit log
 	if s.auditRepo != nil {
-		s.auditRepo.Log(ctx, repository.AuditLog{
+		s.auditRepo.Log(ctx, AuditLog{
 			UserID:       &userID,
 			Action:       "admin.user.2fa.disable",
 			ResourceType: "user",

@@ -20,19 +20,19 @@ import (
 
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/db"
-	"mibee-steward/internal/repository"
+	"mibee-steward/internal/service"
 )
 
 // LinkHandler handles device-document linking endpoints.
 type LinkHandler struct {
 	queries   *db.Queries
-	auditRepo *repository.AuditRepository // may be nil → auditing skipped
+	auditRepo *service.AuditRepository // may be nil → auditing skipped
 }
 
 // NewLinkHandler creates a new LinkHandler. auditRepo is optional; when set,
 // link/unlink actions are recorded in the audit log for parity with other admin
 // write operations.
-func NewLinkHandler(dbConn db.DBTX, auditRepo *repository.AuditRepository) *LinkHandler {
+func NewLinkHandler(dbConn db.DBTX, auditRepo *service.AuditRepository) *LinkHandler {
 	return &LinkHandler{queries: db.New(dbConn), auditRepo: auditRepo}
 }
 
@@ -108,7 +108,7 @@ func (h *LinkHandler) auditLink(r *http.Request, action string, deviceID, docID 
 		return
 	}
 	// Log is best-effort and returns nothing; a write failure is logged inside.
-	h.auditRepo.Log(r.Context(), repository.AuditLog{
+	h.auditRepo.Log(r.Context(), service.AuditLog{
 		UserID:       &userID,
 		Action:       action,
 		ResourceType: "device",

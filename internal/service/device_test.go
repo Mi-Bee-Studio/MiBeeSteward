@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -70,7 +69,7 @@ func setupDeviceService(t *testing.T) (*DeviceService, *sql.DB) {
 	`)
 	require.NoError(t, err)
 
-	repo := repository.NewDeviceRepository(db)
+	repo := NewDeviceRepository(db)
 	svc := NewDeviceService(repo, nil)
 	return svc, db
 }

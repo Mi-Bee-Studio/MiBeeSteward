@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	"mibee-steward/internal/db"
-	"mibee-steward/internal/repository"
+	"mibee-steward/internal/service"
 )
 
 // SDTarget represents a single Prometheus HTTP Service Discovery target.
@@ -29,11 +29,11 @@ type SDTarget struct {
 // SDHandler serves Prometheus HTTP Service Discovery endpoints.
 type SDHandler struct {
 	queries    *db.Queries
-	systemRepo *repository.DeviceSystemRepository
+	systemRepo *service.DeviceSystemRepository
 }
 
 // NewSDHandler creates a new SDHandler.
-func NewSDHandler(dbtx db.DBTX, systemRepo *repository.DeviceSystemRepository) *SDHandler {
+func NewSDHandler(dbtx db.DBTX, systemRepo *service.DeviceSystemRepository) *SDHandler {
 	return &SDHandler{queries: db.New(dbtx), systemRepo: systemRepo}
 }
 

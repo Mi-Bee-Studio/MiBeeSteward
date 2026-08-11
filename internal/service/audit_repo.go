@@ -7,7 +7,7 @@
 // those terms; see LICENSE for the full text. A commercial license is available
 // for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 
-package repository
+package service
 
 import (
 	"context"
