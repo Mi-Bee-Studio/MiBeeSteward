@@ -21,7 +21,6 @@ import (
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
 	sqldb "mibee-steward/internal/db"
-	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
 	"mibee-steward/internal/testutil"
@@ -59,11 +58,11 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 
 	// User service and handler
 	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
-	auditRepo := repository.NewAuditRepository(db)
+	auditRepo := service.NewAuditRepository(db)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, nil)
 
 	// Device handler
-	deviceRepo := repository.NewDeviceRepository(db)
+	deviceRepo := service.NewDeviceRepository(db)
 	deviceSvc := service.NewDeviceService(deviceRepo, nil)
 	deviceHandler := handler.NewDeviceHandler(deviceSvc)
 

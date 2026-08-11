@@ -16,7 +16,6 @@ import (
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
-	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 )
 
@@ -38,7 +37,7 @@ func setupExtendedTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	maxFileSize := cfg.Storage.MaxFileSize
 	uploadSvc := service.NewUploadService(uploadPath, maxFileSize)
 	docSvc := service.NewDocumentService(db, uploadSvc)
-	auditRepo := repository.NewAuditRepository(db)
+	auditRepo := service.NewAuditRepository(db)
 	docHandler := handler.NewDocumentHandler(docSvc, uploadPath, auditRepo)
 
 	// HeartbeatService needs its dedicated store; use a temp file.
@@ -51,7 +50,7 @@ func setupExtendedTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	heartbeatSvc := service.NewHeartbeatService(db, hbStore, cfg)
 	heartbeatHandler := handler.NewHeartbeatHandler(heartbeatSvc)
 
-	deviceRepo := repository.NewDeviceRepository(db)
+	deviceRepo := service.NewDeviceRepository(db)
 	deviceSvc := service.NewDeviceService(deviceRepo, nil)
 	deviceHandler := handler.NewDeviceHandler(deviceSvc)
 

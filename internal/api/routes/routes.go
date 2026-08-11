@@ -28,7 +28,6 @@ import (
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/crypto"
 	"mibee-steward/internal/db"
-	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
@@ -66,7 +65,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// User service and handler
 	userSvc := service.NewUserService(dbConn, cfg.Auth.JWTSecret, expiry)
 	// Audit logging
-	auditRepo := repository.NewAuditRepository(dbConn)
+	auditRepo := service.NewAuditRepository(dbConn)
 
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, tokenBlacklist)
 
@@ -160,7 +159,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	exportHandler := handler.NewExportHandler(service.NewExportService(db.New(dbConn), hbStore.Queries()))
 
 	// Device routes
-	deviceRepo := repository.NewDeviceRepository(dbConn)
+	deviceRepo := service.NewDeviceRepository(dbConn)
 	deviceSvc := service.NewDeviceService(deviceRepo, heartbeatSvc)
 	deviceHandler := handler.NewDeviceHandler(deviceSvc)
 	r.Route("/api/v1/devices", func(r chi.Router) {
@@ -600,7 +599,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 
 	// Device system routes
-	deviceSystemRepo := repository.NewDeviceSystemRepository(dbConn)
+	deviceSystemRepo := service.NewDeviceSystemRepository(dbConn)
 	deviceSystemSvc := service.NewDeviceSystemService(deviceSystemRepo)
 	deviceSystemHandler := handler.NewDeviceSystemHandler(deviceSystemSvc)
 	r.Route("/api/v1/devices/{id}/systems", func(r chi.Router) {

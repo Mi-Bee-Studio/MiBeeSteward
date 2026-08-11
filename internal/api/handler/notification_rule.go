@@ -16,7 +16,6 @@ import (
 
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 )
 
@@ -56,7 +55,7 @@ func (h *NotificationHandler) CreateRule(w http.ResponseWriter, r *http.Request)
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "admin.notification.rule.create",
 			ResourceType: "notification_rule",
@@ -133,7 +132,7 @@ func (h *NotificationHandler) UpdateRule(w http.ResponseWriter, r *http.Request)
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "admin.notification.rule.update",
 			ResourceType: "notification_rule",
@@ -170,7 +169,7 @@ func (h *NotificationHandler) SetRuleEnabled(w http.ResponseWriter, r *http.Requ
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "admin.notification.rule.enable",
 			ResourceType: "notification_rule",
@@ -196,7 +195,7 @@ func (h *NotificationHandler) DeleteRule(w http.ResponseWriter, r *http.Request)
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "admin.notification.rule.delete",
 			ResourceType: "notification_rule",

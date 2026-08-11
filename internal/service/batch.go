@@ -18,7 +18,6 @@ import (
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 )
 
 var (
@@ -31,11 +30,11 @@ var (
 // BatchService handles batch operations for devices and users.
 type BatchService struct {
 	db    *sql.DB
-	audit *repository.AuditRepository
+	audit *AuditRepository
 }
 
 // NewBatchService creates a new BatchService.
-func NewBatchService(db *sql.DB, audit *repository.AuditRepository) *BatchService {
+func NewBatchService(db *sql.DB, audit *AuditRepository) *BatchService {
 	return &BatchService{db: db, audit: audit}
 }
 
@@ -72,7 +71,7 @@ func (s *BatchService) DeleteDevices(ctx context.Context, ids []int64, userID in
 	for i, id := range ids {
 		idStrs[i] = fmt.Sprintf("%d", id)
 	}
-	s.audit.Log(ctx, repository.AuditLog{
+	s.audit.Log(ctx, AuditLog{
 		UserID:       &userID,
 		Action:       "admin.device.batch_delete",
 		ResourceType: "device",
@@ -141,7 +140,7 @@ func (s *BatchService) UpdateDeviceStatuses(ctx context.Context, ids []int64, st
 	for i, id := range ids {
 		idStrs[i] = fmt.Sprintf("%d", id)
 	}
-	s.audit.Log(ctx, repository.AuditLog{
+	s.audit.Log(ctx, AuditLog{
 		UserID:       &userID,
 		Action:       "admin.device.batch_update_status",
 		ResourceType: "device",
@@ -192,7 +191,7 @@ func (s *BatchService) DeleteUsers(ctx context.Context, ids []int64, currentUser
 	for i, id := range ids {
 		idStrs[i] = fmt.Sprintf("%d", id)
 	}
-	s.audit.Log(ctx, repository.AuditLog{
+	s.audit.Log(ctx, AuditLog{
 		UserID:       &currentUserID,
 		Action:       "admin.user.batch_delete",
 		ResourceType: "user",

@@ -19,7 +19,6 @@ import (
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 )
 
@@ -28,11 +27,11 @@ type TOTPHandler struct {
 	svc       *service.TOTPService
 	userSvc   *service.UserService
 	cfg       *config.Config
-	auditRepo *repository.AuditRepository
+	auditRepo *service.AuditRepository
 }
 
 // NewTOTPHandler creates a new TOTPHandler.
-func NewTOTPHandler(svc *service.TOTPService, userSvc *service.UserService, cfg *config.Config, auditRepo *repository.AuditRepository) *TOTPHandler {
+func NewTOTPHandler(svc *service.TOTPService, userSvc *service.UserService, cfg *config.Config, auditRepo *service.AuditRepository) *TOTPHandler {
 	return &TOTPHandler{svc: svc, userSvc: userSvc, cfg: cfg, auditRepo: auditRepo}
 }
 
@@ -203,7 +202,7 @@ func (h *TOTPHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	// Audit log
 	userID := req.UserID
-	h.auditRepo.Log(r.Context(), repository.AuditLog{
+	h.auditRepo.Log(r.Context(), service.AuditLog{
 		UserID:       &userID,
 		Action:       "auth.login.2fa.success",
 		ResourceType: "user",

@@ -19,7 +19,6 @@ import (
 
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
 )
@@ -28,11 +27,11 @@ import (
 type NotificationHandler struct {
 	svc        *service.NotificationService
 	dispatcher *notification.Dispatcher
-	auditRepo  *repository.AuditRepository
+	auditRepo  *service.AuditRepository
 }
 
 // NewNotificationHandler creates a new NotificationHandler.
-func NewNotificationHandler(svc *service.NotificationService, dispatcher *notification.Dispatcher, auditRepo *repository.AuditRepository) *NotificationHandler {
+func NewNotificationHandler(svc *service.NotificationService, dispatcher *notification.Dispatcher, auditRepo *service.AuditRepository) *NotificationHandler {
 	return &NotificationHandler{
 		svc:        svc,
 		dispatcher: dispatcher,
@@ -62,7 +61,7 @@ func (h *NotificationHandler) CreateChannel(w http.ResponseWriter, r *http.Reque
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "admin.notification.channel.create",
 			ResourceType: "notification_channel",
@@ -143,7 +142,7 @@ func (h *NotificationHandler) UpdateChannel(w http.ResponseWriter, r *http.Reque
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "admin.notification.channel.update",
 			ResourceType: "notification_channel",
@@ -185,7 +184,7 @@ func (h *NotificationHandler) SetChannelEnabled(w http.ResponseWriter, r *http.R
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "admin.notification.channel.enable",
 			ResourceType: "notification_channel",
@@ -213,7 +212,7 @@ func (h *NotificationHandler) DeleteChannel(w http.ResponseWriter, r *http.Reque
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "admin.notification.channel.delete",
 			ResourceType: "notification_channel",

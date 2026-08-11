@@ -24,7 +24,6 @@ import (
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/repository"
 	"mibee-steward/internal/service"
 )
 
@@ -32,12 +31,12 @@ import (
 type UserHandler struct {
 	svc       *service.UserService
 	cfg       *config.Config
-	auditRepo *repository.AuditRepository
+	auditRepo *service.AuditRepository
 	blacklist *service.TokenBlacklist
 }
 
 // NewUserHandler creates a new UserHandler.
-func NewUserHandler(svc *service.UserService, cfg *config.Config, auditRepo *repository.AuditRepository, blacklist *service.TokenBlacklist) *UserHandler {
+func NewUserHandler(svc *service.UserService, cfg *config.Config, auditRepo *service.AuditRepository, blacklist *service.TokenBlacklist) *UserHandler {
 	return &UserHandler{svc: svc, cfg: cfg, auditRepo: auditRepo, blacklist: blacklist}
 }
 
@@ -79,7 +78,7 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) {
 			slog.Warn("login failed", "username", req.Username, "ip", r.RemoteAddr, "reason", "invalid credentials")
-			h.auditRepo.Log(r.Context(), repository.AuditLog{
+			h.auditRepo.Log(r.Context(), service.AuditLog{
 				Action:       "auth.login.failure",
 				ResourceType: "user",
 				IPAddress:    r.RemoteAddr,
@@ -91,7 +90,7 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, service.ErrAccountLocked) {
 			slog.Warn("login failed", "username", req.Username, "ip", r.RemoteAddr, "reason", "account locked")
-			h.auditRepo.Log(r.Context(), repository.AuditLog{
+			h.auditRepo.Log(r.Context(), service.AuditLog{
 				Action:       "auth.login.failure",
 				ResourceType: "user",
 				IPAddress:    r.RemoteAddr,
@@ -102,7 +101,7 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		slog.Warn("login failed", "username", req.Username, "ip", r.RemoteAddr, "reason", err.Error())
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			Action:       "auth.login.failure",
 			ResourceType: "user",
 			IPAddress:    r.RemoteAddr,
@@ -121,7 +120,7 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.auditRepo.Log(r.Context(), repository.AuditLog{
+	h.auditRepo.Log(r.Context(), service.AuditLog{
 		UserID:       &userID,
 		Action:       "auth.login.success",
 		ResourceType: "user",
@@ -178,7 +177,7 @@ func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "admin.user.create",
 			ResourceType: "user",
@@ -213,7 +212,7 @@ func (h *UserHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &userID,
 			Action:       "auth.logout",
 			ResourceType: "user",
@@ -418,7 +417,7 @@ func (h *UserHandler) AdminResetPassword(w http.ResponseWriter, r *http.Request)
 
 	adminID, _, ok := middleware.GetUserFromContext(r)
 	if ok {
-		h.auditRepo.Log(r.Context(), repository.AuditLog{
+		h.auditRepo.Log(r.Context(), service.AuditLog{
 			UserID:       &adminID,
 			Action:       "admin.user.reset_password",
 			ResourceType: "user",
