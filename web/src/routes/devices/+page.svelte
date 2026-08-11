@@ -886,6 +886,23 @@ interface AddDevicesResponse {
 			openDelete(device);
 		}
 	}
+
+	// Keyboard equivalent for the event-delegation wrapper. The rendered
+	// <button>/<input> elements are natively focusable + Enter/Space fires a
+	// click that bubbles to handleTableClick — but the wrapper div itself also
+	// needs to forward Enter/Space so keyboard-only users can activate actions
+	// without a mouse. (#167 / #174 — devices page uses real <button> elements
+	// via {@html} render, unlike the 8 pages migrated to cell snippets; this
+	// keyboard handler closes the remaining a11y gap without the cell snippet
+	// that triggered the Svelte 5 flush stall.)
+	function handleTableKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		const target = e.target as HTMLElement;
+		const interactive = target.closest('[data-action]') as HTMLElement | null;
+		if (!interactive) return;
+		e.preventDefault();
+		handleTableClick({ target: interactive } as unknown as MouseEvent);
+	}
 </script>
 
 <div class="p-6">
@@ -1276,8 +1293,9 @@ interface AddDevicesResponse {
 	{#if loading}
 		<PageSkeleton type="table" />
 	{:else}
-		<!-- Device table with expandable heartbeat rows -->
-		<div onclick={handleTableClick}>
+		<!-- Device table with expandable heartbeat rows.
+		     svelte-ignore a11y_no_static_element_interactions -- event delegation wrapper; keyboard handled by onkeydown + native <button> focus -->
+		<div onclick={handleTableClick} onkeydown={handleTableKeydown}>
 			<DataTable
 				{columns}
 				rows={devices as unknown as Record<string, unknown>[]}
