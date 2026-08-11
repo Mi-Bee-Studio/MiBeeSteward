@@ -12,6 +12,7 @@ import (
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/service/scannerv2"
+	"mibee-steward/internal/service/scannerv2/store"
 	"mibee-steward/internal/testutil"
 )
 
@@ -36,6 +37,10 @@ func setupLeaseTestDB(t *testing.T) (*Runner, *db.Queries, *sql.DB, int64, int64
 	require.NoError(t, err)
 
 	rn := New(nil, queries, conn, nil, 0, nil)
+	// Identity repo: the lease tests drive applyDeviceBridge with a per-call
+	// networkID (center or agent), so the repo's own NetworkID is unused by the
+	// identity methods (they take the per-call value).
+	rn.SetRepo(store.NewSQLiteRepository(conn, store.Options{}, nil))
 	recorder := changedetect.NewDBRecorder(queries, nil, 0, nil)
 	rn.SetChangeRecorder(recorder)
 	return rn, queries, conn, centerNet.ID, agentNet.ID

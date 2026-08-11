@@ -11,6 +11,7 @@ import (
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/service/scannerv2"
+	"mibee-steward/internal/service/scannerv2/store"
 	"mibee-steward/internal/testutil"
 )
 
@@ -30,6 +31,10 @@ func setupChangeDetectDB(t *testing.T) (*Runner, *db.Queries, *sql.DB) {
 
 	rn := New(nil, queries, conn, nil, 0, nil)
 	rn.networkID = nid
+	// Wire the identity repository (applyDeviceBridge delegates ResolveDeviceIdentity
+	// / ApplyDeviceIdentity to it). NetworkID is baked into the repo so identity
+	// resolution tags devices with the seeded network.
+	rn.SetRepo(store.NewSQLiteRepository(conn, store.Options{NetworkID: net.ID}, nil))
 	recorder := changedetect.NewDBRecorder(queries, nil, 0, nil)
 	rn.SetChangeRecorder(recorder)
 	return rn, queries, conn

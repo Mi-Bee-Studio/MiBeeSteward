@@ -19,6 +19,7 @@ import (
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/service/scannerv2"
+	"mibee-steward/internal/service/scannerv2/store"
 	"mibee-steward/internal/testutil"
 )
 
@@ -35,6 +36,7 @@ func setupScanAttrsTestDB(t *testing.T) (*Runner, *sql.DB) {
 	nid := sql.NullInt64{Int64: net.ID, Valid: true}
 	rn := New(nil, queries, conn, nil, 0, nil)
 	rn.networkID = nid
+	rn.SetRepo(store.NewSQLiteRepository(conn, store.Options{NetworkID: net.ID}, nil))
 	rn.SetChangeRecorder(changedetect.NewDBRecorder(queries, nil, 0, nil))
 	return rn, conn
 }

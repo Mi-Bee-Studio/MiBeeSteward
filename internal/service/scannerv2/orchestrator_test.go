@@ -2,6 +2,7 @@ package scannerv2
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"reflect"
 	"sort"
@@ -136,6 +137,18 @@ func (r *recordRepo) EnrichDeviceByMAC(_ context.Context, _ string, _ map[string
 func (r *recordRepo) RecordTLSCerts(_ context.Context, ip string, certs []TLSCertRecord) error {
 	r.tlsCerts[ip] = append(r.tlsCerts[ip], certs...)
 	return nil
+}
+
+// ResolveDeviceIdentity / ApplyDeviceIdentity are no-ops in the orchestrator
+// test double — the orchestrator never calls them (identity upsert is the
+// runner's job via applyDeviceBridge). The stubs exist only to satisfy the
+// expanded Repository interface.
+func (r *recordRepo) ResolveDeviceIdentity(_ context.Context, _, _ string, _ sql.NullInt64) (IdentityResolution, error) {
+	return IdentityResolution{IsNew: true}, nil
+}
+
+func (r *recordRepo) ApplyDeviceIdentity(_ context.Context, _ IdentityWrite) (int64, error) {
+	return 0, nil
 }
 
 func TestOrchestrator_GatherClassifyDispatch(t *testing.T) {

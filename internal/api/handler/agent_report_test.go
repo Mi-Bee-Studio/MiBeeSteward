@@ -19,6 +19,7 @@ import (
 	sqldb "mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	scannerv2runner "mibee-steward/internal/service/scannerv2/runner"
+	"mibee-steward/internal/service/scannerv2/store"
 	"mibee-steward/internal/testutil"
 )
 
@@ -54,6 +55,7 @@ func setupAgentIngestServer(t *testing.T) (srv *httptest.Server, db *sql.DB, tok
 	// engine/heartbeat are nil — ApplyReport only needs the device-bridge path,
 	// which uses dbConn directly (heartbeat seeding no-ops when heartbeat is nil).
 	rn := scannerv2runner.New(nil, queries, db, nil, 0, nil)
+	rn.SetRepo(store.NewSQLiteRepository(db, store.Options{}, nil)) // agent reports carry a per-call networkID
 	agentReportHandler := handler.NewAgentReportHandler(rn, queries, db)
 
 	r := chi.NewMux()
@@ -292,6 +294,7 @@ func TestAgentReport_BackfillNetworkCIDR(t *testing.T) {
 	require.NoError(t, err)
 
 	rn := scannerv2runner.New(nil, queries, dbConn, nil, 0, nil)
+	rn.SetRepo(store.NewSQLiteRepository(dbConn, store.Options{}, nil))
 	h := handler.NewAgentReportHandler(rn, queries, dbConn)
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)

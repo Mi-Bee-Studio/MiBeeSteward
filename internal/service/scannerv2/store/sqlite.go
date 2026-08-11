@@ -33,6 +33,8 @@ import (
 	"mibee-steward/internal/domain"
 
 	"mibee-steward/internal/service/scannerv2"
+
+	"github.com/google/uuid"
 )
 
 // SQLiteRepository implements scannerv2.Repository against a *sql.DB.
@@ -460,6 +462,328 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	}
 
 	return tx.Commit()
+}
+
+// identityNetworkClause returns the SQL fragment + arg matching the
+// resolveDeviceIdentity / ApplyDeviceIdentity network scoping: "network_id = ?"
+// when the per-call network is valid, "network_id IS NULL" when not. Unlike
+// RecordDevice (which uses the repository's own r.networkID field), the identity
+// methods take a per-call networkID so a center ingesting many agents' networks
+// resolves each against the agent's own network.
+func identityNetworkClause(networkID sql.NullInt64) (string, []any) {
+	if networkID.Valid {
+		return "network_id = ?", []any{networkID.Int64}
+	}
+	return "network_id IS NULL", nil
+}
+
+// ResolveDeviceIdentity is the read-only half of the MAC-primary identity
+// upsert. It is the single authoritative resolver for which devices row a scan
+// should update (or whether a new row must be created), ported verbatim from the
+// former runner.resolveDeviceIdentity. See Repository.ResolveDeviceIdentity for
+// the contract; the IsNew field replaces the former sql.ErrNoRows sentinel so
+// callers switch on a value, not an error.
+//
+// networkID is per-call (the agent's network on the center ingestion path, the
+// instance's own network locally) — it is NOT r.networkID, so one center
+// repository can resolve identities across many networks.
+func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip string, networkID sql.NullInt64) (scannerv2.IdentityResolution, error) {
+	if mac == "" {
+		// No MAC → identity is (ip, network_id).
+		var targetID int64
+		var err error
+		if networkID.Valid {
+			err = r.db.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+				ip, networkID.Int64).Scan(&targetID)
+		} else {
+			err = r.db.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+				ip).Scan(&targetID)
+		}
+		if err == sql.ErrNoRows {
+			return scannerv2.IdentityResolution{IsNew: true}, nil
+		}
+		if err != nil {
+			return scannerv2.IdentityResolution{}, err
+		}
+		return scannerv2.IdentityResolution{TargetID: targetID}, nil
+	}
+
+	// MAC present → global identity lookup.
+	var targetID int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&targetID)
+	if err == sql.ErrNoRows {
+		// MAC not seen before. Fall back to (ip, network_id) with empty mac so a
+		// device first seen MAC-less gets its mac filled on this scan.
+		if networkID.Valid {
+			err = r.db.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND mac_address = '' LIMIT 1`,
+				ip, networkID.Int64).Scan(&targetID)
+		} else {
+			err = r.db.QueryRowContext(ctx,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' LIMIT 1`,
+				ip).Scan(&targetID)
+		}
+		if err == sql.ErrNoRows {
+			return scannerv2.IdentityResolution{IsNew: true}, nil
+		}
+		if err != nil {
+			return scannerv2.IdentityResolution{}, err
+		}
+		return scannerv2.IdentityResolution{TargetID: targetID}, nil
+	}
+	if err != nil {
+		return scannerv2.IdentityResolution{}, err
+	}
+
+	// MAC matched a row. Check whether it sits on the scanned ip; if so, this is
+	// the normal update path (no replacement).
+	var macRowIP string
+	var macRowMAC string
+	if qerr := r.db.QueryRowContext(ctx,
+		`SELECT ip_address, mac_address FROM devices WHERE id = ?`, targetID).Scan(&macRowIP, &macRowMAC); qerr != nil {
+		// Failing to read the row's ip is unexpected; proceed with the plain match.
+		return scannerv2.IdentityResolution{TargetID: targetID}, nil
+	}
+	if macRowIP == ip {
+		return scannerv2.IdentityResolution{TargetID: targetID}, nil // same ip — normal update.
+	}
+
+	// MAC matched a device on a DIFFERENT ip than the one being scanned. Check
+	// whether the scanned ip is held by another device with its own different
+	// mac: that signals a device replacement.
+	var ipHolderID int64
+	var ipHolderMAC string
+	var ipLookErr error
+	if networkID.Valid {
+		ipLookErr = r.db.QueryRowContext(ctx,
+			`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+			ip, networkID.Int64).Scan(&ipHolderID, &ipHolderMAC)
+	} else {
+		ipLookErr = r.db.QueryRowContext(ctx,
+			`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+			ip).Scan(&ipHolderID, &ipHolderMAC)
+	}
+	if ipLookErr == sql.ErrNoRows {
+		// Scanned ip is free → roaming: the MAC-matched device moved to a new IP.
+		return scannerv2.IdentityResolution{TargetID: targetID, Roamed: true}, nil
+	}
+	if ipLookErr != nil {
+		// Lookup error → don't speculate; fall back to the plain MAC match.
+		return scannerv2.IdentityResolution{TargetID: targetID}, nil
+	}
+	// Replacement requires the ip-holder to have its OWN mac differing from the
+	// scanned one. An empty-mac ip-holder is a MAC-less placeholder: leave it to
+	// be filled, do not treat as a replacement conflict.
+	if ipHolderMAC == "" || ipHolderMAC == mac {
+		return scannerv2.IdentityResolution{TargetID: targetID}, nil
+	}
+	// Device replacement: the ip-holder becomes the target, the MAC-matched row
+	// (the prior asset now sitting on a stale ip) is superseded.
+	return scannerv2.IdentityResolution{TargetID: ipHolderID, ReplacedID: targetID}, nil
+}
+
+// existingIdentityUpdate is the static UPDATE for an existing device (normal
+// rescan). Ported verbatim from the former runner.buildExistingUpdate. Positional
+// args are assembled in identityUpdateArgs. scan_attributes uses json_patch (not a
+// blind overwrite) so a SHALLOW scan can't erase fields a DEEPER earlier scan
+// collected: json_patch(old, new) keeps old's keys that new omits.
+func existingIdentityUpdate() string {
+	return `
+		UPDATE devices SET
+		    name = CASE WHEN (name = '' OR name = ip_address) THEN ? ELSE name END,
+		    type = CASE WHEN (type = '' OR type = 'unknown' OR type = 'other') AND ? != '' THEN ? ELSE type END,
+		    brand = CASE WHEN (brand = '' OR brand = 'unknown') AND ? != '' THEN ? ELSE brand END,
+		    description = CASE WHEN (description = '' OR description = 'unknown') AND ? != '' THEN ? ELSE description END,
+		    location = CASE WHEN (location = '' OR location = 'unknown') AND ? != '' THEN ? ELSE location END,
+		    open_ports = ?,
+		    detected_services = ?,
+		    prometheus_url = CASE WHEN ? != '' THEN ? ELSE prometheus_url END,
+		    node_exporter_url = CASE WHEN ? != '' THEN ? ELSE node_exporter_url END,
+		    scan_attributes = json_patch(scan_attributes, ?),
+		    last_scan_rtt_ms = ?,
+		    last_scanned_at = ?,
+		    updated_at = ?
+		WHERE id = ?`
+}
+
+// replacementIdentityUpdate is the UPDATE for the device-REPLACEMENT case (a
+// different physical device now occupies this ip). FORCE-OVERWRITES
+// name/type/brand/description/location — the CASE "only fill empty/unknown"
+// guards that protect a re-scan would be WRONG here. Ported verbatim from the
+// former runner.buildReplacementUpdate. Shares the SAME positional arg order as
+// existingIdentityUpdate, so it reuses identityUpdateArgs.
+func replacementIdentityUpdate() string {
+	return `
+		UPDATE devices SET
+		    name = ?,
+		    type = CASE WHEN ? != '' THEN ? ELSE type END,
+		    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
+		    description = CASE WHEN ? != '' THEN ? ELSE description END,
+		    location = CASE WHEN ? != '' THEN ? ELSE location END,
+		    open_ports = ?,
+		    detected_services = ?,
+		    prometheus_url = CASE WHEN ? != '' THEN ? ELSE prometheus_url END,
+		    node_exporter_url = CASE WHEN ? != '' THEN ? ELSE node_exporter_url END,
+		    scan_attributes = json_patch(scan_attributes, ?),
+		    last_scan_rtt_ms = ?,
+		    last_scanned_at = ?,
+		    updated_at = ?
+		WHERE id = ?`
+}
+
+// identityUpdateArgs builds the positional args matching both
+// existingIdentityUpdate and replacementIdentityUpdate (they share the same
+// placeholder layout for the columns they have in common). Values come from the
+// IdentityWrite (the runner pre-computes name/JSON blobs/type before calling).
+func identityUpdateArgs(in scannerv2.IdentityWrite, now time.Time) []any {
+	return []any{
+		in.Name, in.Type, in.Type,
+		in.Brand, in.Brand,
+		in.Description, in.Description,
+		in.Location, in.Location,
+		in.OpenPortsJSON, in.DetectedServicesJSON,
+		in.PrometheusURL, in.PrometheusURL,
+		in.NodeExporterURL, in.NodeExporterURL,
+		in.ScanAttributesJSON,
+		in.RTTMs, now, now, in.TargetID,
+	}
+}
+
+// ApplyDeviceIdentity commits the identity upsert. Ported verbatim from the
+// former runner.createDevice + the status/mac/roam/replacement UPDATE blocks of
+// runner.applyDeviceBridge: creates a new row (in.IsNew) or updates the resolved
+// row (normal rescan / replacement when ReplacedID != 0 / roam when Roamed),
+// then stamps status/mac/last_seen and runs the roam eviction-retry. No
+// transaction (mirrors the former best-effort, log-and-continue semantics). See
+// Repository.ApplyDeviceIdentity for the contract.
+func (r *SQLiteRepository) ApplyDeviceIdentity(ctx context.Context, in scannerv2.IdentityWrite) (int64, error) {
+	if in.IsNew {
+		return r.createDeviceIdentity(ctx, in)
+	}
+	return r.updateDeviceIdentity(ctx, in)
+}
+
+// createDeviceIdentity inserts a new device row. Ported verbatim from the former
+// runner.createDevice; the values arrive pre-computed in the IdentityWrite.
+func (r *SQLiteRepository) createDeviceIdentity(ctx context.Context, in scannerv2.IdentityWrite) (int64, error) {
+	devType := in.Type
+	if devType == "" {
+		devType = "other"
+	}
+	now := time.Now().UTC()
+	res, err := r.db.ExecContext(ctx, `
+		INSERT INTO devices (device_uuid, name, type, brand, ip_address, mac_address,
+		                     status, scan_source, description, location,
+		                     open_ports, detected_services, prometheus_url, node_exporter_url,
+		                     scan_attributes, network_id, first_seen, last_seen,
+		                     tags, last_scan_rtt_ms, last_scanned_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?,
+		        'online', 'scanner_v2', ?, ?,
+		        ?, ?, ?, ?,
+		        ?, ?, ?, ?,
+		        ?, ?, ?, ?, ?)`,
+		uuid.NewString(), in.Name, devType, in.Brand, in.IP, in.MAC,
+		in.Description, in.Location,
+		in.OpenPortsJSON, in.DetectedServicesJSON, in.PrometheusURL, in.NodeExporterURL,
+		in.ScanAttributesJSON, in.NetworkID, now, now,
+		in.TagsJSON, in.RTTMs, now, now, now)
+	if err != nil {
+		return 0, err
+	}
+	id, _ := res.LastInsertId()
+	return id, nil
+}
+
+// updateDeviceIdentity updates an existing resolved row: the identity-field
+// UPDATE (existing vs replacement variant) followed by the status/mac/last_seen
+// stamping and roam eviction-retry. Ported verbatim from the former
+// runner.applyDeviceBridge existing-device branch.
+func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv2.IdentityWrite) (int64, error) {
+	// 1. Identity-field UPDATE (existing vs replacement variant).
+	updateSQL := existingIdentityUpdate()
+	if in.ReplacedID != 0 {
+		updateSQL = replacementIdentityUpdate()
+	}
+	now := time.Now().UTC()
+	if _, uerr := r.db.ExecContext(ctx, updateSQL, identityUpdateArgs(in, now)...); uerr != nil {
+		r.logger.Warn("device identity: update device failed", "ip", in.IP, "mac", in.MAC, "error", uerr)
+	}
+
+	// 2. Status/mac/last_seen stamping + roam relocation / replacement offline.
+	if in.ReplacedID != 0 {
+		// Replacement: force-overwrite mac on the ip-holder (it now belongs to the
+		// scanned device), and mark the prior mac-matched row offline.
+		_, _ = r.db.ExecContext(ctx, `
+			UPDATE devices SET status='online',
+			    mac_address = ?,
+			    last_seen = ?,
+			    offline_since=NULL,
+			    last_scanned_at = ?, updated_at = ? WHERE id=?`,
+			in.MAC, now, now, now, in.TargetID)
+		_, _ = r.db.ExecContext(ctx,
+			`UPDATE devices SET status='offline',
+			    offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
+			    updated_at=? WHERE id=?`,
+			now, now, in.ReplacedID)
+		r.logger.Warn("device identity: device replaced (router/asset swap detected)",
+			"ip", in.IP, "scanned_mac", in.MAC, "replaced_device_id", in.ReplacedID,
+			"target_device_id", in.TargetID,
+			"action", "ip-holder updated with new mac; prior mac-matched row marked offline")
+	} else {
+		// Normal re-scan. When the device ROAMED (same MAC, new free IP — DHCP
+		// renewal), relocate ip_address to the scanned IP.
+		ipClause := "ip_address = ip_address"
+		if in.Roamed {
+			ipClause = "ip_address = ?"
+		}
+		_, err := r.db.ExecContext(ctx, `
+			UPDATE devices SET status='online',
+			    `+ipClause+`,
+			    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
+			    last_seen = ?,
+			    offline_since=NULL,
+			    last_scanned_at = ?, updated_at = ? WHERE id=?`,
+			roamUpdateArgs(in.Roamed, in.IP, in.MAC, now, in.TargetID)...)
+		if err != nil && in.Roamed {
+			// The roam UPDATE can fail the (ip_address, network_id) unique constraint
+			// when a mac='' placeholder occupies the target IP. Evict the placeholder
+			// then retry (the real device with this MAC is taking over).
+			r.logger.Warn("device identity: roam update failed, evicting ip-holder placeholder and retrying",
+				"ip", in.IP, "device_id", in.TargetID, "error", err)
+			if netClause, netArg := identityNetworkClause(in.NetworkID); netClause != "" {
+				_, _ = r.db.ExecContext(ctx,
+					`DELETE FROM devices WHERE ip_address = ? AND `+netClause+` AND mac_address = '' AND id != ?`,
+					append([]any{in.IP}, append(netArg, in.TargetID)...)...)
+			}
+			_, err = r.db.ExecContext(ctx, `
+				UPDATE devices SET status='online', ip_address = ?,
+				    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
+				    last_seen = ?,
+				    offline_since=NULL,
+				    last_scanned_at = ?, updated_at = ? WHERE id=?`,
+				in.IP, in.MAC, in.MAC, now, now, now, in.TargetID)
+			if err != nil {
+				r.logger.Warn("device identity: roam retry failed", "ip", in.IP, "device_id", in.TargetID, "error", err)
+			}
+		}
+	}
+	return in.TargetID, nil
+}
+
+// roamUpdateArgs builds the positional args for the normal-rescan status UPDATE
+// (mirrors the former runner.argsForRoamUpdate). When roamed is true the SQL has
+// an extra `ip_address = ?` clause (the scanned IP comes first); otherwise
+// ip_address is left unchanged.
+func roamUpdateArgs(roamed bool, ip, mac string, now time.Time, existingID int64) []any {
+	if roamed {
+		// order: ip_address=?, mac CASE ?/?, last_seen=?, last_scanned_at=?, updated_at=?, id=?
+		return []any{ip, mac, mac, now, now, now, existingID}
+	}
+	// order: mac CASE ?/?, last_seen=?, last_scanned_at=?, updated_at=?, id=?
+	return []any{mac, mac, now, now, now, existingID}
 }
 
 // NormalizeMAC canonicalizes a MAC address for storage and lookup: lowercased
