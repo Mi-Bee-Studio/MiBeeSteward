@@ -123,6 +123,20 @@
 	let draggedId: string | null = $state(null);
 	let refreshTimers: ReturnType<typeof setInterval>[] = [];
 
+	// ipv4OrV6 matches a bare IPv4 (a.b.c.d) or IPv6 literal. Used to detect
+	// when a device's stored name has degenerated to an IP (common after a DHCP
+	// roam: a scanner first discovered the host at .170 and recorded that IP as
+	// the name, then DHCP reassigned .167 — the name field did not follow the
+	// roam). In that case we show the CURRENT ip_address instead, so the device
+	// list name, IP column, and search link all agree (#197).
+	const IPV4_OR_V6 = /^(\d{1,3}\.){3}\d{1,3}$|^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+	function displayName(dev: OverviewDevice): string {
+		// User-set names are always honored; a degenerated IP name should not
+		// override the live ip_address (which is what the search link uses).
+		if (dev.name && !IPV4_OR_V6.test(dev.name)) return dev.name;
+		return dev.ip_address;
+	}
+
 	function getCSSVar(name: string, fallback: string): string {
 		return getComputedStyle(document.documentElement)
 			.getPropertyValue(name)
@@ -969,8 +983,10 @@
 								<a href="/devices?search={dev.ip_address}" class="flex items-center justify-between px-2 py-2 hover:bg-surface-2 rounded transition-colors">
 									<div class="flex items-center gap-2 min-w-0">
 										<span class="inline-block w-2 h-2 rounded-full bg-error shrink-0"></span>
-										<span class="text-sm truncate">{dev.name || dev.ip_address}</span>
-										<span class="text-xs text-muted font-mono truncate">{dev.ip_address}</span>
+										<span class="text-sm truncate">{displayName(dev)}</span>
+										{#if displayName(dev) !== dev.ip_address}
+											<span class="text-xs text-muted font-mono truncate">{dev.ip_address}</span>
+										{/if}
 									</div>
 									<span class="text-xs text-muted shrink-0 ml-2">{dev.type || '-'}</span>
 								</a>
