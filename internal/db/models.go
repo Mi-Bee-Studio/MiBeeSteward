@@ -106,6 +106,16 @@ type Device struct {
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
+type DeviceConfig struct {
+	ID           int64     `json:"id"`
+	DeviceID     int64     `json:"device_id"`
+	ConfigHash   string    `json:"config_hash"`
+	ConfigText   string    `json:"config_text"`
+	Protocol     string    `json:"protocol"`
+	DiffFromPrev string    `json:"diff_from_prev"`
+	FetchedAt    time.Time `json:"fetched_at"`
+}
+
 type DeviceDocument struct {
 	DeviceID   int64     `json:"device_id"`
 	DocumentID int64     `json:"document_id"`
@@ -428,17 +438,4 @@ type Vlan struct {
 	NetworkID   *int64     `json:"network_id"`
 	FirstSeen   *time.Time `json:"first_seen"`
 	LastSeen    *time.Time `json:"last_seen"`
-}
-
-type ZzTestCred struct {
-	ID                int64  `json:"id"`
-	Name              string `json:"name"`
-	SecurityLevel     string `json:"security_level"`
-	Community         string `json:"community"`
-	Username          string `json:"username"`
-	AuthProtocol      string `json:"auth_protocol"`
-	AuthPassphraseEnc string `json:"auth_passphrase_enc"`
-	PrivProtocol      string `json:"priv_protocol"`
-	PrivPassphraseEnc string `json:"priv_passphrase_enc"`
-	Notes             string `json:"notes"`
 }
