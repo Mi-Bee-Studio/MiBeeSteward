@@ -24,7 +24,7 @@ import (
 // okHandler is the protected downstream handler; writing 200 "ok" proves the
 // gate passed the request through.
 func okHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
