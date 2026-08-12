@@ -643,3 +643,22 @@ CREATE TABLE IF NOT EXISTS agent_commands (
     result TEXT                          -- JSON result/err from the agent (optional)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_commands_agent_status ON agent_commands(agent_id, status);
+
+-- device_configs: versioned running-config snapshots (Oxidized/RANCID-style
+-- config backup, #137). Each row is one fetched running-config for a device;
+-- fetched_at orders the versions, config_hash is a cheap "has changed" gate
+-- (sha256 of config_text) so an unchanged rescan need not store a duplicate
+-- version, and diff_from_prev holds the unified diff vs the prior version
+-- (computed by internal/configdiff). protocol records how it was fetched
+-- (ssh_show_run / scp / tftp). Cascades with the device (a deleted device's
+-- config history goes too — change_log retains the audit trail if needed).
+CREATE TABLE IF NOT EXISTS device_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    config_hash TEXT NOT NULL,                -- sha256(config_text): cheap changed-check
+    config_text TEXT NOT NULL DEFAULT '',     -- the running-config snapshot
+    protocol TEXT NOT NULL DEFAULT '',        -- fetch method: 'ssh_show_run', 'scp', 'tftp', ...
+    diff_from_prev TEXT NOT NULL DEFAULT '',  -- unified diff vs the prior version (configdiff)
+    fetched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_device_configs_device_id ON device_configs(device_id, id);
