@@ -662,3 +662,24 @@ CREATE TABLE IF NOT EXISTS device_configs (
     fetched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_device_configs_device_id ON device_configs(device_id, id);
+
+-- ssh_credentials: encrypted SSH credentials for the device config-backup probe
+-- (#137). secret_enc holds the AES-GCM ciphertext of the password OR the PEM
+-- private key; passphrase_enc holds the ciphertext of an encrypted key's
+-- passphrase (empty if the key is unencrypted). Encryption reuses the SNMP
+-- master_key crypto.Cipher (security.master_key) so there is ONE key source.
+-- host_key_fp is the expected SSH host-key fingerprint (TOFU pinning): the probe
+-- accepts+stores it on first connect, then rejects a change (MITM guard).
+CREATE TABLE IF NOT EXISTS ssh_credentials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    auth_method TEXT NOT NULL CHECK(auth_method IN ('password', 'key')),
+    username TEXT NOT NULL DEFAULT '',
+    secret_enc TEXT NOT NULL DEFAULT '',       -- AES-GCM(password | PEM private key)
+    passphrase_enc TEXT NOT NULL DEFAULT '',   -- AES-GCM(key passphrase); '' = unencrypted key
+    host_key_fp TEXT NOT NULL DEFAULT '',       -- expected SHA256 fp (TOFU); '' = not yet pinned
+    enabled INTEGER NOT NULL DEFAULT 1,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
