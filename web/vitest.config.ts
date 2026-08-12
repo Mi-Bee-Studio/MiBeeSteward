@@ -11,10 +11,17 @@
 
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	// svelteTesting() makes @testing-library/svelte's render() compile .svelte
+	// components for the CLIENT (not SSR) under jsdom — without it the sveltekit
+	// plugin emits the server build and render() fails with
+	// "lifecycle_function_unavailable: mount() is not available on the server".
+	// It only adds a client-compile condition for component rendering; the
+	// existing logic/utility tests don't render components and are unaffected.
+	plugins: [tailwindcss(), sveltekit(), svelteTesting()],
 	test: {
 		environment: 'jsdom',
 		include: ['src/**/*.test.ts'],
