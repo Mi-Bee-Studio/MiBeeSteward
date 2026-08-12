@@ -102,6 +102,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	r.Route("/api/v1/users", func(r chi.Router) {
 		r.Use(middleware.RequireAdmin)
 		r.Get("/", userHandler.ListUsers)
+		r.Post("/{id}/reset-password", userHandler.AdminResetPassword)
 	})
 
 	// Device routes
