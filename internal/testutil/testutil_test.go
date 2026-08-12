@@ -54,6 +54,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"audit_logs",
 		"change_log",
 		"dashboard_configs",
+		"device_configs",
 		"device_documents",
 		"device_liveness",
 		"device_neighbors",
