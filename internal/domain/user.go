@@ -11,12 +11,18 @@ package domain
 
 import "time"
 
-// UserRole represents a user's role in the system.
+// UserRole represents a user's role in the system. Roles map to capability sets
+// (see capability.go); authorization is enforced by middleware.RequireCapability,
+// not by string-equality on the role. Phase 1a (#138) introduces operator/viewer
+// alongside the legacy admin/user; "user" is treated as an alias for "viewer" so
+// existing accounts need no data migration.
 type UserRole string
 
 const (
-	RoleAdmin UserRole = "admin"
-	RoleUser  UserRole = "user"
+	RoleAdmin    UserRole = "admin"    // global administrator: all capabilities, bypasses object scope
+	RoleOperator UserRole = "operator" // operational: reads + scan/device/heartbeat ops, no user/cred/network mgmt
+	RoleViewer   UserRole = "viewer"   // read-only
+	RoleUser     UserRole = "user"     // legacy alias for viewer (existing accounts)
 )
 
 // Request types
