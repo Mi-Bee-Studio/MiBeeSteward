@@ -514,6 +514,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Delete("/{id}", credentialHandler.Delete)
 	})
 
+	// SSH credentials for the device config-backup probe (#137). Same admin-only
+	// gate + same shared master_key cipher as SNMP credentials.
+	sshCredentialHandler := handler.NewSSHCredentialHandler(dbConn, credCipher)
+	r.Route("/api/v1/ssh-credentials", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/", sshCredentialHandler.Create)
+		r.Get("/", sshCredentialHandler.List)
+		r.Get("/{id}", sshCredentialHandler.Get)
+		r.Put("/{id}", sshCredentialHandler.Update)
+		r.Delete("/{id}", sshCredentialHandler.Delete)
+	})
+
 	// --- Agent token management (distributed phase) ---
 	// Admin-only CRUD for discovery-agent bearer tokens. The ingestion endpoint
 	// (/agents/report below) authenticates via RequireAgentToken against this
