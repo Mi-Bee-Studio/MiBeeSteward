@@ -60,6 +60,10 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
 	auditRepo := service.NewAuditRepository(db)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, nil)
+	// TOTP service + handler (wired into userSvc so the 2FA flow is exercisable).
+	totpSvc := service.NewTOTPService(db, auditRepo)
+	userSvc.SetTOTPService(totpSvc)
+	totpHandler := handler.NewTOTPHandler(totpSvc, userSvc, cfg, auditRepo)
 
 	// Device handler
 	deviceRepo := service.NewDeviceRepository(db)
@@ -97,6 +101,18 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 
 	// Auth routes
 	r.Mount("/api/v1/auth", userHandler.Routes())
+
+	// 2FA routes (public verify + protected setup/enable/disable/status)
+	r.Route("/api/v1/auth/2fa", func(r chi.Router) {
+		r.Post("/verify", totpHandler.Verify)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth)
+			r.Post("/setup", totpHandler.Setup)
+			r.Post("/enable", totpHandler.Enable)
+			r.Post("/disable", totpHandler.Disable)
+			r.Get("/status", totpHandler.Status)
+		})
+	})
 
 	// Admin-only user list
 	r.Route("/api/v1/users", func(r chi.Router) {
