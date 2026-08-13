@@ -74,6 +74,11 @@ const (
 	ChangeTypeDeviceChanged   = "device_changed"
 	ChangeTypeDeviceLost      = "device_lost"
 	ChangeTypeDeviceRecovered = "device_recovered"
+	// ChangeTypeDeviceConfigChanged: a device's running-config backup changed
+	// between two config-backup fetches (#137). Emitted by the configbackup
+	// Service when configdiff.Diff is non-empty. dedupKind returns "" for it
+	// (never throttled) — every real config change is worth recording.
+	ChangeTypeDeviceConfigChanged = "device_config_changed"
 )
 
 // EntityType is always "device" in this phase (service/neighbor reserved).

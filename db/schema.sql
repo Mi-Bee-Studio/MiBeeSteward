@@ -98,6 +98,11 @@ CREATE TABLE IF NOT EXISTS devices (
     -- cmd/server/main.go (applyIdentityIndexMigrations) so existing rows can be
     -- de-duplicated first.
     network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+    -- ssh_credential_id binds this device to an SSH credential for the config-
+    -- backup probe (#137). NULL = this device is not config-backed-up.
+    -- ON DELETE SET NULL so deleting the credential pauses backup for the device
+    -- (rather than dropping the device row).
+    ssh_credential_id INTEGER REFERENCES ssh_credentials(id) ON DELETE SET NULL,
     -- first_seen / last_seen record when the device was first/last observed
     -- ONLINE by a scan (distinct from created_at/updated_at which track the
     -- row's own lifetime and bump on any write). Needed for asset-freshness
