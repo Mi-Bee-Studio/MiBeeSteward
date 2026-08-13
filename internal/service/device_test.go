@@ -248,7 +248,7 @@ func TestDevice_GetStats(t *testing.T) {
 	_, err = db.Exec("UPDATE devices SET status = 'offline' WHERE name = 'Dev-B'")
 	require.NoError(t, err)
 
-	stats, err := svc.GetStats(ctx, nil)
+	stats, err := svc.GetStats(ctx, nil, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.NotNil(t, stats)
 

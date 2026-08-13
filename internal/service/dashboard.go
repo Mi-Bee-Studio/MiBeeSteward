@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"time"
 
+	"mibee-steward/internal/authz/scopeql"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
@@ -151,49 +152,77 @@ func (e *UpstreamError) Error() string {
 // activity, and the offline-device list. The default dashboard front-end
 // consumes this single call instead of pulling /devices?limit=200 and computing
 // pie charts in the browser (which capped at 200 rows and skewed the picture).
-func (s *DashboardService) Overview(ctx context.Context) (*domain.DashboardOverviewResponse, error) {
+//
+// scope (#138 Phase 2b): the device aggregates (status/type/location/offline)
+// honor object-level network scope — a closed-mode non-admin caller sees counts
+// only for their granted networks. The scanning section (recent tasks/runs) is
+// cross-network discovery metadata and is intentionally NOT scoped (it has no
+// per-network association until scan_tasks.network_id lands).
+func (s *DashboardService) Overview(ctx context.Context, scope domain.Scope) (*domain.DashboardOverviewResponse, error) {
 	out := &domain.DashboardOverviewResponse{Generated: time.Now()}
+	// pred is "1=1" for a global scope (no filtering) — so the same raw query
+	// serves both the admin/open path and the closed-mode restricted path.
+	pred, predArgs := scopeql.NetworkPredicate(scope, "")
 
-	// --- 1. Device totals + by_status (reuse the existing GROUP BY queries) ---
-	statusRows, err := s.queries.CountByStatus(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("overview: count by status: %w", err)
-	}
 	dev := domain.OverviewDevices{
 		ByType:     map[string]int64{},
 		ByLocation: map[string]int64{},
 	}
-	for _, r := range statusRows {
-		dev.Total += r.Count
-		switch r.Status {
-		case "online":
-			dev.Online = r.Count
-		case "offline":
-			dev.Offline = r.Count
-		case "unknown":
-			dev.Unknown = r.Count
+
+	// --- 1. Device totals + by_status ---
+	statusRows, err := s.dbConn.QueryContext(ctx,
+		`SELECT status, COUNT(*) FROM devices WHERE `+pred+` GROUP BY status`, predArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("overview: count by status: %w", err)
+	}
+	for statusRows.Next() {
+		var status string
+		var c int64
+		if err := statusRows.Scan(&status, &c); err != nil {
+			statusRows.Close()
+			return nil, fmt.Errorf("overview: scan status: %w", err)
 		}
+		dev.Total += c
+		switch status {
+		case "online":
+			dev.Online = c
+		case "offline":
+			dev.Offline = c
+		case "unknown":
+			dev.Unknown = c
+		}
+	}
+	statusRows.Close()
+	if err := statusRows.Err(); err != nil {
+		return nil, fmt.Errorf("overview: status rows: %w", err)
 	}
 	if dev.Total > 0 {
 		dev.OnlineRate = float64(dev.Online) / float64(dev.Total)
 	}
 
 	// --- 2. by_type (full population, not a 200-row sample) ---
-	typeRows, err := s.queries.CountDevicesByType(ctx)
+	typeRows, err := s.dbConn.QueryContext(ctx,
+		`SELECT COALESCE(NULLIF(type,''),'unknown'), COUNT(*) FROM devices WHERE `+pred+` GROUP BY type`, predArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("overview: count by type: %w", err)
 	}
-	for _, r := range typeRows {
-		key := r.Type
-		if key == "" {
-			key = "unknown"
+	for typeRows.Next() {
+		var t string
+		var c int64
+		if err := typeRows.Scan(&t, &c); err != nil {
+			typeRows.Close()
+			return nil, fmt.Errorf("overview: scan type: %w", err)
 		}
-		dev.ByType[key] = r.Count
+		dev.ByType[t] = c
+	}
+	typeRows.Close()
+	if err := typeRows.Err(); err != nil {
+		return nil, fmt.Errorf("overview: type rows: %w", err)
 	}
 
 	// --- 3. by_location (raw GROUP BY — no sqlc query exists for it) ---
 	locRows, err := s.dbConn.QueryContext(ctx,
-		`SELECT COALESCE(NULLIF(location,''),'unknown') AS loc, COUNT(*) FROM devices GROUP BY loc`)
+		`SELECT COALESCE(NULLIF(location,''),'unknown') AS loc, COUNT(*) FROM devices WHERE `+pred+` GROUP BY loc`, predArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("overview: count by location: %w", err)
 	}
@@ -212,7 +241,7 @@ func (s *DashboardService) Overview(ctx context.Context) (*domain.DashboardOverv
 	}
 	out.Devices = dev
 
-	// --- 4. Recent scan tasks + runs + run-status distribution ---
+	// --- 4. Recent scan tasks + runs + run-status distribution (cross-network; NOT scoped) ---
 	scan, err := s.overviewScanning(ctx)
 	if err != nil {
 		return nil, err
@@ -220,11 +249,12 @@ func (s *DashboardService) Overview(ctx context.Context) (*domain.DashboardOverv
 	out.Scanning = scan
 
 	// --- 5. Abnormal device list (offline, most-recently-scanned first) ---
+	offlineArgs := append(append([]any{}, predArgs...), 10)
 	offline, err := s.dbConn.QueryContext(ctx, `
 		SELECT id, name, ip_address, type, status, last_scanned_at
-		FROM devices WHERE status='offline'
+		FROM devices WHERE status='offline' AND `+pred+`
 		ORDER BY COALESCE(last_scanned_at, '1970-01-01') DESC, id DESC
-		LIMIT 10`)
+		LIMIT ?`, offlineArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("overview: list offline: %w", err)
 	}

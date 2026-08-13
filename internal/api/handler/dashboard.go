@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 )
 
@@ -45,7 +46,7 @@ func (h *DashboardHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
 // powers the default dashboard (device totals/distributions, recent scan
 // activity, offline-device list). Computed server-side over the full dataset.
 func (h *DashboardHandler) Overview(w http.ResponseWriter, r *http.Request) {
-	resp, err := h.svc.Overview(r.Context())
+	resp, err := h.svc.Overview(r.Context(), domain.ScopeFromContext(r.Context()))
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to load dashboard overview")
 		return
