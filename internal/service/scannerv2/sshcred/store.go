@@ -175,3 +175,12 @@ func Delete(ctx context.Context, db *sql.DB, id int64) (int64, error) {
 	}
 	return res.RowsAffected()
 }
+
+// SetHostKeyFP pins the TOFU host-key fingerprint on a credential (the probe
+// calls this after a first connect that had no pinned fp, so subsequent
+// connects verify against it). Best-effort: a no-row update is not an error.
+func SetHostKeyFP(ctx context.Context, db *sql.DB, id int64, fp string) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE ssh_credentials SET host_key_fp = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, fp, id)
+	return err
+}

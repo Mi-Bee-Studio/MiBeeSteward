@@ -91,6 +91,10 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		// backfill below approximates it for existing offline devices from
 		// updated_at (the last status write).
 		"ALTER TABLE devices ADD COLUMN offline_since TIMESTAMP",
+		// ssh_credential_id: binds a device to an SSH credential for the config-
+		// backup probe (#137). NULL = not config-backed-up. SET NULL on credential
+		// delete so the device row survives (backup just pauses for it).
+		"ALTER TABLE devices ADD COLUMN ssh_credential_id INTEGER REFERENCES ssh_credentials(id) ON DELETE SET NULL",
 		// Dual JSON layer (scan_attributes + user_attributes). Generated columns
 		// (scan_vendor/scan_mac/scan_os/scan_hostname) can't be added via ALTER
 		// on existing DBs — those are only present on fresh installs. For
