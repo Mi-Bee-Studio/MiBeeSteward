@@ -140,6 +140,15 @@ type DeviceFilter struct {
 	// interpolated raw into SQL). Order is "asc" or "desc" (default "asc").
 	SortBy string `json:"sort_by,omitempty"`
 	Order  string `json:"order,omitempty"`
+	// ScopeRestricted/ScopeNetworkIDs carry the caller's resolved object-level
+	// network scope (#138 Phase 2). ScopeRestricted is false (the zero value) for
+	// an unrestricted caller (admin / open mode) — no scope filtering, the safe
+	// default. When true, the list/count queries AND in a
+	// `network_id IN (ScopeNetworkIDs)` clause so a restricted user only sees
+	// their granted networks. ScopeNetworkIDs may be empty when restricted
+	// (closed mode + no grants → the query matches nothing).
+	ScopeRestricted bool
+	ScopeNetworkIDs []int64
 }
 
 // Response types

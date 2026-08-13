@@ -56,6 +56,11 @@ type Config struct {
 	// deployments without it keep working for v1/v2c scans; it only becomes
 	// required when the first SNMPv3 credential is created or read.
 	Security SecurityConfig `koanf:"security"`
+	// RBAC holds role-based access control tuning. Today this is the object-
+	// level network-scope mode (#138 Phase 2): whether a non-admin user without
+	// any network grants sees all networks ("open", default, preserves single-
+	// team deployments) or nothing ("closed", MSP / multi-tenant isolation).
+	RBAC RBACConfig `koanf:"rbac"`
 }
 
 // SecurityConfig carries the process-wide secret keying material. The master
@@ -69,6 +74,19 @@ type SecurityConfig struct {
 	// it and the existing passphrases can no longer be decrypted (re-encrypt
 	// them first via the migration path).
 	MasterKey string `koanf:"master_key"`
+}
+
+// RBACConfig tunes role-based access control. ScopeDefault controls object-level
+// network scope for non-admin users (#138 Phase 2):
+//   - "open" (default): a non-admin user sees EVERY network (current behavior).
+//     Network grants are ignored for visibility (still recorded for future use).
+//   - "closed": a non-admin user sees ONLY the networks they hold a grant for
+//     (MSP / multi-tenant isolation). Admin always bypasses scope.
+//
+// Set via rbac.scope_default YAML or MIBEE_RBAC_SCOPE_DEFAULT. Unknown values
+// fall back to "open" (fail-safe against accidental lockout).
+type RBACConfig struct {
+	ScopeDefault string `koanf:"scope_default"`
 }
 
 // CenterConfig configures an agent's upstream center.
@@ -305,6 +323,7 @@ func Load(configPath string) (*Config, error) {
 	// Apply passive-discovery defaults (interval, trigger_identify, per-source
 	// toggles). Done before validation so the service sees a fully-populated cfg.
 	normalizeDiscovery(&cfg)
+	normalizeRBAC(&cfg)
 
 	// Validate
 	if err := Validate(&cfg); err != nil {
@@ -396,6 +415,20 @@ func normalizeDiscovery(cfg *Config) {
 	}
 	if d.Interval <= 0 {
 		d.Interval = 60
+	}
+}
+
+// normalizeRBAC canonicalizes rbac.scope_default. Empty or unrecognized values
+// fall back to "open" — the non-lockout, backward-compatible default (a non-admin
+// with no grants sees every network, preserving existing single-team installs).
+// The canonical string values mirror domain.ScopeModeOpen/Closed (source of
+// truth); config keeps to raw strings to avoid a config→domain dependency.
+func normalizeRBAC(cfg *Config) {
+	switch strings.ToLower(cfg.RBAC.ScopeDefault) {
+	case "open", "closed":
+		cfg.RBAC.ScopeDefault = strings.ToLower(cfg.RBAC.ScopeDefault)
+	default:
+		cfg.RBAC.ScopeDefault = "open"
 	}
 }
 

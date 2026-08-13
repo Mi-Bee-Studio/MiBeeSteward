@@ -688,3 +688,21 @@ CREATE TABLE IF NOT EXISTS ssh_credentials (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- user_network_grants: object-level network scope for non-admin roles (#138
+-- Phase 2). A grant lets a user see/operate the devices of a given network.
+-- admin bypasses scope entirely (sees all networks); a non-admin user's
+-- effective scope is the set of network_ids they hold a grant for. The scope
+-- mode (open/closed) is config-driven (rbac.scope_default): in "open" (default)
+-- a non-admin with NO grants still sees everything (preserves single-team
+-- deployments); in "closed" a non-admin sees only granted networks (MSP /
+-- multi-tenant). UNIQUE(user_id, network_id) makes a grant idempotent.
+CREATE TABLE IF NOT EXISTS user_network_grants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+    granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, network_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_network_grants_user ON user_network_grants(user_id);
+
