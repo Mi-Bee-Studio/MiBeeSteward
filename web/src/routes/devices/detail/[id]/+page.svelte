@@ -21,7 +21,7 @@
 	import type { Device, System, DeviceNeighbor, TLSPortCerts } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
-	import { Monitor, BarChart3 } from '@lucide/svelte';
+	import { Monitor, BarChart3, FileText } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -66,6 +66,35 @@
 	let tlsCerts = $state<TLSPortCerts[]>([]);
 	let certModalOpen = $state(false);
 	let certModalPort = $state<TLSPortCerts | null>(null);
+
+	// --- Running-config history (#137, device_configs) — Config History tab ---
+	// The list omits config_text (metadata only); the detail Modal fetches the
+	// full text + diff_from_prev by id. Two versions can be selected for an
+	// arbitrary A↔B compare via /configs/diff.
+	interface ConfigSummary {
+		id: number; device_id: number; config_hash: string; protocol: string;
+		has_diff: boolean; fetched_at: string;
+	}
+	interface ConfigDetail {
+		id: number; device_id: number; config_hash: string; config_text: string;
+		protocol: string; diff_from_prev: string; fetched_at: string;
+	}
+	interface ConfigDiffResp {
+		a: { id: number; fetched_at: string };
+		b: { id: number; fetched_at: string };
+		diff: string;
+	}
+	let configs = $state<ConfigSummary[]>([]);
+	let configsError = $state('');
+	let configsLoading = $state(false);
+	let selectedConfigIds = $state<number[]>([]);
+	let canCompareConfigs = $derived(selectedConfigIds.length === 2);
+	let configDetail = $state<ConfigDetail | null>(null);
+	let configDetailOpen = $state(false);
+	let configDetailLoading = $state(false);
+	let configDiff = $state<ConfigDiffResp | null>(null);
+	let configDiffOpen = $state(false);
+	let configDiffLoading = $state(false);
 
 	// --- Filters ---
 	let categoryFilter = $state('');
@@ -260,7 +289,7 @@
 	// Certs / Systems / Heartbeat) so a user can jump straight to the question
 	// they're asking ("is this healthy?" → Overview; "what services?" →
 	// Discovery) instead of scrolling past unrelated sections.
-	type Tab = 'overview' | 'discovery' | 'network' | 'systems' | 'heartbeat';
+	type Tab = 'overview' | 'discovery' | 'network' | 'systems' | 'heartbeat' | 'config';
 	let activeTab = $state<Tab>('overview');
 
 	// Sync the active tab to ?tab= so links/reloads land on the right pane.
@@ -268,7 +297,7 @@
 		if (typeof window === 'undefined') return 'overview';
 		const sp = new URLSearchParams(window.location.search);
 		const t = sp.get('tab');
-		return (t === 'overview' || t === 'discovery' || t === 'network' || t === 'systems' || t === 'heartbeat')
+		return (t === 'overview' || t === 'discovery' || t === 'network' || t === 'systems' || t === 'heartbeat' || t === 'config')
 			? t : 'overview';
 	}
 	function setTab(t: Tab) {
@@ -276,9 +305,15 @@
 		const sp = new URLSearchParams(window.location.search);
 		sp.set('tab', t);
 		history.replaceState(null, '', `?${sp.toString()}`);
-		// When the user first opens the heartbeat / network tab, make sure the
-		// supporting data has been fetched (it's lazy now, not all loaded up
-		// front).
+		loadTabData(t);
+	}
+
+	// Lazy-load the supporting data for a tab on first open (heartbeat/network/
+	// config are NOT fetched up front — only Overview + Systems are, to keep the
+	// initial load at 2 requests). Shared by setTab (user clicks a tab) AND
+	// onMount (deep link to ?tab=…), so a reload landing directly on a lazy tab
+	// still fetches its data instead of rendering an empty panel.
+	function loadTabData(t: Tab) {
 		if (t === 'heartbeat') {
 			if (!heartbeatConfigs.length && !heartbeatConfigLoading) fetchHeartbeatConfigs();
 			if (!trendStats && !trendLoading) fetchHeartbeatTrend();
@@ -286,6 +321,9 @@
 		if (t === 'network') {
 			if (!tlsCerts.length) fetchTLSCerts();
 			if (!neighbors.length) fetchNeighbors();
+		}
+		if (t === 'config') {
+			if (!configs.length && !configsLoading) fetchConfigs();
 		}
 	}
 
@@ -317,9 +355,12 @@
 		activeTab = hydrateTabFromUrl();
 		fetchDevice();
 		// Only the Overview + Systems panes are needed up front; Discovery uses
-		// the same `device` fetch, Network/Heartbeat fetch on first open via
-		// setTab. This cuts the initial load from 6 parallel requests to 2.
+		// the same `device` fetch, Network/Heartbeat/Config fetch on first open
+		// via setTab. This cuts the initial load from 6 parallel requests to 2.
 		fetchSystems();
+		// A deep link (?tab=…) lands directly on a lazy tab — fetch its data so
+		// the panel isn't empty until the user clicks away and back.
+		loadTabData(activeTab);
 	});
 
 	// --- Data fetching ---
@@ -481,6 +522,81 @@
 			// Keep last good certs list; record error for the section banner.
 			tlsCertsError = getErrorMessage(err);
 		}
+	}
+
+	// --- Running-config history (#137) ---
+	// List = metadata only (config_text omitted); the detail Modal fetches the
+	// full text + diff_from_prev by id. Failures record an error banner (Retry),
+	// never masking a server failure as an empty list.
+	async function fetchConfigs() {
+		configsLoading = true;
+		configsError = '';
+		try {
+			const res = await api.get<{ items: ConfigSummary[]; total: number }>(
+				`/devices/${deviceId}/configs`
+			);
+			configs = res.items || [];
+			selectedConfigIds = [];
+		} catch (err: unknown) {
+			configsError = getErrorMessage(err);
+		} finally {
+			configsLoading = false;
+		}
+	}
+
+	// Open the detail Modal for one version: full config_text + the unified diff
+	// vs its immediate predecessor (diff_from_prev).
+	async function openConfigDetail(id: number) {
+		configDetailLoading = true;
+		configDetailOpen = true;
+		configDetail = null;
+		try {
+			configDetail = await api.get<ConfigDetail>(`/devices/${deviceId}/configs/${id}`);
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+			configDetailOpen = false;
+		} finally {
+			configDetailLoading = false;
+		}
+	}
+
+	// Compare any two captured versions via /configs/diff. The selection caps at
+	// 2 (the Compare button is enabled only when exactly 2 are picked).
+	function toggleConfigSelect(id: number) {
+		const i = selectedConfigIds.indexOf(id);
+		if (i >= 0) {
+			selectedConfigIds = selectedConfigIds.filter((x) => x !== id);
+		} else {
+			selectedConfigIds = [...selectedConfigIds, id].slice(-2);
+		}
+	}
+
+	async function compareConfigs() {
+		if (selectedConfigIds.length !== 2) return;
+		const [a, b] = selectedConfigIds;
+		configDiffLoading = true;
+		configDiffOpen = true;
+		configDiff = null;
+		try {
+			configDiff = await api.get<ConfigDiffResp>(
+				`/devices/${deviceId}/configs/diff?a=${a}&b=${b}`
+			);
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+			configDiffOpen = false;
+		} finally {
+			configDiffLoading = false;
+		}
+	}
+
+	// Classify a unified-diff line for +/- coloring (hand-rolled — the project
+	// deliberately ships no diff-rendering dependency).
+	function diffLineClass(line: string): string {
+		if (line.startsWith('+++') || line.startsWith('---')) return 'diff-meta';
+		if (line.startsWith('@@')) return 'diff-hunk';
+		if (line.startsWith('+')) return 'diff-add';
+		if (line.startsWith('-')) return 'diff-del';
+		return 'diff-ctx';
 	}
 
 	// Open the certificate Modal for a specific port. Defensive: the row is only
@@ -937,7 +1053,7 @@
 	{:else}
 	<!-- Sticky in-page tab bar -->
 	<div class="tab-bar" role="tablist" aria-label={m['navigation.Devices']()}>
-		{#each [['overview', m['devicedetail.Tab Overview']()], ['discovery', m['devicedetail.Tab Discovery']()], ['network', m['devicedetail.Tab Network']()], ['systems', m['devicedetail.Tab Systems']()], ['heartbeat', m['devicedetail.Tab Heartbeat']()]] as [key, label] (key)}
+		{#each [['overview', m['devicedetail.Tab Overview']()], ['discovery', m['devicedetail.Tab Discovery']()], ['network', m['devicedetail.Tab Network']()], ['systems', m['devicedetail.Tab Systems']()], ['heartbeat', m['devicedetail.Tab Heartbeat']()], ['config', m['devicedetail.Tab Config']()]] as [key, label] (key)}
 			<button
 				role="tab"
 				aria-selected={activeTab === key}
@@ -1704,6 +1820,85 @@
 
 	</div><!-- /heartbeat tabpanel -->
 	{/if}<!-- /heartbeat tab -->
+
+	<!-- ── CONFIG HISTORY TAB (#137, device_configs) ── -->
+	{#if activeTab === 'config'}
+	<div id="tab-panel-config" role="tabpanel" aria-labelledby="tab-btn-config">
+		<div class="scan-info-panel mt-4">
+			<div class="flex items-center justify-between gap-3 mb-3">
+				<h3 class="scan-info-title">
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+					{m['devicedetail.Tab Config']()}
+					{#if configs.length > 0}
+						<span class="text-xs text-text-muted font-normal ml-1">({configs.length})</span>
+					{/if}
+				</h3>
+				{#if canCompareConfigs}
+					<button class="btn btn-sm btn-primary" onclick={compareConfigs}>
+						{m['devicedetail.Config Compare']()}
+					</button>
+				{/if}
+			</div>
+			<p class="text-xs text-text-muted mb-3">
+				{#if selectedConfigIds.length > 0 && !canCompareConfigs}
+					{m['devicedetail.Config Select Two']()}
+				{:else}
+					{m['devicedetail.Config Empty']()}
+				{/if}
+			</p>
+
+			{#if configsError}
+				<div class="mb-3 px-4 py-2 bg-error/10 border border-error/30 rounded-lg text-sm text-error flex items-center justify-between gap-2">
+					<span>{configsError}</span>
+					<button class="btn btn-sm btn-ghost" onclick={fetchConfigs}>{m['common.Retry']()}</button>
+				</div>
+			{:else if configsLoading}
+				<div class="space-y-2">
+					<Skeleton variant="rect" height="3rem" count={3} />
+				</div>
+			{:else if configs.length > 0}
+				<div class="config-list">
+					{#each configs as c (c.id)}
+						{@const selected = selectedConfigIds.includes(c.id)}
+						<div class="config-row" data-selected={selected}>
+							<label class="config-check" title={m['devicedetail.Config Select Two']()}>
+								<input
+									type="checkbox"
+									checked={selected}
+									disabled={selectedConfigIds.length >= 2 && !selected}
+									onchange={() => toggleConfigSelect(c.id)}
+								/>
+							</label>
+							<button type="button" class="config-main" onclick={() => openConfigDetail(c.id)}>
+								<div class="config-meta">
+									<span class="config-fetched">{formatTimestamp(c.fetched_at)}</span>
+									{#if c.protocol}
+										<span class="config-proto">{c.protocol}</span>
+									{/if}
+									{#if c.has_diff}
+										<span class="config-badge config-badge-changed">{m['devicedetail.Config Changed']()}</span>
+									{:else}
+										<span class="config-badge config-badge-unchanged">{m['devicedetail.Config Unchanged']()}</span>
+									{/if}
+								</div>
+								<span class="config-hash text-text-muted">{c.config_hash.slice(0, 12)}</span>
+							</button>
+							<button type="button" class="config-view-btn" onclick={() => openConfigDetail(c.id)} aria-label={m['devicedetail.Config View']()}>
+								{m['devicedetail.Config View']()}
+							</button>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<EmptyState
+					icon={FileText}
+					title={m['devicedetail.Config Empty']()}
+					description=""
+				/>
+			{/if}
+		</div>
+	</div>
+	{/if}<!-- /config tab -->
 {/if}<!-- /page-level device-loading-or-error guard -->
 
 </div><!-- /p-6 page wrapper -->
@@ -1913,6 +2108,44 @@
 	portCerts={certModalPort}
 	onClose={() => { certModalPort = null; }}
 />
+
+<!-- Config version detail Modal (#137): full config_text + diff vs predecessor. -->
+<Modal
+	bind:open={configDetailOpen}
+	title={configDetail ? `${m['devicedetail.Config View']()} · ${formatTimestamp(configDetail.fetched_at)}` : m['devicedetail.Config View']()}
+	maxWidth="48rem"
+	onClose={() => { configDetail = null; }}
+>
+	{#if configDetailLoading || !configDetail}
+		<div class="space-y-2"><Skeleton variant="text" count={6} /></div>
+	{:else}
+		{#if configDetail.diff_from_prev}
+			<h4 class="text-xs font-semibold text-text-muted uppercase tracking-wide mt-1 mb-1">
+				{m['devicedetail.Config Diff Prev']()}
+			</h4>
+			<pre class="diff-view mb-3">{#each configDetail.diff_from_prev.split('\n') as line}<span class={diffLineClass(line)}>{line}</span>{'\n'}{/each}</pre>
+		{:else}
+			<p class="text-xs text-text-muted mb-3">{m['devicedetail.Config No Diff Prev']()}</p>
+		{/if}
+		<pre class="config-text-view">{configDetail.config_text}</pre>
+	{/if}
+</Modal>
+
+<!-- Config two-version compare Modal (#137): unified diff from /configs/diff. -->
+<Modal
+	bind:open={configDiffOpen}
+	title={m['devicedetail.Config Compare Title']()}
+	maxWidth="48rem"
+	onClose={() => { configDiff = null; }}
+>
+	{#if configDiffLoading || !configDiff}
+		<div class="space-y-2"><Skeleton variant="text" count={6} /></div>
+	{:else if configDiff.diff}
+		<pre class="diff-view">{#each configDiff.diff.split('\n') as line}<span class={diffLineClass(line)}>{line}</span>{'\n'}{/each}</pre>
+	{:else}
+		<p class="text-sm text-text-muted">{m['devicedetail.Config Identical']()}</p>
+	{/if}
+</Modal>
 
 <!-- Device edit (shared form with the list page) + delete. Header buttons (#57). -->
 <DeviceEditModal bind:open={editOpen} device={device} onSaved={fetchDevice} />
@@ -2261,6 +2494,132 @@
 	.tls-tag-trusted {
 		background: color-mix(in srgb, var(--color-success) 16%, transparent);
 		color: var(--color-success);
+	}
+
+	/* --- Config History (#137) --- */
+	.config-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.config-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		background: var(--color-surface);
+	}
+	.config-row[data-selected='true'] {
+		border-color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+	}
+	.config-check {
+		display: flex;
+		align-items: center;
+		cursor: pointer;
+	}
+	.config-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.15rem;
+		text-align: left;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		padding: 0;
+	}
+	.config-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+	.config-fetched {
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+	.config-proto {
+		font-size: 0.7rem;
+		padding: 0.05rem 0.4rem;
+		border-radius: 0.3rem;
+		background: var(--color-surface-2, color-mix(in srgb, var(--color-text) 8%, transparent));
+		color: var(--color-text-muted);
+	}
+	.config-badge {
+		font-size: 0.7rem;
+		padding: 0.05rem 0.4rem;
+		border-radius: 0.3rem;
+	}
+	.config-badge-changed {
+		background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+		color: var(--color-warning);
+	}
+	.config-badge-unchanged {
+		background: color-mix(in srgb, var(--color-text) 8%, transparent);
+		color: var(--color-text-muted);
+	}
+	.config-hash {
+		font-size: 0.7rem;
+		font-family: var(--font-mono, monospace);
+	}
+	.config-view-btn {
+		font-size: 0.75rem;
+		padding: 0.25rem 0.6rem;
+		border-radius: 0.375rem;
+		border: 1px solid var(--color-border);
+		background: transparent;
+		color: var(--color-text);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.config-view-btn:hover {
+		background: var(--color-surface-2, color-mix(in srgb, var(--color-text) 6%, transparent));
+	}
+
+	/* Unified-diff renderer (config detail + compare Modals). Hand-rolled — no
+	   diff-rendering dependency; lines are colored by their first char. */
+	.diff-view,
+	.config-text-view {
+		margin: 0;
+		padding: 0.75rem;
+		max-height: 60vh;
+		overflow: auto;
+		background: var(--color-surface-2, color-mix(in srgb, var(--color-text) 5%, transparent));
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.78rem;
+		line-height: 1.5;
+		white-space: pre;
+		tab-size: 4;
+	}
+	.diff-view span {
+		display: block;
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+	.diff-view .diff-add {
+		background: color-mix(in srgb, var(--color-success) 14%, transparent);
+		color: var(--color-success);
+	}
+	.diff-view .diff-del {
+		background: color-mix(in srgb, var(--color-error) 14%, transparent);
+		color: var(--color-error);
+	}
+	.diff-view .diff-hunk {
+		color: var(--color-primary);
+		font-weight: 600;
+	}
+	.diff-view .diff-meta {
+		color: var(--color-text-muted);
+		font-weight: 600;
+	}
+	.diff-view .diff-ctx {
+		color: var(--color-text);
 	}
 
 </style>
