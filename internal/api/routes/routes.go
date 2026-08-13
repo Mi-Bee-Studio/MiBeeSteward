@@ -31,6 +31,7 @@ import (
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
+	scannerv2configbackup "mibee-steward/internal/service/scannerv2/configbackup"
 	credresolver "mibee-steward/internal/service/scannerv2/credresolver"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
@@ -39,6 +40,7 @@ import (
 	scannerv2reconcile "mibee-steward/internal/service/scannerv2/reconcile"
 	scannerv2runner "mibee-steward/internal/service/scannerv2/runner"
 	scannerv2scheduler "mibee-steward/internal/service/scannerv2/scheduler"
+	"mibee-steward/internal/service/scannerv2/sshcred"
 	scannerv2task "mibee-steward/internal/service/scannerv2/taskservice"
 )
 
@@ -600,6 +602,23 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	cleanupSvc := scannerv2cleanup.New(scanQueries, hbStore.Queries(), hbStore.DB(), dbConn, cfg.Retention)
 	cleanupSvc.Start(context.Background())
 
+	// Config-backup sweep (#137): fetches running-configs over SSH for devices
+	// with a bound SSH credential. Opt-in (scanner.config_backup.enabled) — needs
+	// security.master_key + bound creds to do anything useful.
+	var configBackupSvc *scannerv2configbackup.Service
+	if cfg.Scanner.ConfigBackup.Enabled {
+		sshResolver := sshcred.New(dbConn, credCipher)
+		configBackupSvc = scannerv2configbackup.New(
+			dbConn, scanQueries, sshResolver, changeRecorder, scannerv2configbackup.FetchConfig,
+			time.Duration(cfg.Scanner.ConfigBackup.Interval)*time.Second,
+			time.Duration(cfg.Scanner.ConfigBackup.Timeout)*time.Second,
+			slog.Default(),
+		)
+		configBackupSvc.Start(context.Background())
+		slog.Info("config-backup sweep started",
+			"interval_s", cfg.Scanner.ConfigBackup.Interval, "timeout_s", cfg.Scanner.ConfigBackup.Timeout)
+	}
+
 	if scanScheduler != nil {
 		scanScheduler.Start(context.Background())
 	}
@@ -833,6 +852,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		}
 		discSvc.Stop()
 		cleanupSvc.Stop()
+		if configBackupSvc != nil {
+			configBackupSvc.Stop()
+		}
 		// Stop the rule engine BEFORE the dispatcher — it holds a Watcher
 		// subscriber and calls dispatcher.Dispatch; stopping it first prevents
 		// in-flight dispatch attempts against a stopped dispatcher.
