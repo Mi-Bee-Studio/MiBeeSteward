@@ -1091,7 +1091,19 @@
 		"No IP Address": "该设备没有 IP 地址",
 		"Col MAC": "MAC",
 		"Col Protocol": "协议",
-		"Col Last Seen": "最近发现"
+		"Col Last Seen": "最近发现",
+		"Tab Config": "配置历史",
+		"Config Empty": "尚无运行配置快照。启用配置备份并绑定 SSH 凭据以捕获版本。",
+		"Config Fetched At": "抓取时间",
+		"Config Changed": "有变更",
+		"Config Unchanged": "无变更",
+		"Config View": "查看配置",
+		"Config Compare": "对比所选",
+		"Config Select Two": "选择两个版本进行对比",
+		"Config Diff Prev": "相对上一版的变更",
+		"Config No Diff Prev": "相对上一版无变化",
+		"Config Compare Title": "配置差异",
+		"Config Identical": "所选两个版本内容一致。"
 	},
 	"validation": {
 		"Name Required": "名称为必填项",

@@ -1091,7 +1091,19 @@
 		"No IP Address": "Device has no IP address",
 		"Col MAC": "MAC",
 		"Col Protocol": "Protocol",
-		"Col Last Seen": "Last Seen"
+		"Col Last Seen": "Last Seen",
+		"Tab Config": "Config History",
+		"Config Empty": "No running-config snapshots yet. Enable config backup and bind an SSH credential to capture versions.",
+		"Config Fetched At": "Fetched",
+		"Config Changed": "Changed",
+		"Config Unchanged": "No change",
+		"Config View": "View config",
+		"Config Compare": "Compare selected",
+		"Config Select Two": "Select two versions to compare",
+		"Config Diff Prev": "Change from previous version",
+		"Config No Diff Prev": "No changes vs the previous version",
+		"Config Compare Title": "Configuration diff",
+		"Config Identical": "The two selected versions are identical."
 	},
 	"validation": {
 		"Name Required": "Name is required",
