@@ -26,6 +26,10 @@ type ScannerConfig struct {
 	// 0 means "use the default" (2). Applied by DetectLost (runner), shared by
 	// the local scan path + the agent→center ingestion path + the lease sweeper.
 	LostThreshold int `koanf:"lost_threshold"`
+	// ConfigBackup configures the periodic device running-config backup (#137).
+	// Disabled by default — requires security.master_key + at least one device
+	// with an SSH credential bound. See BackupConfig.
+	ConfigBackup BackupConfig `koanf:"config_backup"`
 	// PerProbeTimeout bounds a SINGLE probe attempt (one SNMP Get, one TCP dial,
 	// one HTTP fetch) in seconds. Distinct from default_timeout (which bounds
 	// the whole per-host pipeline). Default 3s — keeps /24 scans fast even when
@@ -103,6 +107,17 @@ type RouterARPConfig struct {
 	Routers   []string `koanf:"routers"`
 	Community string   `koanf:"community"`
 	Timeout   int      `koanf:"timeout"` // seconds; default 4
+}
+
+// BackupConfig configures the device config-backup sweep (#137). The
+// service fetches each router/switch/firewall device's running-config over SSH
+// (using its bound ssh_credential), diffs it, and records a version when it
+// changes. All fields default (0/empty) → "use sensible defaults"; Enabled
+// defaults to false (opt-in — requires master_key + bound SSH credentials).
+type BackupConfig struct {
+	Enabled  bool `koanf:"enabled"`
+	Interval int  `koanf:"interval_seconds"` // seconds between sweeps; <=0 → 6h
+	Timeout  int  `koanf:"timeout_seconds"`  // per-device SSH timeout; <=0 → 30s
 }
 
 // RDNSConfig tunes the reverse-DNS probe. DNSServers (optional) overrides the
