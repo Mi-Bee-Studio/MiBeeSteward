@@ -28,6 +28,7 @@ import (
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/crypto"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
@@ -479,31 +480,55 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	scannerTaskHandler := handler.NewScannerTaskHandler(scanTaskService)
 	scannerResultHandler := handler.NewScannerResultHandler(scanQueries, dbConn)
 	r.Route("/api/v1/scanner", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
-		// Rate-limited scan trigger endpoints (per-IP, 10/min default)
+		// #138 Phase 1b: scanner routes are gated by capability, not a blanket
+		// RequireAdmin. admin inherits every capability (unchanged access); the
+		// new operator role gains scan access; viewer gains read-only access to
+		// results/tasks/runs (same inventory-data class as the RequireAuth device
+		// endpoints). Each tier is its own group so the capability matches the
+		// action (reads → discovery:read, triggers → scan:trigger, task CRUD +
+		// bulk delete → scan:manage, add-devices → device:write).
+
+		// Reads: discovery:read (viewer+). Scan results, task lists, runs.
 		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireCapability(domain.CapDiscoveryRead))
+			r.Get("/tasks", scannerTaskHandler.ListTasks)
+			r.Get("/tasks/{id}", scannerTaskHandler.GetTask)
+			r.Get("/tasks/{id}/runs", scannerTaskHandler.GetTaskRuns)
+			r.Get("/tasks/{id}/results", scannerTaskHandler.GetTaskResults)
+			r.Get("/results", scannerResultHandler.ListResults)
+			r.Get("/results/{id}", scannerResultHandler.GetResult)
+			r.Get("/runs", scannerResultHandler.ListRuns)
+			r.Get("/runs/{id}", scannerResultHandler.GetRun)
+			r.Get("/results/export", scannerResultHandler.ExportScanResults)
+		})
+
+		// Scan triggers: scan:trigger (operator+). Rate-limited per-IP (these
+		// START scans). The rate limiter runs AFTER the capability gate, so a
+		// rejected (403) request never consumes a rate token.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireCapability(domain.CapScanTrigger))
 			r.Use(scanLimiter.Middleware)
 			r.Post("/scan", scannerHandler.Scan)
 			r.Post("/tasks/{id}/trigger", scannerTaskHandler.TriggerTask)
 		})
-		// Non-rate-limited scanner routes
-		r.Post("/add-devices", scannerHandler.AddDevices)
-		// Task CRUD
-		r.Post("/tasks", scannerTaskHandler.CreateTask)
-		r.Get("/tasks", scannerTaskHandler.ListTasks)
-		r.Get("/tasks/{id}", scannerTaskHandler.GetTask)
-		r.Put("/tasks/{id}", scannerTaskHandler.UpdateTask)
-		r.Delete("/tasks/{id}", scannerTaskHandler.DeleteTask)
-		r.Get("/tasks/{id}/runs", scannerTaskHandler.GetTaskRuns)
-		r.Get("/tasks/{id}/results", scannerTaskHandler.GetTaskResults)
-		r.Post("/tasks/{id}/cancel", scannerTaskHandler.CancelScanTask)
-		// Results & runs
-		r.Get("/results", scannerResultHandler.ListResults)
-		r.Get("/results/{id}", scannerResultHandler.GetResult)
-		r.Get("/runs", scannerResultHandler.ListRuns)
-		r.Get("/runs/{id}", scannerResultHandler.GetRun)
-		r.Get("/results/export", scannerResultHandler.ExportScanResults)
-		r.Delete("/results", scannerResultHandler.BulkDeleteResults)
+
+		// Cancel a running scan: scan:trigger (operator+), but NOT rate-limited
+		// (it stops a run, doesn't start one).
+		r.With(middleware.RequireCapability(domain.CapScanTrigger)).
+			Post("/tasks/{id}/cancel", scannerTaskHandler.CancelScanTask)
+
+		// Scan task CRUD + bulk result delete: scan:manage (operator+).
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireCapability(domain.CapScanManage))
+			r.Post("/tasks", scannerTaskHandler.CreateTask)
+			r.Put("/tasks/{id}", scannerTaskHandler.UpdateTask)
+			r.Delete("/tasks/{id}", scannerTaskHandler.DeleteTask)
+			r.Delete("/results", scannerResultHandler.BulkDeleteResults)
+		})
+
+		// Add devices from a scan: device:write (operator+).
+		r.With(middleware.RequireCapability(domain.CapDeviceWrite)).
+			Post("/add-devices", scannerHandler.AddDevices)
 	})
 
 	// --- SNMP credential management (issue #135 — SNMPv3) ---
