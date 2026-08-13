@@ -74,10 +74,21 @@ func TestRoutes_CapabilityBoundary(t *testing.T) {
 	})
 
 	routes := []capabilityRoute{
-		// --- read tier: CapAuditRead. audit-logs moved off RequireAdmin to
-		// CapAuditRead, which the matrix grants to viewer+ — the one read this
-		// PR opens to non-admins. (Other inventory reads stay RequireAuth and
-		// are covered by TestRoutes_RequireAuthReadsRemainOpen below.) ---
+		// --- read tier: every read capability (granted to viewer+). Phase 1c
+		// opened audit-logs to viewer+; this PR (read-uniformity) gates the rest
+		// of the shared inventory read surface on its CapXxxRead capability too
+		// (previously RequireAuth). All authenticated roles hold the read caps, so
+		// every role passes; anon → 401. A future role lacking a read cap would be
+		// denied — fail-closed by capability. ---
+		{"device-read", http.MethodGet, "/api/v1/devices", levelRead},
+		{"network-read", http.MethodGet, "/api/v1/networks", levelRead},
+		{"config-read", http.MethodGet, "/api/v1/devices/1/configs", levelRead},
+		{"changes-read", http.MethodGet, "/api/v1/changes", levelRead},
+		{"topology-read", http.MethodGet, "/api/v1/topology", levelRead},
+		{"discovery-read", http.MethodGet, "/api/v1/discovery/status", levelRead},
+		{"heartbeat-read", http.MethodGet, "/api/v1/devices/1/heartbeat-results", levelRead},
+		{"document-read", http.MethodGet, "/api/v1/documents", levelRead},
+		{"dashboard-read", http.MethodGet, "/api/v1/dashboard/overview", levelRead},
 		{"audit-read", http.MethodGet, "/api/v1/audit-logs", levelRead},
 
 		// --- operator write tier (CapDeviceWrite / CapHeartbeatManage /
@@ -135,12 +146,14 @@ func TestRoutes_CapabilityBoundary(t *testing.T) {
 	}
 }
 
-// TestRoutes_RequireAuthReadsRemainOpen is a regression guard: the shared
-// inventory read surface stays RequireAuth (NOT capability-gated) in this PR,
-// so every authenticated role — including viewer — must still read it. This
-// catches an accidental tightening where a read route is mis-remapped to an
-// admin/operator capability.
-func TestRoutes_RequireAuthReadsRemainOpen(t *testing.T) {
+// TestRoutes_SelfServiceRoutesAreRequireAuth guards the routes that are
+// INTENTIONALLY left on RequireAuth (not capability-gated): self-service /
+// per-user surfaces — own profile, own per-user notification log bell. Any
+// authenticated user reaches these regardless of their role's capability set,
+// because they operate on the caller's own identity/state. This catches an
+// accidental mis-remap that would, say, gate a user's own profile behind an
+// admin capability.
+func TestRoutes_SelfServiceRoutesAreRequireAuth(t *testing.T) {
 	cfg := newTestConfig()
 	db := newTestDB(t)
 	handler, heartbeatSvc, shutdown := NewRouter(db, cfg)
@@ -150,18 +163,14 @@ func TestRoutes_RequireAuthReadsRemainOpen(t *testing.T) {
 		shutdown()
 	})
 
-	reads := []capabilityRoute{
-		{"devices", http.MethodGet, "/api/v1/devices", levelRead},
-		{"networks", http.MethodGet, "/api/v1/networks", levelRead},
-		{"changes", http.MethodGet, "/api/v1/changes", levelRead},
-		{"topology", http.MethodGet, "/api/v1/topology", levelRead},
-		{"dashboard-overview", http.MethodGet, "/api/v1/dashboard/overview", levelRead},
-		{"device-configs", http.MethodGet, "/api/v1/devices/1/configs", levelRead},
-		{"heartbeat-results", http.MethodGet, "/api/v1/devices/1/heartbeat-results", levelRead},
+	// viewer (least-privileged authenticated role) must reach each self-service
+	// route (status anything but 401/403); anon must get 401.
+	selfService := []capabilityRoute{
+		{"profile", http.MethodGet, "/api/v1/auth/profile", levelRead},
+		{"notification-logs", http.MethodGet, "/api/v1/notification/logs", levelRead},
 	}
 
-	for _, rt := range reads {
-		// viewer must pass (the guard's point); anon must still get 401.
+	for _, rt := range selfService {
 		t.Run(rt.label+"/viewer", func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(rt.method, rt.path, nil)
@@ -169,7 +178,7 @@ func TestRoutes_RequireAuthReadsRemainOpen(t *testing.T) {
 			handler.ServeHTTP(rec, req)
 			require.NotEqual(t, http.StatusUnauthorized, rec.Code)
 			require.NotEqual(t, http.StatusForbidden, rec.Code,
-				"%s %s viewer must remain readable (RequireAuth)", rt.method, rt.path)
+				"%s %s viewer must reach self-service route (RequireAuth)", rt.method, rt.path)
 		})
 		t.Run(rt.label+"/anon", func(t *testing.T) {
 			rec := httptest.NewRecorder()
