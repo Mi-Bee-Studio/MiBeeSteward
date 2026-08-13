@@ -206,6 +206,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// TLS certificates per device (detail page TLS sub-panel + Modal). Read-only;
 	// any logged-in user. Same *db.Queries as the neighbors handler.
 	tlsCertHandler := handler.NewTLSCertHandler(scanQueries)
+	// Versioned running-config history per device (detail page "Config History"
+	// tab, #137). Read-only; any logged-in user. The write path is the background
+	// configbackup.Service; this handler only reads device_configs.
+	deviceConfigHandler := handler.NewDeviceConfigHandler(scanQueries)
 
 	// Resolve this instance's network identity (networks.id) so discovered
 	// devices can be tagged with their origin. Done here (not in migrations)
@@ -661,6 +665,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Route("/api/v1/devices/{id}/certificates", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
 		r.Get("/", tlsCertHandler.ListByDevice)
+	})
+
+	// Device running-config history (#137, Oxidized/RANCID-style) — read-only,
+	// any logged-in user. The list omits config_text; the detail + diff views
+	// load it on demand. Registered before /{configId} so the static /diff
+	// segment wins over the param (chi prefers literal over wildcard).
+	r.Route("/api/v1/devices/{id}/configs", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", deviceConfigHandler.List)
+		r.Get("/diff", deviceConfigHandler.Diff)
+		r.Get("/{configId}", deviceConfigHandler.Get)
 	})
 
 	// Network-level topology graph — all devices (nodes) + all neighbor edges.
