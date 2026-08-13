@@ -139,6 +139,16 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		})
 	})
 
+	// Object-level network scope resolver (#138 Phase 2). Resolves a user's
+	// granted network set (closed mode) or Global (admin / open mode). Consumed
+	// by NetworkScope (injects scope into context), the device query paths, and
+	// the network-grant management handler (Phase 3, for cache invalidation).
+	scopeResolver := scoperesolver.New(dbConn, domain.ScopeMode(cfg.RBAC.ScopeDefault))
+	// Network-grant management handler (#138 Phase 3): admin assigns/removes a
+	// user's network scope. CapUserManage = admin-only. The handler invalidates
+	// the scope resolver cache per affected user so changes apply immediately.
+	networkGrantHandler := handler.NewNetworkGrantHandler(dbConn, scopeResolver)
+
 	// User management — admin-only (#138 CapUserManage; admin is the only role
 	// that holds it, so this preserves the prior RequireAdmin semantics while
 	// expressing the gate through the capability matrix).
@@ -147,6 +157,16 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/", userHandler.ListUsers)
 		r.Post("/batch-delete", batchHandler.BatchDeleteUsers)
 		r.Post("/{id}/reset-password", userHandler.AdminResetPassword)
+		// Per-user network grants (#138 Phase 3) — list the networks a user is
+		// scoped to (closed mode). The create/delete surface is /network-grants.
+		r.Get("/{id}/network-grants", networkGrantHandler.ListByUser)
+	})
+
+	r.Route("/api/v1/network-grants", func(r chi.Router) {
+		r.Use(middleware.RequireCapability(domain.CapUserManage))
+		r.Get("/", networkGrantHandler.List)
+		r.Post("/", networkGrantHandler.Create)
+		r.Delete("/{id}", networkGrantHandler.Delete)
 	})
 	// Heartbeat service + its dedicated time-series store. heartbeat_results
 	// lives in a separate SQLite file (data/heartbeat.db) so its high write
@@ -163,12 +183,6 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// dedicated heartbeat store for heartbeat_results (which lives in
 	// heartbeat.db after the time-series split; the main DB's copy is stale).
 	exportHandler := handler.NewExportHandler(service.NewExportService(db.New(dbConn), hbStore.Queries()))
-
-	// Object-level network scope resolver (#138 Phase 2). Resolves a user's
-	// granted network set (closed mode) or Global (admin / open mode). Consumed
-	// by NetworkScope (injects scope into context) and the device/topology/
-	// changes query paths.
-	scopeResolver := scoperesolver.New(dbConn, domain.ScopeMode(cfg.RBAC.ScopeDefault))
 
 	// Device routes
 	deviceRepo := service.NewDeviceRepository(dbConn)
