@@ -240,6 +240,15 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		return fmt.Errorf("devices type-check migration: %w", err)
 	}
 
+	// Extend users.role CHECK to include 'operator' and 'viewer' (RBAC capability
+	// graph, #138). SQLite can't ALTER a CHECK in place, so on existing DBs we
+	// rebuild the table; fresh installs already get the wider CHECK from
+	// schema.sql. Idempotent: skips the rebuild if 'operator' is already allowed.
+	// Purely additive — no route grants the new roles new access yet.
+	if err := extendUsersRoleCheck(context.Background(), db); err != nil {
+		return fmt.Errorf("users role-check migration: %w", err)
+	}
+
 	// Distributed-identity index migration: replace the legacy global-unique
 	// devices(ip_address) index with the (ip_address, network_id) composite +
 	// MAC lookup index. Runs LAST (after the devices rebuild) so the indexes
@@ -496,6 +505,96 @@ func extendDevicesTypeCheck(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("commit type-check rebuild: %w", err)
 	}
 	slog.Info("devices type CHECK widened (phone, printer added)")
+	return nil
+}
+
+// extendUsersRoleCheck widens the users.role CHECK constraint to include
+// 'operator' and 'viewer' (the RBAC capability graph, #138). SQLite cannot
+// ALTER a CHECK in place, so on existing DBs the table is rebuilt with the new
+// constraint; fresh installs already get the wider CHECK from schema.sql. The
+// rebuild is shape-identical to the current table (only the CHECK clause on
+// `role` differs) — same columns, same UNIQUE(username)/UNIQUE(email) implicit
+// indexes (recreated by the column definitions), no explicit secondary indexes.
+//
+// Idempotent: probes whether 'operator' is already accepted by the CHECK
+// (sentinel INSERT + rollback); if so, the rebuild is a no-op. This mirrors the
+// extendDevicesTypeCheck probe pattern.
+//
+// Behavior is purely additive: existing 'admin'/'user' rows stay valid, and no
+// route grants the new roles new access yet (that is the route-remap follow-up).
+// This migration only enables an admin to CREATE operator/viewer users.
+func extendUsersRoleCheck(ctx context.Context, db *sql.DB) error {
+	// Probe: can the current CHECK accept 'operator'? Insert a sentinel row in a
+	// rolled-back transaction; a CHECK violation means the migration is needed.
+	probe, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin role-check probe tx: %w", err)
+	}
+	probeErr := func() error {
+		if _, err := probe.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+			return err
+		}
+		_, err := probe.ExecContext(ctx,
+			`INSERT INTO users (username, email, password_hash, role) VALUES ('__role_probe__', '__role_probe__@invalid', 'x', 'operator')`)
+		return err
+	}()
+	_ = probe.Rollback()
+	if probeErr == nil {
+		// CHECK already permits 'operator' — nothing to do.
+		return nil
+	}
+	if !strings.Contains(probeErr.Error(), "CHECK constraint failed") {
+		return fmt.Errorf("probe users role CHECK: %w", probeErr)
+	}
+
+	slog.Info("rebuilding users table to widen role CHECK (add operator, viewer)")
+
+	// Rebuild preserving the FULL current column set — only the CHECK clause on
+	// `role` differs (now includes 'operator', 'viewer'). No generated columns,
+	// no explicit secondary indexes to recreate (UNIQUE constraints come back via
+	// the column definitions; FKs referencing users(id) survive via FKs=OFF).
+	stmts := []string{
+		`CREATE TABLE users_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'operator', 'viewer', 'user')),
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+			locked_until TIMESTAMP,
+			password_changed_at DATETIME,
+			must_change_password BOOLEAN NOT NULL DEFAULT 0
+		)`,
+		`INSERT INTO users_new (id, username, email, password_hash, role, created_at, updated_at,
+			failed_login_attempts, locked_until, password_changed_at, must_change_password)
+		SELECT id, username, email, password_hash, role, created_at, updated_at,
+			failed_login_attempts, locked_until, password_changed_at, must_change_password FROM users`,
+		`DROP TABLE users`,
+		`ALTER TABLE users_new RENAME TO users`,
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin role-check rebuild tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable FKs for role-check rebuild: %w", err)
+	}
+	for _, s := range stmts {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
+			return fmt.Errorf("role-check rebuild step failed: %w (stmt: %s)", err, s)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("re-enable FKs after role-check rebuild: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit role-check rebuild: %w", err)
+	}
+	slog.Info("users role CHECK widened (operator, viewer added)")
 	return nil
 }
 
