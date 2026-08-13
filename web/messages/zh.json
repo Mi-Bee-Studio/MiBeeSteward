@@ -686,7 +686,16 @@
 		"Password Reset Success": "密码重置成功，用户下次登录时需要修改密码",
 		"Password Required": "密码为必填项",
 		"Created": "用户已创建",
-		"Deleted": "用户已删除"
+		"Deleted": "用户已删除",
+		"Network Scope": "网络作用域",
+		"Network Scope Help": "在 closed 模式下，此用户只能看到下方授权的网络（管理员始终不受作用域限制）。在 open 模式下无效。",
+		"No Grants": "未授权任何网络——在 closed 模式下此用户什么都看不到。",
+		"Grant Network": "授权网络",
+		"Select Network": "选择网络…",
+		"Add": "添加",
+		"Grant Added": "已添加网络授权",
+		"Grant Removed": "已移除网络授权",
+		"All Networks Granted": "所有网络均已授权。"
 	},
 	"notifications": {
 		"Notifications": "通知管理",
