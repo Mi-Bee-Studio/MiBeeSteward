@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
+    role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'operator', 'viewer', 'user')),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     failed_login_attempts INTEGER NOT NULL DEFAULT 0,
@@ -590,7 +590,7 @@ CREATE INDEX IF NOT EXISTS idx_change_log_detected_at ON change_log(detected_at)
 -- Only the SHA-256 hash is stored; the plaintext is returned once at creation
 -- time. An admin creates a token per network/agent and hands it to the agent
 -- operator. Revocation = setting revoked_at. This is the machine-auth path —
--- distinct from the human user JWT flow (users.role CHECK is admin/user only).
+-- distinct from the human user JWT flow (users.role CHECK is admin/operator/viewer/user).
 CREATE TABLE IF NOT EXISTS agent_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL UNIQUE,    -- stable identifier the agent reports as

@@ -9,6 +9,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -65,4 +66,83 @@ func TestRunMigrations_FreshDB(t *testing.T) {
 	// Verify users table exists (seedAdminUser depends on it).
 	_, err = db.Exec(`SELECT id, username FROM users LIMIT 0`)
 	require.NoError(t, err, "users table must exist after fresh migration")
+}
+
+// TestRunMigrations_UsersRoleCheckWidened verifies that after runMigrations the
+// users.role CHECK accepts all four RBAC roles (#138). A fresh DB gets the wide
+// CHECK straight from schema.sql; an upgraded DB gets it from
+// extendUsersRoleCheck. Either way, all four roles must be insertable.
+func TestRunMigrations_UsersRoleCheckWidened(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "role.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	require.NoError(t, runMigrations(db, dbPath))
+
+	for _, role := range []string{"admin", "operator", "viewer", "user"} {
+		_, err := db.Exec(`INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, 'x', ?)`,
+			"u_"+role, "u_"+role+"@invalid", role)
+		require.NoError(t, err, "role %q must be accepted after migration", role)
+	}
+	// An unknown role is still rejected (CHECK enforced, not dropped).
+	_, err = db.Exec(`INSERT INTO users (username, email, password_hash, role) VALUES ('u_bogus', 'u_bogus@invalid', 'x', 'superuser')`)
+	require.Error(t, err, "an unknown role must still be rejected by the CHECK")
+}
+
+// TestExtendUsersRoleCheck_RebuildsFromNarrowCheck verifies the migration
+// rebuilds an OLD-shape users table (narrow admin/user CHECK) to accept
+// operator/viewer, preserves existing rows (id + role), and is idempotent. This
+// exercises the rebuild path directly — a fresh install already gets the wide
+// CHECK from schema.sql and short-circuits via the probe.
+func TestExtendUsersRoleCheck_RebuildsFromNarrowCheck(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "narrow.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	// Create the OLD-shape users table (narrow CHECK, pre-#138).
+	_, err = db.Exec(`CREATE TABLE users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL UNIQUE,
+		email TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL,
+		role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+		locked_until TIMESTAMP,
+		password_changed_at DATETIME,
+		must_change_password BOOLEAN NOT NULL DEFAULT 0
+	)`)
+	require.NoError(t, err)
+
+	// Seed a real user; confirm the narrow CHECK rejects 'operator'.
+	_, err = db.Exec(`INSERT INTO users (username, email, password_hash, role) VALUES ('admin1', 'a@x', 'h', 'admin')`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO users (username, email, password_hash, role) VALUES ('op1', 'o@x', 'h', 'operator')`)
+	require.Error(t, err, "narrow CHECK must reject 'operator' before migration")
+
+	// Run the migration.
+	require.NoError(t, extendUsersRoleCheck(ctx, db))
+
+	// The seed row survived the rebuild (id + role preserved).
+	var id int64
+	var role string
+	require.NoError(t, db.QueryRow(`SELECT id, role FROM users WHERE username = 'admin1'`).Scan(&id, &role))
+	require.Equal(t, "admin", role)
+	require.EqualValues(t, 1, id, "id must be preserved across the rebuild")
+
+	// 'operator' is now insertable (the widened CHECK accepts it).
+	_, err = db.Exec(`INSERT INTO users (username, email, password_hash, role) VALUES ('op1', 'o@x', 'h', 'operator')`)
+	require.NoError(t, err, "widened CHECK must accept 'operator'")
+
+	// 'viewer' too.
+	_, err = db.Exec(`INSERT INTO users (username, email, password_hash, role) VALUES ('v1', 'v@x', 'h', 'viewer')`)
+	require.NoError(t, err, "widened CHECK must accept 'viewer'")
+
+	// Idempotent: re-running is a no-op (the probe short-circuits).
+	require.NoError(t, extendUsersRoleCheck(ctx, db))
 }
