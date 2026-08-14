@@ -138,9 +138,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		})
 	})
 
-	// Admin-only user list
+	// User management — admin-only (#138 CapUserManage; admin is the only role
+	// that holds it, so this preserves the prior RequireAdmin semantics while
+	// expressing the gate through the capability matrix).
 	r.Route("/api/v1/users", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireCapability(domain.CapUserManage))
 		r.Get("/", userHandler.ListUsers)
 		r.Post("/batch-delete", batchHandler.BatchDeleteUsers)
 		r.Post("/{id}/reset-password", userHandler.AdminResetPassword)
@@ -174,7 +176,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			r.Get("/{id}", deviceHandler.Get)
 		})
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAdmin)
+			r.Use(middleware.RequireCapability(domain.CapDeviceWrite))
 			r.Post("/", deviceHandler.Create)
 			r.Put("/{id}", deviceHandler.Update)
 			r.Delete("/{id}", deviceHandler.Delete)
@@ -190,14 +192,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Network registry — feeds the device-list + change-history network filters
 	// and the Networks admin page. Read (List) is any logged-in user; create/
-	// update/delete are admin-only.
+	// update/delete require CapNetworkManage (admin-only capability).
 	networkHandler := handler.NewNetworkHandler(scanQueries, dbConn)
 	r.Route("/api/v1/networks", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
 		r.Get("/", networkHandler.List)
-		r.With(middleware.RequireAdmin).Post("/", networkHandler.Create)
-		r.With(middleware.RequireAdmin).Put("/{id}", networkHandler.Update)
-		r.With(middleware.RequireAdmin).Delete("/{id}", networkHandler.Delete)
+		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Post("/", networkHandler.Create)
+		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Put("/{id}", networkHandler.Update)
+		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Delete("/{id}", networkHandler.Delete)
 	})
 
 	// L2 topology — neighbors per device (detail page) + the whole-network
@@ -532,12 +534,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 
 	// --- SNMP credential management (issue #135 — SNMPv3) ---
-	// Admin-only CRUD for SNMP credentials (v1/v2c community strings + v3 USM
-	// auth/priv). Passphrases are AES-GCM-encrypted at rest (security.master_key);
-	// the list/get responses never include the secrets (masked projection).
+	// CRUD for SNMP credentials (v1/v2c community strings + v3 USM auth/priv).
+	// Passphrases are AES-GCM-encrypted at rest (security.master_key); the
+	// list/get responses never include the secrets (masked projection). Gated by
+	// CapCredManage — an admin-only capability (credentials are sensitive even
+	// when masked), preserving the prior admin-only semantics.
 	credentialHandler := handler.NewCredentialHandler(dbConn, credCipher, credResolver)
 	r.Route("/api/v1/snmp-credentials", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireCapability(domain.CapCredManage))
 		r.Post("/", credentialHandler.Create)
 		r.Get("/", credentialHandler.List)
 		r.Get("/{id}", credentialHandler.Get)
@@ -545,11 +549,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Delete("/{id}", credentialHandler.Delete)
 	})
 
-	// SSH credentials for the device config-backup probe (#137). Same admin-only
-	// gate + same shared master_key cipher as SNMP credentials.
+	// SSH credentials for the device config-backup probe (#137). Same gate
+	// (CapCredManage, admin-only) + same shared master_key cipher as SNMP.
 	sshCredentialHandler := handler.NewSSHCredentialHandler(dbConn, credCipher)
 	r.Route("/api/v1/ssh-credentials", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireCapability(domain.CapCredManage))
 		r.Post("/", sshCredentialHandler.Create)
 		r.Get("/", sshCredentialHandler.List)
 		r.Get("/{id}", sshCredentialHandler.Get)
@@ -558,12 +562,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 
 	// --- Agent token management (distributed phase) ---
-	// Admin-only CRUD for discovery-agent bearer tokens. The ingestion endpoint
-	// (/agents/report below) authenticates via RequireAgentToken against this
-	// table; this block is the management surface.
+	// CRUD for discovery-agent bearer tokens, gated by CapAgentManage
+	// (admin-only capability). The ingestion endpoint (/agents/report below)
+	// authenticates via RequireAgentToken against this table; this block is the
+	// management surface.
 	agentAdminHandler := handler.NewAgentAdminHandler(scanQueries)
 	r.Route("/api/v1/agents/tokens", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireCapability(domain.CapAgentManage))
 		r.Post("/", agentAdminHandler.Create)
 		r.Get("/", agentAdminHandler.List)
 		r.Post("/{id}/revoke", agentAdminHandler.Revoke)
@@ -592,12 +597,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 
 	// Admin-side command management: enqueue a command for an agent (POST) +
-	// view all commands (GET). Separate route group (RequireAdmin, not agent token).
+	// view all commands (GET). Separate route group (CapAgentManage, not agent
+	// token).
 	r.Route("/api/v1/agents/{agentId}/commands", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireCapability(domain.CapAgentManage))
 		r.Post("/", agentCommandHandler.Create)
 	})
-	r.With(middleware.RequireAdmin).Get("/api/v1/agents/commands/all", agentCommandHandler.ListAll)
+	r.With(middleware.RequireCapability(domain.CapAgentManage)).Get("/api/v1/agents/commands/all", agentCommandHandler.ListAll)
 
 	// --- Change history query (Phase 3) ---
 	// GET /api/v1/changes returns the device_added/changed/lost event stream
@@ -651,9 +657,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	if scanScheduler != nil {
 		scanScheduler.Start(context.Background())
 	}
-	// Audit log routes (admin only)
+	// Audit log routes — CapAuditRead. The capability matrix (#217) grants
+	// audit:read to every read-capable role (admin/operator/viewer/+legacy user):
+	// in a CMDB/monitoring tool a read-only stakeholder seeing the "who changed
+	// what when" trail is reasonable transparency (cf. NetBox change-logs). This
+	// widens the prior admin-only read to viewer+; if a future deployment needs
+	// stricter audit visibility, gate on CapAuditManage (admin-only) instead.
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireCapability(domain.CapAuditRead))
 		r.Get("/api/v1/audit-logs", auditHandler.List)
 		r.Get("/api/v1/audit-logs/facets", auditHandler.Facets)
 		r.Get("/api/v1/audit-logs/export", exportHandler.ExportAuditLogs)
@@ -670,7 +681,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			r.Get("/{systemId}", deviceSystemHandler.Get)
 		})
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAdmin)
+			r.Use(middleware.RequireCapability(domain.CapDeviceWrite))
 			r.Post("/", deviceSystemHandler.Create)
 			r.Put("/{systemId}", deviceSystemHandler.Update)
 			r.Delete("/{systemId}", deviceSystemHandler.Delete)
@@ -730,7 +741,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			r.Get("/{id}/download", docHandler.Download)
 		})
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAdmin)
+			r.Use(middleware.RequireCapability(domain.CapDocumentWrite))
 			r.Post("/", docHandler.CreateURL)
 			r.Post("/upload", docHandler.UploadFile)
 			r.Put("/{id}", docHandler.Update)
@@ -749,14 +760,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			r.Get("/", heartbeatHandler.ListConfigs)
 		})
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAdmin)
+			r.Use(middleware.RequireCapability(domain.CapHeartbeatManage))
 			r.Post("/", heartbeatHandler.CreateConfig)
 		})
 	})
 
 	// Heartbeat config CRUD
 	r.Route("/api/v1/heartbeat-configs", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireCapability(domain.CapHeartbeatManage))
 		r.Put("/{id}", heartbeatHandler.UpdateConfig)
 		r.Delete("/{id}", heartbeatHandler.DeleteConfig)
 	})
@@ -786,7 +797,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			r.Get("/query_range", dashHandler.QueryRange)
 		})
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAdmin)
+			r.Use(middleware.RequireCapability(domain.CapDashboardManage))
 			r.Post("/configs", dashHandler.CreateConfig)
 			r.Put("/configs/{id}", dashHandler.UpdateConfig)
 			r.Delete("/configs/{id}", dashHandler.DeleteConfig)
@@ -801,7 +812,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			r.Get("/", linkHandler.GetDeviceDocuments)
 		})
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAdmin)
+			r.Use(middleware.RequireCapability(domain.CapDocumentWrite))
 			r.Post("/", linkHandler.LinkDocument)
 			r.Delete("/{docId}", linkHandler.UnlinkDocument)
 		})
@@ -824,9 +835,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	ruleEngine := notification.NewRuleEngine(scanQueries, changeWatcher, notificationDispatcher, slog.Default())
 	ruleEngine.Start(context.Background())
 
-	// Notification channel routes (admin only)
+	// Notification channel routes — CapNotificationManage (admin-only
+	// capability). Channels carry webhook URLs / tokens, so even the masked
+	// read stays admin-only.
 	r.Route("/api/v1/notification/channels", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireCapability(domain.CapNotificationManage))
 		r.Post("/", notificationHandler.CreateChannel)
 		r.Get("/", notificationHandler.ListChannels)
 		r.Get("/{id}", notificationHandler.GetChannel)
@@ -836,9 +849,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Post("/{id}/test", notificationHandler.TestChannel)
 	})
 
-	// Notification rule routes (admin only — rules are config, like channels).
+	// Notification rule routes — CapNotificationManage (rules are config, like
+	// channels).
 	r.Route("/api/v1/notification/rules", func(r chi.Router) {
-		r.Use(middleware.RequireAdmin)
+		r.Use(middleware.RequireCapability(domain.CapNotificationManage))
 		r.Post("/", notificationHandler.CreateRule)
 		r.Get("/", notificationHandler.ListRules)
 		r.Get("/{id}", notificationHandler.GetRule)
