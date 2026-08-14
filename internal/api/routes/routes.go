@@ -24,6 +24,7 @@ import (
 
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
+	"mibee-steward/internal/authz/scoperesolver"
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/crypto"
@@ -163,6 +164,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// heartbeat.db after the time-series split; the main DB's copy is stale).
 	exportHandler := handler.NewExportHandler(service.NewExportService(db.New(dbConn), hbStore.Queries()))
 
+	// Object-level network scope resolver (#138 Phase 2). Resolves a user's
+	// granted network set (closed mode) or Global (admin / open mode). Consumed
+	// by NetworkScope (injects scope into context) and the device/topology/
+	// changes query paths.
+	scopeResolver := scoperesolver.New(dbConn, domain.ScopeMode(cfg.RBAC.ScopeDefault))
+
 	// Device routes
 	deviceRepo := service.NewDeviceRepository(dbConn)
 	deviceSvc := service.NewDeviceService(deviceRepo, heartbeatSvc)
@@ -170,16 +177,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Route("/api/v1/devices", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapDeviceRead))
+			r.Use(middleware.NetworkScope(scopeResolver))
 			r.Get("/export", exportHandler.ExportDevices)
 			r.Get("/", deviceHandler.List)
 			r.Get("/stats", deviceHandler.GetStats)
-			r.Get("/{id}", deviceHandler.Get)
+			r.With(middleware.ValidateDeviceScope(dbConn)).Get("/{id}", deviceHandler.Get)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapDeviceWrite))
+			r.Use(middleware.NetworkScope(scopeResolver))
 			r.Post("/", deviceHandler.Create)
-			r.Put("/{id}", deviceHandler.Update)
-			r.Delete("/{id}", deviceHandler.Delete)
+			r.With(middleware.ValidateDeviceScope(dbConn)).Put("/{id}", deviceHandler.Update)
+			r.With(middleware.ValidateDeviceScope(dbConn)).Delete("/{id}", deviceHandler.Delete)
 			r.Post("/batch-delete", batchHandler.BatchDeleteDevices)
 			r.Post("/batch-update-status", batchHandler.BatchUpdateDeviceStatus)
 		})
@@ -675,6 +684,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	deviceSystemSvc := service.NewDeviceSystemService(deviceSystemRepo)
 	deviceSystemHandler := handler.NewDeviceSystemHandler(deviceSystemSvc)
 	r.Route("/api/v1/devices/{id}/systems", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapDeviceRead))
 			r.Get("/", deviceSystemHandler.ListByDevice)
@@ -691,6 +702,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Device L2 neighbors (Bridge-MIB / LLDP / CDP / ARP) — read-only. Feeds
 	// the detail-page Neighbors panel.
 	r.Route("/api/v1/devices/{id}/neighbors", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
 		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
 		r.Get("/", neighborHandler.ListByDevice)
 	})
@@ -699,6 +712,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// detail-page TLS Certificates sub-panel and the per-port certificate Modal
 	// (full chain + PEM).
 	r.Route("/api/v1/devices/{id}/certificates", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
 		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
 		r.Get("/", tlsCertHandler.ListByDevice)
 	})
@@ -708,6 +723,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Registered before /{configId} so the static /diff segment wins over the
 	// param (chi prefers literal over wildcard).
 	r.Route("/api/v1/devices/{id}/configs", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
 		r.Use(middleware.RequireCapability(domain.CapConfigRead))
 		r.Get("/", deviceConfigHandler.List)
 		r.Get("/diff", deviceConfigHandler.Diff)
@@ -755,6 +772,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Device heartbeat configs
 	r.Route("/api/v1/devices/{id}/heartbeat-configs", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapHeartbeatRead))
 			r.Get("/", heartbeatHandler.ListConfigs)
@@ -774,6 +793,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Heartbeat results
 	r.Route("/api/v1/devices/{id}/heartbeat-results", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
 		r.Use(middleware.RequireCapability(domain.CapHeartbeatRead))
 		r.Get("/export", exportHandler.ExportHeartbeatResults)
 		r.Get("/", heartbeatHandler.ListResults)
@@ -781,6 +802,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Heartbeat history and stats
 	r.Group(func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
 		r.Use(middleware.RequireCapability(domain.CapHeartbeatRead))
 		r.Get("/api/v1/devices/{id}/heartbeat-history", heartbeatHandler.ListHistory)
 		r.Get("/api/v1/devices/{id}/heartbeat-stats", heartbeatHandler.GetStats)
@@ -807,6 +830,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Device-Document linking routes
 	linkHandler := handler.NewLinkHandler(dbConn, auditRepo)
 	r.Route("/api/v1/devices/{id}/documents", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapDocumentRead))
 			r.Get("/", linkHandler.GetDeviceDocuments)

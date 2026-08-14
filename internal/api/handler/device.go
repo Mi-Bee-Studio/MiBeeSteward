@@ -129,6 +129,12 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 			filter.NetworkID = &id
 		}
 	}
+	// Object-level network scope (#138 Phase 2): a restricted caller only sees
+	// their granted networks. Applied in addition to any explicit network_id.
+	if scope := domain.ScopeFromContext(r.Context()); !scope.IsGlobal() {
+		filter.ScopeRestricted = true
+		filter.ScopeNetworkIDs = scope.NetworkIDs
+	}
 
 	resp, err := h.svc.List(r.Context(), filter)
 	if err != nil {
