@@ -10,6 +10,8 @@
 package handler
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -17,8 +19,10 @@ import (
 	"strconv"
 	"time"
 
+	"mibee-steward/internal/authz/scopeql"
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 )
 
 // ChangeLogEntry is one row of the change history, JSON-tagged for the API.
@@ -46,11 +50,15 @@ type ChangeLogResponse struct {
 // ChangeLogHandler serves the change-history query API.
 type ChangeLogHandler struct {
 	queries *db.Queries
+	dbConn  *sql.DB // raw connection for the scope-restricted list/count
+	// (sqlc can't express a variable IN-list, so the closed-mode path builds the
+	// WHERE with scopeql.NetworkPredicate and runs it directly).
 }
 
-// NewChangeLogHandler constructs the handler.
-func NewChangeLogHandler(queries *db.Queries) *ChangeLogHandler {
-	return &ChangeLogHandler{queries: queries}
+// NewChangeLogHandler constructs the handler. dbConn powers the object-scope
+// (closed-mode) list/count; it may be nil when scope is never enforced.
+func NewChangeLogHandler(queries *db.Queries, dbConn *sql.DB) *ChangeLogHandler {
+	return &ChangeLogHandler{queries: queries, dbConn: dbConn}
 }
 
 // List handles GET /api/v1/changes — paginated change history, newest first.
@@ -95,6 +103,22 @@ func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	// Search: substring across change_type/entity_type. Empty ⇒ no filter.
 	searchVal := q.Get("search")
+
+	// Object-level network scope (#138 Phase 2b): closed-mode non-admin callers
+	// see only changes on their granted networks. The global path (admin / open
+	// mode) keeps the existing sqlc query; the restricted path builds a raw
+	// WHERE with scopeql.NetworkPredicate (sqlc can't express a variable IN-list).
+	scope := domain.ScopeFromContext(r.Context())
+	if !scope.IsGlobal() && h.dbConn != nil {
+		out, total, err := h.listScopedChanges(r.Context(), scope, networkID,
+			changeType, entityType, searchVal, limit, offset)
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "failed to list changes")
+			return
+		}
+		Success(w, ChangeLogResponse{Changes: out, Total: int(total)})
+		return
+	}
 
 	rows, err := h.queries.ListChangeLog(r.Context(), db.ListChangeLogParams{
 		Column1:    netSentinel,
@@ -144,6 +168,79 @@ func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	Success(w, ChangeLogResponse{Changes: out, Total: int(total)})
+}
+
+// listScopedChanges runs the scope-restricted change-history query (closed mode).
+// It mirrors the ListChangeLog/CountChangeLog sqlc shape exactly (same filters,
+// ordering, pagination) but swaps the single-network filter for the caller's
+// granted-network IN-list via scopeql.NetworkPredicate. The optional network_id
+// param still narrows within the scope (a network_id outside the scope is
+// already excluded by the IN-list). Returns the page + total count.
+func (h *ChangeLogHandler) listScopedChanges(
+	ctx context.Context, scope domain.Scope, networkID *int64,
+	changeType, entityType, searchVal string, limit, offset int64,
+) ([]ChangeLogEntry, int64, error) {
+	netPred, netArgs := scopeql.NetworkPredicate(scope, "")
+
+	typeSentinel := ""
+	if changeType != "" {
+		typeSentinel = "1"
+	}
+	entitySentinel := ""
+	if entityType != "" {
+		entitySentinel = "1"
+	}
+	searchSentinel := ""
+	if searchVal != "" {
+		searchSentinel = "1"
+	}
+	netSentinel := 0
+	var netVal int64
+	if networkID != nil {
+		netSentinel = 1
+		netVal = *networkID
+	}
+
+	// WHERE common to both the list and the count.
+	where := "WHERE " + netPred +
+		" AND (? = 0 OR network_id = ?)" +
+		" AND (? = '' OR change_type = ?)" +
+		" AND (? = '' OR entity_type = ?)" +
+		" AND (? = '' OR INSTR(lower(change_type), lower(?)) > 0 OR INSTR(lower(entity_type), lower(?)) > 0)"
+
+	countArgs := make([]any, 0, len(netArgs)+10)
+	countArgs = append(countArgs, netArgs...)
+	countArgs = append(countArgs, netSentinel, netVal,
+		typeSentinel, changeType, entitySentinel, entityType,
+		searchSentinel, searchVal, searchVal)
+
+	var total int64
+	if err := h.dbConn.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM change_log "+where, countArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	listArgs := make([]any, 0, len(countArgs)+2)
+	listArgs = append(listArgs, countArgs...)
+	listArgs = append(listArgs, limit, offset)
+	rows, err := h.dbConn.QueryContext(ctx,
+		"SELECT id, agent_id, network_id, change_type, entity_type, entity_id, before_data, after_data, detected_at "+
+			"FROM change_log "+where+" ORDER BY detected_at DESC LIMIT ? OFFSET ?", listArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	out := make([]ChangeLogEntry, 0)
+	for rows.Next() {
+		var e ChangeLogEntry
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.NetworkID, &e.ChangeType,
+			&e.EntityType, &e.EntityID, &e.BeforeData, &e.AfterData, &e.DetectedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, e)
+	}
+	return out, total, rows.Err()
 }
 
 // ChangeWatchHandler streams change events to clients via Server-Sent Events
@@ -238,6 +335,10 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 	rc.Flush()
 
 	ctx := r.Context()
+	// Object-level network scope (#138 Phase 2b): a restricted caller's stream
+	// must not leak change events from networks they hold no grant for. Events
+	// are filtered per-row here (the Watcher fans out to every subscriber).
+	scope := domain.ScopeFromContext(r.Context())
 	for {
 		select {
 		case <-ctx.Done():
@@ -253,6 +354,11 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				// Channel closed (server shutting down).
 				return
+			}
+			// Restricted scope: drop events whose network is out of scope (a
+			// change with no network_id is hidden — conservative for isolation).
+			if !scope.IsGlobal() && (row.NetworkID == nil || !scope.AllowsNetwork(*row.NetworkID)) {
+				continue
 			}
 			data, err := json.Marshal(ChangeLogEntry{
 				ID:         row.ID,

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 
 	_ "modernc.org/sqlite"
 )
@@ -102,7 +103,7 @@ func setupExportTest(t *testing.T) (*ExportService, *sql.DB) {
 	require.NoError(t, err)
 
 	queries := db.New(dbConn)
-	svc := NewExportService(queries, nil) // nil hb → falls back to main DB (test uses one DB)
+	svc := NewExportService(queries, nil, dbConn) // nil hb → falls back to main DB (test uses one DB)
 	return svc, dbConn
 }
 
@@ -160,7 +161,7 @@ func TestExport_Devices_CSV(t *testing.T) {
 	exportSeedDevices(t, dbConn, 3)
 
 	var buf bytes.Buffer
-	err := svc.Devices(context.Background(), "csv", &buf)
+	err := svc.Devices(context.Background(), "csv", &buf, domain.Scope{Global: true})
 	require.NoError(t, err)
 
 	// Check UTF-8 BOM
@@ -196,7 +197,7 @@ func TestExport_Devices_JSON(t *testing.T) {
 	exportSeedDevices(t, dbConn, 2)
 
 	var buf bytes.Buffer
-	err := svc.Devices(context.Background(), "json", &buf)
+	err := svc.Devices(context.Background(), "json", &buf, domain.Scope{Global: true})
 	require.NoError(t, err)
 
 	// Should be a valid JSON array
@@ -211,7 +212,7 @@ func TestExport_Devices_Empty(t *testing.T) {
 	svc, _ := setupExportTest(t)
 
 	var buf bytes.Buffer
-	err := svc.Devices(context.Background(), "csv", &buf)
+	err := svc.Devices(context.Background(), "csv", &buf, domain.Scope{Global: true})
 	require.NoError(t, err)
 
 	// Should have BOM + header only
@@ -225,7 +226,7 @@ func TestExport_Devices_StreamChunks(t *testing.T) {
 	exportSeedDevices(t, dbConn, 2500)
 
 	var buf bytes.Buffer
-	err := svc.Devices(context.Background(), "csv", &buf)
+	err := svc.Devices(context.Background(), "csv", &buf, domain.Scope{Global: true})
 	require.NoError(t, err)
 
 	// Skip BOM and header
@@ -365,7 +366,7 @@ func TestExport_InvalidFormat_DefaultsToCSV(t *testing.T) {
 	exportSeedDevices(t, dbConn, 1)
 
 	var buf bytes.Buffer
-	err := svc.Devices(context.Background(), "yaml", &buf)
+	err := svc.Devices(context.Background(), "yaml", &buf, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.True(t, bytes.HasPrefix(buf.Bytes(), []byte{0xEF, 0xBB, 0xBF}), "invalid format should default to CSV")
 }

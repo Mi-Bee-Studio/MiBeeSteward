@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"mibee-steward/internal/authz/scopeql"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 )
@@ -239,6 +240,52 @@ func (r *DeviceRepository) CountByTypeForNetwork(ctx context.Context, networkID 
 		return nil, fmt.Errorf("failed to count devices by type (network): %w", err)
 	}
 	return rows, nil
+}
+
+// CountByStatusScoped returns device counts grouped by status, restricted to the
+// networks in scope (object-level network scope, #138 Phase 2b). A global scope
+// returns counts across all networks. The returned row shape matches the global
+// CountByStatus so callers can treat them uniformly.
+func (r *DeviceRepository) CountByStatusScoped(ctx context.Context, scope domain.Scope) ([]db.CountByStatusRow, error) {
+	pred, args := scopeql.NetworkPredicate(scope, "")
+	rows, err := r.dbConn.QueryContext(ctx,
+		`SELECT status, COUNT(*) as count FROM devices WHERE `+pred+` GROUP BY status`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count devices by status (scoped): %w", err)
+	}
+	defer rows.Close()
+	out := make([]db.CountByStatusRow, 0)
+	for rows.Next() {
+		var row db.CountByStatusRow
+		if err := rows.Scan(&row.Status, &row.Count); err != nil {
+			return nil, fmt.Errorf("scan status (scoped): %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// CountByTypeScoped returns device counts grouped by type, restricted to the
+// networks in scope (#138 Phase 2b). A global scope returns counts across all
+// networks.
+func (r *DeviceRepository) CountByTypeScoped(ctx context.Context, scope domain.Scope) ([]db.CountDevicesByTypeRow, error) {
+	pred, args := scopeql.NetworkPredicate(scope, "")
+	rows, err := r.dbConn.QueryContext(ctx,
+		`SELECT COALESCE(NULLIF(type,''),'unknown') as type, COUNT(*) as count FROM devices WHERE `+
+			pred+` GROUP BY type`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count devices by type (scoped): %w", err)
+	}
+	defer rows.Close()
+	out := make([]db.CountDevicesByTypeRow, 0)
+	for rows.Next() {
+		var row db.CountDevicesByTypeRow
+		if err := rows.Scan(&row.Type, &row.Count); err != nil {
+			return nil, fmt.Errorf("scan type (scoped): %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }
 
 // sortWhitelist maps a client-supplied sort token to the real column name. Any

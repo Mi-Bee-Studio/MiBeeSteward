@@ -181,3 +181,129 @@ func TestScope_OpenMode_ViewerSeesEverything(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, 2, body.Total, "open mode: viewer sees all devices")
 }
+
+// authedGet fires an authenticated GET through the router and returns the recorder.
+func authedGet(t *testing.T, h http.Handler, token, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestScope_ClosedMode_ReadSurfacesScoped pins the Phase 2b surfaces: in closed
+// mode a viewer granted network 1 sees ONLY network-1 data across topology,
+// changes, dashboard overview, device stats, and device export — while admin is
+// unrestricted. This closes the object-scope loop on every read surface that
+// joins the devices/change_log tables by network_id.
+func TestScope_ClosedMode_ReadSurfacesScoped(t *testing.T) {
+	cfg := closedTestConfig()
+	db := scopeTestDB(t, true) // grant user1 → network 1
+	// Richer seed: net2 device offline (so dashboard offline-list + stats differ
+	// by network) + a change_log row on each network.
+	_, err := db.Exec(`
+		UPDATE devices SET status='offline' WHERE id=20;
+		INSERT INTO change_log (network_id, change_type, entity_type, entity_id, detected_at) VALUES
+			(1, 'device_added', 'device', 10, '2026-01-01T00:00:00Z'),
+			(2, 'device_added', 'device', 20, '2026-01-02T00:00:00Z');
+	`)
+	require.NoError(t, err)
+	handler, heartbeatSvc, shutdown := NewRouter(db, cfg)
+	require.NotNil(t, handler)
+	t.Cleanup(func() { heartbeatSvc.Stop(); shutdown() })
+
+	viewer := tokenForRole(t, cfg.Auth.JWTSecret, "viewer") // user_id=1, granted net1
+	admin := tokenForUser(t, cfg.Auth.JWTSecret, 2, "admin")
+
+	// --- topology: scoped viewer sees only the net-1 node (device 10) ---
+	topoFor := func(tok string) (ids []int64) {
+		rec := authedGet(t, handler, tok, "/api/v1/topology")
+		require.Equalf(t, http.StatusOK, rec.Code, "topology body=%s", rec.Body.String())
+		var body struct {
+			Nodes []struct {
+				ID        int64  `json:"id"`
+				NetworkID *int64 `json:"network_id"`
+			} `json:"nodes"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		for _, n := range body.Nodes {
+			ids = append(ids, n.ID)
+		}
+		return ids
+	}
+	require.ElementsMatch(t, []int64{10}, topoFor(viewer), "scoped viewer topology: only net-1 device")
+	require.ElementsMatch(t, []int64{10, 20}, topoFor(admin), "admin topology: both devices")
+
+	// --- changes: scoped viewer sees only the net-1 change ---
+	changesFor := func(tok string) (total int, nets []int64) {
+		rec := authedGet(t, handler, tok, "/api/v1/changes")
+		require.Equalf(t, http.StatusOK, rec.Code, "changes body=%s", rec.Body.String())
+		var body struct {
+			Changes []struct {
+				NetworkID *int64 `json:"network_id"`
+			} `json:"changes"`
+			Total int `json:"total"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		for _, c := range body.Changes {
+			if c.NetworkID != nil {
+				nets = append(nets, *c.NetworkID)
+			}
+		}
+		return body.Total, nets
+	}
+	vTotal, vNets := changesFor(viewer)
+	require.Equal(t, 1, vTotal, "scoped viewer changes: only net-1 change")
+	require.ElementsMatch(t, []int64{1}, vNets)
+	aTotal, _ := changesFor(admin)
+	require.Equal(t, 2, aTotal, "admin changes: both networks")
+
+	// --- dashboard overview: scoped total == 1, offline == 0; admin total == 2, offline == 1 ---
+	overviewFor := func(tok string) (total, offline int64) {
+		rec := authedGet(t, handler, tok, "/api/v1/dashboard/overview")
+		require.Equalf(t, http.StatusOK, rec.Code, "overview body=%s", rec.Body.String())
+		var body struct {
+			Devices struct {
+				Total   int64 `json:"total"`
+				Offline int64 `json:"offline"`
+			} `json:"devices"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		return body.Devices.Total, body.Devices.Offline
+	}
+	vTotal2, vOffline := overviewFor(viewer)
+	require.Equal(t, int64(1), vTotal2, "scoped dashboard total: only net-1 device")
+	require.Equal(t, int64(0), vOffline, "scoped dashboard offline: net2 offline device hidden")
+	aTotal2, aOffline := overviewFor(admin)
+	require.Equal(t, int64(2), aTotal2)
+	require.Equal(t, int64(1), aOffline)
+
+	// --- device stats: scoped by_status reflects only net1 (online:1); admin sees online:1+offline:1 ---
+	statsFor := func(tok string) map[string]int64 {
+		rec := authedGet(t, handler, tok, "/api/v1/devices/stats")
+		require.Equalf(t, http.StatusOK, rec.Code, "stats body=%s", rec.Body.String())
+		var body struct {
+			ByStatus map[string]int64 `json:"by_status"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		return body.ByStatus
+	}
+	require.Equal(t, map[string]int64{"online": 1}, statsFor(viewer), "scoped stats: only net-1 (online) device")
+	require.Equal(t, map[string]int64{"online": 1, "offline": 1}, statsFor(admin), "admin stats: both")
+
+	// --- device export: scoped CSV contains only net-1 IP; admin contains both ---
+	exportFor := func(tok string) string {
+		rec := authedGet(t, handler, tok, "/api/v1/devices/export?format=csv")
+		require.Equalf(t, http.StatusOK, rec.Code, "export body=%s", rec.Body.String())
+		return rec.Body.String()
+	}
+	vExport := exportFor(viewer)
+	require.Contains(t, vExport, "10.0.1.5", "scoped export includes net-1 device IP")
+	require.NotContains(t, vExport, "10.0.2.5", "scoped export excludes net-2 device IP")
+	aExport := exportFor(admin)
+	require.Contains(t, aExport, "10.0.1.5")
+	require.Contains(t, aExport, "10.0.2.5")
+}

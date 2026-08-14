@@ -14,6 +14,7 @@ import (
 	"strconv"
 
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 )
 
 // TopologyHandler serves the network-level topology graph: device nodes + L2
@@ -105,6 +106,37 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 			LocalPort:    e.LocalPort,
 			RemotePort:   e.RemotePort,
 		})
+	}
+
+	// Object-level network scope (#138 Phase 2b): a restricted (non-admin, closed
+	// mode) caller sees only their granted networks. The sqlc fetch above already
+	// honored an explicit ?network_id= param; here we additionally intersect with
+	// the caller's scope. If the caller passed a network_id they hold no grant
+	// for, the node set becomes empty (correct — deny). Nodes with no assigned
+	// network are hidden from restricted scopes (conservative for isolation).
+	// Edges are kept only when their origin device survived the node filter.
+	scope := domain.ScopeFromContext(r.Context())
+	if !scope.IsGlobal() {
+		allowed := make(map[int64]bool, len(scope.NetworkIDs))
+		for _, id := range scope.NetworkIDs {
+			allowed[id] = true
+		}
+		scopedNodes := make([]topoNode, 0, len(nodes))
+		allowedDevices := make(map[int64]bool, len(nodes))
+		for _, n := range nodes {
+			if n.NetworkID != nil && allowed[*n.NetworkID] {
+				scopedNodes = append(scopedNodes, n)
+				allowedDevices[n.ID] = true
+			}
+		}
+		scopedEdges := make([]topoEdge, 0, len(edges))
+		for _, e := range edges {
+			if allowedDevices[e.FromDeviceID] {
+				scopedEdges = append(scopedEdges, e)
+			}
+		}
+		nodes = scopedNodes
+		edges = scopedEdges
 	}
 
 	Success(w, map[string]any{

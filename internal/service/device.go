@@ -246,14 +246,23 @@ func (s *DeviceService) Delete(ctx context.Context, id int64) error {
 
 // GetStats returns device statistics grouped by status and type. When networkID
 // is non-nil the counts are scoped to that network (multi-LAN dashboards); nil
-// spans all networks.
-func (s *DeviceService) GetStats(ctx context.Context, networkID *int64) (*domain.DeviceStatsResponse, error) {
+// spans all networks. scope (#138 Phase 2b) is the authoritative object-level
+// boundary: a restricted scope filters to its granted networks (intersected with
+// networkID when both apply — a networkID outside the scope yields empty stats,
+// not a leak). A global scope leaves the networkID semantics unchanged.
+func (s *DeviceService) GetStats(ctx context.Context, networkID *int64, scope domain.Scope) (*domain.DeviceStatsResponse, error) {
 	var (
 		statusRows []db.CountByStatusRow
 		typeRows   []db.CountDevicesByTypeRow
 		err        error
 	)
-	if networkID != nil {
+
+	switch {
+	case !scope.IsGlobal() && networkID != nil && !scope.AllowsNetwork(*networkID):
+		// Requested a network outside the caller's scope → empty (zero counts,
+		// not a leak of existence).
+	case !scope.IsGlobal() && networkID != nil:
+		// One in-scope network: reuse the single-network repo path.
 		sRows, sErr := s.repo.CountByStatusForNetwork(ctx, networkID)
 		if sErr != nil {
 			return nil, fmt.Errorf("failed to get device stats: %w", sErr)
@@ -262,15 +271,38 @@ func (s *DeviceService) GetStats(ctx context.Context, networkID *int64) (*domain
 		if tErr != nil {
 			return nil, fmt.Errorf("failed to get device stats by type: %w", tErr)
 		}
-		// Normalize the network-scoped row types into the global shapes so the
-		// response assembly below is identical.
 		for _, r := range sRows {
 			statusRows = append(statusRows, db.CountByStatusRow(r))
 		}
 		for _, r := range tRows {
 			typeRows = append(typeRows, db.CountDevicesByTypeRow(r))
 		}
-	} else {
+	case !scope.IsGlobal():
+		// Restricted scope, no network picked → all granted networks.
+		statusRows, err = s.repo.CountByStatusScoped(ctx, scope)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get device stats: %w", err)
+		}
+		typeRows, err = s.repo.CountByTypeScoped(ctx, scope)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get device stats by type: %w", err)
+		}
+	case networkID != nil:
+		sRows, sErr := s.repo.CountByStatusForNetwork(ctx, networkID)
+		if sErr != nil {
+			return nil, fmt.Errorf("failed to get device stats: %w", sErr)
+		}
+		tRows, tErr := s.repo.CountByTypeForNetwork(ctx, networkID)
+		if tErr != nil {
+			return nil, fmt.Errorf("failed to get device stats by type: %w", tErr)
+		}
+		for _, r := range sRows {
+			statusRows = append(statusRows, db.CountByStatusRow(r))
+		}
+		for _, r := range tRows {
+			typeRows = append(typeRows, db.CountDevicesByTypeRow(r))
+		}
+	default:
 		statusRows, err = s.repo.CountByStatus(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get device stats: %w", err)
