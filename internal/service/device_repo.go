@@ -491,6 +491,7 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 	  AND (? = '' OR d.created_at >= ?)
 	  AND (? = '' OR d.created_at <= ?)
 	  AND (? = 0 OR d.network_id = ?)
+	  ` + scopeClause(f) + `
 	ORDER BY ` + sortExpr + " " + dir + `
 	LIMIT ? OFFSET ?`
 
@@ -501,8 +502,9 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 		createdFrom, createdFromArg,
 		createdTo, createdToArg,
 		networkFilterEnabled, networkIDArg,
-		f.Limit, f.Offset,
 	)
+	args = append(args, scopeArgs(f)...)
+	args = append(args, f.Limit, f.Offset)
 
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -567,7 +569,8 @@ func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int
 	  AND (? = '' OR name LIKE ? ESCAPE '\' OR ip_address LIKE ? ESCAPE '\' OR mac_address LIKE ? ESCAPE '\' OR serial_number LIKE ? ESCAPE '\')
 	  AND (? = '' OR created_at >= ?)
 	  AND (? = '' OR created_at <= ?)
-	  AND (? = 0 OR network_id = ?)`
+	  AND (? = 0 OR network_id = ?)
+	  ` + scopeClauseCount(f)
 
 	args = append(args,
 		statusVal, statusVal,
@@ -577,10 +580,64 @@ func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int
 		createdTo, createdToArg,
 		networkFilterEnabled, networkIDArg,
 	)
+	args = append(args, scopeArgs(f)...)
 
 	var count int64
 	if err := q.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count devices (filtered): %w", err)
 	}
 	return count, nil
+}
+
+// scopeClause returns the SQL fragment (with leading AND) that restricts the
+// device list query to the caller's granted networks, or "" when unrestricted.
+// It is the object-level network-scope filter (#138 Phase 2). An empty allowed
+// set under restriction (closed mode + no grants) matches nothing via `AND 0`.
+// Use the `d.` alias variant for the list query (devices d) and scopeClauseCount
+// (bare column, no alias) for the count query.
+func scopeClause(f domain.DeviceFilter) string {
+	if !f.ScopeRestricted {
+		return ""
+	}
+	if len(f.ScopeNetworkIDs) == 0 {
+		return "AND 0"
+	}
+	return "AND d.network_id IN (" + placeholders(len(f.ScopeNetworkIDs)) + ")"
+}
+
+func scopeClauseCount(f domain.DeviceFilter) string {
+	if !f.ScopeRestricted {
+		return ""
+	}
+	if len(f.ScopeNetworkIDs) == 0 {
+		return "AND 0"
+	}
+	return "AND network_id IN (" + placeholders(len(f.ScopeNetworkIDs)) + ")"
+}
+
+// scopeArgs returns the argument slice for the scope IN-list (empty when
+// unrestricted or when the clause is the `AND 0` no-match form).
+func scopeArgs(f domain.DeviceFilter) []any {
+	if !f.ScopeRestricted || len(f.ScopeNetworkIDs) == 0 {
+		return nil
+	}
+	out := make([]any, len(f.ScopeNetworkIDs))
+	for i, id := range f.ScopeNetworkIDs {
+		out[i] = id
+	}
+	return out
+}
+
+// placeholders returns "?,?,...,?" (n question marks).
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	b := make([]byte, 1+2*(n-1))
+	b[0] = '?'
+	for i := 1; i < n; i++ {
+		b[2*i-1] = ','
+		b[2*i] = '?'
+	}
+	return string(b)
 }

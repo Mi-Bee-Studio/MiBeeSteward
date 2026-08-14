@@ -54,6 +54,23 @@ center:
 security:
   master_key: ""
 
+rbac:
+  # Object-level network scope for non-admin roles (#138 Phase 2).
+  #   open  (default): a non-admin user sees every network (current behavior;
+  #                    network grants are recorded but not enforced).
+  #   closed          : a non-admin user sees only networks they hold a grant
+  #                    for (MSP / multi-tenant isolation). Admin always bypasses.
+  # PREVIEW (v1): "closed" currently scopes the device browse surface — the
+  # device LIST (GET /devices) and device detail + per-device sub-resources
+  # (GET/PUT/DELETE /devices/{id} and /devices/{id}/{neighbors,certificates,
+  # configs,systems,heartbeat-*,documents}) enforce the granted-network set.
+  # Topology, change log, dashboard, device stats/export, and scanner
+  # results/runs/tasks are NOT yet network-scoped (#138 Phase 2b — the scanner
+  # tables also lack a network_id column) and remain visible across networks
+  # until then. Do not enable "closed" for strict multi-tenant isolation until
+  # 2b lands; "open" is fully safe (no behavior change).
+  scope_default: "open"
+
 auth:
   jwt_secret: "change-me-in-production"  # REQUIRED — must change, minimum 32 characters
   token_expiry: "24h"
