@@ -47,7 +47,10 @@ func (h *UserHandler) Routes() chi.Router {
 	// Public routes
 	r.Post("/login", h.Login)
 	r.Post("/logout", h.Logout)
-	r.With(middleware.RequireAdmin).Post("/register", h.Register)
+	// Account creation is admin-initiated (closed self-signup): gated by
+	// CapUserManage, an admin-only capability — same semantics as the prior
+	// RequireAdmin, expressed through the capability matrix.
+	r.With(middleware.RequireCapability(domain.CapUserManage)).Post("/register", h.Register)
 
 	// Protected routes (RequireAuth)
 	r.Group(func(r chi.Router) {
