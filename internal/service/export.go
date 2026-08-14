@@ -11,6 +11,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -18,38 +19,108 @@ import (
 	"strconv"
 	"time"
 
+	"mibee-steward/internal/authz/scopeql"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 )
 
 const exportChunkSize = 1000
 
 // ExportService handles data export for devices, heartbeat results, and audit logs.
 type ExportService struct {
-	db *db.Queries // main DB (devices, audit logs)
-	hb *db.Queries // dedicated heartbeat store (heartbeat_results) — nil falls back to db
+	db     *db.Queries // main DB (devices, audit logs)
+	hb     *db.Queries // dedicated heartbeat store (heartbeat_results) — nil falls back to db
+	dbConn *sql.DB     // raw connection for the scope-restricted device export (closed mode)
 }
 
 // NewExportService creates a new ExportService bound to the main DB.
 // Heartbeat results are read from hb when set (the dedicated heartbeat store);
 // if hb is nil, heartbeat export falls back to the main DB (legacy behavior).
-func NewExportService(db *db.Queries, hb *db.Queries) *ExportService {
-	return &ExportService{db: db, hb: hb}
+// dbConn powers the object-scope device export path; it may be nil when scope is
+// never enforced.
+func NewExportService(db *db.Queries, hb *db.Queries, dbConn *sql.DB) *ExportService {
+	return &ExportService{db: db, hb: hb, dbConn: dbConn}
 }
 
-// Devices streams all device data in the specified format (csv or json).
-func (s *ExportService) Devices(ctx context.Context, format string, w io.Writer) error {
+// exportDevice is the flat row the device export emits (the subset of columns in
+// the export header), shared by the JSON and CSV streaming paths so the global
+// (sqlc) and scope-restricted (raw SQL) fetches map into one shape.
+type exportDevice struct {
+	ID          int64
+	Name        string
+	Type        string
+	Status      string
+	IPAddress   string
+	MACAddress  string
+	Brand       string
+	Model       string
+	Location    string
+	Purpose     string
+	Description string
+	Tags        string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// fetchDevices returns one export batch (ordered by id, paged by offset). A
+// global scope uses the sqlc ListDevices query (unchanged path); a restricted
+// scope filters to its granted networks via scopeql (#138 Phase 2b).
+func (s *ExportService) fetchDevices(ctx context.Context, offset int64, scope domain.Scope) ([]exportDevice, error) {
+	if scope.IsGlobal() {
+		rows, err := s.db.ListDevices(ctx, db.ListDevicesParams{
+			Column1: "",
+			Status:  "",
+			Column3: "",
+			Type:    "",
+			Limit:   exportChunkSize,
+			Offset:  offset,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]exportDevice, len(rows))
+		for i, d := range rows {
+			out[i] = exportDevice{
+				ID: d.ID, Name: d.Name, Type: d.Type, Status: d.Status,
+				IPAddress: d.IpAddress, MACAddress: d.MacAddress, Brand: d.Brand,
+				Model: d.Model, Location: d.Location, Purpose: d.Purpose,
+				Description: d.Description, Tags: d.Tags,
+				CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt,
+			}
+		}
+		return out, nil
+	}
+
+	pred, args := scopeql.NetworkPredicate(scope, "")
+	args = append(args, exportChunkSize, offset)
+	rows, err := s.dbConn.QueryContext(ctx,
+		`SELECT id, name, type, status, ip_address, mac_address, brand, model, location, purpose, description, tags, created_at, updated_at `+
+			`FROM devices WHERE `+pred+` ORDER BY id LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]exportDevice, 0, exportChunkSize)
+	for rows.Next() {
+		var d exportDevice
+		if err := rows.Scan(&d.ID, &d.Name, &d.Type, &d.Status, &d.IPAddress, &d.MACAddress,
+			&d.Brand, &d.Model, &d.Location, &d.Purpose, &d.Description, &d.Tags,
+			&d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// Devices streams all device data in the specified format (csv or json). scope
+// (#138 Phase 2b) restricts a closed-mode caller to their granted networks.
+func (s *ExportService) Devices(ctx context.Context, format string, w io.Writer, scope domain.Scope) error {
 	headers := []string{"id", "name", "type", "status", "ip_address", "mac_address", "brand", "model", "location", "purpose", "description", "tags", "created_at", "updated_at"}
 
 	if format == "json" {
 		return s.streamJSON(ctx, w, func(offset int64) ([]map[string]interface{}, error) {
-			rows, err := s.db.ListDevices(ctx, db.ListDevicesParams{
-				Column1: "",
-				Status:  "",
-				Column3: "",
-				Type:    "",
-				Limit:   exportChunkSize,
-				Offset:  offset,
-			})
+			rows, err := s.fetchDevices(ctx, offset, scope)
 			if err != nil {
 				return nil, err
 			}
@@ -60,8 +131,8 @@ func (s *ExportService) Devices(ctx context.Context, format string, w io.Writer)
 					"name":        d.Name,
 					"type":        d.Type,
 					"status":      d.Status,
-					"ip_address":  d.IpAddress,
-					"mac_address": d.MacAddress,
+					"ip_address":  d.IPAddress,
+					"mac_address": d.MACAddress,
 					"brand":       d.Brand,
 					"model":       d.Model,
 					"location":    d.Location,
@@ -78,14 +149,7 @@ func (s *ExportService) Devices(ctx context.Context, format string, w io.Writer)
 
 	// Default: CSV
 	return s.streamCSV(ctx, w, headers, func(offset int64) ([][]string, error) {
-		rows, err := s.db.ListDevices(ctx, db.ListDevicesParams{
-			Column1: "",
-			Status:  "",
-			Column3: "",
-			Type:    "",
-			Limit:   exportChunkSize,
-			Offset:  offset,
-		})
+		rows, err := s.fetchDevices(ctx, offset, scope)
 		if err != nil {
 			return nil, err
 		}
@@ -96,8 +160,8 @@ func (s *ExportService) Devices(ctx context.Context, format string, w io.Writer)
 				d.Name,
 				d.Type,
 				d.Status,
-				d.IpAddress,
-				d.MacAddress,
+				d.IPAddress,
+				d.MACAddress,
 				d.Brand,
 				d.Model,
 				d.Location,

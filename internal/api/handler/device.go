@@ -217,7 +217,7 @@ func (h *DeviceHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 			networkID = &id
 		}
 	}
-	resp, err := h.svc.GetStats(r.Context(), networkID)
+	resp, err := h.svc.GetStats(r.Context(), networkID, domain.ScopeFromContext(r.Context()))
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to get device stats")
 		return

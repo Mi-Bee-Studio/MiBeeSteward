@@ -60,15 +60,16 @@ rbac:
   #                    network grants are recorded but not enforced).
   #   closed          : a non-admin user sees only networks they hold a grant
   #                    for (MSP / multi-tenant isolation). Admin always bypasses.
-  # PREVIEW (v1): "closed" currently scopes the device browse surface — the
-  # device LIST (GET /devices) and device detail + per-device sub-resources
+  # "closed" scopes the device inventory read surfaces: device LIST (GET
+  # /devices) + device detail and per-device sub-resources
   # (GET/PUT/DELETE /devices/{id} and /devices/{id}/{neighbors,certificates,
-  # configs,systems,heartbeat-*,documents}) enforce the granted-network set.
-  # Topology, change log, dashboard, device stats/export, and scanner
-  # results/runs/tasks are NOT yet network-scoped (#138 Phase 2b — the scanner
-  # tables also lack a network_id column) and remain visible across networks
-  # until then. Do not enable "closed" for strict multi-tenant isolation until
-  # 2b lands; "open" is fully safe (no behavior change).
+  # configs,systems,heartbeat-*,documents}), device STATS (GET /devices/stats),
+  # device EXPORT (GET /devices/export), the TOPOLOGY graph (GET /topology), the
+  # CHANGE log list + SSE stream (GET /changes, /changes/watch), and the
+  # DASHBOARD overview device aggregates (GET /dashboard/overview) all enforce
+  # the granted-network set. The dashboard's recent-scan-activity section and
+  # scanner results/runs/tasks are NOT yet network-scoped (#138 Phase 2c — the
+  # scanner tables lack a network_id column) and remain visible across networks.
   scope_default: "open"
 
 auth:

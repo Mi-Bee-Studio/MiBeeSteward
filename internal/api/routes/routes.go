@@ -182,7 +182,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Export handler — bound to the main DB for devices/audit, and to the
 	// dedicated heartbeat store for heartbeat_results (which lives in
 	// heartbeat.db after the time-series split; the main DB's copy is stale).
-	exportHandler := handler.NewExportHandler(service.NewExportService(db.New(dbConn), hbStore.Queries()))
+	exportHandler := handler.NewExportHandler(service.NewExportService(db.New(dbConn), hbStore.Queries(), dbConn))
 
 	// Device routes
 	deviceRepo := service.NewDeviceRepository(dbConn)
@@ -634,10 +634,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// filterable by network_id / change_type / entity_type. This is the
 	// queryable view on top of change_log; the in-process Watcher (changeWatcher
 	// above) is the foundation for a future /watch SSE push endpoint.
-	changeLogHandler := handler.NewChangeLogHandler(scanQueries)
+	changeLogHandler := handler.NewChangeLogHandler(scanQueries, dbConn)
 	changeWatchHandler := handler.NewChangeWatchHandler(changeWatcher, slog.Default())
 	r.Route("/api/v1/changes", func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapChangesRead))
+		r.Use(middleware.NetworkScope(scopeResolver))
 		r.Get("/", changeLogHandler.List)
 		r.Get("/watch", changeWatchHandler.Watch)
 	})
@@ -749,6 +750,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Read-only. Feeds the /topology page.
 	r.Route("/api/v1/topology", func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapTopologyRead))
+		r.Use(middleware.NetworkScope(scopeResolver))
 		r.Get("/", topologyHandler.Graph)
 	})
 
@@ -828,6 +830,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Route("/api/v1/dashboard", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapDashboardRead))
+			r.Use(middleware.NetworkScope(scopeResolver))
 			r.Get("/configs", dashHandler.ListConfigs)
 			r.Get("/overview", dashHandler.Overview)
 			r.Get("/query", dashHandler.Query)

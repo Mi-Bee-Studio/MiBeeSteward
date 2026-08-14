@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 )
 
@@ -48,7 +49,7 @@ func (h *ExportHandler) ExportDevices(w http.ResponseWriter, r *http.Request) {
 		f.Flush()
 	}
 
-	if err := h.svc.Devices(r.Context(), format, w); err != nil {
+	if err := h.svc.Devices(r.Context(), format, w, domain.ScopeFromContext(r.Context())); err != nil {
 		Error(w, http.StatusInternalServerError, "export failed")
 	}
 }
