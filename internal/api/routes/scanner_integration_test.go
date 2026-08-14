@@ -22,6 +22,16 @@ func newTestConfig() *config.Config {
 			MaxConcurrentHosts: 10,
 			RetentionDays:      7,
 		},
+		// Auth-gate / capability-boundary tests fire ~100+ requests per test
+		// function. The default global limiter (100/min, burst 100) would trip
+		// and return 429, which has nothing to do with what these tests assert
+		// (401/403 at the auth layer). Raise the user-facing limiters out of the
+		// way; rate-limit *behavior* is tested separately in middleware/ against
+		// its own isolated limiter.
+		RateLimit: config.RateLimitConfig{
+			GlobalPerMinute: 1_000_000,
+			LoginPerMinute:  1_000_000,
+		},
 	}
 }
 
