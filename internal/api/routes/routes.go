@@ -169,7 +169,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	deviceHandler := handler.NewDeviceHandler(deviceSvc)
 	r.Route("/api/v1/devices", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAuth)
+			r.Use(middleware.RequireCapability(domain.CapDeviceRead))
 			r.Get("/export", exportHandler.ExportDevices)
 			r.Get("/", deviceHandler.List)
 			r.Get("/stats", deviceHandler.GetStats)
@@ -195,7 +195,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// update/delete require CapNetworkManage (admin-only capability).
 	networkHandler := handler.NewNetworkHandler(scanQueries, dbConn)
 	r.Route("/api/v1/networks", func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapNetworkRead))
 		r.Get("/", networkHandler.List)
 		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Post("/", networkHandler.Create)
 		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Put("/{id}", networkHandler.Update)
@@ -614,7 +614,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	changeLogHandler := handler.NewChangeLogHandler(scanQueries)
 	changeWatchHandler := handler.NewChangeWatchHandler(changeWatcher, slog.Default())
 	r.Route("/api/v1/changes", func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapChangesRead))
 		r.Get("/", changeLogHandler.List)
 		r.Get("/watch", changeWatchHandler.Watch)
 	})
@@ -624,7 +624,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// which sources are active. Auth-gated (any logged-in user). Returns
 	// enabled=false when discovery is off or the service was never started.
 	r.Route("/api/v1/discovery", func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapDiscoveryRead))
 		r.Get("/status", handler.DiscoveryStatusHandler(discSvcForStatus))
 	})
 
@@ -676,7 +676,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	deviceSystemHandler := handler.NewDeviceSystemHandler(deviceSystemSvc)
 	r.Route("/api/v1/devices/{id}/systems", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAuth)
+			r.Use(middleware.RequireCapability(domain.CapDeviceRead))
 			r.Get("/", deviceSystemHandler.ListByDevice)
 			r.Get("/{systemId}", deviceSystemHandler.Get)
 		})
@@ -688,36 +688,36 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		})
 	})
 
-	// Device L2 neighbors (Bridge-MIB / LLDP / CDP / ARP) — read-only, any
-	// logged-in user. Feeds the detail-page Neighbors panel.
+	// Device L2 neighbors (Bridge-MIB / LLDP / CDP / ARP) — read-only. Feeds
+	// the detail-page Neighbors panel.
 	r.Route("/api/v1/devices/{id}/neighbors", func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
 		r.Get("/", neighborHandler.ListByDevice)
 	})
 
-	// Device TLS certificates (https/ldaps/imaps/etc) — read-only, any logged-in
-	// user. Feeds the detail-page TLS Certificates sub-panel and the per-port
-	// certificate Modal (full chain + PEM).
+	// Device TLS certificates (https/ldaps/imaps/etc) — read-only. Feeds the
+	// detail-page TLS Certificates sub-panel and the per-port certificate Modal
+	// (full chain + PEM).
 	r.Route("/api/v1/devices/{id}/certificates", func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
 		r.Get("/", tlsCertHandler.ListByDevice)
 	})
 
-	// Device running-config history (#137, Oxidized/RANCID-style) — read-only,
-	// any logged-in user. The list omits config_text; the detail + diff views
-	// load it on demand. Registered before /{configId} so the static /diff
-	// segment wins over the param (chi prefers literal over wildcard).
+	// Device running-config history (#137, Oxidized/RANCID-style) — read-only.
+	// The list omits config_text; the detail + diff views load it on demand.
+	// Registered before /{configId} so the static /diff segment wins over the
+	// param (chi prefers literal over wildcard).
 	r.Route("/api/v1/devices/{id}/configs", func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapConfigRead))
 		r.Get("/", deviceConfigHandler.List)
 		r.Get("/diff", deviceConfigHandler.Diff)
 		r.Get("/{configId}", deviceConfigHandler.Get)
 	})
 
 	// Network-level topology graph — all devices (nodes) + all neighbor edges.
-	// Read-only, any logged-in user. Feeds the /topology page.
+	// Read-only. Feeds the /topology page.
 	r.Route("/api/v1/topology", func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapTopologyRead))
 		r.Get("/", topologyHandler.Graph)
 	})
 
@@ -735,7 +735,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	docHandler := handler.NewDocumentHandler(docSvc, uploadPath, auditRepo)
 	r.Route("/api/v1/documents", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAuth)
+			r.Use(middleware.RequireCapability(domain.CapDocumentRead))
 			r.Get("/", docHandler.List)
 			r.Get("/{id}", docHandler.Get)
 			r.Get("/{id}/download", docHandler.Download)
@@ -756,7 +756,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Device heartbeat configs
 	r.Route("/api/v1/devices/{id}/heartbeat-configs", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAuth)
+			r.Use(middleware.RequireCapability(domain.CapHeartbeatRead))
 			r.Get("/", heartbeatHandler.ListConfigs)
 		})
 		r.Group(func(r chi.Router) {
@@ -774,14 +774,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Heartbeat results
 	r.Route("/api/v1/devices/{id}/heartbeat-results", func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapHeartbeatRead))
 		r.Get("/export", exportHandler.ExportHeartbeatResults)
 		r.Get("/", heartbeatHandler.ListResults)
 	})
 
 	// Heartbeat history and stats
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapHeartbeatRead))
 		r.Get("/api/v1/devices/{id}/heartbeat-history", heartbeatHandler.ListHistory)
 		r.Get("/api/v1/devices/{id}/heartbeat-stats", heartbeatHandler.GetStats)
 	})
@@ -790,7 +790,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	dashHandler := handler.NewDashboardHandler(dashSvc)
 	r.Route("/api/v1/dashboard", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAuth)
+			r.Use(middleware.RequireCapability(domain.CapDashboardRead))
 			r.Get("/configs", dashHandler.ListConfigs)
 			r.Get("/overview", dashHandler.Overview)
 			r.Get("/query", dashHandler.Query)
@@ -808,7 +808,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	linkHandler := handler.NewLinkHandler(dbConn, auditRepo)
 	r.Route("/api/v1/devices/{id}/documents", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAuth)
+			r.Use(middleware.RequireCapability(domain.CapDocumentRead))
 			r.Get("/", linkHandler.GetDeviceDocuments)
 		})
 		r.Group(func(r chi.Router) {
@@ -818,7 +818,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		})
 	})
 	r.Route("/api/v1/documents/{id}/devices", func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
+		r.Use(middleware.RequireCapability(domain.CapDocumentRead))
 		r.Get("/", linkHandler.GetDocumentDevices)
 	})
 
