@@ -25,7 +25,7 @@
 	import Pagination from '$lib/components/Pagination.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
-	import { Users as UsersIcon } from '@lucide/svelte';
+	import { Users as UsersIcon, X } from '@lucide/svelte';
 
 	interface User {
 		id: number;
@@ -33,6 +33,21 @@
 		email: string;
 		role: string;
 		created_at: string;
+	}
+
+	// Network reference + grant row for the per-user object-scope modal (#138
+	// Phase 3). Grants are an immediate-CRUD resource (POST/DELETE
+	// /network-grants), so each add/remove applies at once — no Save/discard.
+	interface NetworkRef {
+		id: number;
+		name: string;
+		cidr?: string;
+	}
+	interface Grant {
+		id: number;
+		user_id: number;
+		network_id: number;
+		granted_at: string;
 	}
 
 	let users = $state<User[]>([]);
@@ -256,6 +271,75 @@
 		fetchUsers();
 	}
 
+	// --- Network scope grants (#138 Phase 3) ---
+	let scopeTarget = $state<User | null>(null);
+	let scopeModalOpen = $state(false);
+	let grants = $state<Grant[]>([]);
+	let networks = $state<NetworkRef[]>([]);
+	let scopeLoading = $state(false);
+	let addNetworkId = $state<number | null>(null);
+	let grantBusy = $state(false);
+
+	// Networks the target already holds — the add-dropdown omits these.
+	let grantedNetIds = $derived(new Set(grants.map((g) => g.network_id)));
+	let availableNetworks = $derived(networks.filter((n) => !grantedNetIds.has(n.id)));
+
+	function networkLabel(id: number): string {
+		const n = networks.find((x) => x.id === id);
+		return n ? (n.cidr ? `${n.name} (${n.cidr})` : n.name) : `#${id}`;
+	}
+
+	async function openScope(user: User) {
+		scopeTarget = user;
+		scopeModalOpen = true;
+		addNetworkId = null;
+		grants = [];
+		networks = [];
+		scopeLoading = true;
+		try {
+			const [grantRes, netRes] = await Promise.all([
+				api.get<{ grants: Grant[] }>(`/users/${user.id}/network-grants`),
+				api.get<NetworkRef[]>('/networks')
+			]);
+			grants = grantRes.grants || [];
+			networks = netRes || [];
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			scopeLoading = false;
+		}
+	}
+
+	async function addGrant() {
+		if (!scopeTarget || addNetworkId === null) return;
+		grantBusy = true;
+		try {
+			await api.post('/network-grants', {
+				user_id: scopeTarget.id,
+				network_id: addNetworkId
+			});
+			addToast('success', m["users.Grant Added"]());
+			addNetworkId = null;
+			const res = await api.get<{ grants: Grant[] }>(`/users/${scopeTarget.id}/network-grants`);
+			grants = res.grants || [];
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			grantBusy = false;
+		}
+	}
+
+	async function removeGrant(id: number) {
+		if (!scopeTarget) return;
+		try {
+			await api.delete(`/network-grants/${id}`);
+			addToast('success', m["users.Grant Removed"]());
+			grants = grants.filter((g) => g.id !== id);
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
 	// Admin-only guard
 	let isAdmin = $derived($auth.user?.role === 'admin');
 
@@ -367,6 +451,12 @@
 								{@const user = users.find((u) => u.id === row.id)}
 								{#if user}
 									<div class="flex items-center gap-2">
+										{#if user.role !== 'admin'}
+											<button
+												onclick={() => openScope(user)}
+												class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors"
+											>{m["users.Network Scope"]()}</button>
+										{/if}
 										<button
 											onclick={() => openReset(user)}
 											class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
@@ -532,4 +622,81 @@
 			</button>
 		</div>
 	</form>
+</Modal>
+
+<!-- Network Scope (grants) Modal — manage a user's object-level network grants -->
+<Modal
+	bind:open={scopeModalOpen}
+	title={scopeTarget ? `${m["users.Network Scope"]()} — ${scopeTarget.username}` : m["users.Network Scope"]()}
+	maxWidth="34rem"
+>
+	<div class="space-y-4">
+		<p class="text-xs text-text-muted">{m["users.Network Scope Help"]()}</p>
+
+		{#if scopeLoading}
+			<p class="text-sm text-text-muted">{m["common.Loading"]()}</p>
+		{:else}
+			<!-- Current grants -->
+			{#if grants.length === 0}
+				<p class="text-xs italic text-text-muted">{m["users.No Grants"]()}</p>
+			{:else}
+				<div class="space-y-2">
+					{#each grants as g (g.id)}
+						<div class="flex items-center justify-between px-3 py-2 bg-bg border border-border rounded-lg">
+							<span class="text-sm text-text">{networkLabel(g.network_id)}</span>
+							<button
+								onclick={() => removeGrant(g.id)}
+								class="text-error hover:bg-error/10 rounded p-1 transition-colors"
+								title={m["common.Delete"]()}
+								aria-label={m["common.Delete"]()}
+							>
+								<X class="w-4 h-4" />
+							</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			<!-- Add grant -->
+			<div class="pt-2 border-t border-border">
+				{#if availableNetworks.length > 0}
+					<div class="flex items-end gap-2">
+						<div class="flex-1">
+							<label class="block text-xs text-text-muted mb-1">{m["users.Grant Network"]()}</label>
+							<select
+								bind:value={addNetworkId}
+								class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+									focus:border-primary focus:outline-none"
+							>
+								<option value={null}>{m["users.Select Network"]()}</option>
+								{#each availableNetworks as n (n.id)}
+									<option value={n.id}>{n.name}{n.cidr ? ` (${n.cidr})` : ''}</option>
+								{/each}
+							</select>
+						</div>
+						<LoadingButton
+							type="button"
+							loading={grantBusy}
+							disabled={addNetworkId === null}
+							variant="primary"
+							label={m["users.Add"]()}
+							onclick={addGrant}
+						/>
+					</div>
+				{:else if grants.length > 0}
+					<p class="text-xs text-text-muted">{m["users.All Networks Granted"]()}</p>
+				{/if}
+			</div>
+		{/if}
+
+		<div class="flex justify-end pt-2">
+			<button
+				type="button"
+				onclick={() => { scopeModalOpen = false; scopeTarget = null; }}
+				class="btn btn-secondary"
+			>
+				{m["common.Close"]()}
+			</button>
+		</div>
+	</div>
 </Modal>

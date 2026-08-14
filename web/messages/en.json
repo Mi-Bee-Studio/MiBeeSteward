@@ -686,7 +686,16 @@
 		"Password Reset Success": "Password reset successfully. The user must change it on next login.",
 		"Password Required": "Password is required",
 		"Created": "User created",
-		"Deleted": "User deleted"
+		"Deleted": "User deleted",
+		"Network Scope": "Network Scope",
+		"Network Scope Help": "In closed mode, this user sees only the networks granted below (admin always bypasses scope). Has no effect in open mode.",
+		"No Grants": "No networks granted — in closed mode this user sees nothing.",
+		"Grant Network": "Grant network",
+		"Select Network": "Select a network…",
+		"Add": "Add",
+		"Grant Added": "Network grant added",
+		"Grant Removed": "Network grant removed",
+		"All Networks Granted": "All networks are already granted."
 	},
 	"notifications": {
 		"Notifications": "Notifications",
