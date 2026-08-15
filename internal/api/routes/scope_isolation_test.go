@@ -307,3 +307,147 @@ func TestScope_ClosedMode_ReadSurfacesScoped(t *testing.T) {
 	require.Contains(t, aExport, "10.0.1.5")
 	require.Contains(t, aExport, "10.0.2.5")
 }
+
+// scannerSeedData adds scan_tasks/runs/results on both networks (plus one
+// cross-network task) so the scanner scope test has data to filter. Task 101 →
+// net 1, task 202 → net 2, task 303 → NULL (multi-CIDR targets, unscoped).
+func scannerSeedData(t *testing.T, db *sql.DB) {
+	t.Helper()
+	_, err := db.Exec(`
+		INSERT INTO scan_tasks (id, name, targets, network_id, enabled) VALUES
+			(101, 'task-net1', '10.0.1.0/24', 1, 1),
+			(202, 'task-net2', '10.0.2.0/24', 2, 1),
+			(303, 'task-cross', '10.0.1.0/24,10.0.2.0/24', NULL, 1);
+		INSERT INTO scan_task_runs (id, task_id, status, total_hosts, alive_hosts) VALUES
+			(11, 101, 'completed', 1, 1),
+			(22, 202, 'completed', 1, 1);
+		INSERT INTO scan_results (id, task_id, run_id, ip, alive) VALUES
+			(1001, 101, 11, '10.0.1.5', 1),
+			(2002, 202, 22, '10.0.2.5', 1);
+	`)
+	require.NoError(t, err)
+}
+
+// TestScope_ClosedMode_ScannerSurfacesScoped pins the Phase 2c surfaces: in
+// closed mode a viewer granted network 1 sees ONLY net-1 tasks/runs/results —
+// out-of-scope details return 404 (indistinguishable from absent), and the
+// NULL-network (cross-network) task is hidden. Admin sees everything.
+func TestScope_ClosedMode_ScannerSurfacesScoped(t *testing.T) {
+	cfg := closedTestConfig()
+	db := scopeTestDB(t, true) // grant user1 → network 1
+	scannerSeedData(t, db)
+	handler, heartbeatSvc, shutdown := NewRouter(db, cfg)
+	require.NotNil(t, handler)
+	t.Cleanup(func() { heartbeatSvc.Stop(); shutdown() })
+
+	viewer := tokenForRole(t, cfg.Auth.JWTSecret, "viewer") // user_id=1, granted net1
+	admin := tokenForUser(t, cfg.Auth.JWTSecret, 2, "admin")
+
+	// --- tasks list: only the net-1 task (cross/NULL task hidden) ---
+	tasksFor := func(tok string) (total int, ids []int64) {
+		rec := authedGet(t, handler, tok, "/api/v1/scanner/tasks")
+		require.Equalf(t, http.StatusOK, rec.Code, "tasks body=%s", rec.Body.String())
+		var body struct {
+			Tasks []struct {
+				ID int64 `json:"id"`
+			} `json:"tasks"`
+			Total int `json:"total"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		for _, tk := range body.Tasks {
+			ids = append(ids, tk.ID)
+		}
+		return body.Total, ids
+	}
+	vTotal, vIDs := tasksFor(viewer)
+	require.Equal(t, 1, vTotal, "scoped viewer tasks: only net-1 task")
+	require.ElementsMatch(t, []int64{101}, vIDs)
+	aTotal, aIDs := tasksFor(admin)
+	require.Equal(t, 3, aTotal, "admin tasks: all three")
+	require.ElementsMatch(t, []int64{101, 202, 303}, aIDs)
+
+	// --- task detail / sub-resources: out-of-scope → 404, in-scope → 200 ---
+	require.Equal(t, http.StatusNotFound, authedGet(t, handler, viewer, "/api/v1/scanner/tasks/202").Code)
+	require.Equal(t, http.StatusNotFound, authedGet(t, handler, viewer, "/api/v1/scanner/tasks/303").Code)
+	require.Equal(t, http.StatusOK, authedGet(t, handler, viewer, "/api/v1/scanner/tasks/101").Code)
+	require.Equal(t, http.StatusNotFound, authedGet(t, handler, viewer, "/api/v1/scanner/tasks/202/runs").Code)
+	require.Equal(t, http.StatusNotFound, authedGet(t, handler, viewer, "/api/v1/scanner/tasks/202/results").Code)
+	require.Equal(t, http.StatusOK, authedGet(t, handler, viewer, "/api/v1/scanner/tasks/101/runs").Code)
+	require.Equal(t, http.StatusOK, authedGet(t, handler, admin, "/api/v1/scanner/tasks/202/runs").Code)
+
+	// --- results list: only the net-1 result row ---
+	resultsFor := func(tok string) (total int, ips []string) {
+		rec := authedGet(t, handler, tok, "/api/v1/scanner/results")
+		require.Equalf(t, http.StatusOK, rec.Code, "results body=%s", rec.Body.String())
+		var body struct {
+			Results []struct {
+				IP string `json:"ip"`
+			} `json:"results"`
+			Total int `json:"total"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		for _, res := range body.Results {
+			ips = append(ips, res.IP)
+		}
+		return body.Total, ips
+	}
+	vrTotal, vrIPs := resultsFor(viewer)
+	require.Equal(t, 1, vrTotal, "scoped viewer results: only net-1 row")
+	require.ElementsMatch(t, []string{"10.0.1.5"}, vrIPs)
+	arTotal, _ := resultsFor(admin)
+	require.Equal(t, 2, arTotal, "admin results: both rows")
+
+	// sorted variant goes through the same scoped path
+	rec := authedGet(t, handler, viewer, "/api/v1/scanner/results?sort=ip&order=asc")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "10.0.1.5")
+	require.NotContains(t, rec.Body.String(), "10.0.2.5")
+
+	// --- result detail: out-of-scope → 404 ---
+	require.Equal(t, http.StatusNotFound, authedGet(t, handler, viewer, "/api/v1/scanner/results/2002").Code)
+	require.Equal(t, http.StatusOK, authedGet(t, handler, viewer, "/api/v1/scanner/results/1001").Code)
+	require.Equal(t, http.StatusOK, authedGet(t, handler, admin, "/api/v1/scanner/results/2002").Code)
+
+	// --- runs list + detail ---
+	runsFor := func(tok string) (total int, ids []int64) {
+		rec := authedGet(t, handler, tok, "/api/v1/scanner/runs?limit=20")
+		require.Equalf(t, http.StatusOK, rec.Code, "runs body=%s", rec.Body.String())
+		var body struct {
+			Runs []struct {
+				ID int64 `json:"id"`
+			} `json:"runs"`
+			Total int `json:"total"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		for _, rn := range body.Runs {
+			ids = append(ids, rn.ID)
+		}
+		return body.Total, ids
+	}
+	vrnTotal, vrnIDs := runsFor(viewer)
+	require.Equal(t, 1, vrnTotal, "scoped viewer runs: only net-1 run")
+	require.ElementsMatch(t, []int64{11}, vrnIDs)
+	arnTotal, _ := runsFor(admin)
+	require.Equal(t, 2, arnTotal)
+	require.Equal(t, http.StatusNotFound, authedGet(t, handler, viewer, "/api/v1/scanner/runs/22").Code)
+	require.Equal(t, http.StatusOK, authedGet(t, handler, viewer, "/api/v1/scanner/runs/11").Code)
+
+	// --- export: out-of-scope task → 404; in-scope → 200 CSV ---
+	require.Equal(t, http.StatusNotFound, authedGet(t, handler, viewer, "/api/v1/scanner/results/export?task_id=202").Code)
+	rec = authedGet(t, handler, viewer, "/api/v1/scanner/results/export?task_id=101")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "10.0.1.5")
+
+	// --- dashboard scanning section reflects the scope ---
+	rec = authedGet(t, handler, viewer, "/api/v1/dashboard/overview")
+	require.Equal(t, http.StatusOK, rec.Code)
+	var ov struct {
+		Scanning struct {
+			TasksTotal int64 `json:"tasks_total"`
+			RunsTotal  int64 `json:"runs_total"`
+		} `json:"scanning"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ov))
+	require.Equal(t, int64(1), ov.Scanning.TasksTotal, "scoped dashboard scanning: 1 task")
+	require.Equal(t, int64(1), ov.Scanning.RunsTotal, "scoped dashboard scanning: 1 run")
+}

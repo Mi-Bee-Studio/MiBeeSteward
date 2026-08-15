@@ -56,7 +56,7 @@ func (h *ScannerTaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
 	search := q.Get("search")
 
-	tasks, total, err := h.service.ListTasks(r.Context(), search, int(limit), int(offset))
+	tasks, total, err := h.service.ListTasks(r.Context(), search, int(limit), int(offset), domain.ScopeFromContext(r.Context()))
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to list scan tasks")
 		return
@@ -75,7 +75,7 @@ func (h *ScannerTaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.service.GetTask(r.Context(), id)
+	resp, err := h.service.GetTask(r.Context(), id, domain.ScopeFromContext(r.Context()))
 	if err != nil {
 		if errors.Is(err, taskservice.ErrScanTaskNotFound) {
 			Error(w, http.StatusNotFound, "scan task not found")
@@ -199,8 +199,12 @@ func (h *ScannerTaskHandler) GetTaskRuns(w http.ResponseWriter, r *http.Request)
 	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
 	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
 
-	runs, total, err := h.service.GetTaskRuns(r.Context(), int(id), int(limit), int(offset))
+	runs, total, err := h.service.GetTaskRuns(r.Context(), int(id), int(limit), int(offset), domain.ScopeFromContext(r.Context()))
 	if err != nil {
+		if errors.Is(err, taskservice.ErrScanTaskNotFound) {
+			Error(w, http.StatusNotFound, "scan task not found")
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to list scan task runs")
 		return
 	}
@@ -222,8 +226,12 @@ func (h *ScannerTaskHandler) GetTaskResults(w http.ResponseWriter, r *http.Reque
 	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
 	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
 
-	results, total, err := h.service.GetTaskResults(r.Context(), int(id), int(limit), int(offset))
+	results, total, err := h.service.GetTaskResults(r.Context(), int(id), int(limit), int(offset), domain.ScopeFromContext(r.Context()))
 	if err != nil {
+		if errors.Is(err, taskservice.ErrScanTaskNotFound) {
+			Error(w, http.StatusNotFound, "scan task not found")
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to list scan task results")
 		return
 	}

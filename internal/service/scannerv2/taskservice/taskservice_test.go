@@ -35,7 +35,7 @@ func setupSvc(t *testing.T) (*Service, *db.Queries) {
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	queries := db.New(conn)
-	return New(queries, nil), queries
+	return New(queries, conn, nil), queries
 }
 
 // TestCreateTask_GetTask verifies the create→read round-trip and that the
@@ -51,7 +51,7 @@ func TestCreateTask_GetTask(t *testing.T) {
 	require.Equal(t, "0 2 * * *", resp.CronExpr)
 	require.NotZero(t, resp.ID)
 
-	got, err := svc.GetTask(ctx, resp.ID)
+	got, err := svc.GetTask(ctx, resp.ID, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.Equal(t, resp.ID, got.ID)
 	require.Equal(t, "nightly-lan", got.Name)
@@ -88,7 +88,7 @@ func TestCreateTask_ValidationRejectsBadInput(t *testing.T) {
 // sentinel the handler switches on).
 func TestGetTask_NotFound(t *testing.T) {
 	svc, _ := setupSvc(t)
-	_, err := svc.GetTask(context.Background(), 9999)
+	_, err := svc.GetTask(context.Background(), 9999, domain.Scope{Global: true})
 	require.ErrorIs(t, err, ErrScanTaskNotFound)
 }
 
@@ -105,12 +105,12 @@ func TestListTasks_PaginationClamping(t *testing.T) {
 		require.NoError(t, err)
 	}
 	// total reflects all 3 regardless of limit/offset.
-	tasks, total, err := svc.ListTasks(ctx, "", 5, 0) // limit<20 → clamped to 20
+	tasks, total, err := svc.ListTasks(ctx, "", 5, 0, domain.Scope{Global: true}) // limit<20 → clamped to 20
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Len(t, tasks, 3)
 	// offset beyond the set → empty page, total unchanged.
-	tasks, total, err = svc.ListTasks(ctx, "", 20, 100)
+	tasks, total, err = svc.ListTasks(ctx, "", 20, 100, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Empty(t, tasks)
@@ -138,40 +138,40 @@ func TestListTasks_Search(t *testing.T) {
 	}
 
 	// Empty search → all 3 (filter disabled).
-	tasks, total, err := svc.ListTasks(ctx, "", 20, 0)
+	tasks, total, err := svc.ListTasks(ctx, "", 20, 0, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Len(t, tasks, 3)
 
 	// Search by name substring → 1 match, total=1.
-	tasks, total, err = svc.ListTasks(ctx, "cameras", 20, 0)
+	tasks, total, err = svc.ListTasks(ctx, "cameras", 20, 0, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, tasks, 1)
 	require.Equal(t, "weekly-cameras", tasks[0].Name)
 
 	// Search by targets substring → 1 match (the 172.16 row).
-	tasks, total, err = svc.ListTasks(ctx, "172.16", 20, 0)
+	tasks, total, err = svc.ListTasks(ctx, "172.16", 20, 0, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, tasks, 1)
 	require.Equal(t, "iot-sweep", tasks[0].Name)
 
 	// Case-insensitive: "LAN" matches "nightly-lan".
-	tasks, total, err = svc.ListTasks(ctx, "LAN", 20, 0)
+	tasks, total, err = svc.ListTasks(ctx, "LAN", 20, 0, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, tasks, 1)
 	require.Equal(t, "nightly-lan", tasks[0].Name)
 
 	// No match → empty page, total=0.
-	tasks, total, err = svc.ListTasks(ctx, "nonexistent-term", 20, 0)
+	tasks, total, err = svc.ListTasks(ctx, "nonexistent-term", 20, 0, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.Equal(t, int64(0), total)
 	require.Empty(t, tasks)
 
 	// A term matching MULTIPLE columns/rows ("0.0/24" is in two targets) → total=2.
-	tasks, total, err = svc.ListTasks(ctx, "0.0/24", 20, 0)
+	tasks, total, err = svc.ListTasks(ctx, "0.0/24", 20, 0, domain.Scope{Global: true})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 	require.Len(t, tasks, 2)
@@ -186,7 +186,7 @@ func TestDeleteTask(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, svc.DeleteTask(ctx, resp.ID))
-	_, err = svc.GetTask(ctx, resp.ID)
+	_, err = svc.GetTask(ctx, resp.ID, domain.Scope{Global: true})
 	require.ErrorIs(t, err, ErrScanTaskNotFound)
 }
 
@@ -217,4 +217,41 @@ func TestCancelTask_NilScheduler(t *testing.T) {
 	require.NoError(t, err)
 	err = svc.CancelTask(ctx, resp.ID)
 	require.Error(t, err)
+}
+
+// TestResolveNetworkFromTargets pins the targets→network resolution rules
+// (#138 Phase 2c): single canonical CIDR matching networks.cidr resolves;
+// single IPs, hostnames, multi-CIDR lists, and unmatched CIDRs stay NULL.
+func TestResolveNetworkFromTargets(t *testing.T) {
+	ctx := context.Background()
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	_, err = conn.Exec(`INSERT INTO networks (id, name, cidr) VALUES (1, 'lan-1', '10.0.1.0/24')`)
+	require.NoError(t, err)
+
+	cases := []struct {
+		name    string
+		targets string
+		wantID  int64
+		wantOK  bool
+	}{
+		{"canonical single CIDR", "10.0.1.0/24", 1, true},
+		{"padded single CIDR", "  10.0.1.0/24  ", 1, true},
+		{"single IP", "10.0.1.5", 0, false},
+		{"hostname", "example.lan", 0, false},
+		{"multi-CIDR list", "10.0.1.0/24,10.0.2.0/24", 0, false},
+		{"unmatched CIDR", "172.16.0.0/24", 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id, err := ResolveNetworkFromTargets(ctx, conn, tc.targets)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantOK, id.Valid, "valid=%v targets=%q", id.Valid, tc.targets)
+			if tc.wantOK {
+				require.EqualValues(t, tc.wantID, id.Int64)
+			}
+		})
+	}
 }

@@ -65,11 +65,15 @@ rbac:
   # (GET/PUT/DELETE /devices/{id} and /devices/{id}/{neighbors,certificates,
   # configs,systems,heartbeat-*,documents}), device STATS (GET /devices/stats),
   # device EXPORT (GET /devices/export), the TOPOLOGY graph (GET /topology), the
-  # CHANGE log list + SSE stream (GET /changes, /changes/watch), and the
-  # DASHBOARD overview device aggregates (GET /dashboard/overview) all enforce
-  # the granted-network set. The dashboard's recent-scan-activity section and
-  # scanner results/runs/tasks are NOT yet network-scoped (#138 Phase 2c — the
-  # scanner tables lack a network_id column) and remain visible across networks.
+  # CHANGE log list + SSE stream (GET /changes, /changes/watch), the DASHBOARD
+  # overview (device aggregates + scan-activity section), and the SCANNER read
+  # surfaces (tasks/runs/results lists, details and export — scoped via
+  # scan_tasks.network_id, resolved from a task's single-CIDR targets). Tasks
+  # whose targets don't resolve to one network (multi-CIDR/range/hostname) are
+  # cross-network: visible to admins, hidden from restricted scopes. Audit logs
+  # are deliberately NOT network-scoped (cross-network system log of user
+  # actions). Scanner writes (task CRUD/trigger) stay capability-gated — grants
+  # isolate visibility, not operation.
   scope_default: "open"
 
 auth:

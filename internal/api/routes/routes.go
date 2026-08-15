@@ -500,7 +500,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		scanScheduler = nil
 	}
 
-	scanTaskService := scannerv2task.New(scanQueries, scanScheduler)
+	scanTaskService := scannerv2task.New(scanQueries, dbConn, scanScheduler)
 	scannerHandler := handler.NewScannerHandler(v2Engine, scanRunner)
 	scannerTaskHandler := handler.NewScannerTaskHandler(scanTaskService)
 	scannerResultHandler := handler.NewScannerResultHandler(scanQueries, dbConn)
@@ -512,6 +512,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// endpoints). Each tier is its own group so the capability matches the
 		// action (reads → discovery:read, triggers → scan:trigger, task CRUD +
 		// bulk delete → scan:manage, add-devices → device:write).
+		//
+		// #138 Phase 2c: the READ surfaces are additionally object-level scoped
+		// — a closed-mode non-admin sees only tasks/runs/results whose
+		// scan_tasks.network_id is in their granted set (details return 404).
+		// Writes (task CRUD/trigger) stay capability-gated only: operators are
+		// trusted to aim scans; grants isolate visibility, not operation.
+		r.Use(middleware.NetworkScope(scopeResolver))
 
 		// Reads: discovery:read (viewer+). Scan results, task lists, runs.
 		r.Group(func(r chi.Router) {

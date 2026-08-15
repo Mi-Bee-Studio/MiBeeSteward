@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"mibee-steward/internal/authz/scopeql"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 )
@@ -48,6 +49,25 @@ var scanResultSortWhitelist = map[string]string{
 	"ip":     "ip",
 	"status": "alive",                    // the "Status" column reflects the alive flag
 	"ports":  "json_array_length(ports)", // the "Ports Count" column renders ports.length
+}
+
+// taskInScope reports whether the given scan task's network falls within the
+// caller's object-level scope (#138 Phase 2c). Global scopes always pass; a
+// restricted scope passes only when the task carries a resolved network_id in
+// the granted set (NULL = cross-network → hidden). A missing task returns
+// false — callers map that onto their not-found path (404) so out-of-scope
+// resources are indistinguishable from absent ones.
+func (h *ScannerResultHandler) taskInScope(ctx context.Context, taskID int64, scope domain.Scope) bool {
+	if scope.IsGlobal() {
+		return true
+	}
+	var netID sql.NullInt64
+	err := h.conn.QueryRowContext(ctx,
+		`SELECT network_id FROM scan_tasks WHERE id = ?`, taskID).Scan(&netID)
+	if err != nil {
+		return false
+	}
+	return netID.Valid && scope.AllowsNetwork(netID.Int64)
 }
 
 // ListResults handles GET /api/v1/scanner/results
@@ -96,10 +116,30 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 	sortBy := q.Get("sort")
 	order := q.Get("order")
 
+	// Object-level scope (#138 Phase 2c): a restricted caller's results list
+	// joins scan_tasks and keeps only rows whose task network is in the granted
+	// set (task with NULL network = cross-network → hidden).
+	scope := domain.ScopeFromContext(r.Context())
+
 	var (
 		results []db.ScanResult
 		err     error
 	)
+	if !scope.IsGlobal() {
+		var total int64
+		results, total, err = h.listResultsScoped(r.Context(), scope, taskID, ipFilter,
+			aliveSentinel, aliveVal, sortBy, order, limit, offset)
+		if err != nil {
+			slog.Error("scoped ListScanResults failed", "task_id", taskID, "ip", ipFilter, "error", err)
+			Error(w, http.StatusInternalServerError, "failed to list scan results")
+			return
+		}
+		Success(w, domain.ScanResultListResponse{
+			Results: toScanResultResponses(results),
+			Total:   int(total),
+		})
+		return
+	}
 	if sortBy != "" {
 		results, err = h.listResultsSorted(r.Context(), taskID, ipFilter, aliveSentinel, aliveVal, sortBy, order, limit, offset)
 	} else {
@@ -219,6 +259,81 @@ func (h *ScannerResultHandler) listResultsSorted(
 	return items, rows.Err()
 }
 
+// listResultsScoped is the restricted-scope variant of ListResults +
+// CountScanResults + listResultsSorted combined: it joins scan_tasks and ANDs
+// the scope predicate into the same filters (task/ip/alive), supports the same
+// whitelist-controlled sort tokens (empty sortBy = default scanned_at DESC),
+// and returns the page + total so pagination totals match the visible set.
+// SELECT column order MUST match db.ScanResult's Scan order.
+func (h *ScannerResultHandler) listResultsScoped(
+	ctx context.Context, scope domain.Scope,
+	taskID int64, ipFilter string, aliveSentinel, aliveVal int64,
+	sortBy, order string, limit, offset int64,
+) ([]db.ScanResult, int64, error) {
+	pred, predArgs := scopeql.NetworkPredicate(scope, "t")
+
+	col := "scanned_at"
+	if c, ok := scanResultSortWhitelist[sortBy]; ok {
+		col = c
+	}
+	dir := "ASC"
+	if order == "desc" || sortBy == "" {
+		// No sort token → the sqlc default (scanned_at DESC); explicit desc
+		// → DESC; explicit asc → ASC.
+		dir = "DESC"
+	}
+
+	where := `FROM scan_results r JOIN scan_tasks t ON r.task_id = t.id
+		WHERE ` + pred + `
+		  AND (? = 0 OR r.task_id = ?)
+		  AND (? = '' OR r.ip LIKE ?)
+		  AND (? < 0 OR r.alive = ?)`
+
+	filterArgs := append(append([]any{}, predArgs...),
+		taskID, taskID,
+		ipFilter, ipFilter,
+		aliveSentinel, aliveVal)
+
+	var total int64
+	if err := h.conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) `+where, filterArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := h.conn.QueryContext(ctx,
+		`SELECT r.id, r.task_id, r.run_id, r.ip, r.alive, r.rtt_ms, r.ports, r.services, r.snmp_data,
+			r.prometheus_detected, r.prometheus_url, r.node_exporter_detected, r.node_exporter_url, r.node_exporter_data, r.scanned_at `+
+			where+` ORDER BY `+col+` `+dir+` LIMIT ? OFFSET ?`,
+		append(append([]any{}, filterArgs...), limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	items := []db.ScanResult{}
+	for rows.Next() {
+		var i db.ScanResult
+		if err := rows.Scan(
+			&i.ID, &i.TaskID, &i.RunID, &i.Ip, &i.Alive, &i.RttMs, &i.Ports,
+			&i.Services, &i.SnmpData, &i.PrometheusDetected, &i.PrometheusUrl,
+			&i.NodeExporterDetected, &i.NodeExporterUrl, &i.NodeExporterData, &i.ScannedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, i)
+	}
+	return items, total, rows.Err()
+}
+
+// toScanResultResponses converts a batch of db.ScanResult rows.
+func toScanResultResponses(results []db.ScanResult) []domain.ScanResultResponse {
+	resp := make([]domain.ScanResultResponse, 0, len(results))
+	for _, r := range results {
+		resp = append(resp, toScanResultResponse(r))
+	}
+	return resp
+}
+
 // GetResult handles GET /api/v1/scanner/results/{id}
 func (h *ScannerResultHandler) GetResult(w http.ResponseWriter, r *http.Request) {
 	id, err := parseScanID(w, r)
@@ -236,6 +351,12 @@ func (h *ScannerResultHandler) GetResult(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Out-of-scope results are indistinguishable from absent ones (#138 2c).
+	if !h.taskInScope(r.Context(), result.TaskID, domain.ScopeFromContext(r.Context())) {
+		Error(w, http.StatusNotFound, "scan result not found")
+		return
+	}
+
 	Success(w, toScanResultResponse(result))
 }
 
@@ -249,6 +370,23 @@ func (h *ScannerResultHandler) ListRuns(w http.ResponseWriter, r *http.Request) 
 	var taskID int64
 	if q.Get("task_id") != "" {
 		taskID, _ = strconv.ParseInt(q.Get("task_id"), 10, 64)
+	}
+
+	// Object-level scope (#138 Phase 2c): the restricted runs list joins
+	// scan_tasks and keeps only runs whose task network is in the granted set.
+	scope := domain.ScopeFromContext(r.Context())
+	if !scope.IsGlobal() {
+		runs, total, err := h.listRunsScoped(r.Context(), scope, taskID, limit, offset)
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "failed to list scan task runs")
+			return
+		}
+		resp := make([]domain.ScanRunResponse, 0, len(runs))
+		for _, run := range runs {
+			resp = append(resp, toScanRunResponse(run))
+		}
+		Success(w, domain.ScanRunListResponse{Runs: resp, Total: int(total)})
+		return
 	}
 
 	runs, err := h.queries.ListScanTaskRuns(r.Context(), db.ListScanTaskRunsParams{
@@ -303,7 +441,57 @@ func (h *ScannerResultHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Out-of-scope runs are indistinguishable from absent ones (#138 2c).
+	if !h.taskInScope(r.Context(), run.TaskID, domain.ScopeFromContext(r.Context())) {
+		Error(w, http.StatusNotFound, "scan task run not found")
+		return
+	}
+
 	Success(w, toScanRunResponse(run))
+}
+
+// listRunsScoped mirrors ListScanTaskRuns/CountScanTaskRuns with the
+// network-scope predicate joined through scan_tasks. SELECT column order MUST
+// match db.ScanTaskRun's Scan order.
+func (h *ScannerResultHandler) listRunsScoped(
+	ctx context.Context, scope domain.Scope, taskID, limit, offset int64,
+) ([]db.ScanTaskRun, int64, error) {
+	pred, predArgs := scopeql.NetworkPredicate(scope, "t")
+
+	where := `FROM scan_task_runs r JOIN scan_tasks t ON r.task_id = t.id
+		WHERE ` + pred + ` AND (? = 0 OR r.task_id = ?)`
+
+	filterArgs := append(append([]any{}, predArgs...), taskID, taskID)
+
+	var total int64
+	if err := h.conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) `+where, filterArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := h.conn.QueryContext(ctx,
+		`SELECT r.id, r.task_id, r.status, r.total_hosts, r.alive_hosts, r.new_hosts, r.updated_hosts,
+			r.duration_ms, r.error_message, r.started_at, r.finished_at, r.created_at `+
+			where+` ORDER BY r.id DESC LIMIT ? OFFSET ?`,
+		append(append([]any{}, filterArgs...), limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	runs := []db.ScanTaskRun{}
+	for rows.Next() {
+		var run db.ScanTaskRun
+		if err := rows.Scan(
+			&run.ID, &run.TaskID, &run.Status, &run.TotalHosts, &run.AliveHosts,
+			&run.NewHosts, &run.UpdatedHosts, &run.DurationMs, &run.ErrorMessage,
+			&run.StartedAt, &run.FinishedAt, &run.CreatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, total, rows.Err()
 }
 
 // BulkDeleteResults handles DELETE /api/v1/scanner/results
@@ -351,6 +539,12 @@ func (h *ScannerResultHandler) ExportScanResults(w http.ResponseWriter, r *http.
 	taskID, err := strconv.ParseInt(taskIDStr, 10, 64)
 	if err != nil || taskID <= 0 {
 		Error(w, http.StatusBadRequest, "invalid task_id")
+		return
+	}
+
+	// Out-of-scope exports are indistinguishable from absent tasks (#138 2c).
+	if !h.taskInScope(r.Context(), taskID, domain.ScopeFromContext(r.Context())) {
+		Error(w, http.StatusNotFound, "scan task not found")
 		return
 	}
 

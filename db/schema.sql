@@ -352,6 +352,14 @@ CREATE TABLE IF NOT EXISTS scan_tasks (
     -- v3 credential. Added by issue #135 (SNMPv3); backfilled onto existing
     -- DBs by the runMigrations ALTER TABLE below.
     credential_id INTEGER REFERENCES snmp_credentials(id) ON DELETE SET NULL,
+    -- network_id: the object-level network this task's targets resolve to
+    -- (#138 Phase 2c). Stamped at task create/update when the targets are a
+    -- single CIDR exactly matching a networks.cidr row; NULL = cross-network
+    -- or unresolved (visible to admins, hidden from restricted scopes).
+    -- Runs (scan_task_runs) and results (scan_results) scope through their
+    -- task via this column — they have no network_id of their own. Backfilled
+    -- onto existing DBs by runMigrations.
+    network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
     last_run_at TIMESTAMP,
     next_run_at TIMESTAMP,
@@ -359,6 +367,9 @@ CREATE TABLE IF NOT EXISTS scan_tasks (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- idx_scan_tasks_network is created by runMigrations (after the ALTER that adds
+-- network_id to pre-existing tables) — creating it here would fail on old DBs
+-- where CREATE TABLE IF NOT EXISTS leaves scan_tasks without the column.
 
 CREATE TABLE IF NOT EXISTS scan_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
