@@ -26,6 +26,7 @@ import (
 	"github.com/google/uuid"
 
 	dbsql "mibee-steward/db"
+	"mibee-steward/internal/service/scannerv2/taskservice"
 )
 
 func runMigrations(db *sql.DB, dbPath string) error {
@@ -114,6 +115,11 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		// snmp_credentials table itself is created via schema.sql's CREATE TABLE
 		// IF NOT EXISTS above (run before this loop), so the FK target exists.
 		"ALTER TABLE scan_tasks ADD COLUMN credential_id INTEGER REFERENCES snmp_credentials(id) ON DELETE SET NULL",
+		// Object-level scope key for the scanner surfaces (#138 Phase 2c).
+		// Nullable; stamped at task create/update when the targets resolve to a
+		// single networks.cidr, and backfilled below. Runs and results scope
+		// through their task — they carry no network_id of their own.
+		"ALTER TABLE scan_tasks ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL",
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
@@ -247,6 +253,19 @@ func runMigrations(db *sql.DB, dbPath string) error {
 	// Purely additive — no route grants the new roles new access yet.
 	if err := extendUsersRoleCheck(context.Background(), db); err != nil {
 		return fmt.Errorf("users role-check migration: %w", err)
+	}
+
+	// #138 Phase 2c: backfill scan_tasks.network_id from targets→networks.cidr
+	// so existing tasks slot into the object-level scope. Idempotent —
+	// unresolvable tasks (multi-CIDR/range/hostname targets) stay NULL on
+	// every run, harmlessly. The network_id index is created here too (after
+	// the ALTER above), not in schema.sql — on old DBs scan_tasks lacks the
+	// column until this point, so an index in schema.sql would fail to apply.
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_scan_tasks_network ON scan_tasks(network_id)`); err != nil {
+		return fmt.Errorf("scan-tasks network index: %w", err)
+	}
+	if err := backfillScanTaskNetworks(context.Background(), db); err != nil {
+		return fmt.Errorf("scan-task network backfill: %w", err)
 	}
 
 	// Distributed-identity index migration: replace the legacy global-unique
@@ -595,6 +614,61 @@ func extendUsersRoleCheck(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("commit role-check rebuild: %w", err)
 	}
 	slog.Info("users role CHECK widened (operator, viewer added)")
+	return nil
+}
+
+// backfillScanTaskNetworks resolves scan_tasks.network_id for existing tasks
+// (#138 Phase 2c): each NULL-network task's targets go through the same
+// ResolveNetworkFromTargets the create/update path uses — a single CIDR
+// exactly matching a networks.cidr resolves to that network's id; anything
+// else (multi-CIDR lists, IP ranges, hostnames, no match) stays NULL, which
+// means cross-network/unresolved (admins see it, restricted scopes don't).
+// Idempotent: resolvable rows are stamped once; the rest re-resolve cheaply
+// on every startup (scan_tasks is a small table).
+func backfillScanTaskNetworks(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `SELECT id, targets FROM scan_tasks WHERE network_id IS NULL`)
+	if err != nil {
+		return fmt.Errorf("select scan_tasks for network backfill: %w", err)
+	}
+	type pending struct {
+		id      int64
+		targets string
+	}
+	var batch []pending
+	for rows.Next() {
+		var p pending
+		if err := rows.Scan(&p.id, &p.targets); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan scan_tasks row for network backfill: %w", err)
+		}
+		batch = append(batch, p)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate scan_tasks for network backfill: %w", err)
+	}
+
+	stamped := 0
+	for _, p := range batch {
+		netID, err := taskservice.ResolveNetworkFromTargets(ctx, db, p.targets)
+		if err != nil {
+			// Best-effort by design: a failed lookup leaves the task NULL
+			// (unscoped) rather than failing the whole migration.
+			slog.Warn("scan-task network backfill: resolve failed", "task_id", p.id, "error", err)
+			continue
+		}
+		if !netID.Valid {
+			continue
+		}
+		if _, err := db.ExecContext(ctx,
+			`UPDATE scan_tasks SET network_id = ? WHERE id = ?`, netID.Int64, p.id); err != nil {
+			return fmt.Errorf("stamp scan_task %d network: %w", p.id, err)
+		}
+		stamped++
+	}
+	if stamped > 0 {
+		slog.Info("scan_tasks network_id backfilled", "tasks", stamped)
+	}
 	return nil
 }
 

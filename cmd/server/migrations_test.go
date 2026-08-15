@@ -146,3 +146,74 @@ func TestExtendUsersRoleCheck_RebuildsFromNarrowCheck(t *testing.T) {
 	// Idempotent: re-running is a no-op (the probe short-circuits).
 	require.NoError(t, extendUsersRoleCheck(ctx, db))
 }
+
+// TestBackfillScanTaskNetworks verifies the #138 Phase 2c migration: an
+// old-shape scan_tasks table (no network_id column) gets the column added by
+// runMigrations, and existing tasks are backfilled — a single-CIDR targets
+// string exactly matching a networks.cidr resolves to that network, while
+// multi-CIDR/unmatched targets stay NULL (cross-network).
+func TestBackfillScanTaskNetworks(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "backfill.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	// Old shape: scan_tasks WITHOUT network_id (pre-2c). runMigrations adds it.
+	_, err = db.Exec(`CREATE TABLE scan_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		targets TEXT NOT NULL,
+		cron_expr TEXT NOT NULL DEFAULT '0 */6 * * *',
+		pipeline_config TEXT NOT NULL DEFAULT '{}',
+		global_labels TEXT NOT NULL DEFAULT '{}',
+		timeout INTEGER NOT NULL DEFAULT 300,
+		concurrent_hosts INTEGER NOT NULL DEFAULT 50,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		last_run_at TIMESTAMP,
+		next_run_at TIMESTAMP,
+		last_run_status TEXT,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	require.NoError(t, err)
+	// networks + three tasks: single-CIDR match, non-canonical raw match, and
+	// a multi-CIDR cross-network task.
+	_, err = db.Exec(`CREATE TABLE networks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE,
+		cidr TEXT,
+		site TEXT,
+		agent_id TEXT,
+		metadata TEXT NOT NULL DEFAULT '{}',
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO networks (id, name, cidr) VALUES
+		(1, 'lan-1', '10.0.1.0/24'),
+		(2, 'lan-2', '10.0.2.0/24')`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO scan_tasks (id, name, targets) VALUES
+		(1, 'task-match', '10.0.1.0/24'),
+		(2, 'task-multi', '10.0.1.0/24,10.0.2.0/24'),
+		(3, 'task-nomatch', '172.16.0.0/24')`)
+	require.NoError(t, err)
+
+	require.NoError(t, runMigrations(db, dbPath))
+
+	var net1, net2, net3 sql.NullInt64
+	require.NoError(t, db.QueryRow(`SELECT network_id FROM scan_tasks WHERE id = 1`).Scan(&net1))
+	require.NoError(t, db.QueryRow(`SELECT network_id FROM scan_tasks WHERE id = 2`).Scan(&net2))
+	require.NoError(t, db.QueryRow(`SELECT network_id FROM scan_tasks WHERE id = 3`).Scan(&net3))
+	require.True(t, net1.Valid, "single-CIDR task must resolve to its network")
+	require.EqualValues(t, 1, net1.Int64)
+	require.False(t, net2.Valid, "multi-CIDR task stays NULL (cross-network)")
+	require.False(t, net3.Valid, "unmatched CIDR stays NULL")
+
+	// Idempotent: re-running keeps the same values.
+	require.NoError(t, backfillScanTaskNetworks(ctx, db))
+	require.NoError(t, db.QueryRow(`SELECT network_id FROM scan_tasks WHERE id = 1`).Scan(&net1))
+	require.EqualValues(t, 1, net1.Int64)
+}

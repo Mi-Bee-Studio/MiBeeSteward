@@ -41,7 +41,7 @@ func setupSvcWithScheduler(t *testing.T) (*Service, *db.Queries) {
 	require.NoError(t, err)
 	sched.Start(context.Background())
 	t.Cleanup(sched.Stop)
-	return New(queries, sched), queries
+	return New(queries, conn, sched), queries
 }
 
 // TestTriggerTask_WithScheduler_ReturnsTriggered verifies the happy path: an
