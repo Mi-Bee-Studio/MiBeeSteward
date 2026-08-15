@@ -19,7 +19,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"strings"
 
+	"mibee-steward/internal/authz/scopeql"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2/scheduler"
@@ -37,13 +40,89 @@ var (
 // scheduler in sync.
 type Service struct {
 	queries   *db.Queries
+	conn      db.DBTX // raw connection for the network_id stamp + scope-restricted reads (nil = skip both)
 	scheduler *scheduler.Scheduler
 }
 
-// New constructs a Service. scheduler may be nil (Trigger/Cancel return errors;
-// CRUD still works for browsing).
-func New(queries *db.Queries, sched *scheduler.Scheduler) *Service {
-	return &Service{queries: queries, scheduler: sched}
+// New constructs a Service. conn powers the scan_tasks.network_id stamping and
+// the object-scope-restricted list paths (sqlc can't express a variable
+// IN-list); it may be nil in unit tests that don't exercise those paths.
+// scheduler may be nil (Trigger/Cancel return errors; CRUD still works for
+// browsing).
+func New(queries *db.Queries, conn db.DBTX, sched *scheduler.Scheduler) *Service {
+	return &Service{queries: queries, conn: conn, scheduler: sched}
+}
+
+// ResolveNetworkFromTargets maps a scan task's targets to a networks row id
+// (#138 Phase 2c). The targets resolve when they are a SINGLE CIDR whose
+// normalized form matches one networks.cidr (the raw target string is tried
+// too, covering non-canonical stored cidrs). Comma lists, IP ranges,
+// hostnames, or no match → NULL — meaning cross-network/unresolved: visible
+// to admins/open mode, hidden from restricted scopes. Best-effort by design;
+// this is a visibility enforcement key, not an identity.
+func ResolveNetworkFromTargets(ctx context.Context, conn db.DBTX, targets string) (sql.NullInt64, error) {
+	fields := strings.FieldsFunc(targets, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == ';'
+	})
+	if len(fields) != 1 {
+		return sql.NullInt64{}, nil
+	}
+	raw := strings.TrimSpace(fields[0])
+	_, ipNet, err := net.ParseCIDR(raw)
+	if err != nil {
+		return sql.NullInt64{}, nil // ranges / single IPs / hostnames → unscoped
+	}
+	for _, candidate := range []string{ipNet.String(), raw} {
+		var id int64
+		err := conn.QueryRowContext(ctx, `SELECT id FROM networks WHERE cidr = ? LIMIT 1`, candidate).Scan(&id)
+		switch {
+		case err == nil:
+			return sql.NullInt64{Int64: id, Valid: true}, nil
+		case errors.Is(err, sql.ErrNoRows):
+			continue
+		default:
+			return sql.NullInt64{}, err
+		}
+	}
+	return sql.NullInt64{}, nil
+}
+
+// stampTaskNetwork resolves a task's targets to a network and writes
+// scan_tasks.network_id. Best-effort: resolution/DB failures are logged and
+// leave the column NULL (unscoped), never failing the task write itself.
+func (s *Service) stampTaskNetwork(ctx context.Context, taskID int64, targets string, logger *slog.Logger) {
+	if s.conn == nil {
+		return
+	}
+	netID, err := ResolveNetworkFromTargets(ctx, s.conn, targets)
+	if err != nil {
+		logger.Warn("scan task: network resolve failed; task left unscoped", "task_id", taskID, "error", err)
+		return
+	}
+	if _, err := s.conn.ExecContext(ctx,
+		`UPDATE scan_tasks SET network_id = ? WHERE id = ?`, netID, taskID); err != nil {
+		logger.Warn("scan task: network stamp failed; task left unscoped", "task_id", taskID, "error", err)
+	}
+}
+
+// taskNetworkInScope reports whether the task's network falls within scope. A
+// global scope always passes; a restricted scope passes only when the task has
+// a resolved network_id in the granted set (NULL = cross-network → hidden).
+// A missing task returns false (callers map that to their not-found path).
+func (s *Service) taskNetworkInScope(ctx context.Context, taskID int64, scope domain.Scope) bool {
+	if scope.IsGlobal() {
+		return true
+	}
+	if s.conn == nil {
+		return true // scope disabled in this construction — fail open (tests)
+	}
+	var netID sql.NullInt64
+	err := s.conn.QueryRowContext(ctx,
+		`SELECT network_id FROM scan_tasks WHERE id = ?`, taskID).Scan(&netID)
+	if err != nil {
+		return false
+	}
+	return netID.Valid && scope.AllowsNetwork(netID.Int64)
 }
 
 // CreateTask inserts a task and registers its cron job.
@@ -78,11 +157,16 @@ func (s *Service) CreateTask(ctx context.Context, req domain.ScanTaskRequest) (d
 			return domain.ScanTaskResponse{}, fmt.Errorf("register cron job: %w", err)
 		}
 	}
+	s.stampTaskNetwork(ctx, task.ID, task.Targets, slog.Default())
 	return toTaskResponse(task), nil
 }
 
-// GetTask returns one task by ID.
-func (s *Service) GetTask(ctx context.Context, id int64) (domain.ScanTaskResponse, error) {
+// GetTask returns one task by ID. A restricted scope sees out-of-scope tasks
+// as not found (they don't exist for that caller).
+func (s *Service) GetTask(ctx context.Context, id int64, scope domain.Scope) (domain.ScanTaskResponse, error) {
+	if !s.taskNetworkInScope(ctx, id, scope) {
+		return domain.ScanTaskResponse{}, ErrScanTaskNotFound
+	}
 	task, err := s.queries.GetScanTask(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -97,7 +181,10 @@ func (s *Service) GetTask(ctx context.Context, id int64) (domain.ScanTaskRespons
 // case-insensitive substring search over name + targets. An empty search
 // string disables the filter (matches the old behaviour) — both the list and
 // the count use the same search term so pagination totals stay consistent.
-func (s *Service) ListTasks(ctx context.Context, search string, limit, offset int) ([]domain.ScanTaskResponse, int64, error) {
+// A restricted scope (#138 Phase 2c) sees only tasks whose network_id is in
+// the granted set (NULL-network tasks are cross-network → hidden); the count
+// mirrors the same WHERE.
+func (s *Service) ListTasks(ctx context.Context, search string, limit, offset int, scope domain.Scope) ([]domain.ScanTaskResponse, int64, error) {
 	if limit < 20 {
 		limit = 20
 	}
@@ -106,6 +193,9 @@ func (s *Service) ListTasks(ctx context.Context, search string, limit, offset in
 	}
 	if offset < 0 {
 		offset = 0
+	}
+	if !scope.IsGlobal() && s.conn != nil {
+		return s.listTasksScoped(ctx, search, limit, offset, scope)
 	}
 	tasks, err := s.queries.ListScanTasksSearch(ctx, db.ListScanTasksSearchParams{
 		Column1: search, // raw search term, used for the (? = '' OR ...) short-circuit
@@ -130,6 +220,45 @@ func (s *Service) ListTasks(ctx context.Context, search string, limit, offset in
 		out = append(out, toTaskResponse(t))
 	}
 	return out, total, nil
+}
+
+// listTasksScoped mirrors ListScanTasksSearch/CountScanTasksSearch with the
+// network-scope predicate ANDed in (sqlc can't express a variable IN-list).
+// The SELECT column list MUST match db.ScanTask's field order for the Scan.
+func (s *Service) listTasksScoped(ctx context.Context, search string, limit, offset int, scope domain.Scope) ([]domain.ScanTaskResponse, int64, error) {
+	pred, predArgs := scopeql.NetworkPredicate(scope, "")
+
+	where := "WHERE " + pred +
+		" AND (? = '' OR INSTR(lower(name), lower(?)) > 0 OR INSTR(lower(targets), lower(?)) > 0)"
+
+	var total int64
+	countArgs := append(append([]any{}, predArgs...), search, search, search)
+	if err := s.conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM scan_tasks `+where, countArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	listArgs := append(append([]any{}, countArgs...), limit, offset)
+	rows, err := s.conn.QueryContext(ctx, `SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+		FROM scan_tasks `+where+` ORDER BY id LIMIT ? OFFSET ?`, listArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	out := make([]domain.ScanTaskResponse, 0)
+	for rows.Next() {
+		var t db.ScanTask
+		if err := rows.Scan(
+			&t.ID, &t.Name, &t.Targets, &t.CronExpr, &t.PipelineConfig, &t.GlobalLabels,
+			&t.Timeout, &t.ConcurrentHosts, &t.CredentialID, &t.Enabled,
+			&t.LastRunAt, &t.NextRunAt, &t.LastRunStatus, &t.CreatedAt, &t.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, toTaskResponse(t))
+	}
+	return out, total, rows.Err()
 }
 
 // UpdateTask applies a partial update and re-registers the cron job if the
@@ -255,6 +384,10 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 	// not reflect the toggle we just applied — patch it so callers see the truth.
 	resp := toTaskResponse(task)
 	resp.Enabled = newEnabled == 1
+	// Re-resolve the network key when the targets moved (#138 Phase 2c).
+	if targetsChanged {
+		s.stampTaskNetwork(ctx, id, targets, slog.Default())
+	}
 	return resp, nil
 }
 
@@ -336,8 +469,13 @@ func (s *Service) CancelTask(ctx context.Context, id int64) error {
 	return nil
 }
 
-// GetTaskRuns returns run history for a task.
-func (s *Service) GetTaskRuns(ctx context.Context, taskID, limit, offset int) ([]domain.ScanRunResponse, int64, error) {
+// GetTaskRuns returns run history for a task. A restricted scope sees runs of
+// an out-of-scope task as not found (the sub-resources inherit the task's
+// scope — single check here covers the whole list).
+func (s *Service) GetTaskRuns(ctx context.Context, taskID, limit, offset int, scope domain.Scope) ([]domain.ScanRunResponse, int64, error) {
+	if !s.taskNetworkInScope(ctx, int64(taskID), scope) {
+		return nil, 0, ErrScanTaskNotFound
+	}
 	if limit < 20 {
 		limit = 20
 	}
@@ -361,8 +499,12 @@ func (s *Service) GetTaskRuns(ctx context.Context, taskID, limit, offset int) ([
 	return out, total, nil
 }
 
-// GetTaskResults returns per-host results for a task.
-func (s *Service) GetTaskResults(ctx context.Context, taskID, limit, offset int) ([]domain.ScanResultResponse, int64, error) {
+// GetTaskResults returns per-host results for a task (scope semantics as
+// GetTaskRuns).
+func (s *Service) GetTaskResults(ctx context.Context, taskID, limit, offset int, scope domain.Scope) ([]domain.ScanResultResponse, int64, error) {
+	if !s.taskNetworkInScope(ctx, int64(taskID), scope) {
+		return nil, 0, ErrScanTaskNotFound
+	}
 	if limit < 20 {
 		limit = 20
 	}

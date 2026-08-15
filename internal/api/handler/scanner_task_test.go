@@ -33,7 +33,7 @@ func setupScannerTaskHandler(t *testing.T) (*ScannerTaskHandler, *db.Queries) {
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	queries := db.New(conn)
-	return NewScannerTaskHandler(taskservice.New(queries, nil)), queries
+	return NewScannerTaskHandler(taskservice.New(queries, conn, nil)), queries
 }
 
 func TestScannerTaskHandler_CreateThenGet(t *testing.T) {

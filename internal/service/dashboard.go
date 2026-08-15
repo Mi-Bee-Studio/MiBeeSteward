@@ -242,7 +242,7 @@ func (s *DashboardService) Overview(ctx context.Context, scope domain.Scope) (*d
 	out.Devices = dev
 
 	// --- 4. Recent scan tasks + runs + run-status distribution (cross-network; NOT scoped) ---
-	scan, err := s.overviewScanning(ctx)
+	scan, err := s.overviewScanning(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -276,29 +276,48 @@ func (s *DashboardService) Overview(ctx context.Context, scope domain.Scope) (*d
 
 // overviewScanning gathers recent scan tasks/runs and the run-status
 // distribution so the dashboard reflects discovery activity, not just device
-// counts.
-func (s *DashboardService) overviewScanning(ctx context.Context) (domain.OverviewScanning, error) {
+// counts. scope (#138 Phase 2c) restricts every aggregate to tasks whose
+// network_id is in the granted set — runs scope through their task.
+func (s *DashboardService) overviewScanning(ctx context.Context, scope domain.Scope) (domain.OverviewScanning, error) {
 	out := domain.OverviewScanning{RunsByStatus: map[string]int64{}}
 
-	tasksTotal, err := s.queries.CountScanTasks(ctx)
-	if err != nil {
+	// taskPred scopes the scan_tasks table; runJoin scopes run aggregates
+	// through the task. Both are no-ops ("1=1") for a global scope.
+	taskPred, taskArgs := scopeql.NetworkPredicate(scope, "")
+	runJoin := `FROM scan_task_runs r JOIN scan_tasks t ON r.task_id = t.id WHERE ` + taskPred
+	runArgs := taskArgs
+
+	if err := s.dbConn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM scan_tasks WHERE `+taskPred, taskArgs...).Scan(&out.TasksTotal); err != nil {
 		return out, fmt.Errorf("overview: count tasks: %w", err)
 	}
-	out.TasksTotal = tasksTotal
 
-	runsTotal, err := s.queries.CountScanTaskRuns(ctx, db.CountScanTaskRunsParams{Column1: 0, TaskID: 0})
-	if err != nil {
+	if err := s.dbConn.QueryRowContext(ctx,
+		`SELECT COUNT(*) `+runJoin, runArgs...).Scan(&out.RunsTotal); err != nil {
 		return out, fmt.Errorf("overview: count runs: %w", err)
 	}
-	out.RunsTotal = runsTotal
 
-	// Recent tasks (last 5 by id desc).
-	tasks, err := s.queries.ListScanTasks(ctx, db.ListScanTasksParams{Limit: 5, Offset: 0})
+	// Recent tasks (last 5 by id desc). Initialized to empty (not nil) so the
+	// JSON keeps rendering [] on an empty DB (matches the previous sqlc path).
+	out.RecentTasks = make([]domain.OverviewScanTask, 0)
+	taskRows, err := s.dbConn.QueryContext(ctx, `SELECT id, name, targets, enabled, last_run_at, last_run_status
+		FROM scan_tasks WHERE `+taskPred+` ORDER BY id DESC LIMIT 5`, taskArgs...)
 	if err != nil {
 		return out, fmt.Errorf("overview: list tasks: %w", err)
 	}
-	out.RecentTasks = make([]domain.OverviewScanTask, 0, len(tasks))
-	for _, t := range tasks {
+	for taskRows.Next() {
+		var t struct {
+			ID            int64
+			Name          string
+			Targets       string
+			Enabled       int64
+			LastRunAt     *time.Time
+			LastRunStatus *string
+		}
+		if err := taskRows.Scan(&t.ID, &t.Name, &t.Targets, &t.Enabled, &t.LastRunAt, &t.LastRunStatus); err != nil {
+			taskRows.Close()
+			return out, fmt.Errorf("overview: scan task row: %w", err)
+		}
 		ot := domain.OverviewScanTask{
 			ID:        t.ID,
 			Name:      t.Name,
@@ -311,23 +330,37 @@ func (s *DashboardService) overviewScanning(ctx context.Context) (domain.Overvie
 		}
 		out.RecentTasks = append(out.RecentTasks, ot)
 	}
+	taskRows.Close()
+	if err := taskRows.Err(); err != nil {
+		return out, fmt.Errorf("overview: task rows: %w", err)
+	}
 
-	// Recent runs across all tasks (task_id=0 ⇒ no filter), last 5.
-	runs, err := s.queries.ListScanTaskRuns(ctx, db.ListScanTaskRunsParams{
-		Column1: 0, TaskID: 0, Limit: 5, Offset: 0,
-	})
+	// Recent runs across all visible tasks, last 5 (scoped through the task).
+	out.RecentRuns = make([]domain.OverviewScanRun, 0)
+	runRows, err := s.dbConn.QueryContext(ctx, `SELECT r.id, r.task_id, r.status, r.total_hosts, r.alive_hosts, r.new_hosts, r.updated_hosts,
+		r.duration_ms, r.error_message, r.started_at, r.finished_at, r.created_at
+		`+runJoin+` ORDER BY r.id DESC LIMIT 5`, runArgs...)
 	if err != nil {
 		return out, fmt.Errorf("overview: list runs: %w", err)
 	}
-	out.RecentRuns = make([]domain.OverviewScanRun, 0, len(runs))
-	for _, r := range runs {
+	for runRows.Next() {
+		var r db.ScanTaskRun
+		if err := runRows.Scan(&r.ID, &r.TaskID, &r.Status, &r.TotalHosts, &r.AliveHosts,
+			&r.NewHosts, &r.UpdatedHosts, &r.DurationMs, &r.ErrorMessage,
+			&r.StartedAt, &r.FinishedAt, &r.CreatedAt); err != nil {
+			runRows.Close()
+			return out, fmt.Errorf("overview: scan run row: %w", err)
+		}
 		out.RecentRuns = append(out.RecentRuns, runToOverview(r))
-		// tally status distribution across ALL runs (not just recent) — cheap to
-		// derive from the recent slice would be wrong, so we do a separate query.
+	}
+	runRows.Close()
+	if err := runRows.Err(); err != nil {
+		return out, fmt.Errorf("overview: run rows: %w", err)
 	}
 
-	// Run-status distribution across all runs (raw, one GROUP BY).
-	distRows, err := s.dbConn.QueryContext(ctx, `SELECT status, COUNT(*) FROM scan_task_runs GROUP BY status`)
+	// Run-status distribution across all visible runs (raw, one GROUP BY).
+	distRows, err := s.dbConn.QueryContext(ctx,
+		`SELECT r.status, COUNT(*) `+runJoin+` GROUP BY r.status`, runArgs...)
 	if err != nil {
 		return out, fmt.Errorf("overview: runs by status: %w", err)
 	}
@@ -345,11 +378,11 @@ func (s *DashboardService) overviewScanning(ctx context.Context) (domain.Overvie
 		return out, fmt.Errorf("overview: run-status rows: %w", err)
 	}
 
-	// Most recent completed run (the latest "discovery" result).
+	// Most recent completed visible run (the latest "discovery" result).
 	completed, err := s.dbConn.QueryContext(ctx, `
-		SELECT id, task_id, status, total_hosts, alive_hosts, new_hosts, duration_ms, error_message, started_at, finished_at
-		FROM scan_task_runs WHERE status='completed'
-		ORDER BY COALESCE(finished_at, started_at, created_at) DESC LIMIT 1`)
+		SELECT r.id, r.task_id, r.status, r.total_hosts, r.alive_hosts, r.new_hosts, r.duration_ms, r.error_message, r.started_at, r.finished_at
+		`+runJoin+` AND r.status='completed'
+		ORDER BY COALESCE(r.finished_at, r.started_at, r.created_at) DESC LIMIT 1`, runArgs...)
 	if err != nil {
 		return out, fmt.Errorf("overview: last discovery: %w", err)
 	}
