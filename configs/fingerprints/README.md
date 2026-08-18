@@ -2,7 +2,7 @@
 
 Language-agnostic, data-driven identification rules consumed by the scannerv2
 `RuleClassifier`. The full format specification lives in
-`docs/fingerprint-spec.md`; this README is the quick reference.
+`docs/en/fingerprint-spec.md`; this README is the quick reference.
 
 ## Why data, not code
 

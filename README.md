@@ -21,7 +21,7 @@
 - **MAC Vendor Inference**: Resolves each discovered MAC to its IEEE-registered vendor (MA-L / MA-M / MA-S registries) via longest-prefix match, recorded as `oui_prefix` + `oui_vendor` (the NIC silicon vendor, distinct from the device's self-declared brand). Ships with an embedded curated vendor table for out-of-box coverage; the full IEEE set is an optional download.
 - **TLS Certificate Inventory**: Collects the full certificate chain (leaf + issuers) from TLS-wrapped services (HTTPS, LDAPS, SMTPS, IMAPS, POP3S, FTPS, IRCS, TelnetS) — Subject/Issuer/SAN/validity/signature/key/fingerprint + PEM, per port per device, with expiry status (valid/expiring/expired) and a trust verdict surfaced in the device detail UI. Retained in `host_tls_certs` (default 30d).
 - **eBPF Passive Observer**: Optional TC ingress program sniffs ONVIF WS-Discovery multicast + TCP magic bytes as a corroborating evidence source (build-tag gated; default build is dependency-free).
-- **Distributed Discovery**: Deploy lightweight agents on remote LANs to discover devices across networks. Agents report to a central hub via pull-model HTTPS with bearer-token auth, disconnect recovery, and MAC-primary device identity (same device stays one asset across networks). [Distributed Guide](docs/en/distributed-guide.md)
+- **Distributed Discovery**: Deploy lightweight agents on remote LANs to discover devices across networks. Agents report to a central hub via pull-model HTTPS with bearer-token auth, disconnect recovery, and MAC-primary device identity (same device stays one asset across networks). [Distributed Guide](docs/en/distributed.md)
 - **Change Detection**: Automatic device_added / device_changed / device_lost detection on every scan, with a grace period to prevent jitter-induced false alarms. Queryable history (`GET /changes`) and real-time SSE stream (`GET /changes/watch`).
 - **Topology Discovery**: Bridge-MIB SNMP probe walks switch forwarding databases to learn L2 adjacency (which MAC is behind which port). [Architecture](docs/en/architecture.md#distributed-architecture)
 - **Heartbeat Monitoring**: Configurable intervals with automatic failure detection
@@ -108,7 +108,7 @@ Check the build version:
 - [Architecture](docs/en/architecture.md) — System design and data flow
 - [API Reference](docs/en/api.md) — REST API documentation
 - [Deployment](docs/en/deployment.md) — Production deployment guide
-- [Development Guide](docs/en/development-guide.md) — Contributing and coding conventions
+- [Development Guide](docs/en/development.md) — Contributing and coding conventions
 - [Configuration](docs/en/configuration.md) — Configuration reference
 
 ## Configuration

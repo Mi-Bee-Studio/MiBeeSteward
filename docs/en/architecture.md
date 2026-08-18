@@ -1,389 +1,273 @@
-# Architecture
+# Architecture Overview
 
 ## System Overview
 
-MiBee Steward is a device management and monitoring system built as a single binary deployment with an embedded web interface. The system consists of a Go backend using the Chi web framework with SQLite database, and a SvelteKit 5 frontend embedded via Go's `go:embed` functionality. The system provides SNMP/ICMP/TCP/HTTP probing capabilities, Prometheus metrics integration, comprehensive heartbeat monitoring, and device systems management.
+MiBee Steward is a device management and monitoring system deployed as a **single binary**. The Go backend (Chi web framework + SQLite) embeds a SvelteKit 5 SPA via `go:embed`. This zero-dependency shape means one `mibee-steward` binary on a Linux box is the entire stack — no runtime, no container, no sidecar.
+
+```mermaid
+flowchart LR
+    Browser["Browser"] --> Nginx --> ChiRouter["Chi Router + Middleware"] --> Handler --> Service --> SQLite["SQLite WAL"]
+```
+
+In a typical deployment a reverse proxy (Nginx) fronts the binary and forwards requests to the Chi router; requests then pass through the middleware chain, handlers, and service layer before landing in SQLite.
 
 ## Layered Architecture
 
-The system follows a Domain-Driven Design (DDD) inspired layered architecture with optional repository pattern:
+The backend is layered; data repos (DeviceRepository / DeviceSystemRepository / AuditRepository) live beside their consumers inside the service layer — there is no separate repository package:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Frontend Layer                          │
-│                 SvelteKit SPA (embedded)                  │
-└─────────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────────┐
-│                   Handler Layer                           │
-│              HTTP Request/Response Processing              │
-└─────────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────────┐
-│                   Service Layer                          │
-│              Business Logic & Orchestration               │
-└─────────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────────┐
-│              Repository Layer (Optional)                  │
-│             Data Access Abstraction Layer                  │
-└─────────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────────┐
-│                    Domain Layer                          │
-│               DTOs, Constants, Context Keys                │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Frontend["Frontend — SvelteKit SPA (go:embed)"]
+    Handler["Handler — internal/api"]
+    Service["Service — internal/service"]
+    SQLC["internal/db — sqlc-generated"]
+    Domain["Domain — internal/domain"]
+    SQLite["SQLite (WAL)"]
+    Frontend --> Handler
+    Handler --> Service
+    Service --> SQLC
+    Service --> Domain
+    SQLC --> SQLite
 ```
 
-### Layer Responsibilities
+**Domain Layer (internal/domain)**: business models, DTOs, constants, context keys for request tracing, typed error definitions.
 
-**Domain Layer**: Contains business models, data transfer objects (DTOs), and application constants. Includes context keys for request tracing and typed error definitions, and device systems models.
+**Service Layer (internal/service)**: business logic, error handling, the scannerv2 engine, and the repos of the heartbeat/notification/audit subsystems. Constructor-based dependency injection; typed errors. **Charter**: mutating handlers must go through a service; read-only passthrough handlers may call sqlc directly.
 
-**Repository Layer**: Optional data access layer that wraps sqlc-generated code. Used by DeviceService and DeviceSystemService, while other services use sqlc directly for simpler data access patterns.
+**Handler Layer (internal/api)**: HTTP request/response processing, input validation, audit logging, error-to-status-code translation. `routes.go` registers ~40 handlers plus the middleware chain.
 
-**Service Layer**: Implements business logic, error handling, and the probe subsystem. Services use constructor-based dependency injection and return typed errors. Includes device systems management and Prometheus service discovery.
+### Request Lifecycle
 
-**Handler Layer**: HTTP request/response processing, input validation, audit logging, and error translation to HTTP status codes. Routes include device systems CRUD operations.
+1. HTTP Request → Chi Router → middleware chain
+2. Middleware: `RequestID → RealIP → Logging → Metrics → Recoverer → CORS → SecurityHeaders → CSRF → RateLimit → Auth/RBAC` (plus a scope middleware for network-scoped endpoints; `agent_auth` bearer auth for agent endpoints)
+3. Handler: validation → audit log → service call
+4. Service → sqlc → SQLite
+5. Response back up the chain
 
-## Text-Based Architecture Diagram
+### Frontend
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    External Requests                       │
-│                    /                                     │
-│                   ↓                                       │
-│        ┌─────────────────────────────────────┐           │
-│        │           Chi Router                │           │
-│        │  Routes → Middleware Chain → Handlers│           │
-│        └─────────────────────────────────────┘           │
-│                   │                                       │
-│            ┌──────┴──────┐                               │
-│            │ Middleware  │                               │
-│            │  Pipeline   │                               │
-│            └──────┬──────┘                               │
-│                   ↓                                       │
-│        ┌─────────────────────────────────────┐           │
-│        │           Handlers                  │           │
-│        │  Validation → Audit Logging → Business Logic    │
-│        └─────────────────────────────────────┘           │
-│                   │                                       │
-│            ┌──────┴──────┐                               │
-│            │    Services │                               │
-│            │  Device, User, Probe, Audit               │
-│            └──────┬──────┘                               │
-│                   ↓                                       │
-│        ┌─────────────────────────────────────┐           │
-│        │        Data Access Layer              │           │
-│        │     Repository OR sqlc Direct         │           │
-│        └─────────────────────────────────────┘           │
-│                   │                                       │
-│            ┌──────┴──────┐                               │
-│            │    SQLite   │                               │
-│            │    Database │                               │
-│            └─────────────┘                               │
-│                                                         │
-│    ┌─────────────────────────────────────┐               │
-│    │           Background Services      │               │
-│    │        HeartbeatService → Probes   │               │
-│    └─────────────────────────────────────┘               │
+SvelteKit 5 SPA embedded via `web/embed.go` (`//go:embed all:dist`). Tailwind 4 styling, ECharts for charts, `@inlang/paraglide-js` for i18n (English + Chinese). File-based routing in `web/src/routes/`; shared components in `web/src/lib/components/`.
+
+### Database
+
+SQLite via the pure-Go `modernc.org/sqlite` driver (CGO-free), WAL mode, main pool `MaxOpenConns=16` (`busy_timeout=5000`). Heartbeat results go to a **separate** SQLite file `data/heartbeat.db` (single connection, batched writes) so high-frequency probe records never contend with the main DB. sqlc generates type-safe Go from `db/queries/*.sql`. Default path: `./data/mibee.db`. **Migrations run automatically at startup**: the embedded `schema.sql` (`CREATE TABLE IF NOT EXISTS`) plus idempotent `ALTER TABLE`/table rebuilds, with an automatic `VACUUM INTO` backup taken on existing DBs before migration. Never edit `internal/db/*.go` directly — modify SQL and regenerate.
+
+## Scanner Engine v2
+
+The scanner is a **plugin-based, 5-layer architecture** that decouples detection from persistence. Adding a new protocol means registering one classifier + one handler — no orchestrator or persistence changes required.
+
+```mermaid
+flowchart TD
+    P1["① Probe"]
+    P2["② Classifier"]
+    P3["③ ServiceHandler"]
+    P4["④ Persistence"]
+    P5["⑤ Orchestrator"]
+    P5 -->|"gather"| P1
+    P5 -->|"classify"| P2
+    P5 -->|"dispatch"| P3
+    P1 -->|"Evidence"| P2
+    P2 -->|"ServiceIdentity"| P3
+    P3 -->|"persist"| P4
 ```
 
-## Request Lifecycle
+- **① Probe** — active (TCP/SNMP/RTSP/ONVIF/HTTP-metrics) + passive (eBPF TC observer behind the `WITH_EBPF` build tag) → emits Evidence (port_open / banner / snmp / …).
+- **② Classifier** — per-protocol pure functions over Evidence → fuses into ServiceIdentity (ssh/http/rtsp/onvif/prometheus/node_exporter/snmp/camera) with confidence.
+- **③ ServiceHandler** — per-service customization: `GenerateHeartbeat()` / `Collect()` / `EnrichDevice()`. 29 service handlers registered, 8 of them TLS-wrapped cert collectors.
+- **④ Persistence** — Repository interface → SQLite; records evidence / services / device updates / heartbeats.
+- **⑤ Orchestrator** — declarative gather → classify → dispatch, with cycle-guarded cascade triggers (max depth 5).
 
-HTTP requests flow through the system in the following sequence:
+Typical cascade: http → probe `/metrics` → prometheus → node_exporter → parse CPU/mem/kernel → enrich device fields.
 
-1. **HTTP Request** → External client sends request to the server
-2. **Chi Router** → Route matching and middleware chain initiation
-3. **Middleware Pipeline** → Each middleware processes the request in order
-4. **Handler** → Request validation, audit logging, business logic invocation
-5. **Service** → Business logic processing and error handling
-6. **Repository/SQLc** → Data access to SQLite database
-7. **Database Response** → Query results returned to service
-8. **Service Response** → Business logic results returned to handler
-9. **HTTP Response** → Final response formatted and sent to client
+### Probe Source Taxonomy
 
-## Middleware Chain
+| Category | Source | What it needs | What it yields |
+|---|---|---|---|
+| Active | ICMP ping | network reachability | echo/reply, RTT |
+| Active | TCP port scan | target IP + port | port_open, banner text |
+| Active | SNMP Get (8 scalar OIDs) | UDP/161, community/credentials | sysDescr, sysObjectID and other system fields (v1/v2c + v3 USM) |
+| Active | RTSP OPTIONS | RTSP port (554/8554) | rtsp_banner, Server header |
+| Active | ONVIF SOAP probe | TCP unicast (observed ports / 80/8080) | onvif_response, device metadata |
+| Active | HTTP probe | HTTP/HTTPS port | Server header, /metrics availability |
+| Active | ARP cache | local `/proc/net/arp` | IP→MAC mapping (same subnet) |
+| Active | CDP-MIB | SNMP on Cisco switches | neighbor MAC/IP/port |
+| Active | LLDP-MIB | SNMP on LLDP-capable switches | neighbor MAC/port/vlan |
+| Active | Q-BRIDGE-MIB | SNMP on managed switches | MAC→port + 802.1Q VLAN tags |
+| Active | STP-MIB | SNMP on switches | dot1dTpFdbTable (MAC→port) |
+| Passive (host-local) | arp_cache | local host | kernel ARP table |
+| Passive (host-local) | multicast | local host | multicast group membership |
+| Passive (host-local) | router_arp | local host | router ARP cache |
+| Passive (eBPF) | eBPF TC observer | kernel ≥5.8, `WITH_EBPF` build tag | ONVIF multicast + TCP magic bytes (confidence 0.6) |
+| Router-resident Tier-1 | dhcp_leases | on-gateway only (default off) | DHCP lease file / DHCPACK logs |
+| Router-resident Tier-1 | conntrack | on-gateway only (default off) | `/proc/net/nf_conntrack` active flows |
+| Router-resident Tier-1 | hostapd | on-gateway only (default off) | Wi-Fi client associations |
+| Router-resident Tier-1 | dns_log | on-gateway only (default off) | DNS query/response log |
 
-The system processes requests through a carefully ordered middleware chain:
+Passive sources (eBPF + host-local) are off by default; router-resident Tier-1 sources only run when the binary is deployed directly on the gateway, opt-in and off by default. See [Discovery & Identification](discovery.md) for details.
 
+### Detected Services (out of the box)
+
+SSH, HTTP/HTTPS, RTSP, ONVIF, SNMP, Prometheus, node\_exporter, mail (SMTP/POP3/IMAP), remote-access (VNC/RDP/Telnet), directory & file-share (LDAP/SMB), DNS, **databases** (MySQL/PostgreSQL/Redis/MongoDB/MSSQL/Memcached), TLS-wrapped family (LDAPS, SMTPS, IMAPS, POP3S, FTPS, IRCS, TelnetS), and a host-level **camera** meta-identity (fused from RTSP + ONVIF evidence, with brand inference from Server headers / SNMP sysDescr / enterprise OID / TLS cert CN).
+
+### TLS Certificate Inventory
+
+Any port classified as TLS-speaking (default ports 443/8443/9443/4443 + well-known TLS-wrapped ports 465/636/989/990/992/993/994/995 + classifier-flagged ports) has its full certificate chain collected via `probe.CollectCertChain` and persisted to `host_tls_certs` — Subject/Issuer/SAN/validity/signature/key/fingerprint + PEM, one row per cert (leaf + issuers). Surfaced via `GET /api/v1/devices/{id}/certificates`.
+
+### Persistence Tables (v2)
+
+| Table | Contents |
+|---|---|
+| `service_evidence` | Raw probe observations (sampling-controlled) |
+| `host_services` | Classified service identities per host |
+| `host_tls_certs` | TLS cert chains per `(ip, port)`, one row per cert; `not_after` indexed |
+| `device_neighbors` | Raw neighbor facts from the LLDP/CDP/Bridge/Q-BRIDGE probes |
+| `topology_edges` | Materialized device↔device topology edges |
+| `subnets` / `vlans` | Per-network CIDR/gateway, 802.1Q VLANs |
+
+Device upserts go to the existing `devices` table; heartbeat configs to `heartbeat_configs`; SNMPv3/SSH credentials (AES-256-GCM encrypted) to `snmp_credentials` / `ssh_credentials`; device config-backup versions to `device_configs`.
+
+## Device Identity & Persistence
+
+### MAC-Primary Identity
+
+Devices are identified by **MAC address first** (a roaming device stays one asset across networks), falling back to `(ip_address, network_id)` when no MAC is known:
+
+- Same private IP on two different LANs → **two distinct devices** (partitioned by `network_id`).
+- Same MAC, different IP (subnet move) → **one asset**.
+- `(ip_address, network_id)` composite unique index backs this partitioning.
+
+**MAC bit flags** (observability only): `mac_is_locally_administered` (U/L bit) and `mac_is_multicast` (I/G bit) are recorded in `scan_attributes` as neutral facts. Neither changes device identity.
+
+**OUI vendor inference**: the OUI loader (`internal/service/scannerv2/vendor/`) resolves MAC to IEEE-registered vendor via **longest-prefix-match** across three registries: MA-S (/36) → MA-M (/28) → MA-L (/24). Result stored as `scan_attributes.oui_prefix` + `oui_vendor` (NIC silicon vendor), kept **separate** from `vendor` (device self-declared brand via SNMP/HTTP/TLS). Out-of-box: embedded curated CC-BY-SA table; full IEEE set optional via `scripts/fetch-oui.sh` (`scanner.oui_path`).
+
+### Single-Writer Funnel (v0.2.0)
+
+All device writes funnel through `runner.applyDeviceBridge` — a single-writer concurrency model that prevents race conditions between concurrent probe handlers (the bridge runs sequentially after the parallel scan). It landed together with MAC-primary identity in v0.2.0.
+
+### Device Replacement Detection
+
+When a scan discovers a device whose MAC matches an existing record but key attributes differ significantly (e.g., different IP range, different services), the system detects a **replacement** event: the IP holder wins, the old MAC row is marked offline, and the diff is recorded in `change_log`.
+
+### Network Reconciliation Drift Job
+
+`internal/service/scannerv2/reconcile` provides the network-reconciliation job (`scanner.reconcile_interval`, default 1h): it periodically reconciles devices against their network's CIDR membership but only **detects and surfaces** drift (the `mibee_network_mismatches` gauge) — it never auto-modifies device records.
+
+### Change Detection Engine
+
+The center diffs each scan against known device state and emits events to `change_log`:
+
+| Event | Trigger |
+|---|---|
+| `device_added` | New device appears in scan |
+| `device_changed` | Tracked field differs (type, brand, MAC, ports, services, scan\_attributes). Field-by-field comparison with normalized `scan_attributes` (volatile keys stripped, key order canonicalized). `after_data` = full post-change snapshot. |
+| `device_lost` | Absent from `lostThreshold` (2) consecutive scans. Grace period prevents single-scan jitter. |
+
+Events: `GET /api/v1/changes`, SSE `GET /api/v1/changes/watch`, Prometheus counter `mibee_changes_total{type}`.
+
+## Heartbeat & State
+
+`HeartbeatService` runs in a background goroutine with a 30-second ticker:
+
+| Config Key | Default | Description |
+|---|---|---|
+| `heartbeat.default_interval` | 30 | Device check interval (seconds) |
+| `heartbeat.timeout` | 5 | Probe timeout (seconds) |
+| `heartbeat.tick_interval_seconds` | 30 | Probe loop tick (seconds) |
+| `heartbeat.offline_threshold` | 5 | Consecutive failures before offline |
+| `heartbeat.offline_backoff_ticks` | 10 | Probe offline devices once every N ticks (~5 min on 30s ticker) instead of every tick. Stops steady timeout-row writes for known-dead hosts. A reviving scan clears failure count immediately. 0 disables backoff. |
+
+**Service lifecycle**: `NewRouter() → HeartbeatService.Start() → goroutine → signal wait → graceful shutdown`.
+
+## Distributed Model
+
+MiBee Steward supports a center + agent deployment: the **center** (`cmd/server`) aggregates device data from multiple **agents** (`cmd/agent`), each on a different LAN segment. Deep dive → [Distributed Deployment](distributed.md).
+
+```mermaid
+flowchart LR
+    subgraph Center["Center (cmd/server)"]
+        API["API + SPA"]
+        Registry["Device registry"]
+        Change["Change detection"]
+        CenterDB["SQLite"]
+    end
+    subgraph Agent["Agent (cmd/agent)"]
+        Engine["scannerv2 engine"]
+        Reporter["Reporter"]
+        Poller["Command poller"]
+        Scheduler["Scheduler"]
+        AgentDB["Mini SQLite"]
+    end
+    Reporter -->|"report (HTTPS + Bearer)"| API
+    API -->|"commands (poll/ack)"| Poller
+    Engine --> Reporter
+    Engine --> AgentDB
+    Scheduler --> Engine
+    API --> Registry
+    Registry --> Change
+    Registry --> CenterDB
 ```
-Request → RequestID → RealIP → Logging → Metrics → Recoverer → 
-SecurityHeaders → CORS → CSRF → RateLimit → Auth/RBAC → Handler
-```
-
-Each middleware serves a specific purpose:
-- **RequestID**: Assigns unique request IDs for tracing
-- **RealIP**: Extracts real client IP from proxies
-- **Logging**: Request/response logging with structured data
-- **Metrics**: Prometheus metrics collection
-- **Recoverer**: Panic recovery and error handling
-- **SecurityHeaders**: Security-related HTTP headers
-- **CORS**: Cross-origin resource sharing configuration
-- **CSRF**: Cross-site request forgery protection
-- **RateLimit**: Request rate limiting
-- **Auth/RBAC**: Authentication and role-based access control
-
-## Database Design
-
-The system uses SQLite with Write-Ahead Logging (WAL) mode for optimal performance:
-
-- **Connection Pool**: Single connection (`MaxOpenConns=1`) for SQLite compatibility
-- **Code Generation**: sqlc generates type-safe Go code from SQL queries
-- **Migration System**: Single schema.sql applied on startup
-- **Data Directory**: Default path `./data/mibee.db` with automatic directory creation
-- **Schema Evolution**: Migrations handle database schema changes
-
-Database code generation follows the pattern:
-```
-db/queries/*.sql → sqlc generate → internal/db/*.go
-```
-
-Never edit `internal/db/*.go` files directly - modify SQL queries and regenerate.
-
-## Frontend Architecture
-
-The frontend is a SvelteKit 5 single-page application with specific configuration:
-
-- **Routing**: File-based routing in `web/src/routes/`
-- **Build Output**: Frontend builds to `web/dist/` for embedding
-- **Embedding**: Go embeds frontend via `web/embed.go` (`//go:embed all:dist`)
-- **Styling**: Tailwind 4 for responsive design
-- **Charts**: ECharts integration for data visualization
-- **Internationalization**: @inlang/paraglide-js with English and Chinese support
-- **State Management**: SvelteKit's `$app/stores` for client-side state
-
-Key frontend patterns:
-- Translation function: `t('section', 'key')`
-- Chart components with ECharts integration
-- File-based routing with `+page.svelte` files
-- Shared components in `web/src/lib/components/`
-
-## Background Services
-
-The system runs background services in separate goroutines:
-
-**HeartbeatService**:
-- 30-second ticker interval
-- Configurable `isDue()` checks based on monitoring intervals
-- 5-failure threshold for device detection (`offlineThreshold=5`)
-- Offline-device backoff: known-dead hosts are probed once every `offline_backoff_ticks` ticks (default 10, ~5min on a 30s ticker) instead of every tick, to stop the steady write of timeout rows for devices that won't answer
-- Orchestrates probe execution across all devices
-- Graceful shutdown coordination via returned service reference
-
-**Service Lifecycle**:
-```
-NewRouter() → HeartbeatService.Start() → goroutine launch → signal wait → graceful shutdown
-```
-
-## Probe Subsystem
-
-The probe system uses an interface-based design with decorator pattern:
-
-```
-Prober Interface → ICMP/TCP/HTTP/SNMP Implementations → RetryProber Decorator
-```
-
-**Probe Features**:
-- Exponential backoff retry (1s → 2s → 4s)
-- Network error retries only (immediate return on probe failures)
-- Configurable timeout and retry parameters
-- Comprehensive probe result tracking
-
-**Probe Implementations**:
-- **ICMP**: Ping-based connectivity checks
-- **TCP**: Port connectivity and banner grabbing
-- **HTTP**: Web server health checks and response validation
-- **SNMP**: Network device monitoring via SNMP protocol
-
-## Network Scanner (v2)
-
-The scanner is a **plugin-based, 5-layer architecture** that decouples detection from persistence and makes adding new protocols a matter of registering one classifier + one handler. It replaces the legacy hardcoded 6-stage pipeline.
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  ① Probe         — active (TCP/SNMP/RTSP/ONVIF/HTTP-metrics) +      │
-│                     passive (eBPF TC observer, build-tag gated)      │
-│     → emits Evidence (port_open / banner / snmp / wsdiscovery / ...) │
-├─────────────────────────────────────────────────────────────────────┤
-│  ② Classifier    — per-protocol, pure functions over Evidence        │
-│     → fuses into ServiceIdentity (ssh/http/rtsp/onvif/prometheus/    │
-│       node_exporter/snmp/camera) with confidence                    │
-├─────────────────────────────────────────────────────────────────────┤
-│  ③ ServiceHandler — per-service customization                        │
-│     ├─ GenerateHeartbeat()  → adapted heartbeat spec                │
-│     ├─ Collect()            → deep gather, may Trigger other handlers│
-│     └─ EnrichDevice()       → fill device fields from collected data │
-│     canonical cascade: http → probe /metrics → prometheus →          │
-│     detect node_ → node_exporter → parse CPU/mem/kernel → enrich     │
-├─────────────────────────────────────────────────────────────────────┤
-│  ④ Persistence   — Repository interface (SQLite impl in store/)      │
-│     → records evidence / services / device updates / heartbeats      │
-├─────────────────────────────────────────────────────────────────────┤
-│  ⑤ Orchestrator  — declarative driver: gather → classify → dispatch │
-│     with cycle-guarded cascade triggers (max depth 5)                │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Extending detection**: to add a new protocol, implement a `ServiceClassifier` and a `ServiceHandler`, then register them in `classify.DefaultClassifiers()` / `handler.DefaultHandlers()`. No orchestrator or persistence changes are required.
-
-**Detected services** (out of the box): SSH, HTTP/HTTPS, RTSP, ONVIF, SNMP, Prometheus, node_exporter, mail (SMTP/POP3/IMAP), remote-access (VNC/RDP/Telnet), directory & file-share (LDAP/SMB), DNS, the TLS-wrapped service family (LDAPS, SMTPS, IMAPS, POP3S, FTPS, IRCS, TelnetS), and a host-level **camera** meta-identity (fused from RTSP + ONVIF evidence, with brand inference from Server headers / SNMP sysDescr / enterprise OID / TLS cert CN).
-
-**TLS certificate inventory**: any port classified as TLS-speaking (default ports 443/8443/9443/4443 + the well-known TLS-wrapped service ports 465/636/989/990/992/993/994/995, plus any port a classifier flags) has its full certificate chain collected via `probe.CollectCertChain` and persisted to `host_tls_certs` — Subject/Issuer/SAN/validity/signature/key/fingerprint + PEM, one row per cert in the chain (leaf + issuers). Surfaced per-device via `GET /api/v1/devices/{id}/certificates` and the device-detail TLS sub-panel.
-
-**eBPF passive observer**: an optional TC ingress program (`bpf/tc_ingress.c`) sniffs ONVIF WS-Discovery multicast (239.255.255.250:3702) and TCP magic bytes (SSH-/RTSP/HTTP/). It emits corroborating Evidence at confidence 0.6, fused with active-probe results. Built only with `make build-with-ebpf` (needs clang/llvm/bpftool + kernel BTF ≥5.8); the default build uses a no-op stub so the binary stays dependency-free.
-
-**Persistence tables** (added by v2): `service_evidence` (raw probe observations, sampling-controlled), `host_services` (classified service identities per host), and `host_tls_certs` (TLS certificate chains per `(ip, port)`, one row per cert; PEM + typed columns for queryability; `not_after` indexed for expiry sweeps). Device upserts go to the existing `devices` table; heartbeat configs to `heartbeat_configs`.
-
-## Prometheus Integration
-
-The system provides comprehensive monitoring capabilities:
-
-**Metrics Endpoint**: `/metrics` - Standard Prometheus metrics export
-**Dashboard Proxy**: `/api/v1/dashboard/query` - Read-only proxy to Prometheus
-**Service Discovery**: HTTP SD endpoint at `/sd` for service discovery and device systems auto-discovery
-**Metric Types**: Counter, Gauge, and Histogram for various system metrics
-
-The dashboard service integrates with Prometheus for monitoring data collection.
-
-### Device Systems Architecture
-- **Database**: New `device_systems` table with relationship to devices
-- **API**: REST endpoints under `/api/v1/devices/{id}/systems` for CRUD operations
-- **Service Discovery**: Extended `/sd` endpoint to auto-discover systems with `metrics_enabled=true`
-- **Frontend**: Card grid UI in device detail pages with category badges (web_app, database, middleware, custom)
-- **Labels**: Systems appear in service discovery with labels (device_name, system_name, category, device_type, location)
-
-## Distributed Architecture
-
-MiBee Steward supports a distributed deployment model: a **center** (the main
-binary, `cmd/server`) aggregates device data from multiple **agents**
-(lightweight binaries, `cmd/agent`), each deployed on a different LAN segment.
-This enables cross-network device discovery without requiring the center to have
-direct L3 reachability to every subnet.
-
-```
-[Network A: 192.168.63.0/24]           [Network B: 192.168.62.0/24]
-  ┌──────────────────────┐               ┌──────────────────────┐
-  │ Center (cmd/server)  │               │ Agent (cmd/agent)     │
-  │  - API + SPA         │   HTTPS       │  - scannerv2 engine   │
-  │  - Device registry   │◄─────────────│  - Reporter (POST)    │
-  │  - Change detection  │   Bearer tok  │  - Command poller     │
-  │  - Scanner (local)   │──────────────►│  - Scheduler (cron)   │
-  │  - Heartbeat service │   Commands    │  - Mini SQLite        │
-  └──────────────────────┘               └──────────────────────┘
-```
-
-### Roles
 
 | Role | Binary | Responsibilities |
 |---|---|---|
 | **Center** | `cmd/server` | Aggregation hub: API, SPA, device registry, change detection, heartbeat, ingestion, agent management |
-| **Agent** | `cmd/agent` | Lightweight scanner: runs scannerv2 locally, reports results upstream, polls for commands |
+| **Agent** | `cmd/agent` | Lightweight scanner: runs the scannerv2 discovery engine locally (router-form reports passive discoveries), reports upstream, polls for commands |
 
-### Agent ↔ Center Protocol
+**Pull model** — agent initiates all connections (NAT-friendly):
 
-**Pull model** — the agent initiates all connections (works behind NAT):
+1. **Report** (`POST /api/v1/agents/report`): batch HostReports, MAC-primary merge.
+2. **Command poll** (`GET /api/v1/agents/commands`, the token is the identity): every 60s; ack/complete are separate calls.
+3. **Disconnect recovery**: failed batches held in memory (bounded at 100), flushed oldest-first.
 
-1. **Report** (`POST /api/v1/agents/report`): Agent batches alive HostReports and
-   POSTs them to the center. The center authenticates via the agent's bearer
-   token and merges devices through the MAC-primary identity model.
-2. **Command poll** (`GET /api/v1/agents/commands`): Agent polls for ad-hoc
-   commands (e.g. "scan these targets now") every 60s.
-3. **Disconnect recovery**: Failed report batches are held in an in-memory
-   pending queue (bounded at 100 batches). The flush loop drains pending
-   oldest-first once the center recovers.
+**Anti-entropy**: agent reports carry `X-Network-State-Hash` (SHA-256 of the alive-set identity/classification fields); the center uses it for drift detection. **Lease TTL**: agent tokens are bound to `network_id` + `agent_id`; lease-TTL lost detection (default 5m), revocation is soft-delete (`revoked_at`).
 
-### Identity Model (MAC-Primary)
+## Observability
 
-Devices are identified by **MAC address first** (a roaming device stays one
-asset across networks), falling back to `(ip_address, network_id)` when no MAC
-is known. This means:
+**Metrics**: `/metrics` — standard Prometheus endpoint. Counter, Gauge, Histogram for system metrics.
 
-- The same private IP (e.g. `192.168.1.10`) on two different LANs is **two
-  distinct devices** (partitioned by `network_id`).
-- A device that moves between subnets (same MAC, different IP) stays **one asset**.
-- The `(ip_address, network_id)` composite unique index backs this partitioning.
+**Service Discovery**: `/sd` — HTTP SD endpoint for Prometheus scrape config and device-systems auto-discovery (`metrics_enabled=true`).
 
-**MAC bit flags (observability only).** Two IEEE 802 / RFC 7042 bits of the
-observed MAC are recorded as neutral factual flags in `scan_attributes`:
-`mac_is_locally_administered` (U/L bit, first octet `& 0x02`) and
-`mac_is_multicast` (I/G bit, first octet `& 0x01`). Neither changes device
-identity — in particular the U/L bit only means "locally administered" and
-**cannot** distinguish privacy randomization (unstable) from a locally fixed
-setting (stable), so it is surfaced as-is (a UI badge) rather than acted on.
+**Dashboard Proxy**: `/api/v1/dashboard/query` — read-only proxy to Prometheus.
 
-**OUI vendor inference.** The OUI loader (`internal/service/scannerv2/vendor/`)
-resolves a MAC to its IEEE-registered vendor via **longest-prefix-match** across
-three registries: MA-S (/36, 9 hex, formerly IAB) → MA-M (/28, 7 hex) → MA-L
-(/24, 6 hex). Longest-prefix is mandatory because MA-S/MA-M sub-blocks are
-carved out of /24 OUIs owned by IEEE or another vendor (a MAC starting
-`8C1F64B14..` is Murata's MA-S block, NOT its parent /24 owner "IEEE
-Registration Authority"). The result is recorded as `scan_attributes.oui_prefix`
-(the matched block) + `oui_vendor` (the IEEE organization — the NIC silicon
-vendor), kept SEPARATE from `vendor` (the device's self-declared brand via
-SNMP/HTTP/TLS). Out-of-box the engine seeds from an embedded curated CC-BY-SA
-table of common vendors; the full IEEE set is an optional runtime download via
-`scripts/fetch-oui.sh` (the IEEE registries are "All rights reserved" factual
-data — cited, NOT folded into the CC-BY-SA fingerprint corpus; see
-`docs/fingerprint-spec.md` §8).
+**Retention Sweepers** (`internal/service/scannerv2/cleanup/`): periodic pruning of high-volume detail tables. Batch deletes (default 5000 rows) to avoid holding the SQLite write lock. Runs on startup + every `sweep_interval_hours` (default 6).
 
-### Agent Authentication
-
-Agent tokens are SHA-256-hashed opaque bearer tokens stored in `agent_tokens`.
-The plaintext is returned **once** at creation; only the hash is persisted.
-Tokens are bound to a `network_id` — every device the agent reports is tagged
-with that network. Revocation is a soft delete (`revoked_at`); revoked tokens
-immediately fail authentication.
-
-Two auth regimes, never mixed:
-- **Admin JWT** (cookie/Bearer): human users via the SPA.
-- **Agent token** (`RequireAgentToken` middleware): machine-to-machine ingestion.
-
-### Change Detection Engine
-
-The center runs a change-detection engine that diffs each scan against the
-known device state and emits events to `change_log`:
-
-- **device_added**: A new device appears in a scan.
-- **device_changed**: A tracked field (type, brand, MAC, ports, services,
-  scan_attributes) differs from the prior state. The old `wasUpdated` always-true
-  heuristic is replaced with a real field-by-field comparison. `scan_attributes`
-  is normalized before diffing — volatile keys (`last_scanned_at`,
-  `last_scan_rtt_ms`) are stripped and key order is canonicalized, so a pure
-  timestamp refresh no longer fires a spurious `device_changed`. The
-  `after_data` payload is the full post-change device snapshot (not a field-level
-  diff map), so consumers can render the new state without a follow-up fetch.
-- **device_lost**: A device absent from `lostThreshold` (2) consecutive scans is
-  declared lost and marked offline. The grace period prevents single-scan jitter
-  (ICMP drop, brief downtime) from flapping.
-
-Events are queryable via `GET /api/v1/changes` and streamable via SSE at
-`GET /api/v1/changes/watch`. A Prometheus counter (`mibee_changes_total{type}`)
-tracks the change rate.
-
-### Topology Discovery (L2 + Derived)
-
-The Bridge-MIB probe walks `dot1dTpFdbTable` (1.3.6.1.2.1.17.4.3) on
-SNMP-capable switches to learn L2 adjacency (which MACs are behind which port).
-Discovered neighbors are persisted to `device_neighbors` via
-`Repository.RecordNeighbors`. LLDP/CDP probes follow the same path. When no
-device speaks SNMP, the kernel ARP cache is walked post-scan to write
-gateway-centric `device_neighbors` edges (protocol `"ARP"`) as a fallback.
-
-**Derived topology tables**: after each scan the runner derives three
-higher-level tables from `device_neighbors` — `topology_edges` (materialized
-device↔device edges via `deriveTopologyEdges`, where both endpoints must be known
-devices; LLDP/CDP/Bridge-MIB → `l2` with high confidence, ARP → `l3` lower),
-`subnets` (per-network CIDR + gateway via `recordSubnets`), and `vlans` (802.1Q
-tags via `recordVLANs`). VLAN tags are extracted from Q-BRIDGE-MIB OID indices
-by `extractVLANFromIndex` and carried on `NeighborSpec.VLANTag`.
-(`vlans.name`/`description` and `subnets.vlan_id` linkage are still TODO.)
-
-### Distributed Schema
-
-| Table | Purpose |
+| Table | Default Retention |
 |---|---|
-| `networks` | Logical network registry (one row per LAN an agent discovers) |
-| `agent_tokens` | Agent bearer tokens (SHA-256 hash + network binding) |
-| `agent_commands` | Center→agent command queue (pull model) |
-| `scan_snapshots` | Per-network miss counter for device_lost grace period |
-| `change_log` | device_added/changed/lost event stream |
-| `device_neighbors` | L2 adjacency edges (LLDP/CDP/Bridge-MIB/Q-BRIDGE-MIB/ARP) |
-| `topology_edges` | Materialized device↔device edges (derived from device_neighbors) |
-| `subnets` | Per-network CIDR + gateway observed during scans |
-| `vlans` | 802.1Q VLAN tags extracted from Q-BRIDGE-MIB |
+| `heartbeat_results` | 7 days |
+| `scan_results` | 30 days |
+| `service_evidence` | 14 days |
+| `host_services` | 30 days |
+| `host_tls_certs` | 30 days |
+| `change_log` | 30 days |
+| `device_neighbors` | 90 days |
+| `device_liveness` | 7 days |
+| `notification_log` | 30 days |
+| `scan_task_runs` | 30 days |
+| `audit_logs` | 90 days |
+
+A **silent-device sweep** also runs: scanner-discovered devices that stop appearing for 24h without a MAC (`retention.silent_device_hours_no_mac`) or 7 days with a MAC (`retention.silent_device_days_mac`) are physically deleted with a `device_removed` record — discovery is the entry to the registry, and rows that can never be rediscovered get reclaimed.
+
+## Background Tasks
+
+Resident goroutines started by `NewRouter()` (stopped in dependency order on graceful shutdown):
+
+| Task | Cadence | Duty |
+|---|---|---|
+| Heartbeat probing loop | 30s tick | Poll due devices, write verdicts |
+| Token blacklist cleanup | periodic | Evict expired JWT blacklist entries |
+| v2 scan scheduler | cron | Fire `scan_tasks` + stale-run sweeper |
+| Lease sweeper | 60s | Agent-network lease expiry → `device_lost` |
+| Retention sweeper | 6h | Batched pruning of the table above |
+| Notification dispatcher | 3 workers | Rule engine → channel (email/webhook/…) dispatch |
+| Device metrics refresher | periodic | Device gauges for `/metrics` |
+| Change Watcher | event-driven | `change_log` → SSE push |
+
+## Security Model
+
+- **JWT auth**: cookie + Bearer dual mode. `auth.jwt_secret` must be changed in production (≥32 chars, enforced at startup). `auth.token_expiry` default 24h.
+- **TOTP 2FA** (optional): `/api/v1/auth/2fa/{verify,setup,enable,disable,status}`.
+- **RBAC**: capability-based model (admin / operator / viewer tiers, `user` being a legacy alias for viewer), enforced in the middleware chain.
+- **Network scope authorization (network grants)**: per-user network scope isolation via `internal/authz` (scopeql + scoperesolver), restricting users to authorized networks.
+- **CSRF**: cross-site request forgery protection middleware.
+- **Agent tokens**: SHA-256-hashed opaque bearer tokens in `agent_tokens`. Plaintext returned once at creation; only hash persisted. Bound to `network_id` + `agent_id`.
+- **Audit log**: request-level audit trail via middleware.
+- **Security headers**: set by `SecurityHeaders` middleware.
