@@ -24,6 +24,7 @@ const (
 	CapDashboardRead    Capability = "dashboard:read"
 	CapNotificationRead Capability = "notification:read"
 	CapAuditRead        Capability = "audit:read"
+	CapProbeRead        Capability = "probe:read" // synthetic probing targets + results + certs (拨测)
 
 	// --- Operational capabilities (operator adds these on top of reads) ---
 	CapDeviceWrite     Capability = "device:write"     // edit device fields, batch ops
@@ -31,6 +32,7 @@ const (
 	CapScanManage      Capability = "scan:manage"      // scan task CRUD
 	CapHeartbeatManage Capability = "heartbeat:manage" // heartbeat config CRUD
 	CapDocumentWrite   Capability = "document:write"
+	CapProbeManage     Capability = "probe:manage" // synthetic probing target CRUD + trigger (拨测)
 
 	// --- Administrative capabilities (admin only) ---
 	CapNetworkManage      Capability = "network:manage" // create/edit/delete networks
@@ -48,13 +50,13 @@ var readCaps = map[Capability]bool{
 	CapDeviceRead: true, CapNetworkRead: true, CapConfigRead: true,
 	CapChangesRead: true, CapTopologyRead: true, CapDiscoveryRead: true,
 	CapHeartbeatRead: true, CapDocumentRead: true, CapDashboardRead: true,
-	CapNotificationRead: true, CapAuditRead: true,
+	CapNotificationRead: true, CapAuditRead: true, CapProbeRead: true,
 }
 
 // operatorCaps = reads + operational writes (no user/cred/network/agent mgmt).
 var operatorCaps = union(readCaps, map[Capability]bool{
 	CapDeviceWrite: true, CapScanTrigger: true, CapScanManage: true,
-	CapHeartbeatManage: true, CapDocumentWrite: true,
+	CapHeartbeatManage: true, CapDocumentWrite: true, CapProbeManage: true,
 })
 
 // adminCaps = every defined capability.

@@ -21,7 +21,8 @@
 		"Brand Subtitle": "Device Management",
 		"Brand Logo Alt": "MiBee logo",
 		"Skip to Content": "Skip to content",
-		"Toggle Sidebar": "Toggle sidebar"
+		"Toggle Sidebar": "Toggle sidebar",
+		"Probes": "Probes"
 	},
 	"auth": {
 		"Username": "Username",
@@ -597,7 +598,7 @@
 		"In Window": "prunes in {remaining} (window: {threshold})",
 		"Prune Pending": "overdue — prune pending next sweep"
 	},
-		"scanfields": {
+	"scanfields": {
 		"Discovery": "Scan Discovery",
 		"Vendor": "Vendor",
 		"OUI Vendor": "OUI Vendor (NIC)",
@@ -994,14 +995,14 @@
 		"Unidentified": "unidentified neighbor",
 		"Empty": "No topology data yet",
 		"Empty Desc": "L2 neighbor edges (Bridge-MIB / LLDP) are populated when switches are scanned. Run a scan that includes managed switches.",
-		"Click Hint": "Click to collapse/expand subtree; double-click to open device detail. Scroll to zoom, drag to pan.",
+		"Click Hint": "Click a node to inspect it, an edge for port detail. Double-click a node to open its page. Scroll to zoom, drag to pan.",
 		"Neighbors": "L2 Neighbors",
 		"Neighbors Desc": "Devices adjacent to this one at Layer 2 (Bridge-MIB / LLDP).",
 		"No Neighbors": "No L2 neighbors recorded for this device yet.",
 		"Neighbor Device": "Neighbor",
 		"Local Port": "Local Port",
 		"Remote Port": "Remote Port",
-		"Unidentified Neighbor": "Unidentified (MAC only)",
+		"Unidentified Neighbor": "Unidentified neighbor",
 		"No Edges Title": "No L2 adjacency discovered yet",
 		"No Edges Desc": "There are devices in this network, but no L2 neighbor edges yet. A scan will automatically derive ARP adjacency from the gateway; managed switches add Bridge-MIB / LLDP edges.",
 		"No Edges Devices": "in this network",
@@ -1037,12 +1038,8 @@
 		"Protocol": "Protocol",
 		"From Device": "From",
 		"To Device": "To",
-		"Local Port": "Local Port",
-		"Remote Port": "Remote Port",
 		"Cross Link": "Redundant / mesh link (not part of the spanning tree)",
-		"Unidentified Neighbor": "Unidentified neighbor",
-		"Open Device": "Open device page",
-		"Click Hint": "Click a node to inspect it, an edge for port detail. Double-click a node to open its page. Scroll to zoom, drag to pan."
+		"Open Device": "Open device page"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",
@@ -1160,7 +1157,12 @@
 		"Task Name Required": "Task name is required",
 		"Timeout Range Task": "Timeout must be between 1 and 3600 seconds",
 		"Channel Required": "A notification channel is required",
-		"Cooldown Min": "Cooldown must be at least 1 minute"
+		"Cooldown Min": "Cooldown must be at least 1 minute",
+		"Name Max Length": "Name must be at most 100 characters",
+		"Notes Max Length": "Notes must be at most 500 characters",
+		"Timeout Before Interval": "Timeout must be smaller than the interval",
+		"Invalid Host Port": "Must be host:port with port 1-65535 (e.g. example.com:443)",
+		"Invalid Host": "Must be a bare host or IP (no port, no path)"
 	},
 	"api": {
 		"Session Expired": "Session expired",
@@ -1169,5 +1171,54 @@
 		"Download Failed": "Download failed",
 		"Upload Failed": "Upload failed",
 		"Upload Timed Out": "Upload timed out"
+	},
+	"probes": {
+		"Title": "Synthetic Probes",
+		"Subtitle": "Configured probing of external resources (blackbox-style): availability, latency and certificate health",
+		"Add Target": "Add Target",
+		"Edit Target": "Edit Target",
+		"No Targets": "No probe targets",
+		"No Targets Desc": "Create a probe target to start monitoring an external endpoint (HTTPS site, TLS port, TCP service or host reachability).",
+		"Name": "Name",
+		"Module": "Module",
+		"Target": "Target",
+		"Interval": "Interval",
+		"Last Status": "Last Status",
+		"Latency": "Latency",
+		"Cert Expiry": "Certificate",
+		"Actions": "Actions",
+		"Notes": "Notes",
+		"Enabled": "Enabled",
+		"Disabled": "Disabled",
+		"Never Run": "Not probed yet",
+		"Trigger": "Probe Now",
+		"Triggering": "Probing…",
+		"View Results": "History",
+		"View Cert": "Certificate",
+		"Delete Target": "Delete",
+		"Delete Title": "Delete probe target",
+		"Delete Message": "Delete target \"{name}\"? Its probe history and stored certificate chain are removed too. This cannot be undone.",
+		"Target Created": "Probe target created",
+		"Target Updated": "Probe target updated",
+		"Target Deleted": "Probe target deleted",
+		"Trigger Done": "Probe finished: {status}",
+		"Results Title": "Probe history — {name}",
+		"No Results": "No results yet",
+		"No Results Desc": "Results appear after the first probe run.",
+		"Checked At": "Time",
+		"Status": "Status",
+		"Status Code": "Code",
+		"Error": "Error",
+		"TLS Version": "TLS",
+		"Cert Not After": "Cert expiry",
+		"Cert Days": "{days} d",
+		"Module http Help": "Full URL to fetch (success = HTTP status < 400); https targets also collect the certificate chain",
+		"Module tls Help": "host:port to handshake (e.g. example.com:443); collects the full certificate chain",
+		"Module tcp Help": "host:port to connect (e.g. example.com:80)",
+		"Module icmp Help": "Host or IP to ping (e.g. example.com)",
+		"Interval Help": "Seconds between probes (10–86400)",
+		"Timeout Help": "Seconds per probe attempt (1–60), must be smaller than the interval",
+		"Cert Trusted": "Trusted",
+		"Cert Untrusted": "Untrusted"
 	}
 }

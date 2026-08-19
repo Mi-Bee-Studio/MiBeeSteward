@@ -32,7 +32,8 @@
 		X,
 		History,
 		Bot,
-		Network
+		Network,
+		Activity
 	} from '@lucide/svelte';
 	import type { Component } from 'svelte';
 
@@ -96,7 +97,8 @@
 			items: [
 				{ path: '/dashboard', label: m['navigation.Dashboard'](), icon: LayoutDashboard },
 				{ path: '/devices', label: m['navigation.Devices'](), icon: Server },
-				{ path: '/changes', label: m['navigation.Changes'](), icon: History }
+				{ path: '/changes', label: m['navigation.Changes'](), icon: History },
+				{ path: '/probes', label: m['navigation.Probes'](), icon: Activity }
 			]
 		},
 		{

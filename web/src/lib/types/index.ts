@@ -122,6 +122,59 @@ export interface DeviceCertificatesResponse {
 	total: number;
 }
 
+// --- Synthetic probing (拨测) — user-configured external targets ---
+
+/** A probe target row (GET/POST/PUT /probe-targets). module: http|tls|tcp|icmp. */
+export interface ProbeTarget {
+	id: number;
+	name: string;
+	module: 'http' | 'tls' | 'tcp' | 'icmp';
+	/** Full URL (http), host:port (tls/tcp), host or IP (icmp). */
+	target: string;
+	interval_seconds: number;
+	timeout_seconds: number;
+	enabled: boolean;
+	notes: string;
+	/** RFC3339 UTC; empty when never probed. */
+	last_run_at?: string;
+	/** success | fail | timeout; empty when never probed. */
+	last_status?: string;
+	last_latency_ms: number;
+	last_error?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ProbeTargetListResponse {
+	targets: ProbeTarget[];
+	total: number;
+}
+
+/** One history row (GET /probe-targets/{id}/results). */
+export interface ProbeResult {
+	id: number;
+	target_id: number;
+	status: 'success' | 'fail' | 'timeout';
+	latency_ms: number;
+	/** HTTP status code (http module); 0 otherwise. */
+	status_code: number;
+	error_message?: string;
+	tls_version?: string;
+	/** Leaf cert expiry, RFC3339 UTC; empty when none collected that run. */
+	cert_not_after?: string;
+	/** null = no cert collected that run. */
+	cert_trusted?: boolean | null;
+	checked_at: string;
+}
+
+export interface ProbeResultListResponse {
+	results: ProbeResult[];
+	total: number;
+}
+
+/** Synchronous trigger response (POST /probe-targets/{id}/trigger). */
+export interface ProbeTriggerResponse extends ProbeResult {}
+
 export interface PrometheusInfo {
 	url?: string;
 	node_exporter_url?: string;

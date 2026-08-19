@@ -58,8 +58,9 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	if success := resp.StatusCode < 400; success {
 		slog.Debug("probe executed", "method", "http", "target", target, "success", true, "latency", latency)
 		return &Result{
-			Success: true,
-			Latency: latency,
+			Success:    true,
+			Latency:    latency,
+			StatusCode: resp.StatusCode,
 		}, nil
 	}
 
@@ -67,6 +68,7 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	return &Result{
 		Success:      false,
 		Latency:      latency,
+		StatusCode:   resp.StatusCode,
 		ErrorMessage: http.StatusText(resp.StatusCode),
 	}, nil
 }
