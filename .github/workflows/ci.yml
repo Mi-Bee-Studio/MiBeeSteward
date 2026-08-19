@@ -82,11 +82,23 @@ jobs:
           go-version-file: go.mod
       - name: Install sqlc
         run: |
-          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
+          # v1.31.1 is the version the committed internal/db was generated
+          # with; a different version reformats headers and breaks the drift
+          # check below (#237).
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
           sqlc version
       # `sqlc compile` validates queries against the schema locally without
       # requiring a sqlc Cloud project (which `sqlc verify` does).
       - run: sqlc compile
+      # Drift guard (#237): the committed internal/db MUST equal a fresh
+      # `sqlc generate` on the committed db/schema.sql + db/queries/. This
+      # fails when schema.sql or queries change without regenerating — the
+      # exact drift that #233 introduced and #235 had to surgically work
+      # around.
+      - name: Check generated code is in sync
+        run: |
+          sqlc generate
+          git diff --exit-code internal/db/
 
   # Validate that the container image builds (build only, no push). Catches
   # Dockerfile/docker-compose regressions before they hit a release tag — the

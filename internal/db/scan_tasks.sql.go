@@ -47,7 +47,7 @@ const createScanTask = `-- name: CreateScanTask :one
 
 INSERT INTO scan_tasks (name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-RETURNING id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+RETURNING id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 `
 
 type CreateScanTaskParams struct {
@@ -91,6 +91,7 @@ func (q *Queries) CreateScanTask(ctx context.Context, arg CreateScanTaskParams) 
 		&i.Timeout,
 		&i.ConcurrentHosts,
 		&i.CredentialID,
+		&i.NetworkID,
 		&i.Enabled,
 		&i.LastRunAt,
 		&i.NextRunAt,
@@ -115,7 +116,7 @@ func (q *Queries) DeleteScanTask(ctx context.Context, id int64) (int64, error) {
 }
 
 const getScanTask = `-- name: GetScanTask :one
-SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 FROM scan_tasks
 WHERE id = ?
 `
@@ -133,6 +134,7 @@ func (q *Queries) GetScanTask(ctx context.Context, id int64) (ScanTask, error) {
 		&i.Timeout,
 		&i.ConcurrentHosts,
 		&i.CredentialID,
+		&i.NetworkID,
 		&i.Enabled,
 		&i.LastRunAt,
 		&i.NextRunAt,
@@ -144,7 +146,7 @@ func (q *Queries) GetScanTask(ctx context.Context, id int64) (ScanTask, error) {
 }
 
 const listEnabledScanTasks = `-- name: ListEnabledScanTasks :many
-SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 FROM scan_tasks
 WHERE enabled = 1
 `
@@ -168,6 +170,7 @@ func (q *Queries) ListEnabledScanTasks(ctx context.Context) ([]ScanTask, error) 
 			&i.Timeout,
 			&i.ConcurrentHosts,
 			&i.CredentialID,
+			&i.NetworkID,
 			&i.Enabled,
 			&i.LastRunAt,
 			&i.NextRunAt,
@@ -189,7 +192,7 @@ func (q *Queries) ListEnabledScanTasks(ctx context.Context) ([]ScanTask, error) 
 }
 
 const listScanTasks = `-- name: ListScanTasks :many
-SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 FROM scan_tasks
 ORDER BY id
 LIMIT ? OFFSET ?
@@ -219,6 +222,7 @@ func (q *Queries) ListScanTasks(ctx context.Context, arg ListScanTasksParams) ([
 			&i.Timeout,
 			&i.ConcurrentHosts,
 			&i.CredentialID,
+			&i.NetworkID,
 			&i.Enabled,
 			&i.LastRunAt,
 			&i.NextRunAt,
@@ -240,7 +244,7 @@ func (q *Queries) ListScanTasks(ctx context.Context, arg ListScanTasksParams) ([
 }
 
 const listScanTasksSearch = `-- name: ListScanTasksSearch :many
-SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 FROM scan_tasks
 WHERE (? = '' OR INSTR(lower(name), lower(?)) > 0 OR INSTR(lower(targets), lower(?)) > 0)
 ORDER BY id
@@ -286,6 +290,7 @@ func (q *Queries) ListScanTasksSearch(ctx context.Context, arg ListScanTasksSear
 			&i.Timeout,
 			&i.ConcurrentHosts,
 			&i.CredentialID,
+			&i.NetworkID,
 			&i.Enabled,
 			&i.LastRunAt,
 			&i.NextRunAt,
@@ -327,7 +332,7 @@ UPDATE scan_tasks
 SET name = ?, targets = ?, cron_expr = ?, pipeline_config = ?, global_labels = ?,
     timeout = ?, concurrent_hosts = ?, credential_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+RETURNING id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 `
 
 type UpdateScanTaskParams struct {
@@ -365,6 +370,7 @@ func (q *Queries) UpdateScanTask(ctx context.Context, arg UpdateScanTaskParams) 
 		&i.Timeout,
 		&i.ConcurrentHosts,
 		&i.CredentialID,
+		&i.NetworkID,
 		&i.Enabled,
 		&i.LastRunAt,
 		&i.NextRunAt,

@@ -34,6 +34,7 @@ import (
 	"github.com/go-co-op/gocron/v2"
 
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/metrics"
 )
 
 // ScanFunc executes one scan task. It is invoked by the scheduler on each cron
@@ -120,6 +121,12 @@ func (s *Scheduler) Start(ctx context.Context) {
 		s.mu.Lock()
 		s.scheduler.Start()
 		s.mu.Unlock()
+	}
+
+	// Seed the task-count gauges (#238). Best-effort: a failed refresh just
+	// leaves the gauges absent until the next task CRUD triggers one.
+	if err := metrics.RefreshScannerTaskGauges(ctx, s.queries); err != nil {
+		s.logger.Debug("scheduler: refresh task gauges failed", "error", err)
 	}
 
 	// Periodic stale-run sweeper. Without this, a run that hangs (e.g. a probe

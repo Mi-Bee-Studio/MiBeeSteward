@@ -99,6 +99,7 @@ type Device struct {
 	ScanOs           *string    `json:"scan_os"`
 	ScanHostname     *string    `json:"scan_hostname"`
 	NetworkID        *int64     `json:"network_id"`
+	SshCredentialID  *int64     `json:"ssh_credential_id"`
 	FirstSeen        *time.Time `json:"first_seen"`
 	LastSeen         *time.Time `json:"last_seen"`
 	OfflineSince     *time.Time `json:"offline_since"`
@@ -392,6 +393,7 @@ type ScanTask struct {
 	Timeout         int64      `json:"timeout"`
 	ConcurrentHosts int64      `json:"concurrent_hosts"`
 	CredentialID    *int64     `json:"credential_id"`
+	NetworkID       *int64     `json:"network_id"`
 	Enabled         int64      `json:"enabled"`
 	LastRunAt       *time.Time `json:"last_run_at"`
 	NextRunAt       *time.Time `json:"next_run_at"`
@@ -443,6 +445,20 @@ type SnmpCredential struct {
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 
+type SshCredential struct {
+	ID            int64     `json:"id"`
+	Name          string    `json:"name"`
+	AuthMethod    string    `json:"auth_method"`
+	Username      string    `json:"username"`
+	SecretEnc     string    `json:"secret_enc"`
+	PassphraseEnc string    `json:"passphrase_enc"`
+	HostKeyFp     string    `json:"host_key_fp"`
+	Enabled       int64     `json:"enabled"`
+	Notes         string    `json:"notes"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 type Subnet struct {
 	ID        int64      `json:"id"`
 	NetworkID int64      `json:"network_id"`
@@ -478,6 +494,13 @@ type User struct {
 	LockedUntil         *time.Time `json:"locked_until"`
 	PasswordChangedAt   *time.Time `json:"password_changed_at"`
 	MustChangePassword  bool       `json:"must_change_password"`
+}
+
+type UserNetworkGrant struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	NetworkID int64     `json:"network_id"`
+	GrantedAt time.Time `json:"granted_at"`
 }
 
 type UserTotp struct {

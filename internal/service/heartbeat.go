@@ -22,6 +22,7 @@ import (
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/metrics"
 	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/service/scannerv2"
 )
@@ -452,6 +453,13 @@ func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg probeConfig) 
 		status = "fail"
 		errorMsg = result.ErrorMessage
 	}
+
+	// Operational metrics (#238): the checks counter is what the
+	// HeartbeatFailures Prometheus alert consumes — it was registered but
+	// never incremented before, leaving that alert permanently at 0. Mirrors
+	// the store row below (one increment per recorded outcome).
+	metrics.MibeeHeartbeatChecksTotal.WithLabelValues(status).Inc()
+	metrics.MibeeHeartbeatLatencySeconds.WithLabelValues(cfg.Method).Observe(result.Latency.Seconds())
 
 	// Hand the result to the dedicated time-series store's batched writer.
 	// Enqueue is non-blocking (drops on overflow with a warning); a dropped

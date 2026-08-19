@@ -10,15 +10,15 @@
 -- name: CreateScanTask :one
 INSERT INTO scan_tasks (name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-RETURNING id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at;
+RETURNING id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at;
 
 -- name: GetScanTask :one
-SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 FROM scan_tasks
 WHERE id = ?;
 
 -- name: ListScanTasks :many
-SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 FROM scan_tasks
 ORDER BY id
 LIMIT ? OFFSET ?;
@@ -30,7 +30,7 @@ LIMIT ? OFFSET ?;
 -- of LIKE so the search term needs no escaping (literal %/_ are not wildcards)
 -- and we pass the same value to both columns + the empty-check.
 -- CountScanTasksSearch below MUST use the same WHERE clause so totals match.
-SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 FROM scan_tasks
 WHERE (? = '' OR INSTR(lower(name), lower(?)) > 0 OR INSTR(lower(targets), lower(?)) > 0)
 ORDER BY id
@@ -41,7 +41,7 @@ UPDATE scan_tasks
 SET name = ?, targets = ?, cron_expr = ?, pipeline_config = ?, global_labels = ?,
     timeout = ?, concurrent_hosts = ?, credential_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at;
+RETURNING id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at;
 
 -- name: DeleteScanTask :execrows
 DELETE FROM scan_tasks
@@ -58,7 +58,7 @@ SET enabled = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
 
 -- name: ListEnabledScanTasks :many
-SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
+SELECT id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, credential_id, network_id, enabled, last_run_at, next_run_at, last_run_status, created_at, updated_at
 FROM scan_tasks
 WHERE enabled = 1;
 
