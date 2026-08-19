@@ -37,6 +37,13 @@ flowchart LR
 - Online/offline history, latency, and availability statistics surface in the web UI and in metrics.
 - Change detection: device additions, attribute changes, and losses are recorded to a change log and pushed as events (`GET /changes` + SSE watch), keeping asset dynamics visible in near real time.
 
+### Synthetic Probing (external resources)
+
+- Explicitly configured periodic probing (blackbox_exporter-style) of any reachable endpoint — typically external/internet resources (a public HTTPS site, a hosted mail TLS port, a vendor gateway) — tracking availability and latency on fixed intervals.
+- Four modules: `http` (full URL, status < 400 = success; https targets also collect the certificate chain), `tls` (host:port handshake with full chain collection), `tcp`, and `icmp`.
+- The TLS certificate capability is reused from the internal network to the outside world: chain (leaf/intermediates/root), SANs, serial, fingerprint, PEM, negotiated TLS version/cipher, and a trust verdict are all persisted; result history carries a cert-expiry summary so rotation cadence is observable.
+- Availability and certificate-expiry metrics (`mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds`) flow through `/metrics`; alerting is left to Prometheus (example rules ship with the repo).
+
 ### Observability (Prometheus Ecosystem)
 
 - `/metrics`: Prometheus text-format metrics — device status gauges, heartbeat counters (total attempts/failures), response-time histograms.

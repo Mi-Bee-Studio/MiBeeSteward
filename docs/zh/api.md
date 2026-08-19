@@ -21,6 +21,7 @@ MiBee Steward 设备管理与监控系统（含设备系统、网络扫描、多
 - [文档](#文档)
 - [文档-设备关联](#文档-设备关联)
 - [心跳](#心跳)
+- [拨测（Synthetic Probing）](#拨测synthetic-probing)
 - [仪表板](#仪表板)
 - [通知](#通知)
 - [审计日志](#审计日志)
@@ -1125,6 +1126,76 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 ```
 
 `status` 取值为 `success` / `fail` / `timeout`；`checked_at` 为 RFC3339 字符串。
+
+## 拨测（Synthetic Probing）
+
+面向外网等显式配置端点的周期探测（blackbox_exporter 模式）：`http` / `tls` / `tcp` / `icmp` 四类模块。`tls` 模块与 https 的 `http` 模块会采集完整证书链（复用扫描器的证书清点能力，`tls` 结果含信任判定与 TLS 版本）。读（`CapProbeRead`）任意登录用户可用；写（`CapProbeManage`）操作员及以上。
+
+| 端点 | 方法 | 认证 | 说明 |
+|------|------|------|------|
+| `/api/v1/probe-targets/` | GET | 需认证 · `CapProbeRead` | 拨测目标列表（`limit`/`offset`/`search` 分页搜索） |
+| `/api/v1/probe-targets/` | POST | 操作员及以上 · `CapProbeManage` | 创建拨测目标 |
+| `/api/v1/probe-targets/{id}` | GET | 需认证 · `CapProbeRead` | 获取单个目标 |
+| `/api/v1/probe-targets/{id}` | PUT | 操作员及以上 · `CapProbeManage` | 更新目标（部分更新，nil 字段保持不变） |
+| `/api/v1/probe-targets/{id}` | DELETE | 操作员及以上 · `CapProbeManage` | 删除目标（连同历史结果与已存证书链） |
+| `/api/v1/probe-targets/{id}/trigger` | POST | 操作员及以上 · `CapProbeManage` | 立即拨测（同步执行，返回本次探测结果） |
+| `/api/v1/probe-targets/{id}/results` | GET | 需认证 · `CapProbeRead` | 探测历史（`limit`/`offset`，新到旧） |
+| `/api/v1/probe-targets/{id}/certificates` | GET | 需认证 · `CapProbeRead` | 当前证书链（响应形状与设备证书端点一致） |
+
+### POST /api/v1/probe-targets/
+
+创建拨测目标。
+
+**操作员及以上** · `CapProbeManage`
+
+**请求**：
+```json
+{
+  "name": "github-tls",
+  "module": "tls",
+  "target": "github.com:443",
+  "interval_seconds": 60,
+  "timeout_seconds": 10,
+  "notes": "",
+  "enabled": true
+}
+```
+- `name`（必填，全局唯一）：目标名称（同时是 Prometheus 指标 label）
+- `module`（必填）：`http` | `tls` | `tcp` | `icmp`
+- `target`（必填）：按模块校验——`http` 须为完整 http(s) URL；`tls`/`tcp` 须为 host:port（端口 1–65535）；`icmp` 须为纯主机名或 IP
+- `interval_seconds`（可选，默认 60）：探测间隔，10–86400 秒
+- `timeout_seconds`（可选，默认 10）：单次探测超时，1–60 秒，须小于间隔
+- `notes`（可选，≤500 字符）、`enabled`（可选，默认 true）
+
+**响应**：`201 Created` 带 ProbeTargetResponse（含 `last_run_at`/`last_status`/`last_latency_ms`/`last_error` 去规范化最新结果，空 = 尚未探测）。
+
+### POST /api/v1/probe-targets/{id}/trigger
+
+立即执行一次探测（与调度引擎互斥防重入；受目标 `timeout_seconds` 约束）。
+
+**操作员及以上** · `CapProbeManage`
+
+**响应**：本次探测结果（ProbeResultResponse）：
+```json
+{
+  "target_id": 1,
+  "status": "success",
+  "latency_ms": 75.09,
+  "status_code": 0,
+  "error_message": "",
+  "tls_version": "TLS 1.2",
+  "cert_not_after": "2027-01-24T02:32:55Z",
+  "cert_trusted": true,
+  "checked_at": "2026-08-19T06:30:22Z"
+}
+```
+`status` 取值 `success` / `fail` / `timeout`（拨测错误串含超时特征时归为 timeout）；`status_code` 仅 http 模块非零；证书字段仅在采集到证书时有值（`cert_trusted` 为 `null` 表示该轮未采集）。
+
+### GET /api/v1/probe-targets/{id}/certificates
+
+目标当前证书链（叶证书 + 中间/根，含 SAN/序列号/指纹/PEM/握手元数据）。采集失败时保留上一条已知良好链；无任何证书时返回空数组（200）。响应的 `certificates[]` 与 `GET /api/v1/devices/{id}/certificates` 同构（每目标单端口一条）。
+
+相关指标：`mibee_probe_up{name,module}`、`mibee_probe_duration_seconds`、`mibee_probe_cert_expiry_timestamp_seconds`、`mibee_probe_checks_total{status,module}`（见[指标与服务发现](#指标与服务发现)）。
 
 ## 仪表板
 

@@ -116,5 +116,6 @@ retention:
   notification_log_days: 30
   service_evidence_days: 14
   host_tls_certs_days: 30
+  probe_results_days: 30
   sweep_interval_hours: 6
   batch_size: 5000
