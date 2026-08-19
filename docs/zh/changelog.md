@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Synthetic probing / 拨测 (Phase 1)
+
+**Blackbox-style probing of EXPLICIT external endpoints (PR #235)** — user-configured
+probe targets (typically internet resources: a public HTTPS site, a hosted mail
+TLS port) probed on fixed intervals, managed via DB/API/UI. The scanner's
+internal-network TLS certificate collection (`CollectCertChain`) is reused
+directly against external hostnames (SNI auto-derived), extending cert-chain
+inventory beyond the LAN.
+
+- **Three tables**: `probe_targets` (name UNIQUE, module CHECK
+  http/tls/tcp/icmp, interval 10–86400s, timeout 1–60s, denormalized last_*
+  outcome), `probe_results` (append-only history with per-run cert summary;
+  RFC3339 string timestamps), `probe_tls_certs` (each target's CURRENT chain,
+  delete-then-insert; a transient handshake failure keeps the last known-good
+  chain — unlike the scanner's current-state semantics).
+- **Engine** (`internal/service/probetarget/`): 10s tick re-reads enabled
+  targets so CRUD applies without restart; next-due times resume from
+  `last_run_at` on restart (no startup storm); 8-probe concurrency bound;
+  in-flight guard makes scheduled and manual runs of one target mutually
+  exclusive; `POST /{id}/trigger` probes synchronously and returns the recorded
+  result.
+- **Modules**: http/tcp/icmp reuse the shared heartbeat probers
+  (`probe.Result` gains `StatusCode`); tls — and https-flavored http — call
+  `CollectCertChain` for the full chain (leaf + issuers + trust verdict +
+  TLS version/cipher).
+- **API** `/api/v1/probe-targets`: CRUD + trigger + `/{id}/results` +
+  `/{id}/certificates` (the cert response reuses the device endpoint's
+  `tlsPortCerts` shape, so the frontend `CertificateModal` works unmodified).
+  RBAC: `probe:read` (viewer+), `probe:manage` (operator+).
+- **Prometheus**: `mibee_probe_up` (mirrors `probe_success`),
+  `mibee_probe_duration_seconds`, `mibee_probe_cert_expiry_timestamp_seconds`
+  (mirrors `probe_ssl_earliest_cert_expiry`), `mibee_probe_checks_total`; two
+  example alert rules (`ProbeTargetDown`, `ProbeCertExpiringSoon`) in
+  `deploy/prometheus/alert_rules.yml`.
+- **Retention**: `retention.probe_results_days` (default 30d) swept by the
+  existing cleanup service.
+- **Frontend**: `/probes` management page (status/latency/cert-days badges,
+  enable toggle, history modal, certificate chain modal), zh/en i18n, nav entry.
+- **sqlc note**: query-file comments must NOT contain apostrophes — sqlc's
+  SQLite lexer swallows them and silently truncates the generated statement
+  (documented in `db/AGENTS.md`).
+
+
 ### MAC bit flags: locally-administered / multicast (neutralized from Phase 1)
 **Correction of #118 Phase 1 (PR #121)** — Phase 1 treated the
 locally-administered (U/L) bit as a "randomized MAC" verdict and downgraded such

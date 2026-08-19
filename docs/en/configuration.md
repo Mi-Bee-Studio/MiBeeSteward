@@ -528,6 +528,7 @@ The synchronous scan endpoint (`POST /api/v1/scanner/scan`) imposes a hard targe
 | `retention.device_neighbors_days` | int | 90 | Device neighbor records retention (days) |
 | `retention.host_services_days` | int | 30 | Host service records retention (days) |
 | `retention.host_tls_certs_days` | int | 30 | TLS certificate records retention (days) |
+| `retention.probe_results_days` | int | 30 | Synthetic-probe (拨测) result history retention (days). `probe_tls_certs` is not swept — it holds only each target's current chain |
 | `retention.sweep_interval_hours` | int | 6 | Cleanup sweep interval (hours) |
 | `retention.batch_size` | int | 5000 | Max rows per cleanup batch |
 
@@ -672,6 +673,7 @@ retention:
   device_neighbors_days: 90
   host_services_days: 30
   host_tls_certs_days: 30
+  probe_results_days: 30
   sweep_interval_hours: 6
   batch_size: 5000
 

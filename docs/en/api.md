@@ -21,6 +21,7 @@ Complete REST API documentation for the MiBee Steward device management and moni
 - [Documents](#documents)
 - [Device-Document Links](#device-document-links)
 - [Heartbeat](#heartbeat)
+- [Synthetic Probing](#synthetic-probing)
 - [Dashboard](#dashboard)
 - [Notifications](#notifications)
 - [Audit Logs](#audit-logs)
@@ -1125,6 +1126,76 @@ Get device heartbeat results.
 ```
 
 `status` is one of `success` / `fail` / `timeout`; `checked_at` is an RFC3339 string.
+
+## Synthetic Probing (拨测)
+
+Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style), typically external/internet resources. Four modules: `http` / `tls` / `tcp` / `icmp`. The `tls` module — and https-flavored `http` targets — collect the full certificate chain (reusing the scanner's internal cert inventory for external hosts; results carry a trust verdict and TLS version). Reads (`CapProbeRead`) are available to any logged-in user; writes (`CapProbeManage`) require operator and above.
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/v1/probe-targets/` | GET | Auth · `CapProbeRead` | List targets (`limit`/`offset`/`search`) |
+| `/api/v1/probe-targets/` | POST | Operator+ · `CapProbeManage` | Create a probe target |
+| `/api/v1/probe-targets/{id}` | GET | Auth · `CapProbeRead` | Get one target |
+| `/api/v1/probe-targets/{id}` | PUT | Operator+ · `CapProbeManage` | Update (partial; nil fields unchanged) |
+| `/api/v1/probe-targets/{id}` | DELETE | Operator+ · `CapProbeManage` | Delete target (with its result history and stored certificate chain) |
+| `/api/v1/probe-targets/{id}/trigger` | POST | Operator+ · `CapProbeManage` | Probe now (synchronous — returns the recorded result) |
+| `/api/v1/probe-targets/{id}/results` | GET | Auth · `CapProbeRead` | Result history (`limit`/`offset`, newest first) |
+| `/api/v1/probe-targets/{id}/certificates` | GET | Auth · `CapProbeRead` | Current certificate chain (same shape as the device endpoint) |
+
+### POST /api/v1/probe-targets/
+
+Create a probe target.
+
+**Operator+** · `CapProbeManage`
+
+**Request**:
+```json
+{
+  "name": "github-tls",
+  "module": "tls",
+  "target": "github.com:443",
+  "interval_seconds": 60,
+  "timeout_seconds": 10,
+  "notes": "",
+  "enabled": true
+}
+```
+- `name` (required, globally unique): target name (also the Prometheus metric label)
+- `module` (required): `http` | `tls` | `tcp` | `icmp`
+- `target` (required, module-validated): `http` needs a full http(s) URL; `tls`/`tcp` need host:port (port 1–65535); `icmp` needs a bare host or IP
+- `interval_seconds` (optional, default 60): probe interval, 10–86400 seconds
+- `timeout_seconds` (optional, default 10): per-probe timeout, 1–60 seconds, must be smaller than the interval
+- `notes` (optional, ≤500 chars), `enabled` (optional, default true)
+
+**Response**: `201 Created` with ProbeTargetResponse (including the denormalized `last_run_at`/`last_status`/`last_latency_ms`/`last_error`; empty = never probed).
+
+### POST /api/v1/probe-targets/{id}/trigger
+
+Run one probe immediately (mutually exclusive with the scheduler via an in-flight guard; bounded by the target's `timeout_seconds`).
+
+**Operator+** · `CapProbeManage`
+
+**Response**: the just-recorded result (ProbeResultResponse):
+```json
+{
+  "target_id": 1,
+  "status": "success",
+  "latency_ms": 75.09,
+  "status_code": 0,
+  "error_message": "",
+  "tls_version": "TLS 1.2",
+  "cert_not_after": "2027-01-24T02:32:55Z",
+  "cert_trusted": true,
+  "checked_at": "2026-08-19T06:30:22Z"
+}
+```
+`status` is `success` / `fail` / `timeout` (a probe error carrying timeout markers is classified as timeout); `status_code` is non-zero only for the http module; the certificate fields are present only when a cert was collected (`cert_trusted` of `null` means none this run).
+
+### GET /api/v1/probe-targets/{id}/certificates
+
+The target's current certificate chain (leaf + intermediates/root, with SAN/serial/fingerprint/PEM/handshake metadata). A transient collection failure keeps the last known-good chain; no certificates at all returns an empty array (200). The `certificates[]` response is structurally identical to `GET /api/v1/devices/{id}/certificates` (one single-port entry per target).
+
+Related metrics: `mibee_probe_up{name,module}`, `mibee_probe_duration_seconds`, `mibee_probe_cert_expiry_timestamp_seconds`, `mibee_probe_checks_total{status,module}` (see [Metrics & Service Discovery](#metrics--service-discovery)).
 
 ## Dashboard
 
