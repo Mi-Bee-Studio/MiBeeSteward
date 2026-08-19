@@ -25,20 +25,24 @@ import (
 	"mibee-steward/internal/authz/scopeql"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/service"
 )
 
 // ScannerResultHandler handles HTTP requests for scan result and run queries.
 type ScannerResultHandler struct {
 	queries *db.Queries
 	conn    db.DBTX
+	svc     *service.ScannerResultService
 	// conn is the raw connection used by listResultsSorted — sqlc can't express
 	// the dynamic ORDER BY the sort-aware list needs, so that one query is raw
 	// SQL with a whitelist-controlled column (mirrors repository/device.go).
 }
 
-// NewScannerResultHandler creates a new ScannerResultHandler.
-func NewScannerResultHandler(queries *db.Queries, conn db.DBTX) *ScannerResultHandler {
-	return &ScannerResultHandler{queries: queries, conn: conn}
+// NewScannerResultHandler creates a new ScannerResultHandler. svc carries the
+// write path (BulkDeleteResults) per the handler/service charter (#240); the
+// rest of this handler is read-only passthrough on queries/conn.
+func NewScannerResultHandler(queries *db.Queries, conn db.DBTX, svc *service.ScannerResultService) *ScannerResultHandler {
+	return &ScannerResultHandler{queries: queries, conn: conn, svc: svc}
 }
 
 // scanResultSortWhitelist maps a client-supplied sort token to the real column
@@ -509,17 +513,14 @@ func (h *ScannerResultHandler) BulkDeleteResults(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// Calculate days from now to the given date
-	days := int(time.Since(parsed).Hours() / 24)
-	if days <= 0 {
-		Error(w, http.StatusBadRequest, "before_date must be in the past")
-		return
-	}
-
-	daysStr := strconv.Itoa(days)
-	affected, err := h.queries.DeleteScanResultsOlderThan(r.Context(), &daysStr)
+	affected, err := h.svc.BulkDeleteBefore(r.Context(), parsed)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to delete scan results")
+		switch {
+		case errors.Is(err, service.ErrBeforeDateNotPast):
+			Error(w, http.StatusBadRequest, err.Error())
+		default:
+			Error(w, http.StatusInternalServerError, "failed to delete scan results")
+		}
 		return
 	}
 

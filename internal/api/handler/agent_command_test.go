@@ -23,6 +23,7 @@ import (
 
 	"mibee-steward/internal/api/handler"
 	sqldb "mibee-steward/internal/db"
+	"mibee-steward/internal/service"
 	"mibee-steward/internal/testutil"
 )
 
@@ -47,7 +48,7 @@ func setupCommandServer(t *testing.T, cidr, agentID string) (srv *httptest.Serve
 		AgentID: strPtr(agentID), ID: net.ID,
 	}))
 
-	cmd := handler.NewAgentCommandHandler(queries)
+	cmd := handler.NewAgentCommandHandler(queries, service.NewAgentCommandService(queries))
 	r := chi.NewMux()
 	r.Route("/api/v1/agents/{agentId}/commands", func(r chi.Router) {
 		r.Post("/", cmd.Create)
@@ -140,7 +141,7 @@ func TestAgentCommand_BoundaryCheck_Layer1(t *testing.T) {
 		require.NoError(t, queries.SetNetworkAgentID(context.Background(), sqldb.SetNetworkAgentIDParams{
 			AgentID: strPtr(agentID), ID: net.ID,
 		}))
-		cmd := handler.NewAgentCommandHandler(queries)
+		cmd := handler.NewAgentCommandHandler(queries, service.NewAgentCommandService(queries))
 		r := chi.NewMux()
 		r.Post("/api/v1/agents/{agentId}/commands", cmd.Create)
 		srv := httptest.NewServer(r)
@@ -160,7 +161,7 @@ func TestAgentCommand_BoundaryCheck_Layer1(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { dbConn.Close() })
 		queries := sqldb.New(dbConn)
-		cmd := handler.NewAgentCommandHandler(queries)
+		cmd := handler.NewAgentCommandHandler(queries, service.NewAgentCommandService(queries))
 		r := chi.NewMux()
 		r.Post("/api/v1/agents/{agentId}/commands", cmd.Create)
 		srv := httptest.NewServer(r)

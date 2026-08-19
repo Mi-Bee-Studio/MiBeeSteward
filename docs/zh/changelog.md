@@ -8,6 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Handler/service charter debt cleared: the 4 grandfathered handlers migrated (issue #240)
+
+The last four mutating handlers that wrote to the DB directly (documented as
+charter debt since #166) now go through service layers — the charter has no
+remaining debt rows:
+
+- **`service.NetworkService`**: network CRUD; the raw-SQL UPDATE workaround
+  (sqlc truncation) moved out of the handler into the service.
+- **`service.AgentTokenService`**: agent-token create/revoke/delete, including
+  the `networks.agent_id` stamp-on-create / conditional-clear-on-revoke wiring.
+  Token MINTING stays in the HTTP layer (one-time credential display) and is
+  injected as a `TokenMinter` func — keeps the service free of api-layer imports.
+- **`service.AgentCommandService`**: enqueue (with the scan-target
+  network-boundary check, now returning a typed `BoundaryError` that carries the
+  offending IPs verbatim), ack, complete.
+- **`service.ScannerResultService`**: `BulkDeleteResults` (before-date
+  validation + delete).
+
+Read-only passthroughs (List/Poll/ListAll/export) stay on `*db.Queries` per the
+charter's sanctioned exception. Behavior is unchanged at the HTTP surface (one
+message nuance: a revoke of an already-revoked token now returns "agent token
+not found" instead of "...or already revoked"). `internal/api/AGENTS.md` debt
+table cleared.
 
 ### Metrics: dead collectors wired up + metrics_path honored (issues #238 / #239)
 
