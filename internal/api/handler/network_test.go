@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/service"
 	"mibee-steward/internal/testutil"
 )
 
@@ -35,7 +36,7 @@ func setupNetworkHandler(t *testing.T) (*NetworkHandler, *db.Queries, *sql.DB) {
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	queries := db.New(conn)
-	return NewNetworkHandler(queries, conn), queries, conn
+	return NewNetworkHandler(queries, service.NewNetworkService(queries, conn)), queries, conn
 }
 
 // reqWithURLParam builds a request with a chi "id" URL param injected, so

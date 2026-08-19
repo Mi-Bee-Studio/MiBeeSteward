@@ -217,7 +217,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Network registry — feeds the device-list + change-history network filters
 	// and the Networks admin page. Read (List) is any logged-in user; create/
 	// update/delete require CapNetworkManage (admin-only capability).
-	networkHandler := handler.NewNetworkHandler(scanQueries, dbConn)
+	networkSvc := service.NewNetworkService(scanQueries, dbConn)
+	networkHandler := handler.NewNetworkHandler(scanQueries, networkSvc)
 	r.Route("/api/v1/networks", func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapNetworkRead))
 		r.Get("/", networkHandler.List)
@@ -504,7 +505,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	scanTaskService := scannerv2task.New(scanQueries, dbConn, scanScheduler)
 	scannerHandler := handler.NewScannerHandler(v2Engine, scanRunner)
 	scannerTaskHandler := handler.NewScannerTaskHandler(scanTaskService)
-	scannerResultHandler := handler.NewScannerResultHandler(scanQueries, dbConn)
+	scannerResultHandler := handler.NewScannerResultHandler(scanQueries, dbConn, service.NewScannerResultService(scanQueries))
 	r.Route("/api/v1/scanner", func(r chi.Router) {
 		// #138 Phase 1b: scanner routes are gated by capability, not a blanket
 		// RequireAdmin. admin inherits every capability (unchanged access); the
@@ -623,7 +624,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// (admin-only capability). The ingestion endpoint (/agents/report below)
 	// authenticates via RequireAgentToken against this table; this block is the
 	// management surface.
-	agentAdminHandler := handler.NewAgentAdminHandler(scanQueries)
+	agentAdminHandler := handler.NewAgentAdminHandler(scanQueries, service.NewAgentTokenService(scanQueries))
 	r.Route("/api/v1/agents/tokens", func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapAgentManage))
 		r.Post("/", agentAdminHandler.Create)
@@ -641,7 +642,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Routed on the top-level mux (separate from /agents/tokens) so the two auth
 	// regimes don't interfere.
 	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn)
-	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries)
+	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries, service.NewAgentCommandService(scanQueries))
 	r.Route("/api/v1/agents", func(r chi.Router) {
 		r.Use(middleware.RequireAgentToken)
 		r.Post("/report", agentReportHandler.Report)

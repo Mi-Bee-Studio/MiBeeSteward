@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 )
 
 // JSON writes a JSON response with the given status code.
@@ -39,4 +40,12 @@ func Created(w http.ResponseWriter, data interface{}) {
 // Error writes an error JSON response with the given status and message.
 func Error(w http.ResponseWriter, status int, message string) {
 	JSON(w, status, map[string]string{"error": message})
+}
+
+// isUniqueConstraintErr reports whether err is a SQLite UNIQUE constraint
+// violation (modernc.org/sqlite returns "UNIQUE constraint failed: ...").
+// Shared by the handlers whose writes surface duplicate-key conflicts as 409
+// (network grants, SSH credentials).
+func isUniqueConstraintErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }

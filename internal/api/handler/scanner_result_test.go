@@ -20,6 +20,7 @@ import (
 
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/service"
 )
 
 // insertScanResultsForSort seeds one scan_task plus a set of scan_results with
@@ -95,7 +96,7 @@ func TestScannerResults_Sort(t *testing.T) {
 	d := setupSDDB(t)
 	taskID := insertScanResultsForSort(t, d)
 	queries := db.New(d)
-	h := handler.NewScannerResultHandler(queries, d)
+	h := handler.NewScannerResultHandler(queries, d, service.NewScannerResultService(queries))
 
 	// sort=ip asc -> globally smallest IP first (not just the inserted order).
 	require.Equal(t, "192.168.1.10", scanResultFirstIP(t, h, "task_id="+itoa(taskID)+"&sort=ip&order=asc&limit=10"))
@@ -139,7 +140,7 @@ func TestScannerResults_SortPagination(t *testing.T) {
 	d := setupSDDB(t)
 	taskID := insertScanResultsForSort(t, d)
 	queries := db.New(d)
-	h := handler.NewScannerResultHandler(queries, d)
+	h := handler.NewScannerResultHandler(queries, d, service.NewScannerResultService(queries))
 
 	// sort=ip asc, page size 1: page 0 = smallest, page 1 = middle, page 2 = largest.
 	require.Equal(t, "192.168.1.10", scanResultFirstIP(t, h, "task_id="+itoa(taskID)+"&sort=ip&order=asc&limit=1&offset=0"))

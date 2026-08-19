@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+// Copyright (c) 2026 Mi Bee Studio. All rights reserved.
 //
 // This file is part of MiBee Steward, distributed under the GNU Affero General
-// Public License v3.0 or later. You may use, modify, and redistribute it under
-// those terms; see LICENSE for the full text. A commercial license is available
-// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+// Public License v3.0 or later; see LICENSE for the full text. A commercial
+// license is available for use cases the AGPL does not accommodate; see
+// LICENSE-COMMERCIAL.md.
 
 package handler
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -20,20 +20,24 @@ import (
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/service"
 )
 
 // AgentAdminHandler exposes admin-only CRUD for discovery-agent bearer tokens
 // (POST/GET/DELETE /api/v1/agents/tokens). An admin creates one token per
 // network/agent and hands the plaintext to the agent operator; the agent then
-// presents it to the ingestion endpoints (RequireAgentToken). This handler is
-// the management surface; auth verification lives in the middleware.
+// presents it to the ingestion endpoints (RequireAgentToken). Mutations go
+// through service.AgentTokenService (#240 — charter debt migration); the
+// plaintext is minted here (one-time credential display concern) and injected
+// into the service. List is a read passthrough.
 type AgentAdminHandler struct {
 	queries *db.Queries
+	svc     *service.AgentTokenService
 }
 
 // NewAgentAdminHandler constructs the handler. queries is the center's DB.
-func NewAgentAdminHandler(queries *db.Queries) *AgentAdminHandler {
-	return &AgentAdminHandler{queries: queries}
+func NewAgentAdminHandler(queries *db.Queries, svc *service.AgentTokenService) *AgentAdminHandler {
+	return &AgentAdminHandler{queries: queries, svc: svc}
 }
 
 // Create handles POST /api/v1/agents/tokens — mint a new agent token.
@@ -45,60 +49,19 @@ func (h *AgentAdminHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.AgentID == "" {
-		Error(w, http.StatusBadRequest, "agent_id is required")
-		return
-	}
-	if req.NetworkID <= 0 {
-		Error(w, http.StatusBadRequest, "network_id is required")
-		return
-	}
-	// Verify the network exists so the foreign key isn't dangling.
-	if _, err := h.queries.GetNetwork(r.Context(), req.NetworkID); err != nil {
-		Error(w, http.StatusBadRequest, "network_id does not refer to a known network")
-		return
-	}
-
-	plaintext, hash := middleware.GenerateAgentToken()
-	networkIDPtr := req.NetworkID // take address of a stable local
-	row, err := h.queries.CreateAgentToken(r.Context(), db.CreateAgentTokenParams{
-		AgentID:   req.AgentID,
-		TokenHash: hash,
-		NetworkID: &networkIDPtr,
-		Name:      req.Name,
-	})
+	resp, err := h.svc.Create(r.Context(), req, middleware.GenerateAgentToken)
 	if err != nil {
-		// UNIQUE(agent_id) collision is the common error here.
-		Error(w, http.StatusConflict, "agent_id already exists; choose a unique id")
+		switch {
+		case errors.Is(err, service.ErrAgentIDRequired), errors.Is(err, service.ErrNetworkIDInvalid):
+			Error(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, service.ErrAgentIDTaken):
+			Error(w, http.StatusConflict, err.Error())
+		default:
+			Error(w, http.StatusInternalServerError, "failed to create agent token")
+		}
 		return
 	}
-
-	// Mark the network as agent-managed: this is the wiring that makes the
-	// center's heartbeat exclusion (no cross-subnet probing of agent devices)
-	// and the lease sweeper scope engage automatically — without it an admin
-	// would have to run manual SQL. Best-effort: a failure here leaves the
-	// token functional (reports still work); the network just isn't scoped.
-	agentIDStr := req.AgentID
-	// Best-effort: a failure here leaves the token functional (reports still
-	// work); the network just isn't scoped for heartbeat exclusion. The error
-	// is intentionally discarded — see the comment above.
-	_ = h.queries.SetNetworkAgentID(r.Context(), db.SetNetworkAgentIDParams{
-		AgentID: &agentIDStr,
-		ID:      req.NetworkID,
-	})
-
-	Created(w, domain.AgentTokenCreatedResponse{
-		AgentTokenResponse: domain.AgentTokenResponse{
-			ID:         row.ID,
-			AgentID:    row.AgentID,
-			NetworkID:  row.NetworkID,
-			Name:       row.Name,
-			CreatedAt:  row.CreatedAt,
-			LastUsedAt: row.LastUsedAt,
-			RevokedAt:  row.RevokedAt,
-		},
-		Token: plaintext,
-	})
+	Created(w, resp)
 }
 
 // List handles GET /api/v1/agents/tokens — list all agent tokens (hash only,
@@ -133,22 +96,14 @@ func (h *AgentAdminHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	// Fetch the token first so we can clear its network's agent_id after.
-	tok, err := h.queries.GetAgentToken(r.Context(), id)
-	if err != nil {
-		Error(w, http.StatusNotFound, "agent token not found")
-		return
-	}
-	n, err := h.queries.RevokeAgentToken(r.Context(), id)
-	if err != nil {
+	if err := h.svc.Revoke(r.Context(), id); err != nil {
+		if errors.Is(err, service.ErrAgentTokenNotFound) {
+			Error(w, http.StatusNotFound, err.Error())
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to revoke agent token")
 		return
 	}
-	if n == 0 {
-		Error(w, http.StatusNotFound, "agent token not found or already revoked")
-		return
-	}
-	h.clearNetworkAgentID(r.Context(), tok)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -160,46 +115,15 @@ func (h *AgentAdminHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	tok, err := h.queries.GetAgentToken(r.Context(), id)
-	if err != nil {
-		Error(w, http.StatusNotFound, "agent token not found")
-		return
-	}
-	n, err := h.queries.DeleteAgentToken(r.Context(), id)
-	if err != nil {
+	if err := h.svc.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, service.ErrAgentTokenNotFound) {
+			Error(w, http.StatusNotFound, err.Error())
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to delete agent token")
 		return
 	}
-	if n == 0 {
-		Error(w, http.StatusNotFound, "agent token not found")
-		return
-	}
-	h.clearNetworkAgentID(r.Context(), tok)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// clearNetworkAgentID nulls out the agent_id on the token's bound network,
-// but ONLY if it matches the token's own agent_id (so revoking a stale token
-// doesn't clobber a newer token that re-uses the network). Best-effort: a
-// failure here doesn't undo the revoke/delete.
-func (h *AgentAdminHandler) clearNetworkAgentID(ctx context.Context, tok db.AgentToken) {
-	if tok.NetworkID == nil {
-		return
-	}
-	net, err := h.queries.GetNetwork(ctx, *tok.NetworkID)
-	if err != nil {
-		return
-	}
-	// Only clear if the network's agent_id matches THIS token's agent_id — a
-	// different agent_id means a newer token has since claimed the network.
-	if net.AgentID == nil || *net.AgentID != tok.AgentID {
-		return
-	}
-	empty := ""
-	_ = h.queries.SetNetworkAgentID(ctx, db.SetNetworkAgentIDParams{
-		AgentID: &empty,
-		ID:      *tok.NetworkID,
-	})
 }
 
 // parseAgentID extracts the {id} path param as a positive int64.
