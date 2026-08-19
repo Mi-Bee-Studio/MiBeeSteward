@@ -158,8 +158,20 @@ SSH、HTTP/HTTPS、RTSP、ONVIF、SNMP、Prometheus、node\_exporter、邮件（
 | `device_added` | 扫描中发现新设备 |
 | `device_changed` | 被追踪字段不同（type、brand、MAC、端口、服务、scan\_attributes）。逐字段比较，`scan_attributes` 归一化（剥离易变键、规范 key 顺序），纯时间戳刷新不触发虚假事件。`after_data` = 变更后完整设备快照。 |
 | `device_lost` | 连续 `lostThreshold`（2）次扫描未出现。grace period 防止单次扫描抖动误报。 |
+| `device_recovered` | 此前判定丢失的设备重新出现。与 `device_lost` 共享 liveness 冷却桶（防抖）。 |
+| `device_config_changed` | 配置备份 sweep 拉到的 running-config 与上一版本哈希不同（见下节）。 |
 
 事件查询：`GET /api/v1/changes`，SSE 推送：`GET /api/v1/changes/watch`，Prometheus 计数器：`mibee_changes_total{type}`。
+
+存活噪声控制：在线/离线判定采样进 `device_liveness` 时间序列（位于心跳存储），而不是每次翻转都发一条 `device_changed`——登记保持鲜活的同时不淹没真实变更。
+
+### 设备配置备份
+
+`internal/service/scannerv2/configbackup` 运行按需启用的 sweep（`scanner.config_backup`，默认 6h）：选取绑定了 SSH 凭据的路由器/交换机/防火墙设备，经 SSH 拉取 running-config（厂商命令矩阵；host-key TOFU），与上一版本计算 unified diff（`internal/configdiff`），仅内容变化时记录新的 `device_configs` 版本——并向上面的变化检测管线发出 `device_config_changed`。SSH 凭据存于 `ssh_credentials`，与 SNMPv3 口令共用 AES-256-GCM master-key 加密。
+
+### 拨测（探测目标）
+
+`internal/service/probetarget` 对显式配置的**外部**端点（公开 HTTPS 站点、托管 TLS 端口）按目标自身间隔探测（10s tick 重读目标——CRUD 免重启生效；到期时间从 `last_run_at` 恢复；8 并发上限）。http/tcp/icmp 模块复用心跳探测器；tls（与 https）调用 `CollectCertChain`，内网证书链清点因此延伸到互联网主机。表：`probe_targets` / `probe_results` / `probe_tls_certs`；指标 `mibee_probe_*`。
 
 ## 心跳与状态
 
@@ -254,6 +266,9 @@ flowchart LR
 | v2 扫描调度器 | cron | 按 `scan_tasks` 触发扫描 + 失联 run 清扫 |
 | 租约清扫器（LeaseSweeper） | 60s | 采集器网络的租约过期 → `device_lost` |
 | 保留清除器 | 6h | 上表的批量裁剪 |
+| 配置备份 sweep | 6h（可配） | SSH 拉取 running-config → `device_configs` 版本 |
+| 拨测引擎 | 10s tick | 到期的外网拨测 → `probe_results` |
+| 通知规则引擎 | 事件驱动 | 变更事件 → 匹配规则 → 分发队列 |
 | 通知分发器 | 3 workers | 规则引擎 → 通道（邮件/webhook 等）派发 |
 | 设备指标刷新（UpdateDeviceMetrics） | 定期 | `/metrics` 的设备 gauge |
 | 变更 Watcher | 事件驱动 | `change_log` → SSE 推送 |
@@ -264,6 +279,7 @@ flowchart LR
 - **TOTP 两步验证**（可选）：`/api/v1/auth/2fa/{verify,setup,enable,disable,status}`。
 - **RBAC**：基于能力的能力集模型（admin / operator / viewer 三档，`user` 为 viewer 旧别名），中间件链中实现。
 - **网络范围授权（network grants）**：基于 `internal/authz`（scopeql + scoperesolver）实现按用户的网络作用域隔离，限制用户仅能访问被授权的网络。
+- **机密存储**：SNMPv3 USM 口令与 SSH 凭据在 SQLite 中以 AES-256-GCM 加密（`security.master_key`，32 字节，仅驻内存；首个凭据创建前可选）。
 - **CSRF**：跨站请求伪造保护中间件。
 - **采集器令牌**：SHA-256 哈希的不透明 bearer 令牌，存储在 `agent_tokens`。明文仅创建时返回一次；仅存哈希。绑定 `network_id` + `agent_id`。
 - **审计日志**：通过中间件记录请求级审计轨迹。

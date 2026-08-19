@@ -1,6 +1,6 @@
 # MiBee Steward Product Introduction
 
-MiBee Steward v0.4.0 (2026-07-29) is a **device/network-layer asset discovery, identification, and registry** tool — CMDB-lite for network and IoT assets, delivered as a single zero-dependency binary. The backend uses Go + Chi routing + modernc.org/sqlite (CGO-free pure-Go SQLite) + sqlc-generated data layer; configuration is managed by koanf (YAML files + `MIBEE_*` environment variables). The frontend is a SvelteKit 5 single-page application embedded into the binary via `go:embed`. Licensed AGPL-3.0 with a commercial dual-license option.
+MiBee Steward v0.5.0 (2026-08-19) is a **device/network-layer asset discovery, identification, and registry** tool — CMDB-lite for network and IoT assets, delivered as a single zero-dependency binary. The backend uses Go + Chi routing + modernc.org/sqlite (CGO-free pure-Go SQLite) + sqlc-generated data layer; configuration is managed by koanf (YAML files + `MIBEE_*` environment variables). The frontend is a SvelteKit 5 single-page application embedded into the binary via `go:embed`. Licensed AGPL-3.0 with a commercial dual-license option.
 
 It answers three questions:
 
@@ -43,6 +43,18 @@ flowchart LR
 - Four modules: `http` (full URL, status < 400 = success; https targets also collect the certificate chain), `tls` (host:port handshake with full chain collection), `tcp`, and `icmp`.
 - The TLS certificate capability is reused from the internal network to the outside world: chain (leaf/intermediates/root), SANs, serial, fingerprint, PEM, negotiated TLS version/cipher, and a trust verdict are all persisted; result history carries a cert-expiry summary so rotation cadence is observable.
 - Availability and certificate-expiry metrics (`mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds`) flow through `/metrics`; alerting is left to Prometheus (example rules ship with the repo).
+
+### Device Config Backup (Oxidized/RANCID-style)
+
+- Scheduled sweeps fetch each router/switch/firewall device's running-config over SSH (vendor command matrix: Juniper JunOS, HP/Aruba/H3C/Comware, and the Cisco-style `show running-config` default; host-key trust-on-first-use), version it in `device_configs`, and record a new version only when the content changes.
+- Two-version unified diffs (API `GET /devices/{id}/configs` + `/diff?a=&b=`) and a device-detail **config history** tab; SSH credentials are encrypted at rest (AES-256-GCM via `security.master_key`) and redacted on read.
+- A config change emits a `device_config_changed` event into the change log — feeding the changes page, the SSE watch, and notification rules.
+- Opt-in (`scanner.config_backup.enabled`, default off): requires the master key and an SSH credential bound to each target device.
+
+### Event Notifications (built-in, rule-driven)
+
+- For teams that don't run a Prometheus+Alertmanager stack: **notification rules** route change events (`device_lost` / `device_recovered` / `device_added` / `device_changed` / `device_config_changed`) to webhook/email channels, with per-(rule × device) cooldown to suppress flapping.
+- Scope each rule to all networks, one network, or a single device (by UUID). This is a thin rule→channel hop on top of change detection — deliberately not an alerting engine.
 
 ### Observability (Prometheus Ecosystem)
 
@@ -87,11 +99,14 @@ Track research devices, test rigs, measurement equipment, and edge nodes with fl
 
 | Scope | Description |
 |-------|-------------|
-| Discovery | ICMP / TCP port scan / SNMP / HTTP / RTSP / ONVIF / mDNS / SSDP / NetBIOS active probing, optional eBPF passive observation and router data sources |
+| Discovery | ICMP / TCP port scan / SNMP (v1/v2c/v3) / HTTP / RTSP / ONVIF / mDNS / SSDP / NetBIOS active probing, optional eBPF passive observation and router data sources |
 | Topology | LLDP / CDP / Bridge-MIB / Q-BRIDGE / STP neighbor discovery → topology edges, subnets, VLANs |
 | Identification | Protocol fingerprints infer device type, brand, model; OUI vendor inference |
 | Registry | Device registry (CMDB-lite): CRUD, grouping, device systems management |
 | Heartbeat | Continuous asset freshness: online/offline + latency + history |
+| Config backup | Scheduled SSH running-config pulls, versioned storage + diffs (opt-in) |
+| Synthetic probing | Blackbox-style periodic probing of external endpoints (http/tls/tcp/icmp) |
+| Change notifications | Rule-driven device/config change events → webhook/email |
 | Metrics export | `/metrics` (Prometheus format) + `/sd` (HTTP service discovery) |
 
 ### What It Is Not

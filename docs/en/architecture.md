@@ -161,8 +161,20 @@ The center diffs each scan against known device state and emits events to `chang
 | `device_added` | New device appears in scan |
 | `device_changed` | Tracked field differs (type, brand, MAC, ports, services, scan\_attributes). Field-by-field comparison with normalized `scan_attributes` (volatile keys stripped, key order canonicalized). `after_data` = full post-change snapshot. |
 | `device_lost` | Absent from `lostThreshold` (2) consecutive scans. Grace period prevents single-scan jitter. |
+| `device_recovered` | A previously-lost device reappears. Shares the liveness cooldown bucket with `device_lost` (anti-flap). |
+| `device_config_changed` | The config-backup sweep fetched a running-config whose hash differs from the last version (see below). |
 
 Events: `GET /api/v1/changes`, SSE `GET /api/v1/changes/watch`, Prometheus counter `mibee_changes_total{type}`.
+
+Liveness noise control: online/offline verdicts are sampled into the `device_liveness` time series (in the heartbeat store) instead of firing `device_changed` per flip — the registry stays a living ledger without burying real changes.
+
+### Device Config Backup
+
+`internal/service/scannerv2/configbackup` runs an opt-in sweep (`scanner.config_backup`, default 6h): it selects router/switch/firewall devices with a bound SSH credential, fetches the running-config over SSH (vendor command matrix; host-key TOFU), computes a unified diff against the last version (`internal/configdiff`), and records a new `device_configs` version only on change — emitting `device_config_changed` into the change-detection pipeline above. SSH credentials live in `ssh_credentials`, encrypted with the same AES-256-GCM master-key cipher as SNMPv3 passphrases.
+
+### Synthetic Probing (probe targets)
+
+`internal/service/probetarget` probes explicitly configured EXTERNAL endpoints (public HTTPS sites, hosted TLS ports) on per-target intervals (10s tick re-reads targets — CRUD applies without restart; next-due resumes from `last_run_at`; 8-probe concurrency bound). Modules http/tcp/icmp reuse the heartbeat probers; tls (and https) call `CollectCertChain`, so the internal cert-chain inventory extends to internet hosts. Tables: `probe_targets` / `probe_results` / `probe_tls_certs`; metrics `mibee_probe_*`.
 
 ## Heartbeat & State
 
@@ -257,6 +269,9 @@ Resident goroutines started by `NewRouter()` (stopped in dependency order on gra
 | v2 scan scheduler | cron | Fire `scan_tasks` + stale-run sweeper |
 | Lease sweeper | 60s | Agent-network lease expiry → `device_lost` |
 | Retention sweeper | 6h | Batched pruning of the table above |
+| Config-backup sweep | 6h (config) | SSH running-config pulls → `device_configs` versions |
+| Probe-target engine | 10s tick | Due synthetic probes → `probe_results` |
+| Notification rule engine | event-driven | Change events → matched rules → dispatch queue |
 | Notification dispatcher | 3 workers | Rule engine → channel (email/webhook/…) dispatch |
 | Device metrics refresher | periodic | Device gauges for `/metrics` |
 | Change Watcher | event-driven | `change_log` → SSE push |
@@ -267,6 +282,7 @@ Resident goroutines started by `NewRouter()` (stopped in dependency order on gra
 - **TOTP 2FA** (optional): `/api/v1/auth/2fa/{verify,setup,enable,disable,status}`.
 - **RBAC**: capability-based model (admin / operator / viewer tiers, `user` being a legacy alias for viewer), enforced in the middleware chain.
 - **Network scope authorization (network grants)**: per-user network scope isolation via `internal/authz` (scopeql + scoperesolver), restricting users to authorized networks.
+- **Secret storage**: SNMPv3 USM passphrases and SSH credentials are AES-256-GCM encrypted in SQLite under `security.master_key` (32 bytes, held in memory only; optional until the first credential exists).
 - **CSRF**: cross-site request forgery protection middleware.
 - **Agent tokens**: SHA-256-hashed opaque bearer tokens in `agent_tokens`. Plaintext returned once at creation; only hash persisted. Bound to `network_id` + `agent_id`.
 - **Audit log**: request-level audit trail via middleware.
