@@ -38,7 +38,7 @@ network:
 # auth_token, a long-lived agent token minted on the center via
 # POST /api/v1/agents/tokens, bound to a networks row whose agent_id matches).
 # Empty url = center/standalone mode (serve API + SPA, no upstream reporting).
-# Distributed model: see docs/{en,zh}/distributed-guide.md.
+# Distributed model: see docs/{en,zh}/distributed.md.
 center:
   url: ""               # e.g. "http://192.168.63.101:8080"; empty = standalone
   auth_token: ""        # agent bearer token from the center; REQUIRED when url set
@@ -155,6 +155,18 @@ scanner:
   # scan-side (absence-based) death sensitivity; heartbeat.offline_threshold
   # is the probe-based one. 0 = use default (2). MIBEE_SCANNER_LOST_THRESHOLD.
   lost_threshold: 2
+  # config_backup enables the Oxidized/RANCID-style device running-config
+  # backup (#137): a scheduled sweep fetches each router/switch/firewall
+  # device's running-config over SSH (vendor command matrix, host-key TOFU),
+  # versions it in device_configs, and emits device_config_changed events on
+  # diff. OPT-IN — disabled by default; enabling requires security.master_key
+  # and an SSH credential bound to each target device (managed via the
+  # ssh-credentials API/UI). interval_seconds <= 0 → 6h; timeout_seconds
+  # (per-device SSH) <= 0 → 30s.
+  config_backup:
+    enabled: false
+    interval_seconds: 21600   # 6h between sweeps
+    timeout_seconds: 30       # per-device SSH fetch timeout
   retention_days: 30
   default_cron_expr: "0 */6 * * *"
   # v2 engine tuning (the legacy v1 engine has been removed).

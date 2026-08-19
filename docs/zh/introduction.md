@@ -1,6 +1,6 @@
 # MiBee Steward 产品介绍
 
-MiBee Steward v0.4.0（2026-07-29）是一个**设备/网络层的资产发现、识别与登记**工具——面向网络与 IoT 资产的轻量 CMDB（CMDB-lite），以单个零依赖二进制交付。后端采用 Go + Chi 路由 + modernc.org/sqlite（CGO-free 的纯 Go SQLite 实现）+ sqlc 生成的数据访问层，配置管理基于 koanf（YAML 文件 + `MIBEE_*` 环境变量）；前端为 SvelteKit 5 单页应用，通过 `go:embed` 嵌入二进制。许可证为 AGPL-3.0，并提供商业双授权。
+MiBee Steward v0.5.0（2026-08-19）是一个**设备/网络层的资产发现、识别与登记**工具——面向网络与 IoT 资产的轻量 CMDB（CMDB-lite），以单个零依赖二进制交付。后端采用 Go + Chi 路由 + modernc.org/sqlite（CGO-free 的纯 Go SQLite 实现）+ sqlc 生成的数据访问层，配置管理基于 koanf（YAML 文件 + `MIBEE_*` 环境变量）；前端为 SvelteKit 5 单页应用，通过 `go:embed` 嵌入二进制。许可证为 AGPL-3.0，并提供商业双授权。
 
 它回答三个问题：
 
@@ -43,6 +43,18 @@ flowchart LR
 - 四类模块：`http`（完整 URL，状态码 < 400 为成功，https 目标同时采集证书链）、`tls`（host:port 握手并采集完整证书链）、`tcp`、`icmp`。
 - TLS 证书能力从内网复用到外网：证书链（叶/中间/根）、SAN、序列号、指纹、PEM、协商的 TLS 版本与密码套件、信任判定全部入库；历史结果携带证书到期摘要，可观察证书续期节奏。
 - 证书到期与可用性指标（`mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds`）走 `/metrics`，告警交给 Prometheus（示例规则随仓库提供）。
+
+### 设备配置备份（Oxidized/RANCID 式）
+
+- 定时后台 sweep 通过 SSH 拉取每台路由器/交换机/防火墙设备的 running-config（厂商命令矩阵：Juniper JunOS、HP/Aruba/H3C/Comware 专用命令，其余走 Cisco 风格 `show running-config` 默认；host-key TOFU），版本化存入 `device_configs`，仅内容变化时记录新版本。
+- 两版本 unified diff（API `GET /devices/{id}/configs` + `/diff?a=&b=`）与设备详情「配置历史」tab；SSH 凭据落库加密（AES-256-GCM，`security.master_key` 派生），读取时脱敏。
+- 配置变更产生 `device_config_changed` 事件写入变更日志——进入变更页、SSE watch 与通知规则。
+- 按需启用（`scanner.config_backup.enabled`，默认关闭）：需要 master key 与绑定到目标设备的 SSH 凭据。
+
+### 事件通知（内置、规则驱动）
+
+- 为不运行 Prometheus+Alertmanager 栈的团队准备：**通知规则**将变更事件（`device_lost` / `device_recovered` / `device_added` / `device_changed` / `device_config_changed`）投递到 webhook/邮件渠道，带每（规则 × 设备）冷却窗口抑制抖动。
+- 每条规则可限定作用域：全部网络 / 单个网络 / 单台设备（按 UUID）。这是变更检测之上的轻量「规则→渠道」链路——刻意不做告警引擎。
 
 ### 可观测性（Prometheus 生态）
 
@@ -87,11 +99,14 @@ flowchart LR
 
 | 范围 | 说明 |
 |------|------|
-| 发现 | ICMP / TCP 端口扫描 / SNMP / HTTP / RTSP / ONVIF / mDNS / SSDP / NetBIOS 主动探测，可选 eBPF 被动观测与路由器数据源 |
+| 发现 | ICMP / TCP 端口扫描 / SNMP（v1/v2c/v3）/ HTTP / RTSP / ONVIF / mDNS / SSDP / NetBIOS 主动探测，可选 eBPF 被动观测与路由器数据源 |
 | 拓扑 | LLDP / CDP / Bridge-MIB / Q-BRIDGE / STP 邻居发现 → 拓扑边、子网、VLAN |
 | 识别 | 协议指纹推断设备类型、品牌、型号；OUI 厂商推断 |
 | 登记 | 设备注册表（CMDB-lite）：CRUD、分组、设备系统管理 |
 | 心跳 | 在线/离线 + 延迟 + 历史的持续资产鲜活度 |
+| 配置备份 | 定时 SSH 拉取 running-config，版本化存储 + diff（按需启用） |
+| 拨测 | blackbox 风格的外部端点周期探测（http/tls/tcp/icmp） |
+| 变更通知 | 规则驱动的设备/配置变更事件 → webhook/邮件 |
 | 指标导出 | `/metrics`（Prometheus 格式）+ `/sd`（HTTP 服务发现） |
 
 ### 不是什么
