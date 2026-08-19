@@ -290,6 +290,67 @@ type NotificationRule struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
+type ProbeResult struct {
+	ID           int64   `json:"id"`
+	TargetID     int64   `json:"target_id"`
+	Status       string  `json:"status"`
+	LatencyMs    float64 `json:"latency_ms"`
+	StatusCode   int64   `json:"status_code"`
+	ErrorMessage string  `json:"error_message"`
+	TlsVersion   string  `json:"tls_version"`
+	CertNotAfter string  `json:"cert_not_after"`
+	CertTrusted  int64   `json:"cert_trusted"`
+	CheckedAt    string  `json:"checked_at"`
+}
+
+type ProbeTarget struct {
+	ID              int64     `json:"id"`
+	Name            string    `json:"name"`
+	Module          string    `json:"module"`
+	Target          string    `json:"target"`
+	IntervalSeconds int64     `json:"interval_seconds"`
+	TimeoutSeconds  int64     `json:"timeout_seconds"`
+	Enabled         int64     `json:"enabled"`
+	Notes           string    `json:"notes"`
+	LastRunAt       string    `json:"last_run_at"`
+	LastStatus      string    `json:"last_status"`
+	LastLatencyMs   float64   `json:"last_latency_ms"`
+	LastError       string    `json:"last_error"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+type ProbeTlsCert struct {
+	ID                int64     `json:"id"`
+	TargetID          int64     `json:"target_id"`
+	Port              int64     `json:"port"`
+	CertIndex         int64     `json:"cert_index"`
+	SubjectCn         string    `json:"subject_cn"`
+	SubjectOrg        string    `json:"subject_org"`
+	Subject           string    `json:"subject"`
+	IssuerCn          string    `json:"issuer_cn"`
+	IssuerOrg         string    `json:"issuer_org"`
+	Issuer            string    `json:"issuer"`
+	SanDns            string    `json:"san_dns"`
+	SanIp             string    `json:"san_ip"`
+	SanEmail          string    `json:"san_email"`
+	Serial            string    `json:"serial"`
+	NotBefore         string    `json:"not_before"`
+	NotAfter          string    `json:"not_after"`
+	SigAlgorithm      string    `json:"sig_algorithm"`
+	KeyAlgorithm      string    `json:"key_algorithm"`
+	KeyBits           int64     `json:"key_bits"`
+	IsCa              int64     `json:"is_ca"`
+	SelfSigned        int64     `json:"self_signed"`
+	FingerprintSha256 string    `json:"fingerprint_sha256"`
+	Pem               string    `json:"pem"`
+	TlsVersion        string    `json:"tls_version"`
+	CipherSuite       string    `json:"cipher_suite"`
+	Trusted           int64     `json:"trusted"`
+	Error             string    `json:"error"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
 type ScanResult struct {
 	ID                   int64     `json:"id"`
 	TaskID               int64     `json:"task_id"`

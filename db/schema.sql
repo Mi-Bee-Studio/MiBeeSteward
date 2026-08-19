@@ -717,3 +717,97 @@ CREATE TABLE IF NOT EXISTS user_network_grants (
 );
 CREATE INDEX IF NOT EXISTS idx_user_network_grants_user ON user_network_grants(user_id);
 
+-- === Synthetic probing layer (拨测) ===
+-- probe_targets: user-configured probing of arbitrary EXPLICIT endpoints —
+-- typically external/internet resources (public HTTPS site, hosted mail TLS
+-- port, vendor gateway), as opposed to the scanner (discovery-driven) and
+-- heartbeat (device-bound). Modeled on Prometheus blackbox_exporter: a module
+-- (http/tls/tcp/icmp) applied to a target on an interval. The engine
+-- (internal/service/probetarget) re-reads enabled targets every tick, so CRUD
+-- changes take effect without a restart. last_* columns denormalize the most
+-- recent outcome so the list view needs no join; the full series lives in
+-- probe_results.
+CREATE TABLE IF NOT EXISTS probe_targets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    module TEXT NOT NULL CHECK(module IN ('http', 'tls', 'tcp', 'icmp')),
+    target TEXT NOT NULL,               -- full URL (http); host:port (tls/tcp); host or IP (icmp)
+    interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK(interval_seconds >= 10 AND interval_seconds <= 86400),
+    timeout_seconds INTEGER NOT NULL DEFAULT 10 CHECK(timeout_seconds >= 1 AND timeout_seconds <= 60),
+    enabled INTEGER NOT NULL DEFAULT 1,
+    notes TEXT NOT NULL DEFAULT '',
+    last_run_at TEXT NOT NULL DEFAULT '',          -- RFC3339 UTC; '' = never run
+    last_status TEXT NOT NULL DEFAULT '' CHECK(last_status IN ('', 'success', 'fail', 'timeout')),
+    last_latency_ms REAL NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_probe_targets_enabled ON probe_targets(enabled);
+
+-- probe_results: time-series outcome of every probe execution (拨测历史).
+-- Volume is tiny next to heartbeat_results (a handful of user-configured
+-- targets), so this lives in the main DB with a retention sweep
+-- (retention.probe_results_days) instead of a dedicated store. checked_at is
+-- an RFC3339 UTC string on purpose: modernc's time.Time serialization appends
+-- a monotonic suffix that breaks SQLite date() — same lesson as
+-- heartbeat_results. The TLS summary columns let the history view chart
+-- certificate expiry over time without joining probe_tls_certs.
+CREATE TABLE IF NOT EXISTS probe_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id INTEGER NOT NULL REFERENCES probe_targets(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('success', 'fail', 'timeout')),
+    latency_ms REAL NOT NULL DEFAULT 0,
+    status_code INTEGER NOT NULL DEFAULT 0,       -- HTTP status code (http module; 0 otherwise)
+    error_message TEXT NOT NULL DEFAULT '',
+    tls_version TEXT NOT NULL DEFAULT '',
+    cert_not_after TEXT NOT NULL DEFAULT '',      -- leaf cert expiry, RFC3339 UTC; '' = none collected
+    cert_trusted INTEGER NOT NULL DEFAULT -1 CHECK(cert_trusted IN (-1, 0, 1)),  -- -1 = no cert this run
+    checked_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_probe_results_target_time ON probe_results(target_id, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at);
+
+-- probe_tls_certs: certificate chains collected from probe targets — the
+-- external sibling of host_tls_certs (same column set, keyed by target_id
+-- instead of ip/device, because external hosts don't resolve to a devices row).
+-- One row per cert in the chain; delete-then-insert per target on every
+-- successful collection so the table always reflects the CURRENT chain (cert
+-- rotation visibility), unlike probe_results which is an append-only series.
+CREATE TABLE IF NOT EXISTS probe_tls_certs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id INTEGER NOT NULL REFERENCES probe_targets(id) ON DELETE CASCADE,
+    port INTEGER NOT NULL DEFAULT 0,
+    cert_index INTEGER NOT NULL DEFAULT 0,        -- 0 = leaf/server cert, 1..N = chain issuers
+    -- Identity
+    subject_cn TEXT NOT NULL DEFAULT '',
+    subject_org TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',             -- full RFC 4514 distinguished name
+    issuer_cn TEXT NOT NULL DEFAULT '',
+    issuer_org TEXT NOT NULL DEFAULT '',
+    issuer TEXT NOT NULL DEFAULT '',
+    san_dns TEXT NOT NULL DEFAULT '',             -- comma-separated DNS names
+    san_ip TEXT NOT NULL DEFAULT '',              -- comma-separated IP addresses
+    san_email TEXT NOT NULL DEFAULT '',           -- comma-separated email addresses
+    serial TEXT NOT NULL DEFAULT '',              -- decimal string (x509.SerialNumber.Text)
+    -- Validity, ISO 8601 UTC for queryability
+    not_before TEXT NOT NULL DEFAULT '',
+    not_after TEXT NOT NULL DEFAULT '',
+    -- Crypto details
+    sig_algorithm TEXT NOT NULL DEFAULT '',
+    key_algorithm TEXT NOT NULL DEFAULT '',
+    key_bits INTEGER NOT NULL DEFAULT 0,
+    is_ca INTEGER NOT NULL DEFAULT 0,
+    self_signed INTEGER NOT NULL DEFAULT 0,
+    fingerprint_sha256 TEXT NOT NULL DEFAULT '',  -- uppercase hex of SHA-256(cert.Raw)
+    pem TEXT NOT NULL DEFAULT '',
+    -- TLS handshake metadata (meaningful for cert_index=0; inherited by chain rows for UI simplicity)
+    tls_version TEXT NOT NULL DEFAULT '',
+    cipher_suite TEXT NOT NULL DEFAULT '',
+    trusted INTEGER NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT '',               -- non-empty when the handshake failed
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_probe_tls_certs_target ON probe_tls_certs(target_id, cert_index);
+CREATE INDEX IF NOT EXISTS idx_probe_tls_certs_expiring ON probe_tls_certs(not_after);
+

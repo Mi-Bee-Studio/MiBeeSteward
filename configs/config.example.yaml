@@ -344,6 +344,10 @@ retention:
   # gone-silent hosts linger; this prunes them.
   host_services_days: 30
   host_tls_certs_days: 30
+  # probe_results: 拨测 synthetic-probe history (one row per target per
+  # interval). probe_tls_certs is not swept — it holds only each target's
+  # current certificate chain, replaced on every successful collection.
+  probe_results_days: 30
   silent_device_days_mac: 7
   silent_device_hours_no_mac: 24
   sweep_interval_hours: 6

@@ -181,6 +181,78 @@ export const agentTokenSchema = z.object({
 	name: z.string().optional(),
 });
 
+// --- Probe target create/edit form (probes page, 拨测) ---
+// Target grammar is module-conditional (http = absolute http(s) URL, tls/tcp =
+// host:port, icmp = bare host), enforced in superRefine so the base fields'
+// per-field blur validation keeps working. Bounds mirror the backend's
+// probe_targets CHECK constraints (10s-24h interval, 1-60s timeout).
+export const probeTargetSchema = z
+	.object({
+		name: z.string().min(1, 'validation.Name Required').max(100, 'validation.Name Max Length'),
+		module: z.enum(['http', 'tls', 'tcp', 'icmp']),
+		target: z.string().min(1, 'validation.Target Required'),
+		interval_seconds: z
+			.number()
+			.int()
+			.min(10, 'validation.Interval Range')
+			.max(86400, 'validation.Interval Range'),
+		timeout_seconds: z.number().int().min(1, 'validation.Timeout Range').max(60, 'validation.Timeout Range'),
+		notes: z.string().max(500, 'validation.Notes Max Length').optional()
+	})
+	.superRefine((data, ctx) => {
+		if (data.timeout_seconds >= data.interval_seconds) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['timeout_seconds'],
+				message: 'validation.Timeout Before Interval'
+			});
+		}
+		switch (data.module) {
+			case 'http': {
+				try {
+					const u = new URL(data.target);
+					if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('scheme');
+				} catch {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						path: ['target'],
+						message: 'validation.Invalid URL'
+					});
+				}
+				break;
+			}
+			case 'tls':
+			case 'tcp': {
+				const idx = data.target.lastIndexOf(':');
+				const ok =
+					idx > 0 &&
+					!data.target.includes(':', idx + 1) &&
+					!/[\s/]/.test(data.target) &&
+					Number.isInteger(Number(data.target.slice(idx + 1))) &&
+					Number(data.target.slice(idx + 1)) >= 1 &&
+					Number(data.target.slice(idx + 1)) <= 65535;
+				if (!ok) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						path: ['target'],
+						message: 'validation.Invalid Host Port'
+					});
+				}
+				break;
+			}
+			case 'icmp': {
+				if (/[\s/:]/.test(data.target)) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						path: ['target'],
+						message: 'validation.Invalid Host'
+					});
+				}
+				break;
+			}
+		}
+	});
+
 // --- Notification channel form (settings/notifications page) ---
 // A flat schema (form state is flat: formUrl, formSmtpHost, ...) with a refine
 // enforcing type-conditional required fields — simpler than a Zod
