@@ -104,7 +104,7 @@ type Config struct {
 	// vendor lookup. The path is overridable via MIBEE_SCANNER_OUI_PATH.
 	OUIPath string
 	// FingerprintPath is the directory of fingerprint YAML files (see
-	// configs/fingerprints/ + docs/fingerprint-spec.md). When set, the
+	// configs/fingerprints/ + docs/en/fingerprint-spec.md). When set, the
 	// RuleClassifier loads rules from it. When empty, the engine falls back to
 	// the fingerprint rules embedded in the binary (fingerprint-assets/), so
 	// data-driven classification works with zero config. Overridable via

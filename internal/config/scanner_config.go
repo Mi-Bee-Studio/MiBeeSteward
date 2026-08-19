@@ -46,7 +46,7 @@ type ScannerConfig struct {
 	// MIBEE_SCANNER_OUI_PATH env var.
 	OUIPath string `koanf:"oui_path"`
 	// FingerprintPath points to a directory of fingerprint YAML rule files
-	// (see configs/fingerprints/ + docs/fingerprint-spec.md). When empty, the
+	// (see configs/fingerprints/ + docs/en/fingerprint-spec.md). When empty, the
 	// engine uses the rules embedded in the binary (zero-config). Override with
 	// MIBEE_SCANNER_FINGERPRINT_PATH.
 	FingerprintPath string `koanf:"fingerprint_path"`
