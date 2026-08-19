@@ -152,6 +152,13 @@ type RetentionConfig struct {
 	// cert chain behind. PEM payload is a few KB per row, so we default tighter
 	// than host_services. Default 30.
 	HostTLSCertsDays int `koanf:"host_tls_certs_days"`
+	// ProbeResultsDays is the retention window for probe_results (the 拨测
+	// synthetic-probe history series). Volume is one row per target per
+	// interval — small, but unbounded over time. Default 30 (matches
+	// scan_results: enough for month-scale trend charts of latency/cert
+	// expiry). probe_tls_certs is NOT swept — it holds only each target's
+	// current chain, replaced on every successful collection.
+	ProbeResultsDays int `koanf:"probe_results_days"`
 	// SilentDeviceDaysMAC is how long a scanner-discovered device WITH a MAC
 	// address can stay offline (no heartbeat — all probe configs failing) before
 	// the silent-device retention sweep physically deletes it (issue #117). MAC-
@@ -387,6 +394,9 @@ func normalizeRetention(cfg *Config) {
 	}
 	if r.HostTLSCertsDays <= 0 {
 		r.HostTLSCertsDays = 30
+	}
+	if r.ProbeResultsDays <= 0 {
+		r.ProbeResultsDays = 30
 	}
 	if r.SilentDeviceDaysMAC <= 0 {
 		r.SilentDeviceDaysMAC = 7

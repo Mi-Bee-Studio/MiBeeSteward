@@ -19,6 +19,9 @@ type Result struct {
 	Success      bool
 	Latency      time.Duration
 	ErrorMessage string
+	// StatusCode is the final HTTP status code (http module only; 0 otherwise,
+	// including error cases where no response was received).
+	StatusCode int
 }
 
 // Prober is the interface that all probe types must implement.

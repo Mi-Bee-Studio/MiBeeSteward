@@ -65,3 +65,29 @@ groups:
         annotations:
           summary: "High memory usage detected"
           description: "MiBee Steward process memory usage is {{ $value | humanize }} (threshold: 500MB)."
+
+      # --- Synthetic probing (拨测) alerts ---
+      # mibee_probe_up{name,module} mirrors blackbox_exporter's probe_success:
+      # 0/1 gauge of the LAST probe outcome, set by the probe engine.
+
+      - alert: ProbeTargetDown
+        expr: mibee_probe_up{job="mibee-steward"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Probe target down"
+          description: "Synthetic probe target {{ $labels.name }} (module {{ $labels.module }}) has been failing for more than 5 minutes."
+
+      - alert: ProbeCertExpiringSoon
+        # mibee_probe_cert_expiry_timestamp_seconds mirrors blackbox_exporter's
+        # probe_ssl_earliest_cert_expiry (Unix seconds; series absent when the
+        # target collects no cert). 15d matches the UI's warning window.
+        expr: |
+          (mibee_probe_cert_expiry_timestamp_seconds{job="mibee-steward"} - time()) < 1296000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Probe target certificate expiring soon"
+          description: "Certificate for probe target {{ $labels.name }} expires in less than 15 days (metric: mibee_probe_cert_expiry_timestamp_seconds)."

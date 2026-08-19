@@ -124,6 +124,7 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneDeviceNeighbors(ctx)
 	s.pruneHostServices(ctx)
 	s.pruneHostTLSCerts(ctx)
+	s.pruneProbeResults(ctx)
 	s.pruneSilentDevices(ctx)
 }
 
@@ -315,6 +316,22 @@ func (s *Service) pruneHostTLSCerts(ctx context.Context) {
 	s.sweepBatched(ctx, "host_tls_certs", days, func(cut time.Time, limit int64) (int64, error) {
 		return s.queries.DeleteHostTLSCertsStaleBatched(ctx, db.DeleteHostTLSCertsStaleBatchedParams{
 			UpdatedAt: cut,
+			Limit:     limit,
+		})
+	})
+}
+
+// pruneProbeResults prunes the 拨测 synthetic-probe history series
+// (probe_results.checked_at). Unlike the tables above, checked_at is an
+// RFC3339 TEXT column (string timestamps keep SQLite date() working with
+// modernc), so the cutoff is formatted before comparison — ISO 8601 sorts
+// lexically. probe_tls_certs needs no sweep: it holds only each target's
+// current chain, replaced on every successful collection.
+func (s *Service) pruneProbeResults(ctx context.Context) {
+	days := s.cfg.ProbeResultsDays
+	s.sweepBatched(ctx, "probe_results", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteProbeResultsStaleBatched(ctx, db.DeleteProbeResultsStaleBatchedParams{
+			CheckedAt: cut.UTC().Format(time.RFC3339),
 			Limit:     limit,
 		})
 	})

@@ -32,6 +32,7 @@ import (
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
+	probetarget "mibee-steward/internal/service/probetarget"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
 	scannerv2configbackup "mibee-steward/internal/service/scannerv2/configbackup"
 	credresolver "mibee-steward/internal/service/scannerv2/credresolver"
@@ -563,6 +564,32 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			Post("/add-devices", scannerHandler.AddDevices)
 	})
 
+	// --- Synthetic probing (拨测): user-configured external targets ---
+	// blackbox_exporter-style modules (http/tls/tcp/icmp) against explicit
+	// endpoints; the tls leg reuses the scanner's CollectCertChain. Reads →
+	// probe:read (viewer+); CRUD + trigger → probe:manage (operator+). NOT
+	// network-scoped: #138's object-level scope guards the internal inventory,
+	// while probing aims at arbitrary external endpoints by design.
+	probeEngine := probetarget.NewEngine(scanQueries, slog.Default(), prometheus.DefaultRegisterer)
+	probeTargetSvc := probetarget.New(scanQueries, probeEngine)
+	probeTargetHandler := handler.NewProbeTargetHandler(probeTargetSvc, scanQueries)
+	r.Route("/api/v1/probe-targets", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireCapability(domain.CapProbeRead))
+			r.Get("/", probeTargetHandler.ListTargets)
+			r.Get("/{id}", probeTargetHandler.GetTarget)
+			r.Get("/{id}/results", probeTargetHandler.GetTargetResults)
+			r.Get("/{id}/certificates", probeTargetHandler.GetTargetCertificates)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireCapability(domain.CapProbeManage))
+			r.Post("/", probeTargetHandler.CreateTarget)
+			r.Put("/{id}", probeTargetHandler.UpdateTarget)
+			r.Delete("/{id}", probeTargetHandler.DeleteTarget)
+			r.Post("/{id}/trigger", probeTargetHandler.TriggerTarget)
+		})
+	})
+
 	// --- SNMP credential management (issue #135 — SNMPv3) ---
 	// CRUD for SNMP credentials (v1/v2c community strings + v3 USM auth/priv).
 	// Passphrases are AES-GCM-encrypted at rest (security.master_key); the
@@ -688,6 +715,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	if scanScheduler != nil {
 		scanScheduler.Start(context.Background())
 	}
+
+	// Probe engine (拨测): interval scheduler for external targets. Re-reads
+	// enabled targets every tick, so no notify wiring from the CRUD service.
+	probeEngine.Start(context.Background())
 	// Audit log routes — CapAuditRead. The capability matrix (#217) grants
 	// audit:read to every read-capable role (admin/operator/viewer/+legacy user):
 	// in a CMDB/monitoring tool a read-only stakeholder seeing the "who changed
@@ -937,6 +968,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		if scanScheduler != nil {
 			scanScheduler.Stop()
 		}
+		// Stop the probe engine (拨测) BEFORE the DB close — an in-flight probe
+		// writes probe_results / probe_tls_certs and must not race db.Close().
+		// Stop() cancels the tick loop and waits for the in-flight tick.
+		probeEngine.Stop()
 		// Stop the lease sweeper BEFORE the DB close — its sweepOnce runs
 		// UPDATE devices + recordDeviceLost (change_log INSERT) and must not
 		// race db.Close(). Cancel unblocks an in-flight sweep's ctx-aware DB
