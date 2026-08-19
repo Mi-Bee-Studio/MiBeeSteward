@@ -186,7 +186,7 @@ func (SNMPClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceIdent
 // Stages 1 and 2 are data-driven (snmp-data.yaml's oid_prefixes +
 // sysdescr_types tables). Stage 3 is the documented logic-plugin — the bitmask
 // × ifNumber heuristic CANNOT be expressed as declarative rules (see
-// docs/fingerprint-spec.md §"Logic plugins") and stays as Go code.
+// docs/en/fingerprint-spec.md §"Logic plugins") and stays as Go code.
 func inferTypeFromSNMP(servicesStr, descr, objID, ifNumberStr string) string {
 	lower := strings.ToLower(descr)
 

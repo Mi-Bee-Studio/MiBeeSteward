@@ -1,217 +1,143 @@
-# 快速开始指南
+# 快速开始
 
-本指南将帮助您在几分钟内启动 MiBee Steward。按照这些步骤设置开发环境并完成您的第一次网络资产发现。
+本文演示如何在几分钟内运行 MiBee Steward 并完成第一次网络资产发现。假设你使用预构建二进制或容器镜像；从源码构建见[开发指南](development.md)。
 
 ## 前置条件
 
-- Go 1.26+ 
-- Node.js 20+
-- Git
+- Linux x86_64 或 ARM64 主机（CGO-free 单二进制，无运行时依赖）
+- 约 50MB 磁盘空间（应用 + SQLite 数据库）
+- 到目标网段的网络访问（用于 ICMP / SNMP / TCP 等探测）
+- 容器路径：Docker Engine（可选）
 
-## 安装
+## 获取二进制
 
-### 1. 克隆仓库
+### 方式一：GitHub Releases
 
-```bash
-git clone https://github.com/Mi-Bee-Studio/MiBeeSteward.git
-cd mibee-steward
-```
-
-### 2. 安装前端依赖
-
-前端使用 SvelteKit 构建，需要 Node.js 依赖：
+从 [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) 下载对应架构的二进制（当前 v0.4.0）：
 
 ```bash
-cd web
-npm install
-cd ..
+chmod +x mibee-steward
+./mibee-steward --config config.yaml
 ```
 
-### 3. 配置应用
-
-复制示例配置文件并进行自定义：
+### 方式二：Docker
 
 ```bash
-cp configs/config.example.yaml configs/config.yaml
+docker pull ghcr.io/mi-bee-studio/mibeesteward:0.4.0
 ```
 
-根据需要编辑 `configs/config.yaml`，但默认值适用于开发：
-- 服务器在端口 8080 运行
-- SQLite 数据库在 `./data/mibee.db` 创建
-- Prometheus 指标已启用
-
-### 4. 启动开发模式
-
-同时启动前端和后端开发模式：
+扫描依赖网络命名空间能力，容器建议使用 host 网络模式并声明 `NET_RAW` / `NET_ADMIN`：
 
 ```bash
-make dev
+docker run -d --name mibee \
+  --network host \
+  --cap-add NET_RAW --cap-add NET_ADMIN \
+  -v "$PWD/configs:/app/configs:ro" \
+  ghcr.io/mi-bee-studio/mibeesteward:0.4.0
 ```
 
-此命令：
-- 在后台启动 SvelteKit 前端
-- 启动 Go 后端服务器
-- 前端和后端更改的热重载
+> Docker 默认 bridge 模式位于 NAT 之后，ICMP、ARP/MAC 与多播探测会失效，不能用于真实资产盘点。详见[部署](deployment.md)。
 
-## 首次运行
+## 最小配置
 
-### 5. 访问应用
-
-打开浏览器并导航到：
-
-```
-http://localhost:8080
-```
-
-### 6. 首次登录
-
-使用您配置的管理员凭据登录：
-- **用户名**: `admin`
-- **密码**: `config.yaml` 中 `auth.initial_admin_password` 的值
-
-### 7. 修改密码（关键）
-
-首次登录后：
-1. 导航到用户资料或设置
-2. 立即更改管理员密码
-3. **生产环境中切勿使用默认密码**
-
-## 可用命令
-
-### 开发命令
-
-```bash
-# 启动开发服务器（前端 + 后端）
-make dev
-
-# 运行测试
-make test
-
-# 清理构建产物
-make clean
-```
-
-### 构建命令
-
-```bash
-# 为生产环境构建（先前端，后后端）
-make build
-
-# 交叉编译到多个平台
-make build-all              # linux amd64 + arm64
-make build-linux-amd64      # 仅 linux amd64  
-make build-linux-arm64      # 仅 linux arm64
-
-# 仅构建前端
-make build-frontend
-
-# 仅构建服务器
-make build-server
-```
-
-### 前端命令
-
-```bash
-# 启动前端开发服务器
-cd web && npm run dev
-
-# 为生产环境构建前端
-cd web && npm run build
-```
-
-### 数据库命令
-
-```bash
-# 更改 db/queries/*.sql 后生成数据库查询
-sqlc generate
-```
-
-## 访问点
-
-运行后，您可以访问：
-
-### Web 界面
-- **主仪表板**: http://localhost:8080
-- 使用管理员凭据登录
-
-### API 端点
-- **健康检查**: http://localhost:8080/api/v1/health
-- **API 文档**: http://localhost:8080/api/v1/docs（如果可用）
-- **指标**: http://localhost:8080/metrics（Prometheus 格式）
-
-### 开发功能
-- **热重载**: 前端在文件更改时自动重载
-- **开发者工具**: 在 http://localhost:8080 可用
-- **API 测试**: 对健康端点使用 curl 或 Postman
-
-## 配置
-
-### 环境变量
-
-您可以使用 `MIBEE_` 前缀的环境变量覆盖配置：
-
-```bash
-# 覆盖服务器端口
-export MIBEE_SERVER_PORT=9090
-
-# 覆盖数据库路径
-export MIBEE_DATABASE_SQLITE_PATH=/path/to/custom.db
-
-# 覆盖 JWT 密钥
-export MIBEE_AUTH_JWT_SECRET=your-secret-key
-```
-
-### 配置文件
-
-主配置文件是 `configs/config.yaml`。主要部分：
+创建 `config.yaml`。最小配置只需监听地址、本机网络 CIDR 与两个必需的认证项（`auth.jwt_secret` 至少 32 字符，`auth.initial_admin_password` 为空则服务直接退出）：
 
 ```yaml
 server:
-  port: 8080
   host: "0.0.0.0"
+  port: 8080
 
-database:
-  type: "sqlite"
-  sqlite:
-    path: "./data/mibee.db"
+network:
+  name: "lan-1"
+  cidr: "192.168.1.0/24"
 
 auth:
-  jwt_secret: "change-me-in-production"
-  initial_admin_password: "change-me"
+  jwt_secret: "change-me-to-a-random-string-32-chars-min"   # ≥32 字符，必填
+  initial_admin_password: "your-strong-password"            # 必填，首次登录后修改
 ```
 
-## 后续步骤
+所有配置项均可被 `MIBEE_` 前缀环境变量覆盖（点号转下划线，如 `network.cidr` → `MIBEE_NETWORK_CIDR`）：
 
-1. **添加第一个设备**: 使用 Web 界面登记要管理的网络设备，或运行网络扫描器自动发现
-2. **配置探针**: 为您的设备设置 SNMP、ICMP、TCP 或 HTTP 心跳探测（保持资产鲜活度）
-3. **探索 API**: 查看 `/api/v1/health` 端点和其他 API 端点
-4. **设置生产环境**: 按照部署指南进行生产环境设置
+```bash
+export MIBEE_SERVER_PORT=8080
+export MIBEE_AUTH_JWT_SECRET="$(openssl rand -base64 32)"
+export MIBEE_AUTH_INITIAL_ADMIN_PASSWORD="your-strong-password"
+```
 
-## 故障排除
+生产环境务必设置 `auth.jwt_secret` 与 `auth.initial_admin_password`。完整配置项见[配置参考](configuration.md)。
 
-### 端口已在使用中
+## 启动并登录
 
-如果端口 8080 已被占用，可以：
-- 终止现有进程：`pkill -f mibee-steward`
-- 更改配置中的端口
-- 使用环境变量使用不同端口：`export MIBEE_SERVER_PORT=8081`
+```bash
+./mibee-steward --config config.yaml
+```
 
-### 前端构建问题
+打开 http://localhost:8080，使用 `admin` 与配置的初始密码登录，登录后立即修改密码。健康检查：
 
-如果遇到前端构建错误：
-- 确保 Node.js 20+ 已安装
-- 删除 `web/node_modules` 并再次运行 `npm install`
-- 清理 SvelteKit 缓存：`rm -rf web/.svelte-kit`
+```bash
+curl http://localhost:8080/api/v1/health
+```
 
-### 数据库问题
+## 首次扫描
 
-如果数据库创建失败：
-- 确保 `data/` 目录存在
-- 检查项目目录中的写权限
-- 验证 SQLite 是否正常工作：`sqlite3 --version`
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant W as Steward Web UI
+    participant S as 扫描引擎
+    participant T as 目标网段
+    participant D as SQLite
+    U->>W: 发起扫描 192.168.1.0/24
+    W->>S: POST /api/v1/scanner/scan
+    S->>T: ICMP + TCP + SNMP 探测
+    T-->>S: 设备响应 (IP/MAC/RTT)
+    S->>D: 设备桥接登记 (devices + 心跳种子)
+    S-->>W: 返回扫描结果
+    W-->>U: 展示设备列表
+```
 
-## 安全提示
+**Web 界面**：登录后进入扫描器页面，选择目标 CIDR 发起扫描。
 
-⚠️ **重要安全警告**: 请务必在 `config.yaml` 中将 `auth.initial_admin_password` 设置为强唯一密码。切勿以空密码或默认密码部署。
+**同步 API**（适合 ≤1024 IP 的目标）：
 
-有关更详细的信息，请参阅完整的 [架构](architecture.md) 和 [配置](configuration.md) 文档。
+```bash
+# 获取管理员令牌
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your-strong-password"}' | jq -r .token)
+
+curl -X POST http://localhost:8080/api/v1/scanner/scan \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"targets":"192.168.1.0/24"}'
+```
+
+返回 `{ hosts, total, alive, duration_ms }`，每个主机含 `ip`、`alive`、`rtt_ms`、`inferred_type`、`inferred_brand` 等字段。存活主机会立即通过**设备桥接**自动登记（写入 `devices`、生成心跳配置、记录变更事件）；扫描历史明细（`scan_results` / `scan_task_runs`）仅由异步任务持久化。
+
+**异步任务**（目标 >1024 IP 时同步接口返回 413）：`POST /api/v1/scanner/tasks` 创建任务，`POST /api/v1/scanner/tasks/{id}/trigger` 触发，结果持久化到 `scan_results`。详见[API 参考](api.md)。
+
+## 应该看到什么
+
+- 设备列表：IP、MAC、OUI 厂商、品牌/型号、类型
+- 识别结果：`inferred_type` / `inferred_brand`（如 camera、server、pc、iot）
+- 心跳状态：在线/离线、响应延迟
+- 若网络中有支持 SNMP 的交换机，还能看到拓扑与邻居关系
+
+## 故障排查
+
+| 现象 | 处理 |
+|------|------|
+| 端口 8080 被占用 | 修改 `server.port` 或设置 `MIBEE_SERVER_PORT` |
+| 没有发现任何设备 | 确认 `network.cidr` 与 `targets` 正确；检查防火墙是否放行 ICMP 与 SNMP（UDP 161） |
+| 设备在线但识别为空 | 确认 SNMP community（默认 `public`），或在扫描请求中显式传 `community` |
+| Docker 中扫描异常 | 改用 host 网络模式（见上文） |
+| 服务无法启动 | 看启动日志：缺 `auth.jwt_secret`（<32 字符）或 `auth.initial_admin_password` 为空会直接退出；再检查 `data/` 目录写权限 |
+| 忘记 admin 密码 | `./mibee-steward reset-admin-password -config config.yaml`（交互输入，或加 `-password '新密码'` / 环境变量 `MIBEE_RESET_PASSWORD`） |
+
+## 下一步
+
+- [架构](architecture.md) — 扫描器流水线与后台服务
+- [部署](deployment.md) — systemd、Docker、Nginx、备份
+- [分布式](distributed.md) — 中心 + 采集器跨网络发现
+- [配置参考](configuration.md) — 全部配置项
+- [API 参考](api.md) — 扫描、设备、心跳接口
