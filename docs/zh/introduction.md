@@ -37,6 +37,13 @@ flowchart LR
 - 在线/离线历史、延迟与可用性统计，实时反映在 Web 界面与指标中。
 - 变更检测：设备新增、属性变更、离线自动写入变更日志并推送事件（`GET /changes` + SSE watch），资产动态准实时可见。
 
+### 拨测（外网资源探测）
+
+- 显式配置的周期探测（blackbox_exporter 模式）：对任意可达端点——通常是外网/互联网资源（公开 HTTPS 站点、托管邮件 TLS 端口、供应商网关）——按固定间隔探测可用性与延迟。
+- 四类模块：`http`（完整 URL，状态码 < 400 为成功，https 目标同时采集证书链）、`tls`（host:port 握手并采集完整证书链）、`tcp`、`icmp`。
+- TLS 证书能力从内网复用到外网：证书链（叶/中间/根）、SAN、序列号、指纹、PEM、协商的 TLS 版本与密码套件、信任判定全部入库；历史结果携带证书到期摘要，可观察证书续期节奏。
+- 证书到期与可用性指标（`mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds`）走 `/metrics`，告警交给 Prometheus（示例规则随仓库提供）。
+
 ### 可观测性（Prometheus 生态）
 
 - `/metrics`：Prometheus 文本格式指标——设备状态 gauge、心跳计数器（总尝试/失败）、响应时间直方图。

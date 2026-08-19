@@ -528,6 +528,7 @@ head -c 32 /dev/urandom | base64
 | `retention.device_neighbors_days` | int | 90 | 设备邻居记录保留天数 |
 | `retention.host_services_days` | int | 30 | 主机服务记录保留天数 |
 | `retention.host_tls_certs_days` | int | 30 | TLS 证书记录保留天数 |
+| `retention.probe_results_days` | int | 30 | 拨测历史结果保留天数（`probe_tls_certs` 不清扫——每目标只存当前证书链） |
 | `retention.sweep_interval_hours` | int | 6 | 清理扫描间隔（小时） |
 | `retention.batch_size` | int | 5000 | 每批清理的最大行数 |
 
@@ -672,6 +673,7 @@ retention:
   device_neighbors_days: 90
   host_services_days: 30
   host_tls_certs_days: 30
+  probe_results_days: 30
   sweep_interval_hours: 6
   batch_size: 5000
 
