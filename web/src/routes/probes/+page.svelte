@@ -248,7 +248,7 @@
 		try {
 			const res = await api.post<ProbeTriggerResponse>(`/probe-targets/${t.id}/trigger`, {});
 			const status = res.status === 'success' ? '✓' : '✗';
-			addToast(res.status === 'success' ? 'success' : 'error', `${status} ${m['probes.Trigger Done']().replace('{status}', res.status)}`);
+			addToast(res.status === 'success' ? 'success' : 'error', `${status} ${m['probes.Trigger Done']({ status: res.status })}`);
 			fetchTargets();
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
@@ -338,7 +338,7 @@
 				if (!notAfter) return html`<span class="text-text-muted text-xs">-</span>`;
 				const days = certDayDelta(notAfter);
 				const cls = days < 0 ? 'badge-error' : days < 15 ? 'badge-warning' : 'badge-success';
-				return html`<span class="badge ${cls}" title="${notAfter}">${m['probes.Cert Days']().replace('{days}', String(days))}</span>`;
+				return html`<span class="badge ${cls}" title="${notAfter}">${m['probes.Cert Days']({ days })}</span>`;
 			}
 		},
 		{ key: 'enabled', label: m['probes.Enabled'](), interactive: true },
@@ -580,7 +580,7 @@
 </Modal>
 
 <!-- Results history Modal -->
-<Modal bind:open={resultsModalOpen} title={m['probes.Results Title']().replace('{name}', resultsTarget?.name || '')}>
+<Modal bind:open={resultsModalOpen} title={m['probes.Results Title']({ name: resultsTarget?.name || '' })}>
 	{#if resultsLoading}
 		<div class="py-8 text-center text-sm text-text-muted">…</div>
 	{:else if results.length === 0}
@@ -605,7 +605,7 @@
 <ConfirmDialog
 	bind:open={deleteDialogOpen}
 	title={m['probes.Delete Title']()}
-	message={m['probes.Delete Message']().replace('{name}', deleteTarget?.name || '')}
+	message={m['probes.Delete Message']({ name: deleteTarget?.name || '' })}
 	confirmLabel={m['common.Delete']()}
 	confirmVariant="danger"
 	onConfirm={confirmDelete}
