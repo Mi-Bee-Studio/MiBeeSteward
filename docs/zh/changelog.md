@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Metrics: dead collectors wired up + metrics_path honored (issues #238 / #239)
+
+**HeartbeatFailures was a dead alert** — `mibee_heartbeat_checks_total` (and five
+siblings) were registered at `/metrics` but never incremented in production
+code, so the alert's expression was permanently 0. Fixed by moving the
+collectors to a new neutral package and wiring the producers:
+
+- **`internal/metrics`** (new): the 7 `mibee_*` collectors moved out of
+  `internal/api/handler` so the service layer can increment them without an
+  handler→service→handler import cycle. `handler.MetricsHandler` /
+  `UpdateDeviceMetrics` unchanged in behavior.
+- **Heartbeat**: `probeAndRecord` now increments
+  `mibee_heartbeat_checks_total{status}` per recorded outcome and observes
+  `mibee_heartbeat_latency_seconds{method}` — the `HeartbeatFailures` alert
+  rule evaluates against real data.
+- **Scanner**: run completion/failure increments
+  `mibee_scanner_runs_total{status}`, observes
+  `mibee_scanner_duration_seconds`, and adds alive hosts to
+  `mibee_scanner_hosts_discovered`; `mibee_scanner_tasks_total{status}` is
+  refreshed at scheduler start and after task CRUD
+  (`metrics.RefreshScannerTaskGauges`).
+- **`prometheus.metrics_path`** now actually configures the mount point
+  (previously defined in config but hard-coded to `/metrics`; empty or
+  non-absolute values fall back to `/metrics`).
+
+### sqlc: generated code back in sync with schema.sql + CI drift guard (issue #237)
+
+The committed `internal/db` had been stale since #233 (`scan_tasks.network_id`
+landed in schema + migrations without `sqlc generate`), so any full regenerate
+emitted per-query Row structs that broke ~10 call sites — PR #235 had to
+surgically merge around it. Fixed at the root:
+
+- `db/queries/devices.sql` full-row lists now select `ssh_credential_id` (6
+  lists) and `db/queries/scan_tasks.sql` selects `network_id` (7 lists) — the
+  column sets match the tables again, so sqlc restores model reuse and NO call
+  sites needed changes. The `CreateScanTask` INSERT still does not set
+  `network_id` (stamped post-insert by raw SQL, as before).
+- Full `sqlc generate` is now idempotent against the committed tree (fresh
+  generate produces an empty diff).
+- **CI drift guard**: the `sqlc-verify` job installs sqlc **v1.31.1** (matching
+  the committed generator) and fails when `sqlc generate` produces a diff in
+  `internal/db/` — schema/query changes must ship with regenerated code.
+- Tests with hand-rolled inline `devices` schemas gained the
+  `ssh_credential_id` column.
+
+
 ### Synthetic probing / 拨测 (Phase 1)
 
 **Blackbox-style probing of EXPLICIT external endpoints (PR #235)** — user-configured
