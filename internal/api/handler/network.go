@@ -1,43 +1,40 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+// Copyright (c) 2026 Mi Bee Studio. All rights reserved.
 //
 // This file is part of MiBee Steward, distributed under the GNU Affero General
-// Public License v3.0 or later. You may use, modify, and redistribute it under
-// those terms; see LICENSE for the full text. A commercial license is available
-// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+// Public License v3.0 or later; see LICENSE for the full text. A commercial
+// license is available for use cases the AGPL does not accommodate; see
+// LICENSE-COMMERCIAL.md.
 
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/service"
 )
-
-// errNetworkNotFound signals an UPDATE/DELETE targeted a non-existent network.
-var errNetworkNotFound = errors.New("network not found")
 
 // NetworkHandler serves the network registry (the logical networks agents
 // discover for). Used by the frontend to populate the device-list network
 // filter, the change-history network filter, and the Networks admin page.
+// Mutations go through service.NetworkService (#240 — this handler was one of
+// the four grandfathered charter-debt direct-DB writers); List is a read
+// passthrough on *db.Queries.
 type NetworkHandler struct {
 	queries *db.Queries
-	conn    db.DBTX // raw connection for UPDATE (sqlc truncation workaround)
+	svc     *service.NetworkService
 }
 
-// NewNetworkHandler constructs the handler. conn is the shared *sql.DB used
-// for the raw UPDATE statement (sqlc v1.31.1 truncates the generated string
-// for UpdateNetwork's multi-bind shape).
-func NewNetworkHandler(queries *db.Queries, conn db.DBTX) *NetworkHandler {
-	return &NetworkHandler{queries: queries, conn: conn}
+// NewNetworkHandler constructs the handler.
+func NewNetworkHandler(queries *db.Queries, svc *service.NetworkService) *NetworkHandler {
+	return &NetworkHandler{queries: queries, svc: svc}
 }
 
 // List handles GET /api/v1/networks — all networks, ordered by id.
@@ -66,22 +63,16 @@ func (h *NetworkHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
-		Error(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	net, err := h.queries.CreateNetwork(r.Context(), db.CreateNetworkParams{
-		Name: strings.TrimSpace(req.Name),
-		Cidr: trimPtr(req.Cidr),
-		Site: trimPtr(req.Site),
-	})
+	net, err := h.svc.Create(r.Context(), service.NetworkInput{Name: req.Name, Cidr: req.Cidr, Site: req.Site})
 	if err != nil {
-		// networks.name is UNIQUE — a duplicate surfaces as a constraint error.
-		if isUniqueConstraintErr(err) {
-			Error(w, http.StatusConflict, "a network with this name already exists")
-			return
+		switch {
+		case errors.Is(err, service.ErrNetworkNameRequired):
+			Error(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, service.ErrNetworkNameTaken):
+			Error(w, http.StatusConflict, err.Error())
+		default:
+			Error(w, http.StatusInternalServerError, "failed to create network")
 		}
-		Error(w, http.StatusInternalServerError, "failed to create network")
 		return
 	}
 	Created(w, net)
@@ -107,21 +98,18 @@ func (h *NetworkHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
-		Error(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	net, err := h.UpdateNetworkRaw(r.Context(), id, strings.TrimSpace(req.Name), trimPtr(req.Cidr), trimPtr(req.Site))
+	net, err := h.svc.Update(r.Context(), id, service.NetworkInput{Name: req.Name, Cidr: req.Cidr, Site: req.Site})
 	if err != nil {
-		if errors.Is(err, errNetworkNotFound) {
-			Error(w, http.StatusNotFound, "network not found")
-			return
+		switch {
+		case errors.Is(err, service.ErrNetworkNameRequired):
+			Error(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, service.ErrNetworkNotFound):
+			Error(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, service.ErrNetworkNameTaken):
+			Error(w, http.StatusConflict, err.Error())
+		default:
+			Error(w, http.StatusInternalServerError, "failed to update network")
 		}
-		if isUniqueConstraintErr(err) {
-			Error(w, http.StatusConflict, "a network with this name already exists")
-			return
-		}
-		Error(w, http.StatusInternalServerError, "failed to update network")
 		return
 	}
 	Success(w, net)
@@ -137,46 +125,13 @@ func (h *NetworkHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	if err := h.queries.DeleteNetwork(r.Context(), id); err != nil {
+	if err := h.svc.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, service.ErrNetworkNotFound) {
+			Error(w, http.StatusNotFound, err.Error())
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to delete network")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// UpdateNetworkRaw runs the UPDATE via raw database/sql and reads the updated
-// row back via GetNetwork. This works around sqlc v1.31.1 truncating the
-// generated query string for this multi-bind UPDATE shape (drops the trailing
-// `?`). The SQL is a bind-parameter statement, so it's safe from the SQLite
-// empty-string-literal truncation bug noted in networks.sql (that only affects
-// inlined literals).
-func (h *NetworkHandler) UpdateNetworkRaw(ctx context.Context, id int64, name string, cidr, site *string) (db.Network, error) {
-	const stmt = `UPDATE networks SET name = ?, cidr = ?, site = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-	res, err := h.conn.ExecContext(ctx, stmt, name, cidr, site, id)
-	if err != nil {
-		return db.Network{}, err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return db.Network{}, errNetworkNotFound
-	}
-	return h.queries.GetNetwork(ctx, id)
-}
-
-// trimPtr returns a pointer to the trimmed value, or nil if the input is nil
-// or empty-after-trim (so empty strings aren't stored as " ").
-func trimPtr(s *string) *string {
-	if s == nil {
-		return nil
-	}
-	t := strings.TrimSpace(*s)
-	if t == "" {
-		return nil
-	}
-	return &t
-}
-
-// isUniqueConstraintErr reports whether err is a SQLite UNIQUE constraint
-// violation (modernc.org/sqlite returns "UNIQUE constraint failed: ...").
-func isUniqueConstraintErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }

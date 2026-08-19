@@ -18,6 +18,7 @@ import (
 	"mibee-steward/internal/api/handler"
 	sqldb "mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/service"
 	"mibee-steward/internal/testutil"
 )
 
@@ -35,7 +36,7 @@ func setupAgentAdminServer(t *testing.T) (srv *httptest.Server, dbConn *sql.DB, 
 	require.NoError(t, err)
 	networkID = net.ID
 
-	adm := handler.NewAgentAdminHandler(queries)
+	adm := handler.NewAgentAdminHandler(queries, service.NewAgentTokenService(queries))
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.Recoverer)
