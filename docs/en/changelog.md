@@ -5,7 +5,66 @@ All notable changes to MiBee Steward are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-08-19
+
+**SNMPv3 + multi-role RBAC + device config backup + built-in notifier + synthetic probing + liveness time series.** v0.5.0 clears the enterprise-adoption hard gates: **SNMPv3** (USM authNoPriv/authPriv with an encrypted credential vault), a **role/capability RBAC model with object-level network scoping** (admin / operator / viewer + per-user network grants), **device config backup** (Oxidized/RANCID-style: scheduled `show running-config` pulls over SSH, versioned storage, two-version diffs, change-detection integration), a **minimal built-in notifier** (device events → webhook/email without running Alertmanager), and **synthetic probing** of external endpoints. Under the hood, device liveness becomes a **time series** (killing a change-log noise storm), device identity is keyed by `device_uuid` across satellite tables, and the release is rounded out by OUI longest-prefix vendor inference, a topology-visualization polish pass, observability wiring fixes, and a large frontend UX/a11y/correctness batch.
+
+### RBAC: multi-role capability model + object-level network scoping (issue #138)
+
+The 2-role model (admin / user with a one-size-fits-all `RequireAdmin`) is replaced by a **capability graph + per-network object scoping** — unlocking team and MSP scenarios:
+
+- **Roles & capabilities**: `users.role` CHECK widened to `admin` / `operator` / `viewer` (`user` remains as a legacy alias for viewer). Every route is gated by a **capability** (`CapDeviceRead`, `CapScanTrigger`, `CapDeviceWrite`, …) via a new `RequireCapability` middleware; roles map to capability sets and admin inherits everything. All `RequireAdmin` call sites were remapped, and shared read surfaces uniformly require their `CapXxxRead` capability.
+- **Network grants**: new `user_network_grants` table + admin management API (`/api/v1/users/{id}/network-grants` + `/api/v1/networks/{id}/grants`) + a users-page UI for assigning which networks a non-admin can see.
+- **Scope modes** (`rbac.scope_default`, default `open`): in `open` mode non-admins see every network (single-team behavior preserved); in `closed` mode a non-admin sees ONLY granted networks — enforced across the whole read surface (device lists/detail, scanner tasks/runs/results, changes, topology), with unauthorized details returning `404`. Admin always bypasses scope; unknown config values fall back to `open` (fail-safe against lockout).
+- **Scanner object scoping**: `scan_tasks.network_id` stamps each task's owning network; in closed mode non-admins only see/trigger tasks within their granted networks, and the scan-target network-boundary check carries over.
+- Migration is zero-drama for existing installs: admins stay admins, `user` rows keep working as viewers, and `open` mode preserves the previous visibility exactly.
+
+### SNMPv3 (authNoPriv / authPriv) — issue #135
+
+The last hard enterprise gate: hardened environments increasingly disable v2c community strings, and every serious competitor supports v3.
+
+- **Credential vault**: new `snmp_credentials` table stores USM credentials (user, auth passphrase + protocol, priv passphrase + protocol, security level) **encrypted at rest with AES-256-GCM**, keyed by `security.master_key` (exactly 32 bytes, `MIBEE_SECURITY_MASTER_KEY` override). The key is optional until the first v3 credential exists — existing v1/v2c deployments keep working unchanged.
+- **Probe support**: the SNMP probe's version loop gains `Version3`; authNoPriv (MD5/SHA/SHA-2) and authPriv (+ AES/DES) credentials are tried per target, and ALL OID paths work under v3 — the 8-OID identity collection and the LLDP-MIB / CDP-MIB / Bridge-MIB / Q-BRIDGE-MIB / STP-MIB / IF-MIB topology walks.
+- **API + UI**: credential CRUD with write-time encryption and read-time redaction (passphrases never echo back); scan forms and device pages carry v3 options with a security-level dropdown.
+- Agent-side v3 is intentionally deferred (issue #241 — needs a distributed credential design); agents keep v1/v2c.
+
+### Device config backup — Oxidized/RANCID-style (issue #137)
+
+Network-ops staple: periodically pull each router/switch/firewall's running-config, version it, diff it, and wire config changes into change detection. Ships end-to-end (browser-verified); **opt-in** via `scanner.config_backup.enabled` (default off — requires `security.master_key` + an SSH credential bound to a device).
+
+- **Storage**: `device_configs` (versioned per `device_uuid`: fetched_at, config_hash, config_text, protocol, diff vs previous) and `ssh_credentials` (encrypted with the same AES-256-GCM master-key cipher as SNMPv3; CRUD API encrypts on write and redacts on read).
+- **SSH probe engine** (`scannerv2/configbackup`): `golang.org/x/crypto/ssh` with a vendor command matrix (Juniper JunOS `show configuration | display set`; HP / Aruba / H3C / Comware `display current-configuration`; Cisco IOS/NX-OS, Arista, Huawei VRP, Mikrotik and unknowns fall back to `show running-config`) and host-key **TOFU** (trust-on-first-use) recording.
+- **Service**: scheduled sweep selects router/switch/firewall devices with bound credentials, fetches, diffs, and records a new version only on change — a change emits a **`device_config_changed`** event into `change_log` + the in-process Watcher (so it feeds the changes page, SSE watch, and notification rules).
+- **Read API + UI**: `GET /devices/{id}/configs` (list), `/{configId}` (detail), `/diff?a=&b=` (two-version compare); device detail gains a **配置历史** tab with version list, detail modal, and hand-colored unified-diff rendering.
+- Real-router end-to-end smoke (GL-MT3000) is deferred to the next release — the code path is complete and browser-verified against the API.
+
+### Built-in notifier: device events → webhook/email (issue #139)
+
+SOHO/branch users no longer need a Prometheus+Alertmanager stack just to get "device lost" emails. A **rule engine** subscribes to the change-detection Watcher and routes matched events through the existing notification dispatcher (webhook/email channels, 3 workers, per-user read state) — a thin rule→channel hop, deliberately NOT an alerting engine:
+
+- New `notification_rules` table: event type (`device_lost` / `device_recovered` / `device_added` / `device_changed`), scope (all / network / device-by-uuid), target channel, `cooldown_minutes` (default 30) per (rule × device) anti-flap window, enable toggle.
+- The engine layers per-(rule, device) cooldowns on top of the change-detector's existing liveness cooldown — flapping devices don't spam channels.
+
+### Device liveness time series + identity hardening (issues #114 / #115 / #116 / #117 / #120 / #129)
+
+Fixes a change-detection noise storm at the root: liveness (online/offline) was modeled as discrete `device_changed` events, so every status flip fired a row (70k+ burying real changes on the test network).
+
+- **`device_liveness` time series** (in the heartbeat store): one online/offline verdict sample per device per tick, batched through the existing buffered-write/WAL infrastructure. Queries: `OnlineRatio` (window jitter-vs-transition signal), `OfflineDuration`, `LivenessHistory`. Disposable — `devices.status` stays the source of truth.
+- **Tiered change events**: status flips are consumed by the liveness tier instead of spamming `device_changed`; real adds/changes/losses stay crisp.
+- **`device_uuid` as the satellite key**: heartbeat targets and the satellite tables key by the stable device UUID (not IP), so address changes don't fork history. Fixes the empty-sentinel regression where a device's second scan showed stale data (#129).
+- **Lease sweeper flap decay**: agent-network flap counts decay instead of hard-resetting, so a flapping device trends toward lost instead of ping-ponging.
+- **Silent-device retention**: scanner-discovered devices with no heartbeat are auto-pruned — MAC-bearing devices after `retention.silent_device_days_mac` (default 7d), MAC-less identities after `retention.silent_device_hours_no_mac` (default 24h). Manual devices are never auto-deleted; coming back online resets the clock.
+- **Liveness in the UI**: device detail exposes last-seen / offline-since / last-online.
+
+### Topology visualization polish (issue #136)
+
+The L2 data (LLDP/CDP/Bridge/Q-BRIDGE/STP edges) was already the richest among OSS peers — now the rendering catches up:
+
+- **Layered force-directed layout**: core/distribution/access layers with distinct node colors; the legend doubles as a per-layer visibility filter.
+- **Search + focus**: typing dims non-matching nodes; clicking a node highlights its neighbors and opens a detail card (IP/MAC/type/degree).
+- **Port drill-down**: edges expose local/remote port, VLAN tag, and STP role from `topology_edges`.
+- **Performance**: option rebuilds are incremental; large graphs stay interactive.
+
 ### Handler/service charter debt cleared: the 4 grandfathered handlers migrated (issue #240)
 
 The last four mutating handlers that wrote to the DB directly (documented as
@@ -187,6 +246,83 @@ device's self-declared `vendor` brand.
   path was letting `oui_prefix`/`oui_vendor` (and `mac`) fall through into
   `scan_attributes.extras` (visible as raw `OUI_PREFIX`/`OUI_VENDOR` keys in the
   Extras panel). They're now mapped to the typed fields and kept out of Extras.
+
+### HTTP surface hardening (issues #133 / #164 / #165 / #177)
+- **Trusted-proxy-aware RealIP**: the deprecated `chimw.RealIP` (which
+  unconditionally trusted `X-Forwarded-For`) is replaced by middleware that
+  only honors forwarded headers from configured `server.trusted_proxies` —
+  client IPs can no longer be spoofed via the header.
+- **Sentinel errors → proper 400s**: service-layer validation errors are typed
+  sentinels; handlers map them with `errors.Is` instead of returning 500s for
+  user mistakes.
+- **credential.go error leak**: internal error details no longer leak to API
+  clients; plain `http.Error` responses became JSON; sentinel mapping added.
+
+### Frontend UX / a11y / correctness batch (issues #150–#176)
+A consolidation pass across the SPA:
+- **Destructive-action gates**: batch device-status flips require confirmation;
+  five create/edit modals gain a confirm-on-dirty-discard guard.
+- **DataTable a11y refactor**: event-delegation rows become properly
+  interactive (keyboard-handled, focusable) — no more click-only rows.
+- **Scanner cancel**: long scans can be aborted from the scan page
+  (AbortController), with the same validation pattern applied to scan tasks and
+  agent targets; login password gains a Zod schema.
+- **2FA type safety**: the login 2FA path drops its `as any` assertions;
+  forced password-change after 2FA reuses the same modal.
+- **Mutation feedback consistency**: users-page toasts, documents-page
+  quiet-success, scanner-page merged error handling.
+- **Locale-aware formatting**: `toLocaleString` calls follow the paraglide UI
+  locale (dates/numbers match the chosen language).
+- **Empty-state honesty**: search-with-no-results no longer shows a misleading
+  create CTA; error states stay distinct from empty states.
+- **Fixes**: `/changes/watch` SSE no longer reports "disconnected" forever
+  (#195); the changes page shows display names/IPs with structured summaries
+  instead of raw JSON (#196); the dashboard offline-device fallback resolves
+  the current IP when the name degenerates to it (#197); device-list sorting
+  by IP/network/vendor/hostname with numeric IP ordering is server-side
+  (#122).
+
+### Performance & concurrency (issues #162 / #163)
+- **Scanner perf**: UUID lookup cache, `PRAGMA temp_store=MEMORY`, and batched
+  miss-count increments on the DetectLost path.
+- **Concurrency hygiene**: scheduler runs IO outside its lock,
+  `LeaseSweeper` owns a WaitGroup, the rate limiter and eBPF observer stop
+  cleanly on shutdown.
+
+### Code health (issues #132 / #141 / #157 / #158 / #160 / #161)
+- **`internal/repository/` dissolved** — repository types moved into
+  `internal/service/` next to their consumers (one less layer to jump).
+- **Handler stub collapse**: server/TLS handler families register
+  data-driven — ~68 handwritten stubs deleted.
+- **God-file splits**: `main.go` migration logic → `migrations.go`; scanner
+  config types → `scanner_config.go`.
+- Dead-code cleanup: v1 scanner stub, misplaced test helpers, `var _`
+  placeholders.
+
+### Test coverage net (issues #134 / #171)
+A characterization-and-regression series over the previously untested core:
+`runMigrations` idempotency + fresh-DB, device-bridge identity merges,
+router-ARP config parsing, retention sweeps, scheduler-coupled scan-task
+trigger/cancel, auth/CSRF/RBAC middleware, network CRUD, 2FA-TOTP (incl. a
+bypass guard), user-management security paths, SNMP-credential handler
+(incl. a passphrase-leak guard), scanner-task + audit handlers, and the first
+`.svelte` page render tests (login / devices / scanner / probes).
+
+### Documentation
+- **Website manuals migrated into the repo** (`docs/{zh,en}/`, 14 bilingual
+  files): introduction, quick-start, architecture, API, configuration,
+  deployment, development, discovery, distributed, eBPF, OpenWrt,
+  fingerprint-spec, product-scope, changelog — the repo is now the single
+  source of truth the website syncs from (issue #234).
+- Probe/synthetic-probing docs + config samples completed (issue #236);
+  `config.example.yaml` regained 9 config blocks that code used but the sample
+  lacked (agent/rdns/mdns/arp_scan/reconcile/retention, issue #131).
+
+### Deferred
+- Agent-side SNMPv3 credentials (issue #241 — needs a distributed
+  credential/key-distribution design; agents stay on v1/v2c).
+- Config-backup real-router end-to-end smoke (GL-MT3000) — code complete,
+  hardware-gated verification.
 
 ## [0.4.0] - 2026-07-29
 

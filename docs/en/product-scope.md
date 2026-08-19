@@ -35,6 +35,9 @@ The differentiation is **identity inference accuracy and breadth**: recognizing 
 ## Derived capabilities (byproducts of accurate asset data)
 
 - **Heartbeat** — keeps the asset registry fresh (online/offline + latency + history). **Not** for alerting — for asset freshness. Heartbeat data flows to Prometheus via `/metrics`; Alertmanager handles alerting.
+- **Device config backup** — scheduled SSH running-config pulls (Oxidized/RANCID-style), versioned + diffed; config changes feed the change-detection engine. Network-ops workflow on top of the device registry, not configuration management (nothing is pushed to devices).
+- **Synthetic probing** — blackbox-style periodic probing of explicitly configured external endpoints (availability/latency/cert expiry), reusing the TLS inventory capability beyond the LAN.
+- **Change notifications** — rule-driven routing of device/config change events to webhook/email channels; a delivery hop, not an alerting engine (no thresholds, no silences, no routing trees).
 - **Prometheus outlet** — `/metrics` (asset state gauges + heartbeat counters) + `/sd` (HTTP service discovery for auto-registering assets in Prometheus)
 - **Single-binary deploy** — zero runtime deps, CGO-free, cross-compiles to linux/amd64 + arm64
 
