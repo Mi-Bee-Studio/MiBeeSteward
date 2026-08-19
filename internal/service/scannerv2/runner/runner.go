@@ -31,6 +31,7 @@ import (
 
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/metrics"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/engine"
 )
@@ -302,6 +303,11 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	}); err != nil {
 		rn.logger.Error("scan runner: finalize run failed", "run_id", runID, "error", err)
 	}
+	// Run outcome metrics (#238): runs counter + duration histogram + the
+	// alive-host tally. Mirrors the run row above.
+	metrics.MibeeScannerRunsTotal.WithLabelValues("completed").Inc()
+	metrics.MibeeScannerDurationSeconds.Observe(duration.Seconds())
+	metrics.MibeeScannerHostsDiscovered.Add(float64(aliveHosts))
 	// 5. Update task last-run status (best-effort) — log on failure so a
 	// stale last_run_status (task UI stuck on "running") is observable.
 	if err := rn.queries.UpdateScanTaskStatus(ctx, db.UpdateScanTaskStatusParams{
@@ -316,6 +322,8 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 // failRun marks a run failed and updates the task's last-run status.
 func (rn *Runner) failRun(ctx context.Context, runID, taskID int64, duration time.Duration, msg string) {
 	rn.logger.Error("scan runner: run failed", "run_id", runID, "task_id", taskID, "error", msg)
+	metrics.MibeeScannerRunsTotal.WithLabelValues("failed").Inc()
+	metrics.MibeeScannerDurationSeconds.Observe(duration.Seconds())
 	finish := time.Now()
 	// best-effort: log on failure so the run/task status reflects reality.
 	if err := rn.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{

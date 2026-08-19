@@ -954,7 +954,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// scrapes these endpoints without credentials, and they leak no secrets
 	// (metrics are aggregate counters; SD exposes only device IPs/labels
 	// that the scanner already published). Keep them out of RequireAuth/Admin.
-	r.Handle("/metrics", handler.MetricsHandler())
+	// prometheus.metrics_path (#239): previously defined in config but the
+	// mount was hard-coded, silently ignoring the setting. Fall back to the
+	// default for empty/malformed values (must be an absolute path).
+	metricsPath := cfg.Prometheus.MetricsPath
+	if metricsPath == "" || metricsPath[0] != '/' {
+		metricsPath = "/metrics"
+	}
+	r.Handle(metricsPath, handler.MetricsHandler())
 	sdHandler := handler.NewSDHandler(dbConn, deviceSystemRepo)
 	r.Get("/sd", sdHandler.ServeHTTP)
 

@@ -25,6 +25,7 @@ import (
 	"mibee-steward/internal/authz/scopeql"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/metrics"
 	"mibee-steward/internal/service/scannerv2/scheduler"
 )
 
@@ -51,6 +52,15 @@ type Service struct {
 // browsing).
 func New(queries *db.Queries, conn db.DBTX, sched *scheduler.Scheduler) *Service {
 	return &Service{queries: queries, conn: conn, scheduler: sched}
+}
+
+// refreshTaskGauges recomputes mibee_scanner_tasks_total after a mutation
+// (#238). Best-effort by design: a failed refresh is logged at debug and never
+// fails the write it follows.
+func (s *Service) refreshTaskGauges(ctx context.Context) {
+	if err := metrics.RefreshScannerTaskGauges(ctx, s.queries); err != nil {
+		slog.Debug("taskservice: refresh task gauges failed", "error", err)
+	}
 }
 
 // ResolveNetworkFromTargets maps a scan task's targets to a networks row id
@@ -158,6 +168,7 @@ func (s *Service) CreateTask(ctx context.Context, req domain.ScanTaskRequest) (d
 		}
 	}
 	s.stampTaskNetwork(ctx, task.ID, task.Targets, slog.Default())
+	s.refreshTaskGauges(ctx)
 	return toTaskResponse(task), nil
 }
 
@@ -388,6 +399,7 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 	if targetsChanged {
 		s.stampTaskNetwork(ctx, id, targets, slog.Default())
 	}
+	s.refreshTaskGauges(ctx)
 	return resp, nil
 }
 
@@ -409,6 +421,7 @@ func (s *Service) DeleteTask(ctx context.Context, id int64) error {
 	if rows == 0 {
 		return ErrScanTaskNotFound
 	}
+	s.refreshTaskGauges(ctx)
 	return nil
 }
 

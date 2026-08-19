@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS devices (
     scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
     scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
 			network_id INTEGER,
+			ssh_credential_id INTEGER,
 			first_seen TIMESTAMP,
 			last_seen TIMESTAMP,
 			offline_since TIMESTAMP,
