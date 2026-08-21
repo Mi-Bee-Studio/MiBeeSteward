@@ -12,6 +12,17 @@ INSERT INTO heartbeat_configs (device_id, method, target, interval_seconds, time
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, device_id, method, target, interval_seconds, timeout_seconds, snmp_community, snmp_oid, enabled, created_at, updated_at;
 
+-- name: CreateHeartbeatConfigIfAbsent :execrows
+-- Idempotent form of CreateHeartbeatConfig for scan-time seeding (#291): a
+-- device scanned twice (or seeded by two paths in one bridge) re-asserts the
+-- same (device_id, method) spec as a no-op instead of failing the UNIQUE
+-- index. The user-driven API create keeps the strict form so a manual
+-- duplicate surfaces as a 409.
+INSERT INTO heartbeat_configs (device_id, method, target, interval_seconds, timeout_seconds, snmp_community, snmp_oid, enabled)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(device_id, method) DO NOTHING
+RETURNING id, device_id, method, target, interval_seconds, timeout_seconds, snmp_community, snmp_oid, enabled, created_at, updated_at;
+
 -- name: GetHeartbeatConfig :one
 SELECT id, device_id, method, target, interval_seconds, timeout_seconds, snmp_community, snmp_oid, enabled, created_at, updated_at
 FROM heartbeat_configs
