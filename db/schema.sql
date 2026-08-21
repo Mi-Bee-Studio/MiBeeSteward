@@ -241,6 +241,11 @@ CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(type);
 -- scan_attributes column. They cannot live here because schema replay runs
 -- before the ALTER on existing DBs and would fail with "no such column".
 -- (Fresh installs get them via the same migration step, which is idempotent.)
+-- One heartbeat config per (device, method). Scan-time seeding must be
+-- idempotent: repeated scans / dual seeding paths re-assert the same spec
+-- instead of failing the UNIQUE index (#291). Declared here for fresh
+-- installs; runMigrations creates it for existing DBs.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_heartbeat_configs_device_method ON heartbeat_configs(device_id, method);
 CREATE INDEX IF NOT EXISTS idx_heartbeat_results_device ON heartbeat_results(device_id, checked_at);
 CREATE INDEX IF NOT EXISTS idx_heartbeat_results_checked_at ON heartbeat_results(checked_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
