@@ -11,6 +11,8 @@ flowchart LR
 
 In a typical deployment a reverse proxy (Nginx) fronts the binary and forwards requests to the Chi router; requests then pass through the middleware chain, handlers, and service layer before landing in SQLite.
 
+![Web UI: network topology](images/topology.webp)
+
 ## Layered Architecture
 
 The backend is layered; data repos (DeviceRepository / DeviceSystemRepository / AuditRepository) live beside their consumers inside the service layer — there is no separate repository package:

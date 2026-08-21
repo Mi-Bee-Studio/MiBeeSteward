@@ -6,12 +6,13 @@ MiBee Steward automatically discovers what devices are on a network, infers what
 
 Documentation is maintained bilingually: `zh/` (中文) and `en/` (English) are structurally aligned, page for page.
 
-## Manual (13 pages per language)
+## Manual (14 pages per language)
 
 ### 入门 / Getting Started
 
 - [产品介绍 / Introduction](zh/introduction.md) · [EN](en/introduction.md) — project overview, capabilities, scope & boundaries
 - [快速开始 / Quick Start](zh/quick-start.md) · [EN](en/quick-start.md) — first deployment and scan within minutes
+- [Web 界面巡礼 / Web UI Tour](zh/web-ui.md) · [EN](en/web-ui.md) — every UI area with screenshots
 - [设备发现与识别 / Discovery](zh/discovery.md) · [EN](en/discovery.md) — probe sources, fingerprint rules, OUI, identity model
 - [架构总览 / Architecture](zh/architecture.md) · [EN](en/architecture.md) — layering, scannerv2 engine, background tasks
 
@@ -39,6 +40,7 @@ Documentation is maintained bilingually: `zh/` (中文) and `en/` (English) are 
 - **Website sync**: the MiBee Studio website (www.mlsbs.top) mirrors this manual from `docs/{zh,en}/` into `public/docs/mibeesteward/{zh-CN,en-US}/` via its `sync-docs.ps1` script (slug = filename, 1:1). Keep filenames stable — renaming a page breaks the site's `manifest.json`.
 - **Changelog mirror**: `en/changelog.md` is a verbatim copy of the root [CHANGELOG.md](../CHANGELOG.md); `zh/changelog.md` is the same content behind a Chinese note. Refresh both when `CHANGELOG.md` changes.
 - **Diagrams**: use Mermaid fenced blocks; do not use ASCII-art diagrams.
+- **Screenshots**: WebP, 1440×900 viewport, light theme, stored under `{zh,en}/images/` and referenced with relative paths (`images/foo.webp`) — the website sync script downloads relative image srcs into the site automatically. Every screenshot must be **sanitized**: demo-safe IPs (`192.168.1.x` / `192.168.2.x`), generic device names, no real MACs/hostnames/credentials. Capture via `scripts/docs_sanitize_proxy.py` (reverse proxy that rewrites API responses) and audit before publishing.
 - **Public docs only**: content here is published — never include private infrastructure details, credentials, or unreleased strategy.
 
 [← Back to root README.md](../README.md)
