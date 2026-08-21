@@ -29,6 +29,8 @@ flowchart LR
 
 The center is the **single writer** of the device registry (single-writer persistence). Agents scan their own network and report results to the center over HTTPS. Agents only make **outbound** connections (pull model), so they work through NAT/firewalls without any inbound port on the site side.
 
+![Agents management page](images/agents.webp)
+
 ### Pull-Model Sequence
 
 ```mermaid
