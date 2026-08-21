@@ -159,7 +159,7 @@
 			{/each}
 		</div>
 		<span class="ml-auto text-xs text-muted">
-			{m['scanner.pipeline.stages_enabled']().replace('{count}', String(enabledCount))}
+			{m['scanner.pipeline.stages_enabled']({ count: enabledCount })}
 		</span>
 	</div>
 
