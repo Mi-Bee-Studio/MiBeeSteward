@@ -170,7 +170,7 @@ fi
 echo "== 5. probe-target persistence (anti-#252) =="
 curl -sf -m 5 -X POST "${BASE}/api/v1/probe-targets" \
     -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' \
-    -d "{\"name\":\"e2e-self\",\"module\":\"http\",\"target\":\"${BASE}/api/v1/health\",\"interval_seconds\":10}" >/dev/null
+    -d "{\"name\":\"e2e-self\",\"module\":\"http\",\"target\":\"${BASE}/api/v1/health\",\"interval_seconds\":10,\"timeout_seconds\":5}" >/dev/null
 PSTAT=1
 for i in $(seq 1 20); do
     PLIST="$(curl -sf -m 5 "${BASE}/api/v1/probe-targets" -H "Authorization: Bearer ${TOKEN}" || echo '{}')"
@@ -181,10 +181,10 @@ done
 PRES=""
 for i in $(seq 1 20); do
     PRES="$(curl -sf -m 5 "${BASE}/api/v1/probe-targets/${PID}/results?limit=1" -H "Authorization: Bearer ${TOKEN}" || echo '')"
-    printf '%s' "${PRES}" | grep -q '"success": *true\|"success":true' && break
+    printf '%s' "${PRES}" | grep -q '"status":"success"' && break
     sleep 2
 done
-if printf '%s' "${PRES}" | grep -q '"success": *true\|"success":true'; then
+if printf '%s' "${PRES}" | grep -q '"status":"success"'; then
     ok "probe-target result persisted (http ${BASE}/api/v1/health)"
 else
     bad "probe-target produced no persisted result (#252 regression class)"
