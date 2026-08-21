@@ -209,7 +209,7 @@ flowchart TB
     PROM["Prometheus · Grafana · Alertmanager"] <-.->|"/metrics · /sd"| MW
 ```
 
-```
+```text
 ├── cmd/server/           # 中心入口（+ reset-admin-password 子命令）
 ├── cmd/agent/            # 远程局域网的分布式发现采集器
 ├── internal/
