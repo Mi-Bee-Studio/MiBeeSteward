@@ -591,6 +591,7 @@ export interface ScannerTask {
 	cron_expr: string;
 	enabled: boolean;
 	timeout: number;
+	concurrent_hosts: number;
 	community: string;
 	// credential_id (issue #135): bound SNMP credential. null = use the engine's
 	// global default community. When set, the task runs with that credential's
