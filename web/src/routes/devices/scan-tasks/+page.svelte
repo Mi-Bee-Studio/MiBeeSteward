@@ -72,6 +72,7 @@
 	let formTargets = $state('');
 	let formCronExpr = $state('');
 	let formTimeout = $state(300);
+	let formConcurrentHosts = $state(16);
 	let formCommunity = $state('public');
 	let formEnabled = $state(true);
 	let formPipelineConfig = $state<PipelineConfig>(defaultPipeline());
@@ -181,6 +182,7 @@
 		formTargets = '';
 		formCronExpr = '';
 		formTimeout = 300;
+		formConcurrentHosts = 16;
 		formCommunity = 'public';
 		formCredentialId = null;
 		formEnabled = true;
@@ -202,6 +204,7 @@
 		formTargets = task.targets;
 		formCronExpr = task.cron_expr;
 		formTimeout = task.timeout;
+		formConcurrentHosts = task.concurrent_hosts ?? 16;
 		formCommunity = task.community;
 		formCredentialId = task.credential_id ?? null;
 		formEnabled = task.enabled;
@@ -265,6 +268,7 @@
 			targets: formTargets,
 			cron_expr: formCronExpr,
 			timeout: formTimeout,
+			concurrent_hosts: formConcurrentHosts,
 			community: formCommunity,
 			credential_id: formCredentialId,
 			enabled: formEnabled,
@@ -730,6 +734,20 @@
 				{#if fieldErrors.timeout}
 					<p class="mt-1 text-xs text-error">{fieldErrors.timeout}</p>
 				{/if}
+			</div>
+
+			<!-- Concurrent hosts -->
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m['scanner.Concurrent Hosts']()}</label>
+				<input
+					type="number"
+					bind:value={formConcurrentHosts}
+					min="1"
+					max="200"
+					required
+					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+						focus:border-primary focus:outline-none"
+				/>
 			</div>
 
 			<!-- Community -->
