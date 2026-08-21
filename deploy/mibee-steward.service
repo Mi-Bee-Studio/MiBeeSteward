@@ -13,6 +13,10 @@ Type=simple
 User=1000
 Group=1000
 WorkingDirectory=/opt/mibee-steward
+# Post-install/post-restart health check (#281): DB integrity, write probe,
+# config sanity, stale-instance port check. Prefixed with '-' so a FAIL only
+# logs loudly (journal) without blocking start — operator decides.
+ExecStartPre=-/opt/mibee-steward/mibee-steward doctor -config configs/config.yaml
 ExecStart=/opt/mibee-steward/mibee-steward -config configs/config.yaml
 # always (not on-failure): a monitoring daemon should come back after ANY exit,
 # including a clean one (e.g. an unexpected SIGTERM from outside). `systemctl
