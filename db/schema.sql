@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS devices (
     -- is the signal for the silent-device retention sweep: a device whose
     -- offline_since is older than the configured window (7d with a MAC, 24h
     -- without) is auto-pruned. Distinct from last_seen (which is scan-derived
-    -- and not refreshed on heartbeat-online) — offline_since is the authoritative
+    -- and not refreshed on heartbeat-online) - offline_since is the authoritative
     -- "how long has this device had no heartbeat" timestamp.
     offline_since TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS heartbeat_results (
 
 -- Device liveness verdict series. NOTE: this table is DECLARED here so sqlc can
 -- generate query code against it, but it LIVES in the dedicated heartbeat.db
--- (alongside heartbeat_results) — see internal/service/heartbeat_store.go for
+-- (alongside heartbeat_results) - see internal/service/heartbeat_store.go for
 -- the authoritative DDL (no FKs, since cross-DB FKs are impossible in SQLite).
 -- It stores the per-device online/offline VERDICT (one row per tick), not the
 -- per-config probe results. It is a DISPOSABLE derived cache: devices.status is
@@ -295,7 +295,7 @@ CREATE TABLE IF NOT EXISTS notification_rules (
 );
 
 -- Per-user notification read state. notification_log is system-wide (no
--- recipient concept — it's a delivery log), so a separate join table tracks
+-- recipient concept - it's a delivery log), so a separate join table tracks
 -- which (user_id, notification_log_id) pairs each user has read. This lets
 -- the header bell show a per-user unread count and clear on dropdown open.
 CREATE TABLE IF NOT EXISTS notification_read_states (
@@ -322,7 +322,7 @@ CREATE INDEX IF NOT EXISTS idx_notification_log_sent_at ON notification_log(sent
 CREATE INDEX IF NOT EXISTS idx_notification_rules_event ON notification_rules(event_type, enabled);
 
 
--- === SNMP credentials (issue #135 — SNMPv3 support) ===
+-- === SNMP credentials (issue #135 - SNMPv3 support) ===
 -- snmp_credentials stores per-credential SNMP authentication material.
 CREATE TABLE IF NOT EXISTS snmp_credentials (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -361,7 +361,7 @@ CREATE TABLE IF NOT EXISTS scan_tasks (
     -- single CIDR exactly matching a networks.cidr row; NULL = cross-network
     -- or unresolved (visible to admins, hidden from restricted scopes).
     -- Runs (scan_task_runs) and results (scan_results) scope through their
-    -- task via this column — they have no network_id of their own. Backfilled
+    -- task via this column - they have no network_id of their own. Backfilled
     -- onto existing DBs by runMigrations.
     network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
@@ -372,7 +372,7 @@ CREATE TABLE IF NOT EXISTS scan_tasks (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 -- idx_scan_tasks_network is created by runMigrations (after the ALTER that adds
--- network_id to pre-existing tables) — creating it here would fail on old DBs
+-- network_id to pre-existing tables) - creating it here would fail on old DBs
 -- where CREATE TABLE IF NOT EXISTS leaves scan_tasks without the column.
 
 CREATE TABLE IF NOT EXISTS scan_results (
@@ -422,7 +422,7 @@ CREATE INDEX IF NOT EXISTS idx_scan_task_runs_created_at ON scan_task_runs(creat
 -- NOTE: the UNIQUE indexes on devices(ip_address) and
 -- heartbeat_configs(device_id, method) are NOT created here. They're created
 -- by applyUniqueIndexMigrations() in cmd/server/main.go, which de-duplicates
--- existing rows first — necessary because long-running DBs may have accumulated
+-- existing rows first - necessary because long-running DBs may have accumulated
 -- dupes via the original (un-guarded) insert path, and CREATE UNIQUE INDEX
 -- would fail on those. On a fresh install the migration's de-dup is a no-op.
 
@@ -516,13 +516,13 @@ CREATE INDEX IF NOT EXISTS idx_host_tls_certs_expiring ON host_tls_certs(not_aft
 
 -- === Topology / relationship / change layer ===
 -- Schema groundwork for cross-network distributed discovery (see
--- docs/private/architecture-future.md §6). These tables are empty in the
+-- docs/private/architecture-future.md section 6). These tables are empty in the
 -- single-instance phase; they exist so that topology/change data can be added
 -- later WITHOUT a schema migration on a populated DB. The networks/subnets/
 -- vlans tables are the container layer (agent deployment boundaries),
 -- device_neighbors/topology_edges are the edge layer (LLDP/CDP/ARP "who-connects-
 -- to-whom"), and change_log is the event stream produced by the change-detection
--- engine. All are CREATE TABLE IF NOT EXISTS — safe on existing installs.
+-- engine. All are CREATE TABLE IF NOT EXISTS - safe on existing installs.
 -- (networks + vlans are defined near the top of this file because devices and
 -- subnets reference them and SQLite validates FK targets at CREATE TABLE time.)
 
@@ -604,7 +604,7 @@ CREATE INDEX IF NOT EXISTS idx_change_log_detected_at ON change_log(detected_at)
 -- present to the center's ingestion endpoints (POST /api/v1/agents/report).
 -- Only the SHA-256 hash is stored; the plaintext is returned once at creation
 -- time. An admin creates a token per network/agent and hands it to the agent
--- operator. Revocation = setting revoked_at. This is the machine-auth path —
+-- operator. Revocation = setting revoked_at. This is the machine-auth path -
 -- distinct from the human user JWT flow (users.role CHECK is admin/operator/viewer/user).
 CREATE TABLE IF NOT EXISTS agent_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -621,14 +621,14 @@ CREATE INDEX IF NOT EXISTS idx_agent_tokens_network ON agent_tokens(network_id);
 -- === Change detection (Phase 3) ===
 -- scan_snapshots tracks, per network+IP, the last-seen state and a miss counter
 -- used to detect device_lost with a grace period (a device must be absent from
--- N consecutive scans before being declared lost — single missed scans from ICMP
+-- N consecutive scans before being declared lost - single missed scans from ICMP
 -- drop / network jitter must not flap a device offline). This is NOT a full
 -- per-scan snapshot; it's the minimal "known alive set + miss count" needed to
 -- compute the alive-vs-known set difference after each scan.
---   - A device PRESENT in a scan → miss_count reset to 0, last_seen_at refreshed.
---   - A device ABSENT from a scan → miss_count incremented.
---   - miss_count >= lost_threshold AND devices.status='online' → device_lost.
--- See docs/private/architecture-future.md §8 (grace period / 去抖动).
+--   - A device PRESENT in a scan -> miss_count reset to 0, last_seen_at refreshed.
+--   - A device ABSENT from a scan -> miss_count incremented.
+--   - miss_count >= lost_threshold AND devices.status='online' -> device_lost.
+-- See docs/private/architecture-future.md section 8 (grace period / drop jitter).
 CREATE TABLE IF NOT EXISTS scan_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
@@ -638,7 +638,7 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
     device_uuid TEXT NOT NULL DEFAULT '',  -- stable device identity (replaces ip as the lost-detection key once backfilled); empty during transition
     miss_count INTEGER NOT NULL DEFAULT 0, -- consecutive scans this IP was absent
     last_seen_at DATETIME NOT NULL,        -- last time this IP appeared alive in a scan
-    flap_count INTEGER NOT NULL DEFAULT 0, -- liveness transitions (lost+recovered) — used by the lease sweeper's flap state-machine to debounce intermittently-seen agent devices
+    flap_count INTEGER NOT NULL DEFAULT 0, -- liveness transitions (lost+recovered) - used by the lease sweeper's flap state-machine to debounce intermittently-seen agent devices
     last_flap_at DATETIME,                 -- when flap_count was last incremented; NULL never. Used to age-out flapping after a stable period.
     UNIQUE(network_id, ip)
 );
@@ -649,7 +649,7 @@ CREATE INDEX IF NOT EXISTS idx_scan_snapshots_miss ON scan_snapshots(miss_count)
 -- agent_commands holds ad-hoc commands the center wants a specific agent to
 -- execute (currently: "scan these targets now"). The agent polls
 -- GET /api/v1/agents/commands on each report cycle and pops its pending
--- commands. This is the center→agent command channel — a pull model (the agent
+-- commands. This is the center->agent command channel - a pull model (the agent
 -- fetches; no inbound connection needed from the center, which fits the
 -- agent-behind-NAT deployment shape).
 CREATE TABLE IF NOT EXISTS agent_commands (
@@ -671,7 +671,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_commands_agent_status ON agent_commands(age
 -- version, and diff_from_prev holds the unified diff vs the prior version
 -- (computed by internal/configdiff). protocol records how it was fetched
 -- (ssh_show_run / scp / tftp). Cascades with the device (a deleted device's
--- config history goes too — change_log retains the audit trail if needed).
+-- config history goes too - change_log retains the audit trail if needed).
 CREATE TABLE IF NOT EXISTS device_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
@@ -721,8 +721,8 @@ CREATE TABLE IF NOT EXISTS user_network_grants (
 );
 CREATE INDEX IF NOT EXISTS idx_user_network_grants_user ON user_network_grants(user_id);
 
--- === Synthetic probing layer (拨测) ===
--- probe_targets: user-configured probing of arbitrary EXPLICIT endpoints —
+-- === Synthetic probing layer (synthetic-probe) ===
+-- probe_targets: user-configured probing of arbitrary EXPLICIT endpoints -
 -- typically external/internet resources (public HTTPS site, hosted mail TLS
 -- port, vendor gateway), as opposed to the scanner (discovery-driven) and
 -- heartbeat (device-bound). Modeled on Prometheus blackbox_exporter: a module
@@ -749,12 +749,12 @@ CREATE TABLE IF NOT EXISTS probe_targets (
 );
 CREATE INDEX IF NOT EXISTS idx_probe_targets_enabled ON probe_targets(enabled);
 
--- probe_results: time-series outcome of every probe execution (拨测历史).
+-- probe_results: time-series outcome of every probe execution (synthetic-probehistory).
 -- Volume is tiny next to heartbeat_results (a handful of user-configured
 -- targets), so this lives in the main DB with a retention sweep
 -- (retention.probe_results_days) instead of a dedicated store. checked_at is
 -- an RFC3339 UTC string on purpose: modernc's time.Time serialization appends
--- a monotonic suffix that breaks SQLite date() — same lesson as
+-- a monotonic suffix that breaks SQLite date() - same lesson as
 -- heartbeat_results. The TLS summary columns let the history view chart
 -- certificate expiry over time without joining probe_tls_certs.
 CREATE TABLE IF NOT EXISTS probe_results (
@@ -772,7 +772,7 @@ CREATE TABLE IF NOT EXISTS probe_results (
 CREATE INDEX IF NOT EXISTS idx_probe_results_target_time ON probe_results(target_id, checked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at);
 
--- probe_tls_certs: certificate chains collected from probe targets — the
+-- probe_tls_certs: certificate chains collected from probe targets - the
 -- external sibling of host_tls_certs (same column set, keyed by target_id
 -- instead of ip/device, because external hosts don't resolve to a devices row).
 -- One row per cert in the chain; delete-then-insert per target on every

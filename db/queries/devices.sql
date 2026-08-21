@@ -114,7 +114,7 @@ LIMIT 1;
 
 -- name: UpdateDeviceStatus :exec
 -- Updates the status column (and updated_at) AND maintains offline_since on
--- the online↔offline flip: stamps CURRENT_TIMESTAMP when transitioning TO
+-- the online-offline flip: stamps CURRENT_TIMESTAMP when transitioning TO
 -- 'offline', clears to NULL when transitioning TO 'online'. Used by paths that
 -- set a single device's status. The CASE evaluates against the row's current
 -- status, so a no-op write (status unchanged) leaves offline_since untouched.
