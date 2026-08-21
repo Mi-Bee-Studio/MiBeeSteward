@@ -320,6 +320,11 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	})
 
 	logger.Info("scannerv2 engine ready", "registry", reg.String())
+	// Surface the evidence-persistence switch at startup: with it off (the
+	// default — raw evidence is voluminous) service_evidence stays empty by
+	// design and the 14d retention sweep is a no-op, which otherwise reads
+	// exactly like a broken persistence chain (#255).
+	logger.Info("scannerv2: raw-evidence persistence", "enabled", cfg.PersistRawEvidence)
 	e := &Engine{Orchestrator: orch, Registry: reg, Repository: repo}
 	// Per-probe timeout: bound each probe attempt so a dead host fails in
 	// seconds instead of consuming the whole per-host budget. Default 3s.

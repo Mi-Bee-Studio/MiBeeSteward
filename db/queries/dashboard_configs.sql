@@ -26,3 +26,8 @@ RETURNING id, name, type, data_source, query, refresh_interval, position, create
 -- name: DeleteDashboardConfig :execrows
 DELETE FROM dashboard_configs
 WHERE id = ?;
+
+-- name: GetMaxDashboardConfigPosition :one
+-- Highest assigned display order; the create path auto-assigns max+1 when the
+-- request carries no position (#247).
+SELECT CAST(COALESCE(MAX(position), 0) AS INTEGER) FROM dashboard_configs;

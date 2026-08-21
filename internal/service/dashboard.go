@@ -63,13 +63,31 @@ func (s *DashboardService) ListConfigs(ctx context.Context) ([]db.DashboardConfi
 	return s.queries.ListConfigs(ctx)
 }
 
-// CreateConfig creates a new dashboard configuration.
+// CreateConfig creates a new dashboard configuration. Position <= 0 means
+// "not specified" and lands after all existing widgets (max+1), so clients
+// never need to compute display order (#247).
 func (s *DashboardService) CreateConfig(ctx context.Context, params db.CreateDashboardConfigParams) (db.DashboardConfig, error) {
+	if params.Position <= 0 {
+		maxPos, err := s.queries.GetMaxDashboardConfigPosition(ctx)
+		if err != nil {
+			return db.DashboardConfig{}, fmt.Errorf("resolve widget position: %w", err)
+		}
+		params.Position = maxPos + 1
+	}
 	return s.queries.CreateDashboardConfig(ctx, params)
 }
 
-// UpdateConfig updates an existing dashboard configuration.
+// UpdateConfig updates an existing dashboard configuration. This is a
+// full-replace PUT; position <= 0 falls back to max+1 (a client that omits
+// position loses its slot ordering rather than storing an invalid 0).
 func (s *DashboardService) UpdateConfig(ctx context.Context, params db.UpdateDashboardConfigParams) (db.DashboardConfig, error) {
+	if params.Position <= 0 {
+		maxPos, err := s.queries.GetMaxDashboardConfigPosition(ctx)
+		if err != nil {
+			return db.DashboardConfig{}, fmt.Errorf("resolve widget position: %w", err)
+		}
+		params.Position = maxPos + 1
+	}
 	return s.queries.UpdateDashboardConfig(ctx, params)
 }
 
