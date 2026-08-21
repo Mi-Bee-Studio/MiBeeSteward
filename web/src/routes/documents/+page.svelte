@@ -405,7 +405,7 @@
 <div class="p-4 sm:p-6">
 	<!-- Header -->
 	<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
-		<h2 class="text-2xl font-bold text-primary">{m["documents.Title"]()}</h2>
+		<h2 class="text-2xl font-bold text-primary">{m["documents.Page Title"]()}</h2>
 		<div class="flex gap-2">
 			<button
 				onclick={openUrlCreate}

@@ -284,11 +284,11 @@
 				// Single summary warning (count + first reason) instead of one
 				// toast per failure — floods the toast stack when many devices
 				// fail (e.g. duplicates). Matches the CSV-import path. #152 part 3.
-				addToast('warning', m['scanner.Add N Failed']().replace('{count}', String(res.errors.length)).replace('{reason}', res.errors[0]));
+				addToast('warning', m['scanner.Add N Failed']({ count: res.errors.length, reason: res.errors[0] }));
 			}
 
 			if (res.added > 0) {
-				addToast('success', m['scanner.Added N Devices']().replace('{count}', String(res.added)));
+				addToast('success', m['scanner.Added N Devices']({ count: res.added }));
 				deselectAll();
 			}
 		} catch (err) {
@@ -570,7 +570,7 @@
 									<td colspan="10" class="px-3 py-2">
 										<div class="flex items-center gap-2 text-xs text-muted">
 											<span class="w-2 h-2 bg-error rounded-full"></span>
-											{m['scanner.Unreachable Hosts']().replace('{count}', String(getUnreachableHosts().length))}
+											{m['scanner.Unreachable Hosts']({ count: getUnreachableHosts().length })}
 										</div>
 									</td>
 								</tr>
@@ -597,7 +597,7 @@
 										>
 											{showAllUnreachable
 												? m['scanner.Show Less Unreachable']()
-												: m['scanner.Show All Unreachable']().replace('{count}', String(getUnreachableHosts().length))}
+												: m['scanner.Show All Unreachable']({ count: getUnreachableHosts().length })}
 										</button>
 									</td>
 								</tr>
@@ -632,7 +632,7 @@
 	<ConfirmDialog
 		bind:open={confirmAddOpen}
 		title={m['scanner.Confirm Add Title']()}
-		message={m['scanner.Confirm Add Message']().replace('{count}', String(selectedIps.size))}
+		message={m['scanner.Confirm Add Message']({ count: selectedIps.size })}
 		confirmLabel={m['scanner.Add Selected']()}
 		onConfirm={performAdd}
 		onCancel={() => { confirmAddOpen = false; }}

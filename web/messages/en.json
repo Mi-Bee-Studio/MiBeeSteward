@@ -228,7 +228,8 @@
 		"Preview File": "Preview File",
 		"Preview Not Available": "Preview not available for this file type",
 		"Restore Failed": "Restore failed",
-		"URL Placeholder": "https://..."
+		"URL Placeholder": "https://...",
+		"Page Title": "Documents"
 	},
 	"heartbeat": {
 		"Success": "Success",
