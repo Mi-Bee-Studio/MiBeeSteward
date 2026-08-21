@@ -268,6 +268,39 @@ Use `scripts/backup.sh` for safe SQLite backups (no database locking):
 
 The backup script automatically verifies integrity and cleans up expired backups.
 
+### Automatic Maintenance
+
+Every retention sweep (default every 6h, `retention.sweep_interval_hours`) also
+runs a storage-health pass: the WAL is checkpointed and truncated
+(`PRAGMA wal_checkpoint(TRUNCATE)` — folds write-ahead log pages back into the
+main file so `-wal` returns to zero), SQLite statistics are refreshed
+(`PRAGMA optimize`), and the on-disk sizes plus high-volume table row counts
+are exported to Prometheus:
+
+| Metric | Labels | Meaning |
+|---|---|---|
+| `mibee_db_size_bytes` | `db` (main/heartbeat), `kind` (db/wal) | On-disk file sizes |
+| `mibee_db_table_rows` | `db`, `table` | Row counts of the high-volume tables |
+
+These are the growth baseline for capacity planning and for the
+db-growth alert in the self-monitoring example (see `deploy/prometheus`).
+
+### Capacity Planning (field-measured baseline)
+
+Measured on a 85-device LAN with default retention windows (30d scan results,
+7d heartbeat results, 14d service evidence):
+
+- Steady state: ~150 MB total for the main database + ~4 MB heartbeat store
+- Growth is dominated by `scan_results` (one row per task × IP per scan —
+  a /24 scanned every 30 min ≈ 12k rows/day) and `heartbeat_results`
+  (one row per probe per tick — ~30 devices × 3 probes × 2880 ticks/day
+  ≈ 260k rows/day, pruned at 7d)
+- Rule of thumb: budget **~2 MB per scanned device per month** at the default
+  retention windows, then watch `mibee_db_size_bytes` — if growth deviates
+  from linear, check `mibee_db_table_rows` for which table is accumulating
+  (a stuck sweeper shows as monotonic growth on one table).
+
+
 ### Restore
 
 Backups are **binary database files** produced by `sqlite3 ".backup"` — not SQL scripts. Restore by copying the file back:
