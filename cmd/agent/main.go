@@ -36,6 +36,7 @@ import (
 	"mibee-steward/internal/agent"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/dbopen"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
@@ -341,21 +342,17 @@ func ptrTime(t time.Time) *time.Time { return &t }
 // networks/vlans FK targets + heartbeat_configs for the device bridge). It does
 // NOT run the center's full migration suite — the agent owns only these tables.
 func openAgentDB(dbPath string) (*sql.DB, error) {
-	conn, err := sql.Open("sqlite", dbPath)
+	// Pragmas travel in the DSN so all 8 pool connections get them —
+	// Exec-after-Open only reached the first connection (#252).
+	conn, err := dbopen.Open(dbPath,
+		"journal_mode=WAL",
+		"busy_timeout=5000",
+		"synchronous=NORMAL",
+	)
 	if err != nil {
 		return nil, err
 	}
 	conn.SetMaxOpenConns(8)
-	for _, p := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA busy_timeout=5000",
-		"PRAGMA synchronous=NORMAL",
-	} {
-		if _, err := conn.Exec(p); err != nil {
-			conn.Close()
-			return nil, fmt.Errorf("pragma %q: %w", p, err)
-		}
-	}
 	if _, err := conn.Exec(agentSchema); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("apply agent schema: %w", err)
