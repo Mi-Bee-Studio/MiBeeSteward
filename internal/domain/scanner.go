@@ -38,6 +38,10 @@ type ScanRequest struct {
 	Targets   string `json:"targets"`
 	Community string `json:"community"`
 	Timeout   int    `json:"timeout"`
+	// Ports optionally narrows the TCP port whitelist for this synchronous
+	// scan (e.g. "22,80,554-558"); empty = the engine's global list. Same
+	// spec syntax as pipeline_config.port_scan.ports (#275).
+	Ports string `json:"ports"`
 	// CredentialID optionally binds this scan to an SNMP credential (issue #135).
 	// 0 = use the engine's global default community. When set, the scan runs
 	// with that credential's auth (v3 USM or a specific v1/v2c community),
@@ -336,6 +340,13 @@ func ValidatePipelineConfig(config PipelineConfig) error {
 		return fmt.Errorf("at least one pipeline stage must be enabled")
 	}
 	return nil
+}
+
+// ValidatePortList validates a TCP port spec ("22,80,100-200") — exported so
+// the sync-scan handler can validate its ports parameter against the same
+// rules as pipeline_config (#275).
+func ValidatePortList(ports string) error {
+	return validatePortList(ports)
 }
 
 // validatePortList validates a port specification string.

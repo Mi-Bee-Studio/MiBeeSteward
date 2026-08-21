@@ -85,6 +85,7 @@ const deleteProbeResultsStaleBatched = `-- name: DeleteProbeResultsStaleBatched 
 DELETE FROM probe_results
 WHERE id IN (
     SELECT sub.id FROM probe_results AS sub WHERE sub.checked_at < ? LIMIT ?
+)
 `
 
 type DeleteProbeResultsStaleBatchedParams struct {
@@ -92,7 +93,7 @@ type DeleteProbeResultsStaleBatchedParams struct {
 	Limit     int64  `json:"limit"`
 }
 
-// Retention sweep (batched) — same shape as DeleteHostTLSCertsStaleBatched.
+// Retention sweep (batched) - same shape as DeleteHostTLSCertsStaleBatched.
 // cutoff is an RFC3339 UTC string compared lexically (ISO 8601 sorts).
 func (q *Queries) DeleteProbeResultsStaleBatched(ctx context.Context, arg DeleteProbeResultsStaleBatchedParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteProbeResultsStaleBatched, arg.CheckedAt, arg.Limit)

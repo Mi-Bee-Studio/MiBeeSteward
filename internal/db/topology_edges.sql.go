@@ -11,11 +11,10 @@ import (
 )
 
 const deleteStaleTopologyEdges = `-- name: DeleteStaleTopologyEdges :execrows
-d;
-
 DELETE FROM topology_edges
 WHERE id IN (
     SELECT sub.id FROM topology_edges AS sub WHERE sub.last_seen < ? LIMIT ?
+)
 `
 
 type DeleteStaleTopologyEdgesParams struct {
@@ -41,7 +40,7 @@ FROM topology_edges te
 JOIN devices df ON te.from_device_id = df.id
 JOIN devices dt ON te.to_device_id = dt.id
 WHERE (? <= 0 OR df.network_id = ? OR dt.network_id = ?)
-ORDER BY te.edge_type, te.confidence DESC, te.
+ORDER BY te.edge_type, te.confidence DESC, te.id
 `
 
 type ListTopologyEdgesByNetworkParams struct {
@@ -58,7 +57,7 @@ type ListTopologyEdgesByNetworkParams struct {
 // Public License v3.0 or later. See LICENSE for the full text. A commercial
 // license is available for use cases the AGPL does not accommodate; see
 // LICENSE-COMMERCIAL.md.
-// All device↔device edges for one network's devices (used by the topology
+// All device-device edges for one network's devices (used by the topology
 // graph). Filters by either endpoint belonging to the network so an edge
 // spanning a known + an external device still appears. network_id <= 0 = all.
 func (q *Queries) ListTopologyEdgesByNetwork(ctx context.Context, arg ListTopologyEdgesByNetworkParams) ([]TopologyEdge, error) {

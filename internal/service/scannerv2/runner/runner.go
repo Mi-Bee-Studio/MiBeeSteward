@@ -212,6 +212,26 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	}
 	start := time.Now()
 
+	// 0. Resolve the task's TCP port whitelist (#275): pipeline_config.
+	// port_scan.ports was validated + stored but never enforced — the engine
+	// always scanned its global list. Read the task row and thread the spec
+	// through the per-scan ProbeHint (no shared-engine mutation, safe under
+	// concurrent scans). A missing/disabled port_scan stage keeps the global
+	// list ("" spec).
+	portSpec := ""
+	if task, err := rn.queries.GetScanTask(ctx, taskID); err == nil {
+		var pipeline struct {
+			PortScan struct {
+				Enabled bool   `json:"enabled"`
+				Ports   string `json:"ports"`
+			} `json:"port_scan"`
+		}
+		if json.Unmarshal([]byte(task.PipelineConfig), &pipeline) == nil &&
+			pipeline.PortScan.Enabled && pipeline.PortScan.Ports != "" {
+			portSpec = pipeline.PortScan.Ports
+		}
+	}
+
 	// 1. Create the run row (status=running).
 	run, err := rn.queries.CreateScanTaskRun(ctx, db.CreateScanTaskRunParams{
 		TaskID:    taskID,
@@ -226,7 +246,7 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	// 2. Execute the engine. The engine's per-host timeout + concurrency are
 	//    applied via a transient reconfiguration; we just pass targets through.
 	rn.engine.Orchestrator.SetTimeouts(timeout, concurrentHosts)
-	reports, err := rn.engine.ScanTargets(ctx, targets, false, credentialID)
+	reports, err := rn.engine.ScanTargetsWithPorts(ctx, targets, portSpec, false, credentialID)
 	duration := time.Since(start)
 
 	if err != nil {

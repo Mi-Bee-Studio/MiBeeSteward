@@ -61,6 +61,12 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	if req.Community == "" {
 		req.Community = "public"
 	}
+	if req.Ports != "" {
+		if err := domain.ValidatePortList(req.Ports); err != nil {
+			Error(w, http.StatusBadRequest, "ports: "+err.Error())
+			return
+		}
+	}
 
 	// Synchronous scans are bounded: estimate the target count up front and
 	// reject ranges too large to complete within the server's WriteTimeout.
@@ -92,7 +98,7 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	h.engine.Orchestrator.SetTimeouts(perHost, h.engine.Orchestrator.MaxConcurrentHosts())
 
 	start := time.Now()
-	reports, err := h.engine.ScanTargets(r.Context(), req.Targets, false, req.CredentialID)
+	reports, err := h.engine.ScanTargetsWithPorts(r.Context(), req.Targets, req.Ports, false, req.CredentialID)
 	duration := time.Since(start)
 	if err != nil {
 		if isTargetError(err) {
