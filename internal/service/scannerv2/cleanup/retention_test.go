@@ -8,13 +8,16 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/metrics"
 	"mibee-steward/internal/testutil"
 )
 
@@ -167,4 +170,31 @@ func countAuditLogs(t *testing.T, conn *sql.DB) int64 {
 	var n int64
 	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM audit_logs`).Scan(&n))
 	return n
+}
+
+// TestMaintenance_CheckpointAndMetrics pins the #280 storage-health pass:
+// the WAL is checkpointed (truncates the -wal sidecar) and the size/rows
+// gauges carry values for the DB file and sampled tables.
+func TestMaintenance_CheckpointAndMetrics(t *testing.T) {
+	// File-backed DB (not :memory:) — the maintenance pass measures real
+	// files via PRAGMA database_list.
+	dir := t.TempDir()
+	mainPath := filepath.Join(dir, "main.db")
+	mainDB, err := sql.Open("sqlite", mainPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { mainDB.Close() })
+	_, err = mainDB.Exec(`CREATE TABLE scan_results (id INTEGER PRIMARY KEY, ip TEXT)`)
+	require.NoError(t, err)
+
+	svc := New(db.New(mainDB), nil, nil, mainDB, config.RetentionConfig{})
+	svc.runMaintenance(context.Background())
+
+	require.Equal(t, float64(0),
+		promtest.ToFloat64(metrics.MibeeDBSizeBytes.WithLabelValues("main", "wal")),
+		"fresh WAL sidecar must report 0 after TRUNCATE checkpoint")
+	dbSize := promtest.ToFloat64(metrics.MibeeDBSizeBytes.WithLabelValues("main", "db"))
+	require.Greater(t, dbSize, float64(0), "db file size must be sampled")
+	require.Equal(t, float64(0),
+		promtest.ToFloat64(metrics.MibeeDBTableRows.WithLabelValues("main", "scan_results")),
+		"empty table row count must be sampled")
 }

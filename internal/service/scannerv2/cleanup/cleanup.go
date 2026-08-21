@@ -126,6 +126,10 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneHostTLSCerts(ctx)
 	s.pruneProbeResults(ctx)
 	s.pruneSilentDevices(ctx)
+	// Storage health last: checkpoint/optimize are most useful right after
+	// the bulk deletes above, and the size/row samples reflect the post-prune
+	// state (#280).
+	s.runMaintenance(ctx)
 }
 
 // cutoff returns now - retentionDays, or a zero time if days<=0 (which would
