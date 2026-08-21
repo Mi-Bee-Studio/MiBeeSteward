@@ -8,7 +8,7 @@
 -- LICENSE-COMMERCIAL.md.
 
 -- name: ListTopologyEdgesByNetwork :many
--- All device↔device edges for one network's devices (used by the topology
+-- All device-device edges for one network's devices (used by the topology
 -- graph). Filters by either endpoint belonging to the network so an edge
 -- spanning a known + an external device still appears. network_id <= 0 = all.
 SELECT DISTINCT

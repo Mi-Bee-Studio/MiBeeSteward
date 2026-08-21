@@ -397,7 +397,8 @@
 		"Close Dialog": "关闭对话框",
 		"Edit Widget": "编辑组件",
 		"Remove Widget": "移除组件",
-		"File": "文件"
+		"File": "文件",
+		"Add": "添加"
 	},
 	"scanner": {
 		"Scanner": "网络扫描器",
@@ -558,7 +559,22 @@
 		"Run": "运行",
 		"New": "新增",
 		"Completed": "已完成",
-		"Status Triggered": "已触发"
+		"Status Triggered": "已触发",
+		"ports.invalid_entry": "无效条目 — 请输入端口（1-65535）或端口段（如 5000-5010）",
+		"ports.remove": "移除 {port}",
+		"ports.empty": "尚未指定端口 — 将使用引擎默认列表",
+		"ports.add_placeholder": "端口或端口段（如 8080 或 5000-5010）",
+		"ports.whitelist_note": "白名单：仅扫描这 {count} 个条目。列表外的端口不会被探测 — 需要发现它们请在此添加。",
+		"templates": {
+			"web": "常见 Web",
+			"cctv": "视频监控",
+			"database": "数据库",
+			"network": "网络设备",
+			"monitoring": "监控组件",
+			"top100": "常用 Top 100"
+		},
+		"Advanced Options": "高级选项",
+		"ports.quick_scan_section": "端口白名单（可选）"
 	},
 	"labels": {
 		"Per Device Labels": "设备级标签",

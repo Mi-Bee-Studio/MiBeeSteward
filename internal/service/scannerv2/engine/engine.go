@@ -368,6 +368,17 @@ func (e *Engine) EstimateTargetCount(targets string) (int, error) {
 // (decrypting passphrases in-process) and threaded into the ProbeHint so every
 // SNMP probe speaks v3 / the bound community instead of the global default.
 func (e *Engine) ScanTargets(ctx context.Context, targets string, fastScan bool, credentialID int64) ([]scannerv2.HostReport, error) {
+	return e.ScanTargetsWithPorts(ctx, targets, "", fastScan, credentialID)
+}
+
+// ScanTargetsWithPorts is ScanTargets with a per-scan TCP port whitelist
+// (portSpec, e.g. "22,80,443,554-558"). Empty portSpec keeps the engine's
+// global configured list. This is how a scan task's
+// pipeline_config.port_scan.ports reaches the port probe without mutating
+// shared engine state — concurrent scans each carry their own ProbeHint
+// (#275; previously the task whitelist was validated and stored but never
+// enforced).
+func (e *Engine) ScanTargetsWithPorts(ctx context.Context, targets string, portSpec string, fastScan bool, credentialID int64) ([]scannerv2.HostReport, error) {
 	ips, err := parseScanTargets(targets)
 	if err != nil {
 		return nil, err
@@ -392,7 +403,7 @@ func (e *Engine) ScanTargets(ctx context.Context, targets string, fastScan bool,
 	// this long. A dead host fails in seconds across all its probes rather than
 	// blocking the full PerHostTimeout on each. The per-host pipeline ceiling
 	// is enforced separately by the hostCtx deadline below.
-	hint := scannerv2.ProbeHint{Timeout: e.perProbeTimeout, Community: e.snmpCommunity}
+	hint := scannerv2.ProbeHint{Timeout: e.perProbeTimeout, Community: e.snmpCommunity, PortSpec: portSpec}
 
 	// Resolve a bound SNMP credential (issue #135). A credential overrides the
 	// global community for every SNMP probe in this scan. Resolution errors

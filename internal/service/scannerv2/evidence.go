@@ -62,6 +62,10 @@ type ProbeHint struct {
 	Community string `json:"community,omitempty"`
 	// Timeout per individual probe attempt.
 	Timeout time.Duration `json:"timeout,omitempty"`
+	// PortSpec overrides the engine's global TCP port list for this scan
+	// (a task's pipeline_config.port_scan.ports whitelist). Empty = use the
+	// probe's configured spec. Consumed by the port-scan probe only (#275).
+	PortSpec string `json:"port_spec,omitempty"`
 	// SNMPCredential, when non-nil, routes every SNMP probe through v3 (or a
 	// specific v1/v2c community tied to this credential) instead of the
 	// engine's global default. Set by the engine when a scan task or scan

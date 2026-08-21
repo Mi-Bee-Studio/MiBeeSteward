@@ -15,9 +15,11 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { validateScanTarget } from '$lib/utils/validation';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import PortListEditor from '$lib/components/scanner/PortListEditor.svelte';
+	import { portTemplates } from '$lib/portTemplates';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
-	import { LoaderCircle, Radar, CircleStop } from '@lucide/svelte';
+	import { LoaderCircle, Radar, CircleStop, ChevronRight } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	// All 9 device types matching internal/domain/device.go
@@ -53,6 +55,9 @@
 	let targets = $state('');
 	let community = $state('public');
 	let timeout = $state(2);
+	// Optional TCP port whitelist for the quick scan (#275). Empty = the
+	// engine's global list (the previous, only behavior).
+	let portSpec = $state('');
 	let targetsError = $state('');
 	// SNMP credential selection (issue #135). When set, overrides community and
 	// routes the scan through v3 USM (or the credential's own community).
@@ -160,6 +165,7 @@
 				targets: targets.trim(),
 				community: community || 'public',
 				timeout: timeout || 2,
+				ports: portSpec.trim() || undefined,
 				credential_id: selectedCredentialId ?? undefined
 			}, scanController?.signal);
 			result = res;
@@ -367,6 +373,30 @@
 					disabled={scanning}
 				/>
 			</div>
+		</div>
+		<div class="mt-2">
+			<details class="group">
+				<summary class="cursor-pointer select-none text-xs text-text-muted hover:text-text flex items-center gap-1">
+					<ChevronRight class="w-3 h-3 transition-transform group-open:rotate-90" />
+					{m['scanner.ports.quick_scan_section']()}
+				</summary>
+				<div class="mt-2">
+					<div class="flex flex-wrap gap-1.5 mb-2">
+						{#each portTemplates as tpl (tpl.ports)}
+							<button
+								type="button"
+								onclick={() => { portSpec = tpl.ports; }}
+								disabled={scanning}
+								class="px-2 py-0.5 rounded-full border border-border text-xs text-muted
+									hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+							>
+								{tpl.label()}
+							</button>
+						{/each}
+					</div>
+					<PortListEditor bind:value={portSpec} />
+				</div>
+			</details>
 		</div>
 		<div>
 			<button

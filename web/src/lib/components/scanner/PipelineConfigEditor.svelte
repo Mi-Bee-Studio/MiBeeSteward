@@ -12,6 +12,8 @@
 	import { m } from '$lib/i18n-paraglide';
 	import type { PipelineConfig } from '$lib/types';
 	import { ChevronDown, Info } from '@lucide/svelte';
+	import PortListEditor from '$lib/components/scanner/PortListEditor.svelte';
+	import { portTemplates } from '$lib/portTemplates';
 
 	let {
 		config = $bindable(defaultPipelineConfig()),
@@ -259,13 +261,19 @@
 							{:else if stage.key === 'port_scan'}
 								<div class="config-field">
 									<label class="config-label">{m['scanner.pipeline.field_ports']()}</label>
-									<input
-										type="text"
-										bind:value={config.port_scan.ports}
-										placeholder={m['scanner.pipeline.field_ports_placeholder']()}
-										onchange={() => onchange?.()}
-										class="config-input w-64"
-									/>
+									<div class="flex flex-wrap gap-1.5 mb-2">
+										{#each portTemplates as tpl (tpl.ports)}
+											<button
+												type="button"
+												onclick={() => { config.port_scan.ports = tpl.ports; onchange?.(); }}
+												class="px-2 py-0.5 rounded-full border border-border text-xs text-muted
+													hover:border-primary hover:text-primary transition-colors"
+											>
+												{tpl.label()}
+											</button>
+										{/each}
+									</div>
+									<PortListEditor bind:value={config.port_scan.ports} onchange={() => onchange?.()} />
 								</div>
 							{:else if stage.key === 'service_detect'}
 								<div class="config-note">

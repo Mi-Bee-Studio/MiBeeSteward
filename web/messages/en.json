@@ -397,7 +397,8 @@
 		"Close Dialog": "Close dialog",
 		"Edit Widget": "Edit widget",
 		"Remove Widget": "Remove widget",
-		"File": "File"
+		"File": "File",
+		"Add": "Add"
 	},
 	"scanner": {
 		"Scanner": "Network Scanner",
@@ -558,7 +559,22 @@
 		"Run": "Run",
 		"New": "New",
 		"Completed": "Completed",
-		"Status Triggered": "Triggered"
+		"Status Triggered": "Triggered",
+		"ports.invalid_entry": "Invalid entry — use a port (1-65535) or a range like 5000-5010",
+		"ports.remove": "Remove {port}",
+		"ports.empty": "No ports — the engine default list applies",
+		"ports.add_placeholder": "port or range (e.g. 8080 or 5000-5010)",
+		"ports.whitelist_note": "Whitelist: only these {count} entries are scanned. Ports outside the list are never probed — add them here to discover them.",
+		"templates": {
+			"web": "Common Web",
+			"cctv": "Video / CCTV",
+			"database": "Databases",
+			"network": "Network Gear",
+			"monitoring": "Monitoring",
+			"top100": "Top ~100 Ports"
+		},
+		"Advanced Options": "Advanced Options",
+		"ports.quick_scan_section": "Port whitelist (optional)"
 	},
 	"labels": {
 		"Per Device Labels": "Per-Device Labels",
