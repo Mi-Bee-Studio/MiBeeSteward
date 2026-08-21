@@ -41,7 +41,7 @@ func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	elapsed := time.Since(start)
 
 	if err != nil {
-		slog.Error("probe failed", "method", "icmp", "target", target, "error", err)
+		logProbeFailure("icmp", target, err)
 		return &Result{
 			Success:      false,
 			Latency:      elapsed,
@@ -52,6 +52,7 @@ func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	stats := pinger.Statistics()
 	if stats.PacketsRecv > 0 {
 		slog.Debug("probe executed", "method", "icmp", "target", target, "success", true, "latency", stats.AvgRtt)
+		noteProbeSuccess("icmp", target, stats.AvgRtt)
 		return &Result{
 			Success: true,
 			Latency: stats.AvgRtt,

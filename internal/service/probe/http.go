@@ -33,7 +33,8 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		slog.Error("probe failed", "method", "http", "target", target, "error", err)
+		// execution failure against the target (dial/timeout/response) → streak log
+		logProbeFailure("http", target, err)
 		return &Result{
 			Success:      false,
 			ErrorMessage: err.Error(),
@@ -57,6 +58,7 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	latency := elapsed
 	if success := resp.StatusCode < 400; success {
 		slog.Debug("probe executed", "method", "http", "target", target, "success", true, "latency", latency)
+		noteProbeSuccess("http", target, latency)
 		return &Result{
 			Success:    true,
 			Latency:    latency,
