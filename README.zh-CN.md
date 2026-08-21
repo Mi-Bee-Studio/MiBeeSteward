@@ -40,6 +40,14 @@ flowchart LR
     R2 --> O2
 ```
 
+![仪表盘](docs/zh/images/dashboard.webp)
+
+![设备资产列表](docs/zh/images/devices.webp)
+
+![网络拓扑](docs/zh/images/topology.webp)
+
+> 完整界面导览见 [Web 界面巡礼](docs/zh/web-ui.md)。
+
 ## 功能特性
 
 - **设备管理**：添加、配置并监控网络设备

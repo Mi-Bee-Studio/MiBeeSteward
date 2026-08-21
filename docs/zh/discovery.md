@@ -114,7 +114,11 @@ export MIBEE_SCANNER_DISCOVERY_CONNTRACK_ENABLED=true
 
 ## 指纹识别
 
-探测产出证据后，**RuleClassifier** 将证据与数据驱动的 YAML 规则库匹配，识别设备类型、品牌和型号。
+探测产出证据后，**RuleClassifier** 将证据与数据驱动的 YAML 规则库匹配，识别设备类型、品牌和型号。识别结果直接体现在设备列表与详情页——类型旁的角标区分识别来源（协议证据 vs 主名启发式）：
+
+![识别结果体现在设备列表](images/devices.webp)
+
+![设备详情：服务与扫描属性](images/device-detail.webp)
 
 ### 规则文件
 
