@@ -72,7 +72,8 @@ func TestCreateTask_ValidationRejectsBadInput(t *testing.T) {
 		{"invalid cron", func(r *domain.ScanTaskRequest) { r.CronExpr = "not-a-cron" }},
 		{"timeout too low", func(r *domain.ScanTaskRequest) { r.Timeout = 0 }},
 		{"timeout too high", func(r *domain.ScanTaskRequest) { r.Timeout = 99999 }},
-		{"concurrent too low", func(r *domain.ScanTaskRequest) { r.ConcurrentHosts = 0 }},
+		{"concurrent too low", func(r *domain.ScanTaskRequest) { r.ConcurrentHosts = -1 }},
+		{"concurrent too high", func(r *domain.ScanTaskRequest) { r.ConcurrentHosts = 201 }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -82,6 +83,31 @@ func TestCreateTask_ValidationRejectsBadInput(t *testing.T) {
 			require.Error(t, err, c.name)
 		})
 	}
+}
+
+// TestCreateTask_ConcurrentHostsDefaultsToSixteen pins the #246 fix: the UI
+// create form historically sent no concurrent_hosts (int zero value), which
+// validation rejected with no fixable form field. Zero now means "unspecified"
+// and lands as the default; explicit values still pass through untouched.
+func TestCreateTask_ConcurrentHostsDefaultsToSixteen(t *testing.T) {
+	svc, _ := setupSvc(t)
+	ctx := context.Background()
+
+	req := validRequest()
+	req.ConcurrentHosts = 0
+	resp, err := svc.CreateTask(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, domain.DefaultConcurrentHosts, resp.ConcurrentHosts)
+
+	got, err := svc.GetTask(ctx, resp.ID, domain.Scope{Global: true})
+	require.NoError(t, err)
+	require.Equal(t, domain.DefaultConcurrentHosts, got.ConcurrentHosts)
+
+	req = validRequest()
+	req.ConcurrentHosts = 64
+	resp, err = svc.CreateTask(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 64, resp.ConcurrentHosts)
 }
 
 // TestGetTask_NotFound verifies a missing ID maps to ErrScanTaskNotFound (the
