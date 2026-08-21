@@ -50,7 +50,7 @@ func (p *SNMPProber) Probe(_ context.Context, target string, timeout time.Durati
 	err := snmp.Connect()
 	if err != nil {
 		elapsed := time.Since(start)
-		slog.Error("probe failed", "method", "snmp", "target", target, "error", err)
+		logProbeFailure("snmp", target, err)
 		return &Result{
 			Success:      false,
 			Latency:      elapsed,
@@ -63,7 +63,7 @@ func (p *SNMPProber) Probe(_ context.Context, target string, timeout time.Durati
 	elapsed := time.Since(start)
 
 	if err != nil {
-		slog.Error("probe failed", "method", "snmp", "target", target, "error", err)
+		logProbeFailure("snmp", target, err)
 		return &Result{
 			Success:      false,
 			Latency:      elapsed,
@@ -72,6 +72,7 @@ func (p *SNMPProber) Probe(_ context.Context, target string, timeout time.Durati
 	}
 
 	slog.Debug("probe executed", "method", "snmp", "target", target, "success", true, "latency", elapsed)
+	noteProbeSuccess("snmp", target, elapsed)
 	return &Result{
 		Success: true,
 		Latency: elapsed,
