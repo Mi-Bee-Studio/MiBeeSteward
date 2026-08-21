@@ -92,7 +92,9 @@ func setupHeartbeatTest(t *testing.T) (*HeartbeatService, *sql.DB, *db.Queries) 
 			enabled INTEGER NOT NULL DEFAULT 1,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)
+		);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_heartbeat_configs_device_method
+			ON heartbeat_configs(device_id, method)
 	`)
 	require.NoError(t, err)
 
@@ -933,4 +935,26 @@ func TestSyncStatus_StampOfflineSince(t *testing.T) {
 	require.NoError(t, dbConn.QueryRowContext(ctx,
 		`SELECT offline_since FROM devices WHERE id = ?`, dev.ID).Scan(&offlineSince))
 	require.Nil(t, offlineSince, "flipping offline→online must clear offline_since to NULL")
+}
+
+// TestCreateConfigs_IdempotentRescan pins #291: seeding the same heartbeat
+// specs twice (a rescan, or two seeding paths in one bridge) must be a no-op,
+// not a UNIQUE(device_id, method) failure that WARNed per device per scan.
+func TestCreateConfigs_IdempotentRescan(t *testing.T) {
+	svc, dbConn, _ := setupHeartbeatTest(t)
+	ctx := context.Background()
+	specs := []scannerv2.HeartbeatSpec{
+		{Method: "tcp", Target: "10.0.0.1:80", IntervalSeconds: 30, TimeoutSeconds: 5},
+		{Method: "icmp", Target: "10.0.0.1", IntervalSeconds: 30, TimeoutSeconds: 5},
+	}
+	require.NoError(t, svc.CreateConfigs(ctx, 1, specs))
+	// Same specs again (rescan) — previously "UNIQUE constraint failed:
+	// heartbeat_configs.device_id, heartbeat_configs.method".
+	require.NoError(t, svc.CreateConfigs(ctx, 1, specs), "re-seeding the same specs must be idempotent")
+	// A duplicate method WITHIN one spec list must also be tolerated.
+	dup := append(append([]scannerv2.HeartbeatSpec{}, specs...), specs[0])
+	require.NoError(t, svc.CreateConfigs(ctx, 1, dup))
+	var cfgCount int
+	require.NoError(t, dbConn.QueryRow("SELECT COUNT(*) FROM heartbeat_configs WHERE device_id = 1").Scan(&cfgCount))
+	require.Equal(t, 2, cfgCount, "exactly one config per method, no duplicates")
 }
