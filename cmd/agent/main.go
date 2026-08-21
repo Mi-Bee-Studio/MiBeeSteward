@@ -219,7 +219,7 @@ func main() {
 		}
 		// arp_cache: free byproduct of normal operation (reads /proc/net/arp).
 		if cfg.Scanner.Discovery.ARPCache.Enabled {
-			arpCacheSrc := scannerv2discovery.NewARPCacheSource(interval, discSvc, slog.Default())
+			arpCacheSrc := scannerv2discovery.NewARPCacheSource(cfg.Network.CIDR, interval, discSvc, slog.Default())
 			arpCacheSrc.Start(discCtx)
 			activeSources = append(activeSources, "arp_cache")
 		}
