@@ -154,7 +154,26 @@ func enumerateCIDR(ipNet *net.IPNet) []string {
 	for ip := ipNet.IP.Mask(ipNet.Mask); ipNet.Contains(ip); incIP(ip) {
 		ips = append(ips, ip.String())
 	}
+	if skipFirst, skipLast := v4ReservedBounds(ipNet); skipFirst {
+		ips = ips[1:]
+		if skipLast && len(ips) > 0 {
+			ips = ips[:len(ips)-1]
+		}
+	}
 	return ips
+}
+
+// v4ReservedBounds mirrors engine.v4ReservedBounds (kept in sync by the parity
+// test): IPv4 networks wider than /31 exclude the network + broadcast
+// addresses — the broadcast IP answers pings via every host's reply and gets
+// recorded as a phantom device (#254). /31 (RFC 3021), /32, and IPv6 exclude
+// nothing.
+func v4ReservedBounds(ipNet *net.IPNet) (skipFirst, skipLast bool) {
+	ones, bits := ipNet.Mask.Size()
+	if bits != 32 || ones >= 31 {
+		return false, false
+	}
+	return true, true
 }
 
 func expandIPRange(s string) ([]string, error) {

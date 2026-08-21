@@ -61,9 +61,11 @@
 		}
 
 		loading = true;
+		let loginDone = false;
 		try {
 			const res = await api.post<LoginResponse>('/auth/login', { username, password });
 			loginResponse = res;
+			loginDone = true;
 
 			// Check if 2FA is required. LoginResponse models these fields
 			// (two_factor_required / user_id) directly — no `as any` needed.
@@ -103,6 +105,10 @@
 			}
 		} finally {
 			loading = false;
+			// A failed attempt leaves the typed password in the (masked) field —
+			// clear it so a stale password isn't shoulder-surfed or resubmitted
+			// after the user walks away (#251).
+			if (!loginDone) password = '';
 		}
 	}
 

@@ -16,6 +16,7 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { scanRunStatusBadge } from '$lib/utils/badges';
 	import { formatDateTime as formatTime } from '$lib/utils/index';
+	import { formatDuration } from '$lib/utils/format';
 	import { goto } from '$app/navigation';
 
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -282,10 +283,6 @@
 	}
 
 	// --- Formatting ---
-	function formatDuration(ms: number): string {
-		if (ms < 1000) return `${ms}ms`;
-		return `${(ms / 1000).toFixed(1)}s`;
-	}
 
 	function formatBytes(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;

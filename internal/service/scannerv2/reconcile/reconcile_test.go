@@ -235,3 +235,42 @@ func TestCleanupGhosts_MACFallback(t *testing.T) {
 	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM devices WHERE mac_address = 'aa:bb:cc:dd:ee:20'`).Scan(&n))
 	require.Equal(t, int64(1), n)
 }
+
+// TestCleanupReservedAddressDevices pins the #254 startup cleanup: devices
+// stamped at a network's own address or its broadcast are phantom (the
+// broadcast answered pings via fan-out replies) and are removed unconditionally
+// together with their scan_snapshots lease. Real neighbors (.1) and devices on
+// /31-style or non-matching networks are untouched, and a second pass is a
+// no-op.
+func TestCleanupReservedAddressDevices(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { dbConn.Close() })
+
+	net63 := addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")
+	seed := func(name, ip string) {
+		_, err := dbConn.Exec(`INSERT INTO devices (name, ip_address, network_id, status, type) VALUES (?, ?, ?, 'online', 'other')`, name, ip, net63)
+		require.NoError(t, err)
+	}
+	seed("broadcast", "192.168.63.255")
+	seed("network-addr", "192.168.63.0")
+	seed("gateway", "192.168.63.1")
+	_, err = dbConn.Exec(`INSERT INTO scan_snapshots (network_id, ip, miss_count, last_seen_at) VALUES (?, '192.168.63.255', 0, datetime('now'))`, net63)
+	require.NoError(t, err)
+
+	svc := New(dbConn, 0, nil, nil)
+	removed, err := svc.CleanupReservedAddressDevices(context.Background())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"192.168.63.0", "192.168.63.255"}, removed)
+
+	var n int64
+	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM devices WHERE network_id = ?`, net63).Scan(&n))
+	require.Equal(t, int64(1), n, "only the real .1 neighbor survives")
+	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM scan_snapshots WHERE network_id = ?`, net63).Scan(&n))
+	require.Equal(t, int64(0), n, "the broadcast lease must go with the device")
+
+	// Idempotent.
+	removed, err = svc.CleanupReservedAddressDevices(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, removed)
+}

@@ -101,7 +101,29 @@ func enumerateCIDR(ipNet *net.IPNet) []string {
 	for ip := ipNet.IP.Mask(ipNet.Mask); ipNet.Contains(ip); incIP(ip) {
 		ips = append(ips, ip.String())
 	}
+	if skipFirst, skipLast := v4ReservedBounds(ipNet); skipFirst {
+		ips = ips[1:]
+		if skipLast && len(ips) > 0 {
+			ips = ips[:len(ips)-1]
+		}
+	}
 	return ips
+}
+
+// v4ReservedBounds reports whether a CIDR's first/last addresses are reserved
+// identifiers rather than hosts and must be excluded from enumeration. IPv4
+// networks wider than /31 reserve the network address and the broadcast
+// address; scanning the broadcast makes every host's ICMP reply get attributed
+// to the broadcast IP, which then persists as a phantom always-online device
+// with no MAC (#254). /31 point-to-point links use both addresses (RFC 3021),
+// /32 is a single host, and IPv6 has no broadcast address — nothing is
+// excluded there.
+func v4ReservedBounds(ipNet *net.IPNet) (skipFirst, skipLast bool) {
+	ones, bits := ipNet.Mask.Size()
+	if bits != 32 || ones >= 31 {
+		return false, false
+	}
+	return true, true
 }
 
 func parseIPRange(s string) ([]string, error) {
