@@ -11,6 +11,8 @@ flowchart LR
 
 典型部署中由反向代理（Nginx）前置，将请求转发给 Chi 路由器；请求依次穿过中间件链、处理器与服务层，最终写入 SQLite。
 
+![Web 界面：网络拓扑](images/topology.webp)
+
 ## 分层架构
 
 后端采用分层架构；数据仓储（DeviceRepository / DeviceSystemRepository / AuditRepository）与消费者同包共存于服务层，没有独立的仓储包：

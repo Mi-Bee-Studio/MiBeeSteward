@@ -13,7 +13,7 @@ This guide shows how to get MiBee Steward running in minutes and complete your f
 
 ### Option 1: GitHub Releases
 
-Download the binary for your architecture from the [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) page (current version: v0.4.0):
+Download the binary for your architecture from the [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) page (current version: v0.5.0):
 
 ```bash
 chmod +x mibee-steward
@@ -74,6 +74,8 @@ For production, always set `auth.jwt_secret` and `auth.initial_admin_password`. 
 
 Open http://localhost:8080 and log in with `admin` and the configured initial password; change the password immediately after the first login. Health check:
 
+![Login page](images/login.webp)
+
 ```bash
 curl http://localhost:8080/api/v1/health
 ```
@@ -98,6 +100,8 @@ sequenceDiagram
 
 **Web UI**: after logging in, open the scanner page and launch a scan against your target CIDR.
 
+![Scanner](images/scanner.webp)
+
 **Synchronous API** (for targets up to 1024 IPs):
 
 ```bash
@@ -117,6 +121,8 @@ The response is `{ hosts, total, alive, duration_ms }`; each host carries `ip`, 
 **Async tasks** (the sync endpoint returns 413 for targets larger than 1024 IPs): create a task with `POST /api/v1/scanner/tasks` and trigger it with `POST /api/v1/scanner/tasks/{id}/trigger`; results are persisted to `scan_results`. See the [API Reference](api.md).
 
 ## What You Should See
+
+![Device list after the first scan](images/devices.webp)
 
 - Device list: IP, MAC, OUI vendor, brand/model, type
 - Identification results: `inferred_type` / `inferred_brand` (e.g. camera, server, pc, iot)
