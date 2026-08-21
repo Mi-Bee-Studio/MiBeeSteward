@@ -24,6 +24,7 @@ import (
 	"mibee-steward/internal/cidrutil"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/metrics"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/runner"
 )
@@ -105,6 +106,10 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nid := sql.NullInt64{Int64: *networkID, Valid: true}
+
+	// Liveness signal for the AgentReportStale alert (#279): stamped on every
+	// authenticated report, including empty and anti-entropy fast-path ones.
+	metrics.MibeeAgentLastReportTimestamp.WithLabelValues(agentID).SetToCurrentTime()
 
 	// Prerequisite backfill (issue #19 前置工作): if the agent ships its
 	// configured CIDR AND the bound network's row lacks one, adopt it. Agent

@@ -1,0 +1,51 @@
+{
+  "title": "MiBee Steward — Overview",
+  "uid": "mibee-overview",
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "type": "stat", "title": "Devices by status",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum by (status) (mibee_devices_total)", "legendFormat": "{{status}}" }]
+    },
+    {
+      "type": "stat", "title": "Scan runs (5m)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "sum by (status) (increase(mibee_scanner_runs_total[5m]))", "legendFormat": "{{status}}" }]
+    },
+    {
+      "type": "timeseries", "title": "Heartbeat outcome rate",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [{ "expr": "sum by (status) (rate(mibee_heartbeat_checks_total[5m]))", "legendFormat": "{{status}}" }]
+    },
+    {
+      "type": "timeseries", "title": "API request rate by status class",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [{ "expr": "sum by (status) (rate(mibee_api_requests_total[5m]))", "legendFormat": "{{status}}" }]
+    },
+    {
+      "type": "timeseries", "title": "DB size (main / heartbeat)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [{ "expr": "mibee_db_size_bytes", "legendFormat": "{{db}}/{{kind}}" }]
+    },
+    {
+      "type": "timeseries", "title": "High-volume table rows",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [{ "expr": "mibee_db_table_rows", "legendFormat": "{{db}}/{{table}}" }]
+    },
+    {
+      "type": "stat", "title": "Agent last report age (s)",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 20 },
+      "targets": [{ "expr": "time() - mibee_agent_last_report_timestamp_seconds", "legendFormat": "{{agent_id}}" }]
+    },
+    {
+      "type": "stat", "title": "Probe targets down",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 20 },
+      "targets": [{ "expr": "count(mibee_probe_up == 0) or vector(0)", "legendFormat": "down" }]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

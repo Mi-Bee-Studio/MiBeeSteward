@@ -38,6 +38,19 @@ var (
 		[]string{"status", "type"},
 	)
 
+	// MibeeAgentLastReportTimestamp is the Unix time of an agent's last
+	// accepted report, keyed by agent_id. Set by the agent-report handler on
+	// every (authenticated) report, including empty and anti-entropy fast-path
+	// ones — the "is this agent alive" signal for the AgentReportStale alert
+	// (#279).
+	MibeeAgentLastReportTimestamp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mibee_agent_last_report_timestamp_seconds",
+			Help: "Unix timestamp of the last accepted agent report",
+		},
+		[]string{"agent_id"},
+	)
+
 	// MibeeHeartbeatChecksTotal counts heartbeat probe outcomes. Incremented
 	// by HeartbeatService.probeAndRecord per probe (#238 — previously
 	// registered but never written, leaving the HeartbeatFailures alert dead).
@@ -106,6 +119,7 @@ func init() {
 	prometheus.MustRegister(MibeeScannerDurationSeconds)
 	prometheus.MustRegister(MibeeScannerHostsDiscovered)
 	prometheus.MustRegister(MibeeScannerTasksTotal)
+	prometheus.MustRegister(MibeeAgentLastReportTimestamp)
 }
 
 // RefreshScannerTaskGauges recomputes mibee_scanner_tasks_total{status} from

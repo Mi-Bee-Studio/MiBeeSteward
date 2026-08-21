@@ -91,3 +91,50 @@ groups:
         annotations:
           summary: "Probe target certificate expiring soon"
           description: "Certificate for probe target {{ $labels.name }} expires in less than 15 days (metric: mibee_probe_cert_expiry_timestamp_seconds)."
+
+      # --- Self-monitoring additions (#279) ---
+      # Signals the two 2026-08 field incidents exposed: silent scan failure
+      # (#253 — runs "completed" while data froze) and agent silence.
+
+      - alert: ScanRunFailed
+        # mibee_scanner_runs_total{status="completed|failed"} — one increment
+        # per run outcome. ANY failed run in 30m is worth a look: cron tasks
+        # fire unattended, and #253 showed failures can look benign in logs.
+        expr: increase(mibee_scanner_runs_total{job="mibee-steward", status="failed"}[30m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scan run failed"
+          description: "{{ $value }} scan run(s) failed in the last 30 minutes on {{ $labels.instance }}. Check run error_message via the API/UI."
+
+      - alert: AgentReportStale
+        # mibee_agent_last_report_timestamp_seconds{agent_id} — stamped on every
+        # authenticated report (including empty and anti-entropy fast-path).
+        # Agents poll commands ~60s and report after each scan cycle; 10 min
+        # with no report means the agent process, its host, or the path to the
+        # center is down.
+        expr: (time() - mibee_agent_last_report_timestamp_seconds{job="mibee-steward"}) > 600
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent report stale"
+          description: "Agent {{ $labels.agent_id }} has not reported for more than 10 minutes (expected: ~1-2 min cycle). Check the agent process and network path."
+
+      - alert: DBSizeHigh
+        # mibee_db_size_bytes{db,kind} from the maintenance pass (#280). 2 GB is
+        # a "time to look at retention settings" line for a single-file SQLite
+        # deployment; tune per site. Pair with mibee_db_table_rows to find the
+        # accumulating table.
+        expr: mibee_db_size_bytes{job="mibee-steward", db="main", kind="db"} > 2147483648
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Main database over 2 GB"
+          description: "Main SQLite file is {{ $value | humanize1024 }}B. Review retention windows and mibee_db_table_rows for the accumulating table."
+
+      # NOTE (planned): a mibee_sqlite_busy_total counter is scoped to the
+      # single-writer governance work (#267); the DatabaseLocked alert above
+      # covers the user-visible symptom via 5xx bursts until then.
