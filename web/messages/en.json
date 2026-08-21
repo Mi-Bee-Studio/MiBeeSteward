@@ -470,6 +470,7 @@
 		"Cron Required": "Cron expression is required",
 		"Delete Confirm": "Are you sure you want to delete this task?",
 		"Timeout Seconds": "Timeout (seconds)",
+		"Concurrent Hosts": "Concurrent Hosts",
 		"Results Title": "Scan Results",
 		"Results Subtitle": "Browse and inspect scan results across all tasks.",
 		"Filter All Tasks": "All Tasks",

@@ -28,6 +28,11 @@ const (
 	maxConcurrentHosts = 200
 )
 
+// DefaultConcurrentHosts is applied when a create request omits
+// concurrent_hosts (the field is a plain int, so "unspecified" arrives as 0 —
+// rejecting it made every UI task creation fail with no fixable field, #246).
+const DefaultConcurrentHosts = 16
+
 // ScanRequest is the input for a network scan operation.
 type ScanRequest struct {
 	Targets   string `json:"targets"`
