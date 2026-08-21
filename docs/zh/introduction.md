@@ -18,6 +18,10 @@ flowchart LR
     E --> F
 ```
 
+![仪表盘](images/dashboard.webp)
+
+![设备列表](images/devices.webp)
+
 ## 核心能力
 
 ### 发现与识别
@@ -68,6 +72,10 @@ flowchart LR
 - 中间件链按序执行：RequestID → RealIP → 日志 → 指标 → 异常恢复 → 安全头 → CORS → CSRF → 限流 → 认证/鉴权（RBAC + scope）。
 - JWT 认证（cookie 优先，Bearer 令牌回退）+ 可选 TOTP 两步验证；基于能力的 RBAC（admin / operator / viewer 三档，`user` 为 viewer 的旧别名），对象级网络作用域授权，审计日志。
 - 完整国际化：中文与英文语言包，自动语言检测。
+
+![网络拓扑](images/topology.webp)
+
+界面全貌见 [Web 界面巡礼](web-ui.md)。
 
 ### 分布式部署
 

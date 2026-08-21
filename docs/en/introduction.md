@@ -18,6 +18,10 @@ flowchart LR
     E --> F
 ```
 
+![Dashboard](images/dashboard.webp)
+
+![Device list](images/devices.webp)
+
 ## Core Capabilities
 
 ### Discovery & Identification
@@ -68,6 +72,10 @@ flowchart LR
 - Middleware chain executes in order: RequestID → RealIP → logging → metrics → panic recovery → security headers → CORS → CSRF → rate limiting → authentication/authorization (RBAC + scope).
 - JWT authentication (cookie-first, Bearer token fallback) with optional TOTP two-factor verification; capability-based RBAC (admin / operator / viewer tiers, `user` being a legacy alias for viewer), object-level network scope grants, and audit logging.
 - Full internationalization: Chinese and English language packs with automatic detection.
+
+![Network topology](images/topology.webp)
+
+For a complete visual walkthrough see the [Web UI Tour](web-ui.md).
 
 ### Distributed Deployment
 
