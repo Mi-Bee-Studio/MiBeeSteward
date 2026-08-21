@@ -134,7 +134,10 @@
 	async function startScan() {
 		const err = validateTargets();
 		if (err) {
-			addToast('error', m['scanner.Invalid Range']());
+			// Empty targets and malformed targets are different failures — the
+			// field hint already shows the precise reason; the toast used to
+			// blanket-report "invalid range" even for a bare empty field (#251).
+			addToast('error', targets.trim() === '' ? m['scanner.Targets Required']() : m['scanner.Invalid Range']());
 			return;
 		}
 

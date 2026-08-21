@@ -89,13 +89,17 @@ func TestPartitionTargets(t *testing.T) {
 	t.Run("mixed in/out", func(t *testing.T) {
 		// The exact real-world bug from issue #19: agent-62's network is /62,
 		// but a command told it to scan 63.0/24 — every one of those lands "out".
+		// 254 = 256 minus the reserved .0 network / .255 broadcast addresses
+		// (excluded from CIDR enumeration since #254).
 		in, out, err := PartitionTargets("192.168.63.0/24", n)
 		require.NoError(t, err)
 		require.Empty(t, in)
-		require.Len(t, out, 256)
+		require.Len(t, out, 254)
 		require.Contains(t, out, "192.168.63.1")
 		require.Contains(t, out, "192.168.63.20")
-		require.Contains(t, out, "192.168.63.255")
+		require.Contains(t, out, "192.168.63.254")
+		require.NotContains(t, out, "192.168.63.0")
+		require.NotContains(t, out, "192.168.63.255")
 	})
 	t.Run("cross-subnet mix", func(t *testing.T) {
 		in, out, err := PartitionTargets("192.168.62.5,192.168.63.5,10.0.0.1", n)
