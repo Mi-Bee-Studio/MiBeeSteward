@@ -327,6 +327,16 @@ sudo systemctl start mibee-steward
 
 ## 监控
 
+### 安装后体检（doctor）
+
+部署完成后（或排障时）运行内置体检命令，逐项输出 ✅/⚠️/❌ 并附修复提示——覆盖配置完整性（jwt/master key）、DB 可写与完整性、WAL 体积、端口双开风险、write_timeout 匹配、备份新旧与可恢复性、（agent 模式）中心可达性：
+
+```bash
+/opt/mibee-steward/mibee-steward doctor -config configs/config.yaml
+```
+
+退出码：0 = 无失败（允许警告），1 = 存在 ❌。systemd unit 已将其作为 `ExecStartPre`（`-` 前缀，失败仅记录不阻断启动）。
+
 ### 健康检查
 
 ```bash
