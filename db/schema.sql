@@ -195,7 +195,11 @@ CREATE TABLE IF NOT EXISTS dashboard_configs (
     data_source TEXT NOT NULL DEFAULT 'prometheus' CHECK(data_source IN ('prometheus', 'victoriametrics')),
     query TEXT NOT NULL DEFAULT '',
     refresh_interval INTEGER NOT NULL DEFAULT 30,
-    position TEXT NOT NULL DEFAULT '{}',
+    -- 1-based display order (lowest = first). 0 is never stored: the service
+    -- layer auto-assigns max(position)+1 on create. Was TEXT '{}' in the first
+    -- release, which no side of the contract (API JSON number, frontend numeric
+    -- sort, drag-persist) ever actually wanted; migrated in runMigrations (#247).
+    position INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
