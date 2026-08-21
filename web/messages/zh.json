@@ -1128,7 +1128,10 @@
 		"Config Diff Prev": "相对上一版的变更",
 		"Config No Diff Prev": "相对上一版无变化",
 		"Config Compare Title": "配置差异",
-		"Config Identical": "所选两个版本内容一致。"
+		"Config Identical": "所选两个版本内容一致。",
+		"Network Vlans": "VLAN",
+		"Network Vlans Desc": "本网络观测到的 802.1Q VLAN（经网关 Q-BRIDGE-MIB 采集）",
+		"Network Vlans Empty": "暂无 VLAN —— 网络内没有可 SNMP 访问的 VLAN 感知网桥"
 	},
 	"validation": {
 		"Name Required": "名称为必填项",

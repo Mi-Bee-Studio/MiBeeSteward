@@ -40,6 +40,14 @@ import (
 // dot1qTpFdbAddress (the MAC itself) is redundant because the OID index contains it.
 const (
 	oidDot1qTpFdbPort = "1.3.6.1.2.1.17.7.1.2.2.1.2" // bridge port number (int) per VLAN+MAC
+
+	// dot1qVlanStaticName (1.3.6.1.2.1.17.7.1.4.3.1.1): the configured VLAN
+	// name, indexed by the bare VLAN tag (1-2 octets, same encoding as the
+	// FDB's VLAN prefix). Walked alongside the FDB so the vlans table gets
+	// names, not just tags (#273). Only STATIC (configured) VLANs appear
+	// here — dynamic-only VLANs keep their tag-only row; that's the graceful
+	// degradation.
+	oidDot1qVlanStaticName = "1.3.6.1.2.1.17.7.1.4.3.1.1"
 )
 
 // QBridgeMIBProbe walks the Q-BRIDGE-MIB forwarding database (dot1qTpFdbTable)
@@ -81,6 +89,22 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 	}
 	// Note: we keep the connection open for the port-name resolution walk below
 
+	// Walk the static VLAN table first: {tag → configured name} (#273). This
+	// is cheap and works even when the FDB is empty, so a freshly-booted
+	// switch still yields named VLANs. Best-effort — a device without the
+	// static table just leaves the map empty.
+	vlanNames := map[string]string{}
+	_ = snmp.Walk(oidDot1qVlanStaticName, func(pdu gosnmp.SnmpPDU) error {
+		tag := vlanTagFromIndex(indexSuffix(pdu.Name, oidDot1qVlanStaticName))
+		if tag == "" {
+			return nil
+		}
+		if name := strings.TrimSpace(gosnmpToString(pdu.Value)); name != "" {
+			vlanNames[tag] = name
+		}
+		return nil
+	})
+
 	// Walk the FDB: collect {MAC-octet-index → port-number}.
 	// The OID index for dot1qTpFdbTable is <VLAN>.<MAC-octets> (e.g. 1.170.187.204.221.238.255),
 	// where VLAN is 1-2 octets and MAC is 6 octets. We skip the VLAN prefix to extract the MAC.
@@ -118,18 +142,32 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 		macIndices = append(macIndices, macIdx)
 		return nil
 	})
-	if walkErr != nil || len(macIndices) == 0 {
+	if walkErr != nil || (len(macIndices) == 0 && len(vlanNames) == 0) {
 		snmp.Conn.Close()
-		return nil, nil // not a VLAN-aware bridge, or no FDB — no topology data
+		return nil, nil // not a VLAN-aware bridge — no Q-BRIDGE data at all
 	}
 
 	// Resolve port names via IF-MIB (bridge port → ifIndex → ifName).
 	// This is best-effort: if it fails, we fall back to numeric port numbers.
 	portNames := ResolvePortNames(snmp, p.logger)
 
-	// Build the evidence: one "neighbor" per unique MAC, carrying the MAC + local port.
-	// The same MAC may appear on multiple VLANs; we emit ONE evidence per MAC.
+	// Build the evidence. Two kinds (#273):
+	//   - "vlan": one per named static VLAN → feeds vlans.name via recordVLANs
+	//   - "neighbor": one per unique MAC → device_neighbors pipeline
 	var evidence []scannerv2.Evidence
+	for tag, name := range vlanNames {
+		evidence = append(evidence, scannerv2.Evidence{
+			Source:     "active:q_bridge_mib",
+			Kind:       "vlan",
+			IP:         ip,
+			Confidence: 0.8,
+			ObservedAt: time.Now().UTC(),
+			RawData: map[string]string{
+				"vlan_tag":  tag,
+				"vlan_name": name,
+			},
+		})
+	}
 	seenMACs := make(map[string]bool)
 	for _, macIdx := range macIndices {
 		mac := macIndexToMAC(macIdx)
@@ -206,6 +244,42 @@ func extractVLANFromIndex(fullIndex string) string {
 	}
 	var tag int
 	for _, p := range vlanParts {
+		octet, err := strconv.Atoi(p)
+		if err != nil || octet < 0 || octet > 255 {
+			return ""
+		}
+		tag = tag<<8 | octet
+	}
+	if tag < 1 || tag > 4094 {
+		return ""
+	}
+	return strconv.Itoa(tag)
+}
+
+// gosnmpToString renders an SNMP OCTET STRING value; anything else ().
+func gosnmpToString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	if b, ok := v.([]byte); ok {
+		return string(b)
+	}
+	return ""
+}
+
+// vlanTagFromIndex parses a bare Q-BRIDGE VLAN index (1-2 octets, e.g. "1" or
+// "16.0" for 4096) into a decimal tag string. Returns "" for malformed or
+// out-of-range tags — same validation as extractVLANFromIndex.
+func vlanTagFromIndex(idx string) string {
+	if idx == "" {
+		return ""
+	}
+	parts := strings.Split(idx, ".")
+	if len(parts) > 2 {
+		return ""
+	}
+	var tag int
+	for _, p := range parts {
 		octet, err := strconv.Atoi(p)
 		if err != nil || octet < 0 || octet > 255 {
 			return ""

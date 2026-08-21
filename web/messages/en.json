@@ -1128,7 +1128,10 @@
 		"Config Diff Prev": "Change from previous version",
 		"Config No Diff Prev": "No changes vs the previous version",
 		"Config Compare Title": "Configuration diff",
-		"Config Identical": "The two selected versions are identical."
+		"Config Identical": "The two selected versions are identical.",
+		"Network Vlans": "VLANs",
+		"Network Vlans Desc": "802.1Q VLANs observed on this network (via the gateway's Q-BRIDGE-MIB walk)",
+		"Network Vlans Empty": "No VLANs observed — the network has no SNMP-speaking VLAN-aware bridge"
 	},
 	"validation": {
 		"Name Required": "Name is required",
