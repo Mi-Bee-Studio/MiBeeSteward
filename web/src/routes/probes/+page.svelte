@@ -45,6 +45,110 @@
 	// Leaf-cert expiry per target id (for the table's certificate badge). Fetched
 	// from /certificates after each list refresh — only tls/http targets have any.
 	let certExpiry = $state<Record<number, string>>({});
+
+	// --- Batch operations (#276): multi-select + toolbar actions -------------
+	let selectedIds = $state<Set<number>>(new Set());
+	let batchBusy = $state(false);
+
+	function toggleSelected(id: number) {
+		const next = new Set(selectedIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selectedIds = next;
+	}
+
+	function toggleSelectAll() {
+		selectedIds = selectedIds.size === targets.length ? new Set() : new Set(targets.map((t) => t.id));
+	}
+
+	async function runBatch(op: (t: ProbeTarget) => Promise<unknown>, label: string) {
+		const list = targets.filter((t) => selectedIds.has(t.id));
+		if (list.length === 0) return;
+		batchBusy = true;
+		let ok = 0;
+		await Promise.all(
+			list.map(async (t) => {
+				try {
+					await op(t);
+					ok++;
+				} catch (err) {
+					addToast('error', `${t.name}: ${getErrorMessage(err)}`);
+				}
+			})
+		);
+		batchBusy = false;
+		selectedIds = new Set();
+		addToast(ok === list.length ? 'success' : 'warning', `${label}: ${ok}/${list.length}`);
+		fetchTargets();
+	}
+
+	const batchEnable = () => runBatch((t) => api.put(`/probe-targets/${t.id}`, { enabled: true }), m['probes.Batch Enable']());
+	const batchDisable = () => runBatch((t) => api.put(`/probe-targets/${t.id}`, { enabled: false }), m['probes.Batch Disable']());
+
+	function batchInterval() {
+		const v = prompt(m['probes.Batch Interval Prompt'](), '60');
+		const n = Number(v);
+		if (!v || !Number.isFinite(n) || n < 10 || n > 86400) {
+			if (v !== null) addToast('error', m['probes.Batch Interval Invalid']());
+			return;
+		}
+		runBatch((t) => api.put(`/probe-targets/${t.id}`, { interval_seconds: n }), `${m['probes.Batch Interval']()}=${n}s`);
+	}
+
+	function batchDelete() {
+		if (!confirm(m['probes.Batch Delete Confirm']({ count: selectedIds.size }))) return;
+		runBatch((t) => api.delete(`/probe-targets/${t.id}`), m['common.Delete']());
+	}
+
+	// --- Module overview cards (#276): per-module success rate + avg latency --
+	interface ModuleStat {
+		module: string;
+		total: number;
+		enabled: number;
+		successRate: number | null;
+		avgLatency: number | null;
+	}
+	const moduleStats = $derived.by<ModuleStat[]>(() => {
+		const mods = ['http', 'tls', 'tcp', 'icmp'];
+		return mods.map((mod) => {
+			const rows = targets.filter((t) => t.module === mod);
+			const ran = rows.filter((t) => t.last_status);
+			const ok = ran.filter((t) => t.last_status === 'success');
+			const lat = ok.map((t) => t.last_latency_ms).filter((v) => v > 0);
+			return {
+				module: mod,
+				total: rows.length,
+				enabled: rows.filter((t) => t.enabled).length,
+				successRate: ran.length ? Math.round((ok.length / ran.length) * 100) : null,
+				avgLatency: lat.length ? lat.reduce((a, b) => a + b, 0) / lat.length : null
+			};
+		});
+	});
+
+	// --- Cert expiry timeline (#276): TLS/http targets on a 0..90d+ scale -----
+	interface TimelineEntry {
+		t: ProbeTarget;
+		days: number;
+		notAfter: string;
+	}
+	const certTimeline = $derived.by<TimelineEntry[]>(() => {
+		const entries: TimelineEntry[] = [];
+		for (const t of targets) {
+			if (t.module !== 'tls' && t.module !== 'http') continue;
+			const notAfter = certExpiry[t.id];
+			if (!notAfter) continue;
+			entries.push({ t, days: certDayDelta(notAfter), notAfter });
+		}
+		return entries.sort((a, b) => a.days - b.days);
+	});
+	// Expiry warning threshold (days) — persisted per browser (#276 goal: configurable).
+	let expiryWarnDays = $state<number>(
+		Number(localStorage.getItem('probes.expiryWarnDays')) || 30
+	);
+	function setExpiryWarn(n: number) {
+		expiryWarnDays = n;
+		localStorage.setItem('probes.expiryWarnDays', String(n));
+	}
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 	// --- Create/Edit modal ---
@@ -185,7 +289,7 @@
 	}
 
 	function validate(field: string, value: unknown) {
-		const res = validateField(probeTargetSchema, field, value);
+		const res = validateField(probeTargetSchema, field as never, value);
 		if (!res.valid) fieldErrors[field] = res.error || '';
 		else delete fieldErrors[field];
 	}
@@ -313,6 +417,7 @@
 	};
 
 	const columns = $derived([
+		{ key: 'select', label: m['probes.Batch Select'](), interactive: true },
 		{ key: 'name', label: m['probes.Name'](), sortable: true, render: (row: Record<string, unknown>) => html`<span class="font-medium">${row.name}</span>` },
 		{ key: 'module', label: m['probes.Module'](), render: (row: Record<string, unknown>) => html`<span class="badge badge-info uppercase">${row.module}</span>` },
 		{ key: 'target', label: m['probes.Target'](), render: (row: Record<string, unknown>) => html`<span class="font-mono text-xs">${row.target}</span>` },
@@ -400,6 +505,83 @@
 		</div>
 		<p class="text-sm text-text-muted mb-6">{m['probes.Subtitle']()}</p>
 
+		<!-- Module overview cards (#276): per-module success rate + avg latency -->
+		<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+			{#each moduleStats as ms (ms.module)}
+				<div class="bg-surface border border-border rounded-lg px-4 py-3">
+					<div class="flex items-center justify-between">
+						<span class="badge badge-info uppercase">{ms.module}</span>
+						<span class="text-xs text-muted">{ms.enabled}/{ms.total}</span>
+					</div>
+					<p class="mt-2 text-lg font-semibold {ms.successRate === null ? 'text-muted' : ms.successRate >= 90 ? 'text-success' : ms.successRate >= 50 ? 'text-warning' : 'text-error'}">
+						{ms.successRate === null ? '-' : ms.successRate + '%'}
+					</p>
+					<p class="text-xs text-muted">{m['probes.Avg Latency']()}: {ms.avgLatency === null ? '-' : ms.avgLatency < 1000 ? Math.round(ms.avgLatency) + 'ms' : (ms.avgLatency / 1000).toFixed(2) + 's'}</p>
+				</div>
+			{/each}
+		</div>
+
+		<!-- Cert expiry timeline (#276): TLS/http targets sorted by days-left -->
+		{#if certTimeline.length > 0}
+			<div class="bg-surface border border-border rounded-lg p-4 mb-6">
+				<div class="flex items-center justify-between mb-3">
+					<div>
+						<h3 class="text-sm font-semibold text-text">{m['probes.Cert Timeline']()}</h3>
+						<p class="text-xs text-muted">{m['probes.Cert Timeline Desc']()}</p>
+					</div>
+					<select
+						value={expiryWarnDays}
+						onchange={(e) => setExpiryWarn(Number((e.target as HTMLSelectElement).value))}
+						class="input !w-auto text-xs"
+						aria-label={m['probes.Expiry Threshold']()}
+					>
+						{#each [15, 30, 60, 90] as d (d)}
+							<option value={d}>{m['probes.Expiry Threshold Option']({ days: d })}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="space-y-1.5">
+					{#each certTimeline as e (e.t.id)}
+						{@const pct = Math.max(2, Math.min(100, (e.days / 90) * 100))}
+						{@const cls = e.days < 0 ? 'bg-error' : e.days < expiryWarnDays ? 'bg-warning' : 'bg-success'}
+						<button
+							type="button"
+							onclick={() => openCerts(e.t)}
+							class="w-full flex items-center gap-3 group text-left"
+							title={e.notAfter}
+						>
+							<span class="w-40 shrink-0 truncate text-xs font-medium group-hover:text-primary">{e.t.name}</span>
+							<span class="flex-1 h-3 rounded-full bg-border/50 overflow-hidden">
+								<span class="block h-full {cls} rounded-full transition-all" style="width: {pct}%"></span>
+							</span>
+							<span class="w-20 shrink-0 text-right text-xs font-mono {e.days < expiryWarnDays ? 'text-warning' : 'text-muted'}">
+								{e.days < 0 ? m['probes.Cert Expired']() : m['probes.Cert Days']({ days: e.days })}
+							</span>
+						</button>
+					{/each}
+				</div>
+				{#if certTimeline.some((e) => e.days >= 0 && e.days < expiryWarnDays)}
+					<p class="mt-3 text-xs text-warning">
+						{m['probes.Cert Expiring Hint']()}
+						<a href="/settings/notifications" class="text-primary hover:underline">{m['probes.Cert Configure Rule']()}</a>
+					</p>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Batch toolbar (#276) -->
+		{#if selectedIds.size > 0}
+			<div class="mb-4 flex flex-wrap items-center gap-2 px-4 py-2.5 bg-primary/5 border border-primary/20 rounded-lg">
+				<span class="text-sm font-medium text-primary">{m['probes.Batch Selected']({ count: selectedIds.size })}</span>
+				<div class="flex-1"></div>
+				<button onclick={batchEnable} disabled={batchBusy} class="btn btn-secondary !py-1 !px-3 text-xs">{m['probes.Batch Enable']()}</button>
+				<button onclick={batchDisable} disabled={batchBusy} class="btn btn-secondary !py-1 !px-3 text-xs">{m['probes.Batch Disable']()}</button>
+				<button onclick={batchInterval} disabled={batchBusy} class="btn btn-secondary !py-1 !px-3 text-xs">{m['probes.Batch Interval']()}</button>
+				<button onclick={batchDelete} disabled={batchBusy} class="btn btn-secondary !py-1 !px-3 text-xs !text-error !border-error/30">{m['common.Delete']()}</button>
+				<button onclick={() => (selectedIds = new Set())} disabled={batchBusy} class="btn btn-secondary !py-1 !px-3 text-xs">{m['common.Cancel']()}</button>
+			</div>
+		{/if}
+
 		{#if error}
 			<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
 				{error}
@@ -425,7 +607,18 @@
 					emptyTitle={m['probes.No Targets']()}
 				>
 					{#snippet cell(row, col)}
-						{#if col.key === 'enabled'}
+						{#if col.key === 'select'}
+							{@const t = targets.find((x) => x.id === row.id)}
+							{#if t}
+								<input
+									type="checkbox"
+									checked={selectedIds.has(t.id)}
+									onchange={() => toggleSelected(t.id)}
+									aria-label={m['probes.Batch Select Row']({ name: t.name })}
+									class="checkbox"
+								/>
+							{/if}
+						{:else if col.key === 'enabled'}
 							{@const t = targets.find((x) => x.id === row.id)}
 							{#if t}
 								<button
