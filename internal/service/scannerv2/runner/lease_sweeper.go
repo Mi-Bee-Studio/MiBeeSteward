@@ -15,6 +15,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"mibee-steward/internal/service/scannerv2"
 )
 
 // staleAgentSnapshot is one row from either the stale- or recoverable-snapshot
@@ -218,7 +220,7 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 		// accurate for the stable-period reset decision).
 		if _, err := s.runner.dbConn.ExecContext(ctx,
 			`UPDATE scan_snapshots SET flap_count = flap_count + 1, last_flap_at = ? WHERE id = ?`,
-			now, l.ID); err != nil {
+			scannerv2.DBTime(now), l.ID); err != nil {
 			s.logger.Warn("lease sweeper: flap_count increment failed", "snapshot_id", l.ID, "error", err)
 		}
 		// Mark the device offline (always — the registry must reflect liveness
@@ -273,7 +275,7 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 		before := s.runner.snapshotDevice(ctx, l.DeviceID)
 		if _, err := s.runner.dbConn.ExecContext(ctx,
 			`UPDATE devices SET status='online', last_seen=?, last_scanned_at=?, offline_since=NULL, updated_at=? WHERE id=?`,
-			now, now, now, l.DeviceID); err != nil {
+			scannerv2.DBTime(now), scannerv2.DBTime(now), scannerv2.DBTime(now), l.DeviceID); err != nil {
 			s.logger.Warn("lease sweeper: recover online failed", "device_id", l.DeviceID, "ip", l.IP, "error", err)
 			continue
 		}
@@ -306,7 +308,7 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 			effectiveFlapCount = l.FlapCount / 2
 			if _, err := s.runner.dbConn.ExecContext(ctx,
 				`UPDATE scan_snapshots SET flap_count = ?, last_flap_at = ? WHERE id = ?`,
-				effectiveFlapCount, now, l.ID); err != nil {
+				effectiveFlapCount, scannerv2.DBTime(now), l.ID); err != nil {
 				s.logger.Warn("lease sweeper: flap_count decay failed", "snapshot_id", l.ID, "error", err)
 			}
 		} else {
@@ -315,7 +317,7 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 			effectiveFlapCount = l.FlapCount + 1
 			if _, err := s.runner.dbConn.ExecContext(ctx,
 				`UPDATE scan_snapshots SET flap_count = ?, last_flap_at = ? WHERE id = ?`,
-				effectiveFlapCount, now, l.ID); err != nil {
+				effectiveFlapCount, scannerv2.DBTime(now), l.ID); err != nil {
 				s.logger.Warn("lease sweeper: flap_count increment failed", "snapshot_id", l.ID, "error", err)
 			}
 		}
@@ -343,7 +345,7 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 // and returns the matched rows. failLabel tags the warn log on error. Centralized
 // so both directions share identical row-scanning + error handling.
 func (s *LeaseSweeper) querySnapshots(ctx context.Context, query string, cutoff time.Time, failLabel string) []staleAgentSnapshot {
-	rows, err := s.runner.dbConn.QueryContext(ctx, query, cutoff)
+	rows, err := s.runner.dbConn.QueryContext(ctx, query, scannerv2.DBTime(cutoff))
 	if err != nil {
 		s.logger.Warn("lease sweeper: "+failLabel+" failed", "error", err)
 		return nil

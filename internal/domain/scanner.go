@@ -200,14 +200,14 @@ type ScanTaskRequest struct {
 }
 
 type ScanTaskResponse struct {
-	ID              int64  `json:"id"`
-	Name            string `json:"name"`
-	Targets         string `json:"targets"`
-	CronExpr        string `json:"cron_expr"`
-	PipelineConfig  string `json:"pipeline_config"`
-	GlobalLabels    string `json:"global_labels"`
-	Timeout         int    `json:"timeout"`
-	ConcurrentHosts int    `json:"concurrent_hosts"`
+	ID              int64          `json:"id"`
+	Name            string         `json:"name"`
+	Targets         string         `json:"targets"`
+	CronExpr        string         `json:"cron_expr"`
+	PipelineConfig  PipelineConfig `json:"pipeline_config"`
+	GlobalLabels    string         `json:"global_labels"`
+	Timeout         int            `json:"timeout"`
+	ConcurrentHosts int            `json:"concurrent_hosts"`
 	// CredentialID is the bound SNMP credential (issue #135). nil = no credential
 	// bound (uses the engine's global default community).
 	CredentialID  *int64     `json:"credential_id,omitempty"`

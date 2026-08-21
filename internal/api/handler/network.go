@@ -10,6 +10,7 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -45,6 +46,27 @@ func (h *NetworkHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Success(w, nets)
+}
+
+// Get handles GET /api/v1/networks/{id} — one network by id. Previously only
+// PUT/DELETE were registered, so a GET fell through to the method-not-allowed
+// (405); reading one network required pulling the whole list (#257).
+func (h *NetworkHandler) Get(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		Error(w, http.StatusBadRequest, "invalid network ID")
+		return
+	}
+	net, err := h.queries.GetNetwork(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			Error(w, http.StatusNotFound, "network not found")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed to get network")
+		return
+	}
+	Success(w, net)
 }
 
 // createNetworkRequest is the body for POST /api/v1/networks.
