@@ -94,7 +94,7 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 		if _, err := rn.dbConn.ExecContext(ctx,
 			`UPDATE devices SET status='offline',
 				offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
-				updated_at=? WHERE id=?`, now, now, l.DeviceID); err != nil {
+				updated_at=? WHERE id=?`, scannerv2.DBTime(now), scannerv2.DBTime(now), l.DeviceID); err != nil {
 			rn.logger.Warn("detect-lost: mark offline failed", "device_id", l.DeviceID, "error", err)
 		}
 		// Emit device_lost (before_data = the device's pre-lost snapshot).
@@ -285,6 +285,6 @@ func (rn *Runner) upsertScanSnapshot(ctx context.Context, networkID int64, taskI
 			device_uuid = CASE WHEN excluded.device_uuid != '' THEN excluded.device_uuid ELSE scan_snapshots.device_uuid END,
 			miss_count = 0,
 			last_seen_at = excluded.last_seen_at`,
-		networkID, taskID, ip, mac, devUUID, lastSeen)
+		networkID, taskID, ip, mac, devUUID, scannerv2.DBTime(lastSeen))
 	return err
 }

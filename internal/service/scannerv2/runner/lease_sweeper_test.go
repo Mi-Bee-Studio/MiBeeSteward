@@ -90,7 +90,7 @@ func TestLeaseSweeper_ExpiresStaleAgentDevice(t *testing.T) {
 	// Backdate the snapshot so it's past the TTL.
 	_, err := conn.ExecContext(ctx,
 		`UPDATE scan_snapshots SET last_seen_at = ? WHERE network_id = ? AND ip = ?`,
-		time.Now().UTC().Add(-10*time.Minute), agentNetID, "192.168.62.41")
+		scannerv2.DBTime(time.Now().UTC().Add(-10*time.Minute)), agentNetID, "192.168.62.41")
 	require.NoError(t, err)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
@@ -121,7 +121,7 @@ func TestLeaseSweeper_IgnoresCenterNetwork(t *testing.T) {
 	})
 	_, err := conn.ExecContext(ctx,
 		`UPDATE scan_snapshots SET last_seen_at = ? WHERE network_id = ? AND ip = ?`,
-		time.Now().UTC().Add(-24*time.Hour), centerNetID, "192.168.63.50")
+		scannerv2.DBTime(time.Now().UTC().Add(-24*time.Hour)), centerNetID, "192.168.63.50")
 	require.NoError(t, err)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
@@ -151,7 +151,7 @@ func TestLeaseSweeper_IgnoresAlreadyOffline(t *testing.T) {
 	// Make it stale AND already offline.
 	_, err := conn.ExecContext(ctx,
 		`UPDATE scan_snapshots SET last_seen_at = ? WHERE network_id = ? AND ip = ?`,
-		time.Now().UTC().Add(-10*time.Minute), agentNetID, "192.168.62.41")
+		scannerv2.DBTime(time.Now().UTC().Add(-10*time.Minute)), agentNetID, "192.168.62.41")
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx,
 		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.62.41'`)

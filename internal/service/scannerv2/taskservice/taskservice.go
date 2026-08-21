@@ -547,12 +547,21 @@ func (s *Service) GetTaskResults(ctx context.Context, taskID, limit, offset int,
 }
 
 func toTaskResponse(t db.ScanTask) domain.ScanTaskResponse {
+	// pipeline_config is stored as a JSON string; decode it so the response
+	// carries the object itself — the create REQUEST takes an object, and the
+	// asymmetry forced every client to double-parse (#257). A malformed stored
+	// value (hand-edited DB row) degrades to the zero config rather than
+	// erroring the whole task listing.
+	var pipeline domain.PipelineConfig
+	if t.PipelineConfig != "" {
+		_ = json.Unmarshal([]byte(t.PipelineConfig), &pipeline)
+	}
 	resp := domain.ScanTaskResponse{
 		ID:              t.ID,
 		Name:            t.Name,
 		Targets:         t.Targets,
 		CronExpr:        t.CronExpr,
-		PipelineConfig:  t.PipelineConfig,
+		PipelineConfig:  pipeline,
 		GlobalLabels:    t.GlobalLabels,
 		Timeout:         int(t.Timeout),
 		ConcurrentHosts: int(t.ConcurrentHosts),
