@@ -16,7 +16,7 @@
 	import { validateScanTarget } from '$lib/utils/validation';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import PortListEditor from '$lib/components/scanner/PortListEditor.svelte';
-	import { portTemplates } from '$lib/data/portTemplates';
+	import { portTemplates } from '$lib/portTemplates';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import { LoaderCircle, Radar, CircleStop, ChevronRight } from '@lucide/svelte';

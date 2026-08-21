@@ -13,7 +13,7 @@
 	import type { PipelineConfig } from '$lib/types';
 	import { ChevronDown, Info } from '@lucide/svelte';
 	import PortListEditor from '$lib/components/scanner/PortListEditor.svelte';
-	import { portTemplates } from '$lib/data/portTemplates';
+	import { portTemplates } from '$lib/portTemplates';
 
 	let {
 		config = $bindable(defaultPipelineConfig()),
