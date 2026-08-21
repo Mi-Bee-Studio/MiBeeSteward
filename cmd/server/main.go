@@ -131,6 +131,14 @@ func main() {
 			slog.Info("startup ghost cleanup complete",
 				"mismatches", stats.Mismatches, "rehomed", stats.Rehomed, "unresolved", stats.Unresolved)
 		}
+		// Reserved-address ghosts (#254): devices the scanner recorded at a
+		// network's own address or its broadcast (the broadcast answered pings
+		// via every host's fan-out reply). Same backup protection as above.
+		if removed, err := cleanupSvc.CleanupReservedAddressDevices(context.Background()); err != nil {
+			slog.Warn("startup reserved-address cleanup failed (continuing)", "error", err)
+		} else if len(removed) > 0 {
+			slog.Info("startup reserved-address cleanup complete", "removed", removed)
+		}
 	}
 
 	// Ensure upload directory exists
