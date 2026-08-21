@@ -32,14 +32,19 @@ func NewDashboardHandler(svc *service.DashboardService) *DashboardHandler {
 	return &DashboardHandler{svc: svc}
 }
 
-// ListConfigs handles GET /api/v1/dashboard/configs
+// ListConfigs handles GET /api/v1/dashboard/configs. The response is an object
+// ({configs, total}), not a bare array — the dashboard page reads res.configs
+// and a bare array made every custom widget invisible (#247).
 func (h *DashboardHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
 	configs, err := h.svc.ListConfigs(r.Context())
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to list dashboard configs")
 		return
 	}
-	Success(w, configs)
+	Success(w, struct {
+		Configs []db.DashboardConfig `json:"configs"`
+		Total   int                  `json:"total"`
+	}{Configs: configs, Total: len(configs)})
 }
 
 // Overview handles GET /api/v1/dashboard/overview — the aggregated payload that
@@ -62,7 +67,7 @@ func (h *DashboardHandler) CreateConfig(w http.ResponseWriter, r *http.Request) 
 		DataSource      string `json:"data_source"`
 		Query           string `json:"query"`
 		RefreshInterval int64  `json:"refresh_interval"`
-		Position        string `json:"position"`
+		Position        int64  `json:"position"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -84,9 +89,8 @@ func (h *DashboardHandler) CreateConfig(w http.ResponseWriter, r *http.Request) 
 	if req.DataSource == "" {
 		req.DataSource = "prometheus"
 	}
-	if req.Position == "" {
-		req.Position = "{}"
-	}
+	// position <= 0 = not specified; the service assigns max(position)+1 so
+	// new widgets land after existing ones without the client computing it.
 	if req.RefreshInterval <= 0 {
 		req.RefreshInterval = 30
 	}
@@ -121,7 +125,7 @@ func (h *DashboardHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) 
 		DataSource      string `json:"data_source"`
 		Query           string `json:"query"`
 		RefreshInterval int64  `json:"refresh_interval"`
-		Position        string `json:"position"`
+		Position        int64  `json:"position"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -138,6 +142,13 @@ func (h *DashboardHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) 
 	if !validTypes[req.Type] {
 		Error(w, http.StatusBadRequest, "type must be one of: gauge, line, bar, pie")
 		return
+	}
+
+	if req.DataSource == "" {
+		req.DataSource = "prometheus"
+	}
+	if req.RefreshInterval <= 0 {
+		req.RefreshInterval = 30
 	}
 
 	result, err := h.svc.UpdateConfig(r.Context(), db.UpdateDashboardConfigParams{
