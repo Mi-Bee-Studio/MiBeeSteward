@@ -61,7 +61,7 @@ type DashboardConfig struct {
 	DataSource      string    `json:"data_source"`
 	Query           string    `json:"query"`
 	RefreshInterval int64     `json:"refresh_interval"`
-	Position        string    `json:"position"`
+	Position        int64     `json:"position"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
