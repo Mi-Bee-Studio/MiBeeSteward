@@ -189,3 +189,33 @@ func TestExtractVLANFromIndex(t *testing.T) {
 		})
 	}
 }
+
+// TestVLANTagFromIndex pins the #273 static-table index parser: bare VLAN
+// tags are 1-2 octets (same encoding as the FDB's VLAN prefix), must decode
+// to 1-4094, and malformed indices return "" so they never reach the DB.
+func TestVLANTagFromIndex(t *testing.T) {
+	cases := map[string]string{
+		"1":     "1",
+		"10":    "10",
+		"16.0":  "4096"[:0] + "", // placeholder replaced below
+		"16.1":  "",
+		"0":     "",
+		"4095":  "",
+		"1.2.3": "",
+		"":      "",
+	}
+	// "16.0" decodes to 4096 which is OUTSIDE 1-4094 — the parser must
+	// reject it (added explicitly for clarity).
+	if got := vlanTagFromIndex("16.0"); got != "" {
+		t.Fatalf("vlanTagFromIndex(\"16.0\") = %q, want \"\" (4096 > 4094)", got)
+	}
+	for in, want := range cases {
+		if got := vlanTagFromIndex(in); got != want {
+			t.Errorf("vlanTagFromIndex(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// 12.34 → 12<<8|34 = 3106: a realistic high tag
+	if got := vlanTagFromIndex("12.34"); got != "3106" {
+		t.Errorf("vlanTagFromIndex(\"12.34\") = %q, want 3106", got)
+	}
+}

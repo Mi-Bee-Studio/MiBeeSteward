@@ -69,6 +69,25 @@ func (h *NetworkHandler) Get(w http.ResponseWriter, r *http.Request) {
 	Success(w, net)
 }
 
+// VLANs handles GET /api/v1/networks/{id}/vlans — the 802.1Q VLANs observed
+// on one network, with names where the dot1qVlanStaticName walk found them
+// (#273). Feeds the topology view's VLAN legend and the device-detail
+// Network tab.
+func (h *NetworkHandler) VLANs(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		Error(w, http.StatusBadRequest, "invalid network ID")
+		return
+	}
+	idPtr := id
+	vlans, err := h.queries.ListVLANs(r.Context(), db.ListVLANsParams{NetworkID: &idPtr})
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to list vlans")
+		return
+	}
+	Success(w, vlans)
+}
+
 // createNetworkRequest is the body for POST /api/v1/networks.
 type createNetworkRequest struct {
 	Name string  `json:"name"` // required, non-empty

@@ -46,6 +46,20 @@
 	let systems = $state<System[]>([]);
 	let total = $state(0);
 	let neighbors = $state<DeviceNeighbor[]>([]);
+	// VLANs observed on the device's network (#273): tag + name (when the
+	// gateway's dot1qVlanStaticName walk found one). null = not loaded yet.
+	let networkVlans = $state<Array<{ id: number; vlan_tag: number; name: string | null; description: string | null }> | null>(null);
+
+	async function fetchNetworkVlans() {
+		if (!device?.network_id) return;
+		try {
+			const res = await api.get<Array<{ id: number; vlan_tag: number; name: string | null; description: string | null }>>(
+				`/networks/${device.network_id}/vlans`);
+			networkVlans = res ?? [];
+		} catch {
+			networkVlans = [];
+		}
+	}
 	// `loading`/`error` here are owned by fetchSystems (the Systems tab). The
 	// page-level device fetch has its own pair below so a fetchDevice failure
 	// doesn't get silently swallowed on non-Systems tabs.
@@ -327,6 +341,7 @@
 		if (t === 'network') {
 			if (!tlsCerts.length) fetchTLSCerts();
 			if (!neighbors.length) fetchNeighbors();
+			if (networkVlans === null && device?.network_id) fetchNetworkVlans();
 		}
 		if (t === 'config') {
 			if (!configs.length && !configsLoading) fetchConfigs();
@@ -1398,6 +1413,31 @@
 	<!-- ── NETWORK TAB ── -->
 	{#if activeTab === 'network'}
 	<div id="tab-panel-network" role="tabpanel" aria-labelledby="tab-btn-network">
+
+	<!-- VLANs observed on this device's network (Q-BRIDGE-MIB, #273) -->
+	{#if device}
+		<div class="scan-info-panel mt-4">
+			<h3 class="scan-info-title">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+				{m['devicedetail.Network Vlans']()}
+			</h3>
+			<p class="text-xs text-text-muted mb-3">{m['devicedetail.Network Vlans Desc']()}</p>
+			{#if networkVlans === null}
+				<p class="text-xs text-muted py-2">…</p>
+			{:else if networkVlans.length === 0}
+				<p class="text-xs text-muted py-2">{m['devicedetail.Network Vlans Empty']()}</p>
+			{:else}
+				<div class="flex flex-wrap gap-2">
+					{#each networkVlans as v (v.id)}
+						<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs">
+							<span class="font-mono font-semibold">VLAN {v.vlan_tag}</span>
+							{#if v.name}<span class="text-primary/80">{v.name}</span>{/if}
+						</span>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- L2 Neighbors (Bridge-MIB / LLDP adjacency) — always shown so users know
 	     this section exists; empty state explains how to populate it. -->
