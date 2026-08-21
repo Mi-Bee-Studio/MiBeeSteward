@@ -21,12 +21,14 @@ package probe
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"mibee-steward/internal/service/scannerv2"
@@ -109,11 +111,28 @@ func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pro
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			open, banner := dialAndGrab(ctx, ip, port, timeout)
+			open, refused, banner := dialAndGrab(ctx, ip, port, timeout)
+			mu.Lock()
+			defer mu.Unlock()
 			if !open {
+				// A TCP RST is positive knowledge: the port is closed. Emit it
+				// as negative evidence so the store can distinguish "confirmed
+				// gone" (safe to drop the service row) from "no answer this
+				// cycle" (timeout — keep the row; a degraded scan cycle must
+				// not erase known services, #256).
+				if refused {
+					evs = append(evs, scannerv2.Evidence{
+						Source:     "active:tcp",
+						Kind:       "port_closed",
+						IP:         ip,
+						Port:       port,
+						Protocol:   "tcp",
+						Confidence: 1.0,
+						ObservedAt: now,
+					})
+				}
 				return
 			}
-			mu.Lock()
 			evs = append(evs, scannerv2.Evidence{
 				Source:     "active:tcp",
 				Kind:       "port_open",
@@ -135,7 +154,6 @@ func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pro
 					ObservedAt: now,
 				})
 			}
-			mu.Unlock()
 		}(port)
 	}
 	wg.Wait()
@@ -149,12 +167,30 @@ func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pro
 // read — this is what lets the port scan classify HTTP on ports where the
 // server waits silently for a request.
 //
-// Returns (open, banner).
-func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration) (bool, string) {
+// A dial that ends in RST (connection refused) is a CONFIRMED-closed port;
+// a dial that runs out of time is UNKNOWN (filtered, or — commonly on busy
+// routers (#256) — a transient drop under load). Unknown dials get one retry
+// so a momentarily-saturated target isn't misread as closed.
+//
+// Returns (open, refused, banner).
+func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration) (bool, bool, string) {
 	dialer := net.Dialer{Timeout: timeout}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip, strconv.Itoa(port)))
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return false, ""
+		if isRefused(err) {
+			return false, true, ""
+		}
+		if ctx.Err() == nil && !isRefused(err) {
+			// Transient (timeout / overloaded target / momentary drop): one
+			// retry before declaring the port unknown.
+			conn, err = dialer.DialContext(ctx, "tcp", addr)
+			if err != nil {
+				return false, isRefused(err), ""
+			}
+		} else {
+			return false, false, ""
+		}
 	}
 	defer conn.Close()
 
@@ -178,7 +214,7 @@ func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration
 		}
 	}
 	if n > 0 {
-		return true, strings.TrimRight(string(buf[:n]), "\r\n\x00")
+		return true, false, strings.TrimRight(string(buf[:n]), "\r\n\x00")
 	}
 
 	// No passive greeting: try the active probe for this port (if any). This
@@ -186,13 +222,20 @@ func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration
 	if probe := probeForPort(port); probe != nil {
 		_ = conn.SetWriteDeadline(time.Now().Add(bannerReadTimeout))
 		if _, werr := conn.Write(probe); werr != nil {
-			return true, ""
+			return true, false, ""
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(bannerReadTimeout))
 		n, _ = conn.Read(buf)
-		return true, strings.TrimRight(string(buf[:n]), "\r\n\x00")
+		return true, false, strings.TrimRight(string(buf[:n]), "\r\n\x00")
 	}
-	return true, ""
+	return true, false, ""
+}
+
+// isRefused reports whether the dial error is a TCP RST (ECONNREFUSED) — the
+// kernel-level proof that nothing listens on the port. Everything else
+// (timeout, no route, network unreachable) leaves the port's state unknown.
+func isRefused(err error) bool {
+	return errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // priorityPortList orders ports with fingerprint ports first (in fingerprint
