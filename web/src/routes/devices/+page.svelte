@@ -12,6 +12,7 @@
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
+	import { acquireStream, changeStream, releaseStream } from '$lib/stores/changes';
 	import { goto } from '$app/navigation';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
@@ -150,11 +151,41 @@ interface AddDevicesResponse {
 	const POLL_MS = 30_000;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+	// --- Live updates via the change stream (#272) ----------------------------
+	// Events trigger a debounced SILENT refresh (batched: a scan touching 37
+	// devices fires many events within a second — one refetch covers them).
+	// device_added / device_lost / device_recovered also toast, so a scan
+	// running in another tab (or on the server) is visible here immediately.
+	let streamUnsub: (() => void) | null = null;
+	let sseRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let sseToastGuard = 0;
+
+	function onChangeEvent(changeType: string, entityId: number | null | undefined) {
+		// One toast per burst per kind (max ~1/s): cap the guard.
+		if (entityId && Date.now() - sseToastGuard > 900) {
+			sseToastGuard = Date.now();
+			if (changeType === 'device_added') addToast('success', m['devices.Sse Device Added']());
+			else if (changeType === 'device_lost') addToast('warning', m['devices.Sse Device Lost']());
+			else if (changeType === 'device_recovered') addToast('info', m['devices.Sse Device Recovered']());
+		}
+		if (sseRefreshTimer) clearTimeout(sseRefreshTimer);
+		sseRefreshTimer = setTimeout(() => {
+			sseRefreshTimer = null;
+			if (!editOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !batchStatusConfirmOpen && !importOpen && !linkOpen) {
+				void refreshDevicesSilent();
+			}
+		}, 1500);
+	}
+
 	onMount(() => {
 		// Hydrate filter/sort/page state from the URL so links (e.g. the scan
 		// results "View Device" deep link) and reloads land on the right view.
 		hydrateFromUrl();
 		fetchDevices();
+		acquireStream();
+		streamUnsub = changeStream().subscribe((st) => {
+			if (st.lastEvent) onChangeEvent(st.lastEvent.change_type, st.lastEvent.entity_id);
+		});
 		// Load the network registry for the filter dropdown (best-effort; a
 		// failure just leaves the dropdown empty — the list still works).
 		api.get<Network[]>('/networks').then((n) => { networks = n || []; networksError = false; }).catch(() => { networksError = true; });
@@ -168,6 +199,10 @@ interface AddDevicesResponse {
 	onDestroy(() => {
 		if (pollTimer) clearInterval(pollTimer);
 		if (searchTimer) clearTimeout(searchTimer);
+		if (sseRefreshTimer) clearTimeout(sseRefreshTimer);
+		streamUnsub?.();
+		streamUnsub = null;
+		releaseStream();
 	});
 
 	// Esc closes any open dropdown menu (Export / batch-status). The global

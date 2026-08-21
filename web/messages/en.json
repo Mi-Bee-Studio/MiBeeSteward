@@ -168,7 +168,10 @@
 		"All Networks": "All Networks",
 		"Collapse Row": "Collapse row",
 		"CSV Format Help": "CSV format: ip,name,type (header row required)",
-		"CSV Col IP": "IP"
+		"CSV Col IP": "IP",
+		"Sse Device Added": "New device discovered on the network",
+		"Sse Device Lost": "A device went offline",
+		"Sse Device Recovered": "A device came back online"
 	},
 	"systems": {
 		"System Management": "System Management",
