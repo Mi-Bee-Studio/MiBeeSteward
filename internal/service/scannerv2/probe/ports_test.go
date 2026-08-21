@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -391,5 +392,48 @@ func TestPortSpecProbe_TimeoutIsUnknownNotClosed(t *testing.T) {
 	// Two attempts at 150ms + slack; a hang or unbounded retry loop blows past.
 	if elapsed > 2*time.Second {
 		t.Fatalf("retry must stay bounded, took %v", elapsed)
+	}
+}
+
+// TestPortSpecProbe_HonorsHintPortSpec pins the #275 task-whitelist path:
+// a hint-carried port spec (a scan task's pipeline_config.port_scan.ports)
+// overrides the probe's engine-global spec for that scan.
+func TestPortSpecProbe_HonorsHintPortSpec(t *testing.T) {
+	li, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("cannot listen: %v", err)
+	}
+	defer li.Close()
+	port := li.Addr().(*net.TCPAddr).Port
+
+	// Engine-global spec deliberately does NOT contain the open port.
+	p := NewPortSpecProbe("22,80", nil)
+	// Hint whitelist DOES.
+	evs, err := p.Probe(context.Background(), "127.0.0.1", scannerv2.ProbeHint{
+		Timeout:  time.Second,
+		PortSpec: strconv.Itoa(port),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range evs {
+		if e.Kind == "port_open" && e.Port == port {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("hint whitelist port %d must be scanned despite global spec omission, got %+v", port, evs)
+	}
+
+	// Without a hint, the global spec applies — the port is NOT scanned.
+	evs, err = p.Probe(context.Background(), "127.0.0.1", scannerv2.ProbeHint{Timeout: 500 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evs {
+		if e.Port == port {
+			t.Fatalf("global spec must govern when hint has no PortSpec, but %d was scanned", port)
+		}
 	}
 }

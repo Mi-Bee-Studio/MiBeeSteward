@@ -35,7 +35,7 @@ DELETE FROM probe_results
 WHERE target_id = ?;
 
 -- name: DeleteProbeResultsStaleBatched :execrows
--- Retention sweep (batched) — same shape as DeleteHostTLSCertsStaleBatched.
+-- Retention sweep (batched) - same shape as DeleteHostTLSCertsStaleBatched.
 -- cutoff is an RFC3339 UTC string compared lexically (ISO 8601 sorts).
 DELETE FROM probe_results
 WHERE id IN (

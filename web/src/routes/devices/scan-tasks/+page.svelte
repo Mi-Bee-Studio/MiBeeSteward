@@ -23,7 +23,7 @@
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PipelineConfigEditor from '$lib/components/scanner/PipelineConfigEditor.svelte';
-	import { Radar, LoaderCircle } from '@lucide/svelte';
+	import { Radar, LoaderCircle, ChevronRight } from '@lucide/svelte';
 
 	// --- Core state ---
 	let tasks = $state<ScannerTask[]>([]);
@@ -716,6 +716,12 @@
 				{/if}
 			</div>
 
+			<!-- Advanced: timeout + concurrency (#275) — collapsed by default -->
+			<details class="group">
+				<summary class="cursor-pointer select-none text-xs text-text-muted hover:text-text mb-2 flex items-center gap-1">
+					<ChevronRight class="w-3 h-3 transition-transform group-open:rotate-90" />
+					{m['scanner.Advanced Options']()}
+				</summary>
 			<!-- Timeout -->
 			<div>
 				<label class="block text-xs text-text-muted mb-1">{m['scanner.Timeout Seconds']()}</label>
@@ -751,6 +757,8 @@
 						focus:border-primary focus:outline-none"
 				/>
 			</div>
+
+			</details>
 
 			<!-- Community -->
 			<div>

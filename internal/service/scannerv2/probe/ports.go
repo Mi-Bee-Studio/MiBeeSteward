@@ -75,10 +75,14 @@ func NewPortSpecProbe(ports string, fingerprintPorts []int) *PortSpecProbe {
 func (p *PortSpecProbe) Name() string { return "active:tcp" }
 
 // Probe dials every port in the spec concurrently, emits port_open + banner
-// evidence for open ports. hint.Ports is advisory and ignored (we scan the
-// configured spec); hint.Timeout bounds each dial.
+// evidence for open ports. hint.PortSpec (a scan task's port whitelist)
+// overrides the engine-global spec for this scan; hint.Timeout bounds each
+// dial. hint.Ports is advisory and ignored.
 func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
 	spec := p.ports
+	if hint.PortSpec != "" {
+		spec = hint.PortSpec
+	}
 	if spec == "" {
 		spec = joinInts(p.fingerprintPorts)
 	}
