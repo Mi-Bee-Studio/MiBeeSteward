@@ -222,6 +222,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Route("/api/v1/networks", func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapNetworkRead))
 		r.Get("/", networkHandler.List)
+		r.Get("/{id}", networkHandler.Get)
 		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Post("/", networkHandler.Create)
 		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Put("/{id}", networkHandler.Update)
 		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Delete("/{id}", networkHandler.Delete)

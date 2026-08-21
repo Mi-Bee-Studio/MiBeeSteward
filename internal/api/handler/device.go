@@ -95,8 +95,23 @@ func (h *DeviceHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
+	// Paging validation (#257): a negative or malformed value is a client
+	// bug, answer 400 instead of silently flooring it; the upper bound keeps
+	// a single request from materializing an unbounded page. An absent param
+	// stays "unset" (limit 0 → service default).
+	limit := int64(0)
+	if raw := q.Get("limit"); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 0 || parsed > 1000 {
+			Error(w, http.StatusBadRequest, "limit must be between 0 and 1000")
+			return
+		}
+		limit = parsed
+	}
 	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	if offset < 0 {
+		offset = 0
+	}
 
 	filter := domain.DeviceFilter{
 		Status: q.Get("status"),

@@ -153,7 +153,7 @@ func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.E
 		if ts.IsZero() {
 			ts = time.Now()
 		}
-		if _, err := stmt.ExecContext(ctx, e.IP, uuid, e.Source, e.Kind, e.Port, e.Protocol, string(raw), e.Confidence, ts.UTC()); err != nil {
+		if _, err := stmt.ExecContext(ctx, e.IP, uuid, e.Source, e.Kind, e.Port, e.Protocol, string(raw), e.Confidence, scannerv2.DBTime(ts)); err != nil {
 			r.logger.Debug("insert evidence row failed", "error", err)
 		}
 	}
@@ -229,7 +229,7 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 		}
 	}
 
-	now := time.Now().UTC()
+	now := scannerv2.DBTime(time.Now())
 	for _, s := range merged {
 		meta, err := json.Marshal(s.Metadata)
 		if err != nil {
@@ -294,7 +294,7 @@ func (r *SQLiteRepository) RecordTLSCerts(ctx context.Context, ip string, certs 
 	}
 	defer stmt.Close()
 
-	now := time.Now().UTC()
+	now := scannerv2.DBTime(time.Now())
 	for _, c := range certs {
 		if _, err := stmt.ExecContext(ctx,
 			ip, uuid, c.Port, c.CertIndex,
@@ -439,7 +439,7 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	// runner owns them. In particular type MUST stay out: this store path runs
 	// BEFORE applyDeviceBridge, and writing type here defeated the runner's
 	// CASE-WHEN guard (the type-flap root cause).
-	now := time.Now().UTC()
+	now := scannerv2.DBTime(time.Now())
 	if _, err = tx.ExecContext(ctx, `
 			UPDATE devices SET
 			    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
@@ -638,7 +638,7 @@ func replacementIdentityUpdate() string {
 // existingIdentityUpdate and replacementIdentityUpdate (they share the same
 // placeholder layout for the columns they have in common). Values come from the
 // IdentityWrite (the runner pre-computes name/JSON blobs/type before calling).
-func identityUpdateArgs(in scannerv2.IdentityWrite, now time.Time) []any {
+func identityUpdateArgs(in scannerv2.IdentityWrite, now string) []any {
 	return []any{
 		in.Name, in.Type, in.Type,
 		in.Brand, in.Brand,
@@ -673,7 +673,7 @@ func (r *SQLiteRepository) createDeviceIdentity(ctx context.Context, in scannerv
 	if devType == "" {
 		devType = "other"
 	}
-	now := time.Now().UTC()
+	now := scannerv2.DBTime(time.Now())
 	res, err := r.db.ExecContext(ctx, `
 		INSERT INTO devices (device_uuid, name, type, brand, ip_address, mac_address,
 		                     status, scan_source, description, location,
@@ -707,7 +707,7 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 	if in.ReplacedID != 0 {
 		updateSQL = replacementIdentityUpdate()
 	}
-	now := time.Now().UTC()
+	now := scannerv2.DBTime(time.Now())
 	if _, uerr := r.db.ExecContext(ctx, updateSQL, identityUpdateArgs(in, now)...); uerr != nil {
 		r.logger.Warn("device identity: update device failed", "ip", in.IP, "mac", in.MAC, "error", uerr)
 	}
@@ -777,7 +777,7 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 // (mirrors the former runner.argsForRoamUpdate). When roamed is true the SQL has
 // an extra `ip_address = ?` clause (the scanned IP comes first); otherwise
 // ip_address is left unchanged.
-func roamUpdateArgs(roamed bool, ip, mac string, now time.Time, existingID int64) []any {
+func roamUpdateArgs(roamed bool, ip, mac string, now string, existingID int64) []any {
 	if roamed {
 		// order: ip_address=?, mac CASE ?/?, last_seen=?, last_scanned_at=?, updated_at=?, id=?
 		return []any{ip, mac, mac, now, now, now, existingID}
@@ -1102,7 +1102,7 @@ func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip string, neigh
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	now := time.Now().UTC()
+	now := scannerv2.DBTime(time.Now())
 	var networkID sql.NullInt64
 	_ = tx.QueryRowContext(ctx, `SELECT network_id FROM devices WHERE id = ?`, deviceID).Scan(&networkID)
 
@@ -1191,7 +1191,7 @@ func (r *SQLiteRepository) EnrichDeviceByMAC(ctx context.Context, mac string, fi
 		scanAttrsJSON = scanAttrsRaw // unchanged
 	}
 
-	now := time.Now().UTC()
+	now := scannerv2.DBTime(time.Now())
 	_, err = r.db.ExecContext(ctx, `
 		UPDATE devices SET
 		    brand = CASE WHEN ? != '' THEN ? ELSE brand END,

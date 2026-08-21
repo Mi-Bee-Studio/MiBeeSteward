@@ -217,3 +217,40 @@ func TestBackfillScanTaskNetworks(t *testing.T) {
 	require.NoError(t, db.QueryRow(`SELECT network_id FROM scan_tasks WHERE id = 1`).Scan(&net1))
 	require.EqualValues(t, 1, net1.Int64)
 }
+
+// TestRunMigrations_ConvertsGoStringTimestamps verifies the #257 conversion:
+// legacy Go time.String() values ("... +0000 UTC") become RFC3339 so SQLite
+// date()/datetime() parse them; already-RFC3339 and CURRENT_TIMESTAMP-style
+// values pass through untouched (idempotent).
+func TestRunMigrations_ConvertsGoStringTimestamps(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "ts.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	require.NoError(t, runMigrations(db, dbPath))
+
+	// Seed one legacy-format row per converted column family.
+	_, err = db.Exec(`INSERT INTO devices (name, ip_address, updated_at, created_at) VALUES ('d', '10.0.0.1', '2026-07-22 18:02:15.149625246 +0000 UTC', '2026-07-22 18:02:15 +0000 UTC')`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO host_services (ip, service, port, updated_at) VALUES ('10.0.0.1', 'http', 80, '2026-07-25 17:30:47.80315038 +0000 UTC')`)
+	require.NoError(t, err)
+
+	require.NoError(t, runMigrations(db, dbPath))
+
+	var devUpdated, svcUpdated string
+	require.NoError(t, db.QueryRow(`SELECT updated_at FROM devices WHERE ip_address='10.0.0.1'`).Scan(&devUpdated))
+	require.NoError(t, db.QueryRow(`SELECT updated_at FROM host_services WHERE ip='10.0.0.1'`).Scan(&svcUpdated))
+	require.Equal(t, "2026-07-22T18:02:15Z", devUpdated)
+	require.Equal(t, "2026-07-25T17:30:47Z", svcUpdated)
+
+	// date() now parses them (returned NULL on the legacy form).
+	var dt string
+	require.NoError(t, db.QueryRow(`SELECT date(updated_at) FROM host_services WHERE ip='10.0.0.1'`).Scan(&dt))
+	require.Equal(t, "2026-07-25", dt)
+
+	// Idempotent: second run leaves RFC3339 values alone.
+	require.NoError(t, runMigrations(db, dbPath))
+	require.NoError(t, db.QueryRow(`SELECT updated_at FROM host_services WHERE ip='10.0.0.1'`).Scan(&svcUpdated))
+	require.Equal(t, "2026-07-25T17:30:47Z", svcUpdated)
+}

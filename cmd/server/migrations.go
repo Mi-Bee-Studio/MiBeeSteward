@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -45,6 +46,11 @@ func runMigrations(db *sql.DB, dbPath string) error {
 				slog.Info("database backed up before migration", "path", backupPath)
 			}
 		}
+		// Prune pre-migration backups older than 7 days (#257): every startup
+		// takes one, and nothing cleaned them up — the field showed dozens of
+		// accumulating multi-hundred-MB copies next to the live DB. The
+		// scripts/backup.sh 7-day retention covers its own files, not these.
+		pruneOldBackups(filepath.Dir(dbPath), filepath.Base(dbPath)+".pre-migration.", 7*24*time.Hour)
 	}
 
 	// Execute embedded schema directly
@@ -276,6 +282,34 @@ func runMigrations(db *sql.DB, dbPath string) error {
 	// for fresh installs that never rebuilt.
 	if err := applyIdentityIndexMigrations(context.Background(), db); err != nil {
 		return fmt.Errorf("identity-index migrations: %w", err)
+	}
+
+	// #257: the raw-SQL store layer bound Go time.Time values, which
+	// modernc.org/sqlite serializes as Go's String() ("2026-08-21 06:19:41.62
+	// +0000 UTC") — SQLite date()/datetime() return NULL on that form, and
+	// text comparisons against the RFC3339 cutoffs misorder. Writes now go
+	// through scannerv2.DBTime (RFC3339); convert existing rows in place.
+	// Idempotent: the WHERE matches only the legacy Go-format suffix.
+	for _, m := range []struct{ table, col string }{
+		{"devices", "created_at"}, {"devices", "updated_at"},
+		{"devices", "first_seen"}, {"devices", "last_seen"},
+		{"devices", "last_scanned_at"}, {"devices", "offline_since"},
+		{"device_neighbors", "first_seen"}, {"device_neighbors", "last_seen"},
+		{"host_tls_certs", "updated_at"},
+		{"scan_snapshots", "last_seen_at"}, {"scan_snapshots", "last_flap_at"},
+		{"host_services", "updated_at"},
+		{"service_evidence", "observed_at"},
+	} {
+		stmt := fmt.Sprintf(
+			"UPDATE %s SET %s = replace(substr(%s, 1, 19), ' ', 'T') || 'Z' WHERE %s LIKE '%% UTC'",
+			m.table, m.col, m.col, m.col)
+		res, err := db.Exec(stmt)
+		if err != nil {
+			return fmt.Errorf("migrate timestamps %s.%s: %w", m.table, m.col, err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			slog.Info("timestamp format migrated to RFC3339", "table", m.table, "column", m.col, "rows", n)
+		}
 	}
 
 	slog.Info("database schema applied")
@@ -1049,4 +1083,28 @@ func extendScanRunStatusCheck(ctx context.Context, db *sql.DB) error {
 	}
 	slog.Info("scan_task_runs rebuilt with 'cancelled' status")
 	return nil
+}
+
+// pruneOldBackups deletes files in dir whose names start with prefix and whose
+// modification time is older than maxAge. Best-effort: failures are logged and
+// never abort startup. Used for the VACUUM INTO pre-migration backups that
+// otherwise accumulate unboundedly (#257).
+func pruneOldBackups(dir, prefix string, maxAge time.Duration) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-maxAge)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err == nil {
+			slog.Info("pruned old pre-migration backup", "file", e.Name())
+		}
+	}
 }
