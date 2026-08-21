@@ -27,7 +27,7 @@ func (p *TCPProber) Probe(ctx context.Context, target string, timeout time.Durat
 	elapsed := time.Since(start)
 
 	if err != nil {
-		slog.Error("probe failed", "method", "tcp", "target", target, "error", err)
+		logProbeFailure("tcp", target, err)
 		return &Result{
 			Success:      false,
 			Latency:      elapsed,
@@ -37,6 +37,7 @@ func (p *TCPProber) Probe(ctx context.Context, target string, timeout time.Durat
 	conn.Close()
 
 	slog.Debug("probe executed", "method", "tcp", "target", target, "success", true, "latency", elapsed)
+	noteProbeSuccess("tcp", target, elapsed)
 	return &Result{
 		Success: true,
 		Latency: elapsed,
