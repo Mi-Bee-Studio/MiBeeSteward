@@ -45,6 +45,12 @@ type doctorCheck struct {
 // DB corruption, WAL bloat, backup rot — as a ✅/⚠️/❌ report with fix hints,
 // instead of leaving the operator to grep logs.
 func runDoctor(args []string) {
+	os.Exit(doctor(args))
+}
+
+// doctor runs the checks and returns the process exit code. Separate from
+// runDoctor so os.Exit happens AFTER doctorMain's defers (db.Close) have run.
+func doctor(args []string) int {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 	cfgPath := fs.String("config", "configs/config.example.yaml", "Path to config file")
 	_ = fs.Parse(args)
@@ -61,17 +67,18 @@ func runDoctor(args []string) {
 			detail: cfgErr.Error(), fixHint: "fix the YAML (see configs/config.example.yaml for the full reference)",
 		})
 		printReport(checks)
-		os.Exit(doctorFailExit)
+		return doctorFailExit
 	}
 	checks = append(checks, doctorCheck{name: "config", status: "ok", detail: "loaded and validated"})
 
-	if cfg.Auth.JWTSecret == "" {
+	switch jwt := cfg.Auth.JWTSecret; {
+	case jwt == "":
 		checks = append(checks, doctorCheck{name: "auth.jwt_secret", status: "fail",
 			detail: "not set", fixHint: "set a random 32+ char value (e.g. `openssl rand -hex 32`)"})
-	} else if len(cfg.Auth.JWTSecret) < 32 {
+	case len(jwt) < 32:
 		checks = append(checks, doctorCheck{name: "auth.jwt_secret", status: "warn",
-			detail: fmt.Sprintf("short (%d chars)", len(cfg.Auth.JWTSecret)), fixHint: "use 32+ chars"})
-	} else {
+			detail: fmt.Sprintf("short (%d chars)", len(jwt)), fixHint: "use 32+ chars"})
+	default:
 		checks = append(checks, doctorCheck{name: "auth.jwt_secret", status: "ok", detail: "present"})
 	}
 
@@ -111,7 +118,7 @@ func runDoctor(args []string) {
 		checks = append(checks, doctorCheck{name: "database open", status: "fail",
 			detail: err.Error(), fixHint: "check the path and directory permissions"})
 		printReport(checks)
-		os.Exit(doctorFailExit)
+		return doctorFailExit
 	}
 	defer db.Close()
 	checks = append(checks, doctorCheck{name: "database open", status: "ok", detail: dbPath})
@@ -168,14 +175,15 @@ func runDoctor(args []string) {
 	if cfg.Server.WriteTimeout != "" && cfg.Scanner.DefaultTimeout > 0 {
 		wt, err := time.ParseDuration(cfg.Server.WriteTimeout)
 		want := time.Duration(cfg.Scanner.DefaultTimeout*2+30) * time.Second
-		if err != nil {
+		switch {
+		case err != nil:
 			checks = append(checks, doctorCheck{name: "server.write_timeout", status: "warn",
 				detail: "unparseable: " + cfg.Server.WriteTimeout, fixHint: "use a Go duration string like 5m"})
-		} else if wt < want {
+		case wt < want:
 			checks = append(checks, doctorCheck{name: "server.write_timeout", status: "warn",
 				detail:  fmt.Sprintf("%s < scanner.auto floor %s — large sync scans can be cut mid-response", wt, want),
 				fixHint: "raise server.write_timeout (the server auto-raises it at boot; this is for explicit low values)"})
-		} else {
+		default:
 			checks = append(checks, doctorCheck{name: "server.write_timeout", status: "ok", detail: wt.String()})
 		}
 	}
@@ -242,9 +250,10 @@ func runDoctor(args []string) {
 	printReport(checks)
 	for _, c := range checks {
 		if c.status == "fail" {
-			os.Exit(doctorFailExit)
+			return doctorFailExit
 		}
 	}
+	return 0
 }
 
 func printReport(checks []doctorCheck) {
