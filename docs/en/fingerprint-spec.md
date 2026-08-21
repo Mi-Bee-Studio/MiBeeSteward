@@ -175,7 +175,7 @@ cross-language results diverge.
 Independent evidence reinforces: a single 0.9 source stays 0.9; two 0.9 sources
 yield ~0.99.
 
-```
+```text
 fused = 1 - (1 - evidence.conf) * (1 - rule.conf)
 ```
 
