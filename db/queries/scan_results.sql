@@ -8,9 +8,26 @@
 -- for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 
 -- name: CreateScanResult :one
+-- Upsert: scan_results holds one latest snapshot per (task_id, ip) - that is
+-- what the UNIQUE(task_id, ip) index expresses. A plain INSERT made every
+-- rescan of a periodic task fail the constraint, freezing the stored data
+-- until the 30d retention sweep finally deleted the old row (#253).
 INSERT INTO scan_results (task_id, run_id, ip, alive, rtt_ms, ports, services, snmp_data, prometheus_detected, prometheus_url, node_exporter_detected, node_exporter_url, node_exporter_data)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING *;
+ON CONFLICT(task_id, ip) DO UPDATE SET
+    run_id = excluded.run_id,
+    alive = excluded.alive,
+    rtt_ms = excluded.rtt_ms,
+    ports = excluded.ports,
+    services = excluded.services,
+    snmp_data = excluded.snmp_data,
+    prometheus_detected = excluded.prometheus_detected,
+    prometheus_url = excluded.prometheus_url,
+    node_exporter_detected = excluded.node_exporter_detected,
+    node_exporter_url = excluded.node_exporter_url,
+    node_exporter_data = excluded.node_exporter_data,
+    scanned_at = excluded.scanned_at
+RETURNING id, task_id, run_id, ip, alive, rtt_ms, ports, services, snmp_data, prometheus_detected, prometheus_url, node_exporter_detected, node_exporter_url, node_exporter_data, scanned_at;
 
 -- name: ListScanResults :many
 SELECT id, task_id, run_id, ip, alive, rtt_ms, ports, services, snmp_data, prometheus_detected, prometheus_url, node_exporter_detected, node_exporter_url, node_exporter_data, scanned_at
@@ -29,8 +46,23 @@ ORDER BY scanned_at DESC
 LIMIT 1;
 
 -- name: BatchInsertScanResults :exec
+-- Upsert for the same reason as CreateScanResult (#253): re-inserting an
+-- existing (task_id, ip) replaces the snapshot instead of failing UNIQUE.
 INSERT INTO scan_results (task_id, run_id, ip, alive, rtt_ms, ports, services, snmp_data, prometheus_detected, prometheus_url, node_exporter_detected, node_exporter_url, node_exporter_data)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(task_id, ip) DO UPDATE SET
+    run_id = excluded.run_id,
+    alive = excluded.alive,
+    rtt_ms = excluded.rtt_ms,
+    ports = excluded.ports,
+    services = excluded.services,
+    snmp_data = excluded.snmp_data,
+    prometheus_detected = excluded.prometheus_detected,
+    prometheus_url = excluded.prometheus_url,
+    node_exporter_detected = excluded.node_exporter_detected,
+    node_exporter_url = excluded.node_exporter_url,
+    node_exporter_data = excluded.node_exporter_data,
+    scanned_at = excluded.scanned_at;
 
 -- name: DeleteScanResultsOlderThan :execrows
 DELETE FROM scan_results
