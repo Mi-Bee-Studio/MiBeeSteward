@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -216,4 +217,66 @@ func TestBackfillScanTaskNetworks(t *testing.T) {
 	require.NoError(t, backfillScanTaskNetworks(ctx, db))
 	require.NoError(t, db.QueryRow(`SELECT network_id FROM scan_tasks WHERE id = 1`).Scan(&net1))
 	require.EqualValues(t, 1, net1.Int64)
+}
+
+// TestConvertDashboardConfigPosition verifies the #247 migration: an old-shape
+// dashboard_configs table (TEXT position, '{}' values) is rebuilt with an
+// INTEGER position, rows survive, legacy values are re-assigned 1-based by id,
+// and the migration is idempotent. A fresh-shape table (INTEGER position) must
+// pass through untouched.
+func TestConvertDashboardConfigPosition(t *testing.T) {
+	ctx := context.Background()
+	// File-backed DB, not testutil's :memory: — the migration opens its own
+	// transaction (pool connection) and an in-memory DB is per-connection.
+	tmpDir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(tmpDir, "dashpos.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	// Create the LEGACY shape directly: the TEXT-position table the first
+	// release shipped (before schema.sql moved position to INTEGER).
+	_, err = db.Exec(`CREATE TABLE dashboard_configs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		type TEXT NOT NULL CHECK(type IN ('gauge', 'line', 'bar', 'pie')),
+		data_source TEXT NOT NULL DEFAULT 'prometheus' CHECK(data_source IN ('prometheus', 'victoriametrics')),
+		query TEXT NOT NULL DEFAULT '',
+		refresh_interval INTEGER NOT NULL DEFAULT 30,
+		position TEXT NOT NULL DEFAULT '{}',
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	require.NoError(t, err)
+	// Two legacy widgets, both with the unusable '{}' position.
+	_, err = db.Exec(`INSERT INTO dashboard_configs (id, name, type, position) VALUES
+		(1, 'legacy-a', 'gauge', '{}'),
+		(2, 'legacy-b', 'line', '{}')`)
+	require.NoError(t, err)
+
+	require.NoError(t, convertDashboardConfigPosition(ctx, db))
+
+	// Column type is now INTEGER.
+	var colType string
+	require.NoError(t, db.QueryRow(`SELECT type FROM pragma_table_info('dashboard_configs') WHERE name = 'position'`).Scan(&colType))
+	require.Contains(t, strings.ToUpper(colType), "INT", "position must be INTEGER after migration, got %q", colType)
+
+	// Rows survived with 1-based positions ordered by id.
+	rows, err := db.Query(`SELECT id, position, typeof(position) FROM dashboard_configs ORDER BY id`)
+	require.NoError(t, err)
+	defer rows.Close()
+	got := map[int64]int64{}
+	for rows.Next() {
+		var id, pos int64
+		var kind string
+		require.NoError(t, rows.Scan(&id, &pos, &kind))
+		require.Equal(t, "integer", kind, "stored value must be an integer, not text")
+		got[id] = pos
+	}
+	require.Equal(t, map[int64]int64{1: 1, 2: 2}, got)
+
+	// Idempotent: second run is a no-op (probe sees INTEGER).
+	require.NoError(t, convertDashboardConfigPosition(ctx, db))
+	var count int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM dashboard_configs`).Scan(&count))
+	require.Equal(t, 2, count)
 }

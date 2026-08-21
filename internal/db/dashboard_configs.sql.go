@@ -22,7 +22,7 @@ type CreateDashboardConfigParams struct {
 	DataSource      string `json:"data_source"`
 	Query           string `json:"query"`
 	RefreshInterval int64  `json:"refresh_interval"`
-	Position        string `json:"position"`
+	Position        int64  `json:"position"`
 }
 
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -68,6 +68,19 @@ func (q *Queries) DeleteDashboardConfig(ctx context.Context, id int64) (int64, e
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const getMaxDashboardConfigPosition = `-- name: GetMaxDashboardConfigPosition :one
+SELECT CAST(COALESCE(MAX(position), 0) AS INTEGER) FROM dashboard_configs
+`
+
+// Highest assigned display order; the create path auto-assigns max+1 when the
+// request carries no position (#247).
+func (q *Queries) GetMaxDashboardConfigPosition(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getMaxDashboardConfigPosition)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const listConfigs = `-- name: ListConfigs :many
@@ -122,7 +135,7 @@ type UpdateDashboardConfigParams struct {
 	DataSource      string `json:"data_source"`
 	Query           string `json:"query"`
 	RefreshInterval int64  `json:"refresh_interval"`
-	Position        string `json:"position"`
+	Position        int64  `json:"position"`
 	ID              int64  `json:"id"`
 }
 

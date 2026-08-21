@@ -510,7 +510,10 @@
 				useCustomLayout = false;
 				widgets = [];
 			}
-		} catch {
+		} catch (err) {
+			// A silent fallback here hid a broken contract for a month (#247):
+			// custom widgets never rendered and nothing said why.
+			addToast('error', getErrorMessage(err));
 			useCustomLayout = false;
 			widgets = [];
 		}
@@ -635,8 +638,8 @@
 		updated[fromIdx] = updated[toIdx];
 		updated[toIdx] = temp;
 
-		// Update positions
-		widgets = updated.map((w, i) => ({ ...w, position: i }));
+		// Update positions (1-based: 0 is the backend's "unspecified" sentinel)
+		widgets = updated.map((w, i) => ({ ...w, position: i + 1 }));
 
 		// Persist positions. Wait for all puts and, on failure, toast + re-sync
 		// from the server so the UI doesn't show an order that wasn't saved
@@ -644,7 +647,14 @@
 		if (isAdmin) {
 			try {
 				await Promise.all(
-					widgets.map((w) => api.put(`/dashboard/configs/${w.id}`, { position: w.position }))
+					widgets.map((w) => api.put(`/dashboard/configs/${w.id}`, {
+						name: w.name,
+						type: w.type,
+						data_source: w.data_source,
+						query: w.query,
+						refresh_interval: w.refresh_interval,
+						position: w.position
+					}))
 				);
 			} catch (err: unknown) {
 				addToast('error', getErrorMessage(err));
@@ -669,12 +679,19 @@
 		const temp = updated[fromIdx];
 		updated[fromIdx] = updated[toIdx];
 		updated[toIdx] = temp;
-		widgets = updated.map((w, i) => ({ ...w, position: i }));
+		widgets = updated.map((w, i) => ({ ...w, position: i + 1 }));
 
 		if (isAdmin) {
 			try {
 				await Promise.all(
-					widgets.map((w) => api.put(`/dashboard/configs/${w.id}`, { position: w.position }))
+					widgets.map((w) => api.put(`/dashboard/configs/${w.id}`, {
+						name: w.name,
+						type: w.type,
+						data_source: w.data_source,
+						query: w.query,
+						refresh_interval: w.refresh_interval,
+						position: w.position
+					}))
 				);
 			} catch (err: unknown) {
 				addToast('error', getErrorMessage(err));
