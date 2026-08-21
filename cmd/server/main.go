@@ -11,7 +11,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -23,10 +22,9 @@ import (
 	"syscall"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"mibee-steward/internal/api/routes"
 	"mibee-steward/internal/config"
+	"mibee-steward/internal/dbopen"
 	"mibee-steward/internal/service"
 	scannerv2reconcile "mibee-steward/internal/service/scannerv2/reconcile"
 	"mibee-steward/internal/version"
@@ -75,10 +73,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Open database connection
-	db, err := sql.Open("sqlite", dbPath)
+	// Open database connection. Pragmas travel in the DSN so every pooled
+	// connection gets them — Exec'ing them on the handle after Open only
+	// reached one connection and left the rest failing instantly with
+	// SQLITE_BUSY under write contention (#252).
+	db, err := dbopen.Open(dbPath,
+		"journal_mode=WAL",
+		"busy_timeout=5000",
+		"synchronous=NORMAL",
+		"cache_size=-64000",
+		// temp_store=MEMORY keeps temp tables + B-trees in RAM instead of
+		// spilling to a temp file — free latency reduction for large scans. (#162)
+		"temp_store=MEMORY",
+	)
 	if err != nil {
-		slog.Error("failed to open database", "error", err)
+		slog.Error("failed to open database", "error", err, "path", dbPath)
 		os.Exit(1)
 	}
 
@@ -93,23 +102,6 @@ func main() {
 	// Match MaxIdleConns to MaxOpenConns so the pool doesn't churn connections
 	// open/close under concurrent scanner + heartbeat load (was 4 << 16). (#162)
 	db.SetMaxIdleConns(16)
-
-	// Optimize SQLite with WAL mode
-	pragmas := []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA busy_timeout=5000",
-		"PRAGMA synchronous=NORMAL",
-		"PRAGMA cache_size=-64000",
-		// temp_store=MEMORY keeps temp tables + B-trees in RAM instead of
-		// spilling to a temp file — free latency reduction for large scans. (#162)
-		"PRAGMA temp_store=MEMORY",
-	}
-	for _, p := range pragmas {
-		if _, err := db.Exec(p); err != nil {
-			slog.Error("failed to set pragma", "pragma", p, "error", err)
-			os.Exit(1)
-		}
-	}
 	// Run migrations
 	if err := runMigrations(db, dbPath); err != nil {
 		slog.Error("failed to run migrations", "error", err)
@@ -130,6 +122,14 @@ func main() {
 		} else if stats.Mismatches > 0 {
 			slog.Info("startup ghost cleanup complete",
 				"mismatches", stats.Mismatches, "rehomed", stats.Rehomed, "unresolved", stats.Unresolved)
+		}
+		// Reserved-address ghosts (#254): devices the scanner recorded at a
+		// network's own address or its broadcast (the broadcast answered pings
+		// via every host's fan-out reply). Same backup protection as above.
+		if removed, err := cleanupSvc.CleanupReservedAddressDevices(context.Background()); err != nil {
+			slog.Warn("startup reserved-address cleanup failed (continuing)", "error", err)
+		} else if len(removed) > 0 {
+			slog.Info("startup reserved-address cleanup complete", "removed", removed)
 		}
 	}
 

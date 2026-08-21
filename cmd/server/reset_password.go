@@ -11,7 +11,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -19,9 +18,8 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"mibee-steward/internal/config"
+	"mibee-steward/internal/dbopen"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/version"
 )
@@ -93,9 +91,10 @@ func resetAdminPasswordSubcommand(args []string) {
 	if dbPath == "" {
 		dbPath = "./data/mibee.db"
 	}
-	db, err := sql.Open("sqlite", dbPath)
+	// Pragmas in the DSN so every pool connection gets them (#252).
+	db, err := dbopen.Open(dbPath, "journal_mode=WAL", "busy_timeout=5000")
 	if err != nil {
-		slog.Error("failed to open database", "error", err)
+		slog.Error("failed to open database", "error", err, "path", dbPath)
 		os.Exit(1)
 	}
 
@@ -104,16 +103,6 @@ func resetAdminPasswordSubcommand(args []string) {
 	// calls are skipped by os.Exit). runReset returns the exit code.
 	exitCode := func() int {
 		defer db.Close()
-
-		for _, p := range []string{
-			"PRAGMA journal_mode=WAL",
-			"PRAGMA busy_timeout=5000",
-		} {
-			if _, err := db.Exec(p); err != nil {
-				slog.Error("failed to set pragma", "pragma", p, "error", err)
-				return 1
-			}
-		}
 
 		if err := runMigrations(db, dbPath); err != nil {
 			slog.Error("failed to run migrations", "error", err)
