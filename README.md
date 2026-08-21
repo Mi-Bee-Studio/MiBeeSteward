@@ -209,7 +209,7 @@ flowchart TB
     PROM["Prometheus · Grafana · Alertmanager"] <-.->|"/metrics · /sd"| MW
 ```
 
-```
+```text
 ├── cmd/server/           # Center entry point (+ reset-admin-password subcommand)
 ├── cmd/agent/            # Distributed discovery agent for remote LANs
 ├── internal/

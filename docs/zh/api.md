@@ -42,7 +42,7 @@ MiBee Steward 设备管理与监控系统（含设备系统、网络扫描、多
 
 每个请求依次经过以下中间件（与源码注册顺序一致）：
 
-```
+```text
 RequestID → RealIP → Logging → Metrics → Recoverer → CORS → SecurityHeaders → CSRF → 全局限流 → 认证/RBAC（+ 网络范围 / 代理令牌）
 ```
 
