@@ -13,6 +13,7 @@
 	import { auth } from '$lib/stores/auth';
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
+	import { acquireStream, changeStream, releaseStream } from '$lib/stores/changes';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { html, formatDateTime as formatTime } from '$lib/utils/index';
 	import { addToast } from '$lib/stores/toast';
@@ -57,11 +58,11 @@
 
 	// SSE live updates (EventSource on /changes/watch). Falls back silently to
 	// the manual refresh if SSE is unavailable (disabled / network error).
-	let evtSource: EventSource | null = null;
-	// sseDisconnected is set when the EventSource gives up reconnecting
-	// (readyState CLOSED) so the page can show a "live updates paused" banner
-	// instead of freezing the feed silently. A fresh change event clears it.
+	// SSE lives in the shared change-stream store (#272): reconnect with
+	// exponential backoff, pause while the tab is hidden, one connection for
+	// every subscribed page. This page just reacts to events.
 	let sseDisconnected = $state(false);
+	let streamUnsub: (() => void) | null = null;
 
 	const changeTypes: ChangeType[] = ['device_added', 'device_changed', 'device_lost', 'device_recovered'];
 
@@ -70,43 +71,26 @@
 		fetchChanges();
 		// Best-effort: populate the network filter dropdown.
 		api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
-		// SSE: push-prepend new change events so the feed feels live. EventSource
-		// auto-reconnects; on a hard failure (readyState CLOSED) we surface a
-		// banner so the user knows the feed froze (manual refresh still works).
-		try {
-			evtSource = new EventSource('/api/v1/changes/watch');
-			evtSource.addEventListener('change', (e: MessageEvent) => {
-				try {
-					const entry = JSON.parse(e.data) as ChangeLogEntry;
-					// A received event means the stream is healthy again.
-					sseDisconnected = false;
-					// Prepend only if not already at the top (dedup by id). Respect the
-					// current filter loosely — if a filter is active, just refresh to
-					// avoid mismatched views; if unfiltered, prepend for instant feedback.
-					if (!filterNetwork && !filterChangeType) {
-						changes = [entry, ...changes.filter((c) => c.id !== entry.id)].slice(0, limit);
-						total += 1;
-						addToast('info', `${changeTypeLabel(entry.change_type)}${entry.entity_id ? ' #' + entry.entity_id : ''}`);
-					}
-				} catch {
-					// Malformed payload — ignore (keepalive comments also land here).
-				}
-			});
-			// Distinguish CONNECTING (auto-retry in progress — stay quiet) from
-			// CLOSED (gave up — tell the user the feed is no longer live).
-			evtSource.onerror = () => {
-				sseDisconnected = evtSource?.readyState === EventSource.CLOSED;
-			};
-		} catch {
-			// EventSource unsupported — SSE is best-effort; polling/refresh still works.
-		}
+		acquireStream();
+		streamUnsub = changeStream().subscribe((st) => {
+			sseDisconnected = !st.connected;
+			const entry = st.lastEvent;
+			if (!entry) return;
+			// Prepend only if not already at the top (dedup by id). Respect the
+			// current filter loosely — if a filter is active, just refresh to
+			// avoid mismatched views; if unfiltered, prepend for instant feedback.
+			if (!filterNetwork && !filterChangeType) {
+				changes = [entry, ...changes.filter((c) => c.id !== entry.id)].slice(0, limit);
+				total += 1;
+				addToast('info', `${changeTypeLabel(entry.change_type)}${entry.entity_id ? ' #' + entry.entity_id : ''}`);
+			}
+		});
 	});
 
 	onDestroy(() => {
-		if (evtSource) {
-			evtSource.close();
-			evtSource = null;
-		}
+		streamUnsub?.();
+		streamUnsub = null;
+		releaseStream();
 	});
 
 	async function fetchChanges() {
