@@ -82,11 +82,11 @@ func (s *DashboardService) CreateConfig(ctx context.Context, params db.CreateDas
 // position loses its slot ordering rather than storing an invalid 0).
 func (s *DashboardService) UpdateConfig(ctx context.Context, params db.UpdateDashboardConfigParams) (db.DashboardConfig, error) {
 	if params.Position <= 0 {
-		max, err := s.queries.GetMaxDashboardConfigPosition(ctx)
+		maxPos, err := s.queries.GetMaxDashboardConfigPosition(ctx)
 		if err != nil {
 			return db.DashboardConfig{}, fmt.Errorf("resolve widget position: %w", err)
 		}
-		params.Position = max + 1
+		params.Position = maxPos + 1
 	}
 	return s.queries.UpdateDashboardConfig(ctx, params)
 }
