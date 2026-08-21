@@ -168,7 +168,10 @@
 		"All Networks": "所有网络",
 		"Collapse Row": "折叠行",
 		"CSV Format Help": "CSV 格式：ip,name,type（需要表头行）",
-		"CSV Col IP": "IP"
+		"CSV Col IP": "IP",
+		"Sse Device Added": "网络中发现新设备",
+		"Sse Device Lost": "有设备离线",
+		"Sse Device Recovered": "有设备恢复在线"
 	},
 	"systems": {
 		"System Management": "系统管理",
