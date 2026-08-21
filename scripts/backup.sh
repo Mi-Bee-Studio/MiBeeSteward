@@ -36,12 +36,14 @@ fi
 echo "Backing up ${DB_PATH} to ${BACKUP_FILE}..."
 sqlite3 "$DB_PATH" ".backup '${BACKUP_FILE}'"
 
-# Verify backup integrity
-if sqlite3 "$BACKUP_FILE" "PRAGMA integrity_check;" | grep -q "ok"; then
+# Verify backup integrity AND that the file opens as a usable database (a
+# truncated/corrupt page can pass a quick stat but fail a real query — #280).
+if sqlite3 "$BACKUP_FILE" "PRAGMA integrity_check;" | grep -q "ok" \
+    && ROWS=$(sqlite3 "$BACKUP_FILE" "SELECT COUNT(*) FROM sqlite_master;") && [ "$ROWS" -gt 0 ]; then
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-    echo "Backup completed successfully: ${BACKUP_FILE} (${SIZE})"
+    echo "Backup completed successfully: ${BACKUP_FILE} (${SIZE}, ${ROWS} schema objects, integrity ok)"
 else
-    echo "ERROR: Backup integrity check failed: ${BACKUP_FILE}" >&2
+    echo "ERROR: Backup verification failed (integrity or open): ${BACKUP_FILE}" >&2
     rm -f "$BACKUP_FILE"
     exit 1
 fi
