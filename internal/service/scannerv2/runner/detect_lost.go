@@ -285,6 +285,6 @@ func (rn *Runner) upsertScanSnapshot(ctx context.Context, networkID int64, taskI
 			device_uuid = CASE WHEN excluded.device_uuid != '' THEN excluded.device_uuid ELSE scan_snapshots.device_uuid END,
 			miss_count = 0,
 			last_seen_at = excluded.last_seen_at`,
-		networkID, taskID, ip, mac, devUUID, lastSeen)
+		networkID, taskID, ip, mac, devUUID, scannerv2.DBTime(lastSeen))
 	return err
 }
