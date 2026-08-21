@@ -27,6 +27,7 @@ package reconcile
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"net"
 	"sync"
@@ -354,4 +355,72 @@ func (s *Service) refreshNetworks(ctx context.Context) error {
 	s.nets = fresh
 	s.mu.Unlock()
 	return nil
+}
+
+// CleanupReservedAddressDevices removes devices recorded at a network's
+// reserved identifiers — the IPv4 network address and the broadcast address
+// (#254). The scanner used to enumerate them: the broadcast address answered
+// pings via every host's fan-out reply and persisted as a phantom
+// always-online device with no MAC. Unlike CleanupGhosts there is no
+// "canonical copy" ambiguity — these addresses can never be a host — so
+// deletion is unconditional (per network_id, only where the device is stamped
+// with that network).
+//
+// Idempotent: a second pass finds nothing. Runs at startup right after
+// CleanupGhosts (both behind the pre-migration VACUUM INTO backup).
+func (s *Service) CleanupReservedAddressDevices(ctx context.Context) ([]string, error) {
+	if err := s.refreshNetworks(ctx); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	nets := make([]netCache, 0, len(s.nets))
+	for _, n := range s.nets {
+		nets = append(nets, n)
+	}
+	s.mu.Unlock()
+
+	var removed []string
+	for _, n := range nets {
+		if n.ipNet == nil {
+			continue
+		}
+		ones, bits := n.ipNet.Mask.Size()
+		if bits != 32 || ones >= 31 {
+			continue // IPv6 has no broadcast; /31 (RFC 3021) and /32 use every address
+		}
+		reserved := []string{
+			n.ipNet.IP.Mask(n.ipNet.Mask).String(),
+			broadcastAddr(n.ipNet).String(),
+		}
+		for _, ip := range reserved {
+			// scan_snapshots keys on (network_id, ip) with no FK to devices —
+			// clear the lease explicitly, then the device row (satellite tables
+			// follow via ON DELETE CASCADE).
+			if _, err := s.dbConn.ExecContext(ctx,
+				`DELETE FROM scan_snapshots WHERE network_id = ? AND ip = ?`, n.id, ip); err != nil {
+				return removed, fmt.Errorf("delete reserved-address lease %s: %w", ip, err)
+			}
+			res, err := s.dbConn.ExecContext(ctx,
+				`DELETE FROM devices WHERE network_id = ? AND ip_address = ?`, n.id, ip)
+			if err != nil {
+				return removed, fmt.Errorf("delete reserved-address device %s: %w", ip, err)
+			}
+			if rows, _ := res.RowsAffected(); rows > 0 {
+				removed = append(removed, ip)
+				s.logger.Info("network reconcile: removed reserved-address ghost device",
+					"ip", ip, "network_id", n.id, "network", n.name)
+			}
+		}
+	}
+	return removed, nil
+}
+
+// broadcastAddr computes the IPv4 broadcast address (network address with the
+// host bits all set) of ipNet.
+func broadcastAddr(ipNet *net.IPNet) net.IP {
+	ip := append(net.IP{}, ipNet.IP.Mask(ipNet.Mask)...)
+	for i := range ip {
+		ip[i] |= ^ipNet.Mask[i]
+	}
+	return ip
 }
