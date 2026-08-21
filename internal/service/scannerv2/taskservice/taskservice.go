@@ -137,6 +137,11 @@ func (s *Service) taskNetworkInScope(ctx context.Context, taskID int64, scope do
 
 // CreateTask inserts a task and registers its cron job.
 func (s *Service) CreateTask(ctx context.Context, req domain.ScanTaskRequest) (domain.ScanTaskResponse, error) {
+	// concurrent_hosts is optional on create: 0 means "not specified" and gets
+	// the default (negative or >200 values still fail validation below). #246
+	if req.ConcurrentHosts == 0 {
+		req.ConcurrentHosts = domain.DefaultConcurrentHosts
+	}
 	if err := domain.ValidateScanTaskRequest(req); err != nil {
 		return domain.ScanTaskResponse{}, err
 	}

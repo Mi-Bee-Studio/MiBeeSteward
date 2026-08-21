@@ -138,6 +138,12 @@
 	let trendError = $state('');
 	// --- Heartbeat config state ---
 	let heartbeatConfigs = $state<Array<{ id: number; method: string; target: string; interval_seconds: number; timeout_seconds: number; enabled: number }>>([]);
+	// Header-level existence probe (#251): the Health card needs to distinguish
+	// "no heartbeat configs" (Not configured) from "configs exist but produced
+	// no results yet" (No data yet) — trendStats alone can't tell them apart,
+	// and it only loads when the Heartbeat tab opens. Cheapest source of truth
+	// is a limit=1 list call reading `total`.
+	let heartbeatConfigCount = $state<number | null>(null);
 	let heartbeatConfigLoading = $state(false);
 	let creatingHeartbeat = $state(false);
 
@@ -358,6 +364,10 @@
 		// the same `device` fetch, Network/Heartbeat/Config fetch on first open
 		// via setTab. This cuts the initial load from 6 parallel requests to 2.
 		fetchSystems();
+		// Header Health card probe (see heartbeatConfigCount above).
+		api.get<{ total: number }>(`/devices/${deviceId}/heartbeat-configs?limit=1`)
+			.then((res) => { heartbeatConfigCount = res.total ?? 0; })
+			.catch(() => { heartbeatConfigCount = null; });
 		// A deep link (?tab=…) lands directly on a lazy tab — fetch its data so
 		// the panel isn't empty until the user clicks away and back.
 		loadTabData(activeTab);
@@ -1005,6 +1015,8 @@
 						<span class="font-mono {heartbeatRate >= 90 ? 'text-success' : heartbeatRate >= 50 ? 'text-warning' : 'text-error'}">
 							{m['devicedetail.Health Success Rate']({ rate: heartbeatRate })}
 						</span>
+					{:else if heartbeatConfigCount !== null && heartbeatConfigCount > 0}
+						<span class="text-muted">{m['devicedetail.Health No Data']()}</span>
 					{:else}
 						<span class="text-muted">{m['devicedetail.Health Not Configured']()}</span>
 					{/if}
