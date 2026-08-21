@@ -342,6 +342,21 @@ curl -s http://localhost:8080/api/v1/health
 curl -s http://localhost:8080/metrics
 ```
 
+### 自监控 5 分钟接入（#279）
+
+`deploy/` 内置了监控自己的完整样例 —— Prometheus 抓取 + 告警规则 + Grafana 最小仪表盘：
+
+```bash
+# 1. Prometheus：使用样例配置（已挂载告警规则、指向中心 /metrics）
+prometheus --config.file=deploy/prometheus/prometheus.yml
+#   把 static_configs 里的 mibee-steward:8080 改成中心实际地址
+
+# 2. Grafana：挂载 provisioning 目录启动（数据源 + MiBee Overview 仪表盘自动出现）
+docker run -d -p 3000:3000   -v $(pwd)/deploy/grafana/provisioning:/etc/grafana/provisioning:ro   -v $(pwd)/deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro   grafana/grafana
+```
+
+告警规则（`deploy/prometheus/alert_rules.yml`，共 10 条）覆盖：实例宕机、HTTP 5xx 比率、DB 竞争 5xx 突发、心跳失败率、内存、拨测目标离线、证书到期、**扫描运行失败**（#253 类静默失败防线）、**agent 上报超时**（`mibee_agent_last_report_timestamp_seconds`，>10 分钟）、**主库体积超限**（`mibee_db_size_bytes`，默认 2GB 阈值，配合 `mibee_db_table_rows` 定位累积表）。
+
 ### 日志监控
 
 ```bash
