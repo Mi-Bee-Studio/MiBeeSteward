@@ -92,6 +92,17 @@ func (h *DeviceConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// 404 for a nonexistent device (parity with GET /devices/{id}, #257) —
+	// previously this returned 200 + an empty list, hiding typos from API
+	// consumers.
+	if _, err := h.queries.GetDevice(r.Context(), deviceID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			Error(w, http.StatusNotFound, "device not found")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed to load device")
+		return
+	}
 	limit, offset := parseListPaging(r)
 	rows, err := h.queries.ListDeviceConfigs(r.Context(), db.ListDeviceConfigsParams{
 		DeviceID: deviceID, Limit: limit, Offset: offset,

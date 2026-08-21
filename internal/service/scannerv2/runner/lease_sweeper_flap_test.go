@@ -70,13 +70,13 @@ func TestLeaseSweeper_FlapDecaySuppressesPeriodicDevice(t *testing.T) {
 	expireCycle := func() {
 		_, err := conn.ExecContext(ctx,
 			`UPDATE scan_snapshots SET last_seen_at = ? WHERE network_id=? AND ip=?`,
-			time.Now().UTC().Add(-10*time.Minute), agentNetID, ip)
+			scannerv2.DBTime(time.Now().UTC().Add(-10*time.Minute)), agentNetID, ip)
 		require.NoError(t, err)
 		sweeper.sweepOnce(ctx) // expireStale: offline + flap_count++
 		// Device wakes: refresh lease, keep device offline so recoverable query matches.
 		_, err = conn.ExecContext(ctx,
 			`UPDATE scan_snapshots SET last_seen_at = ? WHERE network_id=? AND ip=?`,
-			time.Now().UTC(), agentNetID, ip)
+			scannerv2.DBTime(time.Now().UTC()), agentNetID, ip)
 		require.NoError(t, err)
 		_, err = conn.ExecContext(ctx, `UPDATE devices SET status='offline' WHERE ip_address=?`, ip)
 		require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestLeaseSweeper_FlapDecayClearsAfterStable(t *testing.T) {
 	// Force the device into a known-flapping state: high flap_count + recent flap.
 	_, err := conn.ExecContext(ctx,
 		`UPDATE scan_snapshots SET flap_count = 8, last_flap_at = ? WHERE network_id=? AND ip=?`,
-		time.Now().UTC(), agentNetID, ip)
+		scannerv2.DBTime(time.Now().UTC()), agentNetID, ip)
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, `UPDATE devices SET status='offline' WHERE ip_address=?`, ip)
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestLeaseSweeper_FlapDecayClearsAfterStable(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		_, err = conn.ExecContext(ctx,
 			`UPDATE scan_snapshots SET last_flap_at = ?, last_seen_at = ? WHERE network_id=? AND ip=?`,
-			time.Now().UTC().Add(-flapStablePeriod-time.Minute), time.Now().UTC(), agentNetID, ip)
+			scannerv2.DBTime(time.Now().UTC().Add(-flapStablePeriod-time.Minute)), scannerv2.DBTime(time.Now().UTC()), agentNetID, ip)
 		require.NoError(t, err)
 		_, err = conn.ExecContext(ctx, `UPDATE devices SET status='offline' WHERE ip_address=?`, ip)
 		require.NoError(t, err)
