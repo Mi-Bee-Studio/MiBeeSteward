@@ -68,17 +68,18 @@ func TestRecordServices_ReplaceOnRescan(t *testing.T) {
 	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
 		{Service: "http", Port: 80, Confidence: 0.9, Metadata: map[string]string{"server": "nginx"}},
 		{Service: "ssh", Port: 22, Confidence: 0.95},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("record services (1): %v", err)
 	}
 	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_services WHERE ip=?`, ip); cnt != 2 {
 		t.Fatalf("expected 2 services after first scan, got %d", cnt)
 	}
 
-	// Second scan: only http remains (ssh dropped). Replace semantics → 1 row.
+	// Second scan: only http remains — the port scan positively closed 22 (RST)
+	// and re-identified 80. Scoped replace → 1 row.
 	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
 		{Service: "http", Port: 80, Confidence: 0.95, Metadata: map[string]string{"server": "nginx/1.25"}},
-	}); err != nil {
+	}, []int{22}); err != nil {
 		t.Fatalf("record services (2): %v", err)
 	}
 	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_services WHERE ip=?`, ip); cnt != 1 {
@@ -116,7 +117,7 @@ func TestRecordServices_ReplaceAcrossUUIDResolution(t *testing.T) {
 	// device_uuid=''. Mirrors first discovery via the orchestrator path.
 	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
 		{Service: "http", Port: 80, Confidence: 0.9, Metadata: map[string]string{"server": "nginx-old"}},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("record services (scan 1): %v", err)
 	}
 	// Sanity: the row landed with empty device_uuid.
@@ -133,7 +134,7 @@ func TestRecordServices_ReplaceAcrossUUIDResolution(t *testing.T) {
 	// replace scan-1's device_uuid='' row, not collide with it.
 	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
 		{Service: "http", Port: 80, Confidence: 0.95, Metadata: map[string]string{"server": "nginx-new"}},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("record services (scan 2): %v", err)
 	}
 
@@ -467,5 +468,63 @@ func TestRecordDevice_DoesNotCreateIdentity(t *testing.T) {
 	}
 	if devMAC != mac {
 		t.Errorf("mac not enriched: %q", devMAC)
+	}
+}
+
+// TestRecordServices_DegradedCycleKeepsRows pins the #256 fix on the store
+// side: a degraded scan cycle (dial timeouts — no TCP evidence, no closure
+// signal) must NOT erase the host's known service rows. Only positively
+// confirmed-closed ports justify deletion.
+func TestRecordServices_DegradedCycleKeepsRows(t *testing.T) {
+	repo, ctx := newRepo(t, Options{})
+	ip := "10.0.0.9"
+
+	// Healthy cycle: gateway-scale service set.
+	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
+		{Service: "ssh", Port: 22, Confidence: 0.95},
+		{Service: "http", Port: 80, Confidence: 0.99},
+		{Service: "https", Port: 443, Confidence: 0.99},
+		{Service: "snmp", Port: 161, Confidence: 0.99, Protocol: "udp"},
+	}, nil); err != nil {
+		t.Fatalf("record services (healthy): %v", err)
+	}
+
+	// Degraded cycle — exactly the #256 field signature: only snmp answered
+	// (fast, lightweight), every TCP dial timed out (no banner, no port_open,
+	// no port_closed). The old blanket DELETE-by-IP wiped ssh/http/https and
+	// left the host with a lone snmp row until a healthy cycle restored them.
+	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
+		{Service: "snmp", Port: 161, Confidence: 0.99, Protocol: "udp"},
+	}, nil); err != nil {
+		t.Fatalf("record services (degraded): %v", err)
+	}
+	for _, want := range []struct {
+		svc  string
+		port int
+	}{
+		{"ssh", 22}, {"http", 80}, {"https", 443}, {"snmp", 161},
+	} {
+		if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_services WHERE ip=? AND service=? AND port=?`, ip, want.svc, want.port); cnt != 1 {
+			t.Errorf("degraded cycle dropped %s:%d (timeout is not closure)", want.svc, want.port)
+		}
+	}
+
+	// Fully-empty cycle with no closure signal: nothing identified, nothing
+	// closed — the entire prior set must survive untouched.
+	if err := repo.RecordServices(ctx, ip, nil, nil); err != nil {
+		t.Fatalf("record services (empty): %v", err)
+	}
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_services WHERE ip=?`, ip); cnt != 4 {
+		t.Fatalf("no-signal cycle must keep all rows, got %d", cnt)
+	}
+
+	// Service actually stopped (RST observed): the row goes away.
+	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
+		{Service: "snmp", Port: 161, Confidence: 0.99, Protocol: "udp"},
+	}, []int{22, 80, 443}); err != nil {
+		t.Fatalf("record services (shutdown): %v", err)
+	}
+	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_services WHERE ip=?`, ip); cnt != 1 {
+		t.Fatalf("confirmed-closed ports must remove their rows, got %d", cnt)
 	}
 }

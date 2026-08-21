@@ -113,7 +113,7 @@ func (r *recordRepo) RecordEvidence(_ context.Context, ev []Evidence) error {
 	r.evidence = append(r.evidence, ev...)
 	return nil
 }
-func (r *recordRepo) RecordServices(_ context.Context, ip string, svcs []ServiceIdentity) error {
+func (r *recordRepo) RecordServices(_ context.Context, ip string, svcs []ServiceIdentity, _ []int) error {
 	r.services[ip] = svcs
 	return nil
 }

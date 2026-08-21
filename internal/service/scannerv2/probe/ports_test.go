@@ -121,7 +121,9 @@ func TestPortSpecProbe_OpenPortAndBanner(t *testing.T) {
 }
 
 func TestPortSpecProbe_ClosedPortNoEvidence(t *testing.T) {
-	// A port nothing is listening on.
+	// A port nothing is listening on: the dial gets an RST. Since #256 a
+	// refused port emits exactly one port_closed evidence (positive closure
+	// knowledge — safe to drop the host's service row) and nothing else.
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
@@ -131,8 +133,8 @@ func TestPortSpecProbe_ClosedPortNoEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(evs) != 0 {
-		t.Errorf("closed port should yield no evidence, got %d", len(evs))
+	if len(evs) != 1 || evs[0].Kind != "port_closed" || evs[0].Port != port {
+		t.Errorf("refused port should yield exactly one port_closed evidence, got %+v", evs)
 	}
 }
 
@@ -369,5 +371,25 @@ func ioReadUntilClosed(conn net.Conn) {
 		if _, err := conn.Read(buf); err != nil {
 			return
 		}
+	}
+}
+
+// TestPortSpecProbe_TimeoutIsUnknownNotClosed dials a non-routable TEST-NET
+// address with a short timeout: the probe must emit NOTHING for that port
+// (timeout ≠ closed) and stay bounded (one retry, not a hang).
+func TestPortSpecProbe_TimeoutIsUnknownNotClosed(t *testing.T) {
+	p := NewPortSpecProbe("22", nil)
+	start := time.Now()
+	evs, err := p.Probe(context.Background(), "192.0.2.1", scannerv2.ProbeHint{Timeout: 150 * time.Millisecond})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 0 {
+		t.Fatalf("timed-out port must emit no evidence (unknown, not closed), got %+v", evs)
+	}
+	// Two attempts at 150ms + slack; a hang or unbounded retry loop blows past.
+	if elapsed > 2*time.Second {
+		t.Fatalf("retry must stay bounded, took %v", elapsed)
 	}
 }
