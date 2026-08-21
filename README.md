@@ -40,6 +40,14 @@ flowchart LR
     R2 --> O2
 ```
 
+![Dashboard](docs/en/images/dashboard.webp)
+
+![Device inventory](docs/en/images/devices.webp)
+
+![Network topology](docs/en/images/topology.webp)
+
+> A full visual walkthrough lives in the [Web UI Tour](docs/en/web-ui.md).
+
 ## Features
 
 - **Device Management**: Add, configure, and monitor network devices
