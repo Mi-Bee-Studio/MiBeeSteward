@@ -211,9 +211,12 @@ func (o *Orchestrator) Run(ctx context.Context, ip string, hint ProbeHint) HostR
 		}
 	}
 
-	// ② persist service identities.
-	if o.repo != nil && len(services) > 0 {
-		if err := o.repo.RecordServices(ctx, ip, services); err != nil {
+	// ② persist service identities. Called even with zero services when the
+	// scan positively closed ports (RST evidence) — confirmed-gone rows must
+	// be removed; a zero-service cycle with no closure signal keeps the old
+	// rows (a degraded scan must not wipe the service set, #256).
+	if o.repo != nil && (len(services) > 0 || hasEvidenceKind(evidence, "port_closed")) {
+		if err := o.repo.RecordServices(ctx, ip, services, closedPortsFromEvidence(evidence)); err != nil {
 			o.logger.Debug("record services failed", "ip", ip, "error", err)
 		}
 	}
@@ -232,6 +235,19 @@ func hasEvidenceKind(ev []Evidence, kind string) bool {
 		}
 	}
 	return false
+}
+
+// closedPortsFromEvidence collects the ports the port scan positively closed
+// (TCP RST → "port_closed" evidence). Only these justify deleting a host's
+// existing service rows; a dial timeout is NOT closure (#256).
+func closedPortsFromEvidence(ev []Evidence) []int {
+	var closed []int
+	for _, e := range ev {
+		if e.Kind == "port_closed" && e.Port > 0 {
+			closed = append(closed, e.Port)
+		}
+	}
+	return closed
 }
 
 // stripWildcardPrefix removes a leading "*." from a TLS cert CN so it reads as
