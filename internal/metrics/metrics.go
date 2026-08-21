@@ -38,6 +38,29 @@ var (
 		[]string{"status", "type"},
 	)
 
+	// MibeeDBSizeBytes tracks the on-disk size of the SQLite files (main +
+	// heartbeat store), split into the DB file itself and its WAL sidecar.
+	// Refreshed by the cleanup service's maintenance pass each sweep (#280) —
+	// the growth baseline for capacity planning and the db-growth alert.
+	MibeeDBSizeBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mibee_db_size_bytes",
+			Help: "SQLite database file sizes (db = main|heartbeat, kind = db|wal)",
+		},
+		[]string{"db", "kind"},
+	)
+
+	// MibeeDBTableRows tracks row counts of the high-volume tables so retention
+	// effectiveness and growth trends are observable. Refreshed with the
+	// maintenance pass (#280).
+	MibeeDBTableRows = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mibee_db_table_rows",
+			Help: "Row counts of high-volume tables (retention effectiveness / growth)",
+		},
+		[]string{"db", "table"},
+	)
+
 	// MibeeHeartbeatChecksTotal counts heartbeat probe outcomes. Incremented
 	// by HeartbeatService.probeAndRecord per probe (#238 — previously
 	// registered but never written, leaving the HeartbeatFailures alert dead).
@@ -106,6 +129,8 @@ func init() {
 	prometheus.MustRegister(MibeeScannerDurationSeconds)
 	prometheus.MustRegister(MibeeScannerHostsDiscovered)
 	prometheus.MustRegister(MibeeScannerTasksTotal)
+	prometheus.MustRegister(MibeeDBSizeBytes)
+	prometheus.MustRegister(MibeeDBTableRows)
 }
 
 // RefreshScannerTaskGauges recomputes mibee_scanner_tasks_total{status} from
