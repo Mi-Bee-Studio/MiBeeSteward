@@ -43,7 +43,7 @@ Alternatively, email the completed agreement to mickey_zzc@163.com.
 
 Please complete every field.
 
-```
+```text
 Full name:      ___________________________________________
 GitHub username:___________________________________________
 Email:          ___________________________________________
@@ -127,7 +127,7 @@ as of the date such litigation is filed.
 
 Please complete every field.
 
-```
+```text
 Corporation name:__________________________________________
 Corporation address:_______________________________________
 Country:           ___________________________________________

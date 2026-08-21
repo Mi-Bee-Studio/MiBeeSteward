@@ -42,7 +42,7 @@ Complete REST API documentation for the MiBee Steward device management and moni
 
 Every request passes through the following middleware in source registration order:
 
-```
+```text
 RequestID → RealIP → Logging → Metrics → Recoverer → CORS → SecurityHeaders → CSRF → Global Rate Limit → Auth/RBAC (+ Network Scope / Agent Token)
 ```
 
