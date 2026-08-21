@@ -228,7 +228,8 @@
 		"Preview File": "预览文件",
 		"Preview Not Available": "此文件类型不支持预览",
 		"Restore Failed": "恢复失败",
-		"URL Placeholder": "https://..."
+		"URL Placeholder": "https://...",
+		"Page Title": "文档"
 	},
 	"heartbeat": {
 		"Success": "成功",

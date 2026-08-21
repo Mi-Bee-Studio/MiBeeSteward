@@ -168,7 +168,7 @@ func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.E
 // device); the rows land with device_uuid=” and are healed on the next scan.
 // The DELETE keeps an IP guard as a belt-and-suspenders so a not-yet-uuid'd row
 // set is still replaced rather than accumulated while the uuid is unresolved.
-func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, services []scannerv2.ServiceIdentity) error {
+func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, services []scannerv2.ServiceIdentity, closedPorts []int) error {
 	uuid, _ := r.resolveDeviceUUID(ctx, ip)
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -177,14 +177,36 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	// Replace the host's prior service set. The rows belong to this IP regardless
-	// of their device_uuid state, so the DELETE keys on IP. This matters across
-	// the uuid-resolution transition: scan 1 (no device row yet) lands rows with
-	// device_uuid='', scan 2 (uuid resolved) must remove those rows — a DELETE
-	// scoped to the resolved uuid would miss the device_uuid='' rows and the
-	// subsequent INSERT would collide on UNIQUE(ip,service,port), silently
-	// dropping the fresh data (regression #129).
-	if _, err := tx.ExecContext(ctx, `DELETE FROM host_services WHERE ip = ?`, ip); err != nil {
+	// Scoped replace (#256): only rows whose port was re-identified this cycle
+	// OR positively confirmed closed (TCP RST → closedPorts) are removed. The
+	// previous blanket DELETE-by-IP let one degraded cycle (dial timeouts on a
+	// busy gateway, a half-dead camera that accepts TCP but never answers)
+	// erase every known service for the host. Rows on ports with no signal
+	// (timeout = unknown, not closed) survive until a later cycle resolves
+	// them. The DELETE still keys on IP alone within the port scope — that
+	// keeps the uuid-resolution transition working (scan-1 rows with
+	// device_uuid='' must be replaced by scan-2's resolved rows, regression
+	// #129).
+	portsInPlay := make([]int, 0, len(services)+len(closedPorts))
+	for _, s := range services {
+		if s.Port > 0 {
+			portsInPlay = append(portsInPlay, s.Port)
+		}
+	}
+	portsInPlay = append(portsInPlay, closedPorts...)
+	if len(portsInPlay) == 0 {
+		// Nothing identified and nothing confirmed closed: keep the existing
+		// rows rather than wipe on a no-signal cycle.
+		return nil
+	}
+	placeholders := strings.Repeat("?,", len(portsInPlay))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(portsInPlay)+1)
+	args = append(args, ip)
+	for _, p := range portsInPlay {
+		args = append(args, p)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM host_services WHERE ip = ? AND port IN (`+placeholders+`)`, args...); err != nil {
 		return err
 	}
 	if len(services) == 0 {

@@ -284,6 +284,14 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		return fmt.Errorf("identity-index migrations: %w", err)
 	}
 
+	// #247: dashboard_configs.position was TEXT ('{}' default) while every
+	// consumer of the value (API JSON, frontend numeric sort, drag-persist)
+	// treats it as an integer. Rebuild the table with an INTEGER column on
+	// existing DBs; fresh installs already get it from schema.sql.
+	if err := convertDashboardConfigPosition(context.Background(), db); err != nil {
+		return fmt.Errorf("dashboard-config position migration: %w", err)
+	}
+
 	// #257: the raw-SQL store layer bound Go time.Time values, which
 	// modernc.org/sqlite serializes as Go's String() ("2026-08-21 06:19:41.62
 	// +0000 UTC") — SQLite date()/datetime() return NULL on that form, and
@@ -1107,4 +1115,90 @@ func pruneOldBackups(dir, prefix string, maxAge time.Duration) {
 			slog.Info("pruned old pre-migration backup", "file", e.Name())
 		}
 	}
+}
+
+// convertDashboardConfigPosition rebuilds dashboard_configs with an INTEGER
+// position column (#247). The first release stored TEXT ('{}' default): the
+// frontend sorted numerically (NaN against '{}' strings) and the create path
+// never sent a value, so no widget could ever render in a custom layout.
+// Legacy rows are assigned 1-based display order by id — deterministic and
+// stable for however many stragglers an upgraded DB carries.
+//
+// Idempotent: probes the declared column type via PRAGMA table_info; the
+// rebuild is a no-op once position is INTEGER. Mirrors the rebuild pattern of
+// extendUsersRoleCheck (FKs off inside the tx, full column set preserved).
+func convertDashboardConfigPosition(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(dashboard_configs)`)
+	if err != nil {
+		return fmt.Errorf("probe dashboard_configs shape: %w", err)
+	}
+	isText := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue any
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan table_info row: %w", err)
+		}
+		if name == "position" {
+			isText = strings.Contains(strings.ToUpper(colType), "TEXT")
+			break
+		}
+	}
+	// Close the cursor BEFORE the rebuild: an open read cursor on another pool
+	// connection blocks the rebuild tx's commit on non-WAL databases (SQLITE_BUSY).
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return fmt.Errorf("iterate table_info: %w", err)
+	}
+	if !isText {
+		return nil
+	}
+
+	slog.Info("rebuilding dashboard_configs table (position TEXT -> INTEGER, #247)")
+
+	stmts := []string{
+		`CREATE TABLE dashboard_configs_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL CHECK(type IN ('gauge', 'line', 'bar', 'pie')),
+			data_source TEXT NOT NULL DEFAULT 'prometheus' CHECK(data_source IN ('prometheus', 'victoriametrics')),
+			query TEXT NOT NULL DEFAULT '',
+			refresh_interval INTEGER NOT NULL DEFAULT 30,
+			position INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT INTO dashboard_configs_new (id, name, type, data_source, query, refresh_interval, position, created_at, updated_at)
+		SELECT id, name, type, data_source, query, refresh_interval,
+			CAST(ROW_NUMBER() OVER (ORDER BY id) AS INTEGER), created_at, updated_at
+		FROM dashboard_configs`,
+		`DROP TABLE dashboard_configs`,
+		`ALTER TABLE dashboard_configs_new RENAME TO dashboard_configs`,
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin dashboard-configs rebuild tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable FKs for dashboard-configs rebuild: %w", err)
+	}
+	for _, s := range stmts {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
+			return fmt.Errorf("dashboard-configs rebuild step failed: %w (stmt: %s)", err, s)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("re-enable FKs after dashboard-configs rebuild: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit dashboard-configs rebuild: %w", err)
+	}
+	slog.Info("dashboard_configs position converted to INTEGER (legacy rows ordered by id)")
+	return nil
 }

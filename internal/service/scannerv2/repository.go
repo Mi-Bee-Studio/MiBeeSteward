@@ -28,8 +28,11 @@ type Repository interface {
 	RecordEvidence(ctx context.Context, ev []Evidence) error
 
 	// RecordServices persists the classified service identities for an IP.
-	// Replaces the prior set for the IP within the current scan run.
-	RecordServices(ctx context.Context, ip string, services []ServiceIdentity) error
+	// Replacement is scoped (#256): rows on ports that were re-identified OR
+	// positively confirmed closed (closedPorts — TCP RST evidence) are
+	// replaced/removed; rows on ports with no signal this cycle (dial timeout,
+	// degraded scan) are kept, so one bad cycle can't erase known services.
+	RecordServices(ctx context.Context, ip string, services []ServiceIdentity, closedPorts []int) error
 
 	// RecordDevice upserts the enriched device fields.
 	RecordDevice(ctx context.Context, ip string, device DeviceRef) error
@@ -150,8 +153,10 @@ type IdentityWrite struct {
 // persistence is wired (e.g. unit tests, ad-hoc CLI scans).
 type NoopRepository struct{}
 
-func (NoopRepository) RecordEvidence(context.Context, []Evidence) error                   { return nil }
-func (NoopRepository) RecordServices(context.Context, string, []ServiceIdentity) error    { return nil }
+func (NoopRepository) RecordEvidence(context.Context, []Evidence) error { return nil }
+func (NoopRepository) RecordServices(context.Context, string, []ServiceIdentity, []int) error {
+	return nil
+}
 func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error              { return nil }
 func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error    { return nil }
 func (NoopRepository) RecordNeighbors(context.Context, string, []NeighborSpec) error      { return nil }
