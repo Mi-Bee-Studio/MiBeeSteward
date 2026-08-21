@@ -63,6 +63,46 @@ func (q *Queries) CreateHeartbeatConfig(ctx context.Context, arg CreateHeartbeat
 	return i, err
 }
 
+const createHeartbeatConfigIfAbsent = `-- name: CreateHeartbeatConfigIfAbsent :execrows
+INSERT INTO heartbeat_configs (device_id, method, target, interval_seconds, timeout_seconds, snmp_community, snmp_oid, enabled)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(device_id, method) DO NOTHING
+RETURNING id, device_id, method, target, interval_seconds, timeout_seconds, snmp_community, snmp_oid, enabled, created_at, updated_at
+`
+
+type CreateHeartbeatConfigIfAbsentParams struct {
+	DeviceID        int64  `json:"device_id"`
+	Method          string `json:"method"`
+	Target          string `json:"target"`
+	IntervalSeconds int64  `json:"interval_seconds"`
+	TimeoutSeconds  int64  `json:"timeout_seconds"`
+	SnmpCommunity   string `json:"snmp_community"`
+	SnmpOid         string `json:"snmp_oid"`
+	Enabled         int64  `json:"enabled"`
+}
+
+// Idempotent form of CreateHeartbeatConfig for scan-time seeding (#291): a
+// device scanned twice (or seeded by two paths in one bridge) re-asserts the
+// same (device_id, method) spec as a no-op instead of failing the UNIQUE
+// index. The user-driven API create keeps the strict form so a manual
+// duplicate surfaces as a 409.
+func (q *Queries) CreateHeartbeatConfigIfAbsent(ctx context.Context, arg CreateHeartbeatConfigIfAbsentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, createHeartbeatConfigIfAbsent,
+		arg.DeviceID,
+		arg.Method,
+		arg.Target,
+		arg.IntervalSeconds,
+		arg.TimeoutSeconds,
+		arg.SnmpCommunity,
+		arg.SnmpOid,
+		arg.Enabled,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteHeartbeatConfig = `-- name: DeleteHeartbeatConfig :execrows
 DELETE FROM heartbeat_configs
 WHERE id = ?

@@ -194,11 +194,21 @@ func (s *HeartbeatService) CreateConfigs(ctx context.Context, deviceID int64, co
 		return nil
 	}
 	validMethods := map[string]bool{"icmp": true, "snmp": true, "http": true, "tcp": true}
+	// Seeding must be idempotent (#291): a rescan (or two seeding paths in
+	// one bridge) re-asserts the same spec. Deduplicate the spec list by
+	// method and insert with ON CONFLICT DO NOTHING, so an existing
+	// (device_id, method) row is a no-op instead of a UNIQUE failure that
+	// surfaced as a per-device WARN on every scan.
+	seen := make(map[string]bool, len(configs))
 	for _, cfg := range configs {
 		if !validMethods[cfg.Method] {
 			return fmt.Errorf("invalid heartbeat method: %s", cfg.Method)
 		}
-		_, err := s.queries.CreateHeartbeatConfig(ctx, db.CreateHeartbeatConfigParams{
+		if seen[cfg.Method] {
+			continue
+		}
+		seen[cfg.Method] = true
+		if _, err := s.queries.CreateHeartbeatConfigIfAbsent(ctx, db.CreateHeartbeatConfigIfAbsentParams{
 			DeviceID:        deviceID,
 			Method:          cfg.Method,
 			Target:          cfg.Target,
@@ -207,8 +217,7 @@ func (s *HeartbeatService) CreateConfigs(ctx context.Context, deviceID int64, co
 			SnmpCommunity:   cfg.SNMPCommunity,
 			SnmpOid:         cfg.SNMPOID,
 			Enabled:         1,
-		})
-		if err != nil {
+		}); err != nil {
 			return fmt.Errorf("create %s config for device %d: %w", cfg.Method, deviceID, err)
 		}
 	}
