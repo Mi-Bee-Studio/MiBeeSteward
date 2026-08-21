@@ -391,7 +391,7 @@ interface AddDevicesResponse {
 		batchLoading = true;
 		try {
 			await api.post('/devices/batch-delete', { ids: Array.from(selectedIds) });
-			addToast('success', m['devices.Batch Delete Success']().replace('{count}', String(selectedIds.size)));
+			addToast('success', m['devices.Batch Delete Success']({ count: selectedIds.size }));
 			selectedIds = new Set();
 			fetchDevices();
 		} catch (err: unknown) {
@@ -501,10 +501,10 @@ interface AddDevicesResponse {
 			if (res.errors && res.errors.length > 0) {
 				// Summary warning with the first error reason, rather than a toast
 				// per failure (noisy when many rows fail).
-				addToast('warning', m['scanner.Import N Failed']().replace('{count}', String(res.errors.length)).replace('{reason}', res.errors[0]));
+				addToast('warning', m['scanner.Import N Failed']({ count: res.errors.length, reason: res.errors[0] }));
 			}
 			if (res.added > 0) {
-				addToast('success', m['scanner.Added N Devices']().replace('{count}', String(res.added)));
+				addToast('success', m['scanner.Added N Devices']({ count: res.added }));
 				importOpen = false;
 				csvFile = null;
 				csvPreviewRows = [];
@@ -1127,7 +1127,7 @@ interface AddDevicesResponse {
 				<input type="checkbox" checked onchange={toggleSelectAll}
 					class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer" />
 				<span class="text-sm font-medium text-primary">
-					{m['devices.Selected Count']().replace('{count}', String(selectedIds.size))}
+					{m['devices.Selected Count']({ count: selectedIds.size })}
 				</span>
 			</div>
 			<div class="flex-1"></div>
