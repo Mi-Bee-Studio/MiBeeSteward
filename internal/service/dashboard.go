@@ -68,11 +68,11 @@ func (s *DashboardService) ListConfigs(ctx context.Context) ([]db.DashboardConfi
 // never need to compute display order (#247).
 func (s *DashboardService) CreateConfig(ctx context.Context, params db.CreateDashboardConfigParams) (db.DashboardConfig, error) {
 	if params.Position <= 0 {
-		max, err := s.queries.GetMaxDashboardConfigPosition(ctx)
+		maxPos, err := s.queries.GetMaxDashboardConfigPosition(ctx)
 		if err != nil {
 			return db.DashboardConfig{}, fmt.Errorf("resolve widget position: %w", err)
 		}
-		params.Position = max + 1
+		params.Position = maxPos + 1
 	}
 	return s.queries.CreateDashboardConfig(ctx, params)
 }
