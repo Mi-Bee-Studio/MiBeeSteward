@@ -43,6 +43,10 @@ func main() {
 		resetAdminPasswordSubcommand(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "doctor" {
+		runDoctor(os.Args[2:])
+		return
+	}
 
 	flag.Parse()
 
