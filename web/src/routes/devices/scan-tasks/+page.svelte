@@ -606,12 +606,14 @@
 									<div class="flex gap-2 justify-end">
 										<button
 											onclick={() => triggerTask(task)}
-											disabled={triggeringId === task.id}
+											aria-label={m['scanner.Trigger']()}
+											disabled={triggeringId === task.id || activeRuns.has(task.id)}
 											class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10
 												transition-colors disabled:opacity-50"
 										>
 									{#if triggeringId === task.id || activeRuns.has(task.id)}
-										⏳
+										<span aria-hidden="true">⏳</span>
+										<span class="sr-only">{m['scanner.Trigger']()}</span>
 									{:else}
 										{m['scanner.Trigger']()}
 									{/if}
