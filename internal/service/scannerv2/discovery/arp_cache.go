@@ -12,6 +12,7 @@ package discovery
 import (
 	"context"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -33,21 +34,41 @@ type ARPCacheSource struct {
 	interval time.Duration
 	svc      *Service
 	logger   *slog.Logger
+	// localNet filters neighbours to the configured LAN (network.cidr). nil =
+	// no filtering (the pre-#292 behavior). On a form-C center running ON the
+	// router, /proc/net/arp holds BOTH arms' neighbours — without the filter
+	// the WAN side (e.g. the upstream network the router itself sits in) gets
+	// recorded into this LAN's portrait and actively probed.
+	localNet *net.IPNet
 
 	mu       sync.Mutex
 	previous map[string]string // ip → mac, last sweep
 }
 
-// NewARPCacheSource constructs the source. interval is the poll cadence
-// (typically 60s, same as RouterARPSource so they stay in lockstep).
-func NewARPCacheSource(interval time.Duration, svc *Service, logger *slog.Logger) *ARPCacheSource {
+// NewARPCacheSource constructs the source. cidr is the local LAN
+// (network.cidr) used to drop out-of-subnet neighbours (#292); interval is
+// the poll cadence (typically 60s, same as RouterARPSource so they stay in
+// lockstep). An empty or unparseable cidr logs a warning and keeps the
+// unfiltered behavior — unlike the conntrack source (which goes silent), this
+// source predates the filter and must not lose a working deployment to a
+// config typo.
+func NewARPCacheSource(cidr string, interval time.Duration, svc *Service, logger *slog.Logger) *ARPCacheSource {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	var localNet *net.IPNet
+	if cidr != "" {
+		if _, ipnet, err := net.ParseCIDR(cidr); err == nil {
+			localNet = ipnet
+		} else {
+			logger.Warn("discovery: arp_cache source has invalid LAN CIDR; emitting unfiltered (pre-#292 behavior)", "cidr", cidr)
+		}
 	}
 	return &ARPCacheSource{
 		interval: interval,
 		svc:      svc,
 		logger:   logger,
+		localNet: localNet,
 		previous: map[string]string{},
 	}
 }
@@ -80,8 +101,17 @@ func (s *ARPCacheSource) sweep() {
 		s.logger.Debug("discovery: arp_cache read failed", "error", err)
 		return
 	}
+	s.sweepWith(entries)
+}
+
+// sweepWith is the test seam: the diff-and-emit logic over a given neighbour
+// set, so tests can feed fixtures without /proc/net/arp.
+func (s *ARPCacheSource) sweepWith(entries []probe.ARPEntry) {
 	current := make(map[string]string, len(entries))
 	for _, e := range entries {
+		if s.localNet != nil && !s.localNet.Contains(net.ParseIP(e.IP)) {
+			continue
+		}
 		current[e.IP] = e.MAC
 	}
 
