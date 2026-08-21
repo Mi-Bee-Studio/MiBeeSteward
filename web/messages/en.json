@@ -1093,6 +1093,7 @@
 		"Health Certificates": "Certificates",
 		"Health No Certs": "None",
 		"Health Not Configured": "Not configured",
+		"Health No Data": "No data yet",
 		"Health Success Rate": "{rate}% success",
 		"Health Check Certs": "View certificates",
 		"No IP Address": "Device has no IP address",

@@ -21,6 +21,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { Plus, RotateCw, Puzzle, BarChart3, AlertTriangle, CheckCircle2, Radar } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
+	import { formatDuration } from '$lib/utils/format';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { scanRunStatusBadge } from '$lib/utils/badges';
@@ -973,7 +974,7 @@
 											</td>
 											<td class="py-2 pr-3 tabular-nums">{run.alive_hosts}/{run.total_hosts}</td>
 											<td class="py-2 pr-3 tabular-nums">{run.new_hosts}</td>
-											<td class="py-2 pr-3 tabular-nums text-muted">{run.duration_ms}ms</td>
+											<td class="py-2 pr-3 tabular-nums text-muted">{formatDuration(run.duration_ms)}</td>
 										</tr>
 									{/each}
 								</tbody>

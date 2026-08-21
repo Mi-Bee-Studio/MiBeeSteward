@@ -42,3 +42,14 @@ export function formatTime(iso: string | number | Date | null | undefined): stri
 		return String(iso);
 	}
 }
+
+/**
+ * Human-readable duration from milliseconds ("940ms" / "108.3s"), shared by
+ * the scan-results run history and the dashboard scan-activity table — the
+ * two surfaces used to disagree (raw ms vs formatted) for the same column
+ * (#251).
+ */
+export function formatDuration(ms: number): string {
+	if (ms < 1000) return `${ms}ms`;
+	return `${(ms / 1000).toFixed(1)}s`;
+}
