@@ -547,10 +547,24 @@
 		}
 	}
 
+	// fetchOverview loads the banner payload (attention counts, scan activity,
+	// offline list). Runs in BOTH layouts: the custom-widget layout skips the
+	// default cards' stats/device fetch, but the banner still needs overview —
+	// without it the banner fell back to the totalDevices===0 onboarding state
+	// and told the user "no devices yet" over a populated inventory.
+	async function fetchOverview() {
+		try {
+			overview = await api.get<OverviewResponse>('/dashboard/overview');
+		} catch {
+			// Non-fatal: legacy charts still render; type/location pies fall back
+			// to the 200-row sample, scan/offline sections render empty.
+			overview = null;
+		}
+	}
+
 	async function fetchDefaultData() {
-		// stats (status pie + gauge) + overview (full-population type/location
-		// distributions, scan activity, offline list) load in parallel. overview
-		// is in its own try so a failure there doesn't blank the legacy charts.
+		// stats (status pie + gauge) for the default-layout cards. overview is
+		// fetched separately (fetchOverview) so both layouts share it.
 		try {
 			const [statsRes, devsRes] = await Promise.all([
 				api.get<DeviceStats>('/devices/stats'),
@@ -562,13 +576,6 @@
 			addToast('error', getErrorMessage(err));
 			stats = { by_status: { online: 0, offline: 0, unknown: 0 } };
 			devices = [];
-		}
-		try {
-			overview = await api.get<OverviewResponse>('/dashboard/overview');
-		} catch {
-			// Non-fatal: legacy charts still render; type/location pies fall back
-			// to the 200-row sample, scan/offline sections render empty.
-			overview = null;
 		}
 	}
 
@@ -587,6 +594,8 @@
 		loading.set(true);
 		try {
 			await fetchCustomWidgets();
+			// Banner payload in BOTH layouts (see fetchOverview).
+			await fetchOverview();
 			if (!useCustomLayout) {
 				await fetchDefaultData();
 			}
@@ -801,7 +810,7 @@
 			{/if}
 			<button
 				onclick={handleRefresh}
-				disabled={refreshing}
+					disabled={refreshing}
 				class="btn btn-primary shrink-0"
 			>
 				<RotateCw class="w-4 h-4 {refreshing ? 'animate-spin' : ''}" />
@@ -854,13 +863,21 @@
 		</div>
 	{/if}
 
-	{#if $loading}
-		<!-- Top-level skeleton: previously the dashboard rendered nothing at all
-		     while stats/overview/widgets loaded — no feedback that work was
-		     happening. The $loading store path (vs a bare $state) is required
-		     under prerender hydration (see the note above loadAll). -->
-		<PageSkeleton type="dashboard" />
-	{:else if useCustomLayout}
+
+			<!-- Rendered-content block keyed on the NEGATIVE store read ({#if !$loading})
+		     — the same shape as the banner block above, which reliably
+		     re-renders under prerender hydration. The previous positive form
+		     ({#if $loading} skeleton {:else if ...}) left the skeleton branch
+		     mounted forever after the first custom-layout load: the else-if
+		     chain's effect never re-evaluated on the store's true→false flip,
+		     so the widget grid never appeared. -->
+		{#if $loading}
+			<!-- Top-level skeleton: previously the dashboard rendered nothing at all
+			     while stats/overview/widgets loaded — no feedback that work was
+			     happening. The $loading store path (vs a bare $state) is required
+			     under prerender hydration (see the note above loadAll). -->
+			<PageSkeleton type="dashboard" />
+		{:else if useCustomLayout}
 		<!-- Custom widget layout with drag-and-drop -->
 		{#if widgets.length === 0}
 			<EmptyState

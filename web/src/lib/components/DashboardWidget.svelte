@@ -65,9 +65,13 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- NOTE: the drag-over class must be interpolated, NOT `class:drag-over` —
+     the class directive parses dash-names as an expression (drag - over),
+     throwing "drag is not defined" during mount and poisoning Svelte's effect
+     scheduler (every later reactive update on the page silently stopped —
+     the dashboard-custom-layout freeze bug). -->
 <div
-	class="widget-card"
-	class:drag-over
+	class="widget-card {dragOver ? 'drag-over' : ''}"
 	draggable="true"
 	ondragstart={handleDragStart}
 	ondragover={handleDragOver}
