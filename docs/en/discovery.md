@@ -115,7 +115,11 @@ export MIBEE_SCANNER_DISCOVERY_CONNTRACK_ENABLED=true
 
 ## Fingerprint Identification
 
-After probes produce evidence, the **RuleClassifier** matches evidence against a data-driven YAML rule library to identify device type, brand, and model.
+After probes produce evidence, the **RuleClassifier** matches evidence against a data-driven YAML rule library to identify device type, brand, and model. Identification results surface directly in the device list and detail page — the badge next to the type distinguishes the identification source (protocol evidence vs hostname heuristic):
+
+![Identification results in the device list](images/devices.webp)
+
+![Device detail: services and scan attributes](images/device-detail.webp)
 
 ### Rule Files
 

@@ -13,7 +13,7 @@
 
 ### 方式一：GitHub Releases
 
-从 [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) 下载对应架构的二进制（当前 v0.4.0）：
+从 [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) 下载对应架构的二进制（当前 v0.5.0）：
 
 ```bash
 chmod +x mibee-steward
@@ -74,6 +74,8 @@ export MIBEE_AUTH_INITIAL_ADMIN_PASSWORD="your-strong-password"
 
 打开 http://localhost:8080，使用 `admin` 与配置的初始密码登录，登录后立即修改密码。健康检查：
 
+![登录页](images/login.webp)
+
 ```bash
 curl http://localhost:8080/api/v1/health
 ```
@@ -98,6 +100,8 @@ sequenceDiagram
 
 **Web 界面**：登录后进入扫描器页面，选择目标 CIDR 发起扫描。
 
+![扫描器](images/scanner.webp)
+
 **同步 API**（适合 ≤1024 IP 的目标）：
 
 ```bash
@@ -117,6 +121,8 @@ curl -X POST http://localhost:8080/api/v1/scanner/scan \
 **异步任务**（目标 >1024 IP 时同步接口返回 413）：`POST /api/v1/scanner/tasks` 创建任务，`POST /api/v1/scanner/tasks/{id}/trigger` 触发，结果持久化到 `scan_results`。详见[API 参考](api.md)。
 
 ## 应该看到什么
+
+![扫描后的设备列表](images/devices.webp)
 
 - 设备列表：IP、MAC、OUI 厂商、品牌/型号、类型
 - 识别结果：`inferred_type` / `inferred_brand`（如 camera、server、pc、iot）
