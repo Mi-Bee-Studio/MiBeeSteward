@@ -241,7 +241,20 @@
 				<NotificationBell />
 			</div>
 			{#if $auth.token}
-				<div class="flex items-center justify-between pt-2">
+				<!-- Self-service settings (profile/2FA/appearance) + the admin-ish
+				     sub-pages (notification channels, SNMP credentials) live under
+				     /settings; without this link they are undiscoverable (#248). -->
+				<a
+					href="/settings"
+					class="flex items-center gap-1.5 px-1 pt-2 pb-1 text-xs transition-colors
+						{$page.url.pathname.startsWith('/settings')
+						? 'text-primary font-medium'
+						: 'text-muted hover:text-text'}"
+				>
+					<Settings class="w-3.5 h-3.5" />
+					{m['navigation.Settings']()}
+				</a>
+				<div class="flex items-center justify-between pt-1">
 					<span class="text-xs text-muted truncate flex items-center gap-1.5">
 						<Users class="w-3.5 h-3.5" />
 						{$auth.user?.username || '...'}
