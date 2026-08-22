@@ -28,12 +28,16 @@ func newRepo(t *testing.T, opts Options) (*SQLiteRepository, context.Context) {
 func seedDeviceRow(t *testing.T, db *sql.DB, ip, mac string, networkID sql.NullInt64) int64 {
 	t.Helper()
 	now := time.Now().UTC()
+	// device_uuid is UNIQUE on fresh schemas (#268 folded the identity
+	// indexes into schema.sql): distinct deterministic uuid per seed so
+	// multi-device tests don't collide on the '' default.
+	seedUUID := "seed-" + ip + "-" + mac
 	res, err := db.Exec(`
 		INSERT INTO devices (name, type, ip_address, mac_address, status, scan_source,
-		                     scan_attributes, network_id, first_seen, last_seen,
+		                     scan_attributes, network_id, device_uuid, first_seen, last_seen,
 		                     last_scanned_at, created_at, updated_at)
-		VALUES (?, 'other', ?, ?, 'online', 'scanner_v2', '{}', ?, ?, ?, ?, ?, ?)`,
-		ip, ip, mac, networkID, now, now, now, now, now)
+		VALUES (?, 'other', ?, ?, 'online', 'scanner_v2', '{}', ?, ?, ?, ?, ?, ?, ?)`,
+		ip, ip, mac, networkID, seedUUID, now, now, now, now, now)
 	if err != nil {
 		t.Fatalf("seed device row: %v", err)
 	}

@@ -42,9 +42,9 @@ func scopeTestDB(t *testing.T, grantNetwork1 bool) *sql.DB {
 	db := newTestDB(t)
 	_, err := db.Exec(`
 		INSERT INTO networks (id, name, cidr) VALUES (1, 'lan-1', '10.0.1.0/24'), (2, 'lan-2', '10.0.2.0/24');
-		INSERT INTO devices (id, name, ip_address, type, status, network_id) VALUES
-			(10, 'dev-in-net1', '10.0.1.5', 'pc', 'online', 1),
-			(20, 'dev-in-net2', '10.0.2.5', 'pc', 'online', 2);
+		INSERT INTO devices (id, name, ip_address, type, status, network_id, device_uuid) VALUES
+			(10, 'dev-in-net1', '10.0.1.5', 'pc', 'online', 1, 'uuid-scope-1'),
+			(20, 'dev-in-net2', '10.0.2.5', 'pc', 'online', 2, 'uuid-scope-2');
 		INSERT INTO users (id, username, email, password_hash, role) VALUES
 			(1, 'viewer1', 'v1@example.com', 'x', 'viewer'),
 			(2, 'admin1', 'a1@example.com', 'x', 'admin');
