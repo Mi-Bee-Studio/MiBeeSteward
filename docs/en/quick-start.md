@@ -152,6 +152,8 @@ The response is `{ hosts, total, alive, duration_ms }`; each host carries `ip`, 
 
 ## Next Steps
 
+- [Scenario playbooks](playbooks.md) — six guided scenarios from first scan to multi-subnet
+- [Feature overview](features.md) — the full capability inventory
 - [Architecture](architecture.md) — scanner pipeline and background services
 - [Deployment](deployment.md) — systemd, Docker, Nginx, backups
 - [Distributed](distributed.md) — center + agents for multi-network discovery
