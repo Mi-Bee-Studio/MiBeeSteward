@@ -964,7 +964,17 @@
 		"Payload": "Payload",
 		"Result": "Result",
 		"Agent ID Placeholder": "e.g. agent-lan-62",
-		"Agent Name Placeholder": "e.g. Branch Beijing LAN-62"
+		"Agent Name Placeholder": "e.g. Branch Beijing LAN-62",
+		"Fleet Version": "Version",
+		"Fleet Offset": "Clock offset",
+		"Fleet Uptime": "Last report",
+		"Logs Tail": "Logs",
+		"Logs Tail Hint": "Fetch the agent's recent log lines (result appears in the command history below)",
+		"Config Reload": "Reload",
+		"Restart": "Restart",
+		"Command Enqueued": "{command} command queued for the agent",
+		"Ops Confirm Title": "Remote operation",
+		"Ops Confirm Message": "Send \"{command}\" to agent {agentId}? The agent restarts/re-execs to apply it."
 	},
 	"networks": {
 		"Title": "Networks",

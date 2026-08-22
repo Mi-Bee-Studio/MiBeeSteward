@@ -43,6 +43,16 @@ center:
   url: ""               # e.g. "http://192.168.63.101:8080"; empty = standalone
   auth_token: ""        # agent bearer token from the center; REQUIRED when url set
   report_interval: "30s" # flush buffered results when buffer not full; default 30s
+  remote_ops_enabled: false # AGENT-side opt-in (#278): allow executing restart /
+                       # config-reload / logs-tail commands from the center. The
+                       # center-side gate (agent_fleet.remote_ops_enabled) must
+                       # ALSO be on — either side can keep ops from running.
+
+# agent_fleet is the CENTER-side fleet-management block (#278).
+agent_fleet:
+  remote_ops_enabled: false # allow ENQUEUEING ops commands (restart /
+                       # config-reload / logs-tail) from the admin UI. Default
+                       # false; each successful enqueue is audit-logged.
 
 # security holds process-wide secret keying material. master_key protects
 # SNMPv3 USM auth/priv passphrases stored in SQLite (AES-256-GCM). Generate

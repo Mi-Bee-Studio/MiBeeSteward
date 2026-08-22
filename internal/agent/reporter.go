@@ -22,6 +22,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -61,6 +63,14 @@ type Reporter struct {
 	maxBuf     int                   // max hosts buffered before an early flush
 	maxPending int                   // max failed batches held for retry
 
+	// Fleet meta (#278): shipped in every report (and in status-only
+	// heartbeat reports when the buffer is idle). version is injected by
+	// cmd/agent; uptime starts at construction.
+	version    string
+	startTime  time.Time
+	scansTotal int64     // cumulative report batches shipped (atomic-ish under mu)
+	lastPostAt time.Time // last successful POST (any kind) — heartbeats throttle against it
+
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
@@ -83,6 +93,7 @@ func NewReporter(centerURL, authToken, agentID, networkCIDR string, flush time.D
 	}
 	return &Reporter{
 		centerURL:   centerURL,
+		startTime:   time.Now(),
 		authToken:   authToken,
 		agentID:     agentID,
 		networkCIDR: networkCIDR,
@@ -94,12 +105,33 @@ func NewReporter(centerURL, authToken, agentID, networkCIDR string, flush time.D
 	}
 }
 
+// SetVersion stamps the build version shipped in every report's meta block
+// (#278). Called once by cmd/agent after construction; without it the center
+// records an empty version (old-agent semantics).
+func (r *Reporter) SetVersion(v string) { r.version = v }
+
+// Meta builds the fleet-observability block for the current report.
+func (r *Reporter) Meta() domain.AgentMeta {
+	r.mu.Lock()
+	scans := r.scansTotal
+	r.mu.Unlock()
+	host, _ := os.Hostname()
+	return domain.AgentMeta{
+		Version:    r.version,
+		GoVersion:  runtime.Version(),
+		Hostname:   host,
+		UptimeSec:  int64(time.Since(r.startTime).Seconds()),
+		ScansTotal: scans,
+	}
+}
+
 // Report is the runner.ReportSink implementation. It converts each alive
 // HostReport to the wire payload, buffers it, and flushes immediately when the
 // buffer fills. Non-blocking past the buffer-append; the actual HTTP POST
 // happens on the flush goroutine or inline on a full buffer.
 func (r *Reporter) Report(_ context.Context, _ int64, reports []scannerv2.HostReport) {
 	r.mu.Lock()
+	r.scansTotal++
 	for _, rep := range reports {
 		if !rep.Alive || rep.IP == "" {
 			continue
@@ -165,17 +197,45 @@ func (r *Reporter) Stop() {
 func (r *Reporter) flushOnce(ctx context.Context) {
 	r.mu.Lock()
 	if len(r.buf) == 0 {
+		// Status-only heartbeat (#278): with no hosts to ship, still send an
+		// empty report periodically so the center's fleet view (version /
+		// uptime / clock offset / last-report liveness) stays fresh between
+		// scans. Safe by design: the center acks empty reports without touching
+		// leases or the device bridge. Throttled to ≥30s (and never right
+		// after a real post) so a short test flush interval doesn't spam and
+		// idle heartbeats stay cheap.
+		if !r.lastPostAt.IsZero() && time.Since(r.lastPostAt) < 30*time.Second {
+			r.mu.Unlock()
+			return
+		}
 		r.mu.Unlock()
+		metaVal := r.Meta()
+		payload := domain.AgentReport{
+			AgentID:     r.agentID,
+			NetworkCIDR: r.networkCIDR,
+			ScannedAt:   time.Now().UTC(),
+			Meta:        &metaVal,
+			Hosts:       nil,
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+		if r.postWithRetry(ctx, body, 0, "") { // no hash: nothing stateful to fast-path
+			r.lastPostAt = time.Now()
+		}
 		return
 	}
 	hosts := r.buf
 	r.buf = nil
 	r.mu.Unlock()
 
+	batchMeta := r.Meta()
 	payload := domain.AgentReport{
 		AgentID:     r.agentID,
 		NetworkCIDR: r.networkCIDR,
 		ScannedAt:   time.Now().UTC(),
+		Meta:        &batchMeta,
 		Hosts:       hosts,
 	}
 	body, err := json.Marshal(payload)
@@ -189,7 +249,9 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 	// device bridge (it still refreshes leases). The field set mirrors
 	// changedetect.DeviceSnapshot so "nothing changed" == "same hash".
 	hash := networkStateHash(hosts)
-	if !r.postWithRetry(ctx, body, len(hosts), hash) {
+	if r.postWithRetry(ctx, body, len(hosts), hash) {
+		r.lastPostAt = time.Now()
+	} else {
 		// Exhausted retries — enqueue for later delivery instead of dropping.
 		r.enqueuePending(body)
 	}

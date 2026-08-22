@@ -36,13 +36,16 @@ import (
 // migration, including the scan-target network-boundary check); Poll/ListAll
 // are read passthroughs.
 type AgentCommandHandler struct {
-	queries *db.Queries
-	svc     *service.AgentCommandService
+	queries   *db.Queries
+	svc       *service.AgentCommandService
+	auditRepo *service.AuditRepository
 }
 
-// NewAgentCommandHandler constructs the handler.
-func NewAgentCommandHandler(queries *db.Queries, svc *service.AgentCommandService) *AgentCommandHandler {
-	return &AgentCommandHandler{queries: queries, svc: svc}
+// NewAgentCommandHandler constructs the handler. auditRepo records ops-command
+// enqueues (#278) — restart/config-reload/logs-tail are privileged actions and
+// get an audit trail even when the agent later refuses them.
+func NewAgentCommandHandler(queries *db.Queries, svc *service.AgentCommandService, auditRepo *service.AuditRepository) *AgentCommandHandler {
+	return &AgentCommandHandler{queries: queries, svc: svc, auditRepo: auditRepo}
 }
 
 // Create handles POST /api/v1/agents/{agentId}/commands — admin enqueues a
@@ -68,12 +71,33 @@ func (h *AgentCommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var boundary *service.BoundaryError
 		switch {
-		case errors.Is(err, service.ErrAgentIDRequired), errors.As(err, &boundary):
+		case errors.Is(err, service.ErrAgentIDRequired),
+			errors.Is(err, service.ErrUnknownCommand),
+			errors.As(err, &boundary):
 			Error(w, http.StatusBadRequest, err.Error())
+			return
+		case errors.Is(err, service.ErrRemoteOpsDisabled):
+			Error(w, http.StatusForbidden, err.Error())
 			return
 		default:
 			Error(w, http.StatusInternalServerError, "failed to create agent command")
 			return
+		}
+	}
+	// Ops commands are privileged: audit every successful enqueue (#278). The
+	// agent-side opt-in may still refuse execution — that outcome is visible
+	// in the command row's result, this entry records WHO issued it.
+	if service.IsOpsCommand(row.Command) && h.auditRepo != nil {
+		if userID, _, ok := middleware.GetUserFromContext(r); ok {
+			h.auditRepo.Log(r.Context(), service.AuditLog{
+				UserID:       &userID,
+				Action:       "agent.ops_command",
+				ResourceType: "agent",
+				ResourceID:   agentID,
+				IPAddress:    r.RemoteAddr,
+				UserAgent:    r.UserAgent(),
+				Details:      "command=" + row.Command,
+			})
 		}
 	}
 	Created(w, row)
@@ -164,4 +188,16 @@ func (h *AgentCommandHandler) ListAll(w http.ResponseWriter, r *http.Request) {
 		total = 0
 	}
 	Success(w, domain.AgentCommandListResponse{Commands: cmds, Total: int(total)})
+}
+
+// FleetStatus handles GET /api/v1/agents/status — the fleet-observability
+// table (#278): one row per agent that has ever reported, with version,
+// uptime, clock offset, scans shipped, and last-report time (stalest first).
+func (h *AgentCommandHandler) FleetStatus(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.svc.ListAgentStatus(r.Context())
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to list agent status")
+		return
+	}
+	Success(w, map[string]any{"agents": rows, "total": len(rows)})
 }

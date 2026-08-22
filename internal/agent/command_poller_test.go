@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -217,4 +218,60 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestCommandPoller_OpsGatedAndLogsTail covers the remote-ops family (#278):
+// disabled poller refuses ops commands; enabled poller serves logs-tail from
+// the injected ring. Both via the same fake-center shape as the scan test.
+func TestCommandPoller_OpsGatedAndLogsTail(t *testing.T) {
+	completeCh := make(chan struct {
+		status string
+		result string
+	}, 2)
+	newCenter := func(cmdJSON string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/api/v1/agents/commands" && r.Method == http.MethodGet:
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(cmdJSON))
+			case r.URL.Path == "/api/v1/agents/commands/1/ack" && r.Method == http.MethodPost:
+				w.WriteHeader(http.StatusNoContent)
+			case r.URL.Path == "/api/v1/agents/commands/1/complete" && r.Method == http.MethodPost:
+				var req struct {
+					Status string `json:"status"`
+					Result string `json:"result"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&req)
+				completeCh <- struct {
+					status string
+					result string
+				}{req.Status, req.Result}
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+	}
+
+	// 1) ops disabled: logs-tail must fail with the disable reason.
+	srv := newCenter(`[{"id":1,"command":"logs-tail","payload":"{}"}]`)
+	p := agent.NewCommandPoller(srv.URL, "tok", 60*time.Second, "", nil, nil)
+	p.PollOnceForTest(context.Background())
+	res := <-completeCh
+	require.Equal(t, "failed", res.status)
+	require.Contains(t, res.result, "remote ops commands are disabled")
+	srv.Close()
+
+	// 2) ops enabled with a ring: logs-tail returns the ring lines as JSON.
+	srv2 := newCenter(`[{"id":1,"command":"logs-tail","payload":"{}"}]`)
+	ring := agent.NewLogRing(nil, 10)
+	require.NoError(t, ring.Handle(context.Background(), slog.Record{
+		Level: slog.LevelInfo, Message: "agent booted"}))
+	p2 := agent.NewCommandPoller(srv2.URL, "tok", 60*time.Second, "", nil, nil)
+	p2.EnableRemoteOps(ring.Lines, nil)
+	p2.PollOnceForTest(context.Background())
+	res2 := <-completeCh
+	require.Equal(t, "done", res2.status)
+	require.Contains(t, res2.result, "agent booted")
+	srv2.Close()
 }

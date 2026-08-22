@@ -964,7 +964,17 @@
 		"Payload": "载荷",
 		"Result": "结果",
 		"Agent ID Placeholder": "例如 agent-lan-62",
-		"Agent Name Placeholder": "例如 北京分公司 LAN-62"
+		"Agent Name Placeholder": "例如 北京分公司 LAN-62",
+		"Fleet Version": "版本",
+		"Fleet Offset": "时钟偏移",
+		"Fleet Uptime": "最后上报",
+		"Logs Tail": "日志",
+		"Logs Tail Hint": "拉取 agent 最近日志行（结果显示在下方命令历史）",
+		"Config Reload": "重载",
+		"Restart": "重启",
+		"Command Enqueued": "已为 agent 排入 {command} 命令",
+		"Ops Confirm Title": "远程运维操作",
+		"Ops Confirm Message": "向 agent {agentId} 发送「{command}」？agent 将重启/重执行以生效。"
 	},
 	"networks": {
 		"Title": "网络",

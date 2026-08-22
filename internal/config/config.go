@@ -35,6 +35,8 @@ type Config struct {
 	RateLimit  RateLimitConfig  `koanf:"rate_limit"`
 	SMTP       SMTPConfig       `koanf:"smtp"`
 	Scanner    ScannerConfig    `koanf:"scanner"`
+	// AgentFleet is the center-side fleet-management block (#278).
+	AgentFleet AgentFleetConfig `koanf:"agent_fleet"`
 	// Retention governs the periodic background sweep that prunes high-volume
 	// detail tables (heartbeat_results, scan_results, …). Without it these
 	// tables grow unbounded — heartbeat_results alone accumulates ~270k rows/day.
@@ -100,6 +102,21 @@ type CenterConfig struct {
 	// ReportInterval is how often to flush buffered scan results upstream when
 	// the buffer isn't full. Default 30s. Errors retry with exponential backoff.
 	ReportInterval string `koanf:"report_interval"`
+	// RemoteOpsEnabled opts THIS AGENT into executing remote-ops commands
+	// (restart / config-reload / logs-tail) received over the command channel
+	// (#278). Default false; the CENTER-side switch (agent_fleet.
+	// remote_ops_enabled) must ALSO be on — both sides gate independently.
+	RemoteOpsEnabled bool `koanf:"remote_ops_enabled"`
+}
+
+// AgentFleetConfig is the CENTER-side fleet-management switch block (#278).
+type AgentFleetConfig struct {
+	// RemoteOpsEnabled allows enqueueing remote-ops commands (restart /
+	// config-reload / logs-tail) for agents. Default false: the enqueue API
+	// rejects ops commands with 403 until an operator explicitly enables this.
+	// The agent still needs its own center.remote_ops_enabled opt-in to
+	// execute them — either side can keep ops from running.
+	RemoteOpsEnabled bool `koanf:"remote_ops_enabled"`
 }
 
 // NetworkConfig describes the logical network this instance scans/owns.

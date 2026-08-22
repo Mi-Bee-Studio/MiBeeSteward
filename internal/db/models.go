@@ -19,6 +19,17 @@ type AgentCommand struct {
 	Result         *string    `json:"result"`
 }
 
+type AgentStatus struct {
+	AgentID            string    `json:"agent_id"`
+	Version            string    `json:"version"`
+	GoVersion          string    `json:"go_version"`
+	Hostname           string    `json:"hostname"`
+	UptimeSeconds      int64     `json:"uptime_seconds"`
+	ClockOffsetSeconds float64   `json:"clock_offset_seconds"`
+	ScansTotal         int64     `json:"scans_total"`
+	LastReportAt       time.Time `json:"last_report_at"`
+}
+
 type AgentToken struct {
 	ID         int64      `json:"id"`
 	AgentID    string     `json:"agent_id"`

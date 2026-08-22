@@ -131,6 +131,7 @@ func main() {
 	// the center); the reporter just ships the discovery payload.
 	flush := parseDurationOrDefault(cfg.Center.ReportInterval, 30*time.Second)
 	reporter := agent.NewReporter(cfg.Center.URL, cfg.Center.AuthToken, cfg.Network.Name, cfg.Network.CIDR, flush, 256, slog.Default())
+	reporter.SetVersion(version.Version) // fleet telemetry (#278)
 	ctxBg, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	reporter.Start(ctxBg)
@@ -314,6 +315,31 @@ func main() {
 			scanRunner.Run(ctx, run.ID, targets, to, cfg.Scanner.MaxConcurrentHosts, cfg.Scanner.PersistRawEvidence, 0)
 			return fmt.Sprintf(`{"run_id":%d,"targets":"%s"}`, run.ID, targets), nil
 		}, slog.Default())
+	if cfg.Center.RemoteOpsEnabled {
+		// Remote-ops opt-in (#278): restart/config-reload re-exec the process
+		// (config is consumed at construction; re-exec is the only faithful
+		// reload), logs-tail ships the in-memory ring below. Both sides must
+		// opt in: the center gate (agent_fleet.remote_ops_enabled) can still
+		// refuse to enqueue these commands.
+		ring := agent.NewLogRing(slog.Default().Handler(), 300)
+		slog.SetDefault(slog.New(ring))
+		cmdPoller.EnableRemoteOps(ring.Lines, func(reason string) {
+			slog.Warn("mibee-agent re-exec", "reason", reason)
+			// Replace the process image; systemd/procd restart semantics make
+			// this a clean restart under a supervisor. Under a bare shell the
+			// process simply comes back with the same args.
+			exe, err := os.Executable()
+			if err != nil {
+				slog.Error("re-exec failed: cannot resolve executable", "error", err)
+				os.Exit(1)
+			}
+			if err := syscall.Exec(exe, append([]string{exe}, os.Args[1:]...), os.Environ()); err != nil {
+				slog.Error("re-exec failed", "error", err)
+				os.Exit(1)
+			}
+		})
+		slog.Info("agent remote ops ENABLED (restart / config-reload / logs-tail)")
+	}
 	cmdPoller.Start(ctxBg)
 
 	slog.Info("mibee-agent running", "center", cfg.Center.URL, "flush_interval", flush)
