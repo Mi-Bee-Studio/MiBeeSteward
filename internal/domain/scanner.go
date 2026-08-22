@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
+
+	"mibee-steward/internal/cidrutil"
 )
 
 // Validation limits for scan tasks.
@@ -285,8 +287,10 @@ type ScanRunListResponse struct {
 	Total int               `json:"total"`
 }
 
-// ValidateScanTaskRequest validates a scan task request.
-func ValidateScanTaskRequest(req ScanTaskRequest) error {
+// ValidateScanTaskRequest validates a scan task request. allowReservedTargets
+// mirrors scanner.allow_reserved_targets (the synthetic-plane escape hatch,
+// see cidrutil.ValidateTargetsFor) and only softens the reserved-range check.
+func ValidateScanTaskRequest(req ScanTaskRequest, allowReservedTargets bool) error {
 	if strings.TrimSpace(req.Name) == "" {
 		return fmt.Errorf("name is required")
 	}
@@ -301,6 +305,13 @@ func ValidateScanTaskRequest(req ScanTaskRequest) error {
 	}
 	if totalIPs > maxTargetIPs {
 		return fmt.Errorf("targets: too many IPs (%d), maximum is %d", totalIPs, maxTargetIPs)
+	}
+	// Reserved address space (loopback, multicast, broadcast, ...) never
+	// yields a real LAN device — reject at creation so a scheduled task
+	// can't invent phantom devices daily and defeat silent-device
+	// retention (#317). Syntax is still validated when the escape hatch is on.
+	if err := cidrutil.ValidateTargetsFor(req.Targets, allowReservedTargets); err != nil {
+		return fmt.Errorf("targets: %w", err)
 	}
 	if req.CronExpr == "" {
 		return fmt.Errorf("cron_expr is required")

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"testing"
 
 	"mibee-steward/internal/service/scannerv2/ebpf"
@@ -15,10 +16,20 @@ func TestParseScanTargets_Formats(t *testing.T) {
 	}{
 		{"192.168.1.5", 1, 1, false},
 		{"192.168.1.1-5", 5, 5, false},
+		// Host addresses only: network + broadcast are dropped (#254).
 		{"192.168.1.0/30", 2, 2, false},
+		{"192.168.1.0/24", 254, 254, false},
 		{"192.168.1.5,192.168.1.6", 2, 2, false},
 		{"", 0, 0, true},
 		{"not-an-ip", 0, 0, true},
+		// Reserved address space is rejected outright (#317) — a /22 of
+		// loopback once invented 1022 phantom devices on a test center.
+		{"127.8.0.0/22", 0, 0, true},
+		{"127.0.0.1", 0, 0, true},
+		{"0.0.0.0/0", 0, 0, true},
+		{"169.254.0.0/16", 0, 0, true},
+		{"255.255.255.255", 0, 0, true},
+		{"192.168.1.0/24,127.0.0.1", 0, 0, true},
 	}
 	for _, c := range cases {
 		got, err := parseScanTargets(c.in)
@@ -38,6 +49,16 @@ func TestParseScanTargets_Formats(t *testing.T) {
 		if len(got) < c.min {
 			t.Errorf("parseScanTargets(%q) = %d ips, want ≥%d", c.in, len(got), c.min)
 		}
+	}
+}
+
+// TestParseScanTargets_ReservedSentinel pins the error contract the API layer
+// relies on: reserved-range rejections must be classifiable via isTargetError
+// (HTTP 400), so they must wrap ErrReservedTarget.
+func TestParseScanTargets_ReservedSentinel(t *testing.T) {
+	_, err := parseScanTargets("127.8.0.0/22")
+	if !errors.Is(err, ErrReservedTarget) {
+		t.Errorf("parseScanTargets reserved spec: err = %v, want ErrReservedTarget", err)
 	}
 }
 
