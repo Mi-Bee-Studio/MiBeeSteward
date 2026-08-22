@@ -203,6 +203,11 @@ type RetentionConfig struct {
 type ServerConfig struct {
 	Port int    `koanf:"port"`
 	Host string `koanf:"host"`
+	// DemoMode seeds a fictional demo inventory (#285): on an EMPTY database
+	// the first boot populates 2 networks + ~20 devices (RFC 5737 TEST-NET
+	// ranges only) + change history + probe results, and a 45s activity
+	// ticker keeps the dashboard moving. Also enabled with `mibee-steward -demo`.
+	DemoMode bool `koanf:"demo_mode"`
 	// ReadTimeout bounds how long the server waits for a client to send the
 	// full request (headers + body). Default 15s; raise only if clients upload
 	// very large bodies slowly (uploads use a separate streaming path).

@@ -1,4 +1,8 @@
 server:
+  # demo_mode seeds a fictional inventory on an EMPTY database at first boot
+  # (#285) and keeps it active (45s simulated events). Same as `mibee-steward
+  # -demo`. Demo data uses RFC 5737 documentation IP ranges only.
+  demo_mode: false
   port: 8080
   host: "0.0.0.0"
   # HTTP server timeouts. write_timeout MUST exceed the slowest synchronous
