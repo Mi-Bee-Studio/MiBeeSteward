@@ -32,6 +32,7 @@ import (
 
 	"mibee-steward/internal/domain"
 
+	"mibee-steward/internal/db"
 	"mibee-steward/internal/service/scannerv2"
 
 	"github.com/google/uuid"
@@ -63,6 +64,7 @@ type SQLiteRepository struct {
 	// call resolveDeviceUUID per host). (#162)
 	uuidCache map[string]string
 	uuidMu    sync.Mutex
+	queries   *db.Queries // sqlc handle for the #269-migrated writes (tx-scoped clones per tx)
 }
 
 // Options configures the SQLiteRepository.
@@ -88,7 +90,7 @@ type Options struct {
 // v2 tables (service_evidence, host_services) — main.go applies schema.sql on
 // startup, so this holds for the production path. For tests, ensure schema is
 // applied to the in-memory DB.
-func NewSQLiteRepository(db *sql.DB, opts Options, logger *slog.Logger) *SQLiteRepository {
+func NewSQLiteRepository(dbConn *sql.DB, opts Options, logger *slog.Logger) *SQLiteRepository {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -97,7 +99,8 @@ func NewSQLiteRepository(db *sql.DB, opts Options, logger *slog.Logger) *SQLiteR
 		nid = sql.NullInt64{Int64: opts.NetworkID, Valid: true}
 	}
 	return &SQLiteRepository{
-		db:                   db,
+		db:                   dbConn,
+		queries:              db.New(dbConn),
 		logger:               logger,
 		persistRawEvidence:   opts.PersistRawEvidence,
 		defaultHBInterval:    opts.DefaultHeartbeatInterval,
@@ -136,14 +139,9 @@ func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.E
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO service_evidence (ip, device_uuid, source, kind, port, protocol, raw_data, confidence, observed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
+	// sqlc-generated insert (#269): tx-scoped Queries so the whole batch
+	// commits atomically; the schema binding is now CI-guarded (sqlc-verify).
+	txq := db.New(tx)
 	for _, e := range evs {
 		raw, err := json.Marshal(e.RawData)
 		if err != nil {
@@ -153,7 +151,11 @@ func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.E
 		if ts.IsZero() {
 			ts = time.Now()
 		}
-		if _, err := stmt.ExecContext(ctx, e.IP, uuid, e.Source, e.Kind, e.Port, e.Protocol, string(raw), e.Confidence, scannerv2.DBTime(ts)); err != nil {
+		if err := txq.InsertServiceEvidence(ctx, db.InsertServiceEvidenceParams{
+			Ip: e.IP, DeviceUuid: uuid, Source: e.Source, Kind: e.Kind,
+			Port: int64(e.Port), Protocol: e.Protocol, RawData: string(raw),
+			Confidence: e.Confidence, Column9: scannerv2.DBTime(ts), // column 9 = observed_at (CAST-annotated: sqlc names positional cast params ColumnN)
+		}); err != nil {
 			r.logger.Debug("insert evidence row failed", "error", err)
 		}
 	}
@@ -213,13 +215,7 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 		return tx.Commit()
 	}
 
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO host_services (ip, device_uuid, service, port, protocol, confidence, metadata, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
+	txq := db.New(tx)
 
 	// Deduplicate by (service, port): when multiple identities share the same
 	// key (e.g. builtin http-presence + Recog http_header.server both emit
@@ -257,7 +253,10 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 		if err != nil {
 			meta = []byte("{}")
 		}
-		if _, err := stmt.ExecContext(ctx, ip, uuid, s.Service, s.Port, s.Protocol, s.Confidence, string(meta), now); err != nil {
+		if err := txq.InsertHostService(ctx, db.InsertHostServiceParams{
+			Ip: ip, DeviceUuid: uuid, Service: s.Service, Port: int64(s.Port),
+			Protocol: s.Protocol, Confidence: s.Confidence, Metadata: string(meta), Column8: now, // column 8 = updated_at (CAST-annotated)
+		}); err != nil {
 			r.logger.Warn("insert host_service row failed", "ip", ip, "service", s.Service, "error", err)
 		}
 	}
@@ -295,38 +294,29 @@ func (r *SQLiteRepository) RecordTLSCerts(ctx context.Context, ip string, certs 
 	for _, c := range certs {
 		ports[c.Port] = struct{}{}
 	}
+	txq := db.New(tx)
 	for port := range ports {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM host_tls_certs WHERE ip = ? AND port = ?`, ip, port); err != nil {
+		if err := txq.DeleteHostTLSCertsForIPPort(ctx, db.DeleteHostTLSCertsForIPPortParams{
+			Ip: ip, Port: int64(port),
+		}); err != nil {
 			return err
 		}
 	}
 
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO host_tls_certs (
-			ip, device_uuid, port, cert_index,
-			subject_cn, subject_org, subject, issuer_cn, issuer_org, issuer,
-			san_dns, san_ip, san_email, serial,
-			not_before, not_after,
-			sig_algorithm, key_algorithm, key_bits, is_ca, self_signed,
-			fingerprint_sha256, pem,
-			tls_version, cipher_suite, trusted, error, updated_at
-		) VALUES (?, ?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, ?)`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
 	now := scannerv2.DBTime(time.Now())
 	for _, c := range certs {
-		if _, err := stmt.ExecContext(ctx,
-			ip, uuid, c.Port, c.CertIndex,
-			c.SubjectCN, c.SubjectOrg, c.Subject, c.IssuerCN, c.IssuerOrg, c.Issuer,
-			c.SanDNS, c.SanIP, c.SanEmail, c.Serial,
-			c.NotBefore, c.NotAfter,
-			c.SigAlgorithm, c.KeyAlgorithm, c.KeyBits, boolToInt(c.IsCA), boolToInt(c.SelfSigned),
-			c.FingerprintSHA256, c.PEM,
-			c.TLSVersion, c.CipherSuite, boolToInt(c.Trusted), c.Error, now,
-		); err != nil {
+		if err := txq.InsertHostTLSCert(ctx, db.InsertHostTLSCertParams{
+			Ip: ip, DeviceUuid: uuid, Port: int64(c.Port), CertIndex: int64(c.CertIndex),
+			SubjectCn: c.SubjectCN, SubjectOrg: c.SubjectOrg, Subject: c.Subject,
+			IssuerCn: c.IssuerCN, IssuerOrg: c.IssuerOrg, Issuer: c.Issuer,
+			SanDns: c.SanDNS, SanIp: c.SanIP, SanEmail: c.SanEmail, Serial: c.Serial,
+			Column15: c.NotBefore, Column16: c.NotAfter, // 15/16 = not_before/not_after (CAST-annotated)
+			SigAlgorithm: c.SigAlgorithm, KeyAlgorithm: c.KeyAlgorithm, KeyBits: int64(c.KeyBits),
+			IsCa: int64(boolToInt(c.IsCA)), SelfSigned: int64(boolToInt(c.SelfSigned)),
+			FingerprintSha256: c.FingerprintSHA256, Pem: c.PEM,
+			TlsVersion: c.TLSVersion, CipherSuite: c.CipherSuite, Trusted: int64(boolToInt(c.Trusted)),
+			Error: c.Error, Column28: now, // 28 = updated_at (CAST-annotated)
+		}); err != nil {
 			r.logger.Warn("insert host_tls_certs row failed", "ip", ip, "port", c.Port, "error", err)
 		}
 	}

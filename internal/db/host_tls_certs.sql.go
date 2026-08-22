@@ -10,6 +10,23 @@ import (
 	"time"
 )
 
+const deleteHostTLSCertsForIPPort = `-- name: DeleteHostTLSCertsForIPPort :exec
+DELETE FROM host_tls_certs WHERE ip = ? AND port = ?
+`
+
+type DeleteHostTLSCertsForIPPortParams struct {
+	Ip   string `json:"ip"`
+	Port int64  `json:"port"`
+}
+
+// Per-(ip, port) wholesale replace (the delete half of the store
+// RecordTLSCerts, #269): a rotated cert must not linger, but ports NOT in
+// this call keep their rows (a partial scan must not wipe untouched ports).
+func (q *Queries) DeleteHostTLSCertsForIPPort(ctx context.Context, arg DeleteHostTLSCertsForIPPortParams) error {
+	_, err := q.db.ExecContext(ctx, deleteHostTLSCertsForIPPort, arg.Ip, arg.Port)
+	return err
+}
+
 const deleteHostTLSCertsStaleBatched = `-- name: DeleteHostTLSCertsStaleBatched :execrows
 DELETE FROM host_tls_certs
 WHERE id IN (
@@ -32,6 +49,86 @@ func (q *Queries) DeleteHostTLSCertsStaleBatched(ctx context.Context, arg Delete
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const insertHostTLSCert = `-- name: InsertHostTLSCert :exec
+INSERT INTO host_tls_certs (
+    ip, device_uuid, port, cert_index,
+    subject_cn, subject_org, subject, issuer_cn, issuer_org, issuer,
+    san_dns, san_ip, san_email, serial,
+    not_before, not_after,
+    sig_algorithm, key_algorithm, key_bits, is_ca, self_signed,
+    fingerprint_sha256, pem,
+    tls_version, cipher_suite, trusted, error, updated_at
+) VALUES (?, ?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?,  CAST(? AS TEXT), CAST(? AS TEXT),  ?, ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, CAST(? AS TEXT))
+`
+
+type InsertHostTLSCertParams struct {
+	Ip                string `json:"ip"`
+	DeviceUuid        string `json:"device_uuid"`
+	Port              int64  `json:"port"`
+	CertIndex         int64  `json:"cert_index"`
+	SubjectCn         string `json:"subject_cn"`
+	SubjectOrg        string `json:"subject_org"`
+	Subject           string `json:"subject"`
+	IssuerCn          string `json:"issuer_cn"`
+	IssuerOrg         string `json:"issuer_org"`
+	Issuer            string `json:"issuer"`
+	SanDns            string `json:"san_dns"`
+	SanIp             string `json:"san_ip"`
+	SanEmail          string `json:"san_email"`
+	Serial            string `json:"serial"`
+	Column15          string `json:"column_15"`
+	Column16          string `json:"column_16"`
+	SigAlgorithm      string `json:"sig_algorithm"`
+	KeyAlgorithm      string `json:"key_algorithm"`
+	KeyBits           int64  `json:"key_bits"`
+	IsCa              int64  `json:"is_ca"`
+	SelfSigned        int64  `json:"self_signed"`
+	FingerprintSha256 string `json:"fingerprint_sha256"`
+	Pem               string `json:"pem"`
+	TlsVersion        string `json:"tls_version"`
+	CipherSuite       string `json:"cipher_suite"`
+	Trusted           int64  `json:"trusted"`
+	Error             string `json:"error"`
+	Column28          string `json:"column_28"`
+}
+
+// One certificate-chain row (cert_index 0 = leaf); the per-(ip, port)
+// DELETE runs first in the same tx. Column list mirrors the store raw
+// insert verbatim; not_before/not_after/updated_at are RFC3339 text.
+func (q *Queries) InsertHostTLSCert(ctx context.Context, arg InsertHostTLSCertParams) error {
+	_, err := q.db.ExecContext(ctx, insertHostTLSCert,
+		arg.Ip,
+		arg.DeviceUuid,
+		arg.Port,
+		arg.CertIndex,
+		arg.SubjectCn,
+		arg.SubjectOrg,
+		arg.Subject,
+		arg.IssuerCn,
+		arg.IssuerOrg,
+		arg.Issuer,
+		arg.SanDns,
+		arg.SanIp,
+		arg.SanEmail,
+		arg.Serial,
+		arg.Column15,
+		arg.Column16,
+		arg.SigAlgorithm,
+		arg.KeyAlgorithm,
+		arg.KeyBits,
+		arg.IsCa,
+		arg.SelfSigned,
+		arg.FingerprintSha256,
+		arg.Pem,
+		arg.TlsVersion,
+		arg.CipherSuite,
+		arg.Trusted,
+		arg.Error,
+		arg.Column28,
+	)
+	return err
 }
 
 const listTLSCertsByDeviceID = `-- name: ListTLSCertsByDeviceID :many
