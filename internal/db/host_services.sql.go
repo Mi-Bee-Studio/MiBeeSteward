@@ -43,3 +43,39 @@ func (q *Queries) DeleteHostServicesStaleBatched(ctx context.Context, arg Delete
 	}
 	return result.RowsAffected()
 }
+
+const insertHostService = `-- name: InsertHostService :exec
+INSERT INTO host_services (ip, device_uuid, service, port, protocol, confidence, metadata, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS TEXT))
+`
+
+type InsertHostServiceParams struct {
+	Ip         string  `json:"ip"`
+	DeviceUuid string  `json:"device_uuid"`
+	Service    string  `json:"service"`
+	Port       int64   `json:"port"`
+	Protocol   string  `json:"protocol"`
+	Confidence float64 `json:"confidence"`
+	Metadata   string  `json:"metadata"`
+	Column8    string  `json:"column_8"`
+}
+
+// One classified service-identity row (scannerv2/store RecordServices,
+// #269: the insert half moved to sqlc; the scoped DELETE with its DYNAMIC
+// port IN-list stays raw in the store, sqlc cannot bind a slice to IN).
+// Plain INSERT: the scoped DELETE runs first in the same tx so conflicts
+// cannot occur; an upsert form trips sqlc's SQLite parser on the
+// unique-INDEX conflict target. updated_at is RFC3339 text (DBTime).
+func (q *Queries) InsertHostService(ctx context.Context, arg InsertHostServiceParams) error {
+	_, err := q.db.ExecContext(ctx, insertHostService,
+		arg.Ip,
+		arg.DeviceUuid,
+		arg.Service,
+		arg.Port,
+		arg.Protocol,
+		arg.Confidence,
+		arg.Metadata,
+		arg.Column8,
+	)
+	return err
+}

@@ -34,4 +34,24 @@ ORDER BY c.port ASC, c.cert_index ASC;
 DELETE FROM host_tls_certs
 WHERE id IN (
     SELECT sub.id FROM host_tls_certs AS sub WHERE sub.updated_at < ? LIMIT ?
-)
+);
+
+-- name: InsertHostTLSCert :exec
+-- One certificate-chain row (cert_index 0 = leaf); the per-(ip, port)
+-- DELETE runs first in the same tx. Column list mirrors the store raw
+-- insert verbatim; not_before/not_after/updated_at are RFC3339 text.
+INSERT INTO host_tls_certs (
+    ip, device_uuid, port, cert_index,
+    subject_cn, subject_org, subject, issuer_cn, issuer_org, issuer,
+    san_dns, san_ip, san_email, serial,
+    not_before, not_after,
+    sig_algorithm, key_algorithm, key_bits, is_ca, self_signed,
+    fingerprint_sha256, pem,
+    tls_version, cipher_suite, trusted, error, updated_at
+) VALUES (?, ?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?,  CAST(? AS TEXT), CAST(? AS TEXT),  ?, ?, ?, ?, ?,  ?, ?,  ?, ?, ?, ?, CAST(? AS TEXT));
+
+-- name: DeleteHostTLSCertsForIPPort :exec
+-- Per-(ip, port) wholesale replace (the delete half of the store
+-- RecordTLSCerts, #269): a rotated cert must not linger, but ports NOT in
+-- this call keep their rows (a partial scan must not wipe untouched ports).
+DELETE FROM host_tls_certs WHERE ip = ? AND port = ?;
