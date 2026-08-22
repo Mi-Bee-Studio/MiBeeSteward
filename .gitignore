@@ -66,4 +66,4 @@ internal/service/scannerv2/ebpf/tcIngress_*.go
 internal/service/scannerv2/ebpf/tcIngress*.o
 cover.out
 *.prof
-agent
+/agent

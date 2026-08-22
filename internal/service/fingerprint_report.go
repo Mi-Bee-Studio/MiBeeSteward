@@ -130,8 +130,22 @@ func (s *FingerprintReportService) Coverage(ctx context.Context, scope domain.Sc
 			return nil, err
 		}
 	}
+	// Never ship nil slices: encoding/json renders nil as JSON null, and the
+	// UI's .join()/.length on null throws mid-render (the whole coverage
+	// section goes blank). Empty arrays instead.
+	for i := range devs {
+		if devs[i].Ports == nil {
+			devs[i].Ports = []int{}
+		}
+		if devs[i].Services == nil {
+			devs[i].Services = []string{}
+		}
+	}
 	cov.Devices = devs
 	cov.Groups = groupUnidentified(devs)
+	if cov.Groups == nil {
+		cov.Groups = []UnidentifiedGroup{}
+	}
 	return cov, nil
 }
 

@@ -232,6 +232,12 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		return fmt.Errorf("scan_task_runs status migration: %w", err)
 	}
 
+	// Widen notification_channels' type CHECK to the chat-platform family
+	// (#284: feishu/wecom/telegram/discord). Same probe-first rebuild pattern.
+	if err := extendNotificationChannelTypeCheck(context.Background(), db); err != nil {
+		return fmt.Errorf("notification_channels type migration: %w", err)
+	}
+
 	// Add the scan_attributes generated columns (scan_vendor/scan_mac/scan_os/
 	// scan_hostname) to existing DBs. SQLite can't ALTER ADD COLUMN with a
 	// non-constant expression, so a table rebuild is required. Fresh installs
@@ -1090,6 +1096,63 @@ func extendScanRunStatusCheck(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("commit rebuild: %w", err)
 	}
 	slog.Info("scan_task_runs rebuilt with 'cancelled' status")
+	return nil
+}
+
+// extendNotificationChannelTypeCheck widens notification_channels' type CHECK
+// to the chat-platform channel family (#284): feishu / wecom / telegram /
+// discord join webhook + email. Existing installs carry the 2-value CHECK from
+// the original CREATE TABLE, so a rebuild (create-new → copy → drop → rename)
+// is required; schema.sql already ships the widened CHECK for fresh installs.
+// Probe-first keeps it a no-op on rebuilt/new databases.
+func extendNotificationChannelTypeCheck(ctx context.Context, db *sql.DB) error {
+	probe, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin probe tx: %w", err)
+	}
+	probeErr := func() error {
+		_, err := probe.ExecContext(ctx,
+			`INSERT INTO notification_channels (name, type) VALUES ('_probe', 'feishu')`)
+		return err
+	}()
+	_ = probe.Rollback()
+	if probeErr == nil {
+		return nil // CHECK already permits the new types
+	}
+	if !strings.Contains(probeErr.Error(), "CHECK constraint failed") {
+		return fmt.Errorf("probe notification_channels CHECK: %w", probeErr)
+	}
+
+	slog.Info("rebuilding notification_channels to widen the type CHECK (feishu/wecom/telegram/discord)")
+	stmts := []string{
+		`CREATE TABLE notification_channels_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL CHECK(type IN ('webhook', 'email', 'feishu', 'wecom', 'telegram', 'discord')),
+			config TEXT NOT NULL DEFAULT '{}',
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT INTO notification_channels_new (id, name, type, config, enabled, created_at, updated_at)
+		 SELECT id, name, type, config, enabled, created_at, updated_at FROM notification_channels`,
+		`DROP TABLE notification_channels`,
+		`ALTER TABLE notification_channels_new RENAME TO notification_channels`,
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin rebuild tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, st := range stmts {
+		if _, err := tx.ExecContext(ctx, st); err != nil {
+			return fmt.Errorf("rebuild step failed: %w (stmt: %s)", err, st)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit rebuild: %w", err)
+	}
+	slog.Info("notification_channels rebuilt with the widened type CHECK")
 	return nil
 }
 

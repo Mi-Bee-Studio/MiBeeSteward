@@ -259,7 +259,7 @@ CREATE INDEX IF NOT EXISTS idx_device_systems_metrics_enabled ON device_systems(
 CREATE TABLE IF NOT EXISTS notification_channels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('webhook', 'email')),
+    type TEXT NOT NULL CHECK(type IN ('webhook', 'email', 'feishu', 'wecom', 'telegram', 'discord')), -- widened #284
     config TEXT NOT NULL DEFAULT '{}',
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
