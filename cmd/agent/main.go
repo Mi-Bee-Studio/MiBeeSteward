@@ -139,7 +139,11 @@ func main() {
 	// Runner: reused from the center. reportSink forwards scans upstream.
 	// networkID=0 here — the agent's LOCAL shadow devices get NULL network_id;
 	// the center tags its copies with the agent's network from the token.
-	scanRunner := scannerv2runner.New(engine, queries, dbConn, nil, 0, slog.Default())
+	// BUSY retry wrapper (#267): the agent's shadow DB shares one writer pool
+	// with the engine's store — wrapped so scan writes retry + count
+	// mibee_sqlite_busy_total{path="agent"}.
+	agentDB := dbopen.WrapBusyRetry(dbConn, "agent")
+	scanRunner := scannerv2runner.New(engine, queries, agentDB, nil, 0, slog.Default())
 	scanRunner.SetRepo(engine.Repository) // device-identity upsert for the agent's LOCAL shadow devices
 	scanRunner.SetReportSink(reporter.Report)
 	scanRunner.SetLostThreshold(cfg.Scanner.LostThreshold) // scanner.lost_threshold (default 2; <=0 keeps default)

@@ -64,7 +64,7 @@ type HeartbeatCreator interface {
 type Runner struct {
 	engine    *engine.Engine   // nil-safe: when nil, Runner is a no-op (used if engine init failed)
 	queries   *db.Queries      // sqlc queries for run/result/task rows
-	dbConn    *sql.DB          // raw connection for the device-bridge upserts (sqlc has no per-IP device lookup)
+	dbConn    DB               // raw connection for the device-bridge upserts (sqlc has no per-IP device lookup). DB accepts the dbopen.BusyRetry wrapper so scan writes get SQLITE_BUSY retry + metrics (#267).
 	heartbeat HeartbeatCreator // may be nil (heartbeat config creation skipped)
 	logger    *slog.Logger
 	// networkID tags discovered devices with their origin network
@@ -116,11 +116,23 @@ func (rn *Runner) SetChangeRecorder(r changedetect.ChangeRecorder) { rn.changeRe
 // repo can't be inferred from it).
 func (rn *Runner) SetRepo(r scannerv2.Repository) { rn.repo = r }
 
+// DB is the database surface the runner needs beyond *db.Queries: the
+// DBTX methods (raw device-bridge SQL) plus explicit transactions
+// (ARP-topology edge derivation). Both *sql.DB and the dbopen.BusyRetry
+// write wrapper (#267) satisfy it.
+type DB interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
 // New constructs a Runner. engine may be nil (the runner will log and no-op on
 // each Run), letting the scheduler stay alive even if the engine failed to init.
 // networkID is the networks.id this runner tags discovered devices with (0/NULL
 // for the legacy single-instance path).
-func New(engine *engine.Engine, queries *db.Queries, dbConn *sql.DB, heartbeat HeartbeatCreator, networkID int64, logger *slog.Logger) *Runner {
+func New(engine *engine.Engine, queries *db.Queries, dbConn DB, heartbeat HeartbeatCreator, networkID int64, logger *slog.Logger) *Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}
