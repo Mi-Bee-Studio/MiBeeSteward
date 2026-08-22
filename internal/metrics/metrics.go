@@ -132,6 +132,19 @@ var (
 		},
 		[]string{"status"},
 	)
+
+	// MibeeFingerprintIdentified gauges the identification-tier breakdown of
+	// the device inventory (#282): source = "protocol" (SNMP/RTSP/ONVIF/mDNS
+	// evidence), "heuristic" (hostname/brand keyword — spoofable), or
+	// "unidentified" (inferred as generic "other"). The coverage report the
+	// UI shows is computed from the same scan_attributes extraction.
+	MibeeFingerprintIdentified = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mibee_fingerprint_identified_devices",
+			Help: "Device count by identification tier (protocol evidence / heuristic keyword / unidentified)",
+		},
+		[]string{"source"},
+	)
 )
 
 func init() {
@@ -145,6 +158,7 @@ func init() {
 	prometheus.MustRegister(MibeeAgentLastReportTimestamp)
 	prometheus.MustRegister(MibeeDBSizeBytes)
 	prometheus.MustRegister(MibeeDBTableRows)
+	prometheus.MustRegister(MibeeFingerprintIdentified)
 }
 
 // RefreshScannerTaskGauges recomputes mibee_scanner_tasks_total{status} from
