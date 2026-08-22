@@ -75,6 +75,14 @@ export function channelTypeBadge(type: string): Badge {
 			return { label: m['notifications.Webhook'](), cls: 'bg-accent/10 text-accent' };
 		case 'email':
 			return { label: m['notifications.Email'](), cls: 'bg-primary/10 text-primary' };
+		case 'feishu':
+			return { label: m['notifications.Feishu'](), cls: 'bg-success/10 text-success' };
+		case 'wecom':
+			return { label: m['notifications.WeCom'](), cls: 'bg-primary/10 text-primary' };
+		case 'telegram':
+			return { label: m['notifications.Telegram'](), cls: 'bg-accent/10 text-accent' };
+		case 'discord':
+			return { label: m['notifications.Discord'](), cls: 'bg-accent-purple/10 text-accent-purple' };
 		default:
 			return { label: type, cls: 'bg-surface text-text-muted border border-border' };
 	}

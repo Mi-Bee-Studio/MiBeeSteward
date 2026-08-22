@@ -808,7 +808,20 @@
 		"Select Network": "Select a network",
 		"Select Device": "Select a device",
 		"No Channels For Rules": "Create a notification channel first",
-		"No Channels For Rules Desc": "A rule needs a delivery channel to send to. Create one in the Channels tab."
+		"No Channels For Rules Desc": "A rule needs a delivery channel to send to. Create one in the Channels tab.",
+		"Feishu": "Feishu",
+		"WeCom": "WeCom",
+		"Telegram": "Telegram",
+		"Discord": "Discord",
+		"Sign Secret": "Sign Secret (optional)",
+		"Sign Secret Placeholder": "Leave empty to skip signature verification",
+		"Bot Token": "Bot Token",
+		"Bot Token Placeholder": "123456:ABC-DEF...",
+		"Chat ID": "Chat ID",
+		"Chat ID Placeholder": "-1001234567890",
+		"Bot Username": "Bot Username (optional)",
+		"Bot Token Required": "Telegram bot token is required",
+		"Chat ID Required": "Telegram chat ID is required"
 	},
 	"snmpCredentials": {
 		"Title": "SNMP Credentials",

@@ -1,0 +1,91 @@
+{
+	"comment": "n8n workflow: receive MiBee Steward device-change notifications via a generic webhook channel and filter for device_lost events. Import via n8n → Workflows → Import from File, then set the Webhook node PATH. Create a MiBee 'webhook' notification channel pointing at the n8n webhook URL.",
+	"nodes": [
+		{
+			"parameters": {
+				"httpMethod": "POST",
+				"path": "mibee-devices",
+				"responseMode": "onReceived",
+				"options": {}
+			},
+			"id": "webhook-in",
+			"name": "MiBee Webhook",
+			"type": "n8n-nodes-base.webhook",
+			"typeVersion": 2,
+			"position": [0, 0],
+			"webhookId": "mibee-device-alerts"
+		},
+		{
+			"parameters": {
+				"conditions": {
+					"options": {
+						"caseSensitive": true,
+						"version": 2
+					},
+					"conditions": [
+						{
+							"leftValue": "={{ $json.body.metadata.event_type }}",
+							"rightValue": "device_lost",
+							"operator": {
+								"type": "string",
+								"operation": "equals"
+							}
+						}
+					],
+					"combinator": "and"
+				},
+				"options": {}
+			},
+			"id": "filter-lost",
+			"name": "Only device_lost",
+			"type": "n8n-nodes-base.if",
+			"typeVersion": 2,
+			"position": [220, 0]
+		},
+		{
+			"parameters": {
+				"rule": {
+					"interval": [
+						{
+							"field": "minutes",
+							"minutesInterval": 1
+						}
+					]
+				}
+			},
+			"id": "placeholder-example",
+			"name": "Your next step (notify / ticket / chat)",
+			"type": "n8n-nodes-base.noOp",
+			"typeVersion": 1,
+			"position": [440, 0],
+			"notes": "Replace with a Telegram/Slack/Email node. Useful fields: {{ $json.body.subject }}, {{ $json.body.metadata.device_name }}, {{ $json.body.metadata.ip_address }}"
+		}
+	],
+	"connections": {
+		"MiBee Webhook": {
+			"main": [
+				[
+					{
+						"node": "Only device_lost",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Only device_lost": {
+			"main": [
+				[
+					{
+						"node": "Your next step (notify / ticket / chat)",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"name": "MiBee Steward — device alerts",
+	"settings": {},
+	"pinData": {}
+}

@@ -257,19 +257,36 @@ export const probeTargetSchema = z
 // A flat schema (form state is flat: formUrl, formSmtpHost, ...) with a refine
 // enforcing type-conditional required fields — simpler than a Zod
 // discriminated union and keeps per-field blur validation working.
+// webhook_url doubles as the URL field for the formatted-webhook channels
+// (feishu / wecom / discord all POST to a bot webhook URL).
 export const notificationChannelSchema = z
 	.object({
 		name: z.string().min(1, 'validation.Name Required'),
-		type: z.enum(['webhook', 'email']),
+		type: z.enum(['webhook', 'email', 'feishu', 'wecom', 'telegram', 'discord']),
 		webhook_url: z.string().url('validation.Invalid URL').optional().or(z.literal('')),
 		smtp_host: z.string().optional().or(z.literal('')),
 		smtp_port: z.number().int().min(1).max(65535, 'validation.Invalid Port').optional(),
 		smtp_from: z.string().optional().or(z.literal('')),
 		smtp_to: z.string().optional().or(z.literal('')),
+		feishu_secret: z.string().optional().or(z.literal('')),
+		telegram_bot_token: z.string().optional().or(z.literal('')),
+		telegram_chat_id: z.string().optional().or(z.literal('')),
+		discord_username: z.string().optional().or(z.literal('')),
 	})
-	.refine((data) => data.type !== 'webhook' || !!data.webhook_url, {
-		message: 'validation.Webhook URL Required',
-		path: ['webhook_url'],
+	.refine(
+		(data) => !['webhook', 'feishu', 'wecom', 'discord'].includes(data.type) || !!data.webhook_url,
+		{
+			message: 'validation.Webhook URL Required',
+			path: ['webhook_url'],
+		}
+	)
+	.refine((data) => data.type !== 'telegram' || !!data.telegram_bot_token, {
+		message: 'validation.Bot Token Required',
+		path: ['telegram_bot_token'],
+	})
+	.refine((data) => data.type !== 'telegram' || !!data.telegram_chat_id, {
+		message: 'validation.Chat ID Required',
+		path: ['telegram_chat_id'],
 	})
 	.refine((data) => data.type !== 'email' || !!data.smtp_host, {
 		message: 'validation.SMTP Host Required',
