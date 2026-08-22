@@ -163,6 +163,12 @@ scanner:
   default_timeout: 300        # seconds, per-host pipeline timeout (upper bound for ALL probes + handlers on one host)
   per_probe_timeout: 3        # seconds, single probe attempt (one SNMP Get / TCP dial / HTTP fetch). Keep small so dead hosts fail fast.
   max_concurrent_hosts: 50
+  # Escape hatch for the reserved-range scan-target rejection (#317): loopback /
+  # unspecified / link-local / multicast / broadcast / 240-4 space is rejected at
+  # every entry point by default (a scheduled loopback task once invented 1022
+  # phantom devices that resurrected daily). Set true ONLY for synthetic planes
+  # (cmd/loadgen serves its benchmark fleet on 127/8). Env: MIBEE_SCANNER_ALLOW_RESERVED_TARGETS
+  allow_reserved_targets: false
   # Number of consecutive scans a device must be absent from the alive set
   # before being declared "lost" (default 2). Single missed scans (ICMP drop,
   # brief downtime, jitter) must not flap a device offline. This is the

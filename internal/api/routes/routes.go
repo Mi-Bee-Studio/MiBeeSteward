@@ -306,16 +306,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	credCipher, credResolver := buildCredentialCipher(dbConn, cfg)
 
 	v2Engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
-		PortSpec:           scannerPortSpec,
-		MaxConcurrentHosts: cfg.Scanner.MaxConcurrentHosts,
-		MaxConcurrentScans: cfg.Scanner.MaxConcurrentScans,
-		PerHostTimeout:     time.Duration(cfg.Scanner.DefaultTimeout) * time.Second,
-		PerProbeTimeout:    time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
-		PersistRawEvidence: cfg.Scanner.PersistRawEvidence,
-		OUIPath:            cfg.Scanner.OUIPath,
-		FingerprintPath:    cfg.Scanner.FingerprintPath,
-		SNMPCommunity:      cfg.Scanner.SNMPCommunity,
-		CredResolver:       credResolver,
+		PortSpec:             scannerPortSpec,
+		MaxConcurrentHosts:   cfg.Scanner.MaxConcurrentHosts,
+		AllowReservedTargets: cfg.Scanner.AllowReservedTargets,
+		MaxConcurrentScans:   cfg.Scanner.MaxConcurrentScans,
+		PerHostTimeout:       time.Duration(cfg.Scanner.DefaultTimeout) * time.Second,
+		PerProbeTimeout:      time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
+		PersistRawEvidence:   cfg.Scanner.PersistRawEvidence,
+		OUIPath:              cfg.Scanner.OUIPath,
+		FingerprintPath:      cfg.Scanner.FingerprintPath,
+		SNMPCommunity:        cfg.Scanner.SNMPCommunity,
+		CredResolver:         credResolver,
 		RouterARP: scannerv2probe.RouterARPConfig{
 			Routers:   cfg.Scanner.RouterARP.Routers,
 			Community: routerCommunity(cfg.Scanner),
@@ -545,7 +546,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		scanScheduler = nil
 	}
 
-	scanTaskService := scannerv2task.New(scanQueries, dbConn, scanScheduler)
+	scanTaskService := scannerv2task.New(scanQueries, dbConn, scanScheduler, cfg.Scanner.AllowReservedTargets)
 	scannerHandler := handler.NewScannerHandler(v2Engine, scanRunner)
 	scannerTaskHandler := handler.NewScannerTaskHandler(scanTaskService)
 	scannerResultHandler := handler.NewScannerResultHandler(scanQueries, dbConn, service.NewScannerResultService(scanQueries))
@@ -684,7 +685,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// tagged with that network so multi-LAN data coexists without collision.
 	// Routed on the top-level mux (separate from /agents/tokens) so the two auth
 	// regimes don't interfere.
-	agentCmdSvc := service.NewAgentCommandService(scanQueries, cfg.AgentFleet.RemoteOpsEnabled)
+	agentCmdSvc := service.NewAgentCommandService(scanQueries, cfg.AgentFleet.RemoteOpsEnabled, cfg.Scanner.AllowReservedTargets)
 	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn, agentCmdSvc)
 	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries, agentCmdSvc, auditRepo)
 	r.Route("/api/v1/agents", func(r chi.Router) {

@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"mibee-steward/internal/authz/scopeql"
+	"mibee-steward/internal/cidrutil"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/metrics"
@@ -37,12 +38,25 @@ var (
 	ErrSchedulerNotAvailable = errors.New("scheduler not available")
 )
 
+// ValidationError marks field-validation failures (bad targets / pipeline
+// config) from Create/Update so the handler can map them to HTTP 400 with the
+// underlying message instead of an opaque 500. The chain to the wrapped error
+// (e.g. cidrutil.ErrReservedTarget) is preserved via Unwrap.
+type ValidationError struct{ err error }
+
+func (e *ValidationError) Error() string { return e.err.Error() }
+func (e *ValidationError) Unwrap() error { return e.err }
+
 // Service manages scan tasks: CRUD + trigger/cancel, keeping the DB and the
 // scheduler in sync.
 type Service struct {
 	queries   *db.Queries
 	conn      db.DBTX // raw connection for the network_id stamp + scope-restricted reads (nil = skip both)
 	scheduler *scheduler.Scheduler
+	// allowReservedTargets mirrors scanner.allow_reserved_targets (#317 escape
+	// hatch for the loadgen synthetic plane); softens only the reserved-range
+	// target check, never syntax.
+	allowReservedTargets bool
 }
 
 // New constructs a Service. conn powers the scan_tasks.network_id stamping and
@@ -50,8 +64,8 @@ type Service struct {
 // IN-list); it may be nil in unit tests that don't exercise those paths.
 // scheduler may be nil (Trigger/Cancel return errors; CRUD still works for
 // browsing).
-func New(queries *db.Queries, conn db.DBTX, sched *scheduler.Scheduler) *Service {
-	return &Service{queries: queries, conn: conn, scheduler: sched}
+func New(queries *db.Queries, conn db.DBTX, sched *scheduler.Scheduler, allowReservedTargets bool) *Service {
+	return &Service{queries: queries, conn: conn, scheduler: sched, allowReservedTargets: allowReservedTargets}
 }
 
 // refreshTaskGauges recomputes mibee_scanner_tasks_total after a mutation
@@ -142,7 +156,7 @@ func (s *Service) CreateTask(ctx context.Context, req domain.ScanTaskRequest) (d
 	if req.ConcurrentHosts == 0 {
 		req.ConcurrentHosts = domain.DefaultConcurrentHosts
 	}
-	if err := domain.ValidateScanTaskRequest(req); err != nil {
+	if err := domain.ValidateScanTaskRequest(req, s.allowReservedTargets); err != nil {
 		return domain.ScanTaskResponse{}, err
 	}
 	cfgJSON, err := json.Marshal(req.PipelineConfig)
@@ -295,6 +309,12 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 	targets := existing.Targets
 	if req.Targets != nil {
 		targets = *req.Targets
+		// The update path merges fields without re-running the full create
+		// validation, so a reserved-range swap here would otherwise bypass
+		// the #317 gate (create strict → update to 127.8.0.0/22).
+		if err := cidrutil.ValidateTargetsFor(targets, s.allowReservedTargets); err != nil {
+			return domain.ScanTaskResponse{}, &ValidationError{err: fmt.Errorf("targets: %w", err)}
+		}
 	}
 	cron := existing.CronExpr
 	if req.CronExpr != nil {
@@ -319,7 +339,7 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 		// that finds nothing. This also guards against clients sending a
 		// zero-valued PipelineConfig object (which serialises to all-disabled).
 		if err := domain.ValidatePipelineConfig(*req.PipelineConfig); err != nil {
-			return domain.ScanTaskResponse{}, fmt.Errorf("pipeline_config: %w", err)
+			return domain.ScanTaskResponse{}, &ValidationError{err: fmt.Errorf("pipeline_config: %w", err)}
 		}
 		b, err := json.Marshal(req.PipelineConfig)
 		if err != nil {

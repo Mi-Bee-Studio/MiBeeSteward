@@ -14,8 +14,6 @@ import (
 	"net"
 	"testing"
 
-	"mibee-steward/internal/service/scannerv2/engine"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -88,7 +86,7 @@ func TestPartitionTargets(t *testing.T) {
 	})
 	t.Run("mixed in/out", func(t *testing.T) {
 		// The exact real-world bug from issue #19: agent-62's network is /62,
-		// but a command told it to scan 63.0/24 — every one of those lands "out".
+		// but a command told it to scan 63.0/24 — every host lands "out".
 		// 254 = 256 minus the reserved .0 network / .255 broadcast addresses
 		// (excluded from CIDR enumeration since #254).
 		in, out, err := PartitionTargets("192.168.63.0/24", n)
@@ -133,25 +131,101 @@ func TestPartitionTargets(t *testing.T) {
 	})
 }
 
-// TestExpandTargets_ParityWithEngine guards against drift between this
-// package's expandTargets and the engine's ParseScanTargets. If someone changes
-// the engine's target syntax, this test forces them to update cidrutil too (or
-// refactor to a shared helper) rather than silently diverging.
-func TestExpandTargets_ParityWithEngine(t *testing.T) {
-	cases := []string{
-		"192.168.63.0/30",
-		"192.168.63.1",
-		"192.168.63.1-192.168.63.5",
-		"192.168.63.1-5",
-		"192.168.63.1,192.168.63.2,10.0.0.1",
+// TestValidateTargets_Reserved covers the entry-point validation added for
+// issue #317: reserved/non-routable address space must be rejected no matter
+// which syntax names it, while ordinary private space passes.
+func TestValidateTargets_Reserved(t *testing.T) {
+	rejects := []string{
+		// The exact benchmark incident: a /22 of loopback produced 1022
+		// phantom devices on the test center.
+		"127.8.0.0/22",
+		"127.0.0.1",
+		"127.0.0.0/8",
+		"0.0.0.0/0",
+		"0.0.0.0",
+		"169.254.0.0/16",
+		"169.254.1.5",
+		"224.0.0.0/4",
+		"239.255.255.250",
+		"255.255.255.255",
+		"240.0.0.0/4",
+		"250.1.2.3",
+		// Block that merely overlaps reserved space: 126.0.0.0/7 ends at
+		// 127.255.255.255 (loopback).
+		"126.0.0.0/7",
+		// Ranges and comma-separated lists name reserved space too.
+		"127.0.0.1-127.0.0.5",
+		"192.168.63.0/24,127.0.0.1",
+		"192.168.63.1-5,0.0.0.0",
+		// IPv6 reserved space.
+		"::1",
+		"fe80::/10",
 	}
-	for _, tc := range cases {
+	for _, tc := range rejects {
 		t.Run(tc, func(t *testing.T) {
-			ours, err := expandTargets(tc)
-			require.NoError(t, err)
-			theirs, err := engine.ParseScanTargets(tc)
-			require.NoError(t, err)
-			require.Equal(t, theirs, ours, "cidrutil.expandTargets diverged from engine.ParseScanTargets")
+			err := ValidateTargets(tc)
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrReservedTarget)
 		})
 	}
+	accepts := []string{
+		"192.168.63.0/24",
+		"10.0.0.0/8",
+		"172.16.5.9",
+		"192.168.63.1-254",
+		"192.168.63.1,192.168.62.7",
+		"100.64.0.0/10", // CGNAT: not a reserved class, routable-ish
+	}
+	for _, tc := range accepts {
+		t.Run("ok: "+tc, func(t *testing.T) {
+			require.NoError(t, ValidateTargets(tc))
+		})
+	}
+}
+
+// TestExpandTargets_HostAddressesOnly pins the #254 fix: CIDR expansion drops
+// the network and directed-broadcast addresses for IPv4 prefixes up to /30.
+func TestExpandTargets_HostAddressesOnly(t *testing.T) {
+	t.Run("/24 drops .0 and .255", func(t *testing.T) {
+		ips, err := ExpandTargets("192.168.63.0/24")
+		require.NoError(t, err)
+		require.Len(t, ips, 254)
+		require.Equal(t, "192.168.63.1", ips[0])
+		require.Equal(t, "192.168.63.254", ips[len(ips)-1])
+	})
+	t.Run("/31 keeps both (RFC 3021 point-to-point)", func(t *testing.T) {
+		ips, err := ExpandTargets("192.168.63.0/31")
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.168.63.0", "192.168.63.1"}, ips)
+	})
+	t.Run("/32 is a single host", func(t *testing.T) {
+		ips, err := ExpandTargets("192.168.63.5/32")
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.168.63.5"}, ips)
+	})
+	t.Run("/30 keeps the two host addresses", func(t *testing.T) {
+		ips, err := ExpandTargets("192.168.1.0/30")
+		require.NoError(t, err)
+		require.Equal(t, []string{"192.168.1.1", "192.168.1.2"}, ips)
+	})
+	t.Run("range keeps its explicit endpoints", func(t *testing.T) {
+		ips, err := ExpandTargets("192.168.63.0-3")
+		require.NoError(t, err)
+		require.Len(t, ips, 4) // explicit range: caller named those addresses
+	})
+	t.Run("reserved spec rejected", func(t *testing.T) {
+		_, err := ExpandTargets("127.8.0.0/22")
+		require.ErrorIs(t, err, ErrReservedTarget)
+	})
+}
+
+// TestValidateTargetsFor_EscapeHatch pins the scanner.allow_reserved_targets
+// semantics: reserved ranges pass, syntax errors still fail.
+func TestValidateTargetsFor_EscapeHatch(t *testing.T) {
+	require.NoError(t, ValidateTargetsFor("127.8.0.0/22", true))
+	require.NoError(t, ValidateTargetsFor("0.0.0.0/0,127.0.0.1", true))
+	require.ErrorIs(t, ValidateTargetsFor("127.8.0.0/22,garbage", true), ErrInvalidTarget)
+	_, err := ExpandTargetsFor("127.8.0.0/22", true)
+	require.NoError(t, err)
+	require.ErrorIs(t, ValidateTargetsFor("127.8.0.0/22", false), ErrReservedTarget)
 }

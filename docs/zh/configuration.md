@@ -283,6 +283,7 @@ export MIBEE_LOG_FORMAT=json
 | `scanner.max_concurrent_scans` | int | 3 | 同时运行的顶层扫描数上限（引擎的并发扫描信号量，实际生效）。 |
 | `scanner.default_timeout` | int (秒) | 300 | 定时扫描的每主机流水线超时。同时驱动 `write_timeout` 的自动上调。 |
 | `scanner.max_concurrent_hosts` | int | 50 | 每主机并行扫描上限 |
+| `scanner.allow_reserved_targets` | bool | false | 保留网段扫描目标拒绝(#317)的逃生门:开启后接受环回/未指定/链路本地/组播/广播/240-4 目标(语法仍校验)。仅为合成负载面设置 —— `cmd/loadgen` 基准面在 127/8。环境变量 `MIBEE_SCANNER_ALLOW_RESERVED_TARGETS`。 |
 | `scanner.retention_days` | int | — | 旧版回退：仅当 `retention.scan_results_days` 未设置时生效（再回退 30）。清理由 `retention.sweep_interval_hours`（默认 6h）驱动，并非每日一次。 |
 | `scanner.default_cron_expr` | string | "0 */6 * * *" | 新建扫描任务的默认 cron |
 | `scanner.engine` | string | "v2" | 引擎选择（仅支持 "v2"；v1 已移除） |

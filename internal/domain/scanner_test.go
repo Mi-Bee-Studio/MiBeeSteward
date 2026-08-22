@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/cidrutil"
 )
 
 func TestScanHost_SNMPFields_JSONTags(t *testing.T) {
@@ -354,4 +356,53 @@ func TestAddDeviceItemBackwardCompat(t *testing.T) {
 	require.Empty(t, item.PromURL, "PromURL should be empty for old JSON")
 	require.Empty(t, item.NEURL, "NEURL should be empty for old JSON")
 	require.Zero(t, item.RTTMs, "RTTMs should be zero for old JSON")
+}
+
+// TestValidateScanTaskRequest_ReservedTargets pins the #317 entry-point guard:
+// scan tasks may not target reserved address space (loopback, unspecified,
+// link-local, multicast, broadcast, 240/4) — a scheduled loopback task once
+// invented 1022 phantom devices that resurrected daily against the
+// silent-device retention.
+func TestValidateScanTaskRequest_ReservedTargets(t *testing.T) {
+	valid := func() ScanTaskRequest {
+		return ScanTaskRequest{
+			Name:            "lan",
+			Targets:         "192.168.63.0/24",
+			CronExpr:        "*/30 * * * *",
+			PipelineConfig:  PipelineConfig{ICMP: ICMPConfig{Enabled: true}},
+			Timeout:         30,
+			ConcurrentHosts: 50,
+		}
+	}
+	t.Run("ordinary private targets pass", func(t *testing.T) {
+		require.NoError(t, ValidateScanTaskRequest(valid(), false))
+	})
+	t.Run("loopback targets rejected", func(t *testing.T) {
+		req := valid()
+		req.Targets = "127.8.0.0/22"
+		err := ValidateScanTaskRequest(req, false)
+		require.Error(t, err)
+		require.ErrorIs(t, err, cidrutil.ErrReservedTarget)
+	})
+	t.Run("mixed list with one reserved part rejected", func(t *testing.T) {
+		req := valid()
+		req.Targets = "192.168.63.0/24,0.0.0.0"
+		require.ErrorIs(t, ValidateScanTaskRequest(req, false), cidrutil.ErrReservedTarget)
+	})
+	t.Run("multicast and broadcast rejected", func(t *testing.T) {
+		req := valid()
+		req.Targets = "224.0.0.0/24"
+		require.ErrorIs(t, ValidateScanTaskRequest(req, false), cidrutil.ErrReservedTarget)
+		req.Targets = "255.255.255.255"
+		require.ErrorIs(t, ValidateScanTaskRequest(req, false), cidrutil.ErrReservedTarget)
+	})
+	t.Run("escape hatch accepts reserved but still checks syntax", func(t *testing.T) {
+		// scanner.allow_reserved_targets (the loadgen synthetic plane on 127/8)
+		// opts out of the reserved check — but garbage targets still fail.
+		req := valid()
+		req.Targets = "127.8.0.0/22"
+		require.NoError(t, ValidateScanTaskRequest(req, true))
+		req.Targets = "127.8.0.0/22,not-an-ip"
+		require.Error(t, ValidateScanTaskRequest(req, true))
+	})
 }
