@@ -144,4 +144,7 @@ flowchart LR
 
 ## 下一步
 
-继续阅读[快速开始](quick-start.md)，在几分钟内完成首次部署与网络扫描。
+- [功能总览](features.md) — 全部能力的分层清单
+- [场景玩法指引](playbooks.md) — 六个新手场景，边做边学
+- [与同类工具的对比](comparison.md) — 定位、雷达图与选型建议
+- [快速开始](quick-start.md) — 几分钟内完成首次部署与网络扫描
