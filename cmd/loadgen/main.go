@@ -213,13 +213,13 @@ func serveCmd(args []string) {
 				// UDP handled by the packet-conn branch; the tcp handler is unused.
 				h = func(c net.Conn) { c.Close() }
 			case "22":
-				h = bannerHandler(tpl.Banner, i)
+				h = bannerHandler(tpl.Banner)
 			case "80", "443":
 				h = httpHandler(tpl)
 			case "554":
 				h = rtspHandler(tpl)
 			default:
-				h = bannerHandler(tpl.Banner, i) // 631 etc: generic greeting
+				h = bannerHandler(tpl.Banner) // 631 etc: generic greeting
 			}
 			if bind(ip, port, h, proto) {
 				ok++
@@ -240,7 +240,7 @@ func dupIP(base net.IP, i int) net.IP {
 	return out
 }
 
-func bannerHandler(banner string, i int) func(net.Conn) {
+func bannerHandler(banner string) func(net.Conn) {
 	return func(c net.Conn) {
 		defer c.Close()
 		_ = c.SetDeadline(time.Now().Add(10 * time.Second))
@@ -469,7 +469,7 @@ func driveCmd(args []string) {
 	client := &http.Client{Timeout: 60 * time.Second}
 	token := login(client, *center, *user, *pass)
 
-	before := snapshotMetrics(client, *center, token)
+	before := snapshotMetrics(client, *center)
 	t0 := time.Now()
 
 	taskID := createScanTask(client, *center, token, *targets)
@@ -479,7 +479,7 @@ func driveCmd(args []string) {
 	rep.HostsTotal = run.TotalHosts
 	rep.HostsAlive = run.AliveHosts
 
-	after := snapshotMetrics(client, *center, token)
+	after := snapshotMetrics(client, *center)
 	rep.Metrics = delta(before, after)
 
 	rep.APILatency = apiLatencySample(client, *center, token, *apiBurst)
@@ -514,10 +514,10 @@ type metricsDelta struct {
 }
 
 type latencySample struct {
-	N   int     `json:"n"`
-	P50 float64 `json:"p50_ms"`
-	P95 float64 `json:"p95_ms"`
-	Max float64 `json:"max_ms"`
+	N      int     `json:"n"`
+	P50    float64 `json:"p50_ms"`
+	P95    float64 `json:"p95_ms"`
+	MaxVal float64 `json:"max_ms"`
 }
 
 func login(c *http.Client, center, user, pass string) string {
@@ -526,19 +526,19 @@ func login(c *http.Client, center, user, pass string) string {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.Do(req)
 	must(err)
-	defer resp.Body.Close()
 	var out struct {
 		Token string `json:"token"`
 	}
-	must(json.NewDecoder(resp.Body).Decode(&out))
-	if out.Token == "" {
-		slog.Error("login failed (no token)")
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.Token == "" {
+		resp.Body.Close()
+		slog.Error("login failed", "error", err)
 		os.Exit(1)
 	}
+	resp.Body.Close()
 	return out.Token
 }
 
-func snapshotMetrics(c *http.Client, center, token string) metricsSnapshot {
+func snapshotMetrics(c *http.Client, center string) metricsSnapshot {
 	req, _ := http.NewRequest("GET", center+"/metrics", nil)
 	resp, err := c.Do(req)
 	if err != nil {
@@ -588,15 +588,15 @@ func createScanTask(c *http.Client, center, token, targets string) int64 {
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := c.Do(req)
 	must(err)
-	defer resp.Body.Close()
 	var out struct {
 		ID int64 `json:"id"`
 	}
-	must(json.NewDecoder(resp.Body).Decode(&out))
-	if out.ID == 0 {
-		slog.Error("task creation failed")
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.ID == 0 {
+		resp.Body.Close()
+		slog.Error("task creation failed", "error", err)
 		os.Exit(1)
 	}
+	resp.Body.Close()
 	return out.ID
 }
 
@@ -615,8 +615,8 @@ type runRow struct {
 	AliveHosts int64  `json:"alive_hosts"`
 }
 
-func waitForRun(c *http.Client, center, token string, taskID int64, max time.Duration) runRow {
-	deadline := time.Now().Add(max)
+func waitForRun(c *http.Client, center, token string, taskID int64, maxWait time.Duration) runRow {
+	deadline := time.Now().Add(maxWait)
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/scanner/tasks/%d/runs?limit=1", center, taskID), nil)
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -637,8 +637,7 @@ func waitForRun(c *http.Client, center, token string, taskID int64, max time.Dur
 		time.Sleep(2 * time.Second)
 	}
 	slog.Error("scan did not finish within deadline")
-	os.Exit(1)
-	return runRow{}
+	return runRow{Status: "timeout"}
 }
 
 func apiLatencySample(c *http.Client, center, token string, n int) latencySample {
@@ -661,7 +660,7 @@ func apiLatencySample(c *http.Client, center, token string, n int) latencySample
 	pct := func(p float64) float64 {
 		return lat[int(float64(len(lat)-1)*p)]
 	}
-	return latencySample{N: len(lat), P50: pct(0.50), P95: pct(0.95), Max: lat[len(lat)-1]}
+	return latencySample{N: len(lat), P50: pct(0.50), P95: pct(0.95), MaxVal: lat[len(lat)-1]}
 }
 
 func writeReports(r *report, prefix string) {
@@ -680,13 +679,13 @@ func writeReports(r *report, prefix string) {
 		r.HostsAlive, r.HostsTotal,
 		r.Metrics.DBSizeBytes/1024/1024, r.Metrics.SQLiteBusyTotal,
 		r.Metrics.ProcessCPUSeconds, r.Metrics.ResidentMemoryMB,
-		r.APILatency.P50, r.APILatency.P95, r.APILatency.Max, r.APILatency.N)
+		r.APILatency.P50, r.APILatency.P95, r.APILatency.MaxVal, r.APILatency.N)
 	must(os.WriteFile(prefix+".md", []byte(md), 0o644))
 }
 
 func parseFloat(s string) float64 {
 	var f float64
-	fmt.Sscanf(s, "%g", &f)
+	_, _ = fmt.Sscanf(s, "%g", &f)
 	return f
 }
 
