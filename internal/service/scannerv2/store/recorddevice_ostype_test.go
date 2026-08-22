@@ -78,11 +78,11 @@ func TestRecordDevice_OSType_WithCrossNetworkDuplicate(t *testing.T) {
 	// Agent-discovered row on network_id=3 (no MAC) — a distinct asset.
 	_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO devices (name, type, ip_address, mac_address, status, scan_source,
-		                     scan_attributes, network_id, first_seen, last_seen,
+		                     scan_attributes, network_id, device_uuid, first_seen, last_seen,
 		                     last_scanned_at, created_at, updated_at)
 		VALUES ('.9', 'server', ?, '', 'unknown', 'scanner_v2',
-		        '{}', 3, '2026-07-09 04:00:00', '2026-07-09 04:00:00',
-		        '2026-07-09 04:39:52', '2026-07-09 04:00:00', '2026-07-09 04:00:00')`, ip)
+		        '{}', 3, ?, '2026-07-09 04:00:00', '2026-07-09 04:00:00',
+		        '2026-07-09 04:39:52', '2026-07-09 04:00:00', '2026-07-09 04:00:00')`, ip, "seed-net3-"+ip)
 	if err != nil {
 		t.Fatalf("seed network_id=3 row: %v", err)
 	}

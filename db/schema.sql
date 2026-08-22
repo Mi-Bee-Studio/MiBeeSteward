@@ -839,3 +839,14 @@ CREATE TABLE IF NOT EXISTS probe_tls_certs (
 CREATE INDEX IF NOT EXISTS idx_probe_tls_certs_target ON probe_tls_certs(target_id, cert_index);
 CREATE INDEX IF NOT EXISTS idx_probe_tls_certs_expiring ON probe_tls_certs(not_after);
 
+
+-- Identity + lookup indexes (created by the migration chain on legacy DBs;
+-- listed here too so FRESH installs get the same shape — the #268 schema
+-- equivalence test asserts both paths produce identical structures).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_uuid ON devices(device_uuid);
+CREATE INDEX IF NOT EXISTS idx_devices_ip_network ON devices(ip_address, network_id);
+CREATE INDEX IF NOT EXISTS idx_devices_mac_address ON devices(mac_address);
+CREATE INDEX IF NOT EXISTS idx_devices_scan_mac_expr ON devices(json_extract(scan_attributes, '$.mac'));
+CREATE INDEX IF NOT EXISTS idx_devices_scan_vendor_expr ON devices(json_extract(scan_attributes, '$.vendor'));
+CREATE INDEX IF NOT EXISTS idx_networks_name ON networks(name);
+CREATE INDEX IF NOT EXISTS idx_scan_tasks_network ON scan_tasks(network_id);
