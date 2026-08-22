@@ -25,6 +25,7 @@ import (
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/metrics"
+	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/runner"
 )
@@ -48,6 +49,9 @@ type AgentReportHandler struct {
 	runner  *runner.Runner
 	queries *db.Queries // for resolving the agent network's CIDR (boundary check)
 	dbConn  *sql.DB     // raw conn for the networks.cidr backfill (sqlc has no single-col UPDATE)
+	// fleetSvc records the per-agent status snapshot (#278). May be nil in
+	// tests — status recording degrades to a debug log.
+	fleetSvc *service.AgentCommandService
 
 	hashMu     sync.Mutex
 	lastHash   map[int64]string    // network_id → most-recent state hash
@@ -67,11 +71,12 @@ type AgentReportHandler struct {
 // queries is used to resolve the agent's network CIDR for the per-host boundary
 // check (issue #19 Layer 2); dbConn is for the networks.cidr backfill (the
 // single-column UPDATE has no sqlc-generated equivalent).
-func NewAgentReportHandler(rn *runner.Runner, queries *db.Queries, dbConn *sql.DB) *AgentReportHandler {
+func NewAgentReportHandler(rn *runner.Runner, queries *db.Queries, dbConn *sql.DB, fleetSvc *service.AgentCommandService) *AgentReportHandler {
 	return &AgentReportHandler{
 		runner:     rn,
 		queries:    queries,
 		dbConn:     dbConn,
+		fleetSvc:   fleetSvc,
 		lastHash:   make(map[int64]string),
 		lastHashAt: make(map[int64]time.Time),
 		cidrCache:  make(map[int64]*net.IPNet),
@@ -110,6 +115,21 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	// Liveness signal for the AgentReportStale alert (#279): stamped on every
 	// authenticated report, including empty and anti-entropy fast-path ones.
 	metrics.MibeeAgentLastReportTimestamp.WithLabelValues(agentID).SetToCurrentTime()
+
+	// Fleet status snapshot (#278): version/uptime/hostname from the report's
+	// meta block, clock offset from ScannedAt vs receive time (includes
+	// transit; a CONSISTENT offset across reports is the skew signal). Runs
+	// before the empty-report early return so status-only heartbeats land too.
+	if h.fleetSvc != nil {
+		offset := time.Since(rep.ScannedAt).Seconds()
+		const saneRange = 86400 // ±1d clamp: a retried batch's stale ScannedAt must not poison the value
+		if offset > saneRange || offset < -saneRange {
+			offset = 0
+		}
+		if err := h.fleetSvc.UpsertAgentStatus(r.Context(), agentID, rep.Meta, offset); err != nil {
+			slog.Debug("agent report: fleet status upsert failed", "agent_id", agentID, "error", err)
+		}
+	}
 
 	// Prerequisite backfill (issue #19 前置工作): if the agent ships its
 	// configured CIDR AND the bound network's row lacks one, adopt it. Agent

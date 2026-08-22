@@ -183,7 +183,7 @@ func TestAgentCommandService_EnqueueBoundaryRejection(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	queries := db.New(conn)
-	svc := NewAgentCommandService(queries)
+	svc := NewAgentCommandService(queries, false)
 	ctx := context.Background()
 
 	cidr := "192.168.62.0/24"

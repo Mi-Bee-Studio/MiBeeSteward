@@ -55,6 +55,19 @@ type CommandPoller struct {
 	// this package already imports domain).
 	runScan func(ctx context.Context, targets string, timeoutSec int) (string, error)
 
+	// remoteOpsEnabled gates the ops command family (restart / config-reload /
+	// logs-tail, #278). Off by default: the agent must explicitly opt in via
+	// center.remote_ops_enabled in its config. Defense in depth on top of the
+	// CENTER-side switch (agent_fleet.remote_ops_enabled) — either side alone
+	// can keep ops commands from executing.
+	remoteOpsEnabled bool
+	// logRing supplies the last N log lines for "logs-tail" (nil → the command
+	// fails with a hint). Injected by cmd/agent.
+	logRing func() []string
+	// restart re-execs the agent process. Injected by cmd/agent (syscall.Exec
+	// of os.Args[0]) so this package stays testable.
+	restart func(reason string)
+
 	cancel context.CancelFunc
 	done   chan struct{}
 }
@@ -87,6 +100,17 @@ func NewCommandPoller(centerURL, authToken string, pollEvery time.Duration, netw
 		logger:      logger,
 		done:        make(chan struct{}),
 	}
+}
+
+// EnableRemoteOps opts the agent into executing ops commands (#278). logRing
+// supplies recent log lines (logs-tail); restart re-execs the process
+// (restart / config-reload — a reload is a restart in practice: config is
+// consumed at construction time, so re-exec is the only faithful reload).
+func (p *CommandPoller) EnableRemoteOps(logRing func() []string, restart func(reason string)) *CommandPoller {
+	p.remoteOpsEnabled = true
+	p.logRing = logRing
+	p.restart = restart
+	return p
 }
 
 // Start launches the poll loop.
@@ -138,6 +162,10 @@ type scanPayload struct {
 	Timeout    int    `json:"timeout"`
 	Concurrent int    `json:"concurrent"`
 }
+
+// PollOnceForTest runs one poll synchronously (test hook — the real loop
+// polls on its own goroutine).
+func (p *CommandPoller) PollOnceForTest(ctx context.Context) { p.pollOnce(ctx) }
 
 func (p *CommandPoller) pollOnce(ctx context.Context) {
 	cmds, err := p.fetchPending(ctx)
@@ -250,20 +278,68 @@ func (p *CommandPoller) execute(ctx context.Context, cmd pendingCommand) {
 		} else {
 			result = summary
 		}
+	case "restart", "config-reload", "logs-tail":
+		if !p.remoteOpsEnabled {
+			result = `{"error":"remote ops commands are disabled on this agent (center.remote_ops_enabled)"}`
+			status = "failed"
+			break
+		}
+		switch cmd.Command {
+		case "logs-tail":
+			if p.logRing == nil {
+				result = `{"error":"no log ring configured"}`
+				status = "failed"
+				break
+			}
+			lines := p.logRing()
+			const maxLines = 50
+			if len(lines) > maxLines {
+				lines = lines[len(lines)-maxLines:]
+			}
+			// JSON-encode so multi-line logs survive the TEXT result column.
+			resultJSON, err := json.Marshal(map[string]any{"lines": lines})
+			if err != nil {
+				result = fmt.Sprintf(`{"error":"%s"}`, err.Error())
+				status = "failed"
+			} else {
+				result = string(resultJSON)
+			}
+		case "restart", "config-reload":
+			if p.restart == nil {
+				result = `{"error":"no restart hook configured"}`
+				status = "failed"
+				break
+			}
+			// Complete FIRST (with the pre-restart ack) so the center records
+			// the outcome before the process image is replaced; the re-exec
+			// races the POST otherwise. The agent's next report after coming
+			// back is the real "it restarted" signal (fresh uptime).
+			p.logger.Warn("agent command poller: re-executing agent", "id", cmd.ID, "command", cmd.Command)
+			p.complete(ctx, cmd.ID, "done", fmt.Sprintf(`{"restarting":true,"command":%q}`, cmd.Command))
+			go func() {
+				// Give the complete POST a moment to flush, then replace.
+				time.Sleep(500 * time.Millisecond)
+				p.restart(cmd.Command)
+			}()
+			return
+		}
 	default:
 		result = fmt.Sprintf(`{"error":"unknown command: %s"}`, cmd.Command)
 		status = "failed"
 	}
 	p.logger.Info("command poller: command executed", "id", cmd.ID, "command", cmd.Command, "status", status)
+	p.complete(ctx, cmd.ID, status, result)
+}
 
-	// Report the result back to the center.
+// complete reports a command's outcome to the center.
+func (p *CommandPoller) complete(ctx context.Context, id int64, status, result string) {
 	completeReq, _ := json.Marshal(map[string]string{"status": status, "result": result})
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/api/v1/agents/commands/%d/complete", p.centerURL, cmd.ID), bytes.NewReader(completeReq))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/api/v1/agents/commands/%d/complete", p.centerURL, id), bytes.NewReader(completeReq))
 	req.Header.Set("Authorization", "Bearer "+p.authToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := p.client.Do(req)
 	if err != nil {
-		p.logger.Warn("command poller: report result failed", "id", cmd.ID, "error", err)
+		p.logger.Warn("command poller: report result failed", "id", id, "error", err)
 		return
 	}
 	resp.Body.Close()

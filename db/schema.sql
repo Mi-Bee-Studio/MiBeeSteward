@@ -669,6 +669,25 @@ CREATE TABLE IF NOT EXISTS agent_commands (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_commands_agent_status ON agent_commands(agent_id, status);
 
+-- agent_status: the fleet-observability snapshot keyed by agent_id (#278).
+-- Refreshed on EVERY authenticated agent report (including empty and
+-- anti-entropy fast-path ones): version/go_version/hostname/uptime come from
+-- the report's meta block; clock_offset_seconds is center_receive_time minus
+-- the report's ScannedAt (agent clock skew -- includes transit, so treat as an
+-- approximation; a consistent offset across reports is the signal);
+-- scans_total is the agent's cumulative report-batch counter. Read by the
+-- Agents admin view and joined onto agent_tokens for the fleet table.
+CREATE TABLE IF NOT EXISTS agent_status (
+    agent_id TEXT PRIMARY KEY,
+    version TEXT NOT NULL DEFAULT '',
+    go_version TEXT NOT NULL DEFAULT '',
+    hostname TEXT NOT NULL DEFAULT '',
+    uptime_seconds INTEGER NOT NULL DEFAULT 0,
+    clock_offset_seconds REAL NOT NULL DEFAULT 0,
+    scans_total INTEGER NOT NULL DEFAULT 0,
+    last_report_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- device_configs: versioned running-config snapshots (Oxidized/RANCID-style
 -- config backup, #137). Each row is one fetched running-config for a device;
 -- fetched_at orders the versions, config_hash is a cheap "has changed" gate

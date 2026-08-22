@@ -50,6 +50,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 	tables := listTables(t, db)
 	expected := []string{
 		"agent_commands",
+		"agent_status",
 		"agent_tokens",
 		"audit_logs",
 		"change_log",

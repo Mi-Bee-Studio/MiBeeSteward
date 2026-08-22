@@ -146,6 +146,19 @@ The center can actively dispatch commands to an agent (e.g. trigger a one-off sc
 
 Commands are **best-effort**: commands enqueued while the agent is offline never expire — they run on the next poll cycle after the agent reconnects.
 
+## Fleet Management (#278)
+
+Every agent report carries a meta block — build version, Go version, hostname, process uptime, cumulative scans shipped — which the center records into its `agent_status` table together with a **clock offset** approximation (report timestamp vs. receive time). The **Agents page** surfaces this fleet telemetry: version, clock offset (highlighted past ±60s), and last-report age per agent, next to the existing token status.
+
+### Remote operations
+
+The command channel also carries an ops family — `restart`, `config-reload`, `logs-tail` — that acts on the agent **process** rather than the network:
+
+- **Double-gated by design**: the center refuses to enqueue ops commands unless `agent_fleet.remote_ops_enabled: true` is set on the center, AND the agent refuses to execute them unless `center.remote_ops_enabled: true` is set in its own config. Either side can keep ops from running.
+- Every successful enqueue is **audit-logged** (`agent.ops_command`, with the issuing user).
+- `restart` / `config-reload` re-exec the agent binary (config is consumed at construction; a re-exec is the only faithful reload). `logs-tail` returns the last ≤50 log lines from the agent's in-memory ring — the result lands in the command history on the Agents page.
+- Under systemd/procd the re-exec is a clean restart; under a bare shell session the process comes back with the same args.
+
 ## Operations
 
 ### Monitoring

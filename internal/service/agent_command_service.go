@@ -13,12 +13,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"mibee-steward/internal/cidrutil"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 )
 
 // AgentCommandService is the write half of the center→agent command channel
@@ -26,18 +29,49 @@ import (
 // agent-side reads (Poll) and the admin list view stay as handler
 // passthroughs.
 type AgentCommandService struct {
-	queries *db.Queries
+	queries          *db.Queries
+	remoteOpsEnabled bool
 }
 
-// NewAgentCommandService constructs an AgentCommandService.
-func NewAgentCommandService(queries *db.Queries) *AgentCommandService {
-	return &AgentCommandService{queries: queries}
+// NewAgentCommandService constructs an AgentCommandService. remoteOpsEnabled
+// is the center-side ops gate (#278): when false, enqueueing restart /
+// config-reload / logs-tail fails with ErrRemoteOpsDisabled (403).
+func NewAgentCommandService(queries *db.Queries, remoteOpsEnabled bool) *AgentCommandService {
+	return &AgentCommandService{queries: queries, remoteOpsEnabled: remoteOpsEnabled}
 }
 
 var (
 	// ErrAgentIDRequired maps to 400.
 	ErrAgentIDRequired = errors.New("agent_id is required")
+	// ErrRemoteOpsDisabled maps to 403: ops commands are double-gated (#278) —
+	// center switch (agent_fleet.remote_ops_enabled) AND agent opt-in
+	// (center.remote_ops_enabled on the agent). This error is the center gate.
+	ErrRemoteOpsDisabled = errors.New("remote ops commands are disabled on the center (agent_fleet.remote_ops_enabled)")
+	// ErrUnknownCommand maps to 400: the command isn't in the whitelist.
+	ErrUnknownCommand = errors.New("unknown command")
 )
+
+// OpsCommands are the remote-operations command family (#278): they act on
+// the agent PROCESS (restart / reload / read logs), not on the network. They
+// need both the center switch and the agent opt-in; scan remains always-on.
+var OpsCommands = map[string]bool{
+	"restart":       true,
+	"config-reload": true,
+	"logs-tail":     true,
+}
+
+// ValidCommands is the full enqueue whitelist (scan + gated ops family).
+func ValidCommands() map[string]bool {
+	return map[string]bool{
+		"scan":          true,
+		"restart":       true,
+		"config-reload": true,
+		"logs-tail":     true,
+	}
+}
+
+// IsOpsCommand reports whether a command belongs to the gated ops family.
+func IsOpsCommand(command string) bool { return OpsCommands[command] }
 
 // BoundaryError is a scan-target network-boundary rejection (issue #19,
 // Layer 1). It carries the human-readable reason verbatim — the offending
@@ -59,6 +93,12 @@ func (s *AgentCommandService) Enqueue(ctx context.Context, agentID, command stri
 	}
 	if command == "" {
 		command = "scan"
+	}
+	if !ValidCommands()[command] {
+		return db.AgentCommand{}, fmt.Errorf("%w: %s", ErrUnknownCommand, command)
+	}
+	if IsOpsCommand(command) && !s.remoteOpsEnabled {
+		return db.AgentCommand{}, ErrRemoteOpsDisabled
 	}
 	// Boundary check only for scan commands — other command types (none
 	// today, but the channel is extensible) carry no targets field.
@@ -146,4 +186,33 @@ func (s *AgentCommandService) validateScanTargets(ctx context.Context, agentID s
 			strings.Join(sample, ", ") + " (" + strconv.Itoa(len(out)) + " of " + strconv.Itoa(len(in)+len(out)) + " IPs out of network)"
 	}
 	return ""
+}
+
+// --- Fleet status (#278) ---
+
+// UpsertAgentStatus refreshes the fleet snapshot from one report. clockOffset
+// is precomputed by the caller (receive_time - scanned_at); meta may be nil
+// for agents on older builds (keep zero values).
+func (s *AgentCommandService) UpsertAgentStatus(ctx context.Context, agentID string, meta *domain.AgentMeta, clockOffset float64) error {
+	var version, goVersion, hostname string
+	var uptime, scans int64
+	if meta != nil {
+		version, goVersion, hostname = meta.Version, meta.GoVersion, meta.Hostname
+		uptime, scans = meta.UptimeSec, meta.ScansTotal
+	}
+	return s.queries.UpsertAgentStatus(ctx, db.UpsertAgentStatusParams{
+		AgentID:            agentID,
+		Version:            version,
+		GoVersion:          goVersion,
+		Hostname:           hostname,
+		UptimeSeconds:      uptime,
+		ClockOffsetSeconds: clockOffset,
+		ScansTotal:         scans,
+		LastReportAt:       time.Now().UTC(),
+	})
+}
+
+// ListAgentStatus returns all fleet snapshots, stalest first.
+func (s *AgentCommandService) ListAgentStatus(ctx context.Context) ([]db.AgentStatus, error) {
+	return s.queries.ListAgentStatus(ctx)
 }
