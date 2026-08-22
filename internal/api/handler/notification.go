@@ -10,6 +10,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -253,7 +254,12 @@ func (h *NotificationHandler) TestChannel(w http.ResponseWriter, r *http.Request
 		Recipient: "test",
 	}
 
-	h.dispatcher.Dispatch(r.Context(), domain.ChannelType(ch.Type), ch.Config, payload, nil, ch.ID)
+	// Detach from the request lifecycle: the worker pool processes this job
+	// AFTER the HTTP response returns (async by design), and r.Context() is
+	// canceled the moment the response is written — a request-scoped ctx made
+	// every test-send fail before dialing AND made the result-log write fail
+	// ("context canceled"), so the notification_log row never appeared.
+	h.dispatcher.Dispatch(context.WithoutCancel(r.Context()), domain.ChannelType(ch.Type), ch.Config, payload, nil, ch.ID)
 
 	Success(w, map[string]string{"message": "test notification dispatched"})
 }
@@ -331,17 +337,30 @@ func (h *NotificationHandler) maskChannelPassword(ch *domain.ChannelResponse) *d
 	return ch
 }
 
-// maskChannelPasswordInPlace masks the SMTP password in the channel config if type is email.
+// maskChannelPasswordInPlace masks credential-bearing config fields before a
+// channel is serialized to a client: the SMTP password (email) plus the
+// chat-platform secrets (#284) — feishu sign secret, telegram bot token. The
+// dedicated enabled-toggle PATCH and the edit form's keep-if-blank convention
+// prevent masked values from ever being written back.
 func (h *NotificationHandler) maskChannelPasswordInPlace(ch *domain.ChannelResponse) {
-	if ch.Type == string(domain.ChannelTypeEmail) && len(ch.Config) > 0 {
-		var config map[string]interface{}
-		if json.Unmarshal(ch.Config, &config) == nil {
-			if _, ok := config["password"]; ok {
-				config["password"] = "*****"
-			}
-			if masked, err := json.Marshal(config); err == nil {
-				ch.Config = json.RawMessage(masked)
-			}
+	if len(ch.Config) == 0 {
+		return
+	}
+	var touched bool
+	var config map[string]interface{}
+	if json.Unmarshal(ch.Config, &config) != nil {
+		return
+	}
+	for _, f := range []string{"password", "secret", "bot_token"} {
+		if _, ok := config[f]; ok {
+			config[f] = "*****"
+			touched = true
 		}
+	}
+	if !touched {
+		return
+	}
+	if masked, err := json.Marshal(config); err == nil {
+		ch.Config = json.RawMessage(masked)
 	}
 }
