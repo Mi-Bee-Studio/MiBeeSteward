@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,8 +31,39 @@ import (
 	"mibee-steward/internal/service/scannerv2/taskservice"
 )
 
+// SchemaVersion is the current schema generation, stored in
+// PRAGMA user_version (#268). Bump it when adding a migration step to the
+// chain below; existing databases replay only when their recorded version is
+// lower (every step stays idempotent regardless, so a v0 database from before
+// this framework simply runs the whole chain once and gets stamped).
+const SchemaVersion = 1
+
 func runMigrations(db *sql.DB, dbPath string) error {
-	// Backup database before migration (only if file exists)
+	// Version gate (#268): a database already at SchemaVersion skips the whole
+	// chain — no pre-migration VACUUM INTO backup (previously taken on EVERY
+	// startup), no probe statements, no rebuild checks. Startup goes from
+	// "hundreds of idempotent statements" to one PRAGMA read.
+	var current int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&current); err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	switch {
+	case current == SchemaVersion:
+		slog.Info("schema already at version; migrations skipped",
+			"version", current)
+		return nil
+	case current > SchemaVersion:
+		// Downgraded binary against a newer schema. The chain below is
+		// idempotent but written for forward migration only — refuse rather
+		// than touch a newer database.
+		slog.Warn("database schema version is NEWER than this binary; skipping migrations",
+			"db_version", current, "binary_version", SchemaVersion)
+		return nil
+	}
+	slog.Info("running schema migrations", "from_version", current, "to_version", SchemaVersion)
+
+	// Backup database before migration (only if file exists) — now taken only
+	// when a migration will actually run (version gate above), not every boot.
 	if _, err := os.Stat(dbPath); err == nil {
 		backupPath := dbPath + ".pre-migration." + time.Now().Format("20060102-150405")
 		// VACUUM INTO cannot be parameterised, so sanitize the path to avoid
@@ -51,6 +83,29 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		// accumulating multi-hundred-MB copies next to the live DB. The
 		// scripts/backup.sh 7-day retention covers its own files, not these.
 		pruneOldBackups(filepath.Dir(dbPath), filepath.Base(dbPath)+".pre-migration.", 7*24*time.Hour)
+	}
+	// Count-based retention (#268): keep at most the 3 newest pre-migration
+	// backups regardless of age — a 7-day window still piles up ~50 copies on
+	// a daily-restart deployment, and each is a full multi-hundred-MB VACUUM.
+	pruneExcessBackups(filepath.Dir(dbPath), filepath.Base(dbPath)+".pre-migration.", 3)
+
+	// Pre-schema ALTERs (#268): schema.sql now carries idx_devices_ip_network
+	// and idx_scan_tasks_network, which reference the network_id columns that
+	// LEGACY databases only get from the migration chain below. Adding them
+	// before the schema apply lets both paths (fresh: schema.sql creates them
+	// inline; legacy: added here) satisfy the indexes. On a fresh empty DB
+	// both statements fail with "no such table" — tolerated, schema.sql
+	// creates everything a moment later.
+	for _, stmt := range []string{
+		`ALTER TABLE devices ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL`,
+		`ALTER TABLE scan_tasks ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			msg := err.Error()
+			if !strings.Contains(msg, "duplicate column name") && !strings.Contains(msg, "no such table") {
+				return fmt.Errorf("pre-schema migration %q: %w", stmt, err)
+			}
+		}
 	}
 
 	// Execute embedded schema directly
@@ -326,8 +381,36 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		}
 	}
 
-	slog.Info("database schema applied")
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
+		return fmt.Errorf("stamp schema version %d: %w", SchemaVersion, err)
+	}
+	slog.Info("database schema applied", "version", SchemaVersion)
 	return nil
+}
+
+// pruneExcessBackups deletes the oldest backups matching prefix until at most
+// keep remain. Backup filenames carry a sortable timestamp, so lexical order
+// is age order. Best-effort, like pruneOldBackups.
+func pruneExcessBackups(dir, prefix string, keep int) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	var matches []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), prefix) {
+			matches = append(matches, e.Name())
+		}
+	}
+	if len(matches) <= keep {
+		return
+	}
+	sort.Strings(matches) // oldest (lexically smallest timestamp) first
+	for _, name := range matches[:len(matches)-keep] {
+		if err := os.Remove(filepath.Join(dir, name)); err == nil {
+			slog.Info("pruned excess pre-migration backup", "file", name, "kept", keep)
+		}
+	}
 }
 
 // addDevicesGeneratedColumns adds the scan_attributes-derived generated columns

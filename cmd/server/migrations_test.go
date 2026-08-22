@@ -17,6 +17,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/testutil"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -237,6 +240,10 @@ func TestRunMigrations_ConvertsGoStringTimestamps(t *testing.T) {
 	_, err = db.Exec(`INSERT INTO host_services (ip, service, port, updated_at) VALUES ('10.0.0.1', 'http', 80, '2026-07-25 17:30:47.80315038 +0000 UTC')`)
 	require.NoError(t, err)
 
+	// Reset the version stamp so the gated chain replays (the conversion
+	// pass below is part of the migration chain; #268 skips stamped DBs).
+	_, resetErr := db.Exec(`PRAGMA user_version = 0`)
+	require.NoError(t, resetErr)
 	require.NoError(t, runMigrations(db, dbPath))
 
 	var devUpdated, svcUpdated string
@@ -316,4 +323,71 @@ func TestConvertDashboardConfigPosition(t *testing.T) {
 	var count int
 	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM dashboard_configs`).Scan(&count))
 	require.Equal(t, 2, count)
+}
+
+// TestSchemaEquivalence_FreshVsMigrated (#268): a brand-new database created
+// by schema.sql alone must be structurally identical to one that went through
+// the full migration chain. This is the CI assertion that keeps the two
+// schema sources (schema.sql for fresh installs, the chain for upgrades)
+// from drifting apart: table + index DDL compared name-by-name.
+func TestSchemaEquivalence_FreshVsMigrated(t *testing.T) {
+	fresh, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	defer fresh.Close()
+
+	// Migrated: empty file, chain runs end-to-end and stamps the version.
+	migPath := filepath.Join(t.TempDir(), "mig.db")
+	migrated, err := sql.Open("sqlite", migPath)
+	require.NoError(t, err)
+	defer migrated.Close()
+	require.NoError(t, runMigrations(migrated, migPath))
+
+	dump := func(db *sql.DB) map[string]string {
+		rows, err := db.Query(`SELECT type || ':' || name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name`)
+		require.NoError(t, err)
+		defer rows.Close()
+		out := map[string]string{}
+		for rows.Next() {
+			var k, v string
+			require.NoError(t, rows.Scan(&k, &v))
+			// Normalize whitespace so formatting differences don't mask as drift.
+			out[k] = strings.Join(strings.Fields(v), " ")
+		}
+		return out
+	}
+
+	freshDump, migDump := dump(fresh), dump(migrated)
+	require.Equal(t, len(freshDump), len(migDump),
+		"object count differs: fresh=%d migrated=%d", len(freshDump), len(migDump))
+	for k, v := range freshDump {
+		mv, ok := migDump[k]
+		require.True(t, ok, "object %s missing from migrated DB", k)
+		require.Equal(t, v, mv, "DDL drift on %s", k)
+	}
+}
+
+// TestRunMigrations_VersionGateSkipsStampedDB (#268): at SchemaVersion the
+// chain is skipped entirely — observable via user_version staying put and a
+// marker table (that only the chain would create on an empty DB) staying
+// absent. The gate must not re-run idempotent steps.
+func TestRunMigrations_VersionGateSkipsStampedDB(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "gate.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+
+	// First run: empty DB, full chain, stamps the version.
+	require.NoError(t, runMigrations(db, dbPath))
+	var v int
+	require.NoError(t, db.QueryRow(`PRAGMA user_version`).Scan(&v))
+	require.Equal(t, SchemaVersion, v)
+
+	// Drop a core table, then re-run: the gate must SKIP, leaving the drop in
+	// place (pre-gate behavior would have recreated it from schema.sql).
+	_, err = db.Exec(`DROP TABLE devices`)
+	require.NoError(t, err)
+	require.NoError(t, runMigrations(db, dbPath))
+	var count int
+	require.NoError(t, db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name='devices'`).Scan(&count))
+	require.Equal(t, 0, count, "gated run must not re-apply schema.sql")
 }
