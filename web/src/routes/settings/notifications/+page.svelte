@@ -36,7 +36,15 @@
 		password?: string;
 		from?: string;
 		to?: string;
+		secret?: string;
+		bot_token?: string;
+		chat_id?: string;
 	}
+
+	type ChannelFormType = 'webhook' | 'email' | 'feishu' | 'wecom' | 'telegram' | 'discord';
+	// The four chat-platform channels all POST to a bot webhook URL — they
+	// share formUrl, differing only in their optional per-platform extras.
+	const urlFormTypes: ChannelFormType[] = ['webhook', 'feishu', 'wecom', 'discord'];
 
 	interface Channel {
 		id: number;
@@ -64,12 +72,18 @@
 
 	// Form fields
 	let formName = $state('');
-	let formType = $state<'webhook' | 'email'>('webhook');
+	let formType = $state<ChannelFormType>('webhook');
 	let formEnabled = $state(true);
 
-	// Webhook fields
+	// Webhook fields (also the URL for feishu/wecom/discord bots)
 	let formUrl = $state('');
 	let formHeaders = $state<{ key: string; value: string }[]>([{ key: '', value: '' }]);
+
+	// Chat-platform extras
+	let formFeishuSecret = $state('');
+	let formTelegramBotToken = $state('');
+	let formTelegramChatID = $state('');
+	let formDiscordUsername = $state('');
 
 	// Email fields
 	let formSmtpHost = $state('');
@@ -103,6 +117,7 @@
 	let formSnapshot = $state('');
 	function snapshotForm(): string {
 		return JSON.stringify([formName, formType, formEnabled, formUrl, formHeaders,
+			formFeishuSecret, formTelegramBotToken, formTelegramChatID, formDiscordUsername,
 			formSmtpHost, formSmtpPort, formSmtpUsername, formSmtpPassword,
 			formFromAddress, formToAddress]);
 	}
@@ -114,6 +129,10 @@
 		formEnabled = true;
 		formUrl = '';
 		formHeaders = [{ key: '', value: '' }];
+		formFeishuSecret = '';
+		formTelegramBotToken = '';
+		formTelegramChatID = '';
+		formDiscordUsername = '';
 		formSmtpHost = '';
 		formSmtpPort = 587;
 		formSmtpUsername = '';
@@ -132,33 +151,45 @@
 	function openEdit(channel: Channel) {
 		editingChannel = channel;
 		formName = channel.name;
-		formType = channel.type as 'webhook' | 'email';
+		formType = channel.type as ChannelFormType;
 		formEnabled = channel.enabled;
 
-		if (channel.type === 'webhook') {
-			const cfg = channel.config as ChannelConfig;
+		const cfg = channel.config as ChannelConfig;
+		// Reset every conditional block first, then fill the active type —
+		// switching between channel types in the edit modal must not leak
+		// another type's values into the saved config.
+		formUrl = '';
+		formHeaders = [{ key: '', value: '' }];
+		formFeishuSecret = '';
+		formTelegramBotToken = '';
+		formTelegramChatID = '';
+		formDiscordUsername = '';
+		formSmtpHost = '';
+		formSmtpPort = 587;
+		formSmtpUsername = '';
+		formSmtpPassword = ''; // masked, leave blank to keep
+		formFromAddress = '';
+		formToAddress = '';
+
+		if (urlFormTypes.includes(formType)) {
 			formUrl = cfg.url || '';
-			const hdrs = cfg.headers || {};
-			const entries = Object.entries(hdrs);
-			formHeaders = entries.length > 0
-				? entries.map(([key, value]) => ({ key, value }))
-				: [{ key: '', value: '' }];
-			formSmtpHost = '';
-			formSmtpPort = 587;
-			formSmtpUsername = '';
-			formSmtpPassword = '';
-			formFromAddress = '';
-			formToAddress = '';
+			if (formType === 'webhook') {
+				const entries = Object.entries(cfg.headers || {});
+				formHeaders = entries.length > 0
+					? entries.map(([key, value]) => ({ key, value }))
+					: [{ key: '', value: '' }];
+			}
+			if (formType === 'feishu') formFeishuSecret = cfg.secret || '';
+			if (formType === 'discord') formDiscordUsername = cfg.username || '';
+		} else if (formType === 'telegram') {
+			formTelegramBotToken = cfg.bot_token || '';
+			formTelegramChatID = cfg.chat_id || '';
 		} else {
-			const cfg = channel.config as ChannelConfig;
 			formSmtpHost = cfg.host || '';
 			formSmtpPort = cfg.port || 587;
 			formSmtpUsername = cfg.username || '';
-			formSmtpPassword = ''; // masked, leave blank to keep
 			formFromAddress = cfg.from || '';
 			formToAddress = cfg.to || '';
-			formUrl = '';
-			formHeaders = [{ key: '', value: '' }];
 		}
 
 		formSnapshot = snapshotForm();
@@ -186,6 +217,22 @@
 			}
 			return { url: formUrl, headers };
 		}
+		if (formType === 'feishu') {
+			const cfg: Record<string, unknown> = { url: formUrl };
+			if (formFeishuSecret.trim()) cfg.secret = formFeishuSecret.trim();
+			return cfg;
+		}
+		if (formType === 'wecom') {
+			return { url: formUrl };
+		}
+		if (formType === 'telegram') {
+			return { bot_token: formTelegramBotToken.trim(), chat_id: formTelegramChatID.trim() };
+		}
+		if (formType === 'discord') {
+			const cfg: Record<string, unknown> = { url: formUrl };
+			if (formDiscordUsername.trim()) cfg.username = formDiscordUsername.trim();
+			return cfg;
+		}
 		const cfg: Record<string, unknown> = {
 			host: formSmtpHost,
 			port: formSmtpPort,
@@ -203,8 +250,9 @@
 		e.preventDefault();
 
 		// Validate the channel via notificationChannelSchema. The schema is flat
-		// (form state is flat); type-conditional required fields (webhook url /
-		// email host+from+to) are enforced by the refine on full-form validation.
+		// (form state is flat); type-conditional required fields (webhook-family
+		// url / email host+from+to / telegram token+chat) are enforced by the
+		// refine on full-form validation.
 		const validation = validateForm(notificationChannelSchema, {
 			name: formName,
 			type: formType,
@@ -212,7 +260,9 @@
 			smtp_host: formSmtpHost,
 			smtp_port: formSmtpPort,
 			smtp_from: formFromAddress,
-			smtp_to: formToAddress
+			smtp_to: formToAddress,
+			telegram_bot_token: formTelegramBotToken,
+			telegram_chat_id: formTelegramChatID
 		});
 		if (!validation.valid) {
 			fieldErrors = validation.errors;
@@ -800,12 +850,16 @@
 					focus:border-primary focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
 			>
 				<option value="webhook">{m["notifications.Webhook"]()}</option>
+				<option value="feishu">{m["notifications.Feishu"]()}</option>
+				<option value="wecom">{m["notifications.WeCom"]()}</option>
+				<option value="telegram">{m["notifications.Telegram"]()}</option>
+				<option value="discord">{m["notifications.Discord"]()}</option>
 				<option value="email">{m["notifications.Email"]()}</option>
 			</select>
 		</div>
 
-		<!-- Webhook config -->
-		{#if formType === 'webhook'}
+		<!-- URL field shared by webhook + the chat-platform bot webhooks -->
+		{#if urlFormTypes.includes(formType)}
 			<div>
 				<label class="block text-xs text-text-muted mb-1">{m["notifications.Webhook URL"]()} *</label>
 				<input
@@ -826,6 +880,84 @@
 					<p class="mt-1 text-xs text-error">{fieldErrors.webhook_url}</p>
 				{/if}
 			</div>
+		{/if}
+
+		<!-- Feishu sign secret (optional) -->
+		{#if formType === 'feishu'}
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m["notifications.Sign Secret"]()}</label>
+				<input
+					bind:value={formFeishuSecret}
+					type="password"
+					autocomplete="off"
+					placeholder={m["notifications.Sign Secret Placeholder"]()}
+					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+						focus:outline-none focus:border-primary transition-colors"
+				/>
+			</div>
+		{/if}
+
+		<!-- Discord bot username override (optional) -->
+		{#if formType === 'discord'}
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m["notifications.Bot Username"]()}</label>
+				<input
+					bind:value={formDiscordUsername}
+					type="text"
+					placeholder="MiBee Steward"
+					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+						focus:outline-none focus:border-primary transition-colors"
+				/>
+			</div>
+		{/if}
+
+		<!-- Telegram bot credentials -->
+		{#if formType === 'telegram'}
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m["notifications.Bot Token"]()} *</label>
+				<input
+					bind:value={formTelegramBotToken}
+					type="password"
+					autocomplete="off"
+					required
+					placeholder={m["notifications.Bot Token Placeholder"]()}
+					onblur={() => {
+						const r = validateField(notificationChannelSchema, 'telegram_bot_token', formTelegramBotToken);
+						fieldErrors = r.valid
+							? (() => { const { telegram_bot_token: _, ...rest } = fieldErrors; return rest; })()
+							: { ...fieldErrors, telegram_bot_token: r.error ?? '' };
+					}}
+					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+						focus:outline-none focus:border-primary transition-colors {fieldErrors.telegram_bot_token ? '!border-error' : ''}"
+				/>
+				{#if fieldErrors.telegram_bot_token}
+					<p class="mt-1 text-xs text-error">{fieldErrors.telegram_bot_token}</p>
+				{/if}
+			</div>
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m["notifications.Chat ID"]()} *</label>
+				<input
+					bind:value={formTelegramChatID}
+					type="text"
+					required
+					placeholder={m["notifications.Chat ID Placeholder"]()}
+					onblur={() => {
+						const r = validateField(notificationChannelSchema, 'telegram_chat_id', formTelegramChatID);
+						fieldErrors = r.valid
+							? (() => { const { telegram_chat_id: _, ...rest } = fieldErrors; return rest; })()
+							: { ...fieldErrors, telegram_chat_id: r.error ?? '' };
+					}}
+					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+						focus:outline-none focus:border-primary transition-colors {fieldErrors.telegram_chat_id ? '!border-error' : ''}"
+				/>
+				{#if fieldErrors.telegram_chat_id}
+					<p class="mt-1 text-xs text-error">{fieldErrors.telegram_chat_id}</p>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Webhook custom headers (generic webhook only) -->
+		{#if formType === 'webhook'}
 			<div>
 				<div class="flex items-center justify-between mb-1">
 					<label class="text-xs text-text-muted">{m["notifications.Headers"]()}</label>

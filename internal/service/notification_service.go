@@ -49,7 +49,7 @@ func (s *NotificationService) CreateChannel(ctx context.Context, req domain.Crea
 	if req.Name == "" {
 		return nil, fmt.Errorf("%w: name is required", ErrInvalidChannelConfig)
 	}
-	if req.Type != domain.ChannelTypeWebhook && req.Type != domain.ChannelTypeEmail {
+	if !domain.IsValidChannelType(req.Type) {
 		return nil, fmt.Errorf("%w: invalid type %q", ErrInvalidChannelConfig, req.Type)
 	}
 
@@ -117,6 +117,9 @@ func (s *NotificationService) UpdateChannel(ctx context.Context, id int64, req d
 
 	chType := existing.Type
 	if req.Type != nil {
+		if !domain.IsValidChannelType(*req.Type) {
+			return nil, fmt.Errorf("%w: invalid type %q", ErrInvalidChannelConfig, *req.Type)
+		}
 		chType = string(*req.Type)
 	}
 

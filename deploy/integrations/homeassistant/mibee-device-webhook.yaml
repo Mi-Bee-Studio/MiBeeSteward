@@ -1,0 +1,41 @@
+# Home Assistant × MiBee Steward integration example (#284).
+#
+# Two pieces:
+#   1. rest_command — HA can push actions to MiBee's REST API with a read-only
+#      JWT (e.g. trigger a scan from an HA automation).
+#   2. automation — MiBee's generic-webhook notification channel POSTs to HA's
+#      webhook trigger; HA reacts (here: push a notification when a device is
+#      lost).
+#
+# Install: copy the rest_command block into configuration.yaml (or a dedicated
+# include), and the automation package under automations/ or packages/.
+# Replace the placeholders: <MIBEE_HOST>, <MIBEE_TOKEN>.
+
+rest_command:
+  mibee_trigger_scan:
+    url: "http://<MIBEE_HOST>:8080/api/v1/scanner/tasks/1/trigger"
+    method: POST
+    headers:
+      Authorization: "Bearer <MIBEE_TOKEN>"
+      Content-Type: "application/json"
+    payload: "{}"
+
+automation:
+  - id: mibee_device_notifications
+    alias: "MiBee device change webhook"
+    description: "Receives MiBee Steward notification-channel webhooks and notifies on device_lost."
+    trigger:
+      - platform: webhook
+        webhook_id: mibee_notifications
+        allowed_methods: [POST]
+    condition:
+      - condition: template
+        value_template: "{{ trigger.json.metadata.event_type == 'device_lost' }}"
+    action:
+      - service: notify.persistent_notification
+        data:
+          title: "MiBee: 设备离线 / Device lost"
+          message: >
+            {{ trigger.json.metadata.device_name }} ({{ trigger.json.metadata.ip_address }})
+            was lost at {{ trigger.json.metadata.detected_at }}.
+    mode: queued

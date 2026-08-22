@@ -808,7 +808,20 @@
 		"Select Network": "选择网络",
 		"Select Device": "选择设备",
 		"No Channels For Rules": "请先创建通知渠道",
-		"No Channels For Rules Desc": "规则需要一个投递渠道。请先在「渠道」标签页创建一个。"
+		"No Channels For Rules Desc": "规则需要一个投递渠道。请先在「渠道」标签页创建一个。",
+		"Feishu": "飞书",
+		"WeCom": "企业微信",
+		"Telegram": "Telegram",
+		"Discord": "Discord",
+		"Sign Secret": "签名校验密钥（可选）",
+		"Sign Secret Placeholder": "留空则不启用签名校验",
+		"Bot Token": "Bot Token",
+		"Bot Token Placeholder": "123456:ABC-DEF...",
+		"Chat ID": "Chat ID",
+		"Chat ID Placeholder": "-1001234567890",
+		"Bot Username": "机器人名称（可选）",
+		"Bot Token Required": "Telegram Bot Token 为必填项",
+		"Chat ID Required": "Telegram Chat ID 为必填项"
 	},
 	"snmpCredentials": {
 		"Title": "SNMP 凭据",
