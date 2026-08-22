@@ -41,3 +41,40 @@ func (q *Queries) DeleteServiceEvidenceOlderThanBatched(ctx context.Context, arg
 	}
 	return result.RowsAffected()
 }
+
+const insertServiceEvidence = `-- name: InsertServiceEvidence :exec
+INSERT INTO service_evidence (ip, device_uuid, source, kind, port, protocol, raw_data, confidence, observed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS TEXT))
+`
+
+type InsertServiceEvidenceParams struct {
+	Ip         string  `json:"ip"`
+	DeviceUuid string  `json:"device_uuid"`
+	Source     string  `json:"source"`
+	Kind       string  `json:"kind"`
+	Port       int64   `json:"port"`
+	Protocol   string  `json:"protocol"`
+	RawData    string  `json:"raw_data"`
+	Confidence float64 `json:"confidence"`
+	Column9    string  `json:"column_9"`
+}
+
+// One raw evidence row (scannerv2/store RecordEvidence, #269: moved to
+// sqlc so CI sqlc-verify guards the schema binding). observed_at is bound
+// as RFC3339 text by the caller (scannerv2.DBTime; NEVER time.Time, whose
+// String() form breaks SQLite date(), see #257). The CAST names the bind as
+// text; sqlc names positional cast params ColumnN.
+func (q *Queries) InsertServiceEvidence(ctx context.Context, arg InsertServiceEvidenceParams) error {
+	_, err := q.db.ExecContext(ctx, insertServiceEvidence,
+		arg.Ip,
+		arg.DeviceUuid,
+		arg.Source,
+		arg.Kind,
+		arg.Port,
+		arg.Protocol,
+		arg.RawData,
+		arg.Confidence,
+		arg.Column9,
+	)
+	return err
+}

@@ -15,3 +15,12 @@ DELETE FROM service_evidence
 WHERE rowid IN (
     SELECT rowid FROM service_evidence WHERE service_evidence.observed_at < ? LIMIT ?
 );
+
+-- name: InsertServiceEvidence :exec
+-- One raw evidence row (scannerv2/store RecordEvidence, #269: moved to
+-- sqlc so CI sqlc-verify guards the schema binding). observed_at is bound
+-- as RFC3339 text by the caller (scannerv2.DBTime; NEVER time.Time, whose
+-- String() form breaks SQLite date(), see #257). The CAST names the bind as
+-- text; sqlc names positional cast params ColumnN.
+INSERT INTO service_evidence (ip, device_uuid, source, kind, port, protocol, raw_data, confidence, observed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS TEXT));
