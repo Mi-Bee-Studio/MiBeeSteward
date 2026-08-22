@@ -247,6 +247,30 @@ func doctor(args []string) int {
 		checks = append(checks, doctorCheck{name: "center reachable", status: "skip", detail: "not an agent config (center.url unset)"})
 	}
 
+	// ICMP capability (#288): the scanner and heartbeat use unprivileged
+	// ICMP (pro-bing SetPrivileged(false)) — datagram ping sockets require
+	// the group to be inside /proc/sys/net/ipv4/ping_group_range. The OpenWrt
+	// default "1 0" (disabled) leaves every probe "permission denied".
+	if raw, err := os.ReadFile("/proc/sys/net/ipv4/ping_group_range"); err == nil {
+		var lo, hi int
+		if n, _ := fmt.Sscanf(strings.TrimSpace(string(raw)), "%d %d", &lo, &hi); n == 2 {
+			gid := os.Getgid()
+			switch {
+			case lo > hi:
+				checks = append(checks, doctorCheck{name: "icmp ping_group_range", status: "fail",
+					detail:  fmt.Sprintf("disabled (%s) — unprivileged ICMP probes will fail", strings.TrimSpace(string(raw))),
+					fixHint: `echo "0 2147483647" > /proc/sys/net/ipv4/ping_group_range (or add to sysctl.d; required for ICMP without root)`})
+			case gid >= lo && gid <= hi:
+				checks = append(checks, doctorCheck{name: "icmp ping_group_range", status: "ok",
+					detail: fmt.Sprintf("gid %d within [%d %d]", gid, lo, hi)})
+			default:
+				checks = append(checks, doctorCheck{name: "icmp ping_group_range", status: "warn",
+					detail:  fmt.Sprintf("service gid %d outside [%d %d]", gid, lo, hi),
+					fixHint: "widen ping_group_range or run the service under a covered group"})
+			}
+		}
+	}
+
 	printReport(checks)
 	for _, c := range checks {
 		if c.status == "fail" {
