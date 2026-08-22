@@ -32,6 +32,7 @@ import (
 	"mibee-steward/internal/dbopen"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
+	"mibee-steward/internal/service/demoseed"
 	"mibee-steward/internal/service/notification"
 	probetarget "mibee-steward/internal/service/probetarget"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
@@ -50,6 +51,9 @@ import (
 
 // NewRouter creates and returns the main HTTP router with all routes registered.
 // It requires the database connection and configuration to set up auth and user routes.
+// demoActivity stops with the router cleanup (#285).
+var demoActivity *demoseed.Activity
+
 func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.HeartbeatService, func()) {
 	r := chi.NewMux()
 
@@ -131,8 +135,35 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Use(middleware.CSRF)
 	r.Use(globalLimiter.Middleware)
 
-	// API routes (public: health, login, metrics, sd)
+	// API routes (public: health, login, metrics, sd, demo status)
 	r.Get("/api/v1/health", handler.HealthHandler(dbConn))
+
+	// Demo mode (#285): on an EMPTY database the first boot seeds the
+	// fictional inventory (RFC 5737 TEST-NET ranges only — never a real
+	// network) and an activity ticker keeps the dashboard moving. /demo/status
+	// is public so the SPA can show the banner pre-login; wiping is admin.
+	if cfg.Server.DemoMode {
+		if demoseed.IsDemoEmpty(dbConn) {
+			if err := demoseed.Seed(context.Background(), dbConn, slog.Default()); err != nil {
+				slog.Warn("demo seed failed", "error", err)
+			}
+		} else {
+			slog.Info("demo mode active; database not empty, skipping seed")
+		}
+		demoActivity = demoseed.StartActivity(dbConn, slog.Default())
+		r.Get("/api/v1/demo/status", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"demo": true}`))
+		})
+		r.With(middleware.RequireCapability(domain.CapDeviceWrite)).Post("/api/v1/demo/wipe", func(w http.ResponseWriter, req *http.Request) {
+			if err := demoseed.Wipe(req.Context(), dbConn); err != nil {
+				handler.Error(w, http.StatusInternalServerError, "failed to wipe demo data")
+				return
+			}
+			handler.Success(w, map[string]string{"message": "demo data wiped; scan a real subnet to populate the inventory"})
+		})
+		slog.Info("demo mode enabled — fictional inventory seeded, activity ticker running")
+	}
 
 	r.Route("/api/v1/auth", func(r chi.Router) {
 		r.Use(loginLimiter.Middleware)
@@ -1003,6 +1034,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Mount("/", spaHandler)
 
 	return r, heartbeatSvc, func() {
+		if demoActivity != nil {
+			demoActivity.Stop()
+		}
 		if scanScheduler != nil {
 			scanScheduler.Stop()
 		}

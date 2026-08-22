@@ -1312,5 +1312,11 @@
 		"Draft Title": "Fingerprint rule draft",
 		"Draft Device": "Generated for",
 		"Download": "Download YAML"
+	},
+	"demo": {
+		"Banner": "Demo mode — the inventory below is fictional seed data (documentation IP ranges) with simulated activity.",
+		"Wipe": "Clear demo data",
+		"Wiped": "Demo data cleared — scan a real subnet to build your inventory",
+		"Wipe Failed": "Failed to clear demo data (admin only)"
 	}
 }
