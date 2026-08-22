@@ -643,8 +643,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// tagged with that network so multi-LAN data coexists without collision.
 	// Routed on the top-level mux (separate from /agents/tokens) so the two auth
 	// regimes don't interfere.
-	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn)
-	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries, service.NewAgentCommandService(scanQueries))
+	agentCmdSvc := service.NewAgentCommandService(scanQueries, cfg.AgentFleet.RemoteOpsEnabled)
+	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn, agentCmdSvc)
+	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries, agentCmdSvc, auditRepo)
 	r.Route("/api/v1/agents", func(r chi.Router) {
 		r.Use(middleware.RequireAgentToken)
 		r.Post("/report", agentReportHandler.Report)
@@ -664,6 +665,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Post("/", agentCommandHandler.Create)
 	})
 	r.With(middleware.RequireCapability(domain.CapAgentManage)).Get("/api/v1/agents/commands/all", agentCommandHandler.ListAll)
+	// Fleet-observability table (#278): version / uptime / clock offset /
+	// last-report per agent. CapAgentManage (the agents capability — viewer
+	// roles already see device-derived data elsewhere; this is admin-plane
+	// fleet telemetry).
+	r.With(middleware.RequireCapability(domain.CapAgentManage)).Get("/api/v1/agents/status", agentCommandHandler.FleetStatus)
 
 	// --- Change history query (Phase 3) ---
 	// GET /api/v1/changes returns the device_added/changed/lost event stream

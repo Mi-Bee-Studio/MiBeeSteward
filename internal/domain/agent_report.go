@@ -36,12 +36,30 @@ type AgentReport struct {
 	// 1/2 CIDR gates can authoritatively enforce the subnet boundary. The token
 	// still binds network_id; this field only supplies the cidr geometry.
 	NetworkCIDR string `json:"network_cidr,omitempty"`
-	// ScannedAt is when the agent ran this scan batch.
+	// ScannedAt is when the agent ran this scan batch. The center also uses it
+	// (minus its receive time) as the agent clock-skew approximation (#278).
 	ScannedAt time.Time `json:"scanned_at"`
+	// Meta is the fleet-observability block (#278): build/runtime identity and
+	// process health, refreshed by the center into agent_status on every
+	// report. Nil on agents older than this field (center keeps the last known
+	// values).
+	Meta *AgentMeta `json:"meta,omitempty"`
 	// Hosts is the set of alive hosts discovered in this batch. Dead hosts are
 	// omitted (the agent reports presence, not absence — change-detection lives
 	// at the center).
 	Hosts []ReportedHost `json:"hosts"`
+}
+
+// AgentMeta is the self-description every agent ships with its reports: what
+// build it runs, on what host, for how long. It is the difference between
+// "some agent stopped reporting" and "agent-62 v0.5.1 on brume2 has been up
+// 6h and is 40s behind the center clock" (#278).
+type AgentMeta struct {
+	Version    string `json:"version,omitempty"`     // mibee-agent build version
+	GoVersion  string `json:"go_version,omitempty"`  // runtime.Version()
+	Hostname   string `json:"hostname,omitempty"`    // os.Hostname — where it runs
+	UptimeSec  int64  `json:"uptime_sec,omitempty"`  // process uptime
+	ScansTotal int64  `json:"scans_total,omitempty"` // cumulative report batches shipped
 }
 
 // ReportedHost is one alive host in an AgentReport. Fields mirror what the

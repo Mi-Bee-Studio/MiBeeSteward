@@ -56,7 +56,7 @@ func setupAgentIngestServer(t *testing.T) (srv *httptest.Server, db *sql.DB, tok
 	// which uses dbConn directly (heartbeat seeding no-ops when heartbeat is nil).
 	rn := scannerv2runner.New(nil, queries, db, nil, 0, nil)
 	rn.SetRepo(store.NewSQLiteRepository(db, store.Options{}, nil)) // agent reports carry a per-call networkID
-	agentReportHandler := handler.NewAgentReportHandler(rn, queries, db)
+	agentReportHandler := handler.NewAgentReportHandler(rn, queries, db, nil)
 
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
@@ -295,7 +295,7 @@ func TestAgentReport_BackfillNetworkCIDR(t *testing.T) {
 
 	rn := scannerv2runner.New(nil, queries, dbConn, nil, 0, nil)
 	rn.SetRepo(store.NewSQLiteRepository(dbConn, store.Options{}, nil))
-	h := handler.NewAgentReportHandler(rn, queries, dbConn)
+	h := handler.NewAgentReportHandler(rn, queries, dbConn, nil)
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.Recoverer)

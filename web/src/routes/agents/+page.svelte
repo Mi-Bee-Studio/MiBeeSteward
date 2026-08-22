@@ -35,6 +35,20 @@
 	let loading = $state(true);
 	let error = $state('');
 
+	// --- Fleet status (#278): version / uptime / clock offset / last report ---
+	interface FleetStatus {
+		agent_id: string;
+		version: string;
+		go_version: string;
+		hostname: string;
+		uptime_seconds: number;
+		clock_offset_seconds: number;
+		scans_total: number;
+		last_report_at: string;
+	}
+	let fleetStatus = $state<Record<string, FleetStatus>>({});
+	let fleetTimer: ReturnType<typeof setInterval> | null = null;
+
 	// --- Command history ---
 	let commands = $state<AgentCommand[]>([]);
 	let commandsTotal = $state(0);
@@ -83,14 +97,29 @@
 		fetchTokens();
 		fetchNetworks();
 		fetchCommands();
+		fetchFleetStatus();
 		// Poll the command queue so the admin sees status transitions
 		// (pending → acknowledged → done/failed) without a manual refresh.
 		commandPollTimer = setInterval(fetchCommands, 10000);
+		// Fleet status rides on the agent report cadence (~30s).
+		fleetTimer = setInterval(fetchFleetStatus, 30000);
 	});
 
 	onDestroy(() => {
 		if (commandPollTimer) clearInterval(commandPollTimer);
+		if (fleetTimer) clearInterval(fleetTimer);
 	});
+
+	async function fetchFleetStatus() {
+		try {
+			const res = await api.get<{ agents: FleetStatus[]; total: number }>('/agents/status');
+			const map: Record<string, FleetStatus> = {};
+			for (const a of res.agents || []) map[a.agent_id] = a;
+			fleetStatus = map;
+		} catch {
+			// Non-critical — the columns just show '-'.
+		}
+	}
 
 	async function fetchCommands() {
 		commandsLoading = true;
@@ -248,6 +277,35 @@
 		}
 	}
 
+	// --- Remote ops (#278) ---
+	// Double-gated: the CENTER switch (agent_fleet.remote_ops_enabled, 403 from
+	// the API when off) AND the agent's own opt-in. The commands table below
+	// shows execution outcomes (incl. the agent's refusal reason).
+	let opsConfirmOpen = $state(false);
+	let opsConfirmCommand = $state('');
+	let opsConfirmAgent = $state('');
+
+	function sendOpsCommand(agentId: string, command: string) {
+		if (command === 'logs-tail') {
+			// Read-only — no confirmation needed.
+			enqueueOps(agentId, command);
+			return;
+		}
+		opsConfirmAgent = agentId;
+		opsConfirmCommand = command;
+		opsConfirmOpen = true;
+	}
+
+	async function enqueueOps(agentId: string, command: string) {
+		try {
+			await api.post(`/agents/${agentId}/commands/`, { command, payload: {} });
+			addToast('success', m['agents.Command Enqueued']({ command }));
+			fetchCommands();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
 	// --- Helpers ---
 	function timeAgo(iso?: string | null): string {
 		if (!iso) return '-';
@@ -323,6 +381,35 @@
 				const v = row.last_used_at as string | null | undefined;
 				if (!v) return html`<span class="text-text-muted">-</span>`;
 				return html`<span class="text-text-muted text-xs">${timeAgo(v)}</span>`;
+			}
+		},
+		{
+			key: 'fleet_version',
+			label: m['agents.Fleet Version'](),
+			render: (row: Record<string, unknown>) => {
+				const st = fleetStatus[row.agent_id as string];
+				return html`<span class="text-xs font-mono ${st?.version ? 'text-text' : 'text-text-muted'}">${st?.version || '-'}</span>`;
+			}
+		},
+		{
+			key: 'fleet_offset',
+			label: m['agents.Fleet Offset'](),
+			render: (row: Record<string, unknown>) => {
+				const st = fleetStatus[row.agent_id as string];
+				if (!st) return html`<span class="text-text-muted">-</span>`;
+				const off = st.clock_offset_seconds;
+				// >60s behind or ahead of the center clock → warn color.
+				const cls = Math.abs(off) > 60 ? 'text-warning' : 'text-text-muted';
+				const sign = off >= 0 ? '+' : '';
+				return html`<span class="text-xs font-mono ${cls}">${sign}${off.toFixed(0)}s</span>`;
+			}
+		},
+		{
+			key: 'fleet_uptime',
+			label: m['agents.Fleet Uptime'](),
+			render: (row: Record<string, unknown>) => {
+				const st = fleetStatus[row.agent_id as string];
+				return html`<span class="text-xs font-mono ${st ? 'text-text-muted' : 'text-text-muted'}">${st ? timeAgo(st.last_report_at) : '-'}</span>`;
 			}
 		},
 		{
@@ -459,11 +546,26 @@
 							{#if token}
 								{@const isRevoked = !!token.revoked_at}
 								{#if !isRevoked}
-									<div class="flex items-center gap-2">
+									<div class="flex items-center gap-1.5 flex-wrap">
 										<button
 											onclick={() => openScan(String(token.agent_id))}
 											class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
 										>{m['agents.Trigger Scan']()}</button>
+										{#if isAdmin}
+											<button
+												onclick={() => sendOpsCommand(String(token.agent_id), 'logs-tail')}
+												class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors"
+												title={m['agents.Logs Tail Hint']()}
+											>{m['agents.Logs Tail']()}</button>
+											<button
+												onclick={() => sendOpsCommand(String(token.agent_id), 'config-reload')}
+												class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors"
+											>{m['agents.Config Reload']()}</button>
+											<button
+												onclick={() => sendOpsCommand(String(token.agent_id), 'restart')}
+												class="text-xs px-2 py-1 rounded text-warning hover:bg-warning/10 transition-colors"
+											>{m['agents.Restart']()}</button>
+										{/if}
 										<button
 											onclick={() => openRevoke(token)}
 											class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors"
@@ -656,6 +758,17 @@
 	confirmVariant="danger"
 	onConfirm={confirmRevoke}
 	onCancel={() => { revokeTarget = null; }}
+/>
+
+<!-- Remote-ops confirm (restart / config-reload) -->
+<ConfirmDialog
+	bind:open={opsConfirmOpen}
+	title={m['agents.Ops Confirm Title']()}
+	message={m['agents.Ops Confirm Message']({ command: opsConfirmCommand, agentId: opsConfirmAgent })}
+	confirmLabel={m['common.Confirm']()}
+	confirmVariant="danger"
+	onConfirm={() => { enqueueOps(opsConfirmAgent, opsConfirmCommand); }}
+	onCancel={() => { opsConfirmAgent = ''; opsConfirmCommand = ''; }}
 />
 
 <!-- Trigger Scan Modal -->

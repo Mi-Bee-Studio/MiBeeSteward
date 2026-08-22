@@ -146,6 +146,19 @@ sudo mibee-agent -config /etc/mibee/agent.yaml
 
 命令是**尽力而为**的：采集器离线期间入队的命令不会过期，恢复连接后在下个轮询周期执行。
 
+## 舰队管理（#278）
+
+每份 agent 上报都携带元信息块 —— 构建版本、Go 版本、主机名、进程运行时长、累计上报批次数 —— 中心将其连同**时钟偏移**近似值（上报时间戳与接收时间之差）写入 `agent_status` 表。**Agents 页面**展示这些舰队遥测：每个 agent 的版本、时钟偏移（超过 ±60s 高亮）、最后上报时间，与既有 token 状态并列。
+
+### 远程运维
+
+命令通道还承载一个运维命令族 —— `restart` / `config-reload` / `logs-tail` —— 作用于 agent **进程**而非网络：
+
+- **双重门控**：中心侧未开启 `agent_fleet.remote_ops_enabled: true` 时拒绝入队，agent 自身未开启 `center.remote_ops_enabled: true` 时拒绝执行。任一侧都能阻止运维命令。
+- 每次成功入队都有**审计日志**（`agent.ops_command`，含操作用户）。
+- `restart` / `config-reload` 重执行 agent 二进制（配置在构造时消费，重执行是唯一忠实的重载）。`logs-tail` 返回 agent 内存环形缓冲中最近 ≤50 行日志 —— 结果落在 Agents 页的命令历史里。
+- 在 systemd/procd 下重执行即干净重启；裸 shell 会话下进程以相同参数回来。
+
 ## 运维
 
 ### 监控
