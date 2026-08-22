@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/dbopen"
 )
 
 // HeartbeatStore is the dedicated time-series store for heartbeat_results AND
@@ -39,7 +40,7 @@ import (
 // Reads (history, stats, isDue, liveness ratio) go through the same *sql.DB via
 // sqlc Queries, so the read path is unchanged from the caller's perspective.
 type HeartbeatStore struct {
-	db       *sql.DB          // dedicated connection to heartbeat.db
+	db       dbopen.BusyRetry // dedicated connection to heartbeat.db, BUSY-retry wrapped (#267)
 	queries  *db.Queries      // sqlc queries bound to the dedicated connection
 	ch       chan resultRow   // per-config probe results
 	liveCh   chan livenessRow // per-device verdict samples
@@ -139,6 +140,12 @@ func OpenHeartbeatStore(dbPath string) (*HeartbeatStore, error) {
 	conn.SetMaxOpenConns(1)
 	conn.SetMaxIdleConns(1)
 
+	// BUSY retry + metrics wrapper (#267): the single-writer design makes
+	// contention rare here, but retention sweeps + flushes + the center's
+	// reads share the file — a write that outlived busy_timeout used to fail
+	// silently.
+	wrapped := dbopen.WrapBusyRetry(conn, "heartbeat")
+
 	// Pragmas tuned for a high-volume append-only workload: NORMAL sync (safe
 	// under WAL, faster commits), a smaller cache (this DB is bounded by
 	// retention sweep), and frequent WAL checkpoints so the -wal file doesn't
@@ -161,8 +168,8 @@ func OpenHeartbeatStore(dbPath string) (*HeartbeatStore, error) {
 	}
 
 	s := &HeartbeatStore{
-		db:      conn,
-		queries: db.New(conn),
+		db:      *wrapped,
+		queries: db.New(wrapped),
 		ch:      make(chan resultRow, channelBuffer),
 		liveCh:  make(chan livenessRow, channelBuffer),
 		done:    make(chan struct{}),
@@ -217,8 +224,9 @@ func (s *HeartbeatStore) EnqueueLiveness(r livenessRow) {
 func (s *HeartbeatStore) Queries() *db.Queries { return s.queries }
 
 // DB returns the underlying connection (used by the cleanup sweeper for raw
-// batched DELETE and by Close).
-func (s *HeartbeatStore) DB() *sql.DB { return s.db }
+// batched DELETE and by Close). *sql.DB callers get the pool; the BUSY-retry
+// methods stay available via the store's own writes.
+func (s *HeartbeatStore) DB() *sql.DB { return s.db.Pool() }
 
 // flushLoop drains BOTH buffers (probe results + liveness samples) on a timer
 // and when either fills, committing each kind in its own multi-row transaction

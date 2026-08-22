@@ -29,6 +29,7 @@ import (
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/crypto"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/dbopen"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
@@ -70,7 +71,16 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// User service and handler
 	userSvc := service.NewUserService(dbConn, cfg.Auth.JWTSecret, expiry)
 	// Audit logging
-	auditRepo := service.NewAuditRepository(dbConn)
+	// SQLITE_BUSY governance (#267): each hot write path gets its own
+	// dbopen.BusyRetry wrapper — bounded retry with backoff plus the
+	// mibee_sqlite_busy_total{path} counter. Paths that share dbConn below
+	// construct their queries from these wrapped handles.
+	scannerDB := dbopen.WrapBusyRetry(dbConn, "scanner")
+	auditDB := dbopen.WrapBusyRetry(dbConn, "audit")
+	probeDB := dbopen.WrapBusyRetry(dbConn, "probe")
+	notifyDB := dbopen.WrapBusyRetry(dbConn, "notification")
+
+	auditRepo := service.NewAuditRepository(auditDB)
 
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, tokenBlacklist)
 
@@ -300,7 +310,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}
 
 	// Runner: connects the engine to run/result persistence + the device bridge.
-	scanRunner := scannerv2runner.New(v2Engine, scanQueries, dbConn, heartbeatSvc, networkID, slog.Default())
+	scanRunner := scannerv2runner.New(v2Engine, scanQueries, scannerDB, heartbeatSvc, networkID, slog.Default())
 	scanRunner.SetRepo(v2Engine.Repository)                // device-identity upsert (ResolveDeviceIdentity / ApplyDeviceIdentity)
 	scanRunner.SetLostThreshold(cfg.Scanner.LostThreshold) // scanner.lost_threshold (default 2; <=0 keeps default)
 
@@ -573,8 +583,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// probe:read (viewer+); CRUD + trigger → probe:manage (operator+). NOT
 	// network-scoped: #138's object-level scope guards the internal inventory,
 	// while probing aims at arbitrary external endpoints by design.
-	probeEngine := probetarget.NewEngine(scanQueries, slog.Default(), prometheus.DefaultRegisterer)
-	probeTargetSvc := probetarget.New(scanQueries, probeEngine)
+	probeEngine := probetarget.NewEngine(db.New(probeDB), slog.Default(), prometheus.DefaultRegisterer)
+	probeTargetSvc := probetarget.New(db.New(probeDB), probeEngine)
 	probeTargetHandler := handler.NewProbeTargetHandler(probeTargetSvc, scanQueries)
 	r.Route("/api/v1/probe-targets", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
@@ -924,8 +934,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 
 	// Notification service, dispatcher, and handler
-	notificationSvc := service.NewNotificationService(db.New(dbConn))
-	notificationDispatcher := notification.NewDispatcher(db.New(dbConn), nil)
+	notificationSvc := service.NewNotificationService(db.New(notifyDB))
+	notificationDispatcher := notification.NewDispatcher(db.New(notifyDB), nil)
 	notificationDispatcher.Start(context.Background())
 	notificationHandler := handler.NewNotificationHandler(notificationSvc, notificationDispatcher, auditRepo)
 
