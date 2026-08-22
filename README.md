@@ -153,6 +153,7 @@ Full bilingual manuals (English + [中文](docs/zh/introduction.md)) live in `do
 - [Deployment](docs/en/deployment.md) — Production deployment guide (systemd / nginx / Docker / OpenWrt)
 - [Distributed Guide](docs/en/distributed.md) — Center + agent model for multi-network discovery
 - [Integrations](docs/en/integrations.md) — Grafana dashboards, notification channels (Feishu/WeCom/Telegram/Discord), n8n & Home Assistant
+- [Benchmarks](docs/en/benchmark.md) — Synthetic scale harness (loadgen) and the nmap accuracy comparison
 - [Discovery Guide](docs/en/discovery.md) — Probe sources and identification pipeline
 - [Product Scope](docs/en/product-scope.md) — What it is / is not, and where it fits
 - [Fingerprint Spec](docs/en/fingerprint-spec.md) — Contributing identification rules (YAML)
