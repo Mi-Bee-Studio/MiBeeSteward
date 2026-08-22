@@ -11,6 +11,8 @@
 <script lang="ts">
 	import '../lib/styles/themes.css';
 	import { auth } from '$lib/stores/auth';
+	import { addToast } from '$lib/stores/toast';
+	import { probeDemoMode } from '$lib/stores/demo';
 	import { m } from '$lib/i18n-paraglide';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
@@ -57,6 +59,35 @@
 	// Cross-tab sync: a `storage` event fires in OTHER tabs when this tab (or
 	// another) writes/removes the `auth` localStorage key. Mirror the change
 	// into this tab's auth store so the reactive gate above fires here too.
+	// Demo-mode banner (#285): one public probe per page load.
+	let isDemo = $state(false);
+	let demoWiping = $state(false);
+	onMount(() => {
+		probeDemoMode().then((on) => (isDemo = on));
+	});
+
+	async function wipeDemoData() {
+		demoWiping = true;
+		try {
+			const csrf = (document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/) || [])[1] || '';
+			const res = await fetch('/api/v1/demo/wipe', {
+				method: 'POST',
+				credentials: 'include',
+				headers: { 'X-CSRF-Token': csrf }
+			});
+			if (res.ok) {
+				addToast('success', m['demo.Wiped']());
+				setTimeout(() => location.reload(), 800);
+			} else {
+				addToast('error', m['demo.Wipe Failed']());
+			}
+		} catch {
+			addToast('error', m['demo.Wipe Failed']());
+		} finally {
+			demoWiping = false;
+		}
+	}
+
 	// (storage events do NOT fire in the tab that made the change — that path
 	// is already covered by the in-tab store update + $effect above.)
 	onMount(() => {
@@ -278,6 +309,20 @@
 		</div>
 	</aside>
 {/if}
+
+	<!-- Demo-mode banner (#285): fictional data on RFC 5737 documentation
+	     ranges; wipe to start inventorying a real network. -->
+	{#if isDemo}
+		<div class="flex items-center justify-center gap-3 px-4 py-1.5 bg-warning/15 border-b border-warning/40 text-xs text-warning">
+			<span>{m['demo.Banner']()}</span>
+			<button
+				type="button"
+				onclick={wipeDemoData}
+				disabled={demoWiping}
+				class="px-2 py-0.5 rounded font-medium bg-warning/20 hover:bg-warning/30 transition-colors disabled:opacity-50"
+			>{demoWiping ? '…' : m['demo.Wipe']()}</button>
+		</div>
+	{/if}
 
 	<!-- Main content -->
 	<main id="main-content" class="flex-1 overflow-auto" class:pt-14={$auth.token} class:md:pt-0={$auth.token}>

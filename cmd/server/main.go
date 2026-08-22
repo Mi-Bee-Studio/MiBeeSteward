@@ -33,6 +33,7 @@ import (
 var (
 	configPath  = flag.String("config", "configs/config.example.yaml", "Path to config file")
 	showVersion = flag.Bool("version", false, "Print the build version and exit")
+	demoMode    = flag.Bool("demo", false, "Demo mode (#285): seed a fictional inventory on an empty database and keep it active")
 )
 
 func main() {
@@ -57,6 +58,9 @@ func main() {
 
 	// Load configuration first (before slog init)
 	cfg, err := config.Load(*configPath)
+	if *demoMode {
+		cfg.Server.DemoMode = true
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)

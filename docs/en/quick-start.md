@@ -80,6 +80,16 @@ Open http://localhost:8080 and log in with `admin` and the configured initial pa
 curl http://localhost:8080/api/v1/health
 ```
 
+## 60-Second Demo (no network needed)
+
+Curious what the inventory looks like before wiring a real subnet? Start in demo mode — a fictional fleet (two networks, ~20 devices with portraits, change history, probe results) is seeded on first boot and kept active with simulated events:
+
+```bash
+./mibee-steward -demo -config configs/config.example.yaml
+```
+
+Open the UI and explore; an amber banner marks demo mode and offers a one-click **Clear demo data** to switch to real inventorying.
+
 ## First Scan
 
 ```mermaid
