@@ -90,6 +90,9 @@ func defaultSenderFactory(channelType domain.ChannelType, config json.RawMessage
 		return NewWebhookSenderFromConfig(config)
 	case domain.ChannelTypeEmail:
 		return NewSMTPSenderFromConfig(config)
+	case domain.ChannelTypeFeishu, domain.ChannelTypeWeCom,
+		domain.ChannelTypeTelegram, domain.ChannelTypeDiscord:
+		return NewFormattedWebhookSender(channelType), nil
 	default:
 		return nil, fmt.Errorf("unsupported channel type: %s", channelType)
 	}
@@ -196,12 +199,20 @@ func (d *Dispatcher) processJob(job dispatchJob) {
 }
 
 // sendWithSender calls the appropriate send method based on channel type.
+// Senders whose delivery parameters live in the channel config blob
+// (webhook URL, bot token, …) implement ConfigSender and get the raw config;
+// everyone else (SMTP) was fully constructed from config at factory time.
 func sendWithSender(ctx context.Context, sender Sender, payload Payload, config json.RawMessage) SendResult {
-	// If sender is a WebhookSender, use SendWithConfig for the config-aware path
-	if ws, ok := sender.(*WebhookSender); ok {
-		return ws.SendWithConfig(ctx, payload, config)
+	if cs, ok := sender.(ConfigSender); ok {
+		return cs.SendWithConfig(ctx, payload, config)
 	}
 	return sender.Send(ctx, payload)
+}
+
+// ConfigSender is implemented by senders that need the channel's raw JSON
+// config at send time (per-dispatch URL/secret/token parsing).
+type ConfigSender interface {
+	SendWithConfig(ctx context.Context, payload Payload, config json.RawMessage) SendResult
 }
 
 func (d *Dispatcher) logResult(ctx context.Context, ruleID *int64, channelID int64, status string, payload Payload, errMsg string) {

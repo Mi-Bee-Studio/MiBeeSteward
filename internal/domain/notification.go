@@ -18,9 +18,24 @@ import (
 type ChannelType string
 
 const (
-	ChannelTypeWebhook ChannelType = "webhook"
-	ChannelTypeEmail   ChannelType = "email"
+	ChannelTypeWebhook  ChannelType = "webhook"
+	ChannelTypeEmail    ChannelType = "email"
+	ChannelTypeFeishu   ChannelType = "feishu"   // 飞书/Lark custom bot (optional HMAC sign)
+	ChannelTypeWeCom    ChannelType = "wecom"    // 企业微信群机器人
+	ChannelTypeTelegram ChannelType = "telegram" // Bot API sendMessage
+	ChannelTypeDiscord  ChannelType = "discord"  // incoming webhook
 )
+
+// IsValidChannelType reports whether t is a channel type the notification
+// stack can build a Sender for (see notification.defaultSenderFactory).
+func IsValidChannelType(t ChannelType) bool {
+	switch t {
+	case ChannelTypeWebhook, ChannelTypeEmail, ChannelTypeFeishu,
+		ChannelTypeWeCom, ChannelTypeTelegram, ChannelTypeDiscord:
+		return true
+	}
+	return false
+}
 
 // Request types
 

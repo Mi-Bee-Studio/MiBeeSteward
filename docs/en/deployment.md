@@ -285,6 +285,9 @@ are exported to Prometheus:
 These are the growth baseline for capacity planning and for the
 db-growth alert in the self-monitoring example (see `deploy/prometheus`).
 
+Ready-to-import Grafana dashboards for all exported metrics live in
+`deploy/grafana/` — see the [Integrations guide](integrations.md).
+
 ### Capacity Planning (field-measured baseline)
 
 Measured on a 85-device LAN with default retention windows (30d scan results,
