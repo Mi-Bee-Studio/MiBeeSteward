@@ -135,6 +135,15 @@ groups:
           summary: "Main database over 2 GB"
           description: "Main SQLite file is {{ $value | humanize1024 }}B. Review retention windows and mibee_db_table_rows for the accumulating table."
 
-      # NOTE (planned): a mibee_sqlite_busy_total counter is scoped to the
-      # single-writer governance work (#267); the DatabaseLocked alert above
-      # covers the user-visible symptom via 5xx bursts until then.
+      # SQLITE_BUSY observability (#267): the BusyRetry write wrapper counts
+      # every intercepted BUSY (retried and fatal). A climbing rate means
+      # write contention is outliving busy_timeout — investigate the path
+      # label (scanner/heartbeat/probe/audit/notification/agent).
+      - alert: SqliteBusyRetries
+        expr: rate(mibee_sqlite_busy_total{job="mibee-steward"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SQLite BUSY retries sustained on {{ $labels.instance }}"
+          description: "mibee_sqlite_busy_total{path=\"{{ $labels.path }}\"} is retrying at {{ $value }}/s — write contention is outliving busy_timeout."

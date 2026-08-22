@@ -133,6 +133,20 @@ var (
 		[]string{"status"},
 	)
 
+	// MibeeSqliteBusyTotal counts SQLITE_BUSY failures intercepted by the
+	// dbopen.BusyRetry write wrapper (#267) — including retries that
+	// ultimately succeeded (a healthy system shows a low, occasional rate
+	// under scan+heartbeat+probe write overlap; a climbing counter means
+	// write contention outliving busy_timeout). path = the wrapped subsystem
+	// ("scanner", "heartbeat", "probe", "audit", "notification", "agent").
+	MibeeSqliteBusyTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mibee_sqlite_busy_total",
+			Help: "SQLITE_BUSY write failures by call path (retried and fatal)",
+		},
+		[]string{"path"},
+	)
+
 	// MibeeFingerprintIdentified gauges the identification-tier breakdown of
 	// the device inventory (#282): source = "protocol" (SNMP/RTSP/ONVIF/mDNS
 	// evidence), "heuristic" (hostname/brand keyword — spoofable), or
@@ -159,6 +173,7 @@ func init() {
 	prometheus.MustRegister(MibeeDBSizeBytes)
 	prometheus.MustRegister(MibeeDBTableRows)
 	prometheus.MustRegister(MibeeFingerprintIdentified)
+	prometheus.MustRegister(MibeeSqliteBusyTotal)
 }
 
 // RefreshScannerTaskGauges recomputes mibee_scanner_tasks_total{status} from
