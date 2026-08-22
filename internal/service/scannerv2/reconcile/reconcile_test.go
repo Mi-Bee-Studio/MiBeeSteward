@@ -34,8 +34,8 @@ func addNetwork(t *testing.T, db *sql.DB, name, cidr string) int64 {
 func addDevice(t *testing.T, db *sql.DB, ip string, networkID int64) {
 	t.Helper()
 	_, err := db.Exec(
-		`INSERT INTO devices (name, ip_address, network_id, status, type) VALUES (?, ?, ?, 'online', 'other')`,
-		ip, ip, networkID,
+		`INSERT INTO devices (name, ip_address, network_id, status, type, device_uuid) VALUES (?, ?, ?, 'online', 'other', 'rc-' || ? || '-' || ?)`,
+		ip, ip, networkID, ip, networkID,
 	)
 	require.NoError(t, err)
 }
@@ -217,11 +217,11 @@ func TestCleanupGhosts_MACFallback(t *testing.T) {
 	net62 := addNetwork(t, dbConn, "lan-62", "192.168.62.0/24")
 	net63 := addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")
 	// Canonical asset on lan-63 with a MAC.
-	_, err = dbConn.Exec(`INSERT INTO devices (name, ip_address, mac_address, network_id, status, type) VALUES ('real', '192.168.63.20', 'aa:bb:cc:dd:ee:20', ?, 'online', 'other')`, net63)
+	_, err = dbConn.Exec(`INSERT INTO devices (name, ip_address, mac_address, network_id, status, type, device_uuid) VALUES ('real', '192.168.63.20', 'aa:bb:cc:dd:ee:20', ?, 'online', 'other', 'rc-real')`, net63)
 	require.NoError(t, err)
 	// Ghost on lan-62 with the SAME MAC but an IP in a THIRD subnet no network
 	// owns (10.0.0.20) — IP-containment won't find a home, but MAC will.
-	_, err = dbConn.Exec(`INSERT INTO devices (name, ip_address, mac_address, network_id, status, type) VALUES ('ghost', '10.0.0.20', 'aa:bb:cc:dd:ee:20', ?, 'online', 'other')`, net62)
+	_, err = dbConn.Exec(`INSERT INTO devices (name, ip_address, mac_address, network_id, status, type, device_uuid) VALUES ('ghost', '10.0.0.20', 'aa:bb:cc:dd:ee:20', ?, 'online', 'other', 'rc-ghost')`, net62)
 	require.NoError(t, err)
 
 	svc := New(dbConn, 0, nil, nil)
@@ -249,7 +249,7 @@ func TestCleanupReservedAddressDevices(t *testing.T) {
 
 	net63 := addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")
 	seed := func(name, ip string) {
-		_, err := dbConn.Exec(`INSERT INTO devices (name, ip_address, network_id, status, type) VALUES (?, ?, ?, 'online', 'other')`, name, ip, net63)
+		_, err := dbConn.Exec(`INSERT INTO devices (name, ip_address, network_id, status, type, device_uuid) VALUES (?, ?, ?, 'online', 'other', 'rc-' || ? || '-' || ?)`, name, ip, net63, ip, net63)
 		require.NoError(t, err)
 	}
 	seed("broadcast", "192.168.63.255")

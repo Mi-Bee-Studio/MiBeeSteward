@@ -50,7 +50,7 @@ func setupSvc(t *testing.T) (*Service, *db.Queries, *string) {
 	})
 	require.NoError(t, err)
 	// Seed a router bound to the SSH credential.
-	_, err = conn.Exec(`INSERT INTO devices (name, type, ip_address, brand, ssh_credential_id) VALUES ('r1','router','10.0.0.1','Cisco',?)`, credID)
+	_, err = conn.Exec(`INSERT INTO devices (name, type, ip_address, brand, ssh_credential_id, device_uuid) VALUES ('r1','router','10.0.0.1','Cisco',?,'cfg-r1')`, credID)
 	require.NoError(t, err)
 
 	current := "hostname r1\ninterface eth0\n ip address 10.0.0.1/24\n"
@@ -116,9 +116,9 @@ func TestService_SkipsDevicesWithoutCred(t *testing.T) {
 	t.Cleanup(func() { conn.Close() })
 	queries := db.New(conn)
 	// A router with NO ssh_credential_id + a PC (wrong type) — neither is a candidate.
-	_, err = conn.Exec(`INSERT INTO devices (name, type, ip_address, brand) VALUES ('nobody','router','10.0.0.9','Cisco')`)
+	_, err = conn.Exec(`INSERT INTO devices (name, type, ip_address, brand, device_uuid) VALUES ('nobody','router','10.0.0.9','Cisco','cfg-nobody')`)
 	require.NoError(t, err)
-	_, err = conn.Exec(`INSERT INTO devices (name, type, ip_address) VALUES ('mypc','pc','10.0.0.10')`)
+	_, err = conn.Exec(`INSERT INTO devices (name, type, ip_address, device_uuid) VALUES ('mypc','pc','10.0.0.10','cfg-mypc')`)
 	require.NoError(t, err)
 
 	called := false
