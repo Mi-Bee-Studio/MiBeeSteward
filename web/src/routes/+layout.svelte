@@ -33,7 +33,8 @@
 		History,
 		Bot,
 		Network,
-		Activity
+		Activity,
+		Fingerprint
 	} from '@lucide/svelte';
 	import type { Component } from 'svelte';
 
@@ -104,7 +105,8 @@
 		{
 			labelKey: 'navigation.Group Library',
 			items: [
-				{ path: '/documents', label: m['navigation.Documents'](), icon: FileText }
+				{ path: '/documents', label: m['navigation.Documents'](), icon: FileText },
+				{ path: '/fingerprints', label: m['navigation.Fingerprints'](), icon: Fingerprint }
 			]
 		},
 		{
