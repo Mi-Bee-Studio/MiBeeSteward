@@ -306,3 +306,13 @@ is the reference. A Zig/Rust implementation is considered conforming iff, given
 the same rule files and evidence, it emits byte-identical `ServiceIdentity`
 output (service, port, protocol, confidence within 1e-9, metadata). The parity
 tests in `rule_classifier_test.go` are the conformance suite.
+
+## 10. Coverage report & the rule-draft loop
+
+The center ships the contribution loop described above as a first-class page (**Fingerprint Coverage**, `/fingerprints`):
+
+- **Coverage tiers** — every device is bucketed by how its type was identified: *protocol evidence* (SNMP/RTSP/ONVIF/mDNS — trustworthy), *heuristic* (hostname/brand keyword — spoofable, `?` badge in the UI), or *unidentified* (falls back to generic `other`). The same tiers are exported as `mibee_fingerprint_identified_devices{source}` for Prometheus.
+- **Most-needed rule targets** — unidentified devices are clustered by shared features (NIC vendor from the OUI, open-port signature, hostname prefix), so one contributed rule can be evaluated against N devices at once.
+- **Rule draft** — for any unidentified device, "Rule draft" generates a YAML file pre-filled from the evidence the scanner already collected (SNMP `sys_descr`, TCP banners, HTTP `title`/`server`, RTSP `server`). The draft is compile-validated through the real rule classifier before you see it, so what you download is guaranteed loadable — you only fill in the service name judgment calls and tune the match values.
+
+The API behind it: `GET /api/v1/fingerprints/coverage` (tier stats + list + groups) and `POST /api/v1/devices/{uuid}/fingerprint-draft` (returns `text/yaml`).

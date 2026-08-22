@@ -865,6 +865,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/api/v1/devices/{id}/heartbeat-history", heartbeatHandler.ListHistory)
 		r.Get("/api/v1/devices/{id}/heartbeat-stats", heartbeatHandler.GetStats)
 	})
+	// Fingerprint coverage report + rule-draft generation (#282). Read-only
+	// analytics over scan_attributes + collected evidence; the draft POST is
+	// a pure computation (returns YAML text, persists nothing).
+	fingerprintSvc := service.NewFingerprintReportService(db.New(dbConn), dbConn)
+	fingerprintHandler := handler.NewFingerprintHandler(fingerprintSvc)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
+		r.Get("/api/v1/fingerprints/coverage", fingerprintHandler.Coverage)
+		r.Post("/api/v1/devices/{uuid}/fingerprint-draft", fingerprintHandler.RuleDraft)
+	})
+
 	// Dashboard routes
 	dashSvc := service.NewDashboardService(dbConn, cfg)
 	dashHandler := handler.NewDashboardHandler(dashSvc)

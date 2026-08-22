@@ -22,7 +22,8 @@
 		"Brand Logo Alt": "MiBee logo",
 		"Skip to Content": "Skip to content",
 		"Toggle Sidebar": "Toggle sidebar",
-		"Probes": "Probes"
+		"Probes": "Probes",
+		"Fingerprints": "Fingerprint Coverage"
 	},
 	"auth": {
 		"Username": "Username",
@@ -1275,5 +1276,31 @@
 		"Timeout Help": "Seconds per probe attempt (1–60), must be smaller than the interval",
 		"Cert Trusted": "Trusted",
 		"Cert Untrusted": "Untrusted"
+	},
+	"fingerprints": {
+		"Title": "Fingerprint Coverage",
+		"Description": "Identification coverage of your inventory — and the contribution loop for devices the rule library can't recognize yet.",
+		"Tier Protocol": "Protocol evidence (SNMP/RTSP/ONVIF)",
+		"Tier Heuristic": "Heuristic guess (hostname/brand)",
+		"Tier Unidentified": "Unidentified",
+		"Coverage Rate": "identified",
+		"Devices Unit": "devices",
+		"Top Groups": "Most-needed rule targets (shared features)",
+		"Group OUI": "NIC vendor",
+		"Group Ports": "Ports",
+		"Group Hostname": "Hostname",
+		"Unidentified List": "Unidentified devices",
+		"All Identified": "Everything identified",
+		"All Identified Desc": "No device falls into the unidentified tier — the rule library covers your inventory.",
+		"IP": "IP",
+		"Hostname": "Hostname",
+		"Vendor": "Vendor",
+		"OUI Vendor": "NIC vendor (OUI)",
+		"Ports": "Ports",
+		"Services": "Services",
+		"Generate Draft": "Rule draft",
+		"Draft Title": "Fingerprint rule draft",
+		"Draft Device": "Generated for",
+		"Download": "Download YAML"
 	}
 }

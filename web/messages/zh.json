@@ -22,7 +22,8 @@
 		"Brand Logo Alt": "MiBee 图标",
 		"Skip to Content": "跳到正文",
 		"Toggle Sidebar": "切换侧边栏",
-		"Probes": "拨测"
+		"Probes": "拨测",
+		"Fingerprints": "指纹覆盖"
 	},
 	"auth": {
 		"Username": "用户名",
@@ -1275,5 +1276,31 @@
 		"Timeout Help": "单次探测超时秒数（1–60），须小于间隔",
 		"Cert Trusted": "受信任",
 		"Cert Untrusted": "不受信任"
+	},
+	"fingerprints": {
+		"Title": "指纹覆盖率",
+		"Description": "资产清单的识别覆盖情况 —— 以及对规则库尚不能识别设备的贡献闭环入口。",
+		"Tier Protocol": "协议证据（SNMP/RTSP/ONVIF）",
+		"Tier Heuristic": "启发式推断（主机名/品牌）",
+		"Tier Unidentified": "未识别",
+		"Coverage Rate": "已识别",
+		"Devices Unit": "台设备",
+		"Top Groups": "最需要规则的特征（同类聚合）",
+		"Group OUI": "网卡厂商",
+		"Group Ports": "端口",
+		"Group Hostname": "主机名",
+		"Unidentified List": "未识别设备",
+		"All Identified": "全部已识别",
+		"All Identified Desc": "没有设备落入未识别层 —— 规则库已覆盖你的资产清单。",
+		"IP": "IP",
+		"Hostname": "主机名",
+		"Vendor": "厂商",
+		"OUI Vendor": "网卡厂商（OUI）",
+		"Ports": "端口",
+		"Services": "服务",
+		"Generate Draft": "规则草稿",
+		"Draft Title": "指纹规则草稿",
+		"Draft Device": "生成自",
+		"Download": "下载 YAML"
 	}
 }
