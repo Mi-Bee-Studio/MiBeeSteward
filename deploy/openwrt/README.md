@@ -106,6 +106,31 @@ All four are **shared across forms B and C** (and form A — center on a generic
 **Operator setup for `dns_log`:** enable dnsmasq query logging —
 `uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit && /etc/init.d/dnsmasq restart`. Point `scanner.discovery.dns_log.path` at the resulting log (or leave empty to probe the conventional paths).
 
+## Operator prerequisites (GL.iNet / vendor SDK firmware)
+
+Two firmware-level settings materially affect MiBee on router deployments. `mibee-steward doctor` checks both.
+
+### ICMP without root: `ping_group_range`
+
+MiBee's ICMP probes use **unprivileged datagram ping sockets** (no CAP_NET_RAW needed). The kernel only allows these for groups inside `/proc/sys/net/ipv4/ping_group_range`, and OpenWrt's default (`1 0`) disables them entirely — every probe fails with `permission denied`. Fix once:
+
+```sh
+echo "0 2147483647" > /proc/sys/net/ipv4/ping_group_range
+# persist: echo 'net.ipv4.ping_group_range = 0 2147483647' > /etc/sysctl.d/99-mibee.conf
+```
+
+### fw3 `syn_flood` chain throttles LAN-side TCP (GL.iNet SDK firmwares)
+
+GL firmwares ship fw3 with SYN-flood protection enabled: every TCP SYN (loopback included) passes a **global 25/s, burst-50 token bucket** before the accept rules. MiBee's heartbeat port checks + probe fan-out + local API traffic can exhaust the bucket; once it empties, **new TCP connections to ANY local port are silently dropped** — the symptom looks exactly like a broken listener (SYN arrives, no SYN-ACK). If you see intermittent connection timeouts to the router's own services, disable SYN-flood protection in LuCI (Network → Firewall → Traffic Rules → SYN-flood protection), or:
+
+```sh
+uci set firewall.@defaults[0].synflood_protect=0 && uci commit firewall && /etc/init.d/firewall restart
+```
+
+### Known limitation on GL.iNet MT2500 (mt7981, kernel 5.4.211 SDK): v4 TCP listeners
+
+Field diagnosis (see issue #288) on the stock firmware shows **newly-created IPv4 TCP listeners never complete handshakes** — SYNs reach the stack, but no SYN-ACK leaves (loopback captures show the SYN-ACK leaving with an **unfilled `0.0.0.0` address**, which the peer then RSTs). This affects ANY new listener (Go and C alike — the router's own LuCI is affected from off-box too), while IPv6 listeners work perfectly and pre-existing services keep working. Ruled out: iptables filter/nat/raw/mangle, policy routing (zerotier's `iif lo` rule), loopback offloads, conntrack saturation, and `mtkhnat` (rmmod doesn't restore v4). Until the vendor kernel bug is understood, **form C on this specific firmware is not viable on v4** — bind v6 (`server.host: "::"`) or run the center elsewhere and use form B (agent on the router).
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -115,6 +140,8 @@ All four are **shared across forms B and C** (and form A — center on a generic
 | `mmap: access denied` at startup | Kernel disallows the mmap SQLite wants — run as root (the procd script does) or check the router's seccomp/apparmor. |
 | Discovery sources all no-op | Expected on a non-router host. On a router, check each source's prereq (dnsmasq running, `nf_conntrack` loaded, hostapd ctrl_interface enabled). |
 | `unsupported GOARCH mips` at build | MIPS isn't supported (modernc/libc limitation). Use an ARM/ARM64 router. |
+| ICMP probes all `permission denied` | `ping_group_range` disabled — see the operator prerequisites above. |
+| Intermittent silent connection drops to the router's own ports | fw3 `syn_flood` token bucket exhausted — see the operator prerequisites above. |
 
 ## What's NOT covered here
 
