@@ -1,11 +1,15 @@
 package handler_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +43,7 @@ func setupExtendedTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	docSvc := service.NewDocumentService(db, uploadSvc)
 	auditRepo := service.NewAuditRepository(db)
 	docHandler := handler.NewDocumentHandler(docSvc, uploadPath, auditRepo)
+	linkHandler := handler.NewLinkHandler(db, auditRepo)
 
 	// HeartbeatService needs its dedicated store; use a temp file.
 	hbStore, err := service.OpenHeartbeatStore(filepath.Join(t.TempDir(), "hb.db"))
@@ -100,9 +105,18 @@ func setupExtendedTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdmin)
 			r.Post("/", docHandler.CreateURL)
+			r.Post("/upload", docHandler.UploadFile)
 			r.Put("/{id}", docHandler.Update)
 			r.Delete("/{id}", docHandler.Delete)
+			r.Post("/{id}/restore", docHandler.Restore)
 		})
+	})
+
+	r.Route("/api/v1/devices/{id}/documents", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", linkHandler.GetDeviceDocuments)
+		r.Post("/", linkHandler.LinkDocument)
+		r.Delete("/{docId}", linkHandler.UnlinkDocument)
 	})
 
 	r.Route("/api/v1/devices/{id}/heartbeat-configs", func(r chi.Router) {
@@ -305,4 +319,113 @@ func toInt(v interface{}) int {
 		return int(f)
 	}
 	return 0
+}
+
+func TestExtended_DocumentSoftDeleteRestore(t *testing.T) {
+	server, db := setupExtendedTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	resp := authPost(t, server.URL+"/api/v1/documents", token,
+		`{"title":"Doomed Doc","type":"url","url":"https://example.com","description":"will be deleted"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	var created map[string]interface{}
+	decodeJSON(t, resp, &created)
+	docID := idToString(created["id"])
+
+	// Delete → soft: gone from reads but restore brings it back intact.
+	req := authDelete(t, server.URL+"/api/v1/documents/"+docID, token)
+	require.Equal(t, http.StatusOK, req.StatusCode)
+	readBody(t, req)
+
+	resp = authGet(t, server.URL+"/api/v1/documents/"+docID, token)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	readBody(t, resp)
+
+	// Restoring a live (never-deleted) document is a 404, not an error 500.
+	resp = authPost(t, server.URL+"/api/v1/documents/"+docID+"/restore", token, `{}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var restored map[string]interface{}
+	decodeJSON(t, resp, &restored)
+	require.Equal(t, "Doomed Doc", restored["title"])
+
+	resp = authGet(t, server.URL+"/api/v1/documents/"+docID, token)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	readBody(t, resp)
+
+	// Second restore of an already-live doc → 404 (nothing to restore).
+	resp = authPost(t, server.URL+"/api/v1/documents/"+docID+"/restore", token, `{}`)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	readBody(t, resp)
+}
+
+func TestExtended_DeviceDocumentsContract(t *testing.T) {
+	server, db := setupExtendedTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	// A device to link against (minimal required fields).
+	_, err := db.Exec(`INSERT INTO devices (name, ip_address, status) VALUES ('contract-dev', '192.0.2.1', 'online')`)
+	require.NoError(t, err)
+	var deviceID int64
+	require.NoError(t, db.QueryRow(`SELECT id FROM devices WHERE name = 'contract-dev'`).Scan(&deviceID))
+
+	resp := authPost(t, server.URL+"/api/v1/documents", token,
+		`{"title":"Contract Doc","type":"url","url":"https://example.com","description":"d"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	var created map[string]interface{}
+	decodeJSON(t, resp, &created)
+	docID := idToString(created["id"])
+
+	// Link, then read back through the device endpoint.
+	resp = authPost(t, server.URL+"/api/v1/devices/"+strconv.FormatInt(deviceID, 10)+"/documents", token,
+		`{"document_id":`+docID+`}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	readBody(t, resp)
+
+	resp = authGet(t, server.URL+"/api/v1/devices/"+strconv.FormatInt(deviceID, 10)+"/documents", token)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var payload map[string]interface{}
+	decodeJSON(t, resp, &payload)
+	// The frontend reads res.documents — the endpoint MUST return the wrapper
+	// object, not a bare array (the bug this test pins).
+	docs, ok := payload["documents"].([]interface{})
+	require.True(t, ok, "response must be {documents: [...]}")
+	require.Len(t, docs, 1)
+	require.Equal(t, "Contract Doc", docs[0].(map[string]interface{})["title"])
+}
+
+func TestExtended_UploadErrorCodes(t *testing.T) {
+	server, db := setupExtendedTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	newReq := func(filename, content string) *http.Request {
+		var buf bytes.Buffer
+		writer := multipart.NewWriter(&buf)
+		part, err := writer.CreateFormFile("file", filename)
+		require.NoError(t, err)
+		_, err = part.Write([]byte(content))
+		require.NoError(t, err)
+		require.NoError(t, writer.WriteField("title", "t"))
+		require.NoError(t, writer.Close())
+		req, err := http.NewRequest("POST", server.URL+"/api/v1/documents/upload", &buf)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+token)
+		return req
+	}
+
+	// Plain text (.txt) → 415 with the real reason, not a blanket 500.
+	resp, err := http.DefaultClient.Do(newReq("notes.txt", strings.Repeat("plain text ", 80)))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
+	body := readBody(t, resp)
+	require.Contains(t, body, "file type not allowed")
+
+	// Shell script content named .png → 400 content/extension mismatch.
+	resp, err = http.DefaultClient.Do(newReq("evil.png", strings.Repeat("#!/bin/sh\n", 80)))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Contains(t, readBody(t, resp), "does not match")
 }

@@ -48,6 +48,10 @@ func (h *DocumentHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.svc.CreateURL(r.Context(), req)
 	if err != nil {
+		if errors.Is(err, service.ErrTitleRequired) || errors.Is(err, service.ErrURLRequired) {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to create document")
 		return
 	}
@@ -77,7 +81,18 @@ func (h *DocumentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.svc.UploadFile(r.Context(), file, header, title, description)
 	if err != nil {
 		slog.Error("failed to upload file", "error", err)
-		Error(w, http.StatusInternalServerError, "failed to upload file")
+		// Client-fixable rejections surface as their real reason + status —
+		// a blanket 500 hid WHY the file was refused.
+		switch {
+		case errors.Is(err, service.ErrFileTooLarge):
+			Error(w, http.StatusRequestEntityTooLarge, err.Error())
+		case errors.Is(err, service.ErrFileTypeNotAllowed):
+			Error(w, http.StatusUnsupportedMediaType, err.Error())
+		case errors.Is(err, service.ErrFileMismatch), errors.Is(err, service.ErrTitleRequired):
+			Error(w, http.StatusBadRequest, err.Error())
+		default:
+			Error(w, http.StatusInternalServerError, "failed to upload file")
+		}
 		return
 	}
 
@@ -141,7 +156,7 @@ func (h *DocumentHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filePath, err := h.svc.GetFilePath(r.Context(), id)
+	filePath, mimeType, err := h.svc.GetFile(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, service.ErrDocumentNotFound) {
 			Error(w, http.StatusNotFound, "document not found")
@@ -186,8 +201,59 @@ func (h *DocumentHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(filePath)))
+	// Pin Content-Type to the upload-validated MIME type. Letting
+	// http.ServeFile sniff would serve an HTML-flavored .md as text/html —
+	// XSS-same-origin on inline preview. Combined with the global nosniff
+	// header, the stored type is authoritative.
+	if mimeType != "" {
+		w.Header().Set("Content-Type", mimeType)
+	}
+
+	// ?inline=1 switches the disposition for embedded previews (PDF iframe,
+	// img): browsers refuse to RENDER an attachment inside a navigation
+	// context and silently fall back to download. Plain downloads keep
+	// attachment (the default), which also stays the safe choice for types
+	// a browser might execute if sniffed wrong.
+	disposition := "attachment"
+	if r.URL.Query().Get("inline") == "1" {
+		disposition = "inline"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=%s", disposition, filepath.Base(filePath)))
 	http.ServeFile(w, r, filePath)
+}
+
+// Restore handles POST /api/v1/documents/{id}/restore — undo a soft delete
+// (the UI's delete-undo toast). Only clears the tombstone; the row and its
+// uploaded file were kept.
+func (h *DocumentHandler) Restore(w http.ResponseWriter, r *http.Request) {
+	id, err := h.parseID(w, r)
+	if err != nil {
+		return
+	}
+
+	resp, err := h.svc.Restore(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, service.ErrDocumentNotFound) {
+			Error(w, http.StatusNotFound, "document not found")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed to restore document")
+		return
+	}
+
+	userID, _, ok := middleware.GetUserFromContext(r)
+	if ok {
+		h.auditRepo.Log(r.Context(), service.AuditLog{
+			UserID:       &userID,
+			Action:       "file.restore",
+			ResourceType: "document",
+			ResourceID:   strconv.FormatInt(id, 10),
+			IPAddress:    r.RemoteAddr,
+			UserAgent:    r.UserAgent(),
+		})
+	}
+
+	Success(w, resp)
 }
 
 // Update handles PUT /api/v1/documents/{id} — update document.

@@ -132,7 +132,10 @@ func (h *LinkHandler) GetDeviceDocuments(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	Success(w, docs)
+	// Wrapped as {documents: [...]} — the frontend reads res.documents (same
+	// shape as GET /documents); the bare array it used to return parsed to
+	// undefined and rendered "no documents linked" forever.
+	Success(w, map[string]any{"documents": docs})
 }
 
 // GetDocumentDevices handles GET /api/v1/documents/{id}/devices
