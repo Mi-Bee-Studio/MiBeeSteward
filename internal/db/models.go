@@ -170,16 +170,17 @@ type DeviceSystem struct {
 }
 
 type Document struct {
-	ID          int64     `json:"id"`
-	Title       string    `json:"title"`
-	Type        string    `json:"type"`
-	Url         string    `json:"url"`
-	FilePath    string    `json:"file_path"`
-	FileSize    int64     `json:"file_size"`
-	MimeType    string    `json:"mime_type"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int64      `json:"id"`
+	Title       string     `json:"title"`
+	Type        string     `json:"type"`
+	Url         string     `json:"url"`
+	FilePath    string     `json:"file_path"`
+	FileSize    int64      `json:"file_size"`
+	MimeType    string     `json:"mime_type"`
+	Description string     `json:"description"`
+	DeletedAt   *time.Time `json:"deleted_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type HeartbeatConfig struct {

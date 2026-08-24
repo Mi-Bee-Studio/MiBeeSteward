@@ -867,6 +867,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			r.Post("/upload", docHandler.UploadFile)
 			r.Put("/{id}", docHandler.Update)
 			r.Delete("/{id}", docHandler.Delete)
+			// Undo for the delete-undo toast: restore is a write on the doc.
+			r.Post("/{id}/restore", docHandler.Restore)
 		})
 	})
 

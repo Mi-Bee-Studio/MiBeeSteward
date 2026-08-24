@@ -33,7 +33,9 @@
     "@inlang/paraglide-js": "^2.20.2",
     "@inlang/paraglide-sveltekit": "^0.16.1",
     "@lucide/svelte": "^1.23.0",
+    "dompurify": "^3.4.14",
     "echarts": "^6.1.0",
+    "marked": "^18.0.10",
     "qrcode": "^1.5.4",
     "zod": "^4.4.3"
   }

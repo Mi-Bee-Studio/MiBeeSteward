@@ -11,7 +11,7 @@ import (
 
 const countDocuments = `-- name: CountDocuments :one
 SELECT COUNT(*) FROM documents
-WHERE (? = '' OR INSTR(lower(title), lower(?)) > 0 OR INSTR(lower(description), lower(?)) > 0 OR INSTR(lower(type), lower(?)) > 0)
+WHERE deleted_at IS NULL AND (? = '' OR INSTR(lower(title), lower(?)) > 0 OR INSTR(lower(description), lower(?)) > 0 OR INSTR(lower(type), lower(?)) > 0)
 `
 
 type CountDocumentsParams struct {
@@ -38,7 +38,7 @@ const createDocument = `-- name: CreateDocument :one
 
 INSERT INTO documents (title, type, url, file_path, file_size, mime_type, description)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, title, type, url, file_path, file_size, mime_type, description, created_at, updated_at
+RETURNING id, title, type, url, file_path, file_size, mime_type, description, deleted_at, created_at, updated_at
 `
 
 type CreateDocumentParams struct {
@@ -79,6 +79,7 @@ func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) 
 		&i.FileSize,
 		&i.MimeType,
 		&i.Description,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -86,10 +87,13 @@ func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) 
 }
 
 const deleteDocument = `-- name: DeleteDocument :execrows
-DELETE FROM documents
-WHERE id = ?
+UPDATE documents
+SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND deleted_at IS NULL
 `
 
+// Soft delete: stamp the tombstone, keep the row (and its file on disk) so
+// POST /documents/{id}/restore can undo. Physical purge is a later concern.
 func (q *Queries) DeleteDocument(ctx context.Context, id int64) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteDocument, id)
 	if err != nil {
@@ -99,9 +103,9 @@ func (q *Queries) DeleteDocument(ctx context.Context, id int64) (int64, error) {
 }
 
 const getDocument = `-- name: GetDocument :one
-SELECT id, title, type, url, file_path, file_size, mime_type, description, created_at, updated_at
+SELECT id, title, type, url, file_path, file_size, mime_type, description, deleted_at, created_at, updated_at
 FROM documents
-WHERE id = ?
+WHERE id = ? AND deleted_at IS NULL
 `
 
 func (q *Queries) GetDocument(ctx context.Context, id int64) (Document, error) {
@@ -116,6 +120,7 @@ func (q *Queries) GetDocument(ctx context.Context, id int64) (Document, error) {
 		&i.FileSize,
 		&i.MimeType,
 		&i.Description,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -123,9 +128,9 @@ func (q *Queries) GetDocument(ctx context.Context, id int64) (Document, error) {
 }
 
 const listDocuments = `-- name: ListDocuments :many
-SELECT id, title, type, url, file_path, file_size, mime_type, description, created_at, updated_at
+SELECT id, title, type, url, file_path, file_size, mime_type, description, deleted_at, created_at, updated_at
 FROM documents
-WHERE (? = '' OR INSTR(lower(title), lower(?)) > 0 OR INSTR(lower(description), lower(?)) > 0 OR INSTR(lower(type), lower(?)) > 0)
+WHERE deleted_at IS NULL AND (? = '' OR INSTR(lower(title), lower(?)) > 0 OR INSTR(lower(description), lower(?)) > 0 OR INSTR(lower(type), lower(?)) > 0)
 ORDER BY id
 LIMIT ? OFFSET ?
 `
@@ -166,6 +171,7 @@ func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([
 			&i.FileSize,
 			&i.MimeType,
 			&i.Description,
+			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -182,11 +188,26 @@ func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([
 	return items, nil
 }
 
+const restoreDocument = `-- name: RestoreDocument :execrows
+UPDATE documents
+SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND deleted_at IS NOT NULL
+`
+
+// Undo a soft delete (the UI's delete-undo toast). Only clears the tombstone.
+func (q *Queries) RestoreDocument(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, restoreDocument, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateDocument = `-- name: UpdateDocument :one
 UPDATE documents
 SET title = ?, type = ?, url = ?, file_path = ?, file_size = ?, mime_type = ?, description = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING id, title, type, url, file_path, file_size, mime_type, description, created_at, updated_at
+WHERE id = ? AND deleted_at IS NULL
+RETURNING id, title, type, url, file_path, file_size, mime_type, description, deleted_at, created_at, updated_at
 `
 
 type UpdateDocumentParams struct {
@@ -221,6 +242,7 @@ func (q *Queries) UpdateDocument(ctx context.Context, arg UpdateDocumentParams) 
 		&i.FileSize,
 		&i.MimeType,
 		&i.Description,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
