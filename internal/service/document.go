@@ -24,6 +24,8 @@ import (
 var (
 	ErrDocumentNotFound = errors.New("document not found")
 	ErrNotFileDocument  = errors.New("document is not a file type")
+	ErrTitleRequired    = errors.New("title is required")
+	ErrURLRequired      = errors.New("url is required")
 )
 
 // DocumentService handles document management business logic.
@@ -43,7 +45,10 @@ func NewDocumentService(dbConn db.DBTX, uploadSvc *UploadService) *DocumentServi
 // CreateURL creates a document with type="url".
 func (s *DocumentService) CreateURL(ctx context.Context, req domain.CreateDocumentRequest) (*domain.DocumentResponse, error) {
 	if req.Title == "" {
-		return nil, fmt.Errorf("title is required")
+		return nil, ErrTitleRequired
+	}
+	if req.URL == "" {
+		return nil, ErrURLRequired
 	}
 
 	doc, err := s.queries.CreateDocument(ctx, db.CreateDocumentParams{
@@ -63,12 +68,12 @@ func (s *DocumentService) CreateURL(ctx context.Context, req domain.CreateDocume
 // UploadFile saves a file and creates a document with type="file".
 func (s *DocumentService) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, title string, description string) (*domain.DocumentResponse, error) {
 	if title == "" {
-		return nil, fmt.Errorf("title is required")
+		return nil, ErrTitleRequired
 	}
 
 	filePath, _, fileSize, mimeType, err := s.upload.SaveFile(file, header.Filename, header.Size)
 	if err != nil {
-		return nil, fmt.Errorf("failed to save file: %w", err)
+		return nil, err
 	}
 
 	doc, err := s.queries.CreateDocument(ctx, db.CreateDocumentParams{
@@ -185,16 +190,10 @@ func (s *DocumentService) Update(ctx context.Context, id int64, req domain.Updat
 	return &resp, nil
 }
 
-// Delete removes a document by ID, also removing the file from disk if type="file".
+// Delete soft-deletes a document by ID (stamps deleted_at). The row and its
+// uploaded file stay on disk so Restore can undo; list/get queries filter the
+// tombstone away.
 func (s *DocumentService) Delete(ctx context.Context, id int64) error {
-	doc, err := s.queries.GetDocument(ctx, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrDocumentNotFound
-		}
-		return fmt.Errorf("failed to get document: %w", err)
-	}
-
 	affected, err := s.queries.DeleteDocument(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete document: %w", err)
@@ -202,30 +201,41 @@ func (s *DocumentService) Delete(ctx context.Context, id int64) error {
 	if affected == 0 {
 		return ErrDocumentNotFound
 	}
-
-	// Remove file from disk if it's a file-type document
-	if doc.Type == string(domain.DocTypeFile) && doc.FilePath != "" {
-		os.Remove(doc.FilePath)
-	}
-
 	return nil
 }
 
-// GetFilePath returns the file path for a file-type document (for download).
-func (s *DocumentService) GetFilePath(ctx context.Context, id int64) (string, error) {
+// Restore undoes a soft delete (the UI's delete-undo toast). Only clears the
+// tombstone — the row and its file were never physically removed.
+func (s *DocumentService) Restore(ctx context.Context, id int64) (*domain.DocumentResponse, error) {
+	affected, err := s.queries.RestoreDocument(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to restore document: %w", err)
+	}
+	if affected == 0 {
+		return nil, ErrDocumentNotFound
+	}
+	return s.Get(ctx, id)
+}
+
+// GetFile returns the file path and stored MIME type for a file-type document
+// (for download/preview). The MIME type is what the upload whitelist validated
+// — serving it verbatim (instead of letting http.ServeFile sniff) pins the
+// Content-Type and stops an HTML-flavored .md from being sniffed as text/html
+// on inline preview.
+func (s *DocumentService) GetFile(ctx context.Context, id int64) (path string, mimeType string, err error) {
 	doc, err := s.queries.GetDocument(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", ErrDocumentNotFound
+			return "", "", ErrDocumentNotFound
 		}
-		return "", fmt.Errorf("failed to get document: %w", err)
+		return "", "", fmt.Errorf("failed to get document: %w", err)
 	}
 
 	if doc.Type != string(domain.DocTypeFile) {
-		return "", ErrNotFileDocument
+		return "", "", ErrNotFileDocument
 	}
 
-	return doc.FilePath, nil
+	return doc.FilePath, doc.MimeType, nil
 }
 
 // toDocumentResponse converts a db.Document to domain.DocumentResponse.
