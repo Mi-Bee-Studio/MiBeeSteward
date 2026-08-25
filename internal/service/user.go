@@ -23,6 +23,7 @@ import (
 	"github.com/go-chi/jwtauth/v5"
 	"golang.org/x/crypto/bcrypt"
 
+	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 )
@@ -47,28 +48,53 @@ var (
 	hasSpecialChar = regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]`)
 )
 
-// validatePassword checks password strength: length ≥8, no match with username,
-// and requires at least one uppercase, lowercase, digit, and special character.
-func validatePassword(password, username string) error {
-	if len(password) < 8 {
-		return fmt.Errorf("%w: must be at least 8 characters", ErrWeakPassword)
+// DefaultPasswordPolicy reproduces the strength rules that used to be
+// hardcoded in validatePassword: length ≥8 plus all four character classes.
+// Callers that build a UserService without going through config.Load (unit
+// tests, zero-valued configs) fall back to this — behavior is unchanged for
+// them.
+func DefaultPasswordPolicy() config.PasswordPolicyConfig {
+	return config.PasswordPolicyConfig{
+		MinLength:        8,
+		RequireUppercase: true,
+		RequireLowercase: true,
+		RequireDigit:     true,
+		RequireSpecial:   true,
+	}
+}
+
+// validatePassword checks password strength per the configured policy
+// (auth.password_policy). The must-not-equal-username rule is always on — it
+// is an identity guard, not a strength knob. Every failure wraps
+// ErrWeakPassword so handlers map the family to 400 via errors.Is (#165).
+func validatePassword(policy config.PasswordPolicyConfig, password, username string) error {
+	if len(password) < policy.MinLength {
+		return fmt.Errorf("%w: must be at least %d characters", ErrWeakPassword, policy.MinLength)
 	}
 	if password == username {
 		return fmt.Errorf("%w: must not equal username", ErrWeakPassword)
 	}
-	if !hasUppercase.MatchString(password) {
+	if policy.RequireUppercase && !hasUppercase.MatchString(password) {
 		return fmt.Errorf("%w: must contain at least one uppercase letter", ErrWeakPassword)
 	}
-	if !hasLowercase.MatchString(password) {
+	if policy.RequireLowercase && !hasLowercase.MatchString(password) {
 		return fmt.Errorf("%w: must contain at least one lowercase letter", ErrWeakPassword)
 	}
-	if !hasDigit.MatchString(password) {
+	if policy.RequireDigit && !hasDigit.MatchString(password) {
 		return fmt.Errorf("%w: must contain at least one digit", ErrWeakPassword)
 	}
-	if !hasSpecialChar.MatchString(password) {
+	if policy.RequireSpecial && !hasSpecialChar.MatchString(password) {
 		return fmt.Errorf("%w: must contain at least one special character", ErrWeakPassword)
 	}
 	return nil
+}
+
+// zeroPolicy reports whether policy is the zero value — a config that never
+// went through Load's defaults seeding. Treated as "use the defaults" so
+// hand-constructed configs (tests) keep the historical behavior.
+func zeroPolicy(p config.PasswordPolicyConfig) bool {
+	return p.MinLength == 0 && !p.RequireUppercase && !p.RequireLowercase &&
+		!p.RequireDigit && !p.RequireSpecial
 }
 
 // UserService handles user authentication and management operations.
@@ -77,13 +103,18 @@ type UserService struct {
 	auth    *jwtauth.JWTAuth
 	expiry  time.Duration
 	totpSvc *TOTPService
+	policy  config.PasswordPolicyConfig
 }
 
-func NewUserService(dbConn db.DBTX, jwtSecret string, tokenExpiry time.Duration) *UserService {
+func NewUserService(dbConn db.DBTX, jwtSecret string, tokenExpiry time.Duration, passwordPolicy config.PasswordPolicyConfig) *UserService {
+	if zeroPolicy(passwordPolicy) {
+		passwordPolicy = DefaultPasswordPolicy()
+	}
 	return &UserService{
 		queries: db.New(dbConn),
 		auth:    jwtauth.New("HS256", []byte(jwtSecret), nil),
 		expiry:  tokenExpiry,
+		policy:  passwordPolicy,
 	}
 }
 
@@ -98,7 +129,7 @@ func (s *UserService) Register(ctx context.Context, username, email, password, r
 		role = string(domain.RoleUser)
 	}
 
-	if err := validatePassword(password, username); err != nil {
+	if err := validatePassword(s.policy, password, username); err != nil {
 		return nil, err
 	}
 
@@ -239,7 +270,7 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, oldPassw
 		return ErrInvalidCredentials
 	}
 
-	if err := validatePassword(newPassword, user.Username); err != nil {
+	if err := validatePassword(s.policy, newPassword, user.Username); err != nil {
 		return err
 	}
 
@@ -276,7 +307,7 @@ func (s *UserService) ForceChangePassword(ctx context.Context, userID int64, new
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if err := validatePassword(newPassword, user.Username); err != nil {
+	if err := validatePassword(s.policy, newPassword, user.Username); err != nil {
 		return err
 	}
 
@@ -318,7 +349,7 @@ func (s *UserService) AdminResetPassword(ctx context.Context, userID int64, newP
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if err := validatePassword(newPassword, user.Username); err != nil {
+	if err := validatePassword(s.policy, newPassword, user.Username); err != nil {
 		return err
 	}
 

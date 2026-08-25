@@ -99,6 +99,11 @@ database:
 | `auth.cookie_secure` | bool | false | HTTPS 专用 cookie 时设置为 true |
 | `auth.cookie_same_site` | string | "strict" | Cookie 同站策略："strict" 或 "lax" |
 | `auth.cookie_max_age` | duration | *(回退 `auth.token_expiry`，再 86400)* | 认证 cookie 有效期。未设置时沿用 `auth.token_expiry`，仍未设置则为 86400 秒（24h）。 |
+| `auth.password_policy.min_length` | int | 8 | 密码最小长度(注册/改密/重置路径生效)。 |
+| `auth.password_policy.require_uppercase` | bool | true | 要求至少一个大写字母。 |
+| `auth.password_policy.require_lowercase` | bool | true | 要求至少一个小写字母。 |
+| `auth.password_policy.require_digit` | bool | true | 要求至少一个数字。 |
+| `auth.password_policy.require_special` | bool | true | 要求至少一个特殊字符。 |
 
 **环境变量：**
 - `MIBEE_AUTH_JWT_SECRET`
