@@ -41,6 +41,39 @@ const (
 	ProbeTimeoutMaxSeconds  = 60
 )
 
+// Probe vantage values (#277). The vantage is the EXECUTION plan for a target:
+// where its probes run. It is deliberately not part of target identity — one
+// target row, one name, results split per vantage.
+const (
+	// ProbeVantageCenter: the center itself executes (default, current behavior).
+	ProbeVantageCenter = "center"
+	// ProbeVantageAll: center + every registered agent each run a track.
+	ProbeVantageAll = "all"
+	// ProbeVantageAgentPrefix: a specific agent executes ("agent:{agent_id}").
+	ProbeVantageAgentPrefix = "agent:"
+)
+
+// NormalizeProbeVantage validates and canonicalizes a vantage value. Empty
+// (the common case / older clients) resolves to "center". Accepts "center",
+// "all", or "agent:{non-empty id}".
+func NormalizeProbeVantage(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ProbeVantageCenter, nil
+	}
+	if v == ProbeVantageCenter || v == ProbeVantageAll {
+		return v, nil
+	}
+	if strings.HasPrefix(v, ProbeVantageAgentPrefix) {
+		id := strings.TrimPrefix(v, ProbeVantageAgentPrefix)
+		if id == "" || len(id) > 100 {
+			return "", fmt.Errorf("vantage agent id must be 1-100 characters")
+		}
+		return v, nil
+	}
+	return "", fmt.Errorf("vantage must be \"center\", \"all\", or \"agent:{agent_id}\"")
+}
+
 // ProbeTargetRequest is the create payload for POST /api/v1/probe-targets.
 type ProbeTargetRequest struct {
 	Name            string `json:"name"`
@@ -50,6 +83,7 @@ type ProbeTargetRequest struct {
 	TimeoutSeconds  int    `json:"timeout_seconds"`
 	Enabled         *bool  `json:"enabled,omitempty"`
 	Notes           string `json:"notes"`
+	Vantage         string `json:"vantage"`
 }
 
 // UpdateProbeTargetRequest is the partial-update payload for PUT. Nil fields
@@ -62,6 +96,7 @@ type UpdateProbeTargetRequest struct {
 	TimeoutSeconds  *int    `json:"timeout_seconds,omitempty"`
 	Enabled         *bool   `json:"enabled,omitempty"`
 	Notes           *string `json:"notes,omitempty"`
+	Vantage         *string `json:"vantage,omitempty"`
 }
 
 // ProbeTargetResponse is a probe target as served by the API. last_* fields
@@ -81,6 +116,7 @@ type ProbeTargetResponse struct {
 	LastError       string  `json:"last_error,omitempty"`
 	CreatedAt       string  `json:"created_at"`
 	UpdatedAt       string  `json:"updated_at"`
+	Vantage         string  `json:"vantage"`
 }
 
 type ProbeTargetListResponse struct {
@@ -100,6 +136,7 @@ type ProbeResultResponse struct {
 	CertNotAfter string  `json:"cert_not_after,omitempty"`
 	CertTrusted  *bool   `json:"cert_trusted,omitempty"` // nil = no cert collected this run
 	CheckedAt    string  `json:"checked_at"`
+	Vantage      string  `json:"vantage"` // which executor produced this row (#277)
 }
 
 type ProbeResultListResponse struct {
@@ -145,6 +182,9 @@ func ValidateProbeTargetRequest(req ProbeTargetRequest) error {
 	}
 	if len(req.Notes) > 500 {
 		return fmt.Errorf("notes must be at most 500 characters")
+	}
+	if _, err := NormalizeProbeVantage(req.Vantage); err != nil {
+		return err
 	}
 	return ValidateProbeTargetGrammar(req.Module, strings.TrimSpace(req.Target))
 }

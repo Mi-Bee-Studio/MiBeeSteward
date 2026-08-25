@@ -14,6 +14,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -148,6 +149,8 @@ func (h *ProbeTargetHandler) TriggerTarget(w http.ResponseWriter, r *http.Reques
 			Error(w, http.StatusConflict, "probe target is disabled; enable it before triggering")
 		case errors.Is(err, probetarget.ErrProbeBusy):
 			Error(w, http.StatusConflict, "a probe of this target is already in flight")
+		case errors.Is(err, probetarget.ErrProbeVantageNotLocal):
+			Error(w, http.StatusConflict, "target vantage assigns execution to an agent; trigger it from the agent's vantage")
 		case errors.Is(err, probetarget.ErrEngineNotAvailable):
 			Error(w, http.StatusServiceUnavailable, "probe engine is not available")
 		default:
@@ -167,8 +170,18 @@ func (h *ProbeTargetHandler) GetTargetResults(w http.ResponseWriter, r *http.Req
 	q := r.URL.Query()
 	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
 	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	vantage := strings.TrimSpace(q.Get("vantage"))
+	if vantage != "" {
+		if v, err := domain.NormalizeProbeVantage(vantage); err != nil {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		} else if v == domain.ProbeVantageAll {
+			Error(w, http.StatusBadRequest, "vantage filter must be \"center\" or \"agent:{agent_id}\", not \"all\"")
+			return
+		}
+	}
 
-	results, total, err := h.service.Results(r.Context(), id, int(limit), int(offset))
+	results, total, err := h.service.Results(r.Context(), id, vantage, int(limit), int(offset))
 	if err != nil {
 		if errors.Is(err, probetarget.ErrProbeTargetNotFound) {
 			Error(w, http.StatusNotFound, "probe target not found")

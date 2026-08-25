@@ -314,6 +314,7 @@ type ProbeResult struct {
 	CertNotAfter string  `json:"cert_not_after"`
 	CertTrusted  int64   `json:"cert_trusted"`
 	CheckedAt    string  `json:"checked_at"`
+	Vantage      string  `json:"vantage"`
 }
 
 type ProbeTarget struct {
@@ -331,6 +332,7 @@ type ProbeTarget struct {
 	LastError       string    `json:"last_error"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	Vantage         string    `json:"vantage"`
 }
 
 type ProbeTlsCert struct {
