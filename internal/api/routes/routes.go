@@ -1030,13 +1030,21 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	sdHandler := handler.NewSDHandler(dbConn, deviceSystemRepo)
 	r.Get("/sd", sdHandler.ServeHTTP)
 
-	// Seed initial device metrics
-	go handler.UpdateDeviceMetrics(context.Background(), dbConn)
+	// Device gauges refresh on a 60s ticker (#333): they are Reset+Set
+	// snapshots of DB state and a one-shot seed froze them at the
+	// process-start snapshot — SQL-side cleanups and post-start discoveries
+	// both drifted the counts until restart. Cancelled in the cleanup
+	// closure below (before db.Close()).
+	deviceMetricsCtx, deviceMetricsCancel := context.WithCancel(context.Background())
+	go handler.StartDeviceMetricsRefresher(deviceMetricsCtx, dbConn, 60*time.Second)
 	// SPA handler — serves embedded frontend
 	spaHandler := handler.NewSPAHandler()
 	r.Mount("/", spaHandler)
 
 	return r, heartbeatSvc, func() {
+		// Stop the device-metrics refresher BEFORE the DB close — its tick
+		// runs aggregate COUNTs against dbConn (#333).
+		deviceMetricsCancel()
 		if demoActivity != nil {
 			demoActivity.Stop()
 		}
