@@ -57,7 +57,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	}
 
 	// User service and handler
-	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
+	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
 	auditRepo := service.NewAuditRepository(db)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, nil)
 	// TOTP service + handler (wired into userSvc so the 2FA flow is exercisable).

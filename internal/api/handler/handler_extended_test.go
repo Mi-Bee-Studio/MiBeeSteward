@@ -65,7 +65,7 @@ func setupExtendedTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 			expiry = d
 		}
 	}
-	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
+	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, nil)
 
 	r := chi.NewMux()

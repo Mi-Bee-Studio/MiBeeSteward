@@ -138,7 +138,7 @@ func setupCSRFTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	middleware.SetJWTAuth(cfg.Auth.JWTSecret)
 
 	expiry := 1 * time.Hour
-	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
+	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
 	auditRepo := service.NewAuditRepository(db)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, nil)
 
@@ -265,7 +265,7 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 	middleware.SetJWTAuth(cfg.Auth.JWTSecret)
 
 	expiry := 1 * time.Hour
-	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
+	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
 	auditRepo := service.NewAuditRepository(db)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, nil)
 

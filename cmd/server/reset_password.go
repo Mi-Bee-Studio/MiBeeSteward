@@ -112,7 +112,7 @@ func resetAdminPasswordSubcommand(args []string) {
 		// ForceChangePassword does not need a valid JWT secret/expiry to set a
 		// password, but NewUserService requires both params.
 		expiry := 24 * time.Hour
-		userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
+		userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
 
 		// admin user id is 1 — seedAdminUser creates it on first server start. If
 		// the server has never been started, the admin user does not exist yet;
