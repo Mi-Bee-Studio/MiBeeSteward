@@ -37,8 +37,10 @@ Documentation is maintained bilingually: `zh/` (中文) and `en/` (English) are 
 
 ## Conventions
 
-- **Website sync**: the MiBee Studio website (www.mlsbs.top) mirrors this manual from `docs/{zh,en}/` into `public/docs/mibeesteward/{zh-CN,en-US}/` via its `sync-docs.ps1` script (slug = filename, 1:1). Keep filenames stable — renaming a page breaks the site's `manifest.json`.
-- **Changelog mirror**: `en/changelog.md` is a verbatim copy of the root [CHANGELOG.md](../CHANGELOG.md); `zh/changelog.md` is the same content behind a Chinese note. Refresh both when `CHANGELOG.md` changes.
+- **Single source of truth**: this directory IS the manual. The MiBee Studio website docs center (www.mlsbs.top/#/docs/mibeesteward/) syncs from `docs/{zh,en}/` automatically — the website mirrors the repo, never the other way around.
+- **Website sync mechanics**: the site pulls `docs/{zh,en}/` into `public/docs/mibeesteward/{zh-CN,en-US}/` via its `sync-docs.ps1` script (slug = filename, 1:1). Keep filenames stable; **renaming/moving/deleting a page requires an issue** so the website's `ArticleMap` and `manifest.json` can be updated in lockstep — a silent rename becomes a 404 on the site. In-manual cross-links use bare `slug.md`; targets outside the collection use absolute links.
+- **Changelog mirror**: `en/changelog.md` is a verbatim copy of the root [CHANGELOG.md](../CHANGELOG.md); `zh/changelog.md` is the same content behind a Chinese note. Both are **generated** — run `make docs-changelog-sync` after editing `CHANGELOG.md`; the CI `docs` job fails on drift.
+- **Fence languages**: every code fence carries a language annotation (`go`, `bash`, `yaml`, `mermaid`, …; plain output as `text`) — enforced by markdownlint MD040 in the CI `docs` job, because the website's highlight.js rendering degrades to monochrome without it.
 - **Diagrams**: use Mermaid fenced blocks; do not use ASCII-art diagrams.
 - **Screenshots**: WebP, 1440×900 viewport, light theme, stored under `{zh,en}/images/` and referenced with relative paths (`images/foo.webp`) — the website sync script downloads relative image srcs into the site automatically. Every screenshot must be **sanitized**: demo-safe IPs (`192.168.1.x` / `192.168.2.x`), generic device names, no real MACs/hostnames/credentials. Capture via `scripts/docs_sanitize_proxy.py` (reverse proxy that rewrites API responses) and audit before publishing.
 - **Public docs only**: content here is published — never include private infrastructure details, credentials, or unreleased strategy.
