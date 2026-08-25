@@ -42,8 +42,11 @@ MiBee Steward 设备管理与监控系统（含设备系统、网络扫描、多
 
 每个请求依次经过以下中间件（与源码注册顺序一致）：
 
-```text
-RequestID → RealIP → Logging → Metrics → Recoverer → CORS → SecurityHeaders → CSRF → 全局限流 → 认证/RBAC（+ 网络范围 / 代理令牌）
+```mermaid
+flowchart LR
+    A[RequestID] --> B[RealIP] --> C[Logging] --> D[Metrics] --> E[Recoverer]
+    E --> F[CORS] --> G[SecurityHeaders] --> H[CSRF]
+    H --> I["全局限流"] --> J["认证/RBAC<br/>（+ 网络范围 / 代理令牌）"]
 ```
 
 - `RealIP` 仅在 TCP 对端位于 `server.trusted_proxies`（默认空 = 不信任任何代理）时采信 `X-Forwarded-For`；直接暴露时以 TCP 对端为准。反向代理部署需在配置中声明代理来源段。

@@ -21,7 +21,7 @@ git commit -s -m "feat(scanner): add new probe"
 
 This produces a trailer in the commit message:
 
-```
+```text
 Signed-off-by: Jane Doe <jane@example.com>
 ```
 
@@ -46,7 +46,7 @@ git config commit.gpgsign false   # DCO uses trailers, not GPG — but this is u
 
 ## The DCO text
 
-```
+```text
 Developer Certificate of Origin
 Version 1.1
 
