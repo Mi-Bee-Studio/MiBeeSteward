@@ -245,6 +245,41 @@ type AuthConfig struct {
 	CookieSecure         bool   `koanf:"cookie_secure"`
 	CookieSameSite       string `koanf:"cookie_same_site"`
 	CookieMaxAge         string `koanf:"cookie_max_age"`
+	// PasswordPolicy is the admin-tunable strength policy for user passwords
+	// (register / change / reset paths all enforce it). Defaults are seeded
+	// before the YAML load, so a config that sets only one knob keeps the
+	// documented defaults for the rest — see passwordPolicyDefaults.
+	PasswordPolicy PasswordPolicyConfig `koanf:"password_policy"`
+}
+
+// PasswordPolicyConfig mirrors the checks of the (formerly hardcoded)
+// validatePassword in internal/service. Booleans turn individual character
+// class requirements off; min_length floors the length check. The
+// must-not-equal-username rule is always on (it is not a strength knob).
+type PasswordPolicyConfig struct {
+	MinLength        int  `koanf:"min_length"`
+	RequireUppercase bool `koanf:"require_uppercase"`
+	RequireLowercase bool `koanf:"require_lowercase"`
+	RequireDigit     bool `koanf:"require_digit"`
+	RequireSpecial   bool `koanf:"require_special"`
+}
+
+// passwordPolicyDefaults seeds koanf BEFORE the YAML load so a partial
+// `auth.password_policy` block overrides only the keys it names (koanf merge
+// semantics) instead of zeroing the rest. These values reproduce the previous
+// hardcoded behavior exactly — deployments without the block see no change.
+// Nested-map form (not flat dot keys): koanf treats dot keys from a raw
+// provider map as literal key names, which would never reach the struct.
+var passwordPolicyDefaults = map[string]interface{}{
+	"auth": map[string]interface{}{
+		"password_policy": map[string]interface{}{
+			"min_length":        8,
+			"require_uppercase": true,
+			"require_lowercase": true,
+			"require_digit":     true,
+			"require_special":   true,
+		},
+	},
 }
 
 type HeartbeatConfig struct {
@@ -322,9 +357,27 @@ type SMTPConfig struct {
 // ARPScanConfig, EBPFConfig, DiscoveryConfig, PipelineDefaultsConfig, etc.)
 // live in scanner_config.go — extracted to keep this file manageable. (#160)
 
+// mapProvider adapts a flat map[string]interface{} (dot-delimited keys) to
+// the koanf Provider interface, so defaults can be seeded without pulling an
+// extra koanf provider module into go.mod.
+type mapProvider map[string]interface{}
+
+func (m mapProvider) ReadBytes() ([]byte, error) {
+	return nil, fmt.Errorf("mapProvider: bytes not supported")
+}
+func (m mapProvider) Read() (map[string]any, error) {
+	return m, nil
+}
+
 // Load reads configuration from a YAML file and overrides with environment variables.
 func Load(configPath string) (*Config, error) {
 	k := koanf.New(".")
+
+	// Seed defaults first: later loads (YAML/env) override only the keys they
+	// actually name, so partial blocks don't zero out unmentioned fields.
+	if err := k.Load(mapProvider(passwordPolicyDefaults), nil); err != nil {
+		return nil, err
+	}
 
 	// Load YAML file
 	if configPath != "" {

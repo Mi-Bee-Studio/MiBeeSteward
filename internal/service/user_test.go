@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
+	"mibee-steward/internal/config"
 	"mibee-steward/internal/domain"
 )
 
@@ -42,7 +43,7 @@ func setupUserService(t *testing.T) (*UserService, *sql.DB) {
 	`)
 	require.NoError(t, err)
 
-	svc := NewUserService(db, testJWTSecret, 24*time.Hour)
+	svc := NewUserService(db, testJWTSecret, 24*time.Hour, config.PasswordPolicyConfig{})
 	return svc, db
 }
 
@@ -432,4 +433,25 @@ func TestRegister_AdminRole(t *testing.T) {
 	resp, err := svc.Register(context.Background(), "admin1", "admin1@example.com", "Adm1n!Pass", "admin")
 	require.NoError(t, err)
 	require.Equal(t, "admin", resp.Role)
+}
+
+// TestPasswordPolicy_Configurable pins the configurable-policy behavior
+// (auth.password_policy): relaxed rules accept a plain date, defaults still
+// reject it, and the must-not-equal-username guard stays on regardless of the
+// strength knobs.
+func TestPasswordPolicy_Configurable(t *testing.T) {
+	relaxed := config.PasswordPolicyConfig{MinLength: 1}
+	// zero value with MinLength set: only the length floor applies
+	if err := validatePassword(relaxed, "1999-12-31", "admin"); err != nil {
+		t.Errorf("relaxed policy rejected plain date: %v", err)
+	}
+	if err := validatePassword(relaxed, "admin", "admin"); err == nil {
+		t.Error("must-not-equal-username guard must always stay on")
+	}
+	if err := validatePassword(config.PasswordPolicyConfig{MinLength: 11}, "1999-12-31", "admin"); err == nil {
+		t.Error("min_length must still be enforced when relaxed otherwise")
+	}
+	if err := validatePassword(DefaultPasswordPolicy(), "1999-12-31", "admin"); err == nil {
+		t.Error("default policy must still reject the plain date")
+	}
 }

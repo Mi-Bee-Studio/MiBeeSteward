@@ -99,6 +99,11 @@ database:
 | `auth.cookie_secure` | bool | false | Set true for HTTPS-only cookies |
 | `auth.cookie_same_site` | string | "strict" | Cookie same-site policy: "strict" or "lax" |
 | `auth.cookie_max_age` | duration | *(falls back to `auth.token_expiry`, then 86400)* | Auth cookie lifetime. Falls back to `auth.token_expiry` when unset, then 86400 seconds (24h). |
+| `auth.password_policy.min_length` | int | 8 | Minimum password length (register / change / reset paths). |
+| `auth.password_policy.require_uppercase` | bool | true | Require at least one uppercase letter. |
+| `auth.password_policy.require_lowercase` | bool | true | Require at least one lowercase letter. |
+| `auth.password_policy.require_digit` | bool | true | Require at least one digit. |
+| `auth.password_policy.require_special` | bool | true | Require at least one special character. |
 
 **Environment Variables:**
 - `MIBEE_AUTH_JWT_SECRET`

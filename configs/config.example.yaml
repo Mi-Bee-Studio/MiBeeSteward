@@ -97,6 +97,17 @@ auth:
   cookie_domain: ""             # Domain for auth cookie (empty = current domain)
   cookie_secure: true          # Set false only for local development without HTTPS
   cookie_same_site: "strict"   # "strict" or "lax"
+  # Password strength policy (register / change / reset-admin-password paths).
+  # Defaults below = the historical hardcoded rules; a partial block overrides
+  # ONLY the keys you name (unmentioned keys keep these defaults). Relax only
+  # on throwaway/test deployments — the must-not-equal-username guard is
+  # always on regardless.
+  # password_policy:
+  #   min_length: 8
+  #   require_uppercase: true
+  #   require_lowercase: true
+  #   require_digit: true
+  #   require_special: true
   cookie_max_age: "24h"           # Cookie MaxAge (defaults to token_expiry if not set)
 cors:
   allowed_origins:

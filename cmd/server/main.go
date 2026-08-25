@@ -162,7 +162,7 @@ func main() {
 			expiry = d
 		}
 	}
-	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry)
+	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
 	seedAdminUser(userSvc, cfg.Auth.InitialAdminPassword)
 
 	// Create router
