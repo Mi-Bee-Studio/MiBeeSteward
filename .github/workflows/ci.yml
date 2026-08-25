@@ -172,3 +172,23 @@ jobs:
           echo "health check timed out" >&2
           docker logs mibee-ci
           exit 1
+
+  # Docs governance (#319 / #322): fence-language lint (MD040) so the website's
+  # highlight.js rendering never regresses into mixed highlighted/monochrome
+  # code blocks, plus a drift guard that regenerates the docs changelog
+  # mirrors and fails when CHANGELOG.md changed without running
+  # `make docs-changelog-sync`. markdownlint-cli2 is pinned like every other
+  # CI tool in this repo (sqlc v1.31.1, golangci-lint v2.12.2).
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: markdownlint (MD040 fenced-code-language)
+        run: npx -y markdownlint-cli2@0.23.2 "**/*.md"
+      - name: Changelog mirror drift check
+        run: |
+          ./scripts/gen_changelog_mirror.sh
+          git diff --exit-code -- docs/zh/changelog.md docs/en/changelog.md

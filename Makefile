@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -92,6 +92,12 @@ sync-fingerprints:
 sync-device-types:
 	@cp -v configs/fingerprints/device-types/device_types.yaml internal/service/scannerv2/runner/device_types.yaml
 	@echo "device_types.yaml synced to runner embed dir"
+
+# docs-changelog-sync regenerates the docs/{zh,en}/changelog.md mirrors from
+# the root CHANGELOG.md (#322). Run whenever CHANGELOG.md changes; the CI
+# `docs` job runs the same script and fails on drift.
+docs-changelog-sync:
+	@./scripts/gen_changelog_mirror.sh
 
 # sync-oui-curated copies the hand-maintained CC-BY-SA OUI table from configs/
 # into the vendor package dir so //go:embed picks it up (Go embed cannot reach
