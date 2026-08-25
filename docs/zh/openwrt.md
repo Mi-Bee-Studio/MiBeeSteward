@@ -171,6 +171,11 @@ logread -e mibee-agent     # 形态 B，期望 "mibee-agent running"
 | `database is locked (SQLITE_BUSY)` | WAL 模式下高并发探测的写冲突。连接池上限（16）当前为编译期固定值，实际可调的手段是降低 `scanner.max_concurrent_hosts` |
 | 启动时 `mmap: access denied` | 内核不允许 SQLite 所需的 mmap——以 root 运行（procd 脚本默认如此）或检查 seccomp/apparmor |
 | 发现源全部 no-op | 非路由器主机上的预期行为。在路由器上逐一检查前置条件（dnsmasq 运行中、`nf_conntrack` 已加载、hostapd ctrl_interface 已启用） |
+| ICMP 探测全部 `permission denied` | OpenWrt 默认 `net.ipv4.ping_group_range = 1 0`，MiBee ICMP 探测所用的非特权 ping socket 被整体禁用。一次性修复：`echo 'net.ipv4.ping_group_range = 0 2147483647' > /etc/sysctl.d/99-mibee.conf && /etc/init.d/sysctl restart`——`mibee-steward doctor` 会检查此项 |
+| 间歇性静默丢连路由器自身端口 | fw3 SYN-flood 防护（GL.iNet 默认开启）是全局 25/s、burst-50 令牌桶；MiBee 心跳端口检查 + 探测扇出可能耗尽它，之后**到任意本地端口的新 TCP 连接被静默丢弃**。在 LuCI 或 fw3 配置中关闭 SYN-flood 防护 |
+| GL.iNet MT2500（mt7981，kernel 5.4.211 SDK）上新 v4 TCP 监听无法完成握手 | 厂商内核 bug：SYN 到达但 SYN-ACK 以未填充的 `0.0.0.0` 地址域发出、被对端 RST——任何语言的新监听都受影响，v6 正常。该固件上的已知限制：绑 v6（`server.host: "::"`）或 center 另放、路由器跑 agent（form B） |
+| `scp` 传文件报 `sh: /usr/libexec/sftp-server: not found` | 厂商固件（含 GL.iNet）不带 sftp-server，新版 scp 回退 SFTP 即失败。强制旧协议：`scp -O …` |
+| GL.iNet 上 `dns_log` 发现源始终为空 | GL 的 dnsmasq 用定制的 `logfacility` uci 键记查询日志（不是标准的 `logfile`）：`uci set dhcp.@dnsmasq[0].logqueries=1 && uci set dhcp.@dnsmasq[0].logfacility=/tmp/dnsmasq.log && uci commit dhcp`，再把 `discovery.dns_log.path` 指向该文件并重启 dnsmasq |
 | 构建报 `build constraints exclude all Go files … modernc.org/libc…` | MIPS 不受支持（modernc/libc 限制）的典型报错形态。请使用 ARM/ARM64 路由器 |
 
 ### 当前不支持
