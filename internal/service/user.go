@@ -104,6 +104,7 @@ type UserService struct {
 	expiry  time.Duration
 	totpSvc *TOTPService
 	policy  config.PasswordPolicyConfig
+	lockout config.LockoutConfig
 }
 
 func NewUserService(dbConn db.DBTX, jwtSecret string, tokenExpiry time.Duration, passwordPolicy config.PasswordPolicyConfig) *UserService {
@@ -121,6 +122,27 @@ func NewUserService(dbConn db.DBTX, jwtSecret string, tokenExpiry time.Duration,
 // SetTOTPService injects the TOTPService dependency (set after construction to avoid circular deps).
 func (s *UserService) SetTOTPService(totpSvc *TOTPService) {
 	s.totpSvc = totpSvc
+}
+
+// SetLockoutPolicy injects the failed-login lockout tuning (auth.lockout).
+// Zero value keeps the historical defaults (5 attempts / 30 minutes), so
+// constructions that never call this (unit tests) behave as before.
+func (s *UserService) SetLockoutPolicy(l config.LockoutConfig) {
+	s.lockout = l
+}
+
+// lockoutParams resolves the effective lockout tuning, defaulting the
+// historical hardcoded values when unset.
+func (s *UserService) lockoutParams() (maxAttempts int, lockMinutes int) {
+	maxAttempts = s.lockout.MaxFailedAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+	lockMinutes = s.lockout.LockMinutes
+	if lockMinutes <= 0 {
+		lockMinutes = 30
+	}
+	return
 }
 
 // Register creates a new user with the given credentials.
@@ -161,17 +183,34 @@ func (s *UserService) Login(ctx context.Context, username, password string) (*do
 		return nil, ErrInvalidCredentials
 	}
 
-	// Check if account is locked
+	// Check if account is locked. Carrying the remaining minutes in the error
+	// lets the handler return 423 (distinct from the 429 rate limiter) so the
+	// UI can tell "account locked" from "too many attempts from this IP".
 	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
-		return nil, ErrAccountLocked
+		mins := int(time.Until(*user.LockedUntil).Minutes()) + 1
+		return nil, fmt.Errorf("%w: retry after %d minutes", ErrAccountLocked, mins)
+	}
+	// A lock that has expired resets the failure counter: each lockout cycle
+	// costs a fresh maxAttempts failures. Without this, a single stray retry
+	// after expiry re-locked instantly — combined with a periodic automation
+	// using a stale password that meant an effectively indefinite lock.
+	if user.LockedUntil != nil {
+		if err := s.queries.ResetLoginAttempts(ctx, user.ID); err != nil {
+			slog.Warn("failed to reset expired lockout", "user_id", user.ID, "error", err)
+		} else {
+			user.FailedLoginAttempts = 0
+			user.LockedUntil = nil
+		}
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		// Increment failed login attempts
+		// Increment failed login attempts (threshold/duration configurable
+		// via auth.lockout; defaults preserve the historical behavior).
+		maxAttempts, lockMinutes := s.lockoutParams()
 		attempts := user.FailedLoginAttempts + 1
 		var lockedUntil *time.Time
-		if attempts >= 5 {
-			lockTime := time.Now().Add(30 * time.Minute)
+		if attempts >= int64(maxAttempts) {
+			lockTime := time.Now().Add(time.Duration(lockMinutes) * time.Minute)
 			lockedUntil = &lockTime
 		}
 		if err := s.queries.UpdateLoginAttempts(ctx, db.UpdateLoginAttemptsParams{

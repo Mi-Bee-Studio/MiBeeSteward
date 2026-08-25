@@ -91,6 +91,8 @@
 				// every 401 as session-expired; on the login endpoint that maps
 				// to "invalid username or password").
 				error = m['auth.error.invalid_credentials']();
+			} else if (err instanceof ApiError && err.status === 423) {
+				error = m['auth.error.account_locked']();
 			} else if (err instanceof ApiError && err.status === 429) {
 				error = m['auth.error.too_many_attempts']();
 			} else if (err instanceof TypeError) {
