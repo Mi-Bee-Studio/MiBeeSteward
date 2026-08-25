@@ -12,6 +12,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -27,6 +28,26 @@ import (
 // MetricsHandler returns an http.Handler that serves Prometheus metrics.
 func MetricsHandler() http.Handler {
 	return promhttp.Handler()
+}
+
+// StartDeviceMetricsRefresher seeds the device gauges once immediately, then
+// recomputes them on a fixed ticker until ctx is cancelled (#333). The gauges
+// are Reset+Set snapshots of DB state — without periodic refresh they froze at
+// the process-start snapshot and drifted from reality in BOTH directions
+// (SQL-side cleanups left counts inflated; devices discovered after startup
+// were never counted) until restart. Two aggregate COUNTs per tick; cheap.
+func StartDeviceMetricsRefresher(ctx context.Context, dbtx db.DBTX, interval time.Duration) {
+	UpdateDeviceMetrics(ctx, dbtx)
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			UpdateDeviceMetrics(ctx, dbtx)
+		}
+	}
 }
 
 // UpdateDeviceMetrics queries the database and updates the MibeeDevicesTotal gauge.
