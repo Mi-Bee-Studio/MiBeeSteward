@@ -42,8 +42,11 @@ Complete REST API documentation for the MiBee Steward device management and moni
 
 Every request passes through the following middleware in source registration order:
 
-```text
-RequestID → RealIP → Logging → Metrics → Recoverer → CORS → SecurityHeaders → CSRF → Global Rate Limit → Auth/RBAC (+ Network Scope / Agent Token)
+```mermaid
+flowchart LR
+    A[RequestID] --> B[RealIP] --> C[Logging] --> D[Metrics] --> E[Recoverer]
+    E --> F[CORS] --> G[SecurityHeaders] --> H[CSRF]
+    H --> I[Global Rate Limit] --> J["Auth/RBAC<br/>(+ Network Scope / Agent Token)"]
 ```
 
 - `RealIP` only trusts `X-Forwarded-For` when the TCP peer is in `server.trusted_proxies` (default empty = trust no proxy); when directly exposed the TCP peer is used. Reverse proxy deployments must declare the proxy source range in configuration.
