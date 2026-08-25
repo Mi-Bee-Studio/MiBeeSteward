@@ -58,11 +58,20 @@ func TestCoverage_TiersAndGrouping(t *testing.T) {
 	require.EqualValues(t, 3, cov.Unidentified)
 	require.Len(t, cov.Devices, 3)
 
-	// groups: oui TP-Link x2 tops; ports 80 x2; hostname espresso x2
+	// groups: oui TP-Link x2, ports 80 x2, hostname espresso x2 — all tied
+	// at count 2, so assert by KIND lookup, not positional order (the sort
+	// tiebreaks deterministically on kind/signature, but no kind is "first"
+	// among equals).
 	require.NotEmpty(t, cov.Groups)
-	require.Equal(t, "oui", cov.Groups[0].Kind)
-	require.Equal(t, "TP-Link", cov.Groups[0].Signature)
-	require.EqualValues(t, 2, cov.Groups[0].Count)
+	var ouiGroup *UnidentifiedGroup
+	for i := range cov.Groups {
+		if cov.Groups[i].Kind == "oui" {
+			ouiGroup = &cov.Groups[i]
+		}
+	}
+	require.NotNil(t, ouiGroup, "oui group expected")
+	require.Equal(t, "TP-Link", ouiGroup.Signature)
+	require.EqualValues(t, 2, ouiGroup.Count)
 
 	var portsGroup *UnidentifiedGroup
 	for i := range cov.Groups {

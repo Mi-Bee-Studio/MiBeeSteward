@@ -1142,7 +1142,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 | `/api/v1/probe-targets/{id}` | PUT | 操作员及以上 · `CapProbeManage` | 更新目标（部分更新，nil 字段保持不变） |
 | `/api/v1/probe-targets/{id}` | DELETE | 操作员及以上 · `CapProbeManage` | 删除目标（连同历史结果与已存证书链） |
 | `/api/v1/probe-targets/{id}/trigger` | POST | 操作员及以上 · `CapProbeManage` | 立即拨测（同步执行，返回本次探测结果） |
-| `/api/v1/probe-targets/{id}/results` | GET | 需认证 · `CapProbeRead` | 探测历史（`limit`/`offset`，新到旧） |
+| `/api/v1/probe-targets/{id}/results` | GET | 需认证 · `CapProbeRead` | 探测历史（`limit`/`offset`，新到旧；可选 `vantage` 过滤——`center` 或 `agent:{agent_id}`，留空 = 全部视角） |
 | `/api/v1/probe-targets/{id}/certificates` | GET | 需认证 · `CapProbeRead` | 当前证书链（响应形状与设备证书端点一致） |
 
 ### POST /api/v1/probe-targets/
@@ -1160,7 +1160,8 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
   "interval_seconds": 60,
   "timeout_seconds": 10,
   "notes": "",
-  "enabled": true
+  "enabled": true,
+  "vantage": "center"
 }
 ```
 - `name`（必填，全局唯一）：目标名称（同时是 Prometheus 指标 label）
@@ -1169,6 +1170,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 - `interval_seconds`（可选，默认 60）：探测间隔，10–86400 秒
 - `timeout_seconds`（可选，默认 10）：单次探测超时，1–60 秒，须小于间隔
 - `notes`（可选，≤500 字符）、`enabled`（可选，默认 true）
+- `vantage`（可选，默认 `center`）：执行计划——`center`（本机执行）、`agent:{agent_id}`（指定 agent 执行；agent 侧执行随分布式拨测落地，在此之前此类目标无中心侧序列、手动触发返回 409）、`all`（中心 + 全部 agent）
 
 **响应**：`201 Created` 带 ProbeTargetResponse（含 `last_run_at`/`last_status`/`last_latency_ms`/`last_error` 去规范化最新结果，空 = 尚未探测）。
 

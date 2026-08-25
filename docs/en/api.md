@@ -1142,7 +1142,7 @@ Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style)
 | `/api/v1/probe-targets/{id}` | PUT | Operator+ · `CapProbeManage` | Update (partial; nil fields unchanged) |
 | `/api/v1/probe-targets/{id}` | DELETE | Operator+ · `CapProbeManage` | Delete target (with its result history and stored certificate chain) |
 | `/api/v1/probe-targets/{id}/trigger` | POST | Operator+ · `CapProbeManage` | Probe now (synchronous — returns the recorded result) |
-| `/api/v1/probe-targets/{id}/results` | GET | Auth · `CapProbeRead` | Result history (`limit`/`offset`, newest first) |
+| `/api/v1/probe-targets/{id}/results` | GET | Auth · `CapProbeRead` | Result history (`limit`/`offset`, newest first; optional `vantage` filter — `center` or `agent:{agent_id}`, empty = all vantages) |
 | `/api/v1/probe-targets/{id}/certificates` | GET | Auth · `CapProbeRead` | Current certificate chain (same shape as the device endpoint) |
 
 ### POST /api/v1/probe-targets/
@@ -1160,7 +1160,8 @@ Create a probe target.
   "interval_seconds": 60,
   "timeout_seconds": 10,
   "notes": "",
-  "enabled": true
+  "enabled": true,
+  "vantage": "center"
 }
 ```
 - `name` (required, globally unique): target name (also the Prometheus metric label)
@@ -1169,6 +1170,7 @@ Create a probe target.
 - `interval_seconds` (optional, default 60): probe interval, 10–86400 seconds
 - `timeout_seconds` (optional, default 10): per-probe timeout, 1–60 seconds, must be smaller than the interval
 - `notes` (optional, ≤500 chars), `enabled` (optional, default true)
+- `vantage` (optional, default `center`): execution plan — `center` (this instance probes), `agent:{agent_id}` (a named agent probes; agent-side execution lands with the distributed vantage rollout — until then such targets hold no center-side series and manual trigger returns 409), or `all` (center + every agent)
 
 **Response**: `201 Created` with ProbeTargetResponse (including the denormalized `last_run_at`/`last_status`/`last_latency_ms`/`last_error`; empty = never probed).
 

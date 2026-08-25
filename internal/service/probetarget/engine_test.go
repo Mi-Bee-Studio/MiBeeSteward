@@ -101,7 +101,7 @@ func TestEngine_TriggerNowHTTP(t *testing.T) {
 	require.InDelta(t, 150.0, resp.LatencyMs, 1.0)
 
 	// Persisted: one history row + denormalized last_* on the target.
-	results, total, err := svc.Results(ctx, tgt.ID, 10, 0)
+	results, total, err := svc.Results(ctx, tgt.ID, "", 10, 0)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, total)
 	require.Equal(t, "success", results[0].Status)
@@ -123,6 +123,23 @@ func TestEngine_TriggerNowDisabled(t *testing.T) {
 	engine := newTestEngine(t, queries, &fakeProber{}, nil)
 	_, err = engine.TriggerNow(ctx, tgt.ID)
 	require.ErrorIs(t, err, ErrProbeTargetDisabled)
+}
+
+// TestEngine_TriggerNowAgentVantageNotLocal: a target whose vantage plan
+// assigns execution to an agent is refused by the center engine — manual
+// trigger follows the plan (#277 step 1).
+func TestEngine_TriggerNowAgentVantageNotLocal(t *testing.T) {
+	queries, svc, _ := setupEngine(t)
+	ctx := context.Background()
+	req := validCreate("tcp", "example.com:80")
+	req.Name = "remote-plan"
+	req.Vantage = "agent:agent-62"
+	tgt := mustCreate(t, svc, req)
+	require.Equal(t, "agent:agent-62", tgt.Vantage)
+
+	engine := newTestEngine(t, queries, &fakeProber{}, nil)
+	_, err := engine.TriggerNow(ctx, tgt.ID)
+	require.ErrorIs(t, err, ErrProbeVantageNotLocal)
 }
 
 func TestEngine_TriggerNowTLSCollectsChain(t *testing.T) {

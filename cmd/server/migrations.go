@@ -185,6 +185,14 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		// single networks.cidr, and backfilled below. Runs and results scope
 		// through their task — they carry no network_id of their own.
 		"ALTER TABLE scan_tasks ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL",
+		// Probe multi-vantage groundwork (#277 step 1): execution-plan vantage
+		// on targets ('center' | 'agent:{id}' | 'all'), per-vantage result
+		// tracks on results. Existing rows backfill to 'center' via the
+		// DEFAULT — exactly what they are today (engine-run on the center).
+		// The new results index (idx_probe_results_target_vantage_time) comes
+		// from schema.sql's CREATE INDEX IF NOT EXISTS, which re-runs above.
+		"ALTER TABLE probe_targets ADD COLUMN vantage TEXT NOT NULL DEFAULT 'center'",
+		"ALTER TABLE probe_results ADD COLUMN vantage TEXT NOT NULL DEFAULT 'center'",
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {

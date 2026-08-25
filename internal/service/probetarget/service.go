@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -54,6 +55,10 @@ func (s *Service) Create(ctx context.Context, req domain.ProbeTargetRequest) (do
 	if req.Enabled != nil && !*req.Enabled {
 		enabled = 0
 	}
+	vantage, err := domain.NormalizeProbeVantage(req.Vantage)
+	if err != nil {
+		return domain.ProbeTargetResponse{}, err
+	}
 	target := strings.TrimSpace(req.Target)
 	t, err := s.queries.CreateProbeTarget(ctx, db.CreateProbeTargetParams{
 		Name:            name,
@@ -63,6 +68,7 @@ func (s *Service) Create(ctx context.Context, req domain.ProbeTargetRequest) (do
 		TimeoutSeconds:  defaultIfZero(int64(req.TimeoutSeconds), 10),
 		Enabled:         enabled,
 		Notes:           req.Notes,
+		Vantage:         vantage,
 	})
 	if err != nil {
 		return domain.ProbeTargetResponse{}, err
@@ -155,11 +161,19 @@ func (s *Service) Update(ctx context.Context, id int64, req domain.UpdateProbeTa
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	vantage := existing.Vantage
+	if req.Vantage != nil {
+		v, err := domain.NormalizeProbeVantage(*req.Vantage)
+		if err != nil {
+			return domain.ProbeTargetResponse{}, err
+		}
+		vantage = v
+	}
 
 	if err := domain.ValidateProbeTargetRequest(domain.ProbeTargetRequest{
 		Name: name, Module: module, Target: target,
 		IntervalSeconds: int(interval), TimeoutSeconds: int(timeout),
-		Enabled: &enabled, Notes: notes,
+		Enabled: &enabled, Notes: notes, Vantage: vantage,
 	}); err != nil {
 		return domain.ProbeTargetResponse{}, err
 	}
@@ -177,6 +191,7 @@ func (s *Service) Update(ctx context.Context, id int64, req domain.UpdateProbeTa
 		TimeoutSeconds:  timeout,
 		Enabled:         existing.Enabled, // toggled separately below (same split as scan tasks)
 		Notes:           notes,
+		Vantage:         vantage,
 		ID:              id,
 	})
 	if err != nil {
@@ -231,13 +246,29 @@ func (s *Service) Trigger(ctx context.Context, id int64) (domain.ProbeResultResp
 	return s.engine.TriggerNow(ctx, id)
 }
 
-// Results returns a target's history (newest first) + total.
-func (s *Service) Results(ctx context.Context, targetID int64, limit, offset int) ([]domain.ProbeResultResponse, int64, error) {
+// Results returns a target's history (newest first) + total. vantage filters
+// to one executor's track; empty = all vantages interleaved. It accepts the
+// same grammar as probe_targets.vantage ('all' is rejected here — it is a
+// target plan, not a result track).
+func (s *Service) Results(ctx context.Context, targetID int64, vantage string, limit, offset int) ([]domain.ProbeResultResponse, int64, error) {
 	if _, err := s.queries.GetProbeTarget(ctx, targetID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, 0, ErrProbeTargetNotFound
 		}
 		return nil, 0, err
+	}
+	// Filter semantics differ from CRUD semantics: empty here means NO filter
+	// (all vantages interleaved) — unlike probe_targets.vantage, where empty
+	// canonicalizes to "center". Canonicalize only a supplied filter.
+	v := ""
+	if strings.TrimSpace(vantage) != "" {
+		var err error
+		if v, err = domain.NormalizeProbeVantage(vantage); err != nil {
+			return nil, 0, err
+		}
+		if v == domain.ProbeVantageAll {
+			return nil, 0, fmt.Errorf("vantage filter must be \"center\" or \"agent:{agent_id}\", not \"all\"")
+		}
 	}
 	if limit < 1 {
 		limit = 20
@@ -249,12 +280,14 @@ func (s *Service) Results(ctx context.Context, targetID int64, limit, offset int
 		offset = 0
 	}
 	rows, err := s.queries.ListProbeResultsByTarget(ctx, db.ListProbeResultsByTargetParams{
-		TargetID: targetID, Limit: int64(limit), Offset: int64(offset),
+		TargetID: targetID, Column2: v, Vantage: v, Limit: int64(limit), Offset: int64(offset),
 	})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.queries.CountProbeResultsByTarget(ctx, targetID)
+	total, err := s.queries.CountProbeResultsByTarget(ctx, db.CountProbeResultsByTargetParams{
+		TargetID: targetID, Column2: v, Vantage: v,
+	})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -298,6 +331,7 @@ func toTargetResponse(t db.ProbeTarget) domain.ProbeTargetResponse {
 		LastError:       t.LastError,
 		CreatedAt:       t.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:       t.UpdatedAt.UTC().Format(time.RFC3339),
+		Vantage:         t.Vantage,
 	}
 }
 
@@ -312,6 +346,7 @@ func toResultResponse(r db.ProbeResult) domain.ProbeResultResponse {
 		TLSVersion:   r.TlsVersion,
 		CertNotAfter: r.CertNotAfter,
 		CheckedAt:    r.CheckedAt,
+		Vantage:      r.Vantage,
 	}
 	if r.CertTrusted >= 0 {
 		v := r.CertTrusted == 1

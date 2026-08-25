@@ -773,7 +773,14 @@ CREATE TABLE IF NOT EXISTS probe_targets (
     last_latency_ms REAL NOT NULL DEFAULT 0,
     last_error TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Execution-plan vantage (#277 step 1): 'center' (default), 'agent:{agent_id}',
+    -- or 'all' (expands to center + every agent at run time, never stored
+    -- expanded). Deliberately NOT part of target identity: name stays UNIQUE
+    -- alone and results split per vantage in probe_results, so one target row
+    -- can carry multiple vantages' series. Kept at the table tail so fresh
+    -- (schema.sql) and migrated (ALTER TABLE append) column orders match.
+    vantage TEXT NOT NULL DEFAULT 'center'
 );
 CREATE INDEX IF NOT EXISTS idx_probe_targets_enabled ON probe_targets(enabled);
 
@@ -795,10 +802,15 @@ CREATE TABLE IF NOT EXISTS probe_results (
     tls_version TEXT NOT NULL DEFAULT '',
     cert_not_after TEXT NOT NULL DEFAULT '',      -- leaf cert expiry, RFC3339 UTC; '' = none collected
     cert_trusted INTEGER NOT NULL DEFAULT -1 CHECK(cert_trusted IN (-1, 0, 1)),  -- -1 = no cert this run
-    checked_at TEXT NOT NULL DEFAULT ''
+    checked_at TEXT NOT NULL DEFAULT '',
+    -- Which executor produced this row (#277): 'center' or 'agent:{agent_id}'.
+    -- Mirrors probe_targets.vantage (the plan); results are the per-vantage
+    -- tracks. Tail placement keeps fresh/migrated column orders identical.
+    vantage TEXT NOT NULL DEFAULT 'center'
 );
 CREATE INDEX IF NOT EXISTS idx_probe_results_target_time ON probe_results(target_id, checked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at);
+CREATE INDEX IF NOT EXISTS idx_probe_results_target_vantage_time ON probe_results(target_id, vantage, checked_at DESC);
 
 -- probe_tls_certs: certificate chains collected from probe targets - the
 -- external sibling of host_tls_certs (same column set, keyed by target_id
