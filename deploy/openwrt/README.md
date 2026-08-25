@@ -142,6 +142,8 @@ Field diagnosis (see issue #288) on the stock firmware shows **newly-created IPv
 | `unsupported GOARCH mips` at build | MIPS isn't supported (modernc/libc limitation). Use an ARM/ARM64 router. |
 | ICMP probes all `permission denied` | `ping_group_range` disabled — see the operator prerequisites above. |
 | Intermittent silent connection drops to the router's own ports | fw3 `syn_flood` token bucket exhausted — see the operator prerequisites above. |
+| `scp` to the router fails with `sh: /usr/libexec/sftp-server: not found` | Vendor firmwares (GL.iNet included) ship no sftp-server, so modern scp falls back to SFTP and dies. Force the legacy protocol: `scp -O …`. |
+| `dns_log` discovery source stays empty on GL.iNet | GL's dnsmasq build logs queries via the custom `logfacility` uci key (not the standard `logfile`): `uci set dhcp.@dnsmasq[0].logqueries=1 && uci set dhcp.@dnsmasq[0].logfacility=/tmp/dnsmasq.log && uci commit dhcp`, then point `discovery.dns_log.path` at that file and restart dnsmasq. |
 
 ## What's NOT covered here
 
