@@ -32,6 +32,10 @@ var (
 	ErrProbeTargetDisabled = errors.New("probe target is disabled")
 	ErrProbeBusy           = errors.New("probe already running for this target")
 	ErrEngineNotAvailable  = errors.New("probe engine not available")
+	// ErrProbeVantageNotLocal: the target's vantage plan assigns execution to
+	// an agent, so the center engine refuses to run it (#277). Manual trigger
+	// follows the plan; agents get their own trigger path with step 2.
+	ErrProbeVantageNotLocal = errors.New("probe target vantage assigns execution to an agent, not this center")
 )
 
 const (
@@ -158,6 +162,14 @@ func (e *Engine) tick(ctx context.Context) {
 	}
 	for i := range targets {
 		t := targets[i]
+		// Vantage plan (#277): the center engine executes 'center' and 'all'
+		// plans ('all' gains agent tracks once the agent command channel ships
+		// them). Agent-only plans ('agent:{id}') are none of the center's
+		// business — skip them silently; they hold no center-side series and
+		// their last_* stays untouched until their agent reports.
+		if t.Vantage != domain.ProbeVantageCenter && t.Vantage != domain.ProbeVantageAll {
+			continue
+		}
 		current[t.Name+"/"+t.Module] = true
 
 		due, ok := e.nextDue[t.ID]
@@ -212,6 +224,9 @@ func (e *Engine) TriggerNow(ctx context.Context, targetID int64) (domain.ProbeRe
 	if t.Enabled == 0 {
 		return domain.ProbeResultResponse{}, ErrProbeTargetDisabled
 	}
+	if t.Vantage != domain.ProbeVantageCenter && t.Vantage != domain.ProbeVantageAll {
+		return domain.ProbeResultResponse{}, ErrProbeVantageNotLocal
+	}
 	resp, err := e.probeTarget(ctx, t)
 	if errors.Is(err, ErrProbeBusy) {
 		// Manual trigger raced the scheduler's run of the same target — the
@@ -244,6 +259,7 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 		CertNotAfter: out.certNotAfter,
 		CertTrusted:  certTrustedDB(out.certTrusted),
 		CheckedAt:    checkedAt,
+		Vantage:      domain.ProbeVantageCenter, // the engine IS the center executor
 	}); err != nil {
 		e.logger.Error("probe engine: persist result failed", "target_id", t.ID, "error", err)
 	}

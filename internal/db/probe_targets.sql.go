@@ -30,9 +30,10 @@ func (q *Queries) CountProbeTargetsSearch(ctx context.Context, arg CountProbeTar
 
 const createProbeTarget = `-- name: CreateProbeTarget :one
 
-INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, notes)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at
+
+INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, notes, vantage)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
 `
 
 type CreateProbeTargetParams struct {
@@ -43,16 +44,20 @@ type CreateProbeTargetParams struct {
 	TimeoutSeconds  int64  `json:"timeout_seconds"`
 	Enabled         int64  `json:"enabled"`
 	Notes           string `json:"notes"`
+	Vantage         string `json:"vantage"`
 }
 
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Copyright (c) 2026 Mi Bee Studio. All rights reserved.
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
 //
 // This file is part of MiBee Steward, distributed under the GNU Affero General
-// Public License v3.0 or later; see LICENSE for the full text. A commercial
-// license is available for use cases the AGPL does not accommodate; see
-// LICENSE-COMMERCIAL.md.
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+// vantage (#277): the execution plan - 'center' | 'agent:{agent_id}' | 'all'
+// ('all' expands to center + every agent at run time, never stored expanded).
+// Not part of identity: name stays UNIQUE alone.
 func (q *Queries) CreateProbeTarget(ctx context.Context, arg CreateProbeTargetParams) (ProbeTarget, error) {
 	row := q.db.QueryRowContext(ctx, createProbeTarget,
 		arg.Name,
@@ -62,6 +67,7 @@ func (q *Queries) CreateProbeTarget(ctx context.Context, arg CreateProbeTargetPa
 		arg.TimeoutSeconds,
 		arg.Enabled,
 		arg.Notes,
+		arg.Vantage,
 	)
 	var i ProbeTarget
 	err := row.Scan(
@@ -79,6 +85,7 @@ func (q *Queries) CreateProbeTarget(ctx context.Context, arg CreateProbeTargetPa
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Vantage,
 	)
 	return i, err
 }
@@ -97,7 +104,7 @@ func (q *Queries) DeleteProbeTarget(ctx context.Context, id int64) (int64, error
 }
 
 const getProbeTarget = `-- name: GetProbeTarget :one
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
 FROM probe_targets
 WHERE id = ?
 `
@@ -120,12 +127,13 @@ func (q *Queries) GetProbeTarget(ctx context.Context, id int64) (ProbeTarget, er
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Vantage,
 	)
 	return i, err
 }
 
 const getProbeTargetByName = `-- name: GetProbeTargetByName :one
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
 FROM probe_targets
 WHERE name = ?
 `
@@ -150,17 +158,21 @@ func (q *Queries) GetProbeTargetByName(ctx context.Context, name string) (ProbeT
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Vantage,
 	)
 	return i, err
 }
 
 const listEnabledProbeTargets = `-- name: ListEnabledProbeTargets :many
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
 FROM probe_targets
 WHERE enabled = 1
 `
 
 // The engine re-reads this every tick so CRUD changes apply without restart.
+// Targets whose vantage is agent-only are filtered in the engine (Go), not
+// here: the center engine runs 'center' and 'all' vantages and leaves
+// 'agent:{id}' plans to the agent command channel (#277 step 2).
 func (q *Queries) ListEnabledProbeTargets(ctx context.Context) ([]ProbeTarget, error) {
 	rows, err := q.db.QueryContext(ctx, listEnabledProbeTargets)
 	if err != nil {
@@ -185,6 +197,7 @@ func (q *Queries) ListEnabledProbeTargets(ctx context.Context) ([]ProbeTarget, e
 			&i.LastError,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Vantage,
 		); err != nil {
 			return nil, err
 		}
@@ -200,7 +213,7 @@ func (q *Queries) ListEnabledProbeTargets(ctx context.Context) ([]ProbeTarget, e
 }
 
 const listProbeTargetsSearch = `-- name: ListProbeTargetsSearch :many
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
 FROM probe_targets
 WHERE (? = '' OR INSTR(lower(name), lower(?)) > 0 OR INSTR(lower(target), lower(?)) > 0)
 ORDER BY id
@@ -216,8 +229,9 @@ type ListProbeTargetsSearchParams struct {
 }
 
 // Optional case-insensitive substring search over name + target, using the
-// same (? = ”) short-circuit idiom as ListScanTasksSearch (INSTR so search
-// terms need no escaping). CountProbeTargetsSearch MUST mirror this WHERE.
+// same empty-string short-circuit idiom as ListScanTasksSearch (INSTR so
+// search terms need no escaping). CountProbeTargetsSearch MUST mirror this
+// WHERE.
 func (q *Queries) ListProbeTargetsSearch(ctx context.Context, arg ListProbeTargetsSearchParams) ([]ProbeTarget, error) {
 	rows, err := q.db.QueryContext(ctx, listProbeTargetsSearch,
 		arg.Column1,
@@ -248,6 +262,7 @@ func (q *Queries) ListProbeTargetsSearch(ctx context.Context, arg ListProbeTarge
 			&i.LastError,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Vantage,
 		); err != nil {
 			return nil, err
 		}
@@ -309,9 +324,9 @@ func (q *Queries) ToggleProbeTargetEnabled(ctx context.Context, arg ToggleProbeT
 const updateProbeTarget = `-- name: UpdateProbeTarget :one
 UPDATE probe_targets
 SET name = ?, module = ?, target = ?, interval_seconds = ?, timeout_seconds = ?,
-    enabled = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+    enabled = ?, notes = ?, vantage = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at
+RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
 `
 
 type UpdateProbeTargetParams struct {
@@ -322,6 +337,7 @@ type UpdateProbeTargetParams struct {
 	TimeoutSeconds  int64  `json:"timeout_seconds"`
 	Enabled         int64  `json:"enabled"`
 	Notes           string `json:"notes"`
+	Vantage         string `json:"vantage"`
 	ID              int64  `json:"id"`
 }
 
@@ -334,6 +350,7 @@ func (q *Queries) UpdateProbeTarget(ctx context.Context, arg UpdateProbeTargetPa
 		arg.TimeoutSeconds,
 		arg.Enabled,
 		arg.Notes,
+		arg.Vantage,
 		arg.ID,
 	)
 	var i ProbeTarget
@@ -352,6 +369,7 @@ func (q *Queries) UpdateProbeTarget(ctx context.Context, arg UpdateProbeTargetPa
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Vantage,
 	)
 	return i, err
 }
