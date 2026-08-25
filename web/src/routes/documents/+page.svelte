@@ -12,6 +12,8 @@
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
 	import { html, sanitizeUrl } from '$lib/utils';
+	import { renderMarkdown } from '$lib/utils/markdown';
+	import type { HtmlString } from '$lib/utils/html';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { addToast } from '$lib/stores/toast';
 	import Modal from '$lib/components/Modal.svelte';
@@ -82,6 +84,10 @@
 	// File preview modal
 	let previewOpen = $state(false);
 	let previewDoc = $state<Document | null>(null);
+	// Markdown preview: fetched + rendered (sanitized) on open.
+	let previewHtml = $state<HtmlString>('');
+	let previewLoading = $state(false);
+	let previewError = $state('');
 
 	onMount(() => {
 		hydrateFromUrl();
@@ -269,12 +275,34 @@
 	}
 
 	// --- File Preview ---
-	function openPreview(doc: Document) {
+	async function openPreview(doc: Document) {
 		previewDoc = doc;
+		previewError = '';
+		previewHtml = '';
 		previewOpen = true;
+		if (isMarkdown(doc)) {
+			// Markdown renders client-side: fetch the raw text through the API
+			// client (auth/CSRF parity with every other request), then sanitize.
+			previewLoading = true;
+			try {
+				const blob = await api.download(`/documents/${doc.id}/download`);
+				previewHtml = renderMarkdown(await blob.text());
+			} catch (err: unknown) {
+				previewError = getErrorMessage(err);
+			} finally {
+				previewLoading = false;
+			}
+		}
+	}
+
+	function isMarkdown(doc: Document): boolean {
+		const mime = doc.mime_type?.toLowerCase() || '';
+		const ext = doc.file_path?.split('.').pop()?.toLowerCase() || '';
+		return mime === 'text/markdown' || ['md', 'markdown'].includes(ext);
 	}
 
 	function isPreviewable(doc: Document): boolean {
+		if (isMarkdown(doc)) return true;
 		const mime = doc.mime_type?.toLowerCase() || '';
 		const ext = doc.file_path?.split('.').pop()?.toLowerCase() || '';
 		return mime.startsWith('image/') || mime === 'application/pdf'
@@ -596,17 +624,40 @@
 <Modal bind:open={previewOpen} title={m["documents.Preview File"]()} maxWidth="48rem" onClose={() => { previewOpen = false; }}>
 	{#if previewDoc}
 		<div class="text-sm text-text-muted mb-3">{previewDoc.title}</div>
-		{#if isImage(previewDoc)}
+		{#if isMarkdown(previewDoc)}
+			{#if previewLoading}
+				<div class="flex items-center justify-center gap-2 py-16 text-text-muted">
+					<LoaderCircle class="w-5 h-5 animate-spin" aria-hidden="true" />
+					<span>{m["documents.Rendering Preview"]()}</span>
+				</div>
+			{:else if previewError}
+				<div class="text-center py-8 text-text-muted">
+					<p class="mb-3 text-error">{previewError}</p>
+					{#if previewDoc.file_path}
+						<button
+							onclick={() => downloadDocument(previewDoc!)}
+							class="px-3 py-1.5 text-xs rounded text-primary hover:bg-primary/10 transition-colors border border-primary/30"
+						>
+							{m["documents.Download"]()}
+						</button>
+					{/if}
+				</div>
+			{:else}
+				<!-- previewHtml is sanitized in renderMarkdown (DOMPurify) — the only
+				     path through which uploaded file text may reach {@html}. -->
+				<div class="markdown-body max-h-[70vh] overflow-y-auto">{@html previewHtml}</div>
+			{/if}
+		{:else if isImage(previewDoc)}
 			<div class="flex justify-center">
 				<img
-					src="/api/v1/documents/{previewDoc.id}/download"
+					src="/api/v1/documents/{previewDoc.id}/download?inline=1"
 					alt={previewDoc.title}
 					class="max-w-full max-h-[70vh] rounded-lg border border-border"
 				/>
 			</div>
 		{:else if isPdf(previewDoc)}
 			<iframe
-				src="/api/v1/documents/{previewDoc.id}/download"
+				src="/api/v1/documents/{previewDoc.id}/download?inline=1"
 				class="w-full h-[70vh] rounded-lg border border-border"
 				title={previewDoc.title}
 			></iframe>

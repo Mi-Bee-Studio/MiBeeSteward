@@ -152,6 +152,8 @@ curl -X POST http://localhost:8080/api/v1/scanner/scan \
 
 ## 下一步
 
+- [场景玩法指引](playbooks.md) — 从首次扫描到多网段的六个上手场景
+- [功能总览](features.md) — 全部能力的分层清单
 - [架构](architecture.md) — 扫描器流水线与后台服务
 - [部署](deployment.md) — systemd、Docker、Nginx、备份
 - [分布式](distributed.md) — 中心 + 采集器跨网络发现

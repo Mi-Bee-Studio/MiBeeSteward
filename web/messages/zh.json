@@ -231,6 +231,7 @@
 		"Preview": "预览",
 		"Preview File": "预览文件",
 		"Preview Not Available": "此文件类型不支持预览",
+		"Rendering Preview": "正在渲染预览…",
 		"Restore Failed": "恢复失败",
 		"URL Placeholder": "https://...",
 		"Page Title": "文档"

@@ -122,6 +122,9 @@ CREATE TABLE IF NOT EXISTS devices (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 -- Documents table
+-- deleted_at: soft-delete tombstone. DELETE /documents/{id} only stamps it
+-- (so the UI's undo/restore can bring the row + its file back); all read
+-- queries filter on it. Physical purge is a later retention concern.
 CREATE TABLE IF NOT EXISTS documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -131,6 +134,7 @@ CREATE TABLE IF NOT EXISTS documents (
     file_size INTEGER NOT NULL DEFAULT 0,
     mime_type TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
+    deleted_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

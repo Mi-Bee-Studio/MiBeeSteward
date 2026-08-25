@@ -157,6 +157,10 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		// backup probe (#137). NULL = not config-backed-up. SET NULL on credential
 		// delete so the device row survives (backup just pauses for it).
 		"ALTER TABLE devices ADD COLUMN ssh_credential_id INTEGER REFERENCES ssh_credentials(id) ON DELETE SET NULL",
+		// documents.deleted_at: soft-delete tombstone backing the UI's
+		// delete-undo (POST /documents/{id}/restore). Reads filter on it; the
+		// uploaded file stays on disk so restore is lossless.
+		"ALTER TABLE documents ADD COLUMN deleted_at TIMESTAMP",
 		// Dual JSON layer (scan_attributes + user_attributes). Generated columns
 		// (scan_vendor/scan_mac/scan_os/scan_hostname) can't be added via ALTER
 		// on existing DBs — those are only present on fresh installs. For

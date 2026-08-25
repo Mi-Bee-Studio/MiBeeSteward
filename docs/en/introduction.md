@@ -144,4 +144,7 @@ Deploy these tools alongside Steward when you need them — they consume the `/m
 
 ## Next Steps
 
-Continue to [Quick Start](quick-start.md) for a first deployment and network scan within minutes.
+- [Feature overview](features.md) — the full capability inventory, layer by layer
+- [Scenario playbooks](playbooks.md) — six beginner scenarios, learning by doing
+- [Comparison with similar tools](comparison.md) — positioning, radar charts, and selection advice
+- [Quick Start](quick-start.md) — a first deployment and network scan within minutes
