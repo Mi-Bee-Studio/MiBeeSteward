@@ -23,7 +23,7 @@ import sys
 import urllib.error
 import urllib.request
 
-UPSTREAM = sys.argv[1] if len(sys.argv) > 1 else "http://192.168.63.101:8080"
+UPSTREAM = sys.argv[1] if len(sys.argv) > 1 else "http://192.168.63.102:8080"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8081
 # NOTE: the map file holds REAL hostnames/MACs — keep it outside the repo.
 MAP_PATH = sys.argv[3] if len(sys.argv) > 3 else os.path.join(

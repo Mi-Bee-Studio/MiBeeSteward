@@ -104,6 +104,8 @@ database:
 | `auth.password_policy.require_lowercase` | bool | true | Require at least one lowercase letter. |
 | `auth.password_policy.require_digit` | bool | true | Require at least one digit. |
 | `auth.password_policy.require_special` | bool | true | Require at least one special character. |
+| `auth.lockout.max_failed_attempts` | int | 5 | Consecutive failed logins before the account locks. |
+| `auth.lockout.lock_minutes` | int | 30 | Lockout duration. An expired lock resets the failure counter. |
 
 **Environment Variables:**
 - `MIBEE_AUTH_JWT_SECRET`
@@ -456,7 +458,7 @@ The distributed-mode switch: with `center.url` set, this instance runs as an **a
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `center.url` | string | "" | The center's base URL (e.g. "http://192.168.63.101:8080"). Empty = center/standalone mode (no upstream reporting). |
+| `center.url` | string | "" | The center's base URL (e.g. "http://192.168.63.102:8080"). Empty = center/standalone mode (no upstream reporting). |
 | `center.auth_token` | string | "" | The agent's bearer token (minted on the center via `POST /api/v1/agents/tokens`). Required in agent mode. |
 | `center.report_interval` | duration | "30s" | How often buffered scan results are flushed upstream when the buffer isn't full. Errors retry with exponential backoff. |
 

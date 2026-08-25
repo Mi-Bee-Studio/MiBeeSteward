@@ -455,3 +455,36 @@ func TestPasswordPolicy_Configurable(t *testing.T) {
 		t.Error("default policy must still reject the plain date")
 	}
 }
+
+// TestLogin_LockoutConfigurable pins auth.lockout: threshold and duration are
+// tunable, and — the property that turned a 30-minute lock into a multi-hour
+// one in the wild — an EXPIRED lock resets the failure counter, so a single
+// stray retry after expiry no longer re-locks instantly.
+func TestLogin_LockoutConfigurable(t *testing.T) {
+	svc, conn := setupUserService(t)
+	svc.SetLockoutPolicy(config.LockoutConfig{MaxFailedAttempts: 2, LockMinutes: 1})
+	registerTestUser(t, svc, "cfglock", "cfglock@example.com")
+
+	// Threshold 2 (not the default 5).
+	for i := 0; i < 2; i++ {
+		_, err := svc.Login(context.Background(), "cfglock", "WrongPass1!")
+		require.True(t, errors.Is(err, ErrInvalidCredentials))
+	}
+	_, err := svc.Login(context.Background(), "cfglock", "Str0ng!Pass")
+	require.True(t, errors.Is(err, ErrAccountLocked), "threshold 2 must lock")
+	require.Contains(t, err.Error(), "retry after", "locked error should carry the retry hint")
+
+	// Simulate expiry: backdate locked_until past the window.
+	var uid int64
+	require.NoError(t, conn.QueryRow(`SELECT id FROM users WHERE username='cfglock'`).Scan(&uid))
+	expired := time.Now().Add(-2 * time.Minute)
+	_, qerr := conn.Exec(`UPDATE users SET locked_until = ? WHERE id = ?`, expired, uid)
+	require.NoError(t, qerr)
+
+	// After expiry, ONE more failure must NOT re-lock (counter was reset by
+	// the expired-lock branch); it takes another full threshold cycle.
+	_, err = svc.Login(context.Background(), "cfglock", "WrongPass1!")
+	require.True(t, errors.Is(err, ErrInvalidCredentials), "post-expiry single failure must not stay locked: %v", err)
+	_, err = svc.Login(context.Background(), "cfglock", "Str0ng!Pass")
+	require.NoError(t, err, "correct password after expiry + one failure must succeed (no instant re-lock)")
+}
