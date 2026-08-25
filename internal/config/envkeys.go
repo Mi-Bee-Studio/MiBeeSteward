@@ -49,7 +49,7 @@ func envKeyMap(prefix string) map[string]string {
 				key = path + "." + name
 			}
 			ft := f.Type
-			if ft.Kind() == reflect.Ptr {
+			if ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 			switch ft.Kind() {
