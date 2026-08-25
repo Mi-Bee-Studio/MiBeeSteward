@@ -17,6 +17,14 @@ type ScannerConfig struct {
 	MaxConcurrentScans int  `koanf:"max_concurrent_scans"`
 	DefaultTimeout     int  `koanf:"default_timeout"`
 	MaxConcurrentHosts int  `koanf:"max_concurrent_hosts"`
+	// AllowReservedTargets is the escape hatch for the reserved-range scan
+	// target rejection (#317). Default false: loopback / unspecified /
+	// link-local / multicast / broadcast / 240-4 space is rejected at every
+	// entry point — a scheduled loopback task once invented 1022 phantom
+	// devices that resurrected daily. Set true ONLY for synthetic planes
+	// (cmd/loadgen serves its benchmark fleet on 127/8, where the kernel
+	// answers ICMP for free); config-file access is already admin-only.
+	AllowReservedTargets bool `koanf:"allow_reserved_targets"`
 	// LostThreshold is the number of consecutive scans a device must be absent
 	// from the alive set before being declared "lost" (default 2). Single
 	// missed scans (ICMP drop, brief host downtime, network jitter) must not

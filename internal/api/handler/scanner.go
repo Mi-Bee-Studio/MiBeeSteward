@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"time"
 
+	"mibee-steward/internal/cidrutil"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/engine"
@@ -53,6 +54,15 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Targets == "" {
 		Error(w, http.StatusBadRequest, "targets is required")
+		return
+	}
+	// Reserved address space (loopback, multicast, broadcast, ...) is rejected
+	// up front with a specific message; the engine enforces the same rule at
+	// parse time as defense in depth (#317). scanner.allow_reserved_targets
+	// (synthetic loadgen plane) opts out — the handler stays consistent with
+	// what the engine will accept.
+	if err := cidrutil.ValidateTargetsFor(req.Targets, h.engine.AllowReservedTargets()); err != nil {
+		Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if req.Timeout <= 0 {
@@ -193,7 +203,8 @@ func isTargetError(err error) bool {
 		errors.Is(err, engine.ErrInvalidTarget),
 		errors.Is(err, engine.ErrInvalidIPRange),
 		errors.Is(err, engine.ErrIPv6RangeUnsupported),
-		errors.Is(err, engine.ErrTargetRangeTooLarge):
+		errors.Is(err, engine.ErrTargetRangeTooLarge),
+		errors.Is(err, engine.ErrReservedTarget):
 		return true
 	default:
 		return false

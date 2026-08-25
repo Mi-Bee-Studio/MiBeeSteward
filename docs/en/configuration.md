@@ -283,6 +283,7 @@ The network scanner uses a plugin-based 5-layer architecture (probe → classify
 | `scanner.max_concurrent_scans` | int | 3 | Cap on top-level scans running at once (the engine's concurrent-scan semaphore — live and enforced). |
 | `scanner.default_timeout` | int (s) | 300 | Per-host pipeline timeout for cron-driven scans. Also drives the `write_timeout` auto-raise. |
 | `scanner.max_concurrent_hosts` | int | 50 | Parallelism cap for per-host scanning |
+| `scanner.allow_reserved_targets` | bool | false | Escape hatch for the reserved-range scan-target rejection (#317): when true, loopback/unspecified/link-local/multicast/broadcast/240-4 targets are accepted (syntax still validated). Set ONLY for synthetic planes — `cmd/loadgen` benchmarks on 127/8. Env `MIBEE_SCANNER_ALLOW_RESERVED_TARGETS`. |
 | `scanner.retention_days` | int | — | Legacy fallback: only takes effect when `retention.scan_results_days` is unset (then 30). The sweep runs every `retention.sweep_interval_hours` (default 6h), not daily. |
 | `scanner.default_cron_expr` | string | "0 */6 * * *" | Default cron for newly-created scan tasks |
 | `scanner.engine` | string | "v2" | Engine selection (only "v2" is supported; v1 was removed) |
