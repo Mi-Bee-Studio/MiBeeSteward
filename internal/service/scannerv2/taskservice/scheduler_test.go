@@ -36,7 +36,7 @@ func setupSvcWithScheduler(t *testing.T) (*Service, *db.Queries) {
 	t.Cleanup(func() { conn.Close() })
 	queries := db.New(conn)
 	sched, err := scheduler.New(queries, conn,
-		func(context.Context, int64, string, time.Duration, int, int64) {}, // no-op scan
+		func(context.Context, int64, string, time.Duration, int, int64, *int64) {}, // no-op scan
 		nil)
 	require.NoError(t, err)
 	sched.Start(context.Background())

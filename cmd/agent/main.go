@@ -152,7 +152,7 @@ func main() {
 	// mini-DB (seeded manually or via the task API on the center in a later
 	// phase). For now an operator adds rows to scan_tasks directly.
 	scanScheduler, schedErr := scannerv2scheduler.New(queries, dbConn,
-		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64) {
+		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64, _ *int64) {
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("scan_func_panic", "task_id", taskID, "panic", r)
