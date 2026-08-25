@@ -386,8 +386,16 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	// Load env vars with MIBEE_ prefix
+	// Load env vars with MIBEE_ prefix. The transform resolves against the
+	// exact env-name → key table derived from the Config struct first, so
+	// keys with underscores in a segment (auth.initial_admin_password ←
+	// MIBEE_AUTH_INITIAL_ADMIN_PASSWORD) land correctly (#331); vars matching
+	// no known key keep the legacy blind underscore→dot split.
+	exactKeys := envKeyMap("MIBEE_")
 	if err := k.Load(env.Provider("MIBEE_", ".", func(s string) string {
+		if key, ok := exactKeys[s]; ok {
+			return key
+		}
 		return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(s, "MIBEE_")), "_", ".")
 	}), nil); err != nil {
 		return nil, err
