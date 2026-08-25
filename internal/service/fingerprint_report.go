@@ -224,7 +224,19 @@ func groupUnidentified(devs []UnidentifiedDevice) []UnidentifiedGroup {
 	for _, g := range count {
 		groups = append(groups, *g)
 	}
-	sort.Slice(groups, func(i, j int) bool { return groups[i].Count > groups[j].Count })
+	// Count DESC, then kind/signature ASC. The tiebreakers are required for
+	// determinism: groups come out of a map, and an unstable sort over
+	// equal-count groups produced a random Groups[0] (a ~1-in-N CI flake in
+	// TestCoverage_TiersAndGrouping).
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].Count != groups[j].Count {
+			return groups[i].Count > groups[j].Count
+		}
+		if groups[i].Kind != groups[j].Kind {
+			return groups[i].Kind < groups[j].Kind
+		}
+		return groups[i].Signature < groups[j].Signature
+	})
 	if len(groups) > 15 {
 		groups = groups[:15]
 	}

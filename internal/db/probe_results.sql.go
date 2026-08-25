@@ -12,11 +12,17 @@ import (
 const countProbeResultsByTarget = `-- name: CountProbeResultsByTarget :one
 SELECT COUNT(*)
 FROM probe_results
-WHERE target_id = ?
+WHERE target_id = ? AND (? = '' OR vantage = ?)
 `
 
-func (q *Queries) CountProbeResultsByTarget(ctx context.Context, targetID int64) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countProbeResultsByTarget, targetID)
+type CountProbeResultsByTargetParams struct {
+	TargetID int64       `json:"target_id"`
+	Column2  interface{} `json:"column_2"`
+	Vantage  string      `json:"vantage"`
+}
+
+func (q *Queries) CountProbeResultsByTarget(ctx context.Context, arg CountProbeResultsByTargetParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countProbeResultsByTarget, arg.TargetID, arg.Column2, arg.Vantage)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -24,8 +30,9 @@ func (q *Queries) CountProbeResultsByTarget(ctx context.Context, targetID int64)
 
 const createProbeResult = `-- name: CreateProbeResult :exec
 
-INSERT INTO probe_results (target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+
+INSERT INTO probe_results (target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateProbeResultParams struct {
@@ -38,16 +45,20 @@ type CreateProbeResultParams struct {
 	CertNotAfter string  `json:"cert_not_after"`
 	CertTrusted  int64   `json:"cert_trusted"`
 	CheckedAt    string  `json:"checked_at"`
+	Vantage      string  `json:"vantage"`
 }
 
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Copyright (c) 2026 Mi Bee Studio. All rights reserved.
+// Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
 //
 // This file is part of MiBee Steward, distributed under the GNU Affero General
-// Public License v3.0 or later; see LICENSE for the full text. A commercial
-// license is available for use cases the AGPL does not accommodate; see
-// LICENSE-COMMERCIAL.md.
+// Public License v3.0 or later. You may use, modify, and redistribute it under
+// those terms; see LICENSE for the full text. A commercial license is available
+// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+// vantage (#277): which executor produced the row - 'center' or
+// 'agent:{agent_id}'. Mirrors probe_targets.vantage (the plan); results are
+// the per-vantage tracks.
 // Appends one outcome row per probe execution. checked_at is an RFC3339 UTC
 // string supplied by the caller (NOT CURRENT_TIMESTAMP: the engine stamps the
 // probe start, and string timestamps keep SQLite date() working).
@@ -62,6 +73,7 @@ func (q *Queries) CreateProbeResult(ctx context.Context, arg CreateProbeResultPa
 		arg.CertNotAfter,
 		arg.CertTrusted,
 		arg.CheckedAt,
+		arg.Vantage,
 	)
 	return err
 }
@@ -104,23 +116,34 @@ func (q *Queries) DeleteProbeResultsStaleBatched(ctx context.Context, arg Delete
 }
 
 const listProbeResultsByTarget = `-- name: ListProbeResultsByTarget :many
-SELECT id, target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at
+SELECT id, target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage
 FROM probe_results
-WHERE target_id = ?
+WHERE target_id = ? AND (? = '' OR vantage = ?)
 ORDER BY checked_at DESC, id DESC
 LIMIT ? OFFSET ?
 `
 
 type ListProbeResultsByTargetParams struct {
-	TargetID int64 `json:"target_id"`
-	Limit    int64 `json:"limit"`
-	Offset   int64 `json:"offset"`
+	TargetID int64       `json:"target_id"`
+	Column2  interface{} `json:"column_2"`
+	Vantage  string      `json:"vantage"`
+	Limit    int64       `json:"limit"`
+	Offset   int64       `json:"offset"`
 }
 
 // Newest-first series for the history view; id DESC breaks RFC3339 ties for
-// same-second runs.
+// same-second runs. Optional vantage filter via the empty-string
+// short-circuit idiom: pass an empty string to get all vantages interleaved,
+// or one vantage value for that executor's track only.
+// CountProbeResultsByTarget MUST mirror this WHERE.
 func (q *Queries) ListProbeResultsByTarget(ctx context.Context, arg ListProbeResultsByTargetParams) ([]ProbeResult, error) {
-	rows, err := q.db.QueryContext(ctx, listProbeResultsByTarget, arg.TargetID, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, listProbeResultsByTarget,
+		arg.TargetID,
+		arg.Column2,
+		arg.Vantage,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +162,7 @@ func (q *Queries) ListProbeResultsByTarget(ctx context.Context, arg ListProbeRes
 			&i.CertNotAfter,
 			&i.CertTrusted,
 			&i.CheckedAt,
+			&i.Vantage,
 		); err != nil {
 			return nil, err
 		}

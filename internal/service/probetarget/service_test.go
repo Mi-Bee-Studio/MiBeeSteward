@@ -11,6 +11,8 @@ package probetarget
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -171,7 +173,7 @@ func TestService_DeleteCascadesResultsAndCerts(t *testing.T) {
 
 	require.NoError(t, svc.Delete(ctx, created.ID))
 
-	results, err := queries.ListProbeResultsByTarget(ctx, db.ListProbeResultsByTargetParams{TargetID: created.ID, Limit: 10, Offset: 0})
+	results, err := queries.ListProbeResultsByTarget(ctx, db.ListProbeResultsByTargetParams{TargetID: created.ID, Column2: "", Vantage: "", Limit: 10, Offset: 0})
 	require.NoError(t, err)
 	require.Empty(t, results, "result series removed with the target")
 
@@ -219,18 +221,18 @@ func TestService_ResultsNewestFirst(t *testing.T) {
 	require.NoError(t, err)
 	for _, ts := range []string{"2026-08-19T01:00:00Z", "2026-08-19T03:00:00Z", "2026-08-19T02:00:00Z"} {
 		require.NoError(t, queries.CreateProbeResult(ctx, db.CreateProbeResultParams{
-			TargetID: created.ID, Status: "success", CheckedAt: ts,
+			TargetID: created.ID, Status: "success", CheckedAt: ts, Vantage: "center",
 		}))
 	}
 
-	results, total, err := svc.Results(ctx, created.ID, 10, 0)
+	results, total, err := svc.Results(ctx, created.ID, "", 10, 0)
 	require.NoError(t, err)
 	require.EqualValues(t, 3, total)
 	require.Len(t, results, 3)
 	require.Equal(t, "2026-08-19T03:00:00Z", results[0].CheckedAt, "newest first")
 	require.Equal(t, "2026-08-19T01:00:00Z", results[2].CheckedAt)
 
-	_, _, err = svc.Results(ctx, 999, 10, 0)
+	_, _, err = svc.Results(ctx, 999, "", 10, 0)
 	require.ErrorIs(t, err, ErrProbeTargetNotFound)
 }
 
@@ -238,4 +240,96 @@ func TestService_TriggerWithoutEngine(t *testing.T) {
 	svc, _ := setupService(t)
 	_, err := svc.Trigger(context.Background(), 1)
 	require.ErrorIs(t, err, ErrEngineNotAvailable)
+}
+
+// TestService_VantageGrammarAndRoundtrip covers the vantage execution plan
+// (#277 step 1): empty defaults to center, the three valid spellings
+// round-trip, garbage is rejected on create AND on partial update.
+func TestService_VantageGrammarAndRoundtrip(t *testing.T) {
+	svc, _ := setupService(t)
+	ctx := context.Background()
+
+	// Empty (older clients / omitted field) canonicalizes to center.
+	req := validCreate("tls", "example.com:443")
+	created, err := svc.Create(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProbeVantageCenter, created.Vantage)
+
+	// All three valid spellings round-trip.
+	for _, v := range []string{"center", "all", "agent:agent-62"} {
+		slug := strings.ReplaceAll(v, ":", "-")
+		req := validCreate("tls", fmt.Sprintf("v-%s.example.com:443", slug))
+		req.Name = "vantage-" + slug
+		req.Vantage = v
+		got, err := svc.Create(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, v, got.Vantage)
+	}
+
+	// Garbage is rejected on create.
+	bad := validCreate("tls", "bad.example.com:443")
+	bad.Name = "bad-vantage"
+	bad.Vantage = "satellite"
+	_, err = svc.Create(ctx, bad)
+	require.ErrorContains(t, err, "vantage must be")
+
+	// ...and on partial update (nil keeps, garbage rejects).
+	newV := "agent:edge-1"
+	updated, err := svc.Update(ctx, created.ID, domain.UpdateProbeTargetRequest{Vantage: &newV})
+	require.NoError(t, err)
+	require.Equal(t, "agent:edge-1", updated.Vantage)
+
+	worse := "  "
+	_, err = svc.Update(ctx, created.ID, domain.UpdateProbeTargetRequest{Vantage: &worse})
+	require.NoError(t, err) // whitespace-only trims to empty = back to center
+	after, err := svc.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProbeVantageCenter, after.Vantage)
+
+	badPtr := "agent:"
+	_, err = svc.Update(ctx, created.ID, domain.UpdateProbeTargetRequest{Vantage: &badPtr})
+	require.ErrorContains(t, err, "agent id")
+}
+
+// TestService_ResultsVantageFilter seeds a two-track series (center + agent)
+// and checks the optional filter: per-vantage tracks, interleaved when empty,
+// and 'all' rejected (it is a target plan, not a result track).
+func TestService_ResultsVantageFilter(t *testing.T) {
+	svc, queries := setupService(t)
+	ctx := context.Background()
+
+	created, err := svc.Create(ctx, validCreate("http", "https://example.com"))
+	require.NoError(t, err)
+	for i, v := range []string{"center", "agent:agent-62", "center", "agent:agent-62"} {
+		require.NoError(t, queries.CreateProbeResult(ctx, db.CreateProbeResultParams{
+			TargetID: created.ID, Status: "success",
+			CheckedAt: fmt.Sprintf("2026-08-19T0%d:00:00Z", i), Vantage: v,
+		}))
+	}
+
+	all, total, err := svc.Results(ctx, created.ID, "", 20, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 4, total)
+	for _, r := range all {
+		require.NotEmpty(t, r.Vantage)
+	}
+
+	center, total, err := svc.Results(ctx, created.ID, "center", 20, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	for _, r := range center {
+		require.Equal(t, "center", r.Vantage)
+	}
+
+	agent, total, err := svc.Results(ctx, created.ID, "agent:agent-62", 20, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	for _, r := range agent {
+		require.Equal(t, "agent:agent-62", r.Vantage)
+	}
+
+	_, _, err = svc.Results(ctx, created.ID, "all", 20, 0)
+	require.ErrorContains(t, err, "not \"all\"")
+	_, _, err = svc.Results(ctx, created.ID, "bogus", 20, 0)
+	require.ErrorContains(t, err, "vantage must be")
 }
