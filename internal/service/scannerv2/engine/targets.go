@@ -3,204 +3,64 @@
 // Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
 //
 // This file is part of MiBee Steward, distributed under the GNU Affero General
-// Public License v3.0 or later. You may use, modify, and redistribute it under
-// those terms; see LICENSE for the full text. A commercial license is available
-// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+// Public License v3.0 or later. See LICENSE for the full text. A commercial
+// license is available for use cases the AGPL does not accommodate; see
+// LICENSE-COMMERCIAL.md.
 
 package engine
 
 import (
-	"errors"
-	"fmt"
-	"net"
-	"strconv"
-	"strings"
+	"mibee-steward/internal/cidrutil"
 )
 
 // Sentinel errors for target parsing. Callers (e.g. the scanner handler) use
 // errors.Is against these to distinguish user-supplied-bad-targets (HTTP 400)
 // from internal failures, rather than brittle string matching on error text.
+//
+// They alias the cidrutil sentinels: target expansion/validation lives in
+// cidrutil (the leaf package the agent command/report paths also share), and
+// parseScanTargets delegates there — one canonical implementation instead of
+// the two mirrored copies this package used to keep in sync via a parity test.
 var (
-	ErrEmptyTargets         = errors.New("targets is empty")
-	ErrNoValidTargets       = errors.New("no valid targets")
-	ErrInvalidTarget        = errors.New("invalid target")
-	ErrInvalidIPRange       = errors.New("invalid IP range")
-	ErrIPv6RangeUnsupported = errors.New("IPv6 ranges unsupported")
-	ErrTargetRangeTooLarge  = errors.New("target range too large")
+	ErrEmptyTargets         = cidrutil.ErrEmptyTargets
+	ErrNoValidTargets       = cidrutil.ErrNoValidTargets
+	ErrInvalidTarget        = cidrutil.ErrInvalidTarget
+	ErrInvalidIPRange       = cidrutil.ErrInvalidIPRange
+	ErrIPv6RangeUnsupported = cidrutil.ErrIPv6RangeUnsupported
+	ErrTargetRangeTooLarge  = cidrutil.ErrTargetRangeTooLarge
+	ErrReservedTarget       = cidrutil.ErrReservedTarget
 )
 
-// ParseScanTargets is the exported form of parseScanTargets, exposed so other
-// packages (notably internal/cidrutil's parity test) can reference the same
-// expansion logic without duplicating it. It is a thin alias; the canonical
-// implementation stays in parseScanTargets so the engine's call sites read
-// naturally.
+// ParseScanTargets is the exported form of parseScanTargets for callers
+// outside this package. A thin alias; the canonical implementation is
+// cidrutil.ExpandTargets.
 func ParseScanTargets(targets string) ([]string, error) {
 	return parseScanTargets(targets)
 }
 
 // parseScanTargets expands a target spec into a list of IP strings.
 // Supported formats (single or comma-separated):
-//   - CIDR: "192.168.1.0/24"
+//   - CIDR: "192.168.1.0/24" (network + broadcast addresses are skipped)
 //   - single IP: "192.168.1.5"
 //   - IP range: "192.168.1.1-192.168.1.10" or "192.168.1.1-10"
 //
-// Ported from the legacy scanner so the v2 engine supports the same target
-// syntax users already know. Errors are descriptive for the API layer to map
-// to HTTP 400.
+// Specs pointing at reserved address space (loopback, unspecified,
+// link-local, multicast, limited broadcast, 240/4) are rejected with
+// ErrReservedTarget — see cidrutil.ValidateTargets (#317/#254).
 func parseScanTargets(targets string) ([]string, error) {
-	targets = strings.TrimSpace(targets)
-	if targets == "" {
-		return nil, ErrEmptyTargets
-	}
-
-	// Comma-separated list of any of the above.
-	if strings.Contains(targets, ",") {
-		var ips []string
-		for _, part := range strings.Split(targets, ",") {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			expanded, err := parseSingleTarget(part)
-			if err != nil {
-				return nil, err
-			}
-			ips = append(ips, expanded...)
-		}
-		if len(ips) == 0 {
-			return nil, ErrNoValidTargets
-		}
-		return ips, nil
-	}
-
-	return parseSingleTarget(targets)
+	return cidrutil.ExpandTargets(targets)
 }
 
-func parseSingleTarget(t string) ([]string, error) {
-	// CIDR.
-	if _, ipNet, err := net.ParseCIDR(t); err == nil && ipNet != nil {
-		return enumerateCIDR(ipNet), nil
-	}
-	// Single IP.
-	if ip := net.ParseIP(t); ip != nil {
-		return []string{ip.String()}, nil
-	}
-	// Range "a.b.c.d-a.b.c.e" or "a.b.c.d-e".
-	if strings.Contains(t, "-") {
-		return parseIPRange(t)
-	}
-	return nil, fmt.Errorf("%w: %s", ErrInvalidTarget, t)
+// expandTargets applies this engine instance's scanner.allow_reserved_targets
+// policy to the canonical expansion. Scan execution paths (sync scan, task
+// runs) go through here so the escape hatch works end-to-end.
+func (e *Engine) expandTargets(targets string) ([]string, error) {
+	return cidrutil.ExpandTargetsFor(targets, e.allowReservedTargets)
 }
 
-func enumerateCIDR(ipNet *net.IPNet) []string {
-	ones, bits := ipNet.Mask.Size()
-	if ones == bits {
-		return []string{ipNet.IP.String()}
-	}
-	var ips []string
-	for ip := ipNet.IP.Mask(ipNet.Mask); ipNet.Contains(ip); incIP(ip) {
-		ips = append(ips, ip.String())
-	}
-	if skipFirst, skipLast := v4ReservedBounds(ipNet); skipFirst {
-		ips = ips[1:]
-		if skipLast && len(ips) > 0 {
-			ips = ips[:len(ips)-1]
-		}
-	}
-	return ips
-}
-
-// v4ReservedBounds reports whether a CIDR's first/last addresses are reserved
-// identifiers rather than hosts and must be excluded from enumeration. IPv4
-// networks wider than /31 reserve the network address and the broadcast
-// address; scanning the broadcast makes every host's ICMP reply get attributed
-// to the broadcast IP, which then persists as a phantom always-online device
-// with no MAC (#254). /31 point-to-point links use both addresses (RFC 3021),
-// /32 is a single host, and IPv6 has no broadcast address — nothing is
-// excluded there.
-func v4ReservedBounds(ipNet *net.IPNet) (skipFirst, skipLast bool) {
-	ones, bits := ipNet.Mask.Size()
-	if bits != 32 || ones >= 31 {
-		return false, false
-	}
-	return true, true
-}
-
-func parseIPRange(s string) ([]string, error) {
-	parts := strings.SplitN(s, "-", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidIPRange, s)
-	}
-	startStr := strings.TrimSpace(parts[0])
-	endStr := strings.TrimSpace(parts[1])
-	startIP := net.ParseIP(startStr)
-	if startIP == nil {
-		return nil, fmt.Errorf("%w: invalid range start %s", ErrInvalidIPRange, startStr)
-	}
-	start4 := startIP.To4()
-	if start4 == nil {
-		return nil, fmt.Errorf("%w: %s", ErrIPv6RangeUnsupported, s)
-	}
-
-	var end4 net.IP
-	// Full end IP.
-	if e := net.ParseIP(endStr); e != nil {
-		end4 = e.To4()
-	} else {
-		// Suffix range: "192.168.1.1-10" → replace last octet.
-		n, err := strconv.Atoi(endStr)
-		if err != nil || n < 0 || n > 255 {
-			return nil, fmt.Errorf("%w: invalid range end %s", ErrInvalidIPRange, endStr)
-		}
-		end4 = append(net.IP{}, start4...)
-		end4[3] = byte(n)
-	}
-	if end4 == nil {
-		return nil, fmt.Errorf("%w: invalid range end %s", ErrInvalidIPRange, endStr)
-	}
-
-	// Ensure start <= end by comparing the full 32-bit value. The previous code
-	// only compared the last octet (a /24 assumption), which produced wrong /
-	// empty results for cross-boundary ranges like "192.168.1.200-192.168.2.10".
-	startU := uint32(start4[0])<<24 | uint32(start4[1])<<16 | uint32(start4[2])<<8 | uint32(start4[3])
-	endU := uint32(end4[0])<<24 | uint32(end4[1])<<16 | uint32(end4[2])<<8 | uint32(end4[3])
-	if startU > endU {
-		// Swap so start <= end. end4 itself is unused after this point (only
-		// start4 seeds the iteration below), so it is intentionally not swapped.
-		start4 = end4
-		startU, endU = endU, startU
-	}
-
-	// Cap the range size to protect against accidental huge ranges (e.g.
-	// "10.0.0.0-10.255.255.255"). 65536 covers any realistic /16-equivalent
-	// range; larger needs should use CIDR + the async task API. The previous
-	// code silently truncated at 1000 IPs with no error — now we fail loudly.
-	const maxRangeIPs = 65536
-	count := int(endU-startU) + 1
-	if count > maxRangeIPs {
-		return nil, fmt.Errorf("%w: %d IPs (max %d); use a CIDR with the async task API", ErrTargetRangeTooLarge, count, maxRangeIPs)
-	}
-
-	ips := make([]string, 0, count)
-	cur := append(net.IP{}, start4...)
-	curU := startU
-	for curU <= endU {
-		ips = append(ips, net.IP(append(net.IP{}, cur...)).String())
-		if curU == endU {
-			break
-		}
-		incIP(cur)
-		curU = uint32(cur[0])<<24 | uint32(cur[1])<<16 | uint32(cur[2])<<8 | uint32(cur[3])
-	}
-	return ips, nil
-}
-
-// incIP mutates ip in place to the next IP address.
-func incIP(ip net.IP) {
-	for j := len(ip) - 1; j >= 0; j-- {
-		ip[j]++
-		if ip[j] > 0 {
-			break
-		}
-	}
+// AllowReservedTargets reports whether the scanner.allow_reserved_targets
+// escape hatch is enabled. Entry-point handlers use it to keep their
+// validation consistent with what the engine will actually accept.
+func (e *Engine) AllowReservedTargets() bool {
+	return e.allowReservedTargets
 }

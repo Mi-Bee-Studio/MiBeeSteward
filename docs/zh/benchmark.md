@@ -51,3 +51,8 @@ bin/loadgen drive --center http://127.0.0.1:8080 \
 - **127/8 内所有地址都应答 ICMP**（内核行为），存活数 = 扫描地址数而非合成设备数 —— 面上的存活数字衡量管线吞吐而非发现精度；识别计数（经 RTSP/HTTP 判定的摄像头等）才是有意义的准确率信号。
 - `loadgen serve` 的 SNMP 对整个面返回同一 sysDescr（UDP 无每连接状态）；识别压力来自 TCP 侧（banner / HTTP title / RTSP）。
 - 持续负载实验（写路径竞争）：连续触发多轮扫描并抓取 `mibee_sqlite_busy_total`。
+
+> **注意(保留网段防护):** 自 #317 起,保留地址空间(环回等)的扫描目标默认被拒绝。
+> loadgen 的 `127/8` 合成设备面需要在**中心**配置 `scanner.allow_reserved_targets: true`
+> (或环境变量 `MIBEE_SCANNER_ALLOW_RESERVED_TARGETS=true`)。生产环境请保持关闭 ——
+> 否则计划任务扫环回会造出静默清理也清不掉的幻影设备。

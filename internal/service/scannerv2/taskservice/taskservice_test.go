@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"mibee-steward/internal/cidrutil"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/testutil"
@@ -35,7 +36,7 @@ func setupSvc(t *testing.T) (*Service, *db.Queries) {
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	queries := db.New(conn)
-	return New(queries, conn, nil), queries
+	return New(queries, conn, nil, false), queries
 }
 
 // TestCreateTask_GetTask verifies the create→read round-trip and that the
@@ -280,4 +281,40 @@ func TestResolveNetworkFromTargets(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestUpdateTask_ReservedTargetsBlocked pins the #317 update-path gate: the
+// create path rejects reserved ranges, so swapping a live task's targets to
+// loopback via PUT must not become a bypass. With the escape hatch on, the
+// swap is allowed (the loadgen plane edits its tasks too).
+func TestUpdateTask_ReservedTargetsBlocked(t *testing.T) {
+	svc, queries := setupSvc(t)
+	ctx := context.Background()
+	created, err := svc.CreateTask(ctx, domain.ScanTaskRequest{
+		Name: "lan", Targets: "192.168.63.0/24", CronExpr: "*/30 * * * *",
+		PipelineConfig: domain.PipelineConfig{ICMP: domain.ICMPConfig{Enabled: true}},
+		Timeout:        30, ConcurrentHosts: 50,
+	})
+	require.NoError(t, err)
+
+	reserved := "127.8.0.0/22"
+	_, err = svc.UpdateTask(ctx, created.ID, domain.UpdateScanTaskRequest{Targets: &reserved})
+	require.Error(t, err)
+	require.ErrorIs(t, err, cidrutil.ErrReservedTarget)
+	var verr *ValidationError
+	require.ErrorAs(t, err, &verr)
+
+	// Escape hatch: same swap succeeds, garbage still fails.
+	allowSvc, _ := setupSvc(t)
+	allowSvc.allowReservedTargets = true
+	created2, err := allowSvc.CreateTask(ctx, domain.ScanTaskRequest{
+		Name: "loadgen", Targets: "127.8.0.0/24", CronExpr: "0 3 * * *",
+		PipelineConfig: domain.PipelineConfig{ICMP: domain.ICMPConfig{Enabled: true}},
+		Timeout:        120, ConcurrentHosts: 64,
+	})
+	require.NoError(t, err)
+	garbage := "not-an-ip"
+	_, err = allowSvc.UpdateTask(ctx, created2.ID, domain.UpdateScanTaskRequest{Targets: &garbage})
+	require.Error(t, err)
+	_ = queries
 }

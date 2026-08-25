@@ -55,6 +55,11 @@ type Engine struct {
 	// SNMPCredential (decrypting the v3 USM passphrases). nil = no v3 support
 	// (deployments without a master key); ScanTargets falls back to snmpCommunity.
 	credResolver CredentialResolver
+	// allowReservedTargets mirrors scanner.allow_reserved_targets: when true
+	// (the synthetic loadgen plane on 127/8), reserved-range targets are
+	// allowed through expansion. Default false — reserved space is rejected
+	// (#317).
+	allowReservedTargets bool
 	// scanSem caps the number of concurrent top-level scans (sync POST /scan +
 	// cron-triggered task runs). Caps total resource use across the process;
 	// per-host parallelism within a scan is governed by Orchestrator config.
@@ -83,6 +88,10 @@ type Config struct {
 	PortSpec string
 	// MaxConcurrentHosts caps per-scan parallelism (default 50).
 	MaxConcurrentHosts int
+	// AllowReservedTargets opts this instance out of the reserved-range
+	// target rejection (#317) — the scanner.allow_reserved_targets escape
+	// hatch used by the synthetic loadgen plane on 127/8. Default false.
+	AllowReservedTargets bool
 	// PerHostTimeout bounds one host's full pipeline (default 30s). Enforced via
 	// the per-host context deadline in ScanTargets — the upper bound for ALL
 	// probes + handlers + cascade on a single host.
@@ -326,6 +335,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	// exactly like a broken persistence chain (#255).
 	logger.Info("scannerv2: raw-evidence persistence", "enabled", cfg.PersistRawEvidence)
 	e := &Engine{Orchestrator: orch, Registry: reg, Repository: repo}
+	e.allowReservedTargets = cfg.AllowReservedTargets
 	// Per-probe timeout: bound each probe attempt so a dead host fails in
 	// seconds instead of consuming the whole per-host budget. Default 3s.
 	e.perProbeTimeout = cfg.PerProbeTimeout
@@ -350,7 +360,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 // scans that would exceed a safe duration (callers should use the async task
 // API for large ranges). Returns an error on invalid specs.
 func (e *Engine) EstimateTargetCount(targets string) (int, error) {
-	ips, err := parseScanTargets(targets)
+	ips, err := e.expandTargets(targets)
 	if err != nil {
 		return 0, err
 	}
@@ -379,7 +389,7 @@ func (e *Engine) ScanTargets(ctx context.Context, targets string, fastScan bool,
 // (#275; previously the task whitelist was validated and stored but never
 // enforced).
 func (e *Engine) ScanTargetsWithPorts(ctx context.Context, targets string, portSpec string, fastScan bool, credentialID int64) ([]scannerv2.HostReport, error) {
-	ips, err := parseScanTargets(targets)
+	ips, err := e.expandTargets(targets)
 	if err != nil {
 		return nil, err
 	}

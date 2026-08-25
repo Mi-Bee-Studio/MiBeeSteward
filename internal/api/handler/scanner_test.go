@@ -30,6 +30,7 @@ func TestIsTargetError(t *testing.T) {
 		engine.ErrInvalidIPRange,
 		engine.ErrIPv6RangeUnsupported,
 		engine.ErrTargetRangeTooLarge,
+		engine.ErrReservedTarget,
 	}
 	for _, sentinel := range targetSentinels {
 		// Direct sentinel.

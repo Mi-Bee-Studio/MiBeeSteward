@@ -51,3 +51,10 @@ Requires `nmap`, `curl`, `jq`-less (python3), and credentials via `MIBEE_USER` /
 - **Every address in 127/8 answers ICMP** (kernel behavior), so the alive count equals the scanned address count, not the synthetic device count — liveness numbers on the plane measure pipeline throughput, not discovery precision. Identification counts (cameras via RTSP/HTTP, etc.) are the meaningful accuracy signal.
 - `loadgen serve` answers SNMP with a single sysDescr for the whole plane (UDP has no per-connection state); identification pressure comes from the TCP side (banners / HTTP titles / RTSP).
 - For sustained-load runs (write-path contention), trigger several scans back-to-back while `mibee_sqlite_busy_total` is scraped.
+
+> **Note (reserved-target guard):** scan targets in reserved address space
+> (loopback, etc.) are rejected by default since #317. The loadgen synthetic
+> plane on `127/8` requires `scanner.allow_reserved_targets: true` in the
+> CENTER's config (env `MIBEE_SCANNER_ALLOW_RESERVED_TARGETS=true`). Leave it
+> off in production — a scheduled loopback task otherwise invents phantom
+> devices that the silent-device retention can't clear.
