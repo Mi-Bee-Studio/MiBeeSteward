@@ -107,6 +107,14 @@ func (h *ScannerTaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) 
 			Error(w, http.StatusNotFound, "scan task not found")
 			return
 		}
+		// Field-validation failures (bad targets / pipeline config / cron)
+		// come back wrapped with their own message — surface them as 400,
+		// same as the create path, not as an opaque 500.
+		var verr *taskservice.ValidationError
+		if errors.As(err, &verr) {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to update scan task")
 		return
 	}

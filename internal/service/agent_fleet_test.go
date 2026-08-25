@@ -26,7 +26,7 @@ func newAgentFleetService(t *testing.T, remoteOps bool) (*AgentCommandService, *
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	q := db.New(conn)
-	return NewAgentCommandService(q, remoteOps), q
+	return NewAgentCommandService(q, remoteOps, false), q
 }
 
 func TestAgentCommandService_OpsGating(t *testing.T) {
@@ -46,7 +46,7 @@ func TestAgentCommandService_OpsGating(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnknownCommand)
 
 	// Center switch ON: ops commands enqueue.
-	svcOn := NewAgentCommandService(q, true)
+	svcOn := NewAgentCommandService(q, true, false)
 	_, err = svcOn.Enqueue(ctx, "agent-x", "logs-tail", nil)
 	require.NoError(t, err)
 }

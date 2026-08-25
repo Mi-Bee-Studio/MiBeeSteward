@@ -31,13 +31,17 @@ import (
 type AgentCommandService struct {
 	queries          *db.Queries
 	remoteOpsEnabled bool
+	// allowReservedTargets mirrors scanner.allow_reserved_targets (#317 escape
+	// hatch); softens only the reserved-range scan-target rejection.
+	allowReservedTargets bool
 }
 
 // NewAgentCommandService constructs an AgentCommandService. remoteOpsEnabled
 // is the center-side ops gate (#278): when false, enqueueing restart /
 // config-reload / logs-tail fails with ErrRemoteOpsDisabled (403).
-func NewAgentCommandService(queries *db.Queries, remoteOpsEnabled bool) *AgentCommandService {
-	return &AgentCommandService{queries: queries, remoteOpsEnabled: remoteOpsEnabled}
+// allowReservedTargets mirrors scanner.allow_reserved_targets.
+func NewAgentCommandService(queries *db.Queries, remoteOpsEnabled, allowReservedTargets bool) *AgentCommandService {
+	return &AgentCommandService{queries: queries, remoteOpsEnabled: remoteOpsEnabled, allowReservedTargets: allowReservedTargets}
 }
 
 var (
@@ -145,6 +149,12 @@ func (s *AgentCommandService) validateScanTargets(ctx context.Context, agentID s
 		// Missing targets is the agent-command layer's own concern (the
 		// poller rejects it as "missing targets"); not a CIDR issue.
 		return ""
+	}
+	// Reserved address space never yields a real LAN device. Check this
+	// BEFORE the network-boundary lookup so even a cidr-less network (where
+	// the boundary check degrades open) can't be told to scan loopback (#317).
+	if rerr := cidrutil.ValidateTargetsFor(targets, s.allowReservedTargets); rerr != nil {
+		return "invalid scan targets: " + rerr.Error()
 	}
 	net, err := s.queries.GetNetworkByAgentID(ctx, &agentID)
 	if err != nil {
