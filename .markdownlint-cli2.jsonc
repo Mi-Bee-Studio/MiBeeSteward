@@ -1,0 +1,32 @@
+// markdownlint-cli2 configuration — see https://github.com/DavidAnson/markdownlint-cli2
+//
+// Purpose (#319): lock in fence-language annotations (MD040) so the website's
+// highlight.js rendering never regresses into a mix of highlighted and
+// monochrome code blocks (the one-off audit in #297/PR #300 fixed every
+// existing file; this config + the CI `docs` job keep it that way).
+//
+// Only MD040 is enabled ("default": false turns off everything else) — this is
+// a targeted guard, not a general style guide. Pure-output fences (shells
+// transcripts, logs) should be annotated `text`.
+{
+  "config": {
+    "default": false,
+    "MD040": true
+  },
+  "ignores": [
+    // Tool-generated third-party content (#297 explicitly left these alone)
+    "web/src/paraglide/**",
+    "web/project.inlang/**",
+    // Dependencies exist only in local checkouts (CI docs job never installs
+    // them), but a local `npx markdownlint-cli2 "**/*.md"` run would hit them
+    "node_modules/**",
+    "web/node_modules/**",
+    // Local-only strategy notes; gitignored, listed in case of a stray copy
+    "docs/private/**",
+    // Local-only files (gitignored, never in CI; ignored so a local run
+    // matches CI): workspace agent instructions + agent session artifacts
+    "AGENTS.md",
+    ".zcode/**",
+    ".omo/**"
+  ]
+}
