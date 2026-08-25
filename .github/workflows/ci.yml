@@ -58,6 +58,32 @@ jobs:
           name: go-coverage
           path: cover.out
 
+  # Cross-compile the whole tree for Windows from the Linux runner (build-only,
+  # no tests — Windows is a dev platform for this repo, deployments are Linux).
+  # Guards against bare-syscall regressions like #321, where
+  # discovery/multicast.go used int-fd setsockopt calls with no build tag and
+  # silently broke `go build ./...` for every Windows contributor. go vet is
+  # included because it type-checks for the target platform too.
+  windows-build:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: '0'
+      GOOS: windows
+      GOARCH: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: web/dist
+      - run: go vet ./...
+      - run: go build ./...
+
   frontend-test:
     needs: build-frontend
     runs-on: ubuntu-latest
