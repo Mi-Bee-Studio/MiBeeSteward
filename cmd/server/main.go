@@ -58,12 +58,15 @@ func main() {
 
 	// Load configuration first (before slog init)
 	cfg, err := config.Load(*configPath)
-	if *demoMode {
-		cfg.Server.DemoMode = true
-	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
+	}
+	// Demo flag only after the err check: config.Load returns a nil cfg on
+	// failure, so stamping DemoMode before the guard segfaults instead of
+	// printing the config error (#327).
+	if *demoMode {
+		cfg.Server.DemoMode = true
 	}
 
 	// Initialize structured logger
