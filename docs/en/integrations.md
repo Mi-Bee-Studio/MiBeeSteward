@@ -40,7 +40,7 @@ Notification rules (event → channel, see [Web UI](web-ui.md) → Settings → 
 |---|---|---|
 | `webhook` | `url`, optional `headers` map | Custom headers (e.g. your receiver's token) |
 | `email` | SMTP `host`/`port`/`username`/`password`, `from`, `to` | SMTP AUTH |
-| `feishu` | `url`, optional `secret` | 飞书 custom-bot HMAC signature (enable "签名校验" on the bot and paste the secret) |
+| `feishu` | `url`, optional `secret` | Feishu custom-bot HMAC signature (enable signature verification on the bot and paste the secret) |
 | `wecom` | `url` | none (the webhook URL is the credential — treat it as secret) |
 | `telegram` | `bot_token`, `chat_id` | Bot API token |
 | `discord` | `url`, optional `username` | none (webhook URL is the credential) |

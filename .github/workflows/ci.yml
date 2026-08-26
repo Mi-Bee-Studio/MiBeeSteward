@@ -188,7 +188,9 @@ jobs:
           node-version: '20'
       - name: markdownlint (MD040 fenced-code-language)
         run: npx -y markdownlint-cli2@0.23.2 "**/*.md"
-      - name: Changelog mirror drift check
+      - name: Changelog docs sync check
+        # regenerates the en mirror (must match the committed copy) and
+        # version-checks the hand-maintained zh translation
         run: |
           ./scripts/gen_changelog_mirror.sh
-          git diff --exit-code -- docs/zh/changelog.md docs/en/changelog.md
+          git diff --exit-code -- docs/en/changelog.md
