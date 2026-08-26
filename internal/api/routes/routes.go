@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -531,14 +532,27 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			"trigger_identify", cfg.Scanner.Discovery.TriggerIdentify)
 	}
 
-	// Scheduler: cron-driven scan tasks. The ScanFunc delegates to the runner.
+	// Agent command service: constructed BEFORE the scheduler so the ScanFunc
+	// binding below can close over it (agent-network tasks dispatch through it
+	// instead of running a local scan).
+	agentCmdSvc := service.NewAgentCommandService(scanQueries, cfg.AgentFleet.RemoteOpsEnabled, cfg.Scanner.AllowReservedTargets)
+
+	// Scheduler: cron-driven scan tasks. The ScanFunc binding is the
+	// local-vs-agent dispatcher: a task whose resolved network is
+	// agent-managed (networks.agent_id set) has no local scanner path — the
+	// agent IS the scanner there — so the tick enqueues a scan command for
+	// that agent; everything else runs the local pipeline via the runner.
 	scanScheduler, schedErr := scannerv2scheduler.New(scanQueries, dbConn,
-		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64) {
+		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64, networkID *int64) {
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("scan_func_panic", "task_id", taskID, "panic", r)
 				}
 			}()
+			if agentID := agentForNetwork(dbConn, networkID); agentID != "" {
+				dispatchAgentScan(ctx, scanQueries, agentCmdSvc, taskID, targets, timeout, agentID)
+				return
+			}
 			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence, credentialID)
 		}, slog.Default())
 	if schedErr != nil {
@@ -684,8 +698,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// binds the request to an agent_id + network_id, and every reported device is
 	// tagged with that network so multi-LAN data coexists without collision.
 	// Routed on the top-level mux (separate from /agents/tokens) so the two auth
-	// regimes don't interfere.
-	agentCmdSvc := service.NewAgentCommandService(scanQueries, cfg.AgentFleet.RemoteOpsEnabled, cfg.Scanner.AllowReservedTargets)
+	// regimes don't interfere. agentCmdSvc is constructed above (before the
+	// scheduler) so the ScanFunc dispatcher can share the same instance.
 	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn, agentCmdSvc)
 	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries, agentCmdSvc, auditRepo)
 	r.Route("/api/v1/agents", func(r chi.Router) {
@@ -1230,4 +1244,67 @@ func resolveNetworkID(dbConn *sql.DB, cfg *config.Config) int64 {
 
 	slog.Info("network identity resolved", "id", id, "name", name, "cidr", cfg.Network.CIDR)
 	return id
+}
+
+// agentForNetwork returns the agent_id bound to the given network ("" when
+// networkID is nil, the network has no agent, or the lookup fails — all of
+// which mean "run locally"). Used by the scheduler's ScanFunc dispatcher to
+// route agent-managed networks to their scanner.
+func agentForNetwork(dbConn *sql.DB, networkID *int64) string {
+	if networkID == nil {
+		return ""
+	}
+	var agentID sql.NullString
+	if err := dbConn.QueryRow(`SELECT agent_id FROM networks WHERE id = ?`, *networkID).Scan(&agentID); err != nil {
+		// Missing row / transient error: fall back to the local scan path.
+		slog.Warn("agent dispatch: network lookup failed; running local scan", "network_id", *networkID, "error", err)
+		return ""
+	}
+	return strings.TrimSpace(agentID.String)
+}
+
+// dispatchAgentScan enqueues a scan command for an agent-managed network task
+// and records a scan_task_runs row so the task's run history reflects the
+// dispatch (completed = command accepted by the command channel; the scan
+// itself executes on the agent and reports back via /agents/report). A failed
+// enqueue (e.g. targets outside the agent network's CIDR, reserved range with
+// the escape hatch off) is recorded as a FAILED run with the reason — the
+// failure must be visible in the UI, not just the journal.
+func dispatchAgentScan(ctx context.Context, queries *db.Queries, agentCmdSvc *service.AgentCommandService, taskID int64, targets string, timeout time.Duration, agentID string) {
+	start := time.Now()
+	now := time.Now()
+	run, runErr := queries.CreateScanTaskRun(ctx, db.CreateScanTaskRunParams{TaskID: taskID, StartedAt: &now})
+	if runErr != nil {
+		// No run row → still dispatch; the command channel is the primary
+		// effect and the agent view shows it.
+		slog.Warn("agent dispatch: run row create failed", "task_id", taskID, "error", runErr)
+	}
+	runCreated := runErr == nil && run.ID != 0
+	finishRun := func(status, errMsg string) {
+		if !runCreated {
+			return
+		}
+		fin := time.Now()
+		if uerr := queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
+			Status:       status,
+			DurationMs:   fin.Sub(start).Milliseconds(),
+			ErrorMessage: errMsg,
+			FinishedAt:   &fin,
+			ID:           run.ID,
+		}); uerr != nil {
+			slog.Warn("agent dispatch: run row update failed", "task_id", taskID, "run_id", run.ID, "error", uerr)
+		}
+	}
+
+	cmd, err := agentCmdSvc.Enqueue(ctx, agentID, "scan", map[string]interface{}{
+		"targets": targets,
+		"timeout": int(timeout.Seconds()),
+	})
+	if err != nil {
+		slog.Error("agent dispatch: enqueue failed", "task_id", taskID, "agent_id", agentID, "targets", targets, "error", err)
+		finishRun("failed", err.Error())
+		return
+	}
+	slog.Info("scan task dispatched to agent", "task_id", taskID, "agent_id", agentID, "command_id", cmd.ID, "targets", targets)
+	finishRun("completed", "")
 }
