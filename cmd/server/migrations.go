@@ -16,8 +16,11 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -36,22 +39,200 @@ import (
 // chain below; existing databases replay only when their recorded version is
 // lower (every step stays idempotent regardless, so a v0 database from before
 // this framework simply runs the whole chain once and gets stamped).
-const SchemaVersion = 1
+//
+// v2: #328 added the probe vantage columns to the chain WITHOUT bumping this
+// constant — databases already stamped v1 (by a #312..#327-era binary) skipped
+// the chain forever and every probe query failed with "no such column:
+// vantage". v2 forces those databases through the chain once more. The
+// chain-fingerprint self-heal below now makes forgetting the bump harmless:
+// any chain-content change is detected and replayed even on at-version DBs.
+const SchemaVersion = 2
+
+// Migration chain inputs, hoisted to package level so the fingerprint (below)
+// and the convergence tests iterate the exact statements the chain runs.
+//
+// preSchemaMigrations run BEFORE schema.sql is applied: schema.sql carries
+// indexes (idx_devices_ip_network, idx_scan_tasks_network,
+// idx_probe_results_target_vantage_time) whose columns LEGACY databases only
+// get from these ALTERs — applying schema.sql first would fail on "no such
+// column". On a fresh empty DB the statements fail with "no such table" —
+// tolerated, schema.sql creates everything a moment later.
+var preSchemaMigrations = []string{
+	`ALTER TABLE devices ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL`,
+	`ALTER TABLE scan_tasks ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL`,
+	`ALTER TABLE probe_targets ADD COLUMN vantage TEXT NOT NULL DEFAULT 'center'`,
+	`ALTER TABLE probe_results ADD COLUMN vantage TEXT NOT NULL DEFAULT 'center'`,
+	// device_uuid / scan_attributes / user_attributes are ALSO chain-added
+	// columns that schema.sql indexes reference (idx_devices_uuid,
+	// idx_devices_scan_mac_expr, idx_devices_scan_vendor_expr) — caught by
+	// the convergence test, they belong HERE for the same reason as vantage.
+	`ALTER TABLE devices ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE scan_snapshots ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE host_services ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE service_evidence ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE host_tls_certs ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE devices ADD COLUMN scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes))`,
+	`ALTER TABLE devices ADD COLUMN user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes))`,
+}
+
+// columnMigrations backfills columns that DBs created before the column
+// existed lack (CREATE TABLE IF NOT EXISTS is a no-op on them). Every entry
+// tolerates "duplicate column name" — the chain is idempotent by design.
+var columnMigrations = []string{
+	"ALTER TABLE devices ADD COLUMN scan_source TEXT NOT NULL DEFAULT 'manual'",
+	"ALTER TABLE devices ADD COLUMN prometheus_labels TEXT NOT NULL DEFAULT '{}'",
+	"ALTER TABLE devices ADD COLUMN last_scanned_at TIMESTAMP",
+	"ALTER TABLE devices ADD COLUMN last_scan_task_id INTEGER",
+	"ALTER TABLE devices ADD COLUMN open_ports TEXT NOT NULL DEFAULT '[]'",
+	"ALTER TABLE devices ADD COLUMN detected_services TEXT NOT NULL DEFAULT '[]'",
+	"ALTER TABLE devices ADD COLUMN prometheus_url TEXT NOT NULL DEFAULT ''",
+	"ALTER TABLE devices ADD COLUMN node_exporter_url TEXT NOT NULL DEFAULT ''",
+	"ALTER TABLE devices ADD COLUMN last_scan_rtt_ms INTEGER NOT NULL DEFAULT 0",
+	// scan_results columns added in a later schema revision. DBs created
+	// before those columns existed keep the stale shape because
+	// CREATE TABLE IF NOT EXISTS is a no-op, so backfill them here.
+	"ALTER TABLE scan_results ADD COLUMN prometheus_detected INTEGER NOT NULL DEFAULT 0",
+	"ALTER TABLE scan_results ADD COLUMN prometheus_url TEXT NOT NULL DEFAULT ''",
+	"ALTER TABLE scan_results ADD COLUMN node_exporter_detected INTEGER NOT NULL DEFAULT 0",
+	"ALTER TABLE scan_results ADD COLUMN node_exporter_url TEXT NOT NULL DEFAULT ''",
+	"ALTER TABLE scan_results ADD COLUMN node_exporter_data TEXT NOT NULL DEFAULT '{}'",
+	// scan_snapshots flap state (lease-sweeper debounce for intermittently-seen
+	// agent devices). flap_count counts liveness transitions; last_flap_at ages
+	// them out after a stable period. See db/schema.sql scan_snapshots.
+	"ALTER TABLE scan_snapshots ADD COLUMN flap_count INTEGER NOT NULL DEFAULT 0",
+	"ALTER TABLE scan_snapshots ADD COLUMN last_flap_at DATETIME",
+	// offline_since: stamped when a device flips to 'offline' (all heartbeat
+	// configs failed, or lost-detection/lease-sweeper marked it gone), cleared
+	// on recovery. Drives the silent-device retention sweep (issue #117). The
+	// backfill below approximates it for existing offline devices from
+	// updated_at (the last status write).
+	"ALTER TABLE devices ADD COLUMN offline_since TIMESTAMP",
+	// ssh_credential_id: binds a device to an SSH credential for the config-
+	// backup probe (#137). NULL = not config-backed-up. SET NULL on credential
+	// delete so the device row survives (backup just pauses for it).
+	"ALTER TABLE devices ADD COLUMN ssh_credential_id INTEGER REFERENCES ssh_credentials(id) ON DELETE SET NULL",
+	// documents.deleted_at: soft-delete tombstone backing the UI's
+	// delete-undo (POST /documents/{id}/restore). Reads filter on it; the
+	// uploaded file stays on disk so restore is lossless.
+	"ALTER TABLE documents ADD COLUMN deleted_at TIMESTAMP",
+	// Distributed/topology groundwork: device origin (network_id) + online
+	// freshness timestamps (first_seen/last_seen). See db/schema.sql and
+	// docs/private/architecture-future.md §6. network_id resolves to a
+	// networks row seeded at startup (routes) from config `network`.
+	"ALTER TABLE devices ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL",
+	"ALTER TABLE devices ADD COLUMN first_seen TIMESTAMP",
+	"ALTER TABLE devices ADD COLUMN last_seen TIMESTAMP",
+	// SNMPv3 support (issue #135): bind a scan task to an SNMP credential
+	// row. NULL = use the engine's global default (v1/v2c community). The
+	// snmp_credentials table itself is created via schema.sql's CREATE TABLE
+	// IF NOT EXISTS above (run before this loop), so the FK target exists.
+	"ALTER TABLE scan_tasks ADD COLUMN credential_id INTEGER REFERENCES snmp_credentials(id) ON DELETE SET NULL",
+	// Object-level scope key for the scanner surfaces (#138 Phase 2c).
+	// Nullable; stamped at task create/update when the targets resolve to a
+	// single networks.cidr, and backfilled below. Runs and results scope
+	// through their task — they carry no network_id of their own.
+	"ALTER TABLE scan_tasks ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL",
+}
+
+// timestampMigrations (#257): legacy Go time.String() values become RFC3339
+// (see the in-chain comment where they run).
+var timestampMigrations = []struct{ table, col string }{
+	{"devices", "created_at"}, {"devices", "updated_at"},
+	{"devices", "first_seen"}, {"devices", "last_seen"},
+	{"devices", "last_scanned_at"}, {"devices", "offline_since"},
+	{"device_neighbors", "first_seen"}, {"device_neighbors", "last_seen"},
+	{"host_tls_certs", "updated_at"},
+	{"scan_snapshots", "last_seen_at"}, {"scan_snapshots", "last_flap_at"},
+	{"host_services", "updated_at"},
+	{"service_evidence", "observed_at"},
+}
+
+// migrationStepRevisions lists every Go-coded migration step with a manual
+// revision tag. chainFingerprint hashes this list; when you CHANGE what a step
+// does (its SQL, its skip-condition, its data mapping), bump its tag so
+// at-version databases replay the chain. Appending a new step = adding an
+// entry. This is the belt-and-suspenders behind the SQL-statement hash: SQL
+// changes are detected automatically, Go-func-body changes are not.
+var migrationStepRevisions = []string{
+	"scan_attributes_backfill rev1",
+	"scan_attributes_expr_indexes rev1",
+	"backfillDeviceUUIDs rev1",
+	"backfillSatelliteUUIDs rev1",
+	"backfillOfflineSince rev1",
+	"mergeDuplicateMACDevices rev1",
+	"applyUniqueIndexMigrations rev1",
+	"extendScanRunStatusCheck rev1",
+	"extendNotificationChannelTypeCheck rev1",
+	"addDevicesGeneratedColumns rev1",
+	"extendDevicesTypeCheck rev1",
+	"extendUsersRoleCheck rev1",
+	"scanTasksNetworkIndex+Backfill rev1",
+	"applyIdentityIndexMigrations rev1",
+	"convertDashboardConfigPosition rev1",
+	"timestampConversions rev1",
+}
+
+const schemaMetaTable = `CREATE TABLE IF NOT EXISTS schema_meta (
+	k TEXT PRIMARY KEY,
+	v TEXT NOT NULL
+)`
+
+const chainFingerprintKey = "chain_fingerprint_v1"
+
+// chainFingerprint hashes EVERY input the migration chain executes: the
+// embedded schema, the pre-schema and column ALTERs, the Go-coded step
+// revisions, and the timestamp conversion list. Two binaries whose chains
+// differ always produce different fingerprints — which is what lets the gate
+// detect "the chain changed but SchemaVersion was not bumped" (the #328
+// incident: stamped databases silently skipped a chain that had grown).
+func chainFingerprint() string {
+	h := sha256.New()
+	// sha256's Write never fails; errcheck still demands the returns be
+	// acknowledged.
+	_, _ = io.WriteString(h, dbsql.SchemaSQL)
+	for _, s := range preSchemaMigrations {
+		_, _ = io.WriteString(h, s)
+	}
+	for _, s := range columnMigrations {
+		_, _ = io.WriteString(h, s)
+	}
+	for _, s := range migrationStepRevisions {
+		_, _ = io.WriteString(h, s)
+	}
+	for _, m := range timestampMigrations {
+		_, _ = io.WriteString(h, m.table)
+		_, _ = io.WriteString(h, m.col)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// storedChainFingerprint reads the fingerprint stamped by the last chain run.
+// "" means "unknown" (pre-fingerprint database, or fresh DB) — the caller
+// treats unknown as stale, forcing one replay that stamps it.
+func storedChainFingerprint(db *sql.DB) string {
+	if _, err := db.Exec(schemaMetaTable); err != nil {
+		return ""
+	}
+	var v string
+	if err := db.QueryRow(`SELECT v FROM schema_meta WHERE k = ?`, chainFingerprintKey).Scan(&v); err != nil {
+		return ""
+	}
+	return v
+}
 
 func runMigrations(db *sql.DB, dbPath string) error {
-	// Version gate (#268): a database already at SchemaVersion skips the whole
-	// chain — no pre-migration VACUUM INTO backup (previously taken on EVERY
-	// startup), no probe statements, no rebuild checks. Startup goes from
-	// "hundreds of idempotent statements" to one PRAGMA read.
+	// Version gate (#268) + fingerprint self-heal: a database at
+	// SchemaVersion whose recorded chain fingerprint matches skips the whole
+	// chain — no pre-migration VACUUM INTO backup, no probe statements, no
+	// rebuild checks. A MISMATCHING fingerprint on an at-version database
+	// means the chain changed without a version bump (the #328 incident):
+	// replay the idempotent chain instead of silently skipping it.
 	var current int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&current); err != nil {
 		return fmt.Errorf("read schema version: %w", err)
 	}
+	fp := chainFingerprint()
 	switch {
-	case current == SchemaVersion:
-		slog.Info("schema already at version; migrations skipped",
-			"version", current)
-		return nil
 	case current > SchemaVersion:
 		// Downgraded binary against a newer schema. The chain below is
 		// idempotent but written for forward migration only — refuse rather
@@ -59,6 +240,14 @@ func runMigrations(db *sql.DB, dbPath string) error {
 		slog.Warn("database schema version is NEWER than this binary; skipping migrations",
 			"db_version", current, "binary_version", SchemaVersion)
 		return nil
+	case current == SchemaVersion && storedChainFingerprint(db) == fp:
+		slog.Info("schema already at version; migrations skipped",
+			"version", current)
+		return nil
+	case current == SchemaVersion:
+		slog.Warn("migration chain changed without a SchemaVersion bump; "+
+			"self-healing: replaying the idempotent chain on this database",
+			"version", current)
 	}
 	slog.Info("running schema migrations", "from_version", current, "to_version", SchemaVersion)
 
@@ -89,17 +278,9 @@ func runMigrations(db *sql.DB, dbPath string) error {
 	// a daily-restart deployment, and each is a full multi-hundred-MB VACUUM.
 	pruneExcessBackups(filepath.Dir(dbPath), filepath.Base(dbPath)+".pre-migration.", 3)
 
-	// Pre-schema ALTERs (#268): schema.sql now carries idx_devices_ip_network
-	// and idx_scan_tasks_network, which reference the network_id columns that
-	// LEGACY databases only get from the migration chain below. Adding them
-	// before the schema apply lets both paths (fresh: schema.sql creates them
-	// inline; legacy: added here) satisfy the indexes. On a fresh empty DB
-	// both statements fail with "no such table" — tolerated, schema.sql
-	// creates everything a moment later.
-	for _, stmt := range []string{
-		`ALTER TABLE devices ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL`,
-		`ALTER TABLE scan_tasks ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL`,
-	} {
+	// Pre-schema ALTERs — see preSchemaMigrations above for why these run
+	// before the schema apply.
+	for _, stmt := range preSchemaMigrations {
 		if _, err := db.Exec(stmt); err != nil {
 			msg := err.Error()
 			if !strings.Contains(msg, "duplicate column name") && !strings.Contains(msg, "no such table") {
@@ -114,87 +295,7 @@ func runMigrations(db *sql.DB, dbPath string) error {
 	}
 
 	// Run idempotent column migrations (safe to re-run)
-	migrations := []string{
-		"ALTER TABLE devices ADD COLUMN scan_source TEXT NOT NULL DEFAULT 'manual'",
-		"ALTER TABLE devices ADD COLUMN prometheus_labels TEXT NOT NULL DEFAULT '{}'",
-		"ALTER TABLE devices ADD COLUMN last_scanned_at TIMESTAMP",
-		"ALTER TABLE devices ADD COLUMN last_scan_task_id INTEGER",
-		"ALTER TABLE devices ADD COLUMN open_ports TEXT NOT NULL DEFAULT '[]'",
-		"ALTER TABLE devices ADD COLUMN detected_services TEXT NOT NULL DEFAULT '[]'",
-		"ALTER TABLE devices ADD COLUMN prometheus_url TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE devices ADD COLUMN node_exporter_url TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE devices ADD COLUMN last_scan_rtt_ms INTEGER NOT NULL DEFAULT 0",
-		// scan_results columns added in a later schema revision. DBs created
-		// before those columns existed keep the stale shape because
-		// CREATE TABLE IF NOT EXISTS is a no-op, so backfill them here.
-		"ALTER TABLE scan_results ADD COLUMN prometheus_detected INTEGER NOT NULL DEFAULT 0",
-		"ALTER TABLE scan_results ADD COLUMN prometheus_url TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE scan_results ADD COLUMN node_exporter_detected INTEGER NOT NULL DEFAULT 0",
-		"ALTER TABLE scan_results ADD COLUMN node_exporter_url TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE scan_results ADD COLUMN node_exporter_data TEXT NOT NULL DEFAULT '{}'",
-		// scan_snapshots flap state (lease-sweeper debounce for intermittently-seen
-		// agent devices). flap_count counts liveness transitions; last_flap_at ages
-		// them out after a stable period. See db/schema.sql scan_snapshots.
-		"ALTER TABLE scan_snapshots ADD COLUMN flap_count INTEGER NOT NULL DEFAULT 0",
-		"ALTER TABLE scan_snapshots ADD COLUMN last_flap_at DATETIME",
-		// Synthetic device identity (device_uuid): a stable, IP-independent key so
-		// satellite tables can follow a device across DHCP roams. Added nullable
-		// (DEFAULT ''); backfilled + indexed in a later migration step, then the
-		// IP-keyed satellite tables are re-keyed onto device_uuid. See the device
-		// identity rearchitecture plan.
-		"ALTER TABLE devices ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE scan_snapshots ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE host_services ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE service_evidence ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE host_tls_certs ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''",
-		// offline_since: stamped when a device flips to 'offline' (all heartbeat
-		// configs failed, or lost-detection/lease-sweeper marked it gone), cleared
-		// on recovery. Drives the silent-device retention sweep (issue #117). The
-		// backfill below approximates it for existing offline devices from
-		// updated_at (the last status write).
-		"ALTER TABLE devices ADD COLUMN offline_since TIMESTAMP",
-		// ssh_credential_id: binds a device to an SSH credential for the config-
-		// backup probe (#137). NULL = not config-backed-up. SET NULL on credential
-		// delete so the device row survives (backup just pauses for it).
-		"ALTER TABLE devices ADD COLUMN ssh_credential_id INTEGER REFERENCES ssh_credentials(id) ON DELETE SET NULL",
-		// documents.deleted_at: soft-delete tombstone backing the UI's
-		// delete-undo (POST /documents/{id}/restore). Reads filter on it; the
-		// uploaded file stays on disk so restore is lossless.
-		"ALTER TABLE documents ADD COLUMN deleted_at TIMESTAMP",
-		// Dual JSON layer (scan_attributes + user_attributes). Generated columns
-		// (scan_vendor/scan_mac/scan_os/scan_hostname) can't be added via ALTER
-		// on existing DBs — those are only present on fresh installs. For
-		// upgraded DBs we add expression indexes below so the json_extract
-		// queries work without the generated columns.
-		"ALTER TABLE devices ADD COLUMN scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes))",
-		"ALTER TABLE devices ADD COLUMN user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes))",
-		// Distributed/topology groundwork: device origin (network_id) + online
-		// freshness timestamps (first_seen/last_seen). See db/schema.sql and
-		// docs/private/architecture-future.md §6. network_id resolves to a
-		// networks row seeded at startup (routes) from config `network`.
-		"ALTER TABLE devices ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL",
-		"ALTER TABLE devices ADD COLUMN first_seen TIMESTAMP",
-		"ALTER TABLE devices ADD COLUMN last_seen TIMESTAMP",
-		// SNMPv3 support (issue #135): bind a scan task to an SNMP credential
-		// row. NULL = use the engine's global default (v1/v2c community). The
-		// snmp_credentials table itself is created via schema.sql's CREATE TABLE
-		// IF NOT EXISTS above (run before this loop), so the FK target exists.
-		"ALTER TABLE scan_tasks ADD COLUMN credential_id INTEGER REFERENCES snmp_credentials(id) ON DELETE SET NULL",
-		// Object-level scope key for the scanner surfaces (#138 Phase 2c).
-		// Nullable; stamped at task create/update when the targets resolve to a
-		// single networks.cidr, and backfilled below. Runs and results scope
-		// through their task — they carry no network_id of their own.
-		"ALTER TABLE scan_tasks ADD COLUMN network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL",
-		// Probe multi-vantage groundwork (#277 step 1): execution-plan vantage
-		// on targets ('center' | 'agent:{id}' | 'all'), per-vantage result
-		// tracks on results. Existing rows backfill to 'center' via the
-		// DEFAULT — exactly what they are today (engine-run on the center).
-		// The new results index (idx_probe_results_target_vantage_time) comes
-		// from schema.sql's CREATE INDEX IF NOT EXISTS, which re-runs above.
-		"ALTER TABLE probe_targets ADD COLUMN vantage TEXT NOT NULL DEFAULT 'center'",
-		"ALTER TABLE probe_results ADD COLUMN vantage TEXT NOT NULL DEFAULT 'center'",
-	}
-	for _, m := range migrations {
+	for _, m := range columnMigrations {
 		if _, err := db.Exec(m); err != nil {
 			// Ignore "duplicate column" errors — column already exists
 			if !strings.Contains(err.Error(), "duplicate column name") {
@@ -238,15 +339,6 @@ func runMigrations(db *sql.DB, dbPath string) error {
 			slog.Warn("scan_attributes expression index creation skipped", "index", idx, "error", err)
 		}
 	}
-	for _, m := range migrations {
-		if _, err := db.Exec(m); err != nil {
-			// Ignore "duplicate column" errors — column already exists
-			if !strings.Contains(err.Error(), "duplicate column name") {
-				return fmt.Errorf("failed to run migration %q: %w", m, err)
-			}
-		}
-	}
-
 	// Backfill device_uuid on existing devices rows (synthetic stable identity).
 	// Fresh installs get device_uuid from schema.sql's DEFAULT '' but it stays
 	// empty until this runs; new device creation also generates one going forward.
@@ -371,16 +463,7 @@ func runMigrations(db *sql.DB, dbPath string) error {
 	// text comparisons against the RFC3339 cutoffs misorder. Writes now go
 	// through scannerv2.DBTime (RFC3339); convert existing rows in place.
 	// Idempotent: the WHERE matches only the legacy Go-format suffix.
-	for _, m := range []struct{ table, col string }{
-		{"devices", "created_at"}, {"devices", "updated_at"},
-		{"devices", "first_seen"}, {"devices", "last_seen"},
-		{"devices", "last_scanned_at"}, {"devices", "offline_since"},
-		{"device_neighbors", "first_seen"}, {"device_neighbors", "last_seen"},
-		{"host_tls_certs", "updated_at"},
-		{"scan_snapshots", "last_seen_at"}, {"scan_snapshots", "last_flap_at"},
-		{"host_services", "updated_at"},
-		{"service_evidence", "observed_at"},
-	} {
+	for _, m := range timestampMigrations {
 		stmt := fmt.Sprintf(
 			"UPDATE %s SET %s = replace(substr(%s, 1, 19), ' ', 'T') || 'Z' WHERE %s LIKE '%% UTC'",
 			m.table, m.col, m.col, m.col)
@@ -395,6 +478,10 @@ func runMigrations(db *sql.DB, dbPath string) error {
 
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
 		return fmt.Errorf("stamp schema version %d: %w", SchemaVersion, err)
+	}
+	if _, err := db.Exec(`INSERT INTO schema_meta (k, v) VALUES (?, ?)
+		ON CONFLICT(k) DO UPDATE SET v = excluded.v`, chainFingerprintKey, fp); err != nil {
+		return fmt.Errorf("stamp chain fingerprint: %w", err)
 	}
 	slog.Info("database schema applied", "version", SchemaVersion)
 	return nil
