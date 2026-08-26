@@ -710,6 +710,8 @@ Manually add devices from scan results. Each entry goes through the device bridg
 | `/api/v1/scanner/tasks/{id}/runs` | GET | `CapDiscoveryRead` | Run history |
 | `/api/v1/scanner/tasks/{id}/results` | GET | `CapDiscoveryRead` | Per-host results for the task |
 
+> **Agent-managed networks**: Agent-managed networks: a task whose targets resolve into an agent-bound network's CIDR dispatches a scan command to that agent on each cron tick (no local scan); dispatch failures appear as failed runs with the reason. See [Distributed → Scheduled scans for agent-managed networks](distributed.md).
+
 Task creation (`POST /scanner/tasks`) validates: `name` and `targets` are required; targets are capped at **4096 IPs**; `cron_expr` is required and must be a valid cron expression; `timeout` must be **1–600** seconds; `concurrent_hosts` must be **1–200**; `pipeline_config` must pass validation (port lists etc.). Validation failures return `400`.
 
 ### Scan Results API

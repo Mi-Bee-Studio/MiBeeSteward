@@ -146,6 +146,12 @@ The center can actively dispatch commands to an agent (e.g. trigger a one-off sc
 
 Commands are **best-effort**: commands enqueued while the agent is offline never expire — they run on the next poll cycle after the agent reconnects.
 
+
+### Scheduled scans for agent-managed networks
+
+`scan_tasks` natively supports agent-managed networks: when a task's targets resolve into the CIDR of a network bound to an agent (`networks.agent_id`), the scheduler **dispatches a scan command to that agent** on every cron tick (reusing the command channel and its target validation) instead of scanning locally — the agent IS the scanner for its network. A successful dispatch records a `completed` run; a rejected one (out-of-CIDR targets, reserved ranges) records a `failed` run with the reason, visible in the task's run history. Results flow back through `/agents/report` as usual (device bridge, leases, change detection unchanged).
+
+> Historical note: this capability used to be driven by a deployment-side systemd timer plus a password-hardcoded shell script (login → command API). When the password rotated, the script failed silently and kept burning the admin account's failed-login counter, re-locking it indefinitely. With native scheduling, such external scripts should be retired — rotating the password no longer has hidden consumers.
 ## Fleet Management (#278)
 
 Every agent report carries a meta block — build version, Go version, hostname, process uptime, cumulative scans shipped — which the center records into its `agent_status` table together with a **clock offset** approximation (report timestamp vs. receive time). The **Agents page** surfaces this fleet telemetry: version, clock offset (highlighted past ±60s), and last-report age per agent, next to the existing token status.
