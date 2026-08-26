@@ -1171,7 +1171,7 @@
 		"Invalid MAC Format": "Invalid MAC address (use AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)",
 		"Username Min Length": "Username must be at least 3 characters",
 		"Invalid Email": "Invalid email",
-		"Password Min Length": "Password must be at least 8 characters",
+		"Password Min Length": "Password must be at least {n} characters",
 		"Device Required": "Device is required",
 		"Target Required": "Target is required",
 		"Interval Range": "Interval must be between 1 and 300 seconds",

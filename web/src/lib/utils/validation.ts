@@ -10,6 +10,14 @@
 
 import { z } from 'zod';
 import { m } from '$lib/i18n-paraglide';
+import { currentPasswordPolicy } from '$lib/stores/passwordPolicy';
+
+// Password length follows the EFFECTIVE backend policy (auth.password_policy,
+// #332) — read at validation time via the passwordPolicy store, never a
+// hardcoded min(8): a lowered policy would be silently blocked client-side
+// before the backend ever saw the request.
+const passwordMinLengthField = () =>
+	z.string().refine((v) => v.length >= currentPasswordPolicy().min_length, 'validation.Password Min Length');
 
 // --- Custom validators ---
 
@@ -33,6 +41,11 @@ type MessageParams = Record<string, string>;
 function translate(message: string | undefined, params?: MessageParams): string | undefined {
 	if (!message) return message;
 	if (message.startsWith('validation.')) {
+		// The password-length message interpolates the LIVE policy minimum —
+		// the policy is backend state (auth.password_policy), not a constant.
+		if (message === 'validation.Password Min Length' && !params) {
+			params = { n: String(currentPasswordPolicy().min_length) };
+		}
 		// paraglide compiles each key to a function on `m`; look it up dynamically.
 		const fn = (m as unknown as Record<string, (p?: MessageParams) => string>)[message];
 		if (typeof fn === 'function') {
@@ -73,7 +86,7 @@ export const deviceSchema = z.object({
 export const userSchema = z.object({
 	username: z.string().min(3, 'validation.Username Min Length'),
 	email: z.string().email('validation.Invalid Email').optional().or(z.literal('')),
-	password: z.string().min(8, 'validation.Password Min Length'),
+	password: passwordMinLengthField(),
 	role: z.enum(['admin', 'user']),
 });
 
@@ -103,7 +116,7 @@ export const loginSchema = z.object({
 export const settingsSchema = z
 	.object({
 		currentPassword: z.string().min(1, 'validation.Current Password Required'),
-		newPassword: z.string().min(8, 'validation.Password Min Length'),
+		newPassword: passwordMinLengthField(),
 		confirmPassword: z.string().min(1, 'validation.Confirm Password Required'),
 	})
 	.refine((data) => data.newPassword === data.confirmPassword, {
@@ -123,7 +136,7 @@ export const profileSchema = z.object({
 // user's password by token. The match refine attaches the error to `confirm`.
 export const resetPasswordSchema = z
 	.object({
-		new_password: z.string().min(8, 'validation.Password Min Length'),
+		new_password: passwordMinLengthField(),
 		confirm: z.string().min(1, 'validation.Confirm Password Required'),
 	})
 	.refine((data) => data.new_password === data.confirm, {
@@ -137,7 +150,7 @@ export const resetPasswordSchema = z
 // mismatch checks (#154 part 3 — keeps the password policy in ONE place).
 export const forcePasswordSchema = z
 	.object({
-		new_password: z.string().min(8, 'validation.Password Min Length'),
+		new_password: passwordMinLengthField(),
 		confirm: z.string().min(1, 'validation.Confirm Password Required'),
 	})
 	.refine((data) => data.new_password === data.confirm, {
