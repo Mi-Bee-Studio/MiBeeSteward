@@ -93,9 +93,10 @@ sync-device-types:
 	@cp -v configs/fingerprints/device-types/device_types.yaml internal/service/scannerv2/runner/device_types.yaml
 	@echo "device_types.yaml synced to runner embed dir"
 
-# docs-changelog-sync regenerates the docs/{zh,en}/changelog.md mirrors from
-# the root CHANGELOG.md (#322). Run whenever CHANGELOG.md changes; the CI
-# `docs` job runs the same script and fails on drift.
+# docs-changelog-sync regenerates the docs/en/changelog.md mirror from the
+# root CHANGELOG.md and version-checks the hand-maintained Chinese translation
+# (docs/zh/changelog.md) against it (#322). Run whenever CHANGELOG.md changes;
+# the CI `docs` job runs the same script and fails on drift.
 docs-changelog-sync:
 	@./scripts/gen_changelog_mirror.sh
 

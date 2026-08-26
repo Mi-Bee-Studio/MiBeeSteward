@@ -57,7 +57,7 @@ Network-ops staple: periodically pull each router/switch/firewall's running-conf
 - **Storage**: `device_configs` (versioned per `device_uuid`: fetched_at, config_hash, config_text, protocol, diff vs previous) and `ssh_credentials` (encrypted with the same AES-256-GCM master-key cipher as SNMPv3; CRUD API encrypts on write and redacts on read).
 - **SSH probe engine** (`scannerv2/configbackup`): `golang.org/x/crypto/ssh` with a vendor command matrix (Juniper JunOS `show configuration | display set`; HP / Aruba / H3C / Comware `display current-configuration`; Cisco IOS/NX-OS, Arista, Huawei VRP, Mikrotik and unknowns fall back to `show running-config`) and host-key **TOFU** (trust-on-first-use) recording.
 - **Service**: scheduled sweep selects router/switch/firewall devices with bound credentials, fetches, diffs, and records a new version only on change — a change emits a **`device_config_changed`** event into `change_log` + the in-process Watcher (so it feeds the changes page, SSE watch, and notification rules).
-- **Read API + UI**: `GET /devices/{id}/configs` (list), `/{configId}` (detail), `/diff?a=&b=` (two-version compare); device detail gains a **配置历史** tab with version list, detail modal, and hand-colored unified-diff rendering.
+- **Read API + UI**: `GET /devices/{id}/configs` (list), `/{configId}` (detail), `/diff?a=&b=` (two-version compare); device detail gains a **Config History** tab with version list, detail modal, and hand-colored unified-diff rendering.
 - Real-router end-to-end smoke (GL-MT3000) is deferred to the next release — the code path is complete and browser-verified against the API.
 
 ### Built-in notifier: device events → webhook/email (issue #139)
@@ -157,7 +157,7 @@ surgically merge around it. Fixed at the root:
   `ssh_credential_id` column.
 
 
-### Synthetic probing / 拨测 (Phase 1)
+### Synthetic Probing (Phase 1)
 
 **Blackbox-style probing of EXPLICIT external endpoints (PR #235)** — user-configured
 probe targets (typically internet resources: a public HTTPS site, a hosted mail
@@ -574,7 +574,7 @@ and introduces official multi-arch container images on GHCR.
 - **Read API** `GET /api/v1/devices/{id}/certificates`: per-port grouping with
   leaf + chain; status-coloring metadata (TLS version, cipher suite, trust
   verdict, error).
-- **Frontend TLS sub-panel**: new "TLS 证书" panel under Scan Discovery — one
+- **Frontend TLS sub-panel**: new "TLS Certificates" panel under Scan Discovery — one
   clickable row per port with status-colored left border (green=valid / amber=
   expiring <15d / red=expired), day-count badge, self-signed/trusted tags.
 - **`CertificateModal.svelte`**: full-chain viewer — status header, summary field
