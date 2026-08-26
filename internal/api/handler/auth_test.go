@@ -3,6 +3,7 @@ package handler_test
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -312,4 +313,32 @@ func TestAuth_RateLimit_Login(t *testing.T) {
 	}
 
 	require.True(t, got429, "should receive 429 Too Many Requests after exceeding rate limit")
+}
+
+// TestAuth_PasswordPolicyIsPublic pins GET /api/v1/auth/password-policy: the
+// SPA's client-side password validation follows the EFFECTIVE policy (#332),
+// so the endpoint must be reachable pre-auth and report the effective knobs
+// (zero-value config falls back to the default policy, mirroring the service).
+func TestAuth_PasswordPolicyIsPublic(t *testing.T) {
+	server, _ := setupTestServer(t)
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/v1/auth/password-policy")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var policy struct {
+		MinLength        int  `json:"min_length"`
+		RequireUppercase bool `json:"require_uppercase"`
+		RequireLowercase bool `json:"require_lowercase"`
+		RequireDigit     bool `json:"require_digit"`
+		RequireSpecial   bool `json:"require_special"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&policy))
+	require.Equal(t, 8, policy.MinLength)
+	require.True(t, policy.RequireUppercase)
+	require.True(t, policy.RequireLowercase)
+	require.True(t, policy.RequireDigit)
+	require.True(t, policy.RequireSpecial)
 }
