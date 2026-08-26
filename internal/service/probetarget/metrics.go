@@ -24,6 +24,8 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	"mibee-steward/internal/domain"
 )
 
 // metrics wraps the Prometheus collectors the engine exposes on the public
@@ -31,10 +33,13 @@ import (
 // mibee_probe_up / cert expiry from Prometheus, not from MiBee itself).
 // A nil receiver disables all metric ops (tests pass a nil registerer).
 type metrics struct {
-	up         *prometheus.GaugeVec   // mibee_probe_up{name,module}: 1/0
-	duration   *prometheus.GaugeVec   // mibee_probe_duration_seconds{name,module}
-	certExpiry *prometheus.GaugeVec   // mibee_probe_cert_expiry_timestamp_seconds{name,module}
-	checks     *prometheus.CounterVec // mibee_probe_checks_total{status,module}
+	// vantage label (#277): "center" or "agent:{id}" — WHERE the probe ran.
+	// Existing {name,module}-only alert selectors keep matching the new
+	// series (adding a label never narrows an old selector).
+	up         *prometheus.GaugeVec   // mibee_probe_up{name,module,vantage}
+	duration   *prometheus.GaugeVec   // mibee_probe_duration_seconds{name,module,vantage}
+	certExpiry *prometheus.GaugeVec   // mibee_probe_cert_expiry_timestamp_seconds{name,module,vantage}
+	checks     *prometheus.CounterVec // mibee_probe_checks_total{status,module,vantage}
 
 	// seen tracks the gauge label pairs ever recorded so retain() can prune
 	// series of deleted targets (a lingering mibee_probe_up for a target that
@@ -45,8 +50,9 @@ type metrics struct {
 }
 
 type labelPair struct {
-	name   string
-	module string
+	name    string
+	module  string
+	vantage string
 }
 
 // Registration is process-global (DefaultRegisterer) and NewRouter can run
@@ -74,25 +80,25 @@ func newMetrics(r prometheus.Registerer) *metrics {
 				Subsystem: "probe",
 				Name:      "up",
 				Help:      "Whether the last probe of this target succeeded (1/0). Mirrors blackbox_exporter's probe_success.",
-			}, []string{"name", "module"}),
+			}, []string{"name", "module", "vantage"}),
 			duration: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 				Namespace: "mibee",
 				Subsystem: "probe",
 				Name:      "duration_seconds",
 				Help:      "Duration of the last probe of this target in seconds.",
-			}, []string{"name", "module"}),
+			}, []string{"name", "module", "vantage"}),
 			certExpiry: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 				Namespace: "mibee",
 				Subsystem: "probe",
 				Name:      "cert_expiry_timestamp_seconds",
 				Help:      "Leaf certificate NotAfter as a Unix timestamp. Mirrors blackbox_exporter's probe_ssl_earliest_cert_expiry; absent when no cert was collected.",
-			}, []string{"name", "module"}),
+			}, []string{"name", "module", "vantage"}),
 			checks: prometheus.NewCounterVec(prometheus.CounterOpts{
 				Namespace: "mibee",
 				Subsystem: "probe",
 				Name:      "checks_total",
 				Help:      "Total probe executions by outcome and module.",
-			}, []string{"status", "module"}),
+			}, []string{"status", "module", "vantage"}),
 		}
 		r.MustRegister(sharedGa.up, sharedGa.duration, sharedGa.certExpiry, sharedGa.checks)
 	})
@@ -106,7 +112,7 @@ func newMetrics(r prometheus.Registerer) *metrics {
 // record sets the current-outcome gauges for one target and bumps the checks
 // counter. certExpiryUnix nil = no cert collected this run (the expiry gauge
 // series is dropped so stale expiries don't linger).
-func (m *metrics) record(name, module, status string, latencySeconds float64, certExpiryUnix *float64) {
+func (m *metrics) record(name, module, vantage, status string, latencySeconds float64, certExpiryUnix *float64) {
 	if m == nil {
 		return
 	}
@@ -114,21 +120,24 @@ func (m *metrics) record(name, module, status string, latencySeconds float64, ce
 	if status == "success" {
 		up = 1.0
 	}
-	m.up.WithLabelValues(name, module).Set(up)
-	m.duration.WithLabelValues(name, module).Set(latencySeconds)
+	m.up.WithLabelValues(name, module, vantage).Set(up)
+	m.duration.WithLabelValues(name, module, vantage).Set(latencySeconds)
 	if certExpiryUnix == nil {
-		m.certExpiry.DeleteLabelValues(name, module)
+		m.certExpiry.DeleteLabelValues(name, module, vantage)
 	} else {
-		m.certExpiry.WithLabelValues(name, module).Set(*certExpiryUnix)
+		m.certExpiry.WithLabelValues(name, module, vantage).Set(*certExpiryUnix)
 	}
-	m.checks.WithLabelValues(status, module).Inc()
+	m.checks.WithLabelValues(status, module, vantage).Inc()
 
 	m.mu.Lock()
-	m.seen[name+"/"+module] = labelPair{name: name, module: module}
+	m.seen[name+"/"+module+"/"+vantage] = labelPair{name: name, module: module, vantage: vantage}
 	m.mu.Unlock()
 }
 
-// retain prunes gauge series whose (name,module) is no longer in current —
+// retain prunes CENTER-track gauge series whose (name,module) is no longer in
+// current. Agent-track series (written by the ingest path) are left alone:
+// the center cannot know when an agent stops reporting a target, and a
+// stale agent gauge is the visibility (stale marker) rather than a lie.
 // targets deleted while this process was running stop being reported instead
 // of freezing at their last value.
 func (m *metrics) retain(current map[string]bool) {
@@ -138,10 +147,13 @@ func (m *metrics) retain(current map[string]bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for key, p := range m.seen {
+		if p.vantage != domain.ProbeVantageCenter {
+			continue
+		}
 		if !current[key] {
-			m.up.DeleteLabelValues(p.name, p.module)
-			m.duration.DeleteLabelValues(p.name, p.module)
-			m.certExpiry.DeleteLabelValues(p.name, p.module)
+			m.up.DeleteLabelValues(p.name, p.module, p.vantage)
+			m.duration.DeleteLabelValues(p.name, p.module, p.vantage)
+			m.certExpiry.DeleteLabelValues(p.name, p.module, p.vantage)
 			delete(m.seen, key)
 		}
 	}

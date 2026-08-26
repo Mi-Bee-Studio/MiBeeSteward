@@ -632,6 +632,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// while probing aims at arbitrary external endpoints by design.
 	probeEngine := probetarget.NewEngine(db.New(probeDB), slog.Default(), prometheus.DefaultRegisterer)
 	probeTargetSvc := probetarget.New(db.New(probeDB), probeEngine)
+	// Vantage probe dispatcher (#277): ships agent plans over the command
+	// channel whenever a plan content changes (fingerprint-gated, steady
+	// state is zero traffic). Same 10s cadence as the engine tick.
+	probeDispatcher := probetarget.NewAgentDispatcher(db.New(probeDB), agentCmdSvc, slog.Default())
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			probeDispatcher.DispatchTick(context.Background())
+		}
+	}()
+	agentProbeReportHandler := handler.NewAgentProbeReportHandler(probeTargetSvc)
 	probeTargetHandler := handler.NewProbeTargetHandler(probeTargetSvc, scanQueries)
 	r.Route("/api/v1/probe-targets", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
@@ -706,6 +718,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Route("/api/v1/agents", func(r chi.Router) {
 		r.Use(middleware.RequireAgentToken)
 		r.Post("/report", agentReportHandler.Report)
+		r.Post("/probe-report", agentProbeReportHandler.Report)
 		// Agent command channel (Phase 5c): the agent polls pending commands
 		// (GET /commands), acknowledges (POST /commands/{id}/ack), executes, and
 		// reports the result (POST /commands/{id}/complete). Pull model.

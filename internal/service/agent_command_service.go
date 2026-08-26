@@ -68,6 +68,7 @@ var OpsCommands = map[string]bool{
 func ValidCommands() map[string]bool {
 	return map[string]bool{
 		"scan":          true,
+		"probe":         true,
 		"restart":       true,
 		"config-reload": true,
 		"logs-tail":     true,

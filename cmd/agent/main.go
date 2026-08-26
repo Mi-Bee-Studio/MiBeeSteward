@@ -295,6 +295,14 @@ func main() {
 			"trigger_identify", cfg.Scanner.Discovery.TriggerIdentify)
 	}
 
+	// Vantage prober (#277): executes the center-assigned probe plan locally
+	// and ships results in batches. Started before the poller so a "probe"
+	// command arriving in the first poll has a receiver.
+	probePoster := agent.NewHTTPResultPoster(cfg.Center.URL, cfg.Center.AuthToken, slog.Default())
+	prober := agent.NewProber(probePoster, slog.Default())
+	prober.Start(ctxBg)
+	defer prober.Stop()
+
 	// Command poller: fetches ad-hoc scan commands from the center (Phase 5c).
 	// The runScan callback wraps the runner so this package doesn't import runner
 	// directly (avoids an import cycle). Commands are best-effort — the agent's
@@ -319,6 +327,7 @@ func main() {
 			scanRunner.Run(ctx, run.ID, targets, to, cfg.Scanner.MaxConcurrentHosts, cfg.Scanner.PersistRawEvidence, 0)
 			return fmt.Sprintf(`{"run_id":%d,"targets":"%s"}`, run.ID, targets), nil
 		}, slog.Default())
+	cmdPoller.SetProber(prober)
 	if cfg.Center.RemoteOpsEnabled {
 		// Remote-ops opt-in (#278): restart/config-reload re-exec the process
 		// (config is consumed at construction; re-exec is the only faithful
