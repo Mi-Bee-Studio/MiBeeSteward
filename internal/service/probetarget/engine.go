@@ -55,11 +55,13 @@ const (
 // nextDue map (seeded from last_run_at on first sight) prevents re-probing a
 // target the process just probed before a restart.
 type Engine struct {
-	queries     *db.Queries
-	logger      *slog.Logger
-	metrics     *metrics
-	probers     map[string]probe.Prober // http/tcp/icmp modules
-	certCollect certCollector
+	queries *db.Queries
+	logger  *slog.Logger
+	metrics *metrics
+	// exec is the stateless module dispatcher (probers + cert collector).
+	// Split out of Engine so the AGENT-side vantage prober (#277) reuses
+	// the exact execution core without dragging the center DB along.
+	exec targetExecutor
 
 	nextDue  map[int64]time.Time
 	mu       sync.Mutex // guards nextDue
@@ -81,15 +83,17 @@ func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Register
 		queries: queries,
 		logger:  logger,
 		metrics: newMetrics(reg),
-		probers: map[string]probe.Prober{
-			"http": &probe.HTTPProber{},
-			"tcp":  &probe.TCPProber{},
-			"icmp": &probe.ICMPProber{},
+		exec: targetExecutor{
+			probers: map[string]probe.Prober{
+				"http": &probe.HTTPProber{},
+				"tcp":  &probe.TCPProber{},
+				"icmp": &probe.ICMPProber{},
+			},
+			certCollect: scannerv2probe.CollectCertChain,
 		},
-		certCollect: scannerv2probe.CollectCertChain,
-		nextDue:     make(map[int64]time.Time),
-		sem:         make(chan struct{}, maxConcurrency),
-		done:        make(chan struct{}),
+		nextDue: make(map[int64]time.Time),
+		sem:     make(chan struct{}, maxConcurrency),
+		done:    make(chan struct{}),
 	}
 }
 
@@ -170,7 +174,7 @@ func (e *Engine) tick(ctx context.Context) {
 		if t.Vantage != domain.ProbeVantageCenter && t.Vantage != domain.ProbeVantageAll {
 			continue
 		}
-		current[t.Name+"/"+t.Module] = true
+		current[t.Name+"/"+t.Module+"/"+domain.ProbeVantageCenter] = true
 
 		due, ok := e.nextDue[t.ID]
 		if !ok {
@@ -247,17 +251,17 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 	defer e.inFlight.Delete(t.ID)
 
 	checkedAt := time.Now().UTC().Format(time.RFC3339)
-	out := e.execute(ctx, t)
+	out := e.exec.execute(ctx, t)
 
 	if err := e.queries.CreateProbeResult(ctx, db.CreateProbeResultParams{
 		TargetID:     t.ID,
-		Status:       out.status,
-		LatencyMs:    float64(out.latency.Microseconds()) / 1000.0,
-		StatusCode:   int64(out.statusCode),
-		ErrorMessage: out.errMsg,
-		TlsVersion:   out.tlsVersion,
-		CertNotAfter: out.certNotAfter,
-		CertTrusted:  certTrustedDB(out.certTrusted),
+		Status:       out.Status,
+		LatencyMs:    float64(out.Latency.Microseconds()) / 1000.0,
+		StatusCode:   int64(out.StatusCode),
+		ErrorMessage: out.ErrMsg,
+		TlsVersion:   out.TLSVersion,
+		CertNotAfter: out.CertNotAfter,
+		CertTrusted:  certTrustedDB(out.CertTrusted),
 		CheckedAt:    checkedAt,
 		Vantage:      domain.ProbeVantageCenter, // the engine IS the center executor
 	}); err != nil {
@@ -266,9 +270,9 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 
 	if err := e.queries.SetProbeTargetLastResult(ctx, db.SetProbeTargetLastResultParams{
 		LastRunAt:     checkedAt,
-		LastStatus:    out.status,
-		LastLatencyMs: float64(out.latency.Microseconds()) / 1000.0,
-		LastError:     out.errMsg,
+		LastStatus:    out.Status,
+		LastLatencyMs: float64(out.Latency.Microseconds()) / 1000.0,
+		LastError:     out.ErrMsg,
 		ID:            t.ID,
 	}); err != nil {
 		e.logger.Error("probe engine: update target last-result failed", "target_id", t.ID, "error", err)
@@ -277,23 +281,23 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 	// Upsert only on successful collection: a transient handshake failure must
 	// not wipe the last known-good chain (deliberately unlike host_tls_certs,
 	// whose "current state" semantics serve a different UI).
-	if len(out.certs) > 0 {
-		if err := e.upsertCerts(ctx, t.ID, out.certs); err != nil {
+	if len(out.Certs) > 0 {
+		if err := e.upsertCerts(ctx, t.ID, out.Certs); err != nil {
 			e.logger.Error("probe engine: upsert certs failed", "target_id", t.ID, "error", err)
 		}
 	}
 
-	e.metrics.record(t.Name, t.Module, out.status, out.latency.Seconds(), certExpiryUnix(out.certNotAfter))
+	e.metrics.record(t.Name, t.Module, domain.ProbeVantageCenter, out.Status, out.Latency.Seconds(), certExpiryUnix(out.CertNotAfter))
 
 	return domain.ProbeResultResponse{
 		TargetID:     t.ID,
-		Status:       out.status,
-		LatencyMs:    float64(out.latency.Microseconds()) / 1000.0,
-		StatusCode:   out.statusCode,
-		ErrorMessage: out.errMsg,
-		TLSVersion:   out.tlsVersion,
-		CertNotAfter: out.certNotAfter,
-		CertTrusted:  out.certTrusted,
+		Status:       out.Status,
+		LatencyMs:    float64(out.Latency.Microseconds()) / 1000.0,
+		StatusCode:   out.StatusCode,
+		ErrorMessage: out.ErrMsg,
+		TLSVersion:   out.TLSVersion,
+		CertNotAfter: out.CertNotAfter,
+		CertTrusted:  out.CertTrusted,
 		CheckedAt:    checkedAt,
 	}, nil
 }

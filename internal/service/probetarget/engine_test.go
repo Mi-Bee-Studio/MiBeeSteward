@@ -54,7 +54,7 @@ func (f *fakeProber) count() int {
 func newTestEngine(t *testing.T, queries *db.Queries, fp *fakeProber, cc certCollector) *Engine {
 	t.Helper()
 	e := NewEngine(queries, slog.New(slog.NewTextHandler(io.Discard, nil)), nil /* no metrics */)
-	e.probers = map[string]probe.Prober{"http": fp, "tcp": fp, "icmp": fp}
+	e.exec.probers = map[string]probe.Prober{"http": fp, "tcp": fp, "icmp": fp}
 	if cc == nil {
 		// Never touch the network from tests; modules that don't collect certs
 		// never invoke this anyway.
@@ -62,7 +62,7 @@ func newTestEngine(t *testing.T, queries *db.Queries, fp *fakeProber, cc certCol
 			return []scannerv2.TLSCertRecord{{Error: "stub: no cert collection in tests"}}
 		}
 	}
-	e.certCollect = cc
+	e.exec.certCollect = cc
 	return e
 }
 
@@ -185,7 +185,7 @@ func TestEngine_TLSCollectionFailureKeepsLastGoodChain(t *testing.T) {
 
 	// Handshake now fails (e.g. transient network) — the stored chain must
 	// survive so the UI keeps showing the last known-good certificate.
-	engine.certCollect = func(_ context.Context, _ string, _ int, _ time.Duration) []scannerv2.TLSCertRecord {
+	engine.exec.certCollect = func(_ context.Context, _ string, _ int, _ time.Duration) []scannerv2.TLSCertRecord {
 		return []scannerv2.TLSCertRecord{{IP: "example.com", Port: 443, Error: "dial tcp: i/o timeout"}}
 	}
 	resp, err := engine.TriggerNow(ctx, tgt.ID)

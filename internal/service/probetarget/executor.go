@@ -20,6 +20,7 @@ import (
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/service/scannerv2"
+	scannerv2probe "mibee-steward/internal/service/scannerv2/probe"
 )
 
 // certCollector mirrors scannerv2probe.CollectCertChain's signature so tests
@@ -29,36 +30,71 @@ import (
 // auto-derived from the address).
 type certCollector func(ctx context.Context, host string, port int, timeout time.Duration) []scannerv2.TLSCertRecord
 
-// outcome is a single probe execution's result, before persistence. The cert
+// Outcome is a single probe execution's result, before persistence. The cert
 // summary fields mirror the probe_results summary columns (history without a
 // join); certs carries the full chain for the probe_tls_certs upsert.
-type outcome struct {
-	status       string // success | fail | timeout
-	latency      time.Duration
-	statusCode   int // http module only
-	errMsg       string
-	tlsVersion   string
-	certNotAfter string // leaf NotAfter, RFC3339; "" = none collected
-	certTrusted  *bool
-	certs        []scannerv2.TLSCertRecord // nil unless a chain was collected
+// Exported because the agent reuses the same executor for vantage probing
+// (#277): the agent has no center DB, so it runs RunTarget and ships the
+// outcome back over the command/report channel instead of persisting.
+type Outcome struct {
+	Status       string // success | fail | timeout
+	Latency      time.Duration
+	StatusCode   int // http module only
+	ErrMsg       string
+	TLSVersion   string
+	CertNotAfter string // leaf NotAfter, RFC3339; "" = none collected
+	CertTrusted  *bool
+	Certs        []scannerv2.TLSCertRecord // nil unless a chain was collected
+}
+
+// outcome kept as a spelling alias so the engine-side call sites read
+// naturally during the export migration.
+type outcome = Outcome
+
+// targetExecutor is the stateless module dispatcher: which probers to use and
+// how to collect certificate chains. Split from Engine so the agent-side
+// vantage prober (#277) reuses the exact execution core without the center DB.
+type targetExecutor struct {
+	probers     map[string]probe.Prober // http/tcp/icmp modules
+	certCollect certCollector
+}
+
+// defaultTargetExecutor is what RunTarget (and the agent) use: the production
+// probers + the scanner's real cert collector.
+var defaultTargetExecutor = targetExecutor{
+	probers: map[string]probe.Prober{
+		"http": &probe.HTTPProber{},
+		"tcp":  &probe.TCPProber{},
+		"icmp": &probe.ICMPProber{},
+	},
+	certCollect: scannerv2probe.CollectCertChain,
+}
+
+// RunTarget dispatches one target to its module prober — the shared
+// execution core used by BOTH the center engine and the agent-side vantage
+// prober (#277). Never panics on an unknown module (returns a fail outcome)
+// — the CHECK constraint makes that unreachable, but callers must never
+// wedge on bad data.
+func RunTarget(ctx context.Context, t db.ProbeTarget) Outcome {
+	return defaultTargetExecutor.execute(ctx, t)
 }
 
 // execute dispatches one target to its module prober. Never panics on an
 // unknown module (returns a fail outcome) — the CHECK constraint makes that
 // unreachable, but the engine must never wedge on bad data.
-func (e *Engine) execute(ctx context.Context, t db.ProbeTarget) outcome {
+func (x *targetExecutor) execute(ctx context.Context, t db.ProbeTarget) outcome {
 	timeout := time.Duration(t.TimeoutSeconds) * time.Second
 	switch t.Module {
 	case "http":
-		return e.executeHTTP(ctx, t, timeout)
+		return x.executeHTTP(ctx, t, timeout)
 	case "tls":
-		return e.executeTLS(ctx, t, timeout)
+		return x.executeTLS(ctx, t, timeout)
 	case "tcp":
-		return e.executeSimple(ctx, t, "tcp", timeout)
+		return x.executeSimple(ctx, t, "tcp", timeout)
 	case "icmp":
-		return e.executeSimple(ctx, t, "icmp", timeout)
+		return x.executeSimple(ctx, t, "icmp", timeout)
 	default:
-		return outcome{status: "fail", errMsg: "unknown module: " + t.Module}
+		return outcome{Status: "fail", ErrMsg: "unknown module: " + t.Module}
 	}
 }
 
@@ -69,11 +105,11 @@ func (e *Engine) execute(ctx context.Context, t db.ProbeTarget) outcome {
 // collector still captures the chain so the UI can show WHY it failed. A
 // collection failure never flips an otherwise-successful HTTP probe — the cert
 // fields are simply absent for that run.
-func (e *Engine) executeHTTP(ctx context.Context, t db.ProbeTarget, timeout time.Duration) outcome {
-	res, err := e.probers["http"].Probe(ctx, t.Target, timeout)
+func (x *targetExecutor) executeHTTP(ctx context.Context, t db.ProbeTarget, timeout time.Duration) outcome {
+	res, err := x.probers["http"].Probe(ctx, t.Target, timeout)
 	if err != nil {
 		// Prober-level error (not the target's fault) — counts as fail.
-		return outcome{status: classifyError(err.Error()), errMsg: err.Error()}
+		return outcome{Status: classifyError(err.Error()), ErrMsg: err.Error()}
 	}
 	out := outcomeFromResult(res)
 
@@ -85,7 +121,7 @@ func (e *Engine) executeHTTP(ctx context.Context, t db.ProbeTarget, timeout time
 				port = n
 			}
 		}
-		out.attachCerts(e.collectCerts(ctx, host, port, timeout))
+		out.attachCerts(x.collectCerts(ctx, host, port, timeout))
 	}
 	return out
 }
@@ -93,40 +129,40 @@ func (e *Engine) executeHTTP(ctx context.Context, t db.ProbeTarget, timeout time
 // executeTLS is the pure certificate probe: handshake host:port, success =
 // leaf record carries no Error. Latency wraps the whole collection call
 // (two handshakes — collection + trust verdict), documented as such.
-func (e *Engine) executeTLS(ctx context.Context, t db.ProbeTarget, timeout time.Duration) outcome {
+func (x *targetExecutor) executeTLS(ctx context.Context, t db.ProbeTarget, timeout time.Duration) outcome {
 	host, portStr, err := net.SplitHostPort(t.Target)
 	if err != nil {
-		return outcome{status: "fail", errMsg: "invalid target: " + err.Error()}
+		return outcome{Status: "fail", ErrMsg: "invalid target: " + err.Error()}
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return outcome{status: "fail", errMsg: "invalid target port"}
+		return outcome{Status: "fail", ErrMsg: "invalid target port"}
 	}
 
 	start := time.Now()
-	certs := e.collectCerts(ctx, host, port, timeout)
-	out := outcome{latency: time.Since(start)}
+	certs := x.collectCerts(ctx, host, port, timeout)
+	out := outcome{Latency: time.Since(start)}
 	leaf := certs[0] // collectCerts guarantees ≥1 record
 	if leaf.Error != "" {
-		out.status = classifyError(leaf.Error)
-		out.errMsg = leaf.Error
+		out.Status = classifyError(leaf.Error)
+		out.ErrMsg = leaf.Error
 		return out
 	}
-	out.status = "success"
-	out.tlsVersion = leaf.TLSVersion
-	out.certNotAfter = leaf.NotAfter
+	out.Status = "success"
+	out.TLSVersion = leaf.TLSVersion
+	out.CertNotAfter = leaf.NotAfter
 	trusted := leaf.Trusted
-	out.certTrusted = &trusted
-	out.certs = certs
+	out.CertTrusted = &trusted
+	out.Certs = certs
 	return out
 }
 
 // executeSimple serves the tcp/icmp modules: straight passthrough to the
 // shared probers (target grammar already validated at CRUD time).
-func (e *Engine) executeSimple(ctx context.Context, t db.ProbeTarget, module string, timeout time.Duration) outcome {
-	res, err := e.probers[module].Probe(ctx, t.Target, timeout)
+func (x *targetExecutor) executeSimple(ctx context.Context, t db.ProbeTarget, module string, timeout time.Duration) outcome {
+	res, err := x.probers[module].Probe(ctx, t.Target, timeout)
 	if err != nil {
-		return outcome{status: classifyError(err.Error()), errMsg: err.Error()}
+		return outcome{Status: classifyError(err.Error()), ErrMsg: err.Error()}
 	}
 	return outcomeFromResult(res)
 }
@@ -134,8 +170,8 @@ func (e *Engine) executeSimple(ctx context.Context, t db.ProbeTarget, module str
 // collectCerts wraps the injected collector, preserving CollectCertChain's
 // ≥1-record invariant (error-only record on handshake failure) even if a test
 // double forgets it.
-func (e *Engine) collectCerts(ctx context.Context, host string, port int, timeout time.Duration) []scannerv2.TLSCertRecord {
-	certs := e.certCollect(ctx, host, port, timeout)
+func (x *targetExecutor) collectCerts(ctx context.Context, host string, port int, timeout time.Duration) []scannerv2.TLSCertRecord {
+	certs := x.certCollect(ctx, host, port, timeout)
 	if len(certs) == 0 {
 		return []scannerv2.TLSCertRecord{{IP: host, Port: port, Error: "tls handshake returned no records"}}
 	}
@@ -150,25 +186,25 @@ func (o *outcome) attachCerts(certs []scannerv2.TLSCertRecord) {
 		return
 	}
 	leaf := certs[0]
-	o.tlsVersion = leaf.TLSVersion
-	o.certNotAfter = leaf.NotAfter
+	o.TLSVersion = leaf.TLSVersion
+	o.CertNotAfter = leaf.NotAfter
 	trusted := leaf.Trusted
-	o.certTrusted = &trusted
-	o.certs = certs
+	o.CertTrusted = &trusted
+	o.Certs = certs
 }
 
 // outcomeFromResult maps a shared prober Result to an outcome.
 func outcomeFromResult(res *probe.Result) outcome {
 	out := outcome{
-		latency:    res.Latency,
-		statusCode: res.StatusCode,
+		Latency:    res.Latency,
+		StatusCode: res.StatusCode,
 	}
 	if res.Success {
-		out.status = "success"
+		out.Status = "success"
 		return out
 	}
-	out.status = classifyError(res.ErrorMessage)
-	out.errMsg = res.ErrorMessage
+	out.Status = classifyError(res.ErrorMessage)
+	out.ErrMsg = res.ErrorMessage
 	return out
 }
 
