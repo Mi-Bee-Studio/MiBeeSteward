@@ -47,6 +47,12 @@ func (h *UserHandler) Routes() chi.Router {
 	// Public routes
 	r.Post("/login", h.Login)
 	r.Post("/logout", h.Logout)
+	// Password policy (public): the SPA's client-side password validation and
+	// hint text must follow the EFFECTIVE policy (auth.password_policy, #332),
+	// not hardcoded defaults — otherwise an admin lowering min_length is
+	// blocked by the UI before the backend ever sees the request. Contains
+	// only strength knobs, no secrets, so pre-auth exposure is safe.
+	r.Get("/password-policy", h.GetPasswordPolicy)
 	// Account creation is admin-initiated (closed self-signup): gated by
 	// CapUserManage, an admin-only capability — same semantics as the prior
 	// RequireAdmin, expressed through the capability matrix.
@@ -65,6 +71,34 @@ func (h *UserHandler) Routes() chi.Router {
 }
 
 // Login handles POST /api/v1/auth/login
+// PasswordPolicyResponse is the effective password strength policy — the
+// exact knobs validatePassword enforces (internal/service/user.go).
+type PasswordPolicyResponse struct {
+	MinLength        int  `json:"min_length"`
+	RequireUppercase bool `json:"require_uppercase"`
+	RequireLowercase bool `json:"require_lowercase"`
+	RequireDigit     bool `json:"require_digit"`
+	RequireSpecial   bool `json:"require_special"`
+}
+
+// GetPasswordPolicy handles GET /api/v1/auth/password-policy — the effective
+// strength policy for client-side validation + hint text (see Routes comment).
+func (h *UserHandler) GetPasswordPolicy(w http.ResponseWriter, _ *http.Request) {
+	policy := h.cfg.Auth.PasswordPolicy
+	if policy == (config.PasswordPolicyConfig{}) {
+		// Hand-constructed configs (tests) that skipped Load's defaults
+		// seeding — mirror the service's zero-value handling.
+		policy = service.DefaultPasswordPolicy()
+	}
+	Success(w, PasswordPolicyResponse{
+		MinLength:        policy.MinLength,
+		RequireUppercase: policy.RequireUppercase,
+		RequireLowercase: policy.RequireLowercase,
+		RequireDigit:     policy.RequireDigit,
+		RequireSpecial:   policy.RequireSpecial,
+	})
+}
+
 func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req domain.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
