@@ -893,6 +893,7 @@
 		"Event Changed": "Device Changed",
 		"Event Lost": "Device Lost",
 		"Event Recovered": "Device Recovered",
+		"Event Config Changed": "Config Change",
 		"All Events": "All Events",
 		"No Changes": "No changes yet",
 		"No Changes Desc": "Device changes will appear here once scans detect additions, modifications, or losses.",

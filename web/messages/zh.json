@@ -893,6 +893,7 @@
 		"Event Changed": "设备变更",
 		"Event Lost": "设备丢失",
 		"Event Recovered": "设备恢复",
+		"Event Config Changed": "配置变更",
 		"All Events": "全部事件",
 		"No Changes": "暂无变更",
 		"No Changes Desc": "扫描检测到设备新增、变更或离线时,事件将在此显示。",
