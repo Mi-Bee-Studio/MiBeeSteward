@@ -26,9 +26,15 @@ import (
 )
 
 // ChangeLogEntry is one row of the change history, JSON-tagged for the API.
-// BeforeData/AfterData are the raw JSON strings stored at detect time
-// (before_data = full device snapshot for changed/lost; after_data = the new
-// snapshot for added, or a {field: [old,new]} diff map for changed).
+// BeforeData/AfterData are the raw JSON strings stored at detect time: full
+// DeviceSnapshot JSON (see internal/changedetect.DeviceSnapshot) — before_data
+// for device_changed/device_lost, after_data for device_changed/device_added;
+// device_config_changed carries neither. The frontend computes the
+// changed-field diff client-side (web/src/lib/changesDiff.ts buildDiff);
+// legacy rows written before the snapshot switch may hold a
+// {field: [old,new]} diff map in after_data, which buildDiff still accepts.
+// Changing this shape is a cross-stack contract change — update the frontend
+// parser and its tests in the same PR.
 type ChangeLogEntry struct {
 	ID         int64     `json:"id"`
 	AgentID    *string   `json:"agent_id,omitempty"`
@@ -65,7 +71,8 @@ func NewChangeLogHandler(queries *db.Queries, dbConn *sql.DB) *ChangeLogHandler 
 // Query params (all optional):
 //
 //	network_id  — filter to one network (0/absent = all networks)
-//	change_type — filter to one type (device_added / device_changed / device_lost)
+//	change_type — filter to one type (device_added / device_changed /
+//	               device_lost / device_recovered / device_config_changed)
 //	entity_type — filter to one entity (device; service/neighbor reserved)
 //	limit/offset — pagination (default 50, max 200)
 func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {

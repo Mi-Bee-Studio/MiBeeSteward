@@ -222,3 +222,46 @@ func countChangeLog(t *testing.T) int {
 // testDBConn holds the connection opened by setupTestDB, so countChangeLog can
 // run a raw COUNT without re-deriving it from the Queries.
 var testDBConn *sql.DB
+
+// TestDeviceSnapshotJSONContract pins the exact JSON field set the change-log
+// payloads (before_data/after_data) carry. The frontend parses these by field
+// name (web/src/lib/changesDiff.ts buildDiff + the changefields.* labels) —
+// renaming, removing, or adding a field here is a cross-stack contract change
+// that must update the frontend parser and its tests (web/src/__tests__/
+// changesDiff.test.ts) in the same PR. This test exists so the Go side cannot
+// drift silently.
+func TestDeviceSnapshotJSONContract(t *testing.T) {
+	want := []string{
+		"name", "type", "brand", "model", "mac_address", "ip_address",
+		"status", "open_ports", "detected_services", "prometheus_url",
+		"node_exporter_url", "scan_attributes",
+	}
+	raw, err := json.Marshal(DeviceSnapshot{})
+	require.NoError(t, err)
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.ElementsMatch(t, want, keysOfMap(got),
+		"DeviceSnapshot JSON field set changed — update web/src/lib/changesDiff.ts + tests in the same PR")
+
+	// String-typed fields only: a field flipping to array/object would break
+	// the frontend's string-first formatting assumptions.
+	typed, err := json.Marshal(DeviceSnapshot{Name: "n", Type: "t"})
+	require.NoError(t, err)
+	var flat map[string]any
+	require.NoError(t, json.Unmarshal(typed, &flat))
+	for k, v := range flat {
+		if v == nil {
+			continue // zero-value string marshals as "" not nil; nil = absent key
+		}
+		_, ok := v.(string)
+		require.True(t, ok, "field %s must marshal to a JSON string", k)
+	}
+}
+
+func keysOfMap(m map[string]json.RawMessage) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
