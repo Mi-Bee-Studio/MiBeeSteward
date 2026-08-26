@@ -152,7 +152,7 @@ func main() {
 	// mini-DB (seeded manually or via the task API on the center in a later
 	// phase). For now an operator adds rows to scan_tasks directly.
 	scanScheduler, schedErr := scannerv2scheduler.New(queries, dbConn,
-		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64) {
+		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64, _ *int64) {
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("scan_func_panic", "task_id", taskID, "panic", r)
@@ -387,7 +387,48 @@ func openAgentDB(dbPath string) (*sql.DB, error) {
 		conn.Close()
 		return nil, fmt.Errorf("apply agent schema: %w", err)
 	}
+	if err := applyAgentMigrations(conn); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("apply agent migrations: %w", err)
+	}
 	return conn, nil
+}
+
+// agentMigrations brings pre-existing mini-DBs up to the current
+// agentSchema shape (#337): CREATE TABLE IF NOT EXISTS never touches an
+// existing table, so columns added after an agent was first provisioned
+// must be ALTERed in idempotently — the same pattern as the center's
+// cmd/server/migrations.go. Without this, every device-identity query
+// referencing a new column (offline_since was the one seen in the wild)
+// fails and the roam/replace bridge silently degrades.
+var agentMigrations = []struct {
+	table   string // target table (for detection + error context)
+	stmt    string // full ALTER TABLE ... ADD COLUMN
+	colName string // column to detect via pragma_table_info
+}{
+	{"devices", "ALTER TABLE devices ADD COLUMN offline_since TIMESTAMP", "offline_since"},
+	{"devices", "ALTER TABLE devices ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''", "device_uuid"},
+	{"devices", "ALTER TABLE devices ADD COLUMN ssh_credential_id INTEGER", "ssh_credential_id"},
+	// scan_tasks columns the scheduler's ListEnabledScanTasks touches
+	// (observed in the wild as a startup ERROR on .174).
+	{"scan_tasks", "ALTER TABLE scan_tasks ADD COLUMN credential_id INTEGER", "credential_id"},
+	{"scan_tasks", "ALTER TABLE scan_tasks ADD COLUMN network_id INTEGER", "network_id"},
+}
+
+func applyAgentMigrations(conn *sql.DB) error {
+	for _, m := range agentMigrations {
+		var present int
+		if err := conn.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, m.table, m.colName).Scan(&present); err != nil {
+			return fmt.Errorf("inspect %s.%s: %w", m.table, m.colName, err)
+		}
+		if present > 0 {
+			continue
+		}
+		if _, err := conn.Exec(m.stmt); err != nil {
+			return fmt.Errorf("add %s.%s: %w", m.table, m.colName, err)
+		}
+	}
+	return nil
 }
 
 // agentSchema is the minimal table set the runner + scheduler touch. Shapes
@@ -409,7 +450,9 @@ CREATE TABLE IF NOT EXISTS scan_tasks (
 	id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, targets TEXT NOT NULL,
 	cron_expr TEXT NOT NULL DEFAULT '0 */6 * * *', pipeline_config TEXT NOT NULL DEFAULT '{}',
 	global_labels TEXT NOT NULL DEFAULT '{}', timeout INTEGER NOT NULL DEFAULT 300,
-	concurrent_hosts INTEGER NOT NULL DEFAULT 50, enabled INTEGER NOT NULL DEFAULT 1,
+	concurrent_hosts INTEGER NOT NULL DEFAULT 50,
+	credential_id INTEGER, network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+	enabled INTEGER NOT NULL DEFAULT 1,
 	last_run_at TIMESTAMP, next_run_at TIMESTAMP, last_run_status TEXT,
 	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -462,7 +505,9 @@ CREATE TABLE IF NOT EXISTS devices (
 	user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes)),
 	network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
 	first_seen TIMESTAMP, last_seen TIMESTAMP,
-	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	device_uuid TEXT NOT NULL DEFAULT '', offline_since TIMESTAMP,
+	ssh_credential_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
 CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(type);

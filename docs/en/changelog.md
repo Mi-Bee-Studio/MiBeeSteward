@@ -5,6 +5,28 @@ All notable changes to MiBee Steward are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Agent-network scan tasks (#336)**: `scan_tasks` whose targets resolve to an agent-managed network now dispatch a scan command to that agent on every cron tick — no external timer or password-bearing scripts. Dispatch results land in the task's run history (a rejected dispatch, e.g. out-of-CIDR targets, is recorded as a failed run with the reason). Local-network tasks are unchanged.
+- **Configurable password policy (#332)**: `auth.password_policy` (min_length + four character-class toggles). Defaults reproduce the previous hardcoded rules exactly; partial blocks override only the keys they name.
+- **Configurable login lockout (#338)**: `auth.lockout` (max_failed_attempts / lock_minutes). An expired lock now resets the failure counter — a stray retry after expiry no longer re-locks instantly (previously, a periodic client with a stale password could keep an account locked indefinitely). Account-lock responses moved from 429 to **423** with a retry-after hint, and the UI now distinguishes "account locked" from "too many attempts".
+- **Markdown upload & preview for device documents (#324)**: `.md` upload (MIME normalization + binary-content rejection), GFM preview in a sanitized (DOMPurify) dialog, soft-delete with working undo (restore endpoint), per-device document listing fix, `?inline=1` PDF preview, typed upload errors (413/415/400).
+- **Synthetic load harness (#313)**: `cmd/loadgen` serves a 127/8 synthetic device plane (kernel ICMP + SNMP/HTTP/SSH/RTSP responders) and drives full-stack benchmarks through the real API; `scanner.allow_reserved_targets` is the escape hatch for that plane.
+- **Demo mode (#315 / #285)**: `server.demo_mode` (or `-demo`) seeds a fictional TEST-NET inventory on an empty database.
+- **Multi-vantage probing data model (#328, step 1 of #277)**: `probe_targets.vantage` execution plans + per-vantage result tracks.
+- Website content: feature overview / playbooks / comparison articles, zh+en (#320).
+
+### Fixed
+
+- **Reserved-range scan targets rejected (#318 / #317)**: loopback / unspecified / link-local / multicast / broadcast / 240-4 targets are refused at every scan entry point (task create/update, sync scan, agent command dispatch); CIDR expansion drops network/broadcast addresses (nmap semantics, also closes the .255 phantom-device class of #254). Target expansion consolidated into `internal/cidrutil`.
+- **`MIBEE_*` env overrides for underscore keys (#334 / #331)**: exact env-name→key mapping derived from the Config struct; underscore-bearing keys (`initial_admin_password`, `allow_reserved_targets`, …) were previously silently unreachable from the environment.
+- **Device gauges refresh periodically (#335 / #333)**: `mibee_devices_total` no longer freezes at the process-start snapshot.
+- **`-demo` with a broken config no longer segfaults (#330 / #327)**.
+- **Agent mini-DB startup migrations (#339 / #337)**: the agent's local schema now ships the full column set (offline_since / device_uuid / ssh_credential_id / scan_tasks.network_id+credential_id) and upgrades legacy DBs in place — previously every device-identity roam/replace silently degraded with "no such column".
+- Windows build/test parity restored (#325 / #321); sqlite BUSY write-path governance + retry metrics (#311 / #267); schema version gating + backup retention (#312 / #268); scannerv2 store migrated to sqlc (#314 / #269); dashboard layout freeze (#302); agent fleet management (#309 / #278); fingerprint coverage reporting (#308 / #282); ecosystem notification channels + Grafana dashboards (#307 / #284); SSE change-stream in the UI (#306 / #272); probe UX batch (#305 / #276); VLAN name collection (#304 / #273); `doctor` subcommand (#303 / #281); OpenWrt operator docs (#329 / #316); docs governance batch (#326).
+
 ## [0.5.0] - 2026-08-19
 
 **SNMPv3 + multi-role RBAC + device config backup + built-in notifier + synthetic probing + liveness time series.** v0.5.0 clears the enterprise-adoption hard gates: **SNMPv3** (USM authNoPriv/authPriv with an encrypted credential vault), a **role/capability RBAC model with object-level network scoping** (admin / operator / viewer + per-user network grants), **device config backup** (Oxidized/RANCID-style: scheduled `show running-config` pulls over SSH, versioned storage, two-version diffs, change-detection integration), a **minimal built-in notifier** (device events → webhook/email without running Alertmanager), and **synthetic probing** of external endpoints. Under the hood, device liveness becomes a **time series** (killing a change-log noise storm), device identity is keyed by `device_uuid` across satellite tables, and the release is rounded out by OUI longest-prefix vendor inference, a topology-visualization polish pass, observability wiring fixes, and a large frontend UX/a11y/correctness batch.

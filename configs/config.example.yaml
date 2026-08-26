@@ -44,7 +44,7 @@ network:
 # Empty url = center/standalone mode (serve API + SPA, no upstream reporting).
 # Distributed model: see docs/{en,zh}/distributed.md.
 center:
-  url: ""               # e.g. "http://192.168.63.101:8080"; empty = standalone
+  url: ""               # e.g. "http://192.168.63.102:8080"; empty = standalone
   auth_token: ""        # agent bearer token from the center; REQUIRED when url set
   report_interval: "30s" # flush buffered results when buffer not full; default 30s
   remote_ops_enabled: false # AGENT-side opt-in (#278): allow executing restart /
@@ -108,6 +108,12 @@ auth:
   #   require_lowercase: true
   #   require_digit: true
   #   require_special: true
+  # Failed-login lockout (defaults below = historical hardcoded values; partial
+  # blocks override only the keys you name). NOTE: an EXPIRED lock resets the
+  # failure counter — a stray retry after expiry never re-locks by itself.
+  # lockout:
+  #   max_failed_attempts: 5
+  #   lock_minutes: 30
   cookie_max_age: "24h"           # Cookie MaxAge (defaults to token_expiry if not set)
 cors:
   allowed_origins:

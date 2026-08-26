@@ -134,7 +134,10 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 				UserAgent:    r.UserAgent(),
 				Details:      "username=" + req.Username + " reason=account_locked",
 			})
-			Error(w, http.StatusTooManyRequests, "account is temporarily locked")
+			// 423 Locked — distinct from the 429 the IP rate limiter returns, so
+			// the UI can render "account locked" instead of the generic
+			// "too many attempts" (both previously showed the same message).
+			Error(w, http.StatusLocked, err.Error())
 			return
 		}
 		slog.Warn("login failed", "username", req.Username, "ip", r.RemoteAddr, "reason", err.Error())

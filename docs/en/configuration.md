@@ -44,6 +44,7 @@ Environment variables override configuration values using the following pattern:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `server.port` | int | 8080 | HTTP port to listen on |
+| `server.demo_mode` | bool | false | Seed a fictional demo inventory (2 networks + ~20 TEST-NET devices + simulated activity) on an **empty** database at boot; a non-empty DB is never touched. Also enabled with the `-demo` flag. Never enable in production — the data is fake by design. |
 | `server.host` | string | "0.0.0.0" | Bind address (0.0.0.0 = all interfaces) |
 | `server.read_timeout` | duration | "15s" | Max time to read the full request (headers + body) |
 | `server.write_timeout` | duration | "5m" | Max response lifetime. **Must exceed the slowest synchronous endpoint** (POST `/scanner/scan`). Auto-raised to `scanner.default_timeout×2+30s` if configured lower, so synchronous scans are never truncated. |
@@ -104,6 +105,8 @@ database:
 | `auth.password_policy.require_lowercase` | bool | true | Require at least one lowercase letter. |
 | `auth.password_policy.require_digit` | bool | true | Require at least one digit. |
 | `auth.password_policy.require_special` | bool | true | Require at least one special character. |
+| `auth.lockout.max_failed_attempts` | int | 5 | Consecutive failed logins before the account locks. |
+| `auth.lockout.lock_minutes` | int | 30 | Lockout duration. An expired lock resets the failure counter. |
 
 **Environment Variables:**
 - `MIBEE_AUTH_JWT_SECRET`
@@ -456,7 +459,7 @@ The distributed-mode switch: with `center.url` set, this instance runs as an **a
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `center.url` | string | "" | The center's base URL (e.g. "http://192.168.63.101:8080"). Empty = center/standalone mode (no upstream reporting). |
+| `center.url` | string | "" | The center's base URL (e.g. "http://192.168.63.102:8080"). Empty = center/standalone mode (no upstream reporting). |
 | `center.auth_token` | string | "" | The agent's bearer token (minted on the center via `POST /api/v1/agents/tokens`). Required in agent mode. |
 | `center.report_interval` | duration | "30s" | How often buffered scan results are flushed upstream when the buffer isn't full. Errors retry with exponential backoff. |
 
