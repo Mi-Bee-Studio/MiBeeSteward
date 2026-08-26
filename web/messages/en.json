@@ -72,6 +72,7 @@
 		"hide_password": "Hide password",
 		"error.invalid_credentials": "Invalid username or password. Please try again.",
 		"error.too_many_attempts": "Too many login attempts. Please try again later.",
+		"error.account_locked": "Account locked (too many failed attempts). Try again later.",
 		"error.network_error": "Network error. Please check your connection and try again.",
 		"error.server_error": "Server error. Please try again later.",
 		"Username Placeholder": "admin"

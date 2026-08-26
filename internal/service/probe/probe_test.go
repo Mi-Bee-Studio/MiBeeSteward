@@ -110,9 +110,12 @@ func TestHTTPProbe_Success(t *testing.T) {
 	if !result.Success {
 		t.Error("expected success")
 	}
-	if result.Latency <= 0 {
-		t.Error("expected positive latency")
+	if result.Latency < 0 {
+		t.Error("expected non-negative latency")
 	}
+	// A successful loopback dial can legitimately measure 0 on Windows (clock
+	// granularity rounds sub-millisecond dials down); positivity is only
+	// guaranteed on Linux (CI).
 }
 
 func TestHTTPProbe_ServerError(t *testing.T) {
@@ -149,9 +152,12 @@ func TestTCPProbe_Success(t *testing.T) {
 	if !result.Success {
 		t.Error("expected success")
 	}
-	if result.Latency <= 0 {
-		t.Error("expected positive latency")
+	if result.Latency < 0 {
+		t.Error("expected non-negative latency")
 	}
+	// A successful loopback dial can legitimately measure 0 on Windows (clock
+	// granularity rounds sub-millisecond dials down); positivity is only
+	// guaranteed on Linux (CI).
 }
 
 func TestTCPProbe_ConnectionRefused(t *testing.T) {

@@ -75,6 +75,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// User service and handler
 	userSvc := service.NewUserService(dbConn, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
+	userSvc.SetLockoutPolicy(cfg.Auth.Lockout)
 	// Audit logging
 	// SQLITE_BUSY governance (#267): each hot write path gets its own
 	// dbopen.BusyRetry wrapper — bounded retry with backoff plus the
