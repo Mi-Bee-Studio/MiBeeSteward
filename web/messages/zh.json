@@ -1173,7 +1173,7 @@
 		"Invalid MAC Format": "MAC 地址无效（请用 AA:BB:CC:DD:EE:FF 或 AA-BB-CC-DD-EE-FF）",
 		"Username Min Length": "用户名至少需要 3 个字符",
 		"Invalid Email": "邮箱地址无效",
-		"Password Min Length": "密码至少需要 8 个字符",
+		"Password Min Length": "密码至少需要 {n} 个字符",
 		"Device Required": "必须选择设备",
 		"Target Required": "目标为必填项",
 		"Interval Range": "间隔必须在 1 到 300 秒之间",

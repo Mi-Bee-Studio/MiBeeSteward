@@ -13,6 +13,7 @@
 	import { auth } from '$lib/stores/auth';
 	import { addToast } from '$lib/stores/toast';
 	import { probeDemoMode } from '$lib/stores/demo';
+	import { ensurePasswordPolicyLoaded } from '$lib/stores/passwordPolicy';
 	import { m } from '$lib/i18n-paraglide';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
@@ -64,6 +65,9 @@
 	let demoWiping = $state(false);
 	onMount(() => {
 		probeDemoMode().then((on) => (isDemo = on));
+		// Effective password policy (#332): client-side password validation and
+		// hint text must follow auth.password_policy, not hardcoded defaults.
+		ensurePasswordPolicyLoaded();
 	});
 
 	async function wipeDemoData() {
