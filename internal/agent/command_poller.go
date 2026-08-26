@@ -40,6 +40,11 @@ type CommandPoller struct {
 	pollEvery time.Duration
 	logger    *slog.Logger
 
+	// prober, when set, receives "probe" plan commands (#277). nil (tests,
+	// older wiring) makes a probe command fail with a clear message instead
+	// of being silently dropped.
+	prober *Prober
+
 	// networkCIDR is this agent's own configured network (cfg.Network.CIDR), used
 	// for the agent-side boundary check (issue #19 Layer 2-agent). When non-nil,
 	// a scan command whose targets fall outside it is rejected before execution
@@ -76,6 +81,12 @@ type CommandPoller struct {
 // (the agent wires its scanRunner.Run into this). pollEvery ≤0 → 60s.
 // networkCIDR is this agent's own network (cfg.Network.CIDR); empty/invalid
 // disables the agent-side boundary check (degrade-open).
+// SetProber injects the vantage prober (set after construction, mirroring
+// the center's SetTOTPService pattern, so the constructor stays stable).
+func (p *CommandPoller) SetProber(pr *Prober) {
+	p.prober = pr
+}
+
 func NewCommandPoller(centerURL, authToken string, pollEvery time.Duration, networkCIDR string, runScan func(context.Context, string, int) (string, error), logger *slog.Logger) *CommandPoller {
 	if logger == nil {
 		logger = slog.Default()
@@ -278,6 +289,20 @@ func (p *CommandPoller) execute(ctx context.Context, cmd pendingCommand) {
 		} else {
 			result = summary
 		}
+	case "probe":
+		var pc ProbePlanCommand
+		if err := json.Unmarshal([]byte(cmd.Payload), &pc); err != nil {
+			result = fmt.Sprintf(`{"error":"bad payload: %s"}`, err.Error())
+			status = "failed"
+			break
+		}
+		if p.prober == nil {
+			result = `{"error":"probe plan received but this agent has no prober"}`
+			status = "failed"
+			break
+		}
+		p.prober.ApplyConfig(pc)
+		result = fmt.Sprintf(`{"applied":%q,"targets":%d}`, pc.Fingerprint, len(pc.Targets))
 	case "restart", "config-reload", "logs-tail":
 		if !p.remoteOpsEnabled {
 			result = `{"error":"remote ops commands are disabled on this agent (center.remote_ops_enabled)"}`
