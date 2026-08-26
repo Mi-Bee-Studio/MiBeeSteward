@@ -22,6 +22,7 @@
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ChangeDiff from '$lib/components/ChangeDiff.svelte';
+	import { buildDiff } from '$lib/changesDiff';
 	import type { ChangeLogEntry, ChangeType, Network } from '$lib/types';
 
 	let changes = $state<ChangeLogEntry[]>([]);
@@ -64,7 +65,7 @@
 	let sseDisconnected = $state(false);
 	let streamUnsub: (() => void) | null = null;
 
-	const changeTypes: ChangeType[] = ['device_added', 'device_changed', 'device_lost', 'device_recovered'];
+	const changeTypes: ChangeType[] = ['device_added', 'device_changed', 'device_lost', 'device_recovered', 'device_config_changed'];
 
 	onMount(() => {
 		hydrateFromUrl();
@@ -159,6 +160,7 @@
 			case 'device_changed': return m['changes.Event Changed']();
 			case 'device_lost': return m['changes.Event Lost']();
 			case 'device_recovered': return m['changes.Event Recovered']();
+		case 'device_config_changed': return m['changes.Event Config Changed']();
 			default: return t;
 		}
 	}
@@ -172,6 +174,7 @@
 			case 'device_changed': return 'bg-accent/10 text-accent';
 			case 'device_lost': return 'bg-error/10 text-error';
 			case 'device_recovered': return 'bg-success/10 text-success';
+			case 'device_config_changed': return 'bg-warning/10 text-warning';
 			default: return 'bg-surface border border-border text-text-muted';
 		}
 	}
@@ -190,21 +193,28 @@
 	// "Device" column. Three shapes:
 	//  - added:   after_data  = full DeviceSnapshot → use name / ip_address
 	//  - lost:    before_data = full DeviceSnapshot → use name / ip_address
-	//  - changed: after_data  = {field: [old, new]}  → name/ip old value (the
-	//             stable identity — new value is the diff, not the identity)
-	// Falls back to the entity_id ("#211") only if no snapshot/diff is present.
-	function deviceLabel(row: Record<string, unknown>): string {
-		const ct = String(row.change_type);
-		const eid = row.entity_id ? '#' + row.entity_id : '';
-		if (ct === 'device_changed') {
-			const diff = tryParse(String(row.after_data ?? '')) as
-				| Record<string, [unknown, unknown]>
-				| null;
-			// Prefer ip_address for a stable identity, then name.
-			const ip = diff?.ip_address?.[0];
-			const name = diff?.name?.[0];
-			return String(name ?? ip ?? eid ?? '');
-		}
+		//  - changed: before/after snapshots (or legacy diff map) → name/ip old
+		//             value (the stable identity — the new value is the change)
+		// Falls back to the entity_id ("#211") only if no snapshot/diff is present.
+		function deviceLabel(row: Record<string, unknown>): string {
+			const ct = String(row.change_type);
+			const eid = row.entity_id ? '#' + row.entity_id : '';
+			if (ct === 'device_changed') {
+				// The before-snapshot is the stable identity; a legacy diff map has
+				// no snapshot, so fall back to its old values.
+				const before = tryParse(String(row.before_data ?? ''));
+				let name: unknown;
+				let ip: unknown;
+				if (typeof before === 'object' && before !== null) {
+					name = (before as Record<string, unknown>).name;
+					ip = (before as Record<string, unknown>).ip_address;
+				} else {
+					const diff = buildDiff(row.before_data as string, row.after_data as string);
+					name = diff?.name?.[0];
+					ip = diff?.ip_address?.[0];
+				}
+				return String(name ?? ip ?? eid ?? '');
+			}
 		const snap = tryParse(String(ct === 'device_added' ? row.after_data : row.before_data)) as
 			| Record<string, unknown>
 			| null;
@@ -220,9 +230,7 @@
 	function diffSummary(row: Record<string, unknown>): string {
 		const ct = String(row.change_type);
 		if (ct === 'device_changed') {
-			const diff = tryParse(String(row.after_data ?? '')) as
-				| Record<string, [unknown, unknown]>
-				| null;
+			const diff = buildDiff(row.before_data as string, row.after_data as string);
 			if (!diff) return '';
 			const fields = Object.keys(diff);
 			if (fields.length === 0) return '';
