@@ -15,14 +15,17 @@
 	 * Three shapes:
 	 *  - device_added: `after_data` = full DeviceSnapshot → render as a property table.
 	 *  - device_lost:  `before_data` = full DeviceSnapshot → render as a property table.
-	 *  - device_changed: `after_data` = {field: [old, new]} diff map → render a
-	 *    side-by-side old→new comparison table (red old / green new).
+	 *  - device_changed: `before_data` / `after_data` = full DeviceSnapshots →
+	 *    diffed client-side into changed fields → render a side-by-side old→new
+	 *    comparison table (red old / green new). Legacy entries whose `after_data`
+	 *    is already a {field: [old, new]} diff map are still supported.
 	 *
 	 * Long string values (JSON columns like open_ports / scan_attributes) are
 	 * pretty-printed for readability.
 	 */
 
 	import { m } from '$lib/i18n-paraglide';
+	import { buildDiff, tryParse, type Snapshot } from '$lib/changesDiff';
 
 	interface Props {
 		changeType: string;
@@ -32,21 +35,7 @@
 
 	let { changeType, beforeData, afterData }: Props = $props();
 
-	function tryParse(raw?: string): unknown {
-		if (!raw) return null;
-		try {
-			return JSON.parse(raw);
-		} catch {
-			return raw;
-		}
-	}
-
-	// A device_changed diff map: { fieldName: [oldValue, newValue] }.
-	type DiffMap = Record<string, [unknown, unknown]>;
-	// A device snapshot: flat { fieldName: value } (values may be JSON strings).
-	type Snapshot = Record<string, unknown>;
-
-	const diff = $derived(changeType === 'device_changed' ? (tryParse(afterData) as DiffMap | null) : null);
+	const diff = $derived(changeType === 'device_changed' ? buildDiff(beforeData, afterData) : null);
 	const snapshot = $derived(
 		changeType === 'device_changed'
 			? null

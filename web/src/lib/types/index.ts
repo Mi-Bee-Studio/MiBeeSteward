@@ -637,7 +637,7 @@ export interface Network {
 // Change Log (device_added / device_changed / device_lost events)
 // ---------------------------------------------------------------------------
 
-export type ChangeType = 'device_added' | 'device_changed' | 'device_lost' | 'device_recovered';
+export type ChangeType = 'device_added' | 'device_changed' | 'device_lost' | 'device_recovered' | 'device_config_changed';
 
 export interface ChangeLogEntry {
 	id: number;
