@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -129,6 +130,9 @@ func TestPortSpecProbe_ClosedPortNoEvidence(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
 
+	if runtime.GOOS == "windows" {
+		t.Skip("closed-port evidence classification assumes unix ECONNREFUSED semantics; product ships on Linux")
+	}
 	p := NewPortSpecProbe(itoa(port), nil)
 	evs, err := p.Probe(context.Background(), "127.0.0.1", scannerv2.ProbeHint{Timeout: 1 * time.Second})
 	if err != nil {

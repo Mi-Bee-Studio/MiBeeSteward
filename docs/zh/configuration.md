@@ -104,6 +104,8 @@ database:
 | `auth.password_policy.require_lowercase` | bool | true | 要求至少一个小写字母。 |
 | `auth.password_policy.require_digit` | bool | true | 要求至少一个数字。 |
 | `auth.password_policy.require_special` | bool | true | 要求至少一个特殊字符。 |
+| `auth.lockout.max_failed_attempts` | int | 5 | 连续登录失败多少次后锁定账户。 |
+| `auth.lockout.lock_minutes` | int | 30 | 锁定时长(分钟)。锁过期会重置失败计数。 |
 
 **环境变量：**
 - `MIBEE_AUTH_JWT_SECRET`
@@ -456,7 +458,7 @@ scanner:
 
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
-| `center.url` | string | "" | 中心实例的基础 URL（如 "http://192.168.63.101:8080"）。空 = 中心/独立模式（不上报）。 |
+| `center.url` | string | "" | 中心实例的基础 URL（如 "http://192.168.63.102:8080"）。空 = 中心/独立模式（不上报）。 |
 | `center.auth_token` | string | "" | 代理的 bearer 令牌（在中心端通过 `POST /api/v1/agents/tokens` 铸造）。代理模式下必填。 |
 | `center.report_interval` | duration | "30s" | 缓冲未满时向上游刷新扫描结果的间隔。出错按指数退避重试。 |
 
