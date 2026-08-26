@@ -44,6 +44,7 @@ MiBee Steward 使用 YAML 配置文件，支持环境变量覆盖。本文档涵
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
 | `server.port` | int | 8080 | HTTP 监听端口 |
+| `server.demo_mode` | bool | false | 在**空库**上种子虚构演示资产(2 网络 + ~20 台 TEST-NET 设备 + 模拟活动);非空库不受影响。也可用 `-demo` 标志开启。生产环境务必保持关闭 —— 数据是刻意虚构的。 |
 | `server.host` | string | "0.0.0.0" | 绑定地址（0.0.0.0 = 所有接口） |
 | `server.read_timeout` | duration | "15s" | 读取完整请求（头+体）的最长时间 |
 | `server.write_timeout` | duration | "5m" | 响应生命周期上限。**必须超过最慢的同步端点**（POST `/scanner/scan`）。若配置过低会自动上调至 `scanner.default_timeout×2+30s`，确保同步扫描永不被截断。 |
