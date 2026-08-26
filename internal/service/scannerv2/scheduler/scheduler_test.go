@@ -110,7 +110,7 @@ func TestTriggerNow_InvokesScanFunc(t *testing.T) {
 	const targets = "192.168.0.0/24"
 	// Build (not started), seed the task row, THEN start so Start's job
 	// re-hydration picks up task 7 and TriggerNow can find it.
-	s, _, conn := newTestScheduler(t, func(_ context.Context, id int64, tgt string, _ time.Duration, _ int, _ int64) {
+	s, _, conn := newTestScheduler(t, func(_ context.Context, id int64, tgt string, _ time.Duration, _ int, _ int64, _ *int64) {
 		select {
 		case got <- call{id, tgt}:
 		default:
@@ -140,7 +140,7 @@ func TestCancelTask_CancelsInFlightScan(t *testing.T) {
 	cancelled := make(chan struct{})
 	// Build, seed, THEN start so the seeded task is re-hydrated into the
 	// scheduler's jobMap and TriggerNow can fire it.
-	s, _, conn := newTestScheduler(t, func(ctx context.Context, _ int64, _ string, _ time.Duration, _ int, _ int64) {
+	s, _, conn := newTestScheduler(t, func(ctx context.Context, _ int64, _ string, _ time.Duration, _ int, _ int64, _ *int64) {
 		<-ctx.Done() // block until cancelled
 		close(cancelled)
 	})
@@ -182,7 +182,7 @@ func TestConcurrentAddRemove_JobCountConsistent(t *testing.T) {
 	const taskID = int64(42)
 	// Start first (empty DB → no jobs re-hydrated, harmless), then seed + rely on
 	// AddJob (which works regardless of started state) to exercise the mutex.
-	s, _, conn := startTestScheduler(t, func(context.Context, int64, string, time.Duration, int, int64) {})
+	s, _, conn := startTestScheduler(t, func(context.Context, int64, string, time.Duration, int, int64, *int64) {})
 	seedScanTask(t, conn, taskID, "10.0.0.0/24")
 	require.NoError(t, s.AddJob(taskID, "*/10 * * * *", "10.0.0.0/24"))
 
@@ -255,4 +255,39 @@ func TestCleanupStaleRuns_MarksOldRunningAsFailed(t *testing.T) {
 	).Scan(&freshStatus)
 	require.NoError(t, err)
 	require.Equal(t, "running", freshStatus, "recent run (<1h) must be left running")
+}
+
+// TestTriggerNow_PassesNetworkID pins the ScanFunc contract for agent-network
+// dispatch: the scheduler must hand the task's resolved network_id (nil when
+// unscoped) to the bound function so the routes-layer dispatcher can route
+// agent-managed networks to their agent instead of a local scan.
+func TestTriggerNow_PassesNetworkID(t *testing.T) {
+	const taskID = int64(42)
+	const targets = "192.168.62.0/24"
+	gotNet := make(chan *int64, 1)
+	s, _, conn := newTestScheduler(t, func(_ context.Context, _ int64, _ string, _ time.Duration, _ int, _ int64, networkID *int64) {
+		select {
+		case gotNet <- networkID:
+		default:
+		}
+	})
+	seedScanTask(t, conn, taskID, targets)
+	// Stamp the task with a network (the production path is
+	// taskservice.stampTaskNetwork; the test writes it directly).
+	_, err := conn.Exec(`INSERT INTO networks (id, name, cidr) VALUES (3, 'lan-62', '192.168.62.0/24')
+		ON CONFLICT(id) DO NOTHING`)
+	require.NoError(t, err)
+	_, err = conn.Exec(`UPDATE scan_tasks SET network_id = 3 WHERE id = ?`, taskID)
+	require.NoError(t, err)
+	s.Start(context.Background())
+	t.Cleanup(func() { s.Stop() })
+	require.NoError(t, s.TriggerNow(taskID))
+
+	select {
+	case n := <-gotNet:
+		require.NotNil(t, n, "networkID must be passed through for a stamped task")
+		require.EqualValues(t, 3, *n)
+	case <-time.After(5 * time.Second):
+		t.Fatal("ScanFunc was not invoked")
+	}
 }
