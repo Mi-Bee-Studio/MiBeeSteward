@@ -44,6 +44,7 @@ Environment variables override configuration values using the following pattern:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `server.port` | int | 8080 | HTTP port to listen on |
+| `server.demo_mode` | bool | false | Seed a fictional demo inventory (2 networks + ~20 TEST-NET devices + simulated activity) on an **empty** database at boot; a non-empty DB is never touched. Also enabled with the `-demo` flag. Never enable in production — the data is fake by design. |
 | `server.host` | string | "0.0.0.0" | Bind address (0.0.0.0 = all interfaces) |
 | `server.read_timeout` | duration | "15s" | Max time to read the full request (headers + body) |
 | `server.write_timeout` | duration | "5m" | Max response lifetime. **Must exceed the slowest synchronous endpoint** (POST `/scanner/scan`). Auto-raised to `scanner.default_timeout×2+30s` if configured lower, so synchronous scans are never truncated. |
