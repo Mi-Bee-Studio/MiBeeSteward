@@ -866,3 +866,15 @@ CREATE INDEX IF NOT EXISTS idx_devices_scan_mac_expr ON devices(json_extract(sca
 CREATE INDEX IF NOT EXISTS idx_devices_scan_vendor_expr ON devices(json_extract(scan_attributes, '$.vendor'));
 CREATE INDEX IF NOT EXISTS idx_networks_name ON networks(name);
 CREATE INDEX IF NOT EXISTS idx_scan_tasks_network ON scan_tasks(network_id);
+
+
+-- schema_meta: migration-framework bookkeeping. `chain_fingerprint_v1` holds
+-- the sha256 of the migration chain that last ran (cmd/server/migrations.go),
+-- letting the version gate detect chain edits that shipped without a
+-- SchemaVersion bump and self-heal by replaying the idempotent chain. Created
+-- here (not only by the chain) so fresh and migrated installs share the same
+-- shape — the #268 equivalence test asserts exactly that.
+CREATE TABLE IF NOT EXISTS schema_meta (
+    k TEXT PRIMARY KEY,
+    v TEXT NOT NULL
+);
