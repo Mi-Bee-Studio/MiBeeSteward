@@ -248,8 +248,19 @@ type AuthConfig struct {
 	// PasswordPolicy is the admin-tunable strength policy for user passwords
 	// (register / change / reset paths all enforce it). Defaults are seeded
 	// before the YAML load, so a config that sets only one knob keeps the
-	// documented defaults for the rest — see passwordPolicyDefaults.
+	// documented defaults for the rest — see authDefaults.
 	PasswordPolicy PasswordPolicyConfig `koanf:"password_policy"`
+	// Lockout is the failed-login lockout policy (see LockoutConfig). Same
+	// partial-override semantics as PasswordPolicy.
+	Lockout LockoutConfig `koanf:"lockout"`
+}
+
+// LockoutConfig tunes the account lockout on consecutive failed logins.
+// Defaults reproduce the historical hardcoded behavior (5 attempts,
+// 30 minutes). lock_minutes <= 0 also falls back to 30 at use time.
+type LockoutConfig struct {
+	MaxFailedAttempts int `koanf:"max_failed_attempts"`
+	LockMinutes       int `koanf:"lock_minutes"`
 }
 
 // PasswordPolicyConfig mirrors the checks of the (formerly hardcoded)
@@ -270,7 +281,7 @@ type PasswordPolicyConfig struct {
 // hardcoded behavior exactly — deployments without the block see no change.
 // Nested-map form (not flat dot keys): koanf treats dot keys from a raw
 // provider map as literal key names, which would never reach the struct.
-var passwordPolicyDefaults = map[string]interface{}{
+var authDefaults = map[string]interface{}{
 	"auth": map[string]interface{}{
 		"password_policy": map[string]interface{}{
 			"min_length":        8,
@@ -278,6 +289,10 @@ var passwordPolicyDefaults = map[string]interface{}{
 			"require_lowercase": true,
 			"require_digit":     true,
 			"require_special":   true,
+		},
+		"lockout": map[string]interface{}{
+			"max_failed_attempts": 5,
+			"lock_minutes":        30,
 		},
 	},
 }
@@ -375,7 +390,7 @@ func Load(configPath string) (*Config, error) {
 
 	// Seed defaults first: later loads (YAML/env) override only the keys they
 	// actually name, so partial blocks don't zero out unmentioned fields.
-	if err := k.Load(mapProvider(passwordPolicyDefaults), nil); err != nil {
+	if err := k.Load(mapProvider(authDefaults), nil); err != nil {
 		return nil, err
 	}
 
