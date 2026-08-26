@@ -187,19 +187,21 @@ const chainFingerprintKey = "chain_fingerprint_v1"
 // incident: stamped databases silently skipped a chain that had grown).
 func chainFingerprint() string {
 	h := sha256.New()
-	io.WriteString(h, dbsql.SchemaSQL)
+	// sha256's Write never fails; errcheck still demands the returns be
+	// acknowledged.
+	_, _ = io.WriteString(h, dbsql.SchemaSQL)
 	for _, s := range preSchemaMigrations {
-		io.WriteString(h, s)
+		_, _ = io.WriteString(h, s)
 	}
 	for _, s := range columnMigrations {
-		io.WriteString(h, s)
+		_, _ = io.WriteString(h, s)
 	}
 	for _, s := range migrationStepRevisions {
-		io.WriteString(h, s)
+		_, _ = io.WriteString(h, s)
 	}
 	for _, m := range timestampMigrations {
-		io.WriteString(h, m.table)
-		io.WriteString(h, m.col)
+		_, _ = io.WriteString(h, m.table)
+		_, _ = io.WriteString(h, m.col)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

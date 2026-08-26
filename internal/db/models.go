@@ -431,6 +431,11 @@ type ScanTaskRun struct {
 	CreatedAt    time.Time  `json:"created_at"`
 }
 
+type SchemaMetum struct {
+	K string `json:"k"`
+	V string `json:"v"`
+}
+
 type ServiceEvidence struct {
 	ID         int64     `json:"id"`
 	Ip         string    `json:"ip"`
