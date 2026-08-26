@@ -38,11 +38,15 @@ import (
 )
 
 // ScanFunc executes one scan task. It is invoked by the scheduler on each cron
-// tick; implementations (runner.Runner.Run) handle run/result persistence and
-// the device bridge. timeout/concurrentHosts carry the task's tuning.
-// credentialID optionally binds the scan to an SNMP credential (issue #135);
-// 0 = use the engine's global default community.
-type ScanFunc func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64)
+// tick; implementations handle run/result persistence and the device bridge.
+// timeout/concurrentHosts carry the task's tuning. credentialID optionally
+// binds a scan to an SNMP credential (issue #135); 0 = use the engine's global
+// default community. networkID is the task's resolved network (nil = task not
+// scoped to any network): the routes-layer binding uses it to decide whether
+// the task belongs to an agent-managed network and should be dispatched as an
+// agent command instead of a local scan (agent networks have no local scanner
+// path — the agent IS the scanner there).
+type ScanFunc func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64, networkID *int64)
 
 // Scheduler manages cron-driven scan tasks.
 type Scheduler struct {
@@ -69,7 +73,7 @@ func New(queries *db.Queries, dbConn *sql.DB, scanFn ScanFunc, logger *slog.Logg
 		logger = slog.Default()
 	}
 	if scanFn == nil {
-		scanFn = func(context.Context, int64, string, time.Duration, int, int64) {} // no-op safe default
+		scanFn = func(context.Context, int64, string, time.Duration, int, int64, *int64) {} // no-op safe default
 	}
 	return &Scheduler{
 		scheduler:          s,
@@ -282,7 +286,7 @@ func (s *Scheduler) executeScan(taskID int64, targets string) {
 
 	start := time.Now()
 	s.logger.Info("scan job started", "task_id", taskID, "targets", targets)
-	s.scanFunc(ctx, taskID, targets, timeout, concurrent, credentialID)
+	s.scanFunc(ctx, taskID, targets, timeout, concurrent, credentialID, task.NetworkID)
 	s.logger.Info("scan job completed", "task_id", taskID, "duration", time.Since(start))
 }
 

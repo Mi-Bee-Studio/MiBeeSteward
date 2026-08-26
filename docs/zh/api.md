@@ -709,6 +709,8 @@ sequenceDiagram
 | `/api/v1/scanner/tasks/{id}/cancel` | POST | `CapScanTrigger` | 取消运行中的扫描（未运行则 `409`） |
 | `/api/v1/scanner/tasks/{id}/runs` | GET | `CapDiscoveryRead` | 运行历史 |
 | `/api/v1/scanner/tasks/{id}/results` | GET | `CapDiscoveryRead` | 任务每主机结果 |
+> **Agent 网络**:目标落在 agent 绑定网络 CIDR 内的任务,每个 cron 周期向该 agent 下发扫描命令(而非本地扫描);下发失败记为带原因的 failed 运行。见[分布式 → Agent 网络的定时扫描任务](distributed.md)。
+
 
 任务创建（`POST /scanner/tasks`）校验：`name` 与 `targets` 必填；`targets` 上限 **4096 IP**；`cron_expr` 必填且必须为合法 cron 表达式；`timeout` 取值 **1–600** 秒；`concurrent_hosts` 取值 **1–200**；`pipeline_config` 必须通过校验（端口列表等）。校验失败返回 `400`。
 

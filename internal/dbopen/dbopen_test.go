@@ -13,6 +13,7 @@ package dbopen
 import (
 	"database/sql"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -57,6 +58,9 @@ func TestOpen_RejectsBadPragmas(t *testing.T) {
 // TestDSN_EscapesPath guards the URI escaping of path characters that would
 // otherwise be parsed as query-string structure.
 func TestDSN_EscapesPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix path semantics (? and # in filenames); the product ships on Linux")
+	}
 	dsn, err := DSN("/tmp/we?ird#name.db", "busy_timeout=1000")
 	require.NoError(t, err)
 	require.Equal(t, "file:/tmp/we%3Fird%23name.db?_pragma=busy_timeout(1000)", dsn)
