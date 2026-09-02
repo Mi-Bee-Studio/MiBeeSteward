@@ -2,6 +2,8 @@
 
 MiBee Steward can run directly on an OpenWrt router, in two forms: a **router-agent** (a light agent on the router reporting upstream to a remote center — repo naming **Form B**) and a **router-center** (the full center runs ON the router — repo naming **Form C**; Form A means a center on a generic host, see [Standalone Deployment](deployment.md)).
 
+> Verified in the field on a GL.iNet MT2500 (Brume 2, mt7981): form C ran end-to-end on the stock firmware — all 4 Tier-1 sources produced live data, and a full-subnet scan self-identified the router as a GL.iNet device (#288). Read the known-limitation entry about v4 listeners on this firmware (troubleshooting table below) before deploying.
+
 ## Why Run on a Router
 
 The router is the network's **choke point** — it sees DHCP leases, NAT flows, WiFi associations, and DNS queries that a regular LAN host cannot. These four Tier-1 router-only discovery sources are only available on the gateway:
