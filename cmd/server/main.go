@@ -15,10 +15,12 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -169,10 +171,7 @@ func main() {
 	router, heartbeatSvc, shutdownScanner := routes.NewRouter(db, cfg)
 
 	// Determine bind address
-	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	if cfg.Server.Port == 0 {
-		addr = ":8080"
-	}
+	addr := bindAddr(cfg.Server.Host, cfg.Server.Port)
 
 	// Create HTTP server. Timeouts are configurable because the synchronous
 	// /scanner/scan endpoint can legitimately run for minutes on large CIDRs;
@@ -298,6 +297,20 @@ func parseDurationOrDefault(s string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// bindAddr builds the listen address from server.host/port. net.JoinHostPort
+// (not fmt.Sprintf) so IPv6 literals get bracketed: host "::" must yield
+// "[::]:8090", not the unparseable ":::8090" — the OpenWrt GL-firmware docs
+// recommend exactly that host value as the v4-listener workaround (#288), and
+// the old concatenation crash-looped on it ("too many colons in address").
+// An empty host keeps the dual-stack ":port" wildcard; port 0 falls back to
+// the default 8080.
+func bindAddr(host string, port int) string {
+	if port == 0 {
+		port = 8080
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 // listenAndServeWithRetry wraps http.Server.ListenAndServe with a bounded retry
