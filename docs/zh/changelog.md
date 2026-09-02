@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **OpenWrt 形态 C 真机验证 + v6 绑定修复（#288 / #37）**：路由器中心形态在真机（GL.iNet MT2500 / Brume 2，mt7981，aarch64）上完成端到端验证：完整引擎注册表 + 内嵌指纹库、4 个 Tier-1 路由器源全部产出真实数据（一条 DHCP 租约落库为带租约主机名的设备；conntrack + dns_log 事件持续流入；hostapd 干净降级）、/24 扫描 74 秒且路由器自识别为 GL.iNet、SPA 浏览器实测通过、RSS 约 113MB。文档中 GL 固件 v4 绕行所需的 `server.host: "::"` 此前会被地址拼接拼成无法解析的 `:::8090` 导致启动崩溃循环，现改经 `net.JoinHostPort` 正确包裹 IPv6 字面量。
 - **Agent-network scan tasks (#336)**: `scan_tasks` whose targets resolve to an agent-managed network now dispatch a scan command to that agent on every cron tick — no external timer or password-bearing scripts. Dispatch results land in the task's run history (a rejected dispatch, e.g. out-of-CIDR targets, is recorded as a failed run with the reason). Local-network tasks are unchanged.
 - **Configurable password policy (#332)**: `auth.password_policy` (min_length + four character-class toggles). Defaults reproduce the previous hardcoded rules exactly; partial blocks override only the keys they name.
 - **Configurable login lockout (#338)**: `auth.lockout` (max_failed_attempts / lock_minutes). An expired lock now resets the failure counter — a stray retry after expiry no longer re-locks instantly (previously, a periodic client with a stale password could keep an account locked indefinitely). Account-lock responses moved from 429 to **423** with a retry-after hint, and the UI now distinguishes "account locked" from "too many attempts".

@@ -9,6 +9,8 @@ MiBee Steward can run **on an OpenWrt router** in two forms:
 
 Both forms unlock the **4 Tier-1 router-only discovery signals** that a host-based deployment can't get (the router is the network choke point: it sees DHCP, NAT flows, WiFi associations, and DNS queries a random LAN host can't). See `scanner.discovery.*` in `configs/config.example.yaml`.
 
+**Field-verified hardware**: GL.iNet **GL-MT2500 (Brume 2)** — mediatek/mt7981, aarch64_cortex-a53, 1GB RAM, stock GL firmware (OpenWrt 21.02-SNAPSHOT, kernel 5.4.211). Form C verified end-to-end 2026-08-21: engine registry + embedded fingerprint corpus load, **all 4 Tier-1 sources producing live data** (dhcp_leases recorded a device carrying its lease hostname, conntrack + dns_log events flowing, hostapd a clean no-op on this WiFi-less model), a /24 scan in 74s during which the router self-identified as brand GL.iNet, SPA browser-verified, RSS ~113MB (#288, #37). Mind the v4-listener limitation on this firmware documented below.
+
 ## ⚠️ Hardware requirements (read first)
 
 | Resource | Minimum | Comfortable | Notes |
