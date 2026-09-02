@@ -62,7 +62,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 # → ~24MB (includes the embedded SvelteKit SPA)
 ```
 
-`GOARCH=arm` (32-bit, GOARM=7) also works for older ARM boards; `GOARCH=mips*` does **not**. Note: the repo's Makefile cross-compile targets (`make build-linux-arm64` etc.) build the **center** binary (they run the device-type sync the embed step needs); cross-compile the agent with the raw `go build` above, or use `make build-agent` for a native-arch build:
+`GOARCH=arm` (32-bit, GOARM=7) also works for older ARM boards; `GOARCH=mips*` does **not**. Note: the repo's Makefile cross-compile targets (`make build-linux-arm64` etc.) build the **center** binary; the agent has matching `make build-agent-linux-arm64` / `-amd64` / `-arm` targets (both sets run the device-type sync the embed step needs). A bare `make build-agent` builds for the **host** architecture:
 
 ```bash
 # Center (Form C) — Makefile targets (amd64 / arm64 / arm likewise):

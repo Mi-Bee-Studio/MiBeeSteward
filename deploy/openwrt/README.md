@@ -46,7 +46,16 @@ make build-linux-amd64   # x86_64 (generic Linux host)
 make build-linux-arm64   # ARMv8 (GL.iNet MT3000, ipq807x, mt798x)
 make build-linux-arm     # ARMv7 32-bit (older ARM boards)
 make build-all           # all three at once (server binary each)
+
+# Form B (agent) equivalents — same three archs:
+make build-agent-linux-arm64   # e.g. deploying to a GL.iNet router
+make build-agent-linux-amd64
+make build-agent-linux-arm
 ```
+
+(`make build-agent` without a `-linux-<arch>` suffix builds for the HOST
+architecture — handy when the build host IS the target, a foot-gun when it
+isn't.)
 
 ## Install (form B — agent → remote center)
 
