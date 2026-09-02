@@ -62,7 +62,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 # → ~24MB（含嵌入式 SvelteKit SPA）
 ```
 
-`GOARCH=arm`（32 位，GOARM=7）也可用于老款 ARM 板；`GOARCH=mips*` **不支持**。注意：仓库 Makefile 的交叉编译目标（`make build-linux-arm64` 等）构建的是**中心**二进制（内含设备类型同步的 embed 前置步骤）；采集器的交叉编译用上面的 raw `go build`，本机架构下也可用 `make build-agent`：
+`GOARCH=arm`（32 位，GOARM=7）也可用于老款 ARM 板；`GOARCH=mips*` **不支持**。注意：仓库 Makefile 的交叉编译目标（`make build-linux-arm64` 等）构建的是**中心**二进制；采集器有对应的 `make build-agent-linux-arm64` / `-amd64` / `-arm` 目标（两组都内含设备类型同步的 embed 前置步骤）。不带架构后缀的 `make build-agent` 构建的是**本机架构**：
 
 ```bash
 # 中心（形态 C）——Makefile 目标（amd64 / arm64 / arm 同理）：

@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -37,6 +37,21 @@ build-linux-arm64: sync-device-types sync-oui-curated
 # documents this arch for OpenWrt form B/C. MIPS is NOT supported (modernc/libc).
 build-linux-arm: sync-device-types sync-oui-curated
 	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./cmd/server/
+
+# Agent (form B) cross-compile — same three archs as the center above. The
+# agent has no frontend/embed-dist step, but it DOES embed the fingerprint
+# corpus + curated OUI, so the two sync targets remain prerequisites. Without
+# these targets a form-B deploy reflexively runs `make build-agent` and ships
+# a HOST-arch binary to the router (observed on the MT2500: an x86-64 ELF
+# flashed to aarch64 fails with a confusing "syntax error" from ash).
+build-agent-linux-amd64: sync-device-types sync-oui-curated
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent-linux-amd64 ./cmd/agent/
+
+build-agent-linux-arm64: sync-device-types sync-oui-curated
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent-linux-arm64 ./cmd/agent/
+
+build-agent-linux-arm: sync-device-types sync-oui-curated
+	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent-linux-arm ./cmd/agent/
 
 # Build with the eBPF passive observer enabled. Requires clang/llvm/bpftool
 # and kernel BTF on the build host; produces a binary that, at runtime, needs
