@@ -10,10 +10,11 @@
 
 <script lang="ts">
 	import Chart from './Chart.svelte';
+	import EmptyState from './EmptyState.svelte';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { m } from '$lib/i18n-paraglide';
-	import { GripVertical, Pencil, Trash2 } from '@lucide/svelte';
-	import type { DashboardWidgetConfig } from '$lib/types';
+	import { GripVertical, Pencil, Trash2, Inbox } from '@lucide/svelte';
+	import type { DashboardListItem, DashboardWidgetConfig } from '$lib/types';
 
 	// Extends the shared API shape with runtime-only UI state (the ECharts
 	// option + a loading flag). Was a full re-declaration of the 10 API fields
@@ -21,6 +22,9 @@
 	interface WidgetState extends DashboardWidgetConfig {
 		chartOption: EChartsOption;
 		loading?: boolean;
+		// Rows for builtin list widgets (type "list"); chart widgets leave it
+		// empty and render chartOption instead.
+		listItems?: DashboardListItem[];
 	}
 
 	let {
@@ -108,11 +112,37 @@
 			</button>
 		</div>
 	</div>
-	<div class="widget-chart">
+	<div class="widget-body">
 		{#if widget.loading}
 			<div class="widget-loading">
 				<div class="widget-spinner"></div>
 			</div>
+		{:else if widget.type === 'list'}
+			{#if (widget.listItems?.length ?? 0) === 0}
+				<EmptyState
+					icon={Inbox}
+					title={m["dashboard.Widget List Empty"]()}
+					description={m["dashboard.Widget List Empty Desc"]()}
+				/>
+			{:else}
+				<ul class="widget-list">
+					{#each widget.listItems as item}
+						<li class="widget-list-row">
+							{#if item.href}
+								<a class="row-link" href={item.href}>
+									<span class="row-title">{item.title}</span>
+									{#if item.subtitle}<span class="row-subtitle">{item.subtitle}</span>{/if}
+								</a>
+							{:else}
+								<span class="row-title">{item.title}</span>
+								{#if item.subtitle}<span class="row-subtitle">{item.subtitle}</span>{/if}
+							{/if}
+							{#if item.status}<span class="row-status status-{item.status}">{item.status}</span>{/if}
+							{#if item.time}<span class="row-time">{item.time}</span>{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		{:else}
 			<Chart option={widget.chartOption} height="100%" />
 		{/if}
@@ -221,10 +251,115 @@
 		color: var(--color-error);
 	}
 
-	.widget-chart {
+	.widget-body {
 		padding: 0.5rem;
 		height: 260px;
 		position: relative;
+		overflow: hidden;
+	}
+
+	.widget-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		height: 100%;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.widget-list-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.5rem;
+		border-bottom: 1px solid var(--color-border);
+		font-size: 0.8125rem;
+	}
+
+	.widget-list-row:last-child {
+		border-bottom: none;
+	}
+
+	.row-link {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.row-link:hover .row-title {
+		color: var(--color-primary);
+	}
+
+	.row-title {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-weight: 500;
+		color: var(--color-text);
+	}
+
+	.widget-list-row > .row-title {
+		flex: 1;
+	}
+
+	.row-subtitle {
+		font-size: 0.6875rem;
+		color: var(--color-text-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.row-status {
+		flex-shrink: 0;
+		font-size: 0.625rem;
+		text-transform: lowercase;
+		padding: 0.1rem 0.45rem;
+		border-radius: 999px;
+		border: 1px solid var(--color-border);
+		color: var(--color-text-muted);
+	}
+
+	.row-status.status-online,
+	.row-status.status-completed,
+	.row-status.status-success,
+	.row-status.status-recovered {
+		color: var(--color-success);
+		border-color: color-mix(in srgb, var(--color-success) 40%, transparent);
+		background: color-mix(in srgb, var(--color-success) 10%, transparent);
+	}
+
+	.row-status.status-offline,
+	.row-status.status-failed,
+	.row-status.status-error,
+	.row-status.status-lost,
+	.row-status.status-timeout {
+		color: var(--color-error);
+		border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
+		background: color-mix(in srgb, var(--color-error) 10%, transparent);
+	}
+
+	.row-status.status-added,
+	.row-status.status-changed,
+	.row-status.status-running,
+	.row-status.status-warning {
+		color: var(--color-warning);
+		border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
+		background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+	}
+
+	.row-time {
+		flex-shrink: 0;
+		font-size: 0.6875rem;
+		color: var(--color-text-muted);
+		white-space: nowrap;
 	}
 
 	.widget-loading {
