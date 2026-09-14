@@ -327,6 +327,70 @@ func TestConvertDashboardConfigPosition(t *testing.T) {
 	require.Equal(t, 2, count)
 }
 
+// TestExtendDashboardConfigChecks verifies the preset-widget CHECK widening:
+// an existing dashboard_configs table with the narrow CHECKs (no 'list' type,
+// no 'builtin' data_source) is rebuilt with the wide CHECKs, rows survive,
+// builtin rows become insertable, and the migration is idempotent.
+func TestExtendDashboardConfigChecks(t *testing.T) {
+	ctx := context.Background()
+	// File-backed DB: the migration opens its own transaction (pool
+	// connection) and an in-memory DB is per-connection.
+	tmpDir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(tmpDir, "dashchecks.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	// The post-#247 legacy shape: INTEGER position, narrow CHECKs.
+	_, err = db.Exec(`CREATE TABLE dashboard_configs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		type TEXT NOT NULL CHECK(type IN ('gauge', 'line', 'bar', 'pie')),
+		data_source TEXT NOT NULL DEFAULT 'prometheus' CHECK(data_source IN ('prometheus', 'victoriametrics')),
+		query TEXT NOT NULL DEFAULT '',
+		refresh_interval INTEGER NOT NULL DEFAULT 30,
+		position INTEGER NOT NULL DEFAULT 0,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO dashboard_configs (id, name, type, data_source, query, position) VALUES
+		(1, 'legacy-prom', 'gauge', 'prometheus', 'up', 1)`)
+	require.NoError(t, err)
+
+	// Sanity: the narrow CHECK rejects a builtin list row before migration.
+	_, err = db.Exec(`INSERT INTO dashboard_configs (name, type, data_source, query) VALUES ('x', 'list', 'builtin', 'builtin:recent_changes')`)
+	require.ErrorContains(t, err, "CHECK constraint failed")
+
+	require.NoError(t, extendDashboardConfigChecks(ctx, db))
+
+	// The builtin list row is accepted after the rebuild…
+	_, err = db.Exec(`INSERT INTO dashboard_configs (name, type, data_source, query, position) VALUES ('changes', 'list', 'builtin', 'builtin:recent_changes', 2)`)
+	require.NoError(t, err)
+
+	// …the legacy prometheus row survived intact…
+	var name, wtype, ds, query string
+	var pos int64
+	require.NoError(t, db.QueryRow(`SELECT name, type, data_source, query, position FROM dashboard_configs WHERE id = 1`).Scan(&name, &wtype, &ds, &query, &pos))
+	require.Equal(t, "legacy-prom", name)
+	require.Equal(t, "gauge", wtype)
+	require.Equal(t, "prometheus", ds)
+	require.Equal(t, "up", query)
+	require.EqualValues(t, 1, pos)
+
+	// The enum gates stay: an unknown type is still rejected post-migration.
+	_, err = db.Exec(`INSERT INTO dashboard_configs (name, type, data_source, query) VALUES ('x', 'table', 'prometheus', 'up')`)
+	require.ErrorContains(t, err, "CHECK constraint failed")
+	// (A builtin chart-type mismatch — pie + builtin:recent_changes — is NOT a
+	// DB-level violation; that pairing rule lives in the handler's
+	// validateWidgetConfig.)
+
+	// Idempotent: second run is a no-op (probe row accepted).
+	require.NoError(t, extendDashboardConfigChecks(ctx, db))
+	var count int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM dashboard_configs`).Scan(&count))
+	require.Equal(t, 2, count)
+}
+
 // TestSchemaEquivalence_FreshVsMigrated (#268): a brand-new database created
 // by schema.sql alone must be structurally identical to one that went through
 // the full migration chain. This is the CI assertion that keeps the two

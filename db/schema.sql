@@ -195,8 +195,8 @@ CREATE INDEX IF NOT EXISTS idx_device_liveness_checked_at ON device_liveness(che
 CREATE TABLE IF NOT EXISTS dashboard_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('gauge', 'line', 'bar', 'pie')),
-    data_source TEXT NOT NULL DEFAULT 'prometheus' CHECK(data_source IN ('prometheus', 'victoriametrics')),
+    type TEXT NOT NULL CHECK(type IN ('gauge', 'line', 'bar', 'pie', 'list')),
+    data_source TEXT NOT NULL DEFAULT 'prometheus' CHECK(data_source IN ('prometheus', 'victoriametrics', 'builtin')),
     query TEXT NOT NULL DEFAULT '',
     refresh_interval INTEGER NOT NULL DEFAULT 30,
     -- 1-based display order (lowest = first). 0 is never stored: the service

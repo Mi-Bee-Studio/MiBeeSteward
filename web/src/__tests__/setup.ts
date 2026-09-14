@@ -13,6 +13,17 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/svelte';
 import { afterEach } from 'vitest';
 
+// jsdom has no ResizeObserver; Chart.svelte's $effect constructs one on mount
+// and the resulting uncaught ReferenceError fails test runs that render charts
+// (the dashboard's default cards mount Chart unconditionally).
+if (typeof globalThis.ResizeObserver === 'undefined') {
+	globalThis.ResizeObserver = class {
+		observe() {}
+		unobserve() {}
+		disconnect() {}
+	};
+}
+
 afterEach(() => {
 	cleanup();
 });
