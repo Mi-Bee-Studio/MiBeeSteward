@@ -110,12 +110,12 @@ func TestValidationValidSQLite(t *testing.T) {
 // zero-fill). This is what lets a test box relax one knob without silently
 // turning off the other character-class requirements.
 func TestPasswordPolicyDefaults(t *testing.T) {
-	t.Run("absent block keeps historical defaults", func(t *testing.T) {
+	t.Run("absent block keeps documented defaults", func(t *testing.T) {
 		cfg, err := Load(createTempConfig(t, testConfigYAML))
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		want := PasswordPolicyConfig{MinLength: 8, RequireUppercase: true, RequireLowercase: true, RequireDigit: true, RequireSpecial: true}
+		want := PasswordPolicyConfig{MinLength: 8, RequireUppercase: true, RequireLowercase: true, RequireDigit: true, RequireSpecial: false}
 		if cfg.Auth.PasswordPolicy != want {
 			t.Errorf("policy = %+v, want %+v", cfg.Auth.PasswordPolicy, want)
 		}

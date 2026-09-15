@@ -868,6 +868,20 @@ CREATE INDEX IF NOT EXISTS idx_networks_name ON networks(name);
 CREATE INDEX IF NOT EXISTS idx_scan_tasks_network ON scan_tasks(network_id);
 
 
+-- system_settings: runtime-editable settings overlay (the settings center).
+-- Values are JSON blobs keyed by a dotted setting name (e.g.
+-- "auth.password_policy"). Precedence: this overlay > YAML config > compiled
+-- defaults — consumers resolve through SettingsService, which keeps an
+-- in-memory snapshot so reads are cheap and writes notify subscribers
+-- (future hot-reload of engine-level knobs). Migrations pick this up via the
+-- shared CREATE TABLE IF NOT EXISTS chain.
+CREATE TABLE IF NOT EXISTS system_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
 -- schema_meta: migration-framework bookkeeping. `chain_fingerprint_v1` holds
 -- the sha256 of the migration chain that last ran (cmd/server/migrations.go),
 -- letting the version gate detect chain edits that shipped without a

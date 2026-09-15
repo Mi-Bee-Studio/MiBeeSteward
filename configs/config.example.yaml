@@ -93,21 +93,27 @@ rbac:
 auth:
   jwt_secret: "change-me-in-production"  # REQUIRED — must change, minimum 32 characters
   token_expiry: "24h"
-  initial_admin_password: "change-me"  # REQUIRED — must change for production
+  # EMPTY (the installer default) = first-run browser setup: the admin is
+  # seeded with no password and the login page asks you to CREATE one (no
+  # temp credential to copy from install output). A non-empty value = a
+  # TEMPORARY credential; first login forces a change (server-side gate).
+  initial_admin_password: ""
   cookie_domain: ""             # Domain for auth cookie (empty = current domain)
   cookie_secure: true          # Set false only for local development without HTTPS
   cookie_same_site: "strict"   # "strict" or "lax"
   # Password strength policy (register / change / reset-admin-password paths).
-  # Defaults below = the historical hardcoded rules; a partial block overrides
-  # ONLY the keys you name (unmentioned keys keep these defaults). Relax only
-  # on throwaway/test deployments — the must-not-equal-username guard is
-  # always on regardless.
+  # Values below are the DEFAULTS; a partial block overrides ONLY the keys you
+  # name (unmentioned keys keep the defaults). Special characters are optional
+  # by default — min 8 + upper + lower + digit. Prefer editing at runtime via
+  # the web UI (设置 → 安全， PUT /api/v1/settings/auth → system_settings
+  # overlay, effective without restart) over editing this file.
+  # The must-not-equal-username guard is always on regardless.
   # password_policy:
   #   min_length: 8
   #   require_uppercase: true
   #   require_lowercase: true
   #   require_digit: true
-  #   require_special: true
+  #   require_special: false
   # Failed-login lockout (defaults below = historical hardcoded values; partial
   # blocks override only the keys you name). NOTE: an EXPIRED lock resets the
   # failure counter — a stray retry after expiry never re-locks by itself.

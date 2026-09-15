@@ -192,8 +192,9 @@ func (h *TOTPHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate token via a direct call — we need to use GenerateTokenForUser
-	// Since we can't access generateToken directly, use a public method
-	token, err := h.userSvc.GenerateTokenForUser(req.UserID, profile.Role)
+	// Since we can't access generateToken directly, use a public method. The
+	// must-change flag rides the token as the mcp claim (server-side gate).
+	token, err := h.userSvc.GenerateTokenForUser(req.UserID, profile.Role, profile.MustChangePassword)
 	if err != nil {
 		slog.Error("failed to generate token for 2FA", "user_id", req.UserID, "error", err)
 		Error(w, http.StatusInternalServerError, "verification failed")
@@ -216,7 +217,7 @@ func (h *TOTPHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	if h.cfg.Auth.CookieSameSite == "lax" {
 		sameSite = http.SameSiteLaxMode
 	}
-	cookieMaxAge := 86400
+	cookieMaxAge := authCookieMaxAge(h.cfg)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
 		Value:    token,

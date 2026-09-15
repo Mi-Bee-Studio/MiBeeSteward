@@ -75,7 +75,11 @@
 		"error.account_locked": "账户已被锁定（连续失败次数过多），请稍后再试。",
 		"error.network_error": "网络错误，请检查连接后重试。",
 		"error.server_error": "服务器错误，请稍后重试。",
-		"Username Placeholder": "admin"
+		"Username Placeholder": "admin",
+		"setup_title": "创建管理员密码",
+		"setup_desc": "首次使用 — 为 admin 账号设置一个登录密码，设置完成后直接进入系统。",
+		"setup_submit": "设置密码并进入",
+		"setup_already_done": "管理员密码已在别处设置完成，请直接登录。"
 	},
 	"devices": {
 		"Device Name": "设备名称",
@@ -485,7 +489,7 @@
 		"New Task": "新建任务",
 		"Task Name": "任务名称",
 		"Task Name Placeholder": "例如：每周办公网扫描",
-		"Cron Expression": "调度计划（Cron）",
+		"Cron Expression": "扫描频率",
 		"Cron Placeholder": "0 */6 * * *",
 		"Enabled": "已启用",
 		"Disabled": "已禁用",
@@ -620,7 +624,20 @@
 			"top100": "常用 Top 100"
 		},
 		"Advanced Options": "高级选项",
-		"ports.quick_scan_section": "端口白名单（可选）"
+		"ports.quick_scan_section": "端口白名单（可选）",
+		"cron": {
+			"schedule": "扫描频率",
+			"every_30m": "每 30 分钟",
+			"hourly": "每 1 小时",
+			"every_6h": "每 6 小时",
+			"every_12h": "每 12 小时",
+			"daily_2am": "每天 02:00",
+			"daily_4am": "每天 04:00",
+			"weekly_mon_3am": "每周一 03:00",
+			"monthly_1st_3am": "每月 1 日 03:00",
+			"custom": "自定义（Cron 表达式）",
+			"expr_hint": "对应的 Cron 表达式"
+		}
 	},
 	"labels": {
 		"Per Device Labels": "设备级标签",
@@ -1361,5 +1378,46 @@
 		"Wipe": "清空演示数据",
 		"Wiped": "演示数据已清空 —— 扫描真实网段即可建立资产清单",
 		"Wipe Failed": "清空演示数据失败（需管理员）"
+	},
+	"security": {
+		"title": "安全设置",
+		"system": {
+			"title": "系统信息",
+			"version": "版本",
+			"network": "网络标识",
+			"master_key": "凭据保险库",
+			"master_key_configured": "已配置 master key",
+			"master_key_missing": "未配置 master key",
+			"master_key_note": "SNMPv3 / SSH 凭据存储（AES-256-GCM 保险库）需要在配置文件中设置 32 字节的 security.master_key；不影响 v1/v2c 扫描。",
+			"demo": "演示模式"
+		},
+		"policy": {
+			"title": "密码策略",
+			"min_length": "最小长度",
+			"require_uppercase": "要求大写字母",
+			"require_lowercase": "要求小写字母",
+			"require_digit": "要求数字",
+			"require_special": "要求特殊字符"
+		},
+		"lockout": {
+			"title": "登录锁定",
+			"max_attempts": "最大失败次数",
+			"minutes": "锁定时长（分钟）"
+		},
+		"hint": {
+			"length": "至少 {min} 个字符",
+			"uppercase": "大写字母",
+			"lowercase": "小写字母",
+			"digit": "数字",
+			"special": "特殊字符",
+			"joiner": "、"
+		},
+		"source": {
+			"config": "来自配置文件",
+			"overlay": "已在网页端修改"
+		},
+		"save": "保存",
+		"saved": "安全设置已保存",
+		"apply_note": "修改对下一次密码校验 / 登录即生效，无需重启。"
 	}
 }

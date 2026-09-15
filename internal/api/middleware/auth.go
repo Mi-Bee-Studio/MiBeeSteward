@@ -88,8 +88,39 @@ func Authenticator(next http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, domain.ContextKeyRole, role)
 		}
 
+		// Must-change-password gate: a token minted while the user's
+		// must_change_password flag was set carries mcp=true. Until the forced
+		// change completes, every authenticated call except the
+		// change-survival allowlist gets 403 — the flag is enforced server-side,
+		// not just by the SPA modal.
+		var mustChange bool
+		if err := tok.Get("mcp", &mustChange); err == nil && mustChange {
+			if !passwordChangeAllowlisted(r) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":"password_change_required"}`))
+				return
+			}
+		}
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// passwordChangeAllowlisted is the set of authenticated endpoints a gated
+// (mcp=true) token may still reach: the forced change itself, the profile
+// read the change dialog may need, and 2FA management. Public endpoints
+// (login/logout/2fa-verify/health) never run the Authenticator, so they need
+// no entry here.
+func passwordChangeAllowlisted(r *http.Request) bool {
+	p := r.URL.Path
+	switch {
+	case p == "/api/v1/auth/force-password" && r.Method == http.MethodPut,
+		p == "/api/v1/auth/profile" && r.Method == http.MethodGet,
+		strings.HasPrefix(p, "/api/v1/auth/2fa/"):
+		return true
+	}
+	return false
 }
 
 // extractToken gets the token from cookie first, then falls back to Authorization header.

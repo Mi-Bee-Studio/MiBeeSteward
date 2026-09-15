@@ -14,6 +14,33 @@ function getCSRFToken(): string {
 	return match ? decodeURIComponent(match[1]) : '';
 }
 
+// Bearer fallback for the documented "cookie-first, Bearer fallback" auth
+// contract. The server sets the auth cookie with the Secure flag; a browser
+// reaching the SPA over plain HTTP (LAN/router deployments are the norm there)
+// silently DROPS that cookie, and without this header every authenticated call
+// 401s even though login returned a perfectly good token. Read from
+// localStorage directly (not the auth store) — same pattern as getCSRFToken,
+// no store subscription timing to worry about.
+function getBearerToken(): string {
+	try {
+		const stored = localStorage.getItem('auth');
+		if (!stored) return '';
+		const parsed = JSON.parse(stored);
+		return typeof parsed?.token === 'string' ? parsed.token : '';
+	} catch {
+		return '';
+	}
+}
+
+function authHeaders(isStateChanging: boolean): Record<string, string> {
+	const headers: Record<string, string> = {};
+	const token = getBearerToken();
+	if (token) headers['Authorization'] = `Bearer ${token}`;
+	const csrfToken = getCSRFToken();
+	if (csrfToken && isStateChanging) headers['X-CSRF-Token'] = csrfToken;
+	return headers;
+}
+
 import { goto } from '$app/navigation';
 import { auth } from '$lib/stores/auth';
 import { getErrorMessage } from '$lib/utils/error';
@@ -102,13 +129,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-	const csrfToken = getCSRFToken();
-	if (csrfToken && options?.method && options.method !== 'GET') {
-		headers['X-CSRF-Token'] = csrfToken;
-	}
-
 	const method = options?.method;
+	const isStateChanging = !!method && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+	const headers: Record<string, string> = {
+		'Content-Type': 'application/json',
+		...authHeaders(isStateChanging)
+	};
+
 	const canRetry = isRetryableMethod(method);
 	let lastError: unknown;
 
@@ -207,9 +234,7 @@ export const api = {
 	// as a Blob. Goes through the same auth/CSRF/401 handling as request(), so
 	// exports no longer bypass the client via raw fetch (which dropped CSRF).
 	download: async (path: string): Promise<Blob> => {
-		const csrfToken = getCSRFToken();
-		const headers: Record<string, string> = {};
-		if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+		const headers = authHeaders(false);
 		// 60s timeout — more generous than request()'s 30s since downloads
 		// (CSV/JSON exports, file downloads) can be larger. Without this a hung
 		// or very slow response would leave the fetch pending forever (#71).
@@ -232,9 +257,9 @@ export const api = {
 			const xhr = new XMLHttpRequest();
 			xhr.open('POST', `${API_BASE}${path}`);
 			xhr.withCredentials = true;
-			const csrfToken = getCSRFToken();
-			if (csrfToken) {
-				xhr.setRequestHeader('X-CSRF-Token', csrfToken);
+			const uploadHeaders = authHeaders(true);
+			for (const [name, value] of Object.entries(uploadHeaders)) {
+				xhr.setRequestHeader(name, value);
 			}
 			xhr.upload.addEventListener('progress', (e) => {
 				if (e.lengthComputable && onProgress) {

@@ -459,6 +459,17 @@ function handleCancel2FASetup() {
 			<span class="text-sm text-muted">›</span>
 		</button>
 
+		<!-- Security settings section (admin): password policy + lockout +
+		     system info — the settings-center overlay (system_settings). -->
+		<button
+			type="button"
+			onclick={() => goto('/settings/security')}
+			class="w-full text-left bg-surface border border-border rounded-xl p-6 mb-6 flex items-center justify-between hover:border-primary transition-colors"
+		>
+			<h3 class="text-lg font-semibold text-text">{m["security.title"]()}</h3>
+			<span class="text-sm text-muted">›</span>
+		</button>
+
 		<!-- Language section -->
 		<div class="bg-surface border border-border rounded-xl p-6">
 			<h3 class="text-lg font-semibold text-text mb-4">{m["settings.Language"]()}</h3>

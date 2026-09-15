@@ -166,6 +166,36 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	return i, err
 }
 
+const getUserPendingSetup = `-- name: GetUserPendingSetup :one
+SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
+FROM users
+WHERE password_hash = ?
+`
+
+// The bootstrap admin seeded with an empty password hash: first-run state
+// before the operator completes the browser setup flow (POST /auth/setup).
+// At most one can exist, because the seeder only creates the admin this way.
+// The empty string is a bound param rather than a literal because sqlc's
+// SQLite rewriter elides empty-string literals and mangles LIMIT clauses.
+func (q *Queries) GetUserPendingSetup(ctx context.Context, passwordHash string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserPendingSetup, passwordHash)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.FailedLoginAttempts,
+		&i.LockedUntil,
+		&i.PasswordChangedAt,
+		&i.MustChangePassword,
+	)
+	return i, err
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
 FROM users

@@ -68,3 +68,14 @@ WHERE id = ?;
 UPDATE users
 SET must_change_password = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
+
+-- name: GetUserPendingSetup :one
+-- The bootstrap admin seeded with an empty password hash: first-run state
+-- before the operator completes the browser setup flow (POST /auth/setup).
+-- At most one can exist, because the seeder only creates the admin this way.
+-- The empty string is a bound param rather than a literal because sqlc's
+-- SQLite rewriter elides empty-string literals and mangles LIMIT clauses.
+SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
+FROM users
+WHERE password_hash = ?;
+

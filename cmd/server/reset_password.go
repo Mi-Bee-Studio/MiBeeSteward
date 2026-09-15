@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -113,6 +114,14 @@ func resetAdminPasswordSubcommand(args []string) {
 		// password, but NewUserService requires both params.
 		expiry := 24 * time.Hour
 		userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
+		// Resolve the policy through the same precedence the running server
+		// uses (settings overlay > YAML), so a password accepted by the web UI
+		// is accepted here too.
+		if settingsSvc, err := service.NewSettingsService(db); err == nil {
+			userSvc.SetSettingsSource(settingsSvc)
+		} else {
+			slog.Warn("settings overlay unavailable; using config-file policy", "error", err)
+		}
 
 		// admin user id is 1 — seedAdminUser creates it on first server start. If
 		// the server has never been started, the admin user does not exist yet;
@@ -120,9 +129,13 @@ func resetAdminPasswordSubcommand(args []string) {
 		ctx := context.Background()
 		const adminID int64 = 1
 		if err := userSvc.ForceChangePassword(ctx, adminID, password); err != nil {
-			if err == service.ErrUserNotFound {
+			if errors.Is(err, service.ErrUserNotFound) {
+				// Fresh DB the server never started against: seed the admin.
+				// Same bootstrap semantics as startup seeding — the policy is
+				// not applied to this operator-chosen bootstrap credential,
+				// and first login forces a change (mcp gate).
 				slog.Info("admin user not found; seeding with the new password")
-				if _, err := userSvc.Register(ctx, "admin", "admin@localhost", password, "admin"); err != nil {
+				if _, err := userSvc.SeedAdmin(ctx, "admin@localhost", password); err != nil {
 					slog.Error("failed to seed admin user", "error", err)
 					return 1
 				}
