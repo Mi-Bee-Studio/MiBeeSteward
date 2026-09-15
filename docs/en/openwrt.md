@@ -42,7 +42,7 @@ flowchart LR
 
 | Resource | Minimum | Comfortable | Notes |
 |---|---|---|---|
-| **Architecture** | **ARM or ARM64** | ARM64 (GL.iNet MT3000, ipq807x, mt798x) | **MIPS is NOT supported** — `modernc.org/libc` (the pure-Go SQLite backend's transitive dep) has no working `mips`/`mipsle` port and a broken `mips64le` one. This excludes older ath79/ramips routers (TP-Link Archer C7, Netgear R7000, etc.). |
+| **Architecture** | **ARM or ARM64** | ARM64 (GL.iNet MT3000, ipq807x, mt798x; NanoPi R5S-class iStoreOS boxes) | **MIPS is NOT supported** — `modernc.org/libc` (the pure-Go SQLite backend's transitive dep) has no working `mips`/`mipsle` port and a broken `mips64le` one. This excludes older ath79/ramips routers (TP-Link Archer C7, Netgear R7000, etc.). |
 | **RAM** | 128 MB | 256 MB+ | modernc SQLite is memory-heavier than C-SQLite; the center is heavier than the agent. |
 | **Flash** | 32 MB | 128 MB+ | Binary 16-18MB + OUI (~5MB full / 1.2KB curated) + fingerprint corpus (~1.2MB) + DB. The DB should live on `/tmp` (tmpfs) — see Resource Usage below. |
 
@@ -83,7 +83,7 @@ The repo ships two procd init scripts — `deploy/openwrt/mibee-steward.init` an
 scp mibee-agent root@router:/usr/bin/mibee-agent
 scp deploy/openwrt/mibee-agent.init root@router:/etc/init.d/mibee-agent
 ssh root@router 'mkdir -p /etc/mibee'
-scp configs/agent.yaml root@router:/etc/mibee/agent.yaml   # then edit on the router
+scp <your-agent.yaml> root@router:/etc/mibee/agent.yaml   # write it from the minimal sample in [Distributed Deployment](distributed.md) (the repo ships no ready-made file), then edit on the router
 
 # On the router, edit /etc/mibee/agent.yaml:
 #   center.url:         http://<your-center-ip>:<port>
@@ -107,14 +107,73 @@ scp configs/config.yaml root@router:/etc/mibee/config.yaml   # then edit on the 
 # On the router, edit /etc/mibee/config.yaml:
 #   server.port:                   e.g. 8080
 #   auth.jwt_secret:               a ≥32-char random string (required)
-#   auth.initial_admin_password:   REQUIRED (no hardcoded default) — change from default!
+#   auth.initial_admin_password:   empty = create the admin password in the browser on first run (recommended)
 #   network.name/cidr:             this router's LAN
 #   database.sqlite.path:          /tmp/mibee/mibee.db  (tmpfs — see below)
 #   scanner.discovery.*:           enable the router-only sources
 
 ssh root@router '/etc/init.d/mibee-steward enable && /etc/init.d/mibee-steward start'
-# Browse to http://<router-ip>:8080, log in with admin / <initial_admin_password>
+# Browse to http://<router-ip>:8080 — the first run walks you through CREATING the admin password
 ```
+
+### iStoreOS / NanoPi R5S: one-command install (no Docker)
+
+iStoreOS is an OpenWrt-based community firmware — everything on this page applies. A NanoPi R5S (RK3568, **arm64**, 1-4GB RAM + 8-32GB eMMC) is far above the minimums above and comfortably runs **Form C** (the full center); iStoreOS's bundled Docker is NOT needed.
+
+A common concern — "where does the frontend render?" — is a non-issue: the SPA is compiled into the Go binary and the router only serves HTTP. Browse to `http://<router-ip>:8080` from any device on the LAN; the router itself needs no display or frontend runtime. The MT2500 "v4 listeners never handshake" row in the troubleshooting table is a GL.iNet vendor-kernel bug, unrelated to iStoreOS.
+
+```bash
+# On your build host (GOARCH defaults to arm64; add GOARCH=arm for ARMv7 boards):
+make package-openwrt
+#    → bin/mibee-steward-openwrt-arm64-<version>.tar.gz
+
+scp bin/mibee-steward-openwrt-arm64-*.tar.gz root@<router-ip>:/tmp/
+ssh root@<router-ip> 'cd /tmp && tar -xzf mibee-steward-openwrt-arm64-*.tar.gz && ./install.sh'
+```
+
+On the router, `install.sh` verifies the architecture (rejects MIPS, smoke-executes the binary), installs the binary to `/usr/bin` and the procd script to `/etc/init.d`, — **on first install only** — generates `/etc/mibee/config.yaml` (random `jwt_secret`, `cookie_secure` forced to false (plain-HTTP LAN), EMPTY initial admin password, `network.name/cidr` derived from `uci`, DB at the absolute path `/etc/mibee/data/mibee.db`), opens + persists `ping_group_range`, then enables, starts, and health-checks the service. An existing `config.yaml` is left untouched — **re-running with a fresh tarball is the upgrade path**. Open the printed URL in a browser — the first-run screen asks you to **create** the admin password (nothing to copy from the install output, no SSH needed). Afterwards:
+
+- If the password is ever lost: `/usr/bin/mibee-steward reset-admin-password -config /etc/mibee/config.yaml`;
+- Enable the router-only discovery sources you want (`scanner.discovery.*`; the R5S has no onboard WiFi, so `hostapd` no-ops by design);
+- With roomy eMMC the DB defaults to flash (the portrait survives reboots); write-sensitive setups can point it at `/tmp/mibee/mibee.db` (tmpfs — rebuilt after reboot, see "Flash-Wear Mitigation" above).
+
+iStoreOS notes: LuCI/the iStore admin UI hold ports 80/443 — MiBee's default 8080 doesn't conflict; the default LAN is usually `192.168.100.1/24` (check `uci get network.lan.ipaddr`); `dhcp_leases` / `conntrack` / `dns_log` read the same standard OpenWrt paths — no extra adaptation needed.
+
+### System package (.ipk / .apk)
+
+If you prefer the system package manager (install/upgrade/remove via the package manager, auto-generated config, data dir survives removal), deliver a package instead of the tarball. **OpenWrt 24.10 replaced opkg with apk, and the package format went from .ipk to .apk** — iStoreOS builds exist on both bases, so check which one your firmware uses first:
+
+```bash
+ssh root@<router-ip> 'command -v opkg apk; grep DISTRIB_RELEASE /etc/openwrt_release'
+```
+
+```bash
+# opkg (OpenWrt 22.03/23.05 base — most current iStoreOS builds):
+make package-openwrt-ipk     # → bin/mibee-steward_<version>_arm64.ipk
+scp bin/mibee-steward_*_arm64.ipk root@<router-ip>:/tmp/
+ssh root@<router-ip> 'opkg install /tmp/mibee-steward_*_arm64.ipk'
+
+# apk (OpenWrt 24.10+ base):
+make package-openwrt-apk     # → bin/mibee-steward_<version>_arm64.apk
+scp bin/mibee-steward_*_arm64.apk root@<router-ip>:/tmp/
+ssh root@<router-ip> 'apk add --allow-untrusted /tmp/mibee-steward_*_arm64.apk'
+```
+
+The two packages' lifecycle scripts are equivalent: `pre-install`/`preinst` gates on `uname` (a mismatched box is refused before anything is laid down); `post-install`/`postinst` runs the exact same configure logic as the tarball installer (generates `/etc/mibee/config.yaml`, opens `ping_group_range`, enables + starts + health-checks — no admin password is pre-generated; it is created in the browser on first run); upgrade = install the new package (`opkg install` the new .ipk / `apk add` the new .apk — config kept, service restarted); remove = `opkg remove mibee-steward` / `apk del mibee-steward` (**`/etc/mibee` config + database are deliberately kept** — delete manually for a full wipe).
+
+Why `Architecture: all`: the payload is a CGO-free static binary, so instead of chasing OpenWrt's per-target arch-name zoo (`aarch64_generic`, `aarch64_cortex-a53`, `arm_cortex-a7_neon-vfpv4`, …), the real gates are the pre-script uname check + the post-script `-version` smoke run. Exact arch naming and feed publishing remain the buildroot follow-up (see "Not Covered Here" below). The tarball path stays available for package-manager-less environments.
+
+### LuCI native entry (iStoreOS / OpenWrt web admin)
+
+The package also lays down a **LuCI integration** (classic Lua controller + templates; no luci-compat/CBI dependency — the files are inert on builds without LuCI). After install, the router's admin UI (**MiBee Steward** under System → Services) offers two pages:
+
+- **Status**: service state, health, autostart, version, listening port, database size, and an "Open UI" button straight into the full web UI (`http://<lan-ip>:<port>`).
+- **Settings**:
+  - **Web UI port**: rewrites `server.port`, restarts, and health-checks the new port (80/443 are refused — LuCI owns them);
+  - **Admin password**: sets the admin login directly (via `reset-admin-password`, validated against the effective password policy — min 8 + upper + lower + digit; handed over through a 0600 temp file, never a command line);
+  - **Autostart** toggle and **Restart**.
+
+Every privileged operation funnels through the single audited script `/usr/lib/mibee/luci-helper.sh` (the LuCI pages only validate input and delegate); it is callable standalone: `luci-helper.sh status | set-port <N> | set-password <file> | set-enabled <0|1> | restart`. Asset-level configuration (discovery sources, scanner tuning, notifications) stays in MiBee's own web UI — the LuCI entry covers router-level concerns only.
 
 ### UCI Configuration (for the dns_log source)
 
@@ -182,5 +241,5 @@ logread -e mibee-agent     # Form B, expect "mibee-agent running"
 
 ### Not Covered Here
 
-- **Official .ipk packaging** (OpenWrt build feed): this repo ships init scripts + binaries that work via plain `scp` + `/etc/init.d/`. A proper `.ipk` via the OpenWrt buildroot's `golang-package` macros is a follow-up (not required for correctness).
+- **Official .ipk/.apk packaging** (OpenWrt build feed): this repo now ships **hand-rolled binary packages** (`make package-openwrt-ipk` / `make package-openwrt-apk`, `Architecture: all` + pre-script arch gate, installed locally via `opkg install <file>` / `apk add --allow-untrusted <file>`). What's still missing is the **official packaging** via the OpenWrt buildroot's `golang-package` macros — exact per-target arch naming, signing, and feed publishing so users can subscribe. Not required for correctness.
 - **MIPS support**: structural limitation of `modernc/libc`; would require swapping the SQLite backend to bbolt/goleveldb (deferred until a MIPS customer need exists).

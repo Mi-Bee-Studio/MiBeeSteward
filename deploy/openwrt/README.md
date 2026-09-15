@@ -9,6 +9,25 @@ MiBee Steward can run **on an OpenWrt router** in two forms:
 
 Both forms unlock the **4 Tier-1 router-only discovery signals** that a host-based deployment can't get (the router is the network choke point: it sees DHCP, NAT flows, WiFi associations, and DNS queries a random LAN host can't). See `scanner.discovery.*` in `configs/config.example.yaml`.
 
+## Quick start (form C, no Docker — incl. iStoreOS / NanoPi R5S)
+
+`make package-openwrt` bundles the arm64 binary + procd init + example config +
+`install.sh` into one tarball; the installer runs ON the router as root and does
+everything (binary + init + generated config + `ping_group_range` + enable +
+start + health check). No Docker involved. Details: `docs/{en,zh}/openwrt.md` §
+iStoreOS.
+
+```bash
+make package-openwrt        # → bin/mibee-steward-openwrt-arm64-<ver>.tar.gz
+scp bin/mibee-steward-openwrt-arm64-*.tar.gz root@router:/tmp/
+ssh root@router 'cd /tmp && tar -xzf mibee-steward-openwrt-arm64-*.tar.gz && ./install.sh'
+
+# or as a package-manager-managed install (OpenWrt ≤23.05/iStoreOS = opkg → .ipk;
+# OpenWrt 24.10+ = apk → .apk; check with: command -v opkg apk):
+make package-openwrt-ipk    # → bin/mibee-steward_<ver>_arm64.ipk  (opkg install <file>)
+make package-openwrt-apk    # → bin/mibee-steward_<ver>_arm64.apk  (apk add --allow-untrusted <file>)
+```
+
 **Field-verified hardware**: GL.iNet **GL-MT2500 (Brume 2)** — mediatek/mt7981, aarch64_cortex-a53, 1GB RAM, stock GL firmware (OpenWrt 21.02-SNAPSHOT, kernel 5.4.211). Form C verified end-to-end 2026-08-21: engine registry + embedded fingerprint corpus load, **all 4 Tier-1 sources producing live data** (dhcp_leases recorded a device carrying its lease hostname, conntrack + dns_log events flowing, hostapd a clean no-op on this WiFi-less model), a /24 scan in 74s during which the router self-identified as brand GL.iNet, SPA browser-verified, RSS ~113MB (#288, #37). Mind the v4-listener limitation on this firmware documented below.
 
 ## ⚠️ Hardware requirements (read first)
@@ -64,7 +83,7 @@ isn't.)
 scp mibee-agent root@router:/usr/bin/mibee-agent
 scp deploy/openwrt/mibee-agent.init root@router:/etc/init.d/mibee-agent
 ssh root@router 'mkdir -p /etc/mibee'
-scp configs/agent.yaml root@router:/etc/mibee/agent.yaml   # then edit on the router
+scp <your-agent.yaml> root@router:/etc/mibee/agent.yaml   # write it from the minimal sample in docs/en/distributed.md (the repo ships no ready-made file), then edit on the router
 
 # On the router, edit /etc/mibee/agent.yaml:
 #   center.url:         http://<your-center-ip>:<port>
@@ -89,7 +108,7 @@ scp configs/config.yaml root@router:/etc/mibee/config.yaml   # then edit on the 
 #   server.port:                   e.g. 8080
 #   auth.initial_admin_password:   REQUIRED (no hardcoded default) — change from default!
 #   network.name/cidr:             this router's LAN
-#   database.path:                 /tmp/mibee/mibee.db  (tmpfs — see below)
+#   database.sqlite.path:          /tmp/mibee/mibee.db  (tmpfs — see below)
 #   scanner.discovery.*:           enable the router-only sources
 
 ssh root@router '/etc/init.d/mibee-steward enable && /etc/init.d/mibee-steward start'
@@ -101,7 +120,7 @@ ssh root@router '/etc/init.d/mibee-steward enable && /etc/init.d/mibee-steward s
 Both binaries write a SQLite DB (WAL mode). On a router's NAND flash under overlayfs this causes write-wear. **Point the DB at `/tmp` (tmpfs, RAM-backed):**
 
 - **Agent (form B):** the local DB is explicitly a *shadow* (the center is the writer of record), so cold-start loss is fine. **Always use `/tmp/mibee-agent/agent.db`.** The agent's in-memory pending-queue (100 batches) handles disconnection during a reboot.
-- **Center (form C):** the DB is the authoritative portrait. `/tmp` means cold-start loss (rebuilt on the next scan; acceptable for a single-router deployment). For deployments that need persistence across reboots, leave `database.path` on flash and accept the wear — consumer routers live 5-10 years and scan write volume is modest.
+- **Center (form C):** the DB is the authoritative portrait. `/tmp` means cold-start loss (rebuilt on the next scan; acceptable for a single-router deployment). For deployments that need persistence across reboots, leave `database.sqlite.path` on flash and accept the wear — consumer routers live 5-10 years and scan write volume is modest.
 
 ## Router-only discovery sources (enable in `scanner.discovery.*`)
 

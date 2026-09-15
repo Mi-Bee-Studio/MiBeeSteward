@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk openwrt-stage clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -52,6 +52,72 @@ build-agent-linux-arm64: sync-device-types sync-oui-curated
 
 build-agent-linux-arm: sync-device-types sync-oui-curated
 	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent-linux-arm ./cmd/agent/
+
+# Bundle the center for OpenWrt / iStoreOS routers (form C, no Docker): arm64
+# binary + procd init script + example config + on-router installer, packed as
+# one self-contained tar.gz. GOARCH=arm64 covers aarch64 routers (NanoPi R5S,
+# GL.iNet mt798x, ipq807x); override GOARCH=arm for ARMv7. On the router:
+#   tar -xzf mibee-steward-openwrt-arm64-*.tar.gz && ./install.sh
+# (install.sh lays down binary + init, generates /etc/mibee/config.yaml on
+# first install — random jwt_secret + admin password, LAN cidr from uci —
+# fixes ping_group_range, then enables + starts + health-checks the service.)
+# build-frontend is required because the server embeds web/dist (go:embed
+# all:dist). Scripts are piped through `tr -d '\r'` so a CRLF working tree
+# (Windows autocrlf) can never ship scripts busybox ash can't parse.
+package-openwrt: GOARCH?=arm64
+package-openwrt: build-frontend sync-device-types sync-oui-curated
+	GOOS=linux GOARCH=$(GOARCH) CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-$(GOARCH) ./cmd/server/
+	@rm -rf $(BUILD_DIR)/openwrt-pkg && mkdir -p $(BUILD_DIR)/openwrt-pkg
+	cp $(BUILD_DIR)/$(BINARY_NAME)-linux-$(GOARCH) $(BUILD_DIR)/openwrt-pkg/mibee-steward
+	tr -d '\r' < deploy/openwrt/mibee-steward.init > $(BUILD_DIR)/openwrt-pkg/mibee-steward.init
+	tr -d '\r' < deploy/openwrt/install.sh > $(BUILD_DIR)/openwrt-pkg/install.sh
+	tr -d '\r' < configs/config.example.yaml > $(BUILD_DIR)/openwrt-pkg/config.example.yaml
+	chmod +x $(BUILD_DIR)/openwrt-pkg/install.sh
+	tar -czf $(BUILD_DIR)/mibee-steward-openwrt-$(GOARCH)-$(VERSION).tar.gz -C $(BUILD_DIR)/openwrt-pkg mibee-steward mibee-steward.init install.sh config.example.yaml
+	@rm -rf $(BUILD_DIR)/openwrt-pkg
+	@echo "-> $(BUILD_DIR)/mibee-steward-openwrt-$(GOARCH)-$(VERSION).tar.gz  (scp to router, extract, ./install.sh)"
+
+# Shared staging root for the router package formats (.ipk / .apk): the
+# binary + procd init + example config + installer laid out exactly as they
+# land on the router. GOARCH is inherited from the package target that pulls
+# this in (package-openwrt-ipk / package-openwrt-apk).
+openwrt-stage: build-frontend sync-device-types sync-oui-curated
+	@rm -rf $(BUILD_DIR)/openwrt-stage
+	@mkdir -p $(BUILD_DIR)/openwrt-stage/usr/bin $(BUILD_DIR)/openwrt-stage/etc/init.d $(BUILD_DIR)/openwrt-stage/etc/mibee $(BUILD_DIR)/openwrt-stage/usr/lib/mibee \
+	        $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/controller $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee
+	GOOS=linux GOARCH=$(GOARCH) CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/openwrt-stage/usr/bin/mibee-steward ./cmd/server/
+	tr -d '' < deploy/openwrt/mibee-steward.init > $(BUILD_DIR)/openwrt-stage/etc/init.d/mibee-steward
+	tr -d '' < configs/config.example.yaml     > $(BUILD_DIR)/openwrt-stage/etc/mibee/config.example.yaml
+	tr -d '' < deploy/openwrt/install.sh       > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/install.sh
+	tr -d '' < deploy/openwrt/luci/luci-helper.sh > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-helper.sh
+# LuCI integration (inert files on builds without LuCI — no hard Depends):
+# classic Lua controller + plain templates; no luci-compat/CBI dependency.
+	tr -d '' < deploy/openwrt/luci/controller/mibee.lua > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/controller/mibee.lua
+	tr -d '' < deploy/openwrt/luci/view/mibee/status.htm   > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee/status.htm
+	tr -d '' < deploy/openwrt/luci/view/mibee/settings.htm > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee/settings.htm
+	chmod 755 $(BUILD_DIR)/openwrt-stage/etc/init.d/mibee-steward $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/install.sh $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-helper.sh
+
+# Hand-rolled .ipk for opkg (OpenWrt 22.03/23.05-based iStoreOS and older):
+# install/upgrade/remove via opkg with lifecycle scripts (preinst arch gate,
+# postinst = install.sh --from-ipk, prerm stop+disable, postrm keeps data).
+# Architecture is "all" — the binary is CGO-free/static, so the arch gate is
+# the preinst uname check + postinst -version smoke run, not a toolchain
+# match. Format mirrors modern feed ipks byte-for-byte: gzip(tar(./debian-
+# binary, ./data.tar.gz, ./control.tar.gz)) — NOT the legacy ar container
+# (field-rejected by iStoreOS opkg as "Malformed package file").
+package-openwrt-ipk: GOARCH?=arm64
+package-openwrt-ipk: openwrt-stage
+	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
+	./deploy/openwrt/mkipk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).ipk
+
+# Hand-rolled .apk for apk-tools (OpenWrt 24.10+ / iStoreOS builds that
+# replaced opkg): same content and lifecycle as the .ipk in the apk v2
+# package format (gzip tar: .PKGINFO + dot-prefixed scripts first, payload
+# after). Install with: apk add --allow-untrusted <file>.apk
+package-openwrt-apk: GOARCH?=arm64
+package-openwrt-apk: openwrt-stage
+	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
+	./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).apk
 
 # Build with the eBPF passive observer enabled. Requires clang/llvm/bpftool
 # and kernel BTF on the build host; produces a binary that, at runtime, needs
