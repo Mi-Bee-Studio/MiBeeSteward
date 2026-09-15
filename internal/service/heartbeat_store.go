@@ -40,13 +40,23 @@ import (
 // Reads (history, stats, isDue, liveness ratio) go through the same *sql.DB via
 // sqlc Queries, so the read path is unchanged from the caller's perspective.
 type HeartbeatStore struct {
-	db       dbopen.BusyRetry // dedicated connection to heartbeat.db, BUSY-retry wrapped (#267)
-	queries  *db.Queries      // sqlc queries bound to the dedicated connection
-	ch       chan resultRow   // per-config probe results
-	liveCh   chan livenessRow // per-device verdict samples
-	cancelMu sync.Mutex
-	cancel   context.CancelFunc
-	done     chan struct{}
+	db      dbopen.BusyRetry // dedicated connection to heartbeat.db, BUSY-retry wrapped (#267)
+	queries *db.Queries      // sqlc queries bound to the dedicated connection
+	ch      chan resultRow   // per-config probe results
+	liveCh  chan livenessRow // per-device verdict samples
+	// Lifecycle state machine (started/closed under lifecycleMu). The old
+	// cancelMu scheme had a Close-before-Start race: NewRouter launches
+	// Start on its own goroutine (routes.go `go heartbeatSvc.Start(...)`), so
+	// an immediate Stop()/Close() could observe cancel==nil, skip the cancel,
+	// then block on <-s.done forever — while the LATE Start happily launched
+	// a flushLoop nobody would ever cancel (field-observed as a full-test-
+	// suite 15-min hang in internal/api/routes). Close on a never-started
+	// store now returns without waiting; Start after Close no-ops.
+	lifecycleMu sync.Mutex
+	started     bool
+	closed      bool
+	cancel      context.CancelFunc
+	done        chan struct{}
 }
 
 // resultRow is one heartbeat probe result pending a batched write.
@@ -178,16 +188,18 @@ func OpenHeartbeatStore(dbPath string) (*HeartbeatStore, error) {
 }
 
 // Start launches the background flush goroutine that batches buffered results
-// into periodic multi-row INSERTs. The cancel func is assigned synchronously
-// (before the goroutine launches) under the mutex, so a concurrent Close() —
-// which NewRouter's caller (e.g. a test invoking Stop() right after NewRouter
-// returns) may issue while this Start() is still racing onto its goroutine —
-// never observes an unset cancel. Mirrors HeartbeatService.Start's pattern.
+// into periodic multi-row INSERTs. Start/Close form a lifecycle state machine
+// (see the struct comment): double-Start is a no-op, and a Start arriving
+// after Close never launches the loop — its cancel would never be reachable.
 func (s *HeartbeatStore) Start(ctx context.Context) {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.started || s.closed {
+		return
+	}
+	s.started = true
 	ctx, cancel := context.WithCancel(ctx)
-	s.cancelMu.Lock()
 	s.cancel = cancel
-	s.cancelMu.Unlock()
 	go s.flushLoop(ctx)
 }
 
@@ -366,15 +378,24 @@ func (s *HeartbeatStore) commitLivenessBatch(ctx context.Context, rows []livenes
 }
 
 // Close cancels the flush loop, waits for it to finish (including the final
-// drain), then closes the DB connection.
+// drain), then closes the DB connection. Closing a never-started store skips
+// the wait (no flushLoop exists to close s.done); closing twice only closes
+// the DB again.
 func (s *HeartbeatStore) Close() error {
-	s.cancelMu.Lock()
-	cancel := s.cancel
-	s.cancelMu.Unlock()
-	if cancel != nil {
-		cancel()
+	s.lifecycleMu.Lock()
+	if s.closed {
+		s.lifecycleMu.Unlock()
+		return s.db.Close()
 	}
-	<-s.done // wait for flushLoop to exit (does its final drain)
+	s.closed = true
+	started := s.started
+	cancel := s.cancel
+	s.lifecycleMu.Unlock()
+
+	if started {
+		cancel()
+		<-s.done // wait for flushLoop to exit (does its final drain)
+	}
 	return s.db.Close()
 }
 
