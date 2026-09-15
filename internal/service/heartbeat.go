@@ -29,12 +29,20 @@ import (
 
 // HeartbeatService manages heartbeat scheduling and result processing.
 type HeartbeatService struct {
-	queries      *db.Queries     // MAIN db — for config CRUD + status sync (NOT per-tick writes)
-	mainDB       *sql.DB         // raw main DB conn (for initStatusCache + syncStatus batch writes)
-	store        *HeartbeatStore // dedicated heartbeat_results store (separate file)
-	cfg          config.HeartbeatConfig
-	cancel       context.CancelFunc
-	cancelMu     sync.Mutex    // guards cancel (written by Start, read by Stop)
+	queries  *db.Queries     // MAIN db — for config CRUD + status sync (NOT per-tick writes)
+	mainDB   *sql.DB         // raw main DB conn (for initStatusCache + syncStatus batch writes)
+	store    *HeartbeatStore // dedicated heartbeat_results store (separate file)
+	cfg      config.HeartbeatConfig
+	cancel   context.CancelFunc
+	cancelMu sync.Mutex // guards cancel + the started/stopped lifecycle flags
+	// started/stopped close the Start/Stop race the same way the store's
+	// lifecycleMu does: NewRouter runs `go heartbeatSvc.Start(...)`, so an
+	// immediate Stop() (a test, or a fast shutdown) can run BEFORE the
+	// delayed Start — without the guard, that late Start launches the
+	// store's flush loop and the sync loop under a context nobody will ever
+	// cancel (goroutine leak + a store Close() that hangs waiting on the loop).
+	started      bool
+	stopped      bool
 	failCounts   map[int64]int // deviceID -> consecutive failure count
 	failCountsMu sync.Mutex    // guards failCounts only
 	// statusCache is the in-memory source of truth for device status during
@@ -98,10 +106,17 @@ func (s *HeartbeatService) Store() *HeartbeatStore { return s.store }
 
 // Start begins the heartbeat scheduler loop in the background.
 func (s *HeartbeatService) Start(ctx context.Context) {
+	// Lifecycle guard: a delayed Start must lose to an already-issued Stop,
+	// and a double-Start must not spawn duplicate loops.
+	s.cancelMu.Lock()
+	if s.started || s.stopped {
+		s.cancelMu.Unlock()
+		return
+	}
+	s.started = true
 	// Bound the loop with a cancellable context; store the cancel func under
 	// the mutex so Stop() (called from another goroutine) can read it safely.
 	ctx, cancel := context.WithCancel(ctx)
-	s.cancelMu.Lock()
 	s.cancel = cancel
 	s.cancelMu.Unlock()
 	defer cancel()
@@ -150,6 +165,7 @@ func (s *HeartbeatService) Start(ctx context.Context) {
 // dedicated heartbeat store.
 func (s *HeartbeatService) Stop() {
 	s.cancelMu.Lock()
+	s.stopped = true
 	cancel := s.cancel
 	s.cancelMu.Unlock()
 	if cancel != nil {
