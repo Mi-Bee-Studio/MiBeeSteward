@@ -39,6 +39,13 @@ var (
 	// whole family to 400 via errors.Is(err, ErrWeakPassword) without checking
 	// each rule individually. (#165)
 	ErrWeakPassword = errors.New("password does not meet requirements")
+	// ErrSetupPending: login was attempted against the bootstrap admin while
+	// it still has an EMPTY password hash (first-run state) — the operator
+	// must complete the browser setup flow (POST /auth/setup) instead.
+	ErrSetupPending = errors.New("admin password not yet set up")
+	// ErrNoPendingSetup: a setup attempt arrived when no empty-hash bootstrap
+	// account exists (setup already completed, or never seeded this way).
+	ErrNoPendingSetup = errors.New("no pending setup")
 )
 
 var (
@@ -48,18 +55,17 @@ var (
 	hasSpecialChar = regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]`)
 )
 
-// DefaultPasswordPolicy reproduces the strength rules that used to be
-// hardcoded in validatePassword: length ≥8 plus all four character classes.
-// Callers that build a UserService without going through config.Load (unit
-// tests, zero-valued configs) fall back to this — behavior is unchanged for
-// them.
+// DefaultPasswordPolicy mirrors config.authDefaults (min 8 + upper + lower +
+// digit; special chars optional). Callers that build a UserService without
+// going through config.Load (unit tests, zero-valued configs) fall back to
+// this. Keep the two definitions in sync.
 func DefaultPasswordPolicy() config.PasswordPolicyConfig {
 	return config.PasswordPolicyConfig{
 		MinLength:        8,
 		RequireUppercase: true,
 		RequireLowercase: true,
 		RequireDigit:     true,
-		RequireSpecial:   true,
+		RequireSpecial:   false,
 	}
 }
 
@@ -105,6 +111,11 @@ type UserService struct {
 	totpSvc *TOTPService
 	policy  config.PasswordPolicyConfig
 	lockout config.LockoutConfig
+	// settings is the optional settings-center overlay. When present, the
+	// policy/lockout resolve overlay-first at USE time (not construction), so
+	// an admin edit in the web UI applies to the next validation/login
+	// without a restart. Set once during wiring, before serving.
+	settings *SettingsService
 }
 
 func NewUserService(dbConn db.DBTX, jwtSecret string, tokenExpiry time.Duration, passwordPolicy config.PasswordPolicyConfig) *UserService {
@@ -131,18 +142,66 @@ func (s *UserService) SetLockoutPolicy(l config.LockoutConfig) {
 	s.lockout = l
 }
 
+// SetSettingsSource injects the settings-center overlay; policy/lockout then
+// resolve overlay-first (system_settings > YAML config > defaults) at use
+// time, making them runtime-editable from the web UI.
+func (s *UserService) SetSettingsSource(ss *SettingsService) {
+	s.settings = ss
+}
+
+// effectivePolicy resolves the password policy: settings overlay > startup
+// config > compiled defaults. Overlay rows that decode to the zero value are
+// ignored (they can't be saved through the settings API, which validates).
+func (s *UserService) effectivePolicy() config.PasswordPolicyConfig {
+	if s.settings != nil {
+		var p config.PasswordPolicyConfig
+		if s.settings.Get(SettingAuthPasswordPolicy, &p) && !zeroPolicy(p) {
+			return p
+		}
+	}
+	if zeroPolicy(s.policy) {
+		return DefaultPasswordPolicy()
+	}
+	return s.policy
+}
+
+// EffectivePasswordPolicy exposes the resolved policy for the public
+// GET /auth/password-policy handler (client-side validation + hint text).
+func (s *UserService) EffectivePasswordPolicy() config.PasswordPolicyConfig {
+	return s.effectivePolicy()
+}
+
+// effectiveLockout resolves the lockout tuning the same way as
+// effectivePolicy; the legacy per-field fallbacks stay in lockoutParams.
+func (s *UserService) effectiveLockout() config.LockoutConfig {
+	if s.settings != nil {
+		var l config.LockoutConfig
+		if s.settings.Get(SettingAuthLockout, &l) && l.MaxFailedAttempts > 0 {
+			return l
+		}
+	}
+	return s.lockout
+}
+
 // lockoutParams resolves the effective lockout tuning, defaulting the
 // historical hardcoded values when unset.
 func (s *UserService) lockoutParams() (maxAttempts int, lockMinutes int) {
-	maxAttempts = s.lockout.MaxFailedAttempts
+	l := s.effectiveLockout()
+	maxAttempts = l.MaxFailedAttempts
 	if maxAttempts <= 0 {
 		maxAttempts = 5
 	}
-	lockMinutes = s.lockout.LockMinutes
+	lockMinutes = l.LockMinutes
 	if lockMinutes <= 0 {
 		lockMinutes = 30
 	}
 	return
+}
+
+// LockoutParams exposes the resolved lockout tuning (attempts, minutes) for
+// the settings center display.
+func (s *UserService) LockoutParams() (maxAttempts int, lockMinutes int) {
+	return s.lockoutParams()
 }
 
 // Register creates a new user with the given credentials.
@@ -151,7 +210,7 @@ func (s *UserService) Register(ctx context.Context, username, email, password, r
 		role = string(domain.RoleUser)
 	}
 
-	if err := validatePassword(s.policy, password, username); err != nil {
+	if err := validatePassword(s.effectivePolicy(), password, username); err != nil {
 		return nil, err
 	}
 
@@ -173,6 +232,100 @@ func (s *UserService) Register(ctx context.Context, username, email, password, r
 
 	resp := toUserResponse(user)
 	return &resp, nil
+}
+
+// SeedAdmin creates the bootstrap admin (username "admin"), in a single
+// CreateUser step (no separate SetMustChangePassword race). An EMPTY password
+// seeds the first-run state instead: password_hash stays "" (login is
+// impossible) and the SPA's setup screen (GET /auth/setup-status → POST
+// /auth/setup) walks the operator through picking a password in the browser —
+// no temporary credential to copy from the installer output. A non-empty
+// password keeps the classic temp-credential flow: it is deliberately NOT
+// policy-checked (the policy governs passwords users choose for themselves —
+// applying it here is what historically left fresh installs with NO admin at
+// all), and first login forces a change via the server-side mcp gate + SPA
+// modal.
+func (s *UserService) SeedAdmin(ctx context.Context, email, password string) (*domain.UserResponse, error) {
+	hash := ""
+	if password != "" {
+		h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash password: %w", err)
+		}
+		hash = string(h)
+	}
+
+	user, err := s.queries.CreateUser(ctx, db.CreateUserParams{
+		Username:           "admin",
+		Email:              email,
+		PasswordHash:       hash,
+		Role:               string(domain.RoleAdmin),
+		MustChangePassword: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUserExists, err)
+	}
+
+	resp := toUserResponse(user)
+	return &resp, nil
+}
+
+// SetupPending reports whether a bootstrap account with an empty password hash
+// exists (first-run, browser setup not yet completed). Backs the public
+// GET /auth/setup-status the login page polls to decide which form to render.
+func (s *UserService) SetupPending(ctx context.Context) bool {
+	_, err := s.queries.GetUserPendingSetup(ctx, "")
+	return err == nil
+}
+
+// CompleteSetup finishes the first-run flow: sets the chosen password on the
+// empty-hash bootstrap admin, clears the must-change flag (the password IS the
+// user's own choice, made against the live policy), and returns a fresh
+// ungated LoginResponse so the SPA lands straight in the app. Rejected with
+// ErrNoPendingSetup once any password is set — the window closes for good.
+func (s *UserService) CompleteSetup(ctx context.Context, newPassword string) (*domain.LoginResponse, error) {
+	user, err := s.queries.GetUserPendingSetup(ctx, "")
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNoPendingSetup
+		}
+		return nil, fmt.Errorf("failed to get pending setup user: %w", err)
+	}
+
+	if err := validatePassword(s.effectivePolicy(), newPassword, user.Username); err != nil {
+		return nil, err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	now := time.Now()
+	updated, err := s.queries.UpdateUser(ctx, db.UpdateUserParams{
+		Username:            user.Username,
+		Email:               user.Email,
+		PasswordHash:        string(hash),
+		Role:                user.Role,
+		FailedLoginAttempts: 0,
+		LockedUntil:         nil,
+		MustChangePassword:  false,
+		PasswordChangedAt:   &now,
+		ID:                  user.ID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update password: %w", err)
+	}
+
+	token, err := s.generateToken(updated.ID, updated.Role, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	return &domain.LoginResponse{
+		Token: token,
+		User:  toUserResponse(updated),
+	}, nil
 }
 
 // Login authenticates a user by username (or email) and password.
@@ -201,6 +354,14 @@ func (s *UserService) Login(ctx context.Context, username, password string) (*do
 			user.FailedLoginAttempts = 0
 			user.LockedUntil = nil
 		}
+	}
+
+	// First-run state: an empty password hash means the browser setup flow
+	// (POST /auth/setup) hasn't been completed yet. Login is structurally
+	// impossible — return the distinct sentinel BEFORE the bcrypt compare so
+	// the failure counter (and lockout) never ticks for setup-pending guesses.
+	if user.PasswordHash == "" {
+		return nil, ErrSetupPending
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
@@ -241,7 +402,7 @@ func (s *UserService) Login(ctx context.Context, username, password string) (*do
 		}
 	}
 
-	token, err := s.generateToken(user.ID, user.Role)
+	token, err := s.generateToken(user.ID, user.Role, user.MustChangePassword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
@@ -309,7 +470,7 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, oldPassw
 		return ErrInvalidCredentials
 	}
 
-	if err := validatePassword(s.policy, newPassword, user.Username); err != nil {
+	if err := s.ensureNewPassword(user, newPassword); err != nil {
 		return err
 	}
 
@@ -318,6 +479,7 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, oldPassw
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
+	now := time.Now()
 	_, err = s.queries.UpdateUser(ctx, db.UpdateUserParams{
 		Username:            user.Username,
 		Email:               user.Email,
@@ -326,7 +488,7 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, oldPassw
 		FailedLoginAttempts: user.FailedLoginAttempts,
 		LockedUntil:         user.LockedUntil,
 		MustChangePassword:  user.MustChangePassword,
-		PasswordChangedAt:   user.PasswordChangedAt,
+		PasswordChangedAt:   &now,
 		ID:                  user.ID,
 	})
 	if err != nil {
@@ -336,7 +498,20 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, oldPassw
 	return nil
 }
 
-// ForceChangePassword forces a password change for a user (used on first login).
+// ensureNewPassword validates a user-chosen replacement password: it must pass
+// the strength policy AND differ from the current one. The differ check used
+// to be declared (ErrSamePassword was mapped in handlers) but never actually
+// implemented — any caller could "change" to the identical password.
+func (s *UserService) ensureNewPassword(user db.User, newPassword string) error {
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(newPassword)) == nil {
+		return ErrSamePassword
+	}
+	return validatePassword(s.effectivePolicy(), newPassword, user.Username)
+}
+
+// ForceChangePassword forces a password change for a user (used on first
+// login and after an admin reset). On success the caller should mint a fresh
+// token WITHOUT the mcp claim (the old token stays gated until it expires).
 func (s *UserService) ForceChangePassword(ctx context.Context, userID int64, newPassword string) error {
 	user, err := s.queries.GetUserByID(ctx, userID)
 	if err != nil {
@@ -346,7 +521,7 @@ func (s *UserService) ForceChangePassword(ctx context.Context, userID int64, new
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if err := validatePassword(s.policy, newPassword, user.Username); err != nil {
+	if err := s.ensureNewPassword(user, newPassword); err != nil {
 		return err
 	}
 
@@ -388,7 +563,7 @@ func (s *UserService) AdminResetPassword(ctx context.Context, userID int64, newP
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if err := validatePassword(s.policy, newPassword, user.Username); err != nil {
+	if err := validatePassword(s.effectivePolicy(), newPassword, user.Username); err != nil {
 		return err
 	}
 
@@ -451,12 +626,19 @@ func (s *UserService) ListUsers(ctx context.Context, search string, limit, offse
 	}, nil
 }
 
-// generateToken creates a signed JWT with user_id and role claims.
-func (s *UserService) generateToken(userID int64, role string) (string, error) {
+// generateToken creates a signed JWT with user_id and role claims. When
+// mustChangePassword is true (the flag was set at seed/admin-reset time) the
+// token carries mcp=true — middleware.Authenticator gates every API call on
+// that claim until the forced change completes, and the force-password
+// handler mints a fresh token WITHOUT it so the gate lifts immediately.
+func (s *UserService) generateToken(userID int64, role string, mustChangePassword bool) (string, error) {
 	claims := map[string]interface{}{
 		"user_id": userID,
 		"role":    role,
 		"jti":     randomHex(16),
+	}
+	if mustChangePassword {
+		claims["mcp"] = true
 	}
 	jwtauth.SetExpiryIn(claims, s.expiry)
 	_, tokenStr, err := s.auth.Encode(claims)
@@ -466,9 +648,11 @@ func (s *UserService) generateToken(userID int64, role string) (string, error) {
 	return tokenStr, nil
 }
 
-// GenerateTokenForUser creates a JWT token for a given user (public, used by TOTP handler).
-func (s *UserService) GenerateTokenForUser(userID int64, role string) (string, error) {
-	return s.generateToken(userID, role)
+// GenerateTokenForUser creates a JWT token for a given user (public, used by
+// the TOTP verify handler after a successful code — the same login semantics,
+// so the must-change gate applies there too).
+func (s *UserService) GenerateTokenForUser(userID int64, role string, mustChangePassword bool) (string, error) {
+	return s.generateToken(userID, role, mustChangePassword)
 }
 
 // getUserByUsernameOrEmail looks up a user by username first, then by email.

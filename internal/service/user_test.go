@@ -130,9 +130,16 @@ func TestRegister_PasswordMissingDigit(t *testing.T) {
 }
 
 func TestRegister_PasswordMissingSpecial(t *testing.T) {
+	// The default policy no longer REQUIRES special characters (relaxed with
+	// the settings center); pin both halves — the class is optional by
+	// default, and the rule still fires when an admin turns it on.
 	svc, _ := setupUserService(t)
-
 	_, err := svc.Register(context.Background(), "frank", "frank@example.com", "NoSpecial123", "user")
+	require.NoError(t, err, "default policy must accept letters+digits without special chars")
+
+	svc2, _ := setupUserService(t)
+	svc2.policy = config.PasswordPolicyConfig{MinLength: 8, RequireUppercase: true, RequireLowercase: true, RequireDigit: true, RequireSpecial: true}
+	_, err = svc2.Register(context.Background(), "frank2", "frank2@example.com", "NoSpecial123", "user")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrWeakPassword)
 	require.Contains(t, err.Error(), "special")

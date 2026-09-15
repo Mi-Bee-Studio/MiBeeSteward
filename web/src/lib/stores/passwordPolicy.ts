@@ -35,26 +35,38 @@ export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
 	require_uppercase: true,
 	require_lowercase: true,
 	require_digit: true,
-	require_special: true
+	require_special: false
 };
 
 export const passwordPolicy = writable<PasswordPolicy>(DEFAULT_PASSWORD_POLICY);
 
 let loadPromise: Promise<void> | null = null;
 
+function fetchPolicy(): Promise<void> {
+	return api
+		.get<PasswordPolicy>('/auth/password-policy')
+		.then((p) => {
+			if (p && typeof p.min_length === 'number') passwordPolicy.set(p);
+		})
+		.catch(() => {
+			/* keep defaults; backend enforces the real policy */
+		});
+}
+
 // Fetch the effective policy once per session (single-flight). Failures keep
 // the defaults — the backend still enforces the real policy on submit.
 export function ensurePasswordPolicyLoaded(): Promise<void> {
 	if (!loadPromise) {
-		loadPromise = api
-			.get<PasswordPolicy>('/auth/password-policy')
-			.then((p) => {
-				if (p && typeof p.min_length === 'number') passwordPolicy.set(p);
-			})
-			.catch(() => {
-				/* keep defaults; backend enforces the real policy */
-			});
+		loadPromise = fetchPolicy();
 	}
+	return loadPromise;
+}
+
+// Force a re-fetch — the settings/security page calls this after PUT
+// /settings/auth so the single-flight cache doesn't serve the stale
+// pre-edit policy for the rest of the session.
+export function refreshPasswordPolicy(): Promise<void> {
+	loadPromise = fetchPolicy();
 	return loadPromise;
 }
 

@@ -73,9 +73,22 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		}
 	}
 
+	// Settings-center overlay (system_settings): runtime-editable settings
+	// resolved overlay > YAML > defaults by the services that consume them.
+	// A load failure degrades to config-only (writes 503) rather than taking
+	// the whole center down.
+	settingsSvc, err := service.NewSettingsService(dbConn)
+	if err != nil {
+		slog.Warn("settings overlay unavailable; continuing with config-only settings", "error", err)
+		settingsSvc = nil
+	}
+
 	// User service and handler
 	userSvc := service.NewUserService(dbConn, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
 	userSvc.SetLockoutPolicy(cfg.Auth.Lockout)
+	if settingsSvc != nil {
+		userSvc.SetSettingsSource(settingsSvc)
+	}
 	// Audit logging
 	// SQLITE_BUSY governance (#267): each hot write path gets its own
 	// dbopen.BusyRetry wrapper — bounded retry with backoff plus the
@@ -211,6 +224,22 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/", networkGrantHandler.List)
 		r.Post("/", networkGrantHandler.Create)
 		r.Delete("/{id}", networkGrantHandler.Delete)
+	})
+
+	// Settings center: runtime-editable configuration overlay (auth password
+	// policy + login lockout today; engine knobs subscribe later). Writes are
+	// admin-only (CapUserManage) and land in system_settings — effective on
+	// the next validation/login, no restart. /system is read-only instance
+	// info for every signed-in role.
+	settingsHandler := handler.NewSettingsHandler(settingsSvc, userSvc, cfg, auditRepo)
+	r.Route("/api/v1/settings", func(r chi.Router) {
+		r.Use(middleware.RequireCapability(domain.CapUserManage))
+		r.Get("/auth", settingsHandler.GetAuth)
+		r.Put("/auth", settingsHandler.UpdateAuth)
+	})
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/api/v1/system", settingsHandler.GetSystem)
 	})
 	// Heartbeat service + its dedicated time-series store. heartbeat_results
 	// lives in a separate SQLite file (data/heartbeat.db) so its high write

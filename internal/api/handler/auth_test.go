@@ -340,5 +340,8 @@ func TestAuth_PasswordPolicyIsPublic(t *testing.T) {
 	require.True(t, policy.RequireUppercase)
 	require.True(t, policy.RequireLowercase)
 	require.True(t, policy.RequireDigit)
-	require.True(t, policy.RequireSpecial)
+	// Special chars are optional under the (relaxed) default policy — the
+	// settings center can turn the class back on at runtime; this endpoint
+	// then reflects the overlay value.
+	require.False(t, policy.RequireSpecial)
 }

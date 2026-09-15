@@ -21,6 +21,7 @@ import (
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
 	sqldb "mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
 	"mibee-steward/internal/testutil"
@@ -64,6 +65,17 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	totpSvc := service.NewTOTPService(db, auditRepo)
 	userSvc.SetTOTPService(totpSvc)
 	totpHandler := handler.NewTOTPHandler(totpSvc, userSvc, cfg, auditRepo)
+
+	// Settings center (system_settings overlay). A load failure mirrors the
+	// production degradation: settingsSvc stays nil, writes 503, /system works.
+	settingsSvc, settingsErr := service.NewSettingsService(db)
+	if settingsErr != nil {
+		t.Logf("settings overlay unavailable in fixture: %v", settingsErr)
+		settingsSvc = nil
+	} else {
+		userSvc.SetSettingsSource(settingsSvc)
+	}
+	settingsHandler := handler.NewSettingsHandler(settingsSvc, userSvc, cfg, auditRepo)
 
 	// Device handler
 	deviceRepo := service.NewDeviceRepository(db)
@@ -112,6 +124,17 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 			r.Post("/disable", totpHandler.Disable)
 			r.Get("/status", totpHandler.Status)
 		})
+	})
+
+	// Settings center routes (mirrors routes.go registration)
+	r.Route("/api/v1/settings", func(r chi.Router) {
+		r.Use(middleware.RequireCapability(domain.CapUserManage))
+		r.Get("/auth", settingsHandler.GetAuth)
+		r.Put("/auth", settingsHandler.UpdateAuth)
+	})
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/api/v1/system", settingsHandler.GetSystem)
 	})
 
 	// Admin-only user list
