@@ -1,0 +1,8 @@
+# Scripts and unit files that execute on Linux targets (routers, servers) must
+# stay LF in the working tree even on Windows checkouts with core.autocrlf=true:
+# busybox ash, procd and systemd cannot parse CRLF. These files also ship inside
+# release tarballs built from a checkout (make package-openwrt normalizes too).
+*.sh      text eol=lf
+*.init    text eol=lf
+*.service text eol=lf
+Makefile  text eol=lf

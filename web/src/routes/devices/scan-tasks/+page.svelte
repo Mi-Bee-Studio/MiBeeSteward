@@ -15,6 +15,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { validateScanTarget, validateCronExpr, scannerTaskSchema, validateField, validateForm } from '$lib/utils/validation';
+	import { CRON_PRESETS, CUSTOM_KEY, cronForPresetKey, presetKeyForCron } from '$lib/utils/cron';
 	import type { ScannerTask, PipelineConfig, ScanRun } from '$lib/types';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -71,6 +72,11 @@
 	let formName = $state('');
 	let formTargets = $state('');
 	let formCronExpr = $state('');
+	// Schedule selection: a preset key (cron.ts) or CUSTOM_KEY. The cron
+	// expression is DERIVED while a preset is active — most operators should
+	// never need to know cron syntax. Custom keeps the raw input for power
+	// users and round-trips existing tasks saved with arbitrary expressions.
+	let formScheduleKey = $state('daily_2am');
 	let formTimeout = $state(300);
 	let formConcurrentHosts = $state(16);
 	let formCommunity = $state('public');
@@ -177,10 +183,41 @@
 
 	const formDirty = $derived(formOpen && snapshotForm() !== formSnapshot);
 
+	// presetLabel maps a preset key to its localized label with LITERAL m[]
+	// calls (paraglide's m is typed per key — a dynamic m[variable] lookup
+	// would silently drop typing). A switch is the type-safe way to keep one
+	// source of truth over in cron.ts.
+	function presetLabel(key: string): string {
+		switch (key) {
+			case 'every_30m': return m['scanner.cron.every_30m']();
+			case 'hourly': return m['scanner.cron.hourly']();
+			case 'every_6h': return m['scanner.cron.every_6h']();
+			case 'every_12h': return m['scanner.cron.every_12h']();
+			case 'daily_2am': return m['scanner.cron.daily_2am']();
+			case 'daily_4am': return m['scanner.cron.daily_4am']();
+			case 'weekly_mon_3am': return m['scanner.cron.weekly_mon_3am']();
+			case 'monthly_1st_3am': return m['scanner.cron.monthly_1st_3am']();
+			default: return key;
+		}
+	}
+
+	// applySchedulePreset syncs the derived cron expression whenever the
+	// dropdown moves onto a preset (custom leaves the raw input untouched).
+	function onScheduleChange(e: Event) {
+		formScheduleKey = (e.currentTarget as HTMLSelectElement).value;
+		const cron = cronForPresetKey(formScheduleKey);
+		if (cron !== null) {
+			formCronExpr = cron;
+			const { cron: _c, ...rest } = fieldErrors;
+			fieldErrors = rest;
+		}
+	}
+
 	function resetForm() {
 		formName = '';
 		formTargets = '';
-		formCronExpr = '';
+		formScheduleKey = 'daily_2am';
+		formCronExpr = cronForPresetKey('daily_2am') ?? '';
 		formTimeout = 300;
 		formConcurrentHosts = 16;
 		formCommunity = 'public';
@@ -202,7 +239,11 @@
 		editingTask = task;
 		formName = task.name;
 		formTargets = task.targets;
-		formCronExpr = task.cron_expr;
+		// Reverse-map the saved expression onto a preset so the dropdown shows
+		// what the task actually does; anything unrecognized falls to custom
+		// with the raw expression preserved verbatim.
+		formScheduleKey = presetKeyForCron(task.cron_expr);
+		formCronExpr = cronForPresetKey(formScheduleKey) ?? task.cron_expr;
 		formTimeout = task.timeout;
 		formConcurrentHosts = task.concurrent_hosts ?? 16;
 		formCommunity = task.community;
@@ -547,8 +588,15 @@
 									{truncateTargets(task.targets)}
 								</td>
 
-								<!-- Cron -->
-								<td class="px-4 py-3 text-sm font-mono text-accent">{task.cron_expr}</td>
+							<!-- Schedule: friendly label for presets, raw cron otherwise -->
+							<td class="px-4 py-3 text-sm">
+								{#if presetKeyForCron(task.cron_expr) !== CUSTOM_KEY}
+									<span class="text-text">{presetLabel(presetKeyForCron(task.cron_expr))}</span>
+									<span class="block text-xs font-mono text-text-muted mt-0.5" title={task.cron_expr}>{task.cron_expr}</span>
+								{:else}
+									<span class="font-mono text-accent">{task.cron_expr}</span>
+								{/if}
+							</td>
 
 								<!-- Status (enabled/disabled badge with toggle) -->
 								<td class="px-4 py-3">
@@ -699,18 +747,38 @@
 				{/if}
 			</div>
 
-			<!-- Cron -->
+			<!-- Schedule (preset dropdown → derived cron; custom keeps raw input) -->
 			<div>
-				<label class="block text-xs text-text-muted mb-1">{m['scanner.Cron Expression']()} *</label>
-				<input
-					bind:value={formCronExpr}
-					required
-					placeholder={m['scanner.Cron Placeholder']()}
-					class="w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text font-mono
+				<label class="block text-xs text-text-muted mb-1">{m['scanner.cron.schedule']()} *</label>
+				<select
+					value={formScheduleKey}
+					onchange={onScheduleChange}
+					class="w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text
 					focus:border-primary focus:outline-none
 					{fieldErrors.cron ? 'border-error' : 'border-border'}"
-					onblur={validateCron}
-				/>
+				>
+					{#each CRON_PRESETS as p (p.key)}
+						<option value={p.key}>{presetLabel(p.key)}</option>
+					{/each}
+					<option value={CUSTOM_KEY}>{m['scanner.cron.custom']()}</option>
+				</select>
+				{#if formScheduleKey === CUSTOM_KEY}
+					<input
+						bind:value={formCronExpr}
+						required
+						placeholder={m['scanner.Cron Placeholder']()}
+						class="mt-2 w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text font-mono
+						focus:border-primary focus:outline-none
+						{fieldErrors.cron ? 'border-error' : 'border-border'}"
+						onblur={validateCron}
+					/>
+				{:else}
+					<!-- Show the generated expression so preset users still learn what
+					     the dropdown selection means under the hood. -->
+					<p class="mt-1 text-xs text-text-muted font-mono">
+						{m['scanner.cron.expr_hint']()}: {formCronExpr}
+					</p>
+				{/if}
 				{#if fieldErrors.cron}
 					<p class="text-error text-xs mt-1">{fieldErrors.cron}</p>
 				{/if}
