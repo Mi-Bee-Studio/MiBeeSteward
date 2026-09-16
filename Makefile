@@ -145,7 +145,7 @@ check-openwrt:
 		command -v $$c >/dev/null 2>&1 && { LUAC=$$(command -v $$c); break; }; \
 	done; \
 	if [ -z "$$LUAC" ]; then \
-		echo "ERROR: no luac found (apt install lua5.1) — LuCI controller syntax check cannot run"; exit 1; \
+		echo "ERROR: no luac found (apt install lua5.1) - LuCI controller syntax check cannot run"; exit 1; \
 	fi; \
 	echo "-> $$LUAC -p deploy/openwrt/luci/controller/mibee.lua"; \
 	$$LUAC -p deploy/openwrt/luci/controller/mibee.lua
