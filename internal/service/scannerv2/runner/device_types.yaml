@@ -55,10 +55,13 @@ rules:
 
   # ── 小米 IoT 家电生态 (viomi/zhimi/chunmi/mijia/midjd7/XiaoAi) ──
   # 小米生态链设备的 mDNS/rDNS hostname 带厂商前缀,是强 IoT 信号。
+  # Brand/appliance 层的细识别在顶层 iot-identity.yaml（miot 服务身份）;
+  # 这里只兜类型。真机样本见 #361（R68S 31 台，2026-09）。
   - type: iot
     field: host
     source: heuristic
-    keywords: [viomi-, zhimi-, chunmi-, mijia-, midjd7, xiaoaitongxue, xiaoai,
+    keywords: [viomi-, zhimi-, smartmi-, chunmi-, mijia-, midjd7, yeelink-,
+               lumi, aqara, roborock, rockrobo, dreame, xiaoaitongxue, xiaoai,
                xiaomi-aircondition, xiaomi-gateway, mi-appliance, mibt, miap]
 
   # ── PC / 笔记本 ──

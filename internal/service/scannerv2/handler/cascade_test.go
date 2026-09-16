@@ -271,3 +271,36 @@ node_cpu_seconds_total{cpu="3"} 1
 	// Reference orchestrator to ensure it compiles into the integration path.
 	_ = orch
 }
+
+func TestMiotHandler_EnrichBrandAndDescription(t *testing.T) {
+	h := MiotHandler{}
+	if h.GenerateHeartbeat(svcCtx("10.0.0.5", 0, "miot", nil)) != nil {
+		t.Error("miot handler must not generate a heartbeat (no port; bridge seeds ICMP)")
+	}
+	ctx := svcCtx("10.0.0.5", 0, "miot", map[string]string{
+		"inferred_brand": "Viomi",
+		"appliance":      "water heater",
+		"ecosystem":      "Xiaomi Mijia",
+	})
+	h.EnrichDevice(ctx, nil)
+	if ctx.Device.Fields["inferred_brand"] != "Viomi" {
+		t.Error("miot handler should fill the empty brand slot")
+	}
+	if ctx.Device.Fields["inferred_description"] != "water heater · Xiaomi Mijia" {
+		t.Errorf("miot handler should compose appliance+ecosystem description, got %q", ctx.Device.Fields["inferred_description"])
+	}
+	// An existing (protocol-derived) brand must NOT be overwritten by the
+	// spoofable hostname brand.
+	ctx = svcCtx("10.0.0.5", 0, "miot", map[string]string{"inferred_brand": "Xiaomi"})
+	ctx.Device.Fields["inferred_brand"] = "SNMP-derived vendor"
+	h.EnrichDevice(ctx, nil)
+	if ctx.Device.Fields["inferred_brand"] != "SNMP-derived vendor" {
+		t.Error("miot handler must not override an existing brand")
+	}
+	// The type must stay untouched — hostname rules never claim a type.
+	ctx = svcCtx("10.0.0.5", 0, "miot", map[string]string{"ecosystem": "Xiaomi Mijia"})
+	h.EnrichDevice(ctx, nil)
+	if _, typed := ctx.Device.Fields["inferred_type"]; typed {
+		t.Error("miot handler must never set inferred_type (hostname = heuristic, ? badge)")
+	}
+}
