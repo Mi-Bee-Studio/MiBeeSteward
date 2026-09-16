@@ -148,3 +148,29 @@ func itoa(n int64) string {
 	}
 	return string(buf[i:])
 }
+
+// TestDHCPLeases_Sweep_SeedEvidence pins the #377 observation-cache feed:
+// every sweep records lease hostnames as Kind:"hostname" observations (even
+// for already-known leases — the cache refreshes, the EVENT stream stays
+// diff-only), so the next scan of the IP carries the hostname into the
+// fingerprint classifiers.
+func TestDHCPLeases_Sweep_SeedEvidence(t *testing.T) {
+	future := time.Now().Add(1 * time.Hour).Unix()
+	path := writeLeaseFile(t, joinLines(
+		itoa(future)+" aa:bb:cc:dd:ee:01 192.168.1.10 viomi-hood-c13_miap5788 *",
+		itoa(future)+" aa:bb:cc:dd:ee:02 192.168.1.11 * *",
+	))
+	svc, _, _, _ := newTestService(t, false)
+	src := NewDHCPLeasesSource(time.Minute, path, svc, nil)
+
+	src.sweep()
+	evs := svc.EvidenceFor("192.168.1.10")
+	require.NotEmpty(t, evs, "lease hostname must land in the observation cache")
+	require.Equal(t, "hostname", evs[0].Kind)
+	require.Equal(t, "viomi-hood-c13_miap5788", evs[0].RawData["hostname"])
+	require.Empty(t, svc.EvidenceFor("192.168.1.11"), "'*' hostname yields no observation")
+
+	// Second sweep REFRESHES the cache even though the emit stream is quiet.
+	src.sweep()
+	require.NotEmpty(t, svc.EvidenceFor("192.168.1.10"))
+}

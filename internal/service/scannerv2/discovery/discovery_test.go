@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -426,5 +427,41 @@ func TestStatus_DisabledServiceReturnsEnabledFalse(t *testing.T) {
 	}
 	if st.Uptime != "" {
 		t.Errorf("expected empty Uptime for unstarted service, got %q", st.Uptime)
+	}
+}
+
+// TestObservationCache pins the #377 seed-evidence cache semantics: latest
+// observations win, per-IP history is bounded, unknown IPs return nothing,
+// and the returned slice is a copy (callers cannot race the cache).
+func TestObservationCache(t *testing.T) {
+	svc, _, _, _ := newTestService(t, false)
+
+	if evs := svc.EvidenceFor("10.0.0.1"); evs != nil {
+		t.Fatalf("unknown IP should return nothing, got %d", len(evs))
+	}
+
+	mk := func(v string) scannerv2.Evidence {
+		return scannerv2.Evidence{Kind: "mdns", IP: "10.0.0.1",
+			RawData: map[string]string{"n": v}}
+	}
+	for i := 0; i < maxObsPerIP+3; i++ {
+		svc.Observe("10.0.0.1", mk(fmt.Sprintf("%d", i)))
+	}
+	evs := svc.EvidenceFor("10.0.0.1")
+	if len(evs) != maxObsPerIP {
+		t.Fatalf("per-IP history capped at maxObsPerIP, got %d", len(evs))
+	}
+	if want := fmt.Sprintf("%d", maxObsPerIP+2); evs[len(evs)-1].RawData["n"] != want {
+		t.Errorf("newest observation retained: got %s want %s", evs[len(evs)-1].RawData["n"], want)
+	}
+
+	evs[0].Kind = "mutated"
+	if got := svc.EvidenceFor("10.0.0.1")[0].Kind; got != "mdns" {
+		t.Errorf("returned slice must be a copy, mutation leaked: %s", got)
+	}
+
+	svc.Observe("10.0.0.2") // no evidence attached -> no-op
+	if evs := svc.EvidenceFor("10.0.0.2"); evs != nil {
+		t.Errorf("empty Observe must be a no-op, got %d", len(evs))
 	}
 }

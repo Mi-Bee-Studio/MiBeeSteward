@@ -65,7 +65,9 @@ flowchart LR
 
 **被动（eBPF）**：eBPF TC 观测器（`WITH_EBPF` 构建标签，内核 ≥5.8）观测 ONVIF/WS-Discovery 多播与 TCP 魔术字节，产出置信度 0.6 的证据。详见 [eBPF 被动观测](ebpf.md)。
 
-**被动（主机本地）**：`arp_cache`（对账内核 `/proc/net/arp` 缓存，零流量）、`multicast`（被动监听 mDNS 224.0.0.251:5353 与 SSDP 239.255.255.250:1900 的自宣告设备）、`router_arp`（走 `scanner.router_arp.routers` 所列路由器的 SNMP ARP 表——覆盖跨 VLAN 的 MAC，未配置路由器时为 no-op）。默认构建下还有两个需专用构建标签的可选源：`arp_scan`（主动 ARP 广播 sweep，`WITH_ARPSCAN` 标签）与 LLDP 原始帧监听器（`WITH_LLDP` 标签 + `scanner.discovery.lldp_interfaces`）。
+**被动（主机本地）**：`arp_cache`（对账内核 `/proc/net/arp` 缓存，零流量）、`multicast`（被动监听 mDNS 224.0.0.251:5353 与 SSDP 239.255.255.250:1900 的自宣告设备）、`router_arp`（走 `scanner.router_arp.routers` 所列路由器的 SNMP ARP 表——覆盖跨 VLAN 的 MAC，未配置路由器时为 no-op）。默认构建下还有两个需专用构建标签的可选源：`arp_scan`（主动 ARP 广播 sweep，`WITH_ARPSCAN` 标签）与 LLDP 原始帧监听器（`WITH_LLDP` 标签 + `scanner.discovery.lldp_interfaces`）。 
+
+**被动观察作为识别种子（#377）**：主机本地各源还会把「听到的事实」记入按 IP 的观察缓存——DHCP 租约主机名（权威的 主机名/MAC/IP 映射）、完整的 mDNS 服务宣告（服务列表 + TXT）、SSDP 的 SERVER/USN/LOCATION 自报身份。每次扫描会把该 IP 的缓存观察前置进证据收集阶段，指纹分类器因此也能看到被动通道。真实网络上这往往是唯一通道：R68S 现场实测主动 mDNS 查询 100% 无应答、监听器却听到丰富宣告——一条 `viomi-waterheater-…` 租约主机名即可在设备零应答的情况下产出米家品牌身份。
 
 **路由器驻留 Tier-1**：仅在 MiBee Steward 直接部署于网关时才有数据（如 OpenWrt 设备），**默认关闭，需手动启用**。
 

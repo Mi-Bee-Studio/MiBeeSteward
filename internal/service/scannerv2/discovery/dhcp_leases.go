@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"mibee-steward/internal/service/scannerv2"
 )
 
 // DHCPLeasesSource periodically reads the local DHCP server's lease table and
@@ -130,6 +132,22 @@ func (s *DHCPLeasesSource) sweep() {
 	// coordinator dedups against the device DB anyway, but the diff keeps the
 	// event stream quiet in steady state.
 	for _, l := range leases {
+		// Seed-evidence cache (#377): every sweep refreshes the lease hostname
+		// as a Kind:"hostname" observation so the NEXT scan of this IP carries
+		// it into the fingerprint classifiers even when the rDNS probe flakes
+		// or the host answers nothing else. Refreshes are cheap; the emit below
+		// stays diff-only so the event stream stays quiet.
+		if l.hostname != "" && l.hostname != "*" {
+			s.svc.Observe(l.ip, scannerv2.Evidence{
+				Source:     "discovery:dhcp_leases",
+				Kind:       "hostname",
+				IP:         l.ip,
+				Protocol:   "dhcp",
+				RawData:    map[string]string{"hostname": l.hostname},
+				Confidence: 0.8,
+				ObservedAt: time.Now(),
+			})
+		}
 		if prev[l.ip+"\x00"+l.mac] {
 			continue
 		}

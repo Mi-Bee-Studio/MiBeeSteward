@@ -405,3 +405,70 @@ func TestIndexByteAndSplitWS(t *testing.T) {
 		t.Errorf("splitWS = %v", got)
 	}
 }
+
+// TestOrchestrator_SeedEvidencePrepended pins the #377 contract: evidence
+// supplied by the passive-discovery seed hook (lease hostnames, overheard
+// mDNS/SSDP announcements) is PREPENDED to the gather output, reaches the
+// classifiers, and counts toward liveness — the passive channel must flow
+// into the fingerprint layer exactly like probe evidence.
+func TestOrchestrator_SeedEvidencePrepended(t *testing.T) {
+	repo := newRecordRepo()
+	reg := NewRegistry()
+	reg.RegisterProbe(stubProbe{name: "active:icmp", ev: []Evidence{
+		{Kind: "echo", IP: "10.0.0.9", Protocol: "icmp"},
+	}})
+	saw := &sawKinds{}
+	reg.RegisterClassifier(saw)
+
+	orch := NewOrchestrator(reg, repo, OrchestratorConfig{MaxConcurrentHosts: 1, MaxCascadeDepth: 5}, nil)
+	orch.SetSeedEvidence(func(ip string) []Evidence {
+		if ip != "10.0.0.9" {
+			return nil
+		}
+		return []Evidence{
+			{Kind: "hostname", Source: "discovery:dhcp_leases", IP: ip,
+				RawData: map[string]string{"hostname": "viomi-waterheater-e13_miap5E55"}},
+			{Kind: "mdns", Source: "discovery:multicast", IP: ip,
+				RawData: map[string]string{"services": "_smb._tcp,_adisk._tcp"}},
+		}
+	})
+	report := orch.Run(context.Background(), "10.0.0.9", ProbeHint{Timeout: time.Second})
+
+	if !report.Alive {
+		t.Fatal("host should be alive (probe + seed evidence)")
+	}
+	for _, want := range []string{"hostname", "mdns", "echo"} {
+		if !saw.kinds[want] {
+			t.Errorf("classifier never saw seed/probe kind %q (saw %v)", want, saw.kinds)
+		}
+	}
+	if !report.hasKind("hostname") || !report.hasKind("mdns") {
+		t.Errorf("report evidence must carry the seeds, got %+v", report.Evidence)
+	}
+}
+
+// sawKinds is a classifier that records every evidence kind it is offered.
+type sawKinds struct {
+	kinds map[string]bool
+}
+
+func (s *sawKinds) Service() string { return "saw" }
+
+func (s *sawKinds) Classify(evs []Evidence) []ServiceIdentity {
+	if s.kinds == nil {
+		s.kinds = map[string]bool{}
+	}
+	for _, e := range evs {
+		s.kinds[e.Kind] = true
+	}
+	return nil
+}
+
+func (r HostReport) hasKind(kind string) bool {
+	for _, e := range r.Evidence {
+		if e.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
