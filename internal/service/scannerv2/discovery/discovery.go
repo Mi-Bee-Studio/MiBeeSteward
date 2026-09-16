@@ -221,7 +221,9 @@ func (s *Service) Observe(ip string, evs ...scannerv2.Evidence) {
 			}
 		}
 	}
-	merged := append(s.obs[ip], evs...)
+	merged := make([]scannerv2.Evidence, 0, len(s.obs[ip])+len(evs))
+	merged = append(merged, s.obs[ip]...)
+	merged = append(merged, evs...)
 	if excess := len(merged) - maxObsPerIP; excess > 0 {
 		merged = merged[excess:]
 	}
