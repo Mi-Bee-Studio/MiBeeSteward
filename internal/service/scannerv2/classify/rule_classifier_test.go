@@ -694,3 +694,72 @@ func TestRuleClassifier_SMBPortFallback(t *testing.T) {
 		t.Errorf("port-smb fallback should fire on port 445 without smb_negotiate evidence; got: %+v", identitiesMetadata(got))
 	}
 }
+
+// TestRuleClassifier_MijiaHostname pins the iot-identity.yaml rules against
+// real Mijia hostnames captured on an R68S install (#361): exactly one miot
+// identity per hostname (exclusive_group switch semantics), vendor-specific
+// rules winning over the generic _miap/_mibt suffix fallback, and no match
+// for non-Mijia hostnames.
+func TestRuleClassifier_MijiaHostname(t *testing.T) {
+	rc := &fp.RuleClassifier{}
+	if err := rc.LoadFromDir("../../../../configs/fingerprints"); err != nil {
+		t.Fatalf("LoadFromDir: %v", err)
+	}
+	hostnameEv := func(host string) []fp.Evidence {
+		return []fp.Evidence{{
+			Kind:       "hostname",
+			IP:         "192.168.62.1",
+			RawData:    map[string]string{"hostname": host},
+			Confidence: 0.8,
+		}}
+	}
+	cases := []struct {
+		host          string
+		wantBrand     string // "" = absent
+		wantAppliance string
+		wantEcosystem string
+	}{
+		{"viomi-waterheater-e13_miap5E55", "Viomi", "water heater", "Xiaomi Mijia"},
+		{"viomi-hood-c13_miap5788", "Viomi", "range hood", "Xiaomi Mijia"},
+		{"xiaomi-aircondition-c16_mibt2431", "Xiaomi", "air conditioner", "Xiaomi Mijia"},
+		{"yeelink-light-lamp22_mibt63AA", "Yeelight", "light", "Xiaomi Mijia"},
+		{"chuangmi_camera_039a01", "Chuangmi", "IP camera", "Xiaomi Mijia"},
+		{"chunmi-ysj-tsj9_mibt89A7", "Chunmi", "water dispenser", "Xiaomi Mijia"},
+		{"midjd7-fridge-5022_mibt5B23", "Xiaomi", "refrigerator", "Xiaomi Mijia"},
+		{"xiaomi-gateway-hub1", "Xiaomi", "gateway", "Xiaomi Mijia"},
+		{"XiaoAiTongXueX6A", "Xiaomi", "smart speaker", "Xiaomi Mijia"},
+		// Generic suffix fallback: no vendor prefix, only _mibt<hex>.
+		{"some-odd-module_mibtA909", "", "", "Xiaomi Mijia"},
+	}
+	for _, tc := range cases {
+		ids := rc.Classify(hostnameEv(tc.host))
+		var miots []fp.ServiceIdentity
+		for _, id := range ids {
+			if id.Service == "miot" {
+				miots = append(miots, id)
+			}
+		}
+		if len(miots) != 1 {
+			t.Errorf("%s: want exactly 1 miot identity, got %d", tc.host, len(miots))
+			continue
+		}
+		md := miots[0].Metadata
+		if got := md["inferred_brand"]; got != tc.wantBrand {
+			t.Errorf("%s: brand = %q, want %q", tc.host, got, tc.wantBrand)
+		}
+		if got := md["appliance"]; got != tc.wantAppliance {
+			t.Errorf("%s: appliance = %q, want %q", tc.host, got, tc.wantAppliance)
+		}
+		if got := md["ecosystem"]; got != tc.wantEcosystem {
+			t.Errorf("%s: ecosystem = %q, want %q", tc.host, got, tc.wantEcosystem)
+		}
+	}
+	// Non-Mijia hostnames must not fire any miot identity.
+	for _, host := range []string{"orangepi-zero3", "redmi-notebook", "rpi3b-storage"} {
+		for _, id := range rc.Classify(hostnameEv(host)) {
+			if id.Service == "miot" {
+				t.Errorf("%s: unexpected miot identity fired", host)
+			}
+		}
+	}
+}
