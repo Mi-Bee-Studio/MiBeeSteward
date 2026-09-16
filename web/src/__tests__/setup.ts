@@ -24,6 +24,27 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 	};
 }
 
+// jsdom has no Web Animations API; svelte/transition delegates to
+// Element.animate when present, and any test that opens a Modal (fade/scale)
+// would throw "element.animate is not a function". The stub returns a finished
+// Animation-like object — transitions complete instantly, assertions on the
+// post-transition DOM work unmodified.
+if (typeof Element.prototype.animate !== 'function') {
+	Element.prototype.animate = function (
+		_keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
+		_options?: number | KeyframeAnimationOptions
+	) {
+		return {
+			finished: Promise.resolve(),
+			cancel() {},
+			finish() {},
+			pause() {},
+			play() {},
+			reverse() {}
+		};
+	};
+}
+
 afterEach(() => {
 	cleanup();
 });

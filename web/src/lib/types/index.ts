@@ -141,6 +141,8 @@ export interface ProbeTarget {
 	last_status?: string;
 	last_latency_ms: number;
 	last_error?: string;
+	/** Execution plan (#277): 'center' | 'all' | 'agent:{id}'. */
+	vantage: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -165,6 +167,8 @@ export interface ProbeResult {
 	/** null = no cert collected that run. */
 	cert_trusted?: boolean | null;
 	checked_at: string;
+	/** Which executor produced this row (#277): 'center' or 'agent:{id}'. */
+	vantage: string;
 }
 
 export interface ProbeResultListResponse {
