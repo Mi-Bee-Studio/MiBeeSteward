@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk openwrt-stage clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk openwrt-stage check-openwrt clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -119,7 +119,7 @@ openwrt-stage: build-frontend sync-device-types sync-oui-curated
 package-openwrt-ipk: GOARCH?=arm64
 package-openwrt-ipk: openwrt-stage
 	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
-	./deploy/openwrt/mkipk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).ipk
+	sh ./deploy/openwrt/mkipk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).ipk
 
 # Hand-rolled .apk for apk-tools (OpenWrt 24.10+ / iStoreOS builds that
 # replaced opkg): same content and lifecycle as the .ipk in the apk v2
@@ -128,7 +128,40 @@ package-openwrt-ipk: openwrt-stage
 package-openwrt-apk: GOARCH?=arm64
 package-openwrt-apk: openwrt-stage
 	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
-	./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).apk
+	sh ./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).apk
+
+# Static assertions on the OpenWrt packaging sources (#358). The R68S field
+# session (iStoreOS 24.10, #355) proved this class of bug goes "local-green,
+# on-router-dead": a LuCI template with a raw CR byte white-screens with
+# "unfinished string", a Lua syntax slip kills the whole controller, and none
+# of it is caught by go test. Fast (no build): luac -p on the controller,
+# CR-byte scan + sh -n on the committed router sources. The full packaging
+# smoke is `make package-openwrt-ipk` (openwrt-stage CR guard + mkipk.sh),
+# exercised by the CI `openwrt` job. CR/sh checks read the GIT INDEX (`git
+# show :file`) — a CRLF Windows working tree must not false-positive on files
+# the committed tree stores as LF.
+check-openwrt:
+	@LUAC="" && for c in luac5.1 luac5.4 luac; do \
+		command -v $$c >/dev/null 2>&1 && { LUAC=$$(command -v $$c); break; }; \
+	done; \
+	if [ -z "$$LUAC" ]; then \
+		echo "ERROR: no luac found (apt install lua5.1) - LuCI controller syntax check cannot run"; exit 1; \
+	fi; \
+	echo "-> $$LUAC -p deploy/openwrt/luci/controller/mibee.lua"; \
+	$$LUAC -p deploy/openwrt/luci/controller/mibee.lua
+	@for f in deploy/openwrt/luci/view/mibee/status.htm deploy/openwrt/luci/view/mibee/settings.htm \
+	          deploy/openwrt/install.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
+	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/mibee-steward.init configs/config.example.yaml; do \
+		if git show :$$f 2>/dev/null | grep -q $$(printf '\r'); then \
+			echo "ERROR: CR byte in committed $$f — LuCI tparser yields 'unfinished string' (R68S #355)"; exit 1; \
+		fi; \
+	done; echo "-> no CR bytes in committed router sources"
+	@for f in deploy/openwrt/install.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
+	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/mibee-steward.init; do \
+		if ! git show :$$f 2>/dev/null | sh -n; then \
+			echo "ERROR: sh -n failed on committed $$f"; exit 1; \
+		fi; \
+	done; echo "-> sh -n OK on committed router scripts"
 
 # Build with the eBPF passive observer enabled. Requires clang/llvm/bpftool
 # and kernel BTF on the build host; produces a binary that, at runtime, needs

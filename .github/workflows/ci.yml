@@ -173,6 +173,38 @@ jobs:
           docker logs mibee-ci
           exit 1
 
+  # OpenWrt packaging gate (#358): the router-form sources (LuCI controller +
+  # templates, installer, packaging scripts) are invisible to go test, yet the
+  # R68S field session (#355) proved they fail "local-green, on-router-dead" —
+  # a template CR byte white-screens LuCI with "unfinished string", a Lua
+  # syntax slip kills the controller. Static assertions (luac -p, committed-tree
+  # CR scan, sh -n) plus a full packaging smoke: package-openwrt-ipk builds the
+  # arm64 binary, runs the openwrt-stage CR staging guard, and assembles the
+  # ipk via mkipk.sh — the exact pipeline a release artifact goes through.
+  openwrt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # OpenWrt 24.10's LuCI Lua runtime is 5.1 — syntax-check against it.
+      - name: Install lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends lua5.1
+      - name: Static assertions (luac -p / committed-tree CR scan / sh -n)
+        run: make check-openwrt
+      - name: Packaging smoke (stage guard + mkipk.sh)
+        run: |
+          (cd web && npm ci)
+          make package-openwrt-ipk
+          ls -la bin/*.ipk
+
   # Docs governance (#319 / #322): fence-language lint (MD040) so the website's
   # highlight.js rendering never regresses into mixed highlighted/monochrome
   # code blocks, plus a drift guard that regenerates the docs changelog
