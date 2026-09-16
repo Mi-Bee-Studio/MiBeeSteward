@@ -763,6 +763,7 @@ func TestRuleClassifier_MijiaHostname(t *testing.T) {
 		}
 	}
 }
+
 // TestRuleClassifier_MDNSAndSSDP pins the mdns-ssdp.yaml rules against the
 // field-captured announcement shapes from the #365 R68S PoC: the NAS avahi
 // service set, the router's SSDP SERVER self-identification, and TXT record
