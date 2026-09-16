@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -86,6 +87,13 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 // and the command completes as "failed".
 func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 	t.Run("out-of-network command rejected, runScan not called", func(t *testing.T) {
+		// completeStatus/completeResult cross goroutines (handler writes, test
+		// reads) — the stub re-serves the same command on every 10ms poll, so a
+		// later complete POST can still be writing while the test reads after
+		// observing `executed`. Same race class the first test in this file
+		// documents; guard with a mutex (atomic on `executed` alone is not
+		// enough because the write continues AFTER the flag is set).
+		var mu sync.Mutex
 		var executed int32
 		var completeStatus, completeResult string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -103,8 +111,10 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 					Result string `json:"result"`
 				}
 				_ = json.NewDecoder(r.Body).Decode(&req)
+				mu.Lock()
 				completeStatus = req.Status
 				completeResult = req.Result
+				mu.Unlock()
 				atomic.StoreInt32(&executed, 1)
 				w.WriteHeader(http.StatusNoContent)
 			default:
@@ -131,11 +141,17 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
-		require.Equal(t, "failed", completeStatus)
-		require.Contains(t, completeResult, "out of network")
+		mu.Lock()
+		gotStatus, gotResult := completeStatus, completeResult
+		mu.Unlock()
+		require.Equal(t, "failed", gotStatus)
+		require.Contains(t, gotResult, "out of network")
 	})
 
 	t.Run("mixed targets rejected as a whole", func(t *testing.T) {
+		// Same handler/test cross-goroutine capture as the subtest above —
+		// mutex-guarded for the same reason (re-served command keeps writing).
+		var mu sync.Mutex
 		var executed int32
 		var completeStatus string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +166,9 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 					Status string `json:"status"`
 				}
 				_ = json.NewDecoder(r.Body).Decode(&req)
+				mu.Lock()
 				completeStatus = req.Status
+				mu.Unlock()
 				atomic.StoreInt32(&executed, 1)
 				w.WriteHeader(http.StatusNoContent)
 			default:
@@ -177,7 +195,10 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
-		require.Equal(t, "failed", completeStatus)
+		mu.Lock()
+		gotStatus := completeStatus
+		mu.Unlock()
+		require.Equal(t, "failed", gotStatus)
 	})
 
 	t.Run("no cidr configured → degrade open (scan proceeds)", func(t *testing.T) {
