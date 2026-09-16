@@ -150,6 +150,24 @@ ip_mask_base() {
     echo "$_out"
 }
 
+# enable_source KEY — flips "enabled: false" to true inside the YAML block
+# "KEY:" of the generated config (block-scoped awk identical to luci-helper.sh
+# set_source; busybox-awk safe — match()+sub() only, no gsub extensions).
+# Scoped to the block so the many unrelated "enabled:" keys stay untouched.
+enable_source() {
+    _key="$1"
+    awk -v key="$_key" -v val="1" '
+        $0 ~ "^[[:space:]]*" key ":[[:space:]]*$" { inblk=1; ind=match($0,/[^ \t]/)-1; print; next }
+        inblk {
+            n=match($0,/[^ \t]/)-1
+            if ($0 !~ /^[[:space:]]*$/ && n<=ind) inblk=0
+        }
+        inblk && /^[[:space:]]*enabled:/ { sub(/enabled:[[:space:]]*(true|false)/, "enabled: " (val==1 ? "true" : "false")) }
+        { print }
+    ' "$CONF_DST" > "$CONF_DST.tmp" && mv "$CONF_DST.tmp" "$CONF_DST" \
+        || { rm -f "$CONF_DST.tmp"; echo "ERROR: enable_source($1) rewrite failed"; exit 1; }
+}
+
 # ─── 1. config (first install generates; upgrades keep) ────────────────────
 if [ -f "$CONF_DST" ]; then
     echo "-- config $CONF_DST exists — keeping it (upgrade install)"
@@ -163,6 +181,13 @@ if [ -f "$CONF_DST" ]; then
             sed -i "s|^\([[:space:]]*jwt_secret:\).*|\1 \"$_fix_secret\"|" "$CONF_DST"
             echo "-- repaired empty jwt_secret in existing config (regenerated)"
         fi
+    fi
+    # Tier-1 passive discovery (#360): pre-#360 installs generated configs
+    # with the router-resident sources off. Keep the operator's config as-is
+    # (upgrade rule), just point at the one-click toggle.
+    if ! grep -A1 '^[[:space:]]*dhcp_leases:' "$CONF_DST" 2>/dev/null | grep -q 'enabled: true'; then
+        echo "-- note: Tier-1 passive discovery (dhcp_leases/conntrack/hostapd) is OFF in this config —"
+        echo "--       enable under LuCI > Services > MiBee Steward > Settings (one click)"
     fi
 else
     # LAN cidr from uci (static lan is the norm on OpenWrt/iStoreOS).
@@ -212,6 +237,17 @@ else
         -e "s|^\([[:space:]]*path:\) \"./data/mibee.db\"|\1 \"$DATA_DIR/mibee.db\"|" \
         -e "s|^\([[:space:]]*upload_path:\) \"./data/uploads\"|\1 \"$DATA_DIR/uploads\"|" \
         "$CONF_SRC" > "$CONF_DST"
+    # Tier-1 passive discovery ON by default (#360): install.sh only runs on
+    # OpenWrt/iStoreOS, where the host IS the gateway — the DHCP lease table
+    # (authoritative hostname<->MAC<->IP map), conntrack ("who is talking right
+    # now") and hostapd (WiFi STA list) are free signals a wired scanner can
+    # never see. dns_log stays OFF: it additionally needs dnsmasq query logging
+    # (operator UCI change, printed below); the LuCI settings page offers it as
+    # a one-click toggle with the note.
+    enable_source discovery
+    enable_source dhcp_leases
+    enable_source conntrack
+    enable_source hostapd
     # Guard the generator against itself: a sed script error (e.g. an
     # unterminated s||| — seen in the wild as "sed: unmatched '|'") leaves an
     # EMPTY config.yaml behind, and the "keep existing config" upgrade path
@@ -220,15 +256,22 @@ else
         || ! grep -q '^[[:space:]]*initial_admin_password: ""' "$CONF_DST" \
         || ! grep -q '^[[:space:]]*cookie_secure: false' "$CONF_DST" \
         || ! grep -qE '^[[:space:]]*jwt_secret: "[A-Za-z0-9]{32,}"' "$CONF_DST" \
+        || ! grep -A1 '^[[:space:]]*discovery:' "$CONF_DST" | grep -q 'enabled: true' \
+        || ! grep -A1 '^[[:space:]]*dhcp_leases:' "$CONF_DST" | grep -q 'enabled: true' \
         || grep -q 'change-me-in-production' "$CONF_DST"; then
         echo "ERROR: generated $CONF_DST failed its sanity check — sed pipeline broken?"
-        echo "       (empty file / missing auth keys / short jwt_secret / unreplaced placeholder)"
+        echo "       (empty file / missing auth keys / short jwt_secret / unreplaced placeholder"
+        echo "        / Tier-1 discovery flip missing)"
         rm -f "$CONF_DST"
         exit 1
     fi
     chmod 600 "$CONF_DST"
     echo "-- generated $CONF_DST (network: $NET_NAME $NET_CIDR, db: $DATA_DIR/mibee.db)"
-    echo "-- cookie_secure forced to false (router form factor = plain HTTP on the LAN;" 
+    echo "-- Tier-1 passive discovery ON: dhcp_leases + conntrack + hostapd (router-resident)"
+    echo "--   dns_log (DNS query fingerprinting) is available but OFF: needs"
+    echo "--   uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit dhcp && /etc/init.d/dnsmasq restart"
+    echo "--   then enable it in LuCI (Services > MiBee Steward > Settings) or config.yaml"
+    echo "-- cookie_secure forced to false (router form factor = plain HTTP on the LAN;"
     echo "   a Secure cookie would be silently dropped by the browser)"
 fi
 

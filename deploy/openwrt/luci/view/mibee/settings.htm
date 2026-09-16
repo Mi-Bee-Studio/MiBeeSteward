@@ -34,10 +34,15 @@ end
 
 local port = ""
 local enabled = "?"
+local dhcp, conntrack, hostapd, dnslog = "0", "0", "0", "0"
 do
     local out = sys.exec("/usr/lib/mibee/luci-helper.sh status 2>/dev/null") or ""
     port = out:match("port=(%d+)") or ""
     enabled = out:match("enabled=(%d)") or "?"
+    dhcp      = out:match("dhcp_leases=(%d)") or "0"
+    conntrack = out:match("conntrack=(%d)")   or "0"
+    hostapd   = out:match("hostapd=(%d)")     or "0"
+    dnslog    = out:match("dns_log=(%d)")     or "0"
 end
 
 local msgs = {
@@ -51,6 +56,8 @@ local msgs = {
     enabled_ok   = { ok = true,  text = "开机自启已更新 Autostart updated" },
     restart_ok   = { ok = true,  text = "服务已重启并健康 Service restarted" },
     restart_fail = { ok = false, text = "重启失败或服务未应答（看日志 logread -e mibee-steward）Restart failed" },
+    passive_ok   = { ok = true,  text = "被动发现源已更新，服务已重启并健康 Passive discovery updated" },
+    passive_fail = { ok = false, text = "被动发现更新失败或服务未应答（看日志 logread -e mibee-steward）Passive discovery update failed" },
 }
 local flash = msgs[http.formvalue("msg")]
 %>
@@ -114,6 +121,46 @@ local flash = msgs[http.formvalue("msg")]
 	</div>
 
 	<div class="cbi-section">
+		<h3>被动发现 Passive discovery</h3>
+		<div class="cbi-section-node">
+			<form method="post" action="<%=apply_url%>">
+				<input type="hidden" name="act" value="passive" />
+				<input type="hidden" name="token" value="<%=token%>" />
+				<div class="cbi-value">
+					<label class="cbi-value-title">DHCP 租约 dhcp_leases</label>
+					<div class="cbi-value-field">
+						<input type="checkbox" name="dhcp" value="1" <%=dhcp == "1" and "checked" or ""%> />
+					</div>
+				</div>
+				<div class="cbi-value">
+					<label class="cbi-value-title">连接跟踪 conntrack</label>
+					<div class="cbi-value-field">
+						<input type="checkbox" name="conntrack" value="1" <%=conntrack == "1" and "checked" or ""%> />
+					</div>
+				</div>
+				<div class="cbi-value">
+					<label class="cbi-value-title">无线终端 hostapd</label>
+					<div class="cbi-value-field">
+						<input type="checkbox" name="hostapd" value="1" <%=hostapd == "1" and "checked" or ""%> />
+					</div>
+				</div>
+				<div class="cbi-value">
+					<label class="cbi-value-title">DNS 查询日志 dns_log</label>
+					<div class="cbi-value-field">
+						<input type="checkbox" name="dnslog" value="1" <%=dnslog == "1" and "checked" or ""%> />
+					</div>
+				</div>
+				<div class="cbi-value">
+					<div class="cbi-value-field">
+						<button type="submit" class="cbi-button cbi-button-apply">保存并重启 Save</button>
+					</div>
+				</div>
+				<div class="cbi-value-description" style="padding:0 0 .5em 0">
+					路由器本机的 Tier-1 被动信号：租约表（主机名↔MAC↔IP 权威映射）、连接跟踪（谁正在联网）、无线关联终端。保存后服务重启并做健康检查。DNS 日志需先启用 dnsmasq 查询日志：<code>uci set dhcp.@dnsmasq[0].logqueries=1 &amp;&amp; uci commit dhcp &amp;&amp; /etc/init.d/dnsmasq restart</code>
+				</div>
+			</form>
+		</div>
+
 		<h3>管理员密码 Admin password</h3>
 		<div class="cbi-section-node">
 			<form method="post" action="<%=apply_url%>">
