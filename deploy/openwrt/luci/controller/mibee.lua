@@ -43,10 +43,24 @@ local function session_token()
     return nil
 end
 
+-- helper_call runs luci-helper.sh and returns its exit code. Deliberately
+-- plain io.popen, NOT luci.sys.call: on the ucode-era LuCI (24.10's
+-- luci-lua-runtime bridge) sys.call() inside a bridged Lua controller kills
+-- the HTTP response — uhttpd answers 502 "Bad Gateway: the process did not
+-- produce any response" while the operation itself succeeds (field-found on
+-- iStoreOS 24.10.8). io.popen / os.execute are plain Lua C-API calls and
+-- provably survive the bridge (nixio.fs and luci.http.write do too).
+local function helper_call(args)
+    local fh = io.popen(HELPER .. " " .. args .. '; echo " rc=$?"')
+    if not fh then return -1 end
+    local out = fh:read("*a") or ""
+    fh:close()
+    return tonumber(out:match("rc=(-?%d+)%s*$")) or -1
+end
+
 function action_apply()
     local http = require "luci.http"
     local dispatcher = require "luci.dispatcher"
-    local sys = require "luci.sys"
 
     local expect = session_token()
     if expect and http.formvalue("token") ~= expect then
@@ -60,18 +74,18 @@ function action_apply()
     local msg = "noop"
 
     if act == "restart" then
-        local rc = sys.call(HELPER .. " restart")
+        local rc = helper_call("restart")
         msg = (rc == 0) and "restart_ok" or "restart_fail"
 
     elseif act == "enabled" then
         local val = (http.formvalue("enabled") == "1") and "1" or "0"
-        local rc = sys.call(string.format("%s set-enabled %s", HELPER, val))
+        local rc = helper_call(string.format("set-enabled %s", val))
         msg = (rc == 0) and "enabled_ok" or "enabled_fail"
 
     elseif act == "port" then
         local port = tonumber(http.formvalue("port") or "")
         if port and port == math.floor(port) and port >= 1 and port <= 65535 then
-            local rc = sys.call(string.format("%s set-port %d", HELPER, port))
+            local rc = helper_call(string.format("set-port %d", port))
             msg = (rc == 0) and "port_ok" or "port_fail"
         else
             msg = "port_invalid"
@@ -90,12 +104,22 @@ function action_apply()
             local fs = require "nixio.fs"
             local pwfile = string.format("/tmp/.mibee-pw.%d.%d", os.time(), math.random(100000, 999999))
             fs.writefile(pwfile, pw .. "\n")
-            sys.call("chmod 600 " .. pwfile)
-            local rc = sys.call(HELPER .. " set-password " .. pwfile)
+            os.execute("chmod 600 " .. pwfile)
+            local rc = helper_call("set-password " .. pwfile)
             fs.unlink(pwfile) -- belt and braces; the helper deletes it too
             msg = (rc == 0) and "pw_ok" or "pw_fail"
         end
     end
 
-    http.redirect(dispatcher.build_url("admin", "services", "mibee", "settings") .. "?msg=" .. msg)
+    -- Redirect via a meta-refresh page instead of http.redirect(): on the
+    -- ucode-era LuCI (24.10's luci-lua-runtime bridge) http.redirect()
+    -- produces NO output for bridged Lua controllers — uhttpd answers
+    -- "Bad Gateway: the process did not produce any response" while the
+    -- operation itself succeeds (field-found on iStoreOS 24.10.8). The
+    -- status/write pair provably works (the 403 branch above).
+    local target = dispatcher.build_url("admin", "services", "mibee", "settings") .. "?msg=" .. msg
+    http.status(200, "OK")
+    http.prepare_content("text/html")
+    http.write('<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=' .. target .. '">'
+        .. '</head><body>OK — <a href="' .. target .. '">continue</a></body></html>')
 end

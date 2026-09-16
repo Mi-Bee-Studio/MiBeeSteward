@@ -99,29 +99,100 @@ if ! "$SMOKE_BIN" -version >/dev/null 2>&1; then
     exit 1
 fi
 
+# gen_secret: random alnum using ONLY core busybox applets (head/tr/cut).
+# `base64` is NOT guaranteed on router busybox builds — iStoreOS 24.10 on the
+# FastRhino R68S ships without it (field-found: install died with
+# "base64: not found", the empty jwt_secret landed in config.yaml, and the
+# server refused to start). Filter 1KiB of urandom down to [A-Za-z0-9]
+# (~250 survivors) and cut 40; retry from 4KiB in the statistically absurd
+# short case. Echoes nothing if /dev/urandom is somehow unusable.
+gen_secret() {
+    _s="$(head -c 1024 /dev/urandom | tr -dc 'A-Za-z0-9' | cut -c1-40)"
+    [ "${#_s}" -ge 32 ] || _s="$(head -c 4096 /dev/urandom | tr -dc 'A-Za-z0-9' | cut -c1-40)"
+    [ "${#_s}" -ge 32 ] || _s=""
+    echo "$_s"
+}
+
+# mask_to_prefix 255.255.255.0 -> 24. Same busybox-portability story as
+# gen_secret: `ipcalc` is not guaranteed either (the same R68S build lacks
+# it), so the cidr derivation needs a pure-ash fallback. Contiguous masks
+# only; echoes nothing (and returns 1) on anything else.
+mask_to_prefix() {
+    _p=0 _zero=0 _rest="$1"
+    while [ -n "$_rest" ]; do
+        _o="${_rest%%.*}"
+        case "$_rest" in *.*) _rest="${_rest#*.}" ;; *) _rest="" ;; esac
+        case "$_o" in
+            255) [ "$_zero" = 0 ] || return 1; _p=$((_p+8)) ;;
+            254) [ "$_zero" = 0 ] || return 1; _p=$((_p+7)); _zero=1 ;;
+            252) [ "$_zero" = 0 ] || return 1; _p=$((_p+6)); _zero=1 ;;
+            248) [ "$_zero" = 0 ] || return 1; _p=$((_p+5)); _zero=1 ;;
+            240) [ "$_zero" = 0 ] || return 1; _p=$((_p+4)); _zero=1 ;;
+            224) [ "$_zero" = 0 ] || return 1; _p=$((_p+3)); _zero=1 ;;
+            192) [ "$_zero" = 0 ] || return 1; _p=$((_p+2)); _zero=1 ;;
+            128) [ "$_zero" = 0 ] || return 1; _p=$((_p+1)); _zero=1 ;;
+            0)   _zero=1 ;;
+            *)   return 1 ;;
+        esac
+    done
+    echo "$_p"
+}
+
+# ip_mask_base 192.168.62.1 255.255.255.0 -> 192.168.62.0 (per-octet AND).
+ip_mask_base() {
+    _ip="$1" _mask="$2" _out=""
+    while [ -n "$_ip" ]; do
+        _io="${_ip%%.*}"; case "$_ip" in *.*) _ip="${_ip#*.}" ;; *) _ip="" ;; esac
+        _mo="${_mask%%.*}"; case "$_mask" in *.*) _mask="${_mask#*.}" ;; *) _mask="" ;; esac
+        _b=$(( _io & _mo ))
+        _out="${_out}${_out:+.}$_b"
+    done
+    echo "$_out"
+}
+
 # ─── 1. config (first install generates; upgrades keep) ────────────────────
 if [ -f "$CONF_DST" ]; then
     echo "-- config $CONF_DST exists — keeping it (upgrade install)"
+    # Self-heal: installs produced before the gen_secret fix (busybox builds
+    # without `base64`) carry an EMPTY jwt_secret, and the server refuses to
+    # start until it is fixed — the "keep existing config" rule would preserve
+    # a config that can never boot. Regenerate the secret instead.
+    if grep -qE '^[[:space:]]*jwt_secret:[[:space:]]*""' "$CONF_DST" 2>/dev/null; then
+        _fix_secret="$(gen_secret)"
+        if [ -n "$_fix_secret" ]; then
+            sed -i "s|^\([[:space:]]*jwt_secret:\).*|\1 \"$_fix_secret\"|" "$CONF_DST"
+            echo "-- repaired empty jwt_secret in existing config (regenerated)"
+        fi
+    fi
 else
     # LAN cidr from uci (static lan is the norm on OpenWrt/iStoreOS).
     NET_NAME="lan"
     NET_CIDR=""
     LAN_IP="$(uci -q get network.lan.ipaddr || true)"
     LAN_MASK="$(uci -q get network.lan.netmask || true)"
-    if [ -n "$LAN_IP" ] && [ -n "$LAN_MASK" ] && command -v ipcalc >/dev/null 2>&1; then
-        # busybox ipcalc -pn prints NET=<base> and PREFIX=<n>
-        eval "$(ipcalc -pn "$LAN_IP" "$LAN_MASK" 2>/dev/null || true)"
-        if [ -n "${NET:-}" ] && [ -n "${PREFIX:-}" ]; then
-            NET_CIDR="$NET/$PREFIX"
-            OCT3="$(echo "$NET" | cut -d. -f3)"
+    NET_BASE="" NET_PREFIX=""
+    if [ -n "$LAN_IP" ] && [ -n "$LAN_MASK" ]; then
+        if command -v ipcalc >/dev/null 2>&1; then
+            # busybox ipcalc -pn prints NET=<base> and PREFIX=<n>
+            eval "$(ipcalc -pn "$LAN_IP" "$LAN_MASK" 2>/dev/null || true)"
+            NET_BASE="${NET:-}"
+            NET_PREFIX="${PREFIX:-}"
+        fi
+        if [ -z "$NET_BASE" ] || [ -z "$NET_PREFIX" ]; then
+            # ipcalc not present (see mask_to_prefix) — pure-ash fallback.
+            NET_PREFIX="$(mask_to_prefix "$LAN_MASK" || true)"
+            NET_BASE="$(ip_mask_base "$LAN_IP" "$LAN_MASK")"
+        fi
+        if [ -n "$NET_BASE" ] && [ -n "$NET_PREFIX" ] && [ "$NET_PREFIX" -gt 0 ] 2>/dev/null; then
+            NET_CIDR="$NET_BASE/$NET_PREFIX"
+            OCT3="$(echo "$NET_BASE" | cut -d. -f3)"
             [ -n "$OCT3" ] && NET_NAME="lan-$OCT3"   # project convention: lan-<3rd octet>
         fi
     fi
     [ -n "$NET_CIDR" ] || echo "-- WARN: could not derive LAN cidr from uci — edit network.cidr in $CONF_DST"
 
-    # Random alnum strings (base64 of 48B is exactly one 64-char line; strip
-    # +/= then cut). jwt_secret must be >=32 chars.
-    JWT_SECRET="$(head -c 48 /dev/urandom | base64 | tr -d '+/=' | cut -c1-40)"
+    JWT_SECRET="$(gen_secret)"
+    [ -n "$JWT_SECRET" ] || { echo "ERROR: cannot generate jwt_secret (/dev/urandom unusable?)"; exit 1; }
 
     # The admin password is deliberately NOT set here: an EMPTY
     # initial_admin_password seeds the admin with no password, and the web UI's
@@ -148,9 +219,10 @@ else
     if [ ! -s "$CONF_DST" ] \
         || ! grep -q '^[[:space:]]*initial_admin_password: ""' "$CONF_DST" \
         || ! grep -q '^[[:space:]]*cookie_secure: false' "$CONF_DST" \
+        || ! grep -qE '^[[:space:]]*jwt_secret: "[A-Za-z0-9]{32,}"' "$CONF_DST" \
         || grep -q 'change-me-in-production' "$CONF_DST"; then
         echo "ERROR: generated $CONF_DST failed its sanity check — sed pipeline broken?"
-        echo "       (empty file / missing auth keys / unreplaced placeholder)"
+        echo "       (empty file / missing auth keys / short jwt_secret / unreplaced placeholder)"
         rm -f "$CONF_DST"
         exit 1
     fi
@@ -186,11 +258,22 @@ fi
 echo "-- service installed + started (boot-enabled)"
 
 # ─── 4. verify + summary ───────────────────────────────────────────────────
-sleep 2
-LAN_IP="$(uci -q get network.lan.ipaddr || true)"
-[ -n "$LAN_IP" ] || LAN_IP="<router-ip>"
+# A single probe after `sleep 2` false-negatives on slower boards (R68S:
+# service healthy at t+4s, install warned "health check failed"). First boot
+# after a cold start — and migrations on an existing DB — can outrun one
+# shot; retry for up to ~12s instead.
+HEALTH_OK=0
 if command -v curl >/dev/null 2>&1; then
-    if curl -sf "http://127.0.0.1:$PORT/api/v1/health" >/dev/null 2>&1; then
+    _i=0
+    while [ "$_i" -lt 12 ]; do
+        if curl -sf "http://127.0.0.1:$PORT/api/v1/health" >/dev/null 2>&1; then
+            HEALTH_OK=1
+            break
+        fi
+        _i=$((_i+1))
+        sleep 1
+    done
+    if [ "$HEALTH_OK" = 1 ]; then
         echo "-- health check OK (http://127.0.0.1:$PORT/api/v1/health)"
     else
         echo "-- WARN: health check failed — check logs: logread -e $SERVICE | tail -30"
@@ -199,6 +282,8 @@ else
     echo "-- (curl not installed; verify manually: http://127.0.0.1:$PORT/api/v1/health)"
 fi
 
+LAN_IP="$(uci -q get network.lan.ipaddr || true)"
+[ -n "$LAN_IP" ] || LAN_IP="<router-ip>"
 echo ""
 echo "================ MiBee Steward installed ================"
 echo "  Web UI:      http://$LAN_IP:$PORT   (from any LAN machine's browser)"

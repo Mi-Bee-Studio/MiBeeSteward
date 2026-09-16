@@ -12,7 +12,9 @@ from `luci-helper.sh status` (KEY=VALUE lines).
 local sys = require "luci.sys"
 local out = sys.exec("/usr/lib/mibee/luci-helper.sh status 2>/dev/null") or ""
 local info = {}
-for k, v in out:gmatch("(%w+)=(%S*)") do info[k] = v end
+-- NB: %w in Lua does NOT include "_" (unlike PCRE \w) — keys like lan_ip and
+-- db_bytes need the explicit [%w_] class or they parse as "ip"/"bytes".
+for k, v in out:gmatch("([%w_]+)=(%S*)") do info[k] = v end
 
 local function fmt_bytes(n)
     n = tonumber(n) or 0
