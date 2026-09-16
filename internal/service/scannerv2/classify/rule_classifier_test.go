@@ -721,6 +721,7 @@ func TestRuleClassifier_MijiaHostname(t *testing.T) {
 	}{
 		{"viomi-waterheater-e13_miap5E55", "Viomi", "water heater", "Xiaomi Mijia"},
 		{"viomi-hood-c13_miap5788", "Viomi", "range hood", "Xiaomi Mijia"},
+		{"viomi-dishwasher-m01_miapF20A", "Viomi", "dishwasher", "Xiaomi Mijia"},
 		{"xiaomi-aircondition-c16_mibt2431", "Xiaomi", "air conditioner", "Xiaomi Mijia"},
 		{"yeelink-light-lamp22_mibt63AA", "Yeelight", "light", "Xiaomi Mijia"},
 		{"chuangmi_camera_039a01", "Chuangmi", "IP camera", "Xiaomi Mijia"},

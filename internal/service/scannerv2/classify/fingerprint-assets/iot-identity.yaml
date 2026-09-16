@@ -52,9 +52,12 @@ rules:
               - { contains: waterheater, set: "water heater" }
               - { contains: hood, set: "range hood" }
               - { contains: fridge, set: refrigerator }
+              # dishwasher MUST precede washer: "viomi-dishwasher-m01"
+              # contains the substring "washer" and would mis-type as a
+              # washing machine (field-found on R68S, #377 verification).
+              - { contains: dishwasher, set: dishwasher }
               - { contains: washer, set: washing machine }
               - { contains: dryer, set: dryer }
-              - { contains: dish, set: dishwasher }
               - { contains: stove, set: stove }
               - { contains: oven, set: oven }
 
