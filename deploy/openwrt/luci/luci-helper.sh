@@ -57,11 +57,13 @@ cmd_status() {
     if "$INIT" status >/dev/null 2>&1; then _svc="running"; fi
     _enabled=0
     if [ -x "$INIT" ] && grep -q '^START=' "$INIT" 2>/dev/null; then
-        # procd "enabled" = symlink in /etc/rc.d; that check survives theme/locale
-        [ -e "/etc/rc.d/$(basename "$INIT")" ] && _enabled=1
+        # procd "enabled" = S<START>prio-prefixed symlink in /etc/rc.d (e.g.
+        # S95mibee-steward) — the bare name never exists.
+        ls /etc/rc.d/S*"$(basename "$INIT")" >/dev/null 2>&1 && _enabled=1
     fi
     _port="$(read_port || echo '')"
-    _ver="$("$BIN" -version 2>/dev/null || echo unknown)"
+    # `-version` prints "mibee-steward <ver>"; the page wants just <ver>.
+    _ver="$("$BIN" -version 2>/dev/null | awk '{print $NF}' || echo unknown)"
     _health="n/a"
     [ -n "$_port" ] && { wait_health "$_port" >/dev/null 2>&1 && _health="ok" || _health="fail"; }
     _db_bytes=0

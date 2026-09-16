@@ -86,16 +86,27 @@ openwrt-stage: build-frontend sync-device-types sync-oui-curated
 	@mkdir -p $(BUILD_DIR)/openwrt-stage/usr/bin $(BUILD_DIR)/openwrt-stage/etc/init.d $(BUILD_DIR)/openwrt-stage/etc/mibee $(BUILD_DIR)/openwrt-stage/usr/lib/mibee \
 	        $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/controller $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee
 	GOOS=linux GOARCH=$(GOARCH) CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/openwrt-stage/usr/bin/mibee-steward ./cmd/server/
-	tr -d '' < deploy/openwrt/mibee-steward.init > $(BUILD_DIR)/openwrt-stage/etc/init.d/mibee-steward
-	tr -d '' < configs/config.example.yaml     > $(BUILD_DIR)/openwrt-stage/etc/mibee/config.example.yaml
-	tr -d '' < deploy/openwrt/install.sh       > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/install.sh
-	tr -d '' < deploy/openwrt/luci/luci-helper.sh > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-helper.sh
+	tr -d '\r' < deploy/openwrt/mibee-steward.init > $(BUILD_DIR)/openwrt-stage/etc/init.d/mibee-steward
+	tr -d '\r' < configs/config.example.yaml     > $(BUILD_DIR)/openwrt-stage/etc/mibee/config.example.yaml
+	tr -d '\r' < deploy/openwrt/install.sh       > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/install.sh
+	tr -d '\r' < deploy/openwrt/luci/luci-helper.sh > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-helper.sh
 # LuCI integration (inert files on builds without LuCI — no hard Depends):
 # classic Lua controller + plain templates; no luci-compat/CBI dependency.
-	tr -d '' < deploy/openwrt/luci/controller/mibee.lua > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/controller/mibee.lua
-	tr -d '' < deploy/openwrt/luci/view/mibee/status.htm   > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee/status.htm
-	tr -d '' < deploy/openwrt/luci/view/mibee/settings.htm > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee/settings.htm
+	tr -d '\r' < deploy/openwrt/luci/controller/mibee.lua > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/controller/mibee.lua
+	tr -d '\r' < deploy/openwrt/luci/view/mibee/status.htm   > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee/status.htm
+	tr -d '\r' < deploy/openwrt/luci/view/mibee/settings.htm > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee/settings.htm
 	chmod 755 $(BUILD_DIR)/openwrt-stage/etc/init.d/mibee-steward $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/install.sh $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-helper.sh
+# Guard: none of the staged router files may carry a CR byte. busybox ash
+# happens to tolerate CRLF scripts and Go's YAML reader tolerates CRLF
+# configs, but LuCI's template parser does NOT (a raw \r inside a write("...")
+# literal = "unfinished string" — field-found on iStoreOS 24.10 / R68S when
+# a Makefile edit silently corrupted the tr -d patterns above). usr/bin is
+# excluded: the ELF binary legitimately contains \r bytes.
+	@if grep -rlq $$(printf '\r') $(BUILD_DIR)/openwrt-stage/etc $(BUILD_DIR)/openwrt-stage/usr/lib; then \
+		echo "ERROR: CR bytes found in staged router files (a tr -d step above is broken?):"; \
+		grep -rl $$(printf '\r') $(BUILD_DIR)/openwrt-stage/etc $(BUILD_DIR)/openwrt-stage/usr/lib; \
+		exit 1; \
+	fi
 
 # Hand-rolled .ipk for opkg (OpenWrt 22.03/23.05-based iStoreOS and older):
 # install/upgrade/remove via opkg with lifecycle scripts (preinst arch gate,
