@@ -66,6 +66,12 @@ func rolePasses(role string, lvl accessLevel) bool {
 func TestRoutes_CapabilityBoundary(t *testing.T) {
 	cfg := newTestConfig()
 	db := newTestDB(t)
+	// tokenForRole mints user_id=1 tokens; the session-epoch check (#357)
+	// rejects tokens for user rows that don't exist, so seed the principal.
+	if _, err := db.Exec(`INSERT INTO users (id, username, email, password_hash, role)
+		VALUES (1, 'testadmin', 'testadmin@example.com', 'x', 'admin')`); err != nil {
+		t.Fatalf("seed principal: %v", err)
+	}
 	handler, heartbeatSvc, shutdown := NewRouter(db, cfg)
 	require.NotNil(t, handler)
 	t.Cleanup(func() {
@@ -156,6 +162,12 @@ func TestRoutes_CapabilityBoundary(t *testing.T) {
 func TestRoutes_SelfServiceRoutesAreRequireAuth(t *testing.T) {
 	cfg := newTestConfig()
 	db := newTestDB(t)
+	// tokenForRole mints user_id=1 tokens; the session-epoch check (#357)
+	// rejects tokens for user rows that don't exist, so seed the principal.
+	if _, err := db.Exec(`INSERT INTO users (id, username, email, password_hash, role)
+		VALUES (1, 'testadmin', 'testadmin@example.com', 'x', 'admin')`); err != nil {
+		t.Fatalf("seed principal: %v", err)
+	}
 	handler, heartbeatSvc, shutdown := NewRouter(db, cfg)
 	require.NotNil(t, handler)
 	t.Cleanup(func() {

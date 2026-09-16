@@ -519,6 +519,7 @@ type User struct {
 	LockedUntil         *time.Time `json:"locked_until"`
 	PasswordChangedAt   *time.Time `json:"password_changed_at"`
 	MustChangePassword  bool       `json:"must_change_password"`
+	TokenVersion        int64      `json:"token_version"`
 }
 
 type UserNetworkGrant struct {

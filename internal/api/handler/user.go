@@ -486,7 +486,7 @@ func (h *UserHandler) ForceChangePassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	token, err := h.svc.GenerateTokenForUser(userID, role, false)
+	token, err := h.svc.GenerateTokenForUser(r.Context(), userID, role, false)
 	if err != nil {
 		// Password DID change — the login is recoverable by re-login; don't
 		// report a 500 that implies otherwise. Tell the client to re-login.

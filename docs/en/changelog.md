@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-vantage probing data model (#328, step 1 of #277)**: `probe_targets.vantage` execution plans + per-vantage result tracks.
 - Website content: feature overview / playbooks / comparison articles, zh+en (#320).
 
+### Security
+
+- **Password changes now revoke every outstanding session (#357)**: users gain a `token_version` epoch column; every minted JWT records it as the `tv` claim and the Authenticator rejects any token whose claim lags the current value — a self-service change, an admin reset, a forced first-login change or a CLI `reset-admin-password` each bump the epoch, so potentially-leaked tokens stop working on their next request instead of living out the 24h expiry (field-observed: after a LuCI password reset the old browser session kept full API access). Deleted users' tokens die with the row; the epoch is persisted, so unlike the in-memory JTI blacklist a restart no longer resurrects revoked sessions. The per-request cost is one primary-key lookup.
+### Fixed
+
 ### Fixed- **`go test ./internal/service/scannerv2/probe` no longer dials the real network (#364)**: the timeout-semantics test dialed a TEST-NET address expecting silence — on dev machines behind TUN proxies (Clash Verge etc.) the proxy fake-answers SYN packets to unroutable targets, turning "timeout" into a phantom "open" and failing the suite locally (CI unaffected). The TCP dial behind the port probe is now an injectable function; the test stubs deadline-exceeded semantics and additionally pins the exact one-retry contract.
 
 
