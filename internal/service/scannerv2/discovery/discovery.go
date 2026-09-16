@@ -117,10 +117,20 @@ type Service struct {
 	// recent is a short memory window keyed by IP: hosts seen by the coordinator
 	// within dedupTTL are not reprocessed even if another source reports them
 	// again in the same burst. This is independent of the DB pre-check: the DB
-	// check answers "is the host new to the system?", this answers "have I
+	// check answers "is this host new to the system?", this answers "have I
 	// already handled this IP in the last few minutes?".
 	recent   map[string]time.Time
 	recentMu sync.Mutex
+
+	// obs is the passive-observation cache keyed by IP: the latest overheard
+	// facts about a host (lease hostname, mDNS service announcements, SSDP
+	// self-identifications) that scans pull as SEED EVIDENCE into the
+	// fingerprint classifiers (#377 — on real networks the passive channel is
+	// often the ONLY source of these signals; active mDNS queries frequently
+	// go unanswered). Sources call Observe; the engine's seed hook (wired in
+	// routes.go) reads it via EvidenceFor.
+	obs   map[string][]scannerv2.Evidence
+	obsMu sync.Mutex
 
 	// Observable runtime counters (atomic — read by the status endpoint from a
 	// different goroutine than the consumer loop that writes them). These make
@@ -179,7 +189,57 @@ func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID 
 		logger: logger,
 		events: make(chan NewHostEvent, 256),
 		recent: make(map[string]time.Time),
+		obs:    make(map[string][]scannerv2.Evidence),
 	}
+}
+
+// maxObservedIPs bounds the observation cache. A LAN-scale deployment sees
+// hundreds of IPs; 4096 leaves generous headroom while keeping the map tiny.
+const maxObservedIPs = 4096
+
+// maxObsPerIP bounds how many observations are retained per IP — the latest
+// few announcements are plenty for seeding; older ones only add noise.
+const maxObsPerIP = 4
+
+// Observe records the latest passive observations for an IP (called by the
+// discovery sources — lease hostnames, mDNS/SSDP listeners). Observations are
+// DATA, not new-host signals: they don't trigger the event pipeline, they wait
+// to be pulled as seed evidence by the next scan of that IP.
+func (s *Service) Observe(ip string, evs ...scannerv2.Evidence) {
+	if ip == "" || len(evs) == 0 {
+		return
+	}
+	s.obsMu.Lock()
+	defer s.obsMu.Unlock()
+	if len(s.obs) >= maxObservedIPs {
+		if _, known := s.obs[ip]; !known {
+			// Over cap with an unseen IP: drop a stale entry (map iteration
+			// order is arbitrary — fine for cache semantics).
+			for k := range s.obs {
+				delete(s.obs, k)
+				break
+			}
+		}
+	}
+	merged := append(s.obs[ip], evs...)
+	if excess := len(merged) - maxObsPerIP; excess > 0 {
+		merged = merged[excess:]
+	}
+	s.obs[ip] = merged
+}
+
+// EvidenceFor returns the cached passive observations for an IP (latest
+// first within each burst, oldest dropped at the cap). The engine's seed hook
+// calls this at scan time; an empty slice means "nothing overheard".
+func (s *Service) EvidenceFor(ip string) []scannerv2.Evidence {
+	s.obsMu.Lock()
+	defer s.obsMu.Unlock()
+	if len(s.obs[ip]) == 0 {
+		return nil
+	}
+	out := make([]scannerv2.Evidence, len(s.obs[ip]))
+	copy(out, s.obs[ip])
+	return out
 }
 
 // Start launches the coordinator's consumer goroutine. It is the caller's

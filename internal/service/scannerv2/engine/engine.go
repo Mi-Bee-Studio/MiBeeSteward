@@ -108,6 +108,13 @@ type Config struct {
 	MaxConcurrentScans int
 	// PersistRawEvidence toggles writing raw evidence rows (default off).
 	PersistRawEvidence bool
+	// SeedEvidence, when set, supplies passive-discovery observations for a
+	// target IP (lease hostnames, overheard mDNS/SSDP announcements). The
+	// orchestrator prepends them to each host's gather output so the passive
+	// channel's data reaches the fingerprint classifiers (#377). routes.go
+	// wires this to the discovery service's observation cache; nil (default,
+	// unit tests) disables seeding.
+	SeedEvidence func(ip string) []scannerv2.Evidence
 	// OUIPath is the path to the IEEE OUI vendor-mapping file (optional). When
 	// empty or missing, the ARP probe still records MAC addresses but skips the
 	// vendor lookup. The path is overridable via MIBEE_SCANNER_OUI_PATH.
@@ -253,6 +260,12 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 		MaxConcurrentHosts: cfg.MaxConcurrentHosts,
 		PerHostTimeout:     cfg.PerHostTimeout,
 	}, logger)
+	// Passive-discovery seed evidence (#377): observations overheard by the
+	// discovery sources (lease hostnames, mDNS/SSDP announcements) join each
+	// host's gather output ahead of classification.
+	if cfg.SeedEvidence != nil {
+		orch.SetSeedEvidence(cfg.SeedEvidence)
+	}
 	// Inject the post-scan MAC resolver so cold scans still capture MAC after the
 	// ICMP/TCP probes have populated the kernel ARP cache. The engine (not the
 	// scannerv2 root package) wires this to avoid an import cycle. The closure

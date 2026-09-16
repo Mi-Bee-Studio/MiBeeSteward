@@ -36,6 +36,7 @@ import (
 	"mibee-steward/internal/service/demoseed"
 	"mibee-steward/internal/service/notification"
 	probetarget "mibee-steward/internal/service/probetarget"
+	scannerv2 "mibee-steward/internal/service/scannerv2"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
 	scannerv2configbackup "mibee-steward/internal/service/scannerv2/configbackup"
 	credresolver "mibee-steward/internal/service/scannerv2/credresolver"
@@ -340,6 +341,19 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// working). The handler layer also gets these for the credential CRUD API.
 	credCipher, credResolver := buildCredentialCipher(dbConn, cfg)
 
+	// Passive-discovery seed evidence (#377): the discovery service (created
+	// below — the engine is also its identify target, hence the late binding)
+	// caches overheard hostnames/mDNS/SSDP announcements; every scan pulls
+	// them as seed evidence ahead of classification, so the fingerprint rules
+	// see the passive channel even when active queries go unanswered.
+	var discSvcRef *scannerv2discovery.Service
+	seedFromPassive := func(ip string) []scannerv2.Evidence {
+		if discSvcRef == nil {
+			return nil
+		}
+		return discSvcRef.EvidenceFor(ip)
+	}
+
 	v2Engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
 		PortSpec:             scannerPortSpec,
 		MaxConcurrentHosts:   cfg.Scanner.MaxConcurrentHosts,
@@ -348,6 +362,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		PerHostTimeout:       time.Duration(cfg.Scanner.DefaultTimeout) * time.Second,
 		PerProbeTimeout:      time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
 		PersistRawEvidence:   cfg.Scanner.PersistRawEvidence,
+		SeedEvidence:         seedFromPassive,
 		OUIPath:              cfg.Scanner.OUIPath,
 		FingerprintPath:      cfg.Scanner.FingerprintPath,
 		SNMPCommunity:        cfg.Scanner.SNMPCommunity,
@@ -436,6 +451,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		scannerv2discovery.IdentifierAdapter(v2Engine),
 		dbConn, networkID, slog.Default(),
 	)
+	// Late-bind the seed-evidence closure (#377): the engine was constructed
+	// before the discovery service exists (the service needs the engine as its
+	// identify target), so the closure captured a placeholder pointer.
+	discSvcRef = discSvc
 	var discCancel context.CancelFunc
 	// discSvcForStatus carries the discovery service to the status endpoint.
 	// nil when the service was never started (discovery disabled) — the handler

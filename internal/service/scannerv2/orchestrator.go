@@ -82,6 +82,12 @@ type Orchestrator struct {
 	// immutable after construction.
 	cfgMu  sync.RWMutex
 	logger *slog.Logger
+	// seedEvidence, when set, supplies passive-discovery observations for the
+	// target IP (lease hostnames, overheard mDNS/SSDP announcements) that are
+	// PREPENDED to the gather output — the passive channel's data then reaches
+	// the fingerprint classifiers exactly like probe evidence (#377). nil
+	// (default and unit tests) disables seeding.
+	seedEvidence func(ip string) []Evidence
 	// macResolver re-reads the kernel ARP cache after gather, closing the race
 	// where the concurrent ARPProbe runs before ICMP has populated the cache.
 	// Returns (mac, device, vendor, ouiPrefix) — vendor + ouiPrefix come from
@@ -95,6 +101,14 @@ type Orchestrator struct {
 	// enrich on the neighbor device, or nil if no inference can be made. nil
 	// (default) disables enrichment.
 	neighborIdentityInfer func(localMAC, neighborMAC, sysName, sysDesc, platform string) map[string]string
+}
+
+// SetSeedEvidence injects the passive-discovery observation lookup (the engine
+// wires this to the discovery service's cache). Evidence returned here is
+// prepended to each host's gather output before classification. Safe to call
+// once at engine construction time; nil disables.
+func (o *Orchestrator) SetSeedEvidence(f func(ip string) []Evidence) {
+	o.seedEvidence = f
 }
 
 // SetMACResolver injects a post-scan MAC resolver (see ResolveMACPostScan in
@@ -156,8 +170,15 @@ func (o *Orchestrator) SetTimeouts(perHost time.Duration, concurrentHosts int) {
 func (o *Orchestrator) Run(ctx context.Context, ip string, hint ProbeHint) HostReport {
 	report := HostReport{IP: ip, Collected: make(map[string]CollectedData)}
 
-	// ① gather: run every probe in parallel.
+	// ① gather: run every probe in parallel, prepending any passive-discovery
+	// seed evidence for this IP (lease hostnames / mDNS / SSDP announcements —
+	// #377: the passive channel's data must reach the classifiers too).
 	evidence := o.gather(ctx, ip, hint)
+	if o.seedEvidence != nil {
+		if seeds := o.seedEvidence(ip); len(seeds) > 0 {
+			evidence = append(seeds, evidence...)
+		}
+	}
 	report.Evidence = evidence
 	// Liveness heuristic: a host with at least one non-icmp evidence OR an
 	// explicit port_open evidence is alive. (ICMP liveness is set by the icmp
