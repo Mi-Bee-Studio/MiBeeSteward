@@ -1,9 +1,12 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/ebpf"
 )
 
@@ -144,5 +147,64 @@ func TestParseScanTargets_ExcludesReservedBounds(t *testing.T) {
 	}
 	if len(got) != 4 {
 		t.Fatalf("v6 /126 = %d ips, want 4 (no reserved-bounds exclusion for IPv6)", len(got))
+	}
+}
+
+// TestEngine_SeedEvidenceYieldsMiotIdentity pins the #377 end-to-end engine
+// path: a seeded lease-hostname observation (the ONLY identity channel for
+// Mijia devices on real networks) must flow through gather→classify→dispatch
+// and land the miot identity + brand on the report — with the embedded
+// fingerprint rules, no DB, and a target the active probes can't reach.
+func TestEngine_SeedEvidenceYieldsMiotIdentity(t *testing.T) {
+	e, err := NewEngine(nil, Config{
+		PortSpec:             "",
+		MaxConcurrentHosts:   2,
+		PerHostTimeout:       3 * time.Second,
+		PerProbeTimeout:      300 * time.Millisecond,
+		AllowReservedTargets: true,
+		SeedEvidence: func(ip string) []scannerv2.Evidence {
+			if ip != "192.0.2.50" {
+				return nil
+			}
+			return []scannerv2.Evidence{{
+				Source:     "discovery:dhcp_leases",
+				Kind:       "hostname",
+				IP:         ip,
+				Protocol:   "dhcp",
+				RawData:    map[string]string{"hostname": "viomi-waterheater-e13_miap5E55"},
+				Confidence: 0.8,
+				ObservedAt: time.Now(),
+			}}
+		},
+		EBPF: ebpf.Config{Enabled: false},
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	reports, err := e.ScanTargets(context.Background(), "192.0.2.50", false, 0)
+	if err != nil {
+		t.Fatalf("ScanTargets: %v", err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("want 1 report, got %d", len(reports))
+	}
+	rep := reports[0]
+	if !rep.Alive {
+		t.Fatal("seed evidence must count toward liveness")
+	}
+	var miot *scannerv2.ServiceIdentity
+	for i := range rep.Services {
+		if rep.Services[i].Service == "miot" {
+			miot = &rep.Services[i]
+		}
+	}
+	if miot == nil {
+		t.Fatalf("miot identity missing from %+v", rep.Services)
+	}
+	if miot.Metadata["inferred_brand"] != "Viomi" || miot.Metadata["appliance"] != "water heater" {
+		t.Errorf("miot metadata = %v", miot.Metadata)
+	}
+	if rep.Device.Fields["inferred_brand"] != "Viomi" {
+		t.Errorf("MiotHandler must fold the brand into device fields, got %+v", rep.Device.Fields)
 	}
 }

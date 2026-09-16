@@ -218,17 +218,28 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 		if err := rc.LoadFromDir(cfg.FingerprintPath); err != nil {
 			logger.Error("scannerv2: fingerprint dir load failed; falling back to embedded rules",
 				"path", cfg.FingerprintPath, "error", err)
-			_ = rc.LoadEmbeddedDefaults()
+			if err := classify.LoadEmbeddedRules(rc); err != nil {
+				logger.Warn("scannerv2: embedded fingerprint load failed; data-driven rules disabled",
+					"error", err)
+			}
 		} else if rc.Loaded() {
 			logger.Info("scannerv2: fingerprints loaded from dir",
 				"path", cfg.FingerprintPath, "rules", rc.RuleCount())
 		} else {
 			logger.Info("scannerv2: fingerprint dir empty; falling back to embedded rules",
 				"path", cfg.FingerprintPath)
-			_ = rc.LoadEmbeddedDefaults()
+			if err := classify.LoadEmbeddedRules(rc); err != nil {
+				logger.Warn("scannerv2: embedded fingerprint load failed; data-driven rules disabled",
+					"error", err)
+			}
 		}
 	} else {
-		if err := rc.LoadEmbeddedDefaults(); err != nil {
+		// Zero-config fallback: the corpus embedded in the classify package —
+		// the synced SUPERSET of the fingerprint library's own rules (adds
+		// iot-identity.yaml #361 and mdns-ssdp.yaml #365, which the external
+		// library doesn't ship). Loading the library's defaults instead
+		// silently drops those corpora on every default deployment (#377).
+		if err := classify.LoadEmbeddedRules(rc); err != nil {
 			logger.Warn("scannerv2: embedded fingerprint load failed; data-driven rules disabled",
 				"error", err)
 		}
