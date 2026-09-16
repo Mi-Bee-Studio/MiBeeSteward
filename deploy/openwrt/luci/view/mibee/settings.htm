@@ -45,7 +45,7 @@ local msgs = {
     port_fail    = { ok = false, text = "端口修改失败：服务未在新端口应答（看日志 logread -e mibee-steward）Port change failed" },
     port_invalid = { ok = false, text = "端口无效：需为 1-65535，且 80/443 被 LuCI 占用 Invalid port (80/443 belong to LuCI)" },
     pw_ok        = { ok = true,  text = "admin 密码已更新 Admin password updated" },
-    pw_fail      = { ok = false, text = "密码修改失败：可能不符合密码策略（至少 8 位，含大写、小写、数字）Password rejected (policy: min 8 + upper + lower + digit)" },
+    pw_fail      = { ok = false, text = "密码修改失败：可能不符合密码策略（以管理界面 设置 → 安全 中的配置为准）Password rejected — see the policy in Settings → Security" },
     pw_mismatch  = { ok = false, text = "两次输入的密码不一致 Passwords do not match" },
     pw_empty     = { ok = false, text = "密码不能为空 Password cannot be empty" },
     enabled_ok   = { ok = true,  text = "开机自启已更新 Autostart updated" },
@@ -133,7 +133,7 @@ local flash = msgs[http.formvalue("msg")]
 					</div>
 				</div>
 				<div class="cbi-value-description" style="padding:0 0 .5em 0">
-					密码策略：至少 8 位，包含大写字母、小写字母和数字。更新后立即生效，用于 MiBee 管理界面（admin 账号）。
+					密码策略以 MiBee 管理界面（设置 → 安全）中的配置为准，本页不重复描述。更新后立即生效，用于 MiBee 管理界面（admin 账号）。
 				</div>
 			</form>
 		</div>
