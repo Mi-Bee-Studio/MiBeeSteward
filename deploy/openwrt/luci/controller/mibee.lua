@@ -13,6 +13,7 @@
 module("luci.controller.mibee", package.seeall)
 
 local HELPER = "/usr/lib/mibee/luci-helper.sh"
+local APPLY = "/usr/lib/mibee/luci-apply.sh"
 
 function index()
     -- Hide the whole tree when the binary isn't installed (e.g. ipk removed
@@ -43,19 +44,29 @@ local function session_token()
     return nil
 end
 
--- helper_call runs luci-helper.sh and returns its exit code. Deliberately
--- plain io.popen, NOT luci.sys.call: on the ucode-era LuCI (24.10's
--- luci-lua-runtime bridge) sys.call() inside a bridged Lua controller kills
--- the HTTP response — uhttpd answers 502 "Bad Gateway: the process did not
--- produce any response" while the operation itself succeeds (field-found on
--- iStoreOS 24.10.8). io.popen / os.execute are plain Lua C-API calls and
--- provably survive the bridge (nixio.fs and luci.http.write do too).
+-- helper_call runs luci-helper.sh and returns its exit code. Two bridge
+-- landmines shape this implementation (both field-found on iStoreOS 24.10.8 /
+-- R68S, LuCI 24.10's luci-lua-runtime ucode bridge):
+--   * luci.sys.call() inside a bridged controller kills the HTTP response —
+--     uhttpd answers 502 while the operation itself succeeds.
+--   * The bridge's exec family does NOT POSIX-split command strings: the
+--     helper received the ENTIRE command line as ONE argument and fell into
+--     its usage fallback (a plain `lua -e` outside the bridge splits fine).
+-- So the handover goes through files and a single-word invocation, which no
+-- exec API can mangle: the validated argument line is written to a cmd file,
+-- /usr/lib/mibee/luci-apply.sh (one word) re-splits and runs the helper, and
+-- the exit code comes back via an rc file.
 local function helper_call(args)
-    local fh = io.popen(HELPER .. " " .. args .. '; echo " rc=$?"')
-    if not fh then return -1 end
-    local out = fh:read("*a") or ""
-    fh:close()
-    return tonumber(out:match("rc=(-?%d+)%s*$")) or -1
+    local fs = require "nixio.fs"
+    fs.writefile("/tmp/mibee-apply.cmd", args .. "\n")
+    local fh = io.popen(APPLY)
+    if fh then
+        fh:read("*a")
+        fh:close()
+    end
+    local rc = tonumber((fs.readfile("/tmp/mibee-apply.rc") or ""):match("^%s*(-?%d+)")) or -1
+    fs.unlink("/tmp/mibee-apply.rc")
+    return rc
 end
 
 function action_apply()
@@ -97,8 +108,8 @@ function action_apply()
         local function flag(name)
             return (http.formvalue(name) == "1") and "1" or "0"
         end
-        local rc = helper_call(string.format("%s set-passive %s %s %s %s",
-            HELPER, flag("dhcp"), flag("conntrack"), flag("hostapd"), flag("dnslog")))
+        local rc = helper_call(string.format("set-passive %s %s %s %s",
+            flag("dhcp"), flag("conntrack"), flag("hostapd"), flag("dnslog")))
         msg = (rc == 0) and "passive_ok" or "passive_fail"
 
     elseif act == "password" then
