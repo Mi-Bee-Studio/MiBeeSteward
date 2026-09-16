@@ -304,3 +304,30 @@ func TestMiotHandler_EnrichBrandAndDescription(t *testing.T) {
 		t.Error("miot handler must never set inferred_type (hostname = heuristic, ? badge)")
 	}
 }
+func TestMdnsSsdpHandler_EnrichFromAnnouncement(t *testing.T) {
+	for _, h := range []scannerv2.ServiceHandler{MdnsHandler{}, SsdpHandler{}} {
+		ctx := svcCtx("10.0.0.9", 5353, h.Service(), map[string]string{
+			"inferred_type":        "nas",
+			"inferred_brand":       "FastRhino",
+			"inferred_description": "announced via mDNS",
+			"model":                "r68s",
+		})
+		if h.GenerateHeartbeat(ctx) != nil {
+			t.Errorf("%s must not generate a heartbeat (no probeable port)", h.Service())
+		}
+		h.EnrichDevice(ctx, nil)
+		if ctx.Device.Fields["inferred_type"] != "nas" ||
+			ctx.Device.Fields["inferred_brand"] != "FastRhino" ||
+			ctx.Device.Fields["inferred_description"] != "announced via mDNS" ||
+			ctx.Device.Fields["inferred_model"] != "r68s" {
+			t.Errorf("%s should fold announcement metadata into device fields, got %+v", h.Service(), ctx.Device.Fields)
+		}
+		// Stronger in-protocol evidence already on record must survive.
+		ctx = svcCtx("10.0.0.9", 5353, h.Service(), map[string]string{"inferred_type": "camera"})
+		ctx.Device.Fields["inferred_type"] = "nas" // set by SNMPHandler earlier
+		h.EnrichDevice(ctx, nil)
+		if ctx.Device.Fields["inferred_type"] != "nas" {
+			t.Errorf("%s must not override an existing type", h.Service())
+		}
+	}
+}
