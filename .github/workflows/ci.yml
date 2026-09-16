@@ -201,6 +201,7 @@ jobs:
         run: make check-openwrt
       - name: Packaging smoke (stage guard + mkipk.sh)
         run: |
+          (cd web && npm ci)
           make package-openwrt-ipk
           ls -la bin/*.ipk
 
