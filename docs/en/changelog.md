@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Synthetic load harness (#313)**: `cmd/loadgen` serves a 127/8 synthetic device plane (kernel ICMP + SNMP/HTTP/SSH/RTSP responders) and drives full-stack benchmarks through the real API; `scanner.allow_reserved_targets` is the escape hatch for that plane.
 - **Demo mode (#315 / #285)**: `server.demo_mode` (or `-demo`) seeds a fictional TEST-NET inventory on an empty database.
 - **Multi-vantage probing data model (#328, step 1 of #277)**: `probe_targets.vantage` execution plans + per-vantage result tracks.
+- **Vantage probing execution channel (#344, step 2 of #277)**: agent-local probe execution is live end-to-end — the AgentDispatcher diffs per-agent plan fingerprints (sha256 over a canonical form) every 10s and dispatches a probe command ONLY on change (zero steady-state command traffic; clearing targets ships one empty plan that stops the agent-side scan); agents schedule probes fully locally (first-seen targets probe immediately, then per-target intervals; a 10s tick re-reads the plan so CRUD lands within one tick, and probing continues through center outages); results flow back via `POST /api/v1/agents/probe-report` (agent-token auth, 10s/32-row batches; the reporter's identity overrides the payload's claimed vantage — an agent can only write its own track; dropped batches lose samples rather than buffering forever — probing is observation, not a ledger); `mibee_probe_*` metrics gained a `vantage` label (legacy label-less selectors still match).
+- **Agent fleet management (#309 / #278)**: agent version reporting / clock offset / remote ops command whitelist + the fleet management view.
+- **Fingerprint coverage reporting (#308 / #282)**: coverage report + the "this device wasn't recognized" contribution loop.
+- **Ecosystem integration pack (#307 / #284)**: official Grafana dashboards; Feishu/WeCom/Telegram notification channels; webhook templates.
+- **SSE change-stream in the UI (#306 / #272)**: the devices/changes pages subscribe to `/changes/watch` for quasi-realtime portrait refresh.
+- **Synthetic-probing UX batch (#305 / #276)**: multi-target batch operations + certificate-expiry timeline view.
+- **VLAN name collection (#304 / #273)**: VLAN names/descriptions via dot1qVlanStaticTable, feeding the topology view.
+- **`doctor` diagnostic subcommand (#303 / #281)**: one-shot health check (ICMP capabilities, DB state, config sanity) + hardened official systemd units.
+- **OpenWrt operator docs (#329 / #316)** and a documentation governance batch (#326).
 - Website content: feature overview / playbooks / comparison articles, zh+en (#320).
 
 ### Security
@@ -46,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Device gauges refresh periodically (#335 / #333)**: `mibee_devices_total` no longer freezes at the process-start snapshot.
 - **`-demo` with a broken config no longer segfaults (#330 / #327)**.
 - **Agent mini-DB startup migrations (#339 / #337)**: the agent's local schema now ships the full column set (offline_since / device_uuid / ssh_credential_id / scan_tasks.network_id+credential_id) and upgrades legacy DBs in place — previously every device-identity roam/replace silently degraded with "no such column".
-- Windows build/test parity restored (#325 / #321); sqlite BUSY write-path governance + retry metrics (#311 / #267); schema version gating + backup retention (#312 / #268); scannerv2 store migrated to sqlc (#314 / #269); dashboard layout freeze (#302); agent fleet management (#309 / #278); fingerprint coverage reporting (#308 / #282); ecosystem notification channels + Grafana dashboards (#307 / #284); SSE change-stream in the UI (#306 / #272); probe UX batch (#305 / #276); VLAN name collection (#304 / #273); `doctor` subcommand (#303 / #281); OpenWrt operator docs (#329 / #316); docs governance batch (#326).
+- Data-integrity / parity hardening batch: sqlite BUSY write-path governance + retry metrics (#311 / #267); schema version gating + backup retention (#312 / #268); scannerv2 store migrated to sqlc (#314 / #269); Windows build/test parity restored (#325 / #321); dashboard layout freeze (#302). (Feature batches that shipped in the same window were promoted to Added above.)
 
 ## [0.5.0] - 2026-08-19
 
