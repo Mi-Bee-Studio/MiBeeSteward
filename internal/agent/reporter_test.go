@@ -20,16 +20,25 @@ import (
 // TestReporter_FlushesToCenter verifies the reporter buffers scan results and
 // POSTs them to the center on flush (ticker), with the agent's bearer token.
 func TestReporter_FlushesToCenter(t *testing.T) {
-	var (
-		gotAuth  string
-		gotBody  domain.AgentReport
-		requests int32
-	)
+	// Each request is handed to the test goroutine via a channel (same pattern
+	// as TestReporter_SendsStateHashHeader): the handler must not write bare
+	// variables the test reads — a second in-flight POST racing the read is a
+	// data race. Filtering for the HOST-BEARING batch (not "first request") is
+	// load-bearing: the reporter's status-only heartbeat (#278) may legally
+	// POST an EMPTY report first (while lastPostAt is zero the first empty
+	// flush posts unconditionally), and on a loaded -race runner the ticker can
+	// tick between Start and Report before the host lands in the buffer —
+	// observed on CI as "report accepted hosts=0" racing the assertion.
+	type receivedReport struct {
+		auth string
+		body domain.AgentReport
+	}
+	repCh := make(chan receivedReport, 8)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&requests, 1)
-		gotAuth = r.Header.Get("Authorization")
 		b, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(b, &gotBody)
+		var body domain.AgentReport
+		_ = json.Unmarshal(b, &body)
+		repCh <- receivedReport{auth: r.Header.Get("Authorization"), body: body}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"accepted":1,"added":1}`))
 	}))
@@ -47,23 +56,24 @@ func TestReporter_FlushesToCenter(t *testing.T) {
 	// Wait for the ticker flush (≤ ~80ms with 20ms interval). Generous
 	// deadline: under go test -race on a loaded 2-core CI runner the whole
 	// suite runs concurrently and the flush can stall well past 500ms — the
-	// wait is only a liveness check, not a timing assertion.
+	// wait is only a liveness check, not a timing assertion. Empty heartbeat
+	// requests are skipped until the host batch arrives.
+	var got receivedReport
 	deadline := time.After(5 * time.Second)
-	for atomic.LoadInt32(&requests) == 0 {
+	for len(got.body.Hosts) != 1 {
 		select {
+		case got = <-repCh:
 		case <-deadline:
-			t.Fatal("reporter did not flush within deadline")
-		case <-time.After(5 * time.Millisecond):
+			t.Fatalf("reporter did not flush the host batch within deadline (last body had %d hosts)", len(got.body.Hosts))
 		}
 	}
 	r.Stop()
 
-	require.Equal(t, "Bearer test-token", gotAuth, "agent token must be sent as Bearer")
-	require.Equal(t, "agent-x", gotBody.AgentID)
-	require.Len(t, gotBody.Hosts, 1)
-	require.Equal(t, "10.0.0.5", gotBody.Hosts[0].IP)
-	require.Equal(t, "server", gotBody.Hosts[0].InferredType)
-	require.Equal(t, "aa:bb:cc:dd:ee:05", gotBody.Hosts[0].MAC, "MAC carried through from Device.Fields")
+	require.Equal(t, "Bearer test-token", got.auth, "agent token must be sent as Bearer")
+	require.Equal(t, "agent-x", got.body.AgentID)
+	require.Equal(t, "10.0.0.5", got.body.Hosts[0].IP)
+	require.Equal(t, "server", got.body.Hosts[0].InferredType)
+	require.Equal(t, "aa:bb:cc:dd:ee:05", got.body.Hosts[0].MAC, "MAC carried through from Device.Fields")
 }
 
 // TestReporter_RetriesOn5xx verifies the reporter retries with backoff when the
