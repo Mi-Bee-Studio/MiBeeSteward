@@ -12,6 +12,10 @@
 #                                      password ever appearing in a command
 #                                      line / ps output)
 #   luci-helper.sh set-enabled <0|1>   boot autostart toggle (procd enable)
+#   luci-helper.sh set-passive <0|1> <0|1> <0|1> <0|1>
+#                                      Tier-1 passive discovery toggles
+#                                      (dhcp_leases conntrack hostapd dns_log)
+#                                      + restart + health check
 #   luci-helper.sh restart             restart + health check
 #
 # Paths are env-overridable (MIBEE_BIN / MIBEE_CONF / MIBEE_INIT /
@@ -51,6 +55,38 @@ wait_health() {
     return 1
 }
 
+# read_source KEY prints 1/0 for the enabled flag of the YAML block "KEY:".
+# The config is generated from config.example.yaml where "enabled: <bool>" is
+# the first key inside each of these blocks; the block ends at the first line
+# at-or-below the key's indent. busybox-awk safe (match() + sub()).
+read_source() {
+    _key="$1"
+    _val="$(awk -v key="$_key" '
+        $0 ~ "^[[:space:]]*" key ":[[:space:]]*$" { inblk=1; ind=match($0,/[^ 	]/)-1; next }
+        inblk {
+            n=match($0,/[^ 	]/)-1
+            if ($0 !~ /^[[:space:]]*$/ && n<=ind) exit
+            if ($0 ~ /^[[:space:]]*enabled:/) { print ($0 ~ /enabled:[[:space:]]*true/ ? 1 : 0); exit }
+        }
+    ' "$CONF")"
+    echo "${_val:-0}"
+}
+
+# set_source KEY 0|1 flips the enabled flag inside the "KEY:" block in place.
+set_source() {
+    _key="$1" _val="$2"
+    case "$_val" in 0|1) ;; *) log "ERROR: set_source needs 0|1"; exit 1 ;; esac
+    awk -v key="$_key" -v val="$_val" '
+        $0 ~ "^[[:space:]]*" key ":[[:space:]]*$" { inblk=1; ind=match($0,/[^ 	]/)-1; print; next }
+        inblk {
+            n=match($0,/[^ 	]/)-1
+            if ($0 !~ /^[[:space:]]*$/ && n<=ind) inblk=0
+        }
+        inblk && /^[[:space:]]*enabled:/ { sub(/enabled:[[:space:]]*(true|false)/, "enabled: " (val==1 ? "true" : "false")) }
+        { print }
+    ' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF" || { rm -f "$CONF.tmp"; log "ERROR: set_source rewrite failed"; exit 1; }
+}
+
 cmd_status() {
     # service state via the procd init script's status action
     _svc="stopped"
@@ -76,6 +112,12 @@ cmd_status() {
     echo "health=$_health"
     echo "db_bytes=$_db_bytes"
     echo "lan_ip=$_lan_ip"
+    # Tier-1 passive discovery source flags (#360) — consumed by the LuCI
+    # settings page checkboxes.
+    echo "dhcp_leases=$(read_source dhcp_leases)"
+    echo "conntrack=$(read_source conntrack)"
+    echo "hostapd=$(read_source hostapd)"
+    echo "dns_log=$(read_source dns_log)"
 }
 
 cmd_set_port() {
@@ -132,6 +174,31 @@ cmd_set_enabled() {
     echo "boot autostart updated"
 }
 
+# cmd_set_passive DHCP CONNTRACK HOSTAPD DNSLOG — one-click Tier-1 passive
+# discovery toggle (#360). The first three are free on a router-resident
+# install (the host IS the gateway); dns_log additionally requires dnsmasq
+# query logging, which this helper deliberately does NOT touch — the note
+# tells the operator the one UCI line instead of mutating DHCP logging
+# behind their back.
+cmd_set_passive() {
+    set_source dhcp_leases "${1:?}"
+    set_source conntrack  "${2:?}"
+    set_source hostapd    "${3:?}"
+    set_source dns_log    "${4:?}"
+    if [ "${4:?}" = "1" ]; then
+        log "NOTE: dns_log needs dnsmasq query logging — on OpenWrt/iStoreOS run:"
+        log "      uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit dhcp && /etc/init.d/dnsmasq restart"
+    fi
+    "$INIT" restart >/dev/null 2>&1 || log "WARN: restart returned non-zero"
+    _port="$(read_port || echo '')"
+    if [ -n "$_port" ] && [ "$(wait_health "$_port")" = "ok" ]; then
+        echo "passive discovery updated and service healthy"
+    else
+        log "WARN: service did not answer after restart — check: logread -e mibee-steward | tail -20"
+        exit 2
+    fi
+}
+
 cmd_restart() {
     "$INIT" restart >/dev/null 2>&1 || log "WARN: restart returned non-zero"
     _port="$(read_port || echo '')"
@@ -148,6 +215,7 @@ case "${1:-help}" in
     set-port)     shift; cmd_set_port "$@" ;;
     set-password) shift; cmd_set_password "$@" ;;
     set-enabled)  shift; cmd_set_enabled "$@" ;;
+    set-passive)  shift; cmd_set_passive "$@" ;;
     restart)      shift; cmd_restart "$@" ;;
     *) sed -n '2,16p' "$0"; exit 1 ;;
 esac

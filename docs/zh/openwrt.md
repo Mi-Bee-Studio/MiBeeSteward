@@ -15,7 +15,9 @@ MiBee Steward 可以直接运行在 OpenWrt 路由器上，分为两种形态：
 | `hostapd` | WiFi STA 关联（信号 dBm / SSID / 连接时长） | hostapd ctrl socket → `iw station dump` 回退 | ✅ 干净降级（无 WiFi / 无 hostapd） |
 | `dns_log` | 被动 DNS 指纹（阻止探测的设备仍会做 DNS） | dnsmasq `--log-queries` 日志文件 | ✅ 干净降级（未配置查询日志） |
 
-四个信号源为 opt-in（默认关闭），仅在网关上可用；在非路由器主机或底层文件/套接字缺失时干净降级为 no-op（调试日志 + 跳过），不会报错或崩溃。配置见 `scanner.discovery.*`（详见 [发现机制](discovery.md) 与 [配置参考](configuration.md)）。
+在非路由器主机或底层文件/套接字缺失时，四个源干净降级为 no-op（调试日志 + 跳过），不会报错或崩溃。配置见 `scanner.discovery.*`（详见 [发现机制](discovery.md) 与 [配置参考](configuration.md)）。
+
+**一键启用（#360）**：`install.sh` 首次安装生成的配置**默认开启**其中三个零成本源（`dhcp_leases` + `conntrack` + `hostapd`，路由器驻留即免费）；LuCI 的 服务 → MiBee Steward → 设置 页提供四个复选框一键开关（保存即重启 + 健康检查）。`dns_log` 保持默认关闭——它需要先启用 dnsmasq 查询日志（`uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit dhcp && /etc/init.d/dnsmasq restart`），启用入口同样在 LuCI 设置页，页面上附带了这条命令。手工部署或旧配置升级不受影响（保留既有设置，安装器只提示）。
 
 ## 形态选择
 

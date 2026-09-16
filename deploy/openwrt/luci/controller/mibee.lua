@@ -91,6 +91,16 @@ function action_apply()
             msg = "port_invalid"
         end
 
+    elseif act == "passive" then
+        -- Tier-1 passive discovery one-click toggle (#360): four checkboxes
+        -- POST as dhcp/conntrack/hostapd/dnslog = "1" when checked.
+        local function flag(name)
+            return (http.formvalue(name) == "1") and "1" or "0"
+        end
+        local rc = helper_call(string.format("%s set-passive %s %s %s %s",
+            HELPER, flag("dhcp"), flag("conntrack"), flag("hostapd"), flag("dnslog")))
+        msg = (rc == 0) and "passive_ok" or "passive_fail"
+
     elseif act == "password" then
         local pw = http.formvalue("password") or ""
         local pw2 = http.formvalue("password2") or ""
