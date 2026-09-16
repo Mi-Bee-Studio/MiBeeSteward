@@ -392,7 +392,7 @@ func TestPortSpecProbe_TimeoutIsUnknownNotClosed(t *testing.T) {
 	t.Cleanup(func() { tcpDial = orig })
 
 	var calls int32
-	tcpDial = func(_ context.Context, _ string, timeout time.Duration) (net.Conn, error) {
+	tcpDial = func(_ context.Context, _ string, _ time.Duration) (net.Conn, error) {
 		atomic.AddInt32(&calls, 1)
 		time.Sleep(50 * time.Millisecond)
 		return nil, os.ErrDeadlineExceeded
