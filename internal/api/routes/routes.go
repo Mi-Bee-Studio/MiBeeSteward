@@ -85,6 +85,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// User service and handler
 	userSvc := service.NewUserService(dbConn, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
+
+	// Session-epoch source (#357): the Authenticator rejects tokens whose `tv`
+	// claim lags the user's current token_version (bumped on password change).
+	middleware.SetTokenVersionSource(userSvc.TokenVersion)
 	userSvc.SetLockoutPolicy(cfg.Auth.Lockout)
 	if settingsSvc != nil {
 		userSvc.SetSettingsSource(settingsSvc)

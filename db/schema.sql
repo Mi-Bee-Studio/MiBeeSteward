@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS users (
     failed_login_attempts INTEGER NOT NULL DEFAULT 0,
     locked_until TIMESTAMP,
     password_changed_at DATETIME,
-    must_change_password BOOLEAN NOT NULL DEFAULT 0
+    must_change_password BOOLEAN NOT NULL DEFAULT 0,
+    token_version INTEGER NOT NULL DEFAULT 0
 );
 
 -- Devices table

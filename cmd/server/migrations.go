@@ -115,6 +115,13 @@ var columnMigrations = []string{
 	// delete-undo (POST /documents/{id}/restore). Reads filter on it; the
 	// uploaded file stays on disk so restore is lossless.
 	"ALTER TABLE documents ADD COLUMN deleted_at TIMESTAMP",
+	// users.token_version: session revocation epoch (#357). Every minted JWT
+	// carries the then-current version as the `tv` claim; any password change
+	// bumps the column, instantly invalidating every outstanding token for
+	// that user (previously a password reset left old sessions fully working
+	// until natural expiry). extendUsersRoleCheck's rebuild copies the column
+	// too — keep both in sync.
+	"ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0",
 	// Distributed/topology groundwork: device origin (network_id) + online
 	// freshness timestamps (first_seen/last_seen). See db/schema.sql and
 	// docs/private/architecture-future.md §6. network_id resolves to a
@@ -821,12 +828,13 @@ func extendUsersRoleCheck(ctx context.Context, db *sql.DB) error {
 			failed_login_attempts INTEGER NOT NULL DEFAULT 0,
 			locked_until TIMESTAMP,
 			password_changed_at DATETIME,
-			must_change_password BOOLEAN NOT NULL DEFAULT 0
+			must_change_password BOOLEAN NOT NULL DEFAULT 0,
+			token_version INTEGER NOT NULL DEFAULT 0
 		)`,
 		`INSERT INTO users_new (id, username, email, password_hash, role, created_at, updated_at,
-			failed_login_attempts, locked_until, password_changed_at, must_change_password)
+			failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version)
 		SELECT id, username, email, password_hash, role, created_at, updated_at,
-			failed_login_attempts, locked_until, password_changed_at, must_change_password FROM users`,
+			failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version FROM users`,
 		`DROP TABLE users`,
 		`ALTER TABLE users_new RENAME TO users`,
 	}

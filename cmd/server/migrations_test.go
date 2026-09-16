@@ -109,7 +109,9 @@ func TestExtendUsersRoleCheck_RebuildsFromNarrowCheck(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	// Create the OLD-shape users table (narrow CHECK, pre-#138).
+	// Create the OLD-shape users table (narrow CHECK, pre-#138). In the real
+	// chain extendUsersRoleCheck runs AFTER columnMigrations, so token_version
+	// (#357) is always present by rebuild time — mirror that here.
 	_, err = db.Exec(`CREATE TABLE users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT NOT NULL UNIQUE,
@@ -121,7 +123,8 @@ func TestExtendUsersRoleCheck_RebuildsFromNarrowCheck(t *testing.T) {
 		failed_login_attempts INTEGER NOT NULL DEFAULT 0,
 		locked_until TIMESTAMP,
 		password_changed_at DATETIME,
-		must_change_password BOOLEAN NOT NULL DEFAULT 0
+		must_change_password BOOLEAN NOT NULL DEFAULT 0,
+		token_version INTEGER NOT NULL DEFAULT 0
 	)`)
 	require.NoError(t, err)
 

@@ -317,7 +317,11 @@ func (s *UserService) CompleteSetup(ctx context.Context, newPassword string) (*d
 		return nil, fmt.Errorf("failed to update password: %w", err)
 	}
 
-	token, err := s.generateToken(updated.ID, updated.Role, false)
+	// Bump BEFORE minting so the returned session carries the new epoch.
+	if err := s.bumpTokenVersion(ctx, updated.ID); err != nil {
+		return nil, err
+	}
+	token, err := s.generateToken(ctx, updated.ID, updated.Role, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
@@ -402,7 +406,7 @@ func (s *UserService) Login(ctx context.Context, username, password string) (*do
 		}
 	}
 
-	token, err := s.generateToken(user.ID, user.Role, user.MustChangePassword)
+	token, err := s.generateToken(ctx, user.ID, user.Role, user.MustChangePassword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
@@ -495,6 +499,9 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, oldPassw
 		return fmt.Errorf("failed to update password: %w", err)
 	}
 
+	if err := s.bumpTokenVersion(ctx, userID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -546,6 +553,9 @@ func (s *UserService) ForceChangePassword(ctx context.Context, userID int64, new
 		return fmt.Errorf("failed to update password: %w", err)
 	}
 
+	if err := s.bumpTokenVersion(ctx, userID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -588,6 +598,9 @@ func (s *UserService) AdminResetPassword(ctx context.Context, userID int64, newP
 		return fmt.Errorf("failed to update password: %w", err)
 	}
 
+	if err := s.bumpTokenVersion(ctx, userID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -626,16 +639,25 @@ func (s *UserService) ListUsers(ctx context.Context, search string, limit, offse
 	}, nil
 }
 
-// generateToken creates a signed JWT with user_id and role claims. When
-// mustChangePassword is true (the flag was set at seed/admin-reset time) the
-// token carries mcp=true — middleware.Authenticator gates every API call on
-// that claim until the forced change completes, and the force-password
-// handler mints a fresh token WITHOUT it so the gate lifts immediately.
-func (s *UserService) generateToken(userID int64, role string, mustChangePassword bool) (string, error) {
+// generateToken creates a signed JWT with user_id, role, jti and tv (token
+// version) claims. When mustChangePassword is true (the flag was set at
+// seed/admin-reset time) the token carries mcp=true — middleware.Authenticator
+// gates every API call on that claim until the forced change completes, and
+// the force-password handler mints a fresh token WITHOUT it so the gate lifts
+// immediately.
+func (s *UserService) generateToken(ctx context.Context, userID int64, role string, mustChangePassword bool) (string, error) {
+	// Session-revocation epoch (#357): the token records the user's CURRENT
+	// token_version; any password change bumps the column and stale tokens
+	// are rejected by middleware (Authenticator) on the next request.
+	tv, err := s.queries.GetUserTokenVersion(ctx, userID)
+	if err != nil {
+		return "", fmt.Errorf("failed to read token version: %w", err)
+	}
 	claims := map[string]interface{}{
 		"user_id": userID,
 		"role":    role,
 		"jti":     randomHex(16),
+		"tv":      tv,
 	}
 	if mustChangePassword {
 		claims["mcp"] = true
@@ -651,8 +673,8 @@ func (s *UserService) generateToken(userID int64, role string, mustChangePasswor
 // GenerateTokenForUser creates a JWT token for a given user (public, used by
 // the TOTP verify handler after a successful code — the same login semantics,
 // so the must-change gate applies there too).
-func (s *UserService) GenerateTokenForUser(userID int64, role string, mustChangePassword bool) (string, error) {
-	return s.generateToken(userID, role, mustChangePassword)
+func (s *UserService) GenerateTokenForUser(ctx context.Context, userID int64, role string, mustChangePassword bool) (string, error) {
+	return s.generateToken(ctx, userID, role, mustChangePassword)
 }
 
 // getUserByUsernameOrEmail looks up a user by username first, then by email.
@@ -678,6 +700,27 @@ func toUserResponse(u db.User) domain.UserResponse {
 		CreatedAt:          u.CreatedAt,
 		UpdatedAt:          u.UpdatedAt,
 	}
+}
+
+// bumpTokenVersion advances the user's session-revocation epoch, instantly
+// invalidating every outstanding JWT for that user (stale `tv` claim). Called
+// by every password-changing path (#357).
+func (s *UserService) bumpTokenVersion(ctx context.Context, userID int64) error {
+	if _, err := s.queries.BumpUserTokenVersion(ctx, userID); err != nil {
+		return fmt.Errorf("failed to bump token version: %w", err)
+	}
+	return nil
+}
+
+// TokenVersion returns the user's current session-revocation epoch. Wired into
+// middleware as the Authenticator's version source; ok=false (unknown user)
+// rejects the token — sessions of deleted users die with the row.
+func (s *UserService) TokenVersion(ctx context.Context, userID int64) (int64, bool) {
+	v, err := s.queries.GetUserTokenVersion(ctx, userID)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
 }
 
 // SetMustChangePassword sets the must_change_password flag for a user.

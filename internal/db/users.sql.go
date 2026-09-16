@@ -10,6 +10,20 @@ import (
 	"time"
 )
 
+const bumpUserTokenVersion = `-- name: BumpUserTokenVersion :execrows
+UPDATE users
+SET token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+func (q *Queries) BumpUserTokenVersion(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, bumpUserTokenVersion, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users
 WHERE (? = '' OR INSTR(lower(username), lower(?)) > 0 OR INSTR(lower(email), lower(?)) > 0)
@@ -34,7 +48,7 @@ const createUser = `-- name: CreateUser :one
 
 INSERT INTO users (username, email, password_hash, role, failed_login_attempts, locked_until, must_change_password)
 VALUES (?, ?, ?, ?, 0, NULL, ?)
-RETURNING id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
+RETURNING id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version
 `
 
 type CreateUserParams struct {
@@ -74,6 +88,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.LockedUntil,
 		&i.PasswordChangedAt,
 		&i.MustChangePassword,
+		&i.TokenVersion,
 	)
 	return i, err
 }
@@ -92,7 +107,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) (int64, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
+SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version
 FROM users
 WHERE email = ?
 `
@@ -112,12 +127,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.LockedUntil,
 		&i.PasswordChangedAt,
 		&i.MustChangePassword,
+		&i.TokenVersion,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
+SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version
 FROM users
 WHERE id = ?
 `
@@ -137,12 +153,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.LockedUntil,
 		&i.PasswordChangedAt,
 		&i.MustChangePassword,
+		&i.TokenVersion,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
+SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version
 FROM users
 WHERE username = ?
 `
@@ -162,12 +179,13 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.LockedUntil,
 		&i.PasswordChangedAt,
 		&i.MustChangePassword,
+		&i.TokenVersion,
 	)
 	return i, err
 }
 
 const getUserPendingSetup = `-- name: GetUserPendingSetup :one
-SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
+SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version
 FROM users
 WHERE password_hash = ?
 `
@@ -192,12 +210,24 @@ func (q *Queries) GetUserPendingSetup(ctx context.Context, passwordHash string) 
 		&i.LockedUntil,
 		&i.PasswordChangedAt,
 		&i.MustChangePassword,
+		&i.TokenVersion,
 	)
 	return i, err
 }
 
+const getUserTokenVersion = `-- name: GetUserTokenVersion :one
+SELECT token_version FROM users WHERE id = ?
+`
+
+func (q *Queries) GetUserTokenVersion(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getUserTokenVersion, id)
+	var token_version int64
+	err := row.Scan(&token_version)
+	return token_version, err
+}
+
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
+SELECT id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version
 FROM users
 WHERE (? = '' OR INSTR(lower(username), lower(?)) > 0 OR INSTR(lower(email), lower(?)) > 0)
 ORDER BY id
@@ -243,6 +273,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.LockedUntil,
 			&i.PasswordChangedAt,
 			&i.MustChangePassword,
+			&i.TokenVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -305,7 +336,7 @@ const updateUser = `-- name: UpdateUser :one
 UPDATE users
 SET username = ?, email = ?, password_hash = ?, role = ?, failed_login_attempts = ?, locked_until = ?, must_change_password = ?, password_changed_at = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password
+RETURNING id, username, email, password_hash, role, created_at, updated_at, failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version
 `
 
 type UpdateUserParams struct {
@@ -345,6 +376,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.LockedUntil,
 		&i.PasswordChangedAt,
 		&i.MustChangePassword,
+		&i.TokenVersion,
 	)
 	return i, err
 }
