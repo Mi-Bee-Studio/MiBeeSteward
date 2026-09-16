@@ -33,8 +33,9 @@
    - 打完自检：`git merge-base --is-ancestor vX.Y.Z main && echo OK`（必须 OK）。
 
 4. **release.yml 产物核对**
-   - 等 Release 构建完成，逐项核对 Assets 与发布说明一致（当前：linux amd64/arm64
-     服务器二进制 + GHCR 镜像；OpenWrt 三形态包见 #359，落地后补进本清单）；
+   - 等 Release 构建完成，逐项核对 Assets 与发布说明一致：linux amd64/arm64
+     服务器二进制（center + agent）+ OpenWrt 三形态包（tar.gz / .ipk / .apk，
+     arm64，#359）+ SHA256SUMS.openwrt + GHCR 多架构镜像；
    - 每个 artifact 的 SHA256 与本地交叉编译结果抽查一致。
 
 5. **部署验证（真机，不是 is-active）**
