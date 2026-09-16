@@ -119,7 +119,7 @@ openwrt-stage: build-frontend sync-device-types sync-oui-curated
 package-openwrt-ipk: GOARCH?=arm64
 package-openwrt-ipk: openwrt-stage
 	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
-	./deploy/openwrt/mkipk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).ipk
+	sh ./deploy/openwrt/mkipk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).ipk
 
 # Hand-rolled .apk for apk-tools (OpenWrt 24.10+ / iStoreOS builds that
 # replaced opkg): same content and lifecycle as the .ipk in the apk v2
@@ -128,7 +128,7 @@ package-openwrt-ipk: openwrt-stage
 package-openwrt-apk: GOARCH?=arm64
 package-openwrt-apk: openwrt-stage
 	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
-	./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).apk
+	sh ./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).apk
 
 # Static assertions on the OpenWrt packaging sources (#358). The R68S field
 # session (iStoreOS 24.10, #355) proved this class of bug goes "local-green,

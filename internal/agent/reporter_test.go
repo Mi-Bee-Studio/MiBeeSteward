@@ -44,8 +44,11 @@ func TestReporter_FlushesToCenter(t *testing.T) {
 		}},
 	})
 
-	// Wait for the ticker flush (≤ ~80ms with 20ms interval).
-	deadline := time.After(500 * time.Millisecond)
+	// Wait for the ticker flush (≤ ~80ms with 20ms interval). Generous
+	// deadline: under go test -race on a loaded 2-core CI runner the whole
+	// suite runs concurrently and the flush can stall well past 500ms — the
+	// wait is only a liveness check, not a timing assertion.
+	deadline := time.After(5 * time.Second)
 	for atomic.LoadInt32(&requests) == 0 {
 		select {
 		case <-deadline:
