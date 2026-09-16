@@ -763,3 +763,113 @@ func TestRuleClassifier_MijiaHostname(t *testing.T) {
 		}
 	}
 }
+// TestRuleClassifier_MDNSAndSSDP pins the mdns-ssdp.yaml rules against the
+// field-captured announcement shapes from the #365 R68S PoC: the NAS avahi
+// service set, the router's SSDP SERVER self-identification, and TXT record
+// passthrough.
+func TestRuleClassifier_MDNSAndSSDP(t *testing.T) {
+	rc := &fp.RuleClassifier{}
+	if err := rc.LoadFromDir("../../../../configs/fingerprints"); err != nil {
+		t.Fatalf("LoadFromDir: %v", err)
+	}
+	ev := func(kind string, raw map[string]string) []fp.Evidence {
+		return []fp.Evidence{{Kind: kind, IP: "192.168.62.1", RawData: raw, Confidence: 0.85}}
+	}
+	find := func(ids []fp.ServiceIdentity, service string) *fp.ServiceIdentity {
+		for i := range ids {
+			if ids[i].Service == service {
+				return &ids[i]
+			}
+		}
+		return nil
+	}
+
+	// Field sample: the NAS avahi announcement (services joined as one string).
+	ids := rc.Classify(ev("mdns", map[string]string{
+		"hostname": "Z4S-2PSE.local",
+		"services": "_nut._tcp,_smb._tcp,_adisk._tcp",
+	}))
+	id := find(ids, "mdns")
+	if id == nil {
+		t.Fatalf("NAS mDNS announcement must yield an mdns identity, got %+v", ids)
+	}
+	if id.Metadata["inferred_type"] != "nas" {
+		t.Errorf("NAS announcement type = %q, want nas", id.Metadata["inferred_type"])
+	}
+
+	// Field sample: the R68S router's SSDP SERVER header.
+	ids = rc.Classify(ev("ssdp", map[string]string{
+		"server":   "DEVICE_SERIAL:ST-raspi-61BF5B32|lunzn,fastrhino-r68s",
+		"usn":      "unique:61BF5B32",
+		"location": "http://10.100.35.124:8897",
+	}))
+	id = find(ids, "ssdp")
+	if id == nil {
+		t.Fatalf("FastRhino SSDP announcement must yield an ssdp identity, got %+v", ids)
+	}
+	if id.Metadata["inferred_type"] != "router" || id.Metadata["inferred_brand"] != "FastRhino" {
+		t.Errorf("FastRhino SSDP = %q/%q, want router/FastRhino",
+			id.Metadata["inferred_type"], id.Metadata["inferred_brand"])
+	}
+
+	// Field sample: MiniDLNA on the NAS media stack.
+	ids = rc.Classify(ev("ssdp", map[string]string{
+		"server":   "5.15.49-linuxkit-pr DLNADOC/1.50 UPnP/1.0 MiniDLNA/1.3.3",
+		"location": "http://192.168.62.138:8200/rootDesc.xml",
+	}))
+	id = find(ids, "ssdp")
+	if id == nil || id.Metadata["inferred_type"] != "nas" {
+		t.Errorf("MiniDLNA SSDP must yield nas, got %+v", ids)
+	}
+
+	// Service-name type table: exactly one exclusive identity per hit.
+	for _, tc := range []struct {
+		services string
+		wantType string
+	}{
+		{"_onvif._tcp", "camera"},
+		{"_ipp._tcp", "printer"},
+		{"_googlecast._tcp", "iot"},
+		{"_hap._tcp", "iot"},
+		{"_miio._udp", "iot"},
+		{"_smb._tcp,_adisk._tcp", "nas"}, // adisk wins over plain smb
+	} {
+		ids := rc.Classify(ev("mdns", map[string]string{"services": tc.services}))
+		var typed []*fp.ServiceIdentity
+		for i := range ids {
+			if ids[i].Service == "mdns" && ids[i].Metadata["inferred_type"] != "" {
+				typed = append(typed, &ids[i])
+			}
+		}
+		if len(typed) != 1 || typed[0].Metadata["inferred_type"] != tc.wantType {
+			t.Errorf("%s: want exactly one typed identity %q, got %+v", tc.services, tc.wantType, ids)
+		}
+	}
+
+	// ESPHome TXT passthrough: model lands in metadata alongside the type.
+	ids = rc.Classify(ev("mdns", map[string]string{
+		"services":  "_esphomelib._tcp",
+		"txt.model": "esp32-node-livingroom",
+	}))
+	id = find(ids, "mdns")
+	if id == nil || id.Metadata["model"] != "esp32-node-livingroom" || id.Metadata["inferred_brand"] != "ESPHome" {
+		t.Errorf("ESPHome announcement must pass through txt.model, got %+v", ids)
+	}
+
+	// Non-announcement hosts must not fire anything.
+	for _, raw := range []map[string]string{
+		{"services": "_ssh._tcp"},
+		{"hostname": "orangepi-zero3"},
+		{"server": "Custom UPnP/1.0 Stack"},
+	} {
+		kind := "mdns"
+		if _, ok := raw["server"]; ok {
+			kind = "ssdp"
+		}
+		for _, id := range rc.Classify(ev(kind, raw)) {
+			if id.Service == "mdns" || id.Service == "ssdp" {
+				t.Errorf("unrecognized announcement %+v must not fire an identity", raw)
+			}
+		}
+	}
+}
