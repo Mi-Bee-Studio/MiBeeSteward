@@ -152,6 +152,19 @@ Commands are **best-effort**: commands enqueued while the agent is offline never
 `scan_tasks` natively supports agent-managed networks: when a task's targets resolve into the CIDR of a network bound to an agent (`networks.agent_id`), the scheduler **dispatches a scan command to that agent** on every cron tick (reusing the command channel and its target validation) instead of scanning locally — the agent IS the scanner for its network. A successful dispatch records a `completed` run; a rejected one (out-of-CIDR targets, reserved ranges) records a `failed` run with the reason, visible in the task's run history. Results flow back through `/agents/report` as usual (device bridge, leases, change detection unchanged).
 
 > Historical note: this capability used to be driven by a deployment-side systemd timer plus a password-hardcoded shell script (login → command API). When the password rotated, the script failed silently and kept burning the admin account's failed-login counter, re-locking it indefinitely. With native scheduling, such external scripts should be retired — rotating the password no longer has hidden consumers.
+
+### Vantage probing (#277)
+
+Synthetic probe targets declare **where** they run via their `vantage` field — the same endpoint can legitimately answer differently depending on which network asks:
+
+- `center` (default): this instance probes — the original single-vantage behavior.
+- `agent:{agent_id}`: one named agent executes; the center refuses to run such a target locally (manual trigger returns 409 `ErrProbeVantageNotLocal`).
+- `all`: the center AND every registered agent each run their own track.
+
+The dispatcher ships each agent its probe plan over the command channel, fingerprint-deduplicated so steady state is zero command traffic; an `all` plan is stamped per-agent so results land in that agent's own track. The agent executes with the SAME executor core the center uses and posts result batches to `POST /api/v1/agents/probe-report` — agent-token auth, and the reporting agent's identity overrides whatever vantage the payload claims (an agent can only ever write its own track).
+
+On the center, results are stored per `(target, vantage)`. The Probes page offers the vantage selector on the target form, shows each vantage's latest result side by side in the history dialog, and highlights when tracks disagree on success — the "reachable from A, not from B" case multi-vantage exists for. All `mibee_probe_*` metrics carry a `vantage` label. There is no scheduling strong-consistency: an offline agent simply stops contributing samples to its track.
+
 ## Fleet Management (#278)
 
 Every agent report carries a meta block — build version, Go version, hostname, process uptime, cumulative scans shipped — which the center records into its `agent_status` table together with a **clock offset** approximation (report timestamp vs. receive time). The **Agents page** surfaces this fleet telemetry: version, clock offset (highlighted past ±60s), and last-report age per agent, next to the existing token status.

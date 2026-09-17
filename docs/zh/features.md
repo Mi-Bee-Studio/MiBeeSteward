@@ -85,6 +85,7 @@ blackbox 风格的外部资源周期探测——公网站点、托管 TLS 端口
 - **四种模块**：`http`（状态 <400 为成功，https 附带证书链）、`tls`（完整证书链）、`tcp`、`icmp`；每目标可配间隔（10s–86400s）与超时（1–60s）。
 - **引擎**：10s tick 重读目标（增删改即时生效，无需重启）、8 并发、断点续跑、手动触发。
 - **证书库存**：复用扫描器的证书链采集，SNI 自动推导；瞬时失败保留最后已知良好链。
+- **多视角（#277）**：目标的探测可由中心、所有已注册 agent 或指定 agent 发起——结果按 `(target, vantage)` 分别记录，历史弹窗并排展示并在不一致时高亮，指标带 `mibee_probe_*{vantage=…}` 标签。
 - **指标与告警**：`mibee_probe_up` / `mibee_probe_duration_seconds` / `mibee_probe_cert_expiry_timestamp_seconds`，附带示例告警规则（目标宕机、证书临期）。
 
 ![拨测](images/pb-probes.webp)
