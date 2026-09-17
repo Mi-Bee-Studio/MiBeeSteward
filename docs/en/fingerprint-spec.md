@@ -40,13 +40,15 @@ plain JSON structures (defined in `internal/service/scannerv2/evidence.go`):
 | Field | Type | Meaning |
 |---|---|---|
 | `source` | string | probe that produced this (e.g. `active:snmp`, `passive:ebpf:tc`) |
-| `kind` | string | evidence shape: `port_open`, `banner`, `snmp`, `http`, `tls`, `rtsp_banner`, `onvif_response`, `metric`, `echo` |
+| `kind` | string | evidence shape: `port_open`, `banner`, `snmp`, `http`, `tls`, `rtsp_banner`, `onvif_response`, `metric`, `echo`, `hostname`, `mdns`, `ssdp` |
 | `ip` | string | target host |
 | `port` | int | L4 port (0 when N/A, e.g. ICMP) |
 | `protocol` | string | `tcp` / `udp` / `` (icmp) |
 | `raw_data` | map<string,string> | protocol-specific payload (banner text, SNMP varbinds, headers, …) |
 | `confidence` | float | this evidence's standalone reliability, ∈ [0,1] |
 | `observed_at` | timestamp | when gathered |
+
+Three kinds arrive from the discovery side rather than active probes: `hostname` (DHCP-lease / rDNS names — the `iot-identity.yaml` corpus keys on these to brand Mijia-ecosystem IoT that answers nothing else), and `mdns` / `ssdp` (parsed service announcements — the `mdns-ssdp.yaml` corpus maps them to camera / printer / NAS / IoT identities and vendor signatures). See [Discovery](discovery.md) for how passive observations are seeded into the evidence set.
 
 ### ServiceIdentity (output)
 

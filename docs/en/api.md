@@ -1172,7 +1172,7 @@ Create a probe target.
 - `interval_seconds` (optional, default 60): probe interval, 10–86400 seconds
 - `timeout_seconds` (optional, default 10): per-probe timeout, 1–60 seconds, must be smaller than the interval
 - `notes` (optional, ≤500 chars), `enabled` (optional, default true)
-- `vantage` (optional, default `center`): execution plan — `center` (this instance probes), `agent:{agent_id}` (a named agent probes; agent-side execution lands with the distributed vantage rollout — until then such targets hold no center-side series and manual trigger returns 409), or `all` (center + every agent)
+- `vantage` (optional, default `center`): execution plan — `center` (this instance probes), `agent:{agent_id}` (that agent executes over the distributed command channel; the center refuses local execution, so manual trigger returns 409), or `all` (center + every registered agent; each track's rows are stamped `center` / `agent:{id}` — see [Distributed](distributed.md#vantage-probing-277))
 
 **Response**: `201 Created` with ProbeTargetResponse (including the denormalized `last_run_at`/`last_status`/`last_latency_ms`/`last_error`; empty = never probed).
 
