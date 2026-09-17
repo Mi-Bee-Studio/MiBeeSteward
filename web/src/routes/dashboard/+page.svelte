@@ -1154,7 +1154,7 @@
 						{/if}
 					</div>
 				<div class="p-4">
-					{#if overview?.scanning.recent_runs.length}
+					{#if overview?.scanning?.recent_runs?.length}
 						<div class="overflow-x-auto">
 							<table class="w-full text-sm">
 								<thead>
@@ -1202,7 +1202,7 @@
 					</a>
 				</div>
 				<div class="p-2">
-					{#if overview?.abnormal.length}
+					{#if overview?.abnormal?.length}
 						<div class="divide-y divide-border/50">
 							{#each overview.abnormal as dev}
 								<a href="/devices?search={dev.ip_address}" class="flex items-center justify-between px-2 py-2 hover:bg-surface-2 rounded transition-colors">
