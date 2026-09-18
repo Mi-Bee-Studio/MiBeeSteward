@@ -258,3 +258,167 @@ func TestLeaseSweeper_StopWaitsForGoroutine(t *testing.T) {
 	cancel()
 	sweeper.Stop() // must block until the goroutine exits before t.Cleanup closes conn
 }
+
+// seedOrphan creates the #397 legacy shape: a device row bridged from an agent
+// report whose snapshot lease row has since vanished (what the pre-#389 lease
+// mis-resolution left behind once its lease feeder moved to the correct asset),
+// with the device row's last_seen aged past the given duration. The device row
+// keeps its uuid — only the lease reference is gone.
+func seedOrphan(t *testing.T, rn *Runner, conn *sql.DB, networkID int64, ip, mac string, age time.Duration) {
+	t.Helper()
+	ctx := context.Background()
+	nid := sql.NullInt64{Int64: networkID, Valid: true}
+	rn.applyDeviceBridge(ctx, reportFor(ip, "pc", "", mac), nid, "agent-62")
+	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{reportFor(ip, "pc", "", mac)})
+	_, err := conn.ExecContext(ctx, `DELETE FROM scan_snapshots WHERE network_id = ? AND ip = ?`, networkID, ip)
+	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, `UPDATE devices SET last_seen = ? WHERE ip_address = ? AND network_id = ?`,
+		scannerv2.DBTime(time.Now().UTC().Add(-age)), ip, networkID)
+	require.NoError(t, err)
+}
+
+// listLost lists change_log device_lost rows (the shared assertion helper shape
+// used throughout this file).
+func listLost(t *testing.T, queries *db.Queries) []db.ChangeLog {
+	t.Helper()
+	lost, err := queries.ListChangeLog(context.Background(), db.ListChangeLogParams{
+		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_lost",
+		Column5: 1, EntityType: "device", Limit: 100, Offset: 0,
+	})
+	require.NoError(t, err)
+	return lost
+}
+
+// TestLeaseSweeper_ExpiresOrphanedAgentDevice (#397): an online scanner-discovered
+// device in an agent network whose last_seen is past the TTL and which NO
+// scan_snapshots row references is invisible to the stale/recover queries (both
+// walk FROM snapshots and would never find it). The orphan backstop must flip it
+// offline, emit device_lost, and stamp offline_since for the retention sweep.
+// The flip is terminal — a second sweep must not re-emit.
+func TestLeaseSweeper_ExpiresOrphanedAgentDevice(t *testing.T) {
+	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
+	ctx := context.Background()
+	seedOrphan(t, rn, conn, agentNetID, "192.168.62.71", "aa:bb:cc:dd:ee:71", 10*time.Minute)
+
+	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
+	sweeper.sweepOnce(ctx)
+
+	var status, offlineSince string
+	conn.QueryRow(`SELECT status, COALESCE(offline_since,'') FROM devices WHERE ip_address='192.168.62.71'`).Scan(&status, &offlineSince)
+	require.Equal(t, "offline", status, "orphaned online device must be expired by the backstop")
+	require.NotEmpty(t, offlineSince, "offline_since must be stamped for the retention sweep")
+	require.Len(t, listLost(t, queries), 1, "one device_lost event emitted for the orphan")
+
+	// Terminal: the status='online' filter means the orphan fires at most once
+	// (there is no snapshot row to carry a flap counter — none is needed).
+	sweeper.sweepOnce(ctx)
+	require.Len(t, listLost(t, queries), 1, "orphan flip must not re-emit on the next sweep")
+}
+
+// TestLeaseSweeper_OrphanProtectedWithinTTL: the last_seen < cutoff guard — a
+// recently-seen orphan (e.g. a row bridged moments ago whose snapshot upsert
+// hasn't landed) must survive a full TTL window before the backstop fires.
+func TestLeaseSweeper_OrphanProtectedWithinTTL(t *testing.T) {
+	rn, _, conn, _, agentNetID := setupLeaseTestDB(t)
+	ctx := context.Background()
+	seedOrphan(t, rn, conn, agentNetID, "192.168.62.72", "aa:bb:cc:dd:ee:72", time.Minute)
+
+	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
+	sweeper.sweepOnce(ctx)
+
+	var status string
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.62.72'`).Scan(&status)
+	require.Equal(t, "online", status, "orphan within the TTL window must not be expired")
+}
+
+// TestLeaseSweeper_LeaseReferencedDeviceNotOrphanExpired: the NOT EXISTS guard —
+// a device whose uuid IS referenced by a snapshot (even with an aged device-row
+// last_seen) belongs to the normal stale/recover paths, never the orphan
+// backstop. With a FRESH lease it must stay online untouched.
+func TestLeaseSweeper_LeaseReferencedDeviceNotOrphanExpired(t *testing.T) {
+	rn, _, conn, _, agentNetID := setupLeaseTestDB(t)
+	ctx := context.Background()
+	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
+	ip, mac := "192.168.62.73", "aa:bb:cc:dd:ee:73"
+	rn.applyDeviceBridge(ctx, reportFor(ip, "pc", "", mac), nid, "agent-62")
+	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{reportFor(ip, "pc", "", mac)})
+	// Age the DEVICE row only; the lease stays fresh → not an orphan, not stale.
+	_, err := conn.ExecContext(ctx, `UPDATE devices SET last_seen = ? WHERE ip_address = ? AND network_id = ?`,
+		scannerv2.DBTime(time.Now().UTC().Add(-10*time.Minute)), ip, agentNetID)
+	require.NoError(t, err)
+
+	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
+	sweeper.sweepOnce(ctx)
+
+	var status string
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address=?`, ip).Scan(&status)
+	require.Equal(t, "online", status, "lease-referenced device with a fresh lease must stay online")
+}
+
+// TestLeaseSweeper_OrphanIgnoresManualDevices: manual devices are user
+// assertions, not lease subjects — an online manual device in an agent network
+// with an ancient last_seen and no snapshot must never be flipped by the
+// backstop (mirrors the retention sweep's scan_source convention).
+func TestLeaseSweeper_OrphanIgnoresManualDevices(t *testing.T) {
+	rn, _, conn, _, agentNetID := setupLeaseTestDB(t)
+	ctx := context.Background()
+	_, err := conn.ExecContext(ctx, `
+		INSERT INTO devices (name, type, status, ip_address, mac_address, network_id, scan_source, last_seen)
+		VALUES ('manual-box', 'other', 'online', '192.168.62.99', 'aa:bb:cc:dd:ee:99', ?, 'manual', ?)`,
+		agentNetID, scannerv2.DBTime(time.Now().UTC().Add(-24*time.Hour)))
+	require.NoError(t, err)
+
+	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
+	sweeper.sweepOnce(ctx)
+
+	var status string
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.62.99'`).Scan(&status)
+	require.Equal(t, "online", status, "manual device must not be expired by the orphan backstop")
+}
+
+// TestLeaseSweeper_OrphanIgnoredOnCenterNetwork: like both other directions, the
+// orphan backstop is scoped to agent networks — the center's own network keeps
+// its local-scan DetectLost + heartbeat paths.
+func TestLeaseSweeper_OrphanIgnoredOnCenterNetwork(t *testing.T) {
+	rn, _, conn, centerNetID, _ := setupLeaseTestDB(t)
+	ctx := context.Background()
+	seedOrphan(t, rn, conn, centerNetID, "192.168.63.71", "aa:bb:cc:dd:ee:71", 10*time.Minute)
+
+	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
+	sweeper.sweepOnce(ctx)
+
+	var status string
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.63.71'`).Scan(&status)
+	require.Equal(t, "online", status, "center-network orphan must not be expired by the lease sweeper")
+}
+
+// TestLeaseSweeper_OrphanRecoversWhenReportedAgain closes the lifecycle loop:
+// after the backstop flips an orphan offline, the agent reporting the host again
+// re-creates its snapshot (MAC-primary uuid resolution, #395) and recoverFresh
+// flips the row back online with a device_recovered event.
+func TestLeaseSweeper_OrphanRecoversWhenReportedAgain(t *testing.T) {
+	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
+	ctx := context.Background()
+	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
+	ip, mac := "192.168.62.74", "aa:bb:cc:dd:ee:74"
+	seedOrphan(t, rn, conn, agentNetID, ip, mac, 10*time.Minute)
+
+	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
+	sweeper.sweepOnce(ctx)
+	var status string
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address=?`, ip).Scan(&status)
+	require.Equal(t, "offline", status, "precondition: orphan expired")
+
+	// The agent reports the host again — lease re-created, row still offline.
+	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{reportFor(ip, "pc", "", mac)})
+	sweeper.sweepOnce(ctx)
+
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address=?`, ip).Scan(&status)
+	require.Equal(t, "online", status, "re-reported orphan must recover via its fresh lease")
+	recovered, err := queries.ListChangeLog(ctx, db.ListChangeLogParams{
+		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_recovered",
+		Column5: 1, EntityType: "device", Limit: 100, Offset: 0,
+	})
+	require.NoError(t, err)
+	require.Len(t, recovered, 1, "one device_recovered event emitted")
+}
