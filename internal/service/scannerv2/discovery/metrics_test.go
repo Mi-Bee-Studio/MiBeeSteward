@@ -42,10 +42,7 @@ func TestMetrics_EventsCounterBySourceAndOutcome(t *testing.T) {
 	svc.Emit(NewHostEvent{IP: "10.0.0.9", Source: "mdns"})
 
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if testutil.ToFloat64(eventsCounter.WithLabelValues("mdns", "skipped_known")) == 1 {
-			break
-		}
+	for testutil.ToFloat64(eventsCounter.WithLabelValues("mdns", "skipped_known")) != 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("consumer did not process the events within 2s")
 		}
