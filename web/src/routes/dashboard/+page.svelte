@@ -153,10 +153,10 @@
 	let pickerOpen = $state(false);
 	let editingWidget = $state<DashboardConfig | null>(null);
 	let confirmOpen = $state(false);
-	let removingWidgetId = $state<string | null>(null);
+	let removingWidgetId = $state<number | null>(null);
 	let helpOpen = $state(false);
 
-	let draggedId: string | null = $state(null);
+	let draggedId: number | null = $state(null);
 	let refreshTimers: ReturnType<typeof setInterval>[] = [];
 
 	// ipv4OrV6 matches a bare IPv4 (a.b.c.d) or IPv6 literal. Used to detect
@@ -558,7 +558,7 @@
 
 	// applyWidgetPatch merges a refresh result into the widgets array. Shared
 	// by the builtin and prometheus paths so both settle loading the same way.
-	function applyWidgetPatch(id: string, patch: Partial<WidgetState>) {
+	function applyWidgetPatch(id: number, patch: Partial<WidgetState>) {
 		const idx = widgets.findIndex((x) => x.id === id);
 		if (idx >= 0) {
 			widgets[idx] = { ...widgets[idx], ...patch, loading: false };
@@ -826,7 +826,7 @@
 
 	// ── Drag and drop ──
 
-	function handleDragStart(_e: DragEvent, id: string) {
+	function handleDragStart(_e: DragEvent, id: number) {
 		draggedId = id;
 	}
 
@@ -834,7 +834,7 @@
 		// needed for drop to fire
 	}
 
-	async function handleDrop(_e: DragEvent, targetId: string) {
+	async function handleDrop(_e: DragEvent, targetId: number) {
 		if (!draggedId || draggedId === targetId) return;
 
 		const fromIdx = widgets.findIndex((w) => w.id === draggedId);
@@ -878,7 +878,7 @@
 	// Keyboard reorder: move a widget up/down by one slot (mirrors the drag
 	// swap). Wired to the drag handle's arrow-key handler so keyboard users can
 	// reorder without dragging (#71).
-	async function handleMoveWidget(id: string, direction: 'up' | 'down') {
+	async function handleMoveWidget(id: number, direction: 'up' | 'down') {
 		const fromIdx = widgets.findIndex((w) => w.id === id);
 		if (fromIdx < 0) return;
 		const toIdx = direction === 'up' ? fromIdx - 1 : fromIdx + 1;
@@ -916,7 +916,7 @@
 		pickerOpen = true;
 	}
 
-	function handleEditWidget(id: string) {
+	function handleEditWidget(id: number) {
 		const w = widgets.find((x) => x.id === id);
 		if (w) {
 			editingWidget = {
@@ -934,7 +934,7 @@
 		}
 	}
 
-	function handleRemoveWidget(id: string) {
+	function handleRemoveWidget(id: number) {
 		removingWidgetId = id;
 		confirmOpen = true;
 	}

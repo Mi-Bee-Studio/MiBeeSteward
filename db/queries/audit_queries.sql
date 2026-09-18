@@ -8,15 +8,21 @@
 -- for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 
 -- name: ListAuditLogs :many
-SELECT id, user_id, action, resource_type, resource_id, ip_address, user_agent, details, created_at
+-- users.username is JOINed in (empty when the user row was deleted) so the
+-- audit UI can show who did what without a second round-trip per row.
+SELECT audit_logs.id, audit_logs.user_id, audit_logs.action, audit_logs.resource_type,
+       audit_logs.resource_id, audit_logs.ip_address, audit_logs.user_agent,
+       audit_logs.details, audit_logs.created_at,
+       users.username AS username
 FROM audit_logs
-WHERE (? = 0 OR user_id = ?)
-  AND (? = '' OR action = ?)
-  AND (? = '' OR resource_type = ?)
-  AND (? = '' OR created_at >= ?)
-  AND (? = '' OR created_at <= ?)
-  AND (? = '' OR INSTR(lower(action), lower(?)) > 0 OR INSTR(lower(resource_type), lower(?)) > 0 OR INSTR(lower(ip_address), lower(?)) > 0)
-ORDER BY created_at DESC
+LEFT JOIN users ON users.id = audit_logs.user_id
+WHERE (? = 0 OR audit_logs.user_id = ?)
+  AND (? = '' OR audit_logs.action = ?)
+  AND (? = '' OR audit_logs.resource_type = ?)
+  AND (? = '' OR audit_logs.created_at >= ?)
+  AND (? = '' OR audit_logs.created_at <= ?)
+  AND (? = '' OR INSTR(lower(audit_logs.action), lower(?)) > 0 OR INSTR(lower(audit_logs.resource_type), lower(?)) > 0 OR INSTR(lower(audit_logs.ip_address), lower(?)) > 0)
+ORDER BY audit_logs.created_at DESC
 LIMIT ? OFFSET ?;
 
 -- name: CountAuditLogs :one

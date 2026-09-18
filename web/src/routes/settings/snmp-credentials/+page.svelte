@@ -65,7 +65,7 @@
 		error = '';
 		try {
 			const res = await api.get<SNMPCredentialListResponse>('/snmp-credentials');
-			credentials = res.credentials;
+			credentials = res.credentials ?? [];
 		} catch (e) {
 			error = getErrorMessage(e);
 		} finally {

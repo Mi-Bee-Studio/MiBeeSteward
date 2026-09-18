@@ -99,7 +99,6 @@ export const heartbeatConfigSchema = z.object({
 	enabled: z.boolean(),
 	snmp_community: z.string().optional(),
 	snmp_oid: z.string().optional(),
-	expected_status: z.number().int().min(100).max(599).optional(),
 });
 
 export const documentUrlSchema = z.object({

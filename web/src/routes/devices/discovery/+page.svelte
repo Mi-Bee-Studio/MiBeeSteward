@@ -21,7 +21,7 @@
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { Radar as RadarIcon } from '@lucide/svelte';
-	import type { DiscoveryStatus } from '$lib/types';
+	import type { DiscoveryStatus, DiscoveryStats } from '$lib/types';
 
 	let status = $state<DiscoveryStatus | null>(null);
 	let loading = $state(true);
@@ -72,7 +72,8 @@
 		pollTimer = setTimeout(fetchStatus, delay);
 	}
 
-	let stats = $derived(status?.stats ?? {});
+	// Empty-stats fallback keeps the PascalCase wire shape (Partial until first poll).
+	let stats = $derived<Partial<DiscoveryStats>>(status?.stats ?? {});
 	let funnel = $derived([
 		{ label: m['discovery.Funnel Events Received'](), value: stats.EventsReceived ?? 0, cls: 'text-text' },
 		{ label: m['discovery.Funnel Suppressed Recent'](), value: stats.SuppressedRecent ?? 0, cls: 'text-accent' },

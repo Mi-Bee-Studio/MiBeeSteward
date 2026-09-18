@@ -885,12 +885,14 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description {by_status: {...}} */
+                /** @description Counters keyed by status/type */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DeviceStats"];
+                    };
                 };
             };
         };
@@ -1122,7 +1124,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DeviceSystem"];
+                    };
                 };
             };
         };
@@ -1317,7 +1321,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DeviceConfigDiff"];
+                    };
                 };
             };
         };
@@ -1354,7 +1360,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DeviceConfigDetail"];
+                    };
                 };
                 404: components["responses"]["Error"];
             };
@@ -1564,7 +1572,15 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                200: components["responses"]["OK"];
+                /** @description Updated config */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HeartbeatConfig"];
+                    };
+                };
             };
         };
         post?: never;
@@ -1727,10 +1743,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Online ratio / offline duration aggregates */
+        /** Windowed success/fail/timeout aggregates + avg latency */
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    from: string;
+                    to: string;
+                };
                 header?: never;
                 path: {
                     id: components["parameters"]["id"];
@@ -1744,7 +1763,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["HeartbeatStats"];
+                    };
                 };
             };
         };
@@ -2665,7 +2686,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["ProbeResult"];
+                    };
                 };
             };
         };
@@ -3524,7 +3547,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DiscoveryStatus"];
+                    };
                 };
             };
         };
@@ -3605,7 +3630,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["AuditFacets"];
+                    };
                 };
             };
         };
@@ -3971,7 +3998,15 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                201: components["responses"]["Created"];
+                /** @description Saved configuration */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DashboardConfig"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -4000,7 +4035,15 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                200: components["responses"]["OK"];
+                /** @description Updated configuration */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DashboardConfig"];
+                    };
+                };
             };
         };
         post?: never;
@@ -4194,17 +4237,19 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description {channels, total} */
+                /** @description Channels envelope */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["NotificationChannelList"];
+                    };
                 };
             };
         };
         put?: never;
-        /** Create a channel (webhook/smtp) */
+        /** Create a channel (webhook/email/feishu/wecom/telegram/discord) */
         post: {
             parameters: {
                 query?: never;
@@ -4214,7 +4259,15 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                201: components["responses"]["Created"];
+                /** @description Created channel (masked) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationChannel"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -4242,12 +4295,14 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Channel */
+                /** @description Channel (masked) */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["NotificationChannel"];
+                    };
                 };
             };
         };
@@ -4263,12 +4318,14 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Channel */
+                /** @description Channel (masked) */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["NotificationChannel"];
+                    };
                 };
             };
         };
@@ -4308,12 +4365,14 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Channel */
+                /** @description Channel (masked) */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["NotificationChannel"];
+                    };
                 };
             };
         };
@@ -4366,12 +4425,14 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description {rules, total} */
+                /** @description Rules envelope */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["NotificationRuleList"];
+                    };
                 };
             };
         };
@@ -4419,7 +4480,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["NotificationRule"];
+                    };
                 };
             };
         };
@@ -4440,7 +4503,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["NotificationRule"];
+                    };
                 };
             };
         };
@@ -4769,332 +4834,889 @@ export interface components {
             offset?: number;
         };
         LoginResponse: {
-            token?: string;
-            user?: components["schemas"]["User"];
+            /** @description JWT (cookie mibee_token preferred; Bearer fallback) */
+            token: string;
+            user: components["schemas"]["User"];
             two_factor_required?: boolean;
             user_id?: number;
         };
         User: {
-            id?: number;
-            username?: string;
-            email?: string;
-            /** @enum {string} */
-            role?: "admin" | "operator" | "viewer" | "user";
-            must_change_password?: boolean;
+            /** Format: int64 */
+            id: number;
+            username: string;
+            email: string;
+            /**
+             * @description user = legacy alias for viewer
+             * @enum {string}
+             */
+            role: "admin" | "operator" | "viewer" | "user";
+            must_change_password: boolean;
             /** Format: date-time */
-            created_at?: string;
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         UserList: components["schemas"]["PageMeta"] & {
             users?: components["schemas"]["User"][];
         };
+        NetworkGrant: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            user_id: number;
+            username?: string;
+            /** Format: int64 */
+            network_id: number;
+            network_name?: string;
+            /** Format: date-time */
+            granted_at: string;
+        };
         NetworkGrantList: components["schemas"]["PageMeta"] & {
-            grants?: {
-                id?: number;
-                user_id?: number;
-                username?: string;
-                network_id?: number;
-                network_name?: string;
-                /** Format: date-time */
-                granted_at?: string;
-            }[];
+            grants?: components["schemas"]["NetworkGrant"][];
+        };
+        /** @description Parsed SNMP sysObject query (mirrors domain.SNMPDiscovery) */
+        SNMPDiscovery: {
+            sys_descr?: string;
+            sys_object_id?: string;
+            sys_name?: string;
+            sys_location?: string;
+            sys_contact?: string;
+            sys_services?: number;
+        };
+        OpenPortEntry: {
+            port: number;
+            service?: string;
+        };
+        ServiceEntry: {
+            port: number;
+            name: string;
+            protocol?: string;
+            version?: string;
+        };
+        PrometheusInfo: {
+            url?: string;
+            node_exporter_url?: string;
+            labels?: {
+                [key: string]: string;
+            };
+        };
+        /** @description Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively — treat every field as optional. Engine-owned: user edits go to user_attributes. */
+        ScanAttributes: {
+            /** @description OUI lookup or SNMP/HTTP-derived vendor */
+            vendor?: string;
+            /** @description normalized lowercase aa:bb:cc:.. */
+            mac?: string;
+            hostname?: string;
+            /** @description U/L bit set — neutral observability flag */
+            mac_is_locally_administered?: boolean;
+            mac_is_multicast?: boolean;
+            /** @description IEEE block via longest-prefix (6/7/9 hex) */
+            oui_prefix?: string;
+            /** @description NIC silicon vendor — distinct from self-declared vendor */
+            oui_vendor?: string;
+            os?: string;
+            os_version?: string;
+            kernel_version?: string;
+            firmware_version?: string;
+            cpu_count?: number;
+            cpu_model?: string;
+            /** Format: int64 */
+            memory_total_bytes?: number;
+            /** Format: int64 */
+            uptime_seconds?: number;
+            ttl?: number;
+            /** Format: int64 */
+            last_scan_rtt_ms?: number;
+            scan_source?: string;
+            /** @description RFC3339; empty when never scanned */
+            last_scanned_at?: string;
+            inferred_type?: string;
+            /**
+             * @description protocol = evidence-backed (trustworthy); heuristic = hostname/brand guess (spoofable)
+             * @enum {string}
+             */
+            inferred_type_source?: "" | "protocol" | "heuristic";
+            inferred_description?: string;
+            snmp?: components["schemas"]["SNMPDiscovery"];
+            open_ports?: components["schemas"]["OpenPortEntry"][];
+            detected_services?: components["schemas"]["ServiceEntry"][];
+            prometheus?: components["schemas"]["PrometheusInfo"];
+            /** @description Namespaced probe overflow (mdns.* */
+            extras?: {
+                [key: string]: string;
+            };
+        } & {
+            [key: string]: unknown;
         };
         Device: {
-            id?: number;
-            name?: string;
-            /** @description e.g. camera, server, pc, switch, other */
-            type?: string;
-            brand?: string;
-            model?: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
             /** @enum {string} */
-            status?: "online" | "offline" | "warning" | "unknown";
-            ip_address?: string;
-            mac_address?: string;
-            network_id?: number | null;
-            device_uuid?: string;
-            /** @description scanner_v2 | manual | passive:* */
-            scan_source?: string;
+            type: "pc" | "embedded" | "iot" | "server" | "switch" | "router" | "firewall" | "nas" | "camera" | "phone" | "printer" | "other";
+            brand: string;
+            model: string;
+            location: string;
+            purpose: string;
+            description: string;
+            /** @enum {string} */
+            status: "online" | "offline" | "unknown";
+            ip_address: string;
+            mac_address: string;
+            serial_number: string;
+            purchase_date: string;
+            warranty_expiry: string;
+            tags: string;
             /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description scanner_v2 | manual | passive:* */
+            scan_source: string;
+            /**
+             * Format: int64
+             * @description Logical network the device was discovered on (absent for legacy rows)
+             */
+            network_id?: number | null;
+            network_name?: string;
+            prometheus_labels: string;
+            /** Format: date-time */
+            last_scanned_at?: string | null;
+            /** Format: int64 */
+            last_scan_task_id?: number | null;
+            /**
+             * Format: date-time
+             * @description Scan-derived last observed online
+             */
             last_seen?: string | null;
-            open_ports?: Record<string, never>[];
-            detected_services?: Record<string, never>[];
-            /** @description Evidence-derived attributes (mac, oui_vendor, inferred_type, ...) */
-            scan_attributes?: Record<string, never>;
-            user_attributes?: Record<string, never>;
-            tags?: Record<string, never>;
+            /**
+             * Format: date-time
+             * @description Authoritative last-alive from the verdict series (detail rows only)
+             */
+            last_online_at?: string | null;
+            /**
+             * Format: date-time
+             * @description Retention clock start when offline
+             */
+            offline_since?: string | null;
+            /** @description Legacy JSON-string column; parse for OpenPortEntry items. UI prefers scan_attributes.open_ports */
+            open_ports: string;
+            /** @description Legacy JSON-string column; parse for ServiceEntry items. UI prefers scan_attributes.detected_services */
+            detected_services: string;
+            prometheus_url: string;
+            node_exporter_url: string;
+            /** Format: int64 */
+            last_scan_rtt_ms: number;
+            scan_attributes: components["schemas"]["ScanAttributes"];
+            user_attributes: {
+                [key: string]: string;
+            };
         };
         DeviceList: components["schemas"]["PageMeta"] & {
             devices?: components["schemas"]["Device"][];
         };
+        DeviceStats: {
+            /** @description keyed online/offline/unknown */
+            by_status: {
+                [key: string]: number;
+            };
+            by_type: {
+                [key: string]: number;
+            };
+        };
+        DeviceSystem: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            device_id: number;
+            name: string;
+            entry_url: string;
+            description: string;
+            category: string;
+            metrics_url: string;
+            metrics_enabled: boolean;
+            tags: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         DeviceSystemList: components["schemas"]["PageMeta"] & {
-            systems?: Record<string, never>[];
+            systems?: components["schemas"]["DeviceSystem"][];
+        };
+        /** @description One L2 adjacency edge (device_neighbors). Pointer fields are present-but-null when unknown (no omitempty). */
+        DeviceNeighbor: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            device_id: number;
+            /**
+             * Format: int64
+             * @description Present when the neighbor MAC matched a scanned device
+             */
+            neighbor_device_id: number | null;
+            neighbor_mac: string;
+            /** @enum {string} */
+            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP";
+            local_port: string | null;
+            remote_port: string | null;
+            neighbor_name: string | null;
+            neighbor_ip: string | null;
+            neighbor_type: string | null;
+            neighbor_status: string | null;
+            /** Format: date-time */
+            first_seen: string | null;
+            /** Format: date-time */
+            last_seen: string | null;
         };
         NeighborList: {
-            neighbors?: Record<string, never>[];
+            neighbors?: components["schemas"]["DeviceNeighbor"][];
             total?: number;
+        };
+        /** @description One certificate in a port's chain (cert_index 0 = leaf) */
+        CertificateInfo: {
+            cert_index: number;
+            subject_cn: string;
+            subject_org: string;
+            subject: string;
+            issuer_cn: string;
+            issuer_org: string;
+            issuer: string;
+            san_dns: string;
+            san_ip: string;
+            san_email: string;
+            serial: string;
+            /** @description ISO 8601 UTC */
+            not_before: string;
+            /** @description ISO 8601 UTC */
+            not_after: string;
+            sig_algorithm: string;
+            key_algorithm: string;
+            key_bits: number;
+            is_ca: boolean;
+            self_signed: boolean;
+            fingerprint_sha256: string;
+            pem: string;
+        };
+        /** @description One TLS-speaking port — handshake metadata + cert chain */
+        TLSPortCerts: {
+            port: number;
+            tls_version: string;
+            cipher_suite: string;
+            trusted: boolean;
+            /** @description Non-empty when the handshake failed (leaf/chain empty then) */
+            error?: string;
+            updated_at: string;
+            leaf?: components["schemas"]["CertificateInfo"];
+            chain: components["schemas"]["CertificateInfo"][];
         };
         CertificateList: {
-            certificates?: {
-                port?: number;
-                tls_version?: string;
-                cipher_suite?: string;
-                trusted?: boolean;
-                /** Format: date-time */
-                updated_at?: string;
-                chain?: Record<string, never>[];
-            }[];
+            certificates?: components["schemas"]["TLSPortCerts"][];
             total?: number;
         };
+        DeviceConfigSummary: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            device_id: number;
+            config_hash: string;
+            protocol: string;
+            has_diff: boolean;
+            /** Format: date-time */
+            fetched_at: string;
+        };
         DeviceConfigList: components["schemas"]["PageMeta"] & {
-            items?: {
-                id?: number;
-                device_id?: number;
-                config_hash?: string;
-                protocol?: string;
-                has_diff?: boolean;
+            items?: components["schemas"]["DeviceConfigSummary"][];
+        };
+        DeviceConfigDetail: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            device_id: number;
+            config_hash: string;
+            config_text: string;
+            protocol: string;
+            diff_from_prev: string;
+            /** Format: date-time */
+            fetched_at: string;
+        };
+        DeviceConfigDiff: {
+            a: {
+                /** Format: int64 */
+                id: number;
                 /** Format: date-time */
-                fetched_at?: string;
-            }[];
+                fetched_at: string;
+            };
+            b: {
+                /** Format: int64 */
+                id: number;
+                /** Format: date-time */
+                fetched_at: string;
+            };
+            /** @description Unified diff; empty when identical */
+            diff: string;
         };
         DeviceDocumentList: {
             documents?: components["schemas"]["Document"][];
             total?: number;
         };
+        /** @description One heartbeat probe row. NOTE enabled is 0/1 on the wire (SQLite INTEGER column), not a JSON boolean. */
+        HeartbeatConfig: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            device_id: number;
+            /** @enum {string} */
+            method: "ICMP" | "TCP" | "HTTP" | "SNMP";
+            target: string;
+            /** Format: int64 */
+            interval_seconds: number;
+            /** Format: int64 */
+            timeout_seconds: number;
+            snmp_community: string;
+            snmp_oid: string;
+            /** @enum {integer} */
+            enabled: 0 | 1;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         HeartbeatConfigList: {
-            configs?: Record<string, never>[];
+            configs?: components["schemas"]["HeartbeatConfig"][];
             total?: number;
         };
-        HeartbeatResultList: components["schemas"]["PageMeta"] & {
-            results?: Record<string, never>[];
-        };
-        Network: {
-            id?: number;
-            name?: string;
-            cidr?: string | null;
-            site?: string | null;
-            /** @description Non-empty = managed by that distributed agent */
-            agent_id?: string | null;
+        HeartbeatResult: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            device_id: number;
+            /** Format: int64 */
+            config_id: number;
+            /** @enum {string} */
+            status: "success" | "fail" | "timeout";
+            latency_ms: number;
+            error_message: string;
             /** Format: date-time */
-            created_at?: string;
+            checked_at: string;
+        };
+        HeartbeatResultList: components["schemas"]["PageMeta"] & {
+            results?: components["schemas"]["HeartbeatResult"][];
+        };
+        HeartbeatStats: {
+            avg_latency_ms: number;
+            /** Format: int64 */
+            success_count: number;
+            /** Format: int64 */
+            fail_count: number;
+            /** Format: int64 */
+            timeout_count: number;
+        };
+        /** @description Logical network row (db.Network marshaled directly — pointer columns are present-but-null) */
+        Network: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @description Advisory (no strict validation) */
+            cidr: string | null;
+            site: string | null;
+            /** @description Non-empty = managed by that distributed agent */
+            agent_id: string | null;
+            metadata: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         NetworkList: {
             networks?: components["schemas"]["Network"][];
             total?: number;
         };
+        VLAN: {
+            /** Format: int64 */
+            id: number;
+            vlan_tag: number;
+            name: string | null;
+            description: string | null;
+        };
         VLANList: {
-            vlans?: {
-                id?: number;
-                vlan_tag?: number;
-                name?: string | null;
-                description?: string | null;
-            }[];
+            vlans?: components["schemas"]["VLAN"][];
             total?: number;
         };
+        /** @description Per-task pipeline stage toggles (an OBJECT in responses/requests; */
+        PipelineConfig: {
+            icmp: {
+                enabled: boolean;
+                timeout: number;
+            };
+            snmp: {
+                enabled: boolean;
+                community: string;
+            };
+            port_scan: {
+                enabled: boolean;
+                ports: string;
+                scan_type: string;
+            };
+            service_detect: {
+                enabled: boolean;
+            };
+            prometheus: {
+                enabled: boolean;
+                ports: string;
+            };
+            node_exporter: {
+                enabled: boolean;
+            };
+        };
         ScanTask: {
-            id?: number;
-            name?: string;
-            targets?: string;
-            cron_expr?: string;
-            /** @description Pipeline stage configuration (an OBJECT in responses; */
-            pipeline_config?: Record<string, never>;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            targets: string;
+            cron_expr: string;
+            pipeline_config: components["schemas"]["PipelineConfig"];
+            global_labels: string;
+            timeout: number;
+            concurrent_hosts: number;
+            /**
+             * Format: int64
+             * @description Bound SNMP credential; absent = engine default community
+             */
             credential_id?: number | null;
-            network_id?: number | null;
-            enabled?: boolean;
+            enabled: boolean;
             /** Format: date-time */
             last_run_at?: string | null;
             /** Format: date-time */
             next_run_at?: string | null;
+            last_run_status?: string;
             /** Format: date-time */
-            created_at?: string;
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         ScanTaskList: components["schemas"]["PageMeta"] & {
             tasks?: components["schemas"]["ScanTask"][];
         };
         ScanRun: {
-            id?: number;
-            task_id?: number;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            task_id: number;
             /** @enum {string} */
-            status?: "pending" | "running" | "completed" | "failed" | "cancelled";
-            total_hosts?: number;
-            alive_hosts?: number;
-            new_hosts?: number;
-            updated_hosts?: number;
-            duration_ms?: number;
+            status: "pending" | "running" | "completed" | "failed" | "cancelled";
+            total_hosts: number;
+            alive_hosts: number;
+            new_hosts: number;
+            updated_hosts: number;
+            duration_ms: number;
             error_message?: string;
             /** Format: date-time */
             started_at?: string | null;
             /** Format: date-time */
             finished_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
         };
         ScanRunList: components["schemas"]["PageMeta"] & {
             runs?: components["schemas"]["ScanRun"][];
         };
+        /** @description One per-IP scan outcome. ports/services/snmp_data are legacy JSON-string columns (parse client-side). */
         ScanResult: {
-            id?: number;
-            task_id?: number;
-            run_id?: number | null;
-            ip?: string;
-            alive?: boolean;
-            rtt_ms?: number;
-            ports?: Record<string, never>[];
-            services?: Record<string, never>;
-            snmp_data?: Record<string, never>;
-            inferred_type?: string;
-            inferred_brand?: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            task_id: number;
+            /** Format: int64 */
+            run_id?: number;
+            ip: string;
+            alive: boolean;
+            /** Format: int64 */
+            rtt_ms: number;
+            ports: string;
+            services: string;
+            snmp_data: string;
+            prometheus_detected: boolean;
+            prometheus_url?: string;
+            node_exporter_detected: boolean;
+            node_exporter_url?: string;
+            node_exporter_data: string;
             /** Format: date-time */
-            scanned_at?: string;
+            scanned_at: string;
         };
         ScanResultList: components["schemas"]["PageMeta"] & {
             results?: components["schemas"]["ScanResult"][];
         };
+        /** @description Synthetic-probe target. module (NOT method) selects the executor; last_* denormalize the newest outcome (empty/0 = never probed). */
         ProbeTarget: {
-            id?: number;
-            name?: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
             /** @enum {string} */
-            method?: "http" | "tcp" | "icmp" | "snmp";
-            target?: string;
-            interval_seconds?: number;
-            enabled?: boolean;
-            /** @description center (default) | agent:{agent_id} | all */
-            vantage?: string;
-            expect_status?: number;
-            /** Format: date-time */
-            created_at?: string;
+            module: "http" | "tls" | "tcp" | "icmp";
+            /** @description URL (http), host:port (tls/tcp), host/IP (icmp) */
+            target: string;
+            interval_seconds: number;
+            timeout_seconds: number;
+            enabled: boolean;
+            notes: string;
+            last_run_at?: string;
+            /** @enum {string} */
+            last_status?: "" | "success" | "fail" | "timeout";
+            last_latency_ms: number;
+            last_error?: string;
+            created_at: string;
+            updated_at: string;
+            /** @description 'center' (default) | 'agent:{id}' | 'all' */
+            vantage: string;
         };
         ProbeTargetList: components["schemas"]["PageMeta"] & {
             targets?: components["schemas"]["ProbeTarget"][];
         };
         ProbeResult: {
-            id?: number;
-            target_id?: number;
-            vantage?: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            target_id: number;
             /** @enum {string} */
-            status?: "up" | "down";
-            latency_ms?: number;
-            /** Format: date-time */
-            checked_at?: string;
-            error?: string;
+            status: "success" | "fail" | "timeout";
+            latency_ms: number;
+            /** @description HTTP status (http module); 0 otherwise */
+            status_code: number;
+            error_message?: string;
+            tls_version?: string;
+            /** @description Leaf cert expiry; empty when none collected */
+            cert_not_after?: string;
+            /** @description null = no cert collected that run */
+            cert_trusted?: boolean | null;
+            checked_at: string;
+            /** @description 'center' or 'agent:{id}' */
+            vantage: string;
         };
         ProbeResultList: components["schemas"]["PageMeta"] & {
             results?: components["schemas"]["ProbeResult"][];
         };
         /** @description Masked projection — passphrases are NEVER returned (not even ciphertext) */
         SNMPCredential: {
-            id?: number;
-            name?: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
             /** @enum {string} */
-            security_level?: "v1v2c" | "noAuthNoPriv" | "authNoPriv" | "authPriv";
+            security_level: "v1v2c" | "noAuthNoPriv" | "authNoPriv" | "authPriv";
             community?: string;
             username?: string;
             auth_protocol?: string;
-            has_auth?: boolean;
+            has_auth: boolean;
             priv_protocol?: string;
-            has_priv?: boolean;
+            has_priv: boolean;
             notes?: string;
         };
         SNMPCredentialList: components["schemas"]["PageMeta"] & {
             credentials?: components["schemas"]["SNMPCredential"][];
         };
+        /** @description SSH credential metadata (secret redacted) */
+        SSHCredential: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @enum {string} */
+            auth_method: "password" | "key";
+            username?: string;
+            host_key_fp?: string;
+            has_secret: boolean;
+            has_passphrase: boolean;
+            enabled: boolean;
+            notes?: string;
+        };
         SSHCredentialList: components["schemas"]["PageMeta"] & {
-            credentials?: Record<string, never>[];
+            credentials?: components["schemas"]["SSHCredential"][];
         };
         AgentToken: {
-            id?: number;
-            agent_id?: string;
-            network_id?: number | null;
+            /** Format: int64 */
+            id: number;
+            agent_id: string;
+            /**
+             * Format: int64
+             * @description Absent when unbound
+             */
+            network_id?: number;
             name?: string;
             /** Format: date-time */
-            created_at?: string;
+            created_at: string;
             /** Format: date-time */
-            last_used_at?: string | null;
+            last_used_at?: string;
             /** Format: date-time */
-            revoked_at?: string | null;
+            revoked_at?: string;
         };
         AgentTokenList: {
             tokens?: components["schemas"]["AgentToken"][];
             total?: number;
         };
+        AgentTokenCreated: components["schemas"]["AgentToken"] & {
+            /** @description Plaintext token — shown ONCE at mint */
+            token: string;
+        };
         AgentCommand: {
-            id?: number;
-            agent_id?: string;
+            /** Format: int64 */
+            id: number;
+            agent_id: string;
             /** @enum {string} */
-            command?: "scan" | "probe" | "restart" | "config-reload" | "logs-tail";
+            command: "scan" | "probe" | "restart" | "config-reload" | "logs-tail";
             /** @description JSON string (e.g. {targets,timeout,credential_name}) */
-            payload?: string;
+            payload: string;
             /** @enum {string} */
-            status?: "pending" | "acknowledged" | "done" | "failed";
-            result?: string;
+            status: "pending" | "acknowledged" | "done" | "failed";
             /** Format: date-time */
-            created_at?: string;
+            created_at: string;
+            /** Format: date-time */
+            acknowledged_at: string | null;
+            /** @description Optional JSON detail */
+            result: string | null;
         };
         AgentCommandList: components["schemas"]["PageMeta"] & {
             commands?: components["schemas"]["AgentCommand"][];
         };
+        ChangeLogEntry: {
+            /** Format: int64 */
+            id: number;
+            agent_id?: string;
+            /** Format: int64 */
+            network_id?: number;
+            /** @enum {string} */
+            change_type: "device_added" | "device_changed" | "device_lost" | "device_recovered" | "device_config_changed";
+            entity_type: string;
+            /** Format: int64 */
+            entity_id?: number;
+            before_data?: string;
+            after_data?: string;
+            /** Format: date-time */
+            detected_at: string;
+        };
         ChangeList: components["schemas"]["PageMeta"] & {
-            changes?: {
-                id?: number;
-                agent_id?: string;
-                network_id?: number | null;
-                /** @enum {string} */
-                change_type?: "device_added" | "device_changed" | "device_lost" | "device_recovered" | "device_config_changed";
-                entity_type?: string;
-                entity_id?: number;
-                before_data?: string;
-                after_data?: string;
-                /** Format: date-time */
-                detected_at?: string;
-            }[];
+            changes?: components["schemas"]["ChangeLogEntry"][];
+        };
+        /** @description Audit trail row. Pointer fields are present-but-null; username is "" when the user row was deleted. */
+        AuditLog: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            user_id: number | null;
+            username: string;
+            action: string;
+            resource_type: string;
+            resource_id: string | null;
+            ip_address: string | null;
+            user_agent: string | null;
+            details: string | null;
+            /** Format: date-time */
+            created_at: string;
         };
         AuditLogList: components["schemas"]["PageMeta"] & {
-            audit_logs?: {
-                id?: number;
-                user_id?: number | null;
-                username?: string;
-                action?: string;
-                resource_type?: string;
-                resource_id?: string;
-                details?: string;
-                /** Format: date-time */
-                created_at?: string;
-            }[];
+            audit_logs?: components["schemas"]["AuditLog"][];
         };
+        AuditFacets: {
+            actions: string[];
+            resource_types: string[];
+        };
+        /** @description Linked document row (db.Document marshaled directly) */
         Document: {
-            id?: number;
-            title?: string;
-            doc_type?: string;
-            description?: string;
-            file_path?: string;
-            file_size?: number;
+            /** Format: int64 */
+            id: number;
+            title: string;
+            /** @enum {string} */
+            type: "url" | "file";
+            url: string;
+            file_path: string;
+            /** Format: int64 */
+            file_size: number;
+            mime_type: string;
+            description: string;
             /** Format: date-time */
-            deleted_at?: string | null;
+            deleted_at: string | null;
             /** Format: date-time */
-            created_at?: string;
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         DocumentList: components["schemas"]["PageMeta"] & {
             documents?: components["schemas"]["Document"][];
         };
+        /** @description Saved dashboard widget card (db.DashboardConfig — id is an integer) */
+        DashboardConfig: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /**
+             * @description list = builtin preset list, valid only with data_source builtin
+             * @enum {string}
+             */
+            type: "gauge" | "line" | "bar" | "pie" | "list";
+            /** @enum {string} */
+            data_source: "builtin" | "prometheus";
+            /** @description builtin:<key> or raw PromQL */
+            query: string;
+            /** Format: int64 */
+            refresh_interval: number;
+            /** Format: int64 */
+            position: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         DashboardConfigList: {
-            configs?: Record<string, never>[];
+            configs?: components["schemas"]["DashboardConfig"][];
             total?: number;
         };
+        TopologyNode: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            ip_address: string;
+            mac_address: string;
+            /** @description Hand-set type or other */
+            type: string;
+            /** @enum {string} */
+            status: "online" | "offline" | "unknown";
+            /** @description Evidence-derived — richer than type */
+            inferred_type: string;
+            brand: string;
+            /**
+             * Format: int64
+             * @description Origin network (subnet grouping)
+             */
+            network_id: number | null;
+        };
+        TopologyEdge: {
+            /** Format: int64 */
+            from_device_id: number;
+            /**
+             * Format: int64
+             * @description null = unidentified neighbor (dashed edge)
+             */
+            to_device_id: number | null;
+            to_mac: string;
+            /** @enum {string} */
+            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP";
+            local_port: string | null;
+            /** @description Far-end ifName (LLDP/CDP only) */
+            remote_port: string | null;
+        };
         TopologyGraph: {
-            nodes?: {
-                id?: string;
-                name?: string;
-                type?: string;
-                ip?: string;
-                status?: string;
-            }[];
-            edges?: {
-                source?: string;
-                target?: string;
-                source_port?: string;
-                target_port?: string;
-                /** @description lldp | cdp | bridge | arp */
-                protocol?: string;
+            nodes: components["schemas"]["TopologyNode"][];
+            edges: components["schemas"]["TopologyEdge"][];
+        };
+        /** @description Passive-discovery runtime observability. NOTE: config/stats inner keys are Go-default PascalCase (the structs carry no json tags) and Interval is time.Duration — an integer in NANOSECONDS. */
+        DiscoveryStatus: {
+            enabled: boolean;
+            /** Format: date-time */
+            started_at: string;
+            uptime: string;
+            config: {
+                /**
+                 * Format: int64
+                 * @description ARP-source poll cadence
+                 */
+                Interval: number;
+                /** @description Single-IP identify scan on genuinely-new hosts */
+                TriggerIdentify: boolean;
+            };
+            sources: string[];
+            stats: {
+                /** Format: int64 */
+                EventsReceived: number;
+                /** Format: int64 */
+                SuppressedRecent: number;
+                /** Format: int64 */
+                KnownHostSkipped: number;
+                /** Format: int64 */
+                IdentifyTriggered: number;
+                /** Format: int64 */
+                IdentifyAlive: number;
+                /** Format: int64 */
+                IdentifyDead: number;
+                /** Format: int64 */
+                DeviceRecorded: number;
+            };
+            recent_discoveries: {
+                ip: string;
+                mac?: string;
+                source: string;
+                /** @enum {string} */
+                outcome: "recorded" | "skipped_known" | "skipped_recent" | "identify_failed";
+                /** Format: date-time */
+                at: string;
             }[];
         };
+        /** @description Notification channel (password/secret masked in responses) */
+        NotificationChannel: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @enum {string} */
+            type: "webhook" | "email" | "feishu" | "wecom" | "telegram" | "discord";
+            /** @description Channel-type-specific config (secret redacted on read) */
+            config: Record<string, never>;
+            enabled: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        NotificationChannelList: {
+            channels?: components["schemas"]["NotificationChannel"][];
+            total?: number;
+        };
+        /** @description Event→channel binding with anti-flap cooldown (#139) */
+        NotificationRule: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @enum {string} */
+            event_type: "device_added" | "device_changed" | "device_lost" | "device_recovered";
+            /** @enum {string} */
+            scope_type: "all" | "network" | "device";
+            /** Format: int64 */
+            scope_network_id?: number | null;
+            scope_device_uuid?: string;
+            /** Format: int64 */
+            channel_id: number;
+            /** Format: int64 */
+            cooldown_minutes: number;
+            enabled: boolean;
+            /** Format: date-time */
+            last_triggered_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        NotificationRuleList: {
+            rules?: components["schemas"]["NotificationRule"][];
+            total?: number;
+        };
+        /** @description Outbound dispatch history with the requesting user's is_read flag */
+        NotificationLog: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            rule_id?: number | null;
+            /** Format: int64 */
+            channel_id?: number | null;
+            /** @enum {string} */
+            status: "sent" | "failed";
+            payload: string;
+            error_message: string;
+            /** Format: date-time */
+            sent_at: string;
+            is_read: boolean;
+        };
         NotificationLogList: components["schemas"]["PageMeta"] & {
-            logs?: Record<string, never>[];
+            logs?: components["schemas"]["NotificationLog"][];
+        };
+        MarkAllReadResponse: {
+            /** @description Rows flipped to read */
+            marked: number;
         };
     };
     responses: {

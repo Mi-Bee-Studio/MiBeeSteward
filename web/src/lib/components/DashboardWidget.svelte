@@ -37,12 +37,12 @@
 		ondrop
 	}: {
 		widget: WidgetState;
-		onEdit: (id: string) => void;
-		onRemove: (id: string) => void;
-		onMove: (id: string, direction: 'up' | 'down') => void;
-		ondragstart: (e: DragEvent, id: string) => void;
+		onEdit: (id: number) => void;
+		onRemove: (id: number) => void;
+		onMove: (id: number, direction: 'up' | 'down') => void;
+		ondragstart: (e: DragEvent, id: number) => void;
 		ondragover: (e: DragEvent) => void;
-		ondrop: (e: DragEvent, id: string) => void;
+		ondrop: (e: DragEvent, id: number) => void;
 	} = $props();
 
 	let dragOver = $state(false);

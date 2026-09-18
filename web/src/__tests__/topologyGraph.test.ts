@@ -15,36 +15,12 @@ import {
 	recommendedForceParams,
 	LAYER_ORDER
 } from '$lib/utils/topologyGraph';
+import type { TopologyGraph, TopoNode, TopoEdge } from '$lib/types';
 
-// --- Inline type definitions (vitest may not resolve SvelteKit path aliases) ---
+// Helpers: build wire-shaped fixtures with sensible defaults. The nullable
+// fields (to_device_id / local_port / remote_port / network_id) are ALWAYS
+// present on the wire (null when unknown) — the fixtures mirror that.
 
-interface TopoNode {
-	id: number;
-	name: string;
-	ip_address: string;
-	mac_address: string;
-	type: string;
-	status: string;
-	inferred_type: string;
-	brand: string;
-	network_id?: number | null;
-}
-
-interface TopoEdge {
-	from_device_id: number;
-	to_device_id?: number | null;
-	to_mac: string;
-	protocol: string;
-	local_port?: string | null;
-	remote_port?: string | null;
-}
-
-interface TopologyGraph {
-	nodes: TopoNode[];
-	edges: TopoEdge[];
-}
-
-// Helper: build a node with sensible defaults.
 function node(over: Partial<TopoNode> & Pick<TopoNode, 'id'>): TopoNode {
 	return {
 		name: `node-${over.id}`,
@@ -54,6 +30,17 @@ function node(over: Partial<TopoNode> & Pick<TopoNode, 'id'>): TopoNode {
 		status: 'online',
 		inferred_type: 'other',
 		brand: '',
+		network_id: null,
+		...over
+	};
+}
+
+function edge(over: Partial<TopoEdge> & Pick<TopoEdge, 'from_device_id' | 'to_mac'>): TopoEdge {
+	return {
+		to_device_id: null,
+		protocol: 'LLDP',
+		local_port: null,
+		remote_port: null,
 		...over
 	};
 }
@@ -74,9 +61,9 @@ describe('topologyGraph', () => {
 					node({ id: 4, ip_address: '192.168.1.12', inferred_type: 'pc' })
 				],
 				edges: [
-					{ from_device_id: 2, to_mac: 'aa:bb:cc:dd:ee:ff', protocol: 'ARP' },
-					{ from_device_id: 3, to_mac: 'aa:bb:cc:dd:ee:ff', protocol: 'ARP' },
-					{ from_device_id: 4, to_mac: 'aa:bb:cc:dd:ee:ff', protocol: 'ARP' }
+					edge({ from_device_id: 2, to_mac: 'aa:bb:cc:dd:ee:ff', protocol: 'ARP' }),
+					edge({ from_device_id: 3, to_mac: 'aa:bb:cc:dd:ee:ff', protocol: 'ARP' }),
+					edge({ from_device_id: 4, to_mac: 'aa:bb:cc:dd:ee:ff', protocol: 'ARP' })
 				]
 			};
 			const root = detectRoot(graph);
@@ -93,9 +80,9 @@ describe('topologyGraph', () => {
 					node({ id: 4, inferred_type: 'pc' })
 				],
 				edges: [
-					{ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' },
-					{ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' },
-					{ from_device_id: 2, to_device_id: 4, to_mac: '00:00:00:00:00:04', protocol: 'LLDP' }
+					edge({ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' }),
+					edge({ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' }),
+					edge({ from_device_id: 2, to_device_id: 4, to_mac: '00:00:00:00:00:04', protocol: 'LLDP' })
 				]
 			};
 			expect(detectRoot(graph)!.id).toBe(1);
@@ -109,8 +96,8 @@ describe('topologyGraph', () => {
 					node({ id: 3, ip_address: '10.0.0.3' })
 				],
 				edges: [
-					{ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' },
-					{ from_device_id: 1, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' }
+					edge({ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' }),
+					edge({ from_device_id: 1, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' })
 				]
 			};
 			// node 1 has degree 2 (highest) + ends in .1 → root.
@@ -145,8 +132,8 @@ describe('topologyGraph', () => {
 					node({ id: 3, type: 'camera', inferred_type: 'camera' })
 				],
 				edges: [
-					{ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP', local_port: 'Gi0/1', remote_port: 'Gi1/0/24' },
-					{ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP', local_port: 'Gi1/0/1' }
+					edge({ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP', local_port: 'Gi0/1', remote_port: 'Gi1/0/24' }),
+					edge({ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP', local_port: 'Gi1/0/1' })
 				]
 			};
 			const result = buildGraph(graph);
@@ -168,9 +155,9 @@ describe('topologyGraph', () => {
 			const graph: TopologyGraph = {
 				nodes: [node({ id: 1 }), node({ id: 2 }), node({ id: 3 })],
 				edges: [
-					{ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' },
-					{ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' },
-					{ from_device_id: 3, to_device_id: 1, to_mac: '00:00:00:00:00:01', protocol: 'LLDP' }
+					edge({ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' }),
+					edge({ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' }),
+					edge({ from_device_id: 3, to_device_id: 1, to_mac: '00:00:00:00:00:01', protocol: 'LLDP' })
 				]
 			};
 			const result = buildGraph(graph);
@@ -188,9 +175,9 @@ describe('topologyGraph', () => {
 					node({ id: 4, type: 'other', inferred_type: 'nas' })
 				],
 				edges: [
-					{ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' },
-					{ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' },
-					{ from_device_id: 2, to_device_id: 4, to_mac: '00:00:00:00:00:04', protocol: 'LLDP' }
+					edge({ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' }),
+					edge({ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' }),
+					edge({ from_device_id: 2, to_device_id: 4, to_mac: '00:00:00:00:00:04', protocol: 'LLDP' })
 				]
 			};
 			const result = buildGraph(graph);
@@ -209,7 +196,7 @@ describe('topologyGraph', () => {
 		it('6. Unidentified neighbor → link flagged isUnidentified, not dropped', () => {
 			const graph: TopologyGraph = {
 				nodes: [node({ id: 1, type: 'router', inferred_type: 'router' })],
-				edges: [{ from_device_id: 1, to_mac: 'ff:ff:ff:ff:ff:ff', protocol: 'LLDP' }]
+				edges: [edge({ from_device_id: 1, to_mac: 'ff:ff:ff:ff:ff:ff', protocol: 'LLDP' })]
 			};
 			const result = buildGraph(graph);
 			// The edge to an unknown MAC is preserved (graph renders it as a stub).
@@ -225,8 +212,8 @@ describe('topologyGraph', () => {
 					node({ id: 3, type: 'camera', inferred_type: 'camera' })
 				],
 				edges: [
-					{ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' },
-					{ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' }
+					edge({ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' }),
+					edge({ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' })
 				]
 			};
 			const result = buildGraph(graph);
@@ -239,7 +226,7 @@ describe('topologyGraph', () => {
 		it('8. Self-loop → dropped (not a real link)', () => {
 			const graph: TopologyGraph = {
 				nodes: [node({ id: 1 })],
-				edges: [{ from_device_id: 1, to_device_id: 1, to_mac: '00:00:00:00:00:01', protocol: 'LLDP' }]
+				edges: [edge({ from_device_id: 1, to_device_id: 1, to_mac: '00:00:00:00:00:01', protocol: 'LLDP' })]
 			};
 			const result = buildGraph(graph);
 			expect(result.links).toEqual([]);

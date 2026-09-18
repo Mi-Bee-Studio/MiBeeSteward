@@ -39,6 +39,15 @@ func setupAuditTest(t *testing.T) (*AuditService, *sql.DB, *db.Queries) {
 	`)
 	require.NoError(t, err)
 
+	// users table exists solely for the ListAuditLogs LEFT JOIN (username).
+	_, err = dbConn.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE
+		)
+	`)
+	require.NoError(t, err)
+
 	// Create indexes
 	_, err = dbConn.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);

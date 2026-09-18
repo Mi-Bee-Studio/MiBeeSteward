@@ -326,7 +326,11 @@ paths:
       tags: [Devices]
       summary: Status/type counters
       responses:
-        "200": {description: "{by_status: {...}}"}
+        "200":
+          description: Counters keyed by status/type
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceStats"}
   /devices/{id}:
     get:
       tags: [Devices]
@@ -396,7 +400,11 @@ paths:
         - {$ref: "#/components/parameters/id"}
         - {name: systemId, in: path, required: true, schema: {type: integer}}
       responses:
-        "200": {description: System entry}
+        "200":
+          description: System entry
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceSystem"}
     put:
       tags: [Devices]
       summary: Update a system entry
@@ -459,7 +467,11 @@ paths:
         - {name: a, in: query, required: true, schema: {type: integer}}
         - {name: b, in: query, required: true, schema: {type: integer}}
       responses:
-        "200": {description: Diff payload}
+        "200":
+          description: Diff payload
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceConfigDiff"}
   /devices/{id}/configs/{configId}:
     get:
       tags: [Devices]
@@ -468,7 +480,11 @@ paths:
         - {$ref: "#/components/parameters/id"}
         - {name: configId, in: path, required: true, schema: {type: integer}}
       responses:
-        "200": {description: Config detail}
+        "200":
+          description: Config detail
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceConfigDetail"}
         "404": {$ref: "#/components/responses/Error"}
   /devices/{id}/documents:
     get:
@@ -527,7 +543,11 @@ paths:
       summary: Update a heartbeat config
       parameters: [{$ref: "#/components/parameters/id"}]
       responses:
-        "200": {$ref: "#/components/responses/OK"}
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/HeartbeatConfig"}
     delete:
       tags: [Heartbeat]
       summary: Delete a heartbeat config
@@ -576,10 +596,17 @@ paths:
   /devices/{id}/heartbeat-stats:
     get:
       tags: [Heartbeat]
-      summary: Online ratio / offline duration aggregates
-      parameters: [{$ref: "#/components/parameters/id"}]
+      summary: Windowed success/fail/timeout aggregates + avg latency
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: from, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
       responses:
-        "200": {description: Stats object}
+        "200":
+          description: Stats object
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/HeartbeatStats"}
 
   /networks:
     get:
@@ -864,7 +891,11 @@ paths:
       summary: Probe now (409 for agent-vantage targets on the center)
       parameters: [{$ref: "#/components/parameters/id"}]
       responses:
-        "200": {description: Result of the immediate probe}
+        "200":
+          description: Result of the immediate probe
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeResult"}
   /probe-targets/{id}/results:
     get:
       tags: [ProbeTargets]
@@ -1100,7 +1131,11 @@ paths:
       tags: [Discovery]
       summary: Passive discovery source health + recent-event ring stats
       responses:
-        "200": {description: Status object}
+        "200":
+          description: Status object
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DiscoveryStatus"}
 
   /audit-logs:
     get:
@@ -1126,7 +1161,11 @@ paths:
       tags: [Audit]
       summary: Distinct action/resource_type values (filter dropdowns)
       responses:
-        "200": {description: Facets object}
+        "200":
+          description: Facets object
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AuditFacets"}
   /audit-logs/export:
     get:
       tags: [Audit]
@@ -1235,14 +1274,22 @@ paths:
       tags: [Dashboard]
       summary: Save a dashboard configuration
       responses:
-        "201": {$ref: "#/components/responses/Created"}
+        "201":
+          description: Saved configuration
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DashboardConfig"}
   /dashboard/configs/{id}:
     put:
       tags: [Dashboard]
       summary: Update a configuration
       parameters: [{$ref: "#/components/parameters/id"}]
       responses:
-        "200": {$ref: "#/components/responses/OK"}
+        "200":
+          description: Updated configuration
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DashboardConfig"}
     delete:
       tags: [Dashboard]
       summary: Delete a configuration
@@ -1291,31 +1338,51 @@ paths:
       tags: [Notifications]
       summary: Notification channels (passwords masked; complete list)
       responses:
-        "200": {description: "{channels, total}"}
+        "200":
+          description: Channels envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotificationChannelList"}
     post:
       tags: [Notifications]
-      summary: Create a channel (webhook/smtp)
+      summary: Create a channel (webhook/email/feishu/wecom/telegram/discord)
       responses:
-        "201": {$ref: "#/components/responses/Created"}
+        "201":
+          description: Created channel (masked)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotificationChannel"}
   /notification/channels/{id}:
     get:
       tags: [Notifications]
       summary: One channel (masked)
       parameters: [{$ref: "#/components/parameters/id"}]
       responses:
-        "200": {description: Channel}
+        "200":
+          description: Channel (masked)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotificationChannel"}
     put:
       tags: [Notifications]
       summary: Update (empty password = keep)
       parameters: [{$ref: "#/components/parameters/id"}]
       responses:
-        "200": {description: Channel}
+        "200":
+          description: Channel (masked)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotificationChannel"}
     patch:
       tags: [Notifications]
       summary: Partial update (e.g. toggle enabled)
       parameters: [{$ref: "#/components/parameters/id"}]
       responses:
-        "200": {description: Channel}
+        "200":
+          description: Channel (masked)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotificationChannel"}
     delete:
       tags: [Notifications]
       summary: Delete a channel
@@ -1334,7 +1401,11 @@ paths:
       tags: [Notifications]
       summary: Event-to-channel rules (complete list)
       responses:
-        "200": {description: "{rules, total}"}
+        "200":
+          description: Rules envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotificationRuleList"}
     post:
       tags: [Notifications]
       summary: Create a rule
@@ -1346,13 +1417,21 @@ paths:
       summary: One rule
       parameters: [{$ref: "#/components/parameters/id"}]
       responses:
-        "200": {description: Rule}
+        "200":
+          description: Rule
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotificationRule"}
     put:
       tags: [Notifications]
       summary: Update a rule
       parameters: [{$ref: "#/components/parameters/id"}]
       responses:
-        "200": {description: Rule}
+        "200":
+          description: Rule
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotificationRule"}
     patch:
       tags: [Notifications]
       summary: Partial update
@@ -1494,21 +1573,24 @@ components:
 
     LoginResponse:
       type: object
+      required: [token, user]
       properties:
-        token: {type: string}
+        token: {type: string, description: JWT (cookie mibee_token preferred; Bearer fallback)}
         user: {$ref: "#/components/schemas/User"}
         two_factor_required: {type: boolean}
         user_id: {type: integer}
 
     User:
       type: object
+      required: [id, username, email, role, must_change_password, created_at, updated_at]
       properties:
-        id: {type: integer}
+        id: {type: integer, format: int64}
         username: {type: string}
         email: {type: string}
-        role: {type: string, enum: [admin, operator, viewer, user]}
+        role: {type: string, enum: [admin, operator, viewer, user], description: "user = legacy alias for viewer"}
         must_change_password: {type: boolean}
         created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     UserList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1518,6 +1600,16 @@ components:
               type: array
               items: {$ref: "#/components/schemas/User"}
 
+    NetworkGrant:
+      type: object
+      required: [id, user_id, network_id, granted_at]
+      properties:
+        id: {type: integer, format: int64}
+        user_id: {type: integer, format: int64}
+        username: {type: string}
+        network_id: {type: integer, format: int64}
+        network_name: {type: string}
+        granted_at: {type: string, format: date-time}
     NetworkGrantList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1525,36 +1617,112 @@ components:
           properties:
             grants:
               type: array
-              items:
-                type: object
-                properties:
-                  id: {type: integer}
-                  user_id: {type: integer}
-                  username: {type: string}
-                  network_id: {type: integer}
-                  network_name: {type: string}
-                  granted_at: {type: string, format: date-time}
+              items: {$ref: "#/components/schemas/NetworkGrant"}
+
+    SNMPDiscovery:
+      type: object
+      description: Parsed SNMP sysObject query (mirrors domain.SNMPDiscovery)
+      properties:
+        sys_descr: {type: string}
+        sys_object_id: {type: string}
+        sys_name: {type: string}
+        sys_location: {type: string}
+        sys_contact: {type: string}
+        sys_services: {type: integer}
+    OpenPortEntry:
+      type: object
+      required: [port]
+      properties:
+        port: {type: integer}
+        service: {type: string}
+    ServiceEntry:
+      type: object
+      required: [port, name]
+      properties:
+        port: {type: integer}
+        name: {type: string}
+        protocol: {type: string}
+        version: {type: string}
+    PrometheusInfo:
+      type: object
+      properties:
+        url: {type: string}
+        node_exporter_url: {type: string}
+        labels: {type: object, additionalProperties: {type: string}}
+    ScanAttributes:
+      type: object
+      description: >-
+        Engine-written discovery document (mirrors domain.ScanAttributes; stored
+        as JSON in devices.scan_attributes). All fields fill progressively —
+        treat every field as optional. Engine-owned: user edits go to
+        user_attributes.
+      additionalProperties: true
+      properties:
+        vendor: {type: string, description: OUI lookup or SNMP/HTTP-derived vendor}
+        mac: {type: string, description: "normalized lowercase aa:bb:cc:.."}
+        hostname: {type: string}
+        mac_is_locally_administered: {type: boolean, description: U/L bit set — neutral observability flag, no identity effect}
+        mac_is_multicast: {type: boolean}
+        oui_prefix: {type: string, description: "IEEE block via longest-prefix (6/7/9 hex)"}
+        oui_vendor: {type: string, description: NIC silicon vendor — distinct from self-declared vendor}
+        os: {type: string}
+        os_version: {type: string}
+        kernel_version: {type: string}
+        firmware_version: {type: string}
+        cpu_count: {type: integer}
+        cpu_model: {type: string}
+        memory_total_bytes: {type: integer, format: int64}
+        uptime_seconds: {type: integer, format: int64}
+        ttl: {type: integer}
+        last_scan_rtt_ms: {type: integer, format: int64}
+        scan_source: {type: string}
+        last_scanned_at: {type: string, description: RFC3339; empty when never scanned}
+        inferred_type: {type: string}
+        inferred_type_source: {type: string, enum: ["", protocol, heuristic], description: "protocol = evidence-backed (trustworthy); heuristic = hostname/brand guess (spoofable)"}
+        inferred_description: {type: string}
+        snmp: {$ref: "#/components/schemas/SNMPDiscovery"}
+        open_ports: {type: array, items: {$ref: "#/components/schemas/OpenPortEntry"}}
+        detected_services: {type: array, items: {$ref: "#/components/schemas/ServiceEntry"}}
+        prometheus: {$ref: "#/components/schemas/PrometheusInfo"}
+        extras: {type: object, additionalProperties: {type: string}, description: Namespaced probe overflow (mdns.*, ssdp.*, ...)}
 
     Device:
       type: object
+      required: [id, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, created_at, updated_at, scan_source, prometheus_labels, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes]
       properties:
-        id: {type: integer}
+        id: {type: integer, format: int64}
         name: {type: string}
-        type: {type: string, description: "e.g. camera, server, pc, switch, other"}
+        type: {type: string, enum: [pc, embedded, iot, server, switch, router, firewall, nas, camera, phone, printer, other]}
         brand: {type: string}
         model: {type: string}
-        status: {type: string, enum: [online, offline, warning, unknown]}
+        location: {type: string}
+        purpose: {type: string}
+        description: {type: string}
+        status: {type: string, enum: [online, offline, unknown]}
         ip_address: {type: string}
         mac_address: {type: string}
-        network_id: {type: integer, nullable: true}
-        device_uuid: {type: string}
+        serial_number: {type: string}
+        purchase_date: {type: string}
+        warranty_expiry: {type: string}
+        tags: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
         scan_source: {type: string, description: "scanner_v2 | manual | passive:*"}
-        last_seen: {type: string, format: date-time, nullable: true}
-        open_ports: {type: array, items: {type: object}}
-        detected_services: {type: array, items: {type: object}}
-        scan_attributes: {type: object, description: "Evidence-derived attributes (mac, oui_vendor, inferred_type, ...)"}
-        user_attributes: {type: object}
-        tags: {type: object}
+        network_id: {type: integer, format: int64, nullable: true, description: Logical network the device was discovered on (absent for legacy rows)}
+        network_name: {type: string}
+        prometheus_labels: {type: string}
+        last_scanned_at: {type: string, format: date-time, nullable: true}
+        last_scan_task_id: {type: integer, format: int64, nullable: true}
+        last_seen: {type: string, format: date-time, nullable: true, description: Scan-derived last observed online}
+        last_online_at: {type: string, format: date-time, nullable: true, description: Authoritative last-alive from the verdict series (detail rows only)}
+        offline_since: {type: string, format: date-time, nullable: true, description: Retention clock start when offline}
+        open_ports: {type: string, description: "Legacy JSON-string column; parse for OpenPortEntry items. UI prefers scan_attributes.open_ports"}
+        detected_services: {type: string, description: "Legacy JSON-string column; parse for ServiceEntry items. UI prefers scan_attributes.detected_services"}
+        prometheus_url: {type: string}
+        node_exporter_url: {type: string}
+        last_scan_rtt_ms: {type: integer, format: int64}
+        scan_attributes: {$ref: "#/components/schemas/ScanAttributes"}
+        user_attributes: {type: object, additionalProperties: {type: string}}
     DeviceList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1564,35 +1732,115 @@ components:
               type: array
               items: {$ref: "#/components/schemas/Device"}
 
+    DeviceStats:
+      type: object
+      required: [by_status, by_type]
+      properties:
+        by_status: {type: object, additionalProperties: {type: integer, format: int64}, description: "keyed online/offline/unknown"}
+        by_type: {type: object, additionalProperties: {type: integer, format: int64}}
+
+    DeviceSystem:
+      type: object
+      required: [id, device_id, name, entry_url, description, category, metrics_url, metrics_enabled, tags, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64}
+        device_id: {type: integer, format: int64}
+        name: {type: string}
+        entry_url: {type: string}
+        description: {type: string}
+        category: {type: string}
+        metrics_url: {type: string}
+        metrics_enabled: {type: boolean}
+        tags: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     DeviceSystemList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
         - type: object
           properties:
-            systems: {type: array, items: {type: object}}
+            systems:
+              type: array
+              items: {$ref: "#/components/schemas/DeviceSystem"}
 
+    DeviceNeighbor:
+      type: object
+      description: One L2 adjacency edge (device_neighbors). Pointer fields are present-but-null when unknown (no omitempty).
+      required: [id, device_id, neighbor_device_id, neighbor_mac, protocol, local_port, remote_port, neighbor_name, neighbor_ip, neighbor_type, neighbor_status, first_seen, last_seen]
+      properties:
+        id: {type: integer, format: int64}
+        device_id: {type: integer, format: int64}
+        neighbor_device_id: {type: integer, format: int64, nullable: true, description: Present when the neighbor MAC matched a scanned device}
+        neighbor_mac: {type: string}
+        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP]}
+        local_port: {type: string, nullable: true}
+        remote_port: {type: string, nullable: true}
+        neighbor_name: {type: string, nullable: true}
+        neighbor_ip: {type: string, nullable: true}
+        neighbor_type: {type: string, nullable: true}
+        neighbor_status: {type: string, nullable: true}
+        first_seen: {type: string, format: date-time, nullable: true}
+        last_seen: {type: string, format: date-time, nullable: true}
     NeighborList:
       type: object
       properties:
-        neighbors: {type: array, items: {type: object}}
+        neighbors: {type: array, items: {$ref: "#/components/schemas/DeviceNeighbor"}}
         total: {type: integer}
 
+    CertificateInfo:
+      type: object
+      description: One certificate in a port's chain (cert_index 0 = leaf)
+      required: [cert_index, subject_cn, subject_org, subject, issuer_cn, issuer_org, issuer, san_dns, san_ip, san_email, serial, not_before, not_after, sig_algorithm, key_algorithm, key_bits, is_ca, self_signed, fingerprint_sha256, pem]
+      properties:
+        cert_index: {type: integer}
+        subject_cn: {type: string}
+        subject_org: {type: string}
+        subject: {type: string}
+        issuer_cn: {type: string}
+        issuer_org: {type: string}
+        issuer: {type: string}
+        san_dns: {type: string}
+        san_ip: {type: string}
+        san_email: {type: string}
+        serial: {type: string}
+        not_before: {type: string, description: ISO 8601 UTC}
+        not_after: {type: string, description: ISO 8601 UTC}
+        sig_algorithm: {type: string}
+        key_algorithm: {type: string}
+        key_bits: {type: integer}
+        is_ca: {type: boolean}
+        self_signed: {type: boolean}
+        fingerprint_sha256: {type: string}
+        pem: {type: string}
+    TLSPortCerts:
+      type: object
+      description: One TLS-speaking port — handshake metadata + cert chain
+      required: [port, tls_version, cipher_suite, trusted, updated_at, chain]
+      properties:
+        port: {type: integer}
+        tls_version: {type: string}
+        cipher_suite: {type: string}
+        trusted: {type: boolean}
+        error: {type: string, description: Non-empty when the handshake failed (leaf/chain empty then)}
+        updated_at: {type: string}
+        leaf: {$ref: "#/components/schemas/CertificateInfo"}
+        chain: {type: array, items: {$ref: "#/components/schemas/CertificateInfo"}}
     CertificateList:
       type: object
       properties:
-        certificates:
-          type: array
-          items:
-            type: object
-            properties:
-              port: {type: integer}
-              tls_version: {type: string}
-              cipher_suite: {type: string}
-              trusted: {type: boolean}
-              updated_at: {type: string, format: date-time}
-              chain: {type: array, items: {type: object}}
+        certificates: {type: array, items: {$ref: "#/components/schemas/TLSPortCerts"}}
         total: {type: integer}
 
+    DeviceConfigSummary:
+      type: object
+      required: [id, device_id, config_hash, protocol, has_diff, fetched_at]
+      properties:
+        id: {type: integer, format: int64}
+        device_id: {type: integer, format: int64}
+        config_hash: {type: string}
+        protocol: {type: string}
+        has_diff: {type: boolean}
+        fetched_at: {type: string, format: date-time}
     DeviceConfigList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1600,15 +1848,35 @@ components:
           properties:
             items:
               type: array
-              items:
-                type: object
-                properties:
-                  id: {type: integer}
-                  device_id: {type: integer}
-                  config_hash: {type: string}
-                  protocol: {type: string}
-                  has_diff: {type: boolean}
-                  fetched_at: {type: string, format: date-time}
+              items: {$ref: "#/components/schemas/DeviceConfigSummary"}
+    DeviceConfigDetail:
+      type: object
+      required: [id, device_id, config_hash, config_text, protocol, diff_from_prev, fetched_at]
+      properties:
+        id: {type: integer, format: int64}
+        device_id: {type: integer, format: int64}
+        config_hash: {type: string}
+        config_text: {type: string}
+        protocol: {type: string}
+        diff_from_prev: {type: string}
+        fetched_at: {type: string, format: date-time}
+    DeviceConfigDiff:
+      type: object
+      required: [a, b, diff]
+      properties:
+        a:
+          type: object
+          required: [id, fetched_at]
+          properties:
+            id: {type: integer, format: int64}
+            fetched_at: {type: string, format: date-time}
+        b:
+          type: object
+          required: [id, fetched_at]
+          properties:
+            id: {type: integer, format: int64}
+            fetched_at: {type: string, format: date-time}
+        diff: {type: string, description: Unified diff; empty when identical}
 
     DeviceDocumentList:
       type: object
@@ -1616,62 +1884,146 @@ components:
         documents: {type: array, items: {$ref: "#/components/schemas/Document"}}
         total: {type: integer}
 
+    HeartbeatConfig:
+      type: object
+      description: One heartbeat probe row. NOTE enabled is 0/1 on the wire (SQLite INTEGER column), not a JSON boolean.
+      required: [id, device_id, method, target, interval_seconds, timeout_seconds, snmp_community, snmp_oid, enabled, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64}
+        device_id: {type: integer, format: int64}
+        method: {type: string, enum: [ICMP, TCP, HTTP, SNMP]}
+        target: {type: string}
+        interval_seconds: {type: integer, format: int64}
+        timeout_seconds: {type: integer, format: int64}
+        snmp_community: {type: string}
+        snmp_oid: {type: string}
+        enabled: {type: integer, enum: [0, 1]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     HeartbeatConfigList:
       type: object
       properties:
-        configs: {type: array, items: {type: object}}
+        configs: {type: array, items: {$ref: "#/components/schemas/HeartbeatConfig"}}
         total: {type: integer}
+    HeartbeatResult:
+      type: object
+      required: [id, device_id, config_id, status, latency_ms, error_message, checked_at]
+      properties:
+        id: {type: integer, format: int64}
+        device_id: {type: integer, format: int64}
+        config_id: {type: integer, format: int64}
+        status: {type: string, enum: [success, fail, timeout]}
+        latency_ms: {type: number}
+        error_message: {type: string}
+        checked_at: {type: string, format: date-time}
     HeartbeatResultList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
         - type: object
           properties:
-            results: {type: array, items: {type: object}}
+            results:
+              type: array
+              items: {$ref: "#/components/schemas/HeartbeatResult"}
+    HeartbeatStats:
+      type: object
+      required: [avg_latency_ms, success_count, fail_count, timeout_count]
+      properties:
+        avg_latency_ms: {type: number}
+        success_count: {type: integer, format: int64}
+        fail_count: {type: integer, format: int64}
+        timeout_count: {type: integer, format: int64}
 
     Network:
       type: object
+      description: Logical network row (db.Network marshaled directly — pointer columns are present-but-null)
+      required: [id, name, cidr, site, agent_id, metadata, created_at, updated_at]
       properties:
-        id: {type: integer}
+        id: {type: integer, format: int64}
         name: {type: string}
-        cidr: {type: string, nullable: true}
+        cidr: {type: string, nullable: true, description: Advisory (no strict validation)}
         site: {type: string, nullable: true}
-        agent_id: {type: string, nullable: true, description: "Non-empty = managed by that distributed agent"}
+        agent_id: {type: string, nullable: true, description: Non-empty = managed by that distributed agent}
+        metadata: {type: string}
         created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     NetworkList:
       type: object
       properties:
         networks: {type: array, items: {$ref: "#/components/schemas/Network"}}
         total: {type: integer}
+    VLAN:
+      type: object
+      required: [id, vlan_tag, name, description]
+      properties:
+        id: {type: integer, format: int64}
+        vlan_tag: {type: integer}
+        name: {type: string, nullable: true}
+        description: {type: string, nullable: true}
     VLANList:
       type: object
       properties:
-        vlans:
-          type: array
-          items:
-            type: object
-            properties:
-              id: {type: integer}
-              vlan_tag: {type: integer}
-              name: {type: string, nullable: true}
-              description: {type: string, nullable: true}
+        vlans: {type: array, items: {$ref: "#/components/schemas/VLAN"}}
         total: {type: integer}
 
+    PipelineConfig:
+      type: object
+      description: Per-task pipeline stage toggles (an OBJECT in responses/requests; #257 fixed the stringified form)
+      required: [icmp, snmp, port_scan, service_detect, prometheus, node_exporter]
+      properties:
+        icmp:
+          type: object
+          required: [enabled, timeout]
+          properties:
+            enabled: {type: boolean}
+            timeout: {type: integer}
+        snmp:
+          type: object
+          required: [enabled, community]
+          properties:
+            enabled: {type: boolean}
+            community: {type: string}
+        port_scan:
+          type: object
+          required: [enabled, ports, scan_type]
+          properties:
+            enabled: {type: boolean}
+            ports: {type: string}
+            scan_type: {type: string}
+        service_detect:
+          type: object
+          required: [enabled]
+          properties:
+            enabled: {type: boolean}
+        prometheus:
+          type: object
+          required: [enabled, ports]
+          properties:
+            enabled: {type: boolean}
+            ports: {type: string}
+        node_exporter:
+          type: object
+          required: [enabled]
+          properties:
+            enabled: {type: boolean}
     ScanTask:
       type: object
+      required: [id, name, targets, cron_expr, pipeline_config, global_labels, timeout, concurrent_hosts, enabled, created_at, updated_at]
       properties:
-        id: {type: integer}
+        id: {type: integer, format: int64}
         name: {type: string}
         targets: {type: string}
         cron_expr: {type: string}
-        pipeline_config:
-          type: object
-          description: Pipeline stage configuration (an OBJECT in responses; #257 fixed the stringified form)
-        credential_id: {type: integer, nullable: true}
-        network_id: {type: integer, nullable: true}
+        pipeline_config: {$ref: "#/components/schemas/PipelineConfig"}
+        global_labels: {type: string}
+        timeout: {type: integer}
+        concurrent_hosts: {type: integer}
+        credential_id: {type: integer, format: int64, nullable: true, description: Bound SNMP credential; absent = engine default community}
         enabled: {type: boolean}
         last_run_at: {type: string, format: date-time, nullable: true}
         next_run_at: {type: string, format: date-time, nullable: true}
+        last_run_status: {type: string}
         created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     ScanTaskList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1680,9 +2032,10 @@ components:
             tasks: {type: array, items: {$ref: "#/components/schemas/ScanTask"}}
     ScanRun:
       type: object
+      required: [id, task_id, status, total_hosts, alive_hosts, new_hosts, updated_hosts, duration_ms, created_at]
       properties:
-        id: {type: integer}
-        task_id: {type: integer}
+        id: {type: integer, format: int64}
+        task_id: {type: integer, format: int64}
         status: {type: string, enum: [pending, running, completed, failed, cancelled]}
         total_hosts: {type: integer}
         alive_hosts: {type: integer}
@@ -1692,6 +2045,7 @@ components:
         error_message: {type: string}
         started_at: {type: string, format: date-time, nullable: true}
         finished_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
     ScanRunList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1700,18 +2054,23 @@ components:
             runs: {type: array, items: {$ref: "#/components/schemas/ScanRun"}}
     ScanResult:
       type: object
+      description: One per-IP scan outcome. ports/services/snmp_data are legacy JSON-string columns (parse client-side).
+      required: [id, task_id, ip, alive, rtt_ms, ports, services, snmp_data, prometheus_detected, node_exporter_detected, node_exporter_data, scanned_at]
       properties:
-        id: {type: integer}
-        task_id: {type: integer}
-        run_id: {type: integer, nullable: true}
+        id: {type: integer, format: int64}
+        task_id: {type: integer, format: int64}
+        run_id: {type: integer, format: int64}
         ip: {type: string}
         alive: {type: boolean}
-        rtt_ms: {type: integer}
-        ports: {type: array, items: {type: object}}
-        services: {type: object}
-        snmp_data: {type: object}
-        inferred_type: {type: string}
-        inferred_brand: {type: string}
+        rtt_ms: {type: integer, format: int64}
+        ports: {type: string}
+        services: {type: string}
+        snmp_data: {type: string}
+        prometheus_detected: {type: boolean}
+        prometheus_url: {type: string}
+        node_exporter_detected: {type: boolean}
+        node_exporter_url: {type: string}
+        node_exporter_data: {type: string}
         scanned_at: {type: string, format: date-time}
     ScanResultList:
       allOf:
@@ -1722,16 +2081,24 @@ components:
 
     ProbeTarget:
       type: object
+      description: Synthetic-probe target. module (NOT method) selects the executor; last_* denormalize the newest outcome (empty/0 = never probed).
+      required: [id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_latency_ms, created_at, updated_at, vantage]
       properties:
-        id: {type: integer}
+        id: {type: integer, format: int64}
         name: {type: string}
-        method: {type: string, enum: [http, tcp, icmp, snmp]}
-        target: {type: string}
+        module: {type: string, enum: [http, tls, tcp, icmp]}
+        target: {type: string, description: "URL (http), host:port (tls/tcp), host/IP (icmp)"}
         interval_seconds: {type: integer}
+        timeout_seconds: {type: integer}
         enabled: {type: boolean}
-        vantage: {type: string, description: "center (default) | agent:{agent_id} | all"}
-        expect_status: {type: integer}
-        created_at: {type: string, format: date-time}
+        notes: {type: string}
+        last_run_at: {type: string}
+        last_status: {type: string, enum: ["", success, fail, timeout]}
+        last_latency_ms: {type: number}
+        last_error: {type: string}
+        created_at: {type: string}
+        updated_at: {type: string}
+        vantage: {type: string, description: "'center' (default) | 'agent:{id}' | 'all'"}
     ProbeTargetList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1740,14 +2107,19 @@ components:
             targets: {type: array, items: {$ref: "#/components/schemas/ProbeTarget"}}
     ProbeResult:
       type: object
+      required: [id, target_id, status, latency_ms, status_code, checked_at, vantage]
       properties:
-        id: {type: integer}
-        target_id: {type: integer}
-        vantage: {type: string}
-        status: {type: string, enum: [up, down]}
+        id: {type: integer, format: int64}
+        target_id: {type: integer, format: int64}
+        status: {type: string, enum: [success, fail, timeout]}
         latency_ms: {type: number}
-        checked_at: {type: string, format: date-time}
-        error: {type: string}
+        status_code: {type: integer, description: HTTP status (http module); 0 otherwise}
+        error_message: {type: string}
+        tls_version: {type: string}
+        cert_not_after: {type: string, description: Leaf cert expiry; empty when none collected}
+        cert_trusted: {type: boolean, nullable: true, description: null = no cert collected that run}
+        checked_at: {type: string}
+        vantage: {type: string, description: "'center' or 'agent:{id}'"}
     ProbeResultList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1758,8 +2130,9 @@ components:
     SNMPCredential:
       type: object
       description: Masked projection — passphrases are NEVER returned (not even ciphertext)
+      required: [id, name, security_level, has_auth, has_priv]
       properties:
-        id: {type: integer}
+        id: {type: integer, format: int64}
         name: {type: string}
         security_level: {type: string, enum: [v1v2c, noAuthNoPriv, authNoPriv, authPriv]}
         community: {type: string}
@@ -1775,38 +2148,62 @@ components:
         - type: object
           properties:
             credentials: {type: array, items: {$ref: "#/components/schemas/SNMPCredential"}}
+    SSHCredential:
+      type: object
+      description: SSH credential metadata (secret redacted)
+      required: [id, name, auth_method, has_secret, has_passphrase, enabled]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        auth_method: {type: string, enum: [password, key]}
+        username: {type: string}
+        host_key_fp: {type: string}
+        has_secret: {type: boolean}
+        has_passphrase: {type: boolean}
+        enabled: {type: boolean}
+        notes: {type: string}
     SSHCredentialList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
         - type: object
           properties:
-            credentials: {type: array, items: {type: object, description: "SSH credential metadata (secret redacted)"}}
+            credentials: {type: array, items: {$ref: "#/components/schemas/SSHCredential"}}
 
     AgentToken:
       type: object
+      required: [id, agent_id, created_at]
       properties:
-        id: {type: integer}
+        id: {type: integer, format: int64}
         agent_id: {type: string}
-        network_id: {type: integer, nullable: true}
+        network_id: {type: integer, format: int64, description: Absent when unbound}
         name: {type: string}
         created_at: {type: string, format: date-time}
-        last_used_at: {type: string, format: date-time, nullable: true}
-        revoked_at: {type: string, format: date-time, nullable: true}
+        last_used_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time}
     AgentTokenList:
       type: object
       properties:
         tokens: {type: array, items: {$ref: "#/components/schemas/AgentToken"}}
         total: {type: integer}
+    AgentTokenCreated:
+      allOf:
+        - $ref: "#/components/schemas/AgentToken"
+        - type: object
+          required: [token]
+          properties:
+            token: {type: string, description: Plaintext token — shown ONCE at mint}
     AgentCommand:
       type: object
+      required: [id, agent_id, command, payload, status, created_at, acknowledged_at, result]
       properties:
-        id: {type: integer}
+        id: {type: integer, format: int64}
         agent_id: {type: string}
         command: {type: string, enum: [scan, probe, restart, config-reload, logs-tail]}
         payload: {type: string, description: "JSON string (e.g. {targets,timeout,credential_name})"}
         status: {type: string, enum: [pending, acknowledged, done, failed]}
-        result: {type: string}
         created_at: {type: string, format: date-time}
+        acknowledged_at: {type: string, format: date-time, nullable: true}
+        result: {type: string, nullable: true, description: Optional JSON detail}
     AgentCommandList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1814,56 +2211,70 @@ components:
           properties:
             commands: {type: array, items: {$ref: "#/components/schemas/AgentCommand"}}
 
+    ChangeLogEntry:
+      type: object
+      required: [id, change_type, entity_type, detected_at]
+      properties:
+        id: {type: integer, format: int64}
+        agent_id: {type: string}
+        network_id: {type: integer, format: int64}
+        change_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered, device_config_changed]}
+        entity_type: {type: string}
+        entity_id: {type: integer, format: int64}
+        before_data: {type: string}
+        after_data: {type: string}
+        detected_at: {type: string, format: date-time}
     ChangeList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
         - type: object
           properties:
-            changes:
-              type: array
-              items:
-                type: object
-                properties:
-                  id: {type: integer}
-                  agent_id: {type: string}
-                  network_id: {type: integer, nullable: true}
-                  change_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered, device_config_changed]}
-                  entity_type: {type: string}
-                  entity_id: {type: integer}
-                  before_data: {type: string}
-                  after_data: {type: string}
-                  detected_at: {type: string, format: date-time}
+            changes: {type: array, items: {$ref: "#/components/schemas/ChangeLogEntry"}}
 
+    AuditLog:
+      type: object
+      description: Audit trail row. Pointer fields are present-but-null; username is "" when the user row was deleted.
+      required: [id, user_id, username, action, resource_type, resource_id, ip_address, user_agent, details, created_at]
+      properties:
+        id: {type: integer, format: int64}
+        user_id: {type: integer, format: int64, nullable: true}
+        username: {type: string}
+        action: {type: string}
+        resource_type: {type: string}
+        resource_id: {type: string, nullable: true}
+        ip_address: {type: string, nullable: true}
+        user_agent: {type: string, nullable: true}
+        details: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
     AuditLogList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
         - type: object
           properties:
-            audit_logs:
-              type: array
-              items:
-                type: object
-                properties:
-                  id: {type: integer}
-                  user_id: {type: integer, nullable: true}
-                  username: {type: string}
-                  action: {type: string}
-                  resource_type: {type: string}
-                  resource_id: {type: string}
-                  details: {type: string}
-                  created_at: {type: string, format: date-time}
+            audit_logs: {type: array, items: {$ref: "#/components/schemas/AuditLog"}}
+    AuditFacets:
+      type: object
+      required: [actions, resource_types]
+      properties:
+        actions: {type: array, items: {type: string}}
+        resource_types: {type: array, items: {type: string}}
 
     Document:
       type: object
+      description: Linked document row (db.Document marshaled directly)
+      required: [id, title, type, url, file_path, file_size, mime_type, description, deleted_at, created_at, updated_at]
       properties:
-        id: {type: integer}
+        id: {type: integer, format: int64}
         title: {type: string}
-        doc_type: {type: string}
-        description: {type: string}
+        type: {type: string, enum: [url, file]}
+        url: {type: string}
         file_path: {type: string}
-        file_size: {type: integer}
+        file_size: {type: integer, format: int64}
+        mime_type: {type: string}
+        description: {type: string}
         deleted_at: {type: string, format: date-time, nullable: true}
         created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     DocumentList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1871,39 +2282,158 @@ components:
           properties:
             documents: {type: array, items: {$ref: "#/components/schemas/Document"}}
 
+    DashboardConfig:
+      type: object
+      description: Saved dashboard widget card (db.DashboardConfig — id is an integer)
+      required: [id, name, type, data_source, query, refresh_interval, position, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        type: {type: string, enum: [gauge, line, bar, pie, list], description: "list = builtin preset list, valid only with data_source builtin"}
+        data_source: {type: string, enum: [builtin, prometheus]}
+        query: {type: string, description: "builtin:<key> or raw PromQL"}
+        refresh_interval: {type: integer, format: int64}
+        position: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     DashboardConfigList:
       type: object
       properties:
-        configs: {type: array, items: {type: object}}
+        configs: {type: array, items: {$ref: "#/components/schemas/DashboardConfig"}}
         total: {type: integer}
 
+    TopologyNode:
+      type: object
+      required: [id, name, ip_address, mac_address, type, status, inferred_type, brand, network_id]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        ip_address: {type: string}
+        mac_address: {type: string}
+        type: {type: string, description: Hand-set type or other}
+        status: {type: string, enum: [online, offline, unknown]}
+        inferred_type: {type: string, description: Evidence-derived — richer than type}
+        brand: {type: string}
+        network_id: {type: integer, format: int64, nullable: true, description: Origin network (subnet grouping)}
+    TopologyEdge:
+      type: object
+      required: [from_device_id, to_device_id, to_mac, protocol, local_port, remote_port]
+      properties:
+        from_device_id: {type: integer, format: int64}
+        to_device_id: {type: integer, format: int64, nullable: true, description: null = unidentified neighbor (dashed edge)}
+        to_mac: {type: string}
+        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP]}
+        local_port: {type: string, nullable: true}
+        remote_port: {type: string, nullable: true, description: Far-end ifName (LLDP/CDP only)}
     TopologyGraph:
       type: object
+      required: [nodes, edges]
       properties:
-        nodes:
-          type: array
-          items:
-            type: object
-            properties:
-              id: {type: string}
-              name: {type: string}
-              type: {type: string}
-              ip: {type: string}
-              status: {type: string}
-        edges:
-          type: array
-          items:
-            type: object
-            properties:
-              source: {type: string}
-              target: {type: string}
-              source_port: {type: string}
-              target_port: {type: string}
-              protocol: {type: string, description: "lldp | cdp | bridge | arp"}
+        nodes: {type: array, items: {$ref: "#/components/schemas/TopologyNode"}}
+        edges: {type: array, items: {$ref: "#/components/schemas/TopologyEdge"}}
 
+    DiscoveryStatus:
+      type: object
+      description: >-
+        Passive-discovery runtime observability. NOTE: config/stats inner keys
+        are Go-default PascalCase (the structs carry no json tags) and Interval
+        is time.Duration — an integer in NANOSECONDS.
+      required: [enabled, started_at, uptime, config, sources, stats, recent_discoveries]
+      properties:
+        enabled: {type: boolean}
+        started_at: {type: string, format: date-time}
+        uptime: {type: string}
+        config:
+          type: object
+          required: [Interval, TriggerIdentify]
+          properties:
+            Interval: {type: integer, format: int64, description: ARP-source poll cadence, in nanoseconds}
+            TriggerIdentify: {type: boolean, description: Single-IP identify scan on genuinely-new hosts}
+        sources: {type: array, items: {type: string}}
+        stats:
+          type: object
+          required: [EventsReceived, SuppressedRecent, KnownHostSkipped, IdentifyTriggered, IdentifyAlive, IdentifyDead, DeviceRecorded]
+          properties:
+            EventsReceived: {type: integer, format: int64}
+            SuppressedRecent: {type: integer, format: int64}
+            KnownHostSkipped: {type: integer, format: int64}
+            IdentifyTriggered: {type: integer, format: int64}
+            IdentifyAlive: {type: integer, format: int64}
+            IdentifyDead: {type: integer, format: int64}
+            DeviceRecorded: {type: integer, format: int64}
+        recent_discoveries:
+          type: array
+          items:
+            type: object
+            required: [ip, source, outcome, at]
+            properties:
+              ip: {type: string}
+              mac: {type: string}
+              source: {type: string}
+              outcome: {type: string, enum: [recorded, skipped_known, skipped_recent, identify_failed]}
+              at: {type: string, format: date-time}
+
+    NotificationChannel:
+      type: object
+      description: Notification channel (password/secret masked in responses)
+      required: [id, name, type, config, enabled, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        type: {type: string, enum: [webhook, email, feishu, wecom, telegram, discord]}
+        config: {type: object, description: Channel-type-specific config (secret redacted on read)}
+        enabled: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    NotificationChannelList:
+      type: object
+      properties:
+        channels: {type: array, items: {$ref: "#/components/schemas/NotificationChannel"}}
+        total: {type: integer}
+    NotificationRule:
+      type: object
+      description: Event→channel binding with anti-flap cooldown (#139)
+      required: [id, name, event_type, scope_type, channel_id, cooldown_minutes, enabled, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        event_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered]}
+        scope_type: {type: string, enum: [all, network, device]}
+        scope_network_id: {type: integer, format: int64, nullable: true}
+        scope_device_uuid: {type: string}
+        channel_id: {type: integer, format: int64}
+        cooldown_minutes: {type: integer, format: int64}
+        enabled: {type: boolean}
+        last_triggered_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    NotificationRuleList:
+      type: object
+      properties:
+        rules: {type: array, items: {$ref: "#/components/schemas/NotificationRule"}}
+        total: {type: integer}
+    NotificationLog:
+      type: object
+      description: Outbound dispatch history with the requesting user's is_read flag
+      required: [id, status, payload, error_message, sent_at, is_read]
+      properties:
+        id: {type: integer, format: int64}
+        rule_id: {type: integer, format: int64, nullable: true}
+        channel_id: {type: integer, format: int64, nullable: true}
+        status: {type: string, enum: [sent, failed]}
+        payload: {type: string}
+        error_message: {type: string}
+        sent_at: {type: string, format: date-time}
+        is_read: {type: boolean}
     NotificationLogList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
         - type: object
+          description: total is the requesting user's UNREAD count (bell badge), not the row count
           properties:
-            logs: {type: array, items: {type: object}}
+            logs: {type: array, items: {$ref: "#/components/schemas/NotificationLog"}}
+    MarkAllReadResponse:
+      type: object
+      required: [marked]
+      properties:
+        marked: {type: integer, description: Rows flipped to read}
