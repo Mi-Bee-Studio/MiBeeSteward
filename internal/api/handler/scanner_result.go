@@ -78,17 +78,9 @@ func (h *ScannerResultHandler) taskInScope(ctx context.Context, taskID int64, sc
 func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
-
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
-		limit = 100
-	}
-	if offset < 0 {
-		offset = 0
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
 	}
 
 	var taskID int64
@@ -138,10 +130,7 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 			Error(w, http.StatusInternalServerError, "failed to list scan results")
 			return
 		}
-		Success(w, domain.ScanResultListResponse{
-			Results: toScanResultResponses(results),
-			Total:   int(total),
-		})
+		SuccessList(w, "results", toScanResultResponses(results), total, limit, offset)
 		return
 	}
 	if sortBy != "" {
@@ -189,10 +178,7 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 		resp = append(resp, toScanResultResponse(r))
 	}
 
-	Success(w, domain.ScanResultListResponse{
-		Results: resp,
-		Total:   int(total),
-	})
+	SuccessList(w, "results", resp, total, limit, offset)
 }
 
 // listResultsSorted runs the same WHERE/LIMIT/OFFSET as ListScanResults but
@@ -368,8 +354,10 @@ func (h *ScannerResultHandler) GetResult(w http.ResponseWriter, r *http.Request)
 func (h *ScannerResultHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 
 	var taskID int64
 	if q.Get("task_id") != "" {
@@ -389,7 +377,7 @@ func (h *ScannerResultHandler) ListRuns(w http.ResponseWriter, r *http.Request) 
 		for _, run := range runs {
 			resp = append(resp, toScanRunResponse(run))
 		}
-		Success(w, domain.ScanRunListResponse{Runs: resp, Total: int(total)})
+		SuccessList(w, "runs", resp, total, limit, offset)
 		return
 	}
 
@@ -422,10 +410,7 @@ func (h *ScannerResultHandler) ListRuns(w http.ResponseWriter, r *http.Request) 
 		resp = append(resp, toScanRunResponse(run))
 	}
 
-	Success(w, domain.ScanRunListResponse{
-		Runs:  resp,
-		Total: int(total),
-	})
+	SuccessList(w, "runs", resp, total, limit, offset)
 }
 
 // GetRun handles GET /api/v1/scanner/runs/{id}

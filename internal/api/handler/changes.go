@@ -77,13 +77,9 @@ func NewChangeLogHandler(queries *db.Queries, dbConn *sql.DB) *ChangeLogHandler 
 //	limit/offset — pagination (default 50, max 200)
 func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
-	if offset < 0 {
-		offset = 0
+	limit, offset, ok := ParsePagination(w, r, 50, 200)
+	if !ok {
+		return
 	}
 
 	// network_id: parse to a *int64 (nil = all networks).
@@ -123,7 +119,7 @@ func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusInternalServerError, "failed to list changes")
 			return
 		}
-		Success(w, ChangeLogResponse{Changes: out, Total: int(total)})
+		SuccessList(w, "changes", out, total, limit, offset)
 		return
 	}
 
@@ -174,7 +170,7 @@ func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 			DetectedAt: row.DetectedAt,
 		})
 	}
-	Success(w, ChangeLogResponse{Changes: out, Total: int(total)})
+	SuccessList(w, "changes", out, total, limit, offset)
 }
 
 // listScopedChanges runs the scope-restricted change-history query (closed mode).

@@ -71,7 +71,7 @@
 		hydrateFromUrl();
 		fetchChanges();
 		// Best-effort: populate the network filter dropdown.
-		api.get<Network[]>('/networks').then((n) => { networks = n || []; }).catch(() => {});
+		api.get<{ networks: Network[]; total: number }>('/networks').then((r) => { networks = r.networks || []; }).catch(() => {});
 		acquireStream();
 		streamUnsub = changeStream().subscribe((st) => {
 			sseDisconnected = !st.connected;

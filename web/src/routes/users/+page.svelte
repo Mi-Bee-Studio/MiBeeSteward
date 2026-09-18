@@ -299,10 +299,10 @@
 		try {
 			const [grantRes, netRes] = await Promise.all([
 				api.get<{ grants: Grant[] }>(`/users/${user.id}/network-grants`),
-				api.get<NetworkRef[]>('/networks')
+				api.get<{ networks: NetworkRef[]; total: number }>('/networks')
 			]);
 			grants = grantRes.grants || [];
-			networks = netRes || [];
+			networks = netRes.networks || [];
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
 		} finally {

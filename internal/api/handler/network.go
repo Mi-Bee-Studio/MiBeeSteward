@@ -38,14 +38,16 @@ func NewNetworkHandler(queries *db.Queries, svc *service.NetworkService) *Networ
 	return &NetworkHandler{queries: queries, svc: svc}
 }
 
-// List handles GET /api/v1/networks — all networks, ordered by id.
+// List handles GET /api/v1/networks — all networks, ordered by id. Complete
+// list (networks tables are small by nature), wrapped in {networks, total}
+// per the API contract (#274; used to be the list family's bare array).
 func (h *NetworkHandler) List(w http.ResponseWriter, r *http.Request) {
 	nets, err := h.queries.ListNetworks(r.Context())
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to list networks")
 		return
 	}
-	Success(w, nets)
+	Success(w, map[string]any{"networks": nets, "total": len(nets)})
 }
 
 // Get handles GET /api/v1/networks/{id} — one network by id. Previously only
@@ -85,7 +87,7 @@ func (h *NetworkHandler) VLANs(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to list vlans")
 		return
 	}
-	Success(w, vlans)
+	Success(w, map[string]any{"vlans": vlans, "total": len(vlans)})
 }
 
 // createNetworkRequest is the body for POST /api/v1/networks.

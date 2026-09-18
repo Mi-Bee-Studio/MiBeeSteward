@@ -132,10 +132,11 @@ func (h *LinkHandler) GetDeviceDocuments(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Wrapped as {documents: [...]} — the frontend reads res.documents (same
-	// shape as GET /documents); the bare array it used to return parsed to
-	// undefined and rendered "no documents linked" forever.
-	Success(w, map[string]any{"documents": docs})
+	// Wrapped as {documents: [...], total} — the frontend reads res.documents
+	// (same shape as GET /documents); the bare array it used to return parsed
+	// to undefined and rendered "no documents linked" forever. total joined
+	// the envelope in #274 (complete list, no pagination).
+	Success(w, map[string]any{"documents": docs, "total": len(docs)})
 }
 
 // GetDocumentDevices handles GET /api/v1/documents/{id}/devices
@@ -151,7 +152,9 @@ func (h *LinkHandler) GetDocumentDevices(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	Success(w, devices)
+	// {devices, total} per the API contract (#274; used to be a bare array,
+	// inconsistent with its GetDeviceDocuments twin).
+	Success(w, map[string]any{"devices": devices, "total": len(devices)})
 }
 
 // parsePathID extracts and validates a path parameter as int64.

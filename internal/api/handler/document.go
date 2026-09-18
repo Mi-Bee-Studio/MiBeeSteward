@@ -116,8 +116,10 @@ func (h *DocumentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 func (h *DocumentHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 	search := q.Get("search")
 
 	resp, err := h.svc.List(r.Context(), search, limit, offset)
@@ -126,7 +128,7 @@ func (h *DocumentHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Success(w, resp)
+	SuccessList(w, "documents", resp.Documents, int64(resp.Total), limit, offset)
 }
 
 // Get handles GET /api/v1/documents/{id} — get document detail.

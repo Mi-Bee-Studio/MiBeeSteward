@@ -93,8 +93,10 @@ func (h *DeviceSystemHandler) ListByDevice(w http.ResponseWriter, r *http.Reques
 	}
 
 	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 
 	filter := domain.DeviceSystemFilter{
 		Category: q.Get("category"),
@@ -108,7 +110,7 @@ func (h *DeviceSystemHandler) ListByDevice(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	Success(w, resp)
+	SuccessList(w, "systems", resp.Systems, int64(resp.Total), limit, offset)
 }
 
 // Update handles PUT /api/v1/devices/{id}/systems/{systemId}

@@ -47,6 +47,13 @@ jobs:
           name: frontend-dist
           path: web/dist
       - run: go vet ./...
+      - name: Generated Go API client drift check (#274)
+        run: |
+          make gen-api-go
+          git diff --exit-code -- internal/apiclient/ || {
+            echo "::error::internal/apiclient/client.gen.go is out of sync with docs/openapi.yaml — run 'make gen-api-go' and commit the result"
+            exit 1
+          }
       - uses: golangci/golangci-lint-action@v7
         with:
           # golangci-lint v2 requires golangci-lint-action v7+.
@@ -94,10 +101,17 @@ jobs:
           node-version: '20'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - working-directory: web
+      - name: API client types drift check (#274)
+        working-directory: web
         run: |
           npm ci
-          npm test
+          npm run gen:api
+          git diff --exit-code -- src/lib/api/schema.d.ts || {
+            echo "::error::src/lib/api/schema.d.ts is out of sync with docs/openapi.yaml — run 'npm run gen:api' (in web/) and commit the result"
+            exit 1
+          }
+      - working-directory: web
+        run: npm test
 
   sqlc-verify:
     runs-on: ubuntu-latest

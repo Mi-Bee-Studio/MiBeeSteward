@@ -95,22 +95,13 @@ func (h *DeviceHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	// Paging validation (#257): a negative or malformed value is a client
-	// bug, answer 400 instead of silently flooring it; the upper bound keeps
-	// a single request from materializing an unbounded page. An absent param
-	// stays "unset" (limit 0 → service default).
-	limit := int64(0)
-	if raw := q.Get("limit"); raw != "" {
-		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || parsed < 0 || parsed > 1000 {
-			Error(w, http.StatusBadRequest, "limit must be between 0 and 1000")
-			return
-		}
-		limit = parsed
-	}
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
-	if offset < 0 {
-		offset = 0
+	// Contract pagination (#274, generalizing the #257 strictness): negative
+	// or malformed → 400; over-max clamps to the endpoint max (100 — the
+	// service-layer cap); unset/0 → the service default (20). The response
+	// echoes the effective limit/offset.
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
 	}
 
 	filter := domain.DeviceFilter{
@@ -157,7 +148,7 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Success(w, resp)
+	SuccessList(w, "devices", resp.Devices, int64(resp.Total), limit, offset)
 }
 
 // parseFlexibleTime accepts either a full timestamp ("2006-01-02 15:04:05") or

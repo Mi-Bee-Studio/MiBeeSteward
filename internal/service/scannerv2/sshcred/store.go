@@ -130,6 +130,13 @@ func List(ctx context.Context, db *sql.DB, limit, offset int64) ([]ListRow, erro
 	return out, rows.Err()
 }
 
+// Count returns the total row count (for the list endpoint's total field, #274).
+func Count(ctx context.Context, db *sql.DB) (int64, error) {
+	var count int64
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ssh_credentials`).Scan(&count)
+	return count, err
+}
+
 // Create inserts a credential row (ciphertext already filled by the caller) and
 // returns the new id.
 func Create(ctx context.Context, db *sql.DB, p WriteParams) (int64, error) {

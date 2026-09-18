@@ -57,8 +57,8 @@
 		loading = true;
 		error = '';
 		try {
-			const res = await api.get<Network[]>('/networks');
-			networks = res || [];
+			const res = await api.get<{ networks: Network[]; total: number }>('/networks');
+			networks = res.networks || [];
 		} catch (err: unknown) {
 			// Inline banner only on initial load (parallel toast was noisy).
 			error = getErrorMessage(err);

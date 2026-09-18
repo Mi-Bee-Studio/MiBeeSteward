@@ -517,16 +517,11 @@ func (h *UserHandler) ForceChangePassword(w http.ResponseWriter, r *http.Request
 
 // ListUsers handles GET /api/v1/users (admin only)
 func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 	search := r.URL.Query().Get("search")
-
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
-		limit = 100
-	}
 
 	resp, err := h.svc.ListUsers(r.Context(), search, limit, offset)
 	if err != nil {
@@ -534,7 +529,7 @@ func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Success(w, resp)
+	SuccessList(w, "users", resp.Users, int64(resp.Total), limit, offset)
 }
 
 // AdminResetPassword handles POST /api/v1/users/{id}/reset-password (admin only).

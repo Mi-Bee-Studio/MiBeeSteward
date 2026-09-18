@@ -274,10 +274,11 @@ func (h *NotificationHandler) TestChannel(w http.ResponseWriter, r *http.Request
 // legacy system-wide view is available via the service layer but not exposed
 // over HTTP (no current consumer needs it).
 func (h *NotificationHandler) ListNotificationLogs(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
 
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 
 	userID, _, ok := middleware.GetUserFromContext(r)
 	if !ok {
@@ -291,10 +292,7 @@ func (h *NotificationHandler) ListNotificationLogs(w http.ResponseWriter, r *htt
 		return
 	}
 
-	Success(w, domain.NotificationLogListResponse{
-		Logs:  logs,
-		Total: int(unread),
-	})
+	SuccessList(w, "logs", logs, unread, limit, offset)
 }
 
 // MarkAllNotificationLogsRead handles POST /api/v1/notification/logs/read
