@@ -29,8 +29,9 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	// bare gotTargets/gotTimeout write read here without synchronization is a
 	// data race the -race detector flags (CI caught it; local timing hid it).
 	type scanResult struct {
-		targets    string
-		timeoutSec int
+		targets        string
+		timeoutSec     int
+		credentialName string
 	}
 	scanCh := make(chan scanResult, 1)
 	var executed int32
@@ -43,8 +44,9 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 			// Two shapes the center can emit, both valid JSON encodings of a
 			// TEXT payload field. The string form is what sqlc's string-typed
 			// AgentCommand.Payload produces; verify the poller handles it.
+			// credential_name is the #241 agent-side SNMPv3 hook.
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`[{"id":1,"command":"scan","payload":"{\"targets\":\"192.168.62.0/24\",\"timeout\":300}"}]`))
+			_, _ = w.Write([]byte(`[{"id":1,"command":"scan","payload":"{\"targets\":\"192.168.62.0/24\",\"timeout\":300,\"credential_name\":\"switch-v3\"}"}]`))
 		case r.URL.Path == "/api/v1/agents/commands/1/ack" && r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusNoContent)
 		case r.URL.Path == "/api/v1/agents/commands/1/complete" && r.Method == http.MethodPost:
@@ -62,8 +64,8 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	runScan := func(_ context.Context, targets string, timeoutSec int) (string, error) {
-		scanCh <- scanResult{targets: targets, timeoutSec: timeoutSec}
+	runScan := func(_ context.Context, sp agent.ScanCommand) (string, error) {
+		scanCh <- scanResult{targets: sp.Targets, timeoutSec: sp.Timeout, credentialName: sp.CredentialName}
 		return `{"run_id":1}`, nil
 	}
 	// networkCIDR matches the command's targets so the Layer 2-agent boundary
@@ -76,6 +78,7 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	case res := <-scanCh:
 		require.Equal(t, "192.168.62.0/24", res.targets)
 		require.Equal(t, 300, res.timeoutSec)
+		require.Equal(t, "switch-v3", res.credentialName, "credential_name from the scan payload must reach the runScan callback (#241)")
 	case <-time.After(2 * time.Second):
 		t.Fatal("poller did not execute the scan command within deadline")
 	}
@@ -123,7 +126,7 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		runScan := func(context.Context, string, int) (string, error) {
+		runScan := func(context.Context, agent.ScanCommand) (string, error) {
 			t.Fatal("runScan must NOT be called for an out-of-network command")
 			return "", nil
 		}
@@ -177,7 +180,7 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		runScan := func(context.Context, string, int) (string, error) {
+		runScan := func(context.Context, agent.ScanCommand) (string, error) {
 			t.Fatal("runScan must NOT be called when any target is out of network")
 			return "", nil
 		}
@@ -221,7 +224,7 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		runScan := func(context.Context, string, int) (string, error) {
+		runScan := func(context.Context, agent.ScanCommand) (string, error) {
 			return `{"run_id":3}`, nil // actually invoked
 		}
 		// Empty cidr → boundary check disabled.
