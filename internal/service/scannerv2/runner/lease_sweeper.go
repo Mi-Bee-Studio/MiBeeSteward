@@ -86,9 +86,48 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
   AND s.last_seen_at >= ?
   AND d.status = 'offline'`
 
+// orphanedAgentDevice is one row from the orphan backstop query (#397): an
+// online scanner-discovered device in an agent network that NO scan_snapshots
+// row references — invisible to both queries above.
+type orphanedAgentDevice struct {
+	DeviceID  int64
+	NetworkID int64
+	IP        string
+}
+
+// orphanedAgentDevicesSQL is the #397 backstop. Both queries above walk FROM
+// scan_snapshots and JOIN devices, so a devices row that no snapshot references
+// (by uuid, or by the transition IP fallback) is invisible to the lease system
+// and would stay 'online' forever with an ever-aging last_seen. That shape is
+// exactly what the pre-#389 lease mis-resolution left behind: the wrong row got
+// the lease, and after the MAC-primary fix the orphaned row lost its only lease
+// feeder. This query finds those rows directly FROM devices.
+//
+// Guards:
+//   - scan_source = 'scanner_v2' — manual devices are user assertions, never
+//     lease subjects (same convention as the silent-device retention sweep);
+//   - last_seen < cutoff — a row bridged moments ago (its snapshot upsert may
+//     not have landed yet) is protected for a full TTL before it counts as
+//     orphaned; NULL last_seen never matches (SQL NULL semantics), which only
+//     excludes rows that were never scan-stamped;
+//   - the NOT EXISTS predicate mirrors the JOIN condition of the two queries
+//     above, so "visible to the lease system" means the same thing here.
+const orphanedAgentDevicesSQL = `SELECT d.id, d.network_id, d.ip_address
+FROM devices d
+JOIN networks n ON n.id = d.network_id
+WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
+  AND d.status = 'online'
+  AND d.scan_source = 'scanner_v2'
+  AND d.last_seen < ?
+  AND NOT EXISTS (
+	SELECT 1 FROM scan_snapshots s
+	WHERE (s.device_uuid != '' AND s.device_uuid = d.device_uuid AND s.network_id = d.network_id)
+	   OR (s.device_uuid = '' AND s.ip = d.ip_address AND (s.network_id = d.network_id OR s.network_id IS NULL))
+  )`
+
 // LeaseSweeper is the background task that reconciles agent-managed device
-// liveness against their scan_snapshots lease. It does BOTH directions in one
-// pass:
+// liveness against their scan_snapshots lease. It does all three directions in
+// one pass:
 //
 //   - offline: a snapshot whose lease has gone stale (last_seen older than now -
 //     ttl) while the device is still 'online' → the host is presumed gone; mark
@@ -97,6 +136,9 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
 //     ttl window) while the device is stuck 'offline' → the agent is actively
 //     reporting it alive again, but the stable-hash fast path (agent_report.go)
 //     never refreshed the devices row; flip it back online + emit device_changed.
+//   - offline (orphans): an online scanner-discovered device that NO snapshot
+//     references and whose last_seen is past the ttl → the row is invisible to
+//     both directions above; flip it offline (#397 backstop).
 //
 // It replaces the per-report DetectLost call that used to run on every agent
 // POST (O(whole network) each time): the agent ingestion path now only refreshes
@@ -183,16 +225,18 @@ func (s *LeaseSweeper) Stop() {
 
 // sweepOnce runs one reconciliation pass: it first expires agent devices whose
 // lease has gone stale (online→offline), then recovers agent devices whose lease
-// is fresh but whose row is stuck offline (offline→online). It is also the test
-// entry point (Start launches a goroutine, which is awkward to drive
+// is fresh but whose row is stuck offline (offline→online), and finally expires
+// orphaned rows the lease system cannot see at all (#397 backstop). It is also
+// the test entry point (Start launches a goroutine, which is awkward to drive
 // deterministically).
 func (s *LeaseSweeper) sweepOnce(ctx context.Context) {
 	cutoff := time.Now().UTC().Add(-s.ttl)
 	expired := s.expireStale(ctx, cutoff)
 	recovered := s.recoverFresh(ctx, cutoff)
-	if expired > 0 || recovered > 0 {
+	orphans := s.expireOrphaned(ctx, cutoff)
+	if expired > 0 || recovered > 0 || orphans > 0 {
 		s.logger.Info("lease sweeper: reconciliation pass",
-			"expired", expired, "recovered", recovered,
+			"expired", expired, "recovered", recovered, "orphans", orphans,
 			"ttl", s.ttl, "cutoff", cutoff.Format(time.RFC3339))
 	}
 }
@@ -226,11 +270,14 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 		// Mark the device offline (always — the registry must reflect liveness
 		// regardless of event suppression). Stamp offline_since on the flip (CASE
 		// guards so an already-offline device keeps its original stamp) for the
-		// silent-device retention sweep (issue #117).
+		// silent-device retention sweep (issue #117), in the canonical DBTime
+		// text form — the retention cutoff compares offline_since as RFC3339
+		// TEXT, and a raw time.Time binding lands in Go's String() form which
+		// misorders against it (detect_lost.go stamps the same statement this way).
 		if _, err := s.runner.dbConn.ExecContext(ctx,
 			`UPDATE devices SET status='offline',
 				offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
-				updated_at=? WHERE id=?`, now, now, l.DeviceID); err != nil {
+				updated_at=? WHERE id=?`, scannerv2.DBTime(now), scannerv2.DBTime(now), l.DeviceID); err != nil {
 			s.logger.Warn("lease sweeper: mark offline failed", "device_id", l.DeviceID, "ip", l.IP, "error", err)
 		}
 		// Flap suppression: once past the threshold, stop emitting. The device is
@@ -339,6 +386,65 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 		}
 	}
 	return len(recoverable)
+}
+
+// expireOrphaned is the #397 backstop: it flips offline the agent-network device
+// rows that no scan_snapshots lease references (and whose last_seen has aged past
+// the cutoff). Such rows are invisible to expireStale/recoverFresh — both walk
+// FROM snapshots — so without this pass a device that ever lost its lease row
+// stays online forever no matter how stale its last_seen grows.
+//
+// No flap suppression is needed here, unlike the two directions above: there is
+// no snapshot row to carry flap_count, and the flip is terminal — the query only
+// matches status='online', so a row fires at most once. Recovery is symmetric
+// with the rest of the sweeper: as soon as the agent reports the host again,
+// RecordAliveSnapshots re-creates its snapshot (uuid resolution is MAC-primary,
+// #395) and recoverFresh flips the row back online. offline_since is stamped so
+// the silent-device retention sweep (#117) can eventually prune the row.
+func (s *LeaseSweeper) expireOrphaned(ctx context.Context, cutoff time.Time) int {
+	rows, err := s.runner.dbConn.QueryContext(ctx, orphanedAgentDevicesSQL, scannerv2.DBTime(cutoff))
+	if err != nil {
+		s.logger.Warn("lease sweeper: list orphaned failed", "error", err)
+		return 0
+	}
+	var orphans []orphanedAgentDevice
+	for rows.Next() {
+		var o orphanedAgentDevice
+		if err := rows.Scan(&o.DeviceID, &o.NetworkID, &o.IP); err != nil {
+			rows.Close()
+			s.logger.Warn("lease sweeper: orphan scan failed", "error", err)
+			return 0
+		}
+		orphans = append(orphans, o)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		s.logger.Warn("lease sweeper: orphan rows error", "error", err)
+		return 0
+	}
+	if len(orphans) == 0 {
+		return 0
+	}
+	now := time.Now().UTC()
+	for _, o := range orphans {
+		if _, err := s.runner.dbConn.ExecContext(ctx,
+			`UPDATE devices SET status='offline',
+				offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
+				updated_at=? WHERE id=?`, scannerv2.DBTime(now), scannerv2.DBTime(now), o.DeviceID); err != nil {
+			s.logger.Warn("lease sweeper: mark orphaned offline failed", "device_id", o.DeviceID, "ip", o.IP, "error", err)
+			continue
+		}
+		nid := o.NetworkID
+		s.runner.recordDeviceLost(ctx, o.DeviceID, &nid, "lease")
+		// Sample the offline verdict to the liveness series like every other
+		// lease verdict.
+		if s.runner.heartbeat != nil {
+			s.runner.heartbeat.SampleLiveness(o.DeviceID, "offline", "lease")
+		}
+		s.logger.Warn("lease sweeper: orphaned online device expired (no lease row references it)",
+			"device_id", o.DeviceID, "ip", o.IP, "network_id", o.NetworkID)
+	}
+	return len(orphans)
 }
 
 // querySnapshots runs one of the lease-sweeper SELECTs (stale or recoverable)
