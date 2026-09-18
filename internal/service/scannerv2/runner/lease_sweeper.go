@@ -32,6 +32,7 @@ type staleAgentSnapshot struct {
 	DeviceID   int64
 	FlapCount  int64
 	LastFlapAt sql.NullTime
+	DeviceUUID string // the snapshot's device identity ("" = transition row); drives the #399 roam guard
 }
 
 // staleAgentSnapshotsSQL selects snapshots in agent-managed networks whose
@@ -52,7 +53,7 @@ type staleAgentSnapshot struct {
 //
 // Defined as raw SQL (not sqlc) because sqlc's SQLite parser truncates this
 // query's trailing bytes — see the NOTE in db/queries/scan_snapshots.sql.
-const staleAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id, s.flap_count, s.last_flap_at
+const staleAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id, s.flap_count, s.last_flap_at, s.device_uuid
 FROM scan_snapshots s
 JOIN devices d ON (
 	(s.device_uuid != '' AND d.device_uuid = s.device_uuid AND d.network_id = s.network_id)
@@ -75,7 +76,7 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
 // gap the stable-hash optimization opened. Same agent-only scope; the center's
 // own network recovers online via its own applyDeviceBridge scan path. The
 // device_uuid-aware JOIN matches staleAgentSnapshotsSQL.
-const recoverableAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id, s.flap_count, s.last_flap_at
+const recoverableAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id, s.flap_count, s.last_flap_at, s.device_uuid
 FROM scan_snapshots s
 JOIN devices d ON (
 	(s.device_uuid != '' AND d.device_uuid = s.device_uuid AND d.network_id = s.network_id)
@@ -239,6 +240,9 @@ func (s *LeaseSweeper) sweepOnce(ctx context.Context) {
 			"expired", expired, "recovered", recovered, "orphans", orphans,
 			"ttl", s.ttl, "cutoff", cutoff.Format(time.RFC3339))
 	}
+	if decayed := s.decayQuietFlaps(ctx); decayed > 0 {
+		s.logger.Info("lease sweeper: flap counters decayed after a stable period", "rows", decayed)
+	}
 }
 
 // expireStale marks agent devices offline when their snapshot lease is older than
@@ -257,7 +261,36 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 		return 0
 	}
 	now := time.Now().UTC()
+	// One verdict per device per pass: a device with several stale lease rows
+	// (pre-roam remnants whose uuid still points at it, all gone stale together)
+	// is expired + emitted ONCE, not once per row (#399).
+	seen := make(map[int64]bool, len(stale))
 	for _, l := range stale {
+		if seen[l.DeviceID] {
+			continue
+		}
+		// Roam guard (#399): a stale lease whose device ALSO holds a fresher
+		// lease (same uuid, same network) is a pre-roam remnant — the asset
+		// DHCP-roamed and is alive at its new IP; this row just still points at
+		// it. Dissociate the remnant (clear device_uuid, returning it to the
+		// unattributed state; a future host at this IP — including the same
+		// device roaming back — re-attributes via the upsert's CASE) and skip
+		// the expiry. Without the guard the remnant re-kills the device every
+		// sweep while the fresh lease resurrects it: an online/offline flap
+		// loop that once ran ~900 transitions in 15h on a production roamer.
+		// Not marked in seen: another stale remnant of the same device should
+		// still get its own dissociation.
+		if l.DeviceUUID != "" && s.hasFresherLease(ctx, l, cutoff) {
+			if _, err := s.runner.dbConn.ExecContext(ctx,
+				`UPDATE scan_snapshots SET device_uuid = '' WHERE id = ?`, l.ID); err != nil {
+				s.logger.Warn("lease sweeper: roam remnant dissociate failed", "snapshot_id", l.ID, "ip", l.IP, "error", err)
+			} else {
+				s.logger.Info("lease sweeper: dissociated pre-roam lease remnant (device holds a fresher lease)",
+					"ip", l.IP, "device_uuid", l.DeviceUUID, "network_id", l.NetworkID)
+			}
+			continue
+		}
+		seen[l.DeviceID] = true
 		// Increment flap_count + stamp last_flap_at for every transition (this
 		// UPDATE is independent of whether we emit, so the flap counter advances
 		// even while suppressed — keeping the "how flaky is this device" signal
@@ -447,6 +480,53 @@ func (s *LeaseSweeper) expireOrphaned(ctx context.Context, cutoff time.Time) int
 	return len(orphans)
 }
 
+// hasFresherLease reports whether the device carrying this stale lease holds
+// another lease row — same uuid, same network — whose last_seen is within the
+// TTL window, i.e. the asset DHCP-roamed and is alive at its new IP (#399).
+//
+// Network-scoped deliberately: device rows are per-network, and an asset that
+// moved to ANOTHER network must still expire out of this one — only a fresh
+// lease in the same network proves the device still lives here.
+// On query error it fails OPEN to the normal expiry path: a wrongly-expired
+// live device self-heals via recoverFresh within one sweep, whereas failing
+// closed would keep genuinely-dead devices online for as long as the error does.
+func (s *LeaseSweeper) hasFresherLease(ctx context.Context, l staleAgentSnapshot, cutoff time.Time) bool {
+	var n int64
+	err := s.runner.dbConn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM scan_snapshots
+		WHERE device_uuid = ? AND network_id = ? AND id != ? AND last_seen_at >= ?`,
+		l.DeviceUUID, l.NetworkID, l.ID, scannerv2.DBTime(cutoff)).Scan(&n)
+	if err != nil {
+		s.logger.Warn("lease sweeper: fresher-lease check failed", "snapshot_id", l.ID, "error", err)
+		return false
+	}
+	return n > 0
+}
+
+// decayQuietFlaps halves flap_count on lease rows whose last flap is older than
+// flapStablePeriod, independent of any liveness transition. recoverFresh's
+// inline decay only runs when a row passes through a recovery transition — but
+// a device that stops flapping stays ONLINE and never enters that path, so its
+// counter would stay frozen forever (production: a #399 roam-flap pathology
+// inflated a counter to ~900, and the pathology fix itself stops the cycling
+// that would have decayed it). This pass realizes the state machine's documented
+// intent — "several stable periods to clear" — as a single batch UPDATE per
+// sweep: halve, refresh last_flap_at (each halving needs a fresh full stable
+// window), never below 0. Rows with flap_count = 0 are untouched.
+func (s *LeaseSweeper) decayQuietFlaps(ctx context.Context) int {
+	cutoff := time.Now().UTC().Add(-flapStablePeriod)
+	res, err := s.runner.dbConn.ExecContext(ctx,
+		`UPDATE scan_snapshots SET flap_count = flap_count / 2, last_flap_at = ?
+		WHERE flap_count > 0 AND last_flap_at < ?`,
+		scannerv2.DBTime(time.Now().UTC()), scannerv2.DBTime(cutoff))
+	if err != nil {
+		s.logger.Warn("lease sweeper: flap decay failed", "error", err)
+		return 0
+	}
+	n, _ := res.RowsAffected()
+	return int(n)
+}
+
 // querySnapshots runs one of the lease-sweeper SELECTs (stale or recoverable)
 // and returns the matched rows. failLabel tags the warn log on error. Centralized
 // so both directions share identical row-scanning + error handling.
@@ -459,7 +539,7 @@ func (s *LeaseSweeper) querySnapshots(ctx context.Context, query string, cutoff 
 	var out []staleAgentSnapshot
 	for rows.Next() {
 		var r staleAgentSnapshot
-		if err := rows.Scan(&r.ID, &r.NetworkID, &r.IP, &r.Mac, &r.LastSeenAt, &r.DeviceID, &r.FlapCount, &r.LastFlapAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.NetworkID, &r.IP, &r.Mac, &r.LastSeenAt, &r.DeviceID, &r.FlapCount, &r.LastFlapAt, &r.DeviceUUID); err != nil {
 			rows.Close()
 			s.logger.Warn("lease sweeper: scan failed", "error", err)
 			return nil
