@@ -171,6 +171,10 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 					"agent_id", rep.AgentID, "network_id", *networkID, "out_of_network", oon)
 			}
 			h.runner.RecordAliveSnapshots(r.Context(), nid, 0, hostReportsForLease(hostsForLease))
+			// Close the pending dispatch-run with real numbers (#390): the
+			// stable path adds/updates nothing by design (bridge skipped), but
+			// the reported host count IS the run's alive set.
+			h.backfillAgentRunStats(r.Context(), *networkID, len(hostsForLease), 0, 0)
 			slog.Debug("agent report: stable network, skipped device bridge",
 				"agent_id", rep.AgentID, "network_id", *networkID, "hosts", len(rep.Hosts))
 			Success(w, reportAck{Accepted: 0, Stable: true, OutOfNetwork: oon})
@@ -232,10 +236,54 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		"hosts", len(rep.Hosts), "added", added, "updated", updated, "skipped", skipped,
 		"out_of_network", outOfNetwork)
 
+	// Close the pending dispatch-run with the real outcome (#390).
+	h.backfillAgentRunStats(r.Context(), *networkID, len(inNetwork), added, updated)
+
 	Success(w, reportAck{
 		Accepted: added + updated, Added: added, Updated: updated, Skipped: skipped,
 		OutOfNetwork: outOfNetwork,
 	})
+}
+
+// backfillAgentRunStats completes the oldest still-"running" run row among
+// this network's scan tasks with the report's real outcome (#390). Agent-task
+// run rows are created at DISPATCH time (dispatchAgentScan) and used to be
+// closed immediately as a ~6ms "completed" marker with zero hosts — the scan
+// itself executes asynchronously on the agent, so run history showed hollow
+// runs. Dispatch now leaves the row "running"; the first host-carrying report
+// for the network closes it. Duration measures the END-TO-END latency (command
+// poll + agent scan + report POST) — the honest number for the pull model.
+// Runs a report never closes are superseded by the next dispatch or failed by
+// the scheduler's stale-run sweeper (>1h), so nothing sticks.
+func (h *AgentReportHandler) backfillAgentRunStats(ctx context.Context, networkID int64, alive, added, updated int) {
+	if h.dbConn == nil {
+		return
+	}
+	var (
+		runID     int64
+		startedAt time.Time
+	)
+	err := h.dbConn.QueryRowContext(ctx, `
+		SELECT r.id, r.started_at FROM scan_task_runs r
+		JOIN scan_tasks t ON t.id = r.task_id
+		WHERE t.network_id = ? AND r.status = 'running'
+		ORDER BY r.started_at LIMIT 1`, networkID).Scan(&runID, &startedAt)
+	if err != nil {
+		return // no pending run for this network — nothing to backfill
+	}
+	now := time.Now()
+	if uerr := h.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
+		Status:       "completed",
+		TotalHosts:   int64(alive),
+		AliveHosts:   int64(alive),
+		NewHosts:     int64(added),
+		UpdatedHosts: int64(updated),
+		DurationMs:   now.Sub(startedAt).Milliseconds(),
+		FinishedAt:   &now,
+		ID:           runID,
+	}); uerr != nil {
+		slog.Warn("agent report: run stats backfill failed", "run_id", runID, "error", uerr)
+	}
 }
 
 // resolveNetworkCIDR returns the parsed IPNet for the given network, cached.
