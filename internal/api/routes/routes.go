@@ -447,7 +447,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			Interval:        time.Duration(cfg.Scanner.Discovery.Interval) * time.Second,
 			TriggerIdentify: cfg.Scanner.Discovery.TriggerIdentify,
 		},
-		scannerv2discovery.SinkAdapter{Runner: scanRunner},
+		scannerv2discovery.SinkAdapter{
+			Runner:   scanRunner,
+			Networks: scannerv2discovery.NewNetworkResolver(dbConn), // #386: attribute sightings to the network whose CIDR contains them
+		},
 		scannerv2discovery.IdentifierAdapter(v2Engine),
 		dbConn, networkID, prometheus.DefaultRegisterer, slog.Default(),
 	)

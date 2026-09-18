@@ -602,11 +602,24 @@ func foldHints(rep scannerv2.HostReport, hints map[string]string) scannerv2.Host
 type SinkAdapter struct {
 	Runner  *runner.Runner
 	AgentID string
+	// Networks optionally resolves the report IP to the network whose CIDR
+	// contains it (#386): on a form-C (router-resident) center the unfiltered
+	// sources legitimately observe BOTH arms, and stamping those sightings
+	// with the center's own network is what mibee_network_mismatches has been
+	// counting. Nil (or no matching row) keeps the runner's own network —
+	// the pre-#386 behavior. Data-driven by the networks table; no per-source
+	// special cases.
+	Networks *NetworkResolver
 }
 
-// Apply hands rep to the runner's device bridge.
+// Apply hands rep to the runner's device bridge, attributed to the network
+// its IP belongs to when that is resolvable.
 func (a SinkAdapter) Apply(ctx context.Context, rep scannerv2.HostReport) bool {
-	isNew, _, _ := a.Runner.ApplyReport(ctx, rep, a.Runner.NetworkID(), a.AgentID)
+	nid := a.Runner.NetworkID()
+	if resolved := a.Networks.Resolve(ctx, rep.IP); resolved.Valid {
+		nid = resolved
+	}
+	isNew, _, _ := a.Runner.ApplyReport(ctx, rep, nid, a.AgentID)
 	return isNew
 }
 
