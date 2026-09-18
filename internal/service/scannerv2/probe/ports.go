@@ -164,6 +164,14 @@ func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pro
 	return evs, nil
 }
 
+// tcpDial is the TCP connect behind dialAndGrab, as a variable so tests can
+// substitute controlled dials. The real network cannot be trusted on dev
+// machines behind TUN proxies, which fake-answer SYN packets to unroutable
+// TEST-NET targets and turn "timeout" dials into phantom "open" ports (#364).
+var tcpDial = func(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+	return (&net.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", addr)
+}
+
 // dialAndGrab connects (TCP), and on success attempts a passive banner read.
 // Many servers (SSH, RTSP, FTP, SMTP, redis) send a greeting immediately. If
 // the passive read returns nothing AND the port has a known active probe
@@ -178,9 +186,8 @@ func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pro
 //
 // Returns (open, refused, banner).
 func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration) (bool, bool, string) {
-	dialer := net.Dialer{Timeout: timeout}
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	conn, err := tcpDial(ctx, addr, timeout)
 	if err != nil {
 		if isRefused(err) {
 			return false, true, ""
@@ -188,7 +195,7 @@ func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration
 		if ctx.Err() == nil && !isRefused(err) {
 			// Transient (timeout / overloaded target / momentary drop): one
 			// retry before declaring the port unknown.
-			conn, err = dialer.DialContext(ctx, "tcp", addr)
+			conn, err = tcpDial(ctx, addr, timeout)
 			if err != nil {
 				return false, isRefused(err), ""
 			}

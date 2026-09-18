@@ -252,22 +252,8 @@ func doctor(args []string) int {
 	// the group to be inside /proc/sys/net/ipv4/ping_group_range. The OpenWrt
 	// default "1 0" (disabled) leaves every probe "permission denied".
 	if raw, err := os.ReadFile("/proc/sys/net/ipv4/ping_group_range"); err == nil {
-		var lo, hi int
-		if n, _ := fmt.Sscanf(strings.TrimSpace(string(raw)), "%d %d", &lo, &hi); n == 2 {
-			gid := os.Getgid()
-			switch {
-			case lo > hi:
-				checks = append(checks, doctorCheck{name: "icmp ping_group_range", status: "fail",
-					detail:  fmt.Sprintf("disabled (%s) — unprivileged ICMP probes will fail", strings.TrimSpace(string(raw))),
-					fixHint: `echo "0 2147483647" > /proc/sys/net/ipv4/ping_group_range (or add to sysctl.d; required for ICMP without root)`})
-			case gid >= lo && gid <= hi:
-				checks = append(checks, doctorCheck{name: "icmp ping_group_range", status: "ok",
-					detail: fmt.Sprintf("gid %d within [%d %d]", gid, lo, hi)})
-			default:
-				checks = append(checks, doctorCheck{name: "icmp ping_group_range", status: "warn",
-					detail:  fmt.Sprintf("service gid %d outside [%d %d]", gid, lo, hi),
-					fixHint: "widen ping_group_range or run the service under a covered group"})
-			}
+		if c, ok := icmpPingGroupRangeCheck(string(raw), os.Getgid()); ok {
+			checks = append(checks, c)
 		}
 	}
 
@@ -278,6 +264,36 @@ func doctor(args []string) int {
 		}
 	}
 	return 0
+}
+
+// icmpPingGroupRangeCheck turns /proc/sys/net/ipv4/ping_group_range content
+// into a doctorCheck (#288). ok=false means the input didn't parse as two
+// numbers — emit no check rather than a false failure (the sysctl file may be
+// absent or unexpected on exotic kernels). Decision table:
+//
+//   - lo > hi            → fail: the range is inverted = disabled ("1 0" is
+//     the GL.iNet/OpenWrt default); unprivileged ICMP
+//     probes fail with EPERM even for root
+//   - gid in [lo, hi]    → ok
+//   - otherwise          → warn: the service's gid isn't covered
+func icmpPingGroupRangeCheck(raw string, gid int) (doctorCheck, bool) {
+	var lo, hi int
+	if n, _ := fmt.Sscanf(strings.TrimSpace(raw), "%d %d", &lo, &hi); n != 2 {
+		return doctorCheck{}, false
+	}
+	switch {
+	case lo > hi:
+		return doctorCheck{name: "icmp ping_group_range", status: "fail",
+			detail:  fmt.Sprintf("disabled (%s) — unprivileged ICMP probes will fail", strings.TrimSpace(raw)),
+			fixHint: `echo "0 2147483647" > /proc/sys/net/ipv4/ping_group_range (or add to sysctl.d; required for ICMP without root)`}, true
+	case gid >= lo && gid <= hi:
+		return doctorCheck{name: "icmp ping_group_range", status: "ok",
+			detail: fmt.Sprintf("gid %d within [%d %d]", gid, lo, hi)}, true
+	default:
+		return doctorCheck{name: "icmp ping_group_range", status: "warn",
+			detail:  fmt.Sprintf("service gid %d outside [%d %d]", gid, lo, hi),
+			fixHint: "widen ping_group_range or run the service under a covered group"}, true
+	}
 }
 
 func printReport(checks []doctorCheck) {

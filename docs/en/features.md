@@ -85,6 +85,7 @@ Blackbox-style periodic probing of external assets — public sites, hosted TLS 
 - **Four modules**: `http` (status <400 = success; https collects the cert chain), `tls` (full chain), `tcp`, `icmp`; per-target interval (10s–86400s) and timeout (1–60s).
 - **Engine**: 10s tick re-reads targets (CRUD effective without restart), 8-way concurrency, resume from last run, manual trigger.
 - **Certificate inventory**: reuses the scanner's cert-chain collector; SNI auto-derived; last-known-good chain kept on transient failure.
+- **Multi-vantage (#277)**: a target's probes can run from the center, every registered agent, or one specific agent — results recorded per `(target, vantage)`, shown side by side in the history dialog with disagreement highlighted, and exported as `mibee_probe_*{vantage=…}`.
 - **Metrics & alerts**: `mibee_probe_up` / `mibee_probe_duration_seconds` / `mibee_probe_cert_expiry_timestamp_seconds`, with example alert rules (target down, cert expiring).
 
 ![Probes](images/pb-probes.webp)

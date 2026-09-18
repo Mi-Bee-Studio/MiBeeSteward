@@ -489,6 +489,12 @@ type Subnet struct {
 	LastSeen  *time.Time `json:"last_seen"`
 }
 
+type SystemSetting struct {
+	Key       string    `json:"key"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type TopologyEdge struct {
 	ID           int64      `json:"id"`
 	FromDeviceID int64      `json:"from_device_id"`
@@ -513,6 +519,7 @@ type User struct {
 	LockedUntil         *time.Time `json:"locked_until"`
 	PasswordChangedAt   *time.Time `json:"password_changed_at"`
 	MustChangePassword  bool       `json:"must_change_password"`
+	TokenVersion        int64      `json:"token_version"`
 }
 
 type UserNetworkGrant struct {

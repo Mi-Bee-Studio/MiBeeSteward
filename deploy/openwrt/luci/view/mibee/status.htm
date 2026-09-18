@@ -1,0 +1,82 @@
+<%#
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+
+MiBee Steward — LuCI status view (read-only): service state, version, port,
+health, database size, and the door into the full web UI. All data comes
+from `luci-helper.sh status` (KEY=VALUE lines).
+-%>
+<%+header%>
+<%
+local sys = require "luci.sys"
+local out = sys.exec("/usr/lib/mibee/luci-helper.sh status 2>/dev/null") or ""
+local info = {}
+-- NB: %w in Lua does NOT include "_" (unlike PCRE \w) — keys like lan_ip and
+-- db_bytes need the explicit [%w_] class or they parse as "ip"/"bytes".
+for k, v in out:gmatch("([%w_]+)=(%S*)") do info[k] = v end
+
+local function fmt_bytes(n)
+    n = tonumber(n) or 0
+    if n >= 1048576 then return string.format("%.1f MB", n / 1048576) end
+    if n >= 1024 then return string.format("%.1f KB", n / 1024) end
+    return tostring(n) .. " B"
+end
+
+local ui_url = ""
+if info.lan_ip and info.lan_ip ~= "" and info.port and info.port ~= "" then
+    ui_url = "http://" .. info.lan_ip .. ":" .. info.port
+end
+%>
+
+<h2><%:MiBee Steward%></h2>
+<div class="cbi-map" id="cbi-mibee-status">
+	<div class="cbi-section">
+		<div class="cbi-section-node">
+			<div class="cbi-value">
+				<label class="cbi-value-title">运行状态 / Status</label>
+				<div class="cbi-value-field">
+					<% if info.service == "running" then %>
+						<span style="color:#4caf50">● 运行中 running</span>
+					<% else %>
+						<span style="color:#f24236">● 已停止 stopped</span>
+					<% end %>
+				</div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title">健康检查 / Health</label>
+				<div class="cbi-value-field"><%=info.health or "?"%></div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title">开机自启 / Autostart</label>
+				<div class="cbi-value-field">
+					<% if info.enabled == "1" then %>已启用 enabled<% else %>已停用 disabled<% end %>
+				</div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title">版本 / Version</label>
+				<div class="cbi-value-field"><%=info.version or "?"%></div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title">管理端口 / Port</label>
+				<div class="cbi-value-field"><%=info.port or "?"%></div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title">数据库 / Database</label>
+				<div class="cbi-value-field"><%=fmt_bytes(info.db_bytes)%></div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title">管理界面 / Web UI</label>
+				<div class="cbi-value-field">
+					<% if ui_url ~= "" then %>
+						<a class="cbi-button cbi-button-apply" href="<%=ui_url%>" target="_blank" rel="noopener">打开管理界面 Open UI ↗</a>
+					<% else %>
+						—
+					<% end %>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<%+footer%>

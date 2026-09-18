@@ -108,6 +108,13 @@ type Config struct {
 	MaxConcurrentScans int
 	// PersistRawEvidence toggles writing raw evidence rows (default off).
 	PersistRawEvidence bool
+	// SeedEvidence, when set, supplies passive-discovery observations for a
+	// target IP (lease hostnames, overheard mDNS/SSDP announcements). The
+	// orchestrator prepends them to each host's gather output so the passive
+	// channel's data reaches the fingerprint classifiers (#377). routes.go
+	// wires this to the discovery service's observation cache; nil (default,
+	// unit tests) disables seeding.
+	SeedEvidence func(ip string) []scannerv2.Evidence
 	// OUIPath is the path to the IEEE OUI vendor-mapping file (optional). When
 	// empty or missing, the ARP probe still records MAC addresses but skips the
 	// vendor lookup. The path is overridable via MIBEE_SCANNER_OUI_PATH.
@@ -211,17 +218,28 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 		if err := rc.LoadFromDir(cfg.FingerprintPath); err != nil {
 			logger.Error("scannerv2: fingerprint dir load failed; falling back to embedded rules",
 				"path", cfg.FingerprintPath, "error", err)
-			_ = rc.LoadEmbeddedDefaults()
+			if err := classify.LoadEmbeddedRules(rc); err != nil {
+				logger.Warn("scannerv2: embedded fingerprint load failed; data-driven rules disabled",
+					"error", err)
+			}
 		} else if rc.Loaded() {
 			logger.Info("scannerv2: fingerprints loaded from dir",
 				"path", cfg.FingerprintPath, "rules", rc.RuleCount())
 		} else {
 			logger.Info("scannerv2: fingerprint dir empty; falling back to embedded rules",
 				"path", cfg.FingerprintPath)
-			_ = rc.LoadEmbeddedDefaults()
+			if err := classify.LoadEmbeddedRules(rc); err != nil {
+				logger.Warn("scannerv2: embedded fingerprint load failed; data-driven rules disabled",
+					"error", err)
+			}
 		}
 	} else {
-		if err := rc.LoadEmbeddedDefaults(); err != nil {
+		// Zero-config fallback: the corpus embedded in the classify package —
+		// the synced SUPERSET of the fingerprint library's own rules (adds
+		// iot-identity.yaml #361 and mdns-ssdp.yaml #365, which the external
+		// library doesn't ship). Loading the library's defaults instead
+		// silently drops those corpora on every default deployment (#377).
+		if err := classify.LoadEmbeddedRules(rc); err != nil {
 			logger.Warn("scannerv2: embedded fingerprint load failed; data-driven rules disabled",
 				"error", err)
 		}
@@ -253,6 +271,12 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 		MaxConcurrentHosts: cfg.MaxConcurrentHosts,
 		PerHostTimeout:     cfg.PerHostTimeout,
 	}, logger)
+	// Passive-discovery seed evidence (#377): observations overheard by the
+	// discovery sources (lease hostnames, mDNS/SSDP announcements) join each
+	// host's gather output ahead of classification.
+	if cfg.SeedEvidence != nil {
+		orch.SetSeedEvidence(cfg.SeedEvidence)
+	}
 	// Inject the post-scan MAC resolver so cold scans still capture MAC after the
 	// ICMP/TCP probes have populated the kernel ARP cache. The engine (not the
 	// scannerv2 root package) wires this to avoid an import cycle. The closure

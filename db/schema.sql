@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS users (
     failed_login_attempts INTEGER NOT NULL DEFAULT 0,
     locked_until TIMESTAMP,
     password_changed_at DATETIME,
-    must_change_password BOOLEAN NOT NULL DEFAULT 0
+    must_change_password BOOLEAN NOT NULL DEFAULT 0,
+    token_version INTEGER NOT NULL DEFAULT 0
 );
 
 -- Devices table
@@ -195,8 +196,8 @@ CREATE INDEX IF NOT EXISTS idx_device_liveness_checked_at ON device_liveness(che
 CREATE TABLE IF NOT EXISTS dashboard_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('gauge', 'line', 'bar', 'pie')),
-    data_source TEXT NOT NULL DEFAULT 'prometheus' CHECK(data_source IN ('prometheus', 'victoriametrics')),
+    type TEXT NOT NULL CHECK(type IN ('gauge', 'line', 'bar', 'pie', 'list')),
+    data_source TEXT NOT NULL DEFAULT 'prometheus' CHECK(data_source IN ('prometheus', 'victoriametrics', 'builtin')),
     query TEXT NOT NULL DEFAULT '',
     refresh_interval INTEGER NOT NULL DEFAULT 30,
     -- 1-based display order (lowest = first). 0 is never stored: the service
@@ -866,6 +867,20 @@ CREATE INDEX IF NOT EXISTS idx_devices_scan_mac_expr ON devices(json_extract(sca
 CREATE INDEX IF NOT EXISTS idx_devices_scan_vendor_expr ON devices(json_extract(scan_attributes, '$.vendor'));
 CREATE INDEX IF NOT EXISTS idx_networks_name ON networks(name);
 CREATE INDEX IF NOT EXISTS idx_scan_tasks_network ON scan_tasks(network_id);
+
+
+-- system_settings: runtime-editable settings overlay (the settings center).
+-- Values are JSON blobs keyed by a dotted setting name (e.g.
+-- "auth.password_policy"). Precedence: this overlay > YAML config > compiled
+-- defaults — consumers resolve through SettingsService, which keeps an
+-- in-memory snapshot so reads are cheap and writes notify subscribers
+-- (future hot-reload of engine-level knobs). Migrations pick this up via the
+-- shared CREATE TABLE IF NOT EXISTS chain.
+CREATE TABLE IF NOT EXISTS system_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 
 -- schema_meta: migration-framework bookkeeping. `chain_fingerprint_v1` holds

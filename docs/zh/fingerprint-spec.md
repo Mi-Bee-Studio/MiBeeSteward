@@ -61,13 +61,15 @@ plain JSON structures (defined in `internal/service/scannerv2/evidence.go`):
 | Field | Type | Meaning |
 |---|---|---|
 | `source` | string | probe that produced this (e.g. `active:snmp`, `passive:ebpf:tc`) |
-| `kind` | string | evidence shape: `port_open`, `banner`, `snmp`, `http`, `tls`, `rtsp_banner`, `onvif_response`, `metric`, `echo` |
+| `kind` | string | evidence shape: `port_open`, `banner`, `snmp`, `http`, `tls`, `rtsp_banner`, `onvif_response`, `metric`, `echo`, `hostname`, `mdns`, `ssdp` |
 | `ip` | string | target host |
 | `port` | int | L4 port (0 when N/A, e.g. ICMP) |
 | `protocol` | string | `tcp` / `udp` / `` (icmp) |
 | `raw_data` | map<string,string> | protocol-specific payload (banner text, SNMP varbinds, headers, …) |
 | `confidence` | float | this evidence's standalone reliability, ∈ [0,1] |
 | `observed_at` | timestamp | when gathered |
+
+三种 kind 来自发现侧而非主动探测：`hostname`（DHCP 租约 / rDNS 主机名——`iot-identity.yaml` 语料以此为核心，为「什么都不应答」的米家生态 IoT 给出品牌识别），以及 `mdns` / `ssdp`（解析后的服务通告——`mdns-ssdp.yaml` 语料将其映射为摄像头 / 打印机 / NAS / IoT 身份与厂商签名）。被动观察如何进入证据集见[设备发现](discovery.md)。
 
 ### ServiceIdentity (output)
 

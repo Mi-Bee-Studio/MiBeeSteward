@@ -5,9 +5,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -379,10 +381,23 @@ func ioReadUntilClosed(conn net.Conn) {
 	}
 }
 
-// TestPortSpecProbe_TimeoutIsUnknownNotClosed dials a non-routable TEST-NET
-// address with a short timeout: the probe must emit NOTHING for that port
-// (timeout ≠ closed) and stay bounded (one retry, not a hang).
+// TestPortSpecProbe_TimeoutIsUnknownNotClosed stubs tcpDial with a
+// deadline-exceeded error: the probe must emit NOTHING for that port
+// (timeout ≠ closed), retry exactly once, and stay bounded. The dial is
+// stubbed because the real network cannot be trusted on dev machines behind
+// TUN proxies — they fake-answer SYN to TEST-NET targets, turning the
+// intended "timeout" into a phantom "open" (#364).
 func TestPortSpecProbe_TimeoutIsUnknownNotClosed(t *testing.T) {
+	orig := tcpDial
+	t.Cleanup(func() { tcpDial = orig })
+
+	var calls int32
+	tcpDial = func(_ context.Context, _ string, _ time.Duration) (net.Conn, error) {
+		atomic.AddInt32(&calls, 1)
+		time.Sleep(50 * time.Millisecond)
+		return nil, os.ErrDeadlineExceeded
+	}
+
 	p := NewPortSpecProbe("22", nil)
 	start := time.Now()
 	evs, err := p.Probe(context.Background(), "192.0.2.1", scannerv2.ProbeHint{Timeout: 150 * time.Millisecond})
@@ -393,7 +408,9 @@ func TestPortSpecProbe_TimeoutIsUnknownNotClosed(t *testing.T) {
 	if len(evs) != 0 {
 		t.Fatalf("timed-out port must emit no evidence (unknown, not closed), got %+v", evs)
 	}
-	// Two attempts at 150ms + slack; a hang or unbounded retry loop blows past.
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("timeout dial must retry exactly once, got %d dial calls", got)
+	}
 	if elapsed > 2*time.Second {
 		t.Fatalf("retry must stay bounded, took %v", elapsed)
 	}

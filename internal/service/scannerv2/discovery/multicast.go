@@ -20,6 +20,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"mibee-steward/internal/service/scannerv2"
+	"mibee-steward/internal/service/scannerv2/probe"
 )
 
 // The socket-level group join (SO_REUSEADDR + IP_ADD_MEMBERSHIP) is
@@ -242,6 +245,35 @@ func (m *mdnsListener) readLoop(ctx context.Context, conn net.PacketConn) {
 		if ip == "" {
 			continue
 		}
+		// Seed-evidence cache (#377): parse the full announcement into the
+		// same RawData shape the ACTIVE mDNS probe emits (hostname, services
+		// list, txt.* keys) so the mdns-ssdp.yaml rules fire identically on
+		// overheard traffic. The hints below still serve the pre-scan typing
+		// of unscanned hosts.
+		if host, services, txtKV, _ := probe.ParseMDNSResponse(buf[:n]); host != "" || len(services) > 0 {
+			raw := map[string]string{}
+			if host != "" {
+				raw["hostname"] = host
+			}
+			if len(services) > 0 {
+				raw["services"] = strings.Join(services, ",")
+			}
+			for k, v := range txtKV {
+				raw["txt."+k] = v
+			}
+			if len(raw) > 0 {
+				m.svc.Observe(ip, scannerv2.Evidence{
+					Source:     "discovery:multicast",
+					Kind:       "mdns",
+					IP:         ip,
+					Protocol:   "udp",
+					Port:       5353,
+					RawData:    raw,
+					Confidence: 0.8,
+					ObservedAt: time.Now(),
+				})
+			}
+		}
 		hints := parseMDNSHints(buf[:n])
 		m.svc.Emit(NewHostEvent{IP: ip, Source: "mdns", Hints: hints})
 	}
@@ -331,6 +363,22 @@ func (s *ssdpListener) readLoop(ctx context.Context, conn net.PacketConn) {
 		ip := srcIP(addr)
 		if ip == "" {
 			continue
+		}
+		// Seed-evidence cache (#377): the SSDP SERVER/USN/LOCATION headers are
+		// vendor self-identifications — the same shape the active SSDP probe
+		// emits, so the ssdp rules in mdns-ssdp.yaml fire on overheard
+		// NOTIFY/M-SEARCH replies too.
+		if raw := probe.ParseSSDPResponse(buf[:n]); len(raw) >= 2 {
+			s.svc.Observe(ip, scannerv2.Evidence{
+				Source:     "discovery:multicast",
+				Kind:       "ssdp",
+				IP:         ip,
+				Protocol:   "udp",
+				Port:       1900,
+				RawData:    raw,
+				Confidence: 0.8,
+				ObservedAt: time.Now(),
+			})
 		}
 		hints := parseSSDPHints(buf[:n])
 		s.svc.Emit(NewHostEvent{IP: ip, Source: "ssdp", Hints: hints})

@@ -15,11 +15,12 @@
 	import DashboardWidget from '$lib/components/DashboardWidget.svelte';
 	import WidgetPicker from '$lib/components/WidgetPicker.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
-	import { Plus, RotateCw, Puzzle, BarChart3, AlertTriangle, CheckCircle2, Radar } from '@lucide/svelte';
+	import { Plus, RotateCw, Puzzle, BarChart3, AlertTriangle, CheckCircle2, Radar, CircleHelp } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import { formatDuration } from '$lib/utils/format';
 	import { addToast } from '$lib/stores/toast';
@@ -28,7 +29,7 @@
 	import { formatTime } from '$lib/utils/index';
 	import { auth } from '$lib/stores/auth';
 	import type { EChartsOption } from '$lib/charts/echarts';
-	import type { DashboardWidgetConfig } from '$lib/types';
+	import type { DashboardListItem, DashboardWidgetConfig } from '$lib/types';
 
 	interface DeviceStats {
 		by_status: { online: number; offline: number; unknown: number };
@@ -76,6 +77,36 @@
 		generated: string;
 	}
 
+	// GET /changes — feeds the builtin "recent changes" list widget.
+	interface ChangeRow {
+		id: number;
+		change_type: string; // device_added | device_changed | device_lost | device_config_changed | ...
+		entity_type: string;
+		before_data?: string;
+		after_data?: string;
+		detected_at: string;
+	}
+	interface ChangesResponse {
+		changes: ChangeRow[];
+		total: number;
+	}
+
+	// GET /probe-targets — feeds the builtin "probe status" list widget. Only
+	// the fields the widget renders are declared.
+	interface ProbeTargetRow {
+		id: number;
+		name: string;
+		target: string;
+		enabled: boolean;
+		last_run_at?: string;
+		last_status?: string;
+		last_latency_ms?: number;
+	}
+	interface ProbeTargetsResponse {
+		targets: ProbeTargetRow[];
+		total: number;
+	}
+
 	// DashboardConfig is the shared API shape (from $lib/types). The route
 	// keeps a local alias so the DashboardConfigsResponse + editingWidget types
 	// read naturally, and WidgetState extends it with runtime UI fields (#71).
@@ -89,6 +120,9 @@
 	interface WidgetState extends DashboardConfig {
 		chartOption: EChartsOption;
 		loading: boolean;
+		// Rows for builtin list widgets (type "list"); chart widgets leave it
+		// empty and render chartOption instead.
+		listItems?: DashboardListItem[];
 	}
 
 	// loading is a writable store (not $state). A bare {#if loading} backed by
@@ -120,6 +154,7 @@
 	let editingWidget = $state<DashboardConfig | null>(null);
 	let confirmOpen = $state(false);
 	let removingWidgetId = $state<string | null>(null);
+	let helpOpen = $state(false);
 
 	let draggedId: string | null = $state(null);
 	let refreshTimers: ReturnType<typeof setInterval>[] = [];
@@ -502,6 +537,7 @@
 						position: cfg.position,
 						chartOption: {} as EChartsOption,
 						loading: true,
+						listItems: [],
 						created_at: cfg.created_at,
 						updated_at: cfg.updated_at
 					}));
@@ -520,8 +556,22 @@
 		}
 	}
 
+	// applyWidgetPatch merges a refresh result into the widgets array. Shared
+	// by the builtin and prometheus paths so both settle loading the same way.
+	function applyWidgetPatch(id: string, patch: Partial<WidgetState>) {
+		const idx = widgets.findIndex((x) => x.id === id);
+		if (idx >= 0) {
+			widgets[idx] = { ...widgets[idx], ...patch, loading: false };
+		}
+	}
+
 	async function refreshWidgetData(w: WidgetState) {
 		try {
+			if (w.data_source === 'builtin') {
+				await refreshBuiltinWidget(w);
+				return;
+			}
+
 			const now = Math.floor(Date.now() / 1000);
 			let chartOption: EChartsOption;
 
@@ -535,15 +585,163 @@
 				else chartOption = promToPieOption(data, w.name);
 			}
 
-			const idx = widgets.findIndex((x) => x.id === w.id);
-			if (idx >= 0) {
-				widgets[idx] = { ...widgets[idx], chartOption, loading: false };
-			}
+			applyWidgetPatch(w.id, { chartOption });
 		} catch {
-			const idx = widgets.findIndex((x) => x.id === w.id);
-			if (idx >= 0) {
-				widgets[idx] = { ...widgets[idx], loading: false };
+			applyWidgetPatch(w.id, {});
+		}
+	}
+
+	// ── Builtin preset data ──
+	// Presets are backed by the app's own read APIs — no Prometheus, no query
+	// language. The template keys (w.query) mirror the backend whitelist in
+	// internal/api/handler/dashboard.go (builtinWidgetTemplates); unknown keys
+	// render an empty widget rather than erroring the whole dashboard.
+
+	// fetchOverviewForWidget re-reads the aggregated overview for chart/list
+	// presets that derive from it. It refreshes the shared `overview` state
+	// too, so the banner and default cards benefit from the same fetch.
+	async function fetchOverviewForWidget(): Promise<OverviewResponse | null> {
+		try {
+			overview = await api.get<OverviewResponse>('/dashboard/overview');
+		} catch {
+			// Keep whatever overview we already have; widgets fall back to it.
+		}
+		return overview;
+	}
+
+	function buildRateGauge(rate01: number, widgetName: string): EChartsOption {
+		const value = Math.round(Math.max(0, Math.min(1, rate01)) * 100);
+		const primary = getPrimaryColor();
+		return {
+			backgroundColor: 'transparent',
+			series: [{
+				type: 'gauge',
+				startAngle: 200,
+				endAngle: -20,
+				min: 0,
+				max: 100,
+				splitNumber: 10,
+				itemStyle: { color: primary },
+				progress: { show: true, width: 18 },
+				pointer: { show: false },
+				axisLine: { lineStyle: { width: 18, color: [[1, getBorderColor()]] } },
+				axisTick: { show: false },
+				splitLine: { show: false },
+				axisLabel: { show: false },
+				title: { fontSize: 14, color: getTextMutedColor(), offsetCenter: [0, '70%'] },
+				detail: {
+					valueAnimation: true,
+					fontSize: 28,
+					fontWeight: 'bold',
+					color: primary,
+					offsetCenter: [0, '40%'],
+					formatter: '{value}%'
+				},
+				data: [{ value, name: widgetName }]
+			}]
+		};
+	}
+
+	// changeStatusChip maps a change_log row's change_type onto the CSS chip
+	// classes DashboardWidget understands (status-added/-lost/-changed/…).
+	function changeStatusChip(changeType: string): string {
+		switch (changeType) {
+			case 'device_added': return 'added';
+			case 'device_lost': return 'lost';
+			case 'device_removed': return 'changed';
+			default: return 'changed'; // device_changed, device_config_changed, …
+		}
+	}
+
+	// changeToItem extracts the display name/IP from a change row's
+	// before/after JSON snapshots (after_data preferred — it is the newest
+	// state for adds/changes; lost rows only have before_data).
+	function changeToItem(row: ChangeRow): DashboardListItem {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		let payload: any = {};
+		try {
+			payload = JSON.parse(row.after_data || row.before_data || '{}');
+		} catch {
+			// Malformed snapshot — fall back to the raw change type as title.
+		}
+		const ip: string = payload.ip_address ?? '';
+		const name = payload.name && !IPV4_OR_V6.test(payload.name) ? payload.name : ip;
+		return {
+			title: name || row.change_type,
+			subtitle: ip && ip !== name ? ip : undefined,
+			status: changeStatusChip(row.change_type),
+			time: row.detected_at ? formatTime(new Date(row.detected_at)) : undefined,
+			href: ip ? `/devices?search=${ip}` : undefined
+		};
+	}
+
+	async function refreshBuiltinWidget(w: WidgetState) {
+		switch (w.query) {
+			case 'builtin:device_status': {
+				const s = await api.get<DeviceStats>('/devices/stats');
+				applyWidgetPatch(w.id, { chartOption: buildStatusPie(s) });
+				break;
 			}
+			case 'builtin:device_types': {
+				const o = await fetchOverviewForWidget();
+				applyWidgetPatch(w.id, { chartOption: buildTypePie(o?.devices.by_type ?? {}) });
+				break;
+			}
+			case 'builtin:device_locations': {
+				const o = await fetchOverviewForWidget();
+				applyWidgetPatch(w.id, { chartOption: buildLocationBar(o ? devices : []) });
+				break;
+			}
+			case 'builtin:online_rate': {
+				const o = await fetchOverviewForWidget();
+				applyWidgetPatch(w.id, { chartOption: buildRateGauge(o?.devices.online_rate ?? 0, w.name) });
+				break;
+			}
+			case 'builtin:recent_changes': {
+				const res = await api.get<ChangesResponse>('/changes?limit=10');
+				applyWidgetPatch(w.id, { listItems: (res.changes ?? []).map(changeToItem) });
+				break;
+			}
+			case 'builtin:offline_devices': {
+				const o = await fetchOverviewForWidget();
+				applyWidgetPatch(w.id, {
+					listItems: (o?.abnormal ?? []).map((d) => ({
+						title: displayName(d),
+						subtitle: displayName(d) !== d.ip_address ? d.ip_address : undefined,
+						status: 'offline',
+						href: `/devices?search=${d.ip_address}`
+					}))
+				});
+				break;
+			}
+			case 'builtin:scan_activity': {
+				const o = await fetchOverviewForWidget();
+				applyWidgetPatch(w.id, {
+					listItems: (o?.scanning.recent_runs ?? []).map((run) => ({
+						title: `#${run.id}`,
+						subtitle: `${run.alive_hosts}/${run.total_hosts} · ${formatDuration(run.duration_ms)}`,
+						status: run.status,
+						time: run.started_at ? formatTime(new Date(run.started_at)) : undefined
+					}))
+				});
+				break;
+			}
+			case 'builtin:probe_status': {
+				const res = await api.get<ProbeTargetsResponse>('/probe-targets');
+				applyWidgetPatch(w.id, {
+					listItems: (res.targets ?? []).map((t) => ({
+						title: t.name,
+						subtitle: t.last_latency_ms != null ? `${t.target} · ${t.last_latency_ms}ms` : t.target,
+						status: t.last_status ?? (t.enabled ? 'unknown' : 'disabled'),
+						time: t.last_run_at ? formatTime(new Date(t.last_run_at)) : undefined,
+						href: '/probes'
+					}))
+				});
+				break;
+			}
+			default:
+				// Unknown template key — renders the empty-list state.
+				applyWidgetPatch(w.id, { listItems: [] });
 		}
 	}
 
@@ -596,9 +794,10 @@
 			await fetchCustomWidgets();
 			// Banner payload in BOTH layouts (see fetchOverview).
 			await fetchOverview();
-			if (!useCustomLayout) {
-				await fetchDefaultData();
-			}
+			// Append-mode layout: the default cards always render, so their
+			// data is always fetched — adding a custom widget no longer hides
+			// the overview cards (the old replace-mode trap).
+			await fetchDefaultData();
 			lastUpdated = new Date();
 		} finally {
 			loading.set(false);
@@ -607,16 +806,16 @@
 
 	function setupRefreshTimers() {
 		clearRefreshTimers();
-		if (useCustomLayout) {
-			for (const w of widgets) {
-				if (w.refresh_interval > 0) {
-					const timer = setInterval(() => refreshWidgetData(w), w.refresh_interval * 1000);
-					refreshTimers.push(timer);
-				}
+		// Default cards + banner refresh on the 30s cadence…
+		const timer = setInterval(loadAll, 30000);
+		refreshTimers.push(timer);
+		// …and each custom widget keeps its own interval (a widget may want to
+		// refresh faster than the page-level cadence).
+		for (const w of widgets) {
+			if (w.refresh_interval > 0) {
+				const t = setInterval(() => refreshWidgetData(w), w.refresh_interval * 1000);
+				refreshTimers.push(t);
 			}
-		} else {
-			const timer = setInterval(loadAll, 30000);
-			refreshTimers.push(timer);
 		}
 	}
 
@@ -790,7 +989,7 @@
 			{/if}
 			{#if useCustomLayout}
 				<span class="text-xs text-muted px-2 py-0.5 rounded bg-border">
-					{m["dashboard.Config"]()}
+					{m["dashboard.Custom Widgets"]()}
 				</span>
 			{:else}
 				<span class="text-xs text-muted px-2 py-0.5 rounded bg-border">
@@ -799,6 +998,14 @@
 			{/if}
 		</div>
 		<div class="flex items-center gap-2">
+			<button
+				onclick={() => (helpOpen = true)}
+				class="btn btn-secondary shrink-0"
+				title={m["dashboard.Help"]()}
+				aria-label={m["dashboard.Help"]()}
+			>
+				<CircleHelp class="w-4 h-4" />
+			</button>
 			{#if isAdmin}
 				<button
 					onclick={handleAddWidget}
@@ -877,97 +1084,77 @@
 			     happening. The $loading store path (vs a bare $state) is required
 			     under prerender hydration (see the note above loadAll). -->
 			<PageSkeleton type="dashboard" />
-		{:else if useCustomLayout}
-		<!-- Custom widget layout with drag-and-drop -->
-		{#if widgets.length === 0}
+		{:else if devices.length === 0 && stats && stats.by_status.online + stats.by_status.offline + stats.by_status.unknown === 0 && widgets.length === 0}
 			<EmptyState
-				icon={Puzzle}
-				title={m["dashboard.No Widgets"]()}
-				description={m["dashboard.No Widgets Desc"]()}
-				actionLabel={isAdmin ? m["dashboard.Add Widget"]() : undefined}
-				onAction={isAdmin ? handleAddWidget : undefined}
+				icon={BarChart3}
+				title={m["dashboard.No Data"]()}
+				description={m["devices.No Devices Desc"]()}
+				actionLabel={m["devices.Create Device"]()}
 			/>
 		{:else}
-			{#if isAdmin}
-				<p class="text-xs text-muted mb-3">{m["dashboard.Drag to Reorder"]()}</p>
-			{/if}
-			<div class="widget-grid">
-				{#each widgets as widget (widget.id)}
-					<DashboardWidget
-						{widget}
-						onEdit={handleEditWidget}
-						onRemove={handleRemoveWidget}
-						onMove={handleMoveWidget}
-						ondragstart={handleDragStart}
-						ondragover={handleDragOver}
-						ondrop={handleDrop}
-					/>
-				{/each}
-			</div>
-		{/if}
-	{:else if devices.length === 0 && stats && stats.by_status.online + stats.by_status.offline + stats.by_status.unknown === 0}
-		<EmptyState
-			icon={BarChart3}
-			title={m["dashboard.No Data"]()}
-			description={m["devices.No Devices Desc"]()}
-			actionLabel={m["devices.Create Device"]()}
-		/>
-	{:else}
-		<!-- Default 2x2 Chart Grid -->
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-			<!-- Device Status Distribution (Pie) -->
-			<div class="bg-surface border border-border rounded-lg overflow-hidden">
-				<div class="px-4 py-3 border-b border-border">
-					<h3 class="text-sm font-semibold text-text">{m["dashboard.Device Status Distribution"]()}</h3>
+			<!-- Default 2x2 Chart Grid — always rendered (append-mode layout:
+			     custom widgets go BELOW these, they never replace them). -->
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+				<!-- Device Status Distribution (Pie) -->
+				<div class="bg-surface border border-border rounded-lg overflow-hidden">
+					<div class="px-4 py-3 border-b border-border">
+						<h3 class="text-sm font-semibold text-text">{m["dashboard.Device Status Distribution"]()}</h3>
+						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Status Desc"]()}</p>
+					</div>
+					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
+						<Chart option={buildStatusPie(stats || { by_status: { online: 0, offline: 0, unknown: 0 } })} height="100%" />
+					</div>
 				</div>
-				<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-					<Chart option={buildStatusPie(stats || { by_status: { online: 0, offline: 0, unknown: 0 } })} height="100%" />
-				</div>
-			</div>
 
-			<!-- Heartbeat Success Rate (Gauge) -->
-			<div class="bg-surface border border-border rounded-lg overflow-hidden">
-				<div class="px-4 py-3 border-b border-border">
-					<h3 class="text-sm font-semibold text-text">{m["dashboard.Heartbeat Success Rate"]()}</h3>
+				<!-- Heartbeat Success Rate (Gauge) -->
+				<div class="bg-surface border border-border rounded-lg overflow-hidden">
+					<div class="px-4 py-3 border-b border-border">
+						<h3 class="text-sm font-semibold text-text">{m["dashboard.Heartbeat Success Rate"]()}</h3>
+						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Heartbeat Desc"]()}</p>
+					</div>
+					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
+						<Chart option={buildHeartbeatGauge(stats || { by_status: { online: 0, offline: 0, unknown: 0 } })} height="100%" />
+					</div>
 				</div>
-				<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-					<Chart option={buildHeartbeatGauge(stats || { by_status: { online: 0, offline: 0, unknown: 0 } })} height="100%" />
-				</div>
-			</div>
 
-			<!-- Device Type Distribution (Pie) -->
-			<div class="bg-surface border border-border rounded-lg overflow-hidden">
-				<div class="px-4 py-3 border-b border-border">
-					<h3 class="text-sm font-semibold text-text">{m["dashboard.Device Type Distribution"]()}</h3>
+				<!-- Device Type Distribution (Pie) -->
+				<div class="bg-surface border border-border rounded-lg overflow-hidden">
+					<div class="px-4 py-3 border-b border-border">
+						<h3 class="text-sm font-semibold text-text">{m["dashboard.Device Type Distribution"]()}</h3>
+						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Types Desc"]()}</p>
+					</div>
+					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
+						<Chart option={buildTypePie(overview?.devices.by_type ?? {})} height="100%" />
+					</div>
 				</div>
-				<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-					<Chart option={buildTypePie(overview?.devices.by_type ?? {})} height="100%" />
-				</div>
-			</div>
 
-			<!-- Device Count by Location (Bar) -->
-			<div class="bg-surface border border-border rounded-lg overflow-hidden">
-				<div class="px-4 py-3 border-b border-border">
-					<h3 class="text-sm font-semibold text-text">{m["dashboard.Device Count by Location"]()}</h3>
+				<!-- Device Count by Location (Bar) -->
+				<div class="bg-surface border border-border rounded-lg overflow-hidden">
+					<div class="px-4 py-3 border-b border-border">
+						<h3 class="text-sm font-semibold text-text">{m["dashboard.Device Count by Location"]()}</h3>
+						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Location Desc"]()}</p>
+					</div>
+					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
+						<Chart option={buildLocationBar(devices)} height="100%" />
+					</div>
 				</div>
-				<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-					<Chart option={buildLocationBar(devices)} height="100%" />
-				</div>
-			</div>
 
-			<!-- Scan Activity — reflects "discovery", the system's core job -->
-			<div class="bg-surface border border-border rounded-lg overflow-hidden md:col-span-2">
-				<div class="px-4 py-3 border-b border-border flex items-center justify-between">
-					<h3 class="text-sm font-semibold text-text">{m["dashboard.Scan Activity"]()}</h3>
-					{#if overview?.scanning.last_discovery}
-						<span class="text-xs text-muted">
-							{m["dashboard.Last Discovery"]()}:
-							<strong class="text-success ml-1">{overview.scanning.last_discovery.alive_hosts}/{overview.scanning.last_discovery.total_hosts}</strong>
-						</span>
-					{/if}
-				</div>
+				<!-- Scan Activity — reflects "discovery", the system's core job -->
+				<div class="bg-surface border border-border rounded-lg overflow-hidden md:col-span-2">
+					<div class="px-4 py-3 border-b border-border flex items-center justify-between gap-4">
+						<div class="min-w-0">
+							<h3 class="text-sm font-semibold text-text">{m["dashboard.Scan Activity"]()}</h3>
+							<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Scan Desc"]()}</p>
+						</div>
+						{#if overview?.scanning.last_discovery}
+							<span class="text-xs text-muted shrink-0">
+								{m["dashboard.Last Discovery"]()}:
+								<strong class="text-success ml-1">{overview.scanning.last_discovery.alive_hosts}/{overview.scanning.last_discovery.total_hosts}</strong>
+							</span>
+						{/if}
+					</div>
 				<div class="p-4">
-					{#if overview?.scanning.recent_runs.length}
+					{#if overview?.scanning?.recent_runs?.length}
 						<div class="overflow-x-auto">
 							<table class="w-full text-sm">
 								<thead>
@@ -1005,14 +1192,17 @@
 
 			<!-- Abnormal Devices — offline list, clickable to the device page -->
 			<div class="bg-surface border border-border rounded-lg overflow-hidden md:col-span-2">
-				<div class="px-4 py-3 border-b border-border flex items-center justify-between">
-					<h3 class="text-sm font-semibold text-text">{m["dashboard.Offline Devices"]()}</h3>
-					<a href="/devices?status=offline" class="text-xs text-primary hover:underline">
+				<div class="px-4 py-3 border-b border-border flex items-center justify-between gap-4">
+					<div class="min-w-0">
+						<h3 class="text-sm font-semibold text-text">{m["dashboard.Offline Devices"]()}</h3>
+						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Offline Desc"]()}</p>
+					</div>
+					<a href="/devices?status=offline" class="text-xs text-primary hover:underline shrink-0">
 						{m["dashboard.View All"]()} →
 					</a>
 				</div>
 				<div class="p-2">
-					{#if overview?.abnormal.length}
+					{#if overview?.abnormal?.length}
 						<div class="divide-y divide-border/50">
 							{#each overview.abnormal as dev}
 								<a href="/devices?search={dev.ip_address}" class="flex items-center justify-between px-2 py-2 hover:bg-surface-2 rounded transition-colors">
@@ -1036,7 +1226,55 @@
 			</div>
 		</div>
 	{/if}
+
+	<!-- Custom widgets — appended BELOW the default grid (they extend the
+	     dashboard, never replace the overview cards). -->
+	{#if widgets.length > 0}
+		<div class="custom-widgets-section">
+			<div class="flex items-center justify-between mb-3">
+				<h3 class="text-sm font-semibold text-text flex items-center gap-1.5">
+					<Puzzle class="w-4 h-4 text-muted" />
+					{m["dashboard.Custom Widgets"]()}
+				</h3>
+				{#if isAdmin}
+					<span class="text-xs text-muted">{m["dashboard.Drag to Reorder"]()}</span>
+				{/if}
+			</div>
+			<div class="widget-grid">
+				{#each widgets as widget (widget.id)}
+					<DashboardWidget
+						{widget}
+						onEdit={handleEditWidget}
+						onRemove={handleRemoveWidget}
+						onMove={handleMoveWidget}
+						ondragstart={handleDragStart}
+						ondragover={handleDragOver}
+						ondrop={handleDrop}
+					/>
+				{/each}
+			</div>
+		</div>
+	{/if}
 </div>
+
+<!-- Plain-language guide — answers "what is this page and where do I
+     start?" for first-time users. -->
+<Modal bind:open={helpOpen} title={m["dashboard.Help Title"]()} maxWidth="30rem">
+	<div class="help-body">
+		<p>{m["dashboard.Help P1"]()}</p>
+		<p>{m["dashboard.Help P2"]()}</p>
+		<p>{m["dashboard.Help P3"]()}</p>
+		<div class="help-actions">
+			<button type="button" class="btn btn-primary" onclick={() => { helpOpen = false; goto('/devices/scan-tasks'); }}>
+				<Radar class="w-4 h-4" />
+				{m['dashboard.Scan Network']()}
+			</button>
+			<button type="button" class="btn btn-secondary" onclick={() => (helpOpen = false)}>
+				{m["common.Close"]()}
+			</button>
+		</div>
+	</div>
+</Modal>
 
 <WidgetPicker bind:open={pickerOpen} editWidget={editingWidget} onSaved={onWidgetSaved} />
 <ConfirmDialog
@@ -1059,6 +1297,30 @@
 		.widget-grid {
 			grid-template-columns: 1fr;
 		}
+	}
+
+	.custom-widgets-section {
+		margin-top: 2rem;
+	}
+
+	.help-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.help-body p {
+		margin: 0;
+		font-size: 0.875rem;
+		line-height: 1.6;
+		color: var(--color-text);
+	}
+
+	.help-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
 	}
 
 	/* Attention banner — sits between the header and the charts. Three states:

@@ -610,3 +610,18 @@ func parseNetbiosResponse(msg []byte) (host, workgroup string) {
 	}
 	return
 }
+
+// ParseMDNSResponse is the exported form of parseMDNSResponse: it walks a DNS
+// response message and returns the A-record hostname, the service PTR names,
+// and the TXT key=value records. The passive discovery listener reuses it to
+// turn overheard announcements into Kind:"mdns" seed evidence (#377).
+func ParseMDNSResponse(data []byte) (host string, services []string, txt map[string]string, hasMatchingA bool) {
+	return parseMDNSResponse(data)
+}
+
+// ParseSSDPResponse is the exported form of parseSSDPResponse: it extracts the
+// SERVER / LOCATION / ST / USN headers from an SSDP response. The passive
+// discovery listener reuses it for Kind:"ssdp" seed evidence (#377).
+func ParseSSDPResponse(pkt []byte) map[string]string {
+	return parseSSDPResponse(pkt)
+}

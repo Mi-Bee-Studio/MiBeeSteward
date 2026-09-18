@@ -1,0 +1,332 @@
+# License: CC-BY-SA 4.0 (fingerprint corpus).
+# Derivative fingerprint corpora must be released under the same license.
+# See configs/fingerprints/README.md for attribution & provenance.
+
+# mDNS service-name + SSDP/UPnP self-announcement fingerprints.
+#
+# Matches evidence with Kind="mdns" (RawData: hostname, services — a
+# comma-joined service list, txt.<key> TXT records) from the active mDNS
+# probe, and Kind="ssdp" (RawData: server, location, st, usn) from the SSDP
+# M-SEARCH probe. Devices self-DECLARE these on the LAN, which the device
+# bridge already documents as protocol-grade evidence (stronger than a
+# DHCP hostname guess, weaker than actually speaking the protocol).
+#
+# Field-verified samples (iStoreOS R68S network, 2026-09, issue #365):
+#   NAS avahi:        services="_nut._tcp,_smb._tcp,_adisk._tcp" (+SRV/TXT)
+#                     — the _adisk TXT carries `dk0=adVN=Time Machine,…`
+#   Router (R68S):    ssdp server="DEVICE_SERIAL:ST-raspi-61BF5B32|lunzn,fastrhino-r68s"
+#   NAS media stack:  ssdp server="5.15.49-linuxkit-pr DLNADOC/1.50 UPnP/1.0 MiniDLNA/1.3.3"
+#
+# The device TYPE stays honest: service names map onto the fixed type
+# vocabulary (nas/printer/camera/iot/router); niche appliances (Chromecast,
+# AirPlay, HomeKit) land on iot with a descriptive inferred_description.
+# Mijia devices never announce mDNS/SSDP (0/12 in the field PoC) — their
+# identity path is the hostname rules in iot-identity.yaml (#361).
+
+version: 1
+
+rules:
+  # ── mDNS: service name → device identity (exclusive: one per evidence) ──
+  # Ordered by specificity; the exclusive_group keeps exactly one identity.
+  - id: mdns-onvif-camera
+    source: builtin
+    priority: 230
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains
+      value: "_onvif._tcp"
+    service: mdns
+    protocol: udp
+    confidence: 0.75
+    extract:
+      metadata:
+        inferred_type: { const: camera }
+        inferred_description: { const: "ONVIF service announced via mDNS" }
+
+  - id: mdns-rtsp-camera
+    source: builtin
+    priority: 229
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains
+      value: "_rtsp._tcp"
+    service: mdns
+    protocol: udp
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_type: { const: camera }
+        inferred_description: { const: "RTSP service announced via mDNS" }
+
+  # _adisk = Apple file sharing (Time Machine over SMB). An _adisk
+  # announcement implies a real SMB file server — NAS with high confidence.
+  - id: mdns-adisk-nas
+    source: builtin
+    priority: 228
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains
+      value: "_adisk._tcp"
+    service: mdns
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_type: { const: nas }
+        inferred_description: { const: "Apple file sharing (Time Machine/SMB) announced via mDNS" }
+
+  - id: mdns-smb-nas
+    source: builtin
+    priority: 227
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains
+      value: "_smb._tcp"
+    service: mdns
+    protocol: udp
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_type: { const: nas }
+        inferred_description: { const: "SMB file sharing announced via mDNS" }
+
+  - id: mdns-printer
+    source: builtin
+    priority: 226
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains_any
+      ci: true
+      value: ["_ipp._tcp", "_printer._tcp", "_pdl-datastream._tcp", "_ipps._tcp"]
+    service: mdns
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_type: { const: printer }
+        inferred_description: { const: "printing service announced via mDNS" }
+
+  # Media streamers / smart speakers / HomeKit accessories → iot with a
+  # precise description (the type vocabulary has no finer bucket).
+  - id: mdns-googlecast
+    source: builtin
+    priority: 225
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains
+      value: "_googlecast._tcp"
+    service: mdns
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_type: { const: iot }
+        inferred_description: { const: "Chromecast/Cast device announced via mDNS" }
+
+  - id: mdns-airplay
+    source: builtin
+    priority: 224
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains_any
+      value: ["_airplay._tcp", "_raop._tcp"]
+    service: mdns
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_type: { const: iot }
+        inferred_description: { const: "AirPlay receiver announced via mDNS" }
+
+  - id: mdns-homekit
+    source: builtin
+    priority: 223
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains
+      value: "_hap._tcp"
+    service: mdns
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_type: { const: iot }
+        inferred_description: { const: "HomeKit accessory announced via mDNS" }
+
+  # ESPHome DIY devices: the TXT records carry board/model — highest-fidelity
+  # self-identification on this list. txt.model passthrough keeps it.
+  - id: mdns-esphome
+    source: builtin
+    priority: 222
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains_any
+      ci: true
+      value: ["_esphomelib._tcp", "_esp._tcp"]
+    service: mdns
+    protocol: udp
+    confidence: 0.85
+    extract:
+      metadata:
+        inferred_type: { const: iot }
+        inferred_brand: { const: "ESPHome" }
+        inferred_description: { const: "ESPHome node announced via mDNS" }
+        model: { passthrough: txt.model }
+        version: { passthrough: txt.version }
+
+  # Xiaomi miot ecosystem: _miio._udp is announced by miot firmware (when it
+  # announces at all — see the #365 field PoC for the caveats).
+  - id: mdns-miio
+    source: builtin
+    priority: 221
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: services
+      op: contains
+      value: "_miio._udp"
+    service: mdns
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_type: { const: iot }
+        ecosystem: { const: "Xiaomi Mijia" }
+        inferred_description: { const: "Xiaomi miot device announced via mDNS (_miio._udp)" }
+
+  # Generic TXT self-identification (no service-name hit): keep the model/
+  # vendor TXT keys for the host_services row even without a type claim.
+  # Not in the exclusive group — co-fires with a type rule; the store merges
+  # metadata into the same host_services row.
+  - id: mdns-txt-model
+    source: builtin
+    priority: 200
+    match:
+      kind: mdns
+      field: txt.model
+      op: regex
+      value: '.+'
+    service: mdns
+    protocol: udp
+    confidence: 0.5
+    extract:
+      metadata:
+        model: { passthrough: txt.model }
+        vendor: { passthrough: txt.vendor }
+
+  # ── SSDP: SERVER / USN / LOCATION self-identification ──────────────────
+  - id: ssdp-minidlna
+    source: builtin
+    priority: 220
+    exclusive_group: ssdp-identity
+    match:
+      kind: ssdp
+      field: server
+      op: regex
+      value: '(?i)minidlna|readymedia'
+    service: ssdp
+    protocol: udp
+    confidence: 0.85
+    extract:
+      metadata:
+        inferred_type: { const: nas }
+        inferred_description: { const: "MiniDLNA/ReadyMedia media server announced via SSDP" }
+
+  # FastRhino/Lunzn router SOCs self-report vendor+model+serial in the SSDP
+  # SERVER header (field-verified on an R68S: "…|lunzn,fastrhino-r68s").
+  - id: ssdp-fastrhino
+    source: builtin
+    priority: 219
+    exclusive_group: ssdp-identity
+    match:
+      kind: ssdp
+      field: server
+      op: regex
+      value: '(?i)fastrhino|lunzn'
+    service: ssdp
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_type: { const: router }
+        inferred_brand: { const: "FastRhino" }
+        inferred_description: { const: "FastRhino/Lunzn router self-identified via SSDP SERVER header" }
+
+  # Vendor names in any SSDP field (SERVER/USN/LOCATION) — camera vendors
+  # embed their domains in the UPnP LOCATION URL.
+  - id: ssdp-hikvision
+    source: builtin
+    priority: 218
+    exclusive_group: ssdp-identity
+    match:
+      op: or
+      any:
+        - { kind: ssdp, field: server, op: regex, value: '(?i)hikvision' }
+        - { kind: ssdp, field: usn, op: regex, value: '(?i)hikvision' }
+        - { kind: ssdp, field: location, op: regex, value: '(?i)hikvision' }
+    service: ssdp
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_type: { const: camera }
+        inferred_brand: { const: "Hikvision" }
+        inferred_description: { const: "Hikvision device self-identified via SSDP" }
+
+  - id: ssdp-dahua
+    source: builtin
+    priority: 217
+    exclusive_group: ssdp-identity
+    match:
+      op: or
+      any:
+        - { kind: ssdp, field: server, op: regex, value: '(?i)dahua' }
+        - { kind: ssdp, field: usn, op: regex, value: '(?i)dahua' }
+        - { kind: ssdp, field: location, op: regex, value: '(?i)dahua' }
+    service: ssdp
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_type: { const: camera }
+        inferred_brand: { const: "Dahua" }
+        inferred_description: { const: "Dahua device self-identified via SSDP" }
+
+  # Synology DSM answers SSDP with SERVER carrying "Synology" and a LOCATION
+  # on :5000 — an unauthenticated self-declaration of a NAS.
+  - id: ssdp-synology
+    source: builtin
+    priority: 216
+    exclusive_group: ssdp-identity
+    match:
+      op: or
+      any:
+        - { kind: ssdp, field: server, op: regex, value: '(?i)synology' }
+        - { kind: ssdp, field: usn, op: regex, value: '(?i)synology' }
+        - { kind: ssdp, field: location, op: regex, value: '(?i)synology' }
+    service: ssdp
+    protocol: udp
+    confidence: 0.85
+    extract:
+      metadata:
+        inferred_type: { const: nas }
+        inferred_brand: { const: "Synology" }
+        inferred_description: { const: "Synology DSM self-identified via SSDP" }

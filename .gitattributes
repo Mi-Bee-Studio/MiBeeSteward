@@ -1,0 +1,16 @@
+# Scripts and unit files that execute on Linux targets (routers, servers) must
+# stay LF in the working tree even on Windows checkouts with core.autocrlf=true:
+# busybox ash, procd and systemd cannot parse CRLF. These files also ship inside
+# release tarballs built from a checkout (make package-openwrt normalizes too).
+*.sh      text eol=lf
+*.init    text eol=lf
+*.service text eol=lf
+Makefile  text eol=lf
+# LuCI integration files ship in the router package too — and LuCI's template
+# parser does NOT tolerate CRLF (a raw \r inside a write("...") literal is a
+# Lua "unfinished string" error; field-found on iStoreOS 24.10).
+*.lua     text eol=lf
+*.htm     text eol=lf
+# The example config ships in the router package; Go's YAML reader tolerates
+# CRLF, but keep it LF like every other packaged file.
+configs/config.example.yaml text eol=lf

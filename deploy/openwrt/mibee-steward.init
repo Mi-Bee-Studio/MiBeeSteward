@@ -3,17 +3,27 @@
 # OpenWrt procd init script for MiBee Steward CENTER (form C: center-as-router).
 #
 # Lets the MiBee Steward center binary run ON an OpenWrt router — the "router-
-# center" deployment form (see docs/private/architecture-debt-and-openwrt-2026-07-27.md
-# §4.0). A small network (home / small office) can run just the router: one
-# process gets both the choke-point discovery signals (DHCP leases, conntrack,
-# hostapd, dns_log — scanner.discovery.*) AND the full portrait API + SPA + the
-# authoritative asset registry. No separate agent process needed.
+# center" deployment form (see docs/{en,zh}/openwrt.md). A small network (home /
+# small office) can run just the router: one process gets both the choke-point
+# discovery signals (DHCP leases, conntrack, hostapd, dns_log —
+# scanner.discovery.*) AND the full portrait API + SPA + the authoritative
+# asset registry. No separate agent process needed.
 #
-# Why procd, not systemd: OpenWrt uses procd (not systemd). This script is the
-# procd equivalent of deploy/mibee-steward.service (the systemd unit for the
-# center on a generic Linux host).
+# Why procd, not systemd: OpenWrt (and OpenWrt-based firmwares such as iStoreOS)
+# uses procd. This script is the procd equivalent of deploy/mibee-steward.service
+# (the systemd unit for the center on a generic Linux host).
 #
 # ─── Install ───────────────────────────────────────────────────────────────
+# Preferred (no Docker): build the self-installing tarball on your build host
+# and run the on-router installer — it lays down the binary + this init script,
+# generates /etc/mibee/config.yaml on first install (random jwt_secret +
+# admin password, LAN cidr from uci), fixes ping_group_range, and enables +
+# starts the service:
+#   make package-openwrt            # → bin/mibee-steward-openwrt-arm64-<ver>.tar.gz
+#   scp bin/mibee-steward-openwrt-arm64-*.tar.gz root@router:/tmp/
+#   ssh root@router 'cd /tmp && tar -xzf mibee-steward-openwrt-arm64-*.tar.gz && ./install.sh'
+#
+# Manual (form C, three files):
 #   1. Cross-compile the center for the router's arch (ARM/ARM64 only — see
 #      the MIPS exclusion note in deploy/openwrt/README.md):
 #        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
@@ -28,18 +38,18 @@
 #        ssh root@router '/etc/init.d/mibee-steward enable && /etc/init.d/mibee-steward start'
 #      Logs: logread -e mibee-steward
 #
-# ─── Flash-wear mitigation (db on tmpfs) ───────────────────────────────────
-# The center writes a SQLite DB (./data/mibee.db, WAL mode). On a router's NAND
-# flash under overlayfs this causes write-wear. The recommended setup points
-# database.path at /tmp (tmpfs, RAM-backed) — the center is the writer of record
-# so cold-start loss of the LOCAL portrait is acceptable (a remote agent network
-# would re-populate it; on a single-router form-C deployment the portrait is
-# rebuilt on the next scan anyway). For deployments that need persistence across
-# reboots, leave database.path on flash but accept the wear (consumer routers
-# live 5-10 years; scan write volume is modest).
+# ─── Database & upload paths (absolute!) ────────────────────────────────────
+# procd starts the binary with CWD=/, so the config's relative defaults
+# (./data/mibee.db, ./data/uploads) would land directly under / — always set
+# absolute paths. The defaults below keep the authoritative portrait ON FLASH
+# (overlayfs; persists across reboots) — right for eMMC-backed boxes (NanoPi
+# R5S / iStoreOS, GL.iNet MT2500 with plenty of storage).
 #
-# Set DATABASE_PATH below (or via /etc/mibee/config.yaml's database.path) to
-# /tmp/mibee/mibee.db for the tmpfs variant.
+# Flash-wear mitigation for small-NAND routers: point DATABASE_PATH at /tmp
+# (tmpfs, RAM-backed) — /tmp/mibee/mibee.db. The DB is the writer of record,
+# so that variant trades cold-start loss of the LOCAL portrait for zero wear
+# (rebuilt on the next scan; single-router form-C deployments find this
+# acceptable).
 
 USE_PROCD=1
 
@@ -47,12 +57,15 @@ START=95  # after network + dnsmasq (START=60) so the center sees a populated AR
 
 BINARY=/usr/bin/mibee-steward
 CONFIG=/etc/mibee/config.yaml
-# Override the SQLite path here for flash-wear mitigation (see comment above).
-#DATABASE_PATH=/tmp/mibee/mibee.db
+DATABASE_PATH=/etc/mibee/data/mibee.db   # /tmp/mibee/mibee.db for the tmpfs variant
+UPLOAD_PATH=/etc/mibee/data/uploads
 
 start_service() {
     procd_open_instance
     procd_set_param command "$BINARY" -config "$CONFIG"
+    # Absolute data paths via env overrides (koanf MIBEE_* exact-key mapping).
+    [ -n "$DATABASE_PATH" ] && procd_set_param env MIBEE_DATABASE_SQLITE_PATH="$DATABASE_PATH"
+    [ -n "$UPLOAD_PATH" ] && procd_set_param env MIBEE_STORAGE_UPLOAD_PATH="$UPLOAD_PATH"
     # Respawn on crash (procd's equivalent of systemd Restart=always). The 3-tier
     # backoff (5s/10s/30s) bounds a tight crash-loop; procd gives up after
     # maxfail before re-trying after a longer cooldown.
@@ -62,6 +75,9 @@ start_service() {
     # procd_set_param limits the process to keep a runaway center from OOMing a
     # RAM-constrained router. Uncomment + tune for low-RAM hardware (e.g. 128MB).
     #procd_set_param limits nofile=1024 cpu=80
+    # Optional: local-time timestamps in logs/DB (POSIX TZ string, e.g. CST-8
+    # for UTC+8). Without it Go falls back to UTC — consistent, just not local.
+    #procd_set_param env TZ=CST-8
     # The center binds a port (default 8080); procd needs to know it's a service.
     procd_set_param pidfile /var/run/mibee-steward.pid
     procd_close_instance

@@ -1172,7 +1172,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 - `interval_seconds`（可选，默认 60）：探测间隔，10–86400 秒
 - `timeout_seconds`（可选，默认 10）：单次探测超时，1–60 秒，须小于间隔
 - `notes`（可选，≤500 字符）、`enabled`（可选，默认 true）
-- `vantage`（可选，默认 `center`）：执行计划——`center`（本机执行）、`agent:{agent_id}`（指定 agent 执行；agent 侧执行随分布式拨测落地，在此之前此类目标无中心侧序列、手动触发返回 409）、`all`（中心 + 全部 agent）
+- `vantage`（可选，默认 `center`）：执行计划——`center`（本机执行）、`agent:{agent_id}`（该 agent 经分布式命令通道执行；中心拒绝本地执行，手动触发返回 409）、`all`（中心 + 全部已注册 agent；各轨道结果分别盖 `center` / `agent:{id}` 章——见[分布式](distributed.md#多视角拨测277)）
 
 **响应**：`201 Created` 带 ProbeTargetResponse（含 `last_run_at`/`last_status`/`last_latency_ms`/`last_error` 去规范化最新结果，空 = 尚未探测）。
 

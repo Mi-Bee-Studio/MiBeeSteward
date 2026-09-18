@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/jwtauth/v5"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
@@ -38,7 +39,8 @@ func setupUserService(t *testing.T) (*UserService, *sql.DB) {
 			failed_login_attempts INTEGER NOT NULL DEFAULT 0,
 			locked_until TIMESTAMP,
 			password_changed_at DATETIME,
-			must_change_password BOOLEAN NOT NULL DEFAULT 0
+			must_change_password BOOLEAN NOT NULL DEFAULT 0,
+			token_version INTEGER NOT NULL DEFAULT 0
 		)
 	`)
 	require.NoError(t, err)
@@ -130,9 +132,16 @@ func TestRegister_PasswordMissingDigit(t *testing.T) {
 }
 
 func TestRegister_PasswordMissingSpecial(t *testing.T) {
+	// The default policy no longer REQUIRES special characters (relaxed with
+	// the settings center); pin both halves — the class is optional by
+	// default, and the rule still fires when an admin turns it on.
 	svc, _ := setupUserService(t)
-
 	_, err := svc.Register(context.Background(), "frank", "frank@example.com", "NoSpecial123", "user")
+	require.NoError(t, err, "default policy must accept letters+digits without special chars")
+
+	svc2, _ := setupUserService(t)
+	svc2.policy = config.PasswordPolicyConfig{MinLength: 8, RequireUppercase: true, RequireLowercase: true, RequireDigit: true, RequireSpecial: true}
+	_, err = svc2.Register(context.Background(), "frank2", "frank2@example.com", "NoSpecial123", "user")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrWeakPassword)
 	require.Contains(t, err.Error(), "special")
@@ -487,4 +496,63 @@ func TestLogin_LockoutConfigurable(t *testing.T) {
 	require.True(t, errors.Is(err, ErrInvalidCredentials), "post-expiry single failure must not stay locked: %v", err)
 	_, err = svc.Login(context.Background(), "cfglock", "Str0ng!Pass")
 	require.NoError(t, err, "correct password after expiry + one failure must succeed (no instant re-lock)")
+}
+
+// --- Session-epoch (token_version), #357 ---
+
+// tokenTVClaim verifies a minted JWT and returns its `tv` claim (missing = 0).
+func tokenTVClaim(t *testing.T, token string) int64 {
+	t.Helper()
+	auth := jwtauth.New("HS256", []byte(testJWTSecret), nil)
+	tok, err := jwtauth.VerifyToken(auth, token)
+	require.NoError(t, err)
+	var f float64
+	_ = tok.Get("tv", &f)
+	return int64(f)
+}
+
+// TestPasswordChangeBumpsTokenEpoch pins the revocation contract: every
+// password-changing path advances users.token_version, and a freshly minted
+// token records the NEW epoch — so tokens minted before the change (stale tv)
+// are rejected by middleware on their next request.
+func TestPasswordChangeBumpsTokenEpoch(t *testing.T) {
+	svc, db := setupUserService(t)
+	ctx := context.Background()
+	user := registerTestUser(t, svc, "epocher", "epoch@example.com")
+
+	getEpoch := func() int64 {
+		var v int64
+		require.NoError(t, db.QueryRow(`SELECT token_version FROM users WHERE id = ?`, user.ID).Scan(&v))
+		return v
+	}
+	require.EqualValues(t, 0, getEpoch(), "fresh user starts at epoch 0")
+
+	login, err := svc.Login(ctx, "epocher", "Str0ng!Pass")
+	require.NoError(t, err)
+	require.EqualValues(t, 0, tokenTVClaim(t, login.Token), "login token carries the current epoch")
+
+	// Self-service change.
+	require.NoError(t, svc.ChangePassword(ctx, user.ID, "Str0ng!Pass", "Str0ng2Pass!"))
+	require.EqualValues(t, 1, getEpoch(), "ChangePassword bumps the epoch")
+
+	// Forced change (first-login / CLI reset path).
+	require.NoError(t, svc.ForceChangePassword(ctx, user.ID, "Str0ng3Pass!"))
+	require.EqualValues(t, 2, getEpoch(), "ForceChangePassword bumps the epoch")
+
+	// Admin reset path.
+	require.NoError(t, svc.AdminResetPassword(ctx, user.ID, "Str0ng4Pass!"))
+	require.EqualValues(t, 3, getEpoch(), "AdminResetPassword bumps the epoch")
+
+	// A login after all the bumps carries the CURRENT epoch, so the new
+	// session keeps working while every pre-change token is stale.
+	login2, err := svc.Login(ctx, "epocher", "Str0ng4Pass!")
+	require.NoError(t, err)
+	require.EqualValues(t, 3, tokenTVClaim(t, login2.Token))
+
+	// TokenVersion (the middleware source) agrees and flags missing users.
+	v, ok := svc.TokenVersion(ctx, user.ID)
+	require.True(t, ok)
+	require.EqualValues(t, 3, v)
+	_, ok = svc.TokenVersion(ctx, 999999)
+	require.False(t, ok, "unknown user must not authenticate")
 }

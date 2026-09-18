@@ -258,27 +258,35 @@ type AuthConfig struct {
 // LockoutConfig tunes the account lockout on consecutive failed logins.
 // Defaults reproduce the historical hardcoded behavior (5 attempts,
 // 30 minutes). lock_minutes <= 0 also falls back to 30 at use time.
+// JSON tags serve the settings-center overlay (system_settings stores these
+// structs as JSON; the API is snake_case like everywhere else).
 type LockoutConfig struct {
-	MaxFailedAttempts int `koanf:"max_failed_attempts"`
-	LockMinutes       int `koanf:"lock_minutes"`
+	MaxFailedAttempts int `koanf:"max_failed_attempts" json:"max_failed_attempts"`
+	LockMinutes       int `koanf:"lock_minutes" json:"lock_minutes"`
 }
 
 // PasswordPolicyConfig mirrors the checks of the (formerly hardcoded)
 // validatePassword in internal/service. Booleans turn individual character
 // class requirements off; min_length floors the length check. The
 // must-not-equal-username rule is always on (it is not a strength knob).
+// JSON tags serve the settings-center overlay (system_settings stores these
+// structs as JSON; the API is snake_case like everywhere else).
 type PasswordPolicyConfig struct {
-	MinLength        int  `koanf:"min_length"`
-	RequireUppercase bool `koanf:"require_uppercase"`
-	RequireLowercase bool `koanf:"require_lowercase"`
-	RequireDigit     bool `koanf:"require_digit"`
-	RequireSpecial   bool `koanf:"require_special"`
+	MinLength        int  `koanf:"min_length" json:"min_length"`
+	RequireUppercase bool `koanf:"require_uppercase" json:"require_uppercase"`
+	RequireLowercase bool `koanf:"require_lowercase" json:"require_lowercase"`
+	RequireDigit     bool `koanf:"require_digit" json:"require_digit"`
+	RequireSpecial   bool `koanf:"require_special" json:"require_special"`
 }
 
 // passwordPolicyDefaults seeds koanf BEFORE the YAML load so a partial
 // `auth.password_policy` block overrides only the keys it names (koanf merge
-// semantics) instead of zeroing the rest. These values reproduce the previous
-// hardcoded behavior exactly — deployments without the block see no change.
+// semantics) instead of zeroing the rest. Special characters are NOT required
+// by default anymore (min 8 + upper + lower + digit): four mandatory classes
+// was field-feedback-heavy for the home/SOHO audience, and the first-run seed
+// path no longer depends on policy anyway (SeedAdmin bypasses validation).
+// The rules remain fully configurable — YAML here, or at runtime via the
+// settings center (PUT /api/v1/settings/auth → system_settings overlay).
 // Nested-map form (not flat dot keys): koanf treats dot keys from a raw
 // provider map as literal key names, which would never reach the struct.
 var authDefaults = map[string]interface{}{
@@ -288,7 +296,7 @@ var authDefaults = map[string]interface{}{
 			"require_uppercase": true,
 			"require_lowercase": true,
 			"require_digit":     true,
-			"require_special":   true,
+			"require_special":   false,
 		},
 		"lockout": map[string]interface{}{
 			"max_failed_attempts": 5,

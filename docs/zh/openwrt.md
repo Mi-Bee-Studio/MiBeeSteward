@@ -2,6 +2,8 @@
 
 MiBee Steward 可以直接运行在 OpenWrt 路由器上，分为两种形态：**路由器采集器**（轻量采集器跑在路由器上、上报到远程中心，仓库命名**形态 B**）与**路由器中心**（完整中心跑在路由器上，仓库命名**形态 C**；形态 A 指通用主机上的中心，见[单机部署](deployment.md)）。
 
+> 已在 GL.iNet MT2500（Brume 2，mt7981）上完成真机验证：形态 C 在原厂固件上端到端运行——4 个 Tier-1 信号源全部产出真实数据，全网段扫描中路由器被正确自识别为 GL.iNet 设备（#288）。部署前请先阅读下方排障表中该固件 v4 监听限制的已知问题。
+
 ## 为什么跑在路由器上
 
 路由器是网络的**汇聚点（choke point）**——它看到 DHCP 租约、NAT 流量、WiFi 关联和 DNS 查询，这些是普通 LAN 主机看不到的。以下 4 个 Tier-1 路由器专属被动发现源只有在网关上才可用：
@@ -13,7 +15,9 @@ MiBee Steward 可以直接运行在 OpenWrt 路由器上，分为两种形态：
 | `hostapd` | WiFi STA 关联（信号 dBm / SSID / 连接时长） | hostapd ctrl socket → `iw station dump` 回退 | ✅ 干净降级（无 WiFi / 无 hostapd） |
 | `dns_log` | 被动 DNS 指纹（阻止探测的设备仍会做 DNS） | dnsmasq `--log-queries` 日志文件 | ✅ 干净降级（未配置查询日志） |
 
-四个信号源为 opt-in（默认关闭），仅在网关上可用；在非路由器主机或底层文件/套接字缺失时干净降级为 no-op（调试日志 + 跳过），不会报错或崩溃。配置见 `scanner.discovery.*`（详见 [发现机制](discovery.md) 与 [配置参考](configuration.md)）。
+在非路由器主机或底层文件/套接字缺失时，四个源干净降级为 no-op（调试日志 + 跳过），不会报错或崩溃。配置见 `scanner.discovery.*`（详见 [发现机制](discovery.md) 与 [配置参考](configuration.md)）。
+
+**一键启用（#360）**：`install.sh` 首次安装生成的配置**默认开启**其中三个零成本源（`dhcp_leases` + `conntrack` + `hostapd`，路由器驻留即免费）；LuCI 的 服务 → MiBee Steward → 设置 页提供四个复选框一键开关（保存即重启 + 健康检查）。`dns_log` 保持默认关闭——它需要先启用 dnsmasq 查询日志（`uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit dhcp && /etc/init.d/dnsmasq restart`），启用入口同样在 LuCI 设置页，页面上附带了这条命令。手工部署或旧配置升级不受影响（保留既有设置，安装器只提示）。
 
 ## 形态选择
 
@@ -40,7 +44,7 @@ flowchart LR
 
 | 资源 | 最低 | 推荐 | 说明 |
 |---|---|---|---|
-| **架构** | **ARM 或 ARM64** | ARM64（GL.iNet MT3000、ipq807x、mt798x） | **不支持 MIPS**：`modernc.org/libc`（纯 Go SQLite 后端的传递依赖）没有可用的 `mips`/`mipsle` 移植，`mips64le` 也有缺陷。老款 ath79/ramips 路由器（TP-Link Archer C7、Netgear R7000 等）不在支持之列 |
+| **架构** | **ARM 或 ARM64** | ARM64（GL.iNet MT3000、ipq807x、mt798x、NanoPi R5S 等 iStoreOS 软路由） | **不支持 MIPS**：`modernc.org/libc`（纯 Go SQLite 后端的传递依赖）没有可用的 `mips`/`mipsle` 移植，`mips64le` 也有缺陷。老款 ath79/ramips 路由器（TP-Link Archer C7、Netgear R7000 等）不在支持之列 |
 | **内存** | 128 MB | 256 MB+ | modernc SQLite 比 C-SQLite 更吃内存；中心比采集器更重 |
 | **闪存** | 32 MB | 128 MB+ | 二进制 16-18MB + OUI（约 5MB 完整 / 1.2KB 精简）+ 指纹库（约 1.2MB）+ DB。DB 建议放 `/tmp`（tmpfs）——见下文「资源占用」 |
 
@@ -60,7 +64,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 # → ~24MB（含嵌入式 SvelteKit SPA）
 ```
 
-`GOARCH=arm`（32 位，GOARM=7）也可用于老款 ARM 板；`GOARCH=mips*` **不支持**。注意：仓库 Makefile 的交叉编译目标（`make build-linux-arm64` 等）构建的是**中心**二进制（内含设备类型同步的 embed 前置步骤）；采集器的交叉编译用上面的 raw `go build`，本机架构下也可用 `make build-agent`：
+`GOARCH=arm`（32 位，GOARM=7）也可用于老款 ARM 板；`GOARCH=mips*` **不支持**。注意：仓库 Makefile 的交叉编译目标（`make build-linux-arm64` 等）构建的是**中心**二进制；采集器有对应的 `make build-agent-linux-arm64` / `-amd64` / `-arm` 目标（两组都内含设备类型同步的 embed 前置步骤）。不带架构后缀的 `make build-agent` 构建的是**本机架构**：
 
 ```bash
 # 中心（形态 C）——Makefile 目标（amd64 / arm64 / arm 同理）：
@@ -81,7 +85,7 @@ make build-agent
 scp mibee-agent root@router:/usr/bin/mibee-agent
 scp deploy/openwrt/mibee-agent.init root@router:/etc/init.d/mibee-agent
 ssh root@router 'mkdir -p /etc/mibee'
-scp configs/agent.yaml root@router:/etc/mibee/agent.yaml   # 然后在路由器上编辑
+scp <agent.yaml> root@router:/etc/mibee/agent.yaml   # 仓库不带现成文件——按 [分布式部署](distributed.md) 的最小示例创建，上传后在路由器上编辑
 
 # 在路由器上编辑 /etc/mibee/agent.yaml：
 #   center.url:         http://<中心IP>:<端口>
@@ -105,14 +109,73 @@ scp configs/config.yaml root@router:/etc/mibee/config.yaml   # 然后在路由�
 # 在路由器上编辑 /etc/mibee/config.yaml：
 #   server.port:                   如 8080
 #   auth.jwt_secret:               ≥32 字符随机串（必填）
-#   auth.initial_admin_password:   必填（无硬编码默认值）— 请修改！
+#   auth.initial_admin_password:   留空 = 首启在浏览器创建 admin 密码（推荐）
 #   network.name/cidr:             此路由器的 LAN
 #   database.sqlite.path:          /tmp/mibee/mibee.db（tmpfs — 见下文）
 #   scanner.discovery.*:           启用路由器专属信号源
 
 ssh root@router '/etc/init.d/mibee-steward enable && /etc/init.d/mibee-steward start'
-# 浏览器访问 http://<路由器IP>:8080，用 admin / <initial_admin_password> 登录
+# 浏览器访问 http://<路由器IP>:8080 —— 首次打开会引导你创建 admin 密码
 ```
+
+### iStoreOS / NanoPi R5S：一键安装（免 Docker）
+
+iStoreOS 是基于 OpenWrt 的社区固件，本页内容全部适用。NanoPi R5S（RK3568，**arm64**，1-4GB 内存 + 8-32GB eMMC）远超上表最低要求，跑**形态 C**（完整中心）绰绰有余，也**不需要** iStoreOS 自带的 Docker。
+
+关于「前端」的常见疑虑：SPA 已编译进 Go 二进制，路由器只做 HTTP 服务——在局域网内任意设备的浏览器访问 `http://<路由器IP>:8080` 即可，路由器本身不需要任何显示/渲染能力。排障表中 MT2500 的「v4 监听无法握手」是 GL.iNet 厂商内核 bug，与 iStoreOS 无关。
+
+```bash
+# 构建机（默认 GOARCH=arm64；32 位 ARM 板加 GOARCH=arm）：
+make package-openwrt
+#    → bin/mibee-steward-openwrt-arm64-<version>.tar.gz
+
+scp bin/mibee-steward-openwrt-arm64-*.tar.gz root@<路由器IP>:/tmp/
+ssh root@<路由器IP> 'cd /tmp && tar -xzf mibee-steward-openwrt-arm64-*.tar.gz && ./install.sh'
+```
+
+`install.sh` 在路由器上依次完成：架构校验（拒绝 MIPS、冒烟执行二进制）→ 安装二进制到 `/usr/bin`、procd 脚本到 `/etc/init.d` → **首次安装**生成 `/etc/mibee/config.yaml`（随机 `jwt_secret`、`cookie_secure` 置 false（纯 HTTP 局域网）、admin 初始密码留空、从 `uci` 读取 LAN 网段填 `network.name/cidr`、DB 指向 `/etc/mibee/data/mibee.db` 绝对路径）→ 打开并持久化 `ping_group_range` → `enable` + `start` + 健康检查。已存在 `config.yaml` 时原样保留——**换新 tar 包重跑即升级**。装完按终端打印的地址与初始密码登录，随后建议：
+
+- 修改 admin 密码（UI 内，或 `/usr/bin/mibee-steward reset-admin-password -config /etc/mibee/config.yaml`）；
+- 按需启用 4 个路由器专属发现源（`scanner.discovery.*`；R5S 无板载 WiFi，`hostapd` 空转是预期行为）；
+- eMMC 容量充裕 → DB 默认放闪存、跨重启保留资产档案；写入敏感可改 `/tmp/mibee/mibee.db`（tmpfs，重启后重建，见上文「闪存磨损缓解」）。
+
+iStoreOS 注意事项：LuCI/iStore 管理界面占用 80/443，MiBee 默认 8080 不冲突；默认 LAN 通常是 `192.168.100.1/24`（以 `uci get network.lan.ipaddr` 为准）；`dhcp_leases` / `conntrack` / `dns_log` 读取的路径与 OpenWrt 标准一致，无需额外适配。
+
+### 软件包安装（.ipk / .apk）
+
+若偏好系统包管理器（安装/升级/卸载走包管理器，配置自动生成，数据目录卸载后保留），用包交付代替上面的 tar 包。**OpenWrt 24.10 起包管理器从 opkg 换成了 apk，包格式也从 .ipk 变成 .apk**（iStoreOS 新旧版本两种底子都有）——先确认你的固件用哪个：
+
+```bash
+ssh root@<路由器IP> 'command -v opkg apk; grep DISTRIB_RELEASE /etc/openwrt_release'
+```
+
+```bash
+# opkg（OpenWrt 22.03/23.05 底，含多数 iStoreOS 现行版）：
+make package-openwrt-ipk     # → bin/mibee-steward_<版本>_arm64.ipk
+scp bin/mibee-steward_*_arm64.ipk root@<路由器IP>:/tmp/
+ssh root@<路由器IP> 'opkg install /tmp/mibee-steward_*_arm64.ipk'
+
+# apk（OpenWrt 24.10+ 底）：
+make package-openwrt-apk     # → bin/mibee-steward_<版本>_arm64.apk
+scp bin/mibee-steward_*_arm64.apk root@<路由器IP>:/tmp/
+ssh root@<路由器IP> 'apk add --allow-untrusted /tmp/mibee-steward_*_arm64.apk'
+```
+
+两种包的生命周期脚本等价：`pre-install`/`preinst` 做 uname 架构闸门（不匹配直接拒绝安装）；`post-install`/`postinst` 复用与 tar 包完全相同的配置逻辑（生成 `/etc/mibee/config.yaml`、打开 `ping_group_range`、enable + start + 健康检查——admin 密码不预生成，首启在浏览器创建）；升级 = 安装新版本的包（`opkg install` 新 ipk / `apk add` 新 apk，配置保留、服务自动重启）；卸载 = `opkg remove mibee-steward` / `apk del mibee-steward`（**`/etc/mibee` 的配置与数据库保留**，需要彻底清除时手动删）。
+
+架构说明：包内是 CGO-free 静态二进制，`Architecture: all`——不逐个匹配 OpenWrt 的目标架构名（`aarch64_generic`、`aarch64_cortex-a53`、`arm_cortex-a7_neon-vfpv4`……），真正的架构闸门是 pre 脚本的 uname 检查 + post 脚本的 `-version` 冒烟执行。精确架构命名与软件源发布仍是后续工作（见下文「当前不支持」）。tar 包路径继续保留：无包管理器的环境（任意 Linux 主机/任意 shell）同样可用。
+
+### LuCI 原生入口（iStoreOS / OpenWrt 网页管理）
+
+安装包同时落一份 **LuCI 集成**（经典 Lua controller + 模板，无需 luci-compat/CBI；没有 LuCI 的机器上这些文件是惰性的）。装完在路由器管理界面（`http://<路由器IP>/cgi-bin/luci`）的 **服务 → MiBee Steward** 下有两个人口：
+
+- **状态**：运行状态、健康检查、开机自启、版本、监听端口、数据库大小，以及「打开管理界面」按钮（直达 `http://<LAN-IP>:<端口>` 的完整 Web UI）。
+- **设置**：
+  - **管理端口**：改 `server.port` 并自动重启 + 健康检查（80/443 被 LuCI 占用会拒绝）；
+  - **管理员密码**：直接设置 admin 的登录密码（走 `reset-admin-password`，按生效密码策略校验——至少 8 位、含大写/小写/数字；密码经 0600 临时文件传递，不落命令行）；
+  - **开机自启**、**重启服务**。
+
+所有特权操作都收口在单一脚本 `/usr/lib/mibee/luci-helper.sh`（LuCI 页面只做输入校验与转发），可独立于 LuCI 直接调用：`luci-helper.sh status | set-port <N> | set-password <file> | set-enabled <0|1> | restart`。资产级配置（发现源、扫描调优、通知等）仍在 MiBee 自己的 Web UI 里——LuCI 入口只覆盖路由器层面的事。
 
 ### UCI 配置（启用 dns_log 源）
 
@@ -180,5 +243,5 @@ logread -e mibee-agent     # 形态 B，期望 "mibee-agent running"
 
 ### 当前不支持
 
-- **官方 .ipk 打包**（OpenWrt build feed）：本仓库通过 `scp` + `/etc/init.d/` 交付 init 脚本与二进制即可运行；正式的 `.ipk`（经 OpenWrt buildroot 的 `golang-package` 宏）是后续工作，非正确性必需。
+- **官方 .ipk/.apk 打包**（OpenWrt build feed）：本仓库现已提供**手工组装的二进制包**（`make package-openwrt-ipk` / `make package-openwrt-apk`，`Architecture: all` + pre 脚本架构闸门，本地文件经 `opkg install` / `apk add --allow-untrusted` 安装）；仍未做的是经 OpenWrt buildroot `golang-package` 宏的**官方打包**——精确逐目标架构命名、签名与软件源（feed）发布，供用户订阅。非正确性必需。
 - **MIPS 架构**：`modernc/libc` 的结构性限制；需要把 SQLite 后端换成 bbolt/goleveldb（真正的重构，推迟到有 MIPS 需求时）。

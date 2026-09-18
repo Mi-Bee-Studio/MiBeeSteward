@@ -56,6 +56,12 @@ AGENTS.md
 
 # === Test artifacts ====
 web/src/routes/test-derived/
+# Local throwaways from API/browser test runs (kept out of git status noise).
+/api-test-artifacts/
+/gui-test-screenshots/
+# Stray root-level package dir (vitest cache when invoked from the repo root;
+# the real one is web/node_modules above).
+/node_modules/
 
 # === eBPF build artifacts ===
 # vmlinux.h is machine-specific (generated from running kernel's BTF).

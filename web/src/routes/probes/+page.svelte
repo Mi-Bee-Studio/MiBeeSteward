@@ -34,7 +34,8 @@
 		ProbeResultListResponse,
 		ProbeTriggerResponse,
 		TLSPortCerts,
-		DeviceCertificatesResponse
+		DeviceCertificatesResponse,
+		Network
 	} from '$lib/types';
 	import { certDayDelta } from '$lib/utils/certs';
 
@@ -42,6 +43,9 @@
 	let targets = $state<ProbeTarget[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+	// Registered agent ids (networks.agent_id) — options for the vantage
+	// selector (#277). Fetched best-effort; empty = center-only deployment.
+	let agentIds = $state<string[]>([]);
 	// Leaf-cert expiry per target id (for the table's certificate badge). Fetched
 	// from /certificates after each list refresh — only tls/http targets have any.
 	let certExpiry = $state<Record<number, string>>({});
@@ -161,6 +165,7 @@
 	let formTimeout = $state(10);
 	let formNotes = $state('');
 	let formEnabled = $state(true);
+	let formVantage = $state('center');
 	let formLoading = $state(false);
 	let fieldErrors = $state<Record<string, string>>({});
 
@@ -184,6 +189,7 @@
 
 	onMount(() => {
 		fetchTargets();
+		fetchAgents();
 		pollTimer = setInterval(fetchTargets, 10000);
 	});
 	onDestroy(() => {
@@ -202,6 +208,22 @@
 			if (loading) error = getErrorMessage(err);
 		} finally {
 			loading = false;
+		}
+	}
+
+	// Registered agents for the vantage selector — the same population the
+	// probe dispatcher routes plans to (networks.agent_id). Best-effort: the
+	// form degrades to center/all options when this fails.
+	async function fetchAgents() {
+		try {
+			const nets = await api.get<Network[]>('/networks');
+			const ids = new Set<string>();
+			for (const n of nets || []) {
+				if (n.agent_id) ids.add(n.agent_id);
+			}
+			agentIds = [...ids].sort();
+		} catch {
+			agentIds = [];
 		}
 	}
 
@@ -238,6 +260,7 @@
 		formTimeout = 10;
 		formNotes = '';
 		formEnabled = true;
+		formVantage = 'center';
 		fieldErrors = {};
 		editModalOpen = true;
 	}
@@ -251,9 +274,28 @@
 		formTimeout = t.timeout_seconds;
 		formNotes = t.notes || '';
 		formEnabled = t.enabled;
+		formVantage = t.vantage || 'center';
 		fieldErrors = {};
 		editModalOpen = true;
 	}
+
+	// Vantage selector options (#277). An agent-specific value whose agent is
+	// no longer registered still round-trips (marked unregistered) so an edit
+	// can't silently rewrite the plan to something else.
+	const vantageOptions = $derived.by<{ value: string; label: string }[]>(() => {
+		const opts = [
+			{ value: 'center', label: m['probes.Vantage Center']() },
+			{ value: 'all', label: m['probes.Vantage All']() }
+		];
+		for (const id of agentIds) opts.push({ value: `agent:${id}`, label: m['probes.Vantage Agent']({ id }) });
+		if (formVantage.startsWith('agent:') && !agentIds.includes(formVantage.slice('agent:'.length))) {
+			opts.push({
+				value: formVantage,
+				label: m['probes.Vantage Agent Missing']({ id: formVantage.slice('agent:'.length) })
+			});
+		}
+		return opts;
+	});
 
 	const moduleHelpKeys: Record<string, string> = {
 		http: 'probes.Module http Help',
@@ -318,7 +360,8 @@
 				interval_seconds: formInterval,
 				timeout_seconds: formTimeout,
 				notes: formNotes,
-				enabled: formEnabled
+				enabled: formEnabled,
+				vantage: formVantage
 			};
 			if (editingId === null) {
 				await api.post('/probe-targets/', body);
@@ -416,11 +459,26 @@
 		return html`<span class="badge ${cls}">${s}</span>`;
 	};
 
+	// Vantage values are protocol tokens (center / all / agent:{id}) — shown
+	// raw, not localized. Center is the quiet default (plain text); plans that
+	// involve agents get a badge so multi-vantage targets stand out.
+	const vantageBadge = (v: string) => {
+		const val = v || 'center';
+		if (val === 'center') return html`<span class="text-xs text-text-muted">center</span>`;
+		const cls = val === 'all' ? 'badge-info' : 'badge-primary';
+		return html`<span class="badge ${cls} font-mono">${val}</span>`;
+	};
+
+	// An agent-only target cannot be triggered from the center (the engine
+	// returns 409 ErrProbeVantageNotLocal) — reflect that in the button state.
+	const isAgentOnly = (t: ProbeTarget) => (t.vantage || 'center').startsWith('agent:');
+
 	const columns = $derived([
 		{ key: 'select', label: m['probes.Batch Select'](), interactive: true },
 		{ key: 'name', label: m['probes.Name'](), sortable: true, render: (row: Record<string, unknown>) => html`<span class="font-medium">${row.name}</span>` },
 		{ key: 'module', label: m['probes.Module'](), render: (row: Record<string, unknown>) => html`<span class="badge badge-info uppercase">${row.module}</span>` },
 		{ key: 'target', label: m['probes.Target'](), render: (row: Record<string, unknown>) => html`<span class="font-mono text-xs">${row.target}</span>` },
+		{ key: 'vantage', label: m['probes.Vantage'](), render: (row: Record<string, unknown>) => vantageBadge(String(row.vantage || '')) },
 		{ key: 'interval_seconds', label: m['probes.Interval'](), render: (row: Record<string, unknown>) => html`<span class="text-xs">${row.interval_seconds}s</span>` },
 		{ key: 'last_status', label: m['probes.Last Status'](), sortable: true, render: (row: Record<string, unknown>) => statusBadge(String(row.last_status || '')) },
 		{
@@ -450,7 +508,39 @@
 		{ key: 'actions', label: m['probes.Actions'](), interactive: true }
 	]);
 
+	// Per-vantage tracks for the results modal (#277): each executor's newest
+	// row, side by side. `results` arrive newest-first from the API, so the
+	// first row seen per vantage is that track's latest.
+	interface VantageTrack {
+		vantage: string;
+		latest?: ProbeResult;
+		samples: number;
+	}
+	const vantageTracks = $derived.by<VantageTrack[]>(() => {
+		const map = new Map<string, VantageTrack>();
+		for (const r of results) {
+			const key = r.vantage || 'center';
+			let track = map.get(key);
+			if (!track) {
+				track = { vantage: key, samples: 0 };
+				map.set(key, track);
+			}
+			track.samples++;
+			if (!track.latest) track.latest = r;
+		}
+		const order = (v: string) => (v === 'center' ? 0 : 1);
+		return [...map.values()].sort(
+			(a, b) => order(a.vantage) - order(b.vantage) || a.vantage.localeCompare(b.vantage)
+		);
+	});
+	// Disagreement = ≥2 tracks whose LATEST verdicts differ on success — the
+	// "reachable from A, not from B" case the multi-vantage view exists for.
+	const vantageDisagree = $derived(
+		vantageTracks.length >= 2 && new Set(vantageTracks.map((t) => t.latest?.status === 'success')).size > 1
+	);
+
 	const resultColumns = $derived([
+		{ key: 'vantage', label: m['probes.Vantage'](), render: (row: Record<string, unknown>) => vantageBadge(String(row.vantage || '')) },
 		{ key: 'checked_at', label: m['probes.Checked At'](), render: (row: Record<string, unknown>) => html`<span class="text-xs text-text-muted">${formatTime(String(row.checked_at))}</span>` },
 		{ key: 'status', label: m['probes.Status'](), render: (row: Record<string, unknown>) => statusBadge(String(row.status)) },
 		{
@@ -639,7 +729,8 @@
 								<div class="flex items-center gap-2">
 									<button
 										onclick={() => triggerNow(t)}
-										disabled={triggeringId !== null}
+										disabled={triggeringId !== null || isAgentOnly(t)}
+										title={isAgentOnly(t) ? m['probes.Trigger Agent Only']() : ''}
 										class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
 									>{triggeringId === t.id ? m['probes.Triggering']() : m['probes.Trigger']()}</button>
 									{#if t.module === 'tls' || t.module === 'http'}
@@ -713,6 +804,19 @@
 			{#if fieldErrors.target}<p class="text-xs text-error mt-1">{fieldErrors.target}</p>{/if}
 		</div>
 
+		<div>
+			<label class="block text-xs text-text-muted mb-1" for="probe-vantage">{m['probes.Vantage']()}</label>
+			<select id="probe-vantage" class="input" bind:value={formVantage}>
+				{#each vantageOptions as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+			<p class="text-xs text-text-muted mt-1">{m['probes.Vantage Help']()}</p>
+			{#if formVantage === 'all' && agentIds.length === 0}
+				<p class="text-xs text-warning mt-1">{m['probes.Vantage All No Agents']()}</p>
+			{/if}
+		</div>
+
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label class="block text-xs text-text-muted mb-1" for="probe-interval">{m['probes.Interval']()}</label>
@@ -782,6 +886,32 @@
 			<p class="text-xs text-text-muted mt-1">{m['probes.No Results Desc']()}</p>
 		</div>
 	{:else}
+		{#if vantageTracks.length >= 2}
+			<!-- Latest-per-vantage panel (#277): the side-by-side "where is it
+			     reachable from" view; highlighted when tracks disagree. -->
+			<div class="mb-3 rounded-lg border p-3 {vantageDisagree ? 'border-warning/50 bg-warning/5' : 'border-border'}">
+				<div class="flex items-center gap-2 mb-2">
+					<span class="text-xs font-semibold text-text">{m['probes.Vantage Latest']()}</span>
+					{#if vantageDisagree}
+						<span class="badge badge-warning">{m['probes.Vantage Diff']()}</span>
+					{/if}
+				</div>
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+					{#each vantageTracks as track (track.vantage)}
+						{@const s = track.latest?.status}
+						<div class="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
+							<span class="text-xs font-mono text-text-muted shrink-0" title={track.vantage}>{track.vantage}</span>
+							<span class="badge {s === 'success' ? 'badge-success' : s === 'timeout' ? 'badge-warning' : 'badge-error'}">{s || '—'}</span>
+							{#if track.latest && track.latest.latency_ms > 0}
+								<span class="text-xs font-mono text-text-muted">{track.latest.latency_ms < 1000 ? Math.round(track.latest.latency_ms) + 'ms' : (track.latest.latency_ms / 1000).toFixed(2) + 's'}</span>
+							{/if}
+							<span class="flex-1"></span>
+							<span class="text-xs text-text-muted shrink-0">{m['probes.Vantage Samples']({ count: track.samples })}</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
 		<p class="text-xs text-text-muted mb-2">{resultsTotal}</p>
 		<div class="max-h-[60vh] overflow-y-auto">
 			<DataTable

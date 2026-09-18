@@ -12,13 +12,15 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { api, ApiError, SessionExpiredError } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
+	import { ensurePasswordPolicyLoaded, passwordPolicy } from '$lib/stores/passwordPolicy';
 	import type { LoginResponse } from '$lib/types';
 	import { getErrorMessage } from '$lib/utils/error.js';
 	import { loginSchema, forcePasswordSchema, validateForm } from '$lib/utils/validation.js';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import { addToast } from '$lib/stores/toast';
-	import { Lock, Eye, EyeOff } from '@lucide/svelte';
+	import { Lock, Eye, EyeOff, ShieldCheck } from '@lucide/svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
 
@@ -28,6 +30,42 @@
 	let error = $state('');
 	let loading = $state(false);
 	let errors = $state<Record<string, string>>({});
+
+	// First-run setup state: when the bootstrap admin has NO password yet
+	// (installer default — /auth/setup-status reports it), the login page
+	// renders a create-admin-password form instead of the login form.
+	let setupRequired = $state(false);
+	let setupNewPassword = $state('');
+	let setupConfirmPassword = $state('');
+	let setupError = $state('');
+	let setupLoading = $state(false);
+
+	// Live strength-policy hint (shared by the setup form and the force-change
+	// modal) — from the passwordPolicy store so it follows the EFFECTIVE
+	// backend policy, not hardcoded defaults (#332).
+	let policyHint = $derived.by(() => {
+		const p = $passwordPolicy;
+		const parts: string[] = [m['security.hint.length']({ min: p.min_length })];
+		if (p.require_uppercase) parts.push(m['security.hint.uppercase']());
+		if (p.require_lowercase) parts.push(m['security.hint.lowercase']());
+		if (p.require_digit) parts.push(m['security.hint.digit']());
+		if (p.require_special) parts.push(m['security.hint.special']());
+		return parts.join(m['security.hint.joiner']());
+	});
+
+	onMount(() => {
+		// Pre-fetch the strength policy so the hint is correct before submit;
+		// failures keep the compiled-in defaults.
+		void ensurePasswordPolicyLoaded();
+		api
+			.get<{ required: boolean }>('/auth/setup-status')
+			.then((res) => {
+				if (res?.required) setupRequired = true;
+			})
+			.catch(() => {
+				/* unreachable backend / old version — stay on the login form */
+			});
+	});
 
 	// Force password change state
 	let showForceDialog = $state(false);
@@ -86,6 +124,15 @@
 			// Classify by error TYPE / HTTP status, never by message text — the
 			// message is localized and would break classification if the locale
 			// or backend wording changes.
+			if (err instanceof ApiError && err.status === 409 && err.message === 'setup_required') {
+				// The bootstrap admin has no password yet (another tab finished
+				// setup-status after we rendered, or an old bundle cached the
+				// login form) — flip to the setup form instead of showing an
+				// error nobody can act on.
+				setupRequired = true;
+				error = '';
+				return;
+			}
 			if (err instanceof SessionExpiredError) {
 				// 401 from /auth/login = bad credentials (the api client treats
 				// every 401 as session-expired; on the login endpoint that maps
@@ -114,6 +161,42 @@
 		}
 	}
 
+	// handleSetup submits the first-run create-admin-password form. The
+	// response is the same LoginResponse shape as /auth/login (token + user),
+	// so on success we enter the app directly — no second login round-trip.
+	async function handleSetup(e: Event) {
+		e.preventDefault();
+		setupError = '';
+
+		const validation = validateForm(forcePasswordSchema, {
+			new_password: setupNewPassword,
+			confirm: setupConfirmPassword
+		});
+		if (!validation.valid) {
+			setupError = validation.errors.new_password ?? validation.errors.confirm ?? '';
+			return;
+		}
+
+		setupLoading = true;
+		try {
+			const res = await api.post<LoginResponse>('/auth/setup', {
+				new_password: setupNewPassword
+			});
+			auth.login(res.user, res.token);
+			goto('/dashboard');
+		} catch (err: unknown) {
+			if (err instanceof ApiError && err.status === 409) {
+				// Setup was already completed elsewhere — back to the login form.
+				setupRequired = false;
+				addToast('success', m['auth.setup_already_done']());
+				return;
+			}
+			setupError = getErrorMessage(err);
+		} finally {
+			setupLoading = false;
+		}
+	}
+
 	async function handleForcePasswordChange(e: Event) {
 		e.preventDefault();
 		forceError = '';
@@ -135,8 +218,17 @@
 
 		forceLoading = true;
 		try {
-			await api.put('/auth/force-password', { new_password: forceNewPassword });
+			const res = await api.put<{ message: string; token: string }>('/auth/force-password', {
+				new_password: forceNewPassword
+			});
 			showForceDialog = false;
+			if (res.token && loginResponse) {
+				// The pre-change token carries the must-change gate (mcp claim,
+				// enforced server-side) until it expires — the handler mints a
+				// fresh ungated one; swap it in before navigating or every API
+				// call on the dashboard would 403.
+				auth.login({ ...loginResponse.user, must_change_password: false }, res.token);
+			}
 			goto('/dashboard');
 		} catch (err: unknown) {
 			forceError = getErrorMessage(err);
@@ -197,7 +289,51 @@
 		<!-- Login card -->
 		<div class="bg-surface border border-border rounded-xl p-8 glow-border">
 
-            {#if twoFactorRequired}
+            {#if setupRequired}
+                <!-- First run: create the admin password (no login exists yet) -->
+                <div class="text-center mb-6">
+                    <ShieldCheck class="w-12 h-12 mx-auto mb-3 text-primary" strokeWidth={1.5} />
+                    <h2 class="text-xl font-bold text-text">{m["auth.setup_title"]()}</h2>
+                    <p class="text-sm text-muted mt-1">{m["auth.setup_desc"]()}</p>
+                </div>
+
+                {#if setupError}
+                    <div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error" aria-live="polite" transition:fly={{ y: -10, duration: 200 }}>
+                        {setupError}
+                    </div>
+                {/if}
+
+                <form onsubmit={handleSetup}>
+                    <div class="mb-4">
+                        <label class="block text-sm text-muted mb-2" for="setup-new-password">{m["auth.new_password"]()}</label>
+                        <input
+                            type={showPassword ? 'text' : 'password'}
+                            id="setup-new-password"
+                            bind:value={setupNewPassword}
+                            class="input py-2.5 focus:ring-1 focus:ring-primary"
+                            placeholder="••••••••"
+                            required
+                            autocomplete="new-password"
+                            autofocus
+                        />
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm text-muted mb-2" for="setup-confirm-password">{m["auth.confirm_password"]()}</label>
+                        <input
+                            type={showPassword ? 'text' : 'password'}
+                            id="setup-confirm-password"
+                            bind:value={setupConfirmPassword}
+                            class="input py-2.5 focus:ring-1 focus:ring-primary"
+                            placeholder="••••••••"
+                            required
+                            autocomplete="new-password"
+                        />
+                    </div>
+                    <p class="text-xs text-muted bg-bg rounded-lg px-3 py-2 mb-6">{policyHint}</p>
+                    <LoadingButton type="submit" loading={setupLoading} variant="primary"
+                        label={m["auth.setup_submit"]()} class="w-full py-2.5" />
+                </form>
+            {:else if twoFactorRequired}
                 <!-- 2FA Verification -->
                 <div class="text-center mb-6">
                     <Lock class="w-12 h-12 mx-auto mb-3 text-primary" strokeWidth={1.5} />
@@ -293,7 +429,8 @@
 
 <!-- Force password change dialog (uses Modal for focus trap / Escape / focus restore) -->
 <Modal bind:open={showForceDialog} title={m["auth.Change Password"]()} maxWidth="28rem">
-	<p class="text-sm text-warning mb-6">{m["auth.force_change_password"]()}</p>
+	<p class="text-sm text-warning mb-2">{m["auth.force_change_password"]()}</p>
+	<p class="text-xs text-muted mb-6">{policyHint}</p>
 
 	{#if forceError}
 		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error" aria-live="polite" transition:fly={{ y: -10, duration: 200 }}>

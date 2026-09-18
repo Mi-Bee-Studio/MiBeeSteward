@@ -115,6 +115,13 @@ var columnMigrations = []string{
 	// delete-undo (POST /documents/{id}/restore). Reads filter on it; the
 	// uploaded file stays on disk so restore is lossless.
 	"ALTER TABLE documents ADD COLUMN deleted_at TIMESTAMP",
+	// users.token_version: session revocation epoch (#357). Every minted JWT
+	// carries the then-current version as the `tv` claim; any password change
+	// bumps the column, instantly invalidating every outstanding token for
+	// that user (previously a password reset left old sessions fully working
+	// until natural expiry). extendUsersRoleCheck's rebuild copies the column
+	// too — keep both in sync.
+	"ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0",
 	// Distributed/topology groundwork: device origin (network_id) + online
 	// freshness timestamps (first_seen/last_seen). See db/schema.sql and
 	// docs/private/architecture-future.md §6. network_id resolves to a
@@ -455,6 +462,13 @@ func runMigrations(db *sql.DB, dbPath string) error {
 	// existing DBs; fresh installs already get it from schema.sql.
 	if err := convertDashboardConfigPosition(context.Background(), db); err != nil {
 		return fmt.Errorf("dashboard-config position migration: %w", err)
+	}
+
+	// Widen dashboard_configs' type/data_source CHECKs for the preset-widget
+	// scheme (type 'list' + data_source 'builtin'). Runs after the position
+	// rebuild (same table) so the final shape keeps both fixes.
+	if err := extendDashboardConfigChecks(context.Background(), db); err != nil {
+		return fmt.Errorf("dashboard-config checks migration: %w", err)
 	}
 
 	// #257: the raw-SQL store layer bound Go time.Time values, which
@@ -814,12 +828,13 @@ func extendUsersRoleCheck(ctx context.Context, db *sql.DB) error {
 			failed_login_attempts INTEGER NOT NULL DEFAULT 0,
 			locked_until TIMESTAMP,
 			password_changed_at DATETIME,
-			must_change_password BOOLEAN NOT NULL DEFAULT 0
+			must_change_password BOOLEAN NOT NULL DEFAULT 0,
+			token_version INTEGER NOT NULL DEFAULT 0
 		)`,
 		`INSERT INTO users_new (id, username, email, password_hash, role, created_at, updated_at,
-			failed_login_attempts, locked_until, password_changed_at, must_change_password)
+			failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version)
 		SELECT id, username, email, password_hash, role, created_at, updated_at,
-			failed_login_attempts, locked_until, password_changed_at, must_change_password FROM users`,
+			failed_login_attempts, locked_until, password_changed_at, must_change_password, token_version FROM users`,
 		`DROP TABLE users`,
 		`ALTER TABLE users_new RENAME TO users`,
 	}
@@ -1442,8 +1457,81 @@ func convertDashboardConfigPosition(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("re-enable FKs after dashboard-configs rebuild: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit dashboard-configs rebuild: %w", err)
+		return fmt.Errorf("commit dashboard-configs rebuild tx: %w", err)
 	}
 	slog.Info("dashboard_configs position converted to INTEGER (legacy rows ordered by id)")
+	return nil
+}
+
+// extendDashboardConfigChecks widens dashboard_configs' type CHECK to accept
+// 'list' and the data_source CHECK to accept 'builtin' — the preset-widget
+// scheme (query stores the "builtin:<template>" key; list widgets render rows
+// instead of charts). SQLite can't ALTER a CHECK in place, so existing DBs get
+// a table rebuild; fresh installs already have the wide CHECK from schema.sql.
+// Idempotent: skips the rebuild when a probe row with the new values is
+// already accepted.
+func extendDashboardConfigChecks(ctx context.Context, db *sql.DB) error {
+	probe, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin dashboard-checks probe tx: %w", err)
+	}
+	probeErr := func() error {
+		if _, err := probe.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+			return err
+		}
+		_, err := probe.ExecContext(ctx,
+			`INSERT INTO dashboard_configs (name, type, data_source, query) VALUES ('__builtin_probe__', 'list', 'builtin', 'builtin:recent_changes')`)
+		return err
+	}()
+	_ = probe.Rollback()
+	if probeErr == nil {
+		// CHECKs already permit 'list' + 'builtin' — nothing to do.
+		return nil
+	}
+	if !strings.Contains(probeErr.Error(), "CHECK constraint failed") {
+		return fmt.Errorf("probe dashboard_configs CHECKs: %w", probeErr)
+	}
+
+	slog.Info("rebuilding dashboard_configs table to widen type/data_source CHECKs (add list, builtin)")
+
+	stmts := []string{
+		`CREATE TABLE dashboard_configs_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL CHECK(type IN ('gauge', 'line', 'bar', 'pie', 'list')),
+			data_source TEXT NOT NULL DEFAULT 'prometheus' CHECK(data_source IN ('prometheus', 'victoriametrics', 'builtin')),
+			query TEXT NOT NULL DEFAULT '',
+			refresh_interval INTEGER NOT NULL DEFAULT 30,
+			position INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT INTO dashboard_configs_new (id, name, type, data_source, query, refresh_interval, position, created_at, updated_at)
+		SELECT id, name, type, data_source, query, refresh_interval, position, created_at, updated_at
+		FROM dashboard_configs`,
+		`DROP TABLE dashboard_configs`,
+		`ALTER TABLE dashboard_configs_new RENAME TO dashboard_configs`,
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin dashboard-configs checks rebuild tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable FKs for dashboard-configs checks rebuild: %w", err)
+	}
+	for _, s := range stmts {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
+			return fmt.Errorf("dashboard-configs checks rebuild step failed: %w (stmt: %s)", err, s)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("re-enable FKs after dashboard-configs checks rebuild: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit dashboard-configs checks rebuild tx: %w", err)
+	}
+	slog.Info("dashboard_configs CHECKs widened (type +list, data_source +builtin)")
 	return nil
 }

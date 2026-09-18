@@ -12,6 +12,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -75,20 +76,13 @@ func (h *DashboardHandler) CreateConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if req.Name == "" {
-		Error(w, http.StatusBadRequest, "name is required")
+	dataSource, err := validateWidgetConfig(req.Name, req.Type, req.DataSource, req.Query)
+	if err != nil {
+		Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	req.DataSource = dataSource
 
-	validTypes := map[string]bool{"gauge": true, "line": true, "bar": true, "pie": true}
-	if !validTypes[req.Type] {
-		Error(w, http.StatusBadRequest, "type must be one of: gauge, line, bar, pie")
-		return
-	}
-
-	if req.DataSource == "" {
-		req.DataSource = "prometheus"
-	}
 	// position <= 0 = not specified; the service assigns max(position)+1 so
 	// new widgets land after existing ones without the client computing it.
 	if req.RefreshInterval <= 0 {
@@ -133,20 +127,13 @@ func (h *DashboardHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if req.Name == "" {
-		Error(w, http.StatusBadRequest, "name is required")
+	dataSource, err := validateWidgetConfig(req.Name, req.Type, req.DataSource, req.Query)
+	if err != nil {
+		Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	req.DataSource = dataSource
 
-	validTypes := map[string]bool{"gauge": true, "line": true, "bar": true, "pie": true}
-	if !validTypes[req.Type] {
-		Error(w, http.StatusBadRequest, "type must be one of: gauge, line, bar, pie")
-		return
-	}
-
-	if req.DataSource == "" {
-		req.DataSource = "prometheus"
-	}
 	if req.RefreshInterval <= 0 {
 		req.RefreshInterval = 30
 	}
@@ -237,4 +224,63 @@ func (h *DashboardHandler) QueryRange(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
+}
+
+// builtinWidgetTemplates maps the "builtin:" template keys (stored in the
+// query column of dashboard_configs) to the widget type each preset renders
+// as. The frontend preset gallery sends one of these keys with
+// data_source=builtin; validation rejects anything else so a typo or a
+// frontend/backend drift can't create a permanently-blank widget. Adding a
+// preset = one entry here + one gallery card in WidgetPicker.svelte.
+var builtinWidgetTemplates = map[string]string{
+	"builtin:device_status":    "pie",
+	"builtin:device_types":     "pie",
+	"builtin:device_locations": "bar",
+	"builtin:online_rate":      "gauge",
+	"builtin:recent_changes":   "list",
+	"builtin:offline_devices":  "list",
+	"builtin:scan_activity":    "list",
+	"builtin:probe_status":     "list",
+}
+
+// validateWidgetConfig is the pure validation shared by CreateConfig and
+// UpdateConfig (previously duplicated inline in both). It returns the
+// defaulted data_source ("prometheus" when empty) or an error explaining the
+// rejection. Rules:
+//   - data_source "prometheus"/"victoriametrics" (both proxy to the same
+//     upstream, victoriametrics is the historical alias the schema allows):
+//     chart types only (gauge/line/bar/pie) and a non-empty PromQL query — a
+//     widget with nothing to execute is dead UI.
+//   - data_source "builtin": query must be a whitelisted template key and the
+//     type must match the template's rendering type (list presets are list,
+//     chart presets are their chart type).
+func validateWidgetConfig(name, widgetType, dataSource, query string) (string, error) {
+	if name == "" {
+		return "", errors.New("name is required")
+	}
+	if dataSource == "" {
+		dataSource = "prometheus"
+	}
+
+	chartTypes := map[string]bool{"gauge": true, "line": true, "bar": true, "pie": true}
+	switch dataSource {
+	case "prometheus", "victoriametrics":
+		if !chartTypes[widgetType] {
+			return "", errors.New("type must be one of: gauge, line, bar, pie")
+		}
+		if query == "" {
+			return "", errors.New("query is required for prometheus widgets")
+		}
+	case "builtin":
+		wantType, ok := builtinWidgetTemplates[query]
+		if !ok {
+			return "", fmt.Errorf("unknown builtin widget template: %s", query)
+		}
+		if widgetType != wantType {
+			return "", fmt.Errorf("builtin template %s must use type %s", query, wantType)
+		}
+	default:
+		return "", errors.New("data_source must be one of: prometheus, builtin")
+	}
+	return dataSource, nil
 }

@@ -15,10 +15,12 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -151,10 +153,12 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	// Initial admin password is required
+	// Initial admin password: a non-empty value = classic temp credential
+	// (forced change on first login); EMPTY = first-run browser setup (the
+	// admin is seeded password-less and the login page asks for a password to
+	// be created — the installer default).
 	if cfg.Auth.InitialAdminPassword == "" {
-		slog.Error("initial_admin_password must be set in config or via MIBEE_AUTH_INITIAL_ADMIN_PASSWORD env var")
-		os.Exit(1)
+		slog.Info("auth.initial_admin_password is empty — the admin password will be set in the browser on first run")
 	}
 	expiry := 24 * time.Hour
 	if cfg.Auth.TokenExpiry != "" {
@@ -169,10 +173,7 @@ func main() {
 	router, heartbeatSvc, shutdownScanner := routes.NewRouter(db, cfg)
 
 	// Determine bind address
-	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	if cfg.Server.Port == 0 {
-		addr = ":8080"
-	}
+	addr := bindAddr(cfg.Server.Host, cfg.Server.Port)
 
 	// Create HTTP server. Timeouts are configurable because the synchronous
 	// /scanner/scan endpoint can legitimately run for minutes on large CIDRs;
@@ -269,21 +270,33 @@ func parseLogLevel(s string) slog.Level {
 	}
 }
 
+// seedAdminUser creates the bootstrap admin from auth.initial_admin_password.
+// An EMPTY password (the installer's default) seeds the first-run state
+// instead: the account has no usable password and the SPA's setup screen
+// (login page polling /auth/setup-status) walks the operator through picking
+// one in the browser — nothing to copy from the installer output. A non-empty
+// password is a TEMPORARY credential (it deliberately skips the password
+// policy — applying it here is what left fresh installs admin-less whenever
+// the configured value failed the character-class rules) and first login
+// forces a policy-compliant change via the SPA modal + server-side mcp gate.
 func seedAdminUser(userSvc *service.UserService, password string) {
-	ctx := context.Background()
-	if _, err := userSvc.Register(ctx, "admin", "admin@localhost", password, "admin"); err != nil {
-		if err == service.ErrUserExists {
+	_, err := userSvc.SeedAdmin(context.Background(), "admin@localhost", password)
+	if err != nil {
+		if errors.Is(err, service.ErrUserExists) {
 			slog.Info("admin user already exists, skipping seed")
 			return
 		}
-		slog.Warn("failed to seed admin user", "error", err)
+		slog.Error("failed to seed admin user — the server will start WITHOUT any login",
+			"error", err,
+			"remedy", "run `./mibee-steward reset-admin-password -config <config>` to create the admin")
 		return
 	}
-	// Force admin to change password on first login
-	if err := userSvc.SetMustChangePassword(ctx, 1, true); err != nil {
-		slog.Warn("failed to set must_change_password for admin", "error", err)
+	if password == "" {
+		slog.Info("default admin user created with NO password — open the web UI to set it on first run",
+			"username", "admin")
+		return
 	}
-	slog.Info("default admin user created", "username", "admin")
+	slog.Info("default admin user created (first login will force a password change)", "username", "admin")
 }
 
 // parseDurationOrDefault parses a config duration string (e.g. "5m", "30s"),
@@ -298,6 +311,20 @@ func parseDurationOrDefault(s string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// bindAddr builds the listen address from server.host/port. net.JoinHostPort
+// (not fmt.Sprintf) so IPv6 literals get bracketed: host "::" must yield
+// "[::]:8090", not the unparseable ":::8090" — the OpenWrt GL-firmware docs
+// recommend exactly that host value as the v4-listener workaround (#288), and
+// the old concatenation crash-looped on it ("too many colons in address").
+// An empty host keeps the dual-stack ":port" wildcard; port 0 falls back to
+// the default 8080.
+func bindAddr(host string, port int) string {
+	if port == 0 {
+		port = 8080
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 // listenAndServeWithRetry wraps http.Server.ListenAndServe with a bounded retry

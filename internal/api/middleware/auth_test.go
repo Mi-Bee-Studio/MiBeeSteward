@@ -5,6 +5,7 @@
 package middleware_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -160,4 +161,79 @@ func TestGetUserFromContext_EmptyContextNotOk(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	_, _, ok := middleware.GetUserFromContext(r)
 	require.False(t, ok)
+}
+
+// --- Session-epoch (token_version) checks, #357 ---
+
+// mintVersionedToken mints a token for user 7 with an explicit tv claim.
+func mintVersionedToken(t *testing.T, tv int64, withTV bool) string {
+	t.Helper()
+	auth := middleware.GetJWTAuth()
+	require.NotNil(t, auth)
+	claims := map[string]interface{}{
+		"user_id": float64(7),
+		"role":    "viewer",
+		"jti":     fmt.Sprintf("jti-%d", tv),
+	}
+	if withTV {
+		claims["tv"] = tv
+	}
+	_, token, err := auth.Encode(claims)
+	require.NoError(t, err)
+	return token
+}
+
+// useVersionSource installs a stub epoch source for user 7 and cleans up.
+func useVersionSource(t *testing.T, current int64, userExists bool) {
+	t.Helper()
+	prev := middleware.GetTokenVersionSourceForTest()
+	middleware.SetTokenVersionSource(func(_ context.Context, userID int64) (int64, bool) {
+		if userID != 7 || !userExists {
+			return 0, false
+		}
+		return current, true
+	})
+	t.Cleanup(func() { middleware.SetTokenVersionSource(prev) })
+}
+
+func TestAuthenticator_TokenVersionEpoch(t *testing.T) {
+	useJWTAuth(t)
+	h := authProbe()
+
+	t.Run("current epoch authenticates", func(t *testing.T) {
+		useVersionSource(t, 3, true)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, reqWithBearer(mintVersionedToken(t, 3, true)))
+		require.Equal(t, "uid=7 role=viewer", w.Body.String())
+	})
+
+	t.Run("stale epoch (password changed) is anonymous", func(t *testing.T) {
+		useVersionSource(t, 4, true)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, reqWithBearer(mintVersionedToken(t, 3, true)))
+		require.Equal(t, "anon", w.Body.String())
+	})
+
+	t.Run("missing tv claim reads as epoch 0", func(t *testing.T) {
+		useVersionSource(t, 0, true)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, reqWithBearer(mintVersionedToken(t, 0, false)))
+		require.Equal(t, "uid=7 role=viewer", w.Body.String())
+	})
+
+	t.Run("deleted user (unknown epoch) is anonymous", func(t *testing.T) {
+		useVersionSource(t, 0, false)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, reqWithBearer(mintVersionedToken(t, 0, true)))
+		require.Equal(t, "anon", w.Body.String())
+	})
+
+	t.Run("nil source skips the check (backcompat)", func(t *testing.T) {
+		prev := middleware.GetTokenVersionSourceForTest()
+		middleware.SetTokenVersionSource(nil)
+		t.Cleanup(func() { middleware.SetTokenVersionSource(prev) })
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, reqWithBearer(mintVersionedToken(t, 0, false)))
+		require.Equal(t, "uid=7 role=viewer", w.Body.String())
+	})
 }

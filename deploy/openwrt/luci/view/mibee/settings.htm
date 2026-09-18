@@ -1,0 +1,191 @@
+<%#
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+
+MiBee Steward — LuCI settings view: port change, admin password, boot
+autostart, service restart. Every form POSTs to the controller's apply
+action (with the LuCI session token when available); the controller hands
+off to /usr/lib/mibee/luci-helper.sh. Asset-level config stays in the full
+web UI — this is the router-level entry only.
+-%>
+<%+header%>
+<%
+local sys = require "luci.sys"
+local http = require "luci.http"
+local dispatcher = require "luci.dispatcher"
+
+local apply_url = dispatcher.build_url("admin/services/mibee/apply")
+
+-- Session token for the hidden CSRF fields (same resolution order as the
+-- controller; empty string keeps the form valid on builds without tokens).
+local token = ""
+do
+    local ok, v = pcall(function() return sys.token end)
+    if ok and type(v) == "string" then token = v
+    elseif ok and type(v) == "function" then
+        local ok2, v2 = pcall(v)
+        if ok2 and type(v2) == "string" then token = v2 end
+    end
+    if token == "" and dispatcher.context and dispatcher.context.authtoken then
+        token = dispatcher.context.authtoken or ""
+    end
+end
+
+local port = ""
+local enabled = "?"
+local dhcp, conntrack, hostapd, dnslog = "0", "0", "0", "0"
+do
+    local out = sys.exec("/usr/lib/mibee/luci-helper.sh status 2>/dev/null") or ""
+    port = out:match("port=(%d+)") or ""
+    enabled = out:match("enabled=(%d)") or "?"
+    dhcp      = out:match("dhcp_leases=(%d)") or "0"
+    conntrack = out:match("conntrack=(%d)")   or "0"
+    hostapd   = out:match("hostapd=(%d)")     or "0"
+    dnslog    = out:match("dns_log=(%d)")     or "0"
+end
+
+local msgs = {
+    port_ok      = { ok = true,  text = "端口已更新，服务已重启并健康 Port updated, service restarted" },
+    port_fail    = { ok = false, text = "端口修改失败：服务未在新端口应答（看日志 logread -e mibee-steward）Port change failed" },
+    port_invalid = { ok = false, text = "端口无效：需为 1-65535，且 80/443 被 LuCI 占用 Invalid port (80/443 belong to LuCI)" },
+    pw_ok        = { ok = true,  text = "admin 密码已更新 Admin password updated" },
+    pw_fail      = { ok = false, text = "密码修改失败：可能不符合密码策略（以管理界面 设置 → 安全 中的配置为准）Password rejected — see the policy in Settings → Security" },
+    pw_mismatch  = { ok = false, text = "两次输入的密码不一致 Passwords do not match" },
+    pw_empty     = { ok = false, text = "密码不能为空 Password cannot be empty" },
+    enabled_ok   = { ok = true,  text = "开机自启已更新 Autostart updated" },
+    restart_ok   = { ok = true,  text = "服务已重启并健康 Service restarted" },
+    restart_fail = { ok = false, text = "重启失败或服务未应答（看日志 logread -e mibee-steward）Restart failed" },
+    passive_ok   = { ok = true,  text = "被动发现源已更新，服务已重启并健康 Passive discovery updated" },
+    passive_fail = { ok = false, text = "被动发现更新失败或服务未应答（看日志 logread -e mibee-steward）Passive discovery update failed" },
+}
+local flash = msgs[http.formvalue("msg")]
+%>
+
+<h2><%:MiBee Steward%></h2>
+<div class="cbi-map" id="cbi-mibee-settings">
+
+	<% if flash then %>
+		<div class="<%=flash.ok and "cbi-section" or "cbi-section"%>" style="margin-bottom:1em">
+			<div style="padding:.6em .9em;border-radius:4px;background:<%=flash.ok and "#f0fff0" or "#fff0f0"%>;border:1px solid <%=flash.ok and "#4caf50" or "#f24236"%>">
+				<%=flash.text%>
+			</div>
+		</div>
+	<% end %>
+
+	<div class="cbi-section">
+		<h3>服务 Service</h3>
+		<div class="cbi-section-node">
+			<form method="post" action="<%=apply_url%>">
+				<input type="hidden" name="act" value="restart" />
+				<input type="hidden" name="token" value="<%=token%>" />
+				<div class="cbi-value">
+					<label class="cbi-value-title">重启服务 / Restart</label>
+					<div class="cbi-value-field">
+						<button type="submit" class="cbi-button cbi-button-apply">重启 Restart</button>
+					</div>
+				</div>
+			</form>
+			<form method="post" action="<%=apply_url%>">
+				<input type="hidden" name="act" value="enabled" />
+				<input type="hidden" name="token" value="<%=token%>" />
+				<div class="cbi-value">
+					<label class="cbi-value-title">开机自启 / Autostart</label>
+					<div class="cbi-value-field">
+						<input type="checkbox" name="enabled" value="1" <%=enabled == "1" and "checked" or ""%> />
+						<button type="submit" class="cbi-button cbi-button-neutral">保存 Save</button>
+					</div>
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<div class="cbi-section">
+		<h3>管理端口 Web UI port</h3>
+		<div class="cbi-section-node">
+			<form method="post" action="<%=apply_url%>">
+				<input type="hidden" name="act" value="port" />
+				<input type="hidden" name="token" value="<%=token%>" />
+				<div class="cbi-value">
+					<label class="cbi-value-title">端口 / Port</label>
+					<div class="cbi-value-field">
+						<input type="number" name="port" min="1" max="65535" value="<%=port%>" required style="min-width:8em" />
+						<button type="submit" class="cbi-button cbi-button-apply">应用并重启 Apply</button>
+					</div>
+				</div>
+				<div class="cbi-value-description" style="padding:0 0 .5em 0">
+					修改后服务会重启并做健康检查；80/443 已被 LuCI 占用。浏览器需用新端口重新访问管理界面。
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<div class="cbi-section">
+		<h3>被动发现 Passive discovery</h3>
+		<div class="cbi-section-node">
+			<form method="post" action="<%=apply_url%>">
+				<input type="hidden" name="act" value="passive" />
+				<input type="hidden" name="token" value="<%=token%>" />
+				<div class="cbi-value">
+					<label class="cbi-value-title">DHCP 租约 dhcp_leases</label>
+					<div class="cbi-value-field">
+						<input type="checkbox" name="dhcp" value="1" <%=dhcp == "1" and "checked" or ""%> />
+					</div>
+				</div>
+				<div class="cbi-value">
+					<label class="cbi-value-title">连接跟踪 conntrack</label>
+					<div class="cbi-value-field">
+						<input type="checkbox" name="conntrack" value="1" <%=conntrack == "1" and "checked" or ""%> />
+					</div>
+				</div>
+				<div class="cbi-value">
+					<label class="cbi-value-title">无线终端 hostapd</label>
+					<div class="cbi-value-field">
+						<input type="checkbox" name="hostapd" value="1" <%=hostapd == "1" and "checked" or ""%> />
+					</div>
+				</div>
+				<div class="cbi-value">
+					<label class="cbi-value-title">DNS 查询日志 dns_log</label>
+					<div class="cbi-value-field">
+						<input type="checkbox" name="dnslog" value="1" <%=dnslog == "1" and "checked" or ""%> />
+					</div>
+				</div>
+				<div class="cbi-value">
+					<div class="cbi-value-field">
+						<button type="submit" class="cbi-button cbi-button-apply">保存并重启 Save</button>
+					</div>
+				</div>
+				<div class="cbi-value-description" style="padding:0 0 .5em 0">
+					路由器本机的 Tier-1 被动信号：租约表（主机名↔MAC↔IP 权威映射）、连接跟踪（谁正在联网）、无线关联终端。保存后服务重启并做健康检查。DNS 日志需先启用 dnsmasq 查询日志：<code>uci set dhcp.@dnsmasq[0].logqueries=1 &amp;&amp; uci commit dhcp &amp;&amp; /etc/init.d/dnsmasq restart</code>
+				</div>
+			</form>
+		</div>
+
+		<h3>管理员密码 Admin password</h3>
+		<div class="cbi-section-node">
+			<form method="post" action="<%=apply_url%>">
+				<input type="hidden" name="act" value="password" />
+				<input type="hidden" name="token" value="<%=token%>" />
+				<div class="cbi-value">
+					<label class="cbi-value-title">新密码 / Password</label>
+					<div class="cbi-value-field">
+						<input type="password" name="password" autocomplete="new-password" required />
+					</div>
+				</div>
+				<div class="cbi-value">
+					<label class="cbi-value-title">确认 / Confirm</label>
+					<div class="cbi-value-field">
+						<input type="password" name="password2" autocomplete="new-password" required />
+						<button type="submit" class="cbi-button cbi-button-apply">更新 Update</button>
+					</div>
+				</div>
+				<div class="cbi-value-description" style="padding:0 0 .5em 0">
+					密码策略以 MiBee 管理界面（设置 → 安全）中的配置为准，本页不重复描述。更新后立即生效，用于 MiBee 管理界面（admin 账号）。
+				</div>
+			</form>
+		</div>
+	</div>
+
+</div>
+
+<%+footer%>

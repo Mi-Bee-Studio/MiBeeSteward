@@ -47,6 +47,15 @@ func (h *UserHandler) Routes() chi.Router {
 	// Public routes
 	r.Post("/login", h.Login)
 	r.Post("/logout", h.Logout)
+	// First-run setup (public): when the bootstrap admin was seeded with an
+	// EMPTY password (auth.initial_admin_password unset — the installer's
+	// default), the login page polls setup-status and renders the
+	// create-admin-password form instead of the login form. POST /setup is
+	// server-gated on an empty password_hash existing, so the window closes
+	// for good once any password is set. Both sit under the stricter login
+	// rate limiter (mounted by routes.go on the /auth prefix).
+	r.Get("/setup-status", h.GetSetupStatus)
+	r.Post("/setup", h.PostSetup)
 	// Password policy (public): the SPA's client-side password validation and
 	// hint text must follow the EFFECTIVE policy (auth.password_policy, #332),
 	// not hardcoded defaults — otherwise an admin lowering min_length is
@@ -83,13 +92,9 @@ type PasswordPolicyResponse struct {
 
 // GetPasswordPolicy handles GET /api/v1/auth/password-policy — the effective
 // strength policy for client-side validation + hint text (see Routes comment).
+// Resolved through the service so the settings-center overlay is reflected.
 func (h *UserHandler) GetPasswordPolicy(w http.ResponseWriter, _ *http.Request) {
-	policy := h.cfg.Auth.PasswordPolicy
-	if policy == (config.PasswordPolicyConfig{}) {
-		// Hand-constructed configs (tests) that skipped Load's defaults
-		// seeding — mirror the service's zero-value handling.
-		policy = service.DefaultPasswordPolicy()
-	}
+	policy := h.svc.EffectivePasswordPolicy()
 	Success(w, PasswordPolicyResponse{
 		MinLength:        policy.MinLength,
 		RequireUppercase: policy.RequireUppercase,
@@ -113,6 +118,13 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.svc.Login(r.Context(), req.Username, req.Password)
 	if err != nil {
+		if errors.Is(err, service.ErrSetupPending) {
+			// 409 + machine-readable code: the SPA switches to the first-run
+			// setup form. Distinct from 401/423/429 so the login page can tell
+			// "wrong password" from "no password exists yet".
+			Error(w, http.StatusConflict, "setup_required")
+			return
+		}
 		if errors.Is(err, service.ErrInvalidCredentials) {
 			slog.Warn("login failed", "username", req.Username, "ip", r.RemoteAddr, "reason", "invalid credentials")
 			h.auditRepo.Log(r.Context(), service.AuditLog{
@@ -187,6 +199,75 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	Success(w, resp)
 	slog.Info("login success", "username", req.Username, "ip", r.RemoteAddr)
+}
+
+// GetSetupStatus handles GET /api/v1/auth/setup-status — reports whether the
+// first-run browser setup (create the admin password) is still pending. Public
+// and answerable only as a boolean; no account details leak.
+func (h *UserHandler) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
+	Success(w, map[string]bool{"required": h.svc.SetupPending(r.Context())})
+}
+
+// PostSetup handles POST /api/v1/auth/setup — completes the first-run flow by
+// setting the chosen password on the empty-hash bootstrap admin. Returns the
+// same LoginResponse + cookie shape as /auth/login so the SPA can enter the
+// app directly, without a second round-trip. Server-enforced one-shot: once
+// any password exists the endpoint 409s forever.
+func (h *UserHandler) PostSetup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.NewPassword == "" {
+		Error(w, http.StatusBadRequest, "new_password is required")
+		return
+	}
+
+	resp, err := h.svc.CompleteSetup(r.Context(), req.NewPassword)
+	if err != nil {
+		if errors.Is(err, service.ErrNoPendingSetup) {
+			Error(w, http.StatusConflict, "setup already completed")
+			return
+		}
+		if errors.Is(err, service.ErrWeakPassword) {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		slog.Error("first-run setup failed", "error", err)
+		Error(w, http.StatusInternalServerError, "setup failed")
+		return
+	}
+
+	userID := resp.User.ID
+	h.auditRepo.Log(r.Context(), service.AuditLog{
+		UserID:       &userID,
+		Action:       "auth.setup.completed",
+		ResourceType: "user",
+		ResourceID:   strconv.FormatInt(userID, 10),
+		IPAddress:    r.RemoteAddr,
+		UserAgent:    r.UserAgent(),
+	})
+
+	sameSite := http.SameSiteStrictMode
+	if h.cfg.Auth.CookieSameSite == "lax" {
+		sameSite = http.SameSiteLaxMode
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    resp.Token,
+		Path:     "/",
+		MaxAge:   h.cookieMaxAge(),
+		HttpOnly: true,
+		Secure:   h.cfg.Auth.CookieSecure,
+		SameSite: sameSite,
+		Domain:   h.cfg.Auth.CookieDomain,
+	})
+
+	Success(w, resp)
+	slog.Info("first-run setup completed", "username", resp.User.Username, "ip", r.RemoteAddr)
 }
 
 // Register handles POST /api/v1/auth/register (admin only)
@@ -367,9 +448,13 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	Success(w, map[string]string{"message": "password changed"})
 }
 
-// ForceChangePassword handles PUT /api/v1/auth/force-password
+// ForceChangePassword handles PUT /api/v1/auth/force-password — the forced
+// first-login/admin-reset change. On success it mints a FRESH token without
+// the mcp claim (the pre-change token is gated server-side until it expires)
+// and rotates the cookie, so the client keeps its session with the gate
+// lifted.
 func (h *UserHandler) ForceChangePassword(w http.ResponseWriter, r *http.Request) {
-	userID, _, ok := middleware.GetUserFromContext(r)
+	userID, role, ok := middleware.GetUserFromContext(r)
 	if !ok {
 		Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -393,11 +478,41 @@ func (h *UserHandler) ForceChangePassword(w http.ResponseWriter, r *http.Request
 			Error(w, http.StatusNotFound, "user not found")
 			return
 		}
-		Error(w, http.StatusBadRequest, err.Error())
+		if errors.Is(err, service.ErrWeakPassword) || errors.Is(err, service.ErrSamePassword) {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed to change password")
 		return
 	}
 
-	Success(w, map[string]string{"message": "password changed successfully"})
+	token, err := h.svc.GenerateTokenForUser(r.Context(), userID, role, false)
+	if err != nil {
+		// Password DID change — the login is recoverable by re-login; don't
+		// report a 500 that implies otherwise. Tell the client to re-login.
+		Error(w, http.StatusUnauthorized, "password changed; please log in again")
+		return
+	}
+
+	sameSite := http.SameSiteStrictMode
+	if h.cfg.Auth.CookieSameSite == "lax" {
+		sameSite = http.SameSiteLaxMode
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   h.cookieMaxAge(),
+		HttpOnly: true,
+		Secure:   h.cfg.Auth.CookieSecure,
+		SameSite: sameSite,
+		Domain:   h.cfg.Auth.CookieDomain,
+	})
+
+	Success(w, map[string]string{
+		"message": "password changed successfully",
+		"token":   token,
+	})
 }
 
 // ListUsers handles GET /api/v1/users (admin only)
@@ -473,15 +588,22 @@ func (h *UserHandler) AdminResetPassword(w http.ResponseWriter, r *http.Request)
 // cookieMaxAge returns the cookie MaxAge in seconds.
 // Precedence: CookieMaxAge config → TokenExpiry config → 86400 (24h default).
 func (h *UserHandler) cookieMaxAge() int {
+	return authCookieMaxAge(h.cfg)
+}
+
+// authCookieMaxAge is the config-driven auth-cookie MaxAge shared by the
+// login and 2FA-verify cookie setters (the 2FA path previously hardcoded
+// 24h, drifting from a configured TokenExpiry).
+func authCookieMaxAge(cfg *config.Config) int {
 	// Try CookieMaxAge first
-	if h.cfg.Auth.CookieMaxAge != "" {
-		if d, err := time.ParseDuration(h.cfg.Auth.CookieMaxAge); err == nil {
+	if cfg.Auth.CookieMaxAge != "" {
+		if d, err := time.ParseDuration(cfg.Auth.CookieMaxAge); err == nil {
 			return int(d.Seconds())
 		}
 	}
 	// Fallback to TokenExpiry
-	if h.cfg.Auth.TokenExpiry != "" {
-		if d, err := time.ParseDuration(h.cfg.Auth.TokenExpiry); err == nil {
+	if cfg.Auth.TokenExpiry != "" {
+		if d, err := time.ParseDuration(cfg.Auth.TokenExpiry); err == nil {
 			return int(d.Seconds())
 		}
 	}

@@ -95,7 +95,7 @@ database:
 |-----|------|---------|-------------|
 | `auth.jwt_secret` | string | none (required) | JWT signing key. **Required**: startup fails when empty, shorter than 32 characters, or equal to the placeholder `"change-me-in-production"` (25 chars — it fails both checks). |
 | `auth.token_expiry` | string | "24h" | JWT token lifetime |
-| `auth.initial_admin_password` | string | *(required)* | Initial admin password. **Required** — the server exits at startup when it is empty (set it via config or `MIBEE_AUTH_INITIAL_ADMIN_PASSWORD`). |
+| `auth.initial_admin_password` | string | `""` | Bootstrap admin credential. **Empty (default) = first-run browser setup**: the admin is seeded with no password and the login page asks you to create one (`GET /auth/setup-status` → `POST /auth/setup`, policy-checked, one-shot). A non-empty value is a temporary credential; first login forces a change. |
 | `auth.cookie_domain` | string | "" | Cookie domain (empty = current domain) |
 | `auth.cookie_secure` | bool | false | Set true for HTTPS-only cookies |
 | `auth.cookie_same_site` | string | "strict" | Cookie same-site policy: "strict" or "lax" |
@@ -104,9 +104,25 @@ database:
 | `auth.password_policy.require_uppercase` | bool | true | Require at least one uppercase letter. |
 | `auth.password_policy.require_lowercase` | bool | true | Require at least one lowercase letter. |
 | `auth.password_policy.require_digit` | bool | true | Require at least one digit. |
-| `auth.password_policy.require_special` | bool | true | Require at least one special character. |
+| `auth.password_policy.require_special` | bool | false | Require at least one special character (off by default, see note below). |
 | `auth.lockout.max_failed_attempts` | int | 5 | Consecutive failed logins before the account locks. |
 | `auth.lockout.lock_minutes` | int | 30 | Lockout duration. An expired lock resets the failure counter. |
+
+> **Password policy & lockout are editable from the web UI**: the admin page
+> Settings → Security (`GET/PUT /api/v1/settings/auth`) persists overrides to
+> the `system_settings` table with precedence **DB overlay > this config file
+> > built-in defaults**, effective on the next password check/login — no
+> restart. The defaults in this table only apply when nothing overrides them.
+> Special characters are no longer required by default (min 8 + upper + lower
+> + digit) — all four classes proved too heavy for home deployments; re-enable
+> via the UI toggle or an explicit `require_special: true` here. Also note the
+> first-run behavior: an EMPTY `auth.initial_admin_password` (the installer
+> default) seeds the admin with no password — the login page detects it
+> (public `GET /auth/setup-status`) and shows a create-admin-password form
+> instead of the login form (`POST /auth/setup`, policy-checked, one-shot;
+> login attempts return 409 `setup_required` meanwhile). A non-empty value
+> is a temporary bootstrap credential (policy not applied) and the first
+> login forces a browser change backed by a server-side gate.
 
 **Environment Variables:**
 - `MIBEE_AUTH_JWT_SECRET`
@@ -767,7 +783,7 @@ The application validates configuration on startup (`internal/config/config.go`)
 **Center / standalone mode**:
 - `auth.jwt_secret` is required and must be at least 32 characters long
 - `auth.jwt_secret` must not equal the placeholder `"change-me-in-production"`
-- an empty `auth.initial_admin_password` makes the server exit at startup (see `cmd/server/main.go`)
+- an empty `auth.initial_admin_password` now means "first-run browser setup", not a startup exit (see `cmd/server/main.go`)
 
 The following produce **warnings only** and do not block startup:
 - `auth.cookie_secure=false` (cookies will be sent over HTTP)

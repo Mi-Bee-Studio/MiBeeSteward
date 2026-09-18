@@ -35,6 +35,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/engine"
 	"mibee-steward/internal/service/scannerv2/runner"
@@ -117,16 +119,27 @@ type Service struct {
 	// recent is a short memory window keyed by IP: hosts seen by the coordinator
 	// within dedupTTL are not reprocessed even if another source reports them
 	// again in the same burst. This is independent of the DB pre-check: the DB
-	// check answers "is the host new to the system?", this answers "have I
+	// check answers "is this host new to the system?", this answers "have I
 	// already handled this IP in the last few minutes?".
 	recent   map[string]time.Time
 	recentMu sync.Mutex
+
+	// obs is the passive-observation cache keyed by IP: the latest overheard
+	// facts about a host (lease hostname, mDNS service announcements, SSDP
+	// self-identifications) that scans pull as SEED EVIDENCE into the
+	// fingerprint classifiers (#377 — on real networks the passive channel is
+	// often the ONLY source of these signals; active mDNS queries frequently
+	// go unanswered). Sources call Observe; the engine's seed hook (wired in
+	// routes.go) reads it via EvidenceFor.
+	obs   map[string][]scannerv2.Evidence
+	obsMu sync.Mutex
 
 	// Observable runtime counters (atomic — read by the status endpoint from a
 	// different goroutine than the consumer loop that writes them). These make
 	// the service's internal behavior queryable without scraping logs.
 	stats      statsSnapshot
 	statsMu    sync.RWMutex
+	prom       *metrics // Prometheus mirror of the same decision points; nil = disabled
 	startedAt  time.Time
 	lastEvents []recentEvent // ring of the most-recent handled events (status endpoint)
 	sources    []string      // names of active discovery sources (for status endpoint)
@@ -161,8 +174,10 @@ const dedupTTL = 5 * time.Minute
 // New constructs the coordinator. dbConn is used for the known-host pre-check
 // (SELECT from devices); networkID tags synthesized reports with the origin
 // network (0/NULL for the legacy single-instance path — same convention as
-// runner.New). ident may be nil (TriggerIdentify is then effectively forced off).
-func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID int64, logger *slog.Logger) *Service {
+// runner.New); registerer receives the mibee_discovery_events_total counter
+// (nil disables metrics — tests, agent). ident may be nil (TriggerIdentify is
+// then effectively forced off).
+func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID int64, registerer prometheus.Registerer, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -176,10 +191,63 @@ func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID 
 		ident:  ident,
 		nid:    nid,
 		db:     dbConn,
+		prom:   newMetrics(registerer),
 		logger: logger,
 		events: make(chan NewHostEvent, 256),
 		recent: make(map[string]time.Time),
+		obs:    make(map[string][]scannerv2.Evidence),
 	}
+}
+
+// maxObservedIPs bounds the observation cache. A LAN-scale deployment sees
+// hundreds of IPs; 4096 leaves generous headroom while keeping the map tiny.
+const maxObservedIPs = 4096
+
+// maxObsPerIP bounds how many observations are retained per IP — the latest
+// few announcements are plenty for seeding; older ones only add noise.
+const maxObsPerIP = 4
+
+// Observe records the latest passive observations for an IP (called by the
+// discovery sources — lease hostnames, mDNS/SSDP listeners). Observations are
+// DATA, not new-host signals: they don't trigger the event pipeline, they wait
+// to be pulled as seed evidence by the next scan of that IP.
+func (s *Service) Observe(ip string, evs ...scannerv2.Evidence) {
+	if ip == "" || len(evs) == 0 {
+		return
+	}
+	s.obsMu.Lock()
+	defer s.obsMu.Unlock()
+	if len(s.obs) >= maxObservedIPs {
+		if _, known := s.obs[ip]; !known {
+			// Over cap with an unseen IP: drop a stale entry (map iteration
+			// order is arbitrary — fine for cache semantics).
+			for k := range s.obs {
+				delete(s.obs, k)
+				break
+			}
+		}
+	}
+	merged := make([]scannerv2.Evidence, 0, len(s.obs[ip])+len(evs))
+	merged = append(merged, s.obs[ip]...)
+	merged = append(merged, evs...)
+	if excess := len(merged) - maxObsPerIP; excess > 0 {
+		merged = merged[excess:]
+	}
+	s.obs[ip] = merged
+}
+
+// EvidenceFor returns the cached passive observations for an IP (latest
+// first within each burst, oldest dropped at the cap). The engine's seed hook
+// calls this at scan time; an empty slice means "nothing overheard".
+func (s *Service) EvidenceFor(ip string) []scannerv2.Evidence {
+	s.obsMu.Lock()
+	defer s.obsMu.Unlock()
+	if len(s.obs[ip]) == 0 {
+		return nil
+	}
+	out := make([]scannerv2.Evidence, len(s.obs[ip]))
+	copy(out, s.obs[ip])
+	return out
 }
 
 // Start launches the coordinator's consumer goroutine. It is the caller's
@@ -357,6 +425,7 @@ func (s *Service) Status() StatusResponse {
 // Called only from the single consumer goroutine, but guarded by statsMu for
 // the concurrent Status() read.
 func (s *Service) recordEvent(ev NewHostEvent, outcome string) {
+	s.prom.recordEvent(ev.Source, outcome)
 	s.statsMu.Lock()
 	defer s.statsMu.Unlock()
 	s.lastEvents = append(s.lastEvents, recentEvent{
@@ -533,11 +602,24 @@ func foldHints(rep scannerv2.HostReport, hints map[string]string) scannerv2.Host
 type SinkAdapter struct {
 	Runner  *runner.Runner
 	AgentID string
+	// Networks optionally resolves the report IP to the network whose CIDR
+	// contains it (#386): on a form-C (router-resident) center the unfiltered
+	// sources legitimately observe BOTH arms, and stamping those sightings
+	// with the center's own network is what mibee_network_mismatches has been
+	// counting. Nil (or no matching row) keeps the runner's own network —
+	// the pre-#386 behavior. Data-driven by the networks table; no per-source
+	// special cases.
+	Networks *NetworkResolver
 }
 
-// Apply hands rep to the runner's device bridge.
+// Apply hands rep to the runner's device bridge, attributed to the network
+// its IP belongs to when that is resolvable.
 func (a SinkAdapter) Apply(ctx context.Context, rep scannerv2.HostReport) bool {
-	isNew, _, _ := a.Runner.ApplyReport(ctx, rep, a.Runner.NetworkID(), a.AgentID)
+	nid := a.Runner.NetworkID()
+	if resolved := a.Networks.Resolve(ctx, rep.IP); resolved.Valid {
+		nid = resolved
+	}
+	isNew, _, _ := a.Runner.ApplyReport(ctx, rep, nid, a.AgentID)
 	return isNew
 }
 

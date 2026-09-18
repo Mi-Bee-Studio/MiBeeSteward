@@ -52,6 +52,8 @@ The Changes page lays out device additions / attribute changes / losses / config
 
 The Probes page manages periodic probing of targets **outside** your network: HTTP(S) availability, ICMP liveness, TCP ports, DNS, plus full certificate-chain collection and expiry tracking for HTTPS sites. Each target has its own interval; results feed the dashboard and alerting metrics.
 
+Every target also declares its **vantage** — where its probes run from (the center itself, every registered agent, or one specific agent). The history dialog shows each vantage's latest result side by side and highlights when tracks disagree on success — the "reachable from A, not from B" view. See [Distributed](distributed.md#vantage-probing-277).
+
 ![Probe targets](images/probes.webp)
 
 ## Distributed Agents

@@ -75,7 +75,11 @@
 		"error.account_locked": "账户已被锁定（连续失败次数过多），请稍后再试。",
 		"error.network_error": "网络错误，请检查连接后重试。",
 		"error.server_error": "服务器错误，请稍后重试。",
-		"Username Placeholder": "admin"
+		"Username Placeholder": "admin",
+		"setup_title": "创建管理员密码",
+		"setup_desc": "首次使用 — 为 admin 账号设置一个登录密码，设置完成后直接进入系统。",
+		"setup_submit": "设置密码并进入",
+		"setup_already_done": "管理员密码已在别处设置完成，请直接登录。"
 	},
 	"devices": {
 		"Device Name": "设备名称",
@@ -338,7 +342,47 @@
 		"No Scan Activity": "暂无扫描活动。",
 		"Offline Devices": "离线设备",
 		"View All": "查看全部",
-		"No Offline Devices": "全部设备在线"
+		"No Offline Devices": "全部设备在线",
+		"Presets": "推荐",
+		"Advanced PromQL": "高级（PromQL）",
+		"Presets Desc": "开箱即用的组件，数据来自本系统自身，无需任何配置。",
+		"Advanced Desc": "用 PromQL 查询语句自建图表，需要已部署 Prometheus。",
+		"Advanced Needs Prom": "需要 Prometheus 数据源；未部署时组件将显示为空。",
+		"Preset Device Status": "设备状态分布",
+		"Preset Device Status Desc": "在线、离线、未知设备的数量占比",
+		"Preset Device Types": "设备类型分布",
+		"Preset Device Types Desc": "网络里有哪些类型的设备（电脑/手机/摄像头…）",
+		"Preset Device Locations": "按位置统计",
+		"Preset Device Locations Desc": "各位置（书房/客厅…）的设备数量",
+		"Preset Online Rate": "在线率",
+		"Preset Online Rate Desc": "当前在线设备占总数的比例",
+		"Preset Recent Changes": "最近变更",
+		"Preset Recent Changes Desc": "新设备加入、设备离线/恢复的最新动态",
+		"Preset Offline Devices": "离线设备",
+		"Preset Offline Devices Desc": "当前探测失败的设备清单",
+		"Preset Scan Activity": "扫描活动",
+		"Preset Scan Activity Desc": "定时扫描任务的最近执行记录",
+		"Preset Probe Status": "拨测状态",
+		"Preset Probe Status Desc": "外部拨测目标的连通性与证书情况",
+		"Add": "添加",
+		"Adding": "添加中…",
+		"Type List": "列表",
+		"Rename Widget": "重命名组件",
+		"Builtin Edit Hint": "推荐组件的数据源是系统内置的，只能修改名称。",
+		"Widget List Empty": "暂无内容",
+		"Widget List Empty Desc": "有内容后会自动显示在这里。",
+		"Card Status Desc": "当前在线 / 离线 / 未知设备的占比",
+		"Card Heartbeat Desc": "所有设备周期探测的成功比例",
+		"Card Types Desc": "设备按推断类型的数量分布",
+		"Card Location Desc": "设备按所在位置的数量分布",
+		"Card Scan Desc": "扫描任务的最近执行情况",
+		"Card Offline Desc": "探测失败的设备，点击可查看详情",
+		"Help": "帮助",
+		"Help Title": "仪表盘使用指南",
+		"Help P1": "仪表盘是家庭网络的总览：设备在线情况、最近发生的变化、扫描任务的运行状态都在这里。",
+		"Help P2": "推荐的入门路径：先在「设备 → 扫描任务」创建一个定时扫描，让系统持续发现网络里的设备；再到「设备」页查看和管理清单；最后在「设置」里配置变更通知。",
+		"Help P3": "「添加组件」里的推荐组件开箱即用，可直接加到仪表盘；高级组件需要自建 Prometheus，普通用户无需关心。",
+		"Custom Widgets": "自定义组件"
 	},
 	"common": {
 		"Save": "保存",
@@ -445,7 +489,7 @@
 		"New Task": "新建任务",
 		"Task Name": "任务名称",
 		"Task Name Placeholder": "例如：每周办公网扫描",
-		"Cron Expression": "调度计划（Cron）",
+		"Cron Expression": "扫描频率",
 		"Cron Placeholder": "0 */6 * * *",
 		"Enabled": "已启用",
 		"Disabled": "已禁用",
@@ -580,7 +624,20 @@
 			"top100": "常用 Top 100"
 		},
 		"Advanced Options": "高级选项",
-		"ports.quick_scan_section": "端口白名单（可选）"
+		"ports.quick_scan_section": "端口白名单（可选）",
+		"cron": {
+			"schedule": "扫描频率",
+			"every_30m": "每 30 分钟",
+			"hourly": "每 1 小时",
+			"every_6h": "每 6 小时",
+			"every_12h": "每 12 小时",
+			"daily_2am": "每天 02:00",
+			"daily_4am": "每天 04:00",
+			"weekly_mon_3am": "每周一 03:00",
+			"monthly_1st_3am": "每月 1 日 03:00",
+			"custom": "自定义（Cron 表达式）",
+			"expr_hint": "对应的 Cron 表达式"
+		}
 	},
 	"labels": {
 		"Per Device Labels": "设备级标签",
@@ -1244,7 +1301,19 @@
 		"Disabled": "已停用",
 		"Never Run": "尚未探测",
 		"Trigger": "立即拨测",
+		"Trigger": "立即拨测",
 		"Triggering": "探测中…",
+		"Trigger Agent Only": "该目标由 agent 视角执行——无法在中心手动触发",
+		"Vantage": "探测视角",
+		"Vantage Center": "中心（本机）",
+		"Vantage All": "中心 + 所有 agent",
+		"Vantage Agent": "Agent {id}",
+		"Vantage Agent Missing": "Agent {id}（未注册）",
+		"Vantage Help": "探测从哪里发起。结果按视角分别记录——选「中心 + 所有 agent」可对比各处的可达性。",
+		"Vantage All No Agents": "尚无已注册 agent——在有 agent 注册前只有中心视角会执行。",
+		"Vantage Latest": "各视角最新结果",
+		"Vantage Diff": "结果不一致",
+		"Vantage Samples": "{count} 条",
 		"View Results": "历史",
 		"View Cert": "证书",
 		"Delete Target": "删除",
@@ -1321,5 +1390,46 @@
 		"Wipe": "清空演示数据",
 		"Wiped": "演示数据已清空 —— 扫描真实网段即可建立资产清单",
 		"Wipe Failed": "清空演示数据失败（需管理员）"
+	},
+	"security": {
+		"title": "安全设置",
+		"system": {
+			"title": "系统信息",
+			"version": "版本",
+			"network": "网络标识",
+			"master_key": "凭据保险库",
+			"master_key_configured": "已配置 master key",
+			"master_key_missing": "未配置 master key",
+			"master_key_note": "SNMPv3 / SSH 凭据存储（AES-256-GCM 保险库）需要在配置文件中设置 32 字节的 security.master_key；不影响 v1/v2c 扫描。",
+			"demo": "演示模式"
+		},
+		"policy": {
+			"title": "密码策略",
+			"min_length": "最小长度",
+			"require_uppercase": "要求大写字母",
+			"require_lowercase": "要求小写字母",
+			"require_digit": "要求数字",
+			"require_special": "要求特殊字符"
+		},
+		"lockout": {
+			"title": "登录锁定",
+			"max_attempts": "最大失败次数",
+			"minutes": "锁定时长（分钟）"
+		},
+		"hint": {
+			"length": "至少 {min} 个字符",
+			"uppercase": "大写字母",
+			"lowercase": "小写字母",
+			"digit": "数字",
+			"special": "特殊字符",
+			"joiner": "、"
+		},
+		"source": {
+			"config": "来自配置文件",
+			"overlay": "已在网页端修改"
+		},
+		"save": "保存",
+		"saved": "安全设置已保存",
+		"apply_note": "修改对下一次密码校验 / 登录即生效，无需重启。"
 	}
 }

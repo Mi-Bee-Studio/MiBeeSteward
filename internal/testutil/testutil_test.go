@@ -83,6 +83,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"snmp_credentials",
 		"ssh_credentials",
 		"subnets",
+		"system_settings",
 		"topology_edges",
 		"user_network_grants",
 		"user_totp",

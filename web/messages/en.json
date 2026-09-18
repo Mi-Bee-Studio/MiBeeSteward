@@ -75,7 +75,11 @@
 		"error.account_locked": "Account locked (too many failed attempts). Try again later.",
 		"error.network_error": "Network error. Please check your connection and try again.",
 		"error.server_error": "Server error. Please try again later.",
-		"Username Placeholder": "admin"
+		"Username Placeholder": "admin",
+		"setup_title": "Create Admin Password",
+		"setup_desc": "First run — set a login password for the admin account. You'll go straight into the app.",
+		"setup_submit": "Set password & sign in",
+		"setup_already_done": "The admin password was already set elsewhere — please log in."
 	},
 	"devices": {
 		"Device Name": "Device Name",
@@ -338,7 +342,47 @@
 		"No Scan Activity": "No scan activity yet.",
 		"Offline Devices": "Offline Devices",
 		"View All": "View all",
-		"No Offline Devices": "All devices online"
+		"No Offline Devices": "All devices online",
+		"Presets": "Presets",
+		"Advanced PromQL": "Advanced (PromQL)",
+		"Presets Desc": "Ready-to-use widgets backed by this system's own data — no setup needed.",
+		"Advanced Desc": "Build charts with PromQL queries; requires a Prometheus deployment.",
+		"Advanced Needs Prom": "Requires a Prometheus data source; widgets stay empty without one.",
+		"Preset Device Status": "Device Status",
+		"Preset Device Status Desc": "Online / offline / unknown device counts",
+		"Preset Device Types": "Device Types",
+		"Preset Device Types Desc": "What kinds of devices are on the network (PCs, phones, cameras…)",
+		"Preset Device Locations": "By Location",
+		"Preset Device Locations Desc": "Device count per location (study, living room…)",
+		"Preset Online Rate": "Online Rate",
+		"Preset Online Rate Desc": "Share of devices currently online",
+		"Preset Recent Changes": "Recent Changes",
+		"Preset Recent Changes Desc": "Latest events: new devices joined, devices lost or recovered",
+		"Preset Offline Devices": "Offline Devices",
+		"Preset Offline Devices Desc": "Devices currently failing their probes",
+		"Preset Scan Activity": "Scan Activity",
+		"Preset Scan Activity Desc": "Recent runs of your scheduled scan tasks",
+		"Preset Probe Status": "Probe Status",
+		"Preset Probe Status Desc": "Connectivity and certificates of external probe targets",
+		"Add": "Add",
+		"Adding": "Adding…",
+		"Type List": "List",
+		"Rename Widget": "Rename widget",
+		"Builtin Edit Hint": "Preset widgets use built-in data sources; only the name can be changed.",
+		"Widget List Empty": "Nothing here yet",
+		"Widget List Empty Desc": "Content will appear here automatically once available.",
+		"Card Status Desc": "Share of online / offline / unknown devices",
+		"Card Heartbeat Desc": "Success rate of periodic device probes",
+		"Card Types Desc": "Device counts by inferred type",
+		"Card Location Desc": "Device counts by location",
+		"Card Scan Desc": "Recent runs of scan tasks",
+		"Card Offline Desc": "Devices failing probes — click for details",
+		"Help": "Help",
+		"Help Title": "Dashboard guide",
+		"Help P1": "The dashboard is the overview of your network: device availability, recent changes, and scan-task health at a glance.",
+		"Help P2": "Suggested path: create a scheduled scan under Devices → Scan Tasks so devices are discovered continuously; review the inventory on the Devices page; then set up change notifications in Settings.",
+		"Help P3": "The presets under “Add Widget” work out of the box; the advanced ones need your own Prometheus and can be ignored by most users.",
+		"Custom Widgets": "Custom Widgets"
 	},
 	"common": {
 		"Save": "Save",
@@ -445,7 +489,7 @@
 		"New Task": "New Task",
 		"Task Name": "Task Name",
 		"Task Name Placeholder": "e.g. Weekly Office Scan",
-		"Cron Expression": "Schedule (Cron)",
+		"Cron Expression": "Schedule",
 		"Cron Placeholder": "0 */6 * * *",
 		"Enabled": "Enabled",
 		"Disabled": "Disabled",
@@ -580,7 +624,20 @@
 			"top100": "Top ~100 Ports"
 		},
 		"Advanced Options": "Advanced Options",
-		"ports.quick_scan_section": "Port whitelist (optional)"
+		"ports.quick_scan_section": "Port whitelist (optional)",
+		"cron": {
+			"schedule": "Scan schedule",
+			"every_30m": "Every 30 minutes",
+			"hourly": "Every hour",
+			"every_6h": "Every 6 hours",
+			"every_12h": "Every 12 hours",
+			"daily_2am": "Daily at 02:00",
+			"daily_4am": "Daily at 04:00",
+			"weekly_mon_3am": "Weekly on Monday at 03:00",
+			"monthly_1st_3am": "Monthly on the 1st at 03:00",
+			"custom": "Custom (cron expression)",
+			"expr_hint": "Generated cron expression"
+		}
 	},
 	"labels": {
 		"Per Device Labels": "Per-Device Labels",
@@ -1244,7 +1301,19 @@
 		"Disabled": "Disabled",
 		"Never Run": "Not probed yet",
 		"Trigger": "Probe Now",
+		"Trigger": "Probe Now",
 		"Triggering": "Probing…",
+		"Trigger Agent Only": "This target runs on its agent's vantage — trigger it there",
+		"Vantage": "Vantage",
+		"Vantage Center": "Center (this server)",
+		"Vantage All": "Center + all agents",
+		"Vantage Agent": "Agent {id}",
+		"Vantage Agent Missing": "Agent {id} (unregistered)",
+		"Vantage Help": "Where probes run from. Results are recorded per vantage — pick 'Center + all agents' to compare reachability from the center and every agent.",
+		"Vantage All No Agents": "No agents registered yet — only the center track will run until one is.",
+		"Vantage Latest": "Latest per vantage",
+		"Vantage Diff": "results disagree",
+		"Vantage Samples": "{count} samples",
 		"View Results": "History",
 		"View Cert": "Certificate",
 		"Delete Target": "Delete",
@@ -1321,5 +1390,46 @@
 		"Wipe": "Clear demo data",
 		"Wiped": "Demo data cleared — scan a real subnet to build your inventory",
 		"Wipe Failed": "Failed to clear demo data (admin only)"
+	},
+	"security": {
+		"title": "Security Settings",
+		"system": {
+			"title": "System",
+			"version": "Version",
+			"network": "Network",
+			"master_key": "Credential vault",
+			"master_key_configured": "Master key configured",
+			"master_key_missing": "Master key NOT configured",
+			"master_key_note": "SNMPv3 / SSH credential storage (AES-256-GCM vault) requires a 32-byte security.master_key in the config file. v1/v2c scanning works without it.",
+			"demo": "Demo mode"
+		},
+		"policy": {
+			"title": "Password Policy",
+			"min_length": "Minimum length",
+			"require_uppercase": "Require uppercase letters",
+			"require_lowercase": "Require lowercase letters",
+			"require_digit": "Require digits",
+			"require_special": "Require special characters"
+		},
+		"lockout": {
+			"title": "Login Lockout",
+			"max_attempts": "Max failed attempts",
+			"minutes": "Lock duration (minutes)"
+		},
+		"hint": {
+			"length": "at least {min} characters",
+			"uppercase": "an uppercase letter",
+			"lowercase": "a lowercase letter",
+			"digit": "a digit",
+			"special": "a special character",
+			"joiner": ", "
+		},
+		"source": {
+			"config": "from config file",
+			"overlay": "edited in web UI"
+		},
+		"save": "Save",
+		"saved": "Security settings saved",
+		"apply_note": "Changes apply to the next password check / login — no restart needed."
 	}
 }

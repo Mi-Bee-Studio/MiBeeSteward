@@ -36,6 +36,23 @@ func SetTokenBlacklist(bl *service.TokenBlacklist) {
 	tokenBlacklist = bl
 }
 
+// tokenVersionSource resolves a user's CURRENT token_version (session epoch,
+// #357). Set via SetTokenVersionSource; nil (unit tests that never wire it)
+// skips the epoch check for backwards compatibility.
+var tokenVersionSource func(ctx context.Context, userID int64) (int64, bool)
+
+// SetTokenVersionSource wires the user-epoch lookup used to reject tokens
+// minted before the user's last password change.
+func SetTokenVersionSource(fn func(ctx context.Context, userID int64) (int64, bool)) {
+	tokenVersionSource = fn
+}
+
+// GetTokenVersionSourceForTest exposes the current epoch source so tests can
+// save and restore the package global.
+func GetTokenVersionSourceForTest() func(ctx context.Context, userID int64) (int64, bool) {
+	return tokenVersionSource
+}
+
 // GetJWTAuth returns the global JWT authenticator.
 func GetJWTAuth() *jwtauth.JWTAuth {
 	return tokenAuth
@@ -74,10 +91,29 @@ func Authenticator(next http.Handler) http.Handler {
 			}
 		}
 
+		// Session-epoch check (#357): the token's `tv` claim must equal the
+		// user's CURRENT token_version. Any password change bumps the column,
+		// so every token minted before it (potentially leaked ones included)
+		// stops authenticating on its next request. A missing claim reads as
+		// version 0 (tokens minted before the column existed); an unknown
+		// user (deleted row) rejects the token outright. Numbers decode as
+		// float64 through the JSON round-trip, so read into float64 first.
+		var userID float64
+		if err := tok.Get("user_id", &userID); err == nil {
+			if tokenVersionSource != nil {
+				var claimTVf float64
+				_ = tok.Get("tv", &claimTVf)
+				current, ok := tokenVersionSource(r.Context(), int64(userID))
+				if !ok || current != int64(claimTVf) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+		}
+
 		ctx := r.Context()
 
-		// Extract user_id claim
-		var userID float64
+		// Extract user_id claim (userID was already read for the epoch check)
 		if err := tok.Get("user_id", &userID); err == nil {
 			ctx = context.WithValue(ctx, domain.ContextKeyUserID, int64(userID))
 		}
@@ -88,8 +124,39 @@ func Authenticator(next http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, domain.ContextKeyRole, role)
 		}
 
+		// Must-change-password gate: a token minted while the user's
+		// must_change_password flag was set carries mcp=true. Until the forced
+		// change completes, every authenticated call except the
+		// change-survival allowlist gets 403 — the flag is enforced server-side,
+		// not just by the SPA modal.
+		var mustChange bool
+		if err := tok.Get("mcp", &mustChange); err == nil && mustChange {
+			if !passwordChangeAllowlisted(r) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":"password_change_required"}`))
+				return
+			}
+		}
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// passwordChangeAllowlisted is the set of authenticated endpoints a gated
+// (mcp=true) token may still reach: the forced change itself, the profile
+// read the change dialog may need, and 2FA management. Public endpoints
+// (login/logout/2fa-verify/health) never run the Authenticator, so they need
+// no entry here.
+func passwordChangeAllowlisted(r *http.Request) bool {
+	p := r.URL.Path
+	switch {
+	case p == "/api/v1/auth/force-password" && r.Method == http.MethodPut,
+		p == "/api/v1/auth/profile" && r.Method == http.MethodGet,
+		strings.HasPrefix(p, "/api/v1/auth/2fa/"):
+		return true
+	}
+	return false
 }
 
 // extractToken gets the token from cookie first, then falls back to Authorization header.

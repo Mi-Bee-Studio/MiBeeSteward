@@ -141,6 +141,8 @@ export interface ProbeTarget {
 	last_status?: string;
 	last_latency_ms: number;
 	last_error?: string;
+	/** Execution plan (#277): 'center' | 'all' | 'agent:{id}'. */
+	vantage: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -165,6 +167,8 @@ export interface ProbeResult {
 	/** null = no cert collected that run. */
 	cert_trusted?: boolean | null;
 	checked_at: string;
+	/** Which executor produced this row (#277): 'center' or 'agent:{id}'. */
+	vantage: string;
 }
 
 export interface ProbeResultListResponse {
@@ -562,22 +566,43 @@ export interface PipelineConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard Widget (Prometheus-backed dashboard cards). The API shape is shared
-// across WidgetPicker (create/edit form), DashboardWidget (rendered card), and
-// the dashboard route's widget state. Defined once here to avoid the three-way
+// Dashboard Widget (dashboard cards). The API shape is shared across
+// WidgetPicker (create/edit form), DashboardWidget (rendered card), and the
+// dashboard route's widget state. Defined once here to avoid the three-way
 // drift that existed when each file declared its own copy (#71).
 // ---------------------------------------------------------------------------
 
 export interface DashboardWidgetConfig {
 	id: string;
 	name: string;
+	// Chart kind: gauge | line | bar | pie — or "list" for the builtin
+	// preset lists (recent changes / offline devices / scan activity /
+	// probe status). list is only valid with data_source "builtin".
 	type: string;
+	// "builtin" = one of the preset templates in query ("builtin:<key>"),
+	// rendered from the app's own APIs; "prometheus" = raw PromQL proxyed to
+	// the configured prometheus_url.
 	data_source: string;
 	query: string;
 	refresh_interval: number;
 	position: number;
 	created_at: string;
 	updated_at: string;
+}
+
+// A row rendered by a builtin list widget. Builtin chart widgets
+// (pie/bar/gauge) build an ECharts option instead and leave items empty.
+export interface DashboardListItem {
+	// Primary line: device name / change summary / run label / probe target.
+	title: string;
+	// Optional secondary line (IP, sub-status…).
+	subtitle?: string;
+	// Optional status chip (online/offline/running/completed/...).
+	status?: string;
+	// Timestamp text, pre-formatted by the fetch layer.
+	time?: string;
+	// In-app link when the row is clickable (device list, probe page…).
+	href?: string;
 }
 
 // ---------------------------------------------------------------------------

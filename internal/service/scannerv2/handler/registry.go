@@ -24,6 +24,9 @@ func DefaultHandlers() []scannerv2.ServiceHandler {
 		ONVIFHandler{},
 		SNMPHandler{},
 		CameraHandler{},
+		MiotHandler{},
+		MdnsHandler{},
+		SsdpHandler{},
 	}
 	// Server-class + TLS-wrapped handlers are data-driven (one type per family,
 	// registered once per service name) — see handler/services.go and
