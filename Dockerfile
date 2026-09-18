@@ -14,8 +14,12 @@ WORKDIR /app/web
 # Allow overriding the npm registry for builds behind a slow/restricted network
 # (e.g. registry.npmmirror.com in CN). Defaults to the official registry.
 ARG NPM_REGISTRY=https://registry.npmjs.org
+# legacy_peer_deps via env (openapi-typescript peers typescript ^5.x while
+# this project uses TS6 — verified working; host builds pin it in web/.npmrc.
+# Env here because `npm config set` would rewrite a copied .npmrc, #274).
+ARG NPM_REGISTRY=https://registry.npmjs.org
 COPY web/package.json web/package-lock.json* ./
-RUN npm config set registry "${NPM_REGISTRY}" && npm ci
+RUN NPM_CONFIG_REGISTRY="${NPM_REGISTRY}" npm_config_legacy_peer_deps=true npm ci
 COPY web/ .
 # Vite + SvelteKit SSR-compile can exceed node's default heap on larger apps.
 # Raise to 2GB. NOTE: the build host needs >=2GB RAM (swap alone won't save a
