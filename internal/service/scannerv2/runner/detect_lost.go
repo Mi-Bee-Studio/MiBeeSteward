@@ -173,9 +173,23 @@ func (rn *Runner) RecordAliveSnapshots(ctx context.Context, networkID sql.NullIn
 		// (Run step 3 → step 3c), so the device row exists on the local-scan path;
 		// on the agent→center lease path a prior report already created it. An empty
 		// uuid (device somehow still absent) is healed on the next scan.
-		devUUID := rn.resolveDeviceUUIDForIP(ctx, rep.IP, networkID)
+		devUUID := rn.resolveDeviceUUIDForIP(ctx, mac, rep.IP, networkID)
 		if err := rn.upsertScanSnapshot(ctx, networkID.Int64, taskIDPtr, rep.IP, mac, devUUID, now); err != nil {
 			rn.logger.Warn("record-alive-snapshots: upsert failed", "ip", rep.IP, "error", err)
+		}
+		// Keep devices.last_seen honest on the agent→center path: the stable-hash
+		// fast path in agent_report.go refreshes leases ONLY (no device bridge),
+		// so a stable network's device rows showed ever-aging last_seen while the
+		// assets were alive and reported every cycle (#389). Status stays owned by
+		// DetectLost / the lease sweeper — this touches liveness display only.
+		// On the local-scan path the bridge already stamped the same value;
+		// re-stamping is idempotent.
+		if devUUID != "" {
+			if _, err := rn.dbConn.ExecContext(ctx,
+				`UPDATE devices SET last_seen = ? WHERE device_uuid = ?`,
+				scannerv2.DBTime(now), devUUID); err != nil {
+				rn.logger.Warn("record-alive-snapshots: last_seen stamp failed", "ip", rep.IP, "error", err)
+			}
 		}
 	}
 	return aliveIPs
@@ -230,29 +244,42 @@ func (rn *Runner) recordDeviceRecovered(ctx context.Context, deviceID int64, net
 	})
 }
 
-// resolveDeviceUUIDForIP returns the stable device_uuid for an IP, scoped to
-// networkID when valid (mirrors the store's resolveDeviceUUID identity rule).
-// Returns "" on miss (the snapshot row gets device_uuid=” and is healed next
+// resolveDeviceUUIDForIP returns the stable device_uuid for a host sighting,
+// following the system's identity rule — MAC-primary, then IP — so a lease
+// follows the ASSET, not an arbitrary row at that IP. When several rows share
+// the IP (a DHCP tussle, or a stale pre-roam row left behind), the
+// most-recently-seen row wins; a bare LIMIT 1 used to feed the stale row's
+// lease forever, keeping it online while the live row aged (#389).
+// Returns "" on miss (the snapshot row gets device_uuid="" and is healed next
 // scan). Used by RecordAliveSnapshots so a scan_snapshots lease row keys on the
 // device's stable identity rather than its roaming-prone IP.
-func (rn *Runner) resolveDeviceUUIDForIP(ctx context.Context, ip string, networkID sql.NullInt64) string {
+func (rn *Runner) resolveDeviceUUIDForIP(ctx context.Context, mac, ip string, networkID sql.NullInt64) string {
 	if rn.dbConn == nil {
 		return ""
 	}
 	var u string
+	if mac != "" {
+		// MAC-primary identity: the same NIC is one asset across IPs (and
+		// networks), so its lease follows it through a DHCP roam.
+		if err := rn.dbConn.QueryRowContext(ctx,
+			`SELECT device_uuid FROM devices WHERE mac_address = ? ORDER BY last_seen DESC LIMIT 1`,
+			mac).Scan(&u); err == nil && u != "" {
+			return u
+		}
+	}
 	var err error
 	if networkID.Valid {
 		err = rn.dbConn.QueryRowContext(ctx,
-			`SELECT device_uuid FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+			`SELECT device_uuid FROM devices WHERE ip_address = ? AND network_id = ? ORDER BY last_seen DESC LIMIT 1`,
 			ip, networkID.Int64).Scan(&u)
 		if err != nil {
 			// Fall back to any device with this IP (NULL-network / cross-network).
 			err = rn.dbConn.QueryRowContext(ctx,
-				`SELECT device_uuid FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&u)
+				`SELECT device_uuid FROM devices WHERE ip_address = ? ORDER BY last_seen DESC LIMIT 1`, ip).Scan(&u)
 		}
 	} else {
 		err = rn.dbConn.QueryRowContext(ctx,
-			`SELECT device_uuid FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&u)
+			`SELECT device_uuid FROM devices WHERE ip_address = ? ORDER BY last_seen DESC LIMIT 1`, ip).Scan(&u)
 	}
 	if err != nil {
 		return ""
