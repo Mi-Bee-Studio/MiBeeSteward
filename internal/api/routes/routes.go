@@ -449,7 +449,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		},
 		scannerv2discovery.SinkAdapter{Runner: scanRunner},
 		scannerv2discovery.IdentifierAdapter(v2Engine),
-		dbConn, networkID, slog.Default(),
+		dbConn, networkID, prometheus.DefaultRegisterer, slog.Default(),
 	)
 	// Late-bind the seed-evidence closure (#377): the engine was constructed
 	// before the discovery service exists (the service needs the engine as its

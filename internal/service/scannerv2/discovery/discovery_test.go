@@ -173,7 +173,7 @@ func newTestService(t *testing.T, triggerIdentify bool) (*Service, *fakeSink, *f
 	dbConn := memoryDB(t) // creates the schema incl. devices + networks
 	sink := &fakeSink{isNew: true}
 	ident := &fakeIdentifier{reports: map[string]scannerv2.HostReport{}, alive: map[string]bool{}}
-	svc := New(Config{Interval: time.Second, TriggerIdentify: triggerIdentify}, sink, ident, dbConn, 0, nil)
+	svc := New(Config{Interval: time.Second, TriggerIdentify: triggerIdentify}, sink, ident, dbConn, 0, nil, nil)
 	// Run the consumer loop so Emit delivers synchronously.
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -420,7 +420,7 @@ func TestStatus_CountersTrackPipeline(t *testing.T) {
 
 func TestStatus_DisabledServiceReturnsEnabledFalse(t *testing.T) {
 	// A Service that was constructed but never Started should report enabled=false.
-	svc := New(Config{Interval: time.Second}, &fakeSink{}, nil, nil, 0, nil)
+	svc := New(Config{Interval: time.Second}, &fakeSink{}, nil, nil, 0, nil, nil)
 	st := svc.Status()
 	if st.Enabled {
 		t.Error("expected Enabled=false for a never-started service")
