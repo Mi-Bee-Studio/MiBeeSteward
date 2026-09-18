@@ -153,6 +153,34 @@ sudo mibee-agent -config /etc/mibee/agent.yaml
 
 > 历史注记：该能力之前靠部署侧的 systemd timer + 硬编码密码的 shell 脚本驱动（登录 → 调命令 API）。脚本在密码轮换后静默失败，还会周期性烧毁 admin 的失败登录计数、反复续锁账户。内部调度落地后此类外部脚本应全部退役 —— 改密码不再有隐藏的消费方。
 
+### Agent 侧 SNMP 凭据（#241）
+
+agent 可通过**本地凭据库**探测远端局域网内的 SNMPv3（USM auth/priv）设备 —— 凭据存在 agent 自己的 mini-DB 的 `snmp_credentials` 表中，用 **agent 自己的** `security.master_key` 做 AES-256-GCM 加密。该密钥与中心的 master key 刻意相互独立：单台 agent 主机失陷只暴露该 agent 的凭据，不触及中心金库（反之亦然）。凭据材料永远不会经过 agent↔中心 通道。
+
+在 agent 主机上配置：
+
+```bash
+# 1. agent.yaml 里配 32 字节 master key（或 MIBEE_SECURITY_MASTER_KEY 环境变量）：
+#    security:
+#      master_key: "<恰好 32 字节>"
+
+# 2. 写入凭据（口令输入顺序：flag > 环境变量 > stdin 提示）：
+mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action add \
+  -name switch-v3 -security-level authPriv -username snmpadmin \
+  -auth-protocol SHA -priv-protocol AES
+mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action list
+mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action remove -name switch-v3
+
+# 3. 重启 agent 让 resolver 加载金库。
+```
+
+两条绑定路径：
+
+- **本地扫描任务**：直接给 agent 的 `scan_tasks` 行设 `credential_id`（本地金库 ID）——调度器原样传入引擎。
+- **中心下发的任务**：中心侧绑定了凭据的 `scan_tasks` 行下发时在 scan payload 中携带 `credential_name`；agent 用**名字**在自己的金库里解析（两侧 ID 各自独立，名字才是跨系统键）。给 agent 侧凭据起与中心相同的名字即可。
+
+降级语义统一：未配 master key、名字不存在、ID 失效，一律回退到 agent 全局 `scanner.snmp_community` 并记警告 —— 金库配错不会导致扫描失败。
+
 ### 多视角拨测（#277）
 
 拨测目标通过 `vantage` 字段声明**从哪里执行**——同一个端点从不同网络发起，答案可能合法地不同：

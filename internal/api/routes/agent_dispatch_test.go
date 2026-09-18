@@ -65,7 +65,7 @@ func TestDispatchAgentScan_SuccessAndFailure(t *testing.T) {
 
 	// Success path: in-CIDR targets → command enqueued + run left "running"
 	// for the report to backfill.
-	dispatchAgentScan(ctx, queries, svc, 7, "192.168.62.0/24", 300*1e9, "agent-62")
+	dispatchAgentScan(ctx, conn, queries, svc, 7, "192.168.62.0/24", 300*1e9, "agent-62", 0)
 	var cmdCount int
 	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM agent_commands WHERE agent_id='agent-62' AND command='scan'`).Scan(&cmdCount))
 	require.Equal(t, 1, cmdCount, "scan command must be enqueued for the agent")
@@ -76,7 +76,7 @@ func TestDispatchAgentScan_SuccessAndFailure(t *testing.T) {
 
 	// Second dispatch (a report never arrived): the previous run is superseded
 	// with a note, and a fresh "running" row takes its place.
-	dispatchAgentScan(ctx, queries, svc, 7, "192.168.62.0/24", 300*1e9, "agent-62")
+	dispatchAgentScan(ctx, conn, queries, svc, 7, "192.168.62.0/24", 300*1e9, "agent-62", 0)
 	var supersededStatus, supersededMsg string
 	require.NoError(t, conn.QueryRow(`SELECT status, error_message FROM scan_task_runs WHERE id = ?`, run.ID).Scan(&supersededStatus, &supersededMsg))
 	require.Equal(t, "completed", supersededStatus)
@@ -87,7 +87,7 @@ func TestDispatchAgentScan_SuccessAndFailure(t *testing.T) {
 	require.Equal(t, "running", run2.Status)
 
 	// Failure path: out-of-CIDR targets → no command + failed run with reason.
-	dispatchAgentScan(ctx, queries, svc, 7, "10.99.0.0/24", 300*1e9, "agent-62")
+	dispatchAgentScan(ctx, conn, queries, svc, 7, "10.99.0.0/24", 300*1e9, "agent-62", 0)
 	var cmdCount2 int
 	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM agent_commands`).Scan(&cmdCount2))
 	require.Equal(t, 2, cmdCount2, "only the two accepted dispatches enqueue; the rejected one must not")
@@ -95,4 +95,39 @@ func TestDispatchAgentScan_SuccessAndFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "failed", run3.Status)
 	require.NotEmpty(t, run3.ErrorMessage, "failure reason must surface in the run row")
+}
+
+// TestDispatchAgentScan_CredentialNameForwarded pins the #241 credential
+// forwarding: a task bound to a center SNMP credential dispatches with
+// credential_name in the scan payload (the agent resolves the NAME against its
+// own local vault — IDs are per-system). credential_id=0 and a stale ID both
+// omit the field so the agent keeps its community fallback.
+func TestDispatchAgentScan_CredentialNameForwarded(t *testing.T) {
+	conn, err0 := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err0)
+	t.Cleanup(func() { conn.Close() })
+	_, err := conn.Exec(`INSERT INTO networks (id, name, cidr, agent_id) VALUES
+		(3, 'lan-62', '192.168.62.0/24', 'agent-62')`)
+	require.NoError(t, err)
+	// A center-vault row with ciphertext blobs (content irrelevant — only the
+	// NAME is forwarded, and reading it needs no master key).
+	_, err = conn.Exec(`INSERT INTO snmp_credentials (id, name, security_level, username, auth_protocol, auth_passphrase_enc, priv_protocol, priv_passphrase_enc)
+		VALUES (11, 'switch-v3', 'authPriv', 'snmpadmin', 'SHA', 'enc-blob', 'AES', 'enc-blob')`)
+	require.NoError(t, err)
+
+	queries := db.New(conn)
+	svc := service.NewAgentCommandService(queries, false, false)
+	ctx := context.Background()
+
+	dispatchAgentScan(ctx, conn, queries, svc, 0, "192.168.62.0/24", 300*1e9, "agent-62", 11)
+	var payload string
+	require.NoError(t, conn.QueryRow(`SELECT payload FROM agent_commands ORDER BY id DESC LIMIT 1`).Scan(&payload))
+	require.Contains(t, payload, `"credential_name":"switch-v3"`, "bound credential must be forwarded by name")
+
+	// Stale ID (row deleted): no credential_name in the payload — the agent
+	// scans with its global community rather than failing the dispatch.
+	dispatchAgentScan(ctx, conn, queries, svc, 0, "192.168.62.0/24", 300*1e9, "agent-62", 999)
+	var payload2 string
+	require.NoError(t, conn.QueryRow(`SELECT payload FROM agent_commands ORDER BY id DESC LIMIT 1`).Scan(&payload2))
+	require.NotContains(t, payload2, "credential_name", "an unresolvable credential_id must degrade, not fail the dispatch")
 }

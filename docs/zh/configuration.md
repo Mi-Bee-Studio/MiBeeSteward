@@ -474,7 +474,7 @@ scanner:
 
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
-| `security.master_key` | string | "" | AES-GCM 主密钥（必须恰好 32 字节）。用于 SNMPv3 和 SSH 凭证的加密存储。空 = 凭证加密禁用（回退到 v1/v2c community 字符串）。 |
+| `security.master_key` | string | "" | AES-GCM 主密钥（必须恰好 32 字节）。用于 SNMPv3 和 SSH 凭证的加密存储。空 = 凭证加密禁用（回退到 v1/v2c community 字符串）。agent 模式下该密钥保护 agent 自己的本地 SNMP 凭据库（#241）—— 刻意与中心的密钥相互独立。 |
 
 **示例：**
 ```yaml
