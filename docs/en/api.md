@@ -1132,7 +1132,7 @@ Get device heartbeat results.
 
 `status` is one of `success` / `fail` / `timeout`; `checked_at` is an RFC3339 string.
 
-## Synthetic Probing (拨测)
+## Synthetic Probing
 
 Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style), typically external/internet resources. Four modules: `http` / `tls` / `tcp` / `icmp`. The `tls` module — and https-flavored `http` targets — collect the full certificate chain (reusing the scanner's internal cert inventory for external hosts; results carry a trust verdict and TLS version). Reads (`CapProbeRead`) are available to any logged-in user; writes (`CapProbeManage`) require operator and above.
 
