@@ -35,6 +35,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/engine"
 	"mibee-steward/internal/service/scannerv2/runner"
@@ -137,6 +139,7 @@ type Service struct {
 	// the service's internal behavior queryable without scraping logs.
 	stats      statsSnapshot
 	statsMu    sync.RWMutex
+	prom       *metrics // Prometheus mirror of the same decision points; nil = disabled
 	startedAt  time.Time
 	lastEvents []recentEvent // ring of the most-recent handled events (status endpoint)
 	sources    []string      // names of active discovery sources (for status endpoint)
@@ -171,8 +174,10 @@ const dedupTTL = 5 * time.Minute
 // New constructs the coordinator. dbConn is used for the known-host pre-check
 // (SELECT from devices); networkID tags synthesized reports with the origin
 // network (0/NULL for the legacy single-instance path — same convention as
-// runner.New). ident may be nil (TriggerIdentify is then effectively forced off).
-func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID int64, logger *slog.Logger) *Service {
+// runner.New); registerer receives the mibee_discovery_events_total counter
+// (nil disables metrics — tests, agent). ident may be nil (TriggerIdentify is
+// then effectively forced off).
+func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID int64, registerer prometheus.Registerer, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -186,6 +191,7 @@ func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID 
 		ident:  ident,
 		nid:    nid,
 		db:     dbConn,
+		prom:   newMetrics(registerer),
 		logger: logger,
 		events: make(chan NewHostEvent, 256),
 		recent: make(map[string]time.Time),
@@ -419,6 +425,7 @@ func (s *Service) Status() StatusResponse {
 // Called only from the single consumer goroutine, but guarded by statsMu for
 // the concurrent Status() read.
 func (s *Service) recordEvent(ev NewHostEvent, outcome string) {
+	s.prom.recordEvent(ev.Source, outcome)
 	s.statsMu.Lock()
 	defer s.statsMu.Unlock()
 	s.lastEvents = append(s.lastEvents, recentEvent{
@@ -595,11 +602,24 @@ func foldHints(rep scannerv2.HostReport, hints map[string]string) scannerv2.Host
 type SinkAdapter struct {
 	Runner  *runner.Runner
 	AgentID string
+	// Networks optionally resolves the report IP to the network whose CIDR
+	// contains it (#386): on a form-C (router-resident) center the unfiltered
+	// sources legitimately observe BOTH arms, and stamping those sightings
+	// with the center's own network is what mibee_network_mismatches has been
+	// counting. Nil (or no matching row) keeps the runner's own network —
+	// the pre-#386 behavior. Data-driven by the networks table; no per-source
+	// special cases.
+	Networks *NetworkResolver
 }
 
-// Apply hands rep to the runner's device bridge.
+// Apply hands rep to the runner's device bridge, attributed to the network
+// its IP belongs to when that is resolvable.
 func (a SinkAdapter) Apply(ctx context.Context, rep scannerv2.HostReport) bool {
-	isNew, _, _ := a.Runner.ApplyReport(ctx, rep, a.Runner.NetworkID(), a.AgentID)
+	nid := a.Runner.NetworkID()
+	if resolved := a.Networks.Resolve(ctx, rep.IP); resolved.Valid {
+		nid = resolved
+	}
+	isNew, _, _ := a.Runner.ApplyReport(ctx, rep, nid, a.AgentID)
 	return isNew
 }
 

@@ -447,9 +447,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			Interval:        time.Duration(cfg.Scanner.Discovery.Interval) * time.Second,
 			TriggerIdentify: cfg.Scanner.Discovery.TriggerIdentify,
 		},
-		scannerv2discovery.SinkAdapter{Runner: scanRunner},
+		scannerv2discovery.SinkAdapter{
+			Runner:   scanRunner,
+			Networks: scannerv2discovery.NewNetworkResolver(dbConn), // #386: attribute sightings to the network whose CIDR contains them
+		},
 		scannerv2discovery.IdentifierAdapter(v2Engine),
-		dbConn, networkID, slog.Default(),
+		dbConn, networkID, prometheus.DefaultRegisterer, slog.Default(),
 	)
 	// Late-bind the seed-evidence closure (#377): the engine was constructed
 	// before the discovery service exists (the service needs the engine as its
@@ -1331,12 +1334,43 @@ func agentForNetwork(dbConn *sql.DB, networkID *int64) string {
 
 // dispatchAgentScan enqueues a scan command for an agent-managed network task
 // and records a scan_task_runs row so the task's run history reflects the
-// dispatch (completed = command accepted by the command channel; the scan
-// itself executes on the agent and reports back via /agents/report). A failed
-// enqueue (e.g. targets outside the agent network's CIDR, reserved range with
-// the escape hatch off) is recorded as a FAILED run with the reason — the
-// failure must be visible in the UI, not just the journal.
+// dispatch. The row is left "running": the scan itself executes on the agent,
+// and the first host-carrying report for this network closes it with real
+// stats (agent_report.go backfillAgentRunStats, #390) — duration then measures
+// the honest end-to-end latency (command poll + scan + report). Backstops: a
+// still-running older run of the SAME task is superseded here (an agent that
+// never reported hosts), and the scheduler's stale-run sweeper fails runs
+// older than 1h. A failed enqueue is recorded as a FAILED run with the reason —
+// the failure must be visible in the UI, not just the journal.
 func dispatchAgentScan(ctx context.Context, queries *db.Queries, agentCmdSvc *service.AgentCommandService, taskID int64, targets string, timeout time.Duration, agentID string) {
+	// Supersede runs of this task a report never closed (agent down, or it
+	// only sent empty/heartbeat reports). Bounded lifetime: at most one cron
+	// period of "running" before the next dispatch sweeps it.
+	if prev, err := queries.ListScanTaskRuns(ctx, db.ListScanTaskRunsParams{
+		Column1: taskID, TaskID: taskID, Limit: 10, Offset: 0,
+	}); err == nil {
+		now := time.Now()
+		for _, r := range prev {
+			if r.Status != "running" {
+				continue
+			}
+			started := time.Time{}
+			if r.StartedAt != nil {
+				started = *r.StartedAt
+			}
+			fin := now
+			if uerr := queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
+				Status:       "completed",
+				DurationMs:   now.Sub(started).Milliseconds(),
+				ErrorMessage: "superseded by next dispatch (no host-carrying report arrived)",
+				FinishedAt:   &fin,
+				ID:           r.ID,
+			}); uerr != nil {
+				slog.Warn("agent dispatch: supersede previous run failed", "run_id", r.ID, "error", uerr)
+			}
+		}
+	}
+
 	start := time.Now()
 	now := time.Now()
 	run, runErr := queries.CreateScanTaskRun(ctx, db.CreateScanTaskRunParams{TaskID: taskID, StartedAt: &now})
@@ -1372,5 +1406,6 @@ func dispatchAgentScan(ctx context.Context, queries *db.Queries, agentCmdSvc *se
 		return
 	}
 	slog.Info("scan task dispatched to agent", "task_id", taskID, "agent_id", agentID, "command_id", cmd.ID, "targets", targets)
-	finishRun("completed", "")
+	// Success: the run row stays "running" until the agent's report backfills
+	// its real stats (or the backstops above fire).
 }

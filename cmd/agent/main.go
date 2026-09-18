@@ -195,7 +195,7 @@ func main() {
 			},
 			scannerv2discovery.SinkAdapter{Runner: scanRunner},
 			scannerv2discovery.IdentifierAdapter(engine),
-			dbConn, 0, slog.Default(),
+			dbConn, 0, nil, slog.Default(),
 		)
 		discCtx, cancel := context.WithCancel(ctxBg)
 		discCancel = cancel
