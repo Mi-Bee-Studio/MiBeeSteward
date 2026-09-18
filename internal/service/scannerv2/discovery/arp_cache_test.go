@@ -37,7 +37,7 @@ func (r *recordingSink) Apply(_ context.Context, rep scannerv2.HostReport) bool 
 func TestARPCacheSource_CIDRFilter(t *testing.T) {
 	var events []NewHostEvent
 	sink := &recordingSink{events: &events}
-	svc := New(Config{}, sink, nil, nil, 0, nil)
+	svc := New(Config{}, sink, nil, nil, 0, nil, nil)
 	svc.Start(context.Background())
 	t.Cleanup(func() { svc.Stop() })
 
@@ -59,7 +59,7 @@ func TestARPCacheSource_CIDRFilter(t *testing.T) {
 	// in-loop known-host path can't dedup hosts seen in the phase above.
 	events = nil
 	sink2 := &recordingSink{events: &events}
-	svc2 := New(Config{}, sink2, nil, nil, 0, nil)
+	svc2 := New(Config{}, sink2, nil, nil, 0, nil, nil)
 	svc2.Start(context.Background())
 	t.Cleanup(func() { svc2.Stop() })
 	src2 := NewARPCacheSource("", time.Minute, svc2, nil)
