@@ -12,6 +12,7 @@ package routes
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -606,7 +607,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 				}
 			}()
 			if agentID := agentForNetwork(dbConn, networkID); agentID != "" {
-				dispatchAgentScan(ctx, scanQueries, agentCmdSvc, taskID, targets, timeout, agentID)
+				dispatchAgentScan(ctx, dbConn, scanQueries, agentCmdSvc, taskID, targets, timeout, agentID, credentialID)
 				return
 			}
 			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence, credentialID)
@@ -1342,7 +1343,7 @@ func agentForNetwork(dbConn *sql.DB, networkID *int64) string {
 // never reported hosts), and the scheduler's stale-run sweeper fails runs
 // older than 1h. A failed enqueue is recorded as a FAILED run with the reason —
 // the failure must be visible in the UI, not just the journal.
-func dispatchAgentScan(ctx context.Context, queries *db.Queries, agentCmdSvc *service.AgentCommandService, taskID int64, targets string, timeout time.Duration, agentID string) {
+func dispatchAgentScan(ctx context.Context, dbConn *sql.DB, queries *db.Queries, agentCmdSvc *service.AgentCommandService, taskID int64, targets string, timeout time.Duration, agentID string, credentialID int64) {
 	// Supersede runs of this task a report never closed (agent down, or it
 	// only sent empty/heartbeat reports). Bounded lifetime: at most one cron
 	// period of "running" before the next dispatch sweeps it.
@@ -1396,10 +1397,24 @@ func dispatchAgentScan(ctx context.Context, queries *db.Queries, agentCmdSvc *se
 		}
 	}
 
-	cmd, err := agentCmdSvc.Enqueue(ctx, agentID, "scan", map[string]interface{}{
+	payload := map[string]interface{}{
 		"targets": targets,
 		"timeout": int(timeout.Seconds()),
-	})
+	}
+	// #241: forward the task's SNMP credential to the agent BY NAME — vault
+	// IDs are per-system (the agent resolves the name against its OWN local
+	// snmp_credentials store), and the name is non-secret metadata so no
+	// master key is needed here. A missing/unresolvable name on the agent
+	// degrades to its global community, preserving pre-#241 behavior.
+	if credentialID != 0 {
+		if name, err := credresolver.GetSNMPCredentialName(ctx, dbConn, credentialID); err == nil && name != "" {
+			payload["credential_name"] = name
+		} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			slog.Warn("agent dispatch: credential name lookup failed; scan falls back to the agent community",
+				"task_id", taskID, "credential_id", credentialID, "error", err)
+		}
+	}
+	cmd, err := agentCmdSvc.Enqueue(ctx, agentID, "scan", payload)
 	if err != nil {
 		slog.Error("agent dispatch: enqueue failed", "task_id", taskID, "agent_id", agentID, "targets", targets, "error", err)
 		finishRun("failed", err.Error())

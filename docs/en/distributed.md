@@ -153,6 +153,34 @@ Commands are **best-effort**: commands enqueued while the agent is offline never
 
 > Historical note: this capability used to be driven by a deployment-side systemd timer plus a password-hardcoded shell script (login → command API). When the password rotated, the script failed silently and kept burning the admin account's failed-login counter, re-locking it indefinitely. With native scheduling, such external scripts should be retired — rotating the password no longer has hidden consumers.
 
+### Agent-side SNMP credentials (#241)
+
+Agents can probe SNMPv3 (USM auth/priv) devices in their remote LAN via a **local credential vault** — a `snmp_credentials` table in the agent's own mini-DB, encrypted AES-256-GCM with the **agent's** `security.master_key`. The key is deliberately independent of the center's master key: an agent box compromise exposes only that agent's credentials, never the center's vault (and vice versa). No credential material ever crosses the agent↔center channel.
+
+Setup on the agent host:
+
+```bash
+# 1. A 32-byte master key in agent.yaml (or MIBEE_SECURITY_MASTER_KEY):
+#    security:
+#      master_key: "<exactly-32-bytes>"
+
+# 2. Provision credentials (flag > env > stdin prompt for passphrases):
+mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action add \
+  -name switch-v3 -security-level authPriv -username snmpadmin \
+  -auth-protocol SHA -priv-protocol AES
+mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action list
+mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action remove -name switch-v3
+
+# 3. Restart the agent so the resolver picks up the vault.
+```
+
+Two binding paths:
+
+- **Local scan tasks**: set `credential_id` on the agent's `scan_tasks` row (local vault ID) — the scheduler passes it straight into the engine.
+- **Center-dispatched tasks**: a center `scan_tasks` row with a center-vault credential dispatches with `credential_name` in the scan payload; the agent resolves the **name** against its own vault (IDs are per-system, names are the cross-system key). Give the agent-side credential the same name as the center's.
+
+Degrade semantics are uniform: no master key, an unknown name, or a stale ID all fall back to the agent's global `scanner.snmp_community` with a warning — a misconfigured vault never fails a scan.
+
 ### Vantage probing (#277)
 
 Synthetic probe targets declare **where** they run via their `vantage` field — the same endpoint can legitimately answer differently depending on which network asks:

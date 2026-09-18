@@ -33,7 +33,7 @@ import (
 // (that is exactly how #337 happened).
 var agentSharedTables = []string{
 	"networks", "vlans", "scan_tasks", "scan_task_runs",
-	"scan_results", "heartbeat_configs", "devices",
+	"scan_results", "heartbeat_configs", "devices", "snmp_credentials",
 }
 
 func tableColumns(t *testing.T, conn *sql.DB, table string) []string {

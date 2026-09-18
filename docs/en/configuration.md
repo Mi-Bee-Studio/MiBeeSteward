@@ -488,7 +488,7 @@ The distributed-mode switch: with `center.url` set, this instance runs as an **a
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `security.master_key` | string | "" | AES-GCM master key (must be exactly 32 bytes). Used for encrypted storage of SNMPv3 and SSH credentials. Empty = credential encryption disabled (falls back to v1/v2c community strings). |
+| `security.master_key` | string | "" | AES-GCM master key (must be exactly 32 bytes). Used for encrypted storage of SNMPv3 and SSH credentials. Empty = credential encryption disabled (falls back to v1/v2c community strings). In agent mode this key protects the agent's OWN local SNMP credential vault (#241) — it is independent of the center's key by design. |
 
 **Example:**
 ```yaml

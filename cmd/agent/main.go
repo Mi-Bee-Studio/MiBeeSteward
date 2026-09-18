@@ -52,6 +52,14 @@ var (
 )
 
 func main() {
+	// Subcommand dispatch (before flag.Parse — the subcommand owns its own
+	// flag set, mirroring cmd/server's reset-admin-password/doctor pattern).
+	// `snmp-credential` provisions the agent-local SNMP credential vault (#241).
+	if len(os.Args) > 1 && os.Args[1] == "snmp-credential" {
+		snmpCredentialSubcommand(os.Args[2:])
+		return
+	}
+
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("mibee-agent", version.Version)
@@ -94,6 +102,15 @@ func main() {
 	defer dbConn.Close()
 	queries := db.New(dbConn)
 
+	// Agent-side SNMP credential vault (#241, issue 方案 B): the agent owns a
+	// LOCAL snmp_credentials table in its mini-DB, encrypted with the AGENT's
+	// own security.master_key — deliberately NOT the center's key, so the two
+	// trust domains stay separate (an agent box compromise exposes only that
+	// agent's credentials). Empty master key = vault disabled; scans fall back
+	// to the global v1/v2c community exactly as before. Credentials are
+	// provisioned via `mibee-agent snmp-credential` (credential.go).
+	agentCredResolver := buildAgentCredentialResolver(dbConn, cfg)
+
 	// Engine: same construction as the center (routes.go), minus center-only
 	// concerns. dbConn lets the engine's store write the local shadow devices.
 	scannerPortSpec := cfg.Scanner.PipelineDefaults.DefaultPorts
@@ -110,6 +127,7 @@ func main() {
 		OUIPath:            cfg.Scanner.OUIPath,
 		FingerprintPath:    cfg.Scanner.FingerprintPath,
 		SNMPCommunity:      cfg.Scanner.SNMPCommunity,
+		CredResolver:       agentCredResolver,
 		RouterARP: scannerv2probe.RouterARPConfig{
 			Routers:   cfg.Scanner.RouterARP.Routers,
 			Community: cfg.Scanner.SNMPCommunity,
@@ -158,13 +176,14 @@ func main() {
 					slog.Error("scan_func_panic", "task_id", taskID, "panic", r)
 				}
 			}()
-			// Agent-side v3 credential support is intentionally deferred (TODO
-			// issue #135): it requires the agent to hold its own credential DB
-			// + master key, which is a larger distributed-credentials design.
-			// For now the agent ignores credential_id and uses its global v1/v2c
-			// community. Passing 0 here preserves the existing behavior.
-			_ = credentialID
-			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence, 0)
+			// Agent-side SNMP credentials (#241): the task's credential_id now
+			// references the agent's LOCAL vault (credential.go provisions it).
+			// A stale reference degrades to a community scan with a warning
+			// instead of aborting the run — the engine's ResolveByID contract
+			// treats a hard error as fatal, which is right for the center but
+			// too strict for an operator-maintained agent mini-DB.
+			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence,
+				resolveAgentCredentialID(ctx, agentCredResolver, credentialID))
 		}, slog.Default())
 	if schedErr != nil {
 		slog.Error("failed to create scan scheduler", "error", schedErr)
@@ -308,14 +327,18 @@ func main() {
 	// directly (avoids an import cycle). Commands are best-effort — the agent's
 	// own cron scheduler is the primary scan driver.
 	cmdPoller := agent.NewCommandPoller(cfg.Center.URL, cfg.Center.AuthToken, 60*time.Second, cfg.Network.CIDR,
-		func(ctx context.Context, targets string, timeoutSec int) (string, error) {
+		func(ctx context.Context, sp agent.ScanCommand) (string, error) {
 			if scanRunner == nil {
 				return "", fmt.Errorf("scan engine not initialized")
 			}
-			to := time.Duration(timeoutSec) * time.Second
+			to := time.Duration(sp.Timeout) * time.Second
 			if to <= 0 {
 				to = time.Duration(cfg.Scanner.DefaultTimeout) * time.Second
 			}
+			// #241: a center-dispatched task references its credential by NAME
+			// (IDs are per-system); resolve against the local vault. Unknown
+			// name → community fallback with a warning (logged by the helper).
+			credentialID := resolveAgentCredentialName(ctx, dbConn, agentCredResolver, sp.CredentialName)
 			// Create a transient local task row so the run is recorded in the
 			// agent's mini-DB (run history). taskID=0 → a throwaway row.
 			run, err := queries.CreateScanTaskRun(ctx, db.CreateScanTaskRunParams{
@@ -324,8 +347,8 @@ func main() {
 			if err != nil {
 				return "", fmt.Errorf("create run: %w", err)
 			}
-			scanRunner.Run(ctx, run.ID, targets, to, cfg.Scanner.MaxConcurrentHosts, cfg.Scanner.PersistRawEvidence, 0)
-			return fmt.Sprintf(`{"run_id":%d,"targets":"%s"}`, run.ID, targets), nil
+			scanRunner.Run(ctx, run.ID, sp.Targets, to, cfg.Scanner.MaxConcurrentHosts, cfg.Scanner.PersistRawEvidence, credentialID)
+			return fmt.Sprintf(`{"run_id":%d,"targets":"%s"}`, run.ID, sp.Targets), nil
 		}, slog.Default())
 	cmdPoller.SetProber(prober)
 	if cfg.Center.RemoteOpsEnabled {
@@ -455,6 +478,25 @@ CREATE TABLE IF NOT EXISTS vlans (
 	description TEXT, network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
 	first_seen DATETIME, last_seen DATETIME, UNIQUE(vlan_tag, network_id)
 );
+-- Agent-local SNMP credential vault (#241): same shape as the center's
+-- snmp_credentials (db/schema.sql) so the raw-SQL store helpers in
+-- internal/service/scannerv2/credresolver work unchanged against it. The
+-- passphrases are AES-256-GCM blobs under the AGENT's security.master_key.
+CREATE TABLE IF NOT EXISTS snmp_credentials (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL UNIQUE,
+	security_level TEXT NOT NULL,
+	community TEXT NOT NULL DEFAULT '',
+	username TEXT NOT NULL DEFAULT '',
+	auth_protocol TEXT NOT NULL DEFAULT '',
+	auth_passphrase_enc TEXT NOT NULL DEFAULT '',
+	priv_protocol TEXT NOT NULL DEFAULT '',
+	priv_passphrase_enc TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_snmp_credentials_name ON snmp_credentials(name);
 CREATE TABLE IF NOT EXISTS scan_tasks (
 	id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, targets TEXT NOT NULL,
 	cron_expr TEXT NOT NULL DEFAULT '0 */6 * * *', pipeline_config TEXT NOT NULL DEFAULT '{}',

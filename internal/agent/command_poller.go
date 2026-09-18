@@ -54,11 +54,11 @@ type CommandPoller struct {
 	// backstop, so the agent skipping its own check doesn't weaken the system.
 	networkCIDR *net.IPNet
 
-	// runScan executes a "scan" command's payload (targets/timeout) and returns
-	// a result summary or error. Injected by cmd/agent so the poller doesn't
-	// depend on the runner package (avoids an import cycle: runner → store, and
-	// this package already imports domain).
-	runScan func(ctx context.Context, targets string, timeoutSec int) (string, error)
+	// runScan executes a "scan" command's payload and returns a result summary
+	// or error. Injected by cmd/agent so the poller doesn't depend on the
+	// runner package (avoids an import cycle: runner → store, and this package
+	// already imports domain).
+	runScan func(ctx context.Context, sp ScanCommand) (string, error)
 
 	// remoteOpsEnabled gates the ops command family (restart / config-reload /
 	// logs-tail, #278). Off by default: the agent must explicitly opt in via
@@ -87,7 +87,7 @@ func (p *CommandPoller) SetProber(pr *Prober) {
 	p.prober = pr
 }
 
-func NewCommandPoller(centerURL, authToken string, pollEvery time.Duration, networkCIDR string, runScan func(context.Context, string, int) (string, error), logger *slog.Logger) *CommandPoller {
+func NewCommandPoller(centerURL, authToken string, pollEvery time.Duration, networkCIDR string, runScan func(context.Context, ScanCommand) (string, error), logger *slog.Logger) *CommandPoller {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -167,11 +167,17 @@ type pendingCommand struct {
 	Payload string `json:"payload"`
 }
 
-// scanPayload is the JSON payload of a "scan" command.
-type scanPayload struct {
-	Targets    string `json:"targets"`
-	Timeout    int    `json:"timeout"`
-	Concurrent int    `json:"concurrent"`
+// ScanCommand is the JSON payload of a "scan" command. CredentialName is the
+// #241 agent-side SNMP credential hook: the center resolves a scan task's
+// credential_id to its NAME (stable across systems — center and agent vault
+// IDs are independent) and the agent looks the name up in its OWN local
+// snmp_credentials store. Empty name = the engine's global community path
+// (pre-#241 behavior). The credential material itself never crosses the wire.
+type ScanCommand struct {
+	Targets        string `json:"targets"`
+	Timeout        int    `json:"timeout"`
+	Concurrent     int    `json:"concurrent"`
+	CredentialName string `json:"credential_name,omitempty"`
 }
 
 // PollOnceForTest runs one poll synchronously (test hook — the real loop
@@ -230,7 +236,7 @@ func (p *CommandPoller) execute(ctx context.Context, cmd pendingCommand) {
 	status := "done"
 	switch cmd.Command {
 	case "scan":
-		var sp scanPayload
+		var sp ScanCommand
 		if err := json.Unmarshal([]byte(cmd.Payload), &sp); err != nil {
 			result = fmt.Sprintf(`{"error":"bad payload: %s"}`, err.Error())
 			status = "failed"
@@ -282,7 +288,7 @@ func (p *CommandPoller) execute(ctx context.Context, cmd pendingCommand) {
 		}
 		scanCtx, cancel := context.WithTimeout(context.Background(), deadline)
 		defer cancel()
-		summary, err := p.runScan(scanCtx, sp.Targets, sp.Timeout)
+		summary, err := p.runScan(scanCtx, sp)
 		if err != nil {
 			result = fmt.Sprintf(`{"error":"%s"}`, err.Error())
 			status = "failed"
