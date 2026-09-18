@@ -252,14 +252,9 @@ func (h *HeartbeatHandler) ListResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
-
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 500 {
-		limit = 500
+	limit, offset, ok := ParsePagination(w, r, 50, 500)
+	if !ok {
+		return
 	}
 
 	startDate := q.Get("start_date")
@@ -283,10 +278,7 @@ func (h *HeartbeatHandler) ListResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Success(w, domain.HeartbeatResultListResponse{
-		Results: results,
-		Total:   len(results),
-	})
+	SuccessList(w, "results", results, int64(len(results)), limit, offset)
 }
 
 // ListHistory handles GET /api/v1/devices/{id}/heartbeat-history
@@ -298,8 +290,10 @@ func (h *HeartbeatHandler) ListHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 50, 500)
+	if !ok {
+		return
+	}
 
 	from, err := time.Parse(time.RFC3339, q.Get("from"))
 	if err != nil {
@@ -329,7 +323,7 @@ func (h *HeartbeatHandler) ListHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Success(w, resp)
+	SuccessList(w, "results", resp.Results, int64(resp.Total), limit, offset)
 }
 
 // GetStats handles GET /api/v1/devices/{id}/heartbeat-stats

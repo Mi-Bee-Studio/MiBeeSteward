@@ -216,9 +216,9 @@
 	// form degrades to center/all options when this fails.
 	async function fetchAgents() {
 		try {
-			const nets = await api.get<Network[]>('/networks');
+			const netsRes = await api.get<{ networks: Network[]; total: number }>('/networks');
 			const ids = new Set<string>();
-			for (const n of nets || []) {
+			for (const n of netsRes.networks || []) {
 				if (n.agent_id) ids.add(n.agent_id);
 			}
 			agentIds = [...ids].sort();

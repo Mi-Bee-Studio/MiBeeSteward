@@ -38,6 +38,52 @@ Complete REST API documentation for the MiBee Steward device management and moni
 - **Error envelope**: All errors use `{"error": "message"}` format
 - **Capability gating**: Endpoints are gated by capability matrix rather than a uniform role check (see [Authentication & Accounts](#authentication--accounts))
 
+## API Contract (#274)
+
+The conventions every endpoint follows. The machine-readable form of this section is [`docs/openapi.yaml`](../openapi.yaml) (kept in sync with the implementation by a CI parity test); this is the prose contract.
+
+### List envelope
+
+Every list endpoint returns an **object**, never a top-level array:
+
+```json
+{ "<resource>": [ ... ], "total": 42, "limit": 20, "offset": 0 }
+```
+
+- `<resource>` is the plural resource key (`devices`, `users`, `changes`, `audit_logs`, ...). One key per endpoint — see [Pagination](#pagination) for the per-endpoint keys.
+- `total` is the **filtered count** (rows matching the query, not the page size). Two deliberate exceptions: `GET /notification/logs` carries the caller's **unread** count (the header badge), and `GET /scanner/scan` is a scan result, not a list.
+- `limit`/`offset` echo the **effective** pagination (after defaults and clamping), so a client can detect a server-side clamp. Complete, unpaginated collections (`GET /networks`, `GET /networks/{id}/vlans`, `GET /agents/tokens`, `GET /agents/status`, `GET /notification/channels|rules`, topology graph, per-device sub-lists) omit them and always return every row.
+- Machine channel exception: `GET /agents/commands` (the agent poller endpoint) still returns a bare array — it is a fleet-internal contract consumed by deployed agent binaries, not a public integration surface; wrapping it would break every agent until upgraded.
+
+### Error model
+
+```json
+{ "error": "human-readable message" }
+```
+
+One field, always present on non-2xx JSON responses (middleware and handlers share the shape). Status codes: 400 malformed input, 401 unauthenticated, 403 forbidden (capability/scope/CSRF), 404 not found (also used for out-of-scope resources — indistinguishable by design), 409 conflict (duplicate name), 413 payload too large (sync scan > 1024 IPs), 422 semantically invalid batch, 429 rate limited, 503 feature disabled (e.g. credential vault without master key).
+
+### Pagination
+
+`limit` / `offset` query parameters, policy enforced identically everywhere (`ParsePagination`):
+
+- absent (or `0`) → endpoint default
+- **malformed or negative → 400**
+- **over the endpoint max → clamped to the max** (never an error; detect via the echoed `limit`)
+
+| Endpoint family | default | max |
+|---|---|---|
+| devices, users, documents, scanner results/runs/tasks, probe targets, device systems, notification logs | 20 | 100 |
+| changes, agent commands (all), network grants | 50 | 200 |
+| heartbeat results/history, audit logs | 50 | 500 |
+| device config versions | 100 | 1000 |
+| SNMP credentials | 100 | 1000 |
+| SSH credentials | 50 | 200 |
+
+### Timestamps
+
+All timestamps are RFC 3339 strings. Storage-derived fields carry the server's zone offset; integrators should parse with a full RFC 3339 parser (not a bare date parser).
+
 ### Middleware Chain
 
 Every request passes through the following middleware in source registration order:
@@ -1352,14 +1398,9 @@ The following endpoints are not under the `/api/v1` prefix and **require no auth
 
 ## Pagination
 
-List endpoints use `limit` and `offset` query parameters:
+List endpoints use `limit` and `offset` query parameters under the [API Contract](#api-contract-274) policy: absent/0 → endpoint default, malformed or negative → 400, over-max → clamped (detectable via the echoed `limit`). Per-endpoint defaults/maxima are tabulated in the contract section.
 
-- `limit`: Number of results (default: 20, max: 100 — applies to devices/users/documents/scanner-results)
-- `offset`: Pagination offset (default: 0)
-
-Exceptions: the changes list (`/changes`) uses default 50 / max 200; heartbeat results (`/heartbeat-results`) use default 50 / max 500.
-
-Responses use the `{ "<items>": [...], "total": <int> }` envelope, where `total` is the filtered count.
+Responses use the `{ "<items>": [...], "total": <int>, "limit": <int>, "offset": <int> }` envelope, where `total` is the filtered count and limit/offset echo the effective pagination.
 
 ## Rate Limiting
 

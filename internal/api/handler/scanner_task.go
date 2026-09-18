@@ -52,8 +52,10 @@ func (h *ScannerTaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) 
 func (h *ScannerTaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 	search := q.Get("search")
 
 	tasks, total, err := h.service.ListTasks(r.Context(), search, int(limit), int(offset), domain.ScopeFromContext(r.Context()))
@@ -62,10 +64,7 @@ func (h *ScannerTaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Success(w, domain.ScanTaskListResponse{
-		Tasks: tasks,
-		Total: int(total),
-	})
+	SuccessList(w, "tasks", tasks, total, limit, offset)
 }
 
 // GetTask handles GET /api/v1/scanner/tasks/{id}
@@ -203,9 +202,10 @@ func (h *ScannerTaskHandler) GetTaskRuns(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 
 	runs, total, err := h.service.GetTaskRuns(r.Context(), int(id), int(limit), int(offset), domain.ScopeFromContext(r.Context()))
 	if err != nil {
@@ -217,10 +217,7 @@ func (h *ScannerTaskHandler) GetTaskRuns(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	Success(w, domain.ScanRunListResponse{
-		Runs:  runs,
-		Total: int(total),
-	})
+	SuccessList(w, "runs", runs, total, limit, offset)
 }
 
 // GetTaskResults handles GET /api/v1/scanner/tasks/{id}/results
@@ -230,9 +227,10 @@ func (h *ScannerTaskHandler) GetTaskResults(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 
 	results, total, err := h.service.GetTaskResults(r.Context(), int(id), int(limit), int(offset), domain.ScopeFromContext(r.Context()))
 	if err != nil {
@@ -244,10 +242,7 @@ func (h *ScannerTaskHandler) GetTaskResults(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	Success(w, domain.ScanResultListResponse{
-		Results: results,
-		Total:   int(total),
-	})
+	SuccessList(w, "results", results, total, limit, offset)
 }
 
 // parseScanID extracts and validates the {id} path parameter for scan resources.

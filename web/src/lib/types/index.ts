@@ -445,11 +445,21 @@ export interface System {
 // API Response wrappers
 // ---------------------------------------------------------------------------
 
-export interface PaginatedResponse<T> {
-	data: T[];
+// #274: the authoritative API types are GENERATED from docs/openapi.yaml
+// (npm run gen:api → src/lib/api/schema.d.ts, drift-checked in CI). The
+// hand-written interfaces below predate the contract and are migrated to the
+// generated schemas incrementally; new response types should come from
+// `ApiComponents['schemas']`, not be written by hand.
+export type { components as ApiComponents, paths as ApiPaths } from '$lib/api/schema';
+
+// Generic list envelope of the API contract (#274): every paginated endpoint
+// responds {<resource>: [...], total, limit, offset} (complete lists omit
+// limit/offset). Replaces the old PaginatedResponse whose `data` key matched
+// no backend endpoint.
+export interface ListEnvelope {
 	total: number;
-	limit: number;
-	offset: number;
+	limit?: number;
+	offset?: number;
 }
 
 export interface LoginResponse {

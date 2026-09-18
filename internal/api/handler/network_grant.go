@@ -83,9 +83,10 @@ func (h *NetworkGrantHandler) Create(w http.ResponseWriter, r *http.Request) {
 // List handles GET /api/v1/network-grants (admin view of every grant, joined to
 // username + network name). Paginated by limit/offset.
 func (h *NetworkGrantHandler) List(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 50, 200)
+	if !ok {
+		return
+	}
 	grants, total, err := scoperesolver.ListAll(r.Context(), h.db, int(limit), int(offset))
 	if err != nil {
 		slog.Error("network grant: list", "error", err)
@@ -99,7 +100,7 @@ func (h *NetworkGrantHandler) List(w http.ResponseWriter, r *http.Request) {
 			NetworkID: g.NetworkID, NetworkName: g.NetworkName, GrantedAt: g.GrantedAt,
 		})
 	}
-	Success(w, map[string]any{"grants": out, "total": total})
+	SuccessList(w, "grants", out, int64(total), limit, offset)
 }
 
 // ListByUser handles GET /api/v1/users/{id}/network-grants — the networks a user

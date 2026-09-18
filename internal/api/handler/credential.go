@@ -135,7 +135,10 @@ func (h *CredentialHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // List handles GET /api/v1/snmp-credentials
 func (h *CredentialHandler) List(w http.ResponseWriter, r *http.Request) {
-	limit, offset := parseListPaging(r)
+	limit, offset, ok := ParsePagination(w, r, 100, 1000)
+	if !ok {
+		return
+	}
 	rows, err := credresolver.ListSNMPCredentials(r.Context(), h.db, limit, offset)
 	if err != nil {
 		slog.Error("list credentials", "error", err)
@@ -147,7 +150,7 @@ func (h *CredentialHandler) List(w http.ResponseWriter, r *http.Request) {
 		out = append(out, maskedRowToResponse(row))
 	}
 	total, _ := credresolver.CountSNMPCredentials(r.Context(), h.db)
-	Success(w, map[string]any{"credentials": out, "total": total})
+	SuccessList(w, "credentials", out, total, limit, offset)
 }
 
 // Get handles GET /api/v1/snmp-credentials/{id}
@@ -384,22 +387,6 @@ func parseCredentialID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 		return 0, false
 	}
 	return id, true
-}
-
-func parseListPaging(r *http.Request) (int64, int64) {
-	limit := int64(100)
-	offset := int64(0)
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 && n <= 1000 {
-			limit = n
-		}
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
-			offset = n
-		}
-	}
-	return limit, offset
 }
 
 // isUniqueViolation reports whether err is SQLite's UNIQUE constraint failure.

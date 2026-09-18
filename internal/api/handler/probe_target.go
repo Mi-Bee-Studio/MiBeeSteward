@@ -59,8 +59,10 @@ func (h *ProbeTargetHandler) CreateTarget(w http.ResponseWriter, r *http.Request
 // ListTargets handles GET /api/v1/probe-targets
 func (h *ProbeTargetHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 	search := q.Get("search")
 
 	targets, total, err := h.service.List(r.Context(), search, int(limit), int(offset))
@@ -68,7 +70,7 @@ func (h *ProbeTargetHandler) ListTargets(w http.ResponseWriter, r *http.Request)
 		Error(w, http.StatusInternalServerError, "failed to list probe targets")
 		return
 	}
-	Success(w, domain.ProbeTargetListResponse{Targets: targets, Total: int(total)})
+	SuccessList(w, "targets", targets, total, limit, offset)
 }
 
 // GetTarget handles GET /api/v1/probe-targets/{id}
@@ -168,8 +170,10 @@ func (h *ProbeTargetHandler) GetTargetResults(w http.ResponseWriter, r *http.Req
 		return
 	}
 	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 20, 100)
+	if !ok {
+		return
+	}
 	vantage := strings.TrimSpace(q.Get("vantage"))
 	if vantage != "" {
 		if v, err := domain.NormalizeProbeVantage(vantage); err != nil {
@@ -190,7 +194,7 @@ func (h *ProbeTargetHandler) GetTargetResults(w http.ResponseWriter, r *http.Req
 		Error(w, http.StatusInternalServerError, "failed to list probe results")
 		return
 	}
-	Success(w, domain.ProbeResultListResponse{Results: results, Total: int(total)})
+	SuccessList(w, "results", results, total, limit, offset)
 }
 
 // GetTargetCertificates handles GET /api/v1/probe-targets/{id}/certificates —

@@ -32,8 +32,10 @@ func NewAuditHandler(svc *service.AuditService) *AuditHandler {
 func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
+	limit, offset, ok := ParsePagination(w, r, 50, 500)
+	if !ok {
+		return
+	}
 
 	var userID *int64
 	if uid := q.Get("user_id"); uid != "" {
@@ -83,7 +85,7 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Success(w, resp)
+	SuccessList(w, "audit_logs", resp.AuditLogs, int64(resp.Total), limit, offset)
 }
 
 // Facets handles GET /api/v1/audit-logs/facets — returns the distinct action

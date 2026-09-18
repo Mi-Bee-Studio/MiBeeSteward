@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "pretest": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:api": "openapi-typescript ../docs/openapi.yaml -o src/lib/api/schema.d.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",
@@ -20,6 +21,7 @@
     "@testing-library/svelte": "^5.4.2",
     "@types/qrcode": "^1.5.6",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "7.13.0",
     "svelte": "^5.56.4",
     "tailwindcss": "^4.3.2",
     "typescript": "^6.0.3",

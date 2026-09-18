@@ -103,7 +103,10 @@ func (h *DeviceConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to load device")
 		return
 	}
-	limit, offset := parseListPaging(r)
+	limit, offset, ok := ParsePagination(w, r, 100, 1000)
+	if !ok {
+		return
+	}
 	rows, err := h.queries.ListDeviceConfigs(r.Context(), db.ListDeviceConfigsParams{
 		DeviceID: deviceID, Limit: limit, Offset: offset,
 	})
@@ -127,7 +130,7 @@ func (h *DeviceConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to count device configs")
 		return
 	}
-	Success(w, map[string]any{"items": items, "total": total, "limit": limit, "offset": offset})
+	SuccessList(w, "items", items, total, limit, offset)
 }
 
 // Get handles GET /api/v1/devices/{id}/configs/{configId} — the full text of one

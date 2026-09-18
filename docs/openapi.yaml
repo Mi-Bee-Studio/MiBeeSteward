@@ -1,0 +1,1909 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# MiBee Steward — OpenAPI 3.0 specification of the /api/v1 surface.
+#
+# Contract source of truth for issue #274. Path+method parity with the real
+# router is enforced by internal/api/routes/openapi_parity_test.go (a route
+# added to the router without a matching entry here fails CI). Prose contract:
+# docs/en/api.md §"API Contract" — list envelope, error model, pagination.
+#
+# Conventions (see the prose contract for the full text):
+#   - List responses: { "<resource>": [...], total, limit?, offset? }
+#   - Errors: { "error": "<message>" }
+#   - Pagination: limit/offset; malformed or negative -> 400; over-max clamps
+#     (echoed limit reveals the effective value)
+#   - Timestamps: RFC 3339 strings
+openapi: 3.0.3
+info:
+  title: MiBee Steward API
+  description: |
+    Device management & monitoring system (CMDB-lite for network/IoT assets):
+    auto-discovery, identity inference, registry, heartbeat, synthetic
+    probing, distributed agents.
+
+    Auth for browser/user routes: JWT — cookie-first with Bearer header
+    fallback (`Authorization: Bearer <token>`). Machine routes (the
+    /api/v1/agents/{report,probe-report,commands,commands/{id}/...} family)
+    use per-agent bearer tokens minted by an admin.
+  version: 0.6.0
+  license:
+    name: AGPL-3.0-or-later
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+servers:
+  - url: /api/v1
+tags:
+  - {name: Health}
+  - {name: Auth}
+  - {name: Users}
+  - {name: Devices}
+  - {name: Networks}
+  - {name: Scanner}
+  - {name: ProbeTargets}
+  - {name: Credentials}
+  - {name: Agents}
+  - {name: Changes}
+  - {name: Discovery}
+  - {name: Audit}
+  - {name: Documents}
+  - {name: Heartbeat}
+  - {name: Dashboard}
+  - {name: Topology}
+  - {name: Notifications}
+  - {name: Settings}
+  - {name: Fingerprints}
+  - {name: Metrics}
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness + version (public)
+      security: []
+      responses:
+        "200":
+          description: Service status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+                  version: {type: string}
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login (public, 10 req/min)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: {type: string}
+                password: {type: string}
+                totp_code: {type: string, description: "TOTP code when 2FA is enabled"}
+      responses:
+        "200":
+          description: Session token + user (or two_factor_required)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LoginResponse"}
+        "401": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Invalidate the current session
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Self-register (disabled unless demo mode; public)
+      security: []
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+        "403": {$ref: "#/components/responses/Error"}
+  /auth/setup-status:
+    get:
+      tags: [Auth]
+      summary: First-run password setup status (public)
+      security: []
+      responses:
+        "200":
+          description: Whether the browser-guided admin bootstrap is pending
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setup_required: {type: boolean}
+  /auth/setup:
+    post:
+      tags: [Auth]
+      summary: One-time admin password bootstrap (public; 409 once used)
+      security: []
+      responses:
+        "200":
+          description: Full session for the newly-created admin
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LoginResponse"}
+        "409": {$ref: "#/components/responses/Error"}
+  /auth/password-policy:
+    get:
+      tags: [Auth]
+      summary: Effective password policy (public; login form hints)
+      security: []
+      responses:
+        "200":
+          description: Policy object
+          content:
+            application/json:
+              schema: {type: object}
+  /auth/profile:
+    get:
+      tags: [Auth]
+      summary: Current user profile
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/User"}
+    put:
+      tags: [Auth]
+      summary: Update own profile (email / display name)
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/User"}
+  /auth/password:
+    put:
+      tags: [Auth]
+      summary: Change own password
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+        "400": {$ref: "#/components/responses/Error"}
+  /auth/force-password:
+    put:
+      tags: [Auth]
+      summary: Complete forced first-login password change (clears the mcp gate)
+      responses:
+        "200":
+          description: Fresh session without the password_change_required claim
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LoginResponse"}
+  /auth/2fa/status:
+    get:
+      tags: [Auth]
+      summary: TOTP 2FA enrollment status for the current user
+      responses:
+        "200": {description: "{enabled: boolean}"}
+  /auth/2fa/verify:
+    post:
+      tags: [Auth]
+      summary: Verify a TOTP code during login (public + login rate limit)
+      security: []
+      responses:
+        "200":
+          description: Session token
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LoginResponse"}
+  /auth/2fa/setup:
+    post:
+      tags: [Auth]
+      summary: Begin TOTP enrollment (returns the secret + otpauth URL)
+      responses:
+        "200": {description: "{secret, otpauth_url}"}
+  /auth/2fa/enable:
+    post:
+      tags: [Auth]
+      summary: Confirm TOTP enrollment with a valid code
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /auth/2fa/disable:
+    post:
+      tags: [Auth]
+      summary: Remove TOTP (requires a valid code)
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+
+  /users:
+    get:
+      tags: [Users]
+      summary: List users (admin)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: search, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: User list envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UserList"}
+  /users/batch-delete:
+    post:
+      tags: [Users]
+      summary: Bulk-delete users (admin)
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /users/{id}/reset-password:
+    post:
+      tags: [Users]
+      summary: Admin resets another user's password
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /users/{id}/network-grants:
+    get:
+      tags: [Users]
+      summary: Networks granted to a user (scope editor source)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Grants envelope (complete list)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NetworkGrantList"}
+
+  /network-grants:
+    get:
+      tags: [Users]
+      summary: All network grants (admin)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+      responses:
+        "200":
+          description: Grants envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NetworkGrantList"}
+    post:
+      tags: [Users]
+      summary: Grant a user access to a network
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+        "409": {$ref: "#/components/responses/Error"}
+  /network-grants/{id}:
+    delete:
+      tags: [Users]
+      summary: Revoke a grant
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Revoked}
+
+  /devices:
+    get:
+      tags: [Devices]
+      summary: List devices (filters status/type/search/sort/order/network_id/created_from/created_to)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: status, in: query, schema: {type: string}}
+        - {name: type, in: query, schema: {type: string}}
+        - {name: search, in: query, schema: {type: string}}
+        - {name: sort, in: query, schema: {type: string}}
+        - {name: order, in: query, schema: {type: string, enum: [asc, desc]}}
+        - {name: network_id, in: query, schema: {type: integer}}
+      responses:
+        "200":
+          description: Device list envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceList"}
+    post:
+      tags: [Devices]
+      summary: Create a device (manual entry)
+      responses:
+        "201":
+          description: Created device
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Device"}
+  /devices/export:
+    get:
+      tags: [Devices]
+      summary: CSV/JSON export (query mirrors the list endpoint)
+      responses:
+        "200": {description: File download}
+  /devices/stats:
+    get:
+      tags: [Devices]
+      summary: Status/type counters
+      responses:
+        "200": {description: "{by_status: {...}}"}
+  /devices/{id}:
+    get:
+      tags: [Devices]
+      summary: One device (out-of-scope = 404)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Device
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Device"}
+        "404": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [Devices]
+      summary: Update editable device fields
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Updated device
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Device"}
+    delete:
+      tags: [Devices]
+      summary: Delete a device (cascades satellites)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /devices/batch-delete:
+    post:
+      tags: [Devices]
+      summary: Bulk delete
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /devices/batch-update-status:
+    post:
+      tags: [Devices]
+      summary: Bulk status change
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /devices/{id}/systems:
+    get:
+      tags: [Devices]
+      summary: Device system entries (hardware/OS/license inventory)
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: category, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: Systems envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceSystemList"}
+    post:
+      tags: [Devices]
+      summary: Add a system entry
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+  /devices/{id}/systems/{systemId}:
+    get:
+      tags: [Devices]
+      summary: One system entry
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: systemId, in: path, required: true, schema: {type: integer}}
+      responses:
+        "200": {description: System entry}
+    put:
+      tags: [Devices]
+      summary: Update a system entry
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: systemId, in: path, required: true, schema: {type: integer}}
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+    delete:
+      tags: [Devices]
+      summary: Delete a system entry
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: systemId, in: path, required: true, schema: {type: integer}}
+      responses:
+        "204": {description: Deleted}
+  /devices/{id}/neighbors:
+    get:
+      tags: [Devices]
+      summary: LLDP/CDP/Bridge-MIB neighbors of a device
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Neighbors envelope (complete list)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NeighborList"}
+  /devices/{id}/certificates:
+    get:
+      tags: [Devices]
+      summary: TLS certificate chains seen on the device's services
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Certificates envelope (complete list)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CertificateList"}
+  /devices/{id}/configs:
+    get:
+      tags: [Devices]
+      summary: SSH config-backup versions (404 on unknown device)
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+      responses:
+        "200":
+          description: Config versions envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceConfigList"}
+        "404": {$ref: "#/components/responses/Error"}
+  /devices/{id}/configs/diff:
+    get:
+      tags: [Devices]
+      summary: Unified diff between two versions (?a=&b=)
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: a, in: query, required: true, schema: {type: integer}}
+        - {name: b, in: query, required: true, schema: {type: integer}}
+      responses:
+        "200": {description: Diff payload}
+  /devices/{id}/configs/{configId}:
+    get:
+      tags: [Devices]
+      summary: Full text of one config version
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: configId, in: path, required: true, schema: {type: integer}}
+      responses:
+        "200": {description: Config detail}
+        "404": {$ref: "#/components/responses/Error"}
+  /devices/{id}/documents:
+    get:
+      tags: [Documents]
+      summary: Documents linked to a device
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Documents envelope (complete list)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceDocumentList"}
+    post:
+      tags: [Documents]
+      summary: Link a document to a device
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+  /devices/{id}/documents/{docId}:
+    delete:
+      tags: [Documents]
+      summary: Unlink a document
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: docId, in: path, required: true, schema: {type: integer}}
+      responses:
+        "204": {description: Unlinked}
+  /devices/{uuid}/fingerprint-draft:
+    post:
+      tags: [Fingerprints]
+      summary: Draft a fingerprint rule from a device's accumulated evidence
+      parameters:
+        - {name: uuid, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: YAML rule draft (text/yaml)}
+  /devices/{id}/heartbeat-configs:
+    get:
+      tags: [Heartbeat]
+      summary: Heartbeat probe configs of a device
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Configs envelope (complete list)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/HeartbeatConfigList"}
+    post:
+      tags: [Heartbeat]
+      summary: Add a heartbeat config (icmp/tcp/http/snmp)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+  /heartbeat-configs/{id}:
+    put:
+      tags: [Heartbeat]
+      summary: Update a heartbeat config
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+    delete:
+      tags: [Heartbeat]
+      summary: Delete a heartbeat config
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /devices/{id}/heartbeat-results:
+    get:
+      tags: [Heartbeat]
+      summary: Recent heartbeat results (time-window filter)
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: start_date, in: query, schema: {type: string, format: date-time}}
+        - {name: end_date, in: query, schema: {type: string, format: date-time}}
+      responses:
+        "200":
+          description: Results envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/HeartbeatResultList"}
+  /devices/{id}/heartbeat-results/export:
+    get:
+      tags: [Heartbeat]
+      summary: CSV export of heartbeat results
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: File download}
+  /devices/{id}/heartbeat-history:
+    get:
+      tags: [Heartbeat]
+      summary: Liveness time series (?from=&to=, max 90 days)
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: from, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
+      responses:
+        "200":
+          description: Liveness samples envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/HeartbeatResultList"}
+  /devices/{id}/heartbeat-stats:
+    get:
+      tags: [Heartbeat]
+      summary: Online ratio / offline duration aggregates
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Stats object}
+
+  /networks:
+    get:
+      tags: [Networks]
+      summary: All logical networks (complete list, {networks,total})
+      responses:
+        "200":
+          description: Networks envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NetworkList"}
+    post:
+      tags: [Networks]
+      summary: Register a logical network
+      responses:
+        "201":
+          description: Created network
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Network"}
+  /networks/{id}:
+    get:
+      tags: [Networks]
+      summary: One network
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Network
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Network"}
+        "404": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [Networks]
+      summary: Update name/cidr/site (agent_id is managed via tokens)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Updated network
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Network"}
+    delete:
+      tags: [Networks]
+      summary: Delete a network (devices' network_id set null)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /networks/{id}/vlans:
+    get:
+      tags: [Networks]
+      summary: 802.1Q VLANs observed on a network
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: VLANs envelope (complete list)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/VLANList"}
+
+  /scanner/scan:
+    post:
+      tags: [Scanner]
+      summary: Synchronous scan (max 1024 IPs — larger ranges must use tasks)
+      responses:
+        "200": {description: "{hosts, total, alive, duration_ms}"}
+        "413": {$ref: "#/components/responses/Error"}
+  /scanner/add-devices:
+    post:
+      tags: [Scanner]
+      summary: Import scan results as manual devices
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+        "422": {$ref: "#/components/responses/Error"}
+  /scanner/tasks:
+    get:
+      tags: [Scanner]
+      summary: Scan tasks
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: search, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: Tasks envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScanTaskList"}
+    post:
+      tags: [Scanner]
+      summary: Create a scan task (cron schedule; agent-network targets auto-dispatch)
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScanTask"}
+  /scanner/tasks/{id}:
+    get:
+      tags: [Scanner]
+      summary: One task (pipeline_config is an object, not a string)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Task
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScanTask"}
+    put:
+      tags: [Scanner]
+      summary: Update a task
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScanTask"}
+    delete:
+      tags: [Scanner]
+      summary: Delete a task
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /scanner/tasks/{id}/trigger:
+    post:
+      tags: [Scanner]
+      summary: Trigger a run now (rate-limited 10/min)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "202": {description: Run queued}
+  /scanner/tasks/{id}/cancel:
+    post:
+      tags: [Scanner]
+      summary: Cancel the in-flight run
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /scanner/tasks/{id}/runs:
+    get:
+      tags: [Scanner]
+      summary: Run history of a task
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+      responses:
+        "200":
+          description: Runs envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScanRunList"}
+  /scanner/tasks/{id}/results:
+    get:
+      tags: [Scanner]
+      summary: Latest results of a task
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+      responses:
+        "200":
+          description: Results envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScanResultList"}
+  /scanner/runs:
+    get:
+      tags: [Scanner]
+      summary: All runs (filter task_id)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: task_id, in: query, schema: {type: integer}}
+      responses:
+        "200":
+          description: Runs envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScanRunList"}
+  /scanner/runs/{id}:
+    get:
+      tags: [Scanner]
+      summary: One run
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScanRun"}
+  /scanner/results:
+    get:
+      tags: [Scanner]
+      summary: Browse results (task_id/ip/alive/sort/order filters)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: task_id, in: query, schema: {type: integer}}
+        - {name: ip, in: query, schema: {type: string}}
+        - {name: alive, in: query, schema: {type: string, enum: ["0", "1"]}}
+        - {name: sort, in: query, schema: {type: string}}
+        - {name: order, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: Results envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScanResultList"}
+    delete:
+      tags: [Scanner]
+      summary: Bulk delete results (retention helper)
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /scanner/results/{id}:
+    get:
+      tags: [Scanner]
+      summary: One result row
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Result}
+  /scanner/results/export:
+    get:
+      tags: [Scanner]
+      summary: CSV export of results
+      responses:
+        "200": {description: File download}
+
+  /probe-targets:
+    get:
+      tags: [ProbeTargets]
+      summary: Synthetic probing targets (search filter)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: search, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: Targets envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeTargetList"}
+    post:
+      tags: [ProbeTargets]
+      summary: Create a probe target (http/tcp/icmp/snmp; vantage center|agent:..|all)
+      responses:
+        "201":
+          description: Created target
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeTarget"}
+  /probe-targets/{id}:
+    get:
+      tags: [ProbeTargets]
+      summary: One target
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Target
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeTarget"}
+    put:
+      tags: [ProbeTargets]
+      summary: Update a target
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Updated target
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeTarget"}
+    delete:
+      tags: [ProbeTargets]
+      summary: Delete a target
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /probe-targets/{id}/trigger:
+    post:
+      tags: [ProbeTargets]
+      summary: Probe now (409 for agent-vantage targets on the center)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Result of the immediate probe}
+  /probe-targets/{id}/results:
+    get:
+      tags: [ProbeTargets]
+      summary: Result history (vantage filter)
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: vantage, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: Results envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeResultList"}
+  /probe-targets/{id}/certificates:
+    get:
+      tags: [ProbeTargets]
+      summary: Certificate chain collected by the prober
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Certificates envelope (complete list)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CertificateList"}
+
+  /snmp-credentials:
+    get:
+      tags: [Credentials]
+      summary: SNMP credentials (masked — passphrases never echoed)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+      responses:
+        "200":
+          description: Credentials envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SNMPCredentialList"}
+    post:
+      tags: [Credentials]
+      summary: Store a credential (requires security.master_key; 503 otherwise)
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+        "503": {$ref: "#/components/responses/Error"}
+  /snmp-credentials/{id}:
+    get:
+      tags: [Credentials]
+      summary: One credential (masked)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Masked credential}
+    put:
+      tags: [Credentials]
+      summary: Update (empty passphrase = keep)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Masked credential}
+    delete:
+      tags: [Credentials]
+      summary: Delete (bound tasks fall back to the global community)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /ssh-credentials:
+    get:
+      tags: [Credentials]
+      summary: SSH credentials (metadata only; {credentials,total,limit,offset})
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+      responses:
+        "200":
+          description: Credentials envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SSHCredentialList"}
+    post:
+      tags: [Credentials]
+      summary: Store an SSH credential (config backup; requires master key)
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+  /ssh-credentials/{id}:
+    get:
+      tags: [Credentials]
+      summary: One SSH credential (redacted)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Redacted credential}
+    put:
+      tags: [Credentials]
+      summary: Update (empty secret = keep)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Redacted credential}
+    delete:
+      tags: [Credentials]
+      summary: Delete
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+
+  /agents/tokens:
+    get:
+      tags: [Agents]
+      summary: Agent tokens ({tokens,total}; plaintext shown only at mint)
+      responses:
+        "200":
+          description: Tokens envelope (complete list)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AgentTokenList"}
+    post:
+      tags: [Agents]
+      summary: Mint a token bound to a network (auto-stamps networks.agent_id)
+      responses:
+        "201": {description: "{token (plaintext, shown once), ...}"}
+  /agents/tokens/{id}:
+    delete:
+      tags: [Agents]
+      summary: Delete a token (clears the network's agent_id)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /agents/tokens/{id}/revoke:
+    post:
+      tags: [Agents]
+      summary: Soft-revoke (keeps the audit trail)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Revoked}
+  /agents/status:
+    get:
+      tags: [Agents]
+      summary: Fleet telemetry (version, clock offset, last report)
+      responses:
+        "200": {description: "{agents, total}"}
+  /agents/commands/all:
+    get:
+      tags: [Agents]
+      summary: All commands across agents (admin UI)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+      responses:
+        "200":
+          description: Commands envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AgentCommandList"}
+  /agents/{agentId}/commands:
+    post:
+      tags: [Agents]
+      summary: Enqueue a command (scan/probe/restart/config-reload/logs-tail)
+      parameters:
+        - {name: agentId, in: path, required: true, schema: {type: string}}
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+
+  # --- machine channel (agent-token auth) ---
+  /agents/report:
+    post:
+      tags: [Agents]
+      summary: "[agent] Batched host reports + fleet meta"
+      security: [{agentToken: []}]
+      responses:
+        "200": {description: Ack}
+  /agents/probe-report:
+    post:
+      tags: [Agents]
+      summary: "[agent] Synthetic probe result batches"
+      security: [{agentToken: []}]
+      responses:
+        "200": {description: Ack}
+  /agents/commands:
+    get:
+      tags: [Agents]
+      summary: "[agent] Poll pending commands — BARE ARRAY (fleet-internal contract; see api.md)"
+      security: [{agentToken: []}]
+      responses:
+        "200":
+          description: Command array (intentionally NOT enveloped)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/AgentCommand"}
+  /agents/commands/{id}/ack:
+    post:
+      tags: [Agents]
+      summary: "[agent] Acknowledge a command"
+      security: [{agentToken: []}]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Acknowledged}
+  /agents/commands/{id}/complete:
+    post:
+      tags: [Agents]
+      summary: "[agent] Report a command's outcome"
+      security: [{agentToken: []}]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Recorded}
+
+  /changes:
+    get:
+      tags: [Changes]
+      summary: Change history (newest first; network_id/change_type/entity_type/search filters)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: network_id, in: query, schema: {type: integer}}
+        - {name: change_type, in: query, schema: {type: string}}
+        - {name: entity_type, in: query, schema: {type: string}}
+        - {name: search, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: Changes envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChangeList"}
+  /changes/watch:
+    get:
+      tags: [Changes]
+      summary: SSE stream of live change events (text/event-stream)
+      responses:
+        "200":
+          description: Event stream (not a JSON envelope)
+
+  /discovery/status:
+    get:
+      tags: [Discovery]
+      summary: Passive discovery source health + recent-event ring stats
+      responses:
+        "200": {description: Status object}
+
+  /audit-logs:
+    get:
+      tags: [Audit]
+      summary: Audit trail (user_id/action/resource_type/date_from/date_to/search)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: user_id, in: query, schema: {type: integer}}
+        - {name: action, in: query, schema: {type: string}}
+        - {name: resource_type, in: query, schema: {type: string}}
+        - {name: date_from, in: query, schema: {type: string, format: date-time}}
+        - {name: date_to, in: query, schema: {type: string, format: date-time}}
+        - {name: search, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: Audit envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AuditLogList"}
+  /audit-logs/facets:
+    get:
+      tags: [Audit]
+      summary: Distinct action/resource_type values (filter dropdowns)
+      responses:
+        "200": {description: Facets object}
+  /audit-logs/export:
+    get:
+      tags: [Audit]
+      summary: CSV export
+      responses:
+        "200": {description: File download}
+
+  /documents:
+    get:
+      tags: [Documents]
+      summary: Documents (search filter)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - {name: search, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: Documents envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DocumentList"}
+    post:
+      tags: [Documents]
+      summary: Create a metadata-only document
+      responses:
+        "201":
+          description: Created document
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Document"}
+  /documents/upload:
+    post:
+      tags: [Documents]
+      summary: Upload a file (multipart/form-data)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+  /documents/{id}:
+    get:
+      tags: [Documents]
+      summary: Document metadata
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Document
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Document"}
+    put:
+      tags: [Documents]
+      summary: Update metadata
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Updated document
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Document"}
+    delete:
+      tags: [Documents]
+      summary: Soft-delete (restore window)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /documents/{id}/restore:
+    post:
+      tags: [Documents]
+      summary: Restore a soft-deleted document
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /documents/{id}/download:
+    get:
+      tags: [Documents]
+      summary: Download the file (?inline=1 for preview)
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: inline, in: query, schema: {type: string}}
+      responses:
+        "200": {description: File download}
+  /documents/{id}/devices:
+    get:
+      tags: [Documents]
+      summary: Devices linked to a document ({devices,total})
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Linked-device envelope (complete list)}
+
+  /dashboard/configs:
+    get:
+      tags: [Dashboard]
+      summary: Saved dashboard configurations ({configs,total})
+      responses:
+        "200":
+          description: Configs envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DashboardConfigList"}
+    post:
+      tags: [Dashboard]
+      summary: Save a dashboard configuration
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+  /dashboard/configs/{id}:
+    put:
+      tags: [Dashboard]
+      summary: Update a configuration
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+    delete:
+      tags: [Dashboard]
+      summary: Delete a configuration
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /dashboard/overview:
+    get:
+      tags: [Dashboard]
+      summary: Fleet overview aggregate (counts, abnormal, scanning, recent)
+      responses:
+        "200": {description: Overview object (nested aggregate)}
+  /dashboard/query:
+    get:
+      tags: [Dashboard]
+      summary: "[Prometheus passthrough] instant query proxy"
+      parameters: [{name: query, in: query, required: true, schema: {type: string}}]
+      responses:
+        "200": {description: Upstream Prometheus JSON (raw)}
+  /dashboard/query_range:
+    get:
+      tags: [Dashboard]
+      summary: "[Prometheus passthrough] range query proxy"
+      parameters:
+        - {name: query, in: query, required: true, schema: {type: string}}
+        - {name: start, in: query, required: true, schema: {type: string}}
+        - {name: end, in: query, required: true, schema: {type: string}}
+        - {name: step, in: query, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Upstream Prometheus JSON (raw)}
+
+  /topology:
+    get:
+      tags: [Topology]
+      summary: Device-level topology graph ({nodes, edges}; network_id filter)
+      parameters: [{name: network_id, in: query, schema: {type: integer}}]
+      responses:
+        "200":
+          description: Graph (complete, not paginated)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TopologyGraph"}
+
+  /notification/channels:
+    get:
+      tags: [Notifications]
+      summary: Notification channels (passwords masked; complete list)
+      responses:
+        "200": {description: "{channels, total}"}
+    post:
+      tags: [Notifications]
+      summary: Create a channel (webhook/smtp)
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+  /notification/channels/{id}:
+    get:
+      tags: [Notifications]
+      summary: One channel (masked)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Channel}
+    put:
+      tags: [Notifications]
+      summary: Update (empty password = keep)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Channel}
+    patch:
+      tags: [Notifications]
+      summary: Partial update (e.g. toggle enabled)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Channel}
+    delete:
+      tags: [Notifications]
+      summary: Delete a channel
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /notification/channels/{id}/test:
+    post:
+      tags: [Notifications]
+      summary: Send a test notification
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /notification/rules:
+    get:
+      tags: [Notifications]
+      summary: Event-to-channel rules (complete list)
+      responses:
+        "200": {description: "{rules, total}"}
+    post:
+      tags: [Notifications]
+      summary: Create a rule
+      responses:
+        "201": {$ref: "#/components/responses/Created"}
+  /notification/rules/{id}:
+    get:
+      tags: [Notifications]
+      summary: One rule
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Rule}
+    put:
+      tags: [Notifications]
+      summary: Update a rule
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Rule}
+    patch:
+      tags: [Notifications]
+      summary: Partial update
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Rule}
+    delete:
+      tags: [Notifications]
+      summary: Delete a rule
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+  /notification/logs:
+    get:
+      tags: [Notifications]
+      summary: Caller's notification log (total = UNREAD count — the badge source)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+      responses:
+        "200":
+          description: Logs envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotificationLogList"}
+  /notification/logs/read:
+    post:
+      tags: [Notifications]
+      summary: Mark all of the caller's logs read
+      responses:
+        "200": {description: "{marked: n}"}
+
+  /settings/auth:
+    get:
+      tags: [Settings]
+      summary: Effective auth settings (password policy + lockout; DB overlay > YAML)
+      responses:
+        "200": {description: Settings object}
+    put:
+      tags: [Settings]
+      summary: Update auth settings
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /system:
+    get:
+      tags: [Settings]
+      summary: System info (version, uptime, build)
+      responses:
+        "200": {description: System object}
+
+  /fingerprints/coverage:
+    get:
+      tags: [Fingerprints]
+      summary: Rule-library coverage stats
+      responses:
+        "200": {description: Coverage object}
+
+  /metrics:
+    get:
+      tags: [Metrics]
+      summary: Prometheus metrics exposition (public)
+      security: []
+      responses:
+        "200": {description: text/plain exposition}
+  /sd:
+    get:
+      tags: [Metrics]
+      summary: Prometheus http_sd target groups (public)
+      security: []
+      responses:
+        "200": {description: SD target group JSON}
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT from POST /auth/login (Bearer fallback when cookies are unavailable)
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: mibee_token
+      description: JWT session cookie (preferred transport)
+    agentToken:
+      type: http
+      scheme: bearer
+      description: Per-agent token minted via POST /agents/tokens (machine channel)
+
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer, format: int64}
+    limit:
+      name: limit
+      in: query
+      description: Page size (absent/0 → endpoint default; malformed or negative → 400; over-max clamps)
+      schema: {type: integer, format: int64, minimum: 0}
+    offset:
+      name: offset
+      in: query
+      description: Pagination offset (negative → 400)
+      schema: {type: integer, format: int64, minimum: 0}
+
+  responses:
+    OK:
+      description: Generic success
+      content:
+        application/json:
+          schema: {type: object}
+    Created:
+      description: Created resource
+      content:
+        application/json:
+          schema: {type: object}
+    Error:
+      description: Error envelope
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable message (single-field error model)
+
+    PageMeta:
+      type: object
+      description: Echo of the effective pagination (absent on complete lists)
+      properties:
+        total: {type: integer, format: int64, description: Filtered count}
+        limit: {type: integer, format: int64}
+        offset: {type: integer, format: int64}
+
+    LoginResponse:
+      type: object
+      properties:
+        token: {type: string}
+        user: {$ref: "#/components/schemas/User"}
+        two_factor_required: {type: boolean}
+        user_id: {type: integer}
+
+    User:
+      type: object
+      properties:
+        id: {type: integer}
+        username: {type: string}
+        email: {type: string}
+        role: {type: string, enum: [admin, operator, viewer, user]}
+        must_change_password: {type: boolean}
+        created_at: {type: string, format: date-time}
+    UserList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            users:
+              type: array
+              items: {$ref: "#/components/schemas/User"}
+
+    NetworkGrantList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            grants:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: {type: integer}
+                  user_id: {type: integer}
+                  username: {type: string}
+                  network_id: {type: integer}
+                  network_name: {type: string}
+                  granted_at: {type: string, format: date-time}
+
+    Device:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        type: {type: string, description: "e.g. camera, server, pc, switch, other"}
+        brand: {type: string}
+        model: {type: string}
+        status: {type: string, enum: [online, offline, warning, unknown]}
+        ip_address: {type: string}
+        mac_address: {type: string}
+        network_id: {type: integer, nullable: true}
+        device_uuid: {type: string}
+        scan_source: {type: string, description: "scanner_v2 | manual | passive:*"}
+        last_seen: {type: string, format: date-time, nullable: true}
+        open_ports: {type: array, items: {type: object}}
+        detected_services: {type: array, items: {type: object}}
+        scan_attributes: {type: object, description: "Evidence-derived attributes (mac, oui_vendor, inferred_type, ...)"}
+        user_attributes: {type: object}
+        tags: {type: object}
+    DeviceList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            devices:
+              type: array
+              items: {$ref: "#/components/schemas/Device"}
+
+    DeviceSystemList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            systems: {type: array, items: {type: object}}
+
+    NeighborList:
+      type: object
+      properties:
+        neighbors: {type: array, items: {type: object}}
+        total: {type: integer}
+
+    CertificateList:
+      type: object
+      properties:
+        certificates:
+          type: array
+          items:
+            type: object
+            properties:
+              port: {type: integer}
+              tls_version: {type: string}
+              cipher_suite: {type: string}
+              trusted: {type: boolean}
+              updated_at: {type: string, format: date-time}
+              chain: {type: array, items: {type: object}}
+        total: {type: integer}
+
+    DeviceConfigList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: {type: integer}
+                  device_id: {type: integer}
+                  config_hash: {type: string}
+                  protocol: {type: string}
+                  has_diff: {type: boolean}
+                  fetched_at: {type: string, format: date-time}
+
+    DeviceDocumentList:
+      type: object
+      properties:
+        documents: {type: array, items: {$ref: "#/components/schemas/Document"}}
+        total: {type: integer}
+
+    HeartbeatConfigList:
+      type: object
+      properties:
+        configs: {type: array, items: {type: object}}
+        total: {type: integer}
+    HeartbeatResultList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            results: {type: array, items: {type: object}}
+
+    Network:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        cidr: {type: string, nullable: true}
+        site: {type: string, nullable: true}
+        agent_id: {type: string, nullable: true, description: "Non-empty = managed by that distributed agent"}
+        created_at: {type: string, format: date-time}
+    NetworkList:
+      type: object
+      properties:
+        networks: {type: array, items: {$ref: "#/components/schemas/Network"}}
+        total: {type: integer}
+    VLANList:
+      type: object
+      properties:
+        vlans:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: integer}
+              vlan_tag: {type: integer}
+              name: {type: string, nullable: true}
+              description: {type: string, nullable: true}
+        total: {type: integer}
+
+    ScanTask:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        targets: {type: string}
+        cron_expr: {type: string}
+        pipeline_config:
+          type: object
+          description: Pipeline stage configuration (an OBJECT in responses; #257 fixed the stringified form)
+        credential_id: {type: integer, nullable: true}
+        network_id: {type: integer, nullable: true}
+        enabled: {type: boolean}
+        last_run_at: {type: string, format: date-time, nullable: true}
+        next_run_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
+    ScanTaskList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            tasks: {type: array, items: {$ref: "#/components/schemas/ScanTask"}}
+    ScanRun:
+      type: object
+      properties:
+        id: {type: integer}
+        task_id: {type: integer}
+        status: {type: string, enum: [pending, running, completed, failed, cancelled]}
+        total_hosts: {type: integer}
+        alive_hosts: {type: integer}
+        new_hosts: {type: integer}
+        updated_hosts: {type: integer}
+        duration_ms: {type: integer}
+        error_message: {type: string}
+        started_at: {type: string, format: date-time, nullable: true}
+        finished_at: {type: string, format: date-time, nullable: true}
+    ScanRunList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            runs: {type: array, items: {$ref: "#/components/schemas/ScanRun"}}
+    ScanResult:
+      type: object
+      properties:
+        id: {type: integer}
+        task_id: {type: integer}
+        run_id: {type: integer, nullable: true}
+        ip: {type: string}
+        alive: {type: boolean}
+        rtt_ms: {type: integer}
+        ports: {type: array, items: {type: object}}
+        services: {type: object}
+        snmp_data: {type: object}
+        inferred_type: {type: string}
+        inferred_brand: {type: string}
+        scanned_at: {type: string, format: date-time}
+    ScanResultList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            results: {type: array, items: {$ref: "#/components/schemas/ScanResult"}}
+
+    ProbeTarget:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        method: {type: string, enum: [http, tcp, icmp, snmp]}
+        target: {type: string}
+        interval_seconds: {type: integer}
+        enabled: {type: boolean}
+        vantage: {type: string, description: "center (default) | agent:{agent_id} | all"}
+        expect_status: {type: integer}
+        created_at: {type: string, format: date-time}
+    ProbeTargetList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            targets: {type: array, items: {$ref: "#/components/schemas/ProbeTarget"}}
+    ProbeResult:
+      type: object
+      properties:
+        id: {type: integer}
+        target_id: {type: integer}
+        vantage: {type: string}
+        status: {type: string, enum: [up, down]}
+        latency_ms: {type: number}
+        checked_at: {type: string, format: date-time}
+        error: {type: string}
+    ProbeResultList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            results: {type: array, items: {$ref: "#/components/schemas/ProbeResult"}}
+
+    SNMPCredential:
+      type: object
+      description: Masked projection — passphrases are NEVER returned (not even ciphertext)
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        security_level: {type: string, enum: [v1v2c, noAuthNoPriv, authNoPriv, authPriv]}
+        community: {type: string}
+        username: {type: string}
+        auth_protocol: {type: string}
+        has_auth: {type: boolean}
+        priv_protocol: {type: string}
+        has_priv: {type: boolean}
+        notes: {type: string}
+    SNMPCredentialList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            credentials: {type: array, items: {$ref: "#/components/schemas/SNMPCredential"}}
+    SSHCredentialList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            credentials: {type: array, items: {type: object, description: "SSH credential metadata (secret redacted)"}}
+
+    AgentToken:
+      type: object
+      properties:
+        id: {type: integer}
+        agent_id: {type: string}
+        network_id: {type: integer, nullable: true}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+        last_used_at: {type: string, format: date-time, nullable: true}
+        revoked_at: {type: string, format: date-time, nullable: true}
+    AgentTokenList:
+      type: object
+      properties:
+        tokens: {type: array, items: {$ref: "#/components/schemas/AgentToken"}}
+        total: {type: integer}
+    AgentCommand:
+      type: object
+      properties:
+        id: {type: integer}
+        agent_id: {type: string}
+        command: {type: string, enum: [scan, probe, restart, config-reload, logs-tail]}
+        payload: {type: string, description: "JSON string (e.g. {targets,timeout,credential_name})"}
+        status: {type: string, enum: [pending, acknowledged, done, failed]}
+        result: {type: string}
+        created_at: {type: string, format: date-time}
+    AgentCommandList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            commands: {type: array, items: {$ref: "#/components/schemas/AgentCommand"}}
+
+    ChangeList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            changes:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: {type: integer}
+                  agent_id: {type: string}
+                  network_id: {type: integer, nullable: true}
+                  change_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered, device_config_changed]}
+                  entity_type: {type: string}
+                  entity_id: {type: integer}
+                  before_data: {type: string}
+                  after_data: {type: string}
+                  detected_at: {type: string, format: date-time}
+
+    AuditLogList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            audit_logs:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: {type: integer}
+                  user_id: {type: integer, nullable: true}
+                  username: {type: string}
+                  action: {type: string}
+                  resource_type: {type: string}
+                  resource_id: {type: string}
+                  details: {type: string}
+                  created_at: {type: string, format: date-time}
+
+    Document:
+      type: object
+      properties:
+        id: {type: integer}
+        title: {type: string}
+        doc_type: {type: string}
+        description: {type: string}
+        file_path: {type: string}
+        file_size: {type: integer}
+        deleted_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
+    DocumentList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            documents: {type: array, items: {$ref: "#/components/schemas/Document"}}
+
+    DashboardConfigList:
+      type: object
+      properties:
+        configs: {type: array, items: {type: object}}
+        total: {type: integer}
+
+    TopologyGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+              type: {type: string}
+              ip: {type: string}
+              status: {type: string}
+        edges:
+          type: array
+          items:
+            type: object
+            properties:
+              source: {type: string}
+              target: {type: string}
+              source_port: {type: string}
+              target_port: {type: string}
+              protocol: {type: string, description: "lldp | cdp | bridge | arp"}
+
+    NotificationLogList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            logs: {type: array, items: {type: object}}

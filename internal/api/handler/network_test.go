@@ -73,12 +73,18 @@ func TestNetworkHandler_List_ReturnsAllOrdered(t *testing.T) {
 	h.List(rec, httptest.NewRequest(http.MethodGet, "/api/v1/networks", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	var nets []map[string]any
-	decodeBody(t, rec, &nets)
-	require.Len(t, nets, 2)
+	// #274: the list is wrapped in the {networks, total} envelope (was a bare
+	// array).
+	var resp struct {
+		Networks []map[string]any `json:"networks"`
+		Total    int              `json:"total"`
+	}
+	decodeBody(t, rec, &resp)
+	require.Len(t, resp.Networks, 2)
+	require.Equal(t, 2, resp.Total)
 	// ListNetworks orders by id → creation order.
-	require.Equal(t, "lan-b", nets[0]["name"])
-	require.Equal(t, "lan-a", nets[1]["name"])
+	require.Equal(t, "lan-b", resp.Networks[0]["name"])
+	require.Equal(t, "lan-a", resp.Networks[1]["name"])
 }
 
 // --- Create ---

@@ -146,9 +146,9 @@
 		loading = true;
 		error = '';
 		try {
-			// Backend returns a bare JSON array, not {data: [...]}.
-			const res = await api.get<AgentToken[]>('/agents/tokens/');
-			tokens = res || [];
+			// #274 envelope: {tokens, total}.
+			const res = await api.get<{ tokens: AgentToken[]; total: number }>('/agents/tokens/');
+			tokens = res.tokens || [];
 		} catch (err: unknown) {
 			error = getErrorMessage(err);
 			addToast('error', error);
@@ -159,8 +159,9 @@
 
 	async function fetchNetworks() {
 		try {
-			const res = await api.get<Network[]>('/networks');
-			networks = res || [];
+			// #274 envelope: {networks, total}.
+			const res = await api.get<{ networks: Network[]; total: number }>('/networks');
+			networks = res.networks || [];
 		} catch {
 			// Non-critical — the network dropdown just stays empty.
 		}

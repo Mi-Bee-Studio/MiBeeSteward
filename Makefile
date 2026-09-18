@@ -197,6 +197,18 @@ dev:
 migrate-up:
 	@echo "Migrations run automatically on server startup via the embedded db/schema.sql (see db/embed.go). No manual step required."
 
+# gen-api-go regenerates internal/apiclient/client.gen.go from
+# docs/openapi.yaml (#274). The committed output is the source of truth for
+# tooling/agent consumers; CI regenerates and fails on drift. Requires
+# oapi-codegen (go run resolves it from go.mod via the tool dependency).
+gen-api-go:
+	cd internal/apiclient && go generate ./...
+
+# gen-api-ts regenerates web/src/lib/api/schema.d.ts from docs/openapi.yaml
+# (#274). Run inside web/ — CI regenerates and fails on drift.
+gen-api-ts:
+	cd web && npm run gen:api
+
 # sync-fingerprints copies configs/fingerprints/*.yaml into the classify
 # package's embed directory so they ship in the binary (//go:embed). Run this
 # before building whenever fingerprint rules change. The configs/ dir is the

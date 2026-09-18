@@ -31,7 +31,11 @@ vi.mock('$lib/api/client', () => ({
 	api: {
 		get: vi.fn((url: string) => {
 			if (url.startsWith('/networks')) {
-				return Promise.resolve([{ id: 1, name: 'lan-62', cidr: '192.168.62.0/24', agent_id: 'edge-1' }]);
+				// #274 envelope: {networks, total} (was a bare array).
+				return Promise.resolve({
+					networks: [{ id: 1, name: 'lan-62', cidr: '192.168.62.0/24', agent_id: 'edge-1' }],
+					total: 1
+				});
 			}
 			if (url.startsWith('/probe-targets') && url.includes('/certificates')) {
 				return Promise.resolve({ certificates: [], total: 0 });

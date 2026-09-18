@@ -53,9 +53,10 @@
 	async function fetchNetworkVlans() {
 		if (!device?.network_id) return;
 		try {
-			const res = await api.get<Array<{ id: number; vlan_tag: number; name: string | null; description: string | null }>>(
+			// #274 envelope: {vlans, total}.
+			const res = await api.get<{ vlans: Array<{ id: number; vlan_tag: number; name: string | null; description: string | null }>; total: number }>(
 				`/networks/${device.network_id}/vlans`);
-			networkVlans = res ?? [];
+			networkVlans = res.vlans ?? [];
 		} catch {
 			networkVlans = [];
 		}

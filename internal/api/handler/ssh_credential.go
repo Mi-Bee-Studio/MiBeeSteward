@@ -139,8 +139,13 @@ func (h *SSHCredentialHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // List handles GET /api/v1/ssh-credentials — metadata only (ciphertext omitted).
+// Wrapped in {credentials, total, limit, offset} (#274) — twin parity with the
+// SNMP credential list (it used to be the lone bare array of the credentials family).
 func (h *SSHCredentialHandler) List(w http.ResponseWriter, r *http.Request) {
-	limit, offset := parseListPaging(r)
+	limit, offset, ok := ParsePagination(w, r, 50, 200)
+	if !ok {
+		return
+	}
 	rows, err := sshcred.List(r.Context(), h.db, limit, offset)
 	if err != nil {
 		slog.Error("ssh credential: list", "error", err)
@@ -151,7 +156,11 @@ func (h *SSHCredentialHandler) List(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		out = append(out, toSSHListResponse(row))
 	}
-	Success(w, out)
+	total, err := sshcred.Count(r.Context(), h.db)
+	if err != nil {
+		slog.Error("ssh credential: count", "error", err)
+	}
+	SuccessList(w, "credentials", out, total, limit, offset)
 }
 
 // Get handles GET /api/v1/ssh-credentials/{id} — redacted (no ciphertext).

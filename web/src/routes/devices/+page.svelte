@@ -188,7 +188,7 @@ interface AddDevicesResponse {
 		});
 		// Load the network registry for the filter dropdown (best-effort; a
 		// failure just leaves the dropdown empty — the list still works).
-		api.get<Network[]>('/networks').then((n) => { networks = n || []; networksError = false; }).catch(() => { networksError = true; });
+		api.get<{ networks: Network[]; total: number }>('/networks').then((r) => { networks = r.networks || []; networksError = false; }).catch(() => { networksError = true; });
 		pollTimer = setInterval(() => {
 			if (!editOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !batchStatusConfirmOpen && !importOpen && !linkOpen) {
 				void refreshDevicesSilent();

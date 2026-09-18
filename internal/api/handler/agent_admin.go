@@ -84,7 +84,8 @@ func (h *AgentAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 			RevokedAt:  row.RevokedAt,
 		})
 	}
-	Success(w, out)
+	// {tokens, total} per the API contract (#274; used to be a bare array).
+	Success(w, map[string]any{"tokens": out, "total": len(out)})
 }
 
 // Revoke handles POST /api/v1/agents/tokens/{id}/revoke — soft-revoke (sets

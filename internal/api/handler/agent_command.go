@@ -21,7 +21,6 @@ import (
 
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/db"
-	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 )
 
@@ -169,12 +168,10 @@ func (h *AgentCommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 // ListAll handles GET /api/v1/agents/commands/all — admin view of all commands
 // across all agents (for the management UI).
 func (h *AgentCommandHandler) ListAll(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	limit, _ := strconv.ParseInt(q.Get("limit"), 10, 64)
-	if limit <= 0 || limit > 200 {
-		limit = 50
+	limit, offset, ok := ParsePagination(w, r, 50, 200)
+	if !ok {
+		return
 	}
-	offset, _ := strconv.ParseInt(q.Get("offset"), 10, 64)
 	cmds, err := h.queries.ListAllAgentCommands(r.Context(), db.ListAllAgentCommandsParams{
 		Limit:  limit,
 		Offset: offset,
@@ -187,7 +184,7 @@ func (h *AgentCommandHandler) ListAll(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		total = 0
 	}
-	Success(w, domain.AgentCommandListResponse{Commands: cmds, Total: int(total)})
+	SuccessList(w, "commands", cmds, total, limit, offset)
 }
 
 // FleetStatus handles GET /api/v1/agents/status — the fleet-observability
