@@ -98,6 +98,7 @@ vi.mock('$lib/api/client', () => ({
 }));
 
 import Dashboard from '../routes/dashboard/+page.svelte';
+import { api } from '$lib/api/client';
 
 describe('Dashboard page', () => {
 	it('mounts and renders the header with the help button', () => {
@@ -143,5 +144,45 @@ describe('Dashboard page', () => {
 		expect(
 			defaultGrid?.querySelectorAll(':scope > div p.text-xs.text-muted').length ?? 0
 		).toBeGreaterThanOrEqual(6);
+	});
+
+	it('renders the default grid when overview carries JSON null slices (abnormal/recent_runs)', async () => {
+		// Go marshals nil slices as JSON null: a healthy network (0 offline
+		// devices → abnormal:null) and a fresh install (0 runs →
+		// recent_runs:null) produce exactly this shape. The template used to
+		// read overview?.abnormal.length — the ?. covered overview but NOT
+		// abnormal — so null.length threw inside the render effect and froze
+		// the whole dashboard on the loading skeleton (seen live 2026-09-17:
+		// banner + skeleton + custom widgets on screen simultaneously).
+		const origGet = api.get;
+		api.get = vi.fn((url: string) => {
+			if (url.startsWith('/dashboard/overview')) {
+				return Promise.resolve({
+					devices: {
+						total: 2, online: 2, offline: 0, unknown: 0, online_rate: 1,
+						by_type: { pc: 2 },
+						by_location: {}
+					},
+					scanning: {
+						tasks_total: 0, runs_total: 0, recent_runs: null, runs_by_status: {},
+						last_discovery: undefined
+					},
+					abnormal: null,
+					generated: '2026-09-17T00:00:00Z'
+				});
+			}
+			return origGet(url);
+		});
+
+		try {
+			const { container } = render(Dashboard);
+			await waitFor(() => {
+				expect(container.querySelector('.skeleton-rect')).toBeNull();
+			});
+			const defaultGrid = container.querySelector('.grid.grid-cols-1');
+			expect(defaultGrid).toBeTruthy();
+		} finally {
+			api.get = origGet;
+		}
 	});
 });
