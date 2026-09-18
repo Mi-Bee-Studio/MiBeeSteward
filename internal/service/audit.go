@@ -164,15 +164,20 @@ func (s *AuditService) Facets(ctx context.Context) (*domain.AuditFacetsResponse,
 	}, nil
 }
 
-// toAuditLogResponse converts a db.AuditLog to a domain.AuditLogResponse.
-func toAuditLogResponse(log db.AuditLog) domain.AuditLogResponse {
+// toAuditLogResponse converts a ListAuditLogsRow to a domain.AuditLogResponse.
+func toAuditLogResponse(log db.ListAuditLogsRow) domain.AuditLogResponse {
 	createdAt := time.Time{}
 	if log.CreatedAt != nil {
 		createdAt = *log.CreatedAt
 	}
+	username := ""
+	if log.Username != nil {
+		username = *log.Username
+	}
 	return domain.AuditLogResponse{
 		ID:           log.ID,
 		UserID:       log.UserID,
+		Username:     username,
 		Action:       log.Action,
 		ResourceType: log.ResourceType,
 		ResourceID:   log.ResourceID,

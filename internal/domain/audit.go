@@ -15,6 +15,7 @@ import "time"
 type AuditLogResponse struct {
 	ID           int64     `json:"id"`
 	UserID       *int64    `json:"user_id"`
+	Username     string    `json:"username"`
 	Action       string    `json:"action"`
 	ResourceType string    `json:"resource_type"`
 	ResourceID   *string   `json:"resource_id"`

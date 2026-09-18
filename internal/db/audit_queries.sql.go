@@ -157,15 +157,19 @@ func (q *Queries) DistinctAuditResourceTypes(ctx context.Context) ([]string, err
 
 const listAuditLogs = `-- name: ListAuditLogs :many
 
-SELECT id, user_id, action, resource_type, resource_id, ip_address, user_agent, details, created_at
+SELECT audit_logs.id, audit_logs.user_id, audit_logs.action, audit_logs.resource_type,
+       audit_logs.resource_id, audit_logs.ip_address, audit_logs.user_agent,
+       audit_logs.details, audit_logs.created_at,
+       users.username AS username
 FROM audit_logs
-WHERE (? = 0 OR user_id = ?)
-  AND (? = '' OR action = ?)
-  AND (? = '' OR resource_type = ?)
-  AND (? = '' OR created_at >= ?)
-  AND (? = '' OR created_at <= ?)
-  AND (? = '' OR INSTR(lower(action), lower(?)) > 0 OR INSTR(lower(resource_type), lower(?)) > 0 OR INSTR(lower(ip_address), lower(?)) > 0)
-ORDER BY created_at DESC
+LEFT JOIN users ON users.id = audit_logs.user_id
+WHERE (? = 0 OR audit_logs.user_id = ?)
+  AND (? = '' OR audit_logs.action = ?)
+  AND (? = '' OR audit_logs.resource_type = ?)
+  AND (? = '' OR audit_logs.created_at >= ?)
+  AND (? = '' OR audit_logs.created_at <= ?)
+  AND (? = '' OR INSTR(lower(audit_logs.action), lower(?)) > 0 OR INSTR(lower(audit_logs.resource_type), lower(?)) > 0 OR INSTR(lower(audit_logs.ip_address), lower(?)) > 0)
+ORDER BY audit_logs.created_at DESC
 LIMIT ? OFFSET ?
 `
 
@@ -188,6 +192,19 @@ type ListAuditLogsParams struct {
 	Offset       int64       `json:"offset"`
 }
 
+type ListAuditLogsRow struct {
+	ID           int64      `json:"id"`
+	UserID       *int64     `json:"user_id"`
+	Action       string     `json:"action"`
+	ResourceType string     `json:"resource_type"`
+	ResourceID   *string    `json:"resource_id"`
+	IpAddress    *string    `json:"ip_address"`
+	UserAgent    *string    `json:"user_agent"`
+	Details      *string    `json:"details"`
+	CreatedAt    *time.Time `json:"created_at"`
+	Username     *string    `json:"username"`
+}
+
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
@@ -196,7 +213,9 @@ type ListAuditLogsParams struct {
 // Public License v3.0 or later. You may use, modify, and redistribute it under
 // those terms; see LICENSE for the full text. A commercial license is available
 // for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
-func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
+// users.username is JOINed in (empty when the user row was deleted) so the
+// audit UI can show who did what without a second round-trip per row.
+func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]ListAuditLogsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAuditLogs,
 		arg.Column1,
 		arg.UserID,
@@ -219,9 +238,9 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AuditLog{}
+	items := []ListAuditLogsRow{}
 	for rows.Next() {
-		var i AuditLog
+		var i ListAuditLogsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -232,6 +251,7 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 			&i.UserAgent,
 			&i.Details,
 			&i.CreatedAt,
+			&i.Username,
 		); err != nil {
 			return nil, err
 		}

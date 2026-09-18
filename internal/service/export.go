@@ -250,7 +250,7 @@ func (s *ExportService) HeartbeatResults(ctx context.Context, deviceID int64, fo
 
 // AuditLogs streams audit logs in the specified format.
 func (s *ExportService) AuditLogs(ctx context.Context, format string, w io.Writer) error {
-	headers := []string{"id", "user_id", "action", "resource_type", "resource_id", "ip_address", "user_agent", "details", "created_at"}
+	headers := []string{"id", "user_id", "username", "action", "resource_type", "resource_id", "ip_address", "user_agent", "details", "created_at"}
 
 	if format == "json" {
 		return s.streamJSON(ctx, w, func(offset int64) ([]map[string]interface{}, error) {
@@ -276,6 +276,7 @@ func (s *ExportService) AuditLogs(ctx context.Context, format string, w io.Write
 				m := map[string]interface{}{
 					"id":            a.ID,
 					"user_id":       nilIfNil(a.UserID),
+					"username":      nilIfNil(a.Username),
 					"action":        a.Action,
 					"resource_type": a.ResourceType,
 					"resource_id":   nilIfNil(a.ResourceID),
@@ -313,6 +314,7 @@ func (s *ExportService) AuditLogs(ctx context.Context, format string, w io.Write
 			result[i] = []string{
 				strconv.FormatInt(a.ID, 10),
 				nilStr(a.UserID),
+				nilStr(a.Username),
 				a.Action,
 				a.ResourceType,
 				nilStr(a.ResourceID),

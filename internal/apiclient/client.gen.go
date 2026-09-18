@@ -69,27 +69,72 @@ func (e AgentCommandStatus) Valid() bool {
 	}
 }
 
-// Defines values for ChangeListChangesChangeType.
+// Defines values for ChangeLogEntryChangeType.
 const (
-	DeviceAdded         ChangeListChangesChangeType = "device_added"
-	DeviceChanged       ChangeListChangesChangeType = "device_changed"
-	DeviceConfigChanged ChangeListChangesChangeType = "device_config_changed"
-	DeviceLost          ChangeListChangesChangeType = "device_lost"
-	DeviceRecovered     ChangeListChangesChangeType = "device_recovered"
+	ChangeLogEntryChangeTypeDeviceAdded         ChangeLogEntryChangeType = "device_added"
+	ChangeLogEntryChangeTypeDeviceChanged       ChangeLogEntryChangeType = "device_changed"
+	ChangeLogEntryChangeTypeDeviceConfigChanged ChangeLogEntryChangeType = "device_config_changed"
+	ChangeLogEntryChangeTypeDeviceLost          ChangeLogEntryChangeType = "device_lost"
+	ChangeLogEntryChangeTypeDeviceRecovered     ChangeLogEntryChangeType = "device_recovered"
 )
 
-// Valid indicates whether the value is a known member of the ChangeListChangesChangeType enum.
-func (e ChangeListChangesChangeType) Valid() bool {
+// Valid indicates whether the value is a known member of the ChangeLogEntryChangeType enum.
+func (e ChangeLogEntryChangeType) Valid() bool {
 	switch e {
-	case DeviceAdded:
+	case ChangeLogEntryChangeTypeDeviceAdded:
 		return true
-	case DeviceChanged:
+	case ChangeLogEntryChangeTypeDeviceChanged:
 		return true
-	case DeviceConfigChanged:
+	case ChangeLogEntryChangeTypeDeviceConfigChanged:
 		return true
-	case DeviceLost:
+	case ChangeLogEntryChangeTypeDeviceLost:
 		return true
-	case DeviceRecovered:
+	case ChangeLogEntryChangeTypeDeviceRecovered:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DashboardConfigDataSource.
+const (
+	Builtin    DashboardConfigDataSource = "builtin"
+	Prometheus DashboardConfigDataSource = "prometheus"
+)
+
+// Valid indicates whether the value is a known member of the DashboardConfigDataSource enum.
+func (e DashboardConfigDataSource) Valid() bool {
+	switch e {
+	case Builtin:
+		return true
+	case Prometheus:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DashboardConfigType.
+const (
+	Bar   DashboardConfigType = "bar"
+	Gauge DashboardConfigType = "gauge"
+	Line  DashboardConfigType = "line"
+	List  DashboardConfigType = "list"
+	Pie   DashboardConfigType = "pie"
+)
+
+// Valid indicates whether the value is a known member of the DashboardConfigType enum.
+func (e DashboardConfigType) Valid() bool {
+	switch e {
+	case Bar:
+		return true
+	case Gauge:
+		return true
+	case Line:
+		return true
+	case List:
+		return true
+	case Pie:
 		return true
 	default:
 		return false
@@ -98,22 +143,289 @@ func (e ChangeListChangesChangeType) Valid() bool {
 
 // Defines values for DeviceStatus.
 const (
-	Offline DeviceStatus = "offline"
-	Online  DeviceStatus = "online"
-	Unknown DeviceStatus = "unknown"
-	Warning DeviceStatus = "warning"
+	DeviceStatusOffline DeviceStatus = "offline"
+	DeviceStatusOnline  DeviceStatus = "online"
+	DeviceStatusUnknown DeviceStatus = "unknown"
 )
 
 // Valid indicates whether the value is a known member of the DeviceStatus enum.
 func (e DeviceStatus) Valid() bool {
 	switch e {
-	case Offline:
+	case DeviceStatusOffline:
 		return true
-	case Online:
+	case DeviceStatusOnline:
 		return true
-	case Unknown:
+	case DeviceStatusUnknown:
 		return true
-	case Warning:
+	default:
+		return false
+	}
+}
+
+// Defines values for DeviceType.
+const (
+	Camera   DeviceType = "camera"
+	Embedded DeviceType = "embedded"
+	Firewall DeviceType = "firewall"
+	Iot      DeviceType = "iot"
+	Nas      DeviceType = "nas"
+	Other    DeviceType = "other"
+	Pc       DeviceType = "pc"
+	Phone    DeviceType = "phone"
+	Printer  DeviceType = "printer"
+	Router   DeviceType = "router"
+	Server   DeviceType = "server"
+	Switch   DeviceType = "switch"
+)
+
+// Valid indicates whether the value is a known member of the DeviceType enum.
+func (e DeviceType) Valid() bool {
+	switch e {
+	case Camera:
+		return true
+	case Embedded:
+		return true
+	case Firewall:
+		return true
+	case Iot:
+		return true
+	case Nas:
+		return true
+	case Other:
+		return true
+	case Pc:
+		return true
+	case Phone:
+		return true
+	case Printer:
+		return true
+	case Router:
+		return true
+	case Server:
+		return true
+	case Switch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeviceNeighborProtocol.
+const (
+	DeviceNeighborProtocolARP       DeviceNeighborProtocol = "ARP"
+	DeviceNeighborProtocolBridgeMIB DeviceNeighborProtocol = "Bridge-MIB"
+	DeviceNeighborProtocolCDP       DeviceNeighborProtocol = "CDP"
+	DeviceNeighborProtocolLLDP      DeviceNeighborProtocol = "LLDP"
+)
+
+// Valid indicates whether the value is a known member of the DeviceNeighborProtocol enum.
+func (e DeviceNeighborProtocol) Valid() bool {
+	switch e {
+	case DeviceNeighborProtocolARP:
+		return true
+	case DeviceNeighborProtocolBridgeMIB:
+		return true
+	case DeviceNeighborProtocolCDP:
+		return true
+	case DeviceNeighborProtocolLLDP:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DiscoveryStatusRecentDiscoveriesOutcome.
+const (
+	IdentifyFailed DiscoveryStatusRecentDiscoveriesOutcome = "identify_failed"
+	Recorded       DiscoveryStatusRecentDiscoveriesOutcome = "recorded"
+	SkippedKnown   DiscoveryStatusRecentDiscoveriesOutcome = "skipped_known"
+	SkippedRecent  DiscoveryStatusRecentDiscoveriesOutcome = "skipped_recent"
+)
+
+// Valid indicates whether the value is a known member of the DiscoveryStatusRecentDiscoveriesOutcome enum.
+func (e DiscoveryStatusRecentDiscoveriesOutcome) Valid() bool {
+	switch e {
+	case IdentifyFailed:
+		return true
+	case Recorded:
+		return true
+	case SkippedKnown:
+		return true
+	case SkippedRecent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DocumentType.
+const (
+	File DocumentType = "file"
+	Url  DocumentType = "url"
+)
+
+// Valid indicates whether the value is a known member of the DocumentType enum.
+func (e DocumentType) Valid() bool {
+	switch e {
+	case File:
+		return true
+	case Url:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HeartbeatConfigEnabled.
+const (
+	HeartbeatConfigEnabledN0 HeartbeatConfigEnabled = 0
+	HeartbeatConfigEnabledN1 HeartbeatConfigEnabled = 1
+)
+
+// Valid indicates whether the value is a known member of the HeartbeatConfigEnabled enum.
+func (e HeartbeatConfigEnabled) Valid() bool {
+	switch e {
+	case HeartbeatConfigEnabledN0:
+		return true
+	case HeartbeatConfigEnabledN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HeartbeatConfigMethod.
+const (
+	HTTP HeartbeatConfigMethod = "HTTP"
+	ICMP HeartbeatConfigMethod = "ICMP"
+	SNMP HeartbeatConfigMethod = "SNMP"
+	TCP  HeartbeatConfigMethod = "TCP"
+)
+
+// Valid indicates whether the value is a known member of the HeartbeatConfigMethod enum.
+func (e HeartbeatConfigMethod) Valid() bool {
+	switch e {
+	case HTTP:
+		return true
+	case ICMP:
+		return true
+	case SNMP:
+		return true
+	case TCP:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HeartbeatResultStatus.
+const (
+	HeartbeatResultStatusFail    HeartbeatResultStatus = "fail"
+	HeartbeatResultStatusSuccess HeartbeatResultStatus = "success"
+	HeartbeatResultStatusTimeout HeartbeatResultStatus = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the HeartbeatResultStatus enum.
+func (e HeartbeatResultStatus) Valid() bool {
+	switch e {
+	case HeartbeatResultStatusFail:
+		return true
+	case HeartbeatResultStatusSuccess:
+		return true
+	case HeartbeatResultStatusTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NotificationChannelType.
+const (
+	Discord  NotificationChannelType = "discord"
+	Email    NotificationChannelType = "email"
+	Feishu   NotificationChannelType = "feishu"
+	Telegram NotificationChannelType = "telegram"
+	Webhook  NotificationChannelType = "webhook"
+	Wecom    NotificationChannelType = "wecom"
+)
+
+// Valid indicates whether the value is a known member of the NotificationChannelType enum.
+func (e NotificationChannelType) Valid() bool {
+	switch e {
+	case Discord:
+		return true
+	case Email:
+		return true
+	case Feishu:
+		return true
+	case Telegram:
+		return true
+	case Webhook:
+		return true
+	case Wecom:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NotificationLogStatus.
+const (
+	NotificationLogStatusFailed NotificationLogStatus = "failed"
+	NotificationLogStatusSent   NotificationLogStatus = "sent"
+)
+
+// Valid indicates whether the value is a known member of the NotificationLogStatus enum.
+func (e NotificationLogStatus) Valid() bool {
+	switch e {
+	case NotificationLogStatusFailed:
+		return true
+	case NotificationLogStatusSent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NotificationRuleEventType.
+const (
+	NotificationRuleEventTypeDeviceAdded     NotificationRuleEventType = "device_added"
+	NotificationRuleEventTypeDeviceChanged   NotificationRuleEventType = "device_changed"
+	NotificationRuleEventTypeDeviceLost      NotificationRuleEventType = "device_lost"
+	NotificationRuleEventTypeDeviceRecovered NotificationRuleEventType = "device_recovered"
+)
+
+// Valid indicates whether the value is a known member of the NotificationRuleEventType enum.
+func (e NotificationRuleEventType) Valid() bool {
+	switch e {
+	case NotificationRuleEventTypeDeviceAdded:
+		return true
+	case NotificationRuleEventTypeDeviceChanged:
+		return true
+	case NotificationRuleEventTypeDeviceLost:
+		return true
+	case NotificationRuleEventTypeDeviceRecovered:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NotificationRuleScopeType.
+const (
+	NotificationRuleScopeTypeAll     NotificationRuleScopeType = "all"
+	NotificationRuleScopeTypeDevice  NotificationRuleScopeType = "device"
+	NotificationRuleScopeTypeNetwork NotificationRuleScopeType = "network"
+)
+
+// Valid indicates whether the value is a known member of the NotificationRuleScopeType enum.
+func (e NotificationRuleScopeType) Valid() bool {
+	switch e {
+	case NotificationRuleScopeTypeAll:
+		return true
+	case NotificationRuleScopeTypeDevice:
+		return true
+	case NotificationRuleScopeTypeNetwork:
 		return true
 	default:
 		return false
@@ -122,40 +434,67 @@ func (e DeviceStatus) Valid() bool {
 
 // Defines values for ProbeResultStatus.
 const (
-	Down ProbeResultStatus = "down"
-	Up   ProbeResultStatus = "up"
+	ProbeResultStatusFail    ProbeResultStatus = "fail"
+	ProbeResultStatusSuccess ProbeResultStatus = "success"
+	ProbeResultStatusTimeout ProbeResultStatus = "timeout"
 )
 
 // Valid indicates whether the value is a known member of the ProbeResultStatus enum.
 func (e ProbeResultStatus) Valid() bool {
 	switch e {
-	case Down:
+	case ProbeResultStatusFail:
 		return true
-	case Up:
+	case ProbeResultStatusSuccess:
+		return true
+	case ProbeResultStatusTimeout:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for ProbeTargetMethod.
+// Defines values for ProbeTargetLastStatus.
 const (
-	Http ProbeTargetMethod = "http"
-	Icmp ProbeTargetMethod = "icmp"
-	Snmp ProbeTargetMethod = "snmp"
-	Tcp  ProbeTargetMethod = "tcp"
+	ProbeTargetLastStatusEmpty   ProbeTargetLastStatus = ""
+	ProbeTargetLastStatusFail    ProbeTargetLastStatus = "fail"
+	ProbeTargetLastStatusSuccess ProbeTargetLastStatus = "success"
+	ProbeTargetLastStatusTimeout ProbeTargetLastStatus = "timeout"
 )
 
-// Valid indicates whether the value is a known member of the ProbeTargetMethod enum.
-func (e ProbeTargetMethod) Valid() bool {
+// Valid indicates whether the value is a known member of the ProbeTargetLastStatus enum.
+func (e ProbeTargetLastStatus) Valid() bool {
+	switch e {
+	case ProbeTargetLastStatusEmpty:
+		return true
+	case ProbeTargetLastStatusFail:
+		return true
+	case ProbeTargetLastStatusSuccess:
+		return true
+	case ProbeTargetLastStatusTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeTargetModule.
+const (
+	Http ProbeTargetModule = "http"
+	Icmp ProbeTargetModule = "icmp"
+	Tcp  ProbeTargetModule = "tcp"
+	Tls  ProbeTargetModule = "tls"
+)
+
+// Valid indicates whether the value is a known member of the ProbeTargetModule enum.
+func (e ProbeTargetModule) Valid() bool {
 	switch e {
 	case Http:
 		return true
 	case Icmp:
 		return true
-	case Snmp:
-		return true
 	case Tcp:
+		return true
+	case Tls:
 		return true
 	default:
 		return false
@@ -186,6 +525,45 @@ func (e SNMPCredentialSecurityLevel) Valid() bool {
 	}
 }
 
+// Defines values for SSHCredentialAuthMethod.
+const (
+	Key      SSHCredentialAuthMethod = "key"
+	Password SSHCredentialAuthMethod = "password"
+)
+
+// Valid indicates whether the value is a known member of the SSHCredentialAuthMethod enum.
+func (e SSHCredentialAuthMethod) Valid() bool {
+	switch e {
+	case Key:
+		return true
+	case Password:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScanAttributesInferredTypeSource.
+const (
+	ScanAttributesInferredTypeSourceEmpty     ScanAttributesInferredTypeSource = ""
+	ScanAttributesInferredTypeSourceHeuristic ScanAttributesInferredTypeSource = "heuristic"
+	ScanAttributesInferredTypeSourceProtocol  ScanAttributesInferredTypeSource = "protocol"
+)
+
+// Valid indicates whether the value is a known member of the ScanAttributesInferredTypeSource enum.
+func (e ScanAttributesInferredTypeSource) Valid() bool {
+	switch e {
+	case ScanAttributesInferredTypeSourceEmpty:
+		return true
+	case ScanAttributesInferredTypeSourceHeuristic:
+		return true
+	case ScanAttributesInferredTypeSourceProtocol:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ScanRunStatus.
 const (
 	ScanRunStatusCancelled ScanRunStatus = "cancelled"
@@ -207,6 +585,51 @@ func (e ScanRunStatus) Valid() bool {
 	case ScanRunStatusPending:
 		return true
 	case ScanRunStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TopologyEdgeProtocol.
+const (
+	TopologyEdgeProtocolARP       TopologyEdgeProtocol = "ARP"
+	TopologyEdgeProtocolBridgeMIB TopologyEdgeProtocol = "Bridge-MIB"
+	TopologyEdgeProtocolCDP       TopologyEdgeProtocol = "CDP"
+	TopologyEdgeProtocolLLDP      TopologyEdgeProtocol = "LLDP"
+)
+
+// Valid indicates whether the value is a known member of the TopologyEdgeProtocol enum.
+func (e TopologyEdgeProtocol) Valid() bool {
+	switch e {
+	case TopologyEdgeProtocolARP:
+		return true
+	case TopologyEdgeProtocolBridgeMIB:
+		return true
+	case TopologyEdgeProtocolCDP:
+		return true
+	case TopologyEdgeProtocolLLDP:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TopologyNodeStatus.
+const (
+	TopologyNodeStatusOffline TopologyNodeStatus = "offline"
+	TopologyNodeStatusOnline  TopologyNodeStatus = "online"
+	TopologyNodeStatusUnknown TopologyNodeStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the TopologyNodeStatus enum.
+func (e TopologyNodeStatus) Valid() bool {
+	switch e {
+	case TopologyNodeStatusOffline:
+		return true
+	case TopologyNodeStatusOnline:
+		return true
+	case TopologyNodeStatusUnknown:
 		return true
 	default:
 		return false
@@ -257,16 +680,16 @@ func (e GetDevicesParamsOrder) Valid() bool {
 
 // Defines values for GetScannerResultsParamsAlive.
 const (
-	N0 GetScannerResultsParamsAlive = "0"
-	N1 GetScannerResultsParamsAlive = "1"
+	GetScannerResultsParamsAliveN0 GetScannerResultsParamsAlive = "0"
+	GetScannerResultsParamsAliveN1 GetScannerResultsParamsAlive = "1"
 )
 
 // Valid indicates whether the value is a known member of the GetScannerResultsParamsAlive enum.
 func (e GetScannerResultsParamsAlive) Valid() bool {
 	switch e {
-	case N0:
+	case GetScannerResultsParamsAliveN0:
 		return true
-	case N1:
+	case GetScannerResultsParamsAliveN1:
 		return true
 	default:
 		return false
@@ -275,15 +698,18 @@ func (e GetScannerResultsParamsAlive) Valid() bool {
 
 // AgentCommand defines model for AgentCommand.
 type AgentCommand struct {
-	AgentId   *string              `json:"agent_id,omitempty"`
-	Command   *AgentCommandCommand `json:"command,omitempty"`
-	CreatedAt *time.Time           `json:"created_at,omitempty"`
-	Id        *int                 `json:"id,omitempty"`
+	AcknowledgedAt *time.Time          `json:"acknowledged_at"`
+	AgentId        string              `json:"agent_id"`
+	Command        AgentCommandCommand `json:"command"`
+	CreatedAt      time.Time           `json:"created_at"`
+	Id             int64               `json:"id"`
 
 	// Payload JSON string (e.g. {targets,timeout,credential_name})
-	Payload *string             `json:"payload,omitempty"`
-	Result  *string             `json:"result,omitempty"`
-	Status  *AgentCommandStatus `json:"status,omitempty"`
+	Payload string `json:"payload"`
+
+	// Result Optional JSON detail
+	Result *string            `json:"result"`
+	Status AgentCommandStatus `json:"status"`
 }
 
 // AgentCommandCommand defines model for AgentCommand.Command.
@@ -304,13 +730,15 @@ type AgentCommandList struct {
 
 // AgentToken defines model for AgentToken.
 type AgentToken struct {
-	AgentId    *string    `json:"agent_id,omitempty"`
-	CreatedAt  *time.Time `json:"created_at,omitempty"`
-	Id         *int       `json:"id,omitempty"`
+	AgentId    string     `json:"agent_id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Id         int64      `json:"id"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	Name       *string    `json:"name,omitempty"`
-	NetworkId  *int       `json:"network_id,omitempty"`
-	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+
+	// NetworkId Absent when unbound
+	NetworkId *int64     `json:"network_id,omitempty"`
+	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
 
 // AgentTokenList defines model for AgentTokenList.
@@ -319,112 +747,228 @@ type AgentTokenList struct {
 	Total  *int          `json:"total,omitempty"`
 }
 
+// AuditFacets defines model for AuditFacets.
+type AuditFacets struct {
+	Actions       []string `json:"actions"`
+	ResourceTypes []string `json:"resource_types"`
+}
+
+// AuditLog Audit trail row. Pointer fields are present-but-null; username is "" when the user row was deleted.
+type AuditLog struct {
+	Action       string    `json:"action"`
+	CreatedAt    time.Time `json:"created_at"`
+	Details      *string   `json:"details"`
+	Id           int64     `json:"id"`
+	IpAddress    *string   `json:"ip_address"`
+	ResourceId   *string   `json:"resource_id"`
+	ResourceType string    `json:"resource_type"`
+	UserAgent    *string   `json:"user_agent"`
+	UserId       *int64    `json:"user_id"`
+	Username     string    `json:"username"`
+}
+
 // AuditLogList defines model for AuditLogList.
 type AuditLogList struct {
-	AuditLogs *[]struct {
-		Action       *string    `json:"action,omitempty"`
-		CreatedAt    *time.Time `json:"created_at,omitempty"`
-		Details      *string    `json:"details,omitempty"`
-		Id           *int       `json:"id,omitempty"`
-		ResourceId   *string    `json:"resource_id,omitempty"`
-		ResourceType *string    `json:"resource_type,omitempty"`
-		UserId       *int       `json:"user_id,omitempty"`
-		Username     *string    `json:"username,omitempty"`
-	} `json:"audit_logs,omitempty"`
-	Limit  *int64 `json:"limit,omitempty"`
-	Offset *int64 `json:"offset,omitempty"`
+	AuditLogs *[]AuditLog `json:"audit_logs,omitempty"`
+	Limit     *int64      `json:"limit,omitempty"`
+	Offset    *int64      `json:"offset,omitempty"`
 
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
+}
+
+// CertificateInfo One certificate in a port's chain (cert_index 0 = leaf)
+type CertificateInfo struct {
+	CertIndex         int    `json:"cert_index"`
+	FingerprintSha256 string `json:"fingerprint_sha256"`
+	IsCa              bool   `json:"is_ca"`
+	Issuer            string `json:"issuer"`
+	IssuerCn          string `json:"issuer_cn"`
+	IssuerOrg         string `json:"issuer_org"`
+	KeyAlgorithm      string `json:"key_algorithm"`
+	KeyBits           int    `json:"key_bits"`
+
+	// NotAfter ISO 8601 UTC
+	NotAfter string `json:"not_after"`
+
+	// NotBefore ISO 8601 UTC
+	NotBefore    string `json:"not_before"`
+	Pem          string `json:"pem"`
+	SanDns       string `json:"san_dns"`
+	SanEmail     string `json:"san_email"`
+	SanIp        string `json:"san_ip"`
+	SelfSigned   bool   `json:"self_signed"`
+	Serial       string `json:"serial"`
+	SigAlgorithm string `json:"sig_algorithm"`
+	Subject      string `json:"subject"`
+	SubjectCn    string `json:"subject_cn"`
+	SubjectOrg   string `json:"subject_org"`
 }
 
 // CertificateList defines model for CertificateList.
 type CertificateList struct {
-	Certificates *[]struct {
-		Chain       *[]map[string]interface{} `json:"chain,omitempty"`
-		CipherSuite *string                   `json:"cipher_suite,omitempty"`
-		Port        *int                      `json:"port,omitempty"`
-		TlsVersion  *string                   `json:"tls_version,omitempty"`
-		Trusted     *bool                     `json:"trusted,omitempty"`
-		UpdatedAt   *time.Time                `json:"updated_at,omitempty"`
-	} `json:"certificates,omitempty"`
-	Total *int `json:"total,omitempty"`
+	Certificates *[]TLSPortCerts `json:"certificates,omitempty"`
+	Total        *int            `json:"total,omitempty"`
 }
 
 // ChangeList defines model for ChangeList.
 type ChangeList struct {
-	Changes *[]struct {
-		AfterData  *string                      `json:"after_data,omitempty"`
-		AgentId    *string                      `json:"agent_id,omitempty"`
-		BeforeData *string                      `json:"before_data,omitempty"`
-		ChangeType *ChangeListChangesChangeType `json:"change_type,omitempty"`
-		DetectedAt *time.Time                   `json:"detected_at,omitempty"`
-		EntityId   *int                         `json:"entity_id,omitempty"`
-		EntityType *string                      `json:"entity_type,omitempty"`
-		Id         *int                         `json:"id,omitempty"`
-		NetworkId  *int                         `json:"network_id,omitempty"`
-	} `json:"changes,omitempty"`
-	Limit  *int64 `json:"limit,omitempty"`
-	Offset *int64 `json:"offset,omitempty"`
+	Changes *[]ChangeLogEntry `json:"changes,omitempty"`
+	Limit   *int64            `json:"limit,omitempty"`
+	Offset  *int64            `json:"offset,omitempty"`
 
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
 }
 
-// ChangeListChangesChangeType defines model for ChangeList.Changes.ChangeType.
-type ChangeListChangesChangeType string
+// ChangeLogEntry defines model for ChangeLogEntry.
+type ChangeLogEntry struct {
+	AfterData  *string                  `json:"after_data,omitempty"`
+	AgentId    *string                  `json:"agent_id,omitempty"`
+	BeforeData *string                  `json:"before_data,omitempty"`
+	ChangeType ChangeLogEntryChangeType `json:"change_type"`
+	DetectedAt time.Time                `json:"detected_at"`
+	EntityId   *int64                   `json:"entity_id,omitempty"`
+	EntityType string                   `json:"entity_type"`
+	Id         int64                    `json:"id"`
+	NetworkId  *int64                   `json:"network_id,omitempty"`
+}
+
+// ChangeLogEntryChangeType defines model for ChangeLogEntry.ChangeType.
+type ChangeLogEntryChangeType string
+
+// DashboardConfig Saved dashboard widget card (db.DashboardConfig — id is an integer)
+type DashboardConfig struct {
+	CreatedAt  time.Time                 `json:"created_at"`
+	DataSource DashboardConfigDataSource `json:"data_source"`
+	Id         int64                     `json:"id"`
+	Name       string                    `json:"name"`
+	Position   int64                     `json:"position"`
+
+	// Query builtin:<key> or raw PromQL
+	Query           string `json:"query"`
+	RefreshInterval int64  `json:"refresh_interval"`
+
+	// Type list = builtin preset list, valid only with data_source builtin
+	Type      DashboardConfigType `json:"type"`
+	UpdatedAt time.Time           `json:"updated_at"`
+}
+
+// DashboardConfigDataSource defines model for DashboardConfig.DataSource.
+type DashboardConfigDataSource string
+
+// DashboardConfigType list = builtin preset list, valid only with data_source builtin
+type DashboardConfigType string
 
 // DashboardConfigList defines model for DashboardConfigList.
 type DashboardConfigList struct {
-	Configs *[]map[string]interface{} `json:"configs,omitempty"`
-	Total   *int                      `json:"total,omitempty"`
+	Configs *[]DashboardConfig `json:"configs,omitempty"`
+	Total   *int               `json:"total,omitempty"`
 }
 
 // Device defines model for Device.
 type Device struct {
-	Brand            *string                   `json:"brand,omitempty"`
-	DetectedServices *[]map[string]interface{} `json:"detected_services,omitempty"`
-	DeviceUuid       *string                   `json:"device_uuid,omitempty"`
-	Id               *int                      `json:"id,omitempty"`
-	IpAddress        *string                   `json:"ip_address,omitempty"`
-	LastSeen         *time.Time                `json:"last_seen,omitempty"`
-	MacAddress       *string                   `json:"mac_address,omitempty"`
-	Model            *string                   `json:"model,omitempty"`
-	Name             *string                   `json:"name,omitempty"`
-	NetworkId        *int                      `json:"network_id,omitempty"`
-	OpenPorts        *[]map[string]interface{} `json:"open_ports,omitempty"`
+	Brand       string    `json:"brand"`
+	CreatedAt   time.Time `json:"created_at"`
+	Description string    `json:"description"`
 
-	// ScanAttributes Evidence-derived attributes (mac, oui_vendor, inferred_type, ...)
-	ScanAttributes *map[string]interface{} `json:"scan_attributes,omitempty"`
+	// DetectedServices Legacy JSON-string column; parse for ServiceEntry items. UI prefers scan_attributes.detected_services
+	DetectedServices string `json:"detected_services"`
+	Id               int64  `json:"id"`
+	IpAddress        string `json:"ip_address"`
+
+	// LastOnlineAt Authoritative last-alive from the verdict series (detail rows only)
+	LastOnlineAt   *time.Time `json:"last_online_at,omitempty"`
+	LastScanRttMs  int64      `json:"last_scan_rtt_ms"`
+	LastScanTaskId *int64     `json:"last_scan_task_id,omitempty"`
+	LastScannedAt  *time.Time `json:"last_scanned_at,omitempty"`
+
+	// LastSeen Scan-derived last observed online
+	LastSeen   *time.Time `json:"last_seen,omitempty"`
+	Location   string     `json:"location"`
+	MacAddress string     `json:"mac_address"`
+	Model      string     `json:"model"`
+	Name       string     `json:"name"`
+
+	// NetworkId Logical network the device was discovered on (absent for legacy rows)
+	NetworkId       *int64  `json:"network_id,omitempty"`
+	NetworkName     *string `json:"network_name,omitempty"`
+	NodeExporterUrl string  `json:"node_exporter_url"`
+
+	// OfflineSince Retention clock start when offline
+	OfflineSince *time.Time `json:"offline_since,omitempty"`
+
+	// OpenPorts Legacy JSON-string column; parse for OpenPortEntry items. UI prefers scan_attributes.open_ports
+	OpenPorts        string `json:"open_ports"`
+	PrometheusLabels string `json:"prometheus_labels"`
+	PrometheusUrl    string `json:"prometheus_url"`
+	PurchaseDate     string `json:"purchase_date"`
+	Purpose          string `json:"purpose"`
+
+	// ScanAttributes Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively — treat every field as optional. Engine-owned: user edits go to user_attributes.
+	ScanAttributes ScanAttributes `json:"scan_attributes"`
 
 	// ScanSource scanner_v2 | manual | passive:*
-	ScanSource *string                 `json:"scan_source,omitempty"`
-	Status     *DeviceStatus           `json:"status,omitempty"`
-	Tags       *map[string]interface{} `json:"tags,omitempty"`
-
-	// Type e.g. camera, server, pc, switch, other
-	Type           *string                 `json:"type,omitempty"`
-	UserAttributes *map[string]interface{} `json:"user_attributes,omitempty"`
+	ScanSource     string            `json:"scan_source"`
+	SerialNumber   string            `json:"serial_number"`
+	Status         DeviceStatus      `json:"status"`
+	Tags           string            `json:"tags"`
+	Type           DeviceType        `json:"type"`
+	UpdatedAt      time.Time         `json:"updated_at"`
+	UserAttributes map[string]string `json:"user_attributes"`
+	WarrantyExpiry string            `json:"warranty_expiry"`
 }
 
 // DeviceStatus defines model for Device.Status.
 type DeviceStatus string
 
+// DeviceType defines model for Device.Type.
+type DeviceType string
+
+// DeviceConfigDetail defines model for DeviceConfigDetail.
+type DeviceConfigDetail struct {
+	ConfigHash   string    `json:"config_hash"`
+	ConfigText   string    `json:"config_text"`
+	DeviceId     int64     `json:"device_id"`
+	DiffFromPrev string    `json:"diff_from_prev"`
+	FetchedAt    time.Time `json:"fetched_at"`
+	Id           int64     `json:"id"`
+	Protocol     string    `json:"protocol"`
+}
+
+// DeviceConfigDiff defines model for DeviceConfigDiff.
+type DeviceConfigDiff struct {
+	A struct {
+		FetchedAt time.Time `json:"fetched_at"`
+		Id        int64     `json:"id"`
+	} `json:"a"`
+	B struct {
+		FetchedAt time.Time `json:"fetched_at"`
+		Id        int64     `json:"id"`
+	} `json:"b"`
+
+	// Diff Unified diff; empty when identical
+	Diff string `json:"diff"`
+}
+
 // DeviceConfigList defines model for DeviceConfigList.
 type DeviceConfigList struct {
-	Items *[]struct {
-		ConfigHash *string    `json:"config_hash,omitempty"`
-		DeviceId   *int       `json:"device_id,omitempty"`
-		FetchedAt  *time.Time `json:"fetched_at,omitempty"`
-		HasDiff    *bool      `json:"has_diff,omitempty"`
-		Id         *int       `json:"id,omitempty"`
-		Protocol   *string    `json:"protocol,omitempty"`
-	} `json:"items,omitempty"`
-	Limit  *int64 `json:"limit,omitempty"`
-	Offset *int64 `json:"offset,omitempty"`
+	Items  *[]DeviceConfigSummary `json:"items,omitempty"`
+	Limit  *int64                 `json:"limit,omitempty"`
+	Offset *int64                 `json:"offset,omitempty"`
 
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
+}
+
+// DeviceConfigSummary defines model for DeviceConfigSummary.
+type DeviceConfigSummary struct {
+	ConfigHash string    `json:"config_hash"`
+	DeviceId   int64     `json:"device_id"`
+	FetchedAt  time.Time `json:"fetched_at"`
+	HasDiff    bool      `json:"has_diff"`
+	Id         int64     `json:"id"`
+	Protocol   string    `json:"protocol"`
 }
 
 // DeviceDocumentList defines model for DeviceDocumentList.
@@ -443,27 +987,111 @@ type DeviceList struct {
 	Total *int64 `json:"total,omitempty"`
 }
 
+// DeviceNeighbor One L2 adjacency edge (device_neighbors). Pointer fields are present-but-null when unknown (no omitempty).
+type DeviceNeighbor struct {
+	DeviceId  int64      `json:"device_id"`
+	FirstSeen *time.Time `json:"first_seen"`
+	Id        int64      `json:"id"`
+	LastSeen  *time.Time `json:"last_seen"`
+	LocalPort *string    `json:"local_port"`
+
+	// NeighborDeviceId Present when the neighbor MAC matched a scanned device
+	NeighborDeviceId *int64                 `json:"neighbor_device_id"`
+	NeighborIp       *string                `json:"neighbor_ip"`
+	NeighborMac      string                 `json:"neighbor_mac"`
+	NeighborName     *string                `json:"neighbor_name"`
+	NeighborStatus   *string                `json:"neighbor_status"`
+	NeighborType     *string                `json:"neighbor_type"`
+	Protocol         DeviceNeighborProtocol `json:"protocol"`
+	RemotePort       *string                `json:"remote_port"`
+}
+
+// DeviceNeighborProtocol defines model for DeviceNeighbor.Protocol.
+type DeviceNeighborProtocol string
+
+// DeviceStats defines model for DeviceStats.
+type DeviceStats struct {
+	// ByStatus keyed online/offline/unknown
+	ByStatus map[string]int64 `json:"by_status"`
+	ByType   map[string]int64 `json:"by_type"`
+}
+
+// DeviceSystem defines model for DeviceSystem.
+type DeviceSystem struct {
+	Category       string    `json:"category"`
+	CreatedAt      time.Time `json:"created_at"`
+	Description    string    `json:"description"`
+	DeviceId       int64     `json:"device_id"`
+	EntryUrl       string    `json:"entry_url"`
+	Id             int64     `json:"id"`
+	MetricsEnabled bool      `json:"metrics_enabled"`
+	MetricsUrl     string    `json:"metrics_url"`
+	Name           string    `json:"name"`
+	Tags           string    `json:"tags"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
 // DeviceSystemList defines model for DeviceSystemList.
 type DeviceSystemList struct {
-	Limit   *int64                    `json:"limit,omitempty"`
-	Offset  *int64                    `json:"offset,omitempty"`
-	Systems *[]map[string]interface{} `json:"systems,omitempty"`
+	Limit   *int64          `json:"limit,omitempty"`
+	Offset  *int64          `json:"offset,omitempty"`
+	Systems *[]DeviceSystem `json:"systems,omitempty"`
 
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
 }
 
-// Document defines model for Document.
-type Document struct {
-	CreatedAt   *time.Time `json:"created_at,omitempty"`
-	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
-	Description *string    `json:"description,omitempty"`
-	DocType     *string    `json:"doc_type,omitempty"`
-	FilePath    *string    `json:"file_path,omitempty"`
-	FileSize    *int       `json:"file_size,omitempty"`
-	Id          *int       `json:"id,omitempty"`
-	Title       *string    `json:"title,omitempty"`
+// DiscoveryStatus Passive-discovery runtime observability. NOTE: config/stats inner keys are Go-default PascalCase (the structs carry no json tags) and Interval is time.Duration — an integer in NANOSECONDS.
+type DiscoveryStatus struct {
+	Config struct {
+		// Interval ARP-source poll cadence
+		Interval int64 `json:"Interval"`
+
+		// TriggerIdentify Single-IP identify scan on genuinely-new hosts
+		TriggerIdentify bool `json:"TriggerIdentify"`
+	} `json:"config"`
+	Enabled           bool `json:"enabled"`
+	RecentDiscoveries []struct {
+		At      time.Time                               `json:"at"`
+		Ip      string                                  `json:"ip"`
+		Mac     *string                                 `json:"mac,omitempty"`
+		Outcome DiscoveryStatusRecentDiscoveriesOutcome `json:"outcome"`
+		Source  string                                  `json:"source"`
+	} `json:"recent_discoveries"`
+	Sources   []string  `json:"sources"`
+	StartedAt time.Time `json:"started_at"`
+	Stats     struct {
+		DeviceRecorded    int64 `json:"DeviceRecorded"`
+		EventsReceived    int64 `json:"EventsReceived"`
+		IdentifyAlive     int64 `json:"IdentifyAlive"`
+		IdentifyDead      int64 `json:"IdentifyDead"`
+		IdentifyTriggered int64 `json:"IdentifyTriggered"`
+		KnownHostSkipped  int64 `json:"KnownHostSkipped"`
+		SuppressedRecent  int64 `json:"SuppressedRecent"`
+	} `json:"stats"`
+	Uptime string `json:"uptime"`
 }
+
+// DiscoveryStatusRecentDiscoveriesOutcome defines model for DiscoveryStatus.RecentDiscoveries.Outcome.
+type DiscoveryStatusRecentDiscoveriesOutcome string
+
+// Document Linked document row (db.Document marshaled directly)
+type Document struct {
+	CreatedAt   time.Time    `json:"created_at"`
+	DeletedAt   *time.Time   `json:"deleted_at"`
+	Description string       `json:"description"`
+	FilePath    string       `json:"file_path"`
+	FileSize    int64        `json:"file_size"`
+	Id          int64        `json:"id"`
+	MimeType    string       `json:"mime_type"`
+	Title       string       `json:"title"`
+	Type        DocumentType `json:"type"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+	Url         string       `json:"url"`
+}
+
+// DocumentType defines model for Document.Type.
+type DocumentType string
 
 // DocumentList defines model for DocumentList.
 type DocumentList struct {
@@ -481,59 +1109,110 @@ type Error struct {
 	Error string `json:"error"`
 }
 
+// HeartbeatConfig One heartbeat probe row. NOTE enabled is 0/1 on the wire (SQLite INTEGER column), not a JSON boolean.
+type HeartbeatConfig struct {
+	CreatedAt       time.Time              `json:"created_at"`
+	DeviceId        int64                  `json:"device_id"`
+	Enabled         HeartbeatConfigEnabled `json:"enabled"`
+	Id              int64                  `json:"id"`
+	IntervalSeconds int64                  `json:"interval_seconds"`
+	Method          HeartbeatConfigMethod  `json:"method"`
+	SnmpCommunity   string                 `json:"snmp_community"`
+	SnmpOid         string                 `json:"snmp_oid"`
+	Target          string                 `json:"target"`
+	TimeoutSeconds  int64                  `json:"timeout_seconds"`
+	UpdatedAt       time.Time              `json:"updated_at"`
+}
+
+// HeartbeatConfigEnabled defines model for HeartbeatConfig.Enabled.
+type HeartbeatConfigEnabled int
+
+// HeartbeatConfigMethod defines model for HeartbeatConfig.Method.
+type HeartbeatConfigMethod string
+
 // HeartbeatConfigList defines model for HeartbeatConfigList.
 type HeartbeatConfigList struct {
-	Configs *[]map[string]interface{} `json:"configs,omitempty"`
-	Total   *int                      `json:"total,omitempty"`
+	Configs *[]HeartbeatConfig `json:"configs,omitempty"`
+	Total   *int               `json:"total,omitempty"`
 }
+
+// HeartbeatResult defines model for HeartbeatResult.
+type HeartbeatResult struct {
+	CheckedAt    time.Time             `json:"checked_at"`
+	ConfigId     int64                 `json:"config_id"`
+	DeviceId     int64                 `json:"device_id"`
+	ErrorMessage string                `json:"error_message"`
+	Id           int64                 `json:"id"`
+	LatencyMs    float32               `json:"latency_ms"`
+	Status       HeartbeatResultStatus `json:"status"`
+}
+
+// HeartbeatResultStatus defines model for HeartbeatResult.Status.
+type HeartbeatResultStatus string
 
 // HeartbeatResultList defines model for HeartbeatResultList.
 type HeartbeatResultList struct {
-	Limit   *int64                    `json:"limit,omitempty"`
-	Offset  *int64                    `json:"offset,omitempty"`
-	Results *[]map[string]interface{} `json:"results,omitempty"`
+	Limit   *int64             `json:"limit,omitempty"`
+	Offset  *int64             `json:"offset,omitempty"`
+	Results *[]HeartbeatResult `json:"results,omitempty"`
 
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
 }
 
+// HeartbeatStats defines model for HeartbeatStats.
+type HeartbeatStats struct {
+	AvgLatencyMs float32 `json:"avg_latency_ms"`
+	FailCount    int64   `json:"fail_count"`
+	SuccessCount int64   `json:"success_count"`
+	TimeoutCount int64   `json:"timeout_count"`
+}
+
 // LoginResponse defines model for LoginResponse.
 type LoginResponse struct {
-	Token             *string `json:"token,omitempty"`
-	TwoFactorRequired *bool   `json:"two_factor_required,omitempty"`
-	User              *User   `json:"user,omitempty"`
-	UserId            *int    `json:"user_id,omitempty"`
+	// Token JWT (cookie mibee_token preferred; Bearer fallback)
+	Token             string `json:"token"`
+	TwoFactorRequired *bool  `json:"two_factor_required,omitempty"`
+	User              User   `json:"user"`
+	UserId            *int   `json:"user_id,omitempty"`
 }
 
 // NeighborList defines model for NeighborList.
 type NeighborList struct {
-	Neighbors *[]map[string]interface{} `json:"neighbors,omitempty"`
-	Total     *int                      `json:"total,omitempty"`
+	Neighbors *[]DeviceNeighbor `json:"neighbors,omitempty"`
+	Total     *int              `json:"total,omitempty"`
 }
 
-// Network defines model for Network.
+// Network Logical network row (db.Network marshaled directly — pointer columns are present-but-null)
 type Network struct {
 	// AgentId Non-empty = managed by that distributed agent
-	AgentId   *string    `json:"agent_id,omitempty"`
-	Cidr      *string    `json:"cidr,omitempty"`
-	CreatedAt *time.Time `json:"created_at,omitempty"`
-	Id        *int       `json:"id,omitempty"`
-	Name      *string    `json:"name,omitempty"`
-	Site      *string    `json:"site,omitempty"`
+	AgentId *string `json:"agent_id"`
+
+	// Cidr Advisory (no strict validation)
+	Cidr      *string   `json:"cidr"`
+	CreatedAt time.Time `json:"created_at"`
+	Id        int64     `json:"id"`
+	Metadata  string    `json:"metadata"`
+	Name      string    `json:"name"`
+	Site      *string   `json:"site"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// NetworkGrant defines model for NetworkGrant.
+type NetworkGrant struct {
+	GrantedAt   time.Time `json:"granted_at"`
+	Id          int64     `json:"id"`
+	NetworkId   int64     `json:"network_id"`
+	NetworkName *string   `json:"network_name,omitempty"`
+	UserId      int64     `json:"user_id"`
+	Username    *string   `json:"username,omitempty"`
 }
 
 // NetworkGrantList defines model for NetworkGrantList.
 type NetworkGrantList struct {
-	Grants *[]struct {
-		GrantedAt   *time.Time `json:"granted_at,omitempty"`
-		Id          *int       `json:"id,omitempty"`
-		NetworkId   *int       `json:"network_id,omitempty"`
-		NetworkName *string    `json:"network_name,omitempty"`
-		UserId      *int       `json:"user_id,omitempty"`
-		Username    *string    `json:"username,omitempty"`
-	} `json:"grants,omitempty"`
-	Limit  *int64 `json:"limit,omitempty"`
-	Offset *int64 `json:"offset,omitempty"`
+	Grants *[]NetworkGrant `json:"grants,omitempty"`
+	Limit  *int64          `json:"limit,omitempty"`
+	Offset *int64          `json:"offset,omitempty"`
 
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
@@ -545,14 +1224,84 @@ type NetworkList struct {
 	Total    *int       `json:"total,omitempty"`
 }
 
+// NotificationChannel Notification channel (password/secret masked in responses)
+type NotificationChannel struct {
+	// Config Channel-type-specific config (secret redacted on read)
+	Config    map[string]interface{}  `json:"config"`
+	CreatedAt time.Time               `json:"created_at"`
+	Enabled   bool                    `json:"enabled"`
+	Id        int64                   `json:"id"`
+	Name      string                  `json:"name"`
+	Type      NotificationChannelType `json:"type"`
+	UpdatedAt time.Time               `json:"updated_at"`
+}
+
+// NotificationChannelType defines model for NotificationChannel.Type.
+type NotificationChannelType string
+
+// NotificationChannelList defines model for NotificationChannelList.
+type NotificationChannelList struct {
+	Channels *[]NotificationChannel `json:"channels,omitempty"`
+	Total    *int                   `json:"total,omitempty"`
+}
+
+// NotificationLog Outbound dispatch history with the requesting user's is_read flag
+type NotificationLog struct {
+	ChannelId    *int64                `json:"channel_id,omitempty"`
+	ErrorMessage string                `json:"error_message"`
+	Id           int64                 `json:"id"`
+	IsRead       bool                  `json:"is_read"`
+	Payload      string                `json:"payload"`
+	RuleId       *int64                `json:"rule_id,omitempty"`
+	SentAt       time.Time             `json:"sent_at"`
+	Status       NotificationLogStatus `json:"status"`
+}
+
+// NotificationLogStatus defines model for NotificationLog.Status.
+type NotificationLogStatus string
+
 // NotificationLogList defines model for NotificationLogList.
 type NotificationLogList struct {
-	Limit  *int64                    `json:"limit,omitempty"`
-	Logs   *[]map[string]interface{} `json:"logs,omitempty"`
-	Offset *int64                    `json:"offset,omitempty"`
+	Limit  *int64             `json:"limit,omitempty"`
+	Logs   *[]NotificationLog `json:"logs,omitempty"`
+	Offset *int64             `json:"offset,omitempty"`
 
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
+}
+
+// NotificationRule Event→channel binding with anti-flap cooldown (#139)
+type NotificationRule struct {
+	ChannelId       int64                     `json:"channel_id"`
+	CooldownMinutes int64                     `json:"cooldown_minutes"`
+	CreatedAt       time.Time                 `json:"created_at"`
+	Enabled         bool                      `json:"enabled"`
+	EventType       NotificationRuleEventType `json:"event_type"`
+	Id              int64                     `json:"id"`
+	LastTriggeredAt *time.Time                `json:"last_triggered_at,omitempty"`
+	Name            string                    `json:"name"`
+	ScopeDeviceUuid *string                   `json:"scope_device_uuid,omitempty"`
+	ScopeNetworkId  *int64                    `json:"scope_network_id,omitempty"`
+	ScopeType       NotificationRuleScopeType `json:"scope_type"`
+	UpdatedAt       time.Time                 `json:"updated_at"`
+}
+
+// NotificationRuleEventType defines model for NotificationRule.EventType.
+type NotificationRuleEventType string
+
+// NotificationRuleScopeType defines model for NotificationRule.ScopeType.
+type NotificationRuleScopeType string
+
+// NotificationRuleList defines model for NotificationRuleList.
+type NotificationRuleList struct {
+	Rules *[]NotificationRule `json:"rules,omitempty"`
+	Total *int                `json:"total,omitempty"`
+}
+
+// OpenPortEntry defines model for OpenPortEntry.
+type OpenPortEntry struct {
+	Port    int     `json:"port"`
+	Service *string `json:"service,omitempty"`
 }
 
 // PageMeta Echo of the effective pagination (absent on complete lists)
@@ -564,15 +1313,53 @@ type PageMeta struct {
 	Total *int64 `json:"total,omitempty"`
 }
 
+// PipelineConfig Per-task pipeline stage toggles (an OBJECT in responses/requests;
+type PipelineConfig struct {
+	Icmp struct {
+		Enabled bool `json:"enabled"`
+		Timeout int  `json:"timeout"`
+	} `json:"icmp"`
+	NodeExporter struct {
+		Enabled bool `json:"enabled"`
+	} `json:"node_exporter"`
+	PortScan struct {
+		Enabled  bool   `json:"enabled"`
+		Ports    string `json:"ports"`
+		ScanType string `json:"scan_type"`
+	} `json:"port_scan"`
+	Prometheus struct {
+		Enabled bool   `json:"enabled"`
+		Ports   string `json:"ports"`
+	} `json:"prometheus"`
+	ServiceDetect struct {
+		Enabled bool `json:"enabled"`
+	} `json:"service_detect"`
+	Snmp struct {
+		Community string `json:"community"`
+		Enabled   bool   `json:"enabled"`
+	} `json:"snmp"`
+}
+
 // ProbeResult defines model for ProbeResult.
 type ProbeResult struct {
-	CheckedAt *time.Time         `json:"checked_at,omitempty"`
-	Error     *string            `json:"error,omitempty"`
-	Id        *int               `json:"id,omitempty"`
-	LatencyMs *float32           `json:"latency_ms,omitempty"`
-	Status    *ProbeResultStatus `json:"status,omitempty"`
-	TargetId  *int               `json:"target_id,omitempty"`
-	Vantage   *string            `json:"vantage,omitempty"`
+	// CertNotAfter Leaf cert expiry; empty when none collected
+	CertNotAfter *string `json:"cert_not_after,omitempty"`
+
+	// CertTrusted null = no cert collected that run
+	CertTrusted  *bool             `json:"cert_trusted,omitempty"`
+	CheckedAt    string            `json:"checked_at"`
+	ErrorMessage *string           `json:"error_message,omitempty"`
+	Id           int64             `json:"id"`
+	LatencyMs    float32           `json:"latency_ms"`
+	Status       ProbeResultStatus `json:"status"`
+
+	// StatusCode HTTP status (http module); 0 otherwise
+	StatusCode int     `json:"status_code"`
+	TargetId   int64   `json:"target_id"`
+	TlsVersion *string `json:"tls_version,omitempty"`
+
+	// Vantage 'center' or 'agent:{id}'
+	Vantage string `json:"vantage"`
 }
 
 // ProbeResultStatus defines model for ProbeResult.Status.
@@ -588,23 +1375,34 @@ type ProbeResultList struct {
 	Total *int64 `json:"total,omitempty"`
 }
 
-// ProbeTarget defines model for ProbeTarget.
+// ProbeTarget Synthetic-probe target. module (NOT method) selects the executor; last_* denormalize the newest outcome (empty/0 = never probed).
 type ProbeTarget struct {
-	CreatedAt       *time.Time         `json:"created_at,omitempty"`
-	Enabled         *bool              `json:"enabled,omitempty"`
-	ExpectStatus    *int               `json:"expect_status,omitempty"`
-	Id              *int               `json:"id,omitempty"`
-	IntervalSeconds *int               `json:"interval_seconds,omitempty"`
-	Method          *ProbeTargetMethod `json:"method,omitempty"`
-	Name            *string            `json:"name,omitempty"`
-	Target          *string            `json:"target,omitempty"`
+	CreatedAt       string                 `json:"created_at"`
+	Enabled         bool                   `json:"enabled"`
+	Id              int64                  `json:"id"`
+	IntervalSeconds int                    `json:"interval_seconds"`
+	LastError       *string                `json:"last_error,omitempty"`
+	LastLatencyMs   float32                `json:"last_latency_ms"`
+	LastRunAt       *string                `json:"last_run_at,omitempty"`
+	LastStatus      *ProbeTargetLastStatus `json:"last_status,omitempty"`
+	Module          ProbeTargetModule      `json:"module"`
+	Name            string                 `json:"name"`
+	Notes           string                 `json:"notes"`
 
-	// Vantage center (default) | agent:{agent_id} | all
-	Vantage *string `json:"vantage,omitempty"`
+	// Target URL (http), host:port (tls/tcp), host/IP (icmp)
+	Target         string `json:"target"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+	UpdatedAt      string `json:"updated_at"`
+
+	// Vantage 'center' (default) | 'agent:{id}' | 'all'
+	Vantage string `json:"vantage"`
 }
 
-// ProbeTargetMethod defines model for ProbeTarget.Method.
-type ProbeTargetMethod string
+// ProbeTargetLastStatus defines model for ProbeTarget.LastStatus.
+type ProbeTargetLastStatus string
+
+// ProbeTargetModule defines model for ProbeTarget.Module.
+type ProbeTargetModule string
 
 // ProbeTargetList defines model for ProbeTargetList.
 type ProbeTargetList struct {
@@ -616,18 +1414,25 @@ type ProbeTargetList struct {
 	Total *int64 `json:"total,omitempty"`
 }
 
+// PrometheusInfo defines model for PrometheusInfo.
+type PrometheusInfo struct {
+	Labels          *map[string]string `json:"labels,omitempty"`
+	NodeExporterUrl *string            `json:"node_exporter_url,omitempty"`
+	Url             *string            `json:"url,omitempty"`
+}
+
 // SNMPCredential Masked projection — passphrases are NEVER returned (not even ciphertext)
 type SNMPCredential struct {
-	AuthProtocol  *string                      `json:"auth_protocol,omitempty"`
-	Community     *string                      `json:"community,omitempty"`
-	HasAuth       *bool                        `json:"has_auth,omitempty"`
-	HasPriv       *bool                        `json:"has_priv,omitempty"`
-	Id            *int                         `json:"id,omitempty"`
-	Name          *string                      `json:"name,omitempty"`
-	Notes         *string                      `json:"notes,omitempty"`
-	PrivProtocol  *string                      `json:"priv_protocol,omitempty"`
-	SecurityLevel *SNMPCredentialSecurityLevel `json:"security_level,omitempty"`
-	Username      *string                      `json:"username,omitempty"`
+	AuthProtocol  *string                     `json:"auth_protocol,omitempty"`
+	Community     *string                     `json:"community,omitempty"`
+	HasAuth       bool                        `json:"has_auth"`
+	HasPriv       bool                        `json:"has_priv"`
+	Id            int64                       `json:"id"`
+	Name          string                      `json:"name"`
+	Notes         *string                     `json:"notes,omitempty"`
+	PrivProtocol  *string                     `json:"priv_protocol,omitempty"`
+	SecurityLevel SNMPCredentialSecurityLevel `json:"security_level"`
+	Username      *string                     `json:"username,omitempty"`
 }
 
 // SNMPCredentialSecurityLevel defines model for SNMPCredential.SecurityLevel.
@@ -643,30 +1448,112 @@ type SNMPCredentialList struct {
 	Total *int64 `json:"total,omitempty"`
 }
 
+// SNMPDiscovery Parsed SNMP sysObject query (mirrors domain.SNMPDiscovery)
+type SNMPDiscovery struct {
+	SysContact  *string `json:"sys_contact,omitempty"`
+	SysDescr    *string `json:"sys_descr,omitempty"`
+	SysLocation *string `json:"sys_location,omitempty"`
+	SysName     *string `json:"sys_name,omitempty"`
+	SysObjectId *string `json:"sys_object_id,omitempty"`
+	SysServices *int    `json:"sys_services,omitempty"`
+}
+
+// SSHCredential SSH credential metadata (secret redacted)
+type SSHCredential struct {
+	AuthMethod    SSHCredentialAuthMethod `json:"auth_method"`
+	Enabled       bool                    `json:"enabled"`
+	HasPassphrase bool                    `json:"has_passphrase"`
+	HasSecret     bool                    `json:"has_secret"`
+	HostKeyFp     *string                 `json:"host_key_fp,omitempty"`
+	Id            int64                   `json:"id"`
+	Name          string                  `json:"name"`
+	Notes         *string                 `json:"notes,omitempty"`
+	Username      *string                 `json:"username,omitempty"`
+}
+
+// SSHCredentialAuthMethod defines model for SSHCredential.AuthMethod.
+type SSHCredentialAuthMethod string
+
 // SSHCredentialList defines model for SSHCredentialList.
 type SSHCredentialList struct {
-	Credentials *[]map[string]interface{} `json:"credentials,omitempty"`
-	Limit       *int64                    `json:"limit,omitempty"`
-	Offset      *int64                    `json:"offset,omitempty"`
+	Credentials *[]SSHCredential `json:"credentials,omitempty"`
+	Limit       *int64           `json:"limit,omitempty"`
+	Offset      *int64           `json:"offset,omitempty"`
 
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
 }
 
-// ScanResult defines model for ScanResult.
+// ScanAttributes Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively — treat every field as optional. Engine-owned: user edits go to user_attributes.
+type ScanAttributes struct {
+	CpuCount         *int            `json:"cpu_count,omitempty"`
+	CpuModel         *string         `json:"cpu_model,omitempty"`
+	DetectedServices *[]ServiceEntry `json:"detected_services,omitempty"`
+
+	// Extras Namespaced probe overflow (mdns.*
+	Extras              *map[string]string `json:"extras,omitempty"`
+	FirmwareVersion     *string            `json:"firmware_version,omitempty"`
+	Hostname            *string            `json:"hostname,omitempty"`
+	InferredDescription *string            `json:"inferred_description,omitempty"`
+	InferredType        *string            `json:"inferred_type,omitempty"`
+
+	// InferredTypeSource protocol = evidence-backed (trustworthy); heuristic = hostname/brand guess (spoofable)
+	InferredTypeSource *ScanAttributesInferredTypeSource `json:"inferred_type_source,omitempty"`
+	KernelVersion      *string                           `json:"kernel_version,omitempty"`
+	LastScanRttMs      *int64                            `json:"last_scan_rtt_ms,omitempty"`
+
+	// LastScannedAt RFC3339; empty when never scanned
+	LastScannedAt *string `json:"last_scanned_at,omitempty"`
+
+	// Mac normalized lowercase aa:bb:cc:..
+	Mac *string `json:"mac,omitempty"`
+
+	// MacIsLocallyAdministered U/L bit set — neutral observability flag
+	MacIsLocallyAdministered *bool            `json:"mac_is_locally_administered,omitempty"`
+	MacIsMulticast           *bool            `json:"mac_is_multicast,omitempty"`
+	MemoryTotalBytes         *int64           `json:"memory_total_bytes,omitempty"`
+	OpenPorts                *[]OpenPortEntry `json:"open_ports,omitempty"`
+	Os                       *string          `json:"os,omitempty"`
+	OsVersion                *string          `json:"os_version,omitempty"`
+
+	// OuiPrefix IEEE block via longest-prefix (6/7/9 hex)
+	OuiPrefix *string `json:"oui_prefix,omitempty"`
+
+	// OuiVendor NIC silicon vendor — distinct from self-declared vendor
+	OuiVendor  *string         `json:"oui_vendor,omitempty"`
+	Prometheus *PrometheusInfo `json:"prometheus,omitempty"`
+	ScanSource *string         `json:"scan_source,omitempty"`
+
+	// Snmp Parsed SNMP sysObject query (mirrors domain.SNMPDiscovery)
+	Snmp          *SNMPDiscovery `json:"snmp,omitempty"`
+	Ttl           *int           `json:"ttl,omitempty"`
+	UptimeSeconds *int64         `json:"uptime_seconds,omitempty"`
+
+	// Vendor OUI lookup or SNMP/HTTP-derived vendor
+	Vendor               *string                `json:"vendor,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// ScanAttributesInferredTypeSource protocol = evidence-backed (trustworthy); heuristic = hostname/brand guess (spoofable)
+type ScanAttributesInferredTypeSource string
+
+// ScanResult One per-IP scan outcome. ports/services/snmp_data are legacy JSON-string columns (parse client-side).
 type ScanResult struct {
-	Alive         *bool                     `json:"alive,omitempty"`
-	Id            *int                      `json:"id,omitempty"`
-	InferredBrand *string                   `json:"inferred_brand,omitempty"`
-	InferredType  *string                   `json:"inferred_type,omitempty"`
-	Ip            *string                   `json:"ip,omitempty"`
-	Ports         *[]map[string]interface{} `json:"ports,omitempty"`
-	RttMs         *int                      `json:"rtt_ms,omitempty"`
-	RunId         *int                      `json:"run_id,omitempty"`
-	ScannedAt     *time.Time                `json:"scanned_at,omitempty"`
-	Services      *map[string]interface{}   `json:"services,omitempty"`
-	SnmpData      *map[string]interface{}   `json:"snmp_data,omitempty"`
-	TaskId        *int                      `json:"task_id,omitempty"`
+	Alive                bool      `json:"alive"`
+	Id                   int64     `json:"id"`
+	Ip                   string    `json:"ip"`
+	NodeExporterData     string    `json:"node_exporter_data"`
+	NodeExporterDetected bool      `json:"node_exporter_detected"`
+	NodeExporterUrl      *string   `json:"node_exporter_url,omitempty"`
+	Ports                string    `json:"ports"`
+	PrometheusDetected   bool      `json:"prometheus_detected"`
+	PrometheusUrl        *string   `json:"prometheus_url,omitempty"`
+	RttMs                int64     `json:"rtt_ms"`
+	RunId                *int64    `json:"run_id,omitempty"`
+	ScannedAt            time.Time `json:"scanned_at"`
+	Services             string    `json:"services"`
+	SnmpData             string    `json:"snmp_data"`
+	TaskId               int64     `json:"task_id"`
 }
 
 // ScanResultList defines model for ScanResultList.
@@ -681,17 +1568,18 @@ type ScanResultList struct {
 
 // ScanRun defines model for ScanRun.
 type ScanRun struct {
-	AliveHosts   *int           `json:"alive_hosts,omitempty"`
-	DurationMs   *int           `json:"duration_ms,omitempty"`
-	ErrorMessage *string        `json:"error_message,omitempty"`
-	FinishedAt   *time.Time     `json:"finished_at,omitempty"`
-	Id           *int           `json:"id,omitempty"`
-	NewHosts     *int           `json:"new_hosts,omitempty"`
-	StartedAt    *time.Time     `json:"started_at,omitempty"`
-	Status       *ScanRunStatus `json:"status,omitempty"`
-	TaskId       *int           `json:"task_id,omitempty"`
-	TotalHosts   *int           `json:"total_hosts,omitempty"`
-	UpdatedHosts *int           `json:"updated_hosts,omitempty"`
+	AliveHosts   int           `json:"alive_hosts"`
+	CreatedAt    time.Time     `json:"created_at"`
+	DurationMs   int           `json:"duration_ms"`
+	ErrorMessage *string       `json:"error_message,omitempty"`
+	FinishedAt   *time.Time    `json:"finished_at,omitempty"`
+	Id           int64         `json:"id"`
+	NewHosts     int           `json:"new_hosts"`
+	StartedAt    *time.Time    `json:"started_at,omitempty"`
+	Status       ScanRunStatus `json:"status"`
+	TaskId       int64         `json:"task_id"`
+	TotalHosts   int           `json:"total_hosts"`
+	UpdatedHosts int           `json:"updated_hosts"`
 }
 
 // ScanRunStatus defines model for ScanRun.Status.
@@ -709,19 +1597,25 @@ type ScanRunList struct {
 
 // ScanTask defines model for ScanTask.
 type ScanTask struct {
-	CreatedAt    *time.Time `json:"created_at,omitempty"`
-	CredentialId *int       `json:"credential_id,omitempty"`
-	CronExpr     *string    `json:"cron_expr,omitempty"`
-	Enabled      *bool      `json:"enabled,omitempty"`
-	Id           *int       `json:"id,omitempty"`
-	LastRunAt    *time.Time `json:"last_run_at,omitempty"`
-	Name         *string    `json:"name,omitempty"`
-	NetworkId    *int       `json:"network_id,omitempty"`
-	NextRunAt    *time.Time `json:"next_run_at,omitempty"`
+	ConcurrentHosts int       `json:"concurrent_hosts"`
+	CreatedAt       time.Time `json:"created_at"`
 
-	// PipelineConfig Pipeline stage configuration (an OBJECT in responses;
-	PipelineConfig *map[string]interface{} `json:"pipeline_config,omitempty"`
-	Targets        *string                 `json:"targets,omitempty"`
+	// CredentialId Bound SNMP credential; absent = engine default community
+	CredentialId  *int64     `json:"credential_id,omitempty"`
+	CronExpr      string     `json:"cron_expr"`
+	Enabled       bool       `json:"enabled"`
+	GlobalLabels  string     `json:"global_labels"`
+	Id            int64      `json:"id"`
+	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
+	LastRunStatus *string    `json:"last_run_status,omitempty"`
+	Name          string     `json:"name"`
+	NextRunAt     *time.Time `json:"next_run_at,omitempty"`
+
+	// PipelineConfig Per-task pipeline stage toggles (an OBJECT in responses/requests;
+	PipelineConfig PipelineConfig `json:"pipeline_config"`
+	Targets        string         `json:"targets"`
+	Timeout        int            `json:"timeout"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
 // ScanTaskList defines model for ScanTaskList.
@@ -734,36 +1628,89 @@ type ScanTaskList struct {
 	Total *int64 `json:"total,omitempty"`
 }
 
+// ServiceEntry defines model for ServiceEntry.
+type ServiceEntry struct {
+	Name     string  `json:"name"`
+	Port     int     `json:"port"`
+	Protocol *string `json:"protocol,omitempty"`
+	Version  *string `json:"version,omitempty"`
+}
+
+// TLSPortCerts One TLS-speaking port — handshake metadata + cert chain
+type TLSPortCerts struct {
+	Chain       []CertificateInfo `json:"chain"`
+	CipherSuite string            `json:"cipher_suite"`
+
+	// Error Non-empty when the handshake failed (leaf/chain empty then)
+	Error *string `json:"error,omitempty"`
+
+	// Leaf One certificate in a port's chain (cert_index 0 = leaf)
+	Leaf       *CertificateInfo `json:"leaf,omitempty"`
+	Port       int              `json:"port"`
+	TlsVersion string           `json:"tls_version"`
+	Trusted    bool             `json:"trusted"`
+	UpdatedAt  string           `json:"updated_at"`
+}
+
+// TopologyEdge defines model for TopologyEdge.
+type TopologyEdge struct {
+	FromDeviceId int64                `json:"from_device_id"`
+	LocalPort    *string              `json:"local_port"`
+	Protocol     TopologyEdgeProtocol `json:"protocol"`
+
+	// RemotePort Far-end ifName (LLDP/CDP only)
+	RemotePort *string `json:"remote_port"`
+
+	// ToDeviceId null = unidentified neighbor (dashed edge)
+	ToDeviceId *int64 `json:"to_device_id"`
+	ToMac      string `json:"to_mac"`
+}
+
+// TopologyEdgeProtocol defines model for TopologyEdge.Protocol.
+type TopologyEdgeProtocol string
+
 // TopologyGraph defines model for TopologyGraph.
 type TopologyGraph struct {
-	Edges *[]struct {
-		// Protocol lldp | cdp | bridge | arp
-		Protocol   *string `json:"protocol,omitempty"`
-		Source     *string `json:"source,omitempty"`
-		SourcePort *string `json:"source_port,omitempty"`
-		Target     *string `json:"target,omitempty"`
-		TargetPort *string `json:"target_port,omitempty"`
-	} `json:"edges,omitempty"`
-	Nodes *[]struct {
-		Id     *string `json:"id,omitempty"`
-		Ip     *string `json:"ip,omitempty"`
-		Name   *string `json:"name,omitempty"`
-		Status *string `json:"status,omitempty"`
-		Type   *string `json:"type,omitempty"`
-	} `json:"nodes,omitempty"`
+	Edges []TopologyEdge `json:"edges"`
+	Nodes []TopologyNode `json:"nodes"`
 }
+
+// TopologyNode defines model for TopologyNode.
+type TopologyNode struct {
+	Brand string `json:"brand"`
+	Id    int64  `json:"id"`
+
+	// InferredType Evidence-derived — richer than type
+	InferredType string `json:"inferred_type"`
+	IpAddress    string `json:"ip_address"`
+	MacAddress   string `json:"mac_address"`
+	Name         string `json:"name"`
+
+	// NetworkId Origin network (subnet grouping)
+	NetworkId *int64             `json:"network_id"`
+	Status    TopologyNodeStatus `json:"status"`
+
+	// Type Hand-set type or other
+	Type string `json:"type"`
+}
+
+// TopologyNodeStatus defines model for TopologyNode.Status.
+type TopologyNodeStatus string
 
 // User defines model for User.
 type User struct {
-	CreatedAt          *time.Time `json:"created_at,omitempty"`
-	Email              *string    `json:"email,omitempty"`
-	Id                 *int       `json:"id,omitempty"`
-	MustChangePassword *bool      `json:"must_change_password,omitempty"`
-	Role               *UserRole  `json:"role,omitempty"`
-	Username           *string    `json:"username,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	Email              string    `json:"email"`
+	Id                 int64     `json:"id"`
+	MustChangePassword bool      `json:"must_change_password"`
+
+	// Role user = legacy alias for viewer
+	Role      UserRole  `json:"role"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Username  string    `json:"username"`
 }
 
-// UserRole defines model for User.Role.
+// UserRole user = legacy alias for viewer
 type UserRole string
 
 // UserList defines model for UserList.
@@ -776,15 +1723,18 @@ type UserList struct {
 	Users *[]User `json:"users,omitempty"`
 }
 
+// VLAN defines model for VLAN.
+type VLAN struct {
+	Description *string `json:"description"`
+	Id          int64   `json:"id"`
+	Name        *string `json:"name"`
+	VlanTag     int     `json:"vlan_tag"`
+}
+
 // VLANList defines model for VLANList.
 type VLANList struct {
-	Total *int `json:"total,omitempty"`
-	Vlans *[]struct {
-		Description *string `json:"description,omitempty"`
-		Id          *int    `json:"id,omitempty"`
-		Name        *string `json:"name,omitempty"`
-		VlanTag     *int    `json:"vlan_tag,omitempty"`
-	} `json:"vlans,omitempty"`
+	Total *int    `json:"total,omitempty"`
+	Vlans *[]VLAN `json:"vlans,omitempty"`
 }
 
 // Id defines model for id.
@@ -914,6 +1864,12 @@ type GetDevicesIdHeartbeatResultsParams struct {
 	Offset    *Offset    `form:"offset,omitempty" json:"offset,omitempty"`
 	StartDate *time.Time `form:"start_date,omitempty" json:"start_date,omitempty"`
 	EndDate   *time.Time `form:"end_date,omitempty" json:"end_date,omitempty"`
+}
+
+// GetDevicesIdHeartbeatStatsParams defines parameters for GetDevicesIdHeartbeatStats.
+type GetDevicesIdHeartbeatStatsParams struct {
+	From time.Time `form:"from" json:"from"`
+	To   time.Time `form:"to" json:"to"`
 }
 
 // GetDevicesIdSystemsParams defines parameters for GetDevicesIdSystems.
@@ -1077,6 +2033,464 @@ type PostAuthLoginJSONRequestBody PostAuthLoginJSONBody
 
 // PostDocumentsUploadMultipartRequestBody defines body for PostDocumentsUpload for multipart/form-data ContentType.
 type PostDocumentsUploadMultipartRequestBody PostDocumentsUploadMultipartBody
+
+// Getter for additional properties for ScanAttributes. Returns the specified
+// element and whether it was found
+func (a ScanAttributes) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for ScanAttributes
+func (a *ScanAttributes) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for ScanAttributes to handle AdditionalProperties
+func (a *ScanAttributes) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["cpu_count"]; found {
+		err = json.Unmarshal(raw, &a.CpuCount)
+		if err != nil {
+			return fmt.Errorf("error reading 'cpu_count': %w", err)
+		}
+		delete(object, "cpu_count")
+	}
+
+	if raw, found := object["cpu_model"]; found {
+		err = json.Unmarshal(raw, &a.CpuModel)
+		if err != nil {
+			return fmt.Errorf("error reading 'cpu_model': %w", err)
+		}
+		delete(object, "cpu_model")
+	}
+
+	if raw, found := object["detected_services"]; found {
+		err = json.Unmarshal(raw, &a.DetectedServices)
+		if err != nil {
+			return fmt.Errorf("error reading 'detected_services': %w", err)
+		}
+		delete(object, "detected_services")
+	}
+
+	if raw, found := object["extras"]; found {
+		err = json.Unmarshal(raw, &a.Extras)
+		if err != nil {
+			return fmt.Errorf("error reading 'extras': %w", err)
+		}
+		delete(object, "extras")
+	}
+
+	if raw, found := object["firmware_version"]; found {
+		err = json.Unmarshal(raw, &a.FirmwareVersion)
+		if err != nil {
+			return fmt.Errorf("error reading 'firmware_version': %w", err)
+		}
+		delete(object, "firmware_version")
+	}
+
+	if raw, found := object["hostname"]; found {
+		err = json.Unmarshal(raw, &a.Hostname)
+		if err != nil {
+			return fmt.Errorf("error reading 'hostname': %w", err)
+		}
+		delete(object, "hostname")
+	}
+
+	if raw, found := object["inferred_description"]; found {
+		err = json.Unmarshal(raw, &a.InferredDescription)
+		if err != nil {
+			return fmt.Errorf("error reading 'inferred_description': %w", err)
+		}
+		delete(object, "inferred_description")
+	}
+
+	if raw, found := object["inferred_type"]; found {
+		err = json.Unmarshal(raw, &a.InferredType)
+		if err != nil {
+			return fmt.Errorf("error reading 'inferred_type': %w", err)
+		}
+		delete(object, "inferred_type")
+	}
+
+	if raw, found := object["inferred_type_source"]; found {
+		err = json.Unmarshal(raw, &a.InferredTypeSource)
+		if err != nil {
+			return fmt.Errorf("error reading 'inferred_type_source': %w", err)
+		}
+		delete(object, "inferred_type_source")
+	}
+
+	if raw, found := object["kernel_version"]; found {
+		err = json.Unmarshal(raw, &a.KernelVersion)
+		if err != nil {
+			return fmt.Errorf("error reading 'kernel_version': %w", err)
+		}
+		delete(object, "kernel_version")
+	}
+
+	if raw, found := object["last_scan_rtt_ms"]; found {
+		err = json.Unmarshal(raw, &a.LastScanRttMs)
+		if err != nil {
+			return fmt.Errorf("error reading 'last_scan_rtt_ms': %w", err)
+		}
+		delete(object, "last_scan_rtt_ms")
+	}
+
+	if raw, found := object["last_scanned_at"]; found {
+		err = json.Unmarshal(raw, &a.LastScannedAt)
+		if err != nil {
+			return fmt.Errorf("error reading 'last_scanned_at': %w", err)
+		}
+		delete(object, "last_scanned_at")
+	}
+
+	if raw, found := object["mac"]; found {
+		err = json.Unmarshal(raw, &a.Mac)
+		if err != nil {
+			return fmt.Errorf("error reading 'mac': %w", err)
+		}
+		delete(object, "mac")
+	}
+
+	if raw, found := object["mac_is_locally_administered"]; found {
+		err = json.Unmarshal(raw, &a.MacIsLocallyAdministered)
+		if err != nil {
+			return fmt.Errorf("error reading 'mac_is_locally_administered': %w", err)
+		}
+		delete(object, "mac_is_locally_administered")
+	}
+
+	if raw, found := object["mac_is_multicast"]; found {
+		err = json.Unmarshal(raw, &a.MacIsMulticast)
+		if err != nil {
+			return fmt.Errorf("error reading 'mac_is_multicast': %w", err)
+		}
+		delete(object, "mac_is_multicast")
+	}
+
+	if raw, found := object["memory_total_bytes"]; found {
+		err = json.Unmarshal(raw, &a.MemoryTotalBytes)
+		if err != nil {
+			return fmt.Errorf("error reading 'memory_total_bytes': %w", err)
+		}
+		delete(object, "memory_total_bytes")
+	}
+
+	if raw, found := object["open_ports"]; found {
+		err = json.Unmarshal(raw, &a.OpenPorts)
+		if err != nil {
+			return fmt.Errorf("error reading 'open_ports': %w", err)
+		}
+		delete(object, "open_ports")
+	}
+
+	if raw, found := object["os"]; found {
+		err = json.Unmarshal(raw, &a.Os)
+		if err != nil {
+			return fmt.Errorf("error reading 'os': %w", err)
+		}
+		delete(object, "os")
+	}
+
+	if raw, found := object["os_version"]; found {
+		err = json.Unmarshal(raw, &a.OsVersion)
+		if err != nil {
+			return fmt.Errorf("error reading 'os_version': %w", err)
+		}
+		delete(object, "os_version")
+	}
+
+	if raw, found := object["oui_prefix"]; found {
+		err = json.Unmarshal(raw, &a.OuiPrefix)
+		if err != nil {
+			return fmt.Errorf("error reading 'oui_prefix': %w", err)
+		}
+		delete(object, "oui_prefix")
+	}
+
+	if raw, found := object["oui_vendor"]; found {
+		err = json.Unmarshal(raw, &a.OuiVendor)
+		if err != nil {
+			return fmt.Errorf("error reading 'oui_vendor': %w", err)
+		}
+		delete(object, "oui_vendor")
+	}
+
+	if raw, found := object["prometheus"]; found {
+		err = json.Unmarshal(raw, &a.Prometheus)
+		if err != nil {
+			return fmt.Errorf("error reading 'prometheus': %w", err)
+		}
+		delete(object, "prometheus")
+	}
+
+	if raw, found := object["scan_source"]; found {
+		err = json.Unmarshal(raw, &a.ScanSource)
+		if err != nil {
+			return fmt.Errorf("error reading 'scan_source': %w", err)
+		}
+		delete(object, "scan_source")
+	}
+
+	if raw, found := object["snmp"]; found {
+		err = json.Unmarshal(raw, &a.Snmp)
+		if err != nil {
+			return fmt.Errorf("error reading 'snmp': %w", err)
+		}
+		delete(object, "snmp")
+	}
+
+	if raw, found := object["ttl"]; found {
+		err = json.Unmarshal(raw, &a.Ttl)
+		if err != nil {
+			return fmt.Errorf("error reading 'ttl': %w", err)
+		}
+		delete(object, "ttl")
+	}
+
+	if raw, found := object["uptime_seconds"]; found {
+		err = json.Unmarshal(raw, &a.UptimeSeconds)
+		if err != nil {
+			return fmt.Errorf("error reading 'uptime_seconds': %w", err)
+		}
+		delete(object, "uptime_seconds")
+	}
+
+	if raw, found := object["vendor"]; found {
+		err = json.Unmarshal(raw, &a.Vendor)
+		if err != nil {
+			return fmt.Errorf("error reading 'vendor': %w", err)
+		}
+		delete(object, "vendor")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for ScanAttributes to handle AdditionalProperties
+func (a ScanAttributes) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.CpuCount != nil {
+		object["cpu_count"], err = json.Marshal(a.CpuCount)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'cpu_count': %w", err)
+		}
+	}
+
+	if a.CpuModel != nil {
+		object["cpu_model"], err = json.Marshal(a.CpuModel)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'cpu_model': %w", err)
+		}
+	}
+
+	if a.DetectedServices != nil {
+		object["detected_services"], err = json.Marshal(a.DetectedServices)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'detected_services': %w", err)
+		}
+	}
+
+	if a.Extras != nil {
+		object["extras"], err = json.Marshal(a.Extras)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'extras': %w", err)
+		}
+	}
+
+	if a.FirmwareVersion != nil {
+		object["firmware_version"], err = json.Marshal(a.FirmwareVersion)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'firmware_version': %w", err)
+		}
+	}
+
+	if a.Hostname != nil {
+		object["hostname"], err = json.Marshal(a.Hostname)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'hostname': %w", err)
+		}
+	}
+
+	if a.InferredDescription != nil {
+		object["inferred_description"], err = json.Marshal(a.InferredDescription)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'inferred_description': %w", err)
+		}
+	}
+
+	if a.InferredType != nil {
+		object["inferred_type"], err = json.Marshal(a.InferredType)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'inferred_type': %w", err)
+		}
+	}
+
+	if a.InferredTypeSource != nil {
+		object["inferred_type_source"], err = json.Marshal(a.InferredTypeSource)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'inferred_type_source': %w", err)
+		}
+	}
+
+	if a.KernelVersion != nil {
+		object["kernel_version"], err = json.Marshal(a.KernelVersion)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'kernel_version': %w", err)
+		}
+	}
+
+	if a.LastScanRttMs != nil {
+		object["last_scan_rtt_ms"], err = json.Marshal(a.LastScanRttMs)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'last_scan_rtt_ms': %w", err)
+		}
+	}
+
+	if a.LastScannedAt != nil {
+		object["last_scanned_at"], err = json.Marshal(a.LastScannedAt)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'last_scanned_at': %w", err)
+		}
+	}
+
+	if a.Mac != nil {
+		object["mac"], err = json.Marshal(a.Mac)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'mac': %w", err)
+		}
+	}
+
+	if a.MacIsLocallyAdministered != nil {
+		object["mac_is_locally_administered"], err = json.Marshal(a.MacIsLocallyAdministered)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'mac_is_locally_administered': %w", err)
+		}
+	}
+
+	if a.MacIsMulticast != nil {
+		object["mac_is_multicast"], err = json.Marshal(a.MacIsMulticast)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'mac_is_multicast': %w", err)
+		}
+	}
+
+	if a.MemoryTotalBytes != nil {
+		object["memory_total_bytes"], err = json.Marshal(a.MemoryTotalBytes)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'memory_total_bytes': %w", err)
+		}
+	}
+
+	if a.OpenPorts != nil {
+		object["open_ports"], err = json.Marshal(a.OpenPorts)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'open_ports': %w", err)
+		}
+	}
+
+	if a.Os != nil {
+		object["os"], err = json.Marshal(a.Os)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'os': %w", err)
+		}
+	}
+
+	if a.OsVersion != nil {
+		object["os_version"], err = json.Marshal(a.OsVersion)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'os_version': %w", err)
+		}
+	}
+
+	if a.OuiPrefix != nil {
+		object["oui_prefix"], err = json.Marshal(a.OuiPrefix)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'oui_prefix': %w", err)
+		}
+	}
+
+	if a.OuiVendor != nil {
+		object["oui_vendor"], err = json.Marshal(a.OuiVendor)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'oui_vendor': %w", err)
+		}
+	}
+
+	if a.Prometheus != nil {
+		object["prometheus"], err = json.Marshal(a.Prometheus)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'prometheus': %w", err)
+		}
+	}
+
+	if a.ScanSource != nil {
+		object["scan_source"], err = json.Marshal(a.ScanSource)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'scan_source': %w", err)
+		}
+	}
+
+	if a.Snmp != nil {
+		object["snmp"], err = json.Marshal(a.Snmp)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'snmp': %w", err)
+		}
+	}
+
+	if a.Ttl != nil {
+		object["ttl"], err = json.Marshal(a.Ttl)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'ttl': %w", err)
+		}
+	}
+
+	if a.UptimeSeconds != nil {
+		object["uptime_seconds"], err = json.Marshal(a.UptimeSeconds)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'uptime_seconds': %w", err)
+		}
+	}
+
+	if a.Vendor != nil {
+		object["vendor"], err = json.Marshal(a.Vendor)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'vendor': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -1461,10 +2875,10 @@ type ClientInterface interface {
 	// Corresponds with GET /devices/{id}/heartbeat-results/export (the `GetDevicesIdHeartbeatResultsExport` operationId).
 	GetDevicesIdHeartbeatResultsExport(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetDevicesIdHeartbeatStats Online ratio / offline duration aggregates
+	// GetDevicesIdHeartbeatStats Windowed success/fail/timeout aggregates + avg latency
 	//
 	// Corresponds with GET /devices/{id}/heartbeat-stats (the `GetDevicesIdHeartbeatStats` operationId).
-	GetDevicesIdHeartbeatStats(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetDevicesIdHeartbeatStats(ctx context.Context, id Id, params *GetDevicesIdHeartbeatStatsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetDevicesIdNeighbors LLDP/CDP/Bridge-MIB neighbors of a device
 	//
@@ -1628,7 +3042,7 @@ type ClientInterface interface {
 	// Corresponds with GET /notification/channels (the `GetNotificationChannels` operationId).
 	GetNotificationChannels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostNotificationChannels Create a channel (webhook/smtp)
+	// PostNotificationChannels Create a channel (webhook/email/feishu/wecom/telegram/discord)
 	//
 	// Corresponds with POST /notification/channels (the `PostNotificationChannels` operationId).
 	PostNotificationChannels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2838,11 +4252,11 @@ func (c *Client) GetDevicesIdHeartbeatResultsExport(ctx context.Context, id Id, 
 	return c.Client.Do(req)
 }
 
-// GetDevicesIdHeartbeatStats Online ratio / offline duration aggregates
+// GetDevicesIdHeartbeatStats Windowed success/fail/timeout aggregates + avg latency
 //
 // Corresponds with GET /devices/{id}/heartbeat-stats (the `GetDevicesIdHeartbeatStats` operationId).
-func (c *Client) GetDevicesIdHeartbeatStats(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetDevicesIdHeartbeatStatsRequest(c.Server, id)
+func (c *Client) GetDevicesIdHeartbeatStats(ctx context.Context, id Id, params *GetDevicesIdHeartbeatStatsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDevicesIdHeartbeatStatsRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3335,7 +4749,7 @@ func (c *Client) GetNotificationChannels(ctx context.Context, reqEditors ...Requ
 	return c.Client.Do(req)
 }
 
-// PostNotificationChannels Create a channel (webhook/smtp)
+// PostNotificationChannels Create a channel (webhook/email/feishu/wecom/telegram/discord)
 //
 // Corresponds with POST /notification/channels (the `PostNotificationChannels` operationId).
 func (c *Client) PostNotificationChannels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -6613,7 +8027,7 @@ func NewGetDevicesIdHeartbeatResultsExportRequest(server string, id Id) (*http.R
 }
 
 // NewGetDevicesIdHeartbeatStatsRequest constructs an http.Request for the GetDevicesIdHeartbeatStats method
-func NewGetDevicesIdHeartbeatStatsRequest(server string, id Id) (*http.Request, error) {
+func NewGetDevicesIdHeartbeatStatsRequest(server string, id Id, params *GetDevicesIdHeartbeatStatsParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6636,6 +8050,37 @@ func NewGetDevicesIdHeartbeatStatsRequest(server string, id Id) (*http.Request, 
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "from", params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "to", params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -10678,12 +12123,12 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /devices/{id}/heartbeat-results/export (the `GetDevicesIdHeartbeatResultsExport` operationId).
 	GetDevicesIdHeartbeatResultsExportWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdHeartbeatResultsExportResponse, error)
 
-	// GetDevicesIdHeartbeatStatsWithResponse Online ratio / offline duration aggregates
+	// GetDevicesIdHeartbeatStatsWithResponse Windowed success/fail/timeout aggregates + avg latency
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /devices/{id}/heartbeat-stats (the `GetDevicesIdHeartbeatStats` operationId).
-	GetDevicesIdHeartbeatStatsWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdHeartbeatStatsResponse, error)
+	GetDevicesIdHeartbeatStatsWithResponse(ctx context.Context, id Id, params *GetDevicesIdHeartbeatStatsParams, reqEditors ...RequestEditorFn) (*GetDevicesIdHeartbeatStatsResponse, error)
 
 	// GetDevicesIdNeighborsWithResponse LLDP/CDP/Bridge-MIB neighbors of a device
 	//
@@ -10909,7 +12354,7 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /notification/channels (the `GetNotificationChannels` operationId).
 	GetNotificationChannelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetNotificationChannelsResponse, error)
 
-	// PostNotificationChannelsWithResponse Create a channel (webhook/smtp)
+	// PostNotificationChannelsWithResponse Create a channel (webhook/email/feishu/wecom/telegram/discord)
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -11830,6 +13275,13 @@ func (r GetAuditLogsExportResponse) ContentType() string {
 type GetAuditLogsFacetsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AuditFacets
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAuditLogsFacetsResponse) GetJSON200() *AuditFacets {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -12621,11 +14073,11 @@ type PostDashboardConfigsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON201 the response for an HTTP 201 `application/json` response
-	JSON201 *Created
+	JSON201 *DashboardConfig
 }
 
 // GetJSON201 returns the response for an HTTP 201 `application/json` response
-func (r PostDashboardConfigsResponse) GetJSON201() *Created {
+func (r PostDashboardConfigsResponse) GetJSON201() *DashboardConfig {
 	return r.JSON201
 }
 
@@ -12696,11 +14148,11 @@ type PutDashboardConfigsIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *OK
+	JSON200 *DashboardConfig
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r PutDashboardConfigsIdResponse) GetJSON200() *OK {
+func (r PutDashboardConfigsIdResponse) GetJSON200() *DashboardConfig {
 	return r.JSON200
 }
 
@@ -13036,6 +14488,13 @@ func (r GetDevicesExportResponse) ContentType() string {
 type GetDevicesStatsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeviceStats
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesStatsResponse) GetJSON200() *DeviceStats {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -13282,6 +14741,13 @@ func (r GetDevicesIdConfigsResponse) ContentType() string {
 type GetDevicesIdConfigsDiffResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeviceConfigDiff
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdConfigsDiffResponse) GetJSON200() *DeviceConfigDiff {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -13316,8 +14782,15 @@ func (r GetDevicesIdConfigsDiffResponse) ContentType() string {
 type GetDevicesIdConfigsConfigIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeviceConfigDetail
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdConfigsConfigIdResponse) GetJSON200() *DeviceConfigDetail {
+	return r.JSON200
 }
 
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
@@ -13671,6 +15144,13 @@ func (r GetDevicesIdHeartbeatResultsExportResponse) ContentType() string {
 type GetDevicesIdHeartbeatStatsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *HeartbeatStats
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdHeartbeatStatsResponse) GetJSON200() *HeartbeatStats {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -13862,6 +15342,13 @@ func (r DeleteDevicesIdSystemsSystemIdResponse) ContentType() string {
 type GetDevicesIdSystemsSystemIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeviceSystem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdSystemsSystemIdResponse) GetJSON200() *DeviceSystem {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -13971,6 +15458,13 @@ func (r PostDevicesUuidFingerprintDraftResponse) ContentType() string {
 type GetDiscoveryStatusResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DiscoveryStatus
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDiscoveryStatusResponse) GetJSON200() *DiscoveryStatus {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -14469,11 +15963,11 @@ type PutHeartbeatConfigsIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *OK
+	JSON200 *HeartbeatConfig
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r PutHeartbeatConfigsIdResponse) GetJSON200() *OK {
+func (r PutHeartbeatConfigsIdResponse) GetJSON200() *HeartbeatConfig {
 	return r.JSON200
 }
 
@@ -14912,6 +16406,13 @@ func (r GetNetworksIdVlansResponse) ContentType() string {
 type GetNotificationChannelsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *NotificationChannelList
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetNotificationChannelsResponse) GetJSON200() *NotificationChannelList {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -14947,11 +16448,11 @@ type PostNotificationChannelsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON201 the response for an HTTP 201 `application/json` response
-	JSON201 *Created
+	JSON201 *NotificationChannel
 }
 
 // GetJSON201 returns the response for an HTTP 201 `application/json` response
-func (r PostNotificationChannelsResponse) GetJSON201() *Created {
+func (r PostNotificationChannelsResponse) GetJSON201() *NotificationChannel {
 	return r.JSON201
 }
 
@@ -15021,6 +16522,13 @@ func (r DeleteNotificationChannelsIdResponse) ContentType() string {
 type GetNotificationChannelsIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *NotificationChannel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetNotificationChannelsIdResponse) GetJSON200() *NotificationChannel {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -15055,6 +16563,13 @@ func (r GetNotificationChannelsIdResponse) ContentType() string {
 type PatchNotificationChannelsIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *NotificationChannel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PatchNotificationChannelsIdResponse) GetJSON200() *NotificationChannel {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -15089,6 +16604,13 @@ func (r PatchNotificationChannelsIdResponse) ContentType() string {
 type PutNotificationChannelsIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *NotificationChannel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutNotificationChannelsIdResponse) GetJSON200() *NotificationChannel {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -15239,6 +16761,13 @@ func (r PostNotificationLogsReadResponse) ContentType() string {
 type GetNotificationRulesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *NotificationRuleList
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetNotificationRulesResponse) GetJSON200() *NotificationRuleList {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -15348,6 +16877,13 @@ func (r DeleteNotificationRulesIdResponse) ContentType() string {
 type GetNotificationRulesIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *NotificationRule
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetNotificationRulesIdResponse) GetJSON200() *NotificationRule {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -15416,6 +16952,13 @@ func (r PatchNotificationRulesIdResponse) ContentType() string {
 type PutNotificationRulesIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *NotificationRule
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutNotificationRulesIdResponse) GetJSON200() *NotificationRule {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -15730,6 +17273,13 @@ func (r GetProbeTargetsIdResultsResponse) ContentType() string {
 type PostProbeTargetsIdTriggerResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeResult
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostProbeTargetsIdTriggerResponse) GetJSON200() *ProbeResult {
+	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
@@ -17953,13 +19503,13 @@ func (c *ClientWithResponses) GetDevicesIdHeartbeatResultsExportWithResponse(ctx
 	return ParseGetDevicesIdHeartbeatResultsExportResponse(rsp)
 }
 
-// GetDevicesIdHeartbeatStatsWithResponse Online ratio / offline duration aggregates
+// GetDevicesIdHeartbeatStatsWithResponse Windowed success/fail/timeout aggregates + avg latency
 //
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /devices/{id}/heartbeat-stats (the `GetDevicesIdHeartbeatStats` operationId).
-func (c *ClientWithResponses) GetDevicesIdHeartbeatStatsWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdHeartbeatStatsResponse, error) {
-	rsp, err := c.GetDevicesIdHeartbeatStats(ctx, id, reqEditors...)
+func (c *ClientWithResponses) GetDevicesIdHeartbeatStatsWithResponse(ctx context.Context, id Id, params *GetDevicesIdHeartbeatStatsParams, reqEditors ...RequestEditorFn) (*GetDevicesIdHeartbeatStatsResponse, error) {
+	rsp, err := c.GetDevicesIdHeartbeatStats(ctx, id, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -18382,7 +19932,7 @@ func (c *ClientWithResponses) GetNotificationChannelsWithResponse(ctx context.Co
 	return ParseGetNotificationChannelsResponse(rsp)
 }
 
-// PostNotificationChannelsWithResponse Create a channel (webhook/smtp)
+// PostNotificationChannelsWithResponse Create a channel (webhook/email/feishu/wecom/telegram/discord)
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -19423,6 +20973,16 @@ func ParseGetAuditLogsFacetsResponse(rsp *http.Response) (*GetAuditLogsFacetsRes
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AuditFacets
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -19916,7 +21476,7 @@ func ParsePostDashboardConfigsResponse(rsp *http.Response) (*PostDashboardConfig
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest Created
+		var dest DashboardConfig
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -19958,7 +21518,7 @@ func ParsePutDashboardConfigsIdResponse(rsp *http.Response) (*PutDashboardConfig
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest OK
+		var dest DashboardConfig
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -20150,6 +21710,16 @@ func ParseGetDevicesStatsResponse(rsp *http.Response) (*GetDevicesStatsResponse,
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeviceStats
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -20300,6 +21870,16 @@ func ParseGetDevicesIdConfigsDiffResponse(rsp *http.Response) (*GetDevicesIdConf
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeviceConfigDiff
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -20317,8 +21897,12 @@ func ParseGetDevicesIdConfigsConfigIdResponse(rsp *http.Response) (*GetDevicesId
 	}
 
 	switch {
-	case rsp.StatusCode == 200:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeviceConfigDetail
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Error
@@ -20533,6 +22117,16 @@ func ParseGetDevicesIdHeartbeatStatsResponse(rsp *http.Response) (*GetDevicesIdH
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HeartbeatStats
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -20643,6 +22237,16 @@ func ParseGetDevicesIdSystemsSystemIdResponse(rsp *http.Response) (*GetDevicesId
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeviceSystem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -20699,6 +22303,16 @@ func ParseGetDiscoveryStatusResponse(rsp *http.Response) (*GetDiscoveryStatusRes
 	response := &GetDiscoveryStatusResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiscoveryStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	}
 
 	return response, nil
@@ -20984,7 +22598,7 @@ func ParsePutHeartbeatConfigsIdResponse(rsp *http.Response) (*PutHeartbeatConfig
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest OK
+		var dest HeartbeatConfig
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -21252,6 +22866,16 @@ func ParseGetNotificationChannelsResponse(rsp *http.Response) (*GetNotificationC
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationChannelList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -21270,7 +22894,7 @@ func ParsePostNotificationChannelsResponse(rsp *http.Response) (*PostNotificatio
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest Created
+		var dest NotificationChannel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -21310,6 +22934,16 @@ func ParseGetNotificationChannelsIdResponse(rsp *http.Response) (*GetNotificatio
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationChannel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -21326,6 +22960,16 @@ func ParsePatchNotificationChannelsIdResponse(rsp *http.Response) (*PatchNotific
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationChannel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -21340,6 +22984,16 @@ func ParsePutNotificationChannelsIdResponse(rsp *http.Response) (*PutNotificatio
 	response := &PutNotificationChannelsIdResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationChannel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	}
 
 	return response, nil
@@ -21426,6 +23080,16 @@ func ParseGetNotificationRulesResponse(rsp *http.Response) (*GetNotificationRule
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationRuleList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -21484,6 +23148,16 @@ func ParseGetNotificationRulesIdResponse(rsp *http.Response) (*GetNotificationRu
 		HTTPResponse: rsp,
 	}
 
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationRule
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
 	return response, nil
 }
 
@@ -21514,6 +23188,16 @@ func ParsePutNotificationRulesIdResponse(rsp *http.Response) (*PutNotificationRu
 	response := &PutNotificationRulesIdResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationRule
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	}
 
 	return response, nil
@@ -21702,6 +23386,16 @@ func ParsePostProbeTargetsIdTriggerResponse(rsp *http.Response) (*PostProbeTarge
 	response := &PostProbeTargetsIdTriggerResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	}
 
 	return response, nil

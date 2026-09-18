@@ -100,6 +100,11 @@ func setupExportTest(t *testing.T) (*ExportService, *sql.DB) {
 			details TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
+		-- users exists for ListAuditLogs' LEFT JOIN (username column).
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE
+		);
 	`)
 	require.NoError(t, err)
 
@@ -322,7 +327,8 @@ func TestExport_AuditLogs_CSV(t *testing.T) {
 	header, err := reader.Read()
 	require.NoError(t, err)
 	require.Equal(t, "id", header[0])
-	require.Equal(t, "action", header[2])
+	require.Equal(t, "username", header[2])
+	require.Equal(t, "action", header[3])
 
 	count := 0
 	for {

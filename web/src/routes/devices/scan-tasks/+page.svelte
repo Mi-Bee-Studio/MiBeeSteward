@@ -246,7 +246,9 @@
 		formCronExpr = cronForPresetKey(formScheduleKey) ?? task.cron_expr;
 		formTimeout = task.timeout;
 		formConcurrentHosts = task.concurrent_hosts ?? 16;
-		formCommunity = task.community;
+		// The wire has no top-level community on a task — the SNMP community
+		// lives in pipeline_config.snmp.community (#274 contract).
+		formCommunity = task.pipeline_config?.snmp?.community ?? 'public';
 		formCredentialId = task.credential_id ?? null;
 		formEnabled = task.enabled;
 		// Parse pipeline_config if it's a string
@@ -310,10 +312,12 @@
 			cron_expr: formCronExpr,
 			timeout: formTimeout,
 			concurrent_hosts: formConcurrentHosts,
-			community: formCommunity,
 			credential_id: formCredentialId,
 			enabled: formEnabled,
-			pipeline_config: formPipelineConfig
+			pipeline_config: {
+				...formPipelineConfig,
+				snmp: { ...formPipelineConfig.snmp, community: formCommunity }
+			}
 		};
 
 		try {
@@ -617,7 +621,7 @@
 								<td class="px-4 py-3 text-xs text-text-muted whitespace-nowrap">
 									{#if activeRuns.has(task.id)}
 										{@const run = activeRuns.get(task.id)}
-										{#if run?.status === 'running' || run?.status === 'triggered'}
+										{#if run?.status === 'running'}
 											<div>
 												<span class="inline-flex items-center gap-1.5 text-accent">
 													<svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -645,7 +649,7 @@
 											<span class="text-error">✗ {run.error_message || m['scanner.Failed']()}</span>
 										{/if}
 									{:else}
-										{formatRelative(task.last_run_at)}
+										{formatRelative(task.last_run_at ?? null)}
 									{/if}
 								</td>
 
@@ -666,7 +670,7 @@
 										{m['scanner.Trigger']()}
 									{/if}
 											</button>
-											{#if activeRuns.has(task.id) && (activeRuns.get(task.id)?.status === 'running' || activeRuns.get(task.id)?.status === 'triggered')}
+											{#if activeRuns.has(task.id) && activeRuns.get(task.id)?.status === 'running'}
 												<button
 													onclick={() => cancelTask(task.id)}
 													disabled={cancellingId === task.id}
