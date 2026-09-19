@@ -12,6 +12,7 @@ package routes
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -48,4 +49,12 @@ func TestSmallHelpers(t *testing.T) {
 
 	require.Equal(t, 7, rdnsTimeout(config.ScannerConfig{RDNS: config.RDNSConfig{Timeout: 7}}))
 	require.Equal(t, 2, rdnsTimeout(config.ScannerConfig{}))
+}
+
+// TestParseDurationOrDefault_Routes pins the optional-duration helper used by
+// the background-loop config keys.
+func TestParseDurationOrDefault_Routes(t *testing.T) {
+	require.Equal(t, 90*time.Second, parseDurationOrDefault("90s", time.Minute))
+	require.Equal(t, time.Minute, parseDurationOrDefault("", time.Minute))
+	require.Equal(t, time.Minute, parseDurationOrDefault("bogus", time.Minute))
 }
