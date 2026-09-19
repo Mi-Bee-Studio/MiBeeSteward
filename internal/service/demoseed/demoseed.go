@@ -237,7 +237,7 @@ func (a *Activity) tick(ctx context.Context) {
 	var id int64
 	var name string
 	err := a.dbConn.QueryRowContext(ctx,
-		`SELECT id, name FROM devices WHERE status='online' AND name LIKE 'demo-%' ORDER BY RANDOM() LIMIT 1`).Scan(&id, &name)
+		`SELECT id, name FROM devices WHERE status='online' AND device_uuid LIKE 'demo-uuid-%' ORDER BY RANDOM() LIMIT 1`).Scan(&id, &name)
 	if err != nil {
 		return
 	}
@@ -246,7 +246,7 @@ func (a *Activity) tick(ctx context.Context) {
 	// 70% chance to instead recover the offline one (keeps inventory mostly online).
 	if rand.Intn(10) < 7 {
 		if err := a.dbConn.QueryRowContext(ctx,
-			`SELECT id FROM devices WHERE status='offline' AND name LIKE 'demo-%' LIMIT 1`).Scan(&id); err == nil {
+			`SELECT id FROM devices WHERE status='offline' AND device_uuid LIKE 'demo-uuid-%' LIMIT 1`).Scan(&id); err == nil {
 			newStatus, changeType = "online", "device_recovered"
 		}
 	}

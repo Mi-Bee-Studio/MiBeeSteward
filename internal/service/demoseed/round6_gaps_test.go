@@ -10,9 +10,15 @@
 package demoseed
 
 import (
+	"context"
+	"database/sql"
+	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/testutil"
 )
 
 func TestCountJSON(t *testing.T) {
@@ -23,4 +29,43 @@ func TestFirstLine(t *testing.T) {
 	require.Equal(t, "only", firstLine("only"))
 	require.Equal(t, "first", firstLine("first\nsecond\nthird"))
 	require.Equal(t, "", firstLine(""))
+}
+
+// TestActivity_LifecycleAndTick: StartActivity/Stop round-trip cleanly, and a
+// direct tick() flips a seeded demo device's status and records the change —
+// the 45s demo churn that keeps the fictional inventory alive.
+func TestActivity_LifecycleAndTick(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { dbConn.Close() })
+	ctx := context.Background()
+	require.NoError(t, Seed(ctx, dbConn, slog.Default()))
+
+	a := StartActivity(dbConn, slog.Default())
+	require.NotNil(t, a)
+
+	// tick on a seeded DB mutates a demo device (both branches are
+	// probabilistic; assert the aggregate: the online count changed).
+	before := demoOnlineCount(t, dbConn)
+	a.tick(ctx)
+	after := demoOnlineCount(t, dbConn)
+	require.NotEqual(t, before, after, "one tick must flip exactly one demo device")
+
+	// Stop joins the goroutine promptly.
+	done := make(chan struct{})
+	go func() { a.Stop(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not return")
+	}
+}
+
+func demoOnlineCount(t *testing.T, db interface {
+	QueryRow(query string, args ...any) *sql.Row
+}) int {
+	t.Helper()
+	var n int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM devices WHERE device_uuid LIKE 'demo-uuid-%' AND status='online'`).Scan(&n))
+	return n
 }
