@@ -34,10 +34,14 @@ import (
 )
 
 var (
-	configPath  = flag.String("config", "configs/config.example.yaml", "Path to config file")
-	showVersion = flag.Bool("version", false, "Print the build version and exit")
-	demoMode    = flag.Bool("demo", false, "Demo mode (#285): seed a fictional inventory on an empty database and keep it active")
+	configPath  = flagSet.String("config", "configs/config.example.yaml", "Path to config file")
+	showVersion = flagSet.Bool("version", false, "Print the build version and exit")
+	demoMode    = flagSet.Bool("demo", false, "Demo mode (#285): seed a fictional inventory on an empty database and keep it active")
 )
+
+// flagSet is the package-level flag set; tests re-parse it instead of relying
+// on the process's os.Args.
+var flagSet = flag.NewFlagSet("mibee-steward", flag.ContinueOnError)
 
 func main() {
 	// Subcommand dispatch: `mibee-steward reset-admin-password` runs the admin
@@ -52,18 +56,29 @@ func main() {
 		return
 	}
 
-	flag.Parse()
+	if err := runCLI(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// runCLI is the testable front of main: flag parsing + config load + the
+// data-directory bootstrap, returning errors instead of exiting. serve()
+// owns the runtime past this point.
+func runCLI(args []string) error {
+	if err := flagSet.Parse(args); err != nil {
+		return err
+	}
 
 	if *showVersion {
 		fmt.Println("mibee-steward", version.Version)
-		return
+		return nil
 	}
 
 	// Load configuration first (before slog init)
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 	// Demo flag only after the err check: config.Load returns a nil cfg on
 	// failure, so stamping DemoMode before the guard segfaults instead of
@@ -82,9 +97,8 @@ func main() {
 	if dbPath == "" {
 		dbPath = "./data/mibee.db"
 	}
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
-		slog.Error("failed to create data directory", "error", err, "path", filepath.Dir(dbPath))
-		os.Exit(1)
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return fmt.Errorf("failed to create data directory %s: %w", filepath.Dir(dbPath), err)
 	}
 
 	// Open database connection. Pragmas travel in the DSN so every pooled
@@ -101,8 +115,7 @@ func main() {
 		"temp_store=MEMORY",
 	)
 	if err != nil {
-		slog.Error("failed to open database", "error", err, "path", dbPath)
-		os.Exit(1)
+		return fmt.Errorf("failed to open database %s: %w", dbPath, err)
 	}
 
 	// Configure connection pool. Was 2 (a common SQLite default), but the
@@ -128,9 +141,9 @@ func main() {
 		close(stop)
 	}()
 	if err := serve(cfg, db, dbPath, stop); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("server error: %w", err)
 	}
+	return nil
 }
 
 // serveHTTP assembles the router and HTTP server, listens, and runs the
