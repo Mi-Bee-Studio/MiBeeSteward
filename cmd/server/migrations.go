@@ -174,7 +174,7 @@ var migrationStepRevisions = []string{
 	"extendDevicesTypeCheck rev1",
 	"extendUsersRoleCheck rev1",
 	"scanTasksNetworkIndex+Backfill rev1",
-	"applyIdentityIndexMigrations rev1",
+	"applyIdentityIndexMigrations rev2",
 	"convertDashboardConfigPosition rev1",
 	"timestampConversions rev1",
 }
@@ -1160,7 +1160,9 @@ func mergeDuplicateMACDevices(ctx context.Context, db *sql.DB) error {
 //
 //  1. DROP idx_devices_ip_address (the old global-unique IP index) so the same
 //     private IP can coexist across two networks (e.g. both LANs have a .1).
-//  2. De-duplicate by (ip_address, network_id) keeping the lowest id, then
+//  2. De-duplicate by (ip_address, network_id) keeping the lowest id, drop the
+//     PLAIN idx_devices_ip_network that post-#312 schema.sql installs carried
+//     under the same name (it made the CREATE UNIQUE below a no-op), then
 //     CREATE UNIQUE INDEX idx_devices_ip_network ON (ip_address, network_id).
 //     NULL network_id is allowed multiple times — SQLite treats each NULL as
 //     distinct in a UNIQUE index, so legacy single-instance rows (network_id
@@ -1198,6 +1200,14 @@ func applyIdentityIndexMigrations(ctx context.Context, db *sql.DB) error {
 		// Non-fatal: log and continue; the index creation below surfaces a hard
 		// failure if dupes actually remain.
 		slog.Warn("devices (ip_address, network_id) de-dup sweep failed", "error", err)
+	}
+	// Drop the PLAIN index this name carried on post-#312 fresh installs:
+	// schema.sql shipped `CREATE INDEX` (not UNIQUE) under the same name, so
+	// the CREATE UNIQUE below was an IF NOT EXISTS no-op and the composite
+	// identity invariant was never enforced on those databases. Dropping and
+	// recreating is safe — the de-dup sweep above has already run.
+	if _, err := db.ExecContext(ctx, `DROP INDEX IF EXISTS idx_devices_ip_network`); err != nil {
+		return fmt.Errorf("drop plain idx_devices_ip_network: %w", err)
 	}
 	if _, err := db.ExecContext(ctx,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_ip_network ON devices(ip_address, network_id)`); err != nil {

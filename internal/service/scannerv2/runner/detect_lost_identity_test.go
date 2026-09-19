@@ -32,6 +32,17 @@ func insertLeaseDevice(t *testing.T, conn *sql.DB, networkID int64, ip, mac, uui
 	require.NoError(t, err)
 }
 
+// dropIPNetworkUnique removes the composite identity constraint for tests
+// that deliberately seed pre-constraint "identity tangles" (two rows at one
+// (ip, network_id)) — shapes legacy databases carried before the UNIQUE index
+// and that manual sqlite surgery can still produce. The resolution logic
+// under test must stay defensive against them.
+func dropIPNetworkUnique(t *testing.T, conn *sql.DB) {
+	t.Helper()
+	_, err := conn.ExecContext(context.Background(), `DROP INDEX IF EXISTS idx_devices_ip_network`)
+	require.NoError(t, err)
+}
+
 // TestResolveDeviceUUID_MacPrimaryOverSharedIP is the #389 knot: two rows share
 // an IP (a stale pre-roam row and the row currently live at that IP). The
 // sighting's MAC must pick the live row's uuid — the old LIMIT-1-without-ORDER
@@ -41,6 +52,7 @@ func TestResolveDeviceUUID_MacPrimaryOverSharedIP(t *testing.T) {
 	rn, _, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
+	dropIPNetworkUnique(t, conn)
 
 	insertLeaseDevice(t, conn, agentNetID, "192.168.62.41", "aa:bb:cc:dd:ee:41", "uuid-stale", "2026-09-01T00:00:00Z")
 	insertLeaseDevice(t, conn, agentNetID, "192.168.62.41", "aa:bb:cc:dd:ee:99", "uuid-live", "2026-09-18T00:00:00Z")
@@ -62,6 +74,7 @@ func TestResolveDeviceUUID_RecencyFallbackWithoutMAC(t *testing.T) {
 	rn, _, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
+	dropIPNetworkUnique(t, conn)
 
 	insertLeaseDevice(t, conn, agentNetID, "192.168.62.42", "aa:bb:cc:dd:ee:01", "uuid-older", "2026-09-01T00:00:00Z")
 	insertLeaseDevice(t, conn, agentNetID, "192.168.62.42", "", "uuid-newer", "2026-09-18T00:00:00Z")

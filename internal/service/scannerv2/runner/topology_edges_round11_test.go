@@ -37,15 +37,15 @@ func TestDeriveTopologyEdges(t *testing.T) {
 	net, err := queries.CreateNetwork(ctx, db.CreateNetworkParams{Name: "edge-net"})
 	require.NoError(t, err)
 
-	seed := func(name, mac string) int64 {
+	seed := func(name, ip, mac string) int64 {
 		res, err := conn.Exec(`INSERT INTO devices (device_uuid, name, ip_address, mac_address, status, network_id)
-			VALUES (?, ?, '10.30.0.1', ?, 'online', ?)`, "uuid-te-"+name, name, mac, net.ID)
+			VALUES (?, ?, ?, ?, 'online', ?)`, "uuid-te-"+name, name, ip, mac, net.ID)
 		require.NoError(t, err)
 		id, _ := res.LastInsertId()
 		return id
 	}
-	swID := seed("edge-sw", "00:11:22:33:44:55")
-	apID := seed("edge-ap", "00:11:22:33:44:66")
+	swID := seed("edge-sw", "10.30.0.1", "00:11:22:33:44:55")
+	apID := seed("edge-ap", "10.30.0.2", "00:11:22:33:44:66")
 
 	// sw sees ap over LLDP (resolved neighbor); sw also hears an unknown MAC.
 	_, err = conn.Exec(`INSERT INTO device_neighbors (device_id, neighbor_mac, protocol, local_port, remote_port, network_id)
