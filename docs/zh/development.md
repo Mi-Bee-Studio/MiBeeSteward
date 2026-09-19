@@ -117,6 +117,22 @@ go test -race ./...         # 竞态检测（CI 会跑这个）
 cd web && npm test          # 运行前端测试（vitest run，单次执行）
 ```
 
+### 覆盖率棘轮门禁
+
+CI 强制一个只升不降的覆盖率下限（棘轮模式）：Go 任务执行 `make coverage`
+（跨包归因的 profile，排除生成代码 —— sqlc 的 `internal/db` 和 oapi-codegen
+的 `internal/apiclient` 有各自的漂移检查），低于 `scripts/coverage-floor.txt`
+里记录的数值即失败。前端任务执行 `cd web && npm run test:coverage`，阈值在
+`vitest.config.ts`。
+
+```bash
+make coverage               # 生成跨包归因的 cover.out
+make coverage-gate          # 总覆盖率低于 floor 时失败
+make coverage-bump          # 把 floor 重新钉到当前水平（补完测试后执行）
+```
+
+不要为了绿灯去下调 floor —— 请补测试。
+
 ### 代码检查与格式门禁
 
 ```bash

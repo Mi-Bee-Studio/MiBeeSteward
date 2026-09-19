@@ -59,7 +59,13 @@ jobs:
           # golangci-lint v2 requires golangci-lint-action v7+.
           # Pin to an explicit version — the action rejects ranges like 'v2.x'.
           version: v2.12.2
-      - run: go test -race -coverprofile=cover.out -covermode=atomic ./...
+      # Coverage ratchet gate: cross-package profile (excludes sqlc/oapi-codegen
+      # generated code — those have their own drift jobs) + a floor in
+      # scripts/coverage-floor.txt that only moves up (`make coverage-bump`).
+      - name: Test with coverage (ratchet gate)
+        run: |
+          make coverage RACE=-race
+          make coverage-gate
       - uses: actions/upload-artifact@v4
         with:
           name: go-coverage
@@ -110,8 +116,10 @@ jobs:
             echo "::error::src/lib/api/schema.d.ts is out of sync with docs/openapi.yaml — run 'npm run gen:api' (in web/) and commit the result"
             exit 1
           }
+      # Coverage ratchet gate: thresholds in vitest.config.ts are the measured
+      # baseline — vitest exits non-zero if any metric drops below them.
       - working-directory: web
-        run: npm test
+        run: npm run test:coverage
 
   sqlc-verify:
     runs-on: ubuntu-latest

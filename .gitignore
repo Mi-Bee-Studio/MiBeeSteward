@@ -2,6 +2,7 @@
 web/.svelte-kit/
 web/dist/
 web/node_modules/
+web/coverage/
 web/static/map/
 
 # === Build outputs ===

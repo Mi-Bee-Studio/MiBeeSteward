@@ -117,6 +117,23 @@ go test -race ./...         # Race detector (what CI runs)
 cd web && npm test          # Frontend tests (vitest run, single-shot)
 ```
 
+### Coverage Ratchet Gate
+
+CI enforces a coverage floor that only moves up (a "ratchet"): the Go job runs
+`make coverage` (a cross-package profile that excludes generated code — sqlc's
+`internal/db` and oapi-codegen's `internal/apiclient` have their own drift
+gates) and fails below the number recorded in `scripts/coverage-floor.txt`.
+The frontend job runs `cd web && npm run test:coverage` with thresholds in
+`vitest.config.ts`.
+
+```bash
+make coverage               # produce cover.out with cross-package attribution
+make coverage-gate          # fail if total coverage is below the floor
+make coverage-bump          # re-pin the floor to the current level (after adding tests)
+```
+
+Never lower the floor to make a red build green — add tests instead.
+
 ### Linting & the Format Gate
 
 ```bash
