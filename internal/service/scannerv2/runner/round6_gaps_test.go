@@ -77,7 +77,7 @@ func TestReportPromFields(t *testing.T) {
 	rep.Device.Fields["node_exporter_url"] = "http://10.0.0.1:9100/metrics"
 	rep.Device.Fields["kernel_version"] = "6.1.0"
 	rep.Device.Fields["cpu_count"] = "4"
-	prom, ne, data = reportPromFields(rep)
+	_, ne, data = reportPromFields(rep)
 	require.Equal(t, "http://10.0.0.1:9100/metrics", ne)
 	require.Contains(t, data, `"metrics_url":"http://10.0.0.1:9100/metrics"`)
 	require.Contains(t, data, `"kernel_version":"6.1.0"`)

@@ -269,6 +269,7 @@ func setupDeviceRepoGap(t *testing.T) (*DeviceRepository, *sql.DB, *sqldb.Querie
 	return NewDeviceRepository(dbConn), dbConn, queries, context.Background()
 }
 
+//nolint:revive // test helper: t *testing.T is conventionally first for helpers
 func seedGapNetwork(t *testing.T, ctx context.Context, q *sqldb.Queries, name string) int64 {
 	t.Helper()
 	net, err := q.CreateNetwork(ctx, sqldb.CreateNetworkParams{Name: name})
@@ -276,6 +277,7 @@ func seedGapNetwork(t *testing.T, ctx context.Context, q *sqldb.Queries, name st
 	return net.ID
 }
 
+//nolint:revive // test helper: t *testing.T is conventionally first for helpers
 func seedRepoDevice(t *testing.T, ctx context.Context, conn *sql.DB, name, ip, status, typ string, networkID int64) {
 	t.Helper()
 	_, err := conn.ExecContext(ctx, `INSERT INTO devices (device_uuid, name, ip_address, status, type, network_id)
