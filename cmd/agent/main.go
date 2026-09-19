@@ -22,6 +22,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -46,9 +47,13 @@ import (
 	"mibee-steward/internal/version"
 )
 
+// flagSet is the package-level flag set (testable: tests reset and re-parse
+// it instead of relying on the process's os.Args).
+var flagSet = flag.NewFlagSet("mibee-agent", flag.ContinueOnError)
+
 var (
-	configPath  = flag.String("config", "configs/agent.yaml", "Path to agent config file")
-	showVersion = flag.Bool("version", false, "Print the build version and exit")
+	configPath  = flagSet.String("config", "configs/agent.yaml", "Path to agent config file")
+	showVersion = flagSet.Bool("version", false, "Print the build version and exit")
 )
 
 func main() {
@@ -60,32 +65,41 @@ func main() {
 		return
 	}
 
-	flag.Parse()
+	if err := runCLI(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// runCLI is the testable front of main: flag parsing + the pre-run validation
+// ladder, returning errors instead of exiting. The signal bridge and runAgent
+// loop only start once every gate has passed.
+func runCLI(args []string) error {
+	if err := flagSet.Parse(args); err != nil {
+		return err
+	}
 	if *showVersion {
 		fmt.Println("mibee-agent", version.Version)
-		return
+		return nil
 	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 	if cfg.Center.URL == "" {
-		fmt.Fprintln(os.Stderr, "center.url is required (this binary runs in agent mode; use cmd/server for the center)")
-		os.Exit(1)
+		return errors.New("center.url is required (this binary runs in agent mode; use cmd/server for the center)")
 	}
 	if err := config.Validate(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("invalid config: %w", err)
 	}
 	initLogger(cfg.Log)
 	slog.Info("starting mibee-agent",
 		"version", version.Version,
 		"center", cfg.Center.URL, "network", cfg.Network.Name, "agent_id_label", cfg.Network.Name)
 
-	// runAgent owns the full agent lifecycle (below); main only bridges os
-	// signals into its context and maps the returned error to an exit code.
+	// runAgent owns the full agent lifecycle (below); runCLI only bridges os
+	// signals into its context and maps the returned error upward.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -94,13 +108,10 @@ func main() {
 		cancel()
 	}()
 	err = runAgent(ctx, cfg, *configPath)
-	// Explicit (not deferred) so the os.Exit path below still releases the
+	// Explicit (not deferred) so the os.Exit path in main still releases the
 	// context's resources.
 	cancel()
-	if err != nil {
-		slog.Error("agent error", "error", err)
-		os.Exit(1)
-	}
+	return err
 }
 
 // runAgent runs the agent lifecycle: local mini-DB, engine, reporter, runner,
