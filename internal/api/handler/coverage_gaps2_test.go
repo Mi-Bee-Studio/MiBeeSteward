@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"testing"
 
+	"time"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -398,4 +400,46 @@ func TestScannerScanEndpoint_LoopbackHappyPath(t *testing.T) {
 	var count int
 	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address='127.0.0.1'`).Scan(&count))
 	require.Equal(t, 1, count)
+}
+
+// TestHeartbeatHandler_StatsAndHistoryParams pins the stats/history surfaces
+// over the coverage server (with data present + parameter clamps).
+func TestHeartbeatHandler_StatsAndHistoryParams(t *testing.T) {
+	server, db := setupCoverageServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+	deviceID := seedCoverageDevice(t, db, "hb-stats-host", "10.99.0.1")
+
+	// Seed one config + one result row via the service-backed endpoints.
+	resp := authPost(t, server.URL+"/api/v1/devices/"+strconv.FormatInt(deviceID, 10)+"/heartbeat-configs", token,
+		`{"method":"icmp","target":"10.99.0.1","interval_seconds":60}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	// Stats: bad device id / missing from-to / bad from → 400; the full
+	// from/to matrix on a real device → 200.
+	now := time.Now().UTC()
+	fromStr := now.Add(-time.Hour).Format(time.RFC3339)
+	toStr := now.Format(time.RFC3339)
+	resp = authGet(t, server.URL+"/api/v1/devices/abc/heartbeat-stats", token)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp = authGet(t, server.URL+"/api/v1/devices/"+strconv.FormatInt(deviceID, 10)+"/heartbeat-stats", token)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode, "missing from/to is a 400")
+	resp = authGet(t, server.URL+"/api/v1/devices/"+strconv.FormatInt(deviceID, 10)+"/heartbeat-stats?from=not-a-date&to="+toStr, token)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp = authGet(t, server.URL+"/api/v1/devices/"+strconv.FormatInt(deviceID, 10)+"/heartbeat-stats?from="+fromStr+"&to="+toStr, token)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// History: bad device id → 400; missing from/to → 400; a valid window → 200.
+	resp = authGet(t, server.URL+"/api/v1/devices/abc/heartbeat-history", token)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp = authGet(t, server.URL+"/api/v1/devices/"+strconv.FormatInt(deviceID, 10)+"/heartbeat-history", token)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp = authGet(t, server.URL+"/api/v1/devices/"+strconv.FormatInt(deviceID, 10)+"/heartbeat-history?from="+fromStr+"&to="+toStr, token)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Results: bad id → 400 + limit clamp paths.
+	resp = authGet(t, server.URL+"/api/v1/devices/abc/heartbeat-results", token)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp = authGet(t, server.URL+"/api/v1/devices/"+strconv.FormatInt(deviceID, 10)+"/heartbeat-results?limit=99999", token)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
