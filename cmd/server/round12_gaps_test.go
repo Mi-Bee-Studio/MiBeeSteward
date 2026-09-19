@@ -12,12 +12,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"os"
-	"path/filepath"
 )
 
 // TestApplyIdentityIndexMigrations_DedupesLegacyIPs pins the distributed-model

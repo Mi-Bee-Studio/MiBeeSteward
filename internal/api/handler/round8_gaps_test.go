@@ -10,14 +10,15 @@
 package handler
 
 import (
-	"testing"
-
-	"github.com/stretchr/testify/require"
-	"mibee-steward/internal/crypto"
-	"mibee-steward/internal/testutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/crypto"
+	"mibee-steward/internal/testutil"
 )
 
 // TestValidateCredentialRequest_Matrix pins the SNMP credential API-boundary
