@@ -10,12 +10,12 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"context"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/testutil"
 )
