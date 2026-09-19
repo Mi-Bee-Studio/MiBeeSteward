@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
 )
 
 // TestBasicHandlers_GenerateHeartbeat pins the per-service heartbeat specs:
