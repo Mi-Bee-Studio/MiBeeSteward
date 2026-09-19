@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -148,4 +149,69 @@ func TestAgentAdmin_RevokeDoesNotClobberNewerToken(t *testing.T) {
 
 	require.Equal(t, "agent-new", getNetworkAgentID(t, dbConn, netID),
 		"revoking old token must not clobber the newer token's agent_id")
+}
+
+// TestAgentAdmin_CreateErrorBranches pins the create-path error mapping:
+// malformed body → 400, missing agent_id → 400, unknown network → 400,
+// duplicate agent_id → 409 (one agent per network binding).
+func TestAgentAdmin_CreateErrorBranches(t *testing.T) {
+	srv, _, netID := setupAgentAdminServer(t)
+
+	resp, err := http.Post(srv.URL+"/api/v1/agents/tokens", "application/json", bytes.NewReader([]byte(`{nope`)))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	// Missing agent_id.
+	body, _ := json.Marshal(domain.CreateAgentTokenRequest{NetworkID: netID})
+	resp, err = http.Post(srv.URL+"/api/v1/agents/tokens", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	// Unknown network id.
+	body, _ = json.Marshal(domain.CreateAgentTokenRequest{AgentID: "agent-x", NetworkID: 9999})
+	resp, err = http.Post(srv.URL+"/api/v1/agents/tokens", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	// Same agent_id twice → 409.
+	_, id := createToken(t, srv, "agent-dup", netID)
+	require.NotZero(t, id)
+	body, _ = json.Marshal(domain.CreateAgentTokenRequest{AgentID: "agent-dup", NetworkID: netID})
+	resp, err = http.Post(srv.URL+"/api/v1/agents/tokens", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusConflict, resp.StatusCode)
+}
+
+// TestAgentAdmin_RevokeDeleteErrorBranches: unknown ids → 404, non-numeric → 400.
+func TestAgentAdmin_RevokeDeleteErrorBranches(t *testing.T) {
+	srv, _, netID := setupAgentAdminServer(t)
+	_, id := createToken(t, srv, "agent-rd", netID)
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/agents/tokens/9999/revoke", nil)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	req, _ = http.NewRequest(http.MethodPost, srv.URL+"/api/v1/agents/tokens/abc/revoke", nil)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	req, _ = http.NewRequest(http.MethodDelete, srv.URL+"/api/v1/agents/tokens/9999", nil)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	req, _ = http.NewRequest(http.MethodDelete, srv.URL+"/api/v1/agents/tokens/"+fmt.Sprint(id), nil)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
