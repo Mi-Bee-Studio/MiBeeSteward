@@ -74,8 +74,10 @@ func oldDevicesNoGeneratedColumns(t *testing.T, db *sql.DB) {
 		scan_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scan_attributes)),
 		user_attributes TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(user_attributes)),
 		network_id INTEGER,
+		device_uuid TEXT NOT NULL DEFAULT '',
 		first_seen TIMESTAMP,
 		last_seen TIMESTAMP,
+		offline_since TIMESTAMP,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)

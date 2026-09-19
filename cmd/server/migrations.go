@@ -592,8 +592,10 @@ func addDevicesGeneratedColumns(ctx context.Context, db *sql.DB) error {
 			scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
 			scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
 			network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+			device_uuid TEXT NOT NULL DEFAULT '',
 			first_seen TIMESTAMP,
 			last_seen TIMESTAMP,
+			offline_since TIMESTAMP,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -601,12 +603,14 @@ func addDevicesGeneratedColumns(ctx context.Context, db *sql.DB) error {
 			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
 			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
 			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
-			scan_attributes, user_attributes, network_id, first_seen, last_seen, created_at, updated_at)
+			scan_attributes, user_attributes, network_id, device_uuid, first_seen, last_seen,
+			offline_since, created_at, updated_at)
 		SELECT id, name, type, brand, model, location, purpose, description,
 			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
 			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
 			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
-			scan_attributes, user_attributes, network_id, first_seen, last_seen, created_at, updated_at FROM devices`,
+			scan_attributes, user_attributes, network_id, device_uuid, first_seen, last_seen,
+			offline_since, created_at, updated_at FROM devices`,
 		`DROP TABLE devices`,
 		`ALTER TABLE devices_new RENAME TO devices`,
 		// Re-create the indexes that existed on the original devices table.
@@ -723,8 +727,10 @@ func extendDevicesTypeCheck(ctx context.Context, db *sql.DB) error {
 			scan_os       TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.os')) STORED,
 			scan_hostname TEXT GENERATED ALWAYS AS (json_extract(scan_attributes, '$.hostname')) STORED,
 			network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+			device_uuid TEXT NOT NULL DEFAULT '',
 			first_seen TIMESTAMP,
 			last_seen TIMESTAMP,
+			offline_since TIMESTAMP,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -732,12 +738,14 @@ func extendDevicesTypeCheck(ctx context.Context, db *sql.DB) error {
 			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
 			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
 			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
-			scan_attributes, user_attributes, network_id, first_seen, last_seen, created_at, updated_at)
+			scan_attributes, user_attributes, network_id, device_uuid, first_seen, last_seen,
+			offline_since, created_at, updated_at)
 		SELECT id, name, type, brand, model, location, purpose, description,
 			status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags,
 			scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports,
 			detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms,
-			scan_attributes, user_attributes, network_id, first_seen, last_seen, created_at, updated_at FROM devices`,
+			scan_attributes, user_attributes, network_id, device_uuid, first_seen, last_seen,
+			offline_since, created_at, updated_at FROM devices`,
 		`DROP TABLE devices`,
 		`ALTER TABLE devices_new RENAME TO devices`,
 		// Recreate the non-identity indexes (the composite-unique ip+network_id
