@@ -183,7 +183,8 @@ func (h *DashboardHandler) Query(w http.ResponseWriter, r *http.Request) {
 
 	body, err := h.svc.Query(r.Context(), query, ts)
 	if err != nil {
-		if errors.Is(err, &service.UpstreamError{}) {
+		var upErr *service.UpstreamError
+		if errors.As(err, &upErr) {
 			Error(w, http.StatusBadGateway, "data source unreachable")
 			return
 		}
@@ -214,7 +215,8 @@ func (h *DashboardHandler) QueryRange(w http.ResponseWriter, r *http.Request) {
 
 	body, err := h.svc.QueryRange(r.Context(), query, start, end, step)
 	if err != nil {
-		if errors.Is(err, &service.UpstreamError{}) {
+		var upErr *service.UpstreamError
+		if errors.As(err, &upErr) {
 			Error(w, http.StatusBadGateway, "data source unreachable")
 			return
 		}

@@ -26,9 +26,13 @@ import (
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
+	"mibee-steward/internal/crypto"
 	sqldb "mibee-steward/internal/db"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/notification"
+	"mibee-steward/internal/service/scannerv2/engine"
+	"mibee-steward/internal/service/scannerv2/runner"
+	"mibee-steward/internal/service/scannerv2/store"
 	"mibee-steward/internal/testutil"
 )
 
@@ -76,6 +80,31 @@ func setupCoverageServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	userSvc := service.NewUserService(conn, cfg.Auth.JWTSecret, time.Hour, cfg.Auth.PasswordPolicy)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, nil)
 
+	dashHandler := handler.NewDashboardHandler(service.NewDashboardService(conn, cfg))
+
+	heartbeatSvc := service.NewHeartbeatService(conn, hbStore, cfg)
+	heartbeatHandler := handler.NewHeartbeatHandler(heartbeatSvc)
+
+	masterKey := []byte("0123456789abcdef0123456789abcdef") // exactly 32 bytes
+	cipher, err := crypto.NewCipher(masterKey)
+	if err != nil {
+		t.Fatalf("new cipher: %v", err)
+	}
+	credHandler := handler.NewCredentialHandler(conn, cipher, nil)
+
+	scanEngine, err := engine.NewEngine(conn, engine.Config{
+		AllowReservedTargets: true, // tests scan 127.0.0.1 (loopback is reserved)
+		PerProbeTimeout:      300 * time.Millisecond,
+		PerHostTimeout:       3 * time.Second,
+		MaxConcurrentHosts:   8,
+	}, nil)
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	scanRunner := runner.New(nil, queries, conn, nil, 0, nil)
+	scanRunner.SetRepo(store.NewSQLiteRepository(conn, store.Options{}, nil))
+	scannerHandler := handler.NewScannerHandler(scanEngine, scanRunner)
+
 	r := chi.NewMux()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.Recoverer)
@@ -110,7 +139,44 @@ func setupCoverageServer(t *testing.T) (*httptest.Server, *sql.DB) {
 			r.Use(middleware.RequireAuth)
 			r.Get("/export", exportHandler.ExportDevices)
 			r.Get("/{id}/heartbeat-results/export", exportHandler.ExportHeartbeatResults)
+			r.Get("/{id}/heartbeat-configs", heartbeatHandler.ListConfigs)
+			r.Post("/{id}/heartbeat-configs", heartbeatHandler.CreateConfig)
+			r.Get("/{id}/heartbeat-results", heartbeatHandler.ListResults)
+			r.Get("/{id}/heartbeat-history", heartbeatHandler.ListHistory)
+			r.Get("/{id}/heartbeat-stats", heartbeatHandler.GetStats)
 		})
+	})
+
+	r.Route("/api/v1/heartbeat-configs/{id}", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Put("/", heartbeatHandler.UpdateConfig)
+		r.Delete("/", heartbeatHandler.DeleteConfig)
+	})
+
+	r.Route("/api/v1/dashboard", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/configs", dashHandler.ListConfigs)
+		r.Get("/overview", dashHandler.Overview)
+		r.Get("/query", dashHandler.Query)
+		r.Get("/query_range", dashHandler.QueryRange)
+		r.Post("/configs", dashHandler.CreateConfig)
+		r.Put("/configs/{id}", dashHandler.UpdateConfig)
+		r.Delete("/configs/{id}", dashHandler.DeleteConfig)
+	})
+
+	r.Route("/api/v1/snmp-credentials", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/", credHandler.Create)
+		r.Get("/", credHandler.List)
+		r.Get("/{id}", credHandler.Get)
+		r.Put("/{id}", credHandler.Update)
+		r.Delete("/{id}", credHandler.Delete)
+	})
+
+	r.Route("/api/v1/scanner", func(r chi.Router) {
+		r.Use(middleware.RequireAdmin)
+		r.Post("/scan", scannerHandler.Scan)
+		r.Post("/add-devices", scannerHandler.AddDevices)
 	})
 
 	r.Route("/api/v1/users", func(r chi.Router) {
