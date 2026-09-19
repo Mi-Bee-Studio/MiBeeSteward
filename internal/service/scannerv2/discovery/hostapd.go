@@ -115,8 +115,7 @@ func (s *HostapdSource) loop(ctx context.Context) {
 }
 
 // sweep enumerates associated STAs via hostapd-ctrl first, falling back to iw
-// when hostapd yields nothing. Diffs against the previous snapshot and emits an
-// event per newly-seen MAC.
+// when hostapd yields nothing.
 func (s *HostapdSource) sweep() {
 	stas := s.readViaHostapdCtrl()
 	if len(stas) == 0 {
@@ -125,6 +124,13 @@ func (s *HostapdSource) sweep() {
 		// is normal on a non-router host; both failing is the no-op case.
 		stas = s.readViaIW()
 	}
+	s.sweepWith(stas)
+}
+
+// sweepWith diffs a freshly gathered mac→staInfo snapshot against the previous
+// sweep and emits one event per newly-seen MAC. Split from sweep so tests can
+// drive the diff/emit path directly (same seam as ARPCacheSource.sweepWith).
+func (s *HostapdSource) sweepWith(stas map[string]staInfo) {
 	if len(stas) == 0 {
 		return
 	}
