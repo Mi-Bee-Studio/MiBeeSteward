@@ -61,3 +61,42 @@ func TestDeleteTask_RemovesResults(t *testing.T) {
 	// Deleting again → not found.
 	require.ErrorIs(t, svc.DeleteTask(ctx, resp.ID), ErrScanTaskNotFound)
 }
+
+// TestCreateTask_ValidationMatrix walks every ValidateScanTaskRequest rejection
+// reachable through the service (name/targets/ip-count/reserved/cron/timeout/
+// concurrency bounds), plus the concurrent_hosts default.
+func TestCreateTask_ValidationMatrix(t *testing.T) {
+	svc, _ := setupGapService(t)
+	ctx := context.Background()
+
+	base := func() domain.ScanTaskRequest {
+		return domain.ScanTaskRequest{
+			Name: "v", Targets: "192.168.90.0/24", CronExpr: "0 3 * * *",
+			Timeout: 60, ConcurrentHosts: 16,
+			PipelineConfig: domain.PipelineConfig{ICMP: domain.ICMPConfig{Enabled: true}},
+		}
+	}
+	bad := func(mut func(*domain.ScanTaskRequest)) error {
+		r := base()
+		mut(&r)
+		_, err := svc.CreateTask(ctx, r)
+		return err
+	}
+
+	require.ErrorContains(t, bad(func(r *domain.ScanTaskRequest) { r.Name = "" }), "name is required")
+	require.ErrorContains(t, bad(func(r *domain.ScanTaskRequest) { r.Targets = "" }), "targets is required")
+	require.ErrorContains(t, bad(func(r *domain.ScanTaskRequest) { r.Targets = "not-an-ip" }), "targets")
+	require.ErrorContains(t, bad(func(r *domain.ScanTaskRequest) { r.Targets = "10.0.0.0/8" }), "too many IPs")
+	require.ErrorContains(t, bad(func(r *domain.ScanTaskRequest) { r.Targets = "127.0.0.1" }), "reserved")
+	require.ErrorContains(t, bad(func(r *domain.ScanTaskRequest) { r.CronExpr = "" }), "cron_expr is required")
+	require.ErrorContains(t, bad(func(r *domain.ScanTaskRequest) { r.CronExpr = "not cron" }), "cron_expr")
+
+	// concurrent_hosts=0 defaults (16); -1 / 10000 reject.
+	okReq := base()
+	okReq.ConcurrentHosts = 0
+	resp, err := svc.CreateTask(ctx, okReq)
+	require.NoError(t, err)
+	require.Equal(t, 16, resp.ConcurrentHosts)
+	require.Error(t, bad(func(r *domain.ScanTaskRequest) { r.ConcurrentHosts = -1 }))
+	require.Error(t, bad(func(r *domain.ScanTaskRequest) { r.ConcurrentHosts = 10000 }))
+}

@@ -10,9 +10,15 @@
 package handler
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/crypto"
+	"mibee-steward/internal/testutil"
 )
 
 // TestValidateCredentialRequest_Matrix pins the SNMP credential API-boundary
@@ -45,4 +51,34 @@ func TestValidateCredentialRequest_Matrix(t *testing.T) {
 			require.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+// TestCredentialHandler_NilCipherAndBadJSON pins the disabled-vault gate and
+// the malformed-body branch (the handler surface before validation).
+func TestCredentialHandler_NilCipherAndBadJSON(t *testing.T) {
+	// Nil cipher → 503 on both Create and Update.
+	hNil := NewCredentialHandler(nil, nil, nil)
+	rec := httptest.NewRecorder()
+	hNil.Create(rec, httptest.NewRequest(http.MethodPost, "/api/v1/snmp-credentials", nil))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	rec = httptest.NewRecorder()
+	hNil.Update(rec, reqWithURLParam(http.MethodPut, "/api/v1/snmp-credentials/1", `{}`, "1"))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+
+	// Real cipher, malformed JSON → 400.
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
+	require.NoError(t, err)
+	h := NewCredentialHandler(conn, cipher, nil)
+	rec = httptest.NewRecorder()
+	h.Create(rec, httptest.NewRequest(http.MethodPost, "/api/v1/snmp-credentials", strings.NewReader(`{nope`)))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	rec = httptest.NewRecorder()
+	h.Update(rec, reqWithURLParam(http.MethodPut, "/api/v1/snmp-credentials/1", `{nope`, "1"))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	rec = httptest.NewRecorder()
+	h.Update(rec, reqWithURLParam(http.MethodPut, "/api/v1/snmp-credentials/abc", `{}`, "abc"))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
