@@ -111,3 +111,13 @@ func TestRecordVLANs_SingleVLANLinksSubnet(t *testing.T) {
 	// No VLAN evidence at all → no-op.
 	rn.recordVLANs(ctx, netID, []scannerv2.HostReport{{IP: "10.10.0.2", Alive: true}})
 }
+
+// TestValidVLANTagBounds pins the tag validator used by recordVLANs.
+func TestValidVLANTagBounds(t *testing.T) {
+	require.Equal(t, "42", validVLANTag("42"))
+	require.Equal(t, "4094", validVLANTag("4094"))
+	require.Equal(t, "", validVLANTag("4095"))
+	require.Equal(t, "", validVLANTag("0"))
+	require.Equal(t, "", validVLANTag("abc"))
+	require.Equal(t, "", validVLANTag(""))
+}
