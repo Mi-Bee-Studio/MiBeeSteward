@@ -83,7 +83,7 @@ func TestActivity_TickBothBranches(t *testing.T) {
 	a := StartActivity(dbConn, slog.Default())
 
 	sawOnline, sawOffline := false, false
-	for i := 0; i < 60 && !(sawOnline && sawOffline); i++ {
+	for i := 0; i < 60 && (!sawOnline || !sawOffline); i++ {
 		before := demoOnlineCount(t, dbConn)
 		a.tick(ctx)
 		after := demoOnlineCount(t, dbConn)
