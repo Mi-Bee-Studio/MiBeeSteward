@@ -113,10 +113,12 @@ func (s *Service) Start(ctx context.Context) {
 
 // Stop cancels the loop and waits for the in-flight scan to finish.
 func (s *Service) Stop() {
+	// Stop before Start (or after a prior Stop) is a no-op, not a hang:
+	// a bare <-s.done blocks forever when no loop ever ran to close it.
 	if s.cancel != nil {
 		s.cancel()
+		<-s.done
 	}
-	<-s.done
 }
 
 // Reconcile runs one full pass and returns the mismatches found. It is the

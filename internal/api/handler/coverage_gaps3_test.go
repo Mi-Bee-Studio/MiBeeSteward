@@ -70,8 +70,6 @@ func setupGapServer(t *testing.T) *gapServerFixture {
 
 	// --- auth family (logout needs a live blacklist to cover the jti path) ---
 	blacklist := service.NewTokenBlacklist()
-	blacklist.StartCleanup()
-	t.Cleanup(blacklist.StopCleanup)
 	userSvc := service.NewUserService(conn, cfg.Auth.JWTSecret, time.Hour, cfg.Auth.PasswordPolicy)
 	userHandler := handler.NewUserHandler(userSvc, cfg, auditRepo, blacklist)
 

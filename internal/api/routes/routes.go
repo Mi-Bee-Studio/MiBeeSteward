@@ -54,17 +54,15 @@ import (
 
 // NewRouter creates and returns the main HTTP router with all routes registered.
 // It requires the database connection and configuration to set up auth and user routes.
-// demoActivity stops with the router cleanup (#285).
-var demoActivity *demoseed.Activity
 
 func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.HeartbeatService, func()) {
 	r := chi.NewMux()
 
 	// Initialize JWT auth
 	middleware.SetJWTAuth(cfg.Auth.JWTSecret)
-	// Initialize token blacklist for JWT revocation
+	// Initialize token blacklist for JWT revocation. Entries expire lazily
+	// on read — no cleanup goroutine to leak per NewRouter call.
 	tokenBlacklist := service.NewTokenBlacklist()
-	tokenBlacklist.StartCleanup()
 	middleware.SetTokenBlacklist(tokenBlacklist)
 
 	// Parse token expiry, default to 24h
@@ -163,6 +161,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// fictional inventory (RFC 5737 TEST-NET ranges only — never a real
 	// network) and an activity ticker keeps the dashboard moving. /demo/status
 	// is public so the SPA can show the banner pre-login; wiping is admin.
+	// Local (not package-global) so a second NewRouter can't overwrite and
+	// orphan the first instance's activity goroutine.
+	var demoActivity *demoseed.Activity
 	if cfg.Server.DemoMode {
 		if demoseed.IsDemoEmpty(dbConn) {
 			if err := demoseed.Seed(context.Background(), dbConn, slog.Default()); err != nil {
@@ -692,11 +693,19 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// channel whenever a plan content changes (fingerprint-gated, steady
 	// state is zero traffic). Same 10s cadence as the engine tick.
 	probeDispatcher := probetarget.NewAgentDispatcher(db.New(probeDB), agentCmdSvc, slog.Default())
+	// Stop channel for the dispatch ticker below — without it the goroutine
+	// ran forever (one leak per NewRouter call; tests call NewRouter a lot).
+	probeDispatchStop := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
-			probeDispatcher.DispatchTick(context.Background())
+		for {
+			select {
+			case <-probeDispatchStop:
+				return
+			case <-ticker.C:
+				probeDispatcher.DispatchTick(context.Background())
+			}
 		}
 	}()
 	agentProbeReportHandler := handler.NewAgentProbeReportHandler(probeTargetSvc)
@@ -1126,6 +1135,15 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Mount("/", spaHandler)
 
 	return r, heartbeatSvc, func() {
+		// Stop the vantage probe dispatch ticker (goroutine leak otherwise).
+		// Guarded: the cleanup func is documented idempotent — closing a
+		// closed channel would panic on the second call.
+		select {
+		case <-probeDispatchStop:
+			// already stopped
+		default:
+			close(probeDispatchStop)
+		}
 		// Stop the device-metrics refresher BEFORE the DB close — its tick
 		// runs aggregate COUNTs against dbConn (#333).
 		deviceMetricsCancel()
