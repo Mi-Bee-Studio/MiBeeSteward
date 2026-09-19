@@ -28,7 +28,7 @@ type visitor struct {
 // RateLimiter provides per-IP token bucket rate limiting.
 type RateLimiter struct {
 	visitors map[string]*visitor
-	mu       sync.RWMutex
+	mu       sync.Mutex
 	rate     rate.Limit
 	burst    int
 	quit     chan struct{}

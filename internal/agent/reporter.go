@@ -222,7 +222,7 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 			return
 		}
 		if r.postWithRetry(ctx, body, 0, "") { // no hash: nothing stateful to fast-path
-			r.lastPostAt = time.Now()
+			r.markPosted()
 		}
 		return
 	}
@@ -250,11 +250,21 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 	// changedetect.DeviceSnapshot so "nothing changed" == "same hash".
 	hash := networkStateHash(hosts)
 	if r.postWithRetry(ctx, body, len(hosts), hash) {
-		r.lastPostAt = time.Now()
+		r.markPosted()
 	} else {
 		// Exhausted retries — enqueue for later delivery instead of dropping.
 		r.enqueuePending(body)
 	}
+}
+
+// markPosted records a successful POST time under the mutex: the 30s idle
+// heartbeat throttle in flushOnce READS lastPostAt while holding r.mu, so the
+// matching writes must hold it too (they previously raced from three call
+// sites: ticker loop, buffer-full early flush, Stop).
+func (r *Reporter) markPosted() {
+	r.mu.Lock()
+	r.lastPostAt = time.Now()
+	r.mu.Unlock()
 }
 
 // flushPending drains the failed-batch queue, oldest first. Each batch gets a

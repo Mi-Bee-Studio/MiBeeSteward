@@ -3,9 +3,9 @@
 // Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
 //
 // This file is part of MiBee Steward, distributed under the GNU Affero General
-// Public License v3.0 or later. You may use, modify, and redistribute it under
-// those terms; see LICENSE for the full text. A commercial license is available
-// for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+// Public License v3.0 or later. See LICENSE for the full text. A commercial
+// license is available for use cases the AGPL does not accommodate; see
+// LICENSE-COMMERCIAL.md.
 
 package service
 
@@ -14,17 +14,23 @@ import (
 	"time"
 )
 
-// TokenBlacklist stores revoked JWT token IDs with automatic cleanup.
+// TokenBlacklist stores revoked JWT token IDs, expiring them lazily on read.
+//
+// There is deliberately NO background cleanup goroutine: expired entries are
+// dropped by IsBlacklisted when it touches them, and the map is bounded by the
+// number of tokens that ever logged out (each entry dies with its token's own
+// JWT expiry, so a revocation outlives the token it revokes by design). The
+// previous 10-minute sweeper goroutine leaked on every NewRouter call — its
+// StopCleanup had no production callers, and calling it twice panicked on
+// double-close. Lazy expiry deletes that entire lifecycle.
 type TokenBlacklist struct {
 	mu      sync.RWMutex
 	entries map[string]time.Time // jti -> expiry time
-	quit    chan struct{}
 }
 
 func NewTokenBlacklist() *TokenBlacklist {
 	return &TokenBlacklist{
 		entries: make(map[string]time.Time),
-		quit:    make(chan struct{}),
 	}
 }
 
@@ -35,41 +41,19 @@ func (b *TokenBlacklist) Add(jti string, ttl time.Duration) {
 	b.entries[jti] = time.Now().Add(ttl)
 }
 
-// IsBlacklisted checks if a token JTI is in the blacklist.
+// IsBlacklisted reports whether a token JTI is revoked and not yet expired.
+// An expired entry is deleted on sight (lazy expiry) so the map self-cleans
+// under normal traffic without a sweeper goroutine.
 func (b *TokenBlacklist) IsBlacklisted(jti string) bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	expiry, exists := b.entries[jti]
 	if !exists {
 		return false
 	}
-	return time.Now().Before(expiry)
-}
-
-// StartCleanup starts a background goroutine that removes expired entries every 10 minutes.
-func (b *TokenBlacklist) StartCleanup() {
-	ticker := time.NewTicker(10 * time.Minute)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				b.mu.Lock()
-				now := time.Now()
-				for jti, expiry := range b.entries {
-					if now.After(expiry) {
-						delete(b.entries, jti)
-					}
-				}
-				b.mu.Unlock()
-			case <-b.quit:
-				ticker.Stop()
-				return
-			}
-		}
-	}()
-}
-
-// StopCleanup stops the background cleanup goroutine.
-func (b *TokenBlacklist) StopCleanup() {
-	close(b.quit)
+	if !time.Now().Before(expiry) {
+		delete(b.entries, jti)
+		return false
+	}
+	return true
 }

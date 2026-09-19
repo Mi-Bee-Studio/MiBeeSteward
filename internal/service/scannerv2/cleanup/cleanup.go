@@ -103,10 +103,12 @@ func (s *Service) Start(ctx context.Context) {
 
 // Stop signals the sweep loop to exit and waits for it.
 func (s *Service) Stop() {
+	// Stop before Start (or after a prior Stop) is a no-op, not a hang:
+	// a bare <-s.done blocks forever when no loop ever ran to close it.
 	if s.cancel != nil {
 		s.cancel()
+		<-s.done
 	}
-	<-s.done
 }
 
 // runOnce prunes every detail table whose retention window is configured.

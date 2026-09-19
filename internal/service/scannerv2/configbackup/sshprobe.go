@@ -81,9 +81,17 @@ func FetchConfig(ctx context.Context, host string, port int, cred *sshcred.Crede
 		return "", actualFP, fmt.Errorf("dial %s: %w", addr, err)
 	}
 	defer conn.Close()
+	// Bounded ctx-watcher: closed on return, so the goroutine never outlives
+	// this fetch (a bare <-ctx.Done() waiter would park until the SERVICE
+	// ctx dies, leaking one goroutine per fetch).
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		<-ctx.Done()
-		_ = conn.SetDeadline(time.Now()) // unblock a hung handshake on cancellation
+		select {
+		case <-ctx.Done():
+			_ = conn.SetDeadline(time.Now()) // unblock a hung handshake on cancellation
+		case <-done:
+		}
 	}()
 
 	sc, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)

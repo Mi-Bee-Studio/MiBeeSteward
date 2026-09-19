@@ -250,63 +250,68 @@ func (s *HeartbeatStore) flushLoop(ctx context.Context) {
 	batch := make([]resultRow, 0, flushBatchSize)
 	liveBatch := make([]livenessRow, 0, flushBatchSize)
 
-	flushResults := func() {
+	// The closures take the ctx to commit under: the steady-state loop passes
+	// its own ctx; the final drain below passes a FRESH bounded ctx — the loop
+	// ctx is already cancelled at that point, and committing under it would
+	// fail every batch, silently dropping everything still buffered (#audit:
+	// the old code built that fresh ctx and then never used it).
+	flushResults := func(fctx context.Context) {
 		if len(batch) == 0 {
 			return
 		}
-		if err := s.commitBatch(ctx, batch); err != nil {
+		if err := s.commitBatch(fctx, batch); err != nil {
 			slog.Error("heartbeat batch insert failed", "rows", len(batch), "error", err)
 		}
 		batch = batch[:0]
 	}
-	flushLiveness := func() {
+	flushLiveness := func(fctx context.Context) {
 		if len(liveBatch) == 0 {
 			return
 		}
-		if err := s.commitLivenessBatch(ctx, liveBatch); err != nil {
+		if err := s.commitLivenessBatch(fctx, liveBatch); err != nil {
 			slog.Error("device_liveness batch insert failed", "rows", len(liveBatch), "error", err)
 		}
 		liveBatch = liveBatch[:0]
 	}
-	flushAll := func() {
-		flushResults()
-		flushLiveness()
+	flushAll := func(fctx context.Context) {
+		flushResults(fctx)
+		flushLiveness(fctx)
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			// Final drain on shutdown — flush whatever is buffered so we don't
-			// lose recent results when the process stops.
+			// lose recent results when the process stops. Commits run under a
+			// FRESH bounded ctx: the loop ctx is already cancelled here.
 			ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			for len(s.ch) > 0 {
 				batch = append(batch, <-s.ch)
 				if len(batch) >= flushBatchSize {
-					flushResults()
+					flushResults(ctx2)
 				}
 			}
 			for len(s.liveCh) > 0 {
 				liveBatch = append(liveBatch, <-s.liveCh)
 				if len(liveBatch) >= flushBatchSize {
-					flushLiveness()
+					flushLiveness(ctx2)
 				}
 			}
-			flushAll()
+			flushAll(ctx2)
 			cancel()
-			_ = ctx2
 			return
 		case r := <-s.ch:
 			batch = append(batch, r)
 			if len(batch) >= flushBatchSize {
-				flushResults()
+				flushResults(ctx)
 			}
 		case r := <-s.liveCh:
 			liveBatch = append(liveBatch, r)
 			if len(liveBatch) >= flushBatchSize {
-				flushLiveness()
+				flushLiveness(ctx)
 			}
 		case <-ticker.C:
-			flushAll()
+			flushAll(ctx)
 		}
 	}
 }
