@@ -166,3 +166,15 @@ func countGapRows(t *testing.T, db *sql.DB) int {
 	}
 	return n
 }
+
+// TestIdentityNetworkClause pins the per-call network scoping fragment.
+func TestIdentityNetworkClause(t *testing.T) {
+	clause, args := identityNetworkClause(sql.NullInt64{Int64: 7, Valid: true})
+	if clause != "network_id = ?" || len(args) != 1 || args[0].(int64) != 7 {
+		t.Fatalf("valid network: %q %v", clause, args)
+	}
+	clause, args = identityNetworkClause(sql.NullInt64{})
+	if clause != "network_id IS NULL" || args != nil {
+		t.Fatalf("invalid network: %q %v", clause, args)
+	}
+}

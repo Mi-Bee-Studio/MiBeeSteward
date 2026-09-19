@@ -292,3 +292,17 @@ func setupTOTPGap(t *testing.T) (*TOTPService, *sql.DB, *sqldb.Queries) {
 	t.Cleanup(func() { dbConn.Close() })
 	return NewTOTPService(dbConn, nil), dbConn, sqldb.New(dbConn)
 }
+
+// TestPlaceholders pins the IN-list builder (n<=0 empty; n=1 "?"; n=3 "?,?,?").
+func TestPlaceholders(t *testing.T) {
+	require.Equal(t, "", placeholders(0))
+	require.Equal(t, "", placeholders(-1))
+	require.Equal(t, "?", placeholders(1))
+	require.Equal(t, "?,?,?", placeholders(3))
+}
+
+func TestStrPtr(t *testing.T) {
+	p := strPtr("x")
+	require.NotNil(t, p)
+	require.Equal(t, "x", *p)
+}

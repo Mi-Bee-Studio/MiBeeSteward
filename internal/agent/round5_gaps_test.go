@@ -11,17 +11,19 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"github.com/stretchr/testify/require"
 	"io"
 	"log/slog"
+	"mibee-steward/internal/service/probetarget"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
-
-	"mibee-steward/internal/service/probetarget"
 )
 
 // capturePoster records everything Post receives.
@@ -201,4 +203,81 @@ func TestCommandPollerSetProber(t *testing.T) {
 	poller.SetProber(pr)
 	pr.ApplyConfig(ProbePlanCommand{Fingerprint: "fp-x"})
 	require.Equal(t, "fp-x", pr.PlanFingerprint())
+}
+
+// TestCommandPoller_ExecuteMatrix drives the executor against a stub center
+// that records every /complete POST: bad scan payload, missing targets,
+// out-of-network rejection (Layer 2-agent), scan success/failure, probe plan
+// without a prober, and unknown commands.
+func TestCommandPoller_ExecuteMatrix(t *testing.T) {
+	var mu sync.Mutex
+	completions := map[int64][2]string{}
+	center := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/complete") {
+			id, _ := strconv.ParseInt(strings.Split(r.URL.Path, "/")[5], 10, 64)
+			var body struct {
+				Status string `json:"status"`
+				Result string `json:"result"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			completions[id] = [2]string{body.Status, body.Result}
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(center.Close)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	newP := func(cidr string, runScan func(context.Context, ScanCommand) (string, error)) *CommandPoller {
+		return NewCommandPoller(center.URL, "tok", time.Minute, cidr, runScan, logger)
+	}
+	ctx := context.Background()
+	run := func(p *CommandPoller, id int64, cmd, payload string) (string, string) {
+		p.execute(ctx, pendingCommand{ID: id, Command: cmd, Payload: payload})
+		mu.Lock()
+		defer mu.Unlock()
+		c := completions[id]
+		return c[0], c[1]
+	}
+
+	st, res := run(newP("", nil), 1, "scan", `{nope`)
+	require.Equal(t, "failed", st)
+	require.Contains(t, res, "bad payload")
+
+	st, res = run(newP("", nil), 2, "scan", `{}`)
+	require.Equal(t, "failed", st)
+	require.Contains(t, res, "missing targets")
+
+	p := newP("192.168.77.0/24", nil)
+	st, res = run(p, 3, "scan", `{"targets":"10.99.0.0/29"}`)
+	require.Equal(t, "failed", st)
+	require.Contains(t, res, "outside agent network")
+
+	p = newP("192.168.77.0/24", func(context.Context, ScanCommand) (string, error) {
+		return `{"alive":3}`, nil
+	})
+	st, res = run(p, 4, "scan", `{"targets":"192.168.77.0/30"}`)
+	require.Equal(t, "done", st)
+	require.Contains(t, res, `"alive":3`)
+
+	p = newP("192.168.77.0/24", func(context.Context, ScanCommand) (string, error) {
+		return "", errors.New("engine exploded")
+	})
+	st, res = run(p, 5, "scan", `{"targets":"192.168.77.1"}`)
+	require.Equal(t, "failed", st)
+	require.Contains(t, res, "engine exploded")
+
+	st, res = run(newP("", nil), 6, "probe", `{"targets":[]}`)
+	require.Equal(t, "failed", st)
+	require.Contains(t, res, "no prober")
+
+	st, res = run(newP("", nil), 7, "reboot-now", `{}`)
+	require.Equal(t, "failed", st)
+	require.Contains(t, res, "unknown command")
+
+	// Remote ops disabled (the default) → refused with the opt-in hint.
+	st, res = run(newP("", nil), 8, "restart", `{}`)
+	require.Equal(t, "failed", st)
+	require.Contains(t, res, "remote ops")
 }
