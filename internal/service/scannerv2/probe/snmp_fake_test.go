@@ -76,14 +76,14 @@ func injectFakeSnmp(t *testing.T, f *fakeSnmp) *fakeSnmp {
 	if f == nil {
 		f = &fakeSnmp{}
 	}
-	real := dialSNMP
+	prevDial := dialSNMP
 	dialSNMP = func(_ string, _ scannerv2.ProbeHint, _ gosnmp.SnmpVersion, _ int) (snmpClient, error) {
 		if f.connErr != nil {
 			return nil, f.connErr
 		}
 		return f, nil
 	}
-	t.Cleanup(func() { dialSNMP = real })
+	t.Cleanup(func() { dialSNMP = prevDial })
 	return f
 }
 
@@ -316,12 +316,12 @@ func TestRouterARPLookups_CachedAndScripted(t *testing.T) {
 		},
 	}
 	calls := 0
-	real := dialSNMP
+	prevDial := dialSNMP
 	dialSNMP = func(_ string, _ scannerv2.ProbeHint, _ gosnmp.SnmpVersion, _ int) (snmpClient, error) {
 		calls++
 		return &fakeSnmp{walks: walks}, nil
 	}
-	t.Cleanup(func() { dialSNMP = real })
+	t.Cleanup(func() { dialSNMP = prevDial })
 	// Fresh cache per test (the global is keyed to a single router).
 	routerARPCacheGlobal = routerARPStore{}
 	t.Cleanup(func() { routerARPCacheGlobal = routerARPStore{} })
