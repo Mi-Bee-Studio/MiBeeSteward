@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -115,60 +116,28 @@ func main() {
 	// Match MaxIdleConns to MaxOpenConns so the pool doesn't churn connections
 	// open/close under concurrent scanner + heartbeat load (was 4 << 16). (#162)
 	db.SetMaxIdleConns(16)
-	// Run migrations
-	if err := runMigrations(db, dbPath); err != nil {
-		slog.Error("failed to run migrations", "error", err)
+
+	// Bridge os signals into the plain stop channel serve consumes. serve owns
+	// the entire lifecycle (migrations → seed → HTTP → graceful shutdown) so it
+	// can be driven in-process by tests with a bare channel.
+	stop := make(chan struct{})
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-quit
+		close(stop)
+	}()
+	if err := serve(cfg, db, dbPath, stop); err != nil {
+		slog.Error("server error", "error", err)
 		os.Exit(1)
 	}
+}
 
-	// One-time ghost cleanup (issue #19 Layer 4): detect devices whose IP has
-	// drifted outside their stamped network's CIDR, and delete the ones that
-	// are proven duplicates (a canonical copy exists in the correct network, or
-	// the same MAC lives elsewhere). Runs AFTER the pre-migration VACUUM INTO
-	// backup (taken inside runMigrations), so the pre-cleanup state is
-	// recoverable. Idempotent — a steady-state instance finds nothing here.
-	// Skipped for a fresh DB (no networks/devices) since Reconcile returns empty.
-	{
-		cleanupSvc := scannerv2reconcile.New(db, 0, nil, slog.Default())
-		if stats, err := cleanupSvc.CleanupGhosts(context.Background()); err != nil {
-			slog.Warn("startup ghost cleanup failed (continuing)", "error", err)
-		} else if stats.Mismatches > 0 {
-			slog.Info("startup ghost cleanup complete",
-				"mismatches", stats.Mismatches, "rehomed", stats.Rehomed, "unresolved", stats.Unresolved)
-		}
-		// Reserved-address ghosts (#254): devices the scanner recorded at a
-		// network's own address or its broadcast (the broadcast answered pings
-		// via every host's fan-out reply). Same backup protection as above.
-		if removed, err := cleanupSvc.CleanupReservedAddressDevices(context.Background()); err != nil {
-			slog.Warn("startup reserved-address cleanup failed (continuing)", "error", err)
-		} else if len(removed) > 0 {
-			slog.Info("startup reserved-address cleanup complete", "removed", removed)
-		}
-	}
-
-	// Ensure upload directory exists
-	if cfg.Storage.UploadPath != "" {
-		if err := os.MkdirAll(cfg.Storage.UploadPath, 0755); err != nil {
-			slog.Error("failed to create upload directory", "error", err, "path", cfg.Storage.UploadPath)
-			os.Exit(1)
-		}
-	}
-	// Initial admin password: a non-empty value = classic temp credential
-	// (forced change on first login); EMPTY = first-run browser setup (the
-	// admin is seeded password-less and the login page asks for a password to
-	// be created — the installer default).
-	if cfg.Auth.InitialAdminPassword == "" {
-		slog.Info("auth.initial_admin_password is empty — the admin password will be set in the browser on first run")
-	}
-	expiry := 24 * time.Hour
-	if cfg.Auth.TokenExpiry != "" {
-		if d, err := time.ParseDuration(cfg.Auth.TokenExpiry); err == nil {
-			expiry = d
-		}
-	}
-	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
-	seedAdminUser(userSvc, cfg.Auth.InitialAdminPassword)
-
+// serveHTTP assembles the router and HTTP server, listens, and runs the
+// graceful-shutdown sequence when stop closes. A fatal run-time error (bind
+// failure past the retry window) is returned instead of exiting the process,
+// so the caller (main) decides the exit code.
+func serveHTTP(cfg *config.Config, db *sql.DB, stop <-chan struct{}) error {
 	// Create router
 	router, heartbeatSvc, shutdownScanner := routes.NewRouter(db, cfg)
 
@@ -204,18 +173,22 @@ func main() {
 	// repeats hundreds of times (observed 625 restarts on the test VM). A short
 	// retry window lets the port release so one transient failure doesn't become
 	// a restart storm.
+	serverErr := make(chan error, 1)
 	go func() {
 		slog.Info("listening", "address", addr)
-		if err := listenAndServeWithRetry(srv); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "error", err)
-			os.Exit(1)
-		}
+		serverErr <- listenAndServeWithRetry(srv)
 	}()
 
-	// Wait for interrupt signal
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	select {
+	case <-stop:
+	case err := <-serverErr:
+		// ErrServerClosed only arrives when Shutdown was already in flight
+		// (i.e. via the stop path racing this select); anything else is fatal.
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	}
 
 	slog.Info("shutting down server...")
 
@@ -228,19 +201,81 @@ func main() {
 	slog.Info("scanner services stopped")
 
 	// Shutdown HTTP server with 15s timeout.
-	// cancel is called explicitly (not deferred) because os.Exit below would
-	// skip any deferred calls, leaking the timeout context's resources.
+	// cancel is called explicitly (not deferred) because the caller may
+	// os.Exit right after serve returns, which would skip deferred calls and
+	// leak the timeout context's resources.
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	if err := srv.Shutdown(ctx); err != nil {
 		cancel()
-		slog.Error("server forced to shutdown", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("server forced to shutdown: %w", err)
 	}
 	cancel()
 
 	// Close database
 	db.Close()
 	slog.Info("server stopped")
+	return nil
+}
+
+// serve runs the full server lifecycle after the DB is opened: migrations,
+// startup cleanups, admin seeding, router + HTTP listen, and graceful
+// shutdown. It returns when stop is closed (main bridges os signals into it;
+// tests use a plain channel) or on the first fatal error. All os.Exit calls
+// live in main — serve is a plain function so tests can drive it in-process.
+func serve(cfg *config.Config, db *sql.DB, dbPath string, stop <-chan struct{}) error {
+	// Run migrations
+	if err := runMigrations(db, dbPath); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+
+	// One-time ghost cleanup (issue #19 Layer 4): detect devices whose IP has
+	// drifted outside their stamped network's CIDR, and delete the ones that
+	// are proven duplicates (a canonical copy exists in the correct network, or
+	// the same MAC lives elsewhere). Runs AFTER the pre-migration VACUUM INTO
+	// backup (taken inside runMigrations), so the pre-cleanup state is
+	// recoverable. Idempotent — a steady-state instance finds nothing here.
+	// Skipped for a fresh DB (no networks/devices) since Reconcile returns empty.
+	{
+		cleanupSvc := scannerv2reconcile.New(db, 0, nil, slog.Default())
+		if stats, err := cleanupSvc.CleanupGhosts(context.Background()); err != nil {
+			slog.Warn("startup ghost cleanup failed (continuing)", "error", err)
+		} else if stats.Mismatches > 0 {
+			slog.Info("startup ghost cleanup complete",
+				"mismatches", stats.Mismatches, "rehomed", stats.Rehomed, "unresolved", stats.Unresolved)
+		}
+		// Reserved-address ghosts (#254): devices the scanner recorded at a
+		// network's own address or its broadcast (the broadcast answered pings
+		// via every host's fan-out reply). Same backup protection as above.
+		if removed, err := cleanupSvc.CleanupReservedAddressDevices(context.Background()); err != nil {
+			slog.Warn("startup reserved-address cleanup failed (continuing)", "error", err)
+		} else if len(removed) > 0 {
+			slog.Info("startup reserved-address cleanup complete", "removed", removed)
+		}
+	}
+
+	// Ensure upload directory exists
+	if cfg.Storage.UploadPath != "" {
+		if err := os.MkdirAll(cfg.Storage.UploadPath, 0755); err != nil {
+			return fmt.Errorf("create upload directory: %w", err)
+		}
+	}
+	// Initial admin password: a non-empty value = classic temp credential
+	// (forced change on first login); EMPTY = first-run browser setup (the
+	// admin is seeded password-less and the login page asks for a password to
+	// be created — the installer default).
+	if cfg.Auth.InitialAdminPassword == "" {
+		slog.Info("auth.initial_admin_password is empty — the admin password will be set in the browser on first run")
+	}
+	expiry := 24 * time.Hour
+	if cfg.Auth.TokenExpiry != "" {
+		if d, err := time.ParseDuration(cfg.Auth.TokenExpiry); err == nil {
+			expiry = d
+		}
+	}
+	userSvc := service.NewUserService(db, cfg.Auth.JWTSecret, expiry, cfg.Auth.PasswordPolicy)
+	seedAdminUser(userSvc, cfg.Auth.InitialAdminPassword)
+
+	return serveHTTP(cfg, db, stop)
 }
 
 func initLogger(cfg config.LogConfig) {
@@ -339,12 +374,16 @@ func bindAddr(host string, port int) string {
 //
 // Only EADDRINUSE is retried — other errors (bad config, permission denied) are
 // real failures that should surface immediately.
+// bindRetryWindow/bindRetryInterval tune the EADDRINUSE retry loop below.
+// Package vars (not consts) purely as a test seam — production values are the
+// 30s/1s below.
+var (
+	bindRetryWindow   = 30 * time.Second
+	bindRetryInterval = 1 * time.Second
+)
+
 func listenAndServeWithRetry(srv *http.Server) error {
-	const (
-		bindRetryDeadline = 30 * time.Second
-		bindRetryInterval = 1 * time.Second
-	)
-	deadline := time.Now().Add(bindRetryDeadline)
+	deadline := time.Now().Add(bindRetryWindow)
 	for {
 		err := srv.ListenAndServe()
 		if err == http.ErrServerClosed {

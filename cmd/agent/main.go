@@ -84,20 +84,43 @@ func main() {
 		"version", version.Version,
 		"center", cfg.Center.URL, "network", cfg.Network.Name, "agent_id_label", cfg.Network.Name)
 
+	// runAgent owns the full agent lifecycle (below); main only bridges os
+	// signals into its context and maps the returned error to an exit code.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-quit
+		cancel()
+	}()
+	err = runAgent(ctx, cfg, *configPath)
+	// Explicit (not deferred) so the os.Exit path below still releases the
+	// context's resources.
+	cancel()
+	if err != nil {
+		slog.Error("agent error", "error", err)
+		os.Exit(1)
+	}
+}
+
+// runAgent runs the agent lifecycle: local mini-DB, engine, reporter, runner,
+// scheduler, passive discovery sources, vantage prober, and the command
+// poller — until ctx is canceled, then a graceful stop in reverse order.
+// Errors return instead of exiting the process so tests can drive the whole
+// agent in-process against a temp config.
+func runAgent(ctx context.Context, cfg *config.Config, configPath string) error {
 	// Local mini-DB: the scheduler reads scan_tasks and the runner writes
 	// scan_task_runs/scan_results + the device bridge writes devices. The agent
 	// keeps these as a LOCAL shadow (its own recent view + run history); the
 	// authoritative asset registry lives on the center. A tiny schema with just
 	// the tables the runner/scheduler touch keeps the agent self-contained.
-	dbPath := filepath.Join(filepath.Dir(*configPath), "agent.db")
+	dbPath := filepath.Join(filepath.Dir(configPath), "agent.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
-		slog.Error("failed to create data directory", "error", err, "path", filepath.Dir(dbPath))
-		os.Exit(1)
+		return fmt.Errorf("create data directory: %w", err)
 	}
 	dbConn, err := openAgentDB(dbPath)
 	if err != nil {
-		slog.Error("failed to open agent db", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("open agent db: %w", err)
 	}
 	defer dbConn.Close()
 	queries := db.New(dbConn)
@@ -150,7 +173,10 @@ func main() {
 	flush := parseDurationOrDefault(cfg.Center.ReportInterval, 30*time.Second)
 	reporter := agent.NewReporter(cfg.Center.URL, cfg.Center.AuthToken, cfg.Network.Name, cfg.Network.CIDR, flush, 256, slog.Default())
 	reporter.SetVersion(version.Version) // fleet telemetry (#278)
-	ctxBg, cancel := context.WithCancel(context.Background())
+	// Child of the caller's ctx so the shutdown sequence below can cancel
+	// run-scoped workers BEFORE stopping the poller/scheduler/reporter — the
+	// same ordering the old inline signal path had.
+	ctxBg, cancel := context.WithCancel(ctx)
 	defer cancel()
 	reporter.Start(ctxBg)
 
@@ -380,10 +406,9 @@ func main() {
 
 	slog.Info("mibee-agent running", "center", cfg.Center.URL, "flush_interval", flush)
 
-	// Wait for interrupt.
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	// Wait for cancellation (main bridges os signals into ctx; tests cancel
+	// the ctx they passed).
+	<-ctxBg.Done()
 	slog.Info("shutting down mibee-agent...")
 	cancel()
 	if discCancel != nil {
@@ -395,6 +420,7 @@ func main() {
 	}
 	reporter.Stop() // final best-effort flush
 	slog.Info("mibee-agent stopped")
+	return nil
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }
