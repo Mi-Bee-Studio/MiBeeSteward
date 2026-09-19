@@ -181,11 +181,11 @@ func TestDeviceRepo_CountingSurfaces(t *testing.T) {
 	repo, conn, queries, ctx := setupDeviceRepoGap(t)
 
 	// Three devices across two networks with distinct statuses/types.
-	net1 := seedGapNetwork(t, queries, ctx, "lan-a")
-	net2 := seedGapNetwork(t, queries, ctx, "lan-b")
-	seedRepoDevice(t, conn, ctx, "d1", "10.8.0.1", "online", "camera", net1)
-	seedRepoDevice(t, conn, ctx, "d2", "10.8.0.2", "offline", "camera", net1)
-	seedRepoDevice(t, conn, ctx, "d3", "10.8.1.1", "online", "switch", net2)
+	net1 := seedGapNetwork(t, ctx, queries, "lan-a")
+	net2 := seedGapNetwork(t, ctx, queries, "lan-b")
+	seedRepoDevice(t, ctx, conn, "d1", "10.8.0.1", "online", "camera", net1)
+	seedRepoDevice(t, ctx, conn, "d2", "10.8.0.2", "offline", "camera", net1)
+	seedRepoDevice(t, ctx, conn, "d3", "10.8.1.1", "online", "switch", net2)
 
 	statusRows, err := repo.CountByStatusForNetwork(ctx, &net1)
 	require.NoError(t, err)
@@ -269,14 +269,14 @@ func setupDeviceRepoGap(t *testing.T) (*DeviceRepository, *sql.DB, *sqldb.Querie
 	return NewDeviceRepository(dbConn), dbConn, queries, context.Background()
 }
 
-func seedGapNetwork(t *testing.T, q *sqldb.Queries, ctx context.Context, name string) int64 {
+func seedGapNetwork(t *testing.T, ctx context.Context, q *sqldb.Queries, name string) int64 {
 	t.Helper()
 	net, err := q.CreateNetwork(ctx, sqldb.CreateNetworkParams{Name: name})
 	require.NoError(t, err)
 	return net.ID
 }
 
-func seedRepoDevice(t *testing.T, conn *sql.DB, ctx context.Context, name, ip, status, typ string, networkID int64) {
+func seedRepoDevice(t *testing.T, ctx context.Context, conn *sql.DB, name, ip, status, typ string, networkID int64) {
 	t.Helper()
 	_, err := conn.ExecContext(ctx, `INSERT INTO devices (device_uuid, name, ip_address, status, type, network_id)
 		VALUES (?, ?, ?, ?, ?, ?)`, "uuid-r6-"+name, name, ip, status, typ, networkID)

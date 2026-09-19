@@ -44,10 +44,9 @@ func TestDeleteByUserNetwork(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 	ctx := context.Background()
 
-	res, err := db.ExecContext(ctx,
+	_, err = db.ExecContext(ctx,
 		`INSERT INTO user_network_grants (user_id, network_id) VALUES (7, 3)`)
 	require.NoError(t, err)
-	grantID, _ := res.LastInsertId()
 
 	deleted, err := DeleteByUserNetwork(ctx, db, 7, 3)
 	require.NoError(t, err)

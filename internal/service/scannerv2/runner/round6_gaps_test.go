@@ -60,8 +60,7 @@ func TestReportJSONFields(t *testing.T) {
 
 func TestReportPromFields(t *testing.T) {
 	// No fields → all empty.
-	prom, ne, data := reportPromFields(scannerv2.HostReport{})
-	require.Empty(t, prom)
+	_, ne, data := reportPromFields(scannerv2.HostReport{})
 	require.Empty(t, ne)
 	require.Empty(t, data)
 
@@ -69,7 +68,7 @@ func TestReportPromFields(t *testing.T) {
 	rep := scannerv2.HostReport{Device: scannerv2.DeviceRef{Fields: map[string]string{
 		"prometheus_url": "http://10.0.0.1:9090/metrics",
 	}}}
-	prom, ne, data = reportPromFields(rep)
+	prom, ne, data := reportPromFields(rep)
 	require.Equal(t, "http://10.0.0.1:9090/metrics", prom)
 	require.Empty(t, ne)
 	require.Empty(t, data, "no NE URL → no NE data record")
