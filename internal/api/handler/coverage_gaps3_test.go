@@ -216,6 +216,8 @@ func setupGapServer(t *testing.T) *gapServerFixture {
 		r.Get("/api/v1/changes", changesHandler.List)
 		r.Get("/api/v1/scanner/runs", scanResHandler.ListRuns)
 		r.Get("/api/v1/scanner/runs/{id}", scanResHandler.GetRun)
+		r.Get("/api/v1/scanner/results", scanResHandler.ListResults)
+		r.Get("/api/v1/scanner/results/export", scanResHandler.ExportScanResults)
 		r.Get("/api/v1/scanner/results/{id}", scanResHandler.GetResult)
 	})
 	r.Group(func(r chi.Router) {
