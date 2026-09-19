@@ -143,7 +143,7 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 		return nil
 	})
 	if walkErr != nil || (len(macIndices) == 0 && len(vlanNames) == 0) {
-		snmp.Conn.Close()
+		snmp.Close()
 		return nil, nil // not a VLAN-aware bridge — no Q-BRIDGE data at all
 	}
 
@@ -206,7 +206,7 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 			RawData:    rawData,
 		})
 	}
-	snmp.Conn.Close()
+	snmp.Close()
 	return evidence, nil
 }
 

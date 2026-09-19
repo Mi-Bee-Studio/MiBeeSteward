@@ -79,12 +79,12 @@ func (p *STPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHi
 	// Get local bridge MAC (dot1dBaseBridgeAddress.0, scalar OCTET STRING).
 	bridgeResult, err := snmp.Get([]string{oidDot1dBaseBridgeAddress})
 	if err != nil || len(bridgeResult.Variables) == 0 {
-		snmp.Conn.Close()
+		snmp.Close()
 		return nil, nil
 	}
 	bridgeAddrBytes, ok := bridgeResult.Variables[0].Value.([]byte)
 	if !ok || len(bridgeAddrBytes) != 6 {
-		snmp.Conn.Close()
+		snmp.Close()
 		return nil, nil
 	}
 	localBridgeMAC := formatMAC(bridgeAddrBytes)
@@ -129,7 +129,7 @@ func (p *STPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHi
 		return nil
 	})
 	if walkErr != nil || len(entries) == 0 {
-		snmp.Conn.Close()
+		snmp.Close()
 		return nil, nil // no STP neighbors or STP-MIB unsupported
 	}
 
@@ -157,7 +157,7 @@ func (p *STPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHi
 			},
 		})
 	}
-	snmp.Conn.Close()
+	snmp.Close()
 	return evidence, nil
 }
 

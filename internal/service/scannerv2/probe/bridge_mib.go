@@ -97,7 +97,7 @@ func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Prob
 		return nil
 	})
 	if walkErr != nil || len(macIndices) == 0 {
-		snmp.Conn.Close()
+		snmp.Close()
 		return nil, nil // not a bridge, or no FDB — no topology data
 	}
 
@@ -131,7 +131,7 @@ func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Prob
 			},
 		})
 	}
-	snmp.Conn.Close()
+	snmp.Close()
 	return evidence, nil
 }
 
@@ -178,6 +178,15 @@ func gosnmpToInt(v any) int {
 		return int(n)
 	case uint64:
 		return int(n)
+	case string:
+		// OID index suffixes arrive as strings ("5", "1.42" callers pre-split);
+		// without this case every index parsed 0 — port-name resolution
+		// silently never worked and STP-MIB evidence was always skipped.
+		i, err := strconv.Atoi(strings.TrimSpace(n))
+		if err != nil {
+			return 0
+		}
+		return i
 	default:
 		return 0
 	}

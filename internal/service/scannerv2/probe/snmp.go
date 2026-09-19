@@ -154,7 +154,7 @@ func snmpGetOnce(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion
 	if err != nil {
 		return nil, false // host may simply not run SNMP — no evidence
 	}
-	defer snmp.Conn.Close()
+	defer snmp.Close()
 
 	result, err := snmp.Get(snmpOIDs)
 	if err != nil {

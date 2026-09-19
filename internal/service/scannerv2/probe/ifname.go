@@ -33,7 +33,7 @@ const oidIfName = "1.3.6.1.2.1.31.1.1.1.1"
 //
 // The gosnmp connection must already be established by the caller; this function
 // does not connect or close the connection.
-func ResolvePortNames(snmp *gosnmp.GoSNMP, logger *slog.Logger) map[int]string {
+func ResolvePortNames(snmp snmpClient, logger *slog.Logger) map[int]string {
 	if snmp == nil {
 		return nil
 	}

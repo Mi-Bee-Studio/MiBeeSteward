@@ -274,7 +274,7 @@ func walkRouterARPTableHint(router string, hint scannerv2.ProbeHint, retries int
 	if err != nil {
 		return nil, fmt.Errorf("snmp connect %s:161: %w", router, err)
 	}
-	defer snmp.Conn.Close()
+	defer snmp.Close()
 
 	table := map[string]string{}
 	// Try the legacy OID first (universally implemented on SNMP routers).
@@ -316,7 +316,7 @@ func walkRouterARPTableHint(router string, hint scannerv2.ProbeHint, retries int
 // timeout surfaces here so callers can log WHY a router yields nothing.
 // The caller's context is intentionally not forwarded: gosnmp's Walk doesn't
 // accept one, and the snmp.Timeout set on the client bounds the run.
-func walkInto(snmp *gosnmp.GoSNMP, oid string, emit func(ip, mac string)) error {
+func walkInto(snmp snmpClient, oid string, emit func(ip, mac string)) error {
 	return snmp.Walk(oid, func(pdu gosnmp.SnmpPDU) error {
 		ip := indexToIP(pdu.Name, oid)
 		mac := snmpOctetsToMAC(pdu.Value)

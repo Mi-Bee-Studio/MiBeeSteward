@@ -153,15 +153,11 @@ func TestConnectSNMP_V3CredentialRoutesToV3(t *testing.T) {
 	// to 127.0.0.1:161 will fail (nothing listening) — actually Connect() dials
 	// UDP which is connectionless, so it won't fail. We close immediately and
 	// inspect the struct.
-	snmp, err := connectSNMPWithRetries("127.0.0.1", hint, gosnmp.Version2c, 0)
+	snmp, err := dialSNMPReal("127.0.0.1", hint, gosnmp.Version2c, 0)
 	if err != nil {
-		t.Fatalf("connectSNMPWithRetries v3: %v", err)
+		t.Fatalf("dialSNMPReal v3: %v", err)
 	}
-	defer func() {
-		if snmp.Conn != nil {
-			snmp.Conn.Close()
-		}
-	}()
+	defer snmp.Close()
 	if snmp.Version != gosnmp.Version3 {
 		t.Errorf("Version = %d, want Version3 (%d)", snmp.Version, gosnmp.Version3)
 	}
@@ -204,15 +200,11 @@ func TestConnectSNMP_LegacyCommunityUsedWhenNoCred(t *testing.T) {
 		Community: "private",
 		Timeout:   200 * time.Millisecond,
 	}
-	snmp, err := connectSNMPWithRetries("127.0.0.1", hint, gosnmp.Version2c, 0)
+	snmp, err := dialSNMPReal("127.0.0.1", hint, gosnmp.Version2c, 0)
 	if err != nil {
 		t.Fatalf("connectSNMPWithRetries legacy: %v", err)
 	}
-	defer func() {
-		if snmp.Conn != nil {
-			snmp.Conn.Close()
-		}
-	}()
+	defer snmp.Close()
 	if snmp.Version != gosnmp.Version2c {
 		t.Errorf("Version = %d, want Version2c", snmp.Version)
 	}
@@ -238,15 +230,11 @@ func TestConnectSNMP_V1V2CCredentialCommunityWinsOverHint(t *testing.T) {
 		Timeout:        200 * time.Millisecond,
 		SNMPCredential: cred,
 	}
-	snmp, err := connectSNMPWithRetries("127.0.0.1", hint, gosnmp.Version2c, 0)
+	snmp, err := dialSNMPReal("127.0.0.1", hint, gosnmp.Version2c, 0)
 	if err != nil {
 		t.Fatalf("connectSNMPWithRetries: %v", err)
 	}
-	defer func() {
-		if snmp.Conn != nil {
-			snmp.Conn.Close()
-		}
-	}()
+	defer snmp.Close()
 	if snmp.Community != "from-credential" {
 		t.Errorf("Community = %q, want \"from-credential\" (credential must win)", snmp.Community)
 	}
