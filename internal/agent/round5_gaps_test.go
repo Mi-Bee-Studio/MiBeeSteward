@@ -15,7 +15,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"mibee-steward/internal/service/probetarget"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -25,6 +24,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/service/probetarget"
 )
 
 // capturePoster records everything Post receives.
