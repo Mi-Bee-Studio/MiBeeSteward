@@ -165,3 +165,32 @@ func TestSSHCredentialHandler_Delete(t *testing.T) {
 
 // keep these imports used (context for future seed helpers)
 var _ = context.Background
+
+// TestSSHCredentialHandler_KeyTypeAndNotes pins the key-auth branch and the
+// full-shape create (host key fingerprint + notes round-trip).
+func TestSSHCredentialHandler_KeyTypeAndNotes(t *testing.T) {
+	h, db := setupSSHCredHandler(t)
+
+	rec := httptest.NewRecorder()
+	h.Create(rec, httptest.NewRequest(http.MethodPost, "/api/v1/ssh-credentials", strings.NewReader(
+		`{"name":"sw-key","auth_method":"key","username":"admin","secret":"-----BEGIN KEY","host_key_fp":"SHA256:xyz","notes":"primary","enabled":true}`)))
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var created map[string]any
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&created))
+	require.Equal(t, "SHA256:xyz", created["host_key_fp"])
+	require.Equal(t, "primary", created["notes"])
+
+	// Duplicate name → 409 (unique constraint branch).
+	rec = httptest.NewRecorder()
+	h.Create(rec, httptest.NewRequest(http.MethodPost, "/api/v1/ssh-credentials", strings.NewReader(
+		`{"name":"sw-key","auth_method":"password","username":"u","secret":"s"}`)))
+	require.Equal(t, http.StatusConflict, rec.Code)
+
+	// nil-cipher update gate → 503.
+	h2, _ := setupSSHCredHandler(t)
+	h2.cipher = nil
+	rec = httptest.NewRecorder()
+	h2.Update(rec, reqWithURLParam(http.MethodPut, "/api/v1/ssh-credentials/1", `{"name":"x","auth_method":"password","username":"u"}`, "1"))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	_ = db
+}

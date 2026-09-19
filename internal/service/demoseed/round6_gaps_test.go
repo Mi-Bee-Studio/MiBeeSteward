@@ -69,3 +69,32 @@ func demoOnlineCount(t *testing.T, db interface {
 	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM devices WHERE device_uuid LIKE 'demo-uuid-%' AND status='online'`).Scan(&n))
 	return n
 }
+
+// TestActivity_TickBothBranches: 40 ticks virtually certainly exercise both
+// the offline-flip and the 70%-recover branches (P(miss) < 1e-5), and every
+// tick leaves the DB in a consistent one-change state.
+func TestActivity_TickBothBranches(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { dbConn.Close() })
+	ctx := context.Background()
+	require.NoError(t, Seed(ctx, dbConn, slog.Default()))
+
+	a := StartActivity(dbConn, slog.Default())
+
+	sawOnline, sawOffline := false, false
+	for i := 0; i < 60 && !(sawOnline && sawOffline); i++ {
+		before := demoOnlineCount(t, dbConn)
+		a.tick(ctx)
+		after := demoOnlineCount(t, dbConn)
+		if after > before {
+			sawOnline = true
+		}
+		if after < before {
+			sawOffline = true
+		}
+	}
+	require.True(t, sawOnline, "the 70% recover branch must fire across 60 ticks")
+	require.True(t, sawOffline, "the 30% offline branch must fire across 60 ticks")
+	a.Stop()
+}

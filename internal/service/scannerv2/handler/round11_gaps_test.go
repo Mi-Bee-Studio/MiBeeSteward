@@ -143,3 +143,42 @@ func TestWebTypeFromHints(t *testing.T) {
 	require.True(t, containsAny("a hikvision device", "hikvision"))
 	require.False(t, containsAny("plain", "nope"))
 }
+
+// TestPrometheusAndNodeExporter_Collect_RealFetch drives the real-fetch
+// branches against live local endpoints: a prometheus /metrics target cascades
+// to node_exporter when the sample carries NE markers, and a plain metrics
+// page does not.
+func TestPrometheusAndNodeExporter_Collect_RealFetch(t *testing.T) {
+	withNE := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("# HELP node_load1\nnode_load1 0.42\n# HELP node_os_info\nnode_os_info{os_type=\"linux\"} 1\n"))
+	}))
+	t.Cleanup(withNE.Close)
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("# HELP up\nup 1\n"))
+	}))
+	t.Cleanup(plain.Close)
+
+	ctx := context.Background()
+
+	// Prometheus Collect without cascade context → fetches the metrics URL.
+	svc := svcCtx("127.0.0.1", urlPort(t, withNE.URL), "prometheus", nil)
+	data, triggers, err := (PrometheusHandler{}).Collect(ctx, svc)
+	require.NoError(t, err)
+	require.NotEmpty(t, data.(PrometheusData).Sample, "metrics page must be fetched")
+
+	// A NE-flavored sample triggers the node_exporter cascade.
+	require.NotEmpty(t, triggers, "NE markers must cascade")
+	require.Equal(t, "node_exporter", triggers[0].Service)
+
+	// Plain prometheus metrics → no NE cascade.
+	svcPlain := svcCtx("127.0.0.1", urlPort(t, plain.URL), "prometheus", nil)
+	_, triggers, err = (PrometheusHandler{}).Collect(ctx, svcPlain)
+	require.NoError(t, err)
+	require.Empty(t, triggers)
+
+	// NodeExporter Collect fetches + parses hardware fields from the sample.
+	neSvc := svcCtx("127.0.0.1", urlPort(t, withNE.URL), "node_exporter", nil)
+	neData, _, err := (NodeExporterHandler{}).Collect(ctx, neSvc)
+	require.NoError(t, err)
+	require.NotNil(t, neData)
+}

@@ -15,7 +15,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"context"
 	"mibee-steward/internal/service/scannerv2"
+	"mibee-steward/internal/testutil"
 )
 
 // TestRecordHeartbeats_LegacyFallback drops the (device_id, method) unique
@@ -85,4 +87,82 @@ func TestEnrichDeviceByMAC(t *testing.T) {
 	// Empty-mac and empty-fields calls are no-ops.
 	require.NoError(t, repo.EnrichDeviceByMAC(ctx, "", map[string]string{"vendor": "x"}))
 	require.NoError(t, repo.EnrichDeviceByMAC(ctx, "aa:11:22:33:44:66", nil))
+}
+
+// TestRecordDevice_IdentityPaths pins the store's enrich-only identity
+// resolution: a MAC-bearing ref enriches the globally-matching row, a MAC-less
+// ref resolves by (ip, network_id), and a no-match is a silent no-op (device
+// creation is the runner's job, not the store's).
+func TestRecordDevice_IdentityPaths(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	if err != nil {
+		t.Fatalf("setup db: %v", err)
+	}
+	t.Cleanup(func() { dbConn2Close(dbConn) })
+	netID := seedGapNetRow(t, dbConn)
+	id := seedDeviceRow(t, dbConn, "10.150.0.1", "aa:55:00:11:22:33", sql.NullInt64{Int64: netID, Valid: true})
+	repo := NewSQLiteRepository(dbConn, Options{NetworkID: netID}, nil)
+	ctx := context.Background()
+
+	// MAC-bearing ref at a DIFFERENT IP still resolves the row globally by MAC
+	// and enriches it (roaming stays one asset).
+	if err := repo.RecordDevice(ctx, "10.150.0.99", scannerv2.DeviceRef{
+		IP: "10.150.0.99", Brand: "acme",
+		Fields: map[string]string{"mac": "aa:55:00:11:22:33", "hostname": "roamer"},
+	}); err != nil {
+		t.Fatalf("mac-path record: %v", err)
+	}
+	var brand string
+	if err := dbConn.QueryRow(`SELECT brand FROM devices WHERE id=?`, id).Scan(&brand); err != nil {
+		t.Fatalf("brand read: %v", err)
+	}
+	if brand != "acme" {
+		t.Fatalf("mac-resolved row must be enriched, brand=%q", brand)
+	}
+
+	// MAC-less ref resolves by (ip, network_id).
+	if err := repo.RecordDevice(ctx, "10.150.0.1", scannerv2.DeviceRef{
+		IP: "10.150.0.1", Model: "X1",
+	}); err != nil {
+		t.Fatalf("ip-path record: %v", err)
+	}
+	var model string
+	if err := dbConn.QueryRow(`SELECT model FROM devices WHERE id=?`, id).Scan(&model); err != nil {
+		t.Fatalf("model read: %v", err)
+	}
+	if model != "X1" {
+		t.Fatalf("ip-resolved row must be enriched, model=%q", model)
+	}
+
+	// No match anywhere → enrich-only no-op (no row created).
+	before := countGapRows(t, dbConn)
+	if err := repo.RecordDevice(ctx, "10.159.9.9", scannerv2.DeviceRef{
+		IP: "10.159.9.9", Brand: "ghost",
+	}); err != nil {
+		t.Fatalf("no-match record: %v", err)
+	}
+	if after := countGapRows(t, dbConn); after != before {
+		t.Fatalf("enrich-only store must not create rows: %d -> %d", before, after)
+	}
+}
+
+func dbConn2Close(db *sql.DB) { _ = db.Close() }
+
+func seedGapNetRow(t *testing.T, db *sql.DB) int64 {
+	t.Helper()
+	res, err := db.Exec(`INSERT INTO networks (name) VALUES ('id-net')`)
+	if err != nil {
+		t.Fatalf("seed network: %v", err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
+func countGapRows(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM devices`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	return n
 }
