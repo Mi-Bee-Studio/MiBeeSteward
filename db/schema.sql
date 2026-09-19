@@ -860,8 +860,13 @@ CREATE INDEX IF NOT EXISTS idx_probe_tls_certs_expiring ON probe_tls_certs(not_a
 -- Identity + lookup indexes (created by the migration chain on legacy DBs;
 -- listed here too so FRESH installs get the same shape — the #268 schema
 -- equivalence test asserts both paths produce identical structures).
+-- idx_devices_ip_network is UNIQUE (composite identity invariant): the same
+-- private IP may exist on different networks, but only ONCE per network. The
+-- chain's applyIdentityIndexMigrations drops the plain variant this name
+-- briefly carried (2026-08..09, post-#312 fresh installs) and recreates it
+-- as UNIQUE after the de-dup sweep.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_uuid ON devices(device_uuid);
-CREATE INDEX IF NOT EXISTS idx_devices_ip_network ON devices(ip_address, network_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_ip_network ON devices(ip_address, network_id);
 CREATE INDEX IF NOT EXISTS idx_devices_mac_address ON devices(mac_address);
 CREATE INDEX IF NOT EXISTS idx_devices_scan_mac_expr ON devices(json_extract(scan_attributes, '$.mac'));
 CREATE INDEX IF NOT EXISTS idx_devices_scan_vendor_expr ON devices(json_extract(scan_attributes, '$.vendor'));
