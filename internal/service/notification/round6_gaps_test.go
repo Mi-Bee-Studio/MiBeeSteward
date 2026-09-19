@@ -13,13 +13,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"mibee-steward/internal/db"
-	"mibee-steward/internal/domain"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 )
 
 // TestWebhookSender_SendStubs: both webhook senders' bare Send() deliberately

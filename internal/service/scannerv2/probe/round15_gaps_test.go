@@ -11,12 +11,13 @@ package probe
 
 import (
 	"context"
-	"mibee-steward/internal/service/scannerv2"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/service/scannerv2"
 )
 
 // TestMDNSProbe_LoopbackRealSend pins the real send/receive path: a local UDP
