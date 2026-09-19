@@ -26,6 +26,7 @@ import (
 	"bufio"
 	"encoding/csv"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -37,11 +38,25 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 4 {
-		usage()
-		os.Exit(2)
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, errUsage) {
+			os.Exit(2)
+		}
+		os.Exit(1)
 	}
-	cmd, src, dst := os.Args[1], os.Args[2], os.Args[3]
+}
+
+// run is the testable body of main: it maps argv to a subcommand + src/dst
+// and returns usage/validation errors instead of exiting. Exit-code semantics:
+// 2 for usage errors, 1 for conversion failures (wrapped so main can print
+// and exit).
+func run(args []string) error {
+	if len(args) < 3 {
+		usage()
+		return errUsage
+	}
+	cmd, src, dst := args[0], args[1], args[2]
 	var err error
 	switch cmd {
 	case "recog":
@@ -53,13 +68,20 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", cmd)
 		usage()
-		os.Exit(2)
+		return errUsage
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "fpimport %s: %v\n", cmd, err)
-		os.Exit(1)
+		return fmt.Errorf("fpimport %s: %w", cmd, err)
 	}
+	return nil
 }
+
+// errUsage signals an argv-shape error; main maps it to exit code 2.
+var errUsage = usageError{}
+
+type usageError struct{}
+
+func (usageError) Error() string { return "usage error" }
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: fpimport <subcommand> <input> <output>
