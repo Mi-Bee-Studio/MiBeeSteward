@@ -57,7 +57,7 @@ func (p *capturePoster) results() []probetarget.AgentResultReport {
 // probes a target queued by probeOne, and Stop flushes the batch to the
 // poster via the reportLoop's ctx.Done flush.
 func TestProber_StartStopEndToEnd(t *testing.T) {
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(up.Close)
@@ -142,7 +142,7 @@ func TestHTTPResultPoster_Post(t *testing.T) {
 	poster2.Post(context.Background(), results)
 
 	// Transport failure (dead server): logged + dropped, no panic.
-	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	dead := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	deadURL := dead.URL
 	dead.Close()
 	_ = deadURL

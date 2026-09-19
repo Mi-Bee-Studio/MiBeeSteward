@@ -212,7 +212,7 @@ func TestExtendNotificationChannelTypeCheck_Rebuild(t *testing.T) {
 	require.NoError(t, db.QueryRow(`SELECT type FROM notification_channels WHERE id=5`).Scan(&typ))
 	require.Equal(t, "webhook", typ)
 	for _, c := range []string{"feishu", "wecom", "telegram", "discord"} {
-		_, err = db.Exec(`INSERT INTO notification_channels (name, type) VALUES ('c_`+c+`', '`+c+`')`)
+		_, err = db.Exec(`INSERT INTO notification_channels (name, type) VALUES ('c_` + c + `', '` + c + `')`)
 		require.NoError(t, err, "type %q must be accepted after the rebuild", c)
 	}
 	require.NoError(t, extendNotificationChannelTypeCheck(ctx, db))
@@ -358,7 +358,7 @@ func TestParseLogLevel(t *testing.T) {
 	require.Equal(t, "INFO", parseLogLevel("anything-else").String())
 }
 
-func TestInitLogger(t *testing.T) {
+func TestInitLogger(_ *testing.T) {
 	initLogger(config.LogConfig{Level: "debug", Format: "json"})
 	initLogger(config.LogConfig{Level: "bogus", Format: "text"})
 }
