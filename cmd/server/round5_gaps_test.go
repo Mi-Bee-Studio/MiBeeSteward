@@ -333,10 +333,21 @@ auth:
 }
 
 func TestDoctor_ExitCodes(t *testing.T) {
-	t.Run("healthy config exits 0", func(t *testing.T) {
+	t.Run("healthy config exits cleanly", func(t *testing.T) {
 		dbDir := t.TempDir()
 		cfg := writeDoctorConfig(t, filepath.Join(dbDir, "mibee.db"), "0123456789abcdef0123456789abcdef")
-		require.Equal(t, 0, doctor([]string{"-config", cfg}))
+		// The ICMP capability check reads the host's ping_group_range sysctl
+		// (absent on Windows, present on Linux runners where it may be
+		// disabled "1 0"). Mirror doctor's own logic to derive the expected
+		// exit: 0 on capable hosts, doctorFailExit where ICMP is disabled —
+		// both are correct behavior for this config.
+		wantExit := 0
+		if raw, err := os.ReadFile("/proc/sys/net/ipv4/ping_group_range"); err == nil {
+			if c, ok := icmpPingGroupRangeCheck(string(raw), os.Getgid()); ok && c.status == "fail" {
+				wantExit = doctorFailExit
+			}
+		}
+		require.Equal(t, wantExit, doctor([]string{"-config", cfg}))
 	})
 	t.Run("wrong-length master key exits 1", func(t *testing.T) {
 		dbDir := t.TempDir()
