@@ -66,3 +66,42 @@ func TestDeviceService_GetStats_ScopeMatrix(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, count(stats))
 }
+
+// TestDeviceRepo_MoreSurfaces: UpdateScanAttributes round-trip + the unscoped
+// Count surfaces (CountByStatus/CountByType + List/Count with a status filter).
+func TestDeviceRepo_MoreSurfaces(t *testing.T) {
+	repo, conn, queries, ctx := setupDeviceRepoGap(t)
+	netA := seedGapNetwork(t, ctx, queries, "more-a")
+	seedRepoDevice(t, ctx, conn, "m-1", "10.170.0.1", "online", "camera", netA)
+
+	res, err := conn.ExecContext(ctx, `INSERT INTO devices (device_uuid, name, type, ip_address, status)
+		VALUES ('uuid-attrs-host', 'attrs-host', 'server', '10.170.0.2', 'online')`)
+	require.NoError(t, err)
+	var devID int64
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT id FROM devices WHERE device_uuid='uuid-attrs-host'`).Scan(&devID))
+	_ = res
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateScanAttributes(ctx, devID, domain.ScanAttributes{
+		Vendor: "acme", OS: "linux", Hostname: "attrs.lan",
+	}))
+
+	var vendor, osName string
+	require.NoError(t, conn.QueryRow(
+		`SELECT scan_vendor, scan_os FROM devices WHERE id=?`, devID).Scan(&vendor, &osName))
+	require.Equal(t, "acme", vendor)
+	require.Equal(t, "linux", osName)
+
+	byStatus, err := repo.CountByStatus(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, byStatus)
+	byType, err := repo.CountByType(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, byType)
+
+	list, err := repo.List(ctx, domain.DeviceFilter{Status: "online", Limit: 10})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(list), 2)
+	n, err := repo.Count(ctx, domain.DeviceFilter{Status: "online"})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, n)
+}

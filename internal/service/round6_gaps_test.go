@@ -306,3 +306,21 @@ func TestStrPtr(t *testing.T) {
 	require.NotNil(t, p)
 	require.Equal(t, "x", *p)
 }
+
+// TestHeartbeatStore_EnqueueOverflowDrop: filling the buffered channel past
+// capacity drops rows (non-blocking) instead of blocking the heartbeat tick.
+func TestHeartbeatStore_EnqueueOverflowDrop(t *testing.T) {
+	store, err := OpenHeartbeatStore(filepath.Join(t.TempDir(), "ovf.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+	defer func() { store.Start(context.Background()); time.Sleep(50 * time.Millisecond) }()
+
+	// No consumer (Start not called): the channel fills, then drops.
+	for i := 0; i < channelBuffer+50; i++ {
+		store.Enqueue(resultRow{DeviceID: int64(i), Status: "success"})
+		store.EnqueueLiveness(livenessRow{DeviceID: int64(i), Status: "online"})
+	}
+	// Drainable count is exactly the buffer capacity (rest dropped silently).
+	require.Equal(t, channelBuffer, len(store.ch))
+	require.Equal(t, channelBuffer, len(store.liveCh))
+}
