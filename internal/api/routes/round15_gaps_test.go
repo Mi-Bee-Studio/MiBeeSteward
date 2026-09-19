@@ -10,13 +10,13 @@
 package routes
 
 import (
-	"github.com/stretchr/testify/require"
-	"mibee-steward/internal/config"
-	"mibee-steward/internal/testutil"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/config"
+	"mibee-steward/internal/testutil"
 )
 
 // TestBuildCredentialCipherMatrix pins the master-key gate ladder: unset →
