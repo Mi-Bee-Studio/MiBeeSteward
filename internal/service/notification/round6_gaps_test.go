@@ -18,6 +18,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 )
 
 // TestWebhookSender_SendStubs: both webhook senders' bare Send() deliberately
@@ -91,4 +93,47 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	require.NoError(t, err)
 	return b
+}
+
+// TestScopeMatchesAndEventTitle pins the rule-scope matcher and the
+// change-type title map at the engine level.
+func TestScopeMatchesAndEventTitle(t *testing.T) {
+	e := &RuleEngine{}
+
+	require.True(t, e.scopeMatches(db.NotificationRule{ScopeType: domain.RuleScopeAll}, db.ChangeLog{}, nil))
+
+	netID := int64(5)
+	require.True(t, e.scopeMatches(
+		db.NotificationRule{ScopeType: domain.RuleScopeNetwork, ScopeNetworkID: &netID},
+		db.ChangeLog{NetworkID: &netID}, nil))
+	other := int64(6)
+	require.False(t, e.scopeMatches(
+		db.NotificationRule{ScopeType: domain.RuleScopeNetwork, ScopeNetworkID: &netID},
+		db.ChangeLog{NetworkID: &other}, nil))
+	// Both-NULL matches; one-sided does not.
+	require.True(t, e.scopeMatches(
+		db.NotificationRule{ScopeType: domain.RuleScopeNetwork}, db.ChangeLog{}, nil))
+	require.False(t, e.scopeMatches(
+		db.NotificationRule{ScopeType: domain.RuleScopeNetwork, ScopeNetworkID: &netID}, db.ChangeLog{}, nil))
+
+	// Device scope: nil device or uuid mismatch → false; match → true.
+	require.False(t, e.scopeMatches(
+		db.NotificationRule{ScopeType: domain.RuleScopeDevice, ScopeDeviceUuid: "u1"}, db.ChangeLog{}, nil))
+	require.False(t, e.scopeMatches(
+		db.NotificationRule{ScopeType: domain.RuleScopeDevice, ScopeDeviceUuid: "u1"},
+		db.ChangeLog{}, &db.Device{DeviceUuid: "u2"}))
+	require.True(t, e.scopeMatches(
+		db.NotificationRule{ScopeType: domain.RuleScopeDevice, ScopeDeviceUuid: "u1"},
+		db.ChangeLog{}, &db.Device{DeviceUuid: "u1"}))
+
+	// Unknown scope type → false.
+	require.False(t, e.scopeMatches(db.NotificationRule{ScopeType: "weird"}, db.ChangeLog{}, nil))
+
+	for ct, want := range map[string]string{
+		"device_lost": "Device lost", "device_recovered": "Device recovered",
+		"device_added": "Device added", "device_changed": "Device changed",
+		"mystery": "Device event",
+	} {
+		require.Equal(t, want, eventTitle(ct))
+	}
 }
