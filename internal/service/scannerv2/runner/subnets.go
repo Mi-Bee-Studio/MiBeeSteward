@@ -41,7 +41,7 @@ func (rn *Runner) recordSubnets(ctx context.Context, networkID sql.NullInt64) {
 	}
 	cidr := *net.Cidr
 
-	gateway := readDefaultGateway()
+	gateway := readDefaultGatewayFrom(routeTablePath)
 	now := time.Now().UTC()
 
 	// Insert-or-refresh. GetSubnetByCIDR decides the path (the base subnets

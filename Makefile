@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk openwrt-stage check-openwrt clean test dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk openwrt-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -189,6 +189,31 @@ clean:
 
 test:
 	go test ./...
+
+# Coverage ratchet: `make coverage` produces a cross-package profile
+# (-coverpkg attributes coverage from OTHER packages' tests too — a plain
+# `go test -coverprofile` undercounts by ~10 points because it only credits a
+# package's own tests). Generated/dev-only packages are excluded: internal/db
+# (sqlc) and internal/apiclient (oapi-codegen) have their own CI drift gates,
+# cmd/loadgen is a dev tool. `make coverage-gate` fails below the floor in
+# scripts/coverage-floor.txt; `make coverage-bump` re-pins the floor to the
+# current level after adding tests (floor only moves up).
+# (pattern deliberately has no leading "/" — Git Bash's MSYS layer rewrites
+# arguments that start with a slash into Windows paths and silently breaks it)
+COVERAGE_PKGS = $(shell go list ./... | grep -vE '(internal/db|internal/apiclient|cmd/loadgen)$$' | tr '\n' ',' | sed 's/,$$//')
+# CI passes RACE=-race for the same race-detector guarantee the old inline
+# `go test -race` step had; local runs default to the faster non-race profile.
+RACE?=
+
+coverage:
+	go test -count=1 $(RACE) -coverprofile=cover.out -covermode=atomic -coverpkg=$(COVERAGE_PKGS) ./...
+
+coverage-gate:
+	scripts/check-coverage.sh cover.out
+
+coverage-bump:
+	go tool cover -func=cover.out | awk '/^total:/ {sub(/%/, "", $NF); printf "%.1f\n", $$NF}' > scripts/coverage-floor.txt
+	@echo "floor re-pinned to $$(cat scripts/coverage-floor.txt)%"
 
 dev:
 	cd web && npm run dev &

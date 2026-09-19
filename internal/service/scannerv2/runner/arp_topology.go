@@ -54,7 +54,7 @@ func (rn *Runner) injectARPTopology(ctx context.Context, networkID sql.NullInt64
 	}
 
 	// 1. Read the ARP table (ip → mac).
-	arpEntries, err := readLocalARP()
+	arpEntries, err := readARPFile(arpTablePath)
 	if err != nil || len(arpEntries) == 0 {
 		if err != nil {
 			rn.logger.Debug("arp-topology: read /proc/net/arp failed", "error", err)
@@ -64,7 +64,7 @@ func (rn *Runner) injectARPTopology(ctx context.Context, networkID sql.NullInt64
 
 	// 2. Identify the gateway: prefer /proc/net/route default route, fall back
 	//    to .1 heuristic on the scanner's own subnet.
-	gatewayIP := readDefaultGateway()
+	gatewayIP := readDefaultGatewayFrom(routeTablePath)
 	if gatewayIP == "" {
 		gatewayIP = guessGatewayFromARP(arpEntries)
 	}
@@ -78,8 +78,20 @@ func (rn *Runner) injectARPTopology(ctx context.Context, networkID sql.NullInt64
 		return
 	}
 
-	// 3. Collect MACs from this scan's alive reports (only devices that were
-	//    actually scanned get ARP edges — not every kernel cache straggler).
+	rn.injectARPEdges(ctx, networkID, reports, gatewayIP, gatewayMAC)
+}
+
+// arpTablePath is the kernel's ARP cache — world-readable (no privileges).
+const arpTablePath = "/proc/net/arp"
+
+// injectARPEdges is the testable core of injectARPTopology: given the resolved
+// gateway (IP + its ARP MAC) and the scan's host reports, upserts the
+// gateway-centric ARP adjacency edges. Split out so tests can drive the SQL
+// path with a fabricated ARP table on any platform (readARPFile needs a real
+// /proc).
+func (rn *Runner) injectARPEdges(ctx context.Context, networkID sql.NullInt64, reports []scannerv2.HostReport, gatewayIP, gatewayMAC string) {
+	// Collect MACs from this scan's alive reports (only devices that were
+	// actually scanned get ARP edges — not every kernel cache straggler).
 	scannedMACs := make(map[string]bool, len(reports))
 	for _, rep := range reports {
 		if !rep.Alive {
@@ -93,11 +105,11 @@ func (rn *Runner) injectARPTopology(ctx context.Context, networkID sql.NullInt64
 		return
 	}
 
-	// 4. Batch-upsert ARP edges: device → gateway_mac for every scanned device
-	//    EXCEPT the gateway itself (a device shouldn't be its own neighbor).
-	//    Each edge resolves device by MAC in devices table (MAC-primary upsert
-	//    key), then upserts into device_neighbors on (device_id, gateway_mac,
-	//    "ARP").
+	// Batch-upsert ARP edges: device → gateway_mac for every scanned device
+	// EXCEPT the gateway itself (a device shouldn't be its own neighbor).
+	// Each edge resolves device by MAC in devices table (MAC-primary upsert
+	// key), then upserts into device_neighbors on (device_id, gateway_mac,
+	// "ARP").
 	gwMACNorm := store.NormalizeMAC(gatewayMAC)
 	if gwMACNorm == "" {
 		return
@@ -151,12 +163,13 @@ func (rn *Runner) injectARPTopology(ctx context.Context, networkID sql.NullInt64
 	}
 }
 
-// readLocalARP parses /proc/net/arp into an ip→lowercased-mac map. Entries with
-// incomplete (zero) MACs are skipped. This mirrors probe.parseARPFile but lives
-// here to avoid importing the probe package (which would create a cycle through
-// the engine).
-func readLocalARP() (map[string]string, error) {
-	f, err := os.Open("/proc/net/arp")
+// readARPFile parses a /proc/net/arp-format file into an ip→lowercased-mac
+// map. Entries with incomplete (zero) MACs are skipped. This mirrors
+// probe.parseARPFile but lives here to avoid importing the probe package
+// (which would create a cycle through the engine). The path parameter exists
+// so tests can feed a fixture file on any platform.
+func readARPFile(path string) (map[string]string, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
@@ -184,12 +197,13 @@ func readLocalARP() (map[string]string, error) {
 	return out, scanner.Err()
 }
 
-// readDefaultGateway parses /proc/net/route and returns the default gateway IP
-// (the gateway of the row whose Destination is 00000000). /proc/net/route stores
-// IPs and masks in hex little-endian (e.g. "0100A8C0" = 192.168.0.1). Returns
-// "" when no default route exists or the file can't be read (non-Linux / tests).
-func readDefaultGateway() string {
-	f, err := os.Open(routeTablePath)
+// readDefaultGatewayFrom parses a /proc/net/route-format file and returns the
+// default gateway IP (the gateway of the row whose Destination is 00000000).
+// /proc/net/route stores IPs and masks in hex little-endian (e.g. "0100A8C0" =
+// 192.168.0.1). Returns "" when no default route exists or the file can't be
+// read (non-Linux / tests).
+func readDefaultGatewayFrom(path string) string {
+	f, err := os.Open(path)
 	if err != nil {
 		return ""
 	}

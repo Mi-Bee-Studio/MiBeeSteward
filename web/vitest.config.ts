@@ -25,6 +25,19 @@ export default defineConfig({
 	test: {
 		environment: 'jsdom',
 		include: ['src/**/*.test.ts'],
-		setupFiles: ['./src/__tests__/setup.ts']
+		setupFiles: ['./src/__tests__/setup.ts'],
+		coverage: {
+			provider: 'v8',
+			// Ratchet gate: `npm run test:coverage` (CI) fails below these.
+			// Measured baseline 2026-09-19: statements 18.0 / branches 15.1 /
+			// functions 17.8 / lines 19.5 — thresholds sit ~1pt under to absorb
+			// v8-coverage jitter. Only move them UP after adding tests.
+			// src/paraglide is regenerated per build (pretest hook) and the
+			// OpenAPI types are generated (drift-checked in CI) — neither is
+			// hand-maintained code, so they stay out of the measurement.
+			include: ['src/lib/**/*.{ts,svelte}', 'src/routes/**/*.{ts,svelte}'],
+			exclude: ['src/lib/api/schema.d.ts', 'src/**/*.test.ts'],
+			thresholds: { statements: 17, branches: 14, functions: 16, lines: 18 }
+		}
 	}
 });
