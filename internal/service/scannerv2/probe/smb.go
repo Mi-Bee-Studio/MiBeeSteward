@@ -52,8 +52,14 @@ func NewSMBProbe(timeout time.Duration) *SMBProbe {
 func (p *SMBProbe) Name() string { return "active:smb" }
 
 func (p *SMBProbe) Probe(ctx context.Context, ip string, _ scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
+	return p.probeAddr(ctx, ip, net.JoinHostPort(ip, "445"))
+}
+
+// probeAddr is the testable core of Probe: the target address is a parameter
+// so tests can point the probe at a local fake SMB listener instead of a real
+// port 445. ip stays the bare host for the Evidence record.
+func (p *SMBProbe) probeAddr(ctx context.Context, ip, addr string) ([]scannerv2.Evidence, error) {
 	dialer := net.Dialer{Timeout: p.timeout}
-	addr := net.JoinHostPort(ip, "445")
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, nil // port closed or firewalled — not an error
