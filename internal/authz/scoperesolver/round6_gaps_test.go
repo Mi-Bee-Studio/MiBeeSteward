@@ -58,10 +58,10 @@ func TestDeleteByUserNetwork(t *testing.T) {
 	require.False(t, deleted)
 
 	// Surrogate-id delete for contrast (same table, different keying).
-	res, err = db.ExecContext(ctx,
+	res, err := db.ExecContext(ctx,
 		`INSERT INTO user_network_grants (user_id, network_id) VALUES (8, 3)`)
 	require.NoError(t, err)
-	grantID, _ = res.LastInsertId()
+	grantID, _ := res.LastInsertId()
 	deleted, err = Delete(ctx, db, grantID)
 	require.NoError(t, err)
 	require.True(t, deleted)
