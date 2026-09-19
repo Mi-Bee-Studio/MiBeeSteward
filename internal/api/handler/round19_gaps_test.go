@@ -99,7 +99,7 @@ func TestProbeTrigger_RealEngineHttpModule(t *testing.T) {
 	require.Contains(t, body, `status_code":200`)
 
 	// The result row is listable.
-	code, body = probeReq(t, http.MethodGet, srv.URL+"/api/v1/probe-targets/"+idStr+"/results", "")
+	code, _ = probeReq(t, http.MethodGet, srv.URL+"/api/v1/probe-targets/"+idStr+"/results", "")
 	require.Equal(t, http.StatusOK, code)
 
 	// Disable, then trigger → 409.
