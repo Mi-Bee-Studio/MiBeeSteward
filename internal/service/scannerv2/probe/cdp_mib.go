@@ -112,7 +112,7 @@ func (p *CDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHi
 		return nil
 	})
 	if walkErr != nil || len(deviceIDByIndex) == 0 {
-		snmp.Conn.Close()
+		snmp.Close()
 		return nil, nil // no CDP neighbors or CDP-MIB unsupported
 	}
 
@@ -202,7 +202,7 @@ func (p *CDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHi
 		})
 	}
 
-	snmp.Conn.Close()
+	snmp.Close()
 	return evidence, nil
 }
 
@@ -223,7 +223,7 @@ func cdpIfIndexFromIndex(suffix string) int {
 // resolveIfNames walks IF-MIB ifName for specific ifIndex values.
 // Returns a map[ifIndex]string where the value is the ifName (e.g. "GigabitEthernet0/1").
 // On any SNMP error, it returns an empty map (caller should fall back to numeric ports).
-func resolveIfNames(snmp *gosnmp.GoSNMP, ifIndices []int, logger *slog.Logger) map[int]string {
+func resolveIfNames(snmp snmpClient, ifIndices []int, logger *slog.Logger) map[int]string {
 	if snmp == nil || len(ifIndices) == 0 {
 		return nil
 	}

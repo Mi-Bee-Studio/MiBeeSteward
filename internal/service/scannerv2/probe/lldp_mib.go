@@ -83,7 +83,7 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 	if err != nil {
 		return nil, nil // unreachable — not an error, just no topology data
 	}
-	defer snmp.Conn.Close()
+	defer snmp.Close()
 
 	// Walk five columns of lldpRemTable, keyed by the index suffix. The index
 	// is "<timeMark>.<localPort>.<remIndex>" — localPort (2nd sub-identifier) is

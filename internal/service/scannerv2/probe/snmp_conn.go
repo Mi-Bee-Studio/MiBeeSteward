@@ -36,18 +36,59 @@ import (
 //   - caller-supplied `version`.
 //
 // Returns a CONNECTED client (snmp.Conn is open) on success; the caller MUST
-// defer snmp.Conn.Close(). Connect failures are returned as errors (NOT
+// defer snmp.Close(). Connect failures are returned as errors (NOT
 // swallowed) so callers can distinguish "host unreachable" from "no SNMP data"
 // when that distinction matters; most probes treat either as "no evidence".
-func connectSNMP(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion) (*gosnmp.GoSNMP, error) {
-	return connectSNMPWithRetries(ip, hint, version, 0)
+// snmpClient is the gosnmp surface the MIB walkers use: Walk (GETBULK/
+// GETNEXT iteration) + Get + connection lifecycle. *gosnmp.GoSNMP satisfies
+// it through the liveSNMP wrapper; tests inject fakes via dialSNMP (the
+// #405 smb probeAddr injection pattern applied to SNMP — a real SNMP
+// responder in-process is BER soup nobody should maintain).
+type snmpClient interface {
+	Walk(oid string, fn gosnmp.WalkFunc) error
+	Get(oids []string) (*gosnmp.SnmpPacket, error)
+	Close() error
+}
+
+// liveSNMP adapts a dialed *gosnmp.GoSNMP to snmpClient. Close reaches the
+// underlying Conn (nil-safe — an unconnected client closes as a no-op).
+type liveSNMP struct{ g *gosnmp.GoSNMP }
+
+func (l liveSNMP) Walk(oid string, fn gosnmp.WalkFunc) error { return l.g.Walk(oid, fn) }
+
+func (l liveSNMP) Get(oids []string) (*gosnmp.SnmpPacket, error) { return l.g.Get(oids) }
+
+func (l liveSNMP) Close() error {
+	if l.g.Conn != nil {
+		return l.g.Conn.Close()
+	}
+	return nil
+}
+
+// dialSNMP is the swappable dial point behind connectSNMP/connectSNMPWithRetries.
+// Production leaves the default (real UDP dial); tests substitute a factory
+// returning a fake snmpClient so the walkers run against scripted varbinds.
+var dialSNMP = func(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion, retries int) (snmpClient, error) {
+	c, err := dialSNMPReal(ip, hint, version, retries)
+	if err != nil {
+		return nil, err
+	}
+	return liveSNMP{g: c}, nil
+}
+
+func connectSNMP(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion) (snmpClient, error) {
+	return dialSNMP(ip, hint, version, 0)
 }
 
 // connectSNMPWithRetries is the variant for probes that want gosnmp's built-in
 // UDP retransmit (the L2 topology probes set Retries=1 so a single dropped
 // LLDP/CDP/Bridge walk doesn't lose a neighbor). The retry count is per-Get;
 // the probe's own timeout still bounds the total.
-func connectSNMPWithRetries(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion, retries int) (*gosnmp.GoSNMP, error) {
+func connectSNMPWithRetries(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion, retries int) (snmpClient, error) {
+	return dialSNMP(ip, hint, version, retries)
+}
+
+func dialSNMPReal(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion, retries int) (*gosnmp.GoSNMP, error) {
 	timeout := hint.Timeout
 	if timeout <= 0 {
 		timeout = 3 * time.Second
