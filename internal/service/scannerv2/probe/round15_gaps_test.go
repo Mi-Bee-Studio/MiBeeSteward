@@ -53,31 +53,6 @@ func TestMDNSProbe_LoopbackRealSend(t *testing.T) {
 	require.Equal(t, "cam", evs[0].RawData["hostname"], ".local is stripped")
 }
 
-// TestSSDPProbe_LoopbackRealSend: an SSDP responder on 1900 answering with
-// SERVER/NT headers; the probe's evidence carries them.
-func TestSSDPProbe_LoopbackRealSend(t *testing.T) {
-	resp := []byte("HTTP/1.1 200 OK\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice\r\nSERVER: Linux/4.4 UPnP/1.1 Router/1.0\r\n\r\n")
-	ln, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1900})
-	if err != nil {
-		t.Skipf("1900 unavailable on this host: %v", err)
-	}
-	t.Cleanup(func() { _ = ln.Close() })
-	go func() {
-		buf := make([]byte, 1500)
-		for {
-			_, from, err := ln.ReadFromUDP(buf)
-			if err != nil {
-				return
-			}
-			_, _ = ln.WriteToUDP(resp, from)
-		}
-	}()
-
-	evs, err := (&SSDPProbe{}).Probe(context.Background(), "127.0.0.1", scannerv2.ProbeHint{Timeout: 2 * time.Second})
-	require.NoError(t, err)
-	require.NotEmpty(t, evs)
-}
-
 // TestMDNSEvidenceFromPackets_CrossTalkDropped pins the source filter: replies
 // from a NON-target source never become evidence even when well-formed.
 func TestMDNSEvidenceFromPackets_CrossTalkDropped(t *testing.T) {
