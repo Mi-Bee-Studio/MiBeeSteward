@@ -18,6 +18,7 @@
 	import { loginSchema, forcePasswordSchema, validateForm } from '$lib/utils/validation.js';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
 	import { fly } from 'svelte/transition';
 	import { addToast } from '$lib/stores/toast';
 	import { Lock, Eye, EyeOff, ShieldCheck } from '@lucide/svelte';
@@ -54,6 +55,16 @@
 	});
 
 	onMount(() => {
+		// Already authenticated (e.g. navigating to /login with a live session):
+		// bounce straight to the dashboard instead of rendering the login form
+		// next to the logged-in sidebar (#430). One-shot at mount ONLY — the
+		// post-login flows on this page call auth.login() themselves and then
+		// decide where to go (2FA / force-password stay here), so a reactive
+		// token watcher would hijack those redirects.
+		if (get(auth)?.token) {
+			goto('/dashboard');
+			return;
+		}
 		// Pre-fetch the strength policy so the hint is correct before submit;
 		// failures keep the compiled-in defaults.
 		void ensurePasswordPolicyLoaded();
@@ -85,16 +96,12 @@
 		error = '';
 		errors = {};
 
-		const validation = loginSchema.safeParse({ username, password });
-		if (!validation.success) {
-			const fieldErrors: Record<string, string> = {};
-			for (const issue of validation.error.issues) {
-				const key = issue.path.join('.');
-				if (!fieldErrors[key]) {
-					fieldErrors[key] = issue.message;
-				}
-			}
-			errors = fieldErrors;
+		// validateForm translates the zod message keys (validation.Username
+		// Required → localized text); a hand-rolled safeParse loop here would
+		// render the raw keys instead (#427).
+		const validation = validateForm(loginSchema, { username, password });
+		if (!validation.valid) {
+			errors = validation.errors;
 			return;
 		}
 
@@ -364,7 +371,10 @@
 				</div>
 			{/if}
 
-			<form onsubmit={handleLogin}>
+			<!-- novalidate (#427): empty-field feedback comes from the zod path in
+			     handleLogin (in-DOM, localized, works under automation) instead of
+			     the native required bubble, which is silent in some contexts. -->
+			<form onsubmit={handleLogin} novalidate>
 				<div class="mb-4">
 					<label class="block text-sm text-muted mb-2" for="username">{m["auth.Username"]()}</label>
 					<input

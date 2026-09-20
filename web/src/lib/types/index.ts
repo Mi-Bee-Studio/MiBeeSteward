@@ -100,6 +100,7 @@ export type Profile = Pick<User, 'id' | 'username' | 'email' | 'role'>;
 
 export type HeartbeatConfig = Schemas['HeartbeatConfig'];
 export type HeartbeatResult = Schemas['HeartbeatResult'];
+export type HeartbeatResultList = Schemas['HeartbeatResultList'];
 export type HeartbeatStats = Schemas['HeartbeatStats'];
 
 /** Client-side view model: device + its heartbeat data + loading flag. */

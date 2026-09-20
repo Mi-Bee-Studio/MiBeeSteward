@@ -13,6 +13,28 @@ import { render, fireEvent, waitFor } from '@testing-library/svelte';
 // mock returning undefined outright would explode on .then() before the
 // render-level assertions even run.
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+// The auth store must be controllable per-test: the #430 redirect check reads
+// it imperatively (get(auth)) at mount. A hoisted mutable state + store-shaped
+// object lets each test set the session without localStorage ordering games.
+const authMock = vi.hoisted(() => {
+	const state = {
+		user: null as null | { id: number; username: string; email: string; role: string },
+		token: null as string | null
+	};
+	return {
+		state,
+		auth: {
+			subscribe: (fn: (s: typeof state) => void) => {
+				fn(state);
+				return () => {};
+			},
+			login: vi.fn(),
+			logout: vi.fn(),
+			setUser: vi.fn()
+		}
+	};
+});
+vi.mock('$lib/stores/auth', () => ({ auth: authMock.auth }));
 vi.mock('$lib/api/client', () => ({
 	api: {
 		get: vi.fn(() => Promise.resolve(undefined)),
@@ -29,6 +51,7 @@ vi.mock('$lib/api/client', () => ({
 // login page must be imported AFTER the vi.mock calls so the mocks take effect.
 import Login from '../routes/login/+page.svelte';
 import { api } from '$lib/api/client';
+import { goto } from '$app/navigation';
 
 describe('Login page', () => {
 	it('mounts and renders the credential form (username + password)', () => {
@@ -101,5 +124,58 @@ describe('Login page', () => {
 		await waitFor(() => {
 			expect(api.post).toHaveBeenCalledWith('/auth/setup', { new_password: 'NewP@ssw0rd2' });
 		});
+	});
+
+	// #427: an empty submit must show in-DOM, localized field errors — not rely
+	// on the native required bubble (silent under automation) — and must never
+	// reach the API.
+	it('shows localized field errors on empty submit and does not call the API (#427)', async () => {
+		authMock.state.user = null;
+		authMock.state.token = null;
+		vi.mocked(api.get).mockImplementation((path: string) =>
+			path === '/auth/setup-status'
+				? Promise.resolve({ required: false })
+				: Promise.resolve(undefined)
+		);
+		vi.mocked(api.post).mockClear();
+
+		const { container } = render(Login);
+
+		const form = await waitFor(() => {
+			const f = container.querySelector('form');
+			expect(f).toBeTruthy();
+			return f!;
+		});
+		await fireEvent.submit(form);
+
+		// Field-level errors render in-DOM, translated (never the raw
+		// "validation.*" paraglide key).
+		await waitFor(() => {
+			const msgs = Array.from(container.querySelectorAll('p.text-error'));
+			expect(msgs.length).toBeGreaterThanOrEqual(2);
+			for (const p of msgs) {
+				expect(p.textContent).not.toContain('validation.');
+				expect((p.textContent ?? '').trim().length).toBeGreaterThan(0);
+			}
+		});
+		// The empty submit never reached the login endpoint.
+		expect(api.post).not.toHaveBeenCalled();
+	});
+
+	// #430: a visitor with a live session landing on /login is bounced straight
+	// to the dashboard instead of rendering the login form.
+	it('redirects an already-authenticated visitor to /dashboard (#430)', async () => {
+		authMock.state.user = { id: 1, username: 'admin', email: 'a@b.c', role: 'admin' };
+		authMock.state.token = 'live-token';
+
+		render(Login);
+
+		await waitFor(() => {
+			expect(goto).toHaveBeenCalledWith('/dashboard');
+		});
+
+		// Restore for any test that runs after this one.
+		authMock.state.user = null;
+		authMock.state.token = null;
 	});
 });

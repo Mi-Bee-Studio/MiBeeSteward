@@ -45,6 +45,12 @@
 
 	let sidebarOpen = $state(false);
 
+	// /login renders standalone: no sidebar, no hamburger. An authenticated
+	// user landing there is bounced to /dashboard by the page's onMount (#430);
+	// gating the sidebar here removes the mixed login-form + sidebar layout in
+	// the meantime.
+	let isLoginPage = $derived($page.url.pathname === '/login');
+
 	// Reactive auth gate: redirect to /login whenever the token disappears.
 	// Unlike a one-shot onMount check, this catches in-tab logout (the user
 	// clicks Logout here, or a 401 from any API call fires auth.logout()) the
@@ -205,7 +211,7 @@
 </a>
 
 <div class="flex h-screen overflow-hidden relative">
-{#if $auth.token}
+{#if $auth.token && !isLoginPage}
 	<!-- Mobile hamburger button -->
 	<button
 		onclick={() => sidebarOpen = !sidebarOpen}
