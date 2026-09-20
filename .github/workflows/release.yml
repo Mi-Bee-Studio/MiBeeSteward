@@ -210,4 +210,7 @@ jobs:
             mibee-steward-openwrt-arm64-*.tar.gz
             mibee-steward_*_arm64.ipk
             mibee-steward_*_arm64.apk
+            mibee-agent-openwrt-arm64-*.tar.gz
+            mibee-agent_*_arm64.ipk
+            mibee-agent_*_arm64.apk
             SHA256SUMS.openwrt
