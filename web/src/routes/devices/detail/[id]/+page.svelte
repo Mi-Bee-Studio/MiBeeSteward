@@ -18,7 +18,7 @@
 	import { auth } from '$lib/stores/auth';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { formatDateTime as formatTimestamp } from '$lib/utils/index';
-	import type { Device, System, DeviceNeighbor, TLSPortCerts } from '$lib/types';
+	import type { Device, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
 	import { Monitor, BarChart3, FileText } from '@lucide/svelte';
@@ -147,7 +147,7 @@
 	let trendFrom = $state('');
 	let trendTo = $state('');
 	let trendOption = $state<EChartsOption>({});
-	let trendStats = $state<{ avg_latency_ms: number; success_count: number; fail_count: number; timeout_count: number } | null>(null);
+	let trendStats = $state<HeartbeatStats | null>(null);
 	// trendError is set when the trend/stats fetch fails so the chart shows an
 	// error banner (with retry) instead of disguising the failure as "No Data".
 	let trendError = $state('');
@@ -180,6 +180,20 @@
 		if (!raw) return {};
 		try { return JSON.parse(raw); }
 		catch { return {}; }
+	}
+
+	// Device.tags on the wire is a JSON array string ("["iot","Smartmi"]" from the
+	// scan bridge) or a plain CSV string (manual edit form) — render values only,
+	// never array indices (#429).
+	function parseTags(raw: string | undefined | null): string[] {
+		if (!raw || !raw.trim()) return [];
+		try {
+			const parsed: unknown = JSON.parse(raw);
+			if (Array.isArray(parsed)) {
+				return parsed.filter((t): t is string => typeof t === 'string' && t.trim() !== '').map((t) => t.trim());
+			}
+		} catch { /* CSV fallback below */ }
+		return raw.split(',').map((t) => t.trim()).filter((t) => t !== '');
 	}
 
 	function parseJsonArray(raw: string | undefined | null): unknown[] {
@@ -801,15 +815,15 @@
 		}
 		try {
 			const [historyRes, statsRes] = await Promise.all([
-				api.get<{ heartbeat_results: Array<{ id: number; status: string; latency_ms: number; checked_at: string }>; total: number }>(
+				api.get<HeartbeatResultList>(
 					`/devices/${deviceId}/heartbeat-history?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=1000`
 				),
-				api.get<{ avg_latency_ms: number; success_count: number; fail_count: number; timeout_count: number }>(
+				api.get<HeartbeatStats>(
 					`/devices/${deviceId}/heartbeat-stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
 				)
 			]);
 			trendStats = statsRes;
-			buildTrendChart(historyRes.heartbeat_results || []);
+			buildTrendChart(historyRes.results || []);
 		} catch (err: unknown) {
 			// Record the failure so the chart shows an error banner + retry
 			// instead of the misleading "No Data" empty-state (#65).
@@ -821,7 +835,7 @@
 		}
 	}
 
-	function buildTrendChart(results: Array<{ id: number; status: string; latency_ms: number; checked_at: string }>) {
+	function buildTrendChart(results: HeartbeatResult[]) {
 		if (results.length === 0) {
 			trendOption = {};
 			return;
@@ -1102,7 +1116,7 @@
 		{@const hasAssetInfo = device.brand || device.model || device.purchase_date ||
 			device.warranty_expiry || device.purpose || device.description || device.tags}
 		{#if hasAssetInfo}
-			{@const tags = parseLabels(device.tags)}
+				{@const tags = parseTags(device.tags)}
 			<div class="scan-info-panel mt-4">
 				<h3 class="scan-info-title">
 					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
@@ -1139,12 +1153,12 @@
 							<span class="scan-info-value">{device.description}</span>
 						</div>
 					{/if}
-					{#if Object.keys(tags).length > 0}
+					{#if tags.length > 0}
 						<div class="scan-info-field">
 							<span class="scan-info-label">{m['common.Tags']()}</span>
 							<div class="flex flex-wrap gap-1 mt-1">
-								{#each Object.entries(tags) as [k, v]}
-									<span class="service-badge">{k}: {v}</span>
+								{#each tags as tag (tag)}
+									<span class="service-badge">{tag}</span>
 								{/each}
 							</div>
 						</div>
