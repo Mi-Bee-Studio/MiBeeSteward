@@ -201,7 +201,11 @@ jobs:
         with:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          # Release notes are hand-curated (MiBeeNVR style: ⚠️ important-changes
+          # first + emoji theme sections, zh + English, NO auto PR list) —
+          # generate_release_notes would append a "What's Changed" list the
+          # house style doesn't use. Write the body after publishing.
+          generate_release_notes: false
           files: |
             mibee-steward-linux-amd64
             mibee-steward-linux-arm64
