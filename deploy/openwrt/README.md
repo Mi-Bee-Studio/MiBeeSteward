@@ -28,6 +28,26 @@ make package-openwrt-ipk    # → bin/mibee-steward_<ver>_arm64.ipk  (opkg insta
 make package-openwrt-apk    # → bin/mibee-steward_<ver>_arm64.apk  (apk add --allow-untrusted <file>)
 ```
 
+## Quick start (form B — router-agent)
+
+Same three install forms for the agent. The installer (`agent-install.sh`)
+derives `network.name/cidr` from uci and keeps the router Tier-1 passive
+sources ON; the center url + agent token can be passed inline
+(`--center-url URL --token TOKEN` — minted on the center's Agents page) or
+left out, in which case the config is generated with placeholders and the
+service stays DOWN until you fill them (the closing summary prints the steps):
+
+```bash
+make package-openwrt-agent        # → bin/mibee-agent-openwrt-arm64-<ver>.tar.gz
+scp bin/mibee-agent-openwrt-arm64-*.tar.gz root@router:/tmp/
+ssh root@router 'cd /tmp && tar -xzf mibee-agent-openwrt-*.tar.gz && \
+    ./agent-install.sh --center-url http://<center-ip>:8080 --token <agent-token>'
+
+# package-manager forms (same lifecycle as the center packages):
+make package-openwrt-agent-ipk    # → bin/mibee-agent_<ver>_arm64.ipk
+make package-openwrt-agent-apk    # → bin/mibee-agent_<ver>_arm64.apk
+```
+
 **Field-verified hardware**: GL.iNet **GL-MT2500 (Brume 2)** — mediatek/mt7981, aarch64_cortex-a53, 1GB RAM, stock GL firmware (OpenWrt 21.02-SNAPSHOT, kernel 5.4.211). Form C verified end-to-end 2026-08-21: engine registry + embedded fingerprint corpus load, **all 4 Tier-1 sources producing live data** (dhcp_leases recorded a device carrying its lease hostname, conntrack + dns_log events flowing, hostapd a clean no-op on this WiFi-less model), a /24 scan in 74s during which the router self-identified as brand GL.iNet, SPA browser-verified, RSS ~113MB (#288, #37). Mind the v4-listener limitation on this firmware documented below.
 
 ## ⚠️ Hardware requirements (read first)

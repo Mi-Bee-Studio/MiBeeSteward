@@ -221,10 +221,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends lua5.1
       - name: Static assertions (luac -p / committed-tree CR scan / sh -n)
         run: make check-openwrt
-      - name: Packaging smoke (stage guard + mkipk.sh)
+      - name: Packaging smoke (stage guard + mkipk.sh, center + agent)
         run: |
           (cd web && npm ci)
-          make package-openwrt-ipk
+          make package-openwrt-ipk package-openwrt-agent-ipk
           ls -la bin/*.ipk
 
   # Docs governance (#319 / #322): fence-language lint (MD040) so the website's
