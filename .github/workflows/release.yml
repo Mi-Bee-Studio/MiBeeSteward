@@ -98,7 +98,9 @@ jobs:
   # Router-form packages (#359): the same pipeline CI's `openwrt` job smokes
   # (arm64 build -> openwrt-stage CR guard -> packaging scripts), producing all
   # three install forms for OpenWrt/iStoreOS - tarball (scp + ./install.sh),
-  # .ipk (opkg), .apk (OpenWrt 24.10+ apk-tools) - plus a SHA256SUMS file.
+  # .ipk (opkg), .apk (OpenWrt 24.10+ apk-tools) - plus a SHA256SUMS file —
+  # for BOTH forms: the center (mibee-steward) and the distributed agent
+  # (mibee-agent, form B: agent-on-router reporting to a remote center).
   # arm64 only: both field-verified routers (GL.iNet MT2500, FastRhino R68S)
   # and current OpenWrt target hardware are aarch64; 32-bit ARM users build
   # locally via `make build-linux-arm` (docs/{zh,en}/openwrt.md).
@@ -116,12 +118,13 @@ jobs:
           node-version: '20'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Build all three router package forms
+      - name: Build all three router package forms (center + agent)
         run: |
           (cd web && npm ci)
-          # One make invocation -> build-frontend runs once, shared by all
-          # three package targets.
-          make package-openwrt package-openwrt-ipk package-openwrt-apk
+          # One make invocation -> build-frontend runs once, shared by the
+          # center package targets; the agent targets have no frontend step.
+          make package-openwrt package-openwrt-ipk package-openwrt-apk \
+               package-openwrt-agent package-openwrt-agent-ipk package-openwrt-agent-apk
           ls -la bin/
           (cd bin && sha256sum *.tar.gz *.ipk *.apk > SHA256SUMS.openwrt)
       - uses: actions/upload-artifact@v4

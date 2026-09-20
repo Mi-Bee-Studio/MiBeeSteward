@@ -1,15 +1,19 @@
 #!/bin/sh
 #
 # Assemble a hand-rolled .apk for OpenWrt 24.10+ (apk-tools v2 package format)
-# from a prepared staging root — the packaging half of `make package-openwrt-apk`.
+# from a prepared staging root — the packaging half of `make package-openwrt-apk`
+# (center) and `make package-openwrt-agent-apk` (agent).
 #
-#   usage: mkapk.sh <staging_root> <version> <goarch> <out.apk>
+#   usage: mkapk.sh <staging_root> <version> <goarch> <out.apk> [kind]
 #
 #   staging_root/            ← prepared by the Makefile target
-#     usr/bin/mibee-steward
+#     usr/bin/mibee-steward  (kind=center; usr/bin/mibee-agent for kind=agent)
 #     etc/init.d/mibee-steward
-#     etc/mibee/config.example.yaml
-#     usr/lib/mibee/install.sh      (invoked by .post-install with --from-ipk)
+#     etc/mibee/config.example.yaml  (agent.example.yaml for kind=agent)
+#     usr/lib/mibee/install.sh       (agent-install.sh for kind=agent)
+#
+#   kind: "center" (default) or "agent" — selects the package name,
+#   description and lifecycle wiring (which init script, which installer).
 #
 # iStoreOS/OpenWrt 24.10+ replaced opkg (.ipk) with apk. An apk-tools v2
 # package is a single gzip tar: dot-prefixed control members first (.PKGINFO,
@@ -23,10 +27,21 @@
 #
 set -eu
 
-ROOT="${1:?usage: mkapk.sh <staging_root> <version> <goarch> <out.apk>}"
+ROOT="${1:?usage: mkapk.sh <staging_root> <version> <goarch> <out.apk> [center|agent]}"
 VER="${2:?version required}"
 GOARCH_APK="${3:?goarch required (arm64|arm)}"
 OUT="${4:?output path required}"
+KIND="${5:-center}"
+
+case "$KIND" in
+    center) PKG=mibee-steward
+            DESC="Device discovery and monitoring center (CMDB-lite for network/IoT assets) with embedded web UI; CGO-free static binary."
+            INSTALLER=install.sh ;;
+    agent)  PKG=mibee-agent
+            DESC="MiBee Steward distributed discovery agent — scans the LAN it sits on and reports to a remote center; CGO-free static binary."
+            INSTALLER=agent-install.sh ;;
+    *) echo "ERROR: unknown kind '$KIND' (expected center or agent)." >&2; exit 1 ;;
+esac
 
 case "$VER" in
     ""|-*|*" "*) echo "ERROR: invalid apk version '$VER'." >&2; exit 1 ;;
@@ -49,12 +64,12 @@ trap cleanup EXIT
 
 # ─── .PKGINFO ──────────────────────────────────────────────────────────────
 cat > "$ROOT/.PKGINFO" <<EOF
-pkgname = mibee-steward
+pkgname = $PKG
 pkgver = $VER
 arch = $APK_ARCH
-pkgdesc = Device discovery and monitoring center (CMDB-lite for network/IoT assets) with embedded web UI; CGO-free static binary.
+pkgdesc = $DESC
 size = $SIZE_BYTES
-origin = mibee-steward
+origin = $PKG
 maintainer = MiBee Studio <https://github.com/Mi-Bee-Studio/MiBeeSteward>
 license = AGPL-3.0-or-later
 EOF
@@ -65,34 +80,34 @@ cat > "$ROOT/.pre-install" <<EOF
 # Arch gate: refuse cleanly BEFORE apk lays down ~24MB onto a mismatched box.
 case "\$(uname -m)" in
     $UNAME_OK) ;;
-    *) echo "ERROR: mibee-steward: this apk was built for GOARCH=$GOARCH_APK but this machine is \$(uname -m)." >&2
-       echo "       Rebuild with the matching arch: make package-openwrt-apk GOARCH=<arm64|arm>" >&2
+    *) echo "ERROR: $PKG: this apk was built for GOARCH=$GOARCH_APK but this machine is \$(uname -m)." >&2
+       echo "       Rebuild with the matching arch: make package-openwrt${KIND:+-$KIND}-apk GOARCH=<arm64|arm>" >&2
        exit 1 ;;
 esac
 exit 0
 EOF
 
-cat > "$ROOT/.post-install" <<'EOF'
+cat > "$ROOT/.post-install" <<EOF
 #!/bin/sh
 # Files are already laid down by apk — configure + start via the same code
-# path as the tarball installer (config generation, ping_group_range,
-# enable + start, health check). Invoked through `sh` so install.sh needs no
-# exec bit (MSYS-built archives can carry 0644; install.sh chmods it back).
+# path as the tarball installer. Invoked through \`sh\` so the installer needs
+# no exec bit (MSYS-built archives can carry 0644; it chmods itself back).
 # apk passes <pkgname> <pkgver> as arguments — deliberately NOT forwarded.
-exec sh /usr/lib/mibee/install.sh --from-ipk
+exec sh /usr/lib/mibee/$INSTALLER --from-ipk
 EOF
 
 cat > "$ROOT/.pre-deinstall" <<'EOF'
 #!/bin/sh
 # Runs before removal AND before an upgrade; .post-install re-enables + restarts.
-/etc/init.d/mibee-steward stop    >/dev/null 2>&1 || true
-/etc/init.d/mibee-steward disable >/dev/null 2>&1 || true
+/etc/init.d/SERVICE stop    >/dev/null 2>&1 || true
+/etc/init.d/SERVICE disable >/dev/null 2>&1 || true
 exit 0
 EOF
+sed -i "s/SERVICE/$PKG/g" "$ROOT/.pre-deinstall"
 
-cat > "$ROOT/.post-deinstall" <<'EOF'
+cat > "$ROOT/.post-deinstall" <<EOF
 #!/bin/sh
-echo "mibee-steward removed; /etc/mibee (config + database) was deliberately kept —"
+echo "$PKG removed; /etc/mibee (config + database) was deliberately kept —"
 echo "delete it manually if you really want a full wipe."
 exit 0
 EOF

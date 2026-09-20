@@ -1,15 +1,19 @@
 #!/bin/sh
 #
 # Assemble a hand-rolled .ipk for opkg (OpenWrt / iStoreOS) from a prepared
-# staging root — the packaging half of `make package-openwrt-ipk`.
+# staging root — the packaging half of `make package-openwrt-ipk` (center) and
+# `make package-openwrt-agent-ipk` (agent).
 #
-#   usage: mkipk.sh <staging_root> <version> <goarch> <out.ipk>
+#   usage: mkipk.sh <staging_root> <version> <goarch> <out.ipk> [kind]
 #
 #   staging_root/            ← prepared by the Makefile target
-#     usr/bin/mibee-steward
+#     usr/bin/mibee-steward  (kind=center; usr/bin/mibee-agent for kind=agent)
 #     etc/init.d/mibee-steward
-#     etc/mibee/config.example.yaml
-#     usr/lib/mibee/install.sh      (invoked by postinst with --from-ipk)
+#     etc/mibee/config.example.yaml  (agent.example.yaml for kind=agent)
+#     usr/lib/mibee/install.sh       (agent-install.sh for kind=agent)
+#
+#   kind: "center" (default) or "agent" — selects the package name,
+#   description and lifecycle wiring (which init script, which installer).
 #
 # FORMAT NOTE — modern OpenWrt (22.03+) .ipk files are NOT Debian-style ar
 # archives: they are gzip( tar(./debian-binary, ./data.tar.gz, ./control.tar.gz) ),
@@ -35,10 +39,21 @@
 #
 set -eu
 
-ROOT="${1:?usage: mkipk.sh <staging_root> <version> <goarch> <out.ipk>}"
+ROOT="${1:?usage: mkipk.sh <staging_root> <version> <goarch> <out.ipk> [center|agent]}"
 VER="${2:?version required}"
 GOARCH_IPK="${3:?goarch required (arm64|arm)}"
 OUT="${4:?output path required}"
+KIND="${5:-center}"
+
+case "$KIND" in
+    center) PKG=mibee-steward
+            DESC="Device discovery and monitoring center (CMDB-lite for network/IoT assets) with embedded web UI; CGO-free static binary."
+            INSTALLER=install.sh ;;
+    agent)  PKG=mibee-agent
+            DESC="MiBee Steward distributed discovery agent — scans the LAN it sits on and reports to a remote center; CGO-free static binary."
+            INSTALLER=agent-install.sh ;;
+    *) echo "ERROR: unknown kind '$KIND' (expected center or agent)." >&2; exit 1 ;;
+esac
 
 case "$VER" in
     ""|-*|*" "*) echo "ERROR: invalid ipk version '$VER'." >&2; exit 1 ;;
@@ -64,13 +79,13 @@ INSTALLED_SIZE="$(du -sk "$ROOT" | cut -f1)"
 
 # ─── control ───────────────────────────────────────────────────────────────
 cat > "$CTRL/control" <<EOF
-Package: mibee-steward
+Package: $PKG
 Version: $VER
 Architecture: $OPKG_ARCH
 Maintainer: MiBee Studio <https://github.com/Mi-Bee-Studio/MiBeeSteward>
 Section: net
 Installed-Size: $INSTALLED_SIZE
-Description: Device discovery and monitoring center (CMDB-lite for network/IoT assets) with embedded web UI; CGO-free static binary.
+Description: $DESC
 EOF
 
 # ─── lifecycle scripts ─────────────────────────────────────────────────────
@@ -79,33 +94,33 @@ cat > "$CTRL/preinst" <<EOF
 # Arch gate: refuse cleanly BEFORE opkg lays down ~24MB onto a mismatched box.
 case "\$(uname -m)" in
     $UNAME_OK) ;;
-    *) echo "ERROR: mibee-steward: this ipk was built for GOARCH=$GOARCH_IPK but this machine is \$(uname -m)." >&2
-       echo "       Rebuild with the matching arch: make package-openwrt-ipk GOARCH=<arm64|arm>" >&2
+    *) echo "ERROR: $PKG: this ipk was built for GOARCH=$GOARCH_IPK but this machine is \$(uname -m)." >&2
+       echo "       Rebuild with the matching arch: make package-openwrt${KIND:+-$KIND}-ipk GOARCH=<arm64|arm>" >&2
        exit 1 ;;
 esac
 exit 0
 EOF
 
-cat > "$CTRL/postinst" <<'EOF'
+cat > "$CTRL/postinst" <<EOF
 #!/bin/sh
 # Files are already laid down by opkg — configure + start via the same code
-# path as the tarball installer (config generation, ping_group_range,
-# enable + start, health check). Invoked through `sh` so install.sh needs no
-# exec bit (MSYS-built archives can carry 0644; install.sh chmods it back).
-exec sh /usr/lib/mibee/install.sh --from-ipk
+# path as the tarball installer. Invoked through \`sh\` so the installer needs
+# no exec bit (MSYS-built archives can carry 0644; it chmods itself back).
+exec sh /usr/lib/mibee/$INSTALLER --from-ipk
 EOF
 
 cat > "$CTRL/prerm" <<'EOF'
 #!/bin/sh
 # Runs before removal AND before an upgrade; postinst re-enables + restarts.
-/etc/init.d/mibee-steward stop    >/dev/null 2>&1 || true
-/etc/init.d/mibee-steward disable >/dev/null 2>&1 || true
+/etc/init.d/SERVICE stop    >/dev/null 2>&1 || true
+/etc/init.d/SERVICE disable >/dev/null 2>&1 || true
 exit 0
 EOF
+sed -i "s/SERVICE/$PKG/g" "$CTRL/prerm"
 
-cat > "$CTRL/postrm" <<'EOF'
+cat > "$CTRL/postrm" <<EOF
 #!/bin/sh
-echo "mibee-steward removed; /etc/mibee (config + database) was deliberately kept —"
+echo "$PKG removed; /etc/mibee (config + database) was deliberately kept —"
 echo "delete it manually if you really want a full wipe."
 exit 0
 EOF
