@@ -438,8 +438,10 @@ func ptrTime(t time.Time) *time.Time { return &t }
 
 // openAgentDB opens a local SQLite file with WAL + the mini schema the runner
 // and scheduler need (scan_tasks, scan_task_runs, scan_results, devices + the
-// networks/vlans FK targets + heartbeat_configs for the device bridge). It does
-// NOT run the center's full migration suite — the agent owns only these tables.
+// networks/vlans FK targets + heartbeat_configs for the device bridge). Like
+// the center, it only creates a fresh database; a mini-DB from an older build
+// is rejected so schema drift fails loudly at startup instead of as a query
+// error later.
 func openAgentDB(dbPath string) (*sql.DB, error) {
 	// Pragmas travel in the DSN so all 8 pool connections get them —
 	// Exec-after-Open only reached the first connection (#252).
@@ -452,53 +454,37 @@ func openAgentDB(dbPath string) (*sql.DB, error) {
 		return nil, err
 	}
 	conn.SetMaxOpenConns(8)
+	var current int
+	if err := conn.QueryRow(`PRAGMA user_version`).Scan(&current); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("read agent schema version: %w", err)
+	}
+	if current != agentSchemaVersion {
+		var tables int
+		if err := conn.QueryRow(
+			`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+		).Scan(&tables); err != nil || tables > 0 {
+			conn.Close()
+			return nil, fmt.Errorf("agent database %s is from an older build and is not upgraded in place;"+
+				" move the file aside and restart to start a fresh one (local scan history and the local SNMPv3 vault are not carried over)",
+				dbPath)
+		}
+	}
 	if _, err := conn.Exec(agentSchema); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("apply agent schema: %w", err)
 	}
-	if err := applyAgentMigrations(conn); err != nil {
+	if _, err := conn.Exec(fmt.Sprintf("PRAGMA user_version = %d", agentSchemaVersion)); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("apply agent migrations: %w", err)
+		return nil, fmt.Errorf("stamp agent schema version: %w", err)
 	}
 	return conn, nil
 }
 
-// agentMigrations brings pre-existing mini-DBs up to the current
-// agentSchema shape (#337): CREATE TABLE IF NOT EXISTS never touches an
-// existing table, so columns added after an agent was first provisioned
-// must be ALTERed in idempotently — the same pattern as the center's
-// cmd/server/migrations.go. Without this, every device-identity query
-// referencing a new column (offline_since was the one seen in the wild)
-// fails and the roam/replace bridge silently degrades.
-var agentMigrations = []struct {
-	table   string // target table (for detection + error context)
-	stmt    string // full ALTER TABLE ... ADD COLUMN
-	colName string // column to detect via pragma_table_info
-}{
-	{"devices", "ALTER TABLE devices ADD COLUMN offline_since TIMESTAMP", "offline_since"},
-	{"devices", "ALTER TABLE devices ADD COLUMN device_uuid TEXT NOT NULL DEFAULT ''", "device_uuid"},
-	{"devices", "ALTER TABLE devices ADD COLUMN ssh_credential_id INTEGER", "ssh_credential_id"},
-	// scan_tasks columns the scheduler's ListEnabledScanTasks touches
-	// (observed in the wild as a startup ERROR on .174).
-	{"scan_tasks", "ALTER TABLE scan_tasks ADD COLUMN credential_id INTEGER", "credential_id"},
-	{"scan_tasks", "ALTER TABLE scan_tasks ADD COLUMN network_id INTEGER", "network_id"},
-}
-
-func applyAgentMigrations(conn *sql.DB) error {
-	for _, m := range agentMigrations {
-		var present int
-		if err := conn.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, m.table, m.colName).Scan(&present); err != nil {
-			return fmt.Errorf("inspect %s.%s: %w", m.table, m.colName, err)
-		}
-		if present > 0 {
-			continue
-		}
-		if _, err := conn.Exec(m.stmt); err != nil {
-			return fmt.Errorf("add %s.%s: %w", m.table, m.colName, err)
-		}
-	}
-	return nil
-}
+// agentSchemaVersion is the mini-schema generation this build creates. Bump
+// it together with agentSchema changes; databases stamped with a different
+// version are rejected by openAgentDB instead of upgraded.
+const agentSchemaVersion = 1
 
 // agentSchema is the minimal table set the runner + scheduler touch. Shapes
 // mirror db/schema.sql so the sqlc-generated queries compile against them.

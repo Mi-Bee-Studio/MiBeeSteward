@@ -1243,9 +1243,10 @@ func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int6
 // resolveDeviceUUID returns the stable device_uuid for an IP using the same
 // identity rule as resolveDeviceID (network-scoped IP match, then global IP).
 // Returns "" when no device matches — the caller writes "" into the satellite
-// row and it is healed on the next scan (or by the backfill migration). The
-// empty-string sentinel is safe because devices.device_uuid is always populated
-// (non-empty) once a row exists — backfillDeviceUUIDs guarantees it.
+// row and it is healed on the next scan. The empty-string sentinel is safe
+// because devices.device_uuid is always populated (non-empty) once a row
+// exists (device creation generates one; the schema default is only a
+// pre-population placeholder).
 //
 // Results are memoized in r.uuidCache (IP → UUID). UUIDs are stable device
 // identity, so the cache is correct across calls; a /24 scan with 50 alive

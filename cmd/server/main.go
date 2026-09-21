@@ -244,10 +244,8 @@ func serve(cfg *config.Config, db *sql.DB, dbPath string, stop <-chan struct{}) 
 	// One-time ghost cleanup (issue #19 Layer 4): detect devices whose IP has
 	// drifted outside their stamped network's CIDR, and delete the ones that
 	// are proven duplicates (a canonical copy exists in the correct network, or
-	// the same MAC lives elsewhere). Runs AFTER the pre-migration VACUUM INTO
-	// backup (taken inside runMigrations), so the pre-cleanup state is
-	// recoverable. Idempotent — a steady-state instance finds nothing here.
-	// Skipped for a fresh DB (no networks/devices) since Reconcile returns empty.
+	// the same MAC lives elsewhere). A steady-state instance finds nothing
+	// here; a fresh DB skips it naturally (Reconcile returns empty).
 	{
 		cleanupSvc := scannerv2reconcile.New(db, 0, nil, slog.Default())
 		if stats, err := cleanupSvc.CleanupGhosts(context.Background()); err != nil {
@@ -258,7 +256,7 @@ func serve(cfg *config.Config, db *sql.DB, dbPath string, stop <-chan struct{}) 
 		}
 		// Reserved-address ghosts (#254): devices the scanner recorded at a
 		// network's own address or its broadcast (the broadcast answered pings
-		// via every host's fan-out reply). Same backup protection as above.
+		// via every host's fan-out reply).
 		if removed, err := cleanupSvc.CleanupReservedAddressDevices(context.Background()); err != nil {
 			slog.Warn("startup reserved-address cleanup failed (continuing)", "error", err)
 		} else if len(removed) > 0 {

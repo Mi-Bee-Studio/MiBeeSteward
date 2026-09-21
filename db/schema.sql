@@ -886,15 +886,3 @@ CREATE TABLE IF NOT EXISTS system_settings (
     value TEXT NOT NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-
--- schema_meta: migration-framework bookkeeping. `chain_fingerprint_v1` holds
--- the sha256 of the migration chain that last ran (cmd/server/migrations.go),
--- letting the version gate detect chain edits that shipped without a
--- SchemaVersion bump and self-heal by replaying the idempotent chain. Created
--- here (not only by the chain) so fresh and migrated installs share the same
--- shape — the #268 equivalence test asserts exactly that.
-CREATE TABLE IF NOT EXISTS schema_meta (
-    k TEXT PRIMARY KEY,
-    v TEXT NOT NULL
-);

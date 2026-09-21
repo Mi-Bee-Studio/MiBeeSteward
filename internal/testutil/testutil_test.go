@@ -78,7 +78,6 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"scan_snapshots",
 		"scan_task_runs",
 		"scan_tasks",
-		"schema_meta",
 		"service_evidence",
 		"snmp_credentials",
 		"ssh_credentials",
