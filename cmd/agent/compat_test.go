@@ -54,8 +54,8 @@ func tableColumns(t *testing.T, conn *sql.DB, table string) []string {
 // TestAgentSchema_ParityWithCenterSchema pins the "shapes mirror db/schema.sql"
 // promise in agentSchema's doc comment: for every shared table, the agent's
 // column set must equal the center's. If this fails after a schema change,
-// update agentSchema (and usually agentMigrations for already-deployed boxes)
-// in the same PR — do not weaken the assertion.
+// update agentSchema and bump agentSchemaVersion in the same PR — do not
+// weaken the assertion.
 func TestAgentSchema_ParityWithCenterSchema(t *testing.T) {
 	agentConn, err := openAgentDB(t.TempDir() + "/agent.db")
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestAgentSchema_ParityWithCenterSchema(t *testing.T) {
 		require.ElementsMatch(t,
 			tableColumns(t, centerConn, tbl),
 			tableColumns(t, agentConn, tbl),
-			"agent mini-schema drifted from db/schema.sql for table %s — update agentSchema (+ agentMigrations) in the same change", tbl)
+			"agent mini-schema drifted from db/schema.sql for table %s — update agentSchema (+ agentSchemaVersion) in the same change", tbl)
 	}
 }
 
