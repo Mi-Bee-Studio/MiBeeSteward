@@ -48,6 +48,13 @@ type AgentReport struct {
 	// omitted (the agent reports presence, not absence, change-detection lives
 	// at the center).
 	Hosts []ReportedHost `json:"hosts"`
+	// Origin distinguishes how the batch was produced: "" / "scan" for the
+	// output of a scan run, "passive" for hosts picked up by the agent's
+	// passive discovery sources between scans. The center bridges hosts and
+	// refreshes leases for both, but only a scan batch closes the pending
+	// dispatch-run with its statistics (a passive trickle arriving mid-scan
+	// must not complete the run with partial numbers).
+	Origin string `json:"origin,omitempty"`
 }
 
 // AgentMeta is the self-description every agent ships with its reports: what
