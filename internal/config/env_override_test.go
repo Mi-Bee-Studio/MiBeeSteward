@@ -35,7 +35,7 @@ auth:
 
 // TestEnvOverride_KeyCategories guards the three env-override shapes (#331):
 // word-only keys, dot-separated keys, and keys with underscores INSIDE a
-// segment — the last kind silently failed before the exact-map fix because
+// segment, the last kind silently failed before the exact-map fix because
 // the transform split every underscore into a dot.
 func TestEnvOverride_KeyCategories(t *testing.T) {
 	yamlPath := writeConfigYAML(t)

@@ -70,7 +70,7 @@ func probeReq(t *testing.T, method, url, body string) (int, string) {
 }
 
 // TestProbeTrigger_RealEngineHttpModule: creating an http-module target that
-// points at a local server, triggering it, and reading the recorded result —
+// points at a local server, triggering it, and reading the recorded result;
 // plus the disabled-target conflict and not-found branches on the real path.
 func TestProbeTrigger_RealEngineHttpModule(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

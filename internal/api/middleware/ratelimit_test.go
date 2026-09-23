@@ -182,7 +182,7 @@ func TestScanRateLimiter_Allow(t *testing.T) {
 // index.html fallback) so the 40-60-chunk first-load burst isn't throttled.
 // Regression test for the 429 storm that bricked the SPA on page load.
 func TestGlobalRateLimiter_BypassesStaticAssets(t *testing.T) {
-	// Aggressive limit — burst of 1 means a single API request exhausts it,
+	// Aggressive limit, burst of 1 means a single API request exhausts it,
 	// so any static request that ISN'T bypassed would get 429'd.
 	limiter := middleware.NewRateLimiter(1.0/60.0, 1)
 
@@ -225,7 +225,7 @@ func TestRateLimiter_StopIdempotent(t *testing.T) {
 	rl := middleware.NewRateLimiter(1, 1)
 	rl.Stop()
 	rl.Stop() // double Stop must not panic (channel-already-closed guard)
-	// Middleware must still work after Stop — exercise it via a request.
+	// Middleware must still work after Stop, exercise it via a request.
 	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

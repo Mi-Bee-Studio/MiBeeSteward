@@ -21,7 +21,7 @@ import (
 
 // The settings-center API: admin reads/writes the auth policy overlay, and
 // the change is visible through the PUBLIC /auth/password-policy endpoint
-// without a restart — the end-to-end "edit password strength from the web UI"
+// without a restart, the end-to-end "edit password strength from the web UI"
 // contract the SPA settings page relies on.
 func TestSettings_AuthPolicyOverlayLifecycle(t *testing.T) {
 	server, db := setupTestServer(t)

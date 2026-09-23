@@ -48,7 +48,7 @@ func (h *UserHandler) Routes() chi.Router {
 	r.Post("/login", h.Login)
 	r.Post("/logout", h.Logout)
 	// First-run setup (public): when the bootstrap admin was seeded with an
-	// EMPTY password (auth.initial_admin_password unset — the installer's
+	// EMPTY password (auth.initial_admin_password unset, the installer's
 	// default), the login page polls setup-status and renders the
 	// create-admin-password form instead of the login form. POST /setup is
 	// server-gated on an empty password_hash existing, so the window closes
@@ -58,12 +58,12 @@ func (h *UserHandler) Routes() chi.Router {
 	r.Post("/setup", h.PostSetup)
 	// Password policy (public): the SPA's client-side password validation and
 	// hint text must follow the EFFECTIVE policy (auth.password_policy, #332),
-	// not hardcoded defaults — otherwise an admin lowering min_length is
+	// not hardcoded defaults, otherwise an admin lowering min_length is
 	// blocked by the UI before the backend ever sees the request. Contains
 	// only strength knobs, no secrets, so pre-auth exposure is safe.
 	r.Get("/password-policy", h.GetPasswordPolicy)
 	// Account creation is admin-initiated (closed self-signup): gated by
-	// CapUserManage, an admin-only capability — same semantics as the prior
+	// CapUserManage, an admin-only capability, same semantics as the prior
 	// RequireAdmin, expressed through the capability matrix.
 	r.With(middleware.RequireCapability(domain.CapUserManage)).Post("/register", h.Register)
 
@@ -80,7 +80,7 @@ func (h *UserHandler) Routes() chi.Router {
 }
 
 // Login handles POST /api/v1/auth/login
-// PasswordPolicyResponse is the effective password strength policy — the
+// PasswordPolicyResponse is the effective password strength policy, the
 // exact knobs validatePassword enforces (internal/service/user.go).
 type PasswordPolicyResponse struct {
 	MinLength        int  `json:"min_length"`
@@ -90,7 +90,7 @@ type PasswordPolicyResponse struct {
 	RequireSpecial   bool `json:"require_special"`
 }
 
-// GetPasswordPolicy handles GET /api/v1/auth/password-policy — the effective
+// GetPasswordPolicy handles GET /api/v1/auth/password-policy, the effective
 // strength policy for client-side validation + hint text (see Routes comment).
 // Resolved through the service so the settings-center overlay is reflected.
 func (h *UserHandler) GetPasswordPolicy(w http.ResponseWriter, _ *http.Request) {
@@ -146,7 +146,7 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 				UserAgent:    r.UserAgent(),
 				Details:      "username=" + req.Username + " reason=account_locked",
 			})
-			// 423 Locked — distinct from the 429 the IP rate limiter returns, so
+			// 423 Locked, distinct from the 429 the IP rate limiter returns, so
 			// the UI can render "account locked" instead of the generic
 			// "too many attempts" (both previously showed the same message).
 			Error(w, http.StatusLocked, err.Error())
@@ -201,17 +201,17 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	slog.Info("login success", "username", req.Username, "ip", r.RemoteAddr)
 }
 
-// GetSetupStatus handles GET /api/v1/auth/setup-status — reports whether the
+// GetSetupStatus handles GET /api/v1/auth/setup-status, reports whether the
 // first-run browser setup (create the admin password) is still pending. Public
 // and answerable only as a boolean; no account details leak.
 func (h *UserHandler) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
 	Success(w, map[string]bool{"required": h.svc.SetupPending(r.Context())})
 }
 
-// PostSetup handles POST /api/v1/auth/setup — completes the first-run flow by
+// PostSetup handles POST /api/v1/auth/setup, completes the first-run flow by
 // setting the chosen password on the empty-hash bootstrap admin. Returns the
 // same LoginResponse + cookie shape as /auth/login so the SPA can enter the
-// app directly, without a second round-trip. Server-enforced one-shot: once
+// app directly, without a second round-trip. Server-enforced single use: once
 // any password exists the endpoint 409s forever.
 func (h *UserHandler) PostSetup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -448,7 +448,7 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	Success(w, map[string]string{"message": "password changed"})
 }
 
-// ForceChangePassword handles PUT /api/v1/auth/force-password — the forced
+// ForceChangePassword handles PUT /api/v1/auth/force-password, the forced
 // first-login/admin-reset change. On success it mints a FRESH token without
 // the mcp claim (the pre-change token is gated server-side until it expires)
 // and rotates the cookie, so the client keeps its session with the gate
@@ -488,7 +488,7 @@ func (h *UserHandler) ForceChangePassword(w http.ResponseWriter, r *http.Request
 
 	token, err := h.svc.GenerateTokenForUser(r.Context(), userID, role, false)
 	if err != nil {
-		// Password DID change — the login is recoverable by re-login; don't
+		// Password DID change, the login is recoverable by re-login; don't
 		// report a 500 that implies otherwise. Tell the client to re-login.
 		Error(w, http.StatusUnauthorized, "password changed; please log in again")
 		return

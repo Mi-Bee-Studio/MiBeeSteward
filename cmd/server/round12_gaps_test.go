@@ -19,7 +19,7 @@ import (
 
 // TestDoctor_BackupBranches drives the backup checks: a fresh valid backup
 // answers ok + restorable; a corrupt backup fails restorable (still exit 1
-// only if another check failed — backup warn alone exits 0).
+// only if another check failed, backup warn alone exits 0).
 func TestDoctor_BackupBranches(t *testing.T) {
 	dbDir := t.TempDir()
 	cfg := writeDoctorConfig(t, filepath.Join(dbDir, "mibee.db"), "0123456789abcdef0123456789abcdef")

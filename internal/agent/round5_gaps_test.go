@@ -101,7 +101,7 @@ func TestProber_ProbeOnePanicContained(t *testing.T) {
 	go func() {
 		defer close(done)
 		// An invalid module name keeps RunTarget's dispatch table lookup
-		// failing fast (no panic expected) — the recover() path itself is what
+		// failing fast (no panic expected), the recover() path itself is what
 		// keeps a hypothetical panic from escaping; assert the call returns.
 		p.probeOne(context.Background(), probetarget.Spec{ID: 1, Module: "no-such-module", Target: "x", TimeoutSeconds: 1})
 	}()
@@ -113,7 +113,7 @@ func TestProber_ProbeOnePanicContained(t *testing.T) {
 }
 
 // TestHTTPResultPoster_Covers real POST semantics: auth header, payload shape,
-// non-200 drop, and transport failure — none of them panic.
+// non-200 drop, and transport failure, none of them panic.
 func TestHTTPResultPoster_Post(t *testing.T) {
 	var gotAuth, gotBody string
 	var gotPath string

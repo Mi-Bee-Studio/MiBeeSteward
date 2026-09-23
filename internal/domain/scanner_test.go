@@ -53,7 +53,7 @@ func TestScanHost_SNMPFields_JSONTags(t *testing.T) {
 }
 
 func TestScanHost_SNMPFields_OmitEmpty(t *testing.T) {
-	// Host with all SNMP fields empty — should omit omitempty fields
+	// Host with all SNMP fields empty, should omit omitempty fields
 	host := ScanHost{
 		IP:    "192.168.1.1",
 		Alive: false,
@@ -360,7 +360,7 @@ func TestAddDeviceItemBackwardCompat(t *testing.T) {
 
 // TestValidateScanTaskRequest_ReservedTargets pins the #317 entry-point guard:
 // scan tasks may not target reserved address space (loopback, unspecified,
-// link-local, multicast, broadcast, 240/4) — a scheduled loopback task once
+// link-local, multicast, broadcast, 240/4), a scheduled loopback task once
 // invented 1022 phantom devices that resurrected daily against the
 // silent-device retention.
 func TestValidateScanTaskRequest_ReservedTargets(t *testing.T) {
@@ -398,7 +398,7 @@ func TestValidateScanTaskRequest_ReservedTargets(t *testing.T) {
 	})
 	t.Run("escape hatch accepts reserved but still checks syntax", func(t *testing.T) {
 		// scanner.allow_reserved_targets (the loadgen synthetic plane on 127/8)
-		// opts out of the reserved check — but garbage targets still fail.
+		// opts out of the reserved check, but garbage targets still fail.
 		req := valid()
 		req.Targets = "127.8.0.0/22"
 		require.NoError(t, ValidateScanTaskRequest(req, true))

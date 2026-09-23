@@ -18,7 +18,7 @@ import (
 )
 
 // TestLoggingMetricsWrappers_Unwrap: both wrapper types must expose the
-// underlying ResponseWriter via Unwrap — http.ResponseController relies on it
+// underlying ResponseWriter via Unwrap, http.ResponseController relies on it
 // to reach the real Flusher (the SSE /changes/watch endpoint breaks with
 // "streaming not supported" otherwise).
 func TestLoggingMetricsWrappers_Unwrap(t *testing.T) {

@@ -94,7 +94,7 @@ func (rl *RateLimiter) cleanup() {
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Static SPA assets (the embedded SvelteKit bundle) are fetched in a
-		// tight parallel burst on first load — a single page can fire 40-60
+		// tight parallel burst on first load, a single page can fire 40-60
 		// concurrent GETs for /_app/immutable/chunks/*. The global limiter is
 		// meant to protect the API (auth, scans, writes), not to throttle
 		// stateless public assets, so bypass it for these paths. Without this
@@ -128,7 +128,7 @@ func isStaticAsset(path string) bool {
 	if path == "/" || path == "/index.html" || path == "/favicon.svg" {
 		return true
 	}
-	// /_app/* — the entire SvelteKit build output (chunks, assets, nodes, entries).
+	// /_app/*, the entire SvelteKit build output (chunks, assets, nodes, entries).
 	if strings.HasPrefix(path, "/_app/") {
 		return true
 	}

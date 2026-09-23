@@ -10,7 +10,7 @@
 //go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -generate types,client -package apiclient -o client.gen.go ../../docs/openapi.yaml
 
 // Package apiclient is the generated Go client of the /api/v1 API contract
-// (#274). Regenerate with `make gen-api-go` after editing docs/openapi.yaml —
+// (#274). Regenerate with `make gen-api-go` after editing docs/openapi.yaml;
 // the committed output is the source of truth for consumers (agents,
 // tooling); hand edits are overwritten on the next generation. Only the
 // typed ClientWithResponses + models are consumed; this repo's own server

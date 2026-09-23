@@ -22,7 +22,7 @@ import (
 	"mibee-steward/internal/service/scannerv2"
 )
 
-// Table tests for the small pure helpers behind the HTTP handlers — parsing,
+// Table tests for the small pure helpers behind the HTTP handlers, parsing,
 // formatting, and conversion logic that the endpoint tests only hit on one
 // path each.
 

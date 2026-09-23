@@ -26,7 +26,7 @@ import (
 // certificate Modal that shows the full chain + PEM.
 //
 // Like NeighborHandler it depends on *db.Queries directly (sub-resource,
-// read-only) rather than going through a Service — this matches the AGENTS.md
+// read-only) rather than going through a Service, this matches the AGENTS.md
 // sanctioned exception for sub-resource reads.
 type TLSCertHandler struct {
 	queries *db.Queries
@@ -65,7 +65,7 @@ type certificateInfo struct {
 
 // tlsPortCerts bundles every cert for one port with the handshake metadata
 // (negotiated TLS version + cipher, trust verdict, error). The leaf
-// (cert_index=0) is surfaced separately for the panel's at-a-glance summary;
+// (cert_index=0) is returned separately for the panel's at-a-glance summary;
 // `chain` is the full ordered list (leaf first) for the Modal.
 type tlsPortCerts struct {
 	Port        int               `json:"port"`
@@ -78,12 +78,12 @@ type tlsPortCerts struct {
 	Chain       []certificateInfo `json:"chain"`
 }
 
-// ListByDevice handles GET /api/v1/devices/{id}/certificates — the TLS
+// ListByDevice handles GET /api/v1/devices/{id}/certificates, the TLS
 // certificate chains collected from every TLS-speaking port on the device.
 // Grouped by port (one entry per port). Any logged-in user may read.
 //
 // Returns 200 with an empty `certificates` array (not 404) when the device has
-// no recorded certs — the frontend renders an "No certificates" empty state.
+// no recorded certs, the frontend renders an "No certificates" empty state.
 func (h *TLSCertHandler) ListByDevice(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {

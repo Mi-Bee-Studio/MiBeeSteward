@@ -46,7 +46,7 @@ func newTestDB(t *testing.T) *sql.DB {
 	// modernc's ":memory:" gives each connection its OWN private in-memory DB.
 	// NewRouter spawns background goroutines (scheduler/heartbeat/cleanup) that
 	// open separate connections, and the request handlers draw from the same
-	// pool — so a per-test seed created on one connection would be invisible on
+	// pool, so a per-test seed created on one connection would be invisible on
 	// another. Pin the pool to a single connection so the seed, schema, and all
 	// queries share one in-memory DB. (modernc serializes access; busy_timeout
 	// keeps the short-lived background queries from blocking tests.)
@@ -100,7 +100,7 @@ func TestScannerShutdownIdempotent(t *testing.T) {
 
 	_, heartbeatSvc, shutdownScanner := NewRouter(db, cfg)
 
-	// Call shutdown twice — should not panic
+	// Call shutdown twice, should not panic
 	shutdownScanner()
 	shutdownScanner()
 

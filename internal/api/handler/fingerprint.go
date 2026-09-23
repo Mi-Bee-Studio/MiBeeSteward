@@ -20,7 +20,7 @@ import (
 
 // FingerprintHandler exposes the fingerprint coverage report + rule-draft
 // generation (#282). Read-only analytics over device scan_attributes and
-// collected evidence; the draft endpoint POSTs but persists nothing — it is
+// collected evidence; the draft endpoint POSTs but persists nothing, it is
 // a pure computation returning YAML text.
 type FingerprintHandler struct {
 	svc *service.FingerprintReportService
@@ -30,7 +30,7 @@ func NewFingerprintHandler(svc *service.FingerprintReportService) *FingerprintHa
 	return &FingerprintHandler{svc: svc}
 }
 
-// Coverage handles GET /api/v1/fingerprints/coverage — identification-tier
+// Coverage handles GET /api/v1/fingerprints/coverage, identification-tier
 // stats + the unidentified-device list with feature groupings.
 func (h *FingerprintHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 	cov, err := h.svc.Coverage(r.Context(), domain.ScopeFromContext(r.Context()))
@@ -41,7 +41,7 @@ func (h *FingerprintHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 	Success(w, cov)
 }
 
-// RuleDraft handles POST /api/v1/devices/{uuid}/fingerprint-draft — returns
+// RuleDraft handles POST /api/v1/devices/{uuid}/fingerprint-draft, returns
 // text/yaml body generated (and compile-validated) from the device's stored
 // evidence. Text (not JSON) so the UI can offer it as a file download
 // directly.

@@ -26,7 +26,7 @@ import (
 
 // CredentialHandler handles HTTP requests for SNMP credential CRUD
 // (POST/GET/PUT/DELETE /api/v1/snmp-credentials). It encrypts passphrases on
-// write (via crypto.Cipher) and NEVER returns plaintext — list/get responses
+// write (via crypto.Cipher) and NEVER returns plaintext, list/get responses
 // carry only protocol names + has_auth/has_priv booleans.
 type CredentialHandler struct {
 	db     *sql.DB
@@ -46,7 +46,7 @@ func NewCredentialHandler(db *sql.DB, cipher *crypto.Cipher, resolver *credresol
 
 // snmpCredentialRequest is the create/update body. AuthPassphrase /
 // PrivPassphrase arrive as PLAINTEXT from the client (over TLS) and are
-// encrypted by the handler BEFORE any DB write — the plaintext never reaches
+// encrypted by the handler BEFORE any DB write, the plaintext never reaches
 // the DB layer or logs. On update, an empty passphrase field is treated as
 // "leave unchanged" so an edit of e.g. just the name doesn't force the operator
 // to retype the passphrase; see Update for the sentinel.
@@ -193,9 +193,9 @@ func (h *CredentialHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch the existing row so an empty passphrase field means "leave
-	// unchanged" — an operator editing only the name shouldn't have to retype
+	// unchanged", an operator editing only the name shouldn't have to retype
 	// (or even know) the passphrase. We re-encrypt the existing ciphertext's
-	// decrypted plaintext under the same key (idempotent) when the field is
+	// decrypted plaintext under the same key (a no-op on repeat) when the field is
 	// blank in the request.
 	existing, err := credresolver.GetSNMPCredential(r.Context(), h.db, id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -390,7 +390,7 @@ func parseCredentialID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 }
 
 // isUniqueViolation reports whether err is SQLite's UNIQUE constraint failure.
-// modernc/sqlite surfaces it with this substring; matching on the string keeps
+// modernc/sqlite reports it with this substring; matching on the string keeps
 // the handler free of a driver-specific error-type import.
 func isUniqueViolation(err error) bool {
 	if err == nil {

@@ -138,7 +138,7 @@ func TestDashboardHandler_QueryProxyBranches(t *testing.T) {
 }
 
 // TestScannerResultHandler_ClosedDBSweep pins the 500 branches on the scan
-// result/run endpoints — global and scope-restricted variants — against a
+// result/run endpoints, global and scope-restricted variants, against a
 // closed DB so every query fails deterministically.
 func TestScannerResultHandler_ClosedDBSweep(t *testing.T) {
 	conn := closedTestDB(t)

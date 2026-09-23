@@ -54,7 +54,7 @@ func TestRunCLI_FrontDoors(t *testing.T) {
 }
 
 // TestRunAgent_AllSourcesWiring drives ONE full lifecycle with every passive
-// source enabled — each source's wiring branch (constructor + Start +
+// source enabled, each source's wiring branch (constructor + Start +
 // activeSources append) executes, and unbuildable listeners degrade with
 // warnings instead of killing the agent.
 func TestRunAgent_AllSourcesWiring(t *testing.T) {

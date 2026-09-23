@@ -38,7 +38,7 @@ import (
 // hands it each scan's alive HostReports without knowing about HTTP.
 //
 // It is the agent counterpart to the center's ingestion handler. The agent's
-// network identity (network_id) is NOT sent in the body — the center resolves
+// network identity (network_id) is NOT sent in the body, the center resolves
 // it from the agent's bearer token (authenticity + scoping live there). The
 // reporter just ships the discovery payload + the agent_id label.
 //
@@ -46,7 +46,7 @@ import (
 // in an in-memory pending queue (not dropped). The flush loop drains pending
 // first on each tick, so once the center recovers, the backlog is delivered in
 // order. The queue is bounded (maxPendingBatches); oldest batches are dropped
-// if it overflows (extreme outage — the center's change-detection reconciles
+// if it overflows (extreme outage, the center's change-detection reconciles
 // state across scans, so data loss here degrades to "stale" not "corrupt").
 type Reporter struct {
 	centerURL   string // base URL, e.g. "http://192.168.63.101:8080"
@@ -78,7 +78,7 @@ type Reporter struct {
 // NewReporter constructs a Reporter. centerURL is the center base URL,
 // authToken the agent's bearer token, agentID the advisory label, networkCIDR
 // this agent's configured cidr (shipped in every report so the center can
-// backfill networks.cidr — issue #19 前置工作), flush the max interval between
+// backfill networks.cidr，issue #19 前置工作), flush the max interval between
 // flushes (≤0 → 30s), maxBuf the buffer size that triggers an early flush (≤0 →
 // 256).
 func NewReporter(centerURL, authToken, agentID, networkCIDR string, flush time.Duration, maxBuf int, logger *slog.Logger) *Reporter {
@@ -142,7 +142,7 @@ func (r *Reporter) Report(_ context.Context, _ int64, reports []scannerv2.HostRe
 	r.mu.Unlock()
 
 	if full {
-		// Buffer full — flush now rather than waiting for the ticker. Best-effort
+		// Buffer full, flush now rather than waiting for the ticker.
 		// (run on a background goroutine so the scan pipeline isn't blocked).
 		r.wg.Add(1)
 		go func() {
@@ -176,7 +176,7 @@ func (r *Reporter) Start(ctx context.Context) {
 	}()
 }
 
-// Stop cancels the flush loop and does a final best-effort flush of any buffered
+// Stop cancels the flush loop and does a final flush attempt of any buffered
 // hosts + pending backlog (so a graceful agent shutdown delivers as much as
 // possible rather than dropping in-flight data).
 func (r *Reporter) Stop() {
@@ -192,7 +192,7 @@ func (r *Reporter) Stop() {
 
 // flushOnce drains the buffer and POSTs it to the center with exponential
 // backoff on failure. On exhaustion (4 attempts) the batch is enqueued to the
-// pending retry queue instead of dropped — so a center outage doesn't lose
+// pending retry queue instead of dropped, so a center outage doesn't lose
 // data. The flush loop drains pending first on the next tick.
 func (r *Reporter) flushOnce(ctx context.Context) {
 	r.mu.Lock()
@@ -252,7 +252,7 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 	if r.postWithRetry(ctx, body, len(hosts), hash) {
 		r.markPosted()
 	} else {
-		// Exhausted retries — enqueue for later delivery instead of dropping.
+		// Exhausted retries, enqueue for later delivery instead of dropping.
 		r.enqueuePending(body)
 	}
 }
@@ -268,7 +268,7 @@ func (r *Reporter) markPosted() {
 }
 
 // flushPending drains the failed-batch queue, oldest first. Each batch gets a
-// single attempt (no inline backoff — the next tick retries again). This keeps
+// single attempt (no inline backoff, the next tick retries again). This keeps
 // the backlog draining without blocking the flush loop on a still-down center.
 func (r *Reporter) flushPending(ctx context.Context) {
 	r.mu.Lock()
@@ -301,7 +301,7 @@ func (r *Reporter) enqueuePending(body []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if len(r.pending) >= r.maxPending {
-		// Drop oldest — the center's change-detection reconciles state across
+		// Drop oldest, the center's change-detection reconciles state across
 		// scans, so losing the oldest stale batch degrades to "less history",
 		// not corruption.
 		r.pending = r.pending[1:]
@@ -325,7 +325,7 @@ func (r *Reporter) FlushPendingForTest() {
 // hash could mask a state change that happened between the original attempt
 // and the retry, so re-delivery always forces full processing (conservative).
 // Returns true on success, false if exhausted/cancelled.
-// 4xx (except 429) is terminal-failure (bad token) — returns true to avoid
+// 4xx (except 429) is terminal-failure (bad token), returns true to avoid
 // re-queueing an unrecoverable payload.
 func (r *Reporter) postWithRetry(ctx context.Context, body []byte, hostCount int, stateHash string) bool {
 	url := r.centerURL + "/api/v1/agents/report"
@@ -353,7 +353,7 @@ func (r *Reporter) postWithRetry(ctx context.Context, body []byte, hostCount int
 				}
 				return true
 			}
-			// 4xx (except 429) is terminal — retrying won't help (bad token, bad
+			// 4xx (except 429) is terminal, retrying won't help (bad token, bad
 			// payload). Don't re-queue.
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 429 {
 				r.logger.Warn("agent reporter: center rejected report (terminal)", "status", resp.StatusCode)
@@ -441,7 +441,7 @@ func firstNonEmptyStr(vs ...string) string {
 // Field set mirrors changedetect.DeviceSnapshot (the fields the center's
 // change detector treats as "a real change"): identity (ip+mac), inferred
 // type/brand/description/location, hostname, and the raw service/port JSON.
-// Deliberately excludes scanned_at (changes every report) and rtt_ms (jitters).
+// Excludes scanned_at (changes every report) and rtt_ms (jitters).
 // Hosts are sorted by IP so the hash is order-independent.
 func networkStateHash(hosts []domain.ReportedHost) string {
 	if len(hosts) == 0 {

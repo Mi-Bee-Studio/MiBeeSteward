@@ -19,9 +19,9 @@ import (
 )
 
 // These tests pin the SNMP-credential handler's security invariants (#171):
-//   - With no master_key configured, mutating endpoints are DISABLED (503) —
+//   - With no master_key configured, mutating endpoints are DISABLED (503);
 //     SNMPv3 passphrases can't be stored unencrypted.
-//   - The encrypted auth/priv passphrases NEVER appear in any API response —
+//   - The encrypted auth/priv passphrases NEVER appear in any API response;
 //     only HasAuth/HasPriv booleans (so a credential is identifiable without
 //     leaking its secret). A regression that echoes the *_enc column is a
 //     credential-disclosure hole.
@@ -61,8 +61,8 @@ func TestCredentialHandler_Get_NotFound(t *testing.T) {
 }
 
 // TestCredentialHandler_Get_RedactsPassphrases is the disclosure guard: a
-// credential row holding ENCRYPTED passphrases must surface only the
-// HasAuth/HasPriv booleans — the encrypted secret value must never appear in
+// credential row holding ENCRYPTED passphrases must return only the
+// HasAuth/HasPriv booleans, the encrypted secret value must never appear in
 // the response body.
 func TestCredentialHandler_Get_RedactsPassphrases(t *testing.T) {
 	h, db := setupCredentialHandler(t)

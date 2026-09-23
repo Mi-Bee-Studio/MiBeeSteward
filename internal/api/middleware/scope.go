@@ -20,7 +20,7 @@ import (
 // injects it into the request context (domain.ContextKeyUserScope) for the
 // inventory query paths and ValidateDeviceScope (#138 Phase 2).
 //
-// It wraps Authenticator (house style — cf. RequireCapability) so it works in
+// It wraps Authenticator (house style, cf. RequireCapability) so it works in
 // any middleware position. On an unauthenticated request (no user in context)
 // it simply forwards without injecting a scope; the downstream RequireCapability
 // gate will 401. Admin and open-mode resolve to a Global scope; closed-mode

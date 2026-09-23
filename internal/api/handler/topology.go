@@ -59,7 +59,7 @@ type topoEdge struct {
 	RemotePort   *string `json:"remote_port"`
 }
 
-// Graph handles GET /api/v1/topology?network_id=X — the full node + edge set
+// Graph handles GET /api/v1/topology?network_id=X, the full node + edge set
 // for one network (or all networks when network_id is omitted/0). Any logged-in
 // user may read.
 func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +112,7 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 	// mode) caller sees only their granted networks. The sqlc fetch above already
 	// honored an explicit ?network_id= param; here we additionally intersect with
 	// the caller's scope. If the caller passed a network_id they hold no grant
-	// for, the node set becomes empty (correct — deny). Nodes with no assigned
+	// for, the node set becomes empty (correct, deny). Nodes with no assigned
 	// network are hidden from restricted scopes (conservative for isolation).
 	// Edges are kept only when their origin device survived the node filter.
 	scope := domain.ScopeFromContext(r.Context())

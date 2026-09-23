@@ -41,8 +41,8 @@ func NewScannerHandler(eng *engine.Engine, rn *runner.Runner) *ScannerHandler {
 // Scan handles POST /api/v1/scanner/scan.
 // Runs the v2 engine synchronously over the requested targets and returns the
 // per-host results (with v2-inferred type/brand/services). Alive hosts are
-// persisted through the runner's device bridge — the SAME single writer the
-// async scan-task path uses — so a sync scan and a scheduled scan leave
+// persisted through the runner's device bridge, the SAME single writer the
+// async scan-task path uses, so a sync scan and a scheduled scan leave
 // identical device rows (status online, change-detection recorded, device
 // replacement honored). This is what makes the runner the sole authority over
 // the devices table; the store's in-pipeline RecordDevice only pre-enriches.
@@ -59,7 +59,7 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	// Reserved address space (loopback, multicast, broadcast, ...) is rejected
 	// up front with a specific message; the engine enforces the same rule at
 	// parse time as defense in depth (#317). scanner.allow_reserved_targets
-	// (synthetic loadgen plane) opts out — the handler stays consistent with
+	// (synthetic loadgen plane) opts out, the handler stays consistent with
 	// what the engine will accept.
 	if err := cidrutil.ValidateTargetsFor(req.Targets, h.engine.AllowReservedTargets()); err != nil {
 		Error(w, http.StatusBadRequest, err.Error())
@@ -178,7 +178,7 @@ func (h *ScannerHandler) AddDevices(w http.ResponseWriter, r *http.Request) {
 		added++
 	}
 
-	// If every device failed to persist, surface a non-200 status so clients
+	// If every device failed to persist, return a non-200 status so clients
 	// checking the status code don't mistake it for success. 422 (Unprocessable)
 	// signals "request was valid but the operation couldn't be applied".
 	resp := domain.AddDevicesResponse{Added: added, Errors: errs}
@@ -212,7 +212,7 @@ func isTargetError(err error) bool {
 }
 
 // reportToHost converts a v2 HostReport into the API's domain.ScanHost,
-// surfacing the v2-inferred type/brand/description and the SNMP varbinds.
+// including the v2-inferred type/brand/description and the SNMP varbinds.
 func reportToHost(rep scannerv2.HostReport) domain.ScanHost {
 	host := domain.ScanHost{
 		IP:    rep.IP,

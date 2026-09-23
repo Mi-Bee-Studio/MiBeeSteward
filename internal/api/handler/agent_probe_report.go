@@ -21,7 +21,7 @@ import (
 // AgentProbeReportHandler handles POST /api/v1/agents/probe-report (#277):
 // the agent-side vantage prober's result batches. Agent-token authenticated
 // (same regime as /agents/report); the reporting agent's identity overrides
-// any vantage the payload claims — an agent can only write its own track.
+// any vantage the payload claims, an agent can only write its own track.
 type AgentProbeReportHandler struct {
 	svc *probetarget.Service
 }

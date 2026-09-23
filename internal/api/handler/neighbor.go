@@ -50,7 +50,7 @@ type neighborResponseEntry struct {
 	LastSeen         *string `json:"last_seen"`
 }
 
-// ListByDevice handles GET /api/v1/devices/{id}/neighbors — the L2 neighbors
+// ListByDevice handles GET /api/v1/devices/{id}/neighbors, the L2 neighbors
 // of one device, enriched with the neighbor device's name/IP/type where the
 // neighbor has been scanned. Any logged-in user may read.
 func (h *NeighborHandler) ListByDevice(w http.ResponseWriter, r *http.Request) {

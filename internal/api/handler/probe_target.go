@@ -197,7 +197,7 @@ func (h *ProbeTargetHandler) GetTargetResults(w http.ResponseWriter, r *http.Req
 	SuccessList(w, "results", results, total, limit, offset)
 }
 
-// GetTargetCertificates handles GET /api/v1/probe-targets/{id}/certificates —
+// GetTargetCertificates handles GET /api/v1/probe-targets/{id}/certificates;
 // the target's current certificate chain. Returns the SAME tlsPortCerts shape
 // as the device certificates endpoint, so the frontend reuses
 // CertificateModal unmodified (one entry: a target probes one port).

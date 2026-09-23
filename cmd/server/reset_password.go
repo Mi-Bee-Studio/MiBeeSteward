@@ -31,7 +31,7 @@ import (
 // (so the schema is current even if the server has never been started on this
 // data dir), and forces a new password onto the admin user (id=1, created by
 // seedAdminUser on first server start). The admin is NOT marked
-// must_change_password — this is an operator recovery path, not a first-login
+// must_change_password, this is an operator recovery path, not a first-login
 // flow, so the new password is the one the operator intends to keep using.
 //
 // Password is read from stdin (preferred, avoids shell history) or the
@@ -123,7 +123,7 @@ func resetAdminPasswordSubcommand(args []string) {
 			slog.Warn("settings overlay unavailable; using config-file policy", "error", err)
 		}
 
-		// admin user id is 1 — seedAdminUser creates it on first server start. If
+		// admin user id is 1, seedAdminUser creates it on first server start. If
 		// the server has never been started, the admin user does not exist yet;
 		// seed it now with the new password so the operator can log in.
 		ctx := context.Background()
@@ -131,7 +131,7 @@ func resetAdminPasswordSubcommand(args []string) {
 		if err := userSvc.ForceChangePassword(ctx, adminID, password); err != nil {
 			if errors.Is(err, service.ErrUserNotFound) {
 				// Fresh DB the server never started against: seed the admin.
-				// Same bootstrap semantics as startup seeding — the policy is
+				// Same bootstrap semantics as startup seeding, the policy is
 				// not applied to this operator-chosen bootstrap credential,
 				// and first login forces a change (mcp gate).
 				slog.Info("admin user not found; seeding with the new password")

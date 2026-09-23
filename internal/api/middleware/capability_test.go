@@ -16,7 +16,7 @@ import (
 )
 
 // These tests pin RequireCapability (#138 Phase 1a). It wraps Authenticator, so
-// the role is taken from the JWT claim — which means operator/viewer can be
+// the role is taken from the JWT claim, which means operator/viewer can be
 // exercised WITHOUT a DB user or a users.role CHECK widening (the claim is
 // free-form; Authenticator does not validate it against the users table). That
 // lets the capability gate be tested end-to-end before Phase 1b wires real
@@ -85,7 +85,7 @@ func TestRequireCapability_UnauthenticatedReturns401(t *testing.T) {
 func TestRequireCapability_UnknownRoleRejected(t *testing.T) {
 	useJWTAuth(t)
 	tok := issueToken(t, map[string]any{"user_id": 5.0, "role": "superuser"})
-	// Even a read capability is denied — unknown roles fail closed.
+	// Even a read capability is denied, unknown roles fail closed.
 	require.Equal(t, http.StatusForbidden, newCapRecorder(tok, domain.CapDeviceRead).Code)
 }
 

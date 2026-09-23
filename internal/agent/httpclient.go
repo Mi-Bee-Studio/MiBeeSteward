@@ -22,7 +22,7 @@ import (
 // When the center restarts (deploy, crash, OOM), those pooled connections
 // become half-open: the agent's socket is ESTABLISHED but the center's end no
 // longer exists. The NEXT request that reuses such a connection writes bytes
-// into a dead socket and blocks on the response read forever — Go's
+// into a dead socket and blocks on the response read forever, Go's
 // http.Client.Timeout does NOT reliably interrupt a stuck persistConn.Read
 // (observed: goroutine 49 parked in net/http.(*persistConn).Read for 6+ minutes
 // after a center restart, freezing the command poller).
@@ -32,7 +32,7 @@ import (
 //     pool entry is dropped before it can be reused.
 //   - DialContext with a bounded dial timeout so a new connection to a down
 //     center fails fast instead of hanging on the OS SYN retry backoff.
-//   - DisableKeepAlives is intentionally FALSE — keep-alive is fine for the
+//   - DisableKeepAlives is FALSE, keep-alive is fine for the
 //     normal case (rapid polls); the IdleConnTimeout handles the stale case.
 //   - ExpectContinueTimeout: short, consistent with Go defaults.
 //   - The returned client still has a per-request Timeout as a hard ceiling

@@ -18,7 +18,7 @@ import (
 // TestBindAddr pins the #288 follow-up: the OpenWrt docs instruct GL-firmware
 // users to bind v6 via `server.host: "::"` (the v4-listener kernel workaround).
 // The old fmt.Sprintf("%s:%d") concatenation turned that into ":::8090",
-// which net.Listen rejects with "too many colons in address" — observed live
+// which net.Listen rejects with "too many colons in address", observed live
 // on the MT2500 as a crash loop. net.JoinHostPort brackets IPv6 literals so
 // every documented (and undocumented-but-reasonable) host value starts.
 func TestBindAddr(t *testing.T) {

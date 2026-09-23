@@ -93,9 +93,9 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 }
 
 func TestSetupTestDBFromSchema_Reusable(t *testing.T) {
-	// Verify the schema can be applied multiple times (idempotent). This test
-	// checks that re-application produces the same non-empty table set — it
-	// intentionally does NOT assert a specific table count, because that count
+	// Verify the schema can be applied multiple times (a no-op on repeat). This test
+	// checks that re-application produces the same non-empty table set, it
+	// does NOT assert a specific table count, because that count
 	// is bumped by every schema-adding PR and the hard-coded number goes stale
 	// at the first merge of two such PRs (a merge-induced failure no single PR
 	// can catch). The canonical table list + exact count is validated by
@@ -111,7 +111,7 @@ func TestSetupTestDBFromSchema_Reusable(t *testing.T) {
 	defer db2.Close()
 	tables2 := listTables(t, db2)
 
-	// Idempotency: re-applying the schema yields the identical table set.
+	// Re-applying the schema yields the identical table set.
 	require.Equal(t, tables1, tables2, "re-applying schema must produce the same tables")
 }
 

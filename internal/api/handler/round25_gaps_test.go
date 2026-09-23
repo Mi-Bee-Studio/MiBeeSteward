@@ -77,7 +77,7 @@ func TestAgentReport_NilRunnerAndBadBody(t *testing.T) {
 }
 
 // TestAgentReport_TokenWithoutNetworkRejected: a token bound to NO network
-// cannot attribute devices — the report must 403 before touching the bridge.
+// cannot attribute devices, the report must 403 before touching the bridge.
 func TestAgentReport_TokenWithoutNetworkRejected(t *testing.T) {
 	db, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)

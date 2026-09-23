@@ -28,7 +28,7 @@ type CreateAgentTokenRequest struct {
 
 // AgentTokenResponse is the admin-facing view of a token. TokenHash is the
 // stored hash (never the plaintext). The plaintext is returned ONLY in
-// AgentTokenCreatedResponse at creation time — there is no way to recover it.
+// AgentTokenCreatedResponse at creation time, there is no way to recover it.
 type AgentTokenResponse struct {
 	ID         int64      `json:"id"`
 	AgentID    string     `json:"agent_id"`
@@ -44,7 +44,7 @@ type AgentTokenResponse struct {
 // which is never retrievable again.
 type AgentTokenCreatedResponse struct {
 	AgentTokenResponse
-	// Token is the plaintext bearer token. Shown ONCE — store it securely.
+	// Token is the plaintext bearer token. Shown ONCE, store it securely.
 	Token string `json:"token"`
 }
 

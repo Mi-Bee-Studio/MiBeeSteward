@@ -121,7 +121,7 @@ func setupGapServer(t *testing.T) *gapServerFixture {
 	r.Use(chimw.Recoverer)
 
 	r.Mount("/api/v1/auth", userHandler.Routes())
-	// TOTP Routes() is a stdlib ServeMux with method+path patterns — chi.Mount
+	// TOTP Routes() is a stdlib ServeMux with method+path patterns, chi.Mount
 	// does NOT strip the prefix for foreign handlers, so wrap it explicitly
 	// (production wires these endpoints directly; this mount exercises the
 	// mux itself). /verify stays public like production; the rest RequireAuth.
@@ -290,7 +290,7 @@ func TestAuthEndpoints_ProfileUpdateAndLogout(t *testing.T) {
 }
 
 // TestAuthEndpoints_ProfileForDeletedUser pins the 404 branch: a VALID token
-// for a user whose row was deleted meanwhile must surface user-not-found, not
+// for a user whose row was deleted meanwhile must return user-not-found, not
 // a 500 or an empty profile.
 func TestAuthEndpoints_ProfileForDeletedUser(t *testing.T) {
 	fx := setupGapServer(t)
@@ -335,7 +335,7 @@ func TestTOTPEndpoints_StatusAndDisableBranches(t *testing.T) {
 
 	// Disable: empty password 400, wrong password 401, no 2FA row → enabled
 	// stays false; wrong-password branch needs an ENABLED row so the password
-	// check runs — assert the 400/401 branches that are reachable now.
+	// check runs, assert the 400/401 branches that are reachable now.
 	resp = authPost(t, fx.server.URL+"/api/v1/auth/2fa/disable", token, `{not-json`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp = authPost(t, fx.server.URL+"/api/v1/auth/2fa/disable", token, `{"password":""}`)
@@ -679,7 +679,7 @@ func TestAgentCommandEndpoints_FullCycle(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	// Admin fleet views: command list + agent status (agent_status row may be
-	// absent until the agent reports — the endpoint must still 200 with total 0).
+	// absent until the agent reports, the endpoint must still 200 with total 0).
 	resp = authGet(t, fx.server.URL+"/api/v1/agents/commands/all", token)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var all map[string]interface{}
@@ -805,7 +805,7 @@ func TestSPAHandler_AssetHeadersAndFallback(t *testing.T) {
 	h := handler.NewSPAHandler()
 
 	// /_app/* responses carry the immutable cache header (asserted on a path
-	// that actually serves 200 — content-hashed asset filenames aren't stable
+	// that actually serves 200, content-hashed asset filenames aren't stable
 	// across builds, and Go's file server drops pre-set headers on its own 404).
 	req := httptest.NewRequest(http.MethodGet, "/_app/immutable/", nil)
 	w := httptest.NewRecorder()

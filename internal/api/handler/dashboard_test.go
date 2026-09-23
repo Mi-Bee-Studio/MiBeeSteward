@@ -30,7 +30,7 @@ func TestValidateWidgetConfig(t *testing.T) {
 		wantDS     string // expected defaulted data_source; "" when an error is expected
 		wantErr    string // substring of the expected error, "" when valid
 	}{
-		// Legacy prometheus shapes — must keep working unchanged.
+		// Legacy prometheus shapes, must keep working unchanged.
 		{"prometheus gauge", "CPU", "gauge", "prometheus", "up", "prometheus", ""},
 		{"prometheus default ds", "CPU", "line", "", "rate(up[5m])", "prometheus", ""},
 		{"victoriametrics alias", "CPU", "gauge", "victoriametrics", "up", "victoriametrics", ""},

@@ -11,19 +11,19 @@ import (
 )
 
 // RealIP is a trusted-proxy-aware replacement for chi's deprecated middleware.
-// RealIP (which trusts X-Forwarded-For unconditionally — an IP-spoofing risk
+// RealIP (which trusts X-Forwarded-For unconditionally, an IP-spoofing risk
 // when the service is reachable from untrusted networks). It resolves the
 // client IP that downstream middleware/handlers (rate limiting, audit logs,
 // RequireAgentToken) see via r.RemoteAddr.
 //
 // Behavior:
 //   - trustedProxies empty (default): the TCP peer address is the client. No
-//     header is inspected. This is the safe default — direct exposure without
+//     header is inspected. This is the safe default, direct exposure without
 //     a reverse proxy must not let a client forge its IP via X-Forwarded-For.
 //   - trustedProxies populated (CIDRs, e.g. ["127.0.0.1/8", "10.0.0.0/8"]):
 //     only when the TCP peer is inside one of these networks is X-Forwarded-For
 //     consulted. The LEFTMOST (oldest) entry in the comma-separated list is
-//     taken as the real client — this matches the convention that each trusted
+//     taken as the real client, this matches the convention that each trusted
 //     proxy appends the previous hop, so the first hop is the originating
 //     client when all proxies in the chain are trusted. A malformed/non-IP
 //     header value falls back to the TCP peer.
@@ -34,7 +34,7 @@ import (
 // trust the header.
 func RealIP(trustedProxies []*net.IPNet) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		// Fast path: nothing trusted — pass through untouched, behave exactly
+		// Fast path: nothing trusted, pass through untouched, behave exactly
 		// like having no RealIP middleware at all (RemoteAddr = TCP peer).
 		if len(trustedProxies) == 0 {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -64,14 +64,14 @@ func trustedClientIP(r *http.Request, trustedProxies []*net.IPNet) string {
 	if xff == "" {
 		return ""
 	}
-	// X-Forwarded-For: client, proxy1, proxy2 — the leftmost is the original.
+	// X-Forwarded-For: client, proxy1, proxy2, the leftmost is the original.
 	parts := strings.Split(xff, ",")
 	first := strings.TrimSpace(parts[0])
 	if first == "" {
 		return ""
 	}
 	// Strip any zone/port; validate it's a usable IP. A malformed value means
-	// we cannot trust the header — fall back to the TCP peer (return "").
+	// we cannot trust the header, fall back to the TCP peer (return "").
 	if ip := net.ParseIP(first); ip != nil {
 		return ip.String()
 	}
@@ -102,7 +102,7 @@ func hostFromAddr(addr string) string {
 }
 
 // portOf extracts the port from a host:port RemoteAddr (returns "80" if the
-// value isn't host:port — covers the rare case of a pre-stripped RemoteAddr,
+// value isn't host:port, covers the rare case of a pre-stripped RemoteAddr,
 // where the port is unknown and downstream code only inspects the host).
 func portOf(addr string) string {
 	if _, port, err := net.SplitHostPort(addr); err == nil {
@@ -113,8 +113,8 @@ func portOf(addr string) string {
 
 // ParseCIDRs parses a list of CIDR strings (e.g. ["127.0.0.1/8", "10.0.0.0/8"])
 // into net.IPNet values. A bare IP (no /prefix) is treated as a /32 (v4) or
-// /128 (v6) for convenience. Invalid entries are skipped — callers should
-// validate at config-load time, so this is a defensive best-effort.
+// /128 (v6) for convenience. Invalid entries are skipped, callers should
+// validate at config-load time, so this is a defensive extra check.
 func ParseCIDRs(cidrs []string) []*net.IPNet {
 	out := make([]*net.IPNet, 0, len(cidrs))
 	for _, c := range cidrs {

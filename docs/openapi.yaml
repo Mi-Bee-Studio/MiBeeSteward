@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# MiBee Steward — OpenAPI 3.0 specification of the /api/v1 surface.
+# MiBee Steward, OpenAPI 3.0 specification of the /api/v1 surface.
 #
 # Contract source of truth for issue #274. Path+method parity with the real
 # router is enforced by internal/api/routes/openapi_parity_test.go (a route
 # added to the router without a matching entry here fails CI). Prose contract:
-# docs/en/api.md §"API Contract" — list envelope, error model, pagination.
+# docs/en/api.md §"API Contract", list envelope, error model, pagination.
 #
 # Conventions (see the prose contract for the full text):
 #   - List responses: { "<resource>": [...], total, limit?, offset? }
@@ -21,7 +21,7 @@ info:
     auto-discovery, identity inference, registry, heartbeat, synthetic
     probing, distributed agents.
 
-    Auth for browser/user routes: JWT — cookie-first with Bearer header
+    Auth for browser/user routes: JWT, cookie-first with Bearer header
     fallback (`Authorization: Bearer <token>`). Machine routes (the
     /api/v1/agents/{report,probe-report,commands,commands/{id}/...} family)
     use per-agent bearer tokens minted by an admin.
@@ -670,7 +670,7 @@ paths:
   /scanner/scan:
     post:
       tags: [Scanner]
-      summary: Synchronous scan (max 1024 IPs — larger ranges must use tasks)
+      summary: Synchronous scan (max 1024 IPs, larger ranges must use tasks)
       responses:
         "200": {description: "{hosts, total, alive, duration_ms}"}
         "413": {$ref: "#/components/responses/Error"}
@@ -926,7 +926,7 @@ paths:
   /snmp-credentials:
     get:
       tags: [Credentials]
-      summary: SNMP credentials (masked — passphrases never echoed)
+      summary: SNMP credentials (masked, passphrases never echoed)
       parameters:
         - {$ref: "#/components/parameters/limit"}
         - {$ref: "#/components/parameters/offset"}
@@ -1074,7 +1074,7 @@ paths:
   /agents/commands:
     get:
       tags: [Agents]
-      summary: "[agent] Poll pending commands — BARE ARRAY (fleet-internal contract; see api.md)"
+      summary: "[agent] Poll pending commands, BARE ARRAY (fleet-internal contract; see api.md)"
       security: [{agentToken: []}]
       responses:
         "200":
@@ -1447,7 +1447,7 @@ paths:
   /notification/logs:
     get:
       tags: [Notifications]
-      summary: Caller's notification log (total = UNREAD count — the badge source)
+      summary: Caller's notification log (total = UNREAD count, the badge source)
       parameters:
         - {$ref: "#/components/parameters/limit"}
         - {$ref: "#/components/parameters/offset"}
@@ -1653,7 +1653,7 @@ components:
       type: object
       description: >-
         Engine-written discovery document (mirrors domain.ScanAttributes; stored
-        as JSON in devices.scan_attributes). All fields fill progressively —
+        as JSON in devices.scan_attributes). All fields fill progressively,
         treat every field as optional. Engine-owned: user edits go to
         user_attributes.
       additionalProperties: true
@@ -1661,10 +1661,10 @@ components:
         vendor: {type: string, description: OUI lookup or SNMP/HTTP-derived vendor}
         mac: {type: string, description: "normalized lowercase aa:bb:cc:.."}
         hostname: {type: string}
-        mac_is_locally_administered: {type: boolean, description: U/L bit set — neutral observability flag, no identity effect}
+        mac_is_locally_administered: {type: boolean, description: U/L bit set, neutral observability flag, no identity effect}
         mac_is_multicast: {type: boolean}
         oui_prefix: {type: string, description: "IEEE block via longest-prefix (6/7/9 hex)"}
-        oui_vendor: {type: string, description: NIC silicon vendor — distinct from self-declared vendor}
+        oui_vendor: {type: string, description: NIC silicon vendor, distinct from self-declared vendor}
         os: {type: string}
         os_version: {type: string}
         kernel_version: {type: string}
@@ -1814,7 +1814,7 @@ components:
         pem: {type: string}
     TLSPortCerts:
       type: object
-      description: One TLS-speaking port — handshake metadata + cert chain
+      description: One TLS-speaking port, handshake metadata + cert chain
       required: [port, tls_version, cipher_suite, trusted, updated_at, chain]
       properties:
         port: {type: integer}
@@ -1935,7 +1935,7 @@ components:
 
     Network:
       type: object
-      description: Logical network row (db.Network marshaled directly — pointer columns are present-but-null)
+      description: Logical network row (db.Network marshaled directly, pointer columns are present-but-null)
       required: [id, name, cidr, site, agent_id, metadata, created_at, updated_at]
       properties:
         id: {type: integer, format: int64}
@@ -2129,7 +2129,7 @@ components:
 
     SNMPCredential:
       type: object
-      description: Masked projection — passphrases are NEVER returned (not even ciphertext)
+      description: Masked projection, passphrases are NEVER returned (not even ciphertext)
       required: [id, name, security_level, has_auth, has_priv]
       properties:
         id: {type: integer, format: int64}
@@ -2191,7 +2191,7 @@ components:
         - type: object
           required: [token]
           properties:
-            token: {type: string, description: Plaintext token — shown ONCE at mint}
+            token: {type: string, description: Plaintext token, shown ONCE at mint}
     AgentCommand:
       type: object
       required: [id, agent_id, command, payload, status, created_at, acknowledged_at, result]
@@ -2284,7 +2284,7 @@ components:
 
     DashboardConfig:
       type: object
-      description: Saved dashboard widget card (db.DashboardConfig — id is an integer)
+      description: Saved dashboard widget card (db.DashboardConfig, id is an integer)
       required: [id, name, type, data_source, query, refresh_interval, position, created_at, updated_at]
       properties:
         id: {type: integer, format: int64}
@@ -2312,7 +2312,7 @@ components:
         mac_address: {type: string}
         type: {type: string, description: Hand-set type or other}
         status: {type: string, enum: [online, offline, unknown]}
-        inferred_type: {type: string, description: Evidence-derived — richer than type}
+        inferred_type: {type: string, description: Evidence-derived, richer than type}
         brand: {type: string}
         network_id: {type: integer, format: int64, nullable: true, description: Origin network (subnet grouping)}
     TopologyEdge:
@@ -2337,7 +2337,7 @@ components:
       description: >-
         Passive-discovery runtime observability. NOTE: config/stats inner keys
         are Go-default PascalCase (the structs carry no json tags) and Interval
-        is time.Duration — an integer in NANOSECONDS.
+        is time.Duration, an integer in NANOSECONDS.
       required: [enabled, started_at, uptime, config, sources, stats, recent_discoveries]
       properties:
         enabled: {type: boolean}

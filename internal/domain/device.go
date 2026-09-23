@@ -24,18 +24,18 @@ const (
 //
 // The set of valid types is defined ONCE here (via the TypeXxx constants +
 // ValidDeviceTypes below) and is the single source of truth consumed by:
-//   - ValidateDeviceType (scanner.go) — derives its map from ValidDeviceTypes
-//   - db/schema.sql's devices.type CHECK — must list the same values (verified
+//   - ValidateDeviceType (scanner.go), derives its map from ValidDeviceTypes
+//   - db/schema.sql's devices.type CHECK, must list the same values (verified
 //     by TestDevicesTypeCHECK_InSyncWithDomain in device_test.go at runtime via
 //     a SQLite probe; if you add a type here, also add it to the schema CHECK)
 //
 // To add a device type: add a TypeXxx constant + append it to ValidDeviceTypes
 // + add the same string to db/schema.sql's devices.type CHECK. The test then
-// guards against drift. (The deeper ergonomic fix — a device_types lookup table
-// + FK so adding a type is one INSERT not a table rebuild — is tracked in #38
+// guards against drift. (The deeper ergonomic fix, a device_types lookup table
+// + FK so adding a type is one INSERT not a table rebuild, is tracked in #38
 // and deferred until a concrete need; this single-source + sync-test is the
 // low-risk improvement that removes the silent-drift risk today. The agent's
-// mini-schema intentionally has NO CHECK on type — it's a permissive shadow —
+// mini-schema has NO CHECK on type, it's a permissive shadow;
 // so only the center schema needs the type list.)
 type DeviceType string
 
@@ -55,7 +55,7 @@ const (
 )
 
 // ValidDeviceTypes is the canonical list of allowed device types. The TypeXxx
-// constants above are the single source of truth — this slice aggregates them
+// constants above are the single source of truth, this slice aggregates them
 // so callers (ValidateDeviceType, future schema-sync tooling) iterate one place
 // rather than maintaining a parallel map. Order is the declared const order
 // (cosmetic; ValidateDeviceType treats it as a set).
@@ -134,7 +134,7 @@ type DeviceFilter struct {
 	// NetworkID filters by devices.network_id (the logical network an agent
 	// discovered the device on). nil = all networks (no filter); non-nil =
 	// devices on that network only. NULL-network (legacy/unresolved) devices
-	// are excluded when this is set — they have no network to match.
+	// are excluded when this is set, they have no network to match.
 	NetworkID *int64 `json:"network_id,omitempty"`
 	// SortBy is validated against a whitelist in the repository layer (never
 	// interpolated raw into SQL). Order is "asc" or "desc" (default "asc").
@@ -142,7 +142,7 @@ type DeviceFilter struct {
 	Order  string `json:"order,omitempty"`
 	// ScopeRestricted/ScopeNetworkIDs carry the caller's resolved object-level
 	// network scope (#138 Phase 2). ScopeRestricted is false (the zero value) for
-	// an unrestricted caller (admin / open mode) — no scope filtering, the safe
+	// an unrestricted caller (admin / open mode), no scope filtering, the safe
 	// default. When true, the list/count queries AND in a
 	// `network_id IN (ScopeNetworkIDs)` clause so a restricted user only sees
 	// their granted networks. ScopeNetworkIDs may be empty when restricted
@@ -192,7 +192,7 @@ type DeviceResponse struct {
 	//     the verdict series lives in a separate SQLite file (heartbeat.db) that
 	//     cannot be JOINed into the list query, so it's filled by the service on
 	//     Get, not List.
-	//   - OfflineSince: when the device flipped to offline — the retention
+	//   - OfflineSince: when the device flipped to offline, the retention
 	//     clock's start. offline_since + threshold = prune expiry. nil when online.
 	//     Populated on BOTH list and detail rows (column on devices); the list uses
 	//     it for the "offline for Nd/Nh" hover on the status dot.
@@ -207,7 +207,7 @@ type DeviceResponse struct {
 	// Dual JSON layer. ScanAttributes is the typed view of the engine-written
 	// discovery document; UserAttributes is the free-form user map. The legacy
 	// JSON-string fields above (open_ports, detected_services, prometheus_labels)
-	// remain populated for backwards compatibility — frontend may read either.
+	// remain populated for backwards compatibility, frontend may read either.
 	ScanAttributes ScanAttributes `json:"scan_attributes"`
 	UserAttributes UserAttributes `json:"user_attributes"`
 }
@@ -246,7 +246,7 @@ type OverviewDevices struct {
 }
 
 // OverviewScanning summarises recent scan activity so the dashboard reflects
-// "discovery" — the system's core job — rather than only device counts.
+// "discovery", the system's core job, rather than only device counts.
 type OverviewScanning struct {
 	TasksTotal    int64              `json:"tasks_total"`
 	RunsTotal     int64              `json:"runs_total"`
@@ -257,7 +257,7 @@ type OverviewScanning struct {
 }
 
 // OverviewScanTask is a lightweight task projection for the dashboard (no
-// pipeline config / cron details — those live on the scan-tasks page).
+// pipeline config / cron details, those live on the scan-tasks page).
 type OverviewScanTask struct {
 	ID            int64      `json:"id"`
 	Name          string     `json:"name"`

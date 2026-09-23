@@ -387,7 +387,7 @@ func TestExtended_DeviceDocumentsContract(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var payload map[string]interface{}
 	decodeJSON(t, resp, &payload)
-	// The frontend reads res.documents — the endpoint MUST return the wrapper
+	// The frontend reads res.documents, the endpoint MUST return the wrapper
 	// object, not a bare array (the bug this test pins).
 	docs, ok := payload["documents"].([]interface{})
 	require.True(t, ok, "response must be {documents: [...]}")

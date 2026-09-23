@@ -96,7 +96,7 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	// Contract pagination (#274, generalizing the #257 strictness): negative
-	// or malformed → 400; over-max clamps to the endpoint max (100 — the
+	// or malformed → 400; over-max clamps to the endpoint max (100, the
 	// service-layer cap); unset/0 → the service default (20). The response
 	// echoes the effective limit/offset.
 	limit, offset, ok := ParsePagination(w, r, 20, 100)
@@ -114,7 +114,7 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 		Offset: offset,
 	}
 
-	// created_from / created_to — inclusive created_at range. The frontend has
+	// created_from / created_to, inclusive created_at range. The frontend has
 	// been sending these for a while; the handler used to silently drop them.
 	// Accept both bare dates (YYYY-MM-DD) and full timestamps.
 	if v := q.Get("created_from"); v != "" {
@@ -127,7 +127,7 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 			filter.CreatedAtTo = &t
 		}
 	}
-	// network_id — filter to a single logical network (multi-LAN). Absent =
+	// network_id, filter to a single logical network (multi-LAN). Absent =
 	// all networks. 0 (or unparseable) is treated as absent so the default
 	// device list still spans every network.
 	if v := q.Get("network_id"); v != "" {
@@ -153,7 +153,7 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // parseFlexibleTime accepts either a full timestamp ("2006-01-02 15:04:05") or
 // a bare calendar date ("2006-01-02", treated as start-of-day local). Returns
-// ok=false on unparseable input rather than 400-ing — a malformed range bound
+// ok=false on unparseable input rather than 400-ing, a malformed range bound
 // is treated as "no bound" so a typo doesn't hide every device.
 func parseFlexibleTime(s string) (time.Time, bool) {
 	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05", time.RFC3339, "2006-01-02"} {

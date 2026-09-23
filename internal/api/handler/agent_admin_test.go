@@ -24,7 +24,7 @@ import (
 )
 
 // setupAgentAdminServer builds a minimal server with the agent-token admin
-// CRUD routes (no auth middleware — tested directly) over an in-memory DB with
+// CRUD routes (no auth middleware, tested directly) over an in-memory DB with
 // one pre-seeded network. Returns the server, the db conn, and the network id.
 func setupAgentAdminServer(t *testing.T) (srv *httptest.Server, dbConn *sql.DB, networkID int64) {
 	t.Helper()
@@ -76,7 +76,7 @@ func getNetworkAgentID(t *testing.T, dbConn *sql.DB, networkID int64) string {
 }
 
 // TestAgentAdmin_CreateSetsNetworkAgentID verifies that creating a token
-// automatically stamps the network's agent_id — this is what makes the
+// automatically stamps the network's agent_id, this is what makes the
 // heartbeat exclusion + lease sweeper scope engage without manual SQL.
 func TestAgentAdmin_CreateSetsNetworkAgentID(t *testing.T) {
 	srv, dbConn, netID := setupAgentAdminServer(t)
@@ -91,7 +91,7 @@ func TestAgentAdmin_CreateSetsNetworkAgentID(t *testing.T) {
 
 // TestAgentAdmin_RevokeClearsNetworkAgentID verifies that revoking a token
 // clears the network's agent_id (so the center resumes local probing for that
-// network — the agent is no longer reporting).
+// network, the agent is no longer reporting).
 func TestAgentAdmin_RevokeClearsNetworkAgentID(t *testing.T) {
 	srv, dbConn, netID := setupAgentAdminServer(t)
 
@@ -141,7 +141,7 @@ func TestAgentAdmin_RevokeDoesNotClobberNewerToken(t *testing.T) {
 	_, _ = createToken(t, srv, "agent-new", netID)
 	require.Equal(t, "agent-new", getNetworkAgentID(t, dbConn, netID))
 
-	// Revoke the OLD token — must NOT clear agent_id (it belongs to agent-new now).
+	// Revoke the OLD token, must NOT clear agent_id (it belongs to agent-new now).
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/agents/tokens/"+strconv.FormatInt(oldID, 10)+"/revoke", nil)
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)

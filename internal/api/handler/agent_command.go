@@ -25,13 +25,13 @@ import (
 )
 
 // AgentCommandHandler serves both halves of the center→agent command channel:
-//   - Admin POST /api/v1/agents/{agentId}/commands — enqueue a command for an agent.
-//   - Agent GET /api/v1/agents/commands — poll pending commands (RequireAgentToken).
-//   - Agent POST /api/v1/agents/commands/{id}/complete — report a command's result.
+//   - Admin POST /api/v1/agents/{agentId}/commands, enqueue a command for an agent.
+//   - Agent GET /api/v1/agents/commands, poll pending commands (RequireAgentToken).
+//   - Agent POST /api/v1/agents/commands/{id}/complete, report a command's result.
 //
 // This is the pull model: the agent fetches commands on its report cycle, so no
 // inbound connection from the center is needed (fits agent-behind-NAT).
-// Mutations go through service.AgentCommandService (#240 — charter debt
+// Mutations go through service.AgentCommandService (#240, charter debt
 // migration, including the scan-target network-boundary check); Poll/ListAll
 // are read passthroughs.
 type AgentCommandHandler struct {
@@ -41,17 +41,17 @@ type AgentCommandHandler struct {
 }
 
 // NewAgentCommandHandler constructs the handler. auditRepo records ops-command
-// enqueues (#278) — restart/config-reload/logs-tail are privileged actions and
+// enqueues (#278), restart/config-reload/logs-tail are privileged actions and
 // get an audit trail even when the agent later refuses them.
 func NewAgentCommandHandler(queries *db.Queries, svc *service.AgentCommandService, auditRepo *service.AuditRepository) *AgentCommandHandler {
 	return &AgentCommandHandler{queries: queries, svc: svc, auditRepo: auditRepo}
 }
 
-// Create handles POST /api/v1/agents/{agentId}/commands — admin enqueues a
+// Create handles POST /api/v1/agents/{agentId}/commands, admin enqueues a
 // command (currently "scan") for a specific agent. The agent picks it up on its
 // next poll. The network-boundary rejection for scan commands (issue #19,
 // Layer 1) is enforced by the service; its error message (with the offending
-// IPs) is surfaced verbatim as the 400 body.
+// IPs) is returned verbatim as the 400 body.
 func (h *AgentCommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "agentId")
 	if agentID == "" {
@@ -84,7 +84,7 @@ func (h *AgentCommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Ops commands are privileged: audit every successful enqueue (#278). The
-	// agent-side opt-in may still refuse execution — that outcome is visible
+	// agent-side opt-in may still refuse execution, that outcome is visible
 	// in the command row's result, this entry records WHO issued it.
 	if service.IsOpsCommand(row.Command) && h.auditRepo != nil {
 		if userID, _, ok := middleware.GetUserFromContext(r); ok {
@@ -102,7 +102,7 @@ func (h *AgentCommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	Created(w, row)
 }
 
-// Poll handles GET /api/v1/agents/commands — the authenticated agent fetches
+// Poll handles GET /api/v1/agents/commands, the authenticated agent fetches
 // its pending commands (status=pending), oldest first. This is the agent-side
 // pull. The agent should acknowledge each via POST /commands/{id}/ack, execute,
 // then POST /commands/{id}/complete.
@@ -123,7 +123,7 @@ func (h *AgentCommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 	Success(w, cmds)
 }
 
-// Ack handles POST /api/v1/agents/commands/{id}/ack — agent acknowledges it
+// Ack handles POST /api/v1/agents/commands/{id}/ack, agent acknowledges it
 // picked up a command (transitions pending→acknowledged so it isn't re-polled).
 func (h *AgentCommandHandler) Ack(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
@@ -138,7 +138,7 @@ func (h *AgentCommandHandler) Ack(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Complete handles POST /api/v1/agents/commands/{id}/complete — agent reports
+// Complete handles POST /api/v1/agents/commands/{id}/complete, agent reports
 // the result of a finished command (success or failure).
 func (h *AgentCommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
@@ -151,7 +151,7 @@ func (h *AgentCommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		Result string `json:"result"` // optional JSON detail
 	}
 	// Empty body is allowed (defaults to status="done"); a malformed body is
-	// NOT — silently defaulting would record a broken agent payload as a
+	// NOT, silently defaulting would record a broken agent payload as a
 	// successful completion, hiding the real outcome (#130).
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		slog.Warn("agent command complete: malformed body", "command_id", id, "error", err)
@@ -165,7 +165,7 @@ func (h *AgentCommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ListAll handles GET /api/v1/agents/commands/all — admin view of all commands
+// ListAll handles GET /api/v1/agents/commands/all, admin view of all commands
 // across all agents (for the management UI).
 func (h *AgentCommandHandler) ListAll(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := ParsePagination(w, r, 50, 200)
@@ -187,7 +187,7 @@ func (h *AgentCommandHandler) ListAll(w http.ResponseWriter, r *http.Request) {
 	SuccessList(w, "commands", cmds, total, limit, offset)
 }
 
-// FleetStatus handles GET /api/v1/agents/status — the fleet-observability
+// FleetStatus handles GET /api/v1/agents/status, the fleet-observability
 // table (#278): one row per agent that has ever reported, with version,
 // uptime, clock offset, scans shipped, and last-report time (stalest first).
 func (h *AgentCommandHandler) FleetStatus(w http.ResponseWriter, r *http.Request) {

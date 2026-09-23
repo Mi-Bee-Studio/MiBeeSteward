@@ -25,7 +25,7 @@ import (
 
 // ProbePlanCommand is the payload of the center's "probe" command (#277):
 // the full, sorted set of targets this agent should probe locally, plus the
-// plan fingerprint (the agent logs it; re-application is idempotent because
+// plan fingerprint (the agent logs it; re-applying is a no-op because
 // ApplyConfig replaces the whole plan).
 type ProbePlanCommand struct {
 	Targets     []probetarget.Spec `json:"targets"`
@@ -41,7 +41,7 @@ type ResultPoster interface {
 
 // HTTPResultPoster posts result batches to the center's
 // POST /api/v1/agents/probe-report with the agent bearer token. A failed post
-// is logged and the batch DROPPED — probe results are observations, not
+// is logged and the batch DROPPED, probe results are observations, not
 // ledger entries; a lost sample is preferable to unbounded buffering on a
 // tiny router. (The scan reporter keeps its buffer because scan reports ARE
 // the asset ledger; probes are not.)
@@ -53,7 +53,7 @@ type HTTPResultPoster struct {
 }
 
 // NewHTTPResultPoster builds the production poster: the shared HTTP client
-// defaults (no timeout — per-probe deadlines already bounded execution).
+// defaults (no timeout, per-probe deadlines already bounded execution).
 func NewHTTPResultPoster(centerURL, token string, logger *slog.Logger) *HTTPResultPoster {
 	if logger == nil {
 		logger = slog.Default()
@@ -100,7 +100,7 @@ func (p *HTTPResultPoster) Post(ctx context.Context, results []probetarget.Agent
 
 // Prober executes the center-assigned vantage probe plan on the agent (#277
 // step 2). The center sends the WHOLE plan whenever it changes (fingerprint
-// gating — steady state is no traffic); the agent runs each target on its own
+// gating, steady state is no traffic); the agent runs each target on its own
 // interval entirely locally, so probing survives center downtime and never
 // adds per-probe command-channel load.
 type Prober struct {
@@ -114,7 +114,7 @@ type Prober struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	// reportBatch aggregates finished results; flushed every flushInterval or
-	// when full — one HTTP post per batch instead of per probe.
+	// when full, one HTTP post per batch instead of per probe.
 	reportBatch chan probetarget.AgentResultReport
 }
 
@@ -151,7 +151,7 @@ func (p *Prober) Stop() {
 }
 
 // ApplyConfig replaces the whole probe plan (called by the command poller on
-// a "probe" command). An empty target list clears the plan — the center
+// a "probe" command). An empty target list clears the plan, the center
 // dispatches one final empty plan when a target set empties out.
 func (p *Prober) ApplyConfig(cmd ProbePlanCommand) {
 	p.mu.Lock()
@@ -162,7 +162,7 @@ func (p *Prober) ApplyConfig(cmd ProbePlanCommand) {
 }
 
 // PlanFingerprint returns the fingerprint of the currently applied plan
-// ("" when none was ever applied) — command-completion payloads echo it so
+// ("" when none was ever applied), command-completion payloads echo it so
 // the center can correlate acks with plans.
 func (p *Prober) PlanFingerprint() string {
 	p.mu.Lock()

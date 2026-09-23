@@ -107,7 +107,7 @@ func (h *LinkHandler) auditLink(r *http.Request, action string, deviceID, docID 
 	if !ok {
 		return
 	}
-	// Log is best-effort and returns nothing; a write failure is logged inside.
+	// Log returns nothing; a write failure is logged inside.
 	h.auditRepo.Log(r.Context(), service.AuditLog{
 		UserID:       &userID,
 		Action:       action,
@@ -132,7 +132,7 @@ func (h *LinkHandler) GetDeviceDocuments(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Wrapped as {documents: [...], total} — the frontend reads res.documents
+	// Wrapped as {documents: [...], total}, the frontend reads res.documents
 	// (same shape as GET /documents); the bare array it used to return parsed
 	// to undefined and rendered "no documents linked" forever. total joined
 	// the envelope in #274 (complete list, no pagination).

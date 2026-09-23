@@ -18,7 +18,7 @@ import (
 
 // DiscoveryStatusHandler returns the passive-discovery service's runtime state
 // (active sources, cumulative counters, recent discoveries). The service is
-// optional — when discovery is disabled (or the binary predates it), svc is nil
+// optional, when discovery is disabled (or the binary predates it), svc is nil
 // and the endpoint reports enabled=false rather than 404, so the UI can show a
 // consistent "disabled" state.
 func DiscoveryStatusHandler(svc *scannerv2discovery.Service) http.HandlerFunc {

@@ -14,7 +14,7 @@ import (
 	"mibee-steward/internal/api/middleware"
 )
 
-// These tests pin the CSRF middleware (#171) — the cross-origin + double-submit
+// These tests pin the CSRF middleware (#171), the cross-origin + double-submit
 // gate that every state-changing browser request must pass. A regression here is
 // a CSRF hole (an attacker site forcing authenticated state changes). The
 // load-bearing invariants:

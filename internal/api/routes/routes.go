@@ -61,7 +61,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Initialize JWT auth
 	middleware.SetJWTAuth(cfg.Auth.JWTSecret)
 	// Initialize token blacklist for JWT revocation. Entries expire lazily
-	// on read — no cleanup goroutine to leak per NewRouter call.
+	// on read, no cleanup goroutine to leak per NewRouter call.
 	tokenBlacklist := service.NewTokenBlacklist()
 	middleware.SetTokenBlacklist(tokenBlacklist)
 
@@ -95,7 +95,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}
 	// Audit logging
 	// SQLITE_BUSY governance (#267): each hot write path gets its own
-	// dbopen.BusyRetry wrapper — bounded retry with backoff plus the
+	// dbopen.BusyRetry wrapper, bounded retry with backoff plus the
 	// mibee_sqlite_busy_total{path} counter. Paths that share dbConn below
 	// construct their queries from these wrapped handles.
 	scannerDB := dbopen.WrapBusyRetry(dbConn, "scanner")
@@ -143,7 +143,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Use(chimw.RequestID)
 	// RealIP is trusted-proxy-aware: X-Forwarded-For is honored ONLY when the
 	// TCP peer is in server.trusted_proxies (default empty = trust no proxy,
-	// use the TCP peer as the client — safe for direct exposure). Deploy behind
+	// use the TCP peer as the client, safe for direct exposure). Deploy behind
 	// nginx and set trusted_proxies to the proxy's source range (#133).
 	r.Use(middleware.RealIP(middleware.ParseCIDRs(cfg.Server.TrustedProxies)))
 	r.Use(middleware.Logging)
@@ -158,7 +158,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Get("/api/v1/health", handler.HealthHandler(dbConn))
 
 	// Demo mode (#285): on an EMPTY database the first boot seeds the
-	// fictional inventory (RFC 5737 TEST-NET ranges only — never a real
+	// fictional inventory (RFC 5737 TEST-NET ranges only, never a real
 	// network) and an activity ticker keeps the dashboard moving. /demo/status
 	// is public so the SPA can show the banner pre-login; wiping is admin.
 	// Local (not package-global) so a second NewRouter can't overwrite and
@@ -213,7 +213,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// the scope resolver cache per affected user so changes apply immediately.
 	networkGrantHandler := handler.NewNetworkGrantHandler(dbConn, scopeResolver)
 
-	// User management — admin-only (#138 CapUserManage; admin is the only role
+	// User management, admin-only (#138 CapUserManage; admin is the only role
 	// that holds it, so this preserves the prior RequireAdmin semantics while
 	// expressing the gate through the capability matrix).
 	r.Route("/api/v1/users", func(r chi.Router) {
@@ -221,7 +221,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/", userHandler.ListUsers)
 		r.Post("/batch-delete", batchHandler.BatchDeleteUsers)
 		r.Post("/{id}/reset-password", userHandler.AdminResetPassword)
-		// Per-user network grants (#138 Phase 3) — list the networks a user is
+		// Per-user network grants (#138 Phase 3), list the networks a user is
 		// scoped to (closed mode). The create/delete surface is /network-grants.
 		r.Get("/{id}/network-grants", networkGrantHandler.ListByUser)
 	})
@@ -235,7 +235,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Settings center: runtime-editable configuration overlay (auth password
 	// policy + login lockout today; engine knobs subscribe later). Writes are
-	// admin-only (CapUserManage) and land in system_settings — effective on
+	// admin-only (CapUserManage) and land in system_settings, effective on
 	// the next validation/login, no restart. /system is read-only instance
 	// info for every signed-in role.
 	settingsHandler := handler.NewSettingsHandler(settingsSvc, userSvc, cfg, auditRepo)
@@ -259,7 +259,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}
 	heartbeatSvc := service.NewHeartbeatService(dbConn, hbStore, cfg)
 
-	// Export handler — bound to the main DB for devices/audit, and to the
+	// Export handler, bound to the main DB for devices/audit, and to the
 	// dedicated heartbeat store for heartbeat_results (which lives in
 	// heartbeat.db after the time-series split; the main DB's copy is stale).
 	exportHandler := handler.NewExportHandler(service.NewExportService(db.New(dbConn), hbStore.Queries(), dbConn))
@@ -293,7 +293,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// here so the ingestion routes (registered below) can authenticate agents.
 	middleware.SetAgentQueries(scanQueries)
 
-	// Network registry — feeds the device-list + change-history network filters
+	// Network registry, feeds the device-list + change-history network filters
 	// and the Networks admin page. Read (List) is any logged-in user; create/
 	// update/delete require CapNetworkManage (admin-only capability).
 	networkSvc := service.NewNetworkService(scanQueries, dbConn)
@@ -308,7 +308,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Delete("/{id}", networkHandler.Delete)
 	})
 
-	// L2 topology — neighbors per device (detail page) + the whole-network
+	// L2 topology, neighbors per device (detail page) + the whole-network
 	// topology graph (nodes + edges). Read-only; any logged-in user.
 	neighborHandler := handler.NewNeighborHandler(scanQueries)
 	topologyHandler := handler.NewTopologyHandler(scanQueries)
@@ -344,7 +344,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	credCipher, credResolver := buildCredentialCipher(dbConn, cfg)
 
 	// Passive-discovery seed evidence (#377): the discovery service (created
-	// below — the engine is also its identify target, hence the late binding)
+	// below, the engine is also its identify target, hence the late binding)
 	// caches overheard hostnames/mDNS/SSDP announcements; every scan pulls
 	// them as seed evidence ahead of classification, so the fingerprint rules
 	// see the passive channel even when active queries go unanswered.
@@ -402,7 +402,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// events to change_log + pushes in-process Watcher subscribers. The agent
 	// does NOT set this (change detection is a center concern; agents only
 	// forward raw HostReports). The watcher is the foundation for a future
-	// /watch SSE endpoint (Step 4 surfaces a query API on top of change_log).
+	// /watch SSE endpoint (Step 4 exposes a query API on top of change_log).
 	changeWatcher := changedetect.NewWatcher(slog.Default())
 	// Cooldown dedup: a device_changed/device_recovered for the same device
 	// within 15 minutes is suppressed (the devices row already reflects the
@@ -415,7 +415,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// snapshots have gone stale (the agent stopped reporting them). This
 	// replaces the per-report DetectLost that used to run on every agent POST
 	// (O(whole network) each time). Center-only; scope is agent networks
-	// (networks.agent_id non-empty) — the center's own network keeps using
+	// (networks.agent_id non-empty), the center's own network keeps using
 	// the local-scan DetectLost path + heartbeat. Stopped in the cleanup
 	// closure below before db.Close().
 	leaseTTL := parseDurationOrDefault(cfg.Scanner.AgentLeaseTTL, 5*time.Minute)
@@ -426,10 +426,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Network-attribution reconciliation (issue #19 Layer 3): a slow background
 	// audit that detects devices whose IP has drifted outside their stamped
-	// network's CIDR. This is the bottom-line defense — it catches drift the
+	// network's CIDR. This is the bottom-line defense, it catches drift the
 	// Layer 1 (dispatch) + Layer 2 (ingestion) boundary checks miss (e.g. a
 	// network without a cidr, or a future code path that bypasses them).
-	// Detect-and-surface only; correction stays a human decision (Layer 4).
+	// Detect-and-report only; correction stays a human decision (Layer 4).
 	// Center-only; stopped in the cleanup closure below before db.Close().
 	reconcileInterval := parseDurationOrDefault(cfg.Scanner.ReconcileInterval, time.Hour)
 	reconcileCtx, reconcileCancel := context.WithCancel(context.Background())
@@ -462,7 +462,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	discSvcRef = discSvc
 	var discCancel context.CancelFunc
 	// discSvcForStatus carries the discovery service to the status endpoint.
-	// nil when the service was never started (discovery disabled) — the handler
+	// nil when the service was never started (discovery disabled), the handler
 	// then reports enabled=false. Declared here so the route registration below
 	// (outside the if-block) can reference it.
 	var discSvcForStatus *scannerv2discovery.Service
@@ -477,10 +477,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		}
 		var activeSources []string
 		// router_arp exists for the case where the center is NOT on the gateway
-		// — it walks a router's SNMP ARP table from across the subnet to recover
+		// - it walks a router's SNMP ARP table from across the subnet to recover
 		// cross-subnet MACs the center can't see at L2. When the center runs ON
 		// the gateway (form C, deploy/openwrt/) the router's OWN sources cover the
-		// same hosts authoritatively (and more — dhcp_leases, conntrack, hostapd),
+		// same hosts authoritatively (and more, dhcp_leases, conntrack, hostapd),
 		// so router_arp is redundant and just adds SNMP traffic to the router. The
 		// same applies to a router-resident agent (form B) reporting into this
 		// center for that network: the agent's own arp_cache/dhcp_leases are
@@ -517,28 +517,28 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			mcastSrc.Start(discCtx)
 			activeSources = append(activeSources, "multicast")
 		}
-		// dhcp_leases: Tier-1 router signal — the DHCP authority's hostname↔MAC↔IP
+		// dhcp_leases: Tier-1 router signal, the DHCP authority's hostname↔MAC↔IP
 		// map. No-op on a host that isn't the LAN's DHCP server (file absent).
 		if cfg.Scanner.Discovery.DHCPLeases.Enabled {
 			dhcpSrc := scannerv2discovery.NewDHCPLeasesSource(interval, "", discSvc, slog.Default())
 			dhcpSrc.Start(discCtx)
 			activeSources = append(activeSources, "dhcp_leases")
 		}
-		// conntrack: Tier-1 router signal — the NAT choke point's "who is talking
+		// conntrack: Tier-1 router signal, the NAT choke point's "who is talking
 		// RIGHT NOW" view. Filters to the center's own LAN CIDR.
 		if cfg.Scanner.Discovery.Conntrack.Enabled {
 			conntrackSrc := scannerv2discovery.NewConntrackSource(cfg.Network.CIDR, interval, discSvc, slog.Default())
 			conntrackSrc.Start(discCtx)
 			activeSources = append(activeSources, "conntrack")
 		}
-		// hostapd: Tier-1 router/AP signal — WiFi STA associations (signal dBm,
+		// hostapd: Tier-1 router/AP signal, WiFi STA associations (signal dBm,
 		// connect time, SSID). hostapd ctrl socket first, iw station dump fallback.
 		if cfg.Scanner.Discovery.Hostapd.Enabled {
 			hostapdSrc := scannerv2discovery.NewHostapdSource(cfg.Scanner.Discovery.Hostapd.Interfaces, interval, discSvc, slog.Default())
 			hostapdSrc.Start(discCtx)
 			activeSources = append(activeSources, "hostapd")
 		}
-		// dns_log: Tier-1 router signal — tails the dnsmasq query log for passive
+		// dns_log: Tier-1 router signal, tails the dnsmasq query log for passive
 		// DNS fingerprinting (devices that block inbound probes still do DNS).
 		if cfg.Scanner.Discovery.DNSLog.Enabled {
 			dnsLogSrc := scannerv2discovery.NewDNSLogSource(interval, cfg.Scanner.Discovery.DNSLog.Path, discSvc, slog.Default())
@@ -547,7 +547,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		}
 		// arp_scan: active ARP who-has sweep of the whole network CIDR. The only
 		// source that covers the entire broadcast domain with NO router access
-		// (every host must answer ARP — even firewalled ones). Needs the
+		// (every host must answer ARP, even firewalled ones). Needs the
 		// WITH_ARPSCAN build tag + CAP_NET_RAW; NewARPScanSource returns nil in the
 		// default build or when raw sockets are unavailable (no CAP_NET_RAW), so the
 		// nil guard skips it silently in those cases.
@@ -597,8 +597,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Scheduler: cron-driven scan tasks. The ScanFunc binding is the
 	// local-vs-agent dispatcher: a task whose resolved network is
-	// agent-managed (networks.agent_id set) has no local scanner path — the
-	// agent IS the scanner there — so the tick enqueues a scan command for
+	// agent-managed (networks.agent_id set) has no local scanner path, the
+	// agent IS the scanner there, so the tick enqueues a scan command for
 	// that agent; everything else runs the local pipeline via the runner.
 	scanScheduler, schedErr := scannerv2scheduler.New(scanQueries, dbConn,
 		func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64, networkID *int64) {
@@ -632,7 +632,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// bulk delete → scan:manage, add-devices → device:write).
 		//
 		// #138 Phase 2c: the READ surfaces are additionally object-level scoped
-		// — a closed-mode non-admin sees only tasks/runs/results whose
+		// - a closed-mode non-admin sees only tasks/runs/results whose
 		// scan_tasks.network_id is in their granted set (details return 404).
 		// Writes (task CRUD/trigger) stay capability-gated only: operators are
 		// trusted to aim scans; grants isolate visibility, not operation.
@@ -693,7 +693,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// channel whenever a plan content changes (fingerprint-gated, steady
 	// state is zero traffic). Same 10s cadence as the engine tick.
 	probeDispatcher := probetarget.NewAgentDispatcher(db.New(probeDB), agentCmdSvc, slog.Default())
-	// Stop channel for the dispatch ticker below — without it the goroutine
+	// Stop channel for the dispatch ticker below, without it the goroutine
 	// ran forever (one leak per NewRouter call; tests call NewRouter a lot).
 	probeDispatchStop := make(chan struct{})
 	go func() {
@@ -727,11 +727,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		})
 	})
 
-	// --- SNMP credential management (issue #135 — SNMPv3) ---
+	// --- SNMP credential management (issue #135, SNMPv3) ---
 	// CRUD for SNMP credentials (v1/v2c community strings + v3 USM auth/priv).
 	// Passphrases are AES-GCM-encrypted at rest (security.master_key); the
 	// list/get responses never include the secrets (masked projection). Gated by
-	// CapCredManage — an admin-only capability (credentials are sensitive even
+	// CapCredManage, an admin-only capability (credentials are sensitive even
 	// when masked), preserving the prior admin-only semantics.
 	credentialHandler := handler.NewCredentialHandler(dbConn, credCipher, credResolver)
 	r.Route("/api/v1/snmp-credentials", func(r chi.Router) {
@@ -772,7 +772,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// --- Agent ingestion (distributed phase) ---
 	// The report endpoint is the center-side counterpart to an agent's reporter:
 	// remote agents POST their scan results here. Auth is the machine-to-machine
-	// RequireAgentToken path (NOT the admin/user JWT above) — the agent's token
+	// RequireAgentToken path (NOT the admin/user JWT above), the agent's token
 	// binds the request to an agent_id + network_id, and every reported device is
 	// tagged with that network so multi-LAN data coexists without collision.
 	// Routed on the top-level mux (separate from /agents/tokens) so the two auth
@@ -801,7 +801,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	})
 	r.With(middleware.RequireCapability(domain.CapAgentManage)).Get("/api/v1/agents/commands/all", agentCommandHandler.ListAll)
 	// Fleet-observability table (#278): version / uptime / clock offset /
-	// last-report per agent. CapAgentManage (the agents capability — viewer
+	// last-report per agent. CapAgentManage (the agents capability, viewer
 	// roles already see device-derived data elsewhere; this is admin-plane
 	// fleet telemetry).
 	r.With(middleware.RequireCapability(domain.CapAgentManage)).Get("/api/v1/agents/status", agentCommandHandler.FleetStatus)
@@ -840,7 +840,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	cleanupSvc.Start(context.Background())
 
 	// Config-backup sweep (#137): fetches running-configs over SSH for devices
-	// with a bound SSH credential. Opt-in (scanner.config_backup.enabled) — needs
+	// with a bound SSH credential. Opt-in (scanner.config_backup.enabled), needs
 	// security.master_key + bound creds to do anything useful.
 	var configBackupSvc *scannerv2configbackup.Service
 	if cfg.Scanner.ConfigBackup.Enabled {
@@ -863,7 +863,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Probe engine (拨测): interval scheduler for external targets. Re-reads
 	// enabled targets every tick, so no notify wiring from the CRUD service.
 	probeEngine.Start(context.Background())
-	// Audit log routes — CapAuditRead. The capability matrix (#217) grants
+	// Audit log routes, CapAuditRead. The capability matrix (#217) grants
 	// audit:read to every read-capable role (admin/operator/viewer/+legacy user):
 	// in a CMDB/monitoring tool a read-only stakeholder seeing the "who changed
 	// what when" trail is reasonable transparency (cf. NetBox change-logs). This
@@ -896,7 +896,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		})
 	})
 
-	// Device L2 neighbors (Bridge-MIB / LLDP / CDP / ARP) — read-only. Feeds
+	// Device L2 neighbors (Bridge-MIB / LLDP / CDP / ARP), read-only. Feeds
 	// the detail-page Neighbors panel.
 	r.Route("/api/v1/devices/{id}/neighbors", func(r chi.Router) {
 		r.Use(middleware.NetworkScope(scopeResolver))
@@ -905,7 +905,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/", neighborHandler.ListByDevice)
 	})
 
-	// Device TLS certificates (https/ldaps/imaps/etc) — read-only. Feeds the
+	// Device TLS certificates (https/ldaps/imaps/etc), read-only. Feeds the
 	// detail-page TLS Certificates sub-panel and the per-port certificate Modal
 	// (full chain + PEM).
 	r.Route("/api/v1/devices/{id}/certificates", func(r chi.Router) {
@@ -915,7 +915,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/", tlsCertHandler.ListByDevice)
 	})
 
-	// Device running-config history (#137, Oxidized/RANCID-style) — read-only.
+	// Device running-config history (#137, Oxidized/RANCID-style), read-only.
 	// The list omits config_text; the detail + diff views load it on demand.
 	// Registered before /{configId} so the static /diff segment wins over the
 	// param (chi prefers literal over wildcard).
@@ -928,7 +928,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Get("/{configId}", deviceConfigHandler.Get)
 	})
 
-	// Network-level topology graph — all devices (nodes) + all neighbor edges.
+	// Network-level topology graph, all devices (nodes) + all neighbor edges.
 	// Read-only. Feeds the /topology page.
 	r.Route("/api/v1/topology", func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapTopologyRead))
@@ -1073,7 +1073,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	ruleEngine := notification.NewRuleEngine(scanQueries, changeWatcher, notificationDispatcher, slog.Default())
 	ruleEngine.Start(context.Background())
 
-	// Notification channel routes — CapNotificationManage (admin-only
+	// Notification channel routes, CapNotificationManage (admin-only
 	// capability). Channels carry webhook URLs / tokens, so even the masked
 	// read stays admin-only.
 	r.Route("/api/v1/notification/channels", func(r chi.Router) {
@@ -1087,7 +1087,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Post("/{id}/test", notificationHandler.TestChannel)
 	})
 
-	// Notification rule routes — CapNotificationManage (rules are config, like
+	// Notification rule routes, CapNotificationManage (rules are config, like
 	// channels).
 	r.Route("/api/v1/notification/rules", func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapNotificationManage))
@@ -1099,7 +1099,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		r.Delete("/{id}", notificationHandler.DeleteRule)
 	})
 
-	// Notification log routes — every authenticated user sees the header bell
+	// Notification log routes, every authenticated user sees the header bell
 	// and has their own per-user read state, so logs + mark-as-read are
 	// RequireAuth (NOT RequireAdmin). Channel CRUD above stays admin-only.
 	r.Group(func(r chi.Router) {
@@ -1124,19 +1124,19 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Get("/sd", sdHandler.ServeHTTP)
 
 	// Device gauges refresh on a 60s ticker (#333): they are Reset+Set
-	// snapshots of DB state and a one-shot seed froze them at the
-	// process-start snapshot — SQL-side cleanups and post-start discoveries
+	// snapshots of DB state and seeding only at process start froze them at the
+	// process-start snapshot, SQL-side cleanups and post-start discoveries
 	// both drifted the counts until restart. Cancelled in the cleanup
 	// closure below (before db.Close()).
 	deviceMetricsCtx, deviceMetricsCancel := context.WithCancel(context.Background())
 	go handler.StartDeviceMetricsRefresher(deviceMetricsCtx, dbConn, 60*time.Second)
-	// SPA handler — serves embedded frontend
+	// SPA handler, serves embedded frontend
 	spaHandler := handler.NewSPAHandler()
 	r.Mount("/", spaHandler)
 
 	return r, heartbeatSvc, func() {
 		// Stop the vantage probe dispatch ticker (goroutine leak otherwise).
-		// Guarded: the cleanup func is documented idempotent — closing a
+		// Guarded: the cleanup func is tolerates double calls, closing a
 		// closed channel would panic on the second call.
 		select {
 		case <-probeDispatchStop:
@@ -1144,7 +1144,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		default:
 			close(probeDispatchStop)
 		}
-		// Stop the device-metrics refresher BEFORE the DB close — its tick
+		// Stop the device-metrics refresher BEFORE the DB close, its tick
 		// runs aggregate COUNTs against dbConn (#333).
 		deviceMetricsCancel()
 		if demoActivity != nil {
@@ -1153,21 +1153,21 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		if scanScheduler != nil {
 			scanScheduler.Stop()
 		}
-		// Stop the probe engine (拨测) BEFORE the DB close — an in-flight probe
+		// Stop the probe engine (拨测) BEFORE the DB close，an in-flight probe
 		// writes probe_results / probe_tls_certs and must not race db.Close().
 		// Stop() cancels the tick loop and waits for the in-flight tick.
 		probeEngine.Stop()
-		// Stop the lease sweeper BEFORE the DB close — its sweepOnce runs
+		// Stop the lease sweeper BEFORE the DB close, its sweepOnce runs
 		// UPDATE devices + recordDeviceLost (change_log INSERT) and must not
 		// race db.Close(). Cancel unblocks an in-flight sweep's ctx-aware DB
 		// calls, then Stop() waits for the goroutine to fully exit. (#163)
 		leaseSweepCancel()
 		leaseSweeper.Stop()
-		// Stop the reconciliation job BEFORE the DB close — its scan reads
+		// Stop the reconciliation job BEFORE the DB close, its scan reads
 		// devices/networks and must not race db.Close().
 		reconcileCancel()
 		reconciler.Stop()
-		// Stop the passive discovery sources + coordinator BEFORE the DB close —
+		// Stop the passive discovery sources + coordinator BEFORE the DB close;
 		// the coordinator's known-host pre-check and the sources' walks hold
 		// open DB/SNMP handles that must not race db.Close().
 		if discCancel != nil {
@@ -1178,7 +1178,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		if configBackupSvc != nil {
 			configBackupSvc.Stop()
 		}
-		// Stop the rule engine BEFORE the dispatcher — it holds a Watcher
+		// Stop the rule engine BEFORE the dispatcher, it holds a Watcher
 		// subscriber and calls dispatcher.Dispatch; stopping it first prevents
 		// in-flight dispatch attempts against a stopped dispatcher.
 		ruleEngine.Stop()
@@ -1211,7 +1211,7 @@ func parseDurationOrDefault(s string, def time.Duration) time.Duration {
 // only yield data when the host IS the gateway are enabled. When true AND
 // router_arp is also on, router_arp is redundant (the gateway's own
 // arp_cache/dhcp_leases/conntrack cover the same hosts authoritatively, without
-// an extra SNMP walk) — used to emit the redundancy warning at startup.
+// an extra SNMP walk), used to emit the redundancy warning at startup.
 func routerResidentSourcesOn(d config.DiscoveryConfig) bool {
 	return d.ARPCache.Enabled || d.DHCPLeases.Enabled || d.Conntrack.Enabled
 }
@@ -1304,7 +1304,7 @@ func resolveNetworkID(dbConn *sql.DB, cfg *config.Config) int64 {
 		return 0
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		// Row already existed — refresh its cidr/site in case the config changed.
+		// Row already existed, refresh its cidr/site in case the config changed.
 		_, _ = dbConn.Exec(`UPDATE networks SET cidr = ?, site = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?`,
 			cfg.Network.CIDR, cfg.Network.Site, name)
 	}
@@ -1318,7 +1318,7 @@ func resolveNetworkID(dbConn *sql.DB, cfg *config.Config) int64 {
 	// Backfill: tag every pre-existing device that has no network_id with this
 	// instance's network. Without this, a rescan of a legacy (network_id NULL)
 	// device would create a DUPLICATE row keyed on (ip, <resolved network_id>)
-	// instead of updating the original — the (ip, NULL) and (ip, N) composite
+	// instead of updating the original, the (ip, NULL) and (ip, N) composite
 	// keys are distinct in the unique index. This is only safe for the
 	// single-instance default; a true multi-agent deployment would reconcile via
 	// the center, not backfill blindly.
@@ -1335,7 +1335,7 @@ func resolveNetworkID(dbConn *sql.DB, cfg *config.Config) int64 {
 }
 
 // agentForNetwork returns the agent_id bound to the given network ("" when
-// networkID is nil, the network has no agent, or the lookup fails — all of
+// networkID is nil, the network has no agent, or the lookup fails, all of
 // which mean "run locally"). Used by the scheduler's ScanFunc dispatcher to
 // route agent-managed networks to their scanner.
 func agentForNetwork(dbConn *sql.DB, networkID *int64) string {
@@ -1355,11 +1355,11 @@ func agentForNetwork(dbConn *sql.DB, networkID *int64) string {
 // and records a scan_task_runs row so the task's run history reflects the
 // dispatch. The row is left "running": the scan itself executes on the agent,
 // and the first host-carrying report for this network closes it with real
-// stats (agent_report.go backfillAgentRunStats, #390) — duration then measures
+// stats (agent_report.go backfillAgentRunStats, #390), duration then measures
 // the honest end-to-end latency (command poll + scan + report). Backstops: a
 // still-running older run of the SAME task is superseded here (an agent that
 // never reported hosts), and the scheduler's stale-run sweeper fails runs
-// older than 1h. A failed enqueue is recorded as a FAILED run with the reason —
+// older than 1h. A failed enqueue is recorded as a FAILED run with the reason;
 // the failure must be visible in the UI, not just the journal.
 func dispatchAgentScan(ctx context.Context, dbConn *sql.DB, queries *db.Queries, agentCmdSvc *service.AgentCommandService, taskID int64, targets string, timeout time.Duration, agentID string, credentialID int64) {
 	// Supersede runs of this task a report never closed (agent down, or it
@@ -1419,7 +1419,7 @@ func dispatchAgentScan(ctx context.Context, dbConn *sql.DB, queries *db.Queries,
 		"targets": targets,
 		"timeout": int(timeout.Seconds()),
 	}
-	// #241: forward the task's SNMP credential to the agent BY NAME — vault
+	// #241: forward the task's SNMP credential to the agent BY NAME, vault
 	// IDs are per-system (the agent resolves the name against its OWN local
 	// snmp_credentials store), and the name is non-secret metadata so no
 	// master key is needed here. A missing/unresolvable name on the agent

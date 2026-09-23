@@ -19,7 +19,7 @@ import (
 )
 
 // seedAgentTaskAndRun inserts a scan task bound to the agent's network plus a
-// "running" run row — the state dispatchAgentScan leaves behind (#390) — and
+// "running" run row, the state dispatchAgentScan leaves behind (#390), and
 // returns the run id.
 func seedAgentTaskAndRun(t *testing.T, db *sql.DB, networkID int64) int64 {
 	t.Helper()
@@ -74,7 +74,7 @@ func TestAgentReport_BackfillsRunningRunStats(t *testing.T) {
 	require.Greater(t, duration, int64(0), "duration should reflect the pending window, not the 6ms dispatch")
 }
 
-// The stable-hash fast path closes the run too — with the reported host count
+// The stable-hash fast path closes the run too, with the reported host count
 // and zero add/update (the bridge is skipped by design).
 func TestAgentReport_BackfillsRunOnStablePath(t *testing.T) {
 	srv, db, token, networkID := setupAgentIngestServer(t)

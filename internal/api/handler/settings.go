@@ -37,7 +37,7 @@ func NewSettingsHandler(settings *service.SettingsService, userSvc *service.User
 	return &SettingsHandler{settings: settings, userSvc: userSvc, cfg: cfg, auditRepo: auditRepo}
 }
 
-// authSettingsResponse is GET /api/v1/settings/auth — effective values plus
+// authSettingsResponse is GET /api/v1/settings/auth, effective values plus
 // where each came from, so the UI can show "edited in web UI" vs "from the
 // config file".
 type authSettingsResponse struct {
@@ -78,7 +78,7 @@ func (h *SettingsHandler) effectiveLockout() config.LockoutConfig {
 
 // updateAuthRequest is PUT /api/v1/settings/auth. Pointer fields make each
 // section independently optional; a present section REPLACES the whole
-// overlay value (no per-key merge — the UI always submits the full form).
+// overlay value (no per-key merge, the UI always submits the full form).
 type updateAuthRequest struct {
 	PasswordPolicy *config.PasswordPolicyConfig `json:"password_policy,omitempty"`
 	Lockout        *config.LockoutConfig        `json:"lockout,omitempty"`
@@ -86,7 +86,7 @@ type updateAuthRequest struct {
 
 // UpdateAuth handles PUT /api/v1/settings/auth (admin). Writes land in the
 // system_settings overlay and take effect on the next password
-// validation/login — no restart.
+// validation/login, no restart.
 func (h *SettingsHandler) UpdateAuth(w http.ResponseWriter, r *http.Request) {
 	if h.settings == nil {
 		Error(w, http.StatusServiceUnavailable, "settings overlay unavailable (database load failed at startup)")
@@ -147,7 +147,7 @@ func (h *SettingsHandler) UpdateAuth(w http.ResponseWriter, r *http.Request) {
 	h.GetAuth(w, r)
 }
 
-// GetSystem handles GET /api/v1/system — read-only instance facts.
+// GetSystem handles GET /api/v1/system, read-only instance facts.
 func (h *SettingsHandler) GetSystem(w http.ResponseWriter, _ *http.Request) {
 	Success(w, map[string]any{
 		"version": version.Version,

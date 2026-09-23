@@ -22,12 +22,12 @@ import (
 func TestReporter_FlushesToCenter(t *testing.T) {
 	// Each request is handed to the test goroutine via a channel (same pattern
 	// as TestReporter_SendsStateHashHeader): the handler must not write bare
-	// variables the test reads — a second in-flight POST racing the read is a
+	// variables the test reads, a second in-flight POST racing the read is a
 	// data race. Filtering for the HOST-BEARING batch (not "first request") is
 	// load-bearing: the reporter's status-only heartbeat (#278) may legally
 	// POST an EMPTY report first (while lastPostAt is zero the first empty
 	// flush posts unconditionally), and on a loaded -race runner the ticker can
-	// tick between Start and Report before the host lands in the buffer —
+	// tick between Start and Report before the host lands in the buffer;
 	// observed on CI as "report accepted hosts=0" racing the assertion.
 	type receivedReport struct {
 		auth string
@@ -55,7 +55,7 @@ func TestReporter_FlushesToCenter(t *testing.T) {
 
 	// Wait for the ticker flush (≤ ~80ms with 20ms interval). Generous
 	// deadline: under go test -race on a loaded 2-core CI runner the whole
-	// suite runs concurrently and the flush can stall well past 500ms — the
+	// suite runs concurrently and the flush can stall well past 500ms, the
 	// wait is only a liveness check, not a timing assertion. Empty heartbeat
 	// requests are skipped until the host batch arrives.
 	var got receivedReport
@@ -107,7 +107,7 @@ func TestReporter_RetriesOn5xx(t *testing.T) {
 }
 
 // TestReporter_DoesNotRetryOn4xx verifies a 4xx (e.g. 401 bad token) is
-// terminal — retrying won't fix a bad token, so the batch is dropped.
+// terminal, retrying won't fix a bad token, so the batch is dropped.
 func TestReporter_DoesNotRetryOn4xx(t *testing.T) {
 	var attempts int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -165,7 +165,7 @@ func TestReporter_SendsStateHashHeader(t *testing.T) {
 	// Each received hash is sent on hashCh by the handler goroutine and read
 	// here. This establishes the necessary happens-before edge: previously the
 	// handler wrote gotHash/gotHash2 to bare variables that the test goroutine
-	// read right after the count crossed the threshold — a data race AND a
+	// read right after the count crossed the threshold, a data race AND a
 	// logic race (the count increment happened before the hash field was set,
 	// so the test could observe count==2 with gotHash2 still "").
 	hashCh := make(chan string, 4)

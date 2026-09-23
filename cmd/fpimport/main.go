@@ -130,7 +130,7 @@ func writeFile(path string, v any) error {
 //	ssh.banner          → banner field, but Recog matches the part AFTER
 //	                      "SSH-x.x-" (software revision). We wrap the pattern
 //	                      to match within the full banner (search, not anchor).
-//	http_header.server  → server field (HTTP Server header value) — clean match.
+//	http_header.server  → server field (HTTP Server header value), clean match.
 //	ftp.banner          → banner field (Recog matches after the "220 " code;
 //	                      we search within the full banner).
 //	smtp.banner / pop3.banner / imap.banners → banner field (same strip logic).
@@ -138,7 +138,7 @@ func writeFile(path string, v any) error {
 //	mysql.banners       → banner field.
 //
 // Unsupported targets (x509.*, snmp.*, smb.*, mdns.*, ntp.*, sip.*, dns.*)
-// are skipped — we don't have those evidence shapes as regex-matchable fields
+// are skipped, we don't have those evidence shapes as regex-matchable fields
 // in the rule classifier yet. snmp_sysdescr could be added later via keyword_map.
 //
 // Recog is Apache-2.0. Every converted rule carries source: recog.
@@ -270,7 +270,7 @@ func convertRecogFP(fp recogFingerprint, _ string, tgt recogTarget, conf float64
 	}
 	// Validate the pattern compiles as Go regexp (RE2). Recog uses Ruby regex;
 	// most patterns are PCRE-compatible but some use backreferences/lookahead
-	// that RE2 rejects — those are skipped.
+	// that RE2 rejects, those are skipped.
 	if _, err := regexp.Compile(fp.Pattern); err != nil {
 		return nil, false // silently skip RE2-incompatible patterns
 	}

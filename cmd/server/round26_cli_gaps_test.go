@@ -40,7 +40,7 @@ database:
 
 // doctorHealthyExit mirrors doctor's ICMP capability derivation so the
 // healthy-config expectations hold on both capable hosts (0) and CI runners
-// with ping_group_range disabled (doctorFailExit) — both correct behavior.
+// with ping_group_range disabled (doctorFailExit), both correct behavior.
 func doctorHealthyExit() int {
 	if raw, err := os.ReadFile("/proc/sys/net/ipv4/ping_group_range"); err == nil {
 		if c, ok := icmpPingGroupRangeCheck(string(raw), os.Getgid()); ok && c.status == "fail" {
@@ -65,7 +65,7 @@ func TestDoctor_ConfigMatrix(t *testing.T) {
 		filepath.Join(t.TempDir(), "missing.yaml")}))
 
 	// Healthy config (fresh DB): pass on capable hosts, fail where the host
-	// forbids unprivileged ICMP (CI runners) — both correct.
+	// forbids unprivileged ICMP (CI runners), both correct.
 	ok := writeCenterConfig(t, t.TempDir(), "")
 	require.Equal(t, doctorHealthyExit(), doctor([]string{"-config", ok}))
 

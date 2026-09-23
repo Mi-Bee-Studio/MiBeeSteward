@@ -22,7 +22,7 @@ import (
 // SSHCredentialHandler serves the SSH credential registry for the device config-
 // backup probe (#137). It mirrors the SNMP credential handler: plaintext is
 // encrypted at WRITE time via the shared crypto.Cipher and the response ALWAYS
-// redacts the ciphertext (only a has_secret boolean surfaces). A nil cipher (no
+// redacts the ciphertext (only a has_secret boolean is returned). A nil cipher (no
 // master_key) disables the mutating endpoints with 503, exactly as SNMP creds.
 type SSHCredentialHandler struct {
 	db     *sql.DB
@@ -50,7 +50,7 @@ type sshCredentialRequest struct {
 	Notes      string `json:"notes"`
 }
 
-// sshCredentialResponse redacts the secret entirely: it surfaces metadata +
+// sshCredentialResponse redacts the secret entirely: it returns metadata +
 // whether a secret is set (has_secret), never the ciphertext or plaintext.
 type sshCredentialResponse struct {
 	ID            int64  `json:"id"`
@@ -138,8 +138,8 @@ func (h *SSHCredentialHandler) Create(w http.ResponseWriter, r *http.Request) {
 	Created(w, toSSHCredentialResponse(row))
 }
 
-// List handles GET /api/v1/ssh-credentials — metadata only (ciphertext omitted).
-// Wrapped in {credentials, total, limit, offset} (#274) — twin parity with the
+// List handles GET /api/v1/ssh-credentials, metadata only (ciphertext omitted).
+// Wrapped in {credentials, total, limit, offset} (#274), twin parity with the
 // SNMP credential list (it used to be the lone bare array of the credentials family).
 func (h *SSHCredentialHandler) List(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := ParsePagination(w, r, 50, 200)
@@ -163,7 +163,7 @@ func (h *SSHCredentialHandler) List(w http.ResponseWriter, r *http.Request) {
 	SuccessList(w, "credentials", out, total, limit, offset)
 }
 
-// Get handles GET /api/v1/ssh-credentials/{id} — redacted (no ciphertext).
+// Get handles GET /api/v1/ssh-credentials/{id}, redacted (no ciphertext).
 func (h *SSHCredentialHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseSSHCredID(w, r)
 	if !ok {
@@ -199,7 +199,7 @@ func (h *SSHCredentialHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Update validates name + auth_method but allows a BLANK secret (meaning
-	// "keep the existing ciphertext" — so an admin can rename/toggle without
+	// "keep the existing ciphertext", so an admin can rename/toggle without
 	// re-entering the secret). Create uses validateSSHCredentialRequest which
 	// additionally requires a non-empty secret.
 	if strings.TrimSpace(req.Name) == "" {

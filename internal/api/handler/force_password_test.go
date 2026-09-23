@@ -56,7 +56,7 @@ func TestAuth_ForcedPasswordChangeFlow(t *testing.T) {
 	gatedResp.Body.Close()
 	require.Equal(t, http.StatusForbidden, gatedResp.StatusCode)
 
-	// Complete the forced change — must yield a NEW token + cookie.
+	// Complete the forced change, must yield a NEW token + cookie.
 	forceResp, err := http.NewRequest(http.MethodPut, server.URL+"/api/v1/auth/force-password", bytes.NewBufferString(`{"new_password":"NewP@ssw0rd2"}`))
 	require.NoError(t, err)
 	forceResp.Header.Set("Authorization", "Bearer "+gatedToken)
@@ -106,7 +106,7 @@ func TestAuth_ForcedPasswordChangeFlow(t *testing.T) {
 }
 
 // The forced change cannot be completed with the SAME password (bootstrap
-// credential or previously-set) — ErrSamePassword is now actually returned.
+// credential or previously-set), ErrSamePassword is now actually returned.
 func TestAuth_ForcePasswordSamePasswordRejected(t *testing.T) {
 	server, db := setupTestServer(t)
 	insertTestAdmin(t, db)

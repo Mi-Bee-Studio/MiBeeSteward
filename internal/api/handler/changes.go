@@ -27,13 +27,13 @@ import (
 
 // ChangeLogEntry is one row of the change history, JSON-tagged for the API.
 // BeforeData/AfterData are the raw JSON strings stored at detect time: full
-// DeviceSnapshot JSON (see internal/changedetect.DeviceSnapshot) — before_data
+// DeviceSnapshot JSON (see internal/changedetect.DeviceSnapshot), before_data
 // for device_changed/device_lost, after_data for device_changed/device_added;
 // device_config_changed carries neither. The frontend computes the
 // changed-field diff client-side (web/src/lib/changesDiff.ts buildDiff);
 // legacy rows written before the snapshot switch may hold a
 // {field: [old,new]} diff map in after_data, which buildDiff still accepts.
-// Changing this shape is a cross-stack contract change — update the frontend
+// Changing this shape is a cross-stack contract change, update the frontend
 // parser and its tests in the same PR.
 type ChangeLogEntry struct {
 	ID         int64     `json:"id"`
@@ -67,14 +67,14 @@ func NewChangeLogHandler(queries *db.Queries, dbConn *sql.DB) *ChangeLogHandler 
 	return &ChangeLogHandler{queries: queries, dbConn: dbConn}
 }
 
-// List handles GET /api/v1/changes — paginated change history, newest first.
+// List handles GET /api/v1/changes, paginated change history, newest first.
 // Query params (all optional):
 //
-//	network_id  — filter to one network (0/absent = all networks)
-//	change_type — filter to one type (device_added / device_changed /
+//	network_id , filter to one network (0/absent = all networks)
+//	change_type, filter to one type (device_added / device_changed /
 //	               device_lost / device_recovered / device_config_changed)
-//	entity_type — filter to one entity (device; service/neighbor reserved)
-//	limit/offset — pagination (default 50, max 200)
+//	entity_type, filter to one entity (device; service/neighbor reserved)
+//	limit/offset, pagination (default 50, max 200)
 func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, offset, ok := ParsePagination(w, r, 50, 200)
@@ -249,13 +249,13 @@ func (h *ChangeLogHandler) listScopedChanges(
 // ChangeWatchHandler streams change events to clients via Server-Sent Events
 // (SSE). It subscribes to the in-process Watcher and forwards each change_log
 // row as an SSE "change" event. This is the external consumer for the Watcher
-// (architecture-future.md §8) — a dashboard or external integration can listen
+// (architecture-future.md §8), a dashboard or external integration can listen
 // for real-time device_added/changed/lost events without polling.
 //
 // Connection lifecycle: the stream stays open until the client disconnects
 // (ctx.Done) or the server shuts down. A heartbeat comment (":keepalive") is
 // sent every 15s so proxies don't idle-timeout the connection. The Watcher
-// drops events to a full subscriber buffer (best-effort; the client can
+// drops events to a full subscriber buffer (events may drop; the client can
 // backfill from GET /changes).
 type ChangeWatchHandler struct {
 	watcher *changedetect.Watcher
@@ -278,7 +278,7 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// SSE headers: text/event-stream, no buffering, long-lived connection.
-	// These MUST be set before any Flush/WriteHeader — Go's net/http commits
+	// These MUST be set before any Flush/WriteHeader, Go's net/http commits
 	// the status line + headers on the first write or Flush, snapshotting the
 	// header map at that instant. A Flush before these Set() calls (the old
 	// capability check) committed 200 with an empty Content-Type, so the
@@ -300,14 +300,14 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 	// SSE connections are long-lived; the server's WriteTimeout (default 5m,
 	// an absolute deadline from end-of-header-read) would otherwise kill every
 	// stream at 5 minutes. Clear the per-connection write deadline so the
-	// keepalive loop below governs liveness instead. Best-effort: if the
+	// keepalive loop below governs liveness instead. If the
 	// underlying connection doesn't support SetWriteDeadline this is a no-op.
 	_ = rc.SetWriteDeadline(time.Time{})
 
 	w.WriteHeader(http.StatusOK)
 	if err := rc.Flush(); err != nil {
 		// Streaming genuinely unsupported by the transport (not just middleware
-		// wrappers) — nothing we can do; headers are already committed so we
+		// wrappers), nothing we can do; headers are already committed so we
 		// cannot switch to a JSON error. Log and end the request.
 		h.logger.Warn("change watch: streaming not supported", "error", err)
 		return
@@ -331,7 +331,7 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 
 	// Send an initial comment immediately so the client knows the stream is
 	// live (the next line otherwise waits up to the 15s keepalive). Also gives
-	// downstream consumers — and tests — a fast connection-established signal.
+	// downstream consumers, and tests, a fast connection-established signal.
 	if _, err := fmt.Fprintf(w, ": connected\n\n"); err != nil {
 		return
 	}
@@ -359,7 +359,7 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Restricted scope: drop events whose network is out of scope (a
-			// change with no network_id is hidden — conservative for isolation).
+			// change with no network_id is hidden, conservative for isolation).
 			if !scope.IsGlobal() && (row.NetworkID == nil || !scope.AllowsNetwork(*row.NetworkID)) {
 				continue
 			}

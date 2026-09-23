@@ -20,7 +20,7 @@ import (
 	"mibee-steward/internal/crypto"
 )
 
-// openGapVaultDB opens the agent mini-DB in a temp dir (fresh schema) — the
+// openGapVaultDB opens the agent mini-DB in a temp dir (fresh schema), the
 // same shape `snmp-credential` subcommands operate on.
 func openGapVaultDB(t *testing.T) string {
 	t.Helper()

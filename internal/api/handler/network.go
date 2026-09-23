@@ -25,7 +25,7 @@ import (
 // NetworkHandler serves the network registry (the logical networks agents
 // discover for). Used by the frontend to populate the device-list network
 // filter, the change-history network filter, and the Networks admin page.
-// Mutations go through service.NetworkService (#240 — this handler was one of
+// Mutations go through service.NetworkService (#240, this handler was one of
 // the four grandfathered charter-debt direct-DB writers); List is a read
 // passthrough on *db.Queries.
 type NetworkHandler struct {
@@ -38,7 +38,7 @@ func NewNetworkHandler(queries *db.Queries, svc *service.NetworkService) *Networ
 	return &NetworkHandler{queries: queries, svc: svc}
 }
 
-// List handles GET /api/v1/networks — all networks, ordered by id. Complete
+// List handles GET /api/v1/networks, all networks, ordered by id. Complete
 // list (networks tables are small by nature), wrapped in {networks, total}
 // per the API contract (#274; used to be the list family's bare array).
 func (h *NetworkHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func (h *NetworkHandler) List(w http.ResponseWriter, r *http.Request) {
 	Success(w, map[string]any{"networks": nets, "total": len(nets)})
 }
 
-// Get handles GET /api/v1/networks/{id} — one network by id. Previously only
+// Get handles GET /api/v1/networks/{id}, one network by id. Previously only
 // PUT/DELETE were registered, so a GET fell through to the method-not-allowed
 // (405); reading one network required pulling the whole list (#257).
 func (h *NetworkHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +71,7 @@ func (h *NetworkHandler) Get(w http.ResponseWriter, r *http.Request) {
 	Success(w, net)
 }
 
-// VLANs handles GET /api/v1/networks/{id}/vlans — the 802.1Q VLANs observed
+// VLANs handles GET /api/v1/networks/{id}/vlans, the 802.1Q VLANs observed
 // on one network, with names where the dot1qVlanStaticName walk found them
 // (#273). Feeds the topology view's VLAN legend and the device-detail
 // Network tab.
@@ -97,7 +97,7 @@ type createNetworkRequest struct {
 	Site *string `json:"site"` // optional, advisory (branch/datacenter/cloud)
 }
 
-// Create handles POST /api/v1/networks — register a new logical network.
+// Create handles POST /api/v1/networks, register a new logical network.
 // This is the admin path for defining the remote networks that agents discover
 // for (the center's own network is auto-resolved at startup via resolveNetworkID).
 func (h *NetworkHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -128,8 +128,8 @@ type updateNetworkRequest struct {
 	Site *string `json:"site"`
 }
 
-// Update handles PUT /api/v1/networks/{id} — edit name/cidr/site.
-// The agent_id is intentionally NOT editable here (owned by the agent-token flow).
+// Update handles PUT /api/v1/networks/{id}, edit name/cidr/site.
+// The agent_id is NOT editable here (owned by the agent-token flow).
 func (h *NetworkHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -158,7 +158,7 @@ func (h *NetworkHandler) Update(w http.ResponseWriter, r *http.Request) {
 	Success(w, net)
 }
 
-// Delete handles DELETE /api/v1/networks/{id} — remove a logical network.
+// Delete handles DELETE /api/v1/networks/{id}, remove a logical network.
 // FK references are ON DELETE SET NULL (devices/vlans/agent_tokens/change_log)
 // or CASCADE (subnets/scan_snapshots), so devices keep their rows with a NULL
 // network_id rather than vanishing.
