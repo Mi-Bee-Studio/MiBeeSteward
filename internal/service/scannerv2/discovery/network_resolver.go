@@ -26,15 +26,15 @@ import (
 const networkCacheTTL = time.Minute
 
 // NetworkResolver maps a discovered IP to the network row whose CIDR contains
-// it — the data-driven half of passive-discovery attribution (#386). The
+// it, the data-driven half of passive-discovery attribution (#386). The
 // networks table is the ONLY source of truth: adding/edited rows change
-// attribution with zero code or config. There are deliberately no per-source
+// attribution with zero code or config. There are no per-source
 // allowlists or prefix special cases here.
 //
 // On a form-C center (running ON a dual-arm router) the unfiltered sources
 // (multicast, dhcp_leases) legitimately observe hosts on BOTH arms; without
 // this resolver every sighting was stamped with the center's own network and
-// surfaced as mibee_network_mismatches drift.
+// reported as mibee_network_mismatches drift.
 type NetworkResolver struct {
 	db     *sql.DB
 	logger *slog.Logger
@@ -51,7 +51,7 @@ type resolvedNet struct {
 }
 
 // NewNetworkResolver constructs the resolver. dbConn is the main DB; nil
-// returns nil (Resolve on a nil resolver reports no match — callers keep
+// returns nil (Resolve on a nil resolver reports no match, callers keep
 // their fallback).
 func NewNetworkResolver(dbConn *sql.DB) *NetworkResolver {
 	if dbConn == nil {
@@ -61,11 +61,11 @@ func NewNetworkResolver(dbConn *sql.DB) *NetworkResolver {
 }
 
 // Resolve returns the network whose CIDR most-specifically contains ip
-// (longest prefix wins, so a /24 beats an overlapping /16 — same rule as the
+// (longest prefix wins, so a /24 beats an overlapping /16, same rule as the
 // OUI vendor lookup). No match (or a load error) returns the zero
 // NullInt64: the caller falls back to the center's own network, preserving
-// pre-#386 behavior. Errors never block discovery — attribution is
-// best-effort by design.
+// pre-#386 behavior. Errors never block discovery, attribution is
+// logged, never fatal.
 func (r *NetworkResolver) Resolve(ctx context.Context, ip string) sql.NullInt64 {
 	if r == nil || ip == "" {
 		return sql.NullInt64{}

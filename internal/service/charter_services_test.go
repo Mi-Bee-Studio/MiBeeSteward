@@ -198,7 +198,7 @@ func TestAgentCommandService_EnqueueBoundaryRejection(t *testing.T) {
 	require.Equal(t, "scan", cmd.Command)
 
 	// Out-of-network target is a typed boundary error whose message names the
-	// offending IPs (surfaced verbatim as the 400 body).
+	// offending IPs (returned verbatim as the 400 body).
 	_, err = svc.Enqueue(ctx, "agent-62", "scan", map[string]interface{}{"targets": "192.168.63.1"})
 	require.Error(t, err)
 	var boundary *BoundaryError
@@ -206,7 +206,7 @@ func TestAgentCommandService_EnqueueBoundaryRejection(t *testing.T) {
 	require.Contains(t, boundary.Error(), "outside agent network")
 	require.Contains(t, boundary.Error(), "192.168.63.1")
 
-	// Unknown agent (no network binding) degrades open — allowed.
+	// Unknown agent (no network binding) degrades open, allowed.
 	_, err = svc.Enqueue(ctx, "agent-unknown", "scan", map[string]interface{}{"targets": "10.1.1.1"})
 	require.NoError(t, err)
 

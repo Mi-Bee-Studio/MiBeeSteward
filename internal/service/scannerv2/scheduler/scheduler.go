@@ -45,7 +45,7 @@ import (
 // scoped to any network): the routes-layer binding uses it to decide whether
 // the task belongs to an agent-managed network and should be dispatched as an
 // agent command instead of a local scan (agent networks have no local scanner
-// path — the agent IS the scanner there).
+// path, the agent IS the scanner there).
 type ScanFunc func(ctx context.Context, taskID int64, targets string, timeout time.Duration, concurrentHosts int, credentialID int64, networkID *int64)
 
 // Scheduler manages cron-driven scan tasks.
@@ -127,7 +127,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 		s.mu.Unlock()
 	}
 
-	// Seed the task-count gauges (#238). Best-effort: a failed refresh just
+	// Seed the task-count gauges (#238). A failed refresh just
 	// leaves the gauges absent until the next task CRUD triggers one.
 	if err := metrics.RefreshScannerTaskGauges(ctx, s.queries); err != nil {
 		s.logger.Debug("scheduler: refresh task gauges failed", "error", err)
@@ -321,8 +321,8 @@ func (s *Scheduler) staleRunLoop() {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
-			// Use a background ctx — the run-loop outlives any request and the
-			// scheduler intentionally survives request cancellation.
+			// Use a background ctx, the run-loop outlives any request and the
+			// scheduler survives request cancellation.
 			s.cleanupStaleRuns(context.Background())
 		}
 	}

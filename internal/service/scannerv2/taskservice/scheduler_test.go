@@ -28,7 +28,7 @@ import (
 // real scheduler whose ScanFunc is a no-op. The scheduler is started so
 // TriggerNow can dispatch; Stop is registered for teardown. The no-op ScanFunc
 // means triggering a task does not create a run row (the runner is the run
-// writer) — these tests assert the dispatch + error-mapping, not run creation.
+// writer), these tests assert the dispatch + error-mapping, not run creation.
 func setupSvcWithScheduler(t *testing.T) (*Service, *db.Queries) {
 	t.Helper()
 	conn, err := testutil.SetupTestDBFromSchema()

@@ -23,7 +23,7 @@ import (
 // The Start/Stop lifecycle races these tests pin were field-observed as a
 // full-suite 15-minute hang in internal/api/routes: NewRouter launches
 // `go heartbeatSvc.Start(...)`, and TestScannerIntegration issues Stop()
-// immediately — if the delayed Start lands after Close already read a nil
+// immediately, if the delayed Start lands after Close already read a nil
 // cancel, the old code waited on <-done forever while the late-launched
 // flushLoop ran under a context nobody would cancel.
 
@@ -43,7 +43,7 @@ func TestHeartbeatStore_CloseBeforeStartReturns(t *testing.T) {
 	}
 }
 
-// A Start arriving after Close must not launch the flush loop — its cancel
+// A Start arriving after Close must not launch the flush loop, its cancel
 // is unreachable, so the loop would leak and a subsequent Close would hang.
 func TestHeartbeatStore_StartAfterCloseIsNoop(t *testing.T) {
 	store, err := OpenHeartbeatStore(filepath.Join(t.TempDir(), "heartbeat.db"))
@@ -62,7 +62,7 @@ func TestHeartbeatStore_StartAfterCloseIsNoop(t *testing.T) {
 
 // Stop-before-Start on the service: Stop returns promptly, the late Start
 // no-ops (no store flush loop, no sync loop), and the store is closed.
-// mainDB is nil — Stop's final syncStatus finds an empty cache and writes
+// mainDB is nil, Stop's final syncStatus finds an empty cache and writes
 // nothing, which is exactly the never-started state under test.
 func TestHeartbeatService_StopBeforeStartThenStartIsNoop(t *testing.T) {
 	store, err := OpenHeartbeatStore(filepath.Join(t.TempDir(), "heartbeat.db"))

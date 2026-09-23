@@ -29,7 +29,7 @@ func TestParseDnsmasqQuery_ClientQuery(t *testing.T) {
 }
 
 func TestParseDnsmasqQuery_ReplyLineRejected(t *testing.T) {
-	// A reply/forwarded line carries a name→ip mapping but NOT a querying host —
+	// A reply/forwarded line carries a name→ip mapping but NOT a querying host;
 	// must NOT be emitted (no "query[...]" + "from <ip>" shape).
 	line := "Jan  1 12:00:00 router dnsmasq[1234]: config example.com is 192.168.1.10"
 	ip, domain := parseDnsmasqQuery(line)
@@ -38,7 +38,7 @@ func TestParseDnsmasqQuery_ReplyLineRejected(t *testing.T) {
 }
 
 func TestParseDnsmasqQuery_InterfaceRejected(t *testing.T) {
-	// dnsmasq logs locally-originated queries as "from <iface>" — not a host.
+	// dnsmasq logs locally-originated queries as "from <iface>", not a host.
 	line := "Jan  1 12:00:00 router dnsmasq[1234]: query[A] localhost from lo"
 	ip, domain := parseDnsmasqQuery(line)
 	require.Empty(t, ip, "'from lo' is an interface, not a host")
@@ -69,7 +69,7 @@ func TestLooksLikeIPv4(t *testing.T) {
 func TestDNSLog_TailFromEOFOnFirstSight(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dnsmasq.log")
-	// Pre-existing content (history) — must be skipped on first sight.
+	// Pre-existing content (history), must be skipped on first sight.
 	require.NoError(t, os.WriteFile(path, []byte(
 		"Jan 1 00:00:00 r dnsmasq[1]: query[A] old.example.com from 192.168.1.99\n"), 0644))
 	svc, sink, _, _ := newTestService(t, false)
@@ -81,7 +81,7 @@ func TestDNSLog_TailFromEOFOnFirstSight(t *testing.T) {
 	require.Equal(t, 0, sink.count(), "pre-existing log history not replayed")
 
 	// Append a new query AFTER the first sweep → must be emitted on next sweep.
-	// Uses O_APPEND so the file grows (not rotates) — the offset-based tail sees
+	// Uses O_APPEND so the file grows (not rotates), the offset-based tail sees
 	// only the new bytes.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0644)
 	require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestParseHostapdSTA_FullEntry(t *testing.T) {
 }
 
 func TestParseHostapdSTA_PartialEntry(t *testing.T) {
-	// A minimal STA reply (only addr) — must still parse the MAC, empty rest.
+	// A minimal STA reply (only addr), must still parse the MAC, empty rest.
 	info := parseHostapdSTA("addr=11:22:33:44:55:66\n")
 	require.Equal(t, "11:22:33:44:55:66", info.mac)
 	require.Empty(t, info.signal)
@@ -154,7 +154,7 @@ func TestExtractIWStationMAC(t *testing.T) {
 }
 
 // TestHostapd_NoSockets_NoOps confirms the source degrades gracefully when
-// there's no hostapd ctrl socket AND iw is absent (a non-router/non-AP host) —
+// there's no hostapd ctrl socket AND iw is absent (a non-router/non-AP host);
 // no panic, no events, the documented no-op.
 func TestHostapd_NoSockets_NoOps(t *testing.T) {
 	// Point ctrlDir at a TempDir with nothing in it; interfaces at a bogus name.

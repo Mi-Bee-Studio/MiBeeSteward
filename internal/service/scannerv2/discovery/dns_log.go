@@ -23,11 +23,11 @@ import (
 // DNSLogSource tails a dnsmasq query log (dnsmasq --log-queries output) and
 // emits a NewHostEvent for each query a LAN device makes. It is a router-
 // resident signal: the gateway is typically the LAN's recursive resolver, so
-// its DNS log is the authoritative "what is each device asking for" view — a
+// its DNS log is the authoritative "what is each device asking for" view, a
 // powerful passive fingerprint (a device querying ntp.android.com is Android;
 // time.apple.com is Apple; a sudden new C2 domain is behavior of interest).
 //
-// Why it matters (Tier-1 router-only signal — see
+// Why it matters (Tier-1 router-only signal, see
 // docs/private/architecture-debt-and-openwrt-2026-07-27.md §3.2):
 //
 //   - Complements ACTIVE identification (SNMP/RTSP/ONVIF banners): DNS reveals
@@ -137,7 +137,7 @@ func (s *DNSLogSource) tailFile(path string) {
 
 	// If the file shrank since last read (rotated/truncated), restart from the
 	// beginning; otherwise seek to where we left off. Don't tail from offset 0 on
-	// the very first sweep of a huge existing log — start at EOF to avoid replaying
+	// the very first sweep of a huge existing log, start at EOF to avoid replaying
 	// history (only NEW queries going forward are interesting).
 	curSize := info.Size()
 	if prevOff == 0 {
@@ -178,7 +178,7 @@ func (s *DNSLogSource) tailFile(path string) {
 	}
 	if err := sc.Err(); err != nil {
 		s.logger.Debug("discovery: dns_log scan failed", "path", path, "error", err)
-		// Still update offset to where we got — partial progress is fine.
+		// Still update offset to where we got, partial progress is fine.
 	}
 	// Always persist the resume offset. The first-sweep EOF case (prevOff reset
 	// to curSize, zero lines read) MUST record curSize so the next sweep resumes
@@ -199,7 +199,7 @@ func (s *DNSLogSource) tailFile(path string) {
 //	< preamble > dnsmasq[<pid>]: query[<type>] <domain> from <ip>
 //	< preamble > dnsmasq[<pid>]: <type> <domain> is <ip>          (config/static)
 //
-// Only the first (an actual client query) reveals the *querying* device — that's
+// Only the first (an actual client query) reveals the *querying* device, that's
 // what we emit. "is" lines tell us a name→ip mapping but not who asked.
 func parseDnsmasqQuery(line string) (ip, domain string) {
 	// Must be a dnsmasq line.
@@ -227,7 +227,7 @@ func parseDnsmasqQuery(line string) (ip, domain string) {
 	}
 	domain = strings.TrimSpace(rest[:fromIdx])
 	ip = strings.TrimSpace(rest[fromIdx+len(" from "):])
-	// Trim a trailing port/pid if present (defensive — dnsmasq doesn't emit one,
+	// Trim a trailing port/pid if present (defensive, dnsmasq doesn't emit one,
 	// but a syslog relay might append junk).
 	if sp := strings.IndexByte(ip, ' '); sp >= 0 {
 		ip = ip[:sp]
@@ -236,7 +236,7 @@ func parseDnsmasqQuery(line string) (ip, domain string) {
 		return "", ""
 	}
 	// Reject obviously-non-IP queriers (sometimes dnsmasq logs "from <iface>" for
-	// locally-originated queries — not a host sighting).
+	// locally-originated queries, not a host sighting).
 	if !looksLikeIPv4(ip) {
 		return "", ""
 	}

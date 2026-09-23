@@ -32,7 +32,7 @@ func TestFirstLine(t *testing.T) {
 }
 
 // TestActivity_LifecycleAndTick: StartActivity/Stop round-trip cleanly, and a
-// direct tick() flips a seeded demo device's status and records the change —
+// direct tick() flips a seeded demo device's status and records the change;
 // the 45s demo churn that keeps the fictional inventory alive.
 func TestActivity_LifecycleAndTick(t *testing.T) {
 	dbConn, err := testutil.SetupTestDBFromSchema()

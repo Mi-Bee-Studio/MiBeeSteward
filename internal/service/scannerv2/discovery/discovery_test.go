@@ -44,7 +44,7 @@ func (f *fakeSink) count() int {
 	return len(f.applied)
 }
 
-// snapshot returns a copy of the applied reports (thread-safe — Apply runs on
+// snapshot returns a copy of the applied reports (thread-safe, Apply runs on
 // the discovery loop goroutine, assertions read it from the test goroutine).
 func (f *fakeSink) snapshot() []scannerv2.HostReport {
 	f.mu.Lock()
@@ -68,7 +68,7 @@ func (f *fakeIdentifier) Identify(_ context.Context, ip string) (scannerv2.HostR
 	return f.reports[ip], f.alive[ip]
 }
 
-// callCount returns the number of Identify invocations (thread-safe — Identify
+// callCount returns the number of Identify invocations (thread-safe, Identify
 // runs on the discovery loop goroutine, assertions read it from the test goroutine).
 func (f *fakeIdentifier) callCount() int {
 	f.mu.Lock()
@@ -205,7 +205,7 @@ func TestHandle_KnownHostIsNotProcessed(t *testing.T) {
 // TestHandle_KnownMACDifferentIP_NoIdentify guards the DHCP-churn regression:
 // a device recorded as .143 (MAC aa:..) that next appears as .144 (same MAC,
 // new lease) must NOT be treated as new. Without the MAC-primary pre-check it
-// would trigger a full identify scan every poll cycle — a feedback loop that
+// would trigger a full identify scan every poll cycle, a feedback loop that
 // destabilized the memory-constrained test VM (75 restarts observed).
 func TestHandle_KnownMACDifferentIP_NoIdentify(t *testing.T) {
 	svc, sink, ident, dbConn := newTestService(t, true)
@@ -214,7 +214,7 @@ func TestHandle_KnownMACDifferentIP_NoIdentify(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed device: %v", err)
 	}
-	// Discovery reports the SAME MAC on a NEW IP — must be recognized as known.
+	// Discovery reports the SAME MAC on a NEW IP, must be recognized as known.
 	svc.Emit(NewHostEvent{IP: "10.0.0.99", MAC: "aa:bb:cc:dd:ee:ff", Source: "arp_cache"})
 	time.Sleep(150 * time.Millisecond)
 

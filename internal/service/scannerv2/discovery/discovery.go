@@ -15,8 +15,8 @@
 // device bridge (so they get device_added change events + heartbeat seeding)
 // without waiting for the next scheduled scan.
 //
-// The discovery and identification concerns are deliberately decoupled:
-//   - discovery (this package): cheap, continuous, mostly passive — answer
+// The discovery and identification concerns are decoupled:
+//   - discovery (this package): cheap, continuous, mostly passive, answer
 //     "did a NEW host show up?" via ARP-table diffs and mDNS/SSDP listening.
 //   - identification (the existing scannerv2 probe/classify pipeline): run on
 //     demand for a SINGLE newly-discovered IP, not the whole subnet.
@@ -127,14 +127,14 @@ type Service struct {
 	// obs is the passive-observation cache keyed by IP: the latest overheard
 	// facts about a host (lease hostname, mDNS service announcements, SSDP
 	// self-identifications) that scans pull as SEED EVIDENCE into the
-	// fingerprint classifiers (#377 — on real networks the passive channel is
+	// fingerprint classifiers (#377, on real networks the passive channel is
 	// often the ONLY source of these signals; active mDNS queries frequently
 	// go unanswered). Sources call Observe; the engine's seed hook (wired in
 	// routes.go) reads it via EvidenceFor.
 	obs   map[string][]scannerv2.Evidence
 	obsMu sync.Mutex
 
-	// Observable runtime counters (atomic — read by the status endpoint from a
+	// Observable runtime counters (atomic, read by the status endpoint from a
 	// different goroutine than the consumer loop that writes them). These make
 	// the service's internal behavior queryable without scraping logs.
 	stats      statsSnapshot
@@ -145,9 +145,9 @@ type Service struct {
 	sources    []string      // names of active discovery sources (for status endpoint)
 }
 
-// statsSnapshot holds the cumulative counters surfaced by Status(). They are
+// statsSnapshot holds the cumulative counters reported by Status(). They are
 // written under statsMu (handle runs on the single consumer goroutine) and read
-// by the status endpoint, so a RWMutex is sufficient — no atomics needed.
+// by the status endpoint, so a RWMutex is sufficient, no atomics needed.
 type statsSnapshot struct {
 	EventsReceived    int64 // total events pushed into the consumer
 	SuppressedRecent  int64 // dropped by the 5-min memory dedup
@@ -173,9 +173,9 @@ const dedupTTL = 5 * time.Minute
 
 // New constructs the coordinator. dbConn is used for the known-host pre-check
 // (SELECT from devices); networkID tags synthesized reports with the origin
-// network (0/NULL for the legacy single-instance path — same convention as
+// network (0/NULL for the legacy single-instance path, same convention as
 // runner.New); registerer receives the mibee_discovery_events_total counter
-// (nil disables metrics — tests, agent). ident may be nil (TriggerIdentify is
+// (nil disables metrics, tests, agent). ident may be nil (TriggerIdentify is
 // then effectively forced off).
 func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID int64, registerer prometheus.Registerer, logger *slog.Logger) *Service {
 	if logger == nil {
@@ -203,12 +203,12 @@ func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID 
 // hundreds of IPs; 4096 leaves generous headroom while keeping the map tiny.
 const maxObservedIPs = 4096
 
-// maxObsPerIP bounds how many observations are retained per IP — the latest
+// maxObsPerIP bounds how many observations are retained per IP, the latest
 // few announcements are plenty for seeding; older ones only add noise.
 const maxObsPerIP = 4
 
 // Observe records the latest passive observations for an IP (called by the
-// discovery sources — lease hostnames, mDNS/SSDP listeners). Observations are
+// discovery sources, lease hostnames, mDNS/SSDP listeners). Observations are
 // DATA, not new-host signals: they don't trigger the event pipeline, they wait
 // to be pulled as seed evidence by the next scan of that IP.
 func (s *Service) Observe(ip string, evs ...scannerv2.Evidence) {
@@ -220,7 +220,7 @@ func (s *Service) Observe(ip string, evs ...scannerv2.Evidence) {
 	if len(s.obs) >= maxObservedIPs {
 		if _, known := s.obs[ip]; !known {
 			// Over cap with an unseen IP: drop a stale entry (map iteration
-			// order is arbitrary — fine for cache semantics).
+			// order is arbitrary, fine for cache semantics).
 			for k := range s.obs {
 				delete(s.obs, k)
 				break
@@ -252,7 +252,7 @@ func (s *Service) EvidenceFor(ip string) []scannerv2.Evidence {
 
 // Start launches the coordinator's consumer goroutine. It is the caller's
 // responsibility to also start each source (sources are returned/constructed
-// separately so callers can decide which to run). Idempotent.
+// separately so callers can decide which to run). Repeat calls are no-ops.
 func (s *Service) Start(ctx context.Context) {
 	if s.cancel != nil {
 		return // already started
@@ -332,7 +332,7 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 
 	known, err := s.isKnownHost(ctx, ev.IP, ev.MAC)
 	if err != nil {
-		// On query error, assume known to avoid a noisy identify storm — the next
+		// On query error, assume known to avoid a noisy identify storm, the next
 		// scheduled full scan will reconcile. Log for visibility.
 		s.logger.Warn("discovery: known-host pre-check failed; skipping", "ip", ev.IP, "error", err)
 		s.recordEvent(ev, "skipped_known")
@@ -391,7 +391,7 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 // StatusResponse is the JSON shape returned by the status endpoint. It makes
 // the discovery service's internal behavior observable: which sources are
 // running, what they've found, and how the dedup/identify pipeline is
-// performing — without requiring log scraping.
+// performing, without requiring log scraping.
 type StatusResponse struct {
 	Enabled           bool          `json:"enabled"`
 	StartedAt         time.Time     `json:"started_at"`
@@ -457,7 +457,7 @@ func (s *Service) SetSources(names []string) {
 //     was recorded as .143 may next appear in the ARP cache as .144 (same MAC,
 //     new lease). Without this MAC check, the IP-only lookup below would miss
 //     it, the coordinator would treat it as "new", and trigger an expensive
-//     full single-IP identify scan — every poll cycle, forever. On a
+//     full single-IP identify scan, every poll cycle, forever. On a
 //     memory-constrained host that scan loop can become a stability hazard.
 //  2. Fall back to (ip, network_id), the identity rule for MAC-less sightings.
 func (s *Service) isKnownHost(ctx context.Context, ip, mac string) (bool, error) {
@@ -606,7 +606,7 @@ type SinkAdapter struct {
 	// contains it (#386): on a form-C (router-resident) center the unfiltered
 	// sources legitimately observe BOTH arms, and stamping those sightings
 	// with the center's own network is what mibee_network_mismatches has been
-	// counting. Nil (or no matching row) keeps the runner's own network —
+	// counting. Nil (or no matching row) keeps the runner's own network;
 	// the pre-#386 behavior. Data-driven by the networks table; no per-source
 	// special cases.
 	Networks *NetworkResolver

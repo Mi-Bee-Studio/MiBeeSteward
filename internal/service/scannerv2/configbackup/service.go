@@ -88,7 +88,7 @@ func (s *Service) Stop() {
 	}
 }
 
-// runOnce backs up every candidate device. Each device is independent — a
+// runOnce backs up every candidate device. Each device is independent, a
 // failure (no credential / SSH error / store error) is logged and skipped so one
 // bad device doesn't abort the sweep.
 func (s *Service) runOnce(ctx context.Context) {

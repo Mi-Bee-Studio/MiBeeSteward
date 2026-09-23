@@ -52,7 +52,7 @@ type RouterARPConfig struct {
 	// over Community. Set by the engine when a scan task binds a credential so
 	// cross-subnet MAC resolution uses the same auth as the rest of the scan.
 	// The passive discovery service (a separate long-running caller) does NOT
-	// set this and keeps using Community — v3 there is a later enhancement.
+	// set this and keeps using Community, v3 there is a later enhancement.
 	Cred *scannerv2.SNMPCredential
 }
 
@@ -64,8 +64,8 @@ type RouterARPConfig struct {
 // reads the local kernel's neighbour cache (only populated for the scanner's
 // directly-attached subnet), this asks a router that IS on the target subnet.
 // Returns ("", false) when the router doesn't speak SNMP, the OID is empty, or
-// ip has no entry. Errors are swallowed deliberately — cross-subnet MAC is a
-// best-effort enrichment, not a scan-critical path.
+// ip has no entry. Errors are swallowed deliberately, cross-subnet MAC is a
+// optional enrichment, not a scan-critical path.
 //
 // The result is cached per-process for routerARPCacheTTL so a /24 cross-subnet
 // scan only walks each router once instead of once-per-IP.
@@ -84,7 +84,7 @@ func LookupMACViaRouter(ctx context.Context, router, community string, timeout t
 // LookupMACViaRouter: it walks the router's ARP table using a specific SNMP
 // credential (v3 USM or a v1/v2c community tied to the credential) and returns
 // the MAC for ip when found. Used by LookupMACViaRouters when a scan bound a
-// credential. Same best-effort + cache contract as the legacy variant.
+// credential. Same non-fatal + cache contract as the legacy variant.
 func LookupMACViaRouterCred(_ context.Context, router string, cred *scannerv2.SNMPCredential, timeout time.Duration, ip string) (mac string, ok bool) {
 	entries := routerARPCacheGlobal.getCred(router, cred, timeout)
 	if entries == nil {
@@ -98,7 +98,7 @@ func LookupMACViaRouterCred(_ context.Context, router string, cred *scannerv2.SN
 
 // WalkRouterARPTable walks a single router's SNMP ARP table (ipNetToMediaPhysAddress,
 // falling back to the RFC 4293 ipNetToPhysicalPhysAddress) and returns the full
-// ip→lowercased-MAC map. It is the best-effort variant used by the per-scan MAC
+// ip→lowercased-MAC map. It is the cached variant used by the per-scan MAC
 // enrichment path (cross-subnet MAC resolution): the long-running passive
 // discovery service instead uses WalkRouterARPTableWithErr so it can log WHY a
 // router yields nothing, and diff against its previous snapshot to spot
@@ -106,9 +106,9 @@ func LookupMACViaRouterCred(_ context.Context, router string, cred *scannerv2.SN
 //
 // Returns a non-nil empty map only when the router answered but had no entries;
 // returns nil when the router is unreachable, doesn't speak SNMP, or neither OID
-// yielded anything. The failure reason is NOT surfaced (use
+// yielded anything. The failure reason is NOT returned (use
 // WalkRouterARPTableWithErr when observability matters); this variant keeps the
-// best-effort contract the per-scan MAC-enrichment path relies on. ctx is
+// non-fatal contract the per-scan MAC-enrichment path relies on. ctx is
 // currently unused (gosnmp's Walk takes no context); the timeout bounds the walk.
 func WalkRouterARPTable(ctx context.Context, router, community string, timeout time.Duration) map[string]string {
 	table, _ := walkRouterARPTable(ctx, router, community, timeout)
@@ -178,9 +178,9 @@ func credKeyForCommunity(community string) string {
 
 // credKeyForCredential returns the cache key for a v3 (or v1/v2c) credential.
 // Uses the credential's DB id + username (stable, non-secret); the passphrase
-// is deliberately excluded. An ad-hoc credential (id=0) is keyed by name so
+// is excluded. An ad-hoc credential (id=0) is keyed by name so
 // two ad-hoc credentials with the same user but different passphrases collide
-// only if they also share a name — acceptable for a 30s best-effort cache.
+// only if they also share a name, acceptable for a 30s enrichment cache.
 func credKeyForCredential(c *scannerv2.SNMPCredential) string {
 	if c.ID != 0 {
 		return "cred:" + strconv.FormatInt(c.ID, 10) + ":" + c.UserName
@@ -189,9 +189,9 @@ func credKeyForCredential(c *scannerv2.SNMPCredential) string {
 }
 
 // get returns the cached table for a router or walks it fresh when stale.
-// Single-flight is intentionally omitted: the orchestrator resolves MAC
+// Single-flight is omitted: the orchestrator resolves MAC
 // sequentially per-host in the post-gather step, so there's no concurrency to
-// guard here, and a redundant walk during a race is harmless (idempotent read).
+// guard here, and a redundant walk during a race is harmless (a repeat read is harmless).
 func (s *routerARPStore) get(ctx context.Context, router, community string, timeout time.Duration) map[string]string {
 	if router == "" {
 		return nil
@@ -217,7 +217,7 @@ func (s *routerARPStore) get(ctx context.Context, router, community string, time
 
 // getCred is the credential-aware cache lookup: it keys on the credential's
 // stable identity (NOT the passphrase) and walks via walkRouterARPTableCred
-// when stale. Same TTL + best-effort contract as get.
+// when stale. Same TTL + non-fatal contract as get.
 func (s *routerARPStore) getCred(router string, cred *scannerv2.SNMPCredential, timeout time.Duration) map[string]string {
 	if router == "" || cred == nil {
 		return nil
@@ -299,7 +299,7 @@ func walkRouterARPTableHint(router string, hint scannerv2.ProbeHint, retries int
 		}
 	}
 	if len(table) == 0 {
-		// Router answered but neither OID yielded entries — not an error, just
+		// Router answered but neither OID yielded entries, not an error, just
 		// an empty neighbour table. Return the (empty, non-nil) map so callers
 		// can distinguish "answered, nothing to report" from "failed".
 		return table, nil
@@ -313,8 +313,8 @@ func walkRouterARPTableHint(router string, hint scannerv2.ProbeHint, retries int
 // gosnmp hands us pdu.Name as the full dotted path including the index.
 //
 // Returns the walk error instead of swallowing it: a connection-refused or
-// timeout surfaces here so callers can log WHY a router yields nothing.
-// The caller's context is intentionally not forwarded: gosnmp's Walk doesn't
+// timeout is returned here so callers can log WHY a router yields nothing.
+// The caller's context is not forwarded: gosnmp's Walk doesn't
 // accept one, and the snmp.Timeout set on the client bounds the run.
 func walkInto(snmp snmpClient, oid string, emit func(ip, mac string)) error {
 	return snmp.Walk(oid, func(pdu gosnmp.SnmpPDU) error {

@@ -27,7 +27,7 @@ var (
 )
 
 // Service is the CRUD facade over probe_targets (+ result history reads).
-// There is deliberately NO create/update/delete notification to the Engine:
+// There is NO create/update/delete notification to the Engine:
 // the engine re-reads enabled targets every tick, so writes take effect on
 // their own within one tick interval.
 type Service struct {
@@ -238,7 +238,7 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Trigger probes one target now (synchronous — returns the recorded result).
+// Trigger probes one target now (synchronous, returns the recorded result).
 func (s *Service) Trigger(ctx context.Context, id int64) (domain.ProbeResultResponse, error) {
 	if s.engine == nil {
 		return domain.ProbeResultResponse{}, ErrEngineNotAvailable
@@ -248,7 +248,7 @@ func (s *Service) Trigger(ctx context.Context, id int64) (domain.ProbeResultResp
 
 // Results returns a target's history (newest first) + total. vantage filters
 // to one executor's track; empty = all vantages interleaved. It accepts the
-// same grammar as probe_targets.vantage ('all' is rejected here — it is a
+// same grammar as probe_targets.vantage ('all' is rejected here, it is a
 // target plan, not a result track).
 func (s *Service) Results(ctx context.Context, targetID int64, vantage string, limit, offset int) ([]domain.ProbeResultResponse, int64, error) {
 	if _, err := s.queries.GetProbeTarget(ctx, targetID); err != nil {
@@ -258,7 +258,7 @@ func (s *Service) Results(ctx context.Context, targetID int64, vantage string, l
 		return nil, 0, err
 	}
 	// Filter semantics differ from CRUD semantics: empty here means NO filter
-	// (all vantages interleaved) — unlike probe_targets.vantage, where empty
+	// (all vantages interleaved), unlike probe_targets.vantage, where empty
 	// canonicalizes to "center". Canonicalize only a supplied filter.
 	v := ""
 	if strings.TrimSpace(vantage) != "" {
@@ -299,7 +299,7 @@ func (s *Service) Results(ctx context.Context, targetID int64, vantage string, l
 }
 
 // checkNameFree enforces the UNIQUE(name) constraint ahead of INSERT/UPDATE
-// so violations surface as 409-style sentinels, not opaque SQLite errors.
+// so violations come back as 409-style sentinels, not opaque SQLite errors.
 // selfID excludes the row itself on update (0 = create).
 func (s *Service) checkNameFree(ctx context.Context, name string, selfID int64) error {
 	existing, err := s.queries.GetProbeTargetByName(ctx, name)

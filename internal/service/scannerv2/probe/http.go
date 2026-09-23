@@ -33,7 +33,7 @@ const httpProbeTimeout = 4 * time.Second
 
 // httpProbePorts is the set of ports the HTTP probe runs against. Other ports
 // are left to the port scan's GET / active-probe string (banners.go), which
-// captures the response into a generic banner evidence — this dedicated probe
+// captures the response into a generic banner evidence, this dedicated probe
 // instead extracts structured fields (title, server, x-powered-by).
 var httpProbePorts = map[int]bool{
 	80: true, 8080: true, 8000: true, 8008: true, 8081: true, 8888: true,
@@ -106,7 +106,7 @@ func (p *HTTPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 }
 
 // fetchOne does one GET / and returns an http Evidence on any HTTP response
-// (even a 4xx/5xx — the headers/title still identify the server). Returns nil
+// (even a 4xx/5xx, the headers/title still identify the server). Returns nil
 // when the port isn't speaking HTTP (connection refused, timeout, non-HTTP).
 func (p *HTTPProbe) fetchOne(ctx context.Context, client *http.Client, scheme, ip string, port int) *scannerv2.Evidence {
 	url := scheme + "://" + ip + ":" + strconv.Itoa(port) + "/"

@@ -69,7 +69,7 @@ func TestDeriveTopologyEdges(t *testing.T) {
 	require.Equal(t, apID, to.Int64)
 	require.Equal(t, "lldp", protoStr)
 
-	// Re-run is idempotent (refresh, not duplicate).
+	// A re-run refreshes instead of duplicating.
 	rn.deriveTopologyEdges(ctx, sql.NullInt64{Int64: net.ID, Valid: true})
 	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM topology_edges`).Scan(&count))
 	require.Equal(t, 1, count)

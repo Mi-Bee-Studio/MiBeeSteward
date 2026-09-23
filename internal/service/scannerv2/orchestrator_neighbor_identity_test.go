@@ -122,7 +122,7 @@ func TestNeighborIdentityEnrichment_NoIdentityKeys(t *testing.T) {
 				"protocol":     "Bridge-MIB",
 				"local_port":   "5",
 			},
-			// No sys_name/sys_desc/platform — no identity to enrich.
+			// No sys_name/sys_desc/platform, no identity to enrich.
 		},
 	}})
 	reg.RegisterProbe(stubProbe{name: "active:tcp", ev: []Evidence{
@@ -138,7 +138,7 @@ func TestNeighborIdentityEnrichment_NoIdentityKeys(t *testing.T) {
 
 	report := orch.Run(context.Background(), "10.0.0.1", ProbeHint{})
 	require.True(t, report.Alive, "surveyed host should be alive")
-	// No enrichment calls — identity keys absent in all neighbor evidence.
+	// No enrichment calls, identity keys absent in all neighbor evidence.
 	require.Empty(t, repo.enrichCalls, "expected no enrich calls when identity keys are absent")
 }
 
@@ -148,7 +148,7 @@ func TestNeighborIdentityEnrichment_UnrelatedEvidence(t *testing.T) {
 	repo := &enrichRecordRepo{}
 	reg := NewRegistry()
 
-	// Only non-neighbor evidence — nothing should enrich.
+	// Only non-neighbor evidence, nothing should enrich.
 	reg.RegisterProbe(stubProbe{name: "active:tcp", ev: []Evidence{
 		{Kind: "port_open", IP: "10.0.0.1", Port: 80, Protocol: "tcp"},
 		{Kind: "banner", IP: "10.0.0.1", Port: 80, RawData: map[string]string{"banner": "nginx"}},
@@ -221,7 +221,7 @@ func TestNeighborIdentityEnrichment_NoRepo(t *testing.T) {
 	reg.RegisterClassifier(kindClassifier{service: "http", kind: "port_open"})
 	reg.RegisterHandler(&stubHandler{service: "http"})
 
-	// Repo is nil — dispatch persist block is skipped entirely.
+	// Repo is nil, dispatch persist block is skipped entirely.
 	orch := NewOrchestrator(reg, nil, OrchestratorConfig{MaxConcurrentHosts: 2, MaxCascadeDepth: 0}, nil)
 	orch.SetNeighborIdentityInfer(func(_, _, _, _, _ string) map[string]string {
 		return map[string]string{"vendor": "test"}
@@ -229,7 +229,7 @@ func TestNeighborIdentityEnrichment_NoRepo(t *testing.T) {
 
 	report := orch.Run(context.Background(), "10.0.0.1", ProbeHint{})
 	require.True(t, report.Alive, "surveyed host should be alive")
-	// No panic — enrichment pass skipped because repo is nil.
+	// No panic, enrichment pass skipped because repo is nil.
 }
 
 // TestNeighborIdentityEnrichment_CallbackReturnsNil verifies that when the

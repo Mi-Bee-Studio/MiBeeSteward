@@ -19,7 +19,7 @@ import (
 
 // SNMPCredentialRow mirrors the snmp_credentials table. Defined here (not in
 // internal/db) because sqlc v1.27/v1.31 cannot generate queries for this table
-// — it truncates the last token of every SELECT/INSERT/UPDATE/RETURNING
+// - it truncates the last token of every SELECT/INSERT/UPDATE/RETURNING
 // clause, producing invalid SQL at runtime. ALL access to snmp_credentials is
 // therefore raw database/sql in this file. The resolver + handler use these
 // helpers; nothing in internal/db touches the table.
@@ -52,7 +52,7 @@ func scanCredentialRow(row interface{ Scan(dest ...any) error }) (SNMPCredential
 }
 
 // MaskedCredentialRow is the ListSNMPCredentials projection: the *_enc columns
-// are deliberately omitted so a masked list can never leak even ciphertext. The
+// are omitted so a masked list can never leak even ciphertext. The
 // handler derives has_auth / has_priv booleans from the protocol fields.
 type MaskedCredentialRow struct {
 	ID            int64
@@ -77,7 +77,7 @@ func scanMaskedRow(row interface{ Scan(dest ...any) error }) (MaskedCredentialRo
 }
 
 // GetSNMPCredential fetches a full credential row by ID (including the
-// encrypted blobs — for the resolver, which decrypts in-process).
+// encrypted blobs, for the resolver, which decrypts in-process).
 func GetSNMPCredential(ctx context.Context, db *sql.DB, id int64) (SNMPCredentialRow, error) {
 	row := db.QueryRowContext(ctx, `
 SELECT id, name, security_level, community, username, auth_protocol,
@@ -139,7 +139,7 @@ func CountSNMPCredentials(ctx context.Context, db *sql.DB) (int64, error) {
 	return count, err
 }
 
-// GetSNMPCredentialName returns just the name for a given ID — used by scan-task
+// GetSNMPCredentialName returns just the name for a given ID, used by scan-task
 // create/update to validate a referenced credential_id without pulling secrets.
 func GetSNMPCredentialName(ctx context.Context, db *sql.DB, id int64) (string, error) {
 	var name string

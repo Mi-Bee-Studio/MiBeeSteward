@@ -90,7 +90,7 @@ func TestMailClassifier_SMTPvsFTP(t *testing.T) {
 
 func TestMailClassifier_Bare220IsNotSMTP(t *testing.T) {
 	// Bare "220 " without ESMTP/Postfix markers should NOT classify as smtp
-	// (it's likely FTP — left to BannerClassifier).
+	// (it's likely FTP, left to BannerClassifier).
 	ev := []scannerv2.Evidence{{
 		Kind: "banner", Port: 21, Protocol: "tcp",
 		RawData:    map[string]string{"banner": "220 vsFTPd 3.0.5"},

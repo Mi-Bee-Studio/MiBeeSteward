@@ -17,7 +17,7 @@ import (
 
 // metrics wraps the Prometheus counters the discovery coordinator exposes.
 // Declared as a struct so a nil receiver disables all metric ops in one check
-// (tests and the agent pass a nil registerer to skip registration — the agent
+// (tests and the agent pass a nil registerer to skip registration, the agent
 // has no metrics endpoint).
 type metrics struct {
 	// events counts every handled discovery event by source and outcome. On a
@@ -33,7 +33,7 @@ type metrics struct {
 // called multiple times in one process (tests construct coordinators
 // freely). Registering the same collector twice panics, so we register exactly
 // once via sync.Once and hand every Service the same CounterVec. A nil
-// registerer skips it entirely — the Once still fires on the first non-nil
+// registerer skips it entirely, the Once still fires on the first non-nil
 // caller and binds the vec to that registerer (same trade-off as
 // reconcile/metrics.go).
 var (
@@ -63,7 +63,7 @@ func newMetrics(r prometheus.Registerer) *metrics {
 // recordEvent counts one handled event. Called only from the consumer
 // goroutine's single chokepoint (Service.recordEvent), so counter semantics
 // stay in lockstep with the status endpoint's ring and the statsSnapshot
-// counters — the three views of the same decision points.
+// counters, the three views of the same decision points.
 func (m *metrics) recordEvent(source, outcome string) {
 	if m == nil {
 		return

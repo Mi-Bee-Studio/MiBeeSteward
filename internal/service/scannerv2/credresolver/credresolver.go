@@ -41,7 +41,7 @@ import (
 const cacheTTL = 30 * time.Second
 
 // Resolver reads and decrypts SNMP credentials by ID. The zero value is NOT
-// usable — construct with New. A nil Resolver (or one with a nil cipher) is
+// usable, construct with New. A nil Resolver (or one with a nil cipher) is
 // valid and reports ErrDisabled for every Resolve, which lets the engine run
 // in v1/v2c-only deployments without a master key configured.
 type Resolver struct {
@@ -69,7 +69,7 @@ var ErrNotFound = errors.New("credresolver: credential not found")
 // New builds a resolver backed by the given *sql.DB + cipher. cipher may be
 // nil (→ Resolve returns ErrDisabled), which is how a deployment without a
 // master key keeps working for v1/v2c scans. db is used for raw-SQL queries
-// (see store.go — sqlc cannot generate for this table).
+// (see store.go, sqlc cannot generate for this table).
 func New(db *sql.DB, cipher *crypto.Cipher) *Resolver {
 	return &Resolver{
 		db:     db,
@@ -121,7 +121,7 @@ func (r *Resolver) resolve(ctx context.Context, id int64) (*scannerv2.SNMPCreden
 
 	row, err := GetSNMPCredential(ctx, r.db, id)
 	if err != nil {
-		// GetSNMPCredential surfaces sql.ErrNoRows for a missing row; normalize
+		// GetSNMPCredential returns sql.ErrNoRows for a missing row; normalize
 		// to ErrNotFound so callers don't import database/sql to distinguish it.
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound

@@ -31,7 +31,7 @@ import (
 // ErrHostKeyMismatch is returned when the device's SSH host key does not match
 // the pinned fingerprint on the credential (a possible MITM). The first connect
 // (no pinned fp) always succeeds and returns the actual fingerprint for the
-// caller to pin (TOFU — trust on first use).
+// caller to pin (TOFU, trust on first use).
 var ErrHostKeyMismatch = errors.New("configbackup: SSH host key fingerprint mismatch (possible MITM)")
 
 // FetchConfig connects to host:port with the decrypted credential, runs the
@@ -96,7 +96,7 @@ func FetchConfig(ctx context.Context, host string, port int, cred *sshcred.Crede
 
 	sc, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
 	if err != nil {
-		// A host-key mismatch surfaces here; actualFP was captured by the callback.
+		// A host-key mismatch shows up here; actualFP was captured by the callback.
 		return "", actualFP, err
 	}
 	defer sc.Close()

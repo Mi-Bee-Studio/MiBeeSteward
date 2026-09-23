@@ -22,7 +22,7 @@ import (
 	"log/slog"
 )
 
-// LLDPFrameSource is nil in the default build — NewLLDPFrameSource returns nil,
+// LLDPFrameSource is nil in the default build, NewLLDPFrameSource returns nil,
 // and the caller skips registration. See lldp_frame_real.go (WITH_LLDP) for the
 // real listener.
 type LLDPFrameSource struct{}

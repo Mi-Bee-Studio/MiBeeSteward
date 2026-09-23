@@ -22,7 +22,7 @@
 //     network interfaces and drains a ring buffer of observed protocol bytes
 //     into Evidence. Built via `make build-with-ebpf`.
 //
-// The Probe interface is identical in both configurations — the orchestrator
+// The Probe interface is identical in both configurations, the orchestrator
 // is unaware of which one is active.
 package ebpf
 

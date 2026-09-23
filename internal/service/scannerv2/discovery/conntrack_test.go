@@ -37,15 +37,15 @@ func TestConntrack_ReadActiveLANHosts(t *testing.T) {
 	// Two LAN hosts (.41 and .138) talking to the internet, one LAN↔LAN flow,
 	// and one non-established flow from a third host that must be ignored.
 	content := joinLines(
-		// .41 → 142.250.187.78 (TCP established) — src is LAN
+		// .41 → 142.250.187.78 (TCP established), src is LAN
 		"ipv4 2 tcp 6 431999 ESTABLISHED src=192.168.62.41 dst=142.250.187.78 sport=54812 dport=443 [ASSURED] mark=0 use=2",
-		// reply direction of the same flow — dst is LAN (must not double-count, it's the same IP)
+		// reply direction of the same flow, dst is LAN (must not double-count, it's the same IP)
 		"ipv4 2 tcp 6 431999 ESTABLISHED src=142.250.187.78 dst=192.168.62.41 sport=443 dport=54812 [ASSURED] mark=0 use=2",
-		// .138 → 1.1.1.1 (UDP assured DNS) — src is LAN
+		// .138 → 1.1.1.1 (UDP assured DNS), src is LAN
 		"ipv4 2 udp 17 29 src=192.168.62.138 dst=1.1.1.1 sport=41220 dport=53 [ASSURED] mark=0 use=2",
-		// LAN↔LAN: .41 ↔ .138 — both endpoints are LAN, both emitted (dedup'd in the map)
+		// LAN↔LAN: .41 ↔ .138, both endpoints are LAN, both emitted (dedup'd in the map)
 		"ipv4 2 tcp 6 299 ESTABLISHED src=192.168.62.41 dst=192.168.62.138 sport=44000 dport=22 [ASSURED] mark=0 use=1",
-		// .200 → 8.8.8.8 but in TIME_WAIT (not established) — MUST be skipped
+		// .200 → 8.8.8.8 but in TIME_WAIT (not established), MUST be skipped
 		"ipv4 2 tcp 6 119 TIME_WAIT src=192.168.62.200 dst=8.8.8.8 sport=55000 dport=443 [UNREPLIED] mark=0 use=1",
 	)
 	path := writeConntrackFile(t, content)
@@ -61,7 +61,7 @@ func TestConntrack_ReadActiveLANHosts(t *testing.T) {
 }
 
 // TestConntrack_InvalidCIDR_EmitsNothing confirms a misconfigured CIDR degrades
-// to a no-op (not a panic) — the source returns empty rather than emitting
+// to a no-op (not a panic), the source returns empty rather than emitting
 // every public IP.
 func TestConntrack_InvalidCIDR_EmitsNothing(t *testing.T) {
 	content := joinLines(
@@ -82,7 +82,7 @@ func TestConntrack_InvalidCIDR_EmitsNothing(t *testing.T) {
 
 // TestConntrack_MissingFile_Tolerated confirms the no-op-on-non-router behavior:
 // when /proc/net/nf_conntrack doesn't exist (host isn't a NAT gateway), sweep
-// logs at debug and emits nothing — no crash, no noisy errors.
+// logs at debug and emits nothing, no crash, no noisy errors.
 func TestConntrack_MissingFile_Tolerated(t *testing.T) {
 	src := newConntrackSourceWithPath("192.168.62.0/24", time.Minute,
 		filepath.Join(t.TempDir(), "does-not-exist"), nil, nil)
@@ -102,7 +102,7 @@ func TestConntrack_TokenParsing(t *testing.T) {
 	require.Equal(t, "142.250.187.78", tokenValue(line, "dst="))
 	require.Equal(t, "54812", tokenValue(line, "sport="))
 	require.Equal(t, "", tokenValue(line, "missing="))
-	// ESTABLISHED is a bare state token — matched directly.
+	// ESTABLISHED is a bare state token, matched directly.
 	require.True(t, containsToken(line, "ESTABLISHED"))
 	// [ASSURED] is a bracketed token; a bare "ASSURED" is NOT present (the
 	// sweep check looks for "[ASSURED]" for UDP flows, which carry no state

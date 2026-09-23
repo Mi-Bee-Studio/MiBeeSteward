@@ -72,7 +72,7 @@ func TestAgentCommandService_FleetStatusRoundtrip(t *testing.T) {
 	require.InDelta(t, 12.5, rows[0].ClockOffsetSeconds, 0.001)
 	require.EqualValues(t, 42, rows[0].ScansTotal)
 
-	// Upsert again (idempotent on agent_id).
+	// Upsert again (repeat upserts converge).
 	require.NoError(t, svc.UpsertAgentStatus(ctx, "agent-62", meta, 13.0))
 	rows, err = svc.ListAgentStatus(ctx)
 	require.NoError(t, err)

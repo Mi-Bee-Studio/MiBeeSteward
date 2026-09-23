@@ -50,7 +50,7 @@ func countDevices(t *testing.T, conn *sql.DB) int {
 // the new router's MAC was first seen on a transient DHCP ip (.100), and it then
 // took over the gateway ip (.1) still occupied by the prior router. The scan of
 // (.1, newMAC) must update the .1 row (the ip-holder, now the authority for that
-// location) and mark the .100 row offline — NOT write the new data onto the stale
+// location) and mark the .100 row offline, NOT write the new data onto the stale
 // .100 row while leaving .1 showing the dead old router. Because this is a NEW
 // physical device, its name/type/brand must FULLY replace the prior device's
 // (the old identity is preserved in the device_changed change_log event, not in
@@ -93,7 +93,7 @@ func TestApplyDeviceBridge_DeviceReplacement(t *testing.T) {
 	gw := fetchDevice(t, conn, gatewayID)
 	stale := fetchDevice(t, conn, staleID)
 
-	// Identity fields fully replaced — the device row reflects the NEW device.
+	// Identity fields fully replaced, the device row reflects the NEW device.
 	require.Equal(t, "GL-MT3000", gw.Name, "name replaced: NanoPiR4S → GL-MT3000")
 	require.Equal(t, "GL.iNet", gw.Brand, "brand replaced: iStoreOS → GL.iNet")
 	require.Equal(t, "94:83:c4:29:97:3e", gw.MAC, "mac overwritten with new device mac")
@@ -108,7 +108,7 @@ func TestApplyDeviceBridge_DeviceReplacement(t *testing.T) {
 	require.Equal(t, "offline", stale.Status, "prior mac-matched row marked offline")
 
 	// The OLD identity (NanoPiR4S / iStoreOS) must be recorded in change_log as a
-	// device_changed event — that is where the historical "what it was before"
+	// device_changed event, that is where the historical "what it was before"
 	// lives, so the device row itself always shows the current truth.
 	events, err := queries.ListChangeLog(ctx, dbListAllParams())
 	require.NoError(t, err)
@@ -134,7 +134,7 @@ func dbListAllParams() db.ListChangeLogParams {
 // TestApplyDeviceBridge_RoamingNotReplacement is the regression guard for the
 // legitimate roaming case: a device seen at .10 with mac M, then re-scanned at
 // .20 with the SAME mac M, where .20 is FREE (no different-mac holder). This must
-// stay a single-asset update — NOT a replacement — preserving the MAC-primary
+// stay a single-asset update, NOT a replacement, preserving the MAC-primary
 // roaming semantics (TestRecordDevice_MACPrimaryDedup).
 func TestApplyDeviceBridge_RoamingNotReplacement(t *testing.T) {
 	rn, _, conn := setupChangeDetectDB(t)
@@ -143,7 +143,7 @@ func TestApplyDeviceBridge_RoamingNotReplacement(t *testing.T) {
 	// A STABLE (universal, non-LAA) MAC: 08:00:27 is VirtualBox's OUI, and the
 	// low nibble of the first octet (8) has the locally-administered bit CLEAR,
 	// so it anchors cross-network identity. (The legacy placeholder "aa:.."
-	// accidentally had the LAA bit set — 0xaa & 0x02 != 0 — which would now
+	// accidentally had the LAA bit set, 0xaa & 0x02 != 0, which would now
 	// correctly trigger the randomized-MAC identity downgrade and defeat this
 	// test's "stable MAC roams as one asset" premise.)
 	const roamMAC = "08:00:27:bb:cc:10"
@@ -156,7 +156,7 @@ func TestApplyDeviceBridge_RoamingNotReplacement(t *testing.T) {
 	beforeCount := countDevices(t, conn)
 	require.Equal(t, 1, beforeCount)
 
-	// Same mac, now answering from a different (free) ip .20 — pure roaming.
+	// Same mac, now answering from a different (free) ip .20, pure roaming.
 	_, _ = rn.applyDeviceBridge(ctx,
 		reportFor("192.168.63.20", "camera", "hikvision", roamMAC), rn.networkID, "")
 
@@ -165,7 +165,7 @@ func TestApplyDeviceBridge_RoamingNotReplacement(t *testing.T) {
 	after := fetchDevice(t, conn, roamingID)
 	require.Equal(t, roamMAC, after.MAC)
 	require.Equal(t, "online", after.Status, "roaming device stays online")
-	// The device ROAMED to a new IP — the registry must reflect the CURRENT IP,
+	// The device ROAMED to a new IP, the registry must reflect the CURRENT IP,
 	// not the first-seen one. (Prior behavior kept the stale IP; that left a NAS
 	// that renewed its DHCP lease showing an address days out of date.)
 	require.Equal(t, "192.168.63.20", after.IP, "roaming relocates ip_address to the scanned ip")
@@ -173,7 +173,7 @@ func TestApplyDeviceBridge_RoamingNotReplacement(t *testing.T) {
 
 // TestApplyDeviceBridge_MACFirstResolveNotReplacement guards the "MAC fills on
 // rescan" path: a device first seen WITHOUT a mac (matched by ip+network), then
-// a later scan resolves the mac. This must fill the existing row's mac — NOT be
+// a later scan resolves the mac. This must fill the existing row's mac, NOT be
 // mistaken for a replacement conflict (the ip-holder's mac is empty, which is the
 // distinguishing condition). Mirrors TestRecordDevice_MACFillsOnRescan.
 func TestApplyDeviceBridge_MACFirstResolveNotReplacement(t *testing.T) {
@@ -203,13 +203,13 @@ func TestApplyDeviceBridge_MACFirstResolveNotReplacement(t *testing.T) {
 }
 
 // TestApplyDeviceBridge_NameSelfHealsFromIP guards the name=ip_address
-// self-heal in buildExistingUpdate (#169 part d): when a device is first
+// self-correction in buildExistingUpdate (#169 part d): when a device is first
 // discovered with NO resolvable hostname, its name falls back to the IP
 // (deviceDisplayName). A later scan that DOES resolve a hostname must
-// overwrite the IP-as-name — the SQL `name = CASE WHEN (name = ” OR name =
+// overwrite the IP-as-name, the SQL `name = CASE WHEN (name = ” OR name =
 // ip_address) THEN ? ELSE name END` covers exactly this. This is intentional
 // fallback behaviour (NOT a ghost to clean up); the test pins it so a future
-// refactor doesn't silently drop the self-heal and leave devices stuck
+// refactor doesn't silently drop the self-correction and leave devices stuck
 // showing their IP as a name forever.
 func TestApplyDeviceBridge_NameSelfHealsFromIP(t *testing.T) {
 	rn, _, conn := setupChangeDetectDB(t)
@@ -237,6 +237,6 @@ func TestApplyDeviceBridge_NameSelfHealsFromIP(t *testing.T) {
 	require.Equal(t, 1, countDevices(t, conn), "rescan updates the existing row, no new device")
 	healed := fetchDevice(t, conn, id)
 	require.Equal(t, "sensor-living-room", healed.Name,
-		"name self-heals: IP-as-name overwritten once a hostname is resolved")
+		"name self-corrects: IP-as-name overwritten once a hostname is resolved")
 	require.Equal(t, "192.168.63.190", healed.IP, "ip unchanged")
 }

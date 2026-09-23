@@ -128,11 +128,11 @@ func (s *CDPFrameSource) listen(ctx context.Context, iface string) {
 		if edge.NeighborMAC == "" {
 			continue // no valid frame
 		}
-		// (a) host discovery — the device is a host on this network.
+		// (a) host discovery, the device is a host on this network.
 		if s.svc != nil && edge.NeighborIP != "" {
 			s.svc.Emit(NewHostEvent{IP: edge.NeighborIP, MAC: edge.NeighborMAC, Source: "cdp_frame"})
 		}
-		// (b) neighbor edge — local interface sees this neighbor.
+		// (b) neighbor edge, local interface sees this neighbor.
 		if s.neighborSink != nil {
 			s.neighborSink(s.ifaceMACs[iface], []cdpEdge{edge})
 		}

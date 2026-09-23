@@ -17,7 +17,7 @@ import (
 
 // ReportedHostToReport reconstructs a scannerv2.HostReport from a
 // domain.ReportedHost (the wire payload an agent POSTs). The center feeds this
-// through applyDeviceBridge — the same path the local scan uses — so identity
+// through applyDeviceBridge, the same path the local scan uses, so identity
 // rules (MAC-primary → (ip, network_id) fallback) and heartbeat seeding are
 // identical for local and remote discovery.
 //

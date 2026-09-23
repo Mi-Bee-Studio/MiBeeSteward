@@ -58,7 +58,7 @@ func TestCoverage_TiersAndGrouping(t *testing.T) {
 	require.EqualValues(t, 3, cov.Unidentified)
 	require.Len(t, cov.Devices, 3)
 
-	// groups: oui TP-Link x2, ports 80 x2, hostname espresso x2 — all tied
+	// groups: oui TP-Link x2, ports 80 x2, hostname espresso x2, all tied
 	// at count 2, so assert by KIND lookup, not positional order (the sort
 	// tiebreaks deterministically on kind/signature, but no kind is "first"
 	// among equals).

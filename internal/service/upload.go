@@ -23,7 +23,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Typed upload rejection reasons — the HTTP handler maps each to a distinct
+// Typed upload rejection reasons, the HTTP handler maps each to a distinct
 // status code (413/415/400) so the client sees WHY the file was refused,
 // instead of a blanket 500.
 var (
@@ -74,7 +74,7 @@ func isTextMime(v string) bool {
 // compatibleMime reports whether sniffed content (detected) may carry a
 // filename extension claiming ext:
 //   - Generic detections the sniffer cannot distinguish (all Office formats
-//     sniff as application/zip) are accepted — but NOT for a text/* target:
+//     sniff as application/zip) are accepted, but NOT for a text/* target:
 //     binary content named .md is a mismatch, a .md must actually be text.
 //   - The text/* family is one sniffing group (plain text, markdown and HTML
 //     all detect as text/plain or text/html), so any text/* content validates

@@ -28,8 +28,8 @@ import (
 // the shutdown data-loss bug: the final drain used to commit under the ALREADY
 // CANCELLED loop context (the fresh 5s ctx it built was never passed in), so
 // every row still buffered at Close was dropped with a "context canceled"
-// error. Enqueue rows and Close immediately — well before the 5s flush ticker
-// — then verify the rows landed.
+// error. Enqueue rows and Close immediately, well before the 5s flush ticker
+// - then verify the rows landed.
 func TestHeartbeatStore_FinalDrainCommitsBufferedRows(t *testing.T) {
 	dir := t.TempDir()
 	store, err := OpenHeartbeatStore(filepath.Join(dir, "hb.db"))
@@ -49,7 +49,7 @@ func TestHeartbeatStore_FinalDrainCommitsBufferedRows(t *testing.T) {
 		})
 	}
 
-	// Close immediately — the ticker (5s) has NOT fired, so everything is
+	// Close immediately, the ticker (5s) has NOT fired, so everything is
 	// still buffered; only the final drain can commit it.
 	done := make(chan error, 1)
 	go func() { done <- store.Close() }()
@@ -61,7 +61,7 @@ func TestHeartbeatStore_FinalDrainCommitsBufferedRows(t *testing.T) {
 	}
 	cancel()
 
-	// Close() also closes the store's DB handle — read the file back through
+	// Close() also closes the store's DB handle, read the file back through
 	// a fresh connection to verify what the final drain actually committed.
 	verify, err := dbopen.Open(filepath.Join(dir, "hb.db"), "journal_mode=WAL", "busy_timeout=5000")
 	require.NoError(t, err)
@@ -109,7 +109,7 @@ func TestStopWithoutStartDoesNotHang(t *testing.T) {
 		}(inst)
 		select {
 		case <-done:
-			// returned immediately — correct
+			// returned immediately, correct
 		case <-time.After(3 * time.Second):
 			t.Fatal("Stop() before Start() hung")
 		}

@@ -87,7 +87,7 @@ func TestChangeDetect_NoChangeNoEvent(t *testing.T) {
 
 	// First scan: creates the device + device_added.
 	rn.applyDeviceBridge(ctx, rep, rn.networkID, "")
-	// Second scan: identical report — nothing changed.
+	// Second scan: identical report, nothing changed.
 	_, changed := rn.applyDeviceBridge(ctx, rep, rn.networkID, "")
 	require.False(t, changed, "identical rescan should report no change")
 
@@ -100,14 +100,14 @@ func TestChangeDetect_NoChangeNoEvent(t *testing.T) {
 
 // TestChangeDetect_IdentityChangeEmitsChanged confirms a REAL identity change
 // emits a device_changed event under the tiered model. Identity fields are
-// name/type/brand/model/mac/ip — a change to any of these is the gate for
+// name/type/brand/model/mac/ip, a change to any of these is the gate for
 // device_changed (status is excluded; it flows through lost/recovered).
 //
 // The cleanest identity change the scan path produces is a MAC fill-in: a device
 // first seen with no MAC, then resolved to a MAC on a later scan. Under the
 // CASE-when-empty guard this rewrites the mac_address column, so the before/after
 // identity diff fires. (A same-MAC type "reclassification" does NOT change
-// devices.type — the guard keeps the deeper earlier verdict — so it correctly
+// devices.type, the guard keeps the deeper earlier verdict, so it correctly
 // emits nothing; see TestChangeDetect_NoChangeNoEvent for the no-op case.)
 func TestChangeDetect_IdentityChangeEmitsChanged(t *testing.T) {
 	rn, queries, _ := setupChangeDetectDB(t)
@@ -232,7 +232,7 @@ func TestDetectLost_SetLostThreshold(t *testing.T) {
 }
 
 // TestSetLostThreshold_IgnoresNonPositive confirms SetLostThreshold rejects
-// non-positive values (keeps the constructor default of 2 — 0 means "unset →
+// non-positive values (keeps the constructor default of 2, 0 means "unset →
 // use default", matching the config convention).
 func TestSetLostThreshold_IgnoresNonPositive(t *testing.T) {
 	rn, _, _ := setupChangeDetectDB(t)

@@ -28,7 +28,7 @@ import (
 // schema (so scan_tasks / scan_task_runs tables exist). The ScanFunc is the
 // caller's; pass nil for a no-op. Returns the scheduler, the queries (for
 // seeding), and the raw connection (for direct assertions). The scheduler is
-// NOT started — tests that need TriggerNow/CancelTask (which require gocron to
+// NOT started, tests that need TriggerNow/CancelTask (which require gocron to
 // be running) call startTestScheduler instead.
 func newTestScheduler(t *testing.T, scanFn ScanFunc) (*Scheduler, *db.Queries, *sql.DB) {
 	t.Helper()
@@ -49,7 +49,7 @@ func newTestScheduler(t *testing.T, scanFn ScanFunc) (*Scheduler, *db.Queries, *
 
 // startTestScheduler is newTestScheduler + Start. It also shortens the stale-run
 // sweep interval by recreating the scheduler is not possible (private field),
-// so the sweeper simply runs at its default 10min — harmless for short tests,
+// so the sweeper simply runs at its default 10min, harmless for short tests,
 // and Stop (registered via cleanup) terminates it. Seed scan_tasks BEFORE
 // calling this so Start's job re-hydration picks them up.
 func startTestScheduler(t *testing.T, scanFn ScanFunc) (*Scheduler, *db.Queries, *sql.DB) {
@@ -73,7 +73,7 @@ func seedScanTask(t *testing.T, conn *sql.DB, id int64, targets string) {
 }
 
 // TestAddJob_ReplacesExisting asserts that registering the same taskID twice
-// does not leak a stale entry in jobMap — AddJob must remove-then-register, so
+// does not leak a stale entry in jobMap, AddJob must remove-then-register, so
 // JobCount reflects distinct tasks, not registration calls.
 func TestAddJob_ReplacesExisting(t *testing.T) {
 	s, _, _ := newTestScheduler(t, nil)
@@ -161,7 +161,7 @@ func TestCancelTask_CancelsInFlightScan(t *testing.T) {
 	require.NoError(t, s.CancelTask(taskID))
 	select {
 	case <-cancelled:
-		// pass — ctx was cancelled
+		// pass, ctx was cancelled
 	case <-time.After(2 * time.Second):
 		t.Fatal("scan ctx was not cancelled within 2s of CancelTask")
 	}
@@ -206,7 +206,7 @@ func TestConcurrentAddRemove_JobCountConsistent(t *testing.T) {
 	wg.Wait()
 	// Final state is well-defined regardless of interleaving: the last op wins,
 	// JobCount is 0 or 1 (single taskID). The assertion is that it never went
-	// negative or raced — covered by -race + the bound check here.
+	// negative or raced, covered by -race + the bound check here.
 	require.LessOrEqual(t, s.JobCount(), 1, "single taskID → at most 1 job")
 }
 
@@ -229,7 +229,7 @@ func TestCleanupStaleRuns_MarksOldRunningAsFailed(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// A recent 'running' run (12 min ago) must be LEFT alone — only >1h is stale.
+	// A recent 'running' run (12 min ago) must be LEFT alone, only >1h is stale.
 	const freshRunID = 2
 	_, err = conn.Exec(
 		`INSERT INTO scan_task_runs (id, task_id, status, started_at)

@@ -21,7 +21,7 @@ import (
 )
 
 // TestRecordHeartbeats_LegacyFallback drops the (device_id, method) unique
-// index so RecordHeartbeats takes the check-then-upsert legacy path — the
+// index so RecordHeartbeats takes the check-then-upsert legacy path, the
 // upgrade safety net for DBs created before the index existed.
 func TestRecordHeartbeats_LegacyFallback(t *testing.T) {
 	repo, ctx := newRepo(t, Options{})

@@ -79,7 +79,7 @@ func TestRecordServices_ReplaceOnRescan(t *testing.T) {
 		t.Fatalf("expected 2 services after first scan, got %d", cnt)
 	}
 
-	// Second scan: only http remains — the port scan positively closed 22 (RST)
+	// Second scan: only http remains, the port scan positively closed 22 (RST)
 	// and re-identified 80. Scoped replace → 1 row.
 	if err := repo.RecordServices(ctx, ip, []scannerv2.ServiceIdentity{
 		{Service: "http", Port: 80, Confidence: 0.95, Metadata: map[string]string{"server": "nginx/1.25"}},
@@ -107,7 +107,7 @@ func TestRecordServices_ReplaceOnRescan(t *testing.T) {
 // #115/#129: the engine writes satellite rows BEFORE the runner persists the
 // device row, so on first discovery resolveDeviceUUID returns "" and rows land
 // with device_uuid=”. On the next scan the device row exists and the uuid is
-// resolved — but a DELETE scoped to the resolved uuid does NOT remove the
+// resolved, but a DELETE scoped to the resolved uuid does NOT remove the
 // prior scan's device_uuid=” rows, so the INSERT collides on the
 // UNIQUE(ip,service,port) index and the fresh data is silently dropped
 // (downgraded to a Warn), leaving the service list frozen at scan-1.
@@ -142,7 +142,7 @@ func TestRecordServices_ReplaceAcrossUUIDResolution(t *testing.T) {
 		t.Fatalf("record services (scan 2): %v", err)
 	}
 
-	// Exactly ONE row for (ip, http, 80) — not two — and it carries the fresh data.
+	// Exactly ONE row for (ip, http, 80), not two, and it carries the fresh data.
 	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_services WHERE ip=? AND service='http' AND port=80`, ip); cnt != 1 {
 		t.Fatalf("scan 2: expected 1 http row, got %d (uuid-transition collision left a stale row)", cnt)
 	}
@@ -362,7 +362,7 @@ func TestNormalizeMAC(t *testing.T) {
 // (IEEE 802 / RFC 7042). The U/L bit is bit 1 of the first octet (0x02); in a
 // canonical MAC its value rides in the LOW nibble of the first octet (mac[1]).
 // Inputs are NormalizeMAC's canonical output. Note this is a NEUTRAL factual
-// bit: when set it means "locally administered" — it CANNOT, by itself, tell
+// bit: when set it means "locally administered", it CANNOT, by itself, tell
 // privacy randomization (iOS/Android) from a locally fixed setting (soft-router,
 // hypervisor, manual). The test asserts the bit value only, not any "randomized"
 // interpretation.
@@ -378,7 +378,7 @@ func TestIsLocallyAdministeredMAC(t *testing.T) {
 		{"locally administered 6e", "6e:bb:cc:dd:ee:ff", true},
 		{"locally administered 3b", "3b:bb:cc:dd:ee:ff", true},
 		{"locally administered 5f", "5f:bb:cc:dd:ee:ff", true}, // low nibble f (1111) & 2 = true
-		// U/L clear (low nibble 0,1,4,5,8,9,c,d): 0,1,4,5,8,9,c,d — universally administered
+		// U/L clear (low nibble 0,1,4,5,8,9,c,d): 0,1,4,5,8,9,c,d, universally administered
 		{"Hikvision universal OUI", "bc:ad:28:11:22:33", false}, // c -> 12 & 2 = 0
 		{"universal 00", "00:1a:11:22:33:44", false},
 		{"universal 08", "08:00:27:aa:bb:cc", false}, // VirtualBox OUI, universally administered
@@ -429,7 +429,7 @@ func TestIsMulticastMAC(t *testing.T) {
 // TestRecordDevice_DoesNotCreateIdentity verifies the single-writer contract:
 // RecordDevice ENRICHES existing rows but never CREATES a device identity (no
 // INSERT). Device creation is the sole responsibility of runner.applyDeviceBridge.
-// This is what eliminates the dual-write fissure — there is only one identity
+// This is what eliminates the dual-write fissure, there is only one identity
 // creator, so identity rules (MAC-primary, replacement) live in exactly one place.
 //
 // The MAC-primary-dedup, network-partitioning, MAC-fills-on-rescan, and
@@ -476,7 +476,7 @@ func TestRecordDevice_DoesNotCreateIdentity(t *testing.T) {
 }
 
 // TestRecordServices_DegradedCycleKeepsRows pins the #256 fix on the store
-// side: a degraded scan cycle (dial timeouts — no TCP evidence, no closure
+// side: a degraded scan cycle (dial timeouts, no TCP evidence, no closure
 // signal) must NOT erase the host's known service rows. Only positively
 // confirmed-closed ports justify deletion.
 func TestRecordServices_DegradedCycleKeepsRows(t *testing.T) {
@@ -493,7 +493,7 @@ func TestRecordServices_DegradedCycleKeepsRows(t *testing.T) {
 		t.Fatalf("record services (healthy): %v", err)
 	}
 
-	// Degraded cycle — exactly the #256 field signature: only snmp answered
+	// Degraded cycle, exactly the #256 field signature: only snmp answered
 	// (fast, lightweight), every TCP dial timed out (no banner, no port_open,
 	// no port_closed). The old blanket DELETE-by-IP wiped ssh/http/https and
 	// left the host with a lone snmp row until a healthy cycle restored them.
@@ -514,7 +514,7 @@ func TestRecordServices_DegradedCycleKeepsRows(t *testing.T) {
 	}
 
 	// Fully-empty cycle with no closure signal: nothing identified, nothing
-	// closed — the entire prior set must survive untouched.
+	// closed, the entire prior set must survive untouched.
 	if err := repo.RecordServices(ctx, ip, nil, nil); err != nil {
 		t.Fatalf("record services (empty): %v", err)
 	}

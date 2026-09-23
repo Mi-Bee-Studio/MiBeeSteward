@@ -20,7 +20,7 @@ import (
 // construction time); lookup is read-only after construction.
 //
 // The registry is the single extension point for new protocols: to add support
-// for a new service, construct its Classifier + Handler and Register them — no
+// for a new service, construct its Classifier + Handler and Register them, no
 // orchestrator changes needed.
 type Registry struct {
 	mu          sync.RWMutex

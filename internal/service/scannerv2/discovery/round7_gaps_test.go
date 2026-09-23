@@ -55,14 +55,14 @@ func TestFileSourceLoops_StartCancel(t *testing.T) {
 
 	cancel()
 	// The loops observe the cancellation within their short interval; give
-	// them a moment and confirm the process is healthy (goroutines exited —
+	// them a moment and confirm the process is healthy (goroutines exited;
 	// indirectly verified by no deadlock/panic on a final sweep).
 	time.Sleep(120 * time.Millisecond)
 	require.NotPanics(t, func() { dns.sweep() })
 }
 
 // TestFrameHelpers pins the raw-frame helper math used by the build-tag-gated
-// sources — htons byte order and the interface enumeration filters.
+// sources, htons byte order and the interface enumeration filters.
 func TestFrameHelpers(t *testing.T) {
 	require.Equal(t, uint16(0x1234), htons(0x3412), "little-endian host → network order")
 	require.Equal(t, binary.BigEndian.Uint16([]byte{0xAB, 0xCD}), htons(0xCDAB))

@@ -8,7 +8,7 @@
 // for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 
 // Shared types for the LLDP frame source, used by both the stub (default) and
-// real (WITH_LLDP) builds. No build tag — always compiled.
+// real (WITH_LLDP) builds. No build tag, always compiled.
 
 package discovery
 

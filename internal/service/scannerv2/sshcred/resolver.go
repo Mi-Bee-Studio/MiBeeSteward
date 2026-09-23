@@ -30,7 +30,7 @@ type Credential struct {
 var ErrDisabled = errors.New("sshcred: disabled (no master key configured)")
 
 // Resolver decrypts SSH credentials on demand via the shared crypto.Cipher. A
-// nil cipher (no master key) yields ErrDisabled from every Resolve — SSH
+// nil cipher (no master key) yields ErrDisabled from every Resolve, SSH
 // credential storage is then unavailable, matching the SNMP credential behavior.
 //
 // No in-memory cache: the config-backup probe resolves a credential at most
@@ -80,7 +80,7 @@ func (r *Resolver) decryptRow(row Row) (*Credential, error) {
 	if err != nil {
 		return nil, err
 	}
-	// passphrase_enc may be empty (unencrypted key / password auth) — Decrypt("")
+	// passphrase_enc may be empty (unencrypted key / password auth), Decrypt("")
 	// returns ("", nil) per the cipher contract, so this is a no-op then.
 	passphrase, err := r.cipher.Decrypt(row.PassphraseEnc)
 	if err != nil {

@@ -19,7 +19,7 @@ import (
 	"mibee-steward/internal/testutil"
 )
 
-// testKey matches the crypto package test key — 32 ASCII bytes, not secret.
+// testKey matches the crypto package test key, 32 ASCII bytes, not secret.
 var testKey = []byte("01234567890123456789012345678901")
 
 // newTestResolver spins up an in-memory SQLite DB (via testutil), inserts a v3
@@ -40,7 +40,7 @@ func newTestResolver(t *testing.T, level string) (*Resolver, int64) {
 
 	// Build the credential row with encrypted passphrases (the handler does
 	// this; here we encrypt inline to set up the fixture). Uses the raw-SQL
-	// CreateSNMPCredential helper (sqlc corrupts the INSERT — see store.go).
+	// CreateSNMPCredential helper (sqlc corrupts the INSERT, see store.go).
 	authEnc, _ := cipher.Encrypt("authpass8")
 	privEnc, _ := cipher.Encrypt("privpass8")
 	id, err := CreateSNMPCredential(context.Background(), conn, SNMPCredentialWriteParams{
@@ -124,7 +124,7 @@ func TestResolve_InvalidateForcesReread(t *testing.T) {
 }
 
 func TestResolve_NilCipherReturnsDisabled(t *testing.T) {
-	// A resolver built with a nil cipher must return ErrDisabled, NOT panic —
+	// A resolver built with a nil cipher must return ErrDisabled, NOT panic;
 	// this is how a deployment without a master key keeps v1/v2c scans working.
 	conn, err := testutil.SetupTestDBFromSchema()
 	if err != nil {
@@ -172,7 +172,7 @@ func TestResolve_V1V2CCredentialHasNoPassphrases(t *testing.T) {
 		Name:          "v2c-cred",
 		SecurityLevel: scannerv2.SNMPLevelV1V2C,
 		Community:     "private",
-		// AuthPassphraseEnc / PrivPassphraseEnc intentionally empty (default "").
+		// AuthPassphraseEnc / PrivPassphraseEnc empty (default "").
 	})
 	if err != nil {
 		t.Fatalf("CreateSNMPCredential: %v", err)
@@ -195,7 +195,7 @@ func TestResolve_V1V2CCredentialHasNoPassphrases(t *testing.T) {
 
 // TestResolve_CacheExpiresAfterTTL is a slow test (cacheTTL is 30s); rather
 // than wait, we verify the expiry logic by checking the entry's timestamp is
-// recorded. A full TTL-based expiry test would be flaky/slow — the Invalidate
+// recorded. A full TTL-based expiry test would be flaky/slow, the Invalidate
 // test above covers the invalidation path, and the cache-hit test covers the
 // fresh-path. This stub documents that the TTL is 30s for future readers.
 func TestCacheTTL_Is30Seconds(t *testing.T) {

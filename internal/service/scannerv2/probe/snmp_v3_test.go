@@ -42,7 +42,7 @@ func TestV3MsgFlags_MapsSecurityLevels(t *testing.T) {
 			}
 		})
 	}
-	// An invalid level must error (not silently default — that would mask a
+	// An invalid level must error (not silently default, that would mask a
 	// typo as a wrong-but-working credential).
 	if _, err := v3MsgFlags("bogus"); err == nil {
 		t.Errorf("v3MsgFlags(\"bogus\") succeeded; want error")
@@ -130,7 +130,7 @@ func TestParsePrivProtocol_ValidAndMissing(t *testing.T) {
 
 // TestConnectSNMP_V3CredentialRoutesToV3 verifies that when a hint carries a v3
 // credential, connectSNMP builds a Version3 client (NOT v2c) with the USM
-// parameters populated. We don't dial a real agent here — we just confirm the
+// parameters populated. We don't dial a real agent here, we just confirm the
 // credential selection + struct population is correct. The connection attempt
 // to a non-listening port fails fast, which lets us inspect the configured
 // struct before the dial without a running SNMP server.
@@ -150,7 +150,7 @@ func TestConnectSNMP_V3CredentialRoutesToV3(t *testing.T) {
 		SNMPCredential: cred,
 	}
 	// connectSNMPWithRetries returns the configured client even though the dial
-	// to 127.0.0.1:161 will fail (nothing listening) — actually Connect() dials
+	// to 127.0.0.1:161 will fail (nothing listening), actually Connect() dials
 	// UDP which is connectionless, so it won't fail. We close immediately and
 	// inspect the struct.
 	snmp, err := dialSNMPReal("127.0.0.1", hint, gosnmp.Version2c, 0)
@@ -193,7 +193,7 @@ func TestConnectSNMP_V3CredentialRoutesToV3(t *testing.T) {
 }
 
 // TestConnectSNMP_LegacyCommunityUsedWhenNoCred verifies the no-credential path
-// still builds a v2c client with the hint's community — the backward-compat
+// still builds a v2c client with the hint's community, the backward-compat
 // invariant for existing deployments that haven't created any v3 credentials.
 func TestConnectSNMP_LegacyCommunityUsedWhenNoCred(t *testing.T) {
 	hint := scannerv2.ProbeHint{
@@ -217,7 +217,7 @@ func TestConnectSNMP_LegacyCommunityUsedWhenNoCred(t *testing.T) {
 }
 
 // TestConnectSNMP_V1V2CCredentialCommunityWinsOverHint confirms that a v1/v2c
-// credential's community takes precedence over the hint's legacy community —
+// credential's community takes precedence over the hint's legacy community;
 // so a scan task that bound a credential is honored even when the global
 // default community is also set in the hint.
 func TestConnectSNMP_V1V2CCredentialCommunityWinsOverHint(t *testing.T) {

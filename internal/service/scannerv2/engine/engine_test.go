@@ -25,7 +25,7 @@ func TestParseScanTargets_Formats(t *testing.T) {
 		{"192.168.1.5,192.168.1.6", 2, 2, false},
 		{"", 0, 0, true},
 		{"not-an-ip", 0, 0, true},
-		// Reserved address space is rejected outright (#317) — a /22 of
+		// Reserved address space is rejected outright (#317), a /22 of
 		// loopback once invented 1022 phantom devices on a test center.
 		{"127.8.0.0/22", 0, 0, true},
 		{"127.0.0.1", 0, 0, true},
@@ -140,7 +140,7 @@ func TestParseScanTargets_ExcludesReservedBounds(t *testing.T) {
 		t.Fatalf("/32 = %v, want the single host", got)
 	}
 
-	// IPv6: no broadcast concept — a /126 enumerates all 4 addresses.
+	// IPv6: no broadcast concept, a /126 enumerates all 4 addresses.
 	got, err = parseScanTargets("fd00::/126")
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +153,7 @@ func TestParseScanTargets_ExcludesReservedBounds(t *testing.T) {
 // TestEngine_SeedEvidenceYieldsMiotIdentity pins the #377 end-to-end engine
 // path: a seeded lease-hostname observation (the ONLY identity channel for
 // Mijia devices on real networks) must flow through gather→classify→dispatch
-// and land the miot identity + brand on the report — with the embedded
+// and land the miot identity + brand on the report, with the embedded
 // fingerprint rules, no DB, and a target the active probes can't reach.
 func TestEngine_SeedEvidenceYieldsMiotIdentity(t *testing.T) {
 	e, err := NewEngine(nil, Config{

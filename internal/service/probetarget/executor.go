@@ -25,7 +25,7 @@ import (
 
 // certCollector mirrors scannerv2probe.CollectCertChain's signature so tests
 // can stub certificate collection without a real TLS endpoint. The production
-// value IS the scanner's collector — the reuse that puts internal-network cert
+// value IS the scanner's collector, the reuse that puts internal-network cert
 // tooling to work on external hosts (hostname targets work as-is: SNI is
 // auto-derived from the address).
 type certCollector func(ctx context.Context, host string, port int, timeout time.Duration) []scannerv2.TLSCertRecord
@@ -70,17 +70,17 @@ var defaultTargetExecutor = targetExecutor{
 	certCollect: scannerv2probe.CollectCertChain,
 }
 
-// RunTarget dispatches one target to its module prober — the shared
+// RunTarget dispatches one target to its module prober, the shared
 // execution core used by BOTH the center engine and the agent-side vantage
 // prober (#277). Never panics on an unknown module (returns a fail outcome)
-// — the CHECK constraint makes that unreachable, but callers must never
+// - the CHECK constraint makes that unreachable, but callers must never
 // wedge on bad data.
 func RunTarget(ctx context.Context, t db.ProbeTarget) Outcome {
 	return defaultTargetExecutor.execute(ctx, t)
 }
 
 // execute dispatches one target to its module prober. Never panics on an
-// unknown module (returns a fail outcome) — the CHECK constraint makes that
+// unknown module (returns a fail outcome), the CHECK constraint makes that
 // unreachable, but the engine must never wedge on bad data.
 func (x *targetExecutor) execute(ctx context.Context, t db.ProbeTarget) outcome {
 	timeout := time.Duration(t.TimeoutSeconds) * time.Second
@@ -98,17 +98,17 @@ func (x *targetExecutor) execute(ctx context.Context, t db.ProbeTarget) outcome 
 	}
 }
 
-// executeHTTP probes a full URL (status < 400 = success, ≤10 redirects — the
+// executeHTTP probes a full URL (status < 400 = success, ≤10 redirects, the
 // shared HTTPProber's semantics, identical to heartbeat). For https targets it
 // ALSO collects the certificate chain: the HTTP client verifies TLS, so an
 // expired/untrusted cert fails the probe itself, while the skip-verify
 // collector still captures the chain so the UI can show WHY it failed. A
-// collection failure never flips an otherwise-successful HTTP probe — the cert
+// collection failure never flips an otherwise-successful HTTP probe, the cert
 // fields are simply absent for that run.
 func (x *targetExecutor) executeHTTP(ctx context.Context, t db.ProbeTarget, timeout time.Duration) outcome {
 	res, err := x.probers["http"].Probe(ctx, t.Target, timeout)
 	if err != nil {
-		// Prober-level error (not the target's fault) — counts as fail.
+		// Prober-level error (not the target's fault), counts as fail.
 		return outcome{Status: classifyError(err.Error()), ErrMsg: err.Error()}
 	}
 	out := outcomeFromResult(res)
@@ -128,7 +128,7 @@ func (x *targetExecutor) executeHTTP(ctx context.Context, t db.ProbeTarget, time
 
 // executeTLS is the pure certificate probe: handshake host:port, success =
 // leaf record carries no Error. Latency wraps the whole collection call
-// (two handshakes — collection + trust verdict), documented as such.
+// (two handshakes, collection + trust verdict), documented as such.
 func (x *targetExecutor) executeTLS(ctx context.Context, t db.ProbeTarget, timeout time.Duration) outcome {
 	host, portStr, err := net.SplitHostPort(t.Target)
 	if err != nil {

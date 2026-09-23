@@ -126,7 +126,7 @@ func TestEngine_TriggerNowDisabled(t *testing.T) {
 }
 
 // TestEngine_TriggerNowAgentVantageNotLocal: a target whose vantage plan
-// assigns execution to an agent is refused by the center engine — manual
+// assigns execution to an agent is refused by the center engine, manual
 // trigger follows the plan (#277 step 1).
 func TestEngine_TriggerNowAgentVantageNotLocal(t *testing.T) {
 	queries, svc, _ := setupEngine(t)
@@ -183,7 +183,7 @@ func TestEngine_TLSCollectionFailureKeepsLastGoodChain(t *testing.T) {
 	_, err := engine.TriggerNow(ctx, tgt.ID)
 	require.NoError(t, err)
 
-	// Handshake now fails (e.g. transient network) — the stored chain must
+	// Handshake now fails (e.g. transient network), the stored chain must
 	// survive so the UI keeps showing the last known-good certificate.
 	engine.exec.certCollect = func(_ context.Context, _ string, _ int, _ time.Duration) []scannerv2.TLSCertRecord {
 		return []scannerv2.TLSCertRecord{{IP: "example.com", Port: 443, Error: "dial tcp: i/o timeout"}}

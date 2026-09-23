@@ -27,7 +27,7 @@ type NetworkService struct {
 }
 
 // NewNetworkService constructs a NetworkService. conn powers the raw UPDATE
-// statement — sqlc v1.31.1 truncates the generated string for UpdateNetwork's
+// statement, sqlc v1.31.1 truncates the generated string for UpdateNetwork's
 // multi-bind shape, so the UPDATE is hand-written (db/AGENTS.md convention).
 func NewNetworkService(queries *db.Queries, conn db.DBTX) *NetworkService {
 	return &NetworkService{queries: queries, conn: conn}
@@ -50,7 +50,7 @@ type NetworkInput struct {
 	Site *string
 }
 
-// Create registers a new logical network — the admin path for defining the
+// Create registers a new logical network, the admin path for defining the
 // remote networks agents discover for (the center's own network is
 // auto-resolved at startup via resolveNetworkID).
 func (s *NetworkService) Create(ctx context.Context, in NetworkInput) (db.Network, error) {
@@ -72,9 +72,9 @@ func (s *NetworkService) Create(ctx context.Context, in NetworkInput) (db.Networ
 	return net, nil
 }
 
-// Update edits name/cidr/site. agent_id is intentionally NOT editable here
+// Update edits name/cidr/site. agent_id is NOT editable here
 // (owned by the agent-token flow). Runs via raw database/sql and reads the
-// updated row back — sqlc v1.31.1 truncates the generated query string for
+// updated row back, sqlc v1.31.1 truncates the generated query string for
 // this multi-bind UPDATE shape (drops the trailing `?`).
 func (s *NetworkService) Update(ctx context.Context, id int64, in NetworkInput) (db.Network, error) {
 	in = normalizeNetworkInput(in)

@@ -19,7 +19,7 @@ import (
 // DefaultProbeSources returns the standard set of active ProbeSources, ready to
 // register into a scannerv2.Registry. The portSpec configures the TCP port
 // scan; pass "" to scan only the fingerprint ports. oui enables MAC→vendor
-// lookup in the ARP probe (may be nil — vendor is then simply omitted). rdns
+// lookup in the ARP probe (may be nil, vendor is then simply omitted). rdns
 // and mdns tune the reverse-DNS and mDNS hostname probes (pass zero values for
 // the backward-compatible system-resolver / multicast-only behavior). Issue #20.
 //

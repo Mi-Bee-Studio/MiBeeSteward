@@ -100,7 +100,7 @@ func TestRuleClassifier_GoldenCases(t *testing.T) {
 }
 
 // TestRuleClassifier_NegativeNoMatch verifies evidence that matches no rule
-// produces zero identities — the classifier must not emit spurious services.
+// produces zero identities, the classifier must not emit spurious services.
 func TestRuleClassifier_NegativeNoMatch(t *testing.T) {
 	rc := loadBuiltinRules(t)
 	ids := rc.Classify([]scannerv2.Evidence{

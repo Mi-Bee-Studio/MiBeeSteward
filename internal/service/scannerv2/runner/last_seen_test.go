@@ -19,7 +19,7 @@ import (
 
 // TestApplyDeviceBridge_LastSeenAdvancesOnRescan is the regression test for the
 // last_seen bug: the re-scan UPDATEs used `last_seen = COALESCE(last_seen, ?)`,
-// which only backfills a NULL and never advances an already-set value — so a
+// which only backfills a NULL and never advances an already-set value, so a
 // known device's last_seen froze at first-discovery time forever. The fix
 // (`last_seen = ?`) makes each alive re-scan refresh it to now, restoring the
 // documented "last observed ONLINE by a scan" semantics (which the liveness-

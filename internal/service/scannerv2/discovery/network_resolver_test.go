@@ -72,8 +72,8 @@ func TestNetworkResolver_LongestPrefixAndFallback(t *testing.T) {
 	}
 }
 
-// A nil resolver (agent wiring, minimal setups) must behave as "no match" —
-// the pre-#386 fallback path — never a panic.
+// A nil resolver (agent wiring, minimal setups) must behave as "no match";
+// the pre-#386 fallback path, never a panic.
 func TestNetworkResolver_NilReceiverIsNoMatch(t *testing.T) {
 	var r *NetworkResolver
 	if got := r.Resolve(context.Background(), "10.0.0.1"); got.Valid {

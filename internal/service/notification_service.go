@@ -30,7 +30,7 @@ var (
 )
 
 // NotificationService handles notification channel and log business logic.
-// (Alert-rule CRUD was removed: MiBee Steward does not build alerting — see
+// (Alert-rule CRUD was removed: MiBee Steward does not build alerting, see
 // AGENTS.md product vision. Notification channels are retained as neutral
 // infrastructure for future non-alert dispatch use cases.)
 type NotificationService struct {
@@ -153,7 +153,7 @@ func (s *NotificationService) UpdateChannel(ctx context.Context, id int64, req d
 
 // SetChannelEnabled toggles a channel's enabled flag via a single-field UPDATE
 // (no name/type/config are rewritten). This is the backend for the dedicated
-// PATCH /channels/{id} endpoint, used by the UI toggle — it keeps the toggle
+// PATCH /channels/{id} endpoint, used by the UI toggle, it keeps the toggle
 // path from ever re-writing the masked SMTP password back to the DB.
 func (s *NotificationService) SetChannelEnabled(ctx context.Context, id int64, enabled bool) (*domain.ChannelResponse, error) {
 	// Probe existence first so the caller gets the same ErrChannelNotFound → 404
@@ -438,7 +438,7 @@ func (s *NotificationService) ListNotificationLogsForUser(ctx context.Context, u
 }
 
 // MarkAllNotificationLogsRead marks every currently-unread notification log as
-// read for the user (idempotent). Returns the number of logs newly marked.
+// read for the user (a no-op on repeat). Returns the number of logs newly marked.
 func (s *NotificationService) MarkAllNotificationLogsRead(ctx context.Context, userID int64) (int64, error) {
 	n, err := s.q.MarkAllNotificationLogsRead(ctx, db.MarkAllNotificationLogsReadParams{
 		UserID:   userID,

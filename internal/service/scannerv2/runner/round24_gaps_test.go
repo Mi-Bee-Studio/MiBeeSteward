@@ -16,7 +16,7 @@ import (
 
 var errHBStub = errors.New("hb stub failure")
 
-// hbStub records every HeartbeatCreator call and can fail each method — the
+// hbStub records every HeartbeatCreator call and can fail each method, the
 // device bridge's seed/backfill branches need both outcomes.
 type hbStub struct {
 	resetCalls      []int64
@@ -125,7 +125,7 @@ func TestApplyDeviceBridge_BackfillsHeartbeatConfigs(t *testing.T) {
 
 // TestApplyDeviceBridge_NewDeviceSeedHeartbeatErrors walks the new-device
 // seeding warn branches: a failing CreateConfigs (specs present) and a failing
-// CreateDefaultConfig (no specs) must not abort the bridge — the device row
+// CreateDefaultConfig (no specs) must not abort the bridge, the device row
 // still lands.
 func TestApplyDeviceBridge_NewDeviceSeedHeartbeatErrors(t *testing.T) {
 	rn, _, conn := setupChangeDetectDB(t)

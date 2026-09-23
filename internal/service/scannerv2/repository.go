@@ -19,17 +19,17 @@ import (
 // SQLite implementation lives in store/sqlite.go (Phase 1); tests use an
 // in-memory fake.
 //
-// All methods are best-effort from the orchestrator's perspective: persistence
+// All methods are non-fatal from the orchestrator's perspective: persistence
 // failures are logged but never abort a scan. This keeps a slow/locked SQLite
 // from blocking the detection pipeline.
 type Repository interface {
-	// RecordEvidence persists raw evidence (subject to sampling — see config
+	// RecordEvidence persists raw evidence (subject to sampling, see config
 	// scanner.persist_raw_evidence). Implementations may no-op when disabled.
 	RecordEvidence(ctx context.Context, ev []Evidence) error
 
 	// RecordServices persists the classified service identities for an IP.
 	// Replacement is scoped (#256): rows on ports that were re-identified OR
-	// positively confirmed closed (closedPorts — TCP RST evidence) are
+	// positively confirmed closed (closedPorts, TCP RST evidence) are
 	// replaced/removed; rows on ports with no signal this cycle (dial timeout,
 	// degraded scan) are kept, so one bad cycle can't erase known services.
 	RecordServices(ctx context.Context, ip string, services []ServiceIdentity, closedPorts []int) error
@@ -49,7 +49,7 @@ type Repository interface {
 	RecordNeighbors(ctx context.Context, ip string, neighbors []NeighborSpec) error
 
 	// EnrichDeviceByMAC updates vendor/model/type/hostname fields for a device
-	// identified by MAC address. Only updates existing devices — no insert
+	// identified by MAC address. Only updates existing devices, no insert
 	// (enrich-existing-only). Unknown keys go to scan_attributes JSON.
 	// Returns nil if no device matches the MAC (not an error).
 	EnrichDeviceByMAC(ctx context.Context, mac string, fields map[string]string) error
@@ -60,7 +60,7 @@ type Repository interface {
 	// insert in a tx) so stale certs don't linger when a server rotates.
 	// Records carrying only an Error (handshake failed) are still persisted so
 	// the UI can distinguish "we tried this port" from "port not scanned".
-	// Best-effort like the other Record methods: persistence failures are
+	// Like the other Record methods: persistence failures are
 	// logged but never abort a scan.
 	RecordTLSCerts(ctx context.Context, ip string, certs []TLSCertRecord) error
 
@@ -79,7 +79,7 @@ type Repository interface {
 	//
 	// networkID is per-call: a center ingesting many agents' networks resolves
 	// each against the agent's own network, not the center's. This method MUST
-	// NOT mutate — the caller applies type stickiness between resolve and write
+	// NOT mutate, the caller applies type stickiness between resolve and write
 	// (see IdentityWrite), then calls ApplyDeviceIdentity to commit.
 	ResolveDeviceIdentity(ctx context.Context, mac, ip string, networkID sql.NullInt64) (IdentityResolution, error)
 
@@ -87,7 +87,7 @@ type Repository interface {
 	// creates a new row (in.IsNew) or updates the resolved row (normal rescan,
 	// device replacement when ReplacedID != 0, or IP roaming when Roamed). It
 	// also stamps status=online, last_seen, offline_since=NULL, last_scanned_at,
-	// and the mac/network — the liveness + freshness bookkeeping that belongs
+	// and the mac/network, the liveness + freshness bookkeeping that belongs
 	// with the identity write. Returns the device ID of the affected row.
 	//
 	// The caller (runner.applyDeviceBridge) computes the report-derived fields
@@ -163,7 +163,7 @@ func (NoopRepository) RecordNeighbors(context.Context, string, []NeighborSpec) e
 func (NoopRepository) EnrichDeviceByMAC(context.Context, string, map[string]string) error { return nil }
 func (NoopRepository) RecordTLSCerts(context.Context, string, []TLSCertRecord) error      { return nil }
 
-// ResolveDeviceIdentity reports "new device" for every call — a Noop repository
+// ResolveDeviceIdentity reports "new device" for every call, a Noop repository
 // holds no rows, so identity resolution always signals create.
 func (NoopRepository) ResolveDeviceIdentity(context.Context, string, string, sql.NullInt64) (IdentityResolution, error) {
 	return IdentityResolution{IsNew: true}, nil

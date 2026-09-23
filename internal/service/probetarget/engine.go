@@ -26,7 +26,7 @@ import (
 	scannerv2probe "mibee-steward/internal/service/scannerv2/probe"
 )
 
-// Sentinel errors surfaced to the handler for status-code mapping.
+// Sentinel errors returned to the handler for status-code mapping.
 var (
 	ErrProbeTargetNotFound = errors.New("probe target not found")
 	ErrProbeTargetDisabled = errors.New("probe target is disabled")
@@ -51,7 +51,7 @@ const (
 
 // Engine is the interval scheduler + probe executor. The DB is the source of
 // truth: every tick re-lists enabled targets (adds/edits/deletes apply within
-// one tick — no restart, no in-memory registry to desync), while an in-memory
+// one tick, no restart, no in-memory registry to desync), while an in-memory
 // nextDue map (seeded from last_run_at on first sight) prevents re-probing a
 // target the process just probed before a restart.
 type Engine struct {
@@ -98,7 +98,7 @@ func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Register
 }
 
 // Start launches the tick loop (one immediate sweep, then every tickInterval).
-// Idempotent: a second call is a no-op.
+// A second call is a no-op.
 func (e *Engine) Start(ctx context.Context) {
 	e.startMu.Lock()
 	defer e.startMu.Unlock()
@@ -169,7 +169,7 @@ func (e *Engine) tick(ctx context.Context) {
 		// Vantage plan (#277): the center engine executes 'center' and 'all'
 		// plans ('all' gains agent tracks once the agent command channel ships
 		// them). Agent-only plans ('agent:{id}') are none of the center's
-		// business — skip them silently; they hold no center-side series and
+		// business, skip them silently; they hold no center-side series and
 		// their last_* stays untouched until their agent reports.
 		if t.Vantage != domain.ProbeVantageCenter && t.Vantage != domain.ProbeVantageAll {
 			continue
@@ -214,7 +214,7 @@ func (e *Engine) tick(ctx context.Context) {
 }
 
 // TriggerNow probes one target synchronously and returns the recorded result
-// (bounded by the target's timeout — the handler responds with real data, not
+// (bounded by the target's timeout, the handler responds with real data, not
 // a "triggered" acknowledgment). Disabled targets are rejected like scan
 // tasks; a target already mid-probe returns ErrProbeBusy.
 func (e *Engine) TriggerNow(ctx context.Context, targetID int64) (domain.ProbeResultResponse, error) {
@@ -233,7 +233,7 @@ func (e *Engine) TriggerNow(ctx context.Context, targetID int64) (domain.ProbeRe
 	}
 	resp, err := e.probeTarget(ctx, t)
 	if errors.Is(err, ErrProbeBusy) {
-		// Manual trigger raced the scheduler's run of the same target — the
+		// Manual trigger raced the scheduler's run of the same target, the
 		// outcome is already being written; report it as busy rather than block.
 		return domain.ProbeResultResponse{}, ErrProbeBusy
 	}
@@ -279,7 +279,7 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 	}
 
 	// Upsert only on successful collection: a transient handshake failure must
-	// not wipe the last known-good chain (deliberately unlike host_tls_certs,
+	// not wipe the last known-good chain (unlike host_tls_certs,
 	// whose "current state" semantics serve a different UI).
 	if len(out.Certs) > 0 {
 		if err := e.upsertCerts(ctx, t.ID, out.Certs); err != nil {
@@ -303,7 +303,7 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 }
 
 // upsertCerts replaces the target's stored chain (delete-then-insert in one
-// sequence — sqlc can't express the upsert; mirrors store.RecordTLSCerts).
+// sequence, sqlc can't express the upsert; mirrors store.RecordTLSCerts).
 func (e *Engine) upsertCerts(ctx context.Context, targetID int64, certs []scannerv2.TLSCertRecord) error {
 	if _, err := e.queries.DeleteProbeTLSCertsByTarget(ctx, targetID); err != nil {
 		return err

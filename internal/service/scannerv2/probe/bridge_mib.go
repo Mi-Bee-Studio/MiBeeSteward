@@ -25,7 +25,7 @@ import (
 //
 //   - dot1dBasePortTable (1.3.6.1.2.1.17.1.4): port-number → ifIndex mapping.
 //     Indexed by dot1dBasePort (a small integer). Gives us local_port.
-//   - dot1dTpFdbTable (1.3.6.1.2.1.17.4.3.1): the forwarding database — which
+//   - dot1dTpFdbTable (1.3.6.1.2.1.17.4.3.1): the forwarding database, which
 //     MACs are seen on which bridge port. Indexed by MAC + port.
 //     1.3.6.1.2.1.17.4.3.1.1 = dot1dTpFdbAddress (the MAC)
 //     1.3.6.1.2.1.17.4.3.1.2 = dot1dTpFdbPort (the bridge port number)
@@ -41,7 +41,7 @@ const (
 
 // BridgeMIBProbe walks the Bridge-MIB forwarding database (dot1dTpFdbTable) on
 // switches/bridges that speak SNMP. It discovers which MAC addresses are visible
-// behind each port — the L2 adjacency that topology views render as "device A
+// behind each port, the L2 adjacency that topology views render as "device A
 // connects to switch B on port X".
 //
 // Output: one "neighbor" Evidence per learned MAC, carrying the neighbor's MAC
@@ -102,7 +102,7 @@ func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Prob
 	}
 
 	// Resolve port names via IF-MIB (bridge port → ifIndex → ifName).
-	// This is best-effort: if it fails, we fall back to numeric port numbers.
+	// If it fails, we fall back to numeric port numbers.
 	portNames := ResolvePortNames(snmp, p.logger)
 
 	// Build the evidence: one "neighbor" per MAC, carrying the MAC + local port.
@@ -180,7 +180,7 @@ func gosnmpToInt(v any) int {
 		return int(n)
 	case string:
 		// OID index suffixes arrive as strings ("5", "1.42" callers pre-split);
-		// without this case every index parsed 0 — port-name resolution
+		// without this case every index parsed 0, port-name resolution
 		// silently never worked and STP-MIB evidence was always skipped.
 		i, err := strconv.Atoi(strings.TrimSpace(n))
 		if err != nil {

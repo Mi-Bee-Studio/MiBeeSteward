@@ -18,8 +18,8 @@ import (
 
 // MiotHandler is the host-level identity for Xiaomi Mijia ecosystem devices
 // (service "miot", emitted by the iot-identity.yaml hostname rules). On real
-// Mijia fleets the DHCP/rDNS hostname is the ONLY identity channel — 0/12
-// responses to mDNS, miIO hello and TCP ports in the #365 field PoC — so the
+// Mijia fleets the DHCP/rDNS hostname is the ONLY identity channel, 0/12
+// responses to mDNS, miIO hello and TCP ports in the #365 field PoC, so the
 // identity carries brand/appliance metadata only. The device TYPE stays a
 // hostname heuristic (the ? badge) via device-types/device_types.yaml; this
 // handler never touches inferred_type.
@@ -39,10 +39,10 @@ func (MiotHandler) Collect(_ context.Context, _ scannerv2.ServiceContext) (scann
 }
 
 func (MiotHandler) EnrichDevice(svc scannerv2.ServiceContext, _ scannerv2.CollectedData) {
-	// Brand: fill the empty slot only — a protocol-derived brand (SNMP/TLS,
+	// Brand: fill the empty slot only, a protocol-derived brand (SNMP/TLS,
 	// set by other handlers) outranks a spoofable hostname; the OUI fold runs
 	// before handlers, so a NIC-silicon vendor may already sit there and wins
-	// the tie deliberately (both are heuristic-grade for these devices).
+	// the tie (both are heuristic-grade for these devices).
 	if b, ok := svc.Identity.Metadata["inferred_brand"]; ok && b != "" {
 		preserveExisting(svc, "inferred_brand", b)
 	}

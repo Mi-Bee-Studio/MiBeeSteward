@@ -174,7 +174,7 @@ func TestParseCDPFrame_FullFrame(t *testing.T) {
 }
 
 func TestParseCDPFrame_UnknownTLVsAreSkipped(t *testing.T) {
-	// Unknown TLV type followed by Device ID — parser should skip unknown and
+	// Unknown TLV type followed by Device ID, parser should skip unknown and
 	// continue to parse known ones.
 	data := buildCDPFrame(
 		stringTLV(0x00FF, "some-unknown-data"),
@@ -211,7 +211,7 @@ func TestParseCDPFrame_EndMarker(t *testing.T) {
 }
 
 func TestParseCDPFrame_TruncatedTLV(t *testing.T) {
-	// A TLV whose length exceeds the available data — should stop gracefully.
+	// A TLV whose length exceeds the available data, should stop gracefully.
 	data := buildCDPFrame(
 		cdpTLV(0x0001, []byte("Switch1")),
 	)

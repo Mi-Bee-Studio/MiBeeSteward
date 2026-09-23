@@ -81,7 +81,7 @@ func (s *Service) refreshTaskGauges(ctx context.Context) {
 // (#138 Phase 2c). The targets resolve when they are a SINGLE CIDR whose
 // normalized form matches one networks.cidr (the raw target string is tried
 // too, covering non-canonical stored cidrs). Comma lists, IP ranges,
-// hostnames, or no match → NULL — meaning cross-network/unresolved: visible
+// hostnames, or no match → NULL, meaning cross-network/unresolved: visible
 // to admins/open mode, hidden from restricted scopes. Best-effort by design;
 // this is a visibility enforcement key, not an identity.
 func ResolveNetworkFromTargets(ctx context.Context, conn db.DBTX, targets string) (sql.NullInt64, error) {
@@ -112,7 +112,7 @@ func ResolveNetworkFromTargets(ctx context.Context, conn db.DBTX, targets string
 }
 
 // stampTaskNetwork resolves a task's targets to a network and writes
-// scan_tasks.network_id. Best-effort: resolution/DB failures are logged and
+// scan_tasks.network_id. Resolution/DB failures are logged and
 // leave the column NULL (unscoped), never failing the task write itself.
 func (s *Service) stampTaskNetwork(ctx context.Context, taskID int64, targets string, logger *slog.Logger) {
 	if s.conn == nil {
@@ -209,7 +209,7 @@ func (s *Service) GetTask(ctx context.Context, id int64, scope domain.Scope) (do
 
 // ListTasks returns a page of tasks + total count, optionally filtered by a
 // case-insensitive substring search over name + targets. An empty search
-// string disables the filter (matches the old behaviour) — both the list and
+// string disables the filter (matches the old behaviour), both the list and
 // the count use the same search term so pagination totals stay consistent.
 // A restricted scope (#138 Phase 2c) sees only tasks whose network_id is in
 // the granted set (NULL-network tasks are cross-network → hidden); the count
@@ -335,7 +335,7 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 	// PipelineConfig is updated as a whole if provided.
 	pipelineCfg := existing.PipelineConfig
 	if req.PipelineConfig != nil {
-		// Reject a config that disables every stage — it would produce a task
+		// Reject a config that disables every stage, it would produce a task
 		// that finds nothing. This also guards against clients sending a
 		// zero-valued PipelineConfig object (which serialises to all-disabled).
 		if err := domain.ValidatePipelineConfig(*req.PipelineConfig); err != nil {
@@ -351,7 +351,7 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 	// CredentialID: nil in the request = leave unchanged (preserve existing);
 	// non-nil (incl. 0) = set/clear. We resolve this BEFORE the call so the
 	// UPDATE always writes a concrete value (UpdateScanTask has no partial-PATCH
-	// semantics — every field is rewritten).
+	// semantics, every field is rewritten).
 	var credentialID *int64
 	if req.CredentialID != nil {
 		credentialID = req.CredentialID // explicit set (or clear via 0)
@@ -375,7 +375,7 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 	}
 
 	// Apply enabled toggle if requested. UpdateScanTask's generated SQL does not
-	// touch `enabled` (by design — enabled has its own toggle query), so we apply
+	// touch `enabled` (by design, enabled has its own toggle query), so we apply
 	// it separately via ToggleScanTaskEnabled and reflect it in the response.
 	enabledChanged := false
 	newEnabled := existing.Enabled
@@ -417,7 +417,7 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, req domain.UpdateSca
 	}
 
 	// toTaskResponse reads task.Enabled from the UpdateScanTask row, which does
-	// not reflect the toggle we just applied — patch it so callers see the truth.
+	// not reflect the toggle we just applied, patch it so callers see the truth.
 	resp := toTaskResponse(task)
 	resp.Enabled = newEnabled == 1
 	// Re-resolve the network key when the targets moved (#138 Phase 2c).
@@ -453,7 +453,7 @@ func (s *Service) DeleteTask(ctx context.Context, id int64) error {
 // TriggerTask fires the task's cron job asynchronously (fire-and-forget).
 // Returns a synthetic "triggered" status; the real run row is created async.
 //
-// Errors are surfaced distinctly so callers (and the API handler) can map them
+// Errors are returned distinctly so callers (and the API handler) can map them
 // to meaningful status codes: a disabled task is a client-side problem (409),
 // while a missing scheduler/job is a server-side problem (500).
 func (s *Service) TriggerTask(ctx context.Context, id int64) (domain.ScanRunResponse, error) {
@@ -493,8 +493,8 @@ func (s *Service) CancelTask(ctx context.Context, id int64) error {
 		return ErrScanNotRunning
 	}
 	if run, err := s.queries.GetLatestRun(ctx, id); err == nil && run.Status == "running" {
-		// best-effort: mark the in-flight run cancelled so the UI does not
-		// show "running" forever. Log on failure — without this the run row
+		// the in-flight run is marked cancelled so the UI does not
+		// show "running" forever. Log on failure, without this the run row
 		// stays stuck and the user cannot tell cancel didn't take effect.
 		if uerr := s.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
 			Status:       "cancelled",
@@ -509,7 +509,7 @@ func (s *Service) CancelTask(ctx context.Context, id int64) error {
 
 // GetTaskRuns returns run history for a task. A restricted scope sees runs of
 // an out-of-scope task as not found (the sub-resources inherit the task's
-// scope — single check here covers the whole list).
+// scope, single check here covers the whole list).
 func (s *Service) GetTaskRuns(ctx context.Context, taskID, limit, offset int, scope domain.Scope) ([]domain.ScanRunResponse, int64, error) {
 	if !s.taskNetworkInScope(ctx, int64(taskID), scope) {
 		return nil, 0, ErrScanTaskNotFound
@@ -568,7 +568,7 @@ func (s *Service) GetTaskResults(ctx context.Context, taskID, limit, offset int,
 
 func toTaskResponse(t db.ScanTask) domain.ScanTaskResponse {
 	// pipeline_config is stored as a JSON string; decode it so the response
-	// carries the object itself — the create REQUEST takes an object, and the
+	// carries the object itself, the create REQUEST takes an object, and the
 	// asymmetry forced every client to double-parse (#257). A malformed stored
 	// value (hand-edited DB row) degrades to the zero config rather than
 	// erroring the whole task listing.

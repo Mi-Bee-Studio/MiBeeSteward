@@ -28,7 +28,7 @@
 //
 // Each event is translated into a scannerv2.Evidence with Source
 // "passive:ebpf:tc". Because passive observation captures the L2 broadcast
-// domain, observed IPs may include hosts we never actively probed — the
+// domain, observed IPs may include hosts we never actively probed, the
 // orchestrator/classifier layer handles dedup against active evidence.
 
 package ebpf
@@ -183,7 +183,7 @@ func (o *Observer) drain() {
 
 // Stop tears down the eBPF observer: closes the ring-buffer reader (which
 // unblocks the drain goroutine's Read), signals state.stop, detaches the TC
-// programs, and frees the BPF objects. Idempotent — safe to call when the
+// programs, and frees the BPF objects. Safe to call twice or when the
 // observer never started (state.stop is nil) or to call twice. (#163)
 func (o *Observer) Stop() {
 	// Closing the reader unblocks an in-flight drain Read() → ErrClosed exit.

@@ -53,7 +53,7 @@ func TestBuildARPRequestLayout(t *testing.T) {
 	if got := net.IP(f[28:32]).String(); got != "192.168.63.101" {
 		t.Errorf("sender IP = %s, want 192.168.63.101", got)
 	}
-	// Target HW addr must be zero in the template (unknown — that's the question).
+	// Target HW addr must be zero in the template (unknown, that's the question).
 	for i, b := range f[32:38] {
 		if b != 0 {
 			t.Errorf("target HW byte [%d] = %02x, want 00 (template must zero target HW)", i, b)
@@ -163,11 +163,11 @@ func TestSubnetHostIPs(t *testing.T) {
 // TestSubnetHostIPsSmallCIDRs checks the /31 (point-to-point, RFC 3021) and /32
 // (single host) edge cases: both are returned as-is, no network/broadcast carve-out.
 func TestSubnetHostIPsSmallCIDRs(t *testing.T) {
-	// /31 — RFC 3021 treats both addresses as usable.
+	// /31, RFC 3021 treats both addresses as usable.
 	if ips := subnetHostIPs("10.0.0.0/31"); len(ips) != 1 {
 		t.Errorf("/31 host count = %d, want 1 (the .0)", len(ips))
 	}
-	// /32 — single host.
+	// /32, single host.
 	if ips := subnetHostIPs("10.0.0.5/32"); len(ips) != 1 || ips[0].String() != "10.0.0.5" {
 		t.Errorf("/32 expansion = %v, want [10.0.0.5]", ips)
 	}

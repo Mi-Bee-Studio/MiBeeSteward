@@ -17,7 +17,7 @@ import (
 	"mibee-steward/internal/service/scannerv2"
 )
 
-// Table tests for the pure helpers behind ScanTargets' persistence path —
+// Table tests for the pure helpers behind ScanTargets' persistence path;
 // they run on every scan report, so their edge behavior is pinned directly.
 
 func TestUniqueOpenPorts(t *testing.T) {

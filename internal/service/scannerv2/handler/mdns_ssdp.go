@@ -18,9 +18,9 @@ import (
 // mdnsSsdpEnrich folds a self-announcement identity (mdns-ssdp.yaml rules,
 // service "mdns"/"ssdp") into the device record. The device bridge documents
 // mDNS service types as protocol-grade evidence, so the type set here is NOT
-// flagged heuristic (no ? badge) — but preserveExisting keeps stronger
+// flagged heuristic (no ? badge), but preserveExisting keeps stronger
 // in-protocol evidence (SNMP sysObjectID, an actual ONVIF exchange) in charge
-// when both ran. Heartbeat: none — announcements carry no probeable port
+// when both ran. Heartbeat: none, announcements carry no probeable port
 // (Port is the 5353/1900 listener, not the service), and the bridge already
 // seeds ICMP for every discovered host.
 func mdnsSsdpEnrich(svc scannerv2.ServiceContext) {

@@ -70,7 +70,7 @@ func serverVersion(server string) string {
 }
 
 // TLSClassifier turns the structured "tls" evidence from the TLSProbe into a
-// service identity. It also surfaces the cert CN/SAN as a hostname source and
+// service identity. It also uses the cert CN/SAN as a hostname source and
 // the issuer as a vendor hint (e.g. "*.hikvision.com" CN → vendor "Hikvision").
 //
 // Service names emitted: "https" (on TLS ports), plus host-level metadata.

@@ -53,7 +53,7 @@ func (RTSPClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceIdent
 // identity when RTSP and/or ONVIF services are present. This drives the device
 // type to "camera" and the camera ServiceHandler (Phase 3) will generate an
 // RTSP/TCP heartbeat. It runs after the protocol classifiers, consuming their
-// identities — but since classifiers are pure over evidence (not identities),
+// identities, but since classifiers are pure over evidence (not identities),
 // we re-derive from the underlying rtsp/onvif evidence.
 type CameraClassifier struct{}
 

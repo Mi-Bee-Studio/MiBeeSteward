@@ -24,18 +24,18 @@ import (
 //
 // This is a per-scan finalize step (sister to injectARPTopology): it runs after
 // all hosts are persisted, so every MAC observed this scan has a devices row to
-// resolve against. It re-derives the full edge set each scan — cheap (tens of
-// rows on a home LAN) and idempotent via the UNIQUE(from, to, edge_type)
+// resolve against. It re-derives the full edge set each scan, cheap (tens of
+// rows on a home LAN) and de-duplicated by the UNIQUE(from, to, edge_type)
 // upsert, which also refreshes last_seen + raises confidence when a new
 // protocol corroborates an existing edge.
 //
 // Edge semantics by protocol:
 //   - LLDP / CDP / Bridge-MIB / Q-BRIDGE-MIB → edge_type "l2" (physical/logical
-//     port adjacency, the strongest signal — a switch literally sees the peer)
-//   - ARP → edge_type "l3" (same-subnet reachability via the gateway; weaker —
+//     port adjacency, the strongest signal, a switch literally sees the peer)
+//   - ARP → edge_type "l3" (same-subnet reachability via the gateway; weaker;
 //     it proves co-location, not a direct link)
 //
-// Best-effort: failures are logged, never abort a scan (same pattern as the
+// Failures are logged and never abort a scan (same pattern as the
 // other finalize steps).
 func (rn *Runner) deriveTopologyEdges(ctx context.Context, networkID sql.NullInt64) {
 	if !networkID.Valid {
@@ -125,7 +125,7 @@ func (rn *Runner) deriveTopologyEdges(ctx context.Context, networkID sql.NullInt
 
 // edgeSemantics maps a device_neighbors.protocol to its (edge_type, confidence).
 // Switch-sourced protocols (LLDP/CDP/Bridge-MIB) are L2 physical adjacency and
-// carry high confidence; ARP is L3 same-subset reachability (weaker — proves the
+// carry high confidence; ARP is L3 same-subset reachability (weaker, proves the
 // two devices share a broadcast domain, not that one is directly behind the
 // other).
 func edgeSemantics(protocol string) (edgeType string, confidence float64) {

@@ -133,7 +133,7 @@ func TestRegister_PasswordMissingDigit(t *testing.T) {
 
 func TestRegister_PasswordMissingSpecial(t *testing.T) {
 	// The default policy no longer REQUIRES special characters (relaxed with
-	// the settings center); pin both halves — the class is optional by
+	// the settings center); pin both halves, the class is optional by
 	// default, and the rule still fires when an admin turns it on.
 	svc, _ := setupUserService(t)
 	_, err := svc.Register(context.Background(), "frank", "frank@example.com", "NoSpecial123", "user")
@@ -233,11 +233,11 @@ func TestLogin_ResetsAttemptsOnSuccess(t *testing.T) {
 		require.True(t, errors.Is(err, ErrInvalidCredentials))
 	}
 
-	// Succeed — resets counter
+	// Succeed, resets counter
 	_, err := svc.Login(context.Background(), "resetme", "Str0ng!Pass")
 	require.NoError(t, err)
 
-	// Fail 3 more times — should NOT be locked (counter was reset)
+	// Fail 3 more times, should NOT be locked (counter was reset)
 	for i := 0; i < 3; i++ {
 		_, err := svc.Login(context.Background(), "resetme", "WrongPass1!")
 		require.True(t, errors.Is(err, ErrInvalidCredentials))
@@ -391,7 +391,7 @@ func TestListUsers_Pagination(t *testing.T) {
 	registerTestUser(t, svc, "bob", "bob@example.com")
 	registerTestUser(t, svc, "charlie", "charlie@example.com")
 
-	// Get first page of 2 — Total is now the real match count (3), not the page
+	// Get first page of 2, Total is now the real match count (3), not the page
 	// size, so pagination counts are correct across pages.
 	resp, err := svc.ListUsers(context.Background(), "", 2, 0)
 	require.NoError(t, err)
@@ -411,14 +411,14 @@ func TestListUsers_Search(t *testing.T) {
 	registerTestUser(t, svc, "bob", "bob@example.com")
 	registerTestUser(t, svc, "charlie", "charlie@example.com")
 
-	// Substring match on username — "ali" matches only alice.
+	// Substring match on username, "ali" matches only alice.
 	resp, err := svc.ListUsers(context.Background(), "ali", 10, 0)
 	require.NoError(t, err)
 	require.Len(t, resp.Users, 1)
 	require.Equal(t, "alice", resp.Users[0].Username)
 	require.Equal(t, 1, resp.Total)
 
-	// Substring match on email — "example" matches all three.
+	// Substring match on email, "example" matches all three.
 	resp, err = svc.ListUsers(context.Background(), "example", 10, 0)
 	require.NoError(t, err)
 	require.Len(t, resp.Users, 3)
@@ -466,8 +466,8 @@ func TestPasswordPolicy_Configurable(t *testing.T) {
 }
 
 // TestLogin_LockoutConfigurable pins auth.lockout: threshold and duration are
-// tunable, and — the property that turned a 30-minute lock into a multi-hour
-// one in the wild — an EXPIRED lock resets the failure counter, so a single
+// tunable, and, the property that turned a 30-minute lock into a multi-hour
+// one in the wild, an EXPIRED lock resets the failure counter, so a single
 // stray retry after expiry no longer re-locks instantly.
 func TestLogin_LockoutConfigurable(t *testing.T) {
 	svc, conn := setupUserService(t)
@@ -513,7 +513,7 @@ func tokenTVClaim(t *testing.T, token string) int64 {
 
 // TestPasswordChangeBumpsTokenEpoch pins the revocation contract: every
 // password-changing path advances users.token_version, and a freshly minted
-// token records the NEW epoch — so tokens minted before the change (stale tv)
+// token records the NEW epoch, so tokens minted before the change (stale tv)
 // are rejected by middleware on their next request.
 func TestPasswordChangeBumpsTokenEpoch(t *testing.T) {
 	svc, db := setupUserService(t)

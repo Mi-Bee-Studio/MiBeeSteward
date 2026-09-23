@@ -33,7 +33,7 @@ func TestParseSSDPResponse_ExtendedHeaders(t *testing.T) {
 	raw := ParseSSDPResponse(pkt)
 	require.Equal(t, "Linux/5.15 UPnP/1.0 MiniUPnPd/2.2.1", raw["server"])
 	require.Equal(t, "uuid:2fac1234-31f8-11b4-a222-08002b34c003::upnp:rootdevice", raw["usn"])
-	// ST and NT share one bucket (st) — the later line wins.
+	// ST and NT share one bucket (st), the later line wins.
 	require.Equal(t, "uuid:2fac1234-31f8-11b4-a222-08002b34c003", raw["st"])
 	// Empty-valued headers and colon-less lines are skipped, and keys outside
 	// the keep-list never land in the map.

@@ -27,18 +27,18 @@ import (
 
 // CollectCertChain performs a TLS handshake against host:port and extracts the
 // server's full certificate chain (leaf + issuers) plus the negotiated TLS
-// version/cipher and a best-effort trust verdict. It is the single source of
+// version/cipher and an informational trust verdict. It is the single source of
 // truth for cert collection: the TLSProbe uses it for evidence, and the
 // TLS-wrapped service handlers use it for full persistence.
 //
 // The function is read-only and never validates the chain (InsecureSkipVerify
 // is set so self-signed embedded devices can still be inventoried). The trust
-// verdict is computed separately against the system root pool — it informs the
+// verdict is computed separately against the system root pool, it informs the
 // UI's "trusted" badge but does NOT gate collection.
 //
 // Returns a TLSCertRecord slice (one per cert) on success. On failure (port
 // closed, not TLS, handshake error) returns a single-element slice carrying
-// only IP/Port/Error — callers persist it so the UI can show "tried this port,
+// only IP/Port/Error, callers persist it so the UI can show "tried this port,
 // could not collect" instead of silently omitting the port.
 func CollectCertChain(ctx context.Context, ip string, port int, timeout time.Duration) []scannerv2.TLSCertRecord {
 	if timeout <= 0 {
@@ -107,7 +107,7 @@ func dialTLS(ctx context.Context, addr string, timeout time.Duration, skipVerify
 
 // chainIsTrusted runs a verifying handshake against just the leaf's ServerName
 // (empty → IP-based). Used only for the "trusted" badge; failures here do NOT
-// affect collection. Best-effort: any error → not trusted.
+// affect collection. Any error → not trusted.
 func chainIsTrusted(ctx context.Context, addr string, timeout time.Duration, leaf *x509.Certificate) bool {
 	// Use the leaf's first DNS SAN (or CN) as SNI so name verification matches.
 	serverName := ""
@@ -164,7 +164,7 @@ func buildCertRecord(ip string, port, idx int, cert *x509.Certificate) scannerv2
 	rec.KeyAlgorithm = cert.PublicKeyAlgorithm.String()
 	rec.KeyBits = publicKeyBits(cert)
 
-	// SHA-256 fingerprint of the DER (uppercase hex, colon-free — nmap-style is
+	// SHA-256 fingerprint of the DER (uppercase hex, colon-free, nmap-style is
 	// colon-separated; we keep it dense to match the column's "short string"
 	// character and render with monospace in the UI).
 	sum := sha256.Sum256(cert.Raw)

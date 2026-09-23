@@ -41,7 +41,7 @@ import (
 // SQLiteRepository implements scannerv2.Repository against a *sql.DB.
 //
 // persistRawEvidence gates writing to service_evidence (off by default to
-// avoid storage bloat — see config scanner.persist_raw_evidence).
+// avoid storage bloat, see config scanner.persist_raw_evidence).
 type SQLiteRepository struct {
 	db                   *sql.DB
 	logger               *slog.Logger
@@ -87,7 +87,7 @@ type Options struct {
 }
 
 // NewSQLiteRepository constructs the repository. db must already have the
-// v2 tables (service_evidence, host_services) — main.go applies schema.sql on
+// v2 tables (service_evidence, host_services), main.go applies schema.sql on
 // startup, so this holds for the production path. For tests, ensure schema is
 // applied to the in-memory DB.
 func NewSQLiteRepository(dbConn *sql.DB, opts Options, logger *slog.Logger) *SQLiteRepository {
@@ -118,8 +118,8 @@ var _ scannerv2.Repository = (*SQLiteRepository)(nil)
 // RecordEvidence inserts raw evidence rows. Sampling: when persistRawEvidence
 // is false, the method is a no-op. Batches inserts in a single tx.
 //
-// device_uuid is resolved best-effort (the engine runs this BEFORE the runner
-// persists the device row, so on first discovery the device may not exist yet —
+// device_uuid is resolved opportunistically (the engine runs this BEFORE the runner
+// persists the device row, so on first discovery the device may not exist yet;
 // the row lands with device_uuid=” and is healed on the next scan / by the
 // backfill migration). Steady-state scans (the common case) find the device.
 func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.Evidence) error {
@@ -168,7 +168,7 @@ func (r *SQLiteRepository) RecordEvidence(ctx context.Context, evs []scannerv2.E
 // across a DHCP roam instead of stranding on the old IP. On first discovery the
 // device row may not exist yet (the engine runs before the runner persists the
 // device); the rows land with device_uuid=” and are healed on the next scan.
-// The DELETE keeps an IP guard as a belt-and-suspenders so a not-yet-uuid'd row
+// The DELETE keeps an IP guard as an extra guard so a not-yet-uuid'd row
 // set is still replaced rather than accumulated while the uuid is unresolved.
 func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, services []scannerv2.ServiceIdentity, closedPorts []int) error {
 	uuid, _ := r.resolveDeviceUUID(ctx, ip)
@@ -185,7 +185,7 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 	// busy gateway, a half-dead camera that accepts TCP but never answers)
 	// erase every known service for the host. Rows on ports with no signal
 	// (timeout = unknown, not closed) survive until a later cycle resolves
-	// them. The DELETE still keys on IP alone within the port scope — that
+	// them. The DELETE still keys on IP alone within the port scope, that
 	// keeps the uuid-resolution transition working (scan-1 rows with
 	// device_uuid='' must be replaced by scan-2's resolved rows, regression
 	// #129).
@@ -270,7 +270,7 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 // host shouldn't wipe the other 18 ports' certs).
 //
 // Records carrying an Error are still inserted (with the typed columns empty) so
-// the UI can render "we tried this port and the handshake failed" — this is the
+// the UI can render "we tried this port and the handshake failed", this is the
 // difference between "port scanned, no TLS" and "port not scanned at all".
 func (r *SQLiteRepository) RecordTLSCerts(ctx context.Context, ip string, certs []scannerv2.TLSCertRecord) error {
 	if len(certs) == 0 {
@@ -289,7 +289,7 @@ func (r *SQLiteRepository) RecordTLSCerts(ctx context.Context, ip string, certs 
 	// currently holds this IP, and across the uuid-resolution transition a
 	// uuid-scoped DELETE would leave device_uuid='' rows from the first scan
 	// behind, accumulating duplicates (the (ip,port) index is non-unique, so no
-	// conflict — just stale rows). Mirrors the RecordServices fix (#129).
+	// conflict, just stale rows). Mirrors the RecordServices fix (#129).
 	ports := make(map[int]struct{}, len(certs))
 	for _, c := range certs {
 		ports[c.Port] = struct{}{}
@@ -333,11 +333,11 @@ func boolToInt(b bool) int {
 }
 
 // RecordDevice enriches an EXISTING device row with fields discovered by the
-// pipeline. It deliberately does NOT create device identities, set status, set
-// the display name, or detect device replacement — all of those are the
+// pipeline. It does NOT create device identities, set status, set
+// the display name, or detect device replacement, all of those are the
 // responsibility of the single authoritative writer, runner.applyDeviceBridge.
 //
-// Why a "best-effort enrichment only" path exists alongside the runner: the
+// Why a "enrichment-only" path exists alongside the runner: the
 // orchestrator runs inside engine.ScanTargets (every caller: sync handler, the
 // async runner, passive discovery). Persisting freshly-classified scan data
 // here means it lands even on the paths that don't subsequently re-write the
@@ -386,17 +386,17 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	scanAttrsJSON, _ := domain.MarshalScanAttributes(scanAttrs)
 
 	// Resolve an EXISTING row to enrich. MAC-primary (global), else (ip,
-	// network_id). No INSERT on miss — device creation is the runner's job.
+	// network_id). No INSERT on miss, device creation is the runner's job.
 	mac := NormalizeMAC(extra["mac"])
 	brand := d.Brand
 	model := d.Model
-	// NOTE: type is intentionally NOT enriched here. For local scans DeviceRef.Type
+	// NOTE: type is NOT enriched here. For local scans DeviceRef.Type
 	// is always empty (handlers mutate Fields, not the Type field), so writing it
 	// would force-overwrite the runner's authoritative type (set by
 	// applyDeviceBridge's evidence-stickiness merge) back to a default on every
-	// scan — the double-writer conflict that caused the other↔router type flap.
+	// scan, the double-writer conflict that caused the other↔router type flap.
 	// The runner (applyDeviceBridge) is the sole authority for devices.type;
-	// this store path is best-effort enrichment only (see the package doc).
+	// this store path is enrichment-only (see the package doc).
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -447,7 +447,7 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	// (force-overwrite when non-empty), mac (fill when newly resolved),
 	// open_ports/detected_services/prometheus/node_exporter, scan_attributes,
 	// freshness timestamps. NOTE: name, type, status, description, location,
-	// tags, and device replacement are intentionally NOT handled here — the
+	// tags, and device replacement are NOT handled here, the
 	// runner owns them. In particular type MUST stay out: this store path runs
 	// BEFORE applyDeviceBridge, and writing type here defeated the runner's
 	// CASE-WHEN guard (the type-flap root cause).
@@ -497,7 +497,7 @@ func identityNetworkClause(networkID sql.NullInt64) (string, []any) {
 // callers switch on a value, not an error.
 //
 // networkID is per-call (the agent's network on the center ingestion path, the
-// instance's own network locally) — it is NOT r.networkID, so one center
+// instance's own network locally), it is NOT r.networkID, so one center
 // repository can resolve identities across many networks.
 func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip string, networkID sql.NullInt64) (scannerv2.IdentityResolution, error) {
 	if mac == "" {
@@ -623,7 +623,7 @@ func existingIdentityUpdate() string {
 
 // replacementIdentityUpdate is the UPDATE for the device-REPLACEMENT case (a
 // different physical device now occupies this ip). FORCE-OVERWRITES
-// name/type/brand/description/location — the CASE "only fill empty/unknown"
+// name/type/brand/description/location, the CASE "only fill empty/unknown"
 // guards that protect a re-scan would be WRONG here. Ported verbatim from the
 // former runner.buildReplacementUpdate. Shares the SAME positional arg order as
 // existingIdentityUpdate, so it reuses identityUpdateArgs.
@@ -669,7 +669,7 @@ func identityUpdateArgs(in scannerv2.IdentityWrite, now string) []any {
 // runner.applyDeviceBridge: creates a new row (in.IsNew) or updates the resolved
 // row (normal rescan / replacement when ReplacedID != 0 / roam when Roamed),
 // then stamps status/mac/last_seen and runs the roam eviction-retry. No
-// transaction (mirrors the former best-effort, log-and-continue semantics). See
+// transaction (mirrors the former log-and-continue semantics). See
 // Repository.ApplyDeviceIdentity for the contract.
 func (r *SQLiteRepository) ApplyDeviceIdentity(ctx context.Context, in scannerv2.IdentityWrite) (int64, error) {
 	if in.IsNew {
@@ -745,7 +745,7 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 			"target_device_id", in.TargetID,
 			"action", "ip-holder updated with new mac; prior mac-matched row marked offline")
 	} else {
-		// Normal re-scan. When the device ROAMED (same MAC, new free IP — DHCP
+		// Normal re-scan. When the device ROAMED (same MAC, new free IP, DHCP
 		// renewal), relocate ip_address to the scanned IP.
 		ipClause := "ip_address = ip_address"
 		if in.Roamed {
@@ -800,7 +800,7 @@ func roamUpdateArgs(roamed bool, ip, mac string, now string, existingID int64) [
 
 // NormalizeMAC canonicalizes a MAC address for storage and lookup: lowercased
 // with colon separators (aa:bb:cc:dd:ee:ff). Empty/invalid input returns "".
-// Shared by the store and runner so both upsert paths agree on the MAC key —
+// Shared by the store and runner so both upsert paths agree on the MAC key;
 // without this, a MAC stored as "AA-BB..." would never match "aa:bb...".
 func NormalizeMAC(s string) string {
 	s = strings.TrimSpace(strings.ToLower(s))
@@ -856,9 +856,9 @@ func macBitSet(mac string, mask byte) bool {
 // locally-administered (U/L) bit set (first octet bit 1, 0x02). This is a
 // neutral factual statement about the IEEE 802 / RFC 7042 U/L bit: when set,
 // the MAC was assigned locally rather than drawn from an IEEE OUI/MA-S/MA-M
-// block. Note the bit CANNOT distinguish the two real-world causes — privacy
+// block. Note the bit CANNOT distinguish the two real-world causes, privacy
 // randomization (iOS/Android/Windows; unstable across scans) vs. a locally
-// fixed setting (soft-router/manual/hypervisor; stable) — so callers must NOT
+// fixed setting (soft-router/manual/hypervisor; stable), so callers must NOT
 // treat this as a "randomized" verdict or a stability/identity decision. The
 // input must be canonical (NormalizeMAC).
 func IsLocallyAdministeredMAC(mac string) bool {
@@ -875,13 +875,13 @@ func IsMulticastMAC(mac string) bool {
 
 // buildStoreScanAttributes builds the engine-written scan_attributes document
 // from a DeviceRef. It constructs a domain.ScanAttributes struct (NOT a loose
-// map) so the JSON shape round-trips cleanly through UnmarshalScanAttributes —
+// map) so the JSON shape round-trips cleanly through UnmarshalScanAttributes;
 // stringified numbers in the previous map made the API layer's int64-typed
 // struct fields fail to deserialize, producing empty scan_attributes in
 // responses even when the DB held data.
 //
 // Because the store path only sees a DeviceRef (no Evidence/Services arrays),
-// structured sub-objects are best-effort: OpenPorts/DetectedServices are parsed
+// structured sub-objects are optional: OpenPorts/DetectedServices are parsed
 // from the raw JSON the caller captured, and any field not yet promoted to a
 // typed ScanAttributes field lands under Extras.
 //
@@ -1092,10 +1092,10 @@ func (r *SQLiteRepository) legacyUpsertHeartbeats(ctx context.Context, tx *sql.T
 
 // RecordNeighbors persists L2 adjacency edges (LLDP/CDP/Bridge-MIB/ARP) for the
 // device at ip. It resolves ip → device_id (MAC-primary, then (ip, network_id)
-// fallback — same identity rule as RecordDevice), then upserts each neighbor on
+// fallback, same identity rule as RecordDevice), then upserts each neighbor on
 // (device_id, neighbor_mac, protocol). The neighbor's MAC is the cross-agent
 // merge key; neighbor_device_id is left NULL (reconciled later when/if the
-// neighbor is scanned). Best-effort: failures are logged, never abort a scan.
+// neighbor is scanned). Failures are logged and never abort a scan.
 func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip string, neighbors []scannerv2.NeighborSpec) error {
 	if len(neighbors) == 0 {
 		return nil
@@ -1103,7 +1103,7 @@ func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip string, neigh
 	deviceID, err := r.resolveDeviceID(ctx, ip)
 	if err != nil || deviceID == 0 {
 		// Device not yet persisted (the orchestrator may call RecordNeighbors
-		// before RecordDevice lands). Skip — the next scan re-discovers.
+		// before RecordDevice lands). Skip, the next scan re-discovers.
 		r.logger.Debug("record neighbors: device not found", "ip", ip)
 		return nil
 	}
@@ -1220,7 +1220,7 @@ func (r *SQLiteRepository) EnrichDeviceByMAC(ctx context.Context, mac string, fi
 // resolveDeviceID finds the devices.id for an IP using the MAC-primary →
 // (ip, network_id) identity rule. Returns 0 if the device doesn't exist yet.
 func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int64, error) {
-	// Try by IP + this repo's network first (the common case — the device was
+	// Try by IP + this repo's network first (the common case, the device was
 	// upserted by RecordDevice on this scan or a prior one).
 	if r.networkID.Valid {
 		var id int64
@@ -1242,7 +1242,7 @@ func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int6
 
 // resolveDeviceUUID returns the stable device_uuid for an IP using the same
 // identity rule as resolveDeviceID (network-scoped IP match, then global IP).
-// Returns "" when no device matches — the caller writes "" into the satellite
+// Returns "" when no device matches, the caller writes "" into the satellite
 // row and it is healed on the next scan. The empty-string sentinel is safe
 // because devices.device_uuid is always populated (non-empty) once a row
 // exists (device creation generates one; the schema default is only a
@@ -1279,7 +1279,7 @@ func (r *SQLiteRepository) resolveDeviceUUID(ctx context.Context, ip string) (st
 				`SELECT device_uuid FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&u)
 		}
 		if err != nil {
-			// Do NOT cache the negative result ("") — a device may be created
+			// Do NOT cache the negative result (""), a device may be created
 			// between scan passes (the heal scenario the tests verify), so a
 			// stale "" would block the UUID from ever resolving. Only non-empty
 			// results are cached (UUIDs are stable once assigned). (#162)

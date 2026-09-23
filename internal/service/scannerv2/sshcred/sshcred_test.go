@@ -171,7 +171,7 @@ func TestResolver_PlaintextNeverInList(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	// Neither the plaintext nor the ciphertext blob appears in the list payload.
-	// (ListRow has no secret field, so this is a belt-and-suspenders guard.)
+	// (ListRow has no secret field, so this is an extra guard.)
 	require.False(t, strings.Contains(formatListRow(rows[0]), plainPW))
 	require.False(t, strings.Contains(formatListRow(rows[0]), enc))
 }
@@ -179,6 +179,6 @@ func TestResolver_PlaintextNeverInList(t *testing.T) {
 // formatListRow stringifies a ListRow for the disclosure assertion (it has no
 // secret fields, so the secret plaintext/ciphertext can never appear).
 func formatListRow(r ListRow) string {
-	// Intentionally only the non-secret fields.
+	// only the non-secret fields.
 	return r.Name + r.AuthMethod + r.Username + r.HostKeyFP + r.Notes
 }

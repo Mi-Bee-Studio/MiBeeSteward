@@ -34,9 +34,9 @@ import (
 //	      → resolve channel (GetChannelByID) + device name (GetDevice)
 //	        → Dispatcher.Dispatch(...)
 //
-// The engine is best-effort and non-blocking: a slow downstream (dispatcher
+// The engine is non-blocking: a slow downstream (dispatcher
 // queue full, channel lookup error) logs + continues. The Watcher's push is
-// non-blocking with a 64-deep buffer, so a slow engine will drop events —
+// non-blocking with a 64-deep buffer, so a slow engine will drop events;
 // handleEvent must stay fast (no blocking HTTP; the dispatcher is async).
 type RuleEngine struct {
 	queries    *db.Queries
@@ -49,7 +49,7 @@ type RuleEngine struct {
 
 	// Per-(rule, device-mac) cooldown: the last time a rule fired for a device.
 	// Keyed on MAC (not device_uuid or entity_id) because MAC is stable across
-	// identity rescan/re-add — a device that is deleted then re-discovered gets
+	// identity rescan/re-add, a device that is deleted then re-discovered gets
 	// a fresh random uuid.NewString() and a new devices.id, but the same MAC.
 	// In-memory only (lost on restart); the changedetect layer's own 15min
 	// event-level cooldown is the backstop against duplicate dispatches.
@@ -77,7 +77,7 @@ func NewRuleEngine(queries *db.Queries, watcher *changedetect.Watcher, dispatche
 	}
 }
 
-// Start launches the subscriber goroutine. Idempotent; calling twice is a no-op
+// Start launches the subscriber goroutine. Calling twice is a no-op
 // on the second call. The goroutine exits when Stop is called or ctx is cancelled.
 func (e *RuleEngine) Start(ctx context.Context) {
 	if e.watcher == nil || e.dispatcher == nil {
@@ -104,7 +104,7 @@ func (e *RuleEngine) run(ctx context.Context) {
 	sub := e.watcher.Subscribe()
 	// Unsubscribe on exit so the Watcher stops holding a reference to this
 	// channel (Unsubscribe closes it). Unlike the /changes/watch SSE handler we
-	// do NOT drain the channel here — draining a closed-but-buffered channel can
+	// do NOT drain the channel here, draining a closed-but-buffered channel can
 	// race with concurrent push and is unnecessary when Stop() waits on the wg.
 	defer e.watcher.Unsubscribe(sub)
 	for {
@@ -188,7 +188,7 @@ func (e *RuleEngine) scopeMatches(rule db.NotificationRule, row db.ChangeLog, de
 }
 
 // cooldownAllows reports whether the (rule, device) pair is outside its
-// anti-flap window. mac may be "" (unidentified device) — in that case the
+// anti-flap window. mac may be "" (unidentified device), in that case the
 // cooldown is keyed on ruleID alone (all unidentified events share one bucket).
 func (e *RuleEngine) cooldownAllows(ruleID int64, mac string, cooldownMinutes int64) bool {
 	if cooldownMinutes <= 0 {
@@ -221,7 +221,7 @@ func (e *RuleEngine) dispatch(ctx context.Context, rule db.NotificationRule, row
 }
 
 // markFired records the cooldown timestamp (in-memory) + bumps the rule's
-// last_triggered_at diagnostic column (best-effort, errors logged not fatal).
+// last_triggered_at diagnostic column (errors logged, not fatal).
 func (e *RuleEngine) markFired(ctx context.Context, ruleID int64, mac string) {
 	e.cooldownMu.Lock()
 	e.lastSent[cooldownKey{ruleID, mac}] = time.Now()

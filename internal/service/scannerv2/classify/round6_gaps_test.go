@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestClassifierServiceNames pins every classifier's Service() identity — the
+// TestClassifierServiceNames pins every classifier's Service() identity, the
 // name that lands in host_services.service and drives server-class data
 // tables. A silent rename here desyncs the UI's service filters.
 func TestClassifierServiceNames(t *testing.T) {

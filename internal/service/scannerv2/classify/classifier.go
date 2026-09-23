@@ -26,7 +26,7 @@ import (
 )
 
 // fuseConfidence combines several confidence values into one by taking the
-// complement of the product of (1-c) — i.e. independent evidence reinforces.
+// complement of the product of (1-c), i.e. independent evidence reinforces.
 // A single source keeps its confidence; two 0.9 sources yield ~0.99.
 func fuseConfidence(cs ...float64) float64 {
 	prod := 1.0

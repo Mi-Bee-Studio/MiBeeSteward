@@ -18,11 +18,11 @@ func TestExtractNeighbors(t *testing.T) {
 		{Kind: "neighbor", RawData: map[string]string{
 			"neighbor_mac": "aa:bb:cc:dd:ee:02", "protocol": "Bridge-MIB", "local_port": "6",
 		}},
-		// Duplicate (same mac+protocol) — should be deduped.
+		// Duplicate (same mac+protocol), should be deduped.
 		{Kind: "neighbor", RawData: map[string]string{
 			"neighbor_mac": "aa:bb:cc:dd:ee:01", "protocol": "Bridge-MIB", "local_port": "5",
 		}},
-		// Missing mac — skipped.
+		// Missing mac, skipped.
 		{Kind: "neighbor", RawData: map[string]string{"protocol": "LLDP"}},
 	}
 	neighbors := extractNeighbors(ev)

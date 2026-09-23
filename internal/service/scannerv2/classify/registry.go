@@ -25,21 +25,21 @@ import (
 //
 // The logic-retained classifiers (SNMP bitmask heuristic, Camera cross-evidence
 // fusion, Database byte-offset/dedup, RemoteAccess byte-offset/dedup) stay as
-// code — they express logic the declarative rule format intentionally can't.
+// code, they express logic the declarative rule format can't.
 func DefaultClassifiers(rule *fp.RuleClassifier) []scannerv2.ServiceClassifier {
 	out := []scannerv2.ServiceClassifier{}
 	ruleActive := rule != nil && rule.Loaded()
 	if ruleActive {
 		out = append(out, rule)
 	}
-	// Logic-retained classifiers — always registered (not expressible as rules).
+	// Logic-retained classifiers, always registered (not expressible as rules).
 	out = append(out,
 		SNMPClassifier{},
 		CameraClassifier{},
 		DatabaseClassifier{},
 		RemoteAccessClassifier{},
 	)
-	// Pure-data classifiers — only registered as a FALLBACK when no rule
+	// Pure-data classifiers, only registered as a FALLBACK when no rule
 	// classifier is loaded (e.g. unit tests passing nil). When rules are active
 	// they are fully covered and would only cause duplicate-identity conflicts.
 	if !ruleActive {

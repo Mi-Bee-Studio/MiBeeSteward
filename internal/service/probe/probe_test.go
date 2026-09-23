@@ -161,7 +161,7 @@ func TestTCPProbe_Success(t *testing.T) {
 }
 
 func TestTCPProbe_ConnectionRefused(t *testing.T) {
-	// Use a port with no listener — connection should be refused.
+	// Use a port with no listener, connection should be refused.
 	prober := &TCPProber{}
 	result, err := prober.Probe(context.Background(), "127.0.0.1:1", 2*time.Second)
 	if err != nil {

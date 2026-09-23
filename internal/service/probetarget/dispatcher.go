@@ -46,7 +46,7 @@ type Spec struct {
 // AgentDispatcher ships vantage probe plans to agents over the command
 // channel (#277 step 2). It is NOT a scheduler: agents run their own
 // intervals locally. The dispatcher only (re)sends a plan when the plan's
-// content changed — a sha256 over the agent's sorted specs — so the steady
+// content changed, a sha256 over the agent's sorted specs, so the steady
 // state is zero command traffic, and a config edit propagates within one
 // dispatch tick.
 type AgentDispatcher struct {
@@ -120,7 +120,7 @@ func (d *AgentDispatcher) DispatchTick(ctx context.Context) {
 }
 
 // knownAgents returns the agent IDs that currently have a network bound
-// (networks.agent_id) — the same population the scan dispatcher routes to.
+// (networks.agent_id), the same population the scan dispatcher routes to.
 func (d *AgentDispatcher) knownAgents(ctx context.Context) []string {
 	nets, err := d.queries.ListNetworks(ctx)
 	if err != nil {
@@ -138,7 +138,7 @@ func (d *AgentDispatcher) knownAgents(ctx context.Context) []string {
 
 // sendPlan enqueues a "probe" command for one agent when (and only when) the
 // plan content changed. The payload carries the plan's fingerprint so the
-// agent can log idempotent re-application.
+// agent can log a repeated plan.
 func (d *AgentDispatcher) sendPlan(ctx context.Context, agentID string, list []db.ProbeTarget) error {
 	specs := make([]Spec, 0, len(list))
 	for _, t := range list {
@@ -207,7 +207,7 @@ type AgentResultReport struct {
 
 // IngestAgentResults persists a batch of agent-side probe results (#277).
 // The reporting agent's identity (from its token) overrides whatever vantage
-// the payload claims — an agent can only ever write its own track.
+// the payload claims, an agent can only ever write its own track.
 // Rows for unknown/deleted targets are skipped, not failed: a plan removal
 // racing an in-flight report is normal operation.
 func (s *Service) IngestAgentResults(ctx context.Context, agentID string, results []AgentResultReport) (int, error) {
@@ -218,7 +218,7 @@ func (s *Service) IngestAgentResults(ctx context.Context, agentID string, result
 		if err != nil {
 			continue // plan raced: target deleted/disabled mid-flight
 		}
-		// Gauge first (best-effort), then persistence.
+		// Gauge first (failure logged), then persistence.
 		s.engine.metrics.record(t.Name, t.Module, own, r.Status, r.LatencyMs/1000.0, certExpiryUnix(r.CertNotAfter))
 		if err := s.queries.CreateProbeResult(ctx, db.CreateProbeResultParams{
 			TargetID:     r.TargetID,

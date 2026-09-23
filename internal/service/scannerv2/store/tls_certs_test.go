@@ -57,7 +57,7 @@ func TestRecordTLSCerts_ReplacePerPort(t *testing.T) {
 }
 
 // TestRecordTLSCerts_PersistsErrorRow asserts that a record carrying only an
-// Error (handshake failed) still lands in the table — the UI uses these to
+// Error (handshake failed) still lands in the table, the UI uses these to
 // distinguish "we tried this port" from "port not scanned".
 func TestRecordTLSCerts_PersistsErrorRow(t *testing.T) {
 	repo, ctx := newRepo(t, Options{})
@@ -92,7 +92,7 @@ func TestRecordTLSCerts_PersistsErrorRow(t *testing.T) {
 // survive and the cert chain would appear stale/duplicated. Unlike
 // host_services, host_tls_certs has no UNIQUE constraint on (ip,port), so the
 // failure mode is accumulating duplicate stale rows rather than a silent
-// INSERT collision — this test catches both shapes.
+// INSERT collision, this test catches both shapes.
 func TestRecordTLSCerts_ReplaceAcrossUUIDResolution(t *testing.T) {
 	repo, ctx := newRepo(t, Options{})
 	ip := "10.0.0.5"
@@ -122,7 +122,7 @@ func TestRecordTLSCerts_ReplaceAcrossUUIDResolution(t *testing.T) {
 		t.Fatalf("RecordTLSCerts (scan 2): %v", err)
 	}
 
-	// Exactly ONE 443 row — not two — carrying scan-2 data + the resolved uuid.
+	// Exactly ONE 443 row, not two, carrying scan-2 data + the resolved uuid.
 	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM host_tls_certs WHERE ip=? AND port=443`, ip); cnt != 1 {
 		t.Fatalf("scan 2: expected 1 row for 443, got %d (uuid-transition left a stale duplicate)", cnt)
 	}
@@ -141,7 +141,7 @@ func TestRecordTLSCerts_ReplaceAcrossUUIDResolution(t *testing.T) {
 }
 
 // TestRecordTLSCerts_EmptyInputIsNoop guards against a regression where an
-// empty slice would DELETE everything for the IP (it shouldn't — there's
+// empty slice would DELETE everything for the IP (it shouldn't, there's
 // nothing to delete because no port is in the batch).
 func TestRecordTLSCerts_EmptyInputIsNoop(t *testing.T) {
 	repo, ctx := newRepo(t, Options{})

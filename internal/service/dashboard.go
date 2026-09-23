@@ -172,13 +172,13 @@ func (e *UpstreamError) Error() string {
 // pie charts in the browser (which capped at 200 rows and skewed the picture).
 //
 // scope (#138 Phase 2b): the device aggregates (status/type/location/offline)
-// honor object-level network scope — a closed-mode non-admin caller sees counts
+// honor object-level network scope, a closed-mode non-admin caller sees counts
 // only for their granted networks. The scanning section (recent tasks/runs) is
-// cross-network discovery metadata and is intentionally NOT scoped (it has no
+// cross-network discovery metadata and is NOT scoped (it has no
 // per-network association until scan_tasks.network_id lands).
 func (s *DashboardService) Overview(ctx context.Context, scope domain.Scope) (*domain.DashboardOverviewResponse, error) {
 	out := &domain.DashboardOverviewResponse{Generated: time.Now()}
-	// pred is "1=1" for a global scope (no filtering) — so the same raw query
+	// pred is "1=1" for a global scope (no filtering), so the same raw query
 	// serves both the admin/open path and the closed-mode restricted path.
 	pred, predArgs := scopeql.NetworkPredicate(scope, "")
 
@@ -238,7 +238,7 @@ func (s *DashboardService) Overview(ctx context.Context, scope domain.Scope) (*d
 		return nil, fmt.Errorf("overview: type rows: %w", err)
 	}
 
-	// --- 3. by_location (raw GROUP BY — no sqlc query exists for it) ---
+	// --- 3. by_location (raw GROUP BY, no sqlc query exists for it) ---
 	locRows, err := s.dbConn.QueryContext(ctx,
 		`SELECT COALESCE(NULLIF(location,''),'unknown') AS loc, COUNT(*) FROM devices WHERE `+pred+` GROUP BY loc`, predArgs...)
 	if err != nil {
@@ -295,7 +295,7 @@ func (s *DashboardService) Overview(ctx context.Context, scope domain.Scope) (*d
 // overviewScanning gathers recent scan tasks/runs and the run-status
 // distribution so the dashboard reflects discovery activity, not just device
 // counts. scope (#138 Phase 2c) restricts every aggregate to tasks whose
-// network_id is in the granted set — runs scope through their task.
+// network_id is in the granted set, runs scope through their task.
 func (s *DashboardService) overviewScanning(ctx context.Context, scope domain.Scope) (domain.OverviewScanning, error) {
 	out := domain.OverviewScanning{RunsByStatus: map[string]int64{}}
 

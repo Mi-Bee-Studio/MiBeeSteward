@@ -32,8 +32,8 @@ func NewScannerResultService(queries *db.Queries) *ScannerResultService {
 
 var (
 	// ErrBeforeDateRequired / ErrBeforeDateInvalid / ErrBeforeDateNotPast map
-	// to 400 with the historical message strings (kept verbatim — the
-	// frontend surfaces them directly).
+	// to 400 with the historical message strings (kept verbatim, the
+	// frontend shows them directly).
 	ErrBeforeDateRequired = errors.New("before_date query parameter is required (ISO 8601 format)")
 	ErrBeforeDateInvalid  = errors.New("invalid before_date format, use ISO 8601")
 	ErrBeforeDateNotPast  = errors.New("before_date must be in the past")

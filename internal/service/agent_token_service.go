@@ -19,8 +19,8 @@ import (
 
 // AgentTokenService is the write path for discovery-agent bearer tokens
 // (issue #240: the agent_admin handler was grandfathered charter debt). Token
-// MINTING stays in the HTTP layer — the plaintext is a one-time credential
-// shown in the response — and is injected as a func so tests can pin it;
+// MINTING stays in the HTTP layer, the plaintext is a one-time credential
+// shown in the response, and is injected as a func so tests can pin it;
 // persistence + the networks.agent_id wiring live here.
 type AgentTokenService struct {
 	queries *db.Queries
@@ -37,7 +37,7 @@ func NewAgentTokenService(queries *db.Queries) *AgentTokenService {
 type TokenMinter func() (plaintext, hash string)
 
 var (
-	// ErrNetworkIDInvalid maps to 400. (ErrAgentIDRequired — also 400 — is
+	// ErrNetworkIDInvalid maps to 400. (ErrAgentIDRequired, also 400, is
 	// declared once in agent_command_service.go and shared.)
 	ErrNetworkIDInvalid = errors.New("network_id is required or does not refer to a known network")
 	// ErrAgentIDTaken maps to 409 (UNIQUE(agent_id) collision).
@@ -49,7 +49,7 @@ var (
 // Create mints (via mint), stores, and wires a new agent token. Stamping
 // networks.agent_id is what makes the center's heartbeat exclusion (no
 // cross-subnet probing of agent devices) and the lease-sweeper scope engage
-// automatically. The stamp is best-effort: a failure leaves the token
+// automatically. The stamp tolerates failure: a failure leaves the token
 // functional (reports still work); the network just isn't scoped.
 func (s *AgentTokenService) Create(ctx context.Context, req domain.CreateAgentTokenRequest, mint TokenMinter) (domain.AgentTokenCreatedResponse, error) {
 	if req.AgentID == "" {
@@ -95,7 +95,7 @@ func (s *AgentTokenService) Create(ctx context.Context, req domain.CreateAgentTo
 	}, nil
 }
 
-// Revoke soft-revokes (sets revoked_at) — the token immediately fails auth.
+// Revoke soft-revokes (sets revoked_at), the token immediately fails auth.
 // Kept soft so the audit trail (last_used_at, created_at) survives. Also
 // clears the network's agent_id so the center resumes local probing.
 func (s *AgentTokenService) Revoke(ctx context.Context, id int64) error {
@@ -134,7 +134,7 @@ func (s *AgentTokenService) Delete(ctx context.Context, id int64) error {
 
 // clearNetworkAgentID nulls out the agent_id on the token's bound network,
 // but ONLY if it matches the token's own agent_id (so revoking a stale token
-// doesn't clobber a newer token that re-uses the network). Best-effort: a
+// doesn't clobber a newer token that re-uses the network). A
 // failure here doesn't undo the revoke/delete.
 func (s *AgentTokenService) clearNetworkAgentID(ctx context.Context, tok db.AgentToken) {
 	if tok.NetworkID == nil {

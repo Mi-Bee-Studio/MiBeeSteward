@@ -59,7 +59,7 @@ const (
 // per unique ifIndex entry.
 //
 // CDP-MIB does NOT provide the neighbor's MAC address directly. We use cdpCacheDeviceId
-// as the neighbor_mac merge key (per the task spec), even though it's not a MAC — this
+// as the neighbor_mac merge key (per the task spec), even though it's not a MAC, this
 // is acceptable because the orchestrator handles non-MAC values gracefully (they simply
 // won't join to the devices table). The passive CDP frame listener (T5) provides
 // MAC-based edges; CDP-MIB's value is the identity enrichment (platform, version, sys_name).

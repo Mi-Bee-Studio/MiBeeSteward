@@ -38,7 +38,7 @@ func TestTimeMsString(t *testing.T) {
 func TestGosnmpToString(t *testing.T) {
 	require.Equal(t, "VLAN 10", gosnmpToString("VLAN 10"))
 	require.Equal(t, "port1", gosnmpToString([]byte("port1")))
-	// Non-string PDU value types (int, bool) render as "" — callers omit them.
+	// Non-string PDU value types (int, bool) render as "", callers omit them.
 	require.Empty(t, gosnmpToString(10))
 	require.Empty(t, gosnmpToString(nil))
 	require.Empty(t, gosnmpToString(true))

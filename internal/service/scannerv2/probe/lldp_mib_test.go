@@ -56,7 +56,7 @@ func TestLldpEvidenceShape(t *testing.T) {
 
 // TestLldpIndexSuffix verifies indexSuffix with the new LLDP-MIB OID prefixes
 // for lldpRemSysName and lldpRemSysDesc. The index format is
-// "<timeMark>.<localPort>.<remIndex>" — same as the other lldpRemTable columns.
+// "<timeMark>.<localPort>.<remIndex>", same as the other lldpRemTable columns.
 func TestLldpIndexSuffix(t *testing.T) {
 	cases := []struct {
 		full, prefix, want string

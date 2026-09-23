@@ -297,7 +297,7 @@ func TestMiotHandler_EnrichBrandAndDescription(t *testing.T) {
 	if ctx.Device.Fields["inferred_brand"] != "SNMP-derived vendor" {
 		t.Error("miot handler must not override an existing brand")
 	}
-	// The type must stay untouched — hostname rules never claim a type.
+	// The type must stay untouched, hostname rules never claim a type.
 	ctx = svcCtx("10.0.0.5", 0, "miot", map[string]string{"ecosystem": "Xiaomi Mijia"})
 	h.EnrichDevice(ctx, nil)
 	if _, typed := ctx.Device.Fields["inferred_type"]; typed {

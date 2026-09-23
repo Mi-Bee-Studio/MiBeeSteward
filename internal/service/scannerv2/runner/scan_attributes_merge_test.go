@@ -72,7 +72,7 @@ func TestScanAttributes_MergePreservesHostname(t *testing.T) {
 
 	// Scan 2: a SHALLOW scan that found the host alive but collected NO hostname
 	// (no mDNS response, no rDNS, SNMP off). This is the scenario that used to
-	// wipe scan_attributes.hostname. Fields intentionally carry only a brand.
+	// wipe scan_attributes.hostname. Fields carry only a brand.
 	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
 		map[string]string{"inferred_brand": "Apache"}, // no node_hostname, no sys_name
 		// no evidence at all
@@ -136,7 +136,7 @@ func TestScanAttributes_OpenPortsReplaceNotUnion(t *testing.T) {
 
 	var openPorts string
 	require.NoError(t, conn.QueryRow(`SELECT open_ports FROM devices WHERE ip_address=?`, ip).Scan(&openPorts))
-	// Port 22 was only in scan 1. Whatever scan 2 wrote, 22 must NOT appear —
+	// Port 22 was only in scan 1. Whatever scan 2 wrote, 22 must NOT appear;
 	// the column tracks the latest scan, not a union.
 	require.NotContains(t, openPorts, `"port":22`,
 		"a port absent from the latest scan must not linger from an earlier scan (replace, not union)")
@@ -158,7 +158,7 @@ func TestScanAttributes_MACFlagsDerivedFromMAC(t *testing.T) {
 		wantLocallyAdmin bool
 		wantMulticast    bool
 	}{
-		// U/L bit (0x02) set: low nibble of first octet has bit 0x2 — locally administered.
+		// U/L bit (0x02) set: low nibble of first octet has bit 0x2, locally administered.
 		{"locally administered 02", "02:11:22:33:44:55", true, false},
 		{"locally administered 1a", "1a:bb:cc:dd:ee:ff", true, false},
 		// Universally administered OUIs: U/L bit clear.
@@ -203,7 +203,7 @@ func TestScanAttributes_MACFlagsDerivedFromMAC(t *testing.T) {
 // TestScanAttributes_OUIFieldsRecorded verifies that the OUI prefix + vendor
 // (factual IEEE registry data, kept SEPARATE from the device's self-declared
 // brand) flow from mac-kind evidence into scan_attributes. These are
-// unconditional factual fields — they are recorded even when a stronger
+// unconditional factual fields, they are recorded even when a stronger
 // SNMP/HTTP-derived brand is present (the two have different semantics: NIC
 // silicon vendor vs device self-declared brand).
 func TestScanAttributes_OUIFieldsRecorded(t *testing.T) {
@@ -212,7 +212,7 @@ func TestScanAttributes_OUIFieldsRecorded(t *testing.T) {
 	const ip = "192.168.63.60"
 
 	// A report where the mac evidence carries OUI data AND a self-declared brand
-	// (inferred_brand) — both should land in scan_attributes (different fields).
+	// (inferred_brand), both should land in scan_attributes (different fields).
 	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
 		map[string]string{
 			"mac":            "bc:ad:28:11:22:33",
@@ -233,16 +233,16 @@ func TestScanAttributes_OUIFieldsRecorded(t *testing.T) {
 	require.Contains(t, attrs, `"oui_prefix":"BCAD28"`, "oui_prefix recorded from mac evidence")
 	require.Contains(t, attrs, `"oui_vendor":"Hikvision Digital Technology"`, "oui_vendor recorded from mac evidence")
 	// The self-declared brand wins for the top-level `vendor` field (it is
-	// non-empty), but both coexist — oui_vendor is the NIC-chip vendor.
+	// non-empty), but both coexist, oui_vendor is the NIC-chip vendor.
 	require.Contains(t, attrs, `"vendor":"Hikvision (self-declared via SNMP)"`,
 		"self-declared brand wins for top-level vendor, separate from oui_vendor")
 }
 
 // TestScanAttributes_ArpInterfaceRecorded guards #127: the local interface name
 // that the ARP entry was learned on (/proc/net/arp column 6, captured by the ARP
-// probe + post-scan MAC resolver) is surfaced under scan_attributes.extras so
+// probe + post-scan MAC resolver) lands under scan_attributes.extras so
 // "which NIC on the center/agent saw this device" is answerable. It is a
-// debugging/segmentation hint, not an identity signal — hence extras, not a
+// debugging/segmentation hint, not an identity signal, hence extras, not a
 // typed top-level field.
 func TestScanAttributes_ArpInterfaceRecorded(t *testing.T) {
 	rn, conn := setupScanAttrsTestDB(t)
@@ -269,7 +269,7 @@ func TestScanAttributes_ArpInterfaceRecorded(t *testing.T) {
 
 // TestScanAttributes_ArpInterfaceAbsentWhenNoDevice ensures the extras key is
 // NOT fabricated when the ARP evidence carries no device name (e.g. a
-// synthetic/mac-resolver-only evidence without a real /proc/net/arp row) —
+// synthetic/mac-resolver-only evidence without a real /proc/net/arp row);
 // absence must stay absent rather than emitting an empty-string extra.
 func TestScanAttributes_ArpInterfaceAbsentWhenNoDevice(t *testing.T) {
 	rn, conn := setupScanAttrsTestDB(t)
@@ -280,7 +280,7 @@ func TestScanAttributes_ArpInterfaceAbsentWhenNoDevice(t *testing.T) {
 		map[string]string{"mac": "bc:ad:28:11:22:55"},
 		scannerv2.Evidence{Kind: "mac", RawData: map[string]string{
 			"mac": "bc:ad:28:11:22:55",
-			// no "device" key — common when the resolver only returned a MAC.
+			// no "device" key, common when the resolver only returned a MAC.
 		}},
 	), rn.networkID, "")
 

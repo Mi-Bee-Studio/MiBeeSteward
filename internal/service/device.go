@@ -79,7 +79,7 @@ func (s *DeviceService) Get(ctx context.Context, id int64) (*domain.DeviceRespon
 	resp := toDeviceResponse(device)
 	// Enrich with the authoritative "last confirmed alive" timestamp from the
 	// device_liveness series (cross-DB, heartbeat.db). Only the detail path pays
-	// this cost (one indexed query); the list path does not. Best-effort: a
+	// this cost (one indexed query); the list path does not. A
 	// missing/empty store or query error leaves LastOnlineAt nil (the field is
 	// omitempty), never fails the whole request.
 	if s.heartbeatSvc != nil {
@@ -107,8 +107,8 @@ func (s *DeviceService) List(ctx context.Context, filter domain.DeviceFilter) (*
 	// Fetch the page and its total in ONE read transaction so they share a
 	// snapshot. Two separate queries (list, then count) could observe different
 	// snapshots because devices is written every ~30-60s (heartbeat status
-	// sync) and in bursts during scans — a write landing between the queries
-	// made the list and its total disagree, surfacing as page-count flapping.
+	// sync) and in bursts during scans, a write landing between the queries
+	// made the list and its total disagree, which flaps the page count.
 	devices, total, err := s.repo.ListFilteredWithCount(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list devices: %w", err)
@@ -248,7 +248,7 @@ func (s *DeviceService) Delete(ctx context.Context, id int64) error {
 // is non-nil the counts are scoped to that network (multi-LAN dashboards); nil
 // spans all networks. scope (#138 Phase 2b) is the authoritative object-level
 // boundary: a restricted scope filters to its granted networks (intersected with
-// networkID when both apply — a networkID outside the scope yields empty stats,
+// networkID when both apply, a networkID outside the scope yields empty stats,
 // not a leak). A global scope leaves the networkID semantics unchanged.
 func (s *DeviceService) GetStats(ctx context.Context, networkID *int64, scope domain.Scope) (*domain.DeviceStatsResponse, error) {
 	var (

@@ -32,7 +32,7 @@ func (r *recordingSink) Apply(_ context.Context, rep scannerv2.HostReport) bool 
 // TestARPCacheSource_CIDRFilter pins #292: on a form-C center running on the
 // router, /proc/net/arp holds BOTH arms' neighbours. With network.cidr set,
 // only in-subnet neighbours are recorded; without/invalid cidr the historical
-// unfiltered behavior is kept (warn, pass through) — a config typo must not
+// unfiltered behavior is kept (warn, pass through), a config typo must not
 // disable a previously working source.
 func TestARPCacheSource_CIDRFilter(t *testing.T) {
 	var events []NewHostEvent

@@ -30,7 +30,7 @@ func TestServerHandlers_AllNamesRegistered(t *testing.T) {
 		seen[name] = true
 
 		// Every server handler assigns inferred_type=server and generates a TCP
-		// heartbeat — assert the dispatch behavior is consistent across names.
+		// heartbeat, assert the dispatch behavior is consistent across names.
 		sh, ok := h.(serverServiceHandler)
 		require.True(t, ok, "expected serverServiceHandler for %q", name)
 		require.Equal(t, name, sh.name)
@@ -90,7 +90,7 @@ func TestTLSCollectHandlers_AllNamesRegistered(t *testing.T) {
 }
 
 // TestDefaultHandlers_NoServiceNameCollisions asserts no two handlers in the
-// default set claim the same Service() name — a collision would silently shadow
+// default set claim the same Service() name, a collision would silently shadow
 // one handler in the registry.
 func TestDefaultHandlers_NoServiceNameCollisions(t *testing.T) {
 	all := DefaultHandlers()

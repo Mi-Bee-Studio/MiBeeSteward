@@ -21,7 +21,7 @@ import (
 // TestMetrics_EventsCounterBySourceAndOutcome drives the consumer loop through
 // the three main decision points (recorded / skipped_recent / skipped_known)
 // and asserts each lands in mibee_discovery_events_total with its
-// source+outcome labels — the Prometheus answer to "where did this device
+// source+outcome labels, the Prometheus answer to "where did this device
 // come from" that previously required the auth-gated status endpoint.
 func TestMetrics_EventsCounterBySourceAndOutcome(t *testing.T) {
 	dbConn := memoryDB(t)

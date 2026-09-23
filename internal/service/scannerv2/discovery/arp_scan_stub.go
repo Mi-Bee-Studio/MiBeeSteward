@@ -12,7 +12,7 @@
 // Default (no-op) build of the ARP-scan discovery source. The real implementation
 // (arp_scan_real.go, build tag WITH_ARPSCAN) sends ARP who-has requests for every
 // IP in the local subnet via an AF_PACKET raw socket and emits a NewHostEvent for
-// each reply — covering the whole broadcast domain without router access. It
+// each reply, covering the whole broadcast domain without router access. It
 // needs CAP_NET_RAW, so it is build-tag-gated exactly like the LLDP/CDP frame
 // sources: the default binary stays unprivileged and NewARPScanSource returns nil.
 // Callers (routes.go) guard with `if src := NewARPScanSource(...); src != nil`.

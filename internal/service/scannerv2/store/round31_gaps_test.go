@@ -90,7 +90,7 @@ func TestLegacyUpsertHeartbeats_SpecLadder(t *testing.T) {
 
 	tx, err := conn.BeginTx(ctx, nil)
 	require.NoError(t, err)
-	// legacyUpsertHeartbeats commits the tx itself (best-effort semantics).
+	// legacyUpsertHeartbeats commits the tx itself (non-fatal semantics).
 	require.NoError(t, repo.legacyUpsertHeartbeats(ctx, tx, id, []scannerv2.HeartbeatSpec{
 		{Method: "tcp", Target: "10.0.0.5:22", IntervalSeconds: 0, TimeoutSeconds: 0},
 	}))

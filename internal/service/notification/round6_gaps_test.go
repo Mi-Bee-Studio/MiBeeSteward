@@ -23,8 +23,8 @@ import (
 	"mibee-steward/internal/domain"
 )
 
-// TestWebhookSender_SendStubs: both webhook senders' bare Send() deliberately
-// refuse (config is required) — pin the guard so nobody "fixes" it into a
+// TestWebhookSender_SendStubs: both webhook senders' bare Send()
+// refuse (config is required), pin the guard so nobody "fixes" it into a
 // silently-wrong plain send.
 func TestWebhookSender_SendStubs(t *testing.T) {
 	res := NewWebhookSender().Send(context.Background(), Payload{})
@@ -66,7 +66,7 @@ func TestWebhookSender_SendWithConfig(t *testing.T) {
 	require.False(t, res.Success)
 	require.Contains(t, res.Error, "URL is required")
 
-	// Non-2xx endpoint: surfaced as a failed result.
+	// Non-2xx endpoint: reported as a failed result.
 	rej := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))

@@ -16,11 +16,11 @@ import (
 
 // TokenBlacklist stores revoked JWT token IDs, expiring them lazily on read.
 //
-// There is deliberately NO background cleanup goroutine: expired entries are
+// There is NO background cleanup goroutine: expired entries are
 // dropped by IsBlacklisted when it touches them, and the map is bounded by the
 // number of tokens that ever logged out (each entry dies with its token's own
 // JWT expiry, so a revocation outlives the token it revokes by design). The
-// previous 10-minute sweeper goroutine leaked on every NewRouter call — its
+// previous 10-minute sweeper goroutine leaked on every NewRouter call, its
 // StopCleanup had no production callers, and calling it twice panicked on
 // double-close. Lazy expiry deletes that entire lifecycle.
 type TokenBlacklist struct {

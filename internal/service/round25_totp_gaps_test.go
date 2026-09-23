@@ -56,7 +56,7 @@ func TestDashboardService_DataSourceTails(t *testing.T) {
 	_, err = svc.Query(context.Background(), "up", "")
 	require.ErrorContains(t, err, "prometheus URL not configured")
 
-	// The service snapshots the URL at construction — rebuild after changing it.
+	// The service snapshots the URL at construction, rebuild after changing it.
 	weird.Dashboard.PrometheusURL = "http://[::bad-url"
 	svc = NewDashboardService(conn, weird)
 	_, err = svc.Query(context.Background(), "up", "")

@@ -77,7 +77,7 @@ func webTypeFromHints(svc scannerv2.ServiceContext) string {
 	server := lowercase(svc.Identity.Metadata["server"])
 	title := lowercase(svc.Identity.Metadata["title"])
 	// node_hostname is a device-level field (populated by mDNS/rDNS/SNMP), not
-	// service metadata — read from the device fields.
+	// service metadata, read from the device fields.
 	host := lowercase(svc.Device.Fields["node_hostname"])
 	combined := server + " " + title + " " + host
 
@@ -106,7 +106,7 @@ func webTypeFromHints(svc scannerv2.ServiceContext) string {
 	case containsAny(combined, "procurve", "cisco catalyst", "switch"):
 		return "switch"
 	// Single-board / embedded Linux hosts (NanoPi, BananaPi, Raspberry Pi,
-	// Orange Pi) — these are common in home labs and would otherwise default to
+	// Orange Pi), these are common in home labs and would otherwise default to
 	// "server", but "embedded" is a more honest classification.
 	case containsAny(combined, "nanopi", "bananapi", "raspberry pi", "orangepi",
 		"rockpi", "radxa"):
@@ -190,7 +190,7 @@ func (PrometheusHandler) EnrichDevice(svc scannerv2.ServiceContext, data scanner
 
 // NodeExporterHandler is the terminal handler of the camera-free cascade. It
 // parses the node_exporter metrics sample for hardware attributes (memory,
-// CPU count, kernel, OS) and writes them onto the device record — filling in
+// CPU count, kernel, OS) and writes them onto the device record, filling in
 // the "necessary fields to complete the host" per the user's vision.
 type NodeExporterHandler struct{}
 

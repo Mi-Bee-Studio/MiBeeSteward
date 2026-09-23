@@ -170,7 +170,7 @@ func TestMulticastInterfaceHelpers(t *testing.T) {
 	}
 	require.True(t, found, "host must have at least one IPv4 interface (loopback)")
 
-	// Auto selection: any result or the explicit error — never a panic.
+	// Auto selection: any result or the explicit error, never a panic.
 	if _, err := multicastInterface(""); err != nil {
 		require.Contains(t, err.Error(), "multicast-capable")
 	}

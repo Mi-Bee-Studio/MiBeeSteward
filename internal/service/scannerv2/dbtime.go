@@ -17,7 +17,7 @@ import "time"
 //
 // Binding a Go time.Time through modernc.org/sqlite serializes it as Go's
 // String() ("2026-08-21 06:19:41.627875222 +0000 UTC"), which SQLite's
-// date()/datetime() cannot parse — every date() over those columns returned
+// date()/datetime() cannot parse, every date() over those columns returned
 // NULL, and text comparisons against other formats misordered (#257). This
 // matches the formats already used by the heartbeat store (checked_at), the
 // audit query params, and the retention sweeper's RFC3339 cutoffs, so string

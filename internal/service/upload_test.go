@@ -96,7 +96,7 @@ func TestSaveFile_BlockedExecutable(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewUploadService(tmpDir, 10<<20)
 
-	// Random binary data with .exe extension — should be rejected.
+	// Random binary data with .exe extension, should be rejected.
 	data := make([]byte, 512)
 	for i := range data {
 		data[i] = byte(i % 256)
@@ -113,7 +113,7 @@ func TestSaveFile_BlockedExtensionMismatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewUploadService(tmpDir, 10<<20)
 
-	// JPEG content but .png extension — content vs extension mismatch.
+	// JPEG content but .png extension, content vs extension mismatch.
 	jpegData := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46}
 	jpegData = append(jpegData, make([]byte, 500)...)
 	reader := bytes.NewReader(jpegData)
@@ -161,7 +161,7 @@ func TestSaveFile_MarkdownLeadingHTMLBlock(t *testing.T) {
 
 	// A .md starting with an HTML block sniffs as text/html; that is still
 	// text/* content and must be accepted as markdown (sniffing cannot tell
-	// the text family apart — sanitize happens at render time).
+	// the text family apart, sanitize happens at render time).
 	mdData := []byte("<div class=\"note\">alert</div>\n\n# heading\n")
 	mdData = append(mdData, bytes.Repeat([]byte(" "), 512-len(mdData))...)
 	reader := bytes.NewReader(mdData)
@@ -179,7 +179,7 @@ func TestSaveFile_BlockedBinaryNamedMarkdown(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewUploadService(tmpDir, 10<<20)
 
-	// Binary content named .md — the generic-detection exemption must NOT
+	// Binary content named .md, the generic-detection exemption must NOT
 	// apply to a text target; a .md has to actually be text.
 	data := make([]byte, 512)
 	for i := range data {

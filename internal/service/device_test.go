@@ -233,7 +233,7 @@ func TestDevice_Delete_NotFound(t *testing.T) {
 	require.ErrorIs(t, err, ErrDeviceNotFound)
 }
 
-// 10. GetStats — devices with different statuses and types
+// 10. GetStats, devices with different statuses and types
 func TestDevice_GetStats(t *testing.T) {
 	svc, db := setupDeviceService(t)
 	ctx := context.Background()
@@ -303,7 +303,7 @@ func TestDevice_Create_EmptyName(t *testing.T) {
 	require.ErrorIs(t, err, ErrDeviceNameRequired)
 }
 
-// 14. List defaults — limit clamp
+// 14. List defaults, limit clamp
 func TestDevice_List_DefaultLimit(t *testing.T) {
 	svc, _ := setupDeviceService(t)
 	ctx := context.Background()
@@ -316,7 +316,7 @@ func TestDevice_List_DefaultLimit(t *testing.T) {
 	require.Len(t, list.Devices, 1)
 }
 
-// 15. Create with empty IP (allowed — no validation on empty string)
+// 15. Create with empty IP (allowed, no validation on empty string)
 func TestDevice_Create_EmptyIP(t *testing.T) {
 	svc, _ := setupDeviceService(t)
 	ctx := context.Background()

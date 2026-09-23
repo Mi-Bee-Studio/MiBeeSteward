@@ -31,7 +31,7 @@ func NewRetryProber(inner Prober, maxTries int, baseDelay time.Duration) *RetryP
 
 // Probe executes the inner prober with retries on error.
 // Successful probes return immediately. Probes that run but report failure
-// (e.g., port closed, HTTP 500) are not retried — only network-level errors trigger retries.
+// (e.g., port closed, HTTP 500) are not retried, only network-level errors trigger retries.
 func (rp *RetryProber) Probe(ctx context.Context, target string, timeout time.Duration) (*Result, error) {
 	var lastResult *Result
 	var lastErr error
@@ -54,7 +54,7 @@ func (rp *RetryProber) Probe(ctx context.Context, target string, timeout time.Du
 			continue
 		}
 
-		// Probe ran successfully — return result regardless of Success flag.
+		// Probe ran successfully, return result regardless of Success flag.
 		// Only network-level errors (timeout, DNS failure, connection refused) trigger retries.
 		return result, nil
 	}

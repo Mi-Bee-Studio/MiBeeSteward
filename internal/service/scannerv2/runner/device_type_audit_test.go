@@ -68,9 +68,9 @@ func TestAudit_RealNetworkHostnames(t *testing.T) {
 		{"Huawei AL00", "KLE-AL00U", "", "", "phone"},
 		{"Huawei JUY-AL00", "JUY-AL00", "", "", "phone"},
 		{"Xiaomi 2109119BC", "2109119BC", "", "", "phone"},
-		// ── NAS (regression guard — the .138 极空间 Z4S case) ──
+		// ── NAS (regression guard，the .138 极空间 Z4S case) ──
 		{"Z4S NAS", "Z4S-2PSE", "MiniDLNA", "", "nas"},
-		// ── Cameras (regression guard — must not regress to NAS/other) ──
+		// ── Cameras (regression guard, must not regress to NAS/other) ──
 		{"Hikvision IPC", "IPC-1234ABCD", "hikvision", "", "camera"},
 		{"Hikvision DS-2CD", "DS-2CD2143", "hikvision", "", "camera"},
 		{"chuangmi camera", "chuangmi_camera_029a02", "", "", "camera"},
@@ -160,7 +160,7 @@ func TestAudit_PortShapeFallback(t *testing.T) {
 // a service handler (protocol evidence) must be marked "protocol", while a type
 // set/overridden by the hostname keyword heuristic must be marked "heuristic".
 // This is what the UI uses to show users which classifications are trustworthy
-// vs. guessable — the core of the "don't pretend to be certain" design.
+// vs. guessable, the core of the "don't pretend to be certain" design.
 func TestTypeSource_Provenance(t *testing.T) {
 	rn, _, conn := setupTypeTestDB(t)
 	ctx := context.Background()
@@ -219,7 +219,7 @@ func TestTypeSource_Provenance(t *testing.T) {
 }
 
 // TestDeviceTypesYAML_InSyncWithSourceOfTruth guards against a common foot-gun:
-// the device-type keyword table has TWO copies — the source of truth at
+// the device-type keyword table has TWO copies, the source of truth at
 // configs/fingerprints/device-types/device_types.yaml and the //go:embed copy at
 // internal/service/scannerv2/runner/device_types.yaml (Go embed can't reach
 // outside the package dir, so `make sync-device-types` copies it at build time).

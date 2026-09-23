@@ -24,7 +24,7 @@ import (
 
 // applyDeviceBridge mirrors v1's DeviceManager.CreateOrUpdate: for an alive
 // host, create or update the devices row (filling only empty/"unknown" fields
-// on update) and — for newly-created devices — seed heartbeat configs derived
+// on update) and, for newly-created devices, seed heartbeat configs derived
 // from the report's heartbeats. Returns (isNew, wasUpdated).
 //
 // The v2 HostReport already carries enriched device fields (set by
@@ -32,7 +32,7 @@ import (
 // adapter from the in-memory report to the devices/heartbeat_configs tables.
 // applyDeviceBridge mirrors v1's DeviceManager.CreateOrUpdate: for an alive
 // host, create or update the devices row (filling only empty/"unknown" fields
-// on update) and — for newly-created devices — seed heartbeat configs derived
+// on update) and, for newly-created devices, seed heartbeat configs derived
 // from the report's heartbeats. Returns (isNew, wasUpdated).
 //
 // networkID is the per-call origin network (devices.network_id). The local
@@ -47,13 +47,13 @@ import (
 func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string) (bool, bool) {
 	inferredType := rep.Device.Fields["inferred_type"]
 	// typeSource records HOW inferredType was determined, for confidence display:
-	//   "protocol"  — a service handler set it from real protocol evidence
+	//   "protocol" , a service handler set it from real protocol evidence
 	//                 (SNMP sysObjectID, RTSP/ONVIF banner, mDNS service type,
-	//                 node_exporter). Trustworthy — not spoofable by a hostname.
-	//   "heuristic" — the hostname/brand keyword table (device_types.yaml) set
+	//                 node_exporter). Trustworthy, not spoofable by a hostname.
+	//   "heuristic", the hostname/brand keyword table (device_types.yaml) set
 	//                 or overrode it. Spoofable: any DHCP client can name itself
 	//                 "viomi-…" or "nas-box". The UI marks these as "inferred".
-	//   ""          — fell through to the "other" default; unknown/legacy.
+	//   ""         , fell through to the "other" default; unknown/legacy.
 	// The source follows the FINAL value, not the original: a handler-set camera
 	// overridden to "pc" by isStrongPcSignal is now heuristic-confidence, because
 	// the deciding factor was the hostname keyword, not the protocol evidence.
@@ -62,7 +62,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		// An agent report may carry the source the agent's own applyDeviceBridge
 		// computed (it ran the same engine remotely). Trust it when present so a
 		// hostname-guessed type (heuristic) stays marked heuristic across the wire
-		// hop — otherwise the center would default it to "protocol" and the UI
+		// hop, otherwise the center would default it to "protocol" and the UI
 		// confidence badge would lie. For the LOCAL scan path no source is carried
 		// (handlers set inferred_type directly), so default to "protocol" then.
 		typeSource = rep.Device.Fields["inferred_type_source"]
@@ -71,7 +71,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		}
 	}
 	// A service handler may have set a generic "server"/"pc" type from a single
-	// open port (ssh, smb, mysql, …). That's a weak signal — routers, NAS, and
+	// open port (ssh, smb, mysql, …). That's a weak signal, routers, NAS, and
 	// cameras all run ssh/smb too. If the hostname/vendor carries a STRONGER,
 	// device-specific signal (an explicit router/camera/nas/printer/embedded
 	// model name), let the heuristic override the generic verdict. We still
@@ -79,7 +79,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	// come from SNMP sysObjectID or protocol detection and are authoritative.
 	//
 	// One exception: a "camera" verdict that came purely from an RTSP/ONVIF
-	// port can misfire on devices that expose RTSP for non-camera reasons — a
+	// port can misfire on devices that expose RTSP for non-camera reasons, a
 	// laptop/desktop running a media/dev RTSP server (port 8554), or a NAS using
 	// RTSP for media streaming (e.g. 极空间/ZSpace Z4S runs gortsplib for its
 	// 极影视 feature, Synology/QNAP expose RTSP-wrapping web UIs). When the host
@@ -103,7 +103,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			inferredType = t
 			typeSource = src
 		} else if inferredType == "" {
-			// No handler verdict and no specialized heuristic — take whatever
+			// No handler verdict and no specialized heuristic, take whatever
 			// the heuristic offers (including "" → falls to "other" below, or a
 			// heuristic "server" from ssh+exporter).
 			inferredType = t
@@ -128,7 +128,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 
 	// MAC-primary identity: when a MAC is known, match across ALL networks so a
 	// device that roams between subnets (or was seen by another instance) stays
-	// a single asset. Without a MAC, fall back to (ip, network_id) — same IP on
+	// a single asset. Without a MAC, fall back to (ip, network_id), same IP on
 	// two different networks is two distinct devices. This mirrors the store's
 	// RecordDevice lookup so both upsert writers agree on identity.
 	//
@@ -143,7 +143,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	res, err := rn.repo.ResolveDeviceIdentity(ctx, mac, rep.IP, networkID)
 	if err != nil {
 		// A genuine lookup error (not the "no rows" sentinel, which ResolveDeviceIdentity
-		// surfaces as res.IsNew). Can't decide identity safely — bail without writing.
+		// shows up as res.IsNew). Can't decide identity safely, bail without writing.
 		rn.logger.Warn("device bridge: lookup failed", "ip", rep.IP, "mac", mac, "error", err)
 		return false, false
 	}
@@ -172,7 +172,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			} else {
 				// No service was identified (no open ports, or ports the classifiers
 				// don't recognize). Without a heartbeat config this device would be
-				// discovered once and then never probed again — it would show
+				// discovered once and then never probed again, it would show
 				// "no heartbeat" forever even though we just proved it's alive.
 				// Fall back to an ICMP config so every discovered host gets at least
 				// liveness monitoring. The device already has an IP (rep.IP) and was
@@ -189,13 +189,13 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	// delegate the identity upsert (existing-field UPDATE + status/mac/last_seen
 	// stamping + roam relocation / replacement) to the repository.
 	existingID := res.TargetID
-	// In a replacement the before-snapshot is the OLD device's identity — exactly
+	// In a replacement the before-snapshot is the OLD device's identity, exactly
 	// what we want the device_changed diff to record (e.g. name NanoPiR4S → GL-MT3000).
 	before := rn.snapshotDevice(ctx, existingID)
 	// Evidence stickiness (type only upgrades, never downgrades). A protocol-
 	// derived type (SNMP sysObjectID, RTSP/ONVIF) is authoritative and must
 	// NOT be reverted to a heuristic/"other" verdict on a later scan where the
-	// probe timed out — that re-derivation is the other↔router type-flap root
+	// probe timed out, that re-derivation is the other↔router type-flap root
 	// cause. Trust ranking: protocol > heuristic > unknown. Only apply on a
 	// normal re-scan (ReplacedID==0); a device replacement force-overwrites
 	// identity (the new device's type wins), so stickiness must not hold there.
@@ -213,18 +213,18 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	}
 	// Change detection: re-read the AFTER snapshot and apply the TIERED
 	// model. Two separate judgments, so liveness and identity never conflate:
-	//   (a) device_recovered — a status flip offline→online. This is the
+	//   (a) device_recovered, a status flip offline→online. This is the
 	//       symmetric counterpart of device_lost. It fires ONLY on the
 	//       recovery transition (a scan revives a device DetectLost/lease
 	//       sweeper had marked offline), NOT on every rescan of a healthy
 	//       device (those have before.status==online already).
-	//   (b) device_changed — an IDENTITY field changed (name/type/brand/
-	//       model/mac/ip). status is deliberately excluded from this gate
+	//   (b) device_changed, an IDENTITY field changed (name/type/brand/
+	//       model/mac/ip). status is excluded from this gate
 	//       (it is a liveness signal, owned by device_lost/recovered); so is
 	//       classification-field wobble (open_ports/services/scan_attributes)
 	//       which is recorded in before/after_data but doesn't trip the gate.
 	// This replaces the old all-fields Diff that fired a device_changed on
-	// every status flip — the root cause of the 70k+ noise-row storm.
+	// every status flip, the root cause of the 70k+ noise-row storm.
 	changed := false
 	if before != nil {
 		after := rn.snapshotDevice(ctx, existingID)
@@ -315,13 +315,13 @@ func (rn *Runner) snapshotDevice(ctx context.Context, deviceID int64) *changedet
 
 // applyTypeStickiness enforces "type only upgrades, never downgrades" against
 // the stored verdict, returning the (type, source) to actually persist. Trust
-// ranking: protocol (SNMP/RTSP/ONVIF evidence — authoritative) > heuristic
-// (hostname keyword — spoofable) > unknown (no signal → "other").
+// ranking: protocol (SNMP/RTSP/ONVIF evidence, authoritative) > heuristic
+// (hostname keyword, spoofable) > unknown (no signal → "other").
 //
 // The rule: if the STORED type came from a protocol source, do not let this
 // scan's verdict downgrade it. This is what stops a router (protocol-derived via
 // SNMP sysObjectID) from flapping back to "other"/"embedded" on the next scan
-// where SNMP timed out — the timed-out scan produced only a heuristic or no
+// where SNMP timed out, the timed-out scan produced only a heuristic or no
 // signal, which must not overwrite the authoritative protocol verdict. Upgrades
 // (unknown→protocol, heuristic→protocol) and same-tier changes (protocol→
 // protocol when SNMP re-identifies differently) are still accepted.
@@ -332,7 +332,7 @@ func (rn *Runner) snapshotDevice(ctx context.Context, deviceID int64) *changedet
 func applyTypeStickiness(before *changedetect.DeviceSnapshot, newType, newSource string) (string, string) {
 	stored, err := domain.UnmarshalScanAttributes(before.ScanAttributes)
 	if err != nil {
-		// Can't read stored source — can't judge stickiness; accept the new verdict.
+		// Can't read stored source, can't judge stickiness; accept the new verdict.
 		return newType, newSource
 	}
 	storedSource := stored.InferredTypeSource
@@ -344,7 +344,7 @@ func applyTypeStickiness(before *changedetect.DeviceSnapshot, newType, newSource
 	}
 	// Stored type is protocol-authoritative. If this scan ALSO has protocol
 	// evidence (newSource=="protocol"), accept the new verdict (SNMP may have
-	// re-identified the device, or a different protocol handler fired) — that's a
+	// re-identified the device, or a different protocol handler fired), that's a
 	// legitimate same-or-higher-tier change, not a downgrade.
 	if newSource == "protocol" {
 		return newType, newSource
@@ -386,7 +386,7 @@ func (rn *Runner) recordDeviceAdded(ctx context.Context, deviceID int64, network
 // recordDeviceChanged emits a device_changed event with before_data + after_data
 // both as full DeviceSnapshot JSON (consistent with device_added/device_lost).
 // The field-level diff is logged at debug level for operator insight but is NOT
-// stored as after_data — storing the diff map there previously produced a
+// stored as after_data, storing the diff map there previously produced a
 // confusing after_data where scan_attributes was a [old,new] string array
 // rather than a snapshot object, and it diverged from the added/lost shape.
 // Consumers wanting the delta derive it by diffing before_data vs after_data.
@@ -457,10 +457,10 @@ func (rn *Runner) deviceHasHeartbeatConfig(ctx context.Context, deviceID int64) 
 // hostnames that may arrive after the Fields were set), finally the IP.
 //
 // The merged-attributes fallback is the fix for the case where a scan collects a
-// hostname via SNMP/mDNS but doesn't surface it in Device.Fields (different
+// hostname via SNMP/mDNS but doesn't expose it in Device.Fields (different
 // probes populate different stores): without it, devices.name degenerates to the
 // IP even though scan_attributes.hostname carries the real name. See issue #19
-// follow-up (the "62 scan looked more complete than 63" report — root cause was
+// follow-up (the "62 scan looked more complete than 63" report, root cause was
 // devices.name showing IP while hostname lived only in scan_attributes).
 func deviceDisplayName(rep scannerv2.HostReport) string {
 	if h := rep.Device.Fields["node_hostname"]; h != "" {
@@ -486,7 +486,7 @@ func deviceDisplayName(rep scannerv2.HostReport) string {
 // The previous implementation emitted a bare int array ([80,554,8000]) and a
 // bare string array (["camera","onvif","rtsp"]). The frontend's
 // parseJsonArray(... as Array<{port,name,protocol}>) then read svc.port as
-// undefined for every element, so the Scan Info panel rendered nothing — the
+// undefined for every element, so the Scan Info panel rendered nothing, the
 // scan had enriched the device but the user couldn't see it on the web.
 func deviceScanInfoJSON(rep scannerv2.HostReport) (string, string) {
 	// Both arrays are derived from the SAME deduped source as scan_attributes
@@ -567,11 +567,11 @@ func heuristicDeviceType(rep scannerv2.HostReport) (string, string) {
 // (notebook/laptop/thinkpad/macbook/…) or a desktop OS label
 // (ubuntu/debian/macos/darwin/windows) from an SSH/SNMP banner. It is the gate
 // for overriding a handler-set "camera" verdict (applyDeviceBridge): only an
-// unambiguous PC wins here — a generic "server" signal does NOT, because
+// unambiguous PC wins here, a generic "server" signal does NOT, because
 // routers/NAS/NVRs also run RTSP-wrapping web UIs and would be mis-typed.
 //
 // The keyword set is sourced from device_types.yaml via keywordsForType("pc")
-// — the SAME table matchDeviceType uses — so the override gate and the main
+// - the SAME table matchDeviceType uses, so the override gate and the main
 // inference engine can never drift (the three-independent-keyword-list bug that
 // caused the earlier "z4s" mis-classification is structurally impossible now).
 func isStrongPcSignal(rep scannerv2.HostReport) bool {
@@ -584,7 +584,7 @@ func isStrongPcSignal(rep scannerv2.HostReport) bool {
 // or an SMB file-sharing service on port 445. It is the gate for overriding a
 // handler-set "camera" verdict (applyDeviceBridge): consumer NAS boxes stream
 // media over RTSP (极空间 极影视, Synology Video Station, MiniDLNA), so an RTSP
-// port alone mis-types them as cameras — but SMB + a NAS vendor is unambiguous.
+// port alone mis-types them as cameras, but SMB + a NAS vendor is unambiguous.
 // A generic server signal does NOT pass this gate (would mis-type routers/NVRs).
 // Keywords come from device_types.yaml via keywordsForType("nas").
 func isStrongNasSignal(rep scannerv2.HostReport) bool {
@@ -595,7 +595,7 @@ func isStrongNasSignal(rep scannerv2.HostReport) bool {
 // isStrongNasSignal: true when the report's host/brand/hint contains a keyword
 // from device_types.yaml's host/brand rules for the given type, OR its os_type
 // matches an os_rule for that type, OR (for nas only) an smb:445 service.
-// Centralized so both gates read the SAME data source as matchDeviceType — the
+// Centralized so both gates read the SAME data source as matchDeviceType, the
 // override gate and the main engine can never drift.
 func strongTypeSignal(rep scannerv2.HostReport, wantType string) bool {
 	host := strings.ToLower(rep.Device.Fields["node_hostname"])
@@ -608,7 +608,7 @@ func strongTypeSignal(rep scannerv2.HostReport, wantType string) bool {
 	if containsAny(host+" "+brand, keywordsForType(wantType)...) {
 		return true
 	}
-	// os_rules table — a desktop OS label (ubuntu/debian/macos/windows) is a
+	// os_rules table, a desktop OS label (ubuntu/debian/macos/windows) is a
 	// strong PC signal; android is a strong phone signal.
 	for _, r := range deviceTypeRules.OSRules {
 		if r.Type == wantType && containsAny(osType, r.Keywords...) {

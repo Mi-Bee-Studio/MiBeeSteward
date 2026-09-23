@@ -19,7 +19,7 @@ import (
 )
 
 // SeedAdmin pins the first-run bootstrap contract: the configured
-// initial_admin_password is a TEMPORARY credential — it deliberately bypasses
+// initial_admin_password is a TEMPORARY credential, it bypasses
 // the password policy (applying the class rules here is what historically
 // left fresh installs with no admin at all), the seeded user carries
 // must_change_password, and the login token carries the server-side gate
@@ -68,7 +68,7 @@ func TestSeedAdmin_DuplicateReturnsWrappedExists(t *testing.T) {
 }
 
 // The differ-from-current check (ErrSamePassword) used to be declared and
-// mapped in handlers but never returned by the service — pin both call sites.
+// mapped in handlers but never returned by the service, pin both call sites.
 func TestChangePassword_SamePasswordRejected(t *testing.T) {
 	svc, _ := setupUserService(t)
 	registerTestUser(t, svc, "alice", "alice@example.com")
@@ -88,7 +88,7 @@ func TestForceChangePassword_SamePasswordRejected(t *testing.T) {
 }
 
 // Self-service changes must stamp password_changed_at (previously only the
-// force/admin paths did — the column stayed NULL for users who changed their
+// force/admin paths did, the column stayed NULL for users who changed their
 // password from the settings page).
 func TestChangePassword_StampsPasswordChangedAt(t *testing.T) {
 	svc, sqlDB := setupUserService(t)
@@ -109,9 +109,9 @@ func TestChangePassword_StampsPasswordChangedAt(t *testing.T) {
 
 // The installer's default is an EMPTY initial_admin_password: the admin is
 // seeded password-less and the browser setup flow (POST /auth/setup) creates
-// the credential. Pin the full arc — pending detection, login impossible
+// the credential. Pin the full arc, pending detection, login impossible
 // (distinct sentinel, no failure-counter side effect), setup completes with a
-// policy-compliant password and lands a fresh UNGATED token, and the one-shot
+// policy-compliant password and lands a fresh UNGATED token, and the single-use
 // window closes for good afterwards.
 func TestSetupFlow_EmptyPasswordSeedArc(t *testing.T) {
 	svc, sqlDB := setupUserService(t)
@@ -123,7 +123,7 @@ func TestSetupFlow_EmptyPasswordSeedArc(t *testing.T) {
 
 	require.True(t, svc.SetupPending(ctx), "empty-hash seed must report setup pending")
 
-	// Login against a pending account returns the sentinel — NOT invalid
+	// Login against a pending account returns the sentinel, NOT invalid
 	// credentials, and it must not tick the failure counter.
 	_, err = svc.Login(ctx, "admin", "guess")
 	require.ErrorIs(t, err, ErrSetupPending)
@@ -141,7 +141,7 @@ func TestSetupFlow_EmptyPasswordSeedArc(t *testing.T) {
 	require.False(t, login.User.MustChangePassword)
 	require.NotEmpty(t, login.Token)
 
-	// The token the SPA lands with must NOT carry the mcp gate — the password
+	// The token the SPA lands with must NOT carry the mcp gate, the password
 	// was just chosen by the operator, there is nothing left to force.
 	tok, err := jwtauth.VerifyToken(svc.auth, login.Token)
 	require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestSetupFlow_EmptyPasswordSeedArc(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, after.User.MustChangePassword)
 
-	// One-shot: the setup window closed.
+	// Single-use: the setup window closed.
 	require.False(t, svc.SetupPending(ctx))
 	_, err = svc.CompleteSetup(ctx, "Another!Pass1")
 	require.ErrorIs(t, err, ErrNoPendingSetup)

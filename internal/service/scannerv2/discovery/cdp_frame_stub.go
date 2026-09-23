@@ -22,7 +22,7 @@ import (
 	"log/slog"
 )
 
-// CDPFrameSource is nil in the default build — NewCDPFrameSource returns nil,
+// CDPFrameSource is nil in the default build, NewCDPFrameSource returns nil,
 // and the caller skips registration. See cdp_frame_real.go (WITH_CDP) for the
 // real listener.
 type CDPFrameSource struct{}

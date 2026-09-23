@@ -41,7 +41,7 @@ func (MailClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceIdent
 		lower := strings.ToLower(b)
 
 		// SMTP: "220 ... ESMTP" or a known MTA name. The "220 " prefix alone
-		// is NOT enough (FTP also uses it) — require a mail-specific marker.
+		// is NOT enough (FTP also uses it), require a mail-specific marker.
 		if strings.HasPrefix(b, "220 ") && (strings.Contains(lower, "esmtp") ||
 			strings.Contains(lower, "postfix") || strings.Contains(lower, "sendmail") ||
 			strings.Contains(lower, "exim") || strings.Contains(lower, "mail")) {
@@ -134,8 +134,8 @@ func (RemoteAccessClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.Serv
 
 // MiscClassifier catches a few remaining common services: LDAP (bind-response
 // banner on a non-protocol greeting is unreadable, so port-only), DNS (no TCP
-// banner; port-only for 53), and NTP (UDP 123 — port-only). These are
-// intentionally low-confidence because they're port-shape-only, but they make
+// banner; port-only for 53), and NTP (UDP 123, port-only). These are
+// low-confidence because they're port-shape-only, but they make
 // the device record far more useful than a bare "open port".
 //
 // The well-known TLS-wrapped service ports (465/989/990/992/993/994/995) are

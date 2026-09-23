@@ -20,7 +20,7 @@ import (
 
 // TestConfigBackupService_DefaultsAndStartStop pins the constructor's
 // defaulting (interval<=0 → 6h, timeout<=0 → 30s) and the Start/Stop loop
-// with a mock fetch — the startup pass runs once, Stop returns.
+// with a mock fetch, the startup pass runs once, Stop returns.
 func TestConfigBackupService_DefaultsAndStartStop(t *testing.T) {
 	conn, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
@@ -33,7 +33,7 @@ func TestConfigBackupService_DefaultsAndStartStop(t *testing.T) {
 	svc := configbackup.New(conn, queries, nil, nil, fetch, 0, 0, nil)
 	require.NotNil(t, svc)
 
-	// The startup pass runs immediately (over an empty device set — no
+	// The startup pass runs immediately (over an empty device set, no
 	// fetch, but the loop + Stop lifecycle is what's under test).
 	ctx, cancel := context.WithCancel(context.Background())
 	svc.Start(ctx)
