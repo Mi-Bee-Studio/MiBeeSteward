@@ -266,3 +266,31 @@ func TestRecordDevice_OverlapsBridge_ForceOverwriteWins(t *testing.T) {
 func baselineNow() string {
 	return "2026-08-11T00:00:00Z"
 }
+
+// A discovery-synthesized report carries inferred_type "unknown", which is
+// NOT in the devices.type CHECK enum. Live-caught on the agent passive path:
+// the create failed with "CHECK constraint failed: type IN (...)" and the
+// host never landed. The bridge must coerce out-of-enum values to the "" path
+// (heuristic ladder, then the "other" default) instead of feeding them to the
+// INSERT.
+func TestApplyDeviceBridge_UnknownTypeCoercedToOther(t *testing.T) {
+	rn, _, conn := setupChangeDetectDB(t)
+	ctx := context.Background()
+
+	isNew, _ := rn.applyDeviceBridge(ctx, reportFor("10.0.0.77", "unknown", "", "aa:bb:cc:dd:ee:77"), rn.NetworkID(), "")
+	require.True(t, isNew, "out-of-enum type must not fail the create")
+
+	row := fetchBaselineDevice(t, conn, "10.0.0.77")
+	require.Equal(t, "other", row.Type, "unknown falls back to the schema default")
+
+	// A heuristic still gets its chance: a hostname carrying a strong signal
+	// upgrades the coerced type instead of defaulting to other.
+	isNew2, _ := rn.applyDeviceBridge(ctx, func() scannerv2.HostReport {
+		r := reportFor("10.0.0.78", "unknown", "", "aa:bb:cc:dd:ee:78")
+		r.Device.Fields["node_hostname"] = "nas-synology-78"
+		return r
+	}(), rn.NetworkID(), "")
+	require.True(t, isNew2)
+	row2 := fetchBaselineDevice(t, conn, "10.0.0.78")
+	require.Equal(t, "nas", row2.Type, "hostname heuristic applies after the coercion")
+}

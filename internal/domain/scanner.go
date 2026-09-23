@@ -126,11 +126,11 @@ type AddDevicesResponse struct {
 
 // ValidateDeviceType returns a valid device type, defaulting to "other". The
 // canonical list of valid types is ValidDeviceTypes in device.go (the single
-// source of truth); isValidDeviceType iterates that slice. The schema's
+// source of truth); IsValidDeviceType iterates that slice. The schema's
 // devices.type CHECK must agree; TestDevicesTypeCHECK_InSyncWithDomain guards
 // against drift.
 func ValidateDeviceType(t string) string {
-	if isValidDeviceType(t) {
+	if IsValidDeviceType(t) {
 		return t
 	}
 	return "other"
