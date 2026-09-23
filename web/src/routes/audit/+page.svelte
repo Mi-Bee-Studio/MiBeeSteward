@@ -84,7 +84,7 @@
 	}
 
 	async function fetchFacets() {
-		// Best-effort: populate the action / resource-type dropdowns from the
+		// Populate the action / resource-type dropdowns from the
 		// distinct values currently in audit_logs. On failure the dropdowns are
 		// just empty (search + the other filters still work), so stay silent.
 		try {

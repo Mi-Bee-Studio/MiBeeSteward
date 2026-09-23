@@ -33,7 +33,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 // adding a new chart type or option feature, check whether its module is
 // registered below; an unregistered component silently renders nothing.
 //
-// Commonly-needed-but-currently-unused modules (intentionally NOT registered to
+// Commonly-needed-but-currently-unused modules (NOT registered to
 // keep the bundle lean: add the import + echarts.use() entry when a chart
 // first needs one):
 //   - DatasetComponent       (option.dataset source piping)

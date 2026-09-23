@@ -39,9 +39,9 @@ security:
   master_key: ""
 
 auth:
-  jwt_secret: "CHANGE_THIS — generate with: openssl rand -base64 32"
+  jwt_secret: "CHANGE_THIS (generate with: openssl rand -base64 32)"
   token_expiry: "1h"
-  initial_admin_password: "CHANGE_THIS — first-run admin password"
+  initial_admin_password: "CHANGE_THIS (first-run admin password)"
   cookie_domain: ""
   cookie_secure: false     # 容器内若无 TLS 终止，置 false；上游 nginx 终止 TLS 时由 nginx 设置 Secure
   cookie_same_site: "lax"  # 容器场景下通常用 lax（反代跨端口）

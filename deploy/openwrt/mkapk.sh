@@ -92,7 +92,7 @@ cat > "$ROOT/.post-install" <<EOF
 # Files are already laid down by apk: configure + start via the same code
 # path as the tarball installer. Invoked through \`sh\` so the installer needs
 # no exec bit (MSYS-built archives can carry 0644; it chmods itself back).
-# apk passes <pkgname> <pkgver> as arguments: deliberately NOT forwarded.
+# apk passes <pkgname> <pkgver> as arguments; NOT forwarded.
 exec sh /usr/lib/mibee/$INSTALLER --from-ipk
 EOF
 
@@ -107,7 +107,7 @@ sed -i "s/SERVICE/$PKG/g" "$ROOT/.pre-deinstall"
 
 cat > "$ROOT/.post-deinstall" <<EOF
 #!/bin/sh
-echo "$PKG removed; /etc/mibee (config + database) was deliberately kept -"
+echo "$PKG removed; /etc/mibee (config + database) is kept by design."
 echo "delete it manually if you really want a full wipe."
 exit 0
 EOF

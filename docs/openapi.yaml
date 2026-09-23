@@ -1078,7 +1078,7 @@ paths:
       security: [{agentToken: []}]
       responses:
         "200":
-          description: Command array (intentionally NOT enveloped)
+          description: Command array (NOT enveloped)
           content:
             application/json:
               schema:

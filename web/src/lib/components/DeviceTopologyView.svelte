@@ -311,8 +311,8 @@
 						const protoLabel = escapeHtml(m['topology.Protocol']());
 						const localLabel = escapeHtml(m['topology.Local Port']());
 						const remoteLabel = escapeHtml(m['topology.Remote Port']());
-						const remote = l.remotePort ? escapeHtml(l.remotePort) : '-';
-						return `<b>${escapeHtml(l.protocol)}</b><br/>${localLabel}: ${escapeHtml(l.localPort || '-')}<br/>${remoteLabel}: ${remote}`;
+						const remote = l.remotePort ? escapeHtml(l.remotePort) : '—';
+						return `<b>${escapeHtml(l.protocol)}</b><br/>${localLabel}: ${escapeHtml(l.localPort || '—')}<br/>${remoteLabel}: ${remote}`;
 					}
 					return '';
 				}
@@ -449,12 +449,12 @@
 						</button>
 					</div>
 					<dl class="space-y-1.5">
-						<div><dt class="text-muted inline">{m['topology.Tooltip IP']()}: </dt><dd class="inline font-mono">{selectedNode.value.ip_address || '-'}</dd></div>
-						<div><dt class="text-muted inline">{m['topology.Tooltip MAC']()}: </dt><dd class="inline font-mono">{selectedNode.value.mac_address || '-'}</dd></div>
+						<div><dt class="text-muted inline">{m['topology.Tooltip IP']()}: </dt><dd class="inline font-mono">{selectedNode.value.ip_address || '—'}</dd></div>
+						<div><dt class="text-muted inline">{m['topology.Tooltip MAC']()}: </dt><dd class="inline font-mono">{selectedNode.value.mac_address || '—'}</dd></div>
 						<div><dt class="text-muted inline">{m['topology.Tooltip Type']()}: </dt><dd class="inline">{typeLabel(deviceType(selectedNode.value))}</dd></div>
-						<div><dt class="text-muted inline">{m['topology.Tooltip Status']()}: </dt><dd class="inline">{selectedNode.value.status || '-'}</dd></div>
+						<div><dt class="text-muted inline">{m['topology.Tooltip Status']()}: </dt><dd class="inline">{selectedNode.value.status || '—'}</dd></div>
 						<div><dt class="text-muted inline">{m['topology.Degree']()}: </dt><dd class="inline">{selectedNode.degree}</dd></div>
-						<div><dt class="text-muted inline">{m['topology.Brand']()}: </dt><dd class="inline">{selectedNode.value.brand || '-'}</dd></div>
+						<div><dt class="text-muted inline">{m['topology.Brand']()}: </dt><dd class="inline">{selectedNode.value.brand || '—'}</dd></div>
 						{#if selectedNode.value.network_id}
 							<div><dt class="text-muted inline">{m['topology.Network']()}: </dt><dd class="inline">{selectedNode.value.network_id}</dd></div>
 						{/if}
@@ -486,7 +486,7 @@
 						</div>
 						<div>
 							<dt class="text-muted">{m['topology.Local Port']()}</dt>
-							<dd class="font-mono">{selectedEdge.localPort || '-'}</dd>
+							<dd class="font-mono">{selectedEdge.localPort || '—'}</dd>
 						</div>
 						<div>
 							<dt class="text-muted">{m['topology.To Device']()}</dt>
@@ -494,7 +494,7 @@
 						</div>
 						<div>
 							<dt class="text-muted">{m['topology.Remote Port']()}</dt>
-							<dd class="font-mono">{selectedEdge.remotePort || '-'}</dd>
+							<dd class="font-mono">{selectedEdge.remotePort || '—'}</dd>
 						</div>
 						{#if selectedEdge.isCrossLink}
 							<p class="text-xs text-accent-purple mt-2">↻ {m['topology.Cross Link']()}</p>

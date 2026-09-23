@@ -47,9 +47,9 @@ export function certDayDelta(iso: string): number {
 /**
  * Group a fingerprint into colon-separated bytes (AB12CD… → AB:12:CD:…),
  * matching the openssl format operators expect. Input is uppercase hex
- * without separators. Returns '-' for empty input.
+ * without separators. Returns '—' for empty input.
  */
 export function fmtFingerprint(fp: string): string {
-	if (!fp) return '-';
+	if (!fp) return '—';
 	return fp.replace(/(.{2})/g, '$1:').replace(/:$/, '');
 }

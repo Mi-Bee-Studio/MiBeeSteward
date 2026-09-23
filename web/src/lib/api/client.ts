@@ -215,7 +215,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 			callerSignal?.removeEventListener('abort', onCallerAbort);
 		}
 	}
-	// Retry budget exhausted: surface the last error.
+	// Retry budget exhausted: rethrow the last error.
 	throw lastError instanceof Error
 		? lastError
 		: new Error(getErrorMessage(lastError));

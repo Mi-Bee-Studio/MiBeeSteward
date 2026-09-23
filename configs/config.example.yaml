@@ -15,7 +15,7 @@ server:
   idle_timeout: "120s"
   # trusted_proxies authorizes which source IPs may set X-Forwarded-For (used
   # by rate limiting + audit logs to identify the real client behind a proxy).
-  # Empty (default) = trust NO proxy: the TCP peer IS the client: the safe
+  # Empty (default) = trust NO proxy: the TCP peer IS the client, the safe
   # default for direct exposure (a client cannot forge its IP). Deploy behind
   # nginx/another proxy and set this to the proxy's source range so the real
   # client IP is honored. Bare IPs are treated as /32 (v4) or /128 (v6).
@@ -29,7 +29,7 @@ database:
 # Network this instance is responsible for. Resolved to a `networks` table row
 # at startup; discovered devices are tagged with its id (devices.network_id) so
 # multiple instances on different LANs can coexist without IP collisions.
-#   - Single instance: leave at default ("default"): devices get network_id set.
+#   - Single instance: leave at default ("default"), devices get network_id set.
 #   - Distributed: each agent sets a distinct name (e.g. "lan-63", "branch-bj").
 network:
   name: "default"

@@ -35,7 +35,7 @@
 #   postinst  exec sh /usr/lib/mibee/install.sh --from-ipk  (config generation
 #             + ping_group_range + enable + start + health check)
 #   prerm     stop + disable (also runs before an upgrade; postinst re-enables)
-#   postrm    note that /etc/mibee (config + DB) is deliberately kept
+#   postrm    note that /etc/mibee (config + DB) is kept on removal
 #
 set -eu
 
@@ -120,7 +120,7 @@ sed -i "s/SERVICE/$PKG/g" "$CTRL/prerm"
 
 cat > "$CTRL/postrm" <<EOF
 #!/bin/sh
-echo "$PKG removed; /etc/mibee (config + database) was deliberately kept -"
+echo "$PKG removed; /etc/mibee (config + database) is kept by design."
 echo "delete it manually if you really want a full wipe."
 exit 0
 EOF

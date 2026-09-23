@@ -901,7 +901,7 @@
 						{@const s = track.latest?.status}
 						<div class="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
 							<span class="text-xs font-mono text-text-muted shrink-0" title={track.vantage}>{track.vantage}</span>
-							<span class="badge {s === 'success' ? 'badge-success' : s === 'timeout' ? 'badge-warning' : 'badge-error'}">{s || '-'}</span>
+							<span class="badge {s === 'success' ? 'badge-success' : s === 'timeout' ? 'badge-warning' : 'badge-error'}">{s || '—'}</span>
 							{#if track.latest && track.latest.latency_ms > 0}
 								<span class="text-xs font-mono text-text-muted">{track.latest.latency_ms < 1000 ? Math.round(track.latest.latency_ms) + 'ms' : (track.latest.latency_ms / 1000).toFixed(2) + 's'}</span>
 							{/if}

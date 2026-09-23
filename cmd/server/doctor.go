@@ -297,7 +297,7 @@ func icmpPingGroupRangeCheck(raw string, gid int) (doctorCheck, bool) {
 }
 
 func printReport(checks []doctorCheck) {
-	icon := map[string]string{"ok": "✅", "warn": "⚠️ ", "fail": "❌", "skip": "-"}
+	icon := map[string]string{"ok": "✅", "warn": "⚠️ ", "fail": "❌", "skip": "—"}
 	pass, warn, fail := 0, 0, 0
 	for _, c := range checks {
 		fmt.Printf("  %s %-26s %s\n", icon[c.status], c.name, c.detail)

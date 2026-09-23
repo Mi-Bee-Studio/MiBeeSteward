@@ -412,8 +412,8 @@
 					fetchTasks();
 				}
 			} catch (err: unknown) {
-				// Poll errors are non-critical: keep trying: but after several in
-				// a row the live-progress spinner is lying to the user. Surface one
+				// Poll errors are non-critical (keep trying), but after several in
+				// a row the live-progress spinner is lying to the user. Show one
 				// warning so they know to refresh manually (the loop keeps running).
 				consecutiveErrors++;
 				if (consecutiveErrors >= 3 && !errorToasted) {
@@ -853,7 +853,7 @@
 						class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
 							focus:border-primary focus:outline-none"
 					>
-						<option value={null}>- {m['snmpCredentials.Community']()} -</option>
+						<option value={null}>— {m['snmpCredentials.Community']()} —</option>
 						{#each credentials as c (c.id)}
 							<option value={c.id}>{c.name} ({c.security_level})</option>
 						{/each}

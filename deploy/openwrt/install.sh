@@ -186,7 +186,7 @@ if [ -f "$CONF_DST" ]; then
     # with the router-resident sources off. Keep the operator's config as-is
     # (upgrade rule), just point at the one-click toggle.
     if ! grep -A1 '^[[:space:]]*dhcp_leases:' "$CONF_DST" 2>/dev/null | grep -q 'enabled: true'; then
-        echo "-- note: Tier-1 passive discovery (dhcp_leases/conntrack/hostapd) is OFF in this config -"
+        echo "-- note: Tier-1 passive discovery (dhcp_leases/conntrack/hostapd) is OFF in this config."
         echo "--       enable under LuCI > Services > MiBee Steward > Settings (one click)"
     fi
 else
@@ -219,7 +219,7 @@ else
     JWT_SECRET="$(gen_secret)"
     [ -n "$JWT_SECRET" ] || { echo "ERROR: cannot generate jwt_secret (/dev/urandom unusable?)"; exit 1; }
 
-    # The admin password is deliberately NOT set here: an EMPTY
+    # The admin password is NOT set here: an EMPTY
     # initial_admin_password seeds the admin with no password, and the web UI's
     # first-run screen asks the operator to CREATE one in the browser (the
     # login page detects it via GET /auth/setup-status). Nothing to copy from
@@ -302,9 +302,8 @@ echo "-- service installed + started (boot-enabled)"
 
 # ─── 4. verify + summary ───────────────────────────────────────────────────
 # A single probe after `sleep 2` false-negatives on slower boards (R68S:
-# service healthy at t+4s, install warned "health check failed"). First boot
-# after a cold start: and migrations on an existing DB: can outrun one
-# shot; retry for up to ~12s instead.
+# service healthy at t+4s, install warned "health check failed"). A cold
+# start's first boot can outrun one shot; retry for up to ~12s instead.
 HEALTH_OK=0
 if command -v curl >/dev/null 2>&1; then
     _i=0

@@ -55,7 +55,7 @@ groups:
           severity: warning
         annotations:
           summary: "Sustained 5xx burst (possible SQLite contention)"
-          description: "MiBee Steward on {{ $labels.instance }} is returning >1 5xx/s for over a minute — likely SQLite busy/locked errors."
+          description: "MiBee Steward on {{ $labels.instance }} is returning >1 5xx/s for over a minute, likely SQLite busy/locked errors."
 
       - alert: HighMemoryUsage
         expr: process_resident_memory_bytes{job="mibee-steward"} > 524288000
@@ -146,7 +146,7 @@ groups:
           severity: warning
         annotations:
           summary: "SQLite BUSY retries sustained on {{ $labels.instance }}"
-          description: "mibee_sqlite_busy_total{path=\"{{ $labels.path }}\"} is retrying at {{ $value }}/s — write contention is outliving busy_timeout."
+          description: "mibee_sqlite_busy_total{path=\"{{ $labels.path }}\"} is retrying at {{ $value }}/s, write contention is outliving busy_timeout."
 
       # Network-attribution drift (#19): mibee_network_mismatches counts devices
       # whose IP falls outside their stamped network's CIDR (set per hourly
@@ -161,4 +161,4 @@ groups:
           severity: warning
         annotations:
           summary: "Network attribution drift on {{ $labels.network }}"
-          description: "{{ $value }} device(s) on network {{ $labels.network }} have IPs outside its CIDR — check the reconcile log sample_ips and whether the network row (or passive-discovery attribution) is wrong."
+          description: "{{ $value }} device(s) on network {{ $labels.network }} have IPs outside its CIDR, check the reconcile log sample_ips and whether the network row (or passive-discovery attribution) is wrong."

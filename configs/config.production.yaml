@@ -24,9 +24,9 @@ security:
 
 # 认证配置
 auth:
-  jwt_secret: "CHANGE_THIS — generate with: openssl rand -base64 32"  # JWT 签名密钥，生产环境必须更改
+  jwt_secret: "CHANGE_THIS (generate with: openssl rand -base64 32)"  # JWT 签名密钥，生产环境必须更改
   token_expiry: "1h"  # JWT 令牌过期时间
-  initial_admin_password: "CHANGE_THIS — first-run admin password"  # 首次运行的管理员密码，生产环境必须更改
+  initial_admin_password: "CHANGE_THIS (first-run admin password)"  # 首次运行的管理员密码，生产环境必须更改
   cookie_domain: ""  # 认证 Cookie 的域名（空表示当前域名）
   cookie_secure: true  # 在生产环境中设为 true（需要 HTTPS）
   cookie_same_site: "strict"  # Cookie 安全策略："strict" 或 "lax"

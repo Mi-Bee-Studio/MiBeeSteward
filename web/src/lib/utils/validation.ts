@@ -339,7 +339,7 @@ export const notificationRuleSchema = z
 // targets + cron are validated by the standalone validateScanTarget /
 // validateCronExpr functions (kept as-is: they return localized strings and
 // are already wired to onblur). This schema covers name + timeout range only;
-// pipeline_config is deliberately not validated (complex nested object, the
+// pipeline_config is not validated (complex nested object, the
 // backend accepts any shape).
 export const scannerTaskSchema = z.object({
 	name: z.string().min(1, 'validation.Task Name Required'),

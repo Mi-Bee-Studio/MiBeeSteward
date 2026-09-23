@@ -5,7 +5,7 @@
 # Port-shape-only fallback fingerprints (MiscClassifier).
 #
 # These assert a service from an open port ALONE when no banner/structured
-# evidence identified it. They are intentionally LOW confidence (0.5): port
+# evidence identified it. They are LOW confidence (0.5): port
 # number is a weak signal. Mirrors MiscClassifier exactly:
 #   - fires when ANY evidence with Kind="port_open" exists for the port
 #   - confidence is a LITERAL 0.5 (not fused: no evidence confidence to fuse)
