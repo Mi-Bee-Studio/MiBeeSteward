@@ -270,14 +270,22 @@ func (p *Prober) reportLoop(ctx context.Context) {
 		case <-ctx.Done():
 			// Final drain on a fresh context: posting with the already-
 			// cancelled loop ctx would abort the HTTP request and drop up to
-			// a full batch of results on every shutdown.
-			if len(buf) > 0 {
-				fctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				p.poster.Post(fctx, buf)
-				cancel()
-				buf = buf[:0]
+			// a full batch of results on every shutdown. Results still queued
+			// on the channel (producers raced the cancel) join the batch: a
+			// result handed to a dying loop must not depend on scheduling.
+			for {
+				select {
+				case r := <-p.reportBatch:
+					buf = append(buf, r)
+				default:
+					fctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					if len(buf) > 0 {
+						p.poster.Post(fctx, buf)
+					}
+					cancel()
+					return
+				}
 			}
-			return
 		case r := <-p.reportBatch:
 			buf = append(buf, r)
 			if len(buf) >= batchMax {
