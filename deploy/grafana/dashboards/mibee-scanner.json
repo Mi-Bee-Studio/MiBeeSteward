@@ -10,7 +10,7 @@
   "editable": true,
   "graphTooltip": 1,
   "uid": "mibee-scanner",
-  "title": "MiBee Steward — Scanner Activity",
+  "title": "MiBee Steward: Scanner Activity",
   "panels": [
     {
       "type": "timeseries",

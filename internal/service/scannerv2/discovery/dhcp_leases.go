@@ -57,7 +57,7 @@ type DHCPLeasesSource struct {
 	logger     *slog.Logger
 
 	mu       sync.Mutex
-	previous map[string]bool // "ip\x00mac" set, last sweep — for diff
+	previous map[string]bool // "ip\x00mac" set, last sweep: for diff
 }
 
 // NewDHCPLeasesSource constructs the source. interval is the poll cadence

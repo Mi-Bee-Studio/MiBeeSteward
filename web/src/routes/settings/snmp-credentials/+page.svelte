@@ -94,7 +94,7 @@
 		formCommunity = c.community ?? '';
 		formUsername = c.username ?? '';
 		formAuthProtocol = c.auth_protocol ?? '';
-		formAuthPassphrase = ''; // never prefill — server keeps "leave unchanged" on blank
+		formAuthPassphrase = ''; // never prefill: server keeps "leave unchanged" on blank
 		formPrivProtocol = c.priv_protocol ?? '';
 		formPrivPassphrase = '';
 		formNotes = c.notes ?? '';
@@ -187,7 +187,7 @@
 	}
 
 	function levelLabel(level: string): string {
-		// Direct switch (not dynamic m[key]) — paraglide's typed message index
+		// Direct switch (not dynamic m[key]): paraglide's typed message index
 		// can't resolve a computed key, so we enumerate the four levels.
 		switch (level) {
 			case 'v1v2c':

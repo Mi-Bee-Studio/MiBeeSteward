@@ -58,7 +58,7 @@
 
 	let isAdmin = $derived($auth.user?.role === 'admin');
 
-	// Live hint of what the policy will require — built from the CURRENT form
+	// Live hint of what the policy will require: built from the CURRENT form
 	// state so toggles give immediate feedback (the backend enforces on submit).
 	let policyHint = $derived.by(() => {
 		const parts: string[] = [m['security.hint.length']({ min: minLength })];
@@ -109,7 +109,7 @@
 				}
 			});
 			// The single-flight policy cache would serve the stale pre-edit
-			// value for the rest of the session — force a refresh so every
+			// value for the rest of the session: force a refresh so every
 			// password form (login force-change, users page, settings) picks
 			// up the new rules immediately.
 			await refreshPasswordPolicy();

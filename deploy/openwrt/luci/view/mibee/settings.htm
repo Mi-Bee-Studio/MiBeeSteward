@@ -3,11 +3,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
 
-MiBee Steward — LuCI settings view: port change, admin password, boot
+MiBee Steward: LuCI settings view: port change, admin password, boot
 autostart, service restart. Every form POSTs to the controller's apply
 action (with the LuCI session token when available); the controller hands
 off to /usr/lib/mibee/luci-helper.sh. Asset-level config stays in the full
-web UI — this is the router-level entry only.
+web UI: this is the router-level entry only.
 -%>
 <%+header%>
 <%
@@ -50,7 +50,7 @@ local msgs = {
     port_fail    = { ok = false, text = "端口修改失败：服务未在新端口应答（看日志 logread -e mibee-steward）Port change failed" },
     port_invalid = { ok = false, text = "端口无效：需为 1-65535，且 80/443 被 LuCI 占用 Invalid port (80/443 belong to LuCI)" },
     pw_ok        = { ok = true,  text = "admin 密码已更新 Admin password updated" },
-    pw_fail      = { ok = false, text = "密码修改失败：可能不符合密码策略（以管理界面 设置 → 安全 中的配置为准）Password rejected — see the policy in Settings → Security" },
+    pw_fail      = { ok = false, text = "密码修改失败：可能不符合密码策略（以管理界面 设置 → 安全 中的配置为准）Password rejected，see the policy in Settings → Security" },
     pw_mismatch  = { ok = false, text = "两次输入的密码不一致 Passwords do not match" },
     pw_empty     = { ok = false, text = "密码不能为空 Password cannot be empty" },
     enabled_ok   = { ok = true,  text = "开机自启已更新 Autostart updated" },

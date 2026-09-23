@@ -90,7 +90,7 @@
 	let expandedResultId = $state<number | null>(null);
 	// --- Sorting (server-side) ---
 	// The sort is applied by the backend across the WHOLE filtered set, not
-	// just the visible page slice — a header click refetches from page 0 with
+	// just the visible page slice: a header click refetches from page 0 with
 	// ?sort=&order= so the global order is correct and pagination stays in sync
 	// (#55). Mirrors devices/+page.svelte's onSortChange.
 	let sortColumn = $state<'ip' | 'status' | 'ports' | null>(null);
@@ -229,8 +229,8 @@
 		try {
 			// Use api.download() so the request carries the CSRF token and
 			// shares the client's 401/logout handling. The previous raw fetch()
-			// sent only `credentials: 'include'` — no CSRF header, no auth
-			// fallback — which would break under CSRF enforcement and bypass
+			// sent only `credentials: 'include'`: no CSRF header, no auth
+			// fallback: which would break under CSRF enforcement and bypass
 			// the unified auth path.
 			const blob = await api.download(`/scanner/results/export?task_id=${taskIdFilter}`);
 			const url = URL.createObjectURL(blob);

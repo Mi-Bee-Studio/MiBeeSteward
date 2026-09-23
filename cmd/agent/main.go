@@ -429,7 +429,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 	if scanScheduler != nil {
 		scanScheduler.Stop()
 	}
-	reporter.Stop() // final best-effort flush
+	reporter.Stop() // final flush at shutdown
 	slog.Info("mibee-agent stopped")
 	return nil
 }

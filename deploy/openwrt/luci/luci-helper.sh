@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# MiBee Steward LuCI helper — the root-privileged backend behind the LuCI
+# MiBee Steward LuCI helper: the root-privileged backend behind the LuCI
 # pages (/usr/lib/lua/luci/controller/mibee.lua). LuCI itself runs as root
 # but views should NOT shell out ad-hoc; this script is the single audited
 # surface for the small set of router-level operations the LuCI entry offers:
@@ -8,7 +8,7 @@
 #   luci-helper.sh status              KEY=VALUE lines for the status page
 #   luci-helper.sh set-port <N>        rewrite server.port + restart + verify
 #   luci-helper.sh set-password <FILE> reset the admin password (file, 0600,
-#                                      tmpfs; deleted immediately — avoids the
+#                                      tmpfs; deleted immediately: avoids the
 #                                      password ever appearing in a command
 #                                      line / ps output)
 #   luci-helper.sh set-enabled <0|1>   boot autostart toggle (procd enable)
@@ -94,7 +94,7 @@ cmd_status() {
     _enabled=0
     if [ -x "$INIT" ] && grep -q '^START=' "$INIT" 2>/dev/null; then
         # procd "enabled" = S<START>prio-prefixed symlink in /etc/rc.d (e.g.
-        # S95mibee-steward) — the bare name never exists.
+        # S95mibee-steward): the bare name never exists.
         ls /etc/rc.d/S*"$(basename "$INIT")" >/dev/null 2>&1 && _enabled=1
     fi
     _port="$(read_port || echo '')"
@@ -112,7 +112,7 @@ cmd_status() {
     echo "health=$_health"
     echo "db_bytes=$_db_bytes"
     echo "lan_ip=$_lan_ip"
-    # Tier-1 passive discovery source flags (#360) — consumed by the LuCI
+    # Tier-1 passive discovery source flags (#360): consumed by the LuCI
     # settings page checkboxes.
     echo "dhcp_leases=$(read_source dhcp_leases)"
     echo "conntrack=$(read_source conntrack)"
@@ -127,14 +127,14 @@ cmd_set_port() {
     esac
     [ "$_port" -ge 1 ] && [ "$_port" -le 65535 ] || { log "ERROR: port must be 1-65535"; exit 1; }
     case "$_port" in
-        80|443) log "ERROR: port $_port is used by LuCI (uhttpd) — pick another"; exit 1 ;;
+        80|443) log "ERROR: port $_port is used by LuCI (uhttpd): pick another"; exit 1 ;;
     esac
     [ -f "$CONF" ] || { log "ERROR: $CONF not found"; exit 1; }
     sed -i.bak -e "s|^\([[:space:]]*port:\).*|\1 $_port|" "$CONF"
     # Same guard discipline as install.sh: a broken rewrite must fail loudly,
     # not leave a config the service can't start with.
     if ! grep -q "^[[:space:]]*port:[[:space:]]*$_port\$\|^[[:space:]]*port:[[:space:]]*$_port[[:space:]]" "$CONF"; then
-        log "ERROR: port rewrite verification failed — restoring backup"
+        log "ERROR: port rewrite verification failed: restoring backup"
         mv -f "$CONF.bak" "$CONF" 2>/dev/null || true
         exit 1
     fi
@@ -143,7 +143,7 @@ cmd_set_port() {
     if [ "$(wait_health "$_port")" = "ok" ]; then
         echo "port set to $_port and service is healthy"
     else
-        log "WARN: service did not answer on the new port within 12s — check: logread -e mibee-steward | tail -20"
+        log "WARN: service did not answer on the new port within 12s: check: logread -e mibee-steward | tail -20"
         exit 2
     fi
 }
@@ -174,10 +174,10 @@ cmd_set_enabled() {
     echo "boot autostart updated"
 }
 
-# cmd_set_passive DHCP CONNTRACK HOSTAPD DNSLOG — one-click Tier-1 passive
+# cmd_set_passive DHCP CONNTRACK HOSTAPD DNSLOG: one-click Tier-1 passive
 # discovery toggle (#360). The first three are free on a router-resident
 # install (the host IS the gateway); dns_log additionally requires dnsmasq
-# query logging, which this helper deliberately does NOT touch — the note
+# query logging, which this helper deliberately does NOT touch: the note
 # tells the operator the one UCI line instead of mutating DHCP logging
 # behind their back.
 cmd_set_passive() {
@@ -186,7 +186,7 @@ cmd_set_passive() {
     set_source hostapd    "${3:?}"
     set_source dns_log    "${4:?}"
     if [ "${4:?}" = "1" ]; then
-        log "NOTE: dns_log needs dnsmasq query logging — on OpenWrt/iStoreOS run:"
+        log "NOTE: dns_log needs dnsmasq query logging: on OpenWrt/iStoreOS run:"
         log "      uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit dhcp && /etc/init.d/dnsmasq restart"
     fi
     "$INIT" restart >/dev/null 2>&1 || log "WARN: restart returned non-zero"
@@ -194,7 +194,7 @@ cmd_set_passive() {
     if [ -n "$_port" ] && [ "$(wait_health "$_port")" = "ok" ]; then
         echo "passive discovery updated and service healthy"
     else
-        log "WARN: service did not answer after restart — check: logread -e mibee-steward | tail -20"
+        log "WARN: service did not answer after restart: check: logread -e mibee-steward | tail -20"
         exit 2
     fi
 }
@@ -205,7 +205,7 @@ cmd_restart() {
     if [ -n "$_port" ] && [ "$(wait_health "$_port")" = "ok" ]; then
         echo "service restarted and healthy"
     else
-        log "WARN: service did not answer after restart — check: logread -e mibee-steward | tail -20"
+        log "WARN: service did not answer after restart: check: logread -e mibee-steward | tail -20"
         exit 2
     fi
 }

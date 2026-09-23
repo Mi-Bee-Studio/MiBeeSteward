@@ -14,7 +14,7 @@ import { escapeHtml } from './index.js';
 /**
  * HtmlString brands a string that has already been escaped for safe insertion
  * into HTML (element text or a quoted attribute value). It is a type alias (not
- * a real brand) — the intent is to make the "this is already-safe HTML" contract
+ * a real brand): the intent is to make the "this is already-safe HTML" contract
  * visible at DataTable `render` call sites. Build one with the {@link html}
  * tagged template; do NOT cast raw strings to it.
  */
@@ -40,7 +40,7 @@ export type HtmlString = string;
  *
  * If you need a value verbatim in the output WITHOUT escaping (e.g. nesting an
  * already-built HtmlString), use a second `html` call and interpolate its
- * result — but only for values you have already constructed safely. There is no
+ * result: but only for values you have already constructed safely. There is no
  * "opt out of escaping" escape hatch on purpose.
  *
  * @example

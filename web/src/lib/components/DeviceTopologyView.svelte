@@ -9,10 +9,10 @@
 -->
 
 <!--
-  DeviceTopologyView — the L2-topology force-directed graph (issue #136).
+  DeviceTopologyView: the L2-topology force-directed graph (issue #136).
 
   Renders as a view inside /devices. Uses ECharts' `graph` series (force layout)
-  rather than the older `tree` (radial) series — a graph renders mesh/cycle
+  rather than the older `tree` (radial) series: a graph renders mesh/cycle
   edges that a tree cannot, and the force layout naturally separates the
   detected gateway (top), switches/routers (core band), and endpoints (edge).
 
@@ -27,7 +27,7 @@
   root-bridge role needs probe+schema work (follow-up). See topologyGraph.ts.
 
   Props:
-    networkId — the currently-selected network filter from the devices page
+    networkId: the currently-selected network filter from the devices page
                 (empty/null = all networks). Passed through to /topology?network_id=.
 -->
 
@@ -63,7 +63,7 @@
 	let loading = $state(true);
 	let error = $state('');
 	let searchQuery = $state('');
-	// Selected node/edge for the drill-down panels (mutually exclusive — clicking
+	// Selected node/edge for the drill-down panels (mutually exclusive: clicking
 	// one clears the other so only one panel shows at a time).
 	let selectedNode = $state<GraphNode | null>(null);
 	let selectedEdge = $state<GraphLink | null>(null);

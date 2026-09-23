@@ -115,7 +115,7 @@
 		}
 	});
 
-	// addPreset creates a builtin widget immediately with its default name —
+	// addPreset creates a builtin widget immediately with its default name;
 	// one click, no form. Renaming afterwards goes through edit.
 	async function addPreset(p: PresetDef) {
 		addingKey = p.key;
@@ -174,7 +174,7 @@
 		}
 	}
 
-	// saveBuiltinRename edits ONLY the name of a builtin widget — the template
+	// saveBuiltinRename edits ONLY the name of a builtin widget: the template
 	// key/type/data_source are passed through untouched (the API would reject
 	// a builtin row whose type drifts from the template's).
 	async function saveBuiltinRename() {
@@ -202,7 +202,7 @@
 
 <Modal bind:open title={isEditing ? m["dashboard.Edit Widget"]() : m["dashboard.Add Widget"]()} maxWidth={editingBuiltin ? '28rem' : '40rem'}>
 	{#if editingBuiltin}
-		<!-- Builtin widgets: rename only — the data comes from the system itself. -->
+		<!-- Builtin widgets: rename only: the data comes from the system itself. -->
 		<form onsubmit={(e) => { e.preventDefault(); saveBuiltinRename(); }} class="widget-form">
 			<p class="hint">{m["dashboard.Builtin Edit Hint"]()}</p>
 			<div class="form-group">

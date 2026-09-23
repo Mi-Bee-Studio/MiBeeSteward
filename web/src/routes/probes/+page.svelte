@@ -43,11 +43,11 @@
 	let targets = $state<ProbeTarget[]>([]);
 	let loading = $state(true);
 	let error = $state('');
-	// Registered agent ids (networks.agent_id) — options for the vantage
+	// Registered agent ids (networks.agent_id): options for the vantage
 	// selector (#277). Fetched best-effort; empty = center-only deployment.
 	let agentIds = $state<string[]>([]);
 	// Leaf-cert expiry per target id (for the table's certificate badge). Fetched
-	// from /certificates after each list refresh — only tls/http targets have any.
+	// from /certificates after each list refresh: only tls/http targets have any.
 	let certExpiry = $state<Record<number, string>>({});
 
 	// --- Batch operations (#276): multi-select + toolbar actions -------------
@@ -145,7 +145,7 @@
 		}
 		return entries.sort((a, b) => a.days - b.days);
 	});
-	// Expiry warning threshold (days) — persisted per browser (#276 goal: configurable).
+	// Expiry warning threshold (days): persisted per browser (#276 goal: configurable).
 	let expiryWarnDays = $state<number>(
 		Number(localStorage.getItem('probes.expiryWarnDays')) || 30
 	);
@@ -183,7 +183,7 @@
 	let resultsTotal = $state(0);
 	let resultsLoading = $state(false);
 
-	// --- Certificate modal (reuses the shared component — same DTO shape) ---
+	// --- Certificate modal (reuses the shared component: same DTO shape) ---
 	let certModalOpen = $state(false);
 	let certPortCerts = $state<TLSPortCerts | null>(null);
 
@@ -211,7 +211,7 @@
 		}
 	}
 
-	// Registered agents for the vantage selector — the same population the
+	// Registered agents for the vantage selector: the same population the
 	// probe dispatcher routes plans to (networks.agent_id). Best-effort: the
 	// form degrades to center/all options when this fails.
 	async function fetchAgents() {
@@ -228,7 +228,7 @@
 	}
 
 	// Per-target certificate leaf expiry for the table badge. N small requests
-	// (one per tls/http target) — the list endpoint doesn't carry cert state and
+	// (one per tls/http target): the list endpoint doesn't carry cert state and
 	// the target count is user-configured-small by nature.
 	async function fetchCertSummaries() {
 		const tlsLike = targets.filter((t) => t.module === 'tls' || t.module === 'http');
@@ -389,7 +389,7 @@
 		}
 	}
 
-	// --- Trigger now (synchronous — response carries the just-recorded result) ---
+	// --- Trigger now (synchronous: response carries the just-recorded result) ---
 	async function triggerNow(t: ProbeTarget) {
 		triggeringId = t.id;
 		try {
@@ -459,7 +459,7 @@
 		return html`<span class="badge ${cls}">${s}</span>`;
 	};
 
-	// Vantage values are protocol tokens (center / all / agent:{id}) — shown
+	// Vantage values are protocol tokens (center / all / agent:{id}): shown
 	// raw, not localized. Center is the quiet default (plain text); plans that
 	// involve agents get a badge so multi-vantage targets stand out.
 	const vantageBadge = (v: string) => {
@@ -470,7 +470,7 @@
 	};
 
 	// An agent-only target cannot be triggered from the center (the engine
-	// returns 409 ErrProbeVantageNotLocal) — reflect that in the button state.
+	// returns 409 ErrProbeVantageNotLocal): reflect that in the button state.
 	const isAgentOnly = (t: ProbeTarget) => (t.vantage || 'center').startsWith('agent:');
 
 	const columns = $derived([
@@ -533,7 +533,7 @@
 			(a, b) => order(a.vantage) - order(b.vantage) || a.vantage.localeCompare(b.vantage)
 		);
 	});
-	// Disagreement = ≥2 tracks whose LATEST verdicts differ on success — the
+	// Disagreement = ≥2 tracks whose LATEST verdicts differ on success: the
 	// "reachable from A, not from B" case the multi-vantage view exists for.
 	const vantageDisagree = $derived(
 		vantageTracks.length >= 2 && new Set(vantageTracks.map((t) => t.latest?.status === 'success')).size > 1

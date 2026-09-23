@@ -1,32 +1,32 @@
 #!/bin/sh
 #
-# MiBee Steward installer for OpenWrt / iStoreOS routers — form C (center ON
+# MiBee Steward installer for OpenWrt / iStoreOS routers: form C (center ON
 # the router), NO Docker. Runs as root ON the router, from the directory that
 # holds the release files (mibee-steward, mibee-steward.init,
-# config.example.yaml) — typically after extracting the tarball produced by
+# config.example.yaml): typically after extracting the tarball produced by
 # `make package-openwrt` on your build host:
 #
 #   scp bin/mibee-steward-openwrt-arm64-*.tar.gz root@router:/tmp/
 #   ssh root@router 'cd /tmp && tar -xzf mibee-steward-openwrt-arm64-*.tar.gz && ./install.sh'
 #
 # What it does:
-#   1. Gates on architecture (ARM/ARM64 OK; MIPS aborts — modernc/libc limit)
+#   1. Gates on architecture (ARM/ARM64 OK; MIPS aborts: modernc/libc limit)
 #      and smoke-executes the binary to catch arch mismatches early.
 #   2. Installs the binary to /usr/bin/mibee-steward and the procd init script
 #      to /etc/init.d/mibee-steward.
 #   3. FIRST INSTALL ONLY: generates /etc/mibee/config.yaml from
-#      config.example.yaml — random jwt_secret, cookie_secure=false (plain
+#      config.example.yaml: random jwt_secret, cookie_secure=false (plain
 #      HTTP on the LAN), EMPTY initial admin password (the web UI's first-run
 #      screen asks you to create one), network.name/cidr derived from
 #      `uci get network.lan.*`, absolute DB + upload paths under
-#      /etc/mibee/data/ (procd CWD=/ makes the relative defaults land at / —
+#      /etc/mibee/data/ (procd CWD=/ makes the relative defaults land at /;
 #      the init script also injects absolute paths via MIBEE_* env).
 #      Re-runs (upgrades) keep the existing config untouched.
 #   4. Opens net.ipv4.ping_group_range (OpenWrt default `1 0` blocks the
 #      unprivileged ICMP ping sockets the probes use) + persists it.
 #   5. Enables + starts the service, then hits /api/v1/health.
 #
-# The SPA is EMBEDDED in the binary — after install, browse to
+# The SPA is EMBEDDED in the binary: after install, browse to
 # http://<router-lan-ip>:<port> from any machine on the LAN. The router itself
 # needs no display or frontend runtime.
 #
@@ -36,7 +36,7 @@
 # already laid down by opkg (/usr/bin/mibee-steward, /etc/init.d/,
 # /etc/mibee/config.example.yaml, this script at /usr/lib/mibee/install.sh);
 # only the configuration half runs (config generation + ping_group_range +
-# enable + start + health check) — no file copying.
+# enable + start + health check): no file copying.
 #
 set -eu
 
@@ -70,29 +70,29 @@ case "$(uname -m)" in
     aarch64|armv8*) echo "-- arch: $(uname -m) (arm64) OK" ;;
     armv7*|armv6*)  echo "-- arch: $(uname -m) (arm) OK" ;;
     mips*)
-        echo "ERROR: MIPS is not supported — modernc.org/libc (the pure-Go SQLite"
+        echo "ERROR: MIPS is not supported: modernc.org/libc (the pure-Go SQLite"
         echo "       backend) has no working mips port. See docs openwrt.md 'Not covered'."
         exit 1 ;;
     *) echo "-- WARN: untested arch $(uname -m), continuing anyway" ;;
 esac
 
 if [ "$FROM_IPK" = 1 ]; then
-    [ -f "$BIN_DST" ] || { echo "ERROR: $BIN_DST missing — ipk data incomplete."; exit 1; }
-    [ -f "$CONF_SRC" ] || { echo "ERROR: $CONF_SRC missing — ipk data incomplete."; exit 1; }
+    [ -f "$BIN_DST" ] || { echo "ERROR: $BIN_DST missing: ipk data incomplete."; exit 1; }
+    [ -f "$CONF_SRC" ] || { echo "ERROR: $CONF_SRC missing: ipk data incomplete."; exit 1; }
     # Archives built on Windows/MSYS can carry 0644 on the ELF binary (MSYS
-    # only marks PE/shebang files executable — an aarch64 ELF is neither).
+    # only marks PE/shebang files executable: an aarch64 ELF is neither).
     # opkg has already laid the files down; normalize BEFORE the -x gate and
     # the smoke run below, or they fail on a file that is present.
     chmod 755 "$BIN_DST" /etc/init.d/mibee-steward 2>/dev/null || true
     SMOKE_BIN="$BIN_DST"
 else
-    [ -x "$BIN_SRC" ]  || { echo "ERROR: $BIN_SRC not found — run this inside the extracted tarball dir."; exit 1; }
-    [ -f "$INIT_SRC" ] || { echo "ERROR: $INIT_SRC not found — run this inside the extracted tarball dir."; exit 1; }
-    [ -f "$CONF_SRC" ] || { echo "ERROR: $CONF_SRC not found — run this inside the extracted tarball dir."; exit 1; }
+    [ -x "$BIN_SRC" ]  || { echo "ERROR: $BIN_SRC not found: run this inside the extracted tarball dir."; exit 1; }
+    [ -f "$INIT_SRC" ] || { echo "ERROR: $INIT_SRC not found: run this inside the extracted tarball dir."; exit 1; }
+    [ -f "$CONF_SRC" ] || { echo "ERROR: $CONF_SRC not found: run this inside the extracted tarball dir."; exit 1; }
     SMOKE_BIN="$BIN_SRC"
 fi
 
-# A wrong-arch ELF dies with a confusing "not found" from the shell — catch it here.
+# A wrong-arch ELF dies with a confusing "not found" from the shell: catch it here.
 if ! "$SMOKE_BIN" -version >/dev/null 2>&1; then
     echo "ERROR: $SMOKE_BIN fails to execute (router is $(uname -m); binary built for"
     echo "       another GOARCH?). Rebuild with the matching cross-compile target."
@@ -100,7 +100,7 @@ if ! "$SMOKE_BIN" -version >/dev/null 2>&1; then
 fi
 
 # gen_secret: random alnum using ONLY core busybox applets (head/tr/cut).
-# `base64` is NOT guaranteed on router busybox builds — iStoreOS 24.10 on the
+# `base64` is NOT guaranteed on router busybox builds: iStoreOS 24.10 on the
 # FastRhino R68S ships without it (field-found: install died with
 # "base64: not found", the empty jwt_secret landed in config.yaml, and the
 # server refused to start). Filter 1KiB of urandom down to [A-Za-z0-9]
@@ -150,9 +150,9 @@ ip_mask_base() {
     echo "$_out"
 }
 
-# enable_source KEY — flips "enabled: false" to true inside the YAML block
+# enable_source KEY: flips "enabled: false" to true inside the YAML block
 # "KEY:" of the generated config (block-scoped awk identical to luci-helper.sh
-# set_source; busybox-awk safe — match()+sub() only, no gsub extensions).
+# set_source; busybox-awk safe: match()+sub() only, no gsub extensions).
 # Scoped to the block so the many unrelated "enabled:" keys stay untouched.
 enable_source() {
     _key="$1"
@@ -170,10 +170,10 @@ enable_source() {
 
 # ─── 1. config (first install generates; upgrades keep) ────────────────────
 if [ -f "$CONF_DST" ]; then
-    echo "-- config $CONF_DST exists — keeping it (upgrade install)"
+    echo "-- config $CONF_DST exists: keeping it (upgrade install)"
     # Self-heal: installs produced before the gen_secret fix (busybox builds
     # without `base64`) carry an EMPTY jwt_secret, and the server refuses to
-    # start until it is fixed — the "keep existing config" rule would preserve
+    # start until it is fixed: the "keep existing config" rule would preserve
     # a config that can never boot. Regenerate the secret instead.
     if grep -qE '^[[:space:]]*jwt_secret:[[:space:]]*""' "$CONF_DST" 2>/dev/null; then
         _fix_secret="$(gen_secret)"
@@ -186,7 +186,7 @@ if [ -f "$CONF_DST" ]; then
     # with the router-resident sources off. Keep the operator's config as-is
     # (upgrade rule), just point at the one-click toggle.
     if ! grep -A1 '^[[:space:]]*dhcp_leases:' "$CONF_DST" 2>/dev/null | grep -q 'enabled: true'; then
-        echo "-- note: Tier-1 passive discovery (dhcp_leases/conntrack/hostapd) is OFF in this config —"
+        echo "-- note: Tier-1 passive discovery (dhcp_leases/conntrack/hostapd) is OFF in this config."
         echo "--       enable under LuCI > Services > MiBee Steward > Settings (one click)"
     fi
 else
@@ -204,7 +204,7 @@ else
             NET_PREFIX="${PREFIX:-}"
         fi
         if [ -z "$NET_BASE" ] || [ -z "$NET_PREFIX" ]; then
-            # ipcalc not present (see mask_to_prefix) — pure-ash fallback.
+            # ipcalc not present (see mask_to_prefix): pure-ash fallback.
             NET_PREFIX="$(mask_to_prefix "$LAN_MASK" || true)"
             NET_BASE="$(ip_mask_base "$LAN_IP" "$LAN_MASK")"
         fi
@@ -214,12 +214,12 @@ else
             [ -n "$OCT3" ] && NET_NAME="lan-$OCT3"   # project convention: lan-<3rd octet>
         fi
     fi
-    [ -n "$NET_CIDR" ] || echo "-- WARN: could not derive LAN cidr from uci — edit network.cidr in $CONF_DST"
+    [ -n "$NET_CIDR" ] || echo "-- WARN: could not derive LAN cidr from uci: edit network.cidr in $CONF_DST"
 
     JWT_SECRET="$(gen_secret)"
     [ -n "$JWT_SECRET" ] || { echo "ERROR: cannot generate jwt_secret (/dev/urandom unusable?)"; exit 1; }
 
-    # The admin password is deliberately NOT set here: an EMPTY
+    # The admin password is NOT set here: an EMPTY
     # initial_admin_password seeds the admin with no password, and the web UI's
     # first-run screen asks the operator to CREATE one in the browser (the
     # login page detects it via GET /auth/setup-status). Nothing to copy from
@@ -238,7 +238,7 @@ else
         -e "s|^\([[:space:]]*upload_path:\) \"./data/uploads\"|\1 \"$DATA_DIR/uploads\"|" \
         "$CONF_SRC" > "$CONF_DST"
     # Tier-1 passive discovery ON by default (#360): install.sh only runs on
-    # OpenWrt/iStoreOS, where the host IS the gateway — the DHCP lease table
+    # OpenWrt/iStoreOS, where the host IS the gateway: the DHCP lease table
     # (authoritative hostname<->MAC<->IP map), conntrack ("who is talking right
     # now") and hostapd (WiFi STA list) are free signals a wired scanner can
     # never see. dns_log stays OFF: it additionally needs dnsmasq query logging
@@ -249,7 +249,7 @@ else
     enable_source conntrack
     enable_source hostapd
     # Guard the generator against itself: a sed script error (e.g. an
-    # unterminated s||| — seen in the wild as "sed: unmatched '|'") leaves an
+    # unterminated s|||: seen in the wild as "sed: unmatched '|'") leaves an
     # EMPTY config.yaml behind, and the "keep existing config" upgrade path
     # would then preserve that empty file forever. Fail loudly instead.
     if [ ! -s "$CONF_DST" ] \
@@ -259,7 +259,7 @@ else
         || ! grep -A1 '^[[:space:]]*discovery:' "$CONF_DST" | grep -q 'enabled: true' \
         || ! grep -A1 '^[[:space:]]*dhcp_leases:' "$CONF_DST" | grep -q 'enabled: true' \
         || grep -q 'change-me-in-production' "$CONF_DST"; then
-        echo "ERROR: generated $CONF_DST failed its sanity check — sed pipeline broken?"
+        echo "ERROR: generated $CONF_DST failed its sanity check: sed pipeline broken?"
         echo "       (empty file / missing auth keys / short jwt_secret / unreplaced placeholder"
         echo "        / Tier-1 discovery flip missing)"
         rm -f "$CONF_DST"
@@ -302,9 +302,8 @@ echo "-- service installed + started (boot-enabled)"
 
 # ─── 4. verify + summary ───────────────────────────────────────────────────
 # A single probe after `sleep 2` false-negatives on slower boards (R68S:
-# service healthy at t+4s, install warned "health check failed"). First boot
-# after a cold start — and migrations on an existing DB — can outrun one
-# shot; retry for up to ~12s instead.
+# service healthy at t+4s, install warned "health check failed"). A cold
+# start's first boot can outrun one shot; retry for up to ~12s instead.
 HEALTH_OK=0
 if command -v curl >/dev/null 2>&1; then
     _i=0
@@ -319,7 +318,7 @@ if command -v curl >/dev/null 2>&1; then
     if [ "$HEALTH_OK" = 1 ]; then
         echo "-- health check OK (http://127.0.0.1:$PORT/api/v1/health)"
     else
-        echo "-- WARN: health check failed — check logs: logread -e $SERVICE | tail -30"
+        echo "-- WARN: health check failed: check logs: logread -e $SERVICE | tail -30"
     fi
 else
     echo "-- (curl not installed; verify manually: http://127.0.0.1:$PORT/api/v1/health)"
@@ -331,7 +330,7 @@ echo ""
 echo "================ MiBee Steward installed ================"
 echo "  Web UI:      http://$LAN_IP:$PORT   (from any LAN machine's browser)"
 if [ -f "$CONF_DST" ] && grep -q '^[[:space:]]*initial_admin_password: ""' "$CONF_DST" 2>/dev/null; then
-    echo "  First run:   open the Web UI — it will ask you to CREATE the admin"
+    echo "  First run:   open the Web UI: it will ask you to CREATE the admin"
     echo "               password in the browser (no temp password, no CLI)."
 else
     echo "  Login:       admin / <your existing password from $CONF_DST>"

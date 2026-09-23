@@ -54,7 +54,7 @@
 	// Reactive auth gate: redirect to /login whenever the token disappears.
 	// Unlike a one-shot onMount check, this catches in-tab logout (the user
 	// clicks Logout here, or a 401 from any API call fires auth.logout()) the
-	// instant the store updates — no need to wait for the next navigation to
+	// instant the store updates: no need to wait for the next navigation to
 	// hit a 401.
 	$effect(() => {
 		if (!$auth.token) {
@@ -98,7 +98,7 @@
 		}
 	}
 
-	// (storage events do NOT fire in the tab that made the change — that path
+	// (storage events do NOT fire in the tab that made the change: that path
 	// is already covered by the in-tab store update + $effect above.)
 	onMount(() => {
 		const onStorage = (e: StorageEvent) => {
@@ -111,7 +111,7 @@
 					auth.logout();
 				}
 			} catch {
-				// Malformed payload — ignore; the reactive gate handles a missing token.
+				// Malformed payload: ignore; the reactive gate handles a missing token.
 			}
 		};
 		window.addEventListener('storage', onStorage);
@@ -125,7 +125,7 @@
 	}
 
 	// Nav is grouped (Core / Library / Administration) instead of a flat 11-item
-	// list. The admin group is hidden entirely for non-admins — previously the
+	// list. The admin group is hidden entirely for non-admins: previously the
 	// 4 admin-only items rendered as inert grey rows mixed in with the daily-use
 	// items, which read as "a bunch of things I can't click". /topology and
 	// /discovery were removed as top-level entries: topology is now a view toggle
@@ -200,7 +200,7 @@
 	});
 </script>
 
-<!-- Skip to content — accessibility -->
+<!-- Skip to content: accessibility -->
 <a
 	href="#main-content"
 	class="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-1/2 focus:-translate-x-1/2 focus:z-[100]
@@ -345,7 +345,7 @@
 <style>
 	/* Section label for grouped nav (Core / Library / Administration).
 	 * Visually subdued so the items remain the focus, but present so the
-	 * grouping is legible — especially the admin/normal split. */
+	 * grouping is legible: especially the admin/normal split. */
 	.nav-group-label {
 		padding: 0.625rem 0.75rem 0.25rem;
 		font-size: 0.6875rem;

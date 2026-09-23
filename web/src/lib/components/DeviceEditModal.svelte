@@ -8,7 +8,7 @@
   the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 -->
 
-<!-- DeviceEditModal — shared device create/edit form used by both the devices
+<!-- DeviceEditModal: shared device create/edit form used by both the devices
      list page and the device detail page (#57). Owns its own form state +
      validation + submit; the caller just toggles `open`, passes a `device`
      (null for create, non-null for edit), and supplies an `onSaved` refresh
@@ -53,13 +53,13 @@
 	let formLoading = $state(false);
 	let fieldErrors = $state<Record<string, string>>({});
 	// Tracks whether we're editing an existing device (vs creating). Mirrors the
-	// list page's `editingDevice` — kept separate from the `device` prop so the
+	// list page's `editingDevice`: kept separate from the `device` prop so the
 	// form mode is stable across re-renders even if the caller updates `device`.
 	let editing = $state<Device | null>(null);
 
 	// Snapshot of form state captured after the modal hydrates; formDirty
 	// ($derived) detects unsaved edits so the Modal warns before discarding
-	// (Esc / backdrop / X). #170 — same pattern as the list-page modals (#151).
+	// (Esc / backdrop / X). #170: same pattern as the list-page modals (#151).
 	let formSnapshot = $state('');
 	function snapshotForm(): string {
 		return JSON.stringify([formName, formType, formBrand, formModel, formLocation,

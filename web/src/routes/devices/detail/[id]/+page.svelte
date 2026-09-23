@@ -77,12 +77,12 @@
 	let tlsCertsError = $state('');
 	let heartbeatConfigError = $state('');
 
-	// --- TLS certificates (host_tls_certs) — drives the TLS sub-panel + Modal ---
+	// --- TLS certificates (host_tls_certs): drives the TLS sub-panel + Modal ---
 	let tlsCerts = $state<TLSPortCerts[]>([]);
 	let certModalOpen = $state(false);
 	let certModalPort = $state<TLSPortCerts | null>(null);
 
-	// --- Running-config history (#137, device_configs) — Config History tab ---
+	// --- Running-config history (#137, device_configs): Config History tab ---
 	// The list omits config_text (metadata only); the detail Modal fetches the
 	// full text + diff_from_prev by id. Two versions can be selected for an
 	// arbitrary A↔B compare via /configs/diff.
@@ -155,14 +155,14 @@
 	let heartbeatConfigs = $state<Array<{ id: number; method: string; target: string; interval_seconds: number; timeout_seconds: number; enabled: number }>>([]);
 	// Header-level existence probe (#251): the Health card needs to distinguish
 	// "no heartbeat configs" (Not configured) from "configs exist but produced
-	// no results yet" (No data yet) — trendStats alone can't tell them apart,
+	// no results yet" (No data yet): trendStats alone can't tell them apart,
 	// and it only loads when the Heartbeat tab opens. Cheapest source of truth
 	// is a limit=1 list call reading `total`.
 	let heartbeatConfigCount = $state<number | null>(null);
 	let heartbeatConfigLoading = $state(false);
 	let creatingHeartbeat = $state(false);
 
-	// Heartbeat export dropdown — click-toggle (not hover), so keyboard and
+	// Heartbeat export dropdown: click-toggle (not hover), so keyboard and
 	// touch users can reach it. The previous group-hover:opacity-100 made it
 	// invisible to everyone without a mouse.
 	let heartbeatExportOpen = $state(false);
@@ -183,7 +183,7 @@
 	}
 
 	// Device.tags on the wire is a JSON array string ("["iot","Smartmi"]" from the
-	// scan bridge) or a plain CSV string (manual edit form) — render values only,
+	// scan bridge) or a plain CSV string (manual edit form): render values only,
 	// never array indices (#429).
 	function parseTags(raw: string | undefined | null): string[] {
 		if (!raw || !raw.trim()) return [];
@@ -344,7 +344,7 @@
 	}
 
 	// Lazy-load the supporting data for a tab on first open (heartbeat/network/
-	// config are NOT fetched up front — only Overview + Systems are, to keep the
+	// config are NOT fetched up front: only Overview + Systems are, to keep the
 	// initial load at 2 requests). Shared by setTab (user clicks a tab) AND
 	// onMount (deep link to ?tab=…), so a reload landing directly on a lazy tab
 	// still fetches its data instead of rendering an empty panel.
@@ -398,14 +398,14 @@
 		api.get<{ total: number }>(`/devices/${deviceId}/heartbeat-configs?limit=1`)
 			.then((res) => { heartbeatConfigCount = res.total ?? 0; })
 			.catch(() => { heartbeatConfigCount = null; });
-		// A deep link (?tab=…) lands directly on a lazy tab — fetch its data so
+		// A deep link (?tab=…) lands directly on a lazy tab: fetch its data so
 		// the panel isn't empty until the user clicks away and back.
 		loadTabData(activeTab);
 	});
 
 	// --- Data fetching ---
 	async function fetchDevice() {
-		// Non-numeric :id — never hit the API; the EmptyState below handles it.
+		// Non-numeric :id: never hit the API; the EmptyState below handles it.
 		if (invalidId) {
 			deviceLoading = false;
 			return;
@@ -534,7 +534,7 @@
 		fetchSystems();
 	}
 
-	// L2 neighbors (Bridge-MIB / LLDP) — read-only enrichment for the detail
+	// L2 neighbors (Bridge-MIB / LLDP): read-only enrichment for the detail
 	// page. Failures are silent (the panel just shows "no neighbors").
 	async function fetchNeighbors() {
 		neighborsError = '';
@@ -549,7 +549,7 @@
 		}
 	}
 
-	// TLS certificates (host_tls_certs) — read-only. Drives the device-detail TLS
+	// TLS certificates (host_tls_certs): read-only. Drives the device-detail TLS
 	// sub-panel and the per-port certificate Modal (full chain + PEM).
 	async function fetchTLSCerts() {
 		tlsCertsError = '';
@@ -629,7 +629,7 @@
 		}
 	}
 
-	// Classify a unified-diff line for +/- coloring (hand-rolled — the project
+	// Classify a unified-diff line for +/- coloring (hand-rolled: the project
 	// deliberately ships no diff-rendering dependency).
 	function diffLineClass(line: string): string {
 		if (line.startsWith('+++') || line.startsWith('---')) return 'diff-meta';
@@ -646,7 +646,7 @@
 		certModalOpen = true;
 	}
 
-	// Expiry classification — shared between the sub-panel row and (mirrored in
+	// Expiry classification: shared between the sub-panel row and (mirrored in
 	// the Modal). Returns 'expired' | 'expiring' | 'valid' | 'error'.
 	// certStatus is shared via $lib/utils/certs so the detail page and the
 	// CertificateModal can't drift on the 15-day warning window or error cases.
@@ -1026,7 +1026,7 @@
 			</div>
 		{/if}
 
-	<!-- Health summary banner — rolls up status + heartbeat + soonest cert
+	<!-- Health summary banner: rolls up status + heartbeat + soonest cert
 	     expiry so a user can answer "is this device healthy?" at a glance
 	     instead of scrolling to three separate sections. -->
 	{#if device}
@@ -1074,7 +1074,7 @@
 	     + tab panels. Without this, a fetchDevice failure leaves every non-Systems
 	     tab blank because their content is gated on {#if device}. -->
 	{#if invalidId}
-		<!-- Non-numeric :id — never reached the API. Offer a way back to the list. -->
+		<!-- Non-numeric :id: never reached the API. Offer a way back to the list. -->
 		<EmptyState
 			icon="⚠"
 			title={m["devices.Invalid ID"]()}
@@ -1407,7 +1407,7 @@
 		{/if}
 	{/if}
 
-	<!-- User Attributes (free-form key/value, user-editable) — lives in the
+	<!-- User Attributes (free-form key/value, user-editable): lives in the
 	     Discovery tab alongside the other inferred/scanned data. -->
 	{#if device}
 		<div class="scan-info-panel mt-4">
@@ -1454,7 +1454,7 @@
 		</div>
 	{/if}
 
-	<!-- L2 Neighbors (Bridge-MIB / LLDP adjacency) — always shown so users know
+	<!-- L2 Neighbors (Bridge-MIB / LLDP adjacency): always shown so users know
 	     this section exists; empty state explains how to populate it. -->
 	{#if device}
 		<div class="scan-info-panel mt-4">
@@ -1521,7 +1521,7 @@
 		</div>
 	{/if}
 
-	<!-- TLS Certificates (host_tls_certs) — per-port rows; click a row to open
+	<!-- TLS Certificates (host_tls_certs): per-port rows; click a row to open
 	     the certificate Modal with the full chain + PEM. Always shown so users
 	     know the section exists; empty state explains how to populate it. -->
 	{#if device}
@@ -1843,7 +1843,7 @@
 			</div>
 		{/if}
 
-		<!-- No config warning (suppressed when the config fetch itself failed —
+		<!-- No config warning (suppressed when the config fetch itself failed;
 		     otherwise a server error would masquerade as "no config" here too). -->
 		{#if !heartbeatConfigLoading && !heartbeatConfigError && heartbeatConfigs.length === 0 && !trendLoading}
 			<div class="mb-4 px-4 py-3 bg-warning/10 border border-warning/30 rounded-lg text-sm text-warning">
@@ -2226,7 +2226,7 @@
 />
 
 <style>
-	/* Health summary banner — rolls up status + heartbeat + cert expiry. */
+	/* Health summary banner: rolls up status + heartbeat + cert expiry. */
 	.health-banner {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -2458,7 +2458,7 @@
 		transition: background 0.15s ease, border-color 0.15s ease;
 		background: var(--color-surface);
 		/* <button> reset so it renders like the old <div> (full width, left-aligned,
-		   inherits text color/font — button defaults to centered/its own font). */
+		   inherits text color/font: button defaults to centered/its own font). */
 		text-align: left;
 		font: inherit;
 		color: inherit;
@@ -2647,7 +2647,7 @@
 		background: var(--color-surface-2, color-mix(in srgb, var(--color-text) 6%, transparent));
 	}
 
-	/* Unified-diff renderer (config detail + compare Modals). Hand-rolled — no
+	/* Unified-diff renderer (config detail + compare Modals). Hand-rolled: no
 	   diff-rendering dependency; lines are colored by their first char. */
 	.diff-view,
 	.config-text-view {

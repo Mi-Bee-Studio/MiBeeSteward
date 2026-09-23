@@ -11,7 +11,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // vi.mock factories are hoisted above all imports, so the spies they close
-// over must be created with vi.hoisted (also hoisted) — plain top-level const
+// over must be created with vi.hoisted (also hoisted): plain top-level const
 // would be in the temporal dead zone when the factory runs.
 const { logoutSpy, gotoSpy } = vi.hoisted(() => ({
 	logoutSpy: vi.fn(),

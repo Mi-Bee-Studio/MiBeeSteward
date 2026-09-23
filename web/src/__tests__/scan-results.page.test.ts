@@ -12,7 +12,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 
-// render + interaction — mock the API surface the scan-results page touches:
+// render + interaction: mock the API surface the scan-results page touches:
 // the task dropdown, the results list, and the run-history list. Assertions
 // are data-driven (IPs / service names / run IDs), never localized strings.
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -119,7 +119,7 @@ describe('Scan-results page', () => {
 		expect(row).toBeTruthy();
 		await fireEvent.click(row);
 
-		// The expanded detail panel parses snmp_data and shows sys_name —
+		// The expanded detail panel parses snmp_data and shows sys_name;
 		// this pins the parseJSON rendering path, not just the table shell.
 		await waitFor(() => {
 			expect(container.textContent).toContain('edge-router');
@@ -136,7 +136,7 @@ describe('Scan-results page', () => {
 		await waitFor(() => {
 			expect(container.textContent).toContain('#3');
 		});
-		// Duration renders through formatDuration (5400ms → "5.4s") — a
+		// Duration renders through formatDuration (5400ms → "5.4s"): a
 		// single text node, so the assertion is whitespace-stable.
 		expect(container.textContent).toContain('5.4s');
 	});

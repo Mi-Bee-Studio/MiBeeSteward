@@ -71,7 +71,7 @@ func TestAgentSchema_ParityWithCenterSchema(t *testing.T) {
 		require.ElementsMatch(t,
 			tableColumns(t, centerConn, tbl),
 			tableColumns(t, agentConn, tbl),
-			"agent mini-schema drifted from db/schema.sql for table %s — update agentSchema (+ agentSchemaVersion) in the same change", tbl)
+			"agent mini-schema drifted from db/schema.sql for table %s: update agentSchema (+ agentSchemaVersion) in the same change", tbl)
 	}
 }
 

@@ -2,10 +2,10 @@
 #
 # OpenWrt procd init script for MiBee Steward CENTER (form C: center-as-router).
 #
-# Lets the MiBee Steward center binary run ON an OpenWrt router — the "router-
+# Lets the MiBee Steward center binary run ON an OpenWrt router: the "router-
 # center" deployment form (see docs/{en,zh}/openwrt.md). A small network (home /
 # small office) can run just the router: one process gets both the choke-point
-# discovery signals (DHCP leases, conntrack, hostapd, dns_log —
+# discovery signals (DHCP leases, conntrack, hostapd, dns_log;
 # scanner.discovery.*) AND the full portrait API + SPA + the authoritative
 # asset registry. No separate agent process needed.
 #
@@ -15,7 +15,7 @@
 #
 # ─── Install ───────────────────────────────────────────────────────────────
 # Preferred (no Docker): build the self-installing tarball on your build host
-# and run the on-router installer — it lays down the binary + this init script,
+# and run the on-router installer: it lays down the binary + this init script,
 # generates /etc/mibee/config.yaml on first install (random jwt_secret +
 # admin password, LAN cidr from uci), fixes ping_group_range, and enables +
 # starts the service:
@@ -24,7 +24,7 @@
 #   ssh root@router 'cd /tmp && tar -xzf mibee-steward-openwrt-arm64-*.tar.gz && ./install.sh'
 #
 # Manual (form C, three files):
-#   1. Cross-compile the center for the router's arch (ARM/ARM64 only — see
+#   1. Cross-compile the center for the router's arch (ARM/ARM64 only: see
 #      the MIPS exclusion note in deploy/openwrt/README.md):
 #        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 #          -trimpath -ldflags="-s -w" -o mibee-steward ./cmd/server/
@@ -33,20 +33,20 @@
 #        scp deploy/openwrt/mibee-steward.init root@router:/etc/init.d/mibee-steward
 #        scp configs/config.yaml root@router:/etc/mibee/config.yaml
 #      (edit /etc/mibee/config.yaml: server.port, auth.initial_admin_password,
-#       network.name/cidr — the router's own LAN.)
+#       network.name/cidr: the router's own LAN.)
 #   3. Enable + start:
 #        ssh root@router '/etc/init.d/mibee-steward enable && /etc/init.d/mibee-steward start'
 #      Logs: logread -e mibee-steward
 #
 # ─── Database & upload paths (absolute!) ────────────────────────────────────
 # procd starts the binary with CWD=/, so the config's relative defaults
-# (./data/mibee.db, ./data/uploads) would land directly under / — always set
+# (./data/mibee.db, ./data/uploads) would land directly under /: always set
 # absolute paths. The defaults below keep the authoritative portrait ON FLASH
-# (overlayfs; persists across reboots) — right for eMMC-backed boxes (NanoPi
+# (overlayfs; persists across reboots): right for eMMC-backed boxes (NanoPi
 # R5S / iStoreOS, GL.iNet MT2500 with plenty of storage).
 #
 # Flash-wear mitigation for small-NAND routers: point DATABASE_PATH at /tmp
-# (tmpfs, RAM-backed) — /tmp/mibee/mibee.db. The DB is the writer of record,
+# (tmpfs, RAM-backed): /tmp/mibee/mibee.db. The DB is the writer of record,
 # so that variant trades cold-start loss of the LOCAL portrait for zero wear
 # (rebuilt on the next scan; single-router form-C deployments find this
 # acceptable).
@@ -76,7 +76,7 @@ start_service() {
     # RAM-constrained router. Uncomment + tune for low-RAM hardware (e.g. 128MB).
     #procd_set_param limits nofile=1024 cpu=80
     # Optional: local-time timestamps in logs/DB (POSIX TZ string, e.g. CST-8
-    # for UTC+8). Without it Go falls back to UTC — consistent, just not local.
+    # for UTC+8). Without it Go falls back to UTC: consistent, just not local.
     #procd_set_param env TZ=CST-8
     # The center binds a port (default 8080); procd needs to know it's a service.
     procd_set_param pidfile /var/run/mibee-steward.pid

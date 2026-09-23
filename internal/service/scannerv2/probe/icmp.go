@@ -49,7 +49,7 @@ func (p *ICMPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 
 	start := time.Now()
 	if err := pinger.RunWithContext(ctx); err != nil {
-		return nil, nil // not alive — no evidence
+		return nil, nil // not alive: no evidence
 	}
 	stats := pinger.Statistics()
 	if stats.PacketsRecv == 0 {

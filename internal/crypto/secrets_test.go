@@ -75,7 +75,7 @@ func TestEncrypt_RandomNonce_DifferentBlobs(t *testing.T) {
 	b1, _ := c.Encrypt(plaintext)
 	b2, _ := c.Encrypt(plaintext)
 	if b1 == b2 {
-		t.Fatalf("two Encrypt calls produced identical blobs — nonce reuse?")
+		t.Fatalf("two Encrypt calls produced identical blobs: nonce reuse?")
 	}
 	// Both must still decrypt back to the same plaintext.
 	if got, _ := c.Decrypt(b1); got != plaintext {

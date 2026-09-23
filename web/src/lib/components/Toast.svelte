@@ -87,7 +87,7 @@
 				></div>
 			{:else}
 				<!--
-					Explicit 5000ms matches the store's default dismiss timeout —
+					Explicit 5000ms matches the store's default dismiss timeout;
 					without this the CSS fell back to its own 5s, which happened to
 					match, but the coupling was implicit. Hovering freezes the bar.
 				-->
@@ -176,7 +176,7 @@
 		border: none;
 		color: var(--color-text-muted);
 		cursor: pointer;
-		/* ≥44×44px touch target (WCAG 2.5.5) — padding:0.25rem + 16px icon was
+		/* ≥44×44px touch target (WCAG 2.5.5): padding:0.25rem + 16px icon was
 		   ~24px, too small for touch. The icon stays 16px; only the hit area
 		   grows. */
 		min-width: 2.75rem;

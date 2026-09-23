@@ -28,7 +28,7 @@
 		onClose?: () => void;
 	} = $props();
 
-	// Per-chain-entry expanded state — default to leaf expanded so the user
+	// Per-chain-entry expanded state: default to leaf expanded so the user
 	// sees the most relevant cert first. Keyed by cert_index.
 	let expandedChain = $state<Record<number, boolean>>({ 0: true });
 
@@ -56,7 +56,7 @@
 			}, 1500);
 		} catch {
 			// Clipboard API is unavailable (e.g. insecure HTTP context). The copy
-			// silently did nothing — surface it so the user isn't left guessing
+			// silently did nothing: surface it so the user isn't left guessing
 			// whether the PEM was copied. The PEM text remains visible in the
 			// <pre> below for manual selection + Ctrl/Cmd+C.
 			addToast('error', m['agents.Failed to Copy']());
@@ -149,7 +149,7 @@
 				<code>{portCerts.error}</code>
 			</div>
 		{:else if portCerts.leaf}
-			<!-- Leaf summary grid — the most-asked fields surfaced for at-a-glance. -->
+			<!-- Leaf summary grid: the most-asked fields surfaced for at-a-glance. -->
 			<div class="cert-grid">
 				<div class="cert-field">
 					<div class="cert-field-label">{m['certificates.Subject']()}</div>

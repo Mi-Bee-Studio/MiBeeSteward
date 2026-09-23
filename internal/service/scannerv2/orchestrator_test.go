@@ -309,7 +309,7 @@ func TestOrchestrator_CycleGuard(t *testing.T) {
 	case <-done:
 		// good, did not hang
 	case <-time.After(2 * time.Second):
-		t.Fatal("orchestrator hung — cycle guard failed")
+		t.Fatal("orchestrator hung: cycle guard failed")
 	}
 }
 

@@ -13,7 +13,7 @@ import { m } from '$lib/i18n-paraglide';
 import { currentPasswordPolicy } from '$lib/stores/passwordPolicy';
 
 // Password length follows the EFFECTIVE backend policy (auth.password_policy,
-// #332) — read at validation time via the passwordPolicy store, never a
+// #332): read at validation time via the passwordPolicy store, never a
 // hardcoded min(8): a lowered policy would be silently blocked client-side
 // before the backend ever saw the request.
 const passwordMinLengthField = () =>
@@ -28,7 +28,7 @@ const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/;
 //
 // Zod schema messages are stable CODES (the i18n key itself, e.g.
 // 'validation.Name Required'). They are evaluated at schema-definition time
-// and must NOT call into paraglide directly — otherwise the message would be
+// and must NOT call into paraglide directly: otherwise the message would be
 // frozen to whatever locale was active at module import and would not respond
 // to a runtime locale switch. Instead, `translate()` resolves a code to the
 // current locale's string at the moment validateField / validateForm return.
@@ -41,7 +41,7 @@ type MessageParams = Record<string, string>;
 function translate(message: string | undefined, params?: MessageParams): string | undefined {
 	if (!message) return message;
 	if (message.startsWith('validation.')) {
-		// The password-length message interpolates the LIVE policy minimum —
+		// The password-length message interpolates the LIVE policy minimum;
 		// the policy is backend state (auth.password_policy), not a constant.
 		if (message === 'validation.Password Min Length' && !params) {
 			params = { n: String(currentPasswordPolicy().min_length) };
@@ -131,7 +131,7 @@ export const profileSchema = z.object({
 });
 
 // --- Reset-password form (users page) ---
-// Like settingsSchema but without currentPassword — the admin resets another
+// Like settingsSchema but without currentPassword: the admin resets another
 // user's password by token. The match refine attaches the error to `confirm`.
 export const resetPasswordSchema = z
 	.object({
@@ -146,7 +146,7 @@ export const resetPasswordSchema = z
 // --- Force-password-change form (login page) ---
 // Same policy as resetPasswordSchema (8-char min + match) but standalone so the
 // login flow validates via the shared schema instead of hand-rolled length /
-// mismatch checks (#154 part 3 — keeps the password policy in ONE place).
+// mismatch checks (#154 part 3: keeps the password policy in ONE place).
 export const forcePasswordSchema = z
 	.object({
 		new_password: passwordMinLengthField(),
@@ -267,7 +267,7 @@ export const probeTargetSchema = z
 
 // --- Notification channel form (settings/notifications page) ---
 // A flat schema (form state is flat: formUrl, formSmtpHost, ...) with a refine
-// enforcing type-conditional required fields — simpler than a Zod
+// enforcing type-conditional required fields: simpler than a Zod
 // discriminated union and keeps per-field blur validation working.
 // webhook_url doubles as the URL field for the formatted-webhook channels
 // (feishu / wecom / discord all POST to a bot webhook URL).
@@ -337,9 +337,9 @@ export const notificationRuleSchema = z
 
 // --- Scanner task form (devices/scan-tasks page) ---
 // targets + cron are validated by the standalone validateScanTarget /
-// validateCronExpr functions (kept as-is — they return localized strings and
+// validateCronExpr functions (kept as-is: they return localized strings and
 // are already wired to onblur). This schema covers name + timeout range only;
-// pipeline_config is deliberately not validated (complex nested object, the
+// pipeline_config is not validated (complex nested object, the
 // backend accepts any shape).
 export const scannerTaskSchema = z.object({
 	name: z.string().min(1, 'validation.Task Name Required'),
@@ -408,7 +408,7 @@ function isValidOctets(ip: string): boolean {
 
 /** isValidIP checks a single IPv4 address (no CIDR/range/list). Reused by
  *  validateScanTarget below and exported for callers that validate one IP at
- *  a time — e.g. the CSV import preview flagging malformed rows. */
+ *  a time: e.g. the CSV import preview flagging malformed rows. */
 export function isValidIP(ip: string): boolean {
 	return ipv4OctetPattern.test(ip.trim()) && isValidOctets(ip.trim());
 }

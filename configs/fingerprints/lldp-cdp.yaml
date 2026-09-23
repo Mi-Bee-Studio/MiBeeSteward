@@ -14,7 +14,7 @@
 # Rules below match on RawData["platform"] (CDP) or RawData["sys_desc"] (LLDP).
 #
 # Confidence 0.9: CDP/LLDP are explicit protocol-discovered identities from a
-# directly-connected neighbor — far more reliable than banner heuristics.
+# directly-connected neighbor: far more reliable than banner heuristics.
 
 version: 1
 
@@ -24,7 +24,7 @@ rules:
   #   "cisco WS-C2960S-24TS-L", "cisco ISR4331/K9", "cisco ASA5525",
   #   "Aruba 2930F", "Juniper EX3300"
 
-  # Cisco devices — brand is constant; model is the second word; type from
+  # Cisco devices: brand is constant; model is the second word; type from
   # model-prefix keywords (Catalyst → switch, ASA → firewall, ISR → router).
   - id: cdp-cisco
     source: builtin

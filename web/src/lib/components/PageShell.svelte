@@ -9,7 +9,7 @@
 -->
 
 <!--
-  PageShell — wraps a route page's content with the canonical outer padding.
+  PageShell: wraps a route page's content with the canonical outer padding.
 
   Before this component, three padding schemes coexisted:
     • `p-6` (most list pages)

@@ -3,9 +3,9 @@
 #
 # Changelog docs sync (#322, reworked 2026-08): docs/en/changelog.md is a
 # verbatim mirror of the root CHANGELOG.md and is REGENERATED here. Do not
-# hand-edit it — edit CHANGELOG.md and re-run `make docs-changelog-sync`.
+# hand-edit it: edit CHANGELOG.md and re-run `make docs-changelog-sync`.
 #
-# docs/zh/changelog.md is a hand-maintained CHINESE TRANSLATION — this script
+# docs/zh/changelog.md is a hand-maintained CHINESE TRANSLATION: this script
 # never touches it. Instead it runs a coverage check: the set of version
 # headers (`## [Unreleased]` / `## [0.5.0] - date` / …) must be identical on
 # both sides, so a release that adds entries to CHANGELOG.md without updating

@@ -55,7 +55,7 @@ func TestTLSVersionString(t *testing.T) {
 		{tls.VersionTLS11, "TLS 1.1"},
 		{tls.VersionTLS12, "TLS 1.2"},
 		{tls.VersionTLS13, "TLS 1.3"},
-		{0x0300, ""}, // SSLv3 — unrecognized post-handshake
+		{0x0300, ""}, // SSLv3: unrecognized post-handshake
 	}
 	for _, tc := range cases {
 		require.Equal(t, tc.want, tlsVersionString(tc.v), "version 0x%04X", tc.v)

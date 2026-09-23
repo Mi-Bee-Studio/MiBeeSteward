@@ -122,7 +122,7 @@ func TestReporter_DoesNotRetryOn4xx(t *testing.T) {
 
 	time.Sleep(300 * time.Millisecond) // give it time to (not) retry
 	r.Stop()
-	require.Equal(t, int32(1), atomic.LoadInt32(&attempts), "4xx should be terminal — exactly one attempt")
+	require.Equal(t, int32(1), atomic.LoadInt32(&attempts), "4xx should be terminal: exactly one attempt")
 }
 
 // TestReporter_DisconnectRecovery verifies a batch that fails while the center

@@ -4,7 +4,7 @@
 
 # mDNS service-name + SSDP/UPnP self-announcement fingerprints.
 #
-# Matches evidence with Kind="mdns" (RawData: hostname, services — a
+# Matches evidence with Kind="mdns" (RawData: hostname, services: a
 # comma-joined service list, txt.<key> TXT records) from the active mDNS
 # probe, and Kind="ssdp" (RawData: server, location, st, usn) from the SSDP
 # M-SEARCH probe. Devices self-DECLARE these on the LAN, which the device
@@ -13,14 +13,14 @@
 #
 # Field-verified samples (iStoreOS R68S network, 2026-09, issue #365):
 #   NAS avahi:        services="_nut._tcp,_smb._tcp,_adisk._tcp" (+SRV/TXT)
-#                     — the _adisk TXT carries `dk0=adVN=Time Machine,…`
+#                    : the _adisk TXT carries `dk0=adVN=Time Machine,…`
 #   Router (R68S):    ssdp server="DEVICE_SERIAL:ST-raspi-61BF5B32|lunzn,fastrhino-r68s"
 #   NAS media stack:  ssdp server="5.15.49-linuxkit-pr DLNADOC/1.50 UPnP/1.0 MiniDLNA/1.3.3"
 #
 # The device TYPE stays honest: service names map onto the fixed type
 # vocabulary (nas/printer/camera/iot/router); niche appliances (Chromecast,
 # AirPlay, HomeKit) land on iot with a descriptive inferred_description.
-# Mijia devices never announce mDNS/SSDP (0/12 in the field PoC) — their
+# Mijia devices never announce mDNS/SSDP (0/12 in the field PoC): their
 # identity path is the hostname rules in iot-identity.yaml (#361).
 
 version: 1
@@ -63,7 +63,7 @@ rules:
         inferred_description: { const: "RTSP service announced via mDNS" }
 
   # _adisk = Apple file sharing (Time Machine over SMB). An _adisk
-  # announcement implies a real SMB file server — NAS with high confidence.
+  # announcement implies a real SMB file server: NAS with high confidence.
   - id: mdns-adisk-nas
     source: builtin
     priority: 228
@@ -169,7 +169,7 @@ rules:
         inferred_type: { const: iot }
         inferred_description: { const: "HomeKit accessory announced via mDNS" }
 
-  # ESPHome DIY devices: the TXT records carry board/model — highest-fidelity
+  # ESPHome DIY devices: the TXT records carry board/model: highest-fidelity
   # self-identification on this list. txt.model passthrough keeps it.
   - id: mdns-esphome
     source: builtin
@@ -193,7 +193,7 @@ rules:
         version: { passthrough: txt.version }
 
   # Xiaomi miot ecosystem: _miio._udp is announced by miot firmware (when it
-  # announces at all — see the #365 field PoC for the caveats).
+  # announces at all: see the #365 field PoC for the caveats).
   - id: mdns-miio
     source: builtin
     priority: 221
@@ -214,7 +214,7 @@ rules:
 
   # Generic TXT self-identification (no service-name hit): keep the model/
   # vendor TXT keys for the host_services row even without a type claim.
-  # Not in the exclusive group — co-fires with a type rule; the store merges
+  # Not in the exclusive group: co-fires with a type rule; the store merges
   # metadata into the same host_services row.
   - id: mdns-txt-model
     source: builtin
@@ -270,7 +270,7 @@ rules:
         inferred_brand: { const: "FastRhino" }
         inferred_description: { const: "FastRhino/Lunzn router self-identified via SSDP SERVER header" }
 
-  # Vendor names in any SSDP field (SERVER/USN/LOCATION) — camera vendors
+  # Vendor names in any SSDP field (SERVER/USN/LOCATION): camera vendors
   # embed their domains in the UPnP LOCATION URL.
   - id: ssdp-hikvision
     source: builtin
@@ -311,7 +311,7 @@ rules:
         inferred_description: { const: "Dahua device self-identified via SSDP" }
 
   # Synology DSM answers SSDP with SERVER carrying "Synology" and a LOCATION
-  # on :5000 — an unauthenticated self-declaration of a NAS.
+  # on :5000: an unauthenticated self-declaration of a NAS.
   - id: ssdp-synology
     source: builtin
     priority: 216

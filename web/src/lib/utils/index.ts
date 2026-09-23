@@ -18,7 +18,7 @@ export { formatDateTime, formatTime } from './format.js';
  *  (element text or a single- or double-quoted attribute value). DataTable
  *  columns render via {@html}, so any user-controlled field (device name,
  *  location, vendor, MAC, …) must be escaped before being placed into the
- *  template string — otherwise a name containing `"` breaks the surrounding
+ *  template string: otherwise a name containing `"` breaks the surrounding
  *  `data-name="..."` attribute and a name containing `<` is an XSS vector.
  *
  *  The order matters: ampersand must be escaped first.
@@ -51,9 +51,9 @@ export function sanitizeUrl(url: string): string {
 	if (trimmed === '') return '';
 	// Relative paths, anchors, and protocol-free URLs are safe.
 	if (/^[a-z]+:/i.test(trimmed)) {
-		// Has a scheme — allow only the known-safe ones.
+		// Has a scheme: allow only the known-safe ones.
 		if (/^(https?|ftp|mailto):/i.test(trimmed)) return trimmed;
 		return ''; // javascript:, data:, vbscript:, etc.
 	}
-	return trimmed; // relative (#foo, /foo, foo/bar) — safe
+	return trimmed; // relative (#foo, /foo, foo/bar): safe
 }

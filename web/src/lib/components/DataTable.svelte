@@ -19,12 +19,12 @@
 		sortable?: boolean;
 		/** Marks a column whose cells are rendered by the `cell` snippet (real
 		 * <button>/<input> with bound handlers) instead of `render`'s {@html}
-		 * string — the keyboard-accessible path (#167). */
+		 * string: the keyboard-accessible path (#167). */
 		interactive?: boolean;
 		/**
 		 * Custom cell renderer. The returned string is injected via `{@html}`, so
 		 * the caller is responsible for escaping EVERY user-controlled value
-		 * (device name, username, MAC, URL, …) — otherwise a value containing
+		 * (device name, username, MAC, URL, …): otherwise a value containing
 		 * `<` is an XSS vector.
 		 *
 		 * Build the string with the `html` tagged-template helper
@@ -56,7 +56,7 @@
 		// bound handlers) instead of col.render's {@html} string (#167).
 		cell,
 		// Controlled sorting: when onSortChange is provided, the table runs in
-		// "server-side sort" mode — column clicks call back instead of sorting the
+		// "server-side sort" mode: column clicks call back instead of sorting the
 		// in-memory rows (which would only reorder the current page and disagree
 		// with server-side pagination). externalSortKey/Dir drive the arrow display.
 		externalSortKey = null,
@@ -162,7 +162,7 @@
 
 	function handleSort(key: string) {
 		if (onSortChange) {
-			// Server-side sort: cycle asc → desc (no "none" — a server-backed list
+			// Server-side sort: cycle asc → desc (no "none": a server-backed list
 			// always has an order), and hand the decision up.
 			const nextDir: 'asc' | 'desc' =
 				externalSortKey === key && externalSortDirection === 'asc' ? 'desc' : 'asc';
@@ -284,7 +284,7 @@
 		</div>
 	{/if}
 
-	<!-- Empty state — no rows at all -->
+	<!-- Empty state: no rows at all -->
 	{#if isTotallyEmpty}
 		{#if activeQuery}
 			<!-- Server-side search returned nothing: NOT a "create first item" case.

@@ -245,7 +245,7 @@ func TestEngine_TickSchedulesByInterval(t *testing.T) {
 	require.Equal(t, 1, fp.count(), "due immediately on first sight (never run)")
 
 	engine.tick(ctx)
-	require.Equal(t, 1, fp.count(), "interval not elapsed — no re-probe")
+	require.Equal(t, 1, fp.count(), "interval not elapsed: no re-probe")
 
 	after, err := queries.GetProbeTarget(ctx, tgt.ID)
 	require.NoError(t, err)

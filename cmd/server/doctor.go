@@ -55,7 +55,7 @@ func doctor(args []string) int {
 	cfgPath := fs.String("config", "configs/config.example.yaml", "Path to config file")
 	_ = fs.Parse(args)
 
-	fmt.Printf("mibee-steward doctor — config %s\n\n", *cfgPath)
+	fmt.Printf("mibee-steward doctor: config %s\n\n", *cfgPath)
 
 	cfg, cfgErr := config.Load(*cfgPath)
 	var checks []doctorCheck
@@ -93,11 +93,11 @@ func doctor(args []string) int {
 	switch {
 	case mk == "":
 		checks = append(checks, doctorCheck{name: "security.master_key", status: "warn",
-			detail:  "not set — SNMPv3/SSH credential storage disabled (v1/v2c scans unaffected)",
+			detail:  "not set: SNMPv3/SSH credential storage disabled (v1/v2c scans unaffected)",
 			fixHint: "set a 32-byte hex/base64 value to enable encrypted credentials"})
 	case len(mk) != 32 && len(mk) != 44: // 32 raw bytes or base64(32)
 		checks = append(checks, doctorCheck{name: "security.master_key", status: "fail",
-			detail:  fmt.Sprintf("wrong length (%d bytes decoded input) — must decode to 32 bytes", len(mk)),
+			detail:  fmt.Sprintf("wrong length (%d bytes decoded input): must decode to 32 bytes", len(mk)),
 			fixHint: "generate with `openssl rand -base64 32`"})
 	default:
 		checks = append(checks, doctorCheck{name: "security.master_key", status: "ok", detail: "present, plausible length"})
@@ -165,7 +165,7 @@ func doctor(args []string) int {
 	if ln, err := net.Listen("tcp", addr); err != nil {
 		checks = append(checks, doctorCheck{name: "port availability", status: "warn",
 			detail:  fmt.Sprintf(":%d already in use", port),
-			fixHint: "another instance is running (fine on the active server), but do NOT start a second one — two writers on one SQLite file lose data"})
+			fixHint: "another instance is running (fine on the active server), but do NOT start a second one: two writers on one SQLite file lose data"})
 	} else {
 		_ = ln.Close()
 		checks = append(checks, doctorCheck{name: "port availability", status: "ok", detail: fmt.Sprintf(":%d free", port)})
@@ -181,7 +181,7 @@ func doctor(args []string) int {
 				detail: "unparseable: " + cfg.Server.WriteTimeout, fixHint: "use a Go duration string like 5m"})
 		case wt < want:
 			checks = append(checks, doctorCheck{name: "server.write_timeout", status: "warn",
-				detail:  fmt.Sprintf("%s < scanner.auto floor %s — large sync scans can be cut mid-response", wt, want),
+				detail:  fmt.Sprintf("%s < scanner.auto floor %s: large sync scans can be cut mid-response", wt, want),
 				fixHint: "raise server.write_timeout (the server auto-raises it at boot; this is for explicit low values)"})
 		default:
 			checks = append(checks, doctorCheck{name: "server.write_timeout", status: "ok", detail: wt.String()})
@@ -208,7 +208,7 @@ func doctor(args []string) int {
 			age := time.Since(newestMod).Round(time.Hour)
 			status, hint := "ok", ""
 			if age > 48*time.Hour {
-				status, hint = "warn", "older than 48h — check the cron entry"
+				status, hint = "warn", "older than 48h: check the cron entry"
 			}
 			checks = append(checks, doctorCheck{name: "backups", status: status,
 				detail: fmt.Sprintf("newest %s (%s old)", filepath.Base(newest), age), fixHint: hint})
@@ -284,7 +284,7 @@ func icmpPingGroupRangeCheck(raw string, gid int) (doctorCheck, bool) {
 	switch {
 	case lo > hi:
 		return doctorCheck{name: "icmp ping_group_range", status: "fail",
-			detail:  fmt.Sprintf("disabled (%s) — unprivileged ICMP probes will fail", strings.TrimSpace(raw)),
+			detail:  fmt.Sprintf("disabled (%s): unprivileged ICMP probes will fail", strings.TrimSpace(raw)),
 			fixHint: `echo "0 2147483647" > /proc/sys/net/ipv4/ping_group_range (or add to sysctl.d; required for ICMP without root)`}, true
 	case gid >= lo && gid <= hi:
 		return doctorCheck{name: "icmp ping_group_range", status: "ok",

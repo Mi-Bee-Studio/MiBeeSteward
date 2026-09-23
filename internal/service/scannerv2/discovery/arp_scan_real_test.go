@@ -83,7 +83,7 @@ func TestFillARPRequestTarget(t *testing.T) {
 	// Template unchanged: its dst is still zero (it was never the broadcast).
 	for i, b := range tmpl[0:6] {
 		if b != 0 {
-			t.Errorf("template dst byte [%d] = %02x — fillARPRequestTarget must not mutate the template", i, b)
+			t.Errorf("template dst byte [%d] = %02x: fillARPRequestTarget must not mutate the template", i, b)
 		}
 	}
 }

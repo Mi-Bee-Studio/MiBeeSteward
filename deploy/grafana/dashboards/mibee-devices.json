@@ -10,7 +10,7 @@
   "editable": true,
   "graphTooltip": 1,
   "uid": "mibee-devices",
-  "title": "MiBee Steward — Devices",
+  "title": "MiBee Steward: Devices",
   "panels": [
     {
       "type": "stat",

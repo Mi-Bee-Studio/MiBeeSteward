@@ -37,7 +37,7 @@
 
 	// Network reference + grant row for the per-user object-scope modal (#138
 	// Phase 3). Grants are an immediate-CRUD resource (POST/DELETE
-	// /network-grants), so each add/remove applies at once — no Save/discard.
+	// /network-grants), so each add/remove applies at once: no Save/discard.
 	interface NetworkRef {
 		id: number;
 		name: string;
@@ -119,7 +119,7 @@
 			total = res.total || 0;
 			syncUrl();
 		} catch (err: unknown) {
-			// Inline banner only on initial load — a parallel toast here was
+			// Inline banner only on initial load: a parallel toast here was
 			// noisy double-notification for a single failure.
 			error = getErrorMessage(err);
 		} finally {
@@ -280,7 +280,7 @@
 	let addNetworkId = $state<number | null>(null);
 	let grantBusy = $state(false);
 
-	// Networks the target already holds — the add-dropdown omits these.
+	// Networks the target already holds: the add-dropdown omits these.
 	let grantedNetIds = $derived(new Set(grants.map((g) => g.network_id)));
 	let availableNetworks = $derived(networks.filter((n) => !grantedNetIds.has(n.id)));
 
@@ -624,10 +624,10 @@
 	</form>
 </Modal>
 
-<!-- Network Scope (grants) Modal — manage a user's object-level network grants -->
+<!-- Network Scope (grants) Modal: manage a user's object-level network grants -->
 <Modal
 	bind:open={scopeModalOpen}
-	title={scopeTarget ? `${m["users.Network Scope"]()} — ${scopeTarget.username}` : m["users.Network Scope"]()}
+	title={scopeTarget ? `${m["users.Network Scope"]()}: ${scopeTarget.username}` : m["users.Network Scope"]()}
 	maxWidth="34rem"
 >
 	<div class="space-y-4">

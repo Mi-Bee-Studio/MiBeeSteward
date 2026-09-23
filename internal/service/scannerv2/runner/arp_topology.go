@@ -50,7 +50,7 @@ const routeTablePath = "/proc/net/route"
 // scan (same pattern as DetectLost).
 func (rn *Runner) injectARPTopology(ctx context.Context, networkID sql.NullInt64, reports []scannerv2.HostReport) {
 	if !networkID.Valid {
-		return // no network scoping — can't partition edges correctly
+		return // no network scoping: can't partition edges correctly
 	}
 
 	// 1. Read the ARP table (ip → mac).
@@ -128,7 +128,7 @@ func (rn *Runner) injectARPEdges(ctx context.Context, networkID sql.NullInt64, r
 
 	for mac := range scannedMACs {
 		if mac == gwMACNorm {
-			continue // gateway to itself — skip
+			continue // gateway to itself: skip
 		}
 
 		var deviceID int64
@@ -136,7 +136,7 @@ func (rn *Runner) injectARPEdges(ctx context.Context, networkID sql.NullInt64, r
 			`SELECT id FROM devices WHERE mac_address = ? AND (network_id = ? OR network_id IS NULL) LIMIT 1`,
 			mac, netID).Scan(&deviceID)
 		if err != nil {
-			continue // device not persisted yet or MAC mismatch — skip silently
+			continue // device not persisted yet or MAC mismatch: skip silently
 		}
 
 		_, err = tx.ExecContext(ctx, `

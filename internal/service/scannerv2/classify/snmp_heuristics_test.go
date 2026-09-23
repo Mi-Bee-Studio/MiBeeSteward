@@ -26,10 +26,10 @@ func TestInferTypeFromSNMP_CharacterizationMatrix(t *testing.T) {
 		{"76", "2", "server"}, // application + internet, few interfaces
 		{"3", "8", "switch"},  // physical+datalink, many interfaces
 		{"7", "8", "switch"},  // physical+datalink+internet, many interfaces
-		{"4", "2", ""},        // internet only — not decisive alone
+		{"4", "2", ""},        // internet only: not decisive alone
 		{"6", "5", ""},        // datalink+internet, mid interface count
 		{"6", "30", ""},       // datalink+internet, many interfaces
-		{"2", "52", ""},       // datalink only — not decisive without more bits
+		{"2", "52", ""},       // datalink only: not decisive without more bits
 		{"0", "2", ""},        // no services
 		{"x", "y", ""},        // junk numerics
 	}

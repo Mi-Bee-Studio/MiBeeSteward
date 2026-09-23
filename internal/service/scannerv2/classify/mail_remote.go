@@ -94,7 +94,7 @@ func (RemoteAccessClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.Serv
 	idx := indexEvidence(ev)
 	var out []scannerv2.ServiceIdentity
 	for _, e := range idx.byKind["banner"] {
-		b := bannerText(e) // NOT trimmed — telnet IAC bytes are leading whitespace-adjacent
+		b := bannerText(e) // NOT trimmed: telnet IAC bytes are leading whitespace-adjacent
 		if b == "" {
 			continue
 		}

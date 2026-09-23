@@ -76,8 +76,8 @@
 
 		// Watch the container's size directly. A window 'resize' listener alone
 		// misses cases where the container changes size without the window
-		// resizing — e.g. an accordion expanding, a modal opening, or a sidebar
-		// collapsing — which left the chart squeezed into its old (often 0-width)
+		// resizing: e.g. an accordion expanding, a modal opening, or a sidebar
+		// collapsing: which left the chart squeezed into its old (often 0-width)
 		// box. ResizeObserver fires on those layout transitions.
 		const resizeObserver = new ResizeObserver(() => {
 			instance?.resize();
@@ -114,7 +114,7 @@
 	// with the rest of the app's LoaderCircle icon.
 
 	// Bind the click handler whenever it or the instance changes. ECharts
-	// 'click' events carry the series payload (node/edge data) — distinct from
+	// 'click' events carry the series payload (node/edge data): distinct from
 	// DOM clicks, which is why we forward via the instance API.
 	$effect(() => {
 		if (!instance) return;

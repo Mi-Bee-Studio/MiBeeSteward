@@ -8,7 +8,7 @@
 # those terms; see LICENSE for the full text. A commercial license is available
 # for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 
-# MiBee Steward — SQLite Backup Script
+# MiBee Steward: SQLite Backup Script
 # Usage: ./scripts/backup.sh [DB_PATH] [BACKUP_DIR] [RETENTION_DAYS]
 # Cron example: 0 2 * * * /opt/mibee-steward/scripts/backup.sh
 
@@ -32,12 +32,12 @@ if [ ! -f "$DB_PATH" ]; then
 fi
 
 # Perform safe backup using sqlite3 .backup command
-# This does NOT lock the database — safe for production use
+# This does NOT lock the database: safe for production use
 echo "Backing up ${DB_PATH} to ${BACKUP_FILE}..."
 sqlite3 "$DB_PATH" ".backup '${BACKUP_FILE}'"
 
 # Verify backup integrity AND that the file opens as a usable database (a
-# truncated/corrupt page can pass a quick stat but fail a real query — #280).
+# truncated/corrupt page can pass a quick stat but fail a real query: #280).
 if sqlite3 "$BACKUP_FILE" "PRAGMA integrity_check;" | grep -q "ok" \
     && ROWS=$(sqlite3 "$BACKUP_FILE" "SELECT COUNT(*) FROM sqlite_master;") && [ "$ROWS" -gt 0 ]; then
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)

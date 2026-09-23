@@ -47,11 +47,11 @@ ok()   { PASS=$((PASS+1)); echo "  ✓ $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "  ✗ $1"; }
 need() { if [ "$1" != "$2" ]; then bad "$3 (got: $1, want: $2)"; else ok "$3"; fi }
 
-jsonget() { # jsonget <json> <key> — crude extractor for scalar string/number fields
+jsonget() { # jsonget <json> <key>: crude extractor for scalar string/number fields
     printf '%s' "$1" | grep -o "\"$2\":[^,}]*" | head -1 | cut -d: -f2- | tr -d '"'
 }
 
-echo "== e2e smoke (#270) — building center =="
+echo "== e2e smoke (#270): building center =="
 (cd "${ROOT}" && CGO_ENABLED=0 go build -o "${BIN}" ./cmd/server/) || { echo "build failed"; exit 1; }
 
 echo "== starting center on :${PORT} =="
@@ -131,7 +131,7 @@ fi
 # The sync path lands in the device portrait: open_ports must carry the
 # center's own HTTP port (scan_results is the ASYNC-task store, asserted
 # in section 4).
-# open_ports is an escaped-JSON string ([{\"port\":N,...}]) — grep the raw
+# open_ports is an escaped-JSON string ([{\"port\":N,...}]): grep the raw
 # response for the port entry rather than extracting the string.
 DEVJSON="$(curl -sf -m 5 "${BASE}/api/v1/devices?search=127.0.0.1" -H "Authorization: Bearer ${TOKEN}" || echo '')"
 if printf '%s' "${DEVJSON}" | grep -q "\\\"port\\\":${PORT}"; then
@@ -191,5 +191,5 @@ else
 fi
 
 echo
-echo "== e2e result: ${PASS} passed, ${FAIL} failed — log: ${TMP}/server.log =="
+echo "== e2e result: ${PASS} passed, ${FAIL} failed: log: ${TMP}/server.log =="
 [ "${FAIL}" -eq 0 ] || { echo "server log tail:"; tail -20 "${TMP}/server.log" || true; exit 1; }

@@ -122,7 +122,7 @@ func (s *DNSLogSource) sweep() {
 func (s *DNSLogSource) tailFile(path string) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return // file absent (host not running dnsmasq query logging) — skip
+		return // file absent (host not running dnsmasq query logging): skip
 	}
 	f, err := os.Open(path)
 	if err != nil {

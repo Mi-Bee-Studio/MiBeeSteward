@@ -275,7 +275,7 @@ func serve(cfg *config.Config, db *sql.DB, dbPath string, stop <-chan struct{}) 
 	// admin is seeded password-less and the login page asks for a password to
 	// be created, the installer default).
 	if cfg.Auth.InitialAdminPassword == "" {
-		slog.Info("auth.initial_admin_password is empty — the admin password will be set in the browser on first run")
+		slog.Info("auth.initial_admin_password is empty: the admin password will be set in the browser on first run")
 	}
 	expiry := 24 * time.Hour
 	if cfg.Auth.TokenExpiry != "" {
@@ -332,13 +332,13 @@ func seedAdminUser(userSvc *service.UserService, password string) {
 			slog.Info("admin user already exists, skipping seed")
 			return
 		}
-		slog.Error("failed to seed admin user — the server will start WITHOUT any login",
+		slog.Error("failed to seed admin user: the server will start WITHOUT any login",
 			"error", err,
 			"remedy", "run `./mibee-steward reset-admin-password -config <config>` to create the admin")
 		return
 	}
 	if password == "" {
-		slog.Info("default admin user created with NO password — open the web UI to set it on first run",
+		slog.Info("default admin user created with NO password: open the web UI to set it on first run",
 			"username", "admin")
 		return
 	}

@@ -24,7 +24,7 @@ func TestPruneDeviceNeighbors(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
-	old := now.AddDate(0, 0, -100) // 100 days ago — beyond the 90d default
+	old := now.AddDate(0, 0, -100) // 100 days ago: beyond the 90d default
 	// Seed: a device (needed for the FK) + two neighbor edges, one old + one fresh.
 	require.NoError(t, createSwitch(t, queries, "switch-1"))
 	seedNeighbor(t, conn, 1, "aa:bb:cc:dd:ee:01", "LLDP", &old)

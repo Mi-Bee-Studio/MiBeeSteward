@@ -37,7 +37,7 @@ func NewTLSCertHandler(queries *db.Queries) *TLSCertHandler {
 	return &TLSCertHandler{queries: queries}
 }
 
-// certificateInfo is one certificate in a port's chain. Mirrors the columns of
+// certificateInfo is one certificate in a port's chain. Fields track the columns of
 // host_tls_certs but with ints/bools coerced from the SQLite INTEGER encoding
 // (0/1) so the frontend doesn't have to.
 type certificateInfo struct {

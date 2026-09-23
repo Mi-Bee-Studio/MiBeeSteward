@@ -48,8 +48,8 @@ func TestReconcile_DetectsOutOfNetworkDevices(t *testing.T) {
 	// lan-62 with a cidr; one correctly-attributed device + one foreign (the
 	// exact issue-#19 ghost pattern: a 63.x IP stamped on lan-62).
 	net62 := addNetwork(t, dbConn, "lan-62", "192.168.62.0/24")
-	addDevice(t, dbConn, "192.168.62.5", net62)  // in network — OK
-	addDevice(t, dbConn, "192.168.63.20", net62) // OUT of network — mismatch
+	addDevice(t, dbConn, "192.168.62.5", net62)  // in network: OK
+	addDevice(t, dbConn, "192.168.63.20", net62) // OUT of network: mismatch
 
 	// lan-63 with a cidr; all its devices are correctly inside.
 	net63 := addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")

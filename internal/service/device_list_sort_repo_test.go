@@ -309,7 +309,7 @@ func TestListFiltered_SearchEscapesWildcards(t *testing.T) {
 		names = append(names, r.Device.Name)
 	}
 	require.Equal(t, []string{"sensor_10"}, names,
-		"underscore in search must be literal, not a wildcard — escapeLike must run on the LIKE input")
+		"underscore in search must be literal, not a wildcard: escapeLike must run on the LIKE input")
 
 	// Same proof with % : a name with a literal % must only match a % search.
 	_, err = conn.Exec(`UPDATE devices SET name='load 100%' WHERE name='sensorX10'`)

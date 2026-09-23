@@ -48,7 +48,7 @@ func resetAdminPasswordSubcommand(args []string) {
 		os.Exit(2)
 	}
 
-	fmt.Fprintf(os.Stderr, "mibee-steward %s — reset admin password\n", version.Version)
+	fmt.Fprintf(os.Stderr, "mibee-steward %s: reset admin password\n", version.Version)
 
 	// Resolve password: flag > env > stdin prompt.
 	password := *pwFlag

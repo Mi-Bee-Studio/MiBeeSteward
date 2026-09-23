@@ -1,9 +1,9 @@
 # Home Assistant × MiBee Steward integration example (#284).
 #
 # Two pieces:
-#   1. rest_command — HA can push actions to MiBee's REST API with a read-only
+#   1. rest_command: HA can push actions to MiBee's REST API with a read-only
 #      JWT (e.g. trigger a scan from an HA automation).
-#   2. automation — MiBee's generic-webhook notification channel POSTs to HA's
+#   2. automation: MiBee's generic-webhook notification channel POSTs to HA's
 #      webhook trigger; HA reacts (here: push a notification when a device is
 #      lost).
 #

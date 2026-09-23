@@ -583,7 +583,7 @@ func TestHeartbeat_UpdateDeviceStatus_SuccessResetsFailCounter(t *testing.T) {
 	svc.applyDeviceVerdict(deviceID, false)
 	svc.applyDeviceVerdict(deviceID, false)
 
-	require.Equal(t, "online", svc.cachedStatus(deviceID), "device should remain online — failure counter was reset")
+	require.Equal(t, "online", svc.cachedStatus(deviceID), "device should remain online: failure counter was reset")
 
 	// 5th failure → offline
 	svc.applyDeviceVerdict(deviceID, false)

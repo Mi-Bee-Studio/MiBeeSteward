@@ -39,7 +39,7 @@ import (
 // other finalize steps).
 func (rn *Runner) deriveTopologyEdges(ctx context.Context, networkID sql.NullInt64) {
 	if !networkID.Valid {
-		return // no network scoping — can't partition edges correctly
+		return // no network scoping: can't partition edges correctly
 	}
 	netID := networkID.Int64
 
