@@ -32,15 +32,15 @@ type DBTX interface {
 
 // BusyRetry is a db.DBTX wrapper that retries SQLITE_BUSY failures with
 // bounded backoff and counts every occurrence into
-// mibee_sqlite_busy_total{path} (#267 — single-writer governance: SQLite
+// mibee_sqlite_busy_total{path} (#267, single-writer governance: SQLite
 // allows ONE writer; the scanner's result persistence, the heartbeat verdict
 // flush, probe results and audit writes compete, and a write that outlived
-// busy_timeout (5s via the DSN) used to fail — audit writes even dropped
+// busy_timeout (5s via the DSN) used to fail, audit writes even dropped
 // silently, one failed attempt and gone).
 //
 // It implements db.DBTX plus BeginTx (when the wrapped handle is a *sql.DB),
 // so it drops into subsystems that previously took the raw pool. Explicit
-// transactions are pass-through by design: a BUSY inside a tx must surface to
+// transactions are pass-through by design: a BUSY inside a tx must return to
 // the caller, which owns the rollback semantics.
 type BusyRetry struct {
 	inner  DBTX
@@ -53,7 +53,7 @@ type BusyRetry struct {
 }
 
 // WrapBusyRetry wraps one call path's DB handle. path becomes the
-// mibee_sqlite_busy_total{path} label — use the subsystem name ("scanner",
+// mibee_sqlite_busy_total{path} label, use the subsystem name ("scanner",
 // "heartbeat", "audit", …) so contention pins to its source.
 func WrapBusyRetry(dbtx DBTX, path string) *BusyRetry {
 	if br, ok := dbtx.(*BusyRetry); ok {
@@ -113,7 +113,7 @@ func (b *BusyRetry) PrepareContext(ctx context.Context, query string) (*sql.Stmt
 }
 
 // BeginTx passes through to the wrapped pool (explicit transactions own
-// their BUSY handling — see the type comment).
+// their BUSY handling, see the type comment).
 func (b *BusyRetry) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	if b.pool == nil {
 		return nil, errors.New("dbopen: BusyRetry BeginTx requires a *sql.DB inner handle")
@@ -135,7 +135,7 @@ func (b *BusyRetry) Close() error {
 func (b *BusyRetry) Pool() *sql.DB { return b.pool }
 
 // retry runs op until it succeeds, is not BUSY, or the budget is exhausted.
-// Every BUSY increments mibee_sqlite_busy_total{path} — including the
+// Every BUSY increments mibee_sqlite_busy_total{path}, including the
 // exhausted case, so sustained contention stays visible even when the retry
 // ultimately fails.
 func (b *BusyRetry) retry(ctx context.Context, op string, fn func() error) error {

@@ -1961,7 +1961,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Synchronous scan (max 1024 IPs — larger ranges must use tasks) */
+        /** Synchronous scan (max 1024 IPs, larger ranges must use tasks) */
         post: {
             parameters: {
                 query?: never;
@@ -2787,7 +2787,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** SNMP credentials (masked — passphrases never echoed) */
+        /** SNMP credentials (masked, passphrases never echoed) */
         get: {
             parameters: {
                 query?: {
@@ -3345,7 +3345,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** [agent] Poll pending commands — BARE ARRAY (fleet-internal contract; see api.md) */
+        /** [agent] Poll pending commands, BARE ARRAY (fleet-internal contract; see api.md) */
         get: {
             parameters: {
                 query?: never;
@@ -4563,7 +4563,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Caller's notification log (total = UNREAD count — the badge source) */
+        /** Caller's notification log (total = UNREAD count, the badge source) */
         get: {
             parameters: {
                 query?: {
@@ -4900,19 +4900,19 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /** @description Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively — treat every field as optional. Engine-owned: user edits go to user_attributes. */
+        /** @description Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively, treat every field as optional. Engine-owned: user edits go to user_attributes. */
         ScanAttributes: {
             /** @description OUI lookup or SNMP/HTTP-derived vendor */
             vendor?: string;
             /** @description normalized lowercase aa:bb:cc:.. */
             mac?: string;
             hostname?: string;
-            /** @description U/L bit set — neutral observability flag */
+            /** @description U/L bit set */
             mac_is_locally_administered?: boolean;
             mac_is_multicast?: boolean;
             /** @description IEEE block via longest-prefix (6/7/9 hex) */
             oui_prefix?: string;
-            /** @description NIC silicon vendor — distinct from self-declared vendor */
+            /** @description NIC silicon vendor */
             oui_vendor?: string;
             os?: string;
             os_version?: string;
@@ -5098,7 +5098,7 @@ export interface components {
             fingerprint_sha256: string;
             pem: string;
         };
-        /** @description One TLS-speaking port — handshake metadata + cert chain */
+        /** @description One TLS-speaking port, handshake metadata + cert chain */
         TLSPortCerts: {
             port: number;
             tls_version: string;
@@ -5212,7 +5212,7 @@ export interface components {
             /** Format: int64 */
             timeout_count: number;
         };
-        /** @description Logical network row (db.Network marshaled directly — pointer columns are present-but-null) */
+        /** @description Logical network row (db.Network marshaled directly, pointer columns are present-but-null) */
         Network: {
             /** Format: int64 */
             id: number;
@@ -5396,7 +5396,7 @@ export interface components {
         ProbeResultList: components["schemas"]["PageMeta"] & {
             results?: components["schemas"]["ProbeResult"][];
         };
-        /** @description Masked projection — passphrases are NEVER returned (not even ciphertext) */
+        /** @description Masked projection, passphrases are NEVER returned (not even ciphertext) */
         SNMPCredential: {
             /** Format: int64 */
             id: number;
@@ -5453,7 +5453,7 @@ export interface components {
             total?: number;
         };
         AgentTokenCreated: components["schemas"]["AgentToken"] & {
-            /** @description Plaintext token — shown ONCE at mint */
+            /** @description Plaintext token */
             token: string;
         };
         AgentCommand: {
@@ -5541,7 +5541,7 @@ export interface components {
         DocumentList: components["schemas"]["PageMeta"] & {
             documents?: components["schemas"]["Document"][];
         };
-        /** @description Saved dashboard widget card (db.DashboardConfig — id is an integer) */
+        /** @description Saved dashboard widget card (db.DashboardConfig, id is an integer) */
         DashboardConfig: {
             /** Format: int64 */
             id: number;
@@ -5578,7 +5578,7 @@ export interface components {
             type: string;
             /** @enum {string} */
             status: "online" | "offline" | "unknown";
-            /** @description Evidence-derived — richer than type */
+            /** @description Evidence-derived */
             inferred_type: string;
             brand: string;
             /**
@@ -5606,7 +5606,7 @@ export interface components {
             nodes: components["schemas"]["TopologyNode"][];
             edges: components["schemas"]["TopologyEdge"][];
         };
-        /** @description Passive-discovery runtime observability. NOTE: config/stats inner keys are Go-default PascalCase (the structs carry no json tags) and Interval is time.Duration — an integer in NANOSECONDS. */
+        /** @description Passive-discovery runtime observability. NOTE: config/stats inner keys are Go-default PascalCase (the structs carry no json tags) and Interval is time.Duration, an integer in NANOSECONDS. */
         DiscoveryStatus: {
             enabled: boolean;
             /** Format: date-time */

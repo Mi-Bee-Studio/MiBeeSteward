@@ -21,7 +21,7 @@ import (
 // scan_attributes column. The four generated columns
 // (scan_vendor / scan_mac / scan_os / scan_hostname) are derived from the
 // top-level Vendor / MAC / OS / Hostname fields via json_extract, so those
-// field names and JSON keys are part of the query contract — rename with care.
+// field names and JSON keys are part of the query contract, rename with care.
 //
 // Ownership: ONLY the scanner engine (scannerv2 device bridge + store) writes
 // this struct. User edits go to UserAttributes. The split keeps engine and
@@ -34,10 +34,10 @@ type ScanAttributes struct {
 	// MacIsLocallyAdministered records that the observed MAC has the
 	// locally-administered (U/L) bit set (IEEE 802 / RFC 7042): it was assigned
 	// locally rather than drawn from an IEEE OUI/MA-S/MA-M block. This is a
-	// neutral FACTUAL flag — the U/L bit alone CANNOT distinguish privacy
+	// neutral FACTUAL flag, the U/L bit alone CANNOT distinguish privacy
 	// randomization (iOS/Android/Windows, unstable) from a locally fixed setting
 	// (soft-router/hypervisor/manual, stable), so it is NOT a "randomized"
-	// verdict and does NOT change device identity. Surfaced for observability
+	// verdict and does NOT change device identity. Exposed for observability
 	// only (e.g. a UI badge that the MAC is not IEEE-registered).
 	MacIsLocallyAdministered bool `json:"mac_is_locally_administered,omitempty"`
 	// MacIsMulticast records that the observed MAC has the multicast bit set. A
@@ -45,13 +45,13 @@ type ScanAttributes struct {
 	// data-hygiene flag (kept for observability, not used for identity).
 	MacIsMulticast bool `json:"mac_is_multicast,omitempty"`
 	// OUIPrefix is the IEEE assignment block that the MAC matched via the OUI
-	// loader's longest-prefix lookup — 6 hex (MA-L /24), 7 hex (MA-M /28), or 9
+	// loader's longest-prefix lookup, 6 hex (MA-L /24), 7 hex (MA-M /28), or 9
 	// hex (MA-S /36). Empty when no OUI table is loaded or the MAC is unknown /
 	// locally administered. Records which block the vendor below came from.
 	OUIPrefix string `json:"oui_prefix,omitempty"`
 	// OUIVendor is the IEEE-registered organization name for the OUI prefix
 	// above (the NIC silicon vendor). Distinct from Vendor (the device's
-	// SELF-DECLARED brand via SNMP/HTTP/TLS) — the two differ in OEM/rebrand/
+	// SELF-DECLARED brand via SNMP/HTTP/TLS), the two differ in OEM/rebrand/
 	// virtualization cases (e.g. a rebranded camera: SNMP reports the brand,
 	// OUI reports the contract manufacturer). Both are kept when present.
 	OUIVendor string `json:"oui_vendor,omitempty"`

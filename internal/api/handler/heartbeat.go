@@ -269,7 +269,7 @@ func (h *HeartbeatHandler) ListResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read from the dedicated heartbeat store (separate DB) via the service
-	// layer — NOT h.svc.GetQueries(), which is bound to the main DB whose
+	// layer, NOT h.svc.GetQueries(), which is bound to the main DB whose
 	// heartbeat_results table is a stale leftover from before the store
 	// migration (no longer written to → frozen timestamps).
 	results, err := h.svc.ListResults(r.Context(), deviceID, startTime, endTime, int32(limit), int32(offset))

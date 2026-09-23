@@ -483,7 +483,7 @@ func TestDeviceCRUD(t *testing.T) {
 	resp = authDelete(t, server.URL+"/api/v1/devices/"+deviceID, token)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Verify deletion — list should be empty
+	// Verify deletion, list should be empty
 	resp = authGet(t, server.URL+"/api/v1/devices", token)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 

@@ -86,7 +86,7 @@ func TestPartitionTargets(t *testing.T) {
 	})
 	t.Run("mixed in/out", func(t *testing.T) {
 		// The exact real-world bug from issue #19: agent-62's network is /62,
-		// but a command told it to scan 63.0/24 — every host lands "out".
+		// but a command told it to scan 63.0/24, every host lands "out".
 		// 254 = 256 minus the reserved .0 network / .255 broadcast addresses
 		// (excluded from CIDR enumeration since #254).
 		in, out, err := PartitionTargets("192.168.63.0/24", n)

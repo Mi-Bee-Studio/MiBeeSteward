@@ -8,14 +8,14 @@
 // LICENSE-COMMERCIAL.md.
 
 // loadgen is the synthetic-load harness for scale benchmarking (#283). It is
-// NOT part of the default build (make build only compiles cmd/server) — build
+// NOT part of the default build (make build only compiles cmd/server), build
 // it explicitly with `go build ./cmd/loadgen`.
 //
 // Two modes:
 //
 //		loadgen serve --devices 1000 --base 127.8.0.0
 //		  Starts a synthetic device plane on the loopback /8: N fake devices, each
-//		  answering on its own 127.x.y.z address — ICMP works for free (kernel),
+//		  answering on its own 127.x.y.z address, ICMP works for free (kernel),
 //		  and per-template TCP/UDP responders emulate SNMP v2c agents, HTTP
 //		  servers, SSH-style banners, and RTSP servers with realistic payload
 //		  shapes (sysDescr/title/banner per device class).
@@ -27,7 +27,7 @@
 //	         CPU/memory, and API p50/p95 latency. Emits JSON + Markdown.
 //
 // Requires CAP_NET_BIND_SERVICE (root) for the well-known ports (22/80/161/
-// 554) — synthetic devices deliberately use the same ports real ones do so
+// 554), synthetic devices use the same ports real ones do so
 // the scanner's port heuristics and classifiers are exercised unmodified.
 package main
 
@@ -376,7 +376,7 @@ func valueForOID(oid string) []byte {
 
 // syntheticDescr is set per-listener by the serve loop. The SNMP responder is
 // UDP-packet-based (no per-connection state), so per-template sysDescr is not
-// distinguishable without a lookup from the local address — acceptable for a
+// distinguishable without a lookup from the local address, acceptable for a
 // load plane: identification pressure comes from the TCP side, and the DB/
 // write-path load is identical regardless of the sysDescr text.
 var syntheticDescr = "loadgen synthetic device v1"

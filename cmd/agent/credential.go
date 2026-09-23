@@ -28,9 +28,9 @@ import (
 // buildAgentCredentialResolver assembles the agent-local SNMP credential
 // resolver (#241). The vault is optional: no security.master_key (or a
 // wrong-length one) returns nil and scans keep using the global v1/v2c
-// community — the same degrade semantics as the center's buildCredentialCipher.
+// community, the same degrade semantics as the center's buildCredentialCipher.
 // The key protects ONLY this agent's own snmp_credentials rows; it is
-// deliberately independent of the center's master key so the two trust domains
+// independent of the center's master key so the two trust domains
 // never share key material.
 func buildAgentCredentialResolver(dbConn *sql.DB, cfg *config.Config) *credresolver.Resolver {
 	if cfg.Security.MasterKey == "" {
@@ -69,7 +69,7 @@ func resolveAgentCredentialID(ctx context.Context, r *credresolver.Resolver, id 
 
 // resolveAgentCredentialName maps a center-referenced credential NAME to a
 // local vault ID (#241). Center and agent vault IDs are independent (separate
-// tables), so the scan command payload carries the name — the stable
+// tables), so the scan command payload carries the name, the stable
 // cross-system key. Unknown name → community fallback with a warning.
 func resolveAgentCredentialName(ctx context.Context, dbConn *sql.DB, r *credresolver.Resolver, name string) int64 {
 	if name == "" || r == nil || dbConn == nil {
@@ -84,12 +84,12 @@ func resolveAgentCredentialName(ctx context.Context, dbConn *sql.DB, r *credreso
 	return resolveAgentCredentialID(ctx, r, row.ID)
 }
 
-// snmpCredentialSubcommand implements `mibee-agent snmp-credential` — the
+// snmpCredentialSubcommand implements `mibee-agent snmp-credential`, the
 // provisioning path for the agent-local SNMP credential vault (#241). The
 // agent has no HTTP surface, so the operator manages its vault from the shell
 // (the same trust model as editing agent.yaml). Passphrases are read flag >
 // env > stdin prompt, encrypted with the AGENT's security.master_key before
-// touching disk, and never echoed back — `list` shows the masked projection.
+// touching disk, and never echoed back, `list` shows the masked projection.
 //
 // Usage:
 //
@@ -123,7 +123,7 @@ func snmpCredentialSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-	// The vault lives in the agent's mini-DB next to the config file — the
+	// The vault lives in the agent's mini-DB next to the config file, the
 	// same path main() derives. openAgentDB applies the full mini schema, so
 	// a fresh install (agent never started) gets the snmp_credentials table
 	// here too.
@@ -236,7 +236,7 @@ func addAgentCredential(ctx context.Context, conn *sql.DB, cipher *crypto.Cipher
 		return 2
 	}
 	// Passphrase input: flag > env > stdin prompt (the reset-admin-password
-	// pattern; no echo suppression — headless boxes).
+	// pattern; no echo suppression, headless boxes).
 	if f.AuthPassphrase == "" && (f.SecurityLevel == "authNoPriv" || f.SecurityLevel == "authPriv") {
 		f.AuthPassphrase = os.Getenv("MIBEE_AGENT_AUTH_PASSPHRASE")
 	}

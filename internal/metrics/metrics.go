@@ -11,7 +11,7 @@
 // own operational signals (device counts, heartbeat outcomes, scanner runs).
 // It lives OUTSIDE internal/api/handler so the service layer (heartbeat,
 // scanner runner, scheduler) can increment counters without importing the
-// HTTP layer — handler imports service, never the reverse (#238).
+// HTTP layer, handler imports service, never the reverse (#238).
 //
 // Everything registers on the DefaultRegisterer in init() (process-global,
 // like /metrics itself). Consumers must .Inc()/.Observe()/.Set(); nothing here
@@ -41,7 +41,7 @@ var (
 	// MibeeAgentLastReportTimestamp is the Unix time of an agent's last
 	// accepted report, keyed by agent_id. Set by the agent-report handler on
 	// every (authenticated) report, including empty and anti-entropy fast-path
-	// ones — the "is this agent alive" signal for the AgentReportStale alert
+	// ones, the "is this agent alive" signal for the AgentReportStale alert
 	// (#279).
 	MibeeAgentLastReportTimestamp = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -53,7 +53,7 @@ var (
 
 	// MibeeDBSizeBytes tracks the on-disk size of the SQLite files (main +
 	// heartbeat store), split into the DB file itself and its WAL sidecar.
-	// Refreshed by the cleanup service's maintenance pass each sweep (#280) —
+	// Refreshed by the cleanup service's maintenance pass each sweep (#280);
 	// the growth baseline for capacity planning and the db-growth alert.
 	MibeeDBSizeBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -75,7 +75,7 @@ var (
 	)
 
 	// MibeeHeartbeatChecksTotal counts heartbeat probe outcomes. Incremented
-	// by HeartbeatService.probeAndRecord per probe (#238 — previously
+	// by HeartbeatService.probeAndRecord per probe (#238, previously
 	// registered but never written, leaving the HeartbeatFailures alert dead).
 	MibeeHeartbeatChecksTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -134,7 +134,7 @@ var (
 	)
 
 	// MibeeSqliteBusyTotal counts SQLITE_BUSY failures intercepted by the
-	// dbopen.BusyRetry write wrapper (#267) — including retries that
+	// dbopen.BusyRetry write wrapper (#267), including retries that
 	// ultimately succeeded (a healthy system shows a low, occasional rate
 	// under scan+heartbeat+probe write overlap; a climbing counter means
 	// write contention outliving busy_timeout). path = the wrapped subsystem
@@ -149,7 +149,7 @@ var (
 
 	// MibeeFingerprintIdentified gauges the identification-tier breakdown of
 	// the device inventory (#282): source = "protocol" (SNMP/RTSP/ONVIF/mDNS
-	// evidence), "heuristic" (hostname/brand keyword — spoofable), or
+	// evidence), "heuristic" (hostname/brand keyword, spoofable), or
 	// "unidentified" (inferred as generic "other"). The coverage report the
 	// UI shows is computed from the same scan_attributes extraction.
 	MibeeFingerprintIdentified = prometheus.NewGaugeVec(
@@ -177,8 +177,8 @@ func init() {
 }
 
 // RefreshScannerTaskGauges recomputes mibee_scanner_tasks_total{status} from
-// the DB. Best-effort: errors are returned to the caller, who logs and moves
-// on — a stale gauge never fails a scan-task write.
+// the DB. Errors are returned to the caller, who logs and moves
+// on, a stale gauge never fails a scan-task write.
 func RefreshScannerTaskGauges(ctx context.Context, queries *db.Queries) error {
 	tasks, err := queries.ListScanTasks(ctx, db.ListScanTasksParams{Limit: 100000, Offset: 0})
 	if err != nil {

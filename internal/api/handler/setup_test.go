@@ -22,7 +22,7 @@ import (
 // password (auth.initial_admin_password unset). The login page polls the
 // public setup-status endpoint, login attempts return the distinct 409
 // setup_required code, POST /auth/setup creates the password (policy-checked,
-// one-shot), and the response carries a fresh ungated token + cookie so the
+// single-use), and the response carries a fresh ungated token + cookie so the
 // SPA enters the app directly.
 func TestAuth_FirstRunSetupFlow(t *testing.T) {
 	server, db := setupTestServer(t)
@@ -43,7 +43,7 @@ func TestAuth_FirstRunSetupFlow(t *testing.T) {
 	require.Equal(t, true, status["required"])
 
 	// Login against the password-less account: 409 with the machine-readable
-	// code the SPA switches on — NOT a generic 401.
+	// code the SPA switches on, NOT a generic 401.
 	loginResp, err := http.Post(server.URL+"/api/v1/auth/login", "application/json",
 		bytes.NewBufferString(`{"username":"admin","password":"whatever"}`))
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestAuth_FirstRunSetupFlow(t *testing.T) {
 	weakResp.Body.Close()
 	require.Equal(t, http.StatusBadRequest, weakResp.StatusCode)
 
-	// Complete setup — same response shape as login (token + user + cookie).
+	// Complete setup, same response shape as login (token + user + cookie).
 	setupResp, err := http.Post(server.URL+"/api/v1/auth/setup", "application/json",
 		bytes.NewBufferString(`{"new_password":"NewP@ssw0rd2"}`))
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestAuth_FirstRunSetupFlow(t *testing.T) {
 }
 
 // On a deployment whose admin already has a password, setup-status answers
-// false and the login form renders — the setup screen never appears.
+// false and the login form renders, the setup screen never appears.
 func TestAuth_SetupStatusFalseWhenPasswordExists(t *testing.T) {
 	server, db := setupTestServer(t)
 	insertTestAdmin(t, db)

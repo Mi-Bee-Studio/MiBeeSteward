@@ -84,7 +84,7 @@ WHERE NOT EXISTS(
 );
 
 -- name: MarkAllNotificationLogsRead :execrows
--- Idempotently mark all currently-unread notification logs as read for a
+-- Mark all currently-unread notification logs as read for a
 -- user (INSERT OR IGNORE skips any pair already present). Returns the number
 -- of rows inserted (i.e. newly-read logs).
 INSERT OR IGNORE INTO notification_read_states (user_id, notification_log_id)

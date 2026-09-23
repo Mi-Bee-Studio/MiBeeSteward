@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Mi Bee Studio. All rights reserved.
 
 // Package configdiff computes unified text diffs between device-configuration
-// snapshots — the "diff" half of the Oxidized/RANCID-style config-backup
+// snapshots, the "diff" half of the Oxidized/RANCID-style config-backup
 // feature (#137). It is a pure, dependency-light utility (backed by the already
 // vendored go-difflib) so the pull probe, storage, and change-detection layers
 // can all share one diff implementation.
@@ -28,7 +28,7 @@ const ContextLines = 3
 
 // Diff returns a unified diff between oldText and newText. The result is the
 // empty string when the two texts are identical (the common case on a
-// rescan that fetches an unchanged running-config — callers use this to decide
+// rescan that fetches an unchanged running-config, callers use this to decide
 // whether to persist a new version + emit a change event).
 //
 // oldLabel/newLabel label the `---`/`+++` headers (e.g. a version stamp or
@@ -72,6 +72,6 @@ func Changed(old, newText string) bool { return old != newText }
 
 // HasChange reports whether a diff produced by Diff/MustDiff contains any
 // change. Under this package's contract an empty string means "identical", so
-// HasChange is simply a non-empty check — but spelling it out makes the call
+// HasChange is simply a non-empty check, but spelling it out makes the call
 // site read correctly at the storage/change-detection boundary.
 func HasChange(diff string) bool { return diff != "" }

@@ -27,9 +27,9 @@ import (
 // agentSharedTables lists the tables both the center schema (db/schema.sql)
 // and the agent mini-schema (agentSchema) define. The agent reuses the
 // sqlc-generated queries built against the CENTER schema, so a column added
-// on one side but not the other silently breaks the agent at runtime — the
+// on one side but not the other silently breaks the agent at runtime, the
 // schema is applied with CREATE TABLE IF NOT EXISTS, which never touches an
-// existing table, so drift only surfaces as "no such column" on a live box
+// existing table, so drift only shows up as "no such column" on a live box
 // (that is exactly how #337 happened).
 var agentSharedTables = []string{
 	"networks", "vlans", "scan_tasks", "scan_task_runs",
@@ -54,7 +54,7 @@ func tableColumns(t *testing.T, conn *sql.DB, table string) []string {
 // TestAgentSchema_ParityWithCenterSchema pins the "shapes mirror db/schema.sql"
 // promise in agentSchema's doc comment: for every shared table, the agent's
 // column set must equal the center's. If this fails after a schema change,
-// update agentSchema and bump agentSchemaVersion in the same PR — do not
+// update agentSchema and bump agentSchemaVersion in the same PR, do not
 // weaken the assertion.
 func TestAgentSchema_ParityWithCenterSchema(t *testing.T) {
 	agentConn, err := openAgentDB(t.TempDir() + "/agent.db")
@@ -78,7 +78,7 @@ func TestAgentSchema_ParityWithCenterSchema(t *testing.T) {
 // TestOpenAgentDB_RunnerSchedulerQueriesCompile smoke-runs the sqlc queries
 // the agent's scheduler and runner actually execute every cycle against a
 // freshly-provisioned mini-DB. Parity above guards the shape; this guards the
-// wiring — a query whose SQL references a column the mini-DB lacks fails HERE
+// wiring, a query whose SQL references a column the mini-DB lacks fails HERE
 // instead of on a remote agent at 3am.
 func TestOpenAgentDB_RunnerSchedulerQueriesCompile(t *testing.T) {
 	conn, err := openAgentDB(t.TempDir() + "/agent.db")

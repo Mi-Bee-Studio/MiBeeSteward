@@ -34,7 +34,7 @@ func NewDashboardHandler(svc *service.DashboardService) *DashboardHandler {
 }
 
 // ListConfigs handles GET /api/v1/dashboard/configs. The response is an object
-// ({configs, total}), not a bare array — the dashboard page reads res.configs
+// ({configs, total}), not a bare array, the dashboard page reads res.configs
 // and a bare array made every custom widget invisible (#247).
 func (h *DashboardHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
 	configs, err := h.svc.ListConfigs(r.Context())
@@ -48,7 +48,7 @@ func (h *DashboardHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
 	}{Configs: configs, Total: len(configs)})
 }
 
-// Overview handles GET /api/v1/dashboard/overview — the aggregated payload that
+// Overview handles GET /api/v1/dashboard/overview, the aggregated payload that
 // powers the default dashboard (device totals/distributions, recent scan
 // activity, offline-device list). Computed server-side over the full dataset.
 func (h *DashboardHandler) Overview(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +172,7 @@ func (h *DashboardHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) 
 	Success(w, map[string]string{"message": "dashboard config deleted"})
 }
 
-// Query handles GET /api/v1/dashboard/query — proxies instant PromQL queries.
+// Query handles GET /api/v1/dashboard/query, proxies instant PromQL queries.
 func (h *DashboardHandler) Query(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -196,7 +196,7 @@ func (h *DashboardHandler) Query(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// QueryRange handles GET /api/v1/dashboard/query_range — proxies range PromQL queries.
+// QueryRange handles GET /api/v1/dashboard/query_range, proxies range PromQL queries.
 func (h *DashboardHandler) QueryRange(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	query := q.Get("query")
@@ -251,7 +251,7 @@ var builtinWidgetTemplates = map[string]string{
 // rejection. Rules:
 //   - data_source "prometheus"/"victoriametrics" (both proxy to the same
 //     upstream, victoriametrics is the historical alias the schema allows):
-//     chart types only (gauge/line/bar/pie) and a non-empty PromQL query — a
+//     chart types only (gauge/line/bar/pie) and a non-empty PromQL query, a
 //     widget with nothing to execute is dead UI.
 //   - data_source "builtin": query must be a whitelisted template key and the
 //     type must match the template's rendering type (list presets are list,

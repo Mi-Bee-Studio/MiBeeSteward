@@ -46,7 +46,7 @@ func TestAgentForNetwork(t *testing.T) {
 // behavior (#390 semantics): a successful enqueue leaves the run row
 // "running" (the agent's report backfills real stats); a repeat dispatch
 // supersedes the still-running row; a rejected enqueue (targets outside the
-// agent network's CIDR) records a FAILED run with the reason — the failure
+// agent network's CIDR) records a FAILED run with the reason, the failure
 // must be visible in run history, not just logs.
 func TestDispatchAgentScan_SuccessAndFailure(t *testing.T) {
 	conn, err0 := testutil.SetupTestDBFromSchema()
@@ -100,7 +100,7 @@ func TestDispatchAgentScan_SuccessAndFailure(t *testing.T) {
 // TestDispatchAgentScan_CredentialNameForwarded pins the #241 credential
 // forwarding: a task bound to a center SNMP credential dispatches with
 // credential_name in the scan payload (the agent resolves the NAME against its
-// own local vault — IDs are per-system). credential_id=0 and a stale ID both
+// own local vault, IDs are per-system). credential_id=0 and a stale ID both
 // omit the field so the agent keeps its community fallback.
 func TestDispatchAgentScan_CredentialNameForwarded(t *testing.T) {
 	conn, err0 := testutil.SetupTestDBFromSchema()
@@ -109,7 +109,7 @@ func TestDispatchAgentScan_CredentialNameForwarded(t *testing.T) {
 	_, err := conn.Exec(`INSERT INTO networks (id, name, cidr, agent_id) VALUES
 		(3, 'lan-62', '192.168.62.0/24', 'agent-62')`)
 	require.NoError(t, err)
-	// A center-vault row with ciphertext blobs (content irrelevant — only the
+	// A center-vault row with ciphertext blobs (content irrelevant, only the
 	// NAME is forwarded, and reading it needs no master key).
 	_, err = conn.Exec(`INSERT INTO snmp_credentials (id, name, security_level, username, auth_protocol, auth_passphrase_enc, priv_protocol, priv_passphrase_enc)
 		VALUES (11, 'switch-v3', 'authPriv', 'snmpadmin', 'SHA', 'enc-blob', 'AES', 'enc-blob')`)
@@ -124,7 +124,7 @@ func TestDispatchAgentScan_CredentialNameForwarded(t *testing.T) {
 	require.NoError(t, conn.QueryRow(`SELECT payload FROM agent_commands ORDER BY id DESC LIMIT 1`).Scan(&payload))
 	require.Contains(t, payload, `"credential_name":"switch-v3"`, "bound credential must be forwarded by name")
 
-	// Stale ID (row deleted): no credential_name in the payload — the agent
+	// Stale ID (row deleted): no credential_name in the payload, the agent
 	// scans with its global community rather than failing the dispatch.
 	dispatchAgentScan(ctx, conn, queries, svc, 0, "192.168.62.0/24", 300*1e9, "agent-62", 999)
 	var payload2 string

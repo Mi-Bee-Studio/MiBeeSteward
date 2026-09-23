@@ -31,7 +31,7 @@ import (
 // the result back.
 //
 // Pull model: the agent fetches, so no inbound connection from the center is
-// needed (fits agent-behind-NAT). The poll interval is deliberately longer than
+// needed (fits agent-behind-NAT). The poll interval is longer than
 // the report interval (commands are ad-hoc, not high-frequency).
 type CommandPoller struct {
 	centerURL string
@@ -48,7 +48,7 @@ type CommandPoller struct {
 	// networkCIDR is this agent's own configured network (cfg.Network.CIDR), used
 	// for the agent-side boundary check (issue #19 Layer 2-agent). When non-nil,
 	// a scan command whose targets fall outside it is rejected before execution
-	// (complete = failed) — a friendly early failure that saves a wasted cross-
+	// (complete = failed), a friendly early failure that saves a wasted cross-
 	// subnet scan and the bogus host data it would produce. nil (empty/invalid
 	// config) → degrade-open: the center's Layer 2 check is the authoritative
 	// backstop, so the agent skipping its own check doesn't weaken the system.
@@ -63,7 +63,7 @@ type CommandPoller struct {
 	// remoteOpsEnabled gates the ops command family (restart / config-reload /
 	// logs-tail, #278). Off by default: the agent must explicitly opt in via
 	// center.remote_ops_enabled in its config. Defense in depth on top of the
-	// CENTER-side switch (agent_fleet.remote_ops_enabled) — either side alone
+	// CENTER-side switch (agent_fleet.remote_ops_enabled), either side alone
 	// can keep ops commands from executing.
 	remoteOpsEnabled bool
 	// logRing supplies the last N log lines for "logs-tail" (nil → the command
@@ -115,7 +115,7 @@ func NewCommandPoller(centerURL, authToken string, pollEvery time.Duration, netw
 
 // EnableRemoteOps opts the agent into executing ops commands (#278). logRing
 // supplies recent log lines (logs-tail); restart re-execs the process
-// (restart / config-reload — a reload is a restart in practice: config is
+// (restart / config-reload, a reload is a restart in practice: config is
 // consumed at construction time, so re-exec is the only faithful reload).
 func (p *CommandPoller) EnableRemoteOps(logRing func() []string, restart func(reason string)) *CommandPoller {
 	p.remoteOpsEnabled = true
@@ -169,7 +169,7 @@ type pendingCommand struct {
 
 // ScanCommand is the JSON payload of a "scan" command. CredentialName is the
 // #241 agent-side SNMP credential hook: the center resolves a scan task's
-// credential_id to its NAME (stable across systems — center and agent vault
+// credential_id to its NAME (stable across systems, center and agent vault
 // IDs are independent) and the agent looks the name up in its OWN local
 // snmp_credentials store. Empty name = the engine's global community path
 // (pre-#241 behavior). The credential material itself never crosses the wire.
@@ -180,7 +180,7 @@ type ScanCommand struct {
 	CredentialName string `json:"credential_name,omitempty"`
 }
 
-// PollOnceForTest runs one poll synchronously (test hook — the real loop
+// PollOnceForTest runs one poll synchronously (test hook, the real loop
 // polls on its own goroutine).
 func (p *CommandPoller) PollOnceForTest(ctx context.Context) { p.pollOnce(ctx) }
 
@@ -249,7 +249,7 @@ func (p *CommandPoller) execute(ctx context.Context, cmd pendingCommand) {
 		}
 		// Agent-side boundary check (issue #19 Layer 2-agent): refuse to scan
 		// targets outside this agent's own network. This is the friendly mirror
-		// of the center's Layer 1 (dispatch) + Layer 2 (ingestion) checks — it
+		// of the center's Layer 1 (dispatch) + Layer 2 (ingestion) checks, it
 		// fails the command HERE rather than burning a cross-subnet scan whose
 		// results the center would just drop. Degraded to a no-op (scan proceeds)
 		// when no CIDR is configured, since the center's check still authorizes.
@@ -280,7 +280,7 @@ func (p *CommandPoller) execute(ctx context.Context, cmd pendingCommand) {
 		// scan fans out across hosts concurrently so we allow generous headroom
 		// beyond it. Previously this used context.Background() (no deadline),
 		// which meant one hung TCP read on a misbehaving camera left the command
-		// in "acknowledged" forever — the device fleet then went offline as
+		// in "acknowledged" forever, the device fleet then went offline as
 		// leases expired with no fresh reports.
 		deadline := 15 * time.Minute
 		if sp.Timeout > 0 {

@@ -25,7 +25,7 @@ import (
 func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	// scanResult carries the runScan callback's captured args back to the test
 	// goroutine via a channel. This is required (not a bare variable + atomic
-	// flag) because runScan executes on the poller's internal goroutine — a
+	// flag) because runScan executes on the poller's internal goroutine, a
 	// bare gotTargets/gotTimeout write read here without synchronization is a
 	// data race the -race detector flags (CI caught it; local timing hid it).
 	type scanResult struct {
@@ -86,12 +86,12 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 
 // TestCommandPoller_BoundaryCheck_Layer2 covers the agent-side CIDR gate
 // (issue #19 Layer 2-agent): a scan command whose targets fall outside this
-// agent's own network is rejected before execution — runScan is never called
+// agent's own network is rejected before execution, runScan is never called
 // and the command completes as "failed".
 func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 	t.Run("out-of-network command rejected, runScan not called", func(t *testing.T) {
 		// completeStatus/completeResult cross goroutines (handler writes, test
-		// reads) — the stub re-serves the same command on every 10ms poll, so a
+		// reads), the stub re-serves the same command on every 10ms poll, so a
 		// later complete POST can still be writing while the test reads after
 		// observing `executed`. Same race class the first test in this file
 		// documents; guard with a mutex (atomic on `executed` alone is not
@@ -152,7 +152,7 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 	})
 
 	t.Run("mixed targets rejected as a whole", func(t *testing.T) {
-		// Same handler/test cross-goroutine capture as the subtest above —
+		// Same handler/test cross-goroutine capture as the subtest above;
 		// mutex-guarded for the same reason (re-served command keeps writing).
 		var mu sync.Mutex
 		var executed int32
@@ -205,7 +205,7 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 	})
 
 	t.Run("no cidr configured → degrade open (scan proceeds)", func(t *testing.T) {
-		// An agent without a configured cidr must not lock itself out — the
+		// An agent without a configured cidr must not lock itself out, the
 		// center's Layer 2 check authorizes. Empty cidr → check disabled.
 		var executed int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

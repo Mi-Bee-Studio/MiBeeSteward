@@ -19,7 +19,7 @@ import (
 
 // Synthetic probing (拨测) request/response types. A probe target is an
 // EXPLICIT user-configured endpoint (typically external/internet) probed on a
-// fixed interval — the blackbox_exporter model (module × target), unlike the
+// fixed interval, the blackbox_exporter model (module × target), unlike the
 // discovery-driven scanner or the device-bound heartbeat.
 
 // ValidProbeModules is the whitelist of probe modules. Mirrors the
@@ -33,7 +33,7 @@ var ValidProbeModules = map[string]bool{
 
 // Probe target bounds. Mirrored by the probe_targets CHECK constraints; kept
 // here too so the API rejects invalid values before touching the DB (a CHECK
-// violation would surface as an opaque 500).
+// violation would show up as an opaque 500).
 const (
 	ProbeIntervalMinSeconds = 10
 	ProbeIntervalMaxSeconds = 86400
@@ -42,7 +42,7 @@ const (
 )
 
 // Probe vantage values (#277). The vantage is the EXECUTION plan for a target:
-// where its probes run. It is deliberately not part of target identity — one
+// where its probes run. It is not part of target identity, one
 // target row, one name, results split per vantage.
 const (
 	// ProbeVantageCenter: the center itself executes (default, current behavior).
@@ -146,7 +146,7 @@ type ProbeResultListResponse struct {
 
 // ValidateProbeTargetRequest validates a create request. The per-module target
 // grammar is the contract the executor relies on:
-//   - http: absolute http/https URL (host may be a DNS name — external probing
+//   - http: absolute http/https URL (host may be a DNS name, external probing
 //     is the whole point, so no RFC1918 filtering)
 //   - tls: host:port (port required; e.g. "github.com:443", "mail.example.com:993")
 //   - tcp: host:port

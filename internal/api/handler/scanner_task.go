@@ -107,7 +107,7 @@ func (h *ScannerTaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		// Field-validation failures (bad targets / pipeline config / cron)
-		// come back wrapped with their own message — surface them as 400,
+		// come back wrapped with their own message, return them as 400,
 		// same as the create path, not as an opaque 500.
 		var verr *taskservice.ValidationError
 		if errors.As(err, &verr) {
@@ -162,7 +162,7 @@ func (h *ScannerTaskHandler) TriggerTask(w http.ResponseWriter, r *http.Request)
 			Error(w, http.StatusServiceUnavailable, "scanner scheduler is not available")
 			return
 		}
-		// Surface the real cause (e.g. "no job registered for task N") instead
+		// Return the real cause (e.g. "no job registered for task N") instead
 		// of a generic 500 string so operators can diagnose engine wiring failures.
 		Error(w, http.StatusInternalServerError, err.Error())
 		return

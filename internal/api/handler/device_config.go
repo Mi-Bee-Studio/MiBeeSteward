@@ -25,7 +25,7 @@ import (
 )
 
 // DeviceConfigHandler serves the read side of the versioned running-config
-// store (#137) — the Oxidized/RANCID-style config-history view on the device
+// store (#137), the Oxidized/RANCID-style config-history view on the device
 // detail page. It is read-only: the write path is the background
 // configbackup.Service (scheduled SSH pull → diff → device_configs row +
 // device_config_changed event). Per the handler/service charter, a read-only
@@ -83,16 +83,16 @@ type deviceConfigDiffResponse struct {
 	Diff string                 `json:"diff"` // unified diff; "" when the two versions are identical
 }
 
-// List handles GET /api/v1/devices/{id}/configs — the version history for the
+// List handles GET /api/v1/devices/{id}/configs, the version history for the
 // device-detail "Config History" tab. Newest first; metadata only (config_text
 // omitted). Returns 200 with an empty items array (not 404) for a device that
-// has no captures yet — the frontend renders an empty state.
+// has no captures yet, the frontend renders an empty state.
 func (h *DeviceConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 	deviceID, ok := parseDeviceConfigDeviceID(w, r)
 	if !ok {
 		return
 	}
-	// 404 for a nonexistent device (parity with GET /devices/{id}, #257) —
+	// 404 for a nonexistent device (parity with GET /devices/{id}, #257);
 	// previously this returned 200 + an empty list, hiding typos from API
 	// consumers.
 	if _, err := h.queries.GetDevice(r.Context(), deviceID); err != nil {
@@ -133,7 +133,7 @@ func (h *DeviceConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 	SuccessList(w, "items", items, total, limit, offset)
 }
 
-// Get handles GET /api/v1/devices/{id}/configs/{configId} — the full text of one
+// Get handles GET /api/v1/devices/{id}/configs/{configId}, the full text of one
 // version (the detail / "view config" view). A config not belonging to the path
 // device returns 404 (IDOR guard: a configId from another device is treated as
 // not found, never leaked).
@@ -166,7 +166,7 @@ func (h *DeviceConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Diff handles GET /api/v1/devices/{id}/configs/diff?a={id}&b={id} — a unified
+// Diff handles GET /api/v1/devices/{id}/configs/diff?a={id}&b={id}, a unified
 // diff between any two captured versions of the same device. Both versions must
 // belong to the path device (else 404). a==b yields an empty diff. The diff is
 // computed on demand from the stored config_text (it is not the same as either
@@ -215,7 +215,7 @@ func (h *DeviceConfigHandler) Diff(w http.ResponseWriter, r *http.Request) {
 }
 
 // loadOwnedConfig fetches one config version and enforces that it belongs to
-// deviceID. A missing row OR a row owned by a different device both surface as
+// deviceID. A missing row OR a row owned by a different device both show up as
 // sql.ErrNoRows so callers map them uniformly to 404 (no cross-device leak).
 func (h *DeviceConfigHandler) loadOwnedConfig(ctx context.Context, deviceID, configID int64) (db.DeviceConfig, error) {
 	cfg, err := h.queries.GetDeviceConfig(ctx, configID)

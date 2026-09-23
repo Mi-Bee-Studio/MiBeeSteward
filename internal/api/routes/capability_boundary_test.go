@@ -21,7 +21,7 @@ import (
 // scanner_rbac_test.go; this file covers the rest of the surface.
 //
 // "Pass" = the request cleared the auth gate and reached the handler (status is
-// anything OTHER than 401/403 — e.g. 200/400/404 from the handler on a
+// anything OTHER than 401/403, e.g. 200/400/404 from the handler on a
 // near-empty test DB). "Deny" = exactly 403 (authenticated but lacks the
 // capability) or 401 (no token). This decouples the boundary assertion from
 // handler/DB specifics while still catching a mis-wired capability.
@@ -85,7 +85,7 @@ func TestRoutes_CapabilityBoundary(t *testing.T) {
 		// of the shared inventory read surface on its CapXxxRead capability too
 		// (previously RequireAuth). All authenticated roles hold the read caps, so
 		// every role passes; anon → 401. A future role lacking a read cap would be
-		// denied — fail-closed by capability. ---
+		// denied, fail-closed by capability. ---
 		{"device-read", http.MethodGet, "/api/v1/devices", levelRead},
 		{"network-read", http.MethodGet, "/api/v1/networks", levelRead},
 		{"config-read", http.MethodGet, "/api/v1/devices/1/configs", levelRead},
@@ -153,8 +153,8 @@ func TestRoutes_CapabilityBoundary(t *testing.T) {
 }
 
 // TestRoutes_SelfServiceRoutesAreRequireAuth guards the routes that are
-// INTENTIONALLY left on RequireAuth (not capability-gated): self-service /
-// per-user surfaces — own profile, own per-user notification log bell. Any
+// Kept on RequireAuth (not capability-gated): self-service /
+// per-user surfaces, own profile, own per-user notification log bell. Any
 // authenticated user reaches these regardless of their role's capability set,
 // because they operate on the caller's own identity/state. This catches an
 // accidental mis-remap that would, say, gate a user's own profile behind an

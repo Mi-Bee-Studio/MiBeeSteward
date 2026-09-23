@@ -33,7 +33,7 @@ var openapiExtraRoutes = map[string]bool{
 }
 
 // openapiMethods is the method set of the documented contract. chi's metrics
-// Mount also registers CONNECT/HEAD/OPTIONS/TRACE on /metrics — those are
+// Mount also registers CONNECT/HEAD/OPTIONS/TRACE on /metrics, those are
 // transport-level, not API surface.
 var openapiMethods = map[string]bool{
 	http.MethodGet: true, http.MethodPost: true, http.MethodPut: true,
@@ -42,7 +42,7 @@ var openapiMethods = map[string]bool{
 
 // TestOpenAPIRoutesParity is the #274 contract backstop: every route the real
 // router serves must be declared in docs/openapi.yaml (and every declared
-// path must exist in the router). Path parity only — request/response bodies
+// path must exist in the router). Path parity only, request/response bodies
 // are reviewed by hand; this test catches the "route added, spec forgotten"
 // drift class, which is the one that silently breaks generated clients.
 //

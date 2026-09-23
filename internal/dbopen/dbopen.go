@@ -12,7 +12,7 @@
 // via the DSN.
 //
 // Exec'ing "PRAGMA busy_timeout=..." on the *sql.DB handle only reaches ONE
-// pooled connection — the other pool connections open with SQLite defaults
+// pooled connection, the other pool connections open with SQLite defaults
 // (busy_timeout=0) and fail instantly with SQLITE_BUSY under write contention
 // (#252). modernc.org/sqlite applies DSN "_pragma" parameters to every new
 // connection, which is the only correct way to set per-connection pragmas on
@@ -31,9 +31,9 @@ import (
 
 // Open opens the SQLite file at path with every pragma in pragmas ("name=value",
 // no "PRAGMA" keyword) applied to each pool connection as it is created. The
-// returned handle is pinged once so connection-level failures surface here
+// returned handle is pinged once so connection-level failures appear here
 // instead of at first use. Pool sizing (SetMaxOpenConns etc.) is the caller's
-// job — pragmas from the DSN hold regardless of pool size.
+// job, pragmas from the DSN hold regardless of pool size.
 func Open(path string, pragmas ...string) (*sql.DB, error) {
 	dsn, err := DSN(path, pragmas...)
 	if err != nil {

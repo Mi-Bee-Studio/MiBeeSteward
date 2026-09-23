@@ -41,10 +41,10 @@ func quietLogs(t *testing.T) {
 // TestServe_FullLifecycleInProcess boots the REAL server lifecycle in-process
 // (serve → migrations → admin seed → NewRouter → HTTP listen), polls the
 // public /health endpoint until it answers, then closes the stop channel and
-// asserts a clean graceful shutdown — the exact sequence main() drives in
+// asserts a clean graceful shutdown, the exact sequence main() drives in
 // production, minus signals. This is the deployment-shape smoke test: wiring
 // bugs (a router constructor change, a migration crash, a seed regression)
-// surface here even when every unit test still passes.
+// show up here even when every unit test still passes.
 func TestServe_FullLifecycleInProcess(t *testing.T) {
 	quietLogs(t)
 
@@ -148,8 +148,8 @@ scanner:
 }
 
 // TestServeHTTP_BindFailureReturnsError pins the serveHTTP error contract: a
-// port that cannot be bound (someone else holds it) surfaces as a returned
-// error — NOT an os.Exit from a goroutine — so the process lifecycle stays
+// port that cannot be bound (someone else holds it) shows up as a returned
+// error, NOT an os.Exit from a goroutine, so the process lifecycle stays
 // under main's control. The retry window is shrunk via the test seam so the
 // EADDRINUSE loop (where the platform maps the errno as expected) terminates
 // in milliseconds instead of 30s.

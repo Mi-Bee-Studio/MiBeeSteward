@@ -40,7 +40,7 @@ func CSRF(next http.Handler) http.Handler {
 		if origin == "" {
 			referer := r.Header.Get("Referer")
 			if referer == "" {
-				// Neither Origin nor Referer — likely non-browser client
+				// Neither Origin nor Referer, likely non-browser client
 				// Skip CSRF token check for non-browser clients (no cookie set yet)
 				next.ServeHTTP(w, r)
 				return
@@ -72,7 +72,7 @@ func CSRF(next http.Handler) http.Handler {
 		headerToken := r.Header.Get("X-CSRF-Token")
 
 		if cookieErr != nil && headerToken == "" {
-			// No cookie and no header — non-browser client, allow through
+			// No cookie and no header, non-browser client, allow through
 			next.ServeHTTP(w, r)
 			return
 		}

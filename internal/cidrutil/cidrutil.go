@@ -27,7 +27,7 @@ import (
 
 // ErrEmptyCIDR is returned by ParseNetwork when the input is blank. Callers use
 // it to distinguish "no CIDR configured (skip validation)" from "CIDR invalid
-// (reject)" — the two warrant different handling in the command/report paths.
+// (reject)", the two warrant different handling in the command/report paths.
 var ErrEmptyCIDR = errors.New("cidrutil: cidr is empty")
 
 // Sentinel errors for target parsing/expansion. The engine aliases these
@@ -104,10 +104,10 @@ func checkReserved(part string, first, last net.IP) error {
 }
 
 // ValidateTargets rejects a target spec (CIDR / single IP / range, single or
-// comma-separated — the same syntax the scan engine accepts) whose parts fall
+// comma-separated, the same syntax the scan engine accepts) whose parts fall
 // wholly or partly into reserved address space. It inspects each part's
 // endpoints only, so validating a huge CIDR never expands it. Private
-// (RFC1918) space is NOT rejected — it is the product's bread and butter.
+// (RFC1918) space is NOT rejected, it is the product's bread and butter.
 // All scan entry points (task create/update, synchronous scan, agent command
 // enqueue) call this before accepting targets (#317).
 func ValidateTargets(targets string) error {
@@ -171,7 +171,7 @@ func ParseNetwork(cidr string) (*net.IPNet, error) {
 		return nil, ErrEmptyCIDR
 	}
 	// net.ParseCIDR requires the "/prefix" form. A bare IP like "192.168.63.1"
-	// is a valid single-host network — accept it as /32 (v4) / /128 (v6) so the
+	// is a valid single-host network, accept it as /32 (v4) / /128 (v6) so the
 	// helpers work uniformly for both CIDR and single-IP network definitions.
 	if !strings.Contains(cidr, "/") {
 		ip := net.ParseIP(cidr)
@@ -192,7 +192,7 @@ func ParseNetwork(cidr string) (*net.IPNet, error) {
 }
 
 // ContainsIP reports whether ipStr falls inside network. A nil/empty network or
-// an unparseable ipStr returns false — never panics. Callers that need to
+// an unparseable ipStr returns false, never panics. Callers that need to
 // distinguish "no network configured" from "ip out of range" should check the
 // network via ParseNetwork first (see MustContain / the report-handler usage).
 func ContainsIP(network *net.IPNet, ipStr string) bool {
@@ -207,7 +207,7 @@ func ContainsIP(network *net.IPNet, ipStr string) bool {
 }
 
 // PartitionTargets expands a target spec (CIDR / single IP / range, single or
-// comma-separated — the same syntax the scan engine accepts) and partitions the
+// comma-separated, the same syntax the scan engine accepts) and partitions the
 // resulting IPs into (in, out): those inside vs outside the given network. This
 // is what the agent-command and agent-report paths use to reject or quarantine
 // out-of-network targets.
@@ -215,7 +215,7 @@ func ContainsIP(network *net.IPNet, ipStr string) bool {
 // Returns an error if the target spec itself is unparseable or points at
 // reserved address space (mirrors the engine's parseScanTargets semantics,
 // which now delegates to the same expansion). A nil network yields
-// (nil, nil, nil) — callers that want strict mode should guard with
+// (nil, nil, nil), callers that want strict mode should guard with
 // ParseNetwork first.
 func PartitionTargets(targets string, network *net.IPNet) (in, out []string, err error) {
 	if network == nil {
@@ -305,7 +305,7 @@ func expandSingle(t string, allowReserved bool) ([]string, error) {
 
 // enumerateCIDR lists the HOST addresses of a block. For IPv4 prefixes up to
 // /30 the network (first) and directed-broadcast (last) addresses are dropped:
-// they belong to the medium, not to any host — nmap semantics. This stops
+// they belong to the medium, not to any host, nmap semantics. This stops
 // subnet scans from inventing .0/.255 "devices" (#254). /31 point-to-point
 // links use both addresses (RFC 3021) and /32 is a single host, so neither is
 // trimmed. IPv6 has no broadcast concept.
@@ -329,7 +329,7 @@ func enumerateCIDR(ipNet *net.IPNet) []string {
 
 // v4ReservedBounds reports whether an IPv4 network's expansion should drop its
 // network (first) and directed-broadcast (last) addresses: wider than /31 they
-// belong to the medium, not to any host — the broadcast IP answers pings via
+// belong to the medium, not to any host, the broadcast IP answers pings via
 // every host's reply and gets recorded as a phantom device (#254). /31
 // (RFC 3021 point-to-point), /32, and IPv6 exclude nothing. This is the single
 // canonical implementation; the engine's target parser delegates here.

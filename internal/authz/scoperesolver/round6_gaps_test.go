@@ -33,7 +33,7 @@ func TestResolver_ModeAndInvalidateAll(t *testing.T) {
 	require.Equal(t, domain.ScopeModeOpen, nilR.Mode())
 	require.NotPanics(t, nilR.InvalidateAll)
 
-	// InvalidateAll is callable and idempotent on a live resolver.
+	// InvalidateAll is callable repeatedly on a live resolver.
 	r.InvalidateAll()
 	r.InvalidateAll()
 }

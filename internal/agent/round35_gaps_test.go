@@ -22,7 +22,7 @@ import (
 
 // TestCommandPoller_ConstructorDefaults pins the constructor's defaulting:
 // a nil logger, a non-positive poll interval, and an invalid network CIDR
-// (boundary check disabled with a warning — the poller still runs).
+// (boundary check disabled with a warning, the poller still runs).
 func TestCommandPoller_ConstructorDefaults(t *testing.T) {
 	run := func(context.Context, ScanCommand) (string, error) { return "", nil }
 	p := NewCommandPoller("http://127.0.0.1:1", "tok", 0, "not-a-cidr", run, nil)
@@ -31,7 +31,7 @@ func TestCommandPoller_ConstructorDefaults(t *testing.T) {
 }
 
 // TestCommandPoller_FetchAndAckFailureArms drives the transport failure arms
-// through pollOnce against stub centers: a 500 on fetch surfaces as an error,
+// through pollOnce against stub centers: a 500 on fetch shows up as an error,
 // and a failing ack on an otherwise valid command logs + continues.
 func TestCommandPoller_FetchAndAckFailureArms(t *testing.T) {
 	ctx := context.Background()
@@ -47,7 +47,7 @@ func TestCommandPoller_FetchAndAckFailureArms(t *testing.T) {
 	require.NotPanics(t, func() { p.pollOnce(ctx) })
 
 	// Center that serves the command but 500s the ack: the command executes
-	// anyway (best-effort) and completes; the ack failure is logged.
+	// anyway (failure logged) and completes; the ack failure is logged.
 	var mu sync.Mutex
 	served := false
 	ackFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

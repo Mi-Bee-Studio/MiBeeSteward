@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-// testKey is a fixed 32-byte key for deterministic tests. It is NOT secret —
+// testKey is a fixed 32-byte key for deterministic tests. It is NOT secret;
 // it never leaves the test binary.
 var testKey = []byte("01234567890123456789012345678901") // exactly 32 ASCII bytes
 
@@ -100,7 +100,7 @@ func TestDecrypt_TamperedBlob_Fails(t *testing.T) {
 	c, _ := NewCipher(testKey)
 	blob, _ := c.Encrypt("secret")
 
-	// Flip the last char of the base64 blob — any authenticated change must
+	// Flip the last char of the base64 blob, any authenticated change must
 	// break the GCM tag.
 	tampered := blob[:len(blob)-2] + "XX"
 	// Ensure the tampered string is still valid-length base64-ish; if our

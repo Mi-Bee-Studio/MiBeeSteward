@@ -837,7 +837,7 @@ type ChangeLogEntry struct {
 // ChangeLogEntryChangeType defines model for ChangeLogEntry.ChangeType.
 type ChangeLogEntryChangeType string
 
-// DashboardConfig Saved dashboard widget card (db.DashboardConfig — id is an integer)
+// DashboardConfig Saved dashboard widget card (db.DashboardConfig, id is an integer)
 type DashboardConfig struct {
 	CreatedAt  time.Time                 `json:"created_at"`
 	DataSource DashboardConfigDataSource `json:"data_source"`
@@ -905,7 +905,7 @@ type Device struct {
 	PurchaseDate     string `json:"purchase_date"`
 	Purpose          string `json:"purpose"`
 
-	// ScanAttributes Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively — treat every field as optional. Engine-owned: user edits go to user_attributes.
+	// ScanAttributes Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively, treat every field as optional. Engine-owned: user edits go to user_attributes.
 	ScanAttributes ScanAttributes `json:"scan_attributes"`
 
 	// ScanSource scanner_v2 | manual | passive:*
@@ -1041,7 +1041,7 @@ type DeviceSystemList struct {
 	Total *int64 `json:"total,omitempty"`
 }
 
-// DiscoveryStatus Passive-discovery runtime observability. NOTE: config/stats inner keys are Go-default PascalCase (the structs carry no json tags) and Interval is time.Duration — an integer in NANOSECONDS.
+// DiscoveryStatus Passive-discovery runtime observability. NOTE: config/stats inner keys are Go-default PascalCase (the structs carry no json tags) and Interval is time.Duration, an integer in NANOSECONDS.
 type DiscoveryStatus struct {
 	Config struct {
 		// Interval ARP-source poll cadence
@@ -1183,7 +1183,7 @@ type NeighborList struct {
 	Total     *int              `json:"total,omitempty"`
 }
 
-// Network Logical network row (db.Network marshaled directly — pointer columns are present-but-null)
+// Network Logical network row (db.Network marshaled directly, pointer columns are present-but-null)
 type Network struct {
 	// AgentId Non-empty = managed by that distributed agent
 	AgentId *string `json:"agent_id"`
@@ -1421,7 +1421,7 @@ type PrometheusInfo struct {
 	Url             *string            `json:"url,omitempty"`
 }
 
-// SNMPCredential Masked projection — passphrases are NEVER returned (not even ciphertext)
+// SNMPCredential Masked projection, passphrases are NEVER returned (not even ciphertext)
 type SNMPCredential struct {
 	AuthProtocol  *string                     `json:"auth_protocol,omitempty"`
 	Community     *string                     `json:"community,omitempty"`
@@ -1484,7 +1484,7 @@ type SSHCredentialList struct {
 	Total *int64 `json:"total,omitempty"`
 }
 
-// ScanAttributes Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively — treat every field as optional. Engine-owned: user edits go to user_attributes.
+// ScanAttributes Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively, treat every field as optional. Engine-owned: user edits go to user_attributes.
 type ScanAttributes struct {
 	CpuCount         *int            `json:"cpu_count,omitempty"`
 	CpuModel         *string         `json:"cpu_model,omitempty"`
@@ -1508,7 +1508,7 @@ type ScanAttributes struct {
 	// Mac normalized lowercase aa:bb:cc:..
 	Mac *string `json:"mac,omitempty"`
 
-	// MacIsLocallyAdministered U/L bit set — neutral observability flag
+	// MacIsLocallyAdministered U/L bit set
 	MacIsLocallyAdministered *bool            `json:"mac_is_locally_administered,omitempty"`
 	MacIsMulticast           *bool            `json:"mac_is_multicast,omitempty"`
 	MemoryTotalBytes         *int64           `json:"memory_total_bytes,omitempty"`
@@ -1519,7 +1519,7 @@ type ScanAttributes struct {
 	// OuiPrefix IEEE block via longest-prefix (6/7/9 hex)
 	OuiPrefix *string `json:"oui_prefix,omitempty"`
 
-	// OuiVendor NIC silicon vendor — distinct from self-declared vendor
+	// OuiVendor NIC silicon vendor
 	OuiVendor  *string         `json:"oui_vendor,omitempty"`
 	Prometheus *PrometheusInfo `json:"prometheus,omitempty"`
 	ScanSource *string         `json:"scan_source,omitempty"`
@@ -1636,7 +1636,7 @@ type ServiceEntry struct {
 	Version  *string `json:"version,omitempty"`
 }
 
-// TLSPortCerts One TLS-speaking port — handshake metadata + cert chain
+// TLSPortCerts One TLS-speaking port, handshake metadata + cert chain
 type TLSPortCerts struct {
 	Chain       []CertificateInfo `json:"chain"`
 	CipherSuite string            `json:"cipher_suite"`
@@ -1680,7 +1680,7 @@ type TopologyNode struct {
 	Brand string `json:"brand"`
 	Id    int64  `json:"id"`
 
-	// InferredType Evidence-derived — richer than type
+	// InferredType Evidence-derived
 	InferredType string `json:"inferred_type"`
 	IpAddress    string `json:"ip_address"`
 	MacAddress   string `json:"mac_address"`
@@ -2566,7 +2566,7 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 
-	// GetAgentsCommands [agent] Poll pending commands — BARE ARRAY (fleet-internal contract; see api.md)
+	// GetAgentsCommands [agent] Poll pending commands, BARE ARRAY (fleet-internal contract; see api.md)
 	//
 	// Corresponds with GET /agents/commands (the `GetAgentsCommands` operationId).
 	GetAgentsCommands(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3072,7 +3072,7 @@ type ClientInterface interface {
 	// Corresponds with POST /notification/channels/{id}/test (the `PostNotificationChannelsIdTest` operationId).
 	PostNotificationChannelsIdTest(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetNotificationLogs Caller's notification log (total = UNREAD count — the badge source)
+	// GetNotificationLogs Caller's notification log (total = UNREAD count, the badge source)
 	//
 	// Corresponds with GET /notification/logs (the `GetNotificationLogs` operationId).
 	GetNotificationLogs(ctx context.Context, params *GetNotificationLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3187,7 +3187,7 @@ type ClientInterface interface {
 	// Corresponds with GET /scanner/runs/{id} (the `GetScannerRunsId` operationId).
 	GetScannerRunsId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostScannerScan Synchronous scan (max 1024 IPs — larger ranges must use tasks)
+	// PostScannerScan Synchronous scan (max 1024 IPs, larger ranges must use tasks)
 	//
 	// Corresponds with POST /scanner/scan (the `PostScannerScan` operationId).
 	PostScannerScan(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3252,7 +3252,7 @@ type ClientInterface interface {
 	// Corresponds with PUT /settings/auth (the `PutSettingsAuth` operationId).
 	PutSettingsAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetSnmpCredentials SNMP credentials (masked — passphrases never echoed)
+	// GetSnmpCredentials SNMP credentials (masked, passphrases never echoed)
 	//
 	// Corresponds with GET /snmp-credentials (the `GetSnmpCredentials` operationId).
 	GetSnmpCredentials(ctx context.Context, params *GetSnmpCredentialsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3333,7 +3333,7 @@ type ClientInterface interface {
 	PostUsersIdResetPassword(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-// GetAgentsCommands [agent] Poll pending commands — BARE ARRAY (fleet-internal contract; see api.md)
+// GetAgentsCommands [agent] Poll pending commands, BARE ARRAY (fleet-internal contract; see api.md)
 //
 // Corresponds with GET /agents/commands (the `GetAgentsCommands` operationId).
 func (c *Client) GetAgentsCommands(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4839,7 +4839,7 @@ func (c *Client) PostNotificationChannelsIdTest(ctx context.Context, id Id, reqE
 	return c.Client.Do(req)
 }
 
-// GetNotificationLogs Caller's notification log (total = UNREAD count — the badge source)
+// GetNotificationLogs Caller's notification log (total = UNREAD count, the badge source)
 //
 // Corresponds with GET /notification/logs (the `GetNotificationLogs` operationId).
 func (c *Client) GetNotificationLogs(ctx context.Context, params *GetNotificationLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5184,7 +5184,7 @@ func (c *Client) GetScannerRunsId(ctx context.Context, id Id, reqEditors ...Requ
 	return c.Client.Do(req)
 }
 
-// PostScannerScan Synchronous scan (max 1024 IPs — larger ranges must use tasks)
+// PostScannerScan Synchronous scan (max 1024 IPs, larger ranges must use tasks)
 //
 // Corresponds with POST /scanner/scan (the `PostScannerScan` operationId).
 func (c *Client) PostScannerScan(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5379,7 +5379,7 @@ func (c *Client) PutSettingsAuth(ctx context.Context, reqEditors ...RequestEdito
 	return c.Client.Do(req)
 }
 
-// GetSnmpCredentials SNMP credentials (masked — passphrases never echoed)
+// GetSnmpCredentials SNMP credentials (masked, passphrases never echoed)
 //
 // Corresponds with GET /snmp-credentials (the `GetSnmpCredentials` operationId).
 func (c *Client) GetSnmpCredentials(ctx context.Context, params *GetSnmpCredentialsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -11696,7 +11696,7 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
-	// GetAgentsCommandsWithResponse [agent] Poll pending commands — BARE ARRAY (fleet-internal contract; see api.md)
+	// GetAgentsCommandsWithResponse [agent] Poll pending commands, BARE ARRAY (fleet-internal contract; see api.md)
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -12396,7 +12396,7 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /notification/channels/{id}/test (the `PostNotificationChannelsIdTest` operationId).
 	PostNotificationChannelsIdTestWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PostNotificationChannelsIdTestResponse, error)
 
-	// GetNotificationLogsWithResponse Caller's notification log (total = UNREAD count — the badge source)
+	// GetNotificationLogsWithResponse Caller's notification log (total = UNREAD count, the badge source)
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -12557,7 +12557,7 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /scanner/runs/{id} (the `GetScannerRunsId` operationId).
 	GetScannerRunsIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetScannerRunsIdResponse, error)
 
-	// PostScannerScanWithResponse Synchronous scan (max 1024 IPs — larger ranges must use tasks)
+	// PostScannerScanWithResponse Synchronous scan (max 1024 IPs, larger ranges must use tasks)
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -12648,7 +12648,7 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /settings/auth (the `PutSettingsAuth` operationId).
 	PutSettingsAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PutSettingsAuthResponse, error)
 
-	// GetSnmpCredentialsWithResponse SNMP credentials (masked — passphrases never echoed)
+	// GetSnmpCredentialsWithResponse SNMP credentials (masked, passphrases never echoed)
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -18710,7 +18710,7 @@ func (r PostUsersIdResetPasswordResponse) ContentType() string {
 	return ""
 }
 
-// GetAgentsCommandsWithResponse [agent] Poll pending commands — BARE ARRAY (fleet-internal contract; see api.md)
+// GetAgentsCommandsWithResponse [agent] Poll pending commands, BARE ARRAY (fleet-internal contract; see api.md)
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -20010,7 +20010,7 @@ func (c *ClientWithResponses) PostNotificationChannelsIdTestWithResponse(ctx con
 	return ParsePostNotificationChannelsIdTestResponse(rsp)
 }
 
-// GetNotificationLogsWithResponse Caller's notification log (total = UNREAD count — the badge source)
+// GetNotificationLogsWithResponse Caller's notification log (total = UNREAD count, the badge source)
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -20309,7 +20309,7 @@ func (c *ClientWithResponses) GetScannerRunsIdWithResponse(ctx context.Context, 
 	return ParseGetScannerRunsIdResponse(rsp)
 }
 
-// PostScannerScanWithResponse Synchronous scan (max 1024 IPs — larger ranges must use tasks)
+// PostScannerScanWithResponse Synchronous scan (max 1024 IPs, larger ranges must use tasks)
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -20478,7 +20478,7 @@ func (c *ClientWithResponses) PutSettingsAuthWithResponse(ctx context.Context, r
 	return ParsePutSettingsAuthResponse(rsp)
 }
 
-// GetSnmpCredentialsWithResponse SNMP credentials (masked — passphrases never echoed)
+// GetSnmpCredentialsWithResponse SNMP credentials (masked, passphrases never echoed)
 //
 // Returns a wrapper object for the known response body format(s).
 //

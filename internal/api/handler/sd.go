@@ -37,7 +37,7 @@ func NewSDHandler(dbtx db.DBTX, systemRepo *service.DeviceSystemRepository) *SDH
 	return &SDHandler{queries: db.New(dbtx), systemRepo: systemRepo}
 }
 
-// ServeHTTP handles GET /sd — returns Prometheus HTTP SD JSON.
+// ServeHTTP handles GET /sd, returns Prometheus HTTP SD JSON.
 func (h *SDHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -216,7 +216,7 @@ func ExtractDiscoveredServices(servicesJSON string) string {
 func BuildScannerTargets(ctx context.Context, queries *db.Queries) []SDTarget {
 	// Get all scan results, filter prometheus_detected=1 in Go
 	// (no dedicated sqlc query for this filter). Column5=-1 disables the alive
-	// filter (sentinel: ? < 0 ⇒ no clause) — without it the zero-value Alive
+	// filter (sentinel: ? < 0 ⇒ no clause), without it the zero-value Alive
 	// field would silently restrict to dead hosts only.
 	results, err := queries.ListScanResults(ctx, db.ListScanResultsParams{
 		Column1: 0, // no task filter
@@ -277,7 +277,7 @@ func BuildScannerTargets(ctx context.Context, queries *db.Queries) []SDTarget {
 		}
 
 		// Layer 3: per-device override labels from devices.prometheus_labels.
-		// Device-not-found is OK — the scanner may have discovered unregistered devices.
+		// Device-not-found is OK, the scanner may have discovered unregistered devices.
 		var perDeviceLabels map[string]string
 		if device, devErr := queries.GetDeviceByIP(ctx, ip); devErr == nil {
 			perDeviceLabels = ParseJSONLabels(device.PrometheusLabels)

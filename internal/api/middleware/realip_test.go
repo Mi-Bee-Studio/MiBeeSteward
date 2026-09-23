@@ -16,7 +16,7 @@ import (
 )
 
 // capturedRemoteAddr lets the inner handler record what the RealIP middleware
-// set r.RemoteAddr to — that's what downstream code (rate limiters, audit
+// set r.RemoteAddr to, that's what downstream code (rate limiters, audit
 // logs) actually consumes.
 func realipTestHandler(captured *string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +38,7 @@ func doRequest(t *testing.T, h http.Handler, remoteAddr, xff string) {
 }
 
 // When trusted_proxies is empty, the TCP peer is the client regardless of any
-// X-Forwarded-For header — a client cannot forge its IP. This is the safe
+// X-Forwarded-For header, a client cannot forge its IP. This is the safe
 // default for direct exposure.
 func TestRealIP_EmptyTrustedProxies_IgnoresHeader(t *testing.T) {
 	var got string
@@ -68,7 +68,7 @@ func TestRealIP_MultiHopChain_LeftmostWins(t *testing.T) {
 	require.Equal(t, "198.51.100.5:40000", got, "multi-hop: leftmost (original client) should win")
 }
 
-// Untrusted source — even with the header, the TCP peer is the client. This
+// Untrusted source, even with the header, the TCP peer is the client. This
 // is the spoofing defense: a random internet host claiming to be behind a
 // proxy must not be able to forge its IP.
 func TestRealIP_UntrustedSource_IgnoresHeader(t *testing.T) {
@@ -80,7 +80,7 @@ func TestRealIP_UntrustedSource_IgnoresHeader(t *testing.T) {
 	require.Equal(t, "203.0.113.99:5000", got, "untrusted source must not be able to forge X-Forwarded-For")
 }
 
-// Trusted proxy but no header — fall back to the TCP peer (the proxy itself).
+// Trusted proxy but no header, fall back to the TCP peer (the proxy itself).
 func TestRealIP_TrustedProxy_NoHeader(t *testing.T) {
 	trusted := middleware.ParseCIDRs([]string{"10.0.0.0/8"})
 	var got string
@@ -90,7 +90,7 @@ func TestRealIP_TrustedProxy_NoHeader(t *testing.T) {
 }
 
 // A malformed X-Forwarded-For from a trusted proxy must NOT break the request
-// or poison the IP — it falls back to the TCP peer.
+// or poison the IP, it falls back to the TCP peer.
 func TestRealIP_MalformedHeader_FallsBackToPeer(t *testing.T) {
 	trusted := middleware.ParseCIDRs([]string{"127.0.0.1/8"})
 	var got string

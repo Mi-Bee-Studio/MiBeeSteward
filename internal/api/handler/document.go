@@ -38,7 +38,7 @@ func NewDocumentHandler(svc *service.DocumentService, uploadDir string, auditRep
 	return &DocumentHandler{svc: svc, uploadDir: uploadDir, auditRepo: auditRepo}
 }
 
-// CreateURL handles POST /api/v1/documents — create a URL-type document.
+// CreateURL handles POST /api/v1/documents, create a URL-type document.
 func (h *DocumentHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 	var req domain.CreateDocumentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -59,7 +59,7 @@ func (h *DocumentHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 	Created(w, resp)
 }
 
-// UploadFile handles POST /api/v1/documents/upload — upload a file document.
+// UploadFile handles POST /api/v1/documents/upload, upload a file document.
 func (h *DocumentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	// Parse multipart form (default 32MB memory, rest goes to temp files)
 	maxSize := int64(32 << 20)
@@ -81,7 +81,7 @@ func (h *DocumentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.svc.UploadFile(r.Context(), file, header, title, description)
 	if err != nil {
 		slog.Error("failed to upload file", "error", err)
-		// Client-fixable rejections surface as their real reason + status —
+		// Client-fixable rejections show up as their real reason + status;
 		// a blanket 500 hid WHY the file was refused.
 		switch {
 		case errors.Is(err, service.ErrFileTooLarge):
@@ -112,7 +112,7 @@ func (h *DocumentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	Created(w, resp)
 }
 
-// List handles GET /api/v1/documents — list documents with pagination.
+// List handles GET /api/v1/documents, list documents with pagination.
 func (h *DocumentHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -131,7 +131,7 @@ func (h *DocumentHandler) List(w http.ResponseWriter, r *http.Request) {
 	SuccessList(w, "documents", resp.Documents, int64(resp.Total), limit, offset)
 }
 
-// Get handles GET /api/v1/documents/{id} — get document detail.
+// Get handles GET /api/v1/documents/{id}, get document detail.
 func (h *DocumentHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, err := h.parseID(w, r)
 	if err != nil {
@@ -151,7 +151,7 @@ func (h *DocumentHandler) Get(w http.ResponseWriter, r *http.Request) {
 	Success(w, resp)
 }
 
-// Download handles GET /api/v1/documents/{id}/download — download a file.
+// Download handles GET /api/v1/documents/{id}/download, download a file.
 func (h *DocumentHandler) Download(w http.ResponseWriter, r *http.Request) {
 	id, err := h.parseID(w, r)
 	if err != nil {
@@ -204,7 +204,7 @@ func (h *DocumentHandler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Pin Content-Type to the upload-validated MIME type. Letting
-	// http.ServeFile sniff would serve an HTML-flavored .md as text/html —
+	// http.ServeFile sniff would serve an HTML-flavored .md as text/html;
 	// XSS-same-origin on inline preview. Combined with the global nosniff
 	// header, the stored type is authoritative.
 	if mimeType != "" {
@@ -224,7 +224,7 @@ func (h *DocumentHandler) Download(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filePath)
 }
 
-// Restore handles POST /api/v1/documents/{id}/restore — undo a soft delete
+// Restore handles POST /api/v1/documents/{id}/restore, undo a soft delete
 // (the UI's delete-undo toast). Only clears the tombstone; the row and its
 // uploaded file were kept.
 func (h *DocumentHandler) Restore(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +258,7 @@ func (h *DocumentHandler) Restore(w http.ResponseWriter, r *http.Request) {
 	Success(w, resp)
 }
 
-// Update handles PUT /api/v1/documents/{id} — update document.
+// Update handles PUT /api/v1/documents/{id}, update document.
 func (h *DocumentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := h.parseID(w, r)
 	if err != nil {
@@ -284,7 +284,7 @@ func (h *DocumentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	Success(w, resp)
 }
 
-// Delete handles DELETE /api/v1/documents/{id} — delete document.
+// Delete handles DELETE /api/v1/documents/{id}, delete document.
 func (h *DocumentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := h.parseID(w, r)
 	if err != nil {

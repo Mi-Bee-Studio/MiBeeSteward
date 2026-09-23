@@ -9,7 +9,7 @@
 
 // Package crypto provides symmetric encryption-at-rest for secrets stored in
 // SQLite (SNMPv3 USM passphrases today; potentially TOTP secrets and others
-// later). It uses AES-256-GCM from the standard library — no third-party
+// later). It uses AES-256-GCM from the standard library, no third-party
 // dependency.
 //
 // The master key is sourced from configuration (security.master_key, overridable
@@ -42,14 +42,14 @@ const EnvelopeVersion byte = 1
 const MasterKeyLen = 32
 
 // Cipher wraps an AES-256-GCM cipher keyed by the master key. The zero value is
-// NOT usable — construct with NewCipher.
+// NOT usable, construct with NewCipher.
 type Cipher struct {
 	aead cipher.AEAD
 }
 
 // NewCipher builds a Cipher from a master key. The key must be exactly
 // MasterKeyLen (32) bytes; shorter keys are rejected (see MasterKeyLen doc for
-// why). Callers pass the raw bytes — a human-typed passphrase should be run
+// why). Callers pass the raw bytes, a human-typed passphrase should be run
 // through a KDF first (we keep the API at the key layer to avoid hiding the
 // KDF choice behind a stringly-typed convenience).
 func NewCipher(masterKey []byte) (*Cipher, error) {
@@ -76,7 +76,7 @@ func NewCipher(masterKey []byte) (*Cipher, error) {
 // passphrase twice yields different blobs (the test asserts this). The empty
 // string is a valid plaintext and round-trips; it is NOT special-cased, so an
 // empty passphrase is still confidentiality-protected (relevant for v3
-// noAuth/noPriv rows where the field is intentionally empty).
+// noAuth/noPriv rows where the field is empty).
 func (c *Cipher) Encrypt(plaintext string) (string, error) {
 	nonce := make([]byte, c.aead.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
@@ -88,16 +88,16 @@ func (c *Cipher) Encrypt(plaintext string) (string, error) {
 	blob = append(blob, EnvelopeVersion)
 	blob = append(blob, nonce...)
 	// The version byte is ALSO bound as AAD so Decrypt can detect a flipped
-	// version even before GCM verifies the rest — see the matching Open below.
+	// version even before GCM verifies the rest, see the matching Open below.
 	blob = c.aead.Seal(blob, nonce, []byte(plaintext), []byte{EnvelopeVersion})
 	return base64.StdEncoding.EncodeToString(blob), nil
 }
 
 // Decrypt reverses Encrypt. It fails (non-nil error) if the blob is malformed,
-// was sealed under a different key, or was tampered with — GCM authenticates
+// was sealed under a different key, or was tampered with, GCM authenticates
 // the ciphertext and the version byte, so any modification is detected.
 //
-// An empty input string returns ("", nil) — the caller convention is that an
+// An empty input string returns ("", nil), the caller convention is that an
 // empty DB column means "no secret stored" (e.g. a noAuth v3 credential has no
 // passphrase), distinct from a corrupt blob. This keeps inserts of partial v3
 // credentials simple.
@@ -135,9 +135,9 @@ func (c *Cipher) Decrypt(blob string) (string, error) {
 
 // KeyFingerprint returns a short, non-reversible hex prefix of the master key.
 // It exists so startup logs and tests can confirm two processes share a key
-// WITHOUT exposing the key itself — useful when verifying a deployment picked
+// WITHOUT exposing the key itself, useful when verifying a deployment picked
 // up MIBEE_SECURITY_MASTER_KEY. Only the first 4 bytes (8 hex chars) are
-// surfaced: enough to spot a mismatch, far too little to aid an attack.
+// shown: enough to spot a mismatch, far too little to aid an attack.
 func (c *Cipher) KeyFingerprint(masterKey []byte) string {
 	if len(masterKey) < 4 {
 		return "????????"

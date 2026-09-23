@@ -24,7 +24,7 @@ import (
 //   - offset < 0 → 400
 //
 // def/maxLimit mirror the service-layer clamps of each endpoint (those remain
-// as a backstop). ok=false means the 400 was already written — return immediately.
+// as a backstop). ok=false means the 400 was already written, return immediately.
 func ParsePagination(w http.ResponseWriter, r *http.Request, def, maxLimit int64) (limit, offset int64, ok bool) {
 	limit = def
 	offset = 0
@@ -63,7 +63,7 @@ func ParsePagination(w http.ResponseWriter, r *http.Request, def, maxLimit int64
 // is the FILTERED count (the number of rows matching the query, not the page
 // size). limit/offset echo the effective pagination so clients can detect a
 // server-side clamp. Non-paginated collections (topology graphs, per-device
-// sub-lists) may use Success with {key, total} only — they are complete lists.
+// sub-lists) may use Success with {key, total} only, they are complete lists.
 func SuccessList(w http.ResponseWriter, key string, items interface{}, total, limit, offset int64) {
 	Success(w, map[string]interface{}{
 		key:      items,

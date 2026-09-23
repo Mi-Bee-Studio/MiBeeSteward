@@ -127,7 +127,7 @@ func Authenticator(next http.Handler) http.Handler {
 		// Must-change-password gate: a token minted while the user's
 		// must_change_password flag was set carries mcp=true. Until the forced
 		// change completes, every authenticated call except the
-		// change-survival allowlist gets 403 — the flag is enforced server-side,
+		// change-survival allowlist gets 403, the flag is enforced server-side,
 		// not just by the SPA modal.
 		var mustChange bool
 		if err := tok.Get("mcp", &mustChange); err == nil && mustChange {

@@ -41,7 +41,7 @@ import (
 // Anti-entropy: agents send an X-Network-State-Hash header (a digest of the
 // alive set). When the hash matches the last one seen for this agent's
 // network, the network is unchanged and the handler skips the expensive
-// per-host device bridge — it only refreshes leases (RecordAliveSnapshots) so
+// per-host device bridge, it only refreshes leases (RecordAliveSnapshots) so
 // the lease sweeper's staleness clock keeps ticking. Lost detection for agent
 // networks is handled by the background LeaseSweeper, NOT per-report (the old
 // DetectLost call was O(whole network) on every POST).
@@ -50,7 +50,7 @@ type AgentReportHandler struct {
 	queries *db.Queries // for resolving the agent network's CIDR (boundary check)
 	dbConn  *sql.DB     // raw conn for the networks.cidr backfill (sqlc has no single-col UPDATE)
 	// fleetSvc records the per-agent status snapshot (#278). May be nil in
-	// tests — status recording degrades to a debug log.
+	// tests, status recording degrades to a debug log.
 	fleetSvc *service.AgentCommandService
 
 	hashMu     sync.Mutex
@@ -59,7 +59,7 @@ type AgentReportHandler struct {
 
 	// cidrCache memoizes the parsed CIDR per network_id so the per-host boundary
 	// check doesn't re-query + re-parse on every report (agents report ~30s).
-	// A nil entry means "this network has no usable CIDR — skip the check"
+	// A nil entry means "this network has no usable CIDR, skip the check"
 	// (degrade-open; see Layer 2 note + issue #19 前置工作). Guards the whole
 	// map; reads are cheap (one map lookup), writes rare (network config change).
 	cidrMu    sync.RWMutex
@@ -67,7 +67,7 @@ type AgentReportHandler struct {
 }
 
 // NewAgentReportHandler constructs the handler. runner is the center's scan
-// runner (reused as-is — applyDeviceBridge takes the agent's network per-call);
+// runner (reused as-is, applyDeviceBridge takes the agent's network per-call);
 // queries is used to resolve the agent's network CIDR for the per-host boundary
 // check (issue #19 Layer 2); dbConn is for the networks.cidr backfill (the
 // single-column UPDATE has no sqlc-generated equivalent).
@@ -87,8 +87,8 @@ func NewAgentReportHandler(rn *runner.Runner, queries *db.Queries, dbConn *sql.D
 //
 // Auth: RequireAgentToken runs before this handler and injects agent_id +
 // network_id into the request context. The agent's network_id (from its token)
-// is the authoritative origin for every device in the report — NOT a field in
-// the JSON body — so a misconfigured or hostile agent can't stamp devices onto
+// is the authoritative origin for every device in the report, NOT a field in
+// the JSON body, so a misconfigured or hostile agent can't stamp devices onto
 // another network.
 func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	if h.runner == nil {
@@ -104,7 +104,7 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	// The agent's network comes from its token (RequireAgentToken), not the body.
 	agentID, networkID, ok := middleware.GetAgentFromContext(r)
 	if !ok || networkID == nil {
-		// A token without a bound network can't be attributed — reject rather
+		// A token without a bound network can't be attributed, reject rather
 		// than silently tagging devices with NULL (which would collide with the
 		// legacy single-instance pool).
 		Error(w, http.StatusForbidden, "agent token has no bound network")
@@ -136,7 +136,7 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	// networks are created via the admin API without a cidr today, so without
 	// this the Layer 1/2 boundary checks would degrade-open forever for them.
 	// Once filled, invalidate the cidr cache so the next resolveNetworkCIDR
-	// picks it up. The token still authoritatively binds network_id — this only
+	// picks it up. The token still authoritatively binds network_id, this only
 	// supplies the cidr geometry the agent knows best (its own LAN).
 	if rep.NetworkCIDR != "" {
 		h.maybeBackfillNetworkCIDR(r.Context(), *networkID, rep.NetworkCIDR)
@@ -163,7 +163,7 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 			// set: a stable network that happens to contain out-of-network hosts
 			// (shouldn't happen post-Layer-1/2, but defensively) must not keep
 			// refreshing those foreign leases. resolveNetworkCIDR is cached, so
-			// this is one map lookup + per-host Contains — negligible vs. the
+			// this is one map lookup + per-host Contains, negligible vs. the
 			// lease upserts we're already doing.
 			hostsForLease, oon := h.filterInNetwork(r.Context(), *networkID, rep.Hosts)
 			if oon > 0 {
@@ -192,7 +192,7 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	}
 	// Boundary check (issue #19 Layer 2): see filterInNetwork. Resolve once,
 	// then partition. inNetwork feeds BOTH the device bridge (ApplyReport) and
-	// the lease refresh — a dropped out-of-network host must not keep its lease
+	// the lease refresh, a dropped out-of-network host must not keep its lease
 	// fresh, or it would masquerade as alive in the wrong network (the exact
 	// issue-#19 failure).
 	inNetwork, outOfNetwork := h.filterInNetwork(r.Context(), *networkID, rep.Hosts)
@@ -217,7 +217,7 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	}
 	// Refresh leases ONLY for the in-network alive set (resets miss_count,
 	// stamps last_seen_at). Lost detection for agent networks is NO LONGER done
-	// per-report (the old DetectLost call was O(whole network) each time) — the
+	// per-report (the old DetectLost call was O(whole network) each time), the
 	// background LeaseSweeper expires stale agent devices on its own slow ticker.
 	h.runner.RecordAliveSnapshots(r.Context(), nid, 0, hostReportsForLease(inNetwork))
 
@@ -248,11 +248,11 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 // backfillAgentRunStats completes the oldest still-"running" run row among
 // this network's scan tasks with the report's real outcome (#390). Agent-task
 // run rows are created at DISPATCH time (dispatchAgentScan) and used to be
-// closed immediately as a ~6ms "completed" marker with zero hosts — the scan
+// closed immediately as a ~6ms "completed" marker with zero hosts, the scan
 // itself executes asynchronously on the agent, so run history showed hollow
 // runs. Dispatch now leaves the row "running"; the first host-carrying report
 // for the network closes it. Duration measures the END-TO-END latency (command
-// poll + agent scan + report POST) — the honest number for the pull model.
+// poll + agent scan + report POST), the honest number for the pull model.
 // Runs a report never closes are superseded by the next dispatch or failed by
 // the scheduler's stale-run sweeper (>1h), so nothing sticks.
 func (h *AgentReportHandler) backfillAgentRunStats(ctx context.Context, networkID int64, alive, added, updated int) {
@@ -287,7 +287,7 @@ func (h *AgentReportHandler) backfillAgentRunStats(ctx context.Context, networkI
 }
 
 // resolveNetworkCIDR returns the parsed IPNet for the given network, cached.
-// Returns (nil, true) when the network has no usable CIDR (degrade-open — the
+// Returns (nil, true) when the network has no usable CIDR (degrade-open, the
 // boundary check is skipped for that network). Returns (nil, false) only on a
 // hard lookup failure (logged; treated as skip too, never fatal).
 //
@@ -295,7 +295,7 @@ func (h *AgentReportHandler) backfillAgentRunStats(ctx context.Context, networkI
 // (issue #19 Layer 2): a host whose IP falls outside its reporting agent's
 // network CIDR cannot be attributed to that network, regardless of what the
 // agent sends. It is the backstop for Layer 1 (which gates at command dispatch)
-// — even if a command slips through (or an agent scans on its own scheduler),
+// - even if a command slips through (or an agent scans on its own scheduler),
 // out-of-network hosts are dropped here before they reach the device bridge.
 func (h *AgentReportHandler) resolveNetworkCIDR(ctx context.Context, networkID int64) *net.IPNet {
 	h.cidrMu.RLock()
@@ -310,7 +310,7 @@ func (h *AgentReportHandler) resolveNetworkCIDR(ctx context.Context, networkID i
 	if err != nil {
 		slog.Warn("agent report: cannot load network for boundary check; skipping",
 			"network_id", networkID, "error", err)
-		// Don't cache the failure — a transient DB error shouldn't permanently
+		// Don't cache the failure, a transient DB error shouldn't permanently
 		// disable the check. nil-but-not-cached: next report retries.
 		return nil
 	}
@@ -321,7 +321,7 @@ func (h *AgentReportHandler) resolveNetworkCIDR(ctx context.Context, networkID i
 	parsed, perr := cidrutil.ParseNetwork(cidr)
 	switch {
 	case errors.Is(perr, cidrutil.ErrEmptyCIDR):
-		// No CIDR configured — cache nil so we don't re-query every 30s. The
+		// No CIDR configured, cache nil so we don't re-query every 30s. The
 		// cidr-enforcement prerequisite (issue #19 前置工作) is what fills this.
 		slog.Warn("agent report: network has no cidr; boundary check disabled",
 			"network_id", networkID, "network_name", netRow.Name)
@@ -339,7 +339,7 @@ func (h *AgentReportHandler) resolveNetworkCIDR(ctx context.Context, networkID i
 }
 
 // invalidateNetworkCIDR clears the cached CIDR for a network (e.g. after an
-// admin edits the network's cidr). Not wired yet — reserved for the network
+// admin edits the network's cidr). Not wired yet, reserved for the network
 // update handler to call when cidr-enforcement lands.
 func (h *AgentReportHandler) invalidateNetworkCIDR(networkID int64) {
 	h.cidrMu.Lock()
@@ -350,11 +350,11 @@ func (h *AgentReportHandler) invalidateNetworkCIDR(networkID int64) {
 // maybeBackfillNetworkCIDR fills networks.cidr for networkID when the row lacks
 // one, using the agent-reported cidr as the source of truth (issue #19 前置工作).
 // It validates the cidr before writing (a bogus value would silently break the
-// boundary checks) and is idempotent: a non-empty existing cidr wins (the admin
+// boundary checks) and re-runs converge: a non-empty existing cidr wins (the admin
 // or a prior report set it; don't overwrite). The cidr cache is invalidated so
 // the next report re-resolves with the fresh value.
 func (h *AgentReportHandler) maybeBackfillNetworkCIDR(ctx context.Context, networkID int64, reported string) {
-	// Validate first — a malformed cidr in config would otherwise poison the row.
+	// Validate first, a malformed cidr in config would otherwise poison the row.
 	if _, err := cidrutil.ParseNetwork(reported); err != nil {
 		slog.Warn("agent report: agent-reported cidr is invalid; not backfilling",
 			"network_id", networkID, "cidr", reported, "error", err)
@@ -365,7 +365,7 @@ func (h *AgentReportHandler) maybeBackfillNetworkCIDR(ctx context.Context, netwo
 		return // transient DB error; next report retries
 	}
 	if netRow.Cidr != nil && *netRow.Cidr != "" {
-		// Already populated. If it differs, log — operator may want to know the
+		// Already populated. If it differs, log, operator may want to know the
 		// agent disagrees with the configured network geometry, but we don't
 		// auto-clobber (the admin-set value is authoritative).
 		if *netRow.Cidr != reported {
@@ -375,7 +375,7 @@ func (h *AgentReportHandler) maybeBackfillNetworkCIDR(ctx context.Context, netwo
 		return
 	}
 	// Raw UPDATE: networks' update path is hand-written (sqlc truncates multi-
-	// bind UPDATEs — see db/queries/networks.sql UpdateNetworkRaw note). We only
+	// bind UPDATEs, see db/queries/networks.sql UpdateNetworkRaw note). We only
 	// touch cidr + updated_at, leaving the other columns untouched. The
 	// `cidr IS NULL OR cidr = ''` guard makes this safe against a concurrent
 	// report that already filled it.
@@ -393,7 +393,7 @@ func (h *AgentReportHandler) maybeBackfillNetworkCIDR(ctx context.Context, netwo
 // filterInNetwork returns the subset of hosts that are (a) alive with a non-empty
 // IP and (b) inside the network's CIDR. The second return is the count of hosts
 // dropped solely by the CIDR check (dead/empty-IP hosts are neither in the
-// result nor counted as out-of-network — the caller accounts for them as plain
+// result nor counted as out-of-network, the caller accounts for them as plain
 // skips). A network with no usable CIDR degrades open: every alive host passes.
 //
 // This is the single place the boundary check is applied, used by both the

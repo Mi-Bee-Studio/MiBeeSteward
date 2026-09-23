@@ -88,7 +88,7 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	SuccessList(w, "audit_logs", resp.AuditLogs, int64(resp.Total), limit, offset)
 }
 
-// Facets handles GET /api/v1/audit-logs/facets — returns the distinct action
+// Facets handles GET /api/v1/audit-logs/facets, returns the distinct action
 // and resource_type values currently in the table, for the audit page filter
 // dropdowns (so the dropdowns always match what the backend actually emits).
 func (h *AuditHandler) Facets(w http.ResponseWriter, r *http.Request) {

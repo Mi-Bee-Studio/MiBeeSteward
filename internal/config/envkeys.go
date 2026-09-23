@@ -19,15 +19,15 @@ import (
 //
 // Why exact mapping: the legacy transform replaced EVERY underscore in an env
 // var with a dot, so any key whose segment contains an underscore was
-// unreachable from the environment — MIBEE_AUTH_INITIAL_ADMIN_PASSWORD became
+// unreachable from the environment, MIBEE_AUTH_INITIAL_ADMIN_PASSWORD became
 // auth.initial.admin.password instead of auth.initial_admin_password and was
 // silently dropped on unmarshal. Word-only keys (server.port) and dot-only
 // keys (security.master_key) worked by coincidence. The documented contract
 // ("every config key + MIBEE_* env override", docs/en/configuration.md)
 // demands the underscore form work for all keys.
 //
-// The map is derived by reflecting over the Config struct's `koanf` tags —
-// the same tags Unmarshal consumes — so it can never drift from the real key
+// The map is derived by reflecting over the Config struct's `koanf` tags;
+// the same tags Unmarshal consumes, so it can never drift from the real key
 // universe. Dots in a key path and underscores inside a segment both become
 // underscores in the env name (auth.initial_admin_password →
 // MIBEE_AUTH_INITIAL_ADMIN_PASSWORD), exactly as users type them.
@@ -55,7 +55,7 @@ func envKeyMap(prefix string) map[string]string {
 			switch ft.Kind() {
 			case reflect.Struct:
 				// Structs that carry their own scalar encoding (time.Time has
-				// no koanf tags below it) yield no leaves — harmless.
+				// no koanf tags below it) yield no leaves, harmless.
 				walk(ft, key)
 			default:
 				m[prefix+strings.ToUpper(strings.ReplaceAll(key, ".", "_"))] = key

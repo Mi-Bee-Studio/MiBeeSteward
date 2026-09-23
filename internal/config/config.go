@@ -39,7 +39,7 @@ type Config struct {
 	AgentFleet AgentFleetConfig `koanf:"agent_fleet"`
 	// Retention governs the periodic background sweep that prunes high-volume
 	// detail tables (heartbeat_results, scan_results, …). Without it these
-	// tables grow unbounded — heartbeat_results alone accumulates ~270k rows/day.
+	// tables grow unbounded, heartbeat_results alone accumulates ~270k rows/day.
 	Retention RetentionConfig `koanf:"retention"`
 	// Network identifies the logical network this instance is responsible for.
 	// Used to resolve devices.network_id (seeded into the networks table at
@@ -105,7 +105,7 @@ type CenterConfig struct {
 	// RemoteOpsEnabled opts THIS AGENT into executing remote-ops commands
 	// (restart / config-reload / logs-tail) received over the command channel
 	// (#278). Default false; the CENTER-side switch (agent_fleet.
-	// remote_ops_enabled) must ALSO be on — both sides gate independently.
+	// remote_ops_enabled) must ALSO be on, both sides gate independently.
 	RemoteOpsEnabled bool `koanf:"remote_ops_enabled"`
 }
 
@@ -115,7 +115,7 @@ type AgentFleetConfig struct {
 	// config-reload / logs-tail) for agents. Default false: the enqueue API
 	// rejects ops commands with 403 until an operator explicitly enables this.
 	// The agent still needs its own center.remote_ops_enabled opt-in to
-	// execute them — either side can keep ops from running.
+	// execute them, either side can keep ops from running.
 	RemoteOpsEnabled bool `koanf:"remote_ops_enabled"`
 }
 
@@ -133,7 +133,7 @@ type NetworkConfig struct {
 
 // RetentionConfig holds per-table retention windows and sweep tuning. A field
 // of 0 means "use the documented default" (applied in Normalize), NOT "keep
-// forever" — keeping forever is never the intent for these detail tables.
+// forever", keeping forever is never the intent for these detail tables.
 type RetentionConfig struct {
 	// Per-table retention windows (days). Defaults reflect each table's mix of
 	// troubleshooting value vs. volume: heartbeat is high-volume/low-value (7d),
@@ -152,11 +152,11 @@ type RetentionConfig struct {
 	ServiceEvidenceDays int `koanf:"service_evidence_days"`
 	// ChangeLogDays is the retention window for change_log (device_added /
 	// changed / lost events). Default 30 (high value for asset-history audits,
-	// but change_log grows fast — one row per real change per scan).
+	// but change_log grows fast, one row per real change per scan).
 	ChangeLogDays int `koanf:"change_log_days"`
 	// DeviceNeighborsDays is the retention window for device_neighbors (L2
-	// adjacency edges — Bridge-MIB / LLDP). Default 90 (low write volume — one
-	// row per real adjacency, refreshed by upsert — and high value for topology
+	// adjacency edges, Bridge-MIB / LLDP). Default 90 (low write volume, one
+	// row per real adjacency, refreshed by upsert, and high value for topology
 	// history).
 	DeviceNeighborsDays int `koanf:"device_neighbors_days"`
 	// HostServicesDays is the retention window for host_services (classified
@@ -171,13 +171,13 @@ type RetentionConfig struct {
 	HostTLSCertsDays int `koanf:"host_tls_certs_days"`
 	// ProbeResultsDays is the retention window for probe_results (the 拨测
 	// synthetic-probe history series). Volume is one row per target per
-	// interval — small, but unbounded over time. Default 30 (matches
+	// interval, small, but unbounded over time. Default 30 (matches
 	// scan_results: enough for month-scale trend charts of latency/cert
-	// expiry). probe_tls_certs is NOT swept — it holds only each target's
+	// expiry). probe_tls_certs is NOT swept, it holds only each target's
 	// current chain, replaced on every successful collection.
 	ProbeResultsDays int `koanf:"probe_results_days"`
 	// SilentDeviceDaysMAC is how long a scanner-discovered device WITH a MAC
-	// address can stay offline (no heartbeat — all probe configs failing) before
+	// address can stay offline (no heartbeat, all probe configs failing) before
 	// the silent-device retention sweep physically deletes it (issue #117). MAC-
 	// bearing devices are real assets that may genuinely disappear for a while
 	// (laptop on a long trip, IoT device powered off), so the window is generous
@@ -191,10 +191,10 @@ type RetentionConfig struct {
 	// (24h) to keep the registry clean. 0 → default 24.
 	SilentDeviceHoursNoMAC int `koanf:"silent_device_hours_no_mac"`
 	// SweepIntervalHours is how often the retention sweeper runs across all
-	// tables. Default 6h — frequent enough that no table drifts far past its
+	// tables. Default 6h, frequent enough that no table drifts far past its
 	// window, rare enough to be negligible overhead.
 	SweepIntervalHours int `koanf:"sweep_interval_hours"`
-	// BatchSize caps rows deleted per single DELETE statement. Large one-shot
+	// BatchSize caps rows deleted per single DELETE statement. Very large
 	// deletes on million-row tables hold the write lock too long and bloat WAL;
 	// batching keeps each transaction small so WAL can checkpoint between batches.
 	BatchSize int `koanf:"batch_size"`
@@ -213,7 +213,7 @@ type ServerConfig struct {
 	// very large bodies slowly (uploads use a separate streaming path).
 	ReadTimeout string `koanf:"read_timeout"`
 	// WriteTimeout bounds the full response lifetime. This MUST exceed the
-	// slowest synchronous endpoint — primarily POST /scanner/scan, which can
+	// slowest synchronous endpoint, primarily POST /scanner/scan, which can
 	// run for minutes on large CIDRs. Default "5m". Set lower only if you
 	// never run large synchronous scans (use the async task API instead).
 	WriteTimeout string `koanf:"write_timeout"`
@@ -223,7 +223,7 @@ type ServerConfig struct {
 	// X-Forwarded-For. When the TCP peer is inside one of these networks, the
 	// RealIP middleware takes the leftmost X-Forwarded-For entry as the client
 	// IP (for rate limiting / audit logs). Empty (default) = trust NO proxy:
-	// the TCP peer is the client — the safe default for direct exposure.
+	// the TCP peer is the client, the safe default for direct exposure.
 	// Populate with your reverse proxy's source range when deployed behind
 	// nginx/another proxy (e.g. ["127.0.0.1/32"] for localhost nginx).
 	TrustedProxies []string `koanf:"trusted_proxies"`
@@ -248,7 +248,7 @@ type AuthConfig struct {
 	// PasswordPolicy is the admin-tunable strength policy for user passwords
 	// (register / change / reset paths all enforce it). Defaults are seeded
 	// before the YAML load, so a config that sets only one knob keeps the
-	// documented defaults for the rest — see authDefaults.
+	// documented defaults for the rest, see authDefaults.
 	PasswordPolicy PasswordPolicyConfig `koanf:"password_policy"`
 	// Lockout is the failed-login lockout policy (see LockoutConfig). Same
 	// partial-override semantics as PasswordPolicy.
@@ -285,7 +285,7 @@ type PasswordPolicyConfig struct {
 // by default anymore (min 8 + upper + lower + digit): four mandatory classes
 // was field-feedback-heavy for the home/SOHO audience, and the first-run seed
 // path no longer depends on policy anyway (SeedAdmin bypasses validation).
-// The rules remain fully configurable — YAML here, or at runtime via the
+// The rules remain fully configurable, YAML here, or at runtime via the
 // settings center (PUT /api/v1/settings/auth → system_settings overlay).
 // Nested-map form (not flat dot keys): koanf treats dot keys from a raw
 // provider map as literal key names, which would never reach the struct.
@@ -313,7 +313,7 @@ type HeartbeatConfig struct {
 	// seconds (default 30). The loop polls every device whose heartbeat config
 	// is due and writes verdicts to the in-memory status cache. Distinct from
 	// DefaultInterval (which is the per-device probe interval stored in
-	// heartbeat_configs.interval_seconds and feeds the isDue window) — that
+	// heartbeat_configs.interval_seconds and feeds the isDue window), that
 	// value is also defaulted to TickIntervalSeconds when 0, so out of the box
 	// a device is probed once per tick. Operators with large fleets or tight
 	// RTT budgets can lower the tick for faster liveness detection or raise it
@@ -378,7 +378,7 @@ type SMTPConfig struct {
 
 // ScannerConfig and its sub-types (RouterARPConfig, RDNSConfig, MDNSConfig,
 // ARPScanConfig, EBPFConfig, DiscoveryConfig, PipelineDefaultsConfig, etc.)
-// live in scanner_config.go — extracted to keep this file manageable. (#160)
+// live in scanner_config.go, extracted to keep this file manageable. (#160)
 
 // mapProvider adapts a flat map[string]interface{} (dot-delimited keys) to
 // the koanf Provider interface, so defaults can be seeded without pulling an
@@ -448,7 +448,7 @@ func Load(configPath string) (*Config, error) {
 
 // normalizeRetention fills in default retention windows for any field left at
 // 0 by the config. A 0 in the YAML means "use the default", NOT "keep forever"
-// — these detail tables are never meant to be retained indefinitely.
+// - these detail tables are never meant to be retained indefinitely.
 //
 // Back-compat: the legacy scanner.retention_days (and heartbeat.retention_days)
 // settings still drive their respective tables if the new retention.* key isn't
@@ -521,8 +521,8 @@ func normalizeRetention(cfg *Config) {
 // normalizeDiscovery fills in passive-discovery defaults for any field left at
 // its zero value. Only Interval is normalized here (0 → 60s). The boolean
 // fields (Enabled, TriggerIdentify, the per-source toggles) keep their Go zero
-// value (false) when unset, so the recommended defaults are surfaced through
-// configs/config.example.yaml rather than silently applied — this respects a
+// value (false) when unset, so the recommended defaults are visible through
+// configs/config.example.yaml rather than silently applied, this respects a
 // user's explicit `false` instead of clobbering it.
 func normalizeDiscovery(cfg *Config) {
 	d := &cfg.Scanner.Discovery
@@ -535,7 +535,7 @@ func normalizeDiscovery(cfg *Config) {
 }
 
 // normalizeRBAC canonicalizes rbac.scope_default. Empty or unrecognized values
-// fall back to "open" — the non-lockout, backward-compatible default (a non-admin
+// fall back to "open", the non-lockout, backward-compatible default (a non-admin
 // with no grants sees every network, preserving existing single-team installs).
 // The canonical string values mirror domain.ScopeModeOpen/Closed (source of
 // truth); config keeps to raw strings to avoid a config→domain dependency.
@@ -586,10 +586,10 @@ func Validate(cfg *Config) error {
 
 	// security.master_key protects SNMPv3 USM passphrases at rest. It is
 	// OPTIONAL (so existing deployments keep working for v1/v2c) but MUST be
-	// exactly 32 bytes when set — a short key would silently weaken the
+	// exactly 32 bytes when set, a short key would silently weaken the
 	// encryption, and internal/crypto.NewCipher rejects anything other than 32.
 	// We warn here rather than fail so a config without v3 credentials isn't
-	// blocked at startup; the hard error surfaces at first v3 credential use.
+	// blocked at startup; the hard error appears at first v3 credential use.
 	if cfg.Security.MasterKey != "" && len(cfg.Security.MasterKey) != 32 {
 		fmt.Fprintf(os.Stderr,
 			"WARNING: security.master_key must be exactly 32 bytes long (got %d). "+

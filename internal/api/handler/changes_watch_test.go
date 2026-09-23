@@ -21,7 +21,7 @@ import (
 )
 
 // newWatchServer stands up a real httptest.Server (a real connection is needed
-// so ctx.Done fires when the client closes — httptest.ResponseRecorder does
+// so ctx.Done fires when the client closes, httptest.ResponseRecorder does
 // not model connection lifecycle). Returns the server + the watcher so the
 // caller can push events. srv.Close (registered via t.Cleanup) closes all
 // in-flight connections, which triggers the handler's ctx.Done → clean exit.
@@ -54,7 +54,7 @@ func TestChangeWatch_SSEHeadersCorrect(t *testing.T) {
 	require.Equal(t, "no-cache", resp.Header.Get("Cache-Control"))
 	require.Equal(t, "keep-alive", resp.Header.Get("Connection"))
 
-	// The handler emits an initial ": connected" comment on connect — proving
+	// The handler emits an initial ": connected" comment on connect, proving
 	// the stream is live (not a zero-length/CLOSED response).
 	br := bufio.NewReader(resp.Body)
 	line, err := br.ReadString('\n')
@@ -88,7 +88,7 @@ func TestChangeWatch_DeliversEvents(t *testing.T) {
 		}
 		if strings.Contains(line, "device_added") {
 			require.Contains(t, line, "device_added", "payload must carry the change type")
-			// back up one to confirm the preceding "event: change" was emitted —
+			// back up one to confirm the preceding "event: change" was emitted;
 			// we only assert the payload line here; the event label is on the prior line.
 			return
 		}

@@ -215,7 +215,7 @@ func TestBuildScannerTargets(t *testing.T) {
 	for _, tgt := range targets {
 		if len(tgt.Targets) > 0 && tgt.Targets[0] == "10.0.0.99:9090" {
 			found99 = true
-			// No per-device overrides — should use static + dynamic.
+			// No per-device overrides, should use static + dynamic.
 			require.Equal(t, "infra", tgt.Labels["team"], "unregistered device should use static team")
 			require.Equal(t, "production", tgt.Labels["env"])
 			require.Equal(t, "daily-scan", tgt.Labels["scan_task_name"])
@@ -285,7 +285,7 @@ func TestSDIncludesScannerTargets(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Create SDHandler with nil systemRepo — scanner targets don't depend on it.
+	// Create SDHandler with nil systemRepo, scanner targets don't depend on it.
 	sdHandler := handler.NewSDHandler(d, nil)
 
 	req := httptest.NewRequest("GET", "/sd", nil)

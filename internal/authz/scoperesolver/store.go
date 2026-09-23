@@ -107,7 +107,7 @@ func ListAll(ctx context.Context, db *sql.DB, limit, offset int) ([]GrantDetail,
 	return out, int(total), rows.Err()
 }
 
-// Create inserts a grant. Idempotent at the DB level (UNIQUE(user_id, network_id)):
+// Create inserts a grant. Duplicates collapse at the DB level (UNIQUE(user_id, network_id)):
 // a duplicate insert fails with a constraint error the caller maps to "already
 // exists". Returns the new row id.
 func Create(ctx context.Context, db *sql.DB, userID, networkID int64) (int64, error) {

@@ -17,7 +17,7 @@ import "time"
 // via its bearer token (which binds agent_id + network_id), so those fields
 // here are advisory/cross-check rather than the source of truth.
 //
-// This is a deliberately flat, JSON-tagged projection of scannerv2.HostReport
+// This is a flat, JSON-tagged projection of scannerv2.HostReport
 // (whose nested structs DeviceRef/HostReport carry no JSON tags and aren't safe
 // to ship over the wire as-is). The center reconstructs a HostReport from each
 // ReportedHost via runner.ReportedHostToReport and feeds it through the same
@@ -26,7 +26,7 @@ type AgentReport struct {
 	// AgentID is the agent's stable identifier (echoes agent_tokens.agent_id;
 	// the center uses the token-bound value as authoritative).
 	AgentID string `json:"agent_id"`
-	// NetworkName is the human network name (e.g. "lan-62"). Advisory — the
+	// NetworkName is the human network name (e.g. "lan-62"). Advisory, the
 	// center resolves network_id from the agent's token, not from this string.
 	NetworkName string `json:"network_name,omitempty"`
 	// NetworkCIDR is the agent's configured network CIDR (e.g. "192.168.62.0/24").
@@ -45,7 +45,7 @@ type AgentReport struct {
 	// values).
 	Meta *AgentMeta `json:"meta,omitempty"`
 	// Hosts is the set of alive hosts discovered in this batch. Dead hosts are
-	// omitted (the agent reports presence, not absence — change-detection lives
+	// omitted (the agent reports presence, not absence, change-detection lives
 	// at the center).
 	Hosts []ReportedHost `json:"hosts"`
 }
@@ -91,7 +91,7 @@ type ReportedHost struct {
 	PrometheusURL   string `json:"prometheus_url,omitempty"`
 	NodeExporterURL string `json:"node_exporter_url,omitempty"`
 	// Services is the classified service-identity set (the bridge seeds
-	// heartbeat configs from this). Optional — agents that only do liveness
+	// heartbeat configs from this). Optional, agents that only do liveness
 	// discovery may omit it.
 	Services []ReportedService `json:"services,omitempty"`
 	// Heartbeats is the generated heartbeat specs (method/target/interval). When

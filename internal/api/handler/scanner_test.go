@@ -37,7 +37,7 @@ func TestIsTargetError(t *testing.T) {
 		if !isTargetError(sentinel) {
 			t.Errorf("isTargetError(%v) = false, want true for direct sentinel", sentinel)
 		}
-		// Wrapped sentinel with detail text — must still match via errors.Is.
+		// Wrapped sentinel with detail text, must still match via errors.Is.
 		wrapped := fmt.Errorf("%w: some detail", sentinel)
 		if !isTargetError(wrapped) {
 			t.Errorf("isTargetError(wrapped %v) = false, want true", sentinel)
@@ -48,7 +48,7 @@ func TestIsTargetError(t *testing.T) {
 		}
 	}
 
-	// Unrelated errors must NOT classify as target errors — otherwise a real
+	// Unrelated errors must NOT classify as target errors, otherwise a real
 	// internal failure would be masked as a 400 "bad targets".
 	if isTargetError(errors.New("scan failed: timeout")) {
 		t.Errorf("isTargetError(generic error) = true, want false")

@@ -20,7 +20,7 @@ import (
 // is enforced at the route (not just the middleware) layer.
 //
 // "Pass" means the request cleared the auth gate and reached the handler (so the
-// status is anything OTHER than 401/403 — e.g. 200/400/404 from the handler on a
+// status is anything OTHER than 401/403, e.g. 200/400/404 from the handler on a
 // near-empty test DB). "Deny" means exactly 403 (authenticated, insufficient
 // capability) or 401 (no token). This decouples the boundary assertion from
 // handler/DB specifics while still catching a mis-wired capability.

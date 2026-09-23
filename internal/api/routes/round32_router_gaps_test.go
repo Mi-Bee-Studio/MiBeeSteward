@@ -13,7 +13,7 @@ import (
 )
 
 // TestRouter_DiscoveryAllSources drives the discovery wiring with EVERY
-// source enabled — each source's constructor + Start + activeSources append
+// source enabled, each source's constructor + Start + activeSources append
 // executes (listeners that cannot bind degrade with a warning, never kill
 // the router).
 func TestRouter_DiscoveryAllSources(t *testing.T) {
@@ -45,7 +45,7 @@ func TestRouter_DiscoveryAllSources(t *testing.T) {
 
 // TestRouter_DeadDB_SettingsOverlayWarnAndDemoSkip: over a dead handle the
 // settings-overlay constructor fails (warn + config-only) and the demo
-// seed's emptiness probe fails (treated as non-empty → skip) — the router
+// seed's emptiness probe fails (treated as non-empty → skip), the router
 // still builds and serves.
 func TestRouter_DeadDB_SettingsOverlayWarnAndDemoSkip(t *testing.T) {
 	conn := newTestDB(t)

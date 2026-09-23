@@ -55,7 +55,7 @@ func TestDocumentEndpoints_CreateURLAndDelete(t *testing.T) {
 	resp = authPost(t, server.URL+"/api/v1/documents", token, `{"title":""}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.Contains(t, readBody(t, resp), "title")
-	// title-only without url: the service 404s?? — actually CreateURL requires
+	// title-only without url: the service 404s??, actually CreateURL requires
 	// url; observed behavior is 400 via ErrURLRequired. Keep the observed 400.
 	resp = authPost(t, server.URL+"/api/v1/documents", token, `{"title":"x"}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)

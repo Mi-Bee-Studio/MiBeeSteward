@@ -65,7 +65,7 @@ func TestDoctor_ExitCodes(t *testing.T) {
 		// The ICMP capability check reads the host's ping_group_range sysctl
 		// (absent on Windows, present on Linux runners where it may be
 		// disabled "1 0"). Mirror doctor's own logic to derive the expected
-		// exit: 0 on capable hosts, doctorFailExit where ICMP is disabled —
+		// exit: 0 on capable hosts, doctorFailExit where ICMP is disabled;
 		// both are correct behavior for this config.
 		wantExit := 0
 		if raw, err := os.ReadFile("/proc/sys/net/ipv4/ping_group_range"); err == nil {

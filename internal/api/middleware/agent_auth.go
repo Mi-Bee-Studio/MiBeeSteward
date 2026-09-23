@@ -41,9 +41,9 @@ func SetAgentQueries(q *db.Queries) {
 //   - hashes it (SHA-256, hex) and looks up agent_tokens.token_hash
 //   - rejects (401) on no token / unknown hash / revoked token
 //   - on success injects agent_id + network_id into the request context and
-//     updates last_used_at (best-effort, non-blocking)
+//     updates last_used_at (failure logged, non-blocking)
 //
-// The plaintext token is NEVER stored — only its hash — so lookup is by hash.
+// The plaintext token is NEVER stored, only its hash, so lookup is by hash.
 func RequireAgentToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if agentQueries == nil {
@@ -66,7 +66,7 @@ func RequireAgentToken(next http.Handler) http.Handler {
 			http.Error(w, "agent token revoked", http.StatusUnauthorized)
 			return
 		}
-		// Best-effort last-used stamp; a failure here must not fail the request
+		// Last-used stamp; a failure here must not fail the request
 		// (the lookup above already proved the token is valid).
 		_ = agentQueries.TouchAgentTokenLastUsed(r.Context(), row.ID)
 
@@ -80,7 +80,7 @@ func RequireAgentToken(next http.Handler) http.Handler {
 }
 
 // extractBearerToken pulls the opaque token from "Authorization: Bearer <tok>".
-// Returns "" when the header is absent or malformed. Deliberately separate from
+// Returns "" when the header is absent or malformed. It is separate from
 // the JWT extractToken (cookie-first) so the two auth paths can't interfere.
 func extractBearerToken(r *http.Request) string {
 	h := r.Header.Get("Authorization")
@@ -122,7 +122,7 @@ func HashAgentToken(token string) string {
 // GenerateAgentToken returns a freshly-generated opaque token (32 random bytes
 // hex-encoded = 64 chars) plus its SHA-256 hash. The plaintext goes to the
 // operator once; the hash is what gets stored. Panics only on a crypto/rand
-// failure (which indicates a broken host entropy source — not recoverable).
+// failure (which indicates a broken host entropy source, not recoverable).
 func GenerateAgentToken() (plaintext, hash string) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

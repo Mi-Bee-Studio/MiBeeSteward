@@ -81,11 +81,11 @@ type CreateHeartbeatConfigIfAbsentParams struct {
 	Enabled         int64  `json:"enabled"`
 }
 
-// Idempotent form of CreateHeartbeatConfig for scan-time seeding (#291): a
+// Repeatable form of CreateHeartbeatConfig for scan-time seeding (#291): a
 // device scanned twice (or seeded by two paths in one bridge) re-asserts the
 // same (device_id, method) spec as a no-op instead of failing the UNIQUE
 // index. The user-driven API create keeps the strict form so a manual
-// duplicate surfaces as a 409.
+// duplicate shows up as a 409.
 func (q *Queries) CreateHeartbeatConfigIfAbsent(ctx context.Context, arg CreateHeartbeatConfigIfAbsentParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, createHeartbeatConfigIfAbsent,
 		arg.DeviceID,

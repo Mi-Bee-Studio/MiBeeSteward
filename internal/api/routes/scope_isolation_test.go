@@ -160,7 +160,7 @@ func TestScope_AdminBypassesScope(t *testing.T) {
 	require.Equal(t, 2, body.Total, "admin bypasses scope — sees both networks' devices")
 }
 
-// TestScope_OpenMode_ViewerSeesEverything: open mode (default) ignores grants —
+// TestScope_OpenMode_ViewerSeesEverything: open mode (default) ignores grants;
 // a viewer sees all devices regardless of grants. Backward-compatible default.
 func TestScope_OpenMode_ViewerSeesEverything(t *testing.T) {
 	cfg := newTestConfig() // open mode (default)
@@ -196,7 +196,7 @@ func authedGet(t *testing.T, h http.Handler, token, path string) *httptest.Respo
 
 // TestScope_ClosedMode_ReadSurfacesScoped pins the Phase 2b surfaces: in closed
 // mode a viewer granted network 1 sees ONLY network-1 data across topology,
-// changes, dashboard overview, device stats, and device export — while admin is
+// changes, dashboard overview, device stats, and device export, while admin is
 // unrestricted. This closes the object-scope loop on every read surface that
 // joins the devices/change_log tables by network_id.
 func TestScope_ClosedMode_ReadSurfacesScoped(t *testing.T) {
@@ -329,7 +329,7 @@ func scannerSeedData(t *testing.T, db *sql.DB) {
 }
 
 // TestScope_ClosedMode_ScannerSurfacesScoped pins the Phase 2c surfaces: in
-// closed mode a viewer granted network 1 sees ONLY net-1 tasks/runs/results —
+// closed mode a viewer granted network 1 sees ONLY net-1 tasks/runs/results;
 // out-of-scope details return 404 (indistinguishable from absent), and the
 // NULL-network (cross-network) task is hidden. Admin sees everything.
 func TestScope_ClosedMode_ScannerSurfacesScoped(t *testing.T) {

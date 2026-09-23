@@ -151,7 +151,7 @@ func (h *TOTPHandler) Disable(w http.ResponseWriter, r *http.Request) {
 // Verify handles POST /api/v1/auth/2fa/verify
 // This endpoint receives a TOTP code after a login challenge.
 // It validates the code and returns a JWT token on success.
-// This is a public endpoint (no auth middleware) — the user proves identity via 2FA code.
+// This is a public endpoint (no auth middleware), the user proves identity via 2FA code.
 func (h *TOTPHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	var req domain.TOTPVerifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -183,7 +183,7 @@ func (h *TOTPHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Code is valid — generate JWT token
+	// Code is valid, generate JWT token
 	profile, err := h.userSvc.GetProfile(r.Context(), req.UserID)
 	if err != nil {
 		slog.Error("failed to get user profile for 2FA", "user_id", req.UserID, "error", err)
@@ -191,7 +191,7 @@ func (h *TOTPHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate token via a direct call — we need to use GenerateTokenForUser
+	// Generate token via a direct call, we need to use GenerateTokenForUser
 	// Since we can't access generateToken directly, use a public method. The
 	// must-change flag rides the token as the mcp claim (server-side gate).
 	token, err := h.userSvc.GenerateTokenForUser(r.Context(), req.UserID, profile.Role, profile.MustChangePassword)
