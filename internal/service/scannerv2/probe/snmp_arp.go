@@ -64,7 +64,7 @@ type RouterARPConfig struct {
 // reads the local kernel's neighbour cache (only populated for the scanner's
 // directly-attached subnet), this asks a router that IS on the target subnet.
 // Returns ("", false) when the router doesn't speak SNMP, the OID is empty, or
-// ip has no entry. Errors are swallowed deliberately, cross-subnet MAC is a
+// ip has no entry. Errors are swallowed, cross-subnet MAC is a
 // optional enrichment, not a scan-critical path.
 //
 // The result is cached per-process for routerARPCacheTTL so a /24 cross-subnet
