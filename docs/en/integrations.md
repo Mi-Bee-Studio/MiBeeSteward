@@ -1,6 +1,6 @@
 # Integrations
 
-MiBee Steward stays focused on device discovery and inventory — but it ships official bridges to the surrounding observability ecosystem: Grafana dashboards for the metrics it exports, notification channels for the chat platforms your team already uses, and webhook examples for automation tools.
+MiBee Steward stays focused on device discovery and inventory, but it ships official bridges to the surrounding observability ecosystem: Grafana dashboards for the metrics it exports, notification channels for the chat platforms your team already uses, and webhook examples for automation tools.
 
 ## Grafana
 
@@ -26,7 +26,7 @@ volumes:
   - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
 ```
 
-The bundled datasource provisioning expects Prometheus at `http://prometheus:9090` — edit `deploy/grafana/provisioning/datasources/prometheus.yml` if yours lives elsewhere. Dashboards appear in the `MiBee` folder on startup.
+The bundled datasource provisioning expects Prometheus at `http://prometheus:9090`, edit `deploy/grafana/provisioning/datasources/prometheus.yml` if yours lives elsewhere. Dashboards appear in the `MiBee` folder on startup.
 
 ### Manual import
 
@@ -41,11 +41,11 @@ Notification rules (event → channel, see [Web UI](web-ui.md) → Settings → 
 | `webhook` | `url`, optional `headers` map | Custom headers (e.g. your receiver's token) |
 | `email` | SMTP `host`/`port`/`username`/`password`, `from`, `to` | SMTP AUTH |
 | `feishu` | `url`, optional `secret` | Feishu custom-bot HMAC signature (enable signature verification on the bot and paste the secret) |
-| `wecom` | `url` | none (the webhook URL is the credential — treat it as secret) |
+| `wecom` | `url` | none (the webhook URL is the credential, treat it as secret) |
 | `telegram` | `bot_token`, `chat_id` | Bot API token |
 | `discord` | `url`, optional `username` | none (webhook URL is the credential) |
 
-The four chat-platform channels are "formatted webhooks": MiBee translates each event into the platform's message format (a text message combining the subject and details). Use the generic `webhook` type when you want the raw JSON payload instead — it posts the full event structure:
+The four chat-platform channels are "formatted webhooks": MiBee translates each event into the platform's message format (a text message combining the subject and details). Use the generic `webhook` type when you want the raw JSON payload instead, it posts the full event structure:
 
 ```json
 {
@@ -62,13 +62,13 @@ The four chat-platform channels are "formatted webhooks": MiBee translates each 
 }
 ```
 
-Every channel has a **Test send** button in the UI (Settings → Notifications → channel row) — use it to verify delivery before wiring rules.
+Every channel has a **Test send** button in the UI (Settings → Notifications → channel row), use it to verify delivery before wiring rules.
 
 ## Automation Examples
 
 Ready-made examples live under [`deploy/integrations/`](https://github.com/Mi-Bee-Studio/MiBeeSteward/tree/main/deploy/integrations):
 
-- **n8n** — `n8n/mibee-device-alerts.json`: an importable workflow that receives the generic-webhook payload, filters `device_lost`, and hands off to your choice of destination node (chat, ticketing, …).
-- **Home Assistant** — `homeassistant/mibee-device-webhook.yaml`: a `webhook` trigger automation that pushes a persistent notification when a device is lost, plus a `rest_command` for triggering MiBee scans from HA.
+- **n8n**, `n8n/mibee-device-alerts.json`: an importable workflow that receives the generic-webhook payload, filters `device_lost`, and hands off to your choice of destination node (chat, ticketing, …).
+- **Home Assistant**, `homeassistant/mibee-device-webhook.yaml`: a `webhook` trigger automation that pushes a persistent notification when a device is lost, plus a `rest_command` for triggering MiBee scans from HA.
 
 The pattern is the same everywhere: create a `webhook` channel pointing at your tool's inbound URL, bind a notification rule to it, and consume `metadata.event_type` for routing.

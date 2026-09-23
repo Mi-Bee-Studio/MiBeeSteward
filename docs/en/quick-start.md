@@ -36,7 +36,7 @@ docker run -d --name mibee \
   ghcr.io/mi-bee-studio/mibeesteward:0.4.0
 ```
 
-> Docker's default bridge mode sits behind NAT, which breaks ICMP, ARP/MAC, and multicast probing — it cannot be used for real asset inventory. See [Deployment](deployment.md).
+> Docker's default bridge mode sits behind NAT, which breaks ICMP, ARP/MAC, and multicast probing, it cannot be used for real asset inventory. See [Deployment](deployment.md).
 
 ## Minimal Configuration
 
@@ -82,7 +82,7 @@ curl http://localhost:8080/api/v1/health
 
 ## 60-Second Demo (no network needed)
 
-Curious what the inventory looks like before wiring a real subnet? Start in demo mode — a fictional fleet (two networks, ~20 devices with portraits, change history, probe results) is seeded on first boot and kept active with simulated events:
+Curious what the inventory looks like before wiring a real subnet? Start in demo mode, a fictional fleet (two networks, ~20 devices with portraits, change history, probe results) is seeded on first boot and kept active with simulated events:
 
 ```bash
 ./mibee-steward -demo -config configs/config.example.yaml
@@ -152,10 +152,10 @@ The response is `{ hosts, total, alive, duration_ms }`; each host carries `ip`, 
 
 ## Next Steps
 
-- [Scenario playbooks](playbooks.md) — six guided scenarios from first scan to multi-subnet
-- [Feature overview](features.md) — the full capability inventory
-- [Architecture](architecture.md) — scanner pipeline and background services
-- [Deployment](deployment.md) — systemd, Docker, Nginx, backups
-- [Distributed](distributed.md) — center + agents for multi-network discovery
-- [Configuration Reference](configuration.md) — all config options
-- [API Reference](api.md) — scan, device, and heartbeat endpoints
+- [Scenario playbooks](playbooks.md), six guided scenarios from first scan to multi-subnet
+- [Feature overview](features.md), the full capability inventory
+- [Architecture](architecture.md), scanner pipeline and background services
+- [Deployment](deployment.md), systemd, Docker, Nginx, backups
+- [Distributed](distributed.md), center + agents for multi-network discovery
+- [Configuration Reference](configuration.md), all config options
+- [API Reference](api.md), scan, device, and heartbeat endpoints

@@ -10,7 +10,7 @@
 
 [English](README.md) | **中文**
 
-**设备/网络层的资产发现、识别与登记** —— 面向网络与 IoT 资产的轻量 CMDB。自动发现网络上的设备，通过协议指纹识别品牌/型号，并持续跟踪。单个零依赖二进制；资产状态通过 `/metrics` + `/sd` 流向 Prometheus 生态。告警/可视化有意留给 Alertmanager/Grafana。Go 后端 + SvelteKit 前端。
+**设备/网络层的资产发现、识别与登记**，面向网络与 IoT 资产的轻量 CMDB。自动发现网络上的设备，通过协议指纹识别品牌/型号，并持续跟踪。单个零依赖二进制；资产状态通过 `/metrics` + `/sd` 流向 Prometheus 生态。告警/可视化有意留给 Alertmanager/Grafana。Go 后端 + SvelteKit 前端。
 
 ```mermaid
 flowchart LR
@@ -54,22 +54,22 @@ flowchart LR
 - **多协议探测**：SNMP **v1/v2c/v3（USM authNoPriv/authPriv，凭据加密存储）**、ICMP、TCP、HTTP 监控
 - **设备系统管理**：每台设备可挂载多个已安装系统（含入口 URL），以带分类徽章的卡片网格展示
 - **网络扫描器（v2）**：基于插件的 5 层架构（探测 → 分类 → 处理 → 持久化 → 编排），支持级联深度采集。可识别 SSH/HTTP/RTSP/ONVIF/SNMP/Prometheus/node_exporter，并推断设备类型与品牌（例如根据 RTSP+ONVIF 识别为摄像头）。扩展方式：注册一个 Classifier + 一个 Handler 即可接入新协议
-- **设备配置备份**：Oxidized/RANCID 式定时 SSH 拉取 `running-config`（厂商命令矩阵、host-key TOFU），版本化存储、两版本 unified diff、`device_config_changed` 变更事件——按需启用，凭据落库加密。[API 参考](docs/zh/api.md)
+- **设备配置备份**：Oxidized/RANCID 式定时 SSH 拉取 `running-config`（厂商命令矩阵、host-key TOFU），版本化存储、两版本 diff、`device_config_changed` 变更事件。按需启用，凭据落库加密。[API 参考](docs/zh/api.md)
 - **RBAC + 网络作用域**：基于能力的角色模型（admin / operator / viewer）+ 按用户的网络授权；`closed` 模式将租户隔离到各自被授权的网络（MSP 就绪）。
-- **MAC 厂商推断**：按最长前缀匹配将每个发现的 MAC 解析为 IEEE 注册厂商（MA-L / MA-M / MA-S 三档注册表），记为 `oui_prefix` + `oui_vendor`（NIC 芯片厂商，与设备自报品牌分开）。内置精简厂商表，开箱即用；完整 IEEE 数据集可按需下载。
-- **TLS 证书清点**：从 TLS 包装的服务（HTTPS、LDAPS、SMTPS、IMAPS、POP3S、FTPS、IRCS、TelnetS）采集完整证书链（叶证书 + 颁发者），含 Subject/Issuer/SAN/有效期/签名/密钥/指纹与 PEM，按端口/设备维度落地，并在设备详情页展示过期状态（有效/临近/已过期）与信任判定。数据保存在 `host_tls_certs` 表（默认保留 30 天）。
-- **拨测（Synthetic Probing）**：blackbox 风格的显式配置外网端点周期探测（公开 HTTPS 站点、托管 TLS 端口等）——http/tls/tcp/icmp 四类模块，跟踪延迟与状态码；`tls` 与 https 目标采集完整证书链（叶/签发者、信任判定、到期时间），把内网证书清点能力复用到互联网主机。以 `mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds` 指标对接 Prometheus 告警，附示例告警规则。
+- **MAC 厂商推断**：按最长前缀匹配把每个 MAC 解析到 IEEE 注册厂商（MA-L / MA-M / MA-S），记为 `oui_prefix` + `oui_vendor`（NIC 芯片厂商，与设备自报品牌分开）。内置精简表开箱即用，完整 IEEE 数据集可选下载。
+- **TLS 证书清点**：从 TLS 包装的服务（HTTPS、LDAPS、SMTPS、IMAPS、POP3S、FTPS、IRCS、TelnetS）采集完整证书链，含 Subject/Issuer/SAN/有效期/指纹与 PEM，按端口/设备维度保存；设备详情页展示过期状态与信任判定，默认保留 30 天（`host_tls_certs`）。
+- **拨测（Synthetic Probing）**：blackbox 风格的外网端点周期探测（http/tls/tcp/icmp 模块），跟踪延迟与状态码；TLS 目标复用证书链采集。以 `mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds` 指标对接 Prometheus 告警，附示例规则。
 - **eBPF 被动观测器**：可选的 TC ingress 程序，嗅探 ONVIF WS-Discovery 组播与 TCP 特征字节，作为旁证数据源（构建标签门控；默认构建无此依赖）
-- **分布式发现**：在远程局域网部署轻量采集器，跨网络发现设备。采集器通过拉取模型 HTTPS 上报到中心，bearer 令牌认证、断线补报、MAC 优先设备身份（同设备跨网络保持单一资产）。[分布式指南](docs/zh/distributed.md)
+- **分布式发现**：在远程局域网部署轻量采集器跨网络发现设备，经 HTTPS + bearer 令牌上报中心，支持断线补报；MAC 优先身份让漫游设备保持单一资产。[分布式指南](docs/zh/distributed.md)
 - **变化检测**：每次扫描自动检测设备新增/变更/离线/配置变更，带 grace period 防止抖动误报。可查询历史（`GET /changes`）和实时 SSE 推送（`GET /changes/watch`）。
-- **事件通知**：规则驱动地把变更事件（设备离线/恢复/新增/变更、配置变更）投递到 webhook/邮件渠道，带防抖冷却——不搭 Alertmanager 栈也能收到"设备掉线"邮件。
+- **事件通知**：规则驱动地把变更事件（离线/恢复/新增/变更、配置变更）投递到 webhook/邮件渠道，带防抖冷却，不搭 Alertmanager 栈也能收到"设备掉线"邮件。
 - **拓扑发现**：Bridge-MIB SNMP 探针遍历交换机转发表，学习 L2 邻接关系（哪个 MAC 在哪个端口后面）。[架构文档](docs/zh/architecture.md#分布式模型)
 - **心跳监控**：可配置探测间隔，自动失败检测；存活状态以时间序列保存（在线/离线历史、离线时长、可用率）
 - **Prometheus 集成**：`/metrics` 指标端点用于监控，`/sd` HTTP 服务发现用于自动发现
 - **内嵌 Web 界面**：SvelteKit SPA，实时仪表盘、多 LAN 设备筛选、变更历史、采集器管理界面
 - **JWT 认证**：TOTP 两步验证、基于能力的 RBAC（admin / operator / viewer + 对象级网络作用域）、机器到机器的采集器令牌认证
 - **多语言支持**：中英双语，基于 @inlang/paraglide-js
-- **审计日志**：完整的操作追踪
+- **审计日志**：管理操作的完整留痕
 - **单二进制部署**：前端通过 go:embed 嵌入
 
 ## 技术栈
@@ -145,17 +145,17 @@ MIBEE_RESET_PASSWORD=newpass ./mibee-steward reset-admin-password -config config
 
 完整双语手册（中文 + [English](docs/en/introduction.md)）位于 `docs/`：
 
-- [项目概述](docs/zh/introduction.md) — 项目概览与功能
-- [快速开始](docs/zh/quick-start.md) — 五分钟上手
-- [系统架构](docs/zh/architecture.md) — 系统设计与数据流
-- [API 参考](docs/zh/api.md) — REST API 文档
-- [配置参考](docs/zh/configuration.md) — 配置参考
-- [部署指南](docs/zh/deployment.md) — 生产环境部署（systemd / nginx / Docker / OpenWrt）
-- [分布式指南](docs/zh/distributed.md) — 中心 + 采集器多网络模型
-- [发现指南](docs/zh/discovery.md) — 探测源与识别管线
-- [产品范围](docs/zh/product-scope.md) — 是什么 / 不是什么，定位与边界
-- [指纹规范](docs/zh/fingerprint-spec.md) — 贡献识别规则（YAML）
-- [开发指南](docs/zh/development.md) — 贡献与编码规范
+- [项目概述](docs/zh/introduction.md)，项目概览与功能
+- [快速开始](docs/zh/quick-start.md)，五分钟上手
+- [系统架构](docs/zh/architecture.md)，系统设计与数据流
+- [API 参考](docs/zh/api.md)，REST API 文档
+- [配置参考](docs/zh/configuration.md)，配置参考
+- [部署指南](docs/zh/deployment.md)，生产环境部署（systemd / nginx / Docker / OpenWrt）
+- [分布式指南](docs/zh/distributed.md)，中心 + 采集器多网络模型
+- [发现指南](docs/zh/discovery.md)，探测源与识别管线
+- [产品范围](docs/zh/product-scope.md)，是什么 / 不是什么，定位与边界
+- [指纹规范](docs/zh/fingerprint-spec.md)，贡献识别规则（YAML）
+- [开发指南](docs/zh/development.md)，贡献与编码规范
 
 ## 配置
 
@@ -180,7 +180,7 @@ metrics:
 
 ```mermaid
 flowchart TB
-    subgraph BIN["mibee-steward — 单二进制（CGO-free Go，内嵌 SvelteKit SPA）"]
+    subgraph BIN["mibee-steward，单二进制（CGO-free Go，内嵌 SvelteKit SPA）"]
         subgraph HTTP["Chi HTTP"]
             MW["JWT + TOTP 2FA · RBAC 能力 · 网络作用域 · CSRF · 限流"]
             API["/api/v1 handlers"]
@@ -191,7 +191,7 @@ flowchart TB
             PT["拨测引擎<br/>（外网探测目标）"]
             CB["配置备份 sweep<br/>（SSH running-config）"]
         end
-        subgraph V2["扫描器 v2 — 插件管线"]
+        subgraph V2["扫描器 v2，插件管线"]
             PR["探测源"] --> CL["分类器<br/>（YAML 指纹）"]
             CL --> HD["处理器<br/>（级联采集）"]
             HD --> PS["持久化"]
@@ -238,7 +238,7 @@ make test
 
 ## 安全须知
 
-- 切勿编辑 `internal/db/*.go` 文件 —— 它们由 sqlc 生成
+- 切勿编辑 `internal/db/*.go` 文件，它们由 sqlc 生成
 - 使用 `.env` 文件存放密钥，切勿提交
 - SQLite 启用 WAL 模式以提升性能
 - 所有功能测试必须在测试服务器上进行

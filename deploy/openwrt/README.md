@@ -4,12 +4,12 @@ MiBee Steward can run **on an OpenWrt router** in two forms:
 
 | Form | Binary | Role | When to use |
 |---|---|---|---|
-| **B — router-agent → remote center** | `cmd/agent` | Pure sensor: scans the router's LAN, reports upstream over HTTPS to a center elsewhere | Multi-site / multi-LAN: one remote center + one agent per router. The agent is light (18MB binary, ~100MB RAM). |
-| **C — router-center** | `cmd/server` | The full center (API + SPA + asset registry + discovery) running ON the router | Single-network (home / small office): one router does everything — gets the choke-point discovery signals (DHCP leases / conntrack / hostapd / dns_log) AND serves the portrait UI. No separate agent process needed. |
+| **B, router-agent → remote center** | `cmd/agent` | Pure sensor: scans the router's LAN, reports upstream over HTTPS to a center elsewhere | Multi-site / multi-LAN: one remote center + one agent per router. The agent is light (18MB binary, ~100MB RAM). |
+| **C, router-center** | `cmd/server` | The full center (API + SPA + asset registry + discovery) running ON the router | Single-network (home / small office): one router does everything, gets the choke-point discovery signals (DHCP leases / conntrack / hostapd / dns_log) AND serves the portrait UI. No separate agent process needed. |
 
 Both forms unlock the **4 Tier-1 router-only discovery signals** that a host-based deployment can't get (the router is the network choke point: it sees DHCP, NAT flows, WiFi associations, and DNS queries a random LAN host can't). See `scanner.discovery.*` in `configs/config.example.yaml`.
 
-## Quick start (form C, no Docker — incl. iStoreOS / NanoPi R5S)
+## Quick start (form C, no Docker, incl. iStoreOS / NanoPi R5S)
 
 `make package-openwrt` bundles the arm64 binary + procd init + example config +
 `install.sh` into one tarball; the installer runs ON the router as root and does
@@ -28,12 +28,12 @@ make package-openwrt-ipk    # → bin/mibee-steward_<ver>_arm64.ipk  (opkg insta
 make package-openwrt-apk    # → bin/mibee-steward_<ver>_arm64.apk  (apk add --allow-untrusted <file>)
 ```
 
-## Quick start (form B — router-agent)
+## Quick start (form B, router-agent)
 
 Same three install forms for the agent. The installer (`agent-install.sh`)
 derives `network.name/cidr` from uci and keeps the router Tier-1 passive
 sources ON; the center url + agent token can be passed inline
-(`--center-url URL --token TOKEN` — minted on the center's Agents page) or
+(`--center-url URL --token TOKEN`, minted on the center's Agents page) or
 left out, in which case the config is generated with placeholders and the
 service stays DOWN until you fill them (the closing summary prints the steps):
 
@@ -48,19 +48,19 @@ make package-openwrt-agent-ipk    # → bin/mibee-agent_<ver>_arm64.ipk
 make package-openwrt-agent-apk    # → bin/mibee-agent_<ver>_arm64.apk
 ```
 
-**Field-verified hardware**: GL.iNet **GL-MT2500 (Brume 2)** — mediatek/mt7981, aarch64_cortex-a53, 1GB RAM, stock GL firmware (OpenWrt 21.02-SNAPSHOT, kernel 5.4.211). Form C verified end-to-end 2026-08-21: engine registry + embedded fingerprint corpus load, **all 4 Tier-1 sources producing live data** (dhcp_leases recorded a device carrying its lease hostname, conntrack + dns_log events flowing, hostapd a clean no-op on this WiFi-less model), a /24 scan in 74s during which the router self-identified as brand GL.iNet, SPA browser-verified, RSS ~113MB (#288, #37). Mind the v4-listener limitation on this firmware documented below.
+**Field-verified hardware**: GL.iNet **GL-MT2500 (Brume 2)**, mediatek/mt7981, aarch64_cortex-a53, 1GB RAM, stock GL firmware (OpenWrt 21.02-SNAPSHOT, kernel 5.4.211). Form C verified end-to-end 2026-08-21: engine registry + embedded fingerprint corpus load, **all 4 Tier-1 sources producing live data** (dhcp_leases recorded a device carrying its lease hostname, conntrack + dns_log events flowing, hostapd a clean no-op on this WiFi-less model), a /24 scan in 74s during which the router self-identified as brand GL.iNet, SPA browser-verified, RSS ~113MB (#288, #37). Mind the v4-listener limitation on this firmware documented below.
 
 ## ⚠️ Hardware requirements (read first)
 
 | Resource | Minimum | Comfortable | Notes |
 |---|---|---|---|
-| **Architecture** | **ARM or ARM64** | ARM64 (GL.iNet MT3000, ipq807x, mt798x) | **MIPS is NOT supported** — `modernc.org/libc` (the pure-Go SQLite backend's transitive dep) has no working `mips`/`mipsle` port and a broken `mips64le` one. This excludes older ath79/ramips routers (TP-Link Archer C7, Netgear R7000, etc.). |
+| **Architecture** | **ARM or ARM64** | ARM64 (GL.iNet MT3000, ipq807x, mt798x) | **MIPS is NOT supported**, `modernc.org/libc` (the pure-Go SQLite backend's transitive dep) has no working `mips`/`mipsle` port and a broken `mips64le` one. This excludes older ath79/ramips routers (TP-Link Archer C7, Netgear R7000, etc.). |
 | **RAM** | 128 MB | 256 MB+ | modernc SQLite is memory-heavier than C-SQLite; the center is heavier than the agent. |
-| **Flash** | 32 MB | 128 MB+ | Binary 16-18MB + OUI (~5MB full / 1.2KB curated) + fingerprint corpus (~1.2MB) + DB. The DB should live on `/tmp` (tmpfs) — see [Flash-wear mitigation](#flash-wear-mitigation-db-on-tmpfs). |
+| **Flash** | 32 MB | 128 MB+ | Binary 16-18MB + OUI (~5MB full / 1.2KB curated) + fingerprint corpus (~1.2MB) + DB. The DB should live on `/tmp` (tmpfs), see [Flash-wear mitigation](#flash-wear-mitigation-db-on-tmpfs). |
 
 ## Cross-compile
 
-Both binaries build CGO-free (`modernc.org/sqlite`), so a plain `GOOS`/`GOARCH` cross-compile works — no OpenWrt SDK needed.
+Both binaries build CGO-free (`modernc.org/sqlite`), so a plain `GOOS`/`GOARCH` cross-compile works, no OpenWrt SDK needed.
 
 ```bash
 # Form B: agent
@@ -76,7 +76,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 
 `GOARCH=arm` (32-bit, GOARM=7) also works for older ARM boards. `GOARCH=mips*` does **not** (see above).
 
-The repo's Makefile has cross-compile targets for all three supported archs —
+The repo's Makefile has cross-compile targets for all three supported archs;
 prefer these over the raw `go build` above (they run the device-type sync the
 embed step needs):
 
@@ -86,17 +86,17 @@ make build-linux-arm64   # ARMv8 (GL.iNet MT3000, ipq807x, mt798x)
 make build-linux-arm     # ARMv7 32-bit (older ARM boards)
 make build-all           # all three at once (server binary each)
 
-# Form B (agent) equivalents — same three archs:
+# Form B (agent) equivalents, same three archs:
 make build-agent-linux-arm64   # e.g. deploying to a GL.iNet router
 make build-agent-linux-amd64
 make build-agent-linux-arm
 ```
 
 (`make build-agent` without a `-linux-<arch>` suffix builds for the HOST
-architecture — handy when the build host IS the target, a foot-gun when it
+architecture, handy when the build host IS the target, a foot-gun when it
 isn't.)
 
-## Install (form B — agent → remote center)
+## Install (form B, agent → remote center)
 
 ```bash
 # On your build host:
@@ -110,13 +110,13 @@ scp <your-agent.yaml> root@router:/etc/mibee/agent.yaml   # write it from the mi
 #   center.auth_token:  <minted on the center via POST /api/v1/agents/tokens>
 #   network.name/cidr:  this router's LAN (e.g. lan-62 / 192.168.62.0/24)
 #   scanner.discovery.*: enable the router-only sources you want
-#     (dhcp_leases, conntrack, hostapd, dns_log — all default false)
+#     (dhcp_leases, conntrack, hostapd, dns_log, all default false)
 
 ssh root@router '/etc/init.d/mibee-agent enable && /etc/init.d/mibee-agent start'
 ssh root@router 'logread -e mibee-agent | tail -20'   # expect "mibee-agent running"
 ```
 
-## Install (form C — center on the router)
+## Install (form C, center on the router)
 
 ```bash
 scp mibee-steward root@router:/usr/bin/mibee-steward
@@ -126,9 +126,9 @@ scp configs/config.yaml root@router:/etc/mibee/config.yaml   # then edit on the 
 
 # On the router, edit /etc/mibee/config.yaml:
 #   server.port:                   e.g. 8080
-#   auth.initial_admin_password:   REQUIRED (no hardcoded default) — change from default!
+#   auth.initial_admin_password:   REQUIRED (no hardcoded default), change from default!
 #   network.name/cidr:             this router's LAN
-#   database.sqlite.path:          /tmp/mibee/mibee.db  (tmpfs — see below)
+#   database.sqlite.path:          /tmp/mibee/mibee.db  (tmpfs, see below)
 #   scanner.discovery.*:           enable the router-only sources
 
 ssh root@router '/etc/init.d/mibee-steward enable && /etc/init.d/mibee-steward start'
@@ -140,7 +140,7 @@ ssh root@router '/etc/init.d/mibee-steward enable && /etc/init.d/mibee-steward s
 Both binaries write a SQLite DB (WAL mode). On a router's NAND flash under overlayfs this causes write-wear. **Point the DB at `/tmp` (tmpfs, RAM-backed):**
 
 - **Agent (form B):** the local DB is explicitly a *shadow* (the center is the writer of record), so cold-start loss is fine. **Always use `/tmp/mibee-agent/agent.db`.** The agent's in-memory pending-queue (100 batches) handles disconnection during a reboot.
-- **Center (form C):** the DB is the authoritative portrait. `/tmp` means cold-start loss (rebuilt on the next scan; acceptable for a single-router deployment). For deployments that need persistence across reboots, leave `database.sqlite.path` on flash and accept the wear — consumer routers live 5-10 years and scan write volume is modest.
+- **Center (form C):** the DB is the authoritative portrait. `/tmp` means cold-start loss (rebuilt on the next scan; acceptable for a single-router deployment). For deployments that need persistence across reboots, leave `database.sqlite.path` on flash and accept the wear, consumer routers live 5-10 years and scan write volume is modest.
 
 ## Router-only discovery sources (enable in `scanner.discovery.*`)
 
@@ -151,9 +151,9 @@ Both binaries write a SQLite DB (WAL mode). On a router's NAND flash under overl
 | `hostapd` | WiFi STA associations (signal dBm / SSID / connect time) | hostapd ctrl socket → `iw station dump` fallback | ✅ no WiFi / no hostapd |
 | `dns_log` | Passive DNS fingerprint (devices that block probes still do DNS) | dnsmasq `--log-queries` log file | ✅ no query logging configured |
 
-All four are **shared across forms B and C** (and form A — center on a generic host), so the same config block works in `agent.yaml` and `config.yaml`. All four degrade to a clean no-op (debug log + skip) on a host that doesn't have the file/socket — no errors, no crashes.
+All four are **shared across forms B and C** (and form A, center on a generic host), so the same config block works in `agent.yaml` and `config.yaml`. All four degrade to a clean no-op (debug log + skip) on a host that doesn't have the file/socket, no errors, no crashes.
 
-**Operator setup for `dns_log`:** enable dnsmasq query logging —
+**Operator setup for `dns_log`:** enable dnsmasq query logging;
 `uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit && /etc/init.d/dnsmasq restart`. Point `scanner.discovery.dns_log.path` at the resulting log (or leave empty to probe the conventional paths).
 
 ## Operator prerequisites (GL.iNet / vendor SDK firmware)
@@ -162,7 +162,7 @@ Two firmware-level settings materially affect MiBee on router deployments. `mibe
 
 ### ICMP without root: `ping_group_range`
 
-MiBee's ICMP probes use **unprivileged datagram ping sockets** (no CAP_NET_RAW needed). The kernel only allows these for groups inside `/proc/sys/net/ipv4/ping_group_range`, and OpenWrt's default (`1 0`) disables them entirely — every probe fails with `permission denied`. Fix once:
+MiBee's ICMP probes use **unprivileged datagram ping sockets** (no CAP_NET_RAW needed). The kernel only allows these for groups inside `/proc/sys/net/ipv4/ping_group_range`, and OpenWrt's default (`1 0`) disables them entirely, every probe fails with `permission denied`. Fix once:
 
 ```sh
 echo "0 2147483647" > /proc/sys/net/ipv4/ping_group_range
@@ -171,7 +171,7 @@ echo "0 2147483647" > /proc/sys/net/ipv4/ping_group_range
 
 ### fw3 `syn_flood` chain throttles LAN-side TCP (GL.iNet SDK firmwares)
 
-GL firmwares ship fw3 with SYN-flood protection enabled: every TCP SYN (loopback included) passes a **global 25/s, burst-50 token bucket** before the accept rules. MiBee's heartbeat port checks + probe fan-out + local API traffic can exhaust the bucket; once it empties, **new TCP connections to ANY local port are silently dropped** — the symptom looks exactly like a broken listener (SYN arrives, no SYN-ACK). If you see intermittent connection timeouts to the router's own services, disable SYN-flood protection in LuCI (Network → Firewall → Traffic Rules → SYN-flood protection), or:
+GL firmwares ship fw3 with SYN-flood protection enabled: every TCP SYN (loopback included) passes a **global 25/s, burst-50 token bucket** before the accept rules. MiBee's heartbeat port checks + probe fan-out + local API traffic can exhaust the bucket; once it empties, **new TCP connections to ANY local port are silently dropped**, the symptom looks exactly like a broken listener (SYN arrives, no SYN-ACK). If you see intermittent connection timeouts to the router's own services, disable SYN-flood protection in LuCI (Network → Firewall → Traffic Rules → SYN-flood protection), or:
 
 ```sh
 uci set firewall.@defaults[0].synflood_protect=0 && uci commit firewall && /etc/init.d/firewall restart
@@ -179,7 +179,7 @@ uci set firewall.@defaults[0].synflood_protect=0 && uci commit firewall && /etc/
 
 ### Known limitation on GL.iNet MT2500 (mt7981, kernel 5.4.211 SDK): v4 TCP listeners
 
-Field diagnosis (see issue #288) on the stock firmware shows **newly-created IPv4 TCP listeners never complete handshakes** — SYNs reach the stack, but no SYN-ACK leaves (loopback captures show the SYN-ACK leaving with an **unfilled `0.0.0.0` address**, which the peer then RSTs). This affects ANY new listener (Go and C alike — the router's own LuCI is affected from off-box too), while IPv6 listeners work perfectly and pre-existing services keep working. Ruled out: iptables filter/nat/raw/mangle, policy routing (zerotier's `iif lo` rule), loopback offloads, conntrack saturation, and `mtkhnat` (rmmod doesn't restore v4). Until the vendor kernel bug is understood, **form C on this specific firmware is not viable on v4** — bind v6 (`server.host: "::"`) or run the center elsewhere and use form B (agent on the router).
+Field diagnosis (see issue #288) on the stock firmware shows **newly-created IPv4 TCP listeners never complete handshakes**, SYNs reach the stack, but no SYN-ACK leaves (loopback captures show the SYN-ACK leaving with an **unfilled `0.0.0.0` address**, which the peer then RSTs). This affects ANY new listener (Go and C alike, the router's own LuCI is affected from off-box too), while IPv6 listeners work perfectly and pre-existing services keep working. Ruled out: iptables filter/nat/raw/mangle, policy routing (zerotier's `iif lo` rule), loopback offloads, conntrack saturation, and `mtkhnat` (rmmod doesn't restore v4). Until the vendor kernel bug is understood, **form C on this specific firmware is not viable on v4**, bind v6 (`server.host: "::"`) or run the center elsewhere and use form B (agent on the router).
 
 ## Troubleshooting
 
@@ -187,15 +187,15 @@ Field diagnosis (see issue #288) on the stock firmware shows **newly-created IPv
 |---|---|
 | `bind: address already in use` on start | Another process holds the port (often the center's SPA + the router's own LuCI on 80/443). Set `server.port` to a free port (e.g. 8080). |
 | `database is locked (SQLITE_BUSY)` | WAL-mode write contention under heavy concurrent probing. Raise `database.max_open_conns` (default 16) or reduce `scanner.max_concurrent_hosts`. |
-| `mmap: access denied` at startup | Kernel disallows the mmap SQLite wants — run as root (the procd script does) or check the router's seccomp/apparmor. |
+| `mmap: access denied` at startup | Kernel disallows the mmap SQLite wants, run as root (the procd script does) or check the router's seccomp/apparmor. |
 | Discovery sources all no-op | Expected on a non-router host. On a router, check each source's prereq (dnsmasq running, `nf_conntrack` loaded, hostapd ctrl_interface enabled). |
 | `unsupported GOARCH mips` at build | MIPS isn't supported (modernc/libc limitation). Use an ARM/ARM64 router. |
-| ICMP probes all `permission denied` | `ping_group_range` disabled — see the operator prerequisites above. |
-| Intermittent silent connection drops to the router's own ports | fw3 `syn_flood` token bucket exhausted — see the operator prerequisites above. |
+| ICMP probes all `permission denied` | `ping_group_range` disabled, see the operator prerequisites above. |
+| Intermittent silent connection drops to the router's own ports | fw3 `syn_flood` token bucket exhausted, see the operator prerequisites above. |
 | `scp` to the router fails with `sh: /usr/libexec/sftp-server: not found` | Vendor firmwares (GL.iNet included) ship no sftp-server, so modern scp falls back to SFTP and dies. Force the legacy protocol: `scp -O …`. |
 | `dns_log` discovery source stays empty on GL.iNet | GL's dnsmasq build logs queries via the custom `logfacility` uci key (not the standard `logfile`): `uci set dhcp.@dnsmasq[0].logqueries=1 && uci set dhcp.@dnsmasq[0].logfacility=/tmp/dnsmasq.log && uci commit dhcp`, then point `discovery.dns_log.path` at that file and restart dnsmasq. |
 
 ## What's NOT covered here
 
 - **Official .ipk packaging** (OpenWrt build feed): this repo ships init scripts + binaries that work via plain `scp` + `/etc/init.d/`. A proper `.ipk` via the OpenWrt buildroot's `golang-package` macros is a follow-up (lower friction for end users; not required for correctness).
-- **MIPS support**: structural limitation of `modernc/libc`; would require swapping the SQLite backend to bbolt/goleveldb (a real refactor — deferred until a MIPS customer need exists).
+- **MIPS support**: structural limitation of `modernc/libc`; would require swapping the SQLite backend to bbolt/goleveldb (a real refactor, deferred until a MIPS customer need exists).

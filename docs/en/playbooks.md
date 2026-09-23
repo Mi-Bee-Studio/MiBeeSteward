@@ -1,8 +1,8 @@
 # Scenario Playbooks
 
-Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes, that teach the product by doing. The only prerequisite — you've deployed MiBee Steward and logged in following the [quick start](quick-start.md).
+Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes, that teach the product by doing. The only prerequisite, you've deployed MiBee Steward and logged in following the [quick start](quick-start.md).
 
-> Note: screenshots come from a live instance. Your data will differ — discovery results depend on what's actually on your network.
+> Note: screenshots come from a live instance. Your data will differ, discovery results depend on what's actually on your network.
 
 ## Scenario 1: See your network for the first time, in 15 minutes
 
@@ -15,7 +15,7 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
    ![Quick scan form](images/pb-scanner-form.webp)
 
 4. Click **Start Scan**. A /24 typically takes from tens of seconds to a few minutes, with live progress on the page.
-5. When it finishes, open the **Devices** list — every device shows IP, type, brand, and status. Unidentified devices are still registered as bare IPs; later scans progressively fill in their portraits.
+5. When it finishes, open the **Devices** list, every device shows IP, type, brand, and status. Unidentified devices are still registered as bare IPs; later scans progressively fill in their portraits.
 
    ![Devices list](images/pb-devices-camera.webp)
 
@@ -25,19 +25,19 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 
 **Where to go next**: schedule [async scan tasks](web-ui.md) to keep the inventory fresh, or continue with scenario 2 and put your network through a security check.
 
-## Scenario 2: Home network audit — who's using my network?
+## Scenario 2: Home network audit, who's using my network?
 
 **Goal**: spot unfamiliar devices and get notified the moment something new joins. The most practical playbook for home and small-office use.
 
-1. **Take stock**: walk the Devices list with type filters and search — cameras, routers, NAS, PCs, phones. Pay attention to two kinds of rows:
-   - "Blank" devices with no type/brand — open the detail page and check the MAC and OUI vendor (the NIC silicon vendor is a strong clue);
-   - Devices whose MAC carries the locally-administered bit flag — common on phones with MAC randomization or some embedded gear; it's neutral observability info.
-2. **Read the change history**: open **Changes**, filter by device-added — every device's "arrival time" is on record. Anything you don't recognize shows up here immediately.
+1. **Take stock**: walk the Devices list with type filters and search, cameras, routers, NAS, PCs, phones. Pay attention to two kinds of rows:
+   - "Blank" devices with no type/brand, open the detail page and check the MAC and OUI vendor (the NIC silicon vendor is a strong clue);
+   - Devices whose MAC carries the locally-administered bit flag, common on phones with MAC randomization or some embedded gear; it's neutral observability info.
+2. **Read the change history**: open **Changes**, filter by device-added, every device's "arrival time" is on record. Anything you don't recognize shows up here immediately.
 
    ![Change history](images/pb-changes.webp)
 
 3. **Set up join notifications**: go to **Settings → Notifications**, add a channel first (webhook or email), then create a rule: event type "device added", scope your network, target that channel. From now on every new device lands in your Feishu/Telegram/inbox.
-4. **(Optional) Heartbeats on critical devices**: configure probes on the detail page of each device you care about — you'll know when they drop.
+4. **(Optional) Heartbeats on critical devices**: configure probes on the detail page of each device you care about, you'll know when they drop.
 
 **Where to go next**: add "device lost" to the notification rules; wire `/metrics` into Prometheus for 24/7 watch (see the [integrations guide](integrations.md)).
 
@@ -49,7 +49,7 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 
    ![Camera filter](images/pb-devices-camera.webp)
 
-2. Open a camera and switch to the **Scan Discovery** tab — RTSP (554), ONVIF (80), HTTP admin ports, SNMP, SSH are listed per row with confidence and banner snippets. The RTSP URL can be copied straight into a player.
+2. Open a camera and switch to the **Scan Discovery** tab, RTSP (554), ONVIF (80), HTTP admin ports, SNMP, SSH are listed per row with confidence and banner snippets. The RTSP URL can be copied straight into a player.
 
    ![Services and ports](images/pb-camera-services.webp)
 
@@ -57,22 +57,22 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 
    ![TLS certificates](images/pb-router-tls.webp)
 
-4. Wondering "why was this classified as a camera?" — open the **Fingerprint coverage** page: every identification verdict traces back to a YAML rule (3,869+ and growing).
+4. Wondering "why was this classified as a camera?", open the **Fingerprint coverage** page: every identification verdict traces back to a YAML rule (3,869+ and growing).
 
    ![Fingerprint coverage](images/pb-fingerprints.webp)
 
 **Where to go next**: add manual attributes (location, purpose, tags) on the overview page; upload manuals/receipts as attachments and turn the inventory into a real asset dossier.
 
-## Scenario 4: Switch topology — who's plugged into which port
+## Scenario 4: Switch topology, who's plugged into which port
 
 **Goal**: use LLDP/CDP/Bridge-MIB evidence to draw the L2 adjacency graph and answer "which switch port is this device on, in which VLAN". Prerequisite: switches with SNMP enabled (read-only is enough).
 
-1. Scan the switches' subnet first (scenario 1) with SNMP community/v3 credentials configured — all topology evidence comes from SNMP walks.
+1. Scan the switches' subnet first (scenario 1) with SNMP community/v3 credentials configured, all topology evidence comes from SNMP walks.
 2. Open the **Topology** page: a layered force-directed layout separates core/distribution/access tiers; the legend doubles as a per-tier filter.
 
    ![Network topology](images/pb-topology.webp)
 
-3. Type an IP or hostname in the search box to locate a device: matches and their neighbors stay lit while everything else dims — see at a glance "who it connects to".
+3. Type an IP or hostname in the search box to locate a device: matches and their neighbors stay lit while everything else dims, see at a glance "who it connects to".
 
    ![Topology search focus](images/pb-topology-focus.webp)
 
@@ -82,7 +82,7 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 
 ## Scenario 5: External probing and certificate-expiry watch
 
-**Goal**: watch assets *outside* your network — public sites, hosted TLS services: availability, latency, and days-to-cert-expiry.
+**Goal**: watch assets *outside* your network, public sites, hosted TLS services: availability, latency, and days-to-cert-expiry.
 
 1. Open the **Probes** page and click **+ New Target**:
    - HTTP module for websites (e.g. `https://example.com`);
@@ -93,17 +93,17 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 
    ![Probes overview](images/pb-probes.webp)
 
-3. Click any bar in the "certificate expiry timeline" to open the **full certificate chain** modal — leaf and intermediate CA subjects, issuers, serials, SANs, validity, with one-click PEM copy.
+3. Click any bar in the "certificate expiry timeline" to open the **full certificate chain** modal, leaf and intermediate CA subjects, issuers, serials, SANs, validity, with one-click PEM copy.
 
    ![Certificate chain](images/pb-probe-certchain.webp)
 
 4. (Optional) Prometheus integration: `mibee_probe_up`, `mibee_probe_cert_expiry_timestamp_seconds` and friends are exposed out of the box; example alert rules (target down / cert expiring within 30 days) live in [deploy/prometheus/alert_rules.yml](https://github.com/Mi-Bee-Studio/MiBeeSteward/blob/main/deploy/prometheus/alert_rules.yml).
 
-**Where to go next**: add your company site, API gateway, and mail-server TLS ports — inside assets are covered by scanning, outside assets by probing; together they form the complete asset view.
+**Where to go next**: add your company site, API gateway, and mail-server TLS ports, inside assets are covered by scanning, outside assets by probing; together they form the complete asset view.
 
 ## Scenario 6: One inventory across multiple subnets (advanced)
 
-**Goal**: a network at home, one at the office, one in the rack — drop a lightweight agent in each subnet and let the center aggregate a global asset portrait.
+**Goal**: a network at home, one at the office, one in the rack, drop a lightweight agent in each subnet and let the center aggregate a global asset portrait.
 
 1. On the center, create the network and an agent token (**Agents** page; the token is displayed exactly once).
 2. On an always-on host in the target subnet, deploy `mibee-agent` (also a single binary, runs as a regular user) configured with the center address and token.
@@ -118,7 +118,7 @@ Detailed steps in the [distributed deployment guide](distributed.md).
 
 ## Suggested progression
 
-1. [Schedule async scan tasks](web-ui.md) — automate inventory freshness.
-2. [Integrate Prometheus/Grafana](integrations.md) — feed asset data into your observability stack.
-3. [Config backup](features.md) — versioned insurance for network-device configuration.
-4. [RBAC and network scoping](features.md) — permission hygiene for team setups.
+1. [Schedule async scan tasks](web-ui.md), automate inventory freshness.
+2. [Integrate Prometheus/Grafana](integrations.md), feed asset data into your observability stack.
+3. [Config backup](features.md), versioned insurance for network-device configuration.
+4. [RBAC and network scoping](features.md), permission hygiene for team setups.

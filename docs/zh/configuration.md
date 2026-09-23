@@ -44,12 +44,12 @@ MiBee Steward 使用 YAML 配置文件，支持环境变量覆盖。本文档涵
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
 | `server.port` | int | 8080 | HTTP 监听端口 |
-| `server.demo_mode` | bool | false | 在**空库**上种子虚构演示资产(2 网络 + ~20 台 TEST-NET 设备 + 模拟活动);非空库不受影响。也可用 `-demo` 标志开启。生产环境务必保持关闭 —— 数据是刻意虚构的。 |
+| `server.demo_mode` | bool | false | 在**空库**上种子虚构演示资产(2 网络 + ~20 台 TEST-NET 设备 + 模拟活动);非空库不受影响。也可用 `-demo` 标志开启。生产环境务必保持关闭，数据是刻意虚构的。 |
 | `server.host` | string | "0.0.0.0" | 绑定地址（0.0.0.0 = 所有接口） |
 | `server.read_timeout` | duration | "15s" | 读取完整请求（头+体）的最长时间 |
 | `server.write_timeout` | duration | "5m" | 响应生命周期上限。**必须超过最慢的同步端点**（POST `/scanner/scan`）。若配置过低会自动上调至 `scanner.default_timeout×2+30s`，确保同步扫描永不被截断。 |
 | `server.idle_timeout` | duration | "120s" | keep-alive 空闲超时 |
-| `server.trusted_proxies` | []string | [] | 可信代理 CIDR 列表。仅当 TCP 对端在此列表中时，`X-Forwarded-For` 头才会被信任——否则使用 TCP 对端地址作为客户端 IP。空列表 = 信任无代理（直接暴露时安全）。部署在 nginx 后方时，设为代理的源地址范围。 |
+| `server.trusted_proxies` | []string | [] | 可信代理 CIDR 列表。仅当 TCP 对端在此列表中时，`X-Forwarded-For` 头才会被信任--否则使用 TCP 对端地址作为客户端 IP。空列表 = 信任无代理（直接暴露时安全）。部署在 nginx 后方时，设为代理的源地址范围。 |
 
 **环境变量：**
 - `MIBEE_SERVER_PORT`
@@ -108,7 +108,7 @@ database:
 | `auth.lockout.max_failed_attempts` | int | 5 | 连续登录失败多少次后锁定账户。 |
 | `auth.lockout.lock_minutes` | int | 30 | 锁定时长(分钟)。锁过期会重置失败计数。 |
 
-> **密码策略与锁定阈值支持网页端修改**：管理界面「设置 → 安全」（`GET/PUT /api/v1/settings/auth`）把覆盖值写入 `system_settings` 表，优先级 **数据库覆盖 > 本配置文件 > 内置默认**，对下一次密码校验/登录即生效、无需重启。表中的默认值仅作未配置时的兜底。特殊字符默认不再强制（min 8 + 大小写 + 数字）——四类全要求对家用场景过重；如需恢复旧行为，网页端勾选或在此显式配置 `require_special: true` 均可。另见首启行为：`auth.initial_admin_password` 留空（安装器默认）时 admin 以无密码状态播种，登录页轮询公共端点 `GET /auth/setup-status` 检测到后直接渲染「创建管理员密码」表单（`POST /auth/setup`，按生效策略校验、一次性窗口；此间登录尝试返回 409 `setup_required`），无需从安装输出里抄临时密码。非空值则为临时引导凭据（不校验策略），首次登录在浏览器强制改密（服务端闸门）。
+> **密码策略与锁定阈值支持网页端修改**：管理界面「设置 → 安全」（`GET/PUT /api/v1/settings/auth`）把覆盖值写入 `system_settings` 表，优先级 **数据库覆盖 > 本配置文件 > 内置默认**，对下一次密码校验/登录即生效、无需重启。表中的默认值仅作未配置时的兜底。特殊字符默认不再强制（min 8 + 大小写 + 数字）--四类全要求对家用场景过重；如需恢复旧行为，网页端勾选或在此显式配置 `require_special: true` 均可。另见首启行为：`auth.initial_admin_password` 留空（安装器默认）时 admin 以无密码状态播种，登录页轮询公共端点 `GET /auth/setup-status` 检测到后直接渲染「创建管理员密码」表单（`POST /auth/setup`，按生效策略校验、一次性窗口；此间登录尝试返回 409 `setup_required`），无需从安装输出里抄临时密码。非空值则为临时引导凭据（不校验策略），首次登录在浏览器强制改密（服务端闸门）。
 
 **环境变量：**
 - `MIBEE_AUTH_JWT_SECRET`
@@ -199,12 +199,12 @@ export MIBEE_HEARTBEAT_TIMEOUT=10
 
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
-| `prometheus.enabled` | bool | — | **当前未使用**：`/metrics` 端点始终挂载，与此开关无关。 |
-| `prometheus.metrics_path` | string | — | **当前未使用**：指标路径硬编码为 `/metrics`，此键无效。 |
+| `prometheus.enabled` | bool |，| **当前未使用**：`/metrics` 端点始终挂载，与此开关无关。 |
+| `prometheus.metrics_path` | string |，| **当前未使用**：指标路径硬编码为 `/metrics`，此键无效。 |
 
 **环境变量：**
-- `MIBEE_PROMETHEUS_ENABLED`（无效——见上表）
-- `MIBEE_PROMETHEUS_METRICS_PATH`（无效——见上表）
+- `MIBEE_PROMETHEUS_ENABLED`（无效--见上表）
+- `MIBEE_PROMETHEUS_METRICS_PATH`（无效--见上表）
 
 **示例：**
 ```yaml
@@ -289,15 +289,15 @@ export MIBEE_LOG_FORMAT=json
 
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
-| `scanner.enabled` | bool | — | **当前未使用**（结构体中存在但无处消费）：扫描路由与后台调度器无条件启动。 |
+| `scanner.enabled` | bool |，| **当前未使用**（结构体中存在但无处消费）：扫描路由与后台调度器无条件启动。 |
 | `scanner.max_concurrent_scans` | int | 3 | 同时运行的顶层扫描数上限（引擎的并发扫描信号量，实际生效）。 |
 | `scanner.default_timeout` | int (秒) | 300 | 定时扫描的每主机流水线超时。同时驱动 `write_timeout` 的自动上调。 |
 | `scanner.max_concurrent_hosts` | int | 50 | 每主机并行扫描上限 |
-| `scanner.allow_reserved_targets` | bool | false | 保留网段扫描目标拒绝(#317)的逃生门:开启后接受环回/未指定/链路本地/组播/广播/240-4 目标(语法仍校验)。仅为合成负载面设置 —— `cmd/loadgen` 基准面在 127/8。环境变量 `MIBEE_SCANNER_ALLOW_RESERVED_TARGETS`。 |
-| `scanner.retention_days` | int | — | 旧版回退：仅当 `retention.scan_results_days` 未设置时生效（再回退 30）。清理由 `retention.sweep_interval_hours`（默认 6h）驱动，并非每日一次。 |
+| `scanner.allow_reserved_targets` | bool | false | 保留网段扫描目标拒绝(#317)的逃生门:开启后接受环回/未指定/链路本地/组播/广播/240-4 目标(语法仍校验)。仅为合成负载面设置，`cmd/loadgen` 基准面在 127/8。环境变量 `MIBEE_SCANNER_ALLOW_RESERVED_TARGETS`。 |
+| `scanner.retention_days` | int |，| 旧版回退：仅当 `retention.scan_results_days` 未设置时生效（再回退 30）。清理由 `retention.sweep_interval_hours`（默认 6h）驱动，并非每日一次。 |
 | `scanner.default_cron_expr` | string | "0 */6 * * *" | 新建扫描任务的默认 cron |
 | `scanner.engine` | string | "v2" | 引擎选择（仅支持 "v2"；v1 已移除） |
-| `scanner.persist_raw_evidence` | bool | false | 将每次探测观测写入 `service_evidence`（数据量大——仅调试时开启） |
+| `scanner.persist_raw_evidence` | bool | false | 将每次探测观测写入 `service_evidence`（数据量大--仅调试时开启） |
 | `scanner.lost_threshold` | int | 2 | 连续多少次扫描未在存活集中出现后设备被判定为 lost。心跳侧的对应阈值是 `heartbeat.offline_threshold`（探测失败计数）。 |
 | `scanner.per_probe_timeout` | int (秒) | 3 | 单次探测尝试（一次 SNMP Get / TCP 拨号 / HTTP 抓取）的超时（秒）。与 `default_timeout`（整条主机流水线）不同。 |
 | `scanner.snmp_community` | string | "public" | 全局 SNMP community 字符串（v1/v2c 扫描使用）。 |
@@ -305,7 +305,7 @@ export MIBEE_LOG_FORMAT=json
 | `scanner.fingerprint_path` | string | "" | 指纹 YAML 规则目录（见 `docs/fingerprint-spec.md`）。空 = 用二进制内嵌规则。 |
 | `scanner.ebpf.enabled` | bool | false | 启用 eBPF 被动观测器（除非用 `make build-with-ebpf` 构建否则为 no-op） |
 | `scanner.ebpf.interfaces` | []string | [] | 挂载 TC 程序的网卡（空 = 所有非环回口） |
-| `scanner.pipeline_defaults.*` | various | — | 各阶段开关 + `default_ports`（已扩展含摄像头 + prometheus 端口） |
+| `scanner.pipeline_defaults.*` | various |，| 各阶段开关 + `default_ports`（已扩展含摄像头 + prometheus 端口） |
 | `scanner.agent_lease_ttl` | duration | "5m" | 代理管理设备的租约过期时间。代理停止上报后，设备在此时间内被标记为 lost。 |
 | `scanner.lease_sweep_interval` | duration | "60s" | 租约清扫器运行间隔。 |
 | `scanner.reconcile_interval` | duration | "1h" | 网络归属对账间隔。检测设备 IP 是否漂移到其网络 CIDR 之外。 |
@@ -388,7 +388,7 @@ scanner:
 
 ## 路由器驻留发现源
 
-扫描器除了主动探测外，还可以从路由器驻留源获取设备数据。整个服务由总开关 `scanner.discovery.enabled` 控制（默认关闭）。注意：`trigger_identify` 与 `router_arp`/`arp_cache`/`multicast` 子源在 `configs/config.example.yaml` 中出厂为 true（推荐值）——开箱关闭靠的是总开关，而非各子源自身默认关闭。当宿主机上不存在对应的文件或 socket 时，每个源都是空操作（no-op）。
+扫描器除了主动探测外，还可以从路由器驻留源获取设备数据。整个服务由总开关 `scanner.discovery.enabled` 控制（默认关闭）。注意：`trigger_identify` 与 `router_arp`/`arp_cache`/`multicast` 子源在 `configs/config.example.yaml` 中出厂为 true（推荐值）--开箱关闭靠的是总开关，而非各子源自身默认关闭。当宿主机上不存在对应的文件或 socket 时，每个源都是空操作（no-op）。
 
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
@@ -407,7 +407,7 @@ scanner:
 | `scanner.discovery.arp_scan.enabled` | bool | false | 启用主动 ARP who-has 扫描（需 `WITH_ARPSCAN` 构建标签 + `CAP_NET_RAW`）。 |
 | `scanner.discovery.lldp_interfaces` | []string | [] | LLDP/CDP 被动帧监听的网卡接口名列表（需 `WITH_LLDP`/`WITH_CDP` 构建标签）。 |
 
-> \* 各子源的 Go 零值为 false，但 `router_arp`/`arp_cache`/`multicast` 在 `configs/config.example.yaml` 中出厂为 true（推荐值）——开箱关闭由总开关 `scanner.discovery.enabled: false` 实现。
+> \* 各子源的 Go 零值为 false，但 `router_arp`/`arp_cache`/`multicast` 在 `configs/config.example.yaml` 中出厂为 true（推荐值）--开箱关闭由总开关 `scanner.discovery.enabled: false` 实现。
 
 **环境变量：**
 - `MIBEE_SCANNER_DISCOVERY_DHCP_LEASES_ENABLED`
@@ -443,7 +443,7 @@ scanner:
     lldp_interfaces: []
 ```
 
-> **注意**：当宿主机上不存在对应的文件或 socket 时，该源静默变为空操作——不记录错误日志，也不产生发现数据。
+> **注意**：当宿主机上不存在对应的文件或 socket 时，该源静默变为空操作--不记录错误日志，也不产生发现数据。
 
 ## 网络配置
 
@@ -474,7 +474,7 @@ scanner:
 
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
-| `security.master_key` | string | "" | AES-GCM 主密钥（必须恰好 32 字节）。用于 SNMPv3 和 SSH 凭证的加密存储。空 = 凭证加密禁用（回退到 v1/v2c community 字符串）。agent 模式下该密钥保护 agent 自己的本地 SNMP 凭据库（#241）—— 刻意与中心的密钥相互独立。 |
+| `security.master_key` | string | "" | AES-GCM 主密钥（必须恰好 32 字节）。用于 SNMPv3 和 SSH 凭证的加密存储。空 = 凭证加密禁用（回退到 v1/v2c community 字符串）。agent 模式下该密钥保护 agent 自己的本地 SNMP 凭据库（#241）-- 刻意与中心的密钥相互独立。 |
 
 **示例：**
 ```yaml
@@ -487,7 +487,7 @@ security:
 head -c 32 /dev/urandom | base64
 ```
 
-> 注意：`openssl rand -hex 32` 生成的是 64 个十六进制字符（64 字节），**无法**通过恰好 32 字节的校验——不要用它生成主密钥。
+> 注意：`openssl rand -hex 32` 生成的是 64 个十六进制字符（64 字节），**无法**通过恰好 32 字节的校验--不要用它生成主密钥。
 
 ## 心跳阈值
 
@@ -499,7 +499,7 @@ head -c 32 /dev/urandom | base64
 | **退避** | `heartbeat.offline_backoff_ticks` | 10 | 设备已离线后，每 N 个 tick 探测一次而非每个 tick。默认 30s ticker 下 N=10 ≈ 每 5 分钟一次。 |
 | **Tick** | `heartbeat.tick_interval_seconds` | 30 | 调度器 tick 之间的间隔（心跳循环的心跳）。 |
 
-**恢复机制**：成功的扫描始终会立即清除失败计数——退避永远不会延迟上线主机的恢复检测。
+**恢复机制**：成功的扫描始终会立即清除失败计数--退避永远不会延迟上线主机的恢复检测。
 
 ## 同步扫描限制
 
@@ -507,7 +507,7 @@ head -c 32 /dev/urandom | base64
 
 - **最大目标数**：1024 个 IP（展开后的总数，包括单 IP、CIDR 或范围）
 - **超出限制**：返回 HTTP 413，错误信息为 `target range too large for synchronous scan (N IPs; max 1024). Use POST /api/v1/scanner/tasks to run asynchronously.`
-- **替代方案**：使用异步任务 API——`POST /api/v1/scanner/tasks` 创建任务，然后 `POST /api/v1/scanner/tasks/{id}/trigger` 触发。异步路径无目标数量限制。
+- **替代方案**：使用异步任务 API--`POST /api/v1/scanner/tasks` 创建任务，然后 `POST /api/v1/scanner/tasks/{id}/trigger` 触发。异步路径无目标数量限制。
 
 ## 速率限制配置
 
@@ -539,13 +539,13 @@ head -c 32 /dev/urandom | base64
 | `retention.device_neighbors_days` | int | 90 | 设备邻居记录保留天数 |
 | `retention.host_services_days` | int | 30 | 主机服务记录保留天数 |
 | `retention.host_tls_certs_days` | int | 30 | TLS 证书记录保留天数 |
-| `retention.probe_results_days` | int | 30 | 拨测历史结果保留天数（`probe_tls_certs` 不清扫——每目标只存当前证书链） |
+| `retention.probe_results_days` | int | 30 | 拨测历史结果保留天数（`probe_tls_certs` 不清扫--每目标只存当前证书链） |
 | `retention.sweep_interval_hours` | int | 6 | 清理扫描间隔（小时） |
 | `retention.batch_size` | int | 5000 | 每批清理的最大行数 |
 
 ## Docker 配置模板
 
-仓库提供了现成的 Docker Compose 配置模板 [`configs/config.docker.yaml`](../../configs/config.docker.yaml)，预配置了适合容器化部署的路径和网络设置——将其复制为你的起始 `config.yaml`，并为生产环境调整 `auth.jwt_secret` 和 `auth.initial_admin_password`。
+仓库提供了现成的 Docker Compose 配置模板 [`configs/config.docker.yaml`](../../configs/config.docker.yaml)，预配置了适合容器化部署的路径和网络设置--将其复制为你的起始 `config.yaml`，并为生产环境调整 `auth.jwt_secret` 和 `auth.initial_admin_password`。
 
 ## 完整配置示例
 

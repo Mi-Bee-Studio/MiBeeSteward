@@ -1,4 +1,4 @@
-# bpf/ — eBPF passive service detection (TC ingress)
+# bpf/, eBPF passive service detection (TC ingress)
 
 This directory holds the eBPF program that implements the **passive observer**
 half of scannerv2's Probe layer. It is built and linked **only** when the
@@ -23,7 +23,7 @@ loader, which translates them into `scannerv2.Evidence` with
 `Source: "passive:ebpf:tc"` and `Confidence: 0.6`. The classifier layer fuses
 this corroborating signal with active-probe evidence.
 
-**The program never modifies or drops packets** — it is pure observation
+**The program never modifies or drops packets**, it is pure observation
 (`TC_ACT_UNSPEC`).
 
 ## Why passive vs active
@@ -32,7 +32,7 @@ Research conclusion (see plan): ONVIF/WS-Discovery is the cleanest passive
 target because cameras announce themselves on a fixed multicast group
 (239.255.255.250:3702). TCP protocols (SSH/RTSP/HTTP) are more reliably
 detected by active probing; the eBPF magic-byte matching is a *corroborating*
-signal, not a replacement — hence the lower confidence.
+signal, not a replacement, hence the lower confidence.
 
 ## Runtime requirements (WITH_EBPF build only)
 
@@ -47,7 +47,7 @@ gracefully to active-only probing.
 ## Building
 
 ```bash
-# Default build — no eBPF (stub):
+# Default build, no eBPF (stub):
 make build
 
 # Build with eBPF support (requires clang/llvm/bpftool + kernel BTF):

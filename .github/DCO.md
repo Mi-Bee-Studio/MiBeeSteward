@@ -41,7 +41,7 @@ Or set it globally for the project's repo only:
 
 ```bash
 cd mibee-steward
-git config commit.gpgsign false   # DCO uses trailers, not GPG — but this is unrelated
+git config commit.gpgsign false   # DCO uses trailers, not GPG, but this is unrelated
 ```
 
 ## The DCO text
@@ -96,9 +96,9 @@ git push --force-with-lease
 
 ## Relationship to the CLA
 
-- **DCO** (per-commit, automated): certifies *origin* — "I wrote this / have
+- **DCO** (per-commit, automated): certifies *origin*, "I wrote this / have
   the right to submit it."
-- **CLA** (per-contributor, one-time): grants *relicensing rights* — "Mi-Bee
+- **CLA** (per-contributor, one-time): grants *relicensing rights*, "Mi-Bee
   Studio may release my contribution under both AGPLv3 and the commercial
   license."
 

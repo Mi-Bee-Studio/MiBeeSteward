@@ -65,9 +65,9 @@ These sources read data from the local system rather than probing remote hosts. 
 
 **Passive (eBPF)**: the eBPF TC observer (`WITH_EBPF` build tag, kernel ≥5.8) watches ONVIF/WS-Discovery multicast and TCP magic bytes, emitting evidence at confidence 0.6. See [eBPF Passive Observer](ebpf.md).
 
-**Passive (host-local)**: `arp_cache` (diffs the kernel `/proc/net/arp` cache — zero traffic), `multicast` (passively listens on mDNS 224.0.0.251:5353 and SSDP 239.255.255.250:1900 for self-announcing devices), `router_arp` (walks the SNMP ARP tables of the routers listed in `scanner.router_arp.routers` — cross-VLAN MAC coverage; no-op without routers). Two more optional sources need dedicated build tags in the default build: `arp_scan` (active ARP broadcast sweep, `WITH_ARPSCAN` tag) and the raw-frame LLDP listener (`WITH_LLDP` tag + `scanner.discovery.lldp_interfaces`). 
+**Passive (host-local)**: `arp_cache` (diffs the kernel `/proc/net/arp` cache, zero traffic), `multicast` (passively listens on mDNS 224.0.0.251:5353 and SSDP 239.255.255.250:1900 for self-announcing devices), `router_arp` (walks the SNMP ARP tables of the routers listed in `scanner.router_arp.routers`, cross-VLAN MAC coverage; no-op without routers). Two more optional sources need dedicated build tags in the default build: `arp_scan` (active ARP broadcast sweep, `WITH_ARPSCAN` tag) and the raw-frame LLDP listener (`WITH_LLDP` tag + `scanner.discovery.lldp_interfaces`). 
 
-**Passive observations seed identification (#377)**: the host-local sources also record what they overhear into a per-IP observation cache — DHCP-lease hostnames (authoritative hostname/MAC/IP), full mDNS service announcements (services + TXT), and SSDP SERVER/USN/LOCATION self-identifications. Every scan prepends that IP's cached observations to its gather output, so the fingerprint classifiers see the passive channel too. On real networks this is often the only channel: the R68S field session measured active mDNS queries going 100% unanswered while the listeners overheard rich announcements — a lease hostname like `viomi-waterheater-…` yields the MiBee brand identity without the device answering anything.
+**Passive observations seed identification (#377)**: the host-local sources also record what they overhear into a per-IP observation cache, DHCP-lease hostnames (authoritative hostname/MAC/IP), full mDNS service announcements (services + TXT), and SSDP SERVER/USN/LOCATION self-identifications. Every scan prepends that IP's cached observations to its gather output, so the fingerprint classifiers see the passive channel too. On real networks this is often the only channel: the R68S field session measured active mDNS queries going 100% unanswered while the listeners overheard rich announcements, a lease hostname like `viomi-waterheater-…` yields the MiBee brand identity without the device answering anything.
 
 **Router-resident Tier-1**: only produce data when MiBee Steward runs directly on the gateway (e.g., an OpenWrt device). **Off by default; opt-in.**
 
@@ -75,10 +75,10 @@ These sources read data from the local system rather than probing remote hosts. 
 |---|---|---|---|
 | `dhcp_leases` | `scanner.discovery.dhcp_leases.enabled` | dnsmasq lease file (OpenWrt `/tmp/dhcp.leases`, Debian `/var/lib/misc/dnsmasq.leases`) | Needs the local DHCP server's lease table |
 | `conntrack` | `scanner.discovery.conntrack.enabled` | `/proc/net/nf_conntrack` (LAN-side endpoints of active NAT flows) | Needs the gateway's network namespace |
-| `hostapd` | `scanner.discovery.hostapd.enabled` | hostapd control socket (`iw station dump` fallback) — STA associations / signal dBm / SSID | Needs the Wi-Fi AP on the same device |
+| `hostapd` | `scanner.discovery.hostapd.enabled` | hostapd control socket (`iw station dump` fallback), STA associations / signal dBm / SSID | Needs the Wi-Fi AP on the same device |
 | `dns_log` | `scanner.discovery.dns_log.enabled` | dnsmasq query log (`--log-queries`) | Needs the local DNS resolver's log |
 
-**Enabling passive discovery** (YAML example — master switch first, then sub-sources as needed):
+**Enabling passive discovery** (YAML example, master switch first, then sub-sources as needed):
 
 ```yaml
 scanner:
@@ -113,11 +113,11 @@ export MIBEE_SCANNER_DISCOVERY_DHCP_LEASES_ENABLED=true
 export MIBEE_SCANNER_DISCOVERY_CONNTRACK_ENABLED=true
 ```
 
-**Why Tier-1 is opt-in**: these sources read sensitive system state and only produce useful data when the binary runs on the actual gateway. Running them remotely yields nothing useful and may cause permission errors; when the underlying files/sockets are absent they degrade cleanly to no-ops (debug log + skip) — no errors, no crashes.
+**Why Tier-1 is opt-in**: these sources read sensitive system state and only produce useful data when the binary runs on the actual gateway. Running them remotely yields nothing useful and may cause permission errors; when the underlying files/sockets are absent they degrade cleanly to no-ops (debug log + skip), no errors, no crashes.
 
 ## Fingerprint Identification
 
-After probes produce evidence, the **RuleClassifier** matches evidence against a data-driven YAML rule library to identify device type, brand, and model. Identification results surface directly in the device list and detail page — the badge next to the type distinguishes the identification source (protocol evidence vs hostname heuristic):
+After probes produce evidence, the **RuleClassifier** matches evidence against a data-driven YAML rule library to identify device type, brand, and model. Identification results surface directly in the device list and detail page, the badge next to the type distinguishes the identification source (protocol evidence vs hostname heuristic):
 
 ![Identification results in the device list](images/devices.webp)
 
@@ -142,13 +142,13 @@ Each rule has a `match` node (testing evidence fields) and an `emit` node (produ
 
 See [Fingerprint Specification](fingerprint-spec.md) for the full rule format, match operations, and confidence model.
 
-> **Logic that can't be a single declarative rule** (the SNMP bitmask+numeric device-type heuristic, the camera classifier's cross-evidence fusion) stays as Go code, coexisting with the rule library — see the fingerprint spec §"Logic plugins".
+> **Logic that can't be a single declarative rule** (the SNMP bitmask+numeric device-type heuristic, the camera classifier's cross-evidence fusion) stays as Go code, coexisting with the rule library, see the fingerprint spec §"Logic plugins".
 
 ### Device-Type Inference (hostname/brand/port keyword table)
 
 Beyond service-level fingerprints, the device **type** (camera/switch/nas/…) is additionally inferred from a data-driven keyword table: `configs/fingerprints/device-types/device_types.yaml` (hostname prefixes, brands, port combos → type), consumed by the generic matcher in `runner`.
 
-Every rule carries a `source` field — `protocol` (from SNMP/RTSP/ONVIF protocol evidence, trustworthy) or `heuristic` (from hostname guessing, spoofable) — recorded in `scan_attributes.inferred_type_source`. The UI shows a `?` badge on heuristic-sourced types. Adding a device signature = one YAML line, not a new Go branch.
+Every rule carries a `source` field, `protocol` (from SNMP/RTSP/ONVIF protocol evidence, trustworthy) or `heuristic` (from hostname guessing, spoofable), recorded in `scan_attributes.inferred_type_source`. The UI shows a `?` badge on heuristic-sourced types. Adding a device signature = one YAML line, not a new Go branch.
 
 ### OUI Vendor Resolution
 
@@ -174,7 +174,7 @@ Both stored in `scan_attributes`. The distinction matters: a Hikvision camera mi
 **OUI data sources**:
 
 - **Embedded** (default): curated CC-BY-SA table of common vendors. Sufficient for most deployments.
-- **Full IEEE set** (optional): download via `scripts/fetch-oui.sh`, set `scanner.oui_path` to the file. IEEE registries are "All rights reserved" factual data — cited, not folded into the CC-BY-SA fingerprint corpus.
+- **Full IEEE set** (optional): download via `scripts/fetch-oui.sh`, set `scanner.oui_path` to the file. IEEE registries are "All rights reserved" factual data, cited, not folded into the CC-BY-SA fingerprint corpus.
 
 ## Identity Merging & Device Replacement
 
@@ -194,11 +194,11 @@ When a scan finds a MAC matching an existing device but with significantly diffe
 
 ### Single-Writer Concurrency
 
-All device writes go through `runner.applyDeviceBridge` — a single-writer funnel that prevents race conditions when multiple probe handlers run concurrently (the bridge runs sequentially after the parallel scan). MAC-primary identity and this bridge landed in v0.2.0.
+All device writes go through `runner.applyDeviceBridge`, a single-writer funnel that prevents race conditions when multiple probe handlers run concurrently (the bridge runs sequentially after the parallel scan). MAC-primary identity and this bridge landed in v0.2.0.
 
 ### Network Reconciliation Job
 
-`internal/service/scannerv2/reconcile` provides the network reconciliation job (`scanner.reconcile_interval`, default 1h): it periodically reconciles devices against their network's CIDR membership, **detecting and surfacing only** (the `mibee_network_mismatches` gauge + records) — it never modifies device rows.
+`internal/service/scannerv2/reconcile` provides the network reconciliation job (`scanner.reconcile_interval`, default 1h): it periodically reconciles devices against their network's CIDR membership, **detecting and surfacing only** (the `mibee_network_mismatches` gauge + records), it never modifies device rows.
 
 ## Tuning Tips
 
@@ -265,10 +265,10 @@ scanner:
     node_exporter_enabled: true
 ```
 
-The 38 default ports cover remote access (22/23/3389), databases (1433/3306/5432/6379/9200/11211/27017), mail/directory (25/110/143/389/636), media (554/8554), storage (445), and monitoring exporters (9100/9104/9113/9121/9187); 161 is SNMP/UDP (kept in the spec so the port list mirrors what the engine coordinates — the UDP probe path is separate).
+The 38 default ports cover remote access (22/23/3389), databases (1433/3306/5432/6379/9200/11211/27017), mail/directory (25/110/143/389/636), media (554/8554), storage (445), and monitoring exporters (9100/9104/9113/9121/9187); 161 is SNMP/UDP (kept in the spec so the port list mirrors what the engine coordinates, the UDP probe path is separate).
 
 ## Cross-References
 
-- [Architecture Overview](architecture.md) — 5-layer scanner pipeline, persistence tables, device identity model
-- [Configuration Reference](configuration.md) — all `scanner.*` and `heartbeat.*` config keys
-- [Fingerprint Specification](fingerprint-spec.md) — rule format, match operations, confidence model, license
+- [Architecture Overview](architecture.md), 5-layer scanner pipeline, persistence tables, device identity model
+- [Configuration Reference](configuration.md), all `scanner.*` and `heartbeat.*` config keys
+- [Fingerprint Specification](fingerprint-spec.md), rule format, match operations, confidence model, license

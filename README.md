@@ -10,7 +10,7 @@
 
 **English** | [中文](README.zh-CN.md)
 
-**Device/network-layer asset discovery, identification, and registry** — CMDB-lite for network and IoT assets. Automatically discovers what's on your network, infers what it is (brand/model via protocol fingerprints), and tracks it over time. Single zero-dependency binary; asset state flows to Prometheus via `/metrics` + `/sd`. Alerting/visualization are intentionally left to Alertmanager/Grafana. Built with Go + SvelteKit.
+**Device/network-layer asset discovery, identification, and registry**, CMDB-lite for network and IoT assets. Automatically discovers what's on your network, infers what it is (brand/model via protocol fingerprints), and tracks it over time. Single zero-dependency binary; asset state flows to Prometheus via `/metrics` + `/sd`. Alerting/visualization are intentionally left to Alertmanager/Grafana. Built with Go + SvelteKit.
 
 ```mermaid
 flowchart LR
@@ -54,22 +54,22 @@ flowchart LR
 - **Multi-Protocol Probing**: SNMP **v1/v2c/v3 (USM authNoPriv/authPriv, encrypted credential vault)**, ICMP, TCP, and HTTP monitoring
 - **Device Systems Management**: Each device can have multiple installed systems with entry URLs, displayed as card grid UI with category badges
 - **Network Scanner (v2)**: Plugin-based 5-layer architecture (probe → classify → handler → persist → orchestrate) with cascading deep collection. Detects SSH/HTTP/RTSP/ONVIF/SNMP/Prometheus/node_exporter and infers device type/brand (e.g. cameras from RTSP+ONVIF). Extensible: add a protocol by registering one classifier + one handler.
-- **Device Config Backup**: Oxidized/RANCID-style scheduled SSH `running-config` pulls (vendor command matrix, host-key TOFU), versioned storage, two-version unified diffs, and `device_config_changed` change events — opt-in, credentials encrypted at rest. [API Reference](docs/en/api.md)
+- **Device Config Backup**: Oxidized/RANCID-style scheduled SSH `running-config` pulls (vendor command matrix, host-key TOFU), versioned storage, two-version diffs, and `device_config_changed` events. Opt-in; credentials encrypted at rest. [API Reference](docs/en/api.md)
 - **RBAC with Network Scoping**: Capability-based roles (admin / operator / viewer) plus per-user network grants; `closed` mode isolates tenants to their granted networks (MSP-ready).
-- **MAC Vendor Inference**: Resolves each discovered MAC to its IEEE-registered vendor (MA-L / MA-M / MA-S registries) via longest-prefix match, recorded as `oui_prefix` + `oui_vendor` (the NIC silicon vendor, distinct from the device's self-declared brand). Ships with an embedded curated vendor table for out-of-box coverage; the full IEEE set is an optional download.
-- **TLS Certificate Inventory**: Collects the full certificate chain (leaf + issuers) from TLS-wrapped services (HTTPS, LDAPS, SMTPS, IMAPS, POP3S, FTPS, IRCS, TelnetS) — Subject/Issuer/SAN/validity/signature/key/fingerprint + PEM, per port per device, with expiry status (valid/expiring/expired) and a trust verdict surfaced in the device detail UI. Retained in `host_tls_certs` (default 30d).
-- **Synthetic Probing**: Blackbox-style probing of explicitly configured external endpoints (public HTTPS sites, hosted TLS ports) on fixed intervals — http/tls/tcp/icmp modules with latency and status-code tracking; `tls` and https targets collect the full certificate chain (leaf + issuers, trust verdict, expiry), reusing the internal cert inventory for internet hosts. Exposed as `mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds` for Prometheus alerting, with example alert rules included.
+- **MAC Vendor Inference**: Resolves each discovered MAC to its IEEE-registered vendor (MA-L / MA-M / MA-S, longest-prefix match), recorded as `oui_prefix` + `oui_vendor` (the NIC silicon vendor, distinct from the self-declared brand). Embedded curated table out of the box; full IEEE set optional.
+- **TLS Certificate Inventory**: Collects full certificate chains from TLS-wrapped services (HTTPS, LDAPS, SMTPS, IMAPS, POP3S, FTPS, IRCS, TelnetS) with Subject/Issuer/SAN/validity/fingerprint + PEM, per port per device. Expiry status and trust verdict appear in the device detail UI; retained in `host_tls_certs` (default 30d).
+- **Synthetic Probing**: Blackbox-style probing of configured external endpoints (http/tls/tcp/icmp modules) with latency and status-code tracking; TLS targets reuse the internal cert-chain collection. Exposed as `mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds` with example alert rules.
 - **eBPF Passive Observer**: Optional TC ingress program sniffs ONVIF WS-Discovery multicast + TCP magic bytes as a corroborating evidence source (build-tag gated; default build is dependency-free).
-- **Distributed Discovery**: Deploy lightweight agents on remote LANs to discover devices across networks. Agents report to a central hub via pull-model HTTPS with bearer-token auth, disconnect recovery, and MAC-primary device identity (same device stays one asset across networks). [Distributed Guide](docs/en/distributed.md)
+- **Distributed Discovery**: Deploy lightweight agents on remote LANs to discover devices across networks; agents report to the center over HTTPS with bearer-token auth and disconnect recovery. MAC-primary identity keeps a roaming device a single asset. [Distributed Guide](docs/en/distributed.md)
 - **Change Detection**: Automatic device_added / device_changed / device_lost / device_config_changed detection on every scan, with a grace period to prevent jitter-induced false alarms. Queryable history (`GET /changes`) and real-time SSE stream (`GET /changes/watch`).
-- **Event Notifications**: Rule-driven routing of change events (device lost/recovered/added/changed, config changed) to webhook/email channels with anti-flap cooldowns — device-lost emails without running an Alertmanager stack.
+- **Event Notifications**: Rule-driven routing of change events (lost/recovered/added/changed, config changed) to webhook/email channels with anti-flap cooldowns, for device-lost emails without an Alertmanager stack.
 - **Topology Discovery**: Bridge-MIB SNMP probe walks switch forwarding databases to learn L2 adjacency (which MAC is behind which port). [Architecture](docs/en/architecture.md#distributed-model)
 - **Heartbeat Monitoring**: Configurable intervals with automatic failure detection; liveness kept as a time series (online/offline history, offline-since, availability ratio)
 - **Prometheus Integration**: Metrics endpoint at `/metrics` for monitoring, HTTP SD at `/sd` for auto-discovery
 - **Embedded Web Interface**: SvelteKit SPA with real-time dashboards, multi-LAN device filtering, change history, and agent management UI
 - **JWT Authentication**: TOTP 2FA, capability-based RBAC (admin / operator / viewer) with object-level network scoping, and machine-to-machine agent token auth
 - **Multi-Language Support**: English and Chinese with @inlang/paraglide-js
-- **Audit Logging**: Comprehensive action tracking
+- **Audit Logging**: Action tracking for management operations
 - **Single Binary Deployment**: Frontend embedded via go:embed
 
 ## Tech Stack
@@ -145,19 +145,19 @@ Check the build version:
 
 Full bilingual manuals (English + [中文](docs/zh/introduction.md)) live in `docs/`:
 
-- [Introduction](docs/en/introduction.md) — Project overview and features
-- [Quick Start](docs/en/quick-start.md) — Get running in 5 minutes
-- [Architecture](docs/en/architecture.md) — System design and data flow
-- [API Reference](docs/en/api.md) — REST API documentation
-- [Configuration](docs/en/configuration.md) — Configuration reference
-- [Deployment](docs/en/deployment.md) — Production deployment guide (systemd / nginx / Docker / OpenWrt)
-- [Distributed Guide](docs/en/distributed.md) — Center + agent model for multi-network discovery
-- [Integrations](docs/en/integrations.md) — Grafana dashboards, notification channels (Feishu/WeCom/Telegram/Discord), n8n & Home Assistant
-- [Benchmarks](docs/en/benchmark.md) — Synthetic scale harness (loadgen) and the nmap accuracy comparison
-- [Discovery Guide](docs/en/discovery.md) — Probe sources and identification pipeline
-- [Product Scope](docs/en/product-scope.md) — What it is / is not, and where it fits
-- [Fingerprint Spec](docs/en/fingerprint-spec.md) — Contributing identification rules (YAML)
-- [Development Guide](docs/en/development.md) — Contributing and coding conventions
+- [Introduction](docs/en/introduction.md), Project overview and features
+- [Quick Start](docs/en/quick-start.md), Get running in 5 minutes
+- [Architecture](docs/en/architecture.md), System design and data flow
+- [API Reference](docs/en/api.md), REST API documentation
+- [Configuration](docs/en/configuration.md), Configuration reference
+- [Deployment](docs/en/deployment.md), Production deployment guide (systemd / nginx / Docker / OpenWrt)
+- [Distributed Guide](docs/en/distributed.md), Center + agent model for multi-network discovery
+- [Integrations](docs/en/integrations.md), Grafana dashboards, notification channels (Feishu/WeCom/Telegram/Discord), n8n & Home Assistant
+- [Benchmarks](docs/en/benchmark.md), Synthetic scale harness (loadgen) and the nmap accuracy comparison
+- [Discovery Guide](docs/en/discovery.md), Probe sources and identification pipeline
+- [Product Scope](docs/en/product-scope.md), What it is / is not, and where it fits
+- [Fingerprint Spec](docs/en/fingerprint-spec.md), Contributing identification rules (YAML)
+- [Development Guide](docs/en/development.md), Contributing and coding conventions
 
 ## Configuration
 
@@ -182,7 +182,7 @@ Environment variables prefixed with `MIBEE_` override configuration values.
 
 ```mermaid
 flowchart TB
-    subgraph BIN["mibee-steward — single binary (CGO-free Go, embedded SvelteKit SPA)"]
+    subgraph BIN["mibee-steward, single binary (CGO-free Go, embedded SvelteKit SPA)"]
         subgraph HTTP["Chi HTTP"]
             MW["JWT + TOTP 2FA · RBAC capabilities · network scope · CSRF · rate limit"]
             API["/api/v1 handlers"]
@@ -193,7 +193,7 @@ flowchart TB
             PT["probe-target engine<br/>(synthetic probing)"]
             CB["config-backup sweep<br/>(SSH running-config)"]
         end
-        subgraph V2["Scanner v2 — plugin pipeline"]
+        subgraph V2["Scanner v2, plugin pipeline"]
             PR["probe sources"] --> CL["classifiers<br/>(YAML fingerprints)"]
             CL --> HD["handlers<br/>(cascading collect)"]
             HD --> PS["persistence"]

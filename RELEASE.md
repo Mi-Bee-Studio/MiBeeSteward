@@ -1,22 +1,22 @@
-# RELEASE.md — 发布流程 Checklist
+# RELEASE.md，发布流程 Checklist
 
 > 适用范围：`v*` 版本发布（GitHub Release，由 `.github/workflows/release.yml` 构建产物）。
-> 本文件是流程契约，不是代码 —— 改流程先改这里。
+> 本文件是流程契约，不是代码，改流程先改这里。
 
 ## 背景：历史 tag 的祖先断裂（只防未来，不可修复）
 
 `v0.1.0`–`v0.5.0` 全部 5 个 tag **都不是 `main` 的祖先**（`git merge-base --is-ancestor <tag> main`
 逐一失败；v0.5.0 指向的提交与 main 上的 36ee36e 是「同树异提交」双生）。后果：从 main 视角
-`git describe` 拿不到任何 tag。历史 tag 已随 Release 发布、**不能移动**——唯一正确动作是
+`git describe` 拿不到任何 tag。历史 tag 已随 Release 发布、**不能移动**--唯一正确动作是
 今后不再产生新的断裂 tag（见下面第 3 步的规矩）。
 
 ## Checklist（按序执行）
 
 1. **CHANGELOG 定稿**
    - `## [Unreleased]` 重命名为 `## [x.y.z] - YYYY-MM-DD`；
-   - 自查类型归位：新能力在 Added、行为变化在 Changed、修复在 Fixed——不要把特性压进
+   - 自查类型归位：新能力在 Added、行为变化在 Changed、修复在 Fixed--不要把特性压进
      Fixed 的合并尾行（反例见 #362）；
-   - 大特性的 PR（尤其合并提交里带长描述的）逐个核对是否都有条目——历史上 #344 曾整段缺失。
+   - 大特性的 PR（尤其合并提交里带长描述的）逐个核对是否都有条目--历史上 #344 曾整段缺失。
 
 2. **main 上 CI 全绿**
    - `gh pr checks` 确认最后一个合入 PR 的 8 项检查全绿（前端构建 + go vet +
@@ -46,7 +46,7 @@
      journalctl -u mibee-steward --since "-5min" | grep -i error
      ```
    - 历史教训：一个 setsid 启动的幽灵进程占住 8080 时 systemd 崩溃循环，`is-active`
-     照样显示 active——**必须**核对 NRestarts 与 /health 实际应答的版本串。
+     照样显示 active--**必须**核对 NRestarts 与 /health 实际应答的版本串。
 
 6. **发布后收尾**
    - GitHub Release 页面贴 CHANGELOG 该版本段落；公告/文档按需同步；

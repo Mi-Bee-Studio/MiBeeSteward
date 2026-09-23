@@ -1,4 +1,4 @@
-# MiBee Steward — Commercial License
+# MiBee Steward, Commercial License
 
 MiBee Steward is distributed under a **dual-license** model:
 
@@ -33,7 +33,7 @@ You need a **commercial license** if **any** of the following is true:
 - Your company policy prohibits AGPL-licensed software.
 - You embed MiBee Steward into a commercial product whose license is not AGPLv3-compatible.
 
-If you are unsure which category you fall into, please contact us — we will help you decide.
+If you are unsure which category you fall into, please contact us, we will help you decide.
 
 ## Obtaining a commercial license
 
@@ -53,7 +53,7 @@ The complete source code of MiBee Steward is always available under the AGPLv3 a
 
 ## For contributors
 
-Contributions to MiBee Steward are accepted under the AGPLv3. Every contributor agrees to the [Contributor License Agreement (CLA)](./CLA.md), which allows MiBee Steward to distribute the project — including contributed code — under both the open-source (AGPLv3) and commercial licenses. This dual-licensing capability is what keeps the project sustainable.
+Contributions to MiBee Steward are accepted under the AGPLv3. Every contributor agrees to the [Contributor License Agreement (CLA)](./CLA.md), which allows MiBee Steward to distribute the project, including contributed code, under both the open-source (AGPLv3) and commercial licenses. This dual-licensing capability is what keeps the project sustainable.
 
 ---
 

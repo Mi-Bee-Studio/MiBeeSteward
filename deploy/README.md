@@ -177,12 +177,12 @@ sudo crontab -e
 
 ## 方案 C: OpenWrt 路由器部署（router 形态）
 
-MiBee Steward 可以**直接装在 OpenWrt 路由器上**，拿到"咽喉点"独有的发现信号（DHCP 租约表 / conntrack 流表 / hostapd WiFi 关联 / DNS 查询日志）——这些是任意 LAN 主机都拿不到的。两种形态：
+MiBee Steward 可以**直接装在 OpenWrt 路由器上**，拿到"咽喉点"独有的发现信号（DHCP 租约表 / conntrack 流表 / hostapd WiFi 关联 / DNS 查询日志）--这些是任意 LAN 主机都拿不到的。两种形态：
 
 - **形态 B：agent 上路由 → 远端 center**（多站点：一台远端 center + 每个路由器一个轻量 agent）
 - **形态 C：center 上路由**（单网络：一台路由器全包，agent + center 合一）
 
-⚠️ **硬件约束**：仅支持 **ARM/ARM64** 路由（GL.iNet MT3000、ipq807x、mt798x 系列，≥128MB RAM / ≥32MB flash）。**不支持 MIPS** —— `modernc/libc`（纯 Go SQLite 的传递依赖）没有可用的 mips/mipsle 端口，这排除了老款 ath79/ramips 路由（TP-Link Archer C7、Netgear R7000 等）。
+⚠️ **硬件约束**：仅支持 **ARM/ARM64** 路由（GL.iNet MT3000、ipq807x、mt798x 系列，≥128MB RAM / ≥32MB flash）。**不支持 MIPS**，`modernc/libc`（纯 Go SQLite 的传递依赖）没有可用的 mips/mipsle 端口，这排除了老款 ath79/ramips 路由（TP-Link Archer C7、Netgear R7000 等）。
 
 完整安装步骤（交叉编译 / procd init 脚本 / 配置路径约定 / DB-on-tmpfs 防闪存磨损 / 故障排查）见 **[`deploy/openwrt/README.md`](openwrt/README.md)**。procd init 脚本：[`mibee-steward.init`](openwrt/mibee-steward.init)（center，形态 C）、[`mibee-agent.init`](openwrt/mibee-agent.init)（agent，形态 B）。
 
@@ -329,7 +329,7 @@ sudo systemctl start mibee-steward
 
 ### 安装后体检（doctor）
 
-部署完成后（或排障时）运行内置体检命令，逐项输出 ✅/⚠️/❌ 并附修复提示——覆盖配置完整性（jwt/master key）、DB 可写与完整性、WAL 体积、端口双开风险、write_timeout 匹配、备份新旧与可恢复性、（agent 模式）中心可达性：
+部署完成后（或排障时）运行内置体检命令，逐项输出 ✅/⚠️/❌ 并附修复提示--覆盖配置完整性（jwt/master key）、DB 可写与完整性、WAL 体积、端口双开风险、write_timeout 匹配、备份新旧与可恢复性、（agent 模式）中心可达性：
 
 ```bash
 /opt/mibee-steward/mibee-steward doctor -config configs/config.yaml
@@ -354,7 +354,7 @@ curl -s http://localhost:8080/metrics
 
 ### 自监控 5 分钟接入（#279）
 
-`deploy/` 内置了监控自己的完整样例 —— Prometheus 抓取 + 告警规则 + Grafana 最小仪表盘：
+`deploy/` 内置了监控自己的完整样例，Prometheus 抓取 + 告警规则 + Grafana 最小仪表盘：
 
 ```bash
 # 1. Prometheus：使用样例配置（已挂载告警规则、指向中心 /metrics）

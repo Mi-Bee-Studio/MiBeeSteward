@@ -4,7 +4,7 @@ This guide covers production deployment methods for MiBee Steward on a single ho
 
 ## Deployment Form Selection
 
-MiBee Steward offers several deployment forms — pick the one that fits your scenario:
+MiBee Steward offers several deployment forms, pick the one that fits your scenario:
 
 | Form | Best for | Notes |
 |---|---|---|
@@ -100,7 +100,7 @@ The prebuilt image is the **unprivileged variant** (LLDP/eBPF compiled as stubs)
 
 ### docker-compose
 
-The following is a **simplified example** (the host-network equivalent). The repo's own `docker-compose.yml` actually ships three profiles (`bridge` / `host` / `macvlan`) with shared build anchors — prefer using it directly:
+The following is a **simplified example** (the host-network equivalent). The repo's own `docker-compose.yml` actually ships three profiles (`bridge` / `host` / `macvlan`) with shared build anchors, prefer using it directly:
 
 ```yaml
 services:
@@ -133,7 +133,7 @@ flowchart LR
     A -->|"macvlan: own LAN IP"| D["Joins the LAN as an independent device"]
 ```
 
-Field experience backs this up: bridge mode recovers essentially no device MACs while host networking recovers nearly all of them — always use host networking for production scanning.
+Field experience backs this up: bridge mode recovers essentially no device MACs while host networking recovers nearly all of them, always use host networking for production scanning.
 
 > ⚠️ **Why bridge mode can't be used for real inventory**
 > The default Docker bridge places the container behind NAT. Consequences:
@@ -141,7 +141,7 @@ Field experience backs this up: bridge mode recovers essentially no device MACs 
 > 2. **ICMP broken**: ping replies crossing NAT are often dropped, so the heartbeat's 30s active probe falsely marks LAN devices offline.
 > 3. **Passive multicast broken**: the bridge doesn't forward 224/239 multicast, so mDNS/SSDP listeners self-disable.
 >
-> Partial workaround: list your gateway router IPs in `scanner.router_arp.routers` so the scanner can SNMP-walk the router's ARP table for MACs — but this only recovers MACs, not ICMP or multicast.
+> Partial workaround: list your gateway router IPs in `scanner.router_arp.routers` so the scanner can SNMP-walk the router's ARP table for MACs, but this only recovers MACs, not ICMP or multicast.
 
 ### Full Host-Mode Example
 
@@ -272,7 +272,7 @@ The backup script automatically verifies integrity and cleans up expired backups
 
 Every retention sweep (default every 6h, `retention.sweep_interval_hours`) also
 runs a storage-health pass: the WAL is checkpointed and truncated
-(`PRAGMA wal_checkpoint(TRUNCATE)` — folds write-ahead log pages back into the
+(`PRAGMA wal_checkpoint(TRUNCATE)`, folds write-ahead log pages back into the
 main file so `-wal` returns to zero), SQLite statistics are refreshed
 (`PRAGMA optimize`), and the on-disk sizes plus high-volume table row counts
 are exported to Prometheus:
@@ -286,7 +286,7 @@ These are the growth baseline for capacity planning and for the
 db-growth alert in the self-monitoring example (see `deploy/prometheus`).
 
 Ready-to-import Grafana dashboards for all exported metrics live in
-`deploy/grafana/` — see the [Integrations guide](integrations.md).
+`deploy/grafana/`, see the [Integrations guide](integrations.md).
 
 ### Capacity Planning (field-measured baseline)
 
@@ -294,19 +294,19 @@ Measured on a 85-device LAN with default retention windows (30d scan results,
 7d heartbeat results, 14d service evidence):
 
 - Steady state: ~150 MB total for the main database + ~4 MB heartbeat store
-- Growth is dominated by `scan_results` (one row per task × IP per scan —
+- Growth is dominated by `scan_results` (one row per task × IP per scan;
   a /24 scanned every 30 min ≈ 12k rows/day) and `heartbeat_results`
-  (one row per probe per tick — ~30 devices × 3 probes × 2880 ticks/day
+  (one row per probe per tick, ~30 devices × 3 probes × 2880 ticks/day
   ≈ 260k rows/day, pruned at 7d)
 - Rule of thumb: budget **~2 MB per scanned device per month** at the default
-  retention windows, then watch `mibee_db_size_bytes` — if growth deviates
+  retention windows, then watch `mibee_db_size_bytes`, if growth deviates
   from linear, check `mibee_db_table_rows` for which table is accumulating
   (a stuck sweeper shows as monotonic growth on one table).
 
 
 ### Restore
 
-Backups are **binary database files** produced by `sqlite3 ".backup"` — not SQL scripts. Restore by copying the file back:
+Backups are **binary database files** produced by `sqlite3 ".backup"`, not SQL scripts. Restore by copying the file back:
 
 ```bash
 sudo systemctl stop mibee-steward
@@ -334,7 +334,7 @@ docker compose pull  # pull new image
 docker compose up -d
 ```
 
-Data compatibility: the database schema auto-migrates on startup (with an automatic `VACUUM INTO` backup first) — no manual steps required. ARMv7 devices have no prebuilt release artifact — cross-compile locally with `make build-linux-arm`.
+Data compatibility: the database schema auto-migrates on startup (with an automatic `VACUUM INTO` backup first), no manual steps required. ARMv7 devices have no prebuilt release artifact, cross-compile locally with `make build-linux-arm`.
 
 ### Resetting the admin password
 

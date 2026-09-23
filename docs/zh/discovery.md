@@ -65,9 +65,9 @@ flowchart LR
 
 **被动（eBPF）**：eBPF TC 观测器（`WITH_EBPF` 构建标签，内核 ≥5.8）观测 ONVIF/WS-Discovery 多播与 TCP 魔术字节，产出置信度 0.6 的证据。详见 [eBPF 被动观测](ebpf.md)。
 
-**被动（主机本地）**：`arp_cache`（对账内核 `/proc/net/arp` 缓存，零流量）、`multicast`（被动监听 mDNS 224.0.0.251:5353 与 SSDP 239.255.255.250:1900 的自宣告设备）、`router_arp`（走 `scanner.router_arp.routers` 所列路由器的 SNMP ARP 表——覆盖跨 VLAN 的 MAC，未配置路由器时为 no-op）。默认构建下还有两个需专用构建标签的可选源：`arp_scan`（主动 ARP 广播 sweep，`WITH_ARPSCAN` 标签）与 LLDP 原始帧监听器（`WITH_LLDP` 标签 + `scanner.discovery.lldp_interfaces`）。 
+**被动（主机本地）**：`arp_cache`（对账内核 `/proc/net/arp` 缓存，零流量）、`multicast`（被动监听 mDNS 224.0.0.251:5353 与 SSDP 239.255.255.250:1900 的自宣告设备）、`router_arp`（走 `scanner.router_arp.routers` 所列路由器的 SNMP ARP 表--覆盖跨 VLAN 的 MAC，未配置路由器时为 no-op）。默认构建下还有两个需专用构建标签的可选源：`arp_scan`（主动 ARP 广播 sweep，`WITH_ARPSCAN` 标签）与 LLDP 原始帧监听器（`WITH_LLDP` 标签 + `scanner.discovery.lldp_interfaces`）。 
 
-**被动观察作为识别种子（#377）**：主机本地各源还会把「听到的事实」记入按 IP 的观察缓存——DHCP 租约主机名（权威的 主机名/MAC/IP 映射）、完整的 mDNS 服务宣告（服务列表 + TXT）、SSDP 的 SERVER/USN/LOCATION 自报身份。每次扫描会把该 IP 的缓存观察前置进证据收集阶段，指纹分类器因此也能看到被动通道。真实网络上这往往是唯一通道：R68S 现场实测主动 mDNS 查询 100% 无应答、监听器却听到丰富宣告——一条 `viomi-waterheater-…` 租约主机名即可在设备零应答的情况下产出米家品牌身份。
+**被动观察作为识别种子（#377）**：主机本地各源还会把「听到的事实」记入按 IP 的观察缓存--DHCP 租约主机名（权威的 主机名/MAC/IP 映射）、完整的 mDNS 服务宣告（服务列表 + TXT）、SSDP 的 SERVER/USN/LOCATION 自报身份。每次扫描会把该 IP 的缓存观察前置进证据收集阶段，指纹分类器因此也能看到被动通道。真实网络上这往往是唯一通道：R68S 现场实测主动 mDNS 查询 100% 无应答、监听器却听到丰富宣告--一条 `viomi-waterheater-…` 租约主机名即可在设备零应答的情况下产出米家品牌身份。
 
 **路由器驻留 Tier-1**：仅在 MiBee Steward 直接部署于网关时才有数据（如 OpenWrt 设备），**默认关闭，需手动启用**。
 
@@ -75,10 +75,10 @@ flowchart LR
 |---|---|---|---|
 | `dhcp_leases` | `scanner.discovery.dhcp_leases.enabled` | dnsmasq 租约文件（OpenWrt `/tmp/dhcp.leases`、Debian `/var/lib/misc/dnsmasq.leases`） | 需访问本机 DHCP 服务的租约表 |
 | `conntrack` | `scanner.discovery.conntrack.enabled` | `/proc/net/nf_conntrack`（活跃 NAT 流的 LAN 侧端点） | 需网关网络命名空间 |
-| `hostapd` | `scanner.discovery.hostapd.enabled` | hostapd 控制套接字（`iw station dump` 回退）— STA 关联/信号 dBm/SSID | 需同设备上的 Wi-Fi AP |
+| `hostapd` | `scanner.discovery.hostapd.enabled` | hostapd 控制套接字（`iw station dump` 回退）- STA 关联/信号 dBm/SSID | 需同设备上的 Wi-Fi AP |
 | `dns_log` | `scanner.discovery.dns_log.enabled` | dnsmasq 查询日志（`--log-queries`） | 需本机 DNS 解析器日志 |
 
-**启用被动发现**（YAML 示例——先开总开关，再按需开子源）：
+**启用被动发现**（YAML 示例--先开总开关，再按需开子源）：
 
 ```yaml
 scanner:
@@ -116,7 +116,7 @@ export MIBEE_SCANNER_DISCOVERY_CONNTRACK_ENABLED=true
 
 ## 指纹识别
 
-探测产出证据后，**RuleClassifier** 将证据与数据驱动的 YAML 规则库匹配，识别设备类型、品牌和型号。识别结果直接体现在设备列表与详情页——类型旁的角标区分识别来源（协议证据 vs 主名启发式）：
+探测产出证据后，**RuleClassifier** 将证据与数据驱动的 YAML 规则库匹配，识别设备类型、品牌和型号。识别结果直接体现在设备列表与详情页--类型旁的角标区分识别来源（协议证据 vs 主名启发式）：
 
 ![识别结果体现在设备列表](images/devices.webp)
 
@@ -141,13 +141,13 @@ export MIBEE_SCANNER_DISCOVERY_CONNTRACK_ENABLED=true
 
 完整规则格式、匹配操作和置信度模型详见[指纹规范](fingerprint-spec.md)。
 
-> **逻辑无法写成单条声明式规则时**（SNMP 位掩码+数值的设备类型启发式、摄像头分类器的跨证据融合）保留为 Go 代码，与规则库并存——见指纹规范 §"Logic plugins"。
+> **逻辑无法写成单条声明式规则时**（SNMP 位掩码+数值的设备类型启发式、摄像头分类器的跨证据融合）保留为 Go 代码，与规则库并存--见指纹规范 §"Logic plugins"。
 
 ### 设备类型推断（hostname/品牌/端口 关键词表）
 
 在服务级指纹之外，设备**类型**（camera/switch/nas/…）还由一张数据驱动的关键词表推断：`configs/fingerprints/device-types/device_types.yaml`（主机名前缀、品牌、端口组合 → 类型），由 `runner` 的通用匹配器消费。
 
-每条规则带 `source` 字段——`protocol`（来自 SNMP/RTSP/ONVIF 等协议证据，可信）或 `heuristic`（来自主机名猜测，可被伪造）——写入 `scan_attributes.inferred_type_source`。UI 对 heuristic 来源的类型显示 `?` 角标，提示该结论可被设备名 spoof。加一个设备签名 = 在 YAML 里加一行，不是加一个 Go 分支。
+每条规则带 `source` 字段--`protocol`（来自 SNMP/RTSP/ONVIF 等协议证据，可信）或 `heuristic`（来自主机名猜测，可被伪造）--写入 `scan_attributes.inferred_type_source`。UI 对 heuristic 来源的类型显示 `?` 角标，提示该结论可被设备名 spoof。加一个设备签名 = 在 YAML 里加一行，不是加一个 Go 分支。
 
 ### OUI 厂商解析
 
@@ -173,7 +173,7 @@ OUI 加载器按**最长前缀匹配**将 MAC 地址解析为 IEEE 注册厂商�
 **OUI 数据来源**：
 
 - **内嵌**（默认）：精简的 CC-BY-SA 常见厂商表。大多数部署场景足够。
-- **完整 IEEE 数据集**（可选）：通过 `scripts/fetch-oui.sh` 下载，设置 `scanner.oui_path` 指向 CSV 文件。IEEE 注册表为"保留所有权利"的事实数据——引用，不入 CC-BY-SA 指纹语料库。
+- **完整 IEEE 数据集**（可选）：通过 `scripts/fetch-oui.sh` 下载，设置 `scanner.oui_path` 指向 CSV 文件。IEEE 注册表为"保留所有权利"的事实数据--引用，不入 CC-BY-SA 指纹语料库。
 
 ## 身份归并与设备替换
 
@@ -193,7 +193,7 @@ OUI 加载器按**最长前缀匹配**将 MAC 地址解析为 IEEE 注册厂商�
 
 ### 单写者并发
 
-所有设备写入经由 `runner.applyDeviceBridge`——单一写入者漏斗，防止多个探测处理器并发运行时的竞态条件（并行扫描结束后顺序执行桥接）。MAC 优先身份与该桥接自 v0.2.0 起落地。
+所有设备写入经由 `runner.applyDeviceBridge`--单一写入者漏斗，防止多个探测处理器并发运行时的竞态条件（并行扫描结束后顺序执行桥接）。MAC 优先身份与该桥接自 v0.2.0 起落地。
 
 ### 网络对账漂移任务
 
@@ -268,6 +268,6 @@ scanner:
 
 ## 交叉引用
 
-- [架构总览](architecture.md)——五层扫描器流水线、持久化表、设备身份模型
-- [配置参考](configuration.md)——所有 `scanner.*` 和 `heartbeat.*` 配置键
-- [指纹规范](fingerprint-spec.md)——规则格式、匹配操作、置信度模型、许可证
+- [架构总览](architecture.md)--五层扫描器流水线、持久化表、设备身份模型
+- [配置参考](configuration.md)--所有 `scanner.*` 和 `heartbeat.*` 配置键
+- [指纹规范](fingerprint-spec.md)--规则格式、匹配操作、置信度模型、许可证

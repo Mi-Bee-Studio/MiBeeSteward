@@ -50,10 +50,10 @@ MiBee Steward 设备管理与监控系统（含设备系统、网络扫描、多
 { "<resource>": [ ... ], "total": 42, "limit": 20, "offset": 0 }
 ```
 
-- `<resource>` 是资源复数键（`devices`、`users`、`changes`、`audit_logs`……）。每个端点一个键 —— 各端点的键与默认值/上限见[分页](#分页)。
+- `<resource>` 是资源复数键（`devices`、`users`、`changes`、`audit_logs`……）。每个端点一个键，各端点的键与默认值/上限见[分页](#分页)。
 - `total` 是**过滤后总数**（命中查询的行数，不是页大小）。两个刻意例外：`GET /notification/logs` 的 total 是调用者的**未读数**（页首铃铛徽标用）；`GET /scanner/scan` 是扫描结果而非列表。
 - `limit`/`offset` 回显**实际生效**的分页（经过默认值与钳制之后），客户端据此可检测服务端钳制。完整、不分页的集合（`GET /networks`、`GET /networks/{id}/vlans`、`GET /agents/tokens`、`GET /agents/status`、`GET /notification/channels|rules`、拓扑图、按设备子列表）省略这两个字段并总是返回全部行。
-- 机-机通道例外：`GET /agents/commands`（agent 轮询端点）仍是裸数组 —— 它是舰队内部契约，消费方是已部署的 agent 二进制而非公共集成面；包裹它会打断所有未升级的 agent。
+- 机-机通道例外：`GET /agents/commands`（agent 轮询端点）仍是裸数组，它是舰队内部契约，消费方是已部署的 agent 二进制而非公共集成面；包裹它会打断所有未升级的 agent。
 
 ### 错误模型
 
@@ -61,7 +61,7 @@ MiBee Steward 设备管理与监控系统（含设备系统、网络扫描、多
 { "error": "人类可读的信息" }
 ```
 
-单一字段，所有非 2xx JSON 响应必含（中间件与 handler 共享该形状）。状态码：400 输入格式错误、401 未认证、403 禁止（能力/范围/CSRF）、404 不存在（越权资源同样 404 —— 刻意不可区分）、409 冲突（重名）、413 载荷过大（同步扫描 > 1024 IP）、422 批量语义错误、429 限流、503 功能禁用（如未配 master key 的凭据金库）。
+单一字段，所有非 2xx JSON 响应必含（中间件与 handler 共享该形状）。状态码：400 输入格式错误、401 未认证、403 禁止（能力/范围/CSRF）、404 不存在（越权资源同样 404，刻意不可区分）、409 冲突（重名）、413 载荷过大（同步扫描 > 1024 IP）、422 批量语义错误、429 限流、503 功能禁用（如未配 master key 的凭据金库）。
 
 ### 分页
 
@@ -132,7 +132,7 @@ flowchart LR
 
 - **公开**：无需认证（健康检查、登录、登出、2FA 校验、`/metrics`、`/sd`）
 - **需认证**：有效的 JWT 令牌（任意角色）
-- **按能力门控**：持有对应能力的有效 JWT 令牌——读取能力所有登录用户可用，操作能力 operator 及以上，管理能力仅 admin
+- **按能力门控**：持有对应能力的有效 JWT 令牌--读取能力所有登录用户可用，操作能力 operator 及以上，管理能力仅 admin
 
 ### TOTP 双因素认证（2FA）
 
@@ -329,7 +329,7 @@ flowchart LR
 | `/api/v1/devices/batch-delete` | POST | 需认证 · `CapDeviceWrite` | 批量删除设备 |
 | `/api/v1/devices/batch-update-status` | POST | 需认证 · `CapDeviceWrite` | 批量更新设备状态 |
 
-设备读/写路径均带**网络范围**（`NetworkScope`）过滤；设备级操作附加 `ValidateDeviceScope` 校验——闭环模式下越权访问返回 `403`（`{"error":"forbidden: device out of network scope"}`）。
+设备读/写路径均带**网络范围**（`NetworkScope`）过滤；设备级操作附加 `ValidateDeviceScope` 校验--闭环模式下越权访问返回 `403`（`{"error":"forbidden: device out of network scope"}`）。
 
 ### GET /api/v1/devices
 
@@ -388,16 +388,16 @@ flowchart LR
 }
 ```
 
-**`scan_attributes`（引擎写入的扫描发现聚合）** — 每个设备上的 JSON 对象，承载扫描发现的信息。MAC/OUI 相关字段：
+**`scan_attributes`（引擎写入的扫描发现聚合）**，每个设备上的 JSON 对象，承载扫描发现的信息。MAC/OUI 相关字段：
 
 | 字段 | 描述 |
 |-------|-------------|
 | `vendor` | 设备**自报**品牌（经 SNMP sysObjectID / HTTP Server 头 / TLS 证书 CN）；以上都未命中时回落到 OUI 厂商。 |
-| `oui_prefix` | MAC 经最长前缀匹配命中的 IEEE 分配块——6 hex（MA-L /24）、7 hex（MA-M /28）或 9 hex（MA-S /36）。未加载 OUI 表或 MAC 未知/本地管理时为空。 |
-| `oui_vendor` | `oui_prefix` 对应的 IEEE 注册组织名——**NIC 芯片厂商**，与 `vendor` 分开（OEM/贴牌/虚拟化场景下两者不同）。 |
+| `oui_prefix` | MAC 经最长前缀匹配命中的 IEEE 分配块--6 hex（MA-L /24）、7 hex（MA-M /28）或 9 hex（MA-S /36）。未加载 OUI 表或 MAC 未知/本地管理时为空。 |
+| `oui_vendor` | `oui_prefix` 对应的 IEEE 注册组织名--**NIC 芯片厂商**，与 `vendor` 分开（OEM/贴牌/虚拟化场景下两者不同）。 |
 | `mac` | 规范化小写 MAC（`aa:bb:cc:..`）。 |
-| `mac_is_locally_administered` | 中性事实标记：U/L 位（首字节 `& 0x02`）置位——MAC 由本地分配，非 IEEE 块。该位**无法**区分隐私随机化（不稳定）与本地固定设置（稳定），因此仅作观测，**不改变设备身份**。 |
-| `mac_is_multicast` | I/G 位（首字节 `& 0x01`）置位——真实设备不应从多播 MAC 发出；数据卫生标记。 |
+| `mac_is_locally_administered` | 中性事实标记：U/L 位（首字节 `& 0x02`）置位--MAC 由本地分配，非 IEEE 块。该位**无法**区分隐私随机化（不稳定）与本地固定设置（稳定），因此仅作观测，**不改变设备身份**。 |
+| `mac_is_multicast` | I/G 位（首字节 `& 0x01`）置位--真实设备不应从多播 MAC 发出；数据卫生标记。 |
 
 ### GET /api/v1/devices/stats
 
@@ -661,7 +661,7 @@ flowchart LR
 - `leaf` 即 `chain[0]`，单独暴露以便一览式渲染；当 `error` 非空时省略。
 - `error` 在 TLS 握手失败时非空（如 `not TLS`、`handshake failure`）。这类行仍然返回，便于 UI 显示“已尝试过此端口”而非默默省略。此时 `leaf` 与 `chain` 为空。
 - `trusted` 是最佳努力的判定（对系统根证书池做一次验证握手得出），仅用于 UI 徽章，**不影响采集**（自签名证书总会被采集）。
-- 设备未记录任何 TLS 端口时返回空 `certificates` 数组，HTTP 仍为 200 —— 应渲染空状态，而非 404。
+- 设备未记录任何 TLS 端口时返回空 `certificates` 数组，HTTP 仍为 200，应渲染空状态，而非 404。
 
 ## 设备配置历史
 
@@ -725,7 +725,7 @@ sequenceDiagram
 
 **响应**：`ScanResponse { hosts: [ScanHost], total, alive, duration_ms }`，每个 `ScanHost` 含 `ip`、`alive`、`rtt_ms`、`snmp_*` 变量，以及 `inferred_type` / `inferred_brand`（如 `camera`、`server`、`pc`）。
 
-**持久化**：存活主机经设备桥接（`ApplyReport`）写入 `devices` 表——upsert 设备、为新设备种子心跳配置、记录变更事件——与异步任务共用同一条单写者路径。同步扫描**不**写入原始 `scan_results` / `scan_task_runs` 行（那是异步任务路径的产物）。
+**持久化**：存活主机经设备桥接（`ApplyReport`）写入 `devices` 表--upsert 设备、为新设备种子心跳配置、记录变更事件--与异步任务共用同一条单写者路径。同步扫描**不**写入原始 `scan_results` / `scan_task_runs` 行（那是异步任务路径的产物）。
 
 **限制**：对 >1024 IP 的目标返回 **413**（请用下方异步任务 API）。若服务器 `write_timeout` 在扫描途中触发则返回 **504**（配置漂移兜底）。
 
@@ -740,7 +740,7 @@ sequenceDiagram
 { "devices": [ { "ip": "192.168.1.1", "name": "Gateway", "type": "other", "brand": "...", "ports": [...], "services": [...] } ] }
 ```
 
-**响应**：`{ added: int, errors: [string] }`。当**所有**条目都持久化失败时返回 **422**（`added=0`，`errors` 带各条原因）——请求合法但操作无法应用。
+**响应**：`{ added: int, errors: [string] }`。当**所有**条目都持久化失败时返回 **422**（`added=0`，`errors` 带各条原因）--请求合法但操作无法应用。
 
 ### 扫描任务 API（异步，用于大范围）
 
@@ -799,7 +799,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 
 ## 代理与命令通道
 
-分布式部署中的发现代理（agent）管理与命令下发通道。令牌管理与命令管理端点要求 **管理员**（`CapAgentManage`）；代理数据上报与命令拉取使用**代理令牌**（`RequireAgentToken`）认证——令牌绑定 `agent_id` + `network_id`，上报的每台设备都会被打上该网络标签，多网段数据互不冲突。
+分布式部署中的发现代理（agent）管理与命令下发通道。令牌管理与命令管理端点要求 **管理员**（`CapAgentManage`）；代理数据上报与命令拉取使用**代理令牌**（`RequireAgentToken`）认证--令牌绑定 `agent_id` + `network_id`，上报的每台设备都会被打上该网络标签，多网段数据互不冲突。
 
 | 端点 | 方法 | 认证 | 说明 |
 |------|------|------|------|
@@ -1190,7 +1190,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 | `/api/v1/probe-targets/{id}` | PUT | 操作员及以上 · `CapProbeManage` | 更新目标（部分更新，nil 字段保持不变） |
 | `/api/v1/probe-targets/{id}` | DELETE | 操作员及以上 · `CapProbeManage` | 删除目标（连同历史结果与已存证书链） |
 | `/api/v1/probe-targets/{id}/trigger` | POST | 操作员及以上 · `CapProbeManage` | 立即拨测（同步执行，返回本次探测结果） |
-| `/api/v1/probe-targets/{id}/results` | GET | 需认证 · `CapProbeRead` | 探测历史（`limit`/`offset`，新到旧；可选 `vantage` 过滤——`center` 或 `agent:{agent_id}`，留空 = 全部视角） |
+| `/api/v1/probe-targets/{id}/results` | GET | 需认证 · `CapProbeRead` | 探测历史（`limit`/`offset`，新到旧；可选 `vantage` 过滤--`center` 或 `agent:{agent_id}`，留空 = 全部视角） |
 | `/api/v1/probe-targets/{id}/certificates` | GET | 需认证 · `CapProbeRead` | 当前证书链（响应形状与设备证书端点一致） |
 
 ### POST /api/v1/probe-targets/
@@ -1214,11 +1214,11 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 ```
 - `name`（必填，全局唯一）：目标名称（同时是 Prometheus 指标 label）
 - `module`（必填）：`http` | `tls` | `tcp` | `icmp`
-- `target`（必填）：按模块校验——`http` 须为完整 http(s) URL；`tls`/`tcp` 须为 host:port（端口 1–65535）；`icmp` 须为纯主机名或 IP
+- `target`（必填）：按模块校验--`http` 须为完整 http(s) URL；`tls`/`tcp` 须为 host:port（端口 1–65535）；`icmp` 须为纯主机名或 IP
 - `interval_seconds`（可选，默认 60）：探测间隔，10–86400 秒
 - `timeout_seconds`（可选，默认 10）：单次探测超时，1–60 秒，须小于间隔
 - `notes`（可选，≤500 字符）、`enabled`（可选，默认 true）
-- `vantage`（可选，默认 `center`）：执行计划——`center`（本机执行）、`agent:{agent_id}`（该 agent 经分布式命令通道执行；中心拒绝本地执行，手动触发返回 409）、`all`（中心 + 全部已注册 agent；各轨道结果分别盖 `center` / `agent:{id}` 章——见[分布式](distributed.md#多视角拨测277)）
+- `vantage`（可选，默认 `center`）：执行计划--`center`（本机执行）、`agent:{agent_id}`（该 agent 经分布式命令通道执行；中心拒绝本地执行，手动触发返回 409）、`all`（中心 + 全部已注册 agent；各轨道结果分别盖 `center` / `agent:{id}` 章--见[分布式](distributed.md#多视角拨测277)）
 
 **响应**：`201 Created` 带 ProbeTargetResponse（含 `last_run_at`/`last_status`/`last_latency_ms`/`last_error` 去规范化最新结果，空 = 尚未探测）。
 
@@ -1345,7 +1345,7 @@ Prometheus 数据源的仪表板配置与查询透传。读（`CapDashboardRead`
 
 ## 通知
 
-告警通知渠道与规则管理。规则基于能力矩阵（`CapNotificationManage`）——默认管理员；渠道为同能力，`PATCH` 用于启用/禁用。日志端点任意登录用户可读。
+告警通知渠道与规则管理。规则基于能力矩阵（`CapNotificationManage`）--默认管理员；渠道为同能力，`PATCH` 用于启用/禁用。日志端点任意登录用户可读。
 
 ### 通知渠道
 
@@ -1410,7 +1410,7 @@ Prometheus 数据源的仪表板配置与查询透传。读（`CapDashboardRead`
 | 登录限流 | 10 次/分钟/IP | `/api/v1/auth/*`（含 2FA 校验，`rate_limit.login_per_minute`） |
 | 扫描限流 | 10 次/分钟/IP | `POST /scanner/scan` 与 `POST /scanner/tasks/{id}/trigger`（`rate_limit.scan_per_minute`） |
 
-- 扫描限流在能力门控之后生效——权限不足的请求（403）**不消耗**配额。
+- 扫描限流在能力门控之后生效--权限不足的请求（403）**不消耗**配额。
 - 超限返回 `429 Too Many Requests`。
 - 数值可通过配置调整，详见 [配置参考](configuration.md)。
 

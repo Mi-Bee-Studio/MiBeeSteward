@@ -4,7 +4,7 @@ Thank you for contributing to MiBee Steward! This Contributor License Agreement
 (CLA) governs your contributions to the project and is **required** before any
 pull request can be merged.
 
-MiBee Steward is distributed under a **dual-license** model — the open-source
+MiBee Steward is distributed under a **dual-license** model, the open-source
 [GNU AGPLv3](./LICENSE) plus a separate [commercial license](./LICENSE-COMMERCIAL.md).
 This dual licensing is what makes the project sustainable, and it requires every
 contributor to grant Mi-Bee Studio the right to relicense their contribution
@@ -17,10 +17,10 @@ alongside the rest of the codebase. That is the sole purpose of this CLA.
 
 ## Two ways to sign
 
-1. **Individual Contributor** — if you are contributing on your own behalf, or
+1. **Individual Contributor**, if you are contributing on your own behalf, or
    your employer has no claim to your contribution. Use the **Individual CLA
    (ICLA)** below.
-2. **Corporate Contributor** — if you are contributing on behalf of your
+2. **Corporate Contributor**, if you are contributing on behalf of your
    employer and the contribution is within the scope of your employment. Use the
    **Corporate CLA (CCLA)** below, signed by an authorized representative.
 
