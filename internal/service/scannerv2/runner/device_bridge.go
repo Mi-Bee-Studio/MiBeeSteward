@@ -46,6 +46,13 @@ import (
 // adapter from the in-memory report to the devices/heartbeat_configs tables.
 func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string) (bool, bool) {
 	inferredType := rep.Device.Fields["inferred_type"]
+	// Out-of-enum values (the discovery synthesizer's "unknown", or anything
+	// an older agent ships) must not reach the INSERT: the devices.type CHECK
+	// rejects them and the whole create fails. Coerce to the "" path so the
+	// heuristic ladder and the "other" default decide instead.
+	if inferredType != "" && !domain.IsValidDeviceType(inferredType) {
+		inferredType = ""
+	}
 	// typeSource records HOW inferredType was determined, for confidence display:
 	//   "protocol" , a service handler set it from real protocol evidence
 	//                 (SNMP sysObjectID, RTSP/ONVIF banner, mDNS service type,

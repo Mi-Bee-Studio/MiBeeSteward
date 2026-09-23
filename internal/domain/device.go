@@ -67,9 +67,9 @@ var ValidDeviceTypes = []DeviceType{
 	TypeRouter, TypeFirewall, TypeNAS, TypeCamera, TypePhone, TypePrinter,
 }
 
-// isValidDeviceType reports whether t is one of ValidDeviceTypes. Used by
+// IsValidDeviceType reports whether t is one of ValidDeviceTypes. Used by
 // ValidateDeviceType; kept unexported (ValidateDeviceType is the public API).
-func isValidDeviceType(t string) bool {
+func IsValidDeviceType(t string) bool {
 	for _, v := range ValidDeviceTypes {
 		if string(v) == t {
 			return true
