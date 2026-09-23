@@ -10,7 +10,9 @@
 package agent
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -36,4 +38,44 @@ func TestProber_ApplyConfig(t *testing.T) {
 	// Empty plan clears.
 	p.ApplyConfig(ProbePlanCommand{Fingerprint: "fp3"})
 	require.Equal(t, "fp3", p.PlanFingerprint())
+}
+
+// The report loop's final drain must post on a LIVE context: the loop ctx is
+// already cancelled when the Done branch runs, posting with it would abort
+// the HTTP request and drop the buffered batch on every shutdown.
+func TestProber_ReportLoopFinalFlushSurvivesCancel(t *testing.T) {
+	posted := make(chan []probetarget.AgentResultReport, 1)
+	p := NewProber(stubPoster{ch: posted}, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		p.reportLoop(ctx)
+	}()
+
+	p.reportBatch <- probetarget.AgentResultReport{TargetID: 7}
+	time.Sleep(50 * time.Millisecond) // let the loop buffer the result
+	cancel()
+
+	select {
+	case batch := <-posted:
+		require.Len(t, batch, 1, "buffered result must be delivered by the final flush")
+		require.Equal(t, int64(7), batch[0].TargetID)
+	case <-time.After(3 * time.Second):
+		t.Fatal("final flush did not deliver the buffered batch")
+	}
+	select {
+	case <-loopDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("report loop did not exit after cancel")
+	}
+}
+
+type stubPoster struct {
+	ch chan []probetarget.AgentResultReport
+}
+
+func (s stubPoster) Post(_ context.Context, results []probetarget.AgentResultReport) {
+	s.ch <- results
 }

@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -390,6 +391,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// identify target), so the closure captured a placeholder pointer.
 	discSvcRef = discSvc
 	var discCancel context.CancelFunc
+	// frameSrcWG joins the raw-frame listeners (lldp_frame/cdp_frame, only
+	// real in WITH_LLDP/WITH_CDP builds) at shutdown: the cleanup cancels
+	// their ctx and waits here, so no listener outlives the coordinator stop.
+	var frameSrcWG sync.WaitGroup
 	// discSvcForStatus carries the discovery service to the status endpoint.
 	// nil when the service was never started (discovery disabled), the handler
 	// then reports enabled=false. Declared here so the route registration below
@@ -494,10 +499,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// returns nil in the default build, so this is a no-op there. Wiring the
 		// neighbor-edge sink needs a MAC-keyed device resolver (RecordNeighbors
 		// is IP-keyed); deferred until that lands. The host-event path works.
+		// Start BLOCKS until ctx cancel, it must run on its own goroutine
+		// (called synchronously it would hang NewRouter in a WITH_LLDP build)
+		// and joins the cleanup via frameSrcWG.
 		if lldpSrc := scannerv2discovery.NewLLDPFrameSource(
 			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
 		); lldpSrc != nil {
-			lldpSrc.Start(discCtx)
+			frameSrcWG.Add(1)
+			go func() {
+				defer frameSrcWG.Done()
+				lldpSrc.Start(discCtx)
+			}()
 			activeSources = append(activeSources, "lldp_frame")
 		}
 		// cdp_frame: passive CDP frame listener (ethertype 0x2000). Only
@@ -508,7 +520,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		if cdpSrc := scannerv2discovery.NewCDPFrameSource(
 			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
 		); cdpSrc != nil {
-			cdpSrc.Start(discCtx)
+			frameSrcWG.Add(1)
+			go func() {
+				defer frameSrcWG.Done()
+				cdpSrc.Start(discCtx)
+			}()
 			activeSources = append(activeSources, "cdp_frame")
 		}
 
@@ -798,6 +814,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			discCancel()
 		}
 		discSvc.Stop()
+		// Wait for the raw-frame listeners to exit (bounded ~1s: their socket
+		// reads carry a 1s deadline and re-check ctx each pass) before the
+		// later stops, nothing may Emit into a torn-down coordinator.
+		frameSrcWG.Wait()
 		cleanupSvc.Stop()
 		if configBackupSvc != nil {
 			configBackupSvc.Stop()

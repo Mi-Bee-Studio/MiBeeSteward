@@ -255,28 +255,44 @@ func (s *Service) EvidenceFor(ip string) []scannerv2.Evidence {
 // Start launches the coordinator's consumer goroutine. It is the caller's
 // responsibility to also start each source (sources are returned/constructed
 // separately so callers can decide which to run). Repeat calls are no-ops.
+// cancel/done/startedAt are written under statsMu: Status() reads them from
+// the status endpoint's goroutine, unsynchronized writes would be a race.
 func (s *Service) Start(ctx context.Context) {
+	s.statsMu.Lock()
 	if s.cancel != nil {
+		s.statsMu.Unlock()
 		return // already started
 	}
 	ctx, s.cancel = context.WithCancel(ctx)
 	s.done = make(chan struct{})
 	s.startedAt = time.Now()
-	go s.loop(ctx)
+	done := s.done
+	s.statsMu.Unlock()
+	// loop's exit signal closes the channel captured at Start; reading
+	// s.done at exit would race Stop() clearing the field.
+	go func() {
+		defer close(done)
+		s.loop(ctx)
+	}()
 }
 
 // Stop signals the consumer goroutine to exit and blocks until it has. Safe
-// to call when never started (no-op). Must be called before db.Close().
+// to call when never started (no-op) and safe to call concurrently with
+// Status(). Must be called before db.Close().
 func (s *Service) Stop() {
-	if s.cancel == nil {
-		return
-	}
-	s.cancel()
-	if s.done != nil {
-		<-s.done
-	}
+	s.statsMu.Lock()
+	cancel := s.cancel
+	done := s.done
 	s.cancel = nil
 	s.done = nil
+	s.statsMu.Unlock()
+	if cancel == nil {
+		return
+	}
+	cancel()
+	if done != nil {
+		<-done
+	}
 }
 
 // Emit pushes a NewHostEvent to the coordinator. Non-blocking: a full channel
@@ -293,7 +309,7 @@ func (s *Service) Emit(ev NewHostEvent) {
 // loop is the single consumer. Serializing all source events here means the
 // runner's device-bridge upserts are never concurrent with each other.
 func (s *Service) loop(ctx context.Context) {
-	defer close(s.done)
+	// The exit-signal channel is closed by the Start closure, not here.
 	// Periodically sweep the recent-memory window so it doesn't grow unbounded.
 	sweep := time.NewTicker(dedupTTL)
 	defer sweep.Stop()

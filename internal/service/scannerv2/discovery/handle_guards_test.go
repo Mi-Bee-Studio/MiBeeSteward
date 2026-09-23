@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -69,6 +70,40 @@ func TestHandle37_KnownHostSkippedAndRingTrim(t *testing.T) {
 		svc.handle(ctx, NewHostEvent{IP: fmt.Sprintf("10.1.%d.%d", i/10, i%10), Source: "test"})
 	}
 	require.Len(t, svc.lastEvents, maxRecentEvents, "recent-event ring trims to capacity")
+}
+
+// Start/Stop cycling concurrent with Status() reads must be race-free (the
+// status endpoint runs on its own goroutine). Run under -race; also pins the
+// Enabled flag flipping with the lifecycle.
+func TestDiscovery_StartStopStatusConcurrent(t *testing.T) {
+	conn := memoryDB(t)
+	svc := newDiscSvc37(&recSink37{}, conn)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = svc.Status()
+			}
+		}
+	}()
+
+	for i := 0; i < 20; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		svc.Start(ctx)
+		require.True(t, svc.Status().Enabled, "started service reports enabled")
+		svc.Stop()
+		require.False(t, svc.Status().Enabled, "stopped service reports disabled")
+		cancel()
+	}
+	close(stop)
+	wg.Wait()
 }
 
 // A MAC-only event (WiFi association from hostapd) enriches a known device's
