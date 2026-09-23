@@ -234,7 +234,7 @@ func (s *DeviceService) Delete(ctx context.Context, id int64) error {
 		return fmt.Errorf("failed to delete device: %w", err)
 	}
 	// heartbeat_results lives in a separate DB (no cross-DB foreign key), so
-	// cascade-delete its rows explicitly. Best-effort: a dangling history row
+	// cascade-delete its rows explicitly; a dangling history row
 	// for a deleted device is harmless (retention sweep cleans it up).
 	if s.heartbeatSvc != nil && s.heartbeatSvc.Store() != nil {
 		if hbErr := s.heartbeatSvc.Store().DeleteByDevice(ctx, id); hbErr != nil {

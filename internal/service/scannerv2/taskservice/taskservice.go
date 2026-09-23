@@ -69,7 +69,7 @@ func New(queries *db.Queries, conn db.DBTX, sched *scheduler.Scheduler, allowRes
 }
 
 // refreshTaskGauges recomputes mibee_scanner_tasks_total after a mutation
-// (#238). Best-effort by design: a failed refresh is logged at debug and never
+// (#238). A failed refresh is logged at debug and never
 // fails the write it follows.
 func (s *Service) refreshTaskGauges(ctx context.Context) {
 	if err := metrics.RefreshScannerTaskGauges(ctx, s.queries); err != nil {
@@ -82,8 +82,8 @@ func (s *Service) refreshTaskGauges(ctx context.Context) {
 // normalized form matches one networks.cidr (the raw target string is tried
 // too, covering non-canonical stored cidrs). Comma lists, IP ranges,
 // hostnames, or no match → NULL, meaning cross-network/unresolved: visible
-// to admins/open mode, hidden from restricted scopes. Best-effort by design;
-// this is a visibility enforcement key, not an identity.
+// to admins/open mode, hidden from restricted scopes. This is a
+// visibility enforcement key, not an identity.
 func ResolveNetworkFromTargets(ctx context.Context, conn db.DBTX, targets string) (sql.NullInt64, error) {
 	fields := strings.FieldsFunc(targets, func(r rune) bool {
 		return r == ',' || r == ' ' || r == '\t' || r == ';'

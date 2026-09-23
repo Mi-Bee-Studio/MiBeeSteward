@@ -37,7 +37,7 @@ import (
 // definition the one the subnet's broadcast domain rides on. Multi-VLAN
 // networks need per-port PVID evidence to disambiguate and stay unlinked.
 //
-// This is a per-scan finalize step. Best-effort: failures are logged, never
+// This is a per-scan finalize step. Failures are logged and never
 // abort a scan.
 func (rn *Runner) recordVLANs(ctx context.Context, networkID sql.NullInt64, reports []scannerv2.HostReport) {
 	if !networkID.Valid {
