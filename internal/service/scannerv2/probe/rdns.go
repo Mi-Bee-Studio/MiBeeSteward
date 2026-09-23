@@ -127,7 +127,7 @@ func (p *RDNSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 		Kind:       "hostname",
 		IP:         ip,
 		RawData:    map[string]string{"hostname": host},
-		Confidence: 0.8, // rDNS is best-effort; DHCP/mDNS names can be stale
+		Confidence: 0.8, // rDNS names can lag; DHCP/mDNS data may be fresher
 		ObservedAt: time.Now(),
 	}}, nil
 }

@@ -38,7 +38,7 @@ func TestOrchestrator_CascadeDepthAndErrors(t *testing.T) {
 	// First collect errored, second re-triggered; total collects bounded by
 	// depth (0,1,2 → 3 nodes), the chain stopped instead of looping forever.
 	if chainCollects == 0 || chainCollects > 5 {
-		t.Fatalf("collects=%d — chain must run but stay depth-bounded", chainCollects)
+		t.Fatalf("collects=%d: chain must run but stay depth-bounded", chainCollects)
 	}
 	if !report.Alive {
 		t.Fatal("collect error must not kill the report")

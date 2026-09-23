@@ -29,13 +29,13 @@
 		maxWidth?: string;
 		onClose?: () => void;
 		/** When false, Escape / backdrop / X are ignored (e.g. while an async
-		 *  confirm is in flight — see ConfirmDialog). Defaults to true. */
+		 *  confirm is in flight: see ConfirmDialog). Defaults to true. */
 		closable?: boolean;
 		/**
 		 * Return `true` to block the close and instead show the "unsaved
 		 * changes" discard confirmation. The previous name `onBeforeClose`
-		 * read as "return true to allow close" — the opposite of the actual
-		 * contract — so it was renamed for clarity.
+		 * read as "return true to allow close": the opposite of the actual
+		 * contract: so it was renamed for clarity.
 		 */
 		confirmDiscard?: () => boolean;
 		/** Override the discard-confirm title (defaults to "Unsaved Changes"). */
@@ -106,7 +106,7 @@
 		if (!closable) return;
 		// If the discard-confirm overlay is already up, a backdrop click just
 		// dismisses the overlay (back to the open modal) instead of re-running
-		// confirmDiscard and re-showing it — that flickery loop was the old bug.
+		// confirmDiscard and re-showing it: that flickery loop was the old bug.
 		if (showConfirm) {
 			showConfirm = false;
 			return;

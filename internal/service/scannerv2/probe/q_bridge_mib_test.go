@@ -70,7 +70,7 @@ func TestExtractMACFromVLANIndex(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "Only MAC octets (no VLAN prefix) — invalid for Q-BRIDGE",
+			name:    "Only MAC octets (no VLAN prefix): invalid for Q-BRIDGE",
 			index:   "170.187.204.221.238.255",
 			want:    "",
 			wantErr: true,

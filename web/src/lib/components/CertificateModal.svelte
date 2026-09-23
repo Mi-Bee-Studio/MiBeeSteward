@@ -28,7 +28,7 @@
 		onClose?: () => void;
 	} = $props();
 
-	// Per-chain-entry expanded state — default to leaf expanded so the user
+	// Per-chain-entry expanded state: default to leaf expanded so the user
 	// sees the most relevant cert first. Keyed by cert_index.
 	let expandedChain = $state<Record<number, boolean>>({ 0: true });
 
@@ -56,7 +56,7 @@
 			}, 1500);
 		} catch {
 			// Clipboard API is unavailable (e.g. insecure HTTP context). The copy
-			// silently did nothing — surface it so the user isn't left guessing
+			// silently did nothing: surface it so the user isn't left guessing
 			// whether the PEM was copied. The PEM text remains visible in the
 			// <pre> below for manual selection + Ctrl/Cmd+C.
 			addToast('error', m['agents.Failed to Copy']());
@@ -69,7 +69,7 @@
 
 	// Format an ISO 8601 string as a locale-friendly YYYY-MM-DD for display.
 	function fmtDate(iso: string): string {
-		if (!iso) return '—';
+		if (!iso) return '-';
 		const t = Date.parse(iso);
 		if (Number.isNaN(t)) return iso;
 		return new Date(t).toISOString().slice(0, 10);
@@ -102,7 +102,7 @@
 		if (cert.san_dns) parts.push(cert.san_dns);
 		if (cert.san_ip) parts.push(cert.san_ip);
 		if (cert.san_email) parts.push(cert.san_email);
-		return parts.join(', ') || '—';
+		return parts.join(', ') || '-';
 	}
 
 	// fmtFingerprint comes from $lib/utils/certs (shared with the detail page).
@@ -149,7 +149,7 @@
 				<code>{portCerts.error}</code>
 			</div>
 		{:else if portCerts.leaf}
-			<!-- Leaf summary grid — the most-asked fields surfaced for at-a-glance. -->
+			<!-- Leaf summary grid: the most-asked fields surfaced for at-a-glance. -->
 			<div class="cert-grid">
 				<div class="cert-field">
 					<div class="cert-field-label">{m['certificates.Subject']()}</div>
@@ -173,12 +173,12 @@
 				</div>
 				<div class="cert-field">
 					<div class="cert-field-label">{m['certificates.SignatureAlgorithm']()}</div>
-					<div class="cert-field-value">{portCerts.leaf.sig_algorithm || '—'}</div>
+					<div class="cert-field-value">{portCerts.leaf.sig_algorithm || '-'}</div>
 				</div>
 				<div class="cert-field">
 					<div class="cert-field-label">{m['certificates.KeyAlgorithm']()}</div>
 					<div class="cert-field-value">
-						{portCerts.leaf.key_algorithm || '—'}{#if portCerts.leaf.key_bits} ({portCerts.leaf.key_bits} bits){/if}
+						{portCerts.leaf.key_algorithm || '-'}{#if portCerts.leaf.key_bits} ({portCerts.leaf.key_bits} bits){/if}
 					</div>
 				</div>
 				<div class="cert-field cert-field-wide">
@@ -207,7 +207,7 @@
 							>
 								<ChevronDown class={`w-4 h-4 cert-chevron ${expandedChain[cert.cert_index] ? 'rotated' : ''}`} />
 								<span class="cert-chain-role">{chainRole(i, portCerts.chain.length)}</span>
-								<span class="cert-chain-cn">{cert.subject_cn || cert.subject || '—'}</span>
+								<span class="cert-chain-cn">{cert.subject_cn || cert.subject || '-'}</span>
 								{#if cert.is_ca}
 									<span class="cert-chain-ca">CA</span>
 								{/if}
@@ -217,15 +217,15 @@
 									<div class="cert-grid cert-grid-compact">
 										<div class="cert-field">
 											<div class="cert-field-label">{m['certificates.Subject']()}</div>
-											<div class="cert-field-value cert-mono">{cert.subject || '—'}</div>
+											<div class="cert-field-value cert-mono">{cert.subject || '-'}</div>
 										</div>
 										<div class="cert-field">
 											<div class="cert-field-label">{m['certificates.Issuer']()}</div>
-											<div class="cert-field-value cert-mono">{cert.issuer || '—'}</div>
+											<div class="cert-field-value cert-mono">{cert.issuer || '-'}</div>
 										</div>
 										<div class="cert-field">
 											<div class="cert-field-label">{m['certificates.Serial']()}</div>
-											<div class="cert-field-value cert-mono">{cert.serial || '—'}</div>
+											<div class="cert-field-value cert-mono">{cert.serial || '-'}</div>
 										</div>
 										<div class="cert-field">
 											<div class="cert-field-label">{m['certificates.ExpiresOn']()}</div>

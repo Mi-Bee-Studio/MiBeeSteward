@@ -260,7 +260,7 @@ func TestAudit_Facets(t *testing.T) {
 	insertAuditLog(t, dbConn, &uid, "device.delete", "device", "1", now)
 	insertAuditLog(t, dbConn, &uid, "device.create", "device", "2", now) // dup resource_type, new action
 	insertAuditLog(t, dbConn, &uid, "auth.login.success", "auth", "3", now)
-	insertAuditLog(t, dbConn, &uid, "device.create", "device", "4", now) // dup both — must be deduped
+	insertAuditLog(t, dbConn, &uid, "device.create", "device", "4", now) // dup both: must be deduped
 
 	resp, err := svc.Facets(ctx)
 	require.NoError(t, err)

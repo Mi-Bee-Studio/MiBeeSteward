@@ -576,11 +576,11 @@ func Validate(cfg *Config) error {
 
 	// Validation warnings for insecure configurations
 	if !cfg.Auth.CookieSecure {
-		fmt.Fprintf(os.Stderr, "WARNING: auth.cookie_secure is false — cookies will be sent over HTTP. Set true for production.\n")
+		fmt.Fprintf(os.Stderr, "WARNING: auth.cookie_secure is false: cookies will be sent over HTTP. Set true for production.\n")
 	}
 	for _, origin := range cfg.CORS.AllowedOrigins {
 		if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
-			fmt.Fprintf(os.Stderr, "WARNING: CORS allowed_origins contains localhost (%s) — remove for production.\n", origin)
+			fmt.Fprintf(os.Stderr, "WARNING: CORS allowed_origins contains localhost (%s): remove for production.\n", origin)
 		}
 	}
 
@@ -597,7 +597,7 @@ func Validate(cfg *Config) error {
 			len(cfg.Security.MasterKey))
 	}
 	if cfg.Security.MasterKey == "" {
-		fmt.Fprintf(os.Stderr, "NOTE: security.master_key is not set — SNMPv3 credential storage disabled (v1/v2c scans unaffected). Set it to a 32-byte value to enable v3.\n")
+		fmt.Fprintf(os.Stderr, "NOTE: security.master_key is not set: SNMPv3 credential storage disabled (v1/v2c scans unaffected). Set it to a 32-byte value to enable v3.\n")
 	}
 
 	return nil

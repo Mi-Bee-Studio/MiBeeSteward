@@ -42,7 +42,7 @@
 	}
 
 	type ChannelFormType = 'webhook' | 'email' | 'feishu' | 'wecom' | 'telegram' | 'discord';
-	// The four chat-platform channels all POST to a bot webhook URL — they
+	// The four chat-platform channels all POST to a bot webhook URL: they
 	// share formUrl, differing only in their optional per-platform extras.
 	const urlFormTypes: ChannelFormType[] = ['webhook', 'feishu', 'wecom', 'discord'];
 
@@ -155,7 +155,7 @@
 		formEnabled = channel.enabled;
 
 		const cfg = channel.config as ChannelConfig;
-		// Reset every conditional block first, then fill the active type —
+		// Reset every conditional block first, then fill the active type;
 		// switching between channel types in the edit modal must not leak
 		// another type's values into the saved config.
 		formUrl = '';
@@ -304,7 +304,7 @@
 	}
 
 	async function toggleEnabled(channel: Channel) {
-		// Dedicated PATCH endpoint — writes only `enabled` (single-field UPDATE),
+		// Dedicated PATCH endpoint: writes only `enabled` (single-field UPDATE),
 		// so name/type/config (and any SMTP password) are never rewritten. The
 		// generic PUT is reserved for the edit form, which intentionally replaces
 		// the full body.
@@ -351,7 +351,7 @@
 	let isAdmin = $derived($auth.user?.role === 'admin');
 
 	// --- Rules tab (#139) ---
-	// In-page tab toggle (no route split — keeps the page self-contained). The
+	// In-page tab toggle (no route split: keeps the page self-contained). The
 	// channels view above stays the default; rules is a sibling view.
 	let tab = $state<'channels' | 'rules'>('channels');
 
@@ -391,7 +391,7 @@
 	}
 
 	// Lazy-load the networks/devices/channels reference data the rule form needs.
-	// Done once on first switch to the rules tab (not on page load — channels-only
+	// Done once on first switch to the rules tab (not on page load: channels-only
 	// users never pay this cost).
 	let refLoaded = $state(false);
 	async function ensureRefData() {

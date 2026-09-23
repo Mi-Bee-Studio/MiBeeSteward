@@ -24,7 +24,7 @@
 		// Order is daily-use → occasional: scheduled tasks first, then their
 		// results, then the ad-hoc quick scan, then the passive listener.
 		// Previously /discovery was a separate top-level route and /devices/scanner
-		// was labeled just "Scanner" (vague) — now both live here with clearer names.
+		// was labeled just "Scanner" (vague): now both live here with clearer names.
 		...(isAdmin
 			? [
 				{ path: '/devices/scan-tasks', label: m['devices.Tab Scan Tasks'](), exact: false },

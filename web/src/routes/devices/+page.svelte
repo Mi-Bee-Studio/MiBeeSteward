@@ -37,7 +37,7 @@ interface Stats {
     by_type: Record<string, number>;
 }
 
-// AddDevicesResponse mirrors backend domain.AddDevicesResponse — the CSV import
+// AddDevicesResponse mirrors backend domain.AddDevicesResponse: the CSV import
 // must read {added, errors} from it rather than assuming every preview row
 // succeeded (#58: partial failures used to be silently miscounted).
 interface AddDevicesResponse {
@@ -82,7 +82,7 @@ interface AddDevicesResponse {
 	// View toggle: 'list' (device table) vs 'topology' (radial L2 graph).
 	// /topology used to be a separate top-level route; it's now a view here
 	// because list/subnet views were just alternate groupings of this same
-	// table — only the radial graph (needs /topology API edges) is unique.
+	// table: only the radial graph (needs /topology API edges) is unique.
 	let viewMode = $state<'list' | 'topology'>('list');
 	// Server-side search term (name / ip / mac / serial). The previous page only
 	// filtered the current 20-row slice client-side, so any device past page 1
@@ -125,13 +125,13 @@ interface AddDevicesResponse {
 	let batchStatusOpen = $state(false);
 	let batchStatusValue = $state('online');
 	// Batch status confirmation: the dropdown no longer fires the mutation
-	// directly — it stages the chosen status here, then a ConfirmDialog gates
+	// directly: it stages the chosen status here, then a ConfirmDialog gates
 	// the actual API call. Prevents an accidental click from bulk-flipping
 	// dozens of devices to "offline" with no undo (#150).
 	let pendingBatchStatus = $state<string | null>(null);
 	let batchStatusConfirmOpen = $state(false);
 	let batchLoading = $state(false);
-	// Export dropdown — click-toggle (not hover) so keyboard/touch users can
+	// Export dropdown: click-toggle (not hover) so keyboard/touch users can
 	// reach it. group-hover:opacity-100 was invisible without a mouse.
 	let exportOpen = $state(false);
 
@@ -153,7 +153,7 @@ interface AddDevicesResponse {
 
 	// --- Live updates via the change stream (#272) ----------------------------
 	// Events trigger a debounced SILENT refresh (batched: a scan touching 37
-	// devices fires many events within a second — one refetch covers them).
+	// devices fires many events within a second: one refetch covers them).
 	// device_added / device_lost / device_recovered also toast, so a scan
 	// running in another tab (or on the server) is visible here immediately.
 	let streamUnsub: (() => void) | null = null;
@@ -187,7 +187,7 @@ interface AddDevicesResponse {
 			if (st.lastEvent) onChangeEvent(st.lastEvent.change_type, st.lastEvent.entity_id);
 		});
 		// Load the network registry for the filter dropdown (best-effort; a
-		// failure just leaves the dropdown empty — the list still works).
+		// failure just leaves the dropdown empty: the list still works).
 		api.get<{ networks: Network[]; total: number }>('/networks').then((r) => { networks = r.networks || []; networksError = false; }).catch(() => { networksError = true; });
 		pollTimer = setInterval(() => {
 			if (!editOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !batchStatusConfirmOpen && !importOpen && !linkOpen) {
@@ -300,7 +300,7 @@ interface AddDevicesResponse {
 	}
 
 	// Silent refresh: same fetch as fetchDevices but no loading skeleton and no
-	// error toast — background polling failures shouldn't disrupt the user.
+	// error toast: background polling failures shouldn't disrupt the user.
 	async function refreshDevicesSilent() {
 		// Tag this poll with a sequence number; discard the result if a newer
 		// request (user search/page/filter change) has superseded it by the time
@@ -310,7 +310,7 @@ interface AddDevicesResponse {
 		const seq = ++fetchSeq;
 		try {
 			const res = await api.get<{ devices: Device[]; total: number }>(`/devices?${buildParams()}`);
-			if (seq !== fetchSeq) return; // superseded — drop stale result
+			if (seq !== fetchSeq) return; // superseded: drop stale result
 			devices = res.devices || [];
 			total = res.total || 0;
 			const s = await api.get<Stats>(`/devices/stats${networkFilter ? '?network_id=' + networkFilter : ''}`);
@@ -329,7 +329,7 @@ interface AddDevicesResponse {
 		const seq = ++fetchSeq;
 		try {
 			const res = await api.get<{ devices: Device[]; total: number }>(`/devices?${buildParams()}`);
-			if (seq !== fetchSeq) return; // superseded — a newer fetch owns the state
+			if (seq !== fetchSeq) return; // superseded: a newer fetch owns the state
 			devices = res.devices || [];
 			total = res.total || 0;
 
@@ -374,7 +374,7 @@ interface AddDevicesResponse {
 	}
 
 	// View toggle (list vs topology). Syncs to the URL so a topology view is
-	// shareable/reloadable. No refetch — list data is already loaded, and the
+	// shareable/reloadable. No refetch: list data is already loaded, and the
 	// topology component fetches /topology itself on mount.
 	function switchView(mode: 'list' | 'topology') {
 		viewMode = mode;
@@ -386,7 +386,7 @@ interface AddDevicesResponse {
 		try {
 			// Go through api.download() so CSRF + cookie auth + 401 handling
 			// match every other request. The previous raw fetch() bypass dropped
-			// the X-CSRF-Token header and manually extracted a Bearer token —
+			// the X-CSRF-Token header and manually extracted a Bearer token;
 			// both deviations from the client contract.
 			const blob = await api.download(`/devices/export?format=${format}`);
 			const url = URL.createObjectURL(blob);
@@ -455,7 +455,7 @@ interface AddDevicesResponse {
 	}
 
 	// Map a status key to its localized display label, for the confirm dialog's
-	// human-readable message ("mark as offline" — not "mark as 'offline'").
+	// human-readable message ("mark as offline": not "mark as 'offline'").
 	function statusLabel(status: string): string {
 		if (status === 'online') return m['devices.Online']();
 		if (status === 'offline') return m['devices.Offline']();
@@ -530,7 +530,7 @@ interface AddDevicesResponse {
 		importLoading = true;
 		try {
 			// Read the backend's {added, errors} instead of assuming every preview
-			// row succeeded — partial failures (duplicate IP, bad format) used to be
+			// row succeeded: partial failures (duplicate IP, bad format) used to be
 			// silently miscounted as successes (#58).
 			const res = await api.post<AddDevicesResponse>('/scanner/add-devices', { devices: csvPreviewRows });
 			if (res.errors && res.errors.length > 0) {
@@ -664,7 +664,7 @@ interface AddDevicesResponse {
 	}
 
 	// formatOfflineDuration renders "Nd Nh" / "Nh Nm" / "Nm" from an offline_since
-	// timestamp — the status-dot hover text so an operator can tell at a glance
+	// timestamp: the status-dot hover text so an operator can tell at a glance
 	// how long a device has been down (and how close it is to the retention
 	// prune threshold). offline_since is a column on devices and is already in
 	// the LIST payload, so this needs no extra fetch.
@@ -673,7 +673,7 @@ interface AddDevicesResponse {
 		const then = Date.parse(offlineSince);
 		if (Number.isNaN(then)) return '';
 		const ms = Date.now() - then;
-		if (ms < 0) return ''; // clock skew / future timestamp — don't mislead
+		if (ms < 0) return ''; // clock skew / future timestamp: don't mislead
 		const min = Math.floor(ms / 60000);
 		const days = Math.floor(min / 1440);
 		const hours = Math.floor((min % 1440) / 60);
@@ -716,7 +716,7 @@ interface AddDevicesResponse {
 	];
 	// The list defaults to a lean row (status/name/type/IP are fixed columns, plus
 	// network here). Vendor/hostname/location moved into the expand-panel's device
-	// summary — they're still available as columns via the ColumnPicker for users
+	// summary: they're still available as columns via the ColumnPicker for users
 	// who want them back in the row.
 	const defaultColumns = ['network_name'];
 	let selectedColumnKeys = $state(new Set<string>(defaultColumns));
@@ -734,8 +734,8 @@ interface AddDevicesResponse {
 				const mac = (sa?.mac as string) || (row.mac_address ? String(row.mac_address) : '');
 				if (!mac) return '-';
 				// A locally-administered (U/L bit set) MAC was assigned locally,
-				// not drawn from an IEEE OUI block. The bit is neutral fact — it
-				// cannot tell privacy randomization from a locally fixed setting —
+				// not drawn from an IEEE OUI block. The bit is neutral fact: it
+				// cannot tell privacy randomization from a locally fixed setting;
 				// so this is an observability badge, not an identity verdict.
 				// Mirrors the heuristic-type "?" inline marker.
 				const laa = sa?.mac_is_locally_administered === true;
@@ -811,13 +811,13 @@ interface AddDevicesResponse {
 				const s = String(row.status ?? 'unknown');
 				// title carries the offline duration (offline_since → "Nd Nh") so
 				// hovering the dot shows how long the device has been down without
-				// a round-trip — offline_since is already in the list payload.
+				// a round-trip: offline_since is already in the list payload.
 				const title = escapeAttr(statusDotTitle(s, row));
 				return `<span class="inline-block w-2.5 h-2.5 rounded-full ${statusDotClass(s)}" title="${title}"></span>`;
 			}
 		},
 		{
-			// Device name is a link to the full detail page — the detail page is
+			// Device name is a link to the full detail page: the detail page is
 			// where every scan_attributes field lives, so this is the primary entry.
 			key: 'name',
 			label: m['devices.Device Name'](),
@@ -856,7 +856,7 @@ interface AddDevicesResponse {
 			render: (row: Record<string, unknown>) =>
 				row.ip_address ? `<span class="font-mono">${escapeHtml(String(row.ip_address))}</span>` : '-'
 		},
-		// Optional (user-toggleable) columns — included only if selected in the
+		// Optional (user-toggleable) columns: included only if selected in the
 		// ColumnPicker. Order follows the optionalColumns definition so toggling
 		// keeps a stable, predictable column layout. sortable (where present) is
 		// forwarded so the header renders the sort affordance and the click routes
@@ -905,7 +905,7 @@ interface AddDevicesResponse {
 			return;
 		}
 		if (action === 'detail') {
-			// Navigate to the full detail page — the only place every device
+			// Navigate to the full detail page: the only place every device
 			// field (scan_attributes, SNMP, services, monitoring, extras) is shown.
 			goto(`/devices/detail/${id}`);
 			return;
@@ -924,9 +924,9 @@ interface AddDevicesResponse {
 
 	// Keyboard equivalent for the event-delegation wrapper. The rendered
 	// <button>/<input> elements are natively focusable + Enter/Space fires a
-	// click that bubbles to handleTableClick — but the wrapper div itself also
+	// click that bubbles to handleTableClick: but the wrapper div itself also
 	// needs to forward Enter/Space so keyboard-only users can activate actions
-	// without a mouse. (#167 / #174 — devices page uses real <button> elements
+	// without a mouse. (#167 / #174: devices page uses real <button> elements
 	// via {@html} render, unlike the 8 pages migrated to cell snippets; this
 	// keyboard handler closes the remaining a11y gap without the cell snippet
 	// that triggered the Svelte 5 flush stall.)
@@ -1043,7 +1043,7 @@ interface AddDevicesResponse {
 				{/each}
 			</select>
 		{:else if networksError}
-			<!-- The /networks fetch failed — show a small indicator instead of
+			<!-- The /networks fetch failed: show a small indicator instead of
 			     silently dropping the filter (which would look like "no networks"). -->
 			<span class="text-xs text-warning px-2 py-1 border border-warning/30 rounded" title={m['devices.Networks Load Failed']()}>
 				{m['devices.Networks Load Failed']()}
@@ -1089,7 +1089,7 @@ interface AddDevicesResponse {
 
 		<div class="flex-1"></div>
 
-		<!-- Export dropdown (click-toggle — accessible to keyboard/touch) -->
+		<!-- Export dropdown (click-toggle: accessible to keyboard/touch) -->
 		<div class="relative">
 			<button
 				onclick={() => (exportOpen = !exportOpen)}
@@ -1217,8 +1217,8 @@ interface AddDevicesResponse {
 				{@const t = String(device.type ?? 'other')}
 				{@const statusStr = String(device.status ?? 'unknown')}
 				<!-- Header: lean context strip. The row already shows the name, so the
-				     expand header surfaces the OTHER dimensions — IP, type badge,
-				     status badge — instead of repeating the name. -->
+				     expand header surfaces the OTHER dimensions: IP, type badge,
+				     status badge: instead of repeating the name. -->
 				<div class="flex items-center gap-3 px-4 py-2 bg-surface/50 border-b border-border flex-wrap">
 					<button
 						onclick={() => (expandedDeviceId = null)}
@@ -1357,7 +1357,7 @@ interface AddDevicesResponse {
 	{/if}
 </div>
 
-<!-- Create/Edit Modal — the form lives in the shared DeviceEditModal component
+<!-- Create/Edit Modal: the form lives in the shared DeviceEditModal component
      (also used by the device detail page). This page toggles it open with a
      target device (null ⇒ create) and refreshes the list on save. -->
 <DeviceEditModal bind:open={editOpen} device={editTarget} onSaved={fetchDevices} />
@@ -1412,7 +1412,7 @@ interface AddDevicesResponse {
 				<h4 class="text-sm font-medium text-text mb-2">{m['devices.Import Preview']()} ({csvPreviewRows.length} rows)</h4>
 				{#if invalidIpCount > 0}
 					<p class="text-xs text-error mb-2">
-						{m['devices.Invalid IP Format']()} — {invalidIpCount}
+						{m['devices.Invalid IP Format']()}: {invalidIpCount}
 					</p>
 				{/if}
 				<div class="overflow-x-auto border border-border rounded-lg max-h-60">

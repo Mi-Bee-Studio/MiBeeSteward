@@ -82,7 +82,7 @@ func TestRuleClassifier_GoldenCases(t *testing.T) {
 			for _, id := range ids {
 				if id.Service == c.wantSvc {
 					if c.wantMdKey != "" && (id.Metadata == nil || id.Metadata[c.wantMdKey] == "") {
-						continue // right service but missing the metadata key — keep looking
+						continue // right service but missing the metadata key: keep looking
 					}
 					matched = true
 					break

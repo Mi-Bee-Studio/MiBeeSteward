@@ -5,7 +5,7 @@
 # Xiaomi Mijia ecosystem appliance hostnames.
 #
 # Mijia WiFi modules announce themselves via DHCP/rDNS hostnames shaped
-# "<vendor>-<appliance>-<model>_<miap|miibt><hex>" — real samples from an
+# "<vendor>-<appliance>-<model>_<miap|miibt><hex>": real samples from an
 # iStoreOS R68S install (2026-09, 31-host network):
 #   viomi-waterheater-e13_miap5E55   viomi-hood-c13_miap5788
 #   xiaomi-aircondition-c16_mibt2431 xiaomi-gateway-hub1
@@ -13,7 +13,7 @@
 #   chunmi-ysj-tsj9_mibt89A7         midjd7-fridge-5022_mibt5B23
 # On real Mijia fleets this is the ONLY identity channel: field-verified 0/12
 # responses to mDNS queries/announcements, miIO hello (UDP 54321) and TCP
-# ports — only ICMP answers (see issue #365 PoC). dnsmasq publishes the lease
+# ports: only ICMP answers (see issue #365 PoC). dnsmasq publishes the lease
 # hostname as reverse DNS, so the active rDNS probe surfaces it as
 # Kind="hostname" evidence on router-form installs.
 #
@@ -21,7 +21,7 @@
 # All rules share exclusive_group "mijia-host": exactly one identity fires
 # per hostname (switch semantics; vendor-specific rules at higher priority
 # than the generic ecosystem-suffix fallback). The device TYPE stays a
-# hostname heuristic (? badge) via device-types/device_types.yaml — these
+# hostname heuristic (? badge) via device-types/device_types.yaml: these
 # rules carry BRAND + appliance only, never the type.
 
 version: 1
@@ -314,7 +314,7 @@ rules:
 
   # ── 兜底：米家 WiFi 模块通用后缀 _miap<hex> / _mibt<hex> ────────────
   # 覆盖无厂商前缀的模块（moorgen 等第三方生态）。hostname 证据置信 0.8，
-  # 与规则基置信融合后仍属启发级 —— 类型侧照旧走 device_types.yaml 带 ?。
+  # 与规则基置信融合后仍属启发级 ， 类型侧照旧走 device_types.yaml 带 ?。
   - id: iot-host-mijia-suffix
     source: builtin
     priority: 110

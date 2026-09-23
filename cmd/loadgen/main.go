@@ -67,7 +67,7 @@ func main() {
 	}
 }
 
-const usage = `loadgen — MiBee Steward synthetic load harness (#283)
+const usage = `loadgen: MiBee Steward synthetic load harness (#283)
 
   loadgen serve --devices N --base 127.8.0.0 [--seed 1]
       Start the synthetic device plane (Ctrl-C stops).
@@ -357,7 +357,7 @@ func snmpRespond(req []byte) []byte {
 // valueForOID renders the synthetic value TLV for a scalar OID.
 func valueForOID(oid string) []byte {
 	switch {
-	case strings.HasSuffix(oid, "1.1.1.0"): // sysDescr — template text; global default
+	case strings.HasSuffix(oid, "1.1.1.0"): // sysDescr: template text; global default
 		return tlvEncode(0x04, []byte(syntheticDescr))
 	case strings.HasSuffix(oid, "1.1.2.0"): // sysObjectID
 		return tlvEncode(0x06, []byte{0x2b, 6, 1, 4, 1, 99, 99})
@@ -667,7 +667,7 @@ func writeReports(r *report, prefix string) {
 	j, _ := json.MarshalIndent(r, "", "  ")
 	must(os.WriteFile(prefix+".json", j, 0o644))
 
-	md := fmt.Sprintf(`# loadgen benchmark — %s
+	md := fmt.Sprintf(`# loadgen benchmark: %s
 
 - targets: %s
 - scan duration: %.1fs (hosts %d/%d alive)

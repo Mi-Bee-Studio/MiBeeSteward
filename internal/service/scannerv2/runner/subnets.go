@@ -37,7 +37,7 @@ func (rn *Runner) recordSubnets(ctx context.Context, networkID sql.NullInt64) {
 
 	net, err := rn.queries.GetNetwork(ctx, netID)
 	if err != nil || net.Cidr == nil || *net.Cidr == "" {
-		return // no CIDR recorded for this network — nothing to anchor
+		return // no CIDR recorded for this network: nothing to anchor
 	}
 	cidr := *net.Cidr
 

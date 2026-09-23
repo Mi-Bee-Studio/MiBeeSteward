@@ -9,7 +9,7 @@
 -->
 
 <!--
-  PageHeader — the single source of truth for the page title row.
+  PageHeader: the single source of truth for the page title row.
 
   Before this component, route pages hand-rolled their headers, leading to:
     • title color drifting (most pages `text-primary`; scan-tasks/scan-results

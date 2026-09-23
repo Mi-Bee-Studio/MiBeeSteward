@@ -33,7 +33,7 @@
 	let errors = $state<Record<string, string>>({});
 
 	// First-run setup state: when the bootstrap admin has NO password yet
-	// (installer default — /auth/setup-status reports it), the login page
+	// (installer default: /auth/setup-status reports it), the login page
 	// renders a create-admin-password form instead of the login form.
 	let setupRequired = $state(false);
 	let setupNewPassword = $state('');
@@ -42,7 +42,7 @@
 	let setupLoading = $state(false);
 
 	// Live strength-policy hint (shared by the setup form and the force-change
-	// modal) — from the passwordPolicy store so it follows the EFFECTIVE
+	// modal): from the passwordPolicy store so it follows the EFFECTIVE
 	// backend policy, not hardcoded defaults (#332).
 	let policyHint = $derived.by(() => {
 		const p = $passwordPolicy;
@@ -57,7 +57,7 @@
 	onMount(() => {
 		// Already authenticated (e.g. navigating to /login with a live session):
 		// bounce straight to the dashboard instead of rendering the login form
-		// next to the logged-in sidebar (#430). One-shot at mount ONLY — the
+		// next to the logged-in sidebar (#430). One-shot at mount ONLY: the
 		// post-login flows on this page call auth.login() themselves and then
 		// decide where to go (2FA / force-password stay here), so a reactive
 		// token watcher would hijack those redirects.
@@ -74,7 +74,7 @@
 				if (res?.required) setupRequired = true;
 			})
 			.catch(() => {
-				/* unreachable backend / old version — stay on the login form */
+				/* unreachable backend / old version: stay on the login form */
 			});
 	});
 
@@ -113,7 +113,7 @@
 			loginDone = true;
 
 			// Check if 2FA is required. LoginResponse models these fields
-			// (two_factor_required / user_id) directly — no `as any` needed.
+			// (two_factor_required / user_id) directly: no `as any` needed.
 			if (res.two_factor_required) {
 				twoFactorRequired = true;
 				twoFactorUserId = res.user_id ?? null;
@@ -128,13 +128,13 @@
 				goto('/dashboard');
 			}
 		} catch (err: unknown) {
-			// Classify by error TYPE / HTTP status, never by message text — the
+			// Classify by error TYPE / HTTP status, never by message text: the
 			// message is localized and would break classification if the locale
 			// or backend wording changes.
 			if (err instanceof ApiError && err.status === 409 && err.message === 'setup_required') {
 				// The bootstrap admin has no password yet (another tab finished
 				// setup-status after we rendered, or an old bundle cached the
-				// login form) — flip to the setup form instead of showing an
+				// login form): flip to the setup form instead of showing an
 				// error nobody can act on.
 				setupRequired = true;
 				error = '';
@@ -155,13 +155,13 @@
 			} else if (err instanceof ApiError && err.status >= 500) {
 				error = m['auth.error.server_error']();
 			} else {
-				// 4xx other than 401/429 (e.g. 400/403/422) — surface the
+				// 4xx other than 401/429 (e.g. 400/403/422): surface the
 				// backend's own message, which is already user-facing.
 				error = getErrorMessage(err);
 			}
 		} finally {
 			loading = false;
-			// A failed attempt leaves the typed password in the (masked) field —
+			// A failed attempt leaves the typed password in the (masked) field;
 			// clear it so a stale password isn't shoulder-surfed or resubmitted
 			// after the user walks away (#251).
 			if (!loginDone) password = '';
@@ -170,7 +170,7 @@
 
 	// handleSetup submits the first-run create-admin-password form. The
 	// response is the same LoginResponse shape as /auth/login (token + user),
-	// so on success we enter the app directly — no second login round-trip.
+	// so on success we enter the app directly: no second login round-trip.
 	async function handleSetup(e: Event) {
 		e.preventDefault();
 		setupError = '';
@@ -193,7 +193,7 @@
 			goto('/dashboard');
 		} catch (err: unknown) {
 			if (err instanceof ApiError && err.status === 409) {
-				// Setup was already completed elsewhere — back to the login form.
+				// Setup was already completed elsewhere: back to the login form.
 				setupRequired = false;
 				addToast('success', m['auth.setup_already_done']());
 				return;
@@ -209,7 +209,7 @@
 		forceError = '';
 
 		// Validate via the shared forcePasswordSchema (8-char min + match) so the
-		// password policy lives in ONE place (#154 part 3) — previously these
+		// password policy lives in ONE place (#154 part 3): previously these
 		// were hand-rolled length / mismatch checks that would silently drift
 		// from the users-page reset-password modal if the policy changed.
 		const validation = validateForm(forcePasswordSchema, {
@@ -218,7 +218,7 @@
 		});
 		if (!validation.valid) {
 			// The schema attaches the error to `confirm` for a mismatch, or to
-			// `new_password` for the length rule — surface the first one.
+			// `new_password` for the length rule: surface the first one.
 			forceError = validation.errors.new_password ?? validation.errors.confirm ?? '';
 			return;
 		}
@@ -231,7 +231,7 @@
 			showForceDialog = false;
 			if (res.token && loginResponse) {
 				// The pre-change token carries the must-change gate (mcp claim,
-				// enforced server-side) until it expires — the handler mints a
+				// enforced server-side) until it expires: the handler mints a
 				// fresh ungated one; swap it in before navigating or every API
 				// call on the dashboard would 403.
 				auth.login({ ...loginResponse.user, must_change_password: false }, res.token);
@@ -259,7 +259,7 @@
 			auth.login(res.user, res.token);
 
 			// Keep the user on the login page and show the same focused
-			// force-password-change modal the non-2FA flow uses (#156) —
+			// force-password-change modal the non-2FA flow uses (#156);
 			// previously this dumped them onto the generic /settings page.
 			if (res.user.must_change_password) {
 				twoFactorRequired = false;

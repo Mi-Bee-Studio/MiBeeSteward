@@ -69,7 +69,7 @@ type HostapdSource struct {
 	logger     *slog.Logger
 
 	mu       sync.Mutex
-	previous map[string]bool // mac set, last sweep — for diff
+	previous map[string]bool // mac set, last sweep: for diff
 }
 
 // NewHostapdSource constructs the source. interfaces is the wlan name list;

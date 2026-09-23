@@ -111,7 +111,7 @@ func (d *AgentDispatcher) DispatchTick(ctx context.Context) {
 			continue
 		}
 		if d.lastFingerprint[agentID] == "" {
-			continue // never had a plan — nothing to clear
+			continue // never had a plan: nothing to clear
 		}
 		if err := d.sendPlan(ctx, agentID, nil); err != nil {
 			d.logger.Warn("probe dispatch: clear plan failed", "agent_id", agentID, "error", err)

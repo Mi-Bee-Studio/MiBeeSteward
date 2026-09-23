@@ -179,7 +179,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			}
 			handler.Success(w, map[string]string{"message": "demo data wiped; scan a real subnet to populate the inventory"})
 		})
-		slog.Info("demo mode enabled — fictional inventory seeded, activity ticker running")
+		slog.Info("demo mode enabled: fictional inventory seeded, activity ticker running")
 	}
 
 	registerAuthRoutes(r, loginLimiter, userHandler, totpHandler)
@@ -418,7 +418,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// operator may have a reason (e.g. transitional overlap during migration).
 		if cfg.Scanner.Discovery.RouterARP.Enabled && routerResidentSourcesOn(cfg.Scanner.Discovery) {
 			slog.Warn("discovery: router_arp is enabled alongside router-resident sources " +
-				"(arp_cache/dhcp_leases/conntrack) — router_arp is redundant when the center " +
+				"(arp_cache/dhcp_leases/conntrack): router_arp is redundant when the center " +
 				"(or an agent) runs on the gateway. Disable scanner.discovery.router_arp " +
 				"to avoid the redundant SNMP walk.")
 		}

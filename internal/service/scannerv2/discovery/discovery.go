@@ -343,7 +343,7 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 		s.stats.KnownHostSkipped++
 		s.statsMu.Unlock()
 		s.recordEvent(ev, "skipped_known")
-		return // already in the device DB — not new
+		return // already in the device DB: not new
 	}
 
 	s.logger.Info("discovery: new host found", "ip", ev.IP, "mac", ev.MAC, "source", ev.Source)

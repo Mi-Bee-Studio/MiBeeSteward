@@ -12,7 +12,7 @@ import { writable } from 'svelte/store';
 
 /**
  * Demo-mode flag (#285): the backend exposes a public GET /api/v1/demo/status
- * ONLY when running with -demo / server.demo_mode. One probe per page load —
+ * ONLY when running with -demo / server.demo_mode. One probe per page load;
  * a 404 (the normal deployment) resolves false.
  */
 export const demoMode = writable(false);
@@ -27,7 +27,7 @@ export async function probeDemoMode(): Promise<boolean> {
 			return on;
 		}
 	} catch {
-		// network hiccup — default false
+		// network hiccup: default false
 	}
 	demoMode.set(false);
 	return false;

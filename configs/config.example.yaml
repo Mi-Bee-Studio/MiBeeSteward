@@ -6,7 +6,7 @@ server:
   port: 8080
   host: "0.0.0.0"
   # HTTP server timeouts. write_timeout MUST exceed the slowest synchronous
-  # endpoint — primarily POST /scanner/scan on large CIDRs. The server
+  # endpoint: primarily POST /scanner/scan on large CIDRs. The server
   # auto-raises write_timeout to scanner.default_timeout×2+30s if configured
   # lower, so synchronous scans are never truncated by a too-tight timeout.
   # For very large ranges (>/24) prefer the async task API.
@@ -15,7 +15,7 @@ server:
   idle_timeout: "120s"
   # trusted_proxies authorizes which source IPs may set X-Forwarded-For (used
   # by rate limiting + audit logs to identify the real client behind a proxy).
-  # Empty (default) = trust NO proxy: the TCP peer IS the client — the safe
+  # Empty (default) = trust NO proxy: the TCP peer IS the client: the safe
   # default for direct exposure (a client cannot forge its IP). Deploy behind
   # nginx/another proxy and set this to the proxy's source range so the real
   # client IP is honored. Bare IPs are treated as /32 (v4) or /128 (v6).
@@ -29,11 +29,11 @@ database:
 # Network this instance is responsible for. Resolved to a `networks` table row
 # at startup; discovered devices are tagged with its id (devices.network_id) so
 # multiple instances on different LANs can coexist without IP collisions.
-#   - Single instance: leave at default ("default") — devices get network_id set.
+#   - Single instance: leave at default ("default"): devices get network_id set.
 #   - Distributed: each agent sets a distinct name (e.g. "lan-63", "branch-bj").
 network:
   name: "default"
-  cidr: ""        # e.g. "192.168.63.0/24" — advisory, not enforced
+  cidr: ""        # e.g. "192.168.63.0/24": advisory, not enforced
   site: ""        # e.g. "hq" / "datacenter-1"
 
 # center configures a discovery AGENT's upstream aggregation center. When url
@@ -50,7 +50,7 @@ center:
   remote_ops_enabled: false # AGENT-side opt-in (#278): allow executing restart /
                        # config-reload / logs-tail commands from the center. The
                        # center-side gate (agent_fleet.remote_ops_enabled) must
-                       # ALSO be on — either side can keep ops from running.
+                       # ALSO be on: either side can keep ops from running.
 
 # agent_fleet is the CENTER-side fleet-management block (#278).
 agent_fleet:
@@ -81,17 +81,17 @@ rbac:
   # device EXPORT (GET /devices/export), the TOPOLOGY graph (GET /topology), the
   # CHANGE log list + SSE stream (GET /changes, /changes/watch), the DASHBOARD
   # overview (device aggregates + scan-activity section), and the SCANNER read
-  # surfaces (tasks/runs/results lists, details and export — scoped via
+  # surfaces (tasks/runs/results lists, details and export: scoped via
   # scan_tasks.network_id, resolved from a task's single-CIDR targets). Tasks
   # whose targets don't resolve to one network (multi-CIDR/range/hostname) are
   # cross-network: visible to admins, hidden from restricted scopes. Audit logs
   # are deliberately NOT network-scoped (cross-network system log of user
-  # actions). Scanner writes (task CRUD/trigger) stay capability-gated — grants
+  # actions). Scanner writes (task CRUD/trigger) stay capability-gated: grants
   # isolate visibility, not operation.
   scope_default: "open"
 
 auth:
-  jwt_secret: "change-me-in-production"  # REQUIRED — must change, minimum 32 characters
+  jwt_secret: "change-me-in-production"  # REQUIRED: must change, minimum 32 characters
   token_expiry: "24h"
   # EMPTY (the installer default) = first-run browser setup: the admin is
   # seeded with no password and the login page asks you to CREATE one (no
@@ -104,7 +104,7 @@ auth:
   # Password strength policy (register / change / reset-admin-password paths).
   # Values below are the DEFAULTS; a partial block overrides ONLY the keys you
   # name (unmentioned keys keep the defaults). Special characters are optional
-  # by default — min 8 + upper + lower + digit. Prefer editing at runtime via
+  # by default: min 8 + upper + lower + digit. Prefer editing at runtime via
   # the web UI (设置 → 安全， PUT /api/v1/settings/auth → system_settings
   # overlay, effective without restart) over editing this file.
   # The must-not-equal-username guard is always on regardless.
@@ -116,7 +116,7 @@ auth:
   #   require_special: false
   # Failed-login lockout (defaults below = historical hardcoded values; partial
   # blocks override only the keys you name). NOTE: an EXPIRED lock resets the
-  # failure counter — a stray retry after expiry never re-locks by itself.
+  # failure counter: a stray retry after expiry never re-locks by itself.
   # lockout:
   #   max_failed_attempts: 5
   #   lock_minutes: 30
@@ -202,7 +202,7 @@ scanner:
   # backup (#137): a scheduled sweep fetches each router/switch/firewall
   # device's running-config over SSH (vendor command matrix, host-key TOFU),
   # versions it in device_configs, and emits device_config_changed events on
-  # diff. OPT-IN — disabled by default; enabling requires security.master_key
+  # diff. OPT-IN: disabled by default; enabling requires security.master_key
   # and an SSH credential bound to each target device (managed via the
   # ssh-credentials API/UI). interval_seconds <= 0 → 6h; timeout_seconds
   # (per-device SSH) <= 0 → 30s.
@@ -216,7 +216,7 @@ scanner:
   # engine is retained for compatibility but only "v2" is supported.
   engine: "v2"
   # persist_raw_evidence writes every probe observation to service_evidence.
-  # Off by default — raw evidence can be voluminous; enable for debugging.
+  # Off by default: raw evidence can be voluminous; enable for debugging.
   persist_raw_evidence: false
   # oui_path points to the IEEE OUI vendor-mapping file (MA-L + MA-M + MA-S,
   # fetched by scripts/fetch-oui.sh). The ARP probe derives a vendor from each
@@ -246,7 +246,7 @@ scanner:
     timeout: 4         # seconds per router walk
   # rdns tunes the reverse-DNS probe (active:rdns). By default it uses the
   # system resolver (/etc/resolv.conf), which on a center box often points at
-  # a public DNS with no view into the LAN's DHCP-synthesized PTR records — so
+  # a public DNS with no view into the LAN's DHCP-synthesized PTR records: so
   # hostnames are missed for devices that DO have a PTR on the local DNS.
   # Populating dns_servers (e.g. the router/LAN DNS IP) makes the probe query
   # those servers directly for PTR records. Each entry is host or host:port.
@@ -280,7 +280,7 @@ scanner:
   ebpf:
     enabled: false
     interfaces: []
-  # Passive discovery service — spots newly-appeared hosts BETWEEN scheduled
+  # Passive discovery service: spots newly-appeared hosts BETWEEN scheduled
   # scans with near-zero active traffic. It diffs router/local ARP tables and
   # passively listens for mDNS/SSDP (never sends queries), then feeds new hosts
   # through the same device bridge as scans (device_added events + heartbeat
@@ -289,12 +289,12 @@ scanner:
   # onboarding of new devices.
   discovery:
     enabled: false
-    interval: 60          # seconds — poll cadence for the ARP-based sources
+    interval: 60          # seconds: poll cadence for the ARP-based sources
     trigger_identify: true # run a single-IP full identification scan on each
                            # new host so it gets a type + services immediately
                            # (recommended; set false to record as "unknown")
     # router_arp: walks scanner.router_arp.routers' SNMP ARP tables. Widest
-    # coverage — a gateway knows every host that talks through it. One SNMP Walk
+    # coverage: a gateway knows every host that talks through it. One SNMP Walk
     # per router per interval; no end-host traffic. No-op without routers.
     router_arp:
       enabled: true
@@ -312,14 +312,14 @@ scanner:
       enabled: true
     # dhcp_leases: Tier-1 ROUTER signal. Reads the local DHCP server's lease
     # table (dnsmasq /tmp/dhcp.leases on OpenWrt, /var/lib/misc/dnsmasq.leases
-    # on Debian) — the authoritative hostname↔MAC↔IP map, covering devices
+    # on Debian): the authoritative hostname↔MAC↔IP map, covering devices
     # (sleeping IoT, firewalled hosts) that never answer SNMP/ICMP/rDNS. No-op
     # on a host that isn't the LAN's DHCP server (file absent → source skips).
     # Enable when the center/agent runs ON the gateway (router form).
     dhcp_leases:
       enabled: false
     # conntrack: Tier-1 ROUTER signal. Reads /proc/net/nf_conntrack and emits
-    # the LAN-side endpoint of every ESTABLISHED/ASSURED flow — the NAT choke
+    # the LAN-side endpoint of every ESTABLISHED/ASSURED flow: the NAT choke
     # point's "who is talking RIGHT NOW" view. Liveness + discovery for hosts
     # that don't answer active probes but maintain outbound flows. Filters to
     # network.cidr so it doesn't emit a row per public IP. No-op when the
@@ -329,14 +329,14 @@ scanner:
     # hostapd: Tier-1 ROUTER/AP signal. Enumerates the WiFi STAs associated to
     # the local AP via the hostapd control socket (/var/run/hostapd/<phy>),
     # falling back to `iw station dump`. Captures signal dBm / connect time /
-    # SSID — gold for device tracking, unavailable to a wired host. interfaces
+    # SSID: gold for device tracking, unavailable to a wired host. interfaces
     # lists the wlan names to poll (e.g. ["wlan0"]); empty = autodetect. No-op
     # on a host without WiFi/hostapd/iw.
     hostapd:
       enabled: false
       interfaces: []  # e.g. ["wlan0", "wlan1"]; empty probes /var/run/hostapd/*
     # dns_log: Tier-1 ROUTER signal. Tails the dnsmasq query log (--log-queries
-    # output) and emits each querying host + the domain — a powerful passive
+    # output) and emits each querying host + the domain: a powerful passive
     # fingerprint (devices that block inbound probes still do outbound DNS).
     # Operator MUST enable dnsmasq query logging (UCI: `uci set
     # dhcp.@dnsmasq[0].logqueries=1`). path overrides the log file location;
@@ -346,7 +346,7 @@ scanner:
       path: ""  # e.g. /var/log/dnsmasq.log; empty probes conventional paths
   # ── Agent lease (distributed model) ───────────────────────────────────────
   # Agent-managed devices (networks with agent_id set) are kept online by their
-  # agent's reports — the center does NOT probe them locally (cross-subnet ICMP
+  # agent's reports: the center does NOT probe them locally (cross-subnet ICMP
   # would always fail and flap them offline). The report refreshes a per-device
   # lease; if an agent stops reporting a host, the lease sweeper below expires
   # it (marks offline + emits device_lost). Only agent networks are swept; the
@@ -355,7 +355,7 @@ scanner:
   lease_sweep_interval: "60s"  # how often the expiration sweep runs
   # reconcile_interval is how often the background network-attribution
   # reconciliation job runs. It detects devices whose IP falls OUTSIDE their
-  # stamped network's CIDR — the bottom-line defense that catches drift the
+  # stamped network's CIDR: the bottom-line defense that catches drift the
   # Layer 1/2 boundary checks miss. Low-frequency audit, not a hot path.
   # Center-only; the agent does not run reconciliation. 0 = default 1h.
   reconcile_interval: "1h"
@@ -363,7 +363,7 @@ scanner:
 # The retention sweeper runs every sweep_interval_hours and prunes each
 # high-volume detail table in batches of batch_size rows (batching avoids
 # locking the database on a single giant DELETE). A field of 0 means "use the
-# documented default", NOT "keep forever" — these tables are never retained
+# documented default", NOT "keep forever": these tables are never retained
 # indefinitely.
 #
 # Defaults: heartbeat 7d, scan_results/runs 30d, audit 90d, notifications 30d,
@@ -372,9 +372,9 @@ scanner:
 # silent_device_*: scanner-discovered devices (scan_source='scanner_v2') that
 # have had NO heartbeat (all probe configs failing) for longer than these
 # windows are physically DELETED (manual devices are never auto-deleted). A
-# device WITH a MAC gets silent_device_days_mac (7d — a real asset may be
+# device WITH a MAC gets silent_device_days_mac (7d: a real asset may be
 # genuinely gone for a while); a device WITHOUT a MAC gets
-# silent_device_hours_no_mac (24h — a mac-less identity is unreliable and pruned
+# silent_device_hours_no_mac (24h: a mac-less identity is unreliable and pruned
 # faster). A device that recovers (5 consecutive online probe cycles) clears its
 # offline clock. Each deletion is logged to change_log as device_removed.
 retention:
@@ -400,7 +400,7 @@ retention:
   host_services_days: 30
   host_tls_certs_days: 30
   # probe_results: 拨测 synthetic-probe history (one row per target per
-  # interval). probe_tls_certs is not swept — it holds only each target's
+  # interval). probe_tls_certs is not swept: it holds only each target's
   # current certificate chain, replaced on every successful collection.
   probe_results_days: 30
   silent_device_days_mac: 7

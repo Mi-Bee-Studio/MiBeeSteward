@@ -168,7 +168,7 @@ func TestApplyDeviceBridge_RoamToOccupiedIP_Characterization(t *testing.T) {
 		rn.networkID, "")
 
 	require.Equal(t, 2, countDevices(t, conn),
-		"characterization: roam to an occupied IP currently SPLITS (eviction does not fire) — known gap")
+		"characterization: roam to an occupied IP currently SPLITS (eviction does not fire): known gap")
 	// The original device keeps its MAC + old IP (the bridge updated its other
 	// fields but could not relocate the IP).
 	orig := fetchBaselineDevice(t, conn, "192.168.63.10")

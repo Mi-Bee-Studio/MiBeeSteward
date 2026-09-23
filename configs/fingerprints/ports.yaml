@@ -5,15 +5,15 @@
 # Port-shape-only fallback fingerprints (MiscClassifier).
 #
 # These assert a service from an open port ALONE when no banner/structured
-# evidence identified it. They are intentionally LOW confidence (0.5) — port
+# evidence identified it. They are intentionally LOW confidence (0.5): port
 # number is a weak signal. Mirrors MiscClassifier exactly:
 #   - fires when ANY evidence with Kind="port_open" exists for the port
-#   - confidence is a LITERAL 0.5 (not fused — no evidence confidence to fuse)
+#   - confidence is a LITERAL 0.5 (not fused: no evidence confidence to fuse)
 #   - attaches ALL evidence for that port (idx.byPort[port])
 #
 # Note: the original MiscClassifier uses a Go map (non-deterministic iteration
 # order), but since each rule is independent and emits a distinct service, order
-# does not affect the result set — only the slice enumeration order.
+# does not affect the result set: only the slice enumeration order.
 #
 # The smb-version rule fires when the dedicated SMB probe captured a Negotiate
 # Response (Kind="smb_negotiate"), extracting the SMB dialect version. It shares
@@ -24,7 +24,7 @@ version: 1
 
 rules:
   # SMB version (from SMB2/SMB1 Negotiate probe). Higher priority than the port
-  # fallback — carries dialect + OS info.
+  # fallback: carries dialect + OS info.
   - id: smb-version
     source: builtin
     priority: 10

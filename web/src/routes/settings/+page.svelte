@@ -449,7 +449,7 @@ function handleCancel2FASetup() {
 			<span class="text-sm text-muted">›</span>
 		</button>
 
-		<!-- SNMP credentials section (issue #135 — SNMPv3) -->
+		<!-- SNMP credentials section (issue #135: SNMPv3) -->
 		<button
 			type="button"
 			onclick={() => goto('/settings/snmp-credentials')}
@@ -460,7 +460,7 @@ function handleCancel2FASetup() {
 		</button>
 
 		<!-- Security settings section (admin): password policy + lockout +
-		     system info — the settings-center overlay (system_settings). -->
+		     system info: the settings-center overlay (system_settings). -->
 		<button
 			type="button"
 			onclick={() => goto('/settings/security')}

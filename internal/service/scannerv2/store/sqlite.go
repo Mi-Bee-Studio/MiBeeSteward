@@ -560,7 +560,7 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 		return scannerv2.IdentityResolution{TargetID: targetID}, nil
 	}
 	if macRowIP == ip {
-		return scannerv2.IdentityResolution{TargetID: targetID}, nil // same ip — normal update.
+		return scannerv2.IdentityResolution{TargetID: targetID}, nil // same ip: normal update.
 	}
 
 	// MAC matched a device on a DIFFERENT ip than the one being scanned. Check

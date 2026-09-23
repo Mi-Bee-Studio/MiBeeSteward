@@ -11,7 +11,7 @@
 
 /**
  * Cron scheduling presets for scanner tasks. Most operators don't know cron
- * syntax (and shouldn't have to) — the task form offers these as a dropdown
+ * syntax (and shouldn't have to): the task form offers these as a dropdown
  * and only falls back to the raw-expression input when a task uses something
  * outside the preset set (CUSTOM_KEY). Pure data + pure functions so it is
  * unit-testable without i18n; the page maps preset.key → localized labels.

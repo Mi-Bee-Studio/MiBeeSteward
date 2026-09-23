@@ -19,7 +19,7 @@ function getCSRFToken(): string {
 // reaching the SPA over plain HTTP (LAN/router deployments are the norm there)
 // silently DROPS that cookie, and without this header every authenticated call
 // 401s even though login returned a perfectly good token. Read from
-// localStorage directly (not the auth store) — same pattern as getCSRFToken,
+// localStorage directly (not the auth store): same pattern as getCSRFToken,
 // no store subscription timing to worry about.
 function getBearerToken(): string {
 	try {
@@ -56,7 +56,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? '/api/v1';
  * Thrown by all three request paths (request / download / upload) on HTTP 401,
  * after the user has been logged out and redirected to /login. Callers that
  * need to distinguish "session expired" from other errors must check
- * `err instanceof SessionExpiredError` — NOT string-match on the message
+ * `err instanceof SessionExpiredError`: NOT string-match on the message
  * (the message is localized and varies by locale).
  */
 export class SessionExpiredError extends Error {
@@ -74,7 +74,7 @@ export class SessionExpiredError extends Error {
  * so existing `getErrorMessage(err)` / generic `catch` handlers are unaffected.
  *
  * Note: network failures (TypeError), aborts, and parse errors have no HTTP
- * status — those are still thrown as plain Error and are distinguishable from
+ * status: those are still thrown as plain Error and are distinguishable from
  * ApiError via `instanceof ApiError`.
  */
 export class ApiError extends Error {
@@ -100,7 +100,7 @@ export class RequestCancelledError extends Error {
  * SessionExpiredError for the caller to throw (request/download) or reject
  * with (upload's XHR callback can't throw across the async boundary).
  *
- * This was previously copy-pasted in request(), download(), and upload() —
+ * This was previously copy-pasted in request(), download(), and upload();
  * three identical logout+goto+throw/reject triplets. Centralizing it keeps the
  * session-expiry contract (logout BEFORE redirect, typed error after) in one
  * place.
@@ -111,10 +111,10 @@ function handleUnauthorized(): SessionExpiredError {
 	return new SessionExpiredError();
 }
 
-// Retry config for transient failures. Only idempotent GET requests retry —
+// Retry config for transient failures. Only idempotent GET requests retry;
 // POST/PUT/PATCH/DELETE are never retried (a retried write could double-apply).
 // A retry happens on: HTTP 5xx (server-side, likely transient) or a network-
-// level failure (fetch rejected — DNS/connection drop). 4xx, 401, and
+// level failure (fetch rejected: DNS/connection drop). 4xx, 401, and
 // AbortError (explicit cancel / timeout) are NOT retried.
 const MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 150;
@@ -141,7 +141,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
 		// Combine the caller's abort signal (user cancel) with a 30s timeout into
-		// a single controller. Manual combiner instead of AbortSignal.any() — the
+		// a single controller. Manual combiner instead of AbortSignal.any(): the
 		// build target is es2020 and the repo has no prior usage of .any(), so a
 		// listener-based merge is the safe, dependency-free path (#153).
 		const ctrl = new AbortController();
@@ -167,7 +167,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 			});
 			// A cancel that races with the response arriving: the server may have
 			// already written a (likely 500, context-cancelled) status, but the user
-			// cancelled — treat it as a cancel, not an error (#153).
+			// cancelled: treat it as a cancel, not an error (#153).
 			if (callerSignal?.aborted) throw new RequestCancelledError();
 			if (res.status === 401) {
 				throw handleUnauthorized();
@@ -215,7 +215,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 			callerSignal?.removeEventListener('abort', onCallerAbort);
 		}
 	}
-	// Retry budget exhausted — surface the last error.
+	// Retry budget exhausted: surface the last error.
 	throw lastError instanceof Error
 		? lastError
 		: new Error(getErrorMessage(lastError));
@@ -235,7 +235,7 @@ export const api = {
 	// exports no longer bypass the client via raw fetch (which dropped CSRF).
 	download: async (path: string): Promise<Blob> => {
 		const headers = authHeaders(false);
-		// 60s timeout — more generous than request()'s 30s since downloads
+		// 60s timeout: more generous than request()'s 30s since downloads
 		// (CSV/JSON exports, file downloads) can be larger. Without this a hung
 		// or very slow response would leave the fetch pending forever (#71).
 		const res = await fetch(`${API_BASE}${path}`, {

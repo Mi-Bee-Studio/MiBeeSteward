@@ -5,7 +5,7 @@
 #
 # The distributed-agent half: runs on a router in a remote LAN, scans locally,
 # reports upstream to the center over HTTPS. This is the form when you can't
-# (or don't want to) run the full center on every router — one center handles
+# (or don't want to) run the full center on every router: one center handles
 # many router-agents. See docs/{en,zh}/distributed.md + docs/{en,zh}/openwrt.md.
 #
 # ─── Install ───────────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@
 #      (write agent.yaml from the minimal sample in docs/{en,zh}/distributed.md,
 #       then edit on the router: center.url (the remote center's address +
 #       port), center.auth_token (minted on the center via POST
-#       /api/v1/agents/tokens), network.name/cidr — this router's LAN.)
+#       /api/v1/agents/tokens), network.name/cidr: this router's LAN.)
 #   3. Enable + start:
 #        ssh root@router '/etc/init.d/mibee-agent enable && /etc/init.d/mibee-agent start'
 #      Logs: logread -e mibee-agent
@@ -28,10 +28,10 @@
 # ─── Flash-wear mitigation (db on tmpfs) ───────────────────────────────────
 # The agent's local shadow DB is hard-coded to `agent.db` in the SAME directory
 # as the config file (cmd/agent: filepath.Join(filepath.Dir(configPath),
-# "agent.db") — no dedicated config key). It is explicitly a SHADOW: the center
+# "agent.db"): no dedicated config key). It is explicitly a SHADOW: the center
 # is the writer of record, so cold-start loss is fine and the DB SHOULD live on
 # /tmp (tmpfs, RAM-backed). To do that, point CONFIG below at a /tmp location
-# (e.g. /tmp/mibee-agent/agent.yaml — the config file must be recreated after
+# (e.g. /tmp/mibee-agent/agent.yaml: the config file must be recreated after
 # each reboot, or pushed by a boot hook). The agent's in-memory pending-queue
 # (100 batches) handles disconnection during a reboot.
 

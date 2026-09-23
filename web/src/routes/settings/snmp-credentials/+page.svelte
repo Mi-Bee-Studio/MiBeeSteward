@@ -94,7 +94,7 @@
 		formCommunity = c.community ?? '';
 		formUsername = c.username ?? '';
 		formAuthProtocol = c.auth_protocol ?? '';
-		formAuthPassphrase = ''; // never prefill — server keeps "leave unchanged" on blank
+		formAuthPassphrase = ''; // never prefill: server keeps "leave unchanged" on blank
 		formPrivProtocol = c.priv_protocol ?? '';
 		formPrivPassphrase = '';
 		formNotes = c.notes ?? '';
@@ -187,7 +187,7 @@
 	}
 
 	function levelLabel(level: string): string {
-		// Direct switch (not dynamic m[key]) — paraglide's typed message index
+		// Direct switch (not dynamic m[key]): paraglide's typed message index
 		// can't resolve a computed key, so we enumerate the four levels.
 		switch (level) {
 			case 'v1v2c':
@@ -271,12 +271,12 @@
 										{levelLabel(c.security_level)}
 									</span>
 								</td>
-								<td class="px-4 py-3 text-text-muted">{c.username || c.community || '—'}</td>
+								<td class="px-4 py-3 text-text-muted">{c.username || c.community || '-'}</td>
 								<td class="px-4 py-3 text-text-muted">
-									{#if c.has_auth}<span class="text-green-400">✓</span> {c.auth_protocol}{:else}—{/if}
+									{#if c.has_auth}<span class="text-green-400">✓</span> {c.auth_protocol}{:else}-{/if}
 								</td>
 								<td class="px-4 py-3 text-text-muted">
-									{#if c.has_priv}<span class="text-green-400">✓</span> {c.priv_protocol}{:else}—{/if}
+									{#if c.has_priv}<span class="text-green-400">✓</span> {c.priv_protocol}{:else}-{/if}
 								</td>
 								<td class="px-4 py-3 text-right">
 									<button
@@ -370,7 +370,7 @@
 					bind:value={formAuthProtocol}
 					class="w-full px-3 py-2 bg-surface-hover border border-border rounded-lg text-text"
 				>
-					<option value="">—</option>
+					<option value="">-</option>
 					{#each authProtocols as p}
 						<option value={p}>{p}</option>
 					{/each}
@@ -397,7 +397,7 @@
 					bind:value={formPrivProtocol}
 					class="w-full px-3 py-2 bg-surface-hover border border-border rounded-lg text-text"
 				>
-					<option value="">—</option>
+					<option value="">-</option>
 					{#each privProtocols as p}
 						<option value={p}>{p}</option>
 					{/each}

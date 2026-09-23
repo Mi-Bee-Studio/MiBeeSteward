@@ -9,7 +9,7 @@
 -->
 
 <!--
-  PageSkeleton — loading placeholder that matches the rough shape of the page
+  PageSkeleton: loading placeholder that matches the rough shape of the page
   that's loading. The wrapper carries `role="status"` + `aria-busy` so screen
   readers announce "loading" instead of reading the skeleton boxes as blank
   space (the bare divs were previously silent to AT).

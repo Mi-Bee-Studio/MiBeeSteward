@@ -1,4 +1,4 @@
-# MiBee Steward Agent — USER-LEVEL systemd unit (not system-level).
+# MiBee Steward Agent: USER-LEVEL systemd unit (not system-level).
 #
 # Install under the agent account's user manager (no root needed to install,
 # but linger must be enabled once so the service survives logout):
@@ -14,7 +14,7 @@
 # Why user-level: the test agent host (62.174) requires a sudo password for
 # system-level units, but any user can manage their own user-level units. With
 # enable-linger, a user service runs at boot and survives logout just like a
-# system one. No User=/Group= here — a user unit already runs as its owner.
+# system one. No User=/Group= here: a user unit already runs as its owner.
 
 [Unit]
 Description=MiBee Steward Agent - Distributed Discovery Agent

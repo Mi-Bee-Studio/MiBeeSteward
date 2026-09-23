@@ -1,5 +1,5 @@
 # MiBee Steward Alertmanager Configuration
-# Basic template — customize receivers and routing as needed.
+# Basic template: customize receivers and routing as needed.
 route:
   group_by: ["alertname", "severity"]
   group_wait: 30s

@@ -58,12 +58,12 @@
 
 	// Available filter options, pulled from the API so the dropdowns always
 	// reflect what the backend actually emits (a new action appears here
-	// automatically — previously the list was hardcoded and drifted out of sync).
+	// automatically: previously the list was hardcoded and drifted out of sync).
 	let users = $state<{ id: number; username: string }[]>([]);
 	let actions = $state<string[]>([]);
 	let resourceTypes = $state<string[]>([]);
 
-	// Export dropdown (click-toggle so it's reachable by keyboard/touch — the
+	// Export dropdown (click-toggle so it's reachable by keyboard/touch: the
 	// old group-hover:opacity-100 version was mouse-only).
 	let exportOpen = $state(false);
 
@@ -79,7 +79,7 @@
 			const res = await api.get<{ users: { id: number; username: string }[]; total: number }>('/users?limit=100&offset=0');
 			users = res.users || [];
 		} catch {
-			// Non-critical — filter dropdown just won't populate
+			// Non-critical: filter dropdown just won't populate
 		}
 	}
 
@@ -92,7 +92,7 @@
 			actions = res.actions || [];
 			resourceTypes = res.resource_types || [];
 		} catch {
-			// Non-critical — dropdowns stay empty.
+			// Non-critical: dropdowns stay empty.
 		}
 	}
 
@@ -161,7 +161,7 @@
 	}
 
 	// Pretty-print the details JSON (audit events record structured detail
-	// payloads — e.g. file uploads, link operations).
+	// payloads: e.g. file uploads, link operations).
 	function formatDetails(raw: string): string {
 		if (!raw) return '';
 		try {
@@ -285,7 +285,7 @@
 	<div class="flex items-center justify-between mb-6">
 		<h2 class="text-2xl font-bold text-primary">{m["audit.Audit Logs"]()}</h2>
 		<div class="flex items-center gap-2">
-			<!-- Export dropdown (click-toggle — accessible to keyboard/touch;
+			<!-- Export dropdown (click-toggle: accessible to keyboard/touch;
 			     mirrors the pattern in devices/+page.svelte). -->
 			<div class="relative">
 				<button

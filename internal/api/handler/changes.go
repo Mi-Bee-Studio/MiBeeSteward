@@ -174,7 +174,7 @@ func (h *ChangeLogHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // listScopedChanges runs the scope-restricted change-history query (closed mode).
-// It mirrors the ListChangeLog/CountChangeLog sqlc shape exactly (same filters,
+// It matches the ListChangeLog/CountChangeLog sqlc queries exactly (same filters,
 // ordering, pagination) but swaps the single-network filter for the caller's
 // granted-network IN-list via scopeql.NetworkPredicate. The optional network_id
 // param still narrows within the scope (a network_id outside the scope is
@@ -380,7 +380,7 @@ func (h *ChangeWatchHandler) Watch(w http.ResponseWriter, r *http.Request) {
 			}
 			// SSE event: "event: change\ndata: {json}\n\n"
 			if _, err := fmt.Fprintf(w, "event: change\ndata: %s\n\n", data); err != nil {
-				return // write failed — client likely gone
+				return // write failed: client likely gone
 			}
 			rc.Flush()
 		}

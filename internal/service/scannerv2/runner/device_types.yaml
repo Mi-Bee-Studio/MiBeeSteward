@@ -2,7 +2,7 @@
 #
 # Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
 #
-# Device-type inference data table — hostname / brand / os / port-shape →
+# Device-type inference data table: hostname / brand / os / port-shape →
 # device type. This is the DATA half of heuristicDeviceType (device_bridge.go);
 # the Go side is a generic, write-once priority-matching engine that consumes
 # this file. Adding a new device signature = adding a keyword here, NOT editing
@@ -15,21 +15,21 @@
 # at build time for //go:embed (Go embed cannot reach outside the package dir).
 #
 # `source` field: the confidence classification for UI display.
-#   "heuristic" — keyword/hostname-based; spoofable (any DHCP client can rename).
+#   "heuristic": keyword/hostname-based; spoofable (any DHCP client can rename).
 #                 The UI marks these with a "?" badge so users know to verify.
 #   All rules here are heuristic by nature (they key off hostnames/ports, which
 #   are guesses, not cryptographic identity). The "protocol" confidence label is
-#   applied in Go code (device_bridge.go) when a service handler — not this table
-#   — set the type from real protocol evidence (SNMP sysObjectID, RTSP/ONVIF
+#   applied in Go code (device_bridge.go) when a service handler: not this table
+#  : set the type from real protocol evidence (SNMP sysObjectID, RTSP/ONVIF
 #   banner, mDNS service type).
 #
 # Evaluation order (first match wins, mirroring the old switch semantics):
-#   1. rules      — host/brand keyword match (host before brand; the `field`
+#   1. rules     : host/brand keyword match (host before brand; the `field`
 #                   selects which). PC/NAS rules run BEFORE camera/phone so a
 #                   laptop named "redmi-notebook" wins pc over a phone keyword
 #                   "redmi-". Order WITHIN this list is the priority.
-#   2. os_rules   — os_type label (from SSH/SNMP banner) when no host/brand hit.
-#   3. port_rules — service/port-shape fallback (cross-subnet common case).
+#   2. os_rules  : os_type label (from SSH/SNMP banner) when no host/brand hit.
+#   3. port_rules: service/port-shape fallback (cross-subnet common case).
 # All matching is case-insensitive (the engine lowercases inputs).
 
 version: 1
@@ -76,7 +76,7 @@ rules:
   # ── NAS (Synology/QNAP/极空间 Z4S/绿联 UGREEN/MiniDLNA) ──
   # MUST come before camera: consumer NAS stream media over RTSP (极影视/Video
   # Station/MiniDLNA) and would otherwise be mis-typed camera from rtsp:554.
-  # NOTE: bare "ds-" is NOT used — it collides with the Hikvision DS-2CD camera
+  # NOTE: bare "ds-" is NOT used: it collides with the Hikvision DS-2CD camera
   # series (matched below as "ds-2"). Synology uses "diskstation"/"synology".
   - type: nas
     field: host

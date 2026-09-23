@@ -69,7 +69,7 @@
 		}
 	}
 
-	// ECharts renders to canvas, which does NOT resolve CSS custom properties —
+	// ECharts renders to canvas, which does NOT resolve CSS custom properties;
 	// `lineStyle.color: 'var(--color-accent)'` renders transparent/black. Read
 	// the computed value from :root so the sparkline actually shows and follows
 	// the theme. Falls back to a literal so an unset var still draws something.
@@ -128,7 +128,7 @@
 
 	function latestForConfig(configId: number): HeartbeatResult | null {
 		// Explicitly sort by checked_at descending rather than relying on the API
-		// returning results newest-first — find() returned the first array
+		// returning results newest-first: find() returned the first array
 		// element, which was only "latest" by implicit ordering assumption (#71).
 		// RFC3339 strings sort lexicographically = chronologically.
 		return (

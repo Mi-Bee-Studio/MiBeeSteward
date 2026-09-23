@@ -48,7 +48,7 @@
 		total: number;
 	}
 
-	// Overview mirrors GET /dashboard/overview — the aggregated payload that
+	// Overview mirrors GET /dashboard/overview: the aggregated payload that
 	// feeds the type/location distributions (full population, not a 200-row
 	// sample), scan activity, and the offline-device list.
 	interface OverviewScanRun {
@@ -77,7 +77,7 @@
 		generated: string;
 	}
 
-	// GET /changes — feeds the builtin "recent changes" list widget.
+	// GET /changes: feeds the builtin "recent changes" list widget.
 	interface ChangeRow {
 		id: number;
 		change_type: string; // device_added | device_changed | device_lost | device_config_changed | ...
@@ -91,7 +91,7 @@
 		total: number;
 	}
 
-	// GET /probe-targets — feeds the builtin "probe status" list widget. Only
+	// GET /probe-targets: feeds the builtin "probe status" list widget. Only
 	// the fields the widget renders are declared.
 	interface ProbeTargetRow {
 		id: number;
@@ -126,13 +126,13 @@
 	}
 
 	// loading is a writable store (not $state). A bare {#if loading} backed by
-	// $state failed to re-evaluate under prerender hydration — the {#if}'s
+	// $state failed to re-evaluate under prerender hydration: the {#if}'s
 	// dependency subscription never fired on the true→false transition, even
 	// though the assignment happened (verified via console). Other $state vars
 	// (overview/stats) in the same component updated fine, so this is specific
 	// to the {#if <state-var>} re-evaluation path. A store with the $ prefix
 	// ($loading) uses Svelte's long-stable auto-subscription, which reliably
-	// re-renders. (devices/+page.svelte uses $state loading and works — the
+	// re-renders. (devices/+page.svelte uses $state loading and works: the
 	// difference is unrooted in Svelte 5 runes hydration; the store sidesteps it.)
 	const loading = writable(true);
 	let refreshing = $state(false);
@@ -144,7 +144,7 @@
 	let useCustomLayout = $state(false);
 	// isAdmin is derived from the $auth store. The previous implementation kept
 	// it as a $state updated by a top-level auth.subscribe() that never
-	// unsubscribed — that subscription during component init poisoned Svelte 5's
+	// unsubscribed: that subscription during component init poisoned Svelte 5's
 	// effect scheduler under hydration and froze the DOM on the loading skeleton
 	// (data loaded, $state set, but no re-render). Deriving from $auth directly
 	// aligns with how +layout.svelte already consumes the store.
@@ -162,7 +162,7 @@
 	// ipv4OrV6 matches a bare IPv4 (a.b.c.d) or IPv6 literal. Used to detect
 	// when a device's stored name has degenerated to an IP (common after a DHCP
 	// roam: a scanner first discovered the host at .170 and recorded that IP as
-	// the name, then DHCP reassigned .167 — the name field did not follow the
+	// the name, then DHCP reassigned .167: the name field did not follow the
 	// roam). In that case we show the CURRENT ip_address instead, so the device
 	// list name, IP column, and search link all agree (#197).
 	const IPV4_OR_V6 = /^(\d{1,3}\.){3}\d{1,3}$|^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
@@ -592,7 +592,7 @@
 	}
 
 	// ── Builtin preset data ──
-	// Presets are backed by the app's own read APIs — no Prometheus, no query
+	// Presets are backed by the app's own read APIs: no Prometheus, no query
 	// language. The template keys (w.query) mirror the backend whitelist in
 	// internal/api/handler/dashboard.go (builtinWidgetTemplates); unknown keys
 	// render an empty widget rather than erroring the whole dashboard.
@@ -654,7 +654,7 @@
 	}
 
 	// changeToItem extracts the display name/IP from a change row's
-	// before/after JSON snapshots (after_data preferred — it is the newest
+	// before/after JSON snapshots (after_data preferred: it is the newest
 	// state for adds/changes; lost rows only have before_data).
 	function changeToItem(row: ChangeRow): DashboardListItem {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -662,7 +662,7 @@
 		try {
 			payload = JSON.parse(row.after_data || row.before_data || '{}');
 		} catch {
-			// Malformed snapshot — fall back to the raw change type as title.
+			// Malformed snapshot: fall back to the raw change type as title.
 		}
 		const ip: string = payload.ip_address ?? '';
 		const name = payload.name && !IPV4_OR_V6.test(payload.name) ? payload.name : ip;
@@ -740,14 +740,14 @@
 				break;
 			}
 			default:
-				// Unknown template key — renders the empty-list state.
+				// Unknown template key: renders the empty-list state.
 				applyWidgetPatch(w.id, { listItems: [] });
 		}
 	}
 
 	// fetchOverview loads the banner payload (attention counts, scan activity,
 	// offline list). Runs in BOTH layouts: the custom-widget layout skips the
-	// default cards' stats/device fetch, but the banner still needs overview —
+	// default cards' stats/device fetch, but the banner still needs overview;
 	// without it the banner fell back to the totalDevices===0 onboarding state
 	// and told the user "no devices yet" over a populated inventory.
 	async function fetchOverview() {
@@ -780,12 +780,12 @@
 	// loadAll is async and toggles loading itself (in finally). The caller
 	// (onMount) fires it WITHOUT await: under prerender hydration, an awaited
 	// async onMount's post-await $state writes (e.g. loading=false) didn't
-	// re-render the {#if loading} block — the await moves the write out of
+	// re-render the {#if loading} block: the await moves the write out of
 	// Svelte's effect-scheduling context. Mirrors the working devices-page
 	// pattern (sync onMount + fire-and-forget fetch with internal loading toggle).
 	async function loadAll() {
 		// Re-assert loading=true at the start of every load. devices-page does
-		// the same in fetchDevices — the explicit write (even when already true)
+		// the same in fetchDevices: the explicit write (even when already true)
 		// is what establishes Svelte's dependency subscription for the {#if}
 		// block under prerender hydration; without it the initial true→false
 		// transition didn't re-render.
@@ -795,7 +795,7 @@
 			// Banner payload in BOTH layouts (see fetchOverview).
 			await fetchOverview();
 			// Append-mode layout: the default cards always render, so their
-			// data is always fetched — adding a custom widget no longer hides
+			// data is always fetched: adding a custom widget no longer hides
 			// the overview cards (the old replace-mode trap).
 			await fetchDefaultData();
 			lastUpdated = new Date();
@@ -852,7 +852,7 @@
 
 		// Persist positions. Wait for all puts and, on failure, toast + re-sync
 		// from the server so the UI doesn't show an order that wasn't saved
-		// (which a reload would silently snap back — #65).
+		// (which a reload would silently snap back: #65).
 		if (isAdmin) {
 			try {
 				await Promise.all(
@@ -965,7 +965,7 @@
 	}
 
 	// ── Lifecycle ──
-	// (The top-level auth.subscribe that used to live here was removed — see the
+	// (The top-level auth.subscribe that used to live here was removed: see the
 	// note above isAdmin. The $auth store is consumed directly in the markup.)
 
 	onMount(() => {
@@ -1072,7 +1072,7 @@
 
 
 			<!-- Rendered-content block keyed on the NEGATIVE store read ({#if !$loading})
-		     — the same shape as the banner block above, which reliably
+		    : the same shape as the banner block above, which reliably
 		     re-renders under prerender hydration. The previous positive form
 		     ({#if $loading} skeleton {:else if ...}) left the skeleton branch
 		     mounted forever after the first custom-layout load: the else-if
@@ -1080,7 +1080,7 @@
 		     so the widget grid never appeared. -->
 		{#if $loading}
 			<!-- Top-level skeleton: previously the dashboard rendered nothing at all
-			     while stats/overview/widgets loaded — no feedback that work was
+			     while stats/overview/widgets loaded: no feedback that work was
 			     happening. The $loading store path (vs a bare $state) is required
 			     under prerender hydration (see the note above loadAll). -->
 			<PageSkeleton type="dashboard" />
@@ -1092,7 +1092,7 @@
 				actionLabel={m["devices.Create Device"]()}
 			/>
 		{:else}
-			<!-- Default 2x2 Chart Grid — always rendered (append-mode layout:
+			<!-- Default 2x2 Chart Grid: always rendered (append-mode layout:
 			     custom widgets go BELOW these, they never replace them). -->
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 				<!-- Device Status Distribution (Pie) -->
@@ -1139,7 +1139,7 @@
 					</div>
 				</div>
 
-				<!-- Scan Activity — reflects "discovery", the system's core job -->
+				<!-- Scan Activity: reflects "discovery", the system's core job -->
 				<div class="bg-surface border border-border rounded-lg overflow-hidden md:col-span-2">
 					<div class="px-4 py-3 border-b border-border flex items-center justify-between gap-4">
 						<div class="min-w-0">
@@ -1190,7 +1190,7 @@
 				</div>
 			</div>
 
-			<!-- Abnormal Devices — offline list, clickable to the device page -->
+			<!-- Abnormal Devices: offline list, clickable to the device page -->
 			<div class="bg-surface border border-border rounded-lg overflow-hidden md:col-span-2">
 				<div class="px-4 py-3 border-b border-border flex items-center justify-between gap-4">
 					<div class="min-w-0">
@@ -1227,7 +1227,7 @@
 		</div>
 	{/if}
 
-	<!-- Custom widgets — appended BELOW the default grid (they extend the
+	<!-- Custom widgets: appended BELOW the default grid (they extend the
 	     dashboard, never replace the overview cards). -->
 	{#if widgets.length > 0}
 		<div class="custom-widgets-section">
@@ -1257,7 +1257,7 @@
 	{/if}
 </div>
 
-<!-- Plain-language guide — answers "what is this page and where do I
+<!-- Plain-language guide: answers "what is this page and where do I
      start?" for first-time users. -->
 <Modal bind:open={helpOpen} title={m["dashboard.Help Title"]()} maxWidth="30rem">
 	<div class="help-body">
@@ -1323,7 +1323,7 @@
 		margin-top: 0.5rem;
 	}
 
-	/* Attention banner — sits between the header and the charts. Three states:
+	/* Attention banner: sits between the header and the charts. Three states:
 	 * - attention-empty: no devices yet (onboarding, primary-tinted)
 	 * - attention-warn:  devices offline (warning-tinted)
 	 * - attention-ok:    all healthy (success-tinted, subdued) */

@@ -34,7 +34,7 @@
 		confirmVariant?: 'primary' | 'danger';
 		/** When true, the confirm button shows a spinner and is disabled. */
 		loading?: boolean;
-		/** May be async — the dialog stays open (with a spinner) until it resolves,
+		/** May be async: the dialog stays open (with a spinner) until it resolves,
 		 *  closes on success, stays open on rejection so the user can retry. */
 		onConfirm: () => unknown;
 		onCancel?: () => void;
@@ -66,7 +66,7 @@
 			// caller does NOT swallow it internally, the catch below keeps
 			// the dialog open so the user can retry. (Most callers do their
 			// own try/catch + toast, in which case the promise resolves and
-			// we close here — they can re-open the dialog to retry.)
+			// we close here: they can re-open the dialog to retry.)
 			open = false;
 		} catch {
 			// Caller let the error bubble (did not try/catch inside onConfirm).

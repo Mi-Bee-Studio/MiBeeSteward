@@ -10,7 +10,7 @@
   "editable": true,
   "graphTooltip": 1,
   "uid": "mibee-heartbeat",
-  "title": "MiBee Steward — Heartbeat Health",
+  "title": "MiBee Steward: Heartbeat Health",
   "panels": [
     {
       "type": "timeseries",

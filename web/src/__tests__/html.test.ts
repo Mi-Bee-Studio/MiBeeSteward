@@ -50,7 +50,7 @@ describe('html tagged-template helper', () => {
 		const out = html`<span class="font-medium">${username}</span>`;
 		// No live tag survives: there is no `<img` element, only escaped text.
 		// (The literal text "onerror=alert" may appear, but as inert element
-		// content — what matters is it is not a live <img onerror> attribute.)
+		// content: what matters is it is not a live <img onerror> attribute.)
 		expect(out).not.toContain('<img');
 		expect(out).toContain('&lt;img src=x onerror=alert(1)&gt;');
 	});

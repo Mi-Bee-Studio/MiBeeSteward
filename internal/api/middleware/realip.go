@@ -58,7 +58,7 @@ func trustedClientIP(r *http.Request, trustedProxies []*net.IPNet) string {
 		return ""
 	}
 	if !anyCIDRContains(trustedProxies, peerIP) {
-		return "" // untrusted source — do not honor the header
+		return "" // untrusted source: do not honor the header
 	}
 	xff := r.Header.Get("X-Forwarded-For")
 	if xff == "" {

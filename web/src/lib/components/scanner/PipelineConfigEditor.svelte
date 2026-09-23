@@ -123,7 +123,7 @@
 
 	// --- SVG icons per stage ---
 	// Stage icon path data, keyed by stage.icon. Inlined directly into the <svg>
-	// below via an {#if} chain rather than rendered through {@html} — the paths
+	// below via an {#if} chain rather than rendered through {@html}: the paths
 	// are static literals (no injection surface), but avoiding {@html} keeps the
 	// markup auditable and lets the Svelte compiler type-check the attribute set.
 	const STAGE_ICON_PATHS: Record<string, string> = {

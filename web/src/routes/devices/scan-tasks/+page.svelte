@@ -73,7 +73,7 @@
 	let formTargets = $state('');
 	let formCronExpr = $state('');
 	// Schedule selection: a preset key (cron.ts) or CUSTOM_KEY. The cron
-	// expression is DERIVED while a preset is active — most operators should
+	// expression is DERIVED while a preset is active: most operators should
 	// never need to know cron syntax. Custom keeps the raw input for power
 	// users and round-trips existing tasks saved with arbitrary expressions.
 	let formScheduleKey = $state('daily_2am');
@@ -83,7 +83,7 @@
 	let formEnabled = $state(true);
 	let formPipelineConfig = $state<PipelineConfig>(defaultPipeline());
 	// Unified field-error map for the whole form (targets / cron / name /
-	// timeout all read/write here — #154 part 1). Previously targets + cron
+	// timeout all read/write here: #154 part 1). Previously targets + cron
 	// used two dedicated state vars while name + timeout used fieldErrors,
 	// giving three different error-display patterns in one form.
 	let fieldErrors = $state<Record<string, string>>({});
@@ -120,7 +120,7 @@
 			const res = await api.get<{ credentials: Array<{ id: number; name: string; security_level: string }> }>('/snmp-credentials');
 			credentials = res.credentials ?? [];
 		} catch {
-			// non-admin / disabled — leave empty
+			// non-admin / disabled: leave empty
 		}
 		await fetchTasks();
 	});
@@ -184,7 +184,7 @@
 	const formDirty = $derived(formOpen && snapshotForm() !== formSnapshot);
 
 	// presetLabel maps a preset key to its localized label with LITERAL m[]
-	// calls (paraglide's m is typed per key — a dynamic m[variable] lookup
+	// calls (paraglide's m is typed per key: a dynamic m[variable] lookup
 	// would silently drop typing). A switch is the type-safe way to keep one
 	// source of truth over in cron.ts.
 	function presetLabel(key: string): string {
@@ -246,7 +246,7 @@
 		formCronExpr = cronForPresetKey(formScheduleKey) ?? task.cron_expr;
 		formTimeout = task.timeout;
 		formConcurrentHosts = task.concurrent_hosts ?? 16;
-		// The wire has no top-level community on a task — the SNMP community
+		// The wire has no top-level community on a task: the SNMP community
 		// lives in pipeline_config.snmp.community (#274 contract).
 		formCommunity = task.pipeline_config?.snmp?.community ?? 'public';
 		formCredentialId = task.credential_id ?? null;
@@ -294,7 +294,7 @@
 		// Validate targets + cron via the standalone validators (return localized
 		// strings, wired to onblur). Then name + timeout range via scannerTaskSchema.
 		// All four fields now write to the same fieldErrors map (previously
-		// targets/cron used dedicated vars — #154 part 1).
+		// targets/cron used dedicated vars: #154 part 1).
 		const targetsErr = validateTargets();
 		const cronErr = validateCron();
 		const taskValidation = validateForm(scannerTaskSchema, { name: formName, timeout: formTimeout });
@@ -366,7 +366,7 @@
 		if (pollingTimers.has(taskId)) return;
 		let pollCount = 0;
 		// Track consecutive poll failures so a dead backend doesn't leave the
-		// spinner sweeping silently — after a few in a row, surface a warning
+		// spinner sweeping silently: after a few in a row, surface a warning
 		// (once, not per failure). Reset on any successful poll (#65).
 		let consecutiveErrors = 0;
 		let errorToasted = false;
@@ -406,13 +406,13 @@
 					// No run row appeared after ~5min of polling. The backend now
 					// records a failed run when the engine is unavailable (so this
 					// path is rarer), but a scheduler that never picked up the
-					// trigger can still land here — point the user at the runs list
+					// trigger can still land here: point the user at the runs list
 					// / server logs rather than claiming the scheduler is unwired.
 					addToast('warning', m['scanner.Scan No Run']());
 					fetchTasks();
 				}
 			} catch (err: unknown) {
-				// Poll errors are non-critical — keep trying — but after several in
+				// Poll errors are non-critical: keep trying: but after several in
 				// a row the live-progress spinner is lying to the user. Surface one
 				// warning so they know to refresh manually (the loop keeps running).
 				consecutiveErrors++;
@@ -788,7 +788,7 @@
 				{/if}
 			</div>
 
-			<!-- Advanced: timeout + concurrency (#275) — collapsed by default -->
+			<!-- Advanced: timeout + concurrency (#275): collapsed by default -->
 			<details class="group">
 				<summary class="cursor-pointer select-none text-xs text-text-muted hover:text-text mb-2 flex items-center gap-1">
 					<ChevronRight class="w-3 h-3 transition-transform group-open:rotate-90" />
@@ -844,7 +844,7 @@
 				/>
 			</div>
 
-			<!-- SNMP credential (issue #135) — shown only when credentials exist -->
+			<!-- SNMP credential (issue #135): shown only when credentials exist -->
 			{#if credentials.length > 0}
 				<div>
 					<label class="block text-xs text-text-muted mb-1">{m['snmpCredentials.Title']()}</label>
@@ -853,7 +853,7 @@
 						class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
 							focus:border-primary focus:outline-none"
 					>
-						<option value={null}>— {m['snmpCredentials.Community']()} —</option>
+						<option value={null}>- {m['snmpCredentials.Community']()} -</option>
 						{#each credentials as c (c.id)}
 							<option value={c.id}>{c.name} ({c.security_level})</option>
 						{/each}

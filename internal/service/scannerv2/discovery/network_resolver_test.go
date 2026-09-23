@@ -41,7 +41,7 @@ func TestNetworkResolver_LongestPrefixAndFallback(t *testing.T) {
 	dbConn := memoryDB(t)
 	ids := seedNetworks(t, dbConn,
 		[2]string{"supernet", "10.0.0.0/16"}, // id[0]
-		[2]string{"lan-a", "10.0.0.0/24"},    // id[1] — more specific than the supernet
+		[2]string{"lan-a", "10.0.0.0/24"},    // id[1]: more specific than the supernet
 		[2]string{"lan-b", "10.0.1.0/24"},    // id[2]
 		[2]string{"no-cidr", ""},             // skipped: containment impossible
 		[2]string{"broken", "not-a-cidr"},    // skipped: invalid

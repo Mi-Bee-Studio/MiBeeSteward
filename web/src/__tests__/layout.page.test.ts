@@ -26,7 +26,7 @@ beforeAll(() => {
 });
 
 // The layout reads session state ($lib/stores/auth) and the current route
-// ($app/stores page) — both are controllable per-test via hoisted mutable
+// ($app/stores page): both are controllable per-test via hoisted mutable
 // state so each case can pin (token, pathname) independently.
 const mocks = vi.hoisted(() => {
 	const authState = {
@@ -112,7 +112,7 @@ describe('App layout', () => {
 		await waitFor(() => {
 			expect(container.querySelector('aside')).toBeNull();
 		});
-		// The mobile hamburger button is inside the same {#if} — verify it too,
+		// The mobile hamburger button is inside the same {#if}: verify it too,
 		// since it is fixed-positioned and would float over the login form.
 		const hamburger = container.querySelector('button[aria-label]');
 		expect(hamburger).toBeNull();

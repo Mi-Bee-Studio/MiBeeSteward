@@ -8,7 +8,7 @@
 # those terms; see LICENSE for the full text. A commercial license is available
 # for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 
-# MiBee Steward — statement-coverage ratchet gate.
+# MiBee Steward: statement-coverage ratchet gate.
 # Usage: scripts/check-coverage.sh [profile]   (default: cover.out in repo root)
 #
 # Fails when total statement coverage of the measured package set drops below
@@ -18,9 +18,9 @@
 # frictional).
 #
 # The measured set EXCLUDES generated/dev-only code that has its own drift
-# gates instead: internal/db (sqlc — sqlc-verify job), internal/apiclient
-# (oapi-codegen — gen-api-go drift check), cmd/loadgen (dev-only load tool).
-# The profile must be produced by `make coverage` (which passes -coverpkg) —
+# gates instead: internal/db (sqlc: sqlc-verify job), internal/apiclient
+# (oapi-codegen: gen-api-go drift check), cmd/loadgen (dev-only load tool).
+# The profile must be produced by `make coverage` (which passes -coverpkg);
 # a plain `go test -coverprofile` undercounts because it only attributes
 # coverage to a package's own tests.
 
@@ -30,7 +30,7 @@ profile="${1:-cover.out}"
 floor_file="$(cd "$(dirname "$0")" && pwd)/coverage-floor.txt"
 
 if [[ ! -f "$profile" ]]; then
-  echo "coverage profile '$profile' not found — run 'make coverage' first" >&2
+  echo "coverage profile '$profile' not found: run 'make coverage' first" >&2
   exit 1
 fi
 
@@ -44,7 +44,7 @@ total=$(go tool cover -func="$profile" | awk '/^total:/ {sub(/%/, "", $NF); prin
 
 echo "statement coverage: ${total}%  (floor: ${floor}%)"
 if awk -v t="$total" -v f="$floor" 'BEGIN { exit (t + 0 < f + 0) ? 1 : 0 }'; then
-  echo "OK — coverage is at or above the floor"
+  echo "OK: coverage is at or above the floor"
 else
   echo "::error::statement coverage ${total}% fell below the ratchet floor ${floor}%" >&2
   echo "Add tests to restore coverage, or (if you added tests) re-pin with 'make coverage-bump'. Never lower the floor to pass." >&2

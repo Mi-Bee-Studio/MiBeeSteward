@@ -1,25 +1,25 @@
 #!/bin/sh
 #
-# MiBee Steward AGENT installer for OpenWrt / iStoreOS routers — form B
+# MiBee Steward AGENT installer for OpenWrt / iStoreOS routers: form B
 # (agent ON the router, reporting to a remote center). Runs as root ON the
 # router, from the directory that holds the release files (mibee-agent,
-# mibee-agent.init, agent.example.yaml) — typically after extracting the
+# mibee-agent.init, agent.example.yaml): typically after extracting the
 # tarball produced by `make package-openwrt-agent` on your build host:
 #
 #   scp bin/mibee-agent-openwrt-arm64-*.tar.gz root@router:/tmp/
 #   ssh root@router 'cd /tmp && tar -xzf mibee-agent-openwrt-*.tar.gz && ./agent-install.sh'
 #
 # What it does:
-#   1. Gates on architecture (ARM/ARM64 OK; MIPS aborts — modernc/libc limit)
+#   1. Gates on architecture (ARM/ARM64 OK; MIPS aborts: modernc/libc limit)
 #      and smoke-executes the binary to catch arch mismatches early.
 #   2. Installs the binary to /usr/bin/mibee-agent and the procd init script
 #      to /etc/init.d/mibee-agent.
 #   3. FIRST INSTALL ONLY: generates /etc/mibee/agent.yaml from
-#      agent.example.yaml — network.name/cidr derived from `uci get
+#      agent.example.yaml: network.name/cidr derived from `uci get
 #      network.lan.*`, the router-resident passive sources stay ON. The
 #      center url/token CANNOT be derived: pass them as
 #      `--center-url URL --token TOKEN` (written into the config and the
-#      service starts), or omit them — the config is generated with empty
+#      service starts), or omit them: the config is generated with empty
 #      placeholders, the service is NOT started, and the closing summary
 #      prints the exact 3 steps to finish by hand. Re-runs (upgrades) keep
 #      the existing config untouched.
@@ -34,7 +34,7 @@
 #   package-openwrt-agent-ipk / -apk). Files are already laid down
 #   (/usr/bin/mibee-agent, /etc/init.d/mibee-agent, /etc/mibee/
 #   agent.example.yaml, this script at /usr/lib/mibee/agent-install.sh);
-#   only the configuration half runs — no file copying.
+#   only the configuration half runs: no file copying.
 #
 set -eu
 
@@ -69,27 +69,27 @@ case "$(uname -m)" in
     aarch64|armv8*) echo "-- arch: $(uname -m) (arm64) OK" ;;
     armv7*|armv6*)  echo "-- arch: $(uname -m) (arm) OK" ;;
     mips*)
-        echo "ERROR: MIPS is not supported — modernc.org/libc (the pure-Go SQLite"
+        echo "ERROR: MIPS is not supported: modernc.org/libc (the pure-Go SQLite"
         echo "       backend) has no working mips port. See docs openwrt.md 'Not covered'."
         exit 1 ;;
     *) echo "-- WARN: untested arch $(uname -m), continuing anyway" ;;
 esac
 
 if [ "$FROM_IPK" = 1 ]; then
-    [ -f "$BIN_DST" ] || { echo "ERROR: $BIN_DST missing — package data incomplete."; exit 1; }
-    [ -f "$CONF_SRC" ] || { echo "ERROR: $CONF_SRC missing — package data incomplete."; exit 1; }
+    [ -f "$BIN_DST" ] || { echo "ERROR: $BIN_DST missing: package data incomplete."; exit 1; }
+    [ -f "$CONF_SRC" ] || { echo "ERROR: $CONF_SRC missing: package data incomplete."; exit 1; }
     # Archives built on Windows/MSYS can carry 0644 on the ELF binary (same
-    # story as the center installer) — normalize before the smoke run.
+    # story as the center installer): normalize before the smoke run.
     chmod 755 "$BIN_DST" /etc/init.d/$SERVICE 2>/dev/null || true
     SMOKE_BIN="$BIN_DST"
 else
-    [ -x "$BIN_SRC" ]  || { echo "ERROR: $BIN_SRC not found — run this inside the extracted tarball dir."; exit 1; }
-    [ -f "$INIT_SRC" ] || { echo "ERROR: $INIT_SRC not found — run this inside the extracted tarball dir."; exit 1; }
-    [ -f "$CONF_SRC" ] || { echo "ERROR: $CONF_SRC not found — run this inside the extracted tarball dir."; exit 1; }
+    [ -x "$BIN_SRC" ]  || { echo "ERROR: $BIN_SRC not found: run this inside the extracted tarball dir."; exit 1; }
+    [ -f "$INIT_SRC" ] || { echo "ERROR: $INIT_SRC not found: run this inside the extracted tarball dir."; exit 1; }
+    [ -f "$CONF_SRC" ] || { echo "ERROR: $CONF_SRC not found: run this inside the extracted tarball dir."; exit 1; }
     SMOKE_BIN="$BIN_SRC"
 fi
 
-# A wrong-arch ELF dies with a confusing "not found" from the shell — catch it here.
+# A wrong-arch ELF dies with a confusing "not found" from the shell: catch it here.
 if ! "$SMOKE_BIN" -version >/dev/null 2>&1; then
     echo "ERROR: $SMOKE_BIN fails to execute (router is $(uname -m); binary built for"
     echo "       another GOARCH?). Rebuild with the matching cross-compile target."
@@ -100,10 +100,10 @@ fi
 CONFIG_READY=0
 NET_CIDR=""   # set during generation; referenced in the closing summary
 if [ -f "$CONF_DST" ]; then
-    echo "-- config $CONF_DST exists — keeping it (upgrade install)"
+    echo "-- config $CONF_DST exists: keeping it (upgrade install)"
     grep -qE '^[[:space:]]*url:[[:space:]]*"[^"]+"' "$CONF_DST" 2>/dev/null && CONFIG_READY=1
 else
-    # LAN cidr from uci — same derivation as the center installer (ipcalc when
+    # LAN cidr from uci: same derivation as the center installer (ipcalc when
     # present, pure-ash mask math otherwise).
     NET_NAME="lan"
     NET_CIDR=""
@@ -145,11 +145,11 @@ else
             [ -n "$OCT3" ] && NET_NAME="lan-$OCT3"   # project convention: lan-<3rd octet>
         fi
     fi
-    [ -n "$NET_CIDR" ] || echo "-- WARN: could not derive LAN cidr from uci — edit network.cidr in $CONF_DST"
+    [ -n "$NET_CIDR" ] || echo "-- WARN: could not derive LAN cidr from uci: edit network.cidr in $CONF_DST"
 
     # center url/token: CLI args win; otherwise left as the empty placeholders
     # from the example and the service stays down until the operator fills them.
-    # The replacement text is the FULL quoted value (quotes included) — wrapping
+    # The replacement text is the FULL quoted value (quotes included): wrapping
     # an already-quoted fallback here once produced `url: """"` and a crash loop
     # on the router (field-found on R68S/iStoreOS during the v0.6.0 verify).
     if [ -n "$CENTER_URL" ]; then URL_REPL="\"$CENTER_URL\""; else URL_REPL='""'; fi
@@ -165,12 +165,12 @@ else
     # Guard the generator against itself (same rule as the center installer):
     # a broken sed pipeline must not leave a config that looks generated.
     # Full-line match: value is a quoted string (possibly empty), optional
-    # trailing comment — catches the double-wrapped-quote class (`url: """"`).
+    # trailing comment: catches the double-wrapped-quote class (`url: """"`).
     if [ ! -s "$CONF_DST" ] \
         || ! grep -qE '^[[:space:]]*url:[[:space:]]*"[^"]*"([[:space:]]+.*)?$' "$CONF_DST" \
         || ! grep -qE '^[[:space:]]*auth_token:[[:space:]]*"[^"]*"([[:space:]]+.*)?$' "$CONF_DST" \
         || ! grep -qE '^[[:space:]]*name:[[:space:]]*"[^"]*"([[:space:]]+.*)?$' "$CONF_DST"; then
-        echo "ERROR: generated $CONF_DST failed its sanity check — sed pipeline broken?"
+        echo "ERROR: generated $CONF_DST failed its sanity check: sed pipeline broken?"
         rm -f "$CONF_DST"
         exit 1
     fi
@@ -210,13 +210,13 @@ if [ "$CONFIG_READY" = 1 ]; then
     /etc/init.d/$SERVICE enable
     /etc/init.d/$SERVICE start
     echo "-- service installed + started (boot-enabled)"
-    # The agent has no HTTP port — liveness = the process itself, then one
+    # The agent has no HTTP port: liveness = the process itself, then one
     # logread line proving it reached its polling loop.
     sleep 2
     if pgrep -f "$BIN_DST" >/dev/null 2>&1; then
         echo "-- agent process up (logs: logread -e $SERVICE | tail -20)"
     else
-        echo "-- WARN: agent process not visible — check: logread -e $SERVICE | tail -30"
+        echo "-- WARN: agent process not visible: check: logread -e $SERVICE | tail -30"
     fi
 else
     /etc/init.d/$SERVICE enable

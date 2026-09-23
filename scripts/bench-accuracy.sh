@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bench-accuracy.sh — MiBee vs nmap discovery-accuracy comparison (#283).
+# bench-accuracy.sh: MiBee vs nmap discovery-accuracy comparison (#283).
 #
 # Runs both tools against the same subnet and diffs the ALIVE sets (liveness
 # is the primary accuracy dimension; port/service comparison is a follow-up).
@@ -69,7 +69,7 @@ cat <<EOF
   nmap found: $NMAP_COUNT · MiBee found: $MIBEE_COUNT
   recall (vs nmap): $RECALL% · precision: $PRECISION%
   MiBee-only hosts (TCP-only answers nmap -sn misses): $MIBEE_ONLY
-  nmap-only hosts (MiBee misses — investigate): $NMAP_ONLY
+  nmap-only hosts (MiBee misses: investigate): $NMAP_ONLY
 EOF
 
 if [ "$NMAP_ONLY" -gt 0 ]; then

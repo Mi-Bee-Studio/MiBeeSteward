@@ -96,7 +96,7 @@ func (p *CDPMIBProbe) Name() string { return "active:cdp_mib" }
 func (p *CDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
 	snmp, err := connectSNMPWithRetries(ip, hint, gosnmp.Version2c, 1)
 	if err != nil {
-		return nil, nil // unreachable — not an error, just no topology data
+		return nil, nil // unreachable: not an error, just no topology data
 	}
 	// Note: we keep the connection open for the port-name resolution walk below
 

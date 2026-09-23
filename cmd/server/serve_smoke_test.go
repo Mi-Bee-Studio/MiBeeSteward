@@ -62,7 +62,7 @@ func TestServe_FullLifecycleInProcess(t *testing.T) {
 server:
   host: "127.0.0.1"
   port: %d
-  # Deliberately too low for scanner.default_timeout below — the auto-raise
+  # Deliberately too low for scanner.default_timeout below: the auto-raise
   # guard branch must fire (write_timeout < default_timeout×2+30s).
   write_timeout: "10s"
 database:

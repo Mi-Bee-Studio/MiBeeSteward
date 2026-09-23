@@ -29,7 +29,7 @@ import (
 
 // HeartbeatService manages heartbeat scheduling and result processing.
 type HeartbeatService struct {
-	queries  *db.Queries     // MAIN db — for config CRUD + status sync (NOT per-tick writes)
+	queries  *db.Queries     // MAIN db: for config CRUD + status sync (NOT per-tick writes)
 	mainDB   *sql.DB         // raw main DB conn (for initStatusCache + syncStatus batch writes)
 	store    *HeartbeatStore // dedicated heartbeat_results store (separate file)
 	cfg      config.HeartbeatConfig

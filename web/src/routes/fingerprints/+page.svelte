@@ -225,11 +225,11 @@
 							{#each coverage.devices as d (d.device_uuid)}
 								<tr class="border-b border-border/50 hover:bg-bg/50 transition-colors">
 									<td class="px-4 py-2.5 font-mono text-xs">{d.ip_address}</td>
-									<td class="px-4 py-2.5 text-xs">{d.hostname || '—'}</td>
-									<td class="px-4 py-2.5 text-xs">{d.vendor || '—'}</td>
-									<td class="px-4 py-2.5 text-xs">{d.oui_vendor || '—'}</td>
-									<td class="px-4 py-2.5 font-mono text-xs">{d.ports.join(', ') || '—'}</td>
-									<td class="px-4 py-2.5 text-xs">{d.services.join(', ') || '—'}</td>
+									<td class="px-4 py-2.5 text-xs">{d.hostname || '-'}</td>
+									<td class="px-4 py-2.5 text-xs">{d.vendor || '-'}</td>
+									<td class="px-4 py-2.5 text-xs">{d.oui_vendor || '-'}</td>
+									<td class="px-4 py-2.5 font-mono text-xs">{d.ports.join(', ') || '-'}</td>
+									<td class="px-4 py-2.5 text-xs">{d.services.join(', ') || '-'}</td>
 									<td class="px-4 py-2.5 text-right">
 										<button
 											type="button"

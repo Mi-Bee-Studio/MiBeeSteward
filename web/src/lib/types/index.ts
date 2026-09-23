@@ -15,7 +15,7 @@
 // #274 follow-up: the authoritative API types are GENERATED from
 // docs/openapi.yaml (`npm run gen:api` → src/lib/api/schema.d.ts, drift-
 // checked in CI). This module re-exports the generated schemas under their
-// historical names so call sites stay stable — but the SHAPE is now the
+// historical names so call sites stay stable: but the SHAPE is now the
 // contract's truth, not a hand-maintained copy. Do not re-declare wire
 // shapes here; enrich docs/openapi.yaml and regenerate instead.
 //
@@ -27,7 +27,7 @@
 
 import type { components } from '$lib/api/schema';
 
-/** Generated schema table — every wire type below indexes into this. */
+/** Generated schema table: every wire type below indexes into this. */
 type Schemas = components['schemas'];
 
 export type { components as ApiComponents, paths as ApiPaths } from '$lib/api/schema';
@@ -70,7 +70,7 @@ export type TLSPortCerts = Schemas['TLSPortCerts'];
 export type DeviceCertificatesResponse = Schemas['CertificateList'];
 
 // ---------------------------------------------------------------------------
-// Synthetic probing (拨测) — user-configured external targets
+// Synthetic probing (拨测)，user-configured external targets
 // ---------------------------------------------------------------------------
 
 export type ProbeTarget = Schemas['ProbeTarget'];
@@ -118,7 +118,7 @@ export interface DeviceHealth {
 export type Document = Schemas['Document'];
 
 // ---------------------------------------------------------------------------
-// Topology / Neighbors (L2 adjacency — device_neighbors table)
+// Topology / Neighbors (L2 adjacency: device_neighbors table)
 // ---------------------------------------------------------------------------
 
 /** One neighbor edge as returned by GET /devices/{id}/neighbors. */
@@ -165,9 +165,9 @@ export type NodeExporterConfig = Schemas['PipelineConfig']['node_exporter'];
 export type PipelineConfig = Schemas['PipelineConfig'];
 
 // ---------------------------------------------------------------------------
-// SNMP Credential (issue #135 — SNMPv3)
+// SNMP Credential (issue #135: SNMPv3)
 // ---------------------------------------------------------------------------
-// SNMPCredential is the masked LIST/GET response — passphrases are NEVER
+// SNMPCredential is the masked LIST/GET response: passphrases are NEVER
 // included (not even ciphertext); has_auth/has_priv derive from the protocol
 // fields. SNMPCredentialRequest is the CREATE/UPDATE body: passphrases are
 // plaintext (sent over TLS) and encrypted server-side; on UPDATE an empty
@@ -193,7 +193,7 @@ export type SNMPCredentialListResponse = Schemas['SNMPCredentialList'];
 // ---------------------------------------------------------------------------
 // Dashboard widgets (dashboard cards). The API shape (DashboardConfig) is
 // shared across WidgetPicker (create/edit form), DashboardWidget (rendered
-// card), and the dashboard route's widget state — aliased here once to avoid
+// card), and the dashboard route's widget state: aliased here once to avoid
 // the three-way drift that existed when each file declared its own copy (#71).
 // ---------------------------------------------------------------------------
 
@@ -248,7 +248,7 @@ export type DiscoveryStatus = Schemas['DiscoveryStatus'];
 // ---------------------------------------------------------------------------
 
 export type AgentToken = Schemas['AgentToken'];
-/** Returned only on token creation — includes the plaintext token (once). */
+/** Returned only on token creation: includes the plaintext token (once). */
 export type AgentTokenCreated = Schemas['AgentTokenCreated'];
 
 // ---------------------------------------------------------------------------
@@ -258,7 +258,7 @@ export type AgentTokenCreated = Schemas['AgentTokenCreated'];
 export type AgentCommand = Schemas['AgentCommand'];
 
 // ---------------------------------------------------------------------------
-// Notification rule (notification_rules table — #139 event→channel bindings)
+// Notification rule (notification_rules table: #139 event→channel bindings)
 // ---------------------------------------------------------------------------
 
 export type NotificationRule = Schemas['NotificationRule'];
@@ -278,7 +278,7 @@ export interface NotificationRuleRequest {
 export type NotificationRuleListResponse = Schemas['NotificationRuleList'];
 
 // ---------------------------------------------------------------------------
-// Notification log (notification_log table — outbound dispatch history)
+// Notification log (notification_log table: outbound dispatch history)
 // ---------------------------------------------------------------------------
 
 export type NotificationLog = Schemas['NotificationLog'];

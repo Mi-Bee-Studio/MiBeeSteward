@@ -20,7 +20,7 @@ import type { TopologyGraph, TopoNode, TopoEdge } from '$lib/types';
  * graph (nodes + ALL links including cycles), so ECharts' `graph` series can
  * draw redundant links, STP-blocked ports, and mesh topologies.
  *
- * Layering is heuristic (no real STP root-bridge role in the data yet — the
+ * Layering is heuristic (no real STP root-bridge role in the data yet: the
  * stp_mib probe only emits designated-bridge MAC, not dot1dStpPortRole). The
  * layers drive both the visual grouping (ECharts categories → legend + color)
  * and the force layout (gravity pulls each layer toward its band). True STP
@@ -34,17 +34,17 @@ export const LAYER_ORDER: TopoLayer[] = ['root', 'core', 'access', 'edge'];
 
 /** A node in the force-graph, carrying its layer + computed degree. */
 export interface GraphNode {
-	/** Numeric device id — ECharts graph uses this as the node id (coerced to string internally). */
+	/** Numeric device id: ECharts graph uses this as the node id (coerced to string internally). */
 	id: number;
 	name: string;
 	value: TopoNode;
 	/** Undirected link count (both ends counted). Drives symbolSize. */
 	degree: number;
-	/** Heuristic layer — drives category (color/gravity) + legend. */
+	/** Heuristic layer: drives category (color/gravity) + legend. */
 	layer: TopoLayer;
 	/** ECharts category index (matches LAYER_ORDER). */
 	category: number;
-	/** True for the detectedRoot — gets the gateway glyph. */
+	/** True for the detectedRoot: gets the gateway glyph. */
 	isRoot: boolean;
 }
 
@@ -89,14 +89,14 @@ const ENDPOINT_TYPES = new Set([
 const CORE_TYPES = new Set(['switch', 'router', 'firewall']);
 
 /**
- * detectRoot picks the topology root — the device that should sit at the top of
+ * detectRoot picks the topology root: the device that should sit at the top of
  * the visualization. Heuristic, in priority order:
  *   1. Highest ARP in-degree (the gateway most devices ARP toward), preferring
  *      an explicit router-typed node among ties.
  *   2. Any router-typed node (when no ARP edges exist).
  *   3. Highest-degree node, preferring an IP ending in .1 (LAN gateway convention).
  *
- * Unchanged from topologyTree.ts — just relocated so both detectRoot + buildGraph
+ * Unchanged from topologyTree.ts: just relocated so both detectRoot + buildGraph
  * live in the force-graph module.
  */
 export function detectRoot(graph: TopologyGraph): TopoNode | null {
@@ -208,7 +208,7 @@ function classifyLayer(node: TopoNode, isRoot: boolean): TopoLayer {
  * buildGraph turns the raw /topology API response into the force-graph payload.
  *
  * Unlike the old buildTree, this preserves EVERY edge (including cycle-closing
- * cross-links and edges to unidentified neighbors) — a `graph` series renders
+ * cross-links and edges to unidentified neighbors): a `graph` series renders
  * mesh topologies that a `tree` series cannot.
  *
  * Degree is undirected (counts both endpoints of each link) and is the basis
@@ -283,7 +283,7 @@ export function buildGraph(graph: TopologyGraph): GraphBuildResult {
 	// BFS from root (then any unreached node) to mark cross-links (cycle-closing
 	// edges). This mirrors the old buildTree's cross-link detection: a tree edge
 	// reaches an unvisited node; a non-tree edge (to an already-visited node) is
-	// a cross-link. BOTH are emitted as graph links — only the flag differs.
+	// a cross-link. BOTH are emitted as graph links: only the flag differs.
 	const visited = new Set<number>();
 	const crossLinkSet = new Set<string>(); // "from>to" keys
 
@@ -310,7 +310,7 @@ export function buildGraph(graph: TopologyGraph): GraphBuildResult {
 		if (!visited.has(node.id)) bfsFrom(node.id);
 	}
 
-	// Build the link list. Include edges to unidentified neighbors (to=null) —
+	// Build the link list. Include edges to unidentified neighbors (to=null);
 	// they render as dashed links to a synthetic "unknown" stub in the component.
 	const links: GraphLink[] = [];
 	for (const { from, to, edge } of resolved) {

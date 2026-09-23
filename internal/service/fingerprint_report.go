@@ -448,9 +448,9 @@ func significantToken(s string, maxLen int) string {
 	return strings.TrimSpace(s)
 }
 
-const draftHeader = `# MiBee Steward fingerprint rule draft (auto-generated — #282 contribution loop).
+const draftHeader = `# MiBee Steward fingerprint rule draft (auto-generated: #282 contribution loop).
 #
-# This file PARSES AND COMPILES as-is — fill in the TODOs (service name),
+# This file PARSES AND COMPILES as-is: fill in the TODOs (service name),
 # tune the match values, then contribute it:
 #   1. Edit rules: pick the distinctive token for your device (see
 #      docs/en/fingerprint-spec.md for the match/extract grammar).
@@ -458,14 +458,14 @@ const draftHeader = `# MiBee Steward fingerprint rule draft (auto-generated — 
 #      classifier; re-check after edits by re-importing in MiBee.
 #   3. Contribute: PR against configs/fingerprints/ (CC-BY-SA 4.0 corpus).
 #
-# Generated from live scan evidence — match values are real observations
+# Generated from live scan evidence: match values are real observations
 # from your network.
 
 `
 
 const draftNoRulesNote = `# No banner / HTTP / SNMP / RTSP evidence is stored for this device, so no
 # rule could be pre-filled. Trigger a scan of this IP first (scanner → scan),
-# then generate the draft again — evidence older than the retention window
+# then generate the draft again: evidence older than the retention window
 # (default 14d) is pruned.
 `
 

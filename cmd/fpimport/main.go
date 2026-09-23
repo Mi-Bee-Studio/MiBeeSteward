@@ -175,7 +175,7 @@ type recogTarget struct {
 	field       string // RawData key to match against
 	serviceHint string // nominal service for rule-id naming
 	stripKind   string // "ssh" = strip "SSH-x.y-", "respcode" = strip "NNN "
-	kind        string // evidence Kind to scope to (e.g. "snmp" — prevents sysDescr patterns matching banners)
+	kind        string // evidence Kind to scope to (e.g. "snmp": prevents sysDescr patterns matching banners)
 }
 
 var recogTargetMap = map[string]recogTarget{
@@ -370,7 +370,7 @@ func importOUI(srcPath, outPath string) error {
 		return err
 	}
 	defer out.Close()
-	fmt.Fprintln(out, "# IEEE OUI vendor mapping — factual registry, cite IEEE.")
+	fmt.Fprintln(out, "# IEEE OUI vendor mapping: factual registry, cite IEEE.")
 	fmt.Fprintln(out, "# Generated/validated by fpimport oui. See docs/en/fingerprint-spec.md §8.")
 	count := 0
 	scanner := newLineScanner(in)

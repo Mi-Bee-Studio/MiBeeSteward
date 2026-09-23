@@ -152,7 +152,7 @@ func (p *SNMPProbe) trySNMP(ctx context.Context, ip string, hint scannerv2.Probe
 func snmpGetOnce(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersion) (map[string]string, bool) {
 	snmp, err := connectSNMP(ip, hint, version)
 	if err != nil {
-		return nil, false // host may simply not run SNMP — no evidence
+		return nil, false // host may simply not run SNMP: no evidence
 	}
 	defer snmp.Close()
 

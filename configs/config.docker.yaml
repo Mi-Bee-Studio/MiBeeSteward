@@ -1,4 +1,4 @@
-# MiBee Steward — Docker 容器部署专用配置模板
+# MiBee Steward，Docker 容器部署专用配置模板
 #
 # 与 config.production.yaml 的差异：
 #   1. 显式 network 段（容器需要知道自己扫描哪个 LAN）

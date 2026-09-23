@@ -29,7 +29,7 @@ const exportChunkSize = 1000
 // ExportService handles data export for devices, heartbeat results, and audit logs.
 type ExportService struct {
 	db     *db.Queries // main DB (devices, audit logs)
-	hb     *db.Queries // dedicated heartbeat store (heartbeat_results) — nil falls back to db
+	hb     *db.Queries // dedicated heartbeat store (heartbeat_results): nil falls back to db
 	dbConn *sql.DB     // raw connection for the scope-restricted device export (closed mode)
 }
 
