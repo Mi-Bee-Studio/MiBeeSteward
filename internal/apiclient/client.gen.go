@@ -1067,7 +1067,10 @@ type DiscoveryStatus struct {
 		IdentifyDead      int64 `json:"IdentifyDead"`
 		IdentifyTriggered int64 `json:"IdentifyTriggered"`
 		KnownHostSkipped  int64 `json:"KnownHostSkipped"`
-		SuppressedRecent  int64 `json:"SuppressedRecent"`
+
+		// MACOnlyEnriched MAC-only sightings (WiFi associations) whose telemetry was merged into a known device
+		MACOnlyEnriched  *int64 `json:"MACOnlyEnriched,omitempty"`
+		SuppressedRecent int64  `json:"SuppressedRecent"`
 	} `json:"stats"`
 	Uptime string `json:"uptime"`
 }

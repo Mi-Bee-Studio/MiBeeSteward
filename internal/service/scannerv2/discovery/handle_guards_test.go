@@ -70,3 +70,38 @@ func TestHandle37_KnownHostSkippedAndRingTrim(t *testing.T) {
 	}
 	require.Len(t, svc.lastEvents, maxRecentEvents, "recent-event ring trims to capacity")
 }
+
+// A MAC-only event (WiFi association from hostapd) enriches a known device's
+// scan_attributes with the WiFi telemetry and never touches its IP or the
+// device bridge; an unknown MAC creates no device.
+func TestHandle_MACOnlyEnrich(t *testing.T) {
+	ctx := context.Background()
+	conn := memoryDB(t)
+
+	sink := &recSink37{}
+	svc := newDiscSvc37(sink, conn)
+
+	_, err := conn.Exec(`INSERT INTO devices (name, ip_address, mac_address, status, device_uuid)
+		VALUES ('phone', '10.0.0.31', 'aa:bb:cc:dd:ee:31', 'online', 'seed-mac31')`)
+	require.NoError(t, err)
+
+	svc.handle(ctx, NewHostEvent{MAC: "aa:bb:cc:dd:ee:31", Source: "hostapd",
+		Hints: map[string]string{"wifi_signal_dbm": "-52", "wifi_ssid": "home"}})
+	require.Empty(t, sink.reports, "MAC-only events never reach the device bridge")
+
+	var attrs, ip string
+	require.NoError(t, conn.QueryRow(
+		`SELECT scan_attributes, ip_address FROM devices WHERE mac_address = 'aa:bb:cc:dd:ee:31'`).Scan(&attrs, &ip))
+	require.Equal(t, "10.0.0.31", ip, "enrich-only must not touch the IP")
+	require.Contains(t, attrs, `"signal_dbm":"-52"`)
+	require.Contains(t, attrs, `"ssid":"home"`)
+
+	require.Equal(t, int64(1), svc.Status().Stats.MACOnlyEnriched)
+
+	// An unknown MAC is dropped: no device fabricated for a MAC with no L3
+	// sighting, and the dedup window suppresses a repeat burst either way.
+	svc.handle(ctx, NewHostEvent{MAC: "de:ad:be:ef:00:01", Source: "hostapd"})
+	var n int
+	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM devices WHERE mac_address = 'de:ad:be:ef:00:01'`).Scan(&n))
+	require.Zero(t, n)
+}
