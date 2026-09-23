@@ -26,7 +26,7 @@ import (
 // TestRunAgent_LifecycleAndCleanShutdown drives the REAL agent lifecycle
 // in-process: mini-DB open + migrations, engine assembly, reporter, runner,
 // scheduler, passive-discovery sources, vantage prober, command poller, and
-// the remote-ops wiring — then cancels the context and asserts the graceful
+// the remote-ops wiring, then cancels the context and asserts the graceful
 // stop sequence returns nil. The center URL points at a dead loopback port:
 // the reporter/poller are expected to fail-and-retry in the background, which
 // is the agent's normal degraded mode and exactly what the lifecycle must
@@ -86,7 +86,7 @@ scanner:
 }
 
 // TestRunAgent_BadDBPath verifies the startup failure contract: a data
-// directory that cannot be created surfaces as a returned error, not a
+// directory that cannot be created shows up as a returned error, not a
 // process exit.
 func TestRunAgent_BadDBPath(t *testing.T) {
 	prev := slog.Default()

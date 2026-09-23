@@ -90,8 +90,8 @@ func TestAuthenticator_CookieTokenWorks(t *testing.T) {
 }
 
 // TestAuthenticator_CookiePreferredOverBearer pins extractToken's cookie-first
-// precedence: when both are present, the cookie wins. (The reverse — valid
-// bearer shadowed by an invalid cookie — is the auth-bypass case this guards.)
+// precedence: when both are present, the cookie wins. (The reverse, valid
+// bearer shadowed by an invalid cookie, is the auth-bypass case this guards.)
 func TestAuthenticator_CookiePreferredOverBearer(t *testing.T) {
 	useJWTAuth(t)
 	valid := issueToken(t, map[string]any{"user_id": 1.0, "role": "user"})

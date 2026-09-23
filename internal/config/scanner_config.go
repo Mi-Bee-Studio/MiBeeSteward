@@ -10,7 +10,7 @@ package config
 
 // ScannerConfig and its sub-types were extracted from config.go to keep that
 // file manageable (the scanner subsystem alone is ~230 lines of config types).
-// All types here are plain data structs with koanf tags — no methods, no logic.
+// All types here are plain data structs with koanf tags, no methods, no logic.
 
 type ScannerConfig struct {
 	Enabled            bool `koanf:"enabled"`
@@ -20,7 +20,7 @@ type ScannerConfig struct {
 	// AllowReservedTargets is the escape hatch for the reserved-range scan
 	// target rejection (#317). Default false: loopback / unspecified /
 	// link-local / multicast / broadcast / 240-4 space is rejected at every
-	// entry point — a scheduled loopback task once invented 1022 phantom
+	// entry point, a scheduled loopback task once invented 1022 phantom
 	// devices that resurrected daily. Set true ONLY for synthetic planes
 	// (cmd/loadgen serves its benchmark fleet on 127/8, where the kernel
 	// answers ICMP for free); config-file access is already admin-only.
@@ -28,19 +28,19 @@ type ScannerConfig struct {
 	// LostThreshold is the number of consecutive scans a device must be absent
 	// from the alive set before being declared "lost" (default 2). Single
 	// missed scans (ICMP drop, brief host downtime, network jitter) must not
-	// flap a device offline — see architecture-future.md §8 note 3 (去抖动/grace
+	// flap a device offline，see architecture-future.md §8 note 3 (去抖动/grace
 	// period). This is the scan-side (absence-based) death sensitivity; the
 	// heartbeat-side (probe-based) sensitivity is heartbeat.offline_threshold.
 	// 0 means "use the default" (2). Applied by DetectLost (runner), shared by
 	// the local scan path + the agent→center ingestion path + the lease sweeper.
 	LostThreshold int `koanf:"lost_threshold"`
 	// ConfigBackup configures the periodic device running-config backup (#137).
-	// Disabled by default — requires security.master_key + at least one device
+	// Disabled by default, requires security.master_key + at least one device
 	// with an SSH credential bound. See BackupConfig.
 	ConfigBackup BackupConfig `koanf:"config_backup"`
 	// PerProbeTimeout bounds a SINGLE probe attempt (one SNMP Get, one TCP dial,
 	// one HTTP fetch) in seconds. Distinct from default_timeout (which bounds
-	// the whole per-host pipeline). Default 3s — keeps /24 scans fast even when
+	// the whole per-host pipeline). Default 3s, keeps /24 scans fast even when
 	// many hosts are unresponsive (each dead host fails in seconds, not minutes).
 	PerProbeTimeout    int                    `koanf:"per_probe_timeout"`
 	RetentionDays      int                    `koanf:"retention_days"`
@@ -68,7 +68,7 @@ type ScannerConfig struct {
 	RouterARP RouterARPConfig `koanf:"router_arp"`
 	// RDNS tunes the reverse-DNS probe (active:rdns). By default the probe uses
 	// the system resolver (/etc/resolv.conf), which on a center box often points
-	// at a public DNS with no view into the LAN's DHCP-synthesized PTR records —
+	// at a public DNS with no view into the LAN's DHCP-synthesized PTR records;
 	// so hostnames are missed for devices that DO have a PTR on the local DNS.
 	// Populating RDNS.DNSServers (e.g. the router/LAN DNS IP) makes the probe
 	// query those servers directly for PTR records, dramatically improving
@@ -81,7 +81,7 @@ type ScannerConfig struct {
 	// ARPScan is the active ARP-sweep source: it broadcasts ARP who-has requests
 	// for every IP in the local subnet and emits a NewHostEvent for each reply.
 	// Unlike router_arp (needs SNMP) or arp_cache (passive read), this needs no
-	// router access and covers the whole broadcast domain — every host MUST
+	// router access and covers the whole broadcast domain, every host MUST
 	// answer ARP. Needs CAP_NET_RAW + the WITH_ARPSCAN build tag; the toggle in
 	// Discovery.ARPScan gates it, but it remains a no-op in the default build.
 	ARPScan ARPScanConfig `koanf:"arp_scan"`
@@ -94,7 +94,7 @@ type ScannerConfig struct {
 	Discovery DiscoveryConfig `koanf:"discovery"`
 	// AgentLeaseTTL is how long an agent-managed device's snapshot may stay
 	// stale (no agent report refreshing it) before the lease sweeper declares
-	// it lost. Go duration string (e.g. "5m"). Default "5m" — ~10 missed
+	// it lost. Go duration string (e.g. "5m"). Default "5m", ~10 missed
 	// reports at the agent's 30s cadence, absorbing agent restarts/splits.
 	AgentLeaseTTL string `koanf:"agent_lease_ttl"`
 	// LeaseSweepInterval is how often the background lease sweeper runs the
@@ -103,7 +103,7 @@ type ScannerConfig struct {
 	LeaseSweepInterval string `koanf:"lease_sweep_interval"`
 	// ReconcileInterval is how often the background network-attribution
 	// reconciliation job runs (issue #19 Layer 3). The job detects devices whose
-	// IP falls outside their stamped network's CIDR — the bottom-line defense
+	// IP falls outside their stamped network's CIDR, the bottom-line defense
 	// that catches drift the Layer 1/2 boundary checks miss. Go duration string.
 	// Default "1h" (it's a low-frequency audit, not a hot path). Center-only.
 	ReconcileInterval string `koanf:"reconcile_interval"`
@@ -121,7 +121,7 @@ type RouterARPConfig struct {
 // service fetches each router/switch/firewall device's running-config over SSH
 // (using its bound ssh_credential), diffs it, and records a version when it
 // changes. All fields default (0/empty) → "use sensible defaults"; Enabled
-// defaults to false (opt-in — requires master_key + bound SSH credentials).
+// defaults to false (opt-in, requires master_key + bound SSH credentials).
 type BackupConfig struct {
 	Enabled  bool `koanf:"enabled"`
 	Interval int  `koanf:"interval_seconds"` // seconds between sweeps; <=0 → 6h
@@ -182,7 +182,7 @@ type DiscoveryConfig struct {
 	// inferred_type="unknown" and a bare ICMP heartbeat. Default true.
 	TriggerIdentify bool `koanf:"trigger_identify"`
 	// RouterARP walks scanner.router_arp.routers' SNMP ARP tables (the widest-
-	// coverage source — a gateway knows every host that talks through it).
+	// coverage source, a gateway knows every host that talks through it).
 	// No-op when scanner.router_arp.routers is empty.
 	RouterARP DiscoverySourceToggle `koanf:"router_arp"`
 	// ARPCache diffs the local /proc/net/arp kernel cache. Zero network
@@ -201,14 +201,14 @@ type DiscoveryConfig struct {
 	// DHCPLeases reads the local DHCP server's lease table (dnsmasq's
 	// /tmp/dhcp.leases on OpenWrt / /var/lib/misc/dnsmasq.leases on Debian). A
 	// Tier-1 router-resident signal: the gateway is the DHCP authority, so its
-	// lease table is the authoritative hostname↔MAC↔IP map — covering devices
+	// lease table is the authoritative hostname↔MAC↔IP map, covering devices
 	// (sleeping IoT, firewalled hosts) that never answer SNMP/ICMP/rDNS. No-op
 	// on a host that isn't the LAN's DHCP server (file absent → source skips).
 	DHCPLeases DiscoverySourceToggle `koanf:"dhcp_leases"`
 	// Conntrack reads the kernel conntrack table (/proc/net/nf_conntrack) and
 	// emits the LAN-side endpoint of every ESTABLISHED/ASSURED flow. A Tier-1
 	// router-resident signal: the gateway is the NAT choke point, so its
-	// conntrack table is the authoritative "who is talking RIGHT NOW" view — a
+	// conntrack table is the authoritative "who is talking RIGHT NOW" view, a
 	// liveness + discovery source for hosts that don't answer active probes but
 	// maintain outbound flows. Filters to the local LAN CIDR (network.cidr) so
 	// it doesn't emit a row per public IP a device talks to. No-op when the
@@ -221,7 +221,7 @@ type DiscoveryConfig struct {
 	// wired host-based scanner. No-op on a host without WiFi / hostapd / iw.
 	Hostapd HostapdDiscoveryConfig `koanf:"hostapd"`
 	// DNSLog tails a dnsmasq query log (--log-queries output) and emits the
-	// querying host per DNS query — a powerful passive fingerprint (devices that
+	// querying host per DNS query, a powerful passive fingerprint (devices that
 	// block all inbound probes still make outbound DNS). A Tier-1 router signal:
 	// the gateway is typically the LAN's recursive resolver. No-op when dnsmasq
 	// query logging isn't configured (no log file at the conventional paths).

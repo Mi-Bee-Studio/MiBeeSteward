@@ -22,7 +22,7 @@ import (
 // These tests pin ScannerTaskHandler's HTTP error→status mapping (#171). The
 // underlying taskservice is covered by taskservice_test.go (incl. the
 // scheduler-coupled paths, #205); this locks the thin adapter: create/list/get
-// CRUD + the ErrScanTaskNotFound→404 mapping. A nil scheduler is fine — CRUD
+// CRUD + the ErrScanTaskNotFound→404 mapping. A nil scheduler is fine, CRUD
 // doesn't dispatch scans.
 
 const validScanTaskBody = `{"name":"nightly","targets":"192.168.1.0/24","cron_expr":"0 2 * * *","timeout":60,"concurrent_hosts":16,"pipeline_config":{"icmp":{"enabled":true,"timeout":2}}}`

@@ -44,7 +44,7 @@ func setupDeviceConfigHandler(t *testing.T) (h *DeviceConfigHandler, q *db.Queri
 
 	ctx := context.Background()
 	// device_uuid is UNIQUE on fresh schemas (#268 folded the identity
-	// indexes into schema.sql) — seed distinct uuids.
+	// indexes into schema.sql), seed distinct uuids.
 	r1, err := conn.Exec(`INSERT INTO devices (name, ip_address, device_uuid) VALUES ('r1', '10.0.0.1', 'uuid-r1')`)
 	require.NoError(t, err)
 	dev1, err = r1.LastInsertId()

@@ -118,7 +118,7 @@ func TestDeviceConfigs_ListOmitsConfigText(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
-	// The list projection omits config_text — the generated ListDeviceConfigsRow
+	// The list projection omits config_text, the generated ListDeviceConfigsRow
 	// type has NO ConfigText field at all (compile-time guarantee). It still
 	// carries the metadata needed for the history list.
 	require.NotEmpty(t, rows[0].ConfigHash)

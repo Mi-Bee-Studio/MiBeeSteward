@@ -34,7 +34,7 @@ func TestDiff_NoChangeWhenOnlyVolatileKeysDiffer(t *testing.T) {
 }
 
 // TestDiff_DetectsRealAttributeChange ensures a genuine scan_attributes change
-// (e.g. vendor re-identified) still surfaces after volatile-key stripping.
+// (e.g. vendor re-identified) still shows up after volatile-key stripping.
 func TestDiff_DetectsRealAttributeChange(t *testing.T) {
 	before := snapshotWithAttrs(t, `{"vendor":"nginx","last_scanned_at":"2026-07-22T13:47:29Z"}`)
 	after := snapshotWithAttrs(t, `{"vendor":"apache","last_scanned_at":"2026-07-22T13:57:29Z"}`)
@@ -58,7 +58,7 @@ func TestNormalizeScanAttrs_EdgeCases(t *testing.T) {
 	require.Equal(t, "", normalizeScanAttrs(""))
 	require.Equal(t, "not-json", normalizeScanAttrs("not-json"))
 	// A JSON array (the corrupted array-form seen in production data) is not a
-	// JSON object — it must pass through unchanged so it still diffs as a real
+	// JSON object, it must pass through unchanged so it still diffs as a real
 	// change rather than silently masking corruption.
 	require.Equal(t, `["{...}","{...}"]`, normalizeScanAttrs(`["{...}","{...}"]`))
 }
@@ -66,7 +66,7 @@ func TestNormalizeScanAttrs_EdgeCases(t *testing.T) {
 // TestDiffIdentity_StatusExcluded is the regression test for the liveness/
 // identity conflation: an offline→online (or online→offline) status flip MUST
 // NOT register as a device_changed event. status is a liveness signal owned by
-// the heartbeat service and the device_lost/device_recovered topology events —
+// the heartbeat service and the device_lost/device_recovered topology events;
 // it must never single-handedly trip device_changed. This was the core of the
 // flap loop (one device_lost + one device_changed per flap cycle).
 func TestDiffIdentity_StatusExcluded(t *testing.T) {
@@ -79,7 +79,7 @@ func TestDiffIdentity_StatusExcluded(t *testing.T) {
 }
 
 // TestDiffIdentity_DetectsRealIdentityChange confirms a genuine identity change
-// (e.g. a router swap renamed the device) still surfaces via DiffIdentity,
+// (e.g. a router swap renamed the device) still shows up via DiffIdentity,
 // while the classification-only wobble (open_ports/services) goes to
 // DiffClassification instead of triggering device_changed.
 func TestDiffIdentity_DetectsRealIdentityChange(t *testing.T) {
@@ -166,7 +166,7 @@ func TestDBRecorder_CooldownDedup(t *testing.T) {
 	})
 	require.Equal(t, 2, countChangeLog(t), "first device_lost emits (liveness key unused)")
 
-	// device_recovered immediately after — same liveness key, within cooldown →
+	// device_recovered immediately after, same liveness key, within cooldown →
 	// SUPPRESSED. This is the flap fix: a rapid lost→recovered bounce collapses
 	// to one recorded transition, not a storm.
 	rec.Record(ctx, ChangeEvent{
@@ -225,7 +225,7 @@ var testDBConn *sql.DB
 
 // TestDeviceSnapshotJSONContract pins the exact JSON field set the change-log
 // payloads (before_data/after_data) carry. The frontend parses these by field
-// name (web/src/lib/changesDiff.ts buildDiff + the changefields.* labels) —
+// name (web/src/lib/changesDiff.ts buildDiff + the changefields.* labels);
 // renaming, removing, or adding a field here is a cross-stack contract change
 // that must update the frontend parser and its tests (web/src/__tests__/
 // changesDiff.test.ts) in the same PR. This test exists so the Go side cannot

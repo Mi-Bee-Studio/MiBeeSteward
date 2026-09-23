@@ -48,7 +48,7 @@ func TestRouterTimeout_DefaultAndOverride(t *testing.T) {
 func TestRouterResidentSourcesOn(t *testing.T) {
 	// No resident source enabled → false.
 	require.False(t, routerResidentSourcesOn(config.DiscoveryConfig{}))
-	// Each source alone flips it true (OR semantics — any one resident reader
+	// Each source alone flips it true (OR semantics, any one resident reader
 	// means the router may see hosts the active sweep missed).
 	require.True(t, routerResidentSourcesOn(config.DiscoveryConfig{
 		ARPCache: config.DiscoverySourceToggle{Enabled: true},

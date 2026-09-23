@@ -20,7 +20,7 @@ import (
 // (algorithm + storage) is covered by service/totp_test.go; the thin handler
 // layer (error→status mapping) was untested. The load-bearing security invariant
 // is the BYPASS GUARD: Verify with a wrong code MUST be rejected (422), never
-// accepted — a regression here is a 2FA bypass = account takeover.
+// accepted, a regression here is a 2FA bypass = account takeover.
 
 // setupAndEnable2FA seeds a user, logs in, runs the setup→enable flow with a
 // valid current code, and returns the secret + the user's id + login token.

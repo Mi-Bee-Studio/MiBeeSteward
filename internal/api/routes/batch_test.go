@@ -7,7 +7,7 @@ import (
 )
 
 // chunkSlice splits a slice into chunks of the given size. Test-only helper
-// (moved out of routes.go in #132 — it had no production callers, only this
+// (moved out of routes.go in #132, it had no production callers, only this
 // test). Kept here so the batching logic stays under test.
 func chunkSlice[S any](items []S, batchSize int) [][]S {
 	if batchSize <= 0 {

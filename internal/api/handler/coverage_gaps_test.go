@@ -206,7 +206,7 @@ func seedCoverageDevice(t *testing.T, db *sql.DB, name, ip string) int64 {
 }
 
 // seedChannel inserts a notification channel row directly (the coverage server
-// does not wire the channel CRUD routes — those have their own tests).
+// does not wire the channel CRUD routes, those have their own tests).
 func seedChannel(t *testing.T, db *sql.DB) int64 {
 	t.Helper()
 	res, err := db.Exec(`INSERT INTO notification_channels (name, type, config) VALUES ('rules-hook', 'webhook', '{}')`)
@@ -241,7 +241,7 @@ func TestNotificationRuleEndpoints_CRUDAndValidation(t *testing.T) {
 	require.Equal(t, true, created["enabled"])
 	ruleID := idToString(created["id"])
 
-	// Invalid scope config → 400 (service validation surfaces verbatim).
+	// Invalid scope config → 400 (service validation errors are returned verbatim).
 	resp = authPost(t, server.URL+"/api/v1/notification/rules", token,
 		`{"name":"bad","event_type":"device_lost","scope_type":"network","channel_id":`+
 			strconv.FormatInt(channelID, 10)+`}`)
@@ -451,7 +451,7 @@ func TestExportEndpoints_DevicesAuditLogsHeartbeat(t *testing.T) {
 	token := loginAsAdmin(t, server)
 	deviceID := seedCoverageDevice(t, db, "export-host", "10.9.2.1")
 
-	// Devices CSV (default format) — content-type + disposition headers.
+	// Devices CSV (default format), content-type + disposition headers.
 	resp := authGet(t, server.URL+"/api/v1/devices/export", token)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "text/csv; charset=utf-8", resp.Header.Get("Content-Type"))

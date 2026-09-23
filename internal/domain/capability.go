@@ -77,7 +77,7 @@ var roleCapabilities = map[UserRole]map[Capability]bool{
 }
 
 // RoleHas reports whether the role grants the capability. An unknown role (e.g.
-// an empty/invalid value) grants nothing — fail-closed.
+// an empty/invalid value) grants nothing, fail-closed.
 func RoleHas(role UserRole, capability Capability) bool {
 	caps, ok := roleCapabilities[role]
 	if !ok {

@@ -52,7 +52,7 @@ func TestAgentCommand_UnauthedBranches(t *testing.T) {
 	resp, err = http.Get(srv.URL + "/api/v1/agents/status")
 	require.NoError(t, err)
 	resp.Body.Close()
-	// FleetStatus without agent context: it doesn't read the context — answers 200.
+	// FleetStatus without agent context: it doesn't read the context, answers 200.
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	resp, err = http.Post(srv.URL+"/api/v1/agents/probe-report", "application/json", nil)

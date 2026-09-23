@@ -19,7 +19,7 @@ import (
 
 // TestSNMPCredentialSubcommand_ListWithoutMasterKey pins the os.Exit-free CLI
 // shell: `list` on a vault-less config prints the disabled warning but still
-// completes (every OTHER action exits — only list is testable in-process).
+// completes (every OTHER action exits, only list is testable in-process).
 func TestSNMPCredentialSubcommand_ListWithoutMasterKey(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "agent.yaml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("server:\n  port: 0\nauth:\n  jwt_secret: 0123456789abcdef0123456789abcdef\n"), 0o600))

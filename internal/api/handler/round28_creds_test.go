@@ -15,7 +15,7 @@ import (
 )
 
 // TestCredentialHandlers_DeadDB_Sweep drives the SNMP + SSH credential
-// handlers over a dead handle: every storage-touching branch surfaces a 500
+// handlers over a dead handle: every storage-touching branch returns a 500
 // (create insert, list, get, update fetch, delete) without panicking, and
 // the pure validation arms (bad body / bad ID / missing fields) answer 400.
 func TestCredentialHandlers_DeadDB_Sweep(t *testing.T) {

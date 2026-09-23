@@ -33,7 +33,7 @@ type ScannerResultHandler struct {
 	queries *db.Queries
 	conn    db.DBTX
 	svc     *service.ScannerResultService
-	// conn is the raw connection used by listResultsSorted — sqlc can't express
+	// conn is the raw connection used by listResultsSorted, sqlc can't express
 	// the dynamic ORDER BY the sort-aware list needs, so that one query is raw
 	// SQL with a whitelist-controlled column (mirrors repository/device.go).
 }
@@ -59,7 +59,7 @@ var scanResultSortWhitelist = map[string]string{
 // caller's object-level scope (#138 Phase 2c). Global scopes always pass; a
 // restricted scope passes only when the task carries a resolved network_id in
 // the granted set (NULL = cross-network → hidden). A missing task returns
-// false — callers map that onto their not-found path (404) so out-of-scope
+// false, callers map that onto their not-found path (404) so out-of-scope
 // resources are indistinguishable from absent ones.
 func (h *ScannerResultHandler) taskInScope(ctx context.Context, taskID int64, scope domain.Scope) bool {
 	if scope.IsGlobal() {
@@ -105,7 +105,7 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Server-side sort. With no sort token the query keeps its default
-	// (scanned_at DESC) via the sqlc ListScanResults path — zero behavior
+	// (scanned_at DESC) via the sqlc ListScanResults path, zero behavior
 	// change. With a sort token we route through listResultsSorted (raw SQL),
 	// which sorts the WHOLE filtered set before LIMIT/OFFSET, so a header click
 	// reorders globally rather than just the visible page slice (#55).
@@ -184,7 +184,7 @@ func (h *ScannerResultHandler) ListResults(w http.ResponseWriter, r *http.Reques
 // listResultsSorted runs the same WHERE/LIMIT/OFFSET as ListScanResults but
 // with a whitelist-controlled ORDER BY, so a sort applies across the whole
 // filtered set (not just the visible page slice). sqlc can't express the
-// dynamic ORDER BY, hence the raw SQL — the column is resolved from
+// dynamic ORDER BY, hence the raw SQL, the column is resolved from
 // scanResultSortWhitelist (never interpolated raw from user input), and every
 // user value (task_id/ip/alive/limit/offset) is still bound as a `?` param.
 // The SELECT column order MUST match db.ScanResult's Scan order (see

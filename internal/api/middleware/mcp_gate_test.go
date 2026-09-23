@@ -20,7 +20,7 @@ import (
 // The must-change-password gate: a token minted while the user's flag was set
 // carries mcp=true and must be locked out of everything except the
 // change-survival allowlist (force-password, profile GET, 2FA management).
-// This is the server-side enforcement of the first-login flow — a regression
+// This is the server-side enforcement of the first-login flow, a regression
 // here turns the forced change back into an SPA-only courtesy.
 
 func TestAuthenticator_MCPBlocksOtherEndpoints(t *testing.T) {
@@ -56,7 +56,7 @@ func TestAuthenticator_MCPAllowlist(t *testing.T) {
 	}
 }
 
-// Profile PUT is a mutation outside the change flow — still gated.
+// Profile PUT is a mutation outside the change flow, still gated.
 func TestAuthenticator_MCPBlocksProfilePut(t *testing.T) {
 	useJWTAuth(t)
 	tok := issueToken(t, map[string]any{"user_id": 1.0, "role": "admin", "mcp": true})
@@ -82,7 +82,7 @@ func TestAuthenticator_TokenWithoutMCPPasses(t *testing.T) {
 	require.Equal(t, "uid=2 role=user", rec.Body.String())
 }
 
-// The gate must live in the Authenticator only — anonymous requests (no
+// The gate must live in the Authenticator only, anonymous requests (no
 // token) are public routes' business and never see it.
 func TestAuthenticator_MCPGateNoTokenUnaffected(t *testing.T) {
 	useJWTAuth(t)

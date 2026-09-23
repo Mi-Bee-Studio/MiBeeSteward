@@ -23,7 +23,7 @@ import (
 
 // TestUpdateDeviceMetrics_TracksDBChanges pins the refresh semantics the 60s
 // refresher loop relies on (#333): a second call after devices are removed /
-// added must move the gauges to the new DB state — including label
+// added must move the gauges to the new DB state, including label
 // combinations dropping to zero (a status with no devices left disappears
 // entirely via the Reset, not a stale nonzero reading).
 func TestUpdateDeviceMetrics_TracksDBChanges(t *testing.T) {

@@ -24,7 +24,7 @@ import (
 )
 
 // insertScanResultsForSort seeds one scan_task plus a set of scan_results with
-// deliberately varied ip / alive / ports-array-length so each sort key resolves
+// varied ip / alive / ports-array-length so each sort key resolves
 // to a distinct first row. Returns the task_id the rows belong to.
 func insertScanResultsForSort(t *testing.T, d *sql.DB) int64 {
 	t.Helper()
@@ -124,7 +124,7 @@ func TestScannerResults_Sort(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&allResp))
 	require.Equal(t, 3, allResp.Total, "all 3 seeded rows should be visible without a sort")
 
-	// SQL-injection / unknown token must NOT be interpolated into ORDER BY — it
+	// SQL-injection / unknown token must NOT be interpolated into ORDER BY, it
 	// falls back to the default. If it were interpolated, this query would error
 	// (500) or reorder unexpectedly. Assert it returns 200 + all rows.
 	evilReq := httptest.NewRequest("GET", "/api/v1/scanner/results?task_id="+itoa(taskID)+"&sort=evil%27--&order=asc&limit=10", nil)

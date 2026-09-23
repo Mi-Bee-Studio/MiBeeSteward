@@ -22,7 +22,7 @@ func JSON(w http.ResponseWriter, status int, data interface{}) {
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		// The client may have disconnected mid-write; nothing to recover here,
-		// but surface it so connection issues are visible.
+		// but log it so connection issues are visible.
 		slog.Debug("json response encode failed", "error", err)
 	}
 }
@@ -44,7 +44,7 @@ func Error(w http.ResponseWriter, status int, message string) {
 
 // isUniqueConstraintErr reports whether err is a SQLite UNIQUE constraint
 // violation (modernc.org/sqlite returns "UNIQUE constraint failed: ...").
-// Shared by the handlers whose writes surface duplicate-key conflicts as 409
+// Shared by the handlers whose writes turn duplicate-key conflicts into 409
 // (network grants, SSH credentials).
 func isUniqueConstraintErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")

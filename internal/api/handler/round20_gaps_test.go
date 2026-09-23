@@ -34,7 +34,7 @@ import (
 	"mibee-steward/internal/testutil"
 )
 
-// reqWithBodyParams builds a request with arbitrary chi URL params injected — the
+// reqWithBodyParams builds a request with arbitrary chi URL params injected, the
 // direct-invocation equivalent of a routed request (generalizes
 // reqWithURLParam, which only handles "id").
 func reqWithBodyParams(method, target, body string, params map[string]string) *http.Request {
@@ -117,7 +117,7 @@ func TestHandler_ValidationTailBranches(t *testing.T) {
 
 // TestHandler_BadIDBadJSONSweep table-drives the bad-id / bad-JSON /
 // bad-pagination 400 branches across every id-taking or body-decoding handler
-// family — the branches that never fire through the full-router integration
+// family, the branches that never fire through the full-router integration
 // tests (chi routes don't match non-numeric {id} patterns there... they DO
 // match, but those suites only send valid ids).
 func TestHandler_BadIDBadJSONSweep(t *testing.T) {
@@ -131,7 +131,7 @@ func TestHandler_BadIDBadJSONSweep(t *testing.T) {
 	probeH := NewProbeTargetHandler(probetarget.New(queries, nil), queries)
 	notifH := NewNotificationHandler(service.NewNotificationService(queries), nil, auditRepo)
 	grantH := NewNetworkGrantHandler(conn, nil)
-	// The credential handler 503s on a nil cipher BEFORE parsing id/body —
+	// The credential handler 503s on a nil cipher BEFORE parsing id/body;
 	// give it a real 32-byte cipher so the validation branches are reachable.
 	credCipher, err := crypto.NewCipher(make([]byte, crypto.MasterKeyLen))
 	require.NoError(t, err)
@@ -245,7 +245,7 @@ func TestHandler_BadIDBadJSONSweep(t *testing.T) {
 }
 
 // TestHandler_AuditFilterAndGrantTail covers the audit List filter-assembly
-// branches (user_id/action/resource_type/date_from/date_to/search — valid and
+// branches (user_id/action/resource_type/date_from/date_to/search, valid and
 // unparseable dates) and the network-grant Delete not-found path (404 fires
 // before the nil resolver would ever be touched).
 func TestHandler_AuditFilterAndGrantTail(t *testing.T) {
@@ -262,7 +262,7 @@ func TestHandler_AuditFilterAndGrantTail(t *testing.T) {
 		"/x?user_id=1&action=login&resource_type=user&date_from=2026-01-01T00:00:00Z&date_to=2026-12-31T23:59:59Z&search=foo", nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	// Unparseable dates take the ignore arm (not an error — filter is skipped).
+	// Unparseable dates take the ignore arm (not an error, filter is skipped).
 	rec = httptest.NewRecorder()
 	auditH.List(rec, httptest.NewRequest(http.MethodGet,
 		"/x?user_id=notanumber&date_from=yesterday&date_to=soon", nil))
@@ -322,7 +322,7 @@ func TestUserHandler_ErrorTailMatrix(t *testing.T) {
 	h.Login(rw, httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"username":"round20u","password":"a-long-enough-pass-phrase-42"}`)))
 	require.Equal(t, http.StatusOK, rw.Code)
 
-	// First-run setup is one-shot: with a password already set it 409s forever.
+	// First-run setup runs exactly once: with a password already set it 409s forever.
 	rw = httptest.NewRecorder()
 	h.PostSetup(rw, httptest.NewRequest(http.MethodPost, "/setup", strings.NewReader(`{"new_password":"whatever-long-enough-1234"}`)))
 	require.Equal(t, http.StatusConflict, rw.Code)

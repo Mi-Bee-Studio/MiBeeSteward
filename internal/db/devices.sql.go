@@ -639,7 +639,7 @@ type UpdateDeviceParams struct {
 	ID             int64  `json:"id"`
 }
 
-// Note: scan_attributes is engine-owned and intentionally NOT updated here.
+// Note: scan_attributes is engine-owned and NOT updated here.
 // user_attributes is updated via UpdateUserAttributes so the full-row update
 // can't race the user-edit path.
 func (q *Queries) UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (Device, error) {

@@ -256,7 +256,7 @@ func (h *NotificationHandler) TestChannel(w http.ResponseWriter, r *http.Request
 
 	// Detach from the request lifecycle: the worker pool processes this job
 	// AFTER the HTTP response returns (async by design), and r.Context() is
-	// canceled the moment the response is written — a request-scoped ctx made
+	// canceled the moment the response is written, a request-scoped ctx made
 	// every test-send fail before dialing AND made the result-log write fail
 	// ("context canceled"), so the notification_log row never appeared.
 	h.dispatcher.Dispatch(context.WithoutCancel(r.Context()), domain.ChannelType(ch.Type), ch.Config, payload, nil, ch.ID)
@@ -270,7 +270,7 @@ func (h *NotificationHandler) TestChannel(w http.ResponseWriter, r *http.Request
 //
 // Returns the most recent logs for the requesting user with a per-user
 // is_read flag, and a "total" field that is the user's UNREAD count (not the
-// total row count) — this is what the header bell needs for the badge. The
+// total row count), this is what the header bell needs for the badge. The
 // legacy system-wide view is available via the service layer but not exposed
 // over HTTP (no current consumer needs it).
 func (h *NotificationHandler) ListNotificationLogs(w http.ResponseWriter, r *http.Request) {
@@ -298,7 +298,7 @@ func (h *NotificationHandler) ListNotificationLogs(w http.ResponseWriter, r *htt
 // MarkAllNotificationLogsRead handles POST /api/v1/notification/logs/read
 //
 // Marks every currently-unread notification log as read for the requesting
-// user (idempotent). The header bell calls this when its dropdown is opened,
+// user (a no-op on repeat). The header bell calls this when its dropdown is opened,
 // clearing the unread badge.
 func (h *NotificationHandler) MarkAllNotificationLogsRead(w http.ResponseWriter, r *http.Request) {
 	userID, _, ok := middleware.GetUserFromContext(r)
@@ -337,7 +337,7 @@ func (h *NotificationHandler) maskChannelPassword(ch *domain.ChannelResponse) *d
 
 // maskChannelPasswordInPlace masks credential-bearing config fields before a
 // channel is serialized to a client: the SMTP password (email) plus the
-// chat-platform secrets (#284) — feishu sign secret, telegram bot token. The
+// chat-platform secrets (#284), feishu sign secret, telegram bot token. The
 // dedicated enabled-toggle PATCH and the edit form's keep-if-blank convention
 // prevent masked values from ever being written back.
 func (h *NotificationHandler) maskChannelPasswordInPlace(ch *domain.ChannelResponse) {

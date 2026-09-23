@@ -103,7 +103,7 @@ func (h *NetworkGrantHandler) List(w http.ResponseWriter, r *http.Request) {
 	SuccessList(w, "grants", out, int64(total), limit, offset)
 }
 
-// ListByUser handles GET /api/v1/users/{id}/network-grants — the networks a user
+// ListByUser handles GET /api/v1/users/{id}/network-grants, the networks a user
 // is granted (used by the user-edit form to show/edit scope).
 func (h *NetworkGrantHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)

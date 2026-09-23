@@ -108,7 +108,7 @@ func TestNotificationChannel_EmailPasswordMasked(t *testing.T) {
 
 // TestNotificationChannel_SetEnabled exercises the dedicated PATCH toggle
 // endpoint. The contract this guards: toggling `enabled` via PATCH must NOT
-// rewrite name/type/config — in particular the masked SMTP password must stay
+// rewrite name/type/config, in particular the masked SMTP password must stay
 // the real value in the DB, never the `"*****"` mask that would be written if
 // someone naively did a GET-then-full-PUT round-trip. This is the data
 // corruption #53 was worried about; the dedicated endpoint sidesteps it.
@@ -218,7 +218,7 @@ func TestNotificationChannel_NotFound(t *testing.T) {
 // --- Notification Log Tests ---
 //
 // Note: the "total" field in GET /notification/logs responses is the
-// requesting user's UNREAD count (not the total row count) — the header bell
+// requesting user's UNREAD count (not the total row count), the header bell
 // consumes it for the badge. The tests below assert unread semantics.
 
 func TestNotificationLogs_List(t *testing.T) {
@@ -252,7 +252,7 @@ func TestNotificationLogs_Pagination(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Default pagination — 5 unread for admin (total == unread count)
+	// Default pagination, 5 unread for admin (total == unread count)
 	resp := authGet(t, server.URL+"/api/v1/notification/logs", token)
 	require.Equal(t, 200, resp.StatusCode)
 	var result map[string]interface{}
@@ -266,7 +266,7 @@ func TestNotificationLogs_Pagination(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, false, firstLog["is_read"])
 
-	// Limit 2 — unread count is still 5 (pagination doesn't change the badge)
+	// Limit 2, unread count is still 5 (pagination doesn't change the badge)
 	resp = authGet(t, server.URL+"/api/v1/notification/logs?limit=2&offset=0", token)
 	require.Equal(t, 200, resp.StatusCode)
 	var paginated map[string]interface{}
@@ -329,7 +329,7 @@ func TestNotificationLogs_MarkAllRead(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, true, firstLog["is_read"])
 
-	// POST /logs/read again → idempotent, 0 newly-marked
+	// POST /logs/read again → repeat call, 0 newly-marked
 	resp = authPost(t, server.URL+"/api/v1/notification/logs/read", token, "")
 	require.Equal(t, 200, resp.StatusCode)
 	var markResult2 map[string]interface{}
@@ -338,7 +338,7 @@ func TestNotificationLogs_MarkAllRead(t *testing.T) {
 }
 
 // TestNotificationLogs_PerUserIsolation verifies each user has an independent
-// read water mark — user A marking read does NOT clear user B's badge.
+// read water mark, user A marking read does NOT clear user B's badge.
 func TestNotificationLogs_PerUserIsolation(t *testing.T) {
 	server, db := setupTestServer(t)
 	insertTestAdmin(t, db)
@@ -461,7 +461,7 @@ func TestNotificationChannel_TestDisabledChannel(t *testing.T) {
 	decodeJSON(t, resp, &created)
 	channelID := idToString(created["id"])
 
-	// Test disabled channel — should fail
+	// Test disabled channel, should fail
 	resp = authPost(t, server.URL+"/api/v1/notification/channels/"+channelID+"/test", token, "")
 	require.Equal(t, 400, resp.StatusCode)
 }

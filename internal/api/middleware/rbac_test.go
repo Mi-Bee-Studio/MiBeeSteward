@@ -14,7 +14,7 @@ import (
 	"mibee-steward/internal/api/middleware"
 )
 
-// These tests pin RequireAuth / RequireAdmin (#171) — the authorization gates
+// These tests pin RequireAuth / RequireAdmin (#171), the authorization gates
 // that turn the Authenticator's context (or lack of it) into 401/403. They wrap
 // Authenticator, so each is exercised end-to-end with a real signed JWT:
 //   - RequireAuth:  valid user → next;  no/invalid token → 401.
@@ -65,7 +65,7 @@ func TestRequireAdmin_AdminPasses(t *testing.T) {
 }
 
 // TestRequireAdmin_NonAdminReturns403 pins the privilege boundary: an
-// authenticated but non-admin user is rejected with 403 (not 401 — they ARE
+// authenticated but non-admin user is rejected with 403 (not 401, they ARE
 // authenticated, just not authorized). This is the privilege-escalation guard.
 func TestRequireAdmin_NonAdminReturns403(t *testing.T) {
 	useJWTAuth(t)

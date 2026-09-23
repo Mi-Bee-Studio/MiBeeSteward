@@ -68,7 +68,7 @@ func postCommand(t *testing.T, srv *httptest.Server, agentID string, body map[st
 	return resp
 }
 
-// strPtr returns a pointer to a copy of s — for the *string fields sqlc emits
+// strPtr returns a pointer to a copy of s, for the *string fields sqlc emits
 // for nullable columns (Cidr, Site, AgentID).
 func strPtr(s string) *string { return &s }
 
@@ -130,7 +130,7 @@ func TestAgentCommand_BoundaryCheck_Layer1(t *testing.T) {
 
 	t.Run("no cidr configured -> degrade open (allowed)", func(t *testing.T) {
 		// A network WITHOUT cidr must not lock the agent out (historical rows).
-		// The check degrades to allow + warn — cidr enforcement is a separate
+		// The check degrades to allow + warn, cidr enforcement is a separate
 		// prerequisite (issue #19 前置工作).
 		dbConn, err := testutil.SetupTestDBFromSchema()
 		require.NoError(t, err)

@@ -27,7 +27,7 @@ import (
 )
 
 // doctorExit codes: 0 = all checks passed (warnings allowed), 1 = at least
-// one failure. Warnings alone do not fail the run — a fresh small deployment
+// one failure. Warnings alone do not fail the run, a fresh small deployment
 // legitimately warns on some items (e.g. no backup yet).
 const doctorFailExit = 1
 
@@ -40,9 +40,9 @@ type doctorCheck struct {
 }
 
 // runDoctor is the `mibee-steward doctor [-config ...]` subcommand (#281): a
-// post-install health check that surfaces the operational gotchas the field
-// kept hitting — a missing master key, a stale instance holding the port,
-// DB corruption, WAL bloat, backup rot — as a ✅/⚠️/❌ report with fix hints,
+// post-install health check that reports the operational gotchas the field
+// kept hitting, a missing master key, a stale instance holding the port,
+// DB corruption, WAL bloat, backup rot, as a ✅/⚠️/❌ report with fix hints,
 // instead of leaving the operator to grep logs.
 func runDoctor(args []string) {
 	os.Exit(doctor(args))
@@ -248,7 +248,7 @@ func doctor(args []string) int {
 	}
 
 	// ICMP capability (#288): the scanner and heartbeat use unprivileged
-	// ICMP (pro-bing SetPrivileged(false)) — datagram ping sockets require
+	// ICMP (pro-bing SetPrivileged(false)), datagram ping sockets require
 	// the group to be inside /proc/sys/net/ipv4/ping_group_range. The OpenWrt
 	// default "1 0" (disabled) leaves every probe "permission denied".
 	if raw, err := os.ReadFile("/proc/sys/net/ipv4/ping_group_range"); err == nil {
@@ -268,7 +268,7 @@ func doctor(args []string) int {
 
 // icmpPingGroupRangeCheck turns /proc/sys/net/ipv4/ping_group_range content
 // into a doctorCheck (#288). ok=false means the input didn't parse as two
-// numbers — emit no check rather than a false failure (the sysctl file may be
+// numbers, emit no check rather than a false failure (the sysctl file may be
 // absent or unexpected on exotic kernels). Decision table:
 //
 //   - lo > hi            → fail: the range is inverted = disabled ("1 0" is

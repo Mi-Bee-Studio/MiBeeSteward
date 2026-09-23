@@ -38,7 +38,7 @@ func TestCreateScanResult_RescanUpserts(t *testing.T) {
 	row1, err := q.CreateScanResult(ctx, first)
 	require.NoError(t, err, "first scan of an IP must insert")
 
-	// Same (task_id, ip) again — different run, fresher data. Before #253 this
+	// Same (task_id, ip) again, different run, fresher data. Before #253 this
 	// returned "UNIQUE constraint failed: scan_results.task_id, scan_results.ip".
 	row2, err := q.CreateScanResult(ctx, db.CreateScanResultParams{
 		TaskID: taskID, Ip: "192.168.63.1", Alive: 0, RttMs: 0,

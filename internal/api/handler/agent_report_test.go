@@ -52,7 +52,7 @@ func setupAgentIngestServer(t *testing.T) (srv *httptest.Server, db *sql.DB, tok
 	token = plaintext
 
 	// Real runner: device bridge writes devices/heartbeat_configs against db.
-	// engine/heartbeat are nil — ApplyReport only needs the device-bridge path,
+	// engine/heartbeat are nil, ApplyReport only needs the device-bridge path,
 	// which uses dbConn directly (heartbeat seeding no-ops when heartbeat is nil).
 	rn := scannerv2runner.New(nil, queries, db, nil, 0, nil)
 	rn.SetRepo(store.NewSQLiteRepository(db, store.Options{}, nil)) // agent reports carry a per-call networkID
@@ -125,7 +125,7 @@ func TestAgentReport_CreatesDeviceOnAgentNetwork(t *testing.T) {
 // MAC: the SAME MAC reported under two different agent networks resolves to one
 // asset row (the first sighting wins). This is the multi-LAN coexistence rule.
 //
-// NOTE: the MAC must be a STABLE (universal, non-LAA) one — the locally-
+// NOTE: the MAC must be a STABLE (universal, non-LAA) one, the locally-
 // administered bit (0x02) would trigger the randomized-MAC identity downgrade
 // (issue #118 Phase 1) and defeat this test's "one MAC = one asset" premise.
 // 08:00:27 is VirtualBox's OUI; its first octet's low nibble (8) is LAA-clear.
@@ -142,7 +142,7 @@ func TestAgentReport_MACPrimaryDedupAcrossNetworks(t *testing.T) {
 	// Now simulate a SECOND agent network on the SAME DB: mint a token bound to
 	// a different network and report the same MAC at a different IP. lan-63 gets
 	// its own cidr so the Layer 2 boundary check (issue #19) accepts 192.168.63.x
-	// on it — this also verifies the check is per-network, not global.
+	// on it, this also verifies the check is per-network, not global.
 	queries := sqldb.New(db)
 	net2Cidr := "192.168.63.0/24"
 	net2, err := queries.CreateNetwork(context.Background(), sqldb.CreateNetworkParams{Name: "lan-63", Cidr: &net2Cidr})
@@ -174,7 +174,7 @@ func TestAgentReport_MACPrimaryDedupAcrossNetworks(t *testing.T) {
 }
 
 // TestAgentReport_RejectsMissingToken confirms the ingestion route is gated by
-// RequireAgentToken — a request with no Authorization header gets 401.
+// RequireAgentToken, a request with no Authorization header gets 401.
 func TestAgentReport_RejectsMissingToken(t *testing.T) {
 	srv, _, _, _ := setupAgentIngestServer(t)
 	// Post WITHOUT a token (postReport always sets one; do it raw here).
@@ -203,7 +203,7 @@ func TestAgentReport_SkipsDeadAndEmptyIP(t *testing.T) {
 
 // TestAgentReport_HashSkip_StableNetwork verifies the anti-entropy fast path:
 // when the same X-Network-State-Hash arrives twice, the second report skips the
-// device bridge entirely (accepted=0, stable=true) — only the lease is refreshed.
+// device bridge entirely (accepted=0, stable=true), only the lease is refreshed.
 func TestAgentReport_HashSkip_StableNetwork(t *testing.T) {
 	srv, db, token, _ := setupAgentIngestServer(t)
 	host := domain.ReportedHost{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"}
@@ -344,7 +344,7 @@ func TestAgentReport_BackfillNetworkCIDR(t *testing.T) {
 
 // TestAgentReport_BoundaryCheck_Layer2 covers the center-side per-host CIDR
 // gate (issue #19 Layer 2): hosts whose IP falls outside the reporting agent's
-// network CIDR are dropped from BOTH the device bridge and the lease refresh —
+// network CIDR are dropped from BOTH the device bridge and the lease refresh;
 // the exact defense that would have stopped agent-62 stranding 63.x devices.
 func TestAgentReport_BoundaryCheck_Layer2(t *testing.T) {
 	srv, db, token, networkID := setupAgentIngestServer(t)
@@ -356,7 +356,7 @@ func TestAgentReport_BoundaryCheck_Layer2(t *testing.T) {
 			Hosts:   []domain.ReportedHost{{IP: "192.168.63.20", Alive: true, MAC: "aa:bb:cc:dd:ee:20"}},
 		})
 		require.Equal(t, http.StatusOK, status)
-		// out_of_network surfaces the drop in the ack.
+		// out_of_network reports the drop in the ack.
 		require.Equal(t, float64(1), out["out_of_network"])
 		// No device row created for the foreign IP.
 		var n int

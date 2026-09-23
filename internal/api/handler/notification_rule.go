@@ -32,7 +32,7 @@ func (h *NotificationHandler) CreateRule(w http.ResponseWriter, r *http.Request)
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	// Verify the referenced channel exists before creating the rule — a dangling
+	// Verify the referenced channel exists before creating the rule, a dangling
 	// channel_id (ON DELETE CASCADE) would make the rule silently never fire.
 	if _, err := h.svc.GetChannel(r.Context(), req.ChannelID); err != nil {
 		if errors.Is(err, service.ErrChannelNotFound) {

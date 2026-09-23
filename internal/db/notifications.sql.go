@@ -403,7 +403,7 @@ type MarkAllNotificationLogsReadParams struct {
 	UserID_2 int64 `json:"user_id_2"`
 }
 
-// Idempotently mark all currently-unread notification logs as read for a
+// Mark all currently-unread notification logs as read for a
 // user (INSERT OR IGNORE skips any pair already present). Returns the number
 // of rows inserted (i.e. newly-read logs).
 func (q *Queries) MarkAllNotificationLogsRead(ctx context.Context, arg MarkAllNotificationLogsReadParams) (int64, error) {

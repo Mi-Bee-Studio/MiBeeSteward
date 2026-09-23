@@ -11,7 +11,7 @@
 // Steward. It runs the scannerv2 engine locally (against the network it sits
 // on) and reports results to an aggregation center via POST /agents/report. It
 // is the agent half of the "agent + discovery + watch" form factor: no API, no
-// SPA, no users — just scan + report. See docs/private/architecture-future.md.
+// SPA, no users, just scan + report. See docs/private/architecture-future.md.
 //
 // Mode is selected by config: when `center.url` is set the binary runs as an
 // agent; otherwise it would be a center (use cmd/server for that). This binary
@@ -57,7 +57,7 @@ var (
 )
 
 func main() {
-	// Subcommand dispatch (before flag.Parse — the subcommand owns its own
+	// Subcommand dispatch (before flag.Parse, the subcommand owns its own
 	// flag set, mirroring cmd/server's reset-admin-password/doctor pattern).
 	// `snmp-credential` provisions the agent-local SNMP credential vault (#241).
 	if len(os.Args) > 1 && os.Args[1] == "snmp-credential" {
@@ -116,7 +116,7 @@ func runCLI(args []string) error {
 
 // runAgent runs the agent lifecycle: local mini-DB, engine, reporter, runner,
 // scheduler, passive discovery sources, vantage prober, and the command
-// poller — until ctx is canceled, then a graceful stop in reverse order.
+// poller, until ctx is canceled, then a graceful stop in reverse order.
 // Errors return instead of exiting the process so tests can drive the whole
 // agent in-process against a temp config.
 func runAgent(ctx context.Context, cfg *config.Config, configPath string) error {
@@ -138,7 +138,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 
 	// Agent-side SNMP credential vault (#241, issue 方案 B): the agent owns a
 	// LOCAL snmp_credentials table in its mini-DB, encrypted with the AGENT's
-	// own security.master_key — deliberately NOT the center's key, so the two
+	// own security.master_key, NOT the center's key, so the two
 	// trust domains stay separate (an agent box compromise exposes only that
 	// agent's credentials). Empty master key = vault disabled; scans fall back
 	// to the global v1/v2c community exactly as before. Credentials are
@@ -185,17 +185,17 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 	reporter := agent.NewReporter(cfg.Center.URL, cfg.Center.AuthToken, cfg.Network.Name, cfg.Network.CIDR, flush, 256, slog.Default())
 	reporter.SetVersion(version.Version) // fleet telemetry (#278)
 	// Child of the caller's ctx so the shutdown sequence below can cancel
-	// run-scoped workers BEFORE stopping the poller/scheduler/reporter — the
+	// run-scoped workers BEFORE stopping the poller/scheduler/reporter, the
 	// same ordering the old inline signal path had.
 	ctxBg, cancel := context.WithCancel(ctx)
 	defer cancel()
 	reporter.Start(ctxBg)
 
 	// Runner: reused from the center. reportSink forwards scans upstream.
-	// networkID=0 here — the agent's LOCAL shadow devices get NULL network_id;
+	// networkID=0 here, the agent's LOCAL shadow devices get NULL network_id;
 	// the center tags its copies with the agent's network from the token.
 	// BUSY retry wrapper (#267): the agent's shadow DB shares one writer pool
-	// with the engine's store — wrapped so scan writes retry + count
+	// with the engine's store, wrapped so scan writes retry + count
 	// mibee_sqlite_busy_total{path="agent"}.
 	agentDB := dbopen.WrapBusyRetry(dbConn, "agent")
 	scanRunner := scannerv2runner.New(engine, queries, agentDB, nil, 0, slog.Default())
@@ -216,7 +216,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 			// Agent-side SNMP credentials (#241): the task's credential_id now
 			// references the agent's LOCAL vault (credential.go provisions it).
 			// A stale reference degrades to a community scan with a warning
-			// instead of aborting the run — the engine's ResolveByID contract
+			// instead of aborting the run, the engine's ResolveByID contract
 			// treats a hard error as fatal, which is right for the center but
 			// too strict for an operator-maintained agent mini-DB.
 			scanRunner.Run(ctx, taskID, targets, timeout, concurrentHosts, cfg.Scanner.PersistRawEvidence,
@@ -230,7 +230,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 		slog.Info("agent scan scheduler started")
 	}
 
-	// Passive discovery service — the SAME wiring the center uses
+	// Passive discovery service, the SAME wiring the center uses
 	// (internal/api/routes/routes.go), so the agent gets the passive ARP-cache +
 	// multicast + router_arp sources for free. This is Phase A of the
 	// router-agent roadmap: a router-resident agent (or a center deployed on a
@@ -261,7 +261,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 			interval = 60 * time.Second
 		}
 		var activeSources []string
-		// router_arp: widest coverage — one SNMP Walk per configured router.
+		// router_arp: widest coverage, one SNMP Walk per configured router.
 		if cfg.Scanner.Discovery.RouterARP.Enabled {
 			routerCommunity := cfg.Scanner.SNMPCommunity
 			if cfg.Scanner.RouterARP.Community != "" {
@@ -290,28 +290,28 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 			mcastSrc.Start(discCtx)
 			activeSources = append(activeSources, "multicast")
 		}
-		// dhcp_leases: Tier-1 router signal — the DHCP authority's hostname↔MAC↔IP
+		// dhcp_leases: Tier-1 router signal, the DHCP authority's hostname↔MAC↔IP
 		// map. No-op on a host that isn't the LAN's DHCP server (file absent).
 		if cfg.Scanner.Discovery.DHCPLeases.Enabled {
 			dhcpSrc := scannerv2discovery.NewDHCPLeasesSource(interval, "", discSvc, slog.Default())
 			dhcpSrc.Start(discCtx)
 			activeSources = append(activeSources, "dhcp_leases")
 		}
-		// conntrack: Tier-1 router signal — the NAT choke point's "who is talking
+		// conntrack: Tier-1 router signal, the NAT choke point's "who is talking
 		// RIGHT NOW" view. Filters to the agent's own LAN CIDR.
 		if cfg.Scanner.Discovery.Conntrack.Enabled {
 			conntrackSrc := scannerv2discovery.NewConntrackSource(cfg.Network.CIDR, interval, discSvc, slog.Default())
 			conntrackSrc.Start(discCtx)
 			activeSources = append(activeSources, "conntrack")
 		}
-		// hostapd: Tier-1 router/AP signal — WiFi STA associations (signal dBm,
+		// hostapd: Tier-1 router/AP signal, WiFi STA associations (signal dBm,
 		// connect time, SSID). hostapd ctrl socket first, iw station dump fallback.
 		if cfg.Scanner.Discovery.Hostapd.Enabled {
 			hostapdSrc := scannerv2discovery.NewHostapdSource(cfg.Scanner.Discovery.Hostapd.Interfaces, interval, discSvc, slog.Default())
 			hostapdSrc.Start(discCtx)
 			activeSources = append(activeSources, "hostapd")
 		}
-		// dns_log: Tier-1 router signal — tails the dnsmasq query log for passive
+		// dns_log: Tier-1 router signal, tails the dnsmasq query log for passive
 		// DNS fingerprinting (devices that block inbound probes still do DNS).
 		if cfg.Scanner.Discovery.DNSLog.Enabled {
 			dnsLogSrc := scannerv2discovery.NewDNSLogSource(interval, cfg.Scanner.Discovery.DNSLog.Path, discSvc, slog.Default())
@@ -319,7 +319,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 			activeSources = append(activeSources, "dns_log")
 		}
 		// arp_scan: WITH_ARPSCAN build only; NewARPScanSource returns nil
-		// otherwise (or without CAP_NET_RAW) — nil guard skips it silently.
+		// otherwise (or without CAP_NET_RAW), nil guard skips it silently.
 		if cfg.Scanner.Discovery.ARPScan.Enabled {
 			if arpScanSrc := scannerv2discovery.NewARPScanSource(
 				cfg.Network.CIDR, interval, cfg.Scanner.ARPScan.Interface,
@@ -361,7 +361,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 
 	// Command poller: fetches ad-hoc scan commands from the center (Phase 5c).
 	// The runScan callback wraps the runner so this package doesn't import runner
-	// directly (avoids an import cycle). Commands are best-effort — the agent's
+	// directly (avoids an import cycle). Commands are advisory; the agent's
 	// own cron scheduler is the primary scan driver.
 	cmdPoller := agent.NewCommandPoller(cfg.Center.URL, cfg.Center.AuthToken, 60*time.Second, cfg.Network.CIDR,
 		func(ctx context.Context, sp agent.ScanCommand) (string, error) {
@@ -443,7 +443,7 @@ func ptrTime(t time.Time) *time.Time { return &t }
 // is rejected so schema drift fails loudly at startup instead of as a query
 // error later.
 func openAgentDB(dbPath string) (*sql.DB, error) {
-	// Pragmas travel in the DSN so all 8 pool connections get them —
+	// Pragmas travel in the DSN so all 8 pool connections get them;
 	// Exec-after-Open only reached the first connection (#252).
 	conn, err := dbopen.Open(dbPath,
 		"journal_mode=WAL",

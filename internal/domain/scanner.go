@@ -31,7 +31,7 @@ const (
 )
 
 // DefaultConcurrentHosts is applied when a create request omits
-// concurrent_hosts (the field is a plain int, so "unspecified" arrives as 0 —
+// concurrent_hosts (the field is a plain int, so "unspecified" arrives as 0;
 // rejecting it made every UI task creation fail with no fixable field, #246).
 const DefaultConcurrentHosts = 16
 
@@ -307,7 +307,7 @@ func ValidateScanTaskRequest(req ScanTaskRequest, allowReservedTargets bool) err
 		return fmt.Errorf("targets: too many IPs (%d), maximum is %d", totalIPs, maxTargetIPs)
 	}
 	// Reserved address space (loopback, multicast, broadcast, ...) never
-	// yields a real LAN device — reject at creation so a scheduled task
+	// yields a real LAN device, reject at creation so a scheduled task
 	// can't invent phantom devices daily and defeat silent-device
 	// retention (#317). Syntax is still validated when the escape hatch is on.
 	if err := cidrutil.ValidateTargetsFor(req.Targets, allowReservedTargets); err != nil {
@@ -343,7 +343,7 @@ func ValidatePipelineConfig(config PipelineConfig) error {
 			return fmt.Errorf("prometheus: %w", err)
 		}
 	}
-	// A pipeline with every stage disabled produces no useful evidence — the
+	// A pipeline with every stage disabled produces no useful evidence, the
 	// scan would find nothing. Reject this so a malformed edit (e.g. a client
 	// sending an empty/zero-valued config) can't silently brick a task.
 	if !config.ICMP.Enabled && !config.SNMP.Enabled && !config.PortScan.Enabled &&
@@ -353,7 +353,7 @@ func ValidatePipelineConfig(config PipelineConfig) error {
 	return nil
 }
 
-// ValidatePortList validates a TCP port spec ("22,80,100-200") — exported so
+// ValidatePortList validates a TCP port spec ("22,80,100-200"), exported so
 // the sync-scan handler can validate its ports parameter against the same
 // rules as pipeline_config (#275).
 func ValidatePortList(ports string) error {

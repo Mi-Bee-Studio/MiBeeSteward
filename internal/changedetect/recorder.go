@@ -49,23 +49,23 @@ func init() {
 // {entity}_{added|lost|changed|recovered}; service/neighbor variants are
 // reserved for later phases.
 //
-// Event model (v2 — separated liveness from identity):
-//   - device_added    — a brand-new device was discovered (identity event)
-//   - device_lost     — a known device has been absent from ≥lostThreshold
+// Event model (v2, separated liveness from identity):
+//   - device_added   , a brand-new device was discovered (identity event)
+//   - device_lost    , a known device has been absent from ≥lostThreshold
 //     consecutive scans (topology/liveness event; the row is
 //     NOT deleted, only status→offline)
-//   - device_recovered — a device previously declared lost reappeared in a scan
+//   - device_recovered, a device previously declared lost reappeared in a scan
 //     (the symmetric counterpart of device_lost; replaces the
 //     old practice of reporting an offline→online flip as a
 //     generic device_changed, which buried real changes)
-//   - device_changed  — an IDENTITY field of a known device changed
+//   - device_changed , an IDENTITY field of a known device changed
 //     (name/type/brand/model/mac/ip). Classification-field
 //     drift (open_ports/services/scan_attributes) is recorded
 //     in before/after_data for the diff viewer but no longer
 //     single-handedly fires device_changed.
 //
 // Liveness (status online↔offline driven by heartbeat probing) is NOT a change
-// event at all — it is the heartbeat service's concern (status badge, offline
+// event at all, it is the heartbeat service's concern (status badge, offline
 // backoff). Conflating liveness with device_changed was the root cause of the
 // 70k+ noise-row storm on the test env (a flapping host emitted one
 // device_lost + one device_changed per flap cycle).
@@ -77,7 +77,7 @@ const (
 	// ChangeTypeDeviceConfigChanged: a device's running-config backup changed
 	// between two config-backup fetches (#137). Emitted by the configbackup
 	// Service when configdiff.Diff is non-empty. dedupKind returns "" for it
-	// (never throttled) — every real config change is worth recording.
+	// (never throttled), every real config change is worth recording.
 	ChangeTypeDeviceConfigChanged = "device_config_changed"
 )
 
@@ -97,7 +97,7 @@ const (
 // ChangeEvent is one detected change. Before/After are JSON snapshots of the
 // device row (nil for added's before / lost's after). DeviceID is the devices.id
 // the change concerns; NetworkID + AgentID carry provenance. Severity is the
-// UI-triage tier (identity/liveness/enrichment) — reserved for a future
+// UI-triage tier (identity/liveness/enrichment), reserved for a future
 // change_log.severity column + frontend tier filter; not persisted yet, so
 // callers may leave it empty.
 type ChangeEvent struct {
@@ -128,7 +128,7 @@ func (NoopRecorder) Record(context.Context, ChangeEvent) {}
 // DeviceSnapshot is the JSON-serializable device view captured for before/after
 // diffing. Only the fields that constitute a "change" are tracked (per the
 // all-fields decision): identity + classification + scan enrichment. Timestamps
-// (last_seen/last_scanned_at/updated_at) are excluded — they change every scan
+// (last_seen/last_scanned_at/updated_at) are excluded, they change every scan
 // and would drown the signal.
 type DeviceSnapshot struct {
 	Name             string `json:"name"`
@@ -165,7 +165,7 @@ func SnapshotFromDevice(d db.Device) DeviceSnapshot {
 	}
 }
 
-// identityFields are the fields that define a device's IDENTITY — a change to
+// identityFields are the fields that define a device's IDENTITY, a change to
 // any of these is a meaningful device_changed event (e.g. a router swap renamed
 // NanoPiR4S → GL-MT3000, or a device's MAC was resolved for the first time).
 // These drive the DiffIdentity comparison that gates device_changed emission.
@@ -193,8 +193,8 @@ var identityFields = []struct {
 // probe depth/success varies (a port that answered this scan but timed out next
 // scan; a service banner re-parsed slightly differently). A change confined to
 // these is recorded in before/after_data for the diff viewer but does NOT
-// single-handedly fire a device_changed event — it is enrichment-tier drift,
-// not an identity change. status is deliberately ABSENT from both lists: it is
+// single-handedly fire a device_changed event, it is enrichment-tier drift,
+// not an identity change. status is ABSENT from both lists: it is
 // a liveness signal owned by the heartbeat service, not a change event.
 var classificationFields = []struct {
 	name string
@@ -209,11 +209,11 @@ var classificationFields = []struct {
 
 // DiffIdentity returns the subset of IDENTITY fields that differ between before
 // and after, as a map[field]{old, new}. Returns nil when no identity field
-// changed — which is the gate for emitting a device_changed event. This is the
+// changed, which is the gate for emitting a device_changed event. This is the
 // field-by-field comparison that replaces the old all-fields Diff that fired on
 // every rescan regardless of whether anything meaningful changed.
 //
-// status is intentionally excluded: an offline↔online flip is a liveness
+// status is excluded: an offline↔online flip is a liveness
 // signal (heartbeat's concern), reported via device_lost/device_recovered when
 // it crosses the scan-absence threshold, never as device_changed.
 func DiffIdentity(before, after DeviceSnapshot) map[string][2]string {
@@ -270,13 +270,13 @@ func Diff(before, after DeviceSnapshot) map[string][2]string {
 // volatileScanAttrKeys are scan_attributes JSON keys that change every scan by
 // nature and must NOT trip a device_changed/classification diff. Two groups:
 //
-//  1. Timestamps / transient counters (last_scanned_at, last_scan_rtt_ms) — they
+//  1. Timestamps / transient counters (last_scanned_at, last_scan_rtt_ms), they
 //     move every scan by definition. The canonical timestamp lives on the
 //     top-level devices.last_scanned_at column; embedding a copy inside
 //     scan_attributes once generated 53k bogus device_changed rows in 2 days.
 //
 //  2. Scanner-inferred identity keys (inferred_type, inferred_type_source,
-//     inferred_brand, inferred_description, hostname) — these wobble run-to-run
+//     inferred_brand, inferred_description, hostname), these wobble run-to-run
 //     as probe success varies (SNMP present → type from protocol; SNMP timed
 //     out → type falls back to a hostname heuristic). The evidence-stickiness
 //     layer in applyDeviceBridge makes the PERSISTED device.type/brand
@@ -287,7 +287,7 @@ func Diff(before, after DeviceSnapshot) map[string][2]string {
 //     scan_attributes echoes. Stripping them here neutralizes the 81% of
 //     device_changed noise that was pure scan_attributes wobble on the test env.
 //
-// This normalization is a defense-in-depth backstop — the scanner's
+// This normalization is a defense-in-depth backstop, the scanner's
 // evidence-stickiness layer is the primary fix, but legacy rows / future
 // regressions are neutralized here so a Diff can never fire on these keys.
 var volatileScanAttrKeys = []string{
@@ -301,8 +301,8 @@ var volatileScanAttrKeys = []string{
 // normalizeScanAttrs parses a scan_attributes JSON string, drops the volatile
 // keys, and re-marshals with sorted object keys so two snapshots that differ
 // ONLY in key order or volatile fields compare equal. Returns the input
-// unchanged (not "") when it is not a JSON object (malformed/empty) — those
-// cases still surface as a real diff, which is the safe failure mode.
+// unchanged (not "") when it is not a JSON object (malformed/empty), those
+// cases still show up as a real diff, which is the safe failure mode.
 func normalizeScanAttrs(s string) string {
 	if s == "" || s[0] != '{' {
 		return s
@@ -323,16 +323,16 @@ func normalizeScanAttrs(s string) string {
 
 // DBRecorder is the center's ChangeRecorder: writes each event to change_log
 // (via sqlc) and fans it out to in-process Watcher subscribers. The runner
-// calls Record synchronously per host; writes are best-effort (logged, never
+// calls Record synchronously per host; write failures are logged, never
 // abort a scan on a change_log failure).
 //
 // Cooldown dedup: device_changed and device_recovered events for the SAME
 // device are suppressed if an event of the same type was emitted within the
 // cooldown window (default 15m). This stops a flapping/scanning-rapid host from
-// spamming identical changes — the first change in a window is recorded, the
+// spamming identical changes, the first change in a window is recorded, the
 // rest are dropped (the device's current state is already reflected in the
 // devices row; change_log is a log of *transitions*, not a heartbeat).
-// device_added/device_lost are NEVER throttled — they are discrete, meaningful
+// device_added/device_lost are NEVER throttled, they are discrete, meaningful
 // topology events that must always be recorded.
 type DBRecorder struct {
 	queries       *db.Queries
@@ -397,7 +397,7 @@ func (r *DBRecorder) Record(ctx context.Context, ev ChangeEvent) {
 // shouldEmit applies the cooldown dedup. device_added always emits (a genuinely
 // new device is always meaningful). device_changed is throttled per-type. The
 // liveness pair device_lost/device_recovered shares a SINGLE "liveness" key per
-// device: this is the flap fix — an intermittently-seen IoT device that bounces
+// device: this is the flap fix, an intermittently-seen IoT device that bounces
 // online/offline every few minutes would otherwise emit a device_lost storm (it
 // was previously never throttled) plus an asymmetric device_recovered. With a
 // shared key, a full lost→recovered cycle within the cooldown is collapsed: the
@@ -513,7 +513,7 @@ func (w *Watcher) Subscribe() <-chan db.ChangeLog {
 // receive channel returned by Subscribe.
 //
 // Channel identity is compared by header pointer via reflect, NOT by boxing in
-// interface — a bidirectional chan and its <-chan view box to DIFFERENT dynamic
+// interface, a bidirectional chan and its <-chan view box to DIFFERENT dynamic
 // types and any(sub) == any(ch) returns false, so the old any-comparison never
 // matched and the channel was never closed (leaking the subscriber's drain
 // goroutine on every disconnect). Found via the SSE handler test for #195.
@@ -550,8 +550,8 @@ func (w *Watcher) push(row db.ChangeLog) {
 		select {
 		case ch <- row:
 		default:
-			// Subscriber buffer full — drop to avoid blocking the scan. A laggy
-			// consumer can re-query change_log; real-time is best-effort here.
+			// Subscriber buffer full, drop to avoid blocking the scan. A laggy
+			// consumer can re-query change_log; real-time is not guaranteed here.
 			w.logger.Debug("watcher: subscriber full, dropping change event", "change_id", row.ID)
 		}
 	}

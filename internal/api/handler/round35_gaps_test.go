@@ -30,7 +30,7 @@ func asUser(r *http.Request, userID int64, role string) *http.Request {
 
 // TestTOTPHandler_DeadDB_StorageArms drives the storage-failure arms with a
 // real (injected) user context over a dead handle: setup profile fetch,
-// setup secret store, enable store, and disable user-lookup all surface 500s.
+// setup secret store, enable store, and disable user-lookup all return 500s.
 func TestTOTPHandler_DeadDB_StorageArms(t *testing.T) {
 	conn := closedTestDB(t)
 	audit := service.NewAuditRepository(conn)
@@ -65,7 +65,7 @@ func TestTOTPHandler_DisableDeletedUser404(t *testing.T) {
 
 	// User 99 does not exist; the disable path maps ErrUserNotFound → 404
 	// (the service returns it once bcrypt comparison fails on the empty
-	// stored hash — reached here because the user row is absent).
+	// stored hash, reached here because the user row is absent).
 	r := httptest.NewRecorder()
 	h.Disable(r, asUser(reqWithBodyParams(http.MethodPost, "/api/v1/auth/2fa/disable",
 		`{"password":"whatever1"}`, nil), 99, "user"))

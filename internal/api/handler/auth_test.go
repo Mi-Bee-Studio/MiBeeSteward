@@ -114,7 +114,7 @@ func TestAuth_Logout(t *testing.T) {
 	require.Empty(t, tokenCookie.Value, "cleared cookie should have empty value")
 
 	// Verify subsequent request with the old token still works
-	// (JWT is stateless — server doesn't invalidate issued tokens)
+	// (JWT is stateless, server doesn't invalidate issued tokens)
 	// This is expected behavior; cookie clearing is client-side.
 }
 
@@ -340,7 +340,7 @@ func TestAuth_PasswordPolicyIsPublic(t *testing.T) {
 	require.True(t, policy.RequireUppercase)
 	require.True(t, policy.RequireLowercase)
 	require.True(t, policy.RequireDigit)
-	// Special chars are optional under the (relaxed) default policy — the
+	// Special chars are optional under the (relaxed) default policy, the
 	// settings center can turn the class back on at runtime; this endpoint
 	// then reflects the overlay value.
 	require.False(t, policy.RequireSpecial)

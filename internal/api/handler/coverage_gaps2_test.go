@@ -66,7 +66,7 @@ func TestDashboardEndpoints_ConfigsAndQueries(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var list map[string]interface{}
 	decodeJSON(t, resp, &list)
-	// {configs: [...]} wrapper — a bare array once made every widget invisible (#247)
+	// {configs: [...]} wrapper, a bare array once made every widget invisible (#247)
 	configs, ok := list["configs"].([]interface{})
 	require.True(t, ok)
 	require.Len(t, configs, 2)
@@ -343,8 +343,8 @@ func TestScannerAddDevicesEndpoint(t *testing.T) {
 	require.Contains(t, readBody(t, resp), "must not be empty")
 
 	// Batch persist: both rows land via the device bridge (a bad type is
-	// logged-and-skipped by the bridge, not surfaced as an HTTP error — the
-	// best-effort contract).
+	// logged-and-skipped by the bridge, not returned as an HTTP error, the
+	// logged-and-skipped contract).
 	resp = authPost(t, base, token, `{"devices":[
 		{"ip":"10.7.3.1","name":"manual-1","type":"pc","brand":"Generic"},
 		{"ip":"10.7.3.4","name":"manual-2","type":"server"}
@@ -361,7 +361,7 @@ func TestScannerAddDevicesEndpoint(t *testing.T) {
 }
 
 // TestScannerScanEndpoint_LoopbackHappyPath runs one REAL (tiny) scan against
-// 127.0.0.1 — the coverage server's engine allows reserved targets. A local
+// 127.0.0.1, the coverage server's engine allows reserved targets. A local
 // TCP listener guarantees at least one open port; ICMP echo on loopback is
 // always reachable. Pins the full pipeline: engine scan → reportToHost →
 // device-bridge persistence (the manual-sync-scan contract).

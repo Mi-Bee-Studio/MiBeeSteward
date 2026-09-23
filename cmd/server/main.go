@@ -102,7 +102,7 @@ func runCLI(args []string) error {
 	}
 
 	// Open database connection. Pragmas travel in the DSN so every pooled
-	// connection gets them — Exec'ing them on the handle after Open only
+	// connection gets them, Exec'ing them on the handle after Open only
 	// reached one connection and left the rest failing instantly with
 	// SQLITE_BUSY under write contention (#252).
 	db, err := dbopen.Open(dbPath,
@@ -111,7 +111,7 @@ func runCLI(args []string) error {
 		"synchronous=NORMAL",
 		"cache_size=-64000",
 		// temp_store=MEMORY keeps temp tables + B-trees in RAM instead of
-		// spilling to a temp file — free latency reduction for large scans. (#162)
+		// spilling to a temp file, free latency reduction for large scans. (#162)
 		"temp_store=MEMORY",
 	)
 	if err != nil {
@@ -122,7 +122,7 @@ func runCLI(args []string) error {
 	// heartbeat service's concurrent verdict writes (GetDevice + UpdateDeviceStatus
 	// for up to 16 devices at once) starved on 2 connections: a verdict goroutine
 	// holding failCountsMu would block on a DB read while the other connection was
-	// busy writing — leaving devices stuck on offline. 16 gives the probe pool
+	// busy writing, leaving devices stuck on offline. 16 gives the probe pool
 	// enough connections to read device state without blocking the writer.
 	// WAL mode keeps reads from blocking the single writer, so this is safe.
 	db.SetMaxOpenConns(16)
@@ -180,7 +180,7 @@ func serveHTTP(cfg *config.Config, db *sql.DB, stop <-chan struct{}) error {
 
 	// Start server in goroutine. A bare ListenAndServe that exits on bind error
 	// is dangerous under systemd Restart=always: if the previous process's TCP
-	// socket hasn't fully released (TIME_WAIT / kernel cleanup lag — common right
+	// socket hasn't fully released (TIME_WAIT / kernel cleanup lag, common right
 	// after a crash or SIGTERM), the new process hits "bind: address already in
 	// use", exits 1, systemd restarts it 5s later, it fails again, and the cycle
 	// repeats hundreds of times (observed 625 restarts on the test VM). A short
@@ -234,7 +234,7 @@ func serveHTTP(cfg *config.Config, db *sql.DB, stop <-chan struct{}) error {
 // startup cleanups, admin seeding, router + HTTP listen, and graceful
 // shutdown. It returns when stop is closed (main bridges os signals into it;
 // tests use a plain channel) or on the first fatal error. All os.Exit calls
-// live in main — serve is a plain function so tests can drive it in-process.
+// live in main, serve is a plain function so tests can drive it in-process.
 func serve(cfg *config.Config, db *sql.DB, dbPath string, stop <-chan struct{}) error {
 	// Run migrations
 	if err := runMigrations(db, dbPath); err != nil {
@@ -273,7 +273,7 @@ func serve(cfg *config.Config, db *sql.DB, dbPath string, stop <-chan struct{}) 
 	// Initial admin password: a non-empty value = classic temp credential
 	// (forced change on first login); EMPTY = first-run browser setup (the
 	// admin is seeded password-less and the login page asks for a password to
-	// be created — the installer default).
+	// be created, the installer default).
 	if cfg.Auth.InitialAdminPassword == "" {
 		slog.Info("auth.initial_admin_password is empty — the admin password will be set in the browser on first run")
 	}
@@ -320,9 +320,9 @@ func parseLogLevel(s string) slog.Level {
 // An EMPTY password (the installer's default) seeds the first-run state
 // instead: the account has no usable password and the SPA's setup screen
 // (login page polling /auth/setup-status) walks the operator through picking
-// one in the browser — nothing to copy from the installer output. A non-empty
-// password is a TEMPORARY credential (it deliberately skips the password
-// policy — applying it here is what left fresh installs admin-less whenever
+// one in the browser, nothing to copy from the installer output. A non-empty
+// password is a TEMPORARY credential (it skips the password
+// policy, applying it here is what left fresh installs admin-less whenever
 // the configured value failed the character-class rules) and first login
 // forces a policy-compliant change via the SPA modal + server-side mcp gate.
 func seedAdminUser(userSvc *service.UserService, password string) {
@@ -361,7 +361,7 @@ func parseDurationOrDefault(s string, def time.Duration) time.Duration {
 
 // bindAddr builds the listen address from server.host/port. net.JoinHostPort
 // (not fmt.Sprintf) so IPv6 literals get bracketed: host "::" must yield
-// "[::]:8090", not the unparseable ":::8090" — the OpenWrt GL-firmware docs
+// "[::]:8090", not the unparseable ":::8090", the OpenWrt GL-firmware docs
 // recommend exactly that host value as the v4-listener workaround (#288), and
 // the old concatenation crash-looped on it ("too many colons in address").
 // An empty host keeps the dual-stack ":port" wildcard; port 0 falls back to
@@ -377,16 +377,16 @@ func bindAddr(host string, port int) string {
 // for the "address already in use" error. Under systemd Restart=always, a bare
 // ListenAndServe that exits on bind failure causes a restart storm: the
 // previous process's socket lingers in TIME_WAIT, each new attempt fails within
-// milliseconds, and systemd dutifully restarts it every RestartSec — hundreds
+// milliseconds, and systemd dutifully restarts it every RestartSec, hundreds
 // of cycles before the kernel finally releases the port. The retry holds the
 // process alive for up to bindRetryDeadline (spanning several RestartSec windows
 // is unnecessary because the retry itself buys the time) so the port can
 // release in-process, converting a storm into a single delayed start.
 //
-// Only EADDRINUSE is retried — other errors (bad config, permission denied) are
-// real failures that should surface immediately.
+// Only EADDRINUSE is retried, other errors (bad config, permission denied) are
+// real failures that should fail immediately.
 // bindRetryWindow/bindRetryInterval tune the EADDRINUSE retry loop below.
-// Package vars (not consts) purely as a test seam — production values are the
+// Package vars (not consts) purely as a test seam, production values are the
 // 30s/1s below.
 var (
 	bindRetryWindow   = 30 * time.Second
@@ -403,7 +403,7 @@ func listenAndServeWithRetry(srv *http.Server) error {
 		if err == nil {
 			return nil
 		}
-		// Retry only on "address already in use" — the one transient bind error
+		// Retry only on "address already in use", the one transient bind error
 		// that resolves itself as the kernel releases the lingering socket.
 		if !isAddrInUse(err) {
 			return err
@@ -419,7 +419,7 @@ func listenAndServeWithRetry(srv *http.Server) error {
 }
 
 // isAddrInUse reports whether err is an "address already in use" bind error.
-// On Linux this surfaces as syscall.EADDRINUSE inside a *net.OpError.
+// On Linux this shows up as syscall.EADDRINUSE inside a *net.OpError.
 func isAddrInUse(err error) bool {
 	var sysErr *os.SyscallError
 	if errors.As(err, &sysErr) {

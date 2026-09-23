@@ -38,7 +38,7 @@ WHERE (? <= 0 OR network_id = ?)
 ORDER BY id;
 
 -- name: UpdateDevice :one
--- Note: scan_attributes is engine-owned and intentionally NOT updated here.
+-- Note: scan_attributes is engine-owned and NOT updated here.
 -- user_attributes is updated via UpdateUserAttributes so the full-row update
 -- can't race the user-edit path.
 UPDATE devices

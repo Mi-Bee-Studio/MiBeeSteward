@@ -26,7 +26,7 @@ const (
 //
 // Either Global is true (see everything) OR NetworkIDs is the exhaustive
 // allow-list of network_ids the caller may see. A Global scope short-circuits
-// every scope check (no filtering) — the common path (admin + open mode).
+// every scope check (no filtering), the common path (admin + open mode).
 type Scope struct {
 	// Global: when true, the caller is unrestricted (no network filtering).
 	Global bool
@@ -58,7 +58,7 @@ const ContextKeyUserScope contextKey = "user_scope"
 
 // ScopeFromContext returns the resolved Scope from the request context. If no
 // scope is present (e.g. the route runs before NetworkScope, or a unit test
-// that didn't set one), it returns a Global scope — the safe default for paths
+// that didn't set one), it returns a Global scope, the safe default for paths
 // that are not behind the scope middleware, so unscoped callers are NOT
 // accidentally locked out. Code paths that enforce scope are always behind
 // NetworkScope, so they will always find a real (non-default) scope.

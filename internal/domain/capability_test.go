@@ -12,7 +12,7 @@ import (
 
 // These tests pin the role → capability map (#138 Phase 1a). The map is the
 // single source of truth both middleware (RequireCapability) and any UI
-// role-awareness read, so its shape — what each role can and cannot do — is a
+// role-awareness read, so its shape, what each role can and cannot do, is a
 // security-relevant contract. Fail-closed for unknown roles.
 
 func TestRoleHas_AdminGrantsEverything(t *testing.T) {
@@ -59,7 +59,7 @@ func TestRoleHas_LegacyUserIsViewer(t *testing.T) {
 
 // TestRoleHas_UnknownRoleFailsClosed: an empty/garbage role grants nothing.
 // This is the guard against a malformed JWT claim or a future role not yet in
-// the map — never fail open.
+// the map, never fail open.
 func TestRoleHas_UnknownRoleFailsClosed(t *testing.T) {
 	for _, role := range []UserRole{"", "superuser", "root", "OPERATOR"} {
 		require.False(t, RoleHas(role, CapDeviceRead), "unknown role %q must grant nothing", role)

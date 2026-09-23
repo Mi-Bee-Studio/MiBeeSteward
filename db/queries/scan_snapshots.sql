@@ -11,7 +11,7 @@
 -- Mark an IP as seen in this scan: insert or reset miss_count to 0 + refresh
 -- last_seen_at. Called for every alive host in a scan.
 --
--- NOTE: this query is intentionally a sqlc query ONLY in its simplest form.
+-- NOTE: this query is a sqlc query ONLY in its simplest form.
 -- The version that also writes device_uuid + CASE WHEN clauses in the ON
 -- CONFLICT DO UPDATE is implemented as raw SQL in
 -- internal/service/scannerv2/runner/detect_lost.go (Runner.upsertScanSnapshot),

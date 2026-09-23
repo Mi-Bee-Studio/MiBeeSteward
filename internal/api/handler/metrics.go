@@ -32,7 +32,7 @@ func MetricsHandler() http.Handler {
 
 // StartDeviceMetricsRefresher seeds the device gauges once immediately, then
 // recomputes them on a fixed ticker until ctx is cancelled (#333). The gauges
-// are Reset+Set snapshots of DB state — without periodic refresh they froze at
+// are Reset+Set snapshots of DB state, without periodic refresh they froze at
 // the process-start snapshot and drifted from reality in BOTH directions
 // (SQL-side cleanups left counts inflated; devices discovered after startup
 // were never counted) until restart. Two aggregate COUNTs per tick; cheap.
@@ -67,8 +67,8 @@ func UpdateDeviceMetrics(ctx context.Context, dbtx db.DBTX) {
 		metrics.MibeeDevicesTotal.WithLabelValues(s.Status, "").Set(float64(s.Count))
 	}
 
-	// Identification-tier breakdown (#282) — same json_extract tiers as the
-	// fingerprint coverage report. Best-effort: never fails the caller.
+	// Identification-tier breakdown (#282), same json_extract tiers as the
+	// fingerprint coverage report. Never fails the caller.
 	metrics.MibeeFingerprintIdentified.Reset()
 	var protocol, heuristic, unidentified int64
 	if err := dbtx.QueryRowContext(ctx, `
