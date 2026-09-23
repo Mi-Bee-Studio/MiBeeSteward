@@ -140,7 +140,8 @@ type Service struct {
 	// the service's internal behavior queryable without scraping logs.
 	stats      statsSnapshot
 	statsMu    sync.RWMutex
-	prom       *metrics // Prometheus mirror of the same decision points; nil = disabled
+	nets       *NetworkResolver // gates off-subnet sightings; nil without a DB
+	prom       *metrics         // Prometheus mirror of the same decision points; nil = disabled
 	startedAt  time.Time
 	lastEvents []recentEvent // ring of the most-recent handled events (status endpoint)
 	sources    []string      // names of active discovery sources (for status endpoint)
@@ -158,6 +159,7 @@ type statsSnapshot struct {
 	IdentifyDead      int64 // identify scan found host unresponsive (synthesized instead)
 	DeviceRecorded    int64 // sink.Apply created a new device
 	MACOnlyEnriched   int64 // MAC-only sighting merged wifi telemetry into a known device
+	OffNetworkDropped int64 // dropped: matched no known CIDR while geometry exists
 }
 
 // recentEvent is one entry in the status endpoint's "last N discoveries" ring.
@@ -191,6 +193,7 @@ func New(cfg Config, sink HostSink, ident Identifier, dbConn *sql.DB, networkID 
 		cfg:    cfg,
 		sink:   sink,
 		ident:  ident,
+		nets:   NewNetworkResolver(dbConn),
 		nid:    nid,
 		db:     dbConn,
 		prom:   newMetrics(registerer),
@@ -352,6 +355,18 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 	// Mark as recently-handled regardless of outcome so a repeated burst doesn't
 	// re-enter; a genuine re-appearance after dedupTTL will be re-evaluated.
 	s.markSeen(ev.IP)
+
+	// Off-subnet gate (#397 family): when the networks table knows at least
+	// one CIDR and this IP lies inside none of them, the sighting is foreign
+	// (e.g. dhcp_leases rows for a dual-homed router's WAN arm). Drop it
+	// instead of stamping the local network and growing the mismatch count.
+	if nid, anyKnown := s.nets.ResolveGate(ctx, ev.IP); !nid.Valid && anyKnown {
+		s.statsMu.Lock()
+		s.stats.OffNetworkDropped++
+		s.statsMu.Unlock()
+		s.recordEvent(ev, "skipped_offnetwork")
+		return
+	}
 
 	known, err := s.isKnownHost(ctx, ev.IP, ev.MAC)
 	if err != nil {
