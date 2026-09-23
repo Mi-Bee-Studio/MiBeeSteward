@@ -26,7 +26,7 @@ import (
 // prunes high-volume detail tables; the load-bearing invariants are:
 //   - days<=0 NEVER deletes (misconfig must not wipe a table),
 //   - deletion loops in batches until a batch is under-sized (backlog exhausted),
-//   - a mid-sweep cancel/error keeps the rows already deleted (best-effort).
+//   - a mid-sweep cancel/error keeps the rows already deleted (failures are logged).
 // A regression here silently over- or under-prunes production data.
 
 // TestCutoff_ZeroDaysGuard pins the delete-everything guard: a non-positive
@@ -42,7 +42,7 @@ func TestCutoff_ZeroDaysGuard(t *testing.T) {
 }
 
 // TestSweepBatched_ZeroDaysNeverDeletes asserts the del callback is never
-// invoked when days<=0 — the single most important sweep safety property.
+// invoked when days<=0, the single most important sweep safety property.
 func TestSweepBatched_ZeroDaysNeverDeletes(t *testing.T) {
 	svc := New(nil, nil, nil, nil, config.RetentionConfig{BatchSize: 10, SweepIntervalHours: 1})
 	calls := 0
@@ -74,7 +74,7 @@ func TestSweepBatched_LoopsUntilBatchExhausted(t *testing.T) {
 }
 
 // TestSweepBatched_ErrorReturnsTotalSoFar asserts that a del error aborts the
-// loop but keeps the rows already deleted (best-effort: a transient failure
+// loop but keeps the rows already deleted (a transient failure
 // mid-table does not undo earlier batches).
 func TestSweepBatched_ErrorReturnsTotalSoFar(t *testing.T) {
 	svc := New(nil, nil, nil, nil, config.RetentionConfig{BatchSize: 5, SweepIntervalHours: 1})
@@ -176,7 +176,7 @@ func countAuditLogs(t *testing.T, conn *sql.DB) int64 {
 // the WAL is checkpointed (truncates the -wal sidecar) and the size/rows
 // gauges carry values for the DB file and sampled tables.
 func TestMaintenance_CheckpointAndMetrics(t *testing.T) {
-	// File-backed DB (not :memory:) — the maintenance pass measures real
+	// File-backed DB (not :memory:), the maintenance pass measures real
 	// files via PRAGMA database_list.
 	dir := t.TempDir()
 	mainPath := filepath.Join(dir, "main.db")

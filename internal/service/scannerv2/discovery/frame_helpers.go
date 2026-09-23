@@ -19,7 +19,7 @@
 // (lldp_frame_real.go: WITH_LLDP, cdp_frame_real.go: WITH_CDP,
 // arp_scan_real.go: WITH_ARPSCAN). In the default build (no tags) they have no
 // caller, so golangci-lint would flag them as unused. The nolint:unused
-// directives below suppress that — they are NOT dead code, just conditionally
+// directives below suppress that, they are NOT dead code, just conditionally
 // compiled in.
 
 package discovery

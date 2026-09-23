@@ -21,7 +21,7 @@ import (
 type metrics struct {
 	// mismatches is the count of devices whose IP falls outside their stamped
 	// network's CIDR, per network. A gauge (set per scan, then reset before the
-	// next scan) so it reflects the CURRENT drift, not a cumulative tally — a
+	// next scan) so it reflects the CURRENT drift, not a cumulative tally, a
 	// corrected device drops the gauge back toward 0, which is what an operator
 	// alerting on it wants to see.
 	mismatches *prometheus.GaugeVec
@@ -31,7 +31,7 @@ type metrics struct {
 // be called multiple times in one process (tests, hot reloads). Registering the
 // same collector twice panics, so we register exactly once via sync.Once and
 // hand every Service the same GaugeVec. A nil registerer (tests) skips it
-// entirely — each Service gets its own throwaway metrics struct.
+// entirely, each Service gets its own throwaway metrics struct.
 var (
 	mismatchGaugeOnce sync.Once
 	mismatchGauge     *prometheus.GaugeVec

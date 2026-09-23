@@ -127,7 +127,7 @@ func TestPortSpecProbe_OpenPortAndBanner(t *testing.T) {
 func TestPortSpecProbe_ClosedPortNoEvidence(t *testing.T) {
 	// A port nothing is listening on: the dial gets an RST. Since #256 a
 	// refused port emits exactly one port_closed evidence (positive closure
-	// knowledge — safe to drop the host's service row) and nothing else.
+	// knowledge, safe to drop the host's service row) and nothing else.
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
@@ -240,7 +240,7 @@ func TestONVIFProbe_DetectsGenuineONVIF(t *testing.T) {
 }
 
 func TestONVIFProbe_RejectsNonONVIFBody(t *testing.T) {
-	// nginx-style 200 with HTML body — must NOT match.
+	// nginx-style 200 with HTML body, must NOT match.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)
 		w.Write([]byte(`<html><body>Welcome to nginx</body></html>`))
@@ -385,7 +385,7 @@ func ioReadUntilClosed(conn net.Conn) {
 // deadline-exceeded error: the probe must emit NOTHING for that port
 // (timeout ≠ closed), retry exactly once, and stay bounded. The dial is
 // stubbed because the real network cannot be trusted on dev machines behind
-// TUN proxies — they fake-answer SYN to TEST-NET targets, turning the
+// TUN proxies, they fake-answer SYN to TEST-NET targets, turning the
 // intended "timeout" into a phantom "open" (#364).
 func TestPortSpecProbe_TimeoutIsUnknownNotClosed(t *testing.T) {
 	orig := tcpDial
@@ -427,7 +427,7 @@ func TestPortSpecProbe_HonorsHintPortSpec(t *testing.T) {
 	defer li.Close()
 	port := li.Addr().(*net.TCPAddr).Port
 
-	// Engine-global spec deliberately does NOT contain the open port.
+	// Engine-global spec does NOT contain the open port.
 	p := NewPortSpecProbe("22,80", nil)
 	// Hint whitelist DOES.
 	evs, err := p.Probe(context.Background(), "127.0.0.1", scannerv2.ProbeHint{
@@ -447,7 +447,7 @@ func TestPortSpecProbe_HonorsHintPortSpec(t *testing.T) {
 		t.Fatalf("hint whitelist port %d must be scanned despite global spec omission, got %+v", port, evs)
 	}
 
-	// Without a hint, the global spec applies — the port is NOT scanned.
+	// Without a hint, the global spec applies, the port is NOT scanned.
 	evs, err = p.Probe(context.Background(), "127.0.0.1", scannerv2.ProbeHint{Timeout: 500 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)

@@ -51,7 +51,7 @@ func NewRDNSProbe() *RDNSProbe { return NewRDNSProbeWithConfig(RDNSConfig{}) }
 
 // NewRDNSProbeWithConfig returns a reverse-DNS probe. When cfg.DNSServers is
 // non-empty a dedicated resolver is built that dials ONLY those servers,
-// bypassing /etc/resolv.conf — this is how a center box reaches a LAN DNS it
+// bypassing /etc/resolv.conf, this is how a center box reaches a LAN DNS it
 // wouldn't otherwise query. Empty → system resolver.
 func NewRDNSProbeWithConfig(cfg RDNSConfig) *RDNSProbe {
 	p := &RDNSProbe{resolver: net.DefaultResolver, timeout: cfg.Timeout}

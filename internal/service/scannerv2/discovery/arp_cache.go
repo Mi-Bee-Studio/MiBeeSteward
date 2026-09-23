@@ -28,7 +28,7 @@ import (
 //
 // It complements RouterARPSource: where the router walk covers the whole subnet
 // (including hosts the scanner host never talks to directly), this source is a
-// free byproduct of normal operation — no extra packets, just a periodic file
+// free byproduct of normal operation, no extra packets, just a periodic file
 // read + diff.
 type ARPCacheSource struct {
 	interval time.Duration
@@ -36,7 +36,7 @@ type ARPCacheSource struct {
 	logger   *slog.Logger
 	// localNet filters neighbours to the configured LAN (network.cidr). nil =
 	// no filtering (the pre-#292 behavior). On a form-C center running ON the
-	// router, /proc/net/arp holds BOTH arms' neighbours — without the filter
+	// router, /proc/net/arp holds BOTH arms' neighbours, without the filter
 	// the WAN side (e.g. the upstream network the router itself sits in) gets
 	// recorded into this LAN's portrait and actively probed.
 	localNet *net.IPNet
@@ -49,7 +49,7 @@ type ARPCacheSource struct {
 // (network.cidr) used to drop out-of-subnet neighbours (#292); interval is
 // the poll cadence (typically 60s, same as RouterARPSource so they stay in
 // lockstep). An empty or unparseable cidr logs a warning and keeps the
-// unfiltered behavior — unlike the conntrack source (which goes silent), this
+// unfiltered behavior, unlike the conntrack source (which goes silent), this
 // source predates the filter and must not lose a working deployment to a
 // config typo.
 func NewARPCacheSource(cidr string, interval time.Duration, svc *Service, logger *slog.Logger) *ARPCacheSource {

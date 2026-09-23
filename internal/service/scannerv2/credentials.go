@@ -19,16 +19,16 @@ package scannerv2
 // (probe/snmp_conn.go).
 //
 // Design choice: this type lives in the scannerv2 root package (NOT probe/) and
-// intentionally uses NEUTRAL string fields for the protocol identifiers rather
+// uses NEUTRAL string fields for the protocol identifiers rather
 // than gosnmp's typed enums (gosnmp.SnmpV3AuthProtocol etc.). The mapping from
 // the wire string ("SHA256") to the gosnmp enum happens in exactly one place
 // (connectSNMP). This keeps the scannerv2 package free of a direct gosnmp
-// import — important because the orchestrator, engine config, and credential
+// import, important because the orchestrator, engine config, and credential
 // resolver all touch this type, and none of them should depend on the SNMP
 // client library.
 
 // SNMPCredential holds the credentials for one SNMP authentication identity.
-// The zero value is not meaningful — construct via the credential resolver,
+// The zero value is not meaningful, construct via the credential resolver,
 // which decrypts the DB row. A credential is EITHER a v1/v2c community
 // (SecurityLevel=="v1v2c", Community set) OR an SNMPv3 USM credential (one of
 // the v3 security levels, USM fields set).
@@ -40,10 +40,10 @@ type SNMPCredential struct {
 	Name string `json:"name,omitempty"`
 
 	// SecurityLevel selects the authentication model. One of:
-	//   "v1v2c"        — community-string auth (Community field used)
-	//   "noAuthNoPriv" — SNMPv3 USM, no auth, no privacy (RFC 3414 level 1)
-	//   "authNoPriv"   — SNMPv3 USM, authenticated, unencrypted (level 2)
-	//   "authPriv"     — SNMPv3 USM, authenticated + encrypted (level 3)
+	//   "v1v2c"       , community-string auth (Community field used)
+	//   "noAuthNoPriv", SNMPv3 USM, no auth, no privacy (RFC 3414 level 1)
+	//   "authNoPriv"  , SNMPv3 USM, authenticated, unencrypted (level 2)
+	//   "authPriv"    , SNMPv3 USM, authenticated + encrypted (level 3)
 	SecurityLevel string `json:"security_level"`
 
 	// Community is the v1/v2c community string. Used ONLY when
@@ -57,7 +57,7 @@ type SNMPCredential struct {
 	// (valid only for noAuthNoPriv). See probe.parseAuthProtocol for the mapping.
 	AuthProtocol string `json:"auth_protocol,omitempty"`
 	// AuthPassphrase is the plaintext USM auth passphrase (8+ chars per RFC
-	// 3414). Held in memory only; NEVER persisted — the DB stores the
+	// 3414). Held in memory only; NEVER persisted, the DB stores the
 	// AES-GCM ciphertext, decrypted by the credential resolver on read.
 	AuthPassphrase string `json:"-"`
 	// PrivProtocol is the SNMPv3 privacy (encryption) protocol, one of

@@ -26,7 +26,7 @@ import (
 // readAgentMainSource loads cmd/agent/main.go relative to this test file's
 // package directory (internal/service → ../../cmd/agent/main.go). Returns an
 // error (which the caller turns into a t.Skip) when the path can't be resolved
-// — keeps the test working from the repo root and degrades gracefully where
+// - keeps the test working from the repo root and degrades gracefully where
 // source isn't co-located.
 func readAgentMainSource() (string, error) {
 	_, thisFile, _, ok := runtime.Caller(0)
@@ -63,20 +63,20 @@ func extractFirstCHECK(src string) string {
 // tracked in #38 and deferred). The set of valid device types lives in THREE
 // places that must agree:
 //
-//  1. internal/domain/device.go — ValidDeviceTypes (the Go single source of truth)
-//  2. db/schema.sql — devices.type CHECK(...) (the runtime authority on inserts)
-//  3. cmd/agent/main.go agentSchema — the agent's mini-schema CHECK (mirror of #2)
+//  1. internal/domain/device.go, ValidDeviceTypes (the Go single source of truth)
+//  2. db/schema.sql, devices.type CHECK(...) (the runtime authority on inserts)
+//  3. cmd/agent/main.go agentSchema, the agent's mini-schema CHECK (mirror of #2)
 //
 // This test probes #2 at runtime: builds the real schema, then for each type in
 // domain.ValidDeviceTypes confirms a sentinel INSERT succeeds (CHECK accepts it).
 // If anyone adds a TypeXxx constant without updating the schema CHECK, this test
 // fails with a clear "type X accepted by Go but rejected by schema CHECK" message.
 //
-// It does NOT verify the reverse (schema accepts a type Go doesn't) — the
+// It does NOT verify the reverse (schema accepts a type Go doesn't), the
 // ValidateDeviceType default-to-other behavior makes a schema-only type harmless
 // (a host with an unknown-but-CHECK-valid type just won't round-trip through
 // Go validation cleanly). The forward direction (Go knows a type the schema
-// rejects) is the dangerous one — it causes INSERT failures at runtime.
+// rejects) is the dangerous one, it causes INSERT failures at runtime.
 func TestDevicesTypeCHECK_InSyncWithDomain(t *testing.T) {
 	dbConn, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err, "setup test DB from schema")
@@ -108,9 +108,9 @@ func TestDevicesTypeCHECK_InSyncWithDomain(t *testing.T) {
 
 // TestDevicesTypeCHECK_AgentSchemaAcceptsAllDomainTypes confirms the agent's
 // mini-schema (cmd/agent/main.go agentSchema) does NOT have a tighter type
-// constraint than the center. The agent's devices table intentionally carries
+// constraint than the center. The agent's devices table carries
 // NO CHECK on `type` (its DB is a local shadow that just forwards reports
-// upstream — type validation is the center's job, not the agent's), so every
+// upstream, type validation is the center's job, not the agent's), so every
 // domain.ValidDeviceTypes value must INSERT cleanly there. This guards against
 // someone accidentally adding a CHECK to the agent schema that's narrower than
 // the domain set, which would silently drop agent reports of new device types.
@@ -119,9 +119,9 @@ func TestDevicesTypeCHECK_AgentSchemaAcceptsAllDomainTypes(t *testing.T) {
 	if err != nil {
 		t.Skipf("could not read cmd/agent/main.go source (path-dependent; skipping): %v", err)
 	}
-	// The agent's devices table deliberately has no CHECK on type. If one is
+	// The agent's devices table has no CHECK on type. If one is
 	// ever added (extractFirstCHECK returns non-empty), it must list every
-	// domain type — assert that forward direction. Empty result = no CHECK =
+	// domain type, assert that forward direction. Empty result = no CHECK =
 	// the intended permissive shadow, which trivially accepts all types.
 	if agentCHECK := extractFirstCHECK(agentSrc); agentCHECK != "" {
 		for _, typ := range domain.ValidDeviceTypes {

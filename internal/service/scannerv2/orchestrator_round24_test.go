@@ -12,7 +12,7 @@ import (
 
 // TestOrchestrator_MACResolverPostScanSynthesis covers the post-gather ARP
 // re-read: when no probe collected a MAC (cold neighbour cache), the
-// macResolver's answer is synthesized into an active:arp evidence — with the
+// macResolver's answer is synthesized into an active:arp evidence, with the
 // OUI vendor keys when the resolver knows them, without when it doesn't, and
 // skipped entirely when it has nothing.
 func TestOrchestrator_MACResolverPostScanSynthesis(t *testing.T) {

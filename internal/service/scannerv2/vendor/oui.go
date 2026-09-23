@@ -17,7 +17,7 @@
 //	BCAD28          Hikvision Digital Technology       (MA-L, 6 hex)
 //	8C1F64B14       Murata Manufacturing               (MA-S, 9 hex)
 //
-// or the raw IEEE download format (MA-L only — the .txt form does not carry
+// or the raw IEEE download format (MA-L only, the .txt form does not carry
 // MA-S/MA-M):
 //
 //	BC-AD-28   (hex)        Hikvision Digital Technology
@@ -31,7 +31,7 @@
 // vendor. The file path is configurable via the MIBEE_SCANNER_OUI_PATH env
 // override or the scanner.oui_path config key; when the path is empty, the
 // engine seeds from the embedded curated table (see oui_curated.txt). When the
-// file is missing or unreadable, Lookup returns "" (silent degradation — MAC
+// file is missing or unreadable, Lookup returns "" (silent degradation, MAC
 // is still recorded, just no vendor).
 package vendor
 
@@ -46,7 +46,7 @@ import (
 // embeddedCurated is the hand-maintained CC-BY-SA 4.0 vendor table shipped
 // inside the binary for out-of-box coverage of common vendors. Authored by
 // MiBee Studio from public knowledge of well-known OUIs (NOT a reproduction of
-// the IEEE registry — see oui_curated.txt header). The full IEEE set is an
+// the IEEE registry, see oui_curated.txt header). The full IEEE set is an
 // optional runtime download via scripts/fetch-oui.sh.
 //
 //go:embed oui_curated.txt
@@ -87,7 +87,7 @@ func (o *OUI) Load(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Missing file is the documented degradation path — not an error.
+			// Missing file is the documented degradation path, not an error.
 			return nil
 		}
 		return err
@@ -111,7 +111,7 @@ func (o *OUI) Load(path string) error {
 }
 
 // LoadEmbeddedCurated seeds the table from the //go:embed oui_curated.txt
-// asset — a small hand-maintained CC-BY-SA set of common vendor OUIs. Used by
+// asset, a small hand-maintained CC-BY-SA set of common vendor OUIs. Used by
 // the engine as the out-of-box default when scanner.oui_path is empty, so a
 // fresh install gets vendor inference for common devices without downloading
 // the full IEEE registry. A subsequent Load(path) (user-configured full IEEE
@@ -176,7 +176,7 @@ func (o *OUI) LookupFull(mac string) (vendor, prefix string) {
 	defer o.mu.RUnlock()
 	// Longest-prefix match: try 9 → 7 → 6. A MAC starting 8C1F64B14.. must hit
 	// the MA-S row "8C1F64B14" (Murata), not the MA-L row "8C1F64" (IEEE
-	// Registration Authority) — see package doc.
+	// Registration Authority), see package doc.
 	for _, n := range []int{9, 7, 6} {
 		if len(hex) < n {
 			continue
@@ -222,7 +222,7 @@ func normalizeHexPrefix(s string, maxN int) string {
 			continue
 		}
 		if !isHex(r) {
-			// Non-hex (e.g. a typo or a truncated MAC) — bail out.
+			// Non-hex (e.g. a typo or a truncated MAC), bail out.
 			return ""
 		}
 		b.WriteRune(toUpperHex(r))
@@ -240,8 +240,8 @@ func normalizeHexPrefix(s string, maxN int) string {
 // formats are accepted:
 //
 //	"<6|7|9-hex>\t<vendor>"      (MiBee curated / fetch-oui.sh merged format;
-//	                              6=MA-L, 7=MA-M, 9=MA-S — full length preserved)
-//	"<XX-XX-XX> (hex)\t<vendor>" (IEEE standard oui.txt format — MA-L only, as
+//	                              6=MA-L, 7=MA-M, 9=MA-S, full length preserved)
+//	"<XX-XX-XX> (hex)\t<vendor>" (IEEE standard oui.txt format, MA-L only, as
 //	                              the .txt form does not carry MA-S/MA-M)
 //
 // The "(base 16)" duplicate lines from the IEEE file collapse to the same

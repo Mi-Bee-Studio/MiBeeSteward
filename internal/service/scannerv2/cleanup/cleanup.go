@@ -11,7 +11,7 @@
 // detail tables so they don't grow unbounded.
 //
 // History: this used to delete only scan_results. The real data-volume problem
-// is broader — heartbeat_results alone accumulates ~270k rows/day, and
+// is broader, heartbeat_results alone accumulates ~270k rows/day, and
 // scan_task_runs / audit_logs / notification_log / service_evidence had no
 // pruning at all. The sweep now covers all six detail tables, each with its
 // own retention window, and deletes in batches to avoid locking the database
@@ -51,7 +51,7 @@ type Service struct {
 // is skipped, for tests/main-DB-only contexts). heartbeatDB is the raw
 // connection for the RFC3339-bound device_liveness delete (nil ⇒ skipped).
 // mainDB is the raw main-DB connection for the silent-device prune (nil ⇒
-// device pruning is skipped — tests that don't exercise it). SweepIntervalHours
+// device pruning is skipped, tests that don't exercise it). SweepIntervalHours
 // <=0 and BatchSize<=0 are defended in config.normalizeRetention.
 func New(queries *db.Queries, heartbeatQueries *db.Queries, heartbeatDB, mainDB *sql.DB, cfg config.RetentionConfig) *Service {
 	interval := time.Duration(cfg.SweepIntervalHours) * time.Hour
@@ -145,12 +145,12 @@ func cutoff(days int) time.Time {
 }
 
 // sweepBatched loops the batched DELETE until a batch affects fewer rows than
-// batchSize — the signal that the backlog for this cutoff is exhausted. Returns
+// batchSize, the signal that the backlog for this cutoff is exhausted. Returns
 // the total rows deleted across all batches.
 func (s *Service) sweepBatched(ctx context.Context, table string, days int, del func(cutoff time.Time, limit int64) (int64, error)) int64 {
 	cut := cutoff(days)
 	if cut.IsZero() {
-		// days<=0 means "not configured" — leave the table alone, never delete-all.
+		// days<=0 means "not configured", leave the table alone, never delete-all.
 		return 0
 	}
 	var total int64
@@ -300,7 +300,7 @@ func (s *Service) pruneDeviceNeighbors(ctx context.Context) {
 
 // pruneHostServices prunes classified service identities for hosts that haven't
 // been seen within the retention window. host_services is upserted (not
-// appended), so it doesn't grow per-scan — but rows for gone-silent hosts are
+// appended), so it doesn't grow per-scan, but rows for gone-silent hosts are
 // never refreshed and linger; this reclaims them.
 func (s *Service) pruneHostServices(ctx context.Context) {
 	days := s.cfg.HostServicesDays
@@ -330,7 +330,7 @@ func (s *Service) pruneHostTLSCerts(ctx context.Context) {
 // pruneProbeResults prunes the 拨测 synthetic-probe history series
 // (probe_results.checked_at). Unlike the tables above, checked_at is an
 // RFC3339 TEXT column (string timestamps keep SQLite date() working with
-// modernc), so the cutoff is formatted before comparison — ISO 8601 sorts
+// modernc), so the cutoff is formatted before comparison, ISO 8601 sorts
 // lexically. probe_tls_certs needs no sweep: it holds only each target's
 // current chain, replaced on every successful collection.
 func (s *Service) pruneProbeResults(ctx context.Context) {
@@ -364,16 +364,16 @@ func silentDeviceCutoffs(cfg config.RetentionConfig) (macCutoff, noMacCutoff tim
 // no heartbeat for longer than the configured window (issue #117). Two cases:
 //
 //  1. Silent device: a scanner_v2 device whose status is 'offline' and whose
-//     offline_since is older than the threshold — 7d if it has a MAC (a real
+//     offline_since is older than the threshold, 7d if it has a MAC (a real
 //     asset that may be genuinely gone), 24h if it has no MAC (an unreliable
 //     mac-less identity that's likely a transient/duplicate discovery).
 //  2. Roamed orphan: a scanner_v2 device whose MAC also exists ONLINE in another
 //     network (it DHCP-roamed) AND whose offline_since is older than
-//     roamedOrphanWindow — the device has a live copy elsewhere, so this row is
+//     roamedOrphanWindow, the device has a live copy elsewhere, so this row is
 //     a stale old-network leftover. The window is tighter than the silent
 //     window (the online copy proves the asset still exists).
 //
-// Manual devices (scan_source != 'scanner_v2') are NEVER auto-deleted — a human
+// Manual devices (scan_source != 'scanner_v2') are NEVER auto-deleted, a human
 // added them, a human removes them (CMDB semantics). Each deletion is logged to
 // change_log as device_removed (with a before snapshot + reason) BEFORE the
 // DELETE, so the audit trail survives the CASCADE. Skipped entirely when mainDB
@@ -486,9 +486,9 @@ func (s *Service) pruneSilentDevices(ctx context.Context) {
 
 // logDeviceRemoved writes a device_removed audit row to change_log BEFORE the
 // device row is deleted (so the before snapshot is captured while the row still
-// exists; CASCADE will then clean up FK children but leave this change_log row —
-// change_log.entity_id has no FK, intentionally, so device history survives the
-// device). Minimal JSON before_data (identity fields) — not the full snapshot,
+// exists; CASCADE will then clean up FK children but leave this change_log row;
+// change_log.entity_id has no FK, so device history survives the
+// device). Minimal JSON before_data (identity fields), not the full snapshot,
 // since the device is being deleted anyway and the purpose is a "what got
 // pruned and why" trail, not a full restore record.
 func (s *Service) logDeviceRemoved(ctx context.Context, id int64, uuid, name, devType, brand, model, mac, ip string, networkID sql.NullInt64, reason string) {

@@ -41,7 +41,7 @@ func TestHeartbeatRunChecks_OfflineBackoffSkips(t *testing.T) {
 	require.False(t, probed, "offline device must be skipped on a non-boundary backoff tick")
 
 	// Next tick lands on the boundary → the device IS probed (and the dead
-	// port makes the probe itself error out — the failure-aggregation seam).
+	// port makes the probe itself error out, the failure-aggregation seam).
 	svc.runChecks(ctx)
 	svc.lastProbeMu.RLock()
 	_, probed = svc.lastProbe[cfg.ID]

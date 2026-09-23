@@ -97,7 +97,7 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 			// OUI prefix + vendor are factual registry data (the NIC silicon
 			// vendor + the matched IEEE block). Unconditional: a fresher evidence
 			// piece with a newer OUI result should win over a stale earlier one.
-			// Kept separate from attr.Vendor (the device's self-declared brand) —
+			// Kept separate from attr.Vendor (the device's self-declared brand);
 			// the two differ in OEM/rebrand/virtualization cases.
 			if v := e.RawData["oui_prefix"]; v != "" {
 				attr.OUIPrefix = v
@@ -106,11 +106,11 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 				attr.OUIVendor = v
 			}
 			// The local interface name (e.g. eth0, br-lan) that the ARP entry was
-			// learned on — the 6th column of /proc/net/arp, captured by the ARP
+			// learned on, the 6th column of /proc/net/arp, captured by the ARP
 			// probe (probe/arp.go) and the post-scan MAC resolver. Pure debugging
 			// signal: it tells you which NIC on the center/agent saw this device,
 			// which helps trace "why wasn't X discovered" and hints at network
-			// segmentation (br-lan vs eth1). Last-write-wins like the OUI fields —
+			// segmentation (br-lan vs eth1). Last-write-wins like the OUI fields;
 			// a fresher evidence piece carries the current view.
 			if v := e.RawData["device"]; v != "" {
 				ensureExtras(&attr)["arp_interface"] = v
@@ -124,11 +124,11 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 
 	// MAC bit flags (locally-administered / multicast). Computed once after both
 	// MAC sources (Fields["mac"] and mac-kind evidence) have been folded in, so
-	// they reflect the final attr.MAC. Both are neutral FACTUAL flags surfaced for
-	// observability — neither changes device identity. The locally-administered
+	// they reflect the final attr.MAC. Both are neutral FACTUAL flags kept for
+	// observability, neither changes device identity. The locally-administered
 	// bit (U/L) cannot distinguish privacy randomization from a locally fixed
 	// setting, so it is reported as-is, not as a "randomized" verdict. Both expect
-	// a canonical MAC — IsLocallyAdministeredMAC/IsMulticastMAC return false on
+	// a canonical MAC, IsLocallyAdministeredMAC/IsMulticastMAC return false on
 	// non-canonical input, which also covers the empty case.
 	if attr.MAC != "" {
 		attr.MacIsLocallyAdministered = store.IsLocallyAdministeredMAC(attr.MAC)
@@ -152,7 +152,7 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 			attr.SNMP.SysServices = v
 		}
 		// sysUpTime-derived uptime (only fills when nothing stronger already did
-		// — node_exporter's uptime would have come from f["uptime_seconds"]).
+		// - node_exporter's uptime would have come from f["uptime_seconds"]).
 		if attr.UptimeSeconds == 0 {
 			if v, err := strconv.ParseInt(e.RawData["uptime_seconds"], 10, 64); err == nil && v > 0 {
 				attr.UptimeSeconds = v
@@ -167,7 +167,7 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 
 	// Services → OpenPorts + DetectedServices arrays.
 	attr.OpenPorts, attr.DetectedServices = serviceArrays(rep)
-	// NOTE: scan_attributes intentionally does NOT carry last_scanned_at. That
+	// NOTE: scan_attributes does NOT carry last_scanned_at. That
 	// timestamp lives on the top-level devices.last_scanned_at column (the
 	// runner stamps it in the UPDATE). Embedding it here would make the whole
 	// scan_attributes string differ on every rescan, which poisons change-detect

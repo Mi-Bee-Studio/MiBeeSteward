@@ -40,7 +40,7 @@ var (
 	// each rule individually. (#165)
 	ErrWeakPassword = errors.New("password does not meet requirements")
 	// ErrSetupPending: login was attempted against the bootstrap admin while
-	// it still has an EMPTY password hash (first-run state) — the operator
+	// it still has an EMPTY password hash (first-run state), the operator
 	// must complete the browser setup flow (POST /auth/setup) instead.
 	ErrSetupPending = errors.New("admin password not yet set up")
 	// ErrNoPendingSetup: a setup attempt arrived when no empty-hash bootstrap
@@ -70,7 +70,7 @@ func DefaultPasswordPolicy() config.PasswordPolicyConfig {
 }
 
 // validatePassword checks password strength per the configured policy
-// (auth.password_policy). The must-not-equal-username rule is always on — it
+// (auth.password_policy). The must-not-equal-username rule is always on, it
 // is an identity guard, not a strength knob. Every failure wraps
 // ErrWeakPassword so handlers map the family to 400 via errors.Is (#165).
 func validatePassword(policy config.PasswordPolicyConfig, password, username string) error {
@@ -95,7 +95,7 @@ func validatePassword(policy config.PasswordPolicyConfig, password, username str
 	return nil
 }
 
-// zeroPolicy reports whether policy is the zero value — a config that never
+// zeroPolicy reports whether policy is the zero value, a config that never
 // went through Load's defaults seeding. Treated as "use the defaults" so
 // hand-constructed configs (tests) keep the historical behavior.
 func zeroPolicy(p config.PasswordPolicyConfig) bool {
@@ -238,10 +238,10 @@ func (s *UserService) Register(ctx context.Context, username, email, password, r
 // CreateUser step (no separate SetMustChangePassword race). An EMPTY password
 // seeds the first-run state instead: password_hash stays "" (login is
 // impossible) and the SPA's setup screen (GET /auth/setup-status → POST
-// /auth/setup) walks the operator through picking a password in the browser —
+// /auth/setup) walks the operator through picking a password in the browser;
 // no temporary credential to copy from the installer output. A non-empty
-// password keeps the classic temp-credential flow: it is deliberately NOT
-// policy-checked (the policy governs passwords users choose for themselves —
+// password keeps the classic temp-credential flow: it is NOT
+// policy-checked (the policy governs passwords users choose for themselves;
 // applying it here is what historically left fresh installs with NO admin at
 // all), and first login forces a change via the server-side mcp gate + SPA
 // modal.
@@ -282,7 +282,7 @@ func (s *UserService) SetupPending(ctx context.Context) bool {
 // empty-hash bootstrap admin, clears the must-change flag (the password IS the
 // user's own choice, made against the live policy), and returns a fresh
 // ungated LoginResponse so the SPA lands straight in the app. Rejected with
-// ErrNoPendingSetup once any password is set — the window closes for good.
+// ErrNoPendingSetup once any password is set, the window closes for good.
 func (s *UserService) CompleteSetup(ctx context.Context, newPassword string) (*domain.LoginResponse, error) {
 	user, err := s.queries.GetUserPendingSetup(ctx, "")
 	if err != nil {
@@ -349,7 +349,7 @@ func (s *UserService) Login(ctx context.Context, username, password string) (*do
 	}
 	// A lock that has expired resets the failure counter: each lockout cycle
 	// costs a fresh maxAttempts failures. Without this, a single stray retry
-	// after expiry re-locked instantly — combined with a periodic automation
+	// after expiry re-locked instantly, combined with a periodic automation
 	// using a stale password that meant an effectively indefinite lock.
 	if user.LockedUntil != nil {
 		if err := s.queries.ResetLoginAttempts(ctx, user.ID); err != nil {
@@ -362,7 +362,7 @@ func (s *UserService) Login(ctx context.Context, username, password string) (*do
 
 	// First-run state: an empty password hash means the browser setup flow
 	// (POST /auth/setup) hasn't been completed yet. Login is structurally
-	// impossible — return the distinct sentinel BEFORE the bcrypt compare so
+	// impossible, return the distinct sentinel BEFORE the bcrypt compare so
 	// the failure counter (and lockout) never ticks for setup-pending guesses.
 	if user.PasswordHash == "" {
 		return nil, ErrSetupPending
@@ -508,7 +508,7 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, oldPassw
 // ensureNewPassword validates a user-chosen replacement password: it must pass
 // the strength policy AND differ from the current one. The differ check used
 // to be declared (ErrSamePassword was mapped in handlers) but never actually
-// implemented — any caller could "change" to the identical password.
+// implemented, any caller could "change" to the identical password.
 func (s *UserService) ensureNewPassword(user db.User, newPassword string) error {
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(newPassword)) == nil {
 		return ErrSamePassword
@@ -641,7 +641,7 @@ func (s *UserService) ListUsers(ctx context.Context, search string, limit, offse
 
 // generateToken creates a signed JWT with user_id, role, jti and tv (token
 // version) claims. When mustChangePassword is true (the flag was set at
-// seed/admin-reset time) the token carries mcp=true — middleware.Authenticator
+// seed/admin-reset time) the token carries mcp=true, middleware.Authenticator
 // gates every API call on that claim until the forced change completes, and
 // the force-password handler mints a fresh token WITHOUT it so the gate lifts
 // immediately.
@@ -671,7 +671,7 @@ func (s *UserService) generateToken(ctx context.Context, userID int64, role stri
 }
 
 // GenerateTokenForUser creates a JWT token for a given user (public, used by
-// the TOTP verify handler after a successful code — the same login semantics,
+// the TOTP verify handler after a successful code, the same login semantics,
 // so the must-change gate applies there too).
 func (s *UserService) GenerateTokenForUser(ctx context.Context, userID int64, role string, mustChangePassword bool) (string, error) {
 	return s.generateToken(ctx, userID, role, mustChangePassword)
@@ -714,7 +714,7 @@ func (s *UserService) bumpTokenVersion(ctx context.Context, userID int64) error 
 
 // TokenVersion returns the user's current session-revocation epoch. Wired into
 // middleware as the Authenticator's version source; ok=false (unknown user)
-// rejects the token — sessions of deleted users die with the row.
+// rejects the token, sessions of deleted users die with the row.
 func (s *UserService) TokenVersion(ctx context.Context, userID int64) (int64, bool) {
 	v, err := s.queries.GetUserTokenVersion(ctx, userID)
 	if err != nil {

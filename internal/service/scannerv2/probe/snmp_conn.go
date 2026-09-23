@@ -19,7 +19,7 @@ import (
 )
 
 // connectSNMP constructs and dials a gosnmp client configured with whichever
-// credentials the hint carries, using gosnmp's default retry count (0 — most
+// credentials the hint carries, using gosnmp's default retry count (0, most
 // probes that need retries run their own bounded backoff loop). It is the
 // SINGLE place that translates an scannerv2.SNMPCredential (library-neutral)
 // into gosnmp's typed v3 USM parameters, so the 7 SNMP-speaking probes
@@ -42,7 +42,7 @@ import (
 // snmpClient is the gosnmp surface the MIB walkers use: Walk (GETBULK/
 // GETNEXT iteration) + Get + connection lifecycle. *gosnmp.GoSNMP satisfies
 // it through the liveSNMP wrapper; tests inject fakes via dialSNMP (the
-// #405 smb probeAddr injection pattern applied to SNMP — a real SNMP
+// #405 smb probeAddr injection pattern applied to SNMP, a real SNMP
 // responder in-process is BER soup nobody should maintain).
 type snmpClient interface {
 	Walk(oid string, fn gosnmp.WalkFunc) error
@@ -51,7 +51,7 @@ type snmpClient interface {
 }
 
 // liveSNMP adapts a dialed *gosnmp.GoSNMP to snmpClient. Close reaches the
-// underlying Conn (nil-safe — an unconnected client closes as a no-op).
+// underlying Conn (nil-safe, an unconnected client closes as a no-op).
 type liveSNMP struct{ g *gosnmp.GoSNMP }
 
 func (l liveSNMP) Walk(oid string, fn gosnmp.WalkFunc) error { return l.g.Walk(oid, fn) }
@@ -95,7 +95,7 @@ func dialSNMPReal(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersio
 	}
 
 	// v3 path: the credential decides everything. hint.IsV3() is the promoted
-	// embedded-field method (nil-safe — returns false when no credential).
+	// embedded-field method (nil-safe, returns false when no credential).
 	if hint.IsV3() {
 		return connectV3(ip, hint.SNMPCredential, timeout, retries)
 	}
@@ -126,7 +126,7 @@ func dialSNMPReal(ip string, hint scannerv2.ProbeHint, version gosnmp.SnmpVersio
 
 // connectV3 builds the v3 USM parameters from a credential and dials. The v3
 // discovery handshake (engine ID / boots / time) is handled by gosnmp
-// internally on the first request — we only supply the static USM identity.
+// internally on the first request, we only supply the static USM identity.
 func connectV3(ip string, cred *scannerv2.SNMPCredential, timeout time.Duration, retries int) (*gosnmp.GoSNMP, error) {
 	authProto, err := parseAuthProtocol(cred.AuthProtocol, cred.SecurityLevel)
 	if err != nil {

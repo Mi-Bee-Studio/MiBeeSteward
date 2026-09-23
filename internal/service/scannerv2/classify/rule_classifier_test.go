@@ -52,7 +52,7 @@ func loadBuiltinRules(t *testing.T) *fp.RuleClassifier {
 
 func TestRuleClassifier_LoadsAllRules(t *testing.T) {
 	rc := loadBuiltinRules(t)
-	// builtin-only (recog-imported.yaml excluded — tested via loadFullRules).
+	// builtin-only (recog-imported.yaml excluded, tested via loadFullRules).
 	// banner.yaml=8 + http-tls.yaml=12 (6 kind-presence + 6 http-server-*) + ports.yaml=7 (6 port + 1 smb-version) + lldp-cdp.yaml=13 = 40
 	if rc.RuleCount() != 40 {
 		t.Errorf("expected 40 builtin rules, got %d", rc.RuleCount())
@@ -76,7 +76,7 @@ func TestRuleClassifier_LoadsWithRecog(t *testing.T) {
 // assertIdentityEqual compares two ServiceIdentity slices for behavioral parity.
 // Duplicates (same service+port emitted by multiple rules, e.g. http/80 from
 // both BannerClassifier @0.8 and HTTPClassifier @0.75) are matched
-// many-to-many by confidence — each `want` consumes one `got` with the same
+// many-to-many by confidence, each `want` consumes one `got` with the same
 // (service, port, confidence). This avoids false mismatches when two rules emit
 // the same key at different confidences.
 func assertIdentityEqual(t *testing.T, want, got []scannerv2.ServiceIdentity, ctx string) {
@@ -232,7 +232,7 @@ func TestRuleClassifier_PlainPrometheus(t *testing.T) {
 func TestRuleClassifier_WebVersionExtract(t *testing.T) {
 	rc := loadBuiltinRules(t)
 	// Use a fictitious server string that has a real version pattern (so version
-	// extraction is exercised) but matches no http-server-* product rule — those
+	// extraction is exercised) but matches no http-server-* product rule, those
 	// rules are a RuleClassifier enhancement beyond the hand-written WebClassifier
 	// and would otherwise make `want` (WebClassifier output) and `got` diverge in
 	// identity count. This keeps the test focused on version extraction parity.
@@ -526,7 +526,7 @@ func identitiesMetadata(out []scannerv2.ServiceIdentity) []map[string]string {
 // findIdentityByProduct returns the first identity whose metadata["product"]
 // equals the wanted value, or false. Used to locate the specific identity
 // emitted by an http-server-* rule, since multiple rules (and the hand-written
-// WebClassifier) can emit service="http" for the same evidence — product is
+// WebClassifier) can emit service="http" for the same evidence, product is
 // the discriminator unique to the data-driven product rules.
 func findIdentityByProduct(out []scannerv2.ServiceIdentity, product string) (scannerv2.ServiceIdentity, bool) {
 	for _, id := range out {
@@ -539,7 +539,7 @@ func findIdentityByProduct(out []scannerv2.ServiceIdentity, product string) (sca
 
 // TestRuleClassifier_HTTPServerProducts covers the http-server-* rules added
 // from the mibee-fingerprints-go corpus sync. These rules match structured
-// http evidence (Server header / page title) and emit product metadata — an
+// http evidence (Server header / page title) and emit product metadata, an
 // enhancement beyond the hand-written WebClassifier, which is why they can't
 // use the assertIdentityEqual vs-WebClassifier pattern. Each case verifies both
 // a positive match (the rule's target string) and that the rule's product
@@ -617,7 +617,7 @@ func TestRuleClassifier_HTTPServerProducts(t *testing.T) {
 }
 
 // TestRuleClassifier_HTTPServerProducts_NoMatch verifies the http-server-*
-// rules do not fire on evidence that should not match them — the negative
+// rules do not fire on evidence that should not match them, the negative
 // counterpart to TestRuleClassifier_HTTPServerProducts. A generic server string
 // with no known product keyword should produce no product metadata at all.
 func TestRuleClassifier_HTTPServerProducts_NoMatch(t *testing.T) {
@@ -681,11 +681,11 @@ func TestRuleClassifier_SMBVersion(t *testing.T) {
 }
 
 // TestRuleClassifier_SMBPortFallback verifies that without smb_negotiate
-// evidence, the port-smb fallback still fires on port 445 — i.e. adding the
+// evidence, the port-smb fallback still fires on port 445, i.e. adding the
 // smb-version rule did not break the existing fallback path.
 func TestRuleClassifier_SMBPortFallback(t *testing.T) {
 	rc := loadBuiltinRules(t)
-	// No smb_negotiate evidence — just a port_open hint on 445.
+	// No smb_negotiate evidence, just a port_open hint on 445.
 	ev := []scannerv2.Evidence{
 		{Kind: "port_open", Port: 445, Protocol: "tcp", Confidence: 0.9},
 	}

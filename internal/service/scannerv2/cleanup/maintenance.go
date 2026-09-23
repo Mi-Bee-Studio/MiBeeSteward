@@ -23,15 +23,15 @@ import (
 //
 //   - PRAGMA wal_checkpoint(TRUNCATE) folds the WAL back into the DB file so
 //     the -wal sidecar returns to zero instead of drifting upward forever.
-//     Busy (readers active) is normal — the call simply makes no progress and
+//     Busy (readers active) is normal, the call simply makes no progress and
 //     the next pass tries again; a checkpoint is never worth blocking on.
 //   - PRAGMA optimize updates SQLite's internal statistics (recommended after
 //     bulk deletes; cheap and self-limiting).
 //   - File sizes + high-volume table row counts are sampled into
-//     mibee_db_size_bytes / mibee_db_table_rows — the growth baseline for
+//     mibee_db_size_bytes / mibee_db_table_rows, the growth baseline for
 //     capacity planning and the db-growth alert (#279).
 //
-// Everything is best-effort: a failed step logs at Debug/Warn and never fails
+// Everything is non-fatal: a failed step logs at Debug/Warn and never fails
 // the sweep.
 func (s *Service) runMaintenance(ctx context.Context) {
 	if s.mainDB != nil {
@@ -44,7 +44,7 @@ func (s *Service) runMaintenance(ctx context.Context) {
 
 // mainDBTables / heartbeatDBTables are the row-count sample sets. Counting is
 // a full-table scan on SQLite, so these are the tables that actually matter
-// for growth monitoring — not every table.
+// for growth monitoring, not every table.
 var (
 	mainDBTables      = []string{"devices", "scan_results", "scan_task_runs", "host_services", "service_evidence", "audit_logs", "scan_snapshots", "change_log"}
 	heartbeatDBTables = []string{"heartbeat_results", "device_liveness"}

@@ -132,7 +132,7 @@ func rtspProbePort(ctx context.Context, ip string, port int, timeout time.Durati
 
 // ONVIFProbe identifies ONVIF devices by POSTing a minimal SOAP
 // GetSystemDateAndTime to /onvif/device_service on HTTP ports. A genuine
-// ONVIF response carries the ONVIF XML namespace in the body — checking for it
+// ONVIF response carries the ONVIF XML namespace in the body, checking for it
 // (not just any 2xx/401) avoids false positives from generic web servers.
 //
 // Candidate ports: those in hint.Ports that look HTTP (80, 8080, 443, 8443,
@@ -219,7 +219,7 @@ func onvifProbePort(ctx context.Context, ip string, port int, timeout time.Durat
 	if resp.StatusCode == 404 || resp.StatusCode == 502 || resp.StatusCode == 503 {
 		return nil
 	}
-	// Read up to 4KB and require an ONVIF XML namespace — this filters out
+	// Read up to 4KB and require an ONVIF XML namespace, this filters out
 	// nginx/apache default pages that happen to 200.
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	content := string(respBody)
@@ -281,7 +281,7 @@ func (p *HTTPMetricsProbe) Probe(ctx context.Context, ip string, hint scannerv2.
 }
 
 func metricsCandidatePorts(observed []int) []int {
-	// Probe every observed port for /metrics — Prometheus exporters can live
+	// Probe every observed port for /metrics, Prometheus exporters can live
 	// on arbitrary ports, and the classifier confirms via content inspection.
 	if len(observed) > 0 {
 		return dedupPorts(observed)

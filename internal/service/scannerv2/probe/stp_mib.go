@@ -10,7 +10,7 @@
 // STPMIBProbe walks the BRIDGE-MIB dot1dStp subtree (STP information) to recover
 // Spanning Tree Protocol topology facts: which bridge is the STP root, the
 // designated root port, and each port's STP role/state (forwarding/blocking).
-// This is topology metadata rather than direct adjacency — it explains why a
+// This is topology metadata rather than direct adjacency, it explains why a
 // physical link may carry no traffic (blocked by STP) and identifies the
 // network's logical root. Evidence is emitted with protocol "STP" for the
 // orchestrator; consumers can use root/designated roles to orient the topology
@@ -30,7 +30,7 @@ import (
 
 // STP-MIB OIDs (RFC 4318 / IEEE 802.1D):
 //
-//   - dot1dBaseBridgeAddress (1.3.6.1.2.1.17.1.1.0): scalar — the bridge's own MAC address.
+//   - dot1dBaseBridgeAddress (1.3.6.1.2.1.17.1.1.0): scalar, the bridge's own MAC address.
 //   - dot1dStpPortDesignatedBridge (1.3.6.1.2.1.17.2.2.1.15): OCTET STRING (8 bytes) per
 //     bridge port. First 2 bytes = bridge priority (big-endian uint16), next 6 bytes = bridge
 //     MAC. The OID index is the bridge port number (1-based integer).
@@ -40,7 +40,7 @@ const (
 )
 
 // STPMIBProbe walks the STP-MIB dot1dStpPortTable on bridges/switches that speak
-// SNMP. It discovers the designated bridge for each port — the bridge that is
+// SNMP. It discovers the designated bridge for each port, the bridge that is
 // the STP root for that segment.
 //
 // Output: one "neighbor" Evidence per unique designated bridge, carrying the
@@ -48,7 +48,7 @@ const (
 // whose designated bridge differs from the local bridge's own MAC (self-loops
 // are skipped).
 //
-// Confidence: 0.7 — STP topology is indirect inference (the designated bridge
+// Confidence: 0.7, STP topology is indirect inference (the designated bridge
 // is not necessarily directly connected, it could be multiple hops away).
 //
 // Name: "active:stp_mib".
@@ -134,7 +134,7 @@ func (p *STPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHi
 	}
 
 	// Resolve port names via IF-MIB (bridge port → ifIndex → ifName).
-	// This is best-effort: if it fails, we fall back to numeric port numbers.
+	// If it fails, we fall back to numeric port numbers.
 	portNames := ResolvePortNames(snmp, p.logger)
 
 	// Build the evidence: one "neighbor" per unique designated bridge MAC.

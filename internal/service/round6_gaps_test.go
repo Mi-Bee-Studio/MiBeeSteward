@@ -35,7 +35,7 @@ import (
 // result row + liveness sample land in the batched store, and the OR-verdict
 // flips the device online in the status cache.
 func TestHeartbeatService_RunChecks_OnlineVerdict(t *testing.T) {
-	// Custom harness: a REAL store whose flush loop is NOT started — the
+	// Custom harness: a REAL store whose flush loop is NOT started, the
 	// loop hot-drains the enqueue channels, so an unstarted store keeps the
 	// rows observable in the buffers (deterministic; no 5s flush wait).
 	dbConn, err := testutil.SetupTestDBFromSchema()
@@ -68,7 +68,7 @@ func TestHeartbeatService_RunChecks_OnlineVerdict(t *testing.T) {
 	require.Equal(t, "online", svc.cachedStatus(devID))
 
 	// The probe enqueued its result row AND the verdict enqueued a liveness
-	// sample (the store's own loop commits them on a 5s cadence — asserting
+	// sample (the store's own loop commits them on a 5s cadence, asserting
 	// queue occupancy here keeps the test inside the pre-flush window; the
 	// commit path itself is covered by TestHeartbeatStore_*).
 	require.Eventually(t, func() bool {

@@ -242,7 +242,7 @@ func TestEscapeLike(t *testing.T) {
 
 // TestResolveSortExpr_RejectsUnknownToken asserts the sort whitelist (device.go:258)
 // gates the ORDER BY column. Only whitelisted tokens resolve to a real column
-// expression; anything else — including an SQL-injection attempt — returns
+// expression; anything else, including an SQL-injection attempt, returns
 // ok=false so the caller falls back to "d.id". This is the guarantee that user
 // sort input can never reach the ORDER BY clause unsanitized.
 func TestResolveSortExpr_RejectsUnknownToken(t *testing.T) {

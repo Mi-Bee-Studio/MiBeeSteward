@@ -40,11 +40,11 @@ func TestDHCPLeases_ReadLeases(t *testing.T) {
 		itoa(future)+" AA:BB:CC:DD:EE:FF 192.168.1.50 phone-n13 *",
 		// valid, hostname in quotes (some dnsmasq builds)
 		itoa(future)+" 11:22:33:44:55:66 192.168.1.51 \"my-laptop\" 01:02:03",
-		// expired — must be skipped
+		// expired, must be skipped
 		itoa(past)+" 99:88:77:66:55:44 192.168.1.99 oldhost *",
-		// hostname "*" — valid, just no name (client didn't send one)
+		// hostname "*", valid, just no name (client didn't send one)
 		itoa(future)+" aa:bb:cc:00:00:01 192.168.1.52 * *",
-		// malformed: only 2 fields — must be skipped, not crash
+		// malformed: only 2 fields, must be skipped, not crash
 		"garbage row",
 		// blank line + comment
 		"",
@@ -77,7 +77,7 @@ func TestDHCPLeases_ReadLeases_ProbesDefaultPaths(t *testing.T) {
 	// Point all conventional paths at a TempDir they don't exist in by
 	// constructing with an empty string (which forces probing the real default
 	// paths). On the test host none of them should exist, so readLeases returns
-	// ErrNotExist — the documented no-op behavior on a non-DHCP host.
+	// ErrNotExist, the documented no-op behavior on a non-DHCP host.
 	src := NewDHCPLeasesSource(time.Minute, "", nil, nil)
 	leases, _, err := src.readLeases()
 	require.ErrorIs(t, err, os.ErrNotExist)
@@ -108,7 +108,7 @@ func TestDHCPLeases_Sweep_EmitsOnlyNew(t *testing.T) {
 	require.True(t, ips["192.168.1.10"])
 	require.True(t, ips["192.168.1.11"])
 
-	// Second sweep — same file, nothing new.
+	// Second sweep, same file, nothing new.
 	nBefore := sink.count()
 	src.sweep()
 	time.Sleep(150 * time.Millisecond)
@@ -151,7 +151,7 @@ func itoa(n int64) string {
 
 // TestDHCPLeases_Sweep_SeedEvidence pins the #377 observation-cache feed:
 // every sweep records lease hostnames as Kind:"hostname" observations (even
-// for already-known leases — the cache refreshes, the EVENT stream stays
+// for already-known leases, the cache refreshes, the EVENT stream stays
 // diff-only), so the next scan of the IP carries the hostname into the
 // fingerprint classifiers.
 func TestDHCPLeases_Sweep_SeedEvidence(t *testing.T) {

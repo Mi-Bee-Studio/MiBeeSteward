@@ -205,7 +205,7 @@ func (s *DocumentService) Delete(ctx context.Context, id int64) error {
 }
 
 // Restore undoes a soft delete (the UI's delete-undo toast). Only clears the
-// tombstone — the row and its file were never physically removed.
+// tombstone, the row and its file were never physically removed.
 func (s *DocumentService) Restore(ctx context.Context, id int64) (*domain.DocumentResponse, error) {
 	affected, err := s.queries.RestoreDocument(ctx, id)
 	if err != nil {
@@ -219,7 +219,7 @@ func (s *DocumentService) Restore(ctx context.Context, id int64) (*domain.Docume
 
 // GetFile returns the file path and stored MIME type for a file-type document
 // (for download/preview). The MIME type is what the upload whitelist validated
-// — serving it verbatim (instead of letting http.ServeFile sniff) pins the
+// - serving it verbatim (instead of letting http.ServeFile sniff) pins the
 // Content-Type and stops an HTML-flavored .md from being sniffed as text/html
 // on inline preview.
 func (s *DocumentService) GetFile(ctx context.Context, id int64) (path string, mimeType string, err error) {

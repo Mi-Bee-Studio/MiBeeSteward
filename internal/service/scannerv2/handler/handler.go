@@ -13,7 +13,7 @@
 // whether to perform deep collection (and which downstream services that
 // collection should trigger), and how to enrich the device record from
 // collected data. Handlers are independent of each other and of the
-// orchestrator — they communicate only via Triggers.
+// orchestrator, they communicate only via Triggers.
 //
 // The cascade design (HTTP → /metrics probe → Prometheus handler → node_
 // detection → NodeExporter handler → hardware enrich) is the canonical example
@@ -35,7 +35,7 @@ import (
 // === CollectedData concrete types ===
 
 // HTTPData is the result of probing an HTTP service for /metrics. It records
-// whether a metrics endpoint was found and the discovered URL — used to
+// whether a metrics endpoint was found and the discovered URL, used to
 // trigger the Prometheus handler.
 type HTTPData struct {
 	MetricsFound bool
@@ -73,7 +73,7 @@ type PlainData struct{ S string }
 func (d PlainData) Service() string { return d.S }
 
 // httpClient is a shared client used by HTTP/Prometheus/NodeExporter handlers.
-// No redirect following — we want raw responses.
+// No redirect following, we want raw responses.
 var httpClient = &http.Client{
 	Timeout: 5 * time.Second,
 	CheckRedirect: func(*http.Request, []*http.Request) error {

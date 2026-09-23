@@ -35,7 +35,7 @@ const netbiosTimeout = 3 * time.Second
 
 // readUDPMulticastResponses drains a UDP socket for up to timeout, returning
 // every packet received along with its source IP. Used by mDNS/SSDP where
-// multiple devices may answer a single multicast query — the caller MUST filter
+// multiple devices may answer a single multicast query, the caller MUST filter
 // to packets whose source IP equals the target, otherwise cross-talk makes
 // every host appear to speak every other host's services.
 type udpPacket struct {
@@ -57,7 +57,7 @@ func readUDPMulticastResponses(conn *net.UDPConn, timeout time.Duration) []udpPa
 }
 
 // ---------------------------------------------------------------------------
-// mDNS probe (RFC 6762) — multicast DNS on 224.0.0.251:5353
+// mDNS probe (RFC 6762), multicast DNS on 224.0.0.251:5353
 // ---------------------------------------------------------------------------
 
 // mdnsAddr is the mDNS IPv4 multicast group + port.
@@ -69,7 +69,7 @@ type MDNSConfig struct {
 	// UnicastQueries makes the probe ALSO send a unicast mDNS query directly to
 	// each target's 5353 port (in addition to the standard multicast query).
 	// Some devices (certain cameras, embedded stacks) answer unicast mDNS but
-	// don't reliably answer multicast — this reaches them. Default false (multicast
+	// don't reliably answer multicast, this reaches them. Default false (multicast
 	// only) for backward compatibility + to avoid extra per-host traffic. Issue #20.
 	UnicastQueries bool
 }
@@ -85,7 +85,7 @@ type MDNSConfig struct {
 // the target IP yield an "mdns" evidence with the discovered hostname/service.
 //
 // When cfg.UnicastQueries is set, the probe additionally sends each query
-// directly to the target's 5353 port — reaching devices that answer unicast
+// directly to the target's 5353 port, reaching devices that answer unicast
 // mDNS but not multicast. Issue #20.
 //
 // Name: "active:mdns".
@@ -129,7 +129,7 @@ func (p *MDNSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		// Multicast may be unavailable in some sandboxes (no routable IPv4
-		// multicast). This is a soft failure — no mDNS evidence, not a scan error.
+		// multicast). This is a soft failure, no mDNS evidence, not a scan error.
 		return nil, nil
 	}
 	defer conn.Close()
@@ -151,7 +151,7 @@ func (p *MDNSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	}
 
 	// Collect responses for the timeout window. CRITICAL: filter to packets
-	// whose SOURCE IP equals the target — mDNS is multicast, so a query for
+	// whose SOURCE IP equals the target, mDNS is multicast, so a query for
 	// host X receives replies from EVERY mDNS responder on the segment. Without
 	// this filter, every host in a /24 scan inherits every other host's mDNS
 	// identity (false-positive liveness + wrong vendor/hostname).
@@ -181,7 +181,7 @@ func buildMDNSQuery(name string) []byte {
 // mdnsEvidenceFromPackets parses the collected mDNS responses and emits one
 // "mdns" evidence per packet WHOSE SOURCE IP equals the target. The source-IP
 // filter is what keeps a /24 scan from attributing one device's mDNS identity
-// to every other host — mDNS responses arrive from whoever answers, not from
+// to every other host, mDNS responses arrive from whoever answers, not from
 // the IP we queried.
 func mdnsEvidenceFromPackets(targetIP string, packets []udpPacket) []scannerv2.Evidence {
 	target := net.ParseIP(targetIP)
@@ -228,7 +228,7 @@ func mdnsEvidenceFromPackets(targetIP string, packets []udpPacket) []scannerv2.E
 // parseMDNSResponse walks a DNS response message and extracts the A-record
 // hostname, the set of service PTR names, and a map of TXT key=value records.
 // The source-IP filter in mdnsEvidenceFromPackets already guarantees this
-// packet came from the target, so we don't need to re-match by address here —
+// packet came from the target, so we don't need to re-match by address here;
 // hasMatchingA is kept (always false now) only for signature stability.
 func parseMDNSResponse(msg []byte) (hostname string, services []string, txtKV map[string]string, hasMatchingA bool) {
 	if len(msg) < 12 {
@@ -281,7 +281,7 @@ func parseMDNSResponse(msg []byte) (hostname string, services []string, txtKV ma
 				}
 			}
 		case 16: // TXT — key=value pairs (record owner is the service instance,
-			// NOT the device hostname — do not set hostname from it, or it'll
+			// NOT the device hostname, do not set hostname from it, or it'll
 			// look like "NanoPiR4S._smb._tcp").
 			for tpos := 0; tpos < len(rdata); {
 				tlen := int(rdata[tpos])
@@ -305,7 +305,7 @@ func parseMDNSResponse(msg []byte) (hostname string, services []string, txtKV ma
 			// the SRV target (the device FQDN), never from the owner name.
 			if rdlen >= 6 {
 				if srv, _, err := readDNSName(msg, pos+6); err == nil {
-					// SRV target is "<host>.local" — strip the .local suffix.
+					// SRV target is "<host>.local", strip the .local suffix.
 					// Don't overwrite a hostname already set by an A record.
 					if stripped := dnsStripLocal(srv); stripped != "" && hostname == "" && !strings.HasPrefix(stripped, "_") {
 						hostname = stripped
@@ -320,7 +320,7 @@ func parseMDNSResponse(msg []byte) (hostname string, services []string, txtKV ma
 
 // readDNSName reads a (possibly compressed) DNS name starting at pos. Returns
 // the dotted name and the position just past the name (NOT past the type/class
-// that usually follows — callers add 4 themselves). Handles message
+// that usually follows, callers add 4 themselves). Handles message
 // compression pointers (RFC 1035 sec 4.1.4).
 func readDNSName(msg []byte, pos int) (string, int, error) {
 	var labels []string
@@ -369,7 +369,7 @@ func dnsStripLocal(name string) string {
 }
 
 // ---------------------------------------------------------------------------
-// SSDP / UPnP probe — HTTP-over-UDP on 239.255.255.250:1900
+// SSDP / UPnP probe, HTTP-over-UDP on 239.255.255.250:1900
 // ---------------------------------------------------------------------------
 
 // ssdpAddr is the SSDP IPv4 multicast group + port.
@@ -476,7 +476,7 @@ func parseSSDPResponse(pkt []byte) map[string]string {
 }
 
 // ---------------------------------------------------------------------------
-// NetBIOS Name Service probe — UDP 137 (NBNS, RFC 1002)
+// NetBIOS Name Service probe, UDP 137 (NBNS, RFC 1002)
 // ---------------------------------------------------------------------------
 
 // netbiosNSAddr is the Well-Known NBNS port. Unlike mDNS/SSDP, NBNS is a
@@ -580,7 +580,7 @@ func (p *NetBIOSProbe) Probe(ctx context.Context, ip string, hint scannerv2.Prob
 // parseNetbiosResponse extracts the workstation name (suffix 0x00, not the
 // workgroup) and the domain/workgroup name (suffix 0x00 with the GROUP flag)
 // from a Node Status Response. The response body after the header carries the
-// MAC address as the final 6 bytes — we return that too via the caller.
+// MAC address as the final 6 bytes, we return that too via the caller.
 func parseNetbiosResponse(msg []byte) (host, workgroup string) {
 	if len(msg) < 57 {
 		return

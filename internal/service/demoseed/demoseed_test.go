@@ -43,7 +43,7 @@ func TestSeedAndWipe(t *testing.T) {
 	require.Equal(t, 3, counts(`SELECT COUNT(*) FROM probe_targets WHERE name LIKE 'demo-%'`))
 	require.Equal(t, 3*30, counts(`SELECT COUNT(*) FROM probe_results`))
 	require.Positive(t, counts(`SELECT COUNT(*) FROM topology_edges`))
-	// All device IPs are RFC 5737 documentation ranges — demo data can never
+	// All device IPs are RFC 5737 documentation ranges, demo data can never
 	// collide with a real network.
 	require.Equal(t, len(demoDevices), counts(`SELECT COUNT(*) FROM devices
 		WHERE (ip_address LIKE '198.51.100.%' OR ip_address LIKE '203.0.113.%') AND device_uuid LIKE 'demo-uuid-%'`))

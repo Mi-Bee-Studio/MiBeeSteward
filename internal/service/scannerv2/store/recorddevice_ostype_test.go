@@ -75,7 +75,7 @@ func TestRecordDevice_OSType_WithCrossNetworkDuplicate(t *testing.T) {
 	ip := "192.168.63.9"
 	mac := "04:7c:16:19:22:0e"
 
-	// Agent-discovered row on network_id=3 (no MAC) — a distinct asset.
+	// Agent-discovered row on network_id=3 (no MAC), a distinct asset.
 	_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO devices (name, type, ip_address, mac_address, status, scan_source,
 		                     scan_attributes, network_id, device_uuid, first_seen, last_seen,
@@ -86,7 +86,7 @@ func TestRecordDevice_OSType_WithCrossNetworkDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed network_id=3 row: %v", err)
 	}
-	// Center-discovered MAC row (network_id=1) — the asset the center owns.
+	// Center-discovered MAC row (network_id=1), the asset the center owns.
 	seedDeviceRow(t, repo.db, ip, mac, sql.NullInt64{Int64: 1, Valid: true})
 
 	// Center re-scan: discovers .9 with MAC + os_type (from SSH classifier).
@@ -115,7 +115,7 @@ func TestRecordDevice_OSType_WithCrossNetworkDuplicate(t *testing.T) {
 		t.Errorf("scan_attributes.os = %v, want Windows", attr["os"])
 	}
 
-	// Still exactly two rows — the agent row (network_id=3, untouched) and the
+	// Still exactly two rows, the agent row (network_id=3, untouched) and the
 	// center MAC row (enriched). RecordDevice did not create a third.
 	var count int
 	if err := repo.db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address=?`, ip).Scan(&count); err != nil {

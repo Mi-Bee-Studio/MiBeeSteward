@@ -19,7 +19,7 @@ import (
 //
 // They alias the cidrutil sentinels: target expansion/validation lives in
 // cidrutil (the leaf package the agent command/report paths also share), and
-// parseScanTargets delegates there — one canonical implementation instead of
+// parseScanTargets delegates there, one canonical implementation instead of
 // the two mirrored copies this package used to keep in sync via a parity test.
 var (
 	ErrEmptyTargets         = cidrutil.ErrEmptyTargets
@@ -46,7 +46,7 @@ func ParseScanTargets(targets string) ([]string, error) {
 //
 // Specs pointing at reserved address space (loopback, unspecified,
 // link-local, multicast, limited broadcast, 240/4) are rejected with
-// ErrReservedTarget — see cidrutil.ValidateTargets (#317/#254).
+// ErrReservedTarget, see cidrutil.ValidateTargets (#317/#254).
 func parseScanTargets(targets string) ([]string, error) {
 	return cidrutil.ExpandTargets(targets)
 }

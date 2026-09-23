@@ -14,8 +14,8 @@ import (
 
 // TestRecordSubnets_InsertAndRefresh drives the per-scan subnet finalize:
 // a network without a CIDR is skipped, the first pass inserts the subnet row,
-// and the second pass refreshes (never duplicates) — gateway resolution is
-// best-effort against the kernel route table (absent on some hosts → NULL).
+// and the second pass refreshes (never duplicates), gateway resolution is
+// matched against the kernel route table (absent on some hosts → NULL).
 func TestRecordSubnets_InsertAndRefresh(t *testing.T) {
 	rn, queries, conn := setupChangeDetectDB(t)
 	ctx := context.Background()

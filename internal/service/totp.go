@@ -265,7 +265,7 @@ func (s *TOTPService) GetStatus(ctx context.Context, userID int64) (*domain.TOTP
 }
 
 // ValidateBackupCode checks if a code matches any unconsumed backup code.
-// This is a read-only check — does NOT consume the code.
+// This is a read-only check, does NOT consume the code.
 func (s *TOTPService) ValidateBackupCode(ctx context.Context, userID int64, code string) (bool, error) {
 	totpRecord, err := s.queries.GetTOTPByUserID(ctx, userID)
 	if err != nil {

@@ -17,7 +17,7 @@
 //   - *db.Queries (sqlc-generated persistence, reused as-is)
 //   - the heartbeat HeartbeatCreator interface (for new-device config seeding)
 //
-// It deliberately reuses the existing scan_tasks / scan_task_runs / scan_results
+// It reuses the existing scan_tasks / scan_task_runs / scan_results
 // tables so the result-browsing API surface is unchanged.
 package runner
 
@@ -44,7 +44,7 @@ type HeartbeatCreator interface {
 	CreateConfigs(ctx context.Context, deviceID int64, configs []scannerv2.HeartbeatSpec) error
 	// CreateDefaultConfig seeds a single ICMP heartbeat config for a device.
 	// Used as a fallback when a host was discovered alive but no service could
-	// be identified (no open ports, or ports the classifiers don't recognize) —
+	// be identified (no open ports, or ports the classifiers don't recognize);
 	// so every discovered host gets at least liveness monitoring.
 	CreateDefaultConfig(ctx context.Context, deviceID int64, target string) error
 	// ResetFailures clears the device's in-memory failure counter. Called when a
@@ -53,10 +53,10 @@ type HeartbeatCreator interface {
 	ResetFailures(deviceID int64)
 	// SampleLiveness enqueues one device_liveness verdict sample for the change
 	// engine's multi-period judgment. Called by scan/detect-lost/lease paths that
-	// set devices.status OUTSIDE the heartbeat tick loop — the heartbeat path is
+	// set devices.status OUTSIDE the heartbeat tick loop, the heartbeat path is
 	// the primary sampler (every tick), but agent-managed networks are excluded
 	// from center-side probing, so the lease sweeper is their only liveness
-	// signal and must sample directly. Best-effort (drops are tolerated).
+	// signal and must sample directly. Drops are tolerated.
 	SampleLiveness(deviceID int64, status, source string)
 }
 
@@ -72,7 +72,7 @@ type Runner struct {
 	networkID sql.NullInt64
 	// reportSink, when set, receives the alive HostReports from each scan so an
 	// agent can forward them to its center. nil on the center/standalone path
-	// (no upstream reporting) — the hook is a no-op there.
+	// (no upstream reporting), the hook is a no-op there.
 	reportSink ReportSink
 	// changeRecorder, when set, receives device_added/device_changed events from
 	// applyDeviceBridge (and device_lost from detectLost). nil on the agent
@@ -199,7 +199,7 @@ func (rn *Runner) NetworkID() sql.NullInt64 { return rn.networkID }
 // Run executes one scan task: creates a run record, runs the engine over
 // targets, persists per-host results, applies the device bridge, and finalizes
 // the run + task status. It never returns an error that would crash the
-// scheduler — failures are recorded on the run row and logged.
+// scheduler, failures are recorded on the run row and logged.
 //
 // timeout is the per-host pipeline timeout; concurrentHosts caps parallelism.
 // credentialID optionally binds the scan to an SNMP credential (issue #135);
@@ -225,7 +225,7 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	start := time.Now()
 
 	// 0. Resolve the task's TCP port whitelist (#275): pipeline_config.
-	// port_scan.ports was validated + stored but never enforced — the engine
+	// port_scan.ports was validated + stored but never enforced, the engine
 	// always scanned its global list. Read the task row and thread the spec
 	// through the per-scan ProbeHint (no shared-engine mutation, safe under
 	// concurrent scans). A missing/disabled port_scan stage keeps the global
@@ -306,7 +306,7 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 
 	// 3d. ARP-derived topology edges: walk the local kernel's ARP cache once
 	//     and write device→gateway edges (protocol="ARP") to device_neighbors.
-	//     This is the ONLY topology source when no device speaks SNMP — it
+	//     This is the ONLY topology source when no device speaks SNMP, it
 	//     makes the L2 graph useful on home/SOHO networks. Runs on a fresh
 	//     context so a shutdown mid-finalize doesn't skip it.
 	rn.injectARPTopology(context.Background(), rn.networkID, reports)
@@ -340,7 +340,7 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	metrics.MibeeScannerRunsTotal.WithLabelValues("completed").Inc()
 	metrics.MibeeScannerDurationSeconds.Observe(duration.Seconds())
 	metrics.MibeeScannerHostsDiscovered.Add(float64(aliveHosts))
-	// 5. Update task last-run status (best-effort) — log on failure so a
+	// 5. Update task last-run status , logging failures so a
 	// stale last_run_status (task UI stuck on "running") is observable.
 	if err := rn.queries.UpdateScanTaskStatus(ctx, db.UpdateScanTaskStatusParams{
 		LastRunAt:     &finish,
@@ -357,7 +357,7 @@ func (rn *Runner) failRun(ctx context.Context, runID, taskID int64, duration tim
 	metrics.MibeeScannerRunsTotal.WithLabelValues("failed").Inc()
 	metrics.MibeeScannerDurationSeconds.Observe(duration.Seconds())
 	finish := time.Now()
-	// best-effort: log on failure so the run/task status reflects reality.
+	// Failures are logged so the run/task status reflects reality.
 	if err := rn.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
 		Status:       "failed",
 		DurationMs:   duration.Milliseconds(),

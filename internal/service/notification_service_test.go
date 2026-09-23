@@ -88,7 +88,7 @@ func TestNotificationChannel_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "webhook", same.Type)
 
-	// single-field enable toggle (the UI switch path — must not rewrite config)
+	// single-field enable toggle (the UI switch path, must not rewrite config)
 	toggled, err := svc.SetChannelEnabled(ctx, created.ID, false)
 	require.NoError(t, err)
 	require.False(t, toggled.Enabled)

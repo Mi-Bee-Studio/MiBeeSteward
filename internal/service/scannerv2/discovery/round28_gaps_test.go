@@ -27,7 +27,7 @@ func quietDisc(t *testing.T) {
 
 // TestIdentify_NilEngineAndFailedScan pins Identify's degrade contract: with
 // no identification engine wired (or a failing scan) it reports not-found
-// instead of panicking — passive discovery stays observation-only.
+// instead of panicking, passive discovery stays observation-only.
 func TestIdentify_NilEngineAndFailedScan(t *testing.T) {
 	quietDisc(t)
 	ident := &engineIdentifier{}
@@ -74,7 +74,7 @@ func TestEmit_DropsWhenChannelFull(t *testing.T) {
 	for i := 0; i < cap(svc.events); i++ {
 		svc.Emit(NewHostEvent{IP: ipOf(i), Source: "test"})
 	}
-	// Channel now full — one more must not block.
+	// Channel now full, one more must not block.
 	done := make(chan struct{})
 	go func() {
 		svc.Emit(NewHostEvent{IP: "10.8.8.8", Source: "test"})

@@ -26,7 +26,7 @@ type ProbeSource interface {
 	Name() string
 
 	// Probe gathers evidence for ip. hint is advisory (ports, community,
-	// timeout). The returned evidence is best-effort: a probe may return
+	// timeout). The returned evidence is gathered opportunistically: a probe may return
 	// partial results alongside an error (e.g. context deadline mid-scan).
 	Probe(ctx context.Context, ip string, hint ProbeHint) ([]Evidence, error)
 }

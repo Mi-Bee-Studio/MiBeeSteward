@@ -28,14 +28,14 @@ import (
 //     e.g. "10.11.8-MariaDB..." (the server sends its version
 //     in the initial greeting packet, plain ASCII within the
 //     binary packet)
-//   - 6379 redis:     "-ERR" / "+PONG" / "redis" — but on a fresh connect redis
+//   - 6379 redis:     "-ERR" / "+PONG" / "redis", but on a fresh connect redis
 //     sends nothing; only the PING response classifies it. We
 //     also accept the literal "redis" in any banner.
 //   - 5432 postgres:  an error frame on a bare connect ("F...SFATAL") OR the
 //     "FATAL: no PostgreSQL" style text the server emits when
 //     it receives a non-protocol greeting.
 //   - 27017 mongodb:  "mongodb" in banner, or an ismaster response shape.
-//   - 1433 mssql:     TDS prelogin response — recognized by a leading 0x04/
+//   - 1433 mssql:     TDS prelogin response, recognized by a leading 0x04/
 //     0x01 TDS header byte + the absence of any printable
 //     greeting. We key off a small TDS signature.
 type DatabaseClassifier struct{}
@@ -57,7 +57,7 @@ func (DatabaseClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceI
 		// (binary), but the version string follows as ASCII terminated by 0x00.
 		// Look for a MariaDB/MySQL version substring which is robust to the
 		// binary framing. Also catches Percona.
-		// IMPORTANT: the version-shape regex alone is too broad — it matches
+		// IMPORTANT: the version-shape regex alone is too broad, it matches
 		// any X.Y.Z string including HTTP Server headers (nginx/1.26.1). Only
 		// apply it when the banner explicitly names mysql/mariadb OR the port
 		// is the canonical MySQL port 3306.

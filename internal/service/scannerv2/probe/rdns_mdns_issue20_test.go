@@ -17,7 +17,7 @@ import (
 )
 
 // TestRDNSProbe_CustomResolverConfigured verifies that populating DNSServers
-// builds a resolver that does NOT fall back to the system resolver — i.e. the
+// builds a resolver that does NOT fall back to the system resolver, i.e. the
 // custom dial path is wired. We can't easily run a full DNS round-trip in a
 // unit test, but we CAN confirm the resolver's Dial is non-default by checking
 // that a lookup against an unreachable custom server fails (the system resolver
@@ -28,7 +28,7 @@ func TestRDNSProbe_CustomResolverConfigured(t *testing.T) {
 	// dial path, so a successful loopback lookup distinguishes the two.
 	p := NewRDNSProbeWithConfig(RDNSConfig{DNSServers: []string{"127.0.0.1:1"}})
 	require.NotNil(t, p.resolver)
-	// The custom resolver replaces the default — confirm it's a different
+	// The custom resolver replaces the default, confirm it's a different
 	// instance (DefaultResolver is a package var).
 	require.NotSame(t, net.DefaultResolver, p.resolver,
 		"a configured DNSServers must build a dedicated resolver, not reuse the default")

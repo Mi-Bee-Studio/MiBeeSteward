@@ -100,7 +100,7 @@ func (s *BatchService) UpdateDeviceStatuses(ctx context.Context, ids []int64, st
 	}
 	defer func() { _ = tx.Rollback() }() // rollback errors (sql.ErrTxDone after commit) are expected
 
-	// Use raw SQL for batch status update — more efficient than looping UpdateDevice
+	// Use raw SQL for batch status update, more efficient than looping UpdateDevice
 	// since we only change one field. status is bound 3×: once for SET, twice for
 	// the offline_since CASE branches (flip-to-offline stamps, flip-to-online clears).
 	placeholders := make([]string, len(ids))

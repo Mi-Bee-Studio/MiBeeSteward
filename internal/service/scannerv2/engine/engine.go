@@ -57,7 +57,7 @@ type Engine struct {
 	credResolver CredentialResolver
 	// allowReservedTargets mirrors scanner.allow_reserved_targets: when true
 	// (the synthetic loadgen plane on 127/8), reserved-range targets are
-	// allowed through expansion. Default false — reserved space is rejected
+	// allowed through expansion. Default false, reserved space is rejected
 	// (#317).
 	allowReservedTargets bool
 	// scanSem caps the number of concurrent top-level scans (sync POST /scan +
@@ -74,7 +74,7 @@ type Engine struct {
 // The concrete *credresolver.Resolver satisfies it.
 type CredentialResolver interface {
 	// ResolveByID returns the decrypted credential for id. Returning
-	// (nil, nil) means "no credential bound" — the engine falls back to the
+	// (nil, nil) means "no credential bound", the engine falls back to the
 	// legacy community path. A non-nil error aborts the scan with that error
 	// (e.g. master key missing for an encrypted credential).
 	ResolveByID(ctx context.Context, id int64) (*scannerv2.SNMPCredential, error)
@@ -89,11 +89,11 @@ type Config struct {
 	// MaxConcurrentHosts caps per-scan parallelism (default 50).
 	MaxConcurrentHosts int
 	// AllowReservedTargets opts this instance out of the reserved-range
-	// target rejection (#317) — the scanner.allow_reserved_targets escape
+	// target rejection (#317), the scanner.allow_reserved_targets escape
 	// hatch used by the synthetic loadgen plane on 127/8. Default false.
 	AllowReservedTargets bool
 	// PerHostTimeout bounds one host's full pipeline (default 30s). Enforced via
-	// the per-host context deadline in ScanTargets — the upper bound for ALL
+	// the per-host context deadline in ScanTargets, the upper bound for ALL
 	// probes + handlers + cascade on a single host.
 	PerHostTimeout time.Duration
 	// PerProbeTimeout bounds a SINGLE probe attempt (one SNMP Get, one TCP dial,
@@ -172,7 +172,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	// user-provided IEEE file (scripts/fetch-oui.sh produces MA-L+MA-M+MA-S);
 	// otherwise fall back to the embedded curated table (a small CC-BY-SA set
 	// of common vendor OUIs) so a fresh install gets vendor inference without
-	// any setup. Either way, missing/unreadable files degrade silently — the
+	// any setup. Either way, missing/unreadable files degrade silently, the
 	// ARP probe still records MAC addresses, just without vendor.
 	oui := vendor.New()
 	if cfg.OUIPath != "" {
@@ -184,7 +184,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 			logger.Info("scannerv2: OUI vendor table loaded",
 				"path", cfg.OUIPath, "entries", oui.Size())
 		} else {
-			// Path set but file missing — degrade to the embedded curated table
+			// Path set but file missing, degrade to the embedded curated table
 			// rather than silently disabling vendor lookup entirely.
 			logger.Info("scannerv2: OUI file not present; using embedded curated table",
 				"path", cfg.OUIPath)
@@ -209,7 +209,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	}
 
 	// ② Classifiers. The RuleClassifier comes from the standalone fingerprint
-	// library (github.com/Mi-Bee-Studio/mibee-fingerprints-go). It loads data-driven YAML rules — from
+	// library (github.com/Mi-Bee-Studio/mibee-fingerprints-go). It loads data-driven YAML rules, from
 	// FingerprintPath when configured, else from the rules embedded in the
 	// library binary (zero-config). Hand-written logic classifiers (SNMP bitmask
 	// heuristic, Camera cross-evidence fusion) run alongside.
@@ -234,7 +234,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 			}
 		}
 	} else {
-		// Zero-config fallback: the corpus embedded in the classify package —
+		// Zero-config fallback: the corpus embedded in the classify package;
 		// the synced SUPERSET of the fingerprint library's own rules (adds
 		// iot-identity.yaml #361 and mdns-ssdp.yaml #365, which the external
 		// library doesn't ship). Loading the library's defaults instead
@@ -353,8 +353,8 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	})
 
 	logger.Info("scannerv2 engine ready", "registry", reg.String())
-	// Surface the evidence-persistence switch at startup: with it off (the
-	// default — raw evidence is voluminous) service_evidence stays empty by
+	// Log the evidence-persistence switch at startup: with it off (the
+	// default, raw evidence is voluminous) service_evidence stays empty by
 	// design and the 14d retention sweep is a no-op, which otherwise reads
 	// exactly like a broken persistence chain (#255).
 	logger.Info("scannerv2: raw-evidence persistence", "enabled", cfg.PersistRawEvidence)
@@ -409,7 +409,7 @@ func (e *Engine) ScanTargets(ctx context.Context, targets string, fastScan bool,
 // (portSpec, e.g. "22,80,443,554-558"). Empty portSpec keeps the engine's
 // global configured list. This is how a scan task's
 // pipeline_config.port_scan.ports reaches the port probe without mutating
-// shared engine state — concurrent scans each carry their own ProbeHint
+// shared engine state, concurrent scans each carry their own ProbeHint
 // (#275; previously the task whitelist was validated and stored but never
 // enforced).
 func (e *Engine) ScanTargetsWithPorts(ctx context.Context, targets string, portSpec string, fastScan bool, credentialID int64) ([]scannerv2.HostReport, error) {
@@ -442,7 +442,7 @@ func (e *Engine) ScanTargetsWithPorts(ctx context.Context, targets string, portS
 	// Resolve a bound SNMP credential (issue #135). A credential overrides the
 	// global community for every SNMP probe in this scan. Resolution errors
 	// (e.g. missing master key, deleted credential) abort the scan rather than
-	// silently downgrading — a scan expecting v3 must not quietly fall back to
+	// silently downgrading, a scan expecting v3 must not quietly fall back to
 	// a community string the hardened target rejects anyway.
 	if credentialID != 0 && e.credResolver != nil {
 		cred, err := e.credResolver.ResolveByID(ctx, credentialID)

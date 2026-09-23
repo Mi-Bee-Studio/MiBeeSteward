@@ -21,7 +21,7 @@ import (
 )
 
 // insertLeaseDevice inserts a device row directly (bypassing the bridge) so
-// tests can construct identity tangles the bridge itself wouldn't produce —
+// tests can construct identity tangles the bridge itself wouldn't produce;
 // e.g. two rows at one IP, a stale pre-roam row, or a NULL-mac sighting.
 func insertLeaseDevice(t *testing.T, conn *sql.DB, networkID int64, ip, mac, uuid, lastSeen string) {
 	t.Helper()
@@ -33,8 +33,8 @@ func insertLeaseDevice(t *testing.T, conn *sql.DB, networkID int64, ip, mac, uui
 }
 
 // dropIPNetworkUnique removes the composite identity constraint for tests
-// that deliberately seed pre-constraint "identity tangles" (two rows at one
-// (ip, network_id)) — shapes legacy databases carried before the UNIQUE index
+// that seed pre-constraint "identity tangles" (two rows at one
+// (ip, network_id)), shapes legacy databases carried before the UNIQUE index
 // and that manual sqlite surgery can still produce. The resolution logic
 // under test must stay defensive against them.
 func dropIPNetworkUnique(t *testing.T, conn *sql.DB) {
@@ -45,7 +45,7 @@ func dropIPNetworkUnique(t *testing.T, conn *sql.DB) {
 
 // TestResolveDeviceUUID_MacPrimaryOverSharedIP is the #389 knot: two rows share
 // an IP (a stale pre-roam row and the row currently live at that IP). The
-// sighting's MAC must pick the live row's uuid — the old LIMIT-1-without-ORDER
+// sighting's MAC must pick the live row's uuid, the old LIMIT-1-without-ORDER
 // lookup could feed the stale row's lease forever, keeping it online while the
 // real row aged.
 func TestResolveDeviceUUID_MacPrimaryOverSharedIP(t *testing.T) {

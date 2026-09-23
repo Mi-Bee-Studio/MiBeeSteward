@@ -60,7 +60,7 @@ func TestLeaseSweeper_LeaseRefreshedOnReport(t *testing.T) {
 		reportFor("192.168.62.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"),
 	})
 
-	// Sweep with a generous TTL — device was just seen, should NOT expire.
+	// Sweep with a generous TTL, device was just seen, should NOT expire.
 	sweeper := NewLeaseSweeper(rn, time.Hour, time.Hour, nil)
 	sweeper.sweepOnce(ctx)
 
@@ -170,10 +170,10 @@ func TestLeaseSweeper_IgnoresAlreadyOffline(t *testing.T) {
 // TestLeaseSweeper_RecoversFreshOfflineAgentDevice is the symmetric counterpart
 // of TestLeaseSweeper_ExpiresStaleAgentDevice: a device the sweeper previously
 // marked offline, whose snapshot lease is now FRESH again (the agent resumed
-// reporting it), must be flipped back online — closing the recovery gap the
+// reporting it), must be flipped back online, closing the recovery gap the
 // stable-hash fast path (agent_report.go) opens, where leases refresh but the
 // devices row is never touched. The recovery emits a device_recovered event (the
-// symmetric counterpart of device_lost), NOT device_changed — status is a
+// symmetric counterpart of device_lost), NOT device_changed, status is a
 // liveness signal, excluded from the identity-diff gate.
 func TestLeaseSweeper_RecoversFreshOfflineAgentDevice(t *testing.T) {
 	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
@@ -213,8 +213,8 @@ func TestLeaseSweeper_RecoversFreshOfflineAgentDevice(t *testing.T) {
 	require.Len(t, changed, 0, "recovery must not emit device_changed (status is not an identity field)")
 }
 
-// TestLeaseSweeper_NoRecoverOnCenterNetwork confirms the recovery path — like
-// the expiry path — is scoped to agent networks only. A center-network device
+// TestLeaseSweeper_NoRecoverOnCenterNetwork confirms the recovery path, like
+// the expiry path, is scoped to agent networks only. A center-network device
 // that is offline with a fresh snapshot must NOT be touched by the sweeper
 // (the center has its own applyDeviceBridge recovery path via local scans).
 func TestLeaseSweeper_NoRecoverOnCenterNetwork(t *testing.T) {
@@ -226,7 +226,7 @@ func TestLeaseSweeper_NoRecoverOnCenterNetwork(t *testing.T) {
 	rn.RecordAliveSnapshots(ctx, cnid, 0, []scannerv2.HostReport{
 		reportFor("192.168.63.50", "server", "", "aa:bb:cc:dd:ee:50"),
 	})
-	// Offline but fresh lease — the recovery candidate shape, on the CENTER net.
+	// Offline but fresh lease, the recovery candidate shape, on the CENTER net.
 	_, err := conn.ExecContext(ctx,
 		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.63.50'`)
 	require.NoError(t, err)
@@ -241,7 +241,7 @@ func TestLeaseSweeper_NoRecoverOnCenterNetwork(t *testing.T) {
 
 // TestLeaseSweeper_StopWaitsForGoroutine verifies the shutdown contract (#163):
 // after Stop() returns, the sweep goroutine has fully exited. We cancel the ctx
-// (which the loop selects on) then call Stop() — if Stop() did NOT wait (the
+// (which the loop selects on) then call Stop(), if Stop() did NOT wait (the
 // pre-fix bug), the goroutine could still be running and race setupLeaseTestDB's
 // t.Cleanup conn.Close(). The race detector makes this definitive: a leaked
 // goroutine touching conn after the cleanup close trips a data race.
@@ -263,7 +263,7 @@ func TestLeaseSweeper_StopWaitsForGoroutine(t *testing.T) {
 // report whose snapshot lease row has since vanished (what the pre-#389 lease
 // mis-resolution left behind once its lease feeder moved to the correct asset),
 // with the device row's last_seen aged past the given duration. The device row
-// keeps its uuid — only the lease reference is gone.
+// keeps its uuid, only the lease reference is gone.
 func seedOrphan(t *testing.T, rn *Runner, conn *sql.DB, networkID int64, ip, mac string, age time.Duration) {
 	t.Helper()
 	ctx := context.Background()
@@ -294,7 +294,7 @@ func listLost(t *testing.T, queries *db.Queries) []db.ChangeLog {
 // scan_snapshots row references is invisible to the stale/recover queries (both
 // walk FROM snapshots and would never find it). The orphan backstop must flip it
 // offline, emit device_lost, and stamp offline_since for the retention sweep.
-// The flip is terminal — a second sweep must not re-emit.
+// The flip is terminal, a second sweep must not re-emit.
 func TestLeaseSweeper_ExpiresOrphanedAgentDevice(t *testing.T) {
 	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
@@ -310,12 +310,12 @@ func TestLeaseSweeper_ExpiresOrphanedAgentDevice(t *testing.T) {
 	require.Len(t, listLost(t, queries), 1, "one device_lost event emitted for the orphan")
 
 	// Terminal: the status='online' filter means the orphan fires at most once
-	// (there is no snapshot row to carry a flap counter — none is needed).
+	// (there is no snapshot row to carry a flap counter, none is needed).
 	sweeper.sweepOnce(ctx)
 	require.Len(t, listLost(t, queries), 1, "orphan flip must not re-emit on the next sweep")
 }
 
-// TestLeaseSweeper_OrphanProtectedWithinTTL: the last_seen < cutoff guard — a
+// TestLeaseSweeper_OrphanProtectedWithinTTL: the last_seen < cutoff guard, a
 // recently-seen orphan (e.g. a row bridged moments ago whose snapshot upsert
 // hasn't landed) must survive a full TTL window before the backstop fires.
 func TestLeaseSweeper_OrphanProtectedWithinTTL(t *testing.T) {
@@ -331,7 +331,7 @@ func TestLeaseSweeper_OrphanProtectedWithinTTL(t *testing.T) {
 	require.Equal(t, "online", status, "orphan within the TTL window must not be expired")
 }
 
-// TestLeaseSweeper_LeaseReferencedDeviceNotOrphanExpired: the NOT EXISTS guard —
+// TestLeaseSweeper_LeaseReferencedDeviceNotOrphanExpired: the NOT EXISTS guard;
 // a device whose uuid IS referenced by a snapshot (even with an aged device-row
 // last_seen) belongs to the normal stale/recover paths, never the orphan
 // backstop. With a FRESH lease it must stay online untouched.
@@ -356,7 +356,7 @@ func TestLeaseSweeper_LeaseReferencedDeviceNotOrphanExpired(t *testing.T) {
 }
 
 // TestLeaseSweeper_OrphanIgnoresManualDevices: manual devices are user
-// assertions, not lease subjects — an online manual device in an agent network
+// assertions, not lease subjects, an online manual device in an agent network
 // with an ancient last_seen and no snapshot must never be flipped by the
 // backstop (mirrors the retention sweep's scan_source convention).
 func TestLeaseSweeper_OrphanIgnoresManualDevices(t *testing.T) {
@@ -377,7 +377,7 @@ func TestLeaseSweeper_OrphanIgnoresManualDevices(t *testing.T) {
 }
 
 // TestLeaseSweeper_OrphanIgnoredOnCenterNetwork: like both other directions, the
-// orphan backstop is scoped to agent networks — the center's own network keeps
+// orphan backstop is scoped to agent networks, the center's own network keeps
 // its local-scan DetectLost + heartbeat paths.
 func TestLeaseSweeper_OrphanIgnoredOnCenterNetwork(t *testing.T) {
 	rn, _, conn, centerNetID, _ := setupLeaseTestDB(t)
@@ -409,7 +409,7 @@ func TestLeaseSweeper_OrphanRecoversWhenReportedAgain(t *testing.T) {
 	conn.QueryRow(`SELECT status FROM devices WHERE ip_address=?`, ip).Scan(&status)
 	require.Equal(t, "offline", status, "precondition: orphan expired")
 
-	// The agent reports the host again — lease re-created, row still offline.
+	// The agent reports the host again, lease re-created, row still offline.
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{reportFor(ip, "pc", "", mac)})
 	sweeper.sweepOnce(ctx)
 
@@ -424,7 +424,7 @@ func TestLeaseSweeper_OrphanRecoversWhenReportedAgain(t *testing.T) {
 }
 
 // seedRoamedDevice creates the #399 shape: one device row holding TWO lease
-// rows in the agent network — the pre-roam IP (aged past the TTL) and the
+// rows in the agent network, the pre-roam IP (aged past the TTL) and the
 // post-roam IP (fresh), both stamped with the device's uuid. Returns the uuid.
 func seedRoamedDevice(t *testing.T, rn *Runner, conn *sql.DB, agentNetID int64, oldIP, newIP, mac string, oldAge time.Duration) string {
 	t.Helper()
@@ -436,7 +436,7 @@ func seedRoamedDevice(t *testing.T, rn *Runner, conn *sql.DB, agentNetID int64, 
 	var uuid string
 	require.NoError(t, conn.QueryRow(`SELECT device_uuid FROM devices WHERE ip_address=? AND network_id=?`, oldIP, agentNetID).Scan(&uuid))
 	require.NotEmpty(t, uuid)
-	// Roam: the device now lives at newIP — a fresh lease row there (the bridge
+	// Roam: the device now lives at newIP, a fresh lease row there (the bridge
 	// would have moved the device row's ip too; only the lease shape matters
 	// here, so hand-write the snapshot).
 	_, err := conn.ExecContext(ctx, `
@@ -448,7 +448,7 @@ func seedRoamedDevice(t *testing.T, rn *Runner, conn *sql.DB, agentNetID int64, 
 	_, err = conn.ExecContext(ctx, `UPDATE scan_snapshots SET last_seen_at = ? WHERE network_id = ? AND ip = ?`,
 		scannerv2.DBTime(time.Now().UTC().Add(-oldAge)), agentNetID, oldIP)
 	require.NoError(t, err)
-	// The bridge moves the device row's IP on a roam — mirror that, so the
+	// The bridge moves the device row's IP on a roam, mirror that, so the
 	// dissociated remnant (empty uuid) can't re-match the device via the IP
 	// fallback join at its OLD address.
 	_, err = conn.ExecContext(ctx, `UPDATE devices SET ip_address = ? WHERE device_uuid = ?`, newIP, uuid)
@@ -458,7 +458,7 @@ func seedRoamedDevice(t *testing.T, rn *Runner, conn *sql.DB, agentNetID int64, 
 
 // TestLeaseSweeper_RoamRemnantSkippedAndDissociated (#399): a device that
 // DHCP-roamed holds a stale pre-roam lease AND a fresh post-roam lease, both
-// keyed to its uuid. The stale remnant must NOT kill the device — it is alive
+// keyed to its uuid. The stale remnant must NOT kill the device, it is alive
 // at its new IP. The remnant is dissociated (device_uuid cleared) so it can
 // never judge the device again; the fresh lease keeps referencing it.
 func TestLeaseSweeper_RoamRemnantSkippedAndDissociated(t *testing.T) {
@@ -481,19 +481,19 @@ func TestLeaseSweeper_RoamRemnantSkippedAndDissociated(t *testing.T) {
 	require.Equal(t, uuid, freshUUID, "post-roam lease keeps referencing the device")
 
 	// Steady state: the next sweep finds no stale row for the device at all
-	// (the remnant is unattributed) — no expiry, no dissociation repeat.
+	// (the remnant is unattributed), no expiry, no dissociation repeat.
 	sweeper.sweepOnce(ctx)
 	require.Len(t, listLost(t, queries), 0, "no further events after the remnant is dissociated")
 }
 
 // TestLeaseSweeper_DeadDeviceWithMultipleLeasesStillExpires: the roam guard
-// must not shield a device whose leases are ALL stale — that device is really
+// must not shield a device whose leases are ALL stale, that device is really
 // gone (it roamed once, then left). The normal expiry path fires.
 func TestLeaseSweeper_DeadDeviceWithMultipleLeasesStillExpires(t *testing.T) {
 	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
 	uuid := seedRoamedDevice(t, rn, conn, agentNetID, "192.168.63.145", "192.168.63.172", "11:22:33:44:55:66", 30*time.Minute)
-	// Kill the post-roam lease too — nothing fresh anywhere.
+	// Kill the post-roam lease too, nothing fresh anywhere.
 	_, err := conn.ExecContext(ctx, `UPDATE scan_snapshots SET last_seen_at = ? WHERE device_uuid = ?`,
 		scannerv2.DBTime(time.Now().UTC().Add(-30*time.Minute)), uuid)
 	require.NoError(t, err)
@@ -508,7 +508,7 @@ func TestLeaseSweeper_DeadDeviceWithMultipleLeasesStillExpires(t *testing.T) {
 }
 
 // TestLeaseSweeper_CrossNetworkFreshLeaseDoesNotBlockExpiry: the roam guard is
-// network-scoped — a fresh lease for the same asset in ANOTHER network means
+// network-scoped, a fresh lease for the same asset in ANOTHER network means
 // the asset moved networks; this network's device row must still expire.
 func TestLeaseSweeper_CrossNetworkFreshLeaseDoesNotBlockExpiry(t *testing.T) {
 	rn, queries, conn, centerNetID, agentNetID := setupLeaseTestDB(t)
@@ -535,7 +535,7 @@ func TestLeaseSweeper_CrossNetworkFreshLeaseDoesNotBlockExpiry(t *testing.T) {
 }
 
 // TestLeaseSweeper_FlapDecayAfterStablePeriod: flap_count halves once the last
-// flap is older than the stable period — independent of any liveness
+// flap is older than the stable period, independent of any liveness
 // transition (a device that stops flapping stays online and never passes
 // through recoverFresh, the only other decay site). A recent flap does not
 // decay; the halving refreshes last_flap_at so each halving needs a fresh full

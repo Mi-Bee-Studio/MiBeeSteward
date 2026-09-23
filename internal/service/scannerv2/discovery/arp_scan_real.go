@@ -13,7 +13,7 @@
 // "who-has" requests for each IP and collecting the replies. Unlike the ICMP ping
 // sweep (which firewalls can silently drop) or the passive arp_cache source (which
 // only sees hosts the scanner has already talked to), an ARP request is a L2
-// broadcast that every host on the segment MUST answer — it is the most complete
+// broadcast that every host on the segment MUST answer, it is the most complete
 // single-host, no-router-access discovery available.
 //
 // It uses one AF_PACKET raw socket (CAP_NET_RAW) per sweep: send N who-has frames,
@@ -63,7 +63,7 @@ type ARPScanSource struct {
 // NewARPScanSource constructs the source. cidr is the subnet to sweep; iface is
 // the interface to send/receive on (empty = auto-select the interface whose IPv4
 // address falls inside cidr). Returns nil with a warning log when the socket
-// can't be opened (no CAP_NET_RAW) or no suitable interface is found — callers
+// can't be opened (no CAP_NET_RAW) or no suitable interface is found, callers
 // must nil-check (the routes.go wiring guards on a non-nil return).
 func NewARPScanSource(cidr string, interval time.Duration, iface string, svc *Service, logger *slog.Logger) *ARPScanSource {
 	if logger == nil {
@@ -202,7 +202,7 @@ func (s *ARPScanSource) sweep(ctx context.Context) {
 
 	// Broadcast all who-has requests as fast as the socket accepts them. We don't
 	// wait between sends: ARP replies arrive asynchronously and we collect them in
-	// the read window below. A /24 (254 hosts) is a few KB of traffic — negligible.
+	// the read window below. A /24 (254 hosts) is a few KB of traffic, negligible.
 	template := buildARPRequest(s.srcMAC, s.srcIP)
 	bcast := [6]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 	sent := 0
@@ -301,7 +301,7 @@ func sendARPL2(sock, ifindex int, frame []byte) error {
 }
 
 // buildARPRequest returns a reusable 42-byte Ethernet+ARP who-has frame with a
-// zeroed target IP/MAC — callers copy it and fill the per-IP target via
+// zeroed target IP/MAC, callers copy it and fill the per-IP target via
 // fillARPRequestTarget. Allocating once and copying per-IP avoids 254 separate
 // heap allocations per sweep.
 //
@@ -317,11 +317,11 @@ func sendARPL2(sock, ifindex int, frame []byte) error {
 //	[20..21] op 1 (request)
 //	[22..27] sender HW addr (our MAC)
 //	[28..31] sender proto addr (our IP)
-//	[32..37] target HW addr (0 — unknown, that's what we're asking)
+//	[32..37] target HW addr (0, unknown, that's what we're asking)
 //	[38..41] target proto addr (filled per-target)
 func buildARPRequest(srcMAC [6]byte, srcIP [4]byte) []byte {
 	f := make([]byte, 42)
-	// dst left zero — set per-target by fillARPRequestTarget
+	// dst left zero, set per-target by fillARPRequestTarget
 	copy(f[6:12], srcMAC[:])
 	f[12] = 0x08
 	f[13] = 0x06 // ethertype ARP
@@ -423,7 +423,7 @@ func subnetHostIPs(cidr string) []net.IP {
 }
 
 // cur4inRange reports whether a 4-byte IP is strictly between netAddr (exclusive)
-// and bcast (exclusive) — i.e. a usable host address.
+// and bcast (exclusive), i.e. a usable host address.
 func cur4inRange(cur, netAddr, bcast net.IP) bool {
 	for i := 0; i < 4; i++ {
 		if cur[i] != netAddr[i] {

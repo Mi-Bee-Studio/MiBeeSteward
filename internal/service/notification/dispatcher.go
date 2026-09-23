@@ -118,7 +118,7 @@ func (d *Dispatcher) Stop() {
 	d.wg.Wait()
 }
 
-// Dispatch sends a job to the worker pool. Non-blocking — returns immediately.
+// Dispatch sends a job to the worker pool. Non-blocking, returns immediately.
 // If the channel is full, the job is dropped and logged.
 func (d *Dispatcher) Dispatch(ctx context.Context, channelType domain.ChannelType, config json.RawMessage, payload Payload, ruleID *int64, channelID int64) {
 	job := dispatchJob{

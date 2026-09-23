@@ -144,7 +144,7 @@ func TestDashboardOverview_EmptyDBRendersZeroState(t *testing.T) {
 	require.Zero(t, out.Devices.OnlineRate)
 	require.Empty(t, out.Abnormal)
 	// recent tasks/runs initialize to empty slices (not nil) so the JSON keeps
-	// rendering [] — the dashboard skeleton-freeze lesson (#385) is pinned here
+	// rendering [], the dashboard skeleton-freeze lesson (#385) is pinned here
 	require.NotNil(t, out.Scanning.RecentTasks)
 	require.Empty(t, out.Scanning.RecentTasks)
 	require.NotNil(t, out.Scanning.RecentRuns)
@@ -255,7 +255,7 @@ func TestDashboardQuery_UpstreamErrors(t *testing.T) {
 	_, err = svc.Query(context.Background(), "up", "")
 	require.ErrorContains(t, err, "status 500")
 
-	// unreachable upstream surfaces as UpstreamError so handlers can map 502
+	// unreachable upstream shows up as UpstreamError so handlers can map 502
 	unreachable := &config.Config{}
 	unreachable.Dashboard.PrometheusURL = "http://127.0.0.1:1"
 	unreachableSvc := NewDashboardService(conn, unreachable)

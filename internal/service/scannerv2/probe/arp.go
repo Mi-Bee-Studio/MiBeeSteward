@@ -58,7 +58,7 @@ func ReadARPTable() ([]ARPEntry, error) {
 // LookupMACPostScan is a single-shot ARP cache lookup meant to be called AFTER
 // the gather phase (which is when the ICMP/TCP probes have populated the
 // kernel's neighbour table). The ARPProbe that runs concurrently during gather
-// can race ahead of the ICMP probe and miss the entry on a cold scan — this
+// can race ahead of the ICMP probe and miss the entry on a cold scan, this
 // re-read closes that window. It bypasses the 1s read cache so it always sees
 // the freshest entry.
 //
@@ -102,7 +102,7 @@ func ResolveMACPostScan(ip string) (mac, device, vendor, ouiPrefix string) {
 //
 // It only works for hosts on a directly-attached subnet (the kernel only keeps
 // ARP entries for neighbours it has spoken to L2 with). For cross-subnet hosts
-// the probe returns no evidence — the MAC is simply unknown at L3.
+// the probe returns no evidence, the MAC is simply unknown at L3.
 //
 // On a /24 scan the cache is normally populated by the concurrent ICMP/TCP
 // probes; this probe re-reads it after the fact. To make that reliable even
@@ -133,7 +133,7 @@ func (p *ARPProbe) Probe(ctx context.Context, ip string, _ scannerv2.ProbeHint) 
 		// LookupFull returns (vendor, matched-prefix) so we also record which
 		// IEEE block (MA-L/MA-M/MA-S) the vendor was inferred from. The prefix
 		// + vendor are kept as oui_prefix/oui_vendor (factual registry data),
-		// separate from the device's self-declared brand — see scan_attributes.
+		// separate from the device's self-declared brand, see scan_attributes.
 		if v, prefix := p.oui.LookupFull(mac); v != "" {
 			raw["vendor"] = v
 			raw["oui_prefix"] = prefix
@@ -181,7 +181,7 @@ func lookupMACWithRetry(ctx context.Context, ip string) (mac, device string) {
 
 // cachedARP is a process-wide ARP cache snapshot. The kernel's /proc/net/arp is
 // shared state, and re-reading it per-host per-probe on a /24 scan would mean
-// 256 disk reads — we cache the parsed table for 1s so all hosts in one scan
+// 256 disk reads, we cache the parsed table for 1s so all hosts in one scan
 // share one read.
 var cachedARP struct {
 	sync.Mutex
@@ -218,7 +218,7 @@ func readARPTable() map[string]arpEntry {
 }
 
 // parseARPFile reads /proc/net/arp into an ip→{mac,device} map. Entries with
-// zero MAC ("00:00:00:00:00:00") are skipped — they represent incomplete
+// zero MAC ("00:00:00:00:00:00") are skipped, they represent incomplete
 // resolutions.
 func parseARPFile(path string) (map[string]arpEntry, error) {
 	f, err := os.Open(path)

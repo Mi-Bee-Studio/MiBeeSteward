@@ -16,7 +16,7 @@ import (
 
 // longPassword passes every policy class (upper+lower+digit+special) but
 // exceeds bcrypt's 72-byte input cap, making the hash step fail
-// deterministically — the seam every "failed to hash password" branch needs.
+// deterministically, the seam every "failed to hash password" branch needs.
 var longPassword = "Aa1!" + strings.Repeat("a", 100)
 
 // TestValidatePassword_LowercaseMissing pins the one policy rule the sweep
@@ -68,7 +68,7 @@ func TestCompleteSetup_Tails(t *testing.T) {
 }
 
 // TestUserProfileAndPassword_Tails sweeps the generic-error wraps (dead DB
-// handle) of the profile/password paths — the ErrNoRows "user not found"
+// handle) of the profile/password paths, the ErrNoRows "user not found"
 // branches are covered elsewhere; these are the non-sentinel failures.
 func TestUserProfileAndPassword_Tails(t *testing.T) {
 	svc, db := setupUserService(t)
@@ -102,7 +102,7 @@ func TestLogin_TwoFactorRequiredChallenge(t *testing.T) {
 	u := registerTestUser(t, svc, "tfu", "tfu@invalid")
 
 	// The users-table harness lacks the TOTP satellite; add it and enroll
-	// directly at the storage layer — the branch only needs IsEnabled=true.
+	// directly at the storage layer, the branch only needs IsEnabled=true.
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS user_totp (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,

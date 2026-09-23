@@ -160,7 +160,7 @@ func TestQBridgeOIDPrefixHandling(t *testing.T) {
 
 // TestExtractVLANFromIndex verifies the VLAN tag parser extracts the correct
 // 802.1Q tag (1-4094) from both 1-octet and 2-octet OID index forms, and
-// rejects invalid tags. This is the parser that feeds the vlans table —
+// rejects invalid tags. This is the parser that feeds the vlans table;
 // previously the VLAN prefix was discarded at MAC extraction, leaving vlans
 // permanently empty.
 func TestExtractVLANFromIndex(t *testing.T) {
@@ -204,7 +204,7 @@ func TestVLANTagFromIndex(t *testing.T) {
 		"1.2.3": "",
 		"":      "",
 	}
-	// "16.0" decodes to 4096 which is OUTSIDE 1-4094 — the parser must
+	// "16.0" decodes to 4096 which is OUTSIDE 1-4094, the parser must
 	// reject it (added explicitly for clarity).
 	if got := vlanTagFromIndex("16.0"); got != "" {
 		t.Fatalf("vlanTagFromIndex(\"16.0\") = %q, want \"\" (4096 > 4094)", got)

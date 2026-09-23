@@ -19,7 +19,7 @@ import (
 	"mibee-steward/internal/testutil"
 )
 
-// flakyWriter succeeds for the first `ok` writes, then fails — lets a test
+// flakyWriter succeeds for the first `ok` writes, then fails, lets a test
 // pinpoint exactly WHICH write in a streaming pipeline trips the error branch.
 type flakyWriter struct {
 	ok    int
@@ -83,7 +83,7 @@ func TestStreamJSON_ErrorTails(t *testing.T) {
 		func(int64) ([]map[string]interface{}, error) { return nil, nil })
 	require.ErrorContains(t, err, "opening bracket")
 
-	// Context already canceled — the writer still gets its "]".
+	// Context already canceled, the writer still gets its "]".
 	w := &flakyWriter{ok: 10, fail: errFlaky}
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -103,7 +103,7 @@ func TestStreamJSON_ErrorTails(t *testing.T) {
 		})
 	require.ErrorIs(t, err, errFlaky)
 
-	// NaN cannot be encoded as JSON — the encode branch fails while writes
+	// NaN cannot be encoded as JSON, the encode branch fails while writes
 	// still succeed.
 	err = svc.streamJSON(context.Background(), &flakyWriter{ok: 100, fail: errFlaky},
 		func(int64) ([]map[string]interface{}, error) {
@@ -113,7 +113,7 @@ func TestStreamJSON_ErrorTails(t *testing.T) {
 }
 
 // TestExportService_UnsupportedFormatWriters sanity-walks the entry points
-// with a format the switch defaults on CSV for — the JSON branch is taken
+// with a format the switch defaults on CSV for, the JSON branch is taken
 // explicitly elsewhere; this pins the default fall-through plus a dead-DB
 // first-fetch error per surface.
 func TestExportService_DeadDB_FirstFetchFails(t *testing.T) {

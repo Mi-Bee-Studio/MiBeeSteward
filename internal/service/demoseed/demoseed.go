@@ -11,8 +11,8 @@
 // fictional inventory seeded on first boot of an empty database, plus a
 // low-frequency activity ticker that keeps the dashboard feeling alive
 // (status flips → change_log rows, probe result waves). Everything is
-// clearly fictional (device names, IPs in 198.51.100.0/24 — TEST-NET-2 —
-// and 203.0.113.0/24 — TEST-NET-3, RFC 5737 documentation ranges) so demo
+// clearly fictional (device names, IPs in 198.51.100.0/24, TEST-NET-2;
+// and 203.0.113.0/24, TEST-NET-3, RFC 5737 documentation ranges) so demo
 // data can never be confused with a real network.
 package demoseed
 
@@ -94,7 +94,7 @@ var demoDevices = []demoDevice{
 
 // Seed populates an empty database with the demo plane: 2 networks, ~20
 // fictional devices, change history, probe targets with results, and a
-// topology edge set. Idempotent-by-gate: callers only invoke it when
+// topology edge set. Gated to run once: callers only invoke it when
 // IsDemoEmpty() reported true.
 func Seed(ctx context.Context, dbConn *sql.DB, logger *slog.Logger) error {
 	tx, err := dbConn.BeginTx(ctx, nil)
@@ -110,7 +110,7 @@ func Seed(ctx context.Context, dbConn *sql.DB, logger *slog.Logger) error {
 		}
 	}
 
-	// Networks (TEST-NET documentation ranges — never routable in reality).
+	// Networks (TEST-NET documentation ranges, never routable in reality).
 	exec(`INSERT INTO networks (name, cidr, site) VALUES ('demo-hq', '198.51.100.0/24', '演示·总部')`)
 	exec(`INSERT INTO networks (name, cidr, site) VALUES ('demo-branch', '203.0.113.0/24', '演示·分支')`)
 	var hqID, brID int64

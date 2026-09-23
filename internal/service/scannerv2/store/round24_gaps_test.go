@@ -38,7 +38,7 @@ func TestApplyDeviceIdentity_RoamEvictsMaclessPlaceholder(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// The placeholder was evicted and the real device relocated to .9 — one
+	// The placeholder was evicted and the real device relocated to .9, one
 	// row total, still keyed by the original id.
 	require.Equal(t, 1, countRows(t, conn, "SELECT COUNT(*) FROM devices"))
 	var ip, macOut string
@@ -50,7 +50,7 @@ func TestApplyDeviceIdentity_RoamEvictsMaclessPlaceholder(t *testing.T) {
 // TestApplyDeviceIdentity_RoamRetryFailsOnRealHolder is the eviction path's
 // guard rail: when the IP is held by a row with a REAL (non-empty) mac, the
 // eviction DELETE must not remove it and the retry UPDATE fails the unique
-// constraint again — the apply still returns the target id (best-effort
+// constraint again, the apply still returns the target id (non-fatal
 // semantics) and the holder survives.
 func TestApplyDeviceIdentity_RoamRetryFailsOnRealHolder(t *testing.T) {
 	repo, nid, conn, ctx := resolveRepo(t, 1)

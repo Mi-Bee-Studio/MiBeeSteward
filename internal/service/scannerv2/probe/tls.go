@@ -31,7 +31,7 @@ func DefaultTLSTimeout() time.Duration { return tlsProbeTimeout }
 // the handler-level full-chain collection runs). The full chain + PEM is
 // collected separately by the TLS-wrapped service handlers (see handler/
 // tls_collect.go) which are dispatched for every port a classifier flags as
-// TLS-speaking — so coverage is NOT limited to this set.
+// TLS-speaking, so coverage is NOT limited to this set.
 //
 // Includes the well-known TLS-wrapped service ports so their certs land as
 // early evidence (subject_cn / issuer_cn / san are strong brand signals).
@@ -59,7 +59,7 @@ var tlsProbePorts = map[int]bool{
 // The probe emits a lightweight "tls" evidence (CN/Issuer/SAN/validity/algos)
 // used for classification and device-enrichment. The full chain + PEM is
 // collected at handler time (collectCertChain in cert_collector.go) and
-// persisted to host_tls_certs — this probe deliberately stays cheap so it
+// persisted to host_tls_certs, this probe stays cheap so it
 // doesn't block the gather phase.
 //
 // Name: "active:tls".
@@ -73,7 +73,7 @@ func (p *TLSProbe) Name() string { return "active:tls" }
 // Probe attempts a TLS handshake on each candidate port and, on success, emits
 // a "tls" evidence with the leaf cert's CN/Issuer/SAN/validity/signature.
 // Closed ports or non-TLS services contribute no evidence (CollectCertChain
-// returns an error record but the probe suppresses those here — error records
+// returns an error record but the probe suppresses those here, error records
 // are persisted at handler time, not in the evidence stream, to keep the
 // evidence slice focused on positive signal).
 func (p *TLSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
@@ -91,7 +91,7 @@ func (p *TLSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHin
 		// CollectCertChain always returns ≥1 record (success → chain records;
 		// failure → one error record with IP/Port/Error). For the evidence
 		// stream we only want the leaf (cert_index 0) and only when there was
-		// no error — error records are persisted later by the handler, not
+		// no error, error records are persisted later by the handler, not
 		// flowed as classification evidence.
 		records := CollectCertChain(ctx, ip, port, timeout)
 		if len(records) == 0 || records[0].Error != "" {

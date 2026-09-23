@@ -29,12 +29,12 @@ import (
 // FingerprintReportService builds the fingerprint-coverage report (#282):
 // how well the identification stack (protocol evidence / heuristic keyword
 // rules) is doing on this inventory, which devices remain unidentified, and
-// how to turn one of them into a contribution — a validated YAML rule draft
+// how to turn one of them into a contribution, a validated YAML rule draft
 // generated from the evidence the scanner already collected.
 //
 // The tiers read devices.scan_attributes (the engine-written discovery
 // aggregation): inferred_type_source = "protocol" (SNMP/RTSP/ONVIF/mDNS
-// evidence — trustworthy) / "heuristic" (hostname/brand keyword guess —
+// evidence, trustworthy) / "heuristic" (hostname/brand keyword guess;
 // spoofable, shown with a ? badge in the UI) / anything else with
 // inferred_type resolving to "other" = unidentified.
 type FingerprintReportService struct {
@@ -85,7 +85,7 @@ type UnidentifiedGroup struct {
 
 // Coverage computes the tier stats + the unidentified list with groupings.
 // scope filters the inventory to the caller's network grants (nil / global =
-// every network — admin or open-mode rbac).
+// every network, admin or open-mode rbac).
 func (s *FingerprintReportService) Coverage(ctx context.Context, scope domain.Scope) (*FingerprintCoverage, error) {
 	cov := &FingerprintCoverage{}
 	netFilter, netArgs := networkFilter(scope)
@@ -150,7 +150,7 @@ func (s *FingerprintReportService) Coverage(ctx context.Context, scope domain.Sc
 }
 
 // attachServices fills Ports/Services from host_services for the given
-// unidentified devices (matched by IP — the service table's stable key).
+// unidentified devices (matched by IP, the service table's stable key).
 func (s *FingerprintReportService) attachServices(ctx context.Context, devs []UnidentifiedDevice) error {
 	ips := make([]string, len(devs))
 	byIP := map[string]*UnidentifiedDevice{}
@@ -295,7 +295,7 @@ type evidenceRow struct {
 }
 
 // portServiceHints maps well-known ports to the service name used by the
-// classifier stack — used to pre-fill the draft's service field.
+// classifier stack, used to pre-fill the draft's service field.
 var portServiceHints = map[int]string{
 	21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns", 80: "http",
 	110: "pop3", 123: "ntp", 143: "imap", 161: "snmp", 443: "https",
@@ -308,7 +308,7 @@ var portServiceHints = map[int]string{
 // unidentified device, built from the evidence the scanner already collected
 // (SNMP sysDescr, TCP banners, HTTP title/server). The returned YAML parses
 // AND compiles through the real rule classifier (LoadFromDir on a temp dir),
-// so what the contributor downloads is guaranteed syntactically loadable —
+// so what the contributor downloads is guaranteed syntactically loadable;
 // they only fill in the service/device_type judgment calls.
 func (s *FingerprintReportService) RuleDraft(ctx context.Context, deviceUUID string, scope domain.Scope) (string, error) {
 	var ip string
@@ -381,7 +381,7 @@ func (s *FingerprintReportService) RuleDraft(ctx context.Context, deviceUUID str
 	}
 
 	if len(draft.Rules) == 0 {
-		// No usable evidence — hand back the explanatory header alone so the
+		// No usable evidence, hand back the explanatory header alone so the
 		// contributor still gets the "how to contribute" pointers.
 		return draftHeader + draftNoRulesNote, nil
 	}
@@ -470,7 +470,7 @@ const draftNoRulesNote = `# No banner / HTTP / SNMP / RTSP evidence is stored fo
 `
 
 // validateDraft round-trips the generated YAML through the REAL rule
-// classifier (temp dir + LoadFromDir) — parse + compileMatch both run.
+// classifier (temp dir + LoadFromDir), parse + compileMatch both run.
 func validateDraft(yamlText string) error {
 	dir, err := os.MkdirTemp("", "mibee-fp-draft-*")
 	if err != nil {

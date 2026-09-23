@@ -67,7 +67,7 @@ func (s *recordingSender) snapshot() []Payload {
 
 // setupTestEngine builds an in-memory SQLite with the schema, a real Dispatcher
 // wired to a recording log + recording sender, and a RuleEngine. The engine's
-// goroutine is NOT started — tests call handleEvent directly for determinism.
+// goroutine is NOT started, tests call handleEvent directly for determinism.
 // Returns the engine, queries, recorder, and sender.
 func setupTestEngine(t *testing.T) (e *RuleEngine, q *db.Queries, log *recordingLogCreator, sender *recordingSender) {
 	t.Helper()
@@ -84,7 +84,7 @@ func setupTestEngine(t *testing.T) (e *RuleEngine, q *db.Queries, log *recording
 	d.Start(context.Background())
 	t.Cleanup(d.Stop)
 
-	// watcher is nil — we never call Start(); tests invoke handleEvent directly.
+	// watcher is nil, we never call Start(); tests invoke handleEvent directly.
 	e = NewRuleEngine(q, nil, d, nil)
 	return e, q, log, sender
 }

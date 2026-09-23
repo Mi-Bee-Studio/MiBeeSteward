@@ -64,7 +64,7 @@ func setupSvc(t *testing.T) (*Service, *db.Queries, *string) {
 
 func countConfigs(t *testing.T, queries *db.Queries, deviceID int64) int64 {
 	t.Helper()
-	// deviceID is 1 (the seeded device) — CountDeviceConfigs takes device_id.
+	// deviceID is 1 (the seeded device), CountDeviceConfigs takes device_id.
 	n, err := queries.CountDeviceConfigs(context.Background(), deviceID)
 	require.NoError(t, err)
 	return n
@@ -115,7 +115,7 @@ func TestService_SkipsDevicesWithoutCred(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	queries := db.New(conn)
-	// A router with NO ssh_credential_id + a PC (wrong type) — neither is a candidate.
+	// A router with NO ssh_credential_id + a PC (wrong type), neither is a candidate.
 	_, err = conn.Exec(`INSERT INTO devices (name, type, ip_address, brand, device_uuid) VALUES ('nobody','router','10.0.0.9','Cisco','cfg-nobody')`)
 	require.NoError(t, err)
 	_, err = conn.Exec(`INSERT INTO devices (name, type, ip_address, device_uuid) VALUES ('mypc','pc','10.0.0.10','cfg-mypc')`)

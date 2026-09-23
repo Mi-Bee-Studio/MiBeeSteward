@@ -19,14 +19,14 @@ import (
 // reuseJoinControl is a ListenConfig.Control that sets SO_REUSEADDR AND joins
 // the multicast group via IP_ADD_MEMBERSHIP. SO_REUSEADDR lets the listener bind
 // alongside a system resolver (avahi, systemd-resolved) that already holds
-// :5353 / :1900; it deliberately does NOT set SO_REUSEPORT (that would split
+// :5353 / :1900; it does NOT set SO_REUSEPORT (that would split
 // incoming datagrams between us and the resolver, halving both our coverage).
 //
 // The IP_ADD_MEMBERSHIP is the critical part that was missing before: binding to
 // a multicast address (or to 0.0.0.0:port) does NOT by itself cause the kernel
 // to deliver multicast packets to the socket. The kernel only forwards packets
 // sent to a group to sockets that have explicitly joined that group. Without the
-// join, the listener opens successfully and the read loop runs forever — but
+// join, the listener opens successfully and the read loop runs forever, but
 // receives nothing, because the kernel never hands it any multicast traffic.
 // This was the root cause of the multicast source emitting zero events despite
 // devices broadcasting on the link.
@@ -34,7 +34,7 @@ import (
 // ifaceName selects the interface to join on (empty = the first up,
 // multicast-capable, non-loopback interface, which is the common single-NIC
 // case). Joining on a specific interface is required for IP_ADD_MEMBERSHIP to
-// receive link-local multicast (224.0.0.251) — the kernel needs to know which
+// receive link-local multicast (224.0.0.251), the kernel needs to know which
 // L2 segment to listen on.
 //
 // Unix-only (see multicast_control_windows.go): the socket-descriptor

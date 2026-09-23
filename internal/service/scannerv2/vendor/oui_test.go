@@ -32,7 +32,7 @@ func TestParseOUILine_BothFormats(t *testing.T) {
 		{"BCAD28\tHikvision Digital Technology", "BCAD28", "Hikvision Digital Technology"},
 		// IEEE oui.txt (hex) format
 		{"BC-AD-28   (hex)        Hikvision Digital Technology", "BCAD28", "Hikvision Digital Technology"},
-		// IEEE oui.txt (base 16) format — same prefix, should also parse
+		// IEEE oui.txt (base 16) format, same prefix, should also parse
 		{"BCAD28     (base 16)    Hikvision Digital Technology", "BCAD28", "Hikvision Digital Technology"},
 		// Garbage / comment lines
 		{"  ", "", ""},
@@ -40,7 +40,7 @@ func TestParseOUILine_BothFormats(t *testing.T) {
 		{"# comment", "", ""},
 	}
 	for _, c := range cases {
-		// "OUI\tVendor" case: "O" is non-hex so prefix is "" — adjust expectation
+		// "OUI\tVendor" case: "O" is non-hex so prefix is "", adjust expectation
 		if c.line == "OUI\tVendor" {
 			c.wantPrefix = ""
 		}
@@ -135,7 +135,7 @@ func TestNilOUIIsSafe(t *testing.T) {
 // The canonical real-world example: Murata owns MA-S block 8C1F64B14 (/36)
 // carved out of IEEE's pool OUI 8C1F64 (/24, registered to "IEEE Registration
 // Authority"). A MAC 8C:1F:64:B1:4x:.. MUST resolve to Murata, NOT "IEEE
-// Registration Authority" — which is what a naive /24-only lookup returns.
+// Registration Authority", which is what a naive /24-only lookup returns.
 func TestOUI_LongestPrefixMatch(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "oui.txt")
@@ -230,7 +230,7 @@ func TestOUI_LoadEmbeddedCurated(t *testing.T) {
 	if o.Size() == 0 {
 		t.Fatal("LoadEmbeddedCurated should populate at least one entry")
 	}
-	// Hikvision (BCAD28) is a canonical curated entry — verify it resolves.
+	// Hikvision (BCAD28) is a canonical curated entry, verify it resolves.
 	got, prefix := o.LookupFull("bc:ad:28:11:22:33")
 	if !strings.Contains(strings.ToLower(got), "hikvision") {
 		t.Errorf("LookupFull(bcad28..) vendor = %q, want a Hikvision match", got)

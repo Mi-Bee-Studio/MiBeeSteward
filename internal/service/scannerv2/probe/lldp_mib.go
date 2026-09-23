@@ -23,7 +23,7 @@ import (
 
 // LLDP-MIB OIDs (IEEE 802.1AB, OID prefix 1.0.8802.1.1.2.1.4.1 = lldpRemTable).
 // The table is indexed by (lldpRemTimeMark, lldpRemLocalPortNum, lldpRemIndex).
-// lldpRemLocalPortNum is the local port on the surveyed device — directly
+// lldpRemLocalPortNum is the local port on the surveyed device, directly
 // analogous to bridge_mib's local_port.
 //
 //	lldpRemChassisIdSubtype ...1.4.1.1.4   (int: 4=MAC addr, 7=locally assigned, ...)
@@ -43,21 +43,21 @@ const (
 )
 
 // LLDPMIBProbe walks the LLDP-MIB lldpRemTable on switches/APs that speak SNMP
-// and run LLDP. It discovers LLDP-advertised neighbors — the L2 adjacency that
+// and run LLDP. It discovers LLDP-advertised neighbors, the L2 adjacency that
 // the topology view renders. LLDP is the cross-vendor standard (vs CDP, which is
 // Cisco-proprietary), so this probe sees neighbors from any LLDP-speaking peer.
 //
 // Output: one "neighbor" Evidence per remote chassis, carrying the neighbor's
 // MAC (subtype-4 chassis id, the merge key), the local LLDP port number, and the
 // remote port id/description. The orchestrator's neighbor-extract step turns
-// these into device_neighbors rows via RecordNeighbors — identical to Bridge-MIB.
+// these into device_neighbors rows via RecordNeighbors, identical to Bridge-MIB.
 //
 // Only LLDP-capable devices (managed switches, APs, some NAS/IP phones) populate
 // lldpRemTable; endpoints without LLDP return nothing and the probe is a no-op.
 //
 // This complements Bridge-MIB: Bridge-MIB sees every learned MAC behind a port
 // (broadcast-domain), LLDP sees only LLDP-speaking peers (a sparser but richer
-// adjacency — each carries the peer's identity, not just a MAC).
+// adjacency, each carries the peer's identity, not just a MAC).
 //
 // Name: "active:lldp_mib". Privileges: none (UDP/161, like all SNMP probes).
 type LLDPMIBProbe struct {
@@ -86,7 +86,7 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 	defer snmp.Close()
 
 	// Walk five columns of lldpRemTable, keyed by the index suffix. The index
-	// is "<timeMark>.<localPort>.<remIndex>" — localPort (2nd sub-identifier) is
+	// is "<timeMark>.<localPort>.<remIndex>", localPort (2nd sub-identifier) is
 	// the surveyed device's port facing the neighbor. lldpRemChassisId is the
 	// densest column (one row per remote system); its presence drives the loop.
 	subByIndex := map[string]int{}

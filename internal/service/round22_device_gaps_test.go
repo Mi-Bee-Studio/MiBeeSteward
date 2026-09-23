@@ -104,13 +104,13 @@ func TestDeviceService_ListClampsAndFilters(t *testing.T) {
 			IPAddress: "192.0.2." + string(rune('2'+i)), MACAddress: "02:00:00:00:01:0" + string(rune('0'+i)),
 		})
 		require.NoError(t, err)
-		// Status is not part of CreateRequest — set it directly for the filter test.
+		// Status is not part of CreateRequest, set it directly for the filter test.
 		_, err = conn.Exec(`UPDATE devices SET status = ? WHERE name = ?`, spec.status, spec.name)
 		require.NoError(t, err)
 	}
 
 	// Clamp guards: zero limit → 20, negative offset → 0, oversized limit →
-	// 100 — none of them error.
+	// 100, none of them error.
 	resp, err := svc.List(ctx, domain.DeviceFilter{Limit: 0, Offset: -5})
 	require.NoError(t, err)
 	require.Len(t, resp.Devices, 3)

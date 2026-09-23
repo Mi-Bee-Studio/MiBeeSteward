@@ -32,7 +32,7 @@ type SendResult struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
 	// Permanent marks the failure as non-retryable regardless of the error
-	// text — used by senders that know the platform rejected the message
+	// text, used by senders that know the platform rejected the message
 	// (errcode != 0 in the response body, bad config, unknown channel kind)
 	// rather than a transport hiccup.
 	Permanent bool `json:"permanent,omitempty"`
@@ -49,7 +49,7 @@ func (r SendResult) IsRetryable() bool {
 	if msg == "" {
 		return false
 	}
-	// Permanent errors — do not retry
+	// Permanent errors, do not retry
 	if containsAny(msg,
 		"authentication",
 		"auth",

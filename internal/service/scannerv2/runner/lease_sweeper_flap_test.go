@@ -21,7 +21,7 @@ import (
 // gaps on the order of the scan interval (well under flapStablePeriod). Each
 // recovery's last_flap_at was set by the immediately-prior expire/recover, so
 // now-last_flap_at < flapStablePeriod and the counter INCREMENTS, accumulating
-// until it crosses flapThreshold — after which device_recovered is suppressed
+// until it crosses flapThreshold, after which device_recovered is suppressed
 // while the status column keeps tracking liveness. The OLD hard-reset design
 // cleared the counter whenever now-last_flap_at crossed the stable period, which
 // let a device whose gaps happened to straddle the boundary reset on every cycle.

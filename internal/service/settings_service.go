@@ -31,7 +31,7 @@ const (
 // defaults). The whole table is loaded into memory at construction; reads are
 // an RWMutex-guarded map hit, writes persist to the DB and swap the in-memory
 // value before notifying subscribers. Consumers resolve effective values
-// (overlay ?? config) themselves via Get — the service deliberately knows
+// (overlay ?? config) themselves via Get, the service knows
 // nothing about config structs beyond round-tripping JSON.
 //
 // This is the settings-center half of "configuration without SSH": auth
@@ -76,7 +76,7 @@ func (s *SettingsService) Get(key string, dst any) bool {
 		return false
 	}
 	if err := json.Unmarshal(raw, dst); err != nil {
-		// A malformed overlay row must not brick reads — log and treat as
+		// A malformed overlay row must not brick reads, log and treat as
 		// unset (the config layer takes over); the admin can overwrite it.
 		slog.Warn("settings overlay: malformed JSON, ignoring", "key", key, "error", err)
 		return false
@@ -123,7 +123,7 @@ func (s *SettingsService) Set(ctx context.Context, key string, val any) error {
 
 // SetSubscriber registers fn for change notifications on key. Subscribers run
 // synchronously on the Set caller's goroutine after the DB write + memory
-// swap — keep them cheap (swap a struct pointer, poke a channel), never call
+// swap, keep them cheap (swap a struct pointer, poke a channel), never call
 // back into Set (deadlock via the write lock is the failure mode).
 func (s *SettingsService) SetSubscriber(key string, fn func(raw json.RawMessage)) {
 	s.mu.Lock()

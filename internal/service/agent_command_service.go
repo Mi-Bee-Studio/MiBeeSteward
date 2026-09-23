@@ -47,7 +47,7 @@ func NewAgentCommandService(queries *db.Queries, remoteOpsEnabled, allowReserved
 var (
 	// ErrAgentIDRequired maps to 400.
 	ErrAgentIDRequired = errors.New("agent_id is required")
-	// ErrRemoteOpsDisabled maps to 403: ops commands are double-gated (#278) —
+	// ErrRemoteOpsDisabled maps to 403: ops commands are double-gated (#278);
 	// center switch (agent_fleet.remote_ops_enabled) AND agent opt-in
 	// (center.remote_ops_enabled on the agent). This error is the center gate.
 	ErrRemoteOpsDisabled = errors.New("remote ops commands are disabled on the center (agent_fleet.remote_ops_enabled)")
@@ -79,15 +79,15 @@ func ValidCommands() map[string]bool {
 func IsOpsCommand(command string) bool { return OpsCommands[command] }
 
 // BoundaryError is a scan-target network-boundary rejection (issue #19,
-// Layer 1). It carries the human-readable reason verbatim — the offending
-// IPs — so the handler can surface it as the 400 body unchanged.
+// Layer 1). It carries the human-readable reason verbatim, the offending
+// IPs, so the handler can return it as the 400 body unchanged.
 type BoundaryError struct{ Reason string }
 
 func (e *BoundaryError) Error() string { return e.Reason }
 
 // Enqueue stores a command (currently "scan") for an agent to pick up on its
 // next poll. For "scan" commands the requested targets must fall inside the
-// agent's bound network CIDR — the earliest, cheapest defense against
+// agent's bound network CIDR, the earliest, cheapest defense against
 // cross-subnet mis-dispatch (issue #19, Layer 1: exactly what let an agent
 // scan the wrong subnet and strand 30 devices). A network with no CIDR
 // configured degrades open with a warning (historical networks must not be
@@ -105,7 +105,7 @@ func (s *AgentCommandService) Enqueue(ctx context.Context, agentID, command stri
 	if IsOpsCommand(command) && !s.remoteOpsEnabled {
 		return db.AgentCommand{}, ErrRemoteOpsDisabled
 	}
-	// Boundary check only for scan commands — other command types (none
+	// Boundary check only for scan commands, other command types (none
 	// today, but the channel is extensible) carry no targets field.
 	if command == "scan" {
 		if reason := s.validateScanTargets(ctx, agentID, payload); reason != "" {
@@ -159,8 +159,8 @@ func (s *AgentCommandService) validateScanTargets(ctx context.Context, agentID s
 	}
 	net, err := s.queries.GetNetworkByAgentID(ctx, &agentID)
 	if err != nil {
-		// No network bound to this agent_id — we can't validate, so allow +
-		// warn; the agent itself rejects unreachable targets. Best-effort.
+		// No network bound to this agent_id, we can't validate, so allow +
+		// warn; the agent itself rejects unreachable targets. Failures are logged.
 		slog.Warn("agent command: cannot resolve agent network for boundary check; allowing",
 			"agent_id", agentID, "error", err)
 		return ""
@@ -171,14 +171,14 @@ func (s *AgentCommandService) validateScanTargets(ctx context.Context, agentID s
 	}
 	ipNet, perr := cidrutil.ParseNetwork(cidr)
 	if errors.Is(perr, cidrutil.ErrEmptyCIDR) {
-		// Network exists but has no cidr configured — degrade-open + warn.
+		// Network exists but has no cidr configured, degrade-open + warn.
 		// This is the gap the cidr-enforcement prerequisite (issue #19) closes.
 		slog.Warn("agent command: agent network has no cidr; boundary check skipped",
 			"agent_id", agentID, "network_id", net.ID, "network_name", net.Name)
 		return ""
 	}
 	if perr != nil {
-		// A configured-but-unparseable cidr is a data error worth surfacing.
+		// A configured-but-unparseable cidr is a data error worth reporting.
 		return "agent network has invalid cidr: " + cidr
 	}
 	in, out, perr := cidrutil.PartitionTargets(targets, ipNet)
@@ -186,7 +186,7 @@ func (s *AgentCommandService) validateScanTargets(ctx context.Context, agentID s
 		return "invalid scan targets: " + perr.Error()
 	}
 	if len(out) > 0 {
-		// Hard reject. Surface a sample of the offending IPs (capped to keep
+		// Hard reject. Return a sample of the offending IPs (capped to keep
 		// the error body readable); the admin sees exactly what was rejected.
 		sample := out
 		const maxSample = 8

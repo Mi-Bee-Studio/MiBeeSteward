@@ -90,7 +90,7 @@ func TestHeuristicDeviceType_DesktopOSLabels(t *testing.T) {
 
 // TestHeuristicDeviceType_NASKeywordsBeatRTSP covers Bug C (the .138 case):
 // the 极空间 Z4S (hostname "Z4S-2PSE", vendor "MiniDLNA", ports smb:445 +
-// rtsp:554) is a home NAS that streams media over RTSP — it must be typed
+// rtsp:554) is a home NAS that streams media over RTSP, it must be typed
 // "nas", not "camera". "z4s" was previously (incorrectly) a camera keyword.
 func TestHeuristicDeviceType_NASKeywordsBeatRTSP(t *testing.T) {
 	rep := reportWithFields("192.168.62.138", "camera", "MiniDLNA", "1c:83:41:e3:6e:68",
@@ -107,7 +107,7 @@ func TestHeuristicDeviceType_NASKeywordsBeatRTSP(t *testing.T) {
 // treats smb:445 as a NAS signal even with no hostname/brand hint (a file
 // server streaming media over RTSP is still fundamentally a NAS).
 func TestHeuristicDeviceType_NASBySmbPortOnly(t *testing.T) {
-	// No hostname, no brand, no os — only ports. smb + rtsp → nas (smb wins).
+	// No hostname, no brand, no os, only ports. smb + rtsp → nas (smb wins).
 	rep := reportWithFields("10.0.0.20", "", "", "", nil)
 	rep.Services = []scannerv2.ServiceIdentity{
 		{Service: "smb", Port: 445},
@@ -183,7 +183,7 @@ func TestApplyDeviceBridge_NasSignalOverridesCamera(t *testing.T) {
 
 // TestApplyDeviceBridge_CameraWithoutPCOrNasSignalStaysCamera is the negative
 // case: a genuine camera (Hikvision brand, IPC hostname, no PC/NAS signal)
-// keeps type camera even though it also exposes RTSP — the override must not
+// keeps type camera even though it also exposes RTSP, the override must not
 // mis-fire. NOTE: uses a real camera hostname (IPC-), NOT Z4S (which is a NAS).
 func TestApplyDeviceBridge_CameraWithoutPCOrNasSignalStaysCamera(t *testing.T) {
 	rn, _, conn := setupTypeTestDB(t)
@@ -203,7 +203,7 @@ func TestApplyDeviceBridge_CameraWithoutPCOrNasSignalStaysCamera(t *testing.T) {
 // TestIsStrongPcSignal pins the override gate directly so future keyword tweaks
 // are caught: notebook/laptop/thinkpad/macbook hostnames + desktop OS labels are
 // strong PC signals; a generic server-ish hostname or bare "linux" is NOT (the
-// latter must not flip a camera to pc — routers/NAS run RTSP web UIs too).
+// latter must not flip a camera to pc, routers/NAS run RTSP web UIs too).
 func TestIsStrongPcSignal(t *testing.T) {
 	// Strong: explicit laptop/desktop hostnames.
 	for _, h := range []string{"redmi-notebook", "thinkpad-x1", "macbook-pro", "elitebook-840", "surface-go"} {
@@ -215,7 +215,7 @@ func TestIsStrongPcSignal(t *testing.T) {
 		rep := reportWithFields("10.0.0.2", "camera", "", "", map[string]string{"os_type": osVal})
 		require.Truef(t, isStrongPcSignal(rep), "os_type %q should be a strong PC signal", osVal)
 	}
-	// NOT strong: bare linux/freebsd (server-class) and non-laptop hostnames —
+	// NOT strong: bare linux/freebsd (server-class) and non-laptop hostnames;
 	// these must NOT trigger the camera→pc override (would mis-type cameras and
 	// routers/NAS that expose RTSP web UIs).
 	for _, c := range []struct{ host, osVal string }{
@@ -233,7 +233,7 @@ func TestIsStrongPcSignal(t *testing.T) {
 // TestIsStrongNasSignal pins the NAS override gate: NAS hostnames/brands
 // (synology/qnap/z4s/zspace/minidlna/readymedia/ugreen/…) and an smb:445 service
 // are strong NAS signals; a generic camera hostname or bare RTSP is NOT (the
-// latter must not flip a camera to nas — real cameras expose RTSP).
+// latter must not flip a camera to nas, real cameras expose RTSP).
 func TestIsStrongNasSignal(t *testing.T) {
 	// Strong: NAS hostnames.
 	for _, h := range []string{"Z4S-2PSE", "DiskStation-DS920", "QNAP-TS453", "UGREEN-DXP4800"} {
@@ -250,7 +250,7 @@ func TestIsStrongNasSignal(t *testing.T) {
 	rep.Services = []scannerv2.ServiceIdentity{{Service: "smb", Port: 445}}
 	require.True(t, isStrongNasSignal(rep), "smb:445 service should be a strong NAS signal")
 
-	// NOT strong: a real camera hostname/brand with no NAS signal — must NOT
+	// NOT strong: a real camera hostname/brand with no NAS signal, must NOT
 	// trigger the camera→nas override (real cameras expose RTSP).
 	for _, c := range []struct{ host, brand string }{
 		{"IPC-1234", "hikvision"},

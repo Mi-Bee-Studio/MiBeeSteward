@@ -33,7 +33,7 @@ import (
 //
 // The threshold is the runner's lostThreshold (scanner.lost_threshold config
 // key, default 2). Single missed scans (ICMP drop, brief host downtime, network
-// jitter) must not flap a device offline — see architecture-future.md §8 note 3
+// jitter) must not flap a device offline, see architecture-future.md §8 note 3
 // (去抖动/grace period).
 //
 // agentID threads through to change_log provenance (empty on the local-scan
@@ -46,7 +46,7 @@ import (
 // detection with the same grace period.
 func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskID int64, reports []scannerv2.HostReport, agentID string) {
 	if !networkID.Valid {
-		// No network scoping (legacy/agent unresolved) — can't partition the
+		// No network scoping (legacy/agent unresolved), can't partition the
 		// alive set, so lost detection is meaningless. Skip rather than risk
 		// marking every device lost.
 		return
@@ -57,7 +57,7 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 	//    last_seen_at) and build the alive IP set for the set difference.
 	aliveIPs := rn.RecordAliveSnapshots(ctx, networkID, taskID, reports)
 
-	// 2. Increment miss_count for snapshots NOT in the alive set — a single
+	// 2. Increment miss_count for snapshots NOT in the alive set, a single
 	// batch UPDATE replaces the previous one-UPDATE-per-missing-host loop
 	// (200 missing hosts = 200 individual UPDATEs → now 1). (#162)
 	if err := rn.batchIncrementMiss(ctx, netID, aliveIPs); err != nil {
@@ -90,7 +90,7 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 		// silent-device retention sweep has the "how long gone" signal (issue
 		// #117). CASE guards so a device already offline keeps its original
 		// offline_since (the flip time, not re-stamped every lost-detection pass).
-		// Best-effort — a status write failure doesn't block the change_log emit.
+		// A status write failure doesn't block the change_log emit.
 		if _, err := rn.dbConn.ExecContext(ctx,
 			`UPDATE devices SET status='offline',
 				offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
@@ -118,7 +118,7 @@ func (rn *Runner) DetectLost(ctx context.Context, networkID sql.NullInt64, taskI
 // UPDATEs → now 1 query). (#162)
 func (rn *Runner) batchIncrementMiss(ctx context.Context, netID int64, aliveIPs map[string]bool) error {
 	if len(aliveIPs) == 0 {
-		// No alive hosts at all — every snapshot in the network is missing.
+		// No alive hosts at all, every snapshot in the network is missing.
 		_, err := rn.dbConn.ExecContext(ctx,
 			`UPDATE scan_snapshots SET miss_count = miss_count + 1 WHERE network_id = ?`, netID)
 		return err
@@ -150,7 +150,7 @@ func (rn *Runner) batchIncrementMiss(ctx context.Context, netID int64, aliveIPs 
 // sweeper (lease_sweeper.go). The local-scan path still calls DetectLost, which
 // internally delegates here for step 1.
 //
-// Returns nil (no-op) when networkID is invalid — mirrors DetectLost's guard.
+// Returns nil (no-op) when networkID is invalid, mirrors DetectLost's guard.
 func (rn *Runner) RecordAliveSnapshots(ctx context.Context, networkID sql.NullInt64, taskID int64, reports []scannerv2.HostReport) map[string]bool {
 	aliveIPs := make(map[string]bool, len(reports))
 	if !networkID.Valid {
@@ -181,9 +181,9 @@ func (rn *Runner) RecordAliveSnapshots(ctx context.Context, networkID sql.NullIn
 		// fast path in agent_report.go refreshes leases ONLY (no device bridge),
 		// so a stable network's device rows showed ever-aging last_seen while the
 		// assets were alive and reported every cycle (#389). Status stays owned by
-		// DetectLost / the lease sweeper — this touches liveness display only.
+		// DetectLost / the lease sweeper, this touches liveness display only.
 		// On the local-scan path the bridge already stamped the same value;
-		// re-stamping is idempotent.
+		// re-stamping changes nothing.
 		if devUUID != "" {
 			if _, err := rn.dbConn.ExecContext(ctx,
 				`UPDATE devices SET last_seen = ? WHERE device_uuid = ?`,
@@ -196,7 +196,7 @@ func (rn *Runner) RecordAliveSnapshots(ctx context.Context, networkID sql.NullIn
 }
 
 // recordDeviceLost emits a device_lost event (before_data = device snapshot,
-// after_data nil — the device is now gone from the alive set). Re-reads the
+// after_data nil, the device is now gone from the alive set). Re-reads the
 // device for the before snapshot so before_data reflects its last-known state.
 func (rn *Runner) recordDeviceLost(ctx context.Context, deviceID int64, networkID *int64, agentID string) {
 	if rn.changeRecorder == nil {
@@ -217,7 +217,7 @@ func (rn *Runner) recordDeviceLost(ctx context.Context, deviceID int64, networkI
 	})
 }
 
-// recordDeviceRecovered emits a device_recovered event — the symmetric
+// recordDeviceRecovered emits a device_recovered event, the symmetric
 // counterpart of device_lost. A device previously declared lost (status=offline
 // via DetectLost or the lease sweeper) has reappeared alive (status=online via a
 // scan or a fresh lease). before_data = the offline snapshot (caller captures it
@@ -245,7 +245,7 @@ func (rn *Runner) recordDeviceRecovered(ctx context.Context, deviceID int64, net
 }
 
 // resolveDeviceUUIDForIP returns the stable device_uuid for a host sighting,
-// following the system's identity rule — MAC-primary, then IP — so a lease
+// following the system's identity rule, MAC-primary, then IP, so a lease
 // follows the ASSET, not an arbitrary row at that IP. When several rows share
 // the IP (a DHCP tussle, or a stale pre-roam row left behind), the
 // most-recently-seen row wins; a bare LIMIT 1 used to feed the stale row's

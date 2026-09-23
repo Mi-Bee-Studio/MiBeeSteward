@@ -9,15 +9,15 @@
 
 // Package probetarget implements synthetic probing (拨测): user-configured
 // targets (typically external/internet endpoints) probed on fixed intervals,
-// blackbox_exporter-style. The tls module — and the https flavor of the http
-// module — reuses the scanner's CollectCertChain for full certificate-chain
+// blackbox_exporter-style. The tls module, and the https flavor of the http
+// module, reuses the scanner's CollectCertChain for full certificate-chain
 // collection, extending that internal-network capability to external hosts.
 //
 // Layout:
-//   - service.go   — CRUD (probe_targets) + result history
-//   - engine.go    — interval scheduler + persistence of outcomes
-//   - executor.go  — per-module probe dispatch (probers + cert collection)
-//   - metrics.go   — mibee_probe_* Prometheus collectors
+//   - service.go  , CRUD (probe_targets) + result history
+//   - engine.go   , interval scheduler + persistence of outcomes
+//   - executor.go , per-module probe dispatch (probers + cert collection)
+//   - metrics.go  , mibee_probe_* Prometheus collectors
 package probetarget
 
 import (
@@ -33,7 +33,7 @@ import (
 // mibee_probe_up / cert expiry from Prometheus, not from MiBee itself).
 // A nil receiver disables all metric ops (tests pass a nil registerer).
 type metrics struct {
-	// vantage label (#277): "center" or "agent:{id}" — WHERE the probe ran.
+	// vantage label (#277): "center" or "agent:{id}", WHERE the probe ran.
 	// Existing {name,module}-only alert selectors keep matching the new
 	// series (adding a label never narrows an old selector).
 	up         *prometheus.GaugeVec   // mibee_probe_up{name,module,vantage}

@@ -54,7 +54,7 @@ func TestHostapd_Parsers(t *testing.T) {
 }
 
 // TestHostapd_SweepWith_EmitsAndDedupes drives the diff/emit path through the
-// sweepWith seam. The coordinator consumer is deliberately NOT started: the
+// sweepWith seam. The coordinator consumer is NOT started: the
 // coordinator's handle() drops IP-less events today, and hostapd events are
 // pure L2 (MAC, no IP), so observing them at svc.Emit (the buffered events
 // channel) is the faithful level for this source's contract. New STAs emit an
@@ -113,7 +113,7 @@ func TestHostapd_QueryHostapdSocket_DialFailure(t *testing.T) {
 	src := NewHostapdSource(nil, time.Minute, nil, nil)
 	require.Empty(t, src.queryHostapdSocket(filepath.Join(t.TempDir(), "nonexistent.sock")))
 
-	// Glob-based socket discovery over a real (empty) dir — both outcomes.
+	// Glob-based socket discovery over a real (empty) dir, both outcomes.
 	matches, err := ctrlSocketGlob(filepath.Join(t.TempDir(), "*"))
 	require.NoError(t, err)
 	require.Empty(t, matches)

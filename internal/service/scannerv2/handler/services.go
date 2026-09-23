@@ -20,15 +20,15 @@ import (
 // EnrichDevice for these services, so a host whose only detected service was
 // (say) mysql or smb ended up with an empty inferred_type → "other".
 //
-// Each handler marks the device as a "server" (these services — DBs,
-// mail, remote-access, directory, file-sharing — all imply a server-class
+// Each handler marks the device as a "server" (these services, DBs,
+// mail, remote-access, directory, file-sharing, all imply a server-class
 // host). The classification itself (port/banner → service name) is unchanged;
 // this only fills in the missing type-inference step.
 //
 // Data-driven registration (#158): a SINGLE serverServiceHandler type,
 // parameterized by name, replaces ~13 named stub types (MySQLHandler,
 // SMTPHandler, VNCHandler, …). The registry matches handlers by Service()
-// output, so one value-per-name is all the interface needs — adding a new
+// output, so one value-per-name is all the interface needs, adding a new
 // server-class service is now one entry in serverServiceNames, not a new type
 // + 4 method stubs.
 

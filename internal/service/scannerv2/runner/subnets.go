@@ -25,10 +25,10 @@ import (
 // This is a per-scan finalize step: it runs after injectARPTopology (so the
 // gateway is already known). The subnet is keyed by (network_id, cidr): the
 // first scan inserts, subsequent scans refresh last_seen (and update the
-// gateway if the default route changed). vlan_id is left NULL here — VLAN
+// gateway if the default route changed). vlan_id is left NULL here, VLAN
 // assignment requires L2 evidence (Q-BRIDGE-MIB) and is wired separately.
 //
-// Best-effort: failures are logged, never abort a scan.
+// Failures are logged and never abort a scan.
 func (rn *Runner) recordSubnets(ctx context.Context, networkID sql.NullInt64) {
 	if !networkID.Valid {
 		return
@@ -63,7 +63,7 @@ func (rn *Runner) recordSubnets(ctx context.Context, networkID sql.NullInt64) {
 			now, gwArg, existing.ID)
 		return
 	}
-	// Not present — insert.
+	// Not present, insert.
 	var vlanID *int64      // NULL until Q-BRIDGE-MIB VLAN linkage is wired
 	var gatewayPtr *string // NULL when no default route resolved
 	if gateway != "" {

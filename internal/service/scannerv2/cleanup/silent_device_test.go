@@ -16,7 +16,7 @@ import (
 // insertDevice inserts a devices row with full control over the fields the
 // silent-device prune keys on (scan_source, status, mac_address, offline_since).
 // Returns the row id. Used instead of queries.CreateDevice because CreateDevice
-// defaults scan_source='manual' and doesn't let us set offline_since — both
+// defaults scan_source='manual' and doesn't let us set offline_since, both
 // critical to the prune logic under test.
 func insertDevice(t *testing.T, conn *sql.DB, name, scanSource, status, mac, ip string, offlineSince *time.Time) int64 {
 	t.Helper()
@@ -119,7 +119,7 @@ func TestPruneSilentDevices_SkipsManualDevices(t *testing.T) {
 	queries := db.New(conn)
 	ctx := context.Background()
 
-	// A manual device offline for a year with a MAC — must NOT be pruned.
+	// A manual device offline for a year with a MAC, must NOT be pruned.
 	insertDevice(t, conn, "manual-keep", "manual", "offline", "aa:bb:cc:dd:ee:99", "10.0.0.99",
 		utcPtr(time.Now().AddDate(-1, 0, 0)))
 
@@ -137,7 +137,7 @@ func TestPruneSilentDevices_SkipsManualDevices(t *testing.T) {
 }
 
 // TestPruneSilentDevices_SkipsOnlineDevices verifies an online device is never
-// pruned regardless of offline_since (it's online — offline_since should be NULL
+// pruned regardless of offline_since (it's online, offline_since should be NULL
 // anyway, but this guards the status='offline' filter explicitly).
 func TestPruneSilentDevices_SkipsOnlineDevices(t *testing.T) {
 	conn, err := testutil.SetupTestDBFromSchema()
@@ -147,7 +147,7 @@ func TestPruneSilentDevices_SkipsOnlineDevices(t *testing.T) {
 	ctx := context.Background()
 
 	// Online scanner device with a stale offline_since (shouldn't happen, but
-	// defensive) — must be kept because status='online'.
+	// defensive), must be kept because status='online'.
 	insertDevice(t, conn, "online-stale", "scanner_v2", "online", "aa:bb:cc:dd:ee:50", "10.0.0.50",
 		utcPtr(time.Now().AddDate(0, 0, -30)))
 
@@ -164,7 +164,7 @@ func TestPruneSilentDevices_SkipsOnlineDevices(t *testing.T) {
 // TestPruneSilentDevices_RoamedOrphan verifies the cross-network migration
 // cleanup: a device whose MAC exists ONLINE in another network AND whose
 // offline_since is older than the roamed-orphan window is pruned (it's a stale
-// old-network leftover — the live copy is elsewhere).
+// old-network leftover, the live copy is elsewhere).
 func TestPruneSilentDevices_RoamedOrphan(t *testing.T) {
 	conn, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
@@ -221,7 +221,7 @@ func TestPruneSilentDevices_KeepsRoamedRecent(t *testing.T) {
 	net2, err := queries.CreateNetwork(ctx, db.CreateNetworkParams{Name: "net-2"})
 	require.NoError(t, err)
 
-	// Offline only 2min (< 10min roamed window) — kept even though MAC is online elsewhere.
+	// Offline only 2min (< 10min roamed window), kept even though MAC is online elsewhere.
 	recentID := insertDevice(t, conn, "recent-orphan", "scanner_v2", "offline", "aa:bb:cc:dd:ee:88", "10.0.0.88",
 		utcPtr(time.Now().Add(-2*time.Minute)))
 	_, err = conn.ExecContext(ctx, `UPDATE devices SET network_id = ? WHERE id = ?`, net1.ID, recentID)

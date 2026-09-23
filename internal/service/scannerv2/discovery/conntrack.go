@@ -24,10 +24,10 @@ import (
 // (/proc/net/nf_conntrack) and emits a NewHostEvent for every LAN host that has
 // an active (ESTABLISHED / ASSURED) flow. It is a router-resident signal: the
 // gateway is the NAT/forwarding choke point, so its conntrack table is the
-// authoritative "who is talking RIGHT NOW" view — a host-based scanner on a
+// authoritative "who is talking RIGHT NOW" view, a host-based scanner on a
 // random LAN box sees none of this without being a traffic tap.
 //
-// Why it matters (Tier-1 router-only signal — see
+// Why it matters (Tier-1 router-only signal, see
 // docs/private/architecture-debt-and-openwrt-2026-07-27.md §3.2):
 //
 //   - Liveness: a device with an active flow is by definition up, even if it
@@ -40,11 +40,11 @@ import (
 //     MAC was seen at L2 recently"; conntrack says "this IP is generating
 //     traffic RIGHT NOW".
 //
-// P0 scope: this source treats conntrack as a DISCOVERY + liveness signal — it
+// P0 scope: this source treats conntrack as a DISCOVERY + liveness signal, it
 // emits the LAN-side endpoint of each flow as a host sighting, deduped the same
 // way as the ARP sources. The richer per-flow topology ("device A is talking to
 // external service B on port 443") requires a new persistence surface (flow
-// records with src+dst+port+bytes) and is deferred — the host-event path here is
+// records with src+dst+port+bytes) and is deferred, the host-event path here is
 // the high-value, low-risk first cut that all three deployment forms (center /
 // agent / router-center) get for free.
 //
@@ -52,7 +52,7 @@ import (
 // emit an event for every public internet host a device talks to (which would
 // flood the device table with one row per CDN IP).
 type ConntrackSource struct {
-	// cidr is the LAN CIDR this source considers "local" — only flows whose
+	// cidr is the LAN CIDR this source considers "local", only flows whose
 	// LAN-side endpoint falls inside it are emitted. Required: without it the
 	// source would emit every remote IP a device talks to.
 	cidr     string
@@ -124,7 +124,7 @@ func (s *ConntrackSource) loop(ctx context.Context) {
 // ESTABLISHED/ASSURED flow, diffs against the previous snapshot, and emits an
 // event per newly-active host. A missing/unreadable file (nf_conntrack module
 // not loaded, or /proc/sys/net/netfilter/nf_conntrack_entries not exposed) is
-// logged once-per-call at debug and tolerated — the source is a no-op there.
+// logged once-per-call at debug and tolerated, the source is a no-op there.
 func (s *ConntrackSource) sweep() {
 	if s.localNet == nil {
 		return // invalid CIDR at construction → emit nothing
@@ -191,7 +191,7 @@ func (s *ConntrackSource) readActiveLANHosts() (map[string]bool, error) {
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // conntrack lines can be long (MUD/IPv6 entries)
 	for sc.Scan() {
 		line := sc.Text()
-		// Only count established/assured flows — a flow in SYN_SENT or TIME_WAIT
+		// Only count established/assured flows, a flow in SYN_SENT or TIME_WAIT
 		// is not evidence of an active host (could be a half-open or a closing
 		// connection). This keeps the liveness signal honest. Note conntrack
 		// emits ASSURED as the bracketed token "[ASSURED]" (UDP flows have no
@@ -219,7 +219,7 @@ func (s *ConntrackSource) readActiveLANHosts() (map[string]bool, error) {
 // line. Returns "" when the token is absent.
 func tokenValue(line, key string) string {
 	// Find " key=" (leading space avoids matching a substring inside another
-	// token) — but the first token has no leading space, so also try at index 0.
+	// token), but the first token has no leading space, so also try at index 0.
 	search := " " + key
 	idx := strings.Index(line, search)
 	if idx < 0 {

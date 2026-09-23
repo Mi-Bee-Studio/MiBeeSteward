@@ -25,11 +25,11 @@ import (
 // HostapdSource enumerates the WiFi stations (STAs) currently associated to the
 // local AP(s) and emits a NewHostEvent per STA. It is a router-resident signal:
 // only the WiFi AP itself (a router running hostapd) sees the association list
-// — signal strength, link rate, SSID, and connect time are GOLD for device
+// - signal strength, link rate, SSID, and connect time are GOLD for device
 // tracking (room-level location via signal, WiFi device identification, rogue-
 // AP detection) and completely unavailable to a wired host-based scanner.
 //
-// Why it matters (Tier-1 router-only signal — see
+// Why it matters (Tier-1 router-only signal, see
 // docs/private/architecture-debt-and-openwrt-2026-07-27.md §3.2):
 //
 //   - Sees WiFi-only devices that may never answer L3 probes (smart-home
@@ -37,14 +37,14 @@ import (
 //   - MAC-authoritative at association time → feeds the device-bridge's MAC-
 //     primary identity path even before any IP-level probe runs.
 //
-// Two backends, in priority order (per the design decision — both supported,
+// Two backends, in priority order (per the design decision, both supported,
 // hostapd first):
 //
 //  1. hostapd_ctrl socket (preferred). Opens the hostapd control interface
 //     (a UNIX datagram socket at /var/run/hostapd/<phy>, the OpenWrt/consumer-
 //     router convention) and sends STA-FIRST / STA-NEXT to walk the association
-//     table. Most authoritative — gets signal dBm, connect time, RX/TX bytes,
-//     SSID — and has zero subprocess overhead.
+//     table. Most authoritative, gets signal dBm, connect time, RX/TX bytes,
+//     SSID, and has zero subprocess overhead.
 //
 //  2. `iw station dump` fallback. Shells `iw dev <wlan> station dump` (iw ships
 //     with every wireless host including OpenWrt/Debian/Arch) and parses the
@@ -55,7 +55,7 @@ import (
 //
 // The source tries hostapd first per sweep; on any error (socket missing,
 // permission denied, no STAs) it falls back to iw for the same interfaces.
-// When neither yields anything (no WiFi, no hostapd, no iw) it no-ops — same
+// When neither yields anything (no WiFi, no hostapd, no iw) it no-ops, same
 // graceful pattern as the other router sources.
 //
 // Operator config: scanner.discovery.hostapd.interfaces lists the wlan names to
@@ -120,7 +120,7 @@ func (s *HostapdSource) sweep() {
 	stas := s.readViaHostapdCtrl()
 	if len(stas) == 0 {
 		// hostapd didn't yield anything (no sockets, no perms, or no STA on those
-		// sockets) — try iw station dump as the fallback. Either backend failing
+		// sockets), try iw station dump as the fallback. Either backend failing
 		// is normal on a non-router host; both failing is the no-op case.
 		stas = s.readViaIW()
 	}
@@ -165,7 +165,7 @@ func (s *HostapdSource) sweepWith(stas map[string]staInfo) {
 			// No IP: WiFi association is L2. The device bridge reconciles by MAC
 			// (the MAC-primary identity path); an ARP/DHCP/scan sighting of the
 			// same MAC fills the IP. A MAC-only event with no prior IP won't be
-			// emitted by handle() unless it resolves to a known host — which is
+			// emitted by handle() unless it resolves to a known host, which is
 			// correct (we don't fabricate a device for a MAC with no IP).
 			Hints: hints,
 		})
@@ -173,7 +173,7 @@ func (s *HostapdSource) sweepWith(stas map[string]staInfo) {
 }
 
 // staInfo holds the optional per-STA details each backend may capture. Only MAC
-// is required; the rest are best-effort enrichment hints.
+// is required; the rest are optional enrichment hints.
 type staInfo struct {
 	mac         string
 	signal      string // dBm, e.g. "-42"
@@ -187,7 +187,7 @@ type staInfo struct {
 // datagram socket: ATTACH (optional), STA-FIRST, then STA-NEXT until "FAIL".
 func (s *HostapdSource) readViaHostapdCtrl() map[string]staInfo {
 	out := map[string]staInfo{}
-	// Glob the ctrlDir for socket files — each phy/AP has one (e.g.
+	// Glob the ctrlDir for socket files, each phy/AP has one (e.g.
 	// /var/run/hostapd/wlan0, /var/run/hostapd-phy1.conf on some builds).
 	patterns := []string{s.ctrlDir + "/*"}
 	for _, pat := range patterns {
@@ -366,7 +366,7 @@ func iwValue(line, key string) string {
 
 // ctrlSocketGlob lists hostapd ctrl socket paths matching the glob pattern,
 // skipping obvious non-sockets (directories, the global ctrl dir itself). Kept
-// minimal — on a real AP the dir contains one datagram socket per phy.
+// minimal, on a real AP the dir contains one datagram socket per phy.
 func ctrlSocketGlob(pattern string) ([]string, error) {
 	// filepath.Glob lists names; the caller's Dial rejects non-sockets.
 	return filepath.Glob(pattern)

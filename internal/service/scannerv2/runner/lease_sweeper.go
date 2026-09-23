@@ -40,19 +40,19 @@ type staleAgentSnapshot struct {
 // center's lease sweeper declares these devices lost: an agent that stops
 // reporting a host (device left, agent down, network split) lets its snapshot
 // go stale; once past the TTL the host is presumed gone. Only agent networks
-// are swept — the center's own network is handled by the local-scan DetectLost
+// are swept, the center's own network is handled by the local-scan DetectLost
 // path + the heartbeat service. The device JOIN + status='online' filter
 // mirrors ListLostSnapshots so an already-lost device is not re-emitted.
 //
 // The device JOIN is device_uuid-aware: when the snapshot row carries a uuid we
 // match the device by (device_uuid, network_id), which means a device that
 // DHCP-roamed to a new IP is STILL found from its stale pre-roam snapshot row
-// (the device's uuid is unchanged across the roam) — so a roam can't strand a
+// (the device's uuid is unchanged across the roam), so a roam can't strand a
 // device's lease on the old IP. Transition rows with empty device_uuid fall back
 // to the IP join.
 //
 // Defined as raw SQL (not sqlc) because sqlc's SQLite parser truncates this
-// query's trailing bytes — see the NOTE in db/queries/scan_snapshots.sql.
+// query's trailing bytes, see the NOTE in db/queries/scan_snapshots.sql.
 const staleAgentSnapshotsSQL = `SELECT s.id, s.network_id, s.ip, s.mac, s.last_seen_at, d.id, s.flap_count, s.last_flap_at, s.device_uuid
 FROM scan_snapshots s
 JOIN devices d ON (
@@ -72,7 +72,7 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
 // and never touches the devices table). A device the sweeper marked offline
 // during a prior brief outage then stays offline forever on that fast path, even
 // though the agent is actively reporting it alive again. This query finds those
-// stuck rows so sweepOnce can flip them back to online — closing the recovery
+// stuck rows so sweepOnce can flip them back to online, closing the recovery
 // gap the stable-hash optimization opened. Same agent-only scope; the center's
 // own network recovers online via its own applyDeviceBridge scan path. The
 // device_uuid-aware JOIN matches staleAgentSnapshotsSQL.
@@ -89,7 +89,7 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
 
 // orphanedAgentDevice is one row from the orphan backstop query (#397): an
 // online scanner-discovered device in an agent network that NO scan_snapshots
-// row references — invisible to both queries above.
+// row references, invisible to both queries above.
 type orphanedAgentDevice struct {
 	DeviceID  int64
 	NetworkID int64
@@ -105,9 +105,9 @@ type orphanedAgentDevice struct {
 // feeder. This query finds those rows directly FROM devices.
 //
 // Guards:
-//   - scan_source = 'scanner_v2' — manual devices are user assertions, never
+//   - scan_source = 'scanner_v2', manual devices are user assertions, never
 //     lease subjects (same convention as the silent-device retention sweep);
-//   - last_seen < cutoff — a row bridged moments ago (its snapshot upsert may
+//   - last_seen < cutoff, a row bridged moments ago (its snapshot upsert may
 //     not have landed yet) is protected for a full TTL before it counts as
 //     orphaned; NULL last_seen never matches (SQL NULL semantics), which only
 //     excludes rows that were never scan-stamped;
@@ -144,7 +144,7 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
 // It replaces the per-report DetectLost call that used to run on every agent
 // POST (O(whole network) each time): the agent ingestion path now only refreshes
 // leases (RecordAliveSnapshots, one indexed upsert per alive host), and this
-// sweeper — running on its own slow ticker — is the single place that declares
+// sweeper, running on its own slow ticker, is the single place that declares
 // agent devices lost AND the single place that recovers them, keeping the two
 // directions symmetric against the same TTL.
 //
@@ -155,7 +155,7 @@ WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
 //
 // TTL semantics: a snapshot is stale when last_seen_at < now - ttl, fresh
 // otherwise. With the agent's default 30s report cadence, a 5min TTL tolerates
-// ~10 missed reports before a device is presumed gone — generous enough to
+// ~10 missed reports before a device is presumed gone, generous enough to
 // absorb agent restarts and brief network splits without flapping.
 type LeaseSweeper struct {
 	runner   *Runner
@@ -169,7 +169,7 @@ type LeaseSweeper struct {
 // online/offline (a flaky-WiFi IoT device the agent sees intermittently) would
 // otherwise emit a device_lost/device_recovered storm. Once a device has crossed
 // flapThreshold liveness transitions, further transitions update devices.status
-// but do NOT emit change_log events — the device is recognized as flapping. The
+// but do NOT emit change_log events, the device is recognized as flapping. The
 // counter DECAYS (halves) once a stable window (flapStablePeriod) passes with no
 // flap, so a device that genuinely stops bouncing earns its way back to normal
 // event recording across a few stable periods; a periodic device that keeps
@@ -249,7 +249,7 @@ func (s *LeaseSweeper) sweepOnce(ctx context.Context) {
 // the cutoff. Returns the number of devices expired.
 //
 // Flap debouncing: a device whose flap_count has crossed flapThreshold is
-// recognized as flapping — its status is still updated (so the registry reflects
+// recognized as flapping, its status is still updated (so the registry reflects
 // current liveness) but NO device_lost event is emitted, stopping the lost storm
 // an intermittently-seen IoT device would otherwise generate. Each transition
 // increments flap_count; recoverFresh DECAYS it (halves, not resets) after a
@@ -270,11 +270,11 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 			continue
 		}
 		// Roam guard (#399): a stale lease whose device ALSO holds a fresher
-		// lease (same uuid, same network) is a pre-roam remnant — the asset
+		// lease (same uuid, same network) is a pre-roam remnant, the asset
 		// DHCP-roamed and is alive at its new IP; this row just still points at
 		// it. Dissociate the remnant (clear device_uuid, returning it to the
-		// unattributed state; a future host at this IP — including the same
-		// device roaming back — re-attributes via the upsert's CASE) and skip
+		// unattributed state; a future host at this IP, including the same
+		// device roaming back, re-attributes via the upsert's CASE) and skip
 		// the expiry. Without the guard the remnant re-kills the device every
 		// sweep while the fresh lease resurrects it: an online/offline flap
 		// loop that once ran ~900 transitions in 15h on a production roamer.
@@ -293,18 +293,18 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 		seen[l.DeviceID] = true
 		// Increment flap_count + stamp last_flap_at for every transition (this
 		// UPDATE is independent of whether we emit, so the flap counter advances
-		// even while suppressed — keeping the "how flaky is this device" signal
+		// even while suppressed, keeping the "how flaky is this device" signal
 		// accurate for the stable-period reset decision).
 		if _, err := s.runner.dbConn.ExecContext(ctx,
 			`UPDATE scan_snapshots SET flap_count = flap_count + 1, last_flap_at = ? WHERE id = ?`,
 			scannerv2.DBTime(now), l.ID); err != nil {
 			s.logger.Warn("lease sweeper: flap_count increment failed", "snapshot_id", l.ID, "error", err)
 		}
-		// Mark the device offline (always — the registry must reflect liveness
+		// Mark the device offline (always, the registry must reflect liveness
 		// regardless of event suppression). Stamp offline_since on the flip (CASE
 		// guards so an already-offline device keeps its original stamp) for the
 		// silent-device retention sweep (issue #117), in the canonical DBTime
-		// text form — the retention cutoff compares offline_since as RFC3339
+		// text form, the retention cutoff compares offline_since as RFC3339
 		// TEXT, and a raw time.Time binding lands in Go's String() form which
 		// misorders against it (detect_lost.go stamps the same statement this way).
 		if _, err := s.runner.dbConn.ExecContext(ctx,
@@ -321,7 +321,7 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 			nid := l.NetworkID
 			s.runner.recordDeviceLost(ctx, l.DeviceID, &nid, "lease")
 		}
-		// Sample the offline verdict to the liveness series (always — the series
+		// Sample the offline verdict to the liveness series (always, the series
 		// tracks actual liveness, independent of event suppression).
 		if s.runner.heartbeat != nil {
 			s.runner.heartbeat.SampleLiveness(l.DeviceID, "offline", "lease")
@@ -337,7 +337,7 @@ func (s *LeaseSweeper) expireStale(ctx context.Context, cutoff time.Time) int {
 // Flap debouncing mirrors expireStale: a flapping device's status is updated but
 // no device_recovered event is emitted while its flap_count is at/above the
 // threshold. The counter DECAYS (halves) once last_flap_at is older than
-// flapStablePeriod — NOT a hard reset to 0. The decay-only design is deliberate:
+// flapStablePeriod, NOT a hard reset to 0. The decay-only design is deliberate:
 // a hard reset let periodic WiFi-IoT devices (wake every ~35min > flapStablePeriod)
 // clear their counter on every cycle and re-emit device_recovered forever,
 // flooding change_log. With decay, a device must stay quiet across SEVERAL stable
@@ -367,7 +367,7 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 		// The previous design reset to 0 whenever now-last_flap_at >= flapStablePeriod.
 		// That was WRONG for a periodic device (a WiFi-IoT device that wakes every
 		// ~35min): its last_flap_at is set by the *prior expire* ~35min ago, so every
-		// recovery looked "stable" and reset the counter — the device never stayed
+		// recovery looked "stable" and reset the counter, the device never stayed
 		// suppressed, and change_log filled with device_recovered storms.
 		//
 		// Correct semantics: "stable" means the device has been REPEATEDLY seen
@@ -407,7 +407,7 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 		}
 		// Emit device_recovered only on a genuine offline→online flip AND when not
 		// suppressed by flapping. A device that has decayed back below the threshold
-		// (effectiveFlapCount < flapThreshold) DOES emit — it has earned back normal
+		// (effectiveFlapCount < flapThreshold) DOES emit, it has earned back normal
 		// event recording by staying quiet long enough. A still-flapping device
 		// (effectiveFlapCount >= flapThreshold) is suppressed.
 		if before != nil && before.Status == "offline" {
@@ -423,12 +423,12 @@ func (s *LeaseSweeper) recoverFresh(ctx context.Context, cutoff time.Time) int {
 
 // expireOrphaned is the #397 backstop: it flips offline the agent-network device
 // rows that no scan_snapshots lease references (and whose last_seen has aged past
-// the cutoff). Such rows are invisible to expireStale/recoverFresh — both walk
-// FROM snapshots — so without this pass a device that ever lost its lease row
+// the cutoff). Such rows are invisible to expireStale/recoverFresh, both walk
+// FROM snapshots, so without this pass a device that ever lost its lease row
 // stays online forever no matter how stale its last_seen grows.
 //
 // No flap suppression is needed here, unlike the two directions above: there is
-// no snapshot row to carry flap_count, and the flip is terminal — the query only
+// no snapshot row to carry flap_count, and the flip is terminal, the query only
 // matches status='online', so a row fires at most once. Recovery is symmetric
 // with the rest of the sweeper: as soon as the agent reports the host again,
 // RecordAliveSnapshots re-creates its snapshot (uuid resolution is MAC-primary,
@@ -481,14 +481,14 @@ func (s *LeaseSweeper) expireOrphaned(ctx context.Context, cutoff time.Time) int
 }
 
 // hasFresherLease reports whether the device carrying this stale lease holds
-// another lease row — same uuid, same network — whose last_seen is within the
+// another lease row, same uuid, same network, whose last_seen is within the
 // TTL window, i.e. the asset DHCP-roamed and is alive at its new IP (#399).
 //
-// Network-scoped deliberately: device rows are per-network, and an asset that
-// moved to ANOTHER network must still expire out of this one — only a fresh
+// Network-scoped: device rows are per-network, and an asset that
+// moved to ANOTHER network must still expire out of this one, only a fresh
 // lease in the same network proves the device still lives here.
 // On query error it fails OPEN to the normal expiry path: a wrongly-expired
-// live device self-heals via recoverFresh within one sweep, whereas failing
+// live device recovers via recoverFresh within one sweep, whereas failing
 // closed would keep genuinely-dead devices online for as long as the error does.
 func (s *LeaseSweeper) hasFresherLease(ctx context.Context, l staleAgentSnapshot, cutoff time.Time) bool {
 	var n int64
@@ -505,12 +505,12 @@ func (s *LeaseSweeper) hasFresherLease(ctx context.Context, l staleAgentSnapshot
 
 // decayQuietFlaps halves flap_count on lease rows whose last flap is older than
 // flapStablePeriod, independent of any liveness transition. recoverFresh's
-// inline decay only runs when a row passes through a recovery transition — but
+// inline decay only runs when a row passes through a recovery transition, but
 // a device that stops flapping stays ONLINE and never enters that path, so its
 // counter would stay frozen forever (production: a #399 roam-flap pathology
 // inflated a counter to ~900, and the pathology fix itself stops the cycling
 // that would have decayed it). This pass realizes the state machine's documented
-// intent — "several stable periods to clear" — as a single batch UPDATE per
+// intent, "several stable periods to clear", as a single batch UPDATE per
 // sweep: halve, refresh last_flap_at (each halving needs a fresh full stable
 // window), never below 0. Rows with flap_count = 0 are untouched.
 func (s *LeaseSweeper) decayQuietFlaps(ctx context.Context) int {

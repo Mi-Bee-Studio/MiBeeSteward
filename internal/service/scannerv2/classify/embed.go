@@ -22,7 +22,7 @@ import (
 // here by `make sync-fingerprints`). This is a STRICT SUPERSET of the
 // standalone fingerprint library's own embedded rules: it additionally ships
 // the in-repo corpora the external library doesn't (iot-identity.yaml #361,
-// mdns-ssdp.yaml #365) — which is exactly why the ENGINE must load from THIS
+// mdns-ssdp.yaml #365), which is exactly why the ENGINE must load from THIS
 // copy, not the library's LoadEmbeddedDefaults: field-found on R68S that the
 // zero-config fallback silently lacked the Mijia/mDNS rules, so they never
 // fired on real deployments (#377).
@@ -32,7 +32,7 @@ var embeddedAssets embed.FS
 
 // LoadEmbeddedRules loads the synced corpus embedded in this package into rc
 // (replacing anything rc holds). The files are materialized into a scratch
-// directory for LoadFromDir and removed immediately after — the classifier
+// directory for LoadFromDir and removed immediately after, the classifier
 // compiles eagerly, nothing references the directory afterwards.
 func LoadEmbeddedRules(rc *fp.RuleClassifier) error {
 	if rc == nil {

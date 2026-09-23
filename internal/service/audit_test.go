@@ -271,7 +271,7 @@ func TestAudit_Facets(t *testing.T) {
 }
 
 // 8b. Facets on an empty table returns empty slices (not nil), so JSON
-// encodes as [] rather than null — keeps the dropdown logic simple.
+// encodes as [] rather than null, keeps the dropdown logic simple.
 func TestAudit_Facets_EmptyTable(t *testing.T) {
 	svc, _, _ := setupAuditTest(t)
 	ctx := context.Background()

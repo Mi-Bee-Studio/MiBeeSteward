@@ -12,7 +12,7 @@
 // Real build (WITH_LLDP): a passive LLDPDU frame listener. Captures ethertype
 // 0x88cc frames via AF_PACKET raw sockets (requires CAP_NET_RAW) and parses the
 // TLV chain into neighbor edges. This is the only way to see LLDP-broadcasting
-// endpoints (IP phones, APs, NAS) that don't run SNMP LLDP-MIB — the SNMP
+// endpoints (IP phones, APs, NAS) that don't run SNMP LLDP-MIB, the SNMP
 // LLDP-MIB probe (active:lldp_mib) only sees managed switches.
 //
 // Default builds ship the stub (lldp_frame_stub.go); build with -tags WITH_LLDP
@@ -132,11 +132,11 @@ func (s *LLDPFrameSource) listen(ctx context.Context, iface string) {
 		if edge.NeighborMAC == "" {
 			continue // no subtype-4 chassis id — can't merge
 		}
-		// (a) host discovery — the chassis is a host on this network.
+		// (a) host discovery, the chassis is a host on this network.
 		if s.svc != nil {
 			s.svc.Emit(NewHostEvent{IP: "", MAC: edge.NeighborMAC, Source: "lldp_frame"})
 		}
-		// (b) neighbor edge — local interface sees this neighbor.
+		// (b) neighbor edge, local interface sees this neighbor.
 		if s.neighborSink != nil {
 			s.neighborSink(s.ifaceMACs[iface], []lldpEdge{edge})
 		}

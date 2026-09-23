@@ -7,8 +7,8 @@
 // those terms; see LICENSE for the full text. A commercial license is available
 // for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 
-// QBridgeMIBProbe walks the IEEE 802.1Q (Q-BRIDGE) MIB — primarily
-// dot1qTpFdbPort (1.2.840.10006.300.43.1.3.2) — to map learned MAC addresses to
+// QBridgeMIBProbe walks the IEEE 802.1Q (Q-BRIDGE) MIB, primarily
+// dot1qTpFdbPort (1.2.840.10006.300.43.1.3.2), to map learned MAC addresses to
 // the bridge port (and VLAN) they were learned on. This is the VLAN-aware
 // successor to the older BRIDGE-MIB dot1dTpFdbPort probe: where BRIDGE-MIB only
 // sees the default VLAN, Q-BRIDGE-MIB sees per-VLAN forwarding tables, so it
@@ -45,7 +45,7 @@ const (
 	// name, indexed by the bare VLAN tag (1-2 octets, same encoding as the
 	// FDB's VLAN prefix). Walked alongside the FDB so the vlans table gets
 	// names, not just tags (#273). Only STATIC (configured) VLANs appear
-	// here — dynamic-only VLANs keep their tag-only row; that's the graceful
+	// here, dynamic-only VLANs keep their tag-only row; that's the graceful
 	// degradation.
 	oidDot1qVlanStaticName = "1.3.6.1.2.1.17.7.1.4.3.1.1"
 )
@@ -91,7 +91,7 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 
 	// Walk the static VLAN table first: {tag → configured name} (#273). This
 	// is cheap and works even when the FDB is empty, so a freshly-booted
-	// switch still yields named VLANs. Best-effort — a device without the
+	// switch still yields named VLANs. A device without the
 	// static table just leaves the map empty.
 	vlanNames := map[string]string{}
 	_ = snmp.Walk(oidDot1qVlanStaticName, func(pdu gosnmp.SnmpPDU) error {
@@ -134,7 +134,7 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 		}
 		portByMacIdx[macIdx] = port
 		// Record the VLAN tag (the prefix before the 6 MAC octets) for this MAC.
-		// extractVLANFromIndex returns "" when it can't parse — then we just
+		// extractVLANFromIndex returns "" when it can't parse, then we just
 		// omit vlan_tag from the evidence RawData.
 		if vlanByMacIdx[macIdx] == "" {
 			vlanByMacIdx[macIdx] = extractVLANFromIndex(fullIndex)
@@ -148,7 +148,7 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 	}
 
 	// Resolve port names via IF-MIB (bridge port → ifIndex → ifName).
-	// This is best-effort: if it fails, we fall back to numeric port numbers.
+	// If it fails, we fall back to numeric port numbers.
 	portNames := ResolvePortNames(snmp, p.logger)
 
 	// Build the evidence. Two kinds (#273):
@@ -269,7 +269,7 @@ func gosnmpToString(v any) string {
 
 // vlanTagFromIndex parses a bare Q-BRIDGE VLAN index (1-2 octets, e.g. "1" or
 // "16.0" for 4096) into a decimal tag string. Returns "" for malformed or
-// out-of-range tags — same validation as extractVLANFromIndex.
+// out-of-range tags, same validation as extractVLANFromIndex.
 func vlanTagFromIndex(idx string) string {
 	if idx == "" {
 		return ""

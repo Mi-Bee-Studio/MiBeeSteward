@@ -22,7 +22,7 @@ import (
 // carrying a Windows socket path this project cannot exercise in CI, Windows
 // builds decline the join: ListenPacket fails with this error and
 // MulticastSource.run skips the mDNS/SSDP listeners with a warning. The
-// multicast source is supplemental — every other discovery source and the
+// multicast source is supplemental, every other discovery source and the
 // whole engine keep working, and `go build`/`go test ./...` stay green on
 // Windows dev machines, which is the point of the split (#321). Deployments
 // are Linux; the CI windows-build job keeps this file honest.

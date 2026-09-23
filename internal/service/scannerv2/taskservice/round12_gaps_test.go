@@ -52,7 +52,7 @@ func TestDeleteTask_RemovesResults(t *testing.T) {
 
 	require.NoError(t, svc.DeleteTask(ctx, resp.ID))
 
-	// scan_results carry no FK cascade — history is retained for the
+	// scan_results carry no FK cascade, history is retained for the
 	// retention sweep (documented contract); the TASK row is gone.
 	var n int
 	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM scan_tasks WHERE id=?`, resp.ID).Scan(&n))

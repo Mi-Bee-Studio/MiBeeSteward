@@ -29,7 +29,7 @@ import (
 // degradation ladder in round13 leaves closed: a READABLE OUI file (loaded),
 // an OUI path that hard-fails (a directory), a fingerprint dir with a VALID
 // rule (rc.Loaded), the eBPF-enabled log branch, the SNMP-community override
-// log — plus the ScanTargets early-exit tails (bad targets / empty expansion /
+// log, plus the ScanTargets early-exit tails (bad targets / empty expansion /
 // canceled context) and the credential-resolution failure path.
 func TestNewEngine_LoadedPathsAndScanTails(t *testing.T) {
 	db, err := testutil.SetupTestDBFromSchema()
@@ -113,8 +113,8 @@ func TestEngine_PostScanMACResolverClosure(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	// No routers: pure miss path. (NewEngine's side effect — installing the
-	// closure via probe.SetPostScanResolver — is what we exercise.)
+	// No routers: pure miss path. (NewEngine's side effect, installing the
+	// closure via probe.SetPostScanResolver, is what we exercise.)
 	_, err = NewEngine(db, Config{
 		PerProbeTimeout: 200 * time.Millisecond,
 		PerHostTimeout:  2 * time.Second,

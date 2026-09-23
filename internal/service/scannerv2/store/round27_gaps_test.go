@@ -27,11 +27,11 @@ func TestRepository_DeadDB_FirstErrorTails(t *testing.T) {
 	require.Error(t, repo.RecordEvidence(context.Background(), []scannerv2.Evidence{{IP: "10.0.0.1"}}))
 	require.Error(t, repo.RecordServices(context.Background(), "10.0.0.1",
 		[]scannerv2.ServiceIdentity{{Service: "http", Port: 80}}, nil))
-	// RecordTLSCerts begins a tx directly: a dead handle surfaces as an error.
+	// RecordTLSCerts begins a tx directly: a dead handle shows up as an error.
 	require.Error(t, repo.RecordTLSCerts(context.Background(), "10.0.0.1",
 		[]scannerv2.TLSCertRecord{{IP: "10.0.0.1", Port: 443}}))
-	// RecordNeighbors is best-effort: an unresolvable device is logged and
-	// swallowed (nil), never surfaced.
+	// RecordNeighbors never fails the caller: an unresolvable device is logged and
+	// swallowed (nil), never returned.
 	require.NoError(t, repo.RecordNeighbors(context.Background(), "10.0.0.1",
 		[]scannerv2.NeighborSpec{{NeighborMAC: "aa:bb:cc:dd:ee:ff", Protocol: "LLDP"}}))
 	_, err = repo.ResolveDeviceIdentity(context.Background(), "aa:bb:cc:dd:ee:ff", "10.0.0.1", sql.NullInt64{})

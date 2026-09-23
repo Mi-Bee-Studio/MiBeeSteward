@@ -18,7 +18,7 @@ import (
 
 // TestCreateTask_NilConnSkipsNetworkStamp pins the nil-conn guard in
 // stampTaskNetwork: a service built without a raw connection skips the
-// stamping (and the scope checks fail open) — the task write still succeeds.
+// stamping (and the scope checks fail open), the task write still succeeds.
 func TestCreateTask_NilConnSkipsNetworkStamp(t *testing.T) {
 	conn, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
@@ -31,7 +31,7 @@ func TestCreateTask_NilConnSkipsNetworkStamp(t *testing.T) {
 }
 
 // TestStampTaskNetwork_DeadConnLogsAndContinues: a dead raw handle makes the
-// network resolution fail — the failure is logged and the stamping returns
+// network resolution fail, the failure is logged and the stamping returns
 // without failing the caller.
 func TestStampTaskNetwork_DeadConnLogsAndContinues(t *testing.T) {
 	conn, err := testutil.SetupTestDBFromSchema()

@@ -314,7 +314,7 @@ func TestHeartbeat_ListConfigsByDevice(t *testing.T) {
 	insertTestConfig(t, queries, ctx, deviceID, "icmp", "192.168.4.1", 1)
 	insertTestConfig(t, queries, ctx, deviceID, "http", "http://192.168.4.1/health", 1)
 	insertTestConfig(t, queries, ctx, deviceID, "tcp", "192.168.4.1:443", 1)
-	// Different device — should not appear
+	// Different device, should not appear
 	insertTestConfig(t, queries, ctx, otherDeviceID, "icmp", "192.168.4.2", 1)
 
 	q := svc.GetQueries()
@@ -847,7 +847,7 @@ func TestCreateConfigs_InvalidMethod(t *testing.T) {
 }
 
 // TestHeartbeat_ListEnabledConfigs_ExcludesAgentNetwork confirms the center does
-// NOT probe devices on agent-managed networks (networks.agent_id non-empty) —
+// NOT probe devices on agent-managed networks (networks.agent_id non-empty);
 // those devices' liveness comes from agent reports, not local ICMP/TCP probes.
 // This is the fix for the cross-subnet false-offline bug.
 func TestHeartbeat_ListEnabledConfigs_ExcludesAgentNetwork(t *testing.T) {
@@ -914,7 +914,7 @@ func TestSyncStatus_StampOfflineSince(t *testing.T) {
 	require.NotNil(t, offlineSince, "flipping online→offline must stamp offline_since")
 	firstStamp := *offlineSince
 
-	// Sync 'offline' AGAIN (no real change) — force a re-sync by desyncing
+	// Sync 'offline' AGAIN (no real change), force a re-sync by desyncing
 	// lastSynced, but keep the status at 'offline'. offline_since must NOT move
 	// (the CASE guards: status was already 'offline', so the flip branch is skipped).
 	time.Sleep(10 * time.Millisecond)
@@ -927,7 +927,7 @@ func TestSyncStatus_StampOfflineSince(t *testing.T) {
 	require.Equal(t, firstStamp.Unix(), offlineSince.Unix(),
 		"already-offline device must keep its original offline_since (not re-stamped)")
 
-	// Flip it back to online — offline_since must clear to NULL.
+	// Flip it back to online, offline_since must clear to NULL.
 	svc.statusCacheMu.Lock()
 	svc.statusCache[dev.ID] = "online"
 	svc.statusCacheMu.Unlock()
@@ -948,7 +948,7 @@ func TestCreateConfigs_IdempotentRescan(t *testing.T) {
 		{Method: "icmp", Target: "10.0.0.1", IntervalSeconds: 30, TimeoutSeconds: 5},
 	}
 	require.NoError(t, svc.CreateConfigs(ctx, 1, specs))
-	// Same specs again (rescan) — previously "UNIQUE constraint failed:
+	// Same specs again (rescan), previously "UNIQUE constraint failed:
 	// heartbeat_configs.device_id, heartbeat_configs.method".
 	require.NoError(t, svc.CreateConfigs(ctx, 1, specs), "re-seeding the same specs must be idempotent")
 	// A duplicate method WITHIN one spec list must also be tolerated.

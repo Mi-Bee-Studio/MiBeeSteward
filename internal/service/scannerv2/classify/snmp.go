@@ -22,13 +22,13 @@ import (
 // snmpDataYAML is the data half of SNMPClassifier (the logic half is the Go
 // functions below). It mirrors configs/fingerprints/snmp-data.yaml via the
 // sync-fingerprints make target (copied to fingerprint-assets/ at build time).
-// Editing this YAML — not Go code — is how new vendor OIDs, sysDescr keywords,
+// Editing this YAML, not Go code, is how new vendor OIDs, sysDescr keywords,
 // brand keywords, or OS labels are added. This is the same data-driven pattern
 // runner/device_type_rules.go uses for device-type inference.
 //
 // Before this refactor the same data lived as Go literals (enterpriseOIDPrefix,
 // the typeFromSysDescr switch, etc.) AND as this YAML, with the YAML a dead
-// copy — so the two had already drifted (the YAML's oid_prefixes table has 13
+// copy, so the two had already drifted (the YAML's oid_prefixes table has 13
 // more consumer/SMB vendors than the old Go table did). The YAML is now the
 // single source of truth.
 //
@@ -50,7 +50,7 @@ type snmpDataTables struct {
 
 // oidPrefixRule maps a sysObjectID enterprise OID prefix to a brand and (optionally)
 // a device type. Order matters: more-specific prefixes must precede their general
-// parent (e.g. 9.1.300 before 9.1 before 9) — typeFromOID returns on the first
+// parent (e.g. 9.1.300 before 9.1 before 9), typeFromOID returns on the first
 // HasPrefix hit. `type` may be empty when the OID alone can't tell (e.g. Net-SNMP
 // 8072 runs on anything).
 type oidPrefixRule struct {
@@ -60,7 +60,7 @@ type oidPrefixRule struct {
 }
 
 // sysdescrTypeRule matches a sysDescr substring keyword (case-insensitive) to a
-// device type. Ordered — first match wins. Mirrors the original typeFromSysDescr
+// device type. Ordered, first match wins. Mirrors the original typeFromSysDescr
 // switch order.
 type sysdescrTypeRule struct {
 	Keywords []string `yaml:"keywords"`
@@ -75,7 +75,7 @@ type sysdescrBrandRule struct {
 }
 
 // sysdescrOSRule matches a sysDescr substring keyword to a normalized OS family
-// label. Ordered — first match wins.
+// label. Ordered, first match wins.
 type sysdescrOSRule struct {
 	Keywords []string `yaml:"keywords"`
 	OS       string   `yaml:"os"`
@@ -84,7 +84,7 @@ type sysdescrOSRule struct {
 func init() {
 	if err := yaml.Unmarshal([]byte(snmpDataYAML), &snmpData); err != nil {
 		// A malformed embedded table is a build-time authoring error, not a
-		// runtime condition — log loudly and fall back to empty tables (which
+		// runtime condition, log loudly and fall back to empty tables (which
 		// makes the SNMP classifier return no type/brand/OS, degrading
 		// gracefully rather than panicking on startup).
 		slog.Error("snmp-data.yaml parse failed; SNMP type/brand/os inference disabled", "error", err)
@@ -172,11 +172,11 @@ func (SNMPClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceIdent
 // inferTypeFromSNMP maps the sysObject group to a device type. It combines four
 // signals, strongest first:
 //  1. sysObjectID enterprise prefix → exact type for well-known vendor OIDs
-//     (the most reliable signal — vendor OIDs encode device class).
+//     (the most reliable signal, vendor OIDs encode device class).
 //  2. sysDescr keyword patterns → type for known OS/product strings.
 //  3. sysServices BITS (RFC 1213: bit1=L2, bit2=L3, bit3=L4(end-to-end),
 //     bit4=TCP, bit5=app) via bitmask tests, not exact decimal equality.
-//  4. ifNumber — many interfaces reinforce switch/router.
+//  4. ifNumber, many interfaces reinforce switch/router.
 //
 // The previous version matched sysServices by exact decimal (==78/76/6), which
 // missed the wide real-world variation (vendors report 72/74/78/200+ for
@@ -184,7 +184,7 @@ func (SNMPClassifier) Classify(ev []scannerv2.Evidence) []scannerv2.ServiceIdent
 // through to "" → "other".
 //
 // Stages 1 and 2 are data-driven (snmp-data.yaml's oid_prefixes +
-// sysdescr_types tables). Stage 3 is the documented logic-plugin — the bitmask
+// sysdescr_types tables). Stage 3 is the documented logic-plugin, the bitmask
 // × ifNumber heuristic CANNOT be expressed as declarative rules (see
 // docs/en/fingerprint-spec.md §"Logic plugins") and stays as Go code.
 func inferTypeFromSNMP(servicesStr, descr, objID, ifNumberStr string) string {
@@ -208,20 +208,20 @@ func inferTypeFromSNMP(servicesStr, descr, objID, ifNumberStr string) string {
 
 	switch {
 	case hasL3 && !hasL2 && ifNum <= 2:
-		// Pure L3 forwarder with few interfaces — router/firewall. sysDescr
+		// Pure L3 forwarder with few interfaces, router/firewall. sysDescr
 		// didn't match a known firewall product above, so default router.
 		return "router"
 	case hasL2 && hasL3 && ifNum > 4:
-		// L2+L3 with many interfaces — a switch (managed L2/L3 switch).
+		// L2+L3 with many interfaces, a switch (managed L2/L3 switch).
 		return "switch"
 	case hasL2 && hasL3:
-		// L2+L3 with few interfaces — could be a router/L3 switch; lean router.
+		// L2+L3 with few interfaces, could be a router/L3 switch; lean router.
 		return "router"
 	case hasL2 && !hasL3 && ifNum > 4:
-		// Pure L2 with many ports — an unmanaged/layer-2 switch.
+		// Pure L2 with many ports, an unmanaged/layer-2 switch.
 		return "switch"
 	case sv >= 72:
-		// High sysServices (many bits set incl. application) — a host/server.
+		// High sysServices (many bits set incl. application), a host/server.
 		return "server"
 	}
 
@@ -230,7 +230,7 @@ func inferTypeFromSNMP(servicesStr, descr, objID, ifNumberStr string) string {
 
 // typeFromOID maps a sysObjectID enterprise prefix to a device type, loaded from
 // snmp-data.yaml's oid_prefixes table. Vendor OIDs encode device class far more
-// reliably than sysServices — e.g. Cisco routers live under 9.1.1, Catalyst
+// reliably than sysServices, e.g. Cisco routers live under 9.1.1, Catalyst
 // switches under 9.1.300+, HP ProCurve under 11.2.3.7.11. Returns "" for
 // unknown/generic OIDs (e.g. Net-SNMP 8072). Iterates the table in declared
 // order; more-specific prefixes must precede their general parent.

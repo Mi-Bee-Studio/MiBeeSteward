@@ -62,7 +62,7 @@ func (c *OrchestratorConfig) applyDefaults() {
 
 // Orchestrator is the ⑤ pipeline driver. It is constructed with a Registry
 // (the registered probes/classifiers/handlers) and a Persistence repository
-// (Phase 1; nil allowed in tests — persistence is best-effort).
+// (Phase 1; nil allowed in tests, persistence failures never abort).
 //
 // Run flow per host:
 //  1. gather:    run every ProbeSource in parallel, merge Evidence
@@ -84,13 +84,13 @@ type Orchestrator struct {
 	logger *slog.Logger
 	// seedEvidence, when set, supplies passive-discovery observations for the
 	// target IP (lease hostnames, overheard mDNS/SSDP announcements) that are
-	// PREPENDED to the gather output — the passive channel's data then reaches
+	// PREPENDED to the gather output, the passive channel's data then reaches
 	// the fingerprint classifiers exactly like probe evidence (#377). nil
 	// (default and unit tests) disables seeding.
 	seedEvidence func(ip string) []Evidence
 	// macResolver re-reads the kernel ARP cache after gather, closing the race
 	// where the concurrent ARPProbe runs before ICMP has populated the cache.
-	// Returns (mac, device, vendor, ouiPrefix) — vendor + ouiPrefix come from
+	// Returns (mac, device, vendor, ouiPrefix), vendor + ouiPrefix come from
 	// the OUI lookup the engine wires in via probe.SetPostScanResolver. nil
 	// (default) disables the post-scan MAC re-read. Injected by the engine layer
 	// to avoid a scannerv2 → probe → scannerv2 import cycle.
@@ -171,7 +171,7 @@ func (o *Orchestrator) Run(ctx context.Context, ip string, hint ProbeHint) HostR
 	report := HostReport{IP: ip, Collected: make(map[string]CollectedData)}
 
 	// ① gather: run every probe in parallel, prepending any passive-discovery
-	// seed evidence for this IP (lease hostnames / mDNS / SSDP announcements —
+	// seed evidence for this IP (lease hostnames / mDNS / SSDP announcements;
 	// #377: the passive channel's data must reach the classifiers too).
 	evidence := o.gather(ctx, ip, hint)
 	if o.seedEvidence != nil {
@@ -182,10 +182,10 @@ func (o *Orchestrator) Run(ctx context.Context, ip string, hint ProbeHint) HostR
 	report.Evidence = evidence
 	// Liveness heuristic: a host with at least one non-icmp evidence OR an
 	// explicit port_open evidence is alive. (ICMP liveness is set by the icmp
-	// probe emitting a port_open/echo evidence — see probe/icmp.go in Phase 2.)
+	// probe emitting a port_open/echo evidence, see probe/icmp.go in Phase 2.)
 	report.Alive = len(evidence) > 0
 
-	// ① persist raw evidence (best-effort; see Phase 1).
+	// ① persist raw evidence (persistence failures never abort; see Phase 1).
 	if o.repo != nil {
 		if err := o.repo.RecordEvidence(ctx, evidence); err != nil {
 			o.logger.Debug("record evidence failed", "ip", ip, "error", err)
@@ -233,7 +233,7 @@ func (o *Orchestrator) Run(ctx context.Context, ip string, hint ProbeHint) HostR
 	}
 
 	// ② persist service identities. Called even with zero services when the
-	// scan positively closed ports (RST evidence) — confirmed-gone rows must
+	// scan positively closed ports (RST evidence), confirmed-gone rows must
 	// be removed; a zero-service cycle with no closure signal keeps the old
 	// rows (a degraded scan must not wipe the service set, #256).
 	if o.repo != nil && (len(services) > 0 || hasEvidenceKind(evidence, "port_closed")) {
@@ -301,7 +301,7 @@ func httpServerToBrand(server string) string {
 }
 
 // hasCameraEvidence reports whether the host produced RTSP-banner or ONVIF
-// response evidence — i.e. it is (very likely) a camera. Used to suppress
+// response evidence, i.e. it is (very likely) a camera. Used to suppress
 // using the HTTP Server header (nginx/Apache reverse proxy) as the device
 // brand, since that software is not the camera's vendor.
 func hasCameraEvidence(ev []Evidence) bool {
@@ -362,7 +362,7 @@ func certCNToBrand(cn string) string {
 
 // certFieldsToBrand checks both subject_cn and issuer_org for vendor keywords.
 // Some devices (iStoreOS routers) put the product name in subject_cn and
-// "OpenWrt" in issuer_org — checking both maximizes coverage.
+// "OpenWrt" in issuer_org, checking both maximizes coverage.
 func certFieldsToBrand(subjectCN, issuerOrg string) string {
 	if b := certCNToBrand(subjectCN); b != "" {
 		return b
@@ -376,7 +376,7 @@ func containsFold(s, substr string) bool {
 
 func containsFoldImpl(s, substr string) bool {
 	// case-insensitive substring without pulling strings into the root package
-	// (classify already imports strings; orchestrator deliberately doesn't).
+	// (classify already imports strings; orchestrator doesn't).
 	ls := lowerASCII(s)
 	lt := lowerASCII(substr)
 	for i := 0; i+len(lt) <= len(ls); i++ {
@@ -423,7 +423,7 @@ func ssdpServerToBrand(server string) string {
 		return ""
 	}
 	tokens := splitWS(server)
-	// Typical shape: OS/ver UPnP/ver Product/ver — product is the 3rd token.
+	// Typical shape: OS/ver UPnP/ver Product/ver, product is the 3rd token.
 	// Guard against short SERVER headers ("Linux/4.4" alone, etc.).
 	if len(tokens) < 3 {
 		return ""
@@ -516,7 +516,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 	// that no per-service handler owns; without this fold they would be lost
 	// on the store.RecordDevice path (which only sees DeviceRef, not the full
 	// evidence slice). The runner's buildScanAttributes re-reads them as a
-	// belt-and-suspenders measure.
+	// extra guard measure.
 	for _, e := range report.Evidence {
 		if e.RawData == nil {
 			continue
@@ -568,7 +568,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			// Don't overwrite a stronger SNMP/cert-derived brand. Also skip when
 			// the host has RTSP/ONVIF evidence: cameras commonly front their web
 			// UI with nginx/Apache, and the web-server software is NOT the camera
-			// vendor — setting "nginx" as the brand of a Hikvision camera is
+			// vendor, setting "nginx" as the brand of a Hikvision camera is
 			// misleading. Let the OUI/cert/ONVIF brand (or empty) win instead.
 			if v := e.RawData["server"]; v != "" && report.Device.Fields["inferred_brand"] == "" && !hasCameraEvidence(report.Evidence) {
 				report.Device.Fields["inferred_brand"] = httpServerToBrand(v)
@@ -578,7 +578,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			// (_onvif/_rtsp/_airplay), and high-signal TXT records (model,
 			// vendor, serial). Hostname fills node_hostname; vendor TXT fills
 			// inferred_brand; the rest lands under mdns.* for the attribute
-			// builder to surface.
+			// builder to propagate.
 			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" {
 				report.Device.Fields["node_hostname"] = v
 			}
@@ -611,7 +611,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			// NOTE: do NOT infer os_type from a NetBIOS response. Samba, OpenWrt,
 			// Synology DSM, and many routers/NAS appliances all run an SMB stack
 			// that answers NetBIOS, so "responded to NetBIOS" is NOT evidence of
-			// Windows — it was mislabeling Linux routers (e.g. an R68S running
+			// Windows, it was mislabeling Linux routers (e.g. an R68S running
 			// dropbear + samba) as Windows. OS is now derived from stronger
 			// signals only: SNMP sysDescr (osFromSysDescr), node_exporter, SSDP,
 			// or SSH banner.
@@ -671,7 +671,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		if data != nil {
 			report.Collected[cur.svc.Service] = data
 		}
-		// Always apply enrichment (even when Collect returned no data — many
+		// Always apply enrichment (even when Collect returned no data, many
 		// handlers like Camera/SSH/RTSP do all their work in EnrichDevice and
 		// return nil data). Re-snapshot the device so handlers see prior edits.
 		svcCtx.Device = report.Device
@@ -713,7 +713,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		// (https, ldaps, imaps, pop3s, smtps, ftps, ircs, telnets) returns a
 		// TLSCertCollected payload from Collect(). We type-assert it out of the
 		// Collected map and hand the records to the repo in one batch. Records
-		// are best-effort like everything else here.
+		// are logged, never fatal, like everything else here.
 		if certs := extractTLSCerts(report.Collected); len(certs) > 0 {
 			if err := o.repo.RecordTLSCerts(ctx, report.IP, certs); err != nil {
 				o.logger.Debug("record tls certs failed", "ip", report.IP, "error", err)
@@ -797,7 +797,7 @@ func extractNeighbors(evidence []Evidence) []NeighborSpec {
 // result map and flattens its certificate records into a single slice for
 // persistence. Multiple TLS ports on one host (e.g. https/443 + ldaps/636)
 // produce multiple Collected entries; we concat them so the repo gets one batch.
-// Records carrying only an Error are still forwarded — the UI uses them to show
+// Records carrying only an Error are still forwarded, the UI uses them to show
 // "we tried this port".
 func extractTLSCerts(collected map[string]CollectedData) []TLSCertRecord {
 	var out []TLSCertRecord

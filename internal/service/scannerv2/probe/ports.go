@@ -11,7 +11,7 @@
 //
 // Each ProbeSource gathers Evidence for one IP. Probes are domain-agnostic:
 // they emit raw observations (port_open, banner bytes, SNMP varbinds, SOAP
-// responses) and never decide what service is running — that's the
+// responses) and never decide what service is running, that's the
 // Classifier's job.
 //
 // Active probes (this package) connect to the target. A passive eBPF observer
@@ -54,7 +54,7 @@ const (
 // PortSpecProbe scans a TCP port spec ("22,80,100-200") with priority ports
 // scanned first. For each open port it emits a port_open Evidence plus, when a
 // banner can be passively read or actively elicited, a banner Evidence. It
-// does NOT do protocol-specific probing (no HTTP GET, no RTSP OPTIONS) — that
+// does NOT do protocol-specific probing (no HTTP GET, no RTSP OPTIONS), that
 // is the job of the dedicated protocol probes, which run after port discovery.
 //
 // Name: "active:tcp".
@@ -122,7 +122,7 @@ func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pro
 				// A TCP RST is positive knowledge: the port is closed. Emit it
 				// as negative evidence so the store can distinguish "confirmed
 				// gone" (safe to drop the service row) from "no answer this
-				// cycle" (timeout — keep the row; a degraded scan cycle must
+				// cycle" (timeout, keep the row; a degraded scan cycle must
 				// not erase known services, #256).
 				if refused {
 					evs = append(evs, scannerv2.Evidence{
@@ -176,12 +176,12 @@ var tcpDial = func(ctx context.Context, addr string, timeout time.Duration) (net
 // Many servers (SSH, RTSP, FTP, SMTP, redis) send a greeting immediately. If
 // the passive read returns nothing AND the port has a known active probe
 // string (e.g. HTTP "GET / HTTP/1.0"), the probe is sent and the response is
-// read — this is what lets the port scan classify HTTP on ports where the
+// read, this is what lets the port scan classify HTTP on ports where the
 // server waits silently for a request.
 //
 // A dial that ends in RST (connection refused) is a CONFIRMED-closed port;
-// a dial that runs out of time is UNKNOWN (filtered, or — commonly on busy
-// routers (#256) — a transient drop under load). Unknown dials get one retry
+// a dial that runs out of time is UNKNOWN (filtered, or, commonly on busy
+// routers (#256), a transient drop under load). Unknown dials get one retry
 // so a momentarily-saturated target isn't misread as closed.
 //
 // Returns (open, refused, banner).
@@ -208,7 +208,7 @@ func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration
 	// Passive banner read: don't send anything; wait for a server greeting.
 	// Catches SSH/FTP/SMTP/RTSP/redis/etc. that volunteer a banner on connect.
 	// Loop until we get a newline (most greetings end with \r\n) or the read
-	// deadline fires — handles slow servers (ProFTPD ident check) and segmented
+	// deadline fires, handles slow servers (ProFTPD ident check) and segmented
 	// greetings that arrive across TCP segments.
 	_ = conn.SetReadDeadline(time.Now().Add(bannerReadTimeout))
 	buf := make([]byte, bannerReadSize)
@@ -219,7 +219,7 @@ func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration
 		if err != nil || cn == 0 {
 			break
 		}
-		// Most banner greetings end with \r\n — stop after the first line.
+		// Most banner greetings end with \r\n, stop after the first line.
 		if bytes.ContainsRune(buf[:n], '\n') {
 			break
 		}
@@ -242,7 +242,7 @@ func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration
 	return true, false, ""
 }
 
-// isRefused reports whether the dial error is a TCP RST (ECONNREFUSED) — the
+// isRefused reports whether the dial error is a TCP RST (ECONNREFUSED), the
 // kernel-level proof that nothing listens on the port. Everything else
 // (timeout, no route, network unreachable) leaves the port's state unknown.
 func isRefused(err error) bool {

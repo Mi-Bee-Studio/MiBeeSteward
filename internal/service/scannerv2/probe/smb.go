@@ -21,7 +21,7 @@ import (
 
 // SMBProbe sends an SMB2 Negotiate Request on TCP port 445 and parses the
 // Negotiate Response to extract the server's highest supported dialect. Unlike
-// SSH/FTP, an SMB server does NOT greet on connect — it waits for the client to
+// SSH/FTP, an SMB server does NOT greet on connect, it waits for the client to
 // initiate. Without this probe, port 445 is only a port-only "smb" fallback
 // with no version info.
 //

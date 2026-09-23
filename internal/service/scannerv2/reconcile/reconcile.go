@@ -10,11 +10,11 @@
 // Package reconcile runs the periodic network-attribution reconciliation job
 // (issue #19 Layer 3). It is the "兜底" (bottom-line) defense: even if the
 // boundary checks at command dispatch (Layer 1) and report ingestion (Layer 2)
-// fail — because a network lacks a cidr, or a future code path bypasses them —
+// fail, because a network lacks a cidr, or a future code path bypasses them;
 // this job detects devices whose IP no longer belongs to the network they're
-// stamped with, and surfaces them so an operator can correct the attribution.
+// stamped with, and reports them so an operator can correct the attribution.
 //
-// Why detect-and-surface, not auto-fix: automatically re-homing a device to a
+// Why detect-and-report, not auto-fix: automatically re-homing a device to a
 // different network is a destructive call (it changes identity, breaks
 // historical linkage, and can flap if two networks legitimately overlap on the
 // same IP space). The job's job is to FIND the drift; correction stays a human
@@ -56,7 +56,7 @@ type Service struct {
 
 	// nets caches parsed cidrs per network_id so a scan doesn't re-parse on
 	// every device. Invalidated at the start of each scan (a network's cidr can
-	// change between scans — e.g. the agent backfill fills it).
+	// change between scans, e.g. the agent backfill fills it).
 	mu   sync.Mutex
 	nets map[int64]netCache
 
@@ -143,17 +143,17 @@ type CleanupStats struct {
 //
 //   - if YES: the mismatched row is a duplicate ghost (the correct copy lives
 //     elsewhere). Delete the ghost device + its scan_snapshots lease. This is
-//     safe — no data loss, the canonical record stays.
-//   - if NO: there is no safe target. Leave the row and surface it (counted as
+//     safe, no data loss, the canonical record stays.
+//   - if NO: there is no safe target. Leave the row and report it (counted as
 //     Unresolved) so an operator decides. Auto-re-homing to a freshly-created
 //     network would be a guess we don't make automatically.
 //
 // It also re-homes by MAC when the IP's correct network can't be determined
-// (no network's cidr contains it) but a same-MAC device exists elsewhere — the
+// (no network's cidr contains it) but a same-MAC device exists elsewhere, the
 // MAC-primary identity rule means that's the same asset. This covers the ghost
 // that was first seen without a MAC and can't IP-match.
 //
-// Idempotent: a second run finds nothing (the ghosts are gone). Called once at
+// A second run finds nothing (the ghosts are gone). Called once at
 // startup from cmd/server/main.go's migration phase, after the pre-migration
 // VACUUM INTO backup is taken.
 func (s *Service) CleanupGhosts(ctx context.Context) (*CleanupStats, error) {
@@ -217,7 +217,7 @@ func (s *Service) CleanupGhosts(ctx context.Context) (*CleanupStats, error) {
 			continue
 		}
 		// Safe to delete the ghost. Remove its lease first (FK is ON DELETE
-		// CASCADE on scan_snapshots? — no, scan_snapshots has no FK to devices;
+		// CASCADE on scan_snapshots?, no, scan_snapshots has no FK to devices;
 		// it keys on (network_id, ip), so delete it explicitly by the ghost's
 		// (network_id, ip)).
 		if _, err := s.dbConn.ExecContext(ctx,
@@ -267,7 +267,7 @@ func (s *Service) reconcileOnce(ctx context.Context) ([]Mismatch, error) {
 	}
 	for _, n := range nets {
 		if n.ipNet == nil {
-			// No usable cidr → can't check this network. Don't surface its
+			// No usable cidr → can't check this network. Don't report its
 			// devices as mismatches (we don't KNOW they're wrong). The
 			// prerequisite backfill (issue #19 前置工作) is what fills these.
 			continue
@@ -360,15 +360,15 @@ func (s *Service) refreshNetworks(ctx context.Context) error {
 }
 
 // CleanupReservedAddressDevices removes devices recorded at a network's
-// reserved identifiers — the IPv4 network address and the broadcast address
+// reserved identifiers, the IPv4 network address and the broadcast address
 // (#254). The scanner used to enumerate them: the broadcast address answered
 // pings via every host's fan-out reply and persisted as a phantom
 // always-online device with no MAC. Unlike CleanupGhosts there is no
-// "canonical copy" ambiguity — these addresses can never be a host — so
+// "canonical copy" ambiguity, these addresses can never be a host, so
 // deletion is unconditional (per network_id, only where the device is stamped
 // with that network).
 //
-// Idempotent: a second pass finds nothing. Runs at startup right after
+// A second pass finds nothing. Runs at startup right after
 // CleanupGhosts (both behind the pre-migration VACUUM INTO backup).
 func (s *Service) CleanupReservedAddressDevices(ctx context.Context) ([]string, error) {
 	if err := s.refreshNetworks(ctx); err != nil {
@@ -395,7 +395,7 @@ func (s *Service) CleanupReservedAddressDevices(ctx context.Context) ([]string, 
 			broadcastAddr(n.ipNet).String(),
 		}
 		for _, ip := range reserved {
-			// scan_snapshots keys on (network_id, ip) with no FK to devices —
+			// scan_snapshots keys on (network_id, ip) with no FK to devices;
 			// clear the lease explicitly, then the device row (satellite tables
 			// follow via ON DELETE CASCADE).
 			if _, err := s.dbConn.ExecContext(ctx,

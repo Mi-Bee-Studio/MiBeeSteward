@@ -227,7 +227,7 @@ func TestExport_Devices_Empty(t *testing.T) {
 }
 
 func TestExport_Devices_StreamChunks(t *testing.T) {
-	// Insert 2500 devices — more than chunk size of 1000
+	// Insert 2500 devices, more than chunk size of 1000
 	svc, dbConn := setupExportTest(t)
 	exportSeedDevices(t, dbConn, 2500)
 

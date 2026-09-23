@@ -292,7 +292,7 @@ func (r *DeviceRepository) CountByTypeScoped(ctx context.Context, scope domain.S
 // token not in this map falls back to "id". This is the SQL-injection guard:
 // only these literals ever reach ORDER BY, never raw user input.
 //
-// The values here are column names (or `table.col`), NOT arbitrary SQL — they
+// The values here are column names (or `table.col`), NOT arbitrary SQL, they
 // are concatenated into `ORDER BY d.<col> <dir>` only after passing through
 // resolveSortExpr, which for ip_address substitutes a numeric-expression that
 // sorts IPs by value (not lexically). Because every value is a code constant
@@ -301,7 +301,7 @@ func (r *DeviceRepository) CountByTypeScoped(ctx context.Context, scope domain.S
 // JOIN: id/name/type/status/ip_address/last_scanned_at/created_at on `d`, plus
 // n.name (from the LEFT JOIN networks) and scan_vendor/scan_hostname (promoted
 // scan columns on `d`). network_id is included for completeness even though the
-// UI sorts by network_name (a human-meaningful order) — agents/tools may use it.
+// UI sorts by network_name (a human-meaningful order), agents/tools may use it.
 var sortWhitelist = map[string]string{
 	"id":              "id",
 	"name":            "name",
@@ -325,7 +325,7 @@ var sortWhitelist = map[string]string{
 // zero-padded to 3 digits (009 < 010), which sorts numerically while staying a
 // pure string compare. The expression is built by ipSortKeyExpr from one
 // trim-call per octet, so it is readable and fully fixed at compile time (no
-// user input is interpolated — the injection guarantee of the plain-column path
+// user input is interpolated, the injection guarantee of the plain-column path
 // is preserved). Non-IPv4 values (IPv6, empty) collapse to all-zero octets and
 // group at one end, which is acceptable for a TEXT column. Returns ("", false)
 // when the token is unknown so the caller applies its "id" default.
@@ -360,7 +360,7 @@ func resolveDeviceSortExpr(key string) string {
 // `substr(ip, instr(...)+1)`, so octet 2 = first segment of the once-trimmed
 // string, octet 3 = first segment of the twice-trimmed string, etc. The final
 // octet has no trailing dot, so instr(...)=0 and `substr(rest,1,-1)` would yield
-// ” — the CASE falls back to the whole `rest` when no dot remains. Used only to
+// ”, the CASE falls back to the whole `rest` when no dot remains. Used only to
 // compose ipSortKeyExpr; kept here so the per-octet noise lives in one place.
 func octetExpr(ipCol string, n int) string {
 	// `rest` starts as the whole column and loses one `.<octet>` prefix per step.
@@ -402,7 +402,7 @@ func escapeLike(s string) string {
 
 // ListFiltered is the flexible device list used by the device page: server-side
 // search (name/ip/mac/serial LIKE), created_at range, and a whitelisted sort.
-// It intentionally lives outside sqlc — sqlc cannot express a dynamic ORDER BY,
+// It lives outside sqlc, sqlc cannot express a dynamic ORDER BY,
 // and the device list is the one query that genuinely needs per-request
 // sorting. The sort column is taken from sortWhitelist (never raw input), and
 // the search term is parameterized with ESCAPE, so there is no injection surface.
@@ -437,7 +437,7 @@ func strPtr(s string) *string { return &s }
 // and observe two different snapshots. The devices table is written to every
 // ~30-60s (heartbeat status sync) and in bursts during scans, so a device
 // insert/status change landing between the two queries made the page list and
-// its total disagree — the visible symptom was the page count flapping on
+// its total disagree, the visible symptom was the page count flapping on
 // refresh (sometimes 2 pages, sometimes 5). Running both inside one
 // read-only tx (BEGIN ... COMMIT) pins them to one snapshot. The tx is opened
 // read-only so it never blocks writers and is eligible for WAL's concurrent
@@ -475,7 +475,7 @@ func (r *DeviceRepository) ListFilteredWithCount(ctx context.Context, f domain.D
 // dbConnAsDB unwraps the repository's dbConn to a *sql.DB for BeginTx.
 // dbConn is typed as db.DBTX (the sqlc interface) to accept both *sql.DB and
 // *sql.Tx, but in production it is always a *sql.DB (set in NewDeviceRepository
-// from routes.go). This panics if someone wires a Tx in, which is desirable —
+// from routes.go). This panics if someone wires a Tx in, which is desirable;
 // we'd want to know.
 func (r *DeviceRepository) dbConnAsDB() *sql.DB {
 	if db, ok := r.dbConn.(*sql.DB); ok {

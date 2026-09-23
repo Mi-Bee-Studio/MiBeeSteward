@@ -28,14 +28,14 @@ import (
 const routeTablePath = "/proc/net/route"
 
 // injectARPTopology is the post-scan step that derives L2 adjacency edges from
-// the local kernel's ARP cache — the ONLY topology data source available when
+// the local kernel's ARP cache, the ONLY topology data source available when
 // no device on the network speaks SNMP (Bridge-MIB / LLDP-MIB both need SNMP).
 //
 // In home/SOHO networks without managed switches, /proc/net/arp is the sole
 // source of "who is on this subnet" data. It cannot tell us which physical
 // switch port a device sits behind (that needs Bridge-MIB), but it CAN tell us
 // "every device on this subnet reaches the rest of the network through the
-// default gateway" — a meaningful logical topology that the L2 graph view can
+// default gateway", a meaningful logical topology that the L2 graph view can
 // render as a gateway-centric star.
 //
 // The edges it writes use protocol="ARP" to distinguish them from the
@@ -44,9 +44,9 @@ const routeTablePath = "/proc/net/route"
 // vs solid colored lines for physical adjacency.
 //
 // Runs once per local scan, after all hosts are persisted (so device_id
-// lookups succeed). Agent scans do NOT call this — each agent injects its own
+// lookups succeed). Agent scans do NOT call this, each agent injects its own
 // ARP edges from its own /proc/net/arp, then the center merges them via the
-// existing ApplyReport path. Best-effort: failures are logged, never abort a
+// existing ApplyReport path. Failures are logged and never abort a
 // scan (same pattern as DetectLost).
 func (rn *Runner) injectARPTopology(ctx context.Context, networkID sql.NullInt64, reports []scannerv2.HostReport) {
 	if !networkID.Valid {
@@ -81,7 +81,7 @@ func (rn *Runner) injectARPTopology(ctx context.Context, networkID sql.NullInt64
 	rn.injectARPEdges(ctx, networkID, reports, gatewayIP, gatewayMAC)
 }
 
-// arpTablePath is the kernel's ARP cache — world-readable (no privileges).
+// arpTablePath is the kernel's ARP cache, world-readable (no privileges).
 const arpTablePath = "/proc/net/arp"
 
 // injectARPEdges is the testable core of injectARPTopology: given the resolved
@@ -91,7 +91,7 @@ const arpTablePath = "/proc/net/arp"
 // /proc).
 func (rn *Runner) injectARPEdges(ctx context.Context, networkID sql.NullInt64, reports []scannerv2.HostReport, gatewayIP, gatewayMAC string) {
 	// Collect MACs from this scan's alive reports (only devices that were
-	// actually scanned get ARP edges — not every kernel cache straggler).
+	// actually scanned get ARP edges, not every kernel cache straggler).
 	scannedMACs := make(map[string]bool, len(reports))
 	for _, rep := range reports {
 		if !rep.Alive {

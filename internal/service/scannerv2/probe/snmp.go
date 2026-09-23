@@ -183,7 +183,7 @@ func snmpVersionLabel(v gosnmp.SnmpVersion) string {
 
 // parseSNMPUptime converts a sysUpTime value (TimeTicks: hundredths of a second
 // since agent boot) into whole seconds. The value can arrive as a numeric
-// string from gosnmp's int conversion (handled by snmpValString) — divide by
+// string from gosnmp's int conversion (handled by snmpValString), divide by
 // 100 and round down.
 func parseSNMPUptime(raw string) int64 {
 	if raw == "" {

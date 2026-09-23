@@ -27,7 +27,7 @@ import (
 )
 
 // FormattedWebhookSender delivers notifications through third-party IM bot
-// webhooks — Feishu/Lark, WeCom (企业微信群机器人), Telegram, Discord. All four
+// webhooks，Feishu/Lark, WeCom (企业微信群机器人), Telegram, Discord. All four
 // are "formatted webhooks" at heart: POST a platform-specific JSON body to a
 // bot endpoint, with per-platform auth (Feishu HMAC signature header,
 // Telegram bot token embedded in the URL path). The generic `webhook`
@@ -36,7 +36,7 @@ import (
 // platforms (#284).
 //
 // All platforms signal failures INSIDE a 2xx body (errcode/code/ok fields),
-// so success requires both an HTTP 2xx and the platform's own status — and
+// so success requires both an HTTP 2xx and the platform's own status, and
 // those body-level errors are marked Permanent (no retry burns).
 type FormattedWebhookSender struct {
 	Kind   domain.ChannelType
@@ -54,7 +54,7 @@ func NewFormattedWebhookSender(kind domain.ChannelType) *FormattedWebhookSender 
 }
 
 // FeishuConfig is the channel config for a 飞书/Lark custom bot. Secret is
-// the bot's "签名校验" key — when set, every request carries
+// the bot's "签名校验" key，when set, every request carries
 // X-Lark-Request-Timestamp + X-Lark-Request-Signature (HMAC-SHA256).
 type FeishuConfig struct {
 	URL    string `json:"url"`
@@ -78,7 +78,7 @@ type DiscordConfig struct {
 	Username string `json:"username,omitempty"`
 }
 
-// Send is not used — the dispatcher routes through SendWithConfig (the
+// Send is not used, the dispatcher routes through SendWithConfig (the
 // channel config blob is only known per-dispatch). Mirrors WebhookSender.
 func (s *FormattedWebhookSender) Send(context.Context, Payload) SendResult {
 	return SendResult{Success: false, Error: "use SendWithConfig instead", Permanent: true}
@@ -230,7 +230,7 @@ func (s *FormattedWebhookSender) sendDiscord(ctx context.Context, text string, c
 }
 
 // postJSON marshals body, POSTs it with the extra headers, and returns the
-// response plus its (read, closed) body. A non-2xx is NOT an error here —
+// response plus its (read, closed) body. A non-2xx is NOT an error here;
 // platform status handling is the caller's job.
 func (s *FormattedWebhookSender) postJSON(ctx context.Context, url string, body any, headers map[string]string) (*http.Response, []byte, error) {
 	raw, err := json.Marshal(body)

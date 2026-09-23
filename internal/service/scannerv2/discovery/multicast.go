@@ -104,13 +104,13 @@ func ipv4FromInterfaceOrNil(ifi net.Interface) *ipv4If {
 
 // MulticastSource passively listens for mDNS (224.0.0.251:5353) and SSDP
 // (239.255.255.250:1900) traffic WITHOUT sending any queries. Hosts that
-// self-advertise — cameras (ONVIF/RTSP), printers, IoT gadgets, Macs (Bonjour),
-// UPnP/DLNA devices — surface here as a byproduct of their normal background
+// self-advertise, cameras (ONVIF/RTSP), printers, IoT gadgets, Macs (Bonjour),
+// UPnP/DLNA devices, show up here as a byproduct of their normal background
 // chatter, so this source costs zero outbound traffic.
 //
 // It is a supplemental source: only hosts that actively broadcast are seen, so
 // it doesn't replace the router-ARP sweep. But it carries richer hints than a
-// bare MAC — an _onvif._tcp service strongly implies a camera — which the
+// bare MAC, an _onvif._tcp service strongly implies a camera, which the
 // coordinator folds into the synthesized report as device-type hints.
 //
 // The listener binds with SO_REUSEADDR so it coexists with avahi/
@@ -136,7 +136,7 @@ func NewMulticastSource(svc *Service, logger *slog.Logger) *MulticastSource {
 // Start opens both multicast sockets and reads from them until ctx is cancelled.
 // If a socket can't be opened (port busy + no SO_REUSEADDR, or no multicast
 // route), that protocol is skipped with a warning; the other may still come up.
-// Idempotent: a second Start is a no-op.
+// A second Start is a no-op.
 func (s *MulticastSource) Start(ctx context.Context) {
 	if !s.started.CompareAndSwap(false, true) {
 		return
@@ -185,7 +185,7 @@ type multicastListener interface {
 const (
 	// mDNS/SSDP multicast group IPs and ports. The listeners bind 0.0.0.0:port
 	// (so the kernel routes multicast packets to them once they JOIN the group)
-	// rather than the group address itself — binding the group address does not
+	// rather than the group address itself, binding the group address does not
 	// imply group membership and yields zero delivered packets (see
 	// reuseJoinControl). These group IPs are passed to IP_ADD_MEMBERSHIP.
 	mdnsGroupIP = "224.0.0.251"
@@ -208,7 +208,7 @@ func (m *mdnsListener) proto() string { return "mdns" }
 
 func (m *mdnsListener) listen() (net.PacketConn, error) {
 	// Bind 0.0.0.0:5353 and JOIN the 224.0.0.251 group. The join is what makes
-	// the kernel deliver mDNS multicast to us — see reuseJoinControl. SO_REUSEADDR
+	// the kernel deliver mDNS multicast to us, see reuseJoinControl. SO_REUSEADDR
 	// lets us coexist with avahi/systemd-resolved; we do NOT use SO_REUSEPORT
 	// (that would split datagrams between us and the resolver).
 	lc := net.ListenConfig{
@@ -280,7 +280,7 @@ func (m *mdnsListener) readLoop(ctx context.Context, conn net.PacketConn) {
 }
 
 // parseMDNSHints pulls service-type clues out of an mDNS packet for use as
-// device-type hints. It's a deliberately shallow scan (no full DNS parsing): it
+// device-type hints. It's a shallow scan (no full DNS parsing): it
 // looks for well-known service labels in the raw bytes and maps them to hint
 // keys the coordinator folds into the device fields. Returns nil when nothing
 // recognizable is present.
@@ -365,7 +365,7 @@ func (s *ssdpListener) readLoop(ctx context.Context, conn net.PacketConn) {
 			continue
 		}
 		// Seed-evidence cache (#377): the SSDP SERVER/USN/LOCATION headers are
-		// vendor self-identifications — the same shape the active SSDP probe
+		// vendor self-identifications, the same shape the active SSDP probe
 		// emits, so the ssdp rules in mdns-ssdp.yaml fire on overheard
 		// NOTIFY/M-SEARCH replies too.
 		if raw := probe.ParseSSDPResponse(buf[:n]); len(raw) >= 2 {

@@ -48,7 +48,7 @@ func waitForFlush(t *testing.T, store *HeartbeatStore, minCount int64) {
 // LivenessHistory. This guards the two time-format pain points: (1) samples are
 // written as RFC3339 strings (the modernc monotonic-suffix workaround), so the
 // queries must compare against them correctly; (2) GetLastOnlineAt returns a
-// time.Time scanned back from that RFC3339 string — it must parse cleanly.
+// time.Time scanned back from that RFC3339 string, it must parse cleanly.
 func TestHeartbeatStore_DeviceLiveness_WriteQueryCycle(t *testing.T) {
 	store, dbPath := openTestStore(t)
 	defer store.Close()
@@ -112,14 +112,14 @@ func TestHeartbeatStore_DeviceLiveness_RetentionSweep(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now()
-	// Old samples (10 days ago) — past a 7-day cutoff.
+	// Old samples (10 days ago), past a 7-day cutoff.
 	for i := 0; i < 3; i++ {
 		store.EnqueueLiveness(livenessRow{
 			DeviceID: 2, Status: "online", Source: "heartbeat",
 			CheckedAt: now.AddDate(0, 0, -10),
 		})
 	}
-	// Recent samples (1 hour ago) — within the cutoff.
+	// Recent samples (1 hour ago), within the cutoff.
 	for i := 0; i < 2; i++ {
 		store.EnqueueLiveness(livenessRow{
 			DeviceID: 2, Status: "online", Source: "heartbeat",

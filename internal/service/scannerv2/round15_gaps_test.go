@@ -36,7 +36,7 @@ func TestOrchestrator_CascadeDepthAndErrors(t *testing.T) {
 	report := orch.Run(context.Background(), "10.210.0.1", ProbeHint{Timeout: time.Second})
 
 	// First collect errored, second re-triggered; total collects bounded by
-	// depth (0,1,2 → 3 nodes) — the chain stopped instead of looping forever.
+	// depth (0,1,2 → 3 nodes), the chain stopped instead of looping forever.
 	if chainCollects == 0 || chainCollects > 5 {
 		t.Fatalf("collects=%d — chain must run but stay depth-bounded", chainCollects)
 	}

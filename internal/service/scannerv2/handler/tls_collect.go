@@ -20,7 +20,7 @@ import (
 // classifier can identify. The handler's Collect() performs a full-certificate
 // chain grab (leaf + issuers) via probe.CollectCertChain and returns it as a
 // TLSCertCollected payload. The orchestrator detects that payload type and
-// persists it via Repository.RecordTLSCerts — handlers themselves never touch
+// persists it via Repository.RecordTLSCerts, handlers themselves never touch
 // the repository, keeping the dispatch/repo boundary clean.
 //
 // The cert grab is dispatched ONLY for ports a classifier flagged as TLS, so
@@ -63,7 +63,7 @@ func (h tlsCollectHandler) Collect(ctx context.Context, svc scannerv2.ServiceCon
 	}, nil, nil
 }
 
-// GenerateHeartbeat delegates to a TCP heartbeat — these are all server-class
+// GenerateHeartbeat delegates to a TCP heartbeat, these are all server-class
 // services and the port is alive if the handshake succeeded.
 func (h tlsCollectHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
 	return &scannerv2.HeartbeatSpec{

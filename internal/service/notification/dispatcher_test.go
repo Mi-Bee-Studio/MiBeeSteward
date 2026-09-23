@@ -204,7 +204,7 @@ func TestPermanentErrorNoRetry(t *testing.T) {
 		Subject: "permanent error test",
 	}, nil, 3)
 
-	// Should not retry — give enough time for processing
+	// Should not retry, give enough time for processing
 	time.Sleep(500 * time.Millisecond)
 	assert.Equal(t, 1, int(callCount.Load()), "should only attempt once for permanent errors")
 	require.Equal(t, 1, logMock.count())
@@ -285,7 +285,7 @@ func TestStopWaitsForWorkers(t *testing.T) {
 	case <-stopDone:
 		t.Fatal("Stop should not return while worker is blocked")
 	case <-time.After(200 * time.Millisecond):
-		// Good — Stop is waiting
+		// Good, Stop is waiting
 	}
 
 	// Release the worker
@@ -293,7 +293,7 @@ func TestStopWaitsForWorkers(t *testing.T) {
 
 	select {
 	case <-stopDone:
-		// Good — Stop completed after worker finished
+		// Good, Stop completed after worker finished
 	case <-time.After(2 * time.Second):
 		t.Fatal("Stop should complete after worker finishes")
 	}

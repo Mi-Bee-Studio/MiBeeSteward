@@ -126,7 +126,7 @@ func TestParseSMB1OS(t *testing.T) {
 	samba := smb1Response(17, []byte("WORKGROUP\x00Samba 4.15.13-Debian\x00"))
 	require.Equal(t, "Samba 4.15.13-Debian", parseSMB1OS(samba))
 
-	// WordCount 0 (parameterless) — still finds the second string.
+	// WordCount 0 (parameterless), still finds the second string.
 	flat := smb1Response(0, []byte("WG\x00Windows 10 Pro\x00"))
 	require.Equal(t, "Windows 10 Pro", parseSMB1OS(flat))
 
@@ -135,7 +135,7 @@ func TestParseSMB1OS(t *testing.T) {
 	bad[0] = 0xFE
 	require.Empty(t, parseSMB1OS(bad), "wrong magic")
 
-	// Truncated packet: declared byte count exceeds the actual data — the
+	// Truncated packet: declared byte count exceeds the actual data, the
 	// parser clamps instead of panicking.
 	require.Equal(t, "srv", parseSMB1OS(append(smb1Response(0, []byte("WG\x00srv\x00")), make([]byte, 0)...)))
 
@@ -236,7 +236,7 @@ func TestNewSMBProbe_TimeoutClamp(t *testing.T) {
 	require.Equal(t, 1500*time.Millisecond, NewSMBProbe(1500*time.Millisecond).timeout)
 }
 
-// Interface conformance — the probe registry contract.
+// Interface conformance, the probe registry contract.
 func TestSMBProbe_InterfaceConformance(t *testing.T) {
 	var _ scannerv2.ProbeSource = (*SMBProbe)(nil)
 	require.Equal(t, "active:smb", NewSMBProbe(time.Second).Name())

@@ -61,7 +61,7 @@ func TestSettingsService_SetGetRoundTrip(t *testing.T) {
 	require.Equal(t, config.PasswordPolicyConfig{MinLength: 4}, got2)
 }
 
-// The overlay wins over the UserService's startup policy — and applies at
+// The overlay wins over the UserService's startup policy, and applies at
 // USE time, so an admin edit changes the next validation without any restart
 // or reconstruction (the settings-center core property). The UserService and
 // SettingsService may sit on different handles; the overlay is read through
@@ -74,7 +74,7 @@ func TestSettingsService_PolicyOverlayPrecedenceAndHotUpdate(t *testing.T) {
 	_, err := userSvc.Register(context.Background(), "carol", "carol@example.com", "Sh0rt", "user")
 	require.ErrorIs(t, err, ErrWeakPassword)
 
-	// Overlay relaxes min_length to 4 — same service instance now accepts it.
+	// Overlay relaxes min_length to 4, same service instance now accepts it.
 	require.NoError(t, settingsSvc.Set(context.Background(), SettingAuthPasswordPolicy,
 		config.PasswordPolicyConfig{MinLength: 4, RequireUppercase: true, RequireLowercase: true, RequireDigit: true}))
 	userSvc.SetSettingsSource(settingsSvc)
@@ -99,7 +99,7 @@ func TestSettingsService_SubscriberNotified(t *testing.T) {
 	require.Equal(t, int32(1), calls.Load())
 }
 
-// A malformed overlay row must not brick reads — treated as unset, the config
+// A malformed overlay row must not brick reads, treated as unset, the config
 // layer takes over.
 func TestSettingsService_MalformedRowIgnored(t *testing.T) {
 	svc, db := setupSettingsService(t)
@@ -107,7 +107,7 @@ func TestSettingsService_MalformedRowIgnored(t *testing.T) {
 	require.NoError(t, err)
 	_ = svc
 
-	// The row was inserted after load — simulate a restart-era read by
+	// The row was inserted after load, simulate a restart-era read by
 	// re-loading a second service over the same DB.
 	svc2, err := NewSettingsService(db)
 	require.NoError(t, err)

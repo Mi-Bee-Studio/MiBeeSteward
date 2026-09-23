@@ -15,10 +15,10 @@ package probe
 // re-reads the response. This mirrors nmap's "rare" probe approach in a tiny,
 // curated form: only ports where a passive read commonly fails.
 //
-// The probe strings are deliberately minimal and protocol-safe:
+// The probe strings are minimal and protocol-safe:
 //   - HTTP family: a bare HTTP/0.9-style GET, which also works for HTTP/1.x
 //     servers (they answer with a full response even to a 0.9 request).
-//   - TLS family: nothing is sent — the server speaks first only in some TLS
+//   - TLS family: nothing is sent, the server speaks first only in some TLS
 //     setups; we instead rely on the separate TLS probe to read the cert.
 //   - DB / cache: a protocol-specific handshake start (redis PING, postgres
 //     SSLRequest, mongodb ismaster) is NOT sent here because partial handshakes
@@ -26,7 +26,7 @@ package probe
 //     only carries generic, non-mutating probes.
 //
 // Ports not in this map fall back to the passive read only (which already
-// catches SSH, FTP, SMTP, RTSP, redis, etc. — anything that volunteers a
+// catches SSH, FTP, SMTP, RTSP, redis, etc., anything that volunteers a
 // greeting on connect).
 var activeBanners = map[int][]byte{
 	80:   []byte("GET / HTTP/1.0\r\n\r\n"),

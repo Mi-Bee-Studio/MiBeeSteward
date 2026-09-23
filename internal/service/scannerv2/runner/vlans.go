@@ -30,7 +30,7 @@ import (
 //     actually carry learned MACs.
 //
 // LLDP/CDP/ARP don't carry a VLAN tag, so on networks without a managed
-// switch this is a no-op (correct — there's nothing to record).
+// switch this is a no-op (correct, there's nothing to record).
 //
 // After the upserts, a single-VLAN network gets its subnets.vlan_id linked:
 // when the scan saw exactly ONE VLAN for the network, that VLAN is by
@@ -47,7 +47,7 @@ func (rn *Runner) recordVLANs(ctx context.Context, networkID sql.NullInt64, repo
 
 	// Names from the static-table walk (tag → configured name).
 	names := map[string]string{}
-	// Tags observed carrying traffic (FDB index) — the authoritative set.
+	// Tags observed carrying traffic (FDB index), the authoritative set.
 	seen := map[string]bool{}
 	for _, rep := range reports {
 		if !rep.Alive {
@@ -107,14 +107,14 @@ func (rn *Runner) recordVLANs(ctx context.Context, networkID sql.NullInt64, repo
 	}
 
 	// Subnet ↔ VLAN link (#273 goal 2): exactly one observed VLAN for this
-	// network means the subnet rides on it — record the association.
+	// network means the subnet rides on it, record the association.
 	if inserted == 1 {
 		rn.linkSubnetVLAN(ctx, netID, lastVLANID)
 	}
 }
 
 // linkSubnetVLAN sets subnets.vlan_id for the network's subnet when it is
-// still NULL. Idempotent; multi-VLAN networks never reach here.
+// still NULL. A repeat call is a no-op; multi-VLAN networks never reach here.
 func (rn *Runner) linkSubnetVLAN(ctx context.Context, netID, vlanID int64) {
 	res, err := rn.dbConn.ExecContext(ctx,
 		`UPDATE subnets SET vlan_id = ? WHERE network_id = ? AND vlan_id IS NULL`, vlanID, netID)
@@ -129,7 +129,7 @@ func (rn *Runner) linkSubnetVLAN(ctx context.Context, netID, vlanID int64) {
 }
 
 // validVLANTag returns the decimal tag string when s is a real 1-4094 VLAN
-// tag, else "". Defensive — the probe already validates, but a malformed
+// tag, else "". Defensive, the probe already validates, but a malformed
 // entry must never reach the DB.
 func validVLANTag(s string) string {
 	n, err := strconv.Atoi(s)

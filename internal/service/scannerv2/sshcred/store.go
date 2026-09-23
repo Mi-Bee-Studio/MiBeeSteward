@@ -5,7 +5,7 @@
 // Package sshcred stores and resolves SSH credentials for the device config-
 // backup probe (#137). It mirrors the SNMP credential pattern
 // (internal/service/scannerv2/credresolver): raw database/sql access (sqlc
-// truncates queries on credential tables — see credresolver/store.go) + a
+// truncates queries on credential tables, see credresolver/store.go) + a
 // Resolver that decrypts on read via the shared crypto.Cipher (the same
 // security.master_key the SNMP credentials use, so there is one key source).
 //
@@ -38,7 +38,7 @@ type Row struct {
 }
 
 // WriteParams is the create/update input. The caller (handler) fills SecretEnc/
-// PassphraseEnc AFTER encrypting the plaintext — plaintext never reaches this
+// PassphraseEnc AFTER encrypting the plaintext, plaintext never reaches this
 // layer. Mirrors credresolver.SNMPCredentialWriteParams.
 type WriteParams struct {
 	Name          string
@@ -90,7 +90,7 @@ func GetByName(ctx context.Context, db *sql.DB, name string) (Row, error) {
 }
 
 // ListRow is a list projection that OMITS the ciphertext columns (the admin list
-// view shows metadata only — never the secret blobs). Mirrors credresolver's
+// view shows metadata only, never the secret blobs). Mirrors credresolver's
 // MaskedCredentialRow.
 type ListRow struct {
 	ID         int64
@@ -185,7 +185,7 @@ func Delete(ctx context.Context, db *sql.DB, id int64) (int64, error) {
 
 // SetHostKeyFP pins the TOFU host-key fingerprint on a credential (the probe
 // calls this after a first connect that had no pinned fp, so subsequent
-// connects verify against it). Best-effort: a no-row update is not an error.
+// connects verify against it). A no-row update is not an error.
 func SetHostKeyFP(ctx context.Context, db *sql.DB, id int64, fp string) error {
 	_, err := db.ExecContext(ctx,
 		`UPDATE ssh_credentials SET host_key_fp = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, fp, id)

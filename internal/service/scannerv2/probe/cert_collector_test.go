@@ -179,7 +179,7 @@ func TestCollectCertChain_ClosedPort(t *testing.T) {
 
 // TestCollectCertChain_NotTLS asserts the failure path: a plaintext TCP server
 // (no TLS) yields a single error record. This is the key guarantee behind the
-// design — non-TLS ports produce an error record, not an invalid handshake.
+// design, non-TLS ports produce an error record, not an invalid handshake.
 func TestCollectCertChain_NotTLS(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -195,7 +195,7 @@ func TestCollectCertChain_NotTLS(t *testing.T) {
 			}
 			go func(c net.Conn) {
 				defer c.Close()
-				// Plaintext greeting — TLS handshake from the client will fail
+				// Plaintext greeting, TLS handshake from the client will fail
 				// with a "tls: first record does not look like a TLS handshake"
 				// style error.
 				_, _ = c.Write([]byte("SSH-2.0-plaintext\r\n"))

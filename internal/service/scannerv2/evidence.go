@@ -11,11 +11,11 @@
 //
 // Architecture (5 orthogonal, independently-extensible layers):
 //
-//	① Probe        — collects Evidence (active probes / passive eBPF observers)
-//	② Classifier   — turns Evidence into ServiceIdentity (per-protocol, registered)
-//	③ ServiceHandler — per-service deep collection + heartbeat gen + device enrich (cascading)
-//	④ Persistence  — repository interfaces; business layers never touch sqlc directly
-//	⑤ Orchestrator — declarative pipeline driving the four layers with cascade triggers
+//	① Probe       , collects Evidence (active probes / passive eBPF observers)
+//	② Classifier  , turns Evidence into ServiceIdentity (per-protocol, registered)
+//	③ ServiceHandler, per-service deep collection + heartbeat gen + device enrich (cascading)
+//	④ Persistence , repository interfaces; business layers never touch sqlc directly
+//	⑤ Orchestrator, declarative pipeline driving the four layers with cascade triggers
 //
 // Adding a new protocol requires only (a) a Classifier and (b) a ServiceHandler,
 // registered at startup. The orchestrator and persistence layers are untouched.
@@ -34,7 +34,7 @@ import (
 // Evidence and ServiceIdentity are now type aliases to the standalone
 // fingerprint library (github.com/Mi-Bee-Studio/mibee-fingerprints-go). This
 // makes them compile-time
-// identical to fp.Evidence / fp.ServiceIdentity — no conversion needed at the
+// identical to fp.Evidence / fp.ServiceIdentity, no conversion needed at the
 // integration boundary. The RuleClassifier in the fingerprint library operates
 // directly on these types.
 //

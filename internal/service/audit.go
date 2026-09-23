@@ -44,7 +44,7 @@ func (s *AuditService) List(ctx context.Context, filter domain.AuditLogFilter) (
 	}
 
 	// For each filter, we need to pass a sentinel + value pair to sqlc.
-	// Sentinel = 0 for user_id, "" for strings/empty time — means "no filter".
+	// Sentinel = 0 for user_id, "" for strings/empty time, means "no filter".
 	var userIDSentinel int64
 	var userIDVal *int64
 	if filter.UserID != nil {
@@ -82,7 +82,7 @@ func (s *AuditService) List(ctx context.Context, filter domain.AuditLogFilter) (
 
 	// Search sentinel: empty string ⇒ no substring filter (the (? = '' OR ...)
 	// clause short-circuits). The search term is bound once per searched column
-	// (action/resource_type/ip_address) — see ListAuditLogs SQL.
+	// (action/resource_type/ip_address), see ListAuditLogs SQL.
 	searchVal := filter.Search
 
 	logs, err := s.queries.ListAuditLogs(ctx, db.ListAuditLogsParams{

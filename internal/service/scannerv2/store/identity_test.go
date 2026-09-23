@@ -13,7 +13,7 @@ import (
 )
 
 // These tests exercise ResolveDeviceIdentity directly against *SQLiteRepository
-// — the interface-level contract for the device-identity resolver (#159). They
+// - the interface-level contract for the device-identity resolver (#159). They
 // lock the MAC-primary / (ip, network_id) fallback / roam / replacement rules
 // WITHOUT going through runner.applyDeviceBridge, so a future second Repository
 // implementation (the distributed伏笔) can be validated against the same
@@ -95,7 +95,7 @@ func TestResolveDeviceIdentity_MACMatch_EmptyMACHolder_NotReplacement(t *testing
 	// Device known by MAC-A at .100 (a different IP than the scan target).
 	id := seedDeviceRow(t, db, "10.0.0.100", "aa:bb:cc:dd:ee:01", nid)
 	// The scanned IP .5 is held by a MAC-less placeholder (a stale mac-less
-	// discovery). This is NOT a replacement — the placeholder should be filled,
+	// discovery). This is NOT a replacement, the placeholder should be filled,
 	// not treated as a conflict.
 	seedDeviceRow(t, db, "10.0.0.5", "", nid)
 	res, err := repo.ResolveDeviceIdentity(ctx, "aa:bb:cc:dd:ee:01", "10.0.0.5", nid)

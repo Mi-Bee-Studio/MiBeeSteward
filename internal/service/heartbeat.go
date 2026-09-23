@@ -38,7 +38,7 @@ type HeartbeatService struct {
 	// started/stopped close the Start/Stop race the same way the store's
 	// lifecycleMu does: NewRouter runs `go heartbeatSvc.Start(...)`, so an
 	// immediate Stop() (a test, or a fast shutdown) can run BEFORE the
-	// delayed Start — without the guard, that late Start launches the
+	// delayed Start, without the guard, that late Start launches the
 	// store's flush loop and the sync loop under a context nobody will ever
 	// cancel (goroutine leak + a store Close() that hangs waiting on the loop).
 	started      bool
@@ -124,7 +124,7 @@ func (s *HeartbeatService) Start(ctx context.Context) {
 	// Note: heartbeat_results pruning used to run once here on start. It now
 	// lives in the unified retention sweeper (cleanup.Service), which covers
 	// heartbeat_results plus every other detail table on a single periodic
-	// ticker — so a long-running heartbeat loop no longer needs its own ad-hoc
+	// ticker, so a long-running heartbeat loop no longer needs its own ad-hoc
 	// cleanup and won't drift out of sync with the configured retention window.
 
 	// Start the dedicated store's batched-write flush loop.
@@ -133,12 +133,12 @@ func (s *HeartbeatService) Start(ctx context.Context) {
 	// Initialize statusCache from the DB so a restart doesn't lose state.
 	s.initStatusCache(ctx)
 
-	// Start the status sync loop — the SOLE writer of devices.status to the
+	// Start the status sync loop, the SOLE writer of devices.status to the
 	// main DB. Probes write to statusCache (memory); this loop syncs every 30s.
 	go s.syncStatusLoop(ctx)
 
 	// Probing ticker. Probes write results to the store (separate DB) and
-	// verdicts to statusCache (memory) — neither touches the main DB, so
+	// verdicts to statusCache (memory), neither touches the main DB, so
 	// concurrent probing is safe (no SQLite race). Cadence is configurable via
 	// heartbeat.tick_interval_seconds (default 30s).
 	tickInterval := time.Duration(s.cfg.TickIntervalSeconds) * time.Second
@@ -210,11 +210,11 @@ func (s *HeartbeatService) CreateConfigs(ctx context.Context, deviceID int64, co
 		return nil
 	}
 	validMethods := map[string]bool{"icmp": true, "snmp": true, "http": true, "tcp": true}
-	// Seeding must be idempotent (#291): a rescan (or two seeding paths in
+	// Seeding must tolerate rescans (#291): a rescan (or two seeding paths in
 	// one bridge) re-asserts the same spec. Deduplicate the spec list by
 	// method and insert with ON CONFLICT DO NOTHING, so an existing
 	// (device_id, method) row is a no-op instead of a UNIQUE failure that
-	// surfaced as a per-device WARN on every scan.
+	// logged as a per-device WARN on every scan.
 	seen := make(map[string]bool, len(configs))
 	for _, cfg := range configs {
 		if !validMethods[cfg.Method] {
@@ -263,20 +263,20 @@ func GetProber(method, community, oid string) probe.Prober {
 // level. A device typically has multiple heartbeat configs (icmp + tcp + http,
 // seeded by the scanner for each service it identified). The previous
 // implementation called updateDeviceStatus once PER config, so whichever config
-// ran last won the race — a single flapping service config dragged the whole
+// ran last won the race, a single flapping service config dragged the whole
 // device to "offline" even when icmp was perfectly healthy, and devices
 // oscillated online/offline every tick. Any list snapshot then showed a large
 // fraction "offline" purely by bad timing.
 //
 // listLocalProbeConfigsSQL selects enabled heartbeat configs EXCLUDING those
 // whose device belongs to an agent-managed network (networks.agent_id non-empty).
-// Agent devices' liveness comes from their agent's reports — the center must not
+// Agent devices' liveness comes from their agent's reports, the center must not
 // cross-subnet-probe them (ICMP/TCP would always fail and flap them offline).
 // LEFT JOIN so legacy devices with no network_id (d.network_id NULL → n NULL)
 // are still probed by the center.
 //
 // Defined as raw SQL (not sqlc) because sqlc's SQLite parser truncates queries
-// whose WHERE clause contains an empty-string literal (”) — see the NOTE in
+// whose WHERE clause contains an empty-string literal (”), see the NOTE in
 // db/queries/heartbeat_configs.sql.
 //
 // d.ip_address is selected so the prober can dereference the device's CURRENT IP
@@ -341,7 +341,7 @@ func (s *HeartbeatService) runChecks(ctx context.Context) {
 	}
 
 	// Group configs by device. A device is probed this tick if ANY of its
-	// configs is due — and when it's due, ALL its configs are probed together
+	// configs is due, and when it's due, ALL its configs are probed together
 	// (not just the due ones). This matters: a device typically has icmp+tcp+http
 	// configs with the same interval but slightly staggered last-checked times,
 	// so per-config isDue would sometimes include only the failing config in a
@@ -361,7 +361,7 @@ func (s *HeartbeatService) runChecks(ctx context.Context) {
 	// This stops known-dead hosts from generating a steady stream of timeout
 	// rows + log noise every 30s. A device revived by a scan has its status
 	// flipped back to online (and fail count reset) before the next tick, so
-	// backoff never delays recovery detection — it only dampens the futile
+	// backoff never delays recovery detection, it only dampens the futile
 	// polling of hosts confirmed dead. offlineBackoff==0 disables backoff.
 	offlineBackoff := s.cfg.OfflineBackoffTicks
 	if offlineBackoff < 0 {
@@ -385,7 +385,7 @@ func (s *HeartbeatService) runChecks(ctx context.Context) {
 
 	// Probe devices CONCURRENTLY. The previous serial loop (one device after
 	// another, each config retried 3× with backoff) made a single runChecks pass
-	// take 2-3 minutes on ~84 devices — far longer than the 10s ticker, so ticks
+	// take 2-3 minutes on ~84 devices, far longer than the 10s ticker, so ticks
 	// were skipped and each config was effectively probed only every ~3 minutes
 	// instead of its configured 30s interval. That desynchronized the per-config
 	// timing and produced the very online/offline flapping this OR-aggregation
@@ -394,7 +394,7 @@ func (s *HeartbeatService) runChecks(ctx context.Context) {
 	// goroutines hammering the network at once).
 	// Concurrent probing (16 workers). This is safe now: probes write results
 	// to the heartbeat store (separate DB) and verdicts to statusCache (memory)
-	// — neither touches the main DB's devices.status. The sole writer of
+	// - neither touches the main DB's devices.status. The sole writer of
 	// devices.status is syncStatusLoop (serial, every 30s).
 	const maxConcurrency = 16
 	sem := make(chan struct{}, maxConcurrency)
@@ -421,7 +421,7 @@ func (s *HeartbeatService) runChecks(ctx context.Context) {
 // Configs WITHIN a device are probed SERIALLY (not concurrently). The previous
 // concurrent version raced on the results slice under the probe pool, which
 // caused intermittent all-fail verdicts for devices whose probes all succeeded
-// — the root cause of the persistent fleet-wide online/offline flapping.
+// - the root cause of the persistent fleet-wide online/offline flapping.
 // Devices still run concurrently (maxConcurrency), so a fleet of 84 finishes in
 // ~2 batches; serializing 1-3 quick probes per device adds negligible latency.
 func (s *HeartbeatService) checkDevice(ctx context.Context, deviceID int64, cfgs []probeConfig) {
@@ -441,7 +441,7 @@ func (s *HeartbeatService) checkDevice(ctx context.Context, deviceID int64, cfgs
 // (it embeds the device's then-current IP). resolveLiveTarget substitutes the
 // device's CURRENT ip_address (cfg.DeviceIP, read fresh this tick) into the
 // target, so a device that roamed is probed at its live address on the very next
-// tick — no config rewrite, no roam hook.
+// tick, no config rewrite, no roam hook.
 func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg probeConfig) bool {
 	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
@@ -449,7 +449,7 @@ func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg probeConfig) 
 	}
 
 	prober := GetProber(cfg.Method, cfg.SnmpCommunity, cfg.SnmpOid)
-	// 1 attempt (no retry). Heartbeat is continuous monitoring — a failed probe
+	// 1 attempt (no retry). Heartbeat is continuous monitoring, a failed probe
 	// retries naturally on the next tick. The previous 3-attempt retry made a
 	// single unreachable-ICMP config take ~18s (3 × 5s timeout + backoff), which
 	// blew past the ticker interval and desynchronized the whole fleet.
@@ -480,7 +480,7 @@ func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg probeConfig) 
 	}
 
 	// Operational metrics (#238): the checks counter is what the
-	// HeartbeatFailures Prometheus alert consumes — it was registered but
+	// HeartbeatFailures Prometheus alert consumes, it was registered but
 	// never incremented before, leaving that alert permanently at 0. Mirrors
 	// the store row below (one increment per recorded outcome).
 	metrics.MibeeHeartbeatChecksTotal.WithLabelValues(status).Inc()
@@ -503,14 +503,14 @@ func (s *HeartbeatService) probeAndRecord(ctx context.Context, cfg probeConfig) 
 }
 
 // applyDeviceVerdict updates the IN-MEMORY status cache based on probe results.
-// It does NOT touch the main DB — that's syncStatusLoop's job (sole writer).
+// It does NOT touch the main DB, that's syncStatusLoop's job (sole writer).
 // This eliminates the SQLite WAL read-isolation race that caused fleet-wide
 // flapping when concurrent goroutines read+wrote devices.status.
 //
 // Every verdict (online / offline / unchanged) is also sampled to the
 // device_liveness time series via the HeartbeatStore. The series is the storage
 // back-end for the change-detection engine's multi-period jitter-vs-transition
-// judgment — a continuous sample stream lets "online ratio over the last N
+// judgment, a continuous sample stream lets "online ratio over the last N
 // minutes" be computed, which a single missed-scan count cannot express. The
 // sample is the RESOLVED verdict (current effective status), so a device still
 // within the offline grace period (fail count < threshold) samples as its
@@ -537,7 +537,7 @@ func (s *HeartbeatService) applyDeviceVerdict(deviceID int64, anySuccess bool) {
 		// default 5). A device must fail this many consecutive probes before
 		// flipping to offline.
 		if count < s.cfg.OfflineThreshold {
-			// Not yet at threshold — keep current status. Still sample the
+			// Not yet at threshold, keep current status. Still sample the
 			// (unchanged) verdict so the liveness series has a continuous point
 			// for this tick (an online device with a transient probe failure
 			// must not leave a gap that would depress its online-ratio).
@@ -563,9 +563,9 @@ func (s *HeartbeatService) applyDeviceVerdict(deviceID int64, anySuccess bool) {
 // It implements runner.HeartbeatCreator so the scan/detect-lost/lease paths can
 // sample verdicts they set OUTSIDE the heartbeat tick loop (notably the lease
 // sweeper for agent-managed networks, which have no center-side heartbeat
-// probing). It is best-effort: the store's EnqueueLiveness is non-blocking
+// probing). Failures are non-fatal: the store's EnqueueLiveness is non-blocking
 // (drops on buffer-full), and a dropped sample never affects devices.status
-// (source of truth) — it only leaves a gap the multi-period judgment tolerates.
+// (source of truth), it only leaves a gap the multi-period judgment tolerates.
 // An empty store (nil) is a no-op (tests / agent contexts without a heartbeat
 // store).
 func (s *HeartbeatService) SampleLiveness(deviceID int64, status, source string) {
@@ -581,8 +581,8 @@ func (s *HeartbeatService) SampleLiveness(deviceID int64, status, source string)
 }
 
 // LastOnlineAt returns the device's most recent 'online' verdict timestamp from
-// the device_liveness series — the authoritative "last confirmed alive" signal.
-// Used by the device-detail API to surface liveness visibility (so an operator
+// the device_liveness series, the authoritative "last confirmed alive" signal.
+// Used by the device-detail API to expose liveness visibility (so an operator
 // can judge whether the silent-device retention is about to prune a device).
 // Returns nil when the store is unset (tests/agent) or the device was never seen
 // online. Proxies to HeartbeatStore.LastOnlineAt (heartbeat.db, cross-DB).
@@ -595,7 +595,7 @@ func (s *HeartbeatService) LastOnlineAt(ctx context.Context, deviceID int64) (*t
 
 // ResetFailures clears the in-memory device-level failure counter for a device.
 // Called by the scanner's device bridge when a scan confirms the host is alive
-// and sets status=online — otherwise a stale counter from a prior flapping
+// and sets status=online, otherwise a stale counter from a prior flapping
 // window would trip the very next heartbeat tick back to offline.
 func (s *HeartbeatService) ResetFailures(deviceID int64) {
 	s.failCountsMu.Lock()
@@ -643,7 +643,7 @@ func (s *HeartbeatService) initStatusCache(ctx context.Context) {
 // at the configured tick cadence (heartbeat.tick_interval_seconds, default
 // 30s), diffing the in-memory statusCache against lastSynced and writing only
 // the changes. In steady state (no status changes), this is zero writes.
-// Probes never touch devices.status — they only update statusCache — so there's
+// Probes never touch devices.status, they only update statusCache, so there's
 // no concurrent-write race on the main DB. The sync cadence tracks the probe
 // ticker so status writes keep up with probe verdicts at any configured tick.
 func (s *HeartbeatService) syncStatusLoop(ctx context.Context) {
@@ -696,7 +696,7 @@ func (s *HeartbeatService) syncStatus(ctx context.Context) {
 		// offline→online, so the silent-device retention sweep (issue #117) has
 		// an authoritative "how long has this device had no heartbeat" signal.
 		// The CASE evaluates against the row's CURRENT status, so a no-op write
-		// (status unchanged — shouldn't happen here, lastSynced guards it, but
+		// (status unchanged, shouldn't happen here, lastSynced guards it, but
 		// defensive) leaves offline_since untouched.
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE devices SET
@@ -727,14 +727,14 @@ func (s *HeartbeatService) syncStatus(ctx context.Context) {
 }
 
 // safeEvaluateDeviceStatus was removed: the alert engine has been deleted (the
-// product does not build alerting — see AGENTS.md product vision). Device
+// product does not build alerting, see AGENTS.md product vision). Device
 // status changes are still recorded in the status cache and synced to the DB
 // by syncStatusLoop; they just no longer fire alert-rule evaluation.
 // (cleanupOldResults was also removed: heartbeat_results pruning is now handled
 // by the unified retention sweeper in cleanup.Service, so there's a single
 // source of truth for the retention window across all detail tables.)
 // (setDeviceStatus was inlined into applyDeviceVerdict so the entire
-// read-modify-write of device status is under one mutex — the previous split
+// read-modify-write of device status is under one mutex, the previous split
 // had GetDevice/setDeviceStatus outside the lock, racing under concurrency.)
 
 func (s *HeartbeatService) isDue(_ context.Context, cfg db.HeartbeatConfig) bool {
@@ -749,7 +749,7 @@ func (s *HeartbeatService) isDue(_ context.Context, cfg db.HeartbeatConfig) bool
 		}
 	}
 
-	// Read the last probe time from the in-memory map — NOT from the heartbeat
+	// Read the last probe time from the in-memory map, NOT from the heartbeat
 	// store. The store's writes are batched/async, so querying it for the last
 	// checked_at can lag and cause isDue to fire out of cadence.
 	s.lastProbeMu.RLock()
@@ -829,9 +829,9 @@ func (s *HeartbeatService) GetStats(ctx context.Context, deviceID int64, from, t
 
 // ListResults returns the most recent heartbeat results for a device, optionally
 // filtered by a [from, to] time range, paginated. It reads from the dedicated
-// heartbeat store (separate DB), NOT the main DB — the main DB's
+// heartbeat store (separate DB), NOT the main DB, the main DB's
 // heartbeat_results table is a stale leftover from before the store migration
-// and is no longer written to, so reading it would surface frozen/old timestamps.
+// and is no longer written to, so reading it would show frozen/old timestamps.
 func (s *HeartbeatService) ListResults(ctx context.Context, deviceID int64, from, to time.Time, limit, offset int32) ([]db.HeartbeatResult, error) {
 	if limit <= 0 {
 		limit = 50
@@ -894,7 +894,7 @@ func toHeartbeatResultResponse(r db.HeartbeatResult) domain.HeartbeatResultRespo
 //   - host:port      : "192.168.1.10:80"           (tcp)
 //   - scheme://h:p/..: "http://192.168.1.10:80/"   (http, onvif, cascade)
 //
-// When deviceIP is empty (the device somehow lost its IP — shouldn't happen for
+// When deviceIP is empty (the device somehow lost its IP, shouldn't happen for
 // an online device), the original frozen target is returned unchanged so the
 // probe at least attempts the old address rather than an empty string.
 //

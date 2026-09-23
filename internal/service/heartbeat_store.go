@@ -48,7 +48,7 @@ type HeartbeatStore struct {
 	// cancelMu scheme had a Close-before-Start race: NewRouter launches
 	// Start on its own goroutine (routes.go `go heartbeatSvc.Start(...)`), so
 	// an immediate Stop()/Close() could observe cancel==nil, skip the cancel,
-	// then block on <-s.done forever — while the LATE Start happily launched
+	// then block on <-s.done forever, while the LATE Start happily launched
 	// a flushLoop nobody would ever cancel (field-observed as a full-test-
 	// suite 15-min hang in internal/api/routes). Close on a never-started
 	// store now returns without waiting; Start after Close no-ops.
@@ -91,7 +91,7 @@ type livenessRow struct {
 // device_liveness is the device-level liveness series consumed by the
 // change-detection engine's multi-period jitter-vs-transition judgment. It
 // stores the VERDICT (online/offline/unknown) decided by applyDeviceVerdict /
-// scan / lease paths — NOT the per-config probe results (those are in
+// scan / lease paths, NOT the per-config probe results (those are in
 // heartbeat_results). Storing the verdict once, at the point it is decided,
 // lets the change engine query "online ratio over the last N minutes" directly
 // instead of replaying the N-config OR-aggregation that produced the verdict
@@ -152,7 +152,7 @@ func OpenHeartbeatStore(dbPath string) (*HeartbeatStore, error) {
 
 	// BUSY retry + metrics wrapper (#267): the single-writer design makes
 	// contention rare here, but retention sweeps + flushes + the center's
-	// reads share the file — a write that outlived busy_timeout used to fail
+	// reads share the file, a write that outlived busy_timeout used to fail
 	// silently.
 	wrapped := dbopen.WrapBusyRetry(conn, "heartbeat")
 
@@ -190,7 +190,7 @@ func OpenHeartbeatStore(dbPath string) (*HeartbeatStore, error) {
 // Start launches the background flush goroutine that batches buffered results
 // into periodic multi-row INSERTs. Start/Close form a lifecycle state machine
 // (see the struct comment): double-Start is a no-op, and a Start arriving
-// after Close never launches the loop — its cancel would never be reachable.
+// after Close never launches the loop, its cancel would never be reachable.
 func (s *HeartbeatStore) Start(ctx context.Context) {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
@@ -205,7 +205,7 @@ func (s *HeartbeatStore) Start(ctx context.Context) {
 
 // Enqueue adds a heartbeat result to the write buffer. It is non-blocking up to
 // the channel capacity; if the buffer is full (probe faster than flush can
-// drain — only under extreme load), the row is dropped with a warning rather
+// drain, only under extreme load), the row is dropped with a warning rather
 // than stalling the heartbeat tick (a dropped history row doesn't affect the
 // status verdict, which is decided from the probe result directly).
 func (s *HeartbeatStore) Enqueue(r resultRow) {
@@ -219,7 +219,7 @@ func (s *HeartbeatStore) Enqueue(r resultRow) {
 
 // EnqueueLiveness adds a device-level verdict sample to the device_liveness
 // write buffer. Same non-blocking/drop semantics as Enqueue: a dropped sample
-// never affects the current devices.status (source of truth) — it only leaves a
+// never affects the current devices.status (source of truth), it only leaves a
 // gap in the liveness time series, which the multi-period judgment tolerates
 // (online-ratio is computed over whatever samples exist in the window).
 func (s *HeartbeatStore) EnqueueLiveness(r livenessRow) {
@@ -251,7 +251,7 @@ func (s *HeartbeatStore) flushLoop(ctx context.Context) {
 	liveBatch := make([]livenessRow, 0, flushBatchSize)
 
 	// The closures take the ctx to commit under: the steady-state loop passes
-	// its own ctx; the final drain below passes a FRESH bounded ctx — the loop
+	// its own ctx; the final drain below passes a FRESH bounded ctx, the loop
 	// ctx is already cancelled at that point, and committing under it would
 	// fail every batch, silently dropping everything still buffered (#audit:
 	// the old code built that fresh ctx and then never used it).
@@ -281,7 +281,7 @@ func (s *HeartbeatStore) flushLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Final drain on shutdown — flush whatever is buffered so we don't
+			// Final drain on shutdown, flush whatever is buffered so we don't
 			// lose recent results when the process stops. Commits run under a
 			// FRESH bounded ctx: the loop ctx is already cancelled here.
 			ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -437,7 +437,7 @@ type LivenessPoint struct {
 // jitter-vs-transition signal the change-detection engine thresholds on: a
 // flaky host hovers near 0.5 over a short window, a genuinely-down host sits at
 // 0, a healthy one at 1. Returns (ratio, sampleCount, error). A zero
-// sampleCount means the window has no data yet (cold start / retention gap) —
+// sampleCount means the window has no data yet (cold start / retention gap);
 // callers treat the ratio as unknown and fall back to devices.status.
 //
 // The cutoff is formatted as RFC3339 (not passed as time.Time) because
@@ -460,7 +460,7 @@ func (s *HeartbeatStore) OnlineRatio(ctx context.Context, deviceID int64, window
 
 // OfflineDuration returns how long a device has been continuously offline: the
 // elapsed time since its most recent 'online' sample. This distinguishes "just
-// went down" from "has been down for an hour" — the change engine uses it to
+// went down" from "has been down for an hour", the change engine uses it to
 // gate the short-term confirmation window. Returns (duration, ok): ok=false
 // when the device has never been seen online (or samples aged out); callers
 // then rely on devices.status instead of guessing the duration.
@@ -483,12 +483,12 @@ func (s *HeartbeatStore) OfflineDuration(ctx context.Context, deviceID int64) (t
 }
 
 // LastOnlineAt returns the timestamp of the device's most recent 'online'
-// verdict sample — the authoritative "last confirmed alive" time, drawn from the
+// verdict sample, the authoritative "last confirmed alive" time, drawn from the
 // device_liveness series (written by heartbeat probing, scans, and the lease
 // sweeper). This is the most accurate liveness signal: unlike devices.last_seen
 // (scan-derived) it reflects ANY online verdict, including heartbeat ticks.
 // Returns (nil, nil) when the device has never been seen online (or its samples
-// aged out past retention) — callers then omit the field rather than guessing.
+// aged out past retention), callers then omit the field rather than guessing.
 // Mirrors OfflineDuration's query (same SELECT, returns the timestamp itself).
 func (s *HeartbeatStore) LastOnlineAt(ctx context.Context, deviceID int64) (*time.Time, error) {
 	var lastStr string

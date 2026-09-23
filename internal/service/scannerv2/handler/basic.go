@@ -178,7 +178,7 @@ func setDeviceField(svc scannerv2.ServiceContext, key, value string) {
 }
 
 // preserveExisting sets key=value only if the device doesn't already have a
-// non-empty value for it — used so stronger signals (SNMP brand) win over
+// non-empty value for it, used so stronger signals (SNMP brand) win over
 // weaker ones (RTSP banner brand).
 func preserveExisting(svc scannerv2.ServiceContext, key, value string) {
 	if svc.Device.Fields != nil && svc.Device.Fields[key] != "" {

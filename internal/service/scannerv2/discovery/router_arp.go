@@ -28,7 +28,7 @@ type tableReader func(ctx context.Context, routers []string, community string, t
 
 // walkRouters is the production tableReader: walks each router's SNMP ARP table
 // and merges the results. Per-router failures are collected into the returned
-// error map so the caller (sweep) can log them — they do not abort the sweep
+// error map so the caller (sweep) can log them, they do not abort the sweep
 // (a downed router shouldn't mask discoveries from another).
 func walkRouters(ctx context.Context, routers []string, community string, timeout time.Duration) (map[string]string, map[string]error) {
 	current := map[string]string{}
@@ -49,7 +49,7 @@ func walkRouters(ctx context.Context, routers []string, community string, timeou
 // RouterARPSource periodically walks one or more routers' SNMP ARP tables
 // (ipNetToMediaPhysAddress) and emits a NewHostEvent for every IP+MAC it
 // sees. Because a gateway knows every host that has spoken through it, this is
-// the widest-coverage discovery source — and its footprint is O(routers), not
+// the widest-coverage discovery source, and its footprint is O(routers), not
 // O(hosts): one SNMP Walk per router per interval, touching zero end hosts.
 //
 // It diffs against the previous snapshot so only newly-seen IPs are emitted;
@@ -102,7 +102,7 @@ func NewRouterARPSource(routers []string, community string, timeout, interval ti
 
 // Start launches the poll goroutine. It does an immediate first sweep (so a
 // freshly-started instance seeds its snapshot without waiting an interval) then
-// ticks. Idempotent via the ctx lifecycle — cancel ctx to stop.
+// ticks. Repeat calls are no-ops (ctx lifecycle), cancel ctx to stop.
 func (s *RouterARPSource) Start(ctx context.Context) {
 	if len(s.routers) == 0 {
 		s.logger.Info("discovery: router_arp source idle (no routers configured)")
@@ -129,7 +129,7 @@ func (s *RouterARPSource) loop(ctx context.Context) {
 // sweep walks every router, merges their tables, diffs against the previous
 // snapshot, and emits an event for each newly-seen IP. Failures on a single
 // router are logged (first failure per router at Warn, then Debug to avoid
-// spam) but don't abort the sweep — a downed router shouldn't mask discoveries
+// spam) but don't abort the sweep, a downed router shouldn't mask discoveries
 // from another.
 func (s *RouterARPSource) sweep(ctx context.Context) {
 	current, errs := s.readTable(ctx, s.routers, s.community, s.timeout)
@@ -155,7 +155,7 @@ func (s *RouterARPSource) sweep(ctx context.Context) {
 
 // logRouterErrors turns the per-router error map into observable log lines with
 // streak-based de-duplication: the first failure for a router is a Warn (it's
-// actionable — the router is misconfigured/unreachable and discovery is blind
+// actionable, the router is misconfigured/unreachable and discovery is blind
 // to the whole subnet behind it); each subsequent failure drops to Debug so a
 // permanently-down router doesn't flood the log every interval. A router that
 // recovers after failing logs once at Info and resets its streak.

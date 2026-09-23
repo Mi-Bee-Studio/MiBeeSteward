@@ -140,7 +140,7 @@ func (r *recordRepo) RecordTLSCerts(_ context.Context, ip string, certs []TLSCer
 }
 
 // ResolveDeviceIdentity / ApplyDeviceIdentity are no-ops in the orchestrator
-// test double — the orchestrator never calls them (identity upsert is the
+// test double, the orchestrator never calls them (identity upsert is the
 // runner's job via applyDeviceBridge). The stubs exist only to satisfy the
 // expanded Repository interface.
 func (r *recordRepo) ResolveDeviceIdentity(_ context.Context, _, _ string, _ sql.NullInt64) (IdentityResolution, error) {
@@ -243,7 +243,7 @@ func TestOrchestrator_PersistsTLSCerts(t *testing.T) {
 	orch := NewOrchestrator(reg, repo, OrchestratorConfig{MaxCascadeDepth: 5}, nil)
 	report := orch.Run(context.Background(), "10.0.0.5", ProbeHint{Timeout: time.Second})
 
-	// The collected cert bundle should surface on the report.
+	// The collected cert bundle should appear on the report.
 	if _, ok := report.Collected["https"]; !ok {
 		t.Fatalf("expected https Collected entry, got %v", keysOf(report.Collected))
 	}
@@ -307,7 +307,7 @@ func TestOrchestrator_CycleGuard(t *testing.T) {
 	}()
 	select {
 	case <-done:
-		// good — did not hang
+		// good, did not hang
 	case <-time.After(2 * time.Second):
 		t.Fatal("orchestrator hung — cycle guard failed")
 	}
@@ -409,7 +409,7 @@ func TestIndexByteAndSplitWS(t *testing.T) {
 // TestOrchestrator_SeedEvidencePrepended pins the #377 contract: evidence
 // supplied by the passive-discovery seed hook (lease hostnames, overheard
 // mDNS/SSDP announcements) is PREPENDED to the gather output, reaches the
-// classifiers, and counts toward liveness — the passive channel must flow
+// classifiers, and counts toward liveness, the passive channel must flow
 // into the fingerprint layer exactly like probe evidence.
 func TestOrchestrator_SeedEvidencePrepended(t *testing.T) {
 	repo := newRecordRepo()

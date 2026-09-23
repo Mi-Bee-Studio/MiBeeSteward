@@ -21,8 +21,8 @@ import (
 
 // deviceTypesYAML is the data half of device-type inference (the logic half is
 // matchDeviceType below). Embedded so the binary is self-contained and the
-// table is version-controlled alongside the engine. Editing this YAML — not Go
-// code — is how new device signatures are added. See device_types.yaml for the
+// table is version-controlled alongside the engine. Editing this YAML, not Go
+// code, is how new device signatures are added. See device_types.yaml for the
 // schema and ordering rules.
 //
 //go:embed device_types.yaml
@@ -39,9 +39,9 @@ type typeRuleTable struct {
 
 // typeRule matches a host/brand/hint substring keyword against a device type.
 // Field selects the input string: "host" (rDNS hostname), "brand"
-// (inferred_brand), or "hint" (host+" "+brand+" "+os — the broadest). The first
+// (inferred_brand), or "hint" (host+" "+brand+" "+os, the broadest). The first
 // rule whose field's value contains ANY keyword wins (the rules list is the
-// priority order). Source is the confidence label ("heuristic" — these are all
+// priority order). Source is the confidence label ("heuristic", these are all
 // hostname/port guesses, spoofable) persisted to scan_attributes for UI display.
 type typeRule struct {
 	Type     string   `yaml:"type"`
@@ -86,7 +86,7 @@ var deviceTypeRules typeRuleTable
 func init() {
 	if err := yaml.Unmarshal([]byte(deviceTypesYAML), &deviceTypeRules); err != nil {
 		// A malformed embedded table is a build-time authoring error, not a
-		// runtime condition — log loudly and fall back to an empty table (which
+		// runtime condition, log loudly and fall back to an empty table (which
 		// makes matchDeviceType return "" → "other", degrading gracefully rather
 		// than panicking on startup).
 		slog.Error("device_types.yaml parse failed; type inference disabled", "error", err)
@@ -110,7 +110,7 @@ func init() {
 // replaces the former ~145-line hardcoded switch in heuristicDeviceType: the
 // keyword tables now live in device_types.yaml, and this function is the
 // write-once priority matcher over them. Returns (type, source) where source is
-// the confidence label from the matched rule ("heuristic" for all table rules —
+// the confidence label from the matched rule ("heuristic" for all table rules;
 // they're hostname/port guesses, spoofable). Returns ("", "") when nothing
 // matches (the caller falls back to "other").
 //
@@ -127,7 +127,7 @@ func matchDeviceType(rep scannerv2.HostReport) (string, string) {
 	osType := strings.ToLower(rep.Device.Fields["os_type"])
 	hint := host + " " + brand + " " + osType
 
-	// 1. host/brand/hint keyword rules (ordered — priority).
+	// 1. host/brand/hint keyword rules (ordered, priority).
 	for _, r := range deviceTypeRules.Rules {
 		var field string
 		switch r.Field {
@@ -166,7 +166,7 @@ func matchDeviceType(rep scannerv2.HostReport) (string, string) {
 		return false
 	}
 	for _, r := range deviceTypeRules.PortRules {
-		// Service-name conditions (service + optional require list) — all must hold.
+		// Service-name conditions (service + optional require list), all must hold.
 		if r.Service != "" && !svcSet[r.Service] {
 			continue
 		}
@@ -187,7 +187,7 @@ func matchDeviceType(rep scannerv2.HostReport) (string, string) {
 		if len(r.PortAny) > 0 && !hasPort(r.PortAny...) {
 			continue
 		}
-		// Excluded ports — none may be open.
+		// Excluded ports, none may be open.
 		excluded := false
 		for _, p := range r.ExcludePorts {
 			if openPorts[p] {
@@ -213,7 +213,7 @@ func matchDeviceType(rep scannerv2.HostReport) (string, string) {
 // isStrongNasSignal so the override gates share ONE keyword source with the main
 // inference engine (preventing the three-table drift that caused the earlier
 // "z4s" mis-classification). Only host/brand/hint rules contribute (not os/port
-// rules — those are weaker signals not suitable for overriding a camera verdict).
+// rules, those are weaker signals not suitable for overriding a camera verdict).
 func keywordsForType(wantType string) []string {
 	var out []string
 	for _, r := range deviceTypeRules.Rules {
@@ -229,7 +229,7 @@ func keywordsForType(wantType string) []string {
 // applyDeviceBridge (when isStrongPcSignal/isStrongNasSignal flip a camera to
 // pc/nas) so the persisted source comes from the data table, not a hardcoded
 // string. Falls back to "heuristic" (the only source the table uses) if no rule
-// matches — the override wouldn't have fired without a matching keyword anyway.
+// matches, the override wouldn't have fired without a matching keyword anyway.
 func sourceForType(wantType string) string {
 	for _, r := range deviceTypeRules.Rules {
 		if r.Type == wantType && r.Source != "" {

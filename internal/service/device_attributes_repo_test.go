@@ -141,7 +141,7 @@ func TestGetByMAC_FindsByScanAttributesMAC(t *testing.T) {
 
 // TestCreateDeviceRejectsInvalidUserAttributes is a sanity check that the
 // json_valid CHECK on user_attributes guards against bad JSON slipping in via
-// the marshal helper — since the helper always produces valid JSON, this is
+// the marshal helper, since the helper always produces valid JSON, this is
 // mostly asserting the CHECK constraint is in effect.
 func TestCreateDeviceRejectsInvalidUserAttributes(t *testing.T) {
 	conn, err := sql.Open("sqlite", ":memory:")

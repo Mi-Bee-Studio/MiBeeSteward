@@ -46,7 +46,7 @@ func TestService_StampTaskNetwork_CreatePath(t *testing.T) {
 	require.NoError(t, conn.QueryRow(`SELECT network_id FROM scan_tasks WHERE id=?`, resp.ID).Scan(&stamped))
 	require.True(t, stamped.Valid, "single-CIDR task must be stamped with its network")
 
-	// Unresolvable targets stay NULL — no error, no scope key.
+	// Unresolvable targets stay NULL, no error, no scope key.
 	resp2, err := svc.CreateTask(ctx, gapTaskReq("unscoped", "203.0.113.0/24"))
 	require.NoError(t, err)
 	require.NoError(t, conn.QueryRow(`SELECT network_id FROM scan_tasks WHERE id=?`, resp2.ID).Scan(&stamped))

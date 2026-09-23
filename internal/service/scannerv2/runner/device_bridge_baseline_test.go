@@ -22,13 +22,13 @@ import (
 // (moving device_bridge.go's raw SQL onto the Repository interface) must
 // preserve. They exist because a survey of the two identity-writing paths
 // (device_bridge.go vs store.RecordDevice) found these behaviors load-bearing
-// but UNTESTED — a refactor without a baseline could silently regress them.
+// but UNTESTED, a refactor without a baseline could silently regress them.
 //
 // This file adds NO production code; it only locks current behavior so PR 2 of
 // #159 (the actual SQL move) has a safety net.
 
 // reportForTyped builds a HostReport with an explicit inferred_type_source
-// ("protocol" / "heuristic" / "") — reportFor omits it, so tests of
+// ("protocol" / "heuristic" / ""), reportFor omits it, so tests of
 // applyTypeStickiness (which keys on the stored source) need this variant.
 func reportForTyped(ip, devType, brand, mac, typeSource string) scannerv2.HostReport {
 	r := reportFor(ip, devType, brand, mac)
@@ -59,7 +59,7 @@ func fetchBaselineDevice(t *testing.T, conn *sql.DB, ip string) baselineDeviceRo
 
 // TestApplyDeviceBridge_TypeStickiness_PreservesProtocolType is the
 // characterization test for applyTypeStickiness (device_bridge.go:408). A
-// device previously identified by PROTOCOL evidence (SNMP/RTSP/ONVIF —
+// device previously identified by PROTOCOL evidence (SNMP/RTSP/ONVIF;
 // trustworthy) must NOT downgrade to a weaker type just because one rescan's
 // protocol probe timed out (yielding only a heuristic/unknown verdict). This
 // is the core anti-flap mechanism; dropping it would reintroduce the
@@ -89,7 +89,7 @@ func TestApplyDeviceBridge_TypeStickiness_PreservesProtocolType(t *testing.T) {
 // TestApplyDeviceBridge_RealTypeIsStickyOnRescan pins a DUAL-GATE behavior the
 // survey uncovered: applyTypeStickiness (Go) would allow a protocol→protocol
 // re-identification, BUT buildExistingUpdate's SQL CASE guard
-// (device_bridge.go:703 — `type = CASE WHEN (type=” OR 'unknown' OR 'other')
+// (device_bridge.go:703, `type = CASE WHEN (type=” OR 'unknown' OR 'other')
 // AND ?!=” THEN ? ELSE type`) blocks ANY change once a real (non-empty/
 // non-unknown/non-other) type is stored. The net effect: a normal re-scan
 // NEVER transitions one real type to another (e.g. embedded→router); only
@@ -103,7 +103,7 @@ func TestApplyDeviceBridge_RealTypeIsStickyOnRescan(t *testing.T) {
 		reportForTyped("10.0.0.2", "embedded", "", "aa:bb:cc:dd:ee:02", "protocol"),
 		rn.networkID, "")
 	// Re-scan: even a protocol-sourced re-identification to "router" does NOT
-	// overwrite the stored "embedded" — the SQL CASE keeps the first real type.
+	// overwrite the stored "embedded", the SQL CASE keeps the first real type.
 	_, _ = rn.applyDeviceBridge(ctx,
 		reportForTyped("10.0.0.2", "router", "", "aa:bb:cc:dd:ee:02", "protocol"),
 		rn.networkID, "")
@@ -115,7 +115,7 @@ func TestApplyDeviceBridge_RealTypeIsStickyOnRescan(t *testing.T) {
 
 // TestApplyDeviceBridge_HeuristicTypeIsRefinable confirms a heuristic-stored
 // type IS refinable by a later scan (stickiness only protects "protocol"
-// sources — a heuristic type may improve as more evidence arrives).
+// sources, a heuristic type may improve as more evidence arrives).
 func TestApplyDeviceBridge_HeuristicTypeIsRefinable(t *testing.T) {
 	rn, _, conn := setupChangeDetectDB(t)
 	ctx := context.Background()
@@ -135,12 +135,12 @@ func TestApplyDeviceBridge_HeuristicTypeIsRefinable(t *testing.T) {
 // TestApplyDeviceBridge_RoamToOccupiedIP_Characterization pins the ACTUAL
 // behavior (captured by this baseline test) when a MAC-bearing device roams to
 // an IP occupied by a stale mac-less placeholder: the bridge does NOT evict the
-// placeholder in this scenario — the roaming device stays on its old IP and the
+// placeholder in this scenario, the roaming device stays on its old IP and the
 // placeholder persists, yielding a SPLIT (2 devices for 1 physical host). The
 // roam-retry eviction path (device_bridge.go:261-286) is intended to handle
 // exactly this, but the survey found it does not fire here. This test locks the
 // current (buggy) behavior so #159 PR 2 can decide whether to fix it or preserve
-// it — silently changing it during the SQL consolidation would be wrong either way.
+// it, silently changing it during the SQL consolidation would be wrong either way.
 //
 // NOTE: this is a KNOWN-GAP characterization, not a correctness assertion. If
 // #159 PR 2 fixes the eviction, this test should be flipped to assert count==1.
@@ -193,13 +193,13 @@ func TestApplyDeviceBridge_NullNetworkID(t *testing.T) {
 	rn.SetChangeRecorder(changedetect.NewDBRecorder(queries, nil, 0, nil))
 	ctx := context.Background()
 
-	// First discovery — INSERT with network_id NULL.
+	// First discovery, INSERT with network_id NULL.
 	_, _ = rn.applyDeviceBridge(ctx,
 		reportFor("172.16.0.5", "embedded", "", "aa:bb:cc:dd:ee:05"),
 		rn.networkID, "")
 	require.Equal(t, 1, countDevices(t, conn))
 
-	// Rescan — resolve via the NULL-network lookup, UPDATE in place (no split).
+	// Rescan, resolve via the NULL-network lookup, UPDATE in place (no split).
 	_, _ = rn.applyDeviceBridge(ctx,
 		reportFor("172.16.0.5", "embedded", "raspberry", "aa:bb:cc:dd:ee:05"),
 		rn.networkID, "")
@@ -220,7 +220,7 @@ func TestApplyDeviceBridge_NullNetworkID(t *testing.T) {
 // is that RecordDevice's force-overwrite lands first and the bridge's
 // fill-when-empty guards then see a non-empty value and skip. A consolidation
 // that moves identity writing onto the Repository must preserve this net effect
-// — otherwise mac/brand semantics flip for every overlapping rescan.
+// - otherwise mac/brand semantics flip for every overlapping rescan.
 func TestRecordDevice_OverlapsBridge_ForceOverwriteWins(t *testing.T) {
 	rn, _, conn := setupChangeDetectDB(t)
 	ctx := context.Background()

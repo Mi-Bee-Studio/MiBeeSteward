@@ -114,7 +114,7 @@ func TestLLDPMIBProbe_WalkScripted(t *testing.T) {
 	require.Equal(t, "core-sw", rd["sys_name"])
 
 	// A chassis subtype without a MAC merge key (7 = locally assigned) yields
-	// no evidence — un-joinable edges are skipped by design.
+	// no evidence, un-joinable edges are skipped by design.
 	injectFakeSnmp(t, &fakeSnmp{walks: map[string][]gosnmp.SnmpPDU{
 		oidLldpRemChassisSub: {pdu(oidLldpRemChassisSub, idx, gosnmp.Integer, 7)},
 		oidLldpRemChassisID:  {pdu(oidLldpRemChassisID, idx, gosnmp.OctetString, []byte("not-a-mac"))},
@@ -277,8 +277,8 @@ func TestWalkRouterARPTableHint_Scripted(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, table)
 
-	// Connect failure surfaces as an error (the caller logs WHY a router
-	// yields nothing — unlike the probes, this distinguishes unreachable).
+	// Connect failure shows up as an error (the caller logs WHY a router
+	// yields nothing, unlike the probes, this distinguishes unreachable).
 	f := injectFakeSnmp(t, nil)
 	f.connErr = errors.New("no route")
 	_, err = walkRouterARPTableHint("10.6.6.6", probeHint(), 1)
@@ -328,7 +328,7 @@ func TestRouterARPLookups_CachedAndScripted(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Best-effort walk returns the full table.
+	// The walk returns the full table.
 	table := WalkRouterARPTable(ctx, "10.8.8.8", "public", time.Second)
 	require.Equal(t, map[string]string{"192.168.63.133": "bc:ad:28:11:22:33"}, table)
 

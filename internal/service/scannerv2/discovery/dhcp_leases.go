@@ -26,7 +26,7 @@ import (
 // DHCP server (dnsmasq on OpenWrt, dhcpd on generic Linux) runs ON the gateway,
 // so only a router/center deployed as the LAN's DHCP authority has this file.
 //
-// Why it matters (Tier-1 router-only signal — see
+// Why it matters (Tier-1 router-only signal, see
 // docs/private/architecture-debt-and-openwrt-2026-07-27.md §3.2):
 //
 //   - It is the AUTHORITATIVE hostname↔MAC↔IP map. Every device that ever got a
@@ -34,7 +34,7 @@ import (
 //     DNS, or ICMP (sleeping IoT, firewalled hosts, transient guests).
 //   - The hostname arrives as a first-class field (the client sends it in the
 //     DHCP REQUEST), so device naming no longer depends on a PTR record existing
-//     in the local DNS — a frequent gap for devices the router's dnsmasq hands
+//     in the local DNS, a frequent gap for devices the router's dnsmasq hands
 //     out names to but never synthesizes PTRs for.
 //
 // Format parsed (dnsmasq's lease file, the OpenWrt/Debian/Devuan default):
@@ -44,7 +44,7 @@ import (
 //
 // The hostname may be "*" when the client didn't send one. The mac is lowercased
 // by dnsmasq. dhcpd's lease file (/var/lib/dhcp/dhcpd.leases) has a different
-// block format and is NOT parsed here — dnsmasq is the OpenWrt/consumer-router
+// block format and is NOT parsed here, dnsmasq is the OpenWrt/consumer-router
 // default; dhcpd support can be added later behind a format probe.
 type DHCPLeasesSource struct {
 	// leaseFiles are the paths probed in order; the first that exists + reads is
@@ -61,7 +61,7 @@ type DHCPLeasesSource struct {
 }
 
 // NewDHCPLeasesSource constructs the source. interval is the poll cadence
-// (typically 60s — leases change slowly). leaseFile is optional; when empty the
+// (typically 60s, leases change slowly). leaseFile is optional; when empty the
 // conventional dnsmasq paths are probed.
 func NewDHCPLeasesSource(interval time.Duration, leaseFile string, svc *Service, logger *slog.Logger) *DHCPLeasesSource {
 	if logger == nil {
@@ -105,7 +105,7 @@ func (s *DHCPLeasesSource) loop(ctx context.Context) {
 
 // sweep reads the lease file, diffs against the previous snapshot, and emits an
 // event for each lease not seen last sweep. A missing/unreadable file (host is
-// not the DHCP server) is logged once-per-call at debug level and tolerated —
+// not the DHCP server) is logged once-per-call at debug level and tolerated;
 // the source is a no-op there, same as ARPCacheSource on a non-Linux host.
 func (s *DHCPLeasesSource) sweep() {
 	leases, path, err := s.readLeases()
@@ -231,6 +231,6 @@ func (s *DHCPLeasesSource) readLeases() (leases []dhcpLease, path string, err er
 		}
 		return leases, path, nil
 	}
-	// No path existed — not an error worth retrying loudly. Caller logs at debug.
+	// No path existed, not an error worth retrying loudly. Caller logs at debug.
 	return nil, "", os.ErrNotExist
 }
