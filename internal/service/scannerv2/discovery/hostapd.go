@@ -162,11 +162,11 @@ func (s *HostapdSource) sweepWith(stas map[string]staInfo) {
 		s.svc.Emit(NewHostEvent{
 			MAC:    mac,
 			Source: "hostapd",
-			// No IP: WiFi association is L2. The device bridge reconciles by MAC
-			// (the MAC-primary identity path); an ARP/DHCP/scan sighting of the
-			// same MAC fills the IP. A MAC-only event with no prior IP won't be
-			// emitted by handle() unless it resolves to a known host, which is
-			// correct (we don't fabricate a device for a MAC with no IP).
+			// No IP: WiFi association is L2. handle() routes MAC-only events to
+			// the enrich-only path: a known MAC gets the WiFi telemetry below
+			// merged into scan_attributes, and an ARP/DHCP/scan sighting of the
+			// same MAC fills the IP. An unknown MAC is dropped (no device is
+			// fabricated for a MAC with no L3 sighting).
 			Hints: hints,
 		})
 	}
