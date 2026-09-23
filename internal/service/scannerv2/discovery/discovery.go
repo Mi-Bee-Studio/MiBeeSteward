@@ -689,16 +689,26 @@ type SinkAdapter struct {
 	// the pre-#386 behavior. Data-driven by the networks table; no per-source
 	// special cases.
 	Networks *NetworkResolver
+	// Forward, when set, receives each applied report so an agent can ship
+	// passively-discovered hosts to its center between scans. Nil on the
+	// center (passive sightings stay local there). Called after the local
+	// bridge Apply, synchronously; implementations must not block (the agent
+	// wires a buffering reporter).
+	Forward func(ctx context.Context, rep scannerv2.HostReport)
 }
 
 // Apply hands rep to the runner's device bridge, attributed to the network
-// its IP belongs to when that is resolvable.
+// its IP belongs to when that is resolvable, then forwards it upstream when
+// the adapter is agent-side.
 func (a SinkAdapter) Apply(ctx context.Context, rep scannerv2.HostReport) bool {
 	nid := a.Runner.NetworkID()
 	if resolved := a.Networks.Resolve(ctx, rep.IP); resolved.Valid {
 		nid = resolved
 	}
 	isNew, _, _ := a.Runner.ApplyReport(ctx, rep, nid, a.AgentID)
+	if a.Forward != nil {
+		a.Forward(ctx, rep)
+	}
 	return isNew
 }
 

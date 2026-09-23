@@ -122,3 +122,40 @@ func TestAgentReport_BackfillNoPendingRunIsNoop(t *testing.T) {
 		`SELECT COUNT(*) FROM scan_task_runs`).Scan(&runsAfter))
 	require.Equal(t, 0, runsAfter, "backfill must not create rows when no run is pending")
 }
+
+// A passive batch (origin="passive", the agent's discovery trickle between
+// scans) bridges its hosts and refreshes leases, but must NOT close the
+// pending dispatch-run; the scan batch that follows closes it with real
+// numbers.
+func TestAgentReport_PassiveBatchDoesNotCloseRun(t *testing.T) {
+	srv, db, token, networkID := setupAgentIngestServer(t)
+	runID := seedAgentTaskAndRun(t, db, networkID)
+
+	code, body := postReport(t, srv, token, map[string]interface{}{
+		"agent_id": "agent-62",
+		"origin":   "passive",
+		"hosts": []map[string]interface{}{
+			{"ip": "192.168.62.43", "alive": true, "mac": "aa:bb:cc:dd:ee:43"},
+		},
+	})
+	require.Equal(t, 200, code, "body: %v", body)
+
+	status, _, _, _, _, _ := fetchRun(t, db, runID)
+	require.Equal(t, "running", status, "passive batch must leave the pending run open")
+
+	// The host itself still landed despite the run staying open.
+	var n int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.62.43'`).Scan(&n))
+	require.Equal(t, 1, n, "passive host must be bridged into the ledger")
+
+	code, body = postReport(t, srv, token, map[string]interface{}{
+		"agent_id": "agent-62",
+		"hosts": []map[string]interface{}{
+			{"ip": "192.168.62.43", "alive": true, "mac": "aa:bb:cc:dd:ee:43"},
+		},
+	})
+	require.Equal(t, 200, code, "body: %v", body)
+	status, _, alive, _, _, _ := fetchRun(t, db, runID)
+	require.Equal(t, "completed", status, "the scan batch after the trickle closes the run")
+	require.Equal(t, int64(1), alive)
+}

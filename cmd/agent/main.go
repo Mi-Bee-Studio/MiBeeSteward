@@ -239,9 +239,11 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 	// new code. The discovery config block (scanner.discovery.*) is shared with
 	// the center; an operator enables the same sources in agent.yaml.
 	//
-	// The sources write through the runner's device bridge → reportSink →
-	// upstream reporter, so passively-discovered hosts reach the center via the
-	// same path as actively-scanned ones. discCancel is invoked on shutdown.
+	// The sources write through the runner's device bridge (local shadow DB),
+	// and each applied report is also forwarded to the upstream reporter via
+	// the adapter's Forward hook, so passively-discovered hosts reach the
+	// center between scans (tagged origin="passive" on the wire). discCancel
+	// is invoked on shutdown.
 	var discCancel context.CancelFunc
 	if cfg.Scanner.Discovery.Enabled {
 		discSvc := scannerv2discovery.New(
@@ -249,7 +251,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 				Interval:        time.Duration(cfg.Scanner.Discovery.Interval) * time.Second,
 				TriggerIdentify: cfg.Scanner.Discovery.TriggerIdentify,
 			},
-			scannerv2discovery.SinkAdapter{Runner: scanRunner},
+			scannerv2discovery.SinkAdapter{Runner: scanRunner, Forward: reporter.ReportPassive},
 			scannerv2discovery.IdentifierAdapter(engine),
 			dbConn, 0, nil, slog.Default(),
 		)

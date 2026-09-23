@@ -203,3 +203,53 @@ func TestReporter_SendsStateHashHeader(t *testing.T) {
 	require.NotEmpty(t, gotHash, "hash header must be sent")
 	require.Equal(t, gotHash, gotHash2, "identical alive sets must produce the same hash")
 }
+
+// A passive report (the agent's discovery trickle between scans) ships with
+// origin="passive" and NO state hash: the center bridges the hosts but neither
+// closes a pending dispatch-run nor caches a partial-view digest. A scan
+// report in the same buffer keeps scan semantics (hash present, origin
+// omitted).
+func TestReporter_PassiveBatchOriginAndHash(t *testing.T) {
+	type received struct {
+		hash string
+		body string
+	}
+	recvCh := make(chan received, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		recvCh <- received{hash: r.Header.Get("X-Network-State-Hash"), body: string(b)}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	r := agent.NewReporter(srv.URL, "tok", "a", "", 50*time.Millisecond, 256, nil)
+	r.Start(context.Background())
+	passive := scannerv2.HostReport{IP: "10.0.0.7", Alive: true, Device: scannerv2.DeviceRef{IP: "10.0.0.7"}}
+	r.ReportPassive(context.Background(), passive)
+
+	var first received
+	select {
+	case first = <-recvCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("reporter did not flush the passive batch")
+	}
+	r.Stop()
+
+	require.Contains(t, first.body, `"origin":"passive"`)
+	require.Empty(t, first.hash, "passive batches must not carry a state hash")
+
+	// A scan report afterwards regains scan semantics.
+	r2 := agent.NewReporter(srv.URL, "tok", "a", "", 50*time.Millisecond, 256, nil)
+	r2.Start(context.Background())
+	r2.Report(context.Background(), 1, []scannerv2.HostReport{passive})
+	var second received
+	select {
+	case second = <-recvCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("reporter did not flush the scan batch")
+	}
+	r2.Stop()
+
+	require.NotContains(t, second.body, `"origin":"passive"`)
+	require.NotEmpty(t, second.hash, "scan batches carry the state hash")
+}
