@@ -154,6 +154,11 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	// sweeper's staleness clock keeps ticking. This is the steady-state fast
 	// path: most scan cycles on a stable network change nothing.
 	stateHash := r.Header.Get("X-Network-State-Hash")
+	// Only a scan batch closes the pending dispatch-run with its statistics
+	// (#390). A passive batch (agent's discovery sources between scans) bridges
+	// hosts + refreshes leases but must leave the run open: a trickle arriving
+	// mid-scan would otherwise complete it with partial numbers.
+	fromScan := rep.Origin != "passive"
 	if stateHash != "" {
 		h.hashMu.Lock()
 		prev := h.lastHash[*networkID]
@@ -174,7 +179,9 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 			// Close the pending dispatch-run with real numbers (#390): the
 			// stable path adds/updates nothing by design (bridge skipped), but
 			// the reported host count IS the run's alive set.
-			h.backfillAgentRunStats(r.Context(), *networkID, len(hostsForLease), 0, 0)
+			if fromScan {
+				h.backfillAgentRunStats(r.Context(), *networkID, len(hostsForLease), 0, 0)
+			}
 			slog.Debug("agent report: stable network, skipped device bridge",
 				"agent_id", rep.AgentID, "network_id", *networkID, "hosts", len(rep.Hosts))
 			Success(w, reportAck{Accepted: 0, Stable: true, OutOfNetwork: oon})
@@ -237,7 +244,9 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		"out_of_network", outOfNetwork)
 
 	// Close the pending dispatch-run with the real outcome (#390).
-	h.backfillAgentRunStats(r.Context(), *networkID, len(inNetwork), added, updated)
+	if fromScan {
+		h.backfillAgentRunStats(r.Context(), *networkID, len(inNetwork), added, updated)
+	}
 
 	Success(w, reportAck{
 		Accepted: added + updated, Added: added, Updated: updated, Skipped: skipped,
