@@ -88,7 +88,7 @@ func injectFakeSnmp(t *testing.T, f *fakeSnmp) *fakeSnmp {
 }
 
 func probeHint() scannerv2.ProbeHint {
-	return scannerv2.ProbeHint{Timeout: 1e9} // 1s — unused by the fake
+	return scannerv2.ProbeHint{Timeout: 1e9} // 1s: unused by the fake
 }
 
 // --- LLDP-MIB ---

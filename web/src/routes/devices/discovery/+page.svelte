@@ -8,7 +8,7 @@
   the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 -->
 
-<!-- Passive Discovery — moved here from the standalone /discovery route so all
+<!-- Passive Discovery: moved here from the standalone /discovery route so all
      "find devices" entry points live under the Devices → scan tab group. The
      standalone /discovery route now redirects here. Content is unchanged. -->
 <script lang="ts">

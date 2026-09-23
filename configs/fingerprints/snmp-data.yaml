@@ -2,19 +2,19 @@
 # Derivative fingerprint corpora must be released under the same license.
 # See configs/fingerprints/README.md for attribution & provenance.
 
-# SNMP data tables — the DATA part of SNMPClassifier.
+# SNMP data tables: the DATA part of SNMPClassifier.
 #
 # This file holds the pure-data lookup tables that SNMPClassifier (snmp.go)
 # uses. The bitmask + numeric-compare device-type heuristic (inferTypeFromSNMP
 # stage 3: sysServices bit tests × ifNumber comparisons) CANNOT be expressed as
-# declarative rules and stays as Go code — see docs/fingerprint-spec.md
+# declarative rules and stays as Go code: see docs/fingerprint-spec.md
 # §"Logic plugins" for its input/output contract.
 #
 # Three tables here mirror the original Go functions verbatim:
-#   1. oid_prefixes      — enterpriseOIDPrefix: OID prefix → {brand, type}
-#   2. sysdescr_types    — typeFromSysDescr: ordered contains_any → device type
-#   3. sysdescr_brands   — inferBrand keyword list (sysDescr contains → brand)
-#   4. sysdescr_os       — osFromSysDescr: ordered contains → OS label
+#   1. oid_prefixes     : enterpriseOIDPrefix: OID prefix → {brand, type}
+#   2. sysdescr_types   : typeFromSysDescr: ordered contains_any → device type
+#   3. sysdescr_brands  : inferBrand keyword list (sysDescr contains → brand)
+#   4. sysdescr_os      : osFromSysDescr: ordered contains → OS label
 #
 # Ordering matters for the keyword tables (first-match-wins). The OID table is
 # longest-prefix-first in the original (it iterates and returns on first HasPrefix

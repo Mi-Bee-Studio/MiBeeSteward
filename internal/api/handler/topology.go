@@ -38,7 +38,7 @@ type topoNode struct {
 	MACAddress   string `json:"mac_address"`
 	Type         string `json:"type"`          // hand-set or 'other'
 	Status       string `json:"status"`        // online/offline/unknown
-	InferredType string `json:"inferred_type"` // from scan_vendor/scan_os — richer than type
+	InferredType string `json:"inferred_type"` // from scan_vendor/scan_os: richer than type
 	Brand        string `json:"brand"`
 	NetworkID    *int64 `json:"network_id"` // origin network (for subnet grouping)
 }

@@ -67,7 +67,7 @@ describe('Login page', () => {
 	it('does not show the 2FA or force-password views on initial render', () => {
 		const { container } = render(Login);
 
-		// The 2FA code field (inputmode numeric, maxlength 6) is conditional —
+		// The 2FA code field (inputmode numeric, maxlength 6) is conditional;
 		// absent until a 2FA challenge is returned. Absence on mount is the
 		// contract that the default credential form is the initial view.
 		const twoFactorInput = container.querySelector('input[inputmode="numeric"][maxlength="6"]');
@@ -76,7 +76,7 @@ describe('Login page', () => {
 
 	// First-run setup: when the bootstrap admin has no password yet
 	// (/auth/setup-status → required), the login form is REPLACED by the
-	// create-admin-password form — nothing to log in with.
+	// create-admin-password form: nothing to log in with.
 	it('renders the setup form instead of the login form when setup is pending', async () => {
 		vi.mocked(api.get).mockImplementation((path: string) =>
 			path === '/auth/setup-status'
@@ -89,7 +89,7 @@ describe('Login page', () => {
 		await waitFor(() => {
 			expect(container.querySelector('#setup-new-password')).toBeTruthy();
 		});
-		// The credential form is hidden — there is no password to enter yet.
+		// The credential form is hidden: there is no password to enter yet.
 		expect(container.querySelector('input[type="text"]')).toBeFalsy();
 	});
 
@@ -126,8 +126,8 @@ describe('Login page', () => {
 		});
 	});
 
-	// #427: an empty submit must show in-DOM, localized field errors — not rely
-	// on the native required bubble (silent under automation) — and must never
+	// #427: an empty submit must show in-DOM, localized field errors: not rely
+	// on the native required bubble (silent under automation): and must never
 	// reach the API.
 	it('shows localized field errors on empty submit and does not call the API (#427)', async () => {
 		authMock.state.user = null;

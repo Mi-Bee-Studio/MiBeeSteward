@@ -29,12 +29,12 @@ import {
 import { CanvasRenderer } from 'echarts/renderers';
 
 // Only the chart/component modules actually used by the app are registered
-// here (tree-shaking by usage — echarts/core ships just the core). Before
+// here (tree-shaking by usage: echarts/core ships just the core). Before
 // adding a new chart type or option feature, check whether its module is
 // registered below; an unregistered component silently renders nothing.
 //
-// Commonly-needed-but-currently-unused modules (intentionally NOT registered to
-// keep the bundle lean — add the import + echarts.use() entry when a chart
+// Commonly-needed-but-currently-unused modules (NOT registered to
+// keep the bundle lean: add the import + echarts.use() entry when a chart
 // first needs one):
 //   - DatasetComponent       (option.dataset source piping)
 //   - DataZoomComponent      (zoom/pan sliders on large series)

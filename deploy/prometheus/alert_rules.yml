@@ -55,7 +55,7 @@ groups:
           severity: warning
         annotations:
           summary: "Sustained 5xx burst (possible SQLite contention)"
-          description: "MiBee Steward on {{ $labels.instance }} is returning >1 5xx/s for over a minute — likely SQLite busy/locked errors."
+          description: "MiBee Steward on {{ $labels.instance }} is returning >1 5xx/s for over a minute, likely SQLite busy/locked errors."
 
       - alert: HighMemoryUsage
         expr: process_resident_memory_bytes{job="mibee-steward"} > 524288000
@@ -94,10 +94,10 @@ groups:
 
       # --- Self-monitoring additions (#279) ---
       # Signals the two 2026-08 field incidents exposed: silent scan failure
-      # (#253 — runs "completed" while data froze) and agent silence.
+      # (#253: runs "completed" while data froze) and agent silence.
 
       - alert: ScanRunFailed
-        # mibee_scanner_runs_total{status="completed|failed"} — one increment
+        # mibee_scanner_runs_total{status="completed|failed"}: one increment
         # per run outcome. ANY failed run in 30m is worth a look: cron tasks
         # fire unattended, and #253 showed failures can look benign in logs.
         expr: increase(mibee_scanner_runs_total{job="mibee-steward", status="failed"}[30m]) > 0
@@ -109,7 +109,7 @@ groups:
           description: "{{ $value }} scan run(s) failed in the last 30 minutes on {{ $labels.instance }}. Check run error_message via the API/UI."
 
       - alert: AgentReportStale
-        # mibee_agent_last_report_timestamp_seconds{agent_id} — stamped on every
+        # mibee_agent_last_report_timestamp_seconds{agent_id}: stamped on every
         # authenticated report (including empty and anti-entropy fast-path).
         # Agents poll commands ~60s and report after each scan cycle; 10 min
         # with no report means the agent process, its host, or the path to the
@@ -137,7 +137,7 @@ groups:
 
       # SQLITE_BUSY observability (#267): the BusyRetry write wrapper counts
       # every intercepted BUSY (retried and fatal). A climbing rate means
-      # write contention is outliving busy_timeout — investigate the path
+      # write contention is outliving busy_timeout: investigate the path
       # label (scanner/heartbeat/probe/audit/notification/agent).
       - alert: SqliteBusyRetries
         expr: rate(mibee_sqlite_busy_total{job="mibee-steward"}[5m]) > 0.1
@@ -146,12 +146,12 @@ groups:
           severity: warning
         annotations:
           summary: "SQLite BUSY retries sustained on {{ $labels.instance }}"
-          description: "mibee_sqlite_busy_total{path=\"{{ $labels.path }}\"} is retrying at {{ $value }}/s — write contention is outliving busy_timeout."
+          description: "mibee_sqlite_busy_total{path=\"{{ $labels.path }}\"} is retrying at {{ $value }}/s, write contention is outliving busy_timeout."
 
       # Network-attribution drift (#19): mibee_network_mismatches counts devices
       # whose IP falls outside their stamped network's CIDR (set per hourly
       # reconcile pass; 0 = no drift). Sustained drift means passive discovery
-      # or scans are recording hosts into the wrong network — on a form-C
+      # or scans are recording hosts into the wrong network: on a form-C
       # (router-resident) center observed as 14→22+ cross-subnet devices
       # stamped into the center's own LAN before anyone noticed (2026-09-18).
       - alert: NetworkAttributionDrift
@@ -161,4 +161,4 @@ groups:
           severity: warning
         annotations:
           summary: "Network attribution drift on {{ $labels.network }}"
-          description: "{{ $value }} device(s) on network {{ $labels.network }} have IPs outside its CIDR — check the reconcile log sample_ips and whether the network row (or passive-discovery attribution) is wrong."
+          description: "{{ $value }} device(s) on network {{ $labels.network }} have IPs outside its CIDR, check the reconcile log sample_ips and whether the network row (or passive-discovery attribution) is wrong."

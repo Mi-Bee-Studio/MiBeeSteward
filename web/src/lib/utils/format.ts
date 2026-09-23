@@ -14,7 +14,7 @@ import { getLocale } from '$lib/i18n-paraglide';
  * Locale-aware date+time formatting. Uses the paraglide-selected locale (not the
  * browser default), so a Chinese-UI user on an English browser sees Chinese
  * dates (#168). Falls back to the raw input on parse failure, and to '-' for
- * empty/null/undefined — matching the per-page `formatTime` helpers this
+ * empty/null/undefined: matching the per-page `formatTime` helpers this
  * replaces.
  */
 export function formatDateTime(iso: string | number | Date | null | undefined): string {
@@ -45,7 +45,7 @@ export function formatTime(iso: string | number | Date | null | undefined): stri
 
 /**
  * Human-readable duration from milliseconds ("940ms" / "108.3s"), shared by
- * the scan-results run history and the dashboard scan-activity table — the
+ * the scan-results run history and the dashboard scan-activity table: the
  * two surfaces used to disagree (raw ms vs formatted) for the same column
  * (#251).
  */

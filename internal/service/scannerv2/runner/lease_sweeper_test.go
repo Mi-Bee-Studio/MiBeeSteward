@@ -563,7 +563,7 @@ func TestLeaseSweeper_FlapDecayAfterStablePeriod(t *testing.T) {
 	var quietAt string
 	conn.QueryRow(`SELECT flap_count, last_flap_at FROM scan_snapshots WHERE ip='192.168.63.161'`).Scan(&quietFlap, &quietAt)
 	require.Equal(t, int64(4), quietFlap, "quiet flapper's counter must halve (8→4)")
-	require.NotEmpty(t, quietAt, "last_flap_at refreshed — each halving needs a new stable window")
+	require.NotEmpty(t, quietAt, "last_flap_at refreshed: each halving needs a new stable window")
 	var recentFlap int64
 	conn.QueryRow(`SELECT flap_count FROM scan_snapshots WHERE ip='192.168.63.162'`).Scan(&recentFlap)
 	require.Equal(t, int64(6), recentFlap, "recent flap must not decay")

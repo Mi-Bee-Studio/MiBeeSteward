@@ -138,7 +138,7 @@ func (s *Service) taskNetworkInScope(ctx context.Context, taskID int64, scope do
 		return true
 	}
 	if s.conn == nil {
-		return true // scope disabled in this construction — fail open (tests)
+		return true // scope disabled in this construction: fail open (tests)
 	}
 	var netID sql.NullInt64
 	err := s.conn.QueryRowContext(ctx,

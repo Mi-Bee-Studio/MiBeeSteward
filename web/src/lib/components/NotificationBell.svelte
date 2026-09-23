@@ -24,7 +24,7 @@
 	let marking = $state(false);
 	let containerRef: HTMLDivElement | undefined = $state();
 
-	// Returns true on success, false on failure — the poll loop uses this to
+	// Returns true on success, false on failure: the poll loop uses this to
 	// back off when the backend is unreachable (avoids hammering a dead server).
 	async function fetchNotifications(): Promise<boolean> {
 		try {
@@ -36,7 +36,7 @@
 			unreadCount = res.total ?? 0;
 			return true;
 		} catch {
-			// Silently fail — non-critical UI (the poll loop backs off, and the
+			// Silently fail: non-critical UI (the poll loop backs off, and the
 			// next user interaction retries).
 			return false;
 		} finally {
@@ -50,7 +50,7 @@
 		try {
 			await api.post<MarkAllReadResponse>('/notification/logs/read', {});
 			// Clear the badge + flip each visible item's is_read flag in place
-			// (index mutation, not array reassignment — reassigning the $state
+			// (index mutation, not array reassignment: reassigning the $state
 			// array while the dropdown's {#each} is mounted tears Svelte 5's
 			// effect graph and snaps the panel shut under hydration).
 			unreadCount = 0;
@@ -58,7 +58,7 @@
 				notifications[i].is_read = true;
 			}
 		} catch {
-			// Silently fail — the badge will re-sync on the next poll.
+			// Silently fail: the badge will re-sync on the next poll.
 		} finally {
 			marking = false;
 		}
@@ -74,14 +74,14 @@
 	}
 
 	// Extract a human-readable subject from the notification payload JSON.
-	// The dispatcher stores { subject, body, recipient } — fall back to the
+	// The dispatcher stores { subject, body, recipient }: fall back to the
 	// delivery status if no subject is present.
 	function subject(payload: string, status: string): string {
 		try {
 			const parsed = JSON.parse(payload) as { subject?: string };
 			if (parsed.subject) return parsed.subject;
 		} catch {
-			// payload isn't JSON — fall through
+			// payload isn't JSON: fall through
 		}
 		return status === 'sent' ? m['notifications.Sent']() : m['notifications.Failed']();
 	}
@@ -199,7 +199,7 @@
 									hover:bg-surface-2 transition-colors cursor-default
 									{notif.is_read ? 'opacity-60' : ''}"
 							>
-								<!-- Unread dot (left rail) — only renders for unread items -->
+								<!-- Unread dot (left rail): only renders for unread items -->
 								<span
 									class="shrink-0 mt-1.5 w-2 h-2 rounded-full
 										{notif.is_read ? 'bg-transparent' : 'bg-primary'}"

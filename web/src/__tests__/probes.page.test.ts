@@ -12,11 +12,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 
-// render-only + list-render + interaction — mock the API surface the probes
+// render-only + list-render + interaction: mock the API surface the probes
 // page touches: target list, per-target certificate summaries (badge),
 // per-target results history, networks (vantage selector's agent options),
 // and the auth store. Assertions are data-driven (names / vantage tokens),
-// never localized strings (except where an interaction must FIND a button —
+// never localized strings (except where an interaction must FIND a button;
 // the suite runs under the en locale).
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/stores/auth', () => ({
@@ -42,7 +42,7 @@ vi.mock('$lib/api/client', () => ({
 			}
 			if (url.startsWith('/probe-targets') && url.includes('/results')) {
 				// Newest-first, two vantage tracks that DISAGREE (center succeeds,
-				// agent fails) — the case the multi-vantage summary exists for.
+				// agent fails): the case the multi-vantage summary exists for.
 				return Promise.resolve({
 					results: [
 						resultRow(11, 'center', 'success', 42),
@@ -142,7 +142,7 @@ describe('Probes page', () => {
 		expect(texts.some((t) => t.includes('success'))).toBe(true);
 	});
 
-	it('renders vantage badges — "all" as a badge, agent plans verbatim, center quiet', async () => {
+	it('renders vantage badges: "all" as a badge, agent plans verbatim, center quiet', async () => {
 		const { container } = render(Probes);
 		await waitFor(() => {
 			expect(container.textContent).toContain('intranet-gw');

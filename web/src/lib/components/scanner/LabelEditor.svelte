@@ -105,7 +105,7 @@
 			await onSave(result);
 			hasChanges = false;
 		} catch (err: unknown) {
-			// Without this catch a rejecting onSave bubbled up uncaught — no
+			// Without this catch a rejecting onSave bubbled up uncaught: no
 			// toast, no feedback, just a console error. Surface it to the user.
 			addToast('error', getErrorMessage(err));
 		} finally {

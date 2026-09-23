@@ -269,18 +269,18 @@ func parseMDNSResponse(msg []byte) (hostname string, services []string, txtKV ma
 		}
 		rdata := msg[pos : pos+rdlen]
 		switch rtype {
-		case 1: // A — record owner name is the device hostname
+		case 1: // A: record owner name is the device hostname
 			if rdlen == 4 && hostname == "" {
 				hostname = dnsStripLocal(name)
 			}
-		case 12: // PTR — service name (e.g. "_onvif._tcp.local")
+		case 12: // PTR: service name (e.g. "_onvif._tcp.local")
 			if ptr, _, err := readDNSName(msg, pos); err == nil {
 				s := dnsStripLocal(ptr)
 				if s != "" {
 					services = append(services, s)
 				}
 			}
-		case 16: // TXT — key=value pairs (record owner is the service instance,
+		case 16: // TXT: key=value pairs (record owner is the service instance,
 			// NOT the device hostname, do not set hostname from it, or it'll
 			// look like "NanoPiR4S._smb._tcp").
 			for tpos := 0; tpos < len(rdata); {
@@ -300,7 +300,7 @@ func parseMDNSResponse(msg []byte) (hostname string, services []string, txtKV ma
 				}
 				tpos += 1 + tlen
 			}
-		case 33: // SRV — the target host is the device, but the owner name is a
+		case 33: // SRV: the target host is the device, but the owner name is a
 			// service instance ("foo._smb._tcp"). Only derive a hostname from
 			// the SRV target (the device FQDN), never from the owner name.
 			if rdlen >= 6 {
@@ -542,7 +542,7 @@ func (p *NetBIOSProbe) Probe(ctx context.Context, ip string, hint scannerv2.Prob
 	}
 	conn, err := net.DialTimeout("udp", net.JoinHostPort(ip, strconv.Itoa(netbiosNSPort)), timeout)
 	if err != nil {
-		return nil, nil // UDP 137 closed/unreachable — fine
+		return nil, nil // UDP 137 closed/unreachable: fine
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(timeout))

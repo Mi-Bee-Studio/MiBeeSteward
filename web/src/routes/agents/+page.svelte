@@ -117,7 +117,7 @@
 			for (const a of res.agents || []) map[a.agent_id] = a;
 			fleetStatus = map;
 		} catch {
-			// Non-critical — the columns just show '-'.
+			// Non-critical: the columns just show '-'.
 		}
 	}
 
@@ -130,7 +130,7 @@
 			commands = res.commands || [];
 			commandsTotal = res.total || 0;
 		} catch {
-			// Non-critical — the command panel just stays empty.
+			// Non-critical: the command panel just stays empty.
 		} finally {
 			commandsLoading = false;
 		}
@@ -163,7 +163,7 @@
 			const res = await api.get<{ networks: Network[]; total: number }>('/networks');
 			networks = res.networks || [];
 		} catch {
-			// Non-critical — the network dropdown just stays empty.
+			// Non-critical: the network dropdown just stays empty.
 		}
 	}
 
@@ -175,7 +175,7 @@
 		createdToken = null;
 	}
 
-	// The one-time token (createdToken) is unrecoverable — once the modal
+	// The one-time token (createdToken) is unrecoverable: once the modal
 	// closes it's gone forever. confirmDiscard gates the close on the
 	// existing "unsaved changes" overlay so Esc / backdrop / X all warn first
 	// instead of silently discarding the token. Returning true when a token
@@ -249,7 +249,7 @@
 		scanModalOpen = true;
 	}
 
-	// Validate scan targets on blur (same validator the scanner page uses) —
+	// Validate scan targets on blur (same validator the scanner page uses);
 	// previously this modal only empty-checked at submit, so a user could enter
 	// an over-broad range like 192.168.0.0/16 (65k IPs) with no warning
 	// (#154 part 2).
@@ -288,7 +288,7 @@
 
 	function sendOpsCommand(agentId: string, command: string) {
 		if (command === 'logs-tail') {
-			// Read-only — no confirmation needed.
+			// Read-only: no confirmation needed.
 			enqueueOps(agentId, command);
 			return;
 		}

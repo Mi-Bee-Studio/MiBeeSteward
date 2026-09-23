@@ -4,7 +4,7 @@
 // - EventSource cannot send an Authorization header; the endpoint authenticates
 //   via the JWT cookie (same-origin requests carry it automatically). A pure
 //   Bearer-token client (no cookie) will get a 401 and land in the backoff
-//   path — harmless, it retries quietly.
+//   path: harmless, it retries quietly.
 // - Native EventSource auto-reconnects, but a non-retryable failure (401, or
 //   the server answering 200 then closing) can flip it to CLOSED silently. We
 //   manage reconnection ourselves: close on error, reopen with exponential
@@ -46,7 +46,7 @@ function openStream() {
 			const evt = JSON.parse((ev as MessageEvent).data) as ChangeLogEntry;
 			state.update((s) => ({ ...s, lastEvent: evt }));
 		} catch {
-			// malformed frame — ignore
+			// malformed frame: ignore
 		}
 	});
 	es.onerror = () => {

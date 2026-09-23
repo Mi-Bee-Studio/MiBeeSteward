@@ -10,7 +10,7 @@
 
 <script lang="ts">
 	/**
-	 * ColumnPicker — a dropdown of checkboxes that lets the user choose which
+	 * ColumnPicker: a dropdown of checkboxes that lets the user choose which
 	 * optional columns a table shows. Selections persist to localStorage so the
 	 * choice survives reloads and shared links.
 	 *
@@ -75,7 +75,7 @@
 		const next = new Set(selected);
 		if (next.has(key)) next.delete(key);
 		else next.add(key);
-		// Refuse to remove the very last column — an empty table is a bad UX.
+		// Refuse to remove the very last column: an empty table is a bad UX.
 		if (next.size === 0) return;
 		selected = next;
 		persist();

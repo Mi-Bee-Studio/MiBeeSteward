@@ -10,7 +10,7 @@
   "editable": true,
   "graphTooltip": 1,
   "uid": "mibee-probes",
-  "title": "MiBee Steward — Probes (拨测)",
+  "title": "MiBee Steward，Probes (拨测)",
   "panels": [
     {
       "type": "stat",

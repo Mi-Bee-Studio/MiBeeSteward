@@ -269,7 +269,7 @@ func (h *AgentReportHandler) backfillAgentRunStats(ctx context.Context, networkI
 		WHERE t.network_id = ? AND r.status = 'running'
 		ORDER BY r.started_at LIMIT 1`, networkID).Scan(&runID, &startedAt)
 	if err != nil {
-		return // no pending run for this network — nothing to backfill
+		return // no pending run for this network: nothing to backfill
 	}
 	now := time.Now()
 	if uerr := h.queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{

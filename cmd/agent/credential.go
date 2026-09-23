@@ -115,7 +115,7 @@ func snmpCredentialSubcommand(args []string) {
 		os.Exit(2)
 	}
 
-	fmt.Fprintf(os.Stderr, "mibee-agent %s — snmp credential vault\n", version.Version)
+	fmt.Fprintf(os.Stderr, "mibee-agent %s: snmp credential vault\n", version.Version)
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -141,7 +141,7 @@ func snmpCredentialSubcommand(args []string) {
 
 		// Every action except `list` needs the master key to encrypt.
 		if cfg.Security.MasterKey == "" {
-			fmt.Fprintln(os.Stderr, "security.master_key is not configured — the credential vault is disabled.")
+			fmt.Fprintln(os.Stderr, "security.master_key is not configured: the credential vault is disabled.")
 			fmt.Fprintln(os.Stderr, "Set a 32-byte master key in the agent config (or MIBEE_SECURITY_MASTER_KEY) to use it.")
 			if *action != "list" {
 				return 1

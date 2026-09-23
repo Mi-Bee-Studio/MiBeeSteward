@@ -107,7 +107,7 @@
 			total = res.total || 0;
 			syncUrl();
 		} catch (err: unknown) {
-			// Inline banner only on initial load — the parallel toast was
+			// Inline banner only on initial load: the parallel toast was
 			// noisy (double-notified on fetch failure, unlike every other
 			// list page). #152 part 2.
 			error = getErrorMessage(err);
@@ -427,7 +427,7 @@
 	}
 
 	// Actions-column dispatch moved to the `cell` snippet (real onclick handlers,
-	// no event delegation) — see the DataTable usage below (#167).
+	// no event delegation): see the DataTable usage below (#167).
 </script>
 
 <div class="p-4 sm:p-6">
@@ -643,7 +643,7 @@
 					{/if}
 				</div>
 			{:else}
-				<!-- previewHtml is sanitized in renderMarkdown (DOMPurify) — the only
+				<!-- previewHtml is sanitized in renderMarkdown (DOMPurify): the only
 				     path through which uploaded file text may reach {@html}. -->
 				<div class="markdown-body max-h-[70vh] overflow-y-auto">{@html previewHtml}</div>
 			{/if}

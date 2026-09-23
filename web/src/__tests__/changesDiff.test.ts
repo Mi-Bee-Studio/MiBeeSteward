@@ -13,7 +13,7 @@ import { buildDiff, isDiffMap, tryParse } from '$lib/changesDiff';
 
 // The snapshot fixtures below MUST mirror the backend contract: full
 // DeviceSnapshot JSON in both before_data and after_data for device_changed
-// rows (internal/changedetect DeviceSnapshot — pinned on the Go side by
+// rows (internal/changedetect DeviceSnapshot: pinned on the Go side by
 // TestDeviceSnapshotJSONContract). If that contract changes, both sides'
 // tests must be updated in the same PR.
 
@@ -47,7 +47,7 @@ const afterSnapshot = JSON.stringify({
 	scan_attributes: '{"hostname":"mibee-rec","inferred_type":"camera"}'
 });
 
-describe('buildDiff — snapshot payloads (current backend shape)', () => {
+describe('buildDiff: snapshot payloads (current backend shape)', () => {
 	it('returns only changed fields with full before/after values', () => {
 		const diff = buildDiff(beforeSnapshot, afterSnapshot);
 		expect(diff).not.toBeNull();
@@ -81,7 +81,7 @@ describe('buildDiff — snapshot payloads (current backend shape)', () => {
 	});
 });
 
-describe('buildDiff — legacy diff-map payloads', () => {
+describe('buildDiff: legacy diff-map payloads', () => {
 	it('passes through a stored {field: [old, new]} map untouched', () => {
 		const legacy = JSON.stringify({ name: ['old', 'new'], type: ['pc', 'camera'] });
 		expect(buildDiff(null, legacy)).toEqual({
@@ -96,7 +96,7 @@ describe('isDiffMap', () => {
 		expect(isDiffMap({ a: [1, 2], b: ['x', 'y'] })).toBe(true);
 	});
 
-	it('rejects snapshots (string values) — the incident shape', () => {
+	it('rejects snapshots (string values): the incident shape', () => {
 		expect(isDiffMap(JSON.parse(afterSnapshot))).toBe(false);
 	});
 

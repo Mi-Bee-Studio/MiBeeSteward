@@ -18,7 +18,7 @@ export type CertStatus = 'expired' | 'expiring' | 'valid' | 'error';
  *
  * Shared between the device-detail TLS sub-panel and the CertificateModal so
  * the two views can't drift on the 15-day warning window or the error cases.
- * Accepts null (defensive — the modal's open state can briefly hold none).
+ * Accepts null (defensive: the modal's open state can briefly hold none).
  */
 export function certStatus(port: TLSPortCerts | null): CertStatus {
 	if (!port) return 'error';
@@ -28,7 +28,7 @@ export function certStatus(port: TLSPortCerts | null): CertStatus {
 	const after = Date.parse(port.leaf.not_after);
 	if (Number.isNaN(after)) return 'error';
 	if (after < now) return 'expired';
-	// 15-day warning window — short enough to be actionable, long enough to
+	// 15-day warning window: short enough to be actionable, long enough to
 	// catch monthly rotations.
 	if (after - now < 15 * 24 * 3600 * 1000) return 'expiring';
 	return 'valid';

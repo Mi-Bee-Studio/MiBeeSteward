@@ -112,7 +112,7 @@ func Test2FA_VerifyInvalidCode_Rejected(t *testing.T) {
 	resp := authPost(t, server.URL+"/api/v1/auth/2fa/verify", "",
 		`{"user_id":`+itoaInt64(userID)+`,"code":"000000"}`)
 	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode,
-		"a wrong 2FA code must be rejected with 422 — accepting it is a 2FA bypass")
+		"a wrong 2FA code must be rejected with 422: accepting it is a 2FA bypass")
 	// And critically, no token is issued.
 	var body map[string]any
 	decodeJSON(t, resp, &body)

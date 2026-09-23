@@ -11,7 +11,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { onMount } from 'svelte';
-    // replaceState so `/` doesn't linger in history — without it the back
+    // replaceState so `/` doesn't linger in history: without it the back
     // button lands on a redirector stub instead of leaving the app.
     onMount(() => goto('/dashboard', { replaceState: true }));
 </script>

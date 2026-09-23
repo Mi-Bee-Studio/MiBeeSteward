@@ -134,7 +134,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, channelType domain.ChannelTyp
 	case d.channel <- job:
 		d.logger.Debug("notification dispatched", "channel", channelType, "recipient", payload.Recipient)
 	default:
-		d.logger.Warn("notification dropped — channel full", "channel", channelType, "recipient", payload.Recipient)
+		d.logger.Warn("notification dropped: channel full", "channel", channelType, "recipient", payload.Recipient)
 		d.logResult(ctx, ruleID, channelID, "failed", payload, "dispatch queue full")
 	}
 }

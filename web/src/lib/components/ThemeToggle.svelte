@@ -17,11 +17,11 @@
 		const stored = localStorage.getItem('theme');
 		if (stored === 'light') return false;
 		if (stored === 'dark') return true;
-		// No stored preference — detect from system
+		// No stored preference: detect from system
 		return !window.matchMedia('(prefers-color-scheme: light)').matches;
 	}
 
-	// Guard the localStorage/matchMedia access for SSR/prerender — those APIs
+	// Guard the localStorage/matchMedia access for SSR/prerender: those APIs
 	// only exist in the browser. Without this, server-side rendering throws
 	// "localStorage is not defined" at component init (#71).
 	let dark = $state(browser ? getInitialDark() : false);

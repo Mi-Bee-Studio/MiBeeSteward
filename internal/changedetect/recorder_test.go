@@ -241,7 +241,7 @@ func TestDeviceSnapshotJSONContract(t *testing.T) {
 	var got map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(raw, &got))
 	require.ElementsMatch(t, want, keysOfMap(got),
-		"DeviceSnapshot JSON field set changed — update web/src/lib/changesDiff.ts + tests in the same PR")
+		"DeviceSnapshot JSON field set changed: update web/src/lib/changesDiff.ts + tests in the same PR")
 
 	// String-typed fields only: a field flipping to array/object would break
 	// the frontend's string-first formatting assumptions.

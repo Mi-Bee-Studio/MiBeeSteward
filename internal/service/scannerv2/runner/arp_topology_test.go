@@ -129,7 +129,7 @@ func TestInjectARPEdges(t *testing.T) {
 		reportFor("192.168.63.1", "router", "test-brand", gwMAC),
 		reportFor("192.168.63.20", "pc", "test-brand", "aa:bb:cc:dd:ee:20"),
 		reportFor("192.168.63.30", "pc", "test-brand", "aa:bb:cc:dd:ee:30"),
-		{Alive: false, IP: "192.168.63.99"}, // dead host — no edge
+		{Alive: false, IP: "192.168.63.99"}, // dead host: no edge
 	}
 
 	rn.injectARPEdges(ctx, nid, reports, "192.168.63.1", "AA:BB:CC:DD:EE:01")

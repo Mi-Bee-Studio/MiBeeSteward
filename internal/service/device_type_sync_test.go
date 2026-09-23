@@ -99,8 +99,8 @@ func TestDevicesTypeCHECK_InSyncWithDomain(t *testing.T) {
 		if insertErr != nil {
 			t.Errorf("device type %q is in domain.ValidDeviceTypes but the schema's "+
 				"devices.type CHECK rejected it (INSERT error: %v). Add %q to the CHECK "+
-				"in db/schema.sql (the agent's mini-schema intentionally has no CHECK on "+
-				"type — it's a permissive shadow — so only the center schema needs updating).",
+				"in db/schema.sql (the agent's mini-schema carries no CHECK on "+
+				"type (it's a permissive shadow, so only the center schema needs updating).",
 				typ, insertErr, typ)
 		}
 	}

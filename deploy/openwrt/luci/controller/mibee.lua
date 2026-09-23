@@ -4,7 +4,7 @@
 --
 -- MiBee Steward LuCI integration: registers the router-native entry under
 -- 服务 → MiBee Steward (status view + settings forms). Deliberately a
--- classic Lua controller with plain templates — works across 22.03/23.05/
+-- classic Lua controller with plain templates: works across 22.03/23.05/
 -- 24.05+ LuCI (the dispatcher still scans this path) with NO luci-compat /
 -- CBI dependency. All privileged work happens in
 -- /usr/lib/mibee/luci-helper.sh (single audited surface); this controller
@@ -47,7 +47,7 @@ end
 -- helper_call runs luci-helper.sh and returns its exit code. Two bridge
 -- landmines shape this implementation (both field-found on iStoreOS 24.10.8 /
 -- R68S, LuCI 24.10's luci-lua-runtime ucode bridge):
---   * luci.sys.call() inside a bridged controller kills the HTTP response —
+--   * luci.sys.call() inside a bridged controller kills the HTTP response;
 --     uhttpd answers 502 while the operation itself succeeds.
 --   * The bridge's exec family does NOT POSIX-split command strings: the
 --     helper received the ENTIRE command line as ONE argument and fell into
@@ -134,7 +134,7 @@ function action_apply()
 
     -- Redirect via a meta-refresh page instead of http.redirect(): on the
     -- ucode-era LuCI (24.10's luci-lua-runtime bridge) http.redirect()
-    -- produces NO output for bridged Lua controllers — uhttpd answers
+    -- produces NO output for bridged Lua controllers: uhttpd answers
     -- "Bad Gateway: the process did not produce any response" while the
     -- operation itself succeeds (field-found on iStoreOS 24.10.8). The
     -- status/write pair provably works (the 403 branch above).
@@ -142,5 +142,5 @@ function action_apply()
     http.status(200, "OK")
     http.prepare_content("text/html")
     http.write('<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=' .. target .. '">'
-        .. '</head><body>OK — <a href="' .. target .. '">continue</a></body></html>')
+        .. '</head><body>OK: <a href="' .. target .. '">continue</a></body></html>')
 end

@@ -111,7 +111,7 @@ rules:
 
   # ── HTTPClassifier (classify/rtsp_camera.go) ───────────────────────────
   # Re-asserts http at a LOWER confidence (0.75) than banner-http (0.8). Both
-  # fire on the same evidence — overlapping rules are allowed; the orchestrator
+  # fire on the same evidence: overlapping rules are allowed; the orchestrator
   # dedups by service+port downstream. Mirrors the original dual-emit behavior.
   - id: banner-http-lowconf
     source: builtin
@@ -132,10 +132,10 @@ rules:
   # CASE-INSENSITIVE contains. The compound AND expresses "prefix AND (marker
   # OR port)". These run with first-match-wins ordering per banner; place SMTP
   # before POP3/IMAP. Note b is trimmed for mail rules but NOT for the banner/*
-  # rules above — the original code trims only inside MailClassifier.
+  # rules above: the original code trims only inside MailClassifier.
 
   # SMTP: "220 " prefix (CS) AND (ESMTP/Postfix/Sendmail/Exim/mail contains, CI).
-  # The "mail" contains is broad by design — mirrors the original heuristic.
+  # The "mail" contains is broad by design: mirrors the original heuristic.
   - id: banner-smtp
     source: builtin
     match:

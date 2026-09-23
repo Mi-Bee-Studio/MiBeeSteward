@@ -146,9 +146,9 @@ func TestOUI_LongestPrefixMatch(t *testing.T) {
 		"8C1F64\tIEEE Registration Authority",
 		"B84C87\tSome Other Vendor (MA-L parent)",
 		"BCAD28\tHikvision Digital Technology",
-		"# MA-M /28 (7 hex) — sub-block of B84C87",
+		"# MA-M /28 (7 hex): sub-block of B84C87",
 		"B84C879\tAirgain Inc.",
-		"# MA-S /36 (9 hex) — sub-block of 8C1F64 (IEEE pool)",
+		"# MA-S /36 (9 hex): sub-block of 8C1F64 (IEEE pool)",
 		"8C1F64B14\tMurata Manufacturing Co., Ltd.",
 	}, "\n"))
 	if err := os.WriteFile(path, content, 0o644); err != nil {

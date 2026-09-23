@@ -19,7 +19,7 @@ import type { TopologyGraph, TopoNode, TopoEdge } from '$lib/types';
 
 // Helpers: build wire-shaped fixtures with sensible defaults. The nullable
 // fields (to_device_id / local_port / remote_port / network_id) are ALWAYS
-// present on the wire (null when unknown) — the fixtures mirror that.
+// present on the wire (null when unknown): the fixtures mirror that.
 
 function node(over: Partial<TopoNode> & Pick<TopoNode, 'id'>): TopoNode {
 	return {
@@ -161,7 +161,7 @@ describe('topologyGraph', () => {
 				]
 			};
 			const result = buildGraph(graph);
-			// ALL 3 links preserved (tree would drop 1) — key graph-vs-tree win.
+			// ALL 3 links preserved (tree would drop 1): key graph-vs-tree win.
 			expect(result.links.length).toBe(3);
 			expect(result.links.filter((l) => l.isCrossLink).length).toBe(1);
 		});

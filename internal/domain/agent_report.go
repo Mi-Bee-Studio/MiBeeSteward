@@ -57,7 +57,7 @@ type AgentReport struct {
 type AgentMeta struct {
 	Version    string `json:"version,omitempty"`     // mibee-agent build version
 	GoVersion  string `json:"go_version,omitempty"`  // runtime.Version()
-	Hostname   string `json:"hostname,omitempty"`    // os.Hostname — where it runs
+	Hostname   string `json:"hostname,omitempty"`    // os.Hostname: where it runs
 	UptimeSec  int64  `json:"uptime_sec,omitempty"`  // process uptime
 	ScansTotal int64  `json:"scans_total,omitempty"` // cumulative report batches shipped
 }
@@ -76,7 +76,7 @@ type ReportedHost struct {
 	// InferredType / InferredBrand / InferredDescription / InferredLocation are
 	// the handler/heuristic verdicts for the device (camera, router, …).
 	InferredType        string `json:"inferred_type,omitempty"`
-	InferredTypeSource  string `json:"inferred_type_source,omitempty"` // "protocol" (evidence-backed) | "heuristic" (hostname guess) — carried so the center's UI confidence badge is accurate for agent-reported devices, not lost in the wire hop
+	InferredTypeSource  string `json:"inferred_type_source,omitempty"` // "protocol" (evidence-backed) | "heuristic" (hostname guess): carried so the center's UI confidence badge is accurate for agent-reported devices, not lost in the wire hop
 	InferredBrand       string `json:"inferred_brand,omitempty"`
 	InferredDescription string `json:"inferred_description,omitempty"`
 	InferredLocation    string `json:"inferred_location,omitempty"`

@@ -97,7 +97,7 @@ func TestScannerRoutes_CapabilityBoundary(t *testing.T) {
 			code := rec.Code
 			switch {
 			case tc.role == "" && tc.pass:
-				t.Fatalf("anon marked pass — malformed case")
+				t.Fatalf("anon marked pass: malformed case")
 			case tc.role == "":
 				require.Equal(t, http.StatusUnauthorized, code, "anon must be 401")
 			case tc.pass:

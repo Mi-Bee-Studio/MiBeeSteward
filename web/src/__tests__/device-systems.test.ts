@@ -165,7 +165,7 @@ describe('URL Validation', () => {
 // ---------------------------------------------------------------------------
 
 describe('Form Validation Logic', () => {
-	it('name is required — empty fails', () => {
+	it('name is required: empty fails', () => {
 		const name = '';
 		expect(name.trim().length > 0).toBe(false);
 	});

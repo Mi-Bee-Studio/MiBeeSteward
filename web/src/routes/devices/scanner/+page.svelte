@@ -64,7 +64,7 @@
 	let credentials = $state<Array<{ id: number; name: string; security_level: string }>>([]);
 	let selectedCredentialId = $state<number | null>(null);
 
-	// Best-effort credential list load (issue #135). Failures are silent — the
+	// Best-effort credential list load (issue #135). Failures are silent: the
 	// community field still works as the fallback. Admin-only endpoint; non-admin
 	// users just see no selector and use community as before.
 	onMount(async () => {
@@ -72,19 +72,19 @@
 			const res = await api.get<{ credentials: Array<{ id: number; name: string; security_level: string }> }>('/snmp-credentials');
 			credentials = res.credentials ?? [];
 		} catch {
-			// Non-admin or disabled — leave credentials empty; selector hidden.
+			// Non-admin or disabled: leave credentials empty; selector hidden.
 		}
 	});
 
 	// Results state
 	let scanning = $state(false);
-	// AbortController for the in-flight scan request — lets the user cancel a
+	// AbortController for the in-flight scan request: lets the user cancel a
 	// long scan. The backend honors request-context cancellation (ScanTargets
 	// listens on ctx.Done), so aborting here actually stops the server scan.
 	let scanController: AbortController | null = null;
 	let result = $state<ScanResponse | null>(null);
 	// Inline error for a failed whole-scan run. Previously a scan failure only
-	// surfaced as a corner toast and the result pane stayed silently empty —
+	// surfaced as a corner toast and the result pane stayed silently empty;
 	// easy to miss and indistinguishable from "no alive hosts".
 	let scanError = $state('');
 	let selectedIps = $state<Set<string>>(new Set());
@@ -95,7 +95,7 @@
 	// a heavy row (4 bound inputs + a 9-option select + 4 conditional badges),
 	// so an unbounded /22+ (1k+ hosts) thrashes the DOM. Form state is kept in
 	// Record<ip, value> maps keyed by IP, so slicing the rendered rows loses no
-	// edits when paging — the maps survive independent of which slice is shown.
+	// edits when paging: the maps survive independent of which slice is shown.
 	let aliveOffset = $state(0);
 	let aliveLimit = $state(50);
 	// Confirm dialog for bulk add
@@ -139,7 +139,7 @@
 	async function startScan() {
 		const err = validateTargets();
 		if (err) {
-			// Empty targets and malformed targets are different failures — the
+			// Empty targets and malformed targets are different failures: the
 			// field hint already shows the precise reason; the toast used to
 			// blanket-report "invalid range" even for a bare empty field (#251).
 			addToast('error', targets.trim() === '' ? m['scanner.Targets Required']() : m['scanner.Invalid Range']());
@@ -219,7 +219,7 @@
 			// don't also surface a generic error banner.
 			if (err instanceof RequestCancelledError) return;
 			// Inline banner so the user sees the failure in context (not just a
-			// corner toast) — the result pane stays empty otherwise.
+			// corner toast): the result pane stays empty otherwise.
 			scanError = getErrorMessage(err);
 			addToast('error', scanError);
 		} finally {
@@ -291,7 +291,7 @@
 
 			if (res.errors && res.errors.length > 0) {
 				// Single summary warning (count + first reason) instead of one
-				// toast per failure — floods the toast stack when many devices
+				// toast per failure: floods the toast stack when many devices
 				// fail (e.g. duplicates). Matches the CSV-import path. #152 part 3.
 				addToast('warning', m['scanner.Add N Failed']({ count: res.errors.length, reason: res.errors[0] }));
 			}

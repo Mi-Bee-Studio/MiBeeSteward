@@ -7,7 +7,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 
-// render-only — mock external-behavior modules so the page loads under jsdom.
+// render-only: mock external-behavior modules so the page loads under jsdom.
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/api/client', () => ({
 	api: {

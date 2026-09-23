@@ -1,11 +1,11 @@
-# MiBee curated OUI table — common vendor prefixes for out-of-box coverage.
+# MiBee curated OUI table: common vendor prefixes for out-of-box coverage.
 # SPDX-License-Identifier: CC-BY-SA-4.0
 #
 # This is a HAND-MAINTAINED CC-BY-SA 4.0 table (authored by MiBee Studio from
 # public knowledge of well-known vendor OUIs). It is EMBEDDED in the binary
 # (internal/service/scannerv2/vendor/oui_curated.txt via //go:embed) so a fresh
 # install gets vendor inference with no extra setup. For FULL coverage fetch
-# the complete IEEE registries (MA-L / MA-M / MA-S) with scripts/fetch-oui.sh —
+# the complete IEEE registries (MA-L / MA-M / MA-S) with scripts/fetch-oui.sh;
 # that file is NOT bundled (IEEE data stays a separately-cited factual registry;
 # see docs/fingerprint-spec.md §8 "Data vs code distinction").
 #

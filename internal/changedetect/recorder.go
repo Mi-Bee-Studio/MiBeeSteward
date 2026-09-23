@@ -433,7 +433,7 @@ func dedupKind(changeType string) string {
 	case ChangeTypeDeviceChanged:
 		return ChangeTypeDeviceChanged
 	default:
-		return "" // device_added etc. — never throttle
+		return "" // device_added etc.: never throttle
 	}
 }
 

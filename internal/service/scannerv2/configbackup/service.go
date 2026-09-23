@@ -155,7 +155,7 @@ func (s *Service) backupOne(ctx context.Context, deviceID int64, ip, brand strin
 	latest, err := s.queries.GetLatestDeviceConfig(ctx, deviceID)
 	hasLatest := err == nil
 	if hasLatest && latest.ConfigHash == newHash {
-		return // unchanged — no-op (the common case on a stable device)
+		return // unchanged: no-op (the common case on a stable device)
 	}
 	diff := ""
 	if hasLatest {

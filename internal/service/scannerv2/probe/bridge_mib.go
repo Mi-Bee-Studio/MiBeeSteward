@@ -71,7 +71,7 @@ func (p *BridgeMIBProbe) Name() string { return "active:bridge_mib" }
 func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
 	snmp, err := connectSNMPWithRetries(ip, hint, gosnmp.Version2c, 1)
 	if err != nil {
-		return nil, nil // unreachable — not an error, just no topology data
+		return nil, nil // unreachable: not an error, just no topology data
 	}
 	// Note: we keep the connection open for the port-name resolution walk below
 
@@ -98,7 +98,7 @@ func (p *BridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Prob
 	})
 	if walkErr != nil || len(macIndices) == 0 {
 		snmp.Close()
-		return nil, nil // not a bridge, or no FDB — no topology data
+		return nil, nil // not a bridge, or no FDB: no topology data
 	}
 
 	// Resolve port names via IF-MIB (bridge port → ifIndex → ifName).

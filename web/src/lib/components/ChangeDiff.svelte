@@ -10,7 +10,7 @@
 
 <script lang="ts">
 	/**
-	 * ChangeDiff — renders the full before/after data of a ChangeLogEntry.
+	 * ChangeDiff: renders the full before/after data of a ChangeLogEntry.
 	 *
 	 * Three shapes:
 	 *  - device_added: `after_data` = full DeviceSnapshot → render as a property table.

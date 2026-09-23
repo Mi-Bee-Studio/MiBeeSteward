@@ -10,10 +10,10 @@
 
 /**
  * Effective password strength policy (#332 made auth.password_policy
- * admin-tunable; GET /api/v1/auth/password-policy serves it, public — strength
+ * admin-tunable; GET /api/v1/auth/password-policy serves it, public: strength
  * knobs only, no secrets). Client-side validation and hint text MUST follow
  * this, not hardcoded values: a UI-side min(8) silently blocks passwords the
- * backend (e.g. min_length lowered to 4) would accept — the exact
+ * backend (e.g. min_length lowered to 4) would accept: the exact
  * backend-evolved/frontend-stale drift class this store exists to prevent.
  */
 
@@ -28,7 +28,7 @@ export interface PasswordPolicy {
 	require_special: boolean;
 }
 
-// Must mirror the backend defaults (service.DefaultPasswordPolicy) — used
+// Must mirror the backend defaults (service.DefaultPasswordPolicy): used
 // until the fetch resolves (and as the offline fallback).
 export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
 	min_length: 8,
@@ -54,7 +54,7 @@ function fetchPolicy(): Promise<void> {
 }
 
 // Fetch the effective policy once per session (single-flight). Failures keep
-// the defaults — the backend still enforces the real policy on submit.
+// the defaults: the backend still enforces the real policy on submit.
 export function ensurePasswordPolicyLoaded(): Promise<void> {
 	if (!loadPromise) {
 		loadPromise = fetchPolicy();
@@ -62,7 +62,7 @@ export function ensurePasswordPolicyLoaded(): Promise<void> {
 	return loadPromise;
 }
 
-// Force a re-fetch — the settings/security page calls this after PUT
+// Force a re-fetch: the settings/security page calls this after PUT
 // /settings/auth so the single-flight cache doesn't serve the stale
 // pre-edit policy for the rest of the session.
 export function refreshPasswordPolicy(): Promise<void> {

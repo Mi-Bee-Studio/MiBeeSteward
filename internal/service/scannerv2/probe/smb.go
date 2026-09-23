@@ -62,7 +62,7 @@ func (p *SMBProbe) probeAddr(ctx context.Context, ip, addr string) ([]scannerv2.
 	dialer := net.Dialer{Timeout: p.timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return nil, nil // port closed or firewalled — not an error
+		return nil, nil // port closed or firewalled: not an error
 	}
 	defer conn.Close()
 

@@ -239,7 +239,7 @@ func TestDeviceTypesYAML_InSyncWithSourceOfTruth(t *testing.T) {
 	}
 	srcBytes, err := os.ReadFile(srcCopy)
 	if err != nil {
-		t.Skipf("source-of-truth device_types.yaml not found at %s — "+
+		t.Skipf("source-of-truth device_types.yaml not found at %s: "+
 			"this test only runs from a full repo checkout: %v", srcCopy, err)
 	}
 	require.Equalf(t, string(srcBytes), string(runnerBytes),

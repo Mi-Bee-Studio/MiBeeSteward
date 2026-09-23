@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
 
 // The detail page derives deviceId from $page.params.id and reads the URL for
-// tab deep links (?tab=heartbeat) — pin both via a hoisted route object.
+// tab deep links (?tab=heartbeat): pin both via a hoisted route object.
 const mocks = vi.hoisted(() => {
 	const route = { id: '1', search: '' };
 	// Mutable device fixture: the tags test cases swap .tags between renders.
@@ -65,7 +65,7 @@ vi.mock('$lib/charts/echarts', () => ({
 vi.mock('$lib/api/client', () => ({
 	api: {
 		// Route by path: the device itself, its heartbeat endpoints, and the
-		// onMount systems/configs probes. ORDER MATTERS — the bare /devices/1
+		// onMount systems/configs probes. ORDER MATTERS: the bare /devices/1
 		// probe must be exact so it doesn't swallow the sub-resource paths.
 		get: vi.fn((url: string) => {
 			const path = url.split('?')[0];
@@ -117,7 +117,7 @@ describe('Device detail page', () => {
 	});
 
 	// #429: tags on the wire are a JSON array string; the asset-info section
-	// must render the VALUES as chips — never "0: iot" index-prefixed entries.
+	// must render the VALUES as chips: never "0: iot" index-prefixed entries.
 	it('renders tag chips as values without array indices (#429)', async () => {
 		const { container } = render(Detail);
 
@@ -133,7 +133,7 @@ describe('Device detail page', () => {
 		expect(texts).toEqual(['iot', 'Smartmi', 'miot']);
 	});
 
-	// #429 (manual-edit shape): tags may also be a plain CSV string — the
+	// #429 (manual-edit shape): tags may also be a plain CSV string: the
 	// manual edit form submits it that way.
 	it('renders CSV tags as plain chips too (#429)', async () => {
 		mocks.device.tags = 'camera,Chuangmi,miot';
@@ -151,7 +151,7 @@ describe('Device detail page', () => {
 	// #440: the trend chart reads the history rows from the `results` key of
 	// the generated HeartbeatResultList shape. Before the fix it read
 	// `heartbeat_results` (never present) and the chart rendered the "no data"
-	// empty state forever. Deep-link straight to the heartbeat tab — the page
+	// empty state forever. Deep-link straight to the heartbeat tab: the page
 	// reads ?tab= from window.location.search, so set it via replaceState.
 	it('feeds the heartbeat trend chart from the results field (#440)', async () => {
 		window.history.replaceState(null, '', '/devices/1?tab=heartbeat');

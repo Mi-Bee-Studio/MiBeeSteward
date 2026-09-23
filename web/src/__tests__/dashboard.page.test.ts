@@ -21,7 +21,7 @@ vi.mock('$lib/charts/echarts', () => ({
 }));
 vi.mock('$lib/api/client', () => ({
 	api: {
-		// The dashboard fires, on mount: configs, overview, stats, devices —
+		// The dashboard fires, on mount: configs, overview, stats, devices;
 		// plus one fetch per builtin widget (here: /changes for the
 		// recent-changes preset). Route each to a shaped Promise.
 		get: vi.fn((url: string) => {
@@ -117,7 +117,7 @@ describe('Dashboard page', () => {
 		const { container } = render(Dashboard);
 
 		// The custom widget (recent-changes preset) settles after its /changes
-		// fetch resolves — its card must appear…
+		// fetch resolves: its card must appear…
 		await waitFor(() => {
 			expect(container.querySelector('.widget-card')).toBeTruthy();
 		});
@@ -130,7 +130,7 @@ describe('Dashboard page', () => {
 		expect(container.querySelector('.row-status.status-added')).toBeTruthy();
 		expect(container.querySelector('.row-status.status-lost')).toBeTruthy();
 
-		// …but the DEFAULT grid must still render above it — adding a widget
+		// …but the DEFAULT grid must still render above it: adding a widget
 		// no longer hides the overview cards (the old replace-mode trap).
 		expect(container.querySelector('.custom-widgets-section')).toBeTruthy();
 		// The page-level skeleton (whose placeholder grid shares the default
@@ -150,8 +150,8 @@ describe('Dashboard page', () => {
 		// Go marshals nil slices as JSON null: a healthy network (0 offline
 		// devices → abnormal:null) and a fresh install (0 runs →
 		// recent_runs:null) produce exactly this shape. The template used to
-		// read overview?.abnormal.length — the ?. covered overview but NOT
-		// abnormal — so null.length threw inside the render effect and froze
+		// read overview?.abnormal.length: the ?. covered overview but NOT
+		// abnormal: so null.length threw inside the render effect and froze
 		// the whole dashboard on the loading skeleton (seen live 2026-09-17:
 		// banner + skeleton + custom widgets on screen simultaneously).
 		const origGet = api.get;

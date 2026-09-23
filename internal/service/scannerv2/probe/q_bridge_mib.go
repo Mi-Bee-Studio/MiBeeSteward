@@ -85,7 +85,7 @@ func (p *QBridgeMIBProbe) Name() string { return "active:q_bridge_mib" }
 func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHint) ([]scannerv2.Evidence, error) {
 	snmp, err := connectSNMPWithRetries(ip, hint, gosnmp.Version2c, 1)
 	if err != nil {
-		return nil, nil // unreachable — not an error, just no topology data
+		return nil, nil // unreachable: not an error, just no topology data
 	}
 	// Note: we keep the connection open for the port-name resolution walk below
 
@@ -144,7 +144,7 @@ func (p *QBridgeMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Pro
 	})
 	if walkErr != nil || (len(macIndices) == 0 && len(vlanNames) == 0) {
 		snmp.Close()
-		return nil, nil // not a VLAN-aware bridge — no Q-BRIDGE data at all
+		return nil, nil // not a VLAN-aware bridge: no Q-BRIDGE data at all
 	}
 
 	// Resolve port names via IF-MIB (bridge port → ifIndex → ifName).

@@ -9,7 +9,7 @@
 -->
 
 <!--
-  LoadingButton — a button that shows a spinner next to its label while in a
+  LoadingButton: a button that shows a spinner next to its label while in a
   loading state, instead of swapping the label for the literal "..." that 31+
   call-sites used before. The label stays visible so the user still knows what
   the button will do; the spinner communicates the in-flight state.

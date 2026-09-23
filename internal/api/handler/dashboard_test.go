@@ -77,6 +77,6 @@ func TestBuiltinWidgetTemplatesUniqueTypes(t *testing.T) {
 		kinds[typ] = true
 	}
 	for kind, seen := range kinds {
-		require.True(t, seen, "no builtin template renders as %q — the gallery would offer a dead preset", kind)
+		require.True(t, seen, "no builtin template renders as %q: the gallery would offer a dead preset", kind)
 	}
 }

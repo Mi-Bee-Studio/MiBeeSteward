@@ -97,7 +97,7 @@ func (s *Service) Start(ctx context.Context) {
 	ctx, s.cancel = context.WithCancel(ctx)
 	go func() {
 		defer close(s.done)
-		_, _ = s.reconcileOnce(ctx) // best-effort on the initial pass; errors logged inside
+		_, _ = s.reconcileOnce(ctx) // initial pass; errors logged inside, never abort
 		t := time.NewTicker(s.interval)
 		defer t.Stop()
 		for {
@@ -105,7 +105,7 @@ func (s *Service) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				_, _ = s.reconcileOnce(ctx) // best-effort; errors logged inside
+				_, _ = s.reconcileOnce(ctx) // errors logged inside
 			}
 		}
 	}()
@@ -132,7 +132,7 @@ func (s *Service) Reconcile(ctx context.Context) ([]Mismatch, error) {
 type CleanupStats struct {
 	Mismatches    int // total drift detected this pass
 	Rehomed       int // ghosts deleted because a correct-network copy exists
-	Unresolved    int // ghosts with NO correct-network copy — left for operator
+	Unresolved    int // ghosts with NO correct-network copy: left for operator
 	RehomedIPs    []string
 	UnresolvedIPs []string
 }

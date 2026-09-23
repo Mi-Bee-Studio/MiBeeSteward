@@ -15,7 +15,7 @@
  * diff map `{field: [old, new]}`. The backend now stores full before/after
  * DeviceSnapshots (flat `{field: value}`) in `before_data`/`after_data`, so the
  * diff must be computed client-side. Legacy diff-map entries are still handled.
- * Never destructure a snapshot's value directly — a string value destructured
+ * Never destructure a snapshot's value directly: a string value destructured
  * as a pair silently truncates to single characters.
  */
 

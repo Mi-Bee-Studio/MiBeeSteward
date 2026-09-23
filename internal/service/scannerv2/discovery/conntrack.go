@@ -65,7 +65,7 @@ type ConntrackSource struct {
 	logger   *slog.Logger
 
 	mu       sync.Mutex
-	previous map[string]bool // ip set, last sweep — for diff
+	previous map[string]bool // ip set, last sweep: for diff
 }
 
 // NewConntrackSource constructs the source. cidr is the local LAN (e.g.

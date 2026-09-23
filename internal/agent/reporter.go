@@ -69,7 +69,7 @@ type Reporter struct {
 	version    string
 	startTime  time.Time
 	scansTotal int64     // cumulative report batches shipped (atomic-ish under mu)
-	lastPostAt time.Time // last successful POST (any kind) — heartbeats throttle against it
+	lastPostAt time.Time // last successful POST (any kind): heartbeats throttle against it
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup

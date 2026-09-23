@@ -7,8 +7,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 
-// Mock external-behavior modules so the page loads under jsdom. render-only —
-// no submit/navigation exercised — so the spies exist only to resolve imports.
+// Mock external-behavior modules so the page loads under jsdom. render-only;
+// no submit/navigation exercised: so the spies exist only to resolve imports.
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/api/client', () => ({
 	api: {
@@ -34,8 +34,8 @@ describe('Devices page', () => {
 	it('mounts and renders the page header (title + view controls)', () => {
 		const { container } = render(Devices);
 
-		// The page header (h2 title) is always rendered — not gated on the
-		// loading state — so it's a stable "the page mounted" signal.
+		// The page header (h2 title) is always rendered: not gated on the
+		// loading state: so it's a stable "the page mounted" signal.
 		const h2 = container.querySelector('h2');
 		expect(h2).toBeTruthy();
 		expect((h2?.textContent ?? '').trim().length).toBeGreaterThan(0);

@@ -3355,7 +3355,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Command array (intentionally NOT enveloped) */
+                /** @description Command array (NOT enveloped) */
                 200: {
                     headers: {
                         [name: string]: unknown;

@@ -69,7 +69,7 @@ func (h *NeighborHandler) ListByDevice(w http.ResponseWriter, r *http.Request) {
 		out = append(out, neighborResponseEntry{
 			ID:               row.ID,
 			DeviceID:         row.DeviceID,
-			NeighborDeviceID: row.ResolvedDeviceID, // JOIN result — non-nil when the neighbor MAC matches a scanned device
+			NeighborDeviceID: row.ResolvedDeviceID, // JOIN result: non-nil when the neighbor MAC matches a scanned device
 			NeighborMAC:      row.NeighborMac,
 			Protocol:         row.Protocol,
 			LocalPort:        row.LocalPort,

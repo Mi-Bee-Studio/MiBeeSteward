@@ -54,7 +54,7 @@
 	let filterChangeType = $state('');
 	let networks = $state<Network[]>([]);
 
-	// Expanded row (diff viewer) — the entity_id of the open row, or null.
+	// Expanded row (diff viewer): the entity_id of the open row, or null.
 	let expandedId = $state<number | null>(null);
 
 	// SSE live updates (EventSource on /changes/watch). Falls back silently to
@@ -78,7 +78,7 @@
 			const entry = st.lastEvent;
 			if (!entry) return;
 			// Prepend only if not already at the top (dedup by id). Respect the
-			// current filter loosely — if a filter is active, just refresh to
+			// current filter loosely: if a filter is active, just refresh to
 			// avoid mismatched views; if unfiltered, prepend for instant feedback.
 			if (!filterNetwork && !filterChangeType) {
 				changes = [entry, ...changes.filter((c) => c.id !== entry.id)].slice(0, limit);
@@ -167,7 +167,7 @@
 
 	// changeTypeBadge returns the Tailwind color classes for a change type:
 	// added=success(green), changed=accent(blue), lost=error(red),
-	// recovered=success(green, symmetric with added — a device came back).
+	// recovered=success(green, symmetric with added: a device came back).
 	function changeTypeBadge(t: string): string {
 		switch (t) {
 			case 'device_added': return 'bg-success/10 text-success';
@@ -194,7 +194,7 @@
 	//  - added:   after_data  = full DeviceSnapshot → use name / ip_address
 	//  - lost:    before_data = full DeviceSnapshot → use name / ip_address
 		//  - changed: before/after snapshots (or legacy diff map) → name/ip old
-		//             value (the stable identity — the new value is the change)
+		//             value (the stable identity: the new value is the change)
 		// Falls back to the entity_id ("#211") only if no snapshot/diff is present.
 		function deviceLabel(row: Record<string, unknown>): string {
 			const ct = String(row.change_type);
@@ -241,7 +241,7 @@
 			const extra = fields.length > 2 ? ` (+${fields.length - 2})` : '';
 			return parts.join(', ') + extra;
 		}
-		// added / lost / recovered — snapshot.
+		// added / lost / recovered: snapshot.
 		const snap = tryParse(String(ct === 'device_added' || ct === 'device_recovered' ? row.after_data : row.before_data)) as
 			| Record<string, unknown>
 			| null;
@@ -345,7 +345,7 @@
 	<!-- SSE disconnected banner: the live feed gave up reconnecting. -->
 	{#if sseDisconnected}
 		<div class="mb-4 px-4 py-2 bg-warning/10 border border-warning/30 rounded-lg text-sm text-warning flex items-center justify-between gap-2">
-			<span>{m['changes.SSE Disconnected']()} — {m['changes.SSE Disconnected Desc']()}</span>
+			<span>{m['changes.SSE Disconnected']()}: {m['changes.SSE Disconnected Desc']()}</span>
 			<button onclick={fetchChanges} class="btn btn-sm btn-ghost text-warning">{m["dashboard.Refresh"]()}</button>
 		</div>
 	{/if}

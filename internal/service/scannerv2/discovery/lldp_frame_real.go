@@ -130,7 +130,7 @@ func (s *LLDPFrameSource) listen(ctx context.Context, iface string) {
 		lldpdu := frame[14:]
 		edge := parseLLDPDU(lldpdu, srcMAC, iface, s.ifaceMACs[iface])
 		if edge.NeighborMAC == "" {
-			continue // no subtype-4 chassis id — can't merge
+			continue // no subtype-4 chassis id: can't merge
 		}
 		// (a) host discovery, the chassis is a host on this network.
 		if s.svc != nil {
@@ -163,11 +163,11 @@ func parseLLDPDU(data []byte, srcMAC, iface, localMAC string) lldpEdge {
 		switch t {
 		case 0: // End of LLDPDU
 			return edge
-		case 1: // Chassis ID — first byte is subtype; subtype 4 = MAC (6 octets)
+		case 1: // Chassis ID: first byte is subtype; subtype 4 = MAC (6 octets)
 			if len(payload) >= 1 && payload[0] == 4 && len(payload) == 7 {
 				edge.NeighborMAC = net.HardwareAddr(payload[1:7]).String()
 			}
-		case 2: // Port ID — first byte is subtype; the rest is the port identifier
+		case 2: // Port ID: first byte is subtype; the rest is the port identifier
 			if len(payload) > 1 {
 				edge.RemotePort = string(payload[1:])
 			}

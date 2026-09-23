@@ -157,7 +157,7 @@ func TestScope_AdminBypassesScope(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	var body deviceListJSON
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, 2, body.Total, "admin bypasses scope — sees both networks' devices")
+	require.Equal(t, 2, body.Total, "admin bypasses scope: sees both networks' devices")
 }
 
 // TestScope_OpenMode_ViewerSeesEverything: open mode (default) ignores grants;

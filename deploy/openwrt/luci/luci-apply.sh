@@ -1,13 +1,13 @@
 #!/bin/sh
 #
-# MiBee Steward LuCI apply wrapper — the bridge-proof hop between the LuCI
+# MiBee Steward LuCI apply wrapper: the bridge-proof hop between the LuCI
 # controller and luci-helper.sh. On LuCI 24.10's ucode bridge (luci-lua-
 # runtime), the exec family available to bridged Lua controllers does NOT
 # POSIX-split command strings: luci-helper.sh received the ENTIRE command
 # line as a single argument and fell into its usage fallback (field-found on
 # iStoreOS 24.10.8 / R68S). A single-word invocation needs no splitting, so
 # the controller invokes THIS wrapper alone and hands the arguments over via
-# a command file that we re-split here — unquoted $() word splitting is the
+# a command file that we re-split here: unquoted $() word splitting is the
 # whole point; the controller validates every value before writing the file
 # (port is numeric, flags are 0/1, the password travels via its own tmpfs
 # file path). Exit code is echoed to the rc file the controller reads back.

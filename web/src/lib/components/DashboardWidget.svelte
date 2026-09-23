@@ -18,7 +18,7 @@
 
 	// Extends the shared API shape with runtime-only UI state (the ECharts
 	// option + a loading flag). Was a full re-declaration of the 10 API fields
-	// — deduped against the canonical type (#71).
+	//: deduped against the canonical type (#71).
 	interface WidgetState extends DashboardWidgetConfig {
 		chartOption: EChartsOption;
 		loading?: boolean;
@@ -69,10 +69,10 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<!-- NOTE: the drag-over class must be interpolated, NOT `class:drag-over` —
+<!-- NOTE: the drag-over class must be interpolated, NOT `class:drag-over`;
      the class directive parses dash-names as an expression (drag - over),
      throwing "drag is not defined" during mount and poisoning Svelte's effect
-     scheduler (every later reactive update on the page silently stopped —
+     scheduler (every later reactive update on the page silently stopped;
      the dashboard-custom-layout freeze bug). -->
 <div
 	class="widget-card {dragOver ? 'drag-over' : ''}"
@@ -182,7 +182,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		/* ≥44px touch target (WCAG 2.5.5) — the grip icon stays 14px, only the
+		/* ≥44px touch target (WCAG 2.5.5): the grip icon stays 14px, only the
 		   clickable area grows so it's reachable on touch / by shaky pointers. */
 		min-width: 2.75rem;
 		min-height: 2.75rem;
@@ -229,7 +229,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		/* ≥44×44px touch target (WCAG 2.5.5) — was 1.75rem (28px), too small
+		/* ≥44×44px touch target (WCAG 2.5.5): was 1.75rem (28px), too small
 		   for touch. The icon stays 14px; only the hit area grows. */
 		min-width: 2.75rem;
 		min-height: 2.75rem;

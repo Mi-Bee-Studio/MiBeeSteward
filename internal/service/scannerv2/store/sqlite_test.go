@@ -448,7 +448,7 @@ func TestRecordDevice_DoesNotCreateIdentity(t *testing.T) {
 		t.Fatalf("record device on empty db: %v", err)
 	}
 	if cnt := countRows(t, repo.db, `SELECT COUNT(*) FROM devices`); cnt != 0 {
-		t.Fatalf("RecordDevice created a row (%d) — it must NOT create identities", cnt)
+		t.Fatalf("RecordDevice created a row (%d): it must NOT create identities", cnt)
 	}
 
 	// Now seed a row (as the runner would) and confirm RecordDevice enriches it.

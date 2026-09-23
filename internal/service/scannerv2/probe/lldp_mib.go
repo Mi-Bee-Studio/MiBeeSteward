@@ -81,7 +81,7 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 	// matches the previous behavior (gosnmp retransmits a dropped LLDP walk).
 	snmp, err := connectSNMPWithRetries(ip, hint, gosnmp.Version2c, 1)
 	if err != nil {
-		return nil, nil // unreachable — not an error, just no topology data
+		return nil, nil // unreachable: not an error, just no topology data
 	}
 	defer snmp.Close()
 
@@ -96,7 +96,7 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 		}
 		return nil
 	}); err != nil {
-		return nil, nil // SNMP failed or LLDP-MIB unsupported — no topology data
+		return nil, nil // SNMP failed or LLDP-MIB unsupported: no topology data
 	}
 	payloadByIndex := map[string][]byte{}
 	_ = snmp.Walk(oidLldpRemChassisID, func(pdu gosnmp.SnmpPDU) error {
@@ -152,7 +152,7 @@ func (p *LLDPMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeH
 			Source:     "active:lldp_mib",
 			Kind:       "neighbor",
 			IP:         ip,
-			Confidence: 0.85, // LLDP is explicit adjacency — slightly higher than Bridge-MIB's learned-MAC
+			Confidence: 0.85, // LLDP is explicit adjacency: slightly higher than Bridge-MIB's learned-MAC
 			ObservedAt: time.Now().UTC(),
 			RawData: map[string]string{
 				"neighbor_mac": mac,
