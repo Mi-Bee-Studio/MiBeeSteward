@@ -2361,6 +2361,7 @@ components:
             IdentifyAlive: {type: integer, format: int64}
             IdentifyDead: {type: integer, format: int64}
             DeviceRecorded: {type: integer, format: int64}
+            OffNetworkDropped: {type: integer, format: int64, description: Sightings dropped because they matched no known network CIDR while at least one exists}
         recent_discoveries:
           type: array
           items:

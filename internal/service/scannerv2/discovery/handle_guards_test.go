@@ -70,3 +70,32 @@ func TestHandle37_KnownHostSkippedAndRingTrim(t *testing.T) {
 	}
 	require.Len(t, svc.lastEvents, maxRecentEvents, "recent-event ring trims to capacity")
 }
+
+// The off-subnet gate: with a known CIDR in the networks table, a sighting
+// outside every known subnet is dropped (no device, counter bumped) instead
+// of being stamped onto the local network. With no CIDR knowledge at all the
+// fallback applies and the sighting lands.
+func TestHandle_OffSubnetGate(t *testing.T) {
+	ctx := context.Background()
+
+	gated := memoryDB(t)
+	seedNetworks(t, gated, [2]string{"lan-62", "192.168.62.0/24"})
+	sink := &recSink37{}
+	svc := newDiscSvc37(sink, gated)
+
+	svc.handle(ctx, NewHostEvent{IP: "192.168.193.60", Source: "dhcp_leases"})
+	require.Empty(t, sink.reports, "off-subnet sighting must not reach the sink")
+	var n int
+	require.NoError(t, gated.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.193.60'`).Scan(&n))
+	require.Zero(t, n, "off-subnet sighting must not create a device")
+	require.Equal(t, int64(1), svc.Status().Stats.OffNetworkDropped)
+	require.Equal(t, "skipped_offnetwork", svc.lastEvents[0].Outcome)
+
+	// No CIDR rows anywhere: the gate stays open and the fallback applies.
+	open := memoryDB(t)
+	seedNetworks(t, open, [2]string{"blank", ""})
+	svc2 := newDiscSvc37(sink, open)
+	svc2.handle(ctx, NewHostEvent{IP: "192.168.193.60", Source: "dhcp_leases"})
+	require.Len(t, sink.reports, 1, "unconfigured geometry keeps the fallback path")
+	require.Equal(t, int64(0), svc2.Status().Stats.OffNetworkDropped)
+}

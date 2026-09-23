@@ -5637,6 +5637,11 @@ export interface components {
                 IdentifyDead: number;
                 /** Format: int64 */
                 DeviceRecorded: number;
+                /**
+                 * Format: int64
+                 * @description Sightings dropped because they matched no known network CIDR while at least one exists
+                 */
+                OffNetworkDropped?: number;
             };
             recent_discoveries: {
                 ip: string;

@@ -1067,7 +1067,10 @@ type DiscoveryStatus struct {
 		IdentifyDead      int64 `json:"IdentifyDead"`
 		IdentifyTriggered int64 `json:"IdentifyTriggered"`
 		KnownHostSkipped  int64 `json:"KnownHostSkipped"`
-		SuppressedRecent  int64 `json:"SuppressedRecent"`
+
+		// OffNetworkDropped Sightings dropped because they matched no known network CIDR while at least one exists
+		OffNetworkDropped *int64 `json:"OffNetworkDropped,omitempty"`
+		SuppressedRecent  int64  `json:"SuppressedRecent"`
 	} `json:"stats"`
 	Uptime string `json:"uptime"`
 }

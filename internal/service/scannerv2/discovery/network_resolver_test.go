@@ -106,3 +106,38 @@ func TestNetworkResolver_PicksUpNewRows(t *testing.T) {
 		t.Errorf("after seeding + expiry, Resolve = %v, want %d", got, ids[0])
 	}
 }
+
+// The gate answers whether a sighting may be attributed at all: matching a
+// known CIDR resolves it; matching none while geometry exists flags it
+// off-subnet (the caller drops it); no known geometry keeps the fallback.
+func TestNetworkResolver_ResolveGate(t *testing.T) {
+	ctx := context.Background()
+	dbConn := memoryDB(t)
+	ids := seedNetworks(t, dbConn, [2]string{"lan", "192.168.62.0/24"})
+	r := NewNetworkResolver(dbConn)
+
+	nid, anyKnown := r.ResolveGate(ctx, "192.168.62.40")
+	if !nid.Valid || nid.Int64 != ids[0] {
+		t.Fatalf("in-subnet IP must resolve to the network, got %+v", nid)
+	}
+	if !anyKnown {
+		t.Fatal("geometry exists, anyKnown must be true")
+	}
+
+	nid, anyKnown = r.ResolveGate(ctx, "192.168.193.60") // WAN-arm style address
+	if nid.Valid {
+		t.Fatal("off-subnet IP must not resolve")
+	}
+	if !anyKnown {
+		t.Fatal("geometry exists, anyKnown must be true so the caller can drop")
+	}
+
+	// No CIDRs configured anywhere: no gate, the fallback applies.
+	empty := memoryDB(t)
+	seedNetworks(t, empty, [2]string{"no-cidr", ""})
+	r2 := NewNetworkResolver(empty)
+	nid, anyKnown = r2.ResolveGate(ctx, "192.168.193.60")
+	if nid.Valid || anyKnown {
+		t.Fatalf("no geometry means no gate, got nid=%+v anyKnown=%v", nid, anyKnown)
+	}
+}

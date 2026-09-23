@@ -98,6 +98,45 @@ func (r *NetworkResolver) Resolve(ctx context.Context, ip string) sql.NullInt64 
 	return best
 }
 
+// ResolveGate answers whether a sighting may be attributed at all. It
+// returns the matched network (same longest-prefix rule as Resolve) plus
+// whether the networks table carries ANY usable CIDR. A sighting that matches
+// no network while at least one CIDR is known is off-subnet (e.g. dhcp_leases
+// rows for a dual-homed router's WAN arm): the caller drops it instead of
+// stamping the local network. With no known geometry (unconfigured install)
+// or on a load error it reports no gate, preserving the fallback.
+func (r *NetworkResolver) ResolveGate(ctx context.Context, ip string) (sql.NullInt64, bool) {
+	if r == nil || ip == "" {
+		return sql.NullInt64{}, false
+	}
+	if err := r.refresh(ctx); err != nil {
+		return sql.NullInt64{}, false
+	}
+
+	r.mu.RLock()
+	nets := r.nets
+	r.mu.RUnlock()
+
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return sql.NullInt64{}, len(nets) > 0
+	}
+	var (
+		best     sql.NullInt64
+		bestBits = -1
+	)
+	for _, n := range nets {
+		if !n.ipNet.Contains(parsed) {
+			continue
+		}
+		if bits, _ := n.ipNet.Mask.Size(); bits > bestBits {
+			bestBits = bits
+			best = sql.NullInt64{Int64: n.id, Valid: true}
+		}
+	}
+	return best, len(nets) > 0
+}
+
 // refresh reloads the networks snapshot when the cache has expired. Cheap on
 // LAN scale (networks is a handful of rows); the TTL keeps per-event cost at
 // a map scan while a new row takes effect within a minute.
