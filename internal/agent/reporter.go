@@ -58,6 +58,7 @@ type Reporter struct {
 
 	mu         sync.Mutex
 	buf        []domain.ReportedHost // buffered hosts awaiting the next flush
+	bufScan    int                   // hosts in buf appended by the scan path (Report); 0 = pure-passive buffer
 	pending    [][]byte              // failed batches awaiting retry (JSON-encoded payloads)
 	flush      time.Duration         // max time between flushes (ReportInterval)
 	maxBuf     int                   // max hosts buffered before an early flush
@@ -137,6 +138,7 @@ func (r *Reporter) Report(_ context.Context, _ int64, reports []scannerv2.HostRe
 			continue
 		}
 		r.buf = append(r.buf, hostToReported(rep))
+		r.bufScan++
 	}
 	full := len(r.buf) >= r.maxBuf
 	r.mu.Unlock()
@@ -152,9 +154,35 @@ func (r *Reporter) Report(_ context.Context, _ int64, reports []scannerv2.HostRe
 	}
 }
 
+// ReportPassive buffers a single host picked up by the agent's passive
+// discovery sources between scans. Same buffering/flush machinery as Report,
+// but the batch is tagged origin="passive" on the wire so the center bridges
+// the host without treating the trickle as a scan completion.
+func (r *Reporter) ReportPassive(_ context.Context, rep scannerv2.HostReport) {
+	if !rep.Alive || rep.IP == "" {
+		return
+	}
+	r.mu.Lock()
+	r.buf = append(r.buf, hostToReported(rep))
+	full := len(r.buf) >= r.maxBuf
+	r.mu.Unlock()
+
+	if full {
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			r.flushOnce(context.Background())
+		}()
+	}
+}
+
 // Start launches the periodic flush loop. On each tick it first drains any
 // pending (previously-failed) batches, then flushes the current buffer. This
-// ordering delivers the backlog in order once the center recovers.
+// ordering delivers the backlog in order once the center recovers. The tick
+// body runs on a detached context: Stop cancels the loop, and an in-flight
+// POST must finish on its own instead of being cut mid-response (a cancelled
+// post that already reached the center would be re-delivered from the pending
+// queue, double-shipping the batch on every restart that races a flush).
 func (r *Reporter) Start(ctx context.Context) {
 	ctx, r.cancel = context.WithCancel(ctx)
 	r.wg.Add(1)
@@ -169,8 +197,8 @@ func (r *Reporter) Start(ctx context.Context) {
 			case <-t.C:
 				// Drain pending backlog first (a recovered center should get the
 				// oldest undelivered data before the newest).
-				r.flushPending(ctx)
-				r.flushOnce(ctx)
+				r.flushPending(context.Background())
+				r.flushOnce(context.Background())
 			}
 		}
 	}()
@@ -227,7 +255,9 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 		return
 	}
 	hosts := r.buf
+	fromScan := r.bufScan > 0
 	r.buf = nil
+	r.bufScan = 0
 	r.mu.Unlock()
 
 	batchMeta := r.Meta()
@@ -237,6 +267,12 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 		ScannedAt:   time.Now().UTC(),
 		Meta:        &batchMeta,
 		Hosts:       hosts,
+	}
+	if !fromScan {
+		// Pure-passive batch: tag it so the center bridges the hosts without
+		// closing a pending dispatch-run, and skip the state hash (a partial
+		// alive set must not replace the scan path's fast-path digest).
+		payload.Origin = "passive"
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -248,7 +284,10 @@ func (r *Reporter) flushOnce(ctx context.Context) {
 	// match the network is stable and the center skips the expensive per-host
 	// device bridge (it still refreshes leases). The field set mirrors
 	// changedetect.DeviceSnapshot so "nothing changed" == "same hash".
-	hash := networkStateHash(hosts)
+	hash := ""
+	if fromScan {
+		hash = networkStateHash(hosts)
+	}
 	if r.postWithRetry(ctx, body, len(hosts), hash) {
 		r.markPosted()
 	} else {
