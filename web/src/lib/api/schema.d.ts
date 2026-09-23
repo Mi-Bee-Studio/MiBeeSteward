@@ -5642,6 +5642,11 @@ export interface components {
                  * @description Sightings dropped because they matched no known network CIDR while at least one exists
                  */
                 OffNetworkDropped?: number;
+                /**
+                 * Format: int64
+                 * @description MAC-only sightings (WiFi associations) whose telemetry was merged into a known device
+                 */
+                MACOnlyEnriched?: number;
             };
             recent_discoveries: {
                 ip: string;

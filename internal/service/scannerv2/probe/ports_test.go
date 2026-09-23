@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"mibee-steward/internal/service/scannerv2"
 )
 
@@ -457,4 +459,47 @@ func TestPortSpecProbe_HonorsHintPortSpec(t *testing.T) {
 			t.Fatalf("global spec must govern when hint has no PortSpec, but %d was scanned", port)
 		}
 	}
+}
+
+// A ctx cancelled mid-dispatch must return an error (not a silent partial
+// success) while still joining the in-flight dials: the semaphore acquisition
+// is ctx-aware and the final wg.Wait runs even on the cancel path, so no
+// goroutine keeps appending to the returned evidence slice after the call.
+// Run under -race: the abandoned-goroutine pattern this pins out is a data
+// race on the shared evs slice.
+func TestPortSpecProbe_CancelMidDispatchJoinsWorkers(t *testing.T) {
+	orig := tcpDial
+	t.Cleanup(func() { tcpDial = orig })
+
+	var dials atomic.Int32
+	release := make(chan struct{})
+	tcpDial = func(ctx context.Context, _ string, _ time.Duration) (net.Conn, error) {
+		dials.Add(1)
+		select {
+		case <-release:
+			return nil, os.ErrDeadlineExceeded
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	defer close(release)
+
+	p := NewPortSpecProbe("1-130", nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	// Park the first 100 dials (the semaphore capacity), so the dispatch loop
+	// is still acquiring when the cancel lands.
+	go func() {
+		for dials.Load() == 0 {
+			time.Sleep(2 * time.Millisecond)
+		}
+		cancel()
+	}()
+	start := time.Now()
+	evs, err := p.Probe(ctx, "10.0.0.1", scannerv2.ProbeHint{Timeout: 5 * time.Second})
+	require.ErrorIs(t, err, context.Canceled, "cancelled dispatch reports ctx.Err")
+	require.Empty(t, evs)
+	// The call must not return while dials are still parked on the released-
+	// only-at-cleanup path: every parked dial aborts on ctx, proving the
+	// cancel path waited for (joined) its workers rather than abandoning them.
+	require.Less(t, time.Since(start), 3*time.Second, "cancel path must unblock promptly via ctx-aware dial abort")
 }

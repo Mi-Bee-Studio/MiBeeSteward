@@ -103,14 +103,19 @@ func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pro
 	)
 
 	now := time.Now()
+	dispatchCancelled := false
 	for _, port := range ports {
+		// Acquire the dial semaphore ctx-aware: a plain send would keep the
+		// dispatch loop blocked after cancel while in-flight dials drain.
 		select {
 		case <-ctx.Done():
-			return evs, ctx.Err()
-		default:
+			dispatchCancelled = true
+		case sem <- struct{}{}:
+		}
+		if dispatchCancelled {
+			break
 		}
 		wg.Add(1)
-		sem <- struct{}{}
 		go func(port int) {
 			defer wg.Done()
 			defer func() { <-sem }()
@@ -160,7 +165,13 @@ func (p *PortSpecProbe) Probe(ctx context.Context, ip string, hint scannerv2.Pro
 			}
 		}(port)
 	}
+	// Always wait: an early cancel must not abandon in-flight goroutines that
+	// are still appending to evs (the caller would observe writes after the
+	// return). Cancelled dials abort quickly, so this wait stays bounded.
 	wg.Wait()
+	if dispatchCancelled {
+		return evs, ctx.Err()
+	}
 	return evs, nil
 }
 

@@ -2362,6 +2362,7 @@ components:
             IdentifyDead: {type: integer, format: int64}
             DeviceRecorded: {type: integer, format: int64}
             OffNetworkDropped: {type: integer, format: int64, description: Sightings dropped because they matched no known network CIDR while at least one exists}
+            MACOnlyEnriched: {type: integer, format: int64, description: MAC-only sightings (WiFi associations) whose telemetry was merged into a known device}
         recent_discoveries:
           type: array
           items:

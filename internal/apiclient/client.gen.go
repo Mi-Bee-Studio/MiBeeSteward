@@ -1068,6 +1068,9 @@ type DiscoveryStatus struct {
 		IdentifyTriggered int64 `json:"IdentifyTriggered"`
 		KnownHostSkipped  int64 `json:"KnownHostSkipped"`
 
+		// MACOnlyEnriched MAC-only sightings (WiFi associations) whose telemetry was merged into a known device
+		MACOnlyEnriched *int64 `json:"MACOnlyEnriched,omitempty"`
+
 		// OffNetworkDropped Sightings dropped because they matched no known network CIDR while at least one exists
 		OffNetworkDropped *int64 `json:"OffNetworkDropped,omitempty"`
 		SuppressedRecent  int64  `json:"SuppressedRecent"`
