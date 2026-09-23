@@ -12,12 +12,9 @@ package routes
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -29,7 +26,6 @@ import (
 	"mibee-steward/internal/authz/scoperesolver"
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/config"
-	"mibee-steward/internal/crypto"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/dbopen"
 	"mibee-steward/internal/domain"
@@ -40,7 +36,6 @@ import (
 	scannerv2 "mibee-steward/internal/service/scannerv2"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
 	scannerv2configbackup "mibee-steward/internal/service/scannerv2/configbackup"
-	credresolver "mibee-steward/internal/service/scannerv2/credresolver"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
@@ -187,21 +182,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		slog.Info("demo mode enabled — fictional inventory seeded, activity ticker running")
 	}
 
-	r.Route("/api/v1/auth", func(r chi.Router) {
-		r.Use(loginLimiter.Middleware)
-		r.Mount("/", userHandler.Routes())
-		// 2FA routes (public verify + protected setup/enable/disable/status)
-		r.Route("/2fa", func(r chi.Router) {
-			r.Post("/verify", totpHandler.Verify)
-			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireAuth)
-				r.Post("/setup", totpHandler.Setup)
-				r.Post("/enable", totpHandler.Enable)
-				r.Post("/disable", totpHandler.Disable)
-				r.Get("/status", totpHandler.Status)
-			})
-		})
-	})
+	registerAuthRoutes(r, loginLimiter, userHandler, totpHandler)
 
 	// Object-level network scope resolver (#138 Phase 2). Resolves a user's
 	// granted network set (closed mode) or Global (admin / open mode). Consumed
@@ -213,25 +194,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// the scope resolver cache per affected user so changes apply immediately.
 	networkGrantHandler := handler.NewNetworkGrantHandler(dbConn, scopeResolver)
 
-	// User management, admin-only (#138 CapUserManage; admin is the only role
-	// that holds it, so this preserves the prior RequireAdmin semantics while
-	// expressing the gate through the capability matrix).
-	r.Route("/api/v1/users", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapUserManage))
-		r.Get("/", userHandler.ListUsers)
-		r.Post("/batch-delete", batchHandler.BatchDeleteUsers)
-		r.Post("/{id}/reset-password", userHandler.AdminResetPassword)
-		// Per-user network grants (#138 Phase 3), list the networks a user is
-		// scoped to (closed mode). The create/delete surface is /network-grants.
-		r.Get("/{id}/network-grants", networkGrantHandler.ListByUser)
-	})
-
-	r.Route("/api/v1/network-grants", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapUserManage))
-		r.Get("/", networkGrantHandler.List)
-		r.Post("/", networkGrantHandler.Create)
-		r.Delete("/{id}", networkGrantHandler.Delete)
-	})
+	registerUserRoutes(r, userHandler, batchHandler, networkGrantHandler)
 
 	// Settings center: runtime-editable configuration overlay (auth password
 	// policy + login lockout today; engine knobs subscribe later). Writes are
@@ -239,15 +202,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// the next validation/login, no restart. /system is read-only instance
 	// info for every signed-in role.
 	settingsHandler := handler.NewSettingsHandler(settingsSvc, userSvc, cfg, auditRepo)
-	r.Route("/api/v1/settings", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapUserManage))
-		r.Get("/auth", settingsHandler.GetAuth)
-		r.Put("/auth", settingsHandler.UpdateAuth)
-	})
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
-		r.Get("/api/v1/system", settingsHandler.GetSystem)
-	})
+	registerSettingsRoutes(r, settingsHandler)
 	// Heartbeat service + its dedicated time-series store. heartbeat_results
 	// lives in a separate SQLite file (data/heartbeat.db) so its high write
 	// volume (~270k rows/day) doesn't contend with the main DB's CRUD writers.
@@ -268,25 +223,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	deviceRepo := service.NewDeviceRepository(dbConn)
 	deviceSvc := service.NewDeviceService(deviceRepo, heartbeatSvc)
 	deviceHandler := handler.NewDeviceHandler(deviceSvc)
-	r.Route("/api/v1/devices", func(r chi.Router) {
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDeviceRead))
-			r.Use(middleware.NetworkScope(scopeResolver))
-			r.Get("/export", exportHandler.ExportDevices)
-			r.Get("/", deviceHandler.List)
-			r.Get("/stats", deviceHandler.GetStats)
-			r.With(middleware.ValidateDeviceScope(dbConn)).Get("/{id}", deviceHandler.Get)
-		})
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDeviceWrite))
-			r.Use(middleware.NetworkScope(scopeResolver))
-			r.Post("/", deviceHandler.Create)
-			r.With(middleware.ValidateDeviceScope(dbConn)).Put("/{id}", deviceHandler.Update)
-			r.With(middleware.ValidateDeviceScope(dbConn)).Delete("/{id}", deviceHandler.Delete)
-			r.Post("/batch-delete", batchHandler.BatchDeleteDevices)
-			r.Post("/batch-update-status", batchHandler.BatchUpdateDeviceStatus)
-		})
-	})
+	registerDeviceRoutes(r, exportHandler, deviceHandler, batchHandler, scopeResolver, dbConn)
 	// Scanner routes (v2 engine)
 	scanQueries := db.New(dbConn)
 	// Wire the DB querier for agent-token verification (RequireAgentToken). Done
@@ -298,15 +235,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// update/delete require CapNetworkManage (admin-only capability).
 	networkSvc := service.NewNetworkService(scanQueries, dbConn)
 	networkHandler := handler.NewNetworkHandler(scanQueries, networkSvc)
-	r.Route("/api/v1/networks", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapNetworkRead))
-		r.Get("/", networkHandler.List)
-		r.Get("/{id}", networkHandler.Get)
-		r.Get("/{id}/vlans", networkHandler.VLANs)
-		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Post("/", networkHandler.Create)
-		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Put("/{id}", networkHandler.Update)
-		r.With(middleware.RequireCapability(domain.CapNetworkManage)).Delete("/{id}", networkHandler.Delete)
-	})
+	registerNetworkRoutes(r, networkHandler)
 
 	// L2 topology, neighbors per device (detail page) + the whole-network
 	// topology graph (nodes + edges). Read-only; any logged-in user.
@@ -622,64 +551,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	scannerHandler := handler.NewScannerHandler(v2Engine, scanRunner)
 	scannerTaskHandler := handler.NewScannerTaskHandler(scanTaskService)
 	scannerResultHandler := handler.NewScannerResultHandler(scanQueries, dbConn, service.NewScannerResultService(scanQueries))
-	r.Route("/api/v1/scanner", func(r chi.Router) {
-		// #138 Phase 1b: scanner routes are gated by capability, not a blanket
-		// RequireAdmin. admin inherits every capability (unchanged access); the
-		// new operator role gains scan access; viewer gains read-only access to
-		// results/tasks/runs (same inventory-data class as the RequireAuth device
-		// endpoints). Each tier is its own group so the capability matches the
-		// action (reads → discovery:read, triggers → scan:trigger, task CRUD +
-		// bulk delete → scan:manage, add-devices → device:write).
-		//
-		// #138 Phase 2c: the READ surfaces are additionally object-level scoped
-		// - a closed-mode non-admin sees only tasks/runs/results whose
-		// scan_tasks.network_id is in their granted set (details return 404).
-		// Writes (task CRUD/trigger) stay capability-gated only: operators are
-		// trusted to aim scans; grants isolate visibility, not operation.
-		r.Use(middleware.NetworkScope(scopeResolver))
-
-		// Reads: discovery:read (viewer+). Scan results, task lists, runs.
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDiscoveryRead))
-			r.Get("/tasks", scannerTaskHandler.ListTasks)
-			r.Get("/tasks/{id}", scannerTaskHandler.GetTask)
-			r.Get("/tasks/{id}/runs", scannerTaskHandler.GetTaskRuns)
-			r.Get("/tasks/{id}/results", scannerTaskHandler.GetTaskResults)
-			r.Get("/results", scannerResultHandler.ListResults)
-			r.Get("/results/{id}", scannerResultHandler.GetResult)
-			r.Get("/runs", scannerResultHandler.ListRuns)
-			r.Get("/runs/{id}", scannerResultHandler.GetRun)
-			r.Get("/results/export", scannerResultHandler.ExportScanResults)
-		})
-
-		// Scan triggers: scan:trigger (operator+). Rate-limited per-IP (these
-		// START scans). The rate limiter runs AFTER the capability gate, so a
-		// rejected (403) request never consumes a rate token.
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapScanTrigger))
-			r.Use(scanLimiter.Middleware)
-			r.Post("/scan", scannerHandler.Scan)
-			r.Post("/tasks/{id}/trigger", scannerTaskHandler.TriggerTask)
-		})
-
-		// Cancel a running scan: scan:trigger (operator+), but NOT rate-limited
-		// (it stops a run, doesn't start one).
-		r.With(middleware.RequireCapability(domain.CapScanTrigger)).
-			Post("/tasks/{id}/cancel", scannerTaskHandler.CancelScanTask)
-
-		// Scan task CRUD + bulk result delete: scan:manage (operator+).
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapScanManage))
-			r.Post("/tasks", scannerTaskHandler.CreateTask)
-			r.Put("/tasks/{id}", scannerTaskHandler.UpdateTask)
-			r.Delete("/tasks/{id}", scannerTaskHandler.DeleteTask)
-			r.Delete("/results", scannerResultHandler.BulkDeleteResults)
-		})
-
-		// Add devices from a scan: device:write (operator+).
-		r.With(middleware.RequireCapability(domain.CapDeviceWrite)).
-			Post("/add-devices", scannerHandler.AddDevices)
-	})
+	registerScannerRoutes(r, scopeResolver, scanLimiter, scannerHandler, scannerTaskHandler, scannerResultHandler)
 
 	// --- Synthetic probing (拨测): user-configured external targets ---
 	// blackbox_exporter-style modules (http/tls/tcp/icmp) against explicit
@@ -710,22 +582,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}()
 	agentProbeReportHandler := handler.NewAgentProbeReportHandler(probeTargetSvc)
 	probeTargetHandler := handler.NewProbeTargetHandler(probeTargetSvc, scanQueries)
-	r.Route("/api/v1/probe-targets", func(r chi.Router) {
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapProbeRead))
-			r.Get("/", probeTargetHandler.ListTargets)
-			r.Get("/{id}", probeTargetHandler.GetTarget)
-			r.Get("/{id}/results", probeTargetHandler.GetTargetResults)
-			r.Get("/{id}/certificates", probeTargetHandler.GetTargetCertificates)
-		})
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapProbeManage))
-			r.Post("/", probeTargetHandler.CreateTarget)
-			r.Put("/{id}", probeTargetHandler.UpdateTarget)
-			r.Delete("/{id}", probeTargetHandler.DeleteTarget)
-			r.Post("/{id}/trigger", probeTargetHandler.TriggerTarget)
-		})
-	})
+	registerProbeTargetRoutes(r, probeTargetHandler)
 
 	// --- SNMP credential management (issue #135, SNMPv3) ---
 	// CRUD for SNMP credentials (v1/v2c community strings + v3 USM auth/priv).
@@ -734,26 +591,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// CapCredManage, an admin-only capability (credentials are sensitive even
 	// when masked), preserving the prior admin-only semantics.
 	credentialHandler := handler.NewCredentialHandler(dbConn, credCipher, credResolver)
-	r.Route("/api/v1/snmp-credentials", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapCredManage))
-		r.Post("/", credentialHandler.Create)
-		r.Get("/", credentialHandler.List)
-		r.Get("/{id}", credentialHandler.Get)
-		r.Put("/{id}", credentialHandler.Update)
-		r.Delete("/{id}", credentialHandler.Delete)
-	})
+	registerSNMPCredentialRoutes(r, credentialHandler)
 
 	// SSH credentials for the device config-backup probe (#137). Same gate
 	// (CapCredManage, admin-only) + same shared master_key cipher as SNMP.
 	sshCredentialHandler := handler.NewSSHCredentialHandler(dbConn, credCipher)
-	r.Route("/api/v1/ssh-credentials", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapCredManage))
-		r.Post("/", sshCredentialHandler.Create)
-		r.Get("/", sshCredentialHandler.List)
-		r.Get("/{id}", sshCredentialHandler.Get)
-		r.Put("/{id}", sshCredentialHandler.Update)
-		r.Delete("/{id}", sshCredentialHandler.Delete)
-	})
+	registerSSHCredentialRoutes(r, sshCredentialHandler)
 
 	// --- Agent token management (distributed phase) ---
 	// CRUD for discovery-agent bearer tokens, gated by CapAgentManage
@@ -761,13 +604,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// authenticates via RequireAgentToken against this table; this block is the
 	// management surface.
 	agentAdminHandler := handler.NewAgentAdminHandler(scanQueries, service.NewAgentTokenService(scanQueries))
-	r.Route("/api/v1/agents/tokens", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapAgentManage))
-		r.Post("/", agentAdminHandler.Create)
-		r.Get("/", agentAdminHandler.List)
-		r.Post("/{id}/revoke", agentAdminHandler.Revoke)
-		r.Delete("/{id}", agentAdminHandler.Delete)
-	})
+	registerAgentTokenRoutes(r, agentAdminHandler)
 
 	// --- Agent ingestion (distributed phase) ---
 	// The report endpoint is the center-side counterpart to an agent's reporter:
@@ -780,31 +617,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// scheduler) so the ScanFunc dispatcher can share the same instance.
 	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn, agentCmdSvc)
 	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries, agentCmdSvc, auditRepo)
-	r.Route("/api/v1/agents", func(r chi.Router) {
-		r.Use(middleware.RequireAgentToken)
-		r.Post("/report", agentReportHandler.Report)
-		r.Post("/probe-report", agentProbeReportHandler.Report)
-		// Agent command channel (Phase 5c): the agent polls pending commands
-		// (GET /commands), acknowledges (POST /commands/{id}/ack), executes, and
-		// reports the result (POST /commands/{id}/complete). Pull model.
-		r.Get("/commands", agentCommandHandler.Poll)
-		r.Post("/commands/{id}/ack", agentCommandHandler.Ack)
-		r.Post("/commands/{id}/complete", agentCommandHandler.Complete)
-	})
+	registerAgentRoutes(r, agentReportHandler, agentProbeReportHandler, agentCommandHandler)
 
-	// Admin-side command management: enqueue a command for an agent (POST) +
-	// view all commands (GET). Separate route group (CapAgentManage, not agent
-	// token).
-	r.Route("/api/v1/agents/{agentId}/commands", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapAgentManage))
-		r.Post("/", agentCommandHandler.Create)
-	})
-	r.With(middleware.RequireCapability(domain.CapAgentManage)).Get("/api/v1/agents/commands/all", agentCommandHandler.ListAll)
-	// Fleet-observability table (#278): version / uptime / clock offset /
-	// last-report per agent. CapAgentManage (the agents capability, viewer
-	// roles already see device-derived data elsewhere; this is admin-plane
-	// fleet telemetry).
-	r.With(middleware.RequireCapability(domain.CapAgentManage)).Get("/api/v1/agents/status", agentCommandHandler.FleetStatus)
+	registerAgentCommandAdminRoutes(r, agentCommandHandler)
 
 	// --- Change history query (Phase 3) ---
 	// GET /api/v1/changes returns the device_added/changed/lost event stream
@@ -814,21 +629,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// above) is the foundation for a future /watch SSE push endpoint.
 	changeLogHandler := handler.NewChangeLogHandler(scanQueries, dbConn)
 	changeWatchHandler := handler.NewChangeWatchHandler(changeWatcher, slog.Default())
-	r.Route("/api/v1/changes", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapChangesRead))
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Get("/", changeLogHandler.List)
-		r.Get("/watch", changeWatchHandler.Watch)
-	})
+	registerChangeRoutes(r, scopeResolver, changeLogHandler, changeWatchHandler)
 
-	// Passive discovery status: runtime counters (events received, dedup hits,
-	// identify triggers, devices recorded) + the last few discovery outcomes +
-	// which sources are active. Auth-gated (any logged-in user). Returns
-	// enabled=false when discovery is off or the service was never started.
-	r.Route("/api/v1/discovery", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapDiscoveryRead))
-		r.Get("/status", handler.DiscoveryStatusHandler(discSvcForStatus))
-	})
+	registerDiscoveryRoutes(r, discSvcForStatus)
 
 	// --- Scanner background services (v2) ---
 	// Retention sweeper prunes all high-volume detail tables (heartbeat_results,
@@ -863,78 +666,21 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Probe engine (拨测): interval scheduler for external targets. Re-reads
 	// enabled targets every tick, so no notify wiring from the CRUD service.
 	probeEngine.Start(context.Background())
-	// Audit log routes, CapAuditRead. The capability matrix (#217) grants
-	// audit:read to every read-capable role (admin/operator/viewer/+legacy user):
-	// in a CMDB/monitoring tool a read-only stakeholder seeing the "who changed
-	// what when" trail is reasonable transparency (cf. NetBox change-logs). This
-	// widens the prior admin-only read to viewer+; if a future deployment needs
-	// stricter audit visibility, gate on CapAuditManage (admin-only) instead.
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapAuditRead))
-		r.Get("/api/v1/audit-logs", auditHandler.List)
-		r.Get("/api/v1/audit-logs/facets", auditHandler.Facets)
-		r.Get("/api/v1/audit-logs/export", exportHandler.ExportAuditLogs)
-	})
+	registerAuditLogRoutes(r, auditHandler, exportHandler)
 
 	// Device system routes
 	deviceSystemRepo := service.NewDeviceSystemRepository(dbConn)
 	deviceSystemSvc := service.NewDeviceSystemService(deviceSystemRepo)
 	deviceSystemHandler := handler.NewDeviceSystemHandler(deviceSystemSvc)
-	r.Route("/api/v1/devices/{id}/systems", func(r chi.Router) {
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Use(middleware.ValidateDeviceScope(dbConn))
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDeviceRead))
-			r.Get("/", deviceSystemHandler.ListByDevice)
-			r.Get("/{systemId}", deviceSystemHandler.Get)
-		})
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDeviceWrite))
-			r.Post("/", deviceSystemHandler.Create)
-			r.Put("/{systemId}", deviceSystemHandler.Update)
-			r.Delete("/{systemId}", deviceSystemHandler.Delete)
-		})
-	})
+	registerDeviceSystemRoutes(r, scopeResolver, dbConn, deviceSystemHandler)
 
-	// Device L2 neighbors (Bridge-MIB / LLDP / CDP / ARP), read-only. Feeds
-	// the detail-page Neighbors panel.
-	r.Route("/api/v1/devices/{id}/neighbors", func(r chi.Router) {
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Use(middleware.ValidateDeviceScope(dbConn))
-		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
-		r.Get("/", neighborHandler.ListByDevice)
-	})
+	registerDeviceNeighborRoutes(r, scopeResolver, dbConn, neighborHandler)
 
-	// Device TLS certificates (https/ldaps/imaps/etc), read-only. Feeds the
-	// detail-page TLS Certificates sub-panel and the per-port certificate Modal
-	// (full chain + PEM).
-	r.Route("/api/v1/devices/{id}/certificates", func(r chi.Router) {
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Use(middleware.ValidateDeviceScope(dbConn))
-		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
-		r.Get("/", tlsCertHandler.ListByDevice)
-	})
+	registerDeviceCertificateRoutes(r, scopeResolver, dbConn, tlsCertHandler)
 
-	// Device running-config history (#137, Oxidized/RANCID-style), read-only.
-	// The list omits config_text; the detail + diff views load it on demand.
-	// Registered before /{configId} so the static /diff segment wins over the
-	// param (chi prefers literal over wildcard).
-	r.Route("/api/v1/devices/{id}/configs", func(r chi.Router) {
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Use(middleware.ValidateDeviceScope(dbConn))
-		r.Use(middleware.RequireCapability(domain.CapConfigRead))
-		r.Get("/", deviceConfigHandler.List)
-		r.Get("/diff", deviceConfigHandler.Diff)
-		r.Get("/{configId}", deviceConfigHandler.Get)
-	})
+	registerDeviceConfigRoutes(r, scopeResolver, dbConn, deviceConfigHandler)
 
-	// Network-level topology graph, all devices (nodes) + all neighbor edges.
-	// Read-only. Feeds the /topology page.
-	r.Route("/api/v1/topology", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapTopologyRead))
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Get("/", topologyHandler.Graph)
-	})
+	registerTopologyRoutes(r, scopeResolver, topologyHandler)
 
 	// Document routes
 	uploadPath := cfg.Storage.UploadPath
@@ -948,117 +694,28 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	uploadSvc := service.NewUploadService(uploadPath, maxFileSize)
 	docSvc := service.NewDocumentService(dbConn, uploadSvc)
 	docHandler := handler.NewDocumentHandler(docSvc, uploadPath, auditRepo)
-	r.Route("/api/v1/documents", func(r chi.Router) {
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDocumentRead))
-			r.Get("/", docHandler.List)
-			r.Get("/{id}", docHandler.Get)
-			r.Get("/{id}/download", docHandler.Download)
-		})
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDocumentWrite))
-			r.Post("/", docHandler.CreateURL)
-			r.Post("/upload", docHandler.UploadFile)
-			r.Put("/{id}", docHandler.Update)
-			r.Delete("/{id}", docHandler.Delete)
-			// Undo for the delete-undo toast: restore is a write on the doc.
-			r.Post("/{id}/restore", docHandler.Restore)
-		})
-	})
+	registerDocumentRoutes(r, docHandler)
 
 	// Heartbeat routes
 	go heartbeatSvc.Start(context.Background())
 	heartbeatHandler := handler.NewHeartbeatHandler(heartbeatSvc)
 
-	// Device heartbeat configs
-	r.Route("/api/v1/devices/{id}/heartbeat-configs", func(r chi.Router) {
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Use(middleware.ValidateDeviceScope(dbConn))
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapHeartbeatRead))
-			r.Get("/", heartbeatHandler.ListConfigs)
-		})
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapHeartbeatManage))
-			r.Post("/", heartbeatHandler.CreateConfig)
-		})
-	})
-
-	// Heartbeat config CRUD
-	r.Route("/api/v1/heartbeat-configs", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapHeartbeatManage))
-		r.Put("/{id}", heartbeatHandler.UpdateConfig)
-		r.Delete("/{id}", heartbeatHandler.DeleteConfig)
-	})
-
-	// Heartbeat results
-	r.Route("/api/v1/devices/{id}/heartbeat-results", func(r chi.Router) {
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Use(middleware.ValidateDeviceScope(dbConn))
-		r.Use(middleware.RequireCapability(domain.CapHeartbeatRead))
-		r.Get("/export", exportHandler.ExportHeartbeatResults)
-		r.Get("/", heartbeatHandler.ListResults)
-	})
-
-	// Heartbeat history and stats
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Use(middleware.ValidateDeviceScope(dbConn))
-		r.Use(middleware.RequireCapability(domain.CapHeartbeatRead))
-		r.Get("/api/v1/devices/{id}/heartbeat-history", heartbeatHandler.ListHistory)
-		r.Get("/api/v1/devices/{id}/heartbeat-stats", heartbeatHandler.GetStats)
-	})
+	registerDeviceHeartbeatRoutes(r, scopeResolver, dbConn, exportHandler, heartbeatHandler)
 	// Fingerprint coverage report + rule-draft generation (#282). Read-only
 	// analytics over scan_attributes + collected evidence; the draft POST is
 	// a pure computation (returns YAML text, persists nothing).
 	fingerprintSvc := service.NewFingerprintReportService(db.New(dbConn), dbConn)
 	fingerprintHandler := handler.NewFingerprintHandler(fingerprintSvc)
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
-		r.Get("/api/v1/fingerprints/coverage", fingerprintHandler.Coverage)
-		r.Post("/api/v1/devices/{uuid}/fingerprint-draft", fingerprintHandler.RuleDraft)
-	})
+	registerFingerprintRoutes(r, scopeResolver, fingerprintHandler)
 
 	// Dashboard routes
 	dashSvc := service.NewDashboardService(dbConn, cfg)
 	dashHandler := handler.NewDashboardHandler(dashSvc)
-	r.Route("/api/v1/dashboard", func(r chi.Router) {
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDashboardRead))
-			r.Use(middleware.NetworkScope(scopeResolver))
-			r.Get("/configs", dashHandler.ListConfigs)
-			r.Get("/overview", dashHandler.Overview)
-			r.Get("/query", dashHandler.Query)
-			r.Get("/query_range", dashHandler.QueryRange)
-		})
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDashboardManage))
-			r.Post("/configs", dashHandler.CreateConfig)
-			r.Put("/configs/{id}", dashHandler.UpdateConfig)
-			r.Delete("/configs/{id}", dashHandler.DeleteConfig)
-		})
-	})
+	registerDashboardRoutes(r, scopeResolver, dashHandler)
 
 	// Device-Document linking routes
 	linkHandler := handler.NewLinkHandler(dbConn, auditRepo)
-	r.Route("/api/v1/devices/{id}/documents", func(r chi.Router) {
-		r.Use(middleware.NetworkScope(scopeResolver))
-		r.Use(middleware.ValidateDeviceScope(dbConn))
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDocumentRead))
-			r.Get("/", linkHandler.GetDeviceDocuments)
-		})
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireCapability(domain.CapDocumentWrite))
-			r.Post("/", linkHandler.LinkDocument)
-			r.Delete("/{docId}", linkHandler.UnlinkDocument)
-		})
-	})
-	r.Route("/api/v1/documents/{id}/devices", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapDocumentRead))
-		r.Get("/", linkHandler.GetDocumentDevices)
-	})
+	registerDeviceDocumentRoutes(r, scopeResolver, dbConn, linkHandler)
 
 	// Notification service, dispatcher, and handler
 	notificationSvc := service.NewNotificationService(db.New(notifyDB))
@@ -1073,40 +730,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	ruleEngine := notification.NewRuleEngine(scanQueries, changeWatcher, notificationDispatcher, slog.Default())
 	ruleEngine.Start(context.Background())
 
-	// Notification channel routes, CapNotificationManage (admin-only
-	// capability). Channels carry webhook URLs / tokens, so even the masked
-	// read stays admin-only.
-	r.Route("/api/v1/notification/channels", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapNotificationManage))
-		r.Post("/", notificationHandler.CreateChannel)
-		r.Get("/", notificationHandler.ListChannels)
-		r.Get("/{id}", notificationHandler.GetChannel)
-		r.Put("/{id}", notificationHandler.UpdateChannel)
-		r.Patch("/{id}", notificationHandler.SetChannelEnabled)
-		r.Delete("/{id}", notificationHandler.DeleteChannel)
-		r.Post("/{id}/test", notificationHandler.TestChannel)
-	})
-
-	// Notification rule routes, CapNotificationManage (rules are config, like
-	// channels).
-	r.Route("/api/v1/notification/rules", func(r chi.Router) {
-		r.Use(middleware.RequireCapability(domain.CapNotificationManage))
-		r.Post("/", notificationHandler.CreateRule)
-		r.Get("/", notificationHandler.ListRules)
-		r.Get("/{id}", notificationHandler.GetRule)
-		r.Put("/{id}", notificationHandler.UpdateRule)
-		r.Patch("/{id}", notificationHandler.SetRuleEnabled)
-		r.Delete("/{id}", notificationHandler.DeleteRule)
-	})
-
-	// Notification log routes, every authenticated user sees the header bell
-	// and has their own per-user read state, so logs + mark-as-read are
-	// RequireAuth (NOT RequireAdmin). Channel CRUD above stays admin-only.
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequireAuth)
-		r.Get("/api/v1/notification/logs", notificationHandler.ListNotificationLogs)
-		r.Post("/api/v1/notification/logs/read", notificationHandler.MarkAllNotificationLogsRead)
-	})
+	registerNotificationRoutes(r, notificationHandler)
 
 	// Prometheus metrics + HTTP service discovery are PUBLIC: Prometheus
 	// scrapes these endpoints without credentials, and they leak no secrets
@@ -1192,253 +816,4 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		globalLimiter.Stop()
 		scanLimiter.Stop()
 	}
-}
-
-// parseDurationOrDefault parses a Go duration string, returning def on empty or
-// parse error. Used for optional background-loop timing config keys.
-func parseDurationOrDefault(s string, def time.Duration) time.Duration {
-	if s == "" {
-		return def
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return def
-	}
-	return d
-}
-
-// routerResidentSourcesOn reports whether any of the discovery sources that
-// only yield data when the host IS the gateway are enabled. When true AND
-// router_arp is also on, router_arp is redundant (the gateway's own
-// arp_cache/dhcp_leases/conntrack cover the same hosts authoritatively, without
-// an extra SNMP walk), used to emit the redundancy warning at startup.
-func routerResidentSourcesOn(d config.DiscoveryConfig) bool {
-	return d.ARPCache.Enabled || d.DHCPLeases.Enabled || d.Conntrack.Enabled
-}
-
-// routerCommunity resolves the SNMP community for cross-subnet ARP walks:
-// prefer the dedicated router_arp.community, fall back to the global snmp_community.
-func routerCommunity(cfg config.ScannerConfig) string {
-	if cfg.RouterARP.Community != "" {
-		return cfg.RouterARP.Community
-	}
-	if cfg.SNMPCommunity != "" {
-		return cfg.SNMPCommunity
-	}
-	return "public"
-}
-
-// routerTimeout resolves the per-router ARP-walk timeout in seconds (default 4).
-func routerTimeout(cfg config.ScannerConfig) int {
-	if cfg.RouterARP.Timeout > 0 {
-		return cfg.RouterARP.Timeout
-	}
-	return 4
-}
-
-// buildCredentialCipher constructs the AES-GCM cipher + credential resolver
-// from security.master_key. Returns (nil, nil) when the key is unset or
-// invalid (so the engine + handler gracefully degrade to v1/v2c). Logs the
-// reason on failure so the operator can see why v3 is unavailable.
-func buildCredentialCipher(dbConn *sql.DB, cfg *config.Config) (*crypto.Cipher, *credresolver.Resolver) {
-	if cfg.Security.MasterKey == "" {
-		return nil, nil
-	}
-	if len(cfg.Security.MasterKey) != crypto.MasterKeyLen {
-		slog.Error("security.master_key wrong length (must be exactly 32 bytes); SNMPv3 credential storage disabled",
-			"length", len(cfg.Security.MasterKey))
-		return nil, nil
-	}
-	c, err := crypto.NewCipher([]byte(cfg.Security.MasterKey))
-	if err != nil {
-		slog.Error("security.master_key invalid; SNMPv3 credential storage disabled", "error", err)
-		return nil, nil
-	}
-	slog.Info("SNMPv3 credential resolver enabled",
-		"master_key_fingerprint", c.KeyFingerprint([]byte(cfg.Security.MasterKey)))
-	return c, credresolver.New(dbConn, c)
-}
-
-// rdnsTimeout returns the configured rDNS lookup deadline (seconds), default 2.
-func rdnsTimeout(cfg config.ScannerConfig) int {
-	if cfg.RDNS.Timeout > 0 {
-		return cfg.RDNS.Timeout
-	}
-	return 2
-}
-
-// heartbeatDBPathFor derives the heartbeat.db path from the main DB path:
-// same directory, filename "heartbeat.db". This keeps the time-series store
-// alongside the main database (e.g. ./data/heartbeat.db next to ./data/mibee.db).
-func heartbeatDBPathFor(cfg *config.Config) string {
-	mainPath := cfg.Database.SQLite.Path
-	if mainPath == "" {
-		mainPath = "./data/mibee.db"
-	}
-	return filepath.Join(filepath.Dir(mainPath), "heartbeat.db")
-}
-
-// resolveNetworkID upserts the networks row for this instance's configured
-// network (config `network.name`/cidr/site) and returns its id. The returned id
-// is stamped onto every device this instance discovers (devices.network_id) so
-// multiple instances on different LANs can coexist without IP-key collisions.
-//
-// Empty/missing name resolves to "default" so single-instance deployments still
-// tag their devices (network_id non-NULL), which keeps the (ip, network_id)
-// composite-unique index deterministic. Returns 0 only on a hard DB error
-// (logged; devices then fall back to NULL network_id and the legacy IP path).
-func resolveNetworkID(dbConn *sql.DB, cfg *config.Config) int64 {
-	name := cfg.Network.Name
-	if name == "" {
-		name = "default"
-	}
-	// Upsert by name: update cidr/site if the row exists, else insert.
-	res, err := dbConn.Exec(`
-		INSERT INTO networks (name, cidr, site)
-		VALUES (?, ?, ?)
-		ON CONFLICT(name) DO NOTHING`,
-		name, cfg.Network.CIDR, cfg.Network.Site)
-	if err != nil {
-		slog.Error("resolve network id: upsert networks failed; devices will have NULL network_id",
-			"name", name, "error", err)
-		return 0
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		// Row already existed, refresh its cidr/site in case the config changed.
-		_, _ = dbConn.Exec(`UPDATE networks SET cidr = ?, site = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?`,
-			cfg.Network.CIDR, cfg.Network.Site, name)
-	}
-	var id int64
-	if err := dbConn.QueryRow(`SELECT id FROM networks WHERE name = ?`, name).Scan(&id); err != nil {
-		slog.Error("resolve network id: lookup failed; devices will have NULL network_id",
-			"name", name, "error", err)
-		return 0
-	}
-
-	// Backfill: tag every pre-existing device that has no network_id with this
-	// instance's network. Without this, a rescan of a legacy (network_id NULL)
-	// device would create a DUPLICATE row keyed on (ip, <resolved network_id>)
-	// instead of updating the original, the (ip, NULL) and (ip, N) composite
-	// keys are distinct in the unique index. This is only safe for the
-	// single-instance default; a true multi-agent deployment would reconcile via
-	// the center, not backfill blindly.
-	if res, err := dbConn.Exec(`UPDATE devices SET network_id = ? WHERE network_id IS NULL`, id); err != nil {
-		slog.Warn("resolve network id: device backfill failed; legacy devices keep NULL network_id",
-			"network_id", id, "error", err)
-	} else if n, _ := res.RowsAffected(); n > 0 {
-		slog.Info("network identity resolved; tagged pre-existing devices", "id", id, "name", name, "cidr", cfg.Network.CIDR, "devices_tagged", n)
-		return id
-	}
-
-	slog.Info("network identity resolved", "id", id, "name", name, "cidr", cfg.Network.CIDR)
-	return id
-}
-
-// agentForNetwork returns the agent_id bound to the given network ("" when
-// networkID is nil, the network has no agent, or the lookup fails, all of
-// which mean "run locally"). Used by the scheduler's ScanFunc dispatcher to
-// route agent-managed networks to their scanner.
-func agentForNetwork(dbConn *sql.DB, networkID *int64) string {
-	if networkID == nil {
-		return ""
-	}
-	var agentID sql.NullString
-	if err := dbConn.QueryRow(`SELECT agent_id FROM networks WHERE id = ?`, *networkID).Scan(&agentID); err != nil {
-		// Missing row / transient error: fall back to the local scan path.
-		slog.Warn("agent dispatch: network lookup failed; running local scan", "network_id", *networkID, "error", err)
-		return ""
-	}
-	return strings.TrimSpace(agentID.String)
-}
-
-// dispatchAgentScan enqueues a scan command for an agent-managed network task
-// and records a scan_task_runs row so the task's run history reflects the
-// dispatch. The row is left "running": the scan itself executes on the agent,
-// and the first host-carrying report for this network closes it with real
-// stats (agent_report.go backfillAgentRunStats, #390), duration then measures
-// the honest end-to-end latency (command poll + scan + report). Backstops: a
-// still-running older run of the SAME task is superseded here (an agent that
-// never reported hosts), and the scheduler's stale-run sweeper fails runs
-// older than 1h. A failed enqueue is recorded as a FAILED run with the reason;
-// the failure must be visible in the UI, not just the journal.
-func dispatchAgentScan(ctx context.Context, dbConn *sql.DB, queries *db.Queries, agentCmdSvc *service.AgentCommandService, taskID int64, targets string, timeout time.Duration, agentID string, credentialID int64) {
-	// Supersede runs of this task a report never closed (agent down, or it
-	// only sent empty/heartbeat reports). Bounded lifetime: at most one cron
-	// period of "running" before the next dispatch sweeps it.
-	if prev, err := queries.ListScanTaskRuns(ctx, db.ListScanTaskRunsParams{
-		Column1: taskID, TaskID: taskID, Limit: 10, Offset: 0,
-	}); err == nil {
-		now := time.Now()
-		for _, r := range prev {
-			if r.Status != "running" {
-				continue
-			}
-			started := time.Time{}
-			if r.StartedAt != nil {
-				started = *r.StartedAt
-			}
-			fin := now
-			if uerr := queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
-				Status:       "completed",
-				DurationMs:   now.Sub(started).Milliseconds(),
-				ErrorMessage: "superseded by next dispatch (no host-carrying report arrived)",
-				FinishedAt:   &fin,
-				ID:           r.ID,
-			}); uerr != nil {
-				slog.Warn("agent dispatch: supersede previous run failed", "run_id", r.ID, "error", uerr)
-			}
-		}
-	}
-
-	start := time.Now()
-	now := time.Now()
-	run, runErr := queries.CreateScanTaskRun(ctx, db.CreateScanTaskRunParams{TaskID: taskID, StartedAt: &now})
-	if runErr != nil {
-		// No run row → still dispatch; the command channel is the primary
-		// effect and the agent view shows it.
-		slog.Warn("agent dispatch: run row create failed", "task_id", taskID, "error", runErr)
-	}
-	runCreated := runErr == nil && run.ID != 0
-	finishRun := func(status, errMsg string) {
-		if !runCreated {
-			return
-		}
-		fin := time.Now()
-		if uerr := queries.UpdateScanTaskRun(ctx, db.UpdateScanTaskRunParams{
-			Status:       status,
-			DurationMs:   fin.Sub(start).Milliseconds(),
-			ErrorMessage: errMsg,
-			FinishedAt:   &fin,
-			ID:           run.ID,
-		}); uerr != nil {
-			slog.Warn("agent dispatch: run row update failed", "task_id", taskID, "run_id", run.ID, "error", uerr)
-		}
-	}
-
-	payload := map[string]interface{}{
-		"targets": targets,
-		"timeout": int(timeout.Seconds()),
-	}
-	// #241: forward the task's SNMP credential to the agent BY NAME, vault
-	// IDs are per-system (the agent resolves the name against its OWN local
-	// snmp_credentials store), and the name is non-secret metadata so no
-	// master key is needed here. A missing/unresolvable name on the agent
-	// degrades to its global community, preserving pre-#241 behavior.
-	if credentialID != 0 {
-		if name, err := credresolver.GetSNMPCredentialName(ctx, dbConn, credentialID); err == nil && name != "" {
-			payload["credential_name"] = name
-		} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			slog.Warn("agent dispatch: credential name lookup failed; scan falls back to the agent community",
-				"task_id", taskID, "credential_id", credentialID, "error", err)
-		}
-	}
-	cmd, err := agentCmdSvc.Enqueue(ctx, agentID, "scan", payload)
-	if err != nil {
-		slog.Error("agent dispatch: enqueue failed", "task_id", taskID, "agent_id", agentID, "targets", targets, "error", err)
-		finishRun("failed", err.Error())
-		return
-	}
-	slog.Info("scan task dispatched to agent", "task_id", taskID, "agent_id", agentID, "command_id", cmd.ID, "targets", targets)
-	// Success: the run row stays "running" until the agent's report backfills
-	// its real stats (or the backstops above fire).
 }
