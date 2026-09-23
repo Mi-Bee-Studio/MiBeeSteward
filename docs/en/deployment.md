@@ -334,7 +334,7 @@ docker compose pull  # pull new image
 docker compose up -d
 ```
 
-Data compatibility: the database schema auto-migrates on startup (with an automatic `VACUUM INTO` backup first), no manual steps required. ARMv7 devices have no prebuilt release artifact, cross-compile locally with `make build-linux-arm`.
+Data compatibility: since v0.7 the schema is created fresh on first start and is not upgraded in place. A database stamped with an older schema version is rejected at startup with instructions; upgrading across that boundary means backing up the data directory (`scripts/backup.sh`), starting with a new database, and letting the next scan repopulate devices. Within a compatible schema version, replacing the binary is all an upgrade needs. ARMv7 devices have no prebuilt release artifact, cross-compile locally with `make build-linux-arm`.
 
 ### Resetting the admin password
 

@@ -320,7 +320,7 @@ docker compose pull  # 拉取新镜像
 docker compose up -d
 ```
 
-数据兼容性：数据库 schema 在应用启动时自动迁移（迁移前自动 `VACUUM INTO` 备份），升级无需手动操作。ARMv7 设备无 release 预编译产物，需本地 `make build-linux-arm` 交叉编译。
+数据兼容性：自 v0.7 起 schema 只在首次启动时全新创建，不做原地升级。记录为旧版本号的数据库会在启动时被拒绝并给出指引；跨版本升级的做法是先备份 `data/` 目录（`scripts/backup.sh`），用新数据库启动，设备由下一次扫描重新发现。schema 版本兼容时，替换二进制即完成升级。ARMv7 设备无 release 预编译产物，需本地 `make build-linux-arm` 交叉编译。
 
 ### 管理员密码重置
 

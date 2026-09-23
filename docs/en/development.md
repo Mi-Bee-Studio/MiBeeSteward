@@ -99,7 +99,8 @@ SELECT * FROM your_table WHERE id = $1;
 
 1. Edit `db/schema.sql`
 2. Run `~/go/bin/sqlc generate`
-3. Schema is applied automatically at startup from the embedded `schema.sql`
+3. If the change is not compatible with databases created by earlier builds, bump `SchemaVersion` in `cmd/server/migrations.go` (the agent mini-DB has its own `agentSchemaVersion` in `cmd/agent/main.go`)
+4. Schema is applied only when a database is first created; a database stamped with an older version is rejected at startup with guidance, there is no in-place upgrade path
 
 ### Frontend Development
 

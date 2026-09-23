@@ -99,7 +99,8 @@ SELECT * FROM your_table WHERE id = $1;
 
 1. 编辑 `db/schema.sql`
 2. 运行 `~/go/bin/sqlc generate`
-3. 模式在应用启动时自动从嵌入的 `schema.sql` 执行
+3. 变更与旧版本建的库不兼容时，同步调高 `cmd/server/migrations.go` 中的 `SchemaVersion`（agent 本地库对应 `cmd/agent/main.go` 的 `agentSchemaVersion`）
+4. schema 只在数据库首次创建时应用；版本不符的旧库启动即拒并给出指引，不做原地升级
 
 ### 前端开发
 

@@ -52,7 +52,7 @@ SvelteKit 5 SPA embedded via `web/embed.go` (`//go:embed all:dist`). Tailwind 4 
 
 ### Database
 
-SQLite via the pure-Go `modernc.org/sqlite` driver (CGO-free), WAL mode, main pool `MaxOpenConns=16` (`busy_timeout=5000`). Heartbeat results go to a **separate** SQLite file `data/heartbeat.db` (single connection, batched writes) so high-frequency probe records never contend with the main DB. sqlc generates type-safe Go from `db/queries/*.sql`. Default path: `./data/mibee.db`. **Migrations run automatically at startup**: the embedded `schema.sql` (`CREATE TABLE IF NOT EXISTS`) plus idempotent `ALTER TABLE`/table rebuilds, with an automatic `VACUUM INTO` backup taken on existing DBs before migration. Never edit `internal/db/*.go` directly, modify SQL and regenerate.
+SQLite via the pure-Go `modernc.org/sqlite` driver (CGO-free), WAL mode, main pool `MaxOpenConns=16` (`busy_timeout=5000`). Heartbeat results go to a **separate** SQLite file `data/heartbeat.db` (single connection, batched writes) so high-frequency probe records never contend with the main DB. sqlc generates type-safe Go from `db/queries/*.sql`. Default path: `./data/mibee.db`. **Schema bootstrap is fresh-only**: the embedded `schema.sql` is the single DDL source, applied once when the database is first created and stamped via `PRAGMA user_version`; a database stamped with a different version is rejected at startup with guidance instead of being upgraded in place. Never edit `internal/db/*.go` directly, modify SQL and regenerate.
 
 ## Scanner Engine v2
 
