@@ -145,7 +145,7 @@ SvelteKit 5 单页应用嵌入二进制，中英双语（自动检测 + 区域�
 - **单二进制零依赖**：CGO-free（modernc.org/sqlite 纯 Go），前端 `go:embed` 嵌入，SQLite WAL 内嵌存储；`make build-all` 交叉编译 linux amd64 + arm64。
 - **部署形态**：systemd + Nginx、Docker（多阶段非 root、多架构 GHCR 镜像、bridge/host/macvlan 网络档位）、OpenWrt procd（center + agent，UCI 配置，ARMv7）。
 - **保留策略**：分表批量清扫（心跳 7 天、扫描 30 天、审计 90 天等，全部可配），静默设备自动清理。
-- **数据安全**：启动自动迁移（变更前 `VACUUM INTO` 备份）、schema 版本门控、`scripts/backup.sh`（`.backup` + 完整性检查，7 天保留）。
+- **数据安全**：schema 版本门控（版本不符启动即拒，避免对旧库做不完整的原地升级）、`scripts/backup.sh`（`.backup` + 完整性检查，7 天保留）。
 - **配置**：koanf（YAML + `MIBEE_*` 环境变量覆盖），示例配置覆盖全部模块。
 - **可观测性**：slog 结构化日志、请求/扫描/心跳/拨测指标、绑定重试抗重启风暴、优雅停机。
 

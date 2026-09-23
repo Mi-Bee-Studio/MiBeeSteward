@@ -52,7 +52,7 @@ SvelteKit 5 SPA，通过 `web/embed.go`（`//go:embed all:dist`）嵌入。Tailw
 
 ### 数据库
 
-SQLite（`modernc.org/sqlite` 纯 Go 驱动，CGO-free），WAL 模式，主连接池 `MaxOpenConns=16`（`busy_timeout=5000`）。心跳结果写入**独立的** SQLite 文件 `data/heartbeat.db`（单连接、批量写），避免高频探测记录与主库竞争。sqlc 从 `db/queries/*.sql` 生成类型安全的 Go 代码。默认路径：`./data/mibee.db`。**迁移在启动时自动执行**：嵌入的 `schema.sql`（`CREATE TABLE IF NOT EXISTS`）+ 幂等的 `ALTER TABLE`/表重建，存量库迁移前自动做 `VACUUM INTO` 备份。切勿直接编辑 `internal/db/*.go`--修改 SQL 后重新生成。
+SQLite（`modernc.org/sqlite` 纯 Go 驱动，CGO-free），WAL 模式，主连接池 `MaxOpenConns=16`（`busy_timeout=5000`）。心跳结果写入**独立的** SQLite 文件 `data/heartbeat.db`（单连接、批量写），避免高频探测记录与主库竞争。sqlc 从 `db/queries/*.sql` 生成类型安全的 Go 代码。默认路径：`./data/mibee.db`。**模式仅在首次建库时应用**：嵌入的 `schema.sql` 是唯一 DDL 来源，首次创建数据库时整体应用并以 `PRAGMA user_version` 盖章；版本不符的已有库启动即拒并给出指引，不做原地升级。切勿直接编辑 `internal/db/*.go`--修改 SQL 后重新生成。
 
 ## 扫描引擎 v2
 
