@@ -31,6 +31,7 @@ package discovery
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"sync"
 	"time"
@@ -156,6 +157,7 @@ type statsSnapshot struct {
 	IdentifyAlive     int64 // identify scan found the host alive
 	IdentifyDead      int64 // identify scan found host unresponsive (synthesized instead)
 	DeviceRecorded    int64 // sink.Apply created a new device
+	MACOnlyEnriched   int64 // MAC-only sighting merged wifi telemetry into a known device
 }
 
 // recentEvent is one entry in the status endpoint's "last N discoveries" ring.
@@ -329,6 +331,11 @@ func (s *Service) loop(ctx context.Context) {
 // status endpoint can explain what the service is doing without log scraping.
 func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 	if ev.IP == "" {
+		// MAC-only sighting (WiFi association, hostapd): no L3 address to
+		// attribute, probe, or dedup on. Route it to the enrich-only path.
+		if ev.MAC != "" {
+			s.handleMACOnly(ctx, ev)
+		}
 		return
 	}
 	s.statsMu.Lock()
@@ -402,6 +409,78 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 	} else {
 		s.recordEvent(ev, "identify_failed")
 	}
+}
+
+// handleMACOnly processes an L2-only sighting (a WiFi association from the
+// hostapd source): the STA's MAC with no IP yet. A MAC that already matches a
+// device gets its WiFi telemetry (signal, SSID, connect time) merged into
+// scan_attributes, enrich-only: no IP, status, or identity writes, the
+// device's IP stays whatever ARP/DHCP/scan last observed. A MAC with no
+// existing device is dropped, no device is fabricated for a MAC with no L3
+// sighting. The device bridge is deliberately bypassed: its identity path
+// treats an empty IP as a roam target and would blank the device's IP.
+func (s *Service) handleMACOnly(ctx context.Context, ev NewHostEvent) {
+	s.statsMu.Lock()
+	s.stats.EventsReceived++
+	s.statsMu.Unlock()
+
+	// Dedup on the MAC (namespaced key; the recent map is IP-keyed elsewhere).
+	key := "mac:" + ev.MAC
+	if s.seenRecently(key) {
+		s.statsMu.Lock()
+		s.stats.SuppressedRecent++
+		s.statsMu.Unlock()
+		s.recordEvent(ev, "skipped_recent")
+		return
+	}
+	s.markSeen(key)
+
+	if s.db == nil {
+		return
+	}
+	known, err := s.isKnownHost(ctx, "", ev.MAC)
+	if err != nil {
+		s.logger.Warn("discovery: known-host pre-check failed; skipping MAC-only event", "mac", ev.MAC, "error", err)
+		s.recordEvent(ev, "skipped_known")
+		return
+	}
+	if !known {
+		s.recordEvent(ev, "skipped_unknown_mac")
+		return
+	}
+
+	wifi := map[string]string{"source": ev.Source, "seen_at": time.Now().UTC().Format(time.RFC3339)}
+	for hint, key := range map[string]string{
+		"wifi_signal_dbm":     "signal_dbm",
+		"wifi_ssid":           "ssid",
+		"wifi_connected_secs": "connected_secs",
+	} {
+		if v := ev.Hints[hint]; v != "" {
+			wifi[key] = v
+		}
+	}
+	patch, err := json.Marshal(map[string]interface{}{"wifi": wifi})
+	if err != nil {
+		s.recordEvent(ev, "skipped_known")
+		return
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE devices SET scan_attributes = json_patch(scan_attributes, json(?)), updated_at = ? WHERE mac_address = ?`,
+		string(patch), time.Now().UTC(), ev.MAC)
+	if err != nil || res == nil {
+		s.logger.Warn("discovery: MAC-only enrich failed", "mac", ev.MAC, "error", err)
+		s.recordEvent(ev, "skipped_known")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		s.recordEvent(ev, "skipped_unknown_mac")
+		return
+	}
+	s.statsMu.Lock()
+	s.stats.MACOnlyEnriched++
+	s.statsMu.Unlock()
+	s.logger.Info("discovery: wifi telemetry merged for known MAC", "mac", ev.MAC, "source", ev.Source)
+	s.recordEvent(ev, "enriched_mac")
 }
 
 // StatusResponse is the JSON shape returned by the status endpoint. It makes
