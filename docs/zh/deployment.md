@@ -133,7 +133,7 @@ flowchart LR
     A -->|"macvlan：独占 LAN IP"| D["以独立设备身份接入 LAN"]
 ```
 
-实测经验进一步印证：bridge 模式下基本拿不到设备 MAC，host 网络模式下接近全量 —— 生产扫描务必使用 host 网络模式。
+实测经验进一步印证：bridge 模式下基本拿不到设备 MAC，host 网络模式下接近全量，生产扫描务必使用 host 网络模式。
 
 > ⚠️ **为什么 bridge 模式不能用于真实盘点**
 > Docker 默认 bridge 把容器放在 NAT 后面。后果：
@@ -270,7 +270,7 @@ SQLite 数据库默认位于 `./data/mibee.db`（二进制部署）或容器内 
 
 ### 自动养护
 
-每轮保留清理（默认每 6 小时，`retention.sweep_interval_hours`）同时执行存储健康巡检：WAL 检查点并截断（`PRAGMA wal_checkpoint(TRUNCATE)` —— 将预写日志页折回主文件，`-wal` 归零）、刷新 SQLite 统计信息（`PRAGMA optimize`），并将磁盘体积与高容量表行数导出到 Prometheus：
+每轮保留清理（默认每 6 小时，`retention.sweep_interval_hours`）同时执行存储健康巡检：WAL 检查点并截断（`PRAGMA wal_checkpoint(TRUNCATE)`，将预写日志页折回主文件，`-wal` 归零）、刷新 SQLite 统计信息（`PRAGMA optimize`），并将磁盘体积与高容量表行数导出到 Prometheus：
 
 | 指标 | 标签 | 含义 |
 |---|---|---|
@@ -286,13 +286,13 @@ SQLite 数据库默认位于 `./data/mibee.db`（二进制部署）或容器内 
 在 85 台设备的局域网、默认保留窗口（扫描结果 30 天、心跳结果 7 天、服务证据 14 天）下实测：
 
 - 稳态：主库约 150 MB + 心跳库约 4 MB
-- 增长主要由 `scan_results`（每任务 × 每 IP × 每轮扫描一行 —— /24 每 30 分钟一轮 ≈ 1.2 万行/天）与 `heartbeat_results`（每探测每 tick 一行 —— 30 台 × 3 探测 × 2880 tick/天 ≈ 26 万行/天，7 天清理）主导
-- 经验值：默认保留窗口下按**每台被扫描设备每月约 2 MB** 预算；之后关注 `mibee_db_size_bytes` —— 若偏离线性增长，用 `mibee_db_table_rows` 定位哪张表在累积（清理器卡死表现为单表单调增长）
+- 增长主要由 `scan_results`（每任务 × 每 IP × 每轮扫描一行，/24 每 30 分钟一轮 ≈ 1.2 万行/天）与 `heartbeat_results`（每探测每 tick 一行，30 台 × 3 探测 × 2880 tick/天 ≈ 26 万行/天，7 天清理）主导
+- 经验值：默认保留窗口下按**每台被扫描设备每月约 2 MB** 预算；之后关注 `mibee_db_size_bytes`，若偏离线性增长，用 `mibee_db_table_rows` 定位哪张表在累积（清理器卡死表现为单表单调增长）
 
 
 ### 恢复
 
-备份文件是 `sqlite3 ".backup"` 产出的**二进制数据库文件**，不是 SQL 脚本——直接复制回原位即可：
+备份文件是 `sqlite3 ".backup"` 产出的**二进制数据库文件**，不是 SQL 脚本--直接复制回原位即可：
 
 ```bash
 sudo systemctl stop mibee-steward

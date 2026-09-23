@@ -50,10 +50,10 @@ Every list endpoint returns an **object**, never a top-level array:
 { "<resource>": [ ... ], "total": 42, "limit": 20, "offset": 0 }
 ```
 
-- `<resource>` is the plural resource key (`devices`, `users`, `changes`, `audit_logs`, ...). One key per endpoint — see [Pagination](#pagination) for the per-endpoint keys.
+- `<resource>` is the plural resource key (`devices`, `users`, `changes`, `audit_logs`, ...). One key per endpoint, see [Pagination](#pagination) for the per-endpoint keys.
 - `total` is the **filtered count** (rows matching the query, not the page size). Two deliberate exceptions: `GET /notification/logs` carries the caller's **unread** count (the header badge), and `GET /scanner/scan` is a scan result, not a list.
 - `limit`/`offset` echo the **effective** pagination (after defaults and clamping), so a client can detect a server-side clamp. Complete, unpaginated collections (`GET /networks`, `GET /networks/{id}/vlans`, `GET /agents/tokens`, `GET /agents/status`, `GET /notification/channels|rules`, topology graph, per-device sub-lists) omit them and always return every row.
-- Machine channel exception: `GET /agents/commands` (the agent poller endpoint) still returns a bare array — it is a fleet-internal contract consumed by deployed agent binaries, not a public integration surface; wrapping it would break every agent until upgraded.
+- Machine channel exception: `GET /agents/commands` (the agent poller endpoint) still returns a bare array, it is a fleet-internal contract consumed by deployed agent binaries, not a public integration surface; wrapping it would break every agent until upgraded.
 
 ### Error model
 
@@ -61,7 +61,7 @@ Every list endpoint returns an **object**, never a top-level array:
 { "error": "human-readable message" }
 ```
 
-One field, always present on non-2xx JSON responses (middleware and handlers share the shape). Status codes: 400 malformed input, 401 unauthenticated, 403 forbidden (capability/scope/CSRF), 404 not found (also used for out-of-scope resources — indistinguishable by design), 409 conflict (duplicate name), 413 payload too large (sync scan > 1024 IPs), 422 semantically invalid batch, 429 rate limited, 503 feature disabled (e.g. credential vault without master key).
+One field, always present on non-2xx JSON responses (middleware and handlers share the shape). Status codes: 400 malformed input, 401 unauthenticated, 403 forbidden (capability/scope/CSRF), 404 not found (also used for out-of-scope resources, indistinguishable by design), 409 conflict (duplicate name), 413 payload too large (sync scan > 1024 IPs), 422 semantically invalid batch, 429 rate limited, 503 feature disabled (e.g. credential vault without master key).
 
 ### Pagination
 
@@ -132,7 +132,7 @@ flowchart LR
 
 - **Public**: No authentication required (health check, login, logout, 2FA verification, `/metrics`, `/sd`)
 - **Authenticated**: Valid JWT token (any role)
-- **Capability-gated**: Valid JWT token holding the required capability — read capabilities for any logged-in user, operational capabilities for operator and above, manage capabilities for admin only
+- **Capability-gated**: Valid JWT token holding the required capability, read capabilities for any logged-in user, operational capabilities for operator and above, manage capabilities for admin only
 
 ### TOTP Two-Factor Authentication (2FA)
 
@@ -179,7 +179,7 @@ Authenticate user and return JWT token.
 }
 ```
 
-Every user object carries a `must_change_password` flag. Accounts with 2FA enabled have a **challenge variant**: after the password checks out, the response carries `two_factor_required: true` and **no** cookie/token is issued — complete the login by passing `POST /auth/2fa/verify`.
+Every user object carries a `must_change_password` flag. Accounts with 2FA enabled have a **challenge variant**: after the password checks out, the response carries `two_factor_required: true` and **no** cookie/token is issued, complete the login by passing `POST /auth/2fa/verify`.
 
 #### POST /api/v1/auth/register
 
@@ -329,7 +329,7 @@ Device registration and management with multi-protocol auto-discovery and identi
 | `/api/v1/devices/batch-delete` | POST | Authenticated · `CapDeviceWrite` | Batch delete devices |
 | `/api/v1/devices/batch-update-status` | POST | Authenticated · `CapDeviceWrite` | Batch update device status |
 
-Device read/write paths carry **Network Scope** (`NetworkScope`) filtering; device-level operations add a `ValidateDeviceScope` check — out-of-scope access in closed mode returns `403` (`{"error":"forbidden: device out of network scope"}`).
+Device read/write paths carry **Network Scope** (`NetworkScope`) filtering; device-level operations add a `ValidateDeviceScope` check, out-of-scope access in closed mode returns `403` (`{"error":"forbidden: device out of network scope"}`).
 
 ### GET /api/v1/devices
 
@@ -388,16 +388,16 @@ List devices with filtering and pagination.
 }
 ```
 
-**`scan_attributes` (scan-discovery aggregation written by the engine)** — a JSON object on each device carrying scan-discovered information. MAC/OUI-related fields:
+**`scan_attributes` (scan-discovery aggregation written by the engine)**, a JSON object on each device carrying scan-discovered information. MAC/OUI-related fields:
 
 | Field | Description |
 |-------|-------------|
 | `vendor` | Device **self-reported** brand (via SNMP sysObjectID / HTTP Server header / TLS cert CN); falls back to OUI vendor when none of the above match. |
-| `oui_prefix` | IEEE-assigned block matched by longest prefix on the MAC — 6 hex (MA-L /24), 7 hex (MA-M /28), or 9 hex (MA-S /36). Empty when no OUI table is loaded or the MAC is unknown/locally administered. |
-| `oui_vendor` | IEEE-registered organization name for `oui_prefix` — the **NIC chip vendor**, separate from `vendor` (they differ in OEM/rebrand/virtualization scenarios). |
+| `oui_prefix` | IEEE-assigned block matched by longest prefix on the MAC, 6 hex (MA-L /24), 7 hex (MA-M /28), or 9 hex (MA-S /36). Empty when no OUI table is loaded or the MAC is unknown/locally administered. |
+| `oui_vendor` | IEEE-registered organization name for `oui_prefix`, the **NIC chip vendor**, separate from `vendor` (they differ in OEM/rebrand/virtualization scenarios). |
 | `mac` | Normalized lowercase MAC (`aa:bb:cc:..`). |
-| `mac_is_locally_administered` | Neutral factual flag: U/L bit (first byte `& 0x02`) set — MAC is locally administered, not from an IEEE block. This bit **cannot** distinguish privacy randomization (unstable) from local fixed assignment (stable), so it is observation-only and **does not change device identity**. |
-| `mac_is_multicast` | I/G bit (first byte `& 0x01`) set — a real device should never transmit from a multicast MAC; data hygiene flag. |
+| `mac_is_locally_administered` | Neutral factual flag: U/L bit (first byte `& 0x02`) set, MAC is locally administered, not from an IEEE block. This bit **cannot** distinguish privacy randomization (unstable) from local fixed assignment (stable), so it is observation-only and **does not change device identity**. |
+| `mac_is_multicast` | I/G bit (first byte `& 0x01`) set, a real device should never transmit from a multicast MAC; data hygiene flag. |
 
 ### GET /api/v1/devices/stats
 
@@ -660,8 +660,8 @@ List TLS certificate chains collected from each TLS port on the device, grouped 
 - `tls_version` / `cipher_suite` / `trusted` are handshake metadata, identical on every entry within the same port chain (describing the same handshake).
 - `leaf` is `chain[0]`, exposed separately for at-a-glance rendering; omitted when `error` is non-empty.
 - `error` is non-empty when the TLS handshake fails (e.g. `not TLS`, `handshake failure`). These rows are still returned so the UI can show "this port was attempted" rather than silently omitting it. In this case `leaf` and `chain` are empty.
-- `trusted` is a best-effort determination (one validation handshake against the system root cert pool), used for UI badge only — **it does not affect collection** (self-signed certs are always collected).
-- When a device has no recorded TLS ports, an empty `certificates` array is returned with HTTP 200 — render an empty state, not 404.
+- `trusted` is a best-effort determination (one validation handshake against the system root cert pool), used for UI badge only, **it does not affect collection** (self-signed certs are always collected).
+- When a device has no recorded TLS ports, an empty `certificates` array is returned with HTTP 200, render an empty state, not 404.
 
 ## Device Config History
 
@@ -725,7 +725,7 @@ Run a synchronous scan against targets (single IP, CIDR, range, comma list).
 
 **Response**: `ScanResponse { hosts: [ScanHost], total, alive, duration_ms }`, each `ScanHost` containing `ip`, `alive`, `rtt_ms`, `snmp_*` variables, and `inferred_type` / `inferred_brand` (e.g. `camera`, `server`, `pc`).
 
-**Persistence**: Alive hosts are persisted through the device bridge (`ApplyReport`) into the `devices` table — device upsert, heartbeat-config seeding for new devices, change events — the same single-writer path as async tasks. Sync scans do **not** write raw `scan_results` / `scan_task_runs` rows (that is the async-task path).
+**Persistence**: Alive hosts are persisted through the device bridge (`ApplyReport`) into the `devices` table, device upsert, heartbeat-config seeding for new devices, change events, the same single-writer path as async tasks. Sync scans do **not** write raw `scan_results` / `scan_task_runs` rows (that is the async-task path).
 
 **Limits**: Returns **413** for targets >1024 IPs (use the async task API below). Returns **504** if the server `write_timeout` triggers mid-scan (config drift fallback).
 
@@ -740,7 +740,7 @@ Manually add devices from scan results. Each entry goes through the device bridg
 { "devices": [ { "ip": "192.168.1.1", "name": "Gateway", "type": "other", "brand": "...", "ports": [...], "services": [...] } ] }
 ```
 
-**Response**: `{ added: int, errors: [string] }`. Returns **422** when **every** item fails to persist (`added=0`, `errors` carries per-item reasons) — the request was valid but the operation could not be applied.
+**Response**: `{ added: int, errors: [string] }`. Returns **422** when **every** item fails to persist (`added=0`, `errors` carries per-item reasons), the request was valid but the operation could not be applied.
 
 ### Scanner Task API (async, for large ranges)
 
@@ -799,7 +799,7 @@ SSH credentials are used by device config backup probes (see [Device Config Hist
 
 ## Agents & Command Channel
 
-Discovery agent management and command dispatch channel in distributed deployments. Token management and command management endpoints require **Admin** (`CapAgentManage`); agent data upload and command pull use **Agent Token** (`RequireAgentToken`) authentication — tokens are bound to `agent_id` + `network_id`, every reported device is tagged with that network, and multi-subnet data does not collide.
+Discovery agent management and command dispatch channel in distributed deployments. Token management and command management endpoints require **Admin** (`CapAgentManage`); agent data upload and command pull use **Agent Token** (`RequireAgentToken`) authentication, tokens are bound to `agent_id` + `network_id`, every reported device is tagged with that network, and multi-subnet data does not collide.
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
@@ -1180,7 +1180,7 @@ Get device heartbeat results.
 
 ## Synthetic Probing
 
-Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style), typically external/internet resources. Four modules: `http` / `tls` / `tcp` / `icmp`. The `tls` module — and https-flavored `http` targets — collect the full certificate chain (reusing the scanner's internal cert inventory for external hosts; results carry a trust verdict and TLS version). Reads (`CapProbeRead`) are available to any logged-in user; writes (`CapProbeManage`) require operator and above.
+Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style), typically external/internet resources. Four modules: `http` / `tls` / `tcp` / `icmp`. The `tls` module, and https-flavored `http` targets, collect the full certificate chain (reusing the scanner's internal cert inventory for external hosts; results carry a trust verdict and TLS version). Reads (`CapProbeRead`) are available to any logged-in user; writes (`CapProbeManage`) require operator and above.
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
@@ -1189,8 +1189,8 @@ Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style)
 | `/api/v1/probe-targets/{id}` | GET | Auth · `CapProbeRead` | Get one target |
 | `/api/v1/probe-targets/{id}` | PUT | Operator+ · `CapProbeManage` | Update (partial; nil fields unchanged) |
 | `/api/v1/probe-targets/{id}` | DELETE | Operator+ · `CapProbeManage` | Delete target (with its result history and stored certificate chain) |
-| `/api/v1/probe-targets/{id}/trigger` | POST | Operator+ · `CapProbeManage` | Probe now (synchronous — returns the recorded result) |
-| `/api/v1/probe-targets/{id}/results` | GET | Auth · `CapProbeRead` | Result history (`limit`/`offset`, newest first; optional `vantage` filter — `center` or `agent:{agent_id}`, empty = all vantages) |
+| `/api/v1/probe-targets/{id}/trigger` | POST | Operator+ · `CapProbeManage` | Probe now (synchronous, returns the recorded result) |
+| `/api/v1/probe-targets/{id}/results` | GET | Auth · `CapProbeRead` | Result history (`limit`/`offset`, newest first; optional `vantage` filter, `center` or `agent:{agent_id}`, empty = all vantages) |
 | `/api/v1/probe-targets/{id}/certificates` | GET | Auth · `CapProbeRead` | Current certificate chain (same shape as the device endpoint) |
 
 ### POST /api/v1/probe-targets/
@@ -1218,7 +1218,7 @@ Create a probe target.
 - `interval_seconds` (optional, default 60): probe interval, 10–86400 seconds
 - `timeout_seconds` (optional, default 10): per-probe timeout, 1–60 seconds, must be smaller than the interval
 - `notes` (optional, ≤500 chars), `enabled` (optional, default true)
-- `vantage` (optional, default `center`): execution plan — `center` (this instance probes), `agent:{agent_id}` (that agent executes over the distributed command channel; the center refuses local execution, so manual trigger returns 409), or `all` (center + every registered agent; each track's rows are stamped `center` / `agent:{id}` — see [Distributed](distributed.md#vantage-probing-277))
+- `vantage` (optional, default `center`): execution plan, `center` (this instance probes), `agent:{agent_id}` (that agent executes over the distributed command channel; the center refuses local execution, so manual trigger returns 409), or `all` (center + every registered agent; each track's rows are stamped `center` / `agent:{id}`, see [Distributed](distributed.md#vantage-probing-277))
 
 **Response**: `201 Created` with ProbeTargetResponse (including the denormalized `last_run_at`/`last_status`/`last_latency_ms`/`last_error`; empty = never probed).
 
@@ -1345,7 +1345,7 @@ Passthrough **range query** to the configured Prometheus data source. Equivalent
 
 ## Notifications
 
-Alert notification channel and rule management. Rules are gated by capability matrix (`CapNotificationManage`) — admin by default; channels use the same capability, `PATCH` for enable/disable. Log endpoints are readable by any logged-in user.
+Alert notification channel and rule management. Rules are gated by capability matrix (`CapNotificationManage`), admin by default; channels use the same capability, `PATCH` for enable/disable. Log endpoints are readable by any logged-in user.
 
 ### Notification Channels
 
@@ -1410,7 +1410,7 @@ Responses use the `{ "<items>": [...], "total": <int>, "limit": <int>, "offset":
 | Login Rate Limit | 10 req/min/IP | `/api/v1/auth/*` (including 2FA verification, `rate_limit.login_per_minute`) |
 | Scan Rate Limit | 10 req/min/IP | `POST /scanner/scan` and `POST /scanner/tasks/{id}/trigger` (`rate_limit.scan_per_minute`) |
 
-- Scan rate limit is enforced after capability gating — unauthorized requests (403) do **not** consume quota.
+- Scan rate limit is enforced after capability gating, unauthorized requests (403) do **not** consume quota.
 - Exceeding the limit returns `429 Too Many Requests`.
 - Values are configurable; see [Configuration Reference](configuration.md).
 

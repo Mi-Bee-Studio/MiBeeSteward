@@ -13,40 +13,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.0] - 2026-09-20
 
-**The router-native release: OpenWrt/iStoreOS as a first-class form factor, passive-discovery-powered fingerprinting, and a wire-truth API contract.** v0.6.0 completes the distributed-agent story on three fronts. **Form factor**: one-click OpenWrt packages (tarball/.ipk/.apk) with a LuCI status/settings UI, Tier-1 passive discovery on by default, first-run admin setup entirely in the browser (no SSH, no printed temp password), and configurable password policy / login lockout. **Identification**: passive observations (DHCP leases, mDNS/SSDP overheard announcements) now seed the fingerprint classifiers — including a Mijia-ecosystem hostname corpus that brands 12+ device families that answer nothing else — and discovery sightings attribute to the right network on dual-homed routers. **Contract & durability**: the REST API converges on one pagination envelope with an OpenAPI spec that generates BOTH the TS and Go clients (drift-checked in CI), agents keep SNMPv3 credentials in their own local vault with names-only command dispatch, the lease/sweeper model survives device roaming and orphan rows without flap loops, and a CI coverage ratchet locks in an 85%-covered codebase — the campaign behind it surfaced and fixed four real bugs (heartbeat shutdown data loss, a never-enforced identity index, legacy-upgrade column loss, dead SNMP index parsing). A GUI black-box pass hardened the SPA's login and device-detail surfaces.
+**The router-native release: OpenWrt/iStoreOS as a first-class form factor, passive-discovery-powered fingerprinting, and a wire-truth API contract.** v0.6.0 completes the distributed-agent story on three fronts. **Form factor**: one-click OpenWrt packages (tarball/.ipk/.apk) with a LuCI status/settings UI, Tier-1 passive discovery on by default, first-run admin setup entirely in the browser (no SSH, no printed temp password), and configurable password policy / login lockout. **Identification**: passive observations (DHCP leases, mDNS/SSDP overheard announcements) now seed the fingerprint classifiers, including a Mijia-ecosystem hostname corpus that brands 12+ device families that answer nothing else, and discovery sightings attribute to the right network on dual-homed routers. **Contract & durability**: the REST API converges on one pagination envelope with an OpenAPI spec that generates BOTH the TS and Go clients (drift-checked in CI), agents keep SNMPv3 credentials in their own local vault with names-only command dispatch, the lease/sweeper model survives device roaming and orphan rows without flap loops, and a CI coverage ratchet locks in an 85%-covered codebase, the campaign behind it surfaced and fixed four real bugs (heartbeat shutdown data loss, a never-enforced identity index, legacy-upgrade column loss, dead SNMP index parsing). A GUI black-box pass hardened the SPA's login and device-detail surfaces.
 
 ### Added
 
-- **Release artifacts now include the OpenWrt AGENT packages (#449)**: the router form B (agent-on-router reporting to a remote center) ships in the same three install forms as the center — tarball (`scp` + `./agent-install.sh`), `.ipk` (opkg) and `.apk` (OpenWrt 24.10+) — via `make package-openwrt-agent{,-ipk,-apk}`. The installer derives `network.name/cidr` from uci, keeps the router Tier-1 passive sources on, and handles the one thing it can't invent — the center url + agent token — either inline (`--center-url`/`--token`) or by generating a placeholder config and keeping the service DOWN until the operator fills it (the closing summary prints the exact steps). mkipk/mkapk grew a `center|agent` kind parameter (package name, description, lifecycle wiring). Field-verified end-to-end on R68S/iStoreOS opkg: install → placeholder branch → fill → start → `report accepted` → center agent status live → remove. The field pass caught a real generator bug before release: the empty-credential fallback double-wrapped its quotes (`url: """"` → YAML crash loop); the generator's sanity guard is now a full-line match that rejects the whole class.
-- **Agent-side SNMPv3 credential vault (#401, closes #241)**: agents keep SNMPv3 USM credentials in their OWN local encrypted vault (AES-256-GCM under `security.master_key`; CLI `mibee-agent snmp-credential add/list/remove/test`, run on the agent box) — scan commands dispatched from the center carry only the credential NAME (`credential_name` in the command payload), so no secret ever transits the command channel or lands in the center DB; a missing/mismatched name degrades that scan to v1/v2c community with a warn. The center-side vault and redaction guarantees are unchanged.
-- **Wire-truth API contract — OpenAPI drives both generated clients (#402 + #403)**: every list endpoint now speaks one pagination envelope (`{items, total, page, page_size}` / `{results, …}`), bare arrays are wrapped, and `docs/openapi.yaml` (109 paths / 76 schemas, enriched against handler/domain/sqlc DTO shapes) is now the single source of truth generating BOTH clients — the TS types in `web/src/lib/api/schema.d.ts` (`npm run gen:api`) and the Go client in `internal/apiclient` (`make gen-api-go`), each drift-checked in CI, plus a chi.Walk parity test pinning router paths ↔ spec paths. The frontend's hand-declared wire types are retired in favor of re-exports of the generated schemas (the exact class of mismatch #440 was made of). ⚠️ One-time wire changes: unified pagination keys and wrapped arrays are breaking for hand-rolled API consumers (curl/jq scripts) — regenerate or adjust integrations against the spec.
-- **Passive-discovery network attribution (#394, closes #386)**: discovery sightings attribute by IP→CIDR longest-prefix at a single SinkAdapter point, driven by the `networks` table — a dual-homed router center no longer stamps foreign-subnet hosts onto its local network, and WAN-arm artifacts are attributable to a real segment or dropped. Per-source outcome counters `mibee_discovery_events_total{source,outcome}` in `/metrics` (#393) plus a `discovery_network_mismatch` alert rule make residual pollution visible instead of silent.
-- **Agent-task run statistics backfill (#396, closes #390)**: scheduler-dispatched agent scan runs now stay `running` at dispatch and close with REAL statistics backfilled from the agent's report (duration, alive counts — field-measured 165s / 30+ alive per 5-min cycle) instead of writing 6ms empty-shell run rows at dispatch time.
-- **CI coverage ratchet + campaign to 85% (#404, #405–#446)**: a cross-package coverage gate whose floor only moves UP (pinned at 84.9, CI-measured), frontend coverage thresholds in vitest, and a 40-round test campaign that took CI statement coverage from 79.2% to 85.0% — surfacing three real bugs along the way (fixed below: #412, #428, #431, #437) and adding durable test seams (fake SNMP responders, scripted multicast connections, writable-schema legacy-shape migrations, config-variant router assembly).
-- **Multi-vantage probing surfaces in the UI (#277, closes the center-side remainder)**: the agent-side execution channel landed earlier (#344) — probe plans shipped to agents over the command channel, results flowing back through `/agents/probe-report`, per-vantage storage and `mibee_probe_*{vantage=…}` labels — but the SPA knew nothing about it. The probes page now speaks vantage end to end: the target form gains a **vantage selector** (center / center + all agents / a specific registered agent — options built from `networks.agent_id`, with an unregistered `agent:{id}` value still round-tripping marked so an edit can't silently rewrite the plan, and a hint when `all` is picked with zero agents registered); the target list shows the plan as a badge (`all` / `agent:{id}` verbatim; the center default stays quiet plain text); agent-only targets disable the manual **Probe Now** button (the engine 409s `ErrProbeVantageNotLocal` — the button state now matches reality); and the history modal gains a **Latest-per-vantage panel** — each executor's newest result side by side with latency and sample count, the whole panel highlighted when tracks disagree on success (the "reachable from A, not from B" case multi-vantage exists for). The results table gains a vantage column. First modal-opening tests in the suite also fixed a latent jsdom gap (a `Element.animate` stub in the shared setup — svelte/transition delegates to WAAPI).
-- **Agent mini-schema drift guard (#171 safety-net batch)**: the agent's local SQLite schema mirrors `db/schema.sql` BY HAND (`CREATE TABLE IF NOT EXISTS` never updates an existing table), and the agent reuses the sqlc queries generated against the CENTER schema — so a column added on one side only used to surface as "no such column" on a remote agent at runtime (that is exactly how #337 happened). A parity test now compares the column set of every shared table (`networks`/`vlans`/`scan_tasks`/`scan_task_runs`/`scan_results`/`heartbeat_configs`/`devices`) between `agentSchema` and the embedded center schema, and a smoke test runs the scheduler/runner's actual query chain (`ListEnabledScanTasks` → `CreateScanTaskRun` → `UpdateScanTaskRun` → `BatchInsertScanResults` → `ListScanResults`) against a freshly provisioned mini-DB. cmd/agent coverage 5.2% → 11.7% (the rest is `main()` wiring). Frontend: first render tests for the scan-results page — seeded row render, row expansion revealing the parsed SNMP detail, and the run-history tab switch (assertions data-driven, never localized strings).
-- **Passive-discovery observations now seed the fingerprint classifiers (#377)**: the discovery service keeps a per-IP cache of overheard facts — DHCP-lease hostnames (refreshed every sweep), and mDNS/SSDP announcements parsed with the SAME parsers the active probes use (newly exported `probe.ParseMDNSResponse`/`ParseSSDPResponse`) — and every scan prepends them to the host's gather output via a new orchestrator seed hook. On real networks the passive channel is often the ONLY source of these signals (the R68S field session measured active mDNS queries going 100% unanswered while the listeners overheard rich announcements), so the iot-identity and mdns-ssdp rule corpora now fire on field data: a lease hostname like `viomi-waterheater-…` yields the MiBee brand/appliance identity, an overheard `_smb`+`_adisk` announcement types the host nas without a single query sent.
-- **mDNS/SSDP self-announcements are now fingerprintable (#365)**: the active mDNS and SSDP probes already produced rich evidence (service lists, TXT records, SSDP SERVER/USN/LOCATION headers) that no classifier consumed — the wire was connected but the last mile missing. New `mdns-ssdp.yaml` corpus rules match those fields and emit `mdns`/`ssdp` identities with type/brand/description/model metadata, folded into device records by new Mdns/Ssdp handlers (protocol-grade per the device-bridge contract — no `?` badge — but never overriding stronger in-protocol evidence). Field-verified rule samples from the R68S PoC: the NAS avahi set (`_smb`+`_adisk` → nas), the router's SSDP SERVER self-identification (`lunzn,fastrhino-r68s` → router + FastRhino), MiniDLNA (`→ nas`), plus a data-driven table for `_onvif`→camera, `_ipp`→printer, `_googlecast`/`_airplay`/`_hap`/`_esphomelib` (TXT model passthrough)/`_miio`→iot, and Hikvision/Dahua/Synology vendor signatures. (Scope note: Mijia devices announce none of these — their ceiling stays the #361 hostname rules.)
-- **One-click Tier-1 passive discovery on routers (#360)**: the config generated by `install.sh` on first install now enables the three zero-cost router-resident sources by default (`dhcp_leases` — the authoritative hostname/MAC/IP map, `conntrack` — the "who is talking right now" view, `hostapd` — the WiFi STA list), with the generated-config sanity check asserting the flips; the LuCI Settings page gains a Passive-discovery section with all four sources as checkboxes (save = config rewrite + restart + health check via a new `luci-helper.sh set-passive`). `dns_log` stays off — it needs dnsmasq query logging, and both the page and the installer print the one UCI line instead of mutating DHCP logging silently. Upgrades keep existing settings and print a hint.
-- **Release artifacts now include the OpenWrt router packages (#359)**: `release.yml` gains an `openwrt` job that builds all three install forms on `v*` tags — tarball (scp + `./install.sh`), `.ipk` (opkg) and `.apk` (OpenWrt 24.10+ apk-tools), arm64 — through the exact pipeline CI smokes (#358), plus a `SHA256SUMS.openwrt`; the Release is only published when binaries, container image AND router packages all succeed. 32-bit ARM routers build locally via `make build-linux-arm`.
+- **Release artifacts now include the OpenWrt AGENT packages (#449)**: the router form B (agent-on-router reporting to a remote center) ships in the same three install forms as the center, tarball (`scp` + `./agent-install.sh`), `.ipk` (opkg) and `.apk` (OpenWrt 24.10+), via `make package-openwrt-agent{,-ipk,-apk}`. The installer derives `network.name/cidr` from uci, keeps the router Tier-1 passive sources on, and handles the one thing it can't invent, the center url + agent token, either inline (`--center-url`/`--token`) or by generating a placeholder config and keeping the service DOWN until the operator fills it (the closing summary prints the exact steps). mkipk/mkapk grew a `center|agent` kind parameter (package name, description, lifecycle wiring). Field-verified end-to-end on R68S/iStoreOS opkg: install → placeholder branch → fill → start → `report accepted` → center agent status live → remove. The field pass caught a real generator bug before release: the empty-credential fallback double-wrapped its quotes (`url: """"` → YAML crash loop); the generator's sanity guard is now a full-line match that rejects the whole class.
+- **Agent-side SNMPv3 credential vault (#401, closes #241)**: agents keep SNMPv3 USM credentials in their OWN local encrypted vault (AES-256-GCM under `security.master_key`; CLI `mibee-agent snmp-credential add/list/remove/test`, run on the agent box), scan commands dispatched from the center carry only the credential NAME (`credential_name` in the command payload), so no secret ever transits the command channel or lands in the center DB; a missing/mismatched name degrades that scan to v1/v2c community with a warn. The center-side vault and redaction guarantees are unchanged.
+- **Wire-truth API contract, OpenAPI drives both generated clients (#402 + #403)**: every list endpoint now speaks one pagination envelope (`{items, total, page, page_size}` / `{results, …}`), bare arrays are wrapped, and `docs/openapi.yaml` (109 paths / 76 schemas, enriched against handler/domain/sqlc DTO shapes) is now the single source of truth generating BOTH clients, the TS types in `web/src/lib/api/schema.d.ts` (`npm run gen:api`) and the Go client in `internal/apiclient` (`make gen-api-go`), each drift-checked in CI, plus a chi.Walk parity test pinning router paths ↔ spec paths. The frontend's hand-declared wire types are retired in favor of re-exports of the generated schemas (the exact class of mismatch #440 was made of). ⚠️ One-time wire changes: unified pagination keys and wrapped arrays are breaking for hand-rolled API consumers (curl/jq scripts), regenerate or adjust integrations against the spec.
+- **Passive-discovery network attribution (#394, closes #386)**: discovery sightings attribute by IP→CIDR longest-prefix at a single SinkAdapter point, driven by the `networks` table, a dual-homed router center no longer stamps foreign-subnet hosts onto its local network, and WAN-arm artifacts are attributable to a real segment or dropped. Per-source outcome counters `mibee_discovery_events_total{source,outcome}` in `/metrics` (#393) plus a `discovery_network_mismatch` alert rule make residual pollution visible instead of silent.
+- **Agent-task run statistics backfill (#396, closes #390)**: scheduler-dispatched agent scan runs now stay `running` at dispatch and close with REAL statistics backfilled from the agent's report (duration, alive counts, field-measured 165s / 30+ alive per 5-min cycle) instead of writing 6ms empty-shell run rows at dispatch time.
+- **CI coverage ratchet + campaign to 85% (#404, #405–#446)**: a cross-package coverage gate whose floor only moves UP (pinned at 84.9, CI-measured), frontend coverage thresholds in vitest, and a 40-round test campaign that took CI statement coverage from 79.2% to 85.0%, surfacing three real bugs along the way (fixed below: #412, #428, #431, #437) and adding durable test seams (fake SNMP responders, scripted multicast connections, writable-schema legacy-shape migrations, config-variant router assembly).
+- **Multi-vantage probing surfaces in the UI (#277, closes the center-side remainder)**: the agent-side execution channel landed earlier (#344), probe plans shipped to agents over the command channel, results flowing back through `/agents/probe-report`, per-vantage storage and `mibee_probe_*{vantage=…}` labels, but the SPA knew nothing about it. The probes page now speaks vantage end to end: the target form gains a **vantage selector** (center / center + all agents / a specific registered agent, options built from `networks.agent_id`, with an unregistered `agent:{id}` value still round-tripping marked so an edit can't silently rewrite the plan, and a hint when `all` is picked with zero agents registered); the target list shows the plan as a badge (`all` / `agent:{id}` verbatim; the center default stays quiet plain text); agent-only targets disable the manual **Probe Now** button (the engine 409s `ErrProbeVantageNotLocal`, the button state now matches reality); and the history modal gains a **Latest-per-vantage panel**, each executor's newest result side by side with latency and sample count, the whole panel highlighted when tracks disagree on success (the "reachable from A, not from B" case multi-vantage exists for). The results table gains a vantage column. First modal-opening tests in the suite also fixed a latent jsdom gap (a `Element.animate` stub in the shared setup, svelte/transition delegates to WAAPI).
+- **Agent mini-schema drift guard (#171 safety-net batch)**: the agent's local SQLite schema mirrors `db/schema.sql` BY HAND (`CREATE TABLE IF NOT EXISTS` never updates an existing table), and the agent reuses the sqlc queries generated against the CENTER schema, so a column added on one side only used to surface as "no such column" on a remote agent at runtime (that is exactly how #337 happened). A parity test now compares the column set of every shared table (`networks`/`vlans`/`scan_tasks`/`scan_task_runs`/`scan_results`/`heartbeat_configs`/`devices`) between `agentSchema` and the embedded center schema, and a smoke test runs the scheduler/runner's actual query chain (`ListEnabledScanTasks` → `CreateScanTaskRun` → `UpdateScanTaskRun` → `BatchInsertScanResults` → `ListScanResults`) against a freshly provisioned mini-DB. cmd/agent coverage 5.2% → 11.7% (the rest is `main()` wiring). Frontend: first render tests for the scan-results page, seeded row render, row expansion revealing the parsed SNMP detail, and the run-history tab switch (assertions data-driven, never localized strings).
+- **Passive-discovery observations now seed the fingerprint classifiers (#377)**: the discovery service keeps a per-IP cache of overheard facts, DHCP-lease hostnames (refreshed every sweep), and mDNS/SSDP announcements parsed with the SAME parsers the active probes use (newly exported `probe.ParseMDNSResponse`/`ParseSSDPResponse`), and every scan prepends them to the host's gather output via a new orchestrator seed hook. On real networks the passive channel is often the ONLY source of these signals (the R68S field session measured active mDNS queries going 100% unanswered while the listeners overheard rich announcements), so the iot-identity and mdns-ssdp rule corpora now fire on field data: a lease hostname like `viomi-waterheater-…` yields the MiBee brand/appliance identity, an overheard `_smb`+`_adisk` announcement types the host nas without a single query sent.
+- **mDNS/SSDP self-announcements are now fingerprintable (#365)**: the active mDNS and SSDP probes already produced rich evidence (service lists, TXT records, SSDP SERVER/USN/LOCATION headers) that no classifier consumed, the wire was connected but the last mile missing. New `mdns-ssdp.yaml` corpus rules match those fields and emit `mdns`/`ssdp` identities with type/brand/description/model metadata, folded into device records by new Mdns/Ssdp handlers (protocol-grade per the device-bridge contract, no `?` badge, but never overriding stronger in-protocol evidence). Field-verified rule samples from the R68S PoC: the NAS avahi set (`_smb`+`_adisk` → nas), the router's SSDP SERVER self-identification (`lunzn,fastrhino-r68s` → router + FastRhino), MiniDLNA (`→ nas`), plus a data-driven table for `_onvif`→camera, `_ipp`→printer, `_googlecast`/`_airplay`/`_hap`/`_esphomelib` (TXT model passthrough)/`_miio`→iot, and Hikvision/Dahua/Synology vendor signatures. (Scope note: Mijia devices announce none of these, their ceiling stays the #361 hostname rules.)
+- **One-click Tier-1 passive discovery on routers (#360)**: the config generated by `install.sh` on first install now enables the three zero-cost router-resident sources by default (`dhcp_leases`, the authoritative hostname/MAC/IP map, `conntrack`, the "who is talking right now" view, `hostapd`, the WiFi STA list), with the generated-config sanity check asserting the flips; the LuCI Settings page gains a Passive-discovery section with all four sources as checkboxes (save = config rewrite + restart + health check via a new `luci-helper.sh set-passive`). `dns_log` stays off, it needs dnsmasq query logging, and both the page and the installer print the one UCI line instead of mutating DHCP logging silently. Upgrades keep existing settings and print a hint.
+- **Release artifacts now include the OpenWrt router packages (#359)**: `release.yml` gains an `openwrt` job that builds all three install forms on `v*` tags, tarball (scp + `./install.sh`), `.ipk` (opkg) and `.apk` (OpenWrt 24.10+ apk-tools), arm64, through the exact pipeline CI smokes (#358), plus a `SHA256SUMS.openwrt`; the Release is only published when binaries, container image AND router packages all succeed. 32-bit ARM routers build locally via `make build-linux-arm`.
 
 
-- **CI gate for the OpenWrt/LuCI packaging sources (#358)**: a new `openwrt` CI job runs `make check-openwrt` — `luac -p` on the LuCI controller (OpenWrt 24.10's Lua runtime is 5.1), a CR-byte scan and `sh -n` over the COMMITTED router sources (git-index based, so a CRLF Windows checkout can't false-positive) — plus a full packaging smoke via `make package-openwrt-ipk` (arm64 build → openwrt-stage CR staging guard → mkipk.sh assembly). The R68S field session (#355) proved this bug class ships "local-green, on-router-dead": a template CR byte white-screens LuCI with "unfinished string" and go test never sees it.
-- **Mijia ecosystem hostname fingerprints — brand & appliance identification for IoT that answers nothing else (#361)**: new `iot-identity.yaml` fingerprint corpus file matches the DHCP/rDNS hostnames Xiaomi-ecosystem WiFi modules announce (`viomi-waterheater-e13_miap5E55`, `yeelink-light-lamp22_mibt63AA`, `chuangmi_camera_039a01`, …) and emits a `miot` service identity carrying `inferred_brand` (Viomi/Yeelight/Chuangmi/Chunmi/Smartmi/Aqara/Roborock/Xiaomi), `appliance` (water heater / range hood / air conditioner / IP camera / …) and `ecosystem` metadata — an `exclusive_group` keeps exactly one identity per hostname (vendor-specific rules beat the generic `_miap`/`_mibt` suffix fallback). A new `MiotHandler` folds that metadata into device fields (vendor, human description) WITHOUT claiming a device type — the `?` badge on hostname-guessed types stays, honestly. Field-verified against 12 real Mijia devices on an iStoreOS R68S install (where the hostname is provably the only identity channel: 0/12 mDNS/miIO/TCP responses). `device_types.yaml` gains the missing ecosystem keywords (yeelink/lumi/aqara/roborock/dreame/smartmi/…).
+- **CI gate for the OpenWrt/LuCI packaging sources (#358)**: a new `openwrt` CI job runs `make check-openwrt`, `luac -p` on the LuCI controller (OpenWrt 24.10's Lua runtime is 5.1), a CR-byte scan and `sh -n` over the COMMITTED router sources (git-index based, so a CRLF Windows checkout can't false-positive), plus a full packaging smoke via `make package-openwrt-ipk` (arm64 build → openwrt-stage CR staging guard → mkipk.sh assembly). The R68S field session (#355) proved this bug class ships "local-green, on-router-dead": a template CR byte white-screens LuCI with "unfinished string" and go test never sees it.
+- **Mijia ecosystem hostname fingerprints, brand & appliance identification for IoT that answers nothing else (#361)**: new `iot-identity.yaml` fingerprint corpus file matches the DHCP/rDNS hostnames Xiaomi-ecosystem WiFi modules announce (`viomi-waterheater-e13_miap5E55`, `yeelink-light-lamp22_mibt63AA`, `chuangmi_camera_039a01`, …) and emits a `miot` service identity carrying `inferred_brand` (Viomi/Yeelight/Chuangmi/Chunmi/Smartmi/Aqara/Roborock/Xiaomi), `appliance` (water heater / range hood / air conditioner / IP camera / …) and `ecosystem` metadata, an `exclusive_group` keeps exactly one identity per hostname (vendor-specific rules beat the generic `_miap`/`_mibt` suffix fallback). A new `MiotHandler` folds that metadata into device fields (vendor, human description) WITHOUT claiming a device type, the `?` badge on hostname-guessed types stays, honestly. Field-verified against 12 real Mijia devices on an iStoreOS R68S install (where the hostname is provably the only identity channel: 0/12 mDNS/miIO/TCP responses). `device_types.yaml` gains the missing ecosystem keywords (yeelink/lumi/aqara/roborock/dreame/smartmi/…).
 - **Schedule presets for scan tasks (no cron knowledge required)**: the scan-task form's raw cron field is now a dropdown of friendly presets (every 30min / hourly / 6h / 12h / daily 02:00 & 04:00 / weekly Monday / monthly 1st) with the generated expression shown alongside; 自定义 keeps the raw-expression input for power users and round-trips arbitrary existing expressions losslessly. The task list shows the preset label with the raw expression in small type. Backend unchanged (still a 5-field cron string).
-- **LuCI integration on OpenWrt/iStoreOS (router-native entry)**: the ipk/apk/tarball now ship a classic Lua controller + templates (no luci-compat/CBI dependency, inert without LuCI) — LuCI's 服务 → MiBee Steward gains a Status page (service/health/autostart/version/port/DB size + open-UI button) and a Settings page (change the web port with auto-restart + health check — 80/443 refused, set the admin password per the effective policy, autostart toggle, restart). All privileged ops funnel through the single audited `/usr/lib/mibee/luci-helper.sh`, callable standalone; passwords are handed over via a 0600 tmpfs file and `MIBEE_RESET_PASSWORD`, never a command line.
-- **First-run setup with NO temp password (empty-credential bootstrap)**: `auth.initial_admin_password` may now be EMPTY (the OpenWrt/iStoreOS installer default) — the admin is seeded password-less and the login page itself detects the state (public `GET /auth/setup-status`) and renders a **create-admin-password** form instead of the login form; `POST /auth/setup` (public, under the strict login rate limiter, policy-checked, one-shot — 409s forever once any password exists) sets the credential and returns a full session (token + cookie, no second login). Login attempts against the pending account return a distinct 409 `setup_required` and — importantly — do NOT tick the failure counter. The installer no longer generates/prints any temporary password.
-- **First-run web password setup + settings center (no-SSH configuration, step 1)**: the admin bootstrap credential (`auth.initial_admin_password`, incl. installer-generated random ones) is now seeded as a TEMPORARY password that deliberately bypasses the password policy, and the first login forces a change IN THE BROWSER (the SPA modal) backed by a server-side gate: tokens minted while the flag is set carry an `mcp` claim and `Authenticator` 403s every authenticated call except the change-survival allowlist (force-password / profile GET / 2FA). Previously a policy-violating `initial_admin_password` failed seeding with only a warn — fresh installs could come up with NO admin at all, recoverable only via CLI. `PUT /auth/force-password` now returns a fresh ungated token + rotated cookie. New settings-center overlay (`system_settings` table, `SettingsService`: DB overlay > YAML > defaults, in-memory snapshot + change subscribers) with `GET/PUT /api/v1/settings/auth` (admin, audit-logged) and `GET /api/v1/system` (read-only instance facts), plus an SPA page at Settings → Security (password policy form with live rule preview, lockout tuning, system info). Password-policy and lockout edits apply on the next validation/login — no restart. Default password policy relaxed: special characters no longer required (min 8 + upper + lower + digit); re-enable via the UI or YAML.
-- **OpenWrt/iStoreOS no-Docker installers**: `make package-openwrt` (tarball + on-router `install.sh` — generates config with a random `jwt_secret` + `cookie_secure: false` and a password-less bootstrap admin, fixes `ping_group_range`, enables + starts + health-checks), `make package-openwrt-ipk` (hand-rolled opkg package in the modern gzip-tar feed format — the legacy ar container is rejected by current opkg as "Malformed package file"; preinst arch gate, postinst = the same configure logic, `/etc/mibee` survives removal), and `make package-openwrt-apk` (apk-tools v2 format for OpenWrt 24.10+ firmware). `.gitattributes` keeps shell/unit files LF on Windows checkouts; release packaging normalizes too.
-- **OpenWrt form C field verification + v6 bind fix (#288 / #37)**: the router-center form is verified end-to-end on real hardware (GL.iNet MT2500 / Brume 2, mt7981, aarch64): full engine registry + embedded fingerprint corpus, all 4 Tier-1 router sources producing live data (a DHCP lease became a device carrying its lease hostname; conntrack + dns_log events flowing; hostapd a clean no-op), /24 scan in 74s with the router self-identifying as GL.iNet, SPA browser-verified, ~113MB RSS. `server.host: "::"` (the documented GL-firmware v4 workaround) now actually works — the old address concatenation produced the unparseable `:::8090` and a startup crash loop; bind addresses now go through `net.JoinHostPort`.
-- **Agent-network scan tasks (#336)**: `scan_tasks` whose targets resolve to an agent-managed network now dispatch a scan command to that agent on every cron tick — no external timer or password-bearing scripts. Dispatch results land in the task's run history (a rejected dispatch, e.g. out-of-CIDR targets, is recorded as a failed run with the reason). Local-network tasks are unchanged.
+- **LuCI integration on OpenWrt/iStoreOS (router-native entry)**: the ipk/apk/tarball now ship a classic Lua controller + templates (no luci-compat/CBI dependency, inert without LuCI)，LuCI's 服务 → MiBee Steward gains a Status page (service/health/autostart/version/port/DB size + open-UI button) and a Settings page (change the web port with auto-restart + health check，80/443 refused, set the admin password per the effective policy, autostart toggle, restart). All privileged ops funnel through the single audited `/usr/lib/mibee/luci-helper.sh`, callable standalone; passwords are handed over via a 0600 tmpfs file and `MIBEE_RESET_PASSWORD`, never a command line.
+- **First-run setup with NO temp password (empty-credential bootstrap)**: `auth.initial_admin_password` may now be EMPTY (the OpenWrt/iStoreOS installer default), the admin is seeded password-less and the login page itself detects the state (public `GET /auth/setup-status`) and renders a **create-admin-password** form instead of the login form; `POST /auth/setup` (public, under the strict login rate limiter, policy-checked, one-shot, 409s forever once any password exists) sets the credential and returns a full session (token + cookie, no second login). Login attempts against the pending account return a distinct 409 `setup_required` and, importantly, do NOT tick the failure counter. The installer no longer generates/prints any temporary password.
+- **First-run web password setup + settings center (no-SSH configuration, step 1)**: the admin bootstrap credential (`auth.initial_admin_password`, incl. installer-generated random ones) is now seeded as a TEMPORARY password that deliberately bypasses the password policy, and the first login forces a change IN THE BROWSER (the SPA modal) backed by a server-side gate: tokens minted while the flag is set carry an `mcp` claim and `Authenticator` 403s every authenticated call except the change-survival allowlist (force-password / profile GET / 2FA). Previously a policy-violating `initial_admin_password` failed seeding with only a warn, fresh installs could come up with NO admin at all, recoverable only via CLI. `PUT /auth/force-password` now returns a fresh ungated token + rotated cookie. New settings-center overlay (`system_settings` table, `SettingsService`: DB overlay > YAML > defaults, in-memory snapshot + change subscribers) with `GET/PUT /api/v1/settings/auth` (admin, audit-logged) and `GET /api/v1/system` (read-only instance facts), plus an SPA page at Settings → Security (password policy form with live rule preview, lockout tuning, system info). Password-policy and lockout edits apply on the next validation/login, no restart. Default password policy relaxed: special characters no longer required (min 8 + upper + lower + digit); re-enable via the UI or YAML.
+- **OpenWrt/iStoreOS no-Docker installers**: `make package-openwrt` (tarball + on-router `install.sh`, generates config with a random `jwt_secret` + `cookie_secure: false` and a password-less bootstrap admin, fixes `ping_group_range`, enables + starts + health-checks), `make package-openwrt-ipk` (hand-rolled opkg package in the modern gzip-tar feed format, the legacy ar container is rejected by current opkg as "Malformed package file"; preinst arch gate, postinst = the same configure logic, `/etc/mibee` survives removal), and `make package-openwrt-apk` (apk-tools v2 format for OpenWrt 24.10+ firmware). `.gitattributes` keeps shell/unit files LF on Windows checkouts; release packaging normalizes too.
+- **OpenWrt form C field verification + v6 bind fix (#288 / #37)**: the router-center form is verified end-to-end on real hardware (GL.iNet MT2500 / Brume 2, mt7981, aarch64): full engine registry + embedded fingerprint corpus, all 4 Tier-1 router sources producing live data (a DHCP lease became a device carrying its lease hostname; conntrack + dns_log events flowing; hostapd a clean no-op), /24 scan in 74s with the router self-identifying as GL.iNet, SPA browser-verified, ~113MB RSS. `server.host: "::"` (the documented GL-firmware v4 workaround) now actually works, the old address concatenation produced the unparseable `:::8090` and a startup crash loop; bind addresses now go through `net.JoinHostPort`.
+- **Agent-network scan tasks (#336)**: `scan_tasks` whose targets resolve to an agent-managed network now dispatch a scan command to that agent on every cron tick, no external timer or password-bearing scripts. Dispatch results land in the task's run history (a rejected dispatch, e.g. out-of-CIDR targets, is recorded as a failed run with the reason). Local-network tasks are unchanged.
 - **Configurable password policy (#332)**: `auth.password_policy` (min_length + four character-class toggles). Defaults reproduce the previous hardcoded rules exactly; partial blocks override only the keys they name.
-- **Configurable login lockout (#338)**: `auth.lockout` (max_failed_attempts / lock_minutes). An expired lock now resets the failure counter — a stray retry after expiry no longer re-locks instantly (previously, a periodic client with a stale password could keep an account locked indefinitely). Account-lock responses moved from 429 to **423** with a retry-after hint, and the UI now distinguishes "account locked" from "too many attempts".
+- **Configurable login lockout (#338)**: `auth.lockout` (max_failed_attempts / lock_minutes). An expired lock now resets the failure counter, a stray retry after expiry no longer re-locks instantly (previously, a periodic client with a stale password could keep an account locked indefinitely). Account-lock responses moved from 429 to **423** with a retry-after hint, and the UI now distinguishes "account locked" from "too many attempts".
 - **Markdown upload & preview for device documents (#324)**: `.md` upload (MIME normalization + binary-content rejection), GFM preview in a sanitized (DOMPurify) dialog, soft-delete with working undo (restore endpoint), per-device document listing fix, `?inline=1` PDF preview, typed upload errors (413/415/400).
 - **Synthetic load harness (#313)**: `cmd/loadgen` serves a 127/8 synthetic device plane (kernel ICMP + SNMP/HTTP/SSH/RTSP responders) and drives full-stack benchmarks through the real API; `scanner.allow_reserved_targets` is the escape hatch for that plane.
 - **Demo mode (#315 / #285)**: `server.demo_mode` (or `-demo`) seeds a fictional TEST-NET inventory on an empty database.
 - **Multi-vantage probing data model (#328, step 1 of #277)**: `probe_targets.vantage` execution plans + per-vantage result tracks.
-- **Vantage probing execution channel (#344, step 2 of #277)**: agent-local probe execution is live end-to-end — the AgentDispatcher diffs per-agent plan fingerprints (sha256 over a canonical form) every 10s and dispatches a probe command ONLY on change (zero steady-state command traffic; clearing targets ships one empty plan that stops the agent-side scan); agents schedule probes fully locally (first-seen targets probe immediately, then per-target intervals; a 10s tick re-reads the plan so CRUD lands within one tick, and probing continues through center outages); results flow back via `POST /api/v1/agents/probe-report` (agent-token auth, 10s/32-row batches; the reporter's identity overrides the payload's claimed vantage — an agent can only write its own track; dropped batches lose samples rather than buffering forever — probing is observation, not a ledger); `mibee_probe_*` metrics gained a `vantage` label (legacy label-less selectors still match).
+- **Vantage probing execution channel (#344, step 2 of #277)**: agent-local probe execution is live end-to-end, the AgentDispatcher diffs per-agent plan fingerprints (sha256 over a canonical form) every 10s and dispatches a probe command ONLY on change (zero steady-state command traffic; clearing targets ships one empty plan that stops the agent-side scan); agents schedule probes fully locally (first-seen targets probe immediately, then per-target intervals; a 10s tick re-reads the plan so CRUD lands within one tick, and probing continues through center outages); results flow back via `POST /api/v1/agents/probe-report` (agent-token auth, 10s/32-row batches; the reporter's identity overrides the payload's claimed vantage, an agent can only write its own track; dropped batches lose samples rather than buffering forever, probing is observation, not a ledger); `mibee_probe_*` metrics gained a `vantage` label (legacy label-less selectors still match).
 - **Agent fleet management (#309 / #278)**: agent version reporting / clock offset / remote ops command whitelist + the fleet management view.
 - **Fingerprint coverage reporting (#308 / #282)**: coverage report + the "this device wasn't recognized" contribution loop.
 - **Ecosystem integration pack (#307 / #284)**: official Grafana dashboards; Feishu/WeCom/Telegram notification channels; webhook templates.
@@ -59,33 +59,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **Password changes now revoke every outstanding session (#357)**: users gain a `token_version` epoch column; every minted JWT records it as the `tv` claim and the Authenticator rejects any token whose claim lags the current value — a self-service change, an admin reset, a forced first-login change or a CLI `reset-admin-password` each bump the epoch, so potentially-leaked tokens stop working on their next request instead of living out the 24h expiry (field-observed: after a LuCI password reset the old browser session kept full API access). Deleted users' tokens die with the row; the epoch is persisted, so unlike the in-memory JTI blacklist a restart no longer resurrects revoked sessions. The per-request cost is one primary-key lookup.
+- **Password changes now revoke every outstanding session (#357)**: users gain a `token_version` epoch column; every minted JWT records it as the `tv` claim and the Authenticator rejects any token whose claim lags the current value, a self-service change, an admin reset, a forced first-login change or a CLI `reset-admin-password` each bump the epoch, so potentially-leaked tokens stop working on their next request instead of living out the 24h expiry (field-observed: after a LuCI password reset the old browser session kept full API access). Deleted users' tokens die with the row; the epoch is persisted, so unlike the in-memory JTI blacklist a restart no longer resurrects revoked sessions. The per-request cost is one primary-key lookup.
 ### Fixed
 
-- **GUI black-box round 1 — four UI bugs (#447, fixes #427/#429/#430/#440)**: the device-detail heartbeat trend chart read a hand-declared wire field that does not exist (chart showed "no data" for every window despite the API returning rows — now typed by the generated `HeartbeatResultList`); asset-info tags rendered array indices (`0: iot` — now values only, both JSON-array and CSV wire shapes); an empty login submit gave no feedback at all (the native `required` bubble is silent in several contexts — the form now runs its zod path and shows in-DOM localized field errors); and an authenticated visit to `/login` rendered the login form mixed into the logged-in sidebar layout (now redirected to `/dashboard`, sidebar gated off on `/login`).
-- **`(ip_address, network_id)` UNIQUE index never enforced on fresh installs (#431)**: `schema.sql` declared a plain INDEX shadowing the migration's `CREATE UNIQUE INDEX` — post-#312 fresh installs silently accepted duplicate (ip, network) rows, breaking roam/upsert identity semantics (found when coverage tests seeded the constraint and it wasn't there). UNIQUE at both layers now; a migration-fingerprint self-heal replays the chain on already-stamped DBs (dedup sweep + index rebuild), with the usual pre-migration `VACUUM INTO` backup.
-- **Legacy-upgrade devices-table rebuild dropped `device_uuid`/`offline_since` (#437)**: the `devices_new` CREATE TABLE DDL in two migration rebuilds (type-CHECK widening, duplicate-MAC merge) had drifted from the live schema — upgrading a legacy database silently lost the uuid/offline columns, breaking satellite-table keying (heartbeat targets, configs, documents). Both rebuild DDLs now match `schema.sql` exactly; writable-schema-narrowed regression tests reconstruct every legacy CHECK shape and pin all five table rebuilds.
-- **Heartbeat final-drain data loss + goroutine leaks + 2 races (#428)**: the final drain at shutdown used the already-canceled context — the last buffered verdict batch was dropped on every stop; the flush/sync loops leaked goroutines on never-started and immediate-stop orderings; and the verdict maps had unlock-path races. Fixed with a started/stopped lifecycle state machine and copy-then-act lock discipline (two lock scopes simplified away — a full lock audit found no nesting/deadlock issues elsewhere).
-- **SNMP `gosnmpToInt` returned 0 for every index string (#412)** — the STP probe was effectively dead and bridge port names came back broken since the SNMP connection refactor; found by the coverage campaign's fake-responder tests and fixed in the same batch. (Two smaller campaign finds: `UpstreamError` now classifies via `errors.Is`, and demo-mode seeding no longer runs a dead activity query.)
-- **Dashboard skeleton freeze on healthy networks (#385, the #302-era symptom resurfaced)**: Go marshals nil slices as JSON `null`, and `{#if overview?.abnormal.length}` read `null.length` — the TypeError killed Svelte 5's effect scheduler, freezing the loading skeleton on screen together with the banner (a HEALTHY network with 0 offline devices, or a fresh install with 0 runs, triggered it). Optional-chains audited against null JSON fields; red/green regression test added. (This fix had sat unmerged in an open PR while later builds were cut from main — silently regressing both field centers; all three servers were redeployed.)
-- **Roaming-device lease remnant killed a live device / infinite flap loop (#400, fixes #399)**: LeaseSweeper now recognizes a stale pre-roam lease beside a FRESHER same-uuid same-network lease as a remnant to dissociate — not a device to kill; plus per-device-per-pass expiry dedupe and quiet-period flap decay (`flap_count` halves every 30min stable window). Killed a live ~900-transition/15h flap loop on roamer .145/.172 instantly; the 913/911 counters clear within hours instead of never.
-- **Agent-network orphan devices stuck online forever (#398, fixes #397)**: LeaseSweeper third direction — `scanner_v2` rows on agent-managed networks with NO lease-snapshot reference and last_seen past TTL now flip offline (previously only devices the lease table knew about could expire). The first sweep auto-expired the two remaining legacy orphans; steady state orphans = 0.
-- **Lease identity resolution raced on IP reassignment (#395, fixes #389)**: resolution now keys on the MAC (the upsert primary) with recency as tiebreaker, instead of letting a reassigned IP's stale lease win; the anti-entropy fast path (state-hash match) also no longer leaves `devices.last_seen` stale — skipping the per-host bridge used to skip the touch too.
-- **`viomi-dishwasher-*` hostnames mis-typed as washing machines**: the appliance keyword map matched the `washer` substring inside `dishwasher` first; the specific entry now precedes the generic one (found during the #377 full-network verification on R68S — 19 Mijia devices enriched with brand + appliance in one sweep).
-- **Zero-config deployments silently lacked the new fingerprint corpora (found live while verifying #377)**: the engine's no-`fingerprint_path` fallback loaded the STANDALONE fingerprint library's own embedded rules (v0.1.0 — no `iot-identity.yaml`, no `mdns-ssdp.yaml`), so every default deployment classified with a stale corpus and the Mijia/mDNS/SSDP rules never fired — field-observed on R68S where a seeded lease hostname produced the type but no brand. The fallback now loads the corpus embedded in the `classify` package (the `make sync-fingerprints` copy — a strict superset of the library's rules), via a temp-dir materialization around `LoadFromDir`. An engine-level regression test drives a seeded lease hostname through gather/classify/dispatch and asserts the `miot` identity with brand Viomi lands on the report.
+- **GUI black-box round 1, four UI bugs (#447, fixes #427/#429/#430/#440)**: the device-detail heartbeat trend chart read a hand-declared wire field that does not exist (chart showed "no data" for every window despite the API returning rows, now typed by the generated `HeartbeatResultList`); asset-info tags rendered array indices (`0: iot`, now values only, both JSON-array and CSV wire shapes); an empty login submit gave no feedback at all (the native `required` bubble is silent in several contexts, the form now runs its zod path and shows in-DOM localized field errors); and an authenticated visit to `/login` rendered the login form mixed into the logged-in sidebar layout (now redirected to `/dashboard`, sidebar gated off on `/login`).
+- **`(ip_address, network_id)` UNIQUE index never enforced on fresh installs (#431)**: `schema.sql` declared a plain INDEX shadowing the migration's `CREATE UNIQUE INDEX`, post-#312 fresh installs silently accepted duplicate (ip, network) rows, breaking roam/upsert identity semantics (found when coverage tests seeded the constraint and it wasn't there). UNIQUE at both layers now; a migration-fingerprint self-heal replays the chain on already-stamped DBs (dedup sweep + index rebuild), with the usual pre-migration `VACUUM INTO` backup.
+- **Legacy-upgrade devices-table rebuild dropped `device_uuid`/`offline_since` (#437)**: the `devices_new` CREATE TABLE DDL in two migration rebuilds (type-CHECK widening, duplicate-MAC merge) had drifted from the live schema, upgrading a legacy database silently lost the uuid/offline columns, breaking satellite-table keying (heartbeat targets, configs, documents). Both rebuild DDLs now match `schema.sql` exactly; writable-schema-narrowed regression tests reconstruct every legacy CHECK shape and pin all five table rebuilds.
+- **Heartbeat final-drain data loss + goroutine leaks + 2 races (#428)**: the final drain at shutdown used the already-canceled context, the last buffered verdict batch was dropped on every stop; the flush/sync loops leaked goroutines on never-started and immediate-stop orderings; and the verdict maps had unlock-path races. Fixed with a started/stopped lifecycle state machine and copy-then-act lock discipline (two lock scopes simplified away, a full lock audit found no nesting/deadlock issues elsewhere).
+- **SNMP `gosnmpToInt` returned 0 for every index string (#412)**, the STP probe was effectively dead and bridge port names came back broken since the SNMP connection refactor; found by the coverage campaign's fake-responder tests and fixed in the same batch. (Two smaller campaign finds: `UpstreamError` now classifies via `errors.Is`, and demo-mode seeding no longer runs a dead activity query.)
+- **Dashboard skeleton freeze on healthy networks (#385, the #302-era symptom resurfaced)**: Go marshals nil slices as JSON `null`, and `{#if overview?.abnormal.length}` read `null.length`, the TypeError killed Svelte 5's effect scheduler, freezing the loading skeleton on screen together with the banner (a HEALTHY network with 0 offline devices, or a fresh install with 0 runs, triggered it). Optional-chains audited against null JSON fields; red/green regression test added. (This fix had sat unmerged in an open PR while later builds were cut from main, silently regressing both field centers; all three servers were redeployed.)
+- **Roaming-device lease remnant killed a live device / infinite flap loop (#400, fixes #399)**: LeaseSweeper now recognizes a stale pre-roam lease beside a FRESHER same-uuid same-network lease as a remnant to dissociate, not a device to kill; plus per-device-per-pass expiry dedupe and quiet-period flap decay (`flap_count` halves every 30min stable window). Killed a live ~900-transition/15h flap loop on roamer .145/.172 instantly; the 913/911 counters clear within hours instead of never.
+- **Agent-network orphan devices stuck online forever (#398, fixes #397)**: LeaseSweeper third direction, `scanner_v2` rows on agent-managed networks with NO lease-snapshot reference and last_seen past TTL now flip offline (previously only devices the lease table knew about could expire). The first sweep auto-expired the two remaining legacy orphans; steady state orphans = 0.
+- **Lease identity resolution raced on IP reassignment (#395, fixes #389)**: resolution now keys on the MAC (the upsert primary) with recency as tiebreaker, instead of letting a reassigned IP's stale lease win; the anti-entropy fast path (state-hash match) also no longer leaves `devices.last_seen` stale, skipping the per-host bridge used to skip the touch too.
+- **`viomi-dishwasher-*` hostnames mis-typed as washing machines**: the appliance keyword map matched the `washer` substring inside `dishwasher` first; the specific entry now precedes the generic one (found during the #377 full-network verification on R68S, 19 Mijia devices enriched with brand + appliance in one sweep).
+- **Zero-config deployments silently lacked the new fingerprint corpora (found live while verifying #377)**: the engine's no-`fingerprint_path` fallback loaded the STANDALONE fingerprint library's own embedded rules (v0.1.0, no `iot-identity.yaml`, no `mdns-ssdp.yaml`), so every default deployment classified with a stale corpus and the Mijia/mDNS/SSDP rules never fired, field-observed on R68S where a seeded lease hostname produced the type but no brand. The fallback now loads the corpus embedded in the `classify` package (the `make sync-fingerprints` copy, a strict superset of the library's rules), via a temp-dir materialization around `LoadFromDir`. An engine-level regression test drives a seeded lease hostname through gather/classify/dispatch and asserts the `miot` identity with brand Viomi lands on the report.
 - **LuCI apply actions dead on the ucode bridge - helper_call rewired through a command-file wrapper (field-found while verifying #360 on R68S)**: on LuCI 24.10's luci-lua-runtime bridge the exec family available to classic Lua controllers does NOT POSIX-split command strings - luci-helper.sh received the ENTIRE command line as a single argument and fell into its usage fallback, so every Settings-page action (restart/port/password/passive) reported *_fail (a standalone `lua` outside the bridge splits the same string fine; template-side `luci.sys.exec` also works - only the controller context mangles). helper_call now writes the validated argument line to a cmd file and invokes the new single-word `/usr/lib/mibee/luci-apply.sh` wrapper, which re-splits and runs the helper; the exit code returns via an rc file. Also fixes the passive branch passing the helper path twice. Verified end-to-end on iStoreOS 24.10.8/R68S: passive_ok with all four sources landing in the config and the service restarting healthy.
-- **`go test ./internal/service/scannerv2/probe` no longer dials the real network (#364)**: the timeout-semantics test dialed a TEST-NET address expecting silence — on dev machines behind TUN proxies (Clash Verge etc.) the proxy fake-answers SYN packets to unroutable targets, turning "timeout" into a phantom "open" and failing the suite locally (CI unaffected). The TCP dial behind the port probe is now an injectable function; the test stubs deadline-exceeded semantics and additionally pins the exact one-retry contract.
+- **`go test ./internal/service/scannerv2/probe` no longer dials the real network (#364)**: the timeout-semantics test dialed a TEST-NET address expecting silence, on dev machines behind TUN proxies (Clash Verge etc.) the proxy fake-answers SYN packets to unroutable targets, turning "timeout" into a phantom "open" and failing the suite locally (CI unaffected). The TCP dial behind the port probe is now an injectable function; the test stubs deadline-exceeded semantics and additionally pins the exact one-retry contract.
 
 
-- **LuCI settings page no longer hardcodes the default password policy (#356)**: after an admin relaxes the policy via the settings center (DB overlay), the LuCI page kept describing the shipped default (min 8 + upper + lower + digit) — misleading router admins whose chosen passwords actually passed. Both the form hint and the `pw_fail` banner now point at 管理 → 设置 → 安全 as the single source of truth instead of restating rules.
-- **SPA never sent `Authorization: Bearer` — total breakage on plain-HTTP deployments with `cookie_secure: true`**: the api client's documented "cookie-first, Bearer fallback" contract had no fallback implemented — requests relied entirely on the auth cookie. Browsers silently DROP Secure cookies on plain HTTP, so on a fresh router install (generated config carried `cookie_secure: true`) login "succeeded" but every subsequent authenticated call 401'd: the forced-password modal could never complete (surfaced as a generic session-expired error), the dashboard bounced straight back to /login. `request`/`download`/`upload` now attach the Bearer header from the stored session, and the OpenWrt installer additionally forces `cookie_secure: false` in the generated config (router form factor = plain HTTP on the LAN).
-- **Heartbeat Start/Stop lifecycle race (shutdown hang)**: `NewRouter` launches `go heartbeatSvc.Start(...)`, so an immediate `Stop()` (a test, or a fast shutdown) could run before the delayed Start — `HeartbeatStore.Close()` then read a nil cancel, skipped it, and blocked on `<-done` forever while the late Start launched a flush loop nobody could cancel (field-observed as a 15-minute full-suite hang in `internal/api/routes`; goroutine leak of the flush + sync loops). Both the store and the service now run a started/stopped lifecycle state machine: Close-on-never-started returns without waiting, Start-after-Close/Start-after-Stop are no-ops, and double-Start can't spawn duplicate loops. Regression tests pin all three orderings.
-- **Admin seeding robustness (first-run experience)**: `seedAdminUser` compared the wrapped `ErrUserExists` with `==`, so the "already exists, skip" branch never matched — every restart of an initialized instance logged a seed failure; startup seeding failures were only warns (now ERROR with a `reset-admin-password` remedy hint); the two-step seed (Register + SetMustChangePassword on hardcoded id 1) is now one atomic CreateUser with the flag set; self-service password changes now stamp `password_changed_at` (previously only the force/admin paths did); the declared-but-never-implemented `ErrSamePassword` check (new password must differ from current) is now actually enforced on change/force-change paths; the 2FA-verify cookie no longer hardcodes 24h and follows `auth.cookie_max_age`/`token_expiry` like the login cookie.
+- **LuCI settings page no longer hardcodes the default password policy (#356)**: after an admin relaxes the policy via the settings center (DB overlay), the LuCI page kept describing the shipped default (min 8 + upper + lower + digit)，misleading router admins whose chosen passwords actually passed. Both the form hint and the `pw_fail` banner now point at 管理 → 设置 → 安全 as the single source of truth instead of restating rules.
+- **SPA never sent `Authorization: Bearer`, total breakage on plain-HTTP deployments with `cookie_secure: true`**: the api client's documented "cookie-first, Bearer fallback" contract had no fallback implemented, requests relied entirely on the auth cookie. Browsers silently DROP Secure cookies on plain HTTP, so on a fresh router install (generated config carried `cookie_secure: true`) login "succeeded" but every subsequent authenticated call 401'd: the forced-password modal could never complete (surfaced as a generic session-expired error), the dashboard bounced straight back to /login. `request`/`download`/`upload` now attach the Bearer header from the stored session, and the OpenWrt installer additionally forces `cookie_secure: false` in the generated config (router form factor = plain HTTP on the LAN).
+- **Heartbeat Start/Stop lifecycle race (shutdown hang)**: `NewRouter` launches `go heartbeatSvc.Start(...)`, so an immediate `Stop()` (a test, or a fast shutdown) could run before the delayed Start, `HeartbeatStore.Close()` then read a nil cancel, skipped it, and blocked on `<-done` forever while the late Start launched a flush loop nobody could cancel (field-observed as a 15-minute full-suite hang in `internal/api/routes`; goroutine leak of the flush + sync loops). Both the store and the service now run a started/stopped lifecycle state machine: Close-on-never-started returns without waiting, Start-after-Close/Start-after-Stop are no-ops, and double-Start can't spawn duplicate loops. Regression tests pin all three orderings.
+- **Admin seeding robustness (first-run experience)**: `seedAdminUser` compared the wrapped `ErrUserExists` with `==`, so the "already exists, skip" branch never matched, every restart of an initialized instance logged a seed failure; startup seeding failures were only warns (now ERROR with a `reset-admin-password` remedy hint); the two-step seed (Register + SetMustChangePassword on hardcoded id 1) is now one atomic CreateUser with the flag set; self-service password changes now stamp `password_changed_at` (previously only the force/admin paths did); the declared-but-never-implemented `ErrSamePassword` check (new password must differ from current) is now actually enforced on change/force-change paths; the 2FA-verify cookie no longer hardcodes 24h and follows `auth.cookie_max_age`/`token_expiry` like the login cookie.
 - **Reserved-range scan targets rejected (#318 / #317)**: loopback / unspecified / link-local / multicast / broadcast / 240-4 targets are refused at every scan entry point (task create/update, sync scan, agent command dispatch); CIDR expansion drops network/broadcast addresses (nmap semantics, also closes the .255 phantom-device class of #254). Target expansion consolidated into `internal/cidrutil`.
 - **`MIBEE_*` env overrides for underscore keys (#334 / #331)**: exact env-name→key mapping derived from the Config struct; underscore-bearing keys (`initial_admin_password`, `allow_reserved_targets`, …) were previously silently unreachable from the environment.
 - **Device gauges refresh periodically (#335 / #333)**: `mibee_devices_total` no longer freezes at the process-start snapshot.
 - **`-demo` with a broken config no longer segfaults (#330 / #327)**.
-- **Agent mini-DB startup migrations (#339 / #337)**: the agent's local schema now ships the full column set (offline_since / device_uuid / ssh_credential_id / scan_tasks.network_id+credential_id) and upgrades legacy DBs in place — previously every device-identity roam/replace silently degraded with "no such column".
+- **Agent mini-DB startup migrations (#339 / #337)**: the agent's local schema now ships the full column set (offline_since / device_uuid / ssh_credential_id / scan_tasks.network_id+credential_id) and upgrades legacy DBs in place, previously every device-identity roam/replace silently degraded with "no such column".
 - Data-integrity / parity hardening batch: sqlite BUSY write-path governance + retry metrics (#311 / #267); schema version gating + backup retention (#312 / #268); scannerv2 store migrated to sqlc (#314 / #269); Windows build/test parity restored (#325 / #321); dashboard layout freeze (#302). (Feature batches that shipped in the same window were promoted to Added above.)
 
 ## [0.5.0] - 2026-08-19
@@ -94,54 +94,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### RBAC: multi-role capability model + object-level network scoping (issue #138)
 
-The 2-role model (admin / user with a one-size-fits-all `RequireAdmin`) is replaced by a **capability graph + per-network object scoping** — unlocking team and MSP scenarios:
+The 2-role model (admin / user with a one-size-fits-all `RequireAdmin`) is replaced by a **capability graph + per-network object scoping**, unlocking team and MSP scenarios:
 
 - **Roles & capabilities**: `users.role` CHECK widened to `admin` / `operator` / `viewer` (`user` remains as a legacy alias for viewer). Every route is gated by a **capability** (`CapDeviceRead`, `CapScanTrigger`, `CapDeviceWrite`, …) via a new `RequireCapability` middleware; roles map to capability sets and admin inherits everything. All `RequireAdmin` call sites were remapped, and shared read surfaces uniformly require their `CapXxxRead` capability.
 - **Network grants**: new `user_network_grants` table + admin management API (`/api/v1/users/{id}/network-grants` + `/api/v1/networks/{id}/grants`) + a users-page UI for assigning which networks a non-admin can see.
-- **Scope modes** (`rbac.scope_default`, default `open`): in `open` mode non-admins see every network (single-team behavior preserved); in `closed` mode a non-admin sees ONLY granted networks — enforced across the whole read surface (device lists/detail, scanner tasks/runs/results, changes, topology), with unauthorized details returning `404`. Admin always bypasses scope; unknown config values fall back to `open` (fail-safe against lockout).
+- **Scope modes** (`rbac.scope_default`, default `open`): in `open` mode non-admins see every network (single-team behavior preserved); in `closed` mode a non-admin sees ONLY granted networks, enforced across the whole read surface (device lists/detail, scanner tasks/runs/results, changes, topology), with unauthorized details returning `404`. Admin always bypasses scope; unknown config values fall back to `open` (fail-safe against lockout).
 - **Scanner object scoping**: `scan_tasks.network_id` stamps each task's owning network; in closed mode non-admins only see/trigger tasks within their granted networks, and the scan-target network-boundary check carries over.
 - Migration is zero-drama for existing installs: admins stay admins, `user` rows keep working as viewers, and `open` mode preserves the previous visibility exactly.
 
-### SNMPv3 (authNoPriv / authPriv) — issue #135
+### SNMPv3 (authNoPriv / authPriv), issue #135
 
 The last hard enterprise gate: hardened environments increasingly disable v2c community strings, and every serious competitor supports v3.
 
-- **Credential vault**: new `snmp_credentials` table stores USM credentials (user, auth passphrase + protocol, priv passphrase + protocol, security level) **encrypted at rest with AES-256-GCM**, keyed by `security.master_key` (exactly 32 bytes, `MIBEE_SECURITY_MASTER_KEY` override). The key is optional until the first v3 credential exists — existing v1/v2c deployments keep working unchanged.
-- **Probe support**: the SNMP probe's version loop gains `Version3`; authNoPriv (MD5/SHA/SHA-2) and authPriv (+ AES/DES) credentials are tried per target, and ALL OID paths work under v3 — the 8-OID identity collection and the LLDP-MIB / CDP-MIB / Bridge-MIB / Q-BRIDGE-MIB / STP-MIB / IF-MIB topology walks.
+- **Credential vault**: new `snmp_credentials` table stores USM credentials (user, auth passphrase + protocol, priv passphrase + protocol, security level) **encrypted at rest with AES-256-GCM**, keyed by `security.master_key` (exactly 32 bytes, `MIBEE_SECURITY_MASTER_KEY` override). The key is optional until the first v3 credential exists, existing v1/v2c deployments keep working unchanged.
+- **Probe support**: the SNMP probe's version loop gains `Version3`; authNoPriv (MD5/SHA/SHA-2) and authPriv (+ AES/DES) credentials are tried per target, and ALL OID paths work under v3, the 8-OID identity collection and the LLDP-MIB / CDP-MIB / Bridge-MIB / Q-BRIDGE-MIB / STP-MIB / IF-MIB topology walks.
 - **API + UI**: credential CRUD with write-time encryption and read-time redaction (passphrases never echo back); scan forms and device pages carry v3 options with a security-level dropdown.
-- Agent-side v3 is intentionally deferred (issue #241 — needs a distributed credential design); agents keep v1/v2c.
+- Agent-side v3 is intentionally deferred (issue #241, needs a distributed credential design); agents keep v1/v2c.
 
-### Device config backup — Oxidized/RANCID-style (issue #137)
+### Device config backup, Oxidized/RANCID-style (issue #137)
 
-Network-ops staple: periodically pull each router/switch/firewall's running-config, version it, diff it, and wire config changes into change detection. Ships end-to-end (browser-verified); **opt-in** via `scanner.config_backup.enabled` (default off — requires `security.master_key` + an SSH credential bound to a device).
+Network-ops staple: periodically pull each router/switch/firewall's running-config, version it, diff it, and wire config changes into change detection. Ships end-to-end (browser-verified); **opt-in** via `scanner.config_backup.enabled` (default off, requires `security.master_key` + an SSH credential bound to a device).
 
 - **Storage**: `device_configs` (versioned per `device_uuid`: fetched_at, config_hash, config_text, protocol, diff vs previous) and `ssh_credentials` (encrypted with the same AES-256-GCM master-key cipher as SNMPv3; CRUD API encrypts on write and redacts on read).
 - **SSH probe engine** (`scannerv2/configbackup`): `golang.org/x/crypto/ssh` with a vendor command matrix (Juniper JunOS `show configuration | display set`; HP / Aruba / H3C / Comware `display current-configuration`; Cisco IOS/NX-OS, Arista, Huawei VRP, Mikrotik and unknowns fall back to `show running-config`) and host-key **TOFU** (trust-on-first-use) recording.
-- **Service**: scheduled sweep selects router/switch/firewall devices with bound credentials, fetches, diffs, and records a new version only on change — a change emits a **`device_config_changed`** event into `change_log` + the in-process Watcher (so it feeds the changes page, SSE watch, and notification rules).
+- **Service**: scheduled sweep selects router/switch/firewall devices with bound credentials, fetches, diffs, and records a new version only on change, a change emits a **`device_config_changed`** event into `change_log` + the in-process Watcher (so it feeds the changes page, SSE watch, and notification rules).
 - **Read API + UI**: `GET /devices/{id}/configs` (list), `/{configId}` (detail), `/diff?a=&b=` (two-version compare); device detail gains a **Config History** tab with version list, detail modal, and hand-colored unified-diff rendering.
-- Real-router end-to-end smoke (GL-MT3000) is deferred to the next release — the code path is complete and browser-verified against the API.
+- Real-router end-to-end smoke (GL-MT3000) is deferred to the next release, the code path is complete and browser-verified against the API.
 
 ### Built-in notifier: device events → webhook/email (issue #139)
 
-SOHO/branch users no longer need a Prometheus+Alertmanager stack just to get "device lost" emails. A **rule engine** subscribes to the change-detection Watcher and routes matched events through the existing notification dispatcher (webhook/email channels, 3 workers, per-user read state) — a thin rule→channel hop, deliberately NOT an alerting engine:
+SOHO/branch users no longer need a Prometheus+Alertmanager stack just to get "device lost" emails. A **rule engine** subscribes to the change-detection Watcher and routes matched events through the existing notification dispatcher (webhook/email channels, 3 workers, per-user read state), a thin rule→channel hop, deliberately NOT an alerting engine:
 
 - New `notification_rules` table: event type (`device_lost` / `device_recovered` / `device_added` / `device_changed`), scope (all / network / device-by-uuid), target channel, `cooldown_minutes` (default 30) per (rule × device) anti-flap window, enable toggle.
-- The engine layers per-(rule, device) cooldowns on top of the change-detector's existing liveness cooldown — flapping devices don't spam channels.
+- The engine layers per-(rule, device) cooldowns on top of the change-detector's existing liveness cooldown, flapping devices don't spam channels.
 
 ### Device liveness time series + identity hardening (issues #114 / #115 / #116 / #117 / #120 / #129)
 
 Fixes a change-detection noise storm at the root: liveness (online/offline) was modeled as discrete `device_changed` events, so every status flip fired a row (70k+ burying real changes on the test network).
 
-- **`device_liveness` time series** (in the heartbeat store): one online/offline verdict sample per device per tick, batched through the existing buffered-write/WAL infrastructure. Queries: `OnlineRatio` (window jitter-vs-transition signal), `OfflineDuration`, `LivenessHistory`. Disposable — `devices.status` stays the source of truth.
+- **`device_liveness` time series** (in the heartbeat store): one online/offline verdict sample per device per tick, batched through the existing buffered-write/WAL infrastructure. Queries: `OnlineRatio` (window jitter-vs-transition signal), `OfflineDuration`, `LivenessHistory`. Disposable, `devices.status` stays the source of truth.
 - **Tiered change events**: status flips are consumed by the liveness tier instead of spamming `device_changed`; real adds/changes/losses stay crisp.
 - **`device_uuid` as the satellite key**: heartbeat targets and the satellite tables key by the stable device UUID (not IP), so address changes don't fork history. Fixes the empty-sentinel regression where a device's second scan showed stale data (#129).
 - **Lease sweeper flap decay**: agent-network flap counts decay instead of hard-resetting, so a flapping device trends toward lost instead of ping-ponging.
-- **Silent-device retention**: scanner-discovered devices with no heartbeat are auto-pruned — MAC-bearing devices after `retention.silent_device_days_mac` (default 7d), MAC-less identities after `retention.silent_device_hours_no_mac` (default 24h). Manual devices are never auto-deleted; coming back online resets the clock.
+- **Silent-device retention**: scanner-discovered devices with no heartbeat are auto-pruned, MAC-bearing devices after `retention.silent_device_days_mac` (default 7d), MAC-less identities after `retention.silent_device_hours_no_mac` (default 24h). Manual devices are never auto-deleted; coming back online resets the clock.
 - **Liveness in the UI**: device detail exposes last-seen / offline-since / last-online.
 
 ### Topology visualization polish (issue #136)
 
-The L2 data (LLDP/CDP/Bridge/Q-BRIDGE/STP edges) was already the richest among OSS peers — now the rendering catches up:
+The L2 data (LLDP/CDP/Bridge/Q-BRIDGE/STP edges) was already the richest among OSS peers, now the rendering catches up:
 
 - **Layered force-directed layout**: core/distribution/access layers with distinct node colors; the legend doubles as a per-layer visibility filter.
 - **Search + focus**: typing dims non-matching nodes; clicking a node highlights its neighbors and opens a detail card (IP/MAC/type/degree).
@@ -151,7 +151,7 @@ The L2 data (LLDP/CDP/Bridge/Q-BRIDGE/STP edges) was already the richest among O
 ### Handler/service charter debt cleared: the 4 grandfathered handlers migrated (issue #240)
 
 The last four mutating handlers that wrote to the DB directly (documented as
-charter debt since #166) now go through service layers — the charter has no
+charter debt since #166) now go through service layers, the charter has no
 remaining debt rows:
 
 - **`service.NetworkService`**: network CRUD; the raw-SQL UPDATE workaround
@@ -159,7 +159,7 @@ remaining debt rows:
 - **`service.AgentTokenService`**: agent-token create/revoke/delete, including
   the `networks.agent_id` stamp-on-create / conditional-clear-on-revoke wiring.
   Token MINTING stays in the HTTP layer (one-time credential display) and is
-  injected as a `TokenMinter` func — keeps the service free of api-layer imports.
+  injected as a `TokenMinter` func, keeps the service free of api-layer imports.
 - **`service.AgentCommandService`**: enqueue (with the scan-target
   network-boundary check, now returning a typed `BoundaryError` that carries the
   offending IPs verbatim), ack, complete.
@@ -174,7 +174,7 @@ table cleared.
 
 ### Metrics: dead collectors wired up + metrics_path honored (issues #238 / #239)
 
-**HeartbeatFailures was a dead alert** — `mibee_heartbeat_checks_total` (and five
+**HeartbeatFailures was a dead alert**, `mibee_heartbeat_checks_total` (and five
 siblings) were registered at `/metrics` but never incremented in production
 code, so the alert's expression was permanently 0. Fixed by moving the
 collectors to a new neutral package and wiring the producers:
@@ -185,7 +185,7 @@ collectors to a new neutral package and wiring the producers:
   `UpdateDeviceMetrics` unchanged in behavior.
 - **Heartbeat**: `probeAndRecord` now increments
   `mibee_heartbeat_checks_total{status}` per recorded outcome and observes
-  `mibee_heartbeat_latency_seconds{method}` — the `HeartbeatFailures` alert
+  `mibee_heartbeat_latency_seconds{method}`, the `HeartbeatFailures` alert
   rule evaluates against real data.
 - **Scanner**: run completion/failure increments
   `mibee_scanner_runs_total{status}`, observes
@@ -201,11 +201,11 @@ collectors to a new neutral package and wiring the producers:
 
 The committed `internal/db` had been stale since #233 (`scan_tasks.network_id`
 landed in schema + migrations without `sqlc generate`), so any full regenerate
-emitted per-query Row structs that broke ~10 call sites — PR #235 had to
+emitted per-query Row structs that broke ~10 call sites, PR #235 had to
 surgically merge around it. Fixed at the root:
 
 - `db/queries/devices.sql` full-row lists now select `ssh_credential_id` (6
-  lists) and `db/queries/scan_tasks.sql` selects `network_id` (7 lists) — the
+  lists) and `db/queries/scan_tasks.sql` selects `network_id` (7 lists), the
   column sets match the tables again, so sqlc restores model reuse and NO call
   sites needed changes. The `CreateScanTask` INSERT still does not set
   `network_id` (stamped post-insert by raw SQL, as before).
@@ -213,14 +213,14 @@ surgically merge around it. Fixed at the root:
   generate produces an empty diff).
 - **CI drift guard**: the `sqlc-verify` job installs sqlc **v1.31.1** (matching
   the committed generator) and fails when `sqlc generate` produces a diff in
-  `internal/db/` — schema/query changes must ship with regenerated code.
+  `internal/db/`, schema/query changes must ship with regenerated code.
 - Tests with hand-rolled inline `devices` schemas gained the
   `ssh_credential_id` column.
 
 
 ### Synthetic Probing (Phase 1)
 
-**Blackbox-style probing of EXPLICIT external endpoints (PR #235)** — user-configured
+**Blackbox-style probing of EXPLICIT external endpoints (PR #235)**, user-configured
 probe targets (typically internet resources: a public HTTPS site, a hosted mail
 TLS port) probed on fixed intervals, managed via DB/API/UI. The scanner's
 internal-network TLS certificate collection (`CollectCertChain`) is reused
@@ -232,7 +232,7 @@ inventory beyond the LAN.
   outcome), `probe_results` (append-only history with per-run cert summary;
   RFC3339 string timestamps), `probe_tls_certs` (each target's CURRENT chain,
   delete-then-insert; a transient handshake failure keeps the last known-good
-  chain — unlike the scanner's current-state semantics).
+  chain, unlike the scanner's current-state semantics).
 - **Engine** (`internal/service/probetarget/`): 10s tick re-reads enabled
   targets so CRUD applies without restart; next-due times resume from
   `last_run_at` on restart (no startup storm); 8-probe concurrency bound;
@@ -240,7 +240,7 @@ inventory beyond the LAN.
   exclusive; `POST /{id}/trigger` probes synchronously and returns the recorded
   result.
 - **Modules**: http/tcp/icmp reuse the shared heartbeat probers
-  (`probe.Result` gains `StatusCode`); tls — and https-flavored http — call
+  (`probe.Result` gains `StatusCode`); tls, and https-flavored http, call
   `CollectCertChain` for the full chain (leaf + issuers + trust verdict +
   TLS version/cipher).
 - **API** `/api/v1/probe-targets`: CRUD + trigger + `/{id}/results` +
@@ -256,13 +256,13 @@ inventory beyond the LAN.
   existing cleanup service.
 - **Frontend**: `/probes` management page (status/latency/cert-days badges,
   enable toggle, history modal, certificate chain modal), zh/en i18n, nav entry.
-- **sqlc note**: query-file comments must NOT contain apostrophes — sqlc's
+- **sqlc note**: query-file comments must NOT contain apostrophes, sqlc's
   SQLite lexer swallows them and silently truncates the generated statement
   (documented in `db/AGENTS.md`).
 
 
 ### MAC bit flags: locally-administered / multicast (neutralized from Phase 1)
-**Correction of #118 Phase 1 (PR #121)** — Phase 1 treated the
+**Correction of #118 Phase 1 (PR #121)**, Phase 1 treated the
 locally-administered (U/L) bit as a "randomized MAC" verdict and downgraded such
 devices to `(ip, network_id)` identity. That was a semantic overreach: per IEEE
 802 / RFC 7042 the U/L bit only means "locally administered", and it **cannot**
@@ -281,16 +281,16 @@ keeping the bit as a neutral observability flag.
   `mac_is_locally_administered`; helper `store.IsLocalMAC` →
   `IsLocallyAdministeredMAC`; UI badge label "Randomized" → "Locally Admin." with
   a neutral tooltip stating the bit cannot tell random from fixed. `mac_is_multicast` / `IsMulticastMAC` unchanged (multicast bit is unambiguous).
-- The flag is observability-only — it does NOT change device identity. See
+- The flag is observability-only, it does NOT change device identity. See
   issue #118 research comment for the full rationale (RFC 7042, license boundary
   for IEEE data, etc.).
 
 ### OUI vendor inference: MA-S / MA-M / MA-L longest-prefix match
-**Deterministic MAC enrichment** — the OUI lookup now resolves a MAC to its
+**Deterministic MAC enrichment**, the OUI lookup now resolves a MAC to its
 IEEE-registered vendor via **longest-prefix-match** across the three registries:
 MA-S (/36, 9 hex, formerly IAB) → MA-M (/28, 7 hex) → MA-L (/24, 6 hex). This is
 mandatory because MA-S/MA-M sub-blocks are carved out of /24 OUIs owned by IEEE
-or another vendor — without longest-prefix, a MAC starting `8C1F64B14..` would
+or another vendor, without longest-prefix, a MAC starting `8C1F64B14..` would
 be mislabelled "IEEE Registration Authority" instead of "Murata" (the MA-S
 sub-assignee).
 
@@ -299,26 +299,26 @@ sub-assignee).
   loader indexes prefixes of all three lengths (the 6-hex cap in
   `NormalizeMACPrefix` is lifted via a new `normalizeHexPrefix`).
 - **New `scan_attributes` fields**: `oui_prefix` (the matched 6/7/9-hex block)
-  and `oui_vendor` (the IEEE organization name — the NIC silicon vendor). Kept
+  and `oui_vendor` (the IEEE organization name, the NIC silicon vendor). Kept
   SEPARATE from the existing `vendor` (the device's self-declared brand via
   SNMP/HTTP/TLS); the two differ in OEM/rebrand/virtualization cases.
 - **Out-of-box coverage**: the engine now auto-seeds from an EMBEDDED curated
   CC-BY-SA table (`vendor/oui_curated.txt`, via `//go:embed`) when
-  `scanner.oui_path` is empty — a fresh install gets vendor inference for common
+  `scanner.oui_path` is empty, a fresh install gets vendor inference for common
   devices without any setup. A user-configured full IEEE file still overrides it.
 - **`scripts/fetch-oui.sh` rewritten**: fetches all three IEEE CSVs (MA-L/MA-M/
   MA-S), merges into one `<prefix>\t<vendor>` file with Python CSV parsing
   (vendor names contain commas/quotes). Also fixes a pre-existing typo in the
-  download URL (`standardeee.org` → `standards-oui.ieee.org`) — the old script
+  download URL (`standardeee.org` → `standards-oui.ieee.org`), the old script
   downloaded from a non-canonical mirror and would have failed.
 - **License boundary preserved**: the IEEE registries are "All rights reserved"
-  factual data — they are NOT folded into the CC-BY-SA fingerprint corpus (see
+  factual data, they are NOT folded into the CC-BY-SA fingerprint corpus (see
   `docs/fingerprint-spec.md` §8 "Data vs code distinction"). The embedded
   curated table is a hand-authored CC-BY-SA subset, not an IEEE reproduction;
   the full IEEE set stays an optional runtime download.
 
 ### UI: OUI vendor (NIC silicon) surfaced in device views
-**Follow-up to the OUI vendor inference above** — the new `oui_vendor` /
+**Follow-up to the OUI vendor inference above**, the new `oui_vendor` /
 `oui_prefix` fields (Phase 2) are now visible in the UI, kept distinct from the
 device's self-declared `vendor` brand.
 
@@ -333,7 +333,7 @@ device's self-declared `vendor` brand.
 ### HTTP surface hardening (issues #133 / #164 / #165 / #177)
 - **Trusted-proxy-aware RealIP**: the deprecated `chimw.RealIP` (which
   unconditionally trusted `X-Forwarded-For`) is replaced by middleware that
-  only honors forwarded headers from configured `server.trusted_proxies` —
+  only honors forwarded headers from configured `server.trusted_proxies`;
   client IPs can no longer be spoofed via the header.
 - **Sentinel errors → proper 400s**: service-layer validation errors are typed
   sentinels; handlers map them with `errors.Is` instead of returning 500s for
@@ -346,7 +346,7 @@ A consolidation pass across the SPA:
 - **Destructive-action gates**: batch device-status flips require confirmation;
   five create/edit modals gain a confirm-on-dirty-discard guard.
 - **DataTable a11y refactor**: event-delegation rows become properly
-  interactive (keyboard-handled, focusable) — no more click-only rows.
+  interactive (keyboard-handled, focusable), no more click-only rows.
 - **Scanner cancel**: long scans can be aborted from the scan page
   (AbortController), with the same validation pattern applied to scan tasks and
   agent targets; login password gains a Zod schema.
@@ -373,10 +373,10 @@ A consolidation pass across the SPA:
   cleanly on shutdown.
 
 ### Code health (issues #132 / #141 / #157 / #158 / #160 / #161)
-- **`internal/repository/` dissolved** — repository types moved into
+- **`internal/repository/` dissolved**, repository types moved into
   `internal/service/` next to their consumers (one less layer to jump).
 - **Handler stub collapse**: server/TLS handler families register
-  data-driven — ~68 handwritten stubs deleted.
+  data-driven, ~68 handwritten stubs deleted.
 - **God-file splits**: `main.go` migration logic → `migrations.go`; scanner
   config types → `scanner_config.go`.
 - Dead-code cleanup: v1 scanner stub, misplaced test helpers, `var _`
@@ -395,16 +395,16 @@ bypass guard), user-management security paths, SNMP-credential handler
 - **Website manuals migrated into the repo** (`docs/{zh,en}/`, 14 bilingual
   files): introduction, quick-start, architecture, API, configuration,
   deployment, development, discovery, distributed, eBPF, OpenWrt,
-  fingerprint-spec, product-scope, changelog — the repo is now the single
+  fingerprint-spec, product-scope, changelog, the repo is now the single
   source of truth the website syncs from (issue #234).
 - Probe/synthetic-probing docs + config samples completed (issue #236);
   `config.example.yaml` regained 9 config blocks that code used but the sample
   lacked (agent/rdns/mdns/arp_scan/reconcile/retention, issue #131).
 
 ### Deferred
-- Agent-side SNMPv3 credentials (issue #241 — needs a distributed
+- Agent-side SNMPv3 credentials (issue #241, needs a distributed
   credential/key-distribution design; agents stay on v1/v2c).
-- Config-backup real-router end-to-end smoke (GL-MT3000) — code complete,
+- Config-backup real-router end-to-end smoke (GL-MT3000), code complete,
   hardware-gated verification.
 
 ## [0.4.0] - 2026-07-29
@@ -412,7 +412,7 @@ bypass guard), user-management security paths, SNMP-credential handler
 **Router-resident discovery + OpenWrt deployment + device-persistence rewrite.**
 v0.4.0's headline is a new **router form factor**: when the center or agent runs
 ON the gateway, it gains four Tier-1 passive discovery sources (DHCP leases,
-conntrack, hostapd, dnsmasq query log) that see hosts active probing can't —
+conntrack, hostapd, dnsmasq query log) that see hosts active probing can't;
 sleeping IoT, firewalled hosts, WiFi-only clients. This ships with first-class
 **OpenWrt** deployment (procd init scripts for both binaries) and a
 **single-writer device-persistence rewrite** that eliminates a long-standing
@@ -422,45 +422,45 @@ validation, and a DataTable XSS hardening pass.
 
 ### Router-resident discovery sources (Phase A/B)
 The discovery engine (`internal/service/scannerv2/discovery/`) gains four
-Tier-1 sources that only work when the host IS the LAN's gateway/AP — the NAT
+Tier-1 sources that only work when the host IS the LAN's gateway/AP, the NAT
 choke point that sees every flow. All are opt-in (default off) and no-op where
 their backing file/socket is absent, so a host-based deployment degrades
 gracefully.
 
 - **`dhcp_leases`**: reads the local DHCP server's lease table (dnsmasq
-  `/tmp/dhcp.leases` on OpenWrt, `/var/lib/misc/dnsmasq.leases` on Debian) — the
+  `/tmp/dhcp.leases` on OpenWrt, `/var/lib/misc/dnsmasq.leases` on Debian), the
   authoritative hostname↔MAC↔IP map, covering devices that never answer
   SNMP/ICMP/rDNS.
 - **`conntrack`**: reads `/proc/net/nf_conntrack` and emits the LAN-side
-  endpoint of every ESTABLISHED/ASSURED flow — the "who is talking RIGHT NOW"
+  endpoint of every ESTABLISHED/ASSURED flow, the "who is talking RIGHT NOW"
   view. Liveness + discovery for hosts that don't answer active probes but
   maintain outbound flows. Filters to `network.cidr`.
 - **`hostapd`**: enumerates WiFi STAs via the hostapd control socket
   (`/var/run/hostapd/<phy>`), falling back to `iw station dump`. Captures signal
-  dBm / connect time / SSID — unavailable to a wired host. `interfaces` lists
+  dBm / connect time / SSID, unavailable to a wired host. `interfaces` lists
   wlan names; empty = autodetect.
 - **`dns_log`**: tails the dnsmasq query log (`--log-queries` output) and emits
-  each querying host + the domain — a powerful passive fingerprint (devices that
+  each querying host + the domain, a powerful passive fingerprint (devices that
   block inbound probes still do outbound DNS). Operator must enable query
   logging (UCI: `uci set dhcp.@dnsmasq[0].logqueries=1`).
 - **`arp_scan` active source** (`discovery/arp_scan_*`): active ARP-sweep source
-  (CAP_NET_RAW, build-tag stub when unavailable) — complements the existing
+  (CAP_NET_RAW, build-tag stub when unavailable), complements the existing
   passive `arp_cache`/`multicast`/`router_arp` sources.
 - **Passive-source wiring on the agent** (Phase A): the agent binary now runs
   the discovery engine, so a router-form agent reports its LAN's passive
   discoveries into the center alongside scan results.
 - **Multicast / `router_arp` silent-failure fix**: these sources no longer fail
-  silently — they disable themselves with a logged reason when their socket /
+  silently, they disable themselves with a logged reason when their socket /
   SNMP walk is unavailable, instead of appearing healthy while emitting nothing.
   A new warning fires when `router_arp` is redundant to a router-resident
   source already covering the same hosts.
 
 ### OpenWrt deployment (Form C router-center)
 First-class support for running the center or agent directly on an OpenWrt
-router — the natural home for the router-resident sources above.
+router, the natural home for the router-resident sources above.
 
 - **procd init scripts**: `deploy/openwrt/mibee-steward.init` and
-  `mibee-agent.init` — UCI-configured services that start on boot, restart on
+  `mibee-agent.init`, UCI-configured services that start on boot, restart on
   crash, and run as an unprivileged user. README documents install, config, and
   the CAP_NET_RAW story.
 - **ARMv7 build target** + init-script dedup: the release matrix and OpenWrt
@@ -468,7 +468,7 @@ router — the natural home for the router-resident sources above.
   the two init scripts were de-duplicated.
 
 ### Device persistence: single-writer funnel + device replacement
-**Architecture fix** — eliminates the dual-write fissure where the `devices` row
+**Architecture fix**, eliminates the dual-write fissure where the `devices` row
 was written by two independent paths (`store.RecordDevice` and
 `runner.applyDeviceBridge`) with inconsistent field semantics. The most visible
 symptom was that a synchronous `POST /scanner/scan` left the row `status=
@@ -482,7 +482,7 @@ identity + which fields to overwrite.
   for the `devices` row lifecycle (identity creation, display name, `status`,
   heartbeat seeding, change-detection, device-replacement detection). The sync
   scan API (`scanner.go` `Scan`) now persists alive hosts through
-  `runner.ApplyReport` — the SAME path async scan tasks use — so a sync scan and
+  `runner.ApplyReport`, the SAME path async scan tasks use, so a sync scan and
   a scheduled scan leave identical rows.
 - **`store.RecordDevice` reduced to enrichment-only**: it no longer INSERTs
   identities, sets `name`/`status`, or detects replacement. It only enriches an
@@ -499,7 +499,7 @@ identity + which fields to overwrite.
 - **`internal/service/scannerv2/reconcile/`**: a background job that finds
   devices whose IP has drifted outside their stamped `networks.cidr` (e.g. a
   roaming laptop that picked up a new subnet's DHCP) and surfaces them for
-  operator correction. **Detect-and-surface, not auto-fix** — automatically
+  operator correction. **Detect-and-surface, not auto-fix**, automatically
   re-homing a device is destructive (changes identity, breaks historical
   linkage, can flap on overlapping IP space), so correction stays a human
   decision. Findings are exposed via structured `slog` warnings (rate-limited),
@@ -516,7 +516,7 @@ identity + which fields to overwrite.
   once every N ticks, default 10 → ~5min on a 30s ticker). All carry `MIBEE_*`
   env overrides; `0` means "use default". See `internal/config/defaults.go`.
 - **Rate limit raised** `rate_limit.global_per_minute` 100 → 600, with SPA
-  static assets (`/_app/*`) exempted and `data:` fonts allowed in CSP — the old
+  static assets (`/_app/*`) exempted and `data:` fonts allowed in CSP, the old
   100/min starved multi-tab + background-polling sessions.
 - **Shared constants extracted** (`config.SysUpTimeOID`,
   `config.DefaultScanPortSpec`): the sysUpTime OID (copied across 6 sites) and
@@ -525,7 +525,7 @@ identity + which fields to overwrite.
 
 ### Domain: device types
 - **`phone` and `printer` device types** added to the type union
-  (`internal/domain/device.go`) and the `devices.type` CHECK constraint — both
+  (`internal/domain/device.go`) and the `devices.type` CHECK constraint, both
   the schema and the Go enum are the single source of truth, guarded by a
   schema-sync drift test. The hostname/brand/port → type inference table
   (`configs/fingerprints/device-types/device_types.yaml`) is fully data-driven
@@ -545,12 +545,12 @@ identity + which fields to overwrite.
 
 ### Server-side search, sort, and pagination
 A batch of correctness fixes where client-side filtering silently lost results
-once a list grew past one page — search/sort now runs on the server so it spans
+once a list grew past one page, search/sort now runs on the server so it spans
 the full dataset:
 - **Server-side search** on users / audit / changes / documents / scan-tasks /
   scan-results (`fix(web,api)` #54, #55, #64, #86).
 - **Scan-results sort** server-side so ordering holds across pages (#55).
-- **Dedicated `PATCH /channels/{id}`** for the channel enabled-toggle (#53) —
+- **Dedicated `PATCH /channels/{id}`** for the channel enabled-toggle (#53);
   writes only `enabled`, avoiding a GET-then-write race.
 - **CSV import** reads the backend `{added, errors}` result instead of the
   preview count, so the post-import tally matches reality (#58).
@@ -560,17 +560,17 @@ the full dataset:
   bell now shows a per-user unread count and clears on dropdown open. Previously
   the bell was system-wide (no recipient concept).
 - **NotificationBell** pauses polling in background tabs and backs off on
-  failure — stops hammering the API from idle tabs (#67).
+  failure, stops hammering the API from idle tabs (#67).
 
 ### Frontend hardening
 - **DataTable XSS fix** (`lib/utils/html.ts`): a tagged-template `html()`
   helper that escapes interpolated values, with all rich-text callers migrated
   off string concatenation (#50, #87).
 - **Zod schema validation** added to 7 forms (login, register, device edit,
-  network, channel, scan, CSV import) — client-side validation now mirrors the
+  network, channel, scan, CSV import), client-side validation now mirrors the
   backend rules (#66, #106).
 - **Error-state honesty**: pages no longer disguise server errors as empty
-  states — a failed fetch shows an error + retry UI instead of a blank "no data"
+  states, a failed fetch shows an error + retry UI instead of a blank "no data"
   panel (#65); device-detail shows error + skeleton states instead of blank
   (#56).
 - **API client hardening**: GET retry on transient 5xx, env-based base URL, and
@@ -604,14 +604,14 @@ the full dataset:
 
 ## [0.3.0] - 2026-07-18
 
-**Full L2 topology + TLS certificate inventory + container images** — v0.3.0
+**Full L2 topology + TLS certificate inventory + container images**, v0.3.0
 completes the topology story started in v0.2.0 (CDP/Q-BRIDGE/STP probes, radial
 visualization, neighbor identity inference), adds a TLS certificate inventory
 that collects the full cert chain from every TLS-wrapped service on each device,
 and introduces official multi-arch container images on GHCR.
 
 ### TLS certificate inventory
-- **TLS cert collection** (`probe/cert_collector.go`): single source of truth —
+- **TLS cert collection** (`probe/cert_collector.go`): single source of truth;
   `CollectCertChain(ctx, ip, port, timeout)` performs a TLS handshake
   (InsecureSkipVerify for inventory) and extracts the full peer chain. Per-cert:
   Subject/Issuer/SAN (DNS/IP/email)/serial/validity/sig algorithm/key algorithm
@@ -621,7 +621,7 @@ and introduces official multi-arch container images on GHCR.
   this port".
 - **TLS-wrapped service handlers** (`handler/tls_collect.go`): 8 handlers
   (`https`, `ldaps`, `smtps`, `imaps`, `pop3s`, `ftps`, `ircs`, `telnets`)
-  sharing one `tlsCollectHandler` core — each `Collect()` calls
+  sharing one `tlsCollectHandler` core, each `Collect()` calls
   `probe.CollectCertChain` and returns a `TLSCertCollected` payload. Handler
   count 21 → 29.
 - **Extended MiscClassifier**: TLS-wrapped service ports (465/989/990/992/993/994/995)
@@ -635,10 +635,10 @@ and introduces official multi-arch container images on GHCR.
 - **Read API** `GET /api/v1/devices/{id}/certificates`: per-port grouping with
   leaf + chain; status-coloring metadata (TLS version, cipher suite, trust
   verdict, error).
-- **Frontend TLS sub-panel**: new "TLS Certificates" panel under Scan Discovery — one
+- **Frontend TLS sub-panel**: new "TLS Certificates" panel under Scan Discovery, one
   clickable row per port with status-colored left border (green=valid / amber=
   expiring <15d / red=expired), day-count badge, self-signed/trusted tags.
-- **`CertificateModal.svelte`**: full-chain viewer — status header, summary field
+- **`CertificateModal.svelte`**: full-chain viewer, status header, summary field
   grid (Subject/Issuer/Validity/SAN/algorithms/fingerprint), collapsible chain
   entries, PEM block with copy-to-clipboard.
 - **Retention** `retention.host_tls_certs_days` (default 30).
@@ -666,23 +666,23 @@ and introduces official multi-arch container images on GHCR.
   (LLDP blue / Bridge-MIB green); dashed edges point at unidentified neighbors.
   Network filter + 60s auto-refresh; click a node to open its detail page.
 - **Device-detail Neighbors panel**: a table of a device's L2 neighbors with the
-  neighbor's name/IP/type (via a device JOIN — `neighbor_device_id` was always
+  neighbor's name/IP/type (via a device JOIN, `neighbor_device_id` was always
   NULL in v0.2.0; now resolved at query time) and a link to its detail page.
 
 ### LLDP discovery (two paths)
 - **SNMP LLDP-MIB probe** (`active:lldp_mib`, default ON): walks `lldpRemTable`
-  on SNMP-speaking switches/APs that run LLDP — the cross-vendor standard.
+  on SNMP-speaking switches/APs that run LLDP, the cross-vendor standard.
   Emits `protocol:"LLDP"` neighbor edges through the existing neighbor pipeline
   (zero new wiring). Unprivileged (UDP/161); no new dependencies.
 - **Raw-frame LLDPDU listener** (`WITH_LLDP` build-tag, default OFF): captures
   ethertype 0x88cc frames via AF_PACKET (needs CAP_NET_RAW) to see
   LLDP-broadcasting endpoints (IP phones, APs, NAS) that don't run SNMP LLDP-MIB.
-  Mirrors the eBPF observer's build-tag pattern — the default build ships a
+  Mirrors the eBPF observer's build-tag pattern, the default build ships a
   no-op stub so it stays unprivileged (`make build-with-lldp` to enable).
 
 ### Neighbor identity inference
 - Orchestrator gains pluggable `NeighborIdentityInfer` callback wired to the
-  RuleClassifier — CDP/LLDP neighbors get vendor/model/type inferred from their
+  RuleClassifier, CDP/LLDP neighbors get vendor/model/type inferred from their
   platform string.
 - **`EnrichDeviceByMAC`**: enriches a device's vendor/model/type/hostname by MAC
   (the neighbor merge key), preserving existing non-empty values.
@@ -695,7 +695,7 @@ and introduces official multi-arch container images on GHCR.
   only created when both binaries and image succeed. Image is the unprivileged
   variant (LLDP/CDP/eBPF compiled as stubs).
 - **Docker network-mode profiles**: three compose profiles so the deployment
-  shape matches the intent — `bridge` (default, NAT'd, MAC/ARP degraded),
+  shape matches the intent, `bridge` (default, NAT'd, MAC/ARP degraded),
   `host` (recommended, ≈ bare-metal probe fidelity), `macvlan` (own LAN IP).
   Measured on the test LAN: the default docker bridge found 0/26 device MACs vs
   30/31 with host networking (the container's `/proc/net/arp` only sees the
@@ -712,17 +712,17 @@ and introduces official multi-arch container images on GHCR.
 ### CI
 - **`docker-build` smoke-test job** (ci.yml): on every PR, builds the image
   (amd64 only, no push) and boots it with a minimal config, waiting up to 30s
-  for `/health` — catches Dockerfile/compose regressions before a tag.
+  for `/health`, catches Dockerfile/compose regressions before a tag.
 - **Node.js 20 deprecation**: actions still target Node 20; GitHub is forcing
   Node 24 (warning, not failure). Upgrade pending.
 
 ### Retention hardening
 - `device_neighbors` and `host_services` now have retention sweepers (they grew
-  unbounded in v0.2.0 — a latent bloat bug). Defaults: 90d neighbors (topology
+  unbounded in v0.2.0, a latent bloat bug). Defaults: 90d neighbors (topology
   history value), 30d host_services. Per-table `retention.*` config keys +
   `days<=0` safety guard.
 - Also fixes a latent sqlc v1.27.0 bug: a non-ASCII char in a query comment
-  corrupted sibling-query codegen (silently emitted broken SQL — runtime query
+  corrupted sibling-query codegen (silently emitted broken SQL, runtime query
   failure, not a build error).
 
 ### Test coverage
@@ -730,7 +730,7 @@ and introduces official multi-arch container images on GHCR.
   CRUD, validation, pagination clamping, not-found mapping, and nil-scheduler
   behavior.
 - **Fingerprint golden test**: a quality regression guard (real-world evidence
-  samples → expected service/metadata), distinct from the existing count test —
+  samples → expected service/metadata), distinct from the existing count test;
   so a rule edit that breaks identification fails even if the count is unchanged.
 
 ### Fingerprint library
@@ -753,14 +753,14 @@ the new discovery **agent** (`mibee-agent`) for remote LANs.
 ### Distributed discovery (center + agent)
 - **Agent binary** (`cmd/agent`): runs the scannerv2 engine against the LAN it
   sits on and reports results to the center via `POST /api/v1/agents/report`.
-  Pull model — the agent initiates all connections (report + poll commands), so
+  Pull model, the agent initiates all connections (report + poll commands), so
   it works behind NAT. CGO-free, runs as a regular user.
 - **Center ingestion**: agent reports are converted to local device portraits via
   the device bridge; agent-managed networks are excluded from the center's own
   cross-subnet probing (the agent's reports ARE the liveness signal).
 - **Anti-entropy fast path**: agents send an `X-Network-State-Hash` header
   (SHA-256 of the alive set's identity+classification fields); on a match the
-  center skips the per-host device bridge and only refreshes leases — the
+  center skips the per-host device bridge and only refreshes leases, the
   steady-state path for stable networks.
 - **Lease model**: agent reports refresh per-device leases; lost detection for
   agent networks is TTL-based (`LeaseSweeper`, default 5m TTL), distinct from
@@ -800,7 +800,7 @@ the new discovery **agent** (`mibee-agent`) for remote LANs.
 
 ### Management UI
 - **Networks admin page**: create / edit / delete logical networks
-  (POST/PUT/DELETE `/api/v1/networks`) — the network registry the agents bind to.
+  (POST/PUT/DELETE `/api/v1/networks`), the network registry the agents bind to.
 - **Discovery status page**: passive host-discovery runtime counters + recent
   discoveries (`GET /api/v1/discovery/status`).
 - **Devices page**: user-toggleable optional columns (persisted to localStorage);
@@ -817,7 +817,7 @@ the new discovery **agent** (`mibee-agent`) for remote LANs.
 
 ### Known limitations
 - The center is single-instance (SQLite). Multi-center clustering is not in scope.
-- No built-in alerting — integrate with Alertmanager / Uptime Kuma.
+- No built-in alerting, integrate with Alertmanager / Uptime Kuma.
 - eBPF passive observer requires a special build (`make build-with-ebpf`) and
   runtime privileges.
 
@@ -853,7 +853,7 @@ binary.
 
 ### Known limitations
 - Single-instance (SQLite). Distributed/multi-network mode is future work.
-- No built-in alerting engine — alerting is intentionally out of scope
+- No built-in alerting engine, alerting is intentionally out of scope
   (integrate with Alertmanager/Uptime Kuma).
 - eBPF passive observer requires a special build (`make build-with-ebpf`) and
   runtime privileges.

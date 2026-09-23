@@ -2,7 +2,7 @@
 
 ## 系统概览
 
-MiBee Steward 是一个设备管理和监控系统，以**单二进制**方式部署。Go 后端（Chi Web 框架 + SQLite）通过 `go:embed` 嵌入 SvelteKit 5 前端。这种零依赖形态意味着 Linux 上一个 `mibee-steward` 二进制文件就是整个技术栈——无需运行时、无需容器、无需边车。
+MiBee Steward 是一个设备管理和监控系统，以**单二进制**方式部署。Go 后端（Chi Web 框架 + SQLite）通过 `go:embed` 嵌入 SvelteKit 5 前端。这种零依赖形态意味着 Linux 上一个 `mibee-steward` 二进制文件就是整个技术栈--无需运行时、无需容器、无需边车。
 
 ```mermaid
 flowchart LR
@@ -19,11 +19,11 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    Frontend["前端层 — SvelteKit SPA (go:embed)"]
-    Handler["处理器层 — internal/api"]
-    Service["服务层 — internal/service（含仓储）"]
-    Domain["领域层 — internal/domain"]
-    SQLC["internal/db — sqlc 生成代码"]
+    Frontend["前端层，SvelteKit SPA (go:embed)"]
+    Handler["处理器层，internal/api"]
+    Service["服务层，internal/service（含仓储）"]
+    Domain["领域层，internal/domain"]
+    SQLC["internal/db，sqlc 生成代码"]
     SQLite["SQLite (WAL)"]
     Frontend --> Handler
     Handler --> Service
@@ -52,11 +52,11 @@ SvelteKit 5 SPA，通过 `web/embed.go`（`//go:embed all:dist`）嵌入。Tailw
 
 ### 数据库
 
-SQLite（`modernc.org/sqlite` 纯 Go 驱动，CGO-free），WAL 模式，主连接池 `MaxOpenConns=16`（`busy_timeout=5000`）。心跳结果写入**独立的** SQLite 文件 `data/heartbeat.db`（单连接、批量写），避免高频探测记录与主库竞争。sqlc 从 `db/queries/*.sql` 生成类型安全的 Go 代码。默认路径：`./data/mibee.db`。**迁移在启动时自动执行**：嵌入的 `schema.sql`（`CREATE TABLE IF NOT EXISTS`）+ 幂等的 `ALTER TABLE`/表重建，存量库迁移前自动做 `VACUUM INTO` 备份。切勿直接编辑 `internal/db/*.go`——修改 SQL 后重新生成。
+SQLite（`modernc.org/sqlite` 纯 Go 驱动，CGO-free），WAL 模式，主连接池 `MaxOpenConns=16`（`busy_timeout=5000`）。心跳结果写入**独立的** SQLite 文件 `data/heartbeat.db`（单连接、批量写），避免高频探测记录与主库竞争。sqlc 从 `db/queries/*.sql` 生成类型安全的 Go 代码。默认路径：`./data/mibee.db`。**迁移在启动时自动执行**：嵌入的 `schema.sql`（`CREATE TABLE IF NOT EXISTS`）+ 幂等的 `ALTER TABLE`/表重建，存量库迁移前自动做 `VACUUM INTO` 备份。切勿直接编辑 `internal/db/*.go`--修改 SQL 后重新生成。
 
 ## 扫描引擎 v2
 
-扫描器采用**插件式五层架构**，将检测与持久化解耦。新增协议只需注册一个分类器 + 一个处理器——无需改动编排层或持久化层。
+扫描器采用**插件式五层架构**，将检测与持久化解耦。新增协议只需注册一个分类器 + 一个处理器--无需改动编排层或持久化层。
 
 ```mermaid
 flowchart TD
@@ -110,7 +110,7 @@ SSH、HTTP/HTTPS、RTSP、ONVIF、SNMP、Prometheus、node\_exporter、邮件（
 
 ### TLS 证书清点
 
-任何被分类为 TLS 服务的端口（默认端口 443/8443/9443/4443 + 知名 TLS 包装端口 465/636/989/990/992/993/994/995 + 分类器识别的任意端口）都通过 `probe.CollectCertChain` 采集完整证书链并写入 `host_tls_certs`——Subject/Issuer/SAN/有效期/签名/密钥/指纹 + PEM，链中每张证书一行。通过 `GET /api/v1/devices/{id}/certificates` 对外展示。
+任何被分类为 TLS 服务的端口（默认端口 443/8443/9443/4443 + 知名 TLS 包装端口 465/636/989/990/992/993/994/995 + 分类器识别的任意端口）都通过 `probe.CollectCertChain` 采集完整证书链并写入 `host_tls_certs`--Subject/Issuer/SAN/有效期/签名/密钥/指纹 + PEM，链中每张证书一行。通过 `GET /api/v1/devices/{id}/certificates` 对外展示。
 
 ### 持久化表（v2 新增）
 
@@ -141,7 +141,7 @@ SSH、HTTP/HTTPS、RTSP、ONVIF、SNMP、Prometheus、node\_exporter、邮件（
 
 ### 单写者漏斗（v0.2.0）
 
-所有设备写入经由 `runner.applyDeviceBridge`——单一写入者并发模型，防止并发探测处理器之间的竞态条件（并行扫描结束后顺序执行桥接）。与 MAC 优先身份一起于 v0.2.0 落地。
+所有设备写入经由 `runner.applyDeviceBridge`--单一写入者并发模型，防止并发探测处理器之间的竞态条件（并行扫描结束后顺序执行桥接）。与 MAC 优先身份一起于 v0.2.0 落地。
 
 ### 设备替换检测
 
@@ -165,15 +165,15 @@ SSH、HTTP/HTTPS、RTSP、ONVIF、SNMP、Prometheus、node\_exporter、邮件（
 
 事件查询：`GET /api/v1/changes`，SSE 推送：`GET /api/v1/changes/watch`，Prometheus 计数器：`mibee_changes_total{type}`。
 
-存活噪声控制：在线/离线判定采样进 `device_liveness` 时间序列（位于心跳存储），而不是每次翻转都发一条 `device_changed`——登记保持鲜活的同时不淹没真实变更。
+存活噪声控制：在线/离线判定采样进 `device_liveness` 时间序列（位于心跳存储），而不是每次翻转都发一条 `device_changed`--登记保持鲜活的同时不淹没真实变更。
 
 ### 设备配置备份
 
-`internal/service/scannerv2/configbackup` 运行按需启用的 sweep（`scanner.config_backup`，默认 6h）：选取绑定了 SSH 凭据的路由器/交换机/防火墙设备，经 SSH 拉取 running-config（厂商命令矩阵；host-key TOFU），与上一版本计算 unified diff（`internal/configdiff`），仅内容变化时记录新的 `device_configs` 版本——并向上面的变化检测管线发出 `device_config_changed`。SSH 凭据存于 `ssh_credentials`，与 SNMPv3 口令共用 AES-256-GCM master-key 加密。
+`internal/service/scannerv2/configbackup` 运行按需启用的 sweep（`scanner.config_backup`，默认 6h）：选取绑定了 SSH 凭据的路由器/交换机/防火墙设备，经 SSH 拉取 running-config（厂商命令矩阵；host-key TOFU），与上一版本计算 unified diff（`internal/configdiff`），仅内容变化时记录新的 `device_configs` 版本--并向上面的变化检测管线发出 `device_config_changed`。SSH 凭据存于 `ssh_credentials`，与 SNMPv3 口令共用 AES-256-GCM master-key 加密。
 
 ### 拨测（探测目标）
 
-`internal/service/probetarget` 对显式配置的**外部**端点（公开 HTTPS 站点、托管 TLS 端口）按目标自身间隔探测（10s tick 重读目标——CRUD 免重启生效；到期时间从 `last_run_at` 恢复；8 并发上限）。http/tcp/icmp 模块复用心跳探测器；tls（与 https）调用 `CollectCertChain`，内网证书链清点因此延伸到互联网主机。表：`probe_targets` / `probe_results` / `probe_tls_certs`；指标 `mibee_probe_*`。
+`internal/service/probetarget` 对显式配置的**外部**端点（公开 HTTPS 站点、托管 TLS 端口）按目标自身间隔探测（10s tick 重读目标--CRUD 免重启生效；到期时间从 `last_run_at` 恢复；8 并发上限）。http/tcp/icmp 模块复用心跳探测器；tls（与 https）调用 `CollectCertChain`，内网证书链清点因此延伸到互联网主机。表：`probe_targets` / `probe_results` / `probe_tls_certs`；指标 `mibee_probe_*`。
 
 ## 心跳与状态
 
@@ -225,7 +225,7 @@ flowchart LR
 | **中心** | `cmd/server` | 汇聚枢纽：API、SPA、设备注册表、变化检测、心跳、接收上报、采集器管理 |
 | **采集器** | `cmd/agent` | 轻量扫描器：本地运行 scannerv2 发现引擎（网关形态上报被动发现）、上报结果、轮询命令 |
 
-**拉取模型**——采集器发起所有连接（适配 NAT 后部署）：
+**拉取模型**--采集器发起所有连接（适配 NAT 后部署）：
 
 1. **上报**（`POST /api/v1/agents/report`）：批量 HostReport，MAC 优先合并。
 2. **命令轮询**（`GET /api/v1/agents/commands`，令牌即身份）：每 60 秒；ack/complete 各自独立调用。
@@ -235,13 +235,13 @@ flowchart LR
 
 ## 可观测性
 
-**指标**：`/metrics`——标准 Prometheus 端点。Counter、Gauge、Histogram 覆盖系统指标。
+**指标**：`/metrics`--标准 Prometheus 端点。Counter、Gauge、Histogram 覆盖系统指标。
 
-**服务发现**：`/sd`——HTTP SD 端点，用于 Prometheus 抓取配置和设备系统自动发现（`metrics_enabled=true`）。
+**服务发现**：`/sd`--HTTP SD 端点，用于 Prometheus 抓取配置和设备系统自动发现（`metrics_enabled=true`）。
 
-**仪表板代理**：`/api/v1/dashboard/query`——对 Prometheus 的只读代理。
+**仪表板代理**：`/api/v1/dashboard/query`--对 Prometheus 的只读代理。
 
-**保留清除器**（`internal/service/scannerv2/cleanup/`）：定期裁剪高频详情表。批量删除（默认 5000 行）避免长时间持有 SQLite 写锁。启动时 + 每 `sweep_interval_hours`（默认 6）执行一次。**静默设备清理**：持续无 MAC 设备 24 小时（`retention.silent_device_hours_no_mac`）/ 有 MAC 设备 7 天（`retention.silent_device_days_mac`）未再被发现即物理删除并记录 `device_removed`——扫描发现是登记的入口，长期扫不到的行会被回收。
+**保留清除器**（`internal/service/scannerv2/cleanup/`）：定期裁剪高频详情表。批量删除（默认 5000 行）避免长时间持有 SQLite 写锁。启动时 + 每 `sweep_interval_hours`（默认 6）执行一次。**静默设备清理**：持续无 MAC 设备 24 小时（`retention.silent_device_hours_no_mac`）/ 有 MAC 设备 7 天（`retention.silent_device_days_mac`）未再被发现即物理删除并记录 `device_removed`--扫描发现是登记的入口，长期扫不到的行会被回收。
 
 | 表 | 默认保留 |
 |---|---|

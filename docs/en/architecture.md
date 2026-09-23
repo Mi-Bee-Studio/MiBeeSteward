@@ -2,7 +2,7 @@
 
 ## System Overview
 
-MiBee Steward is a device management and monitoring system deployed as a **single binary**. The Go backend (Chi web framework + SQLite) embeds a SvelteKit 5 SPA via `go:embed`. This zero-dependency shape means one `mibee-steward` binary on a Linux box is the entire stack — no runtime, no container, no sidecar.
+MiBee Steward is a device management and monitoring system deployed as a **single binary**. The Go backend (Chi web framework + SQLite) embeds a SvelteKit 5 SPA via `go:embed`. This zero-dependency shape means one `mibee-steward` binary on a Linux box is the entire stack, no runtime, no container, no sidecar.
 
 ```mermaid
 flowchart LR
@@ -15,15 +15,15 @@ In a typical deployment a reverse proxy (Nginx) fronts the binary and forwards r
 
 ## Layered Architecture
 
-The backend is layered; data repos (DeviceRepository / DeviceSystemRepository / AuditRepository) live beside their consumers inside the service layer — there is no separate repository package:
+The backend is layered; data repos (DeviceRepository / DeviceSystemRepository / AuditRepository) live beside their consumers inside the service layer, there is no separate repository package:
 
 ```mermaid
 flowchart TB
-    Frontend["Frontend — SvelteKit SPA (go:embed)"]
-    Handler["Handler — internal/api"]
-    Service["Service — internal/service"]
-    SQLC["internal/db — sqlc-generated"]
-    Domain["Domain — internal/domain"]
+    Frontend["Frontend, SvelteKit SPA (go:embed)"]
+    Handler["Handler, internal/api"]
+    Service["Service, internal/service"]
+    SQLC["internal/db, sqlc-generated"]
+    Domain["Domain, internal/domain"]
     SQLite["SQLite (WAL)"]
     Frontend --> Handler
     Handler --> Service
@@ -52,11 +52,11 @@ SvelteKit 5 SPA embedded via `web/embed.go` (`//go:embed all:dist`). Tailwind 4 
 
 ### Database
 
-SQLite via the pure-Go `modernc.org/sqlite` driver (CGO-free), WAL mode, main pool `MaxOpenConns=16` (`busy_timeout=5000`). Heartbeat results go to a **separate** SQLite file `data/heartbeat.db` (single connection, batched writes) so high-frequency probe records never contend with the main DB. sqlc generates type-safe Go from `db/queries/*.sql`. Default path: `./data/mibee.db`. **Migrations run automatically at startup**: the embedded `schema.sql` (`CREATE TABLE IF NOT EXISTS`) plus idempotent `ALTER TABLE`/table rebuilds, with an automatic `VACUUM INTO` backup taken on existing DBs before migration. Never edit `internal/db/*.go` directly — modify SQL and regenerate.
+SQLite via the pure-Go `modernc.org/sqlite` driver (CGO-free), WAL mode, main pool `MaxOpenConns=16` (`busy_timeout=5000`). Heartbeat results go to a **separate** SQLite file `data/heartbeat.db` (single connection, batched writes) so high-frequency probe records never contend with the main DB. sqlc generates type-safe Go from `db/queries/*.sql`. Default path: `./data/mibee.db`. **Migrations run automatically at startup**: the embedded `schema.sql` (`CREATE TABLE IF NOT EXISTS`) plus idempotent `ALTER TABLE`/table rebuilds, with an automatic `VACUUM INTO` backup taken on existing DBs before migration. Never edit `internal/db/*.go` directly, modify SQL and regenerate.
 
 ## Scanner Engine v2
 
-The scanner is a **plugin-based, 5-layer architecture** that decouples detection from persistence. Adding a new protocol means registering one classifier + one handler — no orchestrator or persistence changes required.
+The scanner is a **plugin-based, 5-layer architecture** that decouples detection from persistence. Adding a new protocol means registering one classifier + one handler, no orchestrator or persistence changes required.
 
 ```mermaid
 flowchart TD
@@ -73,11 +73,11 @@ flowchart TD
     P3 -->|"persist"| P4
 ```
 
-- **① Probe** — active (TCP/SNMP/RTSP/ONVIF/HTTP-metrics) + passive (eBPF TC observer behind the `WITH_EBPF` build tag) → emits Evidence (port_open / banner / snmp / …).
-- **② Classifier** — per-protocol pure functions over Evidence → fuses into ServiceIdentity (ssh/http/rtsp/onvif/prometheus/node_exporter/snmp/camera) with confidence.
-- **③ ServiceHandler** — per-service customization: `GenerateHeartbeat()` / `Collect()` / `EnrichDevice()`. 29 service handlers registered, 8 of them TLS-wrapped cert collectors.
-- **④ Persistence** — Repository interface → SQLite; records evidence / services / device updates / heartbeats.
-- **⑤ Orchestrator** — declarative gather → classify → dispatch, with cycle-guarded cascade triggers (max depth 5).
+- **① Probe**, active (TCP/SNMP/RTSP/ONVIF/HTTP-metrics) + passive (eBPF TC observer behind the `WITH_EBPF` build tag) → emits Evidence (port_open / banner / snmp / …).
+- **② Classifier**, per-protocol pure functions over Evidence → fuses into ServiceIdentity (ssh/http/rtsp/onvif/prometheus/node_exporter/snmp/camera) with confidence.
+- **③ ServiceHandler**, per-service customization: `GenerateHeartbeat()` / `Collect()` / `EnrichDevice()`. 29 service handlers registered, 8 of them TLS-wrapped cert collectors.
+- **④ Persistence**, Repository interface → SQLite; records evidence / services / device updates / heartbeats.
+- **⑤ Orchestrator**, declarative gather → classify → dispatch, with cycle-guarded cascade triggers (max depth 5).
 
 Typical cascade: http → probe `/metrics` → prometheus → node_exporter → parse CPU/mem/kernel → enrich device fields.
 
@@ -113,7 +113,7 @@ SSH, HTTP/HTTPS, RTSP, ONVIF, SNMP, Prometheus, node\_exporter, mail (SMTP/POP3/
 
 ### TLS Certificate Inventory
 
-Any port classified as TLS-speaking (default ports 443/8443/9443/4443 + well-known TLS-wrapped ports 465/636/989/990/992/993/994/995 + classifier-flagged ports) has its full certificate chain collected via `probe.CollectCertChain` and persisted to `host_tls_certs` — Subject/Issuer/SAN/validity/signature/key/fingerprint + PEM, one row per cert (leaf + issuers). Surfaced via `GET /api/v1/devices/{id}/certificates`.
+Any port classified as TLS-speaking (default ports 443/8443/9443/4443 + well-known TLS-wrapped ports 465/636/989/990/992/993/994/995 + classifier-flagged ports) has its full certificate chain collected via `probe.CollectCertChain` and persisted to `host_tls_certs`, Subject/Issuer/SAN/validity/signature/key/fingerprint + PEM, one row per cert (leaf + issuers). Surfaced via `GET /api/v1/devices/{id}/certificates`.
 
 ### Persistence Tables (v2)
 
@@ -144,7 +144,7 @@ Devices are identified by **MAC address first** (a roaming device stays one asse
 
 ### Single-Writer Funnel (v0.2.0)
 
-All device writes funnel through `runner.applyDeviceBridge` — a single-writer concurrency model that prevents race conditions between concurrent probe handlers (the bridge runs sequentially after the parallel scan). It landed together with MAC-primary identity in v0.2.0.
+All device writes funnel through `runner.applyDeviceBridge`, a single-writer concurrency model that prevents race conditions between concurrent probe handlers (the bridge runs sequentially after the parallel scan). It landed together with MAC-primary identity in v0.2.0.
 
 ### Device Replacement Detection
 
@@ -152,7 +152,7 @@ When a scan discovers a device whose MAC matches an existing record but key attr
 
 ### Network Reconciliation Drift Job
 
-`internal/service/scannerv2/reconcile` provides the network-reconciliation job (`scanner.reconcile_interval`, default 1h): it periodically reconciles devices against their network's CIDR membership but only **detects and surfaces** drift (the `mibee_network_mismatches` gauge) — it never auto-modifies device records.
+`internal/service/scannerv2/reconcile` provides the network-reconciliation job (`scanner.reconcile_interval`, default 1h): it periodically reconciles devices against their network's CIDR membership but only **detects and surfaces** drift (the `mibee_network_mismatches` gauge), it never auto-modifies device records.
 
 ### Change Detection Engine
 
@@ -168,15 +168,15 @@ The center diffs each scan against known device state and emits events to `chang
 
 Events: `GET /api/v1/changes`, SSE `GET /api/v1/changes/watch`, Prometheus counter `mibee_changes_total{type}`.
 
-Liveness noise control: online/offline verdicts are sampled into the `device_liveness` time series (in the heartbeat store) instead of firing `device_changed` per flip — the registry stays a living ledger without burying real changes.
+Liveness noise control: online/offline verdicts are sampled into the `device_liveness` time series (in the heartbeat store) instead of firing `device_changed` per flip, the registry stays a living ledger without burying real changes.
 
 ### Device Config Backup
 
-`internal/service/scannerv2/configbackup` runs an opt-in sweep (`scanner.config_backup`, default 6h): it selects router/switch/firewall devices with a bound SSH credential, fetches the running-config over SSH (vendor command matrix; host-key TOFU), computes a unified diff against the last version (`internal/configdiff`), and records a new `device_configs` version only on change — emitting `device_config_changed` into the change-detection pipeline above. SSH credentials live in `ssh_credentials`, encrypted with the same AES-256-GCM master-key cipher as SNMPv3 passphrases.
+`internal/service/scannerv2/configbackup` runs an opt-in sweep (`scanner.config_backup`, default 6h): it selects router/switch/firewall devices with a bound SSH credential, fetches the running-config over SSH (vendor command matrix; host-key TOFU), computes a unified diff against the last version (`internal/configdiff`), and records a new `device_configs` version only on change, emitting `device_config_changed` into the change-detection pipeline above. SSH credentials live in `ssh_credentials`, encrypted with the same AES-256-GCM master-key cipher as SNMPv3 passphrases.
 
 ### Synthetic Probing (probe targets)
 
-`internal/service/probetarget` probes explicitly configured EXTERNAL endpoints (public HTTPS sites, hosted TLS ports) on per-target intervals (10s tick re-reads targets — CRUD applies without restart; next-due resumes from `last_run_at`; 8-probe concurrency bound). Modules http/tcp/icmp reuse the heartbeat probers; tls (and https) call `CollectCertChain`, so the internal cert-chain inventory extends to internet hosts. Tables: `probe_targets` / `probe_results` / `probe_tls_certs`; metrics `mibee_probe_*`.
+`internal/service/probetarget` probes explicitly configured EXTERNAL endpoints (public HTTPS sites, hosted TLS ports) on per-target intervals (10s tick re-reads targets, CRUD applies without restart; next-due resumes from `last_run_at`; 8-probe concurrency bound). Modules http/tcp/icmp reuse the heartbeat probers; tls (and https) call `CollectCertChain`, so the internal cert-chain inventory extends to internet hosts. Tables: `probe_targets` / `probe_results` / `probe_tls_certs`; metrics `mibee_probe_*`.
 
 ## Heartbeat & State
 
@@ -226,7 +226,7 @@ flowchart LR
 | **Center** | `cmd/server` | Aggregation hub: API, SPA, device registry, change detection, heartbeat, ingestion, agent management |
 | **Agent** | `cmd/agent` | Lightweight scanner: runs the scannerv2 discovery engine locally (router-form reports passive discoveries), reports upstream, polls for commands |
 
-**Pull model** — agent initiates all connections (NAT-friendly):
+**Pull model**, agent initiates all connections (NAT-friendly):
 
 1. **Report** (`POST /api/v1/agents/report`): batch HostReports, MAC-primary merge.
 2. **Command poll** (`GET /api/v1/agents/commands`, the token is the identity): every 60s; ack/complete are separate calls.
@@ -236,11 +236,11 @@ flowchart LR
 
 ## Observability
 
-**Metrics**: `/metrics` — standard Prometheus endpoint. Counter, Gauge, Histogram for system metrics.
+**Metrics**: `/metrics`, standard Prometheus endpoint. Counter, Gauge, Histogram for system metrics.
 
-**Service Discovery**: `/sd` — HTTP SD endpoint for Prometheus scrape config and device-systems auto-discovery (`metrics_enabled=true`).
+**Service Discovery**: `/sd`, HTTP SD endpoint for Prometheus scrape config and device-systems auto-discovery (`metrics_enabled=true`).
 
-**Dashboard Proxy**: `/api/v1/dashboard/query` — read-only proxy to Prometheus.
+**Dashboard Proxy**: `/api/v1/dashboard/query`, read-only proxy to Prometheus.
 
 **Retention Sweepers** (`internal/service/scannerv2/cleanup/`): periodic pruning of high-volume detail tables. Batch deletes (default 5000 rows) to avoid holding the SQLite write lock. Runs on startup + every `sweep_interval_hours` (default 6).
 
@@ -258,7 +258,7 @@ flowchart LR
 | `scan_task_runs` | 30 days |
 | `audit_logs` | 90 days |
 
-A **silent-device sweep** also runs: scanner-discovered devices that stop appearing for 24h without a MAC (`retention.silent_device_hours_no_mac`) or 7 days with a MAC (`retention.silent_device_days_mac`) are physically deleted with a `device_removed` record — discovery is the entry to the registry, and rows that can never be rediscovered get reclaimed.
+A **silent-device sweep** also runs: scanner-discovered devices that stop appearing for 24h without a MAC (`retention.silent_device_hours_no_mac`) or 7 days with a MAC (`retention.silent_device_days_mac`) are physically deleted with a `device_removed` record, discovery is the entry to the registry, and rows that can never be rediscovered get reclaimed.
 
 ## Background Tasks
 

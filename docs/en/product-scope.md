@@ -6,9 +6,9 @@
 
 MiBee Steward is a **device/network-layer asset discovery, identification, and registry** tool. It answers three questions:
 
-1. **What devices are on this network?** — auto-discovery via ICMP / TCP portscan / SNMP / HTTP / RTSP / ONVIF / mDNS / WS-Discovery probing, plus an optional eBPF passive observer
-2. **What are they?** — identity inference (device type, brand, model) via banner / HTTP / RTSP / ONVIF / SNMP / Prometheus fingerprint classification
-3. **Track them over time** — registry/management with heartbeat-based freshness (online/offline + latency + history)
+1. **What devices are on this network?**, auto-discovery via ICMP / TCP portscan / SNMP / HTTP / RTSP / ONVIF / mDNS / WS-Discovery probing, plus an optional eBPF passive observer
+2. **What are they?**, identity inference (device type, brand, model) via banner / HTTP / RTSP / ONVIF / SNMP / Prometheus fingerprint classification
+3. **Track them over time**, registry/management with heartbeat-based freshness (online/offline + latency + history)
 
 It is **CMDB-lite for network and IoT assets**, built as a single zero-dependency binary (Go + SQLite + embedded SvelteKit SPA).
 
@@ -24,7 +24,7 @@ MiBee Steward deliberately does NOT build capabilities that mature tools already
 | Host-deep monitoring (CPU/RAM/disk) | Netdata / node_exporter | We discover node_exporter; we are not node_exporter |
 | Service-layer discovery | Consul / eureka | We discover devices (L2-L4), not service instances (L7) |
 
-If you need any of the above, deploy the listed tool alongside MiBee Steward — they consume our `/metrics` and `/sd` endpoints natively.
+If you need any of the above, deploy the listed tool alongside MiBee Steward, they consume our `/metrics` and `/sd` endpoints natively.
 
 ## Core capability
 
@@ -34,12 +34,12 @@ The differentiation is **identity inference accuracy and breadth**: recognizing 
 
 ## Derived capabilities (byproducts of accurate asset data)
 
-- **Heartbeat** — keeps the asset registry fresh (online/offline + latency + history). **Not** for alerting — for asset freshness. Heartbeat data flows to Prometheus via `/metrics`; Alertmanager handles alerting.
-- **Device config backup** — scheduled SSH running-config pulls (Oxidized/RANCID-style), versioned + diffed; config changes feed the change-detection engine. Network-ops workflow on top of the device registry, not configuration management (nothing is pushed to devices).
-- **Synthetic probing** — blackbox-style periodic probing of explicitly configured external endpoints (availability/latency/cert expiry), reusing the TLS inventory capability beyond the LAN.
-- **Change notifications** — rule-driven routing of device/config change events to webhook/email channels; a delivery hop, not an alerting engine (no thresholds, no silences, no routing trees).
-- **Prometheus outlet** — `/metrics` (asset state gauges + heartbeat counters) + `/sd` (HTTP service discovery for auto-registering assets in Prometheus)
-- **Single-binary deploy** — zero runtime deps, CGO-free, cross-compiles to linux/amd64 + arm64
+- **Heartbeat**, keeps the asset registry fresh (online/offline + latency + history). **Not** for alerting, for asset freshness. Heartbeat data flows to Prometheus via `/metrics`; Alertmanager handles alerting.
+- **Device config backup**, scheduled SSH running-config pulls (Oxidized/RANCID-style), versioned + diffed; config changes feed the change-detection engine. Network-ops workflow on top of the device registry, not configuration management (nothing is pushed to devices).
+- **Synthetic probing**, blackbox-style periodic probing of explicitly configured external endpoints (availability/latency/cert expiry), reusing the TLS inventory capability beyond the LAN.
+- **Change notifications**, rule-driven routing of device/config change events to webhook/email channels; a delivery hop, not an alerting engine (no thresholds, no silences, no routing trees).
+- **Prometheus outlet**, `/metrics` (asset state gauges + heartbeat counters) + `/sd` (HTTP service discovery for auto-registering assets in Prometheus)
+- **Single-binary deploy**, zero runtime deps, CGO-free, cross-compiles to linux/amd64 + arm64
 
 ## Where MiBee Steward fits
 
@@ -47,27 +47,27 @@ MiBee Steward sits at the intersection of established categories, none of which 
 
 | Category | Examples | What they miss |
 |---|---|---|
-| Asset registry (CMDB) | NetBox, Snipe-IT | Manual entry — no auto-discovery |
+| Asset registry (CMDB) | NetBox, Snipe-IT | Manual entry, no auto-discovery |
 | Service discovery | Consul, eureka | L7 services, not L2-L4 devices |
 | Scanner | nmap | No management UI, no continuous registry, no identity inference |
 | Network monitoring | LibreNMS, Zabbix | SNMP-heavy, monitoring-oriented, no identity inference |
 
 **MiBee Steward's unique cell**: auto-discovery (nmap-grade) + identity inference (fingerprint-based) + registry/management (CMDB-lite) + single-binary. None of the categories above occupy this combination.
 
-> **Common misconception**: MiBee Steward is sometimes compared to lightweight monitoring tools like Beszel / Uptime Kuma / Netdata. That's a category error — those tools monitor hosts/services you already know about; MiBee Steward discovers what's there in the first place.
+> **Common misconception**: MiBee Steward is sometimes compared to lightweight monitoring tools like Beszel / Uptime Kuma / Netdata. That's a category error, those tools monitor hosts/services you already know about; MiBee Steward discovers what's there in the first place.
 
 ## Use cases
 
-- **Network asset inventory** — automatically discover and catalog what's on your network, with brand/model identification
-- **IoT / camera fleet discovery** — identify IP cameras, sensors, controllers by brand/model. (Camera is a current priority scenario because RTSP+ONVIF fingerprints are crisp and demand is concrete — not because MiBee Steward is camera-specific.)
-- **Branch / SOHO network mapping** — lightweight enough for small networks where LibreNMS is overkill
-- **Lab / edge asset tracking** — track research or edge devices with flexible probe configs and continuous freshness
+- **Network asset inventory**, automatically discover and catalog what's on your network, with brand/model identification
+- **IoT / camera fleet discovery**, identify IP cameras, sensors, controllers by brand/model. (Camera is a current priority scenario because RTSP+ONVIF fingerprints are crisp and demand is concrete, not because MiBee Steward is camera-specific.)
+- **Branch / SOHO network mapping**, lightweight enough for small networks where LibreNMS is overkill
+- **Lab / edge asset tracking**, track research or edge devices with flexible probe configs and continuous freshness
 
 ## Design principles
 
-1. **Single binary, zero runtime deps** — `scp` and run. No Docker/DB/Node required.
-2. **CGO-free** — cross-compiles to linux/amd64 + arm64.
-3. **Prometheus-native outlet** — asset data flows into the Prometheus ecosystem; we don't compete with it.
-4. **Plugin-based discovery** — add a protocol by registering one classifier + one handler (see `scannerv2/` architecture).
-5. **Identity inference is the differentiator** — investment priority is fingerprint/rule library breadth and accuracy.
-6. **Boundaries are features** — what we don't build is as deliberate as what we build. Don't reinvent Alertmanager/Grafana/Kuma inside MiBee Steward.
+1. **Single binary, zero runtime deps**, `scp` and run. No Docker/DB/Node required.
+2. **CGO-free**, cross-compiles to linux/amd64 + arm64.
+3. **Prometheus-native outlet**, asset data flows into the Prometheus ecosystem; we don't compete with it.
+4. **Plugin-based discovery**, add a protocol by registering one classifier + one handler (see `scannerv2/` architecture).
+5. **Identity inference is the differentiator**, investment priority is fingerprint/rule library breadth and accuracy.
+6. **Boundaries are features**, what we don't build is as deliberate as what we build. Don't reinvent Alertmanager/Grafana/Kuma inside MiBee Steward.

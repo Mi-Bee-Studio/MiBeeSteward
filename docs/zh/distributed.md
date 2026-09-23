@@ -107,7 +107,7 @@ sudo mibee-agent -config /etc/mibee/agent.yaml
 
 可选：用 systemd 常驻（仓库 `deploy/mibee-agent.service` 提供 unit 模板）。
 
-> **重要**：采集器**不会仅凭上述配置自行开始扫描**——它只执行本地 `scan_tasks` 中登记的扫描任务和中心下发的命令。让它动起来的三种方式：
+> **重要**：采集器**不会仅凭上述配置自行开始扫描**--它只执行本地 `scan_tasks` 中登记的扫描任务和中心下发的命令。让它动起来的三种方式：
 > 1. 在中心的 Agents 页面对该采集器下发一次 `scan` 命令（最常用）；
 > 2. 在采集器本地数据库中插入 `scan_tasks` 行（适合固化周期扫描）；
 > 3. 启用 `scanner.discovery.*` 被动发现源（路由器侧信号，见 [OpenWrt 部署](openwrt.md)）。
@@ -141,21 +141,21 @@ sudo mibee-agent -config /etc/mibee/agent.yaml
 中心可以主动向采集器下发命令（例如触发一次临时扫描）：
 
 1. 管理员调用 `POST /api/v1/agents/{agentId}/commands` 入队命令（命令保存在中心的 `agent_commands` 表）。
-2. 采集器的 `command_poller` 以约 60 秒周期轮询 `GET /api/v1/agents/commands` 取回——路径中**没有** agentId，令牌即身份。
-3. 采集器执行后先调 `POST /api/v1/agents/commands/{id}/ack` 确认接收，再调 `POST /api/v1/agents/commands/{id}/complete` 上报结果（`{"status":"done|failed","result":...}`）——complete 是即时 HTTP 调用，不随下一次上报捎带。
+2. 采集器的 `command_poller` 以约 60 秒周期轮询 `GET /api/v1/agents/commands` 取回--路径中**没有** agentId，令牌即身份。
+3. 采集器执行后先调 `POST /api/v1/agents/commands/{id}/ack` 确认接收，再调 `POST /api/v1/agents/commands/{id}/complete` 上报结果（`{"status":"done|failed","result":...}`）--complete 是即时 HTTP 调用，不随下一次上报捎带。
 
 命令是**尽力而为**的：采集器离线期间入队的命令不会过期，恢复连接后在下个轮询周期执行。
 
 
 ### Agent 网络的定时扫描任务
 
-`scan_tasks` 原生支持 agent 管理的网络：任务目标落在某个 agent 网络(该 `networks` 行绑有 `agent_id`)的 CIDR 内时，调度器在每个 cron 周期**直接向该 agent 下发扫描命令**（复用命令通道与目标校验），而不是在中心本地扫描 —— agent 网络的扫描器就是 agent 本身。下发成功记一条 `completed` 运行记录；下发被拒（目标越界等）记 `failed` 并附原因，任务运行历史直接可见。扫描结果照常经 `/agents/report` 回流（设备桥接、租约、变更检测不变）。
+`scan_tasks` 原生支持 agent 管理的网络：任务目标落在某个 agent 网络(该 `networks` 行绑有 `agent_id`)的 CIDR 内时，调度器在每个 cron 周期**直接向该 agent 下发扫描命令**（复用命令通道与目标校验），而不是在中心本地扫描，agent 网络的扫描器就是 agent 本身。下发成功记一条 `completed` 运行记录；下发被拒（目标越界等）记 `failed` 并附原因，任务运行历史直接可见。扫描结果照常经 `/agents/report` 回流（设备桥接、租约、变更检测不变）。
 
-> 历史注记：该能力之前靠部署侧的 systemd timer + 硬编码密码的 shell 脚本驱动（登录 → 调命令 API）。脚本在密码轮换后静默失败，还会周期性烧毁 admin 的失败登录计数、反复续锁账户。内部调度落地后此类外部脚本应全部退役 —— 改密码不再有隐藏的消费方。
+> 历史注记：该能力之前靠部署侧的 systemd timer + 硬编码密码的 shell 脚本驱动（登录 → 调命令 API）。脚本在密码轮换后静默失败，还会周期性烧毁 admin 的失败登录计数、反复续锁账户。内部调度落地后此类外部脚本应全部退役，改密码不再有隐藏的消费方。
 
 ### Agent 侧 SNMP 凭据（#241）
 
-agent 可通过**本地凭据库**探测远端局域网内的 SNMPv3（USM auth/priv）设备 —— 凭据存在 agent 自己的 mini-DB 的 `snmp_credentials` 表中，用 **agent 自己的** `security.master_key` 做 AES-256-GCM 加密。该密钥与中心的 master key 刻意相互独立：单台 agent 主机失陷只暴露该 agent 的凭据，不触及中心金库（反之亦然）。凭据材料永远不会经过 agent↔中心 通道。
+agent 可通过**本地凭据库**探测远端局域网内的 SNMPv3（USM auth/priv）设备，凭据存在 agent 自己的 mini-DB 的 `snmp_credentials` 表中，用 **agent 自己的** `security.master_key` 做 AES-256-GCM 加密。该密钥与中心的 master key 刻意相互独立：单台 agent 主机失陷只暴露该 agent 的凭据，不触及中心金库（反之亦然）。凭据材料永远不会经过 agent↔中心 通道。
 
 在 agent 主机上配置：
 
@@ -176,34 +176,34 @@ mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action remove -name s
 
 两条绑定路径：
 
-- **本地扫描任务**：直接给 agent 的 `scan_tasks` 行设 `credential_id`（本地金库 ID）——调度器原样传入引擎。
+- **本地扫描任务**：直接给 agent 的 `scan_tasks` 行设 `credential_id`（本地金库 ID）--调度器原样传入引擎。
 - **中心下发的任务**：中心侧绑定了凭据的 `scan_tasks` 行下发时在 scan payload 中携带 `credential_name`；agent 用**名字**在自己的金库里解析（两侧 ID 各自独立，名字才是跨系统键）。给 agent 侧凭据起与中心相同的名字即可。
 
-降级语义统一：未配 master key、名字不存在、ID 失效，一律回退到 agent 全局 `scanner.snmp_community` 并记警告 —— 金库配错不会导致扫描失败。
+降级语义统一：未配 master key、名字不存在、ID 失效，一律回退到 agent 全局 `scanner.snmp_community` 并记警告，金库配错不会导致扫描失败。
 
 ### 多视角拨测（#277）
 
-拨测目标通过 `vantage` 字段声明**从哪里执行**——同一个端点从不同网络发起，答案可能合法地不同：
+拨测目标通过 `vantage` 字段声明**从哪里执行**--同一个端点从不同网络发起，答案可能合法地不同：
 
-- `center`（默认）：中心本机执行——原有的单视角行为。
+- `center`（默认）：中心本机执行--原有的单视角行为。
 - `agent:{agent_id}`：指定 agent 执行；中心拒绝在本地跑此类目标（手动触发返回 409 `ErrProbeVantageNotLocal`）。
 - `all`：中心与所有已注册 agent 各跑一条轨道。
 
-调度器经命令通道向每个 agent 下发其探测计划（按指纹去重，稳态零命令流量）；`all` 计划按 agent 分别盖章，结果落入各自轨道。agent 用与中心**相同的执行内核**跑探测，批量 POST 到 `POST /api/v1/agents/probe-report`——agent token 认证，且上报者的身份会覆盖 payload 里声称的任何 vantage（agent 永远只能写自己的轨道）。
+调度器经命令通道向每个 agent 下发其探测计划（按指纹去重，稳态零命令流量）；`all` 计划按 agent 分别盖章，结果落入各自轨道。agent 用与中心**相同的执行内核**跑探测，批量 POST 到 `POST /api/v1/agents/probe-report`--agent token 认证，且上报者的身份会覆盖 payload 里声称的任何 vantage（agent 永远只能写自己的轨道）。
 
-中心侧结果按 `(target, vantage)` 维度入库。拨测页的目标表单提供视角选择器；历史弹窗并排展示各视角最新结果，轨道间对成功与否不一致时高亮——正是多视角存在的理由（「A 处通 / B 处不通」）。全部 `mibee_probe_*` 指标带 `vantage` 标签。不做调度强一致：agent 离线只是停止为其轨道贡献样本。
+中心侧结果按 `(target, vantage)` 维度入库。拨测页的目标表单提供视角选择器；历史弹窗并排展示各视角最新结果，轨道间对成功与否不一致时高亮--正是多视角存在的理由（「A 处通 / B 处不通」）。全部 `mibee_probe_*` 指标带 `vantage` 标签。不做调度强一致：agent 离线只是停止为其轨道贡献样本。
 
 ## 舰队管理（#278）
 
-每份 agent 上报都携带元信息块 —— 构建版本、Go 版本、主机名、进程运行时长、累计上报批次数 —— 中心将其连同**时钟偏移**近似值（上报时间戳与接收时间之差）写入 `agent_status` 表。**Agents 页面**展示这些舰队遥测：每个 agent 的版本、时钟偏移（超过 ±60s 高亮）、最后上报时间，与既有 token 状态并列。
+每份 agent 上报都携带元信息块，构建版本、Go 版本、主机名、进程运行时长、累计上报批次数，中心将其连同**时钟偏移**近似值（上报时间戳与接收时间之差）写入 `agent_status` 表。**Agents 页面**展示这些舰队遥测：每个 agent 的版本、时钟偏移（超过 ±60s 高亮）、最后上报时间，与既有 token 状态并列。
 
 ### 远程运维
 
-命令通道还承载一个运维命令族 —— `restart` / `config-reload` / `logs-tail` —— 作用于 agent **进程**而非网络：
+命令通道还承载一个运维命令族，`restart` / `config-reload` / `logs-tail`，作用于 agent **进程**而非网络：
 
 - **双重门控**：中心侧未开启 `agent_fleet.remote_ops_enabled: true` 时拒绝入队，agent 自身未开启 `center.remote_ops_enabled: true` 时拒绝执行。任一侧都能阻止运维命令。
 - 每次成功入队都有**审计日志**（`agent.ops_command`，含操作用户）。
-- `restart` / `config-reload` 重执行 agent 二进制（配置在构造时消费，重执行是唯一忠实的重载）。`logs-tail` 返回 agent 内存环形缓冲中最近 ≤50 行日志 —— 结果落在 Agents 页的命令历史里。
+- `restart` / `config-reload` 重执行 agent 二进制（配置在构造时消费，重执行是唯一忠实的重载）。`logs-tail` 返回 agent 内存环形缓冲中最近 ≤50 行日志，结果落在 Agents 页的命令历史里。
 - 在 systemd/procd 下重执行即干净重启；裸 shell 会话下进程以相同参数回来。
 
 ## 运维
@@ -218,7 +218,7 @@ mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action remove -name s
 
 - 采集器断网：出站连接失败即退避重试，不产生错误风暴；内存中的待重试队列（100 批）缓存上报，恢复后补齐。
 - 中心重启：SQLite 单写者，冷启动安全；采集器自动继续上报（中心的哈希缓存清空，会完整合并一次后恢复快速路径）。
-- 令牌吊销：吊销/删除中心令牌后，采集器下次上报收到 401——这是**终结性**的 4xx，该批上报会被丢弃并记日志（不重试、不入队），采集器本地影子数据不受影响。重新签发令牌并更新 `center.auth_token` 后即恢复。
+- 令牌吊销：吊销/删除中心令牌后，采集器下次上报收到 401--这是**终结性**的 4xx，该批上报会被丢弃并记日志（不重试、不入队），采集器本地影子数据不受影响。重新签发令牌并更新 `center.auth_token` 后即恢复。
 
 ### 限制
 
@@ -228,6 +228,6 @@ mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action remove -name s
 
 ## 相关页面
 
-- [单机部署](deployment.md) — 无需分布式的单网络场景
-- [OpenWrt 部署](openwrt.md) — 形态 B 即分布式采集器的路由器形态
-- [配置参考](configuration.md) — 采集器与中心的全部配置项
+- [单机部署](deployment.md)，无需分布式的单网络场景
+- [OpenWrt 部署](openwrt.md)，形态 B 即分布式采集器的路由器形态
+- [配置参考](configuration.md)，采集器与中心的全部配置项

@@ -1,6 +1,6 @@
 # Web UI Tour
 
-Every management capability of MiBee Steward ships inside its built-in web UI — embedded in the single Go binary, no separate frontend infrastructure required. This page walks through the interface area by area (screenshots show the light theme, captured from a live instance with sanitized demo data).
+Every management capability of MiBee Steward ships inside its built-in web UI, embedded in the single Go binary, no separate frontend infrastructure required. This page walks through the interface area by area (screenshots show the light theme, captured from a live instance with sanitized demo data).
 
 > The UI supports Chinese / English switching (language selector at the bottom of the sidebar) and light / dark themes. Screenshots below use the light theme.
 
@@ -22,7 +22,7 @@ The device list is the day-to-day workhorse: every registered device across all 
 
 ![Device list](images/devices.webp)
 
-Click any device for the detail page: base info, scan attributes (SNMP sysName/description, open ports, detected services and versions), TLS certificates, heartbeat history, neighbor relationships, config backup versions, and attached documents — all on one page.
+Click any device for the detail page: base info, scan attributes (SNMP sysName/description, open ports, detected services and versions), TLS certificates, heartbeat history, neighbor relationships, config backup versions, and attached documents, all on one page.
 
 ![Device detail](images/device-detail.webp)
 
@@ -44,7 +44,7 @@ For switched networks with LLDP / CDP / Bridge-MIB support, the topology page re
 
 ## Change Center
 
-The Changes page lays out device additions / attribute changes / losses / config changes on a timeline — the "history axis" of the quasi-realtime network portrait. The SSE-based `/changes/watch` endpoint feeds downstream integrations.
+The Changes page lays out device additions / attribute changes / losses / config changes on a timeline, the "history axis" of the quasi-realtime network portrait. The SSE-based `/changes/watch` endpoint feeds downstream integrations.
 
 ![Change log](images/changes.webp)
 
@@ -52,7 +52,7 @@ The Changes page lays out device additions / attribute changes / losses / config
 
 The Probes page manages periodic probing of targets **outside** your network: HTTP(S) availability, ICMP liveness, TCP ports, DNS, plus full certificate-chain collection and expiry tracking for HTTPS sites. Each target has its own interval; results feed the dashboard and alerting metrics.
 
-Every target also declares its **vantage** — where its probes run from (the center itself, every registered agent, or one specific agent). The history dialog shows each vantage's latest result side by side and highlights when tracks disagree on success — the "reachable from A, not from B" view. See [Distributed](distributed.md#vantage-probing-277).
+Every target also declares its **vantage**, where its probes run from (the center itself, every registered agent, or one specific agent). The history dialog shows each vantage's latest result side by side and highlights when tracks disagree on success, the "reachable from A, not from B" view. See [Distributed](distributed.md#vantage-probing-277).
 
 ![Probe targets](images/probes.webp)
 
@@ -68,13 +68,13 @@ The Networks page manages logical networks (multi-LAN / multi-site): CIDR, site 
 
 ## Users & Permissions
 
-Since v0.5.0 the UI uses a **role-capability model**: the `admin` / `operator` / `viewer` roles map to fine-grained capabilities (read devices, trigger scans, write configs, …), plus **object-level network grants** — non-admin users only see the networks they are granted (`closed` mode). The Users page handles account management and grant assignment.
+Since v0.5.0 the UI uses a **role-capability model**: the `admin` / `operator` / `viewer` roles map to fine-grained capabilities (read devices, trigger scans, write configs, …), plus **object-level network grants**, non-admin users only see the networks they are granted (`closed` mode). The Users page handles account management and grant assignment.
 
 ![Users & grants](images/users.webp)
 
 ## Notifications & Integrations
 
-The notification settings page manages two things: **channels** (webhook / email) and **rules** (which event — device lost/recovered/added/changed, config changed — goes to which channel, with a per-device cooldown). This is deliberately a thin rule→channel hop, not an alerting engine — alert orchestration stays with the Alertmanager ecosystem.
+The notification settings page manages two things: **channels** (webhook / email) and **rules** (which event, device lost/recovered/added/changed, config changed, goes to which channel, with a per-device cooldown). This is deliberately a thin rule→channel hop, not an alerting engine, alert orchestration stays with the Alertmanager ecosystem.
 
 ![Notification rules](images/notifications.webp)
 
@@ -90,7 +90,7 @@ SNMPv3 (USM authNoPriv / authPriv) and SSH credentials live in the encrypted cre
 
 ## Audit & Documents
 
-The audit log records every sensitive operation (logins, credential changes, scan triggers, user management, …) — the "who changed what, when" trail.
+The audit log records every sensitive operation (logins, credential changes, scan triggers, user management, …), the "who changed what, when" trail.
 
 ![Audit log](images/audit.webp)
 
@@ -100,6 +100,6 @@ The document library attaches manuals, photos, and purchase records to devices (
 
 ## Next Steps
 
-- [Device Discovery & Identification](discovery.md) — how probe sources, fingerprint rules, and the identification pipeline work
-- [Distributed Deployment](distributed.md) — the center + agent architecture in detail
-- [Configuration Reference](configuration.md) — every configuration key
+- [Device Discovery & Identification](discovery.md), how probe sources, fingerprint rules, and the identification pipeline work
+- [Distributed Deployment](distributed.md), the center + agent architecture in detail
+- [Configuration Reference](configuration.md), every configuration key

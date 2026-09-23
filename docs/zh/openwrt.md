@@ -2,11 +2,11 @@
 
 MiBee Steward 可以直接运行在 OpenWrt 路由器上，分为两种形态：**路由器采集器**（轻量采集器跑在路由器上、上报到远程中心，仓库命名**形态 B**）与**路由器中心**（完整中心跑在路由器上，仓库命名**形态 C**；形态 A 指通用主机上的中心，见[单机部署](deployment.md)）。
 
-> 已在 GL.iNet MT2500（Brume 2，mt7981）上完成真机验证：形态 C 在原厂固件上端到端运行——4 个 Tier-1 信号源全部产出真实数据，全网段扫描中路由器被正确自识别为 GL.iNet 设备（#288）。部署前请先阅读下方排障表中该固件 v4 监听限制的已知问题。
+> 已在 GL.iNet MT2500（Brume 2，mt7981）上完成真机验证：形态 C 在原厂固件上端到端运行--4 个 Tier-1 信号源全部产出真实数据，全网段扫描中路由器被正确自识别为 GL.iNet 设备（#288）。部署前请先阅读下方排障表中该固件 v4 监听限制的已知问题。
 
 ## 为什么跑在路由器上
 
-路由器是网络的**汇聚点（choke point）**——它看到 DHCP 租约、NAT 流量、WiFi 关联和 DNS 查询，这些是普通 LAN 主机看不到的。以下 4 个 Tier-1 路由器专属被动发现源只有在网关上才可用：
+路由器是网络的**汇聚点（choke point）**--它看到 DHCP 租约、NAT 流量、WiFi 关联和 DNS 查询，这些是普通 LAN 主机看不到的。以下 4 个 Tier-1 路由器专属被动发现源只有在网关上才可用：
 
 | 信号源 | 提供什么 | 读取的路由器组件 | 缺失时行为 |
 |---|---|---|---|
@@ -17,14 +17,14 @@ MiBee Steward 可以直接运行在 OpenWrt 路由器上，分为两种形态：
 
 在非路由器主机或底层文件/套接字缺失时，四个源干净降级为 no-op（调试日志 + 跳过），不会报错或崩溃。配置见 `scanner.discovery.*`（详见 [发现机制](discovery.md) 与 [配置参考](configuration.md)）。
 
-**一键启用（#360）**：`install.sh` 首次安装生成的配置**默认开启**其中三个零成本源（`dhcp_leases` + `conntrack` + `hostapd`，路由器驻留即免费）；LuCI 的 服务 → MiBee Steward → 设置 页提供四个复选框一键开关（保存即重启 + 健康检查）。`dns_log` 保持默认关闭——它需要先启用 dnsmasq 查询日志（`uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit dhcp && /etc/init.d/dnsmasq restart`），启用入口同样在 LuCI 设置页，页面上附带了这条命令。手工部署或旧配置升级不受影响（保留既有设置，安装器只提示）。
+**一键启用（#360）**：`install.sh` 首次安装生成的配置**默认开启**其中三个零成本源（`dhcp_leases` + `conntrack` + `hostapd`，路由器驻留即免费）；LuCI 的 服务 → MiBee Steward → 设置 页提供四个复选框一键开关（保存即重启 + 健康检查）。`dns_log` 保持默认关闭--它需要先启用 dnsmasq 查询日志（`uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit dhcp && /etc/init.d/dnsmasq restart`），启用入口同样在 LuCI 设置页，页面上附带了这条命令。手工部署或旧配置升级不受影响（保留既有设置，安装器只提示）。
 
 ## 形态选择
 
 | 形态 | 二进制 | 角色 | 何时使用 |
 |---|---|---|---|
-| **形态 B — 路由器采集器（router-agent → 远程中心）** | `cmd/agent` | 纯传感器：扫描本路由器 LAN，经 HTTPS 上报到远程中心 | 多站点 / 多 LAN：一个远程中心 + 每台路由器一个采集器。采集器很轻量（18MB 二进制、约 100MB 内存） |
-| **形态 C — 路由器中心（router-center）** | `cmd/server` | 完整中心（API + SPA + 资产注册 + 发现）跑在路由器上 | 单网络（家庭/小型办公室）：一台路由器包揽全部——既拿到汇聚点发现信号，又提供管理 UI，无需单独采集器进程 |
+| **形态 B，路由器采集器（router-agent → 远程中心）** | `cmd/agent` | 纯传感器：扫描本路由器 LAN，经 HTTPS 上报到远程中心 | 多站点 / 多 LAN：一个远程中心 + 每台路由器一个采集器。采集器很轻量（18MB 二进制、约 100MB 内存） |
+| **形态 C，路由器中心（router-center）** | `cmd/server` | 完整中心（API + SPA + 资产注册 + 发现）跑在路由器上 | 单网络（家庭/小型办公室）：一台路由器包揽全部--既拿到汇聚点发现信号，又提供管理 UI，无需单独采集器进程 |
 
 形态 B 与 [分布式部署](distributed.md) 配合使用；形态 C 适合单网络的自包含部署（与其他形态的对比见 [单机部署](deployment.md)）。
 
@@ -46,7 +46,7 @@ flowchart LR
 |---|---|---|---|
 | **架构** | **ARM 或 ARM64** | ARM64（GL.iNet MT3000、ipq807x、mt798x、NanoPi R5S 等 iStoreOS 软路由） | **不支持 MIPS**：`modernc.org/libc`（纯 Go SQLite 后端的传递依赖）没有可用的 `mips`/`mipsle` 移植，`mips64le` 也有缺陷。老款 ath79/ramips 路由器（TP-Link Archer C7、Netgear R7000 等）不在支持之列 |
 | **内存** | 128 MB | 256 MB+ | modernc SQLite 比 C-SQLite 更吃内存；中心比采集器更重 |
-| **闪存** | 32 MB | 128 MB+ | 二进制 16-18MB + OUI（约 5MB 完整 / 1.2KB 精简）+ 指纹库（约 1.2MB）+ DB。DB 建议放 `/tmp`（tmpfs）——见下文「资源占用」 |
+| **闪存** | 32 MB | 128 MB+ | 二进制 16-18MB + OUI（约 5MB 完整 / 1.2KB 精简）+ 指纹库（约 1.2MB）+ DB。DB 建议放 `/tmp`（tmpfs）--见下文「资源占用」 |
 
 ### 交叉编译
 
@@ -67,16 +67,16 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 `GOARCH=arm`（32 位，GOARM=7）也可用于老款 ARM 板；`GOARCH=mips*` **不支持**。注意：仓库 Makefile 的交叉编译目标（`make build-linux-arm64` 等）构建的是**中心**二进制；采集器有对应的 `make build-agent-linux-arm64` / `-amd64` / `-arm` 目标（两组都内含设备类型同步的 embed 前置步骤）。不带架构后缀的 `make build-agent` 构建的是**本机架构**：
 
 ```bash
-# 中心（形态 C）——Makefile 目标（amd64 / arm64 / arm 同理）：
+# 中心（形态 C）：Makefile 目标（amd64 / arm64 / arm 同理）：
 make build-linux-arm64
 
-# 采集器（形态 B）——本机架构：
+# 采集器（形态 B）：本机架构：
 make build-agent
 ```
 
 ### procd init 脚本与配置文件
 
-仓库提供两个 procd init 脚本——`deploy/openwrt/mibee-steward.init` 与 `deploy/openwrt/mibee-agent.init`，安装到 `/etc/init.d/` 后用 `enable`（开机自启）与 `start`/`stop`/`restart` 管理。配置文件统一放在 `/etc/mibee/`。
+仓库提供两个 procd init 脚本--`deploy/openwrt/mibee-steward.init` 与 `deploy/openwrt/mibee-agent.init`，安装到 `/etc/init.d/` 后用 `enable`（开机自启）与 `start`/`stop`/`restart` 管理。配置文件统一放在 `/etc/mibee/`。
 
 **形态 B 安装（采集器 → 远程中心）：**
 
@@ -85,14 +85,14 @@ make build-agent
 scp mibee-agent root@router:/usr/bin/mibee-agent
 scp deploy/openwrt/mibee-agent.init root@router:/etc/init.d/mibee-agent
 ssh root@router 'mkdir -p /etc/mibee'
-scp <agent.yaml> root@router:/etc/mibee/agent.yaml   # 仓库不带现成文件——按 [分布式部署](distributed.md) 的最小示例创建，上传后在路由器上编辑
+scp <agent.yaml> root@router:/etc/mibee/agent.yaml   # 仓库不带现成文件，按 [分布式部署](distributed.md) 的最小示例创建，上传后在路由器上编辑
 
 # 在路由器上编辑 /etc/mibee/agent.yaml：
 #   center.url:         http://<中心IP>:<端口>
 #   center.auth_token:  <在中心通过 POST /api/v1/agents/tokens 创建>
 #   network.name/cidr:  此路由器的 LAN（如 lan-62 / 192.168.62.0/24）
 #   scanner.discovery.*: 启用需要的路由器专属信号源
-#     （dhcp_leases, conntrack, hostapd, dns_log — 默认均为 false）
+#     （dhcp_leases, conntrack, hostapd, dns_log，默认均为 false）
 
 ssh root@router '/etc/init.d/mibee-agent enable && /etc/init.d/mibee-agent start'
 ssh root@router 'logread -e mibee-agent | tail -20'   # 期望看到 "mibee-agent running"
@@ -111,18 +111,18 @@ scp configs/config.yaml root@router:/etc/mibee/config.yaml   # 然后在路由�
 #   auth.jwt_secret:               ≥32 字符随机串（必填）
 #   auth.initial_admin_password:   留空 = 首启在浏览器创建 admin 密码（推荐）
 #   network.name/cidr:             此路由器的 LAN
-#   database.sqlite.path:          /tmp/mibee/mibee.db（tmpfs — 见下文）
+#   database.sqlite.path:          /tmp/mibee/mibee.db（tmpfs，见下文）
 #   scanner.discovery.*:           启用路由器专属信号源
 
 ssh root@router '/etc/init.d/mibee-steward enable && /etc/init.d/mibee-steward start'
-# 浏览器访问 http://<路由器IP>:8080 —— 首次打开会引导你创建 admin 密码
+# 浏览器访问 http://<路由器IP>:8080，首次打开会引导你创建 admin 密码
 ```
 
 ### iStoreOS / NanoPi R5S：一键安装（免 Docker）
 
 iStoreOS 是基于 OpenWrt 的社区固件，本页内容全部适用。NanoPi R5S（RK3568，**arm64**，1-4GB 内存 + 8-32GB eMMC）远超上表最低要求，跑**形态 C**（完整中心）绰绰有余，也**不需要** iStoreOS 自带的 Docker。
 
-关于「前端」的常见疑虑：SPA 已编译进 Go 二进制，路由器只做 HTTP 服务——在局域网内任意设备的浏览器访问 `http://<路由器IP>:8080` 即可，路由器本身不需要任何显示/渲染能力。排障表中 MT2500 的「v4 监听无法握手」是 GL.iNet 厂商内核 bug，与 iStoreOS 无关。
+关于「前端」的常见疑虑：SPA 已编译进 Go 二进制，路由器只做 HTTP 服务--在局域网内任意设备的浏览器访问 `http://<路由器IP>:8080` 即可，路由器本身不需要任何显示/渲染能力。排障表中 MT2500 的「v4 监听无法握手」是 GL.iNet 厂商内核 bug，与 iStoreOS 无关。
 
 ```bash
 # 构建机（默认 GOARCH=arm64；32 位 ARM 板加 GOARCH=arm）：
@@ -133,7 +133,7 @@ scp bin/mibee-steward-openwrt-arm64-*.tar.gz root@<路由器IP>:/tmp/
 ssh root@<路由器IP> 'cd /tmp && tar -xzf mibee-steward-openwrt-arm64-*.tar.gz && ./install.sh'
 ```
 
-`install.sh` 在路由器上依次完成：架构校验（拒绝 MIPS、冒烟执行二进制）→ 安装二进制到 `/usr/bin`、procd 脚本到 `/etc/init.d` → **首次安装**生成 `/etc/mibee/config.yaml`（随机 `jwt_secret`、`cookie_secure` 置 false（纯 HTTP 局域网）、admin 初始密码留空、从 `uci` 读取 LAN 网段填 `network.name/cidr`、DB 指向 `/etc/mibee/data/mibee.db` 绝对路径）→ 打开并持久化 `ping_group_range` → `enable` + `start` + 健康检查。已存在 `config.yaml` 时原样保留——**换新 tar 包重跑即升级**。装完按终端打印的地址与初始密码登录，随后建议：
+`install.sh` 在路由器上依次完成：架构校验（拒绝 MIPS、冒烟执行二进制）→ 安装二进制到 `/usr/bin`、procd 脚本到 `/etc/init.d` → **首次安装**生成 `/etc/mibee/config.yaml`（随机 `jwt_secret`、`cookie_secure` 置 false（纯 HTTP 局域网）、admin 初始密码留空、从 `uci` 读取 LAN 网段填 `network.name/cidr`、DB 指向 `/etc/mibee/data/mibee.db` 绝对路径）→ 打开并持久化 `ping_group_range` → `enable` + `start` + 健康检查。已存在 `config.yaml` 时原样保留--**换新 tar 包重跑即升级**。装完按终端打印的地址与初始密码登录，随后建议：
 
 - 修改 admin 密码（UI 内，或 `/usr/bin/mibee-steward reset-admin-password -config /etc/mibee/config.yaml`）；
 - 按需启用 4 个路由器专属发现源（`scanner.discovery.*`；R5S 无板载 WiFi，`hostapd` 空转是预期行为）；
@@ -143,7 +143,7 @@ iStoreOS 注意事项：LuCI/iStore 管理界面占用 80/443，MiBee 默认 808
 
 ### 软件包安装（.ipk / .apk）
 
-若偏好系统包管理器（安装/升级/卸载走包管理器，配置自动生成，数据目录卸载后保留），用包交付代替上面的 tar 包。**OpenWrt 24.10 起包管理器从 opkg 换成了 apk，包格式也从 .ipk 变成 .apk**（iStoreOS 新旧版本两种底子都有）——先确认你的固件用哪个：
+若偏好系统包管理器（安装/升级/卸载走包管理器，配置自动生成，数据目录卸载后保留），用包交付代替上面的 tar 包。**OpenWrt 24.10 起包管理器从 opkg 换成了 apk，包格式也从 .ipk 变成 .apk**（iStoreOS 新旧版本两种底子都有）--先确认你的固件用哪个：
 
 ```bash
 ssh root@<路由器IP> 'command -v opkg apk; grep DISTRIB_RELEASE /etc/openwrt_release'
@@ -161,9 +161,9 @@ scp bin/mibee-steward_*_arm64.apk root@<路由器IP>:/tmp/
 ssh root@<路由器IP> 'apk add --allow-untrusted /tmp/mibee-steward_*_arm64.apk'
 ```
 
-两种包的生命周期脚本等价：`pre-install`/`preinst` 做 uname 架构闸门（不匹配直接拒绝安装）；`post-install`/`postinst` 复用与 tar 包完全相同的配置逻辑（生成 `/etc/mibee/config.yaml`、打开 `ping_group_range`、enable + start + 健康检查——admin 密码不预生成，首启在浏览器创建）；升级 = 安装新版本的包（`opkg install` 新 ipk / `apk add` 新 apk，配置保留、服务自动重启）；卸载 = `opkg remove mibee-steward` / `apk del mibee-steward`（**`/etc/mibee` 的配置与数据库保留**，需要彻底清除时手动删）。
+两种包的生命周期脚本等价：`pre-install`/`preinst` 做 uname 架构闸门（不匹配直接拒绝安装）；`post-install`/`postinst` 复用与 tar 包完全相同的配置逻辑（生成 `/etc/mibee/config.yaml`、打开 `ping_group_range`、enable + start + 健康检查--admin 密码不预生成，首启在浏览器创建）；升级 = 安装新版本的包（`opkg install` 新 ipk / `apk add` 新 apk，配置保留、服务自动重启）；卸载 = `opkg remove mibee-steward` / `apk del mibee-steward`（**`/etc/mibee` 的配置与数据库保留**，需要彻底清除时手动删）。
 
-架构说明：包内是 CGO-free 静态二进制，`Architecture: all`——不逐个匹配 OpenWrt 的目标架构名（`aarch64_generic`、`aarch64_cortex-a53`、`arm_cortex-a7_neon-vfpv4`……），真正的架构闸门是 pre 脚本的 uname 检查 + post 脚本的 `-version` 冒烟执行。精确架构命名与软件源发布仍是后续工作（见下文「当前不支持」）。tar 包路径继续保留：无包管理器的环境（任意 Linux 主机/任意 shell）同样可用。
+架构说明：包内是 CGO-free 静态二进制，`Architecture: all`--不逐个匹配 OpenWrt 的目标架构名（`aarch64_generic`、`aarch64_cortex-a53`、`arm_cortex-a7_neon-vfpv4`……），真正的架构闸门是 pre 脚本的 uname 检查 + post 脚本的 `-version` 冒烟执行。精确架构命名与软件源发布仍是后续工作（见下文「当前不支持」）。tar 包路径继续保留：无包管理器的环境（任意 Linux 主机/任意 shell）同样可用。
 
 ### LuCI 原生入口（iStoreOS / OpenWrt 网页管理）
 
@@ -172,10 +172,10 @@ ssh root@<路由器IP> 'apk add --allow-untrusted /tmp/mibee-steward_*_arm64.apk
 - **状态**：运行状态、健康检查、开机自启、版本、监听端口、数据库大小，以及「打开管理界面」按钮（直达 `http://<LAN-IP>:<端口>` 的完整 Web UI）。
 - **设置**：
   - **管理端口**：改 `server.port` 并自动重启 + 健康检查（80/443 被 LuCI 占用会拒绝）；
-  - **管理员密码**：直接设置 admin 的登录密码（走 `reset-admin-password`，按生效密码策略校验——至少 8 位、含大写/小写/数字；密码经 0600 临时文件传递，不落命令行）；
+  - **管理员密码**：直接设置 admin 的登录密码（走 `reset-admin-password`，按生效密码策略校验--至少 8 位、含大写/小写/数字；密码经 0600 临时文件传递，不落命令行）；
   - **开机自启**、**重启服务**。
 
-所有特权操作都收口在单一脚本 `/usr/lib/mibee/luci-helper.sh`（LuCI 页面只做输入校验与转发），可独立于 LuCI 直接调用：`luci-helper.sh status | set-port <N> | set-password <file> | set-enabled <0|1> | restart`。资产级配置（发现源、扫描调优、通知等）仍在 MiBee 自己的 Web UI 里——LuCI 入口只覆盖路由器层面的事。
+所有特权操作都收口在单一脚本 `/usr/lib/mibee/luci-helper.sh`（LuCI 页面只做输入校验与转发），可独立于 LuCI 直接调用：`luci-helper.sh status | set-port <N> | set-password <file> | set-enabled <0|1> | restart`。资产级配置（发现源、扫描调优、通知等）仍在 MiBee 自己的 Web UI 里--LuCI 入口只覆盖路由器层面的事。
 
 ### UCI 配置（启用 dns_log 源）
 
@@ -210,8 +210,8 @@ MiBee Steward 的部分探测基于原始套接字，需要 **CAP_NET_RAW**：
 
 两个二进制都会写 SQLite DB（WAL 模式）。在路由器的 NAND 闪存 + overlayfs 下会造成写磨损。**建议把 DB 指向 `/tmp`（tmpfs，内存支撑）：**
 
-- **形态 B（采集器）：** 本地 DB 只是*影子*（中心才是记录写入方），冷启动丢失无妨。注意采集器的 DB 路径当前**没有独立配置项**——固定为配置文件同目录下的 `agent.db`（如 `/etc/mibee/agent.db`）。它写量很小（仅扫描结果暂存），通常可留在闪存；若确实要放到 tmpfs，可把整个配置目录移到 `/tmp/mibee-agent/` 并让 init 脚本指向它（重启后需重建配置文件）。内存待发队列（100 批）可覆盖重启期间的断连。
-- **形态 C（中心）：** DB 是权威数据。`database.sqlite.path` 指向 `/tmp` 意味着冷启动丢失（下次扫描重建；单路由器部署可接受）。需要跨重启持久化时，可把该键留在闪存上并接受磨损——消费级路由器寿命 5-10 年，扫描写入量不大。
+- **形态 B（采集器）：** 本地 DB 只是*影子*（中心才是记录写入方），冷启动丢失无妨。注意采集器的 DB 路径当前**没有独立配置项**--固定为配置文件同目录下的 `agent.db`（如 `/etc/mibee/agent.db`）。它写量很小（仅扫描结果暂存），通常可留在闪存；若确实要放到 tmpfs，可把整个配置目录移到 `/tmp/mibee-agent/` 并让 init 脚本指向它（重启后需重建配置文件）。内存待发队列（100 批）可覆盖重启期间的断连。
+- **形态 C（中心）：** DB 是权威数据。`database.sqlite.path` 指向 `/tmp` 意味着冷启动丢失（下次扫描重建；单路由器部署可接受）。需要跨重启持久化时，可把该键留在闪存上并接受磨损--消费级路由器寿命 5-10 年，扫描写入量不大。
 
 ## 验证与排障
 
@@ -232,16 +232,16 @@ logread -e mibee-agent     # 形态 B，期望 "mibee-agent running"
 |---|---|
 | 启动时 `bind: address already in use` | 端口被占用（常为路由器自带 LuCI 的 80/443）。把 `server.port` 设为空闲端口（如 8080） |
 | `database is locked (SQLITE_BUSY)` | WAL 模式下高并发探测的写冲突。连接池上限（16）当前为编译期固定值，实际可调的手段是降低 `scanner.max_concurrent_hosts` |
-| 启动时 `mmap: access denied` | 内核不允许 SQLite 所需的 mmap——以 root 运行（procd 脚本默认如此）或检查 seccomp/apparmor |
+| 启动时 `mmap: access denied` | 内核不允许 SQLite 所需的 mmap--以 root 运行（procd 脚本默认如此）或检查 seccomp/apparmor |
 | 发现源全部 no-op | 非路由器主机上的预期行为。在路由器上逐一检查前置条件（dnsmasq 运行中、`nf_conntrack` 已加载、hostapd ctrl_interface 已启用） |
-| ICMP 探测全部 `permission denied` | OpenWrt 默认 `net.ipv4.ping_group_range = 1 0`，MiBee ICMP 探测所用的非特权 ping socket 被整体禁用。一次性修复：`echo 'net.ipv4.ping_group_range = 0 2147483647' > /etc/sysctl.d/99-mibee.conf && /etc/init.d/sysctl restart`——`mibee-steward doctor` 会检查此项 |
+| ICMP 探测全部 `permission denied` | OpenWrt 默认 `net.ipv4.ping_group_range = 1 0`，MiBee ICMP 探测所用的非特权 ping socket 被整体禁用。一次性修复：`echo 'net.ipv4.ping_group_range = 0 2147483647' > /etc/sysctl.d/99-mibee.conf && /etc/init.d/sysctl restart`--`mibee-steward doctor` 会检查此项 |
 | 间歇性静默丢连路由器自身端口 | fw3 SYN-flood 防护（GL.iNet 默认开启）是全局 25/s、burst-50 令牌桶；MiBee 心跳端口检查 + 探测扇出可能耗尽它，之后**到任意本地端口的新 TCP 连接被静默丢弃**。在 LuCI 或 fw3 配置中关闭 SYN-flood 防护 |
-| GL.iNet MT2500（mt7981，kernel 5.4.211 SDK）上新 v4 TCP 监听无法完成握手 | 厂商内核 bug：SYN 到达但 SYN-ACK 以未填充的 `0.0.0.0` 地址域发出、被对端 RST——任何语言的新监听都受影响，v6 正常。该固件上的已知限制：绑 v6（`server.host: "::"`）或 center 另放、路由器跑 agent（form B） |
+| GL.iNet MT2500（mt7981，kernel 5.4.211 SDK）上新 v4 TCP 监听无法完成握手 | 厂商内核 bug：SYN 到达但 SYN-ACK 以未填充的 `0.0.0.0` 地址域发出、被对端 RST--任何语言的新监听都受影响，v6 正常。该固件上的已知限制：绑 v6（`server.host: "::"`）或 center 另放、路由器跑 agent（form B） |
 | `scp` 传文件报 `sh: /usr/libexec/sftp-server: not found` | 厂商固件（含 GL.iNet）不带 sftp-server，新版 scp 回退 SFTP 即失败。强制旧协议：`scp -O …` |
 | GL.iNet 上 `dns_log` 发现源始终为空 | GL 的 dnsmasq 用定制的 `logfacility` uci 键记查询日志（不是标准的 `logfile`）：`uci set dhcp.@dnsmasq[0].logqueries=1 && uci set dhcp.@dnsmasq[0].logfacility=/tmp/dnsmasq.log && uci commit dhcp`，再把 `discovery.dns_log.path` 指向该文件并重启 dnsmasq |
 | 构建报 `build constraints exclude all Go files … modernc.org/libc…` | MIPS 不受支持（modernc/libc 限制）的典型报错形态。请使用 ARM/ARM64 路由器 |
 
 ### 当前不支持
 
-- **官方 .ipk/.apk 打包**（OpenWrt build feed）：本仓库现已提供**手工组装的二进制包**（`make package-openwrt-ipk` / `make package-openwrt-apk`，`Architecture: all` + pre 脚本架构闸门，本地文件经 `opkg install` / `apk add --allow-untrusted` 安装）；仍未做的是经 OpenWrt buildroot `golang-package` 宏的**官方打包**——精确逐目标架构命名、签名与软件源（feed）发布，供用户订阅。非正确性必需。
+- **官方 .ipk/.apk 打包**（OpenWrt build feed）：本仓库现已提供**手工组装的二进制包**（`make package-openwrt-ipk` / `make package-openwrt-apk`，`Architecture: all` + pre 脚本架构闸门，本地文件经 `opkg install` / `apk add --allow-untrusted` 安装）；仍未做的是经 OpenWrt buildroot `golang-package` 宏的**官方打包**--精确逐目标架构命名、签名与软件源（feed）发布，供用户订阅。非正确性必需。
 - **MIPS 架构**：`modernc/libc` 的结构性限制；需要把 SQLite 后端换成 bbolt/goleveldb（真正的重构，推迟到有 MIPS 需求时）。

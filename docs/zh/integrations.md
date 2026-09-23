@@ -45,7 +45,7 @@ Grafana → Dashboards → Import → 粘贴 JSON 文件内容 → 选择 Promet
 | `telegram` | `bot_token`、`chat_id` | Bot API token |
 | `discord` | `url`、可选 `username` | 无（webhook URL 即凭证） |
 
-四个聊天平台渠道是"格式化 webhook"：MiBee 会把事件转换成平台的消息格式（标题 + 详情的文本消息）。若需要原始 JSON 载荷，请使用通用 `webhook` 类型 —— 它 POST 完整事件结构：
+四个聊天平台渠道是"格式化 webhook"：MiBee 会把事件转换成平台的消息格式（标题 + 详情的文本消息）。若需要原始 JSON 载荷，请使用通用 `webhook` 类型，它 POST 完整事件结构：
 
 ```json
 {
@@ -62,13 +62,13 @@ Grafana → Dashboards → Import → 粘贴 JSON 文件内容 → 选择 Promet
 }
 ```
 
-每个渠道在 UI（设置 → 通知 → 渠道行）都有**测试发送**按钮 —— 绑定规则前先用它验证连通性。
+每个渠道在 UI（设置 → 通知 → 渠道行）都有**测试发送**按钮，绑定规则前先用它验证连通性。
 
 ## 自动化示例
 
 现成示例位于 [`deploy/integrations/`](https://github.com/Mi-Bee-Studio/MiBeeSteward/tree/main/deploy/integrations)：
 
-- **n8n** — `n8n/mibee-device-alerts.json`：可导入的工作流，接收通用 webhook 载荷、过滤 `device_lost`，交给任意目标节点（聊天、工单……）。
-- **Home Assistant** — `homeassistant/mibee-device-webhook.yaml`：`webhook` 触发器自动化，设备离线时推送持久通知；另含从 HA 触发 MiBee 扫描的 `rest_command`。
+- **n8n**，`n8n/mibee-device-alerts.json`：可导入的工作流，接收通用 webhook 载荷、过滤 `device_lost`，交给任意目标节点（聊天、工单……）。
+- **Home Assistant**，`homeassistant/mibee-device-webhook.yaml`：`webhook` 触发器自动化，设备离线时推送持久通知；另含从 HA 触发 MiBee 扫描的 `rest_command`。
 
 模式都一样：创建一个指向你工具入站 URL 的 `webhook` 渠道，绑定通知规则，然后按 `metadata.event_type` 做路由。

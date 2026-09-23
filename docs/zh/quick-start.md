@@ -82,7 +82,7 @@ curl http://localhost:8080/api/v1/health
 
 ## 60 秒演示（无需网络）
 
-想在接入真实网段前先看看资产画像长什么样？用演示模式启动 —— 首次启动自动种入一套虚构资产（两个网络、约 20 台设备画像、变更历史、拨测结果），并有模拟事件保持活力：
+想在接入真实网段前先看看资产画像长什么样？用演示模式启动，首次启动自动种入一套虚构资产（两个网络、约 20 台设备画像、变更历史、拨测结果），并有模拟事件保持活力：
 
 ```bash
 ./mibee-steward -demo -config configs/config.example.yaml
@@ -152,10 +152,10 @@ curl -X POST http://localhost:8080/api/v1/scanner/scan \
 
 ## 下一步
 
-- [场景玩法指引](playbooks.md) — 从首次扫描到多网段的六个上手场景
-- [功能总览](features.md) — 全部能力的分层清单
-- [架构](architecture.md) — 扫描器流水线与后台服务
-- [部署](deployment.md) — systemd、Docker、Nginx、备份
-- [分布式](distributed.md) — 中心 + 采集器跨网络发现
-- [配置参考](configuration.md) — 全部配置项
-- [API 参考](api.md) — 扫描、设备、心跳接口
+- [场景玩法指引](playbooks.md)，从首次扫描到多网段的六个上手场景
+- [功能总览](features.md)，全部能力的分层清单
+- [架构](architecture.md)，扫描器流水线与后台服务
+- [部署](deployment.md)，systemd、Docker、Nginx、备份
+- [分布式](distributed.md)，中心 + 采集器跨网络发现
+- [配置参考](configuration.md)，全部配置项
+- [API 参考](api.md)，扫描、设备、心跳接口

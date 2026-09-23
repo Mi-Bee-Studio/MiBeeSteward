@@ -6,12 +6,12 @@ Thank you for your interest in contributing to MiBee Steward!
 
 MiBee Steward is distributed under a **dual license**: the open-source [GNU AGPLv3](./LICENSE) plus a separate [commercial license](./LICENSE-COMMERCIAL.md). For this dual licensing to remain possible, every contribution must be covered by two things:
 
-1. **A signed [Contributor License Agreement (CLA)](./CLA.md)** — one-time per contributor (ICLA for individuals, CCLA for companies). The CLA grants Mi-Bee Studio the right to release your contribution under both the AGPLv3 and the commercial license. You keep your copyright.
-2. **A per-commit `Signed-off-by` (DCO)** — certifies the *origin* of every commit. Pass `-s` to `git commit`, or see [`.github/DCO.md`](./.github/DCO.md). A CI check (`.github/workflows/dco.yml`) blocks any PR with an unsigned commit.
+1. **A signed [Contributor License Agreement (CLA)](./CLA.md)**, one-time per contributor (ICLA for individuals, CCLA for companies). The CLA grants Mi-Bee Studio the right to release your contribution under both the AGPLv3 and the commercial license. You keep your copyright.
+2. **A per-commit `Signed-off-by` (DCO)**, certifies the *origin* of every commit. Pass `-s` to `git commit`, or see [`.github/DCO.md`](./.github/DCO.md). A CI check (`.github/workflows/dco.yml`) blocks any PR with an unsigned commit.
 
 A pull request cannot be merged until both are in place. See the linked docs for signing instructions.
 
-## Development Workflow — TDD
+## Development Workflow, TDD
 
 We follow **Test-Driven Development (TDD)**: Red → Green → Refactor.
 
@@ -41,7 +41,7 @@ cd web && npx vitest run src/__tests__/validation.test.ts
 
 All of the following must pass before a PR can merge (enforced by `.github/workflows/ci.yml`):
 
-- Frontend build (`npm ci && npm run build`) — produces the `web/dist/` artifact the `go` job embeds.
+- Frontend build (`npm ci && npm run build`), produces the `web/dist/` artifact the `go` job embeds.
 - `go vet ./...`
 - `golangci-lint run` (v2, config in `.golangci.yml`)
 - `go test -race -coverprofile=cover.out -covermode=atomic ./...`
@@ -60,7 +60,7 @@ Coverage is **reported** (artifact uploaded), not hard-gated.
 
 ## sqlc Regeneration Rule
 
-The files under `internal/db/` are **generated** — never edit them by hand. If you change `db/schema.sql` or any file under `db/queries/`, you MUST regenerate:
+The files under `internal/db/` are **generated**, never edit them by hand. If you change `db/schema.sql` or any file under `db/queries/`, you MUST regenerate:
 
 ```bash
 sqlc generate
@@ -72,8 +72,8 @@ Then commit the regenerated `internal/db/*.go` files alongside your schema/query
 
 - **CGO-free build**: Never introduce CGO dependencies. SQLite uses `modernc.org/sqlite`. The Makefile sets `CGO_ENABLED=0`.
 - **Frontend embed**: Use `//go:embed all:dist` (with the `all:` prefix) in `web/embed.go`. Without `all:`, Go skips `_app/` and the SPA 404s its JS/CSS.
-- **Svelte 5 runes**: `$state`/`$derived`/`$effect`/`$props` ONLY in `.svelte` files. In `.ts`/`.js`, use `svelte/store` — the Svelte compiler only transforms `.svelte`.
-- **sqlc boundary**: Never edit `internal/db/*.go` directly — edit `db/queries/*.sql` then `sqlc generate`.
+- **Svelte 5 runes**: `$state`/`$derived`/`$effect`/`$props` ONLY in `.svelte` files. In `.ts`/`.js`, use `svelte/store`, the Svelte compiler only transforms `.svelte`.
+- **sqlc boundary**: Never edit `internal/db/*.go` directly, edit `db/queries/*.sql` then `sqlc generate`.
 - **No secrets**: Never commit secrets, private IPs, or credentials. Use `.env` (gitignored).
 
 ## Questions?

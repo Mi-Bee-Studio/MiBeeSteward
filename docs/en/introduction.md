@@ -1,12 +1,12 @@
 # MiBee Steward Product Introduction
 
-MiBee Steward v0.5.0 (2026-08-19) is a **device/network-layer asset discovery, identification, and registry** tool — CMDB-lite for network and IoT assets, delivered as a single zero-dependency binary. The backend uses Go + Chi routing + modernc.org/sqlite (CGO-free pure-Go SQLite) + sqlc-generated data layer; configuration is managed by koanf (YAML files + `MIBEE_*` environment variables). The frontend is a SvelteKit 5 single-page application embedded into the binary via `go:embed`. Licensed AGPL-3.0 with a commercial dual-license option.
+MiBee Steward v0.5.0 (2026-08-19) is a **device/network-layer asset discovery, identification, and registry** tool, CMDB-lite for network and IoT assets, delivered as a single zero-dependency binary. The backend uses Go + Chi routing + modernc.org/sqlite (CGO-free pure-Go SQLite) + sqlc-generated data layer; configuration is managed by koanf (YAML files + `MIBEE_*` environment variables). The frontend is a SvelteKit 5 single-page application embedded into the binary via `go:embed`. Licensed AGPL-3.0 with a commercial dual-license option.
 
 It answers three questions:
 
-1. **What devices are on this network?** — multi-protocol active probing (ICMP, TCP port scan, SNMP, HTTP, RTSP, ONVIF, mDNS, SSDP, NetBIOS); optional eBPF passive observer (sniffs WS-Discovery multicast and TCP magic bytes); router-side data sources since v0.4.0 (DHCP leases, conntrack, hostapd, dnsmasq logs).
-2. **What are they?** — protocol fingerprints (banner / HTTP / RTSP / ONVIF / SNMP / Prometheus) infer device type, brand, and model; the MAC OUI registry infers the vendor.
-3. **Are they alive?** — heartbeat-driven freshness continuously tracks online/offline state, latency, and history, making the registry a living ledger rather than a one-shot snapshot.
+1. **What devices are on this network?**, multi-protocol active probing (ICMP, TCP port scan, SNMP, HTTP, RTSP, ONVIF, mDNS, SSDP, NetBIOS); optional eBPF passive observer (sniffs WS-Discovery multicast and TCP magic bytes); router-side data sources since v0.4.0 (DHCP leases, conntrack, hostapd, dnsmasq logs).
+2. **What are they?**, protocol fingerprints (banner / HTTP / RTSP / ONVIF / SNMP / Prometheus) infer device type, brand, and model; the MAC OUI registry infers the vendor.
+3. **Are they alive?**, heartbeat-driven freshness continuously tracks online/offline state, latency, and history, making the registry a living ledger rather than a one-shot snapshot.
 
 ```mermaid
 flowchart LR
@@ -43,7 +43,7 @@ flowchart LR
 
 ### Synthetic Probing (external resources)
 
-- Explicitly configured periodic probing (blackbox_exporter-style) of any reachable endpoint — typically external/internet resources (a public HTTPS site, a hosted mail TLS port, a vendor gateway) — tracking availability and latency on fixed intervals.
+- Explicitly configured periodic probing (blackbox_exporter-style) of any reachable endpoint, typically external/internet resources (a public HTTPS site, a hosted mail TLS port, a vendor gateway), tracking availability and latency on fixed intervals.
 - Four modules: `http` (full URL, status < 400 = success; https targets also collect the certificate chain), `tls` (host:port handshake with full chain collection), `tcp`, and `icmp`.
 - The TLS certificate capability is reused from the internal network to the outside world: chain (leaf/intermediates/root), SANs, serial, fingerprint, PEM, negotiated TLS version/cipher, and a trust verdict are all persisted; result history carries a cert-expiry summary so rotation cadence is observable.
 - Availability and certificate-expiry metrics (`mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds`) flow through `/metrics`; alerting is left to Prometheus (example rules ship with the repo).
@@ -52,19 +52,19 @@ flowchart LR
 
 - Scheduled sweeps fetch each router/switch/firewall device's running-config over SSH (vendor command matrix: Juniper JunOS, HP/Aruba/H3C/Comware, and the Cisco-style `show running-config` default; host-key trust-on-first-use), version it in `device_configs`, and record a new version only when the content changes.
 - Two-version unified diffs (API `GET /devices/{id}/configs` + `/diff?a=&b=`) and a device-detail **config history** tab; SSH credentials are encrypted at rest (AES-256-GCM via `security.master_key`) and redacted on read.
-- A config change emits a `device_config_changed` event into the change log — feeding the changes page, the SSE watch, and notification rules.
+- A config change emits a `device_config_changed` event into the change log, feeding the changes page, the SSE watch, and notification rules.
 - Opt-in (`scanner.config_backup.enabled`, default off): requires the master key and an SSH credential bound to each target device.
 
 ### Event Notifications (built-in, rule-driven)
 
 - For teams that don't run a Prometheus+Alertmanager stack: **notification rules** route change events (`device_lost` / `device_recovered` / `device_added` / `device_changed` / `device_config_changed`) to webhook/email channels, with per-(rule × device) cooldown to suppress flapping.
-- Scope each rule to all networks, one network, or a single device (by UUID). This is a thin rule→channel hop on top of change detection — deliberately not an alerting engine.
+- Scope each rule to all networks, one network, or a single device (by UUID). This is a thin rule→channel hop on top of change detection, deliberately not an alerting engine.
 
 ### Observability (Prometheus Ecosystem)
 
-- `/metrics`: Prometheus text-format metrics — device status gauges, heartbeat counters (total attempts/failures), response-time histograms.
+- `/metrics`: Prometheus text-format metrics, device status gauges, heartbeat counters (total attempts/failures), response-time histograms.
 - `/sd`: HTTP service discovery endpoint that registers assets (including systems with `metrics_enabled=true`) into Prometheus.
-- Alerting and visualization are deliberately left to Prometheus Alertmanager and Grafana — they consume these endpoints natively.
+- Alerting and visualization are deliberately left to Prometheus Alertmanager and Grafana, they consume these endpoints natively.
 
 ### Management Interface
 
@@ -91,11 +91,11 @@ Automatically discover and register routers, switches, wireless APs, servers, an
 
 ### IoT / Camera Fleet Discovery
 
-Identify IP cameras, sensors, controllers, and other IoT devices by brand and model. Cameras (RTSP + ONVIF) are the current priority scenario because fingerprints are crisp and demand is concrete — Steward is not camera-specific; the same identification pipeline applies to any device type.
+Identify IP cameras, sensors, controllers, and other IoT devices by brand and model. Cameras (RTSP + ONVIF) are the current priority scenario because fingerprints are crisp and demand is concrete, Steward is not camera-specific; the same identification pipeline applies to any device type.
 
 ### Branch / SOHO Network Mapping
 
-Lightweight enough for small/branch networks where LibreNMS or Zabbix is overkill: deploy a single binary, scan the subnet, get a structured asset portrait — no database, message broker, or container stack required.
+Lightweight enough for small/branch networks where LibreNMS or Zabbix is overkill: deploy a single binary, scan the subnet, get a structured asset portrait, no database, message broker, or container stack required.
 
 ### Lab / Edge Asset Tracking
 
@@ -119,7 +119,7 @@ Track research devices, test rigs, measurement equipment, and edge nodes with fl
 
 ### What It Is Not
 
-These are **deliberate product boundaries, not gaps** — mature tools already do them better, and Steward does not compete:
+These are **deliberate product boundaries, not gaps**, mature tools already do them better, and Steward does not compete:
 
 | Capability | Use instead | Notes |
 |------------|-------------|-------|
@@ -130,9 +130,9 @@ These are **deliberate product boundaries, not gaps** — mature tools already d
 | Configuration management | Ansible, etc. | Registers and tracks assets only; pushes no configs to devices |
 | Center HA | Single-instance center | Center is a single process; cross-network scaling via center + agents (see [Distributed](distributed.md)), no cluster/HA |
 
-Deploy these tools alongside Steward when you need them — they consume the `/metrics` and `/sd` endpoints natively.
+Deploy these tools alongside Steward when you need them, they consume the `/metrics` and `/sd` endpoints natively.
 
-> Common misconception: Steward is sometimes compared to lightweight monitoring tools like Beszel / Uptime Kuma / Netdata. That is a category error — those tools monitor hosts/services you already know about; Steward discovers what is actually on the network.
+> Common misconception: Steward is sometimes compared to lightweight monitoring tools like Beszel / Uptime Kuma / Netdata. That is a category error, those tools monitor hosts/services you already know about; Steward discovers what is actually on the network.
 
 ## System Requirements
 
@@ -144,7 +144,7 @@ Deploy these tools alongside Steward when you need them — they consume the `/m
 
 ## Next Steps
 
-- [Feature overview](features.md) — the full capability inventory, layer by layer
-- [Scenario playbooks](playbooks.md) — six beginner scenarios, learning by doing
-- [Comparison with similar tools](comparison.md) — positioning, radar charts, and selection advice
-- [Quick Start](quick-start.md) — a first deployment and network scan within minutes
+- [Feature overview](features.md), the full capability inventory, layer by layer
+- [Scenario playbooks](playbooks.md), six beginner scenarios, learning by doing
+- [Comparison with similar tools](comparison.md), positioning, radar charts, and selection advice
+- [Quick Start](quick-start.md), a first deployment and network scan within minutes
