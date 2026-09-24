@@ -32,9 +32,9 @@ export interface PasswordPolicy {
 // until the fetch resolves (and as the offline fallback).
 export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
 	min_length: 8,
-	require_uppercase: true,
-	require_lowercase: true,
-	require_digit: true,
+	require_uppercase: false,
+	require_lowercase: false,
+	require_digit: false,
 	require_special: false
 };
 

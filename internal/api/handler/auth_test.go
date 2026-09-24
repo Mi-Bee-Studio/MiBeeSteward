@@ -337,11 +337,11 @@ func TestAuth_PasswordPolicyIsPublic(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&policy))
 	require.Equal(t, 8, policy.MinLength)
-	require.True(t, policy.RequireUppercase)
-	require.True(t, policy.RequireLowercase)
-	require.True(t, policy.RequireDigit)
-	// Special chars are optional under the (relaxed) default policy, the
-	// settings center can turn the class back on at runtime; this endpoint
-	// then reflects the overlay value.
+	// The default policy is length-only (all character classes off); the
+	// settings center can turn any class back on at runtime, and this
+	// endpoint then reflects the overlay value.
+	require.False(t, policy.RequireUppercase)
+	require.False(t, policy.RequireLowercase)
+	require.False(t, policy.RequireDigit)
 	require.False(t, policy.RequireSpecial)
 }

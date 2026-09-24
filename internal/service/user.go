@@ -55,16 +55,16 @@ var (
 	hasSpecialChar = regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]`)
 )
 
-// DefaultPasswordPolicy mirrors config.authDefaults (min 8 + upper + lower +
-// digit; special chars optional). Callers that build a UserService without
-// going through config.Load (unit tests, zero-valued configs) fall back to
-// this. Keep the two definitions in sync.
+// DefaultPasswordPolicy mirrors config.authDefaults (length-only, min 8).
+// Callers that build a UserService without going through config.Load (unit
+// tests, zero-valued configs) fall back to this. Keep the two definitions
+// in sync.
 func DefaultPasswordPolicy() config.PasswordPolicyConfig {
 	return config.PasswordPolicyConfig{
 		MinLength:        8,
-		RequireUppercase: true,
-		RequireLowercase: true,
-		RequireDigit:     true,
+		RequireUppercase: false,
+		RequireLowercase: false,
+		RequireDigit:     false,
 		RequireSpecial:   false,
 	}
 }

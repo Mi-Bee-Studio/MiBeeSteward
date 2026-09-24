@@ -281,21 +281,21 @@ type PasswordPolicyConfig struct {
 
 // passwordPolicyDefaults seeds koanf BEFORE the YAML load so a partial
 // `auth.password_policy` block overrides only the keys it names (koanf merge
-// semantics) instead of zeroing the rest. Special characters are NOT required
-// by default anymore (min 8 + upper + lower + digit): four mandatory classes
-// was field-feedback-heavy for the home/SOHO audience, and the first-run seed
-// path no longer depends on policy anyway (SeedAdmin bypasses validation).
-// The rules remain fully configurable, YAML here, or at runtime via the
-// settings center (PUT /api/v1/settings/auth → system_settings overlay).
+// semantics) instead of zeroing the rest. Default is length-only (min 8):
+// mandatory character classes kept tripping up the home/SOHO audience, and
+// the first-run seed path does not depend on policy anyway (SeedAdmin
+// bypasses validation). The rules remain fully configurable, YAML here, or
+// at runtime via the settings center (PUT /api/v1/settings/auth →
+// system_settings overlay).
 // Nested-map form (not flat dot keys): koanf treats dot keys from a raw
 // provider map as literal key names, which would never reach the struct.
 var authDefaults = map[string]interface{}{
 	"auth": map[string]interface{}{
 		"password_policy": map[string]interface{}{
 			"min_length":        8,
-			"require_uppercase": true,
-			"require_lowercase": true,
-			"require_digit":     true,
+			"require_uppercase": false,
+			"require_lowercase": false,
+			"require_digit":     false,
 			"require_special":   false,
 		},
 		"lockout": map[string]interface{}{
