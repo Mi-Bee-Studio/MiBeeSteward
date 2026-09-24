@@ -114,18 +114,30 @@ func TestRegister_PasswordTooShort(t *testing.T) {
 }
 
 func TestRegister_PasswordMissingUppercase(t *testing.T) {
+	// The default policy is length-only (character classes off); pin both
+	// halves, the class is optional by default, and the rule still fires
+	// when an admin turns it on.
 	svc, _ := setupUserService(t)
-
 	_, err := svc.Register(context.Background(), "dave", "dave@example.com", "lower123!@#", "user")
+	require.NoError(t, err, "default policy must accept lowercase+digits without an uppercase letter")
+
+	svc2, _ := setupUserService(t)
+	svc2.policy = config.PasswordPolicyConfig{MinLength: 8, RequireUppercase: true, RequireLowercase: true, RequireDigit: true}
+	_, err = svc2.Register(context.Background(), "dave2", "dave2@example.com", "lower123!@#", "user")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrWeakPassword)
 	require.Contains(t, err.Error(), "uppercase")
 }
 
 func TestRegister_PasswordMissingDigit(t *testing.T) {
+	// Same two halves as the uppercase case above.
 	svc, _ := setupUserService(t)
-
 	_, err := svc.Register(context.Background(), "eve", "eve@example.com", "NoDigits!!", "user")
+	require.NoError(t, err, "default policy must accept letters without a digit")
+
+	svc2, _ := setupUserService(t)
+	svc2.policy = config.PasswordPolicyConfig{MinLength: 8, RequireUppercase: true, RequireLowercase: true, RequireDigit: true}
+	_, err = svc2.Register(context.Background(), "eve2", "eve2@example.com", "NoDigits!!", "user")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrWeakPassword)
 	require.Contains(t, err.Error(), "digit")
@@ -445,9 +457,10 @@ func TestRegister_AdminRole(t *testing.T) {
 }
 
 // TestPasswordPolicy_Configurable pins the configurable-policy behavior
-// (auth.password_policy): relaxed rules accept a plain date, defaults still
-// reject it, and the must-not-equal-username guard stays on regardless of the
-// strength knobs.
+// (auth.password_policy): the length-only default accepts a plain date
+// (date-shaped passwords are the home-audience norm), a stricter config
+// still rejects it, and the must-not-equal-username guard stays on
+// regardless of the strength knobs.
 func TestPasswordPolicy_Configurable(t *testing.T) {
 	relaxed := config.PasswordPolicyConfig{MinLength: 1}
 	// zero value with MinLength set: only the length floor applies
@@ -460,8 +473,12 @@ func TestPasswordPolicy_Configurable(t *testing.T) {
 	if err := validatePassword(config.PasswordPolicyConfig{MinLength: 11}, "1999-12-31", "admin"); err == nil {
 		t.Error("min_length must still be enforced when relaxed otherwise")
 	}
-	if err := validatePassword(DefaultPasswordPolicy(), "1999-12-31", "admin"); err == nil {
-		t.Error("default policy must still reject the plain date")
+	if err := validatePassword(DefaultPasswordPolicy(), "1999-12-31", "admin"); err != nil {
+		t.Errorf("length-only default must accept a plain date: %v", err)
+	}
+	strict := config.PasswordPolicyConfig{MinLength: 8, RequireUppercase: true, RequireLowercase: true, RequireDigit: true}
+	if err := validatePassword(strict, "1999-12-31", "admin"); err == nil {
+		t.Error("class-based policy must reject the plain date")
 	}
 }
 

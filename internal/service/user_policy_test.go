@@ -19,11 +19,17 @@ import (
 // deterministically, the seam every "failed to hash password" branch needs.
 var longPassword = "Aa1!" + strings.Repeat("a", 100)
 
-// TestValidatePassword_LowercaseMissing pins the one policy rule the sweep
-// hadn't reached: upper+digit+length pass, but no lowercase → rejected.
+// TestValidatePassword_LowercaseMissing pins the lowercase rule in both
+// directions: length-only default accepts an all-uppercase+digits password,
+// and the rule fires when the class is turned on.
 func TestValidatePassword_LowercaseMissing(t *testing.T) {
 	svc, _ := setupUserService(t)
 	_, err := svc.Register(context.Background(), "u1", "u1@invalid", "ABCDEFG1", "user")
+	require.NoError(t, err, "length-only default must accept uppercase+digits without lowercase")
+
+	svc2, _ := setupUserService(t)
+	svc2.policy = config.PasswordPolicyConfig{MinLength: 8, RequireUppercase: true, RequireLowercase: true, RequireDigit: true}
+	_, err = svc2.Register(context.Background(), "u2", "u2@invalid", "ABCDEFG1", "user")
 	require.ErrorContains(t, err, "lowercase")
 }
 

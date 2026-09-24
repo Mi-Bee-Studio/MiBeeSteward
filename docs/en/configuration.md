@@ -101,10 +101,10 @@ database:
 | `auth.cookie_same_site` | string | "strict" | Cookie same-site policy: "strict" or "lax" |
 | `auth.cookie_max_age` | duration | *(falls back to `auth.token_expiry`, then 86400)* | Auth cookie lifetime. Falls back to `auth.token_expiry` when unset, then 86400 seconds (24h). |
 | `auth.password_policy.min_length` | int | 8 | Minimum password length (register / change / reset paths). |
-| `auth.password_policy.require_uppercase` | bool | true | Require at least one uppercase letter. |
-| `auth.password_policy.require_lowercase` | bool | true | Require at least one lowercase letter. |
-| `auth.password_policy.require_digit` | bool | true | Require at least one digit. |
-| `auth.password_policy.require_special` | bool | false | Require at least one special character (off by default, see note below). |
+| `auth.password_policy.require_uppercase` | bool | false | Require at least one uppercase letter. |
+| `auth.password_policy.require_lowercase` | bool | false | Require at least one lowercase letter. |
+| `auth.password_policy.require_digit` | bool | false | Require at least one digit. |
+| `auth.password_policy.require_special` | bool | false | Require at least one special character. |
 | `auth.lockout.max_failed_attempts` | int | 5 | Consecutive failed logins before the account locks. |
 | `auth.lockout.lock_minutes` | int | 30 | Lockout duration. An expired lock resets the failure counter. |
 
@@ -113,10 +113,10 @@ database:
 > the `system_settings` table with precedence **DB overlay > this config file
 > > built-in defaults**, effective on the next password check/login, no
 > restart. The defaults in this table only apply when nothing overrides them.
-> Special characters are no longer required by default (min 8 + upper + lower
-> + digit), all four classes proved too heavy for home deployments; re-enable
-> via the UI toggle or an explicit `require_special: true` here. Also note the
-> first-run behavior: an EMPTY `auth.initial_admin_password` (the installer
+> The default policy checks length only (min 8); the character classes are
+> opt-in, mandatory classes proved too heavy for home deployments. Turn any
+> class on via the UI toggle or an explicit `require_*: true` here. Also note
+> the first-run behavior: an EMPTY `auth.initial_admin_password` (the installer
 > default) seeds the admin with no password, the login page detects it
 > (public `GET /auth/setup-status`) and shows a create-admin-password form
 > instead of the login form (`POST /auth/setup`, policy-checked, one-shot;

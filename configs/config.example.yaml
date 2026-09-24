@@ -103,16 +103,16 @@ auth:
   cookie_same_site: "strict"   # "strict" or "lax"
   # Password strength policy (register / change / reset-admin-password paths).
   # Values below are the DEFAULTS; a partial block overrides ONLY the keys you
-  # name (unmentioned keys keep the defaults). Special characters are optional
-  # by default: min 8 + upper + lower + digit. Prefer editing at runtime via
-  # the web UI (设置 → 安全， PUT /api/v1/settings/auth → system_settings
-  # overlay, effective without restart) over editing this file.
+  # name (unmentioned keys keep the defaults). The default policy checks
+  # length only (min 8); character classes are opt-in. Prefer editing at
+  # runtime via the web UI (设置 → 安全， PUT /api/v1/settings/auth →
+  # system_settings overlay, effective without restart) over editing this file.
   # The must-not-equal-username guard is always on regardless.
   # password_policy:
   #   min_length: 8
-  #   require_uppercase: true
-  #   require_lowercase: true
-  #   require_digit: true
+  #   require_uppercase: false
+  #   require_lowercase: false
+  #   require_digit: false
   #   require_special: false
   # Failed-login lockout (defaults below = historical hardcoded values; partial
   # blocks override only the keys you name). NOTE: an EXPIRED lock resets the

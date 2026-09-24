@@ -101,14 +101,14 @@ database:
 | `auth.cookie_same_site` | string | "strict" | Cookie 同站策略："strict" 或 "lax" |
 | `auth.cookie_max_age` | duration | *(回退 `auth.token_expiry`，再 86400)* | 认证 cookie 有效期。未设置时沿用 `auth.token_expiry`，仍未设置则为 86400 秒（24h）。 |
 | `auth.password_policy.min_length` | int | 8 | 密码最小长度(注册/改密/重置路径生效)。 |
-| `auth.password_policy.require_uppercase` | bool | true | 要求至少一个大写字母。 |
-| `auth.password_policy.require_lowercase` | bool | true | 要求至少一个小写字母。 |
-| `auth.password_policy.require_digit` | bool | true | 要求至少一个数字。 |
-| `auth.password_policy.require_special` | bool | false | 要求至少一个特殊字符（默认关闭，见下）。 |
+| `auth.password_policy.require_uppercase` | bool | false | 要求至少一个大写字母。 |
+| `auth.password_policy.require_lowercase` | bool | false | 要求至少一个小写字母。 |
+| `auth.password_policy.require_digit` | bool | false | 要求至少一个数字。 |
+| `auth.password_policy.require_special` | bool | false | 要求至少一个特殊字符。 |
 | `auth.lockout.max_failed_attempts` | int | 5 | 连续登录失败多少次后锁定账户。 |
 | `auth.lockout.lock_minutes` | int | 30 | 锁定时长(分钟)。锁过期会重置失败计数。 |
 
-> **密码策略与锁定阈值支持网页端修改**：管理界面「设置 → 安全」（`GET/PUT /api/v1/settings/auth`）把覆盖值写入 `system_settings` 表，优先级 **数据库覆盖 > 本配置文件 > 内置默认**，对下一次密码校验/登录即生效、无需重启。表中的默认值仅作未配置时的兜底。特殊字符默认不再强制（min 8 + 大小写 + 数字）--四类全要求对家用场景过重；如需恢复旧行为，网页端勾选或在此显式配置 `require_special: true` 均可。另见首启行为：`auth.initial_admin_password` 留空（安装器默认）时 admin 以无密码状态播种，登录页轮询公共端点 `GET /auth/setup-status` 检测到后直接渲染「创建管理员密码」表单（`POST /auth/setup`，按生效策略校验、一次性窗口；此间登录尝试返回 409 `setup_required`），无需从安装输出里抄临时密码。非空值则为临时引导凭据（不校验策略），首次登录在浏览器强制改密（服务端闸门）。
+> **密码策略与锁定阈值支持网页端修改**：管理界面「设置 → 安全」（`GET/PUT /api/v1/settings/auth`）把覆盖值写入 `system_settings` 表，优先级 **数据库覆盖 > 本配置文件 > 内置默认**，对下一次密码校验/登录即生效、无需重启。表中的默认值仅作未配置时的兜底。默认策略只校验长度（min 8），字符类别要求全部可选--强制多类别对家用场景过重；需要时网页端勾选或在此显式配置 `require_*: true` 均可。另见首启行为：`auth.initial_admin_password` 留空（安装器默认）时 admin 以无密码状态播种，登录页轮询公共端点 `GET /auth/setup-status` 检测到后直接渲染「创建管理员密码」表单（`POST /auth/setup`，按生效策略校验、一次性窗口；此间登录尝试返回 409 `setup_required`），无需从安装输出里抄临时密码。非空值则为临时引导凭据（不校验策略），首次登录在浏览器强制改密（服务端闸门）。
 
 **环境变量：**
 - `MIBEE_AUTH_JWT_SECRET`

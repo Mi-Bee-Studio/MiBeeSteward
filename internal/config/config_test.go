@@ -105,17 +105,17 @@ func TestValidationValidSQLite(t *testing.T) {
 }
 
 // TestPasswordPolicyDefaults pins the auth.password_policy semantics: absent
-// block → documented defaults (historical hardcoded behavior); partial block
-// → only the named keys change, the rest keep the defaults (koanf merge, not
-// zero-fill). This is what lets a test box relax one knob without silently
-// turning off the other character-class requirements.
+// block → documented defaults (length-only, min 8); partial block → only the
+// named keys change, the rest keep the defaults (koanf merge, not zero-fill).
+// This is what lets a config turn one class on without silently flipping
+// the others.
 func TestPasswordPolicyDefaults(t *testing.T) {
 	t.Run("absent block keeps documented defaults", func(t *testing.T) {
 		cfg, err := Load(createTempConfig(t, testConfigYAML))
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		want := PasswordPolicyConfig{MinLength: 8, RequireUppercase: true, RequireLowercase: true, RequireDigit: true, RequireSpecial: false}
+		want := PasswordPolicyConfig{MinLength: 8, RequireUppercase: false, RequireLowercase: false, RequireDigit: false, RequireSpecial: false}
 		if cfg.Auth.PasswordPolicy != want {
 			t.Errorf("policy = %+v, want %+v", cfg.Auth.PasswordPolicy, want)
 		}
@@ -129,7 +129,7 @@ auth_extra_marker: true
 		}
 		_ = cfg
 	})
-	t.Run("relaxed block loads as written", func(t *testing.T) {
+	t.Run("partial block loads as written", func(t *testing.T) {
 		cfg, err := Load(createTempConfig(t, `
 server:
   port: 9099
@@ -137,7 +137,7 @@ auth:
   jwt_secret: "test-secret-which-must-be-at-least-32-chars"
   password_policy:
     min_length: 10
-    require_special: false
+    require_uppercase: true
 `))
 		if err != nil {
 			t.Fatalf("Load: %v", err)
@@ -146,12 +146,12 @@ auth:
 		if got.MinLength != 10 {
 			t.Errorf("min_length = %d, want 10", got.MinLength)
 		}
-		if got.RequireSpecial {
-			t.Error("require_special should be false")
+		if !got.RequireUppercase {
+			t.Error("require_uppercase should be true")
 		}
-		// Unmentioned keys keep the seeded defaults.
-		if !got.RequireUppercase || !got.RequireLowercase || !got.RequireDigit {
-			t.Errorf("unmentioned requirements were zeroed: %+v", got)
+		// Unmentioned keys keep the seeded (off) defaults.
+		if got.RequireLowercase || got.RequireDigit || got.RequireSpecial {
+			t.Errorf("unmentioned requirements were flipped on: %+v", got)
 		}
 	})
 }
