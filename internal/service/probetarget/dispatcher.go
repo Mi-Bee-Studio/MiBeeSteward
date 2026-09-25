@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
@@ -43,11 +44,18 @@ type Spec struct {
 	Vantage         string `json:"vantage"`
 }
 
+// planRefreshInterval bounds how long a restarted agent stays planless. The
+// fingerprint dedup assumes the agent still holds the last plan, but an agent
+// restart wipes ITS copy while this side still records the fingerprint as
+// sent, so unchanged plans are re-shipped periodically (re-applying a plan is
+// a no-op on the agent).
+const planRefreshInterval = 5 * time.Minute
+
 // AgentDispatcher ships vantage probe plans to agents over the command
 // channel (#277 step 2). It is NOT a scheduler: agents run their own
 // intervals locally. The dispatcher only (re)sends a plan when the plan's
 // content changed, a sha256 over the agent's sorted specs, so the steady
-// state is zero command traffic, and a config edit propagates within one
+// state is near-zero command traffic, and a config edit propagates within one
 // dispatch tick.
 type AgentDispatcher struct {
 	queries *db.Queries
@@ -56,6 +64,8 @@ type AgentDispatcher struct {
 
 	// lastFingerprint per agentID of the last plan successfully enqueued.
 	lastFingerprint map[string]string
+	// lastSentAt per agentID of that enqueue, for the periodic refresh.
+	lastSentAt map[string]time.Time
 }
 
 func NewAgentDispatcher(queries *db.Queries, enqueue CommandEnqueuer, logger *slog.Logger) *AgentDispatcher {
@@ -67,6 +77,7 @@ func NewAgentDispatcher(queries *db.Queries, enqueue CommandEnqueuer, logger *sl
 		enqueue:         enqueue,
 		logger:          logger,
 		lastFingerprint: make(map[string]string),
+		lastSentAt:      make(map[string]time.Time),
 	}
 }
 
@@ -151,8 +162,11 @@ func (d *AgentDispatcher) sendPlan(ctx context.Context, agentID string, list []d
 	sort.Slice(specs, func(i, j int) bool { return specs[i].ID < specs[j].ID })
 
 	fp := PlanFingerprint(specs)
-	if fp == d.lastFingerprint[agentID] {
-		return nil // unchanged plan: the agent already has it
+	unchanged := fp == d.lastFingerprint[agentID]
+	// Empty plans keep their send-once semantics: an unchanged empty plan
+	// carries no state to refresh, re-sending it would only spam the log.
+	if unchanged && (len(specs) == 0 || time.Since(d.lastSentAt[agentID]) < planRefreshInterval) {
+		return nil // the agent already has this plan
 	}
 	payload := map[string]interface{}{
 		"targets":     specs,
@@ -162,6 +176,7 @@ func (d *AgentDispatcher) sendPlan(ctx context.Context, agentID string, list []d
 		return fmt.Errorf("enqueue probe plan (%d targets): %w", len(specs), err)
 	}
 	d.lastFingerprint[agentID] = fp
+	d.lastSentAt[agentID] = time.Now()
 	if len(specs) == 0 {
 		d.logger.Info("probe dispatch: plan cleared", "agent_id", agentID)
 	} else {
