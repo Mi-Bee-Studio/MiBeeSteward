@@ -100,23 +100,36 @@ type UpdateProbeTargetRequest struct {
 }
 
 // ProbeTargetResponse is a probe target as served by the API. last_* fields
-// denormalize the newest outcome (empty/0 = never probed).
+// denormalize the newest outcome (empty/0 = never probed); they reflect the
+// CENTER track only. vantage_latest carries each executor's newest row
+// (agent tracks included), which is the multi-vantage display source.
 type ProbeTargetResponse struct {
-	ID              int64   `json:"id"`
-	Name            string  `json:"name"`
-	Module          string  `json:"module"`
-	Target          string  `json:"target"`
-	IntervalSeconds int     `json:"interval_seconds"`
-	TimeoutSeconds  int     `json:"timeout_seconds"`
-	Enabled         bool    `json:"enabled"`
-	Notes           string  `json:"notes"`
-	LastRunAt       string  `json:"last_run_at,omitempty"`
-	LastStatus      string  `json:"last_status,omitempty"`
-	LastLatencyMs   float64 `json:"last_latency_ms"`
-	LastError       string  `json:"last_error,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
-	Vantage         string  `json:"vantage"`
+	ID              int64                `json:"id"`
+	Name            string               `json:"name"`
+	Module          string               `json:"module"`
+	Target          string               `json:"target"`
+	IntervalSeconds int                  `json:"interval_seconds"`
+	TimeoutSeconds  int                  `json:"timeout_seconds"`
+	Enabled         bool                 `json:"enabled"`
+	Notes           string               `json:"notes"`
+	LastRunAt       string               `json:"last_run_at,omitempty"`
+	LastStatus      string               `json:"last_status,omitempty"`
+	LastLatencyMs   float64              `json:"last_latency_ms"`
+	LastError       string               `json:"last_error,omitempty"`
+	CreatedAt       string               `json:"created_at"`
+	UpdatedAt       string               `json:"updated_at"`
+	Vantage         string               `json:"vantage"`
+	VantageLatest   []ProbeVantageLatest `json:"vantage_latest,omitempty"`
+}
+
+// ProbeVantageLatest is the newest result of one vantage's track, used by the
+// list UI to show every executor's outcome side by side.
+type ProbeVantageLatest struct {
+	Vantage      string  `json:"vantage"`
+	Status       string  `json:"status"`
+	LatencyMs    float64 `json:"latency_ms"`
+	ErrorMessage string  `json:"error_message,omitempty"`
+	CheckedAt    string  `json:"checked_at"`
 }
 
 type ProbeTargetListResponse struct {

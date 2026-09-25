@@ -25,6 +25,8 @@
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import CertificateModal from '$lib/components/CertificateModal.svelte';
+	import Chart from '$lib/components/Chart.svelte';
+	import type { EChartsOption } from '$lib/charts/echarts';
 	import { Activity as ActivityIcon } from '@lucide/svelte';
 
 	import type {
@@ -33,6 +35,7 @@
 		ProbeResult,
 		ProbeResultListResponse,
 		ProbeTriggerResponse,
+		ProbeVantageLatest,
 		TLSPortCerts,
 		DeviceCertificatesResponse,
 		Network
@@ -112,13 +115,32 @@
 		successRate: number | null;
 		avgLatency: number | null;
 	}
+	// A target's effective latest outcome: the newest row across vantage
+	// tracks when any exist (agent-vantage plans never write last_*), else the
+	// denormalized center fields. Ties on checked_at prefer the center track.
+	function latestOverall(t: ProbeTarget): { status: string; latency_ms: number } | null {
+		const tracks = t.vantage_latest ?? [];
+		if (tracks.length > 0) {
+			let best = tracks[0];
+			for (const tr of tracks) {
+				if (tr.checked_at > best.checked_at || (tr.checked_at === best.checked_at && tr.vantage === 'center')) {
+					best = tr;
+				}
+			}
+			return { status: best.status, latency_ms: best.latency_ms };
+		}
+		if (!t.last_status) return null;
+		return { status: t.last_status, latency_ms: t.last_latency_ms };
+	}
 	const moduleStats = $derived.by<ModuleStat[]>(() => {
 		const mods = ['http', 'tls', 'tcp', 'icmp'];
 		return mods.map((mod) => {
 			const rows = targets.filter((t) => t.module === mod);
-			const ran = rows.filter((t) => t.last_status);
-			const ok = ran.filter((t) => t.last_status === 'success');
-			const lat = ok.map((t) => t.last_latency_ms).filter((v) => v > 0);
+			const ran = rows
+				.map(latestOverall)
+				.filter((v): v is { status: string; latency_ms: number } => v !== null);
+			const ok = ran.filter((v) => v.status === 'success');
+			const lat = ok.map((v) => v.latency_ms).filter((v) => v > 0);
 			return {
 				module: mod,
 				total: rows.length,
@@ -182,6 +204,8 @@
 	let results = $state<ProbeResult[]>([]);
 	let resultsTotal = $state(0);
 	let resultsLoading = $state(false);
+	// Chart is the default view (#277 follow-up); the raw rows stay one tab away.
+	let resultsTab = $state<'chart' | 'detail'>('chart');
 
 	// --- Certificate modal (reuses the shared component: same DTO shape) ---
 	let certModalOpen = $state(false);
@@ -427,10 +451,11 @@
 		resultsTarget = t;
 		results = [];
 		resultsTotal = 0;
+		resultsTab = 'chart';
 		resultsModalOpen = true;
 		resultsLoading = true;
 		try {
-			const res = await api.get<ProbeResultListResponse>(`/probe-targets/${t.id}/results?limit=50`);
+			const res = await api.get<ProbeResultListResponse>(`/probe-targets/${t.id}/results?limit=100`);
 			results = res.results || [];
 			resultsTotal = res.total || 0;
 		} catch (err: unknown) {
@@ -459,6 +484,44 @@
 		return html`<span class="badge ${cls}">${s}</span>`;
 	};
 
+	const fmtLatency = (v: number) => (v < 1000 ? `${Math.round(v)}ms` : `${(v / 1000).toFixed(2)}s`);
+
+	// Status cell: one line per vantage track so agent outcomes are visible at
+	// a glance (last_* mirrors the center track only). A lone center track
+	// renders as compactly as the old single badge. Lines are built as separate
+	// html fragments and joined: interpolating an HtmlString into another
+	// html` template would double-escape its markup.
+	const vantageStatusCell = (row: Record<string, unknown>) => {
+		const tracks = row.vantage_latest as ProbeVantageLatest[] | undefined;
+		const plan = String(row.vantage || 'center');
+		const agentExpected = plan === 'all' || plan.startsWith('agent:');
+		if (!tracks || tracks.length === 0) {
+			if (agentExpected) {
+				return html`<div class="space-y-0.5"><div class="text-text-muted text-xs">${m['probes.Never Run']()}</div><div class="text-warning text-xs">${m['probes.Agent No Results']()}</div></div>`;
+			}
+			return html`<span class="text-text-muted text-xs">${m['probes.Never Run']()}</span>`;
+		}
+		if (tracks.length === 1 && tracks[0].vantage === 'center' && !agentExpected) {
+			const t = tracks[0];
+			if (t.latency_ms > 0) {
+				return html`<div class="flex items-center gap-2"><span class="badge ${t.status === 'success' ? 'badge-success' : t.status === 'timeout' ? 'badge-warning' : 'badge-error'}">${t.status}</span><span class="text-xs font-mono">${fmtLatency(t.latency_ms)}</span></div>`;
+			}
+			return statusBadge(t.status);
+		}
+		const disagree = new Set(tracks.map((t) => t.status === 'success')).size > 1;
+		const lines = tracks.map((t) => {
+			const dot = t.status === 'success' ? 'bg-success' : t.status === 'timeout' ? 'bg-warning' : 'bg-error';
+			return html`<div class="flex items-center gap-1.5"><span class="inline-block h-2 w-2 shrink-0 rounded-full ${dot}"></span><span class="max-w-[9rem] truncate font-mono text-xs text-text-muted" title="${t.vantage}">${t.vantage}</span><span class="text-xs font-mono text-text-muted">${t.latency_ms > 0 ? fmtLatency(t.latency_ms) : ''}</span></div>`;
+		});
+		if (agentExpected && !tracks.some((t) => t.vantage !== 'center')) {
+			lines.push(html`<div class="text-warning text-xs">${m['probes.Agent No Results']()}</div>`);
+		}
+		const wrap = disagree
+			? 'space-y-0.5 rounded-md border border-warning/40 bg-warning/5 px-2 py-1'
+			: 'space-y-0.5';
+		return `<div class="${wrap}">` + lines.join('') + '</div>';
+	};
+
 	// Vantage values are protocol tokens (center / all / agent:{id}): shown
 	// raw, not localized. Center is the quiet default (plain text); plans that
 	// involve agents get a badge so multi-vantage targets stand out.
@@ -480,16 +543,7 @@
 		{ key: 'target', label: m['probes.Target'](), render: (row: Record<string, unknown>) => html`<span class="font-mono text-xs">${row.target}</span>` },
 		{ key: 'vantage', label: m['probes.Vantage'](), render: (row: Record<string, unknown>) => vantageBadge(String(row.vantage || '')) },
 		{ key: 'interval_seconds', label: m['probes.Interval'](), render: (row: Record<string, unknown>) => html`<span class="text-xs">${row.interval_seconds}s</span>` },
-		{ key: 'last_status', label: m['probes.Last Status'](), sortable: true, render: (row: Record<string, unknown>) => statusBadge(String(row.last_status || '')) },
-		{
-			key: 'last_latency_ms',
-			label: m['probes.Latency'](),
-			render: (row: Record<string, unknown>) => {
-				const v = row.last_latency_ms as number;
-				if (!row.last_status || !v) return html`<span class="text-text-muted text-xs">-</span>`;
-				return html`<span class="text-xs font-mono">${v < 1000 ? `${Math.round(v)}ms` : `${(v / 1000).toFixed(2)}s`}</span>`;
-			}
-		},
+		{ key: 'last_status', label: m['probes.Vantage Status'](), sortable: true, render: (row: Record<string, unknown>) => vantageStatusCell(row) },
 		{
 			key: 'cert',
 			label: m['probes.Cert Expiry'](),
@@ -510,11 +564,14 @@
 
 	// Per-vantage tracks for the results modal (#277): each executor's newest
 	// row, side by side. `results` arrive newest-first from the API, so the
-	// first row seen per vantage is that track's latest.
+	// first row seen per vantage is that track's latest; `rows` is the same
+	// set chronological for the chart and the status timeline.
 	interface VantageTrack {
 		vantage: string;
 		latest?: ProbeResult;
+		rows: ProbeResult[];
 		samples: number;
+		okCount: number;
 	}
 	const vantageTracks = $derived.by<VantageTrack[]>(() => {
 		const map = new Map<string, VantageTrack>();
@@ -522,10 +579,12 @@
 			const key = r.vantage || 'center';
 			let track = map.get(key);
 			if (!track) {
-				track = { vantage: key, samples: 0 };
+				track = { vantage: key, rows: [], samples: 0, okCount: 0 };
 				map.set(key, track);
 			}
 			track.samples++;
+			track.rows.unshift(r);
+			if (r.status === 'success') track.okCount++;
 			if (!track.latest) track.latest = r;
 		}
 		const order = (v: string) => (v === 'center' ? 0 : 1);
@@ -539,6 +598,58 @@
 		vantageTracks.length >= 2 && new Set(vantageTracks.map((t) => t.latest?.status === 'success')).size > 1
 	);
 
+	// ECharts renders to canvas, which does NOT resolve CSS custom properties;
+	// read the computed accent from :root (falls back to a literal so an unset
+	// var still draws something). Agent tracks use a fixed readable palette.
+	function cssVar(name: string, fallback: string): string {
+		const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+		return v || fallback;
+	}
+	const TRACK_PALETTE = ['#34d399', '#fbbf24', '#38bdf8', '#f97316', '#c084fc'];
+	const trackColors = $derived.by<Map<string, string>>(() => {
+		const map = new Map<string, string>();
+		let agentIdx = 0;
+		for (const track of vantageTracks) {
+			map.set(
+				track.vantage,
+				track.vantage === 'center'
+					? cssVar('--color-accent', '#818cf8')
+					: TRACK_PALETTE[agentIdx++ % TRACK_PALETTE.length]
+			);
+		}
+		return map;
+	});
+
+	// Latency time series, one line per vantage. Failed probes map to null so
+	// the line breaks there (connectNulls stays false); the status timeline
+	// below the chart is the explicit record of those gaps.
+	const latencyChartOption = $derived.by<EChartsOption>(() => {
+		const series = vantageTracks.map((track) => ({
+			name: track.vantage,
+			type: 'line' as const,
+			symbolSize: 4,
+			showSymbol: true,
+			data: track.rows.map((r) => [
+				r.checked_at,
+				r.status === 'success' && r.latency_ms > 0 ? Math.round(r.latency_ms) : null
+			]),
+			lineStyle: { width: 1.5, color: trackColors.get(track.vantage) },
+			itemStyle: { color: trackColors.get(track.vantage) }
+		}));
+		return {
+			animation: false,
+			grid: { left: 52, right: 12, top: 12, bottom: 44 },
+			tooltip: { trigger: 'axis' },
+			legend: { bottom: 0, type: 'scroll', textStyle: { fontSize: 10 } },
+			xAxis: { type: 'time', axisLabel: { hideOverlap: true } },
+			yAxis: { type: 'value', scale: true, axisLabel: { formatter: '{value} ms' } },
+			series
+		};
+	});
+
+	const statusStripCls = (s: string) =>
+		s === 'success' ? 'bg-success' : s === 'timeout' ? 'bg-warning' : 'bg-error';
+
 	const resultColumns = $derived([
 		{ key: 'vantage', label: m['probes.Vantage'](), render: (row: Record<string, unknown>) => vantageBadge(String(row.vantage || '')) },
 		{ key: 'checked_at', label: m['probes.Checked At'](), render: (row: Record<string, unknown>) => html`<span class="text-xs text-text-muted">${formatTime(String(row.checked_at))}</span>` },
@@ -548,7 +659,7 @@
 			label: m['probes.Latency'](),
 			render: (row: Record<string, unknown>) => {
 				const v = row.latency_ms as number;
-				return html`<span class="text-xs font-mono">${v < 1000 ? `${Math.round(v)}ms` : `${(v / 1000).toFixed(2)}s`}</span>`;
+				return html`<span class="text-xs font-mono">${fmtLatency(v)}</span>`;
 			}
 		},
 		{
@@ -876,8 +987,13 @@
 	</form>
 </Modal>
 
-<!-- Results history Modal -->
-<Modal bind:open={resultsModalOpen} title={m['probes.Results Title']({ name: resultsTarget?.name || '' })}>
+<!-- Results history Modal: chart first (latency lines per vantage + status
+     timeline), raw rows one tab away. -->
+<Modal
+	bind:open={resultsModalOpen}
+	title={m['probes.Results Title']({ name: resultsTarget?.name || '' })}
+	maxWidth="56rem"
+>
 	{#if resultsLoading}
 		<div class="py-8 text-center text-sm text-text-muted">…</div>
 	{:else if results.length === 0}
@@ -903,7 +1019,7 @@
 							<span class="text-xs font-mono text-text-muted shrink-0" title={track.vantage}>{track.vantage}</span>
 							<span class="badge {s === 'success' ? 'badge-success' : s === 'timeout' ? 'badge-warning' : 'badge-error'}">{s || '—'}</span>
 							{#if track.latest && track.latest.latency_ms > 0}
-								<span class="text-xs font-mono text-text-muted">{track.latest.latency_ms < 1000 ? Math.round(track.latest.latency_ms) + 'ms' : (track.latest.latency_ms / 1000).toFixed(2) + 's'}</span>
+								<span class="text-xs font-mono text-text-muted">{fmtLatency(track.latest.latency_ms)}</span>
 							{/if}
 							<span class="flex-1"></span>
 							<span class="text-xs text-text-muted shrink-0">{m['probes.Vantage Samples']({ count: track.samples })}</span>
@@ -912,15 +1028,55 @@
 				</div>
 			</div>
 		{/if}
-		<p class="text-xs text-text-muted mb-2">{resultsTotal}</p>
-		<div class="max-h-[60vh] overflow-y-auto">
-			<DataTable
-				columns={resultColumns}
-				rows={results as unknown as Record<string, unknown>[]}
-				searchableKeys={[]}
-				emptyTitle={m['probes.No Results']()}
-			/>
+		<div class="flex items-center gap-1 mb-3 border-b border-border">
+			<button
+				type="button"
+				onclick={() => (resultsTab = 'chart')}
+				class="px-3 py-1.5 text-sm rounded-t-md transition-colors {resultsTab === 'chart' ? 'text-primary border-b-2 border-primary font-medium' : 'text-text-muted hover:text-text'}"
+			>{m['probes.Tab Chart']()}</button>
+			<button
+				type="button"
+				onclick={() => (resultsTab = 'detail')}
+				class="px-3 py-1.5 text-sm rounded-t-md transition-colors {resultsTab === 'detail' ? 'text-primary border-b-2 border-primary font-medium' : 'text-text-muted hover:text-text'}"
+			>{m['probes.Tab Detail']()}</button>
+			<span class="flex-1"></span>
+			<span class="text-xs text-text-muted">{m['probes.Vantage Samples']({ count: resultsTotal })}</span>
 		</div>
+		{#if resultsTab === 'chart'}
+			<div class="text-xs font-semibold text-text mb-1">{m['probes.Latency Chart']()}</div>
+			<Chart option={latencyChartOption} height="240px" />
+			<div class="mt-4">
+				<div class="text-xs font-semibold text-text mb-2">{m['probes.Status Timeline']()}</div>
+				<div class="space-y-1.5">
+					{#each vantageTracks as track (track.vantage)}
+						{@const pct = track.samples > 0 ? Math.round((track.okCount / track.samples) * 100) : 0}
+						<div class="flex items-center gap-2">
+							<span class="w-36 shrink-0 truncate font-mono text-xs text-text-muted" title={track.vantage}>{track.vantage}</span>
+							<div class="flex flex-1 gap-[2px] overflow-hidden" role="img"
+								aria-label="{track.vantage}: {pct}% {m['probes.Success Rate']()}">
+								{#each track.rows as r (r.id)}
+									<span
+										class="h-4 min-w-[3px] flex-1 rounded-sm {statusStripCls(r.status)}"
+										title="{formatTime(r.checked_at)} · {r.status}{r.error_message ? ` · ${r.error_message}` : ''}"
+									></span>
+								{/each}
+							</div>
+							<span class="w-14 shrink-0 text-right text-xs font-mono {pct >= 100 ? 'text-success' : pct >= 50 ? 'text-warning' : 'text-error'}">{pct}%</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{:else}
+			<p class="text-xs text-text-muted mb-2">{resultsTotal}</p>
+			<div class="max-h-[45vh] overflow-y-auto">
+				<DataTable
+					columns={resultColumns}
+					rows={results as unknown as Record<string, unknown>[]}
+					searchableKeys={[]}
+					emptyTitle={m['probes.No Results']()}
+				/>
+			</div>
+		{/if}
 	{/if}
 </Modal>
 

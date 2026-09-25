@@ -75,6 +75,7 @@ export type DeviceCertificatesResponse = Schemas['CertificateList'];
 
 export type ProbeTarget = Schemas['ProbeTarget'];
 export type ProbeTargetListResponse = Schemas['ProbeTargetList'];
+export type ProbeVantageLatest = Schemas['ProbeVantageLatest'];
 export type ProbeResult = Schemas['ProbeResult'];
 export type ProbeResultListResponse = Schemas['ProbeResultList'];
 /** Synchronous trigger response (POST /probe-targets/{id}/trigger). */

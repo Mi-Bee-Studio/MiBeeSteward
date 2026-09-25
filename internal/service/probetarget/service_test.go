@@ -333,3 +333,66 @@ func TestService_ResultsVantageFilter(t *testing.T) {
 	_, _, err = svc.Results(ctx, created.ID, "bogus", 20, 0)
 	require.ErrorContains(t, err, "vantage must be")
 }
+
+func TestService_ListCarriesVantageLatest(t *testing.T) {
+	svc, queries := setupService(t)
+	ctx := context.Background()
+
+	created, err := svc.Create(ctx, domain.ProbeTargetRequest{
+		Name: "multi", Module: "tcp", Target: "a.com:80",
+		IntervalSeconds: 60, TimeoutSeconds: 5, Vantage: domain.ProbeVantageAll,
+	})
+	require.NoError(t, err)
+	lonely, err := svc.Create(ctx, domain.ProbeTargetRequest{
+		Name: "lonely", Module: "icmp", Target: "b.com", Vantage: domain.ProbeVantageCenter,
+	})
+	require.NoError(t, err)
+
+	// Two rows per track with distinct outcomes: the newest of each vantage
+	// must surface (insertion order IS recency within a track).
+	rows := []struct {
+		vantage, status string
+		latency         float64
+	}{
+		{"center", "fail", 0},
+		{"agent:edge-1", "fail", 0},
+		{"center", "success", 12},
+		{"agent:edge-1", "success", 20},
+	}
+	for i, r := range rows {
+		require.NoError(t, queries.CreateProbeResult(ctx, db.CreateProbeResultParams{
+			TargetID: created.ID, Status: r.status, LatencyMs: r.latency,
+			CheckedAt: fmt.Sprintf("2026-08-19T00:0%d:00Z", i), Vantage: r.vantage,
+		}))
+	}
+
+	list, total, err := svc.List(ctx, "", 20, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	byName := map[string]domain.ProbeTargetResponse{}
+	for _, t := range list {
+		byName[t.Name] = t
+	}
+
+	multi := byName["multi"]
+	require.Len(t, multi.VantageLatest, 2)
+	// ORDER BY vantage: the agent track sorts before center.
+	agent, center := multi.VantageLatest[0], multi.VantageLatest[1]
+	require.Equal(t, "agent:edge-1", agent.Vantage)
+	require.Equal(t, "success", agent.Status)
+	require.InDelta(t, 20.0, agent.LatencyMs, 0.001)
+	require.Equal(t, "center", center.Vantage)
+	require.Equal(t, "success", center.Status)
+	require.InDelta(t, 12.0, center.LatencyMs, 0.001)
+
+	// A target without history carries an empty summary (omitted on the wire).
+	require.Empty(t, byName["lonely"].VantageLatest)
+
+	got, err := svc.Get(ctx, lonely.ID)
+	require.NoError(t, err)
+	require.Empty(t, got.VantageLatest)
+
+	got, err = svc.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.Len(t, got.VantageLatest, 2)
+}

@@ -19,6 +19,13 @@ import { render, waitFor, fireEvent } from '@testing-library/svelte';
 // never localized strings (except where an interaction must FIND a button;
 // the suite runs under the en locale).
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+// echarts cannot paint under jsdom (canvas getContext returns null → zrender
+// crashes in $effect); the history modal mounts Chart on its default tab.
+vi.mock('$lib/charts/echarts', () => ({
+	echarts: {
+		init: vi.fn(() => ({ setOption: vi.fn(), dispose: vi.fn(), resize: vi.fn() }))
+	}
+}));
 vi.mock('$lib/stores/auth', () => ({
 	auth: {
 		subscribe: (fn: (v: unknown) => void) => {
@@ -68,6 +75,16 @@ vi.mock('$lib/api/client', () => ({
 						last_status: 'success',
 						last_latency_ms: 42.5,
 						vantage: 'all',
+						vantage_latest: [
+							{ vantage: 'center', status: 'success', latency_ms: 42.5, checked_at: '2026-09-17T00:00:02Z' },
+							{
+								vantage: 'agent:edge-1',
+								status: 'fail',
+								latency_ms: 0,
+								error_message: 'connection refused',
+								checked_at: '2026-09-17T00:00:01Z'
+							}
+						],
 						created_at: '2026-08-19T00:00:00Z',
 						updated_at: '2026-08-19T00:00:00Z'
 					},
@@ -81,6 +98,11 @@ vi.mock('$lib/api/client', () => ({
 						enabled: true,
 						notes: '',
 						vantage: 'agent:edge-1',
+						// Agent-only plan: last_* stays empty, the agent track is
+						// the only signal (the case vantage_latest exists for).
+						vantage_latest: [
+							{ vantage: 'agent:edge-1', status: 'success', latency_ms: 88, checked_at: '2026-09-17T00:00:00Z' }
+						],
 						created_at: '2026-08-19T00:00:00Z',
 						updated_at: '2026-08-19T00:00:00Z'
 					}
@@ -130,7 +152,7 @@ describe('Probes page', () => {
 		});
 	});
 
-	it('renders the module badge and last-status badge for the row', async () => {
+	it('renders the module badge and per-vantage status lines (agent track visible)', async () => {
 		const { container } = render(Probes);
 		await waitFor(() => {
 			expect(container.textContent).toContain('github-tls');
@@ -139,7 +161,20 @@ describe('Probes page', () => {
 		const badges = container.querySelectorAll('.badge');
 		const texts = Array.from(badges).map((b) => b.textContent ?? '');
 		expect(texts.some((t) => t.includes('tls'))).toBe(true);
-		expect(texts.some((t) => t.includes('success'))).toBe(true);
+
+		// Multi-vantage row: one line per track, status as a colored dot plus
+		// the vantage label and latency. The failing agent track is right
+		// there next to the succeeding center track (disagreement wrap).
+		const dots = container.querySelectorAll('[class*="rounded-full"][class*="bg-"]');
+		expect(dots.length).toBeGreaterThanOrEqual(3);
+		expect(container.querySelector('[class*="bg-warning/5"]')).toBeTruthy();
+		expect(container.textContent).toContain('agent:edge-1');
+		expect(container.textContent).toContain('43ms');
+
+		// Agent-only row with an agent track: its latency shows even though
+		// last_* is empty (previously rendered as "Not probed yet").
+		expect(container.textContent).toContain('88ms');
+		expect(container.textContent).not.toContain('Not probed yet');
 	});
 
 	it('renders vantage badges: "all" as a badge, agent plans verbatim, center quiet', async () => {
@@ -176,6 +211,42 @@ describe('Probes page', () => {
 		expect(container.textContent).toContain('2 samples');
 		// Tracks disagree (center success / agent fail) → the diff badge shows.
 		expect(container.textContent).toContain('results disagree');
+	});
+
+	it('history modal defaults to the chart view and toggles to the detail table', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('github-tls');
+		});
+
+		const historyBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+			(b.textContent ?? '').trim() === 'History'
+		) as HTMLElement;
+		await fireEvent.click(historyBtn);
+		await waitFor(() => {
+			expect(container.textContent).toContain('Latest per vantage');
+		});
+
+		// Chart tab is the default: latency chart + per-vantage status timeline
+		// (one strip of colored cells per track, with a success percentage).
+		expect(container.textContent).toContain('Latency by vantage');
+		expect(container.textContent).toContain('Status timeline');
+		const strips = container.querySelectorAll('[role="img"]');
+		expect(strips.length).toBe(2);
+		// center 2/2 success, agent 0/2: the percentages render per strip.
+		expect(container.textContent).toContain('100%');
+		expect(container.textContent).toContain('0%');
+
+		// The raw table is one tab away; switching shows the vantage column.
+		const detailBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+			(b.textContent ?? '').trim() === 'Detail'
+		) as HTMLElement;
+		expect(detailBtn).toBeTruthy();
+		await fireEvent.click(detailBtn);
+		await waitFor(() => {
+			expect(container.querySelector('table')).toBeTruthy();
+		});
+		expect(container.textContent).not.toContain('Status timeline');
 	});
 
 	it('create form offers the vantage selector with registered agents', async () => {

@@ -85,7 +85,9 @@ func (s *Service) Get(ctx context.Context, id int64) (domain.ProbeTargetResponse
 		}
 		return domain.ProbeTargetResponse{}, err
 	}
-	return toTargetResponse(t), nil
+	resp := toTargetResponse(t)
+	s.attachVantageLatest(ctx, &resp)
+	return resp, nil
 }
 
 // List returns a page of targets + total, optionally filtered by a substring
@@ -116,7 +118,9 @@ func (s *Service) List(ctx context.Context, search string, limit, offset int) ([
 	}
 	out := make([]domain.ProbeTargetResponse, 0, len(targets))
 	for _, t := range targets {
-		out = append(out, toTargetResponse(t))
+		resp := toTargetResponse(t)
+		s.attachVantageLatest(ctx, &resp)
+		out = append(out, resp)
 	}
 	return out, total, nil
 }
@@ -313,6 +317,29 @@ func (s *Service) checkNameFree(ctx context.Context, name string, selfID int64) 
 		return ErrDuplicateName
 	}
 	return nil
+}
+
+// attachVantageLatest fills vantage_latest with each track's newest row.
+// last_* on the target only mirrors the center executor, so agent-vantage
+// plans (and agent tracks of 'all' plans) are invisible without this. A read
+// failure leaves the field empty: the list must not break over a summary.
+// One indexed group-by per target; targets are user-configured-few by nature.
+func (s *Service) attachVantageLatest(ctx context.Context, resp *domain.ProbeTargetResponse) {
+	rows, err := s.queries.LatestProbeResultsPerVantage(ctx, resp.ID)
+	if err != nil {
+		return
+	}
+	latest := make([]domain.ProbeVantageLatest, 0, len(rows))
+	for _, r := range rows {
+		latest = append(latest, domain.ProbeVantageLatest{
+			Vantage:      r.Vantage,
+			Status:       r.Status,
+			LatencyMs:    r.LatencyMs,
+			ErrorMessage: r.ErrorMessage,
+			CheckedAt:    r.CheckedAt,
+		})
+	}
+	resp.VantageLatest = latest
 }
 
 func toTargetResponse(t db.ProbeTarget) domain.ProbeTargetResponse {

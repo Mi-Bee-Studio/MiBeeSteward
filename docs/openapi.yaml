@@ -2099,6 +2099,20 @@ components:
         created_at: {type: string}
         updated_at: {type: string}
         vantage: {type: string, description: "'center' (default) | 'agent:{id}' | 'all'"}
+        vantage_latest:
+          type: array
+          description: Newest result per vantage track (agent tracks included); omitted when the target has no history yet. last_* mirrors the center track only.
+          items: {$ref: "#/components/schemas/ProbeVantageLatest"}
+    ProbeVantageLatest:
+      type: object
+      description: Newest probe outcome of one executor's track.
+      required: [vantage, status, latency_ms, checked_at]
+      properties:
+        vantage: {type: string, description: "'center' or 'agent:{id}'"}
+        status: {type: string, enum: [success, fail, timeout]}
+        latency_ms: {type: number}
+        error_message: {type: string}
+        checked_at: {type: string}
     ProbeTargetList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"

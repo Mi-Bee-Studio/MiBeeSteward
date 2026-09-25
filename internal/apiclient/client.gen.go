@@ -501,6 +501,27 @@ func (e ProbeTargetModule) Valid() bool {
 	}
 }
 
+// Defines values for ProbeVantageLatestStatus.
+const (
+	ProbeVantageLatestStatusFail    ProbeVantageLatestStatus = "fail"
+	ProbeVantageLatestStatusSuccess ProbeVantageLatestStatus = "success"
+	ProbeVantageLatestStatusTimeout ProbeVantageLatestStatus = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the ProbeVantageLatestStatus enum.
+func (e ProbeVantageLatestStatus) Valid() bool {
+	switch e {
+	case ProbeVantageLatestStatusFail:
+		return true
+	case ProbeVantageLatestStatusSuccess:
+		return true
+	case ProbeVantageLatestStatusTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SNMPCredentialSecurityLevel.
 const (
 	AuthNoPriv   SNMPCredentialSecurityLevel = "authNoPriv"
@@ -1402,6 +1423,9 @@ type ProbeTarget struct {
 
 	// Vantage 'center' (default) | 'agent:{id}' | 'all'
 	Vantage string `json:"vantage"`
+
+	// VantageLatest Newest result per vantage track (agent tracks included); omitted when the target has no history yet. last_* mirrors the center track only.
+	VantageLatest *[]ProbeVantageLatest `json:"vantage_latest,omitempty"`
 }
 
 // ProbeTargetLastStatus defines model for ProbeTarget.LastStatus.
@@ -1419,6 +1443,20 @@ type ProbeTargetList struct {
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
 }
+
+// ProbeVantageLatest Newest probe outcome of one executor's track.
+type ProbeVantageLatest struct {
+	CheckedAt    string                   `json:"checked_at"`
+	ErrorMessage *string                  `json:"error_message,omitempty"`
+	LatencyMs    float32                  `json:"latency_ms"`
+	Status       ProbeVantageLatestStatus `json:"status"`
+
+	// Vantage 'center' or 'agent:{id}'
+	Vantage string `json:"vantage"`
+}
+
+// ProbeVantageLatestStatus defines model for ProbeVantageLatest.Status.
+type ProbeVantageLatestStatus string
 
 // PrometheusInfo defines model for PrometheusInfo.
 type PrometheusInfo struct {
