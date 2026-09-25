@@ -5369,6 +5369,18 @@ export interface components {
             updated_at: string;
             /** @description 'center' (default) | 'agent:{id}' | 'all' */
             vantage: string;
+            /** @description Newest result per vantage track (agent tracks included); omitted when the target has no history yet. last_* mirrors the center track only. */
+            vantage_latest?: components["schemas"]["ProbeVantageLatest"][];
+        };
+        /** @description Newest probe outcome of one executor's track. */
+        ProbeVantageLatest: {
+            /** @description 'center' or 'agent:{id}' */
+            vantage: string;
+            /** @enum {string} */
+            status: "success" | "fail" | "timeout";
+            latency_ms: number;
+            error_message?: string;
+            checked_at: string;
         };
         ProbeTargetList: components["schemas"]["PageMeta"] & {
             targets?: components["schemas"]["ProbeTarget"][];

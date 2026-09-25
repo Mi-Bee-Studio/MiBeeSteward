@@ -35,6 +35,20 @@ SELECT COUNT(*)
 FROM probe_results
 WHERE target_id = ? AND (? = '' OR vantage = ?);
 
+-- name: LatestProbeResultsPerVantage :many
+-- Newest row of each vantage track for one target. Within one vantage rows
+-- are inserted strictly in probe order (single writer per track), so MAX(id)
+-- is that track's newest regardless of checked_at string ties.
+SELECT p.id, p.target_id, p.status, p.latency_ms, p.status_code, p.error_message, p.tls_version, p.cert_not_after, p.cert_trusted, p.checked_at, p.vantage
+FROM probe_results p
+JOIN (
+    SELECT i.vantage, MAX(i.id) AS max_id
+    FROM probe_results AS i
+    WHERE i.target_id = ?
+    GROUP BY i.vantage
+) m ON m.max_id = p.id
+ORDER BY p.vantage;
+
 -- name: DeleteProbeResultsByTarget :execrows
 -- Explicit cascade on target delete (the main DB does not enable the SQLite
 -- foreign_keys pragma, so ON DELETE CASCADE never fires).

@@ -115,6 +115,56 @@ func (q *Queries) DeleteProbeResultsStaleBatched(ctx context.Context, arg Delete
 	return result.RowsAffected()
 }
 
+const latestProbeResultsPerVantage = `-- name: LatestProbeResultsPerVantage :many
+SELECT p.id, p.target_id, p.status, p.latency_ms, p.status_code, p.error_message, p.tls_version, p.cert_not_after, p.cert_trusted, p.checked_at, p.vantage
+FROM probe_results p
+JOIN (
+    SELECT i.vantage, MAX(i.id) AS max_id
+    FROM probe_results AS i
+    WHERE i.target_id = ?
+    GROUP BY i.vantage
+) m ON m.max_id = p.id
+ORDER BY p.vantage
+`
+
+// Newest row of each vantage track for one target. Within one vantage rows
+// are inserted strictly in probe order (single writer per track), so MAX(id)
+// is that track's newest regardless of checked_at string ties.
+func (q *Queries) LatestProbeResultsPerVantage(ctx context.Context, targetID int64) ([]ProbeResult, error) {
+	rows, err := q.db.QueryContext(ctx, latestProbeResultsPerVantage, targetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProbeResult{}
+	for rows.Next() {
+		var i ProbeResult
+		if err := rows.Scan(
+			&i.ID,
+			&i.TargetID,
+			&i.Status,
+			&i.LatencyMs,
+			&i.StatusCode,
+			&i.ErrorMessage,
+			&i.TlsVersion,
+			&i.CertNotAfter,
+			&i.CertTrusted,
+			&i.CheckedAt,
+			&i.Vantage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProbeResultsByTarget = `-- name: ListProbeResultsByTarget :many
 SELECT id, target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage
 FROM probe_results
