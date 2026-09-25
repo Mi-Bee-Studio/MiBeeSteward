@@ -191,7 +191,7 @@ mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action remove -name s
 
 调度器经命令通道向每个 agent 下发其探测计划（按指纹去重，稳态零命令流量）；`all` 计划按 agent 分别盖章，结果落入各自轨道。agent 用与中心**相同的执行内核**跑探测，批量 POST 到 `POST /api/v1/agents/probe-report`--agent token 认证，且上报者的身份会覆盖 payload 里声称的任何 vantage（agent 永远只能写自己的轨道）。
 
-中心侧结果按 `(target, vantage)` 维度入库。拨测页的目标表单提供视角选择器；历史弹窗并排展示各视角最新结果，轨道间对成功与否不一致时高亮--正是多视角存在的理由（「A 处通 / B 处不通」）。全部 `mibee_probe_*` 指标带 `vantage` 标签。不做调度强一致：agent 离线只是停止为其轨道贡献样本。
+中心侧结果按 `(target, vantage)` 维度入库。拨测页全程按视角展示：目标表单提供视角选择器；目标列表按轨道逐行显示状态（列表/详情响应的 `vantage_latest`，agent-only 目标的 `last_*` 只由中心写、不会更新，agent 结果靠它才可见），轨道间成功与否不一致时高亮；历史弹窗默认图表页签（各轨道延迟折线，失败断线；agent 轨道用虚线和独立符号，与 center 重叠时仍可分辨），下方状态色块时间线带成功率，原始明细保留在独立页签。全部 `mibee_probe_*` 指标带 `vantage` 标签。不做调度强一致：agent 离线只是停止为其轨道贡献样本。
 
 ## 舰队管理（#278）
 

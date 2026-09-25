@@ -622,20 +622,29 @@
 
 	// Latency time series, one line per vantage. Failed probes map to null so
 	// the line breaks there (connectNulls stays false); the status timeline
-	// below the chart is the explicit record of those gaps.
+	// below the chart is the explicit record of those gaps. Tracks of the same
+	// target usually sit within a few ms of each other, so agent tracks draw
+	// dashed with their own symbol and hover focuses one series: solid lines
+	// stacking on solid lines would read as a single line.
 	const latencyChartOption = $derived.by<EChartsOption>(() => {
-		const series = vantageTracks.map((track) => ({
-			name: track.vantage,
-			type: 'line' as const,
-			symbolSize: 4,
-			showSymbol: true,
-			data: track.rows.map((r) => [
-				r.checked_at,
-				r.status === 'success' && r.latency_ms > 0 ? Math.round(r.latency_ms) : null
-			]),
-			lineStyle: { width: 1.5, color: trackColors.get(track.vantage) },
-			itemStyle: { color: trackColors.get(track.vantage) }
-		}));
+		const series = vantageTracks.map((track) => {
+			const isCenter = track.vantage === 'center';
+			const color = trackColors.get(track.vantage);
+			return {
+				name: track.vantage,
+				type: 'line' as const,
+				symbolSize: 5,
+				showSymbol: true,
+				symbol: isCenter ? 'circle' : 'triangle',
+				emphasis: { focus: 'series' },
+				data: track.rows.map((r) => [
+					r.checked_at,
+					r.status === 'success' && r.latency_ms > 0 ? Math.round(r.latency_ms) : null
+				]),
+				lineStyle: { width: 2, color, type: isCenter ? 'solid' : 'dashed' },
+				itemStyle: { color }
+			};
+		});
 		return {
 			animation: false,
 			grid: { left: 52, right: 12, top: 12, bottom: 44 },
