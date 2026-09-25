@@ -15,6 +15,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -116,6 +117,45 @@ func TestAgentDispatch_ClearsEmptyPlan(t *testing.T) {
 	require.Empty(t, clearPlan)
 	d.DispatchTick(ctx)
 	require.Len(t, fake.plans["agent-62"], 2, "no repeat clears")
+}
+
+// TestAgentDispatch_RefreshesUnchangedPlan pins the agent-restart recovery:
+// an unchanged plan is re-enqueued after planRefreshInterval, because an
+// agent restart wipes its copy while the dispatcher still counts it as
+// delivered. Empty plans keep their send-once semantics.
+func TestAgentDispatch_RefreshesUnchangedPlan(t *testing.T) {
+	d, fake, _, conn := setupDispatch(t)
+	seedVantageWorld(t, conn)
+	ctx := context.Background()
+
+	d.DispatchTick(ctx)
+	require.Len(t, fake.plans["agent-62"], 1)
+
+	// Inside the refresh window an unchanged plan stays quiet.
+	d.DispatchTick(ctx)
+	require.Len(t, fake.plans["agent-62"], 1)
+
+	// Past the window the same plan ships again: what a restarted agent
+	// waits for.
+	d.lastSentAt["agent-62"] = time.Now().Add(-planRefreshInterval - time.Second)
+	d.DispatchTick(ctx)
+	require.Len(t, fake.plans["agent-62"], 2, "unchanged plans refresh so a restarted agent recovers")
+	refreshed := fake.plans["agent-62"][1]["targets"].([]Spec)
+	require.NotEmpty(t, refreshed)
+
+	// The refresh re-arms the window.
+	d.DispatchTick(ctx)
+	require.Len(t, fake.plans["agent-62"], 2)
+
+	// Empty plans never repeat: delete the agent-visible targets, take the
+	// one clearing plan, and stay quiet even past the refresh window.
+	_, err := conn.ExecContext(ctx, `DELETE FROM probe_targets WHERE vantage != 'center'`)
+	require.NoError(t, err)
+	d.DispatchTick(ctx)
+	require.Len(t, fake.plans["agent-62"], 3)
+	d.lastSentAt["agent-62"] = time.Now().Add(-planRefreshInterval - time.Second)
+	d.DispatchTick(ctx)
+	require.Len(t, fake.plans["agent-62"], 3, "empty plans are send-once")
 }
 
 // TestIngestAgentResults_OwnsVantage pins the ownership rule: whatever
