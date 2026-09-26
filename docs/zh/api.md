@@ -633,7 +633,7 @@ flowchart LR
         "issuer_org": "Example CA Ltd",
         "issuer": "CN=Example CA,O=Example CA Ltd,C=US",
         "san_dns": "device.example.com, alt.example.com",
-        "san_ip": "192.168.63.112",
+        "san_ip": "192.168.1.112",
         "san_email": "",
         "serial": "665071982890971409216315924781532514095376553279",
         "not_before": "2023-10-29T02:38:14Z",

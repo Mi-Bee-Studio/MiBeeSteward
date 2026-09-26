@@ -475,7 +475,7 @@ The distributed-mode switch: with `center.url` set, this instance runs as an **a
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `center.url` | string | "" | The center's base URL (e.g. "http://192.168.63.102:8080"). Empty = center/standalone mode (no upstream reporting). |
+| `center.url` | string | "" | The center's base URL (e.g. "http://192.168.1.102:8080"). Empty = center/standalone mode (no upstream reporting). |
 | `center.auth_token` | string | "" | The agent's bearer token (minted on the center via `POST /api/v1/agents/tokens`). Required in agent mode. |
 | `center.report_interval` | duration | "30s" | How often buffered scan results are flushed upstream when the buffer isn't full. Errors retry with exponential backoff. |
 

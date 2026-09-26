@@ -90,7 +90,7 @@ scp <agent.yaml> root@router:/etc/mibee/agent.yaml   # 仓库不带现成文件�
 # 在路由器上编辑 /etc/mibee/agent.yaml：
 #   center.url:         http://<中心IP>:<端口>
 #   center.auth_token:  <在中心通过 POST /api/v1/agents/tokens 创建>
-#   network.name/cidr:  此路由器的 LAN（如 lan-62 / 192.168.62.0/24）
+#   network.name/cidr:  此路由器的 LAN（如 lan-1 / 192.168.1.0/24）
 #   scanner.discovery.*: 启用需要的路由器专属信号源
 #     （dhcp_leases, conntrack, hostapd, dns_log，默认均为 false）
 
