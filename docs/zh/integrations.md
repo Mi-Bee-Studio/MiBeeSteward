@@ -50,11 +50,11 @@ Grafana → Dashboards → Import → 粘贴 JSON 文件内容 → 选择 Promet
 ```json
 {
   "subject": "Device Lost: cam-01",
-  "body": "Device: cam-01\nIP: 192.168.63.133\n...",
+  "body": "Device: cam-01\nIP: 192.168.1.133\n...",
   "metadata": {
     "event_type": "device_lost",
     "device_name": "cam-01",
-    "ip_address": "192.168.63.133",
+    "ip_address": "192.168.1.133",
     "mac_address": "...",
     "device_type": "camera",
     "detected_at": "2026-08-22T00:02:43Z"

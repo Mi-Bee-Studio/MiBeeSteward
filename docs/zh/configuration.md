@@ -461,7 +461,7 @@ scanner:
 
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
-| `center.url` | string | "" | 中心实例的基础 URL（如 "http://192.168.63.102:8080"）。空 = 中心/独立模式（不上报）。 |
+| `center.url` | string | "" | 中心实例的基础 URL（如 "http://192.168.1.102:8080"）。空 = 中心/独立模式（不上报）。 |
 | `center.auth_token` | string | "" | 代理的 bearer 令牌（在中心端通过 `POST /api/v1/agents/tokens` 铸造）。代理模式下必填。 |
 | `center.report_interval` | duration | "30s" | 缓冲未满时向上游刷新扫描结果的间隔。出错按指数退避重试。 |
 
