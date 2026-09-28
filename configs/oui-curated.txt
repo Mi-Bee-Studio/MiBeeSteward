@@ -83,3 +83,7 @@ DCDA0C	Espressif Inc.
 84F3EB	Espressif Inc.
 A4CF12	Espressif Inc.
 A4E57C	Espressif Inc.
+# NVIDIA (Jetson dev kits' on-board ethernet; the WiFi module OUI on these
+# boards is often Intel — verified via TShark manuf, field-found 2026-09-29)
+00044B	Nvidia
+48B02D	NVIDIA Corporation
