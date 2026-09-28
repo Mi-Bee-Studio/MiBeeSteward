@@ -34,6 +34,7 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 	f := rep.Device.Fields
 	attr := domain.ScanAttributes{
 		Vendor:              f["inferred_brand"],
+		InferredModel:       f["inferred_model"],
 		OUIPrefix:           f["oui_prefix"],
 		OUIVendor:           f["oui_vendor"],
 		InferredType:        f["inferred_type"],

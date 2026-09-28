@@ -33,6 +33,7 @@ func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 		"inferred_type":        h.InferredType,
 		"inferred_type_source": h.InferredTypeSource,
 		"inferred_brand":       h.InferredBrand,
+		"inferred_model":       h.InferredModel,
 		"inferred_description": h.InferredDescription,
 		"inferred_location":    h.InferredLocation,
 		"node_hostname":        h.Hostname,

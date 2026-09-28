@@ -260,6 +260,7 @@ func reportToHost(rep scannerv2.HostReport) domain.ScanHost {
 	if rep.Device.Fields != nil {
 		host.InferredType = rep.Device.Fields["inferred_type"]
 		host.InferredBrand = rep.Device.Fields["inferred_brand"]
+		host.InferredModel = rep.Device.Fields["inferred_model"]
 		host.InferredDescription = rep.Device.Fields["inferred_description"]
 		host.InferredLocation = rep.Device.Fields["inferred_location"]
 	}

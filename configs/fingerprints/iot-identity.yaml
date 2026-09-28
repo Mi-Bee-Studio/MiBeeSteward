@@ -36,13 +36,16 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^viomi-'
+      # Loose prefix match preserved; the tail captures the MODEL token (the
+      # "e13" in viomi-waterheater-e13_miap5E55) as group 1 when present.
+      value: '(?i)^viomi-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.65
     extract:
       metadata:
         inferred_brand: { const: "Viomi" }
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
         appliance:
           keyword_map:
@@ -70,13 +73,14 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^yeelink-'
+      value: '(?i)^yeelink-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.65
     extract:
       metadata:
         inferred_brand: { const: "Yeelight" }
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
         appliance:
           keyword_map:
@@ -98,13 +102,14 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^chuangmi[-_]'
+      value: '(?i)^chuangmi[-_](?:.*[-_])?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.65
     extract:
       metadata:
         inferred_brand: { const: "Chuangmi" }
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
         appliance:
           keyword_map:
@@ -124,13 +129,14 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^chunmi-'
+      value: '(?i)^chunmi-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.65
     extract:
       metadata:
         inferred_brand: { const: "Chunmi" }
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
         appliance:
           keyword_map:
@@ -150,13 +156,14 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^(zhimi|smartmi)-'
+      value: '(?i)^(?:zhimi|smartmi)-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.65
     extract:
       metadata:
         inferred_brand: { const: "Smartmi" }
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
         appliance:
           keyword_map:
@@ -178,13 +185,14 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^(lumi|aqara)[-_.]'
+      value: '(?i)^(?:lumi|aqara)[-_.](?:.*[-_.])?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.65
     extract:
       metadata:
         inferred_brand: { const: "Aqara" }
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
         appliance:
           keyword_map:
@@ -205,12 +213,13 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^(roborock|rockrobo|dreame)[-_.]'
+      value: '(?i)^(?:roborock|rockrobo|dreame)[-_.](?:.*[-_.])?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.65
     extract:
       metadata:
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
         appliance: { const: "robot vacuum" }
         inferred_brand:
@@ -250,13 +259,14 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^xiaomi-(aircondition|gateway|humidifier|purifier|heater|washer|fridge|light|plug|speaker|vacuum)'
+      value: '(?i)^xiaomi-(?:aircondition|gateway|humidifier|purifier|heater|washer|fridge|light|plug|speaker|vacuum)(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.65
     extract:
       metadata:
         inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
         appliance:
           keyword_map:
@@ -284,13 +294,14 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^midjd\d*-fridge'
+      value: '(?i)^midjd\d*-fridge-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.65
     extract:
       metadata:
         inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
         appliance: { const: refrigerator }
 
@@ -303,13 +314,14 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^mijia-'
+      value: '(?i)^mijia-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
     service: miot
     protocol: hostname
     confidence: 0.6
     extract:
       metadata:
         inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
 
   # ── 兜底：米家 WiFi 模块通用后缀 _miap<hex> / _mibt<hex> ────────────
@@ -323,10 +335,56 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)_(miap|mibt)[0-9a-f]+$'
+      # Group 1 = the model token before the suffix ("sread9" in
+      # philips-light-sread9_mibtB8DC); the suffix itself stays non-capturing.
+      value: '(?i)(?:.*[-_.])?([0-9a-z]+)_(?:miap|mibt)[0-9a-f]+$'
     service: miot
     protocol: hostname
     confidence: 0.55
     extract:
       metadata:
+        inferred_model: { regex_capture: 1 }
         ecosystem: { const: "Xiaomi Mijia" }
+
+  # ── ESP32 / Espressif 模块（开发板、DIY 摄像头、IoT 样机）──────────────
+  # DHCP 主机名形如 esp32c3-F8E62C / esp32c6-11DB60 / espressif.*
+  # (field LAN 2026-09: AI-Thinker 摄像头与开发板)。走 miot 身份通道
+  # (同为 DHCP 主机名推导的 host 级身份)，但独立 exclusive_group，
+  # 不参与 mijia-host 互斥。
+  - id: iot-host-esp32
+    source: builtin
+    priority: 115
+    exclusive_group: esp32-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^(esp32|espressif)'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Espressif" }
+        ecosystem: { const: "Espressif" }
+        appliance: { const: "ESP32 module" }
+
+  # ── MiBeeCam（AI-Thinker ESP32 方案摄像头）──────────────────────────
+  # 主机名形如 MiBeeCam-AI-THINK / MiBeeCam.*（field LAN 2026-09）。
+  - id: iot-host-mibeecam
+    source: builtin
+    priority: 115
+    exclusive_group: esp32-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)mibeecam'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "MiBee" }
+        ecosystem: { const: "MiBee" }
+        appliance: { const: "AI camera" }

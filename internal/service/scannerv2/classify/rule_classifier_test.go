@@ -708,7 +708,7 @@ func TestRuleClassifier_MijiaHostname(t *testing.T) {
 	hostnameEv := func(host string) []fp.Evidence {
 		return []fp.Evidence{{
 			Kind:       "hostname",
-			IP:         "192.168.62.1",
+			IP:         "192.0.2.10",
 			RawData:    map[string]string{"hostname": host},
 			Confidence: 0.8,
 		}}
@@ -756,7 +756,7 @@ func TestRuleClassifier_MijiaHostname(t *testing.T) {
 		}
 	}
 	// Non-Mijia hostnames must not fire any miot identity.
-	for _, host := range []string{"orangepi-zero3", "redmi-notebook", "rpi3b-storage"} {
+	for _, host := range []string{"orangepi-zero3", "redmi-book", "rpi3b-hall"} {
 		for _, id := range rc.Classify(hostnameEv(host)) {
 			if id.Service == "miot" {
 				t.Errorf("%s: unexpected miot identity fired", host)
@@ -775,7 +775,7 @@ func TestRuleClassifier_MDNSAndSSDP(t *testing.T) {
 		t.Fatalf("LoadFromDir: %v", err)
 	}
 	ev := func(kind string, raw map[string]string) []fp.Evidence {
-		return []fp.Evidence{{Kind: kind, IP: "192.168.62.1", RawData: raw, Confidence: 0.85}}
+		return []fp.Evidence{{Kind: kind, IP: "192.0.2.10", RawData: raw, Confidence: 0.85}}
 	}
 	find := func(ids []fp.ServiceIdentity, service string) *fp.ServiceIdentity {
 		for i := range ids {
@@ -817,7 +817,7 @@ func TestRuleClassifier_MDNSAndSSDP(t *testing.T) {
 	// Field sample: MiniDLNA on the NAS media stack.
 	ids = rc.Classify(ev("ssdp", map[string]string{
 		"server":   "5.15.49-linuxkit-pr DLNADOC/1.50 UPnP/1.0 MiniDLNA/1.3.3",
-		"location": "http://192.168.62.138:8200/rootDesc.xml",
+		"location": "http://192.0.2.1038:8200/rootDesc.xml",
 	}))
 	id = find(ids, "ssdp")
 	if id == nil || id.Metadata["inferred_type"] != "nas" {
@@ -872,6 +872,51 @@ func TestRuleClassifier_MDNSAndSSDP(t *testing.T) {
 			if id.Service == "mdns" || id.Service == "ssdp" {
 				t.Errorf("unrecognized announcement %+v must not fire an identity", raw)
 			}
+		}
+	}
+}
+
+// TestRuleClassifier_MijiaHostnameModel pins the regex_capture model
+// extraction added to iot-identity.yaml (the hostname encodes the model as
+// the last segment before the _miap/_mibt suffix; field-verified samples).
+func TestRuleClassifier_MijiaHostnameModel(t *testing.T) {
+	rc := &fp.RuleClassifier{}
+	if err := rc.LoadFromDir("../../../../configs/fingerprints"); err != nil {
+		t.Fatalf("LoadFromDir: %v", err)
+	}
+	hostnameEv := func(host string) []fp.Evidence {
+		return []fp.Evidence{{
+			Kind:       "hostname",
+			IP:         "192.0.2.10",
+			RawData:    map[string]string{"hostname": host},
+			Confidence: 0.8,
+		}}
+	}
+	cases := []struct {
+		host      string
+		wantModel string
+	}{
+		{"viomi-waterheater-e13_miap5E55", "e13"},
+		{"viomi-hood-c13_miap5788", "c13"},
+		{"viomi-dishwasher-m01_miapF20A", "m01"},
+		{"xiaomi-aircondition-c16_mibt2431", "c16"},
+		{"xiaomi-aircondition-mc8_mibt6093", "mc8"},
+		{"yeelink-light-lamp22_mibt63AA", "lamp22"},
+		{"chunmi-ysj-tsj9_mibt89A7", "tsj9"},
+		{"midjd7-fridge-5022_mibt5B23", "5022"},
+		{"xiaomi-gateway-hub1", "hub1"},
+		{"philips-light-sread9_mibtB8DC", "sread9"}, // suffix fallback rule
+	}
+	for _, tc := range cases {
+		ids := rc.Classify(hostnameEv(tc.host))
+		var model string
+		for _, id := range ids {
+			if id.Service == "miot" {
+				model = id.Metadata["inferred_model"]
+			}
+		}
+		if model != tc.wantModel {
+			t.Errorf("%s: inferred_model = %q, want %q", tc.host, model, tc.wantModel)
 		}
 	}
 }

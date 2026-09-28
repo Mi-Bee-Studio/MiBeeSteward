@@ -136,6 +136,7 @@ type IdentityWrite struct {
 	Name        string
 	Type        string
 	Brand       string
+	Model       string
 	Description string
 	Location    string
 

@@ -296,6 +296,7 @@ func (rn *Runner) buildIdentityWrite(rep scannerv2.HostReport, mac, devType, bra
 		Name:                 deviceDisplayName(rep),
 		Type:                 devType,
 		Brand:                brand,
+		Model:                rep.Device.Fields["inferred_model"],
 		Description:          descr,
 		Location:             location,
 		OpenPortsJSON:        ports,

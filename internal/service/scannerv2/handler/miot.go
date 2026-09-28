@@ -42,9 +42,27 @@ func (MiotHandler) EnrichDevice(svc scannerv2.ServiceContext, _ scannerv2.Collec
 	// Brand: fill the empty slot only, a protocol-derived brand (SNMP/TLS,
 	// set by other handlers) outranks a spoofable hostname; the OUI fold runs
 	// before handlers, so a NIC-silicon vendor may already sit there and wins
-	// the tie (both are heuristic-grade for these devices).
+	// the tie (both are heuristic-grade for these devices). EXCEPT a generic
+	// web-server/software brand: the orchestrator's HTTP-Server evidence fold
+	// runs before EnrichDevice and brands Mijia devices with whatever fronts
+	// their web UI ("nginx" on a Xiaomi gateway, field-found) — the ecosystem
+	// brand from the hostname is strictly better, so it overrides (same
+	// override rule the TLS cert fold uses).
 	if b, ok := svc.Identity.Metadata["inferred_brand"]; ok && b != "" {
-		preserveExisting(svc, "inferred_brand", b)
+		current := ""
+		if svc.Device.Fields != nil {
+			current = svc.Device.Fields["inferred_brand"]
+		}
+		if current == "" || scannerv2.IsWebServerBrand(current) {
+			setDeviceField(svc, "inferred_brand", b)
+		}
+	}
+
+	// Model: the hostname rules extract the model token (e.g. the "e13" in
+	// viomi-waterheater-e13_miap5E55) via regex_capture; fill-empty only so a
+	// user-edited or SNMP-derived model is never clobbered.
+	if m, ok := svc.Identity.Metadata["inferred_model"]; ok && m != "" {
+		preserveExisting(svc, "inferred_model", m)
 	}
 
 	// Description: "<appliance> · <ecosystem>" when the rules extracted an

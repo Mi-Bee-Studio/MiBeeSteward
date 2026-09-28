@@ -608,6 +608,7 @@ func existingIdentityUpdate() string {
 		    name = CASE WHEN (name = '' OR name = ip_address) THEN ? ELSE name END,
 		    type = CASE WHEN (type = '' OR type = 'unknown' OR type = 'other') AND ? != '' THEN ? ELSE type END,
 		    brand = CASE WHEN (brand = '' OR brand = 'unknown') AND ? != '' THEN ? ELSE brand END,
+		    model = CASE WHEN (model = '' OR model = 'unknown') AND ? != '' THEN ? ELSE model END,
 		    description = CASE WHEN (description = '' OR description = 'unknown') AND ? != '' THEN ? ELSE description END,
 		    location = CASE WHEN (location = '' OR location = 'unknown') AND ? != '' THEN ? ELSE location END,
 		    open_ports = ?,
@@ -633,6 +634,7 @@ func replacementIdentityUpdate() string {
 		    name = ?,
 		    type = CASE WHEN ? != '' THEN ? ELSE type END,
 		    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
+		    model = CASE WHEN ? != '' THEN ? ELSE model END,
 		    description = CASE WHEN ? != '' THEN ? ELSE description END,
 		    location = CASE WHEN ? != '' THEN ? ELSE location END,
 		    open_ports = ?,
@@ -654,6 +656,7 @@ func identityUpdateArgs(in scannerv2.IdentityWrite, now string) []any {
 	return []any{
 		in.Name, in.Type, in.Type,
 		in.Brand, in.Brand,
+		in.Model, in.Model,
 		in.Description, in.Description,
 		in.Location, in.Location,
 		in.OpenPortsJSON, in.DetectedServicesJSON,
@@ -687,17 +690,17 @@ func (r *SQLiteRepository) createDeviceIdentity(ctx context.Context, in scannerv
 	}
 	now := scannerv2.DBTime(time.Now())
 	res, err := r.db.ExecContext(ctx, `
-		INSERT INTO devices (device_uuid, name, type, brand, ip_address, mac_address,
+		INSERT INTO devices (device_uuid, name, type, brand, model, ip_address, mac_address,
 		                     status, scan_source, description, location,
 		                     open_ports, detected_services, prometheus_url, node_exporter_url,
 		                     scan_attributes, network_id, first_seen, last_seen,
 		                     tags, last_scan_rtt_ms, last_scanned_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?,
 		        'online', 'scanner_v2', ?, ?,
 		        ?, ?, ?, ?,
 		        ?, ?, ?, ?,
 		        ?, ?, ?, ?, ?)`,
-		uuid.NewString(), in.Name, devType, in.Brand, in.IP, in.MAC,
+		uuid.NewString(), in.Name, devType, in.Brand, in.Model, in.IP, in.MAC,
 		in.Description, in.Location,
 		in.OpenPortsJSON, in.DetectedServicesJSON, in.PrometheusURL, in.NodeExporterURL,
 		in.ScanAttributesJSON, in.NetworkID, now, now,
