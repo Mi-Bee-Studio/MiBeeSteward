@@ -136,6 +136,12 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 	defer dbConn.Close()
 	queries := db.New(dbConn)
 
+	// Retention sweeper for the LOCAL mini-DB: prunes silent shadow devices
+	// (MAC-less 24h / MAC-bearing 7d) and aged scan_results/scan_task_runs so
+	// the agent's database cannot grow unbounded (field rig: 95 MB in a week,
+	// seven dead shadow devices). Center-side retention is unaffected.
+	startAgentSweeper(ctx, dbConn, slog.Default())
+
 	// Agent-side SNMP credential vault (#241, issue 方案 B): the agent owns a
 	// LOCAL snmp_credentials table in its mini-DB, encrypted with the AGENT's
 	// own security.master_key, NOT the center's key, so the two
