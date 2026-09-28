@@ -539,6 +539,27 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 				ip).Scan(&targetID)
 		}
 		if err == sql.ErrNoRows {
+			// Last gap (field-found 2026-09-29): the (ip, network) slot may be
+			// held by a row with a DIFFERENT real mac — a swapped-in board
+			// reporting a never-seen MAC at an occupied address. Concluding
+			// IsNew here made the INSERT violate the unique index and the
+			// report was dropped. The ip-holder is the authority for its slot
+			// (replacement doctrine): take it over.
+			var holderID int64
+			var holderMAC string
+			var holdErr error
+			if networkID.Valid {
+				holdErr = r.db.QueryRowContext(ctx,
+					`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+					ip, networkID.Int64).Scan(&holderID, &holderMAC)
+			} else {
+				holdErr = r.db.QueryRowContext(ctx,
+					`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+					ip).Scan(&holderID, &holderMAC)
+			}
+			if holdErr == nil && holderMAC != "" {
+				return scannerv2.IdentityResolution{TargetID: holderID, TakeOver: true}, nil
+			}
 			return scannerv2.IdentityResolution{IsNew: true}, nil
 		}
 		if err != nil {
@@ -717,7 +738,14 @@ func (r *SQLiteRepository) createDeviceIdentity(ctx context.Context, in scannerv
 // stamping and roam eviction-retry. Ported verbatim from the former
 // runner.applyDeviceBridge existing-device branch.
 func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv2.IdentityWrite) (int64, error) {
-	// 1. Identity-field UPDATE (existing vs replacement variant).
+	// 1. Identity-field UPDATE. Both the normal rescan and a TakeOver use the
+	// fill-when-empty variant: a takeover force-overwrites the MAC (below) but
+	// keeps the slot's identity columns — RecordDevice may have landed fresher
+	// values for this same slot moments earlier (the pinned
+	// RecordDevice_OverlapsBridge net effect), and the structured identity
+	// still refreshes via the scan_attributes json_patch in every variant.
+	// Only a full device REPLACEMENT (a second, stale row exists) force-
+	// overwrites the identity columns.
 	updateSQL := existingIdentityUpdate()
 	if in.ReplacedID != 0 {
 		updateSQL = replacementIdentityUpdate()
@@ -728,9 +756,11 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 	}
 
 	// 2. Status/mac/last_seen stamping + roam relocation / replacement offline.
-	if in.ReplacedID != 0 {
-		// Replacement: force-overwrite mac on the ip-holder (it now belongs to the
-		// scanned device), and mark the prior mac-matched row offline.
+	if in.ReplacedID != 0 || in.TakeOver {
+		// Replacement/takeover: force-overwrite mac on the ip-holder (it now
+		// belongs to the scanned device). A replacement additionally marks the
+		// prior mac-matched row offline; a takeover has no such row (the MAC
+		// was never seen).
 		_, _ = r.db.ExecContext(ctx, `
 			UPDATE devices SET status='online',
 			    mac_address = ?,
@@ -738,15 +768,21 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 			    offline_since=NULL,
 			    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 			in.MAC, now, now, now, in.TargetID)
-		_, _ = r.db.ExecContext(ctx,
-			`UPDATE devices SET status='offline',
-			    offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
-			    updated_at=? WHERE id=?`,
-			now, now, in.ReplacedID)
-		r.logger.Warn("device identity: device replaced (router/asset swap detected)",
-			"ip", in.IP, "scanned_mac", in.MAC, "replaced_device_id", in.ReplacedID,
-			"target_device_id", in.TargetID,
-			"action", "ip-holder updated with new mac; prior mac-matched row marked offline")
+		if in.ReplacedID != 0 {
+			_, _ = r.db.ExecContext(ctx,
+				`UPDATE devices SET status='offline',
+				    offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
+				    updated_at=? WHERE id=?`,
+				now, now, in.ReplacedID)
+			r.logger.Warn("device identity: device replaced (router/asset swap detected)",
+				"ip", in.IP, "scanned_mac", in.MAC, "replaced_device_id", in.ReplacedID,
+				"target_device_id", in.TargetID,
+				"action", "ip-holder updated with new mac; prior mac-matched row marked offline")
+		} else {
+			r.logger.Warn("device identity: slot taken over by new mac (swapped-in board)",
+				"ip", in.IP, "scanned_mac", in.MAC, "target_device_id", in.TargetID,
+				"action", "ip-holder row force-updated with the new mac; identity columns kept (fill-when-empty)")
+		}
 	} else {
 		// Normal re-scan. When the device ROAMED (same MAC, new free IP, DHCP
 		// renewal), relocate ip_address to the scanned IP.
