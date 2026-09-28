@@ -53,3 +53,33 @@ A4B10C	Apple
 005056	VMware
 000C29	VMware
 080027	PCS Systemtechnik (VirtualBox)
+# Xiaomi Mijia ecosystem (WiFi-module OUIs observed on a 51-host field LAN,
+# 2026-09; names per the IEEE registry, verified via TShark's manuf
+# generation of it). OUI = the NIC silicon vendor, NOT the appliance brand —
+# a Philips-branded Mijia light carries a Xiaomi module OUI.
+640980	Xiaomi Communications
+8CBEBE	Xiaomi Communications
+FCD908	Xiaomi Communications
+3480B3	Xiaomi Communications
+58B623	Beijing Xiaomi Mobile Software
+CCB5D1	Beijing Xiaomi Mobile Software
+7CC294	Beijing Xiaomi Mobile Software
+5448E6	Beijing Xiaomi Mobile Software
+B460ED	Beijing Xiaomi Mobile Software
+24CF24	Beijing Xiaomi Mobile Software
+04CF8C	Xiaomi Electronics
+286C07	Xiaomi Electronics
+94F827	Shanghai Imilab Technology
+# Espressif ESP32/ESP8266 modules (dev boards, DIY cameras, IoT prototypes)
+DCDA0C	Espressif Inc.
+543204	Espressif Inc.
+240AC4	Espressif Inc.
+246F28	Espressif Inc.
+30AEA4	Espressif Inc.
+40F520	Espressif Inc.
+5CCF7F	Espressif Inc.
+68B6B3	Espressif Inc.
+70B8F6	Espressif Inc.
+84F3EB	Espressif Inc.
+A4CF12	Espressif Inc.
+A4E57C	Espressif Inc.
