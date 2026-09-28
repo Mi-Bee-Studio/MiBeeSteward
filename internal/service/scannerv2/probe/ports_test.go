@@ -126,6 +126,48 @@ func TestPortSpecProbe_OpenPortAndBanner(t *testing.T) {
 	}
 }
 
+// An SSH server sends its binary KEX_INIT immediately after the greeting line,
+// and both can land in ONE Read. The banner must be cut at the first newline —
+// field-found on a dropbear router whose SSH version metadata carried the raw
+// key-exchange blob ("dropbear\r\n\x00\x00…curve25519-sha256…").
+func TestPortSpecProbe_BannerTruncatedAtFirstLine(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+	kex := append([]byte{0x00, 0x00, 0x01, 0x74, 0x0a, 0x14}, []byte("curve25519-sha256,ecdh-sha2-nistp256")...)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// Greeting + binary KEX in a single write, like a real sshd.
+		_, _ = conn.Write(append([]byte("SSH-2.0-dropbear_2022.83\r\n"), kex...))
+		ioReadUntilClosed(conn)
+	}()
+
+	p := NewPortSpecProbe(itoa(port), nil)
+	evs, err := p.Probe(context.Background(), "127.0.0.1", scannerv2.ProbeHint{Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evs {
+		if e.Kind != "banner" {
+			continue
+		}
+		banner := e.RawData["banner"]
+		if banner != "SSH-2.0-dropbear_2022.83" {
+			t.Errorf("banner must be the greeting line only, got %q", banner)
+		}
+		if strings.Contains(banner, "curve25519") || strings.ContainsRune(banner, 0) {
+			t.Errorf("banner leaked bytes past the first newline: %q", banner)
+		}
+	}
+}
+
 func TestPortSpecProbe_ClosedPortNoEvidence(t *testing.T) {
 	// A port nothing is listening on: the dial gets an RST. Since #256 a
 	// refused port emits exactly one port_closed evidence (positive closure
