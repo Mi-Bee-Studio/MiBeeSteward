@@ -38,7 +38,7 @@ rules:
       op: regex
       # Loose prefix match preserved; the tail captures the MODEL token (the
       # "e13" in viomi-waterheater-e13_miap5E55) as group 1 when present.
-      value: '(?i)^viomi-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^viomi-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.65
@@ -73,7 +73,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^yeelink-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^yeelink-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.65
@@ -102,7 +102,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^chuangmi[-_](?:.*[-_])?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^chuangmi[-_](?:[^-_.]*[-_])*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.65
@@ -129,7 +129,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^chunmi-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^chunmi-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.65
@@ -156,7 +156,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^(?:zhimi|smartmi)-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^(?:zhimi|smartmi)-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.65
@@ -185,7 +185,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^(?:lumi|aqara)[-_.](?:.*[-_.])?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^(?:lumi|aqara)[-_.](?:[^-_.]*[-_])*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.65
@@ -213,7 +213,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^(?:roborock|rockrobo|dreame)[-_.](?:.*[-_.])?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^(?:roborock|rockrobo|dreame)[-_.](?:[^-_.]*[-_])*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.65
@@ -259,7 +259,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^xiaomi-(?:aircondition|gateway|humidifier|purifier|heater|washer|fridge|light|plug|speaker|vacuum)(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^xiaomi-(?:aircondition|gateway|humidifier|purifier|heater|washer|fridge|light|plug|speaker|vacuum)(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.65
@@ -294,7 +294,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^midjd\d*-fridge-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^midjd\d*-fridge-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.65
@@ -314,7 +314,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^mijia-(?:.*-)?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?$'
+      value: '(?i)^mijia-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.6
@@ -337,7 +337,7 @@ rules:
       op: regex
       # Group 1 = the model token before the suffix ("sread9" in
       # philips-light-sread9_mibtB8DC); the suffix itself stays non-capturing.
-      value: '(?i)(?:.*[-_.])?([0-9a-z]+)_(?:miap|mibt)[0-9a-f]+$'
+      value: '(?i)(?:[^-_.]*[-_.])*?([0-9a-z]+)_(?:miap|mibt)[0-9a-f]+(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.55

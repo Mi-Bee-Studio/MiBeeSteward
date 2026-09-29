@@ -906,6 +906,16 @@ func TestRuleClassifier_MijiaHostnameModel(t *testing.T) {
 		{"midjd7-fridge-5022_mibt5B23", "5022"},
 		{"xiaomi-gateway-hub1", "hub1"},
 		{"philips-light-sread9_mibtB8DC", "sread9"}, // suffix fallback rule
+		// Hostnames carrying a DNS suffix (Tailscale .ts.net, mDNS .local).
+		// Field bug 2026-09-30: greedy (?:.*[-_.])? crossed the dots and the
+		// capture group grabbed the TLD — lumi-gateway-v3_miio12345678.taila1b2c3.ts.net
+		// produced inferred_model "net" (observed live in the field).
+		{"lumi-gateway-v3_miio12345678.taila1b2c3.ts.net", "v3"},
+		{"lumi-gateway-v3", "v3"},
+		{"aqara-hub-e1_miapAB12.ts.net", "e1"},
+		{"viomi-waterheater-e13_miap5E55.tail1a481.ts.net", "e13"},
+		{"xiaomi-aircondition-mc8_mibt6093.ts.net", "mc8"},
+		{"mijia-clock.local", "clock"},
 	}
 	for _, tc := range cases {
 		ids := rc.Classify(hostnameEv(tc.host))
