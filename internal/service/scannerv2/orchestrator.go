@@ -320,11 +320,26 @@ func hasCameraEvidence(ev []Evidence) bool {
 // software fronting a device's web/UPnP UI is not the device's vendor
 // (field-found: a Xiaomi gateway branded "nginx", a NAS branded "MiniDLNA",
 // an fnOS NAS branded "Portable").
+// webServerBrandDenylist are software names that appear in HTTP SERVER
+// headers / SSDP SERVER fields and were historically folded into devices.brand
+// before the junk guards existed. Exported (lowercase, for SQL IN lists) so the
+// store's junk-brand heal can recognize rows still carrying one.
+var webServerBrandDenylist = []string{
+	"nginx", "apache", "caddy", "lighttpd", "microsoft iis",
+	"minidlna", "readymedia", "portable",
+}
+
+// WebServerBrandNames returns the lowercase denylist behind IsWebServerBrand.
+func WebServerBrandNames() []string {
+	return append([]string(nil), webServerBrandDenylist...)
+}
+
 func isWebServerName(brand string) bool {
-	switch lowerASCII(brand) {
-	case "nginx", "apache", "caddy", "lighttpd", "microsoft iis",
-		"minidlna", "readymedia", "portable":
-		return true
+	lower := lowerASCII(brand)
+	for _, name := range webServerBrandDenylist {
+		if lower == name {
+			return true
+		}
 	}
 	return false
 }

@@ -174,3 +174,47 @@ func TestApplyDeviceIdentity_NewMACTakesOverOccupiedIPSlot(t *testing.T) {
 	require.Equal(t, "Raspberry Pi Foundation", brandOut)
 	require.Equal(t, "online", statusOut)
 }
+
+// TestApplyDeviceIdentity_JunkBrandHealedOnRescan pins the junk-brand heal:
+// the identity UPDATE is fill-when-empty, so a web-server banner name (nginx/
+// apache/…, pre-denylist field data) or a letter-less junk value ("0,1,2")
+// would otherwise stay the brand forever. When a rescan carries a real brand,
+// those two junk classes are overwritten; a curated NON-junk brand still wins
+// over scan-derived ones (user edits preserved).
+func TestApplyDeviceIdentity_JunkBrandHealedOnRescan(t *testing.T) {
+	repo, nid, conn, ctx := resolveRepo(t, 1)
+	mac := "aa:bb:cc:dd:ee:31"
+	devID := seedDeviceRow(t, conn, "10.0.0.5", mac, nid)
+	setBrand := func(b string) {
+		_, err := conn.Exec(`UPDATE devices SET brand = ? WHERE id = ?`, b, devID)
+		require.NoError(t, err)
+	}
+	rescan := func(brand string) {
+		_, err := repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
+			TargetID: devID, IP: "10.0.0.5", MAC: mac, NetworkID: nid,
+			Brand: brand,
+			OpenPortsJSON: "[]", DetectedServicesJSON: "[]", ScanAttributesJSON: "{}",
+		})
+		require.NoError(t, err)
+	}
+	brandOf := func() string {
+		var b string
+		require.NoError(t, conn.QueryRow(`SELECT brand FROM devices WHERE id = ?`, devID).Scan(&b))
+		return b
+	}
+
+	setBrand("nginx")
+	rescan("QNAP")
+	require.Equal(t, "QNAP", brandOf(), "web-server junk brand must be healed by a real brand")
+
+	setBrand("0,1,2")
+	rescan("Apple")
+	require.Equal(t, "Apple", brandOf(), "letter-less junk brand must be healed by a real brand")
+
+	setBrand("Synology")
+	rescan("QNAP")
+	require.Equal(t, "Synology", brandOf(), "non-junk curated brand must NOT be overwritten by a scan")
+
+	rescan("")
+	require.Equal(t, "Synology", brandOf(), "empty scan brand must not clear or change anything")
+}

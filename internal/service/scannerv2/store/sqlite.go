@@ -755,6 +755,29 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 		r.logger.Warn("device identity: update device failed", "ip", in.IP, "mac", in.MAC, "error", uerr)
 	}
 
+	// 1b. Junk-brand heal. The fill-when-empty CASE above would keep a
+	// web-server banner name (nginx/apache/…, field data written before the
+	// fold-time junk guards existed) or a letter-less junk value ("0,1,2")
+	// as the brand forever. When this scan carries a real brand, overwrite
+	// exactly those two junk classes; a curated non-junk brand still wins
+	// over any scan-derived one (user edits are never clobbered).
+	if in.Brand != "" {
+		deny := scannerv2.WebServerBrandNames()
+		healSQL := `UPDATE devices SET brand = ?, updated_at = ?
+			WHERE id = ?
+			  AND lower(brand) != lower(?)
+			  AND (lower(brand) IN (` + placeholders(len(deny)) + `)
+			       OR brand NOT GLOB '*[a-zA-Z]*')`
+		healArgs := make([]any, 0, len(deny)+5)
+		healArgs = append(healArgs, in.Brand, now, in.TargetID, in.Brand)
+		for _, name := range deny {
+			healArgs = append(healArgs, name)
+		}
+		if _, err := r.db.ExecContext(ctx, healSQL, healArgs...); err != nil {
+			r.logger.Warn("device identity: junk brand heal failed", "ip", in.IP, "device_id", in.TargetID, "error", err)
+		}
+	}
+
 	// 2. Status/mac/last_seen stamping + roam relocation / replacement offline.
 	if in.ReplacedID != 0 || in.TakeOver {
 		// Replacement/takeover: force-overwrite mac on the ip-holder (it now
@@ -1329,4 +1352,19 @@ func (r *SQLiteRepository) resolveDeviceUUID(ctx context.Context, ip string) (st
 	r.uuidCache[ip] = u
 	r.uuidMu.Unlock()
 	return u, nil
+}
+
+// placeholders builds a "?,?,…" list of n bind markers for IN clauses.
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	out := make([]byte, 0, 2*n)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		out = append(out, '?')
+	}
+	return string(out)
 }
