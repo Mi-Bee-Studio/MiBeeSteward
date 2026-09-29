@@ -453,7 +453,11 @@ func ptrTime(t time.Time) *time.Time { return &t }
 func openAgentDB(dbPath string) (*sql.DB, error) {
 	// Pragmas travel in the DSN so all 8 pool connections get them;
 	// Exec-after-Open only reached the first connection (#252).
-	conn, err := dbopen.Open(dbPath,
+	// _txlock=immediate: every BeginTx takes the write lock up front — the
+	// agent's read-then-write enrich transactions hit SQLITE_BUSY_SNAPSHOT
+	// (517, unretryable by busy_timeout) against concurrent scan writers
+	// (field-observed 2026-09-29).
+	conn, err := dbopen.OpenTxLock(dbPath, "immediate",
 		"journal_mode=WAL",
 		"busy_timeout=5000",
 		"synchronous=NORMAL",

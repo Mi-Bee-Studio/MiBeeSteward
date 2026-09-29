@@ -43,7 +43,8 @@ INSERT INTO devices (name, ip_address, mac_address, scan_attributes, last_seen, 
   ('mac-in-attrs','192.0.2.105', '',     '{"mac":"02:00:00:00:00:05"}', datetime('now','-3 days'), datetime('now','-3 days'), datetime('now','-3 days'));
 INSERT INTO scan_tasks (id, name, targets) VALUES (0, 't', '192.0.2.0/24');
 INSERT INTO scan_results (task_id, ip, alive, scanned_at)
-  VALUES (0,'192.0.2.1',1,datetime('now','-20 days')), (0,'192.0.2.2',1,datetime('now','-2 days'));
+  VALUES (0,'192.0.2.1',1,datetime('now','-20 days')), (0,'192.0.2.2',1,datetime('now','-2 days')),
+         (0,'192.0.2.3',1,datetime('now','-4 days')), (0,'192.0.2.4',1,datetime('now','-71 hours'));
 `
 	_, err = db.Exec(seed)
 	require.NoError(t, err)
@@ -67,5 +68,5 @@ INSERT INTO scan_results (task_id, ip, alive, scanned_at)
 
 	var results int
 	require.NoError(t, db.QueryRow(`SELECT count(*) FROM scan_results`).Scan(&results))
-	require.Equal(t, 1, results, "only the 2-day-old row survives; the 20-day-old is pruned")
+	require.Equal(t, 2, results, "72h retention: the 2-day-old and 71-hour-old rows survive; the 4-day-old and 20-day-old are pruned")
 }

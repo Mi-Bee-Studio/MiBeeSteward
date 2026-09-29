@@ -29,8 +29,10 @@ import (
 //     without a MAC is unreliable), MAC-bearing after 7d (a real asset may be
 //     gone a while). MAC = mac_address OR scan_attributes' mac (the bridge
 //     may only have written the structured one).
-//   - scan_results: keep 14d (center's service_evidence default; these rows
-//     are per-task history the center already ingested).
+//   - scan_results: keep 72h only. These rows are a LOCAL evidence cache the
+//     center already ingested; a field rig showed ~10.5k rows/day (91k rows /
+//     116 MB on 2026-09-30), so the former 14d window meant a ~180 MB
+//     steady-state file on a small flash box for zero reader value.
 //   - scan_task_runs: keep 30d (center's scan_task_runs_days default).
 func sweepStaleAgentData(ctx context.Context, db *sql.DB, logger *slog.Logger) {
 	if db == nil {
@@ -50,11 +52,12 @@ func sweepStaleAgentData(ctx context.Context, db *sql.DB, logger *slog.Logger) {
 			  AND (json_extract(scan_attributes, '$.mac') IS NULL
 			       OR json_extract(scan_attributes, '$.mac') = '')
 			  AND last_seen IS NOT NULL AND last_seen < datetime('now', '-24 hours')`},
-		{"scan_results_14d", `
-			DELETE FROM scan_results WHERE scanned_at < datetime('now', '-14 days')`},
+		{"scan_results_72h", `
+			DELETE FROM scan_results WHERE scanned_at < datetime('now', '-72 hours')`},
 		{"scan_task_runs_30d", `
 			DELETE FROM scan_task_runs WHERE created_at < datetime('now', '-30 days')`},
 	}
+	var totalPruned int64
 	for _, s := range statements {
 		res, err := db.ExecContext(ctx, s.sql)
 		if err != nil {
@@ -63,6 +66,18 @@ func sweepStaleAgentData(ctx context.Context, db *sql.DB, logger *slog.Logger) {
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			logger.Info("agent sweep pruned", "step", s.name, "rows", n)
+			totalPruned += n
+		}
+	}
+	// SQLite never shrinks a file on DELETE — without this the rig's agent.db
+	// stays at its high-water mark (116 MB observed 2026-09-30) no matter how
+	// much the sweep prunes. VACUUM only after a substantial prune so the
+	// rewrite cost is rare; best-effort (fails harmlessly under contention).
+	if totalPruned >= 1000 {
+		if _, err := db.ExecContext(ctx, `VACUUM`); err != nil {
+			logger.Warn("agent sweep vacuum failed", "error", err)
+		} else {
+			logger.Info("agent sweep vacuumed", "pruned_rows", totalPruned)
 		}
 	}
 }
