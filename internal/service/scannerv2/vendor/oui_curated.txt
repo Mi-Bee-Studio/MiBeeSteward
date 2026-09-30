@@ -101,6 +101,7 @@ BC2228	D-Link International
 9483C4	GL.iNet
 50465D	ASUSTek Computer
 1C8341	Hefei Bitland
+047C16	Micro-Star (MSI)
 E4AAEC	Tianjin Hualai Technology
 3CCD57	Beijing Xiaomi Mobile Software
 649E31	Beijing Xiaomi Mobile Software

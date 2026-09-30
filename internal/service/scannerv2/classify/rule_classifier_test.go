@@ -958,6 +958,16 @@ func TestRuleClassifier_HostnameBrandModel(t *testing.T) {
 		{"rpi400", "Raspberry Pi", "400"},
 		{"redmi-book", "Redmi", ""},
 		{"jetson-orin", "NVIDIA", ""},
+		// Phones / tablets / TVs whose DHCP device name carries the official
+		// model (field LAN 2026-10-01): Mi-10, REDMI-15R-5G, *Xiaomi-Pad-6,
+		// MiTV4A-<serial>.
+		{"Mi-10", "Xiaomi", "10"},
+		{"REDMI-15R-5G", "Redmi", "15R-5G"},
+		{"redmi-15", "Redmi", "15"},
+		{"Xiaomi-Pad-6", "Xiaomi", "6"},
+		{"user-deXiaomi-Pad-6", "Xiaomi", "6"},
+		{"MiTV4A-1a2b3c4d5e6f7a8b", "Xiaomi", "4A"},
+		{"mitv5x", "Xiaomi", "5x"},
 	}
 	for _, tc := range cases {
 		ids := rc.Classify([]fp.Evidence{{

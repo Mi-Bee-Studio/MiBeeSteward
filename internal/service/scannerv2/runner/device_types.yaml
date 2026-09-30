@@ -62,7 +62,8 @@ rules:
     source: heuristic
     keywords: [viomi-, zhimi-, smartmi-, chunmi-, mijia-, midjd7, yeelink-,
                lumi, aqara, roborock, rockrobo, dreame, xiaoaitongxue, xiaoai,
-               xiaomi-aircondition, xiaomi-gateway, mi-appliance, mibt, miap]
+               xiaomi-aircondition, xiaomi-gateway, mi-appliance, mibt, miap,
+               mitv]
 
   # ── PC / 笔记本 ──
   # MUST come before phone/camera: a laptop named "redmi-notebook" contains
