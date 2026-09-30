@@ -56,8 +56,8 @@ func TestMatchDeviceType_Port9100NodeExporterVeto(t *testing.T) {
 // DIFFERENT port does not veto.
 func TestMatchDeviceType_ExcludeServiceOnOtherPortDoesNotVeto(t *testing.T) {
 	rep := scannerv2.HostReport{
-		IP:       "192.0.2.12",
-		Device:   scannerv2.DeviceRef{Fields: map[string]string{}},
+		IP:     "192.0.2.12",
+		Device: scannerv2.DeviceRef{Fields: map[string]string{}},
 		Services: []scannerv2.ServiceIdentity{
 			{Service: "node_exporter", Port: 9200}, // different port
 			{Service: "unknown", Port: 9100},

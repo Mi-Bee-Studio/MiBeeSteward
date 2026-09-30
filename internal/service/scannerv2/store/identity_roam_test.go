@@ -192,7 +192,7 @@ func TestApplyDeviceIdentity_JunkBrandHealedOnRescan(t *testing.T) {
 	rescan := func(brand string) {
 		_, err := repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
 			TargetID: devID, IP: "10.0.0.5", MAC: mac, NetworkID: nid,
-			Brand: brand,
+			Brand:         brand,
 			OpenPortsJSON: "[]", DetectedServicesJSON: "[]", ScanAttributesJSON: "{}",
 		})
 		require.NoError(t, err)
