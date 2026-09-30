@@ -755,8 +755,10 @@ func TestRuleClassifier_MijiaHostname(t *testing.T) {
 			t.Errorf("%s: ecosystem = %q, want %q", tc.host, got, tc.wantEcosystem)
 		}
 	}
-	// Non-Mijia hostnames must not fire any miot identity.
-	for _, host := range []string{"orangepi-zero3", "redmi-book", "rpi3b-hall"} {
+	// Non-Mijia hostnames must not fire any miot identity. (redmi-* and rpi*
+	// DID move to matched hostnames with the 2026-09-30 rules — see
+	// TestRuleClassifier_HostnameBrandModel — so they no longer belong here.)
+	for _, host := range []string{"orangepi-zero3", "my-laptop", "desktop-7f3a2b"} {
 		for _, id := range rc.Classify(hostnameEv(host)) {
 			if id.Service == "miot" {
 				t.Errorf("%s: unexpected miot identity fired", host)
@@ -924,6 +926,55 @@ func TestRuleClassifier_MijiaHostnameModel(t *testing.T) {
 			if id.Service == "miot" {
 				model = id.Metadata["inferred_model"]
 			}
+		}
+		if model != tc.wantModel {
+			t.Errorf("%s: inferred_model = %q, want %q", tc.host, model, tc.wantModel)
+		}
+	}
+}
+
+// TestRuleClassifier_HostnameBrandModel pins the 2026-09-30 hostname rules
+// (speaker model codes, Philips Mijia lights, SBC/user-device hostnames).
+// All samples are field-collected hostnames (last IPv4 octet only in comments).
+func TestRuleClassifier_HostnameBrandModel(t *testing.T) {
+	rc := &fp.RuleClassifier{}
+	if err := rc.LoadFromDir("../../../../configs/fingerprints"); err != nil {
+		t.Fatalf("LoadFromDir: %v", err)
+	}
+	cases := []struct {
+		host      string
+		wantBrand string
+		wantModel string
+	}{
+		// Xiaomi smart speakers encode the model code after the product name.
+		{"MiAiSoundbox-LX06", "Xiaomi", "LX06"},
+		{"XiaoAiTongXueX6A", "Xiaomi", "X6A"},
+		{"xiaoaisoundbox-lx04.local", "Xiaomi", "lx04"},
+		// Philips-branded Mijia appliances: philips-<category>-<model>.
+		{"philips-light-sread9_mibtB8DC", "Philips", "sread9"},
+		{"philips-bulb-mst120_miap1234", "Philips", "mst120"},
+		// Single-board computers and user-named dev boxes.
+		{"rpi3b-hall", "Raspberry Pi", "3b"},
+		{"rpi400", "Raspberry Pi", "400"},
+		{"redmi-book", "Redmi", ""},
+		{"jetson-orin", "NVIDIA", ""},
+	}
+	for _, tc := range cases {
+		ids := rc.Classify([]fp.Evidence{{
+			Kind:       "hostname",
+			IP:         "192.0.2.10",
+			RawData:    map[string]string{"hostname": tc.host},
+			Confidence: 0.8,
+		}})
+		var brand, model string
+		for _, id := range ids {
+			if id.Service == "miot" {
+				brand = id.Metadata["inferred_brand"]
+				model = id.Metadata["inferred_model"]
+			}
+		}
+		if brand != tc.wantBrand {
+			t.Errorf("%s: inferred_brand = %q, want %q", tc.host, brand, tc.wantBrand)
 		}
 		if model != tc.wantModel {
 			t.Errorf("%s: inferred_model = %q, want %q", tc.host, model, tc.wantModel)

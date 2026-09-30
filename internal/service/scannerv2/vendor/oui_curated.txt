@@ -87,3 +87,28 @@ A4E57C	Espressif Inc.
 # boards is often Intel — verified via TShark manuf, field-found 2026-09-29)
 00044B	Nvidia
 48B02D	NVIDIA Corporation
+# 2026-09-30 additions, all verified via TShark's manuf generation of the IEEE
+# registry (field-found on an 84-device LAN). Module-silicon vendors that would
+# mislead as a device brand (Intel on laptops/Jetson WiFi, AMPAK, Fn-Link) and
+# prefixes not present in the registry snapshot were deliberately excluded.
+001132	Synology
+245EBE	QNAP Systems
+E0BB9E	Epson
+E8B723	Shenzhen Vatilon Electronics
+BC2228	D-Link International
+18F22C	TP-Link Technologies
+4CB7E0	Shenzhen Mercury Communication
+9483C4	GL.iNet
+50465D	ASUSTek Computer
+1C8341	Hefei Bitland
+E4AAEC	Tianjin Hualai Technology
+3CCD57	Beijing Xiaomi Mobile Software
+649E31	Beijing Xiaomi Mobile Software
+68ABBC	Beijing Xiaomi Mobile Software
+F0B429	Xiaomi Communications
+18C23C	Lumi United Technology
+80B54E	Espressif Inc.
+A085E3	Espressif Inc.
+B43A45	Espressif Inc.
+C04E30	Espressif Inc.
+C82E18	Espressif Inc.

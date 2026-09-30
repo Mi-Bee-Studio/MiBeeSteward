@@ -388,3 +388,101 @@ rules:
         inferred_brand: { const: "MiBee" }
         ecosystem: { const: "MiBee" }
         appliance: { const: "AI camera" }
+
+  # ── 小爱音箱 / 米家音响：主机名带官方型号码（field LAN 2026-09-30）──────
+  # MiAiSoundbox-LX06 / XiaoAiTongXueX6A → 型号 LX06 / X6A（保留原名大小写）。
+  - id: iot-host-xiaoai-model
+    source: builtin
+    priority: 124
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^(?:miaisoundbox|xiaoai(?:tongxue)?soundbox|xiaoaitongxue|xiaoaisoundbox)[-_.]?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.7
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance: { const: "smart speaker" }
+
+  # ── Philips 米家生态（philips-<品类>-<型号>，field LAN 2026-09-30）──────
+  # 补充品牌：通用 _miap/_mibt 后缀规则只提型号不设品牌。
+  - id: iot-host-philips
+    source: builtin
+    priority: 122
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^philips[-_][a-z]+[-_]?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Philips" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+
+  # ── Raspberry Pi 主机名型号（rpi3b-* / rpi400，field 2026-09-30）──
+  - id: iot-host-rpi
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^rpi[-_]?([0-9]+[a-z0-9+]*)'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Raspberry Pi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Raspberry Pi" }
+        appliance: { const: "single-board computer" }
+
+  # ── Redmi 主机名（redmi-* 主机名，field LAN 2026-09-30）─────────────
+  - id: iot-host-redmi
+    source: builtin
+    priority: 115
+    exclusive_group: xiaomi-pc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^redmi[-_.][0-9a-z]'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Redmi" }
+        ecosystem: { const: "Xiaomi" }
+
+  # ── Jetson 开发板主机名（jetson-orin 等，field LAN 2026-09-30）────────
+  - id: iot-host-jetson
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^jetson[-_.][0-9a-z]'
+    service: miot
+    protocol: hostname
+    confidence: 0.5
+    extract:
+      metadata:
+        inferred_brand: { const: "NVIDIA" }
+        ecosystem: { const: "Jetson" }
+        appliance: { const: "AI dev kit" }

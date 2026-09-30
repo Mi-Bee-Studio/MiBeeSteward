@@ -126,6 +126,9 @@ rules:
               - { contains_any: ["fortinet", "fortigate"], set: "Fortinet" }
               - { contains: "openwrt", set: "OpenWrt" }
               - { contains: "istoreos", set: "iStoreOS" }
+              # Xiaomi routers sign with "MIWIFI *" CNs (field-verified
+              # issuer "MIWIFI ROOT CA" on a stock firmware, 2026-09-30).
+              - { contains: "miwifi", set: "Xiaomi" }
               - { contains_any: ["gl-inet", "glinet"], set: "GL.iNet" }
 
   # ── PrometheusClassifier (kind="metric", ordered first-match) ──────────
