@@ -130,3 +130,91 @@ func TestRecordNeighbors_ResolvesViaNetworkScopedIP(t *testing.T) {
 	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM device_neighbors WHERE device_id = ?`, devID).Scan(&n))
 	require.Equal(t, 1, n, "neighbor attached to the network-scoped device row")
 }
+
+// TestApplyDeviceIdentity_NewMACTakesOverOccupiedIPSlot pins the field-found
+// gap (2026-09-29, center log "UNIQUE constraint failed: devices.ip_address,
+// devices.network_id"): a scan reports a NEVER-SEEN MAC at an IP whose
+// (ip, network) slot is held by a DIFFERENT-mac row. The MAC lookup misses,
+// the empty-mac fallback misses (the holder has a real mac), and resolution
+// used to conclude IsNew → the INSERT violated the unique index and the
+// report was dropped. The ip-holder is the authority for its network slot
+// (same doctrine as the replacement path): resolution must resolve to the
+// holder row with TakeOver so apply force-overwrites its mac and identity.
+func TestApplyDeviceIdentity_NewMACTakesOverOccupiedIPSlot(t *testing.T) {
+	repo, nid, conn, ctx := resolveRepo(t, 1)
+	holderMAC := "aa:bb:cc:dd:ee:21"
+	holderID := seedDeviceRow(t, conn, "10.0.0.5", holderMAC, nid)
+
+	// A brand-new mac shows up at the holder's IP.
+	newMAC := "aa:bb:cc:dd:ee:22"
+	res, err := repo.ResolveDeviceIdentity(ctx, newMAC, "10.0.0.5", nid)
+	require.NoError(t, err)
+	require.False(t, res.IsNew, "an occupied slot must never resolve as new")
+	require.Equal(t, holderID, res.TargetID)
+	require.True(t, res.TakeOver, "different-mac holder → takeover semantics")
+
+	// Apply: the holder row is force-taken-over (mac overwritten, identity
+	// filled when empty), no second row appears, nothing is marked offline
+	// (there is no stale mac-matched row to supersede). JSON blobs are set as
+	// the bridge always provides them (a malformed patch would fail the whole
+	// UPDATE).
+	_, err = repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
+		TargetID: res.TargetID, TakeOver: true,
+		IP: "10.0.0.5", MAC: newMAC, NetworkID: nid,
+		Name: "new-device", Type: "embedded", Brand: "Raspberry Pi Foundation",
+		OpenPortsJSON: "[]", DetectedServicesJSON: "[]",
+		ScanAttributesJSON: "{}", TagsJSON: "{}",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, countRows(t, conn, "SELECT COUNT(*) FROM devices"))
+	var macOut, brandOut, statusOut string
+	require.NoError(t, conn.QueryRow(`SELECT mac_address, brand, status FROM devices WHERE id = ?`, holderID).Scan(&macOut, &brandOut, &statusOut))
+	require.Equal(t, newMAC, macOut)
+	require.Equal(t, "Raspberry Pi Foundation", brandOut)
+	require.Equal(t, "online", statusOut)
+}
+
+// TestApplyDeviceIdentity_JunkBrandHealedOnRescan pins the junk-brand heal:
+// the identity UPDATE is fill-when-empty, so a web-server banner name (nginx/
+// apache/…, pre-denylist field data) or a letter-less junk value ("0,1,2")
+// would otherwise stay the brand forever. When a rescan carries a real brand,
+// those two junk classes are overwritten; a curated NON-junk brand still wins
+// over scan-derived ones (user edits preserved).
+func TestApplyDeviceIdentity_JunkBrandHealedOnRescan(t *testing.T) {
+	repo, nid, conn, ctx := resolveRepo(t, 1)
+	mac := "aa:bb:cc:dd:ee:31"
+	devID := seedDeviceRow(t, conn, "10.0.0.5", mac, nid)
+	setBrand := func(b string) {
+		_, err := conn.Exec(`UPDATE devices SET brand = ? WHERE id = ?`, b, devID)
+		require.NoError(t, err)
+	}
+	rescan := func(brand string) {
+		_, err := repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
+			TargetID: devID, IP: "10.0.0.5", MAC: mac, NetworkID: nid,
+			Brand:         brand,
+			OpenPortsJSON: "[]", DetectedServicesJSON: "[]", ScanAttributesJSON: "{}",
+		})
+		require.NoError(t, err)
+	}
+	brandOf := func() string {
+		var b string
+		require.NoError(t, conn.QueryRow(`SELECT brand FROM devices WHERE id = ?`, devID).Scan(&b))
+		return b
+	}
+
+	setBrand("nginx")
+	rescan("QNAP")
+	require.Equal(t, "QNAP", brandOf(), "web-server junk brand must be healed by a real brand")
+
+	setBrand("0,1,2")
+	rescan("Apple")
+	require.Equal(t, "Apple", brandOf(), "letter-less junk brand must be healed by a real brand")
+
+	setBrand("Synology")
+	rescan("QNAP")
+	require.Equal(t, "Synology", brandOf(), "non-junk curated brand must NOT be overwritten by a scan")
+
+	rescan("")
+	require.Equal(t, "Synology", brandOf(), "empty scan brand must not clear or change anything")
+}

@@ -67,6 +67,7 @@ type ScanHost struct {
 	SNMPIfCount  int    `json:"snmp_if_count,omitempty"`
 	// Enriched fields (inferred from scan data)
 	InferredBrand       string `json:"inferred_brand,omitempty"`
+	InferredModel       string `json:"inferred_model,omitempty"`
 	InferredType        string `json:"inferred_type,omitempty"`
 	InferredDescription string `json:"inferred_description,omitempty"`
 	InferredLocation    string `json:"inferred_location,omitempty"`

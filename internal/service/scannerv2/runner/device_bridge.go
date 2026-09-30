@@ -215,6 +215,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	iw.TargetID = res.TargetID
 	iw.ReplacedID = res.ReplacedID
 	iw.Roamed = res.Roamed
+	iw.TakeOver = res.TakeOver
 	if _, uerr := rn.repo.ApplyDeviceIdentity(ctx, iw); uerr != nil {
 		rn.logger.Warn("device bridge: update device failed", "ip", rep.IP, "mac", mac, "error", uerr)
 	}
@@ -296,6 +297,7 @@ func (rn *Runner) buildIdentityWrite(rep scannerv2.HostReport, mac, devType, bra
 		Name:                 deviceDisplayName(rep),
 		Type:                 devType,
 		Brand:                brand,
+		Model:                rep.Device.Fields["inferred_model"],
 		Description:          descr,
 		Location:             location,
 		OpenPortsJSON:        ports,

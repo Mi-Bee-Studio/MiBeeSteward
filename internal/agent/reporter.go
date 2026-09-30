@@ -432,6 +432,7 @@ func hostToReported(rep scannerv2.HostReport) domain.ReportedHost {
 		InferredType:        f["inferred_type"],
 		InferredTypeSource:  f["inferred_type_source"],
 		InferredBrand:       f["inferred_brand"],
+		InferredModel:       f["inferred_model"],
 		InferredDescription: f["inferred_description"],
 		InferredLocation:    f["inferred_location"],
 		Hostname:            firstNonEmptyStr(f["node_hostname"], f["sys_name"]),

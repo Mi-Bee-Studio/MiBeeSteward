@@ -539,6 +539,27 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 				ip).Scan(&targetID)
 		}
 		if err == sql.ErrNoRows {
+			// Last gap (field-found 2026-09-29): the (ip, network) slot may be
+			// held by a row with a DIFFERENT real mac — a swapped-in board
+			// reporting a never-seen MAC at an occupied address. Concluding
+			// IsNew here made the INSERT violate the unique index and the
+			// report was dropped. The ip-holder is the authority for its slot
+			// (replacement doctrine): take it over.
+			var holderID int64
+			var holderMAC string
+			var holdErr error
+			if networkID.Valid {
+				holdErr = r.db.QueryRowContext(ctx,
+					`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+					ip, networkID.Int64).Scan(&holderID, &holderMAC)
+			} else {
+				holdErr = r.db.QueryRowContext(ctx,
+					`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+					ip).Scan(&holderID, &holderMAC)
+			}
+			if holdErr == nil && holderMAC != "" {
+				return scannerv2.IdentityResolution{TargetID: holderID, TakeOver: true}, nil
+			}
 			return scannerv2.IdentityResolution{IsNew: true}, nil
 		}
 		if err != nil {
@@ -608,6 +629,7 @@ func existingIdentityUpdate() string {
 		    name = CASE WHEN (name = '' OR name = ip_address) THEN ? ELSE name END,
 		    type = CASE WHEN (type = '' OR type = 'unknown' OR type = 'other') AND ? != '' THEN ? ELSE type END,
 		    brand = CASE WHEN (brand = '' OR brand = 'unknown') AND ? != '' THEN ? ELSE brand END,
+		    model = CASE WHEN (model = '' OR model = 'unknown') AND ? != '' THEN ? ELSE model END,
 		    description = CASE WHEN (description = '' OR description = 'unknown') AND ? != '' THEN ? ELSE description END,
 		    location = CASE WHEN (location = '' OR location = 'unknown') AND ? != '' THEN ? ELSE location END,
 		    open_ports = ?,
@@ -633,6 +655,7 @@ func replacementIdentityUpdate() string {
 		    name = ?,
 		    type = CASE WHEN ? != '' THEN ? ELSE type END,
 		    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
+		    model = CASE WHEN ? != '' THEN ? ELSE model END,
 		    description = CASE WHEN ? != '' THEN ? ELSE description END,
 		    location = CASE WHEN ? != '' THEN ? ELSE location END,
 		    open_ports = ?,
@@ -654,6 +677,7 @@ func identityUpdateArgs(in scannerv2.IdentityWrite, now string) []any {
 	return []any{
 		in.Name, in.Type, in.Type,
 		in.Brand, in.Brand,
+		in.Model, in.Model,
 		in.Description, in.Description,
 		in.Location, in.Location,
 		in.OpenPortsJSON, in.DetectedServicesJSON,
@@ -687,17 +711,17 @@ func (r *SQLiteRepository) createDeviceIdentity(ctx context.Context, in scannerv
 	}
 	now := scannerv2.DBTime(time.Now())
 	res, err := r.db.ExecContext(ctx, `
-		INSERT INTO devices (device_uuid, name, type, brand, ip_address, mac_address,
+		INSERT INTO devices (device_uuid, name, type, brand, model, ip_address, mac_address,
 		                     status, scan_source, description, location,
 		                     open_ports, detected_services, prometheus_url, node_exporter_url,
 		                     scan_attributes, network_id, first_seen, last_seen,
 		                     tags, last_scan_rtt_ms, last_scanned_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?,
 		        'online', 'scanner_v2', ?, ?,
 		        ?, ?, ?, ?,
 		        ?, ?, ?, ?,
 		        ?, ?, ?, ?, ?)`,
-		uuid.NewString(), in.Name, devType, in.Brand, in.IP, in.MAC,
+		uuid.NewString(), in.Name, devType, in.Brand, in.Model, in.IP, in.MAC,
 		in.Description, in.Location,
 		in.OpenPortsJSON, in.DetectedServicesJSON, in.PrometheusURL, in.NodeExporterURL,
 		in.ScanAttributesJSON, in.NetworkID, now, now,
@@ -714,7 +738,14 @@ func (r *SQLiteRepository) createDeviceIdentity(ctx context.Context, in scannerv
 // stamping and roam eviction-retry. Ported verbatim from the former
 // runner.applyDeviceBridge existing-device branch.
 func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv2.IdentityWrite) (int64, error) {
-	// 1. Identity-field UPDATE (existing vs replacement variant).
+	// 1. Identity-field UPDATE. Both the normal rescan and a TakeOver use the
+	// fill-when-empty variant: a takeover force-overwrites the MAC (below) but
+	// keeps the slot's identity columns — RecordDevice may have landed fresher
+	// values for this same slot moments earlier (the pinned
+	// RecordDevice_OverlapsBridge net effect), and the structured identity
+	// still refreshes via the scan_attributes json_patch in every variant.
+	// Only a full device REPLACEMENT (a second, stale row exists) force-
+	// overwrites the identity columns.
 	updateSQL := existingIdentityUpdate()
 	if in.ReplacedID != 0 {
 		updateSQL = replacementIdentityUpdate()
@@ -724,10 +755,35 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 		r.logger.Warn("device identity: update device failed", "ip", in.IP, "mac", in.MAC, "error", uerr)
 	}
 
+	// 1b. Junk-brand heal. The fill-when-empty CASE above would keep a
+	// web-server banner name (nginx/apache/…, field data written before the
+	// fold-time junk guards existed) or a letter-less junk value ("0,1,2")
+	// as the brand forever. When this scan carries a real brand, overwrite
+	// exactly those two junk classes; a curated non-junk brand still wins
+	// over any scan-derived one (user edits are never clobbered).
+	if in.Brand != "" {
+		deny := scannerv2.WebServerBrandNames()
+		healSQL := `UPDATE devices SET brand = ?, updated_at = ?
+			WHERE id = ?
+			  AND lower(brand) != lower(?)
+			  AND (lower(brand) IN (` + placeholders(len(deny)) + `)
+			       OR brand NOT GLOB '*[a-zA-Z]*')`
+		healArgs := make([]any, 0, len(deny)+5)
+		healArgs = append(healArgs, in.Brand, now, in.TargetID, in.Brand)
+		for _, name := range deny {
+			healArgs = append(healArgs, name)
+		}
+		if _, err := r.db.ExecContext(ctx, healSQL, healArgs...); err != nil {
+			r.logger.Warn("device identity: junk brand heal failed", "ip", in.IP, "device_id", in.TargetID, "error", err)
+		}
+	}
+
 	// 2. Status/mac/last_seen stamping + roam relocation / replacement offline.
-	if in.ReplacedID != 0 {
-		// Replacement: force-overwrite mac on the ip-holder (it now belongs to the
-		// scanned device), and mark the prior mac-matched row offline.
+	if in.ReplacedID != 0 || in.TakeOver {
+		// Replacement/takeover: force-overwrite mac on the ip-holder (it now
+		// belongs to the scanned device). A replacement additionally marks the
+		// prior mac-matched row offline; a takeover has no such row (the MAC
+		// was never seen).
 		_, _ = r.db.ExecContext(ctx, `
 			UPDATE devices SET status='online',
 			    mac_address = ?,
@@ -735,15 +791,21 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 			    offline_since=NULL,
 			    last_scanned_at = ?, updated_at = ? WHERE id=?`,
 			in.MAC, now, now, now, in.TargetID)
-		_, _ = r.db.ExecContext(ctx,
-			`UPDATE devices SET status='offline',
-			    offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
-			    updated_at=? WHERE id=?`,
-			now, now, in.ReplacedID)
-		r.logger.Warn("device identity: device replaced (router/asset swap detected)",
-			"ip", in.IP, "scanned_mac", in.MAC, "replaced_device_id", in.ReplacedID,
-			"target_device_id", in.TargetID,
-			"action", "ip-holder updated with new mac; prior mac-matched row marked offline")
+		if in.ReplacedID != 0 {
+			_, _ = r.db.ExecContext(ctx,
+				`UPDATE devices SET status='offline',
+				    offline_since = CASE WHEN status != 'offline' THEN ? ELSE offline_since END,
+				    updated_at=? WHERE id=?`,
+				now, now, in.ReplacedID)
+			r.logger.Warn("device identity: device replaced (router/asset swap detected)",
+				"ip", in.IP, "scanned_mac", in.MAC, "replaced_device_id", in.ReplacedID,
+				"target_device_id", in.TargetID,
+				"action", "ip-holder updated with new mac; prior mac-matched row marked offline")
+		} else {
+			r.logger.Warn("device identity: slot taken over by new mac (swapped-in board)",
+				"ip", in.IP, "scanned_mac", in.MAC, "target_device_id", in.TargetID,
+				"action", "ip-holder row force-updated with the new mac; identity columns kept (fill-when-empty)")
+		}
 	} else {
 		// Normal re-scan. When the device ROAMED (same MAC, new free IP, DHCP
 		// renewal), relocate ip_address to the scanned IP.
@@ -1290,4 +1352,19 @@ func (r *SQLiteRepository) resolveDeviceUUID(ctx context.Context, ip string) (st
 	r.uuidCache[ip] = u
 	r.uuidMu.Unlock()
 	return u, nil
+}
+
+// placeholders builds a "?,?,…" list of n bind markers for IN clauses.
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	out := make([]byte, 0, 2*n)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		out = append(out, '?')
+	}
+	return string(out)
 }

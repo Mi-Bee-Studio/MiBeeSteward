@@ -68,14 +68,20 @@ type osTypeRule struct {
 //     because the banner timed out).
 //   - port_any: any of these ports open.
 //   - exclude_ports: ports that must NOT be open.
+//   - exclude_services: classified services that veto the rule when one of
+//     them sits ON a port the rule keyed on. Disambiguates ports shared by
+//     unrelated protocols: 9100 means JetDirect on a printer but node_exporter
+//     on a Linux box/router (field-found: a GL.iNet router typed "printer"
+//     because it runs node_exporter on 9100).
 type portTypeRule struct {
-	Service      string   `yaml:"service"`
-	Require      []string `yaml:"require"`
-	Port         int      `yaml:"port"`
-	PortAny      []int    `yaml:"port_any"`
-	ExcludePorts []int    `yaml:"exclude_ports"`
-	Type         string   `yaml:"type"`
-	Source       string   `yaml:"source"`
+	Service         string   `yaml:"service"`
+	Require         []string `yaml:"require"`
+	Port            int      `yaml:"port"`
+	PortAny         []int    `yaml:"port_any"`
+	ExcludePorts    []int    `yaml:"exclude_ports"`
+	ExcludeServices []string `yaml:"exclude_services"`
+	Type            string   `yaml:"type"`
+	Source          string   `yaml:"source"`
 }
 
 // deviceTypeRules is the loaded, lowercased table. Populated once by init() from
@@ -198,6 +204,24 @@ func matchDeviceType(rep scannerv2.HostReport) (string, string) {
 		if excluded {
 			continue
 		}
+		// Excluded services: a listed classified service sitting ON a port this
+		// rule keyed on (port / port_any; a bare service rule keys on the service
+		// set itself) vetoes the rule — the port is occupied by the excluded
+		// protocol, not the one the rule guesses.
+		if len(r.ExcludeServices) > 0 {
+			for _, s := range rep.Services {
+				if !excludedSvcListed(r.ExcludeServices, s.Service) {
+					continue
+				}
+				if r.Port == 0 && len(r.PortAny) == 0 || r.Port == s.Port || portListed(r.PortAny, s.Port) {
+					excluded = true
+					break
+				}
+			}
+			if excluded {
+				continue
+			}
+		}
 		// At least one positive condition must be set (otherwise an all-zero rule
 		// would match everything). A rule with only service/require is positive.
 		if r.Service == "" && r.Port == 0 && len(r.PortAny) == 0 {
@@ -242,4 +266,27 @@ func sourceForType(wantType string) string {
 		}
 	}
 	return "heuristic"
+}
+
+// excludedSvcListed reports whether svc is in the rule's exclude_services list
+// (case-insensitive: YAML authors write "node_exporter", the classifier emits
+// the same, but a defensive fold keeps a stray capitalization from silently
+// disabling the veto).
+func excludedSvcListed(list []string, svc string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, svc) {
+			return true
+		}
+	}
+	return false
+}
+
+// portListed reports whether p is in list.
+func portListed(list []int, p int) bool {
+	for _, v := range list {
+		if v == p {
+			return true
+		}
+	}
+	return false
 }

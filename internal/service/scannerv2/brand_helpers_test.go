@@ -47,3 +47,39 @@ func TestOrchestratorBrandHelpers(t *testing.T) {
 	require.True(t, isWebServerName("Apache"))
 	require.False(t, isWebServerName("Hikvision"))
 }
+
+// TestLooksLikeBrandJunk pins the mDNS TXT brand guard. AirPlay receivers
+// publish txt.md="0,1,2" (capability flags) which previously became the
+// device brand verbatim (field-found on a MacBook's AirPlay receiver showing
+// brand "0,1,2"). Lettered values — even with digits mixed in — pass.
+func TestLooksLikeBrandJunk(t *testing.T) {
+	require.True(t, looksLikeBrandJunk("0,1,2"))
+	require.True(t, looksLikeBrandJunk("1.0.2"))
+	require.True(t, looksLikeBrandJunk("0"))
+	require.True(t, looksLikeBrandJunk(""))
+	require.False(t, looksLikeBrandJunk("Aqara"))
+	require.False(t, looksLikeBrandJunk("MacBookPro17,1"))
+	require.False(t, looksLikeBrandJunk("RX-W421"))
+}
+
+// TestWebServerBrandDenylistExtension covers the media-server software names
+// added after the field session: a NAS fronted by MiniDLNA was branded
+// "MiniDLNA", an fnOS NAS "Portable" — both software tokens, not vendors.
+func TestWebServerBrandDenylistExtension(t *testing.T) {
+	for _, name := range []string{"nginx", "MiniDLNA", "ReadyMedia", "Portable", "Caddy", "lighttpd"} {
+		require.True(t, IsWebServerBrand(name), name)
+	}
+	for _, name := range []string{"Xiaomi", "Viomi", "Synology", "GL.iNet"} {
+		require.False(t, IsWebServerBrand(name), name)
+	}
+}
+
+// TestSSDPBrandSkipsSoftwareNames pins ssdpServerToBrand's denylist: the
+// UPnP product token being media-server software must yield "" so the brand
+// stays open for OUI/cert/hostname brands.
+func TestSSDPBrandSkipsSoftwareNames(t *testing.T) {
+	require.Equal(t, "", ssdpServerToBrand("5.15.49-linuxkit-pr DLNADOC/1.50 UPnP/1.0 MiniDLNA/1.3.3"))
+	require.Equal(t, "", ssdpServerToBrand("Linux/4.4 UPnP/1.1 nginx/1.24"))
+	// A real product token still passes through.
+	require.Equal(t, "Sonos", ssdpServerToBrand("Linux UPnP/1.0 Sonos/70.4"))
+}

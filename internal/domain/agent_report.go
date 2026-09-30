@@ -85,6 +85,7 @@ type ReportedHost struct {
 	InferredType        string `json:"inferred_type,omitempty"`
 	InferredTypeSource  string `json:"inferred_type_source,omitempty"` // "protocol" (evidence-backed) | "heuristic" (hostname guess): carried so the center's UI confidence badge is accurate for agent-reported devices, not lost in the wire hop
 	InferredBrand       string `json:"inferred_brand,omitempty"`
+	InferredModel       string `json:"inferred_model,omitempty"`
 	InferredDescription string `json:"inferred_description,omitempty"`
 	InferredLocation    string `json:"inferred_location,omitempty"`
 	// Hostname is the best hostname signal (rDNS / SNMP sysName / mDNS).

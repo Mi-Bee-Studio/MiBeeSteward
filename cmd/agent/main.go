@@ -136,6 +136,12 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 	defer dbConn.Close()
 	queries := db.New(dbConn)
 
+	// Retention sweeper for the LOCAL mini-DB: prunes silent shadow devices
+	// (MAC-less 24h / MAC-bearing 7d) and aged scan_results/scan_task_runs so
+	// the agent's database cannot grow unbounded (field rig: 95 MB in a week,
+	// seven dead shadow devices). Center-side retention is unaffected.
+	startAgentSweeper(ctx, dbConn, slog.Default())
+
 	// Agent-side SNMP credential vault (#241, issue 方案 B): the agent owns a
 	// LOCAL snmp_credentials table in its mini-DB, encrypted with the AGENT's
 	// own security.master_key, NOT the center's key, so the two
@@ -447,7 +453,11 @@ func ptrTime(t time.Time) *time.Time { return &t }
 func openAgentDB(dbPath string) (*sql.DB, error) {
 	// Pragmas travel in the DSN so all 8 pool connections get them;
 	// Exec-after-Open only reached the first connection (#252).
-	conn, err := dbopen.Open(dbPath,
+	// _txlock=immediate: every BeginTx takes the write lock up front — the
+	// agent's read-then-write enrich transactions hit SQLITE_BUSY_SNAPSHOT
+	// (517, unretryable by busy_timeout) against concurrent scan writers
+	// (field-observed 2026-09-29).
+	conn, err := dbopen.OpenTxLock(dbPath, "immediate",
 		"journal_mode=WAL",
 		"busy_timeout=5000",
 		"synchronous=NORMAL",

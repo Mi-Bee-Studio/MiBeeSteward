@@ -236,6 +236,15 @@ func dialAndGrab(ctx context.Context, ip string, port int, timeout time.Duration
 		}
 	}
 	if n > 0 {
+		// The newline check above only stops the LOOP; a single Read can already
+		// have returned the greeting line AND what follows it — an SSH server
+		// sends its binary KEX_INIT immediately after "SSH-2.0-…\r\n" without
+		// waiting for the client. Cut at the first newline so only the greeting
+		// line becomes the banner (field-found on a dropbear router whose
+		// version metadata carried the raw key-exchange blob).
+		if idx := bytes.IndexByte(buf[:n], '\n'); idx >= 0 {
+			n = idx + 1
+		}
 		return true, false, strings.TrimRight(string(buf[:n]), "\r\n\x00")
 	}
 

@@ -250,14 +250,22 @@ func TestRecordDevice_OverlapsBridge_ForceOverwriteWins(t *testing.T) {
 		reportFor("10.0.0.9", "embedded", "vendor-x", "aa:bb:cc:dd:ee:09"),
 		rn.networkID, "")
 
-	// NET effect: RecordDevice's force-overwrite of mac=B / brand=Y wins
-	// (it landed first; the bridge's fill-when-empty guards skipped because the
-	// stored value was now non-empty). Pin this so the consolidation preserves it.
+	// NET effect: RecordDevice's force-overwrite of brand=Y wins (it landed
+	// first; the bridge's fill-when-empty guards skipped because the stored
+	// value was now non-empty). The MAC assertion changed with the takeover
+	// fix (2026-09-29): a re-reported MAC that no longer matches the row
+	// (RecordDevice force-set B mid-cycle) used to make the bridge's INSERT
+	// fail on the (ip, network_id) unique index — which is how B survived —
+	// and the report's data was dropped (field-found: dropped agent reports).
+	// That slot-takeover now resolves to the holder row and force-sets the
+	// reported MAC, so the bridge's A wins the MAC. In production both writers
+	// derive from the same HostReport and agree on the MAC; the disagreement
+	// manufactured here is the documented exception.
 	d := fetchBaselineDevice(t, conn, "10.0.0.9")
 	require.Equal(t, "vendor-y", d.Brand,
 		"RecordDevice force-overwrite of brand must win over the bridge's fill-when-empty (sequence-order net effect)")
-	require.Equal(t, "bb:bb:bb:bb:bb:09", d.MAC,
-		"RecordDevice force-overwrite of mac must win over the bridge's fill-when-empty (sequence-order net effect)")
+	require.Equal(t, "aa:bb:cc:dd:ee:09", d.MAC,
+		"slot-takeover force-sets the reported MAC (the dropped-report fix); RecordDevice's mid-cycle MAC flip is the documented exception")
 }
 
 // baselineNow is a fixed timestamp string for direct INSERT helpers in these

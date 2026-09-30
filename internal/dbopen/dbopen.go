@@ -35,7 +35,38 @@ import (
 // instead of at first use. Pool sizing (SetMaxOpenConns etc.) is the caller's
 // job, pragmas from the DSN hold regardless of pool size.
 func Open(path string, pragmas ...string) (*sql.DB, error) {
-	dsn, err := DSN(path, pragmas...)
+	return openFromDSN(func() (string, error) { return DSN(path, pragmas...) })
+}
+
+// OpenTxLock is Open with modernc.org/sqlite's _txlock DSN parameter appended
+// ("immediate" or "deferred"). "immediate" makes every BeginTx acquire the
+// write lock up front: a transaction that READS and then WRITES under the
+// default deferred mode fails its lock upgrade with SQLITE_BUSY_SNAPSHOT (517)
+// whenever another writer commits in between — an error busy_timeout cannot
+// retry. Field-seen as the agent's recurring "enrich device failed /
+// database is locked (517)" during concurrent scans (2026-09-29).
+func OpenTxLock(path, txlock string, pragmas ...string) (*sql.DB, error) {
+	if txlock == "" {
+		return Open(path, pragmas...)
+	}
+	if strings.ContainsAny(txlock, "()&#?=") || strings.Contains(txlock, " ") {
+		return nil, fmt.Errorf("dbopen: invalid txlock %q", txlock)
+	}
+	return openFromDSN(func() (string, error) {
+		dsn, err := DSN(path, pragmas...)
+		if err != nil {
+			return "", err
+		}
+		sep := "&"
+		if !strings.Contains(dsn, "?") {
+			sep = "?"
+		}
+		return dsn + sep + "_txlock=" + txlock, nil
+	})
+}
+
+func openFromDSN(build func() (string, error)) (*sql.DB, error) {
+	dsn, err := build()
 	if err != nil {
 		return nil, err
 	}

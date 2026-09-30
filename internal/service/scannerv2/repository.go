@@ -111,21 +111,30 @@ type IdentityResolution struct {
 	// Roamed is true when the MAC-matched device moved to a NEW free IP (DHCP
 	// renewal/re-lease). The caller relocates ip_address to the scanned IP.
 	Roamed bool
+	// TakeOver is true when a NEVER-SEEN MAC reports at an IP whose
+	// (ip, network) slot is held by a DIFFERENT-mac row: the ip-holder is the
+	// authority for its slot (the same doctrine as the replacement path), so
+	// the holder row is force-taken-over (mac + identity overwritten) instead
+	// of creating a new row — which would violate the (ip, network_id) unique
+	// index (field-found 2026-09-29: an agent report for a swapped-in board
+	// was dropped with "UNIQUE constraint failed").
+	TakeOver bool
 	// IsNew is true when no existing row matches → the caller must create one.
 	IsNew bool
 }
 
 // IdentityWrite is the input to ApplyDeviceIdentity. It carries the identity
-// resolution result (TargetID/IsNew/ReplacedID/Roamed) plus the pre-computed
-// field values to persist. The runner derives the JSON blobs (OpenPortsJSON,
-// ScanAttributesJSON, …) from the HostReport BEFORE calling ApplyDeviceIdentity,
-// so the store stays a thin SQL layer.
+// resolution result (TargetID/IsNew/ReplacedID/Roamed/TakeOver) plus the
+// pre-computed field values to persist. The runner derives the JSON blobs
+// (OpenPortsJSON, ScanAttributesJSON, …) from the HostReport BEFORE calling
+// ApplyDeviceIdentity, so the store stays a thin SQL layer.
 type IdentityWrite struct {
 	// Resolution (from ResolveDeviceIdentity).
 	TargetID   int64 // 0 when IsNew
 	IsNew      bool
 	ReplacedID int64 // device replacement (router/asset swap); 0 = none
 	Roamed     bool
+	TakeOver   bool // new MAC force-taking an occupied (ip, network) slot; no row to offline
 
 	// Origin.
 	IP        string
@@ -136,6 +145,7 @@ type IdentityWrite struct {
 	Name        string
 	Type        string
 	Brand       string
+	Model       string
 	Description string
 	Location    string
 

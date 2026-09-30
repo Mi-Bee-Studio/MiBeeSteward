@@ -111,14 +111,14 @@ rules:
     source: heuristic
     keywords: [epson, canon, brother, ricoh]
 
-  # ── 路由器 / AP (NanoPi R2S/R4S/R6S/R68S/OpenWrt/MiWiFi/TP-Link) ──
+  # ── 路由器 / AP (NanoPi R2S/R4S/R6S/R68S/OpenWrt/MiWiFi/TP-Link/GL.iNet) ──
   - type: router
     field: host
     source: heuristic
     keywords: [router, gateway, openwrt, padavan, asuswrt, routeros, mikrotik,
                r2s, r4s, r6s, r68s, nanopi-r, miwifi, xiaomi-router, tplink,
-               tp-link, ap-, -ap, ac68, ac88, ax1800, ax3000, ax6000, k2p,
-               unifi, edgeos]
+               tp-link, gl-inet, gl.inet, ap-, -ap, ac68, ac88, ax1800, ax3000,
+               ax6000, k2p, unifi, edgeos]
   - type: router
     field: brand
     source: heuristic
@@ -162,5 +162,10 @@ port_rules:
   # port-number fallback (service may be unclassified when banner timed out)
   - { port: 445,                  type: nas,    source: heuristic }
   - { port_any: [554, 8554, 3702], type: camera, source: heuristic }
-  - { port: 9100,                 type: printer, source: heuristic }
+  # 9100 = JetDirect on a printer, but node_exporter/prometheus on a Linux
+  # box/router (field-found: a GL.iNet router typed "printer" because it runs
+  # node_exporter on 9100). The exclude_services veto only fires when the
+  # excluded service is CLASSIFIED on that port, a bannerless real printer is
+  # unaffected.
+  - { port: 9100, exclude_services: [node_exporter, prometheus], type: printer, source: heuristic }
   - { port: 22, exclude_ports: [80, 443], type: server, source: heuristic }

@@ -53,3 +53,62 @@ A4B10C	Apple
 005056	VMware
 000C29	VMware
 080027	PCS Systemtechnik (VirtualBox)
+# Xiaomi Mijia ecosystem (WiFi-module OUIs observed on a 51-host field LAN,
+# 2026-09; names per the IEEE registry, verified via TShark's manuf
+# generation of it). OUI = the NIC silicon vendor, NOT the appliance brand —
+# a Philips-branded Mijia light carries a Xiaomi module OUI.
+640980	Xiaomi Communications
+8CBEBE	Xiaomi Communications
+FCD908	Xiaomi Communications
+3480B3	Xiaomi Communications
+58B623	Beijing Xiaomi Mobile Software
+CCB5D1	Beijing Xiaomi Mobile Software
+7CC294	Beijing Xiaomi Mobile Software
+5448E6	Beijing Xiaomi Mobile Software
+B460ED	Beijing Xiaomi Mobile Software
+24CF24	Beijing Xiaomi Mobile Software
+04CF8C	Xiaomi Electronics
+286C07	Xiaomi Electronics
+94F827	Shanghai Imilab Technology
+# Espressif ESP32/ESP8266 modules (dev boards, DIY cameras, IoT prototypes)
+DCDA0C	Espressif Inc.
+543204	Espressif Inc.
+240AC4	Espressif Inc.
+246F28	Espressif Inc.
+30AEA4	Espressif Inc.
+40F520	Espressif Inc.
+5CCF7F	Espressif Inc.
+68B6B3	Espressif Inc.
+70B8F6	Espressif Inc.
+84F3EB	Espressif Inc.
+A4CF12	Espressif Inc.
+A4E57C	Espressif Inc.
+# NVIDIA (Jetson dev kits' on-board ethernet; the WiFi module OUI on these
+# boards is often Intel — verified via TShark manuf, field-found 2026-09-29)
+00044B	Nvidia
+48B02D	NVIDIA Corporation
+# 2026-09-30 additions, all verified via TShark's manuf generation of the IEEE
+# registry (field-found on an 84-device LAN). Module-silicon vendors that would
+# mislead as a device brand (Intel on laptops/Jetson WiFi, AMPAK, Fn-Link) and
+# prefixes not present in the registry snapshot were deliberately excluded.
+001132	Synology
+245EBE	QNAP Systems
+E0BB9E	Epson
+E8B723	Shenzhen Vatilon Electronics
+BC2228	D-Link International
+18F22C	TP-Link Technologies
+4CB7E0	Shenzhen Mercury Communication
+9483C4	GL.iNet
+50465D	ASUSTek Computer
+1C8341	Hefei Bitland
+E4AAEC	Tianjin Hualai Technology
+3CCD57	Beijing Xiaomi Mobile Software
+649E31	Beijing Xiaomi Mobile Software
+68ABBC	Beijing Xiaomi Mobile Software
+F0B429	Xiaomi Communications
+18C23C	Lumi United Technology
+80B54E	Espressif Inc.
+A085E3	Espressif Inc.
+B43A45	Espressif Inc.
+C04E30	Espressif Inc.
+C82E18	Espressif Inc.

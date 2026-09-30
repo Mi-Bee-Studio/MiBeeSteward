@@ -313,16 +313,53 @@ func hasCameraEvidence(ev []Evidence) bool {
 	return false
 }
 
-// isWebServerName reports whether a brand string is a generic web-server
-// software name (nginx, Apache, Caddy, etc.) rather than a real device vendor.
-// Used by the TLS evidence fold to decide whether a cert-derived brand should
-// override the HTTP Server header brand.
+// isWebServerName reports whether a brand string is a generic web-server or
+// media-server software name (nginx, Apache, Caddy, MiniDLNA, …) rather than
+// a real device vendor. Used by the TLS evidence fold and the miot handler to
+// decide whether a stronger device-derived brand should override it: the
+// software fronting a device's web/UPnP UI is not the device's vendor
+// (field-found: a Xiaomi gateway branded "nginx", a NAS branded "MiniDLNA",
+// an fnOS NAS branded "Portable").
+// webServerBrandDenylist are software names that appear in HTTP SERVER
+// headers / SSDP SERVER fields and were historically folded into devices.brand
+// before the junk guards existed. Exported (lowercase, for SQL IN lists) so the
+// store's junk-brand heal can recognize rows still carrying one.
+var webServerBrandDenylist = []string{
+	"nginx", "apache", "caddy", "lighttpd", "microsoft iis",
+	"minidlna", "readymedia", "portable",
+}
+
+// WebServerBrandNames returns the lowercase denylist behind IsWebServerBrand.
+func WebServerBrandNames() []string {
+	return append([]string(nil), webServerBrandDenylist...)
+}
+
 func isWebServerName(brand string) bool {
-	switch lowerASCII(brand) {
-	case "nginx", "apache", "caddy", "lighttpd", "microsoft iis":
-		return true
+	lower := lowerASCII(brand)
+	for _, name := range webServerBrandDenylist {
+		if lower == name {
+			return true
+		}
 	}
 	return false
+}
+
+// IsWebServerBrand is the exported form of isWebServerName for handlers in
+// other packages (the miot handler overrides a web-server brand with the
+// hostname-derived ecosystem brand, mirroring the TLS fold below).
+func IsWebServerBrand(brand string) bool { return isWebServerName(brand) }
+
+// looksLikeBrandJunk rejects mDNS TXT values that are numeric flag lists or
+// codes rather than vendor names. AirPlay receivers publish txt.md="0,1,2"
+// (receiver capability flags), which previously became the device brand
+// verbatim. A value is junk when it carries no letters at all.
+func looksLikeBrandJunk(v string) bool {
+	for _, r := range v {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 // certCNToBrand extracts a vendor name from a TLS certificate's subject CN.
@@ -433,10 +470,19 @@ func ssdpServerToBrand(server string) string {
 		if containsFold(t, "upnp") || containsFold(t, "ssdp") {
 			continue
 		}
+		var product string
 		if i := indexByte(t, '/'); i > 0 {
-			return t[:i]
+			product = t[:i]
+		} else {
+			product = t
 		}
-		return t
+		// The media-server software hosting the UPnP stack is not the device's
+		// vendor ("… UPnP/1.0 MiniDLNA/1.3.3" on a NAS). Same denylist the TLS
+		// fold uses; returning "" leaves the brand for OUI/cert/hostname brands.
+		if isWebServerName(product) || looksLikeBrandJunk(product) {
+			return ""
+		}
+		return product
 	}
 	return ""
 }
@@ -583,7 +629,9 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 				report.Device.Fields["node_hostname"] = v
 			}
 			for _, key := range []string{"txt.vendor", "txt.manufacturer", "txt.md", "txt.ty"} {
-				if v := e.RawData[key]; v != "" && report.Device.Fields["inferred_brand"] == "" {
+				// looksLikeBrandJunk: AirPlay's txt.md is a numeric flag list
+				// ("0,1,2"), not a model/brand — never let it become the brand.
+				if v := e.RawData[key]; v != "" && !looksLikeBrandJunk(v) && report.Device.Fields["inferred_brand"] == "" {
 					report.Device.Fields["inferred_brand"] = v
 					break
 				}

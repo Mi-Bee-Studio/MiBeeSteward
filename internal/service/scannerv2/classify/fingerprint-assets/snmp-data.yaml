@@ -68,6 +68,25 @@ oid_prefixes:
   - { prefix: "1.3.6.1.4.1.14988.",      brand: Mikrotik, type: "" }       # older Mikrotik subtype
   - { prefix: "1.3.6.1.4.1.15004.",      brand: TpLink,  type: "" }        # TP-Link Omada subtype
   - { prefix: "1.3.6.1.4.1.43590.",      brand: TpLink,  type: "" }        # TP-Link alternate
+  # ── IANA PEN selective import (2026-09-28, registry updated 2026-09-25) ──
+  # Second/renewal registrations and vendors the hand-curated table missed;
+  # PEN numbers verified against the IANA enterprise-numbers registry.
+  - { prefix: "1.3.6.1.4.1.65856.",      brand: TP-Link, type: router }    # TP-Link Systems (2023 rename)
+  - { prefix: "1.3.6.1.4.1.37497.",      brand: Dahua,   type: camera }    # Zhejiang Dahua second PEN
+  - { prefix: "1.3.6.1.4.1.24682.",      brand: QNAP,    type: nas }      # QNAP SYSTEMS second PEN
+  - { prefix: "1.3.6.1.4.1.55063.",      brand: QNAP,    type: nas }      # QNAP Systems renewal
+  - { prefix: "1.3.6.1.4.1.12357.",      brand: Fortinet, type: firewall } # FortiGate
+  - { prefix: "1.3.6.1.4.1.14824.",      brand: Aruba,   type: switch }    # Aruba (HPE) second PEN
+  - { prefix: "1.3.6.1.4.1.369.",        brand: Axis,    type: camera }    # Axis Communications AB
+  - { prefix: "1.3.6.1.4.1.63215.",      brand: Reolink, type: camera }
+  - { prefix: "1.3.6.1.4.1.39748.",      brand: Uniview, type: camera }    # Zhejiang Uniview
+  - { prefix: "1.3.6.1.4.1.55000.",      brand: Uniview, type: camera }    # Uniview Europe
+  - { prefix: "1.3.6.1.4.1.2012.",       brand: Huawei,  type: "" }        # HUAWEI Technology second PEN
+  - { prefix: "1.3.6.1.4.1.12.",         brand: HP,      type: "" }        # Hewlett-Packard legacy PEN
+  - { prefix: "1.3.6.1.4.1.1249.",       brand: Epson,   type: printer }   # Seiko Epson
+  - { prefix: "1.3.6.1.4.1.1603.",       brand: Canon,   type: printer }
+  - { prefix: "1.3.6.1.4.1.2436.",       brand: Brother, type: printer }
+  - { prefix: "1.3.6.1.4.1.61161.",      brand: Tuya,    type: "" }        # Tuya Smart IoT platform
 
 # ── 2. sysDescr keyword → device type (ordered, first-match) ────────────
 # From typeFromSysDescr. Each entry: contains_any keywords → type. Lowercase
