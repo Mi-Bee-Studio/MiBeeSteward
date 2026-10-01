@@ -257,19 +257,19 @@ func TestBridgeMIBProbe_WalkScripted(t *testing.T) {
 func TestWalkRouterARPTableHint_Scripted(t *testing.T) {
 	injectFakeSnmp(t, &fakeSnmp{walks: map[string][]gosnmp.SnmpPDU{
 		oidIPNetToMediaPhysAddress: {
-			pdu(oidIPNetToMediaPhysAddress, "2.192.168.63.133", gosnmp.OctetString,
+			pdu(oidIPNetToMediaPhysAddress, "2.192.168.1.133", gosnmp.OctetString,
 				[]byte{0xbc, 0xad, 0x28, 0x11, 0x22, 0x33}),
 		},
 	}})
 
 	table, err := walkRouterARPTableHint("10.6.6.6", probeHint(), 1)
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"192.168.63.133": "bc:ad:28:11:22:33"}, table)
+	require.Equal(t, map[string]string{"192.168.1.133": "bc:ad:28:11:22:33"}, table)
 
 	// Legacy table empty → the RFC 4293 fallback is consulted.
 	injectFakeSnmp(t, &fakeSnmp{walks: map[string][]gosnmp.SnmpPDU{
 		oidIPNetToPhysicalAddress: {
-			pdu(oidIPNetToPhysicalAddress, "2.4.192.168.63.134", gosnmp.OctetString,
+			pdu(oidIPNetToPhysicalAddress, "2.4.192.168.1.134", gosnmp.OctetString,
 				[]byte{0xde, 0xad, 0xbe, 0xef, 0x00, 0x01}),
 		},
 	}})
@@ -311,7 +311,7 @@ func TestSnmpGetOnce_Scripted(t *testing.T) {
 func TestRouterARPLookups_CachedAndScripted(t *testing.T) {
 	walks := map[string][]gosnmp.SnmpPDU{
 		oidIPNetToMediaPhysAddress: {
-			pdu(oidIPNetToMediaPhysAddress, "2.192.168.63.133", gosnmp.OctetString,
+			pdu(oidIPNetToMediaPhysAddress, "2.192.168.1.133", gosnmp.OctetString,
 				[]byte{0xbc, 0xad, 0x28, 0x11, 0x22, 0x33}),
 		},
 	}
@@ -330,7 +330,7 @@ func TestRouterARPLookups_CachedAndScripted(t *testing.T) {
 
 	// The walk returns the full table.
 	table := WalkRouterARPTable(ctx, "10.8.8.8", "public", time.Second)
-	require.Equal(t, map[string]string{"192.168.63.133": "bc:ad:28:11:22:33"}, table)
+	require.Equal(t, map[string]string{"192.168.1.133": "bc:ad:28:11:22:33"}, table)
 
 	// Observable variant returns the same map + nil error.
 	table2, err := WalkRouterARPTableWithErr(ctx, "10.8.8.8", "public", time.Second)
@@ -338,25 +338,25 @@ func TestRouterARPLookups_CachedAndScripted(t *testing.T) {
 	require.Equal(t, table, table2)
 
 	// Lookup hits the cached walk (no extra dial).
-	mac, ok := LookupMACViaRouter(ctx, "10.8.8.8", "public", time.Second, "192.168.63.133")
+	mac, ok := LookupMACViaRouter(ctx, "10.8.8.8", "public", time.Second, "192.168.1.133")
 	require.True(t, ok)
 	require.Equal(t, "bc:ad:28:11:22:33", mac)
 	callsAfterLookup := calls
 
-	_, ok = LookupMACViaRouter(ctx, "10.8.8.8", "public", time.Second, "192.168.63.1")
+	_, ok = LookupMACViaRouter(ctx, "10.8.8.8", "public", time.Second, "192.168.1.1")
 	require.False(t, ok, "unknown ip → miss")
 	require.Equal(t, callsAfterLookup, calls, "cache must absorb repeat lookups for the same router/community")
 
 	// Router list wrapper: first router that knows the ip wins.
 	mac, ok = LookupMACViaRouters(ctx, RouterARPConfig{
 		Routers: []string{"10.8.8.8"}, Timeout: time.Second,
-	}, "192.168.63.133")
+	}, "192.168.1.133")
 	require.True(t, ok)
 	require.Equal(t, "bc:ad:28:11:22:33", mac)
 
 	// Credential-aware path: v1v2c credential keyed by its id.
 	cred := &scannerv2.SNMPCredential{ID: 5, SecurityLevel: scannerv2.SNMPLevelV1V2C, Community: "public"}
-	mac, ok = LookupMACViaRouterCred(ctx, "10.8.8.9", cred, time.Second, "192.168.63.133")
+	mac, ok = LookupMACViaRouterCred(ctx, "10.8.8.9", cred, time.Second, "192.168.1.133")
 	require.True(t, ok)
 	require.Equal(t, "bc:ad:28:11:22:33", mac)
 

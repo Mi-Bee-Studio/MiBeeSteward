@@ -69,7 +69,7 @@ func setupAttributesTestDB(t *testing.T) (*DeviceRepository, *sql.DB, int64) {
 	device, err := repo.Create(ctx, domain.CreateDeviceRequest{
 		Name:      "test-cam",
 		Type:      "camera",
-		IPAddress: "192.168.63.133",
+		IPAddress: "192.168.1.133",
 	})
 	require.NoError(t, err)
 	return repo, conn, device.ID

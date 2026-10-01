@@ -864,16 +864,16 @@ func TestHeartbeat_ListEnabledConfigs_ExcludesAgentNetwork(t *testing.T) {
 	dbConn.QueryRowContext(ctx, `SELECT id FROM networks WHERE name = 'agent-net'`).Scan(&agentNetID)
 
 	// Center device: network_id = centerNet.ID (agent_id empty → probed).
-	centerDev := insertTestDevice(t, queries, ctx, "center-device", "192.168.63.50")
+	centerDev := insertTestDevice(t, queries, ctx, "center-device", "192.168.1.50")
 	_, err = dbConn.ExecContext(ctx, `UPDATE devices SET network_id = ? WHERE id = ?`, centerNet.ID, centerDev)
 	require.NoError(t, err)
-	insertTestConfig(t, queries, ctx, centerDev, "icmp", "192.168.63.50", 1)
+	insertTestConfig(t, queries, ctx, centerDev, "icmp", "192.168.1.50", 1)
 
 	// Agent device: network_id = agentNetID (agent_id set → excluded from probing).
-	agentDev := insertTestDevice(t, queries, ctx, "agent-device", "192.168.62.41")
+	agentDev := insertTestDevice(t, queries, ctx, "agent-device", "192.168.2.41")
 	_, err = dbConn.ExecContext(ctx, `UPDATE devices SET network_id = ? WHERE id = ?`, agentNetID, agentDev)
 	require.NoError(t, err)
-	insertTestConfig(t, queries, ctx, agentDev, "icmp", "192.168.62.41", 1)
+	insertTestConfig(t, queries, ctx, agentDev, "icmp", "192.168.2.41", 1)
 
 	q := svc // same package: call the private method directly
 	enabled, err := q.listLocalProbeConfigs(ctx)

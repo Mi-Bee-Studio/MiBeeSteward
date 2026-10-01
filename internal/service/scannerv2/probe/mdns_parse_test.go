@@ -28,7 +28,7 @@ func TestParseMDNSResponse_QuestionSectionAndTruncations(t *testing.T) {
 	msg = append(msg, dnsName("cam.local")...)
 	msg = append(msg, 0x00, 0x01) // QTYPE A
 	msg = append(msg, 0x00, 0x01) // QCLASS IN
-	aRR := dnsRR("cam.local", 1, []byte{192, 168, 63, 9})
+	aRR := dnsRR("cam.local", 1, []byte{192, 168, 1, 9})
 	msg = append(msg, aRR...)
 
 	host, _, _, hasA := ParseMDNSResponse(msg)
@@ -83,8 +83,8 @@ func TestMDNSEvidenceFromPackets_TXTAndServiceFold(t *testing.T) {
 	txtRData = append(txtRData, []byte("vendor=Acme")...)
 	txt := dnsRR("cam._onvif._tcp.local", 16, txtRData)
 
-	pkts := []udpPacket{{src: net.IP{192, 168, 63, 9}, data: dnsMessage(ptr, ptr2, txt)}}
-	ev := mdnsEvidenceFromPackets("192.168.63.9", pkts)
+	pkts := []udpPacket{{src: net.IP{192, 168, 1, 9}, data: dnsMessage(ptr, ptr2, txt)}}
+	ev := mdnsEvidenceFromPackets("192.168.1.9", pkts)
 	require.NotEmpty(t, ev)
 	require.Equal(t, "_onvif._tcp,_rtsp._tcp", ev[0].RawData["services"])
 	require.Equal(t, "S2", ev[0].RawData["txt.model"])

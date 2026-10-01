@@ -486,3 +486,83 @@ rules:
         inferred_brand: { const: "NVIDIA" }
         ecosystem: { const: "Jetson" }
         appliance: { const: "AI dev kit" }
+
+  # ── 手机/平板/电视：DHCP 设备名自带官方型号（field LAN 2026-10-01）──────
+  # Mi-10 → Xiaomi Mi 10；REDMI-15R-5G → Redmi 15R 5G；Xiaomi-Pad-6 → Pad 6
+  # （型号在设备名中段，前缀可带用户自定义段）；MiTV4A-<SN> → Mi TV 4A。
+  # type 分型在 device-types（mi-10/redmi-15 关键词已存在）。
+  - id: iot-host-mi-phone
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^mi[-_ ]?([0-9]{1,2}[a-z]{0,2})$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "smartphone" }
+
+  - id: iot-host-redmi-phone
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-pc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^redmi[-_ ]?([0-9][0-9a-z-]{1,10})$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Redmi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "smartphone" }
+
+  - id: iot-host-xiaomi-pad
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)xiaomi[-_ ]?pad[-_ ]?([0-9]+[a-z]?)$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "tablet" }
+
+  - id: iot-host-mitv
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)mitv[-_ ]?([0-9][0-9a-z]*)(?:[-_][0-9a-f]{8,})?$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "smart TV" }

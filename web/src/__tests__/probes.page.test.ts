@@ -40,7 +40,7 @@ vi.mock('$lib/api/client', () => ({
 			if (url.startsWith('/networks')) {
 				// #274 envelope: {networks, total} (was a bare array).
 				return Promise.resolve({
-					networks: [{ id: 1, name: 'lan-62', cidr: '192.168.62.0/24', agent_id: 'edge-1' }],
+					networks: [{ id: 1, name: 'lan-62', cidr: '192.168.2.0/24', agent_id: 'edge-1' }],
 					total: 1
 				});
 			}

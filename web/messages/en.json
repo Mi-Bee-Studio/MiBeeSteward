@@ -1006,7 +1006,7 @@
 		"Copy Token": "Copy Token",
 		"Copied": "Copied to clipboard",
 		"Scan Targets": "Scan Targets",
-		"Scan Targets Placeholder": "e.g. 192.168.62.0/24",
+		"Scan Targets Placeholder": "e.g. 192.168.2.0/24",
 		"Timeout": "Timeout (seconds)",
 		"Revoke Confirm": "Are you sure you want to revoke this agent token? The agent will immediately lose access.",
 		"Agent ID Required": "Agent ID is required",
@@ -1058,7 +1058,7 @@
 		"Delete Confirm": "Delete network",
 		"Delete Warning": "Devices on this network will have their network binding cleared.",
 		"Name Placeholder": "e.g. lan-beijing-62",
-		"Cidr Placeholder": "e.g. 192.168.62.0/24",
+		"Cidr Placeholder": "e.g. 192.168.2.0/24",
 		"Site Placeholder": "e.g. Beijing branch / datacenter / cloud"
 	},
 	"discovery": {

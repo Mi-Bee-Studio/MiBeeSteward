@@ -367,7 +367,7 @@ func TestValidateScanTaskRequest_ReservedTargets(t *testing.T) {
 	valid := func() ScanTaskRequest {
 		return ScanTaskRequest{
 			Name:            "lan",
-			Targets:         "192.168.63.0/24",
+			Targets:         "192.168.1.0/24",
 			CronExpr:        "*/30 * * * *",
 			PipelineConfig:  PipelineConfig{ICMP: ICMPConfig{Enabled: true}},
 			Timeout:         30,
@@ -386,7 +386,7 @@ func TestValidateScanTaskRequest_ReservedTargets(t *testing.T) {
 	})
 	t.Run("mixed list with one reserved part rejected", func(t *testing.T) {
 		req := valid()
-		req.Targets = "192.168.63.0/24,0.0.0.0"
+		req.Targets = "192.168.1.0/24,0.0.0.0"
 		require.ErrorIs(t, ValidateScanTaskRequest(req, false), cidrutil.ErrReservedTarget)
 	})
 	t.Run("multicast and broadcast rejected", func(t *testing.T) {

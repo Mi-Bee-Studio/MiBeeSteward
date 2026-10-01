@@ -45,10 +45,10 @@ func TestRDNSProbe_SystemResolverWhenUnconfigured(t *testing.T) {
 }
 
 func TestRDNSConfig_PortNormalization(t *testing.T) {
-	// "192.168.63.1" (no port) should be accepted and treated as :53. We
+	// "192.168.1.1" (no port) should be accepted and treated as :53. We
 	// verify indirectly: building the probe must not panic and must produce a
 	// non-default resolver (confirming the entry was accepted + normalized).
-	p := NewRDNSProbeWithConfig(RDNSConfig{DNSServers: []string{"192.168.63.1"}})
+	p := NewRDNSProbeWithConfig(RDNSConfig{DNSServers: []string{"192.168.1.1"}})
 	require.NotSame(t, net.DefaultResolver, p.resolver,
 		"a bare-IP DNSServers entry should be normalized to host:53 and build a custom resolver")
 

@@ -25,7 +25,7 @@ import (
 // privileges (it is world-readable on standard distros). Each non-comment line:
 //
 //	IP address   HW type   Flags   HW address            Mask   Device
-//	192.168.63.1 0x1       0x2     bc:ad:28:11:22:33     *      enp3s0
+//	192.168.1.1 0x1       0x2     bc:ad:28:11:22:33     *      enp3s0
 const arpTablePath = "/proc/net/arp"
 
 // ARPEntry is one row of the kernel ARP cache (IP → MAC + iface).

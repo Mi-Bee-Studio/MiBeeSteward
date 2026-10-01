@@ -14,7 +14,7 @@ import (
 // (so reportMAC's fallback path resolves it).
 func TestReportedHostToReport_MapsFieldsAndMAC(t *testing.T) {
 	in := domain.ReportedHost{
-		IP:               "192.168.62.41",
+		IP:               "192.168.2.41",
 		Alive:            true,
 		RTTMs:            12,
 		MAC:              "AA-BB-CC-DD-EE-41",
@@ -27,13 +27,13 @@ func TestReportedHostToReport_MapsFieldsAndMAC(t *testing.T) {
 			{Service: "rtsp", Port: 554, Protocol: "tcp"},
 		},
 		Heartbeats: []domain.ReportedHeartbeat{
-			{Method: "tcp", Target: "192.168.62.41:554", IntervalSeconds: 30},
+			{Method: "tcp", Target: "192.168.2.41:554", IntervalSeconds: 30},
 		},
 	}
 
 	rep := ReportedHostToReport(in)
 
-	require.Equal(t, "192.168.62.41", rep.IP)
+	require.Equal(t, "192.168.2.41", rep.IP)
 	require.True(t, rep.Alive)
 	require.Equal(t, int64(12), rep.RTTMs)
 	// Fields the bridge reads:

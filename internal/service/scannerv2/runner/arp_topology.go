@@ -250,7 +250,7 @@ func hexRouteToIP(hex string) string {
 
 // guessGatewayFromARP finds a likely gateway IP from the ARP entries when
 // /proc/net/route is unavailable. Heuristic: the .1 address of the first /24
-// seen in the ARP table (e.g. 192.168.63.1). Returns "" if no .1 exists.
+// seen in the ARP table (e.g. 192.168.1.1). Returns "" if no .1 exists.
 func guessGatewayFromARP(arp map[string]string) string {
 	for ip := range arp {
 		parts := strings.Split(ip, ".")

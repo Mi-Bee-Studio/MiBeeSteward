@@ -19,17 +19,17 @@ import (
 
 func TestParseNetwork(t *testing.T) {
 	t.Run("standard CIDR", func(t *testing.T) {
-		n, err := ParseNetwork("192.168.63.0/24")
+		n, err := ParseNetwork("192.168.1.0/24")
 		require.NoError(t, err)
 		require.NotNil(t, n)
-		require.True(t, n.Contains(net.ParseIP("192.168.63.5")))
-		require.False(t, n.Contains(net.ParseIP("192.168.62.5")))
+		require.True(t, n.Contains(net.ParseIP("192.168.1.5")))
+		require.False(t, n.Contains(net.ParseIP("192.168.2.5")))
 	})
 	t.Run("bare IPv4 is /32", func(t *testing.T) {
-		n, err := ParseNetwork("192.168.63.1")
+		n, err := ParseNetwork("192.168.1.1")
 		require.NoError(t, err)
-		require.True(t, n.Contains(net.ParseIP("192.168.63.1")))
-		require.False(t, n.Contains(net.ParseIP("192.168.63.2")))
+		require.True(t, n.Contains(net.ParseIP("192.168.1.1")))
+		require.False(t, n.Contains(net.ParseIP("192.168.1.2")))
 	})
 	t.Run("whitespace trimmed", func(t *testing.T) {
 		n, err := ParseNetwork("  10.0.0.0/8  ")
@@ -52,20 +52,20 @@ func TestParseNetwork(t *testing.T) {
 		require.False(t, errors.Is(err, ErrEmptyCIDR))
 	})
 	t.Run("invalid prefix errors", func(t *testing.T) {
-		_, err := ParseNetwork("192.168.63.0/33")
+		_, err := ParseNetwork("192.168.1.0/33")
 		require.Error(t, err)
 	})
 }
 
 func TestContainsIP(t *testing.T) {
-	n, err := ParseNetwork("192.168.63.0/24")
+	n, err := ParseNetwork("192.168.1.0/24")
 	require.NoError(t, err)
-	require.True(t, ContainsIP(n, "192.168.63.1"))
-	require.True(t, ContainsIP(n, "192.168.63.254"))
-	require.False(t, ContainsIP(n, "192.168.62.1"))
+	require.True(t, ContainsIP(n, "192.168.1.1"))
+	require.True(t, ContainsIP(n, "192.168.1.254"))
+	require.False(t, ContainsIP(n, "192.168.2.1"))
 	require.False(t, ContainsIP(n, "10.0.0.1"))
 	t.Run("nil network is false, no panic", func(t *testing.T) {
-		require.False(t, ContainsIP(nil, "192.168.63.1"))
+		require.False(t, ContainsIP(nil, "192.168.1.1"))
 	})
 	t.Run("garbage ip is false, no panic", func(t *testing.T) {
 		require.False(t, ContainsIP(n, "garbage"))
@@ -76,12 +76,12 @@ func TestContainsIP(t *testing.T) {
 }
 
 func TestPartitionTargets(t *testing.T) {
-	n, err := ParseNetwork("192.168.62.0/24")
+	n, err := ParseNetwork("192.168.2.0/24")
 	require.NoError(t, err)
 	t.Run("all in", func(t *testing.T) {
-		in, out, err := PartitionTargets("192.168.62.1,192.168.62.100", n)
+		in, out, err := PartitionTargets("192.168.2.1,192.168.2.100", n)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{"192.168.62.1", "192.168.62.100"}, in)
+		require.ElementsMatch(t, []string{"192.168.2.1", "192.168.2.100"}, in)
 		require.Empty(t, out)
 	})
 	t.Run("mixed in/out", func(t *testing.T) {
@@ -89,34 +89,34 @@ func TestPartitionTargets(t *testing.T) {
 		// but a command told it to scan 63.0/24, every host lands "out".
 		// 254 = 256 minus the reserved .0 network / .255 broadcast addresses
 		// (excluded from CIDR enumeration since #254).
-		in, out, err := PartitionTargets("192.168.63.0/24", n)
+		in, out, err := PartitionTargets("192.168.1.0/24", n)
 		require.NoError(t, err)
 		require.Empty(t, in)
 		require.Len(t, out, 254)
-		require.Contains(t, out, "192.168.63.1")
-		require.Contains(t, out, "192.168.63.20")
-		require.Contains(t, out, "192.168.63.254")
-		require.NotContains(t, out, "192.168.63.0")
-		require.NotContains(t, out, "192.168.63.255")
+		require.Contains(t, out, "192.168.1.1")
+		require.Contains(t, out, "192.168.1.20")
+		require.Contains(t, out, "192.168.1.254")
+		require.NotContains(t, out, "192.168.1.0")
+		require.NotContains(t, out, "192.168.1.255")
 	})
 	t.Run("cross-subnet mix", func(t *testing.T) {
-		in, out, err := PartitionTargets("192.168.62.5,192.168.63.5,10.0.0.1", n)
+		in, out, err := PartitionTargets("192.168.2.5,192.168.1.5,10.0.0.1", n)
 		require.NoError(t, err)
-		require.Equal(t, []string{"192.168.62.5"}, in)
-		require.ElementsMatch(t, []string{"192.168.63.5", "10.0.0.1"}, out)
+		require.Equal(t, []string{"192.168.2.5"}, in)
+		require.ElementsMatch(t, []string{"192.168.1.5", "10.0.0.1"}, out)
 	})
 	t.Run("range spanning boundary", func(t *testing.T) {
-		in, out, err := PartitionTargets("192.168.61.250-192.168.62.5", n)
+		in, out, err := PartitionTargets("192.168.1.250-192.168.2.5", n)
 		require.NoError(t, err)
-		// .250, .251, .252, .253, .254, .255 on the 61 side are OUT;
-		// .0-.5 on the 62 side are IN.
+		// .250-.255 on the .1 side are OUT; .0-.5 on the .2 side (inside n)
+		// are IN.
 		require.Len(t, out, 6)
 		require.Len(t, in, 6)
-		require.Contains(t, in, "192.168.62.1")
-		require.Contains(t, out, "192.168.61.255")
+		require.Contains(t, in, "192.168.2.1")
+		require.Contains(t, out, "192.168.1.255")
 	})
 	t.Run("nil network -> empty, no error", func(t *testing.T) {
-		in, out, err := PartitionTargets("192.168.62.1", nil)
+		in, out, err := PartitionTargets("192.168.2.1", nil)
 		require.NoError(t, err)
 		require.Nil(t, in)
 		require.Nil(t, out)
@@ -155,8 +155,8 @@ func TestValidateTargets_Reserved(t *testing.T) {
 		"126.0.0.0/7",
 		// Ranges and comma-separated lists name reserved space too.
 		"127.0.0.1-127.0.0.5",
-		"192.168.63.0/24,127.0.0.1",
-		"192.168.63.1-5,0.0.0.0",
+		"192.168.1.0/24,127.0.0.1",
+		"192.168.1.1-5,0.0.0.0",
 		// IPv6 reserved space.
 		"::1",
 		"fe80::/10",
@@ -169,11 +169,11 @@ func TestValidateTargets_Reserved(t *testing.T) {
 		})
 	}
 	accepts := []string{
-		"192.168.63.0/24",
+		"192.168.1.0/24",
 		"10.0.0.0/8",
 		"172.16.5.9",
-		"192.168.63.1-254",
-		"192.168.63.1,192.168.62.7",
+		"192.168.1.1-254",
+		"192.168.1.1,192.168.2.7",
 		"100.64.0.0/10", // CGNAT: not a reserved class, routable-ish
 	}
 	for _, tc := range accepts {
@@ -187,21 +187,21 @@ func TestValidateTargets_Reserved(t *testing.T) {
 // the network and directed-broadcast addresses for IPv4 prefixes up to /30.
 func TestExpandTargets_HostAddressesOnly(t *testing.T) {
 	t.Run("/24 drops .0 and .255", func(t *testing.T) {
-		ips, err := ExpandTargets("192.168.63.0/24")
+		ips, err := ExpandTargets("192.168.1.0/24")
 		require.NoError(t, err)
 		require.Len(t, ips, 254)
-		require.Equal(t, "192.168.63.1", ips[0])
-		require.Equal(t, "192.168.63.254", ips[len(ips)-1])
+		require.Equal(t, "192.168.1.1", ips[0])
+		require.Equal(t, "192.168.1.254", ips[len(ips)-1])
 	})
 	t.Run("/31 keeps both (RFC 3021 point-to-point)", func(t *testing.T) {
-		ips, err := ExpandTargets("192.168.63.0/31")
+		ips, err := ExpandTargets("192.168.1.0/31")
 		require.NoError(t, err)
-		require.Equal(t, []string{"192.168.63.0", "192.168.63.1"}, ips)
+		require.Equal(t, []string{"192.168.1.0", "192.168.1.1"}, ips)
 	})
 	t.Run("/32 is a single host", func(t *testing.T) {
-		ips, err := ExpandTargets("192.168.63.5/32")
+		ips, err := ExpandTargets("192.168.1.5/32")
 		require.NoError(t, err)
-		require.Equal(t, []string{"192.168.63.5"}, ips)
+		require.Equal(t, []string{"192.168.1.5"}, ips)
 	})
 	t.Run("/30 keeps the two host addresses", func(t *testing.T) {
 		ips, err := ExpandTargets("192.168.1.0/30")
@@ -209,7 +209,7 @@ func TestExpandTargets_HostAddressesOnly(t *testing.T) {
 		require.Equal(t, []string{"192.168.1.1", "192.168.1.2"}, ips)
 	})
 	t.Run("range keeps its explicit endpoints", func(t *testing.T) {
-		ips, err := ExpandTargets("192.168.63.0-3")
+		ips, err := ExpandTargets("192.168.1.0-3")
 		require.NoError(t, err)
 		require.Len(t, ips, 4) // explicit range: caller named those addresses
 	})

@@ -444,7 +444,10 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	}
 
 	// Enrich the matched row. Only v2-managed enrichment columns: brand/model
-	// (force-overwrite when non-empty), mac (fill when newly resolved),
+	// (force-overwrite when non-empty), mac (fill ONLY while the row's mac is
+	// empty — an existing different MAC belongs to the identity machinery, and
+	// enrich stamping a foreign report MAC over a placeholder created
+	// same-MAC shadow rows in the field, 2026-10-01),
 	// open_ports/detected_services/prometheus/node_exporter, scan_attributes,
 	// freshness timestamps. NOTE: name, type, status, description, location,
 	// tags, and device replacement are NOT handled here, the
@@ -456,7 +459,7 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 			UPDATE devices SET
 			    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
 			    model = CASE WHEN ? != '' THEN ? ELSE model END,
-			    mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
+			    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
 			    open_ports = ?,
 			    detected_services = ?,
 			    prometheus_url = ?,
@@ -558,6 +561,14 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 					ip).Scan(&holderID, &holderMAC)
 			}
 			if holdErr == nil && holderMAC != "" {
+				// #472 anti-flap: a multi-homed host (Ethernet + WiFi
+				// alternating on ONE ip) lands here every report with the
+				// other NIC's never-seen MAC. If the scanned MAC is already a
+				// recorded alias of the holder, treat it as the SAME host:
+				// plain update, no take-over force-write churn.
+				if r.macIsHolderAlias(ctx, holderID, mac) {
+					return scannerv2.IdentityResolution{TargetID: holderID}, nil
+				}
 				return scannerv2.IdentityResolution{TargetID: holderID, TakeOver: true}, nil
 			}
 			return scannerv2.IdentityResolution{IsNew: true}, nil
@@ -612,6 +623,12 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 	// be filled, do not treat as a replacement conflict.
 	if ipHolderMAC == "" || ipHolderMAC == mac {
 		return scannerv2.IdentityResolution{TargetID: targetID}, nil
+	}
+	// #472 anti-flap (same rule as the take-over branch): when the scanned
+	// MAC is a recorded alias of the ip-holder, the two rows are one
+	// multi-homed host — plain update on the holder, no replacement churn.
+	if r.macIsHolderAlias(ctx, ipHolderID, mac) {
+		return scannerv2.IdentityResolution{TargetID: ipHolderID}, nil
 	}
 	// Device replacement: the ip-holder becomes the target, the MAC-matched row
 	// (the prior asset now sitting on a stale ip) is superseded.
@@ -784,6 +801,16 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 		// belongs to the scanned device). A replacement additionally marks the
 		// prior mac-matched row offline; a takeover has no such row (the MAC
 		// was never seen).
+		// #472: before force-overwriting the slot's MAC, remember its CURRENT
+		// mac as an alias — a multi-homed host's other NIC must resolve back
+		// to this row on its next report instead of churning take-over/
+		// replacement cycles.
+		var prevMAC string
+		_ = r.db.QueryRowContext(ctx,
+			`SELECT mac_address FROM devices WHERE id = ?`, in.TargetID).Scan(&prevMAC)
+		if prevMAC != "" && !strings.EqualFold(prevMAC, in.MAC) {
+			r.recordHolderAlias(ctx, in.TargetID, prevMAC)
+		}
 		_, _ = r.db.ExecContext(ctx, `
 			UPDATE devices SET status='online',
 			    mac_address = ?,
@@ -1352,6 +1379,67 @@ func (r *SQLiteRepository) resolveDeviceUUID(ctx context.Context, ip string) (st
 	r.uuidCache[ip] = u
 	r.uuidMu.Unlock()
 	return u, nil
+}
+
+// macIsHolderAlias reports whether mac is listed in the device's
+// scan_attributes.mac_aliases — the recorded other NICs of a multi-homed
+// host (written when a take-over/replacement force-changed the slot's MAC).
+func (r *SQLiteRepository) macIsHolderAlias(ctx context.Context, deviceID int64, mac string) bool {
+	var aliases string
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(json_extract(scan_attributes, '$.mac_aliases'), '[]') FROM devices WHERE id = ?`,
+		deviceID).Scan(&aliases); err != nil {
+		return false
+	}
+	var list []string
+	if err := json.Unmarshal([]byte(aliases), &list); err != nil {
+		return false
+	}
+	for _, a := range list {
+		if strings.EqualFold(a, mac) {
+			return true
+		}
+	}
+	return false
+}
+
+// recordHolderAlias appends mac to the device's scan_attributes.mac_aliases
+// (dedup, case-insensitive) — called BEFORE a force MAC overwrite so the
+// multi-homed host's other NIC stays resolvable to this row.
+func (r *SQLiteRepository) recordHolderAlias(ctx context.Context, deviceID int64, mac string) {
+	if mac == "" {
+		return
+	}
+	var attrs string
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT scan_attributes FROM devices WHERE id = ?`, deviceID).Scan(&attrs); err != nil || attrs == "" {
+		attrs = "{}"
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(attrs), &m); err != nil {
+		m = map[string]any{}
+	}
+	var list []string
+	if raw, ok := m["mac_aliases"].([]any); ok {
+		for _, v := range raw {
+			if sv, ok := v.(string); ok {
+				list = append(list, sv)
+			}
+		}
+	}
+	for _, existing := range list {
+		if strings.EqualFold(existing, mac) {
+			return // already recorded
+		}
+	}
+	list = append(list, mac)
+	m["mac_aliases"] = list
+	blob, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	_, _ = r.db.ExecContext(ctx,
+		`UPDATE devices SET scan_attributes = ? WHERE id = ?`, string(blob), deviceID)
 }
 
 // placeholders builds a "?,?,…" list of n bind markers for IN clauses.

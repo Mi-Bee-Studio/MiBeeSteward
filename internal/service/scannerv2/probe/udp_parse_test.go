@@ -88,7 +88,7 @@ func dnsMessage(answers ...[]byte) []byte {
 
 func TestParseMDNSResponse_Records(t *testing.T) {
 	// A record (type 1) → hostname, .local stripped.
-	aRR := dnsRR("nas.local", 1, []byte{192, 168, 63, 5})
+	aRR := dnsRR("nas.local", 1, []byte{192, 168, 1, 5})
 	// PTR record (type 12) → service name; rdata is itself a DNS name.
 	ptrRR := dnsRR("_onvif._tcp.local", 12, dnsName("_onvif._tcp.local"))
 	// TXT record (type 16): length-prefixed pairs; high-signal keys kept.

@@ -38,7 +38,7 @@ func TestAgentCommandService_OpsGating(t *testing.T) {
 	require.ErrorIs(t, err, ErrRemoteOpsDisabled)
 
 	// scan stays always-on.
-	_, err = svc.Enqueue(ctx, "agent-x", "scan", map[string]interface{}{"targets": "192.168.62.0/24"})
+	_, err = svc.Enqueue(ctx, "agent-x", "scan", map[string]interface{}{"targets": "192.168.2.0/24"})
 	require.NoError(t, err)
 
 	// Unknown command rejected regardless of the switch.

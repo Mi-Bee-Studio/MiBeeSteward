@@ -29,7 +29,7 @@ type AgentReport struct {
 	// NetworkName is the human network name (e.g. "lan-62"). Advisory, the
 	// center resolves network_id from the agent's token, not from this string.
 	NetworkName string `json:"network_name,omitempty"`
-	// NetworkCIDR is the agent's configured network CIDR (e.g. "192.168.62.0/24").
+	// NetworkCIDR is the agent's configured network CIDR (e.g. "192.168.2.0/24").
 	// Advisory source of truth for the boundary check (issue #19): the center
 	// backfills networks.cidr from this when its own row lacks one (agent
 	// networks are created via the admin API without a cidr today), so the Layer

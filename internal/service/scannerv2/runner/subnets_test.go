@@ -27,7 +27,7 @@ func TestRecordSubnets_InsertAndRefresh(t *testing.T) {
 	require.Zero(t, n)
 
 	// Give the network its CIDR; first finalize inserts.
-	cidr := "192.168.63.0/24"
+	cidr := "192.168.1.0/24"
 	_, err := conn.Exec(`UPDATE networks SET cidr = ? WHERE id = ?`, cidr, rn.networkID.Int64)
 	require.NoError(t, err)
 	rn.recordSubnets(ctx, rn.networkID)

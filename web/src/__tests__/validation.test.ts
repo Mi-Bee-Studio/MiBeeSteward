@@ -613,7 +613,7 @@ describe('networkSchema', () => {
 	});
 
 	it('accepts a valid CIDR', () => {
-		expect(networkSchema.safeParse({ name: 'lan-62', cidr: '192.168.62.0/24' }).success).toBe(true);
+		expect(networkSchema.safeParse({ name: 'lan-62', cidr: '192.168.2.0/24' }).success).toBe(true);
 	});
 
 	it('rejects an empty name', () => {
@@ -625,7 +625,7 @@ describe('networkSchema', () => {
 	});
 
 	it('rejects a malformed CIDR (missing prefix)', () => {
-		const result = networkSchema.safeParse({ name: 'lan-62', cidr: '192.168.62.0' });
+		const result = networkSchema.safeParse({ name: 'lan-62', cidr: '192.168.2.0' });
 		expect(result.success).toBe(false);
 	});
 

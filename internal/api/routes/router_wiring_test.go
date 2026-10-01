@@ -105,7 +105,7 @@ func TestRouter_DiscoveryWiring(t *testing.T) {
 	cfg.Scanner.Discovery.Interval = 0 // default fallback branch
 	cfg.Scanner.Discovery.ARPCache.Enabled = true
 	cfg.Scanner.Discovery.RouterARP.Enabled = true
-	cfg.Scanner.RouterARP.Routers = []string{"192.168.62.1"}
+	cfg.Scanner.RouterARP.Routers = []string{"192.168.2.1"}
 
 	router, hb, shutdown := NewRouter(conn, cfg)
 	require.NotNil(t, router)

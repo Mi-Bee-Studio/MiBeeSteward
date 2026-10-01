@@ -53,7 +53,7 @@ func seedVantageWorld(t *testing.T, conn *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
 	// One agent-bound network (agent-62) so 'all' plans have a destination.
-	_, err := conn.ExecContext(ctx, `INSERT INTO networks (id, name, cidr, agent_id) VALUES (3, 'lan-62', '192.168.62.0/24', 'agent-62')`)
+	_, err := conn.ExecContext(ctx, `INSERT INTO networks (id, name, cidr, agent_id) VALUES (3, 'lan-62', '192.168.2.0/24', 'agent-62')`)
 	require.NoError(t, err)
 	mk := func(name, target, vantage string) {
 		_, err := conn.ExecContext(ctx,

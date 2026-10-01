@@ -218,3 +218,93 @@ func TestApplyDeviceIdentity_JunkBrandHealedOnRescan(t *testing.T) {
 	rescan("")
 	require.Equal(t, "Synology", brandOf(), "empty scan brand must not clear or change anything")
 }
+
+// TestApplyDeviceIdentity_NICFailoverAliasNoFlap pins the #472 anti-flap: a
+// multi-homed host (Ethernet + WiFi on one IP, alternating reports) used to
+// trigger the replacement path back and forth every report — force-overwriting
+// identity columns and marking its own other-NIC row offline each cycle. The
+// first replacement records the displaced MAC as an alias on the ip-holder
+// (scan_attributes.mac_aliases); from then on a report from an ALIAS mac
+// resolves to the holder as a plain update (no ReplacedID churn).
+func TestApplyDeviceIdentity_NICFailoverAliasNoFlap(t *testing.T) {
+	repo, nid, conn, ctx := resolveRepo(t, 1)
+	ip := "10.0.0.5"
+	macEth := "aa:bb:cc:dd:ee:41" // row seeded at the ip (the "first" NIC)
+	macWifi := "aa:bb:cc:dd:ee:42"
+	holderID := seedDeviceRow(t, conn, ip, macEth, nid)
+
+	rescan := func(mac string) scannerv2.IdentityResolution {
+		res, err := repo.ResolveDeviceIdentity(ctx, mac, ip, nid)
+		require.NoError(t, err)
+		_, err = repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
+			TargetID: res.TargetID, ReplacedID: res.ReplacedID, IsNew: res.IsNew,
+			TakeOver: res.TakeOver, Roamed: res.Roamed,
+			IP: ip, MAC: mac, NetworkID: nid, Brand: "Acme",
+			OpenPortsJSON: "[]", DetectedServicesJSON: "[]", ScanAttributesJSON: "{}",
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	// Cycle 1: the WiFi NIC reports at the occupied ip — its MAC was never
+	// seen before, so this takes the TakeOver branch (force MAC onto the
+	// holder). The holder's PREVIOUS ethernet MAC is recorded as an alias.
+	res1 := rescan(macWifi)
+	require.True(t, res1.TakeOver, "first foreign MAC at the slot must take over")
+	require.Equal(t, holderID, res1.TargetID)
+
+	// The holder now carries the displaced ethernet MAC as an alias.
+	var attrs string
+	require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE id=?`, holderID).Scan(&attrs))
+	require.Contains(t, attrs, macEth, "replacement must record the displaced MAC as an alias")
+	require.Contains(t, attrs, `"mac_aliases"`)
+
+	// Cycle 2: the ethernet NIC reports again at the SAME ip. It is a known
+	// alias of the holder — plain update, no second replacement.
+	res2 := rescan(macEth)
+	require.Zero(t, res2.ReplacedID, "alias MAC must not trigger another replacement")
+	require.Equal(t, holderID, res2.TargetID, "alias report must resolve to the holder row")
+
+	// And the holder's MAC/identity stay stable across the alternation.
+	var mac, brand string
+	require.NoError(t, conn.QueryRow(`SELECT mac_address, brand FROM devices WHERE id=?`, holderID).Scan(&mac, &brand))
+	require.Equal(t, macWifi, mac, "holder keeps the last physical occupant's MAC")
+	require.Equal(t, "Acme", brand)
+	require.Equal(t, 1, countRows(t, conn, "SELECT COUNT(*) FROM devices"))
+}
+
+// TestRecordDevice_DoesNotStampMACOverOccupiedSlot pins the enrich MAC-fill
+// guard: RecordDevice may resolve a MAC onto its ip-matched row only while
+// that row's mac is EMPTY. A row already carrying a (different) MAC must not
+// be overwritten by the enrich path — MAC transitions belong to the identity
+// machinery (resolve/takeover/replacement), and enrich stamping foreign MACs
+// produced same-MAC shadow rows in the field (2026-10-01).
+func TestRecordDevice_DoesNotStampMACOverOccupiedSlot(t *testing.T) {
+	repo, nid, conn, ctx := resolveRepo(t, 1)
+	macA := "aa:bb:cc:dd:ee:51"
+	rowA := seedDeviceRow(t, conn, "10.0.0.5", macA, nid) // the MAC's real owner
+	rowB := seedDeviceRow(t, conn, "10.0.0.6", "aa:bb:cc:dd:ee:52", nid)
+
+	// Enrich targeting B's ip while carrying A's mac (e.g. a same-report race
+	// or case-variant lookup miss) must not stamp A's mac onto B.
+	err := repo.RecordDevice(ctx, "10.0.0.6", scannerv2.DeviceRef{
+		IP: "10.0.0.6", Brand: "Acme", Fields: map[string]string{"mac": macA},
+	})
+	require.NoError(t, err)
+
+	var macB string
+	require.NoError(t, conn.QueryRow(`SELECT mac_address FROM devices WHERE id=?`, rowB).Scan(&macB))
+	require.Equal(t, "aa:bb:cc:dd:ee:52", macB, "enrich must not overwrite an existing MAC")
+	var macOut string
+	require.NoError(t, conn.QueryRow(`SELECT mac_address FROM devices WHERE id=?`, rowA).Scan(&macOut))
+	require.Equal(t, macA, macOut, "the MAC's real owner row keeps its mac")
+
+	// The legitimate fill still works: a MAC-less placeholder gains the mac.
+	rowC := seedDeviceRow(t, conn, "10.0.0.7", "", nid)
+	require.NoError(t, repo.RecordDevice(ctx, "10.0.0.7", scannerv2.DeviceRef{
+		IP: "10.0.0.7", Fields: map[string]string{"mac": "aa:bb:cc:dd:ee:53"},
+	}))
+	var macC string
+	require.NoError(t, conn.QueryRow(`SELECT mac_address FROM devices WHERE id=?`, rowC).Scan(&macC))
+	require.Equal(t, "aa:bb:cc:dd:ee:53", macC, "empty-slot MAC fill must keep working")
+}

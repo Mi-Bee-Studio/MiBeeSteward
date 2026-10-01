@@ -33,7 +33,7 @@ func TestLeaseSweeper_FlapDecaySuppressesPeriodicDevice(t *testing.T) {
 	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
-	const ip = "192.168.62.99"
+	const ip = "192.168.2.99"
 
 	// Seed: device online + a fresh snapshot.
 	rn.applyDeviceBridge(ctx, reportFor(ip, "iot", "xiaomi", "aa:bb:cc:dd:ee:99"), nid, "agent-62")
@@ -115,7 +115,7 @@ func TestLeaseSweeper_FlapDecayClearsAfterStable(t *testing.T) {
 	rn, _, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
-	const ip = "192.168.62.88"
+	const ip = "192.168.2.88"
 
 	rn.applyDeviceBridge(ctx, reportFor(ip, "iot", "", "aa:bb:cc:dd:ee:88"), nid, "agent-62")
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{

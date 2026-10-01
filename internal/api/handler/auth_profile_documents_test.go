@@ -97,7 +97,7 @@ func setupGapServer(t *testing.T) *gapServerFixture {
 	// Seed a network + an agent token bound to it. Stamp networks.agent_id so
 	// the scan-command boundary check resolves the agent's network (the token
 	// CRUD path does this automatically; direct seeding must do it by hand).
-	cidr := "192.168.62.0/24"
+	cidr := "192.168.2.0/24"
 	net, err := queries.CreateNetwork(context.Background(), sqldb.CreateNetworkParams{Name: "lan-gap", Cidr: &cidr})
 	require.NoError(t, err)
 	require.NoError(t, queries.SetNetworkAgentID(context.Background(), sqldb.SetNetworkAgentIDParams{
@@ -636,7 +636,7 @@ func TestAgentCommandEndpoints_FullCycle(t *testing.T) {
 
 	// Admin enqueues a scan command for the fixture's agent (in-network).
 	resp := authPost(t, fx.server.URL+"/api/v1/agents/"+fx.agentID+"/commands", token,
-		`{"command":"scan","payload":{"targets":"192.168.62.0/24"}}`)
+		`{"command":"scan","payload":{"targets":"192.168.2.0/24"}}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	var cmd map[string]interface{}
 	decodeJSON(t, resp, &cmd)
@@ -651,7 +651,7 @@ func TestAgentCommandEndpoints_FullCycle(t *testing.T) {
 	resp = authPost(t, fx.server.URL+"/api/v1/agents/"+fx.agentID+"/commands", token,
 		`{"command":"scan","payload":{"targets":"10.99.0.0/16"}}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	require.Contains(t, readBody(t, resp), "192.168.62")
+	require.Contains(t, readBody(t, resp), "192.168.2.0/24")
 
 	// Agent polls: sees the pending command.
 	resp = authGet(t, fx.server.URL+"/api/v1/agents/commands", fx.agentTok)

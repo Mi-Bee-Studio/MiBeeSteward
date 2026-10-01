@@ -80,7 +80,7 @@ func TestHandle_OffSubnetGate(t *testing.T) {
 	ctx := context.Background()
 
 	gated := memoryDB(t)
-	seedNetworks(t, gated, [2]string{"lan-62", "192.168.62.0/24"})
+	seedNetworks(t, gated, [2]string{"lan-62", "192.168.2.0/24"})
 	sink := &recSink37{}
 	svc := newDiscSvc37(sink, gated)
 

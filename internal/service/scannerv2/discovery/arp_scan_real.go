@@ -47,7 +47,7 @@ const (
 // ARPScanSource periodically sweeps the local subnet with ARP requests and emits
 // a NewHostEvent for each responder's IP+MAC.
 type ARPScanSource struct {
-	cidr     string        // subnet to sweep, e.g. "192.168.63.0/24"
+	cidr     string        // subnet to sweep, e.g. "192.168.1.0/24"
 	iface    string        // interface to send on (empty = derive from cidr)
 	srcMAC   [6]byte       // sender hardware address (our NIC)
 	srcIP    [4]byte       // sender protocol address (our NIC's IPv4)

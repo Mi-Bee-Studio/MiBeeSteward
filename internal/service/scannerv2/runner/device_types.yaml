@@ -26,7 +26,7 @@
 # Evaluation order (first match wins, mirroring the old switch semantics):
 #   1. rules     : host/brand keyword match (host before brand; the `field`
 #                   selects which). PC/NAS rules run BEFORE camera/phone so a
-#                   laptop named "redmi-notebook" wins pc over a phone keyword
+#                   laptop named "redmi-laptop" wins pc over a phone keyword
 #                   "redmi-". Order WITHIN this list is the priority.
 #   2. os_rules  : os_type label (from SSH/SNMP banner) when no host/brand hit.
 #   3. port_rules: service/port-shape fallback (cross-subnet common case).
@@ -62,10 +62,11 @@ rules:
     source: heuristic
     keywords: [viomi-, zhimi-, smartmi-, chunmi-, mijia-, midjd7, yeelink-,
                lumi, aqara, roborock, rockrobo, dreame, xiaoaitongxue, xiaoai,
-               xiaomi-aircondition, xiaomi-gateway, mi-appliance, mibt, miap]
+               xiaomi-aircondition, xiaomi-gateway, mi-appliance, mibt, miap,
+               mitv]
 
   # ── PC / 笔记本 ──
-  # MUST come before phone/camera: a laptop named "redmi-notebook" contains
+  # MUST come before phone/camera: a laptop named "redmi-laptop" contains
   # both "notebook" (pc) and "redmi-" (phone); pc wins by rule order.
   - type: pc
     field: host
@@ -124,10 +125,10 @@ rules:
     source: heuristic
     keywords: [mikrotik, ubiquiti, tp-link, tplink, xdr]
 
-  # ── 手机 (Mi-10/Redmi-15R/华为 -AL00 型号码/MickeyPhone) ──
+  # ── 手机 (Mi-10/Redmi-15R/华为 -AL00 型号码/MyPhone) ──
   # MUST come after pc (notebook beats redmi-15). Phone model codes: Huawei
   # uses "-AL00"/"-AL10" suffixes; Redmi phones are "redmi-15r-5g". The generic
-  # "phone" keyword catches MickeyPhone etc. Note redmi-notebook (a laptop) is
+  # "phone" keyword catches MyPhone etc. Note redmi-laptop (a laptop) is
   # NOT matched here because the pc rule's "notebook" already won it above.
   - type: phone
     field: host

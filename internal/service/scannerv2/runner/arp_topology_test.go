@@ -44,9 +44,9 @@ func TestHexRouteToIP(t *testing.T) {
 }
 
 func TestGuessGatewayFromARP(t *testing.T) {
-	require.Equal(t, "192.168.63.1", guessGatewayFromARP(map[string]string{
-		"192.168.63.20": "aa:bb:cc:dd:ee:20",
-		"192.168.63.1":  "aa:bb:cc:dd:ee:01",
+	require.Equal(t, "192.168.1.1", guessGatewayFromARP(map[string]string{
+		"192.168.1.20": "aa:bb:cc:dd:ee:20",
+		"192.168.1.1":  "aa:bb:cc:dd:ee:01",
 	}))
 	// .1 on a different octet boundary does not count; no candidate → ""
 	require.Equal(t, "10.0.0.1", guessGatewayFromARP(map[string]string{
@@ -54,7 +54,7 @@ func TestGuessGatewayFromARP(t *testing.T) {
 		"10.0.0.53": "aa:bb:cc:dd:ee:53",
 	}))
 	require.Empty(t, guessGatewayFromARP(map[string]string{
-		"192.168.63.20": "aa:bb:cc:dd:ee:20",
+		"192.168.1.20": "aa:bb:cc:dd:ee:20",
 	}))
 	require.Empty(t, guessGatewayFromARP(nil))
 }
@@ -63,9 +63,9 @@ func TestReadARPFile_ParsesProcNetArpFormat(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "arp")
 	require.NoError(t, os.WriteFile(path, []byte(`IP address       HW type     Flags       HW address            Mask     Device
-192.168.63.1     0x1         0x2         AA:BB:CC:DD:EE:01   *        eth0
-192.168.63.20    0x1         0x2         aa:bb:cc:dd:ee:20   *        eth0
-192.168.63.99    0x1         0x0         00:00:00:00:00:00   *        eth0
+192.168.1.1     0x1         0x2         AA:BB:CC:DD:EE:01   *        eth0
+192.168.1.20    0x1         0x2         aa:bb:cc:dd:ee:20   *        eth0
+192.168.1.99    0x1         0x0         00:00:00:00:00:00   *        eth0
 shortline
 `), 0o644))
 
@@ -73,8 +73,8 @@ shortline
 	require.NoError(t, err)
 	// MACs lowercased, zero/incomplete entries and malformed rows skipped
 	require.Equal(t, map[string]string{
-		"192.168.63.1":  "aa:bb:cc:dd:ee:01",
-		"192.168.63.20": "aa:bb:cc:dd:ee:20",
+		"192.168.1.1":  "aa:bb:cc:dd:ee:01",
+		"192.168.1.20": "aa:bb:cc:dd:ee:20",
 	}, got)
 
 	_, err = readARPFile(filepath.Join(dir, "missing"))
@@ -122,17 +122,17 @@ func TestInjectARPEdges(t *testing.T) {
 	// Persist three devices: two plain hosts + the gateway itself (.1).
 	gwMAC := "aa:bb:cc:dd:ee:01"
 	for _, m := range []string{gwMAC, "aa:bb:cc:dd:ee:20", "aa:bb:cc:dd:ee:30"} {
-		rn.applyDeviceBridge(ctx, reportFor("192.168.63."+m[len(m)-2:], "pc", "test-brand", m), nid, "")
+		rn.applyDeviceBridge(ctx, reportFor("192.168.1."+m[len(m)-2:], "pc", "test-brand", m), nid, "")
 	}
 
 	reports := []scannerv2.HostReport{
-		reportFor("192.168.63.1", "router", "test-brand", gwMAC),
-		reportFor("192.168.63.20", "pc", "test-brand", "aa:bb:cc:dd:ee:20"),
-		reportFor("192.168.63.30", "pc", "test-brand", "aa:bb:cc:dd:ee:30"),
-		{Alive: false, IP: "192.168.63.99"}, // dead host: no edge
+		reportFor("192.168.1.1", "router", "test-brand", gwMAC),
+		reportFor("192.168.1.20", "pc", "test-brand", "aa:bb:cc:dd:ee:20"),
+		reportFor("192.168.1.30", "pc", "test-brand", "aa:bb:cc:dd:ee:30"),
+		{Alive: false, IP: "192.168.1.99"}, // dead host: no edge
 	}
 
-	rn.injectARPEdges(ctx, nid, reports, "192.168.63.1", "AA:BB:CC:DD:EE:01")
+	rn.injectARPEdges(ctx, nid, reports, "192.168.1.1", "AA:BB:CC:DD:EE:01")
 
 	rows, err := conn.QueryContext(ctx,
 		`SELECT d.mac_address, n.neighbor_mac, n.protocol FROM device_neighbors n JOIN devices d ON d.id = n.device_id`)
@@ -158,7 +158,7 @@ func TestInjectARPEdges(t *testing.T) {
 	require.True(t, seen["aa:bb:cc:dd:ee:30"])
 
 	// a second pass refreshes last_seen (upsert) instead of duplicating
-	rn.injectARPEdges(ctx, nid, reports, "192.168.63.1", "AA:BB:CC:DD:EE:01")
+	rn.injectARPEdges(ctx, nid, reports, "192.168.1.1", "AA:BB:CC:DD:EE:01")
 	var count int
 	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM device_neighbors`).Scan(&count))
 	require.Equal(t, 2, count)
@@ -174,7 +174,7 @@ func TestInjectARPTopology_NoNetworkScope(t *testing.T) {
 	rn := New(nil, queries, conn, nil, 0, nil)
 
 	rn.injectARPTopology(context.Background(), sql.NullInt64{}, []scannerv2.HostReport{
-		reportFor("192.168.63.20", "pc", "test-brand", "aa:bb:cc:dd:ee:20"),
+		reportFor("192.168.1.20", "pc", "test-brand", "aa:bb:cc:dd:ee:20"),
 	})
 
 	var count int

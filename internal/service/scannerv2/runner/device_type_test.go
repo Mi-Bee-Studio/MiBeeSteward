@@ -57,13 +57,13 @@ func reportWithFields(ip, inferredType, brand, mac string, extra map[string]stri
 }
 
 // TestHeuristicDeviceType_PCHostnameBeatsRTSP covers the regression at the heart
-// of Bug B: a laptop (hostname "redmi-notebook") running a dev RTSP server on
+// of Bug B: a laptop (hostname "redmi-laptop") running a dev RTSP server on
 // 8554 must be typed "pc", not "camera". The PC hostname branch was placed
 // BEFORE the camera branch and the rtsp port-shape fallback specifically so this
 // resolves to pc.
 func TestHeuristicDeviceType_PCHostnameBeatsRTSP(t *testing.T) {
-	rep := reportWithFields("192.168.62.41", "camera", "", "38:68:93:ad:6a:6f",
-		map[string]string{"node_hostname": "redmi-notebook"})
+	rep := reportWithFields("192.168.2.41", "camera", "", "38:68:93:ad:6a:6f",
+		map[string]string{"node_hostname": "redmi-laptop"})
 	// An RTSP service on 8554 is exactly what mis-typed this host as a camera.
 	rep.Services = []scannerv2.ServiceIdentity{{Service: "rtsp", Port: 8554}}
 	require.Equal(t, "pc", typeOnly(rep),
@@ -93,7 +93,7 @@ func TestHeuristicDeviceType_DesktopOSLabels(t *testing.T) {
 // rtsp:554) is a home NAS that streams media over RTSP, it must be typed
 // "nas", not "camera". "z4s" was previously (incorrectly) a camera keyword.
 func TestHeuristicDeviceType_NASKeywordsBeatRTSP(t *testing.T) {
-	rep := reportWithFields("192.168.62.138", "camera", "MiniDLNA", "1c:83:41:e3:6e:68",
+	rep := reportWithFields("192.168.2.138", "camera", "MiniDLNA", "1c:83:41:e3:6e:68",
 		map[string]string{"node_hostname": "Z4S-2PSE"})
 	rep.Services = []scannerv2.ServiceIdentity{
 		{Service: "smb", Port: 445},
@@ -127,7 +127,7 @@ func TestHeuristicDeviceType_RealCameraUnaffected(t *testing.T) {
 		{"DS-2CD2143", "hikvision"}, // DS-2 is the Hikvision camera series
 		{"dvr-nvr-01", "dahua"},
 	} {
-		rep := reportWithFields("192.168.62.200", "", c.brand, "aa:bb:cc:dd:ee:ff",
+		rep := reportWithFields("192.168.2.200", "", c.brand, "aa:bb:cc:dd:ee:ff",
 			map[string]string{"node_hostname": c.host})
 		require.Equalf(t, "camera", typeOnly(rep),
 			"hostname=%q brand=%q should classify as camera", c.host, c.brand)
@@ -138,20 +138,20 @@ func TestHeuristicDeviceType_RealCameraUnaffected(t *testing.T) {
 // applyDeviceBridge (device_bridge.go ~line 56): when a handler set
 // inferred_type="camera" (e.g. CameraHandler from an RTSP port) but the host
 // carries a strong PC signal, the persisted type must be "pc". This is the
-// end-to-end fix for 192.168.62.41 (redmi-notebook, RTSP on 8554).
+// end-to-end fix for 192.168.2.41 (redmi-laptop, RTSP on 8554).
 func TestApplyDeviceBridge_PCSignalOverridesCamera(t *testing.T) {
 	rn, _, conn := setupTypeTestDB(t)
 	ctx := context.Background()
 
-	rep := reportWithFields("192.168.62.41", "camera", "", "38:68:93:ad:6a:6f",
-		map[string]string{"node_hostname": "redmi-notebook"})
+	rep := reportWithFields("192.168.2.41", "camera", "", "38:68:93:ad:6a:6f",
+		map[string]string{"node_hostname": "redmi-laptop"})
 	rep.Services = []scannerv2.ServiceIdentity{{Service: "rtsp", Port: 8554}}
 
 	isNew, _ := rn.applyDeviceBridge(ctx, rep, rn.networkID, "agent-62")
 	require.True(t, isNew)
 
 	var devType string
-	err := conn.QueryRow(`SELECT type FROM devices WHERE ip_address='192.168.62.41'`).Scan(&devType)
+	err := conn.QueryRow(`SELECT type FROM devices WHERE ip_address='192.168.2.41'`).Scan(&devType)
 	require.NoError(t, err)
 	require.Equal(t, "pc", devType, "a notebook with an RTSP port should persist as pc, not camera")
 }
@@ -159,13 +159,13 @@ func TestApplyDeviceBridge_PCSignalOverridesCamera(t *testing.T) {
 // TestApplyDeviceBridge_NasSignalOverridesCamera covers Bug C end-to-end (the
 // .138 case): when a handler set inferred_type="camera" (from rtsp:554) but the
 // host carries a strong NAS signal (Z4S hostname + MiniDLNA vendor + smb:445),
-// the persisted type must be "nas". This is the fix for 192.168.62.138
+// the persisted type must be "nas". This is the fix for 192.168.2.138
 // (极空间 Z4S NAS mis-typed as camera).
 func TestApplyDeviceBridge_NasSignalOverridesCamera(t *testing.T) {
 	rn, _, conn := setupTypeTestDB(t)
 	ctx := context.Background()
 
-	rep := reportWithFields("192.168.62.138", "camera", "MiniDLNA", "1c:83:41:e3:6e:68",
+	rep := reportWithFields("192.168.2.138", "camera", "MiniDLNA", "1c:83:41:e3:6e:68",
 		map[string]string{"node_hostname": "Z4S-2PSE"})
 	rep.Services = []scannerv2.ServiceIdentity{
 		{Service: "smb", Port: 445},
@@ -176,7 +176,7 @@ func TestApplyDeviceBridge_NasSignalOverridesCamera(t *testing.T) {
 	require.True(t, isNew)
 
 	var devType string
-	err := conn.QueryRow(`SELECT type FROM devices WHERE ip_address='192.168.62.138'`).Scan(&devType)
+	err := conn.QueryRow(`SELECT type FROM devices WHERE ip_address='192.168.2.138'`).Scan(&devType)
 	require.NoError(t, err)
 	require.Equal(t, "nas", devType, "a Z4S NAS with MiniDLNA + smb + rtsp should persist as nas, not camera")
 }
@@ -189,14 +189,14 @@ func TestApplyDeviceBridge_CameraWithoutPCOrNasSignalStaysCamera(t *testing.T) {
 	rn, _, conn := setupTypeTestDB(t)
 	ctx := context.Background()
 
-	rep := reportWithFields("192.168.62.200", "camera", "hikvision", "1c:83:41:e3:6e:68",
+	rep := reportWithFields("192.168.2.200", "camera", "hikvision", "1c:83:41:e3:6e:68",
 		map[string]string{"node_hostname": "IPC-1234ABCD"})
 	rep.Services = []scannerv2.ServiceIdentity{{Service: "rtsp", Port: 554}}
 
 	rn.applyDeviceBridge(ctx, rep, rn.networkID, "agent-62")
 
 	var devType string
-	conn.QueryRow(`SELECT type FROM devices WHERE ip_address='192.168.62.200'`).Scan(&devType)
+	conn.QueryRow(`SELECT type FROM devices WHERE ip_address='192.168.2.200'`).Scan(&devType)
 	require.Equal(t, "camera", devType, "a real camera (IPC hostname, hikvision) with no PC/NAS signal must stay camera")
 }
 
@@ -206,7 +206,7 @@ func TestApplyDeviceBridge_CameraWithoutPCOrNasSignalStaysCamera(t *testing.T) {
 // latter must not flip a camera to pc, routers/NAS run RTSP web UIs too).
 func TestIsStrongPcSignal(t *testing.T) {
 	// Strong: explicit laptop/desktop hostnames.
-	for _, h := range []string{"redmi-notebook", "thinkpad-x1", "macbook-pro", "elitebook-840", "surface-go"} {
+	for _, h := range []string{"redmi-laptop", "thinkpad-x1", "macbook-pro", "elitebook-840", "surface-go"} {
 		rep := reportWithFields("10.0.0.1", "camera", "", "", map[string]string{"node_hostname": h})
 		require.Truef(t, isStrongPcSignal(rep), "hostname %q should be a strong PC signal", h)
 	}

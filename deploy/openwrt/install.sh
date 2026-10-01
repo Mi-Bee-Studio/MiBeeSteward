@@ -138,7 +138,7 @@ mask_to_prefix() {
     echo "$_p"
 }
 
-# ip_mask_base 192.168.62.1 255.255.255.0 -> 192.168.62.0 (per-octet AND).
+# ip_mask_base 192.168.2.1 255.255.255.0 -> 192.168.2.0 (per-octet AND).
 ip_mask_base() {
     _ip="$1" _mask="$2" _out=""
     while [ -n "$_ip" ]; do

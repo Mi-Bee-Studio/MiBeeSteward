@@ -20,8 +20,8 @@ import (
 // device is probed at its live address on the next tick. Each method's target
 // shape (bare host / host:port / scheme URL) is exercised.
 func TestResolveLiveTarget(t *testing.T) {
-	const frozen = "192.168.63.187"
-	const live = "192.168.63.60"
+	const frozen = "192.168.1.187"
+	const live = "192.168.1.60"
 
 	tests := []struct {
 		name   string
@@ -31,13 +31,13 @@ func TestResolveLiveTarget(t *testing.T) {
 	}{
 		{"icmp bare host", frozen, live, live},
 		{"snmp bare host", frozen, live, live},
-		{"tcp host:port", "192.168.63.187:80", live, "192.168.63.60:80"},
-		{"http scheme url", "http://192.168.63.187:80/health", live, "http://192.168.63.60:80/health"},
-		{"https scheme url default port", "https://192.168.63.187/", live, "https://192.168.63.60/"},
-		{"onvif scheme url", "http://192.168.63.187:8080/onvif/device_service", live, "http://192.168.63.60:8080/onvif/device_service"},
+		{"tcp host:port", "192.168.1.187:80", live, "192.168.1.60:80"},
+		{"http scheme url", "http://192.168.1.187:80/health", live, "http://192.168.1.60:80/health"},
+		{"https scheme url default port", "https://192.168.1.187/", live, "https://192.168.1.60/"},
+		{"onvif scheme url", "http://192.168.1.187:8080/onvif/device_service", live, "http://192.168.1.60:8080/onvif/device_service"},
 		{"no change when live empty (frozen kept)", frozen, "", frozen},
 		{"no change when both empty", "", "", ""},
-		{"url path + query preserved", "http://192.168.63.187:8080/path?q=1", live, "http://192.168.63.60:8080/path?q=1"},
+		{"url path + query preserved", "http://192.168.1.187:8080/path?q=1", live, "http://192.168.1.60:8080/path?q=1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

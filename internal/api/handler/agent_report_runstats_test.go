@@ -26,7 +26,7 @@ func seedAgentTaskAndRun(t *testing.T, db *sql.DB, networkID int64) int64 {
 	ctx := context.Background()
 	res, err := db.ExecContext(ctx,
 		`INSERT INTO scan_tasks (name, targets, cron_expr, network_id) VALUES (?, ?, ?, ?)`,
-		"agent-scan", "192.168.62.0/24", "*/5 * * * *", networkID)
+		"agent-scan", "192.168.2.0/24", "*/5 * * * *", networkID)
 	require.NoError(t, err)
 	taskID, err := res.LastInsertId()
 	require.NoError(t, err)
@@ -59,8 +59,8 @@ func TestAgentReport_BackfillsRunningRunStats(t *testing.T) {
 	code, body := postReport(t, srv, token, map[string]interface{}{
 		"agent_id": "agent-62",
 		"hosts": []map[string]interface{}{
-			{"ip": "192.168.62.41", "alive": true, "mac": "aa:bb:cc:dd:ee:41", "inferred_type": "camera"},
-			{"ip": "192.168.62.42", "alive": true, "mac": "aa:bb:cc:dd:ee:42", "inferred_type": "pc"},
+			{"ip": "192.168.2.41", "alive": true, "mac": "aa:bb:cc:dd:ee:41", "inferred_type": "camera"},
+			{"ip": "192.168.2.42", "alive": true, "mac": "aa:bb:cc:dd:ee:42", "inferred_type": "pc"},
 		},
 	})
 	require.Equal(t, 200, code, "body: %v", body)
@@ -80,7 +80,7 @@ func TestAgentReport_BackfillsRunOnStablePath(t *testing.T) {
 	srv, db, token, networkID := setupAgentIngestServer(t)
 
 	hosts := []map[string]interface{}{
-		{"ip": "192.168.62.41", "alive": true, "mac": "aa:bb:cc:dd:ee:41", "inferred_type": "camera"},
+		{"ip": "192.168.2.41", "alive": true, "mac": "aa:bb:cc:dd:ee:41", "inferred_type": "camera"},
 	}
 	report := map[string]interface{}{"agent_id": "agent-62", "hosts": hosts}
 	code, body := postReportWithHeader(t, srv, token, "X-Network-State-Hash", "h1", report)
@@ -113,7 +113,7 @@ func TestAgentReport_BackfillNoPendingRunIsNoop(t *testing.T) {
 
 	code, body := postReport(t, srv, token, map[string]interface{}{
 		"agent_id": "agent-62",
-		"hosts":    []map[string]interface{}{{"ip": "192.168.62.41", "alive": true, "mac": "aa:bb:cc:dd:ee:41"}},
+		"hosts":    []map[string]interface{}{{"ip": "192.168.2.41", "alive": true, "mac": "aa:bb:cc:dd:ee:41"}},
 	})
 	require.Equal(t, 200, code, "body: %v", body)
 
@@ -135,7 +135,7 @@ func TestAgentReport_PassiveBatchDoesNotCloseRun(t *testing.T) {
 		"agent_id": "agent-62",
 		"origin":   "passive",
 		"hosts": []map[string]interface{}{
-			{"ip": "192.168.62.43", "alive": true, "mac": "aa:bb:cc:dd:ee:43"},
+			{"ip": "192.168.2.43", "alive": true, "mac": "aa:bb:cc:dd:ee:43"},
 		},
 	})
 	require.Equal(t, 200, code, "body: %v", body)
@@ -145,13 +145,13 @@ func TestAgentReport_PassiveBatchDoesNotCloseRun(t *testing.T) {
 
 	// The host itself still landed despite the run staying open.
 	var n int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.62.43'`).Scan(&n))
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.2.43'`).Scan(&n))
 	require.Equal(t, 1, n, "passive host must be bridged into the ledger")
 
 	code, body = postReport(t, srv, token, map[string]interface{}{
 		"agent_id": "agent-62",
 		"hosts": []map[string]interface{}{
-			{"ip": "192.168.62.43", "alive": true, "mac": "aa:bb:cc:dd:ee:43"},
+			{"ip": "192.168.2.43", "alive": true, "mac": "aa:bb:cc:dd:ee:43"},
 		},
 	})
 	require.Equal(t, 200, code, "body: %v", body)

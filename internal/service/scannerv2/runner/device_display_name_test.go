@@ -24,7 +24,7 @@ import (
 // carried a hostname via mDNS/TLS-cert/SNMP evidence (which buildScanAttributes
 // merges into scan_attributes.hostname) left devices.name stuck on the IP.
 func TestDeviceDisplayName(t *testing.T) {
-	ip := "192.168.63.20"
+	ip := "192.168.1.20"
 
 	t.Run("node_hostname field wins", func(t *testing.T) {
 		rep := scannerv2.HostReport{IP: ip}

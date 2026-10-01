@@ -437,7 +437,7 @@ func TestIsMulticastMAC(t *testing.T) {
 // layer are now covered by runner/device_bridge_test.go (the single writer).
 func TestRecordDevice_DoesNotCreateIdentity(t *testing.T) {
 	repo, ctx := newRepo(t, Options{NetworkID: 1})
-	ip := "192.168.63.20"
+	ip := "192.168.1.20"
 	mac := "aa:bb:cc:dd:ee:02"
 
 	// No device row exists yet → RecordDevice is a no-op (must NOT insert).

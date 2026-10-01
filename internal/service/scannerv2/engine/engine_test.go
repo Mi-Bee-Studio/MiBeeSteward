@@ -102,17 +102,17 @@ func TestNewEngine_AssemblesAllLayers(t *testing.T) {
 // TestParseScanTargets_ExcludesReservedBounds pins the #254 fix: IPv4 CIDRs
 // wider than /31 must not enumerate the network or broadcast address. The
 // broadcast IP answered ICMP via every host's fan-out reply and got recorded
-// as a phantom always-online device (192.168.63.255 in the wild). /31
+// as a phantom always-online device (192.168.1.255 in the wild). /31
 // (RFC 3021 point-to-point), /32, and IPv6 keep every address.
 func TestParseScanTargets_ExcludesReservedBounds(t *testing.T) {
-	got, err := parseScanTargets("192.168.63.0/24")
+	got, err := parseScanTargets("192.168.1.0/24")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 254 {
 		t.Fatalf("/24 = %d ips, want 254", len(got))
 	}
-	if got[0] != "192.168.63.1" || got[len(got)-1] != "192.168.63.254" {
+	if got[0] != "192.168.1.1" || got[len(got)-1] != "192.168.1.254" {
 		t.Fatalf("/24 bounds = [%s, %s], want [.1, .254]", got[0], got[len(got)-1])
 	}
 

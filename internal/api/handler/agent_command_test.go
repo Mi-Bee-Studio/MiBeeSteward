@@ -77,13 +77,13 @@ func strPtr(s string) *string { return &s }
 // the agent's bound network must be rejected at enqueue time.
 func TestAgentCommand_BoundaryCheck_Layer1(t *testing.T) {
 	const agentID = "agent-62"
-	const cidr = "192.168.62.0/24"
+	const cidr = "192.168.2.0/24"
 
 	t.Run("in-network targets accepted", func(t *testing.T) {
 		srv, queries := setupCommandServer(t, cidr, agentID)
 		resp := postCommand(t, srv, agentID, map[string]interface{}{
 			"command": "scan",
-			"payload": map[string]interface{}{"targets": "192.168.62.0/24"},
+			"payload": map[string]interface{}{"targets": "192.168.2.0/24"},
 		})
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
 		// Confirm it was actually persisted.
@@ -92,14 +92,14 @@ func TestAgentCommand_BoundaryCheck_Layer1(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Len(t, cmds, 1)
-		require.Contains(t, cmds[0].Payload, "192.168.62.0/24")
+		require.Contains(t, cmds[0].Payload, "192.168.2.0/24")
 	})
 
 	t.Run("out-of-network CIDR rejected (the issue-#19 case)", func(t *testing.T) {
 		srv, queries := setupCommandServer(t, cidr, agentID)
 		resp := postCommand(t, srv, agentID, map[string]interface{}{
 			"command": "scan",
-			"payload": map[string]interface{}{"targets": "192.168.63.0/24"},
+			"payload": map[string]interface{}{"targets": "192.168.1.0/24"},
 		})
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		// Nothing persisted.
@@ -114,7 +114,7 @@ func TestAgentCommand_BoundaryCheck_Layer1(t *testing.T) {
 		srv, _ := setupCommandServer(t, cidr, agentID)
 		resp := postCommand(t, srv, agentID, map[string]interface{}{
 			"command": "scan",
-			"payload": map[string]interface{}{"targets": "192.168.62.5,192.168.63.5"},
+			"payload": map[string]interface{}{"targets": "192.168.2.5,192.168.1.5"},
 		})
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	})
