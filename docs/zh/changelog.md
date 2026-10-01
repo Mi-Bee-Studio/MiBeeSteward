@@ -11,6 +11,37 @@
 
 - **不再迁移旧版数据库。** v0.7 移除整个启动迁移链：`db/schema.sql` 成为唯一 DDL 来源，仅在数据库首次创建时应用；schema 版本与本构建不符的数据库在启动时直接拒绝，并提示重建。从旧版升级到 v0.7 需备份数据目录后使用全新数据库（设备会在下次扫描时重新登记）。此举根除双 DDL 来源这一缺陷类别（#328、#431、#437）。agent 本地 mini-DB 同策略，本地扫描历史与本地 SNMPv3 凭据库不随迁。
 
+### 新增
+
+- **型号识别管道（主机名→型号）**：iot-identity 米家主机名规则现在通过语料的 `regex_capture` 提取型号词元（`viomi-waterheater-e13_miap5E55` 中的 `e13`），完整管道把它送进 `scan_attributes.inferred_model`、`devices.model` 列（只填空槽，绝不覆盖用户手工值或 SNMP 得到的型号）、agent 上报线格式（`inferred_model`）与实时扫描 API 响应。经 10 个真实主机名实地验证；一次重扫后型号列从 0% 覆盖升到每个米家主机都带型号词元。
+- **指纹语料刷新（recog + IANA PEN + OUI）**：`recog-imported.yaml` 从上游 Rapid7 Recog 重新生成（2534 → 2547 条，净 +13 并刷新匹配）；`snmp-data.yaml` 选择性导入 16 条经核实的 IANA PEN 企业 OID（Fortinet、Reolink、Uniview、Epson/Canon/Brother 打印机，Dahua/QNAP/TP-Link/Huawei/Aruba/Axis 的第二/续期 PEN）；精选 OUI 表新增小米生态模块 OUI（13 个前缀）、常见 Espressif ESP32 段（12 个）、NVIDIA Jetson 板载网卡（2 个），以及第二批经实地发现并逐条对照 IEEE 注册表（经 TShark manuf 生成核验）的 22 个厂商前缀（Synology、QNAP、Seiko Epson、Vatilon、D-Link、TP-Link、水星、GL.iNet、华硕、合肥Bitland、华来、另四个小米/Lumi-United 段、另五个 Espressif 段）——此前表里没有任何小米条目。会误导品牌的模组硅片厂商（Intel、AMPAK、Fn-Link）与注册表快照中不存在的前缀被有意排除。
+- **音箱 / 联名 / 开发板主机名指纹**：`iot-identity.yaml` 新增规则从小米智能音箱主机名提取型号代码（`MiAiSoundbox-LX06` → 型号 `LX06`、`XiaoAiTongXueX6A` → `X6A`）、为飞利浦联名米家设备定品牌（`philips-light-sread9_mibtXXXX` → 品牌 Philips + 型号；原通用后缀规则只提取到型号）、从树莓派主机名提取板型（`rpi3b-*` → `3b`、`rpi400` → `400`），并为 `redmi-*` / `jetson-*` 开发机主机名定品牌。`http-tls.yaml` 的证书主题 CN 关键词映射新增 `miwifi` → 小米（小米路由器原厂固件用 `MIWIFI *` CN 签名）。
+- **ESP32/MiBeeCam 主机名指纹**：`iot-identity.yaml` 新增规则为 ESP32 开发板（`esp32c3-*`、`espressif.*`）与 MiBeeCam AI-Thinker 模组按 DHCP 主机名定品牌。
+- **主机身份语料：域名容忍匹配 + 六个厂商家族**：手机/平板/电视主机名规则现在接受可选的尾部 DNS 域名（即 2026-09-30 的惰性分段习语），`iot-identity.yaml` 新增华为零售码手机主机名（`…-AL00U` → 品牌 + 码作型号）、小米出厂日期码手机主机名（7 位数字 + 字母，只定品牌——该码映射不到稳定的公开型号名）、小米中继器（`xiaomi-repeater-v2_miio<序列号>`，序列号不进型号）、MacBook（`MacBookPro.<域名>` → 品牌 Apple，无型号——macOS 不公告型号数字）、香蕉派开发板（`bananapim5` → 型号 m5）、以及 ESP32 主机名的芯片变体型号（`esp32c6-<后缀>` → 型号 esp32c6，MAC 派生后缀排除）的规则。`device_types.yaml` 新增 `-pad`/`ipad` 手机关键词（此前平板主机名被判 "other"）与域名边界的 `pc.` 关键词。
+
+### 修复
+
+- **带域名的主机名从未命中手机/平板/电视规则**：那四条 2026-10-01 的正则以 `$` 结尾锚定，rDNS/mDNS 实际产出的名字（`…-pad-6.<域名>`）过不了锚点，实地一台平板在规则存在的情况下依然无标识；四条规则现在都容忍尾部点分域名（实地发现，脱敏样本已钉入测试）。
+- **agent 上报的主机丢失 SSH banner 操作系统**：agent 线格式没有顶层 OS 字段，`hostToReported` 丢掉了 banner 推导的 `os_type`（`OpenSSH_for_Windows_9.5` → Windows），agent 扫描的主机落到端口形态分型（实地：一台 Windows 机器被 smb:445 判成 nas）。`ReportedHostToReport` 现在从 ssh 服务 metadata 恢复 OS，agent 上报主机的 `os_rules` 分型与 `scan_attributes.os` 恢复工作。
+- **当 AirPlay 接收器的 MacBook 被判成 iot**：macOS 可以公告 `_airplay._tcp`，mDNS 协议裁决（"iot"）压过了所有主机名信号；协议来源的 iot 裁决现在让位于强 PC 主机名信号（与端口来源的 camera 例外同构，指纹/SNMP 裁决仍然权威不受影响）。
+- **主机名型号提取不再抓走 DNS TLD**：米家型号提取正则使用贪婪 `(?:.*[-_.])?` 前缀加 `$` 锚，带 DNS 后缀的主机名（Tailscale `.ts.net` 名、mDNS `.local` 名）让贪婪段跨越了点，捕获组拿到的是顶级标签——实地一台 Aqara 网关主机名产出 `inferred_model="net"` 并写入 `devices.model`。全部 11 条规则改用分段不能包含分隔符或点的惰性习语（`(?:[^-_.]*[-_])*?`），并加显式尾域名组（`(?:\.[0-9a-z-]+)*$`）；完整实地样本集（裸主机名、`_miap`/`_mibt` 后缀、带域名）已钉入测试。
+- **换板后新 MAC 不再丢弃整份上报**：设备 MAC 首次出现而 IP 槽位已被占用（换板，或繁忙槽位上的新 DHCP 身份）时，身份解析返回 IsNew，INSERT 撞上 `(ip_address, network_id)` 唯一索引，agent 对该主机的整份上报丢失（实地表现为上报摄取反复 `UNIQUE constraint failed`）。解析现在返回 TakeOver 裁决（槽位持有者对自己的槽位是权威）：apply 路径强制覆盖持有者 MAC 同时保留身份列的填空语义，与库内已有的漫游/替换语义一致。
+- **历史垃圾品牌在下次重扫时自愈**：身份 UPDATE 是填空式，fold 期垃圾守卫出现之前写入的 Web 服务器软件名（`nginx`、`Apache`、`Caddy`、`MiniDLNA`、`Portable`…）或无字母值（`"0,1,2"` mDNS 能力位）会永远留在品牌字段（实地：NAS 卡在品牌 `Apache` 而 OUI 明明是 QNAP）。现在扫描带有真实品牌时，恰好这两类垃圾会被纠正覆盖；精选的非垃圾品牌（含用户手工值）永不被覆盖。
+- **agent 并发扫描下反复 `database is locked (517)`**：agent 的先读后写 enrich 事务跑在 DEFERRED SQLite 事务里；并发扫描写者在读与写之间提交时，写锁升级立即以 SQLITE_BUSY_SNAPSHOT（517）失败——`busy_timeout` 无法重试的一类——每个扫描周期都以 `enrich device failed` 现身。新的 `dbopen.OpenTxLock` 追加 modernc 的 `_txlock=immediate` DSN 参数，agent 事务在 BEGIN 就拿写锁（干扰写者排队等 `busy_timeout`）；延迟失败模式与立即修复都钉进了并发测试。
+- **多宿主主机在网卡切换时不再弹跳身份（#472，存储语义）**：以太网 + WiFi 在同一 IP 上轮换的主机过去每份上报都走接管/替换路径——强制覆盖槽位 MAC、品牌乒乓、每轮把自己的另一网卡行标记下线（实地：一块开发板约每 15 分钟切换一次网卡）。强制覆盖前，槽位此前的 MAC 现在记录进 `scan_attributes.mac_aliases`，MAC 是槽位持有者已记录别名的那份上报按普通更新解析（仅刷新状态）。别名行的 UI 侧聚合留作后续。
+- **enrich 不再把外来 MAC 盖到已占用槽位上**：RecordDevice/enrich 路径曾把上报 MAC 无条件填进按 IP 匹配的行；现在只在该行 MAC 为空时填充（文档的"新解析"契约），MAC 迁移专属身份机制。动机是 2026-10-01 观察到的同 MAC 影子行（数小时内自我下线、被 7 天清扫剪除）。
+- **agent 扛得住保留清扫的 VACUUM**：`busy_timeout` 从 5 秒提到 15 秒，约 11 秒的 VACUUM 窗口（约 44 MB 本地库上的 6 小时清扫）不再让调度器的陈旧运行清理一天两次记录 `SQLITE_BUSY`。
+- **SSH banner 版本不再携带二进制密钥交换字节**：SSH 服务器把问候与二进制 KEX_INIT 放在同一个 TCP 段里；banner 探测读到换行即止但返回了整个缓冲区，于是 dropbear 路由器的 SSH "版本"成了 `dropbear\r
+\x00\x00…curve25519-sha256…`。banner 现在截到第一个换行。
+- **Web/媒体服务器软件不再冒充设备品牌**：编排器的 HTTP-Server 证据 fold 跑在 handler 增补之前，nginx 前置的小米网关被定品牌 "nginx"；SSDP 的产品词元把 NAS 定成 "MiniDLNA"、fnOS 主机定成 "Portable"。软件名拒绝清单扩充（nginx/Apache/Caddy/lighttpd/IIS + MiniDLNA/ReadyMedia/Portable），miot 生态品牌现在覆盖 Web 服务器品牌（与 TLS fold 同规），SSDP 产品提取彻底跳过软件名。
+- **mDNS TXT 标志列表不再变成品牌**：AirPlay 接收器发布 `txt.md="0,1,2"`（能力位）曾被原样当作设备品牌；完全无字母的值现在在品牌 fold 里被拒绝。
+- **9100 端口不再把 node_exporter 主机判成"打印机"**：JetDirect 回退规则对任何开放的 9100 触发，而 node_exporter 用同一端口（实地：一台 GL.iNet 路由器被判 "printer"）。端口规则新增 `exclude_services` 否决（仅当被排除服务在该端口已被分类时触发，无 banner 的真打印机不受影响），路由器主机名关键词新增 `gl-inet`。
+- **agent 本地 mini-DB 不再无限增长或保留死影子设备**：agent 此前没有保留清扫（实地测试：一周 95 MB，七个被中心早已丢弃的静默无 MAC 影子行）。现在 6 小时一次的清扫剪除静默设备（24h 无 MAC、7d 有 MAC，镜像中心保留语义，MAC 取自 `mac_address` 或 `scan_attributes.mac`）、老化 `scan_results`（72h——实测每天约 1 万行已摄取证据，此前的 14 天窗口意味着小闪存盒上约 180 MB 稳态文件）与 `scan_task_runs`（30d），并在实质剪除后 `VACUUM`（SQLite 的 DELETE 从不收缩文件；实地：116.8 → 41.7 MB 一次完成）。
+
+### 安全
+
+- **示例/测试网段的向前脱敏**：全部受跟踪文件把示例/测试网段迁移到文档网段 192.168.2.x/1.x（与截图脱敏代理同一映射），个人设备名泛化。历史提交不可变；自本变更起，全新克隆不含任何可关联部署网段的标识。代理运行时仍显式接收真实上游。
+
 ## [0.6.0] - 2026-09-20
 
 **路由器原生版本：OpenWrt/iStoreOS 成为一等部署形态、被动发现驱动的指纹识别、wire-truth API 契约。** v0.6.0 从三个方向补完分布式 agent 故事。**形态**：OpenWrt 一键安装包（tarball/.ipk/.apk）+ LuCI 状态/设置页、Tier-1 被动发现默认开启、管理员首启设置全程在浏览器完成（无需 SSH、不打印临时密码）、可配置的密码策略与登录锁定。**识别**：被动观察（DHCP 租约、旁听的 mDNS/SSDP 公告）现在会喂给指纹分类器，包括为 12+ 个"除此之外一问三不知"的设备家族提供品牌识别的米家生态主机名语料，双宿路由器上的发现目击也能归属到正确的网络。**契约与耐久性**：REST API 收敛到统一分页包裹，OpenAPI spec 同时生成 TS 与 Go 两个客户端（CI 漂移检查）；agent 把 SNMPv3 凭据保存在自己的本地库、命令通道只传名称；租约/清扫模型在设备漫游与孤儿行下不再产生弹跳循环；CI 覆盖率棘轮锁定 85% 覆盖的代码库，其背后的战役揪出并修复了四个真实缺陷（心跳停机丢数据、从未生效的身份唯一索引、遗留升级丢列、SNMP 索引解析失效）。一轮 GUI 黑盒测试加固了 SPA 的登录与设备详情面。
