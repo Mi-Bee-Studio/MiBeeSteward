@@ -459,7 +459,10 @@ func openAgentDB(dbPath string) (*sql.DB, error) {
 	// (field-observed 2026-09-29).
 	conn, err := dbopen.OpenTxLock(dbPath, "immediate",
 		"journal_mode=WAL",
-		"busy_timeout=5000",
+		// 15s covers the 6-hourly sweep's VACUUM window (~11s on the field
+		// rig's 44 MB DB, 2026-10-01): with 5s, the scheduler's stale-run
+		// cleanup lost the race twice a day (benign but noisy).
+		"busy_timeout=15000",
 		"synchronous=NORMAL",
 	)
 	if err != nil {
