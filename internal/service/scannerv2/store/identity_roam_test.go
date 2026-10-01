@@ -218,3 +218,57 @@ func TestApplyDeviceIdentity_JunkBrandHealedOnRescan(t *testing.T) {
 	rescan("")
 	require.Equal(t, "Synology", brandOf(), "empty scan brand must not clear or change anything")
 }
+
+// TestApplyDeviceIdentity_NICFailoverAliasNoFlap pins the #472 anti-flap: a
+// multi-homed host (Ethernet + WiFi on one IP, alternating reports) used to
+// trigger the replacement path back and forth every report — force-overwriting
+// identity columns and marking its own other-NIC row offline each cycle. The
+// first replacement records the displaced MAC as an alias on the ip-holder
+// (scan_attributes.mac_aliases); from then on a report from an ALIAS mac
+// resolves to the holder as a plain update (no ReplacedID churn).
+func TestApplyDeviceIdentity_NICFailoverAliasNoFlap(t *testing.T) {
+	repo, nid, conn, ctx := resolveRepo(t, 1)
+	ip := "10.0.0.5"
+	macEth := "aa:bb:cc:dd:ee:41" // row seeded at the ip (the "first" NIC)
+	macWifi := "aa:bb:cc:dd:ee:42"
+	holderID := seedDeviceRow(t, conn, ip, macEth, nid)
+
+	rescan := func(mac string) scannerv2.IdentityResolution {
+		res, err := repo.ResolveDeviceIdentity(ctx, mac, ip, nid)
+		require.NoError(t, err)
+		_, err = repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
+			TargetID: res.TargetID, ReplacedID: res.ReplacedID, IsNew: res.IsNew,
+			TakeOver: res.TakeOver, Roamed: res.Roamed,
+			IP: ip, MAC: mac, NetworkID: nid, Brand: "Acme",
+			OpenPortsJSON: "[]", DetectedServicesJSON: "[]", ScanAttributesJSON: "{}",
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	// Cycle 1: the WiFi NIC reports at the occupied ip — its MAC was never
+	// seen before, so this takes the TakeOver branch (force MAC onto the
+	// holder). The holder's PREVIOUS ethernet MAC is recorded as an alias.
+	res1 := rescan(macWifi)
+	require.True(t, res1.TakeOver, "first foreign MAC at the slot must take over")
+	require.Equal(t, holderID, res1.TargetID)
+
+	// The holder now carries the displaced ethernet MAC as an alias.
+	var attrs string
+	require.NoError(t, conn.QueryRow(`SELECT scan_attributes FROM devices WHERE id=?`, holderID).Scan(&attrs))
+	require.Contains(t, attrs, macEth, "replacement must record the displaced MAC as an alias")
+	require.Contains(t, attrs, `"mac_aliases"`)
+
+	// Cycle 2: the ethernet NIC reports again at the SAME ip. It is a known
+	// alias of the holder — plain update, no second replacement.
+	res2 := rescan(macEth)
+	require.Zero(t, res2.ReplacedID, "alias MAC must not trigger another replacement")
+	require.Equal(t, holderID, res2.TargetID, "alias report must resolve to the holder row")
+
+	// And the holder's MAC/identity stay stable across the alternation.
+	var mac, brand string
+	require.NoError(t, conn.QueryRow(`SELECT mac_address, brand FROM devices WHERE id=?`, holderID).Scan(&mac, &brand))
+	require.Equal(t, macWifi, mac, "holder keeps the last physical occupant's MAC")
+	require.Equal(t, "Acme", brand)
+	require.Equal(t, 1, countRows(t, conn, "SELECT COUNT(*) FROM devices"))
+}
