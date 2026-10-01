@@ -956,7 +956,7 @@ func TestRuleClassifier_HostnameBrandModel(t *testing.T) {
 		// Single-board computers and user-named dev boxes.
 		{"rpi3b-hall", "Raspberry Pi", "3b"},
 		{"rpi400", "Raspberry Pi", "400"},
-		{"redmi-book", "Redmi", ""},
+		{"redmi-laptop", "Redmi", ""},
 		{"jetson-orin", "NVIDIA", ""},
 		// Phones / tablets / TVs whose DHCP device name carries the official
 		// model (field LAN 2026-10-01): Mi-10, REDMI-15R-5G, *Xiaomi-Pad-6,

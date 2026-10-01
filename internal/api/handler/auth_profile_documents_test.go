@@ -651,7 +651,7 @@ func TestAgentCommandEndpoints_FullCycle(t *testing.T) {
 	resp = authPost(t, fx.server.URL+"/api/v1/agents/"+fx.agentID+"/commands", token,
 		`{"command":"scan","payload":{"targets":"10.99.0.0/16"}}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	require.Contains(t, readBody(t, resp), "192.168.62")
+	require.Contains(t, readBody(t, resp), "192.168.2.0/24")
 
 	// Agent polls: sees the pending command.
 	resp = authGet(t, fx.server.URL+"/api/v1/agents/commands", fx.agentTok)

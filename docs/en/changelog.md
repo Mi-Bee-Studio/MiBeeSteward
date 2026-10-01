@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **Forward sanitization of the example/test LAN**: all tracked files move the fictional-but-real-mirroring ranges 192.168.62.x/63.x to the documentation ranges 192.168.2.x/1.x (the same mapping the screenshot sanitize proxy uses), and personal device names are genericized. Historical commits are immutable; from this change on, a fresh clone contains no identifier tied to any deployment LAN. The proxy still takes its real upstream explicitly at runtime.
+- **Forward sanitization of the example/test LAN**: all tracked files move their example/test LAN ranges to the documentation ranges 192.168.2.x/1.x (the same mapping the screenshot sanitize proxy uses), and personal device names are genericized. Historical commits are immutable; from this change on, a fresh clone contains no identifier tied to any deployment LAN. The proxy still takes its real upstream explicitly at runtime.
 
 ## [0.6.0] - 2026-09-20
 

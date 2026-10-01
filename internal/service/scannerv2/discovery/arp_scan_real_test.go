@@ -22,7 +22,7 @@ import (
 // fillARPRequestTarget (tested separately).
 func TestBuildARPRequestLayout(t *testing.T) {
 	srcMAC := [6]byte{0xaa, 0xbb, 0xcc, 0x00, 0x11, 0x22}
-	srcIP := [4]byte{192, 168, 63, 101}
+	srcIP := [4]byte{192, 168, 1, 101}
 	f := buildARPRequest(srcMAC, srcIP)
 
 	if len(f) != 42 {
@@ -65,11 +65,11 @@ func TestBuildARPRequestLayout(t *testing.T) {
 // not mutate the template (each frame is an independent copy).
 func TestFillARPRequestTarget(t *testing.T) {
 	srcMAC := [6]byte{0xaa, 0xbb, 0xcc, 0x00, 0x11, 0x22}
-	srcIP := [4]byte{192, 168, 63, 101}
+	srcIP := [4]byte{192, 168, 1, 101}
 	tmpl := buildARPRequest(srcMAC, srcIP)
 
 	bcast := [6]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
-	tgt := [4]byte{192, 168, 63, 34}
+	tgt := [4]byte{192, 168, 1, 34}
 	f := fillARPRequestTarget(tmpl, bcast, srcMAC, srcIP, tgt)
 
 	// Ethernet dst = broadcast.
@@ -104,7 +104,7 @@ func TestParseARPReply(t *testing.T) {
 	// op = reply
 	reply[20], reply[21] = 0x00, arpOpReply
 	copy(reply[22:28], []byte{0xdc, 0xa6, 0x32, 0x12, 0x2a, 0x4b}) // sender MAC
-	copy(reply[28:32], []byte{192, 168, 63, 34})                   // sender IP
+	copy(reply[28:32], []byte{192, 168, 1, 34})                    // sender IP
 
 	ip, mac, ok := parseARPReply(reply)
 	if !ok {

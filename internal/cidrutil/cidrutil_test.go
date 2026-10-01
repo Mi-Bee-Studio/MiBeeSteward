@@ -106,14 +106,14 @@ func TestPartitionTargets(t *testing.T) {
 		require.ElementsMatch(t, []string{"192.168.1.5", "10.0.0.1"}, out)
 	})
 	t.Run("range spanning boundary", func(t *testing.T) {
-		in, out, err := PartitionTargets("192.168.61.250-192.168.2.5", n)
+		in, out, err := PartitionTargets("192.168.1.250-192.168.2.5", n)
 		require.NoError(t, err)
-		// .250, .251, .252, .253, .254, .255 on the 61 side are OUT;
-		// .0-.5 on the 62 side are IN.
+		// .250-.255 on the .1 side are OUT; .0-.5 on the .2 side (inside n)
+		// are IN.
 		require.Len(t, out, 6)
 		require.Len(t, in, 6)
 		require.Contains(t, in, "192.168.2.1")
-		require.Contains(t, out, "192.168.61.255")
+		require.Contains(t, out, "192.168.1.255")
 	})
 	t.Run("nil network -> empty, no error", func(t *testing.T) {
 		in, out, err := PartitionTargets("192.168.2.1", nil)

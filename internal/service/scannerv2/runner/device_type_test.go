@@ -57,13 +57,13 @@ func reportWithFields(ip, inferredType, brand, mac string, extra map[string]stri
 }
 
 // TestHeuristicDeviceType_PCHostnameBeatsRTSP covers the regression at the heart
-// of Bug B: a laptop (hostname "redmi-book") running a dev RTSP server on
+// of Bug B: a laptop (hostname "redmi-laptop") running a dev RTSP server on
 // 8554 must be typed "pc", not "camera". The PC hostname branch was placed
 // BEFORE the camera branch and the rtsp port-shape fallback specifically so this
 // resolves to pc.
 func TestHeuristicDeviceType_PCHostnameBeatsRTSP(t *testing.T) {
 	rep := reportWithFields("192.168.2.41", "camera", "", "38:68:93:ad:6a:6f",
-		map[string]string{"node_hostname": "redmi-book"})
+		map[string]string{"node_hostname": "redmi-laptop"})
 	// An RTSP service on 8554 is exactly what mis-typed this host as a camera.
 	rep.Services = []scannerv2.ServiceIdentity{{Service: "rtsp", Port: 8554}}
 	require.Equal(t, "pc", typeOnly(rep),
@@ -138,13 +138,13 @@ func TestHeuristicDeviceType_RealCameraUnaffected(t *testing.T) {
 // applyDeviceBridge (device_bridge.go ~line 56): when a handler set
 // inferred_type="camera" (e.g. CameraHandler from an RTSP port) but the host
 // carries a strong PC signal, the persisted type must be "pc". This is the
-// end-to-end fix for 192.168.2.41 (redmi-book, RTSP on 8554).
+// end-to-end fix for 192.168.2.41 (redmi-laptop, RTSP on 8554).
 func TestApplyDeviceBridge_PCSignalOverridesCamera(t *testing.T) {
 	rn, _, conn := setupTypeTestDB(t)
 	ctx := context.Background()
 
 	rep := reportWithFields("192.168.2.41", "camera", "", "38:68:93:ad:6a:6f",
-		map[string]string{"node_hostname": "redmi-book"})
+		map[string]string{"node_hostname": "redmi-laptop"})
 	rep.Services = []scannerv2.ServiceIdentity{{Service: "rtsp", Port: 8554}}
 
 	isNew, _ := rn.applyDeviceBridge(ctx, rep, rn.networkID, "agent-62")
@@ -206,7 +206,7 @@ func TestApplyDeviceBridge_CameraWithoutPCOrNasSignalStaysCamera(t *testing.T) {
 // latter must not flip a camera to pc, routers/NAS run RTSP web UIs too).
 func TestIsStrongPcSignal(t *testing.T) {
 	// Strong: explicit laptop/desktop hostnames.
-	for _, h := range []string{"redmi-book", "thinkpad-x1", "macbook-pro", "elitebook-840", "surface-go"} {
+	for _, h := range []string{"redmi-laptop", "thinkpad-x1", "macbook-pro", "elitebook-840", "surface-go"} {
 		rep := reportWithFields("10.0.0.1", "camera", "", "", map[string]string{"node_hostname": h})
 		require.Truef(t, isStrongPcSignal(rep), "hostname %q should be a strong PC signal", h)
 	}

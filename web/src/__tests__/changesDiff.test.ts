@@ -18,7 +18,7 @@ import { buildDiff, isDiffMap, tryParse } from '$lib/changesDiff';
 // tests must be updated in the same PR.
 
 const beforeSnapshot = JSON.stringify({
-	name: 'redmi-book',
+	name: 'redmi-laptop',
 	type: 'pc',
 	brand: '-',
 	model: '-',
@@ -29,11 +29,11 @@ const beforeSnapshot = JSON.stringify({
 	detected_services: '[]',
 	prometheus_url: '',
 	node_exporter_url: '',
-	scan_attributes: '{"hostname":"redmi-book","inferred_type":"pc"}'
+	scan_attributes: '{"hostname":"redmi-laptop","inferred_type":"pc"}'
 });
 
 const afterSnapshot = JSON.stringify({
-	name: 'redmi-book',
+	name: 'redmi-laptop',
 	type: 'camera',
 	brand: '-',
 	model: '-',
