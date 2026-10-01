@@ -54,16 +54,16 @@ func TestResolveDeviceUUID_MacPrimaryOverSharedIP(t *testing.T) {
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
 	dropIPNetworkUnique(t, conn)
 
-	insertLeaseDevice(t, conn, agentNetID, "192.168.62.41", "aa:bb:cc:dd:ee:41", "uuid-stale", "2026-09-01T00:00:00Z")
-	insertLeaseDevice(t, conn, agentNetID, "192.168.62.41", "aa:bb:cc:dd:ee:99", "uuid-live", "2026-09-18T00:00:00Z")
+	insertLeaseDevice(t, conn, agentNetID, "192.168.2.41", "aa:bb:cc:dd:ee:41", "uuid-stale", "2026-09-01T00:00:00Z")
+	insertLeaseDevice(t, conn, agentNetID, "192.168.2.41", "aa:bb:cc:dd:ee:99", "uuid-live", "2026-09-18T00:00:00Z")
 
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{
-		reportFor("192.168.62.41", "pc", "", "aa:bb:cc:dd:ee:99"),
+		reportFor("192.168.2.41", "pc", "", "aa:bb:cc:dd:ee:99"),
 	})
 
 	var snapUUID string
 	require.NoError(t, conn.QueryRowContext(ctx,
-		`SELECT device_uuid FROM scan_snapshots WHERE ip = ? AND network_id = ?`, "192.168.62.41", agentNetID).Scan(&snapUUID))
+		`SELECT device_uuid FROM scan_snapshots WHERE ip = ? AND network_id = ?`, "192.168.2.41", agentNetID).Scan(&snapUUID))
 	require.Equal(t, "uuid-live", snapUUID, "lease must follow the MAC-matched (live) row, not the arbitrary row at the IP")
 }
 
@@ -76,16 +76,16 @@ func TestResolveDeviceUUID_RecencyFallbackWithoutMAC(t *testing.T) {
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
 	dropIPNetworkUnique(t, conn)
 
-	insertLeaseDevice(t, conn, agentNetID, "192.168.62.42", "aa:bb:cc:dd:ee:01", "uuid-older", "2026-09-01T00:00:00Z")
-	insertLeaseDevice(t, conn, agentNetID, "192.168.62.42", "", "uuid-newer", "2026-09-18T00:00:00Z")
+	insertLeaseDevice(t, conn, agentNetID, "192.168.2.42", "aa:bb:cc:dd:ee:01", "uuid-older", "2026-09-01T00:00:00Z")
+	insertLeaseDevice(t, conn, agentNetID, "192.168.2.42", "", "uuid-newer", "2026-09-18T00:00:00Z")
 
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{
-		reportFor("192.168.62.42", "pc", "", ""), // no MAC on the sighting
+		reportFor("192.168.2.42", "pc", "", ""), // no MAC on the sighting
 	})
 
 	var snapUUID string
 	require.NoError(t, conn.QueryRowContext(ctx,
-		`SELECT device_uuid FROM scan_snapshots WHERE ip = ? AND network_id = ?`, "192.168.62.42", agentNetID).Scan(&snapUUID))
+		`SELECT device_uuid FROM scan_snapshots WHERE ip = ? AND network_id = ?`, "192.168.2.42", agentNetID).Scan(&snapUUID))
 	require.Equal(t, "uuid-newer", snapUUID)
 }
 
@@ -97,10 +97,10 @@ func TestRecordAliveSnapshots_StampsDeviceLastSeen(t *testing.T) {
 	ctx := context.Background()
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
 
-	insertLeaseDevice(t, conn, agentNetID, "192.168.62.43", "aa:bb:cc:dd:ee:43", "uuid-fresh", "2026-09-01T00:00:00Z")
+	insertLeaseDevice(t, conn, agentNetID, "192.168.2.43", "aa:bb:cc:dd:ee:43", "uuid-fresh", "2026-09-01T00:00:00Z")
 
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{
-		reportFor("192.168.62.43", "pc", "", "aa:bb:cc:dd:ee:43"),
+		reportFor("192.168.2.43", "pc", "", "aa:bb:cc:dd:ee:43"),
 	})
 
 	var lastSeen string

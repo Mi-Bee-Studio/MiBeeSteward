@@ -106,7 +106,7 @@ func TestOpenAgentDB_RunnerSchedulerQueriesCompile(t *testing.T) {
 
 	// Runner results persistence + the API-shaped read-back.
 	require.NoError(t, q.BatchInsertScanResults(ctx, db.BatchInsertScanResultsParams{
-		TaskID: 0, RunID: &run.ID, Ip: "192.168.62.10", Alive: 1, RttMs: 3,
+		TaskID: 0, RunID: &run.ID, Ip: "192.168.2.10", Alive: 1, RttMs: 3,
 		Ports:    `[{"port":80,"service":"http"}]`,
 		Services: `{"http":{"port":80}}`, SnmpData: `{}`,
 		PrometheusDetected: 0, PrometheusUrl: "",
@@ -118,7 +118,7 @@ func TestOpenAgentDB_RunnerSchedulerQueriesCompile(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
-	require.Equal(t, "192.168.62.10", got[0].Ip)
+	require.Equal(t, "192.168.2.10", got[0].Ip)
 }
 
 func TestParseDurationOrDefault(t *testing.T) {

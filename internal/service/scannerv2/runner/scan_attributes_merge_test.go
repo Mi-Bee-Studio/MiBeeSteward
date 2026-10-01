@@ -58,7 +58,7 @@ func reportWith(ip string, fields map[string]string, evidence ...scannerv2.Evide
 func TestScanAttributes_MergePreservesHostname(t *testing.T) {
 	rn, conn := setupScanAttrsTestDB(t)
 	ctx := context.Background()
-	const ip = "192.168.63.20"
+	const ip = "192.168.1.20"
 
 	// Scan 1: a deep scan that collected a hostname via mDNS + vendor + ports.
 	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
@@ -94,7 +94,7 @@ func TestScanAttributes_MergePreservesHostname(t *testing.T) {
 func TestScanAttributes_MergeUpdatesPresentFields(t *testing.T) {
 	rn, conn := setupScanAttrsTestDB(t)
 	ctx := context.Background()
-	const ip = "192.168.63.30"
+	const ip = "192.168.1.30"
 
 	// Scan 1: hostname = OLD-NAME.
 	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
@@ -119,7 +119,7 @@ func TestScanAttributes_MergeUpdatesPresentFields(t *testing.T) {
 func TestScanAttributes_OpenPortsReplaceNotUnion(t *testing.T) {
 	rn, conn := setupScanAttrsTestDB(t)
 	ctx := context.Background()
-	const ip = "192.168.63.40"
+	const ip = "192.168.1.40"
 
 	// Scan 1: ports 80 + 22 in the evidence.
 	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
@@ -168,7 +168,7 @@ func TestScanAttributes_MACFlagsDerivedFromMAC(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			ip := "192.168.63.50"
+			ip := "192.168.1.50"
 			// Wipe devices between subtests so each MAC starts fresh.
 			_, _ = conn.Exec(`DELETE FROM devices WHERE ip_address=?`, ip)
 			_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
@@ -209,7 +209,7 @@ func TestScanAttributes_MACFlagsDerivedFromMAC(t *testing.T) {
 func TestScanAttributes_OUIFieldsRecorded(t *testing.T) {
 	rn, conn := setupScanAttrsTestDB(t)
 	ctx := context.Background()
-	const ip = "192.168.63.60"
+	const ip = "192.168.1.60"
 
 	// A report where the mac evidence carries OUI data AND a self-declared brand
 	// (inferred_brand), both should land in scan_attributes (different fields).
@@ -247,7 +247,7 @@ func TestScanAttributes_OUIFieldsRecorded(t *testing.T) {
 func TestScanAttributes_ArpInterfaceRecorded(t *testing.T) {
 	rn, conn := setupScanAttrsTestDB(t)
 	ctx := context.Background()
-	const ip = "192.168.63.61"
+	const ip = "192.168.1.61"
 
 	// A mac evidence carrying the local interface name (the field the ARP probe
 	// sets from /proc/net/arp's Device column).
@@ -274,7 +274,7 @@ func TestScanAttributes_ArpInterfaceRecorded(t *testing.T) {
 func TestScanAttributes_ArpInterfaceAbsentWhenNoDevice(t *testing.T) {
 	rn, conn := setupScanAttrsTestDB(t)
 	ctx := context.Background()
-	const ip = "192.168.63.62"
+	const ip = "192.168.1.62"
 
 	_, _ = rn.applyDeviceBridge(ctx, reportWith(ip,
 		map[string]string{"mac": "bc:ad:28:11:22:55"},

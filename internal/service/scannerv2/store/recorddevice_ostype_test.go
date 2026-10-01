@@ -17,7 +17,7 @@ import (
 // scan_attributes.os stayed empty on the device row.
 func TestRecordDevice_OSType_Propagation(t *testing.T) {
 	repo, ctx := newRepo(t, Options{NetworkID: 1})
-	ip := "192.168.63.9"
+	ip := "192.168.1.9"
 	mac := "04:7c:16:19:22:0e"
 
 	// Seed the device row (RecordDevice no longer creates identities).
@@ -72,7 +72,7 @@ func TestRecordDevice_OSType_Propagation(t *testing.T) {
 // runner would) and assert os_type propagation into scan_attributes.
 func TestRecordDevice_OSType_WithCrossNetworkDuplicate(t *testing.T) {
 	repo, ctx := newRepo(t, Options{NetworkID: 1})
-	ip := "192.168.63.9"
+	ip := "192.168.1.9"
 	mac := "04:7c:16:19:22:0e"
 
 	// Agent-discovered row on network_id=3 (no MAC), a distinct asset.

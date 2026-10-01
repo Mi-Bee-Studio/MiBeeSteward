@@ -31,7 +31,7 @@ func TestRouter_DiscoveryAllSources(t *testing.T) {
 	cfg.Scanner.Discovery.DNSLog.Path = "/nonexistent/dnsmasq.log"
 	cfg.Scanner.Discovery.Multicast.Enabled = true
 	cfg.Scanner.Discovery.RouterARP.Enabled = true
-	cfg.Scanner.RouterARP.Routers = []string{"192.168.62.1"}
+	cfg.Scanner.RouterARP.Routers = []string{"192.168.2.1"}
 	cfg.Scanner.RouterARP.Community = "router-comm"
 
 	router, hb, shutdown := NewRouter(conn, cfg)

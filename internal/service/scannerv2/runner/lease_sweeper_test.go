@@ -55,9 +55,9 @@ func TestLeaseSweeper_LeaseRefreshedOnReport(t *testing.T) {
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
 
 	// Create a device on the agent network + snapshot it.
-	rn.applyDeviceBridge(ctx, reportFor("192.168.62.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"), nid, "agent-62")
+	rn.applyDeviceBridge(ctx, reportFor("192.168.2.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"), nid, "agent-62")
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{
-		reportFor("192.168.62.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"),
+		reportFor("192.168.2.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"),
 	})
 
 	// Sweep with a generous TTL, device was just seen, should NOT expire.
@@ -65,7 +65,7 @@ func TestLeaseSweeper_LeaseRefreshedOnReport(t *testing.T) {
 	sweeper.sweepOnce(ctx)
 
 	var status string
-	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.62.41'`).Scan(&status)
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.2.41'`).Scan(&status)
 	require.Equal(t, "online", status, "freshly-reported device must not expire")
 	lost, _ := queries.ListChangeLog(ctx, db.ListChangeLogParams{
 		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_lost",
@@ -83,21 +83,21 @@ func TestLeaseSweeper_ExpiresStaleAgentDevice(t *testing.T) {
 
 	// Create the device + its snapshot (applyDeviceBridge makes the device row;
 	// RecordAliveSnapshots makes the snapshot row the sweeper reads).
-	rn.applyDeviceBridge(ctx, reportFor("192.168.62.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"), nid, "agent-62")
+	rn.applyDeviceBridge(ctx, reportFor("192.168.2.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"), nid, "agent-62")
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{
-		reportFor("192.168.62.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"),
+		reportFor("192.168.2.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"),
 	})
 	// Backdate the snapshot so it's past the TTL.
 	_, err := conn.ExecContext(ctx,
 		`UPDATE scan_snapshots SET last_seen_at = ? WHERE network_id = ? AND ip = ?`,
-		scannerv2.DBTime(time.Now().UTC().Add(-10*time.Minute)), agentNetID, "192.168.62.41")
+		scannerv2.DBTime(time.Now().UTC().Add(-10*time.Minute)), agentNetID, "192.168.2.41")
 	require.NoError(t, err)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
 	sweeper.sweepOnce(ctx)
 
 	var status string
-	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.62.41'`).Scan(&status)
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.2.41'`).Scan(&status)
 	require.Equal(t, "offline", status, "stale agent device should be expired")
 	lost, _ := queries.ListChangeLog(ctx, db.ListChangeLogParams{
 		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_lost",
@@ -115,20 +115,20 @@ func TestLeaseSweeper_IgnoresCenterNetwork(t *testing.T) {
 	cnid := sql.NullInt64{Int64: centerNetID, Valid: true}
 
 	// Device on the center network with an ancient snapshot.
-	rn.applyDeviceBridge(ctx, reportFor("192.168.63.50", "server", "", "aa:bb:cc:dd:ee:50"), cnid, "")
+	rn.applyDeviceBridge(ctx, reportFor("192.168.1.50", "server", "", "aa:bb:cc:dd:ee:50"), cnid, "")
 	rn.RecordAliveSnapshots(ctx, cnid, 0, []scannerv2.HostReport{
-		reportFor("192.168.63.50", "server", "", "aa:bb:cc:dd:ee:50"),
+		reportFor("192.168.1.50", "server", "", "aa:bb:cc:dd:ee:50"),
 	})
 	_, err := conn.ExecContext(ctx,
 		`UPDATE scan_snapshots SET last_seen_at = ? WHERE network_id = ? AND ip = ?`,
-		scannerv2.DBTime(time.Now().UTC().Add(-24*time.Hour)), centerNetID, "192.168.63.50")
+		scannerv2.DBTime(time.Now().UTC().Add(-24*time.Hour)), centerNetID, "192.168.1.50")
 	require.NoError(t, err)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
 	sweeper.sweepOnce(ctx)
 
 	var status string
-	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.63.50'`).Scan(&status)
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.1.50'`).Scan(&status)
 	require.Equal(t, "online", status, "center-network device must not be expired by the lease sweeper")
 	lost, _ := queries.ListChangeLog(ctx, db.ListChangeLogParams{
 		Column1: 0, NetworkID: nil, Column3: 1, ChangeType: "device_lost",
@@ -144,17 +144,17 @@ func TestLeaseSweeper_IgnoresAlreadyOffline(t *testing.T) {
 	ctx := context.Background()
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
 
-	rn.applyDeviceBridge(ctx, reportFor("192.168.62.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"), nid, "agent-62")
+	rn.applyDeviceBridge(ctx, reportFor("192.168.2.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"), nid, "agent-62")
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{
-		reportFor("192.168.62.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"),
+		reportFor("192.168.2.41", "camera", "hikvision", "aa:bb:cc:dd:ee:41"),
 	})
 	// Make it stale AND already offline.
 	_, err := conn.ExecContext(ctx,
 		`UPDATE scan_snapshots SET last_seen_at = ? WHERE network_id = ? AND ip = ?`,
-		scannerv2.DBTime(time.Now().UTC().Add(-10*time.Minute)), agentNetID, "192.168.62.41")
+		scannerv2.DBTime(time.Now().UTC().Add(-10*time.Minute)), agentNetID, "192.168.2.41")
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx,
-		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.62.41'`)
+		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.2.41'`)
 	require.NoError(t, err)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
@@ -181,21 +181,21 @@ func TestLeaseSweeper_RecoversFreshOfflineAgentDevice(t *testing.T) {
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
 
 	// Create the device + a FRESH snapshot (RecordAliveSnapshots stamps now).
-	rn.applyDeviceBridge(ctx, reportFor("192.168.62.41", "pc", "", "aa:bb:cc:dd:ee:41"), nid, "agent-62")
+	rn.applyDeviceBridge(ctx, reportFor("192.168.2.41", "pc", "", "aa:bb:cc:dd:ee:41"), nid, "agent-62")
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{
-		reportFor("192.168.62.41", "pc", "", "aa:bb:cc:dd:ee:41"),
+		reportFor("192.168.2.41", "pc", "", "aa:bb:cc:dd:ee:41"),
 	})
 	// Simulate the stuck state: the sweeper marked it offline earlier, but the
 	// agent is actively reporting it alive again (snapshot stays fresh).
 	_, err := conn.ExecContext(ctx,
-		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.62.41'`)
+		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.2.41'`)
 	require.NoError(t, err)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
 	sweeper.sweepOnce(ctx)
 
 	var status string
-	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.62.41'`).Scan(&status)
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.2.41'`).Scan(&status)
 	require.Equal(t, "online", status, "fresh-lease agent device stuck offline should be recovered")
 
 	// Recovery emits device_recovered (offline→online), not device_changed.
@@ -222,20 +222,20 @@ func TestLeaseSweeper_NoRecoverOnCenterNetwork(t *testing.T) {
 	ctx := context.Background()
 	cnid := sql.NullInt64{Int64: centerNetID, Valid: true}
 
-	rn.applyDeviceBridge(ctx, reportFor("192.168.63.50", "server", "", "aa:bb:cc:dd:ee:50"), cnid, "")
+	rn.applyDeviceBridge(ctx, reportFor("192.168.1.50", "server", "", "aa:bb:cc:dd:ee:50"), cnid, "")
 	rn.RecordAliveSnapshots(ctx, cnid, 0, []scannerv2.HostReport{
-		reportFor("192.168.63.50", "server", "", "aa:bb:cc:dd:ee:50"),
+		reportFor("192.168.1.50", "server", "", "aa:bb:cc:dd:ee:50"),
 	})
 	// Offline but fresh lease, the recovery candidate shape, on the CENTER net.
 	_, err := conn.ExecContext(ctx,
-		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.63.50'`)
+		`UPDATE devices SET status = 'offline' WHERE ip_address = '192.168.1.50'`)
 	require.NoError(t, err)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
 	sweeper.sweepOnce(ctx)
 
 	var status string
-	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.63.50'`).Scan(&status)
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.1.50'`).Scan(&status)
 	require.Equal(t, "offline", status, "center-network device must not be recovered by the lease sweeper")
 }
 
@@ -298,13 +298,13 @@ func listLost(t *testing.T, queries *db.Queries) []db.ChangeLog {
 func TestLeaseSweeper_ExpiresOrphanedAgentDevice(t *testing.T) {
 	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
-	seedOrphan(t, rn, conn, agentNetID, "192.168.62.71", "aa:bb:cc:dd:ee:71", 10*time.Minute)
+	seedOrphan(t, rn, conn, agentNetID, "192.168.2.71", "aa:bb:cc:dd:ee:71", 10*time.Minute)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
 	sweeper.sweepOnce(ctx)
 
 	var status, offlineSince string
-	conn.QueryRow(`SELECT status, COALESCE(offline_since,'') FROM devices WHERE ip_address='192.168.62.71'`).Scan(&status, &offlineSince)
+	conn.QueryRow(`SELECT status, COALESCE(offline_since,'') FROM devices WHERE ip_address='192.168.2.71'`).Scan(&status, &offlineSince)
 	require.Equal(t, "offline", status, "orphaned online device must be expired by the backstop")
 	require.NotEmpty(t, offlineSince, "offline_since must be stamped for the retention sweep")
 	require.Len(t, listLost(t, queries), 1, "one device_lost event emitted for the orphan")
@@ -321,13 +321,13 @@ func TestLeaseSweeper_ExpiresOrphanedAgentDevice(t *testing.T) {
 func TestLeaseSweeper_OrphanProtectedWithinTTL(t *testing.T) {
 	rn, _, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
-	seedOrphan(t, rn, conn, agentNetID, "192.168.62.72", "aa:bb:cc:dd:ee:72", time.Minute)
+	seedOrphan(t, rn, conn, agentNetID, "192.168.2.72", "aa:bb:cc:dd:ee:72", time.Minute)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
 	sweeper.sweepOnce(ctx)
 
 	var status string
-	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.62.72'`).Scan(&status)
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.2.72'`).Scan(&status)
 	require.Equal(t, "online", status, "orphan within the TTL window must not be expired")
 }
 
@@ -339,7 +339,7 @@ func TestLeaseSweeper_LeaseReferencedDeviceNotOrphanExpired(t *testing.T) {
 	rn, _, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
-	ip, mac := "192.168.62.73", "aa:bb:cc:dd:ee:73"
+	ip, mac := "192.168.2.73", "aa:bb:cc:dd:ee:73"
 	rn.applyDeviceBridge(ctx, reportFor(ip, "pc", "", mac), nid, "agent-62")
 	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{reportFor(ip, "pc", "", mac)})
 	// Age the DEVICE row only; the lease stays fresh → not an orphan, not stale.
@@ -364,7 +364,7 @@ func TestLeaseSweeper_OrphanIgnoresManualDevices(t *testing.T) {
 	ctx := context.Background()
 	_, err := conn.ExecContext(ctx, `
 		INSERT INTO devices (name, type, status, ip_address, mac_address, network_id, scan_source, last_seen)
-		VALUES ('manual-box', 'other', 'online', '192.168.62.99', 'aa:bb:cc:dd:ee:99', ?, 'manual', ?)`,
+		VALUES ('manual-box', 'other', 'online', '192.168.2.99', 'aa:bb:cc:dd:ee:99', ?, 'manual', ?)`,
 		agentNetID, scannerv2.DBTime(time.Now().UTC().Add(-24*time.Hour)))
 	require.NoError(t, err)
 
@@ -372,7 +372,7 @@ func TestLeaseSweeper_OrphanIgnoresManualDevices(t *testing.T) {
 	sweeper.sweepOnce(ctx)
 
 	var status string
-	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.62.99'`).Scan(&status)
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.2.99'`).Scan(&status)
 	require.Equal(t, "online", status, "manual device must not be expired by the orphan backstop")
 }
 
@@ -382,13 +382,13 @@ func TestLeaseSweeper_OrphanIgnoresManualDevices(t *testing.T) {
 func TestLeaseSweeper_OrphanIgnoredOnCenterNetwork(t *testing.T) {
 	rn, _, conn, centerNetID, _ := setupLeaseTestDB(t)
 	ctx := context.Background()
-	seedOrphan(t, rn, conn, centerNetID, "192.168.63.71", "aa:bb:cc:dd:ee:71", 10*time.Minute)
+	seedOrphan(t, rn, conn, centerNetID, "192.168.1.71", "aa:bb:cc:dd:ee:71", 10*time.Minute)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
 	sweeper.sweepOnce(ctx)
 
 	var status string
-	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.63.71'`).Scan(&status)
+	conn.QueryRow(`SELECT status FROM devices WHERE ip_address='192.168.1.71'`).Scan(&status)
 	require.Equal(t, "online", status, "center-network orphan must not be expired by the lease sweeper")
 }
 
@@ -400,7 +400,7 @@ func TestLeaseSweeper_OrphanRecoversWhenReportedAgain(t *testing.T) {
 	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
-	ip, mac := "192.168.62.74", "aa:bb:cc:dd:ee:74"
+	ip, mac := "192.168.2.74", "aa:bb:cc:dd:ee:74"
 	seedOrphan(t, rn, conn, agentNetID, ip, mac, 10*time.Minute)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
@@ -464,7 +464,7 @@ func seedRoamedDevice(t *testing.T, rn *Runner, conn *sql.DB, agentNetID int64, 
 func TestLeaseSweeper_RoamRemnantSkippedAndDissociated(t *testing.T) {
 	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
-	uuid := seedRoamedDevice(t, rn, conn, agentNetID, "192.168.63.145", "192.168.63.172", "11:22:33:44:55:66", 30*time.Minute)
+	uuid := seedRoamedDevice(t, rn, conn, agentNetID, "192.168.1.145", "192.168.1.172", "11:22:33:44:55:66", 30*time.Minute)
 
 	sweeper := NewLeaseSweeper(rn, time.Hour, 5*time.Minute, nil)
 	sweeper.sweepOnce(ctx)
@@ -474,10 +474,10 @@ func TestLeaseSweeper_RoamRemnantSkippedAndDissociated(t *testing.T) {
 	require.Equal(t, "online", status, "roamed device with a fresh lease must not be expired by its stale pre-roam remnant")
 	require.Len(t, listLost(t, queries), 0, "no device_lost for a roamed-alive device")
 	var remnantUUID string
-	conn.QueryRow(`SELECT COALESCE(device_uuid,'') FROM scan_snapshots WHERE network_id=? AND ip='192.168.63.145'`, agentNetID).Scan(&remnantUUID)
+	conn.QueryRow(`SELECT COALESCE(device_uuid,'') FROM scan_snapshots WHERE network_id=? AND ip='192.168.1.145'`, agentNetID).Scan(&remnantUUID)
 	require.Empty(t, remnantUUID, "pre-roam remnant must be dissociated (device_uuid cleared)")
 	var freshUUID string
-	conn.QueryRow(`SELECT device_uuid FROM scan_snapshots WHERE network_id=? AND ip='192.168.63.172'`, agentNetID).Scan(&freshUUID)
+	conn.QueryRow(`SELECT device_uuid FROM scan_snapshots WHERE network_id=? AND ip='192.168.1.172'`, agentNetID).Scan(&freshUUID)
 	require.Equal(t, uuid, freshUUID, "post-roam lease keeps referencing the device")
 
 	// Steady state: the next sweep finds no stale row for the device at all
@@ -492,7 +492,7 @@ func TestLeaseSweeper_RoamRemnantSkippedAndDissociated(t *testing.T) {
 func TestLeaseSweeper_DeadDeviceWithMultipleLeasesStillExpires(t *testing.T) {
 	rn, queries, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
-	uuid := seedRoamedDevice(t, rn, conn, agentNetID, "192.168.63.145", "192.168.63.172", "11:22:33:44:55:66", 30*time.Minute)
+	uuid := seedRoamedDevice(t, rn, conn, agentNetID, "192.168.1.145", "192.168.1.172", "11:22:33:44:55:66", 30*time.Minute)
 	// Kill the post-roam lease too, nothing fresh anywhere.
 	_, err := conn.ExecContext(ctx, `UPDATE scan_snapshots SET last_seen_at = ? WHERE device_uuid = ?`,
 		scannerv2.DBTime(time.Now().UTC().Add(-30*time.Minute)), uuid)
@@ -513,7 +513,7 @@ func TestLeaseSweeper_DeadDeviceWithMultipleLeasesStillExpires(t *testing.T) {
 func TestLeaseSweeper_CrossNetworkFreshLeaseDoesNotBlockExpiry(t *testing.T) {
 	rn, queries, conn, centerNetID, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
-	uuid := seedRoamedDevice(t, rn, conn, agentNetID, "192.168.63.145", "192.168.63.172", "11:22:33:44:55:66", 30*time.Minute)
+	uuid := seedRoamedDevice(t, rn, conn, agentNetID, "192.168.1.145", "192.168.1.172", "11:22:33:44:55:66", 30*time.Minute)
 	// Make BOTH agent-net leases stale, then plant a fresh same-uuid lease in the
 	// CENTER network (the asset moved there).
 	_, err := conn.ExecContext(ctx, `UPDATE scan_snapshots SET last_seen_at = ? WHERE device_uuid = ?`,
@@ -521,7 +521,7 @@ func TestLeaseSweeper_CrossNetworkFreshLeaseDoesNotBlockExpiry(t *testing.T) {
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, `
 		INSERT INTO scan_snapshots (network_id, task_id, ip, mac, device_uuid, miss_count, last_seen_at)
-		VALUES (?, NULL, '192.168.62.200', '11:22:33:44:55:66', ?, 0, ?)`,
+		VALUES (?, NULL, '192.168.2.200', '11:22:33:44:55:66', ?, 0, ?)`,
 		centerNetID, uuid, scannerv2.DBTime(time.Now().UTC()))
 	require.NoError(t, err)
 
@@ -544,15 +544,15 @@ func TestLeaseSweeper_FlapDecayAfterStablePeriod(t *testing.T) {
 	rn, _, conn, _, agentNetID := setupLeaseTestDB(t)
 	ctx := context.Background()
 	nid := sql.NullInt64{Int64: agentNetID, Valid: true}
-	rn.applyDeviceBridge(ctx, reportFor("192.168.63.161", "pc", "", "aa:bb:cc:dd:ee:61"), nid, "agent-62")
-	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{reportFor("192.168.63.161", "pc", "", "aa:bb:cc:dd:ee:61")})
+	rn.applyDeviceBridge(ctx, reportFor("192.168.1.161", "pc", "", "aa:bb:cc:dd:ee:61"), nid, "agent-62")
+	rn.RecordAliveSnapshots(ctx, nid, 0, []scannerv2.HostReport{reportFor("192.168.1.161", "pc", "", "aa:bb:cc:dd:ee:61")})
 	// A quiet flapper (last flap long ago) and a recent one.
-	_, err := conn.ExecContext(ctx, `UPDATE scan_snapshots SET flap_count = 8, last_flap_at = ? WHERE ip = '192.168.63.161'`,
+	_, err := conn.ExecContext(ctx, `UPDATE scan_snapshots SET flap_count = 8, last_flap_at = ? WHERE ip = '192.168.1.161'`,
 		scannerv2.DBTime(time.Now().UTC().Add(-2*flapStablePeriod)))
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, `
 		INSERT INTO scan_snapshots (network_id, task_id, ip, mac, device_uuid, miss_count, last_seen_at, flap_count, last_flap_at)
-		VALUES (?, NULL, '192.168.63.162', '', '', 0, ?, 6, ?)`,
+		VALUES (?, NULL, '192.168.1.162', '', '', 0, ?, 6, ?)`,
 		agentNetID, scannerv2.DBTime(time.Now().UTC()), scannerv2.DBTime(time.Now().UTC().Add(-time.Minute)))
 	require.NoError(t, err)
 
@@ -561,10 +561,10 @@ func TestLeaseSweeper_FlapDecayAfterStablePeriod(t *testing.T) {
 
 	var quietFlap int64
 	var quietAt string
-	conn.QueryRow(`SELECT flap_count, last_flap_at FROM scan_snapshots WHERE ip='192.168.63.161'`).Scan(&quietFlap, &quietAt)
+	conn.QueryRow(`SELECT flap_count, last_flap_at FROM scan_snapshots WHERE ip='192.168.1.161'`).Scan(&quietFlap, &quietAt)
 	require.Equal(t, int64(4), quietFlap, "quiet flapper's counter must halve (8→4)")
 	require.NotEmpty(t, quietAt, "last_flap_at refreshed: each halving needs a new stable window")
 	var recentFlap int64
-	conn.QueryRow(`SELECT flap_count FROM scan_snapshots WHERE ip='192.168.63.162'`).Scan(&recentFlap)
+	conn.QueryRow(`SELECT flap_count FROM scan_snapshots WHERE ip='192.168.1.162'`).Scan(&recentFlap)
 	require.Equal(t, int64(6), recentFlap, "recent flap must not decay")
 }

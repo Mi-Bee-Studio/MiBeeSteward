@@ -30,7 +30,7 @@ func TestApplyDeviceBridge_LastSeenAdvancesOnRescan(t *testing.T) {
 
 	// First scan: device discovered, last_seen stamped ~now.
 	_, _ = rn.applyDeviceBridge(ctx,
-		reportFor("192.168.63.10", "camera", "hikvision", "aa:bb:cc:dd:ee:10"), rn.networkID, "")
+		reportFor("192.168.1.10", "camera", "hikvision", "aa:bb:cc:dd:ee:10"), rn.networkID, "")
 	var devID int64
 	require.NoError(t, conn.QueryRow(
 		`SELECT id FROM devices WHERE mac_address='aa:bb:cc:dd:ee:10'`).Scan(&devID))
@@ -47,7 +47,7 @@ func TestApplyDeviceBridge_LastSeenAdvancesOnRescan(t *testing.T) {
 
 	// Re-scan the same alive device.
 	_, _ = rn.applyDeviceBridge(ctx,
-		reportFor("192.168.63.10", "camera", "hikvision", "aa:bb:cc:dd:ee:10"), rn.networkID, "")
+		reportFor("192.168.1.10", "camera", "hikvision", "aa:bb:cc:dd:ee:10"), rn.networkID, "")
 
 	var after time.Time
 	require.NoError(t, conn.QueryRow(`SELECT last_seen FROM devices WHERE id=?`, devID).Scan(&after))

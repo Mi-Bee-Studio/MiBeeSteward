@@ -23,7 +23,7 @@ server:
 
 network:
   name: "lan-63"        # 改成你的网络名（多实例分布式部署时唯一标识）
-  cidr: "192.168.63.0/24"  # ⚠️ 必须改成宿主机所在 LAN 的 CIDR
+  cidr: "192.168.1.0/24"  # ⚠️ 必须改成宿主机所在 LAN 的 CIDR
   site: "default"
 
 database:

@@ -291,7 +291,7 @@ func TestUpdateTask_ReservedTargetsBlocked(t *testing.T) {
 	svc, queries := setupSvc(t)
 	ctx := context.Background()
 	created, err := svc.CreateTask(ctx, domain.ScanTaskRequest{
-		Name: "lan", Targets: "192.168.63.0/24", CronExpr: "*/30 * * * *",
+		Name: "lan", Targets: "192.168.1.0/24", CronExpr: "*/30 * * * *",
 		PipelineConfig: domain.PipelineConfig{ICMP: domain.ICMPConfig{Enabled: true}},
 		Timeout:        30, ConcurrentHosts: 50,
 	})

@@ -1006,7 +1006,7 @@
 		"Copy Token": "复制令牌",
 		"Copied": "已复制到剪贴板",
 		"Scan Targets": "扫描目标",
-		"Scan Targets Placeholder": "例如 192.168.62.0/24",
+		"Scan Targets Placeholder": "例如 192.168.2.0/24",
 		"Timeout": "超时 (秒)",
 		"Revoke Confirm": "确定要吊销此采集器令牌吗?该采集器将立即失去访问权限。",
 		"Agent ID Required": "采集器 ID 为必填项",
@@ -1058,7 +1058,7 @@
 		"Delete Confirm": "删除网络",
 		"Delete Warning": "该网络上的设备将清除其网络绑定。",
 		"Name Placeholder": "例如 lan-beijing-62",
-		"Cidr Placeholder": "例如 192.168.62.0/24",
+		"Cidr Placeholder": "例如 192.168.2.0/24",
 		"Site Placeholder": "例如 北京分支 / 数据中心 / 云端"
 	},
 	"discovery": {

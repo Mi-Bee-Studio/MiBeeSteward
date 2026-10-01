@@ -444,7 +444,7 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 // SSDP responses look like:
 //
 //	HTTP/1.1 200 OK
-//	LOCATION: http://192.168.63.40:50000/desc.xml
+//	LOCATION: http://192.168.1.40:50000/desc.xml
 //	SERVER: Linux/4.4 UPnP/1.1 MyDevice/1.0
 //	ST: upnp:rootdevice
 //

@@ -33,7 +33,7 @@ database:
 #   - Distributed: each agent sets a distinct name (e.g. "lan-63", "branch-bj").
 network:
   name: "default"
-  cidr: ""        # e.g. "192.168.63.0/24": advisory, not enforced
+  cidr: ""        # e.g. "192.168.1.0/24": advisory, not enforced
   site: ""        # e.g. "hq" / "datacenter-1"
 
 # center configures a discovery AGENT's upstream aggregation center. When url
@@ -44,7 +44,7 @@ network:
 # Empty url = center/standalone mode (serve API + SPA, no upstream reporting).
 # Distributed model: see docs/{en,zh}/distributed.md.
 center:
-  url: ""               # e.g. "http://192.168.63.102:8080"; empty = standalone
+  url: ""               # e.g. "http://192.168.1.102:8080"; empty = standalone
   auth_token: ""        # agent bearer token from the center; REQUIRED when url set
   report_interval: "30s" # flush buffered results when buffer not full; default 30s
   remote_ops_enabled: false # AGENT-side opt-in (#278): allow executing restart /
@@ -241,7 +241,7 @@ scanner:
   # → cross-subnet MAC disabled; the scanner falls back to /proc/net/arp (local
   # subnet only).
   router_arp:
-    routers: []        # e.g. ["192.168.63.1", "192.168.62.1"]
+    routers: []        # e.g. ["192.168.1.1", "192.168.2.1"]
     community: "public"
     timeout: 4         # seconds per router walk
   # rdns tunes the reverse-DNS probe (active:rdns). By default it uses the
@@ -252,7 +252,7 @@ scanner:
   # those servers directly for PTR records. Each entry is host or host:port.
   # Empty = use the system resolver. Override with MIBEE_SCANNER_RDNS_DNS_SERVERS.
   rdns:
-    dns_servers: []    # e.g. ["192.168.63.1"] (the LAN DNS / router)
+    dns_servers: []    # e.g. ["192.168.1.1"] (the LAN DNS / router)
     timeout: 2         # seconds per lookup
   # mdns tunes the mDNS probe (active:mdns). unicast_queries also sends a
   # unicast query to each target's 5353 port (in addition to multicast),

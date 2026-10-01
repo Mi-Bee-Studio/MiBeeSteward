@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
 		purpose: '',
 		description: '',
 		status: 'online',
-		ip_address: '192.168.62.168',
+		ip_address: '192.168.2.168',
 		mac_address: 'aa:bb:cc:dd:ee:ff',
 		serial_number: '',
 		purchase_date: '',

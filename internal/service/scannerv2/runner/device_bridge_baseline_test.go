@@ -150,13 +150,13 @@ func TestApplyDeviceBridge_RoamToOccupiedIP_Characterization(t *testing.T) {
 
 	// Seed a real device at .10 with a MAC.
 	_, _ = rn.applyDeviceBridge(ctx,
-		reportFor("192.168.63.10", "camera", "hikvision", "de:ad:be:ef:10:10"),
+		reportFor("192.168.1.10", "camera", "hikvision", "de:ad:be:ef:10:10"),
 		rn.networkID, "")
 
 	// Seed a stale mac-less placeholder at .20 (occupying the roam target).
 	_, err := conn.Exec(`INSERT INTO devices (name, type, ip_address, mac_address, status, scan_source,
 		scan_attributes, network_id, first_seen, last_seen, last_scanned_at, created_at, updated_at)
-		VALUES ('192.168.63.20','other','192.168.63.20','','online','scanner_v2','{}',?,?,?,?,?,?)`,
+		VALUES ('192.168.1.20','other','192.168.1.20','','online','scanner_v2','{}',?,?,?,?,?,?)`,
 		rn.networkID, baselineNow(), baselineNow(), baselineNow(), baselineNow(), baselineNow())
 	require.NoError(t, err)
 
@@ -164,14 +164,14 @@ func TestApplyDeviceBridge_RoamToOccupiedIP_Characterization(t *testing.T) {
 	// (.20) is occupied by the mac-less placeholder; the eviction-retry path
 	// does NOT fire, so the device splits into two rows.
 	_, _ = rn.applyDeviceBridge(ctx,
-		reportFor("192.168.63.20", "camera", "hikvision", "de:ad:be:ef:10:10"),
+		reportFor("192.168.1.20", "camera", "hikvision", "de:ad:be:ef:10:10"),
 		rn.networkID, "")
 
 	require.Equal(t, 2, countDevices(t, conn),
 		"characterization: roam to an occupied IP currently SPLITS (eviction does not fire): known gap")
 	// The original device keeps its MAC + old IP (the bridge updated its other
 	// fields but could not relocate the IP).
-	orig := fetchBaselineDevice(t, conn, "192.168.63.10")
+	orig := fetchBaselineDevice(t, conn, "192.168.1.10")
 	require.Equal(t, "de:ad:be:ef:10:10", orig.MAC,
 		"the original device row keeps its MAC (identity stable), just didn't relocate")
 }

@@ -69,7 +69,7 @@ type ConntrackSource struct {
 }
 
 // NewConntrackSource constructs the source. cidr is the local LAN (e.g.
-// "192.168.62.0/24") used to filter which flow endpoints count as "a device we
+// "192.168.2.0/24") used to filter which flow endpoints count as "a device we
 // should record". interval is the poll cadence (typically 60s). Returns a
 // usable source even when the CIDR is unparseable (logs a warning, treats every
 // endpoint as remote → emits nothing), so a misconfigured CIDR degrades to a
@@ -173,8 +173,8 @@ func (s *ConntrackSource) sweep() {
 // The conntrack entry format (one flow per line) is space-separated tokens,
 // e.g.:
 //
-//	ipv4 2 tcp 6 431999 ESTABLISHED src=192.168.62.41 dst=142.250.187.78 sport=443 dport=54812 ... [ASSURED] mark=0 use=2
-//	ipv4 2 udp 17 29 src=192.168.62.1 dst=1.1.1.1 sport=53 dport=41220 ... [ASSURED] mark=0 use=2
+//	ipv4 2 tcp 6 431999 ESTABLISHED src=192.168.2.41 dst=142.250.187.78 sport=443 dport=54812 ... [ASSURED] mark=0 use=2
+//	ipv4 2 udp 17 29 src=192.168.2.1 dst=1.1.1.1 sport=53 dport=41220 ... [ASSURED] mark=0 use=2
 //
 // We look at BOTH src= and dport= and dst= and sport= because either endpoint
 // may be the LAN host (a flow LAN→internet has src=LAN; a reply internet→LAN

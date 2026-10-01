@@ -26,7 +26,7 @@ import (
 )
 
 func testPayload() Payload {
-	return Payload{Subject: "Device Lost: cam-01", Body: "Device: cam-01\nIP: 192.168.63.133"}
+	return Payload{Subject: "Device Lost: cam-01", Body: "Device: cam-01\nIP: 192.168.1.133"}
 }
 
 func TestFeishuSender_PayloadAndSignature(t *testing.T) {
@@ -48,7 +48,7 @@ func TestFeishuSender_PayloadAndSignature(t *testing.T) {
 	// payload shape: msg_type=text + content.text = subject + "\n" + body
 	require.Equal(t, "text", gotBody["msg_type"])
 	content := gotBody["content"].(map[string]any)
-	require.Equal(t, "Device Lost: cam-01\nDevice: cam-01\nIP: 192.168.63.133", content["text"])
+	require.Equal(t, "Device Lost: cam-01\nDevice: cam-01\nIP: 192.168.1.133", content["text"])
 
 	// signature verifiable with the documented algorithm
 	wantSign := base64.StdEncoding.EncodeToString(
@@ -83,7 +83,7 @@ func TestWeComSender(t *testing.T) {
 		SendWithConfig(context.Background(), testPayload(), cfg)
 	require.True(t, res.Success, "error: %s", res.Error)
 	require.Equal(t, "text", gotBody["msgtype"])
-	require.Equal(t, "Device Lost: cam-01\nDevice: cam-01\nIP: 192.168.63.133",
+	require.Equal(t, "Device Lost: cam-01\nDevice: cam-01\nIP: 192.168.1.133",
 		gotBody["text"].(map[string]any)["content"])
 }
 

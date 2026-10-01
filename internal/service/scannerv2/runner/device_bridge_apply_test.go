@@ -59,7 +59,7 @@ func TestApplyDeviceBridge_OfflineToOnlineRecovery(t *testing.T) {
 	rn, queries, conn := setupChangeDetectDB(t)
 	ctx := context.Background()
 
-	ip, mac := "192.168.63.10", "6a:27:19:ac:fb:10"
+	ip, mac := "192.168.1.10", "6a:27:19:ac:fb:10"
 	rep := reportFor(ip, "camera", "Hikvision", mac)
 	_, _ = rn.applyDeviceBridge(ctx, rep, rn.networkID, "")
 	var devID int64
@@ -96,7 +96,7 @@ func TestApplyDeviceBridge_BackfillsHeartbeatConfigs(t *testing.T) {
 	rn, _, conn := setupChangeDetectDB(t)
 	ctx := context.Background()
 
-	ip, mac := "192.168.63.11", "6a:27:19:ac:fb:11"
+	ip, mac := "192.168.1.11", "6a:27:19:ac:fb:11"
 	// First sighting lands with NO heartbeat wiring (the legacy shape).
 	_, _ = rn.applyDeviceBridge(ctx, reportFor(ip, "nas", "Synology", mac), rn.networkID, "")
 	var devID int64
@@ -133,17 +133,17 @@ func TestApplyDeviceBridge_NewDeviceSeedHeartbeatErrors(t *testing.T) {
 
 	hb := &hbStub{failCreate: true}
 	rn.heartbeat = hb
-	withSpecs := reportFor("192.168.63.12", "switch", "Mikrotik", "6a:27:19:ac:fb:12")
-	withSpecs.Heartbeats = []scannerv2.HeartbeatSpec{{Method: "tcp", Target: "192.168.63.12:8291"}}
+	withSpecs := reportFor("192.168.1.12", "switch", "Mikrotik", "6a:27:19:ac:fb:12")
+	withSpecs.Heartbeats = []scannerv2.HeartbeatSpec{{Method: "tcp", Target: "192.168.1.12:8291"}}
 	_, _ = rn.applyDeviceBridge(ctx, withSpecs, rn.networkID, "")
 	var n int
-	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.63.12'`).Scan(&n))
+	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.1.12'`).Scan(&n))
 	require.Equal(t, 1, n, "seed failure is logged, the device row persists")
 
 	hb2 := &hbStub{failDefault: true}
 	rn.heartbeat = hb2
-	_, _ = rn.applyDeviceBridge(ctx, reportFor("192.168.63.13", "printer", "HP", "6a:27:19:ac:fb:13"), rn.networkID, "")
-	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.63.13'`).Scan(&n))
+	_, _ = rn.applyDeviceBridge(ctx, reportFor("192.168.1.13", "printer", "HP", "6a:27:19:ac:fb:13"), rn.networkID, "")
+	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.1.13'`).Scan(&n))
 	require.Equal(t, 1, n)
 }
 
@@ -154,6 +154,6 @@ func TestApplyDeviceBridge_ResolveFailureBails(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, conn.Close())
 
-	created, _ := rn.applyDeviceBridge(ctx, reportFor("192.168.63.14", "camera", "Axis", "6a:27:19:ac:fb:14"), rn.networkID, "")
+	created, _ := rn.applyDeviceBridge(ctx, reportFor("192.168.1.14", "camera", "Axis", "6a:27:19:ac:fb:14"), rn.networkID, "")
 	require.False(t, created, "lookup failure must not create a device")
 }

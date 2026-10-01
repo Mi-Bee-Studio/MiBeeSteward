@@ -21,7 +21,7 @@ vi.mock('$lib/api/client', () => ({
 		get: vi.fn((url: string) => {
 			if (url.startsWith('/scanner/tasks')) {
 				return Promise.resolve({
-					tasks: [{ id: 1, name: 'lan-sweep', targets: '192.168.62.0/24', enabled: true }],
+					tasks: [{ id: 1, name: 'lan-sweep', targets: '192.168.2.0/24', enabled: true }],
 					total: 1
 				});
 			}
@@ -49,14 +49,14 @@ function seedResult() {
 		id: 7,
 		task_id: 1,
 		run_id: 3,
-		ip: '192.168.62.10',
+		ip: '192.168.2.10',
 		alive: true,
 		rtt_ms: 3,
 		ports: JSON.stringify([{ port: 80, service: 'http' }, { port: 22, service: 'ssh' }]),
 		services: JSON.stringify([{ port: 80, service: 'http', version: 'nginx/1.24' }]),
 		snmp_data: JSON.stringify({ sys_name: 'edge-router', sys_descr: 'Linux 5.15' }),
 		prometheus_detected: true,
-		prometheus_url: 'http://192.168.62.10:9090/metrics',
+		prometheus_url: 'http://192.168.2.10:9090/metrics',
 		node_exporter_detected: false,
 		node_exporter_url: '',
 		node_exporter_data: '{}',
@@ -101,7 +101,7 @@ describe('Scan-results page', () => {
 		expect((h2?.textContent ?? '').trim().length).toBeGreaterThan(0);
 
 		await waitFor(() => {
-			expect(container.textContent).toContain('192.168.62.10');
+			expect(container.textContent).toContain('192.168.2.10');
 		});
 		// Services cell joins the parsed service names.
 		expect(container.textContent).toContain('http');
@@ -110,11 +110,11 @@ describe('Scan-results page', () => {
 	it('expands a row on click to show SNMP detail', async () => {
 		const { container } = render(ScanResults);
 		await waitFor(() => {
-			expect(container.textContent).toContain('192.168.62.10');
+			expect(container.textContent).toContain('192.168.2.10');
 		});
 
 		const row = Array.from(container.querySelectorAll('tbody tr')).find((tr) =>
-			(tr.textContent ?? '').includes('192.168.62.10')
+			(tr.textContent ?? '').includes('192.168.2.10')
 		) as HTMLElement;
 		expect(row).toBeTruthy();
 		await fireEvent.click(row);
@@ -129,7 +129,7 @@ describe('Scan-results page', () => {
 	it('switches to the run-history tab and renders the seeded run', async () => {
 		const { container } = render(ScanResults);
 		await waitFor(() => {
-			expect(container.textContent).toContain('192.168.62.10');
+			expect(container.textContent).toContain('192.168.2.10');
 		});
 
 		await fireEvent.click(runHistoryTab(container));

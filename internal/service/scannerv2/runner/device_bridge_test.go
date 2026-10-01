@@ -60,20 +60,20 @@ func TestApplyDeviceBridge_DeviceReplacement(t *testing.T) {
 	ctx := context.Background()
 
 	// Prior router occupying the gateway ip .1 with its own mac + identity.
-	prior := reportFor("192.168.63.1", "router", "iStoreOS", "6a:27:19:ac:fb:91")
+	prior := reportFor("192.168.1.1", "router", "iStoreOS", "6a:27:19:ac:fb:91")
 	prior.Device.Fields["sys_name"] = "NanoPiR4S" // drives devices.name via deviceDisplayName
 	_, _ = rn.applyDeviceBridge(ctx, prior, rn.networkID, "")
 	// New router first seen on a transient DHCP ip .100 with its own (new) mac.
-	newDev := reportFor("192.168.63.100", "embedded", "GL.iNet", "94:83:c4:29:97:3e")
+	newDev := reportFor("192.168.1.100", "embedded", "GL.iNet", "94:83:c4:29:97:3e")
 	newDev.Device.Fields["sys_name"] = "GL-MT3000"
 	_, _ = rn.applyDeviceBridge(ctx, newDev, rn.networkID, "")
 
 	// Snapshot the two created rows so we can track them after the swap.
 	var gatewayID, staleID int64
 	require.NoError(t, conn.QueryRow(
-		`SELECT id FROM devices WHERE ip_address='192.168.63.1' AND network_id=?`, rn.networkID.Int64).Scan(&gatewayID))
+		`SELECT id FROM devices WHERE ip_address='192.168.1.1' AND network_id=?`, rn.networkID.Int64).Scan(&gatewayID))
 	require.NoError(t, conn.QueryRow(
-		`SELECT id FROM devices WHERE ip_address='192.168.63.100' AND network_id=?`, rn.networkID.Int64).Scan(&staleID))
+		`SELECT id FROM devices WHERE ip_address='192.168.1.100' AND network_id=?`, rn.networkID.Int64).Scan(&staleID))
 	require.NotEqual(t, gatewayID, staleID, "two distinct rows before swap")
 	// Confirm the prior identity is recorded BEFORE the swap.
 	require.Equal(t, "NanoPiR4S", fetchDevice(t, conn, gatewayID).Name, "gateway row starts as NanoPiR4S")
@@ -83,7 +83,7 @@ func TestApplyDeviceBridge_DeviceReplacement(t *testing.T) {
 
 	// The new router takes over .1: scan sees (.1, newMAC). The MAC matches the
 	// stale .100 row, but .1 is held by a different-MAC device → replacement.
-	swap := reportFor("192.168.63.1", "embedded", "GL.iNet", "94:83:c4:29:97:3e")
+	swap := reportFor("192.168.1.1", "embedded", "GL.iNet", "94:83:c4:29:97:3e")
 	swap.Device.Fields["sys_name"] = "GL-MT3000"
 	_, _ = rn.applyDeviceBridge(ctx, swap, rn.networkID, "")
 
@@ -149,7 +149,7 @@ func TestApplyDeviceBridge_RoamingNotReplacement(t *testing.T) {
 	const roamMAC = "08:00:27:bb:cc:10"
 	// Device first seen at .10.
 	_, _ = rn.applyDeviceBridge(ctx,
-		reportFor("192.168.63.10", "camera", "hikvision", roamMAC), rn.networkID, "")
+		reportFor("192.168.1.10", "camera", "hikvision", roamMAC), rn.networkID, "")
 	var roamingID int64
 	require.NoError(t, conn.QueryRow(
 		`SELECT id FROM devices WHERE mac_address=?`, roamMAC).Scan(&roamingID))
@@ -158,7 +158,7 @@ func TestApplyDeviceBridge_RoamingNotReplacement(t *testing.T) {
 
 	// Same mac, now answering from a different (free) ip .20, pure roaming.
 	_, _ = rn.applyDeviceBridge(ctx,
-		reportFor("192.168.63.20", "camera", "hikvision", roamMAC), rn.networkID, "")
+		reportFor("192.168.1.20", "camera", "hikvision", roamMAC), rn.networkID, "")
 
 	// Still exactly one row: MAC matched globally, no new row, no replacement.
 	require.Equal(t, beforeCount, countDevices(t, conn), "roaming must not create or split rows")
@@ -168,7 +168,7 @@ func TestApplyDeviceBridge_RoamingNotReplacement(t *testing.T) {
 	// The device ROAMED to a new IP, the registry must reflect the CURRENT IP,
 	// not the first-seen one. (Prior behavior kept the stale IP; that left a NAS
 	// that renewed its DHCP lease showing an address days out of date.)
-	require.Equal(t, "192.168.63.20", after.IP, "roaming relocates ip_address to the scanned ip")
+	require.Equal(t, "192.168.1.20", after.IP, "roaming relocates ip_address to the scanned ip")
 }
 
 // TestApplyDeviceBridge_MACFirstResolveNotReplacement guards the "MAC fills on
@@ -181,20 +181,20 @@ func TestApplyDeviceBridge_MACFirstResolveNotReplacement(t *testing.T) {
 	ctx := context.Background()
 
 	// First scan: no MAC. A DeviceRef with an empty mac field.
-	noMacReport := reportFor("192.168.63.20", "embedded", "", "")
+	noMacReport := reportFor("192.168.1.20", "embedded", "", "")
 	noMacReport.Device.Fields["mac"] = "" // ensure no mac leak
 	_, _ = rn.applyDeviceBridge(ctx, noMacReport, rn.networkID, "")
 
 	var holderID int64
 	require.NoError(t, conn.QueryRow(
-		`SELECT id FROM devices WHERE ip_address='192.168.63.20' AND network_id=?`, rn.networkID.Int64).Scan(&holderID))
+		`SELECT id FROM devices WHERE ip_address='192.168.1.20' AND network_id=?`, rn.networkID.Int64).Scan(&holderID))
 	holder := fetchDevice(t, conn, holderID)
 	require.Equal(t, "", holder.MAC, "first scan leaves mac empty")
 
 	// Second scan resolves the mac. The mac is NOT on any other device, and the
 	// ip-holder's mac is empty → must fill, not trigger replacement.
 	_, _ = rn.applyDeviceBridge(ctx,
-		reportFor("192.168.63.20", "embedded", "raspberry", "aa:bb:cc:dd:ee:20"), rn.networkID, "")
+		reportFor("192.168.1.20", "embedded", "raspberry", "aa:bb:cc:dd:ee:20"), rn.networkID, "")
 
 	require.Equal(t, 1, countDevices(t, conn), "no new row, no replacement")
 	filled := fetchDevice(t, conn, holderID)
@@ -217,20 +217,20 @@ func TestApplyDeviceBridge_NameSelfHealsFromIP(t *testing.T) {
 
 	// First scan: device at .190 with no hostname sources at all. deviceDisplayName
 	// falls through node_hostname / sys_name / scan_attributes.hostname → returns
-	// the IP, so devices.name = "192.168.63.190".
-	noName := reportFor("192.168.63.190", "other", "", "de:ad:be:ef:19:00")
+	// the IP, so devices.name = "192.168.1.190".
+	noName := reportFor("192.168.1.190", "other", "", "de:ad:be:ef:19:00")
 	_, _ = rn.applyDeviceBridge(ctx, noName, rn.networkID, "")
 
 	var id int64
 	require.NoError(t, conn.QueryRow(
-		`SELECT id FROM devices WHERE ip_address='192.168.63.190' AND network_id=?`, rn.networkID.Int64).Scan(&id))
-	require.Equal(t, "192.168.63.190", fetchDevice(t, conn, id).Name,
+		`SELECT id FROM devices WHERE ip_address='192.168.1.190' AND network_id=?`, rn.networkID.Int64).Scan(&id))
+	require.Equal(t, "192.168.1.190", fetchDevice(t, conn, id).Name,
 		"first scan with no hostname: name falls back to the IP")
 
 	// Second scan of the same (ip, mac): now a hostname IS resolved (e.g. via
 	// rDNS / TLS CN / mDNS). The CASE in buildExistingUpdate sees name == ip_address
 	// and overwrites it with the resolved hostname.
-	withName := reportFor("192.168.63.190", "other", "", "de:ad:be:ef:19:00")
+	withName := reportFor("192.168.1.190", "other", "", "de:ad:be:ef:19:00")
 	withName.Device.Fields["node_hostname"] = "sensor-living-room"
 	_, _ = rn.applyDeviceBridge(ctx, withName, rn.networkID, "")
 
@@ -238,5 +238,5 @@ func TestApplyDeviceBridge_NameSelfHealsFromIP(t *testing.T) {
 	healed := fetchDevice(t, conn, id)
 	require.Equal(t, "sensor-living-room", healed.Name,
 		"name self-corrects: IP-as-name overwritten once a hostname is resolved")
-	require.Equal(t, "192.168.63.190", healed.IP, "ip unchanged")
+	require.Equal(t, "192.168.1.190", healed.IP, "ip unchanged")
 }

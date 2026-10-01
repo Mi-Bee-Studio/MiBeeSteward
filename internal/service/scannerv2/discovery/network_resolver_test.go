@@ -113,10 +113,10 @@ func TestNetworkResolver_PicksUpNewRows(t *testing.T) {
 func TestNetworkResolver_ResolveGate(t *testing.T) {
 	ctx := context.Background()
 	dbConn := memoryDB(t)
-	ids := seedNetworks(t, dbConn, [2]string{"lan", "192.168.62.0/24"})
+	ids := seedNetworks(t, dbConn, [2]string{"lan", "192.168.2.0/24"})
 	r := NewNetworkResolver(dbConn)
 
-	nid, anyKnown := r.ResolveGate(ctx, "192.168.62.40")
+	nid, anyKnown := r.ResolveGate(ctx, "192.168.2.40")
 	if !nid.Valid || nid.Int64 != ids[0] {
 		t.Fatalf("in-subnet IP must resolve to the network, got %+v", nid)
 	}

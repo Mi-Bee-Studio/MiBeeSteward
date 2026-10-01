@@ -37,7 +37,7 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	var executed int32
 	// The center's Poll handler returns []AgentCommand where Payload is a Go
 	// string; encoding/json serializes a string field as a JSON string literal
-	// (double-quoted), e.g. "payload":"{\"targets\":\"192.168.62.0/24\",\"timeout\":300}".
+	// (double-quoted), e.g. "payload":"{\"targets\":\"192.168.2.0/24\",\"timeout\":300}".
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/agents/commands" && r.Method == http.MethodGet:
@@ -46,7 +46,7 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 			// AgentCommand.Payload produces; verify the poller handles it.
 			// credential_name is the #241 agent-side SNMPv3 hook.
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`[{"id":1,"command":"scan","payload":"{\"targets\":\"192.168.62.0/24\",\"timeout\":300,\"credential_name\":\"switch-v3\"}"}]`))
+			_, _ = w.Write([]byte(`[{"id":1,"command":"scan","payload":"{\"targets\":\"192.168.2.0/24\",\"timeout\":300,\"credential_name\":\"switch-v3\"}"}]`))
 		case r.URL.Path == "/api/v1/agents/commands/1/ack" && r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusNoContent)
 		case r.URL.Path == "/api/v1/agents/commands/1/complete" && r.Method == http.MethodPost:
@@ -70,13 +70,13 @@ func TestCommandPoller_ScanPayload_StringQuoted(t *testing.T) {
 	}
 	// networkCIDR matches the command's targets so the Layer 2-agent boundary
 	// check (issue #19) allows the scan through.
-	p := agent.NewCommandPoller(srv.URL, "test-token", 10*time.Millisecond, "192.168.62.0/24", runScan, nil)
+	p := agent.NewCommandPoller(srv.URL, "test-token", 10*time.Millisecond, "192.168.2.0/24", runScan, nil)
 	p.Start(context.Background())
 	defer p.Stop()
 
 	select {
 	case res := <-scanCh:
-		require.Equal(t, "192.168.62.0/24", res.targets)
+		require.Equal(t, "192.168.2.0/24", res.targets)
 		require.Equal(t, 300, res.timeoutSec)
 		require.Equal(t, "switch-v3", res.credentialName, "credential_name from the scan payload must reach the runScan callback (#241)")
 	case <-time.After(2 * time.Second):
@@ -102,10 +102,10 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case r.URL.Path == "/api/v1/agents/commands" && r.Method == http.MethodGet:
-				// The exact issue-#19 mis-dispatch: targets=192.168.63.0/24 to an
-				// agent whose network is 192.168.62.0/24.
+				// The exact issue-#19 mis-dispatch: targets=192.168.1.0/24 to an
+				// agent whose network is 192.168.2.0/24.
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`[{"id":1,"command":"scan","payload":"{\"targets\":\"192.168.63.0/24\",\"timeout\":60}"}]`))
+				_, _ = w.Write([]byte(`[{"id":1,"command":"scan","payload":"{\"targets\":\"192.168.1.0/24\",\"timeout\":60}"}]`))
 			case r.URL.Path == "/api/v1/agents/commands/1/ack" && r.Method == http.MethodPost:
 				w.WriteHeader(http.StatusNoContent)
 			case r.URL.Path == "/api/v1/agents/commands/1/complete" && r.Method == http.MethodPost:
@@ -131,7 +131,7 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 			return "", nil
 		}
 		p := agent.NewCommandPoller(srv.URL, "test-token", 10*time.Millisecond,
-			"192.168.62.0/24", runScan, nil)
+			"192.168.2.0/24", runScan, nil)
 		p.Start(context.Background())
 		defer p.Stop()
 
@@ -161,7 +161,7 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 			switch {
 			case r.URL.Path == "/api/v1/agents/commands" && r.Method == http.MethodGet:
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`[{"id":2,"command":"scan","payload":"{\"targets\":\"192.168.62.5,192.168.63.5\",\"timeout\":60}"}]`))
+				_, _ = w.Write([]byte(`[{"id":2,"command":"scan","payload":"{\"targets\":\"192.168.2.5,192.168.1.5\",\"timeout\":60}"}]`))
 			case r.URL.Path == "/api/v1/agents/commands/2/ack" && r.Method == http.MethodPost:
 				w.WriteHeader(http.StatusNoContent)
 			case r.URL.Path == "/api/v1/agents/commands/2/complete" && r.Method == http.MethodPost:
@@ -185,7 +185,7 @@ func TestCommandPoller_BoundaryCheck_Layer2(t *testing.T) {
 			return "", nil
 		}
 		p := agent.NewCommandPoller(srv.URL, "test-token", 10*time.Millisecond,
-			"192.168.62.0/24", runScan, nil)
+			"192.168.2.0/24", runScan, nil)
 		p.Start(context.Background())
 		defer p.Stop()
 

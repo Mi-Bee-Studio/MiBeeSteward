@@ -328,7 +328,7 @@ func walkInto(snmp snmpClient, oid string, emit func(ip, mac string)) error {
 }
 
 // indexToIP extracts the IPv4 address from a varbind name like
-// ".1.3.6.1.2.1.4.22.1.2.2.192.168.63.133" where the trailing 4 components
+// ".1.3.6.1.2.1.4.22.1.2.2.192.168.1.133" where the trailing 4 components
 // after the ifIndex are the IP octets. Returns "" when the trailing path isn't
 // a recognizable IPv4 index. Tolerates leading-dot differences between the OID
 // prefix (no dot) and the gosnmp-returned pdu.Name (leading dot).

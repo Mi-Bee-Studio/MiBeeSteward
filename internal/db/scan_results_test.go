@@ -26,13 +26,13 @@ func TestCreateScanResult_RescanUpserts(t *testing.T) {
 	q := db.New(conn)
 	ctx := context.Background()
 
-	res, err := conn.Exec(`INSERT INTO scan_tasks (name, targets) VALUES ('periodic', '192.168.63.0/24')`)
+	res, err := conn.Exec(`INSERT INTO scan_tasks (name, targets) VALUES ('periodic', '192.168.1.0/24')`)
 	require.NoError(t, err)
 	taskID, err := res.LastInsertId()
 	require.NoError(t, err)
 
 	first := db.CreateScanResultParams{
-		TaskID: taskID, Ip: "192.168.63.1", Alive: 1, RttMs: 12,
+		TaskID: taskID, Ip: "192.168.1.1", Alive: 1, RttMs: 12,
 		Ports: "[22]", Services: "{}", SnmpData: "{}",
 	}
 	row1, err := q.CreateScanResult(ctx, first)
@@ -41,7 +41,7 @@ func TestCreateScanResult_RescanUpserts(t *testing.T) {
 	// Same (task_id, ip) again, different run, fresher data. Before #253 this
 	// returned "UNIQUE constraint failed: scan_results.task_id, scan_results.ip".
 	row2, err := q.CreateScanResult(ctx, db.CreateScanResultParams{
-		TaskID: taskID, Ip: "192.168.63.1", Alive: 0, RttMs: 0,
+		TaskID: taskID, Ip: "192.168.1.1", Alive: 0, RttMs: 0,
 		Ports: "[]", Services: "{}", SnmpData: "{}",
 	})
 	require.NoError(t, err, "rescan of the same (task_id, ip) must upsert, not fail")

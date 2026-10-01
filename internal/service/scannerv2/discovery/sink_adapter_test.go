@@ -34,13 +34,13 @@ func TestSinkAdapter_ForwardHook(t *testing.T) {
 		Runner:  rn,
 		Forward: func(_ context.Context, rep scannerv2.HostReport) { forwarded = append(forwarded, rep) },
 	}
-	rep := scannerv2.HostReport{IP: "192.168.62.99", Alive: true,
-		Device: scannerv2.DeviceRef{IP: "192.168.62.99", Fields: map[string]string{"mac": "aa:bb:cc:dd:ee:99"}}}
+	rep := scannerv2.HostReport{IP: "192.168.2.99", Alive: true,
+		Device: scannerv2.DeviceRef{IP: "192.168.2.99", Fields: map[string]string{"mac": "aa:bb:cc:dd:ee:99"}}}
 
 	isNew := adapter.Apply(context.Background(), rep)
 	require.True(t, isNew)
 	require.Len(t, forwarded, 1, "agent-side adapter forwards the applied report")
-	require.Equal(t, "192.168.62.99", forwarded[0].IP)
+	require.Equal(t, "192.168.2.99", forwarded[0].IP)
 
 	// Center-style adapter (no Forward) still applies cleanly.
 	plain := SinkAdapter{Runner: rn}

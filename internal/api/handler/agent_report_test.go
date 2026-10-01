@@ -39,7 +39,7 @@ func setupAgentIngestServer(t *testing.T) (srv *httptest.Server, db *sql.DB, tok
 	t.Cleanup(func() { middleware.SetAgentQueries(nil) })
 
 	// Seed a network + an agent token bound to it.
-	cidr := "192.168.62.0/24"
+	cidr := "192.168.2.0/24"
 	net, err := queries.CreateNetwork(context.Background(), sqldb.CreateNetworkParams{Name: "lan-62", Cidr: &cidr})
 	require.NoError(t, err)
 	networkID = net.ID
@@ -105,7 +105,7 @@ func TestAgentReport_CreatesDeviceOnAgentNetwork(t *testing.T) {
 	status, out := postReport(t, srv, token, domain.AgentReport{
 		AgentID: "agent-62", NetworkName: "lan-62",
 		Hosts: []domain.ReportedHost{
-			{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera", InferredBrand: "hikvision"},
+			{IP: "192.168.2.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera", InferredBrand: "hikvision"},
 		},
 	})
 	require.Equal(t, http.StatusOK, status, "body=%v", out)
@@ -114,7 +114,7 @@ func TestAgentReport_CreatesDeviceOnAgentNetwork(t *testing.T) {
 	// The device row carries the agent's network_id + normalized MAC.
 	var devNetworkID *int64
 	var mac string
-	err := db.QueryRow(`SELECT network_id, mac_address FROM devices WHERE ip_address = ?`, "192.168.62.41").Scan(&devNetworkID, &mac)
+	err := db.QueryRow(`SELECT network_id, mac_address FROM devices WHERE ip_address = ?`, "192.168.2.41").Scan(&devNetworkID, &mac)
 	require.NoError(t, err)
 	require.NotNil(t, devNetworkID)
 	require.Equal(t, networkID, *devNetworkID, "device must be tagged with the agent's network")
@@ -133,18 +133,18 @@ func TestAgentReport_MACPrimaryDedupAcrossNetworks(t *testing.T) {
 	srv, db, token, networkID := setupAgentIngestServer(t)
 	mac := "08:00:27:bb:cc:99"
 
-	// First report: host 192.168.62.50 with this MAC on lan-62.
+	// First report: host 192.168.2.50 with this MAC on lan-62.
 	_, _ = postReport(t, srv, token, domain.AgentReport{
 		AgentID: "agent-62",
-		Hosts:   []domain.ReportedHost{{IP: "192.168.62.50", Alive: true, MAC: mac, InferredType: "camera"}},
+		Hosts:   []domain.ReportedHost{{IP: "192.168.2.50", Alive: true, MAC: mac, InferredType: "camera"}},
 	})
 
 	// Now simulate a SECOND agent network on the SAME DB: mint a token bound to
 	// a different network and report the same MAC at a different IP. lan-63 gets
-	// its own cidr so the Layer 2 boundary check (issue #19) accepts 192.168.63.x
+	// its own cidr so the Layer 2 boundary check (issue #19) accepts 192.168.1.x
 	// on it, this also verifies the check is per-network, not global.
 	queries := sqldb.New(db)
-	net2Cidr := "192.168.63.0/24"
+	net2Cidr := "192.168.1.0/24"
 	net2, err := queries.CreateNetwork(context.Background(), sqldb.CreateNetworkParams{Name: "lan-63", Cidr: &net2Cidr})
 	require.NoError(t, err)
 	plaintext2, hash2 := middleware.GenerateAgentToken()
@@ -156,7 +156,7 @@ func TestAgentReport_MACPrimaryDedupAcrossNetworks(t *testing.T) {
 	// Same MAC, different IP (roaming / seen on two LANs).
 	_, out := postReport(t, srv, plaintext2, domain.AgentReport{
 		AgentID: "agent-63",
-		Hosts:   []domain.ReportedHost{{IP: "192.168.63.50", Alive: true, MAC: mac, InferredType: "camera"}},
+		Hosts:   []domain.ReportedHost{{IP: "192.168.1.50", Alive: true, MAC: mac, InferredType: "camera"}},
 	})
 	// The second report UPDATEd the existing MAC-matched row (not added).
 	require.Equal(t, float64(1), out["updated"], "same-MAC host should update the existing row, not add")
@@ -192,7 +192,7 @@ func TestAgentReport_SkipsDeadAndEmptyIP(t *testing.T) {
 	_, out := postReport(t, srv, token, domain.AgentReport{
 		Hosts: []domain.ReportedHost{
 			{IP: "", Alive: true},               // no IP → skip
-			{IP: "192.168.62.99", Alive: false}, // dead → skip
+			{IP: "192.168.2.99", Alive: false}, // dead → skip
 		},
 	})
 	require.Equal(t, float64(2), out["skipped"])
@@ -206,7 +206,7 @@ func TestAgentReport_SkipsDeadAndEmptyIP(t *testing.T) {
 // device bridge entirely (accepted=0, stable=true), only the lease is refreshed.
 func TestAgentReport_HashSkip_StableNetwork(t *testing.T) {
 	srv, db, token, _ := setupAgentIngestServer(t)
-	host := domain.ReportedHost{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"}
+	host := domain.ReportedHost{IP: "192.168.2.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"}
 	hash := "stable-hash-abc"
 
 	// First report with the hash → full processing (device created).
@@ -226,7 +226,7 @@ func TestAgentReport_HashSkip_StableNetwork(t *testing.T) {
 
 	// Still exactly one device (no duplicate created).
 	var n int
-	_ = db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address='192.168.62.41'`).Scan(&n)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address='192.168.2.41'`).Scan(&n)
 	require.Equal(t, 1, n, "stable report must not create a duplicate device")
 }
 
@@ -238,15 +238,15 @@ func TestAgentReport_HashSkip_ChangedNetwork(t *testing.T) {
 	// First report: one host, hash A.
 	postReportWithHeader(t, srv, token, "X-Network-State-Hash", "hash-A", domain.AgentReport{
 		AgentID: "agent-62",
-		Hosts:   []domain.ReportedHost{{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"}},
+		Hosts:   []domain.ReportedHost{{IP: "192.168.2.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"}},
 	})
 
 	// Second report: a NEW host appears → hash B (different). Full processing.
 	status, out := postReportWithHeader(t, srv, token, "X-Network-State-Hash", "hash-B", domain.AgentReport{
 		AgentID: "agent-62",
 		Hosts: []domain.ReportedHost{
-			{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"},
-			{IP: "192.168.62.42", Alive: true, MAC: "aa:bb:cc:dd:ee:42", InferredType: "server"},
+			{IP: "192.168.2.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"},
+			{IP: "192.168.2.42", Alive: true, MAC: "aa:bb:cc:dd:ee:42", InferredType: "server"},
 		},
 	})
 	require.Equal(t, http.StatusOK, status, "body=%v", out)
@@ -257,8 +257,8 @@ func TestAgentReport_HashSkip_ChangedNetwork(t *testing.T) {
 	_, out3 := postReportWithHeader(t, srv, token, "X-Network-State-Hash", "hash-B", domain.AgentReport{
 		AgentID: "agent-62",
 		Hosts: []domain.ReportedHost{
-			{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"},
-			{IP: "192.168.62.42", Alive: true, MAC: "aa:bb:cc:dd:ee:42", InferredType: "server"},
+			{IP: "192.168.2.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41", InferredType: "camera"},
+			{IP: "192.168.2.42", Alive: true, MAC: "aa:bb:cc:dd:ee:42", InferredType: "server"},
 		},
 	})
 	require.Equal(t, true, out3["stable"], "same hash again → stable skip")
@@ -348,24 +348,24 @@ func TestAgentReport_BackfillNetworkCIDR(t *testing.T) {
 // the exact defense that would have stopped agent-62 stranding 63.x devices.
 func TestAgentReport_BoundaryCheck_Layer2(t *testing.T) {
 	srv, db, token, networkID := setupAgentIngestServer(t)
-	// networkID is lan-62 with cidr 192.168.62.0/24 (seeded in setup).
+	// networkID is lan-62 with cidr 192.168.2.0/24 (seeded in setup).
 
 	t.Run("out-of-network host dropped, not created", func(t *testing.T) {
 		status, out := postReport(t, srv, token, domain.AgentReport{
 			AgentID: "agent-62",
-			Hosts:   []domain.ReportedHost{{IP: "192.168.63.20", Alive: true, MAC: "aa:bb:cc:dd:ee:20"}},
+			Hosts:   []domain.ReportedHost{{IP: "192.168.1.20", Alive: true, MAC: "aa:bb:cc:dd:ee:20"}},
 		})
 		require.Equal(t, http.StatusOK, status)
 		// out_of_network reports the drop in the ack.
 		require.Equal(t, float64(1), out["out_of_network"])
 		// No device row created for the foreign IP.
 		var n int
-		err := db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = ?`, "192.168.63.20").Scan(&n)
+		err := db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = ?`, "192.168.1.20").Scan(&n)
 		require.NoError(t, err)
 		require.Equal(t, 0, n, "out-of-network host must not create a device")
 		// And no lease refreshed for it.
 		var ls int
-		err = db.QueryRow(`SELECT COUNT(*) FROM scan_snapshots WHERE network_id = ? AND ip = ?`, networkID, "192.168.63.20").Scan(&ls)
+		err = db.QueryRow(`SELECT COUNT(*) FROM scan_snapshots WHERE network_id = ? AND ip = ?`, networkID, "192.168.1.20").Scan(&ls)
 		require.NoError(t, err)
 		require.Equal(t, 0, ls, "out-of-network host must not refresh a lease")
 	})
@@ -374,8 +374,8 @@ func TestAgentReport_BoundaryCheck_Layer2(t *testing.T) {
 		_, out := postReport(t, srv, token, domain.AgentReport{
 			AgentID: "agent-62",
 			Hosts: []domain.ReportedHost{
-				{IP: "192.168.62.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41"},
-				{IP: "192.168.63.41", Alive: true, MAC: "aa:bb:cc:dd:ee:63"}, // foreign
+				{IP: "192.168.2.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41"},
+				{IP: "192.168.1.41", Alive: true, MAC: "aa:bb:cc:dd:ee:63"}, // foreign
 				{IP: "10.0.0.5", Alive: true, MAC: "aa:bb:cc:dd:ee:0a"},      // foreign
 			},
 		})
@@ -383,10 +383,10 @@ func TestAgentReport_BoundaryCheck_Layer2(t *testing.T) {
 		require.Equal(t, float64(1), out["added"], "only the in-network host was added")
 		// Only the .62.41 row exists.
 		var n int
-		err := db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.62.41'`).Scan(&n)
+		err := db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.2.41'`).Scan(&n)
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
-		err = db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address IN ('192.168.63.41','10.0.0.5')`).Scan(&n)
+		err = db.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address IN ('192.168.1.41','10.0.0.5')`).Scan(&n)
 		require.NoError(t, err)
 		require.Equal(t, 0, n)
 	})
@@ -396,7 +396,7 @@ func TestAgentReport_BoundaryCheck_Layer2(t *testing.T) {
 		// foreign host mixed in. The fast path must still drop the foreign host's
 		// lease refresh.
 		// First report to establish state + cache a hash.
-		hosts := []domain.ReportedHost{{IP: "192.168.62.77", Alive: true, MAC: "aa:bb:cc:dd:ee:77"}}
+		hosts := []domain.ReportedHost{{IP: "192.168.2.77", Alive: true, MAC: "aa:bb:cc:dd:ee:77"}}
 		_, _ = postReport(t, srv, token, domain.AgentReport{AgentID: "agent-62", Hosts: hosts})
 		// Send with a hash; the center caches whatever hash we send (no prior).
 		_, _ = postReportWithHeader(t, srv, token, "X-Network-State-Hash", "stable-1",
@@ -404,13 +404,13 @@ func TestAgentReport_BoundaryCheck_Layer2(t *testing.T) {
 		// Now re-send the SAME hash but with a foreign host added. Hash matches
 		// → fast path. The foreign host must NOT get a lease.
 		hostsMixed := append([]domain.ReportedHost(nil), hosts...)
-		hostsMixed = append(hostsMixed, domain.ReportedHost{IP: "192.168.63.77", Alive: true, MAC: "aa:bb:cc:dd:ee:c77"})
+		hostsMixed = append(hostsMixed, domain.ReportedHost{IP: "192.168.1.77", Alive: true, MAC: "aa:bb:cc:dd:ee:c77"})
 		_, out := postReportWithHeader(t, srv, token, "X-Network-State-Hash", "stable-1",
 			domain.AgentReport{AgentID: "agent-62", Hosts: hostsMixed})
 		require.Equal(t, true, out["stable"], "hash matched → fast path taken")
 		require.Equal(t, float64(1), out["out_of_network"], "foreign host dropped even on fast path")
 		var ls int
-		err := db.QueryRow(`SELECT COUNT(*) FROM scan_snapshots WHERE network_id = ? AND ip = ?`, networkID, "192.168.63.77").Scan(&ls)
+		err := db.QueryRow(`SELECT COUNT(*) FROM scan_snapshots WHERE network_id = ? AND ip = ?`, networkID, "192.168.1.77").Scan(&ls)
 		require.NoError(t, err)
 		require.Equal(t, 0, ls, "fast path must not refresh a foreign lease")
 	})

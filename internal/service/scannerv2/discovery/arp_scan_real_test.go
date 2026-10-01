@@ -50,8 +50,8 @@ func TestBuildARPRequestLayout(t *testing.T) {
 	if got := net.HardwareAddr(f[22:28]).String(); got != "aa:bb:cc:00:11:22" {
 		t.Errorf("sender MAC = %s, want aa:bb:cc:00:11:22", got)
 	}
-	if got := net.IP(f[28:32]).String(); got != "192.168.63.101" {
-		t.Errorf("sender IP = %s, want 192.168.63.101", got)
+	if got := net.IP(f[28:32]).String(); got != "192.168.1.101" {
+		t.Errorf("sender IP = %s, want 192.168.1.101", got)
 	}
 	// Target HW addr must be zero in the template (unknown, that's the question).
 	for i, b := range f[32:38] {
@@ -76,9 +76,9 @@ func TestFillARPRequestTarget(t *testing.T) {
 	if got := net.HardwareAddr(f[0:6]).String(); got != "ff:ff:ff:ff:ff:ff" {
 		t.Errorf("dst MAC = %s, want broadcast", got)
 	}
-	// Target IP = 192.168.63.34.
-	if got := net.IP(f[38:42]).String(); got != "192.168.63.34" {
-		t.Errorf("target IP = %s, want 192.168.63.34", got)
+	// Target IP = 192.168.1.34.
+	if got := net.IP(f[38:42]).String(); got != "192.168.1.34" {
+		t.Errorf("target IP = %s, want 192.168.1.34", got)
 	}
 	// Template unchanged: its dst is still zero (it was never the broadcast).
 	for i, b := range tmpl[0:6] {
@@ -110,8 +110,8 @@ func TestParseARPReply(t *testing.T) {
 	if !ok {
 		t.Fatal("parseARPReply rejected a valid reply")
 	}
-	if ip != "192.168.63.34" {
-		t.Errorf("ip = %s, want 192.168.63.34", ip)
+	if ip != "192.168.1.34" {
+		t.Errorf("ip = %s, want 192.168.1.34", ip)
 	}
 	if mac != "dc:a6:32:12:2a:4b" {
 		t.Errorf("mac = %s, want dc:a6:32:12:2a:4b", mac)
@@ -140,21 +140,21 @@ func TestParseARPReply(t *testing.T) {
 // TestSubnetHostIPs verifies the /24 host expansion excludes network + broadcast
 // and returns exactly the usable host range. A /24 has 254 hosts (1..254).
 func TestSubnetHostIPs(t *testing.T) {
-	ips := subnetHostIPs("192.168.63.0/24")
+	ips := subnetHostIPs("192.168.1.0/24")
 	if len(ips) != 254 {
 		t.Fatalf("/24 host count = %d, want 254", len(ips))
 	}
 	// First host must be .1, last must be .254.
-	if got := ips[0].String(); got != "192.168.63.1" {
-		t.Errorf("first host = %s, want 192.168.63.1", got)
+	if got := ips[0].String(); got != "192.168.1.1" {
+		t.Errorf("first host = %s, want 192.168.1.1", got)
 	}
-	if got := ips[253].String(); got != "192.168.63.254" {
-		t.Errorf("last host = %s, want 192.168.63.254", got)
+	if got := ips[253].String(); got != "192.168.1.254" {
+		t.Errorf("last host = %s, want 192.168.1.254", got)
 	}
 	// Network (.0) and broadcast (.255) must be absent.
 	for _, ip := range ips {
 		s := ip.String()
-		if s == "192.168.63.0" || s == "192.168.63.255" {
+		if s == "192.168.1.0" || s == "192.168.1.255" {
 			t.Errorf("found reserved host %s in expansion", s)
 		}
 	}

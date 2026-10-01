@@ -263,7 +263,7 @@ func TestCleanupStaleRuns_MarksOldRunningAsFailed(t *testing.T) {
 // agent-managed networks to their agent instead of a local scan.
 func TestTriggerNow_PassesNetworkID(t *testing.T) {
 	const taskID = int64(42)
-	const targets = "192.168.62.0/24"
+	const targets = "192.168.2.0/24"
 	gotNet := make(chan *int64, 1)
 	s, _, conn := newTestScheduler(t, func(_ context.Context, _ int64, _ string, _ time.Duration, _ int, _ int64, networkID *int64) {
 		select {
@@ -274,7 +274,7 @@ func TestTriggerNow_PassesNetworkID(t *testing.T) {
 	seedScanTask(t, conn, taskID, targets)
 	// Stamp the task with a network (the production path is
 	// taskservice.stampTaskNetwork; the test writes it directly).
-	_, err := conn.Exec(`INSERT INTO networks (id, name, cidr) VALUES (3, 'lan-62', '192.168.62.0/24')
+	_, err := conn.Exec(`INSERT INTO networks (id, name, cidr) VALUES (3, 'lan-62', '192.168.2.0/24')
 		ON CONFLICT(id) DO NOTHING`)
 	require.NoError(t, err)
 	_, err = conn.Exec(`UPDATE scan_tasks SET network_id = 3 WHERE id = ?`, taskID)

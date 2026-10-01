@@ -55,7 +55,7 @@ vi.mock('$lib/api/client', () => ({
 						last_discovery: undefined
 					},
 					abnormal: [
-						{ id: 34, name: 'nanopineo', ip_address: '192.168.62.169', type: 'embedded', status: 'offline' }
+						{ id: 34, name: 'nanopineo', ip_address: '192.168.2.169', type: 'embedded', status: 'offline' }
 					],
 					generated: '2026-09-14T00:00:00Z'
 				});
@@ -71,12 +71,12 @@ vi.mock('$lib/api/client', () => ({
 					changes: [
 						{
 							id: 1, change_type: 'device_added', entity_type: 'device',
-							after_data: '{"name":"newcam","ip_address":"192.168.62.212"}',
+							after_data: '{"name":"newcam","ip_address":"192.168.2.212"}',
 							detected_at: '2026-09-13T18:00:01Z'
 						},
 						{
 							id: 2, change_type: 'device_lost', entity_type: 'device',
-							before_data: '{"name":"nanopineo","ip_address":"192.168.62.169"}',
+							before_data: '{"name":"nanopineo","ip_address":"192.168.2.169"}',
 							detected_at: '2026-09-13T17:00:01Z'
 						}
 					],
@@ -125,7 +125,7 @@ describe('Dashboard page', () => {
 		// …and each change row renders with its status chip + device link.
 		const rows = container.querySelectorAll('.widget-list-row');
 		expect(rows.length).toBe(2);
-		const addedLink = container.querySelector('a.row-link[href="/devices?search=192.168.62.212"]');
+		const addedLink = container.querySelector('a.row-link[href="/devices?search=192.168.2.212"]');
 		expect(addedLink).toBeTruthy();
 		expect(container.querySelector('.row-status.status-added')).toBeTruthy();
 		expect(container.querySelector('.row-status.status-lost')).toBeTruthy();

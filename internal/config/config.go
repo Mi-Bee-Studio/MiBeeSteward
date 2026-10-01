@@ -93,7 +93,7 @@ type RBACConfig struct {
 
 // CenterConfig configures an agent's upstream center.
 type CenterConfig struct {
-	// URL is the center's base URL (e.g. "http://192.168.63.101:8080"). Empty =
+	// URL is the center's base URL (e.g. "http://192.168.1.101:8080"). Empty =
 	// standalone/center mode (no upstream reporting).
 	URL string `koanf:"url"`
 	// AuthToken is the agent's bearer token (minted on the center via
@@ -124,7 +124,7 @@ type NetworkConfig struct {
 	// Name is the human-readable network identifier (resolved to a networks.id
 	// at startup). Empty is treated as "default" at resolve time.
 	Name string `koanf:"name"`
-	// CIDR is the advisory network range (e.g. "192.168.63.0/24"). Not enforced;
+	// CIDR is the advisory network range (e.g. "192.168.1.0/24"). Not enforced;
 	// recorded on the networks row for display and future subnet inference.
 	CIDR string `koanf:"cidr"`
 	// Site is an optional site label (branch / datacenter / cloud).

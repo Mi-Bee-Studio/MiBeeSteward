@@ -47,14 +47,14 @@ func TestReconcile_DetectsOutOfNetworkDevices(t *testing.T) {
 
 	// lan-62 with a cidr; one correctly-attributed device + one foreign (the
 	// exact issue-#19 ghost pattern: a 63.x IP stamped on lan-62).
-	net62 := addNetwork(t, dbConn, "lan-62", "192.168.62.0/24")
-	addDevice(t, dbConn, "192.168.62.5", net62)  // in network: OK
-	addDevice(t, dbConn, "192.168.63.20", net62) // OUT of network: mismatch
+	net62 := addNetwork(t, dbConn, "lan-62", "192.168.2.0/24")
+	addDevice(t, dbConn, "192.168.2.5", net62)  // in network: OK
+	addDevice(t, dbConn, "192.168.1.20", net62) // OUT of network: mismatch
 
 	// lan-63 with a cidr; all its devices are correctly inside.
-	net63 := addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")
-	addDevice(t, dbConn, "192.168.63.1", net63)
-	addDevice(t, dbConn, "192.168.63.100", net63)
+	net63 := addNetwork(t, dbConn, "lan-63", "192.168.1.0/24")
+	addDevice(t, dbConn, "192.168.1.1", net63)
+	addDevice(t, dbConn, "192.168.1.100", net63)
 
 	// lan-99 with NO cidr, its devices must be skipped (we don't know they're
 	// wrong without a cidr to test against).
@@ -67,10 +67,10 @@ func TestReconcile_DetectsOutOfNetworkDevices(t *testing.T) {
 
 	require.Len(t, mismatches, 1, "exactly the one ghost device on lan-62")
 	m := mismatches[0]
-	require.Equal(t, "192.168.63.20", m.IP)
+	require.Equal(t, "192.168.1.20", m.IP)
 	require.Equal(t, net62, m.NetworkID)
 	require.Equal(t, "lan-62", m.Network)
-	require.Equal(t, "192.168.62.0/24", m.CIDR)
+	require.Equal(t, "192.168.2.0/24", m.CIDR)
 }
 
 func TestReconcile_NoCidrNetworkSkipped(t *testing.T) {
@@ -98,9 +98,9 @@ func TestReconcile_CorrectionClearsMismatches(t *testing.T) {
 	require.NoError(t, err)
 	defer dbConn.Close()
 
-	net62 := addNetwork(t, dbConn, "lan-62", "192.168.62.0/24")
-	net63 := addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")
-	addDevice(t, dbConn, "192.168.63.20", net62) // ghost on 62
+	net62 := addNetwork(t, dbConn, "lan-62", "192.168.2.0/24")
+	net63 := addNetwork(t, dbConn, "lan-63", "192.168.1.0/24")
+	addDevice(t, dbConn, "192.168.1.20", net62) // ghost on 62
 
 	svc := New(dbConn, 0, nil, nil)
 	m, err := svc.Reconcile(context.Background())
@@ -108,7 +108,7 @@ func TestReconcile_CorrectionClearsMismatches(t *testing.T) {
 	require.Len(t, m, 1)
 
 	// Operator re-homes the ghost to lan-63 (the fix).
-	_, err = dbConn.Exec(`UPDATE devices SET network_id = ? WHERE ip_address = '192.168.63.20'`, net63)
+	_, err = dbConn.Exec(`UPDATE devices SET network_id = ? WHERE ip_address = '192.168.1.20'`, net63)
 	require.NoError(t, err)
 
 	m, err = svc.Reconcile(context.Background())
@@ -125,7 +125,7 @@ func TestReconcile_PicksUpBackfilledCidr(t *testing.T) {
 	defer dbConn.Close()
 
 	net62 := addNetwork(t, dbConn, "lan-62", "")
-	addDevice(t, dbConn, "192.168.63.20", net62)
+	addDevice(t, dbConn, "192.168.1.20", net62)
 
 	svc := New(dbConn, 0, nil, nil)
 	m, err := svc.Reconcile(context.Background())
@@ -133,7 +133,7 @@ func TestReconcile_PicksUpBackfilledCidr(t *testing.T) {
 	require.Empty(t, m, "no cidr yet → skipped")
 
 	// Backfill the cidr (as the agent-report path would).
-	_, err = dbConn.Exec(`UPDATE networks SET cidr = '192.168.62.0/24' WHERE id = ?`, net62)
+	_, err = dbConn.Exec(`UPDATE networks SET cidr = '192.168.2.0/24' WHERE id = ?`, net62)
 	require.NoError(t, err)
 
 	m, err = svc.Reconcile(context.Background())
@@ -149,14 +149,14 @@ func TestCleanupGhosts_RehomesWhenCanonicalExists(t *testing.T) {
 	require.NoError(t, err)
 	defer dbConn.Close()
 
-	net62 := addNetwork(t, dbConn, "lan-62", "192.168.62.0/24")
-	net63 := addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")
+	net62 := addNetwork(t, dbConn, "lan-62", "192.168.2.0/24")
+	net63 := addNetwork(t, dbConn, "lan-63", "192.168.1.0/24")
 	// Canonical copy on lan-63 (correct).
-	addDevice(t, dbConn, "192.168.63.20", net63)
+	addDevice(t, dbConn, "192.168.1.20", net63)
 	// Ghost on lan-62 (wrong).
-	addDevice(t, dbConn, "192.168.63.20", net62)
+	addDevice(t, dbConn, "192.168.1.20", net62)
 	// And a stale lease for the ghost on lan-62.
-	_, err = dbConn.Exec(`INSERT INTO scan_snapshots (network_id, ip, mac, last_seen_at) VALUES (?, '192.168.63.20', '', '')`, net62)
+	_, err = dbConn.Exec(`INSERT INTO scan_snapshots (network_id, ip, mac, last_seen_at) VALUES (?, '192.168.1.20', '', '')`, net62)
 	require.NoError(t, err)
 
 	svc := New(dbConn, 0, nil, nil)
@@ -168,10 +168,10 @@ func TestCleanupGhosts_RehomesWhenCanonicalExists(t *testing.T) {
 
 	// The ghost device is gone; the canonical copy remains.
 	var n int64
-	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.63.20'`).Scan(&n))
+	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.1.20'`).Scan(&n))
 	require.Equal(t, int64(1), n, "only the canonical (lan-63) row remains")
 	// The ghost's lease is gone too.
-	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM scan_snapshots WHERE network_id = ? AND ip = '192.168.63.20'`, net62).Scan(&n))
+	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM scan_snapshots WHERE network_id = ? AND ip = '192.168.1.20'`, net62).Scan(&n))
 	require.Equal(t, int64(0), n, "ghost lease removed")
 
 	// A second pass finds nothing.
@@ -188,10 +188,10 @@ func TestCleanupGhosts_LeavesUnresolvedWhenNoCanonical(t *testing.T) {
 	require.NoError(t, err)
 	defer dbConn.Close()
 
-	net62 := addNetwork(t, dbConn, "lan-62", "192.168.62.0/24")
-	addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")
+	net62 := addNetwork(t, dbConn, "lan-62", "192.168.2.0/24")
+	addNetwork(t, dbConn, "lan-63", "192.168.1.0/24")
 	// Ghost on lan-62, but NO copy on lan-63. Unsafe to auto-delete.
-	addDevice(t, dbConn, "192.168.63.20", net62)
+	addDevice(t, dbConn, "192.168.1.20", net62)
 
 	svc := New(dbConn, 0, nil, nil)
 	stats, err := svc.CleanupGhosts(context.Background())
@@ -202,7 +202,7 @@ func TestCleanupGhosts_LeavesUnresolvedWhenNoCanonical(t *testing.T) {
 
 	// The device is still there, left for the operator.
 	var n int64
-	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.63.20'`).Scan(&n))
+	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM devices WHERE ip_address = '192.168.1.20'`).Scan(&n))
 	require.Equal(t, int64(1), n)
 }
 
@@ -214,10 +214,10 @@ func TestCleanupGhosts_MACFallback(t *testing.T) {
 	require.NoError(t, err)
 	defer dbConn.Close()
 
-	net62 := addNetwork(t, dbConn, "lan-62", "192.168.62.0/24")
-	net63 := addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")
+	net62 := addNetwork(t, dbConn, "lan-62", "192.168.2.0/24")
+	net63 := addNetwork(t, dbConn, "lan-63", "192.168.1.0/24")
 	// Canonical asset on lan-63 with a MAC.
-	_, err = dbConn.Exec(`INSERT INTO devices (name, ip_address, mac_address, network_id, status, type, device_uuid) VALUES ('real', '192.168.63.20', 'aa:bb:cc:dd:ee:20', ?, 'online', 'other', 'rc-real')`, net63)
+	_, err = dbConn.Exec(`INSERT INTO devices (name, ip_address, mac_address, network_id, status, type, device_uuid) VALUES ('real', '192.168.1.20', 'aa:bb:cc:dd:ee:20', ?, 'online', 'other', 'rc-real')`, net63)
 	require.NoError(t, err)
 	// Ghost on lan-62 with the SAME MAC but an IP in a THIRD subnet no network
 	// owns (10.0.0.20), IP-containment won't find a home, but MAC will.
@@ -247,21 +247,21 @@ func TestCleanupReservedAddressDevices(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { dbConn.Close() })
 
-	net63 := addNetwork(t, dbConn, "lan-63", "192.168.63.0/24")
+	net63 := addNetwork(t, dbConn, "lan-63", "192.168.1.0/24")
 	seed := func(name, ip string) {
 		_, err := dbConn.Exec(`INSERT INTO devices (name, ip_address, network_id, status, type, device_uuid) VALUES (?, ?, ?, 'online', 'other', 'rc-' || ? || '-' || ?)`, name, ip, net63, ip, net63)
 		require.NoError(t, err)
 	}
-	seed("broadcast", "192.168.63.255")
-	seed("network-addr", "192.168.63.0")
-	seed("gateway", "192.168.63.1")
-	_, err = dbConn.Exec(`INSERT INTO scan_snapshots (network_id, ip, miss_count, last_seen_at) VALUES (?, '192.168.63.255', 0, datetime('now'))`, net63)
+	seed("broadcast", "192.168.1.255")
+	seed("network-addr", "192.168.1.0")
+	seed("gateway", "192.168.1.1")
+	_, err = dbConn.Exec(`INSERT INTO scan_snapshots (network_id, ip, miss_count, last_seen_at) VALUES (?, '192.168.1.255', 0, datetime('now'))`, net63)
 	require.NoError(t, err)
 
 	svc := New(dbConn, 0, nil, nil)
 	removed, err := svc.CleanupReservedAddressDevices(context.Background())
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"192.168.63.0", "192.168.63.255"}, removed)
+	require.ElementsMatch(t, []string{"192.168.1.0", "192.168.1.255"}, removed)
 
 	var n int64
 	require.NoError(t, dbConn.QueryRow(`SELECT COUNT(*) FROM devices WHERE network_id = ?`, net63).Scan(&n))

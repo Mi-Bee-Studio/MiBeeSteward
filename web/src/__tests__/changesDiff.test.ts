@@ -18,27 +18,27 @@ import { buildDiff, isDiffMap, tryParse } from '$lib/changesDiff';
 // tests must be updated in the same PR.
 
 const beforeSnapshot = JSON.stringify({
-	name: 'redmi-notebook',
+	name: 'redmi-book',
 	type: 'pc',
 	brand: '-',
 	model: '-',
 	mac_address: 'bc:22:28:3f:eb:ca',
-	ip_address: '192.168.62.101',
+	ip_address: '192.168.2.101',
 	status: 'online',
 	open_ports: '[]',
 	detected_services: '[]',
 	prometheus_url: '',
 	node_exporter_url: '',
-	scan_attributes: '{"hostname":"redmi-notebook","inferred_type":"pc"}'
+	scan_attributes: '{"hostname":"redmi-book","inferred_type":"pc"}'
 });
 
 const afterSnapshot = JSON.stringify({
-	name: 'redmi-notebook',
+	name: 'redmi-book',
 	type: 'camera',
 	brand: '-',
 	model: '-',
 	mac_address: 'bc:22:28:3f:eb:ca',
-	ip_address: '192.168.62.41',
+	ip_address: '192.168.2.41',
 	status: 'online',
 	open_ports: '[]',
 	detected_services: '[]',
@@ -52,7 +52,7 @@ describe('buildDiff: snapshot payloads (current backend shape)', () => {
 		const diff = buildDiff(beforeSnapshot, afterSnapshot);
 		expect(diff).not.toBeNull();
 		expect(Object.keys(diff!).sort()).toEqual(['ip_address', 'scan_attributes', 'type']);
-		expect(diff!.ip_address).toEqual(['192.168.62.101', '192.168.62.41']);
+		expect(diff!.ip_address).toEqual(['192.168.2.101', '192.168.2.41']);
 		expect(diff!.type).toEqual(['pc', 'camera']);
 	});
 

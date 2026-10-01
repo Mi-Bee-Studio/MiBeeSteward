@@ -43,8 +43,8 @@ func TestARPCacheSource_CIDRFilter(t *testing.T) {
 
 	entries := []probe.ARPEntry{
 		{IP: "192.168.64.241", MAC: "02:11:aa:bb:cc:01"}, // LAN side
-		{IP: "192.168.63.1", MAC: "94:83:c4:29:97:3e"},   // WAN side (upstream gateway)
-		{IP: "192.168.63.101", MAC: "b8:27:eb:11:22:33"}, // WAN side (lab server)
+		{IP: "192.168.1.1", MAC: "94:83:c4:29:97:3e"},   // WAN side (upstream gateway)
+		{IP: "192.168.1.101", MAC: "b8:27:eb:11:22:33"}, // WAN side (lab server)
 	}
 
 	// Filtered: cidr set → only LAN-side neighbours emitted. The event loop

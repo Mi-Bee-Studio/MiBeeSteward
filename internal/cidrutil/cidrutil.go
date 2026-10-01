@@ -161,7 +161,7 @@ func ValidateTargetsFor(targets string, allowReserved bool) error {
 	return nil
 }
 
-// ParseNetwork parses a CIDR string (e.g. "192.168.63.0/24") into an IPNet.
+// ParseNetwork parses a CIDR string (e.g. "192.168.1.0/24") into an IPNet.
 // Returns (nil, ErrEmptyCIDR) for an empty/whitespace-only string so callers can
 // treat a missing CIDR as "validation disabled" rather than a hard error. Any
 // other parse failure returns the underlying error.
@@ -170,7 +170,7 @@ func ParseNetwork(cidr string) (*net.IPNet, error) {
 	if cidr == "" {
 		return nil, ErrEmptyCIDR
 	}
-	// net.ParseCIDR requires the "/prefix" form. A bare IP like "192.168.63.1"
+	// net.ParseCIDR requires the "/prefix" form. A bare IP like "192.168.1.1"
 	// is a valid single-host network, accept it as /32 (v4) / /128 (v6) so the
 	// helpers work uniformly for both CIDR and single-IP network definitions.
 	if !strings.Contains(cidr, "/") {

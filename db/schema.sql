@@ -18,7 +18,7 @@
 CREATE TABLE IF NOT EXISTS networks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,    -- natural key; one row per named network (resolveNetworkID upserts on it)
-    cidr TEXT,                    -- "192.168.63.0/24" (advisory; not enforced)
+    cidr TEXT,                    -- "192.168.1.0/24" (advisory; not enforced)
     site TEXT,                    -- site label (branch / datacenter / cloud)
     agent_id TEXT,                -- discovering agent id (distributed phase)
     metadata TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(metadata)),
@@ -666,7 +666,7 @@ CREATE TABLE IF NOT EXISTS agent_commands (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL,              -- which agent should run this (agent_tokens.agent_id)
     command TEXT NOT NULL,               -- "scan" (extensible)
-    payload TEXT NOT NULL DEFAULT '{}',  -- JSON: {"targets": "192.168.62.0/24", "timeout": 120}
+    payload TEXT NOT NULL DEFAULT '{}',  -- JSON: {"targets": "192.168.2.0/24", "timeout": 120}
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'acknowledged', 'done', 'failed')),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     acknowledged_at DATETIME,

@@ -138,7 +138,7 @@ func TestParseNetbiosResponse_Workgroup(t *testing.T) {
 
 func TestParseSSDPResponse(t *testing.T) {
 	pkt := []byte("HTTP/1.1 200 OK\r\n" +
-		"LOCATION: http://192.168.63.40:50000/desc.xml\r\n" +
+		"LOCATION: http://192.168.1.40:50000/desc.xml\r\n" +
 		"SERVER: Linux/4.4 UPnP/1.1 MyDevice/1.0\r\n" +
 		"ST: upnp:rootdevice\r\n" +
 		"\r\n")
@@ -146,7 +146,7 @@ func TestParseSSDPResponse(t *testing.T) {
 	if raw["server"] != "Linux/4.4 UPnP/1.1 MyDevice/1.0" {
 		t.Errorf("server = %q", raw["server"])
 	}
-	if raw["location"] != "http://192.168.63.40:50000/desc.xml" {
+	if raw["location"] != "http://192.168.1.40:50000/desc.xml" {
 		t.Errorf("location = %q", raw["location"])
 	}
 	if raw["st"] != "upnp:rootdevice" {
@@ -155,12 +155,12 @@ func TestParseSSDPResponse(t *testing.T) {
 }
 
 func TestIndexToIP(t *testing.T) {
-	// Full OID with trailing index "2.192.168.63.133" (ifIndex=2, IP=192.168.63.133)
-	full := ".1.3.6.1.2.1.4.22.1.2.2.192.168.63.133"
+	// Full OID with trailing index "2.192.168.1.133" (ifIndex=2, IP=192.168.1.133)
+	full := ".1.3.6.1.2.1.4.22.1.2.2.192.168.1.133"
 	prefix := oidIPNetToMediaPhysAddress
 	got := indexToIP(full, prefix)
-	if got != "192.168.63.133" {
-		t.Errorf("indexToIP = %q, want 192.168.63.133", got)
+	if got != "192.168.1.133" {
+		t.Errorf("indexToIP = %q, want 192.168.1.133", got)
 	}
 	// Non-matching prefix → "".
 	if got := indexToIP(full, "1.2.3"); got != "" {

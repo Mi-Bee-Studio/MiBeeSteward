@@ -155,7 +155,7 @@ func (p *CommandPoller) Stop() {
 
 // pendingCommand mirrors the center's agent_commands row (subset the poller needs).
 // Payload is the raw TEXT column value (a JSON string like
-// `{"targets":"192.168.62.0/24","timeout":300}`). The center stores it as TEXT
+// `{"targets":"192.168.2.0/24","timeout":300}`). The center stores it as TEXT
 // and serializes it as a JSON string in the HTTP response, so the poller decodes
 // it into a Go string here and unmarshals the string body into a typed struct in
 // execute(). Using json.RawMessage would fail: the response carries a JSON string

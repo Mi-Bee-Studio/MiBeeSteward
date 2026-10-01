@@ -56,14 +56,14 @@ func TestAudit_RealNetworkHostnames(t *testing.T) {
 		// ── Jetson embedded AI (was "other", should be embedded) ──
 		{"jetson", "jetson-ubuntu", "", "", "embedded"},
 		// ── PC / laptops (was "other"/"embedded", should be pc) ──
-		{"redmi notebook", "redmi-notebook", "", "", "pc"},
+		{"redmi notebook", "redmi-book", "", "", "pc"},
 		{"notebook redmi popos", "notebook-redmi-popos", "", "", "pc"},
 		{"MacBookPro", "MacBookPro", "", "", "pc"},
 		{"thinkpad", "thinkpad-x1-carbon", "", "", "pc"},
 		// ── Phones (new type; was "other", should be phone) ──
-		// NOTE: redmi-notebook must stay pc (notebook beats phone's redmi-15).
+		// NOTE: redmi-book must stay pc (notebook beats phone's redmi-15).
 		{"Mi-10", "Mi-10", "", "", "phone"},
-		{"MickeyPhone", "MickeyPhone", "", "", "phone"},
+		{"MyPhone", "MyPhone", "", "", "phone"},
 		{"Redmi 15R 5G", "REDMI-15R-5G", "", "", "phone"},
 		{"Huawei AL00", "KLE-AL00U", "", "", "phone"},
 		{"Huawei JUY-AL00", "JUY-AL00", "", "", "phone"},
@@ -112,18 +112,18 @@ func TestAudit_RealNetworkHostnames(t *testing.T) {
 }
 
 // TestAudit_RedmiNotebookIsPCNotPhone is the critical ordering guard: the
-// hostname "redmi-notebook" contains BOTH the pc keyword "notebook" AND would
+// hostname "redmi-book" contains BOTH the pc keyword "notebook" AND would
 // match a phone keyword if one were too broad. The pc rule MUST win by priority
 // order. This locks the rule-ordering invariant documented in device_types.yaml.
 func TestAudit_RedmiNotebookIsPCNotPhone(t *testing.T) {
 	rep := scannerv2.HostReport{
 		IP: "10.0.0.2", Alive: true,
 		Device: scannerv2.DeviceRef{IP: "10.0.0.2",
-			Fields: map[string]string{"node_hostname": "redmi-notebook"}},
+			Fields: map[string]string{"node_hostname": "redmi-book"}},
 	}
 	gotType, _ := heuristicDeviceType(rep)
 	require.Equal(t, "pc", gotType,
-		"redmi-notebook must be pc (notebook keyword wins over phone keywords by rule order)")
+		"redmi-book must be pc (notebook keyword wins over phone keywords by rule order)")
 }
 
 // TestAudit_PortShapeFallback verifies the port-shape rules in device_types.yaml
@@ -176,7 +176,7 @@ func TestTypeSource_Provenance(t *testing.T) {
 		{"camera from protocol", "camera", "192.168.1.50", "camera", "protocol"},
 		// Handler-set camera, overridden to pc by notebook hostname → heuristic
 		// (the deciding factor was the hostname keyword, not the RTSP evidence).
-		{"camera overridden to pc", "camera", "redmi-notebook", "pc", "heuristic"},
+		{"camera overridden to pc", "camera", "redmi-book", "pc", "heuristic"},
 		// No handler verdict, hostname keyword decides → heuristic.
 		{"iot from hostname only", "", "viomi-waterheater-e13", "iot", "heuristic"},
 		{"phone from hostname only", "", "Mi-10", "phone", "heuristic"},

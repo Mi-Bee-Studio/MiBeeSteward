@@ -31,7 +31,7 @@ func TestBindAddr(t *testing.T) {
 		{"empty host is the dual-stack wildcard", "", 8090, ":8090"},
 		{"v6 wildcard literal is bracketed", "::", 8090, "[::]:8090"},
 		{"v4 wildcard unchanged", "0.0.0.0", 8080, "0.0.0.0:8080"},
-		{"explicit v4 address unchanged", "192.168.63.176", 8090, "192.168.63.176:8090"},
+		{"explicit v4 address unchanged", "192.168.1.176", 8090, "192.168.1.176:8090"},
 		{"explicit v6 address is bracketed", "fd00::1", 8090, "[fd00::1]:8090"},
 		{"loopback unchanged", "127.0.0.1", 8090, "127.0.0.1:8090"},
 		{"port 0 falls back to the default port", "", 0, ":8080"},

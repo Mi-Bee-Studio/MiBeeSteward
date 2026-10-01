@@ -39,7 +39,7 @@ func TestAgentReport_NilRunnerAndBadBody(t *testing.T) {
 	middleware.SetAgentQueries(queries)
 	t.Cleanup(func() { middleware.SetAgentQueries(nil) })
 
-	cidr := "192.168.62.0/24"
+	cidr := "192.168.2.0/24"
 	net, err := queries.CreateNetwork(context.Background(), sqldb.CreateNetworkParams{Name: "lan-62x", Cidr: &cidr})
 	require.NoError(t, err)
 	plaintext, hash := middleware.GenerateAgentToken()
@@ -125,7 +125,7 @@ func TestAgentReport_FleetMetaClockOffsetClamp(t *testing.T) {
 	middleware.SetAgentQueries(queries)
 	t.Cleanup(func() { middleware.SetAgentQueries(nil) })
 
-	cidr := "192.168.62.0/24"
+	cidr := "192.168.2.0/24"
 	net, err := queries.CreateNetwork(context.Background(), sqldb.CreateNetworkParams{Name: "lan-62f", Cidr: &cidr})
 	require.NoError(t, err)
 	plaintext, hash := middleware.GenerateAgentToken()
@@ -147,7 +147,7 @@ func TestAgentReport_FleetMetaClockOffsetClamp(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	stale := time.Now().UTC().Add(-48 * time.Hour).Format(time.RFC3339)
-	body := `{"agent_id":"agent-fleet","network_cidr":"192.168.62.0/24","scanned_at":"` + stale +
+	body := `{"agent_id":"agent-fleet","network_cidr":"192.168.2.0/24","scanned_at":"` + stale +
 		`","meta":{"version":"test-1.0","hostname":"agent-host","uptime_seconds":42},"hosts":[]}`
 	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/agents/report", strings.NewReader(body))
 	require.NoError(t, err)

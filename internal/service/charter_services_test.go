@@ -186,25 +186,25 @@ func TestAgentCommandService_EnqueueBoundaryRejection(t *testing.T) {
 	svc := NewAgentCommandService(queries, false, false)
 	ctx := context.Background()
 
-	cidr := "192.168.62.0/24"
+	cidr := "192.168.2.0/24"
 	net, err := queries.CreateNetwork(ctx, db.CreateNetworkParams{Name: "lan-62", Cidr: &cidr})
 	require.NoError(t, err)
 	agentID := "agent-62"
 	require.NoError(t, queries.SetNetworkAgentID(ctx, db.SetNetworkAgentIDParams{AgentID: &agentID, ID: net.ID}))
 
 	// In-network target is accepted.
-	cmd, err := svc.Enqueue(ctx, "agent-62", "scan", map[string]interface{}{"targets": "192.168.62.0/24"})
+	cmd, err := svc.Enqueue(ctx, "agent-62", "scan", map[string]interface{}{"targets": "192.168.2.0/24"})
 	require.NoError(t, err)
 	require.Equal(t, "scan", cmd.Command)
 
 	// Out-of-network target is a typed boundary error whose message names the
 	// offending IPs (returned verbatim as the 400 body).
-	_, err = svc.Enqueue(ctx, "agent-62", "scan", map[string]interface{}{"targets": "192.168.63.1"})
+	_, err = svc.Enqueue(ctx, "agent-62", "scan", map[string]interface{}{"targets": "192.168.1.1"})
 	require.Error(t, err)
 	var boundary *BoundaryError
 	require.ErrorAs(t, err, &boundary)
 	require.Contains(t, boundary.Error(), "outside agent network")
-	require.Contains(t, boundary.Error(), "192.168.63.1")
+	require.Contains(t, boundary.Error(), "192.168.1.1")
 
 	// Unknown agent (no network binding) degrades open, allowed.
 	_, err = svc.Enqueue(ctx, "agent-unknown", "scan", map[string]interface{}{"targets": "10.1.1.1"})

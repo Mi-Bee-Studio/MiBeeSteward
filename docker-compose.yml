@@ -110,7 +110,7 @@ services:
     profiles: ["macvlan"]
     networks:
       lan:
-        ipv4_address: ${MIBEE_MACVLAN_IP:-192.168.63.250}
+        ipv4_address: ${MIBEE_MACVLAN_IP:-192.168.1.250}
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -125,8 +125,8 @@ networks:
       mode: bridge
     ipam:
       config:
-        - subnet: ${MIBEE_MACVLAN_SUBNET:-192.168.63.0/24}
-          gateway: ${MIBEE_MACVLAN_GW:-192.168.63.1}
+        - subnet: ${MIBEE_MACVLAN_SUBNET:-192.168.1.0/24}
+          gateway: ${MIBEE_MACVLAN_GW:-192.168.1.1}
 
 volumes:
   mibee-data:
