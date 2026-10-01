@@ -191,7 +191,7 @@ func TestAgentReport_SkipsDeadAndEmptyIP(t *testing.T) {
 	srv, db, token, _ := setupAgentIngestServer(t)
 	_, out := postReport(t, srv, token, domain.AgentReport{
 		Hosts: []domain.ReportedHost{
-			{IP: "", Alive: true},               // no IP → skip
+			{IP: "", Alive: true},              // no IP → skip
 			{IP: "192.168.2.99", Alive: false}, // dead → skip
 		},
 	})
@@ -376,7 +376,7 @@ func TestAgentReport_BoundaryCheck_Layer2(t *testing.T) {
 			Hosts: []domain.ReportedHost{
 				{IP: "192.168.2.41", Alive: true, MAC: "aa:bb:cc:dd:ee:41"},
 				{IP: "192.168.1.41", Alive: true, MAC: "aa:bb:cc:dd:ee:63"}, // foreign
-				{IP: "10.0.0.5", Alive: true, MAC: "aa:bb:cc:dd:ee:0a"},      // foreign
+				{IP: "10.0.0.5", Alive: true, MAC: "aa:bb:cc:dd:ee:0a"},     // foreign
 			},
 		})
 		require.Equal(t, float64(2), out["out_of_network"])
