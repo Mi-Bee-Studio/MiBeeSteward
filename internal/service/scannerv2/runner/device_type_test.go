@@ -19,6 +19,7 @@ import (
 
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/store"
 	"mibee-steward/internal/testutil"
@@ -281,4 +282,88 @@ func setupTypeTestDB(t *testing.T) (*Runner, *db.Queries, *sql.DB) {
 	rn.SetRepo(store.NewSQLiteRepository(conn, store.Options{NetworkID: net.ID}, nil))
 	rn.SetChangeRecorder(changedetect.NewDBRecorder(queries, nil, 0, nil))
 	return rn, queries, conn
+}
+
+// TestApplyDeviceBridge_PCSignalOverridesProtocolIot pins the protocol-iot
+// exception (field-found 2026-10-02): a MacBook advertising _airplay._tcp is
+// typed "iot" with source "protocol" by the mDNS handler, but macOS can act as
+// an AirPlay receiver — the explicit macbook hostname is the stronger signal
+// and must win, same shape as the camera/port-derived exception.
+func TestApplyDeviceBridge_PCSignalOverridesProtocolIot(t *testing.T) {
+	rn, _, conn := setupTypeTestDB(t)
+	ctx := context.Background()
+
+	rep := reportWithFields("192.168.2.151", "iot", "", "c2:0f:8a:7c:31:0e",
+		map[string]string{
+			"node_hostname":        "MacBookPro.tail0a1b2c.ts.net",
+			"inferred_type_source": "protocol",
+		})
+	rep.Services = []scannerv2.ServiceIdentity{{Service: "mdns", Port: 5353, Protocol: "udp"}}
+
+	isNew, _ := rn.applyDeviceBridge(ctx, rep, rn.networkID, "agent-63")
+	require.True(t, isNew)
+
+	var devType string
+	err := conn.QueryRow(`SELECT type FROM devices WHERE ip_address='192.168.2.151'`).Scan(&devType)
+	require.NoError(t, err)
+	require.Equal(t, "pc", devType, "a macbook hostname must beat a protocol-derived AirPlay iot verdict")
+}
+
+// TestApplyDeviceBridge_ProtocolIotWithoutPCSignalStaysIot is the guard rail:
+// a genuine mDNS-announced IoT device (no PC hostname signal) keeps its
+// protocol verdict — the override must not leak to speakers/gateways.
+func TestApplyDeviceBridge_ProtocolIotWithoutPCSignalStaysIot(t *testing.T) {
+	rn, _, conn := setupTypeTestDB(t)
+	ctx := context.Background()
+
+	rep := reportWithFields("192.168.2.228", "iot", "", "24:cf:24:95:2b:11",
+		map[string]string{
+			"node_hostname":        "MiAiSoundbox-LX06",
+			"inferred_type_source": "protocol",
+		})
+	rep.Services = []scannerv2.ServiceIdentity{{Service: "mdns", Port: 5353, Protocol: "udp"}}
+
+	isNew, _ := rn.applyDeviceBridge(ctx, rep, rn.networkID, "agent-63")
+	require.True(t, isNew)
+
+	var devType string
+	err := conn.QueryRow(`SELECT type FROM devices WHERE ip_address='192.168.2.228'`).Scan(&devType)
+	require.NoError(t, err)
+	require.Equal(t, "iot", devType, "a soundbox hostname must not trigger the PC override")
+}
+
+// TestApplyDeviceBridge_AgentReportOSBeatsSmbPortShape pins the agent-path OS
+// regression (field-found 2026-10-02): an agent-reported Windows box whose SSH
+// banner carries os_type inside the service metadata used to be mis-typed
+// "nas" by the smb:445 port shape, because ReportedHostToReport dropped the OS
+// (the wire payload has no top-level OS field). The recovered os_type must
+// feed os_rules → pc.
+func TestApplyDeviceBridge_AgentReportOSBeatsSmbPortShape(t *testing.T) {
+	rn, _, conn := setupTypeTestDB(t)
+	ctx := context.Background()
+
+	in := domain.ReportedHost{
+		IP:           "192.168.1.9",
+		Alive:        true,
+		MAC:          "04:7c:16:19:22:0e",
+		InferredType: "",
+		Hostname:     "winhomepc.tail0a1b2c.ts.net",
+		Services: []domain.ReportedService{
+			{Service: "ssh", Port: 22, Protocol: "tcp",
+				Metadata: map[string]string{"os_type": "Windows", "version": "OpenSSH_for_Windows_9.5"}},
+			{Service: "smb", Port: 445, Protocol: "tcp"},
+		},
+	}
+	rep := ReportedHostToReport(in)
+
+	isNew, _ := rn.applyDeviceBridge(ctx, rep, rn.networkID, "agent-63")
+	require.True(t, isNew)
+
+	var devType, attrOS string
+	err := conn.QueryRow(`SELECT type FROM devices WHERE ip_address='192.168.1.9'`).Scan(&devType)
+	require.NoError(t, err)
+	require.Equal(t, "pc", devType, "a Windows SSH banner must beat the smb port-shape nas guess")
+	err = conn.QueryRow(`SELECT json_extract(scan_attributes,'$.os') FROM devices WHERE ip_address='192.168.1.9'`).Scan(&attrOS)
+	require.NoError(t, err)
+	require.Equal(t, "Windows", attrOS, "the recovered os_type must persist into scan_attributes.os")
 }
