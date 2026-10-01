@@ -444,7 +444,10 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	}
 
 	// Enrich the matched row. Only v2-managed enrichment columns: brand/model
-	// (force-overwrite when non-empty), mac (fill when newly resolved),
+	// (force-overwrite when non-empty), mac (fill ONLY while the row's mac is
+	// empty — an existing different MAC belongs to the identity machinery, and
+	// enrich stamping a foreign report MAC over a placeholder created
+	// same-MAC shadow rows in the field, 2026-10-01),
 	// open_ports/detected_services/prometheus/node_exporter, scan_attributes,
 	// freshness timestamps. NOTE: name, type, status, description, location,
 	// tags, and device replacement are NOT handled here, the
@@ -456,7 +459,7 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 			UPDATE devices SET
 			    brand = CASE WHEN ? != '' THEN ? ELSE brand END,
 			    model = CASE WHEN ? != '' THEN ? ELSE model END,
-			    mac_address = CASE WHEN ? != '' THEN ? ELSE mac_address END,
+			    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
 			    open_ports = ?,
 			    detected_services = ?,
 			    prometheus_url = ?,

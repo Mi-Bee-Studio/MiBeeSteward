@@ -272,3 +272,39 @@ func TestApplyDeviceIdentity_NICFailoverAliasNoFlap(t *testing.T) {
 	require.Equal(t, "Acme", brand)
 	require.Equal(t, 1, countRows(t, conn, "SELECT COUNT(*) FROM devices"))
 }
+
+// TestRecordDevice_DoesNotStampMACOverOccupiedSlot pins the enrich MAC-fill
+// guard: RecordDevice may resolve a MAC onto its ip-matched row only while
+// that row's mac is EMPTY. A row already carrying a (different) MAC must not
+// be overwritten by the enrich path — MAC transitions belong to the identity
+// machinery (resolve/takeover/replacement), and enrich stamping foreign MACs
+// produced same-MAC shadow rows in the field (2026-10-01).
+func TestRecordDevice_DoesNotStampMACOverOccupiedSlot(t *testing.T) {
+	repo, nid, conn, ctx := resolveRepo(t, 1)
+	macA := "aa:bb:cc:dd:ee:51"
+	rowA := seedDeviceRow(t, conn, "10.0.0.5", macA, nid) // the MAC's real owner
+	rowB := seedDeviceRow(t, conn, "10.0.0.6", "aa:bb:cc:dd:ee:52", nid)
+
+	// Enrich targeting B's ip while carrying A's mac (e.g. a same-report race
+	// or case-variant lookup miss) must not stamp A's mac onto B.
+	err := repo.RecordDevice(ctx, "10.0.0.6", scannerv2.DeviceRef{
+		IP: "10.0.0.6", Brand: "Acme", Fields: map[string]string{"mac": macA},
+	})
+	require.NoError(t, err)
+
+	var macB string
+	require.NoError(t, conn.QueryRow(`SELECT mac_address FROM devices WHERE id=?`, rowB).Scan(&macB))
+	require.Equal(t, "aa:bb:cc:dd:ee:52", macB, "enrich must not overwrite an existing MAC")
+	var macOut string
+	require.NoError(t, conn.QueryRow(`SELECT mac_address FROM devices WHERE id=?`, rowA).Scan(&macOut))
+	require.Equal(t, macA, macOut, "the MAC's real owner row keeps its mac")
+
+	// The legitimate fill still works: a MAC-less placeholder gains the mac.
+	rowC := seedDeviceRow(t, conn, "10.0.0.7", "", nid)
+	require.NoError(t, repo.RecordDevice(ctx, "10.0.0.7", scannerv2.DeviceRef{
+		IP: "10.0.0.7", Fields: map[string]string{"mac": "aa:bb:cc:dd:ee:53"},
+	}))
+	var macC string
+	require.NoError(t, conn.QueryRow(`SELECT mac_address FROM devices WHERE id=?`, rowC).Scan(&macC))
+	require.Equal(t, "aa:bb:cc:dd:ee:53", macC, "empty-slot MAC fill must keep working")
+}
