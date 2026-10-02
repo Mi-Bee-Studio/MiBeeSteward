@@ -591,9 +591,11 @@ rules:
         ecosystem: { const: "Xiaomi" }
         appliance: { const: "smart speaker" }
 
-  # ── 小米中继器主机名（xiaomi-repeater-v2_miio<sn>，field LAN 2026-10-02）──
-  # The repeater reports "xiaomi-repeater-<rev>_miio<serial>"; the miio serial
-  # is device-specific and must not leak into the model.
+  # ── 小米中继器主机名（xiaomi-repeater-v2_miio<sn> / XiaoMiRepeater_V2，field LAN）──
+  # The repeater reports "xiaomi-repeater-<rev>_miio<serial>" (mDNS) or the
+  # CamelCase DHCP name "XiaoMiRepeater_V2"; the miio serial is device-specific
+  # and must not leak into the model. 2026-10-03: separators made optional for
+  # the CamelCase DHCP form.
   - id: iot-host-xiaomi-repeater
     source: builtin
     priority: 116
@@ -602,7 +604,7 @@ rules:
       kind: hostname
       field: hostname
       op: regex
-      value: '(?i)^xiaomi-repeater[-_]?([a-z0-9]*)(?:[_-]miio[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+      value: '(?i)^xiaomi[-_]?repeater[-_]?([a-z0-9]*)(?:[_-]miio[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
     service: miot
     protocol: hostname
     confidence: 0.6

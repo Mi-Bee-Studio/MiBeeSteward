@@ -40,6 +40,7 @@ func TestRuleClassifier_HostIdentityDomainTolerance(t *testing.T) {
 		// New vendor rules, field-found 2026-10-02.
 		{"MiAiSoundbox-LX06", "Xiaomi", "LX06"},
 		{"xiaomi-repeater-v2_miio12345678", "Xiaomi", "v2"},
+		{"XiaoMiRepeater_V2", "Xiaomi", "V2"},
 		{"esp32c6-a1b2c3", "Espressif", "esp32c6"},
 		{"esp32c3-f8e62c", "Espressif", "esp32c3"},
 		{"bananapim5.tail0a1b2c.ts.net", "Banana Pi", "m5"},
