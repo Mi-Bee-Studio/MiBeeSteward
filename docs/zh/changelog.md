@@ -21,6 +21,7 @@
 
 ### 修复
 
+- **port-0 服务身份不再破坏重扫持久化**：RecordServices 的范围 DELETE 只按 >0 的端口圈定，主机名推导的 miot 行（端口 0）被排除——重扫要么整体空转（纯 port-0 上报让 IN 列表为空直接返回），要么重插同一行撞 UNIQUE(ip, service, port)，在网络开始按计划重扫后每台每扫一条告警（在路由器 agent 网段首次启用周期扫描当天实地发现）。现在上报带 portless 身份时，端口 0 一并纳入删除范围。
 - **带域名的主机名从未命中手机/平板/电视规则**：那四条 2026-10-01 的正则以 `$` 结尾锚定，rDNS/mDNS 实际产出的名字（`…-pad-6.<域名>`）过不了锚点，实地一台平板在规则存在的情况下依然无标识；四条规则现在都容忍尾部点分域名（实地发现，脱敏样本已钉入测试）。
 - **agent 上报的主机丢失 SSH banner 操作系统**：agent 线格式没有顶层 OS 字段，`hostToReported` 丢掉了 banner 推导的 `os_type`（`OpenSSH_for_Windows_9.5` → Windows），agent 扫描的主机落到端口形态分型（实地：一台 Windows 机器被 smb:445 判成 nas）。`ReportedHostToReport` 现在从 ssh 服务 metadata 恢复 OS，agent 上报主机的 `os_rules` 分型与 `scan_attributes.os` 恢复工作。
 - **当 AirPlay 接收器的 MacBook 被判成 iot**：macOS 可以公告 `_airplay._tcp`，mDNS 协议裁决（"iot"）压过了所有主机名信号；协议来源的 iot 裁决现在让位于强 PC 主机名信号（与端口来源的 camera 例外同构，指纹/SNMP 裁决仍然权威不受影响）。
