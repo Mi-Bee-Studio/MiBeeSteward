@@ -530,3 +530,94 @@ func writeEngineCorpus(t *testing.T, dir string, rules int) {
 		t.Fatal(err)
 	}
 }
+
+// TestFingerprintAdminUpstreamFailureModes: every fetchUpstream error branch
+// plus the agents-nil degrade and the oversize-upload cap.
+func TestFingerprintAdminUpstreamFailureModes(t *testing.T) {
+	mk := func(handler http.HandlerFunc) *FingerprintAdminHandler {
+		srv := httptest.NewServer(handler)
+		t.Cleanup(srv.Close)
+		return NewFingerprintAdminHandler(nil, "", filepath.Join(t.TempDir(), "m"), srv.URL+"/manifest.json", nil, nil)
+	}
+	get := func(h *FingerprintAdminHandler) int {
+		rec := httptest.NewRecorder()
+		h.Upstream(rec, httptest.NewRequest(http.MethodGet, "/u", nil))
+		return rec.Code
+	}
+
+	// Manifest endpoint down → 502.
+	if c := get(mk(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))); c != http.StatusBadGateway {
+		t.Errorf("manifest 404 → %d, want 502", c)
+	}
+	// Manifest not JSON → 502.
+	if c := get(mk(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not-json"))
+	}))); c != http.StatusBadGateway {
+		t.Errorf("non-JSON manifest → %d, want 502", c)
+	}
+	// Tarball 404 → 502.
+	if c := get(mk(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/manifest.json" {
+			_, _ = w.Write([]byte(`{"corpus_version":"1","tarball":"gone.tar.gz"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))); c != http.StatusBadGateway {
+		t.Errorf("tarball 404 → %d, want 502", c)
+	}
+	// Tarball is not a corpus envelope → 502 (extract error).
+	if c := get(mk(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/manifest.json" {
+			_, _ = w.Write([]byte(`{"corpus_version":"1","tarball":"c.tar.gz"}`))
+			return
+		}
+		_, _ = w.Write([]byte{0x1f, 0x8b, 0xff, 0xff})
+	}))); c != http.StatusBadGateway {
+		t.Errorf("garbage tarball → %d, want 502", c)
+	}
+	// Upstream corpus the engine rejects → 502.
+	bad, _ := fpsync.TarGz(map[string][]byte{
+		"broken.yaml": []byte("version: 1\nrules:\n  - id: x\n    match: {op: regex, value: \"(unclosed[\"}\n    service: x\n"),
+	})
+	if c := get(mk(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/manifest.json" {
+			_, _ = w.Write([]byte(`{"corpus_version":"1","tarball":"c.tar.gz"}`))
+			return
+		}
+		_, _ = w.Write(bad)
+	}))); c != http.StatusBadGateway {
+		t.Errorf("rejected corpus → %d, want 502", c)
+	}
+	// Apply against a broken upstream → 502, nothing activated.
+	ha := mk(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
+	rec := httptest.NewRecorder()
+	ha.UpstreamApply(rec, httptest.NewRequest(http.MethodPost, "/a", nil))
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("apply broken upstream → %d, want 502", rec.Code)
+	}
+	if st := getStatus(t, ha); st["source"] != "embedded" {
+		t.Errorf("failed apply must not activate: %v", st["source"])
+	}
+
+	// Agents with nil queries degrades to an empty table.
+	rec = httptest.NewRecorder()
+	newAdminHandler(t).Agents(rec, httptest.NewRequest(http.MethodGet, "/ag", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"total":0`) {
+		t.Errorf("agents nil-queries degrade: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Oversize upload is refused before staging (cap + 2 bytes).
+	big := make([]byte, fpsync.MaxArchiveBytes+2)
+	for i := range big {
+		big[i] = 'x'
+	}
+	hb := newAdminHandler(t)
+	body, ctype := uploadBody(t, "file", "big.tar.gz", big)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/fingerprints", body)
+	req.Header.Set("Content-Type", ctype)
+	rec = httptest.NewRecorder()
+	hb.Put(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "size cap") {
+		t.Errorf("oversize upload → %d %s", rec.Code, rec.Body.String())
+	}
+}
