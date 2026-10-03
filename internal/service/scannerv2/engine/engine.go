@@ -129,10 +129,17 @@ type Config struct {
 	// FingerprintPath is the directory of fingerprint YAML files (see
 	// configs/fingerprints/ + docs/en/fingerprint-spec.md). When set, the
 	// RuleClassifier loads rules from it. When empty, the engine falls back to
-	// the fingerprint rules embedded in the binary (fingerprint-assets/), so
-	// data-driven classification works with zero config. Overridable via
-	// MIBEE_SCANNER_FINGERPRINT_PATH.
+	// the managed dir (if it holds a corpus) or the fingerprint rules embedded
+	// in the binary (fingerprint-assets/), so data-driven classification works
+	// with zero config. Overridable via MIBEE_SCANNER_FINGERPRINT_PATH.
 	FingerprintPath string
+	// FingerprintManagedDir is where web-uploaded corpora live (the admin
+	// UI's upload/online-update target). Startup precedence mirrors the
+	// admin + distribution handlers: FingerprintPath (operator-explicit)
+	// > managed dir > embedded. Without this a restart silently reverts the
+	// engine to the embedded corpus while the admin UI still reports the
+	// managed one.
+	FingerprintManagedDir string
 	// SNMPCommunity is the default community string passed to the SNMP probe
 	// via ProbeHint.Community (default "public" if empty).
 	SNMPCommunity string
@@ -217,24 +224,33 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 
 	// ② Classifiers. The RuleClassifier comes from the standalone fingerprint
 	// library (github.com/Mi-Bee-Studio/mibee-fingerprints-go). It loads data-driven YAML rules, from
-	// FingerprintPath when configured, else from the rules embedded in the
-	// library binary (zero-config). Hand-written logic classifiers (SNMP bitmask
-	// heuristic, Camera cross-evidence fusion) run alongside.
+	// FingerprintPath when configured, else from the managed dir (web corpus)
+	// when it holds files, else from the rules embedded in the library binary
+	// (zero-config). Hand-written logic classifiers (SNMP bitmask heuristic,
+	// Camera cross-evidence fusion) run alongside.
+	corpusDir := cfg.FingerprintPath
+	if corpusDir == "" && cfg.FingerprintManagedDir != "" {
+		if files, err := fpsync.ReadCorpusDir(cfg.FingerprintManagedDir); err == nil && len(files) > 0 {
+			corpusDir = cfg.FingerprintManagedDir
+			logger.Info("scannerv2: startup corpus from managed dir (web-uploaded)",
+				"path", corpusDir, "files", len(files))
+		}
+	}
 	rc := &fp.RuleClassifier{}
-	if cfg.FingerprintPath != "" {
-		if err := rc.LoadFromDir(cfg.FingerprintPath); err != nil {
+	if corpusDir != "" {
+		if err := rc.LoadFromDir(corpusDir); err != nil {
 			logger.Error("scannerv2: fingerprint dir load failed; falling back to embedded rules",
-				"path", cfg.FingerprintPath, "error", err)
+				"path", corpusDir, "error", err)
 			if err := classify.LoadEmbeddedRules(rc); err != nil {
 				logger.Warn("scannerv2: embedded fingerprint load failed; data-driven rules disabled",
 					"error", err)
 			}
 		} else if rc.Loaded() {
 			logger.Info("scannerv2: fingerprints loaded from dir",
-				"path", cfg.FingerprintPath, "rules", rc.RuleCount())
+				"path", corpusDir, "rules", rc.RuleCount())
 		} else {
 			logger.Info("scannerv2: fingerprint dir empty; falling back to embedded rules",
-				"path", cfg.FingerprintPath)
+				"path", corpusDir)
 			if err := classify.LoadEmbeddedRules(rc); err != nil {
 				logger.Warn("scannerv2: embedded fingerprint load failed; data-driven rules disabled",
 					"error", err)
@@ -368,7 +384,7 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	e := &Engine{Orchestrator: orch, Registry: reg, Repository: repo}
 	if rc != nil && rc.Loaded() {
 		e.corpusRules = rc.RuleCount()
-		e.corpusRev = corpusRevOf(cfg.FingerprintPath)
+		e.corpusRev = corpusRevOf(corpusDir)
 	}
 	e.allowReservedTargets = cfg.AllowReservedTargets
 	// Per-probe timeout: bound each probe attempt so a dead host fails in
