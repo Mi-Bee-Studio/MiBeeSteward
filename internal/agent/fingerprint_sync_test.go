@@ -281,7 +281,7 @@ func TestSyncerHostileCenter(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "fingerprints-sync")
 	s := NewFingerprintSyncer("", "t", dir, time.Hour, nil, nil)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("boom"))
 	}))
@@ -295,7 +295,7 @@ func TestSyncerHostileCenter(t *testing.T) {
 	}
 
 	// 200 without the rev header.
-	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv2.Close()
@@ -305,7 +305,7 @@ func TestSyncerHostileCenter(t *testing.T) {
 	}
 
 	// Oversized envelope (over MaxArchiveBytes) is refused before staging.
-	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Fingerprint-Rev", "feed")
 		_, _ = w.Write(make([]byte, fpsync.MaxArchiveBytes+2))
 	}))

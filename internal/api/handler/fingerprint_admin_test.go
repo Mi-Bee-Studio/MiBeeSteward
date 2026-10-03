@@ -546,11 +546,11 @@ func TestFingerprintAdminUpstreamFailureModes(t *testing.T) {
 	}
 
 	// Manifest endpoint down → 502.
-	if c := get(mk(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))); c != http.StatusBadGateway {
+	if c := get(mk(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }))); c != http.StatusBadGateway {
 		t.Errorf("manifest 404 → %d, want 502", c)
 	}
 	// Manifest not JSON → 502.
-	if c := get(mk(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if c := get(mk(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("not-json"))
 	}))); c != http.StatusBadGateway {
 		t.Errorf("non-JSON manifest → %d, want 502", c)
@@ -589,7 +589,7 @@ func TestFingerprintAdminUpstreamFailureModes(t *testing.T) {
 		t.Errorf("rejected corpus → %d, want 502", c)
 	}
 	// Apply against a broken upstream → 502, nothing activated.
-	ha := mk(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
+	ha := mk(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }))
 	rec := httptest.NewRecorder()
 	ha.UpstreamApply(rec, httptest.NewRequest(http.MethodPost, "/a", nil))
 	if rec.Code != http.StatusBadGateway {
