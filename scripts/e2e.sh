@@ -90,6 +90,17 @@ echo "== login =="
 LOGIN="$(curl -sf -m 5 -X POST "${BASE}/api/v1/auth/login" -H 'Content-Type: application/json' \
     -d '{"username":"admin","password":"e2e-Admin-2026"}')"
 TOKEN="$(jsonget "${LOGIN}" token)"
+# First-boot admin tokens carry mcp=true — the forced password-change gate
+# (#353) 403s every authenticated call except the change itself until it
+# completes. Satisfy it and re-login; on an already-changed DB the PUT fails
+# and the original token stays valid.
+if curl -sf -m 5 -X PUT "${BASE}/api/v1/auth/force-password" \
+    -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' \
+    -d '{"current_password":"e2e-Admin-2026","new_password":"e2e-Admin-2027x"}' >/dev/null 2>&1; then
+    LOGIN="$(curl -sf -m 5 -X POST "${BASE}/api/v1/auth/login" -H 'Content-Type: application/json' \
+        -d '{"username":"admin","password":"e2e-Admin-2027x"}')"
+    TOKEN="$(jsonget "${LOGIN}" token)"
+fi
 [ -n "${TOKEN}" ] && ok "admin login issued a token" || bad "login failed"
 
 echo "== 2. agent report → inventory =="
