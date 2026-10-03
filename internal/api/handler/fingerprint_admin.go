@@ -523,10 +523,16 @@ func (h *FingerprintAdminHandler) fetchUpstream(r *http.Request) (staging string
 
 	upFiles, _ := fpsync.ReadCorpusDir(staging)
 	curFiles, _ := h.activeCorpus()
+	// Slices start non-nil so an empty diff serializes as [] instead of
+	// null — a JSON null crashed the admin UI's render effect (`null.length`)
+	// and made the whole upstream panel silently not render.
 	diff = &corpusDiff{
-		Version:    man.CorpusVersion,
-		Rev:        fpsync.Hash(upFiles),
-		CurrentRev: fpsync.Hash(curFiles),
+		Version:      man.CorpusVersion,
+		Rev:          fpsync.Hash(upFiles),
+		CurrentRev:   fpsync.Hash(curFiles),
+		ChangedFiles: []string{},
+		Added:        []string{},
+		Removed:      []string{},
 	}
 	upIDs, curIDs := ruleIDs(upFiles), ruleIDs(curFiles)
 	for name := range upFiles {

@@ -147,7 +147,17 @@
 	async function checkUpstream() {
 		busy = 'check';
 		try {
-			upstream = await api.get<UpstreamCheck>('/fingerprints/upstream');
+			const res = await api.get<UpstreamCheck>('/fingerprints/upstream');
+			// The Go handler serializes empty slices as JSON null; a null
+			// here crashes the panel's render effect (`null.length`), which
+			// Svelte 5 turns into a silently dead subtree — the button then
+			// looks like it "did nothing". Normalize before assigning.
+			upstream = {
+				...res,
+				changed_files: res.changed_files ?? [],
+				added_rules: res.added_rules ?? [],
+				removed_rules: res.removed_rules ?? []
+			};
 		} catch (e) {
 			addToast(m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }), 'error');
 		} finally {

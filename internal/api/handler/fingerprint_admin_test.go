@@ -308,6 +308,20 @@ func TestFingerprintAdminUpstreamCheckAndApply(t *testing.T) {
 	if chk["up_to_date"] != true {
 		t.Errorf("post-apply up_to_date = %v", chk["up_to_date"])
 	}
+
+	// Empty diff categories must serialize as [] (not null): a JSON null
+	// crashed the admin UI's render effect and made the panel silently
+	// disappear — the "button does nothing" report.
+	for _, key := range []string{"changed_files", "added_rules", "removed_rules"} {
+		v, ok := chk[key].([]any)
+		if !ok {
+			t.Errorf("post-apply %s = %T (%v), want JSON array", key, chk[key], chk[key])
+			continue
+		}
+		if len(v) != 0 {
+			t.Errorf("post-apply %s should be empty, got %v", key, v)
+		}
+	}
 }
 
 func TestFingerprintAdminAgents(t *testing.T) {
