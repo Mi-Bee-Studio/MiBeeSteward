@@ -190,10 +190,21 @@ func (r *SQLiteRepository) RecordServices(ctx context.Context, ip string, servic
 	// device_uuid='' must be replaced by scan-2's resolved rows, regression
 	// #129).
 	portsInPlay := make([]int, 0, len(services)+len(closedPorts))
+	hasPortZeroIdentity := false
 	for _, s := range services {
 		if s.Port > 0 {
 			portsInPlay = append(portsInPlay, s.Port)
+		} else if s.Port == 0 {
+			// Portless identities (hostname-derived miot rows) live on port 0.
+			// They must join the scoped DELETE too: excluded, a rescan either
+			// no-ops (port-0-only report → empty IN-list → early return) or
+			// re-inserts the same row and trips UNIQUE(ip, service, port)
+			// (field-found 2026-10-03: one WARN per host per scan).
+			hasPortZeroIdentity = true
 		}
+	}
+	if hasPortZeroIdentity {
+		portsInPlay = append(portsInPlay, 0)
 	}
 	portsInPlay = append(portsInPlay, closedPorts...)
 	if len(portsInPlay) == 0 {

@@ -47,6 +47,21 @@ func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 		fields["sys_name"] = h.SNMP.SysName
 	}
 
+	// The agent wire payload has no top-level OS field: hostToReported drops
+	// Fields["os_type"] and the banner OS survives only inside a service's
+	// Metadata (e.g. ssh "OpenSSH_for_Windows_9.5" → os_type "Windows").
+	// Recover it here so os_rules device typing and scan_attributes.os survive
+	// the agent round trip, mirroring SSHHandler.EnrichDevice's
+	// preserveExisting semantics (first service that has one wins).
+	for _, s := range h.Services {
+		if os := s.Metadata["os_type"]; os != "" {
+			if fields["os_type"] == "" {
+				fields["os_type"] = os
+			}
+			break
+		}
+	}
+
 	// Rebuild Services + Heartbeats (the bridge seeds heartbeat configs from
 	// these; empty Heartbeats → ICMP fallback).
 	services := make([]scannerv2.ServiceIdentity, 0, len(h.Services))

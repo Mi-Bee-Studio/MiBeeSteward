@@ -71,8 +71,8 @@ rules:
   - type: pc
     field: host
     source: heuristic
-    keywords: [notebook, laptop, thinkpad, macbook, ideapad, -pc, precision,
-               elitebook, latitude, xps, surface, popos]
+    keywords: [notebook, laptop, thinkpad, macbook, ideapad, -pc, pc.,
+               precision, elitebook, latitude, xps, surface, popos]
 
   # ── NAS (Synology/QNAP/极空间 Z4S/绿联 UGREEN/MiniDLNA) ──
   # MUST come before camera: consumer NAS stream media over RTSP (极影视/Video
@@ -130,11 +130,14 @@ rules:
   # uses "-AL00"/"-AL10" suffixes; Redmi phones are "redmi-15r-5g". The generic
   # "phone" keyword catches MyPhone etc. Note redmi-laptop (a laptop) is
   # NOT matched here because the pc rule's "notebook" already won it above.
+  # Tablets ("-pad"/"ipad") share the phone bucket — there is no separate
+  # tablet type; they follow the pc rule so "…-pad-x" hostnames fall through
+  # to phone (field-found: a Xiaomi Pad hostname typed "other").
   - type: phone
     field: host
     source: heuristic
     keywords: [phone, mi-10, redmi-15, -al00, -al10, -an00, 2109119bc,
-               honor-, oneplus, galaxy, pixel-, iphone]
+               honor-, oneplus, galaxy, pixel-, iphone, -pad, ipad]
 
 # ── 2. os_type label → type (ordered, when no host/brand rule matched) ──
 # SSH banners yield the distro NAME (e.g. "Ubuntu"), SNMP yields "Windows"/

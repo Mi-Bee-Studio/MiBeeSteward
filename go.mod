@@ -3,7 +3,7 @@ module mibee-steward
 go 1.26.3
 
 require (
-	github.com/Mi-Bee-Studio/mibee-fingerprints-go v0.1.0
+	github.com/Mi-Bee-Studio/mibee-fingerprints-go v0.1.1
 	github.com/cilium/ebpf v0.22.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-chi/jwtauth/v5 v5.4.0

@@ -103,6 +103,16 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 			inferredType = "nas"
 			typeSource = sourceForType("nas") // overridden by hostname keyword / smb
 		}
+	case "iot":
+		// Same shape as the camera exception, for protocol-derived "iot": a
+		// MacBook advertising _airplay._tcp (macOS can act as an AirPlay
+		// receiver) types as iot from the mDNS service alone, while its
+		// hostname ("macbook…") is the explicit signal. Only protocol-sourced
+		// verdicts are overridable — a fingerprint/SNMP iot verdict stays.
+		if typeSource == "protocol" && isStrongPcSignal(rep) {
+			inferredType = "pc"
+			typeSource = sourceForType("pc") // overridden by hostname keyword
+		}
 	case "", "server", "pc":
 		if t, src := heuristicDeviceType(rep); t != "" && t != "server" && t != "pc" {
 			// Specialized heuristic verdict (router/camera/nas/…) beats the
