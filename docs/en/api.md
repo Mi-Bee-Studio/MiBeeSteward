@@ -801,6 +801,8 @@ SSH credentials are used by device config backup probes (see [Device Config Hist
 
 Discovery agent management and command dispatch channel in distributed deployments. Token management and command management endpoints require **Admin** (`CapAgentManage`); agent data upload and command pull use **Agent Token** (`RequireAgentToken`) authentication, tokens are bound to `agent_id` + `network_id`, every reported device is tagged with that network, and multi-subnet data does not collide.
 
+The **fingerprint distribution endpoint** (`GET /api/v1/agents/fingerprints`) is the fleet's no-recompile corpus-update channel: the served corpus is the center's active one (`scanner.fingerprint_path` dir when configured, else the embedded corpus), the revision is a pure content hash, and the envelope is a deterministic tar.gz of the `*.yaml` rule files. Agents validate the envelope with the rule engine's own loader before swapping it in, so a broken corpus never displaces a working one.
+
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/api/v1/agents/tokens` | POST | Admin · `CapAgentManage` | Create agent token (request binds `agent_id` and `network_id`) |
@@ -811,6 +813,7 @@ Discovery agent management and command dispatch channel in distributed deploymen
 | `/api/v1/agents/commands` | GET | Agent Token | Agent pulls pending commands (pull model) |
 | `/api/v1/agents/commands/{id}/ack` | POST | Agent Token | Acknowledge receipt of a command |
 | `/api/v1/agents/commands/{id}/complete` | POST | Agent Token | Report command execution result |
+| `/api/v1/agents/fingerprints` | GET | Agent Token | Fingerprint corpus distribution: poll with `?rev=<applied>`; `204` = current, `200` = deterministic tar.gz envelope + `X-Fingerprint-Rev` header |
 | `/api/v1/agents/{agentId}/commands` | POST | Admin · `CapAgentManage` | Create a command for a specific agent |
 | `/api/v1/agents/commands/all` | GET | Admin · `CapAgentManage` | View all agent commands |
 

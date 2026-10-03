@@ -1071,6 +1071,27 @@ paths:
       security: [{agentToken: []}]
       responses:
         "200": {description: Ack}
+  /agents/fingerprints:
+    get:
+      tags: [Agents]
+      summary: "[agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)"
+      description: >
+        Agents poll with their last-applied corpus revision. 204 = already
+        current; 200 = deterministic tar.gz envelope (*.yaml files) with the
+        new revision in the X-Fingerprint-Rev header. The served corpus is
+        the center's active one (scanner.fingerprint_path dir when set, else
+        the embedded corpus) — this is the no-recompile corpus-update channel.
+      security: [{agentToken: []}]
+      parameters:
+        - {name: rev, in: query, required: false, schema: {type: string}, description: last-applied revision (64-hex); omit to force download}
+      responses:
+        "204": {description: Revision matches the center's corpus}
+        "200":
+          description: tar.gz corpus envelope; X-Fingerprint-Rev header carries the revision
+          content:
+            application/gzip:
+              schema: {type: string, format: binary}
+        "503": {description: No corpus available (embedded missing and dir unreadable)}
   /agents/commands:
     get:
       tags: [Agents]

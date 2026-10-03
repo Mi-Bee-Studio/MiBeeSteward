@@ -3338,6 +3338,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/fingerprints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
+         * @description Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description last-applied revision (64-hex); omit to force download */
+                    rev?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description tar.gz corpus envelope; X-Fingerprint-Rev header carries the revision */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/gzip": string;
+                    };
+                };
+                /** @description Revision matches the center's corpus */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description No corpus available (embedded missing and dir unreadable) */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/commands": {
         parameters: {
             query?: never;

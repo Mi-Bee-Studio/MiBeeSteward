@@ -107,6 +107,22 @@ type CenterConfig struct {
 	// (#278). Default false; the CENTER-side switch (agent_fleet.
 	// remote_ops_enabled) must ALSO be on, both sides gate independently.
 	RemoteOpsEnabled bool `koanf:"remote_ops_enabled"`
+	// FingerprintSync opts the agent into the corpus-distribution channel
+	// (GET /agents/fingerprints): poll the center's corpus revision, and when
+	// it moves, download + validate + swap the local corpus and re-exec to
+	// activate it. Default off; the synced corpus dir lands next to the agent
+	// DB and is loaded when scanner.fingerprint_path is unset.
+	FingerprintSync FingerprintSyncConfig `koanf:"fingerprint_sync"`
+}
+
+// FingerprintSyncConfig configures the agent→center corpus sync (C channel
+// of the no-recompile fingerprint-update story).
+type FingerprintSyncConfig struct {
+	// Enabled turns the sync loop on.
+	Enabled bool `koanf:"enabled"`
+	// Interval is the poll cadence (duration string, default "10m"; clamped
+	// to >= 1m — the corpus changes rarely).
+	Interval string `koanf:"interval"`
 }
 
 // AgentFleetConfig is the CENTER-side fleet-management switch block (#278).
