@@ -30,7 +30,7 @@ func registerAgentTokenRoutes(r chi.Router, agentAdminHandler *handler.AgentAdmi
 
 // registerAgentRoutes registers the agent report and
 // command-channel endpoints under /api/v1/agents.
-func registerAgentRoutes(r chi.Router, agentReportHandler *handler.AgentReportHandler, agentProbeReportHandler *handler.AgentProbeReportHandler, agentCommandHandler *handler.AgentCommandHandler) {
+func registerAgentRoutes(r chi.Router, agentReportHandler *handler.AgentReportHandler, agentProbeReportHandler *handler.AgentProbeReportHandler, agentCommandHandler *handler.AgentCommandHandler, agentFingerprintsHandler *handler.AgentFingerprintsHandler) {
 	r.Route("/api/v1/agents", func(r chi.Router) {
 		r.Use(middleware.RequireAgentToken)
 		r.Post("/report", agentReportHandler.Report)
@@ -41,6 +41,10 @@ func registerAgentRoutes(r chi.Router, agentReportHandler *handler.AgentReportHa
 		r.Get("/commands", agentCommandHandler.Poll)
 		r.Post("/commands/{id}/ack", agentCommandHandler.Ack)
 		r.Post("/commands/{id}/complete", agentCommandHandler.Complete)
+		// Fingerprint distribution channel: agents poll with their last-applied
+		// revision and pull a tar.gz corpus when the center's moved — corpus
+		// updates without touching any agent binary (fpsync format).
+		r.Get("/fingerprints", agentFingerprintsHandler.Get)
 	})
 }
 

@@ -206,6 +206,16 @@ The command channel also carries an ops family, `restart`, `config-reload`, `log
 - `restart` / `config-reload` re-exec the agent binary (config is consumed at construction; a re-exec is the only faithful reload). `logs-tail` returns the last ≤50 log lines from the agent's in-memory ring, the result lands in the command history on the Agents page.
 - Under systemd/procd the re-exec is a clean restart; under a bare shell session the process comes back with the same args.
 
+### Fingerprint corpus distribution
+
+The agent can keep its fingerprint corpus in step with the center without any binary or package update (`center.fingerprint_sync.enabled`, default off):
+
+- The agent polls `GET /api/v1/agents/fingerprints` with its last-applied revision (`interval`, default 10m); `204` means nothing changed, `200` carries a deterministic tar.gz of the center's active corpus — the `scanner.fingerprint_path` dir when one is configured on the center (edit/drop YAML there and the fleet picks it up on the next poll, **no center restart involved**), otherwise the corpus embedded in the center binary (so every center upgrade propagates to the whole fleet on its own).
+- Every envelope is validated by the rule engine's own loader before it displaces anything: a corpus that fails to load (or loads zero rules) is discarded and the agent keeps running the previous one — no restart, no crash loop.
+- On success the corpus is swapped on disk (`fingerprints-sync/` next to the agent config) and the agent re-execs to activate it. Restarts are rate-limited (5m): a flapping corpus directory churns the fleet at most once per window, and consecutive changes coalesce into the newest corpus.
+- Corpus precedence when the engine loads: `scanner.fingerprint_path` (operator-managed) → the synced dir → the embedded corpus.
+- The applied revision is persisted next to the synced dir and logged at startup, so "which corpus revision is this agent running" is answerable from the log, not guesswork.
+
 ## Operations
 
 ### Monitoring

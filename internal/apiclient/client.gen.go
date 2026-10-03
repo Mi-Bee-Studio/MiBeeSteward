@@ -1805,6 +1805,12 @@ type GetAgentsCommandsAllParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetAgentsFingerprintsParams defines parameters for GetAgentsFingerprints.
+type GetAgentsFingerprintsParams struct {
+	// Rev last-applied revision (64-hex); omit to force download
+	Rev *string `form:"rev,omitempty" json:"rev,omitempty"`
+}
+
 // GetAuditLogsParams defines parameters for GetAuditLogs.
 type GetAuditLogsParams struct {
 	// Limit Page size (absent/0 → endpoint default; malformed or negative → 400; over-max clamps)
@@ -2630,6 +2636,13 @@ type ClientInterface interface {
 	// Corresponds with POST /agents/commands/{id}/complete (the `PostAgentsCommandsIdComplete` operationId).
 	PostAgentsCommandsIdComplete(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetAgentsFingerprints [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
+	//
+	// Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
+	//
+	// Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
+	GetAgentsFingerprints(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostAgentsProbeReport [agent] Synthetic probe result batches
 	//
 	// Corresponds with POST /agents/probe-report (the `PostAgentsProbeReport` operationId).
@@ -3427,6 +3440,23 @@ func (c *Client) PostAgentsCommandsIdAck(ctx context.Context, id Id, reqEditors 
 // Corresponds with POST /agents/commands/{id}/complete (the `PostAgentsCommandsIdComplete` operationId).
 func (c *Client) PostAgentsCommandsIdComplete(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostAgentsCommandsIdCompleteRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetAgentsFingerprints [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
+//
+// Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
+//
+// Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
+func (c *Client) GetAgentsFingerprints(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAgentsFingerprintsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -5817,6 +5847,60 @@ func NewPostAgentsCommandsIdCompleteRequest(server string, id Id) (*http.Request
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetAgentsFingerprintsRequest constructs an http.Request for the GetAgentsFingerprints method
+func NewGetAgentsFingerprintsRequest(server string, params *GetAgentsFingerprintsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agents/fingerprints")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Rev != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "rev", *params.Rev, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -11768,6 +11852,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /agents/commands/{id}/complete (the `PostAgentsCommandsIdComplete` operationId).
 	PostAgentsCommandsIdCompleteWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PostAgentsCommandsIdCompleteResponse, error)
 
+	// GetAgentsFingerprintsWithResponse [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
+	//
+	// Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
+	GetAgentsFingerprintsWithResponse(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*GetAgentsFingerprintsResponse, error)
+
 	// PostAgentsProbeReportWithResponse [agent] Synthetic probe result batches
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -12949,6 +13042,40 @@ func (r PostAgentsCommandsIdCompleteResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PostAgentsCommandsIdCompleteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetAgentsFingerprintsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAgentsFingerprintsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAgentsFingerprintsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAgentsFingerprintsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAgentsFingerprintsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -18806,6 +18933,21 @@ func (c *ClientWithResponses) PostAgentsCommandsIdCompleteWithResponse(ctx conte
 	return ParsePostAgentsCommandsIdCompleteResponse(rsp)
 }
 
+// GetAgentsFingerprintsWithResponse [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
+//
+// Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
+func (c *ClientWithResponses) GetAgentsFingerprintsWithResponse(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*GetAgentsFingerprintsResponse, error) {
+	rsp, err := c.GetAgentsFingerprints(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAgentsFingerprintsResponse(rsp)
+}
+
 // PostAgentsProbeReportWithResponse [agent] Synthetic probe result batches
 //
 // Returns a wrapper object for the known response body format(s).
@@ -20807,6 +20949,22 @@ func ParsePostAgentsCommandsIdCompleteResponse(rsp *http.Response) (*PostAgentsC
 	}
 
 	response := &PostAgentsCommandsIdCompleteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetAgentsFingerprintsResponse parses an HTTP response from a GetAgentsFingerprintsWithResponse call
+func ParseGetAgentsFingerprintsResponse(rsp *http.Response) (*GetAgentsFingerprintsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAgentsFingerprintsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

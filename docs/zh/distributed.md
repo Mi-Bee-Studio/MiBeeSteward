@@ -206,6 +206,16 @@ mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action remove -name s
 - `restart` / `config-reload` 重执行 agent 二进制（配置在构造时消费，重执行是唯一忠实的重载）。`logs-tail` 返回 agent 内存环形缓冲中最近 ≤50 行日志，结果落在 Agents 页的命令历史里。
 - 在 systemd/procd 下重执行即干净重启；裸 shell 会话下进程以相同参数回来。
 
+### 指纹语料分发
+
+agent 无需任何二进制或包更新即可与中心保持指纹语料一致（`center.fingerprint_sync.enabled`，默认关闭）：
+
+- agent 携带上次应用的版本号轮询 `GET /api/v1/agents/fingerprints`（`interval`，默认 10m）；`204` 表示无变化，`200` 返回中心当前语料的确定性 tar.gz 包 —— 中心配置了 `scanner.fingerprint_path` 目录时以目录为准（在其中编辑/投放 YAML，全舰队下次轮询即生效，**中心无需重启**），否则返回中心二进制内嵌语料（因此每次中心升级都会自动传播到全舰队）。
+- 每个语料包在替换本地语料前先经规则引擎自身的加载器校验：加载失败（或加载出零规则）的语料直接丢弃，agent 继续运行原语料 —— 不重启、不会崩溃循环。
+- 校验通过后语料原子落盘（agent 配置旁的 `fingerprints-sync/` 目录），agent 重执行以激活。重启带限频（5 分钟）：目录抖动至多每个窗口扰动舰队一次，连续变更会合并收敛到最新语料。
+- 引擎加载语料的优先级：`scanner.fingerprint_path`（运维指定目录）→ 同步目录 → 内嵌语料。
+- 已应用版本号持久化在同步目录旁并在启动时打日志，"这台 agent 跑的哪版语料"从日志即可回答，无需猜测。
+
 ## 运维
 
 ### 监控

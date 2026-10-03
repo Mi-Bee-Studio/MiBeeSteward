@@ -811,6 +811,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 | `/api/v1/agents/commands` | GET | 代理令牌 | 代理拉取待执行命令（pull 模型） |
 | `/api/v1/agents/commands/{id}/ack` | POST | 代理令牌 | 确认命令已收到 |
 | `/api/v1/agents/commands/{id}/complete` | POST | 代理令牌 | 上报命令执行结果 |
+| `/api/v1/agents/fingerprints` | GET | 代理令牌 | 指纹语料分发：携带 `?rev=<已应用版本>` 轮询；`204` = 已最新，`200` = 确定性 tar.gz 语料包 + `X-Fingerprint-Rev` 响应头 |
 | `/api/v1/agents/{agentId}/commands` | POST | 需管理员 · `CapAgentManage` | 为指定代理创建命令 |
 | `/api/v1/agents/commands/all` | GET | 需管理员 · `CapAgentManage` | 查看全部代理命令 |
 

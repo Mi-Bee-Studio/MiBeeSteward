@@ -633,7 +633,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// scheduler) so the ScanFunc dispatcher can share the same instance.
 	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn, agentCmdSvc)
 	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries, agentCmdSvc, auditRepo)
-	registerAgentRoutes(r, agentReportHandler, agentProbeReportHandler, agentCommandHandler)
+	agentFingerprintsHandler := handler.NewAgentFingerprintsHandler(cfg.Scanner.FingerprintPath, slog.Default())
+	registerAgentRoutes(r, agentReportHandler, agentProbeReportHandler, agentCommandHandler, agentFingerprintsHandler)
 
 	registerAgentCommandAdminRoutes(r, agentCommandHandler)
 

@@ -38,6 +38,7 @@ import (
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/dbopen"
+	"mibee-steward/internal/fpsync"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
@@ -157,6 +158,19 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 	if scannerPortSpec == "" {
 		scannerPortSpec = config.DefaultScanPortSpec
 	}
+	// Corpus source precedence (the no-recompile update story):
+	//   1. scanner.fingerprint_path  — operator-managed dir, explicit choice
+	//   2. <config dir>/fingerprints-sync — populated by the center sync
+	//      (center.fingerprint_sync.enabled; the syncer below maintains it)
+	//   3. embedded corpus (binary default)
+	syncDir := filepath.Join(filepath.Dir(configPath), "fingerprints-sync")
+	fingerprintPath := cfg.Scanner.FingerprintPath
+	if fingerprintPath == "" {
+		if files, err := fpsync.ReadCorpusDir(syncDir); err == nil && len(files) > 0 {
+			fingerprintPath = syncDir
+			slog.Info("agent corpus source: center-synced dir", "path", syncDir, "files", len(files))
+		}
+	}
 	engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
 		PortSpec:           scannerPortSpec,
 		MaxConcurrentHosts: cfg.Scanner.MaxConcurrentHosts,
@@ -165,7 +179,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 		PerProbeTimeout:    time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
 		PersistRawEvidence: cfg.Scanner.PersistRawEvidence,
 		OUIPath:            cfg.Scanner.OUIPath,
-		FingerprintPath:    cfg.Scanner.FingerprintPath,
+		FingerprintPath:    fingerprintPath,
 		SNMPCommunity:      cfg.Scanner.SNMPCommunity,
 		CredResolver:       agentCredResolver,
 		RouterARP: scannerv2probe.RouterARPConfig{
@@ -396,6 +410,22 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 			return fmt.Sprintf(`{"run_id":%d,"targets":"%s"}`, run.ID, sp.Targets), nil
 		}, slog.Default())
 	cmdPoller.SetProber(prober)
+	// reExec replaces the process image (systemd/procd restart semantics
+	// make this a clean restart under a supervisor; config is consumed at
+	// construction, so re-exec is the only faithful reload). Shared by the
+	// remote-ops restart command (#278) and the fingerprint corpus syncer.
+	reExec := func(reason string) {
+		slog.Warn("mibee-agent re-exec", "reason", reason)
+		exe, err := os.Executable()
+		if err != nil {
+			slog.Error("re-exec failed: cannot resolve executable", "error", err)
+			os.Exit(1)
+		}
+		if err := syscall.Exec(exe, append([]string{exe}, os.Args[1:]...), os.Environ()); err != nil {
+			slog.Error("re-exec failed", "error", err)
+			os.Exit(1)
+		}
+	}
 	if cfg.Center.RemoteOpsEnabled {
 		// Remote-ops opt-in (#278): restart/config-reload re-exec the process
 		// (config is consumed at construction; re-exec is the only faithful
@@ -404,24 +434,27 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 		// refuse to enqueue these commands.
 		ring := agent.NewLogRing(slog.Default().Handler(), 300)
 		slog.SetDefault(slog.New(ring))
-		cmdPoller.EnableRemoteOps(ring.Lines, func(reason string) {
-			slog.Warn("mibee-agent re-exec", "reason", reason)
-			// Replace the process image; systemd/procd restart semantics make
-			// this a clean restart under a supervisor. Under a bare shell the
-			// process simply comes back with the same args.
-			exe, err := os.Executable()
-			if err != nil {
-				slog.Error("re-exec failed: cannot resolve executable", "error", err)
-				os.Exit(1)
-			}
-			if err := syscall.Exec(exe, append([]string{exe}, os.Args[1:]...), os.Environ()); err != nil {
-				slog.Error("re-exec failed", "error", err)
-				os.Exit(1)
-			}
-		})
+		cmdPoller.EnableRemoteOps(ring.Lines, reExec)
 		slog.Info("agent remote ops ENABLED (restart / config-reload / logs-tail)")
 	}
 	cmdPoller.Start(ctxBg)
+
+	// Fingerprint corpus sync (center.fingerprint_sync.enabled, default off):
+	// poll GET /agents/fingerprints, validate + swap the synced dir, re-exec
+	// to activate. reExec nil-out not possible — the syncer rate-limits
+	// restarts itself (agent.MinRestartInterval).
+	if cfg.Center.FingerprintSync.Enabled && cfg.Center.URL != "" {
+		syncEvery := parseDurationOrDefault(cfg.Center.FingerprintSync.Interval, 10*time.Minute)
+		if syncEvery < time.Minute {
+			syncEvery = time.Minute
+		}
+		fpSyncer := agent.NewFingerprintSyncer(cfg.Center.URL, cfg.Center.AuthToken, syncDir, syncEvery, reExec, slog.Default())
+		if rev := fpSyncer.AppliedRev(); rev != "" && fingerprintPath == syncDir {
+			fpSyncer.AdoptStartupRev(rev)
+		}
+		fpSyncer.Start(ctxBg)
+		slog.Info("agent fingerprint sync enabled", "dir", syncDir, "interval", syncEvery.String(), "applied_rev", fpSyncer.AppliedRev())
+	}
 
 	slog.Info("mibee-agent running", "center", cfg.Center.URL, "flush_interval", flush)
 

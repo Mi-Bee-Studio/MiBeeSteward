@@ -68,3 +68,27 @@ func LoadEmbeddedRules(rc *fp.RuleClassifier) error {
 	}
 	return nil
 }
+
+// EmbeddedCorpusFiles returns the synced corpus embedded in this package as a
+// name→content map (the same superset corpus LoadEmbeddedRules materializes).
+// Consumers: the fingerprint-distribution endpoint (GET /agents/fingerprints)
+// serves this when scanner.fingerprint_path is unset, so agents sync the
+// exact corpus the center's own engine would fall back to.
+func EmbeddedCorpusFiles() (map[string][]byte, error) {
+	entries, err := embeddedAssets.ReadDir("fingerprint-assets")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded assets: %w", err)
+	}
+	files := make(map[string][]byte, len(entries))
+	for _, ent := range entries {
+		if ent.IsDir() || filepath.Ext(ent.Name()) != ".yaml" {
+			continue
+		}
+		body, err := embeddedAssets.ReadFile("fingerprint-assets/" + ent.Name())
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", ent.Name(), err)
+		}
+		files[ent.Name()] = body
+	}
+	return files, nil
+}
