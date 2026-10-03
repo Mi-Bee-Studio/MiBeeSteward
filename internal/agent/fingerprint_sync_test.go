@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -271,4 +272,64 @@ func TestSyncerStartLoopRunsAndStops(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	cancel()
+}
+
+// TestSyncerHostileCenter sweeps CheckOnce's defensive branches against a
+// misbehaving center: error status with body, missing rev header, oversized
+// envelope, and the same-rev race.
+func TestSyncerHostileCenter(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fingerprints-sync")
+	s := NewFingerprintSyncer("", "t", dir, time.Hour, nil, nil)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	defer srv.Close()
+	s2 := NewFingerprintSyncer(srv.URL, "t", dir, time.Hour, nil, nil)
+	if _, err := s2.CheckOnce(context.Background()); err == nil || !strings.Contains(err.Error(), "status 500") {
+		t.Errorf("error status: err=%v", err)
+	}
+	if _, err := s.CheckOnce(context.Background()); err == nil {
+		t.Error("dead center must error")
+	}
+
+	// 200 without the rev header.
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv2.Close()
+	s3 := NewFingerprintSyncer(srv2.URL, "t", dir, time.Hour, nil, nil)
+	if _, err := s3.CheckOnce(context.Background()); err == nil || !strings.Contains(err.Error(), "X-Fingerprint-Rev") {
+		t.Errorf("missing rev: err=%v", err)
+	}
+
+	// Oversized envelope (over MaxArchiveBytes) is refused before staging.
+	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Fingerprint-Rev", "feed")
+		_, _ = w.Write(make([]byte, fpsync.MaxArchiveBytes+2))
+	}))
+	defer srv3.Close()
+	s4 := NewFingerprintSyncer(srv3.URL, "t", dir, time.Hour, nil, nil)
+	if _, err := s4.CheckOnce(context.Background()); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("oversize: err=%v", err)
+	}
+
+	// Same-rev race: server echoes the client's (non-empty) rev as its own.
+	dir5 := filepath.Join(t.TempDir(), "fingerprints-sync")
+	if err := os.MkdirAll(dir5, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir5+".rev", []byte("abc123"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv4 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Fingerprint-Rev", r.URL.Query().Get("rev"))
+		_, _ = w.Write([]byte("garbage-not-an-envelope"))
+	}))
+	defer srv4.Close()
+	s5 := NewFingerprintSyncer(srv4.URL, "t", dir5, time.Hour, nil, nil)
+	if rev, err := s5.CheckOnce(context.Background()); err != nil || rev != "" {
+		t.Errorf("same-rev race must no-op: rev=%q err=%v", rev, err)
+	}
 }
