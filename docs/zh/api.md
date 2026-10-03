@@ -812,6 +812,10 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 | `/api/v1/agents/commands/{id}/ack` | POST | 代理令牌 | 确认命令已收到 |
 | `/api/v1/agents/commands/{id}/complete` | POST | 代理令牌 | 上报命令执行结果 |
 | `/api/v1/agents/fingerprints` | GET | 代理令牌 | 指纹语料分发：携带 `?rev=<已应用版本>` 轮询；`204` = 已最新，`200` = 确定性 tar.gz 语料包 + `X-Fingerprint-Rev` 响应头 |
+
+#### 指纹语料管理（管理员）
+
+设置 → 指纹库对应 `/api/v1/fingerprints`（**管理员**，`fingerprint:manage`）：`GET` 语料状态（来源 = 目录/受管/内嵌、内容版本号、规则数、文件清单、可回滚性）；`PUT` 上传（multipart：tar.gz/zip 包整体替换，单个 `.yaml` 只替换该文件——一切先经规则引擎自身加载器校验，被拒语料返回 400 并附引擎错误原文）；`POST /rollback` 回退上一版；`GET /upstream` + `POST /upstream/apply` 在线更新（对照配置的 `scanner.fingerprint_upstream.url` manifest：检查展示版本 + 增/删规则 diff，一键更新为下载 + 校验 + 激活）；`GET /agents` 舰队语料采纳视图（每台 agent 上报其运行版本号）；`GET /files/{name}` 只读预览单文件 YAML。每次激活都会热加载引擎（center 无需重启）并推动分发版本号，开启同步的 agent 下轮轮询即收敛。所有变更写入审计日志（`fingerprint.upload` / `fingerprint.rollback` / `fingerprint.upstream_apply`）。
 | `/api/v1/agents/{agentId}/commands` | POST | 需管理员 · `CapAgentManage` | 为指定代理创建命令 |
 | `/api/v1/agents/commands/all` | GET | 需管理员 · `CapAgentManage` | 查看全部代理命令 |
 

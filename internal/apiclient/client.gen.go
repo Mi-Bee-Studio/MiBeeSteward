@@ -1952,6 +1952,11 @@ type GetDocumentsIdDownloadParams struct {
 	Inline *string `form:"inline,omitempty" json:"inline,omitempty"`
 }
 
+// PutFingerprintsMultipartBody defines parameters for PutFingerprints.
+type PutFingerprintsMultipartBody struct {
+	File *openapi_types.File `json:"file,omitempty"`
+}
+
 // GetNetworkGrantsParams defines parameters for GetNetworkGrants.
 type GetNetworkGrantsParams struct {
 	// Limit Page size (absent/0 → endpoint default; malformed or negative → 400; over-max clamps)
@@ -2083,6 +2088,9 @@ type PostAuthLoginJSONRequestBody PostAuthLoginJSONBody
 
 // PostDocumentsUploadMultipartRequestBody defines body for PostDocumentsUpload for multipart/form-data ContentType.
 type PostDocumentsUploadMultipartRequestBody PostDocumentsUploadMultipartBody
+
+// PutFingerprintsMultipartRequestBody defines body for PutFingerprints for multipart/form-data ContentType.
+type PutFingerprintsMultipartRequestBody PutFingerprintsMultipartBody
 
 // Getter for additional properties for ScanAttributes. Returns the specified
 // element and whether it was found
@@ -3024,10 +3032,47 @@ type ClientInterface interface {
 	// Corresponds with POST /documents/{id}/restore (the `PostDocumentsIdRestore` operationId).
 	PostDocumentsIdRestore(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetFingerprints Fingerprint corpus status (source/rev/rule count/files/rollback availability)
+	//
+	// Corresponds with GET /fingerprints (the `GetFingerprints` operationId).
+	GetFingerprints(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutFingerprintsWithBody Upload/replace the managed corpus (multipart file: tar.gz/zip envelope, or a single .yaml replacing that file)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /fingerprints (the `PutFingerprints` operationId).
+	PutFingerprintsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFingerprintsAgents Fleet corpus adoption (per-agent fingerprint revision + up-to-date flag)
+	//
+	// Corresponds with GET /fingerprints/agents (the `GetFingerprintsAgents` operationId).
+	GetFingerprintsAgents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetFingerprintsCoverage Rule-library coverage stats
 	//
 	// Corresponds with GET /fingerprints/coverage (the `GetFingerprintsCoverage` operationId).
 	GetFingerprintsCoverage(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFingerprintsFilesName Read-only YAML preview of one corpus file from the active source
+	//
+	// Corresponds with GET /fingerprints/files/{name} (the `GetFingerprintsFilesName` operationId).
+	GetFingerprintsFilesName(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostFingerprintsRollback Roll the managed corpus back to its predecessor (validated, hot-reloaded)
+	//
+	// Corresponds with POST /fingerprints/rollback (the `PostFingerprintsRollback` operationId).
+	PostFingerprintsRollback(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFingerprintsUpstream Check the configured upstream corpus (manifest + diff, nothing activated)
+	//
+	// Corresponds with GET /fingerprints/upstream (the `GetFingerprintsUpstream` operationId).
+	GetFingerprintsUpstream(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostFingerprintsUpstreamApply One-click update - download + validate + activate the upstream corpus
+	//
+	// Corresponds with POST /fingerprints/upstream/apply (the `PostFingerprintsUpstreamApply` operationId).
+	PostFingerprintsUpstreamApply(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetHealth Liveness + version (public)
 	//
@@ -4598,11 +4643,118 @@ func (c *Client) PostDocumentsIdRestore(ctx context.Context, id Id, reqEditors .
 	return c.Client.Do(req)
 }
 
+// GetFingerprints Fingerprint corpus status (source/rev/rule count/files/rollback availability)
+//
+// Corresponds with GET /fingerprints (the `GetFingerprints` operationId).
+func (c *Client) GetFingerprints(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFingerprintsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutFingerprintsWithBody Upload/replace the managed corpus (multipart file: tar.gz/zip envelope, or a single .yaml replacing that file)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /fingerprints (the `PutFingerprints` operationId).
+func (c *Client) PutFingerprintsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutFingerprintsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetFingerprintsAgents Fleet corpus adoption (per-agent fingerprint revision + up-to-date flag)
+//
+// Corresponds with GET /fingerprints/agents (the `GetFingerprintsAgents` operationId).
+func (c *Client) GetFingerprintsAgents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFingerprintsAgentsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetFingerprintsCoverage Rule-library coverage stats
 //
 // Corresponds with GET /fingerprints/coverage (the `GetFingerprintsCoverage` operationId).
 func (c *Client) GetFingerprintsCoverage(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetFingerprintsCoverageRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetFingerprintsFilesName Read-only YAML preview of one corpus file from the active source
+//
+// Corresponds with GET /fingerprints/files/{name} (the `GetFingerprintsFilesName` operationId).
+func (c *Client) GetFingerprintsFilesName(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFingerprintsFilesNameRequest(c.Server, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostFingerprintsRollback Roll the managed corpus back to its predecessor (validated, hot-reloaded)
+//
+// Corresponds with POST /fingerprints/rollback (the `PostFingerprintsRollback` operationId).
+func (c *Client) PostFingerprintsRollback(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostFingerprintsRollbackRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetFingerprintsUpstream Check the configured upstream corpus (manifest + diff, nothing activated)
+//
+// Corresponds with GET /fingerprints/upstream (the `GetFingerprintsUpstream` operationId).
+func (c *Client) GetFingerprintsUpstream(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFingerprintsUpstreamRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostFingerprintsUpstreamApply One-click update - download + validate + activate the upstream corpus
+//
+// Corresponds with POST /fingerprints/upstream/apply (the `PostFingerprintsUpstreamApply` operationId).
+func (c *Client) PostFingerprintsUpstreamApply(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostFingerprintsUpstreamApplyRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -8921,6 +9073,89 @@ func NewPostDocumentsIdRestoreRequest(server string, id Id) (*http.Request, erro
 	return req, nil
 }
 
+// NewGetFingerprintsRequest constructs an http.Request for the GetFingerprints method
+func NewGetFingerprintsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fingerprints")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutFingerprintsRequestWithBody constructs an http.Request for the PutFingerprints method, with any body, and a specified content type
+func NewPutFingerprintsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fingerprints")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetFingerprintsAgentsRequest constructs an http.Request for the GetFingerprintsAgents method
+func NewGetFingerprintsAgentsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fingerprints/agents")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetFingerprintsCoverageRequest constructs an http.Request for the GetFingerprintsCoverage method
 func NewGetFingerprintsCoverageRequest(server string) (*http.Request, error) {
 	var err error
@@ -8941,6 +9176,121 @@ func NewGetFingerprintsCoverageRequest(server string) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFingerprintsFilesNameRequest constructs an http.Request for the GetFingerprintsFilesName method
+func NewGetFingerprintsFilesNameRequest(server string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fingerprints/files/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostFingerprintsRollbackRequest constructs an http.Request for the PostFingerprintsRollback method
+func NewPostFingerprintsRollbackRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fingerprints/rollback")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFingerprintsUpstreamRequest constructs an http.Request for the GetFingerprintsUpstream method
+func NewGetFingerprintsUpstreamRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fingerprints/upstream")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostFingerprintsUpstreamApplyRequest constructs an http.Request for the PostFingerprintsUpstreamApply method
+func NewPostFingerprintsUpstreamApplyRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fingerprints/upstream/apply")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -12386,12 +12736,61 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /documents/{id}/restore (the `PostDocumentsIdRestore` operationId).
 	PostDocumentsIdRestoreWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PostDocumentsIdRestoreResponse, error)
 
+	// GetFingerprintsWithResponse Fingerprint corpus status (source/rev/rule count/files/rollback availability)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /fingerprints (the `GetFingerprints` operationId).
+	GetFingerprintsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFingerprintsResponse, error)
+
+	// PutFingerprintsWithBodyWithResponse Upload/replace the managed corpus (multipart file: tar.gz/zip envelope, or a single .yaml replacing that file)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /fingerprints (the `PutFingerprints` operationId).
+	PutFingerprintsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutFingerprintsResponse, error)
+
+	// GetFingerprintsAgentsWithResponse Fleet corpus adoption (per-agent fingerprint revision + up-to-date flag)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /fingerprints/agents (the `GetFingerprintsAgents` operationId).
+	GetFingerprintsAgentsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFingerprintsAgentsResponse, error)
+
 	// GetFingerprintsCoverageWithResponse Rule-library coverage stats
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /fingerprints/coverage (the `GetFingerprintsCoverage` operationId).
 	GetFingerprintsCoverageWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFingerprintsCoverageResponse, error)
+
+	// GetFingerprintsFilesNameWithResponse Read-only YAML preview of one corpus file from the active source
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /fingerprints/files/{name} (the `GetFingerprintsFilesName` operationId).
+	GetFingerprintsFilesNameWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*GetFingerprintsFilesNameResponse, error)
+
+	// PostFingerprintsRollbackWithResponse Roll the managed corpus back to its predecessor (validated, hot-reloaded)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /fingerprints/rollback (the `PostFingerprintsRollback` operationId).
+	PostFingerprintsRollbackWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostFingerprintsRollbackResponse, error)
+
+	// GetFingerprintsUpstreamWithResponse Check the configured upstream corpus (manifest + diff, nothing activated)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /fingerprints/upstream (the `GetFingerprintsUpstream` operationId).
+	GetFingerprintsUpstreamWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFingerprintsUpstreamResponse, error)
+
+	// PostFingerprintsUpstreamApplyWithResponse One-click update - download + validate + activate the upstream corpus
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /fingerprints/upstream/apply (the `PostFingerprintsUpstreamApply` operationId).
+	PostFingerprintsUpstreamApplyWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostFingerprintsUpstreamApplyResponse, error)
 
 	// GetHealthWithResponse Liveness + version (public)
 	//
@@ -16015,6 +16414,108 @@ func (r PostDocumentsIdRestoreResponse) ContentType() string {
 	return ""
 }
 
+type GetFingerprintsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r GetFingerprintsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFingerprintsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFingerprintsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetFingerprintsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutFingerprintsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r PutFingerprintsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutFingerprintsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutFingerprintsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutFingerprintsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetFingerprintsAgentsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r GetFingerprintsAgentsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFingerprintsAgentsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFingerprintsAgentsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetFingerprintsAgentsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetFingerprintsCoverageResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -16043,6 +16544,142 @@ func (r GetFingerprintsCoverageResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetFingerprintsCoverageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetFingerprintsFilesNameResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r GetFingerprintsFilesNameResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFingerprintsFilesNameResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFingerprintsFilesNameResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetFingerprintsFilesNameResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostFingerprintsRollbackResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r PostFingerprintsRollbackResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostFingerprintsRollbackResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostFingerprintsRollbackResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostFingerprintsRollbackResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetFingerprintsUpstreamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r GetFingerprintsUpstreamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFingerprintsUpstreamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFingerprintsUpstreamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetFingerprintsUpstreamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostFingerprintsUpstreamApplyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r PostFingerprintsUpstreamApplyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostFingerprintsUpstreamApplyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostFingerprintsUpstreamApplyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostFingerprintsUpstreamApplyResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -19923,6 +20560,45 @@ func (c *ClientWithResponses) PostDocumentsIdRestoreWithResponse(ctx context.Con
 	return ParsePostDocumentsIdRestoreResponse(rsp)
 }
 
+// GetFingerprintsWithResponse Fingerprint corpus status (source/rev/rule count/files/rollback availability)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /fingerprints (the `GetFingerprints` operationId).
+func (c *ClientWithResponses) GetFingerprintsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFingerprintsResponse, error) {
+	rsp, err := c.GetFingerprints(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFingerprintsResponse(rsp)
+}
+
+// PutFingerprintsWithBodyWithResponse Upload/replace the managed corpus (multipart file: tar.gz/zip envelope, or a single .yaml replacing that file)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /fingerprints (the `PutFingerprints` operationId).
+func (c *ClientWithResponses) PutFingerprintsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutFingerprintsResponse, error) {
+	rsp, err := c.PutFingerprintsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutFingerprintsResponse(rsp)
+}
+
+// GetFingerprintsAgentsWithResponse Fleet corpus adoption (per-agent fingerprint revision + up-to-date flag)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /fingerprints/agents (the `GetFingerprintsAgents` operationId).
+func (c *ClientWithResponses) GetFingerprintsAgentsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFingerprintsAgentsResponse, error) {
+	rsp, err := c.GetFingerprintsAgents(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFingerprintsAgentsResponse(rsp)
+}
+
 // GetFingerprintsCoverageWithResponse Rule-library coverage stats
 //
 // Returns a wrapper object for the known response body format(s).
@@ -19934,6 +20610,58 @@ func (c *ClientWithResponses) GetFingerprintsCoverageWithResponse(ctx context.Co
 		return nil, err
 	}
 	return ParseGetFingerprintsCoverageResponse(rsp)
+}
+
+// GetFingerprintsFilesNameWithResponse Read-only YAML preview of one corpus file from the active source
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /fingerprints/files/{name} (the `GetFingerprintsFilesName` operationId).
+func (c *ClientWithResponses) GetFingerprintsFilesNameWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*GetFingerprintsFilesNameResponse, error) {
+	rsp, err := c.GetFingerprintsFilesName(ctx, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFingerprintsFilesNameResponse(rsp)
+}
+
+// PostFingerprintsRollbackWithResponse Roll the managed corpus back to its predecessor (validated, hot-reloaded)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /fingerprints/rollback (the `PostFingerprintsRollback` operationId).
+func (c *ClientWithResponses) PostFingerprintsRollbackWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostFingerprintsRollbackResponse, error) {
+	rsp, err := c.PostFingerprintsRollback(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostFingerprintsRollbackResponse(rsp)
+}
+
+// GetFingerprintsUpstreamWithResponse Check the configured upstream corpus (manifest + diff, nothing activated)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /fingerprints/upstream (the `GetFingerprintsUpstream` operationId).
+func (c *ClientWithResponses) GetFingerprintsUpstreamWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFingerprintsUpstreamResponse, error) {
+	rsp, err := c.GetFingerprintsUpstream(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFingerprintsUpstreamResponse(rsp)
+}
+
+// PostFingerprintsUpstreamApplyWithResponse One-click update - download + validate + activate the upstream corpus
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /fingerprints/upstream/apply (the `PostFingerprintsUpstreamApply` operationId).
+func (c *ClientWithResponses) PostFingerprintsUpstreamApplyWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostFingerprintsUpstreamApplyResponse, error) {
+	rsp, err := c.PostFingerprintsUpstreamApply(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostFingerprintsUpstreamApplyResponse(rsp)
 }
 
 // GetHealthWithResponse Liveness + version (public)
@@ -22724,6 +23452,54 @@ func ParsePostDocumentsIdRestoreResponse(rsp *http.Response) (*PostDocumentsIdRe
 	return response, nil
 }
 
+// ParseGetFingerprintsResponse parses an HTTP response from a GetFingerprintsWithResponse call
+func ParseGetFingerprintsResponse(rsp *http.Response) (*GetFingerprintsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFingerprintsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParsePutFingerprintsResponse parses an HTTP response from a PutFingerprintsWithResponse call
+func ParsePutFingerprintsResponse(rsp *http.Response) (*PutFingerprintsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutFingerprintsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetFingerprintsAgentsResponse parses an HTTP response from a GetFingerprintsAgentsWithResponse call
+func ParseGetFingerprintsAgentsResponse(rsp *http.Response) (*GetFingerprintsAgentsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFingerprintsAgentsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
 // ParseGetFingerprintsCoverageResponse parses an HTTP response from a GetFingerprintsCoverageWithResponse call
 func ParseGetFingerprintsCoverageResponse(rsp *http.Response) (*GetFingerprintsCoverageResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -22733,6 +23509,70 @@ func ParseGetFingerprintsCoverageResponse(rsp *http.Response) (*GetFingerprintsC
 	}
 
 	response := &GetFingerprintsCoverageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetFingerprintsFilesNameResponse parses an HTTP response from a GetFingerprintsFilesNameWithResponse call
+func ParseGetFingerprintsFilesNameResponse(rsp *http.Response) (*GetFingerprintsFilesNameResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFingerprintsFilesNameResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParsePostFingerprintsRollbackResponse parses an HTTP response from a PostFingerprintsRollbackWithResponse call
+func ParsePostFingerprintsRollbackResponse(rsp *http.Response) (*PostFingerprintsRollbackResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostFingerprintsRollbackResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetFingerprintsUpstreamResponse parses an HTTP response from a GetFingerprintsUpstreamWithResponse call
+func ParseGetFingerprintsUpstreamResponse(rsp *http.Response) (*GetFingerprintsUpstreamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFingerprintsUpstreamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParsePostFingerprintsUpstreamApplyResponse parses an HTTP response from a PostFingerprintsUpstreamApplyWithResponse call
+func ParsePostFingerprintsUpstreamApplyResponse(rsp *http.Response) (*PostFingerprintsUpstreamApplyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostFingerprintsUpstreamApplyResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

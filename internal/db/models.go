@@ -27,6 +27,7 @@ type AgentStatus struct {
 	UptimeSeconds      int64     `json:"uptime_seconds"`
 	ClockOffsetSeconds float64   `json:"clock_offset_seconds"`
 	ScansTotal         int64     `json:"scans_total"`
+	FingerprintRev     string    `json:"fingerprint_rev"`
 	LastReportAt       time.Time `json:"last_report_at"`
 }
 

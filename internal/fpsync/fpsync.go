@@ -20,6 +20,7 @@ package fpsync
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -180,3 +181,67 @@ func ExtractTarGz(dir string, archive []byte) ([]string, error) {
 	}
 	return names, nil
 }
+
+// ExtractZip unpacks a zip-encoded corpus envelope into dir with exactly the
+// same constraints as ExtractTarGz (flat *.yaml only, name sanitization,
+// per-file and total caps). ZIP is accepted on upload for operator
+// convenience — the wire format between center and agents remains tar.gz.
+func ExtractZip(dir string, archive []byte) ([]string, error) {
+	zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		return nil, fmt.Errorf("zip: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	var names []string
+	total := 0
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		if filepath.Base(f.Name) != f.Name || f.Name == "." || f.Name == ".." {
+			return nil, fmt.Errorf("entry %q: flat file names only", f.Name)
+		}
+		if strings.ToLower(filepath.Ext(f.Name)) != ".yaml" {
+			return nil, fmt.Errorf("entry %q: only .yaml files allowed", f.Name)
+		}
+		if f.UncompressedSize64 > uint64(MaxFileBytes) {
+			return nil, fmt.Errorf("entry %q: exceeds %d bytes", f.Name, MaxFileBytes)
+		}
+		if len(names) >= MaxFileCount {
+			return nil, fmt.Errorf("more than %d files", MaxFileCount)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("open %q: %w", f.Name, err)
+		}
+		body, err := io.ReadAll(io.LimitReader(rc, MaxFileBytes+1))
+		closeErr := rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", f.Name, err)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close %q: %w", f.Name, closeErr)
+		}
+		if len(body) > MaxFileBytes {
+			return nil, fmt.Errorf("entry %q: exceeds %d bytes", f.Name, MaxFileBytes)
+		}
+		total += len(body)
+		if total > MaxArchiveBytes {
+			return nil, fmt.Errorf("archive exceeds %d bytes", MaxArchiveBytes)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f.Name), body, 0o644); err != nil {
+			return nil, err
+		}
+		names = append(names, f.Name)
+	}
+	if len(names) == 0 {
+		return nil, errors.New("archive contains no yaml files")
+	}
+	return names, nil
+}
+
+// IsTarGz and IsZip sniff an upload's envelope format by magic bytes.
+func IsTarGz(b []byte) bool { return len(b) > 2 && b[0] == 0x1f && b[1] == 0x8b }
+func IsZip(b []byte) bool   { return len(b) > 4 && b[0] == 'P' && b[1] == 'K' && b[2] == 3 && b[3] == 4 }

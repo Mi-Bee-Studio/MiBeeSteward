@@ -39,6 +39,7 @@ import (
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/dbopen"
 	"mibee-steward/internal/fpsync"
+	"mibee-steward/internal/service/scannerv2/classify"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
@@ -171,6 +172,14 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 			slog.Info("agent corpus source: center-synced dir", "path", syncDir, "files", len(files))
 		}
 	}
+	// Corpus revision for fleet telemetry (the center's adoption view):
+	// content-hash of whatever source the engine is about to load.
+	fpRev := ""
+	if files, err := fpsync.ReadCorpusDir(fingerprintPath); err == nil && len(files) > 0 {
+		fpRev = fpsync.Hash(files)
+	} else if emb, embErr := classify.EmbeddedCorpusFiles(); embErr == nil && len(emb) > 0 {
+		fpRev = fpsync.Hash(emb)
+	}
 	engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
 		PortSpec:           scannerPortSpec,
 		MaxConcurrentHosts: cfg.Scanner.MaxConcurrentHosts,
@@ -204,6 +213,7 @@ func runAgent(ctx context.Context, cfg *config.Config, configPath string) error 
 	flush := parseDurationOrDefault(cfg.Center.ReportInterval, 30*time.Second)
 	reporter := agent.NewReporter(cfg.Center.URL, cfg.Center.AuthToken, cfg.Network.Name, cfg.Network.CIDR, flush, 256, slog.Default())
 	reporter.SetVersion(version.Version) // fleet telemetry (#278)
+	reporter.SetFingerprintRev(fpRev)    // corpus adoption view (fingerprint-admin)
 	// Child of the caller's ctx so the shutdown sequence below can cancel
 	// run-scoped workers BEFORE stopping the poller/scheduler/reporter, the
 	// same ordering the old inline signal path had.

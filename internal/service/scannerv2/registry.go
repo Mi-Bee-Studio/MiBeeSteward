@@ -127,3 +127,13 @@ func (r *Registry) String() string {
 	return fmt.Sprintf("registry{probes=%d classifiers=%d handlers=%d}",
 		len(r.probes), len(r.classifiers), len(r.handlers))
 }
+
+// ReplaceClassifier atomically swaps the classifier registered under
+// c.Service() — the hot-reload primitive behind the fingerprint-admin
+// upload/rollback endpoints (Engine.ReloadFingerprints). In-flight
+// classifications keep the old classifier; new lookups see the replacement.
+func (r *Registry) ReplaceClassifier(c ServiceClassifier) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.classifiers[c.Service()] = c
+}

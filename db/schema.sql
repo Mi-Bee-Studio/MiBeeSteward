@@ -690,6 +690,7 @@ CREATE TABLE IF NOT EXISTS agent_status (
     uptime_seconds INTEGER NOT NULL DEFAULT 0,
     clock_offset_seconds REAL NOT NULL DEFAULT 0,
     scans_total INTEGER NOT NULL DEFAULT 0,
+    fingerprint_rev TEXT NOT NULL DEFAULT '',   -- corpus revision the agent runs (corpus adoption view)
     last_report_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

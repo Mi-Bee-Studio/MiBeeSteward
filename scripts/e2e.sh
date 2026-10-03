@@ -205,6 +205,58 @@ else
     bad "probe-target produced no persisted result (#252 regression class)"
 fi
 
+echo "== 6. fingerprint corpus management (admin) =="
+# Status: the fresh center classifies with the embedded corpus.
+FPSTAT="$(curl -sf -m 5 "${BASE}/api/v1/fingerprints" -H "Authorization: Bearer ${TOKEN}" || echo '{}')"
+need "$(jsonget "${FPSTAT}" source)" "embedded" "corpus status reports embedded source"
+BASE_RULES="$(jsonget "${FPSTAT}" rule_count)"
+[ -n "${BASE_RULES}" ] && [ "${BASE_RULES}" -gt 1000 ]     && ok "corpus carries ${BASE_RULES} rules" || bad "corpus rule_count missing (${BASE_RULES})"
+
+# Upload a single-file replacement: banner.yaml with one smoke rule. The
+# whole corpus (embedded files + the replacement) must pass the engine's
+# loader, activate, and hot-reload.
+SMOKE_YAML="${TMP}/banner.yaml"
+cat > "${SMOKE_YAML}" <<'YEOF'
+version: 1
+rules:
+  - id: e2e-smoke-rule
+    source: builtin
+    match:
+      op: contains
+      field: banner
+      value: "E2eSmokeBanner2026"
+    service: e2e_smoke
+    protocol: tcp
+    confidence: 0.9
+YEOF
+UPRES="$(curl -sf -m 30 -X PUT "${BASE}/api/v1/fingerprints"     -H "Authorization: Bearer ${TOKEN}" -F "file=@${SMOKE_YAML}" || echo '')"
+NEW_RULES="$(jsonget "${UPRES}" rule_count)"
+if [ -n "${NEW_RULES}" ] && [ "${NEW_RULES}" -gt "${BASE_RULES}" ]; then
+    ok "single-file upload activated (rules ${BASE_RULES} -> ${NEW_RULES})"
+else
+    bad "upload failed or rule count did not grow (${UPRES})"
+fi
+# Status now reports the managed source and a rollback target.
+FPSTAT="$(curl -sf -m 5 "${BASE}/api/v1/fingerprints" -H "Authorization: Bearer ${TOKEN}" || echo '{}')"
+need "$(jsonget "${FPSTAT}" source)" "managed" "corpus status reports managed source after upload"
+need "$(jsonget "${FPSTAT}" prev_available)" "true" "rollback target tracked"
+
+# File preview answers the uploaded file's content.
+FPPREV="$(curl -sf -m 5 "${BASE}/api/v1/fingerprints/files/banner.yaml" -H "Authorization: Bearer ${TOKEN}" || echo '')"
+printf '%s' "${FPPREV}" | grep -q "e2e-smoke-rule"     && ok "file preview serves the uploaded banner.yaml" || bad "file preview missing smoke rule"
+
+# Rollback restores the pre-upload corpus.
+RBRES="$(curl -sf -m 30 -X POST "${BASE}/api/v1/fingerprints/rollback"     -H "Authorization: Bearer ${TOKEN}" || echo '')"
+RB_RULES="$(jsonget "${RBRES}" rule_count)"
+if [ -n "${RB_RULES}" ] && [ "${RB_RULES}" = "${BASE_RULES}" ]; then
+    ok "rollback restored ${RB_RULES} rules (embedded corpus back)"
+else
+    bad "rollback rule count mismatch (${RBRES})"
+fi
+# Unconfigured upstream must answer 501 with a hint, not activate anything.
+FPUP=$(curl -s -m 5 -o /dev/null -w "%{http_code}" "${BASE}/api/v1/fingerprints/upstream"     -H "Authorization: Bearer ${TOKEN}")
+need "${FPUP}" "501" "upstream check answers 501 when unconfigured"
+
 echo
 echo "== e2e result: ${PASS} passed, ${FAIL} failed: log: ${TMP}/server.log =="
 [ "${FAIL}" -eq 0 ] || { echo "server log tail:"; tail -20 "${TMP}/server.log" || true; exit 1; }

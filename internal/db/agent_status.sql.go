@@ -12,7 +12,7 @@ import (
 
 const listAgentStatus = `-- name: ListAgentStatus :many
 SELECT agent_id, version, go_version, hostname, uptime_seconds,
-    clock_offset_seconds, scans_total, last_report_at
+    clock_offset_seconds, scans_total, fingerprint_rev, last_report_at
 FROM agent_status
 ORDER BY last_report_at ASC
 `
@@ -35,6 +35,7 @@ func (q *Queries) ListAgentStatus(ctx context.Context) ([]AgentStatus, error) {
 			&i.UptimeSeconds,
 			&i.ClockOffsetSeconds,
 			&i.ScansTotal,
+			&i.FingerprintRev,
 			&i.LastReportAt,
 		); err != nil {
 			return nil, err
@@ -53,8 +54,8 @@ func (q *Queries) ListAgentStatus(ctx context.Context) ([]AgentStatus, error) {
 const upsertAgentStatus = `-- name: UpsertAgentStatus :exec
 
 INSERT INTO agent_status (agent_id, version, go_version, hostname, uptime_seconds,
-    clock_offset_seconds, scans_total, last_report_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    clock_offset_seconds, scans_total, fingerprint_rev, last_report_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(agent_id) DO UPDATE SET
     version = excluded.version,
     go_version = excluded.go_version,
@@ -62,6 +63,7 @@ ON CONFLICT(agent_id) DO UPDATE SET
     uptime_seconds = excluded.uptime_seconds,
     clock_offset_seconds = excluded.clock_offset_seconds,
     scans_total = excluded.scans_total,
+    fingerprint_rev = excluded.fingerprint_rev,
     last_report_at = excluded.last_report_at
 `
 
@@ -73,6 +75,7 @@ type UpsertAgentStatusParams struct {
 	UptimeSeconds      int64     `json:"uptime_seconds"`
 	ClockOffsetSeconds float64   `json:"clock_offset_seconds"`
 	ScansTotal         int64     `json:"scans_total"`
+	FingerprintRev     string    `json:"fingerprint_rev"`
 	LastReportAt       time.Time `json:"last_report_at"`
 }
 
@@ -95,6 +98,7 @@ func (q *Queries) UpsertAgentStatus(ctx context.Context, arg UpsertAgentStatusPa
 		arg.UptimeSeconds,
 		arg.ClockOffsetSeconds,
 		arg.ScansTotal,
+		arg.FingerprintRev,
 		arg.LastReportAt,
 	)
 	return err
