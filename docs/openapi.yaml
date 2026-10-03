@@ -1062,6 +1062,17 @@ paths:
       summary: Fingerprint corpus status (source/rev/rule count/files/rollback availability)
       responses:
         "200": {description: Corpus status}
+    post:
+      tags: [Fingerprints]
+      summary: Alias of PUT (multipart uploads from browser FormData are POST-shaped)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema: {type: object, properties: {file: {type: string, format: binary}}}
+      responses:
+        "200": {description: Activated (rev + rule_count)}
+        "400": {description: Corpus rejected by the rule engine}
+        "409": {description: Uploads disabled (scanner.fingerprint_path configured)}
     put:
       tags: [Fingerprints]
       summary: "Upload/replace the managed corpus (multipart file: tar.gz/zip envelope, or a single .yaml replacing that file)"

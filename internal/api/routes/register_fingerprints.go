@@ -27,6 +27,9 @@ func registerFingerprintAdminRoutes(r chi.Router, h *handler.FingerprintAdminHan
 		r.Use(middleware.RequireCapability(domain.CapFingerprintManage))
 		r.Get("/", h.Get)
 		r.Put("/", h.Put)
+		// POST alias: browser FormData uploads are POST-shaped (the SPA's
+		// api.upload helper included); same handler, same validation pipeline.
+		r.Post("/", h.Put)
 		r.Post("/rollback", h.Rollback)
 		r.Get("/upstream", h.Upstream)
 		r.Post("/upstream/apply", h.UpstreamApply)

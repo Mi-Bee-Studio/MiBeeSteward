@@ -1952,6 +1952,11 @@ type GetDocumentsIdDownloadParams struct {
 	Inline *string `form:"inline,omitempty" json:"inline,omitempty"`
 }
 
+// PostFingerprintsMultipartBody defines parameters for PostFingerprints.
+type PostFingerprintsMultipartBody struct {
+	File *openapi_types.File `json:"file,omitempty"`
+}
+
 // PutFingerprintsMultipartBody defines parameters for PutFingerprints.
 type PutFingerprintsMultipartBody struct {
 	File *openapi_types.File `json:"file,omitempty"`
@@ -2088,6 +2093,9 @@ type PostAuthLoginJSONRequestBody PostAuthLoginJSONBody
 
 // PostDocumentsUploadMultipartRequestBody defines body for PostDocumentsUpload for multipart/form-data ContentType.
 type PostDocumentsUploadMultipartRequestBody PostDocumentsUploadMultipartBody
+
+// PostFingerprintsMultipartRequestBody defines body for PostFingerprints for multipart/form-data ContentType.
+type PostFingerprintsMultipartRequestBody PostFingerprintsMultipartBody
 
 // PutFingerprintsMultipartRequestBody defines body for PutFingerprints for multipart/form-data ContentType.
 type PutFingerprintsMultipartRequestBody PutFingerprintsMultipartBody
@@ -3036,6 +3044,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /fingerprints (the `GetFingerprints` operationId).
 	GetFingerprints(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostFingerprintsWithBody Alias of PUT (multipart uploads from browser FormData are POST-shaped)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /fingerprints (the `PostFingerprints` operationId).
+	PostFingerprintsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PutFingerprintsWithBody Upload/replace the managed corpus (multipart file: tar.gz/zip envelope, or a single .yaml replacing that file)
 	//
@@ -4648,6 +4663,23 @@ func (c *Client) PostDocumentsIdRestore(ctx context.Context, id Id, reqEditors .
 // Corresponds with GET /fingerprints (the `GetFingerprints` operationId).
 func (c *Client) GetFingerprints(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetFingerprintsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostFingerprintsWithBody Alias of PUT (multipart uploads from browser FormData are POST-shaped)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /fingerprints (the `PostFingerprints` operationId).
+func (c *Client) PostFingerprintsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostFingerprintsRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -9100,6 +9132,35 @@ func NewGetFingerprintsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewPostFingerprintsRequestWithBody constructs an http.Request for the PostFingerprints method, with any body, and a specified content type
+func NewPostFingerprintsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fingerprints")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewPutFingerprintsRequestWithBody constructs an http.Request for the PutFingerprints method, with any body, and a specified content type
 func NewPutFingerprintsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
@@ -12742,6 +12803,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /fingerprints (the `GetFingerprints` operationId).
 	GetFingerprintsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFingerprintsResponse, error)
+
+	// PostFingerprintsWithBodyWithResponse Alias of PUT (multipart uploads from browser FormData are POST-shaped)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /fingerprints (the `PostFingerprints` operationId).
+	PostFingerprintsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostFingerprintsResponse, error)
 
 	// PutFingerprintsWithBodyWithResponse Upload/replace the managed corpus (multipart file: tar.gz/zip envelope, or a single .yaml replacing that file)
 	//
@@ -16442,6 +16510,40 @@ func (r GetFingerprintsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetFingerprintsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostFingerprintsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r PostFingerprintsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostFingerprintsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostFingerprintsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostFingerprintsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -20573,6 +20675,19 @@ func (c *ClientWithResponses) GetFingerprintsWithResponse(ctx context.Context, r
 	return ParseGetFingerprintsResponse(rsp)
 }
 
+// PostFingerprintsWithBodyWithResponse Alias of PUT (multipart uploads from browser FormData are POST-shaped)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /fingerprints (the `PostFingerprints` operationId).
+func (c *ClientWithResponses) PostFingerprintsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostFingerprintsResponse, error) {
+	rsp, err := c.PostFingerprintsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostFingerprintsResponse(rsp)
+}
+
 // PutFingerprintsWithBodyWithResponse Upload/replace the managed corpus (multipart file: tar.gz/zip envelope, or a single .yaml replacing that file)
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -23461,6 +23576,22 @@ func ParseGetFingerprintsResponse(rsp *http.Response) (*GetFingerprintsResponse,
 	}
 
 	response := &GetFingerprintsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParsePostFingerprintsResponse parses an HTTP response from a PostFingerprintsWithResponse call
+func ParsePostFingerprintsResponse(rsp *http.Response) (*PostFingerprintsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostFingerprintsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
