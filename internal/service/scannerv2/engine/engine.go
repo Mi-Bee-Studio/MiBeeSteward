@@ -27,8 +27,8 @@ import (
 	"time"
 
 	fp "github.com/Mi-Bee-Studio/mibee-fingerprints-go"
-	"mibee-steward/internal/fpsync"
 
+	"mibee-steward/internal/fpsync"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/classify"
 	"mibee-steward/internal/service/scannerv2/ebpf"
