@@ -23,6 +23,7 @@
 ### 修复
 
 - **上游"检查更新"端点不再泄漏 staging 目录**：`GET /api/v1/fingerprints/upstream` 会把上游语料拉取并校验到数据根目录下的 `fp-upstream-*` 临时目录，但成功后直接丢弃路径——每点一次检查就留一个目录（实地发现：一次配置会话后残留四个）。现在 diff 计算完即删除 staging 副本；apply 路径原本就有清理。
+- **无信号的 "other" 类型不再冒充 protocol 结论**：缺省 source 的默认逻辑把 agent 上报的回退类型 "other"（agent 侧桥接器没找到任何类型信号）盖成 `inferred_type_source: "protocol"`，类型黏滞随后拒绝一切后续启发式升级——遗留的 "other" 行即使等到了配套的主机名关键词也永远无法自愈（实地：米家网关主机名在 `mijia_` 关键词上线后仍是 other）。现在该默认只作用于真正的 handler 结论；黏滞对 "other" 行也豁免（即使旧行带着错误标记的 source），存量行下次扫描即自愈；真正的 protocol 类型保持防抖保护（守护测试钉住）。
 - **port-0 服务身份不再破坏重扫持久化**：RecordServices 的范围 DELETE 只按 >0 的端口圈定，主机名推导的 miot 行（端口 0）被排除——重扫要么整体空转（纯 port-0 上报让 IN 列表为空直接返回），要么重插同一行撞 UNIQUE(ip, service, port)，在网络开始按计划重扫后每台每扫一条告警（在路由器 agent 网段首次启用周期扫描当天实地发现）。现在上报带 portless 身份时，端口 0 一并纳入删除范围。
 - **带域名的主机名从未命中手机/平板/电视规则**：那四条 2026-10-01 的正则以 `$` 结尾锚定，rDNS/mDNS 实际产出的名字（`…-pad-6.<域名>`）过不了锚点，实地一台平板在规则存在的情况下依然无标识；四条规则现在都容忍尾部点分域名（实地发现，脱敏样本已钉入测试）。
 - **agent 上报的主机丢失 SSH banner 操作系统**：agent 线格式没有顶层 OS 字段，`hostToReported` 丢掉了 banner 推导的 `os_type`（`OpenSSH_for_Windows_9.5` → Windows），agent 扫描的主机落到端口形态分型（实地：一台 Windows 机器被 smb:445 判成 nas）。`ReportedHostToReport` 现在从 ssh 服务 metadata 恢复 OS，agent 上报主机的 `os_rules` 分型与 `scan_attributes.os` 恢复工作。
