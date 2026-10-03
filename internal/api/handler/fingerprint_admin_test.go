@@ -26,6 +26,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	fp "github.com/Mi-Bee-Studio/mibee-fingerprints-go"
+
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/fpsync"
 	"mibee-steward/internal/service"
@@ -507,14 +509,36 @@ func TestFingerprintAdminWithLiveEngine(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("engine rollback: %d", rec.Code)
 	}
-	if _, rules = eng.CorpusFacts(); rules != 2632 {
-		t.Fatalf("engine rules after rollback = %d, want 2632 (embedded)", rules)
+	if _, rules = eng.CorpusFacts(); rules != embeddedRuleCount(t) {
+		t.Fatalf("engine rules after rollback = %d, want %d (embedded)", rules, embeddedRuleCount(t))
 	}
 	// Corpus facts rev tracks the rollback (content differs from upload).
 	rev2, _ := eng.CorpusFacts()
 	if rev2 == rev {
 		t.Error("rollback did not move the engine rev (same corpus?)")
 	}
+}
+
+// embeddedRuleCount counts the rules in the //go:embed corpus. Used instead
+// of a hardcoded total so the rollback expectation survives corpus edits
+// (the 2026-10-04 SBC/NAS rule batch bumped the count and broke the constant).
+func embeddedRuleCount(t *testing.T) int {
+	t.Helper()
+	files, err := classifyEmbedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rc := &fp.RuleClassifier{}
+	if err := rc.LoadFromDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	return rc.RuleCount()
 }
 
 func writeEngineCorpus(t *testing.T, dir string, rules int) {
@@ -619,5 +643,61 @@ func TestFingerprintAdminUpstreamFailureModes(t *testing.T) {
 	hb.Put(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "size cap") {
 		t.Errorf("oversize upload → %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestFingerprintAdminUpstreamCheckCleansStaging pins the check endpoint's
+// staging hygiene: Upstream (a read-only diff) fetches the upstream corpus
+// into a fp-upstream-* temp dir under the data root. The field rig leaked one
+// such dir per "check for updates" click (four stale dirs in data/ after a
+// setup session, 2026-10-04) because the handler dropped the staging path on
+// the floor. Both the success and the repeated-check path must leave zero
+// temp dirs behind.
+func TestFingerprintAdminUpstreamCheckCleansStaging(t *testing.T) {
+	upFiles := corpusB()
+	tgz, err := fpsync.TarGz(upFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/manifest.json":
+			fmt.Fprintf(w, `{"corpus_version":"9.9.9-test","tarball":"corpus.tar.gz"}`)
+		case "/corpus.tar.gz":
+			_, _ = w.Write(tgz)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dataRoot := filepath.Join(t.TempDir(), "data")
+	h := NewFingerprintAdminHandler(nil, "", filepath.Join(dataRoot, "fingerprints"), srv.URL+"/manifest.json", nil, nil)
+
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		h.Upstream(rec, httptest.NewRequest(http.MethodGet, "/u", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("check #%d: %d %s", i+1, rec.Code, rec.Body.String())
+		}
+		left, _ := filepath.Glob(filepath.Join(dataRoot, "fp-upstream-*"))
+		if len(left) != 0 {
+			t.Errorf("check #%d leaked staging dirs: %v", i+1, left)
+		}
+	}
+
+	// The apply path activates the corpus; its staging must be gone too (the
+	// managed dir is the only thing left under the data root).
+	rec := httptest.NewRecorder()
+	h.UpstreamApply(rec, httptest.NewRequest(http.MethodPost, "/a", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply: %d %s", rec.Code, rec.Body.String())
+	}
+	left, _ := filepath.Glob(filepath.Join(dataRoot, "fp-upstream-*"))
+	if len(left) != 0 {
+		t.Errorf("apply leaked staging dirs: %v", left)
+	}
+	if st := getStatus(t, h); st["source"] != "managed" {
+		t.Errorf("apply must activate: %v", st["source"])
 	}
 }

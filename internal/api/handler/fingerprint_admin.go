@@ -292,11 +292,16 @@ func (h *FingerprintAdminHandler) Upstream(w http.ResponseWriter, r *http.Reques
 		Error(w, http.StatusNotImplemented, "no upstream configured: set scanner.fingerprint_upstream.url (a JSON manifest {corpus_version, tarball, sha256?})")
 		return
 	}
-	_, rules, diff, err := h.fetchUpstream(r)
+	staging, rules, diff, err := h.fetchUpstream(r)
 	if err != nil {
 		Error(w, http.StatusBadGateway, "upstream: "+err.Error())
 		return
 	}
+	// Read-only diff: the staging copy of the upstream corpus has served its
+	// purpose once the diff is computed. Remove it or every "check for
+	// updates" click leaks one fp-upstream-* dir under the data root
+	// (field-found 2026-10-04: four stale dirs after a setup session).
+	defer os.RemoveAll(staging)
 	Success(w, map[string]any{
 		"upstream_version": diff.Version,
 		"upstream_rev":     diff.Rev,
