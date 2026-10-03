@@ -69,3 +69,72 @@ func TestReloadFingerprintsHotSwap(t *testing.T) {
 		t.Fatalf("rejected reload changed live corpus: %q/%d", gotRev, gotRules)
 	}
 }
+
+// TestStartupLoadsManagedCorpus: with no explicit FingerprintPath, a managed
+// dir holding a corpus must be loaded at construction — otherwise a restart
+// silently reverts the engine to the embedded corpus while the admin UI still
+// reports the managed one (engine rev vs status rev mismatch).
+func TestStartupLoadsManagedCorpus(t *testing.T) {
+	managed := t.TempDir()
+	writeCorpus(t, managed, 3)
+
+	eng, err := NewEngine(nil, Config{FingerprintManagedDir: managed}, nil)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	rev, rules := eng.CorpusFacts()
+	if rules != 3 {
+		t.Fatalf("managed corpus not loaded at startup: rules=%d", rules)
+	}
+
+	// The startup path and an explicit-path load of the same corpus must
+	// agree on the content revision (same hash, same count).
+	ref, err := NewEngine(nil, Config{FingerprintPath: managed}, nil)
+	if err != nil {
+		t.Fatalf("reference engine: %v", err)
+	}
+	refRev, refRules := ref.CorpusFacts()
+	if rev != refRev || rules != refRules {
+		t.Fatalf("managed-dir startup facts %q/%d != explicit-path %q/%d", rev, rules, refRev, refRules)
+	}
+}
+
+// TestStartupFingerprintPathWinsOverManaged: an operator-explicit
+// FingerprintPath outranks the managed dir.
+func TestStartupFingerprintPathWinsOverManaged(t *testing.T) {
+	explicit := t.TempDir()
+	writeCorpus(t, explicit, 2)
+	managed := t.TempDir()
+	writeCorpus(t, managed, 7)
+
+	eng, err := NewEngine(nil, Config{FingerprintPath: explicit, FingerprintManagedDir: managed}, nil)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	if _, rules := eng.CorpusFacts(); rules != 2 {
+		t.Fatalf("explicit path must win: rules=%d", rules)
+	}
+}
+
+// TestStartupManagedEmptyFallsBackToEmbedded: an empty (or missing) managed
+// dir must leave the engine on the embedded corpus, matching a no-dirs build.
+func TestStartupManagedEmptyFallsBackToEmbedded(t *testing.T) {
+	empty := t.TempDir() // exists, holds no yaml
+
+	eng, err := NewEngine(nil, Config{FingerprintManagedDir: empty}, nil)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	base, err := NewEngine(nil, Config{}, nil)
+	if err != nil {
+		t.Fatalf("baseline engine: %v", err)
+	}
+	rev, rules := eng.CorpusFacts()
+	baseRev, baseRules := base.CorpusFacts()
+	if rules == 0 || baseRules == 0 {
+		t.Fatalf("embedded corpus missing: %d/%d", rules, baseRules)
+	}
+	if rev != baseRev || rules != baseRules {
+		t.Fatalf("empty managed dir changed facts: %q/%d vs %q/%d", rev, rules, baseRev, baseRules)
+	}
+}

@@ -24,7 +24,7 @@
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
-	import { LoaderCircle, Plus, Pencil, Trash2, ArrowLeft } from '@lucide/svelte';
+	import { LoaderCircle, Plus, Pencil, Trash2 } from '@lucide/svelte';
 
 	let credentials = $state<SNMPCredential[]>([]);
 	let loading = $state(true);
@@ -204,24 +204,12 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{m['snmpCredentials.Title']()} · MiBee Steward</title>
-</svelte:head>
-
 {#if loading}
 	<PageSkeleton type="table" />
 {:else}
-	<div class="p-6 max-w-6xl mx-auto">
-		<a href="/settings" class="inline-flex items-center gap-2 text-sm text-text-muted hover:text-text mb-4">
-			<ArrowLeft class="w-4 h-4" />
-			{m['navigation.Settings']()}
-		</a>
-
+	<div>
 		<div class="flex items-center justify-between mb-6">
-			<div>
-				<h1 class="text-2xl font-bold text-text">{m['snmpCredentials.Title']()}</h1>
-				<p class="text-sm text-text-muted mt-1">{m['snmpCredentials.Description']()}</p>
-			</div>
+			<p class="text-sm text-text-muted mt-1">{m['snmpCredentials.Description']()}</p>
 			<button
 				type="button"
 				onclick={openCreate}

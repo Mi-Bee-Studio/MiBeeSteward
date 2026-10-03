@@ -5,7 +5,7 @@
 
   This file is part of MiBee Steward, distributed under the GNU Affero General
   Public License v3.0 or later. A commercial license is available for use cases
-  the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+  the AGPL does not accommodate; see the main repository's LICENSE-COMMERCIAL.md.
 -->
 
 <script lang="ts">
@@ -15,13 +15,56 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { settingsSchema, profileSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { m, getLocale, setLocale } from '$lib/i18n-paraglide';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { Sun, Moon, Copy, Check } from '@lucide/svelte';
-	import { goto } from '$app/navigation';
 	import QRCode from 'qrcode';
 	import Modal from '$lib/components/Modal.svelte';
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import AccordionSection from '$lib/components/settings/AccordionSection.svelte';
+	import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
+	import SnmpCredentialsSettings from '$lib/components/settings/SnmpCredentialsSettings.svelte';
+	import FingerprintSettings from '$lib/components/settings/FingerprintSettings.svelte';
+	import SecuritySettings from '$lib/components/settings/SecuritySettings.svelte';
+
+	// Accordion: one section open at a time — opening a section collapses the
+	// others; content renders in place (no navigation to sub-pages). Section
+	// ids double as URL-hash deep-link targets (/settings#fingerprints), which
+	// the former sub-routes redirect to.
+	type SectionId =
+		| 'profile'
+		| 'password'
+		| 'appearance'
+		| '2fa'
+		| 'notifications'
+		| 'snmp'
+		| 'fingerprints'
+		| 'security'
+		| 'language';
+	const SECTION_IDS: SectionId[] = [
+		'profile',
+		'password',
+		'appearance',
+		'2fa',
+		'notifications',
+		'snmp',
+		'fingerprints',
+		'security',
+		'language'
+	];
+	let openSection = $state<SectionId | null>('profile');
+
+	function toggleSection(id: SectionId) {
+		openSection = openSection === id ? null : id;
+		if (openSection === id) scrollToSection(id);
+	}
+
+	async function scrollToSection(id: SectionId) {
+		await tick();
+		// Optional call: scrollIntoView is missing in jsdom (tests) and in a
+		// few embedded webviews; scrolling is a nicety, never a requirement.
+		document.getElementById(`settings-${id}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+	}
 
 	interface Profile {
 		id: number;
@@ -84,6 +127,13 @@ onMount(() => {
     theme = detectTheme();
     applyTheme(theme);
 
+    // Hash deep-link (/settings#fingerprints etc.) opens that section.
+    const hashed = window.location.hash.slice(1) as SectionId;
+    if (SECTION_IDS.includes(hashed)) {
+        openSection = hashed;
+        scrollToSection(hashed);
+    }
+
     api.get<Profile>('/auth/profile')
         .then((res) => {
             profile = res;
@@ -103,8 +153,8 @@ onMount(() => {
 });
 
 // Clear 2FA setup material (secret + QR + backup codes + verify input) when the
-// page unmounts, so sensitive credentials don't linger in the JS heap after the
-// user navigates away. Mirrors handleCancel2FASetup's clear logic (#72).
+// page unmounts, so sensitive credentials don't linger in the JS heap after
+// the user navigates away. Mirrors handleCancel2FASetup's clear logic (#72).
 onDestroy(() => {
     twoFASetupData = null;
     twoFAQRDataUrl = '';
@@ -257,7 +307,7 @@ function handleCancel2FASetup() {
 }
 </script>
 
-<div class="p-6 max-w-2xl">
+<div class="p-6 max-w-5xl">
 	<h2 class="text-2xl font-bold text-primary mb-6">{m["navigation.Settings"]()}</h2>
 
 	{#if loading}
@@ -274,8 +324,8 @@ function handleCancel2FASetup() {
 		{/if}
 
 		<!-- Profile section -->
-		<div class="bg-surface border border-border rounded-xl p-6 mb-6">
-			<h3 class="text-lg font-semibold text-text mb-4">{m["navigation.Profile"]()}</h3>
+		<AccordionSection id="profile" title={m["navigation.Profile"]()}
+			open={openSection === 'profile'} onToggle={() => toggleSection('profile')}>
 			<form onsubmit={handleProfileSubmit} class="space-y-4">
 				<div>
 				<label class="block text-xs text-muted mb-1">{m["auth.Username"]()}</label>
@@ -305,11 +355,11 @@ function handleCancel2FASetup() {
 				</div>
 				<LoadingButton type="submit" loading={profileLoading} variant="primary" label={m["common.Save"]()} />
 			</form>
-		</div>
+		</AccordionSection>
 
 		<!-- Password section -->
-		<div class="bg-surface border border-border rounded-xl p-6 mb-6">
-			<h3 class="text-lg font-semibold text-text mb-4">{m["auth.Change Password"]()}</h3>
+		<AccordionSection id="password" title={m["auth.Change Password"]()}
+			open={openSection === 'password'} onToggle={() => toggleSection('password')}>
 			<form onsubmit={handlePasswordSubmit} class="space-y-4">
 				<div>
 				<label class="block text-xs text-muted mb-1">{m["auth.Old Password"]()}</label>
@@ -340,13 +390,11 @@ function handleCancel2FASetup() {
 				</div>
 				<LoadingButton type="submit" loading={passwordLoading} variant="primary" label={m["auth.Change Password"]()} />
 			</form>
-		</div>
+		</AccordionSection>
 
 		<!-- Theme section -->
-		<div class="bg-surface border border-border rounded-xl p-6 mb-6">
-			<h3 class="text-lg font-semibold text-text mb-4">
-				{m["settings.Appearance"]()}
-			</h3>
+		<AccordionSection id="appearance" title={m["settings.Appearance"]()}
+			open={openSection === 'appearance'} onToggle={() => toggleSection('appearance')}>
 			<div class="flex items-center gap-4">
 				<button onclick={handleThemeToggle} class="btn btn-secondary">
 					{#if theme === 'dark'}
@@ -365,12 +413,11 @@ function handleCancel2FASetup() {
 					{/if}
 				</span>
 			</div>
-		</div>
+		</AccordionSection>
 
         <!-- 2FA section -->
-        <div class="bg-surface border border-border rounded-xl p-6 mb-6">
-            <h3 class="text-lg font-semibold text-text mb-4">{m["auth.2fa_title"]()}</h3>
-
+		<AccordionSection id="2fa" title={m["auth.2fa_title"]()}
+			open={openSection === '2fa'} onToggle={() => toggleSection('2fa')}>
             {#if twoFASetupData}
                 <!-- Setup flow -->
                 <div class="space-y-5">
@@ -437,52 +484,36 @@ function handleCancel2FASetup() {
                     <LoadingButton onclick={handle2FASetup} loading={twoFALoading} variant="primary" label={m["auth.2fa_enable"]()} />
                 </div>
             {/if}
-        </div>
+		</AccordionSection>
 
 		<!-- Notification settings section -->
-		<button
-			type="button"
-			onclick={() => goto('/settings/notifications')}
-			class="w-full text-left bg-surface border border-border rounded-xl p-6 mb-6 flex items-center justify-between hover:border-primary transition-colors"
-		>
-			<h3 class="text-lg font-semibold text-text">{m["notifications.Notification Settings"]()}</h3>
-			<span class="text-sm text-muted">›</span>
-		</button>
+		<AccordionSection id="notifications" title={m["notifications.Notification Settings"]()}
+			open={openSection === 'notifications'} onToggle={() => toggleSection('notifications')}>
+			<NotificationSettings />
+		</AccordionSection>
 
 		<!-- SNMP credentials section (issue #135: SNMPv3) -->
-		<button
-			type="button"
-			onclick={() => goto('/settings/snmp-credentials')}
-			class="w-full text-left bg-surface border border-border rounded-xl p-6 mb-6 flex items-center justify-between hover:border-primary transition-colors"
-		>
-			<h3 class="text-lg font-semibold text-text">{m["snmpCredentials.Title"]()}</h3>
-			<span class="text-sm text-muted">›</span>
-		</button>
+		<AccordionSection id="snmp" title={m["snmpCredentials.Title"]()}
+			open={openSection === 'snmp'} onToggle={() => toggleSection('snmp')}>
+			<SnmpCredentialsSettings />
+		</AccordionSection>
 
 		<!-- Fingerprint corpus management (upload / online update / fleet adoption) -->
-		<button
-			type="button"
-			onclick={() => goto('/settings/fingerprints')}
-			class="w-full text-left bg-surface border border-border rounded-xl p-6 mb-6 flex items-center justify-between hover:border-primary transition-colors"
-		>
-			<h3 class="text-lg font-semibold text-text">{m["fingerprintAdmin.title"]()}</h3>
-			<span class="text-sm text-muted">›</span>
-		</button>
+		<AccordionSection id="fingerprints" title={m["fingerprintAdmin.title"]()}
+			open={openSection === 'fingerprints'} onToggle={() => toggleSection('fingerprints')}>
+			<FingerprintSettings />
+		</AccordionSection>
 
 		<!-- Security settings section (admin): password policy + lockout +
 		     system info: the settings-center overlay (system_settings). -->
-		<button
-			type="button"
-			onclick={() => goto('/settings/security')}
-			class="w-full text-left bg-surface border border-border rounded-xl p-6 mb-6 flex items-center justify-between hover:border-primary transition-colors"
-		>
-			<h3 class="text-lg font-semibold text-text">{m["security.title"]()}</h3>
-			<span class="text-sm text-muted">›</span>
-		</button>
+		<AccordionSection id="security" title={m["security.title"]()}
+			open={openSection === 'security'} onToggle={() => toggleSection('security')}>
+			<SecuritySettings />
+		</AccordionSection>
 
 		<!-- Language section -->
-		<div class="bg-surface border border-border rounded-xl p-6">
-			<h3 class="text-lg font-semibold text-text mb-4">{m["settings.Language"]()}</h3>
+		<AccordionSection id="language" title={m["settings.Language"]()}
+			open={openSection === 'language'} onToggle={() => toggleSection('language')}>
 			<div class="flex items-center gap-4">
 				<select bind:value={lang} onchange={handleLangChange}
 					class="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
@@ -492,7 +523,7 @@ function handleCancel2FASetup() {
 				</select>
 				<span class="text-sm text-muted">{m["settings.Current Language"]({ lang: lang === 'zh' ? '中文' : 'English' })}</span>
 			</div>
-		</div>
+		</AccordionSection>
 
         <!-- 2FA disable modal -->
         <Modal bind:open={show2FADisableModal} title={m["auth.2fa_disable"]()} maxWidth="24rem" onClose={() => { twoFADisablePassword = ''; }}>

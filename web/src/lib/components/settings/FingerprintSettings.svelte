@@ -22,13 +22,11 @@
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
 	import {
-		Fingerprint,
 		RefreshCw,
 		Upload,
 		Undo2,
 		CloudDownload,
 		FileCode2,
-		ArrowLeft,
 		CheckCircle2,
 		AlertCircle
 	} from '@lucide/svelte';
@@ -197,14 +195,7 @@
 {:else if error}
 	<EmptyState title={m['fingerprintAdmin.title']()} description={error} actionLabel={m['fingerprintAdmin.retry']()} onAction={load} />
 {:else if status}
-	<div class="max-w-5xl mx-auto p-6 space-y-6">
-		<div class="flex items-center gap-3">
-			<button class="p-2 rounded-lg hover:bg-surface transition-colors" onclick={() => history.back()}>
-				<ArrowLeft class="w-5 h-5 text-muted" />
-			</button>
-			<Fingerprint class="w-6 h-6 text-primary" />
-			<h1 class="text-2xl font-bold text-text">{m['fingerprintAdmin.title']()}</h1>
-		</div>
+	<div class="space-y-6">
 
 		<!-- status card -->
 		<div class="bg-surface border border-border rounded-xl p-6">

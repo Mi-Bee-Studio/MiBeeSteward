@@ -13,13 +13,12 @@
 	import { auth } from '$lib/stores/auth';
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { addToast } from '$lib/stores/toast';
 	import { refreshPasswordPolicy } from '$lib/stores/passwordPolicy';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
-	import { ArrowLeft, ShieldCheck, Server, KeyRound, AlertTriangle } from '@lucide/svelte';
+	import { Server, KeyRound, AlertTriangle } from '@lucide/svelte';
 
 	interface PasswordPolicy {
 		min_length: number;
@@ -130,26 +129,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{m['security.title']()} · MiBee Steward</title>
-</svelte:head>
-
-<div class="max-w-3xl mx-auto px-4 py-8">
-	<div class="flex items-center gap-3 mb-6">
-		<button
-			type="button"
-			onclick={() => goto('/settings')}
-			class="p-2 rounded-lg hover:bg-surface transition-colors"
-			aria-label={m['common.Back']()}
-		>
-			<ArrowLeft class="w-5 h-5" />
-		</button>
-		<h1 class="text-2xl font-bold text-text flex items-center gap-2">
-			<ShieldCheck class="w-6 h-6 text-primary" />
-			{m['security.title']()}
-		</h1>
-	</div>
-
+<div>
 	{#if loading}
 		<PageSkeleton type="form" />
 	{:else if loadError}

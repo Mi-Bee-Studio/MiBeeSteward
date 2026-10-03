@@ -266,6 +266,16 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	if scannerPortSpec == "" {
 		scannerPortSpec = config.DefaultScanPortSpec
 	}
+	// Fingerprint corpus management: the managed dir is where web-uploaded
+	// corpora live (scanner.fingerprint_managed_dir, derived from the
+	// database directory when unset). Load precedence everywhere (engine
+	// startup, distribution endpoint, admin view): fingerprint_path >
+	// managed > embedded. Computed here so the engine gets it too — without
+	// it a restart would silently drop the web-managed corpus.
+	fpManagedDir := cfg.Scanner.FingerprintManagedDir
+	if fpManagedDir == "" {
+		fpManagedDir = filepath.Join(filepath.Dir(cfg.Database.SQLite.Path), "fingerprints")
+	}
 
 	// SNMPv3 credential resolver (issue #135). Build the AES-GCM cipher from
 	// security.master_key, then a resolver that decrypts credential rows on
@@ -288,18 +298,19 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}
 
 	v2Engine, engineErr := scannerv2engine.NewEngine(dbConn, scannerv2engine.Config{
-		PortSpec:             scannerPortSpec,
-		MaxConcurrentHosts:   cfg.Scanner.MaxConcurrentHosts,
-		AllowReservedTargets: cfg.Scanner.AllowReservedTargets,
-		MaxConcurrentScans:   cfg.Scanner.MaxConcurrentScans,
-		PerHostTimeout:       time.Duration(cfg.Scanner.DefaultTimeout) * time.Second,
-		PerProbeTimeout:      time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
-		PersistRawEvidence:   cfg.Scanner.PersistRawEvidence,
-		SeedEvidence:         seedFromPassive,
-		OUIPath:              cfg.Scanner.OUIPath,
-		FingerprintPath:      cfg.Scanner.FingerprintPath,
-		SNMPCommunity:        cfg.Scanner.SNMPCommunity,
-		CredResolver:         credResolver,
+		PortSpec:              scannerPortSpec,
+		MaxConcurrentHosts:    cfg.Scanner.MaxConcurrentHosts,
+		AllowReservedTargets:  cfg.Scanner.AllowReservedTargets,
+		MaxConcurrentScans:    cfg.Scanner.MaxConcurrentScans,
+		PerHostTimeout:        time.Duration(cfg.Scanner.DefaultTimeout) * time.Second,
+		PerProbeTimeout:       time.Duration(cfg.Scanner.PerProbeTimeout) * time.Second,
+		PersistRawEvidence:    cfg.Scanner.PersistRawEvidence,
+		SeedEvidence:          seedFromPassive,
+		OUIPath:               cfg.Scanner.OUIPath,
+		FingerprintPath:       cfg.Scanner.FingerprintPath,
+		FingerprintManagedDir: fpManagedDir,
+		SNMPCommunity:         cfg.Scanner.SNMPCommunity,
+		CredResolver:          credResolver,
 		RouterARP: scannerv2probe.RouterARPConfig{
 			Routers:   cfg.Scanner.RouterARP.Routers,
 			Community: routerCommunity(cfg.Scanner),
@@ -634,14 +645,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// scheduler) so the ScanFunc dispatcher can share the same instance.
 	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn, agentCmdSvc)
 	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries, agentCmdSvc, auditRepo)
-	// Fingerprint corpus management: the managed dir is where web-uploaded
-	// corpora live (scanner.fingerprint_managed_dir, derived from the
-	// database directory when unset). Load precedence everywhere (engine,
-	// distribution endpoint, admin view): fingerprint_path > managed > embedded.
-	fpManagedDir := cfg.Scanner.FingerprintManagedDir
-	if fpManagedDir == "" {
-		fpManagedDir = filepath.Join(filepath.Dir(cfg.Database.SQLite.Path), "fingerprints")
-	}
+	// fpManagedDir resolved above (engine construction) per the shared
+	// fingerprint_path > managed > embedded precedence.
 	agentFingerprintsHandler := handler.NewAgentFingerprintsHandler(cfg.Scanner.FingerprintPath, fpManagedDir, slog.Default())
 	registerAgentRoutes(r, agentReportHandler, agentProbeReportHandler, agentCommandHandler, agentFingerprintsHandler)
 	fingerprintAdminHandler := handler.NewFingerprintAdminHandler(v2Engine, cfg.Scanner.FingerprintPath, fpManagedDir, cfg.Scanner.FingerprintUpstreamURL, scanQueries, auditRepo)
