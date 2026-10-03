@@ -26,6 +26,7 @@ import (
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/fpsync"
+	"mibee-steward/internal/service"
 	testutil "mibee-steward/internal/testutil"
 )
 
@@ -346,5 +347,106 @@ func TestFingerprintAdminAgents(t *testing.T) {
 	}
 	if !byID["agent-x"] || !byID["agent-old"] {
 		t.Errorf("missing agents: %+v", resp.Agents)
+	}
+}
+
+// TestFingerprintAdminErrorPaths sweeps the remaining error branches:
+// malformed uploads, preview misses, upstream failures, and the audit trail.
+func TestFingerprintAdminErrorPaths(t *testing.T) {
+	// ── upload shape errors ────────────────────────────────────────────────
+	h := newAdminHandler(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/fingerprints", bytes.NewReader([]byte("junk")))
+	rec := httptest.NewRecorder()
+	h.Put(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("non-multipart upload = %d, want 400", rec.Code)
+	}
+
+	// Single-file upload whose name is not .yaml.
+	body, ctype := uploadBody(t, "file", "notes.txt", []byte("hello"))
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/fingerprints", body)
+	req.Header.Set("Content-Type", ctype)
+	rec = httptest.NewRecorder()
+	h.Put(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "named .yaml") {
+		t.Errorf("non-yaml single file = %d %s", rec.Code, rec.Body.String())
+	}
+
+	// tar.gz that is not a corpus at all (no yaml inside).
+	body, ctype = uploadBody(t, "file", "corpus.tar.gz", []byte{0x1f, 0x8b, 0x00, 0x00})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/fingerprints", body)
+	req.Header.Set("Content-Type", ctype)
+	rec = httptest.NewRecorder()
+	h.Put(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("garbage tar.gz = %d, want 400", rec.Code)
+	}
+
+	// ── file preview errors ────────────────────────────────────────────────
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("name", "../escape")
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/fingerprints/files/../escape", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rec = httptest.NewRecorder()
+	h.FileContent(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("traversal preview = %d, want 400", rec.Code)
+	}
+	rctx = chi.NewRouteContext()
+	rctx.URLParams.Add("name", "nope.yaml")
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/fingerprints/files/nope.yaml", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rec = httptest.NewRecorder()
+	h.FileContent(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("missing preview = %d, want 404", rec.Code)
+	}
+
+	// ── upstream failure modes ─────────────────────────────────────────────
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/manifest.json" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"corpus_version":"x"}`)) // missing tarball
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	hu := NewFingerprintAdminHandler(nil, "", filepath.Join(t.TempDir(), "m"), srv.URL+"/manifest.json", nil, nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/fingerprints/upstream", nil)
+	rec = httptest.NewRecorder()
+	hu.Upstream(rec, req)
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "missing tarball") {
+		t.Errorf("manifest without tarball = %d %s", rec.Code, rec.Body.String())
+	}
+	// Apply with an explicit path configured → conflict, no fetch.
+	hc := NewFingerprintAdminHandler(nil, "/etc/explicit", filepath.Join(t.TempDir(), "m"), srv.URL+"/manifest.json", nil, nil)
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/fingerprints/upstream/apply", nil)
+	rec = httptest.NewRecorder()
+	hc.UpstreamApply(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("apply under explicit path = %d, want 409", rec.Code)
+	}
+
+	// ── audit trail on a real repository ───────────────────────────────────
+	conn, err := testutil.SetupTestDBFromSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	auditRepo := service.NewAuditRepository(conn)
+	ha := NewFingerprintAdminHandler(nil, "", filepath.Join(t.TempDir(), "managed", "fingerprints"), "", nil, auditRepo)
+	putCorpus(t, ha, corpusA()) // upload fires fingerprint.upload into audit_logs
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE action='fingerprint.upload'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("audit row for upload: n=%d err=%v", n, err)
+	}
+	rec = httptest.NewRecorder()
+	ha.Rollback(rec, httptest.NewRequest(http.MethodPost, "/api/v1/fingerprints/rollback", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rollback with audit: %d", rec.Code)
+	}
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE action='fingerprint.rollback'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("audit row for rollback: n=%d err=%v", n, err)
 	}
 }
