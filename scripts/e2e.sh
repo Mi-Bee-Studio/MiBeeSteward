@@ -212,10 +212,10 @@ need "$(jsonget "${FPSTAT}" source)" "embedded" "corpus status reports embedded 
 BASE_RULES="$(jsonget "${FPSTAT}" rule_count)"
 [ -n "${BASE_RULES}" ] && [ "${BASE_RULES}" -gt 1000 ]     && ok "corpus carries ${BASE_RULES} rules" || bad "corpus rule_count missing (${BASE_RULES})"
 
-# Upload a single-file replacement: banner.yaml with one smoke rule. The
-# whole corpus (embedded files + the replacement) must pass the engine's
-# loader, activate, and hot-reload.
-SMOKE_YAML="${TMP}/banner.yaml"
+# Upload a single NEW corpus file (additive): the whole corpus (embedded
+# files + the new file) must pass the engine's loader, activate, hot-reload,
+# and park the previously-active corpus as the rollback target.
+SMOKE_YAML="${TMP}/e2e-smoke.yaml"
 cat > "${SMOKE_YAML}" <<'YEOF'
 version: 1
 rules:
@@ -242,8 +242,8 @@ need "$(jsonget "${FPSTAT}" source)" "managed" "corpus status reports managed so
 need "$(jsonget "${FPSTAT}" prev_available)" "true" "rollback target tracked"
 
 # File preview answers the uploaded file's content.
-FPPREV="$(curl -sf -m 5 "${BASE}/api/v1/fingerprints/files/banner.yaml" -H "Authorization: Bearer ${TOKEN}" || echo '')"
-printf '%s' "${FPPREV}" | grep -q "e2e-smoke-rule"     && ok "file preview serves the uploaded banner.yaml" || bad "file preview missing smoke rule"
+FPPREV="$(curl -sf -m 5 "${BASE}/api/v1/fingerprints/files/e2e-smoke.yaml" -H "Authorization: Bearer ${TOKEN}" || echo '')"
+printf '%s' "${FPPREV}" | grep -q "e2e-smoke-rule"     && ok "file preview serves the uploaded e2e-smoke.yaml" || bad "file preview missing smoke rule"
 
 # Rollback restores the pre-upload corpus.
 RBRES="$(curl -sf -m 30 -X POST "${BASE}/api/v1/fingerprints/rollback"     -H "Authorization: Bearer ${TOKEN}" || echo '')"

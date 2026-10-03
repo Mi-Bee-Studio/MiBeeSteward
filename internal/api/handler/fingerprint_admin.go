@@ -397,6 +397,9 @@ func (h *FingerprintAdminHandler) activeCorpus() (map[string][]byte, string) {
 // single-file replacement uploads).
 func (h *FingerprintAdminHandler) stageCurrent(staging string) error {
 	files, _ := h.activeCorpus()
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		return err
+	}
 	for name, body := range files {
 		if err := os.WriteFile(filepath.Join(staging, name), body, 0o644); err != nil {
 			return err
@@ -423,6 +426,11 @@ func (h *FingerprintAdminHandler) activate(staging string) (rev string, rules in
 		if err := os.Rename(h.managedDir, h.prevDir()); err != nil {
 			return "", 0, err
 		}
+	} else if err := h.stageCurrent(h.prevDir()); err != nil {
+		// First activation: no managed dir yet — materialize the corpus that
+		// was active until now (embedded, or the explicit dir) as the rollback
+		// target, so "rollback" works after ANY change, including the first.
+		return "", 0, err
 	}
 	if err := os.Rename(staging, h.managedDir); err != nil {
 		return "", 0, err

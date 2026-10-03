@@ -125,8 +125,13 @@ func TestFingerprintAdminUploadActivateAndRollback(t *testing.T) {
 	revA, _ := resp["rev"].(string)
 
 	st := getStatus(t, h)
-	if st["source"] != "managed" || st["prev_available"] != false {
+	if st["source"] != "managed" || st["prev_available"] != true {
 		t.Fatalf("post-upload status wrong: %v", st)
+	}
+	// First upload parks the previously-ACTIVE corpus (embedded) as rollback
+	// target — rollback must work after any change, including the first.
+	if st["prev_rev"] == revA {
+		t.Error("prev must differ from the just-uploaded rev")
 	}
 
 	// Single-file replace on top of the managed corpus: replaces banner.yaml,
