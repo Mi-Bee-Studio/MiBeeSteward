@@ -65,6 +65,10 @@ database:
 auth:
   initial_admin_password: "e2e-Admin-2026"
   jwt_secret: "e2e-jwt-secret-only-for-smoke-test-0123456789"
+scanner:
+  # The smoke scans the ephemeral center's own loopback; the #317
+  # reserved-range guard rejects 127.0.0.1 unless this escape hatch is on.
+  allow_reserved_targets: true
 log:
   level: "warn"
 EOF
