@@ -226,9 +226,12 @@ func (s *Service) CleanupGhosts(ctx context.Context) (*CleanupStats, error) {
 				"device_id", m.DeviceID, "ip", m.IP, "error", err)
 			continue
 		}
-		// host_services / host_tls_certs / device_neighbors FK to devices with
-		// ON DELETE CASCADE (see db/schema.sql), so deleting the device row
-		// cleans those up automatically.
+		// device_documents/heartbeats/neighbors etc. FK to devices with ON
+		// DELETE CASCADE (see db/schema.sql). host_services / host_tls_certs
+		// do NOT — they are IP-keyed by design (device_uuid backfill, #129) —
+		// so deleting a ghost leaves those rows behind until the host_services
+		// retention sweep ages them out. Accepted: they carry no FK-visible
+		// identity and a same-IP rescan overwrites them in place.
 		if _, err := s.dbConn.ExecContext(ctx, `DELETE FROM devices WHERE id = ?`, m.DeviceID); err != nil {
 			s.logger.Warn("network reconcile: delete ghost device failed",
 				"device_id", m.DeviceID, "ip", m.IP, "error", err)
@@ -397,7 +400,8 @@ func (s *Service) CleanupReservedAddressDevices(ctx context.Context) ([]string, 
 		for _, ip := range reserved {
 			// scan_snapshots keys on (network_id, ip) with no FK to devices;
 			// clear the lease explicitly, then the device row (satellite tables
-			// follow via ON DELETE CASCADE).
+			// follow via ON DELETE CASCADE; host_services/host_tls_certs are
+			// IP-keyed without FK and age out via their retention sweep).
 			if _, err := s.dbConn.ExecContext(ctx,
 				`DELETE FROM scan_snapshots WHERE network_id = ? AND ip = ?`, n.id, ip); err != nil {
 				return removed, fmt.Errorf("delete reserved-address lease %s: %w", ip, err)
