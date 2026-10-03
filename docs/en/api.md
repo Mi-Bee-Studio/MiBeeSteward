@@ -814,6 +814,10 @@ The **fingerprint distribution endpoint** (`GET /api/v1/agents/fingerprints`) is
 | `/api/v1/agents/commands/{id}/ack` | POST | Agent Token | Acknowledge receipt of a command |
 | `/api/v1/agents/commands/{id}/complete` | POST | Agent Token | Report command execution result |
 | `/api/v1/agents/fingerprints` | GET | Agent Token | Fingerprint corpus distribution: poll with `?rev=<applied>`; `204` = current, `200` = deterministic tar.gz envelope + `X-Fingerprint-Rev` header |
+
+#### Fingerprint corpus management (admin)
+
+Settings → Fingerprints backs onto `/api/v1/fingerprints` (**Admin**, `fingerprint:manage`): `GET` the corpus status (source = dir/managed/embedded, content revision, rule count, file list, rollback availability), `PUT` an upload (multipart: a tar.gz/zip envelope replaces the corpus, a single `.yaml` replaces just that file — everything passes the rule engine's own loader before activation, a rejected corpus is a 400 carrying the engine error), `POST /rollback` to the predecessor, `GET /upstream` + `POST /upstream/apply` for online updates against the configured `scanner.fingerprint_upstream.url` manifest (check shows the version + added/removed rule diff, apply downloads + validates + activates), `GET /agents` for the fleet's corpus-adoption view (each agent reports the revision it runs), and `GET /files/{name}` for a read-only YAML preview. Every activation hot-reloads the engine (no center restart) and moves the distribution revision, so sync-enabled agents converge on their next poll. All mutations are audit-logged (`fingerprint.upload` / `fingerprint.rollback` / `fingerprint.upstream_apply`).
 | `/api/v1/agents/{agentId}/commands` | POST | Admin · `CapAgentManage` | Create a command for a specific agent |
 | `/api/v1/agents/commands/all` | GET | Admin · `CapAgentManage` | View all agent commands |
 

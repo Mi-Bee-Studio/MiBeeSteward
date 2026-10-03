@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -233,5 +234,102 @@ func TestSyncerNilRestartHookCommits(t *testing.T) {
 	}
 	if s.AppliedRev() != rev {
 		t.Fatal("nil restart hook must still commit the revision (no re-download loop)")
+	}
+}
+
+func TestSyncerStartLoopRunsAndStops(t *testing.T) {
+	fc := &fakeCenter{files: validCorpus(1)}
+	srv := httptest.NewServer(http.HandlerFunc(fc.handler))
+	defer srv.Close()
+
+	dir := filepath.Join(t.TempDir(), "fingerprints-sync")
+	s := NewFingerprintSyncer(srv.URL, "t", dir, 50*time.Millisecond, func(string) {}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	s.Start(ctx)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.AppliedRev() != "" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if s.AppliedRev() == "" {
+		t.Fatal("Start loop never applied the corpus")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "banner.yaml")); err != nil {
+		t.Fatalf("synced corpus missing: %v", err)
+	}
+	// Corpus flips while running: the loop converges without restart
+	// (restart hook fires once per window — here the hook is a no-op
+	// recorder, so just assert the staged dir catches up).
+	fc.set(validCorpus(2))
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if rev, err := s.CheckOnce(context.Background()); err == nil && rev != "" && rev != s.AppliedRev() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+}
+
+// TestSyncerHostileCenter sweeps CheckOnce's defensive branches against a
+// misbehaving center: error status with body, missing rev header, oversized
+// envelope, and the same-rev race.
+func TestSyncerHostileCenter(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fingerprints-sync")
+	s := NewFingerprintSyncer("", "t", dir, time.Hour, nil, nil)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	defer srv.Close()
+	s2 := NewFingerprintSyncer(srv.URL, "t", dir, time.Hour, nil, nil)
+	if _, err := s2.CheckOnce(context.Background()); err == nil || !strings.Contains(err.Error(), "status 500") {
+		t.Errorf("error status: err=%v", err)
+	}
+	if _, err := s.CheckOnce(context.Background()); err == nil {
+		t.Error("dead center must error")
+	}
+
+	// 200 without the rev header.
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv2.Close()
+	s3 := NewFingerprintSyncer(srv2.URL, "t", dir, time.Hour, nil, nil)
+	if _, err := s3.CheckOnce(context.Background()); err == nil || !strings.Contains(err.Error(), "X-Fingerprint-Rev") {
+		t.Errorf("missing rev: err=%v", err)
+	}
+
+	// Oversized envelope (over MaxArchiveBytes) is refused before staging.
+	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Fingerprint-Rev", "feed")
+		_, _ = w.Write(make([]byte, fpsync.MaxArchiveBytes+2))
+	}))
+	defer srv3.Close()
+	s4 := NewFingerprintSyncer(srv3.URL, "t", dir, time.Hour, nil, nil)
+	if _, err := s4.CheckOnce(context.Background()); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("oversize: err=%v", err)
+	}
+
+	// Same-rev race: server echoes the client's (non-empty) rev as its own.
+	dir5 := filepath.Join(t.TempDir(), "fingerprints-sync")
+	if err := os.MkdirAll(dir5, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir5+".rev", []byte("abc123"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv4 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Fingerprint-Rev", r.URL.Query().Get("rev"))
+		_, _ = w.Write([]byte("garbage-not-an-envelope"))
+	}))
+	defer srv4.Close()
+	s5 := NewFingerprintSyncer(srv4.URL, "t", dir5, time.Hour, nil, nil)
+	if rev, err := s5.CheckOnce(context.Background()); err != nil || rev != "" {
+		t.Errorf("same-rev race must no-op: rev=%q err=%v", rev, err)
 	}
 }

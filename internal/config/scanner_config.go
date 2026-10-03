@@ -58,6 +58,21 @@ type ScannerConfig struct {
 	// engine uses the rules embedded in the binary (zero-config). Override with
 	// MIBEE_SCANNER_FINGERPRINT_PATH.
 	FingerprintPath string `koanf:"fingerprint_path"`
+	// FingerprintManagedDir is where web-uploaded corpora live (the admin UI's
+	// upload/rollback workspace). Empty = derived at wiring time from the
+	// database directory + "/fingerprints". Loaded with the precedence
+	// fingerprint_path (operator override) > managed dir > embedded. Uploads
+	// are refused while fingerprint_path is explicitly configured (two
+	// sources of truth would be confusing). Override with
+	// MIBEE_SCANNER_FINGERPRINT_MANAGED_DIR.
+	FingerprintManagedDir string `koanf:"fingerprint_managed_dir"`
+	// FingerprintUpstreamURL points at an online corpus source for the admin
+	// UI's "check for updates / one-click apply": a JSON manifest
+	// {corpus_version, tarball, sha256?} whose tarball field is a tar.gz in
+	// the fpsync format. Empty (default) disables upstream checks (the
+	// endpoint answers 501 with a hint). Override with
+	// MIBEE_SCANNER_FINGERPRINT_UPSTREAM_URL.
+	FingerprintUpstreamURL string `koanf:"fingerprint_upstream_url"`
 	// SNMPCommunity is the default community string for the SNMP probe
 	// (default "public" if empty). Override with MIBEE_SCANNER_SNMP_COMMUNITY.
 	SNMPCommunity string `koanf:"snmp_community"`

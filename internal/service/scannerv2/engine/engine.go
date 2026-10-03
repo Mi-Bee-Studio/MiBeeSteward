@@ -28,6 +28,7 @@ import (
 
 	fp "github.com/Mi-Bee-Studio/mibee-fingerprints-go"
 
+	"mibee-steward/internal/fpsync"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/classify"
 	"mibee-steward/internal/service/scannerv2/ebpf"
@@ -55,6 +56,12 @@ type Engine struct {
 	// SNMPCredential (decrypting the v3 USM passphrases). nil = no v3 support
 	// (deployments without a master key); ScanTargets falls back to snmpCommunity.
 	credResolver CredentialResolver
+	// corpusMu guards corpusRev/corpusRules — the loaded corpus facts exposed
+	// to the fingerprint-admin API (set at construction, replaced by
+	// ReloadFingerprints).
+	corpusMu    sync.Mutex
+	corpusRev   string
+	corpusRules int
 	// allowReservedTargets mirrors scanner.allow_reserved_targets: when true
 	// (the synthetic loadgen plane on 127/8), reserved-range targets are
 	// allowed through expansion. Default false, reserved space is rejected
@@ -359,6 +366,10 @@ func NewEngine(db *sql.DB, cfg Config, logger *slog.Logger) (*Engine, error) {
 	// exactly like a broken persistence chain (#255).
 	logger.Info("scannerv2: raw-evidence persistence", "enabled", cfg.PersistRawEvidence)
 	e := &Engine{Orchestrator: orch, Registry: reg, Repository: repo}
+	if rc != nil && rc.Loaded() {
+		e.corpusRules = rc.RuleCount()
+		e.corpusRev = corpusRevOf(cfg.FingerprintPath)
+	}
 	e.allowReservedTargets = cfg.AllowReservedTargets
 	// Per-probe timeout: bound each probe attempt so a dead host fails in
 	// seconds instead of consuming the whole per-host budget. Default 3s.
@@ -491,4 +502,68 @@ func (e *Engine) ScanTargetsWithPorts(ctx context.Context, targets string, portS
 		}
 	}
 	return alive, nil
+}
+
+// CorpusFacts returns the revision and rule count of the corpus the engine is
+// currently classifying with (the fingerprint-admin status card).
+func (e *Engine) CorpusFacts() (rev string, rules int) {
+	e.corpusMu.Lock()
+	defer e.corpusMu.Unlock()
+	return e.corpusRev, e.corpusRules
+}
+
+// ReloadFingerprints hot-swaps the rule-based classifier: it builds a fresh
+// RuleClassifier from dir (validated by the library's own loader — a corpus
+// that fails to load or loads zero rules is REJECTED and the live classifier
+// keeps running), then atomically replaces the registry entry. In-flight
+// classifications finish on the old classifier; new ones see the new one.
+// The hand-written classifiers (SNMP heuristics, camera fusion, …) are
+// untouched — only the data-driven half depends on the corpus.
+func (e *Engine) ReloadFingerprints(dir string, logger *slog.Logger) (rev string, rules int, err error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	rc := &fp.RuleClassifier{}
+	if dir != "" {
+		if err := rc.LoadFromDir(dir); err != nil {
+			return "", 0, fmt.Errorf("corpus rejected by rule engine: %w", err)
+		}
+		if !rc.Loaded() {
+			return "", 0, fmt.Errorf("corpus at %s loaded zero rules", dir)
+		}
+	} else if err := classify.LoadEmbeddedRules(rc); err != nil {
+		return "", 0, fmt.Errorf("embedded corpus: %w", err)
+	}
+	e.Registry.ReplaceClassifier(rc)
+	e.corpusMu.Lock()
+	e.corpusRev = fpsync.Hash(mustCorpusFiles(dir))
+	e.corpusRules = rc.RuleCount()
+	rev, rules = e.corpusRev, e.corpusRules
+	e.corpusMu.Unlock()
+	logger.Info("scannerv2: fingerprint corpus hot-reloaded", "rules", rules, "rev", rev, "path", corpusLabel(dir))
+	return rev, rules, nil
+}
+
+// corpusRevOf computes the content revision for the corpus the engine loaded
+// at construction (dir empty = embedded).
+func corpusRevOf(dir string) string { return fpsync.Hash(mustCorpusFiles(dir)) }
+
+func mustCorpusFiles(dir string) map[string][]byte {
+	if dir != "" {
+		if files, err := fpsync.ReadCorpusDir(dir); err == nil && len(files) > 0 {
+			return files
+		}
+	}
+	files, err := classify.EmbeddedCorpusFiles()
+	if err != nil || len(files) == 0 {
+		return map[string][]byte{}
+	}
+	return files
+}
+
+func corpusLabel(dir string) string {
+	if dir == "" {
+		return "embedded"
+	}
+	return dir
 }

@@ -231,6 +231,15 @@ scanner:
   # runtime with MIBEE_SCANNER_FINGERPRINT_PATH. Point this at a custom rule
   # directory to extend device/service identification without recompiling.
   fingerprint_path: ""
+  # fingerprint_managed_dir: where web-uploaded corpora live (settings →
+  # fingerprints upload/rollback workspace). Empty = <database dir>/fingerprints.
+  # Loaded with precedence fingerprint_path > managed dir > embedded; uploads
+  # are refused while fingerprint_path is explicitly set.
+  fingerprint_managed_dir: ""
+  # fingerprint_upstream_url: online corpus source for the admin UI's
+  # check-update / one-click-apply: a JSON manifest {corpus_version, tarball,
+  # sha256?} whose tarball is a tar.gz in the fpsync format. Empty = disabled.
+  fingerprint_upstream_url: ""
   # snmp_community overrides the default SNMP community ("public") used by the
   # SNMP probe. Override at runtime with MIBEE_SCANNER_SNMP_COMMUNITY.
   snmp_community: "public"

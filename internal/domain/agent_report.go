@@ -67,6 +67,9 @@ type AgentMeta struct {
 	Hostname   string `json:"hostname,omitempty"`    // os.Hostname: where it runs
 	UptimeSec  int64  `json:"uptime_sec,omitempty"`  // process uptime
 	ScansTotal int64  `json:"scans_total,omitempty"` // cumulative report batches shipped
+	// FingerprintRev is the content hash of the corpus the agent currently
+	// runs (empty for old agents): powers the fleet corpus-adoption view.
+	FingerprintRev string `json:"fingerprint_rev,omitempty"`
 }
 
 // ReportedHost is one alive host in an AgentReport. Fields mirror what the

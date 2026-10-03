@@ -67,10 +67,11 @@ type Reporter struct {
 	// Fleet meta (#278): shipped in every report (and in status-only
 	// heartbeat reports when the buffer is idle). version is injected by
 	// cmd/agent; uptime starts at construction.
-	version    string
-	startTime  time.Time
-	scansTotal int64     // cumulative report batches shipped (atomic-ish under mu)
-	lastPostAt time.Time // last successful POST (any kind): heartbeats throttle against it
+	version        string
+	fingerprintRev string
+	startTime      time.Time
+	scansTotal     int64     // cumulative report batches shipped (atomic-ish under mu)
+	lastPostAt     time.Time // last successful POST (any kind): heartbeats throttle against it
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -111,6 +112,11 @@ func NewReporter(centerURL, authToken, agentID, networkCIDR string, flush time.D
 // records an empty version (old-agent semantics).
 func (r *Reporter) SetVersion(v string) { r.version = v }
 
+// SetFingerprintRev stamps the content revision of the corpus the engine
+// loaded (cmd/agent computes it right after engine construction). Powers the
+// center's corpus-adoption view; empty for agents that never set it.
+func (r *Reporter) SetFingerprintRev(rev string) { r.fingerprintRev = rev }
+
 // Meta builds the fleet-observability block for the current report.
 func (r *Reporter) Meta() domain.AgentMeta {
 	r.mu.Lock()
@@ -118,11 +124,12 @@ func (r *Reporter) Meta() domain.AgentMeta {
 	r.mu.Unlock()
 	host, _ := os.Hostname()
 	return domain.AgentMeta{
-		Version:    r.version,
-		GoVersion:  runtime.Version(),
-		Hostname:   host,
-		UptimeSec:  int64(time.Since(r.startTime).Seconds()),
-		ScansTotal: scans,
+		Version:        r.version,
+		GoVersion:      runtime.Version(),
+		Hostname:       host,
+		UptimeSec:      int64(time.Since(r.startTime).Seconds()),
+		ScansTotal:     scans,
+		FingerprintRev: r.fingerprintRev,
 	}
 }
 

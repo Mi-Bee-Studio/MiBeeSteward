@@ -214,7 +214,7 @@ The agent can keep its fingerprint corpus in step with the center without any bi
 - Every envelope is validated by the rule engine's own loader before it displaces anything: a corpus that fails to load (or loads zero rules) is discarded and the agent keeps running the previous one — no restart, no crash loop.
 - On success the corpus is swapped on disk (`fingerprints-sync/` next to the agent config) and the agent re-execs to activate it. Restarts are rate-limited (5m): a flapping corpus directory churns the fleet at most once per window, and consecutive changes coalesce into the newest corpus.
 - Corpus precedence when the engine loads: `scanner.fingerprint_path` (operator-managed) → the synced dir → the embedded corpus.
-- The applied revision is persisted next to the synced dir and logged at startup, so "which corpus revision is this agent running" is answerable from the log, not guesswork.
+- The applied revision is persisted next to the synced dir, logged at startup, AND shipped in every report's fleet meta — the center's Settings → Fingerprints page shows the whole fleet's corpus adoption (up to date / stale / not reporting) in one table.
 
 ## Operations
 

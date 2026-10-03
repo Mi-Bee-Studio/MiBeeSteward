@@ -35,10 +35,11 @@ const (
 	CapProbeManage     Capability = "probe:manage" // synthetic probing target CRUD + trigger (拨测)
 
 	// --- Administrative capabilities (admin only) ---
-	CapNetworkManage      Capability = "network:manage" // create/edit/delete networks
-	CapCredManage         Capability = "cred:manage"    // SNMP + SSH credentials
-	CapUserManage         Capability = "user:manage"    // users, roles, network grants
-	CapAgentManage        Capability = "agent:manage"   // agent tokens + commands
+	CapNetworkManage      Capability = "network:manage"     // create/edit/delete networks
+	CapCredManage         Capability = "cred:manage"        // SNMP + SSH credentials
+	CapUserManage         Capability = "user:manage"        // users, roles, network grants
+	CapAgentManage        Capability = "agent:manage"       // agent tokens + commands
+	CapFingerprintManage  Capability = "fingerprint:manage" // fingerprint corpus upload/update/rollback
 	CapAuditManage        Capability = "audit:manage"
 	CapDashboardManage    Capability = "dashboard:manage"
 	CapNotificationManage Capability = "notification:manage" // channels + rules
@@ -63,6 +64,7 @@ var operatorCaps = union(readCaps, map[Capability]bool{
 var adminCaps = union(operatorCaps, map[Capability]bool{
 	CapNetworkManage: true, CapCredManage: true, CapUserManage: true,
 	CapAgentManage: true, CapAuditManage: true, CapDashboardManage: true,
+	CapFingerprintManage:  true,
 	CapNotificationManage: true,
 })
 

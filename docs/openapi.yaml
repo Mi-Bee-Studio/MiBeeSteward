@@ -1056,6 +1056,71 @@ paths:
       responses:
         "201": {$ref: "#/components/responses/Created"}
 
+  /fingerprints:
+    get:
+      tags: [Fingerprints]
+      summary: Fingerprint corpus status (source/rev/rule count/files/rollback availability)
+      responses:
+        "200": {description: Corpus status}
+    post:
+      tags: [Fingerprints]
+      summary: Alias of PUT (multipart uploads from browser FormData are POST-shaped)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema: {type: object, properties: {file: {type: string, format: binary}}}
+      responses:
+        "200": {description: Activated (rev + rule_count)}
+        "400": {description: Corpus rejected by the rule engine}
+        "409": {description: Uploads disabled (scanner.fingerprint_path configured)}
+    put:
+      tags: [Fingerprints]
+      summary: "Upload/replace the managed corpus (multipart file: tar.gz/zip envelope, or a single .yaml replacing that file)"
+      requestBody:
+        content:
+          multipart/form-data:
+            schema: {type: object, properties: {file: {type: string, format: binary}}}
+      responses:
+        "200": {description: Activated (rev + rule_count)}
+        "400": {description: Corpus rejected by the rule engine (engine error in body)}
+        "409": {description: Uploads disabled (scanner.fingerprint_path configured)}
+  /fingerprints/rollback:
+    post:
+      tags: [Fingerprints]
+      summary: Roll the managed corpus back to its predecessor (validated, hot-reloaded)
+      responses:
+        "200": {description: Rolled back}
+        "409": {description: Nothing to roll back to / uploads disabled}
+  /fingerprints/upstream:
+    get:
+      tags: [Fingerprints]
+      summary: Check the configured upstream corpus (manifest + diff, nothing activated)
+      responses:
+        "200": {description: Upstream status + rule diff}
+        "501": {description: No upstream configured}
+  /fingerprints/upstream/apply:
+    post:
+      tags: [Fingerprints]
+      summary: One-click update - download + validate + activate the upstream corpus
+      responses:
+        "200": {description: Activated}
+        "502": {description: Upstream unreachable/invalid}
+  /fingerprints/agents:
+    get:
+      tags: [Fingerprints]
+      summary: Fleet corpus adoption (per-agent fingerprint revision + up-to-date flag)
+      responses:
+        "200": {description: Adoption rows}
+  /fingerprints/files/{name}:
+    get:
+      tags: [Fingerprints]
+      summary: Read-only YAML preview of one corpus file from the active source
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: File content}
+        "404": {description: No such file}
+
   # --- machine channel (agent-token auth) ---
   /agents/report:
     post:

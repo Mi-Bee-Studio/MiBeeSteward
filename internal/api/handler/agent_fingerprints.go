@@ -36,6 +36,7 @@ import (
 // fleet-internal channel — anonymous corpus listing is not offered.
 type AgentFingerprintsHandler struct {
 	fingerprintPath string
+	managedDir      string // web-uploaded corpus workspace; served when fingerprintPath is unset
 
 	mu        sync.Mutex
 	embedded  bool         // last pack came from the embedded corpus (immutable → cacheable)
@@ -46,11 +47,11 @@ type AgentFingerprintsHandler struct {
 
 // NewAgentFingerprintsHandler constructs the handler. fingerprintPath is the
 // center's scanner.fingerprint_path ("" = serve the embedded corpus).
-func NewAgentFingerprintsHandler(fingerprintPath string, logger *slog.Logger) *AgentFingerprintsHandler {
+func NewAgentFingerprintsHandler(fingerprintPath, managedDir string, logger *slog.Logger) *AgentFingerprintsHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &AgentFingerprintsHandler{fingerprintPath: fingerprintPath, embeddedL: logger}
+	return &AgentFingerprintsHandler{fingerprintPath: fingerprintPath, managedDir: managedDir, embeddedL: logger}
 }
 
 // Get handles GET /api/v1/agents/fingerprints?rev=<last-applied-rev>.
@@ -102,17 +103,22 @@ func (h *AgentFingerprintsHandler) Get(w http.ResponseWriter, r *http.Request) {
 // loadFiles resolves the corpus per the precedence rule. fromEmbedded reports
 // whether the immutable embedded corpus was used (cacheable envelope).
 func (h *AgentFingerprintsHandler) loadFiles() (files map[string][]byte, fromEmbedded bool, err error) {
-	if h.fingerprintPath != "" {
-		files, err = fpsync.ReadCorpusDir(h.fingerprintPath)
+	// Same precedence as the engine's corpus load and the admin status view:
+	// explicit fingerprint_path > managed (web-uploaded) dir > embedded.
+	for _, dir := range []string{h.fingerprintPath, h.managedDir} {
+		if dir == "" {
+			continue
+		}
+		files, err = fpsync.ReadCorpusDir(dir)
 		if err != nil {
 			return nil, false, err
 		}
 		if len(files) > 0 {
 			return files, false, nil
 		}
-		// Empty (or newly emptied) dir: fall through to embedded, same as the
-		// engine's own degrade path — agents must never see an empty corpus
-		// just because an operator created the dir before populating it.
+		// Empty (or newly emptied) dir: fall through to the next source, the
+		// same degrade path the engine uses — agents must never see an empty
+		// corpus just because an operator created the dir before filling it.
 	}
 	files, err = classify.EmbeddedCorpusFiles()
 	return files, true, err

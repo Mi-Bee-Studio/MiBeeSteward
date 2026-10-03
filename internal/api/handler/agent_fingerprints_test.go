@@ -30,7 +30,7 @@ func getFingerprints(h *AgentFingerprintsHandler, rev string) *httptest.Response
 // stable, the rev-match fast path is 204, and a mismatch returns a loadable
 // tar.gz envelope.
 func TestAgentFingerprintsEmbedded(t *testing.T) {
-	h := NewAgentFingerprintsHandler("", nil)
+	h := NewAgentFingerprintsHandler("", "", nil)
 
 	rec := getFingerprints(h, "")
 	if rec.Code != http.StatusOK {
@@ -72,7 +72,7 @@ func TestAgentFingerprintsDirOverride(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	h := NewAgentFingerprintsHandler(dir, nil)
+	h := NewAgentFingerprintsHandler(dir, "", nil)
 
 	rec := getFingerprints(h, "")
 	if rec.Code != http.StatusOK {
@@ -82,7 +82,7 @@ func TestAgentFingerprintsDirOverride(t *testing.T) {
 	if dirRev != fpsync.Hash(corpus) {
 		t.Fatalf("dir rev %q != hash of dir corpus %q", dirRev, fpsync.Hash(corpus))
 	}
-	embeddedOnly := NewAgentFingerprintsHandler("", nil)
+	embeddedOnly := NewAgentFingerprintsHandler("", "", nil)
 	embeddedRec := getFingerprints(embeddedOnly, "")
 	if dirRev == embeddedRec.Header().Get("X-Fingerprint-Rev") {
 		t.Fatal("dir corpus must override embedded")
@@ -110,7 +110,7 @@ func TestAgentFingerprintsDirLiveUpdate(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte("version: 1\nrules: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h := NewAgentFingerprintsHandler(dir, nil)
+	h := NewAgentFingerprintsHandler(dir, "", nil)
 	first := getFingerprints(h, "").Header().Get("X-Fingerprint-Rev")
 
 	if err := os.WriteFile(filepath.Join(dir, "b.yaml"), []byte("version: 1\nrules: []\n"), 0o644); err != nil {

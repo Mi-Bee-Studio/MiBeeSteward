@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -633,8 +634,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// scheduler) so the ScanFunc dispatcher can share the same instance.
 	agentReportHandler := handler.NewAgentReportHandler(scanRunner, scanQueries, dbConn, agentCmdSvc)
 	agentCommandHandler := handler.NewAgentCommandHandler(scanQueries, agentCmdSvc, auditRepo)
-	agentFingerprintsHandler := handler.NewAgentFingerprintsHandler(cfg.Scanner.FingerprintPath, slog.Default())
+	// Fingerprint corpus management: the managed dir is where web-uploaded
+	// corpora live (scanner.fingerprint_managed_dir, derived from the
+	// database directory when unset). Load precedence everywhere (engine,
+	// distribution endpoint, admin view): fingerprint_path > managed > embedded.
+	fpManagedDir := cfg.Scanner.FingerprintManagedDir
+	if fpManagedDir == "" {
+		fpManagedDir = filepath.Join(filepath.Dir(cfg.Database.SQLite.Path), "fingerprints")
+	}
+	agentFingerprintsHandler := handler.NewAgentFingerprintsHandler(cfg.Scanner.FingerprintPath, fpManagedDir, slog.Default())
 	registerAgentRoutes(r, agentReportHandler, agentProbeReportHandler, agentCommandHandler, agentFingerprintsHandler)
+	fingerprintAdminHandler := handler.NewFingerprintAdminHandler(v2Engine, cfg.Scanner.FingerprintPath, fpManagedDir, cfg.Scanner.FingerprintUpstreamURL, scanQueries, auditRepo)
+	registerFingerprintAdminRoutes(r, fingerprintAdminHandler)
 
 	registerAgentCommandAdminRoutes(r, agentCommandHandler)
 
