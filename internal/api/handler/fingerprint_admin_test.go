@@ -10,6 +10,7 @@
 package handler
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,6 +29,7 @@ import (
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/fpsync"
 	"mibee-steward/internal/service"
+	engine "mibee-steward/internal/service/scannerv2/engine"
 	testutil "mibee-steward/internal/testutil"
 )
 
@@ -448,5 +451,82 @@ func TestFingerprintAdminErrorPaths(t *testing.T) {
 	}
 	if err := conn.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE action='fingerprint.rollback'`).Scan(&n); err != nil || n != 1 {
 		t.Errorf("audit row for rollback: n=%d err=%v", n, err)
+	}
+}
+
+// TestFingerprintAdminWithLiveEngine drives the full admin flow against a REAL
+// engine: status carries engine facts, activation hot-reloads, CorpusFacts
+// follow, and a zip envelope upload takes the zip branch.
+func TestFingerprintAdminWithLiveEngine(t *testing.T) {
+	dirA := t.TempDir()
+	writeEngineCorpus(t, dirA, 2)
+	eng, err := engine.NewEngine(nil, engine.Config{FingerprintPath: dirA}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewFingerprintAdminHandler(eng, "", filepath.Join(t.TempDir(), "managed", "fingerprints"), "", nil, nil)
+
+	st := getStatus(t, h)
+	if st["engine_rev"] == nil || st["rule_count"] != float64(2) {
+		t.Fatalf("engine facts missing from status: %v", st)
+	}
+
+	// Full-corpus replacement via a ZIP envelope (the zip upload branch).
+	var zbuf bytes.Buffer
+	zw := zip.NewWriter(&zbuf)
+	for name, body := range corpusA() {
+		w, _ := zw.Create(name)
+		_, _ = w.Write(body)
+	}
+	zw.Close()
+	body, ctype := uploadBody(t, "file", "corpus.zip", zbuf.Bytes())
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/fingerprints", body)
+	req.Header.Set("Content-Type", ctype)
+	rec := httptest.NewRecorder()
+	h.Put(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("zip upload: %d %s", rec.Code, rec.Body.String())
+	}
+	var up map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &up)
+	if up["rule_count"] != float64(2) {
+		t.Errorf("zip upload rule_count = %v", up["rule_count"])
+	}
+	// The engine hot-reloaded onto the managed corpus.
+	rev, rules := eng.CorpusFacts()
+	if rules != 2 || rev == "" || rev != up["rev"] {
+		t.Fatalf("engine facts after upload: rev=%q rules=%d (want %v)", rev, rules, up["rev"])
+	}
+
+	// Rollback through the engine path: the first activation parked the
+	// then-ACTIVE corpus per the handler's own precedence (here: embedded —
+	// the handler does not track an engine-only path, mirroring production
+	// wiring where the two always agree). The engine must follow the swap.
+	rec = httptest.NewRecorder()
+	h.Rollback(rec, httptest.NewRequest(http.MethodPost, "/api/v1/fingerprints/rollback", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("engine rollback: %d", rec.Code)
+	}
+	if _, rules = eng.CorpusFacts(); rules != 2632 {
+		t.Fatalf("engine rules after rollback = %d, want 2632 (embedded)", rules)
+	}
+	// Corpus facts rev tracks the rollback (content differs from upload).
+	rev2, _ := eng.CorpusFacts()
+	if rev2 == rev {
+		t.Error("rollback did not move the engine rev (same corpus?)")
+	}
+}
+
+func writeEngineCorpus(t *testing.T, dir string, rules int) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "version: 1\nrules:\n"
+	for i := 0; i < rules; i++ {
+		body += fmt.Sprintf("  - id: e%d\n    match: {op: contains, value: \"probe\"}\n    service: svc\n", i)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "banner.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

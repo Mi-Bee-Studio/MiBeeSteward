@@ -73,3 +73,23 @@ func TestExtractZipRejectsHostileArchives(t *testing.T) {
 		t.Error("nested path must be rejected")
 	}
 }
+
+func TestReadCorpusDirEdges(t *testing.T) {
+	if files, err := ReadCorpusDir(t.TempDir() + "/does-not-exist"); err != nil || files != nil {
+		t.Errorf("missing dir must be (nil, nil), got %v %v", files, err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ignore.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "keep.yaml"), []byte("version: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := ReadCorpusDir(dir)
+	if err != nil || len(files) != 1 || string(files["keep.yaml"]) != "version: 1\n" {
+		t.Errorf("non-yaml/dir entries must be skipped: %v %v", files, err)
+	}
+}
