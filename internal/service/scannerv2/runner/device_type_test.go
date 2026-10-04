@@ -401,7 +401,7 @@ func TestApplyDeviceBridge_FallbackOtherNotProtocolLocked(t *testing.T) {
 	rep2 := ReportedHostToReport(domain.ReportedHost{
 		IP: ip, Alive: true, MAC: "18:c2:3c:11:22:33",
 		InferredType: "iot", InferredTypeSource: "heuristic",
-		Hostname:     "Mijia_Hub_V2-1a2b.tail0a1b2c.ts.net",
+		Hostname: "Mijia_Hub_V2-1a2b.tail0a1b2c.ts.net",
 	})
 	rn.applyDeviceBridge(ctx, rep2, rn.networkID, "agent-63")
 
@@ -426,7 +426,7 @@ func TestApplyDeviceBridge_ProtocolTypeSurvivesNoSignalScan(t *testing.T) {
 	rep1 := ReportedHostToReport(domain.ReportedHost{
 		IP: ip, Alive: true, MAC: "94:83:c4:11:22:33",
 		InferredType: "router", InferredTypeSource: "protocol",
-		Hostname:     "core-gw",
+		Hostname: "core-gw",
 	})
 	isNew, _ := rn.applyDeviceBridge(ctx, rep1, rn.networkID, "agent-63")
 	require.True(t, isNew)
