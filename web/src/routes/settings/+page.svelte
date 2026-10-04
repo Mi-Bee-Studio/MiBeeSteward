@@ -501,7 +501,7 @@ function handleCancel2FASetup() {
 		<!-- Fingerprint corpus management (upload / online update / fleet adoption) -->
 		<AccordionSection id="fingerprints" title={m["fingerprintAdmin.title"]()}
 			open={openSection === 'fingerprints'} onToggle={() => toggleSection('fingerprints')}>
-			<FingerprintSettings />
+			<FingerprintSettings visible={openSection === 'fingerprints'} />
 		</AccordionSection>
 
 		<!-- Security settings section (admin): password policy + lockout +
