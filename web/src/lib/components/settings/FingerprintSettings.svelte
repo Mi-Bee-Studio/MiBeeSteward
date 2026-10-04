@@ -77,17 +77,39 @@
 	let applyDialog = $state(false);
 	let previewFile = $state<{ name: string; content: string } | null>(null);
 
+	interface Props {
+		/** Section visibility (accordion open state). Polling runs only while visible. */
+		visible?: boolean;
+	}
+	let { visible = true }: Props = $props();
+
 	const sourceLabel: Record<string, string> = {
 		embedded: m['fingerprintAdmin.sourceEmbedded'](),
 		managed: m['fingerprintAdmin.sourceManaged'](),
 		dir: m['fingerprintAdmin.sourceDir']()
 	};
 
-	onMount(load);
+	onMount(() => void load());
 
-	async function load() {
-		loading = true;
-		error = '';
+	// Live view: while the section is open, refresh status + agent adoption
+	// every 15s so state changes (upload/rollback/online update, agents
+	// converging) appear on their own — the user never has to hit reload.
+	// Background refreshes are silent: a transient failure keeps the last
+	// known data instead of flashing the error banner.
+	$effect(() => {
+		if (!visible) return;
+		const id = setInterval(() => {
+			if (!busy && !loading) void load({ silent: true });
+		}, 15000);
+		return () => clearInterval(id);
+	});
+
+	async function load(opts?: { silent?: boolean }) {
+		const silent = !!opts?.silent;
+		if (!silent) {
+			loading = true;
+			error = '';
+		}
 		try {
 			const [st, ag] = await Promise.all([
 				api.get<CorpusStatus>('/fingerprints'),
@@ -95,12 +117,17 @@
 			]);
 			status = st;
 			adoption = ag.agents ?? [];
-			upstream = null;
 		} catch (e) {
-			error = getErrorMessage(e);
+			if (!silent) error = getErrorMessage(e);
 		} finally {
-			loading = false;
+			if (!silent) loading = false;
 		}
+	}
+
+	// A mutation changes the active corpus, so any pending update-check
+	// result is stale — drop it (plain refreshes keep it).
+	function invalidateCheckResult() {
+		upstream = null;
 	}
 
 	async function upload(file: File) {
@@ -113,6 +140,7 @@
 				m['fingerprintAdmin.uploadOk']({ rules: String(res.rule_count), rev: res.rev.slice(0, 8) }),
 				'success'
 			);
+			invalidateCheckResult();
 			await load();
 		} catch (e) {
 			addToast(m['fingerprintAdmin.uploadFailed']({ error: getErrorMessage(e) }), 'error');
@@ -136,6 +164,7 @@
 				m['fingerprintAdmin.rollbackOk']({ rules: String(res.rule_count), rev: res.rev.slice(0, 8) }),
 				'success'
 			);
+			invalidateCheckResult();
 			await load();
 		} catch (e) {
 			addToast(m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }), 'error');
@@ -177,6 +206,7 @@
 				m['fingerprintAdmin.uploadOk']({ rules: String(res.rule_count), rev: res.rev.slice(0, 8) }),
 				'success'
 			);
+			invalidateCheckResult();
 			await load();
 		} catch (e) {
 			addToast(m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }), 'error');
@@ -203,7 +233,7 @@
 {#if loading}
 	<PageSkeleton />
 {:else if error}
-	<EmptyState title={m['fingerprintAdmin.title']()} description={error} actionLabel={m['fingerprintAdmin.retry']()} onAction={load} />
+	<EmptyState title={m['fingerprintAdmin.title']()} description={error} actionLabel={m['fingerprintAdmin.retry']()} onAction={() => void load()} />
 {:else if status}
 	<div class="space-y-6">
 
@@ -245,7 +275,7 @@
 						<CloudDownload class="w-4 h-4" />
 						{m['fingerprintAdmin.checkUpstream']()}
 					</LoadingButton>
-					<LoadingButton loading={busy === '' && loading} variant="ghost" onclick={load}>
+					<LoadingButton loading={busy === '' && loading} variant="ghost" onclick={() => void load()}>
 						<RefreshCw class="w-4 h-4" />
 					</LoadingButton>
 				</div>

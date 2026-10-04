@@ -101,7 +101,7 @@ describe('Fingerprint upstream check panel (null-safe)', () => {
 
 		const fpPanel = document.getElementById('settings-panel-fingerprints')!;
 		const checkBtn = [...fpPanel.querySelectorAll('button')].find((b) =>
-			(b.textContent || '').includes('Check Upstream')
+			(b.textContent || '').includes('Check for Updates')
 		);
 		expect(checkBtn, 'check button exists').toBeTruthy();
 
@@ -109,7 +109,7 @@ describe('Fingerprint upstream check panel (null-safe)', () => {
 		await waitFor(
 			() => {
 				const anyH2 = [...fpPanel.querySelectorAll('h2')].map((h) => h.textContent);
-				expect(anyH2.some((t) => (t || '').includes('Upstream check'))).toBe(true);
+				expect(anyH2.some((t) => (t || '').includes('Update Check'))).toBe(true);
 			},
 			{ timeout: 4000 }
 		);
