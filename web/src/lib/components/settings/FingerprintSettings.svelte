@@ -147,7 +147,17 @@
 	async function checkUpstream() {
 		busy = 'check';
 		try {
-			upstream = await api.get<UpstreamCheck>('/fingerprints/upstream');
+			const res = await api.get<UpstreamCheck>('/fingerprints/upstream');
+			// The Go handler serializes empty slices as JSON null; a null
+			// here crashes the panel's render effect (`null.length`), which
+			// Svelte 5 turns into a silently dead subtree — the button then
+			// looks like it "did nothing". Normalize before assigning.
+			upstream = {
+				...res,
+				changed_files: res.changed_files ?? [],
+				added_rules: res.added_rules ?? [],
+				removed_rules: res.removed_rules ?? []
+			};
 		} catch (e) {
 			addToast(m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }), 'error');
 		} finally {
@@ -220,22 +230,22 @@
 					{/if}
 				</div>
 				<div class="flex flex-wrap gap-2">
-					<LoadingButton busy={busy === 'upload'} disabled={!status.uploads_enabled}
+					<LoadingButton loading={busy === 'upload'} disabled={!status.uploads_enabled}
 						onclick={() => fileInput?.click()}>
 						<Upload class="w-4 h-4" />
 						{m['fingerprintAdmin.upload']()}
 					</LoadingButton>
-					<LoadingButton busy={busy === 'rollback'} variant="secondary"
+					<LoadingButton loading={busy === 'rollback'} variant="secondary"
 						disabled={!status.uploads_enabled || !status.prev_available}
 						onclick={() => (rollbackDialog = true)}>
 						<Undo2 class="w-4 h-4" />
 						{m['fingerprintAdmin.rollback']()}
 					</LoadingButton>
-					<LoadingButton busy={busy === 'check'} variant="secondary" onclick={checkUpstream}>
+					<LoadingButton loading={busy === 'check'} variant="secondary" onclick={checkUpstream}>
 						<CloudDownload class="w-4 h-4" />
 						{m['fingerprintAdmin.checkUpstream']()}
 					</LoadingButton>
-					<LoadingButton busy={busy === '' && loading} variant="ghost" onclick={load}>
+					<LoadingButton loading={busy === '' && loading} variant="ghost" onclick={load}>
 						<RefreshCw class="w-4 h-4" />
 					</LoadingButton>
 				</div>
@@ -260,7 +270,7 @@
 							<CheckCircle2 class="w-4 h-4" /> {m['fingerprintAdmin.upToDate']()}
 						</span>
 					{:else}
-						<LoadingButton busy={busy === 'apply'} disabled={!status.uploads_enabled}
+						<LoadingButton loading={busy === 'apply'} disabled={!status.uploads_enabled}
 							onclick={() => (applyDialog = true)}>
 							<CloudDownload class="w-4 h-4" />
 							{m['fingerprintAdmin.applyUpdate']()} (v{upstream.upstream_version})

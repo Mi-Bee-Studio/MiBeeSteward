@@ -367,3 +367,80 @@ func TestApplyDeviceBridge_AgentReportOSBeatsSmbPortShape(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Windows", attrOS, "the recovered os_type must persist into scan_attributes.os")
 }
+
+// TestApplyDeviceBridge_FallbackOtherNotProtocolLocked pins the type-heal
+// regression (field-found 2026-10-04): an agent report carrying the no-signal
+// fallback type "other" (the agent's own bridge resolved no type and shipped no
+// source) used to be labeled source="protocol" by the missing-source default —
+// both in ReportedHostToReport and again in the bridge — and type stickiness
+// then refused every later heuristic upgrade, so a Mijia gateway hostname stayed
+// "other" forever even after the mijia_ device-types keyword landed. The
+// fallback "other" is the absence of a verdict, not a protocol verdict: it must
+// cross the wire source-less and accept any later signal.
+func TestApplyDeviceBridge_FallbackOtherNotProtocolLocked(t *testing.T) {
+	rn, _, conn := setupTypeTestDB(t)
+	ctx := context.Background()
+	const ip = "192.168.1.44"
+
+	// Scan 1 (pre-keyword era): agent saw nothing type-worthy → "other", no source.
+	rep1 := ReportedHostToReport(domain.ReportedHost{
+		IP: ip, Alive: true, MAC: "18:c2:3c:11:22:33",
+		InferredType: "other",
+		Hostname:     "Mijia_Hub_V2-1a2b.tail0a1b2c.ts.net",
+	})
+	isNew, _ := rn.applyDeviceBridge(ctx, rep1, rn.networkID, "agent-63")
+	require.True(t, isNew)
+
+	// The stored row must NOT claim a protocol-grade source for a no-signal type.
+	var src string
+	err := conn.QueryRow(`SELECT IFNULL(json_extract(scan_attributes,'$.inferred_type_source'),'') FROM devices WHERE ip_address=?`, ip).Scan(&src)
+	require.NoError(t, err)
+	require.NotEqual(t, "protocol", src, "the fallback 'other' must not be stamped source=protocol")
+
+	// Scan 2 (keyword era): same host, now carrying the heuristic iot verdict.
+	rep2 := ReportedHostToReport(domain.ReportedHost{
+		IP: ip, Alive: true, MAC: "18:c2:3c:11:22:33",
+		InferredType: "iot", InferredTypeSource: "heuristic",
+		Hostname: "Mijia_Hub_V2-1a2b.tail0a1b2c.ts.net",
+	})
+	rn.applyDeviceBridge(ctx, rep2, rn.networkID, "agent-63")
+
+	var devType string
+	err = conn.QueryRow(`SELECT type FROM devices WHERE ip_address=?`, ip).Scan(&devType)
+	require.NoError(t, err)
+	require.Equal(t, "iot", devType, "a no-signal 'other' row must accept a later heuristic upgrade")
+}
+
+// TestApplyDeviceBridge_ProtocolTypeSurvivesNoSignalScan is the guard rail for
+// the fix above: a REAL protocol-derived type must survive a later agent report
+// whose pipeline found nothing (the no-signal "other"). Before the fix, the
+// missing-source default stamped that "other" as protocol-grade too, and the
+// stickiness same-tier rule then accepted it — silently degrading a router to
+// "other" whenever the agent's probes timed out.
+func TestApplyDeviceBridge_ProtocolTypeSurvivesNoSignalScan(t *testing.T) {
+	rn, _, conn := setupTypeTestDB(t)
+	ctx := context.Background()
+	const ip = "192.168.1.45"
+
+	// Scan 1: SNMP-grade router verdict.
+	rep1 := ReportedHostToReport(domain.ReportedHost{
+		IP: ip, Alive: true, MAC: "94:83:c4:11:22:33",
+		InferredType: "router", InferredTypeSource: "protocol",
+		Hostname: "core-gw",
+	})
+	isNew, _ := rn.applyDeviceBridge(ctx, rep1, rn.networkID, "agent-63")
+	require.True(t, isNew)
+
+	// Scan 2: everything timed out — the agent's bridge fell back to "other".
+	rep2 := ReportedHostToReport(domain.ReportedHost{
+		IP: ip, Alive: true, MAC: "94:83:c4:11:22:33",
+		InferredType: "other",
+		Hostname:     "core-gw",
+	})
+	rn.applyDeviceBridge(ctx, rep2, rn.networkID, "agent-63")
+
+	var devType string
+	err := conn.QueryRow(`SELECT type FROM devices WHERE ip_address=?`, ip).Scan(&devType)
+	require.NoError(t, err)
+	require.Equal(t, "router", devType, "a no-signal scan must not degrade a protocol-derived type")
+}

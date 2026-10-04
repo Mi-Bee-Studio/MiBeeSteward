@@ -757,8 +757,9 @@ func TestRuleClassifier_MijiaHostname(t *testing.T) {
 	}
 	// Non-Mijia hostnames must not fire any miot identity. (redmi-* and rpi*
 	// DID move to matched hostnames with the 2026-09-30 rules — see
-	// TestRuleClassifier_HostnameBrandModel — so they no longer belong here.)
-	for _, host := range []string{"orangepi-zero3", "my-laptop", "desktop-7f3a2b"} {
+	// TestRuleClassifier_HostnameBrandModel — and orangepi-* joined them with
+	// the 2026-10-04 SBC rules, so they no longer belong here either.)
+	for _, host := range []string{"my-laptop", "desktop-7f3a2b"} {
 		for _, id := range rc.Classify(hostnameEv(host)) {
 			if id.Service == "miot" {
 				t.Errorf("%s: unexpected miot identity fired", host)

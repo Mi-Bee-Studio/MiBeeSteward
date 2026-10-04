@@ -72,8 +72,13 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		// hop, otherwise the center would default it to "protocol" and the UI
 		// confidence badge would lie. For the LOCAL scan path no source is carried
 		// (handlers set inferred_type directly), so default to "protocol" then.
+		// Exception: the fallback "other" is the ABSENCE of a verdict (the agent's
+		// bridge coerced a typeless report), never a protocol derivation —
+		// stamping it protocol-grade locked no-signal rows against every later
+		// heuristic upgrade (field-found 2026-10-04: a Mijia gateway hostname
+		// stayed "other" after the keyword landed).
 		typeSource = rep.Device.Fields["inferred_type_source"]
-		if typeSource == "" {
+		if typeSource == "" && inferredType != "other" {
 			typeSource = "protocol"
 		}
 	}
@@ -357,8 +362,12 @@ func applyTypeStickiness(before *changedetect.DeviceSnapshot, newType, newSource
 	storedSource := stored.InferredTypeSource
 	// Stickiness only protects a PROTOCOL-derived stored type. A heuristic
 	// stored type may be refined by a later heuristic match, and an unknown
-	// stored type ("other"/"") should accept any new signal.
-	if storedSource != "protocol" {
+	// stored type ("other"/"") should accept any new signal. "Other" is exempt
+	// even when mis-stamped source=protocol (the pre-2026-10-04 missing-source
+	// default did exactly that to agent no-signal rows): it is the absence of a
+	// verdict, so there is nothing authoritative to protect, and holding it
+	// locked heuristic upgrades out of legacy rows forever.
+	if storedSource != "protocol" || stored.InferredType == "" || stored.InferredType == "other" {
 		return newType, newSource
 	}
 	// Stored type is protocol-authoritative. If this scan ALSO has protocol

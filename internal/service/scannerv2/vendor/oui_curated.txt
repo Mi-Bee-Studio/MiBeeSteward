@@ -113,3 +113,6 @@ A085E3	Espressif Inc.
 B43A45	Espressif Inc.
 C04E30	Espressif Inc.
 C82E18	Espressif Inc.
+DC0675	Espressif Inc.
+14C19F	Espressif Inc.
+543204	Espressif Inc.

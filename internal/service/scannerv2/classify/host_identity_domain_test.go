@@ -47,6 +47,14 @@ func TestRuleClassifier_HostIdentityDomainTolerance(t *testing.T) {
 		{"MacBookPro.tail0a1b2c.ts.net", "Apple", ""},
 		{"2109119BC", "Xiaomi", ""},
 		{"KLE-AL00U", "Huawei", "KLE-AL00U"},
+		// SBC / NAS vendor rules, field-found 2026-10-04.
+		{"orangepi-zero3", "Orange Pi", "zero3"},
+		{"nanopineo.tail0a1b2c.ts.net", "FriendlyElec", "neo"},
+		{"nanopi-neo2", "FriendlyElec", "neo2"},
+		{"R4S-FNOS", "FriendlyElec", "NanoPi R4S"},
+		{"nanopi-r4s", "FriendlyElec", "NanoPi R4S"},
+		{"Z4S-2PSE", "ZSpace", "Z4S"},
+		{"Mijia_Hub_V2-1a2b.tail0a1b2c.ts.net", "Xiaomi", "Hub V2"},
 	}
 	for _, tc := range cases {
 		ids := rc.Classify(hostnameEv(tc.host))
