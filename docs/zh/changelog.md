@@ -13,6 +13,9 @@
 
 ### 新增
 
+- **网页端指纹语料管理（设置 → 指纹）**：管理 UI 现在可以上传语料（tar.gz/zip 封套，或单个 `.yaml` 只替换该文件）、回滚到上一版、检查在线上游的更新（版本 + 新增/移除规则 diff）并一键应用——每条路径在激活前都经规则引擎自己的加载器校验（坏语料带引擎错误被拒收，在用语料继续运行），激活无需重启中心即热重载引擎，并推进分发版本号让开启同步的 agent 自动收敛，每次变更均记审计日志。舰队视图显示每个 agent 正在运行的语料版本（agent 舰队元数据新增 `fingerprint_rev`；schema v4 新增 `agent_status.fingerprint_rev` 列）。新增能力 `fingerprint:manage`；托管语料位于数据库目录下（`scanner.fingerprint_managed_dir` 可覆盖）；`scanner.fingerprint_upstream.url` 让在线更新检查对准一个 `{corpus_version, tarball, sha256?}` JSON 清单。
+- **指纹语料分发通道（`GET /api/v1/agents/fingerprints`）**：agent 现在无需触碰任何二进制或包即可让指纹语料与中心保持同步。中心将其活跃语料（配置了 `scanner.fingerprint_path` 目录时用该目录——在那里编辑/投放 YAML，舰队下次轮询即拾取，中心无需重启——否则用内嵌语料，因此每次中心升级都会自行传播到全网）以经版本协商的确定性 tar.gz 提供；agent 经 `center.fingerprint_sync.enabled` 选择加入（默认关闭），换用前先用规则引擎自己的加载器校验每个封套（坏语料永远不会顶掉正在工作的语料），激活采用限速重载（5 分钟窗口；连续变更合并为一次），加载优先级为 `scanner.fingerprint_path` → 同步目录 → 内嵌。这与下文的 `mibee-fingerprints-go` v0.1.1 一起补全了免重编译的指纹更新故事。
+- **指纹规则惰性编译（依赖：`mibee-fingerprints-go` v0.1.0 → v0.1.1）**：正则规则现在由可证明必需的字面量门控、按需编译，并共享一个 LRU 缓存——行为一致性由全量语料的“门控 vs 非门控”等价测试钉住。在 armv7 测试 agent 上实测：语料加载的活跃堆从约 50 MB 降至约 4 MB（启动时零正则编译），真实扫描后的稳态 RSS 从约 110 MB 降至 45–55 MB。同时移除了加载期对 `regex_capture` 匹配模式的旧双重编译。
 - **型号识别管道（主机名→型号）**：iot-identity 米家主机名规则现在通过语料的 `regex_capture` 提取型号词元（`viomi-waterheater-e13_miap5E55` 中的 `e13`），完整管道把它送进 `scan_attributes.inferred_model`、`devices.model` 列（只填空槽，绝不覆盖用户手工值或 SNMP 得到的型号）、agent 上报线格式（`inferred_model`）与实时扫描 API 响应。经 10 个真实主机名实地验证；一次重扫后型号列从 0% 覆盖升到每个米家主机都带型号词元。
 - **指纹语料刷新（recog + IANA PEN + OUI）**：`recog-imported.yaml` 从上游 Rapid7 Recog 重新生成（2534 → 2547 条，净 +13 并刷新匹配）；`snmp-data.yaml` 选择性导入 16 条经核实的 IANA PEN 企业 OID（Fortinet、Reolink、Uniview、Epson/Canon/Brother 打印机，Dahua/QNAP/TP-Link/Huawei/Aruba/Axis 的第二/续期 PEN）；精选 OUI 表新增小米生态模块 OUI（13 个前缀）、常见 Espressif ESP32 段（12 个）、NVIDIA Jetson 板载网卡（2 个），以及第二批经实地发现并逐条对照 IEEE 注册表（经 TShark manuf 生成核验）的 22 个厂商前缀（Synology、QNAP、Seiko Epson、Vatilon、D-Link、TP-Link、水星、GL.iNet、华硕、合肥Bitland、华来、另四个小米/Lumi-United 段、另五个 Espressif 段）——此前表里没有任何小米条目。会误导品牌的模组硅片厂商（Intel、AMPAK、Fn-Link）与注册表快照中不存在的前缀被有意排除。
 - **音箱 / 联名 / 开发板主机名指纹**：`iot-identity.yaml` 新增规则从小米智能音箱主机名提取型号代码（`MiAiSoundbox-LX06` → 型号 `LX06`、`XiaoAiTongXueX6A` → `X6A`）、为飞利浦联名米家设备定品牌（`philips-light-sread9_mibtXXXX` → 品牌 Philips + 型号；原通用后缀规则只提取到型号）、从树莓派主机名提取板型（`rpi3b-*` → `3b`、`rpi400` → `400`），并为 `redmi-*` / `jetson-*` 开发机主机名定品牌。`http-tls.yaml` 的证书主题 CN 关键词映射新增 `miwifi` → 小米（小米路由器原厂固件用 `MIWIFI *` CN 签名）。
@@ -22,6 +25,7 @@
 
 ### 修复
 
+- **e2e 冒烟套件恢复全绿**（自两个行为变更落地以来一直失败）：#353 强制改密闸门把首启登录后的每个已认证调用都 403（冒烟现在先改密码再重新登录）；#317 保留网段守卫拒绝了冒烟自己的环回扫描（`127.0.0.1`——临时冒烟实例现在设置文档记载的 `scanner.allow_reserved_targets` 逃生开关）。已在 Linux 上完整验证 13/13。
 - **上游"检查更新"端点不再泄漏 staging 目录**：`GET /api/v1/fingerprints/upstream` 会把上游语料拉取并校验到数据根目录下的 `fp-upstream-*` 临时目录，但成功后直接丢弃路径——每点一次检查就留一个目录（实地发现：一次配置会话后残留四个）。现在 diff 计算完即删除 staging 副本；apply 路径原本就有清理。
 - **无信号的 "other" 类型不再冒充 protocol 结论**：缺省 source 的默认逻辑把 agent 上报的回退类型 "other"（agent 侧桥接器没找到任何类型信号）盖成 `inferred_type_source: "protocol"`，类型黏滞随后拒绝一切后续启发式升级——遗留的 "other" 行即使等到了配套的主机名关键词也永远无法自愈（实地：米家网关主机名在 `mijia_` 关键词上线后仍是 other）。现在该默认只作用于真正的 handler 结论；黏滞对 "other" 行也豁免（即使旧行带着错误标记的 source），存量行下次扫描即自愈；真正的 protocol 类型保持防抖保护（守护测试钉住）。
 - **port-0 服务身份不再破坏重扫持久化**：RecordServices 的范围 DELETE 只按 >0 的端口圈定，主机名推导的 miot 行（端口 0）被排除——重扫要么整体空转（纯 port-0 上报让 IN 列表为空直接返回），要么重插同一行撞 UNIQUE(ip, service, port)，在网络开始按计划重扫后每台每扫一条告警（在路由器 agent 网段首次启用周期扫描当天实地发现）。现在上报带 portless 身份时，端口 0 一并纳入删除范围。
@@ -35,8 +39,7 @@
 - **多宿主主机在网卡切换时不再弹跳身份（#472，存储语义）**：以太网 + WiFi 在同一 IP 上轮换的主机过去每份上报都走接管/替换路径——强制覆盖槽位 MAC、品牌乒乓、每轮把自己的另一网卡行标记下线（实地：一块开发板约每 15 分钟切换一次网卡）。强制覆盖前，槽位此前的 MAC 现在记录进 `scan_attributes.mac_aliases`，MAC 是槽位持有者已记录别名的那份上报按普通更新解析（仅刷新状态）。别名行的 UI 侧聚合留作后续。
 - **enrich 不再把外来 MAC 盖到已占用槽位上**：RecordDevice/enrich 路径曾把上报 MAC 无条件填进按 IP 匹配的行；现在只在该行 MAC 为空时填充（文档的"新解析"契约），MAC 迁移专属身份机制。动机是 2026-10-01 观察到的同 MAC 影子行（数小时内自我下线、被 7 天清扫剪除）。
 - **agent 扛得住保留清扫的 VACUUM**：`busy_timeout` 从 5 秒提到 15 秒，约 11 秒的 VACUUM 窗口（约 44 MB 本地库上的 6 小时清扫）不再让调度器的陈旧运行清理一天两次记录 `SQLITE_BUSY`。
-- **SSH banner 版本不再携带二进制密钥交换字节**：SSH 服务器把问候与二进制 KEX_INIT 放在同一个 TCP 段里；banner 探测读到换行即止但返回了整个缓冲区，于是 dropbear 路由器的 SSH "版本"成了 `dropbear\r
-\x00\x00…curve25519-sha256…`。banner 现在截到第一个换行。
+- **SSH banner 版本不再携带二进制密钥交换字节**：SSH 服务器把问候与二进制 KEX_INIT 放在同一个 TCP 段里；banner 探测读到换行即止但返回了整个缓冲区，于是 dropbear 路由器的 SSH "版本"成了 `dropbear\r\n\x00\x00…curve25519-sha256…`。banner 现在截到第一个换行。
 - **Web/媒体服务器软件不再冒充设备品牌**：编排器的 HTTP-Server 证据 fold 跑在 handler 增补之前，nginx 前置的小米网关被定品牌 "nginx"；SSDP 的产品词元把 NAS 定成 "MiniDLNA"、fnOS 主机定成 "Portable"。软件名拒绝清单扩充（nginx/Apache/Caddy/lighttpd/IIS + MiniDLNA/ReadyMedia/Portable），miot 生态品牌现在覆盖 Web 服务器品牌（与 TLS fold 同规），SSDP 产品提取彻底跳过软件名。
 - **mDNS TXT 标志列表不再变成品牌**：AirPlay 接收器发布 `txt.md="0,1,2"`（能力位）曾被原样当作设备品牌；完全无字母的值现在在品牌 fold 里被拒绝。
 - **9100 端口不再把 node_exporter 主机判成"打印机"**：JetDirect 回退规则对任何开放的 9100 触发，而 node_exporter 用同一端口（实地：一台 GL.iNet 路由器被判 "printer"）。端口规则新增 `exclude_services` 否决（仅当被排除服务在该端口已被分类时触发，无 banner 的真打印机不受影响），路由器主机名关键词新增 `gl-inet`。
