@@ -764,6 +764,28 @@ rules:
         inferred_model: { const: "NanoPi R4S" }
         appliance: { const: "single-board computer" }
 
+  # ── FastRhino R68S 软路由主机名（R68S / R68s，field LAN 2026-10-05）──────
+  # The router's own DHCP name is the hardware model. SSDP already self-
+  # identifies it as FastRhino; the OUI-derived brand usually wins the fold,
+  # this rule fills the model for both of its bridge interfaces.
+  - id: iot-host-r68s
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^r68s(?:[-_][0-9a-z]+)*(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "FastRhino" }
+        inferred_model: { const: "R68S" }
+        appliance: { const: "router" }
+
   # ── 极空间 NAS 主机名（Z4S-2PSE，field LAN 2026-10-04）────────────────
   # ZSpace (Hefei Bitland) NAS boxes name themselves "<model>-<SKU>"; OUI
   # 1C:8B:41 already yields the vendor brand, this recovers the model. SKU

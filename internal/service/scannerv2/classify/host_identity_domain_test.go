@@ -55,6 +55,8 @@ func TestRuleClassifier_HostIdentityDomainTolerance(t *testing.T) {
 		{"nanopi-r4s", "FriendlyElec", "NanoPi R4S"},
 		{"Z4S-2PSE", "ZSpace", "Z4S"},
 		{"Mijia_Hub_V2-1a2b.tail0a1b2c.ts.net", "Xiaomi", "Hub V2"},
+		// Router-as-DHCP-name rule, field-found 2026-10-05.
+		{"R68S", "FastRhino", "R68S"},
 	}
 	for _, tc := range cases {
 		ids := rc.Classify(hostnameEv(tc.host))
