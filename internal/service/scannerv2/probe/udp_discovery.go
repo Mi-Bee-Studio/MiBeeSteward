@@ -558,6 +558,17 @@ func (p *NetBIOSProbe) Probe(ctx context.Context, ip string, hint scannerv2.Prob
 	if host == "" && workgroup == "" {
 		return nil, nil
 	}
+	return netbiosEvidence(ip, host, workgroup), nil
+}
+
+// netbiosEvidence builds the evidence pieces for one parsed NBNS Node Status
+// response. The netbios-kind piece carries the full raw data (workgroup etc.);
+// when the response carried a workstation name, a hostname-kind piece is also
+// emitted so the corpus's hostname rules (kind "hostname") can classify hosts
+// that announce their name ONLY via NetBIOS — field-found 2026-10-05: a
+// NAS-distro box whose DHCP/mDNS hostname never reaches the agent stayed
+// unbranded although its NBNS name matched an existing rule.
+func netbiosEvidence(ip, host, workgroup string) []scannerv2.Evidence {
 	raw := map[string]string{}
 	if host != "" {
 		raw["hostname"] = host
@@ -565,16 +576,30 @@ func (p *NetBIOSProbe) Probe(ctx context.Context, ip string, hint scannerv2.Prob
 	if workgroup != "" {
 		raw["workgroup"] = workgroup
 	}
-	return []scannerv2.Evidence{{
+	out := []scannerv2.Evidence{{
 		Source:     "active:netbios",
 		Kind:       "netbios",
 		IP:         ip,
 		Protocol:   "udp",
-		Port:       137,
+		Port:       netbiosNSPort,
 		RawData:    raw,
 		Confidence: 0.9,
 		ObservedAt: time.Now(),
-	}}, nil
+	}}
+	if host != "" {
+		out = append(out, scannerv2.Evidence{
+			Source:  "active:netbios",
+			Kind:    "hostname",
+			IP:      ip,
+			RawData: map[string]string{"hostname": host},
+			// Same trust tier as rDNS hostnames: installer-set, spoofable by
+			// any DHCP client, and may lag a rename — the hostname rules'
+			// own confidences bound the resulting identity anyway.
+			Confidence: 0.8,
+			ObservedAt: time.Now(),
+		})
+	}
+	return out
 }
 
 // parseNetbiosResponse extracts the workstation name (suffix 0x00, not the

@@ -190,3 +190,39 @@ func TestSnmpOctetsToMAC(t *testing.T) {
 		t.Error("non-[]byte value should return empty")
 	}
 }
+
+// TestNetbiosEvidenceEmitsHostnameKind pins the 2026-10-05 field finding: a
+// NAS-distro box (fnOS/Samba) announces its hostname ONLY via NBNS — no DHCP
+// lease or mDNS hostname reaches the agent — so the corpus's hostname rules
+// (which match kind "hostname") never fired and the device stayed unbranded
+// although its name was a perfect rule match. The probe now emits a
+// hostname-kind piece alongside the netbios-kind one.
+func TestNetbiosEvidenceEmitsHostnameKind(t *testing.T) {
+	evs := netbiosEvidence("192.0.2.5", "R4S-FNOS", "WORKGROUP")
+	var hostPieces, nbPieces int
+	var hostnameVal string
+	for _, ev := range evs {
+		switch ev.Kind {
+		case "netbios":
+			nbPieces++
+			if ev.RawData["workgroup"] != "WORKGROUP" || ev.RawData["hostname"] != "R4S-FNOS" {
+				t.Errorf("netbios piece raw = %v", ev.RawData)
+			}
+		case "hostname":
+			hostPieces++
+			hostnameVal = ev.RawData["hostname"]
+		}
+	}
+	if nbPieces != 1 || hostPieces != 1 {
+		t.Fatalf("evidence pieces: netbios=%d hostname=%d, want 1/1", nbPieces, hostPieces)
+	}
+	if hostnameVal != "R4S-FNOS" {
+		t.Errorf("hostname piece = %q, want R4S-FNOS", hostnameVal)
+	}
+
+	// Workgroup-only response: keep the netbios piece, synthesize nothing.
+	evs = netbiosEvidence("192.0.2.5", "", "WORKGROUP")
+	if len(evs) != 1 || evs[0].Kind != "netbios" {
+		t.Fatalf("workgroup-only: %v, want single netbios piece", evs)
+	}
+}
