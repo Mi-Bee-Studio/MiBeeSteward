@@ -415,3 +415,68 @@ func TestAgentReport_BoundaryCheck_Layer2(t *testing.T) {
 		require.Equal(t, 0, ls, "fast path must not refresh a foreign lease")
 	})
 }
+
+// TestAgentReport_NeighborsPersistDeviceEdges verifies the wire neighbors
+// array survives ingest: the handler's apply path records device_neighbors
+// rows for the reported device (the same table the local-scan L2 probes and
+// the topology view read).
+func TestAgentReport_NeighborsPersistDeviceEdges(t *testing.T) {
+	srv, db, token, networkID := setupAgentIngestServer(t)
+
+	body := map[string]interface{}{
+		"agent_id": "agent-62",
+		"hosts": []map[string]interface{}{
+			{
+				"ip": "192.168.2.10", "alive": true, "mac": "aa:bb:cc:dd:ee:10",
+				"neighbors": []map[string]interface{}{
+					{
+						"neighbor_mac": "AA-BB-CC-DD-EE-41", "protocol": "LLDP",
+						"local_port": "ge-0/0/1", "remote_port": "swp1",
+						"sys_name": "sw-core", "source": "active:lldp_mib",
+					},
+					{"neighbor_mac": "aa:bb:cc:dd:ee:42", "protocol": "Bridge-MIB", "local_port": "eth0.1"},
+					{"neighbor_mac": "", "protocol": "LLDP"}, // dropped: no MAC
+					{"neighbor_mac": "aa:bb:cc:dd:ee:43"},    // dropped: no protocol
+				},
+			},
+		},
+	}
+	code, out := postReport(t, srv, token, body)
+	require.Equal(t, http.StatusOK, code, "%v", out)
+	require.Equal(t, float64(1), out["accepted"], "%v", out)
+
+	var rows []struct {
+		DeviceID    int64
+		NeighborMAC string
+		Protocol    string
+		LocalPort   sql.NullString
+	}
+	rs, err := db.Query(`SELECT device_id, neighbor_mac, protocol, local_port FROM device_neighbors ORDER BY neighbor_mac`)
+	require.NoError(t, err)
+	defer rs.Close()
+	for rs.Next() {
+		var r struct {
+			DeviceID    int64
+			NeighborMAC string
+			Protocol    string
+			LocalPort   sql.NullString
+		}
+		require.NoError(t, rs.Scan(&r.DeviceID, &r.NeighborMAC, &r.Protocol, &r.LocalPort))
+		rows = append(rows, r)
+	}
+	require.NoError(t, rs.Err())
+	require.Len(t, rows, 2)
+	require.Equal(t, "aa:bb:cc:dd:ee:41", rows[0].NeighborMAC)
+	require.Equal(t, "LLDP", rows[0].Protocol)
+	require.True(t, rows[0].LocalPort.Valid)
+	require.Equal(t, "ge-0/0/1", rows[0].LocalPort.String)
+	require.Equal(t, "aa:bb:cc:dd:ee:42", rows[1].NeighborMAC)
+	require.Equal(t, "Bridge-MIB", rows[1].Protocol)
+
+	// The edge must attach to a device on the agent's network.
+	var netID sql.NullInt64
+	err = db.QueryRow(`SELECT network_id FROM devices WHERE id = ?`, rows[0].DeviceID).Scan(&netID)
+	require.NoError(t, err)
+	require.True(t, netID.Valid)
+	require.Equal(t, networkID, netID.Int64)
+}

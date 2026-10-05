@@ -112,6 +112,38 @@ type ReportedHost struct {
 	// SNMP holds the structured SNMP sys* fields the agent collected (sysDescr,
 	// sysObjectID, sysName, …). Folded into scan_attributes by the bridge.
 	SNMP *ReportedSNMP `json:"snmp,omitempty"`
+	// Neighbors carries the L2 adjacency edges the agent observed on the host
+	// (LLDP / CDP / Bridge-MIB / Q-BRIDGE-MIB / STP probes). The full evidence
+	// array does NOT cross the wire, so without this field those probes'
+	// output dies inside the agent; the center rebuilds "neighbor"-kind
+	// evidence from these rows and feeds the same device_neighbors pipeline
+	// a local scan uses.
+	Neighbors []ReportedNeighbor `json:"neighbors,omitempty"`
+}
+
+// ReportedNeighbor is one L2 adjacency edge observed on the reported host.
+// Mirrors scannerv2.NeighborSpec (the device_neighbors row shape) plus the
+// identity hints LLDP/CDP announce about the peer (sys_name/sys_desc), which
+// the center's neighbor identity inference consumes.
+type ReportedNeighbor struct {
+	// NeighborMAC is the canonical colon-separated lowercase MAC of the peer
+	// (the merge key against the devices table). Required; rows without one
+	// are dropped on ingest.
+	NeighborMAC string `json:"neighbor_mac"`
+	// Protocol is the discovery protocol: "LLDP" | "CDP" | "Bridge-MIB" |
+	// "Q-BRIDGE-MIB" | "STP". Required; rows without one are dropped on
+	// ingest (they cannot be attributed).
+	Protocol string `json:"protocol"`
+	// LocalPort / RemotePort are port labels on the reporting host / the peer.
+	LocalPort  string `json:"local_port,omitempty"`
+	RemotePort string `json:"remote_port,omitempty"`
+	// VLANTag is the 802.1Q tag as a decimal string (Q-BRIDGE carries it).
+	VLANTag string `json:"vlan_tag,omitempty"`
+	// SysName / SysDesc are the peer's self-announced identity (LLDP/CDP only).
+	SysName string `json:"sys_name,omitempty"`
+	SysDesc string `json:"sys_desc,omitempty"`
+	// Source names the probe that saw the edge, e.g. "active:lldp_mib".
+	Source string `json:"source,omitempty"`
 }
 
 // ReportedService mirrors scannerv2.ServiceIdentity (the subset the center

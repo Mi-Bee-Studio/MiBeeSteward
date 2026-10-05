@@ -25,7 +25,7 @@ func TestExtractNeighbors(t *testing.T) {
 		// Missing mac, skipped.
 		{Kind: "neighbor", RawData: map[string]string{"protocol": "LLDP"}},
 	}
-	neighbors := extractNeighbors(ev)
+	neighbors := ExtractNeighbors(ev)
 	require.Len(t, neighbors, 2, "two unique neighbors after dedup")
 	require.Equal(t, "aa:bb:cc:dd:ee:01", neighbors[0].NeighborMAC)
 	require.Equal(t, "Bridge-MIB", neighbors[0].Protocol)
@@ -34,6 +34,6 @@ func TestExtractNeighbors(t *testing.T) {
 
 // TestExtractNeighbors_Empty confirms no-neighbor evidence yields nil.
 func TestExtractNeighbors_Empty(t *testing.T) {
-	require.Nil(t, extractNeighbors(nil))
-	require.Nil(t, extractNeighbors([]Evidence{{Kind: "port_open"}}))
+	require.Nil(t, ExtractNeighbors(nil))
+	require.Nil(t, ExtractNeighbors([]Evidence{{Kind: "port_open"}}))
 }

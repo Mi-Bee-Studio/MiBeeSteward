@@ -823,6 +823,8 @@ Settings → Fingerprints backs onto `/api/v1/fingerprints` (**Admin**, `fingerp
 
 > Agent token authentication and user JWT are two independent authentication systems: `/agents/report` and `/agents/commands` (pull/ack/complete) are under the `/api/v1/agents` group and use `RequireAgentToken`; command management and token management use admin JWT.
 
+> **L2 neighbors on agent reports** (since 2026-10): each host in the `POST /agents/report` payload may carry a `neighbors` array — L2 adjacency edges the agent's LLDP / CDP / Bridge-MIB / Q-BRIDGE-MIB / STP probes observed (`neighbor_mac` and `protocol` required; optional `local_port` / `remote_port` / `vlan_tag` / `sys_name` / `sys_desc` / `source`). The center rebuilds each edge into `neighbor` evidence and records it in `device_neighbors` through the same pipeline a local scan uses, so the topology view treats local and agent-reported edges identically. Rows missing `neighbor_mac` or `protocol` are dropped.
+
 ## Changes & Discovery
 
 Change event stream and passive discovery status.

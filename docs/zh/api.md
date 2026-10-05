@@ -821,6 +821,8 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 
 > 代理令牌认证与用户 JWT 是两套独立的认证体制：`/agents/report` 与 `/agents/commands`（拉取/确认/完成）挂在 `/api/v1/agents` 组下走 `RequireAgentToken`；命令管理与令牌管理走管理员 JWT。
 
+> **代理上报的 L2 邻居**（2026-10 起）：`POST /agents/report` 的每台设备可选携带 `neighbors` 数组——LLDP / CDP / Bridge-MIB / Q-BRIDGE-MIB / STP 探针在 agent 侧观察到的二层邻接边（`neighbor_mac` 必填、`protocol` 必填，另有可选 `local_port` / `remote_port` / `vlan_tag` / `sys_name` / `sys_desc` / `source`）。center 会把每条边重建为 `neighbor` 证据并写入 `device_neighbors`（与本地扫描路径同一条管线），拓扑视图对本地扫描与 agent 上报来源一致。缺少 `neighbor_mac` 或 `protocol` 的行会被丢弃。
+
 ## 变更与发现
 
 变更事件流与被动发现状态。
