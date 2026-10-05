@@ -98,18 +98,66 @@ func (p *TLSProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHin
 			continue
 		}
 		leaf := records[0]
-		evs = append(evs, scannerv2.Evidence{
-			Source:     "active:tls",
-			Kind:       "tls",
-			IP:         ip,
-			Port:       port,
-			Protocol:   "tcp",
-			RawData:    leafEvidence(leaf),
-			Confidence: 0.95,
+		evs = append(evs, tlsEvidenceWithCertCN(ip, port, leaf)...)
+	}
+	return evs, nil
+}
+
+// tlsEvidenceWithCertCN builds the evidence pieces for one leaf cert: the
+// tls-kind piece every consumer knows, plus — when the subject CN looks like a
+// device hostname — a hostname-kind piece so the corpus's hostname rules can
+// classify the device in the SAME scan. Field-found 2026-10-06: a router signs
+// its model into the CN ("R68S"), the orchestrator's host-fact fold treated it
+// as a node_hostname fallback, but that fold runs after classification, so the
+// hostname rules never saw it (same shape as the NBNS channel fix).
+func tlsEvidenceWithCertCN(ip string, port int, leaf scannerv2.TLSCertRecord) []scannerv2.Evidence {
+	out := []scannerv2.Evidence{{
+		Source:     "active:tls",
+		Kind:       "tls",
+		IP:         ip,
+		Port:       port,
+		Protocol:   "tcp",
+		RawData:    leafEvidence(leaf),
+		Confidence: 0.95,
+		ObservedAt: time.Now(),
+	}}
+	if host, ok := certCNAsHostname(leaf.SubjectCN); ok {
+		out = append(out, scannerv2.Evidence{
+			Source:  "active:tls",
+			Kind:    "hostname",
+			IP:      ip,
+			Port:    port,
+			RawData: map[string]string{"hostname": host},
+			// Fallback tier (below rDNS/NBNS 0.8): self-declared by firmware,
+			// and the orchestrator fold treats a CN as the hostname fallback.
+			Confidence: 0.7,
 			ObservedAt: time.Now(),
 		})
 	}
-	return evs, nil
+	return out
+}
+
+// certCNAsHostname reports whether a cert subject CN looks like a device
+// hostname rather than a certificate-ish label: a single DNS label — no dots,
+// no spaces, no wildcard — with at least one letter or digit. "R68S" qualifies
+// (routers sign their model); "MIWIFI SERVER CERT" (spaces), "*.hikvision.com"
+// (wildcard/dots) do not. Generic labels ("root", "localhost") may qualify by
+// shape but match no vendor-anchored hostname rule.
+func certCNAsHostname(cn string) (string, bool) {
+	if cn == "" || len(cn) > 63 {
+		return "", false
+	}
+	hasAlnum := false
+	for _, r := range cn {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			hasAlnum = true
+		case r == '-':
+		default:
+			return "", false // dot, space, wildcard, anything else
+		}
+	}
+	return cn, hasAlnum
 }
 
 // leafEvidence builds the flat map[string]string evidence payload from a leaf
