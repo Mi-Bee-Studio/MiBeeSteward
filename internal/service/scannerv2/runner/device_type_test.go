@@ -444,3 +444,16 @@ func TestApplyDeviceBridge_ProtocolTypeSurvivesNoSignalScan(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "router", devType, "a no-signal scan must not degrade a protocol-derived type")
 }
+
+// TestHeuristicDeviceType_RepeaterKeywordIsIot pins the 2026-10-07 field
+// finding: a Xiaomi WiFi repeater announces "XiaoMiRepeater_V2" — its miot
+// identity (brand Xiaomi, model V2, appliance "WiFi repeater") was extracted
+// by the hostname rules, but the device_types table had no repeater keyword,
+// so the device stayed typed "other" with full identity in hand.
+func TestHeuristicDeviceType_RepeaterKeywordIsIot(t *testing.T) {
+	for _, host := range []string{"XiaoMiRepeater_V2", "xiaomi-repeater-v2_miio1234abcd", "wifi-repeater"} {
+		rep := reportWithFields("10.0.0.9", "", "", "", map[string]string{"node_hostname": host})
+		require.Equalf(t, "iot", typeOnly(rep),
+			"hostname %q carries a repeater signal and should classify as iot", host)
+	}
+}
