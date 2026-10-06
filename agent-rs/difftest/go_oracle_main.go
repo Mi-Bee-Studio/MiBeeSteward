@@ -4,6 +4,8 @@
 //
 // Input line:  {"dir":"<corpus dir>","evidence":[{...},{...}]}
 // Output line: {"line":N,"identities":[...]}  (identities verbatim from Classify)
+//go:build ignore
+
 package main
 
 import (

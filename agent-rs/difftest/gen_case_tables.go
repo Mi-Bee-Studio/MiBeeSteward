@@ -1,6 +1,8 @@
 // Generates Go-exact simple case-mapping + fold-orbit tables for the Rust
 // port. Output: crates/mibee-fingerprints/src/tables.rs
 // Run: go run gen_case_tables.go > ../crates/mibee-fingerprints/src/tables.rs
+//go:build ignore
+
 package main
 
 import (
