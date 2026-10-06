@@ -18,6 +18,15 @@ build-server: sync-device-types sync-oui-curated
 build-agent: sync-device-types sync-oui-curated
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent ./cmd/agent/
 
+# Rust agent (agent-rs/, issue #471). cargo-zigbuild + ziglang 0.13; the
+# ZIG command env var is REQUIRED on the Windows dev host (the pyenv
+# python3 shim resolves to a Python without ziglang — see agent-rs/README).
+ZIG_EXE := $(shell python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig.exe"))' 2>/dev/null)
+build-agent-rs:
+	cd agent-rs && CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release 		--target aarch64-unknown-linux-musl -p mibee-agent 		&& CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release 		--target armv7-unknown-linux-musleabihf -p mibee-agent
+test-agent-rs:
+	cd agent-rs && cargo test
+
 build: build-frontend build-server
 
 build-all: build-frontend sync-device-types sync-oui-curated

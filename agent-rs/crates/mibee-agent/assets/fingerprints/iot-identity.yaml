@@ -1,0 +1,833 @@
+# License: CC-BY-SA 4.0 (fingerprint corpus).
+# Derivative fingerprint corpora must be released under the same license.
+# See configs/fingerprints/README.md for attribution & provenance.
+
+# Xiaomi Mijia ecosystem appliance hostnames.
+#
+# Mijia WiFi modules announce themselves via DHCP/rDNS hostnames shaped
+# "<vendor>-<appliance>-<model>_<miap|miibt><hex>": real samples from an
+# iStoreOS R68S install (2026-09, 31-host network):
+#   viomi-waterheater-e13_miap5E55   viomi-hood-c13_miap5788
+#   xiaomi-aircondition-c16_mibt2431 xiaomi-gateway-hub1
+#   yeelink-light-lamp22_mibt63AA    chuangmi_camera_039a01
+#   chunmi-ysj-tsj9_mibt89A7         midjd7-fridge-5022_mibt5B23
+# On real Mijia fleets this is the ONLY identity channel: field-verified 0/12
+# responses to mDNS queries/announcements, miIO hello (UDP 54321) and TCP
+# ports: only ICMP answers (see issue #365 PoC). dnsmasq publishes the lease
+# hostname as reverse DNS, so the active rDNS probe surfaces it as
+# Kind="hostname" evidence on router-form installs.
+#
+# Matches evidence with Kind="hostname", RawData["hostname"]=<name>.
+# All rules share exclusive_group "mijia-host": exactly one identity fires
+# per hostname (switch semantics; vendor-specific rules at higher priority
+# than the generic ecosystem-suffix fallback). The device TYPE stays a
+# hostname heuristic (? badge) via device-types/device_types.yaml: these
+# rules carry BRAND + appliance only, never the type.
+
+version: 1
+
+rules:
+  # ── 云米 Viomi (water heaters, hoods, fridges, washers) ──────────────
+  - id: iot-host-viomi
+    source: builtin
+    priority: 130
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      # Loose prefix match preserved; the tail captures the MODEL token (the
+      # "e13" in viomi-waterheater-e13_miap5E55) as group 1 when present.
+      value: '(?i)^viomi-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Viomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance:
+          keyword_map:
+            field: hostname
+            ci: true
+            entries:
+              - { contains: waterheater, set: "water heater" }
+              - { contains: hood, set: "range hood" }
+              - { contains: fridge, set: refrigerator }
+              # dishwasher MUST precede washer: "viomi-dishwasher-m01"
+              # contains the substring "washer" and would mis-type as a
+              # washing machine (field-found on R68S, #377 verification).
+              - { contains: dishwasher, set: dishwasher }
+              - { contains: washer, set: washing machine }
+              - { contains: dryer, set: dryer }
+              - { contains: stove, set: stove }
+              - { contains: oven, set: oven }
+
+  # ── Yeelight (lights; LAN API on TCP 55443 is off by default) ────────
+  - id: iot-host-yeelink
+    source: builtin
+    priority: 129
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^yeelink-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Yeelight" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance:
+          keyword_map:
+            field: hostname
+            ci: true
+            entries:
+              - { contains: light, set: light }
+              - { contains: lamp, set: lamp }
+              - { contains: ceil, set: ceiling light }
+              - { contains: strip, set: light strip }
+              - { contains: bulb, set: bulb }
+
+  # ── Chuangmi (IP cameras, smart plugs) ───────────────────────────────
+  - id: iot-host-chuangmi
+    source: builtin
+    priority: 128
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^chuangmi[-_](?:[^-_.]*[-_])*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Chuangmi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance:
+          keyword_map:
+            field: hostname
+            ci: true
+            entries:
+              - { contains: camera, set: "IP camera" }
+              - { contains: plug, set: "smart plug" }
+              - { contains: iris, set: "smart IR hub" }
+
+  # ── Chunmi (rice cookers, water dispensers/purifiers) ────────────────
+  - id: iot-host-chunmi
+    source: builtin
+    priority: 127
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^chunmi-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Chunmi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance:
+          keyword_map:
+            field: hostname
+            ci: true
+            entries:
+              - { contains: ysj, set: "water dispenser" }
+              - { contains: cook, set: "rice cooker" }
+              - { contains: water, set: "water purifier" }
+
+  # ── 智米 Smartmi/Zhimi (air purifiers, fans, humidifiers) ────────────
+  - id: iot-host-zhimi
+    source: builtin
+    priority: 126
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^(?:zhimi|smartmi)-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Smartmi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance:
+          keyword_map:
+            field: hostname
+            ci: true
+            entries:
+              - { contains: airpurifier, set: "air purifier" }
+              - { contains: purifier, set: "air purifier" }
+              - { contains: humidifier, set: humidifier }
+              - { contains: fan, set: fan }
+              - { contains: heater, set: heater }
+
+  # ── Aqara/Lumi ( Zigbee hubs and sensors with WiFi bridges ) ─────────
+  - id: iot-host-aqara
+    source: builtin
+    priority: 125
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^(?:lumi|aqara)[-_.](?:[^-_.]*[-_])*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Aqara" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance:
+          keyword_map:
+            field: hostname
+            ci: true
+            entries:
+              - { contains: gateway, set: "Zigbee gateway" }
+              - { contains: hub, set: "Zigbee gateway" }
+              - { contains: sensor, set: sensor }
+              - { contains: switch, set: "smart switch" }
+
+  # ── Robot vacuums (Roborock / Dreame) ────────────────────────────────
+  - id: iot-host-roborock
+    source: builtin
+    priority: 124
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^(?:roborock|rockrobo|dreame)[-_.](?:[^-_.]*[-_])*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance: { const: "robot vacuum" }
+        inferred_brand:
+          keyword_map:
+            field: hostname
+            ci: true
+            entries:
+              - { contains: roborock, set: Roborock }
+              - { contains: rockrobo, set: Roborock }
+              - { contains: dreame, set: Dreame }
+
+  # ── 小爱音箱 XiaoAI smart speakers ───────────────────────────────────
+  - id: iot-host-xiaoai
+    source: builtin
+    priority: 123
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)xiaoai'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance: { const: "smart speaker" }
+
+  # ── 米家带品类前缀的 WiFi 模块 (air conditioners, gateways) ─────────
+  - id: iot-host-xiaomi-appliance
+    source: builtin
+    priority: 122
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^xiaomi-(?:aircondition|gateway|humidifier|purifier|heater|washer|fridge|light|plug|speaker|vacuum)(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance:
+          keyword_map:
+            field: hostname
+            ci: true
+            entries:
+              - { contains: aircondition, set: "air conditioner" }
+              - { contains: gateway, set: gateway }
+              - { contains: humidifier, set: humidifier }
+              - { contains: purifier, set: "air purifier" }
+              - { contains: heater, set: heater }
+              - { contains: washer, set: "washing machine" }
+              - { contains: fridge, set: refrigerator }
+              - { contains: light, set: light }
+              - { contains: plug, set: "smart plug" }
+              - { contains: speaker, set: "smart speaker" }
+              - { contains: vacuum, set: "robot vacuum" }
+
+  # ── 米家冰箱模块前缀 midjd7 (midjd7-fridge-5022_mibt5B23) ───────────
+  - id: iot-host-midjd-fridge
+    source: builtin
+    priority: 121
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^midjd\d*-fridge-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance: { const: refrigerator }
+
+  # ── 米家通用前缀 ─────────────────────────────────────────────────────
+  - id: iot-host-mijia
+    source: builtin
+    priority: 120
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^mijia-(?:[^-_.]*-)*?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+
+  # ── 兜底：米家 WiFi 模块通用后缀 _miap<hex> / _mibt<hex> ────────────
+  # 覆盖无厂商前缀的模块（moorgen 等第三方生态）。hostname 证据置信 0.8，
+  # 与规则基置信融合后仍属启发级 ， 类型侧照旧走 device_types.yaml 带 ?。
+  - id: iot-host-mijia-suffix
+    source: builtin
+    priority: 110
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      # Group 1 = the model token before the suffix ("sread9" in
+      # philips-light-sread9_mibtB8DC); the suffix itself stays non-capturing.
+      value: '(?i)(?:[^-_.]*[-_.])*?([0-9a-z]+)_(?:miap|mibt)[0-9a-f]+(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+
+  # ── ESP32 / Espressif 模块（开发板、DIY 摄像头、IoT 样机）──────────────
+  # DHCP 主机名形如 esp32c3-F8E62C / esp32c6-11DB60 / espressif.*
+  # (field LAN 2026-09: AI-Thinker 摄像头与开发板)。走 miot 身份通道
+  # (同为 DHCP 主机名推导的 host 级身份)，但独立 exclusive_group，
+  # 不参与 mijia-host 互斥。2026-10-02: 型号提取芯片变体（esp32c6），
+  # MAC 尾缀与可选域名不进 model。
+  - id: iot-host-esp32
+    source: builtin
+    priority: 115
+    exclusive_group: esp32-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^(esp32[a-z0-9]*|espressif[a-z0-9-]*?)(?:-[0-9a-f]{4,8})?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Espressif" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Espressif" }
+        appliance: { const: "ESP32 module" }
+
+  # ── MiBeeCam（AI-Thinker ESP32 方案摄像头）──────────────────────────
+  # 主机名形如 MiBeeCam-AI-THINK / MiBeeCam.*（field LAN 2026-09）。
+  - id: iot-host-mibeecam
+    source: builtin
+    priority: 115
+    exclusive_group: esp32-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)mibeecam'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "MiBee" }
+        ecosystem: { const: "MiBee" }
+        appliance: { const: "AI camera" }
+
+  # ── 小爱音箱 / 米家音响：主机名带官方型号码（field LAN 2026-09-30）──────
+  # MiAiSoundbox-LX06 / XiaoAiTongXueX6A → 型号 LX06 / X6A（保留原名大小写）。
+  - id: iot-host-xiaoai-model
+    source: builtin
+    priority: 124
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^(?:miaisoundbox|xiaoai(?:tongxue)?soundbox|xiaoaitongxue|xiaoaisoundbox)[-_.]?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.7
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance: { const: "smart speaker" }
+
+  # ── Philips 米家生态（philips-<品类>-<型号>，field LAN 2026-09-30）──────
+  # 补充品牌：通用 _miap/_mibt 后缀规则只提型号不设品牌。
+  - id: iot-host-philips
+    source: builtin
+    priority: 122
+    exclusive_group: mijia-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^philips[-_][a-z]+[-_]?([0-9a-z]+)(?:_(?:miap|mibt|miio)[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.65
+    extract:
+      metadata:
+        inferred_brand: { const: "Philips" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi Mijia" }
+
+  # ── Raspberry Pi 主机名型号（rpi3b-* / rpi400，field 2026-09-30）──
+  - id: iot-host-rpi
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^rpi[-_]?([0-9]+[a-z0-9+]*)'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Raspberry Pi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Raspberry Pi" }
+        appliance: { const: "single-board computer" }
+
+  # ── Redmi 主机名（redmi-* 主机名，field LAN 2026-09-30）─────────────
+  - id: iot-host-redmi
+    source: builtin
+    priority: 115
+    exclusive_group: xiaomi-pc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^redmi[-_.][0-9a-z]'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Redmi" }
+        ecosystem: { const: "Xiaomi" }
+
+  # ── Jetson 开发板主机名（jetson-orin 等，field LAN 2026-09-30）────────
+  - id: iot-host-jetson
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^jetson[-_.][0-9a-z]'
+    service: miot
+    protocol: hostname
+    confidence: 0.5
+    extract:
+      metadata:
+        inferred_brand: { const: "NVIDIA" }
+        ecosystem: { const: "Jetson" }
+        appliance: { const: "AI dev kit" }
+
+  # ── 手机/平板/电视：DHCP 设备名自带官方型号（field LAN 2026-10-01）──────
+  # Mi-10 → Xiaomi Mi 10；REDMI-15R-5G → Redmi 15R 5G；Xiaomi-Pad-6 → Pad 6
+  # （型号在设备名中段，前缀可带用户自定义段）；MiTV4A-<SN> → Mi TV 4A。
+  # type 分型在 device-types（mi-10/redmi-15 关键词已存在）。
+  - id: iot-host-mi-phone
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^mi[-_ ]?([0-9]{1,2}[a-z]{0,2})(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "smartphone" }
+
+  - id: iot-host-redmi-phone
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-pc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^redmi[-_ ]?([0-9][0-9a-z-]{1,10})(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Redmi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "smartphone" }
+
+  - id: iot-host-xiaomi-pad
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)xiaomi[-_ ]?pad[-_ ]?([0-9]+[a-z]?)(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "tablet" }
+
+  - id: iot-host-mitv
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)mitv[-_ ]?([0-9][0-9a-z]*)(?:[-_][0-9a-f]{8,})?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "smart TV" }
+
+  # ── 小爱音箱主机名（MiAiSoundbox-LX06，field LAN 2026-10-02）────────────
+  # Xiaomi AI speakers expose "MiAiSoundbox-<model code>" as DHCP/mDNS name;
+  # LX01/LX04/LX05/LX06 are the XiaoAI soundbox model codes.
+  - id: iot-host-miaisoundbox
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^miaisoundbox[-_]?([a-z0-9]+)(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "smart speaker" }
+
+  # ── 小米中继器主机名（xiaomi-repeater-v2_miio<sn> / XiaoMiRepeater_V2，field LAN）──
+  # The repeater reports "xiaomi-repeater-<rev>_miio<serial>" (mDNS) or the
+  # CamelCase DHCP name "XiaoMiRepeater_V2"; the miio serial is device-specific
+  # and must not leak into the model. 2026-10-03: separators made optional for
+  # the CamelCase DHCP form.
+  - id: iot-host-xiaomi-repeater
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^xiaomi[-_]?repeater[-_]?([a-z0-9]*)(?:[_-]miio[0-9a-f]*)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { regex_capture: 1 }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "WiFi repeater" }
+
+  # ── 小米手机出厂数字主机名（2109119BC 形，field LAN 2026-10-02）──────────
+  # Xiaomi/Redmi phones default their hostname to a build-date code (7 digits
+  # + 1-3 letters, e.g. 2109119BC). The code maps to no stable public model
+  # name, so this rule yields brand only — 宁缺毋滥 on the model.
+  - id: iot-host-xiaomi-serial-phone
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^[0-9]{7}[0-9]{0,3}[a-z]{1,3}(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.5
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        ecosystem: { const: "Xiaomi" }
+        appliance: { const: "smartphone" }
+
+  # ── 华为手机型号码主机名（KLE-AL00U / VOG-AL10 形，field LAN 2026-10-02）──
+  # Huawei phones use "<project>-<retail code>" (…-AL00/-AL10/-AN10…) as their
+  # default hostname; the code itself identifies the SKU.
+  - id: iot-host-huawei-phone
+    source: builtin
+    priority: 116
+    exclusive_group: huawei-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^([a-z]{2,4}-al[0-9]{2}[a-z]?)(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Huawei" }
+        inferred_model: { regex_capture: 1 }
+        appliance: { const: "smartphone" }
+
+  # ── MacBook 主机名（MacBookPro.tail-….ts.net，field LAN 2026-10-02）──────
+  # macOS advertises just "MacBookPro"/"MacBookAir" (no model number) over
+  # mDNS/PTR; brand-only, the pro/air tier is not a model number.
+  - id: iot-host-macbook
+    source: builtin
+    priority: 116
+    exclusive_group: apple-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^macbook(pro|air)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Apple" }
+        ecosystem: { const: "Apple" }
+        appliance: { const: "laptop" }
+
+  # ── Banana Pi 开发板主机名（bananapim5.tail-….ts.net，field LAN 2026-10-02）─
+  - id: iot-host-bananapi
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^bananapi[-_ ]?([a-z0-9]+[a-z0-9]*)(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Banana Pi" }
+        inferred_model: { regex_capture: 1 }
+        appliance: { const: "single-board computer" }
+
+  # ── Orange Pi 开发板主机名（orangepi-zero3，field LAN 2026-10-04）──────
+  # Xunlong SBCs default to "orangepi<board>" DHCP/mDNS names, with or without
+  # a separator ("orangepizero3", "orangepi-zero3"). Board codes: zero3/3b/5/5+.
+  - id: iot-host-orangepi
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^orangepi[-_]?([a-z0-9]+)(?:[-_][0-9a-z]+)*(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "Orange Pi" }
+        inferred_model: { regex_capture: 1 }
+        appliance: { const: "single-board computer" }
+
+  # ── NanoPi 开发板主机名（nanopineo / nanopineo2.tail-….ts.net，field LAN
+  # 2026-10-04）───────────────────────────────────────────────────────────
+  # FriendlyElec SBCs default to "nanopi<board>". The board code is the model
+  # (neo, neo2, r2s …); "nanopi-r4s" is claimed by the more specific R4S rule.
+  - id: iot-host-nanopi
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^nanopi[-_]?([a-z0-9]+)(?:[-_][0-9a-z]+)*(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "FriendlyElec" }
+        inferred_model: { regex_capture: 1 }
+        appliance: { const: "single-board computer" }
+
+  # ── NanoPi R4S 主机名（R4S-FNOS，field LAN 2026-10-04）────────────────
+  # R4S boards repurposed as NAS/gateway boxes keep the bare "R4S" board name
+  # and append the OS/role ("-FNOS" = fnOS NAS distro). The hardware identity
+  # is the board, so brand/model are consts; priority beats iot-host-nanopi
+  # for the "nanopi-r4s" spelling via the shared sbc-host exclusive group.
+  - id: iot-host-nanopi-r4s
+    source: builtin
+    priority: 116
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^(?:nanopi-)?r4s(?:[-_][0-9a-z]+)*(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "FriendlyElec" }
+        inferred_model: { const: "NanoPi R4S" }
+        appliance: { const: "single-board computer" }
+
+  # ── FastRhino R68S 软路由主机名（R68S / R68s，field LAN 2026-10-05）──────
+  # The router's own DHCP name is the hardware model. SSDP already self-
+  # identifies it as FastRhino; the OUI-derived brand usually wins the fold,
+  # this rule fills the model for both of its bridge interfaces.
+  - id: iot-host-r68s
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^r68s(?:[-_][0-9a-z]+)*(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "FastRhino" }
+        inferred_model: { const: "R68S" }
+        appliance: { const: "router" }
+
+  # ── 极空间 NAS 主机名（Z4S-2PSE，field LAN 2026-10-04）────────────────
+  # ZSpace (Hefei Bitland) NAS boxes name themselves "<model>-<SKU>"; OUI
+  # 1C:8B:41 already yields the vendor brand, this recovers the model. SKU
+  # suffixes vary (2PSE/2P/性能版 pinyin) so the model is the Z-prefix const.
+  - id: iot-host-zspace-z4s
+    source: builtin
+    priority: 115
+    exclusive_group: zspace-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^z4s(?:[-_][0-9a-z]+)*(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "ZSpace" }
+        inferred_model: { const: "Z4S" }
+        appliance: { const: "NAS" }
+
+  # ── 米家网关 V2 主机名（Mijia_Hub_V2-AAEE.tail-….ts.net，field LAN 2026-10-04）─
+  # The Mijia smart-gateway V2 announces "Mijia_Hub_V2-<hex4>" over mDNS;
+  # note the UNDERSCORE separator (the device-types keyword list needed
+  # "mijia_" too). Brand falls back to Xiaomi when no Lumi OUI is present.
+  - id: iot-host-mijia-hub
+    source: builtin
+    priority: 116
+    exclusive_group: xiaomi-device-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^mijia[-_]hub[-_]?v2(?:[-_][0-9a-z]+)?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Xiaomi" }
+        inferred_model: { const: "Hub V2" }
+        ecosystem: { const: "Xiaomi Mijia" }
+        appliance: { const: "gateway" }
+

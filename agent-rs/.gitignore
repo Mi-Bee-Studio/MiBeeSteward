@@ -1,0 +1,9 @@
+/target
+difftest/battery.jsonl
+difftest/out_*.jsonl
+difftest/err_*.txt
+difftest/v3client/v3client.exe
+difftest/zigshim-run/
+difftest/v3client/v3client-linux64
+difftest/v3client/v3client-linux
+difftest/walkclient/walkclient-linux
