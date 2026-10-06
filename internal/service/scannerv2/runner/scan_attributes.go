@@ -183,6 +183,11 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 	if wg := f["netbios_workgroup"]; wg != "" {
 		ensureExtras(&attr)["netbios_workgroup"] = wg
 	}
+	// Multi-homed alias ips (set by applyDeviceBridge's roam-downgrade; absent
+	// on normal reports so json_patch keeps the stored list untouched).
+	if v := f["ip_aliases"]; v != "" {
+		ensureExtras(&attr)["ip_aliases"] = v
+	}
 	for _, e := range rep.Evidence {
 		if e.RawData == nil {
 			continue

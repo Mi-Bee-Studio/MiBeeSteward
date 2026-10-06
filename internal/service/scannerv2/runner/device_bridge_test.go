@@ -240,3 +240,27 @@ func TestApplyDeviceBridge_NameSelfHealsFromIP(t *testing.T) {
 		"name self-corrects: IP-as-name overwritten once a hostname is resolved")
 	require.Equal(t, "192.168.1.190", healed.IP, "ip unchanged")
 }
+
+func TestMergeIPAlias(t *testing.T) {
+	const base = `{"extras":{"ip_aliases":"192.0.2.20,192.0.2.30"}}`
+	// New ip appends.
+	if got := mergeIPAlias(base, "192.0.2.40"); got != "192.0.2.20,192.0.2.30,192.0.2.40" {
+		t.Fatalf("append: %q", got)
+	}
+	// Already recorded → "" (no write, no change-detect churn).
+	if got := mergeIPAlias(base, "192.0.2.20"); got != "" {
+		t.Fatalf("idempotent: %q", got)
+	}
+	// Cap drops the OLDEST entry.
+	full := `{"extras":{"ip_aliases":"192.0.2.1,192.0.2.2,192.0.2.3,192.0.2.4,192.0.2.5,192.0.2.6,192.0.2.7,192.0.2.8"}}`
+	if got := mergeIPAlias(full, "192.0.2.9"); got != "192.0.2.2,192.0.2.3,192.0.2.4,192.0.2.5,192.0.2.6,192.0.2.7,192.0.2.8,192.0.2.9" {
+		t.Fatalf("cap: %q", got)
+	}
+	// Empty stored attrs start a fresh list; empty ip never writes.
+	if got := mergeIPAlias("{}", "192.0.2.20"); got != "192.0.2.20" {
+		t.Fatalf("fresh: %q", got)
+	}
+	if got := mergeIPAlias(base, ""); got != "" {
+		t.Fatalf("empty ip: %q", got)
+	}
+}

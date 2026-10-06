@@ -480,3 +480,81 @@ func TestAgentReport_NeighborsPersistDeviceEdges(t *testing.T) {
 	require.True(t, netID.Valid)
 	require.Equal(t, networkID, netID.Int64)
 }
+
+// TestAgentReport_MultiHomedMACStable covers the dual-live-IP shape field-found
+// on the rig 2026-10-06: one MAC holding TWO live ips in the SAME report
+// (R4S dual-NIC bonding: .60+.220; rpi dual DHCP lease: .161+.118). MAC-primary
+// resolution saw the second ip as a "roam to a free ip" and moved the row every
+// report — with map-ordered host application the row ping-ponged at full scan
+// cadence (3-4 change_log ip moves/hour/device). The fix: when the report batch
+// itself contains the row's current ip for the same MAC, the roam is downgraded
+// to an in-place update and the scanned ip is recorded as an alias
+// (scan_attributes.extras.ip_aliases).
+func TestAgentReport_MultiHomedMACStable(t *testing.T) {
+	srv, db, token, _ := setupAgentIngestServer(t)
+
+	const mac = "bc:ad:28:11:22:33" // universal OUI, not locally administered
+	hostAt := func(ip string) map[string]interface{} {
+		return map[string]interface{}{
+			"ip": ip, "alive": true, "mac": mac, "hostname": "dualhome-demo",
+		}
+	}
+
+	// Batch 1: both live ips in one report, .10 first.
+	code, out := postReport(t, srv, token, map[string]interface{}{
+		"agent_id": "agent-62", "origin": "scan",
+		"hosts": []map[string]interface{}{hostAt("192.168.2.10"), hostAt("192.168.2.20")},
+	})
+	require.Equal(t, http.StatusOK, code, "%v", out)
+
+	var id1 int64
+	var ip1 string
+	require.NoError(t, db.QueryRow(`SELECT id, ip_address FROM devices WHERE mac_address = ?`, mac).Scan(&id1, &ip1))
+	require.Equal(t, "192.168.2.10", ip1)
+
+	// Batch 2 (identical set, REVERSED order — application order must not
+	// decide where the row lives). Without the fix this report ROAMs the row to
+	// .20; with it, the row stays and the twin is recorded as an alias.
+	code, out = postReport(t, srv, token, map[string]interface{}{
+		"agent_id": "agent-62", "origin": "scan",
+		"hosts": []map[string]interface{}{hostAt("192.168.2.20"), hostAt("192.168.2.10")},
+	})
+	require.Equal(t, http.StatusOK, code, "%v", out)
+
+	var id2 int64
+	var ip2, attrs2 string
+	require.NoError(t, db.QueryRow(`SELECT id, ip_address, scan_attributes FROM devices WHERE mac_address = ?`, mac).Scan(&id2, &ip2, &attrs2))
+	require.Equal(t, id1, id2, "one row per MAC")
+	require.Equal(t, "192.168.2.10", ip2, "row must not ping-pong between the twin ips")
+
+	// The alias is visible in scan_attributes extras.
+	var attrs struct {
+		Extras map[string]string `json:"extras"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(attrs2), &attrs))
+	require.Equal(t, "192.168.2.20", attrs.Extras["ip_aliases"], "twin ip recorded as alias: %s", attrs2)
+
+	// Batch 3: the .10 twin goes away — a genuine roam to the surviving ip must
+	// still work (multi-home stability must not pin the row to a dead ip).
+	code, out = postReport(t, srv, token, map[string]interface{}{
+		"agent_id": "agent-62", "origin": "scan",
+		"hosts": []map[string]interface{}{hostAt("192.168.2.20")},
+	})
+	require.Equal(t, http.StatusOK, code, "%v", out)
+	var ip3 string
+	require.NoError(t, db.QueryRow(`SELECT ip_address FROM devices WHERE mac_address = ?`, mac).Scan(&ip3))
+	require.Equal(t, "192.168.2.20", ip3, "genuine roam still works")
+
+	// No ip ping-pong churn in change_log between batch 1 and 2: zero
+	// device_changed entries that move ip_address for this device after the
+	// initial creation stabilized it.
+	var moves int
+	require.NoError(t, db.QueryRow(`
+		SELECT COUNT(*) FROM change_log
+		WHERE entity_type = 'device' AND entity_id = ?
+		  AND json_extract(after_data, '$.ip_address') IS NOT NULL
+		  AND json_extract(before_data, '$.ip_address') IS NOT NULL
+		  AND json_extract(before_data, '$.ip_address') != json_extract(after_data, '$.ip_address')`,
+		id1).Scan(&moves))
+	require.Zerof(t, moves, "stable twin batch must not relocate the row (churn was the bug)")
+}
