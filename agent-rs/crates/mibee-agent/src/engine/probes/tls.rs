@@ -85,15 +85,54 @@ probe_impl!(TlsProbe, "active:tls", |ip: IpAddr, hint: &ProbeHint| async move {
                 if fields.is_empty() {
                     continue;
                 }
-                let mut e = ev("active:tls", "tls", ip, 0.95);
-                e.port = port as i64;
-                e.protocol = "tcp".into();
-                e.raw_data = Some(fields.into_iter().collect());
-                out.push(e);
+                out.extend(tls_evidence_with_cert_cn(ip, port, &fields));
             }
         }
         out
 });
+
+/// Evidence pieces for one leaf cert: the tls-kind piece every consumer
+/// knows, plus — when the subject CN looks like a device hostname — a
+/// hostname-kind piece so the corpus's hostname rules can classify the
+/// device in the SAME scan. Mirrors Go tlsEvidenceWithCertCN (7ddd821):
+/// the fold's node_hostname CN fallback runs after classification, so
+/// without this channel the hostname rules never saw a model signed into
+/// the CN ("R68S", field-found 2026-10-06).
+pub(crate) fn tls_evidence_with_cert_cn(
+    ip: IpAddr,
+    port: u16,
+    fields: &BTreeMap<String, String>,
+) -> Vec<Evidence> {
+    let mut e = ev("active:tls", "tls", ip, 0.95);
+    e.port = port as i64;
+    e.protocol = "tcp".into();
+    e.raw_data = Some(fields.clone());
+    let mut out = vec![e];
+    if let Some(host) = cert_cn_as_hostname(fields.get("subject_cn").map(|s| s.as_str()).unwrap_or("")) {
+        let mut h = ev("active:tls", "hostname", ip, 0.7);
+        h.raw_data = Some(BTreeMap::from([("hostname".into(), host.into())]));
+        h.port = port as i64;
+        out.push(h);
+    }
+    out
+}
+
+/// Whether a cert subject CN looks like a device hostname rather than a
+/// certificate-ish label: a single DNS label — no dots, spaces, or
+/// wildcards, at least one letter or digit, ≤63 bytes. "R68S" qualifies
+/// (routers sign their model); "MIWIFI SERVER CERT" (spaces) and
+/// "*.hikvision.com" (wildcard/dots) do not. Generic labels ("root",
+/// "localhost") may qualify by shape but match no vendor-anchored rule.
+pub(crate) fn cert_cn_as_hostname(cn: &str) -> Option<&str> {
+    if cn.is_empty() || cn.len() > 63 {
+        return None;
+    }
+    let has_alnum = cn.chars().any(|c| c.is_ascii_alphanumeric());
+    if !has_alnum || !cn.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return None;
+    }
+    Some(cn)
+}
 
 async fn tls_handshake(ip: IpAddr, port: u16, timeout: Duration) -> Option<BTreeMap<String, String>> {
     let addr = SocketAddr::new(ip, port);
@@ -168,6 +207,59 @@ mod tests {
         // the rig. Here: garbage yields empty (dropped evidence upstream).
         let m = cert_fields(&[0xde, 0xad]);
         assert!(m.is_empty());
+    }
+
+    #[test]
+    fn cert_cn_hostname_shape_gate() {
+        // Mirrors Go certCNAsHostname: single DNS label, [a-zA-Z0-9-] only,
+        // at least one alnum, <=63 bytes. Routers sign their model ("R68S").
+        assert_eq!(cert_cn_as_hostname("R68S"), Some("R68S"));
+        assert_eq!(cert_cn_as_hostname("nanopi-r4s"), Some("nanopi-r4s"));
+        // Shape-only qualifier ("root"): matches no vendor-anchored rule.
+        assert_eq!(cert_cn_as_hostname("root"), Some("root"));
+        assert_eq!(cert_cn_as_hostname(""), None);
+        assert_eq!(cert_cn_as_hostname("MIWIFI SERVER CERT"), None); // space
+        assert_eq!(cert_cn_as_hostname("*.hikvision.com"), None); // wildcard + dots
+        assert_eq!(cert_cn_as_hostname("foo_bar"), None); // underscore
+        assert_eq!(cert_cn_as_hostname("---"), None); // punctuation only
+        assert_eq!(cert_cn_as_hostname("路由器"), None); // non-ASCII
+        let ok63 = "a".repeat(63);
+        assert_eq!(cert_cn_as_hostname(&ok63), Some(ok63.as_str()));
+        let long64 = "a".repeat(64);
+        assert_eq!(cert_cn_as_hostname(&long64), None);
+    }
+
+    #[test]
+    fn tls_evidence_emits_hostname_piece_for_single_label_cn() {
+        let ip: IpAddr = "192.0.2.10".parse().unwrap();
+        let fields = BTreeMap::from([
+            ("subject_cn".to_string(), "R68S".to_string()),
+            ("issuer_cn".to_string(), "R68S".to_string()),
+        ]);
+        let evs = tls_evidence_with_cert_cn(ip, 443, &fields);
+        assert_eq!(evs.len(), 2);
+        assert_eq!(evs[0].kind, "tls");
+        assert_eq!(evs[0].confidence, 0.95);
+        assert_eq!(evs[0].port, 443);
+        assert_eq!(evs[0].protocol, "tcp");
+        // hostname-kind piece so the corpus's hostname rules classify the
+        // device in the SAME scan (Go 7ddd821 parity).
+        assert_eq!(evs[1].kind, "hostname");
+        assert_eq!(evs[1].confidence, 0.7);
+        assert_eq!(evs[1].port, 443);
+        assert!(evs[1].protocol.is_empty()); // Go sets no protocol here
+        assert_eq!(
+            evs[1].raw_data.as_ref().unwrap().get("hostname").unwrap(),
+            "R68S"
+        );
+    }
+
+    #[test]
+    fn tls_evidence_without_hostname_shaped_cn_is_single_piece() {
+        let ip: IpAddr = "192.0.2.10".parse().unwrap();
+        let wildcard = BTreeMap::from([("subject_cn".to_string(), "*.hikvision.com".to_string())]);
+        assert_eq!(tls_evidence_with_cert_cn(ip, 443, &wildcard).len(), 1);
+        assert_eq!(tls_evidence_with_cert_cn(ip, 443, &BTreeMap::new()).len(), 1);
     }
 }
 
