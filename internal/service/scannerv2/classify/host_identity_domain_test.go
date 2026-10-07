@@ -57,6 +57,9 @@ func TestRuleClassifier_HostIdentityDomainTolerance(t *testing.T) {
 		{"Mijia_Hub_V2-1a2b.tail0a1b2c.ts.net", "Xiaomi", "Hub V2"},
 		// Router-as-DHCP-name rule, field-found 2026-10-05.
 		{"R68S", "FastRhino", "R68S"},
+		// Seeed Studio XIAO firmware default name, field-found 2026-10-08.
+		{"Seeed-esp32c6", "Seeed Studio", "esp32c6"},
+		{"seeed_esp32c3.tail0a1b2c.ts.net", "Seeed Studio", "esp32c3"},
 	}
 	for _, tc := range cases {
 		ids := rc.Classify(hostnameEv(tc.host))
