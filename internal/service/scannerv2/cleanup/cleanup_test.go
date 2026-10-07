@@ -92,3 +92,52 @@ func createSwitch(t *testing.T, queries *db.Queries, name string) error {
 	})
 	return err
 }
+
+// TestPruneOrphanHeartbeatConfigs pins the 2026-10-08 field finding: the main
+// DB does not enable SQLite's foreign_keys pragma, so ON DELETE CASCADE on
+// heartbeat_configs never fires — deleting a device row (silent-device sweep,
+// reconcile ghost cleanup, any future path) left its heartbeat configs behind,
+// and the still-enabled configs kept probing a vanished IP forever (two
+// orphans logged ~2300 ERRORs/day between them). The maintenance pass now
+// reaps configs whose device_id no longer resolves.
+func TestPruneOrphanHeartbeatConfigs(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	queries := db.New(conn)
+	ctx := context.Background()
+
+	// createSwitch leaves device_uuid empty and the UNIQUE index rejects a
+	// second empty uuid — insert the two rows with distinct uuids directly.
+	_, err = conn.ExecContext(ctx, `INSERT INTO devices (name, type, status, device_uuid, tags, user_attributes)
+		VALUES ('switch-1', 'switch', 'unknown', 'orphan-live', '{}', '{}'),
+		       ('switch-2', 'switch', 'unknown', 'orphan-gone', '{}', '{}')`)
+	require.NoError(t, err)
+	// One config on a live device, one on a device we then delete WITHOUT any
+	// cascade (mirroring what the silent-device sweep's DELETE actually does).
+	seedHeartbeatConfig(t, conn, 1, "http", "http://192.0.2.10:80/")
+	seedHeartbeatConfig(t, conn, 2, "http", "http://192.0.2.11:80/")
+	_, err = conn.ExecContext(ctx, `DELETE FROM devices WHERE id = 2`)
+	require.NoError(t, err)
+
+	svc := New(queries, nil, nil, conn, config.RetentionConfig{BatchSize: 1000})
+	svc.pruneOrphanHeartbeatConfigs(ctx)
+
+	var n int
+	require.NoError(t, conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM heartbeat_configs WHERE device_id NOT IN (SELECT id FROM devices)`).Scan(&n))
+	require.Zero(t, n, "orphaned heartbeat configs must be reaped")
+
+	var live int
+	require.NoError(t, conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM heartbeat_configs WHERE device_id = 1`).Scan(&live))
+	require.Equal(t, 1, live, "configs of live devices are untouched")
+}
+
+func seedHeartbeatConfig(t *testing.T, conn *sql.DB, deviceID int64, method, target string) {
+	t.Helper()
+	_, err := conn.ExecContext(context.Background(),
+		`INSERT INTO heartbeat_configs (device_id, method, target, interval_seconds, timeout_seconds)
+		 VALUES (?, ?, ?, 30, 5)`, deviceID, method, target)
+	require.NoError(t, err)
+}
