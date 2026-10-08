@@ -36,7 +36,7 @@ Cross (musl static; zig via `pip install ziglang==0.13.0`):
 NOTE: do NOT let cargo-zigbuild pick its own zig command on this host —
 the pyenv `python3.bat` shim resolves to a Python without ziglang.
 
-## Status: DEPLOYED (2026-10-06, agent 0.1.4)
+## Status: DEPLOYED (2026-10-07, agent 0.1.5)
 
 All milestones complete; the Rust agent replaced the Go agent on BOTH rig
 nodes and parity gaps closed in 0.1.1 (issue #471 acceptance):
@@ -57,6 +57,12 @@ nodes and parity gaps closed in 0.1.1 (issue #471 acceptance):
   bug: `msgMaxSize` 65535 was BER-encoded as `FF FF` (signed = -1) and
   net-snmp silently DROPPED every v3 message we ever sent (our own echo
   agent parsed it leniently, so the self-interop suite never saw it).
+- 0.1.5 closes the last evidence-channel parity gap: the TLS probe now
+  emits a hostname-kind piece when the leaf cert CN is a single DNS
+  label (mirror of the Go probe change 7ddd821) — a router signing its
+  model into the CN ("R68S") now reaches the corpus's hostname rules on
+  Rust-scanned networks too. Verified live 2026-10-07: the R68S router
+  row gained `model=R68S` after one scan on 0.1.5.
 - 0.1.4 completes agent-side L2 topology: the main repo's wire extension
   (commit 5325bcd — `neighbors` on ReportedHost, center-side rebuild into
   neighbor evidence + RecordNeighbors on the agent-report apply path)
