@@ -25,7 +25,10 @@ type ICMPProber struct{}
 func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Duration) (*Result, error) {
 	pinger, err := probing.NewPinger(target)
 	if err != nil {
-		slog.Error("probe failed", "method", "icmp", "target", target, "error", err)
+		// unresolvable/invalid target — same per-target repeat cycle as any
+		// other execution failure, route through the streak logger (a stale
+		// DNS name on a heartbeat config fires this every cycle).
+		logProbeFailure("icmp", target, err)
 		return &Result{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("failed to create pinger: %v", err),

@@ -14,6 +14,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"mibee-steward/internal/changedetect"
@@ -44,7 +45,7 @@ import (
 // The v2 HostReport already carries enriched device fields (set by
 // ServiceHandlers) and generated heartbeats, so this function is a thin
 // adapter from the in-memory report to the devices/heartbeat_configs tables.
-func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string) (bool, bool) {
+func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string, batchAliases ...string) (bool, bool) {
 	inferredType := rep.Device.Fields["inferred_type"]
 	// Out-of-enum values (the discovery synthesizer's "unknown", or anything
 	// an older agent ships) must not reach the INSERT: the devices.type CHECK
@@ -226,11 +227,30 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 		rep.Device.Fields["inferred_type"] = inferredType
 		rep.Device.Fields["inferred_type_source"] = typeSource
 	}
+
+	// Multi-homed stability (field-found 2026-10-06): one MAC can hold TWO
+	// live ips in a single report (dual-NIC bonding, a stale + current DHCP
+	// lease on one interface). MAC-primary resolution sees the twin as a
+	// "roam to a free ip" and would relocate the row on EVERY report — with
+	// map-ordered host application the row ping-ponged between the twins at
+	// full scan cadence (3-4 change_log ip moves/hour/device). When the batch
+	// itself vouches that the row's current ip is still alive (it is one of
+	// this MAC's other ips in the same report), this is not a roam: keep the
+	// row where it is and record the scanned ip as an alias instead. A
+	// GENUINE roam (the twin absent from the batch) still proceeds below.
+	if res.Roamed && len(batchAliases) > 0 && before != nil && before.IPAddress != "" &&
+		slices.Contains(batchAliases, before.IPAddress) {
+		res.Roamed = false
+		if v := mergeIPAlias(before.ScanAttributes, rep.IP); v != "" {
+			rep.Device.Fields["ip_aliases"] = v
+		}
+	}
 	iw := rn.buildIdentityWrite(rep, mac, inferredType, inferredBrand, inferredDescr, inferredLoc, networkID)
 	iw.TargetID = res.TargetID
 	iw.ReplacedID = res.ReplacedID
 	iw.Roamed = res.Roamed
 	iw.TakeOver = res.TakeOver
+	iw.ParkHolderID = res.ParkHolderID
 	if _, uerr := rn.repo.ApplyDeviceIdentity(ctx, iw); uerr != nil {
 		rn.logger.Warn("device bridge: update device failed", "ip", rep.IP, "mac", mac, "error", uerr)
 	}
@@ -335,6 +355,44 @@ func (rn *Runner) snapshotDevice(ctx context.Context, deviceID int64) *changedet
 	}
 	s := changedetect.SnapshotFromDevice(d)
 	return &s
+}
+
+// ipAliasCap bounds the recorded alias ips per device: a long-lived device
+// cycling through DHCP addresses would otherwise grow the list forever.
+const ipAliasCap = 8
+
+// mergeIPAlias unions the scanned ip into the device's existing
+// scan_attributes.extras.ip_aliases (comma-separated). Returns "" when
+// nothing changes (ip already recorded, or the stored attrs are unreadable)
+// so the caller can skip setting the field — an unchanged value must not
+// reach json_patch at all, or every rescan would rewrite scan_attributes and
+// retrigger change-detection. Oldest entries drop off the front at the cap.
+func mergeIPAlias(storedAttrsJSON, ip string) string {
+	if ip == "" {
+		return ""
+	}
+	var attrs struct {
+		Extras map[string]string `json:"extras"`
+	}
+	if err := json.Unmarshal([]byte(storedAttrsJSON), &attrs); err != nil && storedAttrsJSON != "" {
+		return ""
+	}
+	var list []string
+	if v := attrs.Extras["ip_aliases"]; v != "" {
+		for _, s := range strings.Split(v, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				list = append(list, s)
+			}
+		}
+	}
+	if slices.Contains(list, ip) {
+		return ""
+	}
+	list = append(list, ip)
+	if len(list) > ipAliasCap {
+		list = list[len(list)-ipAliasCap:]
+	}
+	return strings.Join(list, ",")
 }
 
 // applyTypeStickiness enforces "type only upgrades, never downgrades" against

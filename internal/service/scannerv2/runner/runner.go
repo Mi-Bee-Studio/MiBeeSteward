@@ -186,8 +186,14 @@ func (rn *Runner) PersistManualDevice(ctx context.Context, rep scannerv2.HostRep
 // passed here per-call), so the device-bridge identity logic (MAC-primary →
 // (ip, network_id) fallback) partitions correctly per agent. agentID carries
 // through to change_log provenance (empty for the local-scan path).
-func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string) (bool, bool, error) {
-	isNew, updated := rn.applyDeviceBridge(ctx, rep, networkID, agentID)
+//
+// batchAliases optionally lists the OTHER ips the same MAC reports at within
+// the SAME agent report — the ingest handler's multi-homed pre-pass. It lets
+// the bridge tell "the device moved" apart from "the device holds two live
+// ips" (dual-NIC / dual DHCP lease) and stop the row ping-ponging between
+// them. Local-scan callers pass nothing.
+func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, networkID sql.NullInt64, agentID string, batchAliases ...string) (bool, bool, error) {
+	isNew, updated := rn.applyDeviceBridge(ctx, rep, networkID, agentID, batchAliases...)
 	// L2 adjacency: agent reports rebuild "neighbor"-kind evidence from the
 	// wire neighbors array (ReportedHostToReport); the local-scan path records
 	// them inside the orchestrator apply, but agent reports land HERE, so

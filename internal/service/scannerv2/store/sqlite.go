@@ -536,10 +536,14 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 		return scannerv2.IdentityResolution{TargetID: targetID}, nil
 	}
 
-	// MAC present → global identity lookup.
+	// MAC present → global identity lookup. ORDER BY matters when duplicate
+	// rows share the MAC (the legacy churn the randomized-MAC guard now
+	// prevents could leave several): prefer the live row, then the freshest,
+	// so resolution is deterministic instead of rowid-order luck.
 	var targetID int64
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&targetID)
+		`SELECT id FROM devices WHERE mac_address = ?
+		 ORDER BY (status='online') DESC, last_seen DESC LIMIT 1`, mac).Scan(&targetID)
 	if err == sql.ErrNoRows {
 		// MAC not seen before. Fall back to (ip, network_id) with empty mac so a
 		// device first seen MAC-less gets its mac filled on this scan.
@@ -579,6 +583,18 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 				// plain update, no take-over force-write churn.
 				if r.macIsHolderAlias(ctx, holderID, mac) {
 					return scannerv2.IdentityResolution{TargetID: holderID}, nil
+				}
+				// Locally-administered MAC guard: a U/L-bit MAC (privacy
+				// randomization OR locally-assigned) is not tied to an IEEE
+				// vendor identity, so it cannot PROVE an asset swap — it must
+				// not force-take-over a slot held by a globally-administered
+				// (real vendor) device. Park the holder and create a fresh
+				// row instead — e.g. a privacy-MAC client that grabbed an
+				// idle IoT device's DHCP lease must not overwrite the IoT
+				// row. A locally-administered or empty-mac holder may still
+				// be taken over (vacuum rule).
+				if IsLocallyAdministeredMAC(mac) && !IsLocallyAdministeredMAC(holderMAC) {
+					return scannerv2.IdentityResolution{IsNew: true, ParkHolderID: holderID}, nil
 				}
 				return scannerv2.IdentityResolution{TargetID: holderID, TakeOver: true}, nil
 			}
@@ -640,6 +656,15 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 	// multi-homed host — plain update on the holder, no replacement churn.
 	if r.macIsHolderAlias(ctx, ipHolderID, mac) {
 		return scannerv2.IdentityResolution{TargetID: ipHolderID}, nil
+	}
+	// Locally-administered MAC guard (same doctrine as the take-over
+	// branch): a U/L-bit MAC claiming a slot held by a globally-administered
+	// device is not asset-swap evidence — park the holder and ROAM the
+	// scanned device's own row onto the freed IP. The prior mac-matched row
+	// is NOT superseded (it IS the scanned device), and the holder is NOT
+	// force-overwritten (its identity survives for the real device's return).
+	if IsLocallyAdministeredMAC(mac) && !IsLocallyAdministeredMAC(ipHolderMAC) {
+		return scannerv2.IdentityResolution{TargetID: targetID, Roamed: true, ParkHolderID: ipHolderID}, nil
 	}
 	// Device replacement: the ip-holder becomes the target, the MAC-matched row
 	// (the prior asset now sitting on a stale ip) is superseded.
@@ -724,6 +749,22 @@ func identityUpdateArgs(in scannerv2.IdentityWrite, now string) []any {
 // transaction (mirrors the former log-and-continue semantics). See
 // Repository.ApplyDeviceIdentity for the contract.
 func (r *SQLiteRepository) ApplyDeviceIdentity(ctx context.Context, in scannerv2.IdentityWrite) (int64, error) {
+	// Randomized-MAC guard: park the slot holder (ip='') before creating or
+	// roaming onto its IP, or the unique (ip, network_id) index would reject
+	// the write. Parking is destructive only to the holder's IP CLAIM (the
+	// real device re-resolves via MAC-primary when it returns), never to its
+	// identity/history.
+	if in.ParkHolderID != 0 {
+		if _, err := r.db.ExecContext(ctx,
+			`UPDATE devices SET ip_address = '', updated_at = ? WHERE id = ?`,
+			scannerv2.DBTime(time.Now()), in.ParkHolderID); err != nil {
+			r.logger.Warn("device identity: park holder failed", "holder_id", in.ParkHolderID, "error", err)
+		} else {
+			r.logger.Warn("device identity: randomized MAC claimed a slot held by a real device — holder parked",
+				"ip", in.IP, "scanned_mac", in.MAC, "holder_device_id", in.ParkHolderID,
+				"action", "holder ip cleared, identity preserved; separate row for the randomized client")
+		}
+	}
 	if in.IsNew {
 		return r.createDeviceIdentity(ctx, in)
 	}
