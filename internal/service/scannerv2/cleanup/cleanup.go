@@ -128,6 +128,13 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneHostTLSCerts(ctx)
 	s.pruneProbeResults(ctx)
 	s.pruneSilentDevices(ctx)
+	// After the silent-device sweep (and any other device-row delete — reconcile's
+	// ghost cleanup runs on its own ticker): reap heartbeat configs whose device
+	// row is gone. The main DB does not enable SQLite's foreign_keys pragma, so
+	// the ON DELETE CASCADE on heartbeat_configs never fires (field-found
+	// 2026-10-08: two orphaned configs kept probing a vanished IP and logged
+	// ~2300 ERRORs/day between them).
+	s.pruneOrphanHeartbeatConfigs(ctx)
 	// Storage health last: checkpoint/optimize are most useful right after
 	// the bulk deletes above, and the size/row samples reflect the post-prune
 	// state (#280).
@@ -544,4 +551,38 @@ func (s *Service) execWithBusyRetry(ctx context.Context, query string, args ...a
 		}
 	}
 	return lastErr
+}
+
+// pruneOrphanHeartbeatConfigs reaps heartbeat configs whose device row no
+// longer exists. Retention-independent: an orphan is garbage the moment its
+// device is gone, there is no cutoff to apply. Batched so a large legacy
+// backlog (the field rig's schema history predates this reap) cannot hold the
+// write lock for long.
+func (s *Service) pruneOrphanHeartbeatConfigs(ctx context.Context) {
+	if s.mainDB == nil {
+		return
+	}
+	const batch = 500
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := s.execWithBusyRetry(ctx, `
+			DELETE FROM heartbeat_configs WHERE id IN (
+				SELECT id FROM heartbeat_configs
+				WHERE device_id NOT IN (SELECT id FROM devices)
+				LIMIT ?
+			)`, batch); err != nil {
+			s.logger.Warn("cleanup: orphan heartbeat-config reap failed", "error", err)
+			return
+		}
+		var n int64
+		if err := s.mainDB.QueryRowContext(ctx, `SELECT changes()`).Scan(&n); err != nil || n == 0 {
+			return
+		}
+		if n >= int64(batch) {
+			continue // full batch: more orphans may remain
+		}
+		return
+	}
 }

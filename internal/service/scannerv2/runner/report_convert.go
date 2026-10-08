@@ -100,6 +100,43 @@ func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 		})
 	}
 
+	// Rebuild "neighbor"-kind evidence from the wire neighbors array so the
+	// apply path's extractNeighbors → RecordNeighbors (and the neighbor
+	// identity inference) runs identically for agent-reported hosts and local
+	// scans. Rows without a MAC or protocol are dropped — extractNeighbors
+	// would skip them anyway, and an empty protocol cannot be attributed.
+	for _, n := range h.Neighbors {
+		nmac := store.NormalizeMAC(n.NeighborMAC)
+		if nmac == "" || n.Protocol == "" {
+			continue
+		}
+		raw := map[string]string{
+			"neighbor_mac": nmac,
+			"protocol":     n.Protocol,
+		}
+		for k, v := range map[string]string{
+			"local_port":  n.LocalPort,
+			"remote_port": n.RemotePort,
+			"vlan_tag":    n.VLANTag,
+			"sys_name":    n.SysName,
+			"sys_desc":    n.SysDesc,
+		} {
+			if v != "" {
+				raw[k] = v
+			}
+		}
+		source := n.Source
+		if source == "" {
+			source = "agent"
+		}
+		evidence = append(evidence, scannerv2.Evidence{
+			Source:  source,
+			Kind:    "neighbor",
+			IP:      h.IP,
+			RawData: raw,
+		})
+	}
+
 	return scannerv2.HostReport{
 		IP:         h.IP,
 		Alive:      h.Alive,

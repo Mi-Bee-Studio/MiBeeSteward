@@ -57,14 +57,16 @@ rules:
   # 小米生态链设备的 mDNS/rDNS hostname 带厂商前缀,是强 IoT 信号。
   # Brand/appliance 层的细识别在顶层 iot-identity.yaml（miot 服务身份）;
   # 这里只兜类型。真机样本见 #361（R68S 31 台，2026-09）。"mijia_" 是下划线
-  # 变体（Mijia_Hub_V2，field LAN 2026-10-04）。
+  # 变体（Mijia_Hub_V2，field LAN 2026-10-04）；"repeater" 是通用 WiFi 中继器
+  # 词（XiaoMiRepeater_V2，field LAN 2026-10-07，miot 身份 Xiaomi/V2 在手而
+  # 类型落 other）。
   - type: iot
     field: host
     source: heuristic
     keywords: [viomi-, zhimi-, smartmi-, chunmi-, mijia-, mijia_, midjd7, yeelink-,
                lumi, aqara, roborock, rockrobo, dreame, xiaoaitongxue, xiaoai,
                xiaomi-aircondition, xiaomi-gateway, mi-appliance, mibt, miap,
-               mitv]
+               mitv, repeater]
 
   # ── PC / 笔记本 ──
   # MUST come before phone/camera: a laptop named "redmi-laptop" contains

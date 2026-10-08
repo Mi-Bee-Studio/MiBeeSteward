@@ -770,7 +770,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		// Persist L2 neighbors (Phase 4): extract "neighbor"-kind evidence
 		// (from the Bridge-MIB / LLDP / CDP probes) into NeighborSpecs and
 		// record them. The store resolves ip→device_id and upserts edges.
-		if neighbors := extractNeighbors(report.Evidence); len(neighbors) > 0 {
+		if neighbors := ExtractNeighbors(report.Evidence); len(neighbors) > 0 {
 			if err := o.repo.RecordNeighbors(ctx, report.IP, neighbors); err != nil {
 				o.logger.Debug("record neighbors failed", "ip", report.IP, "error", err)
 			}
@@ -809,11 +809,14 @@ func cascadeKey(s ServiceIdentity) string {
 	return s.Service + "@" + itoa(s.Port)
 }
 
-// extractNeighbors pulls L2 adjacency edges from "neighbor"-kind evidence
-// (emitted by the Bridge-MIB / LLDP / CDP probes). Each evidence piece's
-// RawData carries neighbor_mac + protocol + optional local/remote_port. The MAC
-// is normalized (the store's RecordNeighbors expects canonical form).
-func extractNeighbors(evidence []Evidence) []NeighborSpec {
+// ExtractNeighbors pulls L2 adjacency edges from "neighbor"-kind evidence
+// (emitted by the Bridge-MIB / LLDP / CDP / Q-BRIDGE / STP probes, or rebuilt
+// from an agent report's wire neighbors array). Each evidence piece's RawData
+// carries neighbor_mac + protocol + optional local/remote_port. The MAC is
+// normalized (the store's RecordNeighbors expects canonical form). Exported
+// because the runner's agent-report apply path shares it with the local-scan
+// orchestrator apply.
+func ExtractNeighbors(evidence []Evidence) []NeighborSpec {
 	var out []NeighborSpec
 	seen := map[string]bool{} // dedup (neighbor_mac, protocol) within one host
 	for _, e := range evidence {

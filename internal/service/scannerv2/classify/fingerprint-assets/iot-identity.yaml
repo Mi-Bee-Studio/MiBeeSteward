@@ -371,6 +371,31 @@ rules:
         ecosystem: { const: "Espressif" }
         appliance: { const: "ESP32 module" }
 
+  # ── Seeed Studio XIAO ESP32 开发板（Seeed-esp32c6，field LAN 2026-10-08）─
+  # Seeed's XIAO firmware defaults the DHCP name to "Seeed-<module>"; the
+  # module is the model and Seeed Studio is the product vendor (the chip is
+  # Espressif silicon, but the NAME is Seeed's firmware default). Higher
+  # priority than iot-host-esp32 within the shared esp32-host group so the
+  # Seeed spelling wins the tie.
+  - id: iot-host-seeed-esp32
+    source: builtin
+    priority: 116
+    exclusive_group: esp32-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^seeed[-_]?(esp32[a-z0-9]*)(?:-[0-9a-f]{4,8})?(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.6
+    extract:
+      metadata:
+        inferred_brand: { const: "Seeed Studio" }
+        inferred_model: { regex_capture: 1 }
+        appliance: { const: "ESP32 module" }
+
+
   # ── MiBeeCam（AI-Thinker ESP32 方案摄像头）──────────────────────────
   # 主机名形如 MiBeeCam-AI-THINK / MiBeeCam.*（field LAN 2026-09）。
   - id: iot-host-mibeecam
@@ -763,6 +788,28 @@ rules:
         inferred_brand: { const: "FriendlyElec" }
         inferred_model: { const: "NanoPi R4S" }
         appliance: { const: "single-board computer" }
+
+  # ── FastRhino R68S 软路由主机名（R68S / R68s，field LAN 2026-10-05）──────
+  # The router's own DHCP name is the hardware model. SSDP already self-
+  # identifies it as FastRhino; the OUI-derived brand usually wins the fold,
+  # this rule fills the model for both of its bridge interfaces.
+  - id: iot-host-r68s
+    source: builtin
+    priority: 115
+    exclusive_group: sbc-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^r68s(?:[-_][0-9a-z]+)*(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "FastRhino" }
+        inferred_model: { const: "R68S" }
+        appliance: { const: "router" }
 
   # ── 极空间 NAS 主机名（Z4S-2PSE，field LAN 2026-10-04）────────────────
   # ZSpace (Hefei Bitland) NAS boxes name themselves "<model>-<SKU>"; OUI

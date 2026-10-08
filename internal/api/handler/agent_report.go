@@ -28,6 +28,7 @@ import (
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/runner"
+	"mibee-steward/internal/service/scannerv2/store"
 )
 
 // AgentReportHandler receives discovery reports from remote agents
@@ -208,9 +209,31 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("agent report: dropped out-of-network hosts",
 			"agent_id", rep.AgentID, "network_id", *networkID, "out_of_network", outOfNetwork)
 	}
+	// Multi-homed pre-pass (field-found 2026-10-06): one MAC may report at
+	// several ips in the SAME batch (dual-NIC bonding, stale + current DHCP
+	// leases). Index the batch by MAC so each host can tell the bridge which
+	// OTHER ips its MAC currently holds; without it the bridge saw every twin
+	// as a "roam" and the row ping-ponged between the ips at scan cadence.
+	macIPs := make(map[string]map[string]bool, len(inNetwork))
+	for _, host := range inNetwork {
+		if m := store.NormalizeMAC(host.MAC); m != "" && host.IP != "" {
+			if macIPs[m] == nil {
+				macIPs[m] = map[string]bool{}
+			}
+			macIPs[m][host.IP] = true
+		}
+	}
 	for _, host := range inNetwork {
 		hr := runner.ReportedHostToReport(host)
-		isNew, wasUpdated, err := h.runner.ApplyReport(r.Context(), hr, nid, agentID)
+		var aliases []string
+		if m := store.NormalizeMAC(host.MAC); m != "" {
+			for ip := range macIPs[m] {
+				if ip != host.IP {
+					aliases = append(aliases, ip)
+				}
+			}
+		}
+		isNew, wasUpdated, err := h.runner.ApplyReport(r.Context(), hr, nid, agentID, aliases...)
 		if err != nil {
 			slog.Warn("agent report: apply failed", "agent_id", rep.AgentID, "ip", host.IP, "error", err)
 			skipped++

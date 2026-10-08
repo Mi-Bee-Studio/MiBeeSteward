@@ -121,6 +121,16 @@ type IdentityResolution struct {
 	TakeOver bool
 	// IsNew is true when no existing row matches → the caller must create one.
 	IsNew bool
+	// ParkHolderID is the id of the (ip, network) slot holder that must be
+	// PARKED (ip_address='') before the resolution's other action runs —
+	// creating a new row or roaming the scanned device's row onto the IP.
+	// Set when a LOCALLY-ADMINISTERED (randomized) MAC claims a slot held by
+	// a globally-administered (real vendor) MAC: a randomized MAC is per-SSID
+	// client state, it can never prove an asset swap, so it must not
+	// force-overwrite the holder's identity. Parking preserves the holder's
+	// row for when the real device reappears (MAC-primary resolution +
+	// Roamed relocation). 0 = no parking.
+	ParkHolderID int64
 }
 
 // IdentityWrite is the input to ApplyDeviceIdentity. It carries the identity
@@ -130,11 +140,12 @@ type IdentityResolution struct {
 // ApplyDeviceIdentity, so the store stays a thin SQL layer.
 type IdentityWrite struct {
 	// Resolution (from ResolveDeviceIdentity).
-	TargetID   int64 // 0 when IsNew
-	IsNew      bool
-	ReplacedID int64 // device replacement (router/asset swap); 0 = none
-	Roamed     bool
-	TakeOver   bool // new MAC force-taking an occupied (ip, network) slot; no row to offline
+	TargetID     int64 // 0 when IsNew
+	IsNew        bool
+	ReplacedID   int64 // device replacement (router/asset swap); 0 = none
+	Roamed       bool
+	TakeOver     bool  // new MAC force-taking an occupied (ip, network) slot; no row to offline
+	ParkHolderID int64 // slot holder to park (ip='') before create/roam; randomized-MAC guard
 
 	// Origin.
 	IP        string

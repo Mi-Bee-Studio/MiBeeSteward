@@ -31,6 +31,7 @@ import (
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/runner"
+	"mibee-steward/internal/service/scannerv2/store"
 )
 
 // Reporter buffers scan results from the local engine and flushes them to the
@@ -466,6 +467,37 @@ func hostToReported(rep scannerv2.HostReport) domain.ReportedHost {
 		out.Heartbeats = append(out.Heartbeats, domain.ReportedHeartbeat{
 			Method: hb.Method, Target: hb.Target, IntervalSeconds: hb.IntervalSeconds,
 			TimeoutSeconds: hb.TimeoutSeconds, SNMPCommunity: hb.SNMPCommunity, SNMPOID: hb.SNMPOID,
+		})
+	}
+	// L2 adjacency: "neighbor"-kind evidence (Bridge-MIB / Q-BRIDGE / LLDP /
+	// CDP / STP probes) → the wire neighbors array. The evidence slice itself
+	// never crosses the wire, so this extraction is the only way the center's
+	// device_neighbors pipeline sees agent-side topology. Dedup per
+	// (neighbor_mac, protocol), mirroring the center's ExtractNeighbors.
+	seen := map[string]bool{}
+	for _, e := range rep.Evidence {
+		if e.Kind != "neighbor" || e.RawData == nil {
+			continue
+		}
+		mac := store.NormalizeMAC(e.RawData["neighbor_mac"])
+		protocol := e.RawData["protocol"]
+		if mac == "" || protocol == "" {
+			continue
+		}
+		key := mac + "|" + protocol
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out.Neighbors = append(out.Neighbors, domain.ReportedNeighbor{
+			NeighborMAC: mac,
+			Protocol:    protocol,
+			LocalPort:   e.RawData["local_port"],
+			RemotePort:  e.RawData["remote_port"],
+			VLANTag:     e.RawData["vlan_tag"],
+			SysName:     e.RawData["sys_name"],
+			SysDesc:     e.RawData["sys_desc"],
+			Source:      e.Source,
 		})
 	}
 	return out

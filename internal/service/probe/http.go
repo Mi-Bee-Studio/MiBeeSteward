@@ -46,7 +46,11 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	elapsed := time.Since(start)
 
 	if err != nil {
-		slog.Error("probe failed", "method", "http", "target", target, "error", err)
+		// execution failure against the target (dial/timeout/response) → streak
+		// log. This is the branch a half-dead IoT http service hits EVERY cycle:
+		// it stayed on direct slog.Error after #271 and a field center logged
+		// ~2300 ERRORs/day from five such targets (2026-10-08).
+		logProbeFailure("http", target, err)
 		return &Result{
 			Success:      false,
 			Latency:      elapsed,
