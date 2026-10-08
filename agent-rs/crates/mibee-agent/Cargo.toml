@@ -1,0 +1,56 @@
+[package]
+name = "mibee-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MiBee Steward distributed agent (Rust)"
+
+[[bin]]
+name = "mibee-agent"
+path = "src/main.rs"
+
+[dependencies]
+mibee-fingerprints = { path = "../mibee-fingerprints" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+rusqlite = { workspace = true }
+tokio = { workspace = true }
+sha2 = "0.10"
+ipnet = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# Provider-agnostic rustls: WE pick the CryptoProvider at startup (see
+# ensure_tls_provider). ring has no mips backend (0.17 covers
+# x86/x64/arm/aarch64 only), so MIPS builds use the pure-Rust oxitls
+# provider instead — same code, target-conditional provider dep below.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots-no-provider"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["tls12"] }
+x509-parser = "0.16"
+socket2 = "0.5"
+futures = "0.3"
+base64 = "0.22"
+tar = "0.4"
+flate2 = "1"
+rand = "0.8"
+aes-gcm = "0.10"
+# SNMPv3 USM crypto (gosnmp parity): RFC3414 MD5/SHA1 manual HMAC,
+# RFC7860 HMAC-SHA2, DES-CBC + AES-CFB128 privacy.
+hmac = "0.12"
+md-5 = "0.10"
+sha1 = "0.10"
+des = "0.8"
+cbc = "0.1"
+aes = "0.8"
+cfb-mode = "0.8"
+
+[target.'cfg(not(target_arch = "mips"))'.dependencies]
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "logging", "ring"] }
+
+[target.'cfg(target_arch = "mips")'.dependencies]
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "logging"] }
+oxitls-rustcrypto-provider = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+serial_test = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "test-util"] }

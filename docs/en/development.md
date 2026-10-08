@@ -45,6 +45,7 @@ flowchart TB
     ROOT --> CFGDIR["configs/, example configs + fingerprints/ rule library (YAML data)"]
     ROOT --> DEPLOY["deploy/, systemd · nginx · docker · prometheus · openwrt/"]
     ROOT --> SCRIPTS["scripts/, backup.sh · fetch-oui.sh"]
+    ROOT --> ARS["agent-rs/, Rust agent (issue #471) — replaces cmd/agent long-term"]
     CMD --> CMD1["server/, center entrypoint (main · migrations · reset_password)"]
     CMD --> CMD2["agent/, distributed agent entrypoint"]
     CMD --> CMD3["fpimport/, third-party fingerprint importer (recog/OUI/PEN)"]
@@ -155,6 +156,29 @@ make build-with-ebpf       # Requires clang/llvm/bpftool + kernel BTF (run go ge
 ```
 
 See [eBPF Passive Observer](ebpf.md) for details.
+
+### Rust agent (`agent-rs/`)
+
+The Rust rewrite of the distributed agent (issue #471) lives at `agent-rs/`
+as a self-contained cargo workspace — `crates/mibee-agent` (engine, probes,
+vault, DB, center client) plus `crates/mibee-fingerprints` (the classifier,
+differential-tested byte-identical against mibee-fingerprints-go). It is NOT
+part of the Go module: nested `go.mod` dirs under `agent-rs/difftest/` are
+excluded from `go test ./...` and golangci-lint automatically.
+
+```bash
+make test-agent-rs                     # cargo test (agent-rs/)
+make build-agent-rs                    # static musl binaries, aarch64 + armv7
+```
+
+Toolchain: cargo-zigbuild + `pip install ziglang==0.13.0`. On the Windows
+dev host the zig command env var is REQUIRED (`agent-rs/README.md` has the
+exact incantation — the pyenv python3 shim breaks zig discovery). The
+classifier's gosnmp/SNMP implementations are validated by differential
+testing against real net-snmp (`agent-rs/difftest/`), not just unit tests.
+Behavior reference: where docs and Go code disagree, the Go code wins —
+the Rust engine mirrors `internal/service/scannerv2/` semantics probe by
+probe (deviations are documented in `agent-rs/README.md`).
 
 ## Extending the Scanner
 

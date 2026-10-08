@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent package-openwrt-agent-ipk package-openwrt-agent-apk openwrt-stage openwrt-agent-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent package-openwrt-agent-ipk package-openwrt-agent-apk openwrt-stage openwrt-agent-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -17,6 +17,15 @@ build-server: sync-device-types sync-oui-curated
 # frontend, no SPA — just the scannerv2 engine + upstream reporter.
 build-agent: sync-device-types sync-oui-curated
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent ./cmd/agent/
+
+# Rust agent (agent-rs/, issue #471). cargo-zigbuild + ziglang 0.13; the
+# ZIG command env var is REQUIRED on the Windows dev host (the pyenv
+# python3 shim resolves to a Python without ziglang — see agent-rs/README).
+ZIG_EXE := $(shell python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig.exe"))' 2>/dev/null)
+build-agent-rs: sync-agent-rs-assets
+	cd agent-rs && CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release 		--target aarch64-unknown-linux-musl -p mibee-agent 		&& CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release 		--target armv7-unknown-linux-musleabihf -p mibee-agent
+test-agent-rs:
+	cd agent-rs && cargo test
 
 build: build-frontend build-server
 
@@ -319,6 +328,21 @@ docs-changelog-sync:
 sync-oui-curated:
 	@cp -v configs/oui-curated.txt internal/service/scannerv2/vendor/oui_curated.txt
 	@echo "oui_curated.txt synced to vendor embed dir"
+
+# sync-agent-rs-assets aligns the Rust agent's embedded copies (the THIRD
+# copy in the tree) with the configs/ source of truth — same contract as the
+# Go embed syncs above: configs/ is truth, the agent-rs assets are build-time
+# copies (crates cannot include_str files outside their package dir).
+sync-agent-rs-assets:
+	@cp -v configs/fingerprints/*.yaml agent-rs/crates/mibee-agent/assets/fingerprints/
+	@cp -v configs/fingerprints/device-types/device_types.yaml agent-rs/crates/mibee-agent/assets/device_types.yaml
+	@cp -v configs/oui-curated.txt agent-rs/crates/mibee-agent/assets/oui_curated.txt
+	@echo "agent-rs assets synced"
+
+# check-agent-rs-assets fails when the committed agent-rs copies drifted from
+# configs/ (CI runs it; same guard class as the sqlc/apiclient drift checks).
+check-agent-rs-assets:
+	@ok=1; 	for f in configs/fingerprints/*.yaml; do 		b=$$(basename "$$f"); 		diff -q "$$f" "agent-rs/crates/mibee-agent/assets/fingerprints/$$b" >/dev/null || { echo "::error::agent-rs assets drift: $$b (run 'make sync-agent-rs-assets')"; ok=0; }; 	done; 	diff -q configs/fingerprints/device-types/device_types.yaml agent-rs/crates/mibee-agent/assets/device_types.yaml >/dev/null || { echo "::error::agent-rs assets drift: device_types.yaml (run 'make sync-agent-rs-assets')"; ok=0; }; 	diff -q configs/oui-curated.txt agent-rs/crates/mibee-agent/assets/oui_curated.txt >/dev/null || { echo "::error::agent-rs assets drift: oui_curated.txt (run 'make sync-agent-rs-assets')"; ok=0; }; 	[ $$ok -eq 1 ] && echo "agent-rs assets in sync"
 
 # fpimport converts third-party fingerprint databases into the MiBee rule format.
 # See cmd/fpimport/ and docs/fingerprint-spec.md for supported sources.

@@ -147,6 +147,11 @@ jobs:
         run: |
           sqlc generate
           git diff --exit-code internal/db/
+      # Drift guard for the Rust agent's embedded copies of configs/ (the
+      # third copy in the tree — configs/ is truth; agent-rs assets are
+      # build-time copies, same contract as the Go embed dirs).
+      - name: Check agent-rs assets are in sync
+        run: make check-agent-rs-assets
 
   # Validate that the container image builds (build only, no push). Catches
   # Dockerfile/docker-compose regressions before they hit a release tag — the

@@ -45,6 +45,7 @@ flowchart TB
     ROOT --> CFGDIR["configs/，示例配置 + fingerprints/ 指纹库（YAML 数据）"]
     ROOT --> DEPLOY["deploy/, systemd · nginx · docker · prometheus · openwrt/"]
     ROOT --> SCRIPTS["scripts/, backup.sh · fetch-oui.sh"]
+    ROOT --> ARS["agent-rs/，Rust 采集器（issue #471）——长期替换 cmd/agent"]
     CMD --> CMD1["server/，中心入口（main · migrations · reset_password）"]
     CMD --> CMD2["agent/，分布式采集器入口"]
     CMD --> CMD3["fpimport/，第三方指纹库导入工具（recog/OUI/PEN）"]
@@ -154,6 +155,26 @@ make build-with-ebpf       # 需要 clang/llvm/bpftool + 内核 BTF（先 go gen
 ```
 
 详见 [eBPF 被动观测](ebpf.md)。
+
+### Rust 采集器（`agent-rs/`）
+
+分布式采集器的 Rust 重写（issue #471）位于 `agent-rs/`，是一个自包含的
+cargo workspace——`crates/mibee-agent`（引擎、探针、凭据库、本地库、center
+客户端）加 `crates/mibee-fingerprints`（分类器，与 mibee-fingerprints-go
+对拍字节一致）。它**不在** Go module 之内：`agent-rs/difftest/` 下的嵌套
+`go.mod` 目录会被 `go test ./...` 和 golangci-lint 自动排除。
+
+```bash
+make test-agent-rs                     # cargo test（agent-rs/）
+make build-agent-rs                    # musl 静态二进制，aarch64 + armv7
+```
+
+工具链：cargo-zigbuild + `pip install ziglang==0.13.0`。Windows 开发机上
+zig 命令环境变量是必须的（`agent-rs/README.md` 有准确写法——pyenv 的
+python3 shim 会破坏 zig 发现）。分类器与 SNMP 实现靠对真实 net-snmp 的
+差分测试（`agent-rs/difftest/`）验证，而非仅单测。行为参照：文档与 Go
+代码不一致时以 Go 代码为准——Rust 引擎逐探针对齐
+`internal/service/scannerv2/` 的语义（偏离之处记录在 `agent-rs/README.md`）。
 
 ## 扩展扫描器
 
