@@ -23,7 +23,7 @@ On a host that lacks the backing file/socket, the sources degrade to a clean no-
 
 | Form | Binary | Role | When to use |
 |---|---|---|---|
-| **Form B, router-agent → remote center** | `cmd/agent` | Pure sensor: scans the router's LAN, reports upstream over HTTPS to a center elsewhere | Multi-site / multi-LAN: one remote center + one agent per router. The agent is light (18MB binary, ~100MB RAM). |
+| **Form B, router-agent → remote center** | `agent-rs` (Rust, binary `mibee-agent`) | Pure sensor: scans the router's LAN, reports upstream over HTTPS to a center elsewhere | Multi-site / multi-LAN: one remote center + one agent per router. The agent is very light (~4.8MB static binary, ~12MB RAM). |
 | **Form C, router-center** | `cmd/server` | The full center (API + SPA + asset registry + discovery) running ON the router | Single-network (home / small office): one router does everything, gets the choke-point signals AND serves the management UI. No separate agent process needed. |
 
 Form B pairs with [Distributed Deployment](distributed.md); Form C is a self-contained single-network option (compare with [Standalone Deployment](deployment.md)).
@@ -32,7 +32,7 @@ Form B pairs with [Distributed Deployment](distributed.md); Form C is a self-con
 flowchart LR
     subgraph R["OpenWrt router"]
         S["cmd/server (Form C center)"] --> C["Local Tier-1 discovery sources"]
-        B["cmd/agent (Form B agent)"] --> C
+        B["agent-rs mibee-agent (Form B agent)"] --> C
     end
     C -->|"Form C: consumed locally"| D["Center API + embedded SPA"]
     C -->|"Form B: reported upstream"| E["Remote center over HTTPS"]
@@ -46,46 +46,41 @@ flowchart LR
 |---|---|---|---|
 | **Architecture** | **ARM or ARM64** | ARM64 (GL.iNet MT3000, ipq807x, mt798x; NanoPi R5S-class iStoreOS boxes) | **MIPS is NOT supported**, `modernc.org/libc` (the pure-Go SQLite backend's transitive dep) has no working `mips`/`mipsle` port and a broken `mips64le` one. This excludes older ath79/ramips routers (TP-Link Archer C7, Netgear R7000, etc.). |
 | **RAM** | 128 MB | 256 MB+ | modernc SQLite is memory-heavier than C-SQLite; the center is heavier than the agent. |
-| **Flash** | 32 MB | 128 MB+ | Binary 16-18MB + OUI (~5MB full / 1.2KB curated) + fingerprint corpus (~1.2MB) + DB. The DB should live on `/tmp` (tmpfs), see Resource Usage below. |
+| **Flash** | 32 MB | 128 MB+ | Binary 5MB (agent) / 24MB (center) + OUI (~5MB full / 1.2KB curated) + fingerprint corpus (~1.2MB) + DB. The DB should live on `/tmp` (tmpfs), see Resource Usage below. |
 
 ### Cross-Compile
 
-Both binaries build CGO-free (`modernc.org/sqlite`), so a plain `GOOS`/`GOARCH` cross-compile works, no OpenWrt SDK needed:
+Both forms build CGO-free/static, no OpenWrt SDK needed:
 
 ```bash
-# Form B: agent
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-  -trimpath -ldflags="-s -w" -o mibee-agent ./cmd/agent/
-# → ~18MB
+# Form B: agent — the Rust agent (agent-rs/), static musl binaries.
+# Requires cargo-zigbuild + the ziglang pip package (see agent-rs/README.md).
+make build-agent-rs
+# → agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent      (~4.8MB)
+# → agent-rs/target/armv7-unknown-linux-musleabihf/release/mibee-agent  (~4.8MB)
 
-# Form C: center
+# Form C: center (Go, embeds the SvelteKit SPA — `make build-linux-arm64`
+# is the same thing with the sync+frontend steps wired in):
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
   -trimpath -ldflags="-s -w" -o mibee-steward ./cmd/server/
-# → ~24MB (includes the embedded SvelteKit SPA)
+# → ~24MB
 ```
 
-`GOARCH=arm` (32-bit, GOARM=7) also works for older ARM boards; `GOARCH=mips*` does **not**. Note: the repo's Makefile cross-compile targets (`make build-linux-arm64` etc.) build the **center** binary; the agent has matching `make build-agent-linux-arm64` / `-amd64` / `-arm` targets (both sets run the device-type sync the embed step needs). A bare `make build-agent` builds for the **host** architecture:
-
-```bash
-# Center (Form C), Makefile targets (amd64 / arm64 / arm likewise):
-make build-linux-arm64
-
-# Agent (Form B), native arch:
-make build-agent
-```
+The center supports `GOARCH=arm` (32-bit, GOARM=7) for older ARM boards; `GOARCH=mips*` does **not** (modernc/libc). The Rust agent builds for aarch64 and armv7 out of the box (mipsel exists for the test oracles but is unsupported/unvalidated). The agent binary already embeds the fingerprint corpus + curated OUI via its own asset-sync step (`make build-agent-rs` runs it).
 
 ### procd Init Scripts & Config Files
 
-The repo ships two procd init scripts, `deploy/openwrt/mibee-steward.init` and `deploy/openwrt/mibee-agent.init`, installed to `/etc/init.d/` and managed with `enable` (start at boot) and `start`/`stop`/`restart`. Config files live under `/etc/mibee/`.
+The repo ships the center's procd init script (`deploy/openwrt/mibee-steward.init`), and the agent's (`agent-rs/deploy/openwrt/mibee-agent.init`). Both are installed to `/etc/init.d/` and managed with `enable` (start at boot) and `start`/`stop`/`restart`. Config files live under `/etc/mibee/`.
 
-**Install Form B (agent → remote center):**
+**Install Form B (Rust agent → remote center):**
 
 ```bash
 # On your build host:
-scp mibee-agent root@router:/usr/bin/mibee-agent
-scp deploy/openwrt/mibee-agent.init root@router:/etc/init.d/mibee-agent
+make build-agent-rs
+scp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent root@router:/usr/bin/mibee-agent
+scp agent-rs/deploy/openwrt/mibee-agent.init root@router:/etc/init.d/mibee-agent
 ssh root@router 'mkdir -p /etc/mibee'
-scp <your-agent.yaml> root@router:/etc/mibee/agent.yaml   # write it from the minimal sample in [Distributed Deployment](distributed.md) (the repo ships no ready-made file), then edit on the router
+scp <your-agent.yaml> root@router:/etc/mibee/agent.yaml   # write it from configs/agent.example.yaml / the minimal sample in [Distributed Deployment](distributed.md), then edit on the router
 
 # On the router, edit /etc/mibee/agent.yaml:
 #   center.url:         http://<your-center-ip>:<port>
@@ -95,7 +90,7 @@ scp <your-agent.yaml> root@router:/etc/mibee/agent.yaml   # write it from the mi
 #     (dhcp_leases, conntrack, hostapd, dns_log, all default false)
 
 ssh root@router '/etc/init.d/mibee-agent enable && /etc/init.d/mibee-agent start'
-ssh root@router 'logread -e mibee-agent | tail -20'   # expect "mibee-agent running"
+ssh root@router 'logread -e mibee-agent | tail -20'   # expect "mibee-agent x.y.z starting"
 ```
 
 **Install Form C (center on the router):**
@@ -199,12 +194,12 @@ Some of MiBee Steward's probes rely on raw sockets and need **CAP_NET_RAW**:
 
 ## Resource Usage
 
-| Resource | Form B (agent) | Form C (center) |
+| Resource | Form B (Rust agent) | Form C (center) |
 |---|---|---|
-| **Binary size** | ~18MB | ~24MB (includes SPA) |
-| **RAM** | ~100MB | Heavier (modernc SQLite + asset registry) |
+| **Binary size** | ~4.8MB (static musl) | ~24MB (includes SPA) |
+| **RAM** | ~12MB steady | Heavier (modernc SQLite + asset registry) |
 
-The agent is very lightweight and fits low-power routers (e.g. GL.iNet series); the center is best on 256MB+ routers.
+Measured on the field rigs (NanoPi NEO armv7 / FastRhino R68S arm64); the full Go-vs-Rust comparison lives in [agent-rs.md](agent-rs.md). The agent fits even 128MB routers; the center is best on 256MB+.
 
 ### Flash-Wear Mitigation (DB on tmpfs)
 
@@ -223,7 +218,7 @@ curl -s http://localhost:8080/api/v1/health
 
 # View logs
 logread -e mibee-steward   # Form C
-logread -e mibee-agent     # Form B, expect "mibee-agent running"
+logread -e mibee-agent     # Form B, expect "mibee-agent x.y.z starting"
 ```
 
 ### Common Issues

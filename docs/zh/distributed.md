@@ -20,7 +20,7 @@ flowchart LR
         C["中心 cmd/server<br/>Web UI + API + 资产注册表 + 变更检测"]
     end
     subgraph NB["网络 B（远端站点，可在 NAT 后）"]
-        AG["采集器 cmd/agent<br/>扫描 + 上报 + 轮询命令 + 被动信号源"]
+        AG["采集器 agent-rs（Rust）<br/>扫描 + 上报 + 轮询命令 + 被动信号源"]
         D1["站点设备"]
         AG --- D1
     end
@@ -52,12 +52,12 @@ sequenceDiagram
     end
 ```
 
-采集器内部由 `command_poller`（轮询 / ack / complete）与 `reporter`（上报，附带 `X-Network-State-Hash`）驱动，扫描由 `scannerv2` 引擎执行（被动信号源从路由器采集）。两条通道相互独立：上报快慢不影响命令轮询。
+采集器由命令轮询器（轮询 / ack / complete）与上报器（上报，附带 `X-Network-State-Hash`）配对驱动，扫描执行与中心同源的 scannerv2 发现引擎（被动信号源从路由器就地采集）。两条通道相互独立：上报快慢不影响命令轮询。采集器即 Rust workspace `agent-rs/`——原 Go 采集器（`cmd/agent`）已于 2026-10-09 退役，完整对比与迁移须知见 [agent-rs.md](agent-rs.md)。
 
 ## 前置条件
 
 - **中心**：一台可被采集器访问的服务器（域名或固定 IP，建议 HTTPS），运行中心二进制（`cmd/server`，~24MB，含嵌入式 SPA）。
-- **采集器**：每站点一台（虚拟机 / 低功耗路由器均可），运行采集器二进制（`cmd/agent`，~18MB，无内置 UI，内存 ~100MB）。
+- **采集器**：每站点一台（虚拟机 / 低功耗路由器均可），运行 Rust 采集器二进制（`agent-rs/` 的 `mibee-agent`，约 4.8MB 静态，无内置 UI，稳态内存约 12MB——见 [agent-rs.md](agent-rs.md)）。
 - **时钟同步**：建议所有节点 NTP 对齐。采集器上报会按时间戳记录，NTP 能让"最近上报时间"更可读；令牌本身是不透明哈希查找、不校验时间，租约过期也只依赖中心自身时钟。
 
 ## Agent 安装与注册
@@ -82,10 +82,12 @@ curl -s -X POST http://<center-ip>:8080/api/v1/agents/tokens \
 ### 2. 安装采集器
 
 ```bash
-# 下载或交叉编译采集器二进制（见 [OpenWrt 部署](openwrt.md) 交叉编译一节）
-wget https://github.com/Mi-Bee-Studio/MiBeeSteward/releases/download/<tag>/mibee-agent-linux-arm64
-chmod +x mibee-agent-linux-arm64
-sudo mv mibee-agent-linux-arm64 /usr/local/bin/mibee-agent
+# 构建目标架构的静态 musl 二进制（aarch64 / armv7；
+# 需要 cargo-zigbuild + ziglang pip 包——见 agent-rs/README.md）。
+# Rust 采集器的发布制品由 agent-rs workspace 出品（原生的路由器
+# 打包是已登记的后续项；Go 采集器的发布制品随 cmd/agent 一并退役）。
+make build-agent-rs
+cp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent /usr/local/bin/mibee-agent
 ```
 
 ### 3. 配置并启动

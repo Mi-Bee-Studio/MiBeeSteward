@@ -20,7 +20,7 @@ flowchart LR
         C["Center, cmd/server<br/>Web UI + API + asset registry + change detection"]
     end
     subgraph NB["Network B (remote site, may be behind NAT)"]
-        AG["Agent, cmd/agent<br/>scan + report + command polling + passive sources"]
+        AG["Agent, agent-rs (Rust)<br/>scan + report + command polling + passive sources"]
         D1["Site devices"]
         AG --- D1
     end
@@ -52,12 +52,12 @@ sequenceDiagram
     end
 ```
 
-Internally the agent is driven by `command_poller` (poll / ack / complete) and `reporter` (reports with `X-Network-State-Hash`); scanning is run by the `scannerv2` engine (passive sources are collected on the router). The two channels are independent: report cadence does not affect command polling.
+The agent pairs a command poller (poll / ack / complete) with a reporter (reports carrying `X-Network-State-Hash`); scanning runs the same scannerv2 discovery engine the center uses (passive router-resident sources are collected locally). The two channels are independent: report cadence does not affect command polling. The agent is the Rust workspace `agent-rs/` — the former Go agent (`cmd/agent`) was retired 2026-10-09; see [agent-rs.md](agent-rs.md) for the full comparison and migration notes.
 
 ## Prerequisites
 
 - **Center**: a server reachable by all agents (hostname or fixed IP, HTTPS recommended), running the center binary (`cmd/server`, ~24MB, embedded SPA).
-- **Agent**: one per site (VM or low-power router), running the agent binary (`cmd/agent`, ~18MB, no embedded UI, ~100MB RAM).
+- **Agent**: one per site (VM or low-power router), running the Rust agent binary (`mibee-agent` from `agent-rs/`, ~4.8MB static, no embedded UI, ~12MB RAM steady — see [agent-rs.md](agent-rs.md)).
 - **Clock sync**: NTP on all nodes is recommended so report timestamps read cleanly. Tokens themselves are opaque hash lookups with no time check, and lease expiry only uses the center's own clock.
 
 ## Install & Register an Agent
@@ -82,10 +82,13 @@ The plaintext token is returned exactly once at creation; the center stores only
 ### 2. Install the agent binary
 
 ```bash
-# Download or cross-compile the agent binary (see the cross-compile section of [OpenWrt Deployment](openwrt.md))
-wget https://github.com/Mi-Bee-Studio/MiBeeSteward/releases/download/<tag>/mibee-agent-linux-arm64
-chmod +x mibee-agent-linux-arm64
-sudo mv mibee-agent-linux-arm64 /usr/local/bin/mibee-agent
+# Build the static musl binary for the host arch (aarch64 / armv7;
+# requires cargo-zigbuild + the ziglang pip package — see agent-rs/README.md).
+# Rust-agent release artifacts come from the agent-rs workspace (native
+# router packaging is a tracked follow-up; the Go-agent release artifacts
+# were retired together with cmd/agent).
+make build-agent-rs
+cp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent /usr/local/bin/mibee-agent
 ```
 
 ### 3. Configure and start

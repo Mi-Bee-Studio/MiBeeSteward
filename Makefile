@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-agent build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm build-agent-linux-amd64 build-agent-linux-arm64 build-agent-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent package-openwrt-agent-ipk package-openwrt-agent-apk openwrt-stage openwrt-agent-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk openwrt-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -13,10 +13,16 @@ build-frontend:
 build-server: sync-device-types sync-oui-curated
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
 
-# Discovery agent (distributed mode): lightweight scan + report binary. No
-# frontend, no SPA — just the scannerv2 engine + upstream reporter.
-build-agent: sync-device-types sync-oui-curated
-	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent ./cmd/agent/
+# Discovery agent (distributed mode): the Rust agent (agent-rs/, issue #471)
+# is the ONLY agent. The former Go agent (cmd/agent) was retired 2026-10-09.
+# ZIG_EXE: cargo-zigbuild + ziglang 0.13; the ZIG command env var is REQUIRED
+# on the Windows dev host (the pyenv python3 shim resolves to a Python without
+# ziglang — see agent-rs/README).
+ZIG_EXE := $(shell python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig.exe"))' 2>/dev/null)
+build-agent-rs: sync-agent-rs-assets
+	cd agent-rs && CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release 		--target aarch64-unknown-linux-musl -p mibee-agent 		&& CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release 		--target armv7-unknown-linux-musleabihf -p mibee-agent
+test-agent-rs:
+	cd agent-rs && cargo test
 
 # Rust agent (agent-rs/, issue #471). cargo-zigbuild + ziglang 0.13; the
 # ZIG command env var is REQUIRED on the Windows dev host (the pyenv
@@ -46,21 +52,6 @@ build-linux-arm64: sync-device-types sync-oui-curated
 # documents this arch for OpenWrt form B/C. MIPS is NOT supported (modernc/libc).
 build-linux-arm: sync-device-types sync-oui-curated
 	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./cmd/server/
-
-# Agent (form B) cross-compile — same three archs as the center above. The
-# agent has no frontend/embed-dist step, but it DOES embed the fingerprint
-# corpus + curated OUI, so the two sync targets remain prerequisites. Without
-# these targets a form-B deploy reflexively runs `make build-agent` and ships
-# a HOST-arch binary to the router (observed on the MT2500: an x86-64 ELF
-# flashed to aarch64 fails with a confusing "syntax error" from ash).
-build-agent-linux-amd64: sync-device-types sync-oui-curated
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent-linux-amd64 ./cmd/agent/
-
-build-agent-linux-arm64: sync-device-types sync-oui-curated
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent-linux-arm64 ./cmd/agent/
-
-build-agent-linux-arm: sync-device-types sync-oui-curated
-	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent-linux-arm ./cmd/agent/
 
 # Bundle the center for OpenWrt / iStoreOS routers (form C, no Docker): arm64
 # binary + procd init script + example config + on-router installer, packed as
@@ -140,51 +131,10 @@ package-openwrt-apk: openwrt-stage
 	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
 	sh ./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).apk center
 
-# ── Router packages for the AGENT (form B: agent-on-router, reporting to a
-# remote center) — the same three install forms as the center packages. No
-# frontend build (the agent has no SPA), no LuCI files; the installer is
-# deploy/openwrt/agent-install.sh (generates /etc/mibee/agent.yaml with a
-# uci-derived network; center url/token come from --center-url/--token or are
-# left for the operator — the service stays down until they are filled).
-package-openwrt-agent: GOARCH?=arm64
-package-openwrt-agent: sync-device-types sync-oui-curated
-	GOOS=linux GOARCH=$(GOARCH) CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/mibee-agent-linux-$(GOARCH) ./cmd/agent/
-	@rm -rf $(BUILD_DIR)/openwrt-agent-pkg && mkdir -p $(BUILD_DIR)/openwrt-agent-pkg
-	cp $(BUILD_DIR)/mibee-agent-linux-$(GOARCH) $(BUILD_DIR)/openwrt-agent-pkg/mibee-agent
-	tr -d '\r' < deploy/openwrt/mibee-agent.init   > $(BUILD_DIR)/openwrt-agent-pkg/mibee-agent.init
-	tr -d '\r' < deploy/openwrt/agent-install.sh   > $(BUILD_DIR)/openwrt-agent-pkg/agent-install.sh
-	tr -d '\r' < configs/agent.example.yaml        > $(BUILD_DIR)/openwrt-agent-pkg/agent.example.yaml
-	chmod +x $(BUILD_DIR)/openwrt-agent-pkg/agent-install.sh
-	tar -czf $(BUILD_DIR)/mibee-agent-openwrt-$(GOARCH)-$(VERSION).tar.gz -C $(BUILD_DIR)/openwrt-agent-pkg mibee-agent mibee-agent.init agent-install.sh agent.example.yaml
-	@rm -rf $(BUILD_DIR)/openwrt-agent-pkg
-	@echo "-> $(BUILD_DIR)/mibee-agent-openwrt-$(GOARCH)-$(VERSION).tar.gz  (scp to router, extract, ./agent-install.sh)"
-
-# Shared staging root for the agent .ipk / .apk — mirror of openwrt-stage
-# minus the LuCI tree.
-openwrt-agent-stage: sync-device-types sync-oui-curated
-	@rm -rf $(BUILD_DIR)/openwrt-agent-stage
-	@mkdir -p $(BUILD_DIR)/openwrt-agent-stage/usr/bin $(BUILD_DIR)/openwrt-agent-stage/etc/init.d $(BUILD_DIR)/openwrt-agent-stage/etc/mibee $(BUILD_DIR)/openwrt-agent-stage/usr/lib/mibee
-	GOOS=linux GOARCH=$(GOARCH) CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/openwrt-agent-stage/usr/bin/mibee-agent ./cmd/agent/
-	tr -d '\r' < deploy/openwrt/mibee-agent.init > $(BUILD_DIR)/openwrt-agent-stage/etc/init.d/mibee-agent
-	tr -d '\r' < configs/agent.example.yaml      > $(BUILD_DIR)/openwrt-agent-stage/etc/mibee/agent.example.yaml
-	tr -d '\r' < deploy/openwrt/agent-install.sh > $(BUILD_DIR)/openwrt-agent-stage/usr/lib/mibee/agent-install.sh
-	chmod 755 $(BUILD_DIR)/openwrt-agent-stage/etc/init.d/mibee-agent $(BUILD_DIR)/openwrt-agent-stage/usr/lib/mibee/agent-install.sh
-	@if grep -rlq $$(printf '\r') $(BUILD_DIR)/openwrt-agent-stage/etc $(BUILD_DIR)/openwrt-agent-stage/usr/lib; then \
-		echo "ERROR: CR bytes found in staged agent router files (a tr -d step above is broken?):"; \
-		grep -rl $$(printf '\r') $(BUILD_DIR)/openwrt-agent-stage/etc $(BUILD_DIR)/openwrt-agent-stage/usr/lib; \
-		exit 1; \
-	fi
-
-package-openwrt-agent-ipk: GOARCH?=arm64
-package-openwrt-agent-ipk: openwrt-agent-stage
-	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
-	sh ./deploy/openwrt/mkipk.sh $(BUILD_DIR)/openwrt-agent-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-agent_$${PKG_VER}_$(GOARCH).ipk agent
-
-package-openwrt-agent-apk: GOARCH?=arm64
-package-openwrt-agent-apk: openwrt-agent-stage
-	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
-	sh ./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-agent-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-agent_$${PKG_VER}_$(GOARCH).apk agent
-
+# ── Router packages for the AGENT (form B): the Go agent packages were
+# retired with cmd/agent (2026-10-09). The Rust agent ships as static musl
+# binaries from `make build-agent-rs` (agent-rs/); router install is the
+# tarball + init-script path documented in docs/{en,zh}/distributed.md.
 # Static assertions on the OpenWrt packaging sources (#358). The R68S field
 # session (iStoreOS 24.10, #355) proved this class of bug goes "local-green,
 # on-router-dead": a LuCI template with a raw CR byte white-screens with
@@ -205,15 +155,15 @@ check-openwrt:
 	echo "-> $$LUAC -p deploy/openwrt/luci/controller/mibee.lua"; \
 	$$LUAC -p deploy/openwrt/luci/controller/mibee.lua
 	@for f in deploy/openwrt/luci/view/mibee/status.htm deploy/openwrt/luci/view/mibee/settings.htm \
-	          deploy/openwrt/install.sh deploy/openwrt/agent-install.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
+	          deploy/openwrt/install.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
 	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/luci/luci-apply.sh deploy/openwrt/mibee-steward.init \
-	          deploy/openwrt/mibee-agent.init configs/config.example.yaml configs/agent.example.yaml; do \
+	          configs/config.example.yaml configs/agent.example.yaml; do \
 		if git show :$$f 2>/dev/null | grep -q $$(printf '\r'); then \
 			echo "ERROR: CR byte in committed $$f — LuCI tparser yields 'unfinished string' (R68S #355)"; exit 1; \
 		fi; \
 	done; echo "-> no CR bytes in committed router sources"
-	@for f in deploy/openwrt/install.sh deploy/openwrt/agent-install.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
-	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/luci/luci-apply.sh deploy/openwrt/mibee-steward.init deploy/openwrt/mibee-agent.init; do \
+	@for f in deploy/openwrt/install.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
+	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/luci/luci-apply.sh deploy/openwrt/mibee-steward.init; do \
 		if ! git show :$$f 2>/dev/null | sh -n; then \
 			echo "ERROR: sh -n failed on committed $$f"; exit 1; \
 		fi; \

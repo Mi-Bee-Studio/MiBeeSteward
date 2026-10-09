@@ -30,7 +30,7 @@ flowchart TD
 
 ### Download
 
-Grab the prebuilt binary for your platform (amd64/arm64) from [GitHub Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases), or build from source. Standalone deployments use the **center** binary (source entry `cmd/server`, ~24MB, embeds the SvelteKit web UI); the agent (`cmd/agent`, ~18MB, no embedded UI) is for the [OpenWrt](openwrt.md) and [Distributed](distributed.md) scenarios:
+Grab the prebuilt binary for your platform (amd64/arm64) from [GitHub Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases), or build from source. Standalone deployments use the **center** binary (source entry `cmd/server`, ~24MB, embeds the SvelteKit web UI); the agent (the Rust `agent-rs/` workspace, ~4.8MB, no embedded UI) is for the [OpenWrt](openwrt.md) and [Distributed](distributed.md) scenarios:
 
 ```bash
 git clone https://github.com/Mi-Bee-Studio/MiBeeSteward.git

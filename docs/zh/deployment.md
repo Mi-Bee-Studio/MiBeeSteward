@@ -30,7 +30,7 @@ flowchart TD
 
 ### 下载
 
-从 [GitHub Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) 下载对应平台的预编译 binary（amd64/arm64），或从源码构建。单机部署使用**中心**二进制（源码入口 `cmd/server`，约 24MB，内嵌 SvelteKit Web 界面）；纯采集器（`cmd/agent`，约 18MB，无内嵌界面）用于 [OpenWrt](openwrt.md) 与 [分布式](distributed.md) 场景：
+从 [GitHub Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) 下载对应平台的预编译 binary（amd64/arm64），或从源码构建。单机部署使用**中心**二进制（源码入口 `cmd/server`，约 24MB，内嵌 SvelteKit Web 界面）；纯采集器（Rust `agent-rs/` workspace，约 4.8MB，无内嵌界面）用于 [OpenWrt](openwrt.md) 与 [分布式](distributed.md) 场景：
 
 ```bash
 git clone https://github.com/Mi-Bee-Studio/MiBeeSteward.git

@@ -50,42 +50,37 @@ flowchart LR
 
 ### 交叉编译
 
-两个二进制均 CGO-free（`modernc.org/sqlite`），直接 `GOOS`/`GOARCH` 交叉编译即可，无需 OpenWrt SDK：
+两种形态均为静态免依赖构建，无需 OpenWrt SDK：
 
 ```bash
-# 形态 B: 采集器
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-  -trimpath -ldflags="-s -w" -o mibee-agent ./cmd/agent/
-# → ~18MB
+# 形态 B: 采集器 —— Rust agent（agent-rs/），静态 musl 二进制。
+# 需要 cargo-zigbuild + ziglang pip 包（见 agent-rs/README.md）。
+make build-agent-rs
+# → agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent      （约 4.8MB）
+# → agent-rs/target/armv7-unknown-linux-musleabihf/release/mibee-agent  （约 4.8MB）
 
-# 形态 C: 中心
+# 形态 C: 中心（Go，内嵌 SvelteKit SPA——`make build-linux-arm64` 是等价的
+# 全流程目标，含同步与前端步骤）：
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
   -trimpath -ldflags="-s -w" -o mibee-steward ./cmd/server/
-# → ~24MB（含嵌入式 SvelteKit SPA）
+# → ~24MB
 ```
 
-`GOARCH=arm`（32 位，GOARM=7）也可用于老款 ARM 板；`GOARCH=mips*` **不支持**。注意：仓库 Makefile 的交叉编译目标（`make build-linux-arm64` 等）构建的是**中心**二进制；采集器有对应的 `make build-agent-linux-arm64` / `-amd64` / `-arm` 目标（两组都内含设备类型同步的 embed 前置步骤）。不带架构后缀的 `make build-agent` 构建的是**本机架构**：
-
-```bash
-# 中心（形态 C）：Makefile 目标（amd64 / arm64 / arm 同理）：
-make build-linux-arm64
-
-# 采集器（形态 B）：本机架构：
-make build-agent
-```
+中心支持 `GOARCH=arm`（32 位，GOARM=7）用于老款 ARM 板；`GOARCH=mips*` **不支持**（modernc/libc）。Rust agent 开箱支持 aarch64 与 armv7（mipsel 仅用于测试 oracle，不受支持、未实测）。采集器二进制已经由自己的资产同步步骤（`make build-agent-rs` 会先跑同步）内嵌指纹库 + 精简 OUI。
 
 ### procd init 脚本与配置文件
 
-仓库提供两个 procd init 脚本--`deploy/openwrt/mibee-steward.init` 与 `deploy/openwrt/mibee-agent.init`，安装到 `/etc/init.d/` 后用 `enable`（开机自启）与 `start`/`stop`/`restart` 管理。配置文件统一放在 `/etc/mibee/`。
+仓库提供中心的 procd init 脚本（`deploy/openwrt/mibee-steward.init`）与采集器的（`agent-rs/deploy/openwrt/mibee-agent.init`），安装到 `/etc/init.d/` 后用 `enable`（开机自启）与 `start`/`stop`/`restart` 管理。配置文件统一放在 `/etc/mibee/`。
 
-**形态 B 安装（采集器 → 远程中心）：**
+**形态 B 安装（Rust 采集器 → 远程中心）：**
 
 ```bash
 # 在构建机器上：
-scp mibee-agent root@router:/usr/bin/mibee-agent
-scp deploy/openwrt/mibee-agent.init root@router:/etc/init.d/mibee-agent
+make build-agent-rs
+scp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent root@router:/usr/bin/mibee-agent
+scp agent-rs/deploy/openwrt/mibee-agent.init root@router:/etc/init.d/mibee-agent
 ssh root@router 'mkdir -p /etc/mibee'
-scp <agent.yaml> root@router:/etc/mibee/agent.yaml   # 仓库不带现成文件，按 [分布式部署](distributed.md) 的最小示例创建，上传后在路由器上编辑
+scp <agent.yaml> root@router:/etc/mibee/agent.yaml   # 以 configs/agent.example.yaml / [分布式部署](distributed.md) 的最小示例为底稿，上传后在路由器上编辑
 
 # 在路由器上编辑 /etc/mibee/agent.yaml：
 #   center.url:         http://<中心IP>:<端口>
@@ -95,7 +90,7 @@ scp <agent.yaml> root@router:/etc/mibee/agent.yaml   # 仓库不带现成文件�
 #     （dhcp_leases, conntrack, hostapd, dns_log，默认均为 false）
 
 ssh root@router '/etc/init.d/mibee-agent enable && /etc/init.d/mibee-agent start'
-ssh root@router 'logread -e mibee-agent | tail -20'   # 期望看到 "mibee-agent running"
+ssh root@router 'logread -e mibee-agent | tail -20'   # 期望看到 "mibee-agent x.y.z starting"
 ```
 
 **形态 C 安装（中心跑在路由器上）：**
@@ -201,8 +196,8 @@ MiBee Steward 的部分探测基于原始套接字，需要 **CAP_NET_RAW**：
 
 | 资源 | 形态 B（采集器） | 形态 C（中心） |
 |---|---|---|
-| **二进制大小** | ~18MB | ~24MB（含 SPA） |
-| **运行内存** | ~100MB | 更重（modernc SQLite + 资产注册表） |
+| **二进制大小** | ~4.8MB（静态 musl） | ~24MB（含 SPA） |
+| **运行内存** | ~12MB 稳态 | 更重（modernc SQLite + 资产注册表） |
 
 采集器非常轻量，适合低功耗路由器（如 GL.iNet 系列）；中心建议 256MB+ 内存的路由器。
 

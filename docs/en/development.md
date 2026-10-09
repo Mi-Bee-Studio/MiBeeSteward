@@ -45,7 +45,7 @@ flowchart TB
     ROOT --> CFGDIR["configs/, example configs + fingerprints/ rule library (YAML data)"]
     ROOT --> DEPLOY["deploy/, systemd · nginx · docker · prometheus · openwrt/"]
     ROOT --> SCRIPTS["scripts/, backup.sh · fetch-oui.sh"]
-    ROOT --> ARS["agent-rs/, Rust agent (issue #471) — replaces cmd/agent long-term"]
+    ROOT --> ARS["agent-rs/, the Rust distributed agent (issue #471) — the only agent since 2026-10-09"]
     CMD --> CMD1["server/, center entrypoint (main · migrations · reset_password)"]
     CMD --> CMD2["agent/, distributed agent entrypoint"]
     CMD --> CMD3["fpimport/, third-party fingerprint importer (recog/OUI/PEN)"]
@@ -100,7 +100,7 @@ SELECT * FROM your_table WHERE id = $1;
 
 1. Edit `db/schema.sql`
 2. Run `~/go/bin/sqlc generate`
-3. If the change is not compatible with databases created by earlier builds, bump `SchemaVersion` in `cmd/server/migrations.go` (the agent mini-DB has its own `agentSchemaVersion` in `cmd/agent/main.go`)
+3. If the change is not compatible with databases created by earlier builds, bump `SchemaVersion` in `cmd/server/migrations.go` (the Rust agent's local DB has its own schema versioning inside `agent-rs/crates/mibee-agent/src/db.rs`)
 4. Schema is applied only when a database is first created; a database stamped with an older version is rejected at startup with guidance, there is no in-place upgrade path
 
 ### Frontend Development
@@ -159,7 +159,10 @@ See [eBPF Passive Observer](ebpf.md) for details.
 
 ### Rust agent (`agent-rs/`)
 
-The Rust rewrite of the distributed agent (issue #471) lives at `agent-rs/`
+The Rust agent IS the distributed agent (issue #471): the former Go agent
+(`cmd/agent` + `internal/agent`) was retired and removed on 2026-10-09 —
+the full measured comparison and migration notes live in
+[agent-rs.md](agent-rs.md). The Rust implementation lives at `agent-rs/`
 as a self-contained cargo workspace — `crates/mibee-agent` (engine, probes,
 vault, DB, center client) plus `crates/mibee-fingerprints` (the classifier,
 differential-tested byte-identical against mibee-fingerprints-go). It is NOT

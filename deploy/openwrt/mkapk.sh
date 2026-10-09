@@ -2,17 +2,17 @@
 #
 # Assemble a hand-rolled .apk for OpenWrt 24.10+ (apk-tools v2 package format)
 # from a prepared staging root: the packaging half of `make package-openwrt-apk`
-# (center) and `make package-openwrt-agent-apk` (agent).
+# (center).
 #
 #   usage: mkapk.sh <staging_root> <version> <goarch> <out.apk> [kind]
 #
 #   staging_root/            ← prepared by the Makefile target
-#     usr/bin/mibee-steward  (kind=center; usr/bin/mibee-agent for kind=agent)
+#     usr/bin/mibee-steward  (kind=center)
 #     etc/init.d/mibee-steward
-#     etc/mibee/config.example.yaml  (agent.example.yaml for kind=agent)
-#     usr/lib/mibee/install.sh       (agent-install.sh for kind=agent)
+#     etc/mibee/config.example.yaml
+#     usr/lib/mibee/install.sh
 #
-#   kind: "center" (default) or "agent": selects the package name,
+#   kind: "center" (default): selects the package name,
 #   description and lifecycle wiring (which init script, which installer).
 #
 # iStoreOS/OpenWrt 24.10+ replaced opkg (.ipk) with apk. An apk-tools v2
@@ -27,7 +27,7 @@
 #
 set -eu
 
-ROOT="${1:?usage: mkapk.sh <staging_root> <version> <goarch> <out.apk> [center|agent]}"
+ROOT="${1:?usage: mkapk.sh <staging_root> <version> <goarch> <out.apk> [center]}"
 VER="${2:?version required}"
 GOARCH_APK="${3:?goarch required (arm64|arm)}"
 OUT="${4:?output path required}"
@@ -37,10 +37,7 @@ case "$KIND" in
     center) PKG=mibee-steward
             DESC="Device discovery and monitoring center (CMDB-lite for network/IoT assets) with embedded web UI; CGO-free static binary."
             INSTALLER=install.sh ;;
-    agent)  PKG=mibee-agent
-            DESC="MiBee Steward distributed discovery agent: scans the LAN it sits on and reports to a remote center; CGO-free static binary."
-            INSTALLER=agent-install.sh ;;
-    *) echo "ERROR: unknown kind '$KIND' (expected center or agent)." >&2; exit 1 ;;
+    *) echo "ERROR: unknown kind '$KIND' (only 'center' remains; the agent packages were retired with the Go agent)." >&2; exit 1 ;;
 esac
 
 case "$VER" in

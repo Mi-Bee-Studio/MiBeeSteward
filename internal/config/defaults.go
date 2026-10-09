@@ -47,9 +47,9 @@ const SysUpTimeOID = "1.3.6.1.2.1.1.3.0"
 // spec so the port-list mirrors what the engine coordinates, even though the
 // UDP probe path is separate).
 //
-// Shared by both scan entry points, the center (api/routes) and the agent
-// (cmd/agent), so they scan the identical default set when no config override
-// is present.
+// Shared by both scan entry points, the center (api/routes) and the Rust
+// agent (agent-rs/, which mirrors this constant), so they scan the identical
+// default set when no config override is present.
 const DefaultScanPortSpec = "22,21,23,25,53,80,110,143,389,443,445,554,631,636,8554,1433," +
 	"3306,3389,5432,5900,6379,8000,8080,8081,8443,8888,9000,9090,9100,9104," +
 	"9113,9121,9187,9200,9443,11211,27017,161"
