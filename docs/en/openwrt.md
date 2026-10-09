@@ -160,6 +160,8 @@ The two packages' lifecycle scripts are equivalent: `pre-install`/`preinst` gate
 
 Why `Architecture: all`: the payload is a CGO-free static binary, so instead of chasing OpenWrt's per-target arch-name zoo (`aarch64_generic`, `aarch64_cortex-a53`, `arm_cortex-a7_neon-vfpv4`, …), the real gates are the pre-script uname check + the post-script `-version` smoke run. Exact arch naming and feed publishing remain the buildroot follow-up (see "Not Covered Here" below). The tarball path stays available for package-manager-less environments.
 
+**Agent packages (form B)**: the Rust agent ships the same three forms — `make package-openwrt-agent-rs` (tarball, the manual flow above), `package-openwrt-agent-rs-ipk`, `package-openwrt-agent-rs-apk` — and release tags attach them to the GitHub Release (`mibee-agent_*_arm64.*`). The lifecycle matches the center packages: `preinst` gates on `uname` + smoke-runs `-version`; `postinst` runs the same `agent-install.sh --from-ipk` configure logic (first install generates `/etc/mibee/agent.yaml` from uci-derived LAN facts; the center url/token stay empty placeholders and the service stays **down** until you fill them — upgrades keep the config untouched). No LuCI files: the agent is headless. On the router: `opkg install mibee-agent_*_arm64.ipk` / `apk add --allow-untrusted mibee-agent_*_arm64.apk`, then edit `/etc/mibee/agent.yaml` (center.url + auth_token) and `/etc/init.d/mibee-agent start`.
+
 ### LuCI native entry (iStoreOS / OpenWrt web admin)
 
 The package also lays down a **LuCI integration** (classic Lua controller + templates; no luci-compat/CBI dependency, the files are inert on builds without LuCI). After install, the router's admin UI (**MiBee Steward** under System → Services) offers two pages:

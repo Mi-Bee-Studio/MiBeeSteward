@@ -100,7 +100,7 @@ The 3× code growth is the deliberate price of the two requirements that motivat
 
 ## Retirement notes for operators
 
-- **Install/upgrade paths**: see [Distributed Deployment](distributed.md). The Go agent's OpenWrt `.ipk`/`.apk`/tarball package forms were removed together with `cmd/agent`; the Rust agent currently ships as static musl binaries (`make build-agent-rs`, aarch64 + armv7) with the router install documented per form. Native Rust `.ipk`/`.apk` packaging is a tracked follow-up.
+- **Install/upgrade paths**: see [Distributed Deployment](distributed.md). The Rust agent ships as static musl binaries (`make build-agent-rs`, aarch64 + armv7) and, for routers, the same three package forms as the center (`make package-openwrt-agent-rs{,-ipk,-apk}`; release tags attach them to the GitHub Release).
 - **Config**: an existing `agent.yaml` works with the Rust agent unchanged (same keys; unknown keys are ignored with a logged warning).
 - **Local data**: the Rust agent's `agent.db` is its own schema (v1). A Go-agent `agent.db` is **not** carried over — it held only a device shadow and scan history; the center's inventory is the source of record and repopulates from the first scan.
 - **Version string**: the Rust agent reports `mibee-agent-rs/x.y.z` in the center's fleet view; the center accepts both it and the legacy Go format during a mixed-fleet transition window.
@@ -115,4 +115,4 @@ The 3× code growth is the deliberate price of the two requirements that motivat
 
 - **MIPS**: the Rust agent builds for `mipsel` (used by the difftest oracles under QEMU) but MIPS hardware remains unvalidated; MIPS is unsupported by the center regardless (modernc/libc).
 - **hostapd live validation**: the WiFi STA source parses real `hostapd_cli`/`iw` captures in tests; a live AP rig is still wanted.
-- **Rust agent router packages** (`.ipk`/`.apk` + LuCI integration): the Go packaging scaffolding was retired rather than half-converted; the tarball + init-script path is the documented install until the native packages land.
+- **Feed publishing**: the agent `.ipk`/`.apk` are hand-rolled binary packages installed from a file; subscribing to an OpenWrt feed (buildroot integration, signing) remains open, shared with the center packages.

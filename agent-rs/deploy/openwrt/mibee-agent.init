@@ -1,0 +1,54 @@
+#!/bin/sh /etc/rc.common
+#
+# OpenWrt procd init script for the MiBee Steward AGENT (Rust, agent-rs/) —
+# form B: agent-on-router, reporting to a remote center.
+#
+# The distributed-agent half: runs on a router in a remote LAN, scans locally,
+# reports upstream to the center over HTTPS. This is the form when you can't
+# (or don't want to) run the full center on every router: one center handles
+# many router-agents. See docs/{en,zh}/distributed.md + docs/{en,zh}/openwrt.md
+# and agent-rs/README.md.
+#
+# ─── Install ───────────────────────────────────────────────────────────────
+#   1. Build the static musl binary for the router's arch (aarch64 / armv7):
+#        make build-agent-rs
+#      → agent-rs/target/<aarch64-unknown-linux-musl|armv7-unknown-linux-musleabihf>/release/mibee-agent
+#      (~4.8MB, statically linked — no runtime deps on the router).
+#   2. Copy binary + init + config to the router:
+#        scp mibee-agent root@router:/usr/bin/mibee-agent
+#        scp agent-rs/deploy/openwrt/mibee-agent.init root@router:/etc/init.d/mibee-agent
+#        scp <your-agent.yaml> root@router:/etc/mibee/agent.yaml
+#      (write agent.yaml from configs/agent.example.yaml, then edit on the
+#       router: center.url (the remote center's address + port),
+#       center.auth_token (minted on the center via POST
+#       /api/v1/agents/tokens), network.name/cidr: this router's LAN.)
+#   3. Enable + start:
+#        ssh root@router '/etc/init.d/mibee-agent enable && /etc/init.d/mibee-agent start'
+#      Logs: logread -e mibee-agent   (expect "mibee-agent x.y.z starting")
+#
+# ─── Flash-wear mitigation (db on tmpfs) ───────────────────────────────────
+# The agent's local DB (tasks/credentials/scan ledger) is hard-coded to
+# `agent.db` in the SAME directory as the config file. It is a ledger, not the
+# inventory (the center is the writer of record), so cold-start loss costs only
+# local task/credential state and the DB MAY live on /tmp (tmpfs, RAM-backed).
+# To do that, point CONFIG below at a /tmp location (e.g.
+# /tmp/mibee-agent/agent.yaml: the config file must be recreated after each
+# reboot, or pushed by a boot hook).
+
+USE_PROCD=1
+
+START=95  # after network + dnsmasq
+
+BINARY=/usr/bin/mibee-agent
+CONFIG=/etc/mibee/agent.yaml  # /tmp/mibee-agent/agent.yaml for the tmpfs variant
+
+start_service() {
+    procd_open_instance
+    procd_set_param command "$BINARY" -config "$CONFIG"
+    # Respawn on crash (procd's Restart=always equivalent).
+    procd_set_param respawn ${respawn_threshold:-3600} ${respawn_timeout:-5} ${respawn_retry:-10}
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param pidfile /var/run/mibee-agent.pid
+    procd_close_instance
+}

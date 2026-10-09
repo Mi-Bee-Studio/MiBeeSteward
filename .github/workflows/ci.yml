@@ -257,6 +257,16 @@ jobs:
           (cd web && npm ci)
           make package-openwrt-ipk
           ls -la bin/*.ipk
+      # Agent packaging smoke: AGENT_BIN with a placeholder file fully
+      # exercises the stage rule + tarball + .ipk + .apk paths (nothing
+      # executes the binary at BUILD time — the router's preinst does, at
+      # install time), so the agent chain gets per-PR validation without a
+      # cargo-zigbuild install here.
+      - name: Agent packaging smoke (stage guard + mkipk/mkapk, agent)
+        run: |
+          echo placeholder > /tmp/dummy-mibee-agent
+          AGENT_BIN=/tmp/dummy-mibee-agent make package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk
+          ls -la bin/mibee-agent*
 
   # Docs governance (#319 / #322): fence-language lint (MD040) so the website's
   # highlight.js rendering never regresses into mixed highlighted/monochrome
