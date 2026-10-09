@@ -11,6 +11,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -125,7 +126,7 @@ func TestApply_ParkHolder_EndToEnd(t *testing.T) {
 	require.NoError(t, conn.QueryRow(
 		`SELECT ip_address, name, brand FROM devices WHERE id = ?`, holder).
 		Scan(&hIP, &hName, &hBrand))
-	require.Equal(t, "", hIP, "holder parked off the IP")
+	require.Equal(t, fmt.Sprintf("#park:%d", holder), hIP, "holder parked off the IP")
 	require.Equal(t, "waterheater-demo", hName)
 	require.Equal(t, "vendor-demo", hBrand)
 
@@ -166,4 +167,47 @@ func setDeviceIdentity(t *testing.T, db *sql.DB, id int64, name, typ, brand stri
 	t.Helper()
 	_, err := db.Exec(`UPDATE devices SET name = ?, type = ?, brand = ? WHERE id = ?`, name, typ, brand, id)
 	require.NoError(t, err)
+}
+
+// TestApply_ParkHolder_MultipleHoldersSameNetwork pins the 2026-10-10 field
+// failure: parking clears the holder's IP to ” — but the unique
+// (ip_address, network_id) index allows only ONE empty-IP row per network,
+// so the second+ park on the same network trips the constraint, the park
+// fails, and the subsequent create at the contested IP fails too — every
+// scan cycle (four holders logged ~340 WARNs/day). Parking must give each
+// holder a unique non-IP sentinel so any number of holders can be parked.
+func TestApply_ParkHolder_MultipleHoldersSameNetwork(t *testing.T) {
+	repo, nid, conn, ctx := resolveRepo(t, 1)
+	holderA := seedDeviceRow(t, conn, "10.0.0.5", realMAC, nid)
+	holderB := seedDeviceRow(t, conn, "10.0.0.6", "e4:aa:ec:11:22:33", nid)
+
+	apply := func(parkID int64, mac, ip string) int64 {
+		res, err := repo.ResolveDeviceIdentity(ctx, mac, ip, nid)
+		require.NoError(t, err)
+		newID, err := repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
+			IsNew: true, ParkHolderID: res.ParkHolderID,
+			IP: ip, MAC: mac, NetworkID: nid,
+			Name: "rand-" + ip, Type: "phone", ScanAttributesJSON: "{}",
+		})
+		require.NoError(t, err, "create after parking %d must succeed", parkID)
+		return newID
+	}
+
+	apply(holderA, randomizedMAC, "10.0.0.5")
+	apply(holderB, "2a:6c:07:dd:ee:ff", "10.0.0.6")
+
+	var parkedA, parkedB string
+	require.NoError(t, conn.QueryRow(`SELECT ip_address FROM devices WHERE id = ?`, holderA).Scan(&parkedA))
+	require.NoError(t, conn.QueryRow(`SELECT ip_address FROM devices WHERE id = ?`, holderB).Scan(&parkedB))
+	require.NotEqual(t, "10.0.0.5", parkedA, "holder A off its IP")
+	require.NotEqual(t, "10.0.0.6", parkedB, "holder B off its IP")
+	require.NotEqual(t, parkedA, parkedB, "two parked holders must not collide on the same sentinel")
+	require.NotEqual(t, "", parkedA, "parked sentinel must be a distinguishable value, not the unique-indexed ''")
+	require.NotEqual(t, "", parkedB, "parked sentinel must be a distinguishable value, not the unique-indexed ''")
+
+	// Both randomized rows own their slots now.
+	var n int
+	require.NoError(t, conn.QueryRow(
+		`SELECT COUNT(*) FROM devices WHERE ip_address IN ('10.0.0.5','10.0.0.6') AND network_id = 1`).Scan(&n))
+	require.Equal(t, 2, n)
 }

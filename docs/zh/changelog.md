@@ -7,7 +7,9 @@
 
 ## [Unreleased]（未发布）
 
-### ⚠️ 破坏性变更（目标 v0.7.0）
+## [0.7.0]（2026-10-10）
+
+### ⚠️ 破坏性变更
 - **Go 分布式采集器（`cmd/agent`）退役并移除；Rust 采集器（`agent-rs/`）成为唯一采集器。** 完整实测对比——二进制小 4.2 倍、同板中位 RSS 低 4.5 倍（54.1 MB → 11.9 MB）、/24 扫描快约 1.7 倍、全量语料对拍实现分类器逐字节一致、对真实 net-snmp 的线上差分——见 `docs/{en,zh}/agent-rs.md`。随 `cmd/agent` 一并移除的还有：`internal/agent` 库（唯一使用方）、`make build-agent` / `build-agent-linux-*` 目标、OpenWrt 采集器路由器包（`.ipk`/`.apk`/tarball 及 Go 采集器 init）、Go 采集器发布制品。存量 `agent.yaml` 无需修改即可用于 Rust 采集器（同键）；Go 采集器的本地 `agent.db` 不随迁（它只是影子/台账——中心的资产台账才是记录源，首次扫描即回填）。Rust 采集器路由器打包（`.ipk`/`.apk`）为已登记后续项；tarball + procd init（`agent-rs/deploy/openwrt/mibee-agent.init`）是文档化安装路径。
 
 - **不再迁移旧版数据库。** v0.7 移除整个启动迁移链：`db/schema.sql` 成为唯一 DDL 来源，仅在数据库首次创建时应用；schema 版本与本构建不符的数据库在启动时直接拒绝，并提示重建。从旧版升级到 v0.7 需备份数据目录后使用全新数据库（设备会在下次扫描时重新登记）。此举根除双 DDL 来源这一缺陷类别（#328、#431、#437）。agent 本地 mini-DB 同策略，本地扫描历史与本地 SNMPv3 凭据库不随迁。
@@ -24,8 +26,10 @@
 - **指纹语料刷新（recog + IANA PEN + OUI）**：`recog-imported.yaml` 从上游 Rapid7 Recog 重新生成（2534 → 2547 条，净 +13 并刷新匹配）；`snmp-data.yaml` 选择性导入 16 条经核实的 IANA PEN 企业 OID（Fortinet、Reolink、Uniview、Epson/Canon/Brother 打印机，Dahua/QNAP/TP-Link/Huawei/Aruba/Axis 的第二/续期 PEN）；精选 OUI 表新增小米生态模块 OUI（13 个前缀）、常见 Espressif ESP32 段（12 个）、NVIDIA Jetson 板载网卡（2 个），以及第二批经实地发现并逐条对照 IEEE 注册表（经 TShark manuf 生成核验）的 22 个厂商前缀（Synology、QNAP、Seiko Epson、Vatilon、D-Link、TP-Link、水星、GL.iNet、华硕、合肥Bitland、华来、另四个小米/Lumi-United 段、另五个 Espressif 段）——此前表里没有任何小米条目。会误导品牌的模组硅片厂商（Intel、AMPAK、Fn-Link）与注册表快照中不存在的前缀被有意排除。
 - **音箱 / 联名 / 开发板主机名指纹**：`iot-identity.yaml` 新增规则从小米智能音箱主机名提取型号代码（`MiAiSoundbox-LX06` → 型号 `LX06`、`XiaoAiTongXueX6A` → `X6A`）、为飞利浦联名米家设备定品牌（`philips-light-sread9_mibtXXXX` → 品牌 Philips + 型号；原通用后缀规则只提取到型号）、从树莓派主机名提取板型（`rpi3b-*` → `3b`、`rpi400` → `400`），并为 `redmi-*` / `jetson-*` 开发机主机名定品牌。`http-tls.yaml` 的证书主题 CN 关键词映射新增 `miwifi` → 小米（小米路由器原厂固件用 `MIWIFI *` CN 签名）。
 - **ESP32/MiBeeCam 主机名指纹**：`iot-identity.yaml` 新增规则为 ESP32 开发板（`esp32c3-*`、`espressif.*`）与 MiBeeCam AI-Thinker 模组按 DHCP 主机名定品牌。
+- **多台随机 MAC 持有者的停放不再失败**：随机 MAC 守卫通过把槽位持有者的 IP 清空为 `''` 来停放——但 `(ip_address, network_id)` 唯一索引下每个网络只允许一个空 IP 行，同网络的第二次及以后的停放撞约束，停放失败后随机客户端在争议 IP 的建行也失败，且每轮扫描重试（实地四个持有者 ≈340 WARN/天）。现在每台持有者停放到按行的 `#park:<id>` 哨兵——构造上唯一、不匹配任何按 IP 的查询、按 MAC 重解析语义不变。
 - **孤儿心跳配置回收**：主库不开 SQLite `foreign_keys`，`heartbeat_configs` 的 ON DELETE CASCADE 从不生效——删除设备行（静默设备清扫、reconcile ghost 清理）后心跳配置残留，仍启用的配置对一个已消失的 IP 永久探测（实地两个孤儿贡献了上述 ~2300 ERROR/天的大头）。保留维护清扫现在回收 `device_id` 已无主的可配置，分批执行。
 - **HTTP/ICMP 探测失败全面接入 #271 连败分级日志**：周期探测降噪器（首败 WARN、后续采样 DEBUG）此前只接了 http 建请求与 icmp 运行分支——http 的 `client.Do` 失败与 icmp 的 `NewPinger` 失败两处仍直打 `slog.Error`。实地一台 center 有五个半死 IoT http 服务，恰恰经由这两条分支刷出 **~2300 ERROR/天**；两处均已改走 `logProbeFailure`。
+- **Recog 语料刷新（2547 → 2548）**：上游 Rapid7 Recog 的 xml 路径解冻（六个提交，2026-08-17 以来首次）——净效果为一条新 http title 指纹（Sangoma Switchvox）。经 `fpimport recog` 重导；零删除。
 - **Seeed Studio XIAO ESP32 主机名规则（2026-10-08 实地批次）**：Seeed 的 XIAO 固件默认 DHCP 名为 `Seeed-<模组>`（实地样本 `Seeed-esp32c6`）——既有 ESP32 规则锚定 `esp32…`/`espressif…`，看不到厂商前缀。新规则 `iot-host-seeed-esp32` 品牌 Seeed Studio、模组作型号（共享 esp32-host 组内优先级 116 赢平局）。
 - **中继器主机名判 iot（2026-10-07 实地批次）**：小米 WiFi 中继器公告 `XiaoMiRepeater_V2`——hostname 规则已提取出完整 miot 身份（品牌 Xiaomi、型号 V2），但 `device_types.yaml` 没有中继器关键词，设备拿着完整身份却被判 "other"。`repeater` 加入 iot 主机名关键词（各厂商的 WiFi 放大器名字都带它）。
 - **TLS 证书 CN 进入主机名规则（2026-10-06 实地批次）**：路由器把型号签进证书 CN（`R68S`），orchestrator 的主机事实折叠早已把 CN 作为 node_hostname 回退——但折叠在分类之后，语料的 hostname 规则（kind `hostname`）从未见过它，设备在规则完全匹配的情况下没有型号。TLS 探针现在在叶证书 CN 是单个 DNS 标签（无点/空格/通配符；回退信任级 0.7，低于 rDNS/NBNS 的 0.8）时同步产出一条 hostname 类证据，与 NBNS 修复构成完整的证据通道家族。

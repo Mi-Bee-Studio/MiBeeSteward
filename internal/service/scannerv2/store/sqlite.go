@@ -749,14 +749,19 @@ func identityUpdateArgs(in scannerv2.IdentityWrite, now string) []any {
 // transaction (mirrors the former log-and-continue semantics). See
 // Repository.ApplyDeviceIdentity for the contract.
 func (r *SQLiteRepository) ApplyDeviceIdentity(ctx context.Context, in scannerv2.IdentityWrite) (int64, error) {
-	// Randomized-MAC guard: park the slot holder (ip='') before creating or
-	// roaming onto its IP, or the unique (ip, network_id) index would reject
-	// the write. Parking is destructive only to the holder's IP CLAIM (the
-	// real device re-resolves via MAC-primary when it returns), never to its
-	// identity/history.
+	// Randomized-MAC guard: park the slot holder (off its IP) before creating
+	// or roaming onto its IP, or the unique (ip, network_id) index would
+	// reject the write. Parking is destructive only to the holder's IP CLAIM
+	// (the real device re-resolves via MAC-primary when it returns), never to
+	// its identity/history. The parked value is a per-row sentinel
+	// '#park:<id>' — NOT '' (field-found 2026-10-10: the index allows only one
+	// empty-IP row per network, so a second park failed the constraint, its
+	// create then failed too, and the pair retried every scan cycle, four
+	// holders ≈340 WARNs/day). Sentinels are unique by construction and match
+	// no IP-based lookup, same as '' did.
 	if in.ParkHolderID != 0 {
 		if _, err := r.db.ExecContext(ctx,
-			`UPDATE devices SET ip_address = '', updated_at = ? WHERE id = ?`,
+			`UPDATE devices SET ip_address = '#park:' || id, updated_at = ? WHERE id = ?`,
 			scannerv2.DBTime(time.Now()), in.ParkHolderID); err != nil {
 			r.logger.Warn("device identity: park holder failed", "holder_id", in.ParkHolderID, "error", err)
 		} else {
