@@ -13,6 +13,7 @@
 - **不再迁移旧版数据库。** v0.7 移除整个启动迁移链：`db/schema.sql` 成为唯一 DDL 来源，仅在数据库首次创建时应用；schema 版本与本构建不符的数据库在启动时直接拒绝，并提示重建。从旧版升级到 v0.7 需备份数据目录后使用全新数据库（设备会在下次扫描时重新登记）。此举根除双 DDL 来源这一缺陷类别（#328、#431、#437）。agent 本地 mini-DB 同策略，本地扫描历史与本地 SNMPv3 凭据库不随迁。
 
 ### 新增
+- **Rust 采集器路由器包**（`make package-openwrt-agent-rs{,-ipk,-apk}`）：采集器提供与中心相同的 OpenWrt/iStoreOS 三种安装形态——tar 包（实测过的 `agent-install.sh` 流程，已适配 Rust）、`.ipk`（opkg）、`.apk`（24.10+ apk）。staging 规则默认经 cargo-zigbuild 构建 musl 二进制，`AGENT_BIN` 指向预制二进制时直接复用（发版流水线即如此）；`preinst` 保留 uname 闸门 + `-version` 冒烟，`postinst` 跑同一套首装配置生成（uci 推导 LAN、center 凭据留占位且服务在填好前不启动——升级保留配置）。发版 tag 将 `mibee-agent-openwrt-arm64-*.tar.gz` / `mibee-agent_*_arm64.ipk` / `.apk` 与二进制一同挂出。
 - **Rust 采集器进入发布制品与 CI 测试门禁**：打 `v*` tag 发版时，采集器的静态 musl 二进制（amd64 / arm64 / armv7，约 4.8MB，经 `MIBEE_AGENT_VERSION` 以 tag 注入版本串）与中心二进制一同构建，以 `mibee-agent-linux-*` 挂上 GitHub Release。CI 新增 `agent-rs` 任务在每个 PR 上跑 cargo 全量测试——此前这 172 个测试只在开发机上运行，任务上线当天就抓到一个在语料批次中静默断裂的规则计数断言（现已改为容忍增长的 Floor）。
 - **用户手册 + 采集器实现报告**：`docs/{en,zh}/user-guide.md` 是 Web 界面的完整导览（每个页面、一段话说清身份规则、故障速查表）；`docs/{en,zh}/agent-rs.md` 是支撑退役决策的 Go vs Rust 采集器工程对比，每个数字都标注了测量来源。
 

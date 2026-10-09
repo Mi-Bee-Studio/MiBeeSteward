@@ -100,7 +100,7 @@ Rust agent 的内存不光更低，而且**平**：没有 GC 锯齿——这正�
 
 ## 运维者退役须知
 
-- **安装/升级路径**：见[分布式部署](distributed.md)。Go agent 的 OpenWrt `.ipk`/`.apk`/tarball 包形态随 `cmd/agent` 一并移除；Rust agent 目前以静态 musl 二进制交付（`make build-agent-rs`，aarch64 + armv7），路由器安装按形态分别文档化。Rust 原生 `.ipk`/`.apk` 打包是已登记的后续项。
+- **安装/升级路径**：见[分布式部署](distributed.md)。Rust 采集器以静态 musl 二进制交付（`make build-agent-rs`，aarch64 + armv7），路由器侧提供与中心相同的三种包形态（`make package-openwrt-agent-rs{,-ipk,-apk}`；发版 tag 会挂上 GitHub Release）。
 - **配置**：存量 `agent.yaml` 无需修改即可用于 Rust agent（同键；未知键会记日志警告并忽略）。
 - **本地数据**：Rust agent 的 `agent.db` 是自有 schema（v1）。Go agent 的 `agent.db` **不做迁移**——它只承载设备影子与扫描历史，center 的资产台账才是权威数据源，首次扫描即回填。
 - **版本串**：Rust agent 在 center 的 fleet 视图上报 `mibee-agent-rs/x.y.z`；混合舰队过渡期内 center 同时接受旧 Go 格式。
@@ -115,4 +115,4 @@ Rust agent 的内存不光更低，而且**平**：没有 GC 锯齿——这正�
 
 - **MIPS**：Rust agent 可构建 `mipsel`（QEMU 下的对拍 oracle 在用），但 MIPS 实机未验证；center 本身也不支持 MIPS（modernc/libc）。
 - **hostapd 活体验证**：WiFi STA 源在测试中解析真实 `hostapd_cli`/`iw` 抓取；仍欠一台带 AP 的实测环境。
-- **Rust agent 路由器包**（`.ipk`/`.apk` + LuCI 集成）：Go 打包脚手架随下线一并移除而非半吊子转换；原生包落地前，tarball + init 脚本是文档化的安装路径。
+- **软件源发布**：采集器的 `.ipk`/`.apk` 为手搓二进制包、从文件安装；订阅 OpenWrt 软件源（buildroot 集成、签名）仍待做，与中心包共用此项。

@@ -27,7 +27,7 @@
 #
 set -eu
 
-ROOT="${1:?usage: mkapk.sh <staging_root> <version> <goarch> <out.apk> [center]}"
+ROOT="${1:?usage: mkapk.sh <staging_root> <version> <goarch> <out.apk> [center|agent]}"
 VER="${2:?version required}"
 GOARCH_APK="${3:?goarch required (arm64|arm)}"
 OUT="${4:?output path required}"
@@ -37,7 +37,10 @@ case "$KIND" in
     center) PKG=mibee-steward
             DESC="Device discovery and monitoring center (CMDB-lite for network/IoT assets) with embedded web UI; CGO-free static binary."
             INSTALLER=install.sh ;;
-    *) echo "ERROR: unknown kind '$KIND' (only 'center' remains; the agent packages were retired with the Go agent)." >&2; exit 1 ;;
+    agent)  PKG=mibee-agent
+            DESC="MiBee Steward distributed discovery agent (Rust): scans the LAN it sits on and reports to a remote center; static musl binary."
+            INSTALLER=agent-install.sh ;;
+    *) echo "ERROR: unknown kind '$KIND' ('center' or 'agent')." >&2; exit 1 ;;
 esac
 
 case "$VER" in

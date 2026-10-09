@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk openwrt-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -131,10 +131,60 @@ package-openwrt-apk: openwrt-stage
 	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
 	sh ./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-steward_$${PKG_VER}_$(GOARCH).apk center
 
-# ── Router packages for the AGENT (form B): the Go agent packages were
-# retired with cmd/agent (2026-10-09). The Rust agent ships as static musl
-# binaries from `make build-agent-rs` (agent-rs/); router install is the
-# tarball + init-script path documented in docs/{en,zh}/distributed.md.
+# ── Router packages for the AGENT (form B, Rust agent-rs/): the same three
+# install forms as the center packages — tarball (scp + ./agent-install.sh),
+# .ipk (opkg), .apk (OpenWrt 24.10+ apk-tools). No frontend, no LuCI files.
+# The binary is the static musl build from the agent-rs workspace: the stage
+# rule builds it via cargo-zigbuild (same toolchain as build-agent-rs) unless
+# AGENT_BIN points at an already-built binary — the release pipeline sets
+# AGENT_BIN to reuse the binaries its agent-rs job just built.
+AGENT_TRIPLE_arm64 = aarch64-unknown-linux-musl
+AGENT_TRIPLE_arm = armv7-unknown-linux-musleabihf
+
+openwrt-agent-stage: GOARCH?=arm64
+openwrt-agent-stage:
+	@rm -rf $(BUILD_DIR)/openwrt-agent-stage
+	@mkdir -p $(BUILD_DIR)/openwrt-agent-stage/usr/bin $(BUILD_DIR)/openwrt-agent-stage/etc/init.d $(BUILD_DIR)/openwrt-agent-stage/etc/mibee $(BUILD_DIR)/openwrt-agent-stage/usr/lib/mibee
+ifeq ($(strip $(AGENT_BIN)),)
+	cd agent-rs && CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release --target $(AGENT_TRIPLE_$(GOARCH)) -p mibee-agent
+	cp agent-rs/target/$(AGENT_TRIPLE_$(GOARCH))/release/mibee-agent $(BUILD_DIR)/openwrt-agent-stage/usr/bin/mibee-agent
+else
+	cp $(AGENT_BIN) $(BUILD_DIR)/openwrt-agent-stage/usr/bin/mibee-agent
+endif
+	tr -d '\r' < agent-rs/deploy/openwrt/mibee-agent.init   > $(BUILD_DIR)/openwrt-agent-stage/etc/init.d/mibee-agent
+	tr -d '\r' < configs/agent.example.yaml                > $(BUILD_DIR)/openwrt-agent-stage/etc/mibee/agent.example.yaml
+	tr -d '\r' < agent-rs/deploy/openwrt/agent-install.sh  > $(BUILD_DIR)/openwrt-agent-stage/usr/lib/mibee/agent-install.sh
+	chmod 755 $(BUILD_DIR)/openwrt-agent-stage/etc/init.d/mibee-agent $(BUILD_DIR)/openwrt-agent-stage/usr/lib/mibee/agent-install.sh
+	@if grep -rlq $$(printf '\r') $(BUILD_DIR)/openwrt-agent-stage/etc $(BUILD_DIR)/openwrt-agent-stage/usr/lib; then \
+		echo "ERROR: CR bytes found in staged agent router files (a tr -d step above is broken?):"; \
+		grep -rl $$(printf '\r') $(BUILD_DIR)/openwrt-agent-stage/etc $(BUILD_DIR)/openwrt-agent-stage/usr/lib; \
+		exit 1; \
+	fi
+
+# Tarball form: the field-proven install flow (extract; ./agent-install.sh).
+# Member names match the old Go tarball exactly so existing runbooks hold.
+package-openwrt-agent-rs: GOARCH?=arm64
+package-openwrt-agent-rs: openwrt-agent-stage
+	@rm -rf $(BUILD_DIR)/openwrt-agent-pkg && mkdir -p $(BUILD_DIR)/openwrt-agent-pkg
+	cp $(BUILD_DIR)/openwrt-agent-stage/usr/bin/mibee-agent $(BUILD_DIR)/openwrt-agent-pkg/mibee-agent
+	cp $(BUILD_DIR)/openwrt-agent-stage/etc/init.d/mibee-agent $(BUILD_DIR)/openwrt-agent-pkg/mibee-agent.init
+	cp $(BUILD_DIR)/openwrt-agent-stage/etc/mibee/agent.example.yaml $(BUILD_DIR)/openwrt-agent-pkg/agent.example.yaml
+	cp $(BUILD_DIR)/openwrt-agent-stage/usr/lib/mibee/agent-install.sh $(BUILD_DIR)/openwrt-agent-pkg/agent-install.sh
+	chmod 755 $(BUILD_DIR)/openwrt-agent-pkg/agent-install.sh
+	tar -czf $(BUILD_DIR)/mibee-agent-openwrt-$(GOARCH)-$(VERSION).tar.gz -C $(BUILD_DIR)/openwrt-agent-pkg mibee-agent mibee-agent.init agent-install.sh agent.example.yaml
+	@rm -rf $(BUILD_DIR)/openwrt-agent-pkg
+	@echo "-> $(BUILD_DIR)/mibee-agent-openwrt-$(GOARCH)-$(VERSION).tar.gz  (scp to router, extract, ./agent-install.sh)"
+
+package-openwrt-agent-rs-ipk: GOARCH?=arm64
+package-openwrt-agent-rs-ipk: openwrt-agent-stage
+	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
+	sh ./deploy/openwrt/mkipk.sh $(BUILD_DIR)/openwrt-agent-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-agent_$${PKG_VER}_$(GOARCH).ipk agent
+
+package-openwrt-agent-rs-apk: GOARCH?=arm64
+package-openwrt-agent-rs-apk: openwrt-agent-stage
+	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
+	sh ./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-agent-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-agent_$${PKG_VER}_$(GOARCH).apk agent
+
 # Static assertions on the OpenWrt packaging sources (#358). The R68S field
 # session (iStoreOS 24.10, #355) proved this class of bug goes "local-green,
 # on-router-dead": a LuCI template with a raw CR byte white-screens with
@@ -157,13 +207,15 @@ check-openwrt:
 	@for f in deploy/openwrt/luci/view/mibee/status.htm deploy/openwrt/luci/view/mibee/settings.htm \
 	          deploy/openwrt/install.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
 	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/luci/luci-apply.sh deploy/openwrt/mibee-steward.init \
-	          configs/config.example.yaml configs/agent.example.yaml; do \
+	          configs/config.example.yaml configs/agent.example.yaml \
+	          agent-rs/deploy/openwrt/mibee-agent.init agent-rs/deploy/openwrt/agent-install.sh; do \
 		if git show :$$f 2>/dev/null | grep -q $$(printf '\r'); then \
 			echo "ERROR: CR byte in committed $$f — LuCI tparser yields 'unfinished string' (R68S #355)"; exit 1; \
 		fi; \
 	done; echo "-> no CR bytes in committed router sources"
 	@for f in deploy/openwrt/install.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
-	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/luci/luci-apply.sh deploy/openwrt/mibee-steward.init; do \
+	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/luci/luci-apply.sh deploy/openwrt/mibee-steward.init \
+	          agent-rs/deploy/openwrt/mibee-agent.init agent-rs/deploy/openwrt/agent-install.sh; do \
 		if ! git show :$$f 2>/dev/null | sh -n; then \
 			echo "ERROR: sh -n failed on committed $$f"; exit 1; \
 		fi; \

@@ -160,6 +160,8 @@ ssh root@<路由器IP> 'apk add --allow-untrusted /tmp/mibee-steward_*_arm64.apk
 
 架构说明：包内是 CGO-free 静态二进制，`Architecture: all`--不逐个匹配 OpenWrt 的目标架构名（`aarch64_generic`、`aarch64_cortex-a53`、`arm_cortex-a7_neon-vfpv4`……），真正的架构闸门是 pre 脚本的 uname 检查 + post 脚本的 `-version` 冒烟执行。精确架构命名与软件源发布仍是后续工作（见下文「当前不支持」）。tar 包路径继续保留：无包管理器的环境（任意 Linux 主机/任意 shell）同样可用。
 
+**采集器包（形态 B）**：Rust 采集器同样有三种形态——`make package-openwrt-agent-rs`（tar 包，即上文的手动流程）、`package-openwrt-agent-rs-ipk`、`package-openwrt-agent-rs-apk`——发版 tag 会把它们挂上 GitHub Release（`mibee-agent_*_arm64.*`）。生命周期与中心包一致：`preinst` 做 uname 闸门 + `-version` 冒烟；`postinst` 跑同一个 `agent-install.sh --from-ipk` 配置逻辑（首装从 uci 推导 LAN 生成 `/etc/mibee/agent.yaml`；center 的 url/token 留空占位、服务**不启动**，填好后手动 start——升级保留配置不动）。无 LuCI 文件：采集器无界面。路由器上：`opkg install mibee-agent_*_arm64.ipk` / `apk add --allow-untrusted mibee-agent_*_arm64.apk`，然后编辑 `/etc/mibee/agent.yaml`（center.url + auth_token）并 `/etc/init.d/mibee-agent start`。
+
 ### LuCI 原生入口（iStoreOS / OpenWrt 网页管理）
 
 安装包同时落一份 **LuCI 集成**（经典 Lua controller + 模板，无需 luci-compat/CBI；没有 LuCI 的机器上这些文件是惰性的）。装完在路由器管理界面（`http://<路由器IP>/cgi-bin/luci`）的 **服务 → MiBee Steward** 下有两个人口：
