@@ -79,7 +79,7 @@ For a complete visual walkthrough see the [Web UI Tour](web-ui.md).
 
 ### Distributed Deployment
 
-- Center (`cmd/server`) + agent (`cmd/agent`) model: each agent owns one LAN segment; the center aggregates a unified registry.
+- Center (`cmd/server`) + agent (Rust `agent-rs/`) model: each agent owns one LAN segment; the center aggregates a unified registry.
 - Pull model: agents actively report to and poll the center; the center needs no inbound connections and can sit behind NAT.
 - MAC-first identity: roaming devices across subnets stay a single asset; the same private IP in different networks (`network_id`) is a distinct device.
 

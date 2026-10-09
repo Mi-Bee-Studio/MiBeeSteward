@@ -9,9 +9,9 @@
 # via POST /api/v1/agents/tokens, bound to a networks row for this LAN) +
 # network.cidr (attribution + scan-target validation).
 #
-# The agent's local shadow DB lands as agent.db NEXT TO this file; on a router
-# point -config at a /tmp location (tmpfs) to spare flash: see
-# deploy/openwrt/mibee-agent.init.
+# The agent's local DB lands as agent.db NEXT TO this file; on a router
+# point -config at a /tmp location (tmpfs) to spare flash (see the init
+# script shipped with the agent tarball).
 
 center:
   url: ""                 # e.g. "http://192.168.2.40:8080": the remote center

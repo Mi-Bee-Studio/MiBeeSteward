@@ -194,7 +194,7 @@ Liveness noise control: online/offline verdicts are sampled into the `device_liv
 
 ## Distributed Model
 
-MiBee Steward supports a center + agent deployment: the **center** (`cmd/server`) aggregates device data from multiple **agents** (`cmd/agent`), each on a different LAN segment. Deep dive → [Distributed Deployment](distributed.md).
+MiBee Steward supports a center + agent deployment: the **center** (`cmd/server`) aggregates device data from multiple **agents** (the Rust `agent-rs/` workspace), each on a different LAN segment. Deep dive → [Distributed Deployment](distributed.md), implementation report → [agent-rs.md](agent-rs.md).
 
 ```mermaid
 flowchart LR
@@ -204,7 +204,7 @@ flowchart LR
         Change["Change detection"]
         CenterDB["SQLite"]
     end
-    subgraph Agent["Agent (cmd/agent)"]
+    subgraph Agent["Agent (agent-rs mibee-agent)"]
         Engine["scannerv2 engine"]
         Reporter["Reporter"]
         Poller["Command poller"]
@@ -224,7 +224,7 @@ flowchart LR
 | Role | Binary | Responsibilities |
 |---|---|---|
 | **Center** | `cmd/server` | Aggregation hub: API, SPA, device registry, change detection, heartbeat, ingestion, agent management |
-| **Agent** | `cmd/agent` | Lightweight scanner: runs the scannerv2 discovery engine locally (router-form reports passive discoveries), reports upstream, polls for commands |
+| **Agent** | `agent-rs/` (Rust) | Lightweight scanner: runs the same scannerv2 discovery engine logic locally (router-form reports passive discoveries), reports upstream, polls for commands. The Go agent (`cmd/agent`) was retired 2026-10-09 — comparison in [agent-rs.md](agent-rs.md) |
 
 **Pull model**, agent initiates all connections (NAT-friendly):
 

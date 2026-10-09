@@ -8,10 +8,12 @@
 ## [Unreleased]（未发布）
 
 ### ⚠️ 破坏性变更（目标 v0.7.0）
+- **Go 分布式采集器（`cmd/agent`）退役并移除；Rust 采集器（`agent-rs/`）成为唯一采集器。** 完整实测对比——二进制小 4.2 倍、同板中位 RSS 低 4.5 倍（54.1 MB → 11.9 MB）、/24 扫描快约 1.7 倍、全量语料对拍实现分类器逐字节一致、对真实 net-snmp 的线上差分——见 `docs/{en,zh}/agent-rs.md`。随 `cmd/agent` 一并移除的还有：`internal/agent` 库（唯一使用方）、`make build-agent` / `build-agent-linux-*` 目标、OpenWrt 采集器路由器包（`.ipk`/`.apk`/tarball 及 Go 采集器 init）、Go 采集器发布制品。存量 `agent.yaml` 无需修改即可用于 Rust 采集器（同键）；Go 采集器的本地 `agent.db` 不随迁（它只是影子/台账——中心的资产台账才是记录源，首次扫描即回填）。Rust 采集器路由器打包（`.ipk`/`.apk`）为已登记后续项；tarball + procd init（`agent-rs/deploy/openwrt/mibee-agent.init`）是文档化安装路径。
 
 - **不再迁移旧版数据库。** v0.7 移除整个启动迁移链：`db/schema.sql` 成为唯一 DDL 来源，仅在数据库首次创建时应用；schema 版本与本构建不符的数据库在启动时直接拒绝，并提示重建。从旧版升级到 v0.7 需备份数据目录后使用全新数据库（设备会在下次扫描时重新登记）。此举根除双 DDL 来源这一缺陷类别（#328、#431、#437）。agent 本地 mini-DB 同策略，本地扫描历史与本地 SNMPv3 凭据库不随迁。
 
 ### 新增
+- **用户手册 + 采集器实现报告**：`docs/{en,zh}/user-guide.md` 是 Web 界面的完整导览（每个页面、一段话说清身份规则、故障速查表）；`docs/{en,zh}/agent-rs.md` 是支撑退役决策的 Go vs Rust 采集器工程对比，每个数字都标注了测量来源。
 
 - **网页端指纹语料管理（设置 → 指纹）**：管理 UI 现在可以上传语料（tar.gz/zip 封套，或单个 `.yaml` 只替换该文件）、回滚到上一版、检查在线上游的更新（版本 + 新增/移除规则 diff）并一键应用——每条路径在激活前都经规则引擎自己的加载器校验（坏语料带引擎错误被拒收，在用语料继续运行），激活无需重启中心即热重载引擎，并推进分发版本号让开启同步的 agent 自动收敛，每次变更均记审计日志。舰队视图显示每个 agent 正在运行的语料版本（agent 舰队元数据新增 `fingerprint_rev`；schema v4 新增 `agent_status.fingerprint_rev` 列）。新增能力 `fingerprint:manage`；托管语料位于数据库目录下（`scanner.fingerprint_managed_dir` 可覆盖）；`scanner.fingerprint_upstream.url` 让在线更新检查对准一个 `{corpus_version, tarball, sha256?}` JSON 清单。
 - **指纹语料分发通道（`GET /api/v1/agents/fingerprints`）**：agent 现在无需触碰任何二进制或包即可让指纹语料与中心保持同步。中心将其活跃语料（配置了 `scanner.fingerprint_path` 目录时用该目录——在那里编辑/投放 YAML，舰队下次轮询即拾取，中心无需重启——否则用内嵌语料，因此每次中心升级都会自行传播到全网）以经版本协商的确定性 tar.gz 提供；agent 经 `center.fingerprint_sync.enabled` 选择加入（默认关闭），换用前先用规则引擎自己的加载器校验每个封套（坏语料永远不会顶掉正在工作的语料），激活采用限速重载（5 分钟窗口；连续变更合并为一次），加载优先级为 `scanner.fingerprint_path` → 同步目录 → 内嵌。这与下文的 `mibee-fingerprints-go` v0.1.1 一起补全了免重编译的指纹更新故事。

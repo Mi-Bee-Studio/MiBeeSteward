@@ -213,7 +213,7 @@ flowchart TB
 
 ```text
 ├── cmd/server/           # Center entry point (+ reset-admin-password subcommand)
-├── cmd/agent/            # Distributed discovery agent for remote LANs
+├── agent-rs/             # Distributed discovery agent for remote LANs (Rust workspace)
 ├── internal/
 │   ├── api/              # Chi HTTP: handlers, middleware, routes
 │   ├── authz/            # Network-scope authorization (scopeql + scoperesolver)

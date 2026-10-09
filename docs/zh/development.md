@@ -45,7 +45,7 @@ flowchart TB
     ROOT --> CFGDIR["configs/，示例配置 + fingerprints/ 指纹库（YAML 数据）"]
     ROOT --> DEPLOY["deploy/, systemd · nginx · docker · prometheus · openwrt/"]
     ROOT --> SCRIPTS["scripts/, backup.sh · fetch-oui.sh"]
-    ROOT --> ARS["agent-rs/，Rust 采集器（issue #471）——长期替换 cmd/agent"]
+    ROOT --> ARS["agent-rs/，Rust 分布式采集器（issue #471）——2026-10-09 起的唯一采集器"]
     CMD --> CMD1["server/，中心入口（main · migrations · reset_password）"]
     CMD --> CMD2["agent/，分布式采集器入口"]
     CMD --> CMD3["fpimport/，第三方指纹库导入工具（recog/OUI/PEN）"]
@@ -100,7 +100,7 @@ SELECT * FROM your_table WHERE id = $1;
 
 1. 编辑 `db/schema.sql`
 2. 运行 `~/go/bin/sqlc generate`
-3. 变更与旧版本建的库不兼容时，同步调高 `cmd/server/migrations.go` 中的 `SchemaVersion`（agent 本地库对应 `cmd/agent/main.go` 的 `agentSchemaVersion`）
+3. 变更与旧版本建的库不兼容时，同步调高 `cmd/server/migrations.go` 中的 `SchemaVersion`（Rust agent 的本地库在 `agent-rs/crates/mibee-agent/src/db.rs` 内自行管理 schema 版本）
 4. schema 只在数据库首次创建时应用；版本不符的旧库启动即拒并给出指引，不做原地升级
 
 ### 前端开发
@@ -158,7 +158,9 @@ make build-with-ebpf       # 需要 clang/llvm/bpftool + 内核 BTF（先 go gen
 
 ### Rust 采集器（`agent-rs/`）
 
-分布式采集器的 Rust 重写（issue #471）位于 `agent-rs/`，是一个自包含的
+Rust 采集器**就是**分布式采集器（issue #471）：原 Go 采集器（`cmd/agent` +
+`internal/agent`）已于 2026-10-09 退役并移除——完整实测对比与迁移须知见
+[agent-rs.md](agent-rs.md)。Rust 实现位于 `agent-rs/`，是一个自包含的
 cargo workspace——`crates/mibee-agent`（引擎、探针、凭据库、本地库、center
 客户端）加 `crates/mibee-fingerprints`（分类器，与 mibee-fingerprints-go
 对拍字节一致）。它**不在** Go module 之内：`agent-rs/difftest/` 下的嵌套

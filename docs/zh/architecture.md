@@ -193,7 +193,7 @@ SSH、HTTP/HTTPS、RTSP、ONVIF、SNMP、Prometheus、node\_exporter、邮件（
 
 ## 分布式模型
 
-MiBee Steward 支持中心 + 采集器部署：**中心**（`cmd/server`）汇聚多个**采集器**（`cmd/agent`）的设备数据，每个采集器部署在不同的局域网段。详见[分布式部署](distributed.md)。
+MiBee Steward 支持中心 + 采集器部署：**中心**（`cmd/server`）汇聚多个**采集器**（Rust `agent-rs/` workspace）的设备数据，每个采集器部署在不同的局域网段。详见[分布式部署](distributed.md)，实现报告见 [agent-rs.md](agent-rs.md)。
 
 ```mermaid
 flowchart LR
@@ -203,7 +203,7 @@ flowchart LR
         Change["变化检测"]
         CenterDB["SQLite"]
     end
-    subgraph Agent["采集器 (cmd/agent)"]
+    subgraph Agent["采集器 (agent-rs mibee-agent)"]
         Engine["scannerv2 引擎"]
         Reporter["上报器"]
         Poller["命令轮询器"]
@@ -223,7 +223,7 @@ flowchart LR
 | 角色 | 二进制 | 职责 |
 |---|---|---|
 | **中心** | `cmd/server` | 汇聚枢纽：API、SPA、设备注册表、变化检测、心跳、接收上报、采集器管理 |
-| **采集器** | `cmd/agent` | 轻量扫描器：本地运行 scannerv2 发现引擎（网关形态上报被动发现）、上报结果、轮询命令 |
+| **采集器** | `agent-rs/`（Rust） | 轻量扫描器：本地运行同源 scannerv2 发现引擎逻辑（网关形态上报被动发现）、上报结果、轮询命令。Go 采集器（`cmd/agent`）已于 2026-10-09 退役——对比见 [agent-rs.md](agent-rs.md) |
 
 **拉取模型**--采集器发起所有连接（适配 NAT 后部署）：
 
