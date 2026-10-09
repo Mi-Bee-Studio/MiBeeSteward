@@ -165,7 +165,9 @@ jobs:
         run: |
           AGENT_BIN="$PWD/mibee-agent-linux-arm64" make package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk
           ls -la bin/
-          (cd bin && sha256sum mibee-agent-linux-* mibee-agent-openwrt-arm64-*.tar.gz mibee-agent_*_arm64.ipk mibee-agent_*_arm64.apk > SHA256SUMS.agent-rs)
+          # the linux binaries were staged in the repo root, the router
+          # packages land in bin/ — glob them from their own dirs
+          (cd bin && sha256sum ../mibee-agent-linux-* mibee-agent-openwrt-arm64-*.tar.gz mibee-agent_*_arm64.ipk mibee-agent_*_arm64.apk > SHA256SUMS.agent-rs)
       - uses: actions/upload-artifact@v4
         with:
           name: agent-rs-binaries
