@@ -170,7 +170,7 @@ func setDeviceIdentity(t *testing.T, db *sql.DB, id int64, name, typ, brand stri
 }
 
 // TestApply_ParkHolder_MultipleHoldersSameNetwork pins the 2026-10-10 field
-// failure: parking clears the holder's IP to '' — but the unique
+// failure: parking clears the holder's IP to ” — but the unique
 // (ip_address, network_id) index allows only ONE empty-IP row per network,
 // so the second+ park on the same network trips the constraint, the park
 // fails, and the subsequent create at the contested IP fails too — every
