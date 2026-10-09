@@ -82,11 +82,13 @@ The plaintext token is returned exactly once at creation; the center stores only
 ### 2. Install the agent binary
 
 ```bash
-# Build the static musl binary for the host arch (aarch64 / armv7;
-# requires cargo-zigbuild + the ziglang pip package — see agent-rs/README.md).
-# Rust-agent release artifacts come from the agent-rs workspace (native
-# router packaging is a tracked follow-up; the Go-agent release artifacts
-# were retired together with cmd/agent).
+# Option 1: download the release binary (static musl, tag-stamped)
+wget https://github.com/Mi-Bee-Studio/MiBeeSteward/releases/download/<tag>/mibee-agent-linux-arm64
+chmod +x mibee-agent-linux-arm64
+sudo mv mibee-agent-linux-arm64 /usr/local/bin/mibee-agent
+
+# Option 2: build locally (aarch64 / armv7 musl; requires cargo-zigbuild +
+# the ziglang pip package — see agent-rs/README.md)
 make build-agent-rs
 cp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent /usr/local/bin/mibee-agent
 ```

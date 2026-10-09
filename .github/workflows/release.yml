@@ -1,12 +1,11 @@
 name: Release
 
 # Builds amd64 + arm64 binaries for the center (cmd/server, embeds the
-# frontend), the three OpenWrt/iStoreOS router package forms (tarball /
-# .ipk / .apk, arm64 - #359), and a multi-arch container image on GHCR
-# (ghcr.io/<owner>/<repo>); everything is attached to the GitHub Release.
-# The distributed agent is the Rust agent (agent-rs/, built by
-# `make build-agent-rs`) — its release artifacts are published from the
-# agent-rs workspace, not here. CGO-free; SQLite via modernc.org/sqlite.
+# frontend), the Rust agent's static musl binaries (agent-rs/, amd64/arm64/
+# armv7, version-stamped from the tag), the three OpenWrt/iStoreOS router
+# package forms (tarball / .ipk / .apk, arm64 - #359), and a multi-arch
+# container image on GHCR (ghcr.io/<owner>/<repo>); everything is attached to
+# the GitHub Release. CGO-free; SQLite via modernc.org/sqlite.
 on:
   push:
     tags:
@@ -117,6 +116,55 @@ jobs:
             bin/*.apk
             bin/SHA256SUMS.openwrt
 
+  # Rust agent (agent-rs/): static musl binaries for the three deployment
+  # archs. cargo-zigbuild + the ziglang pip package — the same toolchain
+  # `make build-agent-rs` uses locally (agent-rs/README.md). The tag is
+  # stamped in via MIBEE_AGENT_VERSION (main.rs reports it in -version and
+  # to the center's fleet view); non-release builds fall back to the
+  # Cargo.toml version. The amd64 binary executes on the runner — the
+  # -version check is the stamp's verification.
+  agent-rs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,armv7-unknown-linux-musleabihf
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            agent-rs/target
+          key: agent-rs-release-${{ runner.os }}-cargo-${{ hashFiles('agent-rs/Cargo.lock') }}
+      - name: Install cargo-zigbuild + zig
+        run: |
+          pip install ziglang==0.13.0
+          cargo install cargo-zigbuild --locked
+      - name: Sync embedded assets (corpus + curated OUI + device types)
+        run: make sync-agent-rs-assets
+      - name: Build static musl binaries (tag-stamped)
+        working-directory: agent-rs
+        run: |
+          for T in x86_64-unknown-linux-musl aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf; do
+            MIBEE_AGENT_VERSION="${GITHUB_REF_NAME}" cargo zigbuild --release --target "$T" -p mibee-agent
+          done
+      - name: Stage artifacts + verify the version stamp
+        run: |
+          cp agent-rs/target/x86_64-unknown-linux-musl/release/mibee-agent    mibee-agent-linux-amd64
+          cp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent   mibee-agent-linux-arm64
+          cp agent-rs/target/armv7-unknown-linux-musleabihf/release/mibee-agent mibee-agent-linux-armv7
+          ./mibee-agent-linux-amd64 --version
+          ./mibee-agent-linux-amd64 --version | grep -q "^mibee-agent ${GITHUB_REF_NAME}$"
+          file mibee-agent-linux-arm64 mibee-agent-linux-armv7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-rs-binaries
+          path: |
+            mibee-agent-linux-amd64
+            mibee-agent-linux-arm64
+            mibee-agent-linux-armv7
+
   # Multi-arch container image → GHCR. The Dockerfile rebuilds the frontend
   # itself (Stage 1), so this job does NOT depend on build-frontend — it runs
   # fully self-contained. Only the unprivileged variant is published
@@ -161,9 +209,10 @@ jobs:
             BUILD_TAGS=
 
   publish:
-    # Needs the binaries, the container image AND the router packages, so a
-    # Release is only created when every artifact has succeeded.
-    needs: [release, docker, openwrt]
+    # Needs the binaries, the Rust agent binaries, the container image AND the
+    # router packages, so a Release is only created when every artifact has
+    # succeeded.
+    needs: [release, agent-rs, docker, openwrt]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -171,6 +220,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: binary-*
+          merge-multiple: true
+      - name: Download Rust agent binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: agent-rs-binaries
           merge-multiple: true
       - name: Download router packages
         uses: actions/download-artifact@v4
@@ -190,6 +244,9 @@ jobs:
           files: |
             mibee-steward-linux-amd64
             mibee-steward-linux-arm64
+            mibee-agent-linux-amd64
+            mibee-agent-linux-arm64
+            mibee-agent-linux-armv7
             mibee-steward-openwrt-arm64-*.tar.gz
             mibee-steward_*_arm64.ipk
             mibee-steward_*_arm64.apk

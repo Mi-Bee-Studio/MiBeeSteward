@@ -17,7 +17,13 @@ use mibee_agent::wire::{AgentCommand, ProbePlanCommand, ScanCommand};
 use mibee_fingerprints::RuleClassifier;
 use tokio::sync::{watch, Mutex as AsyncMutex};
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+// Version precedence: a release build sets MIBEE_AGENT_VERSION (the git tag,
+// e.g. "v0.7.0") at compile time; every other build reports the Cargo.toml
+// version. option_env! keeps both branches compile-time, zero runtime cost.
+const VERSION: &str = match option_env!("MIBEE_AGENT_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
 const COMMAND_POLL: Duration = Duration::from_secs(60);
 const SWEEP_EVERY: Duration = Duration::from_secs(6 * 3600);
 const SCAN_DEADLINE: Duration = Duration::from_secs(15 * 60);

@@ -13,6 +13,7 @@
 - **不再迁移旧版数据库。** v0.7 移除整个启动迁移链：`db/schema.sql` 成为唯一 DDL 来源，仅在数据库首次创建时应用；schema 版本与本构建不符的数据库在启动时直接拒绝，并提示重建。从旧版升级到 v0.7 需备份数据目录后使用全新数据库（设备会在下次扫描时重新登记）。此举根除双 DDL 来源这一缺陷类别（#328、#431、#437）。agent 本地 mini-DB 同策略，本地扫描历史与本地 SNMPv3 凭据库不随迁。
 
 ### 新增
+- **Rust 采集器进入发布制品与 CI 测试门禁**：打 `v*` tag 发版时，采集器的静态 musl 二进制（amd64 / arm64 / armv7，约 4.8MB，经 `MIBEE_AGENT_VERSION` 以 tag 注入版本串）与中心二进制一同构建，以 `mibee-agent-linux-*` 挂上 GitHub Release。CI 新增 `agent-rs` 任务在每个 PR 上跑 cargo 全量测试——此前这 172 个测试只在开发机上运行，任务上线当天就抓到一个在语料批次中静默断裂的规则计数断言（现已改为容忍增长的 Floor）。
 - **用户手册 + 采集器实现报告**：`docs/{en,zh}/user-guide.md` 是 Web 界面的完整导览（每个页面、一段话说清身份规则、故障速查表）；`docs/{en,zh}/agent-rs.md` 是支撑退役决策的 Go vs Rust 采集器工程对比，每个数字都标注了测量来源。
 
 - **网页端指纹语料管理（设置 → 指纹）**：管理 UI 现在可以上传语料（tar.gz/zip 封套，或单个 `.yaml` 只替换该文件）、回滚到上一版、检查在线上游的更新（版本 + 新增/移除规则 diff）并一键应用——每条路径在激活前都经规则引擎自己的加载器校验（坏语料带引擎错误被拒收，在用语料继续运行），激活无需重启中心即热重载引擎，并推进分发版本号让开启同步的 agent 自动收敛，每次变更均记审计日志。舰队视图显示每个 agent 正在运行的语料版本（agent 舰队元数据新增 `fingerprint_rev`；schema v4 新增 `agent_status.fingerprint_rev` 列）。新增能力 `fingerprint:manage`；托管语料位于数据库目录下（`scanner.fingerprint_managed_dir` 可覆盖）；`scanner.fingerprint_upstream.url` 让在线更新检查对准一个 `{corpus_version, tarball, sha256?}` JSON 清单。

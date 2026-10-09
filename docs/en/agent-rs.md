@@ -105,6 +105,12 @@ The 3× code growth is the deliberate price of the two requirements that motivat
 - **Local data**: the Rust agent's `agent.db` is its own schema (v1). A Go-agent `agent.db` is **not** carried over — it held only a device shadow and scan history; the center's inventory is the source of record and repopulates from the first scan.
 - **Version string**: the Rust agent reports `mibee-agent-rs/x.y.z` in the center's fleet view; the center accepts both it and the legacy Go format during a mixed-fleet transition window.
 
+## Release & verification gates
+
+- **CI**: the cargo workspace has its own test job (`agent-rs`) on every PR — the full suite plus the full-corpus load, whose rule-count assertion is a floor (the corpus only grows). Until 2026-10-09 this suite ran only on dev machines; the day the job was added it caught a corpus-count pin that had silently broken on a corpus batch.
+- **Release**: a `v*` tag builds static musl binaries for amd64, arm64 and armv7, version-stamped from the tag (`MIBEE_AGENT_VERSION` at build time; ordinary builds report the Cargo.toml version). They attach to the GitHub Release as `mibee-agent-linux-amd64` / `-arm64` / `-armv7`, and the pipeline executes the amd64 binary on the runner to verify the stamp.
+- **Measured coverage**: 74.3% lines / 74.6% functions across both crates (`cargo llvm-cov`, 2026-10-09, 19,244 instrumented lines). The raw number understates the verification strength: the parity-critical classifier and SNMP layers are gated by the full-corpus byte-diff and the real net-snmp differentials above, which line coverage cannot see into. A coverage ratchet for the Rust side is a candidate follow-up, not a current gate.
+
 ## Known gaps / follow-ups
 
 - **MIPS**: the Rust agent builds for `mipsel` (used by the difftest oracles under QEMU) but MIPS hardware remains unvalidated; MIPS is unsupported by the center regardless (modernc/libc).
