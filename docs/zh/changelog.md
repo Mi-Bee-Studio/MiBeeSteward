@@ -7,7 +7,9 @@
 
 ## [Unreleased]（未发布）
 
-### ⚠️ 破坏性变更（目标 v0.7.0）
+## [0.7.0]（2026-10-10）
+
+### ⚠️ 破坏性变更
 - **Go 分布式采集器（`cmd/agent`）退役并移除；Rust 采集器（`agent-rs/`）成为唯一采集器。** 完整实测对比——二进制小 4.2 倍、同板中位 RSS 低 4.5 倍（54.1 MB → 11.9 MB）、/24 扫描快约 1.7 倍、全量语料对拍实现分类器逐字节一致、对真实 net-snmp 的线上差分——见 `docs/{en,zh}/agent-rs.md`。随 `cmd/agent` 一并移除的还有：`internal/agent` 库（唯一使用方）、`make build-agent` / `build-agent-linux-*` 目标、OpenWrt 采集器路由器包（`.ipk`/`.apk`/tarball 及 Go 采集器 init）、Go 采集器发布制品。存量 `agent.yaml` 无需修改即可用于 Rust 采集器（同键）；Go 采集器的本地 `agent.db` 不随迁（它只是影子/台账——中心的资产台账才是记录源，首次扫描即回填）。Rust 采集器路由器打包（`.ipk`/`.apk`）为已登记后续项；tarball + procd init（`agent-rs/deploy/openwrt/mibee-agent.init`）是文档化安装路径。
 
 - **不再迁移旧版数据库。** v0.7 移除整个启动迁移链：`db/schema.sql` 成为唯一 DDL 来源，仅在数据库首次创建时应用；schema 版本与本构建不符的数据库在启动时直接拒绝，并提示重建。从旧版升级到 v0.7 需备份数据目录后使用全新数据库（设备会在下次扫描时重新登记）。此举根除双 DDL 来源这一缺陷类别（#328、#431、#437）。agent 本地 mini-DB 同策略，本地扫描历史与本地 SNMPv3 凭据库不随迁。

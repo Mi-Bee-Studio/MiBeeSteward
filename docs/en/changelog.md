@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### ⚠️ Breaking (targeting v0.7.0)
+## [0.7.0] - 2026-10-10
+
+### ⚠️ Breaking
 - **The Go distributed agent (`cmd/agent`) is retired and removed; the Rust agent (`agent-rs/`) is the only agent.** The full measured comparison — binary 4.2× smaller, median RSS 4.5× lower (54.1 MB → 11.9 MB on the same ARMv7 board), /24 scans ~1.7× faster, classifier byte-exact via full-corpus difftest, SNMP wire differentials against real net-snmp — lives in `docs/{en,zh}/agent-rs.md`. Removed together with `cmd/agent`: the `internal/agent` library (its only consumer), the `make build-agent` / `build-agent-linux-*` targets, the OpenWrt agent router packages (`.ipk`/`.apk`/tarball with the Go-agent init), and the Go agent release artifacts. An existing `agent.yaml` works with the Rust agent unchanged (same keys); a Go agent's local `agent.db` is not carried over (it was a shadow/ledger — the center's inventory is the record and repopulates on the first scan). Rust-agent router packaging (`.ipk`/`.apk`) is a tracked follow-up; the tarball + procd init path (`agent-rs/deploy/openwrt/mibee-agent.init`) is the documented install.
 
 
