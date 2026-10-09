@@ -82,10 +82,13 @@ curl -s -X POST http://<center-ip>:8080/api/v1/agents/tokens \
 ### 2. 安装采集器
 
 ```bash
-# 构建目标架构的静态 musl 二进制（aarch64 / armv7；
-# 需要 cargo-zigbuild + ziglang pip 包——见 agent-rs/README.md）。
-# Rust 采集器的发布制品由 agent-rs workspace 出品（原生的路由器
-# 打包是已登记的后续项；Go 采集器的发布制品随 cmd/agent 一并退役）。
+# 方式一：下载发布制品（静态 musl，带 tag 版本戳）
+wget https://github.com/Mi-Bee-Studio/MiBeeSteward/releases/download/<tag>/mibee-agent-linux-arm64
+chmod +x mibee-agent-linux-arm64
+sudo mv mibee-agent-linux-arm64 /usr/local/bin/mibee-agent
+
+# 方式二：本地构建（aarch64 / armv7 musl；需要 cargo-zigbuild +
+# ziglang pip 包——见 agent-rs/README.md）
 make build-agent-rs
 cp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent /usr/local/bin/mibee-agent
 ```

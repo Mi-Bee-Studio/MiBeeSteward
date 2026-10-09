@@ -31,6 +31,32 @@ jobs:
           name: frontend-dist
           path: web/dist
 
+  # Rust agent (agent-rs/): the cargo workspace is NOT part of the Go module,
+  # so its tests need their own job. Without this job a change that breaks the
+  # Rust suite ships silently — field-found 2026-10-09: the embedded corpus
+  # grew 2638 -> 2639 and the count-pinning test had been red for a day with
+  # no CI signal (the pin is now a floor; the job is the gate).
+  # The full-corpus load test reads configs/fingerprints via the nested-layout
+  # path, so assets stay in sync by construction; check-agent-rs-assets in the
+  # sqlc-verify job still guards the embedded copies.
+  agent-rs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            agent-rs/target
+          key: agent-rs-${{ runner.os }}-cargo-${{ hashFiles('agent-rs/Cargo.lock') }}
+      - name: Sync embedded assets (test fixtures read configs/)
+        run: make sync-agent-rs-assets
+      - name: cargo test
+        working-directory: agent-rs
+        run: cargo test --locked
+
   go:
     needs: build-frontend
     runs-on: ubuntu-latest

@@ -36,6 +36,10 @@ Cross (musl static; zig via `pip install ziglang==0.13.0`):
 NOTE: do NOT let cargo-zigbuild pick its own zig command on this host —
 the pyenv `python3.bat` shim resolves to a Python without ziglang.
 
+Version: `-version` reports `MIBEE_AGENT_VERSION` when that env var is set
+at BUILD time (the release pipeline stamps the git tag through it), else
+the Cargo.toml version.
+
 ## Status: DEPLOYED (2026-10-07, agent 0.1.5)
 
 All milestones complete; the Rust agent replaced the Go agent on BOTH rig

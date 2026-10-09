@@ -241,7 +241,14 @@ fn loads_full_corpus() {
     let mut c = RuleClassifier::new();
     c.load_from_dir(&corpus_dir()).unwrap();
     assert!(c.loaded());
-    assert_eq!(c.rule_count(), 2638, "main repo corpus rule count (see configs/fingerprints)");
+    // The corpus only grows (curated additions + recog refreshes); pin a FLOOR,
+    // not the exact count — an exact pin broke silently on every corpus batch
+    // until CI started running this suite. 2639 at the time of the floor.
+    assert!(
+        c.rule_count() >= 2639,
+        "main repo corpus rule count {} below floor (see configs/fingerprints)",
+        c.rule_count()
+    );
     assert_eq!(c.compiled_regex_count(), 0, "lazy: zero compiled at load");
 }
 
