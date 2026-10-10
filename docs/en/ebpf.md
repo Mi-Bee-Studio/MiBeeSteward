@@ -29,10 +29,23 @@ flowchart LR
 | TCP ClientHello | `tls_sni` (SNI hostname) | https |
 | UDP/5353 mDNS query | `mdns` (first query name) | mdns |
 | UDP/1900 SSDP | `ssdp` (presence) | ssdp |
+| ARP (any op) | `arp_sighting` → discovery channel (#497) | — (presence, not evidence) |
+| IPv6 NS/NA/RS | `nd_sighting` → discovery channel (#497) | — (presence, not evidence) |
 
 Matches are emitted to a ring buffer (`events` map) and consumed by the Go loader, which translates them into `scannerv2.Evidence` with `Source: "passive:ebpf:tc"`. Presence/banner matches carry `Confidence: 0.6`; identity-bearing signatures carry more: DHCP 0.8 (vendor class + parameter-request list drive the DHCP fingerprint rules), TLS SNI 0.7. The classifier layer fuses this corroborating signal with active-probe evidence to produce the final identification.
 
 **Key property**: The program **never modifies or drops packets**; it is pure observation (`TC_ACT_UNSPEC`). On a bridge, attach the **physical ports** (`eth0`, `eth1`, ...), not the bridge device: frames forwarded between bridge ports do not traverse the bridge device's own TC hook.
+
+## ARP / ND Passive Presence (#497)
+
+Beyond service signatures, the observer captures **wire-level presence**: ARP sender pairs (IP+MAC) and IPv6 NS/NA/RS speakers. These are facts about the network, not service evidence — they enter through the **discovery channel** (`source=passive:ebpf:arp`), joining the same dedup/known-host/identify funnel as the other discovery sources. This is the third capture path for sleeping devices (after active scanning and DHCP leases): hosts that answer nothing and renew no lease still speak ARP.
+
+Mechanics worth knowing:
+
+- **Throttling is in the BPF program itself**: an LRU map allows one sighting per (sender IP, MAC, kind) per ~30s bucket. A gratuitous-ARP storm (1000 frames verified on the rig) produces exactly one event; the ring buffer never sees the rest. The map is LRU-capped at 8192 entries, so memory is bounded and a re-sighting after eviction simply re-emits.
+- **DAD probes (sender 0.0.0.0) are filtered in BPF** — they carry no identity.
+- **ND sightings are MAC-keyed**: the sender's IPv6 is decoded and kept, but discovery is IPv4-keyed today, so they wait for the MAC-keyed channel (#522).
+- **Bridge boxes get the most value**: attach the physical ports — bridged frames do not traverse the bridge device's TC hook (see the notes on `scanner.ebpf.interfaces`).
 
 ## Build Story
 

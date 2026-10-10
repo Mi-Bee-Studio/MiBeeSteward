@@ -29,10 +29,23 @@ flowchart LR
 | TCP ClientHello | `tls_sni`（SNI 主机名） | https |
 | UDP/5353 mDNS 查询 | `mdns`（首个查询名） | mdns |
 | UDP/1900 SSDP | `ssdp`（存在性） | ssdp |
+| ARP（任意 op） | `arp_sighting` → discovery 通道（#497） | —（在网事实，非证据） |
+| IPv6 NS/NA/RS | `nd_sighting` → discovery 通道（#497） | —（在网事实，非证据） |
 
 匹配结果通过环形缓冲区（`events` map）发送到 Go 用户态，由加载器转换为 `scannerv2.Evidence`，标记 `Source: "passive:ebpf:tc"`。存在性/banner 类匹配置信度 `0.6`；携带身份信息的签名更高：DHCP `0.8`（vendor class + 参数请求表直接驱动 DHCP 指纹规则），TLS SNI `0.7`。分类层将此被动证据与主动探测证据融合，得出最终识别结论。
 
 **关键特性**：程序**从不修改或丢弃数据包**--它是纯粹的观测（`TC_ACT_UNSPEC`）。在网桥上请挂载**物理口**（`eth0`、`eth1`……）而非网桥设备本身：桥端口之间转发的帧不经过桥设备的 TC 钩子。
+
+## ARP / ND 被动在网（#497）
+
+除服务签名外，观测器还捕捉**线缆级在网事实**：ARP 发送方的 IP+MAC 对，以及 IPv6 NS/NA/RS 说话者。它们是网络事实而非服务证据——走 **discovery 通道**（`source=passive:ebpf:arp`），与其他 discovery 源共用同一套去重/已知主机/识别漏斗。这是沉睡设备的第三条捕捉路径（前两条：主动扫描、DHCP 租约）：既不应答也无租约续约的主机，仍然会讲 ARP。
+
+值得了解的机制：
+
+- **节流在 BPF 程序内完成**：LRU map 按（发送方 IP, MAC, kind）每 ~30 秒桶只放行一次。gratuitous-ARP 风暴（rig 上 1000 帧实测）只产生一个事件，其余根本进不了环形缓冲。map 为 LRU、上限 8192 条，内存有界；被逐出后的再次目击会重新发一次事件——方向正确（在网状态被刷新而非丢失）。
+- **DAD 探测（发送方 0.0.0.0）在 BPF 层过滤**——它不携带身份。
+- **ND 目击按 MAC 键控**：发送方的 IPv6 已解码保留，但 discovery 目前以 IPv4 为主键，等待 MAC 键控通道落地（#522）。
+- **网桥形态价值最大**：挂物理口——桥转发的帧不过桥设备自身的 TC 钩子（见 `scanner.ebpf.interfaces` 的说明）。
 
 ## 构建方式
 

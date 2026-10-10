@@ -30,6 +30,11 @@ import (
 // compiled in".
 func BuiltWithEBPF() bool { return false }
 
+// SetHostSighting is the stub-build no-op of the ARP/ND presence sink binding
+// (see observer_real.go): without the loader there are no ring-buffer events,
+// so there is nothing to route.
+func SetHostSighting(func(ip, mac string)) {}
+
 func (o *Observer) Name() string { return "passive:ebpf:tc" }
 
 func (o *Observer) statusSnapshot() Status {

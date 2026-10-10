@@ -82,7 +82,20 @@ type observerState struct {
 	// when the orchestrator polls. This decouples the asynchronous ring-buffer
 	// drain from the synchronous Probe() call model.
 	recent map[string][]scannerv2.Evidence
-	st     Status
+	// sighting is the late-bound ARP/ND presence sink (#497); set by
+	// SetHostSighting once the discovery service exists.
+	sighting func(ip, mac string)
+	st       Status
+}
+
+// SetHostSighting binds the ARP/ND presence sink. Late-binding on purpose: the
+// engine (and its observer config) is constructed before the discovery
+// service, so routes.go installs the bridge once discSvc exists. Nil clears
+// it. Safe to call before or after the observer started.
+func SetHostSighting(fn func(ip, mac string)) {
+	state.mu.Lock()
+	state.sighting = fn
+	state.mu.Unlock()
 }
 
 var state observerState
@@ -282,14 +295,18 @@ func (o *Observer) drain() {
 			continue
 		}
 		ev := decodeEvent(rec.RawSample)
-		if ev.IP == "" {
-			continue
+		if ev.IP == "" && ev.Kind != "nd_sighting" {
+			continue // nd sightings are MAC-keyed; they carry no IPv4 (#522)
 		}
 		state.mu.Lock()
-		state.recent[ev.IP] = append(state.recent[ev.IP], ev)
+		sink := state.sighting
+		if sink == nil {
+			sink = o.cfg.HostSighting
+		}
+		routePassive(ev, state.recent, sink)
 		// Cap per-IP buffer to avoid unbounded growth from chatty hosts.
-		if len(state.recent[ev.IP]) > 100 {
-			state.recent[ev.IP] = state.recent[ev.IP][len(state.recent[ev.IP])-100:]
+		if buf := state.recent[ev.IP]; len(buf) > 100 {
+			state.recent[ev.IP] = buf[len(buf)-100:]
 		}
 		state.mu.Unlock()
 	}

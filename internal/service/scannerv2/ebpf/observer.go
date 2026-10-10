@@ -44,6 +44,13 @@ type Config struct {
 	// on a bridge, attach the physical ports (bridged frames do not traverse
 	// the bridge device itself).
 	Interfaces []string
+	// HostSighting, when set, receives ARP/ND presence facts (#497): a live
+	// on-wire (ip, mac) pair for a host that may answer nothing else. ARP
+	// sightings carry the sender's IPv4; ND sightings carry an empty ip (the
+	// sender's IPv6 lives in the evidence's ipv6 field) until a MAC-keyed
+	// discovery channel exists (#522). The callback must be cheap — it runs
+	// on the ring-buffer drain goroutine.
+	HostSighting func(ip, mac string)
 }
 
 // Observer is the PassiveObserver ProbeSource. The concrete behavior depends

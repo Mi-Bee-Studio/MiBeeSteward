@@ -78,6 +78,8 @@ enum {
     KIND_TLS_SNI = 6,
     KIND_MDNS = 7,
     KIND_SSDP = 8,
+    KIND_ARP = 9,   // ARP presence (#497): sender IP+MAC, op in dhcp_type
+    KIND_ND = 10,   // IPv6 NS/NA/RS presence (#497): src IPv6 in server, MAC in opt55_raw
 };
 
 // Ring buffer map — consumed by userspace (ringbuf.Reader).
@@ -85,6 +87,40 @@ struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 1 << 16); // 64 KiB
 } events SEC(".maps");
+
+// Presence throttle (#497): one sighting per (ip, mac, kind) per ~30s bucket.
+// LRU so a broadcast storm cannot grow it — the kernel evicts cold entries at
+// the 8192 cap and a re-sighting after eviction simply re-emits, which is the
+// correct direction (presence is refreshed, never lost).
+struct sighting_key {
+    __u32 ip;        // sender IPv4 (network order); 0 for ND
+    __u8  mac[6];    // sender MAC
+    __u8  kind;      // KIND_ARP or KIND_ND
+    __u8  _pad;
+};
+struct sighting_val {
+    __u64 bucket;    // ktime_ns / 30s
+};
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 8192);
+    __type(key, struct sighting_key);
+    __type(value, struct sighting_val);
+} sighting_last SEC(".maps");
+
+// sighting_throttled returns 1 (and records the sighting) when this (ip, mac,
+// kind) was ALREADY emitted in the current 30s bucket, 0 when the sighting
+// should proceed to the ring buffer.
+static __always_inline int sighting_throttled(const struct sighting_key *k) {
+    __u64 bucket = bpf_ktime_get_ns() / 30000000000ULL;
+    struct sighting_val *v = bpf_map_lookup_elem(&sighting_last, k);
+    if (v && v->bucket == bucket) {
+        return 1;
+    }
+    struct sighting_val nv = { .bucket = bucket };
+    bpf_map_update_elem(&sighting_last, k, &nv, BPF_ANY);
+    return 0;
+}
 
 // ONVIF WS-Discovery multicast address bytes: 239.255.255.250 = ef ff ff fa.
 #define ONVIF_MCAST_B0 0xef
@@ -248,9 +284,81 @@ int tc_ingress(struct __sk_buff *skb) {
     // ---- L2: Ethernet header into a stack buffer -------------------------
     __u8 eth[14];
     if (bpf_skb_load_bytes(skb, 0, eth, sizeof(eth)) < 0) return TC_ACT_UNSPEC;
-    if (eth[12] != 0x08 || eth[13] != 0x00) return TC_ACT_UNSPEC; // ethertype IPv4
     // Note: VLAN-tagged frames (802.1Q) are skipped; acceptable for passive
     // corroborating evidence.
+
+    // ---- ARP presence (#497) ---------------------------------------------
+    // ARP has no L3/L4; it is handled before the IPv4 path. Both requests and
+    // replies carry the SENDER's IP+MAC — the presence pair we want. Sightings
+    // are throttled per (sender ip, mac, kind) to a 30s bucket: a gratuitous-ARP
+    // storm must not flood the ring buffer.
+    if (eth[12] == 0x08 && eth[13] == 0x06) {
+        __u8 arp[8];
+        if (bpf_skb_load_bytes(skb, 14, arp, sizeof(arp)) < 0) return TC_ACT_UNSPEC;
+        // htype(2) ptype(2) hlen(1) plen(1) op(2): Ethernet/IPv4 ARP only.
+        if (arp[0] != 0x00 || arp[1] != 0x01) return TC_ACT_UNSPEC;
+        if (arp[2] != 0x08 || arp[3] != 0x00) return TC_ACT_UNSPEC;
+        if (arp[4] != 6 || arp[5] != 4) return TC_ACT_UNSPEC;
+
+        struct sighting_key k = {};
+        k.kind = KIND_ARP;
+        if (bpf_skb_load_bytes(skb, 14 + 8, k.mac, 6) < 0) return TC_ACT_UNSPEC;
+        __u32 spa;
+        if (bpf_skb_load_bytes(skb, 14 + 14, &spa, 4) < 0) return TC_ACT_UNSPEC;
+        if (spa == 0) return TC_ACT_UNSPEC; // 0.0.0.0 senders (DAD probes) carry no identity
+        k.ip = spa;
+        if (sighting_throttled(&k)) return TC_ACT_UNSPEC;
+
+        struct event *e = bpf_ringbuf_reserve(&events, EVENT_LEN, 0);
+        if (!e) return TC_ACT_UNSPEC;
+        __builtin_memset(e, 0, EVENT_LEN);
+        e->src_ip  = spa;
+        e->kind    = KIND_ARP;
+        e->opt55_len = 6;
+        __builtin_memcpy(e->opt55_raw, k.mac, 6);
+        e->dhcp_type = arp[6] == 0x00 && arp[7] == 0x01 ? 1 : 2; // 1=request, 2=reply
+        bpf_ringbuf_submit(e, 0);
+        return TC_ACT_UNSPEC;
+    }
+
+    // ---- IPv6 ND presence (#497) ------------------------------------------
+    // NS(135)/NA(136)/RS(133) prove a live IPv6 speaker. The event carries the
+    // sender's link-local (or global) source address raw in server[16] and the
+    // Ethernet source MAC in opt55_raw; the IPv4 src_ip field stays 0.
+    if (eth[12] == 0x86 && eth[13] == 0xdd) {
+        __u8 ip6h[8];
+        if (bpf_skb_load_bytes(skb, 14, ip6h, sizeof(ip6h)) < 0) return TC_ACT_UNSPEC;
+        if ((ip6h[0] >> 4) != 6) return TC_ACT_UNSPEC;              // version
+        if (ip6h[6] != 58) return TC_ACT_UNSPEC;                    // next header ICMPv6
+        __u8 icmp6[2];
+        if (bpf_skb_load_bytes(skb, 14 + 40, icmp6, sizeof(icmp6)) < 0) return TC_ACT_UNSPEC;
+        if (icmp6[0] != 133 && icmp6[0] != 135 && icmp6[0] != 136) return TC_ACT_UNSPEC;
+
+        struct sighting_key k = {};
+        k.kind = KIND_ND;
+        __builtin_memcpy(k.mac, eth + 6, 6);
+        if (sighting_throttled(&k)) return TC_ACT_UNSPEC;
+
+        // Read the sender IPv6 into a stack buffer BEFORE reserving the ring
+        // slot: a failed read must not return with the reservation held (the
+        // verifier rejects exactly that as a reference leak).
+        char ipv6[16] = {};
+        if (bpf_skb_load_bytes(skb, 14 + 8, ipv6, 16) < 0) return TC_ACT_UNSPEC;
+
+        struct event *e = bpf_ringbuf_reserve(&events, EVENT_LEN, 0);
+        if (!e) return TC_ACT_UNSPEC;
+        __builtin_memset(e, 0, EVENT_LEN);
+        e->kind    = KIND_ND;
+        e->proto   = 58; // ICMPv6
+        e->opt55_len = 6;
+        __builtin_memcpy(e->opt55_raw, k.mac, 6);
+        __builtin_memcpy(e->server, ipv6, 16);
+        e->dhcp_type = icmp6[0];
+        bpf_ringbuf_submit(e, 0);
+        return TC_ACT_UNSPEC;
+    }
+
+    if (eth[12] != 0x08 || eth[13] != 0x00) return TC_ACT_UNSPEC; // ethertype IPv4
 
     // ---- L3: fixed 20-byte IPv4 header ------------------------------------
     __u8 iph[20];
