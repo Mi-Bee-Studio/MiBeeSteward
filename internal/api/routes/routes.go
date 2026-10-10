@@ -482,10 +482,36 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			conntrackSrc.Start(discCtx)
 			activeSources = append(activeSources, "conntrack")
 		}
+		// Neighbor-edge persistence for MAC-keyed sources (#501/#505): one
+		// repository handle dedicated to the sinks. Options{} is deliberate —
+		// the MAC-keyed resolver scopes by the resolved device's own network,
+		// not the engine's scan network.
+		neighborRepo := scannerv2store.NewSQLiteRepository(dbConn, scannerv2store.Options{}, slog.Default())
 		// hostapd: Tier-1 router/AP signal, WiFi STA associations (signal dBm,
 		// connect time, SSID). hostapd ctrl socket first, iw station dump fallback.
+		// The neighbor sink (#505) persists AP→STA edges each sweep via the
+		// MAC-keyed repository path (same short-transaction contract as the
+		// LLDP/CDP frame sinks, #501): protocol "WiFi", local port = the AP's
+		// wlan interface. Signal/SSID telemetry keeps flowing through the
+		// MAC-only enrich path into scan_attributes.wifi.
 		if cfg.Scanner.Discovery.Hostapd.Enabled {
 			hostapdSrc := scannerv2discovery.NewHostapdSource(cfg.Scanner.Discovery.Hostapd.Interfaces, interval, discSvc, slog.Default())
+			hostapdSrc.SetWifiNeighborSink(func(apMAC, iface string, staMACs []string) {
+				if apMAC == "" || len(staMACs) == 0 {
+					return
+				}
+				specs := make([]scannerv2.NeighborSpec, 0, len(staMACs))
+				for _, mac := range staMACs {
+					specs = append(specs, scannerv2.NeighborSpec{
+						NeighborMAC: mac,
+						Protocol:    "WiFi",
+						LocalPort:   iface,
+					})
+				}
+				if err := neighborRepo.RecordNeighborsByMAC(discCtx, apMAC, specs); err != nil {
+					slog.Default().Warn("hostapd: persist wifi edges failed", "error", err)
+				}
+			})
 			hostapdSrc.Start(discCtx)
 			activeSources = append(activeSources, "hostapd")
 		}
@@ -511,11 +537,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 				activeSources = append(activeSources, "arp_scan")
 			}
 		}
-		// Frame-listener neighbor persistence (#501): one repository handle
-		// dedicated to the sinks. Options{} is deliberate — the MAC-keyed
-		// resolver scopes by the resolved device's own network, not the
-		// engine's scan network.
-		neighborRepo := scannerv2store.NewSQLiteRepository(dbConn, scannerv2store.Options{}, slog.Default())
+		// Frame-listener sinks share the neighborRepo declared above.
 		persistFrameNeighbors := func(source, localMAC string, specs []scannerv2.NeighborSpec) {
 			if err := neighborRepo.RecordNeighborsByMAC(discCtx, localMAC, specs); err != nil {
 				slog.Default().Warn(source+" frame: persist neighbors failed", "error", err)

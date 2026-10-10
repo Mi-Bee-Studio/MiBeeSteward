@@ -25,6 +25,10 @@ func TestEdgeSemantics(t *testing.T) {
 		{"Bridge-MIB", "l2", 0.75},
 		{"Q-BRIDGE-MIB", "l2", 0.75},
 		{"ARP", "l3", 0.0},
+		// WiFi association is a hard L2 fact reported by the AP itself (#505):
+		// its own edge_type, confidence on par with LLDP (both are
+		// authoritative self-reports of adjacency).
+		{"WiFi", "wireless", 0.85},
 	}
 	for _, c := range cases {
 		t.Run(c.protocol, func(t *testing.T) {
