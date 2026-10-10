@@ -215,5 +215,6 @@ struct __sk_buff {
 static void *(*bpf_ringbuf_reserve)(void *ringbuf, __u64 size, __u64 flags) = (void *) 131;
 static void (*bpf_ringbuf_submit)(void *data, __u64 flags) = (void *) 132;
 static long (*bpf_probe_read_kernel_str)(void *dst, __u32 size, const void *unsafe_ptr) = (void *) 115;
+static long (*bpf_skb_load_bytes)(void *skb, __u32 offset, void *to, __u32 len) = (void *) 26;
 
 #endif /* MIBEE_BPF_STANDALONE_H */
