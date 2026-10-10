@@ -191,10 +191,32 @@ if [ -f "$CONF_DST" ]; then
     fi
 else
     # LAN cidr from uci (static lan is the norm on OpenWrt/iStoreOS).
+    # uci may store ipaddr bare OR as CIDR ("192.168.1.1/24" — field-found on
+    # an iStoreOS 24.10 box, 0.7.1: the LuCI link and the address math below
+    # both choke on the suffix). Split it once: bare IP + optional prefix.
     NET_NAME="lan"
     NET_CIDR=""
     LAN_IP="$(uci -q get network.lan.ipaddr || true)"
+    LAN_PREFIX=""
+    case "$LAN_IP" in
+        */*) LAN_PREFIX="${LAN_IP##*/}"; LAN_IP="${LAN_IP%%/*}" ;;
+    esac
     LAN_MASK="$(uci -q get network.lan.netmask || true)"
+    if [ -z "$LAN_MASK" ] && [ -n "$LAN_PREFIX" ]; then
+        # CIDR-style ipaddr without a separate netmask key: synthesize the
+        # dotted mask for the common router prefixes (ip_mask_base needs one).
+        case "$LAN_PREFIX" in
+            8)  LAN_MASK="128.0.0.0" ;;
+            16) LAN_MASK="255.255.0.0" ;;
+            24) LAN_MASK="255.255.255.0" ;;
+            25) LAN_MASK="255.255.255.128" ;;
+            26) LAN_MASK="255.255.255.192" ;;
+            27) LAN_MASK="255.255.255.224" ;;
+            28) LAN_MASK="255.255.255.240" ;;
+            29) LAN_MASK="255.255.255.248" ;;
+            30) LAN_MASK="255.255.255.252" ;;
+        esac
+    fi
     NET_BASE="" NET_PREFIX=""
     if [ -n "$LAN_IP" ] && [ -n "$LAN_MASK" ]; then
         if command -v ipcalc >/dev/null 2>&1; then
@@ -325,6 +347,8 @@ else
 fi
 
 LAN_IP="$(uci -q get network.lan.ipaddr || true)"
+# display only, but a CIDR-suffixed value would print "http://ip/24:port"
+case "$LAN_IP" in */*) LAN_IP="${LAN_IP%%/*}" ;; esac
 [ -n "$LAN_IP" ] || LAN_IP="<router-ip>"
 echo ""
 echo "================ MiBee Steward installed ================"
