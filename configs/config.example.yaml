@@ -52,6 +52,18 @@ center:
                        # center-side gate (agent_fleet.remote_ops_enabled) must
                        # ALSO be on: either side can keep ops from running.
 
+# SNMP trap receiver (#509): devices speaking unprompted — linkDown/linkUp/
+# coldStart/authenticationFailure land as snmp_trap passive evidence on the
+# source device; coldStart/linkUp additionally feed the discovery funnel.
+# Default OFF: it opens a listening socket. ":162" (the SNMP standard) needs
+# root or AmbientCapabilities=CAP_NET_BIND_SERVICE (systemd drop-in); a high
+# port like ":1162" runs unprivileged — point your devices' trap destinations
+# at it. v2c first (community below); v3 traps are the designed follow-up.
+snmp_trap:
+  enabled: false
+  bind: ":162"
+  community: "public"
+
 # agent_fleet is the CENTER-side fleet-management block (#278).
 agent_fleet:
   remote_ops_enabled: false # allow ENQUEUEING ops commands (restart /

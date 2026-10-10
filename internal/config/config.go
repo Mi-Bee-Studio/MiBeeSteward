@@ -37,6 +37,11 @@ type Config struct {
 	Scanner    ScannerConfig    `koanf:"scanner"`
 	// AgentFleet is the center-side fleet-management block (#278).
 	AgentFleet AgentFleetConfig `koanf:"agent_fleet"`
+	// SNMPTrap is the inbound SNMP trap receiver (#509): the unprompted
+	// channel (linkDown/linkUp/coldStart...) landing as snmp_trap evidence.
+	// Default off — it opens a listening socket (UDP 162; ports below 1024
+	// need CAP_NET_BIND_SERVICE) and expects firewall allowance.
+	SNMPTrap SNMPTrapConfig `koanf:"snmp_trap"`
 	// Retention governs the periodic background sweep that prunes high-volume
 	// detail tables (heartbeat_results, scan_results, …). Without it these
 	// tables grow unbounded, heartbeat_results alone accumulates ~270k rows/day.
@@ -617,4 +622,15 @@ func Validate(cfg *Config) error {
 	}
 
 	return nil
+}
+
+// SNMPTrapConfig configures the SNMP trap receiver (#509). Community is the
+// v2c community traps must carry; v3 traps (USM) are the designed follow-up
+// and deliberately have no keys here yet. Bind ":162" needs root or
+// AmbientCapabilities=CAP_NET_BIND_SERVICE under systemd; a high port
+// (e.g. ":1162") works unprivileged with matching sender configuration.
+type SNMPTrapConfig struct {
+	Enabled   bool   `koanf:"enabled"`
+	Bind      string `koanf:"bind"`
+	Community string `koanf:"community"`
 }
