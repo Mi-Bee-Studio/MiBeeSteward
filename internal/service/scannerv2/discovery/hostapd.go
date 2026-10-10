@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -67,6 +68,13 @@ type HostapdSource struct {
 	interval   time.Duration
 	svc        *Service
 	logger     *slog.Logger
+
+	// wifiNeighborSink, when set, receives one callback per AP interface per
+	// sweep with the FULL currently-associated STA MAC list and the AP's own
+	// interface identity (#505). The full-list refresh (not just new STAs) is
+	// deliberate: the caller persists AP→STA edges whose last_seen must track
+	// the association's lifetime.
+	wifiNeighborSink func(apMAC, iface string, staMACs []string)
 
 	mu       sync.Mutex
 	previous map[string]bool // mac set, last sweep: for diff
@@ -127,7 +135,16 @@ func (s *HostapdSource) sweep() {
 	s.sweepWith(stas)
 }
 
-// sweepWith diffs a freshly gathered mac→staInfo snapshot against the previous
+// SetWifiNeighborSink registers the AP→STA edge callback (#505). apMAC is the
+// AP interface's own MAC (resolved via net.InterfaceByName at call time, so a
+// renamed/added interface is picked up without restart); an interface that
+// cannot be resolved yields apMAC "" and the caller decides (the persist path
+// skips unknown local MACs by design). Nil clears the callback.
+func (s *HostapdSource) SetWifiNeighborSink(fn func(apMAC, iface string, staMACs []string)) {
+	s.wifiNeighborSink = fn
+}
+
+// sweep diffs a freshly gathered mac→staInfo snapshot against the previous
 // sweep and emits one event per newly-seen MAC. Split from sweep so tests can
 // drive the diff/emit path directly (same seam as ARPCacheSource.sweepWith).
 func (s *HostapdSource) sweepWith(stas map[string]staInfo) {
@@ -170,12 +187,38 @@ func (s *HostapdSource) sweepWith(stas map[string]staInfo) {
 			Hints: hints,
 		})
 	}
+
+	// AP→STA edges (#505): report every currently-associated STA grouped by AP
+	// interface. Runs on the source's own sweep goroutine; the caller's
+	// persist path only writes device_neighbors in short transactions (the
+	// #501 sink contract), so it cannot interleave with the coordinator's
+	// serialized device upserts.
+	if s.wifiNeighborSink != nil {
+		byIface := map[string][]string{}
+		for mac, info := range stas {
+			if info.iface == "" {
+				continue
+			}
+			byIface[info.iface] = append(byIface[info.iface], mac)
+		}
+		for iface, macs := range byIface {
+			apMAC, err := ifaceMAC(iface)
+			if err != nil {
+				s.logger.Debug("discovery: hostapd AP iface MAC unavailable",
+					"iface", iface, "error", err)
+			}
+			s.wifiNeighborSink(apMAC, iface, macs)
+		}
+	}
 }
 
 // staInfo holds the optional per-STA details each backend may capture. Only MAC
-// is required; the rest are optional enrichment hints.
+// is required; the rest are optional enrichment hints. iface records which AP
+// interface the association was seen on (the ctrl-socket name, or the iw dev
+// interface) — it attributes the AP side of the #505 edge.
 type staInfo struct {
 	mac         string
+	iface       string // AP-side interface the STA is associated to
 	signal      string // dBm, e.g. "-42"
 	ssid        string
 	connectTime string // seconds connected
@@ -206,9 +249,20 @@ func (s *HostapdSource) readViaHostapdCtrl() map[string]staInfo {
 // and returns the parsed stations. Errors are tolerated (logged at debug) and
 // return empty so the caller can try the next socket or fall back to iw.
 func (s *HostapdSource) queryHostapdSocket(sockPath string) map[string]staInfo {
-	// Use a local datagram socket pair so hostapd's reply has somewhere to go
-	// (the ctrl protocol requires the client to bind its own datagram socket).
-	conn, err := net.Dial("unixgram", sockPath)
+	// Bind the client to an abstract address before exchanging. hostapd (and
+	// any datagram server) replies with sendto() to the address it received
+	// from; a nameless peer — what a plain net.Dial yields on Linux — is
+	// unrepliable, so every response would be dropped. Found live on the rig
+	// (#505): the ctrl path was silently deaf against a real protocol server,
+	// only the iw fallback ever produced data.
+	raddr, err := net.ResolveUnixAddr("unixgram", sockPath)
+	if err != nil {
+		s.logger.Debug("discovery: hostapd ctrl socket path invalid", "socket", sockPath, "error", err)
+		return nil
+	}
+	laddr, _ := net.ResolveUnixAddr("unixgram",
+		fmt.Sprintf("@mibee-hostapd-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	conn, err := net.DialUnix("unixgram", laddr, raddr)
 	if err != nil {
 		s.logger.Debug("discovery: hostapd ctrl socket dial failed", "socket", sockPath, "error", err)
 		return nil
@@ -221,6 +275,10 @@ func (s *HostapdSource) queryHostapdSocket(sockPath string) map[string]staInfo {
 	}
 
 	stas := map[string]staInfo{}
+	// The ctrl socket's file name is the AP interface (hostapd convention:
+	// one socket per phy, named after the interface). Attribution for the
+	// #505 AP→STA edge.
+	iface := filepath.Base(sockPath)
 	// STA-FIRST → first station; then STA-NEXT <mac> → next after that, until FAIL.
 	cmd := "STA-FIRST"
 	for {
@@ -238,6 +296,7 @@ func (s *HostapdSource) queryHostapdSocket(sockPath string) map[string]staInfo {
 		}
 		info := parseHostapdSTA(resp)
 		if info.mac != "" {
+			info.iface = iface
 			stas[info.mac] = info
 			cmd = "STA-NEXT " + info.mac
 		} else {
@@ -296,7 +355,15 @@ func (s *HostapdSource) queryIW(iface string) map[string]staInfo {
 		s.logger.Debug("discovery: iw station dump failed", "iface", iface, "error", err)
 		return nil
 	}
-	return parseIWStationDump(string(out))
+	stas := parseIWStationDump(string(out))
+	// Backfill AP attribution when the dump header lacked "(on <iface>)" (#505).
+	for mac, info := range stas {
+		if info.iface == "" {
+			info.iface = iface
+			stas[mac] = info
+		}
+	}
+	return stas
 }
 
 // parseIWStationDump parses `iw dev X station dump` output into a mac→staInfo
@@ -323,8 +390,9 @@ func parseIWStationDump(out string) map[string]staInfo {
 			flush()
 			// "Station <mac> (on <iface>)"
 			mac := extractIWStationMAC(line)
+			iface := extractIWStationIface(line)
 			if mac != "" {
-				cur = &staInfo{mac: mac}
+				cur = &staInfo{mac: mac, iface: iface}
 			}
 			continue
 		}
@@ -353,6 +421,21 @@ func extractIWStationMAC(line string) string {
 		rest = rest[:sp]
 	}
 	return strings.ToLower(rest)
+}
+
+// extractIWStationIface pulls the AP interface out of a
+// "Station <mac> (on <iface>)" header, falling back to the queried interface
+// name when the dump omits the "(on ...)" part (some iw builds do).
+func extractIWStationIface(line string) string {
+	open := strings.Index(line, "(on ")
+	if open < 0 {
+		return ""
+	}
+	rest := line[open+4:]
+	if sp := strings.IndexByte(rest, ')'); sp >= 0 {
+		return rest[:sp]
+	}
+	return ""
 }
 
 // iwValue returns the value portion of a "key:   value" line when line starts

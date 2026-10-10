@@ -711,7 +711,11 @@
 		"SNMP Name": "sysName",
 		"SNMP OID": "sysObjectID",
 		"SNMP Services": "sysServices",
-		"TTL": "ICMP TTL"
+		"TTL": "ICMP TTL",
+		"WiFi SSID": "WiFi SSID",
+		"WiFi Signal": "Signal",
+		"WiFi Connected": "Connected for",
+		"WiFi Seen": "WiFi seen at"
 	},
 	"userfields": {
 		"Custom Attributes": "Custom Attributes",

@@ -216,6 +216,7 @@ const (
 	DeviceNeighborProtocolBridgeMIB DeviceNeighborProtocol = "Bridge-MIB"
 	DeviceNeighborProtocolCDP       DeviceNeighborProtocol = "CDP"
 	DeviceNeighborProtocolLLDP      DeviceNeighborProtocol = "LLDP"
+	DeviceNeighborProtocolWiFi      DeviceNeighborProtocol = "WiFi"
 )
 
 // Valid indicates whether the value is a known member of the DeviceNeighborProtocol enum.
@@ -228,6 +229,8 @@ func (e DeviceNeighborProtocol) Valid() bool {
 	case DeviceNeighborProtocolCDP:
 		return true
 	case DeviceNeighborProtocolLLDP:
+		return true
+	case DeviceNeighborProtocolWiFi:
 		return true
 	default:
 		return false
@@ -618,6 +621,7 @@ const (
 	TopologyEdgeProtocolBridgeMIB TopologyEdgeProtocol = "Bridge-MIB"
 	TopologyEdgeProtocolCDP       TopologyEdgeProtocol = "CDP"
 	TopologyEdgeProtocolLLDP      TopologyEdgeProtocol = "LLDP"
+	TopologyEdgeProtocolWiFi      TopologyEdgeProtocol = "WiFi"
 )
 
 // Valid indicates whether the value is a known member of the TopologyEdgeProtocol enum.
@@ -630,6 +634,8 @@ func (e TopologyEdgeProtocol) Valid() bool {
 	case TopologyEdgeProtocolCDP:
 		return true
 	case TopologyEdgeProtocolLLDP:
+		return true
+	case TopologyEdgeProtocolWiFi:
 		return true
 	default:
 		return false

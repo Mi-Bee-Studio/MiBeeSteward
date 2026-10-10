@@ -1317,6 +1317,7 @@
 	{#if device?.scan_attributes}
 		{@const sa = device.scan_attributes}
 		{@const extras = (sa.extras ?? {}) as Record<string, string>}
+		{@const wifi = (sa as { wifi?: { source?: string; seen_at?: string; signal_dbm?: string | number; ssid?: string; connected_secs?: string | number } }).wifi}
 		{@const hasDiscoveryData = Boolean(
 			sa.vendor || sa.mac || sa.hostname || sa.os || sa.os_version ||
 			sa.kernel_version || sa.firmware_version || sa.cpu_count || sa.cpu_model ||
@@ -1325,6 +1326,7 @@
 			(sa.prometheus && (sa.prometheus.url || sa.prometheus.node_exporter_url)) ||
 			(sa.open_ports && sa.open_ports.length > 0) ||
 			(sa.detected_services && sa.detected_services.length > 0) ||
+			(wifi && (wifi.ssid || wifi.signal_dbm != null)) ||
 			Object.keys(extras).length > 0
 		)}
 		{#if hasDiscoveryData}
@@ -1347,6 +1349,12 @@
 					{#if sa.ttl}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.TTL']()}</span><span class="scan-info-value font-mono text-xs">{sa.ttl}</span></div>{/if}
 					{#if sa.inferred_type}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Inferred Type']()}</span><span class="scan-info-value">{sa.inferred_type}</span></div>{/if}
 					{#if sa.inferred_description}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Description']()}</span><span class="scan-info-value">{sa.inferred_description}</span></div>{/if}
+					{#if wifi && (wifi.ssid || wifi.signal_dbm != null)}
+						<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.WiFi SSID']()}</span><span class="scan-info-value">{wifi.ssid ?? '-'}</span></div>
+						<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.WiFi Signal']()}</span><span class="scan-info-value font-mono text-xs">{wifi.signal_dbm} dBm</span></div>
+						{#if wifi.connected_secs}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.WiFi Connected']()}</span><span class="scan-info-value">{formatDurationMs(Number(wifi.connected_secs) * 1000)}</span></div>{/if}
+						{#if wifi.seen_at}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.WiFi Seen']()}</span><span class="scan-info-value text-xs">{wifi.seen_at}</span></div>{/if}
+					{/if}
 				</div>
 
 				<!-- SNMP sub-card -->

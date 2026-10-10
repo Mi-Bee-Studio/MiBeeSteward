@@ -63,8 +63,6 @@ func allUpInterfaces(logger *slog.Logger) []string {
 
 // ifaceMAC returns the hardware address of an interface as a canonical
 // "aa:bb:cc:dd:ee:ff" string, or "" when the interface has no hardware address.
-//
-//nolint:unused // only called from build-tag-gated raw-frame sources (WITH_LLDP/CDP/ARPSCAN)
 func ifaceMAC(name string) (string, error) {
 	ifi, err := net.InterfaceByName(name)
 	if err != nil {
