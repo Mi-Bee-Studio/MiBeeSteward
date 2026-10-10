@@ -46,6 +46,7 @@ import (
 	scannerv2runner "mibee-steward/internal/service/scannerv2/runner"
 	scannerv2scheduler "mibee-steward/internal/service/scannerv2/scheduler"
 	"mibee-steward/internal/service/scannerv2/sshcred"
+	scannerv2store "mibee-steward/internal/service/scannerv2/store"
 	scannerv2task "mibee-steward/internal/service/scannerv2/taskservice"
 )
 
@@ -506,16 +507,54 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 				activeSources = append(activeSources, "arp_scan")
 			}
 		}
+		// Frame-listener neighbor persistence (#501): one repository handle
+		// dedicated to the sinks. Options{} is deliberate — the MAC-keyed
+		// resolver scopes by the resolved device's own network, not the
+		// engine's scan network.
+		neighborRepo := scannerv2store.NewSQLiteRepository(dbConn, scannerv2store.Options{}, slog.Default())
+		persistFrameNeighbors := func(source, localMAC string, specs []scannerv2.NeighborSpec) {
+			if err := neighborRepo.RecordNeighborsByMAC(discCtx, localMAC, specs); err != nil {
+				slog.Default().Warn(source+" frame: persist neighbors failed", "error", err)
+			}
+		}
+		lldpSink := func(localMAC string, edges []scannerv2discovery.LLDPEdge) {
+			specs := make([]scannerv2.NeighborSpec, 0, len(edges))
+			for _, e := range edges {
+				specs = append(specs, scannerv2.NeighborSpec{
+					NeighborMAC: e.NeighborMAC, Protocol: e.Protocol,
+					LocalPort: e.LocalPort, RemotePort: e.RemotePort,
+				})
+			}
+			persistFrameNeighbors("lldp", localMAC, specs)
+		}
+		cdpSink := func(localMAC string, edges []scannerv2discovery.CDPEdge) {
+			specs := make([]scannerv2.NeighborSpec, 0, len(edges))
+			for _, e := range edges {
+				specs = append(specs, scannerv2.NeighborSpec{
+					NeighborMAC: e.NeighborMAC, Protocol: e.Protocol,
+					LocalPort: e.LocalPort, RemotePort: e.RemotePort,
+				})
+			}
+			persistFrameNeighbors("cdp", localMAC, specs)
+		}
 		// lldp_frame: passive LLDPDU frame listener (ethertype 0x88cc). Only
 		// available in WITH_LLDP builds (needs CAP_NET_RAW); NewLLDPFrameSource
-		// returns nil in the default build, so this is a no-op there. Wiring the
-		// neighbor-edge sink needs a MAC-keyed device resolver (RecordNeighbors
-		// is IP-keyed); deferred until that lands. The host-event path works.
+		// returns nil in the default build, so this is a no-op there. Captured
+		// adjacencies persist through the neighbor sink (#501): the listener
+		// knows only the surveyed interface's MAC, so the local end resolves
+		// via RecordNeighborsByMAC and rows land in device_neighbors with the
+		// same (device_id, neighbor_mac, protocol) merge semantics as scanned
+		// and agent-reported neighbors. The sink runs on the per-interface
+		// listener goroutine — it only writes device_neighbors in short
+		// transactions on the busy-retry handle, never device rows, so it
+		// cannot corrupt the coordinator's serialized upserts. Edges
+		// materialize into topology_edges on the next scan of the network
+		// (deriveTopologyEdges), not per frame.
 		// Start BLOCKS until ctx cancel, it must run on its own goroutine
 		// (called synchronously it would hang NewRouter in a WITH_LLDP build)
 		// and joins the cleanup via frameSrcWG.
 		if lldpSrc := scannerv2discovery.NewLLDPFrameSource(
-			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
+			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, lldpSink, slog.Default(),
 		); lldpSrc != nil {
 			frameSrcWG.Add(1)
 			go func() {
@@ -527,10 +566,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// cdp_frame: passive CDP frame listener (ethertype 0x2000). Only
 		// available in WITH_CDP builds (needs CAP_NET_RAW); NewCDPFrameSource
 		// returns nil in the default build, so this is a no-op there. Uses the
-		// same interface list as LLDP. The host-event path works; neighbor-edge
-		// sink deferred until a MAC-keyed device resolver lands.
+		// same interface list and persistence semantics as LLDP (#501); the
+		// CDP TLV extras (Device ID / Platform / Software Version) stay on the
+		// host-event/evidence side, RecordNeighborsByMAC persists the spec
+		// subset (MAC/protocol/ports) exactly like the agent-reported merge.
 		if cdpSrc := scannerv2discovery.NewCDPFrameSource(
-			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, nil, slog.Default(),
+			cfg.Scanner.Discovery.LLDPInterfaces, discSvc, cdpSink, slog.Default(),
 		); cdpSrc != nil {
 			frameSrcWG.Add(1)
 			go func() {

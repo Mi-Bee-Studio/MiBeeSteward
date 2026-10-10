@@ -1282,6 +1282,56 @@ func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip string, neigh
 	return tx.Commit()
 }
 
+// RecordNeighborsByMAC persists L2 adjacency for the device identified by the
+// surveyed interface's MAC — the key the LLDP/CDP frame listeners actually
+// hold (#501). MAC-keyed mirror of RecordNeighbors: the local end resolves
+// globally by canonical MAC (freshest row wins when duplicates exist), then
+// the same (device_id, neighbor_mac, protocol) upsert applies, including the
+// empty-port-preserving merge. Unknown MAC is a logged skip, not an error —
+// the listener host simply isn't in the inventory (yet).
+func (r *SQLiteRepository) RecordNeighborsByMAC(ctx context.Context, localMAC string, neighbors []scannerv2.NeighborSpec) error {
+	if len(neighbors) == 0 {
+		return nil
+	}
+	mac := NormalizeMAC(localMAC)
+	if mac == "" {
+		return nil
+	}
+	var deviceID int64
+	var networkID sql.NullInt64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, network_id FROM devices WHERE mac_address = ? ORDER BY last_seen DESC LIMIT 1`, mac).
+		Scan(&deviceID, &networkID)
+	if err != nil {
+		r.logger.Debug("record neighbors by mac: device not found", "mac", mac)
+		return nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	now := scannerv2.DBTime(time.Now())
+	for _, n := range neighbors {
+		if n.NeighborMAC == "" || n.Protocol == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO device_neighbors (device_id, neighbor_mac, protocol, local_port, remote_port, network_id, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(device_id, neighbor_mac, protocol) DO UPDATE SET
+				local_port = CASE WHEN excluded.local_port != '' THEN excluded.local_port ELSE device_neighbors.local_port END,
+				remote_port = CASE WHEN excluded.remote_port != '' THEN excluded.remote_port ELSE device_neighbors.remote_port END,
+				last_seen = excluded.last_seen`,
+			deviceID, NormalizeMAC(n.NeighborMAC), n.Protocol, n.LocalPort, n.RemotePort, networkID, now, now); err != nil {
+			r.logger.Debug("upsert neighbor failed", "mac", mac, "neighbor_mac", n.NeighborMAC, "error", err)
+		}
+	}
+	return tx.Commit()
+}
+
 // EnrichDeviceByMAC updates vendor/model/type/hostname fields for a device
 // identified by MAC address. Only non-empty fields are applied; existing values
 // are preserved for empty-string keys. Unknown keys are merged into
