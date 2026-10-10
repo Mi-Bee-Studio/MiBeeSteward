@@ -221,10 +221,12 @@ check-openwrt:
 		fi; \
 	done; echo "-> sh -n OK on committed router scripts"
 
-# Build with the eBPF passive observer enabled. Requires clang/llvm/bpftool
-# and kernel BTF on the build host; produces a binary that, at runtime, needs
-# Linux >=5.8 + CAP_BPF/CAP_NET_ADMIN when scanner.ebpf.enabled is true.
-# Without those runtime privileges the observer degrades to active-only.
+# Build with the eBPF passive observer enabled. Requires ONLY clang (>=14) on
+# the build host — the program is CO-RE free (bpf/bpf_standalone.h), so no
+# bpftool/kernel-BTF/libbpf headers. At runtime it needs Linux >=5.8 plus
+# root or CAP_BPF/CAP_NET_ADMIN when scanner.ebpf.enabled is true; without
+# those runtime privileges the observer degrades (Status + doctor show why),
+# it never blocks active scanning.
 build-with-ebpf: build-frontend
 	cd bpf && $(MAKE) tc_ingress.o
 	CGO_ENABLED=0 go build -tags WITH_EBPF -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/

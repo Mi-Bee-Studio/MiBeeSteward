@@ -283,9 +283,11 @@ scanner:
     service_detection_enabled: true
     prometheus_check_enabled: true
     node_exporter_enabled: true
-  # eBPF passive observer (TC ingress). No-op unless the binary was built
-  # with `make build-with-ebpf` (WITH_EBPF tag). Requires Linux ≥5.8 + BTF
-  # and CAP_BPF/CAP_NET_ADMIN at runtime. Empty interfaces → all non-loopback.
+  # eBPF passive observer (TCX ingress). No-op unless the binary was built
+  # with `make build-with-ebpf` (WITH_EBPF tag). Requires Linux ≥6.6 and
+  # root or CAP_BPF/CAP_NET_ADMIN at runtime; BTF is optional (the program is
+  # CO-RE free). Empty interfaces → all non-loopback, up interfaces. Any
+  # problem degrades the observer only — `mibee-steward doctor` reports why.
   ebpf:
     enabled: false
     interfaces: []

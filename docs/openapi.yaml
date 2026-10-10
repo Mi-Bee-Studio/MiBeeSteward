@@ -655,6 +655,20 @@ paths:
       parameters: [{$ref: "#/components/parameters/id"}]
       responses:
         "204": {description: Deleted}
+  /subnets:
+    get:
+      tags: [Networks]
+      summary: Observed subnets (CIDR, gateway, VLAN linkage) across networks
+      description: Read-only view of the subnets table scan finalizes write (#503). Complete list, not paginated.
+      parameters:
+        - {name: network_id, in: query, schema: {type: integer, format: int64}}
+      responses:
+        "200":
+          description: Subnets envelope (complete list)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SubnetList"}
+
   /networks/{id}/vlans:
     get:
       tags: [Networks]
@@ -2045,6 +2059,24 @@ components:
         vlan_tag: {type: integer}
         name: {type: string, nullable: true}
         description: {type: string, nullable: true}
+    Subnet:
+      type: object
+      required: [id, network_id, cidr]
+      properties:
+        id: {type: integer, format: int64}
+        network_id: {type: integer, format: int64}
+        cidr: {type: string}
+        vlan_id: {type: integer, nullable: true}
+        gateway: {type: string, nullable: true}
+        metadata: {type: string}
+        first_seen: {type: string, nullable: true}
+        last_seen: {type: string, nullable: true}
+    SubnetList:
+      type: object
+      properties:
+        subnets: {type: array, items: {$ref: "#/components/schemas/Subnet"}}
+        total: {type: integer}
+
     VLANList:
       type: object
       properties:

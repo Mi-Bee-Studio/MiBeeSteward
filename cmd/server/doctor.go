@@ -18,12 +18,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/dbopen"
+	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 )
 
 // doctorExit codes: 0 = all checks passed (warnings allowed), 1 = at least
@@ -257,6 +259,29 @@ func doctor(args []string) int {
 		}
 	}
 
+	// eBPF passive observer (#493/#495): report build/config/prerequisite
+	// state so operators can see WHY passive evidence is missing. The
+	// observer degrades by design, so this mirrors the same philosophy as
+	// ping_group_range: a real, actionable "fail" only when the feature is
+	// enabled in config but hard-blocked (old kernel, missing caps).
+	switch {
+	case runtime.GOOS != "linux":
+		checks = append(checks, doctorCheck{name: "ebpf observer", status: "skip",
+			detail: "not Linux (" + runtime.GOOS + ")"})
+	case !cfg.Scanner.EBPF.Enabled:
+		checks = append(checks, doctorCheck{name: "ebpf observer", status: "skip",
+			detail: "scanner.ebpf.enabled is false"})
+	case !scannerv2ebpf.BuiltWithEBPF():
+		checks = append(checks, doctorCheck{name: "ebpf observer", status: "warn",
+			detail:  "enabled in config, but this binary was built without the WITH_EBPF tag",
+			fixHint: "rebuild with `make build-with-ebpf` (see docs/en/ebpf.md)"})
+	default:
+		// Evaluate prerequisites proactively (no kernel loading, no scan
+		// needed): doctor must answer "would eBPF work here" even before the
+		// observer's lazy start has ever run.
+		checks = append(checks, ebpfDoctorCheck(scannerv2ebpf.EvaluatePrerequisites()))
+	}
+
 	printReport(checks)
 	for _, c := range checks {
 		if c.status == "fail" {
@@ -264,6 +289,28 @@ func doctor(args []string) int {
 		}
 	}
 	return 0
+}
+
+// ebpfDoctorCheck turns a prerequisite evaluation into a doctor line (#495).
+// fail = enabled in config but hard-blocked (old kernel, missing caps);
+// warn = loadable with caveats (missing BTF, unparsable kernel); ok = the
+// observer would come up on this host.
+func ebpfDoctorCheck(ps scannerv2ebpf.PrereqStatus) doctorCheck {
+	const name = "ebpf observer"
+	if len(ps.Unsupported) > 0 {
+		hint := "see docs/en/ebpf.md"
+		if len(ps.CapsMissing) > 0 {
+			hint = "grant ambient caps via a systemd drop-in — see deploy/mibee-steward-ebpf-dropin.example.conf"
+		}
+		return doctorCheck{name: name, status: "fail", detail: strings.Join(ps.Unsupported, "; "), fixHint: hint}
+	}
+	detail := fmt.Sprintf("kernel=%s btf=%v caps=ok", ps.Kernel, ps.BTF)
+	if len(ps.Warnings) > 0 {
+		return doctorCheck{name: name, status: "warn",
+			detail:  strings.Join(ps.Warnings, "; "),
+			fixHint: "the observer may still load (CO-RE free); check logs after enabling"}
+	}
+	return doctorCheck{name: name, status: "ok", detail: detail}
 }
 
 // icmpPingGroupRangeCheck turns /proc/sys/net/ipv4/ping_group_range content

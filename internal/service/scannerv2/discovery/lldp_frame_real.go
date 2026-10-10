@@ -32,7 +32,7 @@ import (
 	"syscall"
 )
 
-// lldpEdge is defined in lldp_types.go (shared across build variants).
+// LLDPEdge is defined in lldp_types.go (shared across build variants).
 
 // LLDPFrameSource passively listens for LLDPDU broadcasts on one or more NICs.
 // On each frame it parses the TLV chain and (a) emits a NewHostEvent for the
@@ -41,7 +41,7 @@ import (
 type LLDPFrameSource struct {
 	interfaces   []string
 	svc          *Service
-	neighborSink func(localMAC string, neighbors []lldpEdge)
+	neighborSink func(localMAC string, neighbors []LLDPEdge)
 	logger       *slog.Logger
 	ifaceMACs    map[string]string // iface name → local MAC (for LocalMAC)
 }
@@ -49,7 +49,7 @@ type LLDPFrameSource struct {
 // NewLLDPFrameSource constructs the listener. interfaces is the list of NIC
 // names to listen on (empty = all non-loopback UP interfaces). svc is the
 // discovery coordinator (host events); neighborSink receives neighbor edges.
-func NewLLDPFrameSource(interfaces []string, svc *Service, neighborSink func(localMAC string, neighbors []lldpEdge), logger *slog.Logger) *LLDPFrameSource {
+func NewLLDPFrameSource(interfaces []string, svc *Service, neighborSink func(localMAC string, neighbors []LLDPEdge), logger *slog.Logger) *LLDPFrameSource {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -138,7 +138,7 @@ func (s *LLDPFrameSource) listen(ctx context.Context, iface string) {
 		}
 		// (b) neighbor edge, local interface sees this neighbor.
 		if s.neighborSink != nil {
-			s.neighborSink(s.ifaceMACs[iface], []lldpEdge{edge})
+			s.neighborSink(s.ifaceMACs[iface], []LLDPEdge{edge})
 		}
 	}
 }
@@ -148,8 +148,8 @@ func (s *LLDPFrameSource) listen(ctx context.Context, iface string) {
 // Extracts: Chassis ID (type 1, subtype 4 = MAC), Port ID (type 2, the remote
 // port identifier). The srcMAC from the Ethernet header is the fallback when
 // the chassis id isn't a MAC subtype.
-func parseLLDPDU(data []byte, srcMAC, iface, localMAC string) lldpEdge {
-	edge := lldpEdge{Protocol: "LLDP", NeighborMAC: srcMAC, LocalMAC: localMAC, LocalPort: iface}
+func parseLLDPDU(data []byte, srcMAC, iface, localMAC string) LLDPEdge {
+	edge := LLDPEdge{Protocol: "LLDP", NeighborMAC: srcMAC, LocalMAC: localMAC, LocalPort: iface}
 	for i := 0; i+1 < len(data); {
 		tlv := uint16(data[i])<<8 | uint16(data[i+1])
 		t := tlv >> 9

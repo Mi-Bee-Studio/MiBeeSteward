@@ -1680,6 +1680,24 @@ type ServiceEntry struct {
 	Version  *string `json:"version,omitempty"`
 }
 
+// Subnet defines model for Subnet.
+type Subnet struct {
+	Cidr      string  `json:"cidr"`
+	FirstSeen *string `json:"first_seen,omitempty"`
+	Gateway   *string `json:"gateway,omitempty"`
+	Id        int64   `json:"id"`
+	LastSeen  *string `json:"last_seen,omitempty"`
+	Metadata  *string `json:"metadata,omitempty"`
+	NetworkId int64   `json:"network_id"`
+	VlanId    *int    `json:"vlan_id,omitempty"`
+}
+
+// SubnetList defines model for SubnetList.
+type SubnetList struct {
+	Subnets *[]Subnet `json:"subnets,omitempty"`
+	Total   *int      `json:"total,omitempty"`
+}
+
 // TLSPortCerts One TLS-speaking port, handshake metadata + cert chain
 type TLSPortCerts struct {
 	Chain       []CertificateInfo `json:"chain"`
@@ -2071,6 +2089,11 @@ type GetSshCredentialsParams struct {
 
 	// Offset Pagination offset (negative → 400)
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// GetSubnetsParams defines parameters for GetSubnets.
+type GetSubnetsParams struct {
+	NetworkId *int64 `form:"network_id,omitempty" json:"network_id,omitempty"`
 }
 
 // GetTopologyParams defines parameters for GetTopology.
@@ -3418,6 +3441,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /ssh-credentials/{id} (the `PutSshCredentialsId` operationId).
 	PutSshCredentialsId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSubnets Observed subnets (CIDR, gateway, VLAN linkage) across networks
+	//
+	// Read-only view of the subnets table scan finalizes write (#503). Complete list, not paginated.
+	//
+	// Corresponds with GET /subnets (the `GetSubnets` operationId).
+	GetSubnets(ctx context.Context, params *GetSubnetsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSystem System info (version, uptime, build)
 	//
@@ -5777,6 +5807,23 @@ func (c *Client) GetSshCredentialsId(ctx context.Context, id Id, reqEditors ...R
 // Corresponds with PUT /ssh-credentials/{id} (the `PutSshCredentialsId` operationId).
 func (c *Client) PutSshCredentialsId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutSshCredentialsIdRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSubnets Observed subnets (CIDR, gateway, VLAN linkage) across networks
+//
+// Read-only view of the subnets table scan finalizes write (#503). Complete list, not paginated.
+//
+// Corresponds with GET /subnets (the `GetSubnets` operationId).
+func (c *Client) GetSubnets(ctx context.Context, params *GetSubnetsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSubnetsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -11937,6 +11984,60 @@ func NewPutSshCredentialsIdRequest(server string, id Id) (*http.Request, error) 
 	return req, nil
 }
 
+// NewGetSubnetsRequest constructs an http.Request for the GetSubnets method
+func NewGetSubnetsRequest(server string, params *GetSubnetsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/subnets")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.NetworkId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "network_id", *params.NetworkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetSystemRequest constructs an http.Request for the GetSystem method
 func NewGetSystemRequest(server string) (*http.Request, error) {
 	var err error
@@ -13321,6 +13422,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /ssh-credentials/{id} (the `PutSshCredentialsId` operationId).
 	PutSshCredentialsIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PutSshCredentialsIdResponse, error)
+
+	// GetSubnetsWithResponse Observed subnets (CIDR, gateway, VLAN linkage) across networks
+	//
+	// Read-only view of the subnets table scan finalizes write (#503). Complete list, not paginated.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /subnets (the `GetSubnets` operationId).
+	GetSubnetsWithResponse(ctx context.Context, params *GetSubnetsParams, reqEditors ...RequestEditorFn) (*GetSubnetsResponse, error)
 
 	// GetSystemWithResponse System info (version, uptime, build)
 	//
@@ -19381,6 +19491,47 @@ func (r PutSshCredentialsIdResponse) ContentType() string {
 	return ""
 }
 
+type GetSubnetsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SubnetList
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSubnetsResponse) GetJSON200() *SubnetList {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSubnetsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSubnetsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSubnetsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSubnetsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetSystemResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -21635,6 +21786,21 @@ func (c *ClientWithResponses) PutSshCredentialsIdWithResponse(ctx context.Contex
 		return nil, err
 	}
 	return ParsePutSshCredentialsIdResponse(rsp)
+}
+
+// GetSubnetsWithResponse Observed subnets (CIDR, gateway, VLAN linkage) across networks
+//
+// Read-only view of the subnets table scan finalizes write (#503). Complete list, not paginated.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /subnets (the `GetSubnets` operationId).
+func (c *ClientWithResponses) GetSubnetsWithResponse(ctx context.Context, params *GetSubnetsParams, reqEditors ...RequestEditorFn) (*GetSubnetsResponse, error) {
+	rsp, err := c.GetSubnets(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSubnetsResponse(rsp)
 }
 
 // GetSystemWithResponse System info (version, uptime, build)
@@ -25246,6 +25412,32 @@ func ParsePutSshCredentialsIdResponse(rsp *http.Response) (*PutSshCredentialsIdR
 	response := &PutSshCredentialsIdResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetSubnetsResponse parses an HTTP response from a GetSubnetsWithResponse call
+func ParseGetSubnetsResponse(rsp *http.Response) (*GetSubnetsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSubnetsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SubnetList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	}
 
 	return response, nil

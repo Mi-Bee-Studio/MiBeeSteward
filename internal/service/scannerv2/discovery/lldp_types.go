@@ -12,12 +12,12 @@
 
 package discovery
 
-// lldpEdge is one neighbor adjacency extracted from a captured LLDPDU. The
+// LLDPEdge is one neighbor adjacency extracted from a captured LLDPDU. The
 // fields mirror scannerv2.NeighborSpec but stay local to this package to avoid
 // an import cycle (discovery → scannerv2 would cycle). The real listener
 // (lldp_frame_real.go, WITH_LLDP) builds these; the caller's neighborSink
 // consumes them.
-type lldpEdge struct {
+type LLDPEdge struct {
 	NeighborMAC string // canonical aa:bb:cc:dd:ee:ff (subtype-4 chassis id, or the Ethernet src MAC)
 	Protocol    string // always "LLDP"
 	LocalMAC    string // the surveyed interface's MAC (the listener host)

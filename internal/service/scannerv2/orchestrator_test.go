@@ -130,6 +130,10 @@ func (r *recordRepo) RecordNeighbors(_ context.Context, _ string, _ []NeighborSp
 	return nil
 }
 
+func (r *recordRepo) RecordNeighborsByMAC(_ context.Context, _ string, _ []NeighborSpec) error {
+	return nil
+}
+
 func (r *recordRepo) EnrichDeviceByMAC(_ context.Context, _ string, _ map[string]string) error {
 	return nil
 }
