@@ -7,6 +7,8 @@
 // license is available for use cases the AGPL does not accommodate; see
 // LICENSE-COMMERCIAL.md.
 
+//go:build !WITH_ARPSCAN && !WITH_CDP
+
 package discovery
 
 import (

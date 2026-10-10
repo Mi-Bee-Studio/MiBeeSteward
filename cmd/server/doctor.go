@@ -25,6 +25,7 @@ import (
 
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/dbopen"
+	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 )
 
@@ -282,6 +283,18 @@ func doctor(args []string) int {
 		checks = append(checks, ebpfDoctorCheck(scannerv2ebpf.EvaluatePrerequisites()))
 	}
 
+	// Optional frame/ARP capabilities (#502): the LLDP/CDP listeners and the
+	// ARP sweep are compiled in only under their WITH_* tags and need
+	// CAP_NET_RAW at runtime. Same philosophy as the eBPF check: a warn says
+	// "you asked for this (or built it) and the environment won't deliver",
+	// the default build is a skip, not a failure.
+	capRaw := scannerv2discovery.EffectiveCapNetRaw()
+	checks = append(checks,
+		frameListenerDoctorCheck("lldp listener", "WITH_LLDP", runtime.GOOS, scannerv2discovery.BuiltWithLLDP(), capRaw),
+		frameListenerDoctorCheck("cdp listener", "WITH_CDP", runtime.GOOS, scannerv2discovery.BuiltWithCDP(), capRaw),
+		arpScanDoctorCheck(cfg, runtime.GOOS, scannerv2discovery.BuiltWithARPSCAN(), capRaw),
+	)
+
 	printReport(checks)
 	for _, c := range checks {
 		if c.status == "fail" {
@@ -289,6 +302,49 @@ func doctor(args []string) int {
 		}
 	}
 	return 0
+}
+
+// frameListenerDoctorCheck reports one raw-frame listener (LLDP/CDP, #502).
+// The listeners register whenever the binary carries their tag, so a built
+// binary without CAP_NET_RAW means "silently disabled" — exactly what doctor
+// should surface. The default build is a plain skip (unprivileged by design).
+func frameListenerDoctorCheck(name, tag, goos string, built, capRaw bool) doctorCheck {
+	switch {
+	case goos != "linux":
+		return doctorCheck{name: name, status: "skip", detail: "not Linux (" + goos + ")"}
+	case !built:
+		return doctorCheck{name: name, status: "skip",
+			detail: fmt.Sprintf("default build (rebuild with -tags %s to enable; needs CAP_NET_RAW)", tag)}
+	case capRaw:
+		return doctorCheck{name: name, status: "ok", detail: "built, CAP_NET_RAW present"}
+	default:
+		return doctorCheck{name: name, status: "warn",
+			detail:  "built but CAP_NET_RAW missing — the listener stays disabled",
+			fixHint: "run as root or grant AmbientCapabilities=CAP_NET_RAW (systemd drop-in)"}
+	}
+}
+
+// arpScanDoctorCheck reports the active ARP sweep (#502). Unlike the frame
+// listeners it has an explicit config toggle, so "enabled in config but not
+// built" is a warn (operator intent the binary cannot honor), not a skip.
+func arpScanDoctorCheck(cfg *config.Config, goos string, built, capRaw bool) doctorCheck {
+	const name = "arp scan"
+	switch {
+	case goos != "linux":
+		return doctorCheck{name: name, status: "skip", detail: "not Linux (" + goos + ")"}
+	case !cfg.Scanner.Discovery.ARPScan.Enabled:
+		return doctorCheck{name: name, status: "skip", detail: "scanner.discovery.arp_scan.enabled is false"}
+	case !built:
+		return doctorCheck{name: name, status: "warn",
+			detail:  "enabled in config, but this binary was built without the WITH_ARPSCAN tag",
+			fixHint: "rebuild with `make build-with-arpscan` (the release ships a -full variant that includes it)"}
+	case capRaw:
+		return doctorCheck{name: name, status: "ok", detail: "built, CAP_NET_RAW present"}
+	default:
+		return doctorCheck{name: name, status: "warn",
+			detail:  "built but CAP_NET_RAW missing — the sweep stays disabled",
+			fixHint: "run as root or grant AmbientCapabilities=CAP_NET_RAW (systemd drop-in)"}
+	}
 }
 
 // ebpfDoctorCheck turns a prerequisite evaluation into a doctor line (#495).

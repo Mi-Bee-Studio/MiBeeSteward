@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Optional build tags: release matrix, doctor preflight, capability docs (#502)**: every release now attaches a `-full` center binary per arch (WITH_LLDP + WITH_CDP + WITH_ARPSCAN, pure Go, still CGO-free; needs CAP_NET_RAW at runtime) alongside the default unprivileged binary, with flat-name SHA256SUMS.center covering both variants. `make build-full` builds the same tag set locally; CI gains an optional-tags job that vets, tests, and links the tagged build on every PR. `mibee-steward doctor` reports per-source state (lldp/cdp listener, arp scan) with the same philosophy as the eBPF check: warn = built or configured but the environment will not deliver, skip = not built/enabled. New bilingual docs page (build-variants.md) with the full tag x privilege x kernel x data-output matrix. Field-verified on the arm64 test rig: the sweep discovered 54 real hosts on its first round, doctor reported every state transition live (skip/warn/ok), and the frame listeners attach and receive - the neighbor-anchor gap the run surfaced is filed as #522.
+
 ## [0.7.2] - 2026-10-10
 
 ### Fixed
