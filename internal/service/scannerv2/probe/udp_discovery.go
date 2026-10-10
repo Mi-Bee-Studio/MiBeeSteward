@@ -27,8 +27,10 @@ import (
 // mdnsTimeout bounds a single mDNS multicast query round.
 const mdnsTimeout = 3 * time.Second
 
-// ssdpTimeout bounds a single SSDP M-SEARCH round.
-const ssdpTimeout = 3 * time.Second
+// ssdpTimeout bounds a single SSDP M-SEARCH round. It follows the MX=2s
+// contract sent in the M-SEARCH (a conforming responder answers within MX);
+// staying under it leaves budget for the description-XML fetch (#506).
+const ssdpTimeout = 2 * time.Second
 
 // netbiosTimeout bounds a single NetBIOS Name-Service query.
 const netbiosTimeout = 3 * time.Second
@@ -399,10 +401,15 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	if ctx.Err() != nil {
 		return nil, nil
 	}
+	// The listen window follows the M-SEARCH MX contract (ssdpTimeout): a
+	// conforming responder answers within MX, and staying under it leaves
+	// budget inside the orchestrator's per-probe cap for the description-XML
+	// fetch (#506).
 	timeout := ssdpTimeout
 	if hint.Timeout > 0 && hint.Timeout < timeout {
 		timeout = hint.Timeout
 	}
+	start := time.Now()
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		return nil, nil // soft failure (no multicast)
@@ -415,6 +422,7 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	packets := readUDPMulticastResponses(conn, timeout)
 	var evs []scannerv2.Evidence
 	target := net.ParseIP(ip)
+	var descLoc string
 	for _, pkt := range packets {
 		// SSDP is multicast: a single M-SEARCH is answered by every UPnP
 		// responder on the segment. Only count replies from the target IP, or
@@ -435,6 +443,20 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 				Confidence: 0.8,
 				ObservedAt: time.Now(),
 			})
+			if descLoc == "" && validateSSDPLocation(raw["location"], ip) {
+				descLoc = raw["location"]
+			}
+		}
+	}
+	// Device description XML (#506): the LOCATION document is the most
+	// authoritative UPnP self-description. Fetch once for the target's own
+	// (validated) LOCATION and merge the identity fields into the first
+	// evidence; corpus rules pick them up as raw keys.
+	if descLoc != "" {
+		if desc := fetchUPnPDescription(ctx, descLoc, time.Since(start)+2*time.Second); len(desc) > 0 {
+			for k, v := range desc {
+				evs[0].RawData[k] = v
+			}
 		}
 	}
 	return evs, nil
