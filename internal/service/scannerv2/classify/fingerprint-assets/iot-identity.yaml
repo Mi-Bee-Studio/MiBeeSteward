@@ -856,3 +856,27 @@ rules:
         ecosystem: { const: "Xiaomi Mijia" }
         appliance: { const: "gateway" }
 
+
+  # ── TP-Link TL-XDR 系列 WiFi 路由器主机名（TL-XDR3040易展版.tail-…，field LAN
+  # 2026-10-11）──────────────────────────────────────────────────────────
+  # TP-Link's Chinese-market routers name themselves "TL-XDR<model><营销后缀>"
+  # (易展版 = Mesh variant; the suffix is CJK and varies by SKU/marketing).
+  # OUI already yields TP-Link; this extracts the XDR model token. The loose
+  # tail tolerates the CJK suffix and any trailing DNS domain.
+  - id: iot-host-tplink-xdr
+    source: builtin
+    priority: 115
+    exclusive_group: tplink-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^tl[-_ ]?(xdr[0-9]{3,5}[a-z]*).*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "TP-Link" }
+        inferred_model: { regex_capture: 1 }
+        appliance: { const: "router" }
