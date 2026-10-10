@@ -92,6 +92,78 @@ func TestDecodeEventKinds(t *testing.T) {
 	})
 }
 
+// Event layout v3 (#496): header + server[64] + opt55_raw[16] + name_raw[48]
+// + opt55_len + dhcp_type. All rendering (opt55 decimal join, DNS label
+// join) happens in the Go decoder; the BPF side writes raw bytes only.
+func TestDecodeEventV3Kinds(t *testing.T) {
+	mk := func(kind uint8, ip uint32, port, proto uint16, str string, opt55 []byte, name []byte, dhcpType uint8) []byte {
+		b := make([]byte, eventLen)
+		binary.LittleEndian.PutUint32(b[0:4], ip)
+		binary.LittleEndian.PutUint16(b[4:6], port)
+		binary.LittleEndian.PutUint16(b[6:8], proto)
+		b[8] = kind
+		copy(b[10:74], str)
+		copy(b[74:86], opt55)
+		copy(b[86:118], name)
+		b[118] = byte(len(opt55))
+		b[119] = dhcpType
+		return b
+	}
+	t.Run("dhcp", func(t *testing.T) {
+		ev := decodeEvent(mk(5, 0x0100A8C0, 68, 17, "android-dhcp-13",
+			[]byte{1, 33, 3, 6, 15, 26, 28, 51, 58, 59}, nil, 1))
+		if ev.Kind != "dhcp" {
+			t.Fatalf("Kind = %q", ev.Kind)
+		}
+		if ev.RawData["vendor_class"] != "android-dhcp-13" {
+			t.Errorf("vendor_class = %q", ev.RawData["vendor_class"])
+		}
+		if ev.RawData["opt55"] != "1,33,3,6,15,26,28,51,58,59" {
+			t.Errorf("opt55 = %q", ev.RawData["opt55"])
+		}
+		if ev.RawData["msg_type"] != "1" {
+			t.Errorf("msg_type = %q", ev.RawData["msg_type"])
+		}
+		if ev.Confidence != 0.8 {
+			t.Errorf("dhcp self-declaration confidence = %v", ev.Confidence)
+		}
+	})
+	t.Run("tls_sni", func(t *testing.T) {
+		ev := decodeEvent(mk(6, 0x0100A8C0, 443, 6, "blog.mickeyzzc.tech", nil, nil, 0))
+		if ev.Kind != "tls_sni" || ev.RawData["sni"] != "blog.mickeyzzc.tech" {
+			t.Fatalf("Kind/sni = %q/%v", ev.Kind, ev.RawData["sni"])
+		}
+		if ev.Confidence != 0.7 {
+			t.Errorf("sni confidence = %v", ev.Confidence)
+		}
+	})
+	t.Run("mdns wire name joins", func(t *testing.T) {
+		// wire format for "rig-sensor._tcp.local": len-prefixed labels
+		wire := []byte{10}
+		wire = append(wire, "rig-sensor"...)
+		wire = append(wire, 4)
+		wire = append(wire, "_tcp"...)
+		wire = append(wire, 5)
+		wire = append(wire, "local"...)
+		ev := decodeEvent(mk(7, 0x0100A8C0, 5353, 17, "", nil, wire, 0))
+		if ev.Kind != "mdns" || ev.RawData["query"] != "rig-sensor._tcp.local" {
+			t.Fatalf("Kind/query = %q/%v", ev.Kind, ev.RawData["query"])
+		}
+	})
+	t.Run("mdns rejects compression pointer", func(t *testing.T) {
+		ev := decodeEvent(mk(7, 0x0100A8C0, 5353, 17, "", nil, []byte{0xc0, 0x0c}, 0))
+		if ev.RawData["query"] != "" {
+			t.Fatalf("compression pointer must not render, got %q", ev.RawData["query"])
+		}
+	})
+	t.Run("ssdp passive", func(t *testing.T) {
+		ev := decodeEvent(mk(8, 0x0100A8C0, 1900, 17, "", nil, nil, 0))
+		if ev.Kind != "ssdp" {
+			t.Fatalf("Kind = %q", ev.Kind)
+		}
+	})
+}
+
 func TestTrimCString(t *testing.T) {
 	if got := trimCString([]byte("abc\x00zzz")); got != "abc" {
 		t.Errorf("trimCString NUL = %q", got)

@@ -57,6 +57,27 @@ func (MdnsHandler) EnrichDevice(svc scannerv2.ServiceContext, _ scannerv2.Collec
 	mdnsSsdpEnrich(svc)
 }
 
+// DhcpHandler hosts the "dhcp" identity from the eBPF passive observer's
+// DHCP signature (#496/#508): vendor class / parameter-request-list
+// self-declarations captured from broadcast DISCOVER/REQUEST traffic. The
+// corpus rules (configs/fingerprints/dhcp.yaml) produce inferred_brand/type;
+// the enrich pass is the same field set as mDNS/SSDP.
+type DhcpHandler struct{}
+
+func (DhcpHandler) Service() string { return "dhcp" }
+
+func (DhcpHandler) GenerateHeartbeat(_ scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
+	return nil
+}
+
+func (DhcpHandler) Collect(_ context.Context, _ scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
+	return nil, nil, nil
+}
+
+func (DhcpHandler) EnrichDevice(svc scannerv2.ServiceContext, _ scannerv2.CollectedData) {
+	mdnsSsdpEnrich(svc)
+}
+
 // SsdpHandler hosts the "ssdp" identity from the SSDP M-SEARCH probe's
 // Kind="ssdp" evidence (SERVER/USN/LOCATION self-declarations).
 type SsdpHandler struct{}

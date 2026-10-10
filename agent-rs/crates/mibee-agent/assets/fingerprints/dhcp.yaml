@@ -1,0 +1,128 @@
+# DHCP fingerprint evidence (#508).
+#
+# Source: the eBPF passive observer's DHCP signature (#496) - vendor class
+# (option 60), parameter request list (option 55, comma-joined decimal) and
+# message type (option 53) captured from DISCOVER/REQUEST broadcasts. This is
+# the identification channel for devices that answer nothing else: sleeping
+# IoT, Android phones (until an L3 sighting), statically-configured gear.
+#
+# Field reference:
+#   vendor_class - option 60 verbatim (e.g. "android-dhcp-13", "MSFT 5.0",
+#                  "udhcp 1.30.1", vendor strings like "Mijia-...")
+#   opt55        - parameter request list, comma-joined decimal option codes
+#                  (e.g. "1,33,3,6,15,26,28,51,58,59" - the classic Android
+#                  signature). Sequences vary slightly by stack version, so
+#                  the rules below match DISTINCTIVE RUNS, not exact lists.
+#   msg_type     - DHCP message type (1=DISCOVER, 3=REQUEST, ...)
+#
+# Ordered by specificity; the exclusive group keeps exactly one identity.
+version: 1
+rules:
+  # Android's dhcpcd/AOSP stack: the vendor class says it outright on modern
+  # builds, the option-55 run "26,28,51,58,59" (MTU, all-subnets, lease
+  # renewal timers) is the classic pre-android-dhcp-era signature.
+  - id: dhcp-vendor-android
+    source: builtin
+    priority: 240
+    exclusive_group: dhcp-identity
+    match:
+      kind: dhcp
+      field: vendor_class
+      op: regex
+      value: '(?i)android-dhcp'
+    service: dhcp
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_brand: { const: Android }
+        inferred_type: { const: phone }
+        inferred_description: { const: "Android DHCP client (vendor class android-dhcp-*)" }
+
+  - id: dhcp-opt55-android
+    source: builtin
+    priority: 239
+    exclusive_group: dhcp-identity
+    match:
+      kind: dhcp
+      field: opt55
+      op: regex
+      value: '26,28,51,58,59'
+    service: dhcp
+    protocol: udp
+    confidence: 0.7
+    extract:
+      metadata:
+        inferred_brand: { const: Android }
+        inferred_type: { const: phone }
+
+  # Windows: vendor classes start with MSFT; the option-55 run with NetBIOS
+  # name-server options (44,46,47) is Windows-distinctive (Android/iOS/embedded
+  # stacks never request them).
+  - id: dhcp-vendor-msft
+    source: builtin
+    priority: 238
+    exclusive_group: dhcp-identity
+    match:
+      kind: dhcp
+      field: vendor_class
+      op: regex
+      value: '(?i)^MSFT'
+    service: dhcp
+    protocol: udp
+    confidence: 0.8
+    extract:
+      metadata:
+        inferred_brand: { const: Microsoft }
+        inferred_type: { const: pc }
+
+  - id: dhcp-opt55-windows
+    source: builtin
+    priority: 237
+    exclusive_group: dhcp-identity
+    match:
+      kind: dhcp
+      field: opt55
+      op: regex
+      value: '44,46,47'
+    service: dhcp
+    protocol: udp
+    confidence: 0.7
+    extract:
+      metadata:
+        inferred_brand: { const: Microsoft }
+        inferred_type: { const: pc }
+
+  # BusyBox udhcp: the default client on OpenWrt and much embedded firmware.
+  - id: dhcp-vendor-udhcp
+    source: builtin
+    priority: 236
+    exclusive_group: dhcp-identity
+    match:
+      kind: dhcp
+      field: vendor_class
+      op: regex
+      value: '(?i)udhcp'
+    service: dhcp
+    protocol: udp
+    confidence: 0.7
+    extract:
+      metadata:
+        inferred_type: { const: embedded }
+        inferred_description: { const: "BusyBox udhcp client (OpenWrt/embedded firmware)" }
+
+  # Catch-all: a DHCP self-declaration without a recognized stack says
+  # "device is present and configuring via DHCP" - the presence channel for
+  # sleeping/static-ish devices even when no rule above fires.
+  - id: dhcp-presence
+    source: builtin
+    priority: 200
+    match:
+      kind: dhcp
+      op: kind_presence
+    service: dhcp
+    protocol: udp
+    confidence: 0.5
+    extract:
+      metadata:
+        inferred_description: { const: "DHCP client observed via broadcast traffic" }
