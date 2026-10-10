@@ -38,7 +38,6 @@ import (
 	scannerv2 "mibee-steward/internal/service/scannerv2"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
 	scannerv2configbackup "mibee-steward/internal/service/scannerv2/configbackup"
-	"mibee-steward/internal/service/snmptrap"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
@@ -49,6 +48,7 @@ import (
 	"mibee-steward/internal/service/scannerv2/sshcred"
 	scannerv2store "mibee-steward/internal/service/scannerv2/store"
 	scannerv2task "mibee-steward/internal/service/scannerv2/taskservice"
+	"mibee-steward/internal/service/snmptrap"
 )
 
 // NewRouter creates and returns the main HTTP router with all routes registered.

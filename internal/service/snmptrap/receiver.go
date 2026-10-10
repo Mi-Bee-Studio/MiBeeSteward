@@ -172,8 +172,8 @@ const snmpTrapOID = ".1.3.6.1.6.3.1.1.4.1.0"
 // ifIndexPrefix / ifOperStatusPrefix identify the interface varbinds of
 // linkDown/linkUp traps (IF-MIB).
 const (
-	ifIndexPrefix       = ".1.3.6.1.2.1.2.2.1.1."
-	ifOperStatusPrefix  = ".1.3.6.1.2.1.2.2.1.8."
+	ifIndexPrefix      = ".1.3.6.1.2.1.2.2.1.1."
+	ifOperStatusPrefix = ".1.3.6.1.2.1.2.2.1.8."
 )
 
 // evidenceFromTrap folds one trap PDU into passive evidence. String building

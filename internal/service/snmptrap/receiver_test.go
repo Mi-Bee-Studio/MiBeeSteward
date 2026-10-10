@@ -32,8 +32,8 @@ func TestV2CTrapToEvidence(t *testing.T) {
 		Variables: []gosnmp.SnmpPDU{
 			{Name: ".1.3.6.1.2.1.1.3.0", Type: gosnmp.TimeTicks, Value: uint32(1200)},
 			{Name: ".1.3.6.1.6.3.1.1.4.1.0", Type: gosnmp.OctetString, Value: []byte{0x2b, 6, 1, 6, 3, 1, 1, 5, 3}}, // linkDown
-			{Name: ".1.3.6.1.2.1.2.2.1.1.3", Type: gosnmp.Integer, Value: 3},                                          // ifIndex = 3
-			{Name: ".1.3.6.1.2.1.2.2.1.8.3", Type: gosnmp.Integer, Value: 2},                                          // ifOperStatus.3 = down
+			{Name: ".1.3.6.1.2.1.2.2.1.1.3", Type: gosnmp.Integer, Value: 3},                                        // ifIndex = 3
+			{Name: ".1.3.6.1.2.1.2.2.1.8.3", Type: gosnmp.Integer, Value: 2},                                        // ifOperStatus.3 = down
 		},
 	}
 	ev := evidenceFromTrap(pkt, addr("192.0.2.9"))
@@ -129,13 +129,13 @@ func TestListenerReceivesV2CTrap(t *testing.T) {
 
 	send := func(community string) error {
 		c := &gosnmp.GoSNMP{
-			Target:          "127.0.0.1",
-			Port:            11620,
-			Version:         gosnmp.Version2c,
-			Community:       community,
-			Timeout:         2 * time.Second,
-			MaxOids:         gosnmp.MaxOids,
-			Retries:         0,
+			Target:             "127.0.0.1",
+			Port:               11620,
+			Version:            gosnmp.Version2c,
+			Community:          community,
+			Timeout:            2 * time.Second,
+			MaxOids:            gosnmp.MaxOids,
+			Retries:            0,
 			ExponentialTimeout: false,
 		}
 		if err := c.Connect(); err != nil {
