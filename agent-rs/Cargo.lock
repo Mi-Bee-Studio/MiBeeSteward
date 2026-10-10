@@ -1098,7 +1098,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "mibee-agent"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "mibee-fingerprints"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "regex",
  "regex-syntax",
