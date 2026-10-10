@@ -158,13 +158,15 @@ func TestListenerReceivesV2CTrap(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(3 * time.Second)
-	for len(store.evs) == 0 && time.Now().Before(deadline) {
+	var got []scannerv2.Evidence
+	for len(got) == 0 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
+		got = store.snapshot()
 	}
-	if len(store.evs) != 1 {
-		t.Fatalf("stored %d evidence rows, want exactly 1 (wrong community dropped): %+v", len(store.evs), store.evs)
+	if len(got) != 1 {
+		t.Fatalf("stored %d evidence rows, want exactly 1 (wrong community dropped): %+v", len(got), got)
 	}
-	ev := store.evs[0]
+	ev := got[0]
 	if ev.IP != "127.0.0.1" || ev.RawData["trap"] != "coldStart" {
 		t.Fatalf("evidence = %+v", ev)
 	}
@@ -180,4 +182,14 @@ func (m *memStore) RecordEvidence(_ context.Context, evs []scannerv2.Evidence) e
 	defer m.mu.Unlock()
 	m.evs = append(m.evs, evs...)
 	return nil
+}
+
+// snapshot copies under the lock: the trap handler runs on the listener
+// goroutine, so unlocked reads of evs are a data race under -race.
+func (m *memStore) snapshot() []scannerv2.Evidence {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]scannerv2.Evidence, len(m.evs))
+	copy(out, m.evs)
+	return out
 }
