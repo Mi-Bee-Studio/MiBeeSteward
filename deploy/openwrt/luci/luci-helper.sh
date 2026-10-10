@@ -156,7 +156,11 @@ cmd_status() {
     [ -n "$_port" ] && { wait_health "$_port" >/dev/null 2>&1 && _health="ok" || _health="fail"; }
     _db_bytes=0
     [ -f "$DATA_DIR/mibee.db" ] && _db_bytes="$(wc -c < "$DATA_DIR/mibee.db" | tr -d ' ')"
+    # uci may store ipaddr as CIDR ("192.168.1.1/24", field-found on iStoreOS
+    # 24.10): the status page builds "http://$lan_ip:$port" from this, and a
+    # suffixed value renders a broken link ("http://ip/24:port").
     _lan_ip="$(uci -q get network.lan.ipaddr 2>/dev/null || true)"
+    _lan_ip="${_lan_ip%%/*}"
     echo "service=$_svc"
     echo "enabled=$_enabled"
     echo "port=$_port"

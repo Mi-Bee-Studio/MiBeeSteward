@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-10
+
+### Fixed
+
+- **The LuCI "Open UI" link no longer breaks on firmwares that store the LAN address in CIDR form** (field-found on an iStoreOS 24.10 box running 0.7.1, hours after release: `uci get network.lan.ipaddr` returned `192.168.60.1/24`, so the status page built `http://192.168.60.1/24:8080` — a dead link with a stray `/24` in the host position). The LuCI helper now strips the `/prefix` suffix before reporting `lan_ip`. The installer had the same unguarded read twice: the closing summary would print the same malformed URL, and — worse — on a firmware that carries the prefix in `ipaddr` without a separate `netmask` key, the first-install LAN-CIDR derivation silently produced an empty `network.cidr`; the prefix is now used to synthesize the dotted netmask for the common router prefixes (/8, /16, /24–/30) so the generated config gets the right scan range.
+
 ## [0.7.1] - 2026-10-10
 
 ### Fixed
