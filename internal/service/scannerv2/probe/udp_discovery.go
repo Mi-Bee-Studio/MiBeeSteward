@@ -27,8 +27,10 @@ import (
 // mdnsTimeout bounds a single mDNS multicast query round.
 const mdnsTimeout = 3 * time.Second
 
-// ssdpTimeout bounds a single SSDP M-SEARCH round.
-const ssdpTimeout = 3 * time.Second
+// ssdpTimeout bounds a single SSDP M-SEARCH round. It follows the MX=2s
+// contract sent in the M-SEARCH (a conforming responder answers within MX);
+// staying under it leaves budget for the description-XML fetch (#506).
+const ssdpTimeout = 2 * time.Second
 
 // netbiosTimeout bounds a single NetBIOS Name-Service query.
 const netbiosTimeout = 3 * time.Second
@@ -399,10 +401,11 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	if ctx.Err() != nil {
 		return nil, nil
 	}
-	// The listen window follows the M-SEARCH MX contract (2s): a conforming
-	// responder answers within MX. Staying under MX leaves budget inside the
-	// orchestrator's per-probe cap for the description-XML fetch (#506).
-	timeout := 2 * time.Second
+	// The listen window follows the M-SEARCH MX contract (ssdpTimeout): a
+	// conforming responder answers within MX, and staying under it leaves
+	// budget inside the orchestrator's per-probe cap for the description-XML
+	// fetch (#506).
+	timeout := ssdpTimeout
 	if hint.Timeout > 0 && hint.Timeout < timeout {
 		timeout = hint.Timeout
 	}
