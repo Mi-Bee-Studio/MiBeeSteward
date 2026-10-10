@@ -13,8 +13,8 @@
 // no evidence. This keeps the default binary free of kernel/BTF/clang
 // dependencies and runnable unprivileged on any platform.
 //
-// To enable the real eBPF observer, build with: WITH_EBPF=1 go build ...
-// (see Makefile target build-with-ebpf and bpf/Makefile).
+// To enable the real eBPF observer, build with the WITH_EBPF tag
+// (see Makefile target build-with-ebpf and bpf/README.md).
 
 package ebpf
 
@@ -25,7 +25,19 @@ import (
 	"mibee-steward/internal/service/scannerv2"
 )
 
+// BuiltWithEBPF reports that this binary has no eBPF loader compiled in.
+// Doctor uses it to distinguish "feature turned off" from "feature not
+// compiled in".
+func BuiltWithEBPF() bool { return false }
+
 func (o *Observer) Name() string { return "passive:ebpf:tc" }
+
+func (o *Observer) statusSnapshot() Status {
+	if !o.cfg.Enabled {
+		return Status{State: StateDisabled, Reason: "scanner.ebpf.enabled is false"}
+	}
+	return Status{State: StateNotBuilt, Reason: "binary built without the WITH_EBPF tag (see make build-with-ebpf)"}
+}
 
 // Probe returns no evidence in the stub build. If Enabled was requested but
 // the binary lacks eBPF support, it logs a one-time warning so operators know

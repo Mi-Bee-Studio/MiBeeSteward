@@ -65,10 +65,15 @@ web/src/routes/test-derived/
 /node_modules/
 
 # === eBPF build artifacts ===
-# vmlinux.h is machine-specific (generated from running kernel's BTF).
-# bpf2go-generated *.go bindings and compiled *.o are produced by `make build-with-ebpf`.
+# bpf2go-generated *.go bindings and compiled *.o are produced by
+# `go generate -tags WITH_EBPF ./internal/service/scannerv2/ebpf/`.
+# bpf2go lowercases the stem for FILE names (tcIngress -> tcingress_*) but
+# keeps it camelCase for Go identifiers; match the lowercase form explicitly
+# (git on case-sensitive filesystems must not pick these up).
 bpf/vmlinux.h
 bpf/*.o
+internal/service/scannerv2/ebpf/tcingress_*.go
+internal/service/scannerv2/ebpf/tcingress*.o
 internal/service/scannerv2/ebpf/tcIngress_*.go
 internal/service/scannerv2/ebpf/tcIngress*.o
 cover.out

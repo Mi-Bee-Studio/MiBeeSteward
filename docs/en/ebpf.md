@@ -2,17 +2,17 @@
 
 ## Overview
 
-MiBee Steward's scanning engine (scannerv2) uses a **dual-probe architecture**: active probing (TCP/SNMP/ONVIF etc.) provides precise identification, while passive observation collects supplementary evidence from real traffic without sending any probe packets. The eBPF passive observer implements the latter-it attaches to the Linux kernel's TC (Traffic Control) ingress hook to passively inspect inbound packets on network interfaces, matching known protocol signatures and feeding evidence to the classifier layer for fusion.
+MiBee Steward's scanning engine (scannerv2) uses a **dual-probe architecture**: active probing (TCP/SNMP/ONVIF etc.) provides precise identification, while passive observation collects supplementary evidence from real traffic without sending any probe packets. The eBPF passive observer implements the latter: it attaches to the Linux kernel's TCX ingress hook to passively inspect inbound packets on network interfaces, matching known protocol signatures and feeding evidence to the classifier layer for fusion.
 
 > **Positioning**: The eBPF observer is a **corroborating signal**, not a replacement for active probing. ONVIF/WS-Discovery multicast announcements are the cleanest passive target; TCP protocols (SSH/RTSP/HTTP) are more reliably detected by active probing, and the eBPF match results are injected as corroborating evidence with confidence 0.6.
 
 ## How It Works
 
-`tc_ingress.c` attaches to the TC ingress hook on network interfaces and inspects incoming packets for known protocol signatures. The full packet path:
+`tc_ingress.c` attaches to the TCX ingress hook on network interfaces and inspects incoming packets for known protocol signatures. The full packet path:
 
 ```mermaid
 flowchart LR
-  NIC["NIC ingress"] --> TC["TC program (WITH_EBPF build)"]
+  NIC["NIC ingress"] --> TC["TCX program (WITH_EBPF build)"]
   TC --> EV["Events (WS-Discovery multicast / TCP magic bytes)"]
   EV --> OBS["Passive observer"]
   OBS --> EVI["Evidence"]
@@ -28,7 +28,7 @@ flowchart LR
 
 Matches are emitted to a ring buffer (`events` map) and consumed by the Go loader, which translates them into `scannerv2.Evidence` with `Source: "passive:ebpf:tc"` and `Confidence: 0.6`. The classifier layer fuses this corroborating signal with active-probe evidence to produce the final identification.
 
-**Key property**: The program **never modifies or drops packets**-it is pure observation (`TC_ACT_UNSPEC`).
+**Key property**: The program **never modifies or drops packets**; it is pure observation (`TC_ACT_UNSPEC`). On a bridge, attach the **physical ports** (`eth0`, `eth1`, ...), not the bridge device: frames forwarded between bridge ports do not traverse the bridge device's own TC hook.
 
 ## Build Story
 
@@ -38,27 +38,23 @@ eBPF support is controlled by a build tag. The default build ships with **zero k
 # Default build, no eBPF (no-op stub):
 make build
 
-# Build with eBPF support (requires clang/llvm/bpftool + kernel BTF):
+# Build with eBPF support (requires ONLY clang >= 14, on any host OS):
 make build-with-ebpf
 ```
 
-```mermaid
-flowchart LR
-  DEF["make build"] --> STUB["no-op stub (observer_stub.go)"]
-  EBPF["make build-with-ebpf"] --> REAL["real observer (tc_ingress.c)"]
-  REAL --> PRIV["requires privileges (CAP_BPF / CAP_NET_ADMIN)"]
-```
-
-- **Default build**: uses the no-op stub at `internal/service/scannerv2/ebpf/observer_stub.go`-zero kernel/toolchain dependencies
-- **eBPF build**: two steps. First run `go generate ./internal/service/scannerv2/ebpf/` inside the repo, it invokes `cilium/ebpf`'s bpf2go to compile `tc_ingress.c` into a BPF object and generate the Go bindings (the `tcIngress_*.go` outputs are gitignored and must be produced locally). Then `make build-with-ebpf` (which compiles the BPF object and builds with `-tags WITH_EBPF`). The BPF object is embedded into the final binary
+- **Default build**: uses the no-op stub at `internal/service/scannerv2/ebpf/observer_stub.go` with zero kernel/toolchain dependencies
+- **eBPF build**: two steps. First generate the bpf2go bindings — this invokes `cilium/ebpf`'s bpf2go to compile `tc_ingress.c` (the program is **CO-RE free**: it uses only stable UAPI types via `bpf/bpf_standalone.h`, so no bpftool, no kernel BTF, and no libbpf headers are needed at build time). The generated files (`tcingress_*.go/.o`, note the lowercase stem) are gitignored build artifacts. Then `make build-with-ebpf` builds with `-tags WITH_EBPF`; the BPF object is embedded into the final binary
 
 ```bash
-# Step 1: generate bpf2go bindings (needs clang/llvm/bpftool + kernel BTF; outputs are not committed)
-go generate ./internal/service/scannerv2/ebpf/
+# Step 1: generate bpf2go bindings (clang only; outputs are not committed).
+# The generator lives in a WITH_EBPF-tagged file, so the tag is required:
+go generate -tags WITH_EBPF ./internal/service/scannerv2/ebpf/
 
 # Step 2: build
 make build-with-ebpf
 ```
+
+Because the object contains **no CO-RE relocations**, it loads on kernels **without BTF** as well — the build is fully portable and so is the artifact.
 
 ## Runtime Requirements
 
@@ -66,13 +62,34 @@ Only the `WITH_EBPF` build requires:
 
 | Requirement | Details |
 |-------------|---------|
-| **Kernel** | Linux ≥ 5.8 with BTF (`CONFIG_DEBUG_INFO_BTF=y`) |
-| **Privileges** | `CAP_BPF` + `CAP_NET_ADMIN` (or run as root) |
-| **Config** | `scanner.ebpf.enabled: true` + `scanner.ebpf.interfaces: [eth0]` (**at least one interface must be listed**) |
+| **Kernel** | Linux ≥ 6.6 (the loader attaches via TCX; BTF is **optional** — the program is CO-RE free) |
+| **Privileges** | root, or ambient `CAP_BPF` + `CAP_NET_ADMIN` (see `deploy/mibee-steward-ebpf-dropin.example.conf`) |
+| **Config** | `scanner.ebpf.enabled: true`; `scanner.ebpf.interfaces` empty = all non-loopback, up interfaces |
 
-When requirements aren't met (missing privileges or an empty `interfaces` list), the observer logs a debug message and **degrades gracefully** to active-only probing.
+Verified working on: kernel 6.18 (arm64 and armv7, Armbian), kernel 6.6 (OpenWrt 24.10, arm64).
 
-> Note: leaving `interfaces` empty does **not** auto-attach to all interfaces, the observer fails to start with nothing to attach to and degrades, so always list the interfaces explicitly when enabling.
+## Degradation & Observability
+
+The degradation rule: **an eBPF problem may silence the observer, it never crashes the server and never blocks active scanning** (#493). The observer evaluates prerequisites before touching the kernel and reports its lifecycle through a state machine:
+
+| State | Meaning | Example |
+|-------|---------|---------|
+| `active` | fully operational | attached on all interfaces |
+| `degraded` | running with reduced capability | attached 1/2 interfaces; ring-buffer reader tripped its error breaker |
+| `unsupported` | prerequisites missing, nothing was loaded | kernel < 6.6; missing `CAP_BPF`/`CAP_NET_ADMIN` (names the missing caps) |
+| `failed` | a start attempt failed | program load/verification error (full reason in the log) |
+| `pending` | enabled, lazy start has not run yet | the observer starts on the first probe of the first scan |
+| `disabled` / `not-built` | turned off / binary lacks the WITH_EBPF tag | — |
+
+Every transition logs once (`active` at info, degradations at warn with an actionable reason). The ring-buffer drain has an error breaker: after 100 consecutive read errors it stops and degrades instead of spinning.
+
+`mibee-steward doctor` evaluates the prerequisites proactively — before any scan — so you can answer "would eBPF work on this host" without starting anything:
+
+```text
+✅ ebpf observer    kernel=6.6.144 btf=true caps=ok
+❌ ebpf observer    missing privileges: CAP_NET_ADMIN, CAP_BPF (run as root, or grant ambient caps — see docs/en/ebpf.md)
+   ❌ hint: grant ambient caps via a systemd drop-in — see deploy/mibee-steward-ebpf-dropin.example.conf
+```
 
 ## Configuration
 
@@ -84,11 +101,11 @@ scanner:
     enabled: true
     interfaces:
       - eth0
-      - br-lan
+      - eth1
 ```
 
 - `scanner.ebpf.enabled`: enable the eBPF passive observer (default `false`)
-- `scanner.ebpf.interfaces`: list of network interfaces to monitor; at least one is required when enabled (e.g. `eth0`, `br-lan`)
+- `scanner.ebpf.interfaces`: interfaces to attach; **empty = every non-loopback, up interface**. On a gateway prefer an explicit list to keep the observation surface predictable; on a bridge list the physical ports
 
 See [Configuration](configuration.md) for all config options, and [Discovery](discovery.md) for discovery-related settings.
 
@@ -104,24 +121,24 @@ See [Configuration](configuration.md) for all config options, and [Discovery](di
 ### Active probing suffices when
 
 - All network devices respond to SNMP/ICMP probes
-- Runtime environment doesn't meet eBPF requirements (non-Linux 5.8+, no BTF)
+- Runtime environment doesn't meet eBPF requirements (kernel < 6.6, no privileges)
 - Container/virtualized environment can't obtain `CAP_BPF` privileges
 
 ## Known Limitations
 
-- **Linux only**: eBPF requires Linux kernel 5.8+ with BTF support
-- **Privileges required**: must run as root or have `CAP_BPF` + `CAP_NET_ADMIN` capabilities
+- **Linux only**, kernel ≥ 6.6 (TCX attach); BTF optional (CO-RE-free program)
+- **Privileges required**: root or ambient `CAP_BPF` + `CAP_NET_ADMIN`; unprivileged BPF is disabled by default on modern kernels
 - **TCP signals are corroborating only**: SSH/RTSP/HTTP matches are evidence at confidence 0.6, not replacements for active probing
 - **No CGO dependency**: the default build is completely free of eBPF code, suitable for all deployment environments
-- **`vmlinux.h` is machine-specific**: generated from the running kernel's BTF, already gitignored
+- **On a bridge, attach physical ports**: bridged frames do not traverse the bridge device's own TC hook
 
 ## Iterating on the C Program
 
 ```bash
-cd bpf && make vmlinux.h && make tc_ingress.o
+cd bpf && make tc_ingress.o
 ```
 
-This requires `clang`, `llc`, and `bpftool`. The generated `vmlinux.h` is machine-specific (from the running kernel's BTF) and is gitignored.
+Requires `clang` (≥ 14) only — any host OS. The program is CO-RE free by construction (`bpf/bpf_standalone.h` provides the UAPI types and the helper declarations in cilium/ebpf's static-pointer style); do **not** introduce accesses to kernel-internal types, that would silently reintroduce the BTF/CO-RE dependency. Keep the verifier bounds checks complete: every packet field read must be covered by a preceding bounds check that spans the full struct (the TCP header check guards the `doff` bitfield container at offset 12 — an 8-byte window is not enough).
 
 ## Related Pages
 

@@ -27,17 +27,16 @@
 // acceptable here — the userspace classifier fuses this with active-probe
 // evidence and applies confidence thresholds.
 //
-// Build requirements: clang + llvm (>=14), kernel headers, libbpf-style
-// vmlinux.h (generated via bpftool btf dump, see bpf/Makefile).
+// Build requirements: clang (>=14) only — the program is CO-RE free (stable
+// UAPI types only, see bpf_standalone.h): no bpftool, no kernel BTF, no
+// libbpf headers at build time, and it loads on kernels without BTF as well.
 
-#include "vmlinux.h"
-#include <bpf/bpf_helpers.h>
-#include <bpf/bpf_endian.h>
+#include "bpf_standalone.h"
 
-#define ETH_P_IP 0x0800
 #define EVENT_LEN 74
 
-// event layout — must match decodeEvent() in observer_real.go.
+// event layout — must match decodeEvent() in event.go (shared with the stub
+// build so the default CI tests cover the decoding).
 struct event {
     __u32 src_ip;     // source IPv4 (network byte order)
     __u16 port;       // source port
@@ -84,25 +83,30 @@ int tc_ingress(struct __sk_buff *skb) {
     if ((void *)(ip + 1) > data_end) return TC_ACT_UNSPEC;
     if (ip->ihl < 5) return TC_ACT_UNSPEC;
 
-    void *l4 = (void *)ip + (ip->ihl * 4);
-    if (l4 + 8 > data_end) return TC_ACT_UNSPEC;
-
     __u32 src_ip = ip->saddr;
     __u16 src_port = 0;
     __u8 kind = 0;
     const char *payload = NULL;
 
+    void *l4 = (void *)ip + (ip->ihl * 4);
+
     if (ip->protocol == 6) { // TCP
         struct tcphdr *tcp = l4;
+        // The FULL header must be in bounds before ANY field read: doff lives
+        // in a u16 bitfield container at offset 12, so an 8-byte check is not
+        // enough for the verifier (found on the first-ever real load of this
+        // program — see #493/#494).
+        if ((void *)(tcp + 1) > data_end) return TC_ACT_UNSPEC;
         src_port = bpf_ntohs(tcp->source);
         payload = (void *)tcp + (tcp->doff * 4);
-        if (payload + 8 > data_end) return TC_ACT_UNSPEC;
+        if (payload + 8 > (const char *)data_end) return TC_ACT_UNSPEC;
         if (has_prefix(payload, "SSH-", 4))        kind = KIND_SSH;
         else if (has_prefix(payload, "RTSP/1", 6)) kind = KIND_RTSP;
         else if (has_prefix(payload, "HTTP/1", 6)) kind = KIND_HTTP;
         else return TC_ACT_UNSPEC;
     } else if (ip->protocol == 17) { // UDP
         struct udphdr *udp = l4;
+        if ((void *)(udp + 1) > data_end) return TC_ACT_UNSPEC;
         __u16 dport = bpf_ntohs(udp->dest);
         __u16 sport = bpf_ntohs(udp->source);
         // WS-Discovery: traffic on port 3702 (either direction) to/from the
@@ -129,8 +133,6 @@ int tc_ingress(struct __sk_buff *skb) {
 
     // Best-effort: copy a server/banner string fragment when available (TCP).
     if (payload && ip->protocol == 6) {
-        int remaining = (data_end - payload);
-        if (remaining > 64) remaining = 64;
         bpf_probe_read_kernel_str(e->server, 64, payload);
     }
 
