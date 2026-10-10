@@ -125,9 +125,10 @@ func decodeEvent(b []byte) scannerv2.Evidence {
 		ip = "" // presence is MAC-keyed; no IPv4 to report
 	}
 	protocol := protoName(proto)
-	if kind == kindARP {
+	switch kind {
+	case kindARP:
 		protocol = "arp" // no L4: the ethertype is the protocol
-	} else if kind == kindND {
+	case kindND:
 		protocol = "icmpv6"
 	}
 	return scannerv2.Evidence{
@@ -165,7 +166,7 @@ func macString(b []byte) string {
 		if i > 0 {
 			sb.WriteByte(':')
 		}
-		sb.WriteString(fmt.Sprintf("%02x", v))
+		fmt.Fprintf(&sb, "%02x", v)
 	}
 	return sb.String()
 }
