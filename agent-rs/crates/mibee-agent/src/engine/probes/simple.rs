@@ -174,6 +174,7 @@ mod tests {
             community: "public".into(),
             port_spec: vec![554, 8554, 80, 8080, 9090, 9100],
             snmp_port: 161,
+            mdns_port: 0,
             rdns_servers: vec![],
             oui: Arc::new(Oui::parse("")),
             snmp_v3: None,
