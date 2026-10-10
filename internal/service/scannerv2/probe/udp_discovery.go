@@ -399,10 +399,14 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	if ctx.Err() != nil {
 		return nil, nil
 	}
-	timeout := ssdpTimeout
+	// The listen window follows the M-SEARCH MX contract (2s): a conforming
+	// responder answers within MX. Staying under MX leaves budget inside the
+	// orchestrator's per-probe cap for the description-XML fetch (#506).
+	timeout := 2 * time.Second
 	if hint.Timeout > 0 && hint.Timeout < timeout {
 		timeout = hint.Timeout
 	}
+	start := time.Now()
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		return nil, nil // soft failure (no multicast)
@@ -415,6 +419,7 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	packets := readUDPMulticastResponses(conn, timeout)
 	var evs []scannerv2.Evidence
 	target := net.ParseIP(ip)
+	var descLoc string
 	for _, pkt := range packets {
 		// SSDP is multicast: a single M-SEARCH is answered by every UPnP
 		// responder on the segment. Only count replies from the target IP, or
@@ -435,6 +440,20 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 				Confidence: 0.8,
 				ObservedAt: time.Now(),
 			})
+			if descLoc == "" && validateSSDPLocation(raw["location"], ip) {
+				descLoc = raw["location"]
+			}
+		}
+	}
+	// Device description XML (#506): the LOCATION document is the most
+	// authoritative UPnP self-description. Fetch once for the target's own
+	// (validated) LOCATION and merge the identity fields into the first
+	// evidence; corpus rules pick them up as raw keys.
+	if descLoc != "" {
+		if desc := fetchUPnPDescription(ctx, descLoc, time.Since(start)+2*time.Second); len(desc) > 0 {
+			for k, v := range desc {
+				evs[0].RawData[k] = v
+			}
 		}
 	}
 	return evs, nil

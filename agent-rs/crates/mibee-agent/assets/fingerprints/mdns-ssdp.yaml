@@ -233,6 +233,27 @@ rules:
         vendor: { passthrough: txt.vendor }
 
   # ── SSDP: SERVER / USN / LOCATION self-identification ──────────────────
+  # Device description XML fetched from the SSDP LOCATION (#506): the most
+  # authoritative UPnP self-description. Presence of model_name is the
+  # trigger; manufacturer/description ride along when present.
+  - id: ssdp-description
+    source: builtin
+    priority: 225
+    exclusive_group: ssdp-identity
+    match:
+      kind: ssdp
+      field: model_name
+      op: regex
+      value: '.+'
+    service: ssdp
+    protocol: udp
+    confidence: 0.9
+    extract:
+      metadata:
+        model: { passthrough: model_name }
+        vendor: { passthrough: manufacturer }
+        inferred_description: { passthrough: model_description }
+
   - id: ssdp-minidlna
     source: builtin
     priority: 220
