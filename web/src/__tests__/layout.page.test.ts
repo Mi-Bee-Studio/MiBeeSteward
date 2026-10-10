@@ -58,6 +58,17 @@ vi.mock('$lib/stores/auth', () => ({
 	}
 }));
 vi.mock('$lib/stores/demo', () => ({ probeDemoMode: vi.fn(() => Promise.resolve(false)) }));
+// serverVersion: pinned value so the footer line is deterministic (the real
+// store fetches /health once per session — covered by the login page tests).
+vi.mock('$lib/stores/serverVersion', () => ({
+	serverVersion: {
+		subscribe: (fn: (v: string) => void) => {
+			fn('v1.2.3-test');
+			return () => {};
+		}
+	},
+	loadServerVersion: vi.fn()
+}));
 vi.mock('$lib/stores/passwordPolicy', () => ({
 	ensurePasswordPolicyLoaded: vi.fn(() => Promise.resolve()),
 	passwordPolicy: {

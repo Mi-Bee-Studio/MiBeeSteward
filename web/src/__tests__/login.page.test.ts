@@ -74,6 +74,23 @@ describe('Login page', () => {
 		expect(twoFactorInput).toBeFalsy();
 	});
 
+	// The running build's version sits under the login card (public /health
+	// via the serverVersion store, no credentials needed): the deployed
+	// version must be identifiable from the UI before login.
+	it('shows the running server version under the login card', async () => {
+		vi.mocked(api.get).mockImplementation((path: string) =>
+			path === '/health'
+				? Promise.resolve({ version: 'v9.9.9-test' })
+				: Promise.resolve(undefined)
+		);
+
+		const { container } = render(Login);
+
+		await waitFor(() => {
+			expect(container.textContent).toContain('MiBee Steward v9.9.9-test');
+		});
+	});
+
 	// First-run setup: when the bootstrap admin has no password yet
 	// (/auth/setup-status → required), the login form is REPLACED by the
 	// create-admin-password form: nothing to log in with.

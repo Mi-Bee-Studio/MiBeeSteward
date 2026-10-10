@@ -7,6 +7,19 @@
 
 ## [Unreleased]（未发布）
 
+## [0.7.1]（2026-10-10）
+
+### 修复
+- **LuCI 被动发现开关不再"报成功但什么都没改"**（v0.7.0 正式包安装验证期间于 iStoreOS 24.10.8 实机发现，#515）：`luci-helper.sh set_source` 只会改写**已存在**的 `KEY:` YAML 块，于是在缺少 `conntrack` / `hostapd` / `dns_log` 块的配置（遗留或手工精简配置）上，路由器的 服务 → MiBee Steward 设置页会闪出"已更新，服务已重启并健康"，配置却纹丝不动——开关静默无效，服务还白白重启一次。现在缺失的块会作为全新的 `KEY:` / `enabled:` 对追加到父级 `discovery:` 块**末尾**（作为 `dhcp_leases` 的兄弟块——而不是紧贴 `discovery:` 头部，头部自身的 `enabled:` 必须保持为其第一个 enabled 形态的行，否则 `read_source(discovery)` 会读到兄弟块的值）；块存在但缺 `enabled:` 行的会补插一行；完全没有 `discovery:` 父块时 helper 响亮报错，页面如实显示失败。另外，自启保存失败此前不显示任何反馈（闪现消息表缺 `enabled_fail` 条目）——现在会报告失败。
+- **eBPF 被动观测器此前从未真正工作过；现在可以加载、挂载并优雅降级。** 三处相互独立的损坏导致没有任何 WITH_EBPF 二进制能跑起观测器：loader 用了 cilium/ebpf v0.22（锁定依赖）已移除的 `link.AttachTC`；不带 `-tags WITH_EBPF` 时 `go generate` 静默产出为空（生成器本身在带 tag 的文件里）；TC 程序自身过不了 verifier——TCP 分支在 8 字节边界检查下读取头部偏移 12 处的 `doff` 位域容器（边界现在覆盖完整 20 字节头；首次真实加载时发现）。观测器现在经 TCX 挂载（内核 ≥6.6），BPF 目标文件免 CO-RE（自包含 `bpf/bpf_standalone.h`：仅 UAPI 类型、静态指针风格 helper），任意主机只需 clang 即可构建——不需要 bpftool、内核 BTF、libbpf 头——且无 BTF 内核也能加载（#492、#493、#494）。
+
+### 新增
+- **Web 界面可见运行版本**：侧边栏底部与登录页现在显示部署构建的版本串（`MiBee Steward vX.Y.Z`），数据来自公开的 `/api/v1/health` 端点——每个浏览器会话只取一次（共享 store，首次取空则允许重试），取不到就不显示该行。此前运行版本只能通过 API、`mibee-steward -version` 或路由器安装上的 LuCI 状态页看到（2026-10-10 现场需求，与上一条同一场实机验证中提出）。
+- **观测子网可见（#503）**：`GET /api/v1/subnets` 暴露每次扫描收尾写入的 subnets 表（CIDR、路由表默认网关、VLAN 关联）——数据早已存在但一直没有消费方。可选 `?network_id=` 过滤；非全局权限只能看到被授权的网段；`{subnets, total}` 信封与 VLAN 列表一致。网络页新增只读"观测子网"卡片（CIDR / 网络 / 网关 / VLAN / 最近发现）。OpenAPI 规范、Go client 与 TS 类型已再生成。
+- **裸帧 LLDP/CDP 邻居落库进拓扑（#501）**：`WITH_LLDP`/`WITH_CDP` 裸帧监听器此前丢弃所有采集到的邻接——主机事件路径正常，但 `neighborSink` 被接成 nil，裸帧永远到不了 `device_neighbors`。新增按 MAC 为键的仓储方法（`RecordNeighborsByMAC`）把监听接口的 MAC 解析为本端设备（重复行取最新），并以与扫描/agent 上报邻居完全一致的 `(device_id, neighbor_mac, protocol)` 合并语义 upsert（空端口不会覆盖已记录值、`last_seen` 刷新）。边在网络下一次扫描时经既有 `deriveTopologyEdges` 物化进 `topology_edges`（LLDP→l2/0.85，CDP→l2/0.80）。sink 跑在监听 goroutine 上且只以短事务写 `device_neighbors`，不会与发现协调器的串行设备 upsert 交错。没有 SNMP 管理面的网络现在也能仅凭裸帧贡献真实 L2 边。
+- **eBPF 运行时能力检测与优雅降级（#493）**：观测器在触碰内核前探测内核版本、生效能力（点名缺的是 `CAP_BPF` 还是 `CAP_NET_ADMIN`）与 BTF 存在性，并报告生命周期状态（`active`/`degraded`/`unsupported`/`failed`/`pending`/`disabled`/`not-built`）与可执行的失败原因。红线：任何 eBPF 问题只让观测器静默——绝不崩溃 server、绝不阻塞主动扫描。接口挂载按接口容错（部分挂载 = degraded）；ring-buffer 排空带连续错误熔断，热错误循环转不起来；`interfaces: []` 现在真的会挂载到全部非回环、up 状态的接口（旧代码返回 nil 并启动失败，与自己的文档注释相矛盾）。`mibee-steward doctor` 新增 `ebpf observer` 检查项，主动回答"这台主机上 eBPF 能不能用"——内核版本、BTF、能力，附 systemd drop-in 修复提示（`deploy/mibee-steward-ebpf-dropin.example.conf`）。
+- **已在 arm64 rig（内核 6.18.44）两种权限形态下实测**：root 与 systemd drop-in 形态（非 root 用户 + ambient CAP_BPF/CAP_NET_ADMIN）——观测器挂载成功、报告 active，真实局域网流量（SSH/HTTP banner、ONVIF WS-Discovery 多播）以 `passive:ebpf:tc` 证据行落地（对 4 台主机两轮扫描得 11 条被动行、约 90 条主动行；观测器 RSS 开销对比实例 <1 MB）。rig 还暴露一个 verifier 细节并已在同一 PR 修复：带变偏移包指针算术的加载即使有 ambient CAP_BPF 也会被非 root euid 拒绝（"pointer arithmetic prohibited for !root"，内核 6.18）；程序现在完全经 bpf_skb_load_bytes 读入栈缓冲（零包指针算术、跳过 IP 选项包），在该形态下干净加载。无能力的非特权运行降级为 `unsupported` 并点名缺失能力，扫描不受影响；doctor 两种形态都能报告。
+
 ## [0.7.0]（2026-10-10）
 
 ### ⚠️ 破坏性变更
