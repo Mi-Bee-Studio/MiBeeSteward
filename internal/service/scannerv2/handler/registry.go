@@ -27,6 +27,7 @@ func DefaultHandlers() []scannerv2.ServiceHandler {
 		MiotHandler{},
 		MdnsHandler{},
 		SsdpHandler{},
+		DhcpHandler{},
 	}
 	// Server-class + TLS-wrapped handlers are data-driven (one type per family,
 	// registered once per service name), see handler/services.go and
