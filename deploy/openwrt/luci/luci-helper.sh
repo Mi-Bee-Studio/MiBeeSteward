@@ -72,19 +72,71 @@ read_source() {
     echo "${_val:-0}"
 }
 
-# set_source KEY 0|1 flips the enabled flag inside the "KEY:" block in place.
+# set_source KEY 0|1 flips the enabled flag inside the "KEY:" block.
+# Two config shapes must both work (field-found on R68S 2026-10-10: a legacy
+# minimal config had no conntrack/hostapd/dns_log blocks, the LuCI toggle
+# flashed "passive_ok" while rewriting nothing — a silent no-op):
+#   * block present  -> rewrite its enabled: line in place (inserting one
+#                       right after the KEY: header if the block lacks it)
+#   * block absent   -> append a fresh KEY:/enabled: pair at the END of the
+#                       parent discovery: block (sibling of dhcp_leases; NOT
+#                       right after the discovery: header — discovery's own
+#                       enabled: must stay its first enabled-like line or
+#                       read_source(discovery) would read a sibling's value)
+# No discovery: parent to append to -> fail loudly (caller reports fail).
 set_source() {
     _key="$1" _val="$2"
     case "$_val" in 0|1) ;; *) log "ERROR: set_source needs 0|1"; exit 1 ;; esac
-    awk -v key="$_key" -v val="$_val" '
-        $0 ~ "^[[:space:]]*" key ":[[:space:]]*$" { inblk=1; ind=match($0,/[^ 	]/)-1; print; next }
-        inblk {
-            n=match($0,/[^ 	]/)-1
-            if ($0 !~ /^[[:space:]]*$/ && n<=ind) inblk=0
+    _bool="$([ "$_val" = 1 ] && echo true || echo false)"
+
+    if ! grep -qE "^[[:space:]]*${_key}:[[:space:]]*$" "$CONF"; then
+        # append path: the KEY block is absent
+        awk -v key="$_key" -v val="$_bool" '
+            $0 ~ "^[[:space:]]*discovery:[[:space:]]*$" && !ins {
+                dind = match($0, /[^ \t]/) - 1; dmode = 1; print; next
+            }
+            dmode {
+                if ($0 !~ /^[[:space:]]*$/ && match($0, /[^ \t]/) - 1 <= dind) {
+                    print substr("                    ", 1, dind + 2) key ":"
+                    print substr("                    ", 1, dind + 4) "enabled: " val
+                    ins = 1; dmode = 0
+                }
+            }
+            { print }
+            END {
+                if (dmode && !ins) {
+                    print substr("                    ", 1, dind + 2) key ":"
+                    print substr("                    ", 1, dind + 4) "enabled: " val
+                }
+            }
+        ' "$CONF" > "$CONF.tmp"
+        if [ -s "$CONF.tmp" ] && grep -qE "^[[:space:]]*${_key}:[[:space:]]*$" "$CONF.tmp"; then
+            mv "$CONF.tmp" "$CONF"
+            return 0
+        fi
+        rm -f "$CONF.tmp"
+        log "ERROR: set_source: no ${_key}: block and no discovery: parent to append one to"
+        exit 1
+    fi
+
+    # rewrite path: the KEY block exists
+    awk -v key="$_key" -v val="$_bool" '
+        $0 ~ "^[[:space:]]*" key ":[[:space:]]*$" { kmode = 1; kind = match($0, /[^ \t]/) - 1; print; next }
+        kmode {
+            if ($0 !~ /^[[:space:]]*$/ && match($0, /[^ \t]/) - 1 <= kind) {
+                if (!edone) print substr("                    ", 1, kind + 2) "enabled: " val
+                kmode = 0
+            } else if ($0 ~ /^[[:space:]]*enabled:/) {
+                sub(/enabled:[[:space:]]*(true|false)/, "enabled: " val)
+                edone = 1
+            }
         }
-        inblk && /^[[:space:]]*enabled:/ { sub(/enabled:[[:space:]]*(true|false)/, "enabled: " (val==1 ? "true" : "false")) }
         { print }
-    ' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF" || { rm -f "$CONF.tmp"; log "ERROR: set_source rewrite failed"; exit 1; }
+        END {
+            if (kmode && !edone) print substr("                    ", 1, kind + 2) "enabled: " val
+        }
+    ' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF" \
+        || { rm -f "$CONF.tmp"; log "ERROR: set_source rewrite failed"; exit 1; }
 }
 
 cmd_status() {

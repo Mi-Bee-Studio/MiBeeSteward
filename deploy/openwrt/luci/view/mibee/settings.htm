@@ -54,6 +54,7 @@ local msgs = {
     pw_mismatch  = { ok = false, text = "两次输入的密码不一致 Passwords do not match" },
     pw_empty     = { ok = false, text = "密码不能为空 Password cannot be empty" },
     enabled_ok   = { ok = true,  text = "开机自启已更新 Autostart updated" },
+    enabled_fail = { ok = false, text = "开机自启更新失败（看日志 logread -e mibee-steward 或 init 脚本权限）Autostart update failed" },
     restart_ok   = { ok = true,  text = "服务已重启并健康 Service restarted" },
     restart_fail = { ok = false, text = "重启失败或服务未应答（看日志 logread -e mibee-steward）Restart failed" },
     passive_ok   = { ok = true,  text = "被动发现源已更新，服务已重启并健康 Passive discovery updated" },
