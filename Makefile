@@ -81,11 +81,23 @@ package-openwrt: build-frontend sync-device-types sync-oui-curated
 # binary + procd init + example config + installer laid out exactly as they
 # land on the router. GOARCH is inherited from the package target that pulls
 # this in (package-openwrt-ipk / package-openwrt-apk).
+#
+# Router-package variant controls (#499): PKG_TAGS passes optional build tags
+# into the staged center binary, PKG_DEPS becomes the package's runtime
+# dependency line (ipk Depends / apk depend). The eBPF-enabled variant, for a
+# kernel >= 6.6 (TCX) router with the clsact qdisc available:
+#   make package-openwrt-ipk PKG_TAGS=WITH_EBPF \
+#        PKG_DEPS="+kmod-sched-bpf +kmod-sched-cls-act +tc"
+# The Go loader is built in (no libbpf userland needed); procd runs the
+# service as root, so no extra capability wiring is required.
+PKG_TAGS ?=
+PKG_DEPS ?=
+export PKG_DEPS
 openwrt-stage: build-frontend sync-device-types sync-oui-curated
 	@rm -rf $(BUILD_DIR)/openwrt-stage
 	@mkdir -p $(BUILD_DIR)/openwrt-stage/usr/bin $(BUILD_DIR)/openwrt-stage/etc/init.d $(BUILD_DIR)/openwrt-stage/etc/mibee $(BUILD_DIR)/openwrt-stage/usr/lib/mibee \
 	        $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/controller $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee
-	GOOS=linux GOARCH=$(GOARCH) CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/openwrt-stage/usr/bin/mibee-steward ./cmd/server/
+	GOOS=linux GOARCH=$(GOARCH) CGO_ENABLED=0 go build $(if $(PKG_TAGS),-tags $(PKG_TAGS),) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/openwrt-stage/usr/bin/mibee-steward ./cmd/server/
 	tr -d '\r' < deploy/openwrt/mibee-steward.init > $(BUILD_DIR)/openwrt-stage/etc/init.d/mibee-steward
 	tr -d '\r' < configs/config.example.yaml     > $(BUILD_DIR)/openwrt-stage/etc/mibee/config.example.yaml
 	tr -d '\r' < deploy/openwrt/install.sh       > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/install.sh

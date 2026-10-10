@@ -162,6 +162,27 @@ ssh root@<路由器IP> 'apk add --allow-untrusted /tmp/mibee-steward_*_arm64.apk
 
 **采集器包（形态 B）**：Rust 采集器同样有三种形态——`make package-openwrt-agent-rs`（tar 包，即上文的手动流程）、`package-openwrt-agent-rs-ipk`、`package-openwrt-agent-rs-apk`——发版 tag 会把它们挂上 GitHub Release（`mibee-agent_*_arm64.*`）。生命周期与中心包一致：`preinst` 做 uname 闸门 + `-version` 冒烟；`postinst` 跑同一个 `agent-install.sh --from-ipk` 配置逻辑（首装从 uci 推导 LAN 生成 `/etc/mibee/agent.yaml`；center 的 url/token 留空占位、服务**不启动**，填好后手动 start——升级保留配置不动）。无 LuCI 文件：采集器无界面。路由器上：`opkg install mibee-agent_*_arm64.ipk` / `apk add --allow-untrusted mibee-agent_*_arm64.apk`，然后编辑 `/etc/mibee/agent.yaml`（center.url + auth_token）并 `/etc/init.d/mibee-agent start`。
 
+### eBPF 版路由器软件包（#499）
+
+常规路由器软件包为默认零特权构建。在**内核 ≥ 6.6**（TCX 时代）的路由器上可以打包 eBPF 版 center——[被动观测器](ebpf.md)从此在网关视角静默看到线缆级 ARP/ND 在网事实与协议签名，零探测发包：
+
+```bash
+# 一次性：生成 BPF 对象（构建机需 clang >= 14）：
+go generate -tags WITH_EBPF ./internal/service/scannerv2/ebpf/
+
+# 带标签打包；kmod 依赖自动写进包元数据：
+make package-openwrt-ipk PKG_TAGS=WITH_EBPF      PKG_DEPS="+kmod-sched-bpf +kmod-sched-cls-act +tc"
+#（或 package-openwrt-apk，变量相同）
+```
+
+说明：
+
+- **不需要 `libbpf`**——Go 二进制自带加载器，BPF 对象 CO-RE free（无 BTF 内核也能加载）；`kmod`/`tc` 依赖只提供 TC 挂载所需的内核侧调度器钩子。
+- **procd 以 root 运行服务**，天然满足特权要求，无需额外配置。
+- **桥接路由器请把观测器挂到物理口**（`eth0`、`eth1`……）而不是 `br-lan`：桥端口之间转发的帧不经过桥设备自身的 TC ingress 钩子。`/etc/mibee/config.yaml` 的 `scanner.ebpf.interfaces` 接口列表即为此设。
+- 内核低于 6.6 时观测器启动报 `unsupported`，服务本体与默认构建完全一致（#493 降级规则）。
+- 同样的变量适用于 LLDP/CDP/ARP 扫描变体：`PKG_TAGS=WITH_LLDP,WITH_CDP,WITH_ARPSCAN`（procd 的 root 已提供 CAP_NET_RAW，无需依赖）。
+
 ### LuCI 原生入口（iStoreOS / OpenWrt 网页管理）
 
 安装包同时落一份 **LuCI 集成**（经典 Lua controller + 模板，无需 luci-compat/CBI；没有 LuCI 的机器上这些文件是惰性的）。装完在路由器管理界面（`http://<路由器IP>/cgi-bin/luci`）的 **服务 → MiBee Steward** 下有两个人口：

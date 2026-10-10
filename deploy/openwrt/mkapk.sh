@@ -73,6 +73,14 @@ origin = $PKG
 maintainer = MiBee Studio <https://github.com/Mi-Bee-Studio/MiBeeSteward>
 license = AGPL-3.0-or-later
 EOF
+# Optional runtime deps (#499), mirroring the ipk's Depends: space-separated
+# list in PKG_DEPENDS (see the ipk script for the eBPF example).
+if [ -n "${PKG_DEPENDS:-}" ]; then
+    for dep in $PKG_DEPENDS; do
+        printf 'depend = %s
+' "$dep" >> "$ROOT/.PKGINFO"
+    done
+fi
 
 # ─── lifecycle scripts (apk v2 names use hyphens, not ipk-style prerm/…) ───
 cat > "$ROOT/.pre-install" <<EOF

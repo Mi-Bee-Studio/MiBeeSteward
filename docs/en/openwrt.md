@@ -162,6 +162,27 @@ Why `Architecture: all`: the payload is a CGO-free static binary, so instead of 
 
 **Agent packages (form B)**: the Rust agent ships the same three forms — `make package-openwrt-agent-rs` (tarball, the manual flow above), `package-openwrt-agent-rs-ipk`, `package-openwrt-agent-rs-apk` — and release tags attach them to the GitHub Release (`mibee-agent_*_arm64.*`). The lifecycle matches the center packages: `preinst` gates on `uname` + smoke-runs `-version`; `postinst` runs the same `agent-install.sh --from-ipk` configure logic (first install generates `/etc/mibee/agent.yaml` from uci-derived LAN facts; the center url/token stay empty placeholders and the service stays **down** until you fill them — upgrades keep the config untouched). No LuCI files: the agent is headless. On the router: `opkg install mibee-agent_*_arm64.ipk` / `apk add --allow-untrusted mibee-agent_*_arm64.apk`, then edit `/etc/mibee/agent.yaml` (center.url + auth_token) and `/etc/init.d/mibee-agent start`.
 
+### eBPF-enabled router package (#499)
+
+The stock router packages ship the default unprivileged build. For a **kernel >= 6.6** (the TCX attach era) router you can package the eBPF-enabled center — the [passive observer](ebpf.md) then sees wire-level ARP/ND presence and protocol signatures from the gateway vantage, silently, with zero probe packets:
+
+```bash
+# One-time: generate the BPF object (clang >= 14 needed on the build host):
+go generate -tags WITH_EBPF ./internal/service/scannerv2/ebpf/
+
+# Then package with the tag; the kmod deps are written into the package metadata:
+make package-openwrt-ipk PKG_TAGS=WITH_EBPF      PKG_DEPS="+kmod-sched-bpf +kmod-sched-cls-act +tc"
+# (or package-openwrt-apk with the same variables)
+```
+
+Notes:
+
+- **`libbpf` is NOT needed** — the Go binary carries its own loader and the BPF object is CO-RE free (loads even on BTF-less kernels); the `kmod`/`tc` deps only provide the kernel-side scheduler hooks the TC attach rides on.
+- **procd runs the service as root**, which satisfies the capability requirement without any extra wiring.
+- **On a bridged router, attach the observer to the physical ports** (`eth0`, `eth1`, ...), not `br-lan`: frames forwarded between bridge ports do not traverse the bridge device's own TC ingress hook. `scanner.ebpf.interfaces` in `/etc/mibee/config.yaml` takes the list.
+- On a kernel older than 6.6 the observer reports `unsupported` at startup and the server runs exactly like the default build (#493 degradation).
+- Same variables work for the LLDP/CDP/ARP-sweep variant: `PKG_TAGS=WITH_LLDP,WITH_CDP,WITH_ARPSCAN` (procd's root already provides CAP_NET_RAW, no deps needed).
+
 ### LuCI native entry (iStoreOS / OpenWrt web admin)
 
 The package also lays down a **LuCI integration** (classic Lua controller + templates; no luci-compat/CBI dependency, the files are inert on builds without LuCI). After install, the router's admin UI (**MiBee Steward** under System → Services) offers two pages:
