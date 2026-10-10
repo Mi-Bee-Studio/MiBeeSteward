@@ -13,6 +13,7 @@
 	import { api, ApiError, SessionExpiredError } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
 	import { ensurePasswordPolicyLoaded, passwordPolicy } from '$lib/stores/passwordPolicy';
+	import { serverVersion, loadServerVersion } from '$lib/stores/serverVersion';
 	import type { LoginResponse } from '$lib/types';
 	import { getErrorMessage } from '$lib/utils/error.js';
 	import { loginSchema, forcePasswordSchema, validateForm } from '$lib/utils/validation.js';
@@ -68,6 +69,9 @@
 		// Pre-fetch the strength policy so the hint is correct before submit;
 		// failures keep the compiled-in defaults.
 		void ensurePasswordPolicyLoaded();
+		// Running build version under the login card (public /health; shared
+		// with the sidebar footer, fetched once per session).
+		void loadServerVersion();
 		api
 			.get<{ required: boolean }>('/auth/setup-status')
 			.then((res) => {
@@ -434,6 +438,14 @@
 			</p>
             {/if}
 		</div>
+
+		{#if $serverVersion}
+			<!-- Running build, from the public /health endpoint: identify the
+			     deployed version before any credentials exist. -->
+			<p class="mt-6 text-center text-xs text-muted/70">
+				MiBee Steward {$serverVersion}
+			</p>
+		{/if}
 	</div>
 </div>
 

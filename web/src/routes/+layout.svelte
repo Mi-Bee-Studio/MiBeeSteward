@@ -14,6 +14,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import { probeDemoMode } from '$lib/stores/demo';
 	import { ensurePasswordPolicyLoaded } from '$lib/stores/passwordPolicy';
+	import { serverVersion, loadServerVersion } from '$lib/stores/serverVersion';
 	import { m } from '$lib/i18n-paraglide';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
@@ -74,6 +75,9 @@
 		// Effective password policy (#332): client-side password validation and
 		// hint text must follow auth.password_policy, not hardcoded defaults.
 		ensurePasswordPolicyLoaded();
+		// Running build version for the sidebar footer (public /health; once
+		// per session — the login page shares the same store).
+		loadServerVersion();
 	});
 
 	async function wipeDemoData() {
@@ -315,6 +319,14 @@
 					<Users class="w-4 h-4" />
 					<span>{m['navigation.Login']()}</span>
 				</a>
+			{/if}
+			{#if $serverVersion}
+				<!-- Running build, from the public /health endpoint: the deployed
+				     version must be identifiable from the UI alone (not only via
+				     CLI or the LuCI entry on router installs). -->
+				<div class="pt-1 text-center text-[10px] text-muted/70 truncate">
+					MiBee Steward {$serverVersion}
+				</div>
 			{/if}
 		</div>
 	</aside>
