@@ -98,9 +98,18 @@ typedef __u32 __wsum;
 #define TC_ACT_UNSPEC (-1)
 /* linux/bpf.h enum bpf_map_type */
 #define BPF_MAP_TYPE_RINGBUF 27
+#define BPF_MAP_TYPE_LRU_HASH 9
+/* linux/bpf.h enum bpf_func_id: map lookup/update (1/2), ktime (5) */
+static void *(*bpf_map_lookup_elem)(void *map, const void *key) = (void *) 1;
+static long (*bpf_map_update_elem)(void *map, const void *key, const void *value, __u64 flags) = (void *) 2;
+static __u64 (*bpf_ktime_get_ns)(void) = (void *) 5;
+/* linux/bpf.h update flags */
+#define BPF_ANY 0
 /* linux/if_ether.h */
 #define ETH_ALEN 6
 #define ETH_P_IP 0x0800
+#define ETH_P_ARP 0x0806
+#define ETH_P_IPV6 0x86dd
 
 /* ------------------------------------------------------------------ */
 /* UAPI struct layouts                                                  */

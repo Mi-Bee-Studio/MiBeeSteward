@@ -614,6 +614,19 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			"trigger_identify", cfg.Scanner.Discovery.TriggerIdentify)
 	}
 
+	// ARP/ND passive presence (#497): the eBPF observer's wire-level sightings
+	// enter through the SAME discovery funnel as the other sources (dedup,
+	// known-host gate, optional identify) — a presence fact, not scan evidence.
+	// ND sightings carry no IPv4 and wait for the MAC-keyed channel (#522).
+	scannerv2ebpf.SetHostSighting(func(ip, mac string) {
+		if ip == "" || mac == "" {
+			return
+		}
+		discSvc.Emit(scannerv2discovery.NewHostEvent{
+			IP: ip, MAC: mac, Source: "passive:ebpf:arp",
+		})
+	})
+
 	// Agent command service: constructed BEFORE the scheduler so the ScanFunc
 	// binding below can close over it (agent-network tasks dispatch through it
 	// instead of running a local scan).

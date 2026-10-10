@@ -16,6 +16,7 @@ package ebpf
 import (
 	"encoding/binary"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,8 @@ const (
 	kindTLSSNI      uint8 = 6
 	kindMDNS        uint8 = 7
 	kindSSDP        uint8 = 8
+	kindARP         uint8 = 9
+	kindND          uint8 = 10
 )
 
 // decodeEvent parses one ring-buffer record into Evidence. Unknown kinds,
@@ -72,11 +75,15 @@ func decodeEvent(b []byte) scannerv2.Evidence {
 		eKind, service = "mdns", "mdns"
 	case kindSSDP:
 		eKind, service = "ssdp", "ssdp"
+	case kindARP:
+		eKind, service = "arp_sighting", "arp"
+	case kindND:
+		eKind, service = "nd_sighting", "nd"
 	default:
 		return scannerv2.Evidence{}
 	}
 	raw := map[string]string{}
-	if server != "" && eKind != "dhcp" {
+	if server != "" && eKind != "dhcp" && eKind != "nd_sighting" {
 		raw["server"] = server
 	}
 	switch kind {
@@ -98,27 +105,89 @@ func decodeEvent(b []byte) scannerv2.Evidence {
 		if q := decodeDNSWireName(b[86:118]); q != "" {
 			raw["query"] = q
 		}
+	case kindARP, kindND:
+		// Presence sightings (#497): the MAC lives in the opt55 slot (6 bytes),
+		// the ARP sender IP in src_ip, the ND sender IPv6 raw in server[0:16].
+		raw["mac"] = macString(b[74:80])
+		if kind == kindARP {
+			if b[119] == 1 {
+				raw["op"] = "request"
+			} else {
+				raw["op"] = "reply"
+			}
+		} else {
+			raw["ipv6"] = ipv6String(b[10:26])
+			raw["icmp6_type"] = fmt.Sprintf("%d", b[119])
+		}
 	}
 	raw["service_hint"] = service
+	if kind == kindND {
+		ip = "" // presence is MAC-keyed; no IPv4 to report
+	}
+	protocol := protoName(proto)
+	switch kind {
+	case kindARP:
+		protocol = "arp" // no L4: the ethertype is the protocol
+	case kindND:
+		protocol = "icmpv6"
+	}
 	return scannerv2.Evidence{
 		Source:     "passive:ebpf:tc",
 		Kind:       eKind,
 		IP:         ip,
 		Port:       port,
-		Protocol:   protoName(proto),
+		Protocol:   protocol,
 		RawData:    raw,
 		Confidence: confidenceFor(kind),
 		ObservedAt: time.Now(),
 	}
 }
 
+// routePassive is the drain loop's per-event decision (#497): ARP/ND presence
+// sightings are facts about the network, not service evidence — they go to the
+// discovery channel via the sighting callback and are never buffered for
+// Probe(). ND sightings carry no IPv4 (ip stays empty) until the MAC-keyed
+// discovery channel lands (#522); the callback decides what to do with them.
+// Everything else buffers under the source IP as scan evidence.
+func routePassive(ev scannerv2.Evidence, recent map[string][]scannerv2.Evidence, sighting func(ip, mac string)) {
+	if ev.Kind == "arp_sighting" || ev.Kind == "nd_sighting" {
+		if sighting != nil {
+			sighting(ev.IP, ev.RawData["mac"])
+		}
+		return
+	}
+	recent[ev.IP] = append(recent[ev.IP], ev)
+}
+
+// macString renders the 6 bytes in the opt55 slot as aa:bb:cc:dd:ee:ff.
+func macString(b []byte) string {
+	var sb strings.Builder
+	for i, v := range b {
+		if i > 0 {
+			sb.WriteByte(':')
+		}
+		fmt.Fprintf(&sb, "%02x", v)
+	}
+	return sb.String()
+}
+
+// ipv6String renders the 16 raw bytes of the ND sender address; an all-zero
+// capture reads as "::" (the BPF read can only fail on truncated frames,
+// which the program drops before emitting).
+func ipv6String(b []byte) string {
+	ip := make(net.IP, net.IPv6len)
+	copy(ip, b)
+	return ip.String()
+}
+
 // confidenceFor: DHCP carries vendor-class + parameter-list self-declaration
-// (0.8, the same weight as the active mDNS/SSDP seeds); a TLS SNI is a
-// somewhat weaker client-side hint; plain protocol presence stays
+// and an ARP/ND sighting is a hard on-wire liveness fact from the sender
+// itself (both 0.8, the same weight as the active mDNS/SSDP seeds); a TLS SNI
+// is a somewhat weaker client-side hint; plain protocol presence stays
 // corroborating.
 func confidenceFor(kind uint8) float64 {
 	switch kind {
-	case kindDHCP:
+	case kindDHCP, kindARP, kindND:
 		return 0.8
 	case kindTLSSNI:
 		return 0.7
