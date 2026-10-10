@@ -24,10 +24,11 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
-	import { Network as NetworkIcon } from '@lucide/svelte';
-	import type { Network } from '$lib/types';
+	import { Network as NetworkIcon, Route as RouteIcon } from '@lucide/svelte';
+	import type { Network, Subnet } from '$lib/types';
 
 	let networks = $state<Network[]>([]);
+	let subnets = $state<Subnet[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -59,6 +60,14 @@
 		try {
 			const res = await api.get<{ networks: Network[]; total: number }>('/networks');
 			networks = res.networks || [];
+			// Subnets are written by every scan finalize (#503); failures here
+			// stay silent — the networks list is the primary content.
+			try {
+				const sub = await api.get<{ subnets: Subnet[]; total: number }>('/subnets');
+				subnets = sub.subnets || [];
+			} catch {
+				subnets = [];
+			}
 		} catch (err: unknown) {
 			// Inline banner only on initial load (parallel toast was noisy).
 			error = getErrorMessage(err);
@@ -153,6 +162,50 @@
 			deleteLoading = false;
 		}
 	}
+
+	// --- Subnet table columns (observed CIDR/gateway/VLAN per network, #503) ---
+	const subnetColumns = $derived([
+		{
+			key: 'cidr',
+			label: m['networks.CIDR'](),
+			sortable: true,
+			render: (row: Record<string, unknown>) =>
+				html`<span class="font-mono text-xs text-text">${row.cidr}</span>`
+		},
+		{
+			key: 'network',
+			label: m['networks.Network'](),
+			render: (row: Record<string, unknown>) => {
+				const net = networks.find((n) => n.id === row.network_id);
+				return net ? html`<span class="text-text-muted">${net.name}</span>` : '<span class="text-text-muted">-</span>';
+			}
+		},
+		{
+			key: 'gateway',
+			label: m['networks.Gateway'](),
+			render: (row: Record<string, unknown>) => {
+				const v = row.gateway as string | null | undefined;
+				return v ? html`<span class="font-mono text-xs text-text-muted">${v}</span>` : '<span class="text-text-muted">-</span>';
+			}
+		},
+		{
+			key: 'vlan_id',
+			label: m['networks.VLAN'](),
+			render: (row: Record<string, unknown>) => {
+				const v = row.vlan_id as number | null | undefined;
+				return v != null ? html`<span class="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-mono">${v}</span>` : '<span class="text-text-muted">-</span>';
+			}
+		},
+		{
+			key: 'last_seen',
+			label: m['networks.Last Seen'](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const v = row.last_seen as string | null | undefined;
+				return v ? html`<span class="text-xs text-text-muted">${v}</span>` : '<span class="text-text-muted">-</span>';
+			}
+		}
+	]);
 
 	// --- DataTable columns ---
 	const columns = $derived([
@@ -267,6 +320,31 @@
 						{/if}
 					{/snippet}
 				</DataTable>
+			</div>
+	{/if}
+
+	<!-- Observed subnets (#503): CIDR + gateway + VLAN linkage per network,
+	     written by every scan finalize. Read-only. -->
+	{#if !loading}
+		<div class="mt-6">
+			<h3 class="text-lg font-semibold text-text mb-3 flex items-center gap-2">
+				<RouteIcon class="w-4 h-4 text-accent" />
+				{m['networks.Subnets']()}
+			</h3>
+			{#if subnets.length === 0}
+				<div class="bg-surface border border-border rounded-lg p-6 text-center text-sm text-text-muted">
+					{m['networks.Subnets Empty']()}
+				</div>
+			{:else}
+				<div class="bg-surface border border-border rounded-lg p-4">
+					<DataTable
+						columns={subnetColumns}
+						rows={subnets as unknown as Record<string, unknown>[]}
+						searchableKeys={['cidr']}
+						emptyTitle={m['networks.Subnets Empty']()}
+					/>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>

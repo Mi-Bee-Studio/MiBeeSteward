@@ -1914,6 +1914,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/subnets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observed subnets (CIDR, gateway, VLAN linkage) across networks
+         * @description Read-only view of the subnets table scan finalizes write (#503). Complete list, not paginated.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    network_id?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Subnets envelope (complete list) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SubnetList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/networks/{id}/vlans": {
         parameters: {
             query?: never;
@@ -5606,6 +5647,22 @@ export interface components {
             vlan_tag: number;
             name: string | null;
             description: string | null;
+        };
+        Subnet: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            network_id: number;
+            cidr: string;
+            vlan_id?: number | null;
+            gateway?: string | null;
+            metadata?: string;
+            first_seen?: string | null;
+            last_seen?: string | null;
+        };
+        SubnetList: {
+            subnets?: components["schemas"]["Subnet"][];
+            total?: number;
         };
         VLANList: {
             vlans?: components["schemas"]["VLAN"][];

@@ -244,6 +244,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// topology graph (nodes + edges). Read-only; any logged-in user.
 	neighborHandler := handler.NewNeighborHandler(scanQueries)
 	topologyHandler := handler.NewTopologyHandler(scanQueries)
+	// Observed subnets (CIDR/gateway/VLAN linkage written by scan finalize).
+	// Read-only; any logged-in user. Same *db.Queries as the neighbors
+	// handler (#503).
+	subnetHandler := handler.NewSubnetHandler(scanQueries)
 	// TLS certificates per device (detail page TLS sub-panel + Modal). Read-only;
 	// any logged-in user. Same *db.Queries as the neighbors handler.
 	tlsCertHandler := handler.NewTLSCertHandler(scanQueries)
@@ -755,6 +759,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	registerDeviceConfigRoutes(r, scopeResolver, dbConn, deviceConfigHandler)
 
 	registerTopologyRoutes(r, scopeResolver, topologyHandler)
+
+	registerSubnetRoutes(r, scopeResolver, subnetHandler)
 
 	// Document routes
 	uploadPath := cfg.Storage.UploadPath
