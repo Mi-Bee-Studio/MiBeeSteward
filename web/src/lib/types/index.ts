@@ -228,6 +228,7 @@ export type ScanRun = Schemas['ScanRun'];
 
 export type Network = Schemas['Network'];
 export type VLAN = Schemas['VLAN'];
+export type Subnet = Schemas['Subnet'];
 
 // ---------------------------------------------------------------------------
 // Change Log (device_added / device_changed / device_lost events)
