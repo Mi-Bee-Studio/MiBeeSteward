@@ -557,6 +557,18 @@ The synchronous scan endpoint (`POST /api/v1/scanner/scan`) imposes a hard targe
 | `retention.sweep_interval_hours` | int | 6 | Cleanup sweep interval (hours) |
 | `retention.batch_size` | int | 5000 | Max rows per cleanup batch |
 
+## SNMP Trap Receiver Configuration
+
+The inbound SNMP trap channel (#509) — devices speaking unprompted. `linkDown`/`linkUp` are topology-change signals, `coldStart` is an onboarding report, `authenticationFailure` is a security whisper; every accepted trap lands as a `snmp_trap` passive-evidence row on the source device (throttled to one row per source+trap per 10s — a flapping link does not flood the table), and `coldStart`/`linkUp` additionally feed the discovery funnel. Inform requests are ACKed by the listener; nothing else is ever sent.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `snmp_trap.enabled` | bool | `false` | Strictly opt-in: the receiver opens a listening socket |
+| `snmp_trap.bind` | string | `":162"` | UDP bind address. Ports below 1024 need root or `AmbientCapabilities=CAP_NET_BIND_SERVICE` (systemd drop-in); `":1162"` runs unprivileged — point your devices' trap destinations at it |
+| `snmp_trap.community` | string | `"public"` | The v2c community traps must carry; mismatched communities are dropped silently by the listener |
+
+Operational notes: open the UDP port in the firewall for the trap sources only (the listener sees any packet that reaches it); v3 traps (USM, credential-name references against the vault) are the designed follow-up — no v3 keys exist yet, so no one can enable a stub.
+
 ## Docker Configuration Template
 
 The repository ships a ready-to-use Docker Compose config template at [`configs/config.docker.yaml`](../../configs/config.docker.yaml). It pre-configures paths and network settings appropriate for containerized deployment, copy it as your starting `config.yaml` and adjust `auth.jwt_secret` and `auth.initial_admin_password` for production.

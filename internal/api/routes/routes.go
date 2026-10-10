@@ -38,6 +38,7 @@ import (
 	scannerv2 "mibee-steward/internal/service/scannerv2"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
 	scannerv2configbackup "mibee-steward/internal/service/scannerv2/configbackup"
+	"mibee-steward/internal/service/snmptrap"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
@@ -627,6 +628,31 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		})
 	})
 
+	// SNMP trap receiver (#509): devices speaking unprompted — linkDown/linkUp,
+	// coldStart, authenticationFailure — land as snmp_trap evidence on the
+	// source device. Default off (extra listening socket, firewall surface);
+	// a bind failure logs once and never blocks the server.
+	var trapReceiver *snmptrap.Receiver
+	if cfg.SNMPTrap.Enabled {
+		trapReceiver = snmptrap.New(snmptrap.Config{
+			Enabled:   true,
+			Bind:      cfg.SNMPTrap.Bind,
+			Community: cfg.SNMPTrap.Community,
+		}, v2Engine.Repository, slog.Default())
+		// coldStart is an onboarding report and linkUp a liveness signal for
+		// the discovery funnel; linkDown stays evidence-only (the host may
+		// legitimately be unreachable for identify right then).
+		trapReceiver.OnSighting = func(ip, trap string) {
+			if trap == "coldStart" || trap == "linkUp" {
+				discSvc.Emit(scannerv2discovery.NewHostEvent{IP: ip, Source: "snmp_trap"})
+			}
+		}
+		if err := trapReceiver.Start(); err != nil {
+			slog.Error("snmp trap receiver failed to start (continuing without it)", "error", err)
+			trapReceiver = nil
+		}
+	}
+
 	// Agent command service: constructed BEFORE the scheduler so the ScanFunc
 	// binding below can close over it (agent-network tasks dispatch through it
 	// instead of running a local scan).
@@ -911,6 +937,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// open DB/SNMP handles that must not race db.Close().
 		if discCancel != nil {
 			discCancel()
+		}
+		if trapReceiver != nil {
+			trapReceiver.Stop()
 		}
 		discSvc.Stop()
 		// Wait for the raw-frame listeners to exit (bounded ~1s: their socket

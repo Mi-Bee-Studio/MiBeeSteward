@@ -543,6 +543,18 @@ head -c 32 /dev/urandom | base64
 | `retention.sweep_interval_hours` | int | 6 | 清理扫描间隔（小时） |
 | `retention.batch_size` | int | 5000 | 每批清理的最大行数 |
 
+## SNMP Trap 接收器配置
+
+入站 SNMP trap 通道（#509）——设备主动说话。`linkDown`/`linkUp` 是拓扑变化信号，`coldStart` 是入网上报，`authenticationFailure` 是安全低语；每条被接受的 trap 以 `snmp_trap` 被动证据行落在源设备上（按 源+trap 类型 每 10 秒一条节流——链路抖动不会刷爆表），`coldStart`/`linkUp` 额外馈入 discovery 漏斗。Inform 请求由监听器自动 ACK；除此之外绝不发包。
+
+| 键 | 类型 | 默认值 | 说明 |
+|-----|------|---------|-------------|
+| `snmp_trap.enabled` | bool | `false` | 严格显式开启：接收器会打开监听套接字 |
+| `snmp_trap.bind` | string | `":162"` | UDP 绑定地址。低于 1024 的端口需要 root 或 `AmbientCapabilities=CAP_NET_BIND_SERVICE`（systemd drop-in）；`":1162"` 可无特权运行——把设备的 trap 目标指向它即可 |
+| `snmp_trap.community` | string | `"public"` | v2c trap 必须携带的 community；不匹配的 community 被监听器静默丢弃 |
+
+运维要点：防火墙只对 trap 来源网段放行该 UDP 端口（到达监听器的包都会被看到）；v3 trap（USM、凭据名引用凭据库）是已设计的后续项——配置面刻意没有 v3 键，避免开启一个空壳。
+
 ## Docker 配置模板
 
 仓库提供了现成的 Docker Compose 配置模板 [`configs/config.docker.yaml`](../../configs/config.docker.yaml)，预配置了适合容器化部署的路径和网络设置--将其复制为你的起始 `config.yaml`，并为生产环境调整 `auth.jwt_secret` 和 `auth.initial_admin_password`。
