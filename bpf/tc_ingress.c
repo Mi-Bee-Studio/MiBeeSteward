@@ -46,17 +46,27 @@
 
 #include "bpf_standalone.h"
 
-#define EVENT_LEN 74
+#define EVENT_LEN 124
 
-// event layout — must match decodeEvent() in event.go (shared with the stub
-// build so the default CI tests cover the decoding).
+// event layout (v3, #496) — must match decodeEvent() in event.go (shared with
+// the stub build so the default CI tests cover the decoding). Variable-index
+// stack writes are FORBIDDEN in this program: clang lowers them to
+// `pointer |= scalar`, which the verifier rejects outright (seen live on
+// 6.18). Every field below is filled by constant-index writes only; all
+// string building (DNS label joining, opt55 decimal joining) happens in the
+// Go decoder.
 struct event {
-    __u32 src_ip;     // source IPv4 (network byte order)
-    __u16 port;       // source port (host order)
-    __u16 proto;      // L4 protocol (6=tcp, 17=udp)
-    __u8  kind;       // kind* constant below
+    __u32 src_ip;       // source IPv4 (network byte order)
+    __u16 port;         // source port (host order)
+    __u16 proto;        // L4 protocol (6=tcp, 17=udp)
+    __u8  kind;         // kind* constant below
     __u8  _pad;
-    char server[64];  // optional banner/server string
+    char server[64];    // banner / DHCP vendor class (<=32) / TLS SNI (<=32)
+    char opt55_raw[12]; // DHCP option 55 raw bytes (first 12 request codes)
+    char name_raw[32];  // mDNS query name, DNS wire format (<=32 bytes)
+    __u8  opt55_len;    // valid bytes in opt55_raw, 0 = absent
+    __u8  dhcp_type;    // DHCP message type (option 53), 0 = absent
+    __u8  _pad2[4];     // pad sizeof(struct event) to EVENT_LEN
 };
 
 enum {
@@ -64,6 +74,10 @@ enum {
     KIND_RTSP = 2,
     KIND_HTTP = 3,
     KIND_WSDISCOVERY = 4,
+    KIND_DHCP = 5,
+    KIND_TLS_SNI = 6,
+    KIND_MDNS = 7,
+    KIND_SSDP = 8,
 };
 
 // Ring buffer map — consumed by userspace (ringbuf.Reader).
@@ -94,6 +108,141 @@ static __always_inline __u16 be16_at(const __u8 *b) {
     return (__u16)((b[0] << 8) | b[1]);
 }
 
+// ---------------------------------------------------------------------------
+// Wire parsers for the #496 signatures. All reads go through
+// bpf_skb_load_bytes at SCALAR offsets (no packet-pointer arithmetic, see the
+// verifier-portability note up top), and every loop has a fixed bound the
+// verifier can prove.
+
+// parse_dhcp walks the DHCP option list (after the 236-byte bootp header and
+// the 4-byte magic cookie) collecting option 53 (message type), 60 (vendor
+// class -> vendor, up to 63 bytes) and 55 (parameter request list -> opt55 as
+// comma-joined decimal, up to 47 bytes). Returns 0 when the packet is not a
+// plausible DHCP message.
+// parse_dhcp walks the DHCP option list header-by-header (constant 2-byte
+// reads at scalar offsets) and takes ONE constant-width window read for each
+// fingerprint field: vendor class 32B (option 60), parameter request list 12B
+// (option 55), message type 1B (option 53). A window crossing the packet end
+// fails the helper and that field is simply skipped - fields sit mid-list in
+// practice and this is corroborating evidence. No variable-length reads, no
+// variable-index writes, and the walk is a bounded non-unrolled loop: each of
+// those breaks the verifier in its ambient-caps mode or explodes its state
+// count past the 1M complexity limit (all seen live on 6.18).
+static __always_inline int parse_dhcp(void *skb, __u32 off, char *vendor, char *opt55_out, __u8 *opt55_n, __u8 *msg_type) {
+    __u8 bootp[4];
+    if (bpf_skb_load_bytes(skb, off + 236, bootp, sizeof(bootp)) < 0) return 0;
+    if (bootp[0] != 0x63 || bootp[1] != 0x82 || bootp[2] != 0x53 || bootp[3] != 0x63)
+        return 0; // magic cookie mismatch
+
+    __u32 pos = off + 240;
+    for (int i = 0; i < 48; i++) {
+        __u8 hdr[2];
+        if (bpf_skb_load_bytes(skb, pos, hdr, sizeof(hdr)) < 0) break; // packet ended mid-list: keep what the walk collected
+        if (hdr[0] == 0) { pos += 1; continue; }  // pad
+        if (hdr[0] == 255) break;                  // end of options
+        __u8 code = hdr[0], olen = hdr[1];
+        if (code == 53 && olen >= 1) {
+            __u8 v[1];
+            if (bpf_skb_load_bytes(skb, pos + 2, v, sizeof(v)) < 0) break;
+            *msg_type = v[0];
+        } else if (code == 60 && olen >= 1) {
+            // Fixed 32-byte window (constant-width reads only, see notes), then
+            // predicated constant-index zeroing so the captured string ends at
+            // the option's real length instead of bleeding into the next option.
+            bpf_skb_load_bytes(skb, pos + 2, vendor, 32); // failure leaves zeros
+            __u8 vn = olen; if (vn > 32) vn = 32;
+            #pragma unroll
+            for (int k = 0; k < 32; k++) {
+                if (k >= vn) vendor[k] = 0;
+            }
+        } else if (code == 55 && olen >= 1) {
+            bpf_skb_load_bytes(skb, pos + 2, opt55_out, 12);
+            __u8 n = olen; if (n > 12) n = 12;
+            *opt55_n = n;
+        }
+        pos += 2 + olen;
+    }
+    return *msg_type != 0 || vendor[0] != 0 || *opt55_n != 0;
+}
+
+// parse_tls_sni walks a TLS ClientHello looking for the server_name
+// extension (type 0x0000) and copies the first hostname (up to 63 bytes)
+// into out. Every length field is read with a bounded helper call and the
+// walk is capped; a malformed or truncated handshake returns 0.
+static __always_inline int parse_tls_sni(void *skb, __u32 off, char *out) {
+    __u8 h[5];
+    if (bpf_skb_load_bytes(skb, off, h, sizeof(h)) < 0) return 0;
+    if (h[0] != 0x16) return 0;              // handshake record
+    if (h[1] != 0x03) return 0;              // major version 3
+
+    __u32 p = off + 5;                        // handshake header
+    __u8 hs[4];
+    if (bpf_skb_load_bytes(skb, p, hs, sizeof(hs)) < 0) return 0;
+    if (hs[0] != 0x01) return 0;              // ClientHello
+    p += 4 + 2;                               // handshake hdr + client version
+    __u8 lens[1];
+    // session id
+    if (bpf_skb_load_bytes(skb, p, lens, 1) < 0) return 0;
+    p += 1 + lens[0];
+    // cipher suites
+    __u8 two[2];
+    if (bpf_skb_load_bytes(skb, p, two, 2) < 0) return 0;
+    p += 2 + be16_at(two);
+    // compression methods
+    if (bpf_skb_load_bytes(skb, p, lens, 1) < 0) return 0;
+    p += 1 + lens[0];
+    // extensions total length
+    if (bpf_skb_load_bytes(skb, p, two, 2) < 0) return 0;
+    p += 2;
+
+    #pragma unroll
+    for (int i = 0; i < 12; i++) {
+        __u8 ext[4];
+        if (bpf_skb_load_bytes(skb, p, ext, sizeof(ext)) < 0) return 0;
+        __u16 etype = be16_at(ext), elen = be16_at(ext + 2);
+        if (etype != 0) { p += 4 + elen; continue; }
+        // server_name: list_len(2) name_type(1) name_len(2)
+        __u8 sni[5];
+        if (bpf_skb_load_bytes(skb, p + 4, sni, sizeof(sni)) < 0) return 0;
+        __u16 name_len = be16_at(sni + 3);
+        if (name_len == 0 || name_len > 32) return 0;
+        // Single constant-width window read (see the DHCP note): a failure
+        // near the packet tail drops the field, not the packet. Zero-fill
+        // past name_len so a short hostname does not bleed into the next
+        // extension's bytes (predicated constant-index writes, verifier-safe).
+        if (bpf_skb_load_bytes(skb, p + 9, out, 32) < 0) return 0;
+        #pragma unroll
+        for (int k = 0; k < 32; k++) {
+            if (k >= name_len) out[k] = 0;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+// parse_mdns_query captures the first 48 bytes of the query name section in
+// DNS WIRE format (length-prefixed labels, verbatim). Validation and the
+// dot-joined rendering happen in the Go decoder - the verifier forbids
+// variable-index stack writes, so BPF captures raw bytes with constant-index
+// writes only. Returns 0 unless the packet is a standard query (QR=0) with at
+// least one question.
+static __always_inline int parse_mdns_query(void *skb, __u32 off, char *name_raw) {
+    __u8 hdr[6];
+    if (bpf_skb_load_bytes(skb, off + 2, hdr, sizeof(hdr)) < 0) return 0;
+    if ((hdr[0] & 0x80) != 0) return 0;       // QR=1: a response
+    if (hdr[2] == 0 && hdr[3] == 0) return 0; // QDCOUNT == 0
+    if (hdr[4] != 0 && hdr[5] != 0) { }       // ANCOUNT ignored
+
+    // Predicated, break-less: a zero byte (read error, or the root label)
+    // simply leaves the buffer zero-filled from that point, which is exactly
+    // the terminator the Go label decoder stops at.
+    // Single constant-width window read of the wire-format name right after
+    // the 12-byte DNS header; the Go decoder walks the labels.
+    if (bpf_skb_load_bytes(skb, off + 12, name_raw, 32) < 0) return 0;
+    return name_raw[0] != 0;
+}
+
+
 SEC("tc")
 int tc_ingress(struct __sk_buff *skb) {
     // ---- L2: Ethernet header into a stack buffer -------------------------
@@ -117,7 +266,11 @@ int tc_ingress(struct __sk_buff *skb) {
     __u16 src_port = 0;
     __u8 kind = 0;
     char payload[64] = {};
-    __u32 payload_len = 0;
+    char server[64] = {};   // parsed identity string (SNI / vendor class)
+    char opt55_raw[12] = {};
+    char name_raw[32] = {};
+    __u8 opt55_len = 0;
+    __u8 dhcp_type = 0;
 
     if (proto == 6) { // TCP
         __u8 tcph[20];
@@ -126,11 +279,11 @@ int tc_ingress(struct __sk_buff *skb) {
         if (doff < 5) return TC_ACT_UNSPEC;
         __u32 off = 14 + 20 + (doff * 4); // scalar arithmetic only
         if (bpf_skb_load_bytes(skb, off, payload, sizeof(payload)) < 0) return TC_ACT_UNSPEC;
-        payload_len = sizeof(payload);
 
         if (has_prefix(payload, "SSH-", 4))        kind = KIND_SSH;
         else if (has_prefix(payload, "RTSP/1", 6)) kind = KIND_RTSP;
         else if (has_prefix(payload, "HTTP/1", 6)) kind = KIND_HTTP;
+        else if (parse_tls_sni(skb, off, server)) { kind = KIND_TLS_SNI; }
         else return TC_ACT_UNSPEC;
 
         src_port = be16_at(tcph);
@@ -149,6 +302,29 @@ int tc_ingress(struct __sk_buff *skb) {
         if ((dport == 3702 || sport == 3702) && (mcast_src || mcast_dst)) {
             kind = KIND_WSDISCOVERY;
             src_port = sport;
+        } else if (sport == 68 || dport == 67 || sport == 67 || dport == 68) {
+            // DHCP (#496/#508): vendor class (opt 60), parameter request list
+            // (opt 55) and message type (opt 53) are the fingerprint fields.
+            if (!parse_dhcp(skb, 14 + 20 + 8, server, opt55_raw, &opt55_len, &dhcp_type))
+                return TC_ACT_UNSPEC;
+            kind = KIND_DHCP;
+            src_port = sport;
+        } else if (dport == 5353 || sport == 5353) {
+            // mDNS: capture the first query name of a standard query (#496).
+            if (!parse_mdns_query(skb, 14 + 20 + 8, name_raw))
+                return TC_ACT_UNSPEC;
+            kind = KIND_MDNS;
+            src_port = sport;
+        } else if (dport == 1900 || sport == 1900) {
+            // SSDP: method/prefix presence only (#496) — header deep-scan
+            // stays with the active probe + description fetch.
+            __u8 head[1];
+            if (bpf_skb_load_bytes(skb, 14 + 20 + 8, head, sizeof(head)) < 0)
+                return TC_ACT_UNSPEC;
+            if (head[0] != 'M' && head[0] != 'N' && head[0] != 'H')
+                return TC_ACT_UNSPEC;
+            kind = KIND_SSDP;
+            src_port = sport;
         } else {
             return TC_ACT_UNSPEC;
         }
@@ -165,14 +341,25 @@ int tc_ingress(struct __sk_buff *skb) {
     e->proto  = proto;
     e->kind   = kind;
 
-    // Banner fragment for TCP kinds: the stack buffer is already
+    // Banner fragment for TCP banner kinds: the stack buffer is already
     // zero-padded, so the copy is NUL-safe for userspace string handling.
-    if (proto == 6 && payload_len == sizeof(payload)) {
+    if (kind == KIND_SSH || kind == KIND_RTSP || kind == KIND_HTTP) {
         __builtin_memcpy(e->server, payload, sizeof(e->server));
     }
+    // Parsed identity fields (#496): TLS SNI / DHCP vendor class / mDNS query
+    // land in server; opt55 + message type carry the DHCP fingerprint tail.
+    if (server[0] != 0) {
+        __builtin_memcpy(e->server, server, sizeof(e->server));
+    }
+    
+    __builtin_memcpy(e->opt55_raw, opt55_raw, sizeof(e->opt55_raw));
+    __builtin_memcpy(e->name_raw, name_raw, sizeof(e->name_raw));
+    e->opt55_len = opt55_len;
+    e->dhcp_type = dhcp_type;
 
     bpf_ringbuf_submit(e, 0);
     return TC_ACT_UNSPEC;
 }
+
 
 char LICENSE[] SEC("license") = "GPL";
