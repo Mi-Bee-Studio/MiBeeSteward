@@ -39,11 +39,29 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        # Two variants per arch (#502): the default build stays unprivileged
+        # and kernel-free; the -full build compiles in the optional
+        # LLDP/CDP frame listeners and the ARP sweep (all pure Go, still
+        # CGO-free) for operators who grant CAP_NET_RAW. WITH_EBPF stays out
+        # of the matrix — it needs the clang/bpf2go generation step, so it
+        # remains a local `make build-with-ebpf` artifact.
         include:
           - goos: linux
             goarch: amd64
+            variant: default
+            tags: ""
+          - goos: linux
+            goarch: amd64
+            variant: full
+            tags: "WITH_LLDP,WITH_CDP,WITH_ARPSCAN"
           - goos: linux
             goarch: arm64
+            variant: default
+            tags: ""
+          - goos: linux
+            goarch: arm64
+            variant: full
+            tags: "WITH_LLDP,WITH_CDP,WITH_ARPSCAN"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -60,23 +78,43 @@ jobs:
           CGO_ENABLED: '0'
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        # Inject the git tag (e.g. v0.1.0) as the version string.
+          BUILD_TAGS: ${{ matrix.tags }}
+        # Inject the git tag (e.g. v0.1.0) as the version string. The -full
+        # variant appends its suffix to the artifact name.
         run: |
           VERSION=${GITHUB_REF_NAME}
-          go build -ldflags "-s -w -X mibee-steward/internal/version.Version=${VERSION}" \
-            -o mibee-steward-${GOOS}-${GOARCH} ./cmd/server/
+          SUFFIX=""
+          TAG_ARGS=()
+          if [ -n "${BUILD_TAGS}" ]; then SUFFIX="-full"; TAG_ARGS=(-tags "${BUILD_TAGS}"); fi
+          go build "${TAG_ARGS[@]}" -ldflags "-s -w -X mibee-steward/internal/version.Version=${VERSION}" \
+            -o mibee-steward-${GOOS}-${GOARCH}${SUFFIX} ./cmd/server/
       - name: Verify version (amd64 only)
         if: matrix.goarch == 'amd64'
-        run: ./mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }} -version
+        run: |
+          BIN=mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
+          [ "${{ matrix.variant }}" = full ] && BIN="${BIN}-full"
+          ./${BIN} -version
+          # The full variant must actually carry the optional sources: the
+          # doctor line must NOT say "default build" (the caps may honestly be
+          # missing on the runner — either "built, CAP_NET_RAW present" or
+          # "built but CAP_NET_RAW missing" proves the tag compiled in).
+          if [ "${{ matrix.variant }}" = full ]; then
+            ./${BIN} doctor -config configs/config.example.yaml 2>/dev/null \
+              | grep 'lldp listener' | grep -v 'default build' || {
+              echo "::error::full variant does not report the LLDP listener as built"; exit 1; }
+          fi
       - name: Verify binary (arm64 — file check, can't execute on amd64 runner)
         if: matrix.goarch == 'arm64'
-        run: file mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
+        run: |
+          BIN=mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
+          [ "${{ matrix.variant }}" = full ] && BIN="${BIN}-full"
+          file ${BIN}
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}-${{ matrix.variant }}
           path: |
-            mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}
+            mibee-steward-${{ matrix.goos }}-${{ matrix.goarch }}*
 
   # Router-form packages (#359): the same pipeline CI's `openwrt` job smokes
   # (arm64 build -> openwrt-stage CR guard -> packaging scripts), producing all
@@ -251,6 +289,11 @@ jobs:
         with:
           name: openwrt-packages
           merge-multiple: true
+      # Center-binary checksums (#502): flat names only, same rule as the
+      # agent's SHA256SUMS (#491) — release assets download into one
+      # directory, so any path prefix would break `sha256sum -c`.
+      - name: Checksum the center binaries
+        run: sha256sum mibee-steward-linux-* > SHA256SUMS.center
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -263,7 +306,9 @@ jobs:
           generate_release_notes: false
           files: |
             mibee-steward-linux-amd64
+            mibee-steward-linux-amd64-full
             mibee-steward-linux-arm64
+            mibee-steward-linux-arm64-full
             mibee-agent-linux-amd64
             mibee-agent-linux-arm64
             mibee-agent-linux-armv7
@@ -273,5 +318,6 @@ jobs:
             mibee-agent-openwrt-arm64-*.tar.gz
             mibee-agent_*_arm64.ipk
             mibee-agent_*_arm64.apk
+            SHA256SUMS.center
             SHA256SUMS.openwrt
             SHA256SUMS.agent-rs

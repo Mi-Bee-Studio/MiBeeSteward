@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-full build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -241,6 +241,13 @@ build-with-lldp: build-frontend
 # with LLDP/CDP via -tags WITH_ARPSCAN,WITH_LLDP,WITH_CDP.
 build-with-arpscan: build-frontend
 	CGO_ENABLED=0 go build -tags WITH_ARPSCAN -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
+
+# Build the "full" optional-capability variant — the same tag set the release
+# pipeline ships as the -full artifacts (#502): LLDP + CDP frame listeners and
+# the ARP sweep, all needing CAP_NET_RAW at runtime. WITH_EBPF stays separate
+# (it requires the clang/bpf2go generation step, see build-with-ebpf).
+build-full: build-frontend
+	CGO_ENABLED=0 go build -tags WITH_LLDP,WITH_CDP,WITH_ARPSCAN -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
 
 clean:
 	rm -rf $(BUILD_DIR) web/dist web/.svelte-kit

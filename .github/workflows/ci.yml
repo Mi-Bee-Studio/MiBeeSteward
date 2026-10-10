@@ -57,6 +57,29 @@ jobs:
         working-directory: agent-rs
         run: cargo test --locked
 
+  # Optional build tags (#502): the release ships a -full variant with
+  # WITH_LLDP,WITH_CDP,WITH_ARPSCAN, and those code paths never compile in
+  # the default `go vet/test ./...` — the reals are Linux-only (AF_PACKET).
+  # Guard them on every PR: vet + the tag-gated introspection tests + a full
+  # center build with all three tags.
+  optional-tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet -tags "WITH_LLDP,WITH_CDP,WITH_ARPSCAN" ./internal/service/scannerv2/discovery/
+      - run: go test -tags "WITH_LLDP,WITH_CDP,WITH_ARPSCAN" ./internal/service/scannerv2/discovery/
+      # go:embed needs web/dist for a cmd/server build; a stub index is
+      # enough to prove the tagged binary LINKS.
+      - name: Build center with all optional tags (embed stub)
+        run: |
+          mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
+          CGO_ENABLED=0 go build -tags "WITH_LLDP,WITH_CDP,WITH_ARPSCAN" -o /tmp/mibee-full ./cmd/server/
+          file /tmp/mibee-full
+
   go:
     needs: build-frontend
     runs-on: ubuntu-latest
