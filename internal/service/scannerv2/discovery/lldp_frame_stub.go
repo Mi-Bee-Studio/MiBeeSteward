@@ -31,7 +31,7 @@ type LLDPFrameSource struct{}
 // to the caller that raw-frame LLDP listening is unavailable. interfaces is the
 // list of NIC names to listen on (empty = all). svc is the discovery
 // coordinator (for host events); neighborSink receives neighbor edges.
-func NewLLDPFrameSource(_ []string, _ *Service, _ func(localMAC string, neighbors []lldpEdge), logger *slog.Logger) *LLDPFrameSource {
+func NewLLDPFrameSource(_ []string, _ *Service, _ func(localMAC string, neighbors []LLDPEdge), logger *slog.Logger) *LLDPFrameSource {
 	if logger != nil {
 		logger.Info("lldp_frame source disabled (build without WITH_LLDP)")
 	}

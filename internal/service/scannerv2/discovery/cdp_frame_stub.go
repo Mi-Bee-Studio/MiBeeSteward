@@ -31,7 +31,7 @@ type CDPFrameSource struct{}
 // to the caller that raw-frame CDP listening is unavailable. interfaces is the
 // list of NIC names to listen on (empty = all). svc is the discovery
 // coordinator (for host events); neighborSink receives neighbor edges.
-func NewCDPFrameSource(_ []string, _ *Service, _ func(localMAC string, neighbors []cdpEdge), logger *slog.Logger) *CDPFrameSource {
+func NewCDPFrameSource(_ []string, _ *Service, _ func(localMAC string, neighbors []CDPEdge), logger *slog.Logger) *CDPFrameSource {
 	if logger != nil {
 		logger.Info("cdp_frame source disabled (build without WITH_CDP)")
 	}

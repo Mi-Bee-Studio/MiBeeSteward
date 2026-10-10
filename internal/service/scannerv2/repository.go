@@ -48,6 +48,12 @@ type Repository interface {
 	// last_seen without losing first_seen.
 	RecordNeighbors(ctx context.Context, ip string, neighbors []NeighborSpec) error
 
+	// RecordNeighborsByMAC is the MAC-keyed variant for sources that know the
+	// surveyed interface's MAC but no IP (the LLDP/CDP frame listeners, #501).
+	// Same upsert semantics as RecordNeighbors; an unknown local MAC is a
+	// silent skip so a not-yet-inventoried listener host is not an error.
+	RecordNeighborsByMAC(ctx context.Context, localMAC string, neighbors []NeighborSpec) error
+
 	// EnrichDeviceByMAC updates vendor/model/type/hostname fields for a device
 	// identified by MAC address. Only updates existing devices, no insert
 	// (enrich-existing-only). Unknown keys go to scan_attributes JSON.
@@ -181,6 +187,7 @@ func (NoopRepository) RecordServices(context.Context, string, []ServiceIdentity,
 func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error              { return nil }
 func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error    { return nil }
 func (NoopRepository) RecordNeighbors(context.Context, string, []NeighborSpec) error      { return nil }
+func (NoopRepository) RecordNeighborsByMAC(context.Context, string, []NeighborSpec) error { return nil }
 func (NoopRepository) EnrichDeviceByMAC(context.Context, string, map[string]string) error { return nil }
 func (NoopRepository) RecordTLSCerts(context.Context, string, []TLSCertRecord) error      { return nil }
 

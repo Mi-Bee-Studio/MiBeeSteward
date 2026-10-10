@@ -37,7 +37,7 @@ import (
 type CDPFrameSource struct {
 	interfaces   []string
 	svc          *Service
-	neighborSink func(localMAC string, neighbors []cdpEdge)
+	neighborSink func(localMAC string, neighbors []CDPEdge)
 	logger       *slog.Logger
 	ifaceMACs    map[string]string // iface name → local MAC (for LocalMAC)
 }
@@ -45,7 +45,7 @@ type CDPFrameSource struct {
 // NewCDPFrameSource constructs the listener. interfaces is the list of NIC
 // names to listen on (empty = all non-loopback UP interfaces). svc is the
 // discovery coordinator (host events); neighborSink receives neighbor edges.
-func NewCDPFrameSource(interfaces []string, svc *Service, neighborSink func(localMAC string, neighbors []cdpEdge), logger *slog.Logger) *CDPFrameSource {
+func NewCDPFrameSource(interfaces []string, svc *Service, neighborSink func(localMAC string, neighbors []CDPEdge), logger *slog.Logger) *CDPFrameSource {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -134,7 +134,7 @@ func (s *CDPFrameSource) listen(ctx context.Context, iface string) {
 		}
 		// (b) neighbor edge, local interface sees this neighbor.
 		if s.neighborSink != nil {
-			s.neighborSink(s.ifaceMACs[iface], []cdpEdge{edge})
+			s.neighborSink(s.ifaceMACs[iface], []CDPEdge{edge})
 		}
 	}
 }
@@ -143,8 +143,8 @@ func (s *CDPFrameSource) listen(ctx context.Context, iface string) {
 // CDP has its own 4-byte header (version=1 byte, TTL=1 byte, checksum=2 bytes),
 // then TLVs. TLV format: 2-byte type (big-endian) + 2-byte length (big-endian,
 // includes type+length) + payload.
-func parseCDPFrame(data []byte, srcMAC, iface, localMAC string) cdpEdge {
-	edge := cdpEdge{Protocol: "CDP", NeighborMAC: srcMAC, LocalMAC: localMAC, LocalPort: iface}
+func parseCDPFrame(data []byte, srcMAC, iface, localMAC string) CDPEdge {
+	edge := CDPEdge{Protocol: "CDP", NeighborMAC: srcMAC, LocalMAC: localMAC, LocalPort: iface}
 	if len(data) < 4 {
 		return edge // not enough for CDP header
 	}
@@ -152,7 +152,7 @@ func parseCDPFrame(data []byte, srcMAC, iface, localMAC string) cdpEdge {
 	// version should be 2 for CDPv2
 	version := data[0]
 	if version != 2 {
-		return cdpEdge{Protocol: "CDP", LocalMAC: localMAC, LocalPort: iface}
+		return CDPEdge{Protocol: "CDP", LocalMAC: localMAC, LocalPort: iface}
 	}
 	// Skip CDP header (4 bytes), parse TLVs
 	data = data[4:]
