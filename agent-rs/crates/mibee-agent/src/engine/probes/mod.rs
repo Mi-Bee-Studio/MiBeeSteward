@@ -36,6 +36,10 @@ pub struct ProbeHint {
     /// UDP port for SNMP probes (Go hardcodes 161; a hint field lets the
     /// engine-level tests point probes at a scripted agent).
     pub snmp_port: u16,
+    /// UDP port for mDNS unicast queries (Go hardcodes 5353; a hint field
+    /// lets tests point the probe at a scripted responder — some dev hosts
+    /// also reserve 5353). 0 = 5353.
+    pub mdns_port: u16,
     pub rdns_servers: Vec<String>,
     pub oui: std::sync::Arc<Oui>,
     /// SNMPv3 credential (name/id-resolved before the scan); None = community.
@@ -89,12 +93,18 @@ pub(crate) use probe_impl;
 
 /// Default registry: name-sorted (Go probe/registry.go DefaultProbeSources).
 pub fn default_probes() -> Vec<Box<dyn Probe>> {
+    default_probes_with_mdns_unicast(false)
+}
+
+/// #504 Go parity: main builds the registry with the mdns unicast_queries
+/// flag from agent config (scanner.mdns.unicast_queries).
+pub fn default_probes_with_mdns_unicast(mdns_unicast: bool) -> Vec<Box<dyn Probe>> {
     let mut probes: Vec<Box<dyn Probe>> = vec![
         Box::new(arp::ArpProbe),
         Box::new(http::HttpProbe),
         Box::new(simple::MetricsProbe),
         Box::new(icmp::IcmpProbe),
-        Box::new(mdns::MdnsProbe),
+        Box::new(mdns::MdnsProbe { unicast: mdns_unicast }),
         Box::new(netbios::NetbiosProbe),
         Box::new(simple::OnvifProbe),
         Box::new(l2_mib::BridgeMibProbe),

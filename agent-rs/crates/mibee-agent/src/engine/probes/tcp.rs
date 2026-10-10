@@ -190,6 +190,7 @@ mod tests {
             community: "public".into(),
             port_spec: vec![p1, p2, p3],
             snmp_port: 161,
+            mdns_port: 0,
             rdns_servers: vec![],
             oui: std::sync::Arc::new(crate::engine::oui::Oui::parse("")),
             snmp_v3: None,

@@ -90,6 +90,9 @@ The 3× code growth is the deliberate price of the two requirements that motivat
 | hostapd/iw WiFi station telemetry | ✔ | ✔ | live rig validation pending an AP-equipped rig |
 | Heartbeat probe specs from report | ✔ | ✔ | |
 | Retention sweep + VACUUM | ✔ | ✔ | |
+| conntrack new-host reporting | ✔ | ✔ | LAN endpoint of ESTABLISHED/[ASSURED] flows reported once on first sighting (src or dst side, Go parser parity incl. [UNASSURED] rejection) — #504 |
+| mDNS unicast queries (`scanner.mdns.unicast_queries`) | ✔ | ✔ | each query also sent to the target's 5353 directly, for unicast-only responders (#20/#504) |
+| dns_log source (dnsmasq `--log-queries` tail) | ✔ | ✔ | byte-offset resume, rotation reset, first-sweep EOF skip; query domains become scan seeds (#504) |
 | Config (`agent.yaml` keys + `MIBEE_` env) | ✔ | ✔ | same shape — an existing agent.yaml works unchanged |
 
 ## Field record

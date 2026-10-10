@@ -64,6 +64,7 @@ impl ScanEngine {
             community: self.community.clone(),
             port_spec: self.port_spec.clone(),
             snmp_port: self.snmp_port,
+            mdns_port: 0,
             rdns_servers: self.rdns_servers.clone(),
             oui: Arc::clone(&self.oui),
             snmp_v3: cred.v3.clone(),

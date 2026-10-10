@@ -53,15 +53,26 @@ pub fn parse_proc_arp_pairs(text: &str) -> Vec<(String, String)> {
 }
 
 /// Parse /proc/net/nf_conntrack: LAN-side endpoints of ESTABLISHED/ASSURED
-/// flows as (lan_ip,) tuples within the given CIDR.
+/// flows, within the given CIDR (#504 Go parity):
+/// - liveness tokens match Go exactly — bare ESTABLISHED (TCP state field) or
+///   bracketed [ASSURED] (UDP flows have no state field); [UNASSURED] does NOT
+///   count;
+/// - the LAN-local endpoint is whichever side of the flow sits inside the
+///   CIDR: outbound flows carry it as src=, inbound as dst=, LAN↔LAN flows
+///   contribute both.
 pub fn parse_conntrack(text: &str, cidr: &ipnet::Ipv4Net) -> Vec<String> {
     let mut seen = HashSet::new();
     for line in text.lines() {
-        if !(line.contains("ESTABLISHED") || line.contains("ASSURED")) {
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        let live = tokens.iter().any(|t| *t == "ESTABLISHED" || *t == "[ASSURED]");
+        if !live {
             continue;
         }
-        for part in line.split_whitespace() {
-            if let Some(ip) = part.strip_prefix("src=") {
+        for token in &tokens {
+            let value = token
+                .strip_prefix("src=")
+                .or_else(|| token.strip_prefix("dst="));
+            if let Some(ip) = value {
                 if let Ok(v4) = ip.parse::<std::net::Ipv4Addr>() {
                     if cidr.contains(&v4) {
                         seen.insert(v4.to_string());
@@ -71,6 +82,47 @@ pub fn parse_conntrack(text: &str, cidr: &ipnet::Ipv4Net) -> Vec<String> {
         }
     }
     seen.into_iter().collect()
+}
+
+// ---------- dns_log (dnsmasq --log-queries tail, Go discovery/dns_log.go) ----------
+
+/// Conventional dnsmasq log paths, probed in order when the config gives none
+/// (Go DNSLogSource.files parity).
+pub const DNS_LOG_PATHS: [&str; 4] = [
+    "/var/log/dnsmasq.log", // explicit --log-facility (common)
+    "/tmp/dnsmasq.log",     // OpenWrt ramdisk (often via logread redirect)
+    "/var/log/messages",    // syslog fallback (when dnsmasq logs to syslog)
+    "/var/log/syslog",      // Debian rsyslog default
+];
+
+/// Parse one dnsmasq query line into (querying_host_ip, domain). Only
+/// "query[...]" lines carry a "... from <ip>" host sighting; reply/cached
+/// lines and locally-originated queries ("from <iface>") yield None. Go
+/// parseDnsmasqQuery parity (#504).
+pub fn parse_dnsmasq_query(line: &str) -> Option<(String, String)> {
+    let rest = line.split("dnsmasq").nth(1)?;
+    let rest = &rest[rest.find("query[")?..];
+    let close = rest.find(']')?;
+    let rest = rest[close + 1..].trim();
+    let from = rest.rfind(" from ")?;
+    let domain = rest[..from].trim();
+    let mut ip = rest[from + " from ".len()..].trim();
+    // Defensive: a syslog relay might append junk after the address.
+    if let Some(sp) = ip.find(' ') {
+        ip = &ip[..sp];
+    }
+    if domain.is_empty() || ip.is_empty() {
+        return None;
+    }
+    // Reject "from eth0" style non-addresses (locally-originated queries).
+    let octets: Vec<&str> = ip.split('.').collect();
+    if octets.len() != 4 {
+        return None;
+    }
+    if !octets.iter().all(|o| !o.is_empty() && o.bytes().all(|b| b.is_ascii_digit()) && o.parse::<u8>().is_ok()) {
+        return None;
+    }
+    Some((ip.to_string(), domain.to_string()))
 }
 
 // ---------- hostapd (WiFi STA associations, Go discovery/hostapd.go) ----------
@@ -245,6 +297,13 @@ pub struct DiscoverySources {
     pub router_community: String,
     pub router_timeout: Duration,
     pub network_cidr: Option<ipnet::Ipv4Net>,
+    /// Conntrack table path; empty = /proc/net/nf_conntrack. Test seam.
+    pub conntrack_path: String,
+    /// dns_log source (Go DNSLogSource): tails dnsmasq --log-queries output;
+    /// each LAN host's queries are host sightings + domain seeds (#504).
+    pub enabled_dns_log: bool,
+    /// Explicit dns log path; empty = the conventional DNS_LOG_PATHS probe.
+    pub dns_log_path: String,
 }
 
 #[derive(Default)]
@@ -258,6 +317,8 @@ pub struct DiscoveryState {
     /// source went blind to that subnet — actionable), subsequent ones stay
     /// silent until recovery (Go RouterARPSource.failStreak).
     router_fail_streak: std::collections::HashMap<String, u32>,
+    /// dns_log tail offsets per file path (Go DNSLogSource.offset map parity).
+    dns_offsets: std::collections::HashMap<String, u64>,
 }
 
 pub const HOSTAPD_CTRL_DIR: &str = "/var/run/hostapd";
@@ -350,15 +411,78 @@ impl DiscoverySources {
             }
         }
         if self.enabled_conntrack {
-            if let (Some(cidr), Ok(text)) = (
-                self.network_cidr,
-                tokio::fs::read_to_string("/proc/net/nf_conntrack").await,
-            ) {
+            let ct_path = if self.conntrack_path.is_empty() {
+                "/proc/net/nf_conntrack"
+            } else {
+                self.conntrack_path.as_str()
+            };
+            if let (Some(cidr), Ok(text)) =
+                (self.network_cidr, tokio::fs::read_to_string(ct_path).await)
+            {
                 for ip in parse_conntrack(&text, &cidr) {
-                    state.known.insert(format!("ct:{ip}"));
+                    // Go parity (#504): a LAN endpoint with an established flow
+                    // is a live-host sighting, reported once on its first
+                    // lifetime appearance — the host may answer no probe at
+                    // all. No MAC: conntrack is L3+; a later ARP/dhcp/scan
+                    // sighting of the same IP fills the MAC and the center
+                    // bridge reconciles by IP+network.
+                    if state.known.insert(format!("ct:{ip}")) {
+                        newly.push((ip, None, None));
+                    }
                 }
             }
         }
+        if self.enabled_dns_log {
+            let paths: Vec<String> = if self.dns_log_path.is_empty() {
+                DNS_LOG_PATHS.iter().map(|p| p.to_string()).collect()
+            } else {
+                vec![self.dns_log_path.clone()]
+            };
+            for path in paths {
+                // Go tailFile parity (#504): first sight of a file starts at
+                // EOF (history is not replayed — only NEW queries going
+                // forward are interesting); a shrunk file (rotation/truncation)
+                // restarts from byte 0.
+                let Ok(meta) = tokio::fs::metadata(&path).await else { continue };
+                let cur = meta.len();
+                let prev = *state.dns_offsets.get(&path).unwrap_or(&0);
+                let mut start = if prev == 0 { cur } else if cur < prev { 0 } else { prev };
+                if start >= cur {
+                    state.dns_offsets.insert(path.clone(), cur);
+                    continue;
+                }
+                let Ok(bytes) = tokio::fs::read(&path).await else { continue };
+                let chunk = &bytes[start as usize..cur as usize];
+                let text = String::from_utf8_lossy(chunk);
+                let mut new_off = start;
+                for line in text.split_inclusive('\n') {
+                    new_off += line.len() as u64;
+                    if let Some((ip, domain)) = parse_dnsmasq_query(line) {
+                        let ev = Evidence {
+                            source: "discovery:dns_log".into(),
+                            kind: "dns_query".into(),
+                            ip: ip.clone(),
+                            protocol: "dns".into(),
+                            confidence: 0.8,
+                            raw_data: Some(
+                                [("domain".to_string(), domain)]
+                                    .into_iter()
+                                    .collect(),
+                            ),
+                            ..Default::default()
+                        };
+                        observations.push((ip.clone(), ev));
+                        // Devices that block every inbound probe still make
+                        // outbound DNS: the query itself is the sighting.
+                        if state.known.insert(format!("dns:{ip}")) {
+                            newly.push((ip, None, None));
+                        }
+                    }
+                }
+                state.dns_offsets.insert(path, new_off.max(cur));
+            }
+        }
+
         if self.enabled_router_arp && !self.routers.is_empty() {
             let community = if self.router_community.is_empty() {
                 "public".to_string()
@@ -582,6 +706,9 @@ mod tests {
             router_community: "public".into(),
             router_timeout: Duration::from_secs(2),
             network_cidr: Some("192.0.2.0/24".parse().unwrap()),
+            conntrack_path: String::new(),
+            enabled_dns_log: false,
+            dns_log_path: String::new(),
         };
         let mut state = DiscoveryState::default();
         let newly = sources.sweep(&engine, &mut state).await;
@@ -619,6 +746,9 @@ mod tests {
             router_community: "public".into(),
             router_timeout: Duration::from_millis(250),
             network_cidr: None,
+            conntrack_path: String::new(),
+            enabled_dns_log: false,
+            dns_log_path: String::new(),
         };
         let mut state = DiscoveryState::default();
         let newly = sources.sweep(&engine, &mut state).await;
@@ -653,6 +783,176 @@ mod tests {
         let net: ipnet::Ipv4Net = "192.0.2.0/24".parse().unwrap();
         let ips = parse_conntrack(text, &net);
         assert!(ips.contains(&"192.0.2.7".to_string()), "{ips:?}");
+    }
+
+    /// Go parity (#504): the LAN-local endpoint of a flow is whichever side is
+    /// inside the CIDR — inbound flows carry it as dst=, and LAN↔LAN flows
+    /// contribute both endpoints.
+    #[test]
+    fn parses_conntrack_dst_side_and_lan_lan() {
+        let net: ipnet::Ipv4Net = "192.0.2.0/24".parse().unwrap();
+        // Inbound flow: LAN host is the dst= of the first direction tuple.
+        let inbound = "ipv4 2 tcp 6 432000 ESTABLISHED src=198.51.100.9 dst=192.0.2.31 sport=443 dport=51001 [ASSURED] mark=0\n";
+        let ips = parse_conntrack(inbound, &net);
+        assert_eq!(ips, vec!["192.0.2.31".to_string()], "{ips:?}");
+        // LAN↔LAN: both endpoints are LAN-local, both are sightings.
+        let lanlan = "ipv4 2 tcp 6 120 ESTABLISHED src=192.0.2.1 dst=192.0.2.55 sport=80 dport=41000 [ASSURED] mark=0\n";
+        let ips = parse_conntrack(lanlan, &net);
+        assert_eq!(ips.len(), 2, "{ips:?}");
+    }
+
+    /// Go parity (#504): [UNASSURED] UDP entries must NOT count as liveness
+    /// (Go matches the [ASSURED] token exactly; a contains() check would
+    /// wrongly match [UNASSURED]).
+    #[test]
+    fn parses_conntrack_rejects_unassured_and_nonestablished() {
+        let net: ipnet::Ipv4Net = "192.0.2.0/24".parse().unwrap();
+        let text = "ipv4 2 udp 17 30 src=192.0.2.8 dst=198.51.100.2 sport=51002 dport=53 [UNASSURED] mark=0\n\
+                    ipv4 2 tcp 6 120 TIME_WAIT src=192.0.2.9 dst=198.51.100.3 sport=51003 dport=80 mark=0\n\
+                    ipv4 2 udp 17 180 src=192.0.2.10 dst=198.51.100.4 sport=51004 dport=53 [ASSURED] mark=0\n";
+        let ips = parse_conntrack(text, &net);
+        assert_eq!(ips, vec!["192.0.2.10".to_string()], "{ips:?}");
+    }
+
+    /// Go parity (#504): conntrack LAN endpoints are reported as new-host
+    /// sightings (first lifetime sighting, once) instead of only being marked
+    /// known — a live flow proves the host is up even when it answers nothing.
+    #[tokio::test]
+    async fn conntrack_source_reports_new_hosts_once() {
+        let dir = std::env::temp_dir().join(format!("mibee-ct-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("nf_conntrack");
+        std::fs::write(
+            &path,
+            "ipv4 2 tcp 6 300 ESTABLISHED src=192.0.2.50 dst=198.51.100.9 sport=51000 dport=443 [ASSURED] mark=0\n\
+             ipv4 2 tcp 6 10 TIME_WAIT src=192.0.2.99 dst=198.51.100.9 sport=51001 dport=443 mark=0\n",
+        )
+        .unwrap();
+        let engine = test_engine();
+        let sources = DiscoverySources {
+            enabled_dhcp_leases: false,
+            enabled_arp_cache: false,
+            enabled_conntrack: true,
+            enabled_hostapd: false,
+            hostapd_interfaces: vec![],
+            enabled_router_arp: false,
+            routers: vec![],
+            router_community: String::new(),
+            router_timeout: Duration::from_secs(1),
+            network_cidr: Some("192.0.2.0/24".parse().unwrap()),
+            conntrack_path: path.to_string_lossy().to_string(),
+            enabled_dns_log: false,
+            dns_log_path: String::new(),
+        };
+        let mut state = DiscoveryState::default();
+        let newly = sources.sweep(&engine, &mut state).await;
+        assert_eq!(newly.len(), 1, "{newly:?}");
+        assert_eq!(newly[0].0, "192.0.2.50");
+        assert!(newly[0].1.is_none() && newly[0].2.is_none());
+        // Second sweep over the same table: nothing new.
+        let again = sources.sweep(&engine, &mut state).await;
+        assert!(again.is_empty(), "{again:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Go parseDnsmasqQuery parity (#504): only query[...] lines carry a host
+    /// sighting; "from <iface>" and non-IP tails are rejected.
+    #[test]
+    fn parses_dnsmasq_query_lines() {
+        let ok = "Oct 11 01:00:00 router dnsmasq[1234]: query[A] example.com from 192.0.2.50";
+        assert_eq!(
+            parse_dnsmasq_query(ok),
+            Some(("192.0.2.50".to_string(), "example.com".to_string()))
+        );
+        // AAAA flavor
+        let ok6 = "dnsmasq[1]: query[AAAA] api.v6.test from 192.0.2.51";
+        assert_eq!(
+            parse_dnsmasq_query(ok6),
+            Some(("192.0.2.51".to_string(), "api.v6.test".to_string()))
+        );
+        // replies and cached lines: no query[...] token
+        assert_eq!(parse_dnsmasq_query("dnsmasq[1]: reply example.com is 192.0.2.9"), None);
+        // locally-originated query: "from <iface>", not a host
+        assert_eq!(parse_dnsmasq_query("dnsmasq[1]: query[A] router.lan from eth0"), None);
+        // junk after the IP (defensive syslog relay) is trimmed
+        let junk = "dnsmasq[1]: query[A] x.test from 192.0.2.52 pid=99";
+        assert_eq!(
+            parse_dnsmasq_query(junk),
+            Some(("192.0.2.52".to_string(), "x.test".to_string()))
+        );
+        // non-dnsmasq syslog line
+        assert_eq!(parse_dnsmasq_query("kernel: usb 1-1 disconnected"), None);
+    }
+
+    /// Go DNSLogSource parity (#504): the first sweep starts at EOF (history is
+    /// not replayed), appended lines are tailed with byte-offset resume, and a
+    /// rotated/truncated file restarts from the beginning. Each querying host
+    /// is reported once (first lifetime sighting); every query domain becomes
+    /// a seed observation for the next scan.
+    #[tokio::test]
+    async fn dns_log_source_tails_with_offset_resume() {
+        let dir = std::env::temp_dir().join(format!("mibee-dns-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("dnsmasq.log");
+        std::fs::write(&path, "dnsmasq[1]: query[A] history.test from 192.0.2.60
+").unwrap();
+        let engine = test_engine();
+        let sources = DiscoverySources {
+            enabled_dhcp_leases: false,
+            enabled_arp_cache: false,
+            enabled_conntrack: false,
+            enabled_hostapd: false,
+            hostapd_interfaces: vec![],
+            enabled_router_arp: false,
+            routers: vec![],
+            router_community: String::new(),
+            router_timeout: Duration::from_secs(1),
+            network_cidr: Some("192.0.2.0/24".parse().unwrap()),
+            conntrack_path: String::new(),
+            enabled_dns_log: true,
+            dns_log_path: path.to_string_lossy().to_string(),
+        };
+        let mut state = DiscoveryState::default();
+        // First sight: skip history, nothing reported.
+        let first = sources.sweep(&engine, &mut state).await;
+        assert!(first.is_empty(), "{first:?}");
+        // Append one query: reported as a new host + a domain seed.
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        use std::io::Write;
+        writeln!(f, "dnsmasq[1]: query[A] camera.test from 192.0.2.61").unwrap();
+        drop(f);
+        let second = sources.sweep(&engine, &mut state).await;
+        assert_eq!(second.len(), 1, "{second:?}");
+        assert_eq!(second[0].0, "192.0.2.61");
+        {
+            let seeds = engine.seeds.lock().await;
+            let evs = seeds.get("192.0.2.61").expect("seeded");
+            assert!(
+                evs.iter().any(|e| e.kind == "dns_query"
+                    && e.source == "discovery:dns_log"
+                    && e.raw_data.as_ref().unwrap()["domain"] == "camera.test"),
+                "{evs:?}"
+            );
+        }
+        // Same host queries another domain: no duplicate host report, the new
+        // domain still seeds.
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        writeln!(f, "dnsmasq[1]: query[A] ntp.test from 192.0.2.61").unwrap();
+        drop(f);
+        let third = sources.sweep(&engine, &mut state).await;
+        assert!(third.is_empty(), "{third:?}");
+        {
+            let seeds = engine.seeds.lock().await;
+            let evs = seeds.get("192.0.2.61").expect("seeded");
+            assert!(evs.iter().any(|e| e.raw_data.as_ref().unwrap()["domain"] == "ntp.test"), "{evs:?}");
+        }
+        // Truncation (rotation): offset resets, a fresh querying host reports.
+        std::fs::write(&path, "dnsmasq[1]: query[A] fresh.test from 192.0.2.62
+").unwrap();
+        let fourth = sources.sweep(&engine, &mut state).await;
+        assert_eq!(fourth.len(), 1, "{fourth:?}");
+        assert_eq!(fourth[0].0, "192.0.2.62");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

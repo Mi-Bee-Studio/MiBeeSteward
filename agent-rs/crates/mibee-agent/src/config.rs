@@ -78,6 +78,9 @@ fn default_level() -> String {
 pub struct ScannerConfig {
     #[serde(default)]
     pub snmp_community: String,
+    /// mDNS probe tuning (Go scanner.mdns parity, #504).
+    #[serde(default)]
+    pub mdns: MdnsConfig,
     /// Seconds (engine floor 30 when 0).
     #[serde(default)]
     pub default_timeout: i64,
@@ -104,6 +107,15 @@ pub struct ScannerConfig {
     pub router_arp: RouterArpConfig,
 }
 
+/// mDNS probe options (Go MDNSConfig): unicast_queries additionally sends each
+/// query straight to the target's 5353 port — for devices that answer unicast
+/// mDNS but not multicast (#20).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct MdnsConfig {
+    #[serde(default)]
+    pub unicast_queries: bool,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct DiscoveryConfig {
     #[serde(default)]
@@ -128,6 +140,21 @@ pub struct DiscoveryConfig {
     pub router_arp: SourceToggle,
     #[serde(default)]
     pub hostapd: HostapdConfig,
+    /// dns_log source (Go DNSLogDiscoveryConfig): tails dnsmasq --log-queries
+    /// output; each LAN host's queries are host sightings + domain seeds.
+    /// No-op when the log file is absent (dnsmasq query logging not enabled).
+    #[serde(default)]
+    pub dns_log: DnsLogConfig,
+}
+
+/// dns_log source options (Go DNSLogDiscoveryConfig). Path empty = probe the
+/// conventional dnsmasq log paths.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct DnsLogConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub path: String,
 }
 
 /// hostapd WiFi STA source (Go HostapdDiscoveryConfig): ctrl-socket walk

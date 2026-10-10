@@ -112,7 +112,9 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
     let snmp_tables = SnmpTables::parse(&read_snmp_tables(&corpus_dir)).unwrap_or_default();
     let oui = Arc::new(Oui::parse(mibee_agent::engine::oui::EMBEDDED_OUI));
     let engine = Arc::new(ScanEngine {
-        probes: mibee_agent::engine::probes::default_probes(),
+        probes: mibee_agent::engine::probes::default_probes_with_mdns_unicast(
+            cfg.scanner.mdns.unicast_queries,
+        ),
         classifier: Arc::new(classifier),
         snmp_tables: Arc::new(snmp_tables),
         rules: Arc::new(DeviceTypeRules::load_embedded()),
@@ -226,6 +228,9 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
                 Duration::from_secs(t.max(3) as u64)
             },
             network_cidr: cfg.network.cidr.parse().ok(),
+            conntrack_path: String::new(),
+            enabled_dns_log: cfg.scanner.discovery.dns_log.enabled,
+            dns_log_path: cfg.scanner.discovery.dns_log.path.clone(),
         };
         let engine_disc = Arc::clone(&engine);
         let reporter_disc = Arc::clone(&reporter);

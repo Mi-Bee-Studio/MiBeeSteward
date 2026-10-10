@@ -90,6 +90,9 @@ Rust agent 的内存不光更低，而且**平**：没有 GC 锯齿——这正�
 | hostapd/iw WiFi 站点遥测 | ✔ | ✔ | 等待带 AP 的实测环境做活体验证 |
 | 上报携带心跳探针规格 | ✔ | ✔ | |
 | 保留清扫 + VACUUM | ✔ | ✔ | |
+| conntrack 新主机上报 | ✔ | ✔ | ESTABLISHED/[ASSURED] 流的 LAN 端点（src 或 dst 侧，含 [UNASSURED] 拒收的解析对等）首次目击上报一次（#504） |
+| mDNS 单播查询（`scanner.mdns.unicast_queries`） | ✔ | ✔ | 每个查询同时直发目标 5353，覆盖只应答单播的设备（#20/#504） |
+| dns_log 源（dnsmasq `--log-queries` 尾随） | ✔ | ✔ | 字节偏移续读、轮转重置、首扫 EOF 跳过；查询域名成为扫描种子（#504） |
 | 配置（`agent.yaml` 键 + `MIBEE_` 环境变量） | ✔ | ✔ | 同构——存量 agent.yaml 无需改动即可使用 |
 
 ## 实战记录
