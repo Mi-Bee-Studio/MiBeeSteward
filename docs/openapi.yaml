@@ -1872,7 +1872,7 @@ components:
         device_id: {type: integer, format: int64}
         neighbor_device_id: {type: integer, format: int64, nullable: true, description: Present when the neighbor MAC matched a scanned device}
         neighbor_mac: {type: string}
-        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP]}
+        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP, WiFi]}
         local_port: {type: string, nullable: true}
         remote_port: {type: string, nullable: true}
         neighbor_name: {type: string, nullable: true}
@@ -2454,7 +2454,7 @@ components:
         from_device_id: {type: integer, format: int64}
         to_device_id: {type: integer, format: int64, nullable: true, description: null = unidentified neighbor (dashed edge)}
         to_mac: {type: string}
-        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP]}
+        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP, WiFi]}
         local_port: {type: string, nullable: true}
         remote_port: {type: string, nullable: true, description: Far-end ifName (LLDP/CDP only)}
     TopologyGraph:

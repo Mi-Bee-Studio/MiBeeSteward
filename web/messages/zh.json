@@ -711,7 +711,11 @@
 		"SNMP Name": "sysName",
 		"SNMP OID": "sysObjectID",
 		"SNMP Services": "sysServices",
-		"TTL": "ICMP TTL"
+		"TTL": "ICMP TTL",
+		"WiFi SSID": "WiFi SSID",
+		"WiFi Signal": "信号强度",
+		"WiFi Connected": "已连接时长",
+		"WiFi Seen": "WiFi 发现时间"
 	},
 	"userfields": {
 		"Custom Attributes": "自定义属性",

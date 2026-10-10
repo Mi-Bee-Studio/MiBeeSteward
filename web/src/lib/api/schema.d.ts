@@ -5466,7 +5466,7 @@ export interface components {
             neighbor_device_id: number | null;
             neighbor_mac: string;
             /** @enum {string} */
-            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP";
+            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP" | "WiFi";
             local_port: string | null;
             remote_port: string | null;
             neighbor_name: string | null;
@@ -6034,7 +6034,7 @@ export interface components {
             to_device_id: number | null;
             to_mac: string;
             /** @enum {string} */
-            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP";
+            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP" | "WiFi";
             local_port: string | null;
             /** @description Far-end ifName (LLDP/CDP only) */
             remote_port: string | null;

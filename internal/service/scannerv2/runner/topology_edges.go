@@ -138,6 +138,10 @@ func edgeSemantics(protocol string) (edgeType string, confidence float64) {
 		return "l2", 0.80
 	case "ARP":
 		return "l3", 0.50
+	case "WiFi":
+		// hostapd/iw association observed on the AP itself (#505): a hard L2
+		// fact, its own edge class so the graph can draw wireless distinctly.
+		return "wireless", 0.90
 	default:
 		return "l2", 0.60 // unknown but presumably L2-adjacent
 	}
