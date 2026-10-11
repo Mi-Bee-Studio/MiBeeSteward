@@ -116,8 +116,12 @@ func TestThrottleCollapsesFlappingStorm(t *testing.T) {
 }
 
 // End-to-end over the wire: a real gosnmp client sends a v2c trap to the
-// receiver's listener; the evidence lands in the store, the wrong community is
-// dropped by the listener (never reaches the store).
+// receiver's listener; the evidence lands in the store. The wrong community is
+// dropped by the RECEIVER's constant-time gate (#534) — never the store, and
+// never a throttle slot. The negative leg runs FIRST deliberately: the #534
+// regression this test pins is exactly "wrong community consumes the real
+// one's 10s throttle window and both sides still pass len==1 for the wrong
+// reason".
 func TestListenerReceivesV2CTrap(t *testing.T) {
 	store := &memStore{}
 	r := New(Config{Bind: "127.0.0.1:11620", Community: "public"}, store, nil)
@@ -153,10 +157,22 @@ func TestListenerReceivesV2CTrap(t *testing.T) {
 	if err := send("wrong-community"); err != nil {
 		t.Fatalf("send with wrong community: %v", err)
 	}
+
+	// Negative leg: the wrong-community trap must leave NOTHING in the
+	// store — the constant-time gate drops it before the throttle, so the
+	// legit trap below still lands. (The #534 regression this pins: the
+	// old code stored BOTH and the 10s throttle ate the legit one.)
+	brief := time.Now().Add(700 * time.Millisecond)
+	for time.Now().Before(brief) {
+		time.Sleep(20 * time.Millisecond)
+		if n := len(store.snapshot()); n != 0 {
+			t.Fatalf("wrong-community trap reached the store: %d rows", n)
+		}
+	}
+
 	if err := send("public"); err != nil {
 		t.Fatalf("send with right community: %v", err)
 	}
-
 	deadline := time.Now().Add(3 * time.Second)
 	var got []scannerv2.Evidence
 	for len(got) == 0 && time.Now().Before(deadline) {
