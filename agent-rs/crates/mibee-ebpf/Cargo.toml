@@ -17,3 +17,8 @@ loader = ["dep:aya"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 aya = { version = "0.14", optional = true }
+
+# The veth chain diagnostic only exists where the loader does.
+[[example]]
+name = "veth_check"
+required-features = ["loader"]

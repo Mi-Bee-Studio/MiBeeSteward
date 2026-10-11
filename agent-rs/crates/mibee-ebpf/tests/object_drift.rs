@@ -2,12 +2,13 @@
 //! center embeds (`internal/service/scannerv2/ebpf/tcingress_bpfel.o`, the
 //! bpf2go output of `bpf/tc_ingress.c`). One field-verified verifier
 //! artifact, two loaders — that is the whole parity story of #498, so drift
-//! between the two copies is a CI failure (`make check-agent-rs-assets`
-//! guards the same invariant from the Makefile side).
+//! between the two copies fails the suite. The bpf2go generate step
+//! refreshes both copies in one command (its second directive is the copy).
 //!
-//! When the canonical file is not present (a standalone agent-rs checkout
-//! without the surrounding Go repo) the test skips: the Makefile guard owns
-//! the check where both trees exist.
+//! The canonical file is a generate output and never committed, so it only
+//! exists on machines that ran the generate step (or synced a build tree);
+//! on a fresh checkout this test skips, and CI's object-parse guard (aya
+//! must parse the embedded copy) still runs on every PR.
 
 use std::path::PathBuf;
 

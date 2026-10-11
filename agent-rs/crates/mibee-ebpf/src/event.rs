@@ -40,18 +40,18 @@ pub const KIND_ND: u8 = 10;
 /// What the BPF program saw. The discriminants mirror the wire byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    Ssh,
-    Rtsp,
-    Http,
-    WsDiscovery,
-    Dhcp,
-    TlsSni,
-    Mdns,
-    Ssdp,
+    Ssh = 1,
+    Rtsp = 2,
+    Http = 3,
+    WsDiscovery = 4,
+    Dhcp = 5,
+    TlsSni = 6,
+    Mdns = 7,
+    Ssdp = 8,
     /// ARP presence sighting (#497): a hard on-wire liveness fact.
-    ArpSighting,
+    ArpSighting = 9,
     /// NDP presence sighting (#497): MAC-keyed, carries no IPv4.
-    NdSighting,
+    NdSighting = 10,
 }
 
 impl Kind {

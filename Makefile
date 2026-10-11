@@ -365,13 +365,12 @@ sync-agent-rs-assets:
 	@cp -v configs/fingerprints/*.yaml agent-rs/crates/mibee-agent/assets/fingerprints/
 	@cp -v configs/fingerprints/device-types/device_types.yaml agent-rs/crates/mibee-agent/assets/device_types.yaml
 	@cp -v configs/oui-curated.txt agent-rs/crates/mibee-agent/assets/oui_curated.txt
-	@cp -v internal/service/scannerv2/ebpf/tcingress_bpfel.o agent-rs/crates/mibee-ebpf/ebpf/tc_ingress.bpfel.o
 	@echo "agent-rs assets synced"
 
 # check-agent-rs-assets fails when the committed agent-rs copies drifted from
 # configs/ (CI runs it; same guard class as the sqlc/apiclient drift checks).
 check-agent-rs-assets:
-	@ok=1; 	for f in configs/fingerprints/*.yaml; do 		b=$$(basename "$$f"); 		diff -q "$$f" "agent-rs/crates/mibee-agent/assets/fingerprints/$$b" >/dev/null || { echo "::error::agent-rs assets drift: $$b (run 'make sync-agent-rs-assets')"; ok=0; }; 	done; 	diff -q configs/fingerprints/device-types/device_types.yaml agent-rs/crates/mibee-agent/assets/device_types.yaml >/dev/null || { echo "::error::agent-rs assets drift: device_types.yaml (run 'make sync-agent-rs-assets')"; ok=0; }; 	diff -q configs/oui-curated.txt agent-rs/crates/mibee-agent/assets/oui_curated.txt >/dev/null || { echo "::error::agent-rs assets drift: oui_curated.txt (run 'make sync-agent-rs-assets')"; ok=0; }; 	diff -q internal/service/scannerv2/ebpf/tcingress_bpfel.o agent-rs/crates/mibee-ebpf/ebpf/tc_ingress.bpfel.o >/dev/null || { echo "::error::agent-rs ebpf object drift: tc_ingress.bpfel.o (run 'make sync-agent-rs-assets')"; ok=0; }; 	[ $$ok -eq 1 ] && echo "agent-rs assets in sync"
+	@ok=1; 	for f in configs/fingerprints/*.yaml; do 		b=$$(basename "$$f"); 		diff -q "$$f" "agent-rs/crates/mibee-agent/assets/fingerprints/$$b" >/dev/null || { echo "::error::agent-rs assets drift: $$b (run 'make sync-agent-rs-assets')"; ok=0; }; 	done; 	diff -q configs/fingerprints/device-types/device_types.yaml agent-rs/crates/mibee-agent/assets/device_types.yaml >/dev/null || { echo "::error::agent-rs assets drift: device_types.yaml (run 'make sync-agent-rs-assets')"; ok=0; }; 	diff -q configs/oui-curated.txt agent-rs/crates/mibee-agent/assets/oui_curated.txt >/dev/null || { echo "::error::agent-rs assets drift: oui_curated.txt (run 'make sync-agent-rs-assets')"; ok=0; }; 	[ $$ok -eq 1 ] && echo "agent-rs assets in sync"
 
 # fpimport converts third-party fingerprint databases into the MiBee rule format.
 # See cmd/fpimport/ and docs/fingerprint-spec.md for supported sources.

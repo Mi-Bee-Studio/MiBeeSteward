@@ -135,10 +135,12 @@ The same TC observer also ships in the Rust agent — see
 [aya](https://aya-rs.dev) userspace loader. Two facts carry over unchanged:
 
 - **One kernel program**: the agent embeds a byte-identical copy of this
-  document's bpf2go object (`make sync-agent-rs-assets` syncs it,
-  `make check-agent-rs-assets` fails CI on drift). Signature kinds, ring
-  layout, and the ARP/ND presence semantics are therefore identical by
-  construction.
+  document's bpf2go object — the `go generate` step refreshes both copies in
+  one command, and the agent crate's drift test fails when they diverge.
+  Signature kinds, ring layout, and the ARP/ND presence semantics are
+  therefore identical by construction. (The shared section name is the
+  canonical `classifier`: both loaders resolve it, while the `tc` alias is
+  cilium-only and aya rejects it.)
 - **One degradation rule**: unsupported host, old kernel, missing caps,
   load/attach failure — the agent logs one warn line and keeps scanning.
 

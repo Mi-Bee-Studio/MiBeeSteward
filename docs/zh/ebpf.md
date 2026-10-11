@@ -134,9 +134,11 @@ scanner:
 [agent-rs.md](agent-rs.md) —— 以默认关闭的 cargo feature 搭载
 [aya](https://aya-rs.dev) 用户态加载器。两个事实原样保留：
 
-- **一个内核程序**：agent 内嵌本文档所述 bpf2go 对象的逐字节拷贝
-  （`make sync-agent-rs-assets` 同步，`make check-agent-rs-assets` 漂移
-  即 CI 失败）。签名种类、环形缓冲布局、ARP/ND 在网语义因此天然一致。
+- **一个内核程序**：agent 内嵌本文档所述 bpf2go 对象的逐字节拷贝 ——
+  `go generate` 步骤一条命令同时刷新两份拷贝，agent crate 的漂移测试在
+  分叉时报错。签名种类、环形缓冲布局、ARP/ND 在网语义因此天然一致。
+  （共享的段名是规范的 `classifier`：两个加载器都认；`tc` 别名仅
+  cilium 认，aya 会拒绝。）
 - **一条降级规则**：主机不支持、内核过老、缺 caps、加载/挂载失败 ——
   agent 打一行 warn 并照常扫描。
 

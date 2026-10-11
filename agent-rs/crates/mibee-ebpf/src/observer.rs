@@ -128,6 +128,9 @@ impl Observer {
         // 4. Ring-buffer drain on its own thread: RingBuf::next is poll-style
         //    (mmap reads cannot fail), so an idle sleep keeps it off the CPU.
         //    Events hop into the agent's async world through the sync sink.
+        //    The first event of each kind logs once (bounded: ten kinds per
+        //    process lifetime) — the field-verification line that the whole
+        //    kernel→ringbuf→drain chain is delivering.
         let map = ebpf
             .take_map("events")
             .ok_or_else(|| "map events missing from the object".to_string())?;
@@ -136,17 +139,30 @@ impl Observer {
         let thread_stop = Arc::clone(&stop);
         let thread = std::thread::Builder::new()
             .name("mibee-ebpf-drain".into())
-            .spawn(move || loop {
-                while let Some(item) = rb.next() {
-                    let data: &[u8] = &item;
-                    if let Some(ev) = event::decode(data) {
-                        on_event(ev);
+            .spawn(move || {
+                let mut first_logged = [false; 11];
+                loop {
+                    while let Some(item) = rb.next() {
+                        let data: &[u8] = &item;
+                        if let Some(ev) = event::decode(data) {
+                            if let Some(kind) = ev.kind {
+                                let idx = (kind as u8 as usize).min(10);
+                                if !first_logged[idx] {
+                                    first_logged[idx] = true;
+                                    eprintln!(
+                                        "ebpf: first {:?} event ip={} mac={}",
+                                        kind, ev.ip, ev.mac
+                                    );
+                                }
+                            }
+                            on_event(ev);
+                        }
                     }
+                    if thread_stop.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(DRAIN_POLL_MS));
                 }
-                if thread_stop.load(Ordering::Relaxed) {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(DRAIN_POLL_MS));
             })
             .map_err(|e| format!("spawn drain thread: {e}"))?;
 

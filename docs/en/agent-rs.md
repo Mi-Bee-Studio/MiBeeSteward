@@ -103,9 +103,10 @@ Rust agent, as an opt-in cargo feature. The kernel-side program is SHARED,
 not rewritten: the embedded object
 (`agent-rs/crates/mibee-ebpf/ebpf/tc_ingress.bpfel.o`) is a byte-identical
 copy of the center's bpf2go
-artifact — `make sync-agent-rs-assets` copies it, `make check-agent-rs-assets`
-plus a drift test pin the two copies together. One field-verified verifier
-artifact, two loaders. The userspace loader is [aya](https://aya-rs.dev) —
+artifact — the bpf2go `go generate` step refreshes both copies in one
+command (its second directive is the copy), and a drift test pins them
+together wherever both exist. One field-verified verifier artifact, two
+loaders. The userspace loader is [aya](https://aya-rs.dev) —
 pure Rust, no libbpf/BCC — so the static-musl, zero-C-dependency property
 survives the feature.
 
@@ -123,7 +124,11 @@ Build and config:
 - Requirements: Linux ≥ 5.8 — aya attaches via TCX on ≥ 6.6 and falls back
   to the classic clsact/netlink path on older kernels, one notch lower than
   the center's TCX-only loader (6.6). Root or ambient `CAP_BPF` +
-  `CAP_NET_ADMIN`; BTF optional (CO-RE-free program).
+  `CAP_NET_ADMIN`; BTF optional (CO-RE-free program). Field note: on the
+  6.18.44 sunxi armv7 rig the ambient-caps drop-in shape hangs the BPF
+  program load (same kernel-quirk family the center documents) — run that
+  vantage's agent as root; `MIBEE_EBPF_DEBUG=1` logs every routing decision
+  for field diagnostics.
 
 What it feeds (same routing as the center's funnel):
 

@@ -176,6 +176,8 @@ pub async fn run(
 ) {
     let handle = tokio::runtime::Handle::current();
     let seen = Arc::new(Mutex::new(HashSet::<String>::new()));
+    // MIBEE_EBPF_DEBUG=1: log every routing decision (field diagnostics).
+    let debug = std::env::var("MIBEE_EBPF_DEBUG").is_ok_and(|v| v != "0" && v != "false");
     let sink = {
         let handle = handle.clone();
         let seen = Arc::clone(&seen);
@@ -188,11 +190,21 @@ pub async fn run(
             let engine = Arc::clone(&engine);
             let reporter = Arc::clone(&reporter);
             let cidr = cidr.clone();
+            let debug = debug;
             handle.spawn(async move {
                 let routing = {
                     let Ok(mut seen) = seen.lock() else { return };
                     route(&ev, &cidr, &mut seen)
                 };
+                if debug {
+                    eprintln!(
+                        "ebpf: debug kind={:?} ip={} -> report={} observe={}",
+                        ev.kind,
+                        ev.ip,
+                        routing.report_host.is_some(),
+                        routing.observe.is_some()
+                    );
+                }
                 if let Some((ip, mac)) = routing.report_host {
                     reporter
                         .report_passive(ReportedHost {
@@ -308,6 +320,25 @@ mod tests {
         // empty-IP signature (zeroed capture) drops
         let r = route(&dhcp(""), &cidr, &mut seen);
         assert!(r.observe.is_none());
+    }
+
+    /// The android vendor-class seed must classify into a dhcp identity with
+    /// the REAL corpus — the rig end-to-end expectation, pinned locally so a
+    /// corpus/shape drift cannot silently break the passive channel.
+    #[test]
+    fn dhcp_seed_classifies_with_the_corpus() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../configs/fingerprints");
+        if !std::path::Path::new(dir).exists() {
+            eprintln!("skipped: {dir} not present (standalone checkout)");
+            return;
+        }
+        let mut c = mibee_fingerprints::RuleClassifier::new();
+        c.load_from_dir(dir).expect("corpus loads");
+        let idents = c.classify(&[to_evidence(&dhcp("192.0.2.60"))]);
+        assert!(
+            idents.iter().any(|i| i.service == "dhcp"),
+            "dhcp identity expected, got {idents:?}"
+        );
     }
 
     /// Raw-data key parity with the Go decoder's tail.

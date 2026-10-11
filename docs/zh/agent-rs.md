@@ -101,9 +101,9 @@ Rust agent 的内存不光更低，而且**平**：没有 GC 锯齿——这正�
 center 侧的 TC 观测器（[eBPF 被动观测](ebpf.md)）同样下沉到了 Rust agent，
 以可选 cargo feature 的形式提供。内核侧程序是共享而非重写的：内嵌对象
 （`agent-rs/crates/mibee-ebpf/ebpf/tc_ingress.bpfel.o`）与 center 的
-bpf2go 产物逐字节相同 —— `make sync-agent-rs-assets` 负责拷贝，
-`make check-agent-rs-assets` 加漂移测试把两份拷贝钉在一起。一份经过实机
-验证的 verifier 产物，两个加载器。用户态加载器是
+bpf2go 产物逐字节相同 —— bpf2go 的 `go generate` 步骤一条命令同时刷新
+两份拷贝（其第二条指令就是拷贝），漂移测试在两份同时存在的机器上把它们
+钉在一起。一份经过实机验证的 verifier 产物，两个加载器。用户态加载器是
 [aya](https://aya-rs.dev) —— 纯 Rust、无 libbpf/BCC —— 因此静态 musl、
 零 C 依赖的特性在开启 feature 后依然成立。
 
@@ -119,6 +119,9 @@ bpf2go 产物逐字节相同 —— `make sync-agent-rs-assets` 负责拷贝，
 - 要求：Linux ≥ 5.8 —— aya 在 ≥ 6.6 走 TCX、更老的内核回落到经典
   clsact/netlink 挂载，比 center 仅 TCX 的加载器（6.6）低一档。root 或
   ambient `CAP_BPF` + `CAP_NET_ADMIN`；BTF 可选（CO-RE-free 程序）。
+  实测注意：6.18.44 sunxi armv7 rig 上 ambient-caps 形态会挂死 BPF 程序
+  加载（与 center 侧记录的同族内核怪癖）——该 vantage 的 agent 以 root
+  运行；`MIBEE_EBPF_DEBUG=1` 会打出每条路由决策供现场排查。
 
 上报面（与 center 漏斗同一路由规则）：
 

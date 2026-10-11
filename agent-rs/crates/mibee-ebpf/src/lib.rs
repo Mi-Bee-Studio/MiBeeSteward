@@ -3,9 +3,10 @@
 //! #493/#496/#497/#508).
 //!
 //! The kernel-side program is SHARED, not rewritten: `ebpf/tc_ingress.bpfel.o`
-//! is a byte-for-byte copy of the object the Go center embeds (built from
-//! `bpf/tc_ingress.c` via `make sync-agent-rs-assets`; a drift test pins the
-//! copies together). Parity of the ten signature kinds and the ARP/ND presence
+//! is a byte-for-byte copy of the object the Go center embeds — the bpf2go
+//! `go generate` step refreshes BOTH copies in one command (see
+//! observer_real.go), and a drift test pins them together wherever both
+//! exist. Parity of the ten signature kinds and the ARP/ND presence
 //! semantics is therefore by construction — one field-verified verifier
 //! artifact, two loaders.
 //!
