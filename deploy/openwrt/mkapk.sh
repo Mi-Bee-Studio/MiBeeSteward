@@ -74,9 +74,9 @@ maintainer = MiBee Studio <https://github.com/Mi-Bee-Studio/MiBeeSteward>
 license = AGPL-3.0-or-later
 EOF
 # Optional runtime deps (#499), mirroring the ipk's Depends: space-separated
-# list in PKG_DEPENDS (see the ipk script for the eBPF example).
-if [ -n "${PKG_DEPENDS:-}" ]; then
-    for dep in $PKG_DEPENDS; do
+# list in PKG_DEPS (see the ipk script for the eBPF example).
+if [ -n "${PKG_DEPS:-}" ]; then
+    for dep in $PKG_DEPS; do
         printf 'depend = %s
 ' "$dep" >> "$ROOT/.PKGINFO"
     done

@@ -90,9 +90,10 @@ package-openwrt: build-frontend sync-device-types sync-oui-curated
 # Router-package variant controls (#499): PKG_TAGS passes optional build tags
 # into the staged center binary, PKG_DEPS becomes the package's runtime
 # dependency line (ipk Depends / apk depend). The eBPF-enabled variant, for a
-# kernel >= 6.6 (TCX) router with the clsact qdisc available:
-#   make package-openwrt-ipk PKG_TAGS=WITH_EBPF \
-#        PKG_DEPS="+kmod-sched-bpf +kmod-sched-cls-act +tc"
+# kernel >= 6.6 router — the loader attaches via TCX, which needs NO clsact
+# qdisc and no tc userland (#535 matrix correction; the classic-TC fallback
+# does not exist in the center loader, kernel < 6.6 degrades instead):
+#   make package-openwrt-ipk PKG_TAGS=WITH_EBPF PKG_DEPS="+kmod-sched-bpf"
 # The Go loader is built in (no libbpf userland needed); procd runs the
 # service as root, so no extra capability wiring is required.
 PKG_TAGS ?=

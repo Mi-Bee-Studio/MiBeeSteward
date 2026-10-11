@@ -171,13 +171,13 @@ The stock router packages ship the default unprivileged build. For a **kernel >=
 go generate -tags WITH_EBPF ./internal/service/scannerv2/ebpf/
 
 # Then package with the tag; the kmod deps are written into the package metadata:
-make package-openwrt-ipk PKG_TAGS=WITH_EBPF      PKG_DEPS="+kmod-sched-bpf +kmod-sched-cls-act +tc"
+make package-openwrt-ipk PKG_TAGS=WITH_EBPF      PKG_DEPS="+kmod-sched-bpf"
 # (or package-openwrt-apk with the same variables)
 ```
 
 Notes:
 
-- **`libbpf` is NOT needed** — the Go binary carries its own loader and the BPF object is CO-RE free (loads even on BTF-less kernels); the `kmod`/`tc` deps only provide the kernel-side scheduler hooks the TC attach rides on.
+- **`libbpf`, `tc` and the clsact qdisc are NOT needed** — the Go binary carries its own loader, the BPF object is CO-RE free (loads even on BTF-less kernels), and the loader attaches via TCX (kernel ≥ 6.6), which needs no classic qdisc or userland (#535 matrix correction: earlier docs recommended `+kmod-sched-cls-act +tc`; the center loader has no classic-TC fallback — older kernels degrade instead). `kmod-sched-bpf` provides the kernel-side BPF scheduler hooks the attach rides on.
 - **procd runs the service as root**, which satisfies the capability requirement without any extra wiring.
 - **On a bridged router, attach the observer to the physical ports** (`eth0`, `eth1`, ...), not `br-lan`: frames forwarded between bridge ports do not traverse the bridge device's own TC ingress hook. `scanner.ebpf.interfaces` in `/etc/mibee/config.yaml` takes the list.
 - On a kernel older than 6.6 the observer reports `unsupported` at startup and the server runs exactly like the default build (#493 degradation).

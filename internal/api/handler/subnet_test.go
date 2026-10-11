@@ -10,7 +10,9 @@
 package handler_test
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -23,6 +25,7 @@ import (
 	handler "mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
 	sqldb "mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/testutil"
 )
 
@@ -114,4 +117,70 @@ func TestSubnetHandler_EmptyList(t *testing.T) {
 	decodeJSON(t, resp, &body)
 	require.Equal(t, float64(0), body["total"])
 	require.NotNil(t, body["subnets"])
+}
+
+// TestSubnetHandler_ScopeEnforcement pins the #536 fix: the scope
+// intersection applies on EVERY path, including an explicit ?network_id= the
+// caller holds no grant for (deny = empty set, topology-graph semantics).
+// The mini-router mounts no NetworkScope middleware (that is the gap the
+// review found: the vulnerable branch had no test), so scopes are injected
+// directly into the request context.
+func TestSubnetHandler_ScopeEnforcement(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	var netA, netB int64
+	for _, name := range []string{"lan-a", "lan-b"} {
+		res, err := conn.Exec(`INSERT INTO networks (name) VALUES (?)`, name)
+		require.NoError(t, err)
+		id, _ := res.LastInsertId()
+		if name == "lan-a" {
+			netA = id
+		} else {
+			netB = id
+		}
+	}
+	for _, net := range []int64{netA, netB} {
+		_, err := conn.Exec(`INSERT INTO subnets (network_id, cidr, metadata, first_seen, last_seen)
+			VALUES (?, '10.30.0.0/24', '{}', '2026-10-10T12:00:00Z', '2026-10-10T12:00:00Z')`, net)
+		require.NoError(t, err)
+	}
+
+	h := handler.NewSubnetHandler(sqldb.New(conn))
+	scoped := func(ids ...int64) func(*http.Request) *http.Request {
+		return func(r *http.Request) *http.Request {
+			return r.WithContext(context.WithValue(r.Context(), domain.ContextKeyUserScope,
+				domain.Scope{NetworkIDs: ids}))
+		}
+	}
+	global := func(r *http.Request) *http.Request { return r }
+
+	cases := []struct {
+		name      string
+		query     string
+		inject    func(*http.Request) *http.Request
+		wantTotal int
+	}{
+		// 1: the #536 regression — restricted + unauthorized explicit id
+		// must DENY (empty), not fall back to unfiltered.
+		{"restricted + unauthorized network_id -> deny", "?network_id=" + strconv.FormatInt(netB, 10), scoped(netA), 0},
+		{"restricted + granted network_id -> only that network", "?network_id=" + strconv.FormatInt(netA, 10), scoped(netA), 1},
+		{"restricted + no param -> granted aggregation", "", scoped(netA), 1},
+		{"global + no param -> all", "", global, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := tc.inject(httptest.NewRequest(http.MethodGet, "/api/v1/subnets"+tc.query, nil))
+			h.List(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+			var body struct {
+				Total   int              `json:"total"`
+				Subnets []map[string]any `json:"subnets"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			require.Equal(t, tc.wantTotal, body.Total)
+		})
+	}
 }
