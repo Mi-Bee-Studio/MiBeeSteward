@@ -82,6 +82,7 @@ type ScanAttributes struct {
 
 	// Discovery surfaces (kept struct-shaped where stable, free-form otherwise)
 	SNMP             *SNMPDiscovery  `json:"snmp,omitempty"`
+	STP              *STPDiscovery   `json:"stp,omitempty"`
 	OpenPorts        []OpenPortEntry `json:"open_ports,omitempty"`
 	DetectedServices []ServiceEntry  `json:"detected_services,omitempty"`
 	Prometheus       *PrometheusInfo `json:"prometheus,omitempty"`
@@ -100,6 +101,19 @@ type SNMPDiscovery struct {
 	SysLocation string `json:"sys_location,omitempty"`
 	SysContact  string `json:"sys_contact,omitempty"`
 	SysServices int    `json:"sys_services,omitempty"`
+}
+
+// STPDiscovery records the Spanning-Tree facts from the BRIDGE-MIB dot1dStp
+// walk (#525): the bridge's own ID, the network's root bridge, whether THIS
+// bridge is the root, and each port's role. is_root is the collected fact
+// that replaces the frontend's root-detection heuristics; the per-port roles
+// explain hierarchy and blocked links (alternate/backup ports carry no
+// forwarding traffic).
+type STPDiscovery struct {
+	BridgeMAC     string `json:"bridge_mac,omitempty"`      // dot1dBaseBridgeAddress
+	RootBridgeMAC string `json:"root_bridge_mac,omitempty"` // MAC half of dot1dStpDesignatedRoot
+	IsRoot        bool   `json:"is_root,omitempty"`         // own bridge == designated root
+	Ports         string `json:"ports,omitempty"`           // "ifName=role,..." (role: root/designated/alternate/backup/disabled)
 }
 
 // OpenPortEntry is one element of ScanAttributes.OpenPorts. Shape must match

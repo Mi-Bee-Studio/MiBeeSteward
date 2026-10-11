@@ -138,6 +138,21 @@ func buildScanAttributes(rep scannerv2.HostReport) domain.ScanAttributes {
 
 	// SNMP evidence → structured sub-object. We pick the first snmp evidence
 	// (the snmp probe emits exactly one per host).
+	// STP facts (#525): the BRIDGE-MIB dot1dStp walk's device-level view
+	// (own bridge MAC, root bridge MAC, is_root, per-port roles). The graph
+	// reads is_root as the factual root detection.
+	for _, e := range rep.Evidence {
+		if e.Kind != "stp" || e.RawData == nil {
+			continue
+		}
+		attr.STP = &domain.STPDiscovery{
+			BridgeMAC:     e.RawData["bridge_mac"],
+			RootBridgeMAC: e.RawData["root_bridge_mac"],
+			IsRoot:        e.RawData["is_root"] == "true",
+			Ports:         e.RawData["ports"],
+		}
+	}
+
 	for _, e := range rep.Evidence {
 		if e.Kind != "snmp" || e.RawData == nil {
 			continue

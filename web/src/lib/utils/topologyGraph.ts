@@ -92,7 +92,9 @@ const CORE_TYPES = new Set(['switch', 'router', 'firewall']);
 
 /**
  * detectRoot picks the topology root: the device that should sit at the top of
- * the visualization. Heuristic, in priority order:
+ * the visualization. The collected STP fact wins outright when present (#525):
+ * a bridge whose dot1dStp walk says "I am the root" IS the root, no guessing.
+ * Otherwise heuristic, in priority order:
  *   1. Highest ARP in-degree (the gateway most devices ARP toward), preferring
  *      an explicit router-typed node among ties.
  *   2. Any router-typed node (when no ARP edges exist).
@@ -106,6 +108,12 @@ export function detectRoot(graph: TopologyGraph): TopoNode | null {
 
 	if (nodes.length === 0) {
 		return null;
+	}
+
+	// --- Pass 0: the collected STP root fact (#525) ---
+	const stpRoot = nodes.find((n) => n.stp_root === true);
+	if (stpRoot) {
+		return stpRoot;
 	}
 
 	const macToNodeId = new Map<string, number>();

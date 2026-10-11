@@ -2480,6 +2480,7 @@ components:
         inferred_type: {type: string, description: Evidence-derived, richer than type}
         brand: {type: string}
         network_id: {type: integer, format: int64, nullable: true, description: Origin network (subnet grouping)}
+        stp_root: {type: boolean, description: Collected dot1dStp fact (#525) - this bridge reported itself as the spanning-tree root; false when it never spoke STP}
     TopologyEdge:
       type: object
       required: [from_device_id, to_device_id, to_mac, protocol, local_port, remote_port]

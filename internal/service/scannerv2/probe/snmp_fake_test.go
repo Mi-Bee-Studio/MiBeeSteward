@@ -226,6 +226,84 @@ func TestSTPMIBProbe_WalkScripted(t *testing.T) {
 	require.Empty(t, evs)
 }
 
+// --- STP-MIB port roles + root bridge (#525) ---
+
+// The extended walk collects dot1dStpPortRole and dot1dStpDesignatedRoot on
+// top of the designated-bridge edges: the neighbor evidence gains a
+// port_role key, and a device-level "stp" evidence carries the root facts
+// (own bridge MAC, root bridge MAC, is_root, per-port roles) that fold into
+// scan_attributes.stp.
+func TestSTPMIBProbe_RolesAndRoot(t *testing.T) {
+	injectFakeSnmp(t, &fakeSnmp{walks: map[string][]gosnmp.SnmpPDU{
+		oidDot1dStpPortDesignatedBridge: {
+			// Port 1 (toward the root) sees designated bridge aa:bb:cc:dd:ee:ff.
+			pdu(oidDot1dStpPortDesignatedBridge, "1", gosnmp.OctetString,
+				[]byte{0x80, 0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}),
+			// Port 2's designated bridge is the local switch itself: edge skipped.
+			pdu(oidDot1dStpPortDesignatedBridge, "2", gosnmp.OctetString,
+				[]byte{0x80, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66}),
+		},
+		oidDot1dStpPortRole: {
+			pdu(oidDot1dStpPortRole, "1", gosnmp.Integer, 4), // root
+			pdu(oidDot1dStpPortRole, "2", gosnmp.Integer, 5), // designated
+		},
+		oidDot1dBasePortIfIndex: {pdu(oidDot1dBasePortIfIndex, "1", gosnmp.Integer, 11)},
+		oidIfName:               {pdu(oidIfName, "11", gosnmp.OctetString, "port11")},
+	}, get: &gosnmp.SnmpPacket{Variables: []gosnmp.SnmpPDU{
+		{Name: "." + oidDot1dBaseBridgeAddress, Type: gosnmp.OctetString, Value: []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66}},
+		{Name: "." + oidDot1dStpDesignatedRoot, Type: gosnmp.OctetString, Value: []byte{0x80, 0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}},
+	}}})
+
+	evs, err := NewSTPMIBProbe(nil).Probe(context.Background(), "10.4.4.4", probeHint())
+	require.NoError(t, err)
+	require.Len(t, evs, 2, "one device-level stp evidence + one neighbor edge")
+
+	var stp, neighbor scannerv2.Evidence
+	for _, e := range evs {
+		switch e.Kind {
+		case "stp":
+			stp = e
+		case "neighbor":
+			neighbor = e
+		}
+	}
+	require.NotNil(t, stp.RawData, "device-level stp evidence must be present")
+	require.Equal(t, "11:22:33:44:55:66", stp.RawData["bridge_mac"])
+	require.Equal(t, "aa:bb:cc:dd:ee:ff", stp.RawData["root_bridge_mac"])
+	require.Equal(t, "false", stp.RawData["is_root"])
+	require.Equal(t, "port11=root,2=designated", stp.RawData["ports"],
+		"roles keyed by resolved ifName when known, bridge port otherwise")
+
+	require.Equal(t, "aa:bb:cc:dd:ee:ff", neighbor.RawData["neighbor_mac"])
+	require.Equal(t, "root", neighbor.RawData["port_role"],
+		"the edge toward the designated root carries its STP role")
+}
+
+// The root bridge itself: every designated bridge is the local switch (all
+// edges self-skip), but the root facts still land — this is exactly the
+// device the graph needs to mark as root.
+func TestSTPMIBProbe_RootBridgeNoEdges(t *testing.T) {
+	injectFakeSnmp(t, &fakeSnmp{walks: map[string][]gosnmp.SnmpPDU{
+		oidDot1dStpPortDesignatedBridge: {
+			pdu(oidDot1dStpPortDesignatedBridge, "1", gosnmp.OctetString,
+				[]byte{0x80, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66}),
+		},
+		oidDot1dStpPortRole: {
+			pdu(oidDot1dStpPortRole, "1", gosnmp.Integer, 5), // designated
+		},
+	}, get: &gosnmp.SnmpPacket{Variables: []gosnmp.SnmpPDU{
+		{Name: "." + oidDot1dBaseBridgeAddress, Type: gosnmp.OctetString, Value: []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66}},
+		{Name: "." + oidDot1dStpDesignatedRoot, Type: gosnmp.OctetString, Value: []byte{0x80, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66}},
+	}}})
+
+	evs, err := NewSTPMIBProbe(nil).Probe(context.Background(), "10.4.4.4", probeHint())
+	require.NoError(t, err)
+	require.Len(t, evs, 1, "no neighbor edges, but the stp evidence survives")
+	require.Equal(t, "stp", evs[0].Kind)
+	require.Equal(t, "true", evs[0].RawData["is_root"])
+	require.Equal(t, "11:22:33:44:55:66", evs[0].RawData["root_bridge_mac"])
+}
+
 // --- Bridge-MIB ---
 
 func TestBridgeMIBProbe_WalkScripted(t *testing.T) {

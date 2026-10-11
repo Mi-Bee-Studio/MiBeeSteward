@@ -41,6 +41,10 @@ type topoNode struct {
 	InferredType string `json:"inferred_type"` // from scan_vendor/scan_os: richer than type
 	Brand        string `json:"brand"`
 	NetworkID    *int64 `json:"network_id"` // origin network (for subnet grouping)
+	// STPRoot is the collected dot1dStp fact (#525): this bridge reported
+	// itself as the network's spanning-tree root. True root detection for
+	// the graph, replacing in-degree/type heuristics.
+	STPRoot bool `json:"stp_root"`
 }
 
 // topoEdge is one L2 adjacency: a device sees a neighbor (by MAC) via a
@@ -88,6 +92,7 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 			InferredType: ptrString(d.ScanVendor),
 			Brand:        ptrString(d.ScanVendor),
 			NetworkID:    d.NetworkID,
+			STPRoot:      d.StpRoot == 1,
 		})
 	}
 

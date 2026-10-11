@@ -549,7 +549,8 @@ func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Dev
 }
 
 const listTopologyDevices = `-- name: ListTopologyDevices :many
-SELECT id, name, ip_address, mac_address, type, status, scan_vendor, scan_mac, scan_os, scan_hostname, network_id
+SELECT id, name, ip_address, mac_address, type, status, scan_vendor, scan_mac, scan_os, scan_hostname, network_id,
+       CAST(COALESCE(json_extract(scan_attributes, '$.stp.is_root'), 0) AS INTEGER) AS stp_root
 FROM devices
 WHERE (? <= 0 OR network_id = ?)
 ORDER BY id
@@ -572,10 +573,14 @@ type ListTopologyDevicesRow struct {
 	ScanOs       *string `json:"scan_os"`
 	ScanHostname *string `json:"scan_hostname"`
 	NetworkID    *int64  `json:"network_id"`
+	StpRoot      int64   `json:"stp_root"`
 }
 
 // Lightweight node projection for the topology graph: only the columns the
 // graph needs (id/name/ip/mac/type/status + inferred type/brand from scan_*).
+// stp_root is extracted from scan_attributes JSON (no generated column: the
+// schema stays untouched, #525) -- 1 when the bridge reported itself as the
+// STP root, NULL when it never spoke dot1dStp.
 // network_id <= 0 means "all networks".
 func (q *Queries) ListTopologyDevices(ctx context.Context, arg ListTopologyDevicesParams) ([]ListTopologyDevicesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTopologyDevices, arg.Column1, arg.NetworkID)
@@ -598,6 +603,7 @@ func (q *Queries) ListTopologyDevices(ctx context.Context, arg ListTopologyDevic
 			&i.ScanOs,
 			&i.ScanHostname,
 			&i.NetworkID,
+			&i.StpRoot,
 		); err != nil {
 			return nil, err
 		}
