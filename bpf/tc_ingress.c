@@ -108,6 +108,30 @@ struct {
     __type(value, struct sighting_val);
 } sighting_last SEC(".maps");
 
+// Flow accounting (#500): per (src, dst, proto, dport) byte/packet counters,
+// aggregated by the TC program for every IPv4 TCP/UDP packet. Userspace
+// drains the map on a fixed cadence (iterate + delete) and folds the samples
+// into device-level speaks-with aggregates — raw flows never leave the box.
+// LRU caps the memory (default 16384 entries ~= 0.5 MiB; the loader may
+// override max_entries per deployment shape). Counters are non-atomic adds:
+// races on the same key undercount slightly, acceptable for a traffic profile.
+struct flow_key {
+    __u32 saddr;     // network order
+    __u32 daddr;     // network order
+    __u16 proto;     // 6 = tcp, 17 = udp
+    __u16 dport;     // host order
+};
+struct flow_val {
+    __u64 bytes;
+    __u64 pkts;
+};
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 16384);
+    __type(key, struct flow_key);
+    __type(value, struct flow_val);
+} flows SEC(".maps");
+
 // sighting_throttled returns 1 (and records the sighting) when this (ip, mac,
 // kind) was ALREADY emitted in the current 30s bucket, 0 when the sighting
 // should proceed to the ring buffer.
@@ -373,6 +397,27 @@ int tc_ingress(struct __sk_buff *skb) {
     __u32 src_ip, dst_ip;
     __builtin_memcpy(&src_ip, iph + 12, 4);
     __builtin_memcpy(&dst_ip, iph + 16, 4);
+
+    // Flow accounting (#500): every IPv4 TCP/UDP packet bumps its flow entry
+    // BEFORE the signature gates (which return early for non-matching
+    // traffic). dport is read tolerantly: a truncated header leaves 0.
+    if (proto == 6 || proto == 17) {
+        struct flow_key fk = {};
+        fk.saddr = src_ip;
+        fk.daddr = dst_ip;
+        fk.proto = proto;
+        __u8 dp[2];
+        if (bpf_skb_load_bytes(skb, 14 + 20 + 2, dp, sizeof(dp)) >= 0)
+            fk.dport = ((__u16)dp[0] << 8) | dp[1];
+        struct flow_val *fv = bpf_map_lookup_elem(&flows, &fk);
+        if (fv) {
+            fv->bytes += skb->len;
+            fv->pkts += 1;
+        } else {
+            struct flow_val nv = { .bytes = skb->len, .pkts = 1 };
+            bpf_map_update_elem(&flows, &fk, &nv, BPF_ANY);
+        }
+    }
 
     __u16 src_port = 0;
     __u8 kind = 0;

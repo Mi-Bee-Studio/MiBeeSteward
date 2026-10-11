@@ -176,6 +176,18 @@ type ARPScanConfig struct {
 type EBPFConfig struct {
 	Enabled    bool     `koanf:"enabled"`
 	Interfaces []string `koanf:"interfaces"`
+	// Flows tunes the flow-accounting exporter (#500). Defaults: 30s drain
+	// cadence, 16384-entry LRU cap (~0.5 MiB kernel memory).
+	Flows EBPFFlowsConfig `koanf:"flows"`
+}
+
+// EBPFFlowsConfig tunes the #500 speaks-with flow exporter.
+type EBPFFlowsConfig struct {
+	// ExportIntervalSec is the flow-map drain cadence; <= 0 = 30s.
+	ExportIntervalSec int `koanf:"export_interval"`
+	// MapEntries caps the LRU flow map (clamped to [1024, 131072]);
+	// <= 0 = 16384.
+	MapEntries int `koanf:"map_entries"`
 }
 
 // DiscoveryConfig controls the long-running passive discovery service. Unlike

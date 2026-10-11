@@ -42,6 +42,9 @@ type Config struct {
 	// Default off — it opens a listening socket (UDP 162; ports below 1024
 	// need CAP_NET_BIND_SERVICE) and expects firewall allowance.
 	SNMPTrap SNMPTrapConfig `koanf:"snmp_trap"`
+	// ListenWatch diffs the local LISTEN table and alerts on newly opened
+	// listening sockets (#500). Default OFF.
+	ListenWatch ListenWatchConfig `koanf:"listen_watch"`
 	// Retention governs the periodic background sweep that prunes high-volume
 	// detail tables (heartbeat_results, scan_results, …). Without it these
 	// tables grow unbounded, heartbeat_results alone accumulates ~270k rows/day.
@@ -180,6 +183,8 @@ type RetentionConfig struct {
 	// row per real adjacency, refreshed by upsert, and high value for topology
 	// history).
 	DeviceNeighborsDays int `koanf:"device_neighbors_days"`
+	// DeviceSpeaksDays: idle speaks-with aggregates retention (#500).
+	DeviceSpeaksDays int `koanf:"device_speaks_days"`
 	// HostServicesDays is the retention window for host_services (classified
 	// service identities). host_services is upserted, not appended, but rows
 	// for gone-silent hosts linger. Default 30.
@@ -516,6 +521,9 @@ func normalizeRetention(cfg *Config) {
 	if r.DeviceNeighborsDays <= 0 {
 		r.DeviceNeighborsDays = 90
 	}
+	if r.DeviceSpeaksDays <= 0 {
+		r.DeviceSpeaksDays = 30
+	}
 	if r.HostServicesDays <= 0 {
 		r.HostServicesDays = 30
 	}
@@ -633,4 +641,15 @@ type SNMPTrapConfig struct {
 	Enabled   bool   `koanf:"enabled"`
 	Bind      string `koanf:"bind"`
 	Community string `koanf:"community"`
+}
+
+// ListenWatchConfig controls the listen-table diff source (#500).
+type ListenWatchConfig struct {
+	Enabled bool `koanf:"enabled"`
+	// IntervalSeconds is the poll cadence; <= 0 = 15s.
+	IntervalSeconds int `koanf:"interval"`
+	// DeviceIP optionally binds the emitted events to that device's
+	// change_log entity (rules scoped to that device then match); empty
+	// leaves events unbound (global-scope rules still fire).
+	DeviceIP string `koanf:"device_ip"`
 }

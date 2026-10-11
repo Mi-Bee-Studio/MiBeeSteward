@@ -147,6 +147,27 @@ agent 的内核门槛是 **5.8** 而非 6.6：aya 在 ≥ 6.6 走 TCX、更老�
 TCX。在对应 agent 的 `agent.yaml` 里置 `scanner.discovery.ebpf.enabled:
 true` 即可开启（agent 需以 `make build-agent-rs-ebpf` 构建）。
 
+## 流遥测与 speaks-with（#500）
+
+TC 程序同时做流量记账：每个 IPv4 TCP/UDP 包都会更新一张 LRU flow map
+（`(源, 目的, 协议, 目的端口) -> 字节/包数`）。用户态导出器按固定节奏
+（`scanner.ebpf.flows.export_interval`，默认 30s）排空该 map（迭代+删除），
+并把每批样本折叠成**仅设备级的聚合**——#500 的隐私红线：原始按端口流
+永不离开内存。
+
+聚合产物：
+
+- **speaks-with 边**：两台受管设备之间的会话以 `speaks-with` 边进入拓扑图
+  （淡色点线，悬停显示字节总量），并以设备详情的流量画像面板呈现
+  （`GET /api/v1/devices/{id}/speaks`）；
+- **首次事件**：两台受管设备**首次**被观测到通信时发出 `speaks_with_new`
+  变更事件——绑定通知规则即可获得横向移动可见性。首次**外部**对端只进
+ 画像、不事件（每个 CDN 都是"新"的，会是噪音）。
+
+内存：LRU 上限默认 16384 项（约 0.5 MiB 内核内存）；
+`scanner.ebpf.flows.map_entries` 可按部署形态在 [1024, 131072] 内调整。
+保留：闲置聚合按 `retention.device_speaks_days`（默认 30 天）清扫。
+
 ## 适用场景
 
 ### 何时使用 eBPF 被动观测

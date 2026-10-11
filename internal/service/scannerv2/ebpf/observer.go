@@ -51,6 +51,20 @@ type Config struct {
 	// discovery channel exists (#522). The callback must be cheap — it runs
 	// on the ring-buffer drain goroutine.
 	HostSighting func(ip, mac string)
+	// Flows tunes the flow-accounting exporter (#500). Zero values select
+	// the defaults (30s drain cadence, 16384-entry LRU cap); the exporter
+	// always runs when the observer is active — the TC program updates the
+	// flow map as part of its per-packet path.
+	Flows FlowExporterConfig
+}
+
+// FlowExporterConfig tunes the #500 flow drain. Both fields are optional.
+type FlowExporterConfig struct {
+	// ExportInterval is the drain cadence; <= 0 selects the 30s default.
+	ExportIntervalSec int
+	// MapEntries overrides the LRU flow-map capacity (clamped to
+	// [1024, 131072]); <= 0 selects the 16384 default.
+	MapEntries int
 }
 
 // Observer is the PassiveObserver ProbeSource. The concrete behavior depends

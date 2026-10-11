@@ -156,6 +156,17 @@ type DeviceNeighbor struct {
 	LastSeen         *time.Time `json:"last_seen"`
 }
 
+type DeviceSpeaksWith struct {
+	ID           int64     `json:"id"`
+	DeviceID     int64     `json:"device_id"`
+	PeerIp       string    `json:"peer_ip"`
+	PeerDeviceID *int64    `json:"peer_device_id"`
+	BytesOut     int64     `json:"bytes_out"`
+	BytesIn      int64     `json:"bytes_in"`
+	FirstSeen    time.Time `json:"first_seen"`
+	LastSeen     time.Time `json:"last_seen"`
+}
+
 type DeviceSystem struct {
 	ID             int64     `json:"id"`
 	DeviceID       int64     `json:"device_id"`

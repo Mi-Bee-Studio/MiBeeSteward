@@ -284,6 +284,10 @@ func eventTitle(changeType string) string {
 		return "Device added"
 	case changedetect.ChangeTypeDeviceChanged:
 		return "Device changed"
+	case changedetect.ChangeTypeSpeaksWithNew:
+		return "New device conversation"
+	case changedetect.ChangeTypeListenPortAdded:
+		return "New listening port"
 	}
 	return "Device event"
 }

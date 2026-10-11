@@ -18,7 +18,7 @@
 	import { auth } from '$lib/stores/auth';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { formatDateTime as formatTimestamp } from '$lib/utils/index';
-	import type { Device, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats } from '$lib/types';
+	import type { Device, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
 	import { Monitor, BarChart3, FileText } from '@lucide/svelte';
@@ -46,6 +46,7 @@
 	let systems = $state<System[]>([]);
 	let total = $state(0);
 	let neighbors = $state<DeviceNeighbor[]>([]);
+	let speaks = $state<DeviceSpeaks[]>([]);
 	// VLANs observed on the device's network (#273): tag + name (when the
 	// gateway's dot1qVlanStaticName walk found one). null = not loaded yet.
 	let networkVlans = $state<Array<{ id: number; vlan_tag: number; name: string | null; description: string | null }> | null>(null);
@@ -356,6 +357,7 @@
 		if (t === 'network') {
 			if (!tlsCerts.length) fetchTLSCerts();
 			if (!neighbors.length) fetchNeighbors();
+			if (!speaks.length) fetchSpeaks();
 			if (networkVlans === null && device?.network_id) fetchNetworkVlans();
 		}
 		if (t === 'config') {
@@ -546,6 +548,32 @@
 		} catch (err: unknown) {
 			// Keep last good neighbors list; record error for the section banner.
 			neighborsError = getErrorMessage(err);
+		}
+	}
+
+	// Compact byte formatting for the traffic profile (1.2 MB style).
+	function fmtBytes(n: number): string {
+		if (n < 1024) return `${n} B`;
+		const units = ['KB', 'MB', 'GB', 'TB'];
+		let v = n;
+		let i = -1;
+		do {
+			v /= 1024;
+			i++;
+		} while (v >= 1024 && i < units.length - 1);
+		return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
+	}
+
+	// Speaks-with traffic profile (#500): passive flow aggregates, heaviest
+	// peers first. Failures are silent (empty panel).
+	async function fetchSpeaks() {
+		try {
+			const res = await api.get<{ speaks: DeviceSpeaks[]; total: number }>(
+				`/devices/${deviceId}/speaks`
+			);
+			speaks = res.speaks || [];
+		} catch {
+			// passive enrichment: keep empty
 		}
 	}
 
@@ -1458,6 +1486,57 @@
 						</span>
 					{/each}
 				</div>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Traffic Profile (speaks-with, #500): passive flow aggregates per
+	     peer — heaviest first. Empty until the eBPF observer runs on a
+	     vantage that sees this device's traffic. -->
+	{#if device}
+		<div class="scan-info-panel mt-4">
+			<h3 class="scan-info-title">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+				{m['topology.Speaks']()}
+			</h3>
+			<p class="text-xs text-text-muted mb-3">{m['topology.Speaks Desc']()}</p>
+			{#if speaks.length > 0}
+				<div class="overflow-x-auto">
+					<table class="w-full text-left border border-border rounded-lg overflow-hidden">
+						<thead class="bg-bg/50 border-b border-border">
+							<tr>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Speaks Peer']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Speaks Out']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Speaks In']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['devicedetail.Col Last Seen']()}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each speaks as sp}
+								<tr class="border-b border-border/50 last:border-b-0">
+									<td class="px-3 py-2 text-sm">
+										{#if sp.peer_device_id}
+											<a href={`/devices/detail/${sp.peer_device_id}`} class="text-primary hover:underline font-medium">
+												{sp.peer_name ?? sp.peer_ip}
+											</a>
+											{#if sp.peer_ip && sp.peer_name}
+												<span class="block text-xs text-text-muted font-mono">{sp.peer_ip}</span>
+											{/if}
+										{:else}
+											<span class="font-mono text-xs">{sp.peer_ip}</span>
+											<span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-bg-hover text-text-muted">{m['topology.Speaks External']()}</span>
+										{/if}
+									</td>
+									<td class="px-3 py-2 font-mono text-xs">{fmtBytes(sp.bytes_out)}</td>
+									<td class="px-3 py-2 font-mono text-xs">{fmtBytes(sp.bytes_in)}</td>
+									<td class="px-3 py-2 text-xs text-text-muted">{sp.last_seen}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<p class="text-xs text-text-muted italic">{m['topology.Speaks Empty']()}</p>
 			{/if}
 		</div>
 	{/if}

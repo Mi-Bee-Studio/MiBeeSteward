@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS notification_log (
 CREATE TABLE IF NOT EXISTS notification_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    event_type TEXT NOT NULL,                  -- device_lost|device_recovered|device_added|device_changed
+    event_type TEXT NOT NULL,                  -- device_lost|device_recovered|device_added|device_changed|speaks_with_new|listen_port_added
     scope_type TEXT NOT NULL DEFAULT 'all',    -- all|network|device
     scope_network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
     scope_device_uuid TEXT NOT NULL DEFAULT '',-- device scope: device_uuid (stable across IP changes)
@@ -588,6 +588,25 @@ CREATE TABLE IF NOT EXISTS topology_edges (
 );
 CREATE INDEX IF NOT EXISTS idx_topology_edges_from ON topology_edges(from_device_id);
 CREATE INDEX IF NOT EXISTS idx_topology_edges_to ON topology_edges(to_device_id);
+
+-- device_speaks_with: device-level traffic aggregates (#500). The passive
+-- observer's raw flow samples are folded in memory; ONLY these per
+-- (device, peer) byte totals persist (the #500 privacy red line — raw
+-- per-port flows never reach storage). peer_device_id is resolved at write
+-- time (NULL = external/unmanaged peer) and refreshed on later upserts.
+CREATE TABLE IF NOT EXISTS device_speaks_with (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    peer_ip TEXT NOT NULL,
+    peer_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+    bytes_out INTEGER NOT NULL DEFAULT 0,
+    bytes_in INTEGER NOT NULL DEFAULT 0,
+    first_seen DATETIME NOT NULL,
+    last_seen DATETIME NOT NULL,
+    UNIQUE(device_id, peer_ip)
+);
+CREATE INDEX IF NOT EXISTS idx_device_speaks_device ON device_speaks_with(device_id);
+CREATE INDEX IF NOT EXISTS idx_device_speaks_peer ON device_speaks_with(peer_device_id);
 
 -- change_log: the event stream produced by the change-detection engine
 -- (added / lost / changed for devices, services, neighbors, topology edges).

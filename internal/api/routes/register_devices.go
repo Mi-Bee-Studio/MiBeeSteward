@@ -77,6 +77,19 @@ func registerDeviceNeighborRoutes(r chi.Router, scopeResolver *scoperesolver.Res
 	})
 }
 
+// registerDeviceSpeaksRoutes registers the per-device speaks-with traffic
+// profile (#500).
+func registerDeviceSpeaksRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, dbConn *sql.DB, speaksHandler *handler.DeviceSpeaksHandler) {
+	// Device traffic peers (passive flow aggregates), read-only. Feeds the
+	// detail-page Traffic Profile panel.
+	r.Route("/api/v1/devices/{id}/speaks", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
+		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
+		r.Get("/", speaksHandler.ListByDevice)
+	})
+}
+
 // registerDeviceCertificateRoutes registers the per-device TLS
 // certificate listing.
 func registerDeviceCertificateRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, dbConn *sql.DB, tlsCertHandler *handler.TLSCertHandler) {

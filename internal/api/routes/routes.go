@@ -36,8 +36,10 @@ import (
 	"mibee-steward/internal/service/notification"
 	probetarget "mibee-steward/internal/service/probetarget"
 	scannerv2 "mibee-steward/internal/service/scannerv2"
+	"mibee-steward/internal/service/listenwatch"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
 	scannerv2configbackup "mibee-steward/internal/service/scannerv2/configbackup"
+	"mibee-steward/internal/service/flows"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
 	scannerv2ebpf "mibee-steward/internal/service/scannerv2/ebpf"
 	scannerv2engine "mibee-steward/internal/service/scannerv2/engine"
@@ -244,6 +246,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// L2 topology, neighbors per device (detail page) + the whole-network
 	// topology graph (nodes + edges). Read-only; any logged-in user.
 	neighborHandler := handler.NewNeighborHandler(scanQueries)
+	speaksHandler := handler.NewDeviceSpeaksHandler(scanQueries)
 	topologyHandler := handler.NewTopologyHandler(scanQueries)
 	// Observed subnets (CIDR/gateway/VLAN linkage written by scan finalize).
 	// Read-only; any logged-in user. Same *db.Queries as the neighbors
@@ -335,6 +338,10 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		EBPF: scannerv2ebpf.Config{
 			Enabled:    cfg.Scanner.EBPF.Enabled,
 			Interfaces: cfg.Scanner.EBPF.Interfaces,
+			Flows: scannerv2ebpf.FlowExporterConfig{
+				ExportIntervalSec: cfg.Scanner.EBPF.Flows.ExportIntervalSec,
+				MapEntries:        cfg.Scanner.EBPF.Flows.MapEntries,
+			},
 		},
 	}, slog.Default())
 	if engineErr != nil {
@@ -628,6 +635,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		})
 	})
 
+	// Flow telemetry (#500): drained flow batches fold into device-level
+	// speaks-with aggregates (raw per-port flows never persist) and emit a
+	// change_log event the first time two MANAGED devices talk. The sink
+	// hands each batch to a worker so the exporter goroutine never waits on
+	// DB writes.
+	flowSvc := flows.NewService(scannerDB, scanQueries, changeWatcher, slog.Default())
+	scannerv2ebpf.SetFlowSink(func(batch []scannerv2ebpf.FlowSample) {
+		b := batch
+		go flowSvc.Ingest(context.Background(), b)
+	})
+
 	// SNMP trap receiver (#509): devices speaking unprompted — linkDown/linkUp,
 	// coldStart, authenticationFailure — land as snmp_trap evidence on the
 	// source device. Default off (extra listening socket, firewall surface);
@@ -651,6 +669,21 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			slog.Error("snmp trap receiver failed to start (continuing without it)", "error", err)
 			trapReceiver = nil
 		}
+	}
+
+	// Listen-table diff (#500): newly opened LISTEN sockets on THIS host are
+	// asset-anomaly events (change_log → notification rules). Default off;
+	// a missing /proc (non-Linux) degrades to one warn line.
+	var listenWatchCancel context.CancelFunc
+	if cfg.ListenWatch.Enabled {
+		lwCtx, cancel := context.WithCancel(context.Background())
+		listenWatchCancel = cancel
+		listenWatcher := listenwatch.NewWatcher(listenwatch.Config{
+			Enabled:     true,
+			IntervalSec: cfg.ListenWatch.IntervalSeconds,
+			DeviceIP:    cfg.ListenWatch.DeviceIP,
+		}, scanQueries, changeWatcher, slog.Default())
+		go listenWatcher.Run(lwCtx)
 	}
 
 	// Agent command service: constructed BEFORE the scheduler so the ScanFunc
@@ -814,6 +847,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	registerDeviceSystemRoutes(r, scopeResolver, dbConn, deviceSystemHandler)
 
 	registerDeviceNeighborRoutes(r, scopeResolver, dbConn, neighborHandler)
+	registerDeviceSpeaksRoutes(r, scopeResolver, dbConn, speaksHandler)
 
 	registerDeviceCertificateRoutes(r, scopeResolver, dbConn, tlsCertHandler)
 
@@ -949,6 +983,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		cleanupSvc.Stop()
 		if configBackupSvc != nil {
 			configBackupSvc.Stop()
+		}
+		if listenWatchCancel != nil {
+			listenWatchCancel()
 		}
 		// Stop the rule engine BEFORE the dispatcher, it holds a Watcher
 		// subscriber and calls dispatcher.Dispatch; stopping it first prevents

@@ -74,6 +74,13 @@ const (
 	ChangeTypeDeviceChanged   = "device_changed"
 	ChangeTypeDeviceLost      = "device_lost"
 	ChangeTypeDeviceRecovered = "device_recovered"
+	// ChangeTypeSpeaksWithNew (#500): two managed devices were observed
+	// talking to each other for the first time (passive flow telemetry) —
+	// the lateral-visibility signal.
+	ChangeTypeSpeaksWithNew = "speaks_with_new"
+	// ChangeTypeListenPortAdded (#500): a new LISTEN socket appeared on the
+	// local listen table (listen-watch diff) — the asset-anomaly signal.
+	ChangeTypeListenPortAdded = "listen_port_added"
 	// ChangeTypeDeviceConfigChanged: a device's running-config backup changed
 	// between two config-backup fetches (#137). Emitted by the configbackup
 	// Service when configdiff.Diff is non-empty. dedupKind returns "" for it

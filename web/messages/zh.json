@@ -885,7 +885,9 @@
 		"Chat ID Placeholder": "-1001234567890",
 		"Bot Username": "机器人名称（可选）",
 		"Bot Token Required": "Telegram Bot Token 为必填项",
-		"Chat ID Required": "Telegram Chat ID 为必填项"
+		"Chat ID Required": "Telegram Chat ID 为必填项",
+		"Event Speaks With New": "新设备会话",
+		"Event Listen Port Added": "新监听端口"
 	},
 	"snmpCredentials": {
 		"Title": "SNMP 凭据",
@@ -1154,7 +1156,15 @@
 		"From Device": "起点",
 		"To Device": "终点",
 		"Cross Link": "冗余 / 环网链路（不在生成树上）",
-		"Open Device": "打开设备页"
+		"Open Device": "打开设备页",
+		"Speaks": "流量画像（speaks-with）",
+		"Speaks Desc": "来自被动 eBPF 流观测的对端聚合——这台设备在和谁说话、说了多少。原始流不出 vantage，仅落设备级总量。",
+		"Speaks Peer": "对端",
+		"Speaks Out": "发出",
+		"Speaks In": "收到",
+		"Speaks External": "外部",
+		"Speaks Empty": "尚未观测到流量。当部署了 eBPF 观测器（scanner.ebpf.enabled）的 vantage 能看到该设备的流量后，此处会自动填充。",
+		"Bytes": "字节"
 	},
 	"certificates": {
 		"Title": "TLS 证书",

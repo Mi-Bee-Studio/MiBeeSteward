@@ -432,6 +432,17 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/NeighborList"}
+  /devices/{id}/speaks:
+    get:
+      tags: [Devices]
+      summary: Speaks-with traffic profile of a device (#500, passive flow aggregates)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Traffic peers envelope (heaviest first, capped at 100)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SpeaksList"}
   /devices/{id}/certificates:
     get:
       tags: [Devices]
@@ -1872,7 +1883,8 @@ components:
         device_id: {type: integer, format: int64}
         neighbor_device_id: {type: integer, format: int64, nullable: true, description: Present when the neighbor MAC matched a scanned device}
         neighbor_mac: {type: string}
-        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP, WiFi]}
+        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP, WiFi, speaks-with]}
+        bytes: {type: integer, format: int64, nullable: true, description: speaks-with edges only — observed byte total}
         local_port: {type: string, nullable: true}
         remote_port: {type: string, nullable: true}
         neighbor_name: {type: string, nullable: true}
@@ -1881,6 +1893,27 @@ components:
         neighbor_status: {type: string, nullable: true}
         first_seen: {type: string, format: date-time, nullable: true}
         last_seen: {type: string, format: date-time, nullable: true}
+    DeviceSpeaks:
+      type: object
+      description: >-
+        One peer aggregate from the passive flow telemetry (#500). LAN-internal
+        peers carry device linkage; external peers carry only the IP + totals.
+      required: [peer_ip, bytes_out, bytes_in, first_seen, last_seen]
+      properties:
+        peer_ip: {type: string}
+        peer_device_id: {type: integer, format: int64, nullable: true}
+        peer_name: {type: string, nullable: true}
+        peer_device_ip: {type: string, nullable: true}
+        bytes_out: {type: integer, format: int64, description: device -> peer total}
+        bytes_in: {type: integer, format: int64, description: peer -> device total}
+        first_seen: {type: string, format: date-time}
+        last_seen: {type: string, format: date-time}
+    SpeaksList:
+      type: object
+      required: [speaks, total]
+      properties:
+        speaks: {type: array, items: {$ref: "#/components/schemas/DeviceSpeaks"}}
+        total: {type: integer}
     NeighborList:
       type: object
       properties:
@@ -2350,7 +2383,7 @@ components:
         id: {type: integer, format: int64}
         agent_id: {type: string}
         network_id: {type: integer, format: int64}
-        change_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered, device_config_changed]}
+        change_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered, device_config_changed, speaks_with_new, listen_port_added]}
         entity_type: {type: string}
         entity_id: {type: integer, format: int64}
         before_data: {type: string}
@@ -2531,7 +2564,7 @@ components:
       properties:
         id: {type: integer, format: int64}
         name: {type: string}
-        event_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered]}
+        event_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered, speaks_with_new, listen_port_added]}
         scope_type: {type: string, enum: [all, network, device]}
         scope_network_id: {type: integer, format: int64, nullable: true}
         scope_device_uuid: {type: string}

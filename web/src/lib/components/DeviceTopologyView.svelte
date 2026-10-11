@@ -144,8 +144,24 @@
 		'Bridge-MIB': { color: ['--color-info', '#3b82f6'], type: 'solid', width: 1.5 },
 		'Q-BRIDGE-MIB': { color: ['--color-info', '#3b82f6'], type: 'solid', width: 1.5 },
 		STP: { color: ['--color-accent-purple', '#8b5cf6'], type: 'dashed', width: 1.5 },
-		ARP: { color: ['--color-muted', '#94a3b8'], type: 'dotted', width: 1 }
+		ARP: { color: ['--color-muted', '#94a3b8'], type: 'dotted', width: 1 },
+		// speaks-with (#500): L3 traffic observation — visually the faintest
+		// class (corroborating relation, not a link fact).
+		'speaks-with': { color: ['--color-info', '#38bdf8'], type: 'dotted', width: 1 }
 	};
+
+	// Compact byte formatting for speaks-with tooltips (1.2 MB style).
+	function formatBytes(n: number): string {
+		if (n < 1024) return `${n} B`;
+		const units = ['KB', 'MB', 'GB', 'TB'];
+		let v = n;
+		let i = -1;
+		do {
+			v /= 1024;
+			i++;
+		} while (v >= 1024 && i < units.length - 1);
+		return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
+	}
 
 	function protocolStyle(protocol: string) {
 		return PROTOCOL_STYLES[protocol] ?? { color: ['--color-muted', '#94a3b8'], type: 'solid', width: 1 };
@@ -312,7 +328,11 @@
 						const localLabel = escapeHtml(m['topology.Local Port']());
 						const remoteLabel = escapeHtml(m['topology.Remote Port']());
 						const remote = l.remotePort ? escapeHtml(l.remotePort) : '—';
-						return `<b>${escapeHtml(l.protocol)}</b><br/>${localLabel}: ${escapeHtml(l.localPort || '—')}<br/>${remoteLabel}: ${remote}`;
+						let tip = `<b>${escapeHtml(l.protocol)}</b><br/>${localLabel}: ${escapeHtml(l.localPort || '—')}<br/>${remoteLabel}: ${remote}`;
+						if (l.protocol === 'speaks-with' && l.bytes != null) {
+							tip += `<br/>${escapeHtml(m['topology.Bytes']())}: ${formatBytes(l.bytes)}`;
+						}
+						return tip;
 					}
 					return '';
 				}

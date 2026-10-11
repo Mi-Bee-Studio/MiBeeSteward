@@ -59,6 +59,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"device_documents",
 		"device_liveness",
 		"device_neighbors",
+		"device_speaks_with",
 		"device_systems",
 		"devices",
 		"documents",

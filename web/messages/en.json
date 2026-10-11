@@ -885,7 +885,9 @@
 		"Chat ID Placeholder": "-1001234567890",
 		"Bot Username": "Bot Username (optional)",
 		"Bot Token Required": "Telegram bot token is required",
-		"Chat ID Required": "Telegram chat ID is required"
+		"Chat ID Required": "Telegram chat ID is required",
+		"Event Speaks With New": "New device conversation",
+		"Event Listen Port Added": "New listening port"
 	},
 	"snmpCredentials": {
 		"Title": "SNMP Credentials",
@@ -1154,7 +1156,15 @@
 		"From Device": "From",
 		"To Device": "To",
 		"Cross Link": "Redundant / mesh link (not part of the spanning tree)",
-		"Open Device": "Open device page"
+		"Open Device": "Open device page",
+		"Speaks": "Traffic Profile (speaks-with)",
+		"Speaks Desc": "Per-peer traffic aggregates from the passive eBPF flow observer — who this device talks to, and how much. Raw flows never leave the vantage; only device-level totals persist.",
+		"Speaks Peer": "Peer",
+		"Speaks Out": "Sent",
+		"Speaks In": "Received",
+		"Speaks External": "external",
+		"Speaks Empty": "No traffic observed yet. This panel fills once a vantage with the eBPF observer (scanner.ebpf.enabled) sees this device's traffic.",
+		"Bytes": "Bytes"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",
