@@ -168,7 +168,7 @@ func (s *DNSLogSource) tailFile(path string) {
 		}
 		s.svc.Emit(NewHostEvent{
 			IP:     ip,
-			Source: "dns_log",
+			Source: "discovery:dns_log",
 			Hints: map[string]string{
 				"discovery_note": "dns",
 				"dns_query":      domain,

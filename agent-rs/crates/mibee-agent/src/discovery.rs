@@ -125,6 +125,21 @@ pub fn parse_dnsmasq_query(line: &str) -> Option<(String, String)> {
     Some((ip.to_string(), domain.to_string()))
 }
 
+/// Read the byte range [start, end) of `path` without touching anything
+/// before it (Go DNSLogSource Seek parity, #538): a dns_log commonly lands
+/// in an unbounded /var/log/messages, so re-reading the whole file per sweep
+/// is an O(file) allocation regression. The returned Vec is exactly
+/// end-start bytes long (read_exact), keeping the sweep's cost proportional
+/// to the NEW tail only.
+async fn read_range(path: &str, start: u64, end: u64) -> std::io::Result<Vec<u8>> {
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+    let mut f = tokio::fs::File::open(path).await?;
+    f.seek(std::io::SeekFrom::Start(start)).await?;
+    let mut buf = vec![0u8; (end - start) as usize];
+    f.read_exact(&mut buf).await?;
+    Ok(buf)
+}
+
 // ---------- hostapd (WiFi STA associations, Go discovery/hostapd.go) ----------
 
 /// One associated WiFi station. Only the MAC is required; signal/ssid/
@@ -451,9 +466,10 @@ impl DiscoverySources {
                     state.dns_offsets.insert(path.clone(), cur);
                     continue;
                 }
-                let Ok(bytes) = tokio::fs::read(&path).await else { continue };
-                let chunk = &bytes[start as usize..cur as usize];
-                let text = String::from_utf8_lossy(chunk);
+                // #538: bounded tail read — only the NEW bytes are read
+                // (seek + read_exact), never the file body.
+                let Ok(bytes) = read_range(&path, start, cur).await else { continue };
+                let text = String::from_utf8_lossy(&bytes);
                 let mut new_off = start;
                 for line in text.split_inclusive('\n') {
                     new_off += line.len() as u64;
@@ -857,6 +873,35 @@ mod tests {
 
     /// Go parseDnsmasqQuery parity (#504): only query[...] lines carry a host
     /// sighting; "from <iface>" and non-IP tails are rejected.
+    /// #538: the tail read is bounded — read_range returns EXACTLY the new
+    /// bytes and never the file body. The history prefix here is 8 MiB; the
+    /// returned Vec length (== requested range) is the structural bound.
+    #[tokio::test]
+    async fn read_range_reads_only_the_tail() {
+        let dir = std::env::temp_dir().join(format!("mibee-tail-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("big.log");
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            f.set_len(8 << 20).unwrap();
+        }
+        let line = "dnsmasq[1]: query[A] tail.test from 192.0.2.70
+";
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+            write!(f, "{}", line).unwrap();
+        }
+        let len = std::fs::metadata(&path).unwrap().len();
+        let tail = line.len() as u64;
+        let bytes = read_range(path.to_str().unwrap(), len - tail, len).await.unwrap();
+        assert_eq!(bytes.len(), tail as usize, "must read exactly the tail range");
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("tail.test"), "{text:?}");
+        assert!(!text.contains(" "), "no history bytes may leak in");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn parses_dnsmasq_query_lines() {
         let ok = "Oct 11 01:00:00 router dnsmasq[1234]: query[A] example.com from 192.0.2.50";
