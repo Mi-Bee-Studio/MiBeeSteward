@@ -310,11 +310,13 @@ func (o *Observer) flowExporter(objs *tcIngressObjects) {
 				break
 			}
 			keys = append(keys, k)
-			// Saddr/Daddr are the wire-order bytes read as native uint32;
-			// BigEndian round-trip restores dotted-quad order.
+			// Saddr/Daddr hold the wire-order bytes reinterpreted as a
+			// native u32 (bpf2go HostLayout); LittleEndian round-trips the
+			// value back into dotted-quad byte order (same render as the
+			// event decoder's ipString).
 			var sb, db [4]byte
-			binary.BigEndian.PutUint32(sb[:], k.Saddr)
-			binary.BigEndian.PutUint32(db[:], k.Daddr)
+			binary.LittleEndian.PutUint32(sb[:], k.Saddr)
+			binary.LittleEndian.PutUint32(db[:], k.Daddr)
 			samples = append(samples, FlowSample{
 				SrcIP:   net.IP(sb[:]).String(),
 				DstIP:   net.IP(db[:]).String(),
