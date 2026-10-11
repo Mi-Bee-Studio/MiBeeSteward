@@ -87,12 +87,12 @@ Section: net
 Installed-Size: $INSTALLED_SIZE
 Description: $DESC
 EOF
-# Optional runtime deps (#499): set PKG_DEPENDS when packaging a build with
+# Optional runtime deps (#499): set PKG_DEPS when packaging a build with
 # optional tags (e.g. the eBPF variant wants "+kmod-sched-bpf +kmod-sched-cls-act +tc").
 # The default package stays dependency-free on purpose.
-if [ -n "${PKG_DEPENDS:-}" ]; then
+if [ -n "${PKG_DEPS:-}" ]; then
     printf 'Depends: %s
-' "$PKG_DEPENDS" >> "$CTRL/control"
+' "$PKG_DEPS" >> "$CTRL/control"
 fi
 
 # ─── lifecycle scripts ─────────────────────────────────────────────────────
