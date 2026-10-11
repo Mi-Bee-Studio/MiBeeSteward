@@ -1,0 +1,27 @@
+[package]
+name = "mibee-ebpf"
+description = "Passive eBPF TC observer for the Rust agent: ring-buffer event decode + capability probing (always) and the aya loader (feature `loader`, Linux only)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Zero dependencies by default: the event decoder and the capability machine
+# are pure Rust and compile on every platform (so the default CI matrix keeps
+# testing them). The `loader` feature pulls in aya — pure-Rust userspace, no
+# libbpf/BCC, musl-static friendly — and only on Linux targets, so a
+# `--features loader` build on a non-Linux host still compiles (the observer
+# module is cfg'd out and every entry point degrades to a no-op).
+[features]
+loader = ["dep:aya", "dep:aya-obj"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+aya = { version = "0.14", optional = true }
+# parse-only ELF access (CI's object guard) - aya's full loader creates the
+# maps via syscall, which needs privileges; aya-obj::Object::parse does not.
+aya-obj = { version = "0.3", optional = true }
+
+# The veth chain diagnostic only exists where the loader does.
+[[example]]
+name = "veth_check"
+required-features = ["loader"]

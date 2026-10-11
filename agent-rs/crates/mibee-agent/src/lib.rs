@@ -3,6 +3,11 @@ pub mod config;
 pub mod cron;
 pub mod db;
 pub mod discovery;
+
+// The eBPF passive source exists only where its dependency does (Linux +
+// the ebpf feature); the config section parses everywhere (schema stable).
+#[cfg(all(target_os = "linux", feature = "ebpf"))]
+pub mod ebpf_source;
 pub mod engine;
 pub mod fpsync;
 pub mod prober;

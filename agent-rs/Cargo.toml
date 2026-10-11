@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/mibee-fingerprints", "crates/mibee-agent"]
+members = ["crates/mibee-fingerprints", "crates/mibee-agent", "crates/mibee-ebpf"]
 
 [workspace.package]
 version = "0.1.6"

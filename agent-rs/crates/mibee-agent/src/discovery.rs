@@ -563,7 +563,7 @@ fn attach_wifi(state: &mut DiscoveryState, mac: &str) -> Option<Evidence> {
     state.wifi_by_mac.get(mac).cloned()
 }
 
-fn in_cidr(ip: &str, cidr: &Option<ipnet::Ipv4Net>) -> bool {
+pub(crate) fn in_cidr(ip: &str, cidr: &Option<ipnet::Ipv4Net>) -> bool {
     match cidr {
         Some(net) => ip
             .parse::<std::net::Ipv4Addr>()

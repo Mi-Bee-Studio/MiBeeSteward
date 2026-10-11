@@ -128,6 +128,28 @@ scanner:
 
 See [Configuration](configuration.md) for all config options, and [Discovery](discovery.md) for discovery-related settings.
 
+## The Rust Agent Observer (#498)
+
+The same TC observer also ships in the Rust agent — see
+[agent-rs.md](agent-rs.md) — behind a default-off cargo feature with an
+[aya](https://aya-rs.dev) userspace loader. Two facts carry over unchanged:
+
+- **One kernel program**: the agent embeds a byte-identical copy of this
+  document's bpf2go object — the `go generate` step refreshes both copies in
+  one command, and the agent crate's drift test fails when they diverge.
+  Signature kinds, ring layout, and the ARP/ND presence semantics are
+  therefore identical by construction. (The shared section name is the
+  canonical `classifier`: both loaders resolve it, while the `tc` alias is
+  cilium-only and aya rejects it.)
+- **One degradation rule**: unsupported host, old kernel, missing caps,
+  load/attach failure — the agent logs one warn line and keeps scanning.
+
+The agent's kernel floor is **5.8**, not 6.6: aya attaches via TCX on ≥ 6.6
+and falls back to the classic clsact/netlink TC path on older kernels,
+while the center's cilium/ebpf loader is TCX-only. Enable it per agent with
+`scanner.discovery.ebpf.enabled: true` in that agent's `agent.yaml` (build
+the agent with `make build-agent-rs-ebpf`).
+
 ## When to Use
 
 ### Use eBPF passive observation when
@@ -145,7 +167,7 @@ See [Configuration](configuration.md) for all config options, and [Discovery](di
 
 ## Known Limitations
 
-- **Linux only**, kernel ≥ 6.6 (TCX attach); BTF optional (CO-RE-free program)
+- **Linux only**; center kernel ≥ 6.6 (TCX attach), Rust agent kernel ≥ 5.8 (aya falls back to the classic TC path) — BTF optional (CO-RE-free program)
 - **Privileges required**: root or ambient `CAP_BPF` + `CAP_NET_ADMIN`; unprivileged BPF is disabled by default on modern kernels
 - **TCP signals are corroborating only**: SSH/RTSP/HTTP matches are evidence at confidence 0.6, not replacements for active probing
 - **No CGO dependency**: the default build is completely free of eBPF code, suitable for all deployment environments

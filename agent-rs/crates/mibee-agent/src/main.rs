@@ -268,6 +268,30 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
                 mibee_agent::discovery::run_multicast_listener(engine_mc, cidr, stop).await;
             });
         }
+        // eBPF passive observer (#498): same TC program as the center, loaded
+        // via aya on this box's interfaces. Only exists in --features ebpf
+        // Linux builds; the config key parses everywhere so a default build
+        // explains itself instead of silently ignoring it.
+        #[cfg(all(target_os = "linux", feature = "ebpf"))]
+        if cfg.scanner.discovery.ebpf.enabled {
+            let engine_ebpf = Arc::clone(&engine);
+            let reporter_ebpf = Arc::clone(&reporter);
+            let cidr = cfg.network.cidr.parse().ok();
+            let interfaces = cfg.scanner.discovery.ebpf.interfaces.clone();
+            let stop = stop_rx.clone();
+            tasks.spawn(async move {
+                mibee_agent::ebpf_source::run(engine_ebpf, reporter_ebpf, cidr, interfaces, stop)
+                    .await;
+            });
+        }
+        #[cfg(not(all(target_os = "linux", feature = "ebpf")))]
+        if cfg.scanner.discovery.ebpf.enabled {
+            log(
+                "discovery: ebpf source enabled in config but this build has no aya loader \
+                 (needs Linux + --features ebpf); source stays off"
+                    .to_string(),
+            );
+        }
     }
 
     // retention sweeper (immediate first pass, then 6h)

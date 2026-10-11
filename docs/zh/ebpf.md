@@ -128,6 +128,25 @@ scanner:
 
 更多扫描配置请参阅 [配置](configuration.md)，网络发现相关配置请参阅 [网络发现](discovery.md)。
 
+## Rust agent 侧观测器（#498）
+
+同一套 TC 观测器也随 Rust agent 发布 —— 见
+[agent-rs.md](agent-rs.md) —— 以默认关闭的 cargo feature 搭载
+[aya](https://aya-rs.dev) 用户态加载器。两个事实原样保留：
+
+- **一个内核程序**：agent 内嵌本文档所述 bpf2go 对象的逐字节拷贝 ——
+  `go generate` 步骤一条命令同时刷新两份拷贝，agent crate 的漂移测试在
+  分叉时报错。签名种类、环形缓冲布局、ARP/ND 在网语义因此天然一致。
+  （共享的段名是规范的 `classifier`：两个加载器都认；`tc` 别名仅
+  cilium 认，aya 会拒绝。）
+- **一条降级规则**：主机不支持、内核过老、缺 caps、加载/挂载失败 ——
+  agent 打一行 warn 并照常扫描。
+
+agent 的内核门槛是 **5.8** 而非 6.6：aya 在 ≥ 6.6 走 TCX、更老的内核
+回落经典 clsact/netlink TC 挂载；center 的 cilium/ebpf 加载器仅支持
+TCX。在对应 agent 的 `agent.yaml` 里置 `scanner.discovery.ebpf.enabled:
+true` 即可开启（agent 需以 `make build-agent-rs-ebpf` 构建）。
+
 ## 适用场景
 
 ### 何时使用 eBPF 被动观测
@@ -145,7 +164,7 @@ scanner:
 
 ## 已知限制
 
-- **仅 Linux**，内核 ≥ 6.6（TCX 挂载）；BTF 可选（程序无 CO-RE）
+- **仅 Linux**；center 内核 ≥ 6.6（TCX 挂载），Rust agent 内核 ≥ 5.8（aya 回落到经典 TC 挂载）——BTF 可选（程序无 CO-RE）
 - **需要特权**：root 或 ambient `CAP_BPF` + `CAP_NET_ADMIN`；现代内核默认关闭非特权 BPF
 - **TCP 信号为佐证**：SSH/RTSP/HTTP 的匹配仅作为置信度 0.6 的辅助证据，不替代主动探测
 - **无 CGO 依赖**：默认构建完全不含 eBPF 代码，适合所有部署环境
