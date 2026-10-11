@@ -108,6 +108,9 @@ const (
 	RuleEventTypeDeviceRecovered = "device_recovered"
 	RuleEventTypeDeviceAdded     = "device_added"
 	RuleEventTypeDeviceChanged   = "device_changed"
+	// #500: passive-observer signals (flow telemetry + listen watch).
+	RuleEventTypeSpeaksWithNew   = "speaks_with_new"
+	RuleEventTypeListenPortAdded = "listen_port_added"
 )
 
 // RuleScopeType controls which devices a rule applies to.
@@ -121,7 +124,8 @@ const (
 func IsValidRuleEventType(t string) bool {
 	switch t {
 	case RuleEventTypeDeviceLost, RuleEventTypeDeviceRecovered,
-		RuleEventTypeDeviceAdded, RuleEventTypeDeviceChanged:
+		RuleEventTypeDeviceAdded, RuleEventTypeDeviceChanged,
+		RuleEventTypeSpeaksWithNew, RuleEventTypeListenPortAdded:
 		return true
 	}
 	return false

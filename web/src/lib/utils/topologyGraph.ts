@@ -64,6 +64,8 @@ export interface GraphLink {
 	isCrossLink: boolean;
 	/** True if the far end is an unidentified neighbor (no matching device). */
 	isUnidentified: boolean;
+	/** speaks-with edges (#500): observed byte total (both directions). */
+	bytes?: number | null;
 }
 
 export interface GraphBuildResult {
@@ -323,7 +325,8 @@ export function buildGraph(graph: TopologyGraph): GraphBuildResult {
 			localPort: edge.local_port,
 			remotePort: edge.remote_port,
 			isCrossLink: to !== null && crossLinkSet.has(`${from}>${to}`),
-			isUnidentified
+			isUnidentified,
+			bytes: edge.bytes ?? null
 		});
 	}
 

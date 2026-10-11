@@ -256,3 +256,21 @@ describe('topologyGraph', () => {
 		});
 	});
 });
+
+describe('speaks-with edges (#500)', () => {
+	it('carries the byte total through to the link', () => {
+		const graph: TopologyGraph = {
+			nodes: [node({ id: 1 }), node({ id: 2 })],
+			edges: [
+				edge({ from_device_id: 1, to_mac: '00:00:00:00:00:02', to_device_id: 2, protocol: 'speaks-with', bytes: 123456 }),
+				edge({ from_device_id: 2, to_mac: '00:00:00:00:00:01', to_device_id: 1, protocol: 'speaks-with', bytes: 654321 })
+			]
+		};
+		const res = buildGraph(graph);
+		expect(res.links).toHaveLength(2);
+		expect(res.links.find((l) => l.source === 1)?.bytes).toBe(123456);
+		expect(res.links.find((l) => l.source === 2)?.bytes).toBe(654321);
+		// both endpoints known: solid graph edges, not unidentified stubs
+		expect(res.links.every((l) => !l.isUnidentified)).toBe(true);
+	});
+});

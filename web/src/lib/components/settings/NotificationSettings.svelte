@@ -1133,6 +1133,8 @@
 			<label class="block text-xs text-text-muted mb-1">{m["notifications.Event Type"]()}</label>
 			<select bind:value={ruleEventType} class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none">
 				<option value="device_lost">{m["notifications.Event Device Lost"]()}</option>
+				<option value="speaks_with_new">{m["notifications.Event Speaks With New"]()}</option>
+				<option value="listen_port_added">{m["notifications.Event Listen Port Added"]()}</option>
 				<option value="device_recovered">{m["notifications.Event Device Recovered"]()}</option>
 				<option value="device_added">{m["notifications.Event Device Added"]()}</option>
 				<option value="device_changed">{m["notifications.Event Device Changed"]()}</option>

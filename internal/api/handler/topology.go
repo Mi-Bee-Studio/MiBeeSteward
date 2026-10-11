@@ -54,9 +54,12 @@ type topoEdge struct {
 	FromDeviceID int64   `json:"from_device_id"`
 	ToDeviceID   *int64  `json:"to_device_id"`
 	ToMAC        string  `json:"to_mac"`
-	Protocol     string  `json:"protocol"` // LLDP / CDP / Bridge-MIB / ARP
+	Protocol     string  `json:"protocol"` // LLDP / CDP / Bridge-MIB / ARP / speaks-with
 	LocalPort    *string `json:"local_port"`
 	RemotePort   *string `json:"remote_port"`
+	// Bytes carries the speaks-with edge's observed traffic total (#500);
+	// nil for discovery-protocol edges.
+	Bytes *int64 `json:"bytes,omitempty"`
 }
 
 // Graph handles GET /api/v1/topology?network_id=X, the full node + edge set
@@ -106,6 +109,27 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 			LocalPort:    e.LocalPort,
 			RemotePort:   e.RemotePort,
 		})
+	}
+
+	// Speaks-with edges (#500): L3 device↔device conversations observed by
+	// the passive flow telemetry. Only managed-peer pairs render as graph
+	// edges (external peers live in the device-detail profile). Emitted
+	// AFTER the L2 edges so the view can style them by protocol; failures
+	// degrade to an L2-only graph.
+	speaksRows, err := h.queries.ListSpeaksEdges(r.Context(), db.ListSpeaksEdgesParams{
+		Column1:   networkID,
+		NetworkID: &networkID,
+	})
+	if err == nil {
+		for _, e := range speaksRows {
+			bytes := e.TotalBytes
+			edges = append(edges, topoEdge{
+				FromDeviceID: e.DeviceID,
+				ToDeviceID:   e.PeerDeviceID, // *int64, IS NOT NULL in the query
+				Protocol:     "speaks-with",
+				Bytes:        &bytes,
+			})
+		}
 	}
 
 	// Object-level network scope (#138 Phase 2b): a restricted (non-admin, closed

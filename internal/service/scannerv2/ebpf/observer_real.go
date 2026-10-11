@@ -39,6 +39,7 @@ package ebpf
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -185,7 +186,22 @@ func (o *Observer) start() error {
 		return fmt.Errorf("ebpf: remove memlock: %w", err)
 	}
 	objs := &tcIngressObjects{}
-	if err := loadTcIngressObjects(objs, nil); err != nil {
+	// Load via the spec so the flow map's LRU capacity follows config (#500);
+	// everything else stays exactly as generated.
+	spec, err := loadTcIngress()
+	if err != nil {
+		st.State = StateFailed
+		st.Reason = fmt.Sprintf("load TC spec: %v", err)
+		logState(st)
+		state.mu.Lock()
+		state.st = st
+		state.mu.Unlock()
+		return fmt.Errorf("ebpf: load spec: %w", err)
+	}
+	if m := spec.Maps["flows"]; m != nil {
+		m.MaxEntries = uint32(ClampFlowMapEntries(o.cfg.Flows.MapEntries))
+	}
+	if err := spec.LoadAndAssign(objs, nil); err != nil {
 		st.State = StateFailed
 		st.Reason = fmt.Sprintf("load TC program: %v", err)
 		logState(st)
@@ -259,7 +275,64 @@ func (o *Observer) start() error {
 	state.st = st
 	state.mu.Unlock()
 	go o.drain()
+	go o.flowExporter(objs)
 	return nil
+}
+
+// flowExporter drains the LRU flow map on the configured cadence (#500):
+// iterate (collect), then delete what was collected — the two phases are
+// separate because mutating a map during Iterate skips entries. Each batch
+// goes to the late-bound sink whole; no raw sample is ever persisted.
+// Failures degrade to a skipped cycle (the map's LRU eviction is the
+// backstop — at capacity, cold flows simply drop, which is the intended
+// bounded-memory behavior).
+func (o *Observer) flowExporter(objs *tcIngressObjects) {
+	interval := time.Duration(o.cfg.Flows.ExportIntervalSec) * time.Second
+	if interval <= 0 {
+		interval = DefaultFlowExportIntervalSec * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-state.stop:
+			return
+		case <-ticker.C:
+		}
+		sink := currentFlowSink()
+		var keys []tcIngressFlowKey
+		var samples []FlowSample
+		it := objs.Flows.Iterate()
+		for {
+			var k tcIngressFlowKey
+			var v tcIngressFlowVal
+			if !it.Next(&k, &v) {
+				break
+			}
+			keys = append(keys, k)
+			// Saddr/Daddr hold the wire-order bytes reinterpreted as a
+			// native u32 (bpf2go HostLayout); LittleEndian round-trips the
+			// value back into dotted-quad byte order (same render as the
+			// event decoder's ipString).
+			var sb, db [4]byte
+			binary.LittleEndian.PutUint32(sb[:], k.Saddr)
+			binary.LittleEndian.PutUint32(db[:], k.Daddr)
+			samples = append(samples, FlowSample{
+				SrcIP:   net.IP(sb[:]).String(),
+				DstIP:   net.IP(db[:]).String(),
+				Proto:   k.Proto,
+				Dport:   k.Dport,
+				Bytes:   v.Bytes,
+				Packets: v.Pkts,
+			})
+		}
+		for _, k := range keys {
+			_ = objs.Flows.Delete(&k)
+		}
+		if len(samples) > 0 && sink != nil {
+			sink(samples)
+		}
+	}
 }
 
 // drain reads ring-buffer events forever, translating each into Evidence and

@@ -537,11 +537,31 @@ head -c 32 /dev/urandom | base64
 | `retention.service_evidence_days` | int | 14 | 服务证据保留天数 |
 | `retention.change_log_days` | int | 30 | 变更日志保留天数 |
 | `retention.device_neighbors_days` | int | 90 | 设备邻居记录保留天数 |
+| `retention.device_speaks_days` | int | 30 | 闲置 speaks-with 流量聚合保留天数（#500） |
 | `retention.host_services_days` | int | 30 | 主机服务记录保留天数 |
 | `retention.host_tls_certs_days` | int | 30 | TLS 证书记录保留天数 |
 | `retention.probe_results_days` | int | 30 | 拨测历史结果保留天数（`probe_tls_certs` 不清扫--每目标只存当前证书链） |
 | `retention.sweep_interval_hours` | int | 6 | 清理扫描间隔（小时） |
 | `retention.batch_size` | int | 5000 | 每批清理的最大行数 |
+
+## 流遥测配置（#500）
+
+被动观测器的 speaks-with 通道。原始按端口流永不落库——导出器在存储前把每批样本折叠成设备级聚合（#500 隐私红线）。两台受管设备之间的会话呈现为 `speaks-with` 拓扑边 + 设备流量画像面板；受管设备对首次被观测时发出 `speaks_with_new` 变更事件（绑定通知规则即可获得横向移动告警）。
+
+| 键 | 类型 | 默认 | 说明 |
+|-----|------|---------|-------------|
+| `scanner.ebpf.flows.export_interval` | int | 30 | flow map 排空间隔（秒） |
+| `scanner.ebpf.flows.map_entries` | int | 16384 | LRU flow map 容量，钳制在 [1024, 131072]（默认约 0.5 MiB 内核内存） |
+
+## 监听端口差分配置（#500）
+
+差分本机 LISTEN 表（`/proc/net/tcp{,6}`），本机每出现一个新开监听套接字即发出 `listen_port_added` 变更事件——无需 eBPF、无需特权的资产异常通道。首帧快照只建基线不告警（重启不会重放整个表）。非 Linux 主机降级为一行 warn。
+
+| 键 | 类型 | 默认 | 说明 |
+|-----|------|---------|-------------|
+| `listen_watch.enabled` | bool | `false` | 开启差分源 |
+| `listen_watch.interval` | int | 15 | 差分间隔（秒） |
+| `listen_watch.device_ip` | string | `""` | 把事件绑到该设备的 change_log 实体（设备范围规则可匹配）；留空则不绑定 |
 
 ## SNMP Trap 接收器配置
 

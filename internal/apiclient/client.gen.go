@@ -76,6 +76,8 @@ const (
 	ChangeLogEntryChangeTypeDeviceConfigChanged ChangeLogEntryChangeType = "device_config_changed"
 	ChangeLogEntryChangeTypeDeviceLost          ChangeLogEntryChangeType = "device_lost"
 	ChangeLogEntryChangeTypeDeviceRecovered     ChangeLogEntryChangeType = "device_recovered"
+	ChangeLogEntryChangeTypeListenPortAdded     ChangeLogEntryChangeType = "listen_port_added"
+	ChangeLogEntryChangeTypeSpeaksWithNew       ChangeLogEntryChangeType = "speaks_with_new"
 )
 
 // Valid indicates whether the value is a known member of the ChangeLogEntryChangeType enum.
@@ -90,6 +92,10 @@ func (e ChangeLogEntryChangeType) Valid() bool {
 	case ChangeLogEntryChangeTypeDeviceLost:
 		return true
 	case ChangeLogEntryChangeTypeDeviceRecovered:
+		return true
+	case ChangeLogEntryChangeTypeListenPortAdded:
+		return true
+	case ChangeLogEntryChangeTypeSpeaksWithNew:
 		return true
 	default:
 		return false
@@ -212,11 +218,12 @@ func (e DeviceType) Valid() bool {
 
 // Defines values for DeviceNeighborProtocol.
 const (
-	DeviceNeighborProtocolARP       DeviceNeighborProtocol = "ARP"
-	DeviceNeighborProtocolBridgeMIB DeviceNeighborProtocol = "Bridge-MIB"
-	DeviceNeighborProtocolCDP       DeviceNeighborProtocol = "CDP"
-	DeviceNeighborProtocolLLDP      DeviceNeighborProtocol = "LLDP"
-	DeviceNeighborProtocolWiFi      DeviceNeighborProtocol = "WiFi"
+	DeviceNeighborProtocolARP        DeviceNeighborProtocol = "ARP"
+	DeviceNeighborProtocolBridgeMIB  DeviceNeighborProtocol = "Bridge-MIB"
+	DeviceNeighborProtocolCDP        DeviceNeighborProtocol = "CDP"
+	DeviceNeighborProtocolLLDP       DeviceNeighborProtocol = "LLDP"
+	DeviceNeighborProtocolSpeaksWith DeviceNeighborProtocol = "speaks-with"
+	DeviceNeighborProtocolWiFi       DeviceNeighborProtocol = "WiFi"
 )
 
 // Valid indicates whether the value is a known member of the DeviceNeighborProtocol enum.
@@ -229,6 +236,8 @@ func (e DeviceNeighborProtocol) Valid() bool {
 	case DeviceNeighborProtocolCDP:
 		return true
 	case DeviceNeighborProtocolLLDP:
+		return true
+	case DeviceNeighborProtocolSpeaksWith:
 		return true
 	case DeviceNeighborProtocolWiFi:
 		return true
@@ -396,6 +405,8 @@ const (
 	NotificationRuleEventTypeDeviceChanged   NotificationRuleEventType = "device_changed"
 	NotificationRuleEventTypeDeviceLost      NotificationRuleEventType = "device_lost"
 	NotificationRuleEventTypeDeviceRecovered NotificationRuleEventType = "device_recovered"
+	NotificationRuleEventTypeListenPortAdded NotificationRuleEventType = "listen_port_added"
+	NotificationRuleEventTypeSpeaksWithNew   NotificationRuleEventType = "speaks_with_new"
 )
 
 // Valid indicates whether the value is a known member of the NotificationRuleEventType enum.
@@ -408,6 +419,10 @@ func (e NotificationRuleEventType) Valid() bool {
 	case NotificationRuleEventTypeDeviceLost:
 		return true
 	case NotificationRuleEventTypeDeviceRecovered:
+		return true
+	case NotificationRuleEventTypeListenPortAdded:
+		return true
+	case NotificationRuleEventTypeSpeaksWithNew:
 		return true
 	default:
 		return false
@@ -1016,6 +1031,8 @@ type DeviceList struct {
 
 // DeviceNeighbor One L2 adjacency edge (device_neighbors). Pointer fields are present-but-null when unknown (no omitempty).
 type DeviceNeighbor struct {
+	// Bytes speaks-with edges only — observed byte total
+	Bytes     *int64     `json:"bytes,omitempty"`
 	DeviceId  int64      `json:"device_id"`
 	FirstSeen *time.Time `json:"first_seen"`
 	Id        int64      `json:"id"`
@@ -1035,6 +1052,21 @@ type DeviceNeighbor struct {
 
 // DeviceNeighborProtocol defines model for DeviceNeighbor.Protocol.
 type DeviceNeighborProtocol string
+
+// DeviceSpeaks One peer aggregate from the passive flow telemetry (#500). LAN-internal peers carry device linkage; external peers carry only the IP + totals.
+type DeviceSpeaks struct {
+	// BytesIn peer -> device total
+	BytesIn int64 `json:"bytes_in"`
+
+	// BytesOut device -> peer total
+	BytesOut     int64     `json:"bytes_out"`
+	FirstSeen    time.Time `json:"first_seen"`
+	LastSeen     time.Time `json:"last_seen"`
+	PeerDeviceId *int64    `json:"peer_device_id,omitempty"`
+	PeerDeviceIp *string   `json:"peer_device_ip,omitempty"`
+	PeerIp       string    `json:"peer_ip"`
+	PeerName     *string   `json:"peer_name,omitempty"`
+}
 
 // DeviceStats defines model for DeviceStats.
 type DeviceStats struct {
@@ -1684,6 +1716,12 @@ type ServiceEntry struct {
 	Port     int     `json:"port"`
 	Protocol *string `json:"protocol,omitempty"`
 	Version  *string `json:"version,omitempty"`
+}
+
+// SpeaksList defines model for SpeaksList.
+type SpeaksList struct {
+	Speaks []DeviceSpeaks `json:"speaks"`
+	Total  int            `json:"total"`
 }
 
 // Subnet defines model for Subnet.
@@ -2986,6 +3024,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /devices/{id}/neighbors (the `GetDevicesIdNeighbors` operationId).
 	GetDevicesIdNeighbors(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDevicesIdSpeaks Speaks-with traffic profile of a device (#500, passive flow aggregates)
+	//
+	// Corresponds with GET /devices/{id}/speaks (the `GetDevicesIdSpeaks` operationId).
+	GetDevicesIdSpeaks(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetDevicesIdSystems Device system entries (hardware/OS/license inventory)
 	//
@@ -4442,6 +4485,21 @@ func (c *Client) GetDevicesIdHeartbeatStats(ctx context.Context, id Id, params *
 // Corresponds with GET /devices/{id}/neighbors (the `GetDevicesIdNeighbors` operationId).
 func (c *Client) GetDevicesIdNeighbors(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetDevicesIdNeighborsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetDevicesIdSpeaks Speaks-with traffic profile of a device (#500, passive flow aggregates)
+//
+// Corresponds with GET /devices/{id}/speaks (the `GetDevicesIdSpeaks` operationId).
+func (c *Client) GetDevicesIdSpeaks(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDevicesIdSpeaksRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -8473,6 +8531,40 @@ func NewGetDevicesIdNeighborsRequest(server string, id Id) (*http.Request, error
 	}
 
 	operationPath := fmt.Sprintf("/devices/%s/neighbors", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetDevicesIdSpeaksRequest constructs an http.Request for the GetDevicesIdSpeaks method
+func NewGetDevicesIdSpeaksRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/speaks", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -12792,6 +12884,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /devices/{id}/neighbors (the `GetDevicesIdNeighbors` operationId).
 	GetDevicesIdNeighborsWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdNeighborsResponse, error)
 
+	// GetDevicesIdSpeaksWithResponse Speaks-with traffic profile of a device (#500, passive flow aggregates)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /devices/{id}/speaks (the `GetDevicesIdSpeaks` operationId).
+	GetDevicesIdSpeaksWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdSpeaksResponse, error)
+
 	// GetDevicesIdSystemsWithResponse Device system entries (hardware/OS/license inventory)
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -15971,6 +16070,47 @@ func (r GetDevicesIdNeighborsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetDevicesIdNeighborsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetDevicesIdSpeaksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SpeaksList
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdSpeaksResponse) GetJSON200() *SpeaksList {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetDevicesIdSpeaksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDevicesIdSpeaksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDevicesIdSpeaksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetDevicesIdSpeaksResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -20611,6 +20751,19 @@ func (c *ClientWithResponses) GetDevicesIdNeighborsWithResponse(ctx context.Cont
 	return ParseGetDevicesIdNeighborsResponse(rsp)
 }
 
+// GetDevicesIdSpeaksWithResponse Speaks-with traffic profile of a device (#500, passive flow aggregates)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /devices/{id}/speaks (the `GetDevicesIdSpeaks` operationId).
+func (c *ClientWithResponses) GetDevicesIdSpeaksWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdSpeaksResponse, error) {
+	rsp, err := c.GetDevicesIdSpeaks(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDevicesIdSpeaksResponse(rsp)
+}
+
 // GetDevicesIdSystemsWithResponse Device system entries (hardware/OS/license inventory)
 //
 // Returns a wrapper object for the known response body format(s).
@@ -23363,6 +23516,32 @@ func ParseGetDevicesIdNeighborsResponse(rsp *http.Response) (*GetDevicesIdNeighb
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest NeighborList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetDevicesIdSpeaksResponse parses an HTTP response from a GetDevicesIdSpeaksWithResponse call
+func ParseGetDevicesIdSpeaksResponse(rsp *http.Response) (*GetDevicesIdSpeaksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDevicesIdSpeaksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SpeaksList
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

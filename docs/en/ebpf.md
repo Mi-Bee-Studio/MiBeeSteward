@@ -150,6 +150,31 @@ while the center's cilium/ebpf loader is TCX-only. Enable it per agent with
 `scanner.discovery.ebpf.enabled: true` in that agent's `agent.yaml` (build
 the agent with `make build-agent-rs-ebpf`).
 
+## Flow Telemetry & speaks-with (#500)
+
+The TC program also accounts traffic: every IPv4 TCP/UDP packet bumps an LRU
+flow map (`(src, dst, proto, dport) -> bytes/packets`). A userspace exporter
+drains the map on a fixed cadence (iterate + delete — see
+`scanner.ebpf.flows.export_interval`, default 30s) and folds each batch into
+**device-level aggregates only** — the privacy red line of #500: raw per-port
+flows never leave memory.
+
+The aggregates land as:
+
+- **speaks-with edges**: conversations between two managed devices appear as
+  `speaks-with` edges in the topology graph (faint dotted, byte total in the
+  tooltip) and as a per-device Traffic Profile panel
+  (`GET /api/v1/devices/{id}/speaks`);
+- **first-seen events**: the FIRST time two managed devices are observed
+  talking, a `speaks_with_new` change event fires — bind a notification rule
+  to it for lateral-movement visibility. First-seen EXTERNAL peers are
+  recorded in the profile but do not event (every CDN would be "new").
+
+Memory: the LRU cap defaults to 16384 entries (~0.5 MiB kernel memory);
+`scanner.ebpf.flows.map_entries` clamps it to [1024, 131072] per deployment
+shape. Retention: idle aggregates sweep after
+`retention.device_speaks_days` (default 30).
+
 ## When to Use
 
 ### Use eBPF passive observation when

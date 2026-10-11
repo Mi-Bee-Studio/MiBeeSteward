@@ -1212,6 +1212,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/{id}/speaks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Speaks-with traffic profile of a device (#500, passive flow aggregates) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Traffic peers envelope (heaviest first, capped at 100) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SpeaksList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/{id}/certificates": {
         parameters: {
             query?: never;
@@ -5466,7 +5504,12 @@ export interface components {
             neighbor_device_id: number | null;
             neighbor_mac: string;
             /** @enum {string} */
-            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP" | "WiFi";
+            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP" | "WiFi" | "speaks-with";
+            /**
+             * Format: int64
+             * @description speaks-with edges only — observed byte total
+             */
+            bytes?: number | null;
             local_port: string | null;
             remote_port: string | null;
             neighbor_name: string | null;
@@ -5477,6 +5520,32 @@ export interface components {
             first_seen: string | null;
             /** Format: date-time */
             last_seen: string | null;
+        };
+        /** @description One peer aggregate from the passive flow telemetry (#500). LAN-internal peers carry device linkage; external peers carry only the IP + totals. */
+        DeviceSpeaks: {
+            peer_ip: string;
+            /** Format: int64 */
+            peer_device_id?: number | null;
+            peer_name?: string | null;
+            peer_device_ip?: string | null;
+            /**
+             * Format: int64
+             * @description device -> peer total
+             */
+            bytes_out: number;
+            /**
+             * Format: int64
+             * @description peer -> device total
+             */
+            bytes_in: number;
+            /** Format: date-time */
+            first_seen: string;
+            /** Format: date-time */
+            last_seen: string;
+        };
+        SpeaksList: {
+            speaks: components["schemas"]["DeviceSpeaks"][];
+            total: number;
         };
         NeighborList: {
             neighbors?: components["schemas"]["DeviceNeighbor"][];
@@ -5920,7 +5989,7 @@ export interface components {
             /** Format: int64 */
             network_id?: number;
             /** @enum {string} */
-            change_type: "device_added" | "device_changed" | "device_lost" | "device_recovered" | "device_config_changed";
+            change_type: "device_added" | "device_changed" | "device_lost" | "device_recovered" | "device_config_changed" | "speaks_with_new" | "listen_port_added";
             entity_type: string;
             /** Format: int64 */
             entity_id?: number;
@@ -6120,7 +6189,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            event_type: "device_added" | "device_changed" | "device_lost" | "device_recovered";
+            event_type: "device_added" | "device_changed" | "device_lost" | "device_recovered" | "speaks_with_new" | "listen_port_added";
             /** @enum {string} */
             scope_type: "all" | "network" | "device";
             /** Format: int64 */

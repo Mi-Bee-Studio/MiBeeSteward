@@ -59,6 +59,15 @@ center:
 # root or AmbientCapabilities=CAP_NET_BIND_SERVICE (systemd drop-in); a high
 # port like ":1162" runs unprivileged — point your devices' trap destinations
 # at it. v2c first (community below); v3 traps are the designed follow-up.
+# Listen-table diff (#500): newly opened LISTEN sockets on THIS host are
+# asset-anomaly events (change_log -> notification rules; bind a rule with
+# event type listen_port_added). Default off; /proc absent = one warn, off.
+listen_watch:
+  enabled: false
+  interval: 15           # seconds between diffs
+  device_ip: ""          # optional: bind events to this device's entity
+                         # (empty = unbound; global-scope rules still fire)
+
 snmp_trap:
   enabled: false
   bind: ":162"
@@ -303,6 +312,12 @@ scanner:
   ebpf:
     enabled: false
     interfaces: []
+    # Flow telemetry (#500): the TC program accounts traffic into an LRU
+    # flow map; this exporter drains it into device-level speaks-with
+    # aggregates (raw flows never persist). Defaults shown.
+    flows:
+      export_interval: 30   # seconds between map drains
+      map_entries: 16384    # LRU cap, clamped to [1024, 131072]
   # Passive discovery service: spots newly-appeared hosts BETWEEN scheduled
   # scans with near-zero active traffic. It diffs router/local ARP tables and
   # passively listens for mDNS/SSDP (never sends queries), then feeds new hosts

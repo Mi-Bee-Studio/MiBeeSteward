@@ -551,11 +551,31 @@ The synchronous scan endpoint (`POST /api/v1/scanner/scan`) imposes a hard targe
 | `retention.service_evidence_days` | int | 14 | Service evidence retention (days) |
 | `retention.change_log_days` | int | 30 | Change log retention (days) |
 | `retention.device_neighbors_days` | int | 90 | Device neighbor records retention (days) |
+| `retention.device_speaks_days` | int | 30 | Idle speaks-with traffic aggregates retention (days) (#500) |
 | `retention.host_services_days` | int | 30 | Host service records retention (days) |
 | `retention.host_tls_certs_days` | int | 30 | TLS certificate records retention (days) |
 | `retention.probe_results_days` | int | 30 | Synthetic-probe result history retention (days). `probe_tls_certs` is not swept, it holds only each target's current chain |
 | `retention.sweep_interval_hours` | int | 6 | Cleanup sweep interval (hours) |
 | `retention.batch_size` | int | 5000 | Max rows per cleanup batch |
+
+## Flow Telemetry Configuration (#500)
+
+The passive observer's speaks-with channel. Raw per-port flows never persist — the exporter folds each drained batch into device-level aggregates before storage (the #500 privacy red line). Conversations between two managed devices appear as `speaks-with` topology edges + the device Traffic Profile panel; the first observation of a managed pair emits a `speaks_with_new` change event (bind a notification rule for lateral-movement alerts).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `scanner.ebpf.flows.export_interval` | int | 30 | Seconds between flow-map drains |
+| `scanner.ebpf.flows.map_entries` | int | 16384 | LRU flow-map capacity, clamped to [1024, 131072] (~0.5 MiB kernel memory at the default) |
+
+## Listen Watch Configuration (#500)
+
+Diffs the local LISTEN table (`/proc/net/tcp{,6}`) and emits a `listen_port_added` change event for every newly opened listening socket on THIS host — the asset-anomaly channel that needs no eBPF and no privileges. The first snapshot establishes a baseline without alerting (a restart does not replay the table). Non-Linux hosts degrade to one warn line.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `listen_watch.enabled` | bool | `false` | Enable the diff source |
+| `listen_watch.interval` | int | 15 | Seconds between diffs |
+| `listen_watch.device_ip` | string | `""` | Bind events to that device's change_log entity (rules scoped to the device then match); empty leaves them unbound |
 
 ## SNMP Trap Receiver Configuration
 

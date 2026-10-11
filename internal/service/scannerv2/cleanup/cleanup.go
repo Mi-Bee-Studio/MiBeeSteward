@@ -124,6 +124,7 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneServiceEvidence(ctx)
 	s.pruneChangeLog(ctx)
 	s.pruneDeviceNeighbors(ctx)
+	s.pruneDeviceSpeaks(ctx)
 	s.pruneHostServices(ctx)
 	s.pruneHostTLSCerts(ctx)
 	s.pruneProbeResults(ctx)
@@ -300,6 +301,19 @@ func (s *Service) pruneDeviceNeighbors(ctx context.Context) {
 		// cutoff and NULL last_seen rows are left alone (SQL NULL < x is unknown).
 		return s.queries.DeleteDeviceNeighborsOlderThanBatched(ctx, db.DeleteDeviceNeighborsOlderThanBatchedParams{
 			LastSeen: &cut,
+			Limit:    limit,
+		})
+	})
+}
+
+// pruneDeviceSpeaks prunes idle speaks-with aggregates (#500). Rows refresh
+// on every observed conversation; a silent pair lingers until the (shorter,
+// traffic-data-shaped) 30d default reclaims it.
+func (s *Service) pruneDeviceSpeaks(ctx context.Context) {
+	days := s.cfg.DeviceSpeaksDays
+	s.sweepBatched(ctx, "device_speaks_with", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteDeviceSpeaksStaleBatched(ctx, db.DeleteDeviceSpeaksStaleBatchedParams{
+			LastSeen: cut,
 			Limit:    limit,
 		})
 	})
