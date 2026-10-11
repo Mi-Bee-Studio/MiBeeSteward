@@ -11,7 +11,6 @@
 // reports newly opened listening sockets as asset-anomaly events (#500).
 // This is the eBPF-free half of the security-events scope: it needs no
 // privileges and works on any Linux host running the process.
-
 package listenwatch
 
 import (

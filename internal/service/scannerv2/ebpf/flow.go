@@ -22,11 +22,11 @@ import "sync"
 // FlowSample is one drained flow-map entry: the byte/packet totals observed
 // for one (src -> dst, proto, dport) direction since the last drain.
 type FlowSample struct {
-	SrcIP  string
-	DstIP  string
-	Proto  uint16 // 6 = tcp, 17 = udp
-	Dport  uint16
-	Bytes  uint64
+	SrcIP   string
+	DstIP   string
+	Proto   uint16 // 6 = tcp, 17 = udp
+	Dport   uint16
+	Bytes   uint64
 	Packets uint64
 }
 
@@ -35,7 +35,10 @@ type FlowSample struct {
 type FlowSink func(samples []FlowSample)
 
 var (
-	flowMu   sync.Mutex
+	flowMu sync.Mutex
+	// flowSink is consumed by the WITH_EBPF exporter only.
+	//
+	//nolint:unused // read via currentFlowSink in observer_real.go (WITH_EBPF build)
 	flowSink FlowSink
 )
 
@@ -49,6 +52,8 @@ func SetFlowSink(fn FlowSink) {
 }
 
 // currentFlowSink returns the bound sink (nil when none).
+//
+//nolint:unused // called from observer_real.go (WITH_EBPF build)
 func currentFlowSink() FlowSink {
 	flowMu.Lock()
 	defer flowMu.Unlock()

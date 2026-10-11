@@ -55,9 +55,9 @@ func TestDiff(t *testing.T) {
 		{Proto: "tcp", Addr: "0100007F", Port: 5432},
 	}
 	cur := []Entry{
-		{Proto: "tcp", Addr: "00000000", Port: 22},     // unchanged
-		{Proto: "tcp", Addr: "0100007F", Port: 5432},   // unchanged
-		{Proto: "tcp", Addr: "00000000", Port: 8080},   // NEW
+		{Proto: "tcp", Addr: "00000000", Port: 22},                            // unchanged
+		{Proto: "tcp", Addr: "0100007F", Port: 5432},                          // unchanged
+		{Proto: "tcp", Addr: "00000000", Port: 8080},                          // NEW
 		{Proto: "tcp6", Addr: "00000000000000000000000000000000", Port: 9090}, // NEW (v6)
 	}
 	got := Diff(prev, cur)

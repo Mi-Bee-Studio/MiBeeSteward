@@ -77,15 +77,15 @@ func TestIngestPersistsAggregatesAndFirstSeenEvent(t *testing.T) {
 	}
 	defer rows.Close()
 	var got []struct {
-		device, peer                   int64
-		ip                             string
-		out, in                        int64
+		device, peer int64
+		ip           string
+		out, in      int64
 	}
 	for rows.Next() {
 		var r struct {
-			device, peer                   int64
-			ip                             string
-			out, in                        int64
+			device, peer int64
+			ip           string
+			out, in      int64
 		}
 		var peerID sql.NullInt64
 		if err := rows.Scan(&r.device, &r.ip, &peerID, &r.out, &r.in); err != nil {

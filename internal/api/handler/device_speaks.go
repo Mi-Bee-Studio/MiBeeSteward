@@ -34,14 +34,14 @@ func NewDeviceSpeaksHandler(queries *db.Queries) *DeviceSpeaksHandler {
 // peer is itself an inventory device (LAN-internal conversation); external
 // peers carry only the IP and byte totals.
 type speakRow struct {
-	PeerIP        string  `json:"peer_ip"`
-	PeerDeviceID  *int64  `json:"peer_device_id"`
-	PeerName      *string `json:"peer_name"`
-	PeerDeviceIP  *string `json:"peer_device_ip"`
-	BytesOut      int64   `json:"bytes_out"`
-	BytesIn       int64   `json:"bytes_in"`
-	FirstSeen     string  `json:"first_seen"`
-	LastSeen      string  `json:"last_seen"`
+	PeerIP       string  `json:"peer_ip"`
+	PeerDeviceID *int64  `json:"peer_device_id"`
+	PeerName     *string `json:"peer_name"`
+	PeerDeviceIP *string `json:"peer_device_ip"`
+	BytesOut     int64   `json:"bytes_out"`
+	BytesIn      int64   `json:"bytes_in"`
+	FirstSeen    string  `json:"first_seen"`
+	LastSeen     string  `json:"last_seen"`
 }
 
 // ListByDevice handles GET /api/v1/devices/{id}/speaks — the device's

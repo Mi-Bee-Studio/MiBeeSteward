@@ -14,7 +14,6 @@
 // applied to raw samples, and its output is what may persist — per (device,
 // peer) byte totals. Per-port, per-protocol raw flows never leave this
 // package's input.
-
 package flows
 
 import (

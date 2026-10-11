@@ -31,9 +31,9 @@ var ProcNetPaths = [2][2]string{
 
 // Config controls the watcher (config keys listen_watch.*).
 type Config struct {
-	Enabled        bool
-	IntervalSec    int    // poll cadence; <= 0 = the 15s default
-	DeviceIP       string // optional: bind events to this device's change_log entity
+	Enabled     bool
+	IntervalSec int    // poll cadence; <= 0 = the 15s default
+	DeviceIP    string // optional: bind events to this device's change_log entity
 }
 
 // DefaultIntervalSec is the poll cadence when config gives none.
@@ -125,11 +125,11 @@ func (w *Watcher) resolveEntity(ctx context.Context) {
 // emit writes one listen_port_added change_log row and pushes it live.
 func (w *Watcher) emit(ctx context.Context, e Entry) {
 	after, _ := json.Marshal(map[string]any{
-		"proto":    e.Proto,
-		"port":     e.Port,
-		"bind":     e.Addr,
+		"proto":       e.Proto,
+		"port":        e.Port,
+		"bind":        e.Addr,
 		"bind_dotted": dottedBind(e),
-		"source":   "listen_watch",
+		"source":      "listen_watch",
 	})
 	now := time.Now().UTC()
 	row, err := w.queries.CreateChangeLog(ctx, db.CreateChangeLogParams{
