@@ -86,6 +86,21 @@ jobs:
           mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
           CGO_ENABLED=0 go build -tags "WITH_LLDP,WITH_CDP,WITH_ARPSCAN" -o /tmp/mibee-full ./cmd/server/
           file /tmp/mibee-full
+      # eBPF generation guards (#537): (a) the go:generate directive keeps
+      # -tags WITH_EBPF so generated files can never compile into DEFAULT
+      # builds; (b) generating on a clean tree and building WITHOUT the tag
+      # must still pass (the ELF does not leak); (c) the tagged build passes
+      # with the artifacts present.
+      - name: eBPF generate guards (no-leak + tagged build, #537)
+        run: |
+          grep -q -- '-tags WITH_EBPF' internal/service/scannerv2/ebpf/observer_real.go             || { echo '::error::go:generate directive lost -tags WITH_EBPF'; exit 1; }
+          test ! -f internal/service/scannerv2/ebpf/tcingress_bpfel.go             || { echo '::error::generated eBPF artifacts must never be committed'; exit 1; }
+          sudo apt-get update -qq && sudo apt-get install -y -qq clang >/dev/null
+          mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
+          go generate -tags WITH_EBPF ./internal/service/scannerv2/ebpf/
+          CGO_ENABLED=0 go build ./...                       # default: no ELF leak
+          CGO_ENABLED=0 go build -tags WITH_EBPF ./cmd/server/  # tagged: links the loader
+          rm -f internal/service/scannerv2/ebpf/tcingress_*
 
   go:
     needs: build-frontend
