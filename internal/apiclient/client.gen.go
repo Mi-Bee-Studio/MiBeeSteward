@@ -1799,6 +1799,9 @@ type TopologyNode struct {
 	NetworkId *int64             `json:"network_id"`
 	Status    TopologyNodeStatus `json:"status"`
 
+	// StpRoot Collected dot1dStp fact (#525) - this bridge reported itself as the spanning-tree root; false when it never spoke STP
+	StpRoot *bool `json:"stp_root,omitempty"`
+
 	// Type Hand-set type or other
 	Type string `json:"type"`
 }
