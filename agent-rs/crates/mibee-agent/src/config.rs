@@ -145,6 +145,21 @@ pub struct DiscoveryConfig {
     /// No-op when the log file is absent (dnsmasq query logging not enabled).
     #[serde(default)]
     pub dns_log: DnsLogConfig,
+    /// eBPF passive observer (#498): the center-side TC observer (same
+    /// kernel program) loaded via aya on the agent's own interfaces.
+    /// Default OFF; needs a `--features ebpf` build (Linux) - a default
+    /// build logs one warn and stays off when enabled in config.
+    #[serde(default)]
+    pub ebpf: EbpfConfig,
+}
+
+/// eBPF source options. Interfaces empty = every up, non-loopback interface.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct EbpfConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub interfaces: Vec<String>,
 }
 
 /// dns_log source options (Go DNSLogDiscoveryConfig). Path empty = probe the
@@ -392,6 +407,13 @@ fn apply_path(cfg: &mut Config, path: &[&str], value: &str) -> Result<(), String
             cfg.scanner.discovery.hostapd.interfaces =
                 value.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
         }
+        ["scanner", "discovery", "ebpf"] => {
+            cfg.scanner.discovery.ebpf.enabled = bool_val(value)?
+        }
+        ["scanner", "discovery", "ebpf", "interfaces"] => {
+            cfg.scanner.discovery.ebpf.interfaces =
+                value.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+        }
         // Unknown keys are ignored (koanf's blind env mapping only maps
         // keys the struct knows; silently skipping keeps parity).
         _ => {}
@@ -464,6 +486,34 @@ mod tests {
         std::env::remove_var("MIBEE_SCANNER_DISCOVERY_ROUTER_ARP");
         assert_eq!(cfg.scanner.router_arp.routers, vec!["192.0.2.9", "192.0.2.8"]);
         assert!(cfg.scanner.discovery.router_arp.enabled);
+    }
+
+    /// The eBPF source is default-off and parses from YAML + env like every
+    /// other discovery source (#498) - the config schema is stable whether
+    /// or not the binary was built with the loader.
+    #[test]
+    #[serial]
+    fn ebpf_section_parses_and_env_overrides() {
+        let cfg = Config::load(&write_cfg(&format!(
+            "{MINIMAL}scanner:
+  discovery:
+    enabled: true
+    ebpf:
+      enabled: true
+      interfaces: [\"end0\", \"lan1\"]
+"
+        )))
+        .unwrap();
+        assert!(cfg.scanner.discovery.ebpf.enabled);
+        assert_eq!(cfg.scanner.discovery.ebpf.interfaces, vec!["end0", "lan1"]);
+
+        std::env::set_var("MIBEE_SCANNER_DISCOVERY_EBPF", "true");
+        std::env::set_var("MIBEE_SCANNER_DISCOVERY_EBPF_INTERFACES", "eth0, eth1");
+        let cfg = Config::load(&write_cfg(MINIMAL)).unwrap();
+        std::env::remove_var("MIBEE_SCANNER_DISCOVERY_EBPF");
+        std::env::remove_var("MIBEE_SCANNER_DISCOVERY_EBPF_INTERFACES");
+        assert!(cfg.scanner.discovery.ebpf.enabled);
+        assert_eq!(cfg.scanner.discovery.ebpf.interfaces, vec!["eth0", "eth1"]);
     }
 
     #[test]

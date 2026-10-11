@@ -50,6 +50,17 @@ rustls = { version = "0.23", default-features = false, features = ["std", "tls12
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "logging"] }
 oxitls-rustcrypto-provider = "0.3"
 
+# Passive eBPF observer (#498): optional, Linux-only. The `ebpf` feature
+# turns it on; every other target (and the default build) never resolves the
+# dependency, so default artifacts stay byte-identical.
+[target.'cfg(target_os = "linux")'.dependencies]
+mibee-ebpf = { path = "../mibee-ebpf", optional = true }
+
+[features]
+# Enables the aya-based passive TC observer (implies mibee-ebpf/loader on
+# Linux). Off by default: musl-static default builds keep zero new deps.
+ebpf = ["dep:mibee-ebpf", "mibee-ebpf/loader"]
+
 [dev-dependencies]
 tempfile = "3"
 serial_test = "3"

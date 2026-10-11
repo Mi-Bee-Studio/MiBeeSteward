@@ -56,6 +56,13 @@ jobs:
       - name: cargo test
         working-directory: agent-rs
         run: cargo test --locked
+      # eBPF observer (#498): the loader path (aya) + the linux-only agent
+      # wiring only compile under the feature; the object-parse test proves
+      # aya understands the bpf2go artifact on every PR (loading into the
+      # kernel is rig-verified, CI has no privileges for it).
+      - name: cargo test (ebpf feature)
+        working-directory: agent-rs
+        run: cargo test --locked -p mibee-ebpf --features loader && cargo test --locked -p mibee-agent --features ebpf
 
   # Optional build tags (#502): the release ships a -full variant with
   # WITH_LLDP,WITH_CDP,WITH_ARPSCAN, and those code paths never compile in

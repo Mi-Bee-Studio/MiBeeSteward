@@ -93,7 +93,45 @@ Rust agent 的内存不光更低，而且**平**：没有 GC 锯齿——这正�
 | conntrack 新主机上报 | ✔ | ✔ | ESTABLISHED/[ASSURED] 流的 LAN 端点（src 或 dst 侧，含 [UNASSURED] 拒收的解析对等）首次目击上报一次（#504） |
 | mDNS 单播查询（`scanner.mdns.unicast_queries`） | ✔ | ✔ | 每个查询同时直发目标 5353，覆盖只应答单播的设备（#20/#504） |
 | dns_log 源（dnsmasq `--log-queries` 尾随） | ✔ | ✔ | 字节偏移续读、轮转重置、首扫 EOF 跳过；查询域名成为扫描种子（#504） |
-| 配置（`agent.yaml` 键 + `MIBEE_` 环境变量） | ✔ | ✔ | 同构——存量 agent.yaml 无需改动即可使用 |
+| 配置（`agent.yaml` 键 + `MIBEE_` 环境变量） | ✔ | ✔ | 同构——存量 agent.yaml 无需改动即可使用 || 配置（`agent.yaml` 键 + `MIBEE_` 环境变量） | ✔ | ✔ | 同构——存量 agent.yaml 无需改动即可使用 |
+| 被动 eBPF TC 观测器（center #493/#496/#497/#508 全套） | ✗（Go agent 从未搭载） | ✔ feature `ebpf`（#498） | 同一内核对象、aya 加载器、默认关闭 |
+
+## 被动 eBPF 观测器（#498，feature 门控）
+
+center 侧的 TC 观测器（[eBPF 被动观测](ebpf.md)）同样下沉到了 Rust agent，
+以可选 cargo feature 的形式提供。内核侧程序是共享而非重写的：内嵌对象
+（`agent-rs/crates/mibee-ebpf/ebpf/tc_ingress.bpfel.o`）与 center 的
+bpf2go 产物逐字节相同 —— `make sync-agent-rs-assets` 负责拷贝，
+`make check-agent-rs-assets` 加漂移测试把两份拷贝钉在一起。一份经过实机
+验证的 verifier 产物，两个加载器。用户态加载器是
+[aya](https://aya-rs.dev) —— 纯 Rust、无 libbpf/BCC —— 因此静态 musl、
+零 C 依赖的特性在开启 feature 后依然成立。
+
+构建与配置：
+
+- 构建：`make build-agent-rs-ebpf`（两个 musl 架构），或
+  `cargo zigbuild --release --target <musl-target> -p mibee-agent --features ebpf`。
+  默认构建不受影响 —— `mibee-ebpf` crate 在依赖图中是可选且仅 Linux 的，
+  默认产物逐字节不变，aya 完全不进入。
+- 配置（`agent.yaml`）：`scanner.discovery.ebpf.enabled: true` 与
+  `scanner.discovery.ebpf.interfaces`（留空 = 所有 up 的非 loopback 接口）。
+  配置键在任何构建下都可解析；默认构建会打一行 warn 并保持该源关闭。
+- 要求：Linux ≥ 5.8 —— aya 在 ≥ 6.6 走 TCX、更老的内核回落到经典
+  clsact/netlink 挂载，比 center 仅 TCX 的加载器（6.6）低一档。root 或
+  ambient `CAP_BPF` + `CAP_NET_ADMIN`；BTF 可选（CO-RE-free 程序）。
+
+上报面（与 center 漏斗同一路由规则）：
+
+- ARP 在网目击按 IP 首次目击上报一次被动主机，并为该主机的下次扫描
+  种入 MAC；ND 不带 IPv4，等待 MAC 键通道（#522）。
+- 签名类（SSH / RTSP / HTTP / WS-Discovery / DHCP / TLS-SNI / mDNS /
+  SSDP）成为 `passive:ebpf:tc` 证据种子，随该主机的下一次扫描报告上行
+  —— 走既有 agent→center 通道，无协议变更。
+
+降级：任何失败（非 Linux 主机、内核 < 5.8、缺 caps、加载/挂载失败）只打
+一行 warn 并保持该源关闭，主动探测不受影响。能力探测机是 center 侧逐行
+移植到 `crates/mibee-ebpf/src/capability.rs` 的 1:1 端口，在所有平台上
+都有单元测试，包括非 Linux 路径。
 
 ## 实战记录
 
