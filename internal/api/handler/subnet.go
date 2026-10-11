@@ -43,18 +43,26 @@ func (h *SubnetHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scope := domain.ScopeFromContext(r.Context())
-	if !scope.IsGlobal() && networkID == 0 {
+	// Scope intersection on EVERY path (#536): an explicit ?network_id=
+	// the caller holds no grant for returns the empty set (deny, matching
+	// the topology graph's semantics), an absent param aggregates over the
+	// granted networks only. Global scopes are untouched.
+	if !scope.IsGlobal() {
 		allowed := make(map[int64]bool, len(scope.NetworkIDs))
 		for _, id := range scope.NetworkIDs {
 			allowed[id] = true
 		}
-		scoped := make([]db.Subnet, 0, len(subnets))
-		for _, s := range subnets {
-			if allowed[s.NetworkID] {
-				scoped = append(scoped, s)
+		if networkID != 0 && !allowed[networkID] {
+			subnets = nil
+		} else {
+			scoped := make([]db.Subnet, 0, len(subnets))
+			for _, s := range subnets {
+				if allowed[s.NetworkID] {
+					scoped = append(scoped, s)
+				}
 			}
+			subnets = scoped
 		}
-		subnets = scoped
 	}
 
 	Success(w, map[string]any{"subnets": subnets, "total": len(subnets)})
