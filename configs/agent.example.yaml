@@ -46,3 +46,11 @@ scanner:
     hostapd:
       enabled: true
       interfaces: []      # e.g. ["wlan0"]; empty probes /var/run/hostapd/*
+    # eBPF passive observer (#498): the center's TC observer on this box —
+    # same kernel program, loaded via aya. Needs a --features ebpf build
+    # (make build-agent-rs-ebpf); a default build logs one warn and stays
+    # off. Kernel >= 5.8, root or CAP_BPF + CAP_NET_ADMIN; empty interfaces
+    # = every up, non-loopback interface. See docs/{en,zh}/agent-rs.md.
+    ebpf:
+      enabled: false
+      interfaces: []      # e.g. ["end0"]; empty = auto-detect

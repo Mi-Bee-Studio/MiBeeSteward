@@ -33,6 +33,11 @@ build-agent-rs: sync-agent-rs-assets
 test-agent-rs:
 	cd agent-rs && cargo test
 
+# Feature-on agent builds (#498): same static-musl artifacts plus the aya
+# eBPF loader. Default builds stay byte-identical — the feature is additive.
+build-agent-rs-ebpf: sync-agent-rs-assets
+	cd agent-rs && CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release 		--target aarch64-unknown-linux-musl -p mibee-agent --features ebpf 		&& CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release 		--target armv7-unknown-linux-musleabihf -p mibee-agent --features ebpf
+
 build: build-frontend build-server
 
 build-all: build-frontend sync-device-types sync-oui-curated

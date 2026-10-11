@@ -279,7 +279,10 @@ static __always_inline int parse_mdns_query(void *skb, __u32 off, char *name_raw
 }
 
 
-SEC("tc")
+// "classifier" is the canonical libbpf section name for SCHED_CLS: both
+// loaders the project ships (cilium/ebpf on the center, aya on the Rust
+// agent) resolve it; the "tc" alias is cilium-only and aya rejects it.
+SEC("classifier")
 int tc_ingress(struct __sk_buff *skb) {
     // ---- L2: Ethernet header into a stack buffer -------------------------
     __u8 eth[14];

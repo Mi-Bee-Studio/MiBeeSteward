@@ -94,6 +94,56 @@ The 3× code growth is the deliberate price of the two requirements that motivat
 | mDNS unicast queries (`scanner.mdns.unicast_queries`) | ✔ | ✔ | each query also sent to the target's 5353 directly, for unicast-only responders (#20/#504) |
 | dns_log source (dnsmasq `--log-queries` tail) | ✔ | ✔ | byte-offset resume, rotation reset, first-sweep EOF skip; query domains become scan seeds (#504) |
 | Config (`agent.yaml` keys + `MIBEE_` env) | ✔ | ✔ | same shape — an existing agent.yaml works unchanged |
+| Passive eBPF TC observer (center #493/#496/#497/#508 stack) | ✗ (never shipped in the Go agent) | ✔ feature `ebpf` (#498) | same kernel object, aya loader, default-off |
+
+## Passive eBPF observer (#498, feature-gated)
+
+The center's TC observer ([eBPF Passive Observer](ebpf.md)) also ships in the
+Rust agent, as an opt-in cargo feature. The kernel-side program is SHARED,
+not rewritten: the embedded object
+(`agent-rs/crates/mibee-ebpf/ebpf/tc_ingress.bpfel.o`) is a byte-identical
+copy of the center's bpf2go
+artifact — the bpf2go `go generate` step refreshes both copies in one
+command (its second directive is the copy), and a drift test pins them
+together wherever both exist. One field-verified verifier artifact, two
+loaders. The userspace loader is [aya](https://aya-rs.dev) —
+pure Rust, no libbpf/BCC — so the static-musl, zero-C-dependency property
+survives the feature.
+
+Build and config:
+
+- Build: `make build-agent-rs-ebpf` (both musl arches), or
+  `cargo zigbuild --release --target <musl-target> -p mibee-agent --features ebpf`.
+  Default builds are untouched — the `mibee-ebpf` crate is optional and
+  Linux-only in the dependency graph, so default artifacts stay
+  byte-identical and aya never enters them.
+- Config (`agent.yaml`): `scanner.discovery.ebpf.enabled: true` and
+  `scanner.discovery.ebpf.interfaces` (empty = every up, non-loopback
+  interface). The keys parse in every build; a default build logs one warn
+  line and keeps the source off.
+- Requirements: Linux ≥ 5.8 — aya attaches via TCX on ≥ 6.6 and falls back
+  to the classic clsact/netlink path on older kernels, one notch lower than
+  the center's TCX-only loader (6.6). Root or ambient `CAP_BPF` +
+  `CAP_NET_ADMIN`; BTF optional (CO-RE-free program). Field note: on the
+  6.18.44 sunxi armv7 rig the ambient-caps drop-in shape hangs the BPF
+  program load (same kernel-quirk family the center documents) — run that
+  vantage's agent as root; `MIBEE_EBPF_DEBUG=1` logs every routing decision
+  for field diagnostics.
+
+What it feeds (same routing as the center's funnel):
+
+- ARP presence sightings report a passive host upstream (once per IP, first
+  lifetime sighting) and seed the MAC for the host's next scan; NDP carries
+  no IPv4 and waits for the MAC-keyed channel (#522).
+- Signature kinds (SSH / RTSP / HTTP / WS-Discovery / DHCP / TLS-SNI / mDNS /
+  SSDP) become `passive:ebpf:tc` evidence seeds that ride the host's next
+  scan report — the existing agent→center channel, no wire change.
+
+Degradation: every failure mode (non-Linux host, kernel < 5.8, missing caps,
+load/attach error) logs one warn line and leaves the source off; active
+probing is unaffected. The capability probe is the center's machine ported
+1:1 into `crates/mibee-ebpf/src/capability.rs` and unit-tested on every
+platform, including the off-Linux path.
 
 ## Field record
 
