@@ -27,7 +27,7 @@ flowchart LR
 | UDP/3702 ↔ 239.255.255.250 | `wsdiscovery` | onvif |
 | UDP/67-68 DHCP | `dhcp`（vendor class / 参数请求表 / 消息类型，#496/#508） | dhcp |
 | TCP ClientHello | `tls_sni`（SNI 主机名） | https |
-| UDP/5353 mDNS 查询 | `mdns`（首个查询名） | mdns |
+| UDP/5353 mDNS 查询 | `mdns`（首个查询名；query 观测规则给 0.5 兜底身份） | mdns |
 | UDP/1900 SSDP | `ssdp`（存在性） | ssdp |
 | ARP（任意 op） | `arp_sighting` → discovery 通道（#497） | —（在网事实，非证据） |
 | IPv6 NS/NA/RS | `nd_sighting` → discovery 通道（#497） | —（在网事实，非证据） |

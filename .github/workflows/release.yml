@@ -293,7 +293,10 @@ jobs:
       # agent's SHA256SUMS (#491) — release assets download into one
       # directory, so any path prefix would break `sha256sum -c`.
       - name: Checksum the center binaries
-        run: sha256sum mibee-steward-linux-* > SHA256SUMS.center
+        # Explicit list (#539 item 19): a bare wildcard would silently sweep
+        # any future same-named artifact into the manifest.
+        run: |
+          sha256sum mibee-steward-linux-amd64 mibee-steward-linux-amd64-full             mibee-steward-linux-arm64 mibee-steward-linux-arm64-full > SHA256SUMS.center
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

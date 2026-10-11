@@ -409,7 +409,6 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	if hint.Timeout > 0 && hint.Timeout < timeout {
 		timeout = hint.Timeout
 	}
-	start := time.Now()
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		return nil, nil // soft failure (no multicast)
@@ -422,7 +421,7 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	packets := readUDPMulticastResponses(conn, timeout)
 	var evs []scannerv2.Evidence
 	target := net.ParseIP(ip)
-	var descLoc string
+	var descLoc, descUSN string
 	for _, pkt := range packets {
 		// SSDP is multicast: a single M-SEARCH is answered by every UPnP
 		// responder on the segment. Only count replies from the target IP, or
@@ -445,6 +444,7 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 			})
 			if descLoc == "" && validateSSDPLocation(raw["location"], ip) {
 				descLoc = raw["location"]
+				descUSN = raw["usn"]
 			}
 		}
 	}
@@ -452,10 +452,25 @@ func (p *SSDPProbe) Probe(ctx context.Context, ip string, hint scannerv2.ProbeHi
 	// authoritative UPnP self-description. Fetch once for the target's own
 	// (validated) LOCATION and merge the identity fields into the first
 	// evidence; corpus rules pick them up as raw keys.
-	if descLoc != "" {
-		if desc := fetchUPnPDescription(ctx, descLoc, time.Since(start)+2*time.Second); len(desc) > 0 {
+	if descLoc != "" && usnCooldownAllows(descUSN) {
+		if desc := fetchUPnPDescription(ctx, descLoc); len(desc) > 0 {
 			for k, v := range desc {
 				evs[0].RawData[k] = v
+			}
+			// friendlyName is the device's own name for itself — a natural
+			// hostname seed riding the same channel as NetBIOS/rDNS names.
+			if fn := desc["friendly_name"]; fn != "" {
+				evs = append(evs, scannerv2.Evidence{
+					Source:  "active:ssdp",
+					Kind:    "hostname",
+					IP:      ip,
+					RawData: map[string]string{"hostname": fn},
+					// Same trust tier as NetBIOS hostnames: device-set,
+					// spoofable, possibly stale — the hostname rules' own
+					// confidences bound the resulting identity.
+					Confidence: 0.8,
+					ObservedAt: time.Now(),
+				})
 			}
 		}
 	}

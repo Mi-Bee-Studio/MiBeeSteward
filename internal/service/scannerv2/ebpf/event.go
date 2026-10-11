@@ -24,7 +24,7 @@ import (
 	"mibee-steward/internal/service/scannerv2"
 )
 
-// eventLen mirrors the C struct (v4, #496): 4+2+2+1+1 + server[64] +
+// eventLen mirrors the C struct (v3, #496): 4+2+2+1+1 + server[64] +
 // opt55_raw[12] + name_raw[32] + opt55_len + dhcp_type + pad. All string
 // building happens here — the BPF program writes constant-index bytes only.
 const eventLen = 124

@@ -144,6 +144,9 @@
 		'Bridge-MIB': { color: ['--color-info', '#3b82f6'], type: 'solid', width: 1.5 },
 		'Q-BRIDGE-MIB': { color: ['--color-info', '#3b82f6'], type: 'solid', width: 1.5 },
 		STP: { color: ['--color-accent-purple', '#8b5cf6'], type: 'dashed', width: 1.5 },
+		// WiFi (#505): hostapd association observed on the AP — its own class,
+		// amber dashed, as the release notes have always described.
+		WiFi: { color: ['--color-accent-amber', '#f59e0b'], type: 'dashed', width: 1.5 },
 		ARP: { color: ['--color-muted', '#94a3b8'], type: 'dotted', width: 1 },
 		// speaks-with (#500): L3 traffic observation — visually the faintest
 		// class (corroborating relation, not a link fact).

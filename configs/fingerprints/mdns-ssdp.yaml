@@ -28,6 +28,28 @@ version: 1
 rules:
   # ── mDNS: service name → device identity (exclusive: one per evidence) ──
   # Ordered by specificity; the exclusive_group keeps exactly one identity.
+  # eBPF mDNS query floor (#539 item 8): the passive observer's mDNS evidence
+  # carries only the captured query name (raw key "query"; no services list),
+  # so the rules above never fire for it and it was silently dropped. Matching
+  # on the query field gives the wire observation a floor identity WITHOUT
+  # firing on unrecognized active mDNS announcements (those carry
+  # hostname/services, never "query").
+  - id: mdns-query-presence
+    source: builtin
+    priority: 200
+    exclusive_group: mdns-identity
+    match:
+      kind: mdns
+      field: query
+      op: regex
+      value: '.+'
+    service: mdns
+    protocol: udp
+    confidence: 0.5
+    extract:
+      metadata:
+        inferred_description: { const: "mDNS speaker observed (passive query capture)" }
+
   - id: mdns-onvif-camera
     source: builtin
     priority: 230
@@ -253,6 +275,11 @@ rules:
         model: { passthrough: model_name }
         vendor: { passthrough: manufacturer }
         inferred_description: { passthrough: model_description }
+        model_number: { passthrough: model_number }
+        udn: { passthrough: udn }
+        device_type: { passthrough: device_type }
+        # friendly_name rides the hostname channel instead (a natural
+        # hostname seed; the corpus's hostname rules pick it up there).
 
   - id: ssdp-minidlna
     source: builtin
