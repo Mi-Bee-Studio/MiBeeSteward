@@ -287,6 +287,17 @@ jobs:
           (cd web && npm ci)
           make package-openwrt-ipk
           ls -la bin/*.ipk
+      # PKG_DEPS smoke (#535): re-run mkipk.sh on the staged tree with the
+      # variable set and assert the Depends line actually lands in the ipk's
+      # control member — the exact regression #535 pinned (the scripts read
+      # PKG_DEPENDS while everything else said PKG_DEPS, silently).
+      - name: PKG_DEPS smoke (Depends must land in the ipk control, #535)
+        run: |
+          PKG_DEPS="+kmod-sched-bpf" sh deploy/openwrt/mkipk.sh bin/openwrt-stage 0.0.0-depsmoke arm64 /tmp/deps-smoke.ipk
+          rm -rf /tmp/deps-smoke && mkdir -p /tmp/deps-smoke && cd /tmp/deps-smoke
+          tar xzf /tmp/deps-smoke.ipk ./control.tar.gz
+          tar xzf control.tar.gz ./control
+          grep -F 'Depends: +kmod-sched-bpf' ./control
       # Agent packaging smoke: AGENT_BIN with a placeholder file fully
       # exercises the stage rule + tarball + .ipk + .apk paths (nothing
       # executes the binary at BUILD time — the router's preinst does, at

@@ -171,13 +171,13 @@ ssh root@<路由器IP> 'apk add --allow-untrusted /tmp/mibee-steward_*_arm64.apk
 go generate -tags WITH_EBPF ./internal/service/scannerv2/ebpf/
 
 # 带标签打包；kmod 依赖自动写进包元数据：
-make package-openwrt-ipk PKG_TAGS=WITH_EBPF      PKG_DEPS="+kmod-sched-bpf +kmod-sched-cls-act +tc"
+make package-openwrt-ipk PKG_TAGS=WITH_EBPF      PKG_DEPS="+kmod-sched-bpf"
 #（或 package-openwrt-apk，变量相同）
 ```
 
 说明：
 
-- **不需要 `libbpf`**——Go 二进制自带加载器，BPF 对象 CO-RE free（无 BTF 内核也能加载）；`kmod`/`tc` 依赖只提供 TC 挂载所需的内核侧调度器钩子。
+- **不需要 `libbpf`、`tc` 与 clsact qdisc**——Go 二进制自带加载器，BPF 对象 CO-RE free（无 BTF 内核也能加载），且加载器经 TCX 挂载（内核 ≥ 6.6），不需要经典 qdisc 或用户态工具（#535 依赖矩阵更正：早先文档推荐 `+kmod-sched-cls-act +tc`；center 加载器没有经典 TC 回退——更老内核直接降级）。`kmod-sched-bpf` 提供 TC 挂载所需的内核侧 BPF 调度器钩子。
 - **procd 以 root 运行服务**，天然满足特权要求，无需额外配置。
 - **桥接路由器请把观测器挂到物理口**（`eth0`、`eth1`……）而不是 `br-lan`：桥端口之间转发的帧不经过桥设备自身的 TC ingress 钩子。`/etc/mibee/config.yaml` 的 `scanner.ebpf.interfaces` 接口列表即为此设。
 - 内核低于 6.6 时观测器启动报 `unsupported`，服务本体与默认构建完全一致（#493 降级规则）。
