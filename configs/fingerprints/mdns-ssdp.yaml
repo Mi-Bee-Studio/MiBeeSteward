@@ -331,6 +331,29 @@ rules:
         inferred_brand: { const: "Dahua" }
         inferred_description: { const: "Dahua device self-identified via SSDP" }
 
+  # ── WS-Discovery (#507): the ACTIVE probe's ProbeMatches identity ──
+  # The ONVIF scope URIs are the authoritative self-description a camera
+  # offers; the active probe unpacks them into direct raw keys (name,
+  # hardware, model), the passive observer's kind also lands here.
+  - id: wsd-onvif-camera
+    source: builtin
+    priority: 229
+    exclusive_group: wsd-identity
+    match:
+      kind: wsdiscovery
+      op: or
+      any:
+        - { field: types, op: contains, value: "NetworkVideoTransmitter" }
+        - { field: hardware, op: regex, value: '.+' }
+        - { field: name, op: regex, value: '.+' }
+    service: wsdiscovery
+    protocol: udp
+    confidence: 0.85
+    extract:
+      metadata:
+        inferred_type: { const: camera }
+        inferred_description: { const: "ONVIF device self-identified via WS-Discovery" }
+
   # Synology DSM answers SSDP with SERVER carrying "Synology" and a LOCATION
   # on :5000: an unauthenticated self-declaration of a NAS.
   - id: ssdp-synology
