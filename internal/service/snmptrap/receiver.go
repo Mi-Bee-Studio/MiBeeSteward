@@ -22,6 +22,7 @@ package snmptrap
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net"
@@ -32,6 +33,7 @@ import (
 
 	gosnmp "github.com/gosnmp/gosnmp"
 
+	"mibee-steward/internal/metrics"
 	"mibee-steward/internal/service/scannerv2"
 )
 
@@ -101,6 +103,10 @@ func (r *Receiver) Start() error {
 	l.Params = &gosnmp.GoSNMP{
 		Version:   gosnmp.Version2c, // also accepts v1 packets
 		Community: r.cfg.Community,
+		// gosnmp logs malformed/short packets here only; without an adapter
+		// those vanish silently (#534). The mask keeps communities out of
+		// the log — gosnmp prints packet contents verbatim.
+		Logger: gosnmp.NewLogger(maskedGoSnmpLogger{inner: r.logger}),
 	}
 	r.listener = l
 	errCh := make(chan error, 1)
@@ -131,6 +137,17 @@ func (r *Receiver) Stop() {
 }
 
 func (r *Receiver) onTrap(pkt *gosnmp.SnmpPacket, addr *net.UDPAddr) {
+	// Community gate (#534): gosnmp's TrapListener does NOT validate the
+	// v2c community of received packets (its Params.Community only shapes
+	// its own sends), so the check lives here — constant-time, and a
+	// mismatched packet is dropped before any throttle slot, evidence row
+	// or discovery sighting (#534: never let a spoofed community consume
+	// the 10s window of the real one).
+	if subtle.ConstantTimeCompare([]byte(pkt.Community), []byte(r.cfg.Community)) != 1 {
+		metrics.MibeeSnmpTrapCommunityDrops.Inc()
+		r.logger.Debug("snmp trap: community mismatch dropped", "ip", addr.IP.String())
+		return
+	}
 	ip := addr.IP.String()
 	ev := evidenceFromTrap(pkt, addr)
 	if !r.throttle.allow(trapKey(ip, ev.RawData["trap"])) {
@@ -318,3 +335,37 @@ func (t *throttle) allow(key string) bool {
 }
 
 func trapKey(ip, trap string) string { return ip + "|" + trap }
+
+// maskedGoSnpmLogger adapts slog to gosnmp's LoggerInterface, masking
+// community-looking tokens: gosnmp's own log lines embed raw packet bytes,
+// and the "credentials never appear in logs" guarantee outranks debug
+// fidelity. The mask swaps every double-quoted run and hex-ish blob for ***.
+type maskedGoSnmpLogger struct {
+	inner *slog.Logger
+}
+
+func (m maskedGoSnmpLogger) Print(v ...any) {
+	m.Printf("%s", fmt.Sprint(v...))
+}
+
+func (m maskedGoSnmpLogger) Printf(format string, v ...any) {
+	m.inner.Debug("gosnmp: " + maskQuotedRuns(fmt.Sprintf(format, v...)))
+}
+
+// maskQuotedRuns replaces "..." runs and 0x.../hex-byte sequences with ***.
+func maskQuotedRuns(s string) string {
+	var b strings.Builder
+	inRun := false
+	for _, r := range s {
+		switch {
+		case r == '"':
+			b.WriteRune(r)
+			inRun = !inRun
+		case inRun:
+			b.WriteRune('*')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
