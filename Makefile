@@ -239,14 +239,17 @@ check-openwrt:
 		fi; \
 	done; echo "-> sh -n OK on committed router scripts"
 
-# Build with the eBPF passive observer enabled. Requires ONLY clang (>=14) on
-# the build host — the program is CO-RE free (bpf/bpf_standalone.h), so no
-# bpftool/kernel-BTF/libbpf headers. At runtime it needs Linux >=5.8 plus
-# root or CAP_BPF/CAP_NET_ADMIN when scanner.ebpf.enabled is true; without
-# those runtime privileges the observer degrades (Status + doctor show why),
-# it never blocks active scanning.
+# Build with the eBPF passive observer enabled (#537: self-contained — the
+# bpf2go artifacts are generated on demand when absent, and the generation is
+# guarded by the WITH_EBPF tag so a generated tree can never leak the ELF
+# into default builds). Requires ONLY clang (>=14) on the build host — the
+# program is CO-RE free (bpf/bpf_standalone.h), so no bpftool/kernel-BTF/
+# libbpf headers. At runtime it needs Linux >= 6.6 (the TCX attach era)
+# plus root or CAP_BPF/CAP_NET_ADMIN when scanner.ebpf.enabled is true;
+# without those the observer degrades (Status + doctor show why), it never
+# blocks active scanning.
 build-with-ebpf: build-frontend
-	cd bpf && $(MAKE) tc_ingress.o
+	@if [ ! -f internal/service/scannerv2/ebpf/tcingress_bpfel.go ]; then 		echo "bpf2go artifacts missing - generating (needs clang >= 14)"; 		GOFLAGS=$${GOFLAGS:-} go generate -tags WITH_EBPF ./internal/service/scannerv2/ebpf/; 	fi
 	CGO_ENABLED=0 go build -tags WITH_EBPF -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
 
 # Build with the raw-frame LLDPDU listener enabled (needs CAP_NET_RAW at runtime;
