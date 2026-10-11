@@ -45,6 +45,7 @@ func TestOrchestratorBrandHelpers(t *testing.T) {
 
 	require.True(t, isWebServerName("NGINX"))
 	require.True(t, isWebServerName("Apache"))
+	require.True(t, isWebServerName("SDK"), "fnOS ships Server: SDK (field-found 2026-10-12)")
 	require.False(t, isWebServerName("Hikvision"))
 }
 

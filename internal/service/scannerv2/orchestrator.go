@@ -328,6 +328,10 @@ func hasCameraEvidence(ev []Evidence) bool {
 var webServerBrandDenylist = []string{
 	"nginx", "apache", "caddy", "lighttpd", "microsoft iis",
 	"minidlna", "readymedia", "portable",
+	// fnOS (and other NAS/web SDK front-ends) ship a literal "SDK" Server
+	// header — a software-stack name, not a device vendor (field-found
+	// 2026-10-12: an fnOS box's brand regressed to "SDK" between scans).
+	"sdk",
 }
 
 // WebServerBrandNames returns the lowercase denylist behind IsWebServerBrand.
