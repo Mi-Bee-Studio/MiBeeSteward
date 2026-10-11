@@ -142,6 +142,12 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 		}
 		hosts = append(hosts, reportToHost(rep))
 	}
+	// The sync path skips Runner.Run's finalize sequence, but the local anchor
+	// (#522) must not: a self-scan row is exactly the MAC-less row the anchor
+	// exists to fill (fill-empty-only, no-op when already anchored).
+	if h.runner != nil {
+		h.runner.AnchorLocalInterfaces(r.Context())
+	}
 
 	resp := domain.ScanResponse{
 		Hosts:      hosts,
