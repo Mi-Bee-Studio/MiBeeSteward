@@ -92,7 +92,7 @@ func TestDecodeEventKinds(t *testing.T) {
 	})
 }
 
-// Event layout v3 (#496): header + server[64] + opt55_raw[16] + name_raw[48]
+// Event layout (#496): header + server[64] + opt55_raw[12] + name_raw[32]
 // + opt55_len + dhcp_type. All rendering (opt55 decimal join, DNS label
 // join) happens in the Go decoder; the BPF side writes raw bytes only.
 func TestDecodeEventV3Kinds(t *testing.T) {

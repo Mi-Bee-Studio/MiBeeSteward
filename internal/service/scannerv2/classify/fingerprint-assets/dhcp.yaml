@@ -47,7 +47,7 @@ rules:
       kind: dhcp
       field: opt55
       op: regex
-      value: '26,28,51,58,59'
+      value: '28,51,58,59'
     service: dhcp
     protocol: udp
     confidence: 0.7

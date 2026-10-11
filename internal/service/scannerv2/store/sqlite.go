@@ -1299,8 +1299,13 @@ func (r *SQLiteRepository) RecordNeighborsByMAC(ctx context.Context, localMAC st
 	}
 	var deviceID int64
 	var networkID sql.NullInt64
+	// Ordering aligned with ResolveDeviceIdentity (#539 item 14): prefer the
+	// online row, then freshest — the two resolvers must pick the same device
+	// when duplicate MAC rows exist, or neighbors and identity updates land
+	// on different devices.
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, network_id FROM devices WHERE mac_address = ? ORDER BY last_seen DESC LIMIT 1`, mac).
+		`SELECT id, network_id FROM devices WHERE mac_address = ?
+		 ORDER BY (status='online') DESC, last_seen DESC LIMIT 1`, mac).
 		Scan(&deviceID, &networkID)
 	if err != nil {
 		r.logger.Debug("record neighbors by mac: device not found", "mac", mac)

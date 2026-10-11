@@ -209,3 +209,29 @@ func (m *memStore) snapshot() []scannerv2.Evidence {
 	copy(out, m.evs)
 	return out
 }
+
+// decodeOIDBytes must decode BER base-128 sub-identifiers (#539 item 17):
+// the enterprise PEN 8072 encodes as two continuation bytes.
+func TestDecodeOIDBytesBase128(t *testing.T) {
+	// 1.3.6.1.4.1.8072 (the net-snmp enterprise PEN): prefix bytes
+	// 2B 06 01 04 01, then 8072 = 63*128 + 8 → 0xBF 0x08.
+	if got := decodeOIDBytes([]byte{0x2b, 6, 1, 4, 1, 0xBF, 0x08}); got != "1.3.6.1.4.1.8072" {
+		t.Fatalf("decodeOIDBytes = %q, want 1.3.6.1.4.1.8072", got)
+	}
+	// The same wire bytes under the OLD single-byte decode would read
+	// ".190.56" — this pins the continuation handling specifically.
+	if got := decodeOIDBytes([]byte{0x2b, 6, 1, 4, 1, 0xC0, 0x38}); got != "1.3.6.1.4.1.8248" {
+		t.Fatalf("decodeOIDBytes = %q, want 1.3.6.1.4.1.8248 (64*128+56)", got)
+	}
+	// Simple OID: 1.3.6.1.2.1.1.3 (sysUpTime) — all single-byte sub-ids.
+	if got := decodeOIDBytes([]byte{0x2b, 6, 1, 2, 1, 1, 3}); got != "1.3.6.1.2.1.1.3" {
+		t.Fatalf("decodeOIDBytes = %q", got)
+	}
+	// Truncated continuation still yields the accumulated value.
+	if got := decodeOIDBytes([]byte{0x2b, 0xC0}); got != "1.3.64" {
+		t.Fatalf("truncated = %q, want 1.3.64", got)
+	}
+	if decodeOIDBytes(nil) != "" || decodeOIDBytes([]byte{}) != "" {
+		t.Fatal("empty input must be empty")
+	}
+}

@@ -282,8 +282,23 @@ func decodeOIDBytes(b []byte) string {
 	first := int(b[0]) / 40
 	second := int(b[0]) % 40
 	fmt.Fprintf(&sb, "%d.%d", first, second)
+	// Remaining sub-identifiers are BER base-128: high bit set = continuation.
+	// Single-byte decoding rendered enterprise OIDs wrong (PEN 8072 = two
+	// bytes 0xC0 0x38 → "192.56" instead of "1.3.6.1.4.1.8072" joining the
+	// prefix as ".192.56") — #539 item 17.
+	var sub int64
 	for _, x := range b[1:] {
-		fmt.Fprintf(&sb, ".%d", x)
+		sub = sub<<7 | int64(x&0x7F)
+		if x&0x80 != 0 {
+			continue
+		}
+		fmt.Fprintf(&sb, ".%d", sub)
+		sub = 0
+	}
+	if sub != 0 {
+		// Truncated continuation: emit what accumulated rather than drop
+		// silently — a mangled tail beats a wrong-but-clean-looking OID.
+		fmt.Fprintf(&sb, ".%d", sub)
 	}
 	return sb.String()
 }

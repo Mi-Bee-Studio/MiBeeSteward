@@ -148,10 +148,13 @@ func (s *HostapdSource) SetWifiNeighborSink(fn func(apMAC, iface string, staMACs
 // sweep and emits one event per newly-seen MAC. Split from sweep so tests can
 // drive the diff/emit path directly (same seam as ARPCacheSource.sweepWith).
 func (s *HostapdSource) sweepWith(stas map[string]staInfo) {
-	if len(stas) == 0 {
-		return
-	}
-
+	// An EMPTY association list is still a sweep (#539 item 16): the diff
+	// must clear `previous` so a STA that roams away and returns is reported
+	// again, and the telemetry refresh path below must see the emptiness.
+	// (The neighbor sink itself reports "currently associated" per sweep, so
+	// an empty sweep simply reports no edges — the wireless edge's
+	// last_seen then ages out under the standard retention instead of
+	// freezing forever.)
 	current := make(map[string]bool, len(stas))
 	for mac := range stas {
 		current[mac] = true
@@ -161,6 +164,9 @@ func (s *HostapdSource) sweepWith(stas map[string]staInfo) {
 	prev := s.previous
 	s.previous = current
 	s.mu.Unlock()
+	if len(stas) == 0 {
+		return
+	}
 
 	for mac, info := range stas {
 		if prev[mac] {

@@ -216,9 +216,14 @@ static __always_inline int parse_dhcp(void *skb, __u32 off, char *vendor, char *
                 if (k >= vn) vendor[k] = 0;
             }
         } else if (code == 55 && olen >= 1) {
-            bpf_skb_load_bytes(skb, pos + 2, opt55_out, 12);
-            __u8 n = olen; if (n > 12) n = 12;
-            *opt55_n = n;
+            // A window crossing the packet end fails the helper: the field is
+            // then simply absent (never render zeros as a request list).
+            __u8 win[12];
+            if (bpf_skb_load_bytes(skb, pos + 2, win, sizeof(win)) >= 0) {
+                __u8 n = olen; if (n > 12) n = 12;
+                __builtin_memcpy(opt55_out, win, sizeof(win));
+                *opt55_n = n;
+            }
         }
         pos += 2 + olen;
     }
@@ -326,6 +331,9 @@ int tc_ingress(struct __sk_buff *skb) {
         if (arp[0] != 0x00 || arp[1] != 0x01) return TC_ACT_UNSPEC;
         if (arp[2] != 0x08 || arp[3] != 0x00) return TC_ACT_UNSPEC;
         if (arp[4] != 6 || arp[5] != 4) return TC_ACT_UNSPEC;
+        // Only request(1)/reply(2) are meaningful presence ops; InARP(3)/
+        // ATM(8) frames would render as "reply" (#539 item 10).
+        if (arp[6] != 0x00 || (arp[7] != 0x01 && arp[7] != 0x02)) return TC_ACT_UNSPEC;
 
         struct sighting_key k = {};
         k.kind = KIND_ARP;

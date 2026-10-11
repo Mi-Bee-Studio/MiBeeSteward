@@ -27,7 +27,7 @@ flowchart LR
 | UDP/3702 ↔ 239.255.255.250 | `wsdiscovery` | onvif |
 | UDP/67-68 DHCP | `dhcp` (vendor class / parameter request list / message type, #496/#508) | dhcp |
 | TCP ClientHello | `tls_sni` (SNI hostname) | https |
-| UDP/5353 mDNS query | `mdns` (first query name) | mdns |
+| UDP/5353 mDNS query | `mdns` (first query name; the query-observation rule gives it a 0.5 floor identity) | mdns |
 | UDP/1900 SSDP | `ssdp` (presence) | ssdp |
 | ARP (any op) | `arp_sighting` → discovery channel (#497) | — (presence, not evidence) |
 | IPv6 NS/NA/RS | `nd_sighting` → discovery channel (#497) | — (presence, not evidence) |

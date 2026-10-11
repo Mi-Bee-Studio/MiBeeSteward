@@ -67,6 +67,12 @@ import (
 // uses it to distinguish "feature turned off" from "feature not compiled in".
 func BuiltWithEBPF() bool { return true }
 
+// recentMapCeiling bounds the passive-evidence buffer map (#539 item 12):
+// ~10k IPs is far beyond any real LAN; crossing it means a spoofing source
+// cycling IPs, and halving beats OOM. The orchestrator drains per-IP
+// buffers on every scan, so healthy deployments never approach this.
+const recentMapCeiling = 10240
+
 // drainBreaker is the ring-buffer read error threshold at which the drain
 // goroutine gives up and degrades the observer instead of spinning (#493).
 const drainBreaker = 100
@@ -249,6 +255,10 @@ func (o *Observer) start() error {
 		state.mu.Lock()
 		state.st = st
 		state.mu.Unlock()
+		// Release the loaded objects immediately (#539 item 13): kernel-side
+		// memory must not linger until process exit on a failed start.
+		_ = objs.Close()
+		state.objects = nil
 		return fmt.Errorf("ebpf: no interfaces attached")
 	case len(st.InterfacesAttached) < len(ifaces):
 		st.State = StateDegraded
@@ -268,6 +278,8 @@ func (o *Observer) start() error {
 		state.mu.Lock()
 		state.st = st
 		state.mu.Unlock()
+		_ = objs.Close() // #539 item 13: no lingering kernel memory on failure
+		state.objects = nil
 		return fmt.Errorf("ebpf: ring buffer: %w", err)
 	}
 	state.reader = reader
@@ -378,9 +390,23 @@ func (o *Observer) drain() {
 			sink = o.cfg.HostSighting
 		}
 		routePassive(ev, state.recent, sink)
-		// Cap per-IP buffer to avoid unbounded growth from chatty hosts.
+		// Cap per-IP buffer to avoid unbounded growth from chatty hosts...
 		if buf := state.recent[ev.IP]; len(buf) > 100 {
 			state.recent[ev.IP] = buf[len(buf)-100:]
+		}
+		// ...and the MAP itself to bound lifetime growth on large L2
+		// domains (#539 item 12): per-IP caps don't cap the number of IPs.
+		// At the ceiling, drop half the entries (approximate LRU — fine for
+		// corroborating evidence the next scan rebuilds anyway).
+		if len(state.recent) > recentMapCeiling {
+			drop := len(state.recent) / 2
+			for ip := range state.recent {
+				if drop == 0 {
+					break
+				}
+				delete(state.recent, ip)
+				drop--
+			}
 		}
 		state.mu.Unlock()
 	}

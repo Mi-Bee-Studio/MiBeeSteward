@@ -47,6 +47,11 @@ func (rn *Runner) deriveTopologyEdges(ctx context.Context, networkID sql.NullInt
 	// device id. Only rows where BOTH device_id and the resolved to_device_id
 	// are non-null survive into topology_edges (unidentified neighbors stay in
 	// device_neighbors only, rendered as dashed lines).
+	// NOTE (#539 item 15): the JOIN resolves by devices.mac_address only —
+	// mac_aliases are NOT consulted, so a frame neighbor whose MAC is a
+	// multi-homed device's second NIC resolves to no edge. Deliberate for
+	// now: alias-aware resolution should land together with the alias
+	// aggregation work (#472) so both paths agree on identity.
 	rows, err := rn.dbConn.QueryContext(ctx, `
 		SELECT dn.device_id, dn.neighbor_mac, dn.protocol, dn.local_port, dn.remote_port,
 		       d.id AS to_device_id
