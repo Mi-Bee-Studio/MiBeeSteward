@@ -571,7 +571,7 @@ head -c 32 /dev/urandom | base64
 |-----|------|---------|-------------|
 | `snmp_trap.enabled` | bool | `false` | 严格显式开启：接收器会打开监听套接字 |
 | `snmp_trap.bind` | string | `":162"` | UDP 绑定地址。低于 1024 的端口需要 root 或 `AmbientCapabilities=CAP_NET_BIND_SERVICE`（systemd drop-in）；`":1162"` 可无特权运行——把设备的 trap 目标指向它即可 |
-| `snmp_trap.community` | string | `"public"` | v2c trap 必须携带的 community；不匹配的 community 被监听器静默丢弃 |
+| `snmp_trap.community` | string | `"public"` | trap 必须携带的 v2c community；接收器在节流与入库之前丢弃不匹配包（常数时间比较，计数入 `mibee_snmp_trap_community_drops`） |
 
 运维要点：防火墙只对 trap 来源网段放行该 UDP 端口（到达监听器的包都会被看到）；v3 trap（USM、凭据名引用凭据库）是已设计的后续项——配置面刻意没有 v3 键，避免开启一个空壳。
 

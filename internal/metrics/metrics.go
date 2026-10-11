@@ -114,6 +114,15 @@ var (
 		},
 	)
 
+	// MibeeSnmpTrapCommunityDrops counts inbound SNMP traps rejected for a
+	// mismatched v2c community (#534) — a cheap spoofing signal.
+	MibeeSnmpTrapCommunityDrops = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "mibee_snmp_trap_community_drops",
+			Help: "Total SNMP traps dropped for a community mismatch",
+		},
+	)
+
 	// MibeeScannerHostsDiscovered counts total alive hosts found by scans.
 	MibeeScannerHostsDiscovered = prometheus.NewCounter(
 		prometheus.CounterOpts{
@@ -166,6 +175,7 @@ func init() {
 	prometheus.MustRegister(MibeeHeartbeatChecksTotal)
 	prometheus.MustRegister(MibeeHeartbeatLatencySeconds)
 	prometheus.MustRegister(MibeeScannerRunsTotal)
+	prometheus.MustRegister(MibeeSnmpTrapCommunityDrops)
 	prometheus.MustRegister(MibeeScannerDurationSeconds)
 	prometheus.MustRegister(MibeeScannerHostsDiscovered)
 	prometheus.MustRegister(MibeeScannerTasksTotal)

@@ -585,7 +585,7 @@ The inbound SNMP trap channel (#509) — devices speaking unprompted. `linkDown`
 |-----|------|---------|-------------|
 | `snmp_trap.enabled` | bool | `false` | Strictly opt-in: the receiver opens a listening socket |
 | `snmp_trap.bind` | string | `":162"` | UDP bind address. Ports below 1024 need root or `AmbientCapabilities=CAP_NET_BIND_SERVICE` (systemd drop-in); `":1162"` runs unprivileged — point your devices' trap destinations at it |
-| `snmp_trap.community` | string | `"public"` | The v2c community traps must carry; mismatched communities are dropped silently by the listener |
+| `snmp_trap.community` | string | `"public"` | The v2c community traps must carry; the receiver drops mismatches before any throttling or persistence (constant-time compare, counted in `mibee_snmp_trap_community_drops`) |
 
 Operational notes: open the UDP port in the firewall for the trap sources only (the listener sees any packet that reaches it); v3 traps (USM, credential-name references against the vault) are the designed follow-up — no v3 keys exist yet, so no one can enable a stub.
 
