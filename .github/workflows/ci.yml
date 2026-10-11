@@ -95,7 +95,7 @@ jobs:
         run: |
           grep -q -- '-tags WITH_EBPF' internal/service/scannerv2/ebpf/observer_real.go             || { echo '::error::go:generate directive lost -tags WITH_EBPF'; exit 1; }
           test ! -f internal/service/scannerv2/ebpf/tcingress_bpfel.go             || { echo '::error::generated eBPF artifacts must never be committed'; exit 1; }
-          sudo apt-get update -qq && sudo apt-get install -y -qq clang >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq clang llvm >/dev/null
           mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
           go generate -tags WITH_EBPF ./internal/service/scannerv2/ebpf/
           CGO_ENABLED=0 go build ./...                       # default: no ELF leak
