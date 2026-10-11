@@ -224,22 +224,33 @@ mod tests {
     use super::*;
 
     /// The embedded object must parse as a standard BPF ELF with the two
-    /// maps and the sched_cls program, WITHOUT any privileges — parsing is
-    /// pure userspace. This is the continuous guard that aya understands
-    /// what bpf2go emitted (the load-into-kernel half is rig-verified).
+    /// maps and the sched_cls program. aya-obj's parse is pure userspace,
+    /// so this guard runs everywhere - including unprivileged CI. The
+    /// section-kind assertion is the regression line for the canonical
+    /// `classifier` name (aya rejects cilium's `tc` alias at parse time;
+    /// found on the first real-device load).
     #[test]
     fn object_parses_with_aya() {
-        let mut ebpf = EbpfLoader::new()
-            .load(TC_INGRESS_OBJ)
-            .expect("aya parses the object");
-        let maps: Vec<String> = ebpf.maps().map(|(n, _)| n.to_string()).collect();
-        assert!(maps.iter().any(|m| m == "events"), "maps: {maps:?}");
-        assert!(maps.iter().any(|m| m == "sighting_last"), "maps: {maps:?}");
-        let prog: &mut SchedClassifier = ebpf
-            .program_mut("tc_ingress")
-            .expect("program tc_ingress")
-            .try_into()
-            .expect("sched_cls program");
-        let _ = prog;
+        let obj = aya_obj::Object::parse(TC_INGRESS_OBJ).expect("aya-obj parses the ELF");
+        let maps: Vec<&str> = obj.maps.keys().map(|n| n.as_str()).collect();
+        assert!(maps.contains(&"events"), "maps: {maps:?}");
+        assert!(maps.contains(&"sighting_last"), "maps: {maps:?}");
+        let prog = obj
+            .programs
+            .get("tc_ingress")
+            .expect("program tc_ingress present");
+        assert!(
+            matches!(prog.section, aya_obj::ProgramSection::SchedClassifier),
+            "tc_ingress must be a sched_cls, got {:?}",
+            prog.section
+        );
+        // Privileged machines (dev boxes, rigs) additionally prove the full
+        // aya load path, which creates the maps for real.
+        if crate::capability::evaluate(&crate::capability::host_probe())
+            .unsupported
+            .is_empty()
+        {
+            EbpfLoader::new().load(TC_INGRESS_OBJ).expect("aya loads the object");
+        }
     }
 }

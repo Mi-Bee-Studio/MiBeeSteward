@@ -13,10 +13,13 @@ publish = false
 # `--features loader` build on a non-Linux host still compiles (the observer
 # module is cfg'd out and every entry point degrades to a no-op).
 [features]
-loader = ["dep:aya"]
+loader = ["dep:aya", "dep:aya-obj"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 aya = { version = "0.14", optional = true }
+# parse-only ELF access (CI's object guard) - aya's full loader creates the
+# maps via syscall, which needs privileges; aya-obj::Object::parse does not.
+aya-obj = { version = "0.3", optional = true }
 
 # The veth chain diagnostic only exists where the loader does.
 [[example]]
