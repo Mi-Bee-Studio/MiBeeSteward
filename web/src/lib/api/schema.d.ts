@@ -6092,6 +6092,8 @@ export interface components {
              * @description Origin network (subnet grouping)
              */
             network_id: number | null;
+            /** @description Collected dot1dStp fact (#525) - this bridge reported itself as the spanning-tree root; false when it never spoke STP */
+            stp_root?: boolean;
         };
         TopologyEdge: {
             /** Format: int64 */

@@ -23,8 +23,9 @@
     - Drag node / scroll / drag-canvas → reposition / zoom / pan (ECharts roam)
     - Search box   → dim non-matching nodes + their edges
 
-  Layering is heuristic (detectRoot + device-type classification); real STP
-  root-bridge role needs probe+schema work (follow-up). See topologyGraph.ts.
+  Root detection prefers the collected STP fact when a bridge reported itself
+  as the dot1dStp root (#525); otherwise it is heuristic (detectRoot +
+  device-type classification). See topologyGraph.ts.
 
   Props:
     networkId: the currently-selected network filter from the devices page

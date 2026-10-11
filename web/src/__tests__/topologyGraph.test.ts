@@ -52,6 +52,24 @@ describe('topologyGraph', () => {
 			expect(detectRoot(graph)).toBeNull();
 		});
 
+		it('0. STP root fact wins over every heuristic (#525)', () => {
+			// A hub-and-spoke ARP star that would pick the router by in-degree —
+			// but a downstream switch reports dot1dStp facts naming ITSELF the
+			// root bridge. The collected fact beats the guess.
+			const graph: TopologyGraph = {
+				nodes: [
+					node({ id: 1, name: 'Gateway', ip_address: '192.168.1.1', type: 'router', inferred_type: 'router' }),
+					node({ id: 2, name: 'core-sw', inferred_type: 'switch', stp_root: true }),
+					node({ id: 3, ip_address: '192.168.1.11', inferred_type: 'pc' })
+				],
+				edges: [
+					edge({ from_device_id: 3, to_mac: 'aa:bb:cc:dd:ee:ff', protocol: 'ARP' })
+				]
+			};
+			const root = detectRoot(graph);
+			expect(root?.id).toBe(2);
+		});
+
 		it('2. ARP star → returns gateway with highest ARP in-degree', () => {
 			const graph: TopologyGraph = {
 				nodes: [

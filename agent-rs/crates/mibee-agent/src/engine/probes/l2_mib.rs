@@ -21,7 +21,9 @@ use crate::engine::probes::snmp_arp::octets_to_mac;
 const OID_DOT1D_TP_FDB_PORT: &str = "1.3.6.1.2.1.17.4.3.1.2";
 const OID_DOT1D_BASE_PORT_IF_INDEX: &str = "1.3.6.1.2.1.17.1.4.1.2";
 const OID_DOT1D_BASE_BRIDGE_ADDRESS: &str = "1.3.6.1.2.1.17.1.1.0";
+const OID_DOT1D_STP_DESIGNATED_ROOT: &str = "1.3.6.1.2.1.17.2.1.0";
 const OID_DOT1D_STP_PORT_DESIGNATED_BRIDGE: &str = "1.3.6.1.2.1.17.2.2.1.15";
+const OID_DOT1D_STP_PORT_ROLE: &str = "1.3.6.1.2.1.17.2.2.1.18";
 const OID_DOT1Q_TP_FDB_PORT: &str = "1.3.6.1.2.1.17.7.1.2.2.1.2";
 const OID_DOT1Q_VLAN_STATIC_NAME: &str = "1.3.6.1.2.1.17.7.1.4.3.1.1";
 const OID_IF_NAME: &str = "1.3.6.1.2.1.31.1.1.1.1";
@@ -545,8 +547,15 @@ pub struct StpMibProbe;
 probe_impl!(StpMibProbe, "active:stp_mib", |ip: IpAddr, hint: &ProbeHint| async move {
     let addr = snmp_addr(ip, hint);
     let community = community_of(hint);
-    // local bridge MAC first: designated==local is a self-loop to skip
-    let Some(vars) = v2c_get_raw(addr, &community, hint.timeout, &[OID_DOT1D_BASE_BRIDGE_ADDRESS]).await
+    // One Get for both scalars: local bridge MAC + the network's designated
+    // root bridge ID (#525). The root may be absent on ancient agents.
+    let Some(vars) = v2c_get_raw(
+        addr,
+        &community,
+        hint.timeout,
+        &[OID_DOT1D_BASE_BRIDGE_ADDRESS, OID_DOT1D_STP_DESIGNATED_ROOT],
+    )
+    .await
     else {
         return Vec::new();
     };
@@ -557,14 +566,55 @@ probe_impl!(StpMibProbe, "active:stp_mib", |ip: IpAddr, hint: &ProbeHint| async 
     let Some(local_bridge) = octets_to_mac(value) else {
         return Vec::new();
     };
+    let mut root_bridge = String::new();
+    if let Some((rtag, rvalue)) = vars.get(1) {
+        if *rtag == 0x04 && rvalue.len() == 8 {
+            if let Some(mac) = octets_to_mac(&rvalue[2..8]) {
+                root_bridge = mac;
+            }
+        }
+    }
 
     let Some(designated) = walk_col_bytes(addr, &community, hint, OID_DOT1D_STP_PORT_DESIGNATED_BRIDGE).await
     else {
         return Vec::new();
     };
+    // Port roles (#525): best-effort, an agent without the column keeps the
+    // probe working with roles absent.
+    let port_roles = walk_col_int(addr, &community, hint, OID_DOT1D_STP_PORT_ROLE)
+        .await
+        .unwrap_or_default();
+    if designated.is_empty() && root_bridge.is_empty() && port_roles.is_empty() {
+        return Vec::new();
+    }
     let port_names = resolve_port_names(addr, &community, hint).await;
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
+
+    // Device-level STP facts (#525): is_root replaces root-detection
+    // heuristics; emitted even on the root bridge where every designated
+    // bridge is self and no edge survives.
+    if !root_bridge.is_empty() || !port_roles.is_empty() {
+        let ports = build_stp_ports(&port_roles, &port_names);
+        let mut e = ev("active:stp_mib", "stp", ip, 0.9);
+        e.port = 161;
+        e.protocol = "snmp".to_string();
+        e.raw_data = Some(
+            [
+                ("bridge_mac".to_string(), local_bridge.clone()),
+                ("root_bridge_mac".to_string(), root_bridge.clone()),
+                (
+                    "is_root".to_string(),
+                    (!root_bridge.is_empty() && root_bridge == local_bridge).to_string(),
+                ),
+                ("ports".to_string(), ports),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        out.push(e);
+    }
+
     for (port_suffix, value) in designated {
         let Ok(port) = port_suffix.parse::<i64>() else { continue };
         if port <= 0 || value.len() != 8 {
@@ -578,21 +628,57 @@ probe_impl!(StpMibProbe, "active:stp_mib", |ip: IpAddr, hint: &ProbeHint| async 
         if !seen.insert(mac.clone()) {
             continue; // first occurrence wins
         }
+        let mut rd: std::collections::BTreeMap<String, String> = [
+            ("neighbor_mac".to_string(), mac),
+            ("protocol".to_string(), "STP".to_string()),
+            ("local_port".to_string(), local_port_of(&port_names, port)),
+        ]
+        .into_iter()
+        .collect();
+        if let Some(role) = port_roles.get(&port_suffix) {
+            if let Some(v) = rd.get_mut("port_role") {
+                *v = stp_role_name(*role);
+            }
+        }
         let mut e = ev("active:stp_mib", "neighbor", ip, 0.7);
         e.port = 161;
-        e.raw_data = Some(
-            [
-                ("neighbor_mac".to_string(), mac),
-                ("protocol".to_string(), "STP".to_string()),
-                ("local_port".to_string(), local_port_of(&port_names, port)),
-            ]
-            .into_iter()
-            .collect(),
-        );
+        e.raw_data = Some(rd);
         out.push(e);
     }
     out
 });
+
+/// dot1dStpPortRole enum to name (Go stpRoleName parity); unknown values
+/// render numerically so a future MIB extension still surfaces.
+fn stp_role_name(v: i64) -> String {
+    match v {
+        1 => "disabled".into(),
+        2 => "alternate".into(),
+        3 => "backup".into(),
+        4 => "root".into(),
+        5 => "designated".into(),
+        other => other.to_string(),
+    }
+}
+
+/// Renders the per-port roles as "ifName=role,..." sorted by bridge port
+/// (numeric fallback when no ifName resolved). Go parity: same order, same
+/// key preference, same separators.
+fn build_stp_ports(roles: &std::collections::HashMap<String, i64>, port_names: &HashMap<i64, String>) -> String {
+    let mut ports: Vec<(i64, String)> = roles
+        .iter()
+        .filter_map(|(suffix, role)| suffix.parse::<i64>().ok().map(|p| (p, stp_role_name(*role))))
+        .collect();
+    ports.sort_by_key(|(p, _)| *p);
+    ports
+        .iter()
+        .map(|(p, role)| match port_names.get(p) {
+            Some(name) if !name.is_empty() => format!("{name}={role}"),
+            _ => format!("{p}={role}"),
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
 
 #[cfg(test)]
 mod tests {
@@ -706,6 +792,29 @@ mod tests {
         assert_eq!(vlan_tag_from_index("0.0"), None); // tag 0 rejected
         assert_eq!(vlan_tag_from_index("1").as_deref(), Some("1"));
         assert_eq!(vlan_tag_from_index("1.2.3"), None);
+    }
+
+    #[test]
+    fn stp_role_names_match_go() {
+        assert_eq!(stp_role_name(1), "disabled");
+        assert_eq!(stp_role_name(2), "alternate");
+        assert_eq!(stp_role_name(3), "backup");
+        assert_eq!(stp_role_name(4), "root");
+        assert_eq!(stp_role_name(5), "designated");
+        assert_eq!(stp_role_name(9), "9", "unknown values render numerically");
+    }
+
+    #[test]
+    fn stp_ports_string_sorted_with_ifname_preference() {
+        let mut roles = std::collections::HashMap::new();
+        roles.insert("2".to_string(), 5); // designated
+        roles.insert("1".to_string(), 4); // root
+        let mut names = std::collections::HashMap::new();
+        names.insert(1i64, "port11".to_string());
+        // port 1 resolves to its ifName, port 2 falls back to the numeric id;
+        // output is bridge-port sorted regardless of map iteration order.
+        assert_eq!(build_stp_ports(&roles, &names), "port11=root,2=designated");
+        assert_eq!(build_stp_ports(&std::collections::HashMap::new(), &names), "");
     }
 
     #[test]
