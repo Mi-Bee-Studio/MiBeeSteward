@@ -39,6 +39,7 @@ func DefaultProbeSources(portSpec string, oui *vendor.OUI, rdns RDNSConfig, mdns
 		NewRDNSProbeWithConfig(rdns),
 		NewMDNSProbeWithConfig(mdns),
 		NewSSDPProbe(),
+		NewWSDiscoveryProbe(),
 		NewNetBIOSProbe(),
 		NewBridgeMIBProbe(slog.Default()),
 		NewLLDPMIBProbe(slog.Default()),

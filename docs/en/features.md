@@ -19,7 +19,7 @@ This page is the complete capability inventory of MiBee Steward, baselined on **
 
 **Scanner engine v2**: a plugin-based five-layer pipeline (probe → classify → handle → persist → orchestrate). Adding a protocol means one Classifier + one Handler, the orchestration and persistence layers never change.
 
-- **Active probes**: ICMP, TCP port scan, SNMP (v1/v2c/v3 USM), HTTP, RTSP, ONVIF, ARP, mDNS/SSDP/NetBIOS (UDP), rDNS (configurable DNS servers), SMB2 negotiate, FTP banner; exponential-backoff retry (1s → 2s → 4s, network errors only).
+- **Active probes**: ICMP, TCP port scan, SNMP (v1/v2c/v3 USM), HTTP, RTSP, ONVIF, ARP, mDNS/SSDP/NetBIOS/WS-Discovery (UDP), rDNS (configurable DNS servers), SMB2 negotiate, FTP banner; exponential-backoff retry (1s → 2s → 4s, network errors only).
 - **Cascading deep collection**: find HTTP → probe `/metrics` → identify Prometheus → cascade to node_exporter → auto-backfill hardware info. One scan progressively refines the device portrait.
 - **Passive discovery service** (opt-in): ARP-diff plus passive mDNS/SSDP listening between scheduled scans shrinks the discovery-to-registry gap to about a minute.
 - **Router-resident sources** (when running on the router): DHCP leases (dnsmasq), conntrack table, hostapd WiFi stations (signal/association time), dnsmasq DNS query logs (passive DNS fingerprinting).

@@ -19,7 +19,7 @@
 
 **扫描引擎 v2**：插件化五层流水线（探测 → 分类 → 处理 → 持久化 → 编排），新增协议只需一个 Classifier + 一个 Handler，不触碰编排与持久化层。
 
-- **主动探测**：ICMP、TCP 端口扫描、SNMP（v1/v2c/v3 USM）、HTTP、RTSP、ONVIF、ARP、mDNS/SSDP/NetBIOS（UDP）、rDNS（可配置专用 DNS 服务器）、SMB2 协商、FTP banner；指数退避重试（1s → 2s → 4s，仅网络错误）。
+- **主动探测**：ICMP、TCP 端口扫描、SNMP（v1/v2c/v3 USM）、HTTP、RTSP、ONVIF、ARP、mDNS/SSDP/NetBIOS/WS-Discovery（UDP）、rDNS（可配置专用 DNS 服务器）、SMB2 协商、FTP banner；指数退避重试（1s → 2s → 4s，仅网络错误）。
 - **级联深采**：扫到 HTTP → 探测 `/metrics` → 识别为 Prometheus → 级联探测 node_exporter → 自动回填硬件信息，一次扫描把设备画像越滚越细。
 - **被动发现服务**（opt-in）：两次计划扫描之间用 ARP 差分 + mDNS/SSDP 被动监听近实时登记新设备，把发现到登记的间隔缩短到约 1 分钟。
 - **路由器侧数据源**（跑在路由器上时）：DHCP 租约（dnsmasq）、conntrack 连接表、hostapd WiFi 工作站（信号强度/关联时间）、dnsmasq DNS 查询日志（被动 DNS 指纹）。

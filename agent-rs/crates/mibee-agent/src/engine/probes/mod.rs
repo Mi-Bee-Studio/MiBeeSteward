@@ -17,6 +17,7 @@ pub mod snmp_v3;
 pub mod ssdp;
 pub mod tcp;
 pub mod tls;
+pub mod wsdiscovery;
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -104,7 +105,9 @@ pub fn default_probes_with_mdns_unicast(mdns_unicast: bool) -> Vec<Box<dyn Probe
         Box::new(http::HttpProbe),
         Box::new(simple::MetricsProbe),
         Box::new(icmp::IcmpProbe),
-        Box::new(mdns::MdnsProbe { unicast: mdns_unicast }),
+        Box::new(mdns::MdnsProbe {
+            unicast: mdns_unicast,
+        }),
         Box::new(netbios::NetbiosProbe),
         Box::new(simple::OnvifProbe),
         Box::new(l2_mib::BridgeMibProbe),
@@ -118,6 +121,7 @@ pub fn default_probes_with_mdns_unicast(mdns_unicast: bool) -> Vec<Box<dyn Probe
         Box::new(smb::SmbProbe),
         Box::new(ssdp::SsdpProbe),
         Box::new(tcp::TcpPortsProbe),
+        Box::new(wsdiscovery::WsDiscoveryProbe),
         Box::new(tls::TlsProbe),
     ];
     probes.sort_by_key(|p| p.name());
