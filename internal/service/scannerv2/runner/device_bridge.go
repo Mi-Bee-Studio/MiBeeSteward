@@ -198,9 +198,13 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				// discovered once and then never probed again, it would show
 				// "no heartbeat" forever even though we just proved it's alive.
 				// Fall back to an ICMP config so every discovered host gets at least
-				// liveness monitoring. The device already has an IP (rep.IP) and was
-				// reached by the scan, so ICMP is always a valid probe target.
-				if herr := rn.heartbeat.CreateDefaultConfig(ctx, devID, rep.IP); herr != nil {
+				// liveness monitoring — but only when the report carries a real
+				// address: a MAC-anchored chassis row (#522) has nothing to probe
+				// yet; the ICMP config is seeded when a scan fills the address.
+				if scannerv2.CarriesNoLocation(rep.IP) {
+					rn.logger.Debug("device bridge: chassis-anchored device awaits an address, heartbeat deferred",
+						"mac", mac)
+				} else if herr := rn.heartbeat.CreateDefaultConfig(ctx, devID, rep.IP); herr != nil {
 					rn.logger.Warn("device bridge: seed ICMP fallback heartbeat failed", "ip", rep.IP, "error", herr)
 				}
 			}
@@ -308,7 +312,13 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 					rn.logger.Warn("device bridge: backfill heartbeats failed", "ip", rep.IP, "error", herr)
 				}
 			} else {
-				if herr := rn.heartbeat.CreateDefaultConfig(ctx, existingID, rep.IP); herr != nil {
+				// A MAC-anchored row re-sighted without an address (#522) still
+				// has nothing to probe; the backfill fires on the scan that
+				// brings the address instead.
+				if scannerv2.CarriesNoLocation(rep.IP) {
+					rn.logger.Debug("device bridge: chassis-anchored device awaits an address, backfill deferred",
+						"mac", mac)
+				} else if herr := rn.heartbeat.CreateDefaultConfig(ctx, existingID, rep.IP); herr != nil {
 					rn.logger.Warn("device bridge: backfill ICMP fallback heartbeat failed", "ip", rep.IP, "error", herr)
 				}
 			}
@@ -329,7 +339,7 @@ func (rn *Runner) buildIdentityWrite(rep scannerv2.HostReport, mac, devType, bra
 		IP:                   rep.IP,
 		MAC:                  mac,
 		NetworkID:            networkID,
-		Name:                 deviceDisplayName(rep),
+		Name:                 deviceDisplayName(rep, mac),
 		Type:                 devType,
 		Brand:                brand,
 		Model:                rep.Device.Fields["inferred_model"],
@@ -548,7 +558,11 @@ func (rn *Runner) deviceHasHeartbeatConfig(ctx context.Context, deviceID int64) 
 // IP even though scan_attributes.hostname carries the real name. See issue #19
 // follow-up (the "62 scan looked more complete than 63" report, root cause was
 // devices.name showing IP while hostname lived only in scan_attributes).
-func deviceDisplayName(rep scannerv2.HostReport) string {
+// deviceDisplayName picks the most honest human label for a report: an
+// announced hostname first, the report IP when it is a real address, and the
+// MAC last — a MAC-anchored chassis row (#522) has no hostname and only a
+// sentinel IP, showing the sentinel string as the name would be noise.
+func deviceDisplayName(rep scannerv2.HostReport, mac string) string {
 	if h := rep.Device.Fields["node_hostname"]; h != "" {
 		return h
 	}
@@ -558,7 +572,10 @@ func deviceDisplayName(rep scannerv2.HostReport) string {
 	if h := buildScanAttributes(rep).Hostname; h != "" {
 		return h
 	}
-	return rep.IP
+	if !scannerv2.CarriesNoLocation(rep.IP) {
+		return rep.IP
+	}
+	return mac
 }
 
 // deviceScanInfoJSON returns the open_ports + detected_services JSON for the

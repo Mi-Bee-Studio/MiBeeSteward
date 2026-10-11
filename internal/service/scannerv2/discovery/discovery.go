@@ -159,6 +159,7 @@ type statsSnapshot struct {
 	IdentifyDead      int64 // identify scan found host unresponsive (synthesized instead)
 	DeviceRecorded    int64 // sink.Apply created a new device
 	MACOnlyEnriched   int64 // MAC-only sighting merged wifi telemetry into a known device
+	MACOnlyAnchored   int64 // MAC-only sighting of an unknown chassis synthesized a device row (#522)
 	OffNetworkDropped int64 // dropped: matched no known CIDR while geometry exists
 }
 
@@ -174,6 +175,30 @@ type recentEvent struct {
 const maxRecentEvents = 20
 
 const dedupTTL = 5 * time.Minute
+
+// macAnchorSources are the discovery sources whose MAC-only sightings vouch
+// independent L2 presence — the device physically transmitted a frame on the
+// wire (LLDP/CDP chassis broadcast, NDP packet) — and may therefore anchor a
+// device row for an unknown MAC (#522). Sources like hostapd associations
+// report the AP's view of a client, not a frame from the client itself, and
+// stay enrich-existing-only.
+var macAnchorSources = map[string]bool{
+	"lldp_frame":      true,
+	"cdp_frame":       true,
+	"passive:ebpf:nd": true,
+}
+
+// hasWiFiHints reports whether a MAC-only event carries WiFi telemetry worth
+// persisting (hostapd signal/SSID/connect-time). Re-sightings without hints
+// must not write junk blobs.
+func hasWiFiHints(ev NewHostEvent) bool {
+	for _, k := range []string{"wifi_signal_dbm", "wifi_ssid", "wifi_connected_secs"} {
+		if ev.Hints[k] != "" {
+			return true
+		}
+	}
+	return false
+}
 
 // New constructs the coordinator. dbConn is used for the known-host pre-check
 // (SELECT from devices); networkID tags synthesized reports with the origin
@@ -426,14 +451,20 @@ func (s *Service) handle(ctx context.Context, ev NewHostEvent) {
 	}
 }
 
-// handleMACOnly processes an L2-only sighting (a WiFi association from the
-// hostapd source): the STA's MAC with no IP yet. A MAC that already matches a
-// device gets its WiFi telemetry (signal, SSID, connect time) merged into
-// scan_attributes, enrich-only: no IP, status, or identity writes, the
-// device's IP stays whatever ARP/DHCP/scan last observed. A MAC with no
-// existing device is dropped, no device is fabricated for a MAC with no L3
-// sighting. The device bridge is deliberately bypassed: its identity path
-// treats an empty IP as a roam target and would blank the device's IP.
+// handleMACOnly processes an L2-only sighting (no IP). Two doctrines by source:
+//
+//   - L2 witnesses (macAnchorSources: LLDP/CDP chassis frames, NDP packets)
+//     vouch the device is physically on the wire. An unknown chassis
+//     synthesizes a MAC-anchored device row through the device bridge (#522):
+//     the report IP is the anchor sentinel, so identity resolves purely by MAC
+//     and the row merges into the real one when a scan or ARP sighting later
+//     fills the address. A known chassis is a skip — the neighbor-edge path
+//     owns its topology, there is nothing to enrich.
+//   - Other MAC-only sources (hostapd WiFi associations) stay enrich-only: a
+//     known device gets its WiFi telemetry merged into scan_attributes; an
+//     unknown MAC is dropped, no device is fabricated. The device bridge is
+//     bypassed on this path: its identity treats a missing IP as a roam target
+//     and would blank the device's IP.
 func (s *Service) handleMACOnly(ctx context.Context, ev NewHostEvent) {
 	s.statsMu.Lock()
 	s.stats.EventsReceived++
@@ -460,7 +491,37 @@ func (s *Service) handleMACOnly(ctx context.Context, ev NewHostEvent) {
 		return
 	}
 	if !known {
+		if macAnchorSources[ev.Source] {
+			rep := synthesizeReport(ev)
+			// The anchor sentinel is the report's whole point: unique per MAC
+			// (the unique (ip, network_id) index tolerates several chassis
+			// rows in one network) and matched by no IP lookup, so the bridge
+			// resolves this row purely by MAC until a real address lands.
+			anchor := scannerv2.AnchorIP(ev.MAC)
+			rep.IP = anchor
+			rep.Device.IP = anchor
+			if isNew := s.sink.Apply(ctx, rep); isNew {
+				s.statsMu.Lock()
+				s.stats.MACOnlyAnchored++
+				s.stats.DeviceRecorded++
+				s.statsMu.Unlock()
+				s.logger.Info("discovery: chassis sighted, device anchored by MAC",
+					"mac", ev.MAC, "source", ev.Source)
+				s.recordEvent(ev, "anchored_mac")
+			} else {
+				s.recordEvent(ev, "skipped_known")
+			}
+			return
+		}
 		s.recordEvent(ev, "skipped_unknown_mac")
+		return
+	}
+
+	// Known MAC: merge WiFi telemetry only from non-witness sources that
+	// actually carry some (hostapd signal/SSID). A witness re-sighting has
+	// nothing to add — no junk blob.
+	if macAnchorSources[ev.Source] || !hasWiFiHints(ev) {
+		s.recordEvent(ev, "skipped_known")
 		return
 	}
 

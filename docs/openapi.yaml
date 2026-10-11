@@ -2528,6 +2528,7 @@ components:
             DeviceRecorded: {type: integer, format: int64}
             OffNetworkDropped: {type: integer, format: int64, description: Sightings dropped because they matched no known network CIDR while at least one exists}
             MACOnlyEnriched: {type: integer, format: int64, description: MAC-only sightings (WiFi associations) whose telemetry was merged into a known device}
+            MACOnlyAnchored: {type: integer, format: int64, description: MAC-only sightings from L2-witness sources (LLDP/CDP chassis, NDP) of unknown MACs that anchored a new device row}
         recent_discoveries:
           type: array
           items:

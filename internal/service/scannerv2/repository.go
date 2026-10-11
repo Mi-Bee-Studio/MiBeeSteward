@@ -12,7 +12,36 @@ package scannerv2
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
+
+// AnchorIPPrefix marks a device row whose IP is a placeholder, not a location:
+// rows synthesized from MAC-only sightings (LLDP/CDP chassis, NDP) until a
+// scan or ARP sighting fills in a real address. Same doctrine as the store's
+// '#park:' sentinels — unique by construction (the MAC is the identity), so
+// the (ip_address, network_id) unique index tolerates several of them per
+// network, and no IP-based lookup ever matches them.
+const AnchorIPPrefix = "#anchor:"
+
+// AnchorIP builds the placeholder IP for a MAC-only sighting's device row.
+func AnchorIP(mac string) string { return AnchorIPPrefix + mac }
+
+// CarriesNoLocation reports whether an IP string asserts nothing about where
+// a device sits: empty, or an anchor placeholder. Identity resolution treats
+// such reports as MAC-only — they must never drive the (ip, network_id)
+// fallback, a slot take-over, or a roam decision.
+func CarriesNoLocation(ip string) bool {
+	return ip == "" || strings.HasPrefix(ip, AnchorIPPrefix)
+}
+
+// IPMACPair is one local interface binding the anchor step (#522) writes:
+// the interface's IPv4 address and its MAC. The scan center knows these from
+// the OS — the one identity fact ARP self-scan can never learn (loopback
+// shortcut, no wire frame).
+type IPMACPair struct {
+	IP  string
+	MAC string
+}
 
 // Repository is the ④ Persistence abstraction. The orchestrator and handlers
 // depend only on this interface, never on sqlc types or *sql.DB. The concrete
@@ -53,6 +82,13 @@ type Repository interface {
 	// Same upsert semantics as RecordNeighbors; an unknown local MAC is a
 	// silent skip so a not-yet-inventoried listener host is not an error.
 	RecordNeighborsByMAC(ctx context.Context, localMAC string, neighbors []NeighborSpec) error
+
+	// AnchorLocalInterfaces fills the MAC into device rows matching the
+	// center's own interface IPs (#522): self-scan can never learn these
+	// (local ARP takes the loopback shortcut), and without the anchor every
+	// MAC-keyed neighbor source silently drops its rows. Fill-empty-only,
+	// scoped to the caller's network; returns how many rows were anchored.
+	AnchorLocalInterfaces(ctx context.Context, networkID sql.NullInt64, pairs []IPMACPair) (int64, error)
 
 	// EnrichDeviceByMAC updates vendor/model/type/hostname fields for a device
 	// identified by MAC address. Only updates existing devices, no insert
@@ -188,6 +224,10 @@ func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error    
 func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error    { return nil }
 func (NoopRepository) RecordNeighbors(context.Context, string, []NeighborSpec) error      { return nil }
 func (NoopRepository) RecordNeighborsByMAC(context.Context, string, []NeighborSpec) error { return nil }
+
+func (NoopRepository) AnchorLocalInterfaces(context.Context, sql.NullInt64, []IPMACPair) (int64, error) {
+	return 0, nil
+}
 func (NoopRepository) EnrichDeviceByMAC(context.Context, string, map[string]string) error { return nil }
 func (NoopRepository) RecordTLSCerts(context.Context, string, []TLSCertRecord) error      { return nil }
 

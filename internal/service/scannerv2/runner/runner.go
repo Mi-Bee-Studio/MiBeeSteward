@@ -324,6 +324,13 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	//     context so a server shutdown mid-finalize doesn't skip it.
 	rn.DetectLost(context.Background(), rn.networkID, taskID, reports, "")
 
+	// 3c.5 Local anchor (#522): fill the center's own interface MACs into its
+	//     device rows. Self-scan can never learn them (local ARP takes the
+	//     loopback shortcut), and the MAC-keyed neighbor sources resolve their
+	//     local end against exactly these rows. Runs every scan so a row
+	//     created by this scan is anchored by it too.
+	rn.AnchorLocalInterfaces(context.Background())
+
 	// 3d. ARP-derived topology edges: walk the local kernel's ARP cache once
 	//     and write device→gateway edges (protocol="ARP") to device_neighbors.
 	//     This is the ONLY topology source when no device speaks SNMP, it

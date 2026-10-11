@@ -134,6 +134,10 @@ func (r *recordRepo) RecordNeighborsByMAC(_ context.Context, _ string, _ []Neigh
 	return nil
 }
 
+func (r *recordRepo) AnchorLocalInterfaces(_ context.Context, _ sql.NullInt64, _ []IPMACPair) (int64, error) {
+	return 0, nil
+}
+
 func (r *recordRepo) EnrichDeviceByMAC(_ context.Context, _ string, _ map[string]string) error {
 	return nil
 }
