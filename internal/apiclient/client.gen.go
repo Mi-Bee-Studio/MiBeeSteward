@@ -1127,6 +1127,9 @@ type DiscoveryStatus struct {
 		IdentifyTriggered int64 `json:"IdentifyTriggered"`
 		KnownHostSkipped  int64 `json:"KnownHostSkipped"`
 
+		// MACOnlyAnchored MAC-only sightings from L2-witness sources (LLDP/CDP chassis
+		MACOnlyAnchored *int64 `json:"MACOnlyAnchored,omitempty"`
+
 		// MACOnlyEnriched MAC-only sightings (WiFi associations) whose telemetry was merged into a known device
 		MACOnlyEnriched *int64 `json:"MACOnlyEnriched,omitempty"`
 

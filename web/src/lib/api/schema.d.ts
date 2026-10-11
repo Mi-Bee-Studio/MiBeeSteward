@@ -6153,6 +6153,11 @@ export interface components {
                  * @description MAC-only sightings (WiFi associations) whose telemetry was merged into a known device
                  */
                 MACOnlyEnriched?: number;
+                /**
+                 * Format: int64
+                 * @description MAC-only sightings from L2-witness sources (LLDP/CDP chassis
+                 */
+                MACOnlyAnchored?: number;
             };
             recent_discoveries: {
                 ip: string;

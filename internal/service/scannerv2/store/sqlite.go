@@ -545,6 +545,13 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 		`SELECT id FROM devices WHERE mac_address = ?
 		 ORDER BY (status='online') DESC, last_seen DESC LIMIT 1`, mac).Scan(&targetID)
 	if err == sql.ErrNoRows {
+		// A no-location report (empty IP, or an anchor placeholder from the
+		// chassis synthesizer, #522) carries no slot identity: it can neither
+		// match the (ip, network_id) fallback nor take over a holder. The MAC
+		// is the whole identity — a miss means new.
+		if scannerv2.CarriesNoLocation(ip) {
+			return scannerv2.IdentityResolution{IsNew: true}, nil
+		}
 		// MAC not seen before. Fall back to (ip, network_id) with empty mac so a
 		// device first seen MAC-less gets its mac filled on this scan.
 		if networkID.Valid {
@@ -610,7 +617,10 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 	}
 
 	// MAC matched a row. Check whether it sits on the scanned ip; if so, this is
-	// the normal update path (no replacement).
+	// the normal update path (no replacement). A no-location report (empty IP /
+	// anchor placeholder, #522) is also a plain match: "no IP information" must
+	// never read as "roamed away from the recorded IP" — that would blank the
+	// row's address on every chassis re-sighting.
 	var macRowIP string
 	var macRowMAC string
 	if qerr := r.db.QueryRowContext(ctx,
@@ -618,8 +628,8 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 		// Failing to read the row's ip is unexpected; proceed with the plain match.
 		return scannerv2.IdentityResolution{TargetID: targetID}, nil
 	}
-	if macRowIP == ip {
-		return scannerv2.IdentityResolution{TargetID: targetID}, nil // same ip: normal update.
+	if macRowIP == ip || scannerv2.CarriesNoLocation(ip) {
+		return scannerv2.IdentityResolution{TargetID: targetID}, nil // same ip (or no ip info): normal update.
 	}
 
 	// MAC matched a device on a DIFFERENT ip than the one being scanned. Check
@@ -1335,6 +1345,44 @@ func (r *SQLiteRepository) RecordNeighborsByMAC(ctx context.Context, localMAC st
 		}
 	}
 	return tx.Commit()
+}
+
+// AnchorLocalInterfaces fills the MAC into device rows sitting on the scan
+// center's own interface IPs (#522). The center's self-scan can never learn
+// its own MACs: ARP to a local address takes the kernel's loopback shortcut,
+// no wire frame is ever seen — so the center's device row stayed MAC-less and
+// every MAC-keyed neighbor source (LLDP/CDP frame listeners, hostapd edges)
+// silently dropped its rows for lack of a local anchor.
+//
+// Fill-empty-only (a learned MAC on the row is trusted as-is), scoped by the
+// per-call network (same clause as the identity methods — a same-string IP in
+// a foreign network is not ours to touch). Returns the number of rows
+// anchored; failures on one pair don't abort the rest.
+func (r *SQLiteRepository) AnchorLocalInterfaces(ctx context.Context, networkID sql.NullInt64, pairs []scannerv2.IPMACPair) (int64, error) {
+	if len(pairs) == 0 {
+		return 0, nil
+	}
+	netClause, netArg := identityNetworkClause(networkID)
+
+	var anchored int64
+	for _, p := range pairs {
+		mac := NormalizeMAC(p.MAC)
+		if mac == "" || p.IP == "" || scannerv2.CarriesNoLocation(p.IP) {
+			continue
+		}
+		res, err := r.db.ExecContext(ctx, `
+			UPDATE devices SET mac_address = ?, updated_at = ?
+			WHERE ip_address = ? AND `+netClause+` AND (mac_address IS NULL OR mac_address = '')`,
+			append([]any{mac, scannerv2.DBTime(time.Now()), p.IP}, netArg...)...)
+		if err != nil {
+			r.logger.Debug("anchor local interface failed", "ip", p.IP, "error", err)
+			continue
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			anchored += n
+		}
+	}
+	return anchored, nil
 }
 
 // EnrichDeviceByMAC updates vendor/model/type/hostname fields for a device

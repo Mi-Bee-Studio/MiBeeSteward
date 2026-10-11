@@ -29,13 +29,13 @@ func TestDeviceDisplayName(t *testing.T) {
 	t.Run("node_hostname field wins", func(t *testing.T) {
 		rep := scannerv2.HostReport{IP: ip}
 		rep.Device.Fields = map[string]string{"node_hostname": "FROM-FIELD"}
-		require.Equal(t, "FROM-FIELD", deviceDisplayName(rep))
+		require.Equal(t, "FROM-FIELD", deviceDisplayName(rep, ""))
 	})
 
 	t.Run("sys_name field is second priority", func(t *testing.T) {
 		rep := scannerv2.HostReport{IP: ip}
 		rep.Device.Fields = map[string]string{"sys_name": "FROM-SYSNAME"}
-		require.Equal(t, "FROM-SYSNAME", deviceDisplayName(rep))
+		require.Equal(t, "FROM-SYSNAME", deviceDisplayName(rep, ""))
 	})
 
 	t.Run("merged scan_attributes hostname (mDNS evidence) is third", func(t *testing.T) {
@@ -47,7 +47,7 @@ func TestDeviceDisplayName(t *testing.T) {
 		rep.Evidence = []scannerv2.Evidence{
 			{Kind: "hostname", RawData: map[string]string{"hostname": "MICKEYBEESSD"}},
 		}
-		require.Equal(t, "MICKEYBEESSD", deviceDisplayName(rep))
+		require.Equal(t, "MICKEYBEESSD", deviceDisplayName(rep, ""))
 	})
 
 	t.Run("SNMP sysName evidence feeds hostname fallback", func(t *testing.T) {
@@ -58,11 +58,11 @@ func TestDeviceDisplayName(t *testing.T) {
 		rep.Evidence = []scannerv2.Evidence{
 			{Kind: "snmp", RawData: map[string]string{"sys_name": "NANOPIR4S"}},
 		}
-		require.Equal(t, "NANOPIR4S", deviceDisplayName(rep))
+		require.Equal(t, "NANOPIR4S", deviceDisplayName(rep, ""))
 	})
 
 	t.Run("falls back to IP when no hostname anywhere", func(t *testing.T) {
 		rep := scannerv2.HostReport{IP: ip}
-		require.Equal(t, ip, deviceDisplayName(rep))
+		require.Equal(t, ip, deviceDisplayName(rep, ""))
 	})
 }

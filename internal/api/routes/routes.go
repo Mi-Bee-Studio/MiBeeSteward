@@ -352,6 +352,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	scanRunner := scannerv2runner.New(v2Engine, scanQueries, scannerDB, heartbeatSvc, networkID, slog.Default())
 	scanRunner.SetRepo(v2Engine.Repository)                // device-identity upsert (ResolveDeviceIdentity / ApplyDeviceIdentity)
 	scanRunner.SetLostThreshold(cfg.Scanner.LostThreshold) // scanner.lost_threshold (default 2; <=0 keeps default)
+	// Local anchor (#522), startup pass: fill the center's own interface MACs
+	// into its device rows so MAC-keyed neighbor sources (LLDP/CDP frames,
+	// hostapd edges) find their local anchor immediately after an upgrade,
+	// without waiting for the first scan. The per-scan finalize repeats it.
+	scanRunner.AnchorLocalInterfaces(context.Background())
 
 	// Change detection (Phase 3): the center records device_added/changed/lost
 	// events to change_log + pushes in-process Watcher subscribers. The agent
@@ -625,9 +630,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// ARP/ND passive presence (#497): the eBPF observer's wire-level sightings
 	// enter through the SAME discovery funnel as the other sources (dedup,
 	// known-host gate, optional identify) — a presence fact, not scan evidence.
-	// ND sightings carry no IPv4 and wait for the MAC-keyed channel (#522).
+	// ND sightings carry no IPv4; they ride the MAC-keyed channel (#522): an
+	// unknown MAC anchors a device row, a known one is deduped away.
 	scannerv2ebpf.SetHostSighting(func(ip, mac string) {
-		if ip == "" || mac == "" {
+		if mac == "" {
+			return
+		}
+		if ip == "" {
+			discSvc.Emit(scannerv2discovery.NewHostEvent{IP: "", MAC: mac, Source: "passive:ebpf:nd"})
 			return
 		}
 		discSvc.Emit(scannerv2discovery.NewHostEvent{
