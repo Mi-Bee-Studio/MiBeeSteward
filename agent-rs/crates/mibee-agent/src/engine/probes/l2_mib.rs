@@ -27,6 +27,16 @@ const OID_DOT1D_STP_PORT_ROLE: &str = "1.3.6.1.2.1.17.2.2.1.18";
 const OID_DOT1Q_TP_FDB_PORT: &str = "1.3.6.1.2.1.17.7.1.2.2.1.2";
 const OID_DOT1Q_VLAN_STATIC_NAME: &str = "1.3.6.1.2.1.17.7.1.4.3.1.1";
 const OID_IF_NAME: &str = "1.3.6.1.2.1.31.1.1.1.1";
+const OID_IF_DESCR: &str = "1.3.6.1.2.1.2.2.1.2";
+const OID_IF_SPEED: &str = "1.3.6.1.2.1.2.2.1.5";
+const OID_IF_PHYS_ADDR: &str = "1.3.6.1.2.1.2.2.1.6";
+const OID_IP_AD_ENT_IF_INDEX: &str = "1.3.6.1.2.1.4.20.1.2";
+const OID_IP_ROUTE_DEST: &str = "1.3.6.1.2.1.4.21.1.1";
+const OID_IP_ROUTE_IF_INDEX: &str = "1.3.6.1.2.1.4.21.1.2";
+const OID_IP_ROUTE_NEXT_HOP: &str = "1.3.6.1.2.1.4.21.1.7";
+const OID_IP_ROUTE_TYPE: &str = "1.3.6.1.2.1.4.21.1.8";
+const OID_IP_ROUTE_PROTO: &str = "1.3.6.1.2.1.4.21.1.9";
+const OID_IP_ROUTE_MASK: &str = "1.3.6.1.2.1.4.21.1.11";
 const OID_LLDP_REM_TABLE: &str = "1.0.8802.1.1.2.1.4.1";
 const OID_LLDP_REM_CHASSIS_SUB: &str = "1.0.8802.1.1.2.1.4.1.1.4";
 const OID_LLDP_REM_CHASSIS_ID: &str = "1.0.8802.1.1.2.1.4.1.1.5";
@@ -41,11 +51,13 @@ const OID_CDP_VERSION: &str = "1.3.6.1.4.1.9.9.23.1.2.1.1.6";
 
 /// The registry names of this family — the orchestrator's gather gate and
 /// the tests partition the registry on this list.
-pub const L2_PROBE_NAMES: [&str; 5] = [
+pub const L2_PROBE_NAMES: [&str; 7] = [
     "active:bridge_mib",
     "active:cdp_mib",
+    "active:if_mib",
     "active:lldp_mib",
     "active:q_bridge_mib",
+    "active:route_mib",
     "active:stp_mib",
 ];
 
@@ -680,6 +692,138 @@ fn build_stp_ports(roles: &std::collections::HashMap<String, i64>, port_names: &
         .join(",")
 }
 
+// ---- IF-MIB interface census (#529) ----
+
+pub struct IfMibProbe;
+
+probe_impl!(IfMibProbe, "active:if_mib", |ip: IpAddr, hint: &ProbeHint| async move {
+    let addr = snmp_addr(ip, hint);
+    let community = community_of(hint);
+    let names = walk_col_bytes(addr, &community, hint, OID_IF_NAME).await.unwrap_or_default();
+    let descrs = walk_col_bytes(addr, &community, hint, OID_IF_DESCR).await.unwrap_or_default();
+    let macs = walk_col_bytes(addr, &community, hint, OID_IF_PHYS_ADDR).await.unwrap_or_default();
+    let speeds = walk_col_int(addr, &community, hint, OID_IF_SPEED).await.unwrap_or_default();
+    let ip_if = walk_col_int(addr, &community, hint, OID_IP_AD_ENT_IF_INDEX).await.unwrap_or_default();
+    if names.is_empty() && descrs.is_empty() {
+        return Vec::new();
+    }
+
+    // ipAddrTable is keyed BY the IP (dotted-octet suffix); invert to
+    // ifIndex -> first IP for the census row.
+    let mut ip_by_if: HashMap<String, String> = HashMap::new();
+    for (ip_key, if_index) in &ip_if {
+        let parts: Vec<&str> = ip_key.split('.').collect();
+        if parts.len() == 4 {
+            ip_by_if.entry(if_index.to_string()).or_insert_with(|| ip_key.clone());
+        }
+    }
+
+    let mut indices: Vec<i64> = names
+        .keys()
+        .chain(descrs.keys())
+        .filter_map(|k| k.parse::<i64>().ok())
+        .collect();
+    indices.sort();
+    indices.dedup();
+
+    let mut out = Vec::new();
+    for idx in indices {
+        let key = idx.to_string();
+        let mac = macs
+            .get(&key)
+            .and_then(|b| (b.len() == 6).then(|| octets_to_mac(b)))
+            .flatten()
+            .unwrap_or_default();
+        let ip_opt = ip_by_if.get(&key).cloned().unwrap_or_default();
+        if mac.is_empty() && ip_opt.is_empty() {
+            continue;
+        }
+        let name = names
+            .get(&key)
+            .map(|b| String::from_utf8_lossy(b).to_string())
+            .unwrap_or_default();
+        let descr = descrs
+            .get(&key)
+            .map(|b| String::from_utf8_lossy(b).to_string())
+            .unwrap_or_default();
+        let display = if !name.is_empty() { name.clone() } else { descr.clone() };
+        let mut rd = vec![
+            ("if_index".to_string(), key.clone()),
+            ("if_name".to_string(), display),
+            ("if_descr".to_string(), descr),
+            ("mac".to_string(), mac),
+            ("ip".to_string(), ip_opt),
+        ];
+        if let Some(sp) = speeds.get(&key) {
+            if *sp > 0 {
+                rd.push(("speed_mbps".to_string(), (sp / 1_000_000).to_string()));
+            }
+        }
+        let mut e = ev("active:if_mib", "interface", ip, 0.9);
+        e.port = 161;
+        e.protocol = "snmp".to_string();
+        e.raw_data = Some(rd.into_iter().collect());
+        out.push(e);
+    }
+    out
+});
+
+// ---- Route-MIB ipRouteTable (#528) ----
+
+pub struct RouteMibProbe;
+
+probe_impl!(RouteMibProbe, "active:route_mib", |ip: IpAddr, hint: &ProbeHint| async move {
+    let addr = snmp_addr(ip, hint);
+    let community = community_of(hint);
+    let dests = walk_col_bytes(addr, &community, hint, OID_IP_ROUTE_DEST).await.unwrap_or_default();
+    if dests.is_empty() {
+        return Vec::new();
+    }
+    let hops = walk_col_bytes(addr, &community, hint, OID_IP_ROUTE_NEXT_HOP).await.unwrap_or_default();
+    let types = walk_col_int(addr, &community, hint, OID_IP_ROUTE_TYPE).await.unwrap_or_default();
+    let protos = walk_col_int(addr, &community, hint, OID_IP_ROUTE_PROTO).await.unwrap_or_default();
+    let masks = walk_col_bytes(addr, &community, hint, OID_IP_ROUTE_MASK).await.unwrap_or_default();
+    let if_idx = walk_col_int(addr, &community, hint, OID_IP_ROUTE_IF_INDEX).await.unwrap_or_default();
+
+    let mut out = Vec::new();
+    for (key, dest_b) in &dests {
+        if types.get(key) == Some(&3) {
+            continue; // direct route: connected-subnet fact lives elsewhere
+        }
+        let hop = hops.get(key).and_then(|b| (b.len() == 4).then(|| octets_to_dotted(b))).unwrap_or_default();
+        if hop.is_empty() || hop == "0.0.0.0" {
+            continue;
+        }
+        let dest = octets_to_dotted(dest_b);
+        let mask_bits = masks
+            .get(key)
+            .and_then(|b| (b.len() == 4).then(|| mask_bits_of(b)))
+            .unwrap_or(0);
+        let mut rd = vec![
+            ("dest".to_string(), format!("{dest}/{mask_bits}")),
+            ("next_hop".to_string(), hop),
+            ("if_index".to_string(), if_idx.get(key).unwrap_or(&0).to_string()),
+            ("proto".to_string(), protos.get(key).unwrap_or(&0).to_string()),
+        ];
+        let mut e = ev("active:route_mib", "route", ip, 0.9);
+        e.port = 161;
+        e.protocol = "snmp".to_string();
+        e.raw_data = Some(rd.into_iter().collect());
+        out.push(e);
+    }
+    out
+});
+
+/// 4 raw octets -> dotted IPv4 (Go octetsToDotted parity).
+fn octets_to_dotted(b: &[u8]) -> String {
+    format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3])
+}
+
+/// Dotted netmask bytes -> prefix length (Go maskBits parity).
+fn mask_bits_of(b: &[u8]) -> u32 {
+    b.iter().map(|o| o.count_ones()).sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -792,6 +936,15 @@ mod tests {
         assert_eq!(vlan_tag_from_index("0.0"), None); // tag 0 rejected
         assert_eq!(vlan_tag_from_index("1").as_deref(), Some("1"));
         assert_eq!(vlan_tag_from_index("1.2.3"), None);
+    }
+
+    #[test]
+    fn if_route_helpers_match_go() {
+        assert_eq!(octets_to_dotted(&[172, 16, 0, 0]), "172.16.0.0");
+        assert_eq!(octets_to_dotted(&[0, 0, 0, 0]), "0.0.0.0");
+        assert_eq!(mask_bits_of(&[255, 255, 0, 0]), 16);
+        assert_eq!(mask_bits_of(&[255, 255, 255, 0]), 24);
+        assert_eq!(mask_bits_of(&[0, 0, 0, 0]), 0);
     }
 
     #[test]

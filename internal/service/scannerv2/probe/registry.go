@@ -46,5 +46,7 @@ func DefaultProbeSources(portSpec string, oui *vendor.OUI, rdns RDNSConfig, mdns
 		NewQBridgeMIBProbe(slog.Default()),
 		NewCDPMIBProbe(slog.Default()),
 		NewSTPMIBProbe(slog.Default()),
+		NewIFMIBProbe(slog.Default()),
+		NewRouteMIBProbe(slog.Default()),
 	}
 }

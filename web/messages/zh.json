@@ -1176,7 +1176,15 @@
 		"Sightings Local": "本机",
 		"Neighbors Vantage": "视角",
 		"Multi Homed": "多网归属",
-		"Multi Homed Desc": "同时活跃于多个网段——按网采集的在网事实。"
+		"Multi Homed Desc": "同时活跃于多个网段——按网采集的在网事实。",
+		"Interfaces": "接口清单",
+		"Interfaces Desc": "来自 IF-MIB 与 ipAddrTable 的设备自身端口：序号、名称、MAC、链路速率，以及每个端口的地址——单一地址列表达不了的细节。",
+		"Interfaces Empty": "暂无接口清单——设备应答 SNMP（IF-MIB）后采集。",
+		"Interfaces IfIndex": "序号",
+		"Interfaces Port": "端口",
+		"Interfaces MAC": "MAC",
+		"Interfaces Speed": "速率",
+		"Interfaces IP": "地址"
 	},
 	"certificates": {
 		"Title": "TLS 证书",

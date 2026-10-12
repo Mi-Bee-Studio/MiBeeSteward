@@ -466,6 +466,22 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/SightingList"}
+  /devices/{id}/interfaces:
+    get:
+      tags: [Devices]
+      summary: Interface census of a device (#529, IF-MIB + ipAddrTable)
+      description: >-
+        The device's own port list - ifIndex, name, description, MAC, link
+        speed, and the IPv4 each port answers at. This is the multi-homed
+        detail the single devices.ip_address row cannot express. Ordered by
+        ifIndex; vanished ports keep their frozen last-seen row.
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Interfaces envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InterfaceList"}
   /devices/{id}/certificates:
     get:
       tags: [Devices]
@@ -1965,6 +1981,25 @@ components:
       properties:
         sightings: {type: array, items: {$ref: "#/components/schemas/DeviceSighting"}}
         total: {type: integer}
+    DeviceInterface:
+      type: object
+      description: One port of the device's interface census (#529).
+      required: [id, if_index, if_name, first_seen, last_seen]
+      properties:
+        id: {type: integer, format: int64}
+        if_index: {type: integer}
+        if_name: {type: string}
+        if_descr: {type: string}
+        mac_address: {type: string}
+        ip_address: {type: string}
+        speed: {type: integer, format: int64, description: Link speed in Mbps}
+        first_seen: {type: string, format: date-time}
+        last_seen: {type: string, format: date-time}
+    InterfaceList:
+      type: object
+      properties:
+        interfaces: {type: array, items: {$ref: "#/components/schemas/DeviceInterface"}}
+        total: {type: integer}
 
     CertificateInfo:
       type: object
@@ -2545,9 +2580,14 @@ components:
         from_device_id: {type: integer, format: int64}
         to_device_id: {type: integer, format: int64, nullable: true, description: null = unidentified neighbor (dashed edge)}
         to_mac: {type: string}
-        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP, WiFi]}
+        protocol: {type: string, enum: [LLDP, CDP, Bridge-MIB, ARP, WiFi, route-table]}
         local_port: {type: string, nullable: true}
         remote_port: {type: string, nullable: true, description: Far-end ifName (LLDP/CDP only)}
+        bytes: {type: integer, format: int64, nullable: true, description: speaks-with edges only - observed byte total}
+        metadata:
+          type: object
+          nullable: true
+          description: route-table edge context (#528) - dest_subnet, next_hop, route_proto; null for neighbor-derived edges
     TopologyGraph:
       type: object
       required: [nodes, edges]

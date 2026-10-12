@@ -77,6 +77,19 @@ func registerDeviceNeighborRoutes(r chi.Router, scopeResolver *scoperesolver.Res
 	})
 }
 
+// registerDeviceInterfacesRoutes registers the per-device interface census
+// (#529): the IF-MIB port list with per-port addresses.
+func registerDeviceInterfacesRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, dbConn *sql.DB, interfacesHandler *handler.DeviceInterfacesHandler) {
+	// Device interface census, read-only. Feeds the detail-page Interfaces
+	// panel.
+	r.Route("/api/v1/devices/{id}/interfaces", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
+		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
+		r.Get("/", interfacesHandler.ListByDevice)
+	})
+}
+
 // registerDeviceSightingsRoutes registers the per-device address-observation
 // history (#527/#529): where the device was seen, via which vantage.
 func registerDeviceSightingsRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, dbConn *sql.DB, sightingsHandler *handler.DeviceSightingsHandler) {

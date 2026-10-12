@@ -243,6 +243,9 @@ SSH、HTTP/HTTPS、RTSP、ONVIF、SNMP、Prometheus、node\_exporter、邮件（
 | `device_neighbors` | LLDP/CDP/Bridge/Q-BRIDGE 探测、LLDP/CDP 原始帧监听（`WITH_LLDP`/`WITH_CDP` 构建，#501）与 WiFi AP 自身关联表（hostapd/iw，#505）的原始邻居关系 |
 
 | `topology_edges` | 物化的设备↔设备拓扑边 |
+| `device_sightings` | 地址目击历史（设备, ip, mac, 视角, 来源）：设备在哪被谁看到（#527/#529） |
+| `device_network_presence` | 多归属身份层：资产活跃于哪些网络、各自地址（#526） |
+| `device_interfaces` | 设备自身 IF-MIB + ipAddrTable 端口清单，含各端口地址（#529） |
 
 生成树事实（#525）：STP-MIB 探针同时把每台网桥的 dot1dStp 视角记入 `scan_attributes.stp`——自身网桥 MAC、全网根桥、`is_root` 布尔值、各端口角色（root/designated/alternate/backup/disabled）。拓扑节点集暴露 `stp_root`，图的根判定优先采用这一采集事实而非任何启发式（见 web-ui.md）。
 
@@ -271,6 +274,10 @@ SSH、HTTP/HTTPS、RTSP、ONVIF、SNMP、Prometheus、node\_exporter、邮件（
 - `(ip_address, network_id)` 复合唯一索引支撑此分区逻辑。
 
 **多归属身份与网络在场（#526）**：来自非主网网络的资产上报不再触发行漂移——只要它在其他网络仍持有新鲜在场行（24 小时窗口），本次上报只更新该网的 `device_network_presence`（每 (设备, 网络) 一行，记录它在那个网的地址）；设备行保持单一图节点、锚定主网。这终结了双归属路由器的乒乓（过去两边 agent 的上报按扫描节拍反复搬行）。真正的搬家——其余在场行全部过期——才会搬迁设备行，且漫游现在随迁 `network_id`（过去永远滞后，持续喂 reconcile 漂移计数器）。拓扑节点集暴露各节点的在场 `networks`，图上"哪台设备互联了这两个网段"由采集事实回答。
+
+**接口清单（#529）**：IF-MIB 与 ipAddrTable 采集把设备自身的每个端口记入 `device_interfaces`——序号、名称、描述、MAC、链路速率，以及每个端口应答的 IPv4（单一 `devices.ip_address` 列表达不了的细节）。`GET /devices/{id}/interfaces` 供详情页面板；消失的端口保留冻结的 last-seen 行（历史而非删除）。agent-rs 同步采集。
+
+**路由表边（#528）**：ipRouteTable 采集每条非直连路由（目的 CIDR + 下一跳 + 出口 ifIndex + 协议）；下一跳可解析为已知设备的路由物化 `topology_edges` 行（路由器 → 下一跳，via `route-table`，目的子网记入 metadata——同跳多条路由取更具体的子网）。拓扑图将这些边与邻居派生边并集渲染，多跳互联成为采集事实。直连路由跳过：直连子网事实已由接口清单与按网在场承载。
 
 **目击历史与视角溯源（#527）**：设备桥每次落库记录一条 `device_sightings`——在哪里（ip/mac/网络）、经哪个视角（空 = 本中心，否则为上报 agent id）、来自哪个来源（scan / 被动）。相同组合只刷新（last_seen + see_count），变化则追加；`GET /devices/{id}/sightings?vantage=` 是漫游/搬家考古数据源。邻居行同样携带上报方 `agent_id`。
 

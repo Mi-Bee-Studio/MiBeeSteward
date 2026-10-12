@@ -25,6 +25,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -1494,6 +1495,144 @@ func (r *SQLiteRepository) ListNetworkPresences(ctx context.Context, deviceID in
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// RecordInterfaces upserts the device's interface census (#529). One row per
+// (device, ifIndex); a re-walk refreshes the mutable fields (names change,
+// IPs move with DHCP) while first_seen survives. Ports that vanished from a
+// later walk keep their last row (frozen last_seen) - the census is history,
+// not deletion.
+func (r *SQLiteRepository) recordInterfaces(ctx context.Context, deviceID int64, specs []scannerv2.InterfaceSpec) error {
+	if deviceID == 0 || len(specs) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	now := scannerv2.DBTime(time.Now())
+	for _, sp := range specs {
+		if sp.IfIndex <= 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO device_interfaces (device_id, if_index, if_name, if_descr, mac_address, ip_address, speed, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(device_id, if_index) DO UPDATE SET
+				if_name = CASE WHEN excluded.if_name != '' THEN excluded.if_name ELSE device_interfaces.if_name END,
+				if_descr = CASE WHEN excluded.if_descr != '' THEN excluded.if_descr ELSE device_interfaces.if_descr END,
+				mac_address = CASE WHEN excluded.mac_address != '' THEN excluded.mac_address ELSE device_interfaces.mac_address END,
+				ip_address = CASE WHEN excluded.ip_address != '' THEN excluded.ip_address ELSE device_interfaces.ip_address END,
+				speed = CASE WHEN excluded.speed > 0 THEN excluded.speed ELSE device_interfaces.speed END,
+				last_seen = excluded.last_seen`,
+			deviceID, sp.IfIndex, sp.IfName, sp.IfDescr, NormalizeMAC(sp.MAC), sp.IP, sp.Speed, now, now); err != nil {
+			r.logger.Debug("record interface failed", "device_id", deviceID, "if_index", sp.IfIndex, "error", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// RecordRoutes materializes route-table edges (#528). Each route whose next
+// hop resolves to a KNOWN device (by ip, any network - preferring the freshest
+// row like the identity resolvers) becomes one topology edge
+// (router -> next hop, edge_type l3, via route-table). Routes sharing the same
+// hop device collapse onto the UNIQUE(from,to,edge_type) edge; the more
+// specific destination subnet (shorter CIDR prefix length) wins the metadata.
+// Self/zero next hops and unresolvable hops are skipped - the raw rows stay
+// in service_evidence for audit.
+func (r *SQLiteRepository) recordRoutes(ctx context.Context, deviceID int64, routes []scannerv2.RouteSpec) error {
+	if deviceID == 0 || len(routes) == 0 {
+		return nil
+	}
+	now := scannerv2.DBTime(time.Now())
+	for _, rt := range routes {
+		if rt.NextHop == "" || rt.NextHop == "0.0.0.0" {
+			continue
+		}
+		var toID int64
+		err := r.db.QueryRowContext(ctx,
+			`SELECT id FROM devices WHERE ip_address = ? AND id != ?
+			 ORDER BY (status='online') DESC, last_seen DESC LIMIT 1`,
+			rt.NextHop, deviceID).Scan(&toID)
+		if err != nil {
+			continue // next hop not in the inventory (yet)
+		}
+		meta := map[string]string{
+			"dest_subnet": rt.DestCIDR,
+			"next_hop":    rt.NextHop,
+			"route_proto": rt.Proto,
+		}
+		// Same-hop routes collapse onto one edge; the more specific
+		// destination subnet (longer prefix) is the one worth showing.
+		var existing string
+		_ = r.db.QueryRowContext(ctx,
+			`SELECT metadata FROM topology_edges WHERE from_device_id = ? AND to_device_id = ? AND edge_type = 'l3'`,
+			deviceID, toID).Scan(&existing)
+		if existing != "" {
+			var prev map[string]string
+			if json.Unmarshal([]byte(existing), &prev) == nil {
+				if cidrPrefixBits(prev["dest_subnet"]) >= cidrPrefixBits(rt.DestCIDR) {
+					meta["dest_subnet"] = prev["dest_subnet"]
+					if v := prev["route_proto"]; v != "" {
+						meta["route_proto"] = v
+					}
+				}
+			}
+		}
+		metaJSON, _ := json.Marshal(meta)
+		if _, err := r.db.ExecContext(ctx, `
+			INSERT INTO topology_edges (from_device_id, to_device_id, edge_type, via_protocol, confidence, metadata, first_seen, last_seen)
+			VALUES (?, ?, 'l3', 'route-table', 0.7, ?, ?, ?)
+			ON CONFLICT(from_device_id, to_device_id, edge_type) DO UPDATE SET
+				metadata = json_patch(metadata, excluded.metadata),
+				confidence = MAX(confidence, excluded.confidence),
+				last_seen = excluded.last_seen`,
+			deviceID, toID, string(metaJSON), now, now); err != nil {
+			r.logger.Debug("record route edge failed", "device_id", deviceID, "next_hop", rt.NextHop, "error", err)
+		}
+	}
+	return nil
+}
+
+// RecordInterfaces is the Repository-facing, IP-keyed entry: resolve the
+// device by the scan's ip (same identity rule as RecordNeighbors), then
+// upsert the census. Unknown ip is a logged skip - the device row may not
+// exist yet on a racing apply.
+func (r *SQLiteRepository) RecordInterfaces(ctx context.Context, ip string, specs []scannerv2.InterfaceSpec) error {
+	if len(specs) == 0 {
+		return nil
+	}
+	deviceID, err := r.resolveDeviceID(ctx, ip)
+	if err != nil || deviceID == 0 {
+		r.logger.Debug("record interfaces: device not found", "ip", ip)
+		return nil
+	}
+	return r.recordInterfaces(ctx, deviceID, specs)
+}
+
+// RecordRoutes is the IP-keyed route-edge materializer (#528).
+func (r *SQLiteRepository) RecordRoutes(ctx context.Context, ip string, routes []scannerv2.RouteSpec) error {
+	if len(routes) == 0 {
+		return nil
+	}
+	deviceID, err := r.resolveDeviceID(ctx, ip)
+	if err != nil || deviceID == 0 {
+		r.logger.Debug("record routes: device not found", "ip", ip)
+		return nil
+	}
+	return r.recordRoutes(ctx, deviceID, routes)
+}
+
+// cidrPrefixBits returns the prefix length of a CIDR string (-1 when
+// unparseable). Longer = more specific.
+func cidrPrefixBits(cidr string) int {
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return -1
+	}
+	ones, _ := ipnet.Mask.Size()
+	return ones
 }
 
 // EnrichDeviceByMAC updates vendor/model/type/hostname fields for a device

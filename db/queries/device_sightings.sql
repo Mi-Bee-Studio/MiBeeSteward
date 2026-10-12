@@ -24,3 +24,12 @@ LIMIT ?;
 SELECT device_id, network_id, ip_address, vantage, first_seen, last_seen
 FROM device_network_presence
 ORDER BY device_id, network_id;
+
+-- name: ListDeviceInterfaces :many
+-- The device's interface census (#529): one row per ifIndex, freshest walk
+-- wins (vanished ports keep their frozen last_seen row - history, not deletion).
+SELECT id, device_id, if_index, if_name, if_descr, mac_address, ip_address, speed,
+       first_seen, last_seen
+FROM device_interfaces
+WHERE device_id = ?
+ORDER BY if_index;

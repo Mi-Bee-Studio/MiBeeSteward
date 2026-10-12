@@ -1295,6 +1295,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/{id}/interfaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Interface census of a device (#529, IF-MIB + ipAddrTable)
+         * @description The device's own port list - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at. This is the multi-homed detail the single devices.ip_address row cannot express. Ordered by ifIndex; vanished ports keep their frozen last-seen row.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Interfaces envelope */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InterfaceList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/{id}/certificates": {
         parameters: {
             query?: never;
@@ -5620,6 +5661,29 @@ export interface components {
             sightings?: components["schemas"]["DeviceSighting"][];
             total?: number;
         };
+        /** @description One port of the device's interface census (#529). */
+        DeviceInterface: {
+            /** Format: int64 */
+            id: number;
+            if_index: number;
+            if_name: string;
+            if_descr?: string;
+            mac_address?: string;
+            ip_address?: string;
+            /**
+             * Format: int64
+             * @description Link speed in Mbps
+             */
+            speed?: number;
+            /** Format: date-time */
+            first_seen: string;
+            /** Format: date-time */
+            last_seen: string;
+        };
+        InterfaceList: {
+            interfaces?: components["schemas"]["DeviceInterface"][];
+            total?: number;
+        };
         /** @description One certificate in a port's chain (cert_index 0 = leaf) */
         CertificateInfo: {
             cert_index: number;
@@ -6183,10 +6247,17 @@ export interface components {
             to_device_id: number | null;
             to_mac: string;
             /** @enum {string} */
-            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP" | "WiFi";
+            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP" | "WiFi" | "route-table";
             local_port: string | null;
             /** @description Far-end ifName (LLDP/CDP only) */
             remote_port: string | null;
+            /**
+             * Format: int64
+             * @description speaks-with edges only - observed byte total
+             */
+            bytes?: number | null;
+            /** @description route-table edge context (#528) - dest_subnet, next_hop, route_proto; null for neighbor-derived edges */
+            metadata?: Record<string, never> | null;
         };
         TopologyGraph: {
             nodes: components["schemas"]["TopologyNode"][];

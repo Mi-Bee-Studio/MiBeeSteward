@@ -304,6 +304,103 @@ func TestSTPMIBProbe_RootBridgeNoEdges(t *testing.T) {
 	require.Equal(t, "11:22:33:44:55:66", evs[0].RawData["root_bridge_mac"])
 }
 
+// --- IF-MIB interface census (#529) ---
+
+func TestIFMIBProbe_WalkScripted(t *testing.T) {
+	injectFakeSnmp(t, &fakeSnmp{walks: map[string][]gosnmp.SnmpPDU{
+		oidIfNameX: {
+			// wire shape: gosnmp decodes real agents' OCTET STRINGs to []byte
+			pdu(oidIfNameX, "1", gosnmp.OctetString, []byte("eth0")),
+			pdu(oidIfNameX, "2", gosnmp.OctetString, []byte("eth1")),
+		},
+		oidIfDescr: {
+			pdu(oidIfDescr, "1", gosnmp.OctetString, []byte("Ethernet0")),
+			pdu(oidIfDescr, "3", gosnmp.OctetString, []byte("lo0")),
+		},
+		oidIfPhysAddr: {
+			pdu(oidIfPhysAddr, "1", gosnmp.OctetString, []byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x01}),
+		},
+		oidIfSpeed: {
+			pdu(oidIfSpeed, "1", gosnmp.Gauge32, 1_000_000_000),
+		},
+		oidIPAdEntIdx: {
+			pdu(oidIPAdEntIdx, "192.168.1.1", gosnmp.Integer, 1),
+			pdu(oidIPAdEntIdx, "10.0.5.1", gosnmp.Integer, 2),
+		},
+	}})
+
+	evs, err := NewIFMIBProbe(nil).Probe(context.Background(), "10.6.6.6", probeHint())
+	require.NoError(t, err)
+	// eth0 (mac + ip), eth1 (ip only), lo0 (neither -> skipped).
+	require.Len(t, evs, 2)
+	byIndex := map[string]scannerv2.Evidence{}
+	for _, e := range evs {
+		byIndex[e.RawData["if_index"]] = e
+	}
+	eth0 := byIndex["1"]
+	require.Equal(t, "eth0", eth0.RawData["if_name"])
+	require.Equal(t, "aa:bb:cc:dd:ee:01", eth0.RawData["mac"])
+	require.Equal(t, "192.168.1.1", eth0.RawData["ip"])
+	require.Equal(t, "1000", eth0.RawData["speed_mbps"])
+	eth1 := byIndex["2"]
+	require.Equal(t, "10.0.5.1", eth1.RawData["ip"])
+	require.Equal(t, "eth1", eth1.RawData["if_name"])
+	require.Empty(t, eth1.RawData["mac"], "no ifPhysAddress row renders empty")
+}
+
+// --- Route-MIB ipRouteTable (#528) ---
+
+func TestRouteMIBProbe_WalkScripted(t *testing.T) {
+	injectFakeSnmp(t, &fakeSnmp{walks: map[string][]gosnmp.SnmpPDU{
+		oidIPRouteDest: {
+			// Key = the dest IP's dotted-octet index.
+			pdu(oidIPRouteDest, "0.0.0.0", gosnmp.OctetString, []byte{0, 0, 0, 0}),
+			pdu(oidIPRouteDest, "172.16.0.0", gosnmp.OctetString, []byte{172, 16, 0, 0}),
+			pdu(oidIPRouteDest, "192.168.50.0", gosnmp.OctetString, []byte{192, 168, 50, 0}),
+		},
+		oidIPRouteNextHop: {
+			pdu(oidIPRouteNextHop, "0.0.0.0", gosnmp.OctetString, []byte{10, 0, 0, 254}),
+			pdu(oidIPRouteNextHop, "172.16.0.0", gosnmp.OctetString, []byte{10, 0, 0, 254}),
+			// Direct route: next hop 0.0.0.0 -> skipped.
+			pdu(oidIPRouteNextHop, "192.168.50.0", gosnmp.OctetString, []byte{0, 0, 0, 0}),
+		},
+		oidIPRouteType: {
+			pdu(oidIPRouteType, "0.0.0.0", gosnmp.Integer, 4),
+			pdu(oidIPRouteType, "172.16.0.0", gosnmp.Integer, 4),
+			pdu(oidIPRouteType, "192.168.50.0", gosnmp.Integer, 3),
+		},
+		oidIPRouteProto: {
+			pdu(oidIPRouteProto, "0.0.0.0", gosnmp.Integer, 3),     // netmgmt
+			pdu(oidIPRouteProto, "172.16.0.0", gosnmp.Integer, 11), // ospf
+		},
+		oidIPRouteMask: {
+			pdu(oidIPRouteMask, "0.0.0.0", gosnmp.OctetString, []byte{0, 0, 0, 0}),
+			pdu(oidIPRouteMask, "172.16.0.0", gosnmp.OctetString, []byte{255, 255, 0, 0}),
+		},
+		oidIPRouteIfIndex: {
+			pdu(oidIPRouteIfIndex, "0.0.0.0", gosnmp.Integer, 2),
+			pdu(oidIPRouteIfIndex, "172.16.0.0", gosnmp.Integer, 2),
+		},
+	}})
+
+	evs, err := NewRouteMIBProbe(nil).Probe(context.Background(), "10.7.7.7", probeHint())
+	require.NoError(t, err)
+	require.Len(t, evs, 2, "direct route skipped, two indirect routes emitted")
+
+	var def, corp scannerv2.Evidence
+	for _, e := range evs {
+		if e.RawData["dest"] == "0.0.0.0/0" {
+			def = e
+		} else {
+			corp = e
+		}
+	}
+	require.Equal(t, "10.0.0.254", def.RawData["next_hop"])
+	require.Equal(t, "2", def.RawData["if_index"])
+	require.Equal(t, "172.16.0.0/16", corp.RawData["dest"], "mask renders as prefix length")
+	require.Equal(t, "11", corp.RawData["proto"])
+}
+
 // --- Bridge-MIB ---
 
 func TestBridgeMIBProbe_WalkScripted(t *testing.T) {

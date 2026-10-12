@@ -1176,7 +1176,15 @@
 		"Sightings Local": "center",
 		"Neighbors Vantage": "Vantage",
 		"Multi Homed": "Multi-homed",
-		"Multi Homed Desc": "Actively present in several networks - the interconnect fact from per-network presence collection."
+		"Multi Homed Desc": "Actively present in several networks - the interconnect fact from per-network presence collection.",
+		"Interfaces": "Interface Census",
+		"Interfaces Desc": "The device's own ports from IF-MIB + ipAddrTable: index, name, MAC, link speed, and the address each port answers at - the detail a single address row cannot express.",
+		"Interfaces Empty": "No interface census yet - collected when the device answers SNMP (IF-MIB).",
+		"Interfaces IfIndex": "Index",
+		"Interfaces Port": "Port",
+		"Interfaces MAC": "MAC",
+		"Interfaces Speed": "Speed",
+		"Interfaces IP": "Address"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",

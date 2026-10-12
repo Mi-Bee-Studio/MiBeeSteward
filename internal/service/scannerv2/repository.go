@@ -46,6 +46,26 @@ type NetworkPresence struct {
 	LastSeen  time.Time
 }
 
+// InterfaceSpec is one row of the device's own interface census (#529),
+// collected from IF-MIB (ifIndex/ifName/ifDescr/ifPhysAddress/ifSpeed) joined
+// with ipAddrTable (the IPv4 answered on that port).
+type InterfaceSpec struct {
+	IfIndex int
+	IfName  string
+	IfDescr string
+	MAC     string
+	IP      string
+	Speed   int64 // Mbps
+}
+
+// RouteSpec is one collected routing-table row (#528) from SNMP ipRouteTable.
+type RouteSpec struct {
+	DestCIDR string // "172.16.0.0/12"
+	NextHop  string // IPv4; empty when not a unicast gateway route
+	IfIndex  int
+	Proto    string // local|netmgmt|icmp|egp|ggp|hello|rip|isIs|esIs|cisco|bia|ospf|bgp|...
+}
+
 // IPMACPair is one local interface binding the anchor step (#522) writes:
 // the interface's IPv4 address and its MAC. The scan center knows these from
 // the OS — the one identity fact ARP self-scan can never learn (loopback
@@ -89,6 +109,18 @@ type Repository interface {
 	// last_seen without losing first_seen. agentID carries the reporting
 	// vantage (#527): "" for center-local scans, the agent id for reports.
 	RecordNeighbors(ctx context.Context, ip, agentID string, neighbors []NeighborSpec) error
+
+	// RecordInterfaces upserts the interface census of the device at ip
+	// (#529): one row per (device, ifIndex), refreshing
+	// name/descr/mac/ip/speed on re-walk. Unknown ip is a logged skip.
+	RecordInterfaces(ctx context.Context, ip string, specs []InterfaceSpec) error
+
+	// RecordRoutes materializes route-table edges (#528) for the device at
+	// ip: every route whose next hop resolves to a known device becomes a
+	// topology edge (router -> next hop, via route-table) carrying the
+	// destination subnet in metadata; unresolvable or self next hops are
+	// skipped.
+	RecordRoutes(ctx context.Context, ip string, routes []RouteSpec) error
 
 	// RecordSighting upserts one address observation into the sightings
 	// history (#527/#529): where a device was seen, via which vantage, from
@@ -254,6 +286,10 @@ func (NoopRepository) RecordNeighborsByMAC(context.Context, string, []NeighborSp
 func (NoopRepository) AnchorLocalInterfaces(context.Context, sql.NullInt64, []IPMACPair) (int64, error) {
 	return 0, nil
 }
+
+func (NoopRepository) RecordInterfaces(context.Context, string, []InterfaceSpec) error { return nil }
+
+func (NoopRepository) RecordRoutes(context.Context, string, []RouteSpec) error { return nil }
 
 func (NoopRepository) RecordSighting(context.Context, int64, string, string, sql.NullInt64, string, string, time.Time) error {
 	return nil

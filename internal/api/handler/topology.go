@@ -10,6 +10,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -72,12 +74,15 @@ type topoEdge struct {
 	FromDeviceID int64   `json:"from_device_id"`
 	ToDeviceID   *int64  `json:"to_device_id"`
 	ToMAC        string  `json:"to_mac"`
-	Protocol     string  `json:"protocol"` // LLDP / CDP / Bridge-MIB / ARP / speaks-with
+	Protocol     string  `json:"protocol"` // LLDP / CDP / Bridge-MIB / ARP / WiFi / speaks-with / route-table
 	LocalPort    *string `json:"local_port"`
 	RemotePort   *string `json:"remote_port"`
 	// Bytes carries the speaks-with edge's observed traffic total (#500);
 	// nil for discovery-protocol edges.
 	Bytes *int64 `json:"bytes,omitempty"`
+	// Metadata carries route-table edge context (#528): dest_subnet,
+	// next_hop, route_proto. nil for neighbor-derived edges.
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // Graph handles GET /api/v1/topology?network_id=X, the full node + edge set
@@ -151,6 +156,41 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 	// edges (external peers live in the device-detail profile). Emitted
 	// AFTER the L2 edges so the view can style them by protocol; failures
 	// degrade to an L2-only graph.
+	// Route-table edges (#528): topology_edges rows the route collector
+	// materialized (router -> next-hop device, via route-table, destination
+	// subnet in metadata). Deduped against the neighbor-derived edges above
+	// by (from, to, protocol); failure degrades to the neighbor-only graph.
+	netFilter := networkID
+	teRows, terr := h.queries.ListTopologyEdgesByNetwork(r.Context(), db.ListTopologyEdgesByNetworkParams{
+		Column1:   netFilter,
+		NetworkID: &netFilter,
+	})
+	if terr == nil {
+		seen := make(map[string]bool, len(edges))
+		for _, e := range edges {
+			seen[fmt.Sprint(e.FromDeviceID, ":", e.ToDeviceID, ":", e.Protocol)] = true
+		}
+		for _, te := range teRows {
+			key := fmt.Sprint(te.FromDeviceID, ":", te.ToDeviceID, ":", te.ViaProtocol)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			var meta map[string]any
+			_ = json.Unmarshal([]byte(te.Metadata), &meta)
+			proto := ""
+			if te.ViaProtocol != nil {
+				proto = *te.ViaProtocol
+			}
+			edges = append(edges, topoEdge{
+				FromDeviceID: te.FromDeviceID,
+				ToDeviceID:   &te.ToDeviceID,
+				Protocol:     proto,
+				Metadata:     meta,
+			})
+		}
+	}
+
 	speaksRows, err := h.queries.ListSpeaksEdges(r.Context(), db.ListSpeaksEdgesParams{
 		Column1:   networkID,
 		NetworkID: &networkID,

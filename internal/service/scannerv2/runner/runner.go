@@ -207,6 +207,18 @@ func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, net
 				rn.logger.Debug("agent report: record neighbors failed", "ip", rep.IP, "error", err)
 			}
 		}
+		// Interface census (#529) + route-table edges (#528) ride the agent
+		// report's evidence exactly like the local-scan path.
+		if faces := scannerv2.ExtractInterfaces(rep.Evidence); len(faces) > 0 {
+			if err := rn.repo.RecordInterfaces(ctx, rep.IP, faces); err != nil {
+				rn.logger.Debug("agent report: record interfaces failed", "ip", rep.IP, "error", err)
+			}
+		}
+		if routes := scannerv2.ExtractRoutes(rep.Evidence); len(routes) > 0 {
+			if err := rn.repo.RecordRoutes(ctx, rep.IP, routes); err != nil {
+				rn.logger.Debug("agent report: record routes failed", "ip", rep.IP, "error", err)
+			}
+		}
 	}
 	return isNew, updated, nil
 }

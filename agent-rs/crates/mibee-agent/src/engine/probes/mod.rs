@@ -115,6 +115,8 @@ pub fn default_probes_with_mdns_unicast(mdns_unicast: bool) -> Vec<Box<dyn Probe
         Box::new(l2_mib::LldpMibProbe),
         Box::new(l2_mib::QBridgeMibProbe),
         Box::new(l2_mib::StpMibProbe),
+        Box::new(l2_mib::IfMibProbe),
+        Box::new(l2_mib::RouteMibProbe),
         Box::new(rdns::RdnsProbe),
         Box::new(simple::RtspProbe),
         Box::new(snmp::SnmpProbe),

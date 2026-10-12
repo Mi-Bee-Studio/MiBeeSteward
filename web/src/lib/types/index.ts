@@ -126,6 +126,7 @@ export type Document = Schemas['Document'];
 export type DeviceNeighbor = Schemas['DeviceNeighbor'];
 export type DeviceSpeaks = Schemas['DeviceSpeaks'];
 export type DeviceSighting = Schemas['DeviceSighting'];
+export type DeviceInterfaceRow = Schemas['DeviceInterface'];
 /** Topology graph node (one device) + edge (one L2 adjacency). */
 export type TopoNode = Schemas['TopologyNode'];
 export type TopoEdge = Schemas['TopologyEdge'];
