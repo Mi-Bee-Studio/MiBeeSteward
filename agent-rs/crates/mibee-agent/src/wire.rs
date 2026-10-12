@@ -93,6 +93,44 @@ pub struct ReportedHost {
     /// .Neighbors parity).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub neighbors: Vec<ReportedNeighbor>,
+    /// The device's own port census (#529, IF-MIB + ipAddrTable) - the only
+    /// channel the center's device_interfaces table sees from agent-side
+    /// collection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub interfaces: Vec<ReportedInterface>,
+    /// Routing-table rows (#528, ipRouteTable) - next-hop-resolvable routes
+    /// materialize route-table topology edges on the center.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routes: Vec<ReportedRoute>,
+}
+
+/// One port-census row (Go domain.ReportedInterface). if_index is the
+/// center-side merge key (device_interfaces upsert).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReportedInterface {
+    pub if_index: i64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub if_name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub if_descr: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub mac: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ip: String,
+    /// Link speed in Mbps.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub speed: i64,
+}
+
+/// One routing-table row (Go domain.ReportedRoute).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReportedRoute {
+    pub dest: String,
+    pub next_hop: String,
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub if_index: i64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub proto: String,
 }
 
 /// One L2 adjacency edge (Go domain.ReportedNeighbor). `neighbor_mac` +

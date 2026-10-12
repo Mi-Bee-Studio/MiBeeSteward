@@ -35,6 +35,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -391,6 +392,44 @@ func HostToReported(rep scannerv2.HostReport) domain.ReportedHost {
 			Method: hb.Method, Target: hb.Target, IntervalSeconds: hb.IntervalSeconds,
 			TimeoutSeconds: hb.TimeoutSeconds, SNMPCommunity: hb.SNMPCommunity, SNMPOID: hb.SNMPOID,
 		})
+	}
+	// Interface census (#529) + route table (#528): the flat wire arrays are
+	// the only channel these cross on; the peer rebuilds them as evidence on
+	// ingest exactly like an agent report.
+	for _, e := range rep.Evidence {
+		rd := e.RawData
+		if rd == nil {
+			continue
+		}
+		switch e.Kind {
+		case "interface":
+			idx := 0
+			if v, err := strconv.Atoi(rd["if_index"]); err == nil {
+				idx = v
+			}
+			if idx <= 0 {
+				continue
+			}
+			speed := int64(0)
+			if v, err := strconv.ParseInt(rd["speed_mbps"], 10, 64); err == nil {
+				speed = v
+			}
+			out.Interfaces = append(out.Interfaces, domain.ReportedInterface{
+				IfIndex: idx, IfName: rd["if_name"], IfDescr: rd["if_descr"],
+				MAC: rd["mac"], IP: rd["ip"], SpeedMbps: speed,
+			})
+		case "route":
+			if rd["dest"] == "" || rd["next_hop"] == "" {
+				continue
+			}
+			ifx := 0
+			if v, err := strconv.Atoi(rd["if_index"]); err == nil {
+				ifx = v
+			}
+			out.Routes = append(out.Routes, domain.ReportedRoute{
+				DestCIDR: rd["dest"], NextHop: rd["next_hop"], IfIndex: ifx, Proto: rd["proto"],
+			})
+		}
 	}
 	// L2 adjacency: "neighbor"-kind evidence rides the neighbors array; the
 	// evidence slice itself never crosses the wire.

@@ -10,6 +10,8 @@
 package runner
 
 import (
+	"strconv"
+
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/store"
@@ -105,6 +107,47 @@ func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 	// identity inference) runs identically for agent-reported hosts and local
 	// scans. Rows without a MAC or protocol are dropped — extractNeighbors
 	// would skip them anyway, and an empty protocol cannot be attributed.
+	// Interface census (#529) + route table (#528): rebuild the wire arrays
+	// as "interface"/"route" evidence so the apply path's extractors land
+	// them exactly like a local scan's probe output.
+	for _, ifc := range h.Interfaces {
+		if ifc.IfIndex <= 0 {
+			continue
+		}
+		evidence = append(evidence, scannerv2.Evidence{
+			Source:     "agent:if_mib",
+			Kind:       "interface",
+			IP:         h.IP,
+			Protocol:   "snmp",
+			Confidence: 0.9,
+			RawData: map[string]string{
+				"if_index":   strconv.Itoa(ifc.IfIndex),
+				"if_name":    ifc.IfName,
+				"if_descr":   ifc.IfDescr,
+				"mac":        ifc.MAC,
+				"ip":         ifc.IP,
+				"speed_mbps": strconv.FormatInt(ifc.SpeedMbps, 10),
+			},
+		})
+	}
+	for _, rt := range h.Routes {
+		if rt.DestCIDR == "" || rt.NextHop == "" {
+			continue
+		}
+		evidence = append(evidence, scannerv2.Evidence{
+			Source:     "agent:route_mib",
+			Kind:       "route",
+			IP:         h.IP,
+			Protocol:   "snmp",
+			Confidence: 0.9,
+			RawData: map[string]string{
+				"dest":     rt.DestCIDR,
+				"next_hop": rt.NextHop,
+				"if_index": strconv.Itoa(rt.IfIndex),
+				"proto":    rt.Proto,
+			},
+		})
+	}
 	for _, n := range h.Neighbors {
 		nmac := store.NormalizeMAC(n.NeighborMAC)
 		if nmac == "" || n.Protocol == "" {
