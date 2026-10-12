@@ -3,10 +3,28 @@
 //! retry/terminal semantics, command double-encoded payloads + ack-before-
 //! execute, probe batch shape, fingerprint rev negotiation.
 
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use mibee_agent::center::{CenterClient, FingerprintFetch, PostOutcome, RealClock, Reporter};
+use mibee_agent::center::{CenterClient, Clock, FingerprintFetch, PostOutcome, RealClock, Reporter};
 use mibee_agent::wire::{AgentCommand, AgentReport, ProbeResultReport, ReportedHost};
+
+/// Steppable clock: 401-cooldown tests advance it deterministically.
+struct MockClock(AtomicI64);
+impl MockClock {
+    fn at(ms: i64) -> Self {
+        MockClock(AtomicI64::new(ms))
+    }
+    fn advance_ms(&self, ms: i64) {
+        self.0.fetch_add(ms, Ordering::SeqCst);
+    }
+}
+impl Clock for MockClock {
+    fn now_unix_ms(&self) -> i64 {
+        self.0.load(Ordering::SeqCst)
+    }
+}
 
 // ---------- tiny HTTP mock ----------
 
@@ -24,7 +42,9 @@ struct RecordedReq {
 struct MockCenter {
     log: Arc<Mutex<Vec<RecordedReq>>>,
     script: Arc<Mutex<Vec<MockAction>>>, // consumed per matching request
-    default: MockAction,
+    // Shared with the serving task so tests can flip the center's posture
+    // (e.g. 401 -> 200, "token restored") after spawn.
+    default: Arc<Mutex<MockAction>>,
 }
 
 #[derive(Clone)]
@@ -38,13 +58,17 @@ impl MockCenter {
         MockCenter {
             log: Arc::new(Mutex::new(Vec::new())),
             script: Arc::new(Mutex::new(Vec::new())),
-            default: MockAction::Json(200, r#"{"accepted":1}"#.into()),
+            default: Arc::new(Mutex::new(MockAction::Json(200, r#"{"accepted":1}"#.into()))),
         }
     }
 
     fn then(&self, action: MockAction) -> &Self {
         self.script.lock().unwrap().push(action);
         self
+    }
+
+    fn set_default(&self, action: MockAction) {
+        *self.default.lock().unwrap() = action;
     }
 
     async fn serve(self, listener: tokio::net::TcpListener) {
@@ -59,7 +83,7 @@ impl MockCenter {
                     let Some(req) = read_request(&mut sock).await else { return };
                     let action = {
                         let mut script = mock.script.lock().unwrap();
-                        if script.is_empty() { mock.default.clone() } else { script.remove(0) }
+                        if script.is_empty() { mock.default.lock().unwrap().clone() } else { script.remove(0) }
                     };
                     mock.log.lock().unwrap().push(req.clone());
                     let (head, body) = match &action {
@@ -212,30 +236,153 @@ async fn report_posts_bearer_json_and_parses_ack() {
     assert_eq!(body["hosts"][0]["ip"], "192.0.2.5");
 }
 
+// ---------- 401 semantics (issue #554) ----------
+//
+// A 401 from the center means "token unknown right now" — which happens in
+// legitimate ops (fresh-DB migration with a token-restore window, token
+// rotation). The reporter must NOT treat it as terminal: batches are parked
+// (data survives the gap), ticks go quiet for a cool-down window, and the
+// first tick after the window re-delivers everything once the token returns.
+
+const AUTH_COOLDOWN_MS: i64 = 5 * 60 * 1000;
+
 #[tokio::test]
-async fn terminal_401_drops_batch_without_requeue() {
+async fn auth_401_parks_batch_cools_down_then_self_heals() {
     let (base, mock) = spawn_mock().await;
-    mock.then(MockAction::Json(401, "invalid agent token\n".into()));
+    mock.set_default(MockAction::Json(401, "invalid agent token\n".into()));
+    let c = client(&base);
+    let clock = Arc::new(MockClock::at(1_800_000_000_000));
+    let mut reporter =
+        Reporter::new(c, "lan-63".into(), "192.0.2.0/24".into(), 256, clock.clone());
+    reporter.set_auth_retry_backoff(Duration::from_millis(AUTH_COOLDOWN_MS as u64));
+
+    reporter.report(vec![host("192.0.2.1")]).await;
+    reporter.tick().await; // buffer flush -> 401 -> parked + cooldown
+    assert_eq!(reporter.pending_len().await, 1, "401 must park the batch, not drop it");
+    assert_eq!(mock.log.lock().unwrap().len(), 1);
+
+    // Every tick inside the cooldown window is a no-op: no retries, no
+    // heartbeats, no buffer flushes — even with new data waiting.
+    reporter.report(vec![host("192.0.2.2")]).await;
+    reporter.tick().await;
+    assert_eq!(
+        mock.log.lock().unwrap().len(),
+        1,
+        "cooldown suppresses all posts for the whole window"
+    );
+
+    // Token restored (center answers 200 again). Ticks BEFORE the window
+    // expires still stay quiet; the first tick after it drains the parked
+    // batch (pending-queue rule: no state hash) and then the buffer.
+    mock.set_default(MockAction::Json(200, r#"{"accepted":1}"#.into()));
+    clock.advance_ms(AUTH_COOLDOWN_MS - 1_000);
+    reporter.tick().await;
+    assert_eq!(mock.log.lock().unwrap().len(), 1, "still inside the cooldown");
+    clock.advance_ms(2_000);
+    reporter.tick().await;
+    assert_eq!(reporter.pending_len().await, 0, "parked batch drains on recovery");
+    {
+        let log = mock.log.lock().unwrap();
+        assert!(log.len() >= 3, "drain + buffer flush expected, got {}", log.len());
+        assert!(log[1].state_hash.is_none(), "parked drain must not re-send the state hash");
+        let drained: serde_json::Value = serde_json::from_slice(&log[1].body).unwrap();
+        assert_eq!(
+            drained["hosts"][0]["ip"], "192.0.2.1",
+            "the host observed before the token gap must survive it"
+        );
+        let buffered: serde_json::Value = serde_json::from_slice(&log[2].body).unwrap();
+        assert_eq!(buffered["hosts"][0]["ip"], "192.0.2.2");
+    }
+
+    // Recovery clears the cooldown: a fresh batch posts on the next tick
+    // without waiting out another window.
+    reporter.report(vec![host("192.0.2.9")]).await;
+    reporter.tick().await;
+    let log = mock.log.lock().unwrap();
+    let last: serde_json::Value = serde_json::from_slice(&log.last().unwrap().body).unwrap();
+    assert_eq!(last["hosts"][0]["ip"], "192.0.2.9");
+}
+
+#[tokio::test]
+async fn auth_401_heartbeat_sets_cooldown_without_parking() {
+    let (base, mock) = spawn_mock().await;
+    mock.set_default(MockAction::Json(401, "invalid agent token\n".into()));
+    let c = client(&base);
+    let clock = Arc::new(MockClock::at(1_800_000_000_000));
+    let mut reporter =
+        Reporter::new(c, "lan-63".into(), "192.0.2.0/24".into(), 256, clock.clone());
+    reporter.set_auth_retry_backoff(Duration::from_millis(AUTH_COOLDOWN_MS as u64));
+
+    reporter.tick().await; // idle heartbeat -> 401 -> cooldown, nothing to park
+    assert_eq!(reporter.pending_len().await, 0, "empty heartbeats carry no data; never parked");
+    reporter.tick().await;
+    assert_eq!(mock.log.lock().unwrap().len(), 1, "cooldown holds after a 401 heartbeat");
+}
+
+#[tokio::test]
+async fn terminal_4xx_other_than_401_still_drops_immediately() {
+    // 400/403/409 stay Go-parity terminal: dropped as delivered, no requeue,
+    // and crucially NO cooldown — the next batch still posts right away.
+    let (base, mock) = spawn_mock().await;
+    mock.set_default(MockAction::Json(400, "bad request\n".into()));
     let c = client(&base);
     let reporter = Reporter::new(c, "lan-63".into(), "192.0.2.0/24".into(), 256, Arc::new(RealClock));
     reporter.report(vec![host("192.0.2.1")]).await;
-    // 401: not enough to fill the 256 buffer, so drive a tick flush
-    reporter.tick().await;
-    // Re-tick immediately: no new POST should happen (heartbeat throttled to
-    // 30s; a re-queued batch would POST again right away).
-    reporter.tick().await;
-    assert_eq!(mock.log.lock().unwrap().len(), 1, "401 must be terminal, no retries");
+    reporter.tick().await; // 400 -> terminal drop
+    assert_eq!(reporter.pending_len().await, 0);
+    assert_eq!(mock.log.lock().unwrap().len(), 1);
+    reporter.report(vec![host("192.0.2.2")]).await;
+    reporter.tick().await; // no cooldown: the next batch posts immediately
+    assert_eq!(mock.log.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn stop_flush_is_bounded_when_center_keeps_401ing() {
+    // Shutdown during a token gap: exactly one drain attempt, then give up
+    // with the batch re-parked. The old loop could spin forever once a
+    // 401-parked batch never left the queue (#554).
+    let (base, mock) = spawn_mock().await;
+    mock.set_default(MockAction::Json(401, "invalid agent token\n".into()));
+    let c = client(&base);
+    let clock = Arc::new(MockClock::at(1_800_000_000_000));
+    let mut reporter =
+        Reporter::new(c, "lan-63".into(), "192.0.2.0/24".into(), 256, clock);
+    reporter.set_auth_retry_backoff(Duration::from_millis(AUTH_COOLDOWN_MS as u64));
+    reporter.report(vec![host("192.0.2.1")]).await;
+    reporter.tick().await; // 401 -> parked + cooldown
+    let flushed = tokio::time::timeout(Duration::from_secs(5), reporter.stop_flush()).await;
+    assert!(flushed.is_ok(), "stop_flush must terminate, not spin on the 401 park");
+    assert_eq!(reporter.pending_len().await, 1, "batch stays parked for the next start");
+    assert_eq!(mock.log.lock().unwrap().len(), 2, "one initial 401 + one shutdown drain attempt");
+}
+
+#[tokio::test]
+async fn stop_flush_is_bounded_when_center_is_down() {
+    // Transport-failure exhaustion also re-parks; shutdown must not retry
+    // those rounds forever either.
+    let (base, mock) = spawn_mock().await;
+    mock.set_default(MockAction::Json(500, "boom".into()));
+    let c = client(&base);
+    let mut reporter = Reporter::new(c, "lan-63".into(), "192.0.2.0/24".into(), 256, Arc::new(RealClock));
+    reporter.set_retry_backoff(Duration::from_millis(10));
+    reporter.report(vec![host("192.0.2.1")]).await;
+    reporter.tick().await; // 4 fast failures -> parked
+    assert_eq!(reporter.pending_len().await, 1);
+    let flushed = tokio::time::timeout(Duration::from_secs(5), reporter.stop_flush()).await;
+    assert!(flushed.is_ok(), "stop_flush must terminate after one final retry round");
+    let log = mock.log.lock().unwrap();
+    assert_eq!(log.len(), 8, "4 attempts + 4 shutdown attempts, then bounded exit");
 }
 
 #[tokio::test]
 async fn server_errors_retry_then_park_then_drain() {
-    let (base, mut mock) = spawn_mock().await;
+    let (base, mock) = spawn_mock().await;
     // Attempts 1-4 see 500 (parked); the drain attempt sees 200.
     for _ in 0..4 {
         mock.then(MockAction::Json(500, "boom".into()));
     }
     mock.then(MockAction::Json(200, r#"{"accepted":3}"#.into()));
-    mock.default = MockAction::Json(500, "boom".into());
+    mock.set_default(MockAction::Json(500, "boom".into()));
     let c = client(&base);
     let mut reporter = Reporter::new(Arc::clone(&c), "lan-63".into(), "192.0.2.0/24".into(), 256, Arc::new(RealClock));
     reporter.set_retry_backoff(std::time::Duration::from_millis(10));

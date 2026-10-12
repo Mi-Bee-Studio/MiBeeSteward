@@ -149,6 +149,7 @@ platform, including the off-Linux path.
 
 - **2026-10-06**: both rig agents (NanoPi NEO armv7 via systemd, FastRhino R68S arm64 via the iStoreOS web package channel) switched to the Rust agent. From that moment the rigs' identification pipeline has been Rust-only.
 - **0.1.0 → 0.1.5**, five production upgrades across the two rigs: zero failed upgrades, zero service restarts (`NRestarts=0` across the whole window), zero missed scan cadences. The randomized-MAC guard, multi-homed stability fix, and TLS-CN hostname channel were all shipped and field-verified in this window.
+- **0.1.7 (#554)**: the reporter no longer treats 401 as terminal. The flaw was caught live during the 2026-10-12 main-center migration: a ~3-minute token-restore window made both agents drop batches and the affected agent needed a manual restart to resume. Now a 401 parks the batch and cools down 5 minutes between re-checks, so a center rebuild that restores the same token is survived without operator action. Shutdown is bounded too: `stop_flush` re-parks once instead of spinning on a queue that cannot drain.
 - The Go agent's last production duty was 2026-10-06 01:27 UTC (NEO). It was removed from the repository on 2026-10-09.
 
 ## Retirement notes for operators
