@@ -295,6 +295,43 @@ pub fn host_to_reported(
             });
         }
     }
+    // Interface census (#529) + route table (#528): flat wire arrays, same
+    // channel doctrine as neighbors above - the evidence slice never crosses
+    // the wire.
+    for e in evidence.iter() {
+        let Some(rd) = &e.raw_data else { continue };
+        match e.kind.as_str() {
+            "interface" => {
+                let Ok(idx) = rd.get("if_index").map(String::as_str).unwrap_or("").parse::<i64>() else { continue };
+                if idx <= 0 {
+                    continue;
+                }
+                let g = |k: &str| rd.get(k).cloned().unwrap_or_default();
+                host.interfaces.push(crate::wire::ReportedInterface {
+                    if_index: idx,
+                    if_name: g("if_name"),
+                    if_descr: g("if_descr"),
+                    mac: g("mac"),
+                    ip: g("ip"),
+                    speed: rd.get("speed_mbps").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
+                });
+            }
+            "route" => {
+                let g = |k: &str| rd.get(k).cloned().unwrap_or_default();
+                let (dest, next_hop) = (g("dest"), g("next_hop"));
+                if dest.is_empty() || next_hop.is_empty() {
+                    continue;
+                }
+                host.routes.push(crate::wire::ReportedRoute {
+                    dest,
+                    next_hop,
+                    if_index: rd.get("if_index").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
+                    proto: g("proto"),
+                });
+            }
+            _ => {}
+        }
+    }
     host
 }
 

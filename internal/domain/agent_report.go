@@ -112,6 +112,14 @@ type ReportedHost struct {
 	// SNMP holds the structured SNMP sys* fields the agent collected (sysDescr,
 	// sysObjectID, sysName, …). Folded into scan_attributes by the bridge.
 	SNMP *ReportedSNMP `json:"snmp,omitempty"`
+	// Interfaces carries the device's own port census (#529): IF-MIB +
+	// ipAddrTable rows the agent collected. The evidence slice never crosses
+	// the wire, so this array is the only channel device_interfaces sees
+	// from agent-side collection.
+	Interfaces []ReportedInterface `json:"interfaces,omitempty"`
+	// Routes carries the agent-collected routing table rows (#528);
+	// next-hop-resolvable routes materialize route-table topology edges.
+	Routes []ReportedRoute `json:"routes,omitempty"`
 	// Neighbors carries the L2 adjacency edges the agent observed on the host
 	// (LLDP / CDP / Bridge-MIB / Q-BRIDGE-MIB / STP probes). The full evidence
 	// array does NOT cross the wire, so without this field those probes'
@@ -125,6 +133,25 @@ type ReportedHost struct {
 // Mirrors scannerv2.NeighborSpec (the device_neighbors row shape) plus the
 // identity hints LLDP/CDP announce about the peer (sys_name/sys_desc), which
 // the center's neighbor identity inference consumes.
+// ReportedInterface is one row of the device's port census (#529) on the
+// wire: if_index is the merge key on the center (device_interfaces upsert).
+type ReportedInterface struct {
+	IfIndex   int    `json:"if_index"`
+	IfName    string `json:"if_name,omitempty"`
+	IfDescr   string `json:"if_descr,omitempty"`
+	MAC       string `json:"mac,omitempty"`
+	IP        string `json:"ip,omitempty"`
+	SpeedMbps int64  `json:"speed,omitempty"` // link speed in Mbps
+}
+
+// ReportedRoute is one collected routing-table row (#528) on the wire.
+type ReportedRoute struct {
+	DestCIDR string `json:"dest"`     // "172.16.0.0/12"
+	NextHop  string `json:"next_hop"` // IPv4; the edge target
+	IfIndex  int    `json:"if_index,omitempty"`
+	Proto    string `json:"proto,omitempty"` // local|netmgmt|rip|ospf|bgp|...
+}
+
 type ReportedNeighbor struct {
 	// NeighborMAC is the canonical colon-separated lowercase MAC of the peer
 	// (the merge key against the devices table). Required; rows without one
