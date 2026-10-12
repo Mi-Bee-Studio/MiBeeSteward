@@ -89,3 +89,28 @@ func TestRecordRoutes_SelfNextHopSkipped(t *testing.T) {
 	require.NoError(t, repo.db.QueryRow(`SELECT COUNT(*) FROM topology_edges`).Scan(&n))
 	require.Zero(t, n)
 }
+
+// The IP-keyed Repository entries: resolve-by-ip then delegate; an unknown
+// ip is a logged skip (the apply path may race the row's creation).
+func TestRecordInterfacesAndRoutes_IPKeyedEntries(t *testing.T) {
+	repo, ctx := newRepo(t, Options{})
+	seedDeviceRow(t, repo.db, "10.0.0.1", "aa:bb:cc:dd:ee:01", sql.NullInt64{})
+
+	require.NoError(t, repo.RecordInterfaces(ctx, "10.0.0.1", []scannerv2.InterfaceSpec{
+		{IfIndex: 4, IfName: "wan"},
+	}))
+	require.NoError(t, repo.RecordRoutes(ctx, "10.0.0.1", []scannerv2.RouteSpec{
+		{DestCIDR: "10.0.0.0/8", NextHop: "10.0.0.254"},
+	}))
+	var n int
+	require.NoError(t, repo.db.QueryRow(`SELECT COUNT(*) FROM device_interfaces`).Scan(&n))
+	require.EqualValues(t, 1, n)
+	require.NoError(t, repo.db.QueryRow(`SELECT COUNT(*) FROM topology_edges`).Scan(&n))
+	require.EqualValues(t, 0, n, "next hop not in inventory: no edge, no error")
+
+	// Unknown ip: silent skip both ways.
+	require.NoError(t, repo.RecordInterfaces(ctx, "10.9.9.9", []scannerv2.InterfaceSpec{{IfIndex: 1}}))
+	require.NoError(t, repo.RecordRoutes(ctx, "10.9.9.9", []scannerv2.RouteSpec{{DestCIDR: "0.0.0.0/0", NextHop: "1.1.1.1"}}))
+	require.NoError(t, repo.db.QueryRow(`SELECT COUNT(*) FROM device_interfaces`).Scan(&n))
+	require.EqualValues(t, 1, n)
+}
