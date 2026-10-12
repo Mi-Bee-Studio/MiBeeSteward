@@ -43,12 +43,12 @@ import (
 //   - ipRouteProto (4.21.1.9): local|netmgmt|icmp|egp|ggp|hello|rip|isIs|...
 //   - ipRouteMask (4.21.1.11): the destination network mask.
 const (
-	oidIpRouteDest    = "1.3.6.1.2.1.4.21.1.1"
-	oidIpRouteIfIndex = "1.3.6.1.2.1.4.21.1.2"
-	oidIpRouteNextHop = "1.3.6.1.2.1.4.21.1.7"
-	oidIpRouteType    = "1.3.6.1.2.1.4.21.1.8"
-	oidIpRouteProto   = "1.3.6.1.2.1.4.21.1.9"
-	oidIpRouteMask    = "1.3.6.1.2.1.4.21.1.11"
+	oidIPRouteDest    = "1.3.6.1.2.1.4.21.1.1"
+	oidIPRouteIfIndex = "1.3.6.1.2.1.4.21.1.2"
+	oidIPRouteNextHop = "1.3.6.1.2.1.4.21.1.7"
+	oidIPRouteType    = "1.3.6.1.2.1.4.21.1.8"
+	oidIPRouteProto   = "1.3.6.1.2.1.4.21.1.9"
+	oidIPRouteMask    = "1.3.6.1.2.1.4.21.1.11"
 )
 
 // RouteMIBProbe collects the routing table via SNMP.
@@ -90,34 +90,34 @@ func (p *RouteMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.Probe
 		})
 	}
 
-	collect(oidIpRouteDest, func(key string, pdu gosnmp.SnmpPDU) {
+	collect(oidIPRouteDest, func(key string, pdu gosnmp.SnmpPDU) {
 		if b, ok := pdu.Value.([]byte); ok {
 			dests[key] = octetsToDotted(b)
 		}
 	})
-	collect(oidIpRouteNextHop, func(key string, pdu gosnmp.SnmpPDU) {
+	collect(oidIPRouteNextHop, func(key string, pdu gosnmp.SnmpPDU) {
 		if b, ok := pdu.Value.([]byte); ok {
 			nextHops[key] = octetsToDotted(b)
 		}
 	})
-	collect(oidIpRouteMask, func(key string, pdu gosnmp.SnmpPDU) {
+	collect(oidIPRouteMask, func(key string, pdu gosnmp.SnmpPDU) {
 		if b, ok := pdu.Value.([]byte); ok {
 			masks[key] = octetsToDotted(b)
 		}
 	})
-	collect(oidIpRouteType, func(key string, pdu gosnmp.SnmpPDU) {
+	collect(oidIPRouteType, func(key string, pdu gosnmp.SnmpPDU) {
 		if v, ok := gosnmpToIntValue(pdu.Value); ok {
 			types[key] = v
 		}
 	})
-	collect(oidIpRouteProto, func(key string, pdu gosnmp.SnmpPDU) {
+	collect(oidIPRouteProto, func(key string, pdu gosnmp.SnmpPDU) {
 		if s, ok := octetStringValue(pdu); ok {
 			protos[key] = s
 		} else if v, ok := gosnmpToIntValue(pdu.Value); ok {
 			protos[key] = strconv.Itoa(v)
 		}
 	})
-	collect(oidIpRouteIfIndex, func(key string, pdu gosnmp.SnmpPDU) {
+	collect(oidIPRouteIfIndex, func(key string, pdu gosnmp.SnmpPDU) {
 		if v, ok := gosnmpToIntValue(pdu.Value); ok {
 			ifIdx[key] = v
 		}

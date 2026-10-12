@@ -42,7 +42,7 @@ const (
 	oidIfSpeed    = "1.3.6.1.2.1.2.2.1.5"
 	oidIfPhysAddr = "1.3.6.1.2.1.2.2.1.6"
 	oidIfNameX    = "1.3.6.1.2.1.31.1.1.1.1"
-	oidIpAdEntIdx = "1.3.6.1.2.1.4.20.1.2"
+	oidIPAdEntIdx = "1.3.6.1.2.1.4.20.1.2"
 )
 
 // IFMIBProbe collects the interface census from IF-MIB + ipAddrTable.
@@ -107,8 +107,8 @@ func (p *IFMIBProbe) Probe(_ context.Context, ip string, hint scannerv2.ProbeHin
 		return nil
 	})
 	// ipAddrTable is keyed by the IP itself (ipAdEntIfIndex.IP -> ifIndex).
-	_ = snmp.Walk(oidIpAdEntIdx, func(pdu gosnmp.SnmpPDU) error {
-		suffix := indexSuffix(pdu.Name, oidIpAdEntIdx)
+	_ = snmp.Walk(oidIPAdEntIdx, func(pdu gosnmp.SnmpPDU) error {
+		suffix := indexSuffix(pdu.Name, oidIPAdEntIdx)
 		if suffix == "" {
 			return nil
 		}

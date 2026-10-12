@@ -138,7 +138,9 @@ func (r *recordRepo) AnchorLocalInterfaces(_ context.Context, _ sql.NullInt64, _
 	return 0, nil
 }
 
-func (r *recordRepo) RecordInterfaces(_ context.Context, _ string, _ []InterfaceSpec) error { return nil }
+func (r *recordRepo) RecordInterfaces(_ context.Context, _ string, _ []InterfaceSpec) error {
+	return nil
+}
 
 func (r *recordRepo) RecordRoutes(_ context.Context, _ string, _ []RouteSpec) error { return nil }
 

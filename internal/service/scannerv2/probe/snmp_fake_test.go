@@ -323,9 +323,9 @@ func TestIFMIBProbe_WalkScripted(t *testing.T) {
 		oidIfSpeed: {
 			pdu(oidIfSpeed, "1", gosnmp.Gauge32, 1_000_000_000),
 		},
-		oidIpAdEntIdx: {
-			pdu(oidIpAdEntIdx, "192.168.1.1", gosnmp.Integer, 1),
-			pdu(oidIpAdEntIdx, "10.0.5.1", gosnmp.Integer, 2),
+		oidIPAdEntIdx: {
+			pdu(oidIPAdEntIdx, "192.168.1.1", gosnmp.Integer, 1),
+			pdu(oidIPAdEntIdx, "10.0.5.1", gosnmp.Integer, 2),
 		},
 	}})
 
@@ -352,34 +352,34 @@ func TestIFMIBProbe_WalkScripted(t *testing.T) {
 
 func TestRouteMIBProbe_WalkScripted(t *testing.T) {
 	injectFakeSnmp(t, &fakeSnmp{walks: map[string][]gosnmp.SnmpPDU{
-		oidIpRouteDest: {
+		oidIPRouteDest: {
 			// Key = the dest IP's dotted-octet index.
-			pdu(oidIpRouteDest, "0.0.0.0", gosnmp.OctetString, []byte{0, 0, 0, 0}),
-			pdu(oidIpRouteDest, "172.16.0.0", gosnmp.OctetString, []byte{172, 16, 0, 0}),
-			pdu(oidIpRouteDest, "192.168.50.0", gosnmp.OctetString, []byte{192, 168, 50, 0}),
+			pdu(oidIPRouteDest, "0.0.0.0", gosnmp.OctetString, []byte{0, 0, 0, 0}),
+			pdu(oidIPRouteDest, "172.16.0.0", gosnmp.OctetString, []byte{172, 16, 0, 0}),
+			pdu(oidIPRouteDest, "192.168.50.0", gosnmp.OctetString, []byte{192, 168, 50, 0}),
 		},
-		oidIpRouteNextHop: {
-			pdu(oidIpRouteNextHop, "0.0.0.0", gosnmp.OctetString, []byte{10, 0, 0, 254}),
-			pdu(oidIpRouteNextHop, "172.16.0.0", gosnmp.OctetString, []byte{10, 0, 0, 254}),
+		oidIPRouteNextHop: {
+			pdu(oidIPRouteNextHop, "0.0.0.0", gosnmp.OctetString, []byte{10, 0, 0, 254}),
+			pdu(oidIPRouteNextHop, "172.16.0.0", gosnmp.OctetString, []byte{10, 0, 0, 254}),
 			// Direct route: next hop 0.0.0.0 -> skipped.
-			pdu(oidIpRouteNextHop, "192.168.50.0", gosnmp.OctetString, []byte{0, 0, 0, 0}),
+			pdu(oidIPRouteNextHop, "192.168.50.0", gosnmp.OctetString, []byte{0, 0, 0, 0}),
 		},
-		oidIpRouteType: {
-			pdu(oidIpRouteType, "0.0.0.0", gosnmp.Integer, 4),
-			pdu(oidIpRouteType, "172.16.0.0", gosnmp.Integer, 4),
-			pdu(oidIpRouteType, "192.168.50.0", gosnmp.Integer, 3),
+		oidIPRouteType: {
+			pdu(oidIPRouteType, "0.0.0.0", gosnmp.Integer, 4),
+			pdu(oidIPRouteType, "172.16.0.0", gosnmp.Integer, 4),
+			pdu(oidIPRouteType, "192.168.50.0", gosnmp.Integer, 3),
 		},
-		oidIpRouteProto: {
-			pdu(oidIpRouteProto, "0.0.0.0", gosnmp.Integer, 3),     // netmgmt
-			pdu(oidIpRouteProto, "172.16.0.0", gosnmp.Integer, 11), // ospf
+		oidIPRouteProto: {
+			pdu(oidIPRouteProto, "0.0.0.0", gosnmp.Integer, 3),     // netmgmt
+			pdu(oidIPRouteProto, "172.16.0.0", gosnmp.Integer, 11), // ospf
 		},
-		oidIpRouteMask: {
-			pdu(oidIpRouteMask, "0.0.0.0", gosnmp.OctetString, []byte{0, 0, 0, 0}),
-			pdu(oidIpRouteMask, "172.16.0.0", gosnmp.OctetString, []byte{255, 255, 0, 0}),
+		oidIPRouteMask: {
+			pdu(oidIPRouteMask, "0.0.0.0", gosnmp.OctetString, []byte{0, 0, 0, 0}),
+			pdu(oidIPRouteMask, "172.16.0.0", gosnmp.OctetString, []byte{255, 255, 0, 0}),
 		},
-		oidIpRouteIfIndex: {
-			pdu(oidIpRouteIfIndex, "0.0.0.0", gosnmp.Integer, 2),
-			pdu(oidIpRouteIfIndex, "172.16.0.0", gosnmp.Integer, 2),
+		oidIPRouteIfIndex: {
+			pdu(oidIPRouteIfIndex, "0.0.0.0", gosnmp.Integer, 2),
+			pdu(oidIPRouteIfIndex, "172.16.0.0", gosnmp.Integer, 2),
 		},
 	}})
 

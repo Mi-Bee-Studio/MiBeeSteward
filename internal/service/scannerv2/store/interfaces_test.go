@@ -58,7 +58,7 @@ func TestRecordRoutes_EdgesToNextHopDevices(t *testing.T) {
 
 	routes := []scannerv2.RouteSpec{
 		{DestCIDR: "172.16.0.0/12", NextHop: "10.0.0.254", IfIndex: 1, Proto: "static"},
-		{DestCIDR: "192.168.50.0/24", NextHop: "10.0.0.253", Proto: "ospf"},  // no device at .253
+		{DestCIDR: "192.168.50.0/24", NextHop: "10.0.0.253", Proto: "ospf"},       // no device at .253
 		{DestCIDR: "0.0.0.0/0", NextHop: "10.0.0.254", IfIndex: 2, Proto: "dhcp"}, // second route, same hop
 	}
 	require.NoError(t, repo.recordRoutes(ctx, routerID, routes))
