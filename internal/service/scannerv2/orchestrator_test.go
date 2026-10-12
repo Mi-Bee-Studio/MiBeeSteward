@@ -126,7 +126,7 @@ func (r *recordRepo) RecordHeartbeats(_ context.Context, ip string, specs []Hear
 	return nil
 }
 
-func (r *recordRepo) RecordNeighbors(_ context.Context, _ string, _ []NeighborSpec) error {
+func (r *recordRepo) RecordNeighbors(_ context.Context, _, _ string, _ []NeighborSpec) error {
 	return nil
 }
 
@@ -136,6 +136,14 @@ func (r *recordRepo) RecordNeighborsByMAC(_ context.Context, _ string, _ []Neigh
 
 func (r *recordRepo) AnchorLocalInterfaces(_ context.Context, _ sql.NullInt64, _ []IPMACPair) (int64, error) {
 	return 0, nil
+}
+
+func (r *recordRepo) RecordSighting(_ context.Context, _ int64, _, _ string, _ sql.NullInt64, _, _ string, _ time.Time) error {
+	return nil
+}
+
+func (r *recordRepo) UpsertNetworkPresence(_ context.Context, _, _ int64, _, _ string, _ time.Time) error {
+	return nil
 }
 
 func (r *recordRepo) EnrichDeviceByMAC(_ context.Context, _ string, _ map[string]string) error {

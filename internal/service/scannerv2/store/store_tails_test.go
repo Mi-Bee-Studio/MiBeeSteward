@@ -32,7 +32,7 @@ func TestRepository_DeadDB_FirstErrorTails(t *testing.T) {
 		[]scannerv2.TLSCertRecord{{IP: "10.0.0.1", Port: 443}}))
 	// RecordNeighbors never fails the caller: an unresolvable device is logged and
 	// swallowed (nil), never returned.
-	require.NoError(t, repo.RecordNeighbors(context.Background(), "10.0.0.1",
+	require.NoError(t, repo.RecordNeighbors(context.Background(), "10.0.0.1", "",
 		[]scannerv2.NeighborSpec{{NeighborMAC: "aa:bb:cc:dd:ee:ff", Protocol: "LLDP"}}))
 	_, err = repo.ResolveDeviceIdentity(context.Background(), "aa:bb:cc:dd:ee:ff", "10.0.0.1", sql.NullInt64{})
 	require.Error(t, err)

@@ -1250,6 +1250,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/{id}/sightings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Address-observation history of a device (#527/#529, newest first)
+         * @description Where the device was seen (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which pipeline source. The roaming/move archaeology feed.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    /** @description Filter to one reporting agent; omit for every stream */
+                    vantage?: string;
+                };
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sightings envelope */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SightingList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/{id}/certificates": {
         parameters: {
             query?: never;
@@ -5512,6 +5557,8 @@ export interface components {
             bytes?: number | null;
             local_port: string | null;
             remote_port: string | null;
+            /** @description Reporting vantage (#527): empty = center-local, else the agent id */
+            agent_id?: string;
             neighbor_name: string | null;
             neighbor_ip: string | null;
             neighbor_type: string | null;
@@ -5549,6 +5596,28 @@ export interface components {
         };
         NeighborList: {
             neighbors?: components["schemas"]["DeviceNeighbor"][];
+            total?: number;
+        };
+        /** @description One address-observation history row (#527/#529): where the device was seen, at which address, via which vantage (empty = center-local, else an agent id), from which pipeline source. */
+        DeviceSighting: {
+            /** Format: int64 */
+            id: number;
+            ip_address: string;
+            mac_address?: string;
+            /** Format: int64 */
+            network_id?: number | null;
+            vantage?: string;
+            /** @description scan | agent-report | passive:ebpf:arp | discovery:* */
+            source?: string;
+            /** Format: date-time */
+            first_seen: string;
+            /** Format: date-time */
+            last_seen: string;
+            /** Format: int64 */
+            see_count: number;
+        };
+        SightingList: {
+            sightings?: components["schemas"]["DeviceSighting"][];
             total?: number;
         };
         /** @description One certificate in a port's chain (cert_index 0 = leaf) */
@@ -6094,6 +6163,15 @@ export interface components {
             network_id: number | null;
             /** @description Collected dot1dStp fact (#525) - this bridge reported itself as the spanning-tree root; false when it never spoke STP */
             stp_root?: boolean;
+            /** @description Segments this asset is actively present in (#526) - the multi-homed interconnect fact; omitted when no presence has accrued. */
+            networks?: {
+                /** Format: int64 */
+                network_id: number;
+                ip_address: string;
+                vantage?: string;
+                /** Format: date-time */
+                last_seen: string;
+            }[];
         };
         TopologyEdge: {
             /** Format: int64 */

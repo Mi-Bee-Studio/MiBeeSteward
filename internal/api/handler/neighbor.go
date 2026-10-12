@@ -42,6 +42,7 @@ type neighborResponseEntry struct {
 	Protocol         string  `json:"protocol"`
 	LocalPort        *string `json:"local_port"`
 	RemotePort       *string `json:"remote_port"`
+	AgentID          string  `json:"agent_id"` // reporting vantage (#527): "" = center-local
 	NeighborName     *string `json:"neighbor_name"`
 	NeighborIP       *string `json:"neighbor_ip"`
 	NeighborType     *string `json:"neighbor_type"`
@@ -74,6 +75,7 @@ func (h *NeighborHandler) ListByDevice(w http.ResponseWriter, r *http.Request) {
 			Protocol:         row.Protocol,
 			LocalPort:        row.LocalPort,
 			RemotePort:       row.RemotePort,
+			AgentID:          row.AgentID,
 			NeighborName:     row.NeighborName,
 			NeighborIP:       row.NeighborIp,
 			NeighborType:     row.NeighborType,

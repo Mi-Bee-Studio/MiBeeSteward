@@ -12,6 +12,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
@@ -45,6 +46,19 @@ type topoNode struct {
 	// itself as the network's spanning-tree root. True root detection for
 	// the graph, replacing in-degree/type heuristics.
 	STPRoot bool `json:"stp_root"`
+	// Networks are the segments this asset is actively present in (#526) —
+	// the multi-homed identity layer. A node bridging two LANs carries both;
+	// the graph answers "which device interconnects these segments" from
+	// this collected fact. Empty when presence data hasn't accrued yet.
+	Networks []topoNetwork `json:"networks,omitempty"`
+}
+
+// topoNetwork is one per-network presence of a topology node (#526).
+type topoNetwork struct {
+	NetworkID int64  `json:"network_id"`
+	IPAddress string `json:"ip_address"`
+	Vantage   string `json:"vantage,omitempty"` // "" = center-local, else agent id
+	LastSeen  string `json:"last_seen"`
 }
 
 // topoEdge is one L2 adjacency: a device sees a neighbor (by MAC) via a
@@ -80,6 +94,21 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to query topology nodes")
 		return
 	}
+	// Multi-homed presence (#526): bulk-fetch every (device, network)
+	// presence row and attach per node — the interconnect fact. Failure
+	// degrades to presence-less nodes (the graph still renders).
+	presenceByDevice := map[int64][]topoNetwork{}
+	if pres, perr := h.queries.ListAllNetworkPresences(r.Context()); perr == nil {
+		for _, p := range pres {
+			presenceByDevice[p.DeviceID] = append(presenceByDevice[p.DeviceID], topoNetwork{
+				NetworkID: p.NetworkID,
+				IPAddress: p.IpAddress,
+				Vantage:   p.Vantage,
+				LastSeen:  p.LastSeen.UTC().Format(time.RFC3339),
+			})
+		}
+	}
+
 	nodes := make([]topoNode, 0, len(devRows))
 	for _, d := range devRows {
 		nodes = append(nodes, topoNode{
@@ -93,6 +122,7 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 			Brand:        ptrString(d.ScanVendor),
 			NetworkID:    d.NetworkID,
 			STPRoot:      d.StpRoot == 1,
+			Networks:     presenceByDevice[d.ID],
 		})
 	}
 

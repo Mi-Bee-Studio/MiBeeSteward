@@ -443,6 +443,29 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/SpeaksList"}
+  /devices/{id}/sightings:
+    get:
+      tags: [Devices]
+      summary: Address-observation history of a device (#527/#529, newest first)
+      description: >-
+        Where the device was seen (ip/mac/network), via which vantage
+        (empty = center-local, else the reporting agent id), from which
+        pipeline source. The roaming/move archaeology feed.
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50, maximum: 500}
+        - name: vantage
+          in: query
+          schema: {type: string}
+          description: Filter to one reporting agent; omit for every stream
+      responses:
+        "200":
+          description: Sightings envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SightingList"}
   /devices/{id}/certificates:
     get:
       tags: [Devices]
@@ -1887,6 +1910,7 @@ components:
         bytes: {type: integer, format: int64, nullable: true, description: speaks-with edges only — observed byte total}
         local_port: {type: string, nullable: true}
         remote_port: {type: string, nullable: true}
+        agent_id: {type: string, description: "Reporting vantage (#527): empty = center-local, else the agent id"}
         neighbor_name: {type: string, nullable: true}
         neighbor_ip: {type: string, nullable: true}
         neighbor_type: {type: string, nullable: true}
@@ -1918,6 +1942,28 @@ components:
       type: object
       properties:
         neighbors: {type: array, items: {$ref: "#/components/schemas/DeviceNeighbor"}}
+        total: {type: integer}
+    DeviceSighting:
+      type: object
+      description: >-
+        One address-observation history row (#527/#529): where the device was
+        seen, at which address, via which vantage (empty = center-local, else
+        an agent id), from which pipeline source.
+      required: [id, ip_address, first_seen, last_seen, see_count]
+      properties:
+        id: {type: integer, format: int64}
+        ip_address: {type: string}
+        mac_address: {type: string}
+        network_id: {type: integer, format: int64, nullable: true}
+        vantage: {type: string}
+        source: {type: string, description: "scan | agent-report | passive:ebpf:arp | discovery:*"}
+        first_seen: {type: string, format: date-time}
+        last_seen: {type: string, format: date-time}
+        see_count: {type: integer, format: int64}
+    SightingList:
+      type: object
+      properties:
+        sightings: {type: array, items: {$ref: "#/components/schemas/DeviceSighting"}}
         total: {type: integer}
 
     CertificateInfo:
@@ -2481,6 +2527,17 @@ components:
         brand: {type: string}
         network_id: {type: integer, format: int64, nullable: true, description: Origin network (subnet grouping)}
         stp_root: {type: boolean, description: Collected dot1dStp fact (#525) - this bridge reported itself as the spanning-tree root; false when it never spoke STP}
+        networks:
+          type: array
+          description: Segments this asset is actively present in (#526) - the multi-homed interconnect fact; omitted when no presence has accrued.
+          items:
+            type: object
+            required: [network_id, ip_address, last_seen]
+            properties:
+              network_id: {type: integer, format: int64}
+              ip_address: {type: string}
+              vantage: {type: string}
+              last_seen: {type: string, format: date-time}
     TopologyEdge:
       type: object
       required: [from_device_id, to_device_id, to_mac, protocol, local_port, remote_port]

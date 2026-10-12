@@ -152,8 +152,32 @@ type DeviceNeighbor struct {
 	LocalPort        *string    `json:"local_port"`
 	RemotePort       *string    `json:"remote_port"`
 	NetworkID        *int64     `json:"network_id"`
+	AgentID          string     `json:"agent_id"`
 	FirstSeen        *time.Time `json:"first_seen"`
 	LastSeen         *time.Time `json:"last_seen"`
+}
+
+type DeviceNetworkPresence struct {
+	ID        int64     `json:"id"`
+	DeviceID  int64     `json:"device_id"`
+	NetworkID int64     `json:"network_id"`
+	IpAddress string    `json:"ip_address"`
+	Vantage   string    `json:"vantage"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+}
+
+type DeviceSighting struct {
+	ID         int64     `json:"id"`
+	DeviceID   int64     `json:"device_id"`
+	IpAddress  string    `json:"ip_address"`
+	MacAddress string    `json:"mac_address"`
+	NetworkID  *int64    `json:"network_id"`
+	Vantage    string    `json:"vantage"`
+	Source     string    `json:"source"`
+	FirstSeen  time.Time `json:"first_seen"`
+	LastSeen   time.Time `json:"last_seen"`
+	SeeCount   int64     `json:"see_count"`
 }
 
 type DeviceSpeaksWith struct {

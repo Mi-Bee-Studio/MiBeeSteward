@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/domain"
@@ -209,6 +210,7 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 				}
 			}
 		}
+		rn.recordVantage(ctx, devID, rep, mac, networkID, agentID)
 		return true, false
 	}
 
@@ -298,6 +300,8 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 	// Clear the heartbeat service's failure counter for this device: the
 	// scan just proved it's alive, so a stale counter from a prior flapping
 	// window must not pull it back to offline on the next heartbeat tick.
+	rn.recordVantage(ctx, existingID, rep, mac, networkID, agentID)
+
 	if rn.heartbeat != nil {
 		rn.heartbeat.ResetFailures(existingID)
 		// Backfill heartbeat configs for pre-existing devices that were
@@ -352,6 +356,25 @@ func (rn *Runner) buildIdentityWrite(rep scannerv2.HostReport, mac, devType, bra
 		ScanAttributesJSON:   marshalScanAttributes(buildScanAttributes(rep)),
 		TagsJSON:             buildDeviceTags(devType, brand, rep),
 		RTTMs:                rep.RTTMs,
+	}
+}
+
+// recordVantage writes the per-apply observation tails (#526/#527): the
+// network presence (which segments the asset is active in, at which address)
+// and the sighting history row (where, via which vantage, when). Both are
+// log-and-continue tails like every persistence step here.
+func (rn *Runner) recordVantage(ctx context.Context, deviceID int64, rep scannerv2.HostReport, mac string, networkID sql.NullInt64, agentID string) {
+	if deviceID == 0 || rn.repo == nil {
+		return
+	}
+	now := time.Now().UTC()
+	if networkID.Valid && !scannerv2.CarriesNoLocation(rep.IP) {
+		if err := rn.repo.UpsertNetworkPresence(ctx, deviceID, networkID.Int64, rep.IP, agentID, now); err != nil {
+			rn.logger.Debug("device bridge: upsert network presence failed", "ip", rep.IP, "error", err)
+		}
+	}
+	if err := rn.repo.RecordSighting(ctx, deviceID, rep.IP, mac, networkID, agentID, "scan", now); err != nil {
+		rn.logger.Debug("device bridge: record sighting failed", "ip", rep.IP, "error", err)
 	}
 }
 

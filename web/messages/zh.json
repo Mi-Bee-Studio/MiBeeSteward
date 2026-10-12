@@ -1164,7 +1164,19 @@
 		"Speaks In": "收到",
 		"Speaks External": "外部",
 		"Speaks Empty": "尚未观测到流量。当部署了 eBPF 观测器（scanner.ebpf.enabled）的 vantage 能看到该设备的流量后，此处会自动填充。",
-		"Bytes": "字节"
+		"Bytes": "字节",
+		"Sightings": "目击历史",
+		"Sightings Desc": "地址目击记录：这台设备在哪里被看到、经哪个视角（留空 = 本中心，否则为上报 agent）、来自哪个来源。相同组合只刷新时间——次数累加。",
+		"Sightings Empty": "暂无目击历史——schema v6 写入端上线后，每次扫描与被动目击都会记录。",
+		"Sightings IP": "地址",
+		"Sightings Vantage": "视角",
+		"Sightings Source": "来源",
+		"Sightings Count": "次数",
+		"Sightings First Seen": "首次",
+		"Sightings Local": "本机",
+		"Neighbors Vantage": "视角",
+		"Multi Homed": "多网归属",
+		"Multi Homed Desc": "同时活跃于多个网段——按网采集的在网事实。"
 	},
 	"certificates": {
 		"Title": "TLS 证书",

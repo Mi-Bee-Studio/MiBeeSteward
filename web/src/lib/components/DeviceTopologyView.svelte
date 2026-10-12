@@ -486,6 +486,25 @@
 					{#if selectedNode.isRoot}
 						<p class="mt-3 text-xs text-warning">⭐ {m['topology.Gateway']()}</p>
 					{/if}
+					{#if (selectedNode.value.networks?.length ?? 0) > 1}
+						<!-- Multi-homed (#526): the node bridges several networks -
+						     the collected interconnect fact, not a graph guess. -->
+						<div class="mt-3 pt-3 border-t border-border">
+							<p class="text-xs font-medium text-primary mb-1">{m['topology.Multi Homed']()}</p>
+							<p class="text-xs text-muted mb-2">{m['topology.Multi Homed Desc']()}</p>
+							<ul class="space-y-1">
+								{#each selectedNode.value.networks as pn}
+									<li class="text-xs flex items-center gap-2">
+										<span class="px-1.5 py-0.5 rounded bg-bg-hover text-text-muted">#{pn.network_id}</span>
+										<span class="font-mono">{pn.ip_address || '—'}</span>
+										{#if pn.vantage}
+											<span class="text-muted font-mono">@{pn.vantage}</span>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
 					<a
 						href="/devices/detail/{selectedNode.value.id}"
 						class="btn btn-secondary text-xs mt-4 inline-block"

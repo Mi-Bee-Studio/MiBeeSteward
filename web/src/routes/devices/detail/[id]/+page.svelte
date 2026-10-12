@@ -18,7 +18,7 @@
 	import { auth } from '$lib/stores/auth';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { formatDateTime as formatTimestamp } from '$lib/utils/index';
-	import type { Device, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks } from '$lib/types';
+	import type { Device, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks, DeviceSighting } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
 	import { Monitor, BarChart3, FileText } from '@lucide/svelte';
@@ -47,6 +47,7 @@
 	let total = $state(0);
 	let neighbors = $state<DeviceNeighbor[]>([]);
 	let speaks = $state<DeviceSpeaks[]>([]);
+	let sightings = $state<DeviceSighting[]>([]);
 	// VLANs observed on the device's network (#273): tag + name (when the
 	// gateway's dot1qVlanStaticName walk found one). null = not loaded yet.
 	let networkVlans = $state<Array<{ id: number; vlan_tag: number; name: string | null; description: string | null }> | null>(null);
@@ -358,6 +359,7 @@
 			if (!tlsCerts.length) fetchTLSCerts();
 			if (!neighbors.length) fetchNeighbors();
 			if (!speaks.length) fetchSpeaks();
+			if (!sightings.length) fetchSightings();
 			if (networkVlans === null && device?.network_id) fetchNetworkVlans();
 		}
 		if (t === 'config') {
@@ -574,6 +576,19 @@
 			speaks = res.speaks || [];
 		} catch {
 			// passive enrichment: keep empty
+		}
+	}
+
+	// Sighting history (#527): address observations with vantage provenance.
+	// Newest first; failures are silent (empty panel).
+	async function fetchSightings() {
+		try {
+			const res = await api.get<{ sightings: DeviceSighting[]; total: number }>(
+				`/devices/${deviceId}/sightings?limit=100`
+			);
+			sightings = res.sightings || [];
+		} catch {
+			// history enrichment: keep empty
 		}
 	}
 
@@ -1541,6 +1556,54 @@
 		</div>
 	{/if}
 
+	<!-- Sighting History (#527): address observations with vantage
+	     provenance - the roaming/move archaeology feed. -->
+	{#if device}
+		<div class="scan-info-panel mt-4">
+			<h3 class="scan-info-title">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+				{m['topology.Sightings']()}
+			</h3>
+			<p class="text-xs text-text-muted mb-3">{m['topology.Sightings Desc']()}</p>
+			{#if sightings.length > 0}
+				<div class="overflow-x-auto">
+					<table class="w-full text-left border border-border rounded-lg overflow-hidden">
+						<thead class="bg-bg/50 border-b border-border">
+							<tr>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Sightings IP']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Sightings Vantage']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Sightings Source']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Sightings Count']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Sightings First Seen']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['devicedetail.Col Last Seen']()}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each sightings as sg}
+								<tr class="border-b border-border/50 last:border-b-0">
+									<td class="px-3 py-2 font-mono text-xs">{sg.ip_address}</td>
+									<td class="px-3 py-2 text-xs">
+										{#if sg.vantage}
+											<span class="px-1.5 py-0.5 rounded bg-bg-hover text-text-muted font-mono">{sg.vantage}</span>
+										{:else}
+											<span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary">{m['topology.Sightings Local']()}</span>
+										{/if}
+									</td>
+									<td class="px-3 py-2 text-xs text-text-muted font-mono">{sg.source}</td>
+									<td class="px-3 py-2 font-mono text-xs">{sg.see_count}</td>
+									<td class="px-3 py-2 text-xs text-text-muted">{sg.first_seen}</td>
+									<td class="px-3 py-2 text-xs text-text-muted">{sg.last_seen}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<p class="text-xs text-text-muted italic">{m['topology.Sightings Empty']()}</p>
+			{/if}
+		</div>
+	{/if}
+
 	<!-- L2 Neighbors (Bridge-MIB / LLDP adjacency): always shown so users know
 	     this section exists; empty state explains how to populate it. -->
 	{#if device}
@@ -1565,6 +1628,7 @@
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['devicedetail.Col Protocol']()}</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Local Port']()}</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Remote Port']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Neighbors Vantage']()}</th>
 								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['devicedetail.Col Last Seen']()}</th>
 							</tr>
 						</thead>
@@ -1592,6 +1656,13 @@
 									</td>
 									<td class="px-3 py-2 font-mono text-xs text-text">{nb.local_port ?? '-'}</td>
 									<td class="px-3 py-2 font-mono text-xs text-text">{nb.remote_port ?? '-'}</td>
+									<td class="px-3 py-2 text-xs">
+										{#if nb.agent_id}
+											<span class="px-1.5 py-0.5 rounded bg-bg-hover text-text-muted font-mono" title={m['topology.Neighbors Vantage']()}>{nb.agent_id}</span>
+										{:else}
+											<span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary">{m['topology.Sightings Local']()}</span>
+										{/if}
+									</td>
 									<td class="px-3 py-2 text-xs text-text-muted">{formatTimestamp(nb.last_seen)}</td>
 								</tr>
 							{/each}

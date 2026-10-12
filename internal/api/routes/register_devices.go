@@ -77,6 +77,19 @@ func registerDeviceNeighborRoutes(r chi.Router, scopeResolver *scoperesolver.Res
 	})
 }
 
+// registerDeviceSightingsRoutes registers the per-device address-observation
+// history (#527/#529): where the device was seen, via which vantage.
+func registerDeviceSightingsRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, dbConn *sql.DB, sightingsHandler *handler.DeviceSightingsHandler) {
+	// Device sighting history, read-only. Feeds the detail-page Sightings
+	// panel; ?vantage= filters to one reporting agent ("" = center-local).
+	r.Route("/api/v1/devices/{id}/sightings", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
+		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
+		r.Get("/", sightingsHandler.ListByDevice)
+	})
+}
+
 // registerDeviceSpeaksRoutes registers the per-device speaks-with traffic
 // profile (#500).
 func registerDeviceSpeaksRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, dbConn *sql.DB, speaksHandler *handler.DeviceSpeaksHandler) {
