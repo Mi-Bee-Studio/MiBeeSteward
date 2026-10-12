@@ -233,7 +233,7 @@ The agent can keep its fingerprint corpus in step with the center without any bi
 
 - Agent offline: outbound failures back off and retry without an error storm; the in-memory pending queue (100 batches) buffers reports and drains them on reconnect.
 - Center restart: SQLite single-writer makes cold starts safe; agents simply keep reporting (the center's hash cache is cleared, so one full merge happens before the fast path resumes).
-- Token revocation: after revoking/deleting the center token, the agent's next report gets a 401, a **terminal** 4xx: that batch is dropped and logged (not retried, not re-queued); the agent's local shadow data is untouched. Re-issue a token and update `center.auth_token` to resume.
+- Token gap / revocation: a 401 means "the center does not know this token *right now*" — that covers both deliberate revocation and the legitimate ops window where the center was rebuilt and the same token is about to be restored (agent-rs 0.1.7, #554). The agent parks the batch in its pending queue, drops only the empty heartbeat, and re-checks once per 5-minute cool-down window until the token works again; local scans and passive discovery keep running throughout. A permanently revoked token therefore costs the agent one probe request per window, nothing more. Other 4xx (400/403/409) stay terminal: that batch is dropped and logged, and re-issuing the token plus updating `center.auth_token` resumes reporting immediately.
 
 ### Limitations
 

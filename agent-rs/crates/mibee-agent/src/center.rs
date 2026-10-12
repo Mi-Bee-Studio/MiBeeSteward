@@ -14,8 +14,10 @@ use crate::wire::{now_rfc3339, AgentCommand, AgentReport, CommandComplete, Probe
 #[derive(Debug)]
 pub enum PostOutcome {
     Accepted(ReportAck),
-    /// 4xx except 429: unrecoverable — the batch is dropped (Go treats it as
-    /// delivered so it never re-queues).
+    /// 4xx except 429. The reporter decides what it means: 400/403/409 are
+    /// unrecoverable (batch dropped, treated as delivered — Go parity);
+    /// 401 means the token is unknown *right now* and triggers the
+    /// park-and-cooldown self-heal path (#554).
     Rejected(u16),
 }
 
@@ -220,7 +222,8 @@ impl Clock for RealClock {
 }
 
 /// Buffered scan-report reporter with heartbeat, retry/backoff and a
-/// bounded pending queue (Go internal/agent/reporter.go semantics).
+/// bounded pending queue (Go internal/agent/reporter.go semantics, with one
+/// deliberate divergence: 401 is NOT terminal — see post_with_retry).
 pub struct Reporter {
     client: Arc<CenterClient>,
     agent_id: String,
@@ -229,6 +232,11 @@ pub struct Reporter {
     state: Mutex<ReporterState>,
     clock: Arc<dyn Clock>,
     retry_backoff: Duration,
+    /// How long ticks stay quiet after a 401: the center rejecting our
+    /// token is usually a rebuild/migration with a token-restore window
+    /// (#554), so we park batches and re-check at a low frequency instead
+    /// of dropping data.
+    auth_retry_backoff: Duration,
     // MIPS32 lacks 64-bit lock-free atomics: the epoch start is kept as
     // seconds (u32) and re-multiplied on read.
     process_start_sec: AtomicU32,
@@ -241,6 +249,8 @@ struct ReporterState {
     passive: bool,
     pending: Vec<AgentReport>, // oldest-first, cap 100 drop-oldest
     last_post_ms: i64,
+    /// First unix-ms a POST may be attempted again after a 401; 0 = none.
+    auth_retry_after_ms: i64,
 }
 
 impl Reporter {
@@ -263,8 +273,10 @@ impl Reporter {
                 passive: false,
                 pending: Vec::new(),
                 last_post_ms: 0,
+                auth_retry_after_ms: 0,
             }),
             retry_backoff: Duration::from_secs(1),
+            auth_retry_backoff: Duration::from_secs(5 * 60),
             process_start_sec: AtomicU32::new((now / 1000) as u32),
             scans_total: AtomicU32::new(0),
             meta: std::sync::Mutex::new(crate::wire::AgentMeta::default()),
@@ -293,10 +305,15 @@ impl Reporter {
 
     /// One flush tick: drain ONE pending retry (no state hash), then the
     /// current buffer (with hash unless passive), else heartbeat when idle
-    /// and >=30s since any successful POST.
+    /// and >=30s since any successful POST. During a 401 cool-down the tick
+    /// is a no-op — the center just told us our token is unknown, so we
+    /// stay quiet and keep buffering until the window passes (#554).
     pub async fn tick(&self) {
         {
             let mut st = self.state.lock().await;
+            if self.clock.now_unix_ms() < st.auth_retry_after_ms {
+                return;
+            }
             if !st.pending.is_empty() {
                 let batch = st.pending.remove(0);
                 drop(st);
@@ -325,6 +342,12 @@ impl Reporter {
         self.retry_backoff = base;
     }
 
+    /// Override the 401 cool-down window (tests use milliseconds;
+    /// production waits 5 minutes between token re-checks).
+    pub fn set_auth_retry_backoff(&mut self, window: Duration) {
+        self.auth_retry_backoff = window;
+    }
+
     /// Pending-queue depth (test observability).
     pub async fn pending_len(&self) -> usize {
         self.state.lock().await.pending.len()
@@ -336,14 +359,20 @@ impl Reporter {
         self.state.lock().await.last_post_ms
     }
 
-    /// Final flush on shutdown.
+    /// Final flush on shutdown. Bounded: a batch that still can't be
+    /// delivered (transport exhaustion, 401 park) is re-parked once and the
+    /// loop stops — a shutdown must terminate rather than spin on a queue
+    /// that never drains (#554).
     pub async fn stop_flush(&self) {
         let mut st = self.state.lock().await;
         while !st.pending.is_empty() {
             let batch = st.pending.remove(0);
             drop(st);
-            self.post_with_retry(batch, None).await;
+            let delivered = self.post_with_retry(batch, None).await;
             st = self.state.lock().await;
+            if !delivered {
+                break; // re-parked by post_with_retry; retry after restart
+            }
         }
         if !st.buffer.is_empty() {
             let batch = std::mem::take(&mut st.buffer);
@@ -371,16 +400,40 @@ impl Reporter {
         self.post_with_retry(report, hash.as_deref()).await;
     }
 
-    /// 4 attempts, 1s/2s/4s/8s backoff; 4xx-except-429 terminal (dropped,
-    /// treated as delivered); exhaustion parks the batch in the pending
-    /// queue (cap 100, drop-oldest).
+    /// 4 attempts, 1s/2s/4s/8s backoff; exhaustion parks the batch in the
+    /// pending queue (cap 100, drop-oldest). Terminal for 400/403/409 (the
+    /// batch itself is unrecoverable, treated as delivered — Go parity) but
+    /// NOT for 401: an unknown token is usually a center-side rebuild with
+    /// a token-restore window (#554), so the batch is parked and the
+    /// reporter cools down for auth_retry_backoff before re-checking.
     async fn post_with_retry(&self, report: AgentReport, hash: Option<&str>) -> bool {
         let mut backoff = self.retry_backoff;
         for _ in 0..4 {
             match self.client.post_report(&report, hash).await {
                 Ok(PostOutcome::Accepted(_)) => {
-                    self.state.lock().await.last_post_ms = self.clock.now_unix_ms();
+                    let mut st = self.state.lock().await;
+                    st.last_post_ms = self.clock.now_unix_ms();
+                    st.auth_retry_after_ms = 0; // token accepted: cooldown over
                     return true;
+                }
+                Ok(PostOutcome::Rejected(401)) => {
+                    let parks = report.hosts.is_some(); // heartbeats carry no data
+                    let now = self.clock.now_unix_ms();
+                    let mut st = self.state.lock().await;
+                    st.auth_retry_after_ms = now + self.auth_retry_backoff.as_millis() as i64;
+                    if parks {
+                        st.pending.push(report);
+                        while st.pending.len() > 100 {
+                            st.pending.remove(0);
+                        }
+                    }
+                    drop(st);
+                    eprintln!(
+                        "reporter: center rejected token (401); {}, retry in {:?}",
+                        if parks { "batch parked" } else { "heartbeat dropped" },
+                        self.auth_retry_backoff
+                    );
+                    return false;
                 }
                 Ok(PostOutcome::Rejected(status)) => {
                     eprintln!("reporter: center rejected report (terminal, status {status})");
