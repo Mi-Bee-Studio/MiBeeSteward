@@ -103,6 +103,18 @@ type ReportSink func(ctx context.Context, taskID int64, reports []scannerv2.Host
 // concurrently with a running scan.
 func (rn *Runner) SetReportSink(s ReportSink) { rn.reportSink = s }
 
+// ForwardToSink ships a batch of alive reports to the configured upstream
+// sink (the federated-peer reporter on a federating center; nil locally).
+// The sync scan path calls it after its apply loop - Run() does the same for
+// task scans at step 3b; without this, a center driven by sync scans would
+// never mirror anything to its peer.
+func (rn *Runner) ForwardToSink(taskID int64, alive []scannerv2.HostReport) {
+	if rn.reportSink == nil || len(alive) == 0 {
+		return
+	}
+	rn.reportSink(context.Background(), taskID, alive)
+}
+
 // SetChangeRecorder wires the center's change-detection recorder (writes
 // change_log + pushes Watcher subscribers). nil clears it (agent mode, where
 // change detection is deferred to the center). Must be called before Run.

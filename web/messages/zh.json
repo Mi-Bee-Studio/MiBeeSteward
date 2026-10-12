@@ -177,7 +177,9 @@
 		"CSV Col IP": "IP",
 		"Sse Device Added": "网络中发现新设备",
 		"Sse Device Lost": "有设备离线",
-		"Sse Device Recovered": "有设备恢复在线"
+		"Sse Device Recovered": "有设备恢复在线",
+		"Remote Network": "远端",
+		"Remote Network Desc": "镜像自联邦对端网段（本端只读，编辑在对端所属 center）"
 	},
 	"systems": {
 		"System Management": "系统管理",
@@ -1258,7 +1260,9 @@
 		"Config Identical": "所选两个版本内容一致。",
 		"Network Vlans": "VLAN",
 		"Network Vlans Desc": "本网络观测到的 802.1Q VLAN（经网关 Q-BRIDGE-MIB 采集）",
-		"Network Vlans Empty": "暂无 VLAN —— 网络内没有可 SNMP 访问的 VLAN 感知网桥"
+		"Network Vlans Empty": "暂无 VLAN —— 网络内没有可 SNMP 访问的 VLAN 感知网桥",
+		"Remote Network": "远端网段",
+		"Remote Network Desc": "该设备镜像自联邦对端网段：本端只读，在其所属 center 管理。"
 	},
 	"validation": {
 		"Name Required": "名称为必填项",

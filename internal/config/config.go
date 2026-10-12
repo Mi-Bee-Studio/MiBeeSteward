@@ -45,6 +45,10 @@ type Config struct {
 	// ListenWatch diffs the local LISTEN table and alerts on newly opened
 	// listening sockets (#500). Default OFF.
 	ListenWatch ListenWatchConfig `koanf:"listen_watch"`
+	// Peer is the federated-peer reporter (#379): mirrors THIS center's own
+	// network to a peer center over the agent-report channel. Default OFF;
+	// enabling requires center_url + auth_token (minted on the peer).
+	Peer PeerConfig `koanf:"peer"`
 	// Retention governs the periodic background sweep that prunes high-volume
 	// detail tables (heartbeat_results, scan_results, …). Without it these
 	// tables grow unbounded, heartbeat_results alone accumulates ~270k rows/day.
@@ -652,4 +656,22 @@ type ListenWatchConfig struct {
 	// change_log entity (rules scoped to that device then match); empty
 	// leaves events unbound (global-scope rules still fire).
 	DeviceIP string `koanf:"device_ip"`
+}
+
+// PeerConfig is the federated-peer reporter block (#379). The center embeds
+// the reporter and ships its own network's device portraits to a peer center
+// using the agent-report protocol; the peer's networks row must exist and a
+// peer token minted there (POST /agents/tokens binds the network and stamps
+// networks.agent_id, which also arms the peer's read-only fence).
+type PeerConfig struct {
+	Enabled   bool   `koanf:"enabled"`
+	CenterURL string `koanf:"center_url"`
+	// AuthToken is the peer bearer token minted ON THE PEER center.
+	AuthToken string `koanf:"auth_token"`
+	// AgentID is the advisory label the peer sees in its fleet view.
+	AgentID string `koanf:"agent_id"`
+	// NetworkCIDR overrides the reported cidr (defaults to network.cidr).
+	NetworkCIDR string `koanf:"network_cidr"`
+	// FlushInterval is the max interval between report flushes (seconds).
+	FlushInterval int `koanf:"flush_interval"`
 }

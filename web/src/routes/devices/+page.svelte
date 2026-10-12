@@ -70,6 +70,10 @@ interface AddDevicesResponse {
 	// GET /networks on mount.
 	let networkFilter = $state('');
 	let networks = $state<Network[]>([]);
+	// #379: a device in a network with agent_id set is a mirror (distributed
+	// agent or federated peer) - read-only here, hide its edit/delete actions.
+	const remoteNetworkIDs = $derived(new Set(networks.filter((n) => n.agent_id).map((n) => n.id)));
+	const isRemoteDevice = (d: Pick<Device, 'network_id'>) => d.network_id !== null && d.network_id !== undefined && remoteNetworkIDs.has(d.network_id);
 	// networksError tracks a /networks fetch failure so the network-filter
 	// dropdown shows a small "failed to load" indicator instead of silently
 	// vanishing (which a user could mistake for "no networks configured").
@@ -875,6 +879,15 @@ interface AddDevicesResponse {
 			render: (row: Record<string, unknown>) => {
 				const id = row.id;
 				const name = escapeAttr(String(row.name ?? ''));
+				// #379 read-only fence: mirrored devices (agent/peer network)
+				// hide edit/link/delete - writes are rejected server-side anyway,
+				// the UI just doesn't offer them.
+				if (isRemoteDevice(row as Pick<Device, 'network_id'>)) {
+					return `<div class="flex gap-2 items-center">`
+						+ `<button data-action="detail" data-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['devices.Details']()}</button>`
+						+ `<span class="text-xs px-1.5 py-0.5 rounded bg-bg-hover text-text-muted" title="${m['devices.Remote Network Desc']()}">${m['devices.Remote Network']()}</span>`
+						+ `</div>`;
+				}
 				return `<div class="flex gap-2">`
 					+ `<button data-action="detail" data-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['devices.Details']()}</button>`
 					+ `<button data-action="edit" data-id="${id}" class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10">${m['common.Edit']()}</button>`

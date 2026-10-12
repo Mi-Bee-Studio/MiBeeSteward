@@ -25,6 +25,11 @@ var (
 	ErrBatchSelfDelete    = errors.New("cannot delete yourself")
 	ErrBatchInvalidStatus = errors.New("invalid device status")
 	ErrBatchPartialDelete = errors.New("some IDs were not found")
+
+	// ErrRemoteManagedDevice: the batch touches a device mirrored from an
+	// agent-managed or federated-peer network (#379) - read-only, the whole
+	// batch is rejected.
+	ErrRemoteManagedDevice = errors.New("device is managed by network origin (reporting agent or federated peer) and is read-only")
 )
 
 // BatchService handles batch operations for devices and users.
@@ -41,6 +46,9 @@ func NewBatchService(db *sql.DB, audit *AuditRepository) *BatchService {
 // DeleteDevices deletes multiple devices by IDs in a single transaction.
 // Returns the number of devices actually deleted.
 func (s *BatchService) DeleteDevices(ctx context.Context, ids []int64, userID int64) (int64, error) {
+	if remote, err := s.remoteManagedDevices(ctx, ids); err == nil && len(remote) > 0 {
+		return 0, ErrRemoteManagedDevice
+	}
 	if len(ids) == 0 {
 		return 0, ErrBatchEmptyIDs
 	}
@@ -85,6 +93,9 @@ func (s *BatchService) DeleteDevices(ctx context.Context, ids []int64, userID in
 // UpdateDeviceStatuses updates the status for multiple devices in a single transaction.
 // Returns the number of devices actually updated.
 func (s *BatchService) UpdateDeviceStatuses(ctx context.Context, ids []int64, status string, userID int64) (int64, error) {
+	if remote, err := s.remoteManagedDevices(ctx, ids); err == nil && len(remote) > 0 {
+		return 0, ErrRemoteManagedDevice
+	}
 	if len(ids) == 0 {
 		return 0, ErrBatchEmptyIDs
 	}
@@ -209,4 +220,36 @@ func isValidDeviceStatus(status string) bool {
 		return true
 	}
 	return false
+}
+
+// remoteManagedDevices returns the subset of ids sitting in an agent-managed
+// network (networks.agent_id non-empty, #379). Empty error result means
+// "could not determine" - the call is allowed through, the same graceful
+// degradation the route fence uses.
+func (s *BatchService) remoteManagedDevices(ctx context.Context, ids []int64) ([]int64, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT d.id FROM devices d
+		JOIN networks n ON d.network_id = n.id
+		WHERE n.agent_id IS NOT NULL AND n.agent_id != ''
+		  AND d.id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
 }

@@ -11,6 +11,7 @@ package routes
 
 import (
 	"database/sql"
+	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
@@ -36,8 +37,14 @@ func registerDeviceRoutes(r chi.Router, exportHandler *handler.ExportHandler, de
 			r.Use(middleware.RequireCapability(domain.CapDeviceWrite))
 			r.Use(middleware.NetworkScope(scopeResolver))
 			r.Post("/", deviceHandler.Create)
-			r.With(middleware.ValidateDeviceScope(dbConn)).Put("/{id}", deviceHandler.Update)
-			r.With(middleware.ValidateDeviceScope(dbConn)).Delete("/{id}", deviceHandler.Delete)
+			// Network-origin read-only fence (#379): mirrored devices (agent
+			// or peer network) reject hand edits with 403.
+			fence := []func(http.Handler) http.Handler{
+				middleware.ValidateDeviceScope(dbConn),
+				middleware.RejectRemoteNetworkWrite(dbConn),
+			}
+			r.With(fence...).Put("/{id}", deviceHandler.Update)
+			r.With(fence...).Delete("/{id}", deviceHandler.Delete)
 			r.Post("/batch-delete", batchHandler.BatchDeleteDevices)
 			r.Post("/batch-update-status", batchHandler.BatchUpdateDeviceStatus)
 		})
@@ -57,6 +64,7 @@ func registerDeviceSystemRoutes(r chi.Router, scopeResolver *scoperesolver.Resol
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapDeviceWrite))
+			r.Use(middleware.RejectRemoteNetworkWrite(dbConn))
 			r.Post("/", deviceSystemHandler.Create)
 			r.Put("/{systemId}", deviceSystemHandler.Update)
 			r.Delete("/{systemId}", deviceSystemHandler.Delete)
@@ -181,6 +189,7 @@ func registerDeviceHeartbeatRoutes(r chi.Router, scopeResolver *scoperesolver.Re
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapHeartbeatManage))
+			r.Use(middleware.RejectRemoteNetworkWrite(dbConn))
 			r.Post("/", heartbeatHandler.CreateConfig)
 		})
 	})
@@ -188,6 +197,7 @@ func registerDeviceHeartbeatRoutes(r chi.Router, scopeResolver *scoperesolver.Re
 	// Heartbeat config CRUD
 	r.Route("/api/v1/heartbeat-configs", func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapHeartbeatManage))
+		r.Use(middleware.RejectRemoteNetworkWriteFor(middleware.FenceTargetHeartbeatConfig, dbConn))
 		r.Put("/{id}", heartbeatHandler.UpdateConfig)
 		r.Delete("/{id}", heartbeatHandler.DeleteConfig)
 	})
@@ -234,6 +244,8 @@ func registerDeviceDocumentRoutes(r chi.Router, scopeResolver *scoperesolver.Res
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapDocumentWrite))
+			// {id} is the device (#379 fence); {docId} is unrelated.
+			r.Use(middleware.RejectRemoteNetworkWrite(dbConn))
 			r.Post("/", linkHandler.LinkDocument)
 			r.Delete("/{docId}", linkHandler.UnlinkDocument)
 		})
