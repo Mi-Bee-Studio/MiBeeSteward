@@ -47,3 +47,28 @@ func TestExtractBridgeMACFromDesignatedBridge(t *testing.T) {
 		})
 	}
 }
+
+func TestIFAndRouteMIBProbe_NamesAndHelpers(t *testing.T) {
+	if got := NewIFMIBProbe(nil).Name(); got != "active:if_mib" {
+		t.Errorf("IFMIB name = %q", got)
+	}
+	if got := NewRouteMIBProbe(nil).Name(); got != "active:route_mib" {
+		t.Errorf("RouteMIB name = %q", got)
+	}
+	// octetsToDotted rejects non-4-byte inputs.
+	if got := octetsToDotted([]byte{1, 2, 3}); got != "" {
+		t.Errorf("short octets = %q", got)
+	}
+	// maskBits rejects garbage and covers every octet step.
+	for _, c := range []struct {
+		mask string
+		want int
+	}{
+		{"255.255.255.255", 32}, {"128.0.0.0", 1}, {"192.224.240.252", 15},
+		{"garbage", 0}, {"1.2.3", 0}, {"255.x.0.0", 0},
+	} {
+		if got := maskBits(c.mask); got != c.want {
+			t.Errorf("maskBits(%q) = %d, want %d", c.mask, got, c.want)
+		}
+	}
+}
