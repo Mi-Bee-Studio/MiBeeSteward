@@ -18,7 +18,7 @@
 	import { auth } from '$lib/stores/auth';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { formatDateTime as formatTimestamp } from '$lib/utils/index';
-	import type { Device, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks, DeviceSighting, DeviceInterfaceRow } from '$lib/types';
+	import type { Device, Network, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks, DeviceSighting, DeviceInterfaceRow } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
 	import { Monitor, BarChart3, FileText } from '@lucide/svelte';
@@ -52,6 +52,19 @@
 	// VLANs observed on the device's network (#273): tag + name (when the
 	// gateway's dot1qVlanStaticName walk found one). null = not loaded yet.
 	let networkVlans = $state<Array<{ id: number; vlan_tag: number; name: string | null; description: string | null }> | null>(null);
+	// #379: whether this device is a mirror from an agent-managed or
+	// federated-peer network (read-only here). Derived from the networks list.
+	let remoteManaged = $state(false);
+	async function fetchRemoteFlag() {
+		if (!device?.network_id) return;
+		try {
+			const res = await api.get<{ networks: Network[]; total: number }>('/networks');
+			const net = (res.networks || []).find((n) => n.id === device.network_id);
+			remoteManaged = !!net?.agent_id;
+		} catch {
+			remoteManaged = false;
+		}
+	}
 
 	async function fetchNetworkVlans() {
 		if (!device?.network_id) return;
@@ -568,6 +581,10 @@
 		return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
 	}
 
+	$effect(() => {
+		if (device?.network_id !== undefined && device?.network_id !== null) fetchRemoteFlag();
+	});
+
 	// Speaks-with traffic profile (#500): passive flow aggregates, heaviest
 	// peers first. Failures are silent (empty panel).
 	async function fetchSpeaks() {
@@ -1043,7 +1060,7 @@
 						</span>
 					{/if}
 				</div>
-				{#if isAdmin}
+				{#if isAdmin && !remoteManaged}
 					<div class="flex items-center gap-2">
 						<button onclick={() => editOpen = true} class="btn btn-secondary text-sm">
 							{m['common.Edit']()}
@@ -1052,6 +1069,12 @@
 							{m['common.Delete']()}
 						</button>
 					</div>
+				{:else if remoteManaged}
+					<!-- #379 read-only fence: mirrored device, edits belong on its own center. -->
+					<span class="text-xs px-2 py-1 rounded-full bg-surface-2 text-muted font-medium"
+						title={m['devicedetail.Remote Network Desc']()}>
+						{m['devicedetail.Remote Network']()}
+					</span>
 				{/if}
 			</div>
 				<div class="device-meta">

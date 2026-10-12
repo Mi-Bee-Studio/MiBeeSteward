@@ -241,6 +241,44 @@ The agent can keep its fingerprint corpus in step with the center without any bi
 - The command channel is pull-based, no millisecond-level dispatch (poll cycle ~60s).
 - The agent's local DB is only a shadow; authoritative data always lives on the center.
 
+## Read-Only Federation (#379)
+
+Two centers can mirror each other's segment: each center fully manages ITS
+OWN network (its UI, its database, its scan cadence stay autonomous when the
+link is down), and additionally holds a near-real-time MIRROR of the peer's
+devices - list + detail portraits only. Everything else (probe targets,
+documents, TLS chains, config backups, credentials, raw evidence, the command
+channel) is neither shared nor exposed: the wire format simply does not carry
+it, and a peer can never dispatch scans/probes/reboots into the other
+segment.
+
+Setup, entirely from existing building blocks:
+
+1. On the peer: create a networks row for YOUR segment (POST /networks) and
+   mint a peer token (POST /agents/tokens with that network) - minting stamps
+   the network's `agent_id`, marking it externally managed.
+2. On your center: set the `peer.*` config block (center_url, auth_token;
+   agent_id defaults to `peer-<hostname>`, cidr defaults to network.cidr).
+
+From then on your scans and passive discoveries flow to the peer over the
+same agent-report channel the Rust agents use (anti-entropy state hash,
+lease-based liveness, change events included), and the peer's devices appear
+on your side tagged with their network.
+
+**The network-origin read-only fence** guards both directions: devices whose
+network has a non-empty `agent_id` (distributed agent OR federated peer) are
+mirrors - every mutating route (device edit/delete, batch ops, systems,
+documents, heartbeat configs) rejects them with 403, for local admins too.
+Hand edits would be overwritten by the next report wave anyway; the UI hides
+the actions and shows a "remote network" badge. The fence also closes the
+same hole in the plain center+agent architecture.
+
+Semantics: peer-link loss lets the peer's leases expire (devices go lost
+there) and self-heal on recovery; mirrored-device change events DO appear in
+the local change log (that is the freshness channel). Cross-segment topology
+link points are a phase-2 candidate (the presence/interconnect facts from
+#526 are the foundation).
+
 ## Related Pages
 
 - [Standalone Deployment](deployment.md), single-network scenarios that don't need distribution

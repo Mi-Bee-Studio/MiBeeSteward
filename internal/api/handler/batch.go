@@ -71,6 +71,10 @@ func (h *BatchHandler) BatchDeleteDevices(w http.ResponseWriter, r *http.Request
 			Error(w, http.StatusBadRequest, "no IDs provided")
 			return
 		}
+		if errors.Is(err, service.ErrRemoteManagedDevice) {
+			Error(w, http.StatusForbidden, "batch contains devices managed by network origin (reporting agent or federated peer); they are read-only")
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to delete devices")
 		return
 	}
@@ -117,6 +121,10 @@ func (h *BatchHandler) BatchUpdateDeviceStatus(w http.ResponseWriter, r *http.Re
 		}
 		if errors.Is(err, service.ErrBatchInvalidStatus) {
 			Error(w, http.StatusBadRequest, "invalid device status")
+			return
+		}
+		if errors.Is(err, service.ErrRemoteManagedDevice) {
+			Error(w, http.StatusForbidden, "batch contains devices managed by network origin (reporting agent or federated peer); they are read-only")
 			return
 		}
 		Error(w, http.StatusInternalServerError, "failed to update device statuses")

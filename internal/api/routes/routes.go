@@ -36,6 +36,7 @@ import (
 	"mibee-steward/internal/service/flows"
 	"mibee-steward/internal/service/listenwatch"
 	"mibee-steward/internal/service/notification"
+	scannerv2peer "mibee-steward/internal/service/peer"
 	probetarget "mibee-steward/internal/service/probetarget"
 	scannerv2 "mibee-steward/internal/service/scannerv2"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
@@ -51,6 +52,7 @@ import (
 	scannerv2store "mibee-steward/internal/service/scannerv2/store"
 	scannerv2task "mibee-steward/internal/service/scannerv2/taskservice"
 	"mibee-steward/internal/service/snmptrap"
+	"mibee-steward/internal/version"
 )
 
 // NewRouter creates and returns the main HTTP router with all routes registered.
@@ -406,6 +408,34 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// constructed so the config surface is stable, but its goroutine + sources
 	// only start when scanner.discovery.enabled is true. Stopped in the cleanup
 	// closure below before db.Close().
+	// Federated-peer reporter (#379): mirrors this center's own network to a
+	// peer center over the agent-report channel (the peer's ingestion, lease
+	// sweeper and change detection run the same pipeline as for Rust agents).
+	// The scan sink and the discovery Forward hook below share it; STOPPED in
+	// the shutdown closure before db.Close(). Deliberately no command channel
+	// - a peer never dispatches into the other segment.
+	var peerReporter *scannerv2peer.Reporter
+	if cfg.Peer.Enabled && cfg.Peer.CenterURL != "" && cfg.Peer.AuthToken != "" {
+		peerCIDR := cfg.Peer.NetworkCIDR
+		if peerCIDR == "" {
+			peerCIDR = cfg.Network.CIDR
+		}
+		peerAgentID := cfg.Peer.AgentID
+		if peerAgentID == "" {
+			if host, err := os.Hostname(); err == nil && host != "" {
+				peerAgentID = "peer-" + host
+			} else {
+				peerAgentID = "peer-center"
+			}
+		}
+		flush := time.Duration(cfg.Peer.FlushInterval) * time.Second
+		peerReporter = scannerv2peer.NewReporter(cfg.Peer.CenterURL, cfg.Peer.AuthToken,
+			peerAgentID, peerCIDR, flush, 256, slog.Default())
+		peerReporter.SetVersion(version.Version)
+		scanRunner.SetReportSink(peerReporter.Report)
+		slog.Info("federated peer reporter armed",
+			"peer", cfg.Peer.CenterURL, "agent_id", peerAgentID, "cidr", peerCIDR)
+	}
 	discSvc := scannerv2discovery.New(
 		scannerv2discovery.Config{
 			Interval:        time.Duration(cfg.Scanner.Discovery.Interval) * time.Second,
@@ -414,6 +444,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		scannerv2discovery.SinkAdapter{
 			Runner:   scanRunner,
 			Networks: scannerv2discovery.NewNetworkResolver(dbConn), // #386: attribute sightings to the network whose CIDR contains them
+			// Passive discoveries mirror to the peer too (#379); nil keeps
+			// them local (the pre-federation behavior).
+			Forward: peerForwardHook(peerReporter),
 		},
 		scannerv2discovery.IdentifierAdapter(v2Engine),
 		dbConn, networkID, prometheus.DefaultRegisterer, slog.Default(),
@@ -634,6 +667,15 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// known-host gate, optional identify) — a presence fact, not scan evidence.
 	// ND sightings carry no IPv4; they ride the MAC-keyed channel (#522): an
 	// unknown MAC anchors a device row, a known one is deduped away.
+	// Peer reporter lifecycle (#379): one context, stopped in the shutdown
+	// closure before db.Close().
+	var peerCancel context.CancelFunc
+	if peerReporter != nil {
+		peerCtx, pcancel := context.WithCancel(context.Background())
+		peerCancel = pcancel
+		peerReporter.Start(peerCtx)
+	}
+
 	scannerv2ebpf.SetHostSighting(func(ip, mac string) {
 		if mac == "" {
 			return
@@ -983,6 +1025,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// Stop the passive discovery sources + coordinator BEFORE the DB close;
 		// the coordinator's known-host pre-check and the sources' walks hold
 		// open DB/SNMP handles that must not race db.Close().
+		if peerCancel != nil {
+			peerCancel()
+		}
+		if peerReporter != nil {
+			peerReporter.Stop()
+		}
 		if discCancel != nil {
 			discCancel()
 		}
@@ -1015,4 +1063,13 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		globalLimiter.Stop()
 		scanLimiter.Stop()
 	}
+}
+
+// peerForwardHook adapts the (optional) peer reporter to the discovery
+// SinkAdapter.Forward signature; nil reporter keeps passive sightings local.
+func peerForwardHook(r *scannerv2peer.Reporter) func(ctx context.Context, rep scannerv2.HostReport) {
+	if r == nil {
+		return nil
+	}
+	return r.ReportPassive
 }

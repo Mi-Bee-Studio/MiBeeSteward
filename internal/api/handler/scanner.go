@@ -142,11 +142,15 @@ func (h *ScannerHandler) Scan(w http.ResponseWriter, r *http.Request) {
 		}
 		hosts = append(hosts, reportToHost(rep))
 	}
-	// The sync path skips Runner.Run's finalize sequence, but the local anchor
-	// (#522) must not: a self-scan row is exactly the MAC-less row the anchor
-	// exists to fill (fill-empty-only, no-op when already anchored).
+	// The sync path skips Runner.Run's finalize sequence, but two of Run's
+	// steps must not be skipped: the local anchor (#522) fills a self-scan
+	// row's MAC (fill-empty-only), and the upstream sink forward mirrors the
+	// alive batch to the federated peer (#379).
 	if h.runner != nil {
 		h.runner.AnchorLocalInterfaces(r.Context())
+		if alive := aliveReports(reports); len(alive) > 0 {
+			h.runner.ForwardToSink(0, alive)
+		}
 	}
 
 	resp := domain.ScanResponse{
@@ -319,4 +323,16 @@ func addDeviceItemToReport(item domain.AddDeviceItem) scannerv2.HostReport {
 		}
 	}
 	return rep
+}
+
+// aliveReports filters a scan's reports down to the alive set the upstream
+// sink cares about.
+func aliveReports(reports []scannerv2.HostReport) []scannerv2.HostReport {
+	var out []scannerv2.HostReport
+	for _, rep := range reports {
+		if rep.Alive {
+			out = append(out, rep)
+		}
+	}
+	return out
 }
