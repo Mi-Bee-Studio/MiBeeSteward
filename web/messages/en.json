@@ -1164,7 +1164,19 @@
 		"Speaks In": "Received",
 		"Speaks External": "external",
 		"Speaks Empty": "No traffic observed yet. This panel fills once a vantage with the eBPF observer (scanner.ebpf.enabled) sees this device's traffic.",
-		"Bytes": "Bytes"
+		"Bytes": "Bytes",
+		"Sightings": "Sighting History",
+		"Sightings Desc": "Address observations: where this device was seen, via which vantage (blank = this center, otherwise the reporting agent), from which source. Same tuple upserts - see_count grows instead.",
+		"Sightings Empty": "No sighting history yet - recorded on every scan and passive sighting once the schema-v6 writers run.",
+		"Sightings IP": "Address",
+		"Sightings Vantage": "Vantage",
+		"Sightings Source": "Source",
+		"Sightings Count": "Seen",
+		"Sightings First Seen": "First Seen",
+		"Sightings Local": "center",
+		"Neighbors Vantage": "Vantage",
+		"Multi Homed": "Multi-homed",
+		"Multi Homed Desc": "Actively present in several networks - the interconnect fact from per-network presence collection."
 	},
 	"certificates": {
 		"Title": "TLS Certificates",

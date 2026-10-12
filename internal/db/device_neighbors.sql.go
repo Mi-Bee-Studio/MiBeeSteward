@@ -57,7 +57,7 @@ func (q *Queries) DeleteDeviceNeighborsOlderThanBatched(ctx context.Context, arg
 }
 
 const listAllDeviceNeighbors = `-- name: ListAllDeviceNeighbors :many
-SELECT id, device_id, neighbor_device_id, neighbor_mac, protocol, local_port, remote_port, network_id, first_seen, last_seen FROM device_neighbors ORDER BY id DESC LIMIT ? OFFSET ?
+SELECT id, device_id, neighbor_device_id, neighbor_mac, protocol, local_port, remote_port, network_id, agent_id, first_seen, last_seen FROM device_neighbors ORDER BY id DESC LIMIT ? OFFSET ?
 `
 
 type ListAllDeviceNeighborsParams struct {
@@ -84,6 +84,7 @@ func (q *Queries) ListAllDeviceNeighbors(ctx context.Context, arg ListAllDeviceN
 			&i.LocalPort,
 			&i.RemotePort,
 			&i.NetworkID,
+			&i.AgentID,
 			&i.FirstSeen,
 			&i.LastSeen,
 		); err != nil {
@@ -101,7 +102,7 @@ func (q *Queries) ListAllDeviceNeighbors(ctx context.Context, arg ListAllDeviceN
 }
 
 const listDeviceNeighbors = `-- name: ListDeviceNeighbors :many
-SELECT id, device_id, neighbor_device_id, neighbor_mac, protocol, local_port, remote_port, network_id, first_seen, last_seen FROM device_neighbors WHERE device_id = ? ORDER BY protocol, neighbor_mac
+SELECT id, device_id, neighbor_device_id, neighbor_mac, protocol, local_port, remote_port, network_id, agent_id, first_seen, last_seen FROM device_neighbors WHERE device_id = ? ORDER BY protocol, neighbor_mac
 `
 
 // All neighbors of a device (the local-end device_id), for the topology view.
@@ -123,6 +124,7 @@ func (q *Queries) ListDeviceNeighbors(ctx context.Context, deviceID int64) ([]De
 			&i.LocalPort,
 			&i.RemotePort,
 			&i.NetworkID,
+			&i.AgentID,
 			&i.FirstSeen,
 			&i.LastSeen,
 		); err != nil {
@@ -147,6 +149,7 @@ SELECT
     device_neighbors.protocol AS protocol,
     device_neighbors.local_port AS local_port,
     device_neighbors.remote_port AS remote_port,
+    device_neighbors.agent_id AS agent_id,
     device_neighbors.first_seen AS first_seen,
     device_neighbors.last_seen AS last_seen,
     d.id   AS resolved_device_id,
@@ -167,6 +170,7 @@ type ListDeviceNeighborsWithDeviceRow struct {
 	Protocol         string     `json:"protocol"`
 	LocalPort        *string    `json:"local_port"`
 	RemotePort       *string    `json:"remote_port"`
+	AgentID          string     `json:"agent_id"`
 	FirstSeen        *time.Time `json:"first_seen"`
 	LastSeen         *time.Time `json:"last_seen"`
 	ResolvedDeviceID *int64     `json:"resolved_device_id"`
@@ -198,6 +202,7 @@ func (q *Queries) ListDeviceNeighborsWithDevice(ctx context.Context, deviceID in
 			&i.Protocol,
 			&i.LocalPort,
 			&i.RemotePort,
+			&i.AgentID,
 			&i.FirstSeen,
 			&i.LastSeen,
 			&i.ResolvedDeviceID,

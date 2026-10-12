@@ -1031,6 +1031,9 @@ type DeviceList struct {
 
 // DeviceNeighbor One L2 adjacency edge (device_neighbors). Pointer fields are present-but-null when unknown (no omitempty).
 type DeviceNeighbor struct {
+	// AgentId Reporting vantage (#527): empty = center-local, else the agent id
+	AgentId *string `json:"agent_id,omitempty"`
+
 	// Bytes speaks-with edges only — observed byte total
 	Bytes     *int64     `json:"bytes,omitempty"`
 	DeviceId  int64      `json:"device_id"`
@@ -1052,6 +1055,21 @@ type DeviceNeighbor struct {
 
 // DeviceNeighborProtocol defines model for DeviceNeighbor.Protocol.
 type DeviceNeighborProtocol string
+
+// DeviceSighting One address-observation history row (#527/#529): where the device was seen, at which address, via which vantage (empty = center-local, else an agent id), from which pipeline source.
+type DeviceSighting struct {
+	FirstSeen  time.Time `json:"first_seen"`
+	Id         int64     `json:"id"`
+	IpAddress  string    `json:"ip_address"`
+	LastSeen   time.Time `json:"last_seen"`
+	MacAddress *string   `json:"mac_address,omitempty"`
+	NetworkId  *int64    `json:"network_id,omitempty"`
+	SeeCount   int64     `json:"see_count"`
+
+	// Source scan | agent-report | passive:ebpf:arp | discovery:*
+	Source  *string `json:"source,omitempty"`
+	Vantage *string `json:"vantage,omitempty"`
+}
 
 // DeviceSpeaks One peer aggregate from the passive flow telemetry (#500). LAN-internal peers carry device linkage; external peers carry only the IP + totals.
 type DeviceSpeaks struct {
@@ -1721,6 +1739,12 @@ type ServiceEntry struct {
 	Version  *string `json:"version,omitempty"`
 }
 
+// SightingList defines model for SightingList.
+type SightingList struct {
+	Sightings *[]DeviceSighting `json:"sightings,omitempty"`
+	Total     *int              `json:"total,omitempty"`
+}
+
 // SpeaksList defines model for SpeaksList.
 type SpeaksList struct {
 	Speaks []DeviceSpeaks `json:"speaks"`
@@ -1796,8 +1820,16 @@ type TopologyNode struct {
 	Name         string `json:"name"`
 
 	// NetworkId Origin network (subnet grouping)
-	NetworkId *int64             `json:"network_id"`
-	Status    TopologyNodeStatus `json:"status"`
+	NetworkId *int64 `json:"network_id"`
+
+	// Networks Segments this asset is actively present in (#526) - the multi-homed interconnect fact; omitted when no presence has accrued.
+	Networks *[]struct {
+		IpAddress string    `json:"ip_address"`
+		LastSeen  time.Time `json:"last_seen"`
+		NetworkId int64     `json:"network_id"`
+		Vantage   *string   `json:"vantage,omitempty"`
+	} `json:"networks,omitempty"`
+	Status TopologyNodeStatus `json:"status"`
 
 	// StpRoot Collected dot1dStp fact (#525) - this bridge reported itself as the spanning-tree root; false when it never spoke STP
 	StpRoot *bool `json:"stp_root,omitempty"`
@@ -1988,6 +2020,14 @@ type GetDevicesIdHeartbeatResultsParams struct {
 type GetDevicesIdHeartbeatStatsParams struct {
 	From time.Time `form:"from" json:"from"`
 	To   time.Time `form:"to" json:"to"`
+}
+
+// GetDevicesIdSightingsParams defines parameters for GetDevicesIdSightings.
+type GetDevicesIdSightingsParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Vantage Filter to one reporting agent; omit for every stream
+	Vantage *string `form:"vantage,omitempty" json:"vantage,omitempty"`
 }
 
 // GetDevicesIdSystemsParams defines parameters for GetDevicesIdSystems.
@@ -3030,6 +3070,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /devices/{id}/neighbors (the `GetDevicesIdNeighbors` operationId).
 	GetDevicesIdNeighbors(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDevicesIdSightings Address-observation history of a device (#527/#529, newest first)
+	//
+	// Where the device was seen (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which pipeline source. The roaming/move archaeology feed.
+	//
+	// Corresponds with GET /devices/{id}/sightings (the `GetDevicesIdSightings` operationId).
+	GetDevicesIdSightings(ctx context.Context, id Id, params *GetDevicesIdSightingsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetDevicesIdSpeaks Speaks-with traffic profile of a device (#500, passive flow aggregates)
 	//
@@ -4491,6 +4538,23 @@ func (c *Client) GetDevicesIdHeartbeatStats(ctx context.Context, id Id, params *
 // Corresponds with GET /devices/{id}/neighbors (the `GetDevicesIdNeighbors` operationId).
 func (c *Client) GetDevicesIdNeighbors(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetDevicesIdNeighborsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetDevicesIdSightings Address-observation history of a device (#527/#529, newest first)
+//
+// Where the device was seen (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which pipeline source. The roaming/move archaeology feed.
+//
+// Corresponds with GET /devices/{id}/sightings (the `GetDevicesIdSightings` operationId).
+func (c *Client) GetDevicesIdSightings(ctx context.Context, id Id, params *GetDevicesIdSightingsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDevicesIdSightingsRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -8544,6 +8608,79 @@ func NewGetDevicesIdNeighborsRequest(server string, id Id) (*http.Request, error
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetDevicesIdSightingsRequest constructs an http.Request for the GetDevicesIdSightings method
+func NewGetDevicesIdSightingsRequest(server string, id Id, params *GetDevicesIdSightingsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/sightings", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Vantage != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "vantage", *params.Vantage, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -12890,6 +13027,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /devices/{id}/neighbors (the `GetDevicesIdNeighbors` operationId).
 	GetDevicesIdNeighborsWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdNeighborsResponse, error)
 
+	// GetDevicesIdSightingsWithResponse Address-observation history of a device (#527/#529, newest first)
+	//
+	// Where the device was seen (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which pipeline source. The roaming/move archaeology feed.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /devices/{id}/sightings (the `GetDevicesIdSightings` operationId).
+	GetDevicesIdSightingsWithResponse(ctx context.Context, id Id, params *GetDevicesIdSightingsParams, reqEditors ...RequestEditorFn) (*GetDevicesIdSightingsResponse, error)
+
 	// GetDevicesIdSpeaksWithResponse Speaks-with traffic profile of a device (#500, passive flow aggregates)
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -16076,6 +16222,47 @@ func (r GetDevicesIdNeighborsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetDevicesIdNeighborsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetDevicesIdSightingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SightingList
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdSightingsResponse) GetJSON200() *SightingList {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetDevicesIdSightingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDevicesIdSightingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDevicesIdSightingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetDevicesIdSightingsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -20757,6 +20944,21 @@ func (c *ClientWithResponses) GetDevicesIdNeighborsWithResponse(ctx context.Cont
 	return ParseGetDevicesIdNeighborsResponse(rsp)
 }
 
+// GetDevicesIdSightingsWithResponse Address-observation history of a device (#527/#529, newest first)
+//
+// Where the device was seen (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which pipeline source. The roaming/move archaeology feed.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /devices/{id}/sightings (the `GetDevicesIdSightings` operationId).
+func (c *ClientWithResponses) GetDevicesIdSightingsWithResponse(ctx context.Context, id Id, params *GetDevicesIdSightingsParams, reqEditors ...RequestEditorFn) (*GetDevicesIdSightingsResponse, error) {
+	rsp, err := c.GetDevicesIdSightings(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDevicesIdSightingsResponse(rsp)
+}
+
 // GetDevicesIdSpeaksWithResponse Speaks-with traffic profile of a device (#500, passive flow aggregates)
 //
 // Returns a wrapper object for the known response body format(s).
@@ -23522,6 +23724,32 @@ func ParseGetDevicesIdNeighborsResponse(rsp *http.Response) (*GetDevicesIdNeighb
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest NeighborList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetDevicesIdSightingsResponse parses an HTTP response from a GetDevicesIdSightingsWithResponse call
+func ParseGetDevicesIdSightingsResponse(rsp *http.Response) (*GetDevicesIdSightingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDevicesIdSightingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SightingList
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

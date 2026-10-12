@@ -37,6 +37,7 @@ SELECT
     device_neighbors.protocol AS protocol,
     device_neighbors.local_port AS local_port,
     device_neighbors.remote_port AS remote_port,
+    device_neighbors.agent_id AS agent_id,
     device_neighbors.first_seen AS first_seen,
     device_neighbors.last_seen AS last_seen,
     d.id   AS resolved_device_id,

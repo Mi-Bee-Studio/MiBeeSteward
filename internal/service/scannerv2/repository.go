@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 )
 
 // AnchorIPPrefix marks a device row whose IP is a placeholder, not a location:
@@ -32,6 +33,17 @@ func AnchorIP(mac string) string { return AnchorIPPrefix + mac }
 // fallback, a slot take-over, or a roam decision.
 func CarriesNoLocation(ip string) bool {
 	return ip == "" || strings.HasPrefix(ip, AnchorIPPrefix)
+}
+
+// NetworkPresence is one (device, network) binding from the multi-homed
+// identity layer (#526): the address the asset answers at inside that network
+// and the vantage that last reported it.
+type NetworkPresence struct {
+	NetworkID int64
+	IPAddress string
+	Vantage   string
+	FirstSeen time.Time
+	LastSeen  time.Time
 }
 
 // IPMACPair is one local interface binding the anchor step (#522) writes:
@@ -74,8 +86,20 @@ type Repository interface {
 	// device at ip. Each NeighborSpec is one edge: the neighbor's MAC (the merge
 	// key), the discovery protocol, and optional local/remote port labels.
 	// Implementations upsert on (device_id, neighbor_mac, protocol), refreshing
-	// last_seen without losing first_seen.
-	RecordNeighbors(ctx context.Context, ip string, neighbors []NeighborSpec) error
+	// last_seen without losing first_seen. agentID carries the reporting
+	// vantage (#527): "" for center-local scans, the agent id for reports.
+	RecordNeighbors(ctx context.Context, ip, agentID string, neighbors []NeighborSpec) error
+
+	// RecordSighting upserts one address observation into the sightings
+	// history (#527/#529): where a device was seen, via which vantage, from
+	// which source. Same tuple refreshes last_seen/see_count, changed tuple
+	// appends.
+	RecordSighting(ctx context.Context, deviceID int64, ip, mac string, networkID sql.NullInt64, vantage, source string, at time.Time) error
+
+	// UpsertNetworkPresence records the device's active presence in a network
+	// (#526): the multi-homed identity layer. Same (device, network) refreshes
+	// ip/vantage/last_seen.
+	UpsertNetworkPresence(ctx context.Context, deviceID, networkID int64, ip, vantage string, at time.Time) error
 
 	// RecordNeighborsByMAC is the MAC-keyed variant for sources that know the
 	// surveyed interface's MAC but no IP (the LLDP/CDP frame listeners, #501).
@@ -220,13 +244,23 @@ func (NoopRepository) RecordEvidence(context.Context, []Evidence) error { return
 func (NoopRepository) RecordServices(context.Context, string, []ServiceIdentity, []int) error {
 	return nil
 }
-func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error              { return nil }
-func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error    { return nil }
-func (NoopRepository) RecordNeighbors(context.Context, string, []NeighborSpec) error      { return nil }
+func (NoopRepository) RecordDevice(context.Context, string, DeviceRef) error           { return nil }
+func (NoopRepository) RecordHeartbeats(context.Context, string, []HeartbeatSpec) error { return nil }
+func (NoopRepository) RecordNeighbors(context.Context, string, string, []NeighborSpec) error {
+	return nil
+}
 func (NoopRepository) RecordNeighborsByMAC(context.Context, string, []NeighborSpec) error { return nil }
 
 func (NoopRepository) AnchorLocalInterfaces(context.Context, sql.NullInt64, []IPMACPair) (int64, error) {
 	return 0, nil
+}
+
+func (NoopRepository) RecordSighting(context.Context, int64, string, string, sql.NullInt64, string, string, time.Time) error {
+	return nil
+}
+
+func (NoopRepository) UpsertNetworkPresence(context.Context, int64, int64, string, string, time.Time) error {
+	return nil
 }
 func (NoopRepository) EnrichDeviceByMAC(context.Context, string, map[string]string) error { return nil }
 func (NoopRepository) RecordTLSCerts(context.Context, string, []TLSCertRecord) error      { return nil }

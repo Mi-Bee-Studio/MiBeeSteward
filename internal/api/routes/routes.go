@@ -247,6 +247,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// topology graph (nodes + edges). Read-only; any logged-in user.
 	neighborHandler := handler.NewNeighborHandler(scanQueries)
 	speaksHandler := handler.NewDeviceSpeaksHandler(scanQueries)
+	sightingsHandler := handler.NewDeviceSightingsHandler(scanQueries)
 	topologyHandler := handler.NewTopologyHandler(scanQueries)
 	// Observed subnets (CIDR/gateway/VLAN linkage written by scan finalize).
 	// Read-only; any logged-in user. Same *db.Queries as the neighbors
@@ -858,6 +859,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	registerDeviceNeighborRoutes(r, scopeResolver, dbConn, neighborHandler)
 	registerDeviceSpeaksRoutes(r, scopeResolver, dbConn, speaksHandler)
+	registerDeviceSightingsRoutes(r, scopeResolver, dbConn, sightingsHandler)
 
 	registerDeviceCertificateRoutes(r, scopeResolver, dbConn, tlsCertHandler)
 

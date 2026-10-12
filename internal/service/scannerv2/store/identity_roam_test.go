@@ -121,7 +121,7 @@ func TestRecordNeighbors_ResolvesViaNetworkScopedIP(t *testing.T) {
 	nid := sql.NullInt64{Int64: 1, Valid: true}
 	devID := seedDeviceRow(t, conn, "10.0.0.3", "aa:bb:cc:dd:ee:03", nid)
 
-	err = repo.RecordNeighbors(ctx, "10.0.0.3", []scannerv2.NeighborSpec{
+	err = repo.RecordNeighbors(ctx, "10.0.0.3", "", []scannerv2.NeighborSpec{
 		{NeighborMAC: "aa:bb:cc:dd:ee:99", Protocol: "LLDP", LocalPort: "eth0", RemotePort: "gi1/0/1", VLANTag: "10"},
 	})
 	require.NoError(t, err)

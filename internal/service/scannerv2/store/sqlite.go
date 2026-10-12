@@ -490,6 +490,13 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 	return tx.Commit()
 }
 
+// PresenceFreshWindow is how long a network-presence row stays "live" for
+// the multi-homed decision (#526). Long enough to bridge the slowest sane
+// scan cadence (6h scheduled scans x a few missed cycles), short enough that
+// a genuine mover relocates within a day. The presence table itself carries
+// the timestamps; this is only the freshness threshold.
+const PresenceFreshWindow = 24 * time.Hour
+
 // identityNetworkClause returns the SQL fragment + arg matching the
 // resolveDeviceIdentity / ApplyDeviceIdentity network scoping: "network_id = ?"
 // when the per-call network is valid, "network_id IS NULL" when not. Unlike
@@ -623,13 +630,26 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 	// row's address on every chassis re-sighting.
 	var macRowIP string
 	var macRowMAC string
+	var macRowNet sql.NullInt64
 	if qerr := r.db.QueryRowContext(ctx,
-		`SELECT ip_address, mac_address FROM devices WHERE id = ?`, targetID).Scan(&macRowIP, &macRowMAC); qerr != nil {
+		`SELECT ip_address, mac_address, network_id FROM devices WHERE id = ?`, targetID).
+		Scan(&macRowIP, &macRowMAC, &macRowNet); qerr != nil {
 		// Failing to read the row's ip is unexpected; proceed with the plain match.
 		return scannerv2.IdentityResolution{TargetID: targetID}, nil
 	}
 	if macRowIP == ip || scannerv2.CarriesNoLocation(ip) {
 		return scannerv2.IdentityResolution{TargetID: targetID}, nil // same ip (or no ip info): normal update.
+	}
+
+	// Multi-homed asset (#526): the report comes from a DIFFERENT network than
+	// the row's home, and the row is still freshly present in some other
+	// network (a dual-homed router reported by both agents). This is not a
+	// roam: the row keeps its home identity, the caller upserts the foreign
+	// presence. Only when every other presence went stale does the report
+	// below proceed as a genuine relocation.
+	if networkID.Valid && macRowNet.Valid && networkID.Int64 != macRowNet.Int64 &&
+		r.HasFreshPresenceOutside(ctx, targetID, networkID.Int64, PresenceFreshWindow) {
+		return scannerv2.IdentityResolution{TargetID: targetID}, nil
 	}
 
 	// MAC matched a device on a DIFFERENT ip than the one being scanned. Check
@@ -902,19 +922,26 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 		}
 	} else {
 		// Normal re-scan. When the device ROAMED (same MAC, new free IP, DHCP
-		// renewal), relocate ip_address to the scanned IP.
+		// renewal), relocate ip_address to the scanned IP. A roam reported
+		// under a VALID network also carries the network with the row (#526):
+		// the asset moved segments, leaving network_id behind fed the
+		// reconcile drift counter forever.
 		ipClause := "ip_address = ip_address"
+		netClause := ""
 		if in.Roamed {
 			ipClause = "ip_address = ?"
+			if in.NetworkID.Valid {
+				netClause = ", network_id = ?"
+			}
 		}
 		_, err := r.db.ExecContext(ctx, `
 			UPDATE devices SET status='online',
-			    `+ipClause+`,
+			    `+ipClause+netClause+`,
 			    mac_address = CASE WHEN ? != '' AND mac_address = '' THEN ? ELSE mac_address END,
 			    last_seen = ?,
 			    offline_since=NULL,
 			    last_scanned_at = ?, updated_at = ? WHERE id=?`,
-			roamUpdateArgs(in.Roamed, in.IP, in.MAC, now, in.TargetID)...)
+			roamUpdateArgs(in.Roamed, netClause != "", in.NetworkID, in.IP, in.MAC, now, in.TargetID)...)
 		if err != nil && in.Roamed {
 			// The roam UPDATE can fail the (ip_address, network_id) unique constraint
 			// when a mac='' placeholder occupies the target IP. Evict the placeholder
@@ -945,10 +972,15 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 // (mirrors the former runner.argsForRoamUpdate). When roamed is true the SQL has
 // an extra `ip_address = ?` clause (the scanned IP comes first); otherwise
 // ip_address is left unchanged.
-func roamUpdateArgs(roamed bool, ip, mac string, now string, existingID int64) []any {
+func roamUpdateArgs(roamed, migratesNet bool, networkID sql.NullInt64, ip, mac string, now string, existingID int64) []any {
 	if roamed {
-		// order: ip_address=?, mac CASE ?/?, last_seen=?, last_scanned_at=?, updated_at=?, id=?
-		return []any{ip, mac, mac, now, now, now, existingID}
+		args := []any{ip}
+		if migratesNet {
+			// order: ip_address=?, network_id=?, mac CASE ?/?, ...
+			args = append(args, networkID.Int64)
+		}
+		// tail: mac CASE ?/?, last_seen=?, last_scanned_at=?, updated_at=?, id=?
+		return append(args, mac, mac, now, now, now, existingID)
 	}
 	// order: mac CASE ?/?, last_seen=?, last_scanned_at=?, updated_at=?, id=?
 	return []any{mac, mac, now, now, now, existingID}
@@ -1252,7 +1284,7 @@ func (r *SQLiteRepository) legacyUpsertHeartbeats(ctx context.Context, tx *sql.T
 // (device_id, neighbor_mac, protocol). The neighbor's MAC is the cross-agent
 // merge key; neighbor_device_id is left NULL (reconciled later when/if the
 // neighbor is scanned). Failures are logged and never abort a scan.
-func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip string, neighbors []scannerv2.NeighborSpec) error {
+func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip, agentID string, neighbors []scannerv2.NeighborSpec) error {
 	if len(neighbors) == 0 {
 		return nil
 	}
@@ -1279,13 +1311,14 @@ func (r *SQLiteRepository) RecordNeighbors(ctx context.Context, ip string, neigh
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO device_neighbors (device_id, neighbor_mac, protocol, local_port, remote_port, network_id, first_seen, last_seen)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO device_neighbors (device_id, neighbor_mac, protocol, local_port, remote_port, network_id, agent_id, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(device_id, neighbor_mac, protocol) DO UPDATE SET
 				local_port = CASE WHEN excluded.local_port != '' THEN excluded.local_port ELSE device_neighbors.local_port END,
 				remote_port = CASE WHEN excluded.remote_port != '' THEN excluded.remote_port ELSE device_neighbors.remote_port END,
+				agent_id = CASE WHEN excluded.agent_id != '' THEN excluded.agent_id ELSE device_neighbors.agent_id END,
 				last_seen = excluded.last_seen`,
-			deviceID, n.NeighborMAC, n.Protocol, n.LocalPort, n.RemotePort, networkID, now, now); err != nil {
+			deviceID, n.NeighborMAC, n.Protocol, n.LocalPort, n.RemotePort, networkID, agentID, now, now); err != nil {
 			r.logger.Debug("upsert neighbor failed", "ip", ip, "neighbor_mac", n.NeighborMAC, "error", err)
 		}
 	}
@@ -1383,6 +1416,84 @@ func (r *SQLiteRepository) AnchorLocalInterfaces(ctx context.Context, networkID 
 		}
 	}
 	return anchored, nil
+}
+
+// RecordSighting upserts one address observation into device_sightings
+// (#527/#529): the same (device, ip, mac, vantage, source) tuple refreshes
+// last_seen and bumps see_count; a changed tuple appends history. Failures
+// return to the caller (writers log-and-continue like every persistence tail).
+func (r *SQLiteRepository) RecordSighting(ctx context.Context, deviceID int64, ip, mac string, networkID sql.NullInt64, vantage, source string, at time.Time) error {
+	if deviceID == 0 {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO device_sightings (device_id, ip_address, mac_address, network_id, vantage, source, first_seen, last_seen, see_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+		ON CONFLICT(device_id, ip_address, mac_address, vantage, source) DO UPDATE SET
+			last_seen = CASE WHEN excluded.last_seen > device_sightings.last_seen THEN excluded.last_seen ELSE device_sightings.last_seen END,
+			see_count = device_sightings.see_count + 1`,
+		deviceID, ip, NormalizeMAC(mac), networkID, vantage, source,
+		scannerv2.DBTime(at), scannerv2.DBTime(at))
+	return err
+}
+
+// UpsertNetworkPresence records that the device is actively present in a
+// network at an address (#526): the multi-homed identity layer behind the
+// single graph node. Same (device, network) refreshes ip/vantage/last_seen.
+func (r *SQLiteRepository) UpsertNetworkPresence(ctx context.Context, deviceID, networkID int64, ip, vantage string, at time.Time) error {
+	if deviceID == 0 || networkID <= 0 {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO device_network_presence (device_id, network_id, ip_address, vantage, first_seen, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(device_id, network_id) DO UPDATE SET
+			ip_address = excluded.ip_address,
+			vantage = excluded.vantage,
+			last_seen = excluded.last_seen`,
+		deviceID, networkID, ip, vantage, scannerv2.DBTime(at), scannerv2.DBTime(at))
+	return err
+}
+
+// HasFreshPresenceOutside answers the multi-homed decision input (#526): does
+// the device hold a presence row in ANY network other than the reporting one,
+// refreshed within maxAge? True while a foreign network still sees the asset
+// (dual-homed router: don't roam the row); false once every other presence
+// went stale (the asset moved: relocate).
+func (r *SQLiteRepository) HasFreshPresenceOutside(ctx context.Context, deviceID, reportingNetworkID int64, maxAge time.Duration) bool {
+	if deviceID == 0 {
+		return false
+	}
+	var n int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM device_network_presence
+		 WHERE device_id = ? AND network_id != ? AND last_seen >= ?`,
+		deviceID, reportingNetworkID, scannerv2.DBTime(time.Now().UTC().Add(-maxAge))).Scan(&n)
+	return err == nil && n > 0
+}
+
+// ListNetworkPresences returns the device's per-network presence rows for the
+// topology node (which segments the asset bridges, and at which addresses).
+func (r *SQLiteRepository) ListNetworkPresences(ctx context.Context, deviceID int64) ([]scannerv2.NetworkPresence, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT network_id, ip_address, vantage, first_seen, last_seen
+		 FROM device_network_presence WHERE device_id = ? ORDER BY network_id`, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []scannerv2.NetworkPresence
+	for rows.Next() {
+		var p scannerv2.NetworkPresence
+		var first, last string
+		if err := rows.Scan(&p.NetworkID, &p.IPAddress, &p.Vantage, &first, &last); err != nil {
+			continue
+		}
+		p.FirstSeen, _ = time.Parse(time.RFC3339, first)
+		p.LastSeen, _ = time.Parse(time.RFC3339, last)
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 // EnrichDeviceByMAC updates vendor/model/type/hostname fields for a device

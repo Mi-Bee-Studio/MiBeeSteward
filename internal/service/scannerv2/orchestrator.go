@@ -771,7 +771,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		// (from the Bridge-MIB / LLDP / CDP probes) into NeighborSpecs and
 		// record them. The store resolves ip→device_id and upserts edges.
 		if neighbors := ExtractNeighbors(report.Evidence); len(neighbors) > 0 {
-			if err := o.repo.RecordNeighbors(ctx, report.IP, neighbors); err != nil {
+			if err := o.repo.RecordNeighbors(ctx, report.IP, "", neighbors); err != nil {
 				o.logger.Debug("record neighbors failed", "ip", report.IP, "error", err)
 			}
 		}

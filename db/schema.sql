@@ -562,6 +562,7 @@ CREATE TABLE IF NOT EXISTS device_neighbors (
     local_port TEXT,
     remote_port TEXT,
     network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+    agent_id TEXT NOT NULL DEFAULT '',                                        -- vantage provenance (#527): '' = center-local, else the reporting agent
     first_seen DATETIME,
     last_seen DATETIME,
     UNIQUE(device_id, neighbor_mac, protocol)
@@ -607,6 +608,51 @@ CREATE TABLE IF NOT EXISTS device_speaks_with (
 );
 CREATE INDEX IF NOT EXISTS idx_device_speaks_device ON device_speaks_with(device_id);
 CREATE INDEX IF NOT EXISTS idx_device_speaks_peer ON device_speaks_with(peer_device_id);
+
+-- device_sightings (#527/#529): append-style history of address observations.
+-- Every writer that resolves a host to a device row (scan bridge, agent
+-- reports, passive ARP/ND sightings) upserts here: the same
+-- (device, ip, mac, vantage, source) tuple refreshes last_seen + bumps
+-- see_count; a changed tuple adds a row. Answers "which vantage saw this MAC
+-- where, and when" - roaming archaeology and address-drift audits. Bounded by
+-- the tuple space (devices x addresses x sources), no retention sweep needed.
+CREATE TABLE IF NOT EXISTS device_sightings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    ip_address TEXT NOT NULL DEFAULT '',
+    mac_address TEXT NOT NULL DEFAULT '',
+    network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+    vantage TEXT NOT NULL DEFAULT '',     -- '' = center-local, else the agent id
+    source TEXT NOT NULL DEFAULT '',      -- scan | agent-report | passive:ebpf:arp | discovery:...
+    first_seen DATETIME NOT NULL,
+    last_seen DATETIME NOT NULL,
+    see_count INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(device_id, ip_address, mac_address, vantage, source)
+);
+CREATE INDEX IF NOT EXISTS idx_device_sightings_device ON device_sightings(device_id, last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_device_sightings_vantage ON device_sightings(vantage);
+
+-- device_network_presence (#526): the multi-homed identity layer. The devices
+-- row stays the single graph node (MAC-primary, one "home" network); this
+-- table records every network the asset is ACTIVELY seen in, with that
+-- network's current ip. A dual-homed router bridging two LANs gets one node
+-- plus two presence rows - the graph answers "which device interconnects
+-- these segments" from collected fact instead of splitting the router into
+-- per-network ghosts. Presence freshness is what tells a multi-homed asset
+-- (foreign-network reports arrive, home presence keeps refreshing) from a
+-- genuine mover (home presence goes stale, the row relocates).
+CREATE TABLE IF NOT EXISTS device_network_presence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+    ip_address TEXT NOT NULL DEFAULT '',
+    vantage TEXT NOT NULL DEFAULT '',
+    first_seen DATETIME NOT NULL,
+    last_seen DATETIME NOT NULL,
+    UNIQUE(device_id, network_id)
+);
+CREATE INDEX IF NOT EXISTS idx_device_presence_device ON device_network_presence(device_id);
+CREATE INDEX IF NOT EXISTS idx_device_presence_network ON device_network_presence(network_id);
 
 -- change_log: the event stream produced by the change-detection engine
 -- (added / lost / changed for devices, services, neighbors, topology edges).

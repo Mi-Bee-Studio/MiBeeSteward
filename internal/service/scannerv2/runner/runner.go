@@ -203,7 +203,7 @@ func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, net
 	// re-recording the same edges are harmless.
 	if rn.repo != nil {
 		if neighbors := scannerv2.ExtractNeighbors(rep.Evidence); len(neighbors) > 0 {
-			if err := rn.repo.RecordNeighbors(ctx, rep.IP, neighbors); err != nil {
+			if err := rn.repo.RecordNeighbors(ctx, rep.IP, agentID, neighbors); err != nil {
 				rn.logger.Debug("agent report: record neighbors failed", "ip", rep.IP, "error", err)
 			}
 		}
