@@ -135,6 +135,19 @@ type DeviceDocument struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type DeviceInterface struct {
+	ID         int64     `json:"id"`
+	DeviceID   int64     `json:"device_id"`
+	IfIndex    int64     `json:"if_index"`
+	IfName     string    `json:"if_name"`
+	IfDescr    string    `json:"if_descr"`
+	MacAddress string    `json:"mac_address"`
+	IpAddress  string    `json:"ip_address"`
+	Speed      int64     `json:"speed"`
+	FirstSeen  time.Time `json:"first_seen"`
+	LastSeen   time.Time `json:"last_seen"`
+}
+
 type DeviceLiveness struct {
 	ID        int64     `json:"id"`
 	DeviceID  int64     `json:"device_id"`

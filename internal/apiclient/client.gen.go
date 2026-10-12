@@ -632,11 +632,12 @@ func (e ScanRunStatus) Valid() bool {
 
 // Defines values for TopologyEdgeProtocol.
 const (
-	TopologyEdgeProtocolARP       TopologyEdgeProtocol = "ARP"
-	TopologyEdgeProtocolBridgeMIB TopologyEdgeProtocol = "Bridge-MIB"
-	TopologyEdgeProtocolCDP       TopologyEdgeProtocol = "CDP"
-	TopologyEdgeProtocolLLDP      TopologyEdgeProtocol = "LLDP"
-	TopologyEdgeProtocolWiFi      TopologyEdgeProtocol = "WiFi"
+	TopologyEdgeProtocolARP        TopologyEdgeProtocol = "ARP"
+	TopologyEdgeProtocolBridgeMIB  TopologyEdgeProtocol = "Bridge-MIB"
+	TopologyEdgeProtocolCDP        TopologyEdgeProtocol = "CDP"
+	TopologyEdgeProtocolLLDP       TopologyEdgeProtocol = "LLDP"
+	TopologyEdgeProtocolRouteTable TopologyEdgeProtocol = "route-table"
+	TopologyEdgeProtocolWiFi       TopologyEdgeProtocol = "WiFi"
 )
 
 // Valid indicates whether the value is a known member of the TopologyEdgeProtocol enum.
@@ -649,6 +650,8 @@ func (e TopologyEdgeProtocol) Valid() bool {
 	case TopologyEdgeProtocolCDP:
 		return true
 	case TopologyEdgeProtocolLLDP:
+		return true
+	case TopologyEdgeProtocolRouteTable:
 		return true
 	case TopologyEdgeProtocolWiFi:
 		return true
@@ -1019,6 +1022,21 @@ type DeviceDocumentList struct {
 	Total     *int        `json:"total,omitempty"`
 }
 
+// DeviceInterface One port of the device's interface census (#529).
+type DeviceInterface struct {
+	FirstSeen  time.Time `json:"first_seen"`
+	Id         int64     `json:"id"`
+	IfDescr    *string   `json:"if_descr,omitempty"`
+	IfIndex    int       `json:"if_index"`
+	IfName     string    `json:"if_name"`
+	IpAddress  *string   `json:"ip_address,omitempty"`
+	LastSeen   time.Time `json:"last_seen"`
+	MacAddress *string   `json:"mac_address,omitempty"`
+
+	// Speed Link speed in Mbps
+	Speed *int64 `json:"speed,omitempty"`
+}
+
 // DeviceList defines model for DeviceList.
 type DeviceList struct {
 	Devices *[]Device `json:"devices,omitempty"`
@@ -1252,6 +1270,12 @@ type HeartbeatStats struct {
 	FailCount    int64   `json:"fail_count"`
 	SuccessCount int64   `json:"success_count"`
 	TimeoutCount int64   `json:"timeout_count"`
+}
+
+// InterfaceList defines model for InterfaceList.
+type InterfaceList struct {
+	Interfaces *[]DeviceInterface `json:"interfaces,omitempty"`
+	Total      *int               `json:"total,omitempty"`
 }
 
 // LoginResponse defines model for LoginResponse.
@@ -1787,9 +1811,14 @@ type TLSPortCerts struct {
 
 // TopologyEdge defines model for TopologyEdge.
 type TopologyEdge struct {
-	FromDeviceId int64                `json:"from_device_id"`
-	LocalPort    *string              `json:"local_port"`
-	Protocol     TopologyEdgeProtocol `json:"protocol"`
+	// Bytes speaks-with edges only - observed byte total
+	Bytes        *int64  `json:"bytes,omitempty"`
+	FromDeviceId int64   `json:"from_device_id"`
+	LocalPort    *string `json:"local_port"`
+
+	// Metadata route-table edge context (#528) - dest_subnet, next_hop, route_proto; null for neighbor-derived edges
+	Metadata *map[string]interface{} `json:"metadata,omitempty"`
+	Protocol TopologyEdgeProtocol    `json:"protocol"`
 
 	// RemotePort Far-end ifName (LLDP/CDP only)
 	RemotePort *string `json:"remote_port"`
@@ -3065,6 +3094,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /devices/{id}/heartbeat-stats (the `GetDevicesIdHeartbeatStats` operationId).
 	GetDevicesIdHeartbeatStats(ctx context.Context, id Id, params *GetDevicesIdHeartbeatStatsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDevicesIdInterfaces Interface census of a device (#529, IF-MIB + ipAddrTable)
+	//
+	// The device's own port list - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at. This is the multi-homed detail the single devices.ip_address row cannot express. Ordered by ifIndex; vanished ports keep their frozen last-seen row.
+	//
+	// Corresponds with GET /devices/{id}/interfaces (the `GetDevicesIdInterfaces` operationId).
+	GetDevicesIdInterfaces(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetDevicesIdNeighbors LLDP/CDP/Bridge-MIB neighbors of a device
 	//
@@ -4523,6 +4559,23 @@ func (c *Client) GetDevicesIdHeartbeatResultsExport(ctx context.Context, id Id, 
 // Corresponds with GET /devices/{id}/heartbeat-stats (the `GetDevicesIdHeartbeatStats` operationId).
 func (c *Client) GetDevicesIdHeartbeatStats(ctx context.Context, id Id, params *GetDevicesIdHeartbeatStatsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetDevicesIdHeartbeatStatsRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetDevicesIdInterfaces Interface census of a device (#529, IF-MIB + ipAddrTable)
+//
+// The device's own port list - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at. This is the multi-homed detail the single devices.ip_address row cannot express. Ordered by ifIndex; vanished ports keep their frozen last-seen row.
+//
+// Corresponds with GET /devices/{id}/interfaces (the `GetDevicesIdInterfaces` operationId).
+func (c *Client) GetDevicesIdInterfaces(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDevicesIdInterfacesRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -8574,6 +8627,40 @@ func NewGetDevicesIdHeartbeatStatsRequest(server string, id Id, params *GetDevic
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
 		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetDevicesIdInterfacesRequest constructs an http.Request for the GetDevicesIdInterfaces method
+func NewGetDevicesIdInterfacesRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/interfaces", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -13020,6 +13107,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /devices/{id}/heartbeat-stats (the `GetDevicesIdHeartbeatStats` operationId).
 	GetDevicesIdHeartbeatStatsWithResponse(ctx context.Context, id Id, params *GetDevicesIdHeartbeatStatsParams, reqEditors ...RequestEditorFn) (*GetDevicesIdHeartbeatStatsResponse, error)
 
+	// GetDevicesIdInterfacesWithResponse Interface census of a device (#529, IF-MIB + ipAddrTable)
+	//
+	// The device's own port list - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at. This is the multi-homed detail the single devices.ip_address row cannot express. Ordered by ifIndex; vanished ports keep their frozen last-seen row.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /devices/{id}/interfaces (the `GetDevicesIdInterfaces` operationId).
+	GetDevicesIdInterfacesWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdInterfacesResponse, error)
+
 	// GetDevicesIdNeighborsWithResponse LLDP/CDP/Bridge-MIB neighbors of a device
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -16181,6 +16277,47 @@ func (r GetDevicesIdHeartbeatStatsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetDevicesIdHeartbeatStatsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetDevicesIdInterfacesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *InterfaceList
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdInterfacesResponse) GetJSON200() *InterfaceList {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetDevicesIdInterfacesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDevicesIdInterfacesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDevicesIdInterfacesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetDevicesIdInterfacesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -20931,6 +21068,21 @@ func (c *ClientWithResponses) GetDevicesIdHeartbeatStatsWithResponse(ctx context
 	return ParseGetDevicesIdHeartbeatStatsResponse(rsp)
 }
 
+// GetDevicesIdInterfacesWithResponse Interface census of a device (#529, IF-MIB + ipAddrTable)
+//
+// The device's own port list - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at. This is the multi-homed detail the single devices.ip_address row cannot express. Ordered by ifIndex; vanished ports keep their frozen last-seen row.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /devices/{id}/interfaces (the `GetDevicesIdInterfaces` operationId).
+func (c *ClientWithResponses) GetDevicesIdInterfacesWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdInterfacesResponse, error) {
+	rsp, err := c.GetDevicesIdInterfaces(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDevicesIdInterfacesResponse(rsp)
+}
+
 // GetDevicesIdNeighborsWithResponse LLDP/CDP/Bridge-MIB neighbors of a device
 //
 // Returns a wrapper object for the known response body format(s).
@@ -23698,6 +23850,32 @@ func ParseGetDevicesIdHeartbeatStatsResponse(rsp *http.Response) (*GetDevicesIdH
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest HeartbeatStats
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetDevicesIdInterfacesResponse parses an HTTP response from a GetDevicesIdInterfacesWithResponse call
+func ParseGetDevicesIdInterfacesResponse(rsp *http.Response) (*GetDevicesIdInterfacesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDevicesIdInterfacesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest InterfaceList
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

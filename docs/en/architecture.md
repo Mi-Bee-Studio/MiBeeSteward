@@ -249,6 +249,9 @@ Any port classified as TLS-speaking (default ports 443/8443/9443/4443 + well-kno
 | `device_neighbors` | Raw neighbor facts from the LLDP/CDP/Bridge/Q-BRIDGE probes, the raw-frame LLDP/CDP listeners (`WITH_LLDP`/`WITH_CDP` builds, #501), and the WiFi AP's own association table (hostapd/iw, #505) |
 
 | `topology_edges` | Materialized device↔device topology edges |
+| `device_sightings` | Address-observation history per (device, ip, mac, vantage, source): where a device was seen and by whom (#527/#529) |
+| `device_network_presence` | The multi-homed identity layer: every network an asset is actively present in, at which address (#526) |
+| `device_interfaces` | The device's own IF-MIB + ipAddrTable port census, per-port addresses included (#529) |
 
 Spanning-tree facts (#525): the STP-MIB probe also records each bridge's dot1dStp view into `scan_attributes.stp` — its own bridge MAC, the network's root bridge, an `is_root` boolean, and each port's role (root/designated/alternate/backup/disabled). The topology node set exposes `stp_root`, and the graph's root detection takes that collected fact over every heuristic (see `web-ui.md`).
 
@@ -277,6 +280,10 @@ Devices are identified by **MAC address first** (a roaming device stays one asse
 - `(ip_address, network_id)` composite unique index backs this partitioning.
 
 **Multi-homed identity & network presence (#526)**: an asset reported from a network other than its row's home no longer roams the row — while it holds a FRESH presence (24h window) in some other network, the report only upserts that network's presence row (`device_network_presence`: one per (device, network), the address it answers at there); the device row stays a single graph node anchored to its home. This kills the dual-homed-router ping-pong (both agents' reports used to relocate the row at scan cadence). A genuine mover — every other presence stale — relocates the row, and the roam now carries `network_id` with it (it used to lag forever, feeding the reconcile drift counter). The topology node set exposes each node's presence `networks`, so the graph answers "which device interconnects these segments" from collected fact.
+
+**Interface census (#529)**: the IF-MIB + ipAddrTable walk records every port of the device itself into `device_interfaces` - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at (the multi-homed detail a single `devices.ip_address` row can never express). `GET /devices/{id}/interfaces` feeds the detail-page panel; vanished ports keep their frozen last-seen row (history, not deletion). agent-rs collects the same census.
+
+**Route-table edges (#528)**: the ipRouteTable walk collects every non-direct route (dest CIDR + next hop + egress ifIndex + protocol); routes whose next hop resolves to a known device materialize `topology_edges` rows (router -> next hop, via `route-table`, destination subnet in metadata - the more specific subnet wins when routes share a hop). The topology graph unions these edges with the neighbor-derived set, so multi-hop interconnects render as collected fact. Direct routes are skipped: the connected-subnet fact already lives in the interface census and per-network presence.
 
 **Sighting history & vantage provenance (#527)**: every device-bridge apply records a `device_sightings` row — where (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which source (scan / passive). Same tuple upserts (last_seen + see_count), a changed tuple appends; `GET /devices/{id}/sightings?vantage=` is the roaming/move archaeology feed. Neighbor rows carry the reporting `agent_id` too.
 

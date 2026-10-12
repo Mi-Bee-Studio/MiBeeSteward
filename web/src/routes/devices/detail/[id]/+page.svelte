@@ -18,7 +18,7 @@
 	import { auth } from '$lib/stores/auth';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { formatDateTime as formatTimestamp } from '$lib/utils/index';
-	import type { Device, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks, DeviceSighting } from '$lib/types';
+	import type { Device, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks, DeviceSighting, DeviceInterfaceRow } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
 	import { Monitor, BarChart3, FileText } from '@lucide/svelte';
@@ -48,6 +48,7 @@
 	let neighbors = $state<DeviceNeighbor[]>([]);
 	let speaks = $state<DeviceSpeaks[]>([]);
 	let sightings = $state<DeviceSighting[]>([]);
+	let interfaces = $state<DeviceInterfaceRow[]>([]);
 	// VLANs observed on the device's network (#273): tag + name (when the
 	// gateway's dot1qVlanStaticName walk found one). null = not loaded yet.
 	let networkVlans = $state<Array<{ id: number; vlan_tag: number; name: string | null; description: string | null }> | null>(null);
@@ -360,6 +361,7 @@
 			if (!neighbors.length) fetchNeighbors();
 			if (!speaks.length) fetchSpeaks();
 			if (!sightings.length) fetchSightings();
+			if (!interfaces.length) fetchInterfaces();
 			if (networkVlans === null && device?.network_id) fetchNetworkVlans();
 		}
 		if (t === 'config') {
@@ -576,6 +578,18 @@
 			speaks = res.speaks || [];
 		} catch {
 			// passive enrichment: keep empty
+		}
+	}
+
+	// Interface census (#529): IF-MIB ports with per-port addresses.
+	async function fetchInterfaces() {
+		try {
+			const res = await api.get<{ interfaces: DeviceInterfaceRow[]; total: number }>(
+				`/devices/${deviceId}/interfaces`
+			);
+			interfaces = res.interfaces || [];
+		} catch {
+			// census enrichment: keep empty
 		}
 	}
 
@@ -1552,6 +1566,45 @@
 				</div>
 			{:else}
 				<p class="text-xs text-text-muted italic">{m['topology.Speaks Empty']()}</p>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Interface Census (#529): IF-MIB ports with per-port addresses. -->
+	{#if device}
+		<div class="scan-info-panel mt-4">
+			<h3 class="scan-info-title">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 12h.01M10 12h.01M14 12h.01M18 12h.01"/></svg>
+				{m['topology.Interfaces']()}
+			</h3>
+			<p class="text-xs text-text-muted mb-3">{m['topology.Interfaces Desc']()}</p>
+			{#if interfaces.length > 0}
+				<div class="overflow-x-auto">
+					<table class="w-full text-left border border-border rounded-lg overflow-hidden">
+						<thead class="bg-bg/50 border-b border-border">
+							<tr>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Interfaces IfIndex']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Interfaces Port']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Interfaces MAC']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Interfaces IP']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Interfaces Speed']()}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each interfaces as ifc}
+								<tr class="border-b border-border/50 last:border-b-0">
+									<td class="px-3 py-2 font-mono text-xs text-text-muted">{ifc.if_index}</td>
+									<td class="px-3 py-2 text-sm">{ifc.if_name}</td>
+									<td class="px-3 py-2 font-mono text-xs text-text-muted">{ifc.mac_address || '—'}</td>
+									<td class="px-3 py-2 font-mono text-xs">{ifc.ip_address || '—'}</td>
+									<td class="px-3 py-2 font-mono text-xs text-text-muted">{ifc.speed ? `${ifc.speed} Mbps` : '—'}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<p class="text-xs text-text-muted italic">{m['topology.Interfaces Empty']()}</p>
 			{/if}
 		</div>
 	{/if}

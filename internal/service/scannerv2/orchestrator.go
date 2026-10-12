@@ -12,6 +12,7 @@ package scannerv2
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -775,6 +776,18 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 				o.logger.Debug("record neighbors failed", "ip", report.IP, "error", err)
 			}
 		}
+		// Interface census (#529) + route-table edges (#528): same tail
+		// pattern as the neighbors - IP-keyed, logged, never fatal.
+		if faces := ExtractInterfaces(report.Evidence); len(faces) > 0 {
+			if err := o.repo.RecordInterfaces(ctx, report.IP, faces); err != nil {
+				o.logger.Debug("record interfaces failed", "ip", report.IP, "error", err)
+			}
+		}
+		if routes := ExtractRoutes(report.Evidence); len(routes) > 0 {
+			if err := o.repo.RecordRoutes(ctx, report.IP, routes); err != nil {
+				o.logger.Debug("record routes failed", "ip", report.IP, "error", err)
+			}
+		}
 		// Neighbor-identity enrichment: for each "neighbor"-kind evidence carrying
 		// identity keys (sys_name, sys_desc, platform), infer fields and enrich the
 		// neighbor device by MAC. Only runs when a callback is configured.
@@ -802,6 +815,47 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			}
 		}
 	}
+}
+
+// ExtractInterfaces pulls the interface census out of "interface"-kind
+// evidence (IF-MIB probe or an agent report's port rows, #529).
+func ExtractInterfaces(evidence []Evidence) []InterfaceSpec {
+	var out []InterfaceSpec
+	for _, e := range evidence {
+		if e.Kind != "interface" || e.RawData == nil {
+			continue
+		}
+		idx, err := strconv.Atoi(e.RawData["if_index"])
+		if err != nil || idx <= 0 {
+			continue
+		}
+		sp := InterfaceSpec{IfIndex: idx, IfName: e.RawData["if_name"], IfDescr: e.RawData["if_descr"], MAC: e.RawData["mac"], IP: e.RawData["ip"]}
+		if v, err := strconv.ParseInt(e.RawData["speed_mbps"], 10, 64); err == nil {
+			sp.Speed = v
+		}
+		out = append(out, sp)
+	}
+	return out
+}
+
+// ExtractRoutes pulls routing rows out of "route"-kind evidence
+// (ipRouteTable probe or an agent report, #528).
+func ExtractRoutes(evidence []Evidence) []RouteSpec {
+	var out []RouteSpec
+	for _, e := range evidence {
+		if e.Kind != "route" || e.RawData == nil {
+			continue
+		}
+		if e.RawData["dest"] == "" || e.RawData["next_hop"] == "" {
+			continue
+		}
+		sp := RouteSpec{DestCIDR: e.RawData["dest"], NextHop: e.RawData["next_hop"], Proto: e.RawData["proto"]}
+		if v, err := strconv.Atoi(e.RawData["if_index"]); err == nil {
+			sp.IfIndex = v
+		}
+		out = append(out, sp)
+	}
+	return out
 }
 
 // cascadeKey is the dedup key for the cycle guard: service@port.

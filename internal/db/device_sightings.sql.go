@@ -57,6 +57,50 @@ func (q *Queries) ListAllNetworkPresences(ctx context.Context) ([]ListAllNetwork
 	return items, nil
 }
 
+const listDeviceInterfaces = `-- name: ListDeviceInterfaces :many
+SELECT id, device_id, if_index, if_name, if_descr, mac_address, ip_address, speed,
+       first_seen, last_seen
+FROM device_interfaces
+WHERE device_id = ?
+ORDER BY if_index
+`
+
+// The device's interface census (#529): one row per ifIndex, freshest walk
+// wins (vanished ports keep their frozen last_seen row - history, not deletion).
+func (q *Queries) ListDeviceInterfaces(ctx context.Context, deviceID int64) ([]DeviceInterface, error) {
+	rows, err := q.db.QueryContext(ctx, listDeviceInterfaces, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeviceInterface{}
+	for rows.Next() {
+		var i DeviceInterface
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceID,
+			&i.IfIndex,
+			&i.IfName,
+			&i.IfDescr,
+			&i.MacAddress,
+			&i.IpAddress,
+			&i.Speed,
+			&i.FirstSeen,
+			&i.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDeviceSightings = `-- name: ListDeviceSightings :many
 
 SELECT id, device_id, ip_address, mac_address,

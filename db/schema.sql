@@ -654,6 +654,26 @@ CREATE TABLE IF NOT EXISTS device_network_presence (
 CREATE INDEX IF NOT EXISTS idx_device_presence_device ON device_network_presence(device_id);
 CREATE INDEX IF NOT EXISTS idx_device_presence_network ON device_network_presence(network_id);
 
+-- device_interfaces (#529): the device's own interface inventory from IF-MIB +
+-- ipAddrTable walks - ifIndex/name/description/MAC/speed, plus the IPv4 the
+-- interface answers at (the multi-homed gold: which address lives on which
+-- port). Upserted per (device, ifIndex) on every walk; scan snapshots carry
+-- only the CURRENT single ip/mac, this table holds the full port census.
+CREATE TABLE IF NOT EXISTS device_interfaces (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    if_index INTEGER NOT NULL,
+    if_name TEXT NOT NULL DEFAULT '',
+    if_descr TEXT NOT NULL DEFAULT '',
+    mac_address TEXT NOT NULL DEFAULT '',
+    ip_address TEXT NOT NULL DEFAULT '',
+    speed INTEGER NOT NULL DEFAULT 0,
+    first_seen DATETIME NOT NULL,
+    last_seen DATETIME NOT NULL,
+    UNIQUE(device_id, if_index)
+);
+CREATE INDEX IF NOT EXISTS idx_device_interfaces_device ON device_interfaces(device_id);
+
 -- change_log: the event stream produced by the change-detection engine
 -- (added / lost / changed for devices, services, neighbors, topology edges).
 -- Carries agent_id + network_id provenance so a future aggregation center can
