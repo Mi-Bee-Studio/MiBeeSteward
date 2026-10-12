@@ -183,24 +183,14 @@ func maskBits(mask string) int {
 		if err != nil {
 			return 0
 		}
-		switch v {
-		case 255:
-			bits += 8
-		case 254:
-			bits += 7
-		case 252:
-			bits += 6
-		case 248:
-			bits += 5
-		case 240:
-			bits += 4
-		case 224:
-			bits += 3
-		case 192:
-			bits += 2
-		case 128:
-			bits += 1
-		}
+		bits += octetPrefixBits(v)
 	}
 	return bits
+}
+
+// octetPrefixBits maps one netmask octet to its set-bit count (0 for
+// non-contiguous/unknown values).
+func octetPrefixBits(octet int) int {
+	m := map[int]int{255: 8, 254: 7, 252: 6, 248: 5, 240: 4, 224: 3, 192: 2, 128: 1}
+	return m[octet]
 }
