@@ -10,10 +10,11 @@
 package runner
 
 import (
+	"strconv"
+
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/scannerv2"
 	"mibee-steward/internal/service/scannerv2/store"
-	"strconv"
 )
 
 // ReportedHostToReport reconstructs a scannerv2.HostReport from a
