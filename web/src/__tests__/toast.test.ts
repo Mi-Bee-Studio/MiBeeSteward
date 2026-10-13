@@ -14,7 +14,7 @@ import { get } from 'svelte/store';
 
 // We need to re-import for each test to reset the store state.
 // Since the module uses a singleton, we test the exported store directly.
-import { toasts, addToast, removeToast } from '$lib/stores/toast';
+import { toasts, addToast, removeToast, pauseToast, resumeToast } from '$lib/stores/toast';
 
 describe('toast store', () => {
 	beforeEach(() => {
@@ -76,6 +76,50 @@ describe('toast store', () => {
 
 		const current = get(toasts);
 		expect(current[1].id).toBeGreaterThan(current[0].id);
+	});
+
+	it('merges repeated identical toasts into one row with a counter (#573)', () => {
+		addToast('error', 'request timeout');
+		addToast('error', 'request timeout');
+		addToast('error', 'request timeout');
+		addToast('error', 'a different message');
+
+		const current = get(toasts);
+		expect(current.length).toBe(2);
+		const merged = current.find((t) => t.message === 'request timeout')!;
+		expect(merged.count).toBe(3);
+		expect(current.find((t) => t.message === 'a different message')!.count).toBeUndefined();
+	});
+
+	it('restarts the dismiss window when a toast merges', () => {
+		addToast('info', 'blip');
+		// 4.9s of the 5s window elapses, then the repeat arrives and restarts it.
+		vi.advanceTimersByTime(4900);
+		addToast('info', 'blip');
+		vi.advanceTimersByTime(4900);
+		expect(get(toasts).length).toBe(1, 'restarted window must not have fired yet');
+
+		vi.advanceTimersByTime(200);
+		expect(get(toasts).length).toBe(0, 'restarted window fires after the full 5s');
+	});
+
+	it('pauseToast freezes dismissal and resumeToast continues the remainder (#573)', () => {
+		addToast('info', 'hold me');
+		const id = get(toasts)[0].id;
+
+		// Fake-timer worlds advance Date with the timers, so Date.now() inside
+		// the store tracks the elapsed 2000ms of the window.
+		vi.advanceTimersByTime(2000);
+		pauseToast(id);
+		vi.advanceTimersByTime(60000);
+		expect(get(toasts).length).toBe(1, 'paused toast must not dismiss');
+
+		resumeToast(id);
+		vi.advanceTimersByTime(2900);
+		expect(get(toasts).length).toBe(1, 'resume must continue the remainder, not a full window');
+
+		vi.advanceTimersByTime(200);
+		expect(get(toasts).length).toBe(0);
 	});
 
 	it('supports all toast types', () => {

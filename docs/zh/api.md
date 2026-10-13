@@ -744,6 +744,9 @@ flowchart LR
 
 `status` 为 `ok` 或 `degraded`（数据库 ping 失败时）。`db` 为 `ok` 或 `error`。`version` 为通过 ldflags 注入的构建版本（未打 tag 的构建为 `dev`）。
 
+根路径别名 `GET /health` 返回同样的 JSON：外部监控、容器探针与负载均衡按惯例探测 `/health` 时将拿到真实健康状态，而不是 SPA fallback 的 HTML（#571）。
+
+
 
 
 
@@ -769,6 +772,7 @@ flowchart LR
 | `/api/v1/users` | GET | 需管理员 | 列出所有用户（分页） |
 
 
+| `/api/v1/users/{id}` | DELETE | 需管理员 | 删除用户（拒绝自删） |
 | `/api/v1/users/batch-delete` | POST | 需管理员 | 批量删除用户 |
 
 
@@ -882,6 +886,16 @@ flowchart LR
 
 
 
+
+### DELETE /api/v1/users/{id}
+
+
+
+按 ID 删除用户。删除自己会被拒绝（`400`，`cannot delete yourself`，与批量删除同一防线）；不存在的 ID 返回 `404`。审计日志记录为 `admin.user.delete`。#568 引入——UI 行内删除按钮一直调用的端点此前并不存在（所有删除一律 404）。
+
+
+
+**需管理员**
 
 ### POST /api/v1/users/{id}/reset-password
 
