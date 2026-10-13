@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Demo seed probe targets stay in documentation namespaces (#572)**: the demo seed's tcp probe target was `1.1.1.1:53` - a live Cloudflare anycast address demo installs dialed every 60s, violating the demo contract (RFC 5737 ranges / RFC 2606 domains only, never real infrastructure) and producing constant failure noise on isolated demo boxes. Seed targets now use TEST-NET-3 and example.org hosts, and the seed test pins the documentation-namespace rule for probe targets the way it already did for device IPs.
+### Fixed
+- **Root-level `GET /health` returns health JSON instead of SPA HTML (#571)**: external monitors, container probes and load balancers that conventionally probe `/health` used to get `200 + index.html` from the SPA fallback - an API-down process with the SPA still serving looked healthy. The root path now serves the exact same JSON as `/api/v1/health` (registered next to `/metrics`; OpenAPI parity test extended, bilingual API docs note the alias).
+
 ### Added
 - **Self-hosted opkg feed (#563)**: `make feed-index` turns the built `.ipk` packages (center + agent) into a self-contained feed directory — opkg-standard `Packages`/`Packages.gz` indexes with `Filename`/`Size`/`SHA256sum` stanzas — that any static file server can host. Routers subscribe once via `/etc/opkg/customfeeds.conf` and upgrades become plain `opkg update && opkg upgrade` (or the LuCI package page). The generator (`scripts/make_opkg_feed.sh`) digs the control metadata out of each ipk (the `./`-prefixed gzip-tar members) and is busybox-compatible; the CI openwrt job smokes the index shape on every PR. Index stanzas carry per-package SHA256sum so opkg verifies downloads against the fetched index; the index itself is unsigned (usign signing is a follow-up) — serve it from a host you control. Field-verified on the rig: a router subscribed to a feed hosted on the LAN saw `mibee-steward 0.7.3` from the index with install state untouched.
 
