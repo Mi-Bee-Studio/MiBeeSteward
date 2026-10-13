@@ -36,6 +36,60 @@ function jsonResponse(body: unknown, init: { status: number }): Response {
 // small (RETRY_BASE_DELAY_MS=150 → 150ms + 300ms = 450ms for the full 2-retry
 // exhaustion path), so letting real time elapse keeps the test honest and far
 // simpler. Each retry-capable case is awaited to settlement.
+// #570: the synchronous scan endpoint legitimately runs longer than the
+// client's 30s default (a demo /28 of unroutable IPs ran 36s server-side
+// while the client had already reported "request timeout"). These tests pin
+// the per-request timeoutMs override with fake timers and a fetch that never
+// resolves on its own - it only rejects when the request's abort signal
+// fires, exactly how a real fetch behaves on timeout.
+describe('per-request timeout override (#570)', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	function hangingFetch() {
+		return vi.fn().mockImplementation(
+			(_url: string, init?: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+				})
+		) as unknown as typeof fetch;
+	}
+
+	it('aborts at the 30s default when no override is given', async () => {
+		vi.useFakeTimers();
+		try {
+			vi.stubGlobal('fetch', hangingFetch());
+
+			const pending = api.post('/slow', {}).catch((e) => e);
+			await vi.advanceTimersByTimeAsync(29_000);
+			expect(await Promise.race([pending, Promise.resolve('pending')])).toBe('pending');
+
+			await vi.advanceTimersByTimeAsync(2_000);
+			expect(await pending).toBeInstanceOf(Error);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('honors a timeoutMs wider than the default (scan-shaped request)', async () => {
+		vi.useFakeTimers();
+		try {
+			vi.stubGlobal('fetch', hangingFetch());
+
+			const pending = api.post('/scanner/scan', {}, { timeoutMs: 300_000 }).catch((e) => e);
+			// 35s: past the old 30s default where the false failure fired (#570).
+			await vi.advanceTimersByTimeAsync(35_000);
+			expect(await Promise.race([pending, Promise.resolve('pending')])).toBe('pending');
+
+			await vi.advanceTimersByTimeAsync(300_000);
+			expect(await pending).toBeInstanceOf(Error);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe('api client retry / 401 handling', () => {
 	let fetchMock: ReturnType<typeof vi.fn>;
 

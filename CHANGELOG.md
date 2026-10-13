@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Quick scan no longer false-fails on long synchronous scans (#570)**: the API client hard-coded a 30s timeout for every request, but POST /scanner/scan holds the request open for the whole scan (a demo /28 of unroutable documentation IPs with 2s probe timeouts ran 36s server-side) - the UI reported "request timeout" within seconds while the server completed fine, inviting duplicate submissions. The client gains a per-request `timeoutMs` override and the scan call passes a 5-minute budget (the cancel button aborts earlier); tests pin both the 30s default and the override with a hanging fetch under fake timers.
+
 ### Added
 - **Self-hosted opkg feed (#563)**: `make feed-index` turns the built `.ipk` packages (center + agent) into a self-contained feed directory — opkg-standard `Packages`/`Packages.gz` indexes with `Filename`/`Size`/`SHA256sum` stanzas — that any static file server can host. Routers subscribe once via `/etc/opkg/customfeeds.conf` and upgrades become plain `opkg update && opkg upgrade` (or the LuCI package page). The generator (`scripts/make_opkg_feed.sh`) digs the control metadata out of each ipk (the `./`-prefixed gzip-tar members) and is busybox-compatible; the CI openwrt job smokes the index shape on every PR. Index stanzas carry per-package SHA256sum so opkg verifies downloads against the fetched index; the index itself is unsigned (usign signing is a follow-up) — serve it from a host you control. Field-verified on the rig: a router subscribed to a feed hosted on the LAN saw `mibee-steward 0.7.3` from the index with install state untouched.
 
