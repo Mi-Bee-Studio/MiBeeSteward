@@ -154,3 +154,63 @@ func TestAdminResetPassword_NotFound(t *testing.T) {
 		`{"new_password":"Any@2026"}`)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode, "resetting a non-existent user → 404")
 }
+
+// TestDeleteUser_Success pins #568: the single-user DELETE endpoint used to
+// not exist at all (the UI's row-level delete button hit chi's sub-router
+// 404 while the row stayed in the list). Admin deletes a real user → 200,
+// and the row is gone from the DB.
+func TestDeleteUser_Success(t *testing.T) {
+	server, db := setupTestServer(t)
+	goneID := insertTestUser(t, db, "temp-user", "temp@test.com", "viewer", "Temp@2026")
+	insertTestAdmin(t, db)
+	admin := loginAsAdmin(t, server)
+
+	resp := authDelete(t, server.URL+"/api/v1/users/"+strconv.FormatInt(goneID, 10), admin)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	defer resp.Body.Close()
+
+	var n int
+	require.NoError(t, db.QueryRow("SELECT COUNT(*) FROM users WHERE id = ?", goneID).Scan(&n))
+	require.Zero(t, n, "deleted user must be gone from the database")
+}
+
+// TestDeleteUser_NotFound: an ID matching no row is a real 404 (regression
+// guard - the pre-fix state was a 404 for EVERY id, existing or not).
+func TestDeleteUser_NotFound(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	admin := loginAsAdmin(t, server)
+
+	resp := authDelete(t, server.URL+"/api/v1/users/99999", admin)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	defer resp.Body.Close()
+}
+
+// TestDeleteUser_SelfDeleteRejected: the last management surface must
+// survive its owner - the same guard the batch endpoint enforces.
+func TestDeleteUser_SelfDeleteRejected(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	var adminID int64
+	require.NoError(t, db.QueryRow("SELECT id FROM users WHERE username = 'admin'").Scan(&adminID))
+	admin := loginAsAdmin(t, server)
+
+	resp := authDelete(t, server.URL+"/api/v1/users/"+strconv.FormatInt(adminID, 10), admin)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	defer resp.Body.Close()
+
+	var n int
+	require.NoError(t, db.QueryRow("SELECT COUNT(*) FROM users WHERE id = ?", adminID).Scan(&n))
+	require.Equal(t, 1, n, "self-delete must leave the account intact")
+}
+
+// TestDeleteUser_InvalidID: a non-numeric path parameter is a 400, not a 500.
+func TestDeleteUser_InvalidID(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	admin := loginAsAdmin(t, server)
+
+	resp := authDelete(t, server.URL+"/api/v1/users/not-a-number", admin)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	defer resp.Body.Close()
+}

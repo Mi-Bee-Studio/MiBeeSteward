@@ -46,6 +46,11 @@ var (
 	// ErrNoPendingSetup: a setup attempt arrived when no empty-hash bootstrap
 	// account exists (setup already completed, or never seeded this way).
 	ErrNoPendingSetup = errors.New("no pending setup")
+	// ErrSelfDelete: the acting admin tried to delete their own account. The
+	// user-management surface must survive its owner - the same rule the
+	// batch-delete path enforces with ErrBatchSelfDelete, exposed here for
+	// the single-user DELETE endpoint (#568).
+	ErrSelfDelete = errors.New("cannot delete yourself")
 )
 
 var (
@@ -600,6 +605,24 @@ func (s *UserService) AdminResetPassword(ctx context.Context, userID int64, newP
 
 	if err := s.bumpTokenVersion(ctx, userID); err != nil {
 		return err
+	}
+	return nil
+}
+
+// DeleteUser removes one user by ID (admin action). The actor cannot delete
+// themselves, and an ID that matches no row surfaces as ErrUserNotFound so
+// the handler can answer 404 (the batch path instead silently skips missing
+// IDs - single-delete callers expect a precise answer).
+func (s *UserService) DeleteUser(ctx context.Context, id int64, currentUserID int64) error {
+	if id == currentUserID {
+		return ErrSelfDelete
+	}
+	affected, err := s.queries.DeleteUser(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete user: %w", err)
+	}
+	if affected == 0 {
+		return ErrUserNotFound
 	}
 	return nil
 }
