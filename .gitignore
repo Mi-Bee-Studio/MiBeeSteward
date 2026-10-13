@@ -82,3 +82,6 @@ cover.out
 
 # agent-rs coverage ratchet artifact (make coverage-agent-rs)
 agent-rs/lcov.info
+
+# make feed-index output
+dist/

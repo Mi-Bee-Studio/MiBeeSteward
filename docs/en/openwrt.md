@@ -205,6 +205,31 @@ uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit && /etc/init.d/dnsmasq resta
 
 Then point `scanner.discovery.dns_log.path` at the resulting log (or leave it empty to probe the conventional paths).
 
+## Self-Hosted opkg Feed
+
+`make package-openwrt-ipk package-openwrt-agent-rs-ipk feed-index` builds the
+packages and turns them into a self-contained feed directory
+`dist/feed/arm64/` (`Packages` + `Packages.gz` + the `.ipk` files). Host that
+directory on any static file server inside your network:
+
+```bash
+python3 -m http.server 8093 --directory /opt/mibee-feed   # or nginx et al.
+```
+
+On each router, subscribe once and updates become plain opkg operations:
+
+```sh
+echo "src/gz mibee http://<feed-host>:8093/arm64/" >> /etc/opkg/customfeeds.conf
+opkg update
+opkg list | grep mibee          # versions from the feed
+opkg upgrade mibee-steward      # or install/upgrade via the LuCI package page
+```
+
+Every index stanza carries a `SHA256sum`, so opkg verifies each downloaded
+package against the index it fetched over the same channel. The index itself
+is unsigned (usign/ed25519 signing is a follow-up): serve it from a host you
+control - the same trust you already place in the release artifacts.
+
 ## Permissions (CAP_NET_RAW)
 
 Some of MiBee Steward's probes rely on raw sockets and need **CAP_NET_RAW**:

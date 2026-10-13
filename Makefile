@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-full build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt clean test coverage coverage-gate coverage-bump coverage-agent-rs coverage-agent-rs-gate coverage-agent-rs-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-full build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt feed-index clean test coverage coverage-gate coverage-bump coverage-agent-rs coverage-agent-rs-gate coverage-agent-rs-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -317,8 +317,17 @@ coverage-agent-rs-bump: coverage-agent-rs
 	@echo "floor re-pinned to $$(cat agent-rs/coverage-floor.txt)%"
 	@git diff --quiet agent-rs/coverage-floor.txt || echo "note: floor moved; commit agent-rs/coverage-floor.txt"
 
+
+# opkg feed index (#563): turn the built .ipk packages (center + agent) into
+# a self-contained feed directory dist/feed/arm64/ (Packages + Packages.gz +
+# the packages). Host it on any static file server and routers subscribe via
+# /etc/opkg/customfeeds.conf - see docs openwrt.md "Self-hosted opkg feed".
+feed-index:
+	@mkdir -p dist/feed/arm64
+	scripts/make_opkg_feed.sh $(BUILD_DIR) dist/feed/arm64
+
 dev:
-	cd web && npm run dev &
+
 	CGO_ENABLED=0 go run ./cmd/server/
 
 migrate-up:
