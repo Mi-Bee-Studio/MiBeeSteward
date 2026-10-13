@@ -146,12 +146,15 @@ func Seed(ctx context.Context, dbConn *sql.DB, logger *slog.Logger) error {
 		SELECT network_id, 'device_changed', 'device', id, '{"os":"V5.6.9"}', '{"os":"V5.7.1"}', datetime('now', '-2 hours') FROM devices WHERE name='hq-cam-lobby'`)
 
 	// Probe targets (external synthetic probes) + recent results.
+	// Targets must stay inside documentation namespaces (RFC 5737 ranges /
+	// RFC 2606 example domains): demo installs must never send real traffic
+	// to live infrastructure (#572).
 	exec(`INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, created_at, updated_at)
-		VALUES ('demo-portal', 'http', 'https://example.org', 60, 10, 1, datetime('now'), datetime('now'))`)
+		VALUES ('demo-portal', 'http', 'https://www.example.org', 60, 10, 1, datetime('now'), datetime('now'))`)
 	exec(`INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, created_at, updated_at)
-		VALUES ('demo-api', 'http', 'https://api.example.org/healthz', 60, 10, 1, datetime('now'), datetime('now'))`)
+		VALUES ('demo-api', 'http', 'https://example.org/healthz', 60, 10, 1, datetime('now'), datetime('now'))`)
 	exec(`INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, created_at, updated_at)
-		VALUES ('demo-dns', 'tcp', '1.1.1.1:53', 60, 5, 1, datetime('now'), datetime('now'))`)
+		VALUES ('demo-dns', 'tcp', '203.0.113.10:53', 60, 5, 1, datetime('now'), datetime('now'))`)
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM probe_targets`)
 	if err == nil {
 		var ids []int64
