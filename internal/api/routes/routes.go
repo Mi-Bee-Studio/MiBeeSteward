@@ -977,6 +977,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	r.Handle(metricsPath, handler.MetricsHandler())
 	sdHandler := handler.NewSDHandler(dbConn, deviceSystemRepo)
 	r.Get("/sd", sdHandler.ServeHTTP)
+	// Root-level /health alias (#571): external monitors, container probes and
+	// load balancers conventionally probe /health. Without this route the SPA
+	// catch-all below answered 200 + index HTML, so an API-down-but-SPA-up
+	// process still looked healthy to anything probing the conventional path.
+	// Serves the same JSON as /api/v1/health.
+	r.Get("/health", handler.HealthHandler(dbConn))
 
 	// Device gauges refresh on a 60s ticker (#333): they are Reset+Set
 	// snapshots of DB state and seeding only at process start froze them at the

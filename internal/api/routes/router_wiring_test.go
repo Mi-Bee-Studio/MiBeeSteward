@@ -132,3 +132,26 @@ func TestRouter_BadFingerprintDirFailsEngineGracefully(t *testing.T) {
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 }
+
+// TestRouter_RootHealthAlias pins #571: the conventional /health probe path
+// must return the health JSON, not 200 + SPA index HTML from the catch-all.
+// An API-down process previously still "passed" external /health monitors.
+func TestRouter_RootHealthAlias(t *testing.T) {
+	conn := newTestDB(t)
+
+	router, hb, shutdown := NewRouter(conn, newTestConfig())
+	require.NotNil(t, router)
+	t.Cleanup(func() { hb.Stop(); shutdown() })
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	var out struct {
+		Status string `json:"status"`
+		DB     string `json:"db"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Equal(t, "ok", out.Status)
+	require.Equal(t, "ok", out.DB)
+}

@@ -744,6 +744,8 @@ System health check, including database status.
 
 `status` is `ok` or `degraded` (when database ping fails). `db` is `ok` or `error`. `version` is the build version injected via ldflags (`dev` for untagged builds).
 
+A root-level alias `GET /health` serves the same JSON. External monitors, container probes and load balancers that conventionally probe `/health` get real health status instead of the SPA fallback HTML (#571).
+
 
 
 
@@ -769,6 +771,7 @@ User management and network scope grant endpoints. All endpoints require **Admin
 | `/api/v1/users` | GET | Admin | List all users (paginated) |
 
 
+| `/api/v1/users/{id}` | DELETE | Admin | Delete a user (self-delete rejected) |
 | `/api/v1/users/batch-delete` | POST | Admin | Batch delete users |
 
 
@@ -882,6 +885,16 @@ List all users.
 
 
 
+
+### DELETE /api/v1/users/{id}
+
+
+
+Deletes a user by ID. Self-deletion is rejected with `400` (`cannot delete yourself`, the same guard as batch delete); a non-existent ID returns `404`. Audit-logged as `admin.user.delete`. Introduced in #568 — the endpoint the UI's row-level delete button always targeted, which previously did not exist (every delete answered 404).
+
+
+
+**Admin**
 
 ### POST /api/v1/users/{id}/reset-password
 
