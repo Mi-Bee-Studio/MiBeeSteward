@@ -744,6 +744,8 @@ System health check, including database status.
 
 `status` is `ok` or `degraded` (when database ping fails). `db` is `ok` or `error`. `version` is the build version injected via ldflags (`dev` for untagged builds).
 
+A root-level alias `GET /health` serves the same JSON. External monitors, container probes and load balancers that conventionally probe `/health` get real health status instead of the SPA fallback HTML (#571).
+
 
 
 

@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Liveness + version (public) */
+        /** Liveness + version (public); also served at the root as /health for conventional monitors/probes (#571) */
         get: {
             parameters: {
                 query?: never;

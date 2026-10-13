@@ -25,9 +25,10 @@ import (
 
 // openapiExtraRoutes are non-/api routes that ARE part of the documented
 // public surface. Everything else outside /api (SPA catch-all, demo-mode
-// routes) is excluded from the contract. (/health lives under /api/v1 and is
-// covered by the /api prefix rule.)
+// routes) is excluded from the contract. (/api/v1/health lives under /api/v1
+// and is covered by the /api prefix rule; the root /health alias is #571.)
 var openapiExtraRoutes = map[string]bool{
+	"/health":  true,
 	"/metrics": true,
 	"/sd":      true,
 }
@@ -94,6 +95,11 @@ func TestOpenAPIRoutesParity(t *testing.T) {
 		// servers.url); /metrics and /sd live at the root. Compare full paths.
 		if norm != "/metrics" && norm != "/sd" {
 			norm = "/api/v1" + norm
+		}
+		// /health is declared once but served twice: canonical /api/v1/health
+		// plus the root-level alias for conventional probes (#571).
+		if norm == "/api/v1/health" {
+			declared["GET /health"] = true
 		}
 		for _, m := range []string{"get", "put", "post", "delete", "patch"} {
 			if itemMap, ok := item.(map[string]interface{}); ok && itemMap[m] != nil {

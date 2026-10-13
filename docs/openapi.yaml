@@ -61,7 +61,7 @@ paths:
   /health:
     get:
       tags: [Health]
-      summary: Liveness + version (public)
+      summary: Liveness + version (public); also served at the root as /health for conventional monitors/probes (#571)
       security: []
       responses:
         "200":
