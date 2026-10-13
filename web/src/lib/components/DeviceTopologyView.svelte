@@ -496,7 +496,7 @@
 				<aside class="w-72 shrink-0 bg-surface border border-border rounded-lg p-4 text-sm overflow-y-auto">
 					<div class="flex items-start justify-between mb-2">
 						<h3 class="font-semibold text-base">{m['topology.Node Detail Title']()}</h3>
-						<button onclick={() => (selectedNode = null)} class="text-muted hover:text-text" aria-label="close">
+						<button onclick={() => (selectedNode = null)} class="text-muted hover:text-text" aria-label={m['common.Close']()}>
 							<X class="w-4 h-4" />
 						</button>
 					</div>
@@ -543,7 +543,7 @@
 				<aside class="w-72 shrink-0 bg-surface border border-border rounded-lg p-4 text-sm overflow-y-auto">
 					<div class="flex items-start justify-between mb-2">
 						<h3 class="font-semibold text-base">{m['topology.Edge Detail Title']()}</h3>
-						<button onclick={() => (selectedEdge = null)} class="text-muted hover:text-text" aria-label="close">
+						<button onclick={() => (selectedEdge = null)} class="text-muted hover:text-text" aria-label={m['common.Close']()}>
 							<X class="w-4 h-4" />
 						</button>
 					</div>

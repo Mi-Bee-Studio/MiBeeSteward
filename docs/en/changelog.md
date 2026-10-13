@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **i18n / a11y batch (#569)**: backend errors arrive as English literal strings (no error codes on the wire) and rendered raw into the Chinese UI - getErrorMessage now maps the strings users actually hit (reserved-address-space scan guard #317, same/weak password guards, user-delete self guard, scan server-timeout) to localized copy, bilingual message keys added, unknown strings still pass through so operators keep exact diagnostics. The topology link/node detail panels' close buttons carry the localized aria-label instead of hardcoded English "close" (screen readers read Chinese pages in Chinese). The users-page modals' inputs have proper label for/id associations (create/reset/scope forms were unnamed for assistive tech). The login form's stale error banner is cleared when the forced-password-change modal opens.
+
 ### Added
 - **Self-hosted opkg feed (#563)**: `make feed-index` turns the built `.ipk` packages (center + agent) into a self-contained feed directory — opkg-standard `Packages`/`Packages.gz` indexes with `Filename`/`Size`/`SHA256sum` stanzas — that any static file server can host. Routers subscribe once via `/etc/opkg/customfeeds.conf` and upgrades become plain `opkg update && opkg upgrade` (or the LuCI package page). The generator (`scripts/make_opkg_feed.sh`) digs the control metadata out of each ipk (the `./`-prefixed gzip-tar members) and is busybox-compatible; the CI openwrt job smokes the index shape on every PR. Index stanzas carry per-package SHA256sum so opkg verifies downloads against the fetched index; the index itself is unsigned (usign signing is a follow-up) — serve it from a host you control. Field-verified on the rig: a router subscribed to a feed hosted on the LAN saw `mibee-steward 0.7.3` from the index with install state untouched.
 
