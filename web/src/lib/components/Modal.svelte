@@ -9,7 +9,7 @@
 -->
 
 <script lang="ts">
-	import { fade, scale } from 'svelte/transition';
+	import { scale } from 'svelte/transition';
 	import { m } from '$lib/i18n-paraglide';
 	import { X } from '@lucide/svelte';
 
@@ -166,10 +166,19 @@
 </script>
 
 {#if open}
+	<!-- Closing must never depend on an animation finishing (#567): Svelte
+	     outro transitions wait for the Web Animations clock, and embedded
+	     webviews (old tablets, kiosks, some Electron/WebView hosts) can have
+	     a document timeline that never advances - the outro's onfinish never
+	     fired, open flipped false but the backdrop+dialog DOM lingered
+	     forever, intercepting every pointer event under it. So: no outro at
+	     all (close removes the DOM on the spot), and the intro is
+	     transform-only (in:scale) - a frozen clock then leaves the dialog at
+	     0.95 scale, still fully visible and usable, instead of an
+	     opacity-keyed fade that would pin the scrim invisible. -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="modal-backdrop"
-		transition:fade={{ duration: 150 }}
 		onclick={handleBackdropClick}
 		onkeydown={handleKeydown}
 	>
@@ -177,7 +186,7 @@
 			bind:this={dialogRef}
 			class="modal-dialog"
 			style="max-width: {maxWidth}"
-			transition:scale={{ duration: 200, start: 0.95 }}
+			in:scale={{ duration: 200, start: 0.95 }}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby={titleId}

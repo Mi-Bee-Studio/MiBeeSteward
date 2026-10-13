@@ -46,6 +46,7 @@ func registerUserRoutes(r chi.Router, userHandler *handler.UserHandler, batchHan
 	r.Route("/api/v1/users", func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapUserManage))
 		r.Get("/", userHandler.ListUsers)
+		r.Delete("/{id}", userHandler.DeleteUser)
 		r.Post("/batch-delete", batchHandler.BatchDeleteUsers)
 		r.Post("/{id}/reset-password", userHandler.AdminResetPassword)
 		// Per-user network grants (#138 Phase 3), list the networks a user is

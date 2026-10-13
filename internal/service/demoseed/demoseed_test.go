@@ -47,6 +47,16 @@ func TestSeedAndWipe(t *testing.T) {
 	// collide with a real network.
 	require.Equal(t, len(demoDevices), counts(`SELECT COUNT(*) FROM devices
 		WHERE (ip_address LIKE '198.51.100.%' OR ip_address LIKE '203.0.113.%') AND device_uuid LIKE 'demo-uuid-%'`))
+	// Probe targets too must stay in documentation namespaces (#572): IPs in
+	// RFC 5737 ranges, hostnames in RFC 2606 example domains — demo installs
+	// never send traffic to live infrastructure.
+	require.Equal(t, 3, counts(`SELECT COUNT(*) FROM probe_targets WHERE name LIKE 'demo-%'
+		AND (
+			(target LIKE '198.51.100.%' OR target LIKE '203.0.113.%' OR target LIKE '192.0.2.%')
+			OR target LIKE '%example.org%'
+			OR target LIKE '%example.com%'
+			OR target LIKE '%example.net%'
+		)`))
 
 	// Wipe clears every demo-marked row.
 	require.NoError(t, Wipe(context.Background(), conn))
