@@ -3276,7 +3276,7 @@ type ClientInterface interface {
 	// Corresponds with POST /fingerprints/upstream/apply (the `PostFingerprintsUpstreamApply` operationId).
 	PostFingerprintsUpstreamApply(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHealth Liveness + version (public)
+	// GetHealth Liveness + version (public); also served at the root as /health for conventional monitors/probes (#571)
 	//
 	// Corresponds with GET /health (the `GetHealth` operationId).
 	GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -5040,7 +5040,7 @@ func (c *Client) PostFingerprintsUpstreamApply(ctx context.Context, reqEditors .
 	return c.Client.Do(req)
 }
 
-// GetHealth Liveness + version (public)
+// GetHealth Liveness + version (public); also served at the root as /health for conventional monitors/probes (#571)
 //
 // Corresponds with GET /health (the `GetHealth` operationId).
 func (c *Client) GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -13340,7 +13340,7 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /fingerprints/upstream/apply (the `PostFingerprintsUpstreamApply` operationId).
 	PostFingerprintsUpstreamApplyWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostFingerprintsUpstreamApplyResponse, error)
 
-	// GetHealthWithResponse Liveness + version (public)
+	// GetHealthWithResponse Liveness + version (public); also served at the root as /health for conventional monitors/probes (#571)
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -21475,7 +21475,7 @@ func (c *ClientWithResponses) PostFingerprintsUpstreamApplyWithResponse(ctx cont
 	return ParsePostFingerprintsUpstreamApplyResponse(rsp)
 }
 
-// GetHealthWithResponse Liveness + version (public)
+// GetHealthWithResponse Liveness + version (public); also served at the root as /health for conventional monitors/probes (#571)
 //
 // Returns a wrapper object for the known response body format(s).
 //
