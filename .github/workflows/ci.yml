@@ -64,6 +64,32 @@ jobs:
         working-directory: agent-rs
         run: cargo test --locked -p mibee-ebpf --features loader && cargo test --locked -p mibee-agent --features ebpf
 
+  # agent-rs line-coverage ratchet (#559): the Rust mirror of the Go side's
+  # coverage-floor gate. Separate job so the instrumented rebuild never
+  # slows the plain test job. cargo-llvm-cov needs the llvm-tools-preview
+  # component; the floor lives in agent-rs/coverage-floor.txt and only moves
+  # up (make coverage-agent-rs-bump re-pins).
+  agent-rs-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            agent-rs/target
+          key: agent-rs-cov-${{ runner.os }}-cargo-${{ hashFiles('agent-rs/Cargo.lock') }}
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+      - name: Sync embedded assets (test fixtures read configs/)
+        run: make sync-agent-rs-assets
+      - name: Coverage gate
+        run: make coverage-agent-rs-gate
+
   # Optional build tags (#502): the release ships a -full variant with
   # WITH_LLDP,WITH_CDP,WITH_ARPSCAN, and those code paths never compile in
   # the default `go vet/test ./...` — the reals are Linux-only (AF_PACKET).

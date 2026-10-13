@@ -79,3 +79,6 @@ internal/service/scannerv2/ebpf/tcIngress*.o
 cover.out
 *.prof
 /agent
+
+# agent-rs coverage ratchet artifact (make coverage-agent-rs)
+agent-rs/lcov.info

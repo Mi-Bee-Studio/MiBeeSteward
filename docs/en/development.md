@@ -136,6 +136,19 @@ make coverage-bump          # re-pin the floor to the current level (after addin
 
 Never lower the floor to make a red build green, add tests instead.
 
+The Rust agent has the same ratchet (#559): the `agent-rs-coverage` CI job runs
+`cargo llvm-cov` over the whole cargo workspace and fails below the line
+coverage recorded in `agent-rs/coverage-floor.txt` (lcov LF/LH totals — the
+closest analog of the Go side's statement coverage, and immune to
+cargo-llvm-cov's text-table format changes). It needs `cargo-llvm-cov`
+installed plus the `llvm-tools-preview` rustup component.
+
+```bash
+make coverage-agent-rs          # produce agent-rs/lcov.info
+make coverage-agent-rs-gate     # fail if line coverage is below the floor
+make coverage-agent-rs-bump     # re-pin the floor (floor only moves up)
+```
+
 ### Linting & the Format Gate
 
 ```bash

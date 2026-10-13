@@ -135,6 +135,18 @@ make coverage-bump          # 把 floor 重新钉到当前水平（补完测试�
 
 不要为了绿灯去下调 floor，请补测试。
 
+Rust agent 有同一机制的棘轮（#559）：`agent-rs-coverage` CI 任务对整个 cargo
+workspace 跑 `cargo llvm-cov`，行覆盖率低于 `agent-rs/coverage-floor.txt` 记录值即
+失败（取 lcov 的 LF/LH 汇总——与 Go 侧语句覆盖最接近的口径，且不受 cargo-llvm-cov
+文本表格列序变化影响）。本地需要安装 `cargo-llvm-cov` 并启用 rustup 组件
+`llvm-tools-preview`。
+
+```bash
+make coverage-agent-rs          # 生成 agent-rs/lcov.info
+make coverage-agent-rs-gate     # 行覆盖率低于 floor 时失败
+make coverage-agent-rs-bump     # 重钉 floor（只升不降）
+```
+
 ### 代码检查与格式门禁
 
 ```bash
