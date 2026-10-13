@@ -205,6 +205,29 @@ uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit && /etc/init.d/dnsmasq resta
 
 然后在 `scanner.discovery.dns_log.path` 指向日志文件路径（留空则自动探测常规路径）。
 
+## 自建 opkg feed
+
+`make package-openwrt-ipk package-openwrt-agent-rs-ipk feed-index` 构建各包并生成
+自包含的 feed 目录 `dist/feed/arm64/`（`Packages` + `Packages.gz` + `.ipk` 文件）。
+把该目录放到内网任意静态文件服务上即可：
+
+```bash
+python3 -m http.server 8093 --directory /opt/mibee-feed   # 或 nginx 等
+```
+
+每台路由器订阅一次，之后升级就是标准 opkg 操作：
+
+```sh
+echo "src/gz mibee http://<feed主机>:8093/arm64/" >> /etc/opkg/customfeeds.conf
+opkg update
+opkg list | grep mibee          # 来自 feed 的版本
+opkg upgrade mibee-steward      # 或经 LuCI 软件包页安装/升级
+```
+
+索引里每个条目都带 `SHA256sum`，opkg 会按取回索引的同一通道校验每个下载包。索引
+本身未签名（usign/ed25519 签名是后续增强）：请部署在你掌控的主机上——与你信任
+release 产物的信任模型一致。
+
 ## 权限说明（CAP_NET_RAW）
 
 MiBee Steward 的部分探测基于原始套接字，需要 **CAP_NET_RAW**：

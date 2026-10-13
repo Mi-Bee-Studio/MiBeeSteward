@@ -332,6 +332,16 @@ jobs:
       # variable set and assert the Depends line actually lands in the ipk's
       # control member — the exact regression #535 pinned (the scripts read
       # PKG_DEPENDS while everything else said PKG_DEPS, silently).
+      # Feed index smoke (#563): the feed generator must produce an opkg-
+      # standard index (Packages + Packages.gz) with both packages and
+      # SHA256sum stanzas — the same directory a self-hosted feed serves.
+      - name: Feed index smoke (make feed-index, #563)
+        run: |
+          make feed-index
+          test -s dist/feed/arm64/Packages && test -s dist/feed/arm64/Packages.gz
+          grep -c '^Package:' dist/feed/arm64/Packages | grep -qv '^0$'
+          grep -q '^SHA256sum: ' dist/feed/arm64/Packages
+          grep -q '^Filename: ' dist/feed/arm64/Packages
       - name: PKG_DEPS smoke (Depends must land in the ipk control, #535)
         run: |
           PKG_DEPS="+kmod-sched-bpf" sh deploy/openwrt/mkipk.sh bin/openwrt-stage 0.0.0-depsmoke arm64 /tmp/deps-smoke.ipk

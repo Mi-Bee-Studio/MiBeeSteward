@@ -7,6 +7,9 @@
 
 ## [Unreleased]（未发布）
 
+### 新增
+- **自建 opkg feed（#563）**：`make feed-index` 把构建出的 `.ipk` 包（center + agent）变成自包含的 feed 目录——opkg 标准 `Packages`/`Packages.gz` 索引（带 `Filename`/`Size`/`SHA256sum` 字段）——任意静态文件服务即可托管。路由器经 `/etc/opkg/customfeeds.conf` 一次订阅，升级就是普通的 `opkg update && opkg upgrade`（或 LuCI 软件包页）。生成器（`scripts/make_opkg_feed.sh`）从每个 ipk 里挖出 control 元数据（`./` 前缀的 gzip-tar 成员）并兼容 busybox；CI openwrt job 每个 PR 冒烟索引形状。索引条目带每包 SHA256sum，opkg 按取回索引校验下载；索引本身未签名（usign 签名为后续增强）——请部署在你掌控的主机上。rig 实测：路由器订阅内网 feed 后从索引看到 `mibee-steward 0.7.3`，安装状态零变化。
+
 
 ## [0.7.3] - 2026-10-13
 
