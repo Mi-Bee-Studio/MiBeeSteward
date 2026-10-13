@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-full build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt clean test coverage coverage-gate coverage-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-full build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt clean test coverage coverage-gate coverage-bump coverage-agent-rs coverage-agent-rs-gate coverage-agent-rs-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -301,6 +301,21 @@ coverage-gate:
 coverage-bump:
 	go tool cover -func=cover.out | awk '/^total:/ {sub(/%/, "", $NF); printf "%.1f\n", $$NF}' > scripts/coverage-floor.txt
 	@echo "floor re-pinned to $$(cat scripts/coverage-floor.txt)%"
+
+# agent-rs line-coverage ratchet (#559): same doctrine as the Go side, metric
+# = lcov LF/LH (the closest analog of statement coverage). Requires
+# cargo-llvm-cov (cargo install cargo-llvm-cov --locked) and the
+# llvm-tools-preview rustup component.
+coverage-agent-rs:
+	cd agent-rs && (cargo llvm-cov lcov --locked --output-path lcov.info 2>/dev/null || cargo llvm-cov --lcov --locked --output-path lcov.info)
+
+coverage-agent-rs-gate: coverage-agent-rs
+	scripts/check-coverage-agent-rs.sh agent-rs/lcov.info
+
+coverage-agent-rs-bump: coverage-agent-rs
+	@awk -F: '/^LF:/ {f += $$2} /^LH:/ {h += $$2} END {if (f > 0) printf "%.1f\n", 100 * h / f; else exit 1}' agent-rs/lcov.info > agent-rs/coverage-floor.txt
+	@echo "floor re-pinned to $$(cat agent-rs/coverage-floor.txt)%"
+	@git diff --quiet agent-rs/coverage-floor.txt || echo "note: floor moved; commit agent-rs/coverage-floor.txt"
 
 dev:
 	cd web && npm run dev &
