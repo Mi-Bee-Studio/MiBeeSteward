@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 )
 
 const createNetwork = `-- name: CreateNetwork :one
@@ -132,6 +133,65 @@ func (q *Queries) ListNetworks(ctx context.Context) ([]Network, error) {
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNetworksWithAgentLiveness = `-- name: ListNetworksWithAgentLiveness :many
+SELECT n.id, n.name, n.cidr, n.site, n.agent_id, n.metadata, n.created_at, n.updated_at,
+       t.last_used_at AS agent_last_used_at
+FROM networks n
+LEFT JOIN agent_tokens t ON t.agent_id = n.agent_id
+ORDER BY n.id
+`
+
+type ListNetworksWithAgentLivenessRow struct {
+	ID              int64      `json:"id"`
+	Name            string     `json:"name"`
+	Cidr            *string    `json:"cidr"`
+	Site            *string    `json:"site"`
+	AgentID         *string    `json:"agent_id"`
+	Metadata        string     `json:"metadata"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	AgentLastUsedAt *time.Time `json:"agent_last_used_at"`
+}
+
+// Networks plus the owning agent's last report time (#557): the mirror-
+// freshness fact for agent/peer-managed segments. An agent-managed network
+// carries agent_tokens.last_used_at (the peer reporter is an agent too, so
+// federated mirrors get the same signal); center-local networks get NULL.
+// Dedicated query rather than extending ListNetworks: the other callers
+// (service discovery, probe dispatch, flow scoping) never need the JOIN.
+func (q *Queries) ListNetworksWithAgentLiveness(ctx context.Context) ([]ListNetworksWithAgentLivenessRow, error) {
+	rows, err := q.db.QueryContext(ctx, listNetworksWithAgentLiveness)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNetworksWithAgentLivenessRow{}
+	for rows.Next() {
+		var i ListNetworksWithAgentLivenessRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Cidr,
+			&i.Site,
+			&i.AgentID,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AgentLastUsedAt,
 		); err != nil {
 			return nil, err
 		}

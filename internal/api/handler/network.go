@@ -15,6 +15,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -38,14 +39,59 @@ func NewNetworkHandler(queries *db.Queries, svc *service.NetworkService) *Networ
 	return &NetworkHandler{queries: queries, svc: svc}
 }
 
+// agentMirrorFreshWindow is how long an agent/peer-managed network stays
+// "fresh" after its owning agent's last report (#557). Same rule as the
+// Agents page's Active state, so the two views can never disagree.
+const agentMirrorFreshWindow = 5 * time.Minute
+
+// networkWithMirror is one List row plus the #557 freshness facts. Embedding
+// keeps the wire shape of the base row identical; the two extra fields ride
+// alongside.
+type networkWithMirror struct {
+	db.Network
+	// AgentLastUsedAt is the owning agent's last report time (RFC3339), null
+	// for center-local networks. For a federated mirror the "agent" is the
+	// peer's embedded reporter, so this is the peer-link liveness signal.
+	AgentLastUsedAt *string `json:"agent_last_used_at"`
+	// AgentStale is true when the network is agent-managed and the agent
+	// hasn't reported within agentMirrorFreshWindow — the UI grays the
+	// segment's mirrored data. Purely derived, never persisted.
+	AgentStale bool `json:"agent_stale"`
+}
+
 // List handles GET /api/v1/networks, all networks, ordered by id. Complete
 // list (networks tables are small by nature), wrapped in {networks, total}
 // per the API contract (#274; used to be the list family's bare array).
+// Rows carry the agent-mirror freshness facts (#557) so any viewer — not
+// just agent managers — can see whether an agent/peer segment's data is
+// still being refreshed.
 func (h *NetworkHandler) List(w http.ResponseWriter, r *http.Request) {
-	nets, err := h.queries.ListNetworks(r.Context())
+	rows, err := h.queries.ListNetworksWithAgentLiveness(r.Context())
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to list networks")
 		return
+	}
+	nets := make([]networkWithMirror, 0, len(rows))
+	now := time.Now()
+	for _, row := range rows {
+		item := networkWithMirror{
+			Network: db.Network{
+				ID:        row.ID,
+				Name:      row.Name,
+				Cidr:      row.Cidr,
+				Site:      row.Site,
+				AgentID:   row.AgentID,
+				Metadata:  row.Metadata,
+				CreatedAt: row.CreatedAt,
+				UpdatedAt: row.UpdatedAt,
+			},
+		}
+		if row.AgentLastUsedAt != nil {
+			formatted := row.AgentLastUsedAt.UTC().Format(time.RFC3339)
+			item.AgentLastUsedAt = &formatted
+			item.AgentStale = now.Sub(*row.AgentLastUsedAt) > agentMirrorFreshWindow
+		}
+		nets = append(nets, item)
 	}
 	Success(w, map[string]any{"networks": nets, "total": len(nets)})
 }

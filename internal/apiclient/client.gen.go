@@ -1330,8 +1330,29 @@ type NetworkGrantList struct {
 
 // NetworkList defines model for NetworkList.
 type NetworkList struct {
-	Networks *[]Network `json:"networks,omitempty"`
-	Total    *int       `json:"total,omitempty"`
+	Networks *[]NetworkWithMirror `json:"networks,omitempty"`
+	Total    *int                 `json:"total,omitempty"`
+}
+
+// NetworkWithMirror Network row plus the agent-mirror freshness facts (#557) - the list endpoint's shape. An agent/peer-managed segment is only as fresh as its owning agent's last report; staleness uses the same 5-minute window as the Agents page's Active state.
+type NetworkWithMirror struct {
+	// AgentId Non-empty = managed by that distributed agent
+	AgentId *string `json:"agent_id"`
+
+	// AgentLastUsedAt Owning agent's last report time; null for center-local networks. For a federated mirror the "agent" is the peer's embedded reporter, so this doubles as the peer-link liveness signal.
+	AgentLastUsedAt *time.Time `json:"agent_last_used_at,omitempty"`
+
+	// AgentStale True when the network is agent-managed and the agent hasn't reported within the fresh window - the UI grays the segment's mirrored data. Purely derived, never persisted.
+	AgentStale *bool `json:"agent_stale,omitempty"`
+
+	// Cidr Advisory (no strict validation)
+	Cidr      *string   `json:"cidr"`
+	CreatedAt time.Time `json:"created_at"`
+	Id        int64     `json:"id"`
+	Metadata  string    `json:"metadata"`
+	Name      string    `json:"name"`
+	Site      *string   `json:"site"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // NotificationChannel Notification channel (password/secret masked in responses)
@@ -1851,12 +1872,17 @@ type TopologyNode struct {
 	// NetworkId Origin network (subnet grouping)
 	NetworkId *int64 `json:"network_id"`
 
-	// Networks Segments this asset is actively present in (#526) - the multi-homed interconnect fact; omitted when no presence has accrued.
+	// Networks Segments this asset is actively present in (#526) - the multi-homed interconnect fact; omitted when no presence has accrued. Entries carry the segment's name + CIDR (#556) so the graph can label cross-segment bridge points without a second round-trip.
 	Networks *[]struct {
+		// Cidr Segment CIDR (#556); empty when the networks lookup failed
+		Cidr      *string   `json:"cidr,omitempty"`
 		IpAddress string    `json:"ip_address"`
 		LastSeen  time.Time `json:"last_seen"`
-		NetworkId int64     `json:"network_id"`
-		Vantage   *string   `json:"vantage,omitempty"`
+
+		// Name Segment name (#556); empty when the networks lookup failed
+		Name      *string `json:"name,omitempty"`
+		NetworkId int64   `json:"network_id"`
+		Vantage   *string `json:"vantage,omitempty"`
 	} `json:"networks,omitempty"`
 	Status TopologyNodeStatus `json:"status"`
 

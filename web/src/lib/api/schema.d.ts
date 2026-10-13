@@ -5839,8 +5839,18 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        /** @description Network row plus the agent-mirror freshness facts (#557) - the list endpoint's shape. An agent/peer-managed segment is only as fresh as its owning agent's last report; staleness uses the same 5-minute window as the Agents page's Active state. */
+        NetworkWithMirror: components["schemas"]["Network"] & {
+            /**
+             * Format: date-time
+             * @description Owning agent's last report time; null for center-local networks. For a federated mirror the "agent" is the peer's embedded reporter, so this doubles as the peer-link liveness signal.
+             */
+            agent_last_used_at?: string | null;
+            /** @description True when the network is agent-managed and the agent hasn't reported within the fresh window - the UI grays the segment's mirrored data. Purely derived, never persisted. */
+            agent_stale?: boolean;
+        };
         NetworkList: {
-            networks?: components["schemas"]["Network"][];
+            networks?: components["schemas"]["NetworkWithMirror"][];
             total?: number;
         };
         VLAN: {
@@ -6227,10 +6237,14 @@ export interface components {
             network_id: number | null;
             /** @description Collected dot1dStp fact (#525) - this bridge reported itself as the spanning-tree root; false when it never spoke STP */
             stp_root?: boolean;
-            /** @description Segments this asset is actively present in (#526) - the multi-homed interconnect fact; omitted when no presence has accrued. */
+            /** @description Segments this asset is actively present in (#526) - the multi-homed interconnect fact; omitted when no presence has accrued. Entries carry the segment's name + CIDR (#556) so the graph can label cross-segment bridge points without a second round-trip. */
             networks?: {
                 /** Format: int64 */
                 network_id: number;
+                /** @description Segment name (#556); empty when the networks lookup failed */
+                name?: string;
+                /** @description Segment CIDR (#556); empty when the networks lookup failed */
+                cidr?: string;
                 ip_address: string;
                 vantage?: string;
                 /** Format: date-time */

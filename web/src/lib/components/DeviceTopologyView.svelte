@@ -48,6 +48,8 @@
 		buildGraph,
 		recommendedForceParams,
 		LAYER_ORDER,
+		isSegmentBridge,
+		formatPresence,
 		type GraphNode,
 		type GraphLink,
 		type TopoLayer
@@ -206,6 +208,14 @@
 	// The ECharts option. Rebuilt whenever graph/search/layer-filter change.
 	let graphOption = $derived<EChartsOption | null>(buildOption(graph, searchQuery, layerVisible));
 
+	// Cross-segment bridge count (#556): nodes present in more than one
+	// segment — the link points joining the LAN clusters. Zero on a
+	// single-network view, so the pill adds no noise there.
+	let bridgeCount = $derived.by(() => {
+		if (!graph) return 0;
+		return graph.nodes.filter((n) => isSegmentBridge(n)).length;
+	});
+
 	function buildOption(
 		g: TopologyGraph | null,
 		search: string,
@@ -263,6 +273,9 @@
 				const showLabel =
 					force.labelDensity === 'all' ||
 					(force.labelDensity === 'core' && (gn.layer === 'root' || gn.layer === 'core'));
+				// Cross-segment bridge (#556): a blue ring marks the node that
+				// joins two segments (the root keeps its amber gateway ring).
+				const bridgeRing = gn.isBridge && !gn.isRoot;
 				return {
 					id: String(gn.id),
 					name: gn.name,
@@ -272,15 +285,20 @@
 					itemStyle: {
 						color: cssVar(token, fallback),
 						opacity: dimmed ? 0.15 : 1,
-						borderColor: gn.isRoot ? cssVar('--color-warning', '#f59e0b') : 'transparent',
-						borderWidth: gn.isRoot ? 3 : 0
+						borderColor: gn.isRoot
+							? cssVar('--color-warning', '#f59e0b')
+							: bridgeRing
+								? cssVar('--color-primary', '#3b82f6')
+								: 'transparent',
+						borderWidth: gn.isRoot ? 3 : bridgeRing ? 2 : 0
 					},
 					label: {
 						show: showLabel && !dimmed,
 						position: 'right',
 						fontSize: 11,
 						color: cssVar('--color-text', '#e2e8f0'),
-						formatter: () => gn.value.name || gn.value.ip_address || `#${gn.value.id}`
+						formatter: () =>
+							(gn.isBridge ? '⇄ ' : '') + (gn.value.name || gn.value.ip_address || `#${gn.value.id}`)
 					}
 				};
 			});
@@ -318,12 +336,13 @@
 						if (!gn || !gn.value) return '';
 						const n = gn.value;
 						const gw = gn.isRoot ? ` ⭐ ${escapeHtml(m['topology.Gateway']())}` : '';
+						const br = gn.isBridge ? `<br/>⇄ ${escapeHtml(m['topology.Bridges Segments']())}` : '';
 						const ipLabel = escapeHtml(m['topology.Tooltip IP']());
 						const macLabel = escapeHtml(m['topology.Tooltip MAC']());
 						const typeLabelStr = escapeHtml(m['topology.Tooltip Type']());
 						const statusLabel = escapeHtml(m['topology.Tooltip Status']());
 						const degreeLabel = escapeHtml(m['topology.Degree']());
-						return `<b>${escapeHtml(n.name)}</b>${gw}<br/>${ipLabel}: ${escapeHtml(n.ip_address || '-')}<br/>${macLabel}: ${escapeHtml(n.mac_address || '-')}<br/>${typeLabelStr}: ${escapeHtml(typeLabel(deviceType(n)))}<br/>${statusLabel}: ${escapeHtml(n.status || '-')}<br/>${degreeLabel}: ${gn.degree}`;
+						return `<b>${escapeHtml(n.name)}</b>${gw}${br}<br/>${ipLabel}: ${escapeHtml(n.ip_address || '-')}<br/>${macLabel}: ${escapeHtml(n.mac_address || '-')}<br/>${typeLabelStr}: ${escapeHtml(typeLabel(deviceType(n)))}<br/>${statusLabel}: ${escapeHtml(n.status || '-')}<br/>${degreeLabel}: ${gn.degree}`;
 					}
 					if (p.dataType === 'edge') {
 						const l = p.data.value as GraphLink | undefined;
@@ -412,6 +431,15 @@
 			placeholder={m['common.Search']() + '…'}
 			class="input max-w-xs"
 		/>
+		<!-- Cross-segment bridges (#556): how many nodes join multiple segments -->
+		{#if bridgeCount > 0}
+			<span
+				class="px-2 py-1 rounded-full border border-primary/60 text-primary text-xs inline-flex items-center gap-1"
+				title={m['topology.Bridge Count Desc']()}
+			>
+				⇄ {m['topology.Bridge Count']({ n: bridgeCount })}
+			</span>
+		{/if}
 		<!-- Layer filter pills (also reflected in the legend) -->
 		<div class="flex items-center gap-1 text-xs">
 			{#each LAYER_ORDER as layer}
@@ -495,8 +523,9 @@
 							<ul class="space-y-1">
 								{#each selectedNode.value.networks as pn}
 									<li class="text-xs flex items-center gap-2">
-										<span class="px-1.5 py-0.5 rounded bg-bg-hover text-text-muted">#{pn.network_id}</span>
-										<span class="font-mono">{pn.ip_address || '—'}</span>
+										<!-- #556: the chip names the segment (name · CIDR · the
+										     address the asset answers at in it), never a bare #id. -->
+										<span class="px-1.5 py-0.5 rounded bg-bg-hover text-text-muted font-mono">{formatPresence(pn)}</span>
 										{#if pn.vantage}
 											<span class="text-muted font-mono">@{pn.vantage}</span>
 										{/if}

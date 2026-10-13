@@ -179,7 +179,9 @@
 		"Sse Device Lost": "A device went offline",
 		"Sse Device Recovered": "A device came back online",
 		"Remote Network": "Remote",
-		"Remote Network Desc": "Mirrored from a federated peer network (read-only here; edits belong on its own center)"
+		"Remote Network Desc": "Mirrored from a federated peer network (read-only here; edits belong on its own center)",
+		"Mirror Stale": "Remote · stale",
+		"Mirror Stale Desc": "The agent/peer managing this segment has not reported for a while; its data may be outdated. Last report: {t}"
 	},
 	"systems": {
 		"System Management": "System Management",
@@ -1073,7 +1075,9 @@
 		"Delete Warning": "Devices on this network will have their network binding cleared.",
 		"Name Placeholder": "e.g. lan-beijing-62",
 		"Cidr Placeholder": "e.g. 192.168.2.0/24",
-		"Site Placeholder": "e.g. Beijing branch / datacenter / cloud"
+		"Site Placeholder": "e.g. Beijing branch / datacenter / cloud",
+		"Agent Stale": "stale",
+		"Agent Stale Desc": "The owning agent has not reported within the fresh window; this segment is not being refreshed."
 	},
 	"discovery": {
 		"Enabled": "Enabled",
@@ -1186,7 +1190,10 @@
 		"Interfaces Port": "Port",
 		"Interfaces MAC": "MAC",
 		"Interfaces Speed": "Speed",
-		"Interfaces IP": "Address"
+		"Interfaces IP": "Address",
+		"Bridges Segments": "bridges segments",
+		"Bridge Count": "{n} bridging multiple segments",
+		"Bridge Count Desc": "Devices present in more than one network (multi-homed presence facts) - the cross-segment link points. Blue ring on the graph."
 	},
 	"certificates": {
 		"Title": "TLS Certificates",

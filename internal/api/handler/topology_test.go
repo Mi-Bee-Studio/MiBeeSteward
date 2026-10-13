@@ -77,6 +77,85 @@ func TestTopologyGraph_STPRootFact(t *testing.T) {
 		byMAC[n["mac_address"].(string)] = n
 	}
 	require.Equal(t, true, byMAC["aa:bb:cc:dd:ee:02"]["stp_root"], "the root bridge reports the fact")
-	require.Equal(t, false, byMAC["aa:bb:cc:dd:ee:03"]["stp_root"], "a downstream bridge is not the root")
+	require.Equal(t, false, byMAC["aa:bb:cc:dd:ee:03"]["stp_root"], "a downstream bridge is not it")
 	require.Equal(t, false, byMAC["aa:bb:cc:dd:ee:04"]["stp_root"], "no STP facts = not root, never null")
+}
+
+// The multi-homed presence a node carries must name its segments (#556): a
+// chip reading "#2" answers nothing. Every presence entry carries the
+// network's name + CIDR alongside the address, so the node card can render
+// "lan-63 · 192.0.2.0/24 · 192.0.2.5" without a second round-trip.
+func TestTopologyGraph_PresenceCarriesSegmentNames(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	exec := func(q string, args ...any) {
+		_, err := conn.Exec(q, args...)
+		require.NoError(t, err)
+	}
+	exec(`INSERT INTO networks (name, cidr) VALUES ('lan-a', '192.0.2.0/24')`)
+	exec(`INSERT INTO networks (name, cidr) VALUES ('lan-b', '198.51.100.0/24')`)
+	// The bridge: one device row (home lan-a), present in BOTH segments —
+	// exactly the cross-segment link point the graph must be able to name.
+	exec(`INSERT INTO devices (name, type, ip_address, mac_address, status, device_uuid, network_id)
+		VALUES ('r68s-bridge', 'router', '192.0.2.1', 'aa:bb:cc:dd:ee:10', 'online', 'seed-bridge', 1)`)
+	exec(`INSERT INTO device_network_presence (device_id, network_id, ip_address, vantage, first_seen, last_seen)
+		VALUES (1, 1, '192.0.2.1', '', '2026-10-13 00:00:00', '2026-10-13 00:05:00')`)
+	exec(`INSERT INTO device_network_presence (device_id, network_id, ip_address, vantage, first_seen, last_seen)
+		VALUES (1, 2, '198.51.100.1', 'agent-lan-b', '2026-10-13 00:00:00', '2026-10-13 00:05:00')`)
+
+	middleware.SetJWTAuth("test-secret-key-for-tests")
+	h := handler.NewTopologyHandler(sqldb.New(conn))
+	r := chi.NewRouter()
+	r.Route("/api/v1/topology", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+		r.Get("/", h.Graph)
+	})
+	ta := jwtauth.New("HS256", []byte("test-secret-key-for-tests"), nil)
+	_, token, err := ta.Encode(map[string]interface{}{"user_id": int64(1), "role": "admin"})
+	require.NoError(t, err)
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/topology", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Nodes []presenceNode `json:"nodes"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	var bridge *presenceNode
+	for i := range body.Nodes {
+		if body.Nodes[i].MACAddress == "aa:bb:cc:dd:ee:10" {
+			bridge = &body.Nodes[i]
+		}
+	}
+	require.NotNil(t, bridge, "bridge device present in the graph")
+	require.Len(t, bridge.Networks, 2, "the multi-homed fact: both segments")
+	byNet := map[int64]presenceEntry{}
+	for _, pn := range bridge.Networks {
+		byNet[pn.NetworkID] = pn
+	}
+	require.Equal(t, "lan-a", byNet[1].Name, "presence names its segment")
+	require.Equal(t, "192.0.2.0/24", byNet[1].CIDR)
+	require.Equal(t, "192.0.2.1", byNet[1].IPAddress)
+	require.Equal(t, "lan-b", byNet[2].Name)
+	require.Equal(t, "198.51.100.0/24", byNet[2].CIDR)
+	require.Equal(t, "agent-lan-b", byNet[2].Vantage)
+}
+
+// presenceEntry mirrors one topoNetwork on the wire (#556 test fixture).
+type presenceEntry struct {
+	NetworkID int64  `json:"network_id"`
+	Name      string `json:"name"`
+	CIDR      string `json:"cidr"`
+	IPAddress string `json:"ip_address"`
+	Vantage   string `json:"vantage"`
+}
+
+type presenceNode struct {
+	MACAddress string          `json:"mac_address"`
+	Networks   []presenceEntry `json:"networks"`
 }

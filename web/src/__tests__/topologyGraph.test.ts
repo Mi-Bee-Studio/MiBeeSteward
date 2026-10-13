@@ -13,7 +13,9 @@ import {
 	detectRoot,
 	buildGraph,
 	recommendedForceParams,
-	LAYER_ORDER
+	LAYER_ORDER,
+	isSegmentBridge,
+	formatPresence
 } from '$lib/utils/topologyGraph';
 import type { TopologyGraph, TopoNode, TopoEdge } from '$lib/types';
 
@@ -290,5 +292,47 @@ describe('speaks-with edges (#500)', () => {
 		expect(res.links.find((l) => l.source === 2)?.bytes).toBe(654321);
 		// both endpoints known: solid graph edges, not unidentified stubs
 		expect(res.links.every((l) => !l.isUnidentified)).toBe(true);
+	});
+});
+
+describe('cross-segment bridges (#556)', () => {
+	const presence = (network_id: number, ip: string, name?: string, cidr?: string) => ({
+		network_id,
+		ip_address: ip,
+		last_seen: '2026-10-13T00:05:00Z',
+		vantage: '',
+		...(name !== undefined ? { name } : {}),
+		...(cidr !== undefined ? { cidr } : {})
+	});
+
+	it('isSegmentBridge: only multi-presence nodes are bridges', () => {
+		expect(isSegmentBridge(node({ id: 1 }))).toBe(false);
+		expect(isSegmentBridge(node({ id: 1, networks: [] }))).toBe(false);
+		expect(isSegmentBridge(node({ id: 1, networks: [presence(1, '192.0.2.1')] }))).toBe(false);
+		expect(
+			isSegmentBridge(node({ id: 1, networks: [presence(1, '192.0.2.1'), presence(2, '198.51.100.1')] }))
+		).toBe(true);
+	});
+
+	it('formatPresence: name · cidr · ip, with fallbacks when hydration degraded', () => {
+		expect(formatPresence(presence(3, '192.0.2.5', 'lan-a', '192.0.2.0/24'))).toBe(
+			'lan-a · 192.0.2.0/24 · 192.0.2.5'
+		);
+		// name lookup failed → raw id, cidr still there
+		expect(formatPresence(presence(3, '192.0.2.5', '', '192.0.2.0/24'))).toBe('#3 · 192.0.2.0/24 · 192.0.2.5');
+		// no cidr at all → segment + address
+		expect(formatPresence(presence(3, '192.0.2.5'))).toBe('#3 · 192.0.2.5');
+	});
+
+	it('buildGraph flags bridge nodes so the view can style them', () => {
+		const res = buildGraph({
+			nodes: [
+				node({ id: 1, networks: [presence(1, '192.0.2.1'), presence(2, '198.51.100.1')] }),
+				node({ id: 2, networks: [presence(1, '192.0.2.9')] })
+			],
+			edges: []
+		});
+		expect(res.nodes.find((n) => n.id === 1)?.isBridge).toBe(true);
+		expect(res.nodes.find((n) => n.id === 2)?.isBridge).toBe(false);
 	});
 });

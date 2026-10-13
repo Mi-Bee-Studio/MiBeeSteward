@@ -55,9 +55,13 @@ type topoNode struct {
 	Networks []topoNetwork `json:"networks,omitempty"`
 }
 
-// topoNetwork is one per-network presence of a topology node (#526).
+// topoNetwork is one per-network presence of a topology node (#526). Name +
+// CIDR are hydrated from the networks table (#556): a chip reading "#2" answers
+// nothing, the card must be able to say "lan-63 · 192.0.2.0/24 · 192.0.2.5".
 type topoNetwork struct {
 	NetworkID int64  `json:"network_id"`
+	Name      string `json:"name,omitempty"`
+	CIDR      string `json:"cidr,omitempty"`
 	IPAddress string `json:"ip_address"`
 	Vantage   string `json:"vantage,omitempty"` // "" = center-local, else agent id
 	LastSeen  string `json:"last_seen"`
@@ -101,12 +105,23 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 	}
 	// Multi-homed presence (#526): bulk-fetch every (device, network)
 	// presence row and attach per node — the interconnect fact. Failure
-	// degrades to presence-less nodes (the graph still renders).
+	// degrades to presence-less nodes (the graph still renders). Segment
+	// names/CIDRs (#556) hydrate from one networks fetch; its failure
+	// degrades to unnamed presences (chips fall back to the raw id).
 	presenceByDevice := map[int64][]topoNetwork{}
+	segmentNames := map[int64][2]string{}
+	if nets, nerr := h.queries.ListNetworks(r.Context()); nerr == nil {
+		for _, n := range nets {
+			segmentNames[n.ID] = [2]string{n.Name, ptrString(n.Cidr)}
+		}
+	}
 	if pres, perr := h.queries.ListAllNetworkPresences(r.Context()); perr == nil {
 		for _, p := range pres {
+			seg := segmentNames[p.NetworkID]
 			presenceByDevice[p.DeviceID] = append(presenceByDevice[p.DeviceID], topoNetwork{
 				NetworkID: p.NetworkID,
+				Name:      seg[0],
+				CIDR:      seg[1],
 				IPAddress: p.IpAddress,
 				Vantage:   p.Vantage,
 				LastSeen:  p.LastSeen.UTC().Format(time.RFC3339),

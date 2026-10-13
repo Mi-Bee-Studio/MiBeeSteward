@@ -46,6 +46,10 @@ export interface GraphNode {
 	category: number;
 	/** True for the detectedRoot: gets the gateway glyph. */
 	isRoot: boolean;
+	/** True when the node bridges multiple segments (#556): present in more
+	 * than one network per the multi-homed presence facts (#526). These are
+	 * the cross-segment link points — the nodes that join two LAN clusters. */
+	isBridge: boolean;
 }
 
 /** A link in the force-graph. All edges become links (tree edges AND crossLinks). */
@@ -215,6 +219,26 @@ function classifyLayer(node: TopoNode, isRoot: boolean): TopoLayer {
 }
 
 /**
+ * isSegmentBridge: the node is present in more than one network per the
+ * collected multi-homed presence facts (#526) — a cross-segment link point
+ * (#556). Dual-NIC routers, the box bridging two LANs, a federated segment's
+ * interconnect: these are the nodes that join otherwise separate clusters.
+ */
+export function isSegmentBridge(node: TopoNode): boolean {
+	return (node.networks?.length ?? 0) > 1;
+}
+
+/**
+ * formatPresence renders one presence entry for the node card (#556):
+ * "lan-63 · 192.0.2.0/24 · 192.0.2.5", degrading gracefully — no name
+ * hydration → "#3 · 192.0.2.0/24 · …"; no cidr → name + address only.
+ */
+export function formatPresence(pn: NonNullable<TopoNode['networks']>[number]): string {
+	const seg = pn.name || `#${pn.network_id}`;
+	return pn.cidr ? `${seg} · ${pn.cidr} · ${pn.ip_address}` : `${seg} · ${pn.ip_address}`;
+}
+
+/**
  * buildGraph turns the raw /topology API response into the force-graph payload.
  *
  * Unlike the old buildTree, this preserves EVERY edge (including cycle-closing
@@ -281,14 +305,15 @@ export function buildGraph(graph: TopologyGraph): GraphBuildResult {
 		const layer = classifyLayer(node, isRoot);
 		return {
 			id: node.id,
-			name: node.name || node.ip_address || `#${node.id}`,
-			value: node,
-			degree: degree.get(node.id) ?? 0,
-			layer,
-			category: LAYER_ORDER.indexOf(layer),
-			isRoot
-		};
-	});
+		name: node.name || node.ip_address || `#${node.id}`,
+		value: node,
+		degree: degree.get(node.id) ?? 0,
+		layer,
+		category: LAYER_ORDER.indexOf(layer),
+		isRoot,
+		isBridge: isSegmentBridge(node)
+	};
+});
 
 	// BFS from root (then any unreached node) to mark cross-links (cycle-closing
 	// edges). This mirrors the old buildTree's cross-link detection: a tree edge
