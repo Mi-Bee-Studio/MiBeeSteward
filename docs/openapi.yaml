@@ -235,6 +235,14 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/UserList"}
+  /users/{id}:
+    delete:
+      tags: [Users]
+      summary: Delete a user (admin; self-delete rejected)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+        "404": {description: User not found}
   /users/batch-delete:
     post:
       tags: [Users]
