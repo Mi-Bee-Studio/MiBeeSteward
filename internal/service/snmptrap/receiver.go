@@ -13,8 +13,9 @@
 // security whisper — all landing as `snmp_trap` evidence on the source
 // device instead of waiting for the next scan round.
 //
-// Scope of the minimal loop: v2c (community-validated by the listener) and
-// v1 traps, listen-only (the listener answers Inform ACKs itself, nothing
+// Scope of the minimal loop: v2c (community-validated by the receiver's
+// constant-time gate before anything is stored or bridged) and v1 traps,
+// listen-only (the listener answers Inform ACKs itself, nothing
 // else is ever sent). v3 traps (USM, credential-name references against the
 // vault) are the designed follow-up — the config surface deliberately has
 // no v3 keys yet so no one can enable a stub.
