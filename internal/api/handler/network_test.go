@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
@@ -85,6 +86,68 @@ func TestNetworkHandler_List_ReturnsAllOrdered(t *testing.T) {
 	// ListNetworks orders by id → creation order.
 	require.Equal(t, "lan-b", resp.Networks[0]["name"])
 	require.Equal(t, "lan-a", resp.Networks[1]["name"])
+}
+
+// Agent-managed networks expose their mirror freshness (#557): the owning
+// agent's last report time travels with the row, and a server-side 5-minute
+// window (same rule as the Agents page's Active state) marks it stale so the
+// UI can gray the segment's mirrored data. Center-local networks (no agent)
+// carry null and are never stale.
+func TestNetworkHandler_List_AgentMirrorFreshness(t *testing.T) {
+	h, q, conn := setupNetworkHandler(t)
+	ctx := context.Background()
+
+	mkNet := func(name string) int64 {
+		net, err := q.CreateNetwork(ctx, db.CreateNetworkParams{Name: name})
+		require.NoError(t, err)
+		return net.ID
+	}
+	mkNet("lan-local")
+	netFresh := mkNet("lan-fresh")
+	netStale := mkNet("lan-stale")
+	agentID := func(s string) *string { return &s }
+	require.NoError(t, q.SetNetworkAgentID(ctx, db.SetNetworkAgentIDParams{AgentID: agentID("agent-fresh"), ID: netFresh}))
+	require.NoError(t, q.SetNetworkAgentID(ctx, db.SetNetworkAgentIDParams{AgentID: agentID("agent-stale"), ID: netStale}))
+
+	stamp := func(agent string, lastUsed any) {
+		var err error
+		if lastUsed == nil {
+			_, err = conn.Exec(`INSERT INTO agent_tokens (agent_id, token_hash, network_id, name, created_at)
+				VALUES (?, 'hash-' || ?, ?, '', CURRENT_TIMESTAMP)`, agent, agent, nil)
+		} else {
+			_, err = conn.Exec(`INSERT INTO agent_tokens (agent_id, token_hash, network_id, name, created_at, last_used_at)
+				VALUES (?, 'hash-' || ?, ?, '', CURRENT_TIMESTAMP, ?)`, agent, agent, nil, lastUsed)
+		}
+		require.NoError(t, err)
+	}
+	stamp("agent-fresh", time.Now().Add(-1*time.Minute).UTC().Format("2006-01-02 15:04:05"))
+	stamp("agent-stale", time.Now().Add(-30*time.Minute).UTC().Format("2006-01-02 15:04:05"))
+
+	rec := httptest.NewRecorder()
+	h.List(rec, httptest.NewRequest(http.MethodGet, "/api/v1/networks", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Networks []networkMirrorRow `json:"networks"`
+	}
+	decodeBody(t, rec, &resp)
+	byName := map[string]networkMirrorRow{}
+	for _, n := range resp.Networks {
+		byName[n.Name] = n
+	}
+	require.Nil(t, byName["lan-local"].AgentLastUsed, "center-local network: no agent, null last-used")
+	require.False(t, byName["lan-local"].AgentStale)
+	require.NotNil(t, byName["lan-fresh"].AgentLastUsed, "agent network carries its last report time")
+	require.False(t, byName["lan-fresh"].AgentStale, "reported a minute ago: fresh")
+	require.NotNil(t, byName["lan-stale"].AgentLastUsed)
+	require.True(t, byName["lan-stale"].AgentStale, "reported 30 minutes ago: the mirror is stale")
+}
+
+// networkMirrorRow mirrors the #557 freshness fields on the wire.
+type networkMirrorRow struct {
+	Name          string  `json:"name"`
+	AgentLastUsed *string `json:"agent_last_used_at"`
+	AgentStale    bool    `json:"agent_stale"`
 }
 
 // --- Create ---

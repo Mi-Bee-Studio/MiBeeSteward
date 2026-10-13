@@ -34,6 +34,19 @@ SELECT id, name, cidr, site, agent_id, metadata, created_at, updated_at
 FROM networks
 ORDER BY id;
 
+-- name: ListNetworksWithAgentLiveness :many
+-- Networks plus the owning agent's last report time (#557): the mirror-
+-- freshness fact for agent/peer-managed segments. An agent-managed network
+-- carries agent_tokens.last_used_at (the peer reporter is an agent too, so
+-- federated mirrors get the same signal); center-local networks get NULL.
+-- Dedicated query rather than extending ListNetworks: the other callers
+-- (service discovery, probe dispatch, flow scoping) never need the JOIN.
+SELECT n.id, n.name, n.cidr, n.site, n.agent_id, n.metadata, n.created_at, n.updated_at,
+       t.last_used_at AS agent_last_used_at
+FROM networks n
+LEFT JOIN agent_tokens t ON t.agent_id = n.agent_id
+ORDER BY n.id;
+
 -- name: SetNetworkAgentID :exec
 -- Stamp (or clear) the discovering-agent id on a network. Called by the agent-
 -- token admin handler: when an admin mints a token bound to a network, the

@@ -12,6 +12,7 @@
 	import { api } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
 	import { m } from '$lib/i18n-paraglide';
+	import { formatDateTime } from '$lib/utils';
 	import { onMount } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { html } from '$lib/utils/index';
@@ -238,7 +239,15 @@
 			render: (row: Record<string, unknown>) => {
 				const v = row.agent_id as string | null | undefined;
 				if (!v) return '<span class="text-text-muted text-xs">-</span>';
-				return html`<span class="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-mono">${v}</span>`;
+				// Mirror freshness (#557): the segment is only as fresh as the
+				// owning agent's last report — stale turns amber with the time.
+				const lastUsed = row.agent_last_used_at as string | null | undefined;
+				const stale = row.agent_stale === true;
+				const when = lastUsed ? formatDateTime(lastUsed) : '';
+				const state = stale
+					? `<span class="ml-2 text-xs text-warning" title="${m['networks.Agent Stale Desc']()}">● ${m['networks.Agent Stale']()} · ${when}</span>`
+					: (when ? `<span class="ml-2 text-xs text-text-muted">${when}</span>` : '');
+				return html`<span class="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-mono">${v}</span>` + state;
 			}
 		},
 		{

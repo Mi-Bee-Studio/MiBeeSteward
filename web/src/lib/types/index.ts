@@ -230,6 +230,7 @@ export type ScanRun = Schemas['ScanRun'];
 // ---------------------------------------------------------------------------
 
 export type Network = Schemas['Network'];
+export type NetworkWithMirror = Schemas['NetworkWithMirror'];
 export type VLAN = Schemas['VLAN'];
 export type Subnet = Schemas['Subnet'];
 

@@ -2160,10 +2160,24 @@ components:
         metadata: {type: string}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
+    NetworkWithMirror:
+      description: Network row plus the agent-mirror freshness facts (#557) - the list endpoint's shape. An agent/peer-managed segment is only as fresh as its owning agent's last report; staleness uses the same 5-minute window as the Agents page's Active state.
+      allOf:
+        - $ref: "#/components/schemas/Network"
+        - type: object
+          properties:
+            agent_last_used_at:
+              type: string
+              format: date-time
+              nullable: true
+              description: Owning agent's last report time; null for center-local networks. For a federated mirror the "agent" is the peer's embedded reporter, so this doubles as the peer-link liveness signal.
+            agent_stale:
+              type: boolean
+              description: True when the network is agent-managed and the agent hasn't reported within the fresh window - the UI grays the segment's mirrored data. Purely derived, never persisted.
     NetworkList:
       type: object
       properties:
-        networks: {type: array, items: {$ref: "#/components/schemas/Network"}}
+        networks: {type: array, items: {$ref: "#/components/schemas/NetworkWithMirror"}}
         total: {type: integer}
     VLAN:
       type: object
@@ -2564,12 +2578,14 @@ components:
         stp_root: {type: boolean, description: Collected dot1dStp fact (#525) - this bridge reported itself as the spanning-tree root; false when it never spoke STP}
         networks:
           type: array
-          description: Segments this asset is actively present in (#526) - the multi-homed interconnect fact; omitted when no presence has accrued.
+          description: Segments this asset is actively present in (#526) - the multi-homed interconnect fact; omitted when no presence has accrued. Entries carry the segment's name + CIDR (#556) so the graph can label cross-segment bridge points without a second round-trip.
           items:
             type: object
             required: [network_id, ip_address, last_seen]
             properties:
               network_id: {type: integer, format: int64}
+              name: {type: string, description: Segment name (#556); empty when the networks lookup failed}
+              cidr: {type: string, description: Segment CIDR (#556); empty when the networks lookup failed}
               ip_address: {type: string}
               vantage: {type: string}
               last_seen: {type: string, format: date-time}

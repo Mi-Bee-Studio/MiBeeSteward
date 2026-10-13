@@ -74,6 +74,9 @@
 		// create-first-item CTA. Pass the current query string for the message
 		// (#169). For DataTable's own search box, this falls back to searchQuery.
 		serverFilterQuery = '',
+		// Optional per-row class (e.g. devices grays rows whose agent/peer
+		// mirror went stale, #557). Null/empty keeps the default rendering.
+		rowClassName = null,
 	}: {
 		columns: Column[];
 		rows: Record<string, unknown>[];
@@ -93,6 +96,7 @@
 		onSortChange?: (key: string, direction: 'asc' | 'desc') => void;
 		onSearchChange?: (query: string) => void;
 		serverFilterQuery?: string;
+		rowClassName?: ((row: Record<string, unknown>) => string) | null;
 	} = $props();
 
 	let sortKey = $state<string | null>(null);
@@ -257,7 +261,7 @@
 						</tr>
 					{:else}
 						{#each displayRows as row, i}
-							<tr class="border-b border-border last:border-b-0 hover:bg-surface-2 transition-colors">
+							<tr class="border-b border-border last:border-b-0 hover:bg-surface-2 transition-colors {rowClassName ? rowClassName(row) : ''}">
 								{#each columns as col, colIndex}
 							<td class="px-4 py-3 text-sm" scope={colIndex === 0 ? 'row' : undefined}>
 								{#if col.interactive && cell}

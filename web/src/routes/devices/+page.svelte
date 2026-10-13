@@ -18,7 +18,7 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { escapeHtml, escapeAttr, formatDateTime } from '$lib/utils';
 	import { isValidIP } from '$lib/utils/validation';
-	import type { Device, LinkedDoc, Network } from '$lib/types';
+	import type { Device, LinkedDoc, Network , NetworkWithMirror } from '$lib/types';
 	import { ChevronDown, ChevronRight, Download, Upload, Plus, List, Share2 } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -69,10 +69,16 @@ interface AddDevicesResponse {
 	// Network filter (distributed): empty = all networks. Populated from
 	// GET /networks on mount.
 	let networkFilter = $state('');
-	let networks = $state<Network[]>([]);
+	let networks = $state<NetworkWithMirror[]>([]);
 	// #379: a device in a network with agent_id set is a mirror (distributed
 	// agent or federated peer) - read-only here, hide its edit/delete actions.
 	const remoteNetworkIDs = $derived(new Set(networks.filter((n) => n.agent_id).map((n) => n.id)));
+	// Mirror freshness (#557): agent/peer-managed networks whose owning agent
+	// hasn't reported within the server's fresh window. Derived per fetch —
+	// an agent recovery un-grays the segment on the next load.
+	const staleNetworkIDs = $derived(new Set(networks.filter((n) => n.agent_stale).map((n) => n.id)));
+	const agentLastUsedByID = $derived(new Map(networks.filter((n) => n.agent_last_used_at).map((n) => [n.id, n.agent_last_used_at as string])));
+	const isStaleDevice = (d: Pick<Device, 'network_id'>) => d.network_id !== null && d.network_id !== undefined && staleNetworkIDs.has(d.network_id);
 	const isRemoteDevice = (d: Pick<Device, 'network_id'>) => d.network_id !== null && d.network_id !== undefined && remoteNetworkIDs.has(d.network_id);
 	// networksError tracks a /networks fetch failure so the network-filter
 	// dropdown shows a small "failed to load" indicator instead of silently
@@ -192,7 +198,7 @@ interface AddDevicesResponse {
 		});
 		// Load the network registry for the filter dropdown (best-effort; a
 		// failure just leaves the dropdown empty: the list still works).
-		api.get<{ networks: Network[]; total: number }>('/networks').then((r) => { networks = r.networks || []; networksError = false; }).catch(() => { networksError = true; });
+		api.get<{ networks: NetworkWithMirror[]; total: number }>('/networks').then((r) => { networks = r.networks || []; networksError = false; }).catch(() => { networksError = true; });
 		pollTimer = setInterval(() => {
 			if (!editOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !batchStatusConfirmOpen && !importOpen && !linkOpen) {
 				void refreshDevicesSilent();
@@ -883,9 +889,19 @@ interface AddDevicesResponse {
 				// hide edit/link/delete - writes are rejected server-side anyway,
 				// the UI just doesn't offer them.
 				if (isRemoteDevice(row as Pick<Device, 'network_id'>)) {
+					// Mirror freshness (#557): an agent/peer segment whose owner
+					// stopped reporting swaps the neutral Remote badge for a
+					// stale one (amber, last report in the tooltip).
+					const stale = isStaleDevice(row as Pick<Device, 'network_id'>);
+					const staleTitle = stale && (row as { network_id?: number | null }).network_id != null
+						? m['devices.Mirror Stale Desc']({ t: formatDateTime(agentLastUsedByID.get((row as { network_id: number }).network_id) ?? null) })
+						: m['devices.Remote Network Desc']();
+					const badge = stale
+						? `<span class="text-xs px-1.5 py-0.5 rounded bg-warning/15 text-warning" title="${escapeAttr(staleTitle)}">${m['devices.Mirror Stale']()}</span>`
+						: `<span class="text-xs px-1.5 py-0.5 rounded bg-bg-hover text-text-muted" title="${m['devices.Remote Network Desc']()}">${m['devices.Remote Network']()}</span>`;
 					return `<div class="flex gap-2 items-center">`
 						+ `<button data-action="detail" data-id="${id}" class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10">${m['devices.Details']()}</button>`
-						+ `<span class="text-xs px-1.5 py-0.5 rounded bg-bg-hover text-text-muted" title="${m['devices.Remote Network Desc']()}">${m['devices.Remote Network']()}</span>`
+						+ badge
 						+ `</div>`;
 				}
 				return `<div class="flex gap-2">`
@@ -1055,6 +1071,14 @@ interface AddDevicesResponse {
 					<option value={net.id}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
 				{/each}
 			</select>
+			<!-- Filtering into a stale agent/peer segment (#557): say so next
+			     to the filter, or frozen data reads like a bug. -->
+			{#if networkFilter && staleNetworkIDs.has(Number(networkFilter))}
+				<span
+					class="text-xs text-warning inline-flex items-center gap-1"
+					title={m['devices.Mirror Stale Desc']({ t: formatDateTime(agentLastUsedByID.get(Number(networkFilter)) ?? null) })}
+				>⚠ {m['devices.Mirror Stale']()}</span>
+			{/if}
 		{:else if networksError}
 			<!-- The /networks fetch failed: show a small indicator instead of
 			     silently dropping the filter (which would look like "no networks"). -->
@@ -1347,6 +1371,7 @@ interface AddDevicesResponse {
 			<DataTable
 				{columns}
 				rows={devices as unknown as Record<string, unknown>[]}
+				rowClassName={(row) => isStaleDevice(row as Pick<Device, 'network_id'>) ? 'opacity-60' : ''}
 				emptyTitle={m['devices.No Devices']()}
 				emptyDescription={m['devices.No Devices Desc']()}
 				emptyAction={openCreate}

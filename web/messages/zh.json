@@ -179,7 +179,9 @@
 		"Sse Device Lost": "有设备离线",
 		"Sse Device Recovered": "有设备恢复在线",
 		"Remote Network": "远端",
-		"Remote Network Desc": "镜像自联邦对端网段（本端只读，编辑在对端所属 center）"
+		"Remote Network Desc": "镜像自联邦对端网段（本端只读，编辑在对端所属 center）",
+		"Mirror Stale": "远端 · 过期",
+		"Mirror Stale Desc": "管理该网段的 agent/联邦对端已有一段时间未上报，数据可能过期。最近上报：{t}"
 	},
 	"systems": {
 		"System Management": "系统管理",
@@ -1073,7 +1075,9 @@
 		"Delete Warning": "该网络上的设备将清除其网络绑定。",
 		"Name Placeholder": "例如 lan-beijing-62",
 		"Cidr Placeholder": "例如 192.168.2.0/24",
-		"Site Placeholder": "例如 北京分支 / 数据中心 / 云端"
+		"Site Placeholder": "例如 北京分支 / 数据中心 / 云端",
+		"Agent Stale": "已过期",
+		"Agent Stale Desc": "该网段的 agent 超过新鲜窗口未上报，数据未在刷新。"
 	},
 	"discovery": {
 		"Enabled": "已启用",
@@ -1186,7 +1190,10 @@
 		"Interfaces Port": "端口",
 		"Interfaces MAC": "MAC",
 		"Interfaces Speed": "速率",
-		"Interfaces IP": "地址"
+		"Interfaces IP": "地址",
+		"Bridges Segments": "跨网段桥接",
+		"Bridge Count": "{n} 台桥接多网段",
+		"Bridge Count Desc": "同时活跃在多个网段的设备（多归属在场事实）——跨网段链接点，图上以蓝色描边标出。"
 	},
 	"certificates": {
 		"Title": "TLS 证书",

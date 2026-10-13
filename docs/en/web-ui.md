@@ -38,7 +38,7 @@ The Scanner page launches manual scans or manages recurring tasks: enter target 
 
 ## Network Topology
 
-For switched networks with LLDP / CDP / Bridge-MIB support, the topology page renders the device relationship graph automatically: core/distribution/access layers in distinct colors, edges carrying local/remote ports, VLAN tags, and STP roles; when a bridge's dot1dStp walk says which switch is the root bridge (#525), the graph roots on that collected fact instead of guessing by ARP in-degree; the legend doubles as a layer filter, and clicking a node highlights its neighbors with a detail card.
+For switched networks with LLDP / CDP / Bridge-MIB support, the topology page renders the device relationship graph automatically: core/distribution/access layers in distinct colors, edges carrying local/remote ports, VLAN tags, and STP roles; when a bridge's dot1dStp walk says which switch is the root bridge (#525), the graph roots on that collected fact instead of guessing by ARP in-degree; a device present in several segments (dual-NIC routers, the box bridging two LANs) wears a blue ring and a marker - the cross-segment link points (#556) - and its card lists each presence as segment · CIDR · address with the reporting vantage; the legend doubles as a layer filter, and clicking a node highlights its neighbors with a detail card.
 
 ![Network topology](images/topology.webp)
 
