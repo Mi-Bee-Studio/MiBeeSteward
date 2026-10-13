@@ -748,7 +748,13 @@
 		"Bad Gateway Desc": "上游服务返回了无效响应，请稍后重试。",
 		"Service Unavailable Desc": "服务暂时离线，可能在维护中，请稍后重试。",
 		"Gateway Timeout Desc": "上游服务响应超时，请重试。",
-		"Back Home": "返回首页"
+		"Back Home": "返回首页",
+		"Reserved Target Space": "目标位于保留地址段（环回、链路本地等），默认拒绝扫描。请选择可路由的网络目标。",
+		"Same Password": "新密码不能与当前密码相同。",
+		"Weak Password": "密码不满足策略要求。",
+		"Cannot Delete Self": "不能删除自己的账号。",
+		"Scan Server Timeout": "扫描超出服务端超时。请缩小目标范围或改用扫描任务。",
+		"Invalid Credentials": "用户名或密码错误。"
 	},
 	"settings": {
 		"Appearance": "外观",
