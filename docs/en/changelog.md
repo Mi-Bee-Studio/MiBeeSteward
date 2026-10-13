@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Demo seed probe targets stay in documentation namespaces (#572)**: the demo seed's tcp probe target was `1.1.1.1:53` - a live Cloudflare anycast address demo installs dialed every 60s, violating the demo contract (RFC 5737 ranges / RFC 2606 domains only, never real infrastructure) and producing constant failure noise on isolated demo boxes. Seed targets now use TEST-NET-3 and example.org hosts, and the seed test pins the documentation-namespace rule for probe targets the way it already did for device IPs.
 ### Fixed
 - **Root-level `GET /health` returns health JSON instead of SPA HTML (#571)**: external monitors, container probes and load balancers that conventionally probe `/health` used to get `200 + index.html` from the SPA fallback - an API-down process with the SPA still serving looked healthy. The root path now serves the exact same JSON as `/api/v1/health` (registered next to `/metrics`; OpenAPI parity test extended, bilingual API docs note the alias).
 
