@@ -116,26 +116,37 @@
 	// Bind the click handler whenever it or the instance changes. ECharts
 	// 'click' events carry the series payload (node/edge data): distinct from
 	// DOM clicks, which is why we forward via the instance API.
+	//
+	// The instance is captured in a local: the cleanup must unbind from the
+	// SAME instance it bound to. Reading the reactive `instance` in the
+	// cleanup instead re-reads its current value — on unmount the onMount
+	// teardown may have already disposed and set it to undefined, and the
+	// cleanup then threw `Cannot read properties of undefined (reading
+	// 'off')` (the one-off TypeError on the heartbeat tab's first open,
+	// #573). off() on an already-disposed instance is a no-op warning.
 	$effect(() => {
-		if (!instance) return;
+		const inst = instance;
+		if (!inst) return;
 		const handler = onclick;
 		if (!handler) return;
 		const fn = (params: Record<string, unknown>) => handler(params);
-		instance.on('click', fn);
+		inst.on('click', fn);
 		return () => {
-			instance.off('click', fn);
+			inst.off('click', fn);
 		};
 	});
 
 	// Bind the double-click handler whenever it or the instance changes.
+	// Same captured-instance discipline as the click effect above.
 	$effect(() => {
-		if (!instance) return;
+		const inst = instance;
+		if (!inst) return;
 		const handler = ondblclick;
 		if (!handler) return;
 		const fn = (params: Record<string, unknown>) => handler(params);
-		instance.on('dblclick', fn);
+		inst.on('dblclick', fn);
 		return () => {
-			instance.off('dblclick', fn);
+			inst.off('dblclick', fn);
 		};
 	});
 </script>
