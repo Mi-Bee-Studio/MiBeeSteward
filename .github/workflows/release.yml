@@ -98,9 +98,14 @@ jobs:
           # doctor line must NOT say "default build" (the caps may honestly be
           # missing on the runner — either "built, CAP_NET_RAW present" or
           # "built but CAP_NET_RAW missing" proves the tag compiled in).
+          # doctor short-circuits on the config-completeness check, and the
+          # example's placeholder jwt_secret fails it - seed a length-passing
+          # secret so the capability lines actually print (the first v0.7.3
+          # run failed on exactly this).
           if [ "${{ matrix.variant }}" = full ]; then
-            ./${BIN} doctor -config configs/config.example.yaml 2>/dev/null \
-              | grep 'lldp listener' | grep -v 'default build' || {
+            sed -e 's/^  jwt_secret:.*/  jwt_secret: "ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci-ci"/'                 -e 's/^  initial_admin_password:.*/  initial_admin_password: "ci-ci-ci-ci-ci-ci-ci-ci"/'                 configs/config.example.yaml > /tmp/ci-doctor.yaml
+            mkdir -p ./data
+            ./${BIN} doctor -config /tmp/ci-doctor.yaml 2>/dev/null               | grep 'lldp listener' | grep -v 'default build' || {
               echo "::error::full variant does not report the LLDP listener as built"; exit 1; }
           fi
       - name: Verify binary (arm64 — file check, can't execute on amd64 runner)
