@@ -60,6 +60,9 @@ func TestRuleClassifier_HostIdentityDomainTolerance(t *testing.T) {
 		// Seeed Studio XIAO firmware default name, field-found 2026-10-08.
 		{"Seeed-esp32c6", "Seeed Studio", "esp32c6"},
 		{"seeed_esp32c3.tail0a1b2c.ts.net", "Seeed Studio", "esp32c3"},
+		// TP-Link XDR router with CJK marketing suffix, field-found 2026-10-11.
+		{"TL-XDR3040易展版.tail0a1b2c.ts.net", "TP-Link", "XDR3040"},
+		{"TL-XDR6088", "TP-Link", "XDR6088"},
 	}
 	for _, tc := range cases {
 		ids := rc.Classify(hostnameEv(tc.host))
