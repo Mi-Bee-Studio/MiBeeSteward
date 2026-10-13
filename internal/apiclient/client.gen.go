@@ -3633,6 +3633,11 @@ type ClientInterface interface {
 	// Corresponds with POST /users/batch-delete (the `PostUsersBatchDelete` operationId).
 	PostUsersBatchDelete(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DeleteUsersId Delete a user (admin; self-delete rejected)
+	//
+	// Corresponds with DELETE /users/{id} (the `DeleteUsersId` operationId).
+	DeleteUsersId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetUsersIdNetworkGrants Networks granted to a user (scope editor source)
 	//
 	// Corresponds with GET /users/{id}/network-grants (the `GetUsersIdNetworkGrants` operationId).
@@ -6097,6 +6102,21 @@ func (c *Client) GetUsers(ctx context.Context, params *GetUsersParams, reqEditor
 // Corresponds with POST /users/batch-delete (the `PostUsersBatchDelete` operationId).
 func (c *Client) PostUsersBatchDelete(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostUsersBatchDeleteRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteUsersId Delete a user (admin; self-delete rejected)
+//
+// Corresponds with DELETE /users/{id} (the `DeleteUsersId` operationId).
+func (c *Client) DeleteUsersId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteUsersIdRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -12578,6 +12598,40 @@ func NewPostUsersBatchDeleteRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewDeleteUsersIdRequest constructs an http.Request for the DeleteUsersId method
+func NewDeleteUsersIdRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/users/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetUsersIdNetworkGrantsRequest constructs an http.Request for the GetUsersIdNetworkGrants method
 func NewGetUsersIdNetworkGrantsRequest(server string, id Id) (*http.Request, error) {
 	var err error
@@ -13838,6 +13892,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /users/batch-delete (the `PostUsersBatchDelete` operationId).
 	PostUsersBatchDeleteWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostUsersBatchDeleteResponse, error)
+
+	// DeleteUsersIdWithResponse Delete a user (admin; self-delete rejected)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /users/{id} (the `DeleteUsersId` operationId).
+	DeleteUsersIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteUsersIdResponse, error)
 
 	// GetUsersIdNetworkGrantsWithResponse Networks granted to a user (scope editor source)
 	//
@@ -20191,6 +20252,47 @@ func (r PostUsersBatchDeleteResponse) ContentType() string {
 	return ""
 }
 
+type DeleteUsersIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OK
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DeleteUsersIdResponse) GetJSON200() *OK {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteUsersIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteUsersIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteUsersIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteUsersIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetUsersIdNetworkGrantsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -22398,6 +22500,19 @@ func (c *ClientWithResponses) PostUsersBatchDeleteWithResponse(ctx context.Conte
 		return nil, err
 	}
 	return ParsePostUsersBatchDeleteResponse(rsp)
+}
+
+// DeleteUsersIdWithResponse Delete a user (admin; self-delete rejected)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /users/{id} (the `DeleteUsersId` operationId).
+func (c *ClientWithResponses) DeleteUsersIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteUsersIdResponse, error) {
+	rsp, err := c.DeleteUsersId(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteUsersIdResponse(rsp)
 }
 
 // GetUsersIdNetworkGrantsWithResponse Networks granted to a user (scope editor source)
@@ -26154,6 +26269,35 @@ func ParsePostUsersBatchDeleteResponse(rsp *http.Response) (*PostUsersBatchDelet
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteUsersIdResponse parses an HTTP response from a DeleteUsersIdWithResponse call
+func ParseDeleteUsersIdResponse(rsp *http.Response) (*DeleteUsersIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteUsersIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OK
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case rsp.StatusCode == 404:
+		break // No content-type
 
 	}
 
