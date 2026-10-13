@@ -744,6 +744,9 @@ flowchart LR
 
 `status` 为 `ok` 或 `degraded`（数据库 ping 失败时）。`db` 为 `ok` 或 `error`。`version` 为通过 ldflags 注入的构建版本（未打 tag 的构建为 `dev`）。
 
+根路径别名 `GET /health` 返回同样的 JSON：外部监控、容器探针与负载均衡按惯例探测 `/health` 时将拿到真实健康状态，而不是 SPA fallback 的 HTML（#571）。
+
+
 
 
 
