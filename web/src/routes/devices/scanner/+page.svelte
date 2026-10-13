@@ -136,6 +136,14 @@
 		return err;
 	}
 
+	// The synchronous scan endpoint holds the request open for the whole scan:
+	// a demo /28 of unroutable documentation IPs with 2s probe timeouts ran
+	// 36s server-side while the client's old 30s budget had already reported
+	// "request timeout" — a false failure that invited duplicate submissions
+	// (#570). Five minutes bounds any sane synchronous scan; the cancel
+	// button aborts earlier for the impatient.
+	const SCAN_TIMEOUT_MS = 300_000;
+
 	async function startScan() {
 		const err = validateTargets();
 		if (err) {
@@ -167,7 +175,7 @@
 				timeout: timeout || 2,
 				ports: portSpec.trim() || undefined,
 				credential_id: selectedCredentialId ?? undefined
-			}, scanController?.signal);
+			}, { signal: scanController?.signal, timeoutMs: SCAN_TIMEOUT_MS });
 			result = res;
 
 			// Initialize form fields for alive hosts, pre-fill from enriched data
