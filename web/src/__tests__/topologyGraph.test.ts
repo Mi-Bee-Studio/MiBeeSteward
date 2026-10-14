@@ -12,6 +12,8 @@ import { describe, expect, it } from 'vitest';
 import {
 	detectRoot,
 	buildGraph,
+	edgeTypeCounts,
+	WEAK_PROTOCOLS,
 	recommendedForceParams,
 	LAYER_ORDER,
 	isSegmentBridge,
@@ -334,5 +336,41 @@ describe('cross-segment bridges (#556)', () => {
 		});
 		expect(res.nodes.find((n) => n.id === 1)?.isBridge).toBe(true);
 		expect(res.nodes.find((n) => n.id === 2)?.isBridge).toBe(false);
+	});
+});
+
+// #583: the edge-type legend is driven by what actually appears in the graph.
+describe('edgeTypeCounts (#583)', () => {
+	it('counts per protocol, unknown protocols included, hard facts first', () => {
+		const links = [
+			{ source: 1, target: 2, protocol: 'ARP' },
+			{ source: 1, target: 3, protocol: 'ARP' },
+			{ source: 2, target: 3, protocol: 'LLDP' },
+			{ source: 4, target: 5, protocol: 'speaks-with' },
+			{ source: 6, target: 7, protocol: 'WiFi' },
+			{ source: 8, target: 9, protocol: 'ZZZ-future' }
+		] as Array<{ source: number; target: number; protocol: string }>;
+		const stats = edgeTypeCounts(links as never[]);
+		// Hard wiring facts first, weak evidence last, unknown protocols
+		// after everything known (alphabetically among themselves).
+		expect(stats.map((s) => s.protocol)).toEqual([
+			'LLDP',
+			'WiFi',
+			'ARP',
+			'speaks-with',
+			'ZZZ-future'
+		]);
+		expect(stats.find((s) => s.protocol === 'ARP')?.count).toBe(2);
+	});
+
+	it('returns an empty list for an empty graph', () => {
+		expect(edgeTypeCounts([])).toEqual([]);
+	});
+
+	it('weak-evidence set covers ARP and speaks-with only', () => {
+		expect(WEAK_PROTOCOLS.has('ARP')).toBe(true);
+		expect(WEAK_PROTOCOLS.has('speaks-with')).toBe(true);
+		expect(WEAK_PROTOCOLS.has('LLDP')).toBe(false);
+		expect(WEAK_PROTOCOLS.has('WiFi')).toBe(false);
 	});
 });
