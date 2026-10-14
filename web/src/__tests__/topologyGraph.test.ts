@@ -12,6 +12,14 @@ import { describe, expect, it } from 'vitest';
 import {
 	detectRoot,
 	buildGraph,
+	edgeTypeCounts,
+	WEAK_PROTOCOLS,
+	isStaleEdge,
+	edgeAgeMs,
+	STALE_EDGE_MS,
+	WIFI_STALE_MS,
+	splitOrphans,
+	missingEnrichmentFamilies,
 	recommendedForceParams,
 	LAYER_ORDER,
 	isSegmentBridge,
@@ -334,5 +342,120 @@ describe('cross-segment bridges (#556)', () => {
 		});
 		expect(res.nodes.find((n) => n.id === 1)?.isBridge).toBe(true);
 		expect(res.nodes.find((n) => n.id === 2)?.isBridge).toBe(false);
+	});
+});
+
+// #583: the edge-type legend is driven by what actually appears in the graph.
+describe('edgeTypeCounts (#583)', () => {
+	it('counts per protocol, unknown protocols included, hard facts first', () => {
+		const links = [
+			{ source: 1, target: 2, protocol: 'ARP' },
+			{ source: 1, target: 3, protocol: 'ARP' },
+			{ source: 2, target: 3, protocol: 'LLDP' },
+			{ source: 4, target: 5, protocol: 'speaks-with' },
+			{ source: 6, target: 7, protocol: 'WiFi' },
+			{ source: 8, target: 9, protocol: 'ZZZ-future' }
+		] as Array<{ source: number; target: number; protocol: string }>;
+		const stats = edgeTypeCounts(links as never[]);
+		// Hard wiring facts first, weak evidence last, unknown protocols
+		// after everything known (alphabetically among themselves).
+		expect(stats.map((s) => s.protocol)).toEqual([
+			'LLDP',
+			'WiFi',
+			'ARP',
+			'speaks-with',
+			'ZZZ-future'
+		]);
+		expect(stats.find((s) => s.protocol === 'ARP')?.count).toBe(2);
+	});
+
+	it('returns an empty list for an empty graph', () => {
+		expect(edgeTypeCounts([])).toEqual([]);
+	});
+
+	it('weak-evidence set covers ARP and speaks-with only', () => {
+		expect(WEAK_PROTOCOLS.has('ARP')).toBe(true);
+		expect(WEAK_PROTOCOLS.has('speaks-with')).toBe(true);
+		expect(WEAK_PROTOCOLS.has('LLDP')).toBe(false);
+		expect(WEAK_PROTOCOLS.has('WiFi')).toBe(false);
+	});
+});
+
+// #585: edges carry freshness; ghosts fade, unknown age never does.
+describe('edge freshness (#585)', () => {
+	const now = Date.parse('2026-10-14T12:00:00Z');
+
+	it('buildGraph carries last_seen onto links', () => {
+		const g: TopologyGraph = {
+			nodes: [node({ id: 1, mac_address: 'aa:aa:aa:aa:aa:01' }), node({ id: 2, mac_address: 'aa:aa:aa:aa:aa:02' })],
+			edges: [
+				edge({
+					from_device_id: 1,
+					to_device_id: 2,
+					to_mac: 'aa:aa:aa:aa:aa:02',
+					protocol: 'WiFi',
+					last_seen: '2026-10-14T11:30:00Z'
+				})
+			]
+		} as unknown as TopologyGraph;
+		const built = buildGraph(g);
+		expect(built.links).toHaveLength(1);
+		expect(built.links[0].lastSeen).toBe('2026-10-14T11:30:00Z');
+	});
+
+	it('generic edge is stale past 10 minutes', () => {
+		expect(isStaleEdge({ protocol: 'LLDP', lastSeen: new Date(now - STALE_EDGE_MS - 1).toISOString() }, now)).toBe(true);
+		expect(isStaleEdge({ protocol: 'LLDP', lastSeen: new Date(now - STALE_EDGE_MS + 60000).toISOString() }, now)).toBe(false);
+	});
+
+	it('WiFi edges use the shorter 5-minute threshold (associations are volatile)', () => {
+		const sixMinAgo = new Date(now - WIFI_STALE_MS - 60000).toISOString();
+		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: sixMinAgo }, now)).toBe(true);
+		// The same age on a generic edge is still fresh.
+		expect(isStaleEdge({ protocol: 'LLDP', lastSeen: sixMinAgo }, now)).toBe(false);
+	});
+
+	it('unknown or invalid age is never stale (no fading on missing data)', () => {
+		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: null }, now)).toBe(false);
+		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: '' }, now)).toBe(false);
+		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: 'not-a-date' }, now)).toBe(false);
+		expect(edgeAgeMs({ protocol: 'LLDP', lastSeen: null }, now)).toBeNull();
+	});
+});
+
+// #584: orphan census + enrichment gaps drive the collapsed group node and
+// the actionable hints.
+describe('orphan grouping and enrichment hints (#584)', () => {
+	it('splitOrphans separates degree-0 nodes; the root always stays connected', () => {
+		const g: TopologyGraph = {
+			nodes: [
+				node({ id: 1, mac_address: 'aa:aa:aa:aa:aa:01', inferred_type: 'router' }),
+				node({ id: 2, mac_address: 'aa:aa:aa:aa:aa:02' }),
+				node({ id: 3, mac_address: 'aa:aa:aa:aa:aa:03' }),
+				node({ id: 4, mac_address: 'aa:aa:aa:aa:aa:04' })
+			],
+			edges: [
+				edge({ from_device_id: 1, to_device_id: 2, to_mac: 'aa:aa:aa:aa:aa:02', protocol: 'LLDP' })
+			]
+		} as unknown as TopologyGraph;
+		const built = buildGraph(g);
+		const { connected, orphans } = splitOrphans(built.nodes);
+		expect(connected.map((n) => n.id).sort()).toEqual([1, 2]);
+		expect(orphans.map((n) => n.id).sort()).toEqual([3, 4]);
+	});
+
+	it('missingEnrichmentFamilies: empty graph misses all three; full graph misses none', () => {
+		expect(missingEnrichmentFamilies([])).toEqual(['wifi', 'traffic', 'snmp']);
+		const rich = [
+			{ protocol: 'WiFi' },
+			{ protocol: 'speaks-with' },
+			{ protocol: 'LLDP' }
+		].map((p) => ({ ...p, source: 1, target: 2 })) as never[];
+		expect(missingEnrichmentFamilies(rich)).toEqual([]);
+	});
+
+	it('missingEnrichmentFamilies: WiFi alone lights wifi only (traffic + snmp still missing)', () => {
+		const links = [{ source: 1, target: 2, protocol: 'WiFi' }] as never[];
+		expect(missingEnrichmentFamilies(links)).toEqual(['traffic', 'snmp']);
 	});
 });

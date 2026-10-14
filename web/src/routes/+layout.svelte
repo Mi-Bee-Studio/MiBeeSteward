@@ -178,15 +178,12 @@
 			// Don't intercept when typing in inputs
 			if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
 
-			if (e.key === 'Escape') {
-				// Close any open modal
-				const backdrop = document.querySelector('.modal-backdrop');
-				if (backdrop) {
-					const closeBtn = backdrop.querySelector('.modal-close') as HTMLButtonElement | null;
-					closeBtn?.click();
-				}
-				return;
-			}
+			// Escape is owned by the open Modal itself (#582): it registers a
+			// document-capture listener while open, covering every focus and
+			// dispatch shape. The old branch here (querySelector a backdrop and
+			// click its X) only patched the focus-outside case and could never
+			// see non-bubbling synthetic keydowns — both halves now live in the
+			// component with the closable/confirmDiscard guards intact.
 
 			if (e.key === '/') {
 				e.preventDefault();
@@ -333,21 +330,35 @@
 {/if}
 
 	<!-- Demo-mode banner (#285): fictional data on RFC 5737 documentation
-	     ranges; wipe to start inventorying a real network. -->
+	     ranges; wipe to start inventorying a real network. Fixed to the
+	     bottom edge and pointer-transparent except the button (#566): as a
+	     flex child of the shell it stretched into a full-height column that
+	     crushed the dashboard at 1280 and left a dead strip intercepting
+	     pointer events at every width. -->
 	{#if isDemo}
-		<div class="flex items-center justify-center gap-3 px-4 py-1.5 bg-warning/15 border-b border-warning/40 text-xs text-warning">
+		<div
+			class="fixed bottom-0 inset-x-0 z-40 flex items-center justify-center gap-3 px-4 py-1.5
+				bg-warning/15 border-t border-warning/40 text-xs text-warning pointer-events-none"
+			>
 			<span>{m['demo.Banner']()}</span>
 			<button
 				type="button"
 				onclick={wipeDemoData}
 				disabled={demoWiping}
-				class="px-2 py-0.5 rounded font-medium bg-warning/20 hover:bg-warning/30 transition-colors disabled:opacity-50"
+				class="px-2 py-0.5 rounded font-medium bg-warning/20 hover:bg-warning/30 transition-colors disabled:opacity-50 pointer-events-auto"
 			>{demoWiping ? '…' : m['demo.Wipe']()}</button>
 		</div>
 	{/if}
 
-	<!-- Main content -->
-	<main id="main-content" class="flex-1 overflow-auto" class:pt-14={$auth.token} class:md:pt-0={$auth.token}>
+	<!-- Main content: reserve the fixed banner strip at the bottom in demo
+	     mode so scrolled content can rest behind it instead of under it. -->
+	<main
+		id="main-content"
+		class="flex-1 overflow-auto"
+		class:pt-14={$auth.token}
+		class:md:pt-0={$auth.token}
+		class:pb-9={isDemo}
+	>
 		{@render children()}
 	</main>
 </div>

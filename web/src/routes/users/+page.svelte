@@ -483,8 +483,9 @@
 	<form onsubmit={handleSubmit} class="space-y-4">
 		<!-- Username -->
 		<div>
-			<label class="block text-xs text-text-muted mb-1">{m["users.Username"]()} *</label>
+			<label for="create-username" class="block text-xs text-text-muted mb-1">{m["users.Username"]()} *</label>
 			<input
+				id="create-username"
 				bind:value={formUsername}
 				onblur={() => handleBlur('username', formUsername)}
 				required
@@ -497,8 +498,9 @@
 
 		<!-- Email -->
 		<div>
-			<label class="block text-xs text-text-muted mb-1">{m["users.Email"]()}</label>
+			<label for="create-email" class="block text-xs text-text-muted mb-1">{m["users.Email"]()}</label>
 			<input
+				id="create-email"
 				type="email"
 				bind:value={formEmail}
 				onblur={() => handleBlur('email', formEmail)}
@@ -511,8 +513,9 @@
 
 		<!-- Password -->
 		<div>
-			<label class="block text-xs text-text-muted mb-1">{m["users.Password"]()} *</label>
+			<label for="create-password" class="block text-xs text-text-muted mb-1">{m["users.Password"]()} *</label>
 			<input
+				id="create-password"
 				type="password"
 				bind:value={formPassword}
 				onblur={() => handleBlur('password', formPassword)}
@@ -526,8 +529,9 @@
 
 		<!-- Role -->
 		<div>
-			<label class="block text-xs text-text-muted mb-1">{m["users.Role"]()}</label>
+			<label for="create-role" class="block text-xs text-text-muted mb-1">{m["users.Role"]()}</label>
 			<select
+				id="create-role"
 				bind:value={formRole}
 				onchange={() => handleBlur('role', formRole)}
 				class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
@@ -568,8 +572,9 @@
 	<form onsubmit={(e) => { e.preventDefault(); confirmResetPassword(); }} class="space-y-4">
 		<!-- New password -->
 		<div>
-			<label class="block text-xs text-text-muted mb-1">{m["users.New Password"]()} *</label>
+			<label for="reset-new-password" class="block text-xs text-text-muted mb-1">{m["users.New Password"]()} *</label>
 			<input
+				id="reset-new-password"
 				type="password"
 				bind:value={resetPassword}
 				onblur={() => {
@@ -588,8 +593,9 @@
 
 		<!-- Confirm password -->
 		<div>
-			<label class="block text-xs text-text-muted mb-1">{m["users.Confirm Password"]()} *</label>
+			<label for="reset-confirm-password" class="block text-xs text-text-muted mb-1">{m["users.Confirm Password"]()} *</label>
 			<input
+				id="reset-confirm-password"
 				type="password"
 				bind:value={resetConfirmPassword}
 				onblur={() => {
@@ -662,8 +668,9 @@
 				{#if availableNetworks.length > 0}
 					<div class="flex items-end gap-2">
 						<div class="flex-1">
-							<label class="block text-xs text-text-muted mb-1">{m["users.Grant Network"]()}</label>
+							<label for="grant-network" class="block text-xs text-text-muted mb-1">{m["users.Grant Network"]()}</label>
 							<select
+								id="grant-network"
 								bind:value={addNetworkId}
 								class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
 									focus:border-primary focus:outline-none"

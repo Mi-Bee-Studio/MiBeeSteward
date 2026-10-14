@@ -84,6 +84,11 @@ type topoEdge struct {
 	// Bytes carries the speaks-with edge's observed traffic total (#500);
 	// nil for discovery-protocol edges.
 	Bytes *int64 `json:"bytes,omitempty"`
+	// LastSeen is when this adjacency was last re-observed (#585): the
+	// freshness signal the UI uses to fade ghost edges (a WiFi client that
+	// left, a neighbor that stopped reporting). RFC3339 UTC; zero time
+	// surfaces as empty and the UI treats it as "age unknown".
+	LastSeen string `json:"last_seen,omitempty"`
 	// Metadata carries route-table edge context (#528): dest_subnet,
 	// next_hop, route_proto. nil for neighbor-derived edges.
 	Metadata map[string]any `json:"metadata,omitempty"`
@@ -163,6 +168,7 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 			Protocol:     e.Protocol,
 			LocalPort:    e.LocalPort,
 			RemotePort:   e.RemotePort,
+			LastSeen:     rfc3339Ptr(e.LastSeen),
 		})
 	}
 
@@ -202,6 +208,7 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 				ToDeviceID:   &te.ToDeviceID,
 				Protocol:     proto,
 				Metadata:     meta,
+				LastSeen:     rfc3339Ptr(te.LastSeen),
 			})
 		}
 	}
@@ -218,6 +225,7 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 				ToDeviceID:   e.PeerDeviceID, // *int64, IS NOT NULL in the query
 				Protocol:     "speaks-with",
 				Bytes:        &bytes,
+				LastSeen:     rfc3339(e.LastSeen),
 			})
 		}
 	}
@@ -257,6 +265,23 @@ func (h *TopologyHandler) Graph(w http.ResponseWriter, r *http.Request) {
 		"nodes": nodes,
 		"edges": edges,
 	})
+}
+
+// rfc3339 renders a sqlc time value as RFC3339 UTC; the zero time (source
+// column empty/null) renders as "" so the wire stays omitempty.
+func rfc3339(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+// rfc3339Ptr dereferences a nullable timestamp, zero/nil rendering as "".
+func rfc3339Ptr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return rfc3339(*t)
 }
 
 // ptrString dereferences a *string, returning "" for nil.

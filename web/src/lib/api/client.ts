@@ -128,7 +128,20 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((r) => setTimeout(r, ms));
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+/** Per-request knobs beyond RequestInit. */
+export interface RequestOptions {
+	/** Caller-owned abort (user cancel). */
+	signal?: AbortSignal;
+	/** Timeout override (#570): endpoints that legitimately run long - the
+	 *  synchronous scan runs server-side for the whole scan - pass a wider
+	 *  budget instead of the 30s default, so the client stops reporting
+	 *  false "request timeout" failures while the server still succeeds. */
+	timeoutMs?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 30000;
+
+async function request<T>(path: string, options?: RequestInit, reqOpts?: RequestOptions): Promise<T> {
 	const method = options?.method;
 	const isStateChanging = !!method && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
 	const headers: Record<string, string> = {
@@ -147,7 +160,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 		const ctrl = new AbortController();
 		const timer = setTimeout(
 			() => ctrl.abort(new DOMException('request timeout', 'TimeoutError')),
-			30000
+			reqOpts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
 		);
 		const callerSignal = options?.signal;
 		const onCallerAbort = () => ctrl.abort(callerSignal?.reason);
@@ -223,8 +236,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
 	get: <T>(path: string) => request<T>(path),
-	post: <T>(path: string, body: unknown, signal?: AbortSignal) =>
-		request<T>(path, { method: 'POST', body: JSON.stringify(body), signal }),
+	post: <T>(path: string, body: unknown, opts?: RequestOptions) =>
+		request<T>(path, { method: 'POST', body: JSON.stringify(body), signal: opts?.signal }, opts),
 	put: <T>(path: string, body: unknown) =>
 		request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
 	patch: <T>(path: string, body: unknown) =>

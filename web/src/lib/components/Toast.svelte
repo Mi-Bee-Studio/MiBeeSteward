@@ -9,7 +9,7 @@
 -->
 
 <script lang="ts">
-	import { toasts, removeToast, invokeUndo, type ToastType, type Toast } from '$lib/stores/toast';
+	import { toasts, removeToast, pauseToast, resumeToast, invokeUndo, type ToastType, type Toast } from '$lib/stores/toast';
 	import { fly } from 'svelte/transition';
 	import { CheckCircle2, XCircle, AlertTriangle, Info, X } from '@lucide/svelte';
 	import { m } from '$lib/i18n-paraglide';
@@ -23,16 +23,19 @@
 	};
 
 	// Hover-to-pause: stop the dismiss timer while the user is interacting
-	// with a toast (reading it, about to click undo). Per-toast state tracks
-	// whether the auto-dismiss should fire.
+	// with a toast (reading it, about to click undo). The store now pauses
+	// its own timer (#573) — previously only the CSS progress bar froze and
+	// the toast dismissed mid-read anyway.
 	let hoveredId: number | null = $state(null);
 	const dismissLabel = $derived(m['common.Dismiss']());
 
 	function onEnter(toast: Toast) {
 		hoveredId = toast.id;
+		pauseToast(toast.id);
 	}
-	function onLeave() {
-		hoveredId = null;
+	function onLeave(toast: Toast) {
+		if (hoveredId === toast.id) hoveredId = null;
+		resumeToast(toast.id);
 	}
 </script>
 
@@ -55,15 +58,19 @@
 			class:hovered={hoveredId === toast.id}
 			style="border-left-color: {cfg.color}"
 			role={toast.type === 'error' ? 'alert' : 'status'}
-			transition:fly={{ y: 20, duration: 300 }}
+			in:fly={{ y: 20, duration: 300 }}
 			onmouseenter={() => onEnter(toast)}
-			onmouseleave={onLeave}
+			onmouseleave={() => onLeave(toast)}
 		>
 			<div class="toast-body">
 				<span class="toast-icon" style="color: {cfg.color}">
 					<cfg.icon class="w-[18px] h-[18px]" aria-hidden="true" />
 				</span>
 				<span class="toast-message">{toast.message}</span>
+				{#if (toast.count ?? 1) > 1}
+					<!-- Merged repeat counter (#573); language-neutral on purpose. -->
+					<span class="toast-count" aria-label="x{toast.count}">×{toast.count}</span>
+				{/if}
 				{#if toast.undo}
 					<button
 						class="toast-undo"
@@ -80,22 +87,27 @@
 					<X class="w-4 h-4" aria-hidden="true" />
 				</button>
 			</div>
-			{#if toast.undo}
-				<div
-					class="toast-progress"
-					style="background: {cfg.color}; animation-duration: {toast.undo.timeout}ms"
-				></div>
-			{:else}
-				<!--
-					Explicit 5000ms matches the store's default dismiss timeout;
-					without this the CSS fell back to its own 5s, which happened to
-					match, but the coupling was implicit. Hovering freezes the bar.
-				-->
-				<div
-					class="toast-progress"
-					style="background: {cfg.color}; animation-duration: 5000ms"
-				></div>
-			{/if}
+			<!-- Keyed on the merge count (#573): a merged repeat restarts the
+			     dismiss window in the store, and the recreated bar matches it
+			     instead of running out early. -->
+			{#key toast.count ?? 1}
+				{#if toast.undo}
+					<div
+						class="toast-progress"
+						style="background: {cfg.color}; animation-duration: {toast.undo.timeout}ms"
+					></div>
+				{:else}
+					<!--
+						Explicit 5000ms matches the store's default dismiss timeout;
+						without this the CSS fell back to its own 5s, which happened to
+						match, but the coupling was implicit. Hovering freezes the bar.
+					-->
+					<div
+						class="toast-progress"
+						style="background: {cfg.color}; animation-duration: 5000ms"
+					></div>
+				{/if}
+			{/key}
 		</div>
 	{/each}
 </div>
@@ -191,6 +203,17 @@
 	.toast-dismiss:hover {
 		color: var(--color-text);
 		background: var(--color-surface-2);
+	}
+
+	.toast-count {
+		flex-shrink: 0;
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: var(--color-text-muted);
+		background: var(--color-surface-2);
+		padding: 0.1rem 0.4rem;
+		border-radius: var(--radius-sm);
+		line-height: 1.4;
 	}
 
 	.toast-progress {

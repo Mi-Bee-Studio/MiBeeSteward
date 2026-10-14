@@ -34,7 +34,8 @@ const mocks = vi.hoisted(() => {
 		token: null as string | null
 	};
 	const route = { pathname: '/dashboard' };
-	return { authState, route };
+	const demoMode = { on: false };
+	return { authState, route, demoMode };
 });
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -57,7 +58,10 @@ vi.mock('$lib/stores/auth', () => ({
 		setUser: vi.fn()
 	}
 }));
-vi.mock('$lib/stores/demo', () => ({ probeDemoMode: vi.fn(() => Promise.resolve(false)) }));
+vi.mock('$lib/stores/demo', () => ({
+	// Per-test controllable: the demo banner test flips this on.
+	probeDemoMode: vi.fn(() => Promise.resolve(mocks.demoMode.on))
+}));
 // serverVersion: pinned value so the footer line is deterministic (the real
 // store fetches /health once per session — covered by the login page tests).
 vi.mock('$lib/stores/serverVersion', () => ({
@@ -98,6 +102,7 @@ import Layout from '../routes/+layout.svelte';
 
 describe('App layout', () => {
 	beforeEach(() => {
+		mocks.demoMode.on = false;
 		mocks.route.pathname = '/dashboard';
 		mocks.authState.user = { id: 1, username: 'admin', email: 'a@b.c', role: 'admin' };
 		mocks.authState.token = 'live-token';
@@ -127,5 +132,40 @@ describe('App layout', () => {
 		// since it is fixed-positioned and would float over the login form.
 		const hamburger = container.querySelector('button[aria-label]');
 		expect(hamburger).toBeNull();
+	});
+
+	// #566: the demo banner used to be a flex child of the h-screen shell,
+	// stretching into a full-height column between aside and main that crushed
+	// the dashboard at 1280 and intercepted pointer events across the dead
+	// strip. It must be a fixed bottom strip, pointer-transparent except its
+	// own button, with main reserving the strip height.
+	it('pins the demo banner as a fixed bottom strip that does not join the shell flex row (#566)', async () => {
+		mocks.demoMode.on = true;
+
+		const { container } = render(Layout, { children: () => {} });
+
+		const banner = await waitFor(() => {
+			const el = container.querySelector('div.fixed.bottom-0');
+			expect(el).toBeTruthy();
+			return el as HTMLElement;
+		});
+		expect(banner.className).toContain('fixed');
+		expect(banner.className).toContain('bottom-0');
+		// Pointer events pass through the strip; only the wipe button is live,
+		// so the strip can never shadow the content behind it.
+		expect(banner.className).toContain('pointer-events-none');
+		const wipe = banner.querySelector('button');
+		expect(wipe?.className).toContain('pointer-events-auto');
+		// Main reserves the strip height so scrolled content rests above it.
+		const main = container.querySelector('#main-content');
+		expect(main?.className).toContain('pb-9');
+	});
+
+	it('renders no demo banner when demo mode is off', async () => {
+		const { container } = render(Layout, { children: () => {} });
+		await waitFor(() => {
+			expect(container.querySelector('aside')).toBeTruthy();
+		});
+		expect(container.querySelector('div.fixed.bottom-0')).toBeNull();
 	});
 });

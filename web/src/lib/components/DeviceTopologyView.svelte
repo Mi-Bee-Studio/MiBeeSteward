@@ -50,11 +50,17 @@
 		LAYER_ORDER,
 		isSegmentBridge,
 		formatPresence,
+		edgeTypeCounts,
+		WEAK_PROTOCOLS,
+		isStaleEdge,
+		edgeAgeMs,
+		splitOrphans,
+		missingEnrichmentFamilies,
 		type GraphNode,
 		type GraphLink,
 		type TopoLayer
 	} from '$lib/utils/topologyGraph';
-	import { Share2, X } from '@lucide/svelte';
+	import { Share2, X, Settings2 } from '@lucide/svelte';
 
 	let {
 		networkId = ''
@@ -70,6 +76,25 @@
 	// one clears the other so only one panel shows at a time).
 	let selectedNode = $state<GraphNode | null>(null);
 	let selectedEdge = $state<GraphLink | null>(null);
+	// Per-protocol edge visibility (#583): the edge-type legend doubles as a
+	// filter, mirroring the layer pills above. Absent protocol = visible (the
+	// map only stores explicit hides, so new protocols default to shown).
+	let hiddenProtocols = $state<Record<string, boolean>>({});
+
+	function toggleProtocol(protocol: string) {
+		hiddenProtocols = { ...hiddenProtocols, [protocol]: !hiddenProtocols[protocol] };
+	}
+
+	// Orphan grouping (#584): devices with zero observed relations default to
+	// a collapsed group node so the canvas carries relationship information
+	// instead of a floating island ocean; one pill expands them back.
+	let showOrphans = $state(false);
+	let orphanPanelOpen = $state(false);
+
+	// Synthetic ECharts node id for the collapsed group (real device ids are
+	// numeric strings; this can never collide).
+	const ORPHAN_GROUP_ID = 'orphans-group';
+
 	// Per-layer visibility (the legend doubles as a filter toggle). All on by default.
 	let layerVisible = $state<Record<TopoLayer, boolean>>({
 		root: true,
@@ -205,8 +230,25 @@
 		return labels[layer];
 	}
 
-	// The ECharts option. Rebuilt whenever graph/search/layer-filter change.
-	let graphOption = $derived<EChartsOption | null>(buildOption(graph, searchQuery, layerVisible));
+	// Build once per graph, feed every derived below (#584).
+	let builtGraph = $derived(graph ? buildGraph(graph) : null);
+
+	// Edge types actually present in the graph (#583) — the legend lists only
+	// these, with per-type counts.
+	let edgeStats = $derived(builtGraph ? edgeTypeCounts(builtGraph.links) : []);
+
+	// Orphan census (#584): degree-0 nodes (the root always stays drawn).
+	let orphanNodes = $derived(builtGraph ? splitOrphans(builtGraph.nodes).orphans : []);
+
+	// Enrichment gaps (#584): edge families with zero presence — the hints
+	// link each to the settings page where its source is enabled.
+	let enrichHints = $derived(builtGraph ? missingEnrichmentFamilies(builtGraph.links) : []);
+
+	// The ECharts option. Rebuilt whenever graph/search/layer/edge-type/orphan
+	// state changes.
+	let graphOption = $derived<EChartsOption | null>(
+		buildOption(graph, searchQuery, layerVisible, hiddenProtocols, showOrphans)
+	);
 
 	// Cross-segment bridge count (#556): nodes present in more than one
 	// segment — the link points joining the LAN clusters. Zero on a
@@ -219,18 +261,28 @@
 	function buildOption(
 		g: TopologyGraph | null,
 		search: string,
-		lvis: Record<TopoLayer, boolean>
+		lvis: Record<TopoLayer, boolean>,
+		hiddenProto: Record<string, boolean>,
+		expandOrphans: boolean
 	): EChartsOption | null {
 		if (!g || g.nodes.length === 0) return null;
 		const built = buildGraph(g);
 		if (built.nodes.length === 0) return null;
 
-		const force = recommendedForceParams(built.nodes.length);
+		// Orphan grouping (#584): collapsed mode renders the connected subgraph
+		// plus one synthetic dashed group node; expanded renders everything.
+		const { connected, orphans } = splitOrphans(built.nodes);
+		const layoutNodes = expandOrphans ? built.nodes : connected;
+		const orphanVisible = orphans.filter((o) => lvis[o.layer]).length;
+		const renderCount = layoutNodes.length + (expandOrphans || orphanVisible === 0 ? 0 : 1);
+
+		const force = recommendedForceParams(Math.max(renderCount, 1));
 
 		// Nodes filtered by layer visibility. Hidden layers' nodes are omitted
 		// (and their links auto-dropped by ECharts when an endpoint is absent).
+		// Orphans have no links, so collapsing them drops nothing (#584).
 		const visibleNodeIds = new Set<number>();
-		for (const gn of built.nodes) {
+		for (const gn of layoutNodes) {
 			if (lvis[gn.layer]) visibleNodeIds.add(gn.id);
 		}
 
@@ -263,7 +315,7 @@
 			}
 		}
 
-		const echartsNodes = built.nodes
+		const echartsNodes = layoutNodes
 			.filter((gn) => visibleNodeIds.has(gn.id))
 			.map((gn) => {
 				const dimmed = search && !highlightedIds.has(gn.id);
@@ -303,11 +355,56 @@
 				};
 			});
 
+		// The collapsed orphan group node (#584): one dashed hollow circle
+		// instead of an island ocean. Click opens the member list panel.
+		if (!expandOrphans && orphanVisible > 0) {
+			echartsNodes.push({
+				id: ORPHAN_GROUP_ID,
+				name: m['topology.Orphan Group Node']({ n: orphanVisible }),
+				symbolSize: 56,
+				itemStyle: {
+					color: 'transparent',
+					borderColor: cssVar('--color-muted', '#94a3b8'),
+					borderWidth: 2,
+					borderType: 'dashed'
+				},
+				label: {
+					show: true,
+					position: 'inside',
+					fontSize: 11,
+					color: cssVar('--color-text-muted', '#cbd5e1'),
+					formatter: () => m['topology.Orphan Group Node']({ n: orphanVisible })
+				}
+			});
+		}
+
+		// Node status by id (#585): an edge whose endpoint is offline (per
+		// heartbeat) is a "was connected", not an "is connected".
+		const statusById = new Map<string, string>();
+		for (const gn of built.nodes) statusById.set(String(gn.id), gn.value.status || '');
+
 		const echartsLinks = built.links
 			.filter((l) => visibleNodeIds.has(l.source) && (l.isUnidentified || visibleNodeIds.has(l.target)))
+			// Edge-type filter (#583): the legend pills toggle whole protocols.
+			.filter((l) => !hiddenProto[l.protocol])
 			.map((l) => {
 				const style = protocolStyle(l.protocol);
 				const dimmed = search && !highlightedIds.has(l.source) && !highlightedIds.has(l.target);
+				// Weak-evidence hierarchy (#583): ARP/speaks-with render fainter
+				// than hard wiring facts even at full visibility, so users read
+				// inference as inference.
+				let baseOpacity = WEAK_PROTOCOLS.has(l.protocol) ? 0.4 : 0.8;
+				// Staleness (#585): an adjacency past its freshness threshold
+				// (10min generic, 5min WiFi) fades and dashed-izes — the ghost
+				// of a departed client must not read as a live link.
+				const stale = isStaleEdge(l);
+				if (stale) baseOpacity *= 0.4;
+				// Offline endpoint (#585): edges of an offline device dim the
+				// same way regardless of the edge's own freshness.
+				const offlineEnd =
+					statusById.get(String(l.source)) === 'offline' ||
+					(!l.isUnidentified && statusById.get(String(l.target)) === 'offline');
+				if (offlineEnd) baseOpacity *= 0.4;
 				return {
 					source: String(l.source),
 					target: String(l.target),
@@ -315,8 +412,8 @@
 					lineStyle: {
 						color: cssVar(style.color[0], style.color[1]),
 						width: l.isCrossLink ? style.width + 0.5 : style.width,
-						type: l.isUnidentified ? 'dashed' : style.type,
-						opacity: dimmed ? 0.1 : l.isCrossLink ? 0.5 : 0.8,
+						type: l.isUnidentified || stale ? 'dashed' : style.type,
+						opacity: dimmed ? 0.1 : l.isCrossLink ? 0.5 : baseOpacity,
 						curveness: l.isCrossLink ? 0.3 : 0.1
 					},
 					emphasis: { lineStyle: { width: 3 } }
@@ -354,6 +451,11 @@
 						let tip = `<b>${escapeHtml(l.protocol)}</b><br/>${localLabel}: ${escapeHtml(l.localPort || '—')}<br/>${remoteLabel}: ${remote}`;
 						if (l.protocol === 'speaks-with' && l.bytes != null) {
 							tip += `<br/>${escapeHtml(m['topology.Bytes']())}: ${formatBytes(l.bytes)}`;
+						}
+						const age = edgeAgeMs(l);
+						if (age !== null) {
+							tip += `<br/>${escapeHtml(m['topology.Last Seen']())}: ${formatAge(age)}`;
+							if (isStaleEdge(l)) tip += ` <span style="opacity:0.7">(${escapeHtml(m['topology.Edge Stale']())})</span>`;
 						}
 						return tip;
 					}
@@ -393,11 +495,20 @@
 	}
 
 	// Click handler: node → select node (clear edge); edge → select edge (clear node).
-	function onChartClick(ev: { dataType: string; data: { value?: GraphNode | GraphLink } }) {
+	function onChartClick(ev: { dataType: string; data: { id?: string; value?: GraphNode | GraphLink } }) {
 		if (ev.dataType === 'node') {
+			// The synthetic orphan group (#584) opens the member list instead of
+			// a device card.
+			if ((ev.data as { id?: string }).id === ORPHAN_GROUP_ID) {
+				orphanPanelOpen = true;
+				selectedNode = null;
+				selectedEdge = null;
+				return;
+			}
 			const gn = ev.data.value as GraphNode | undefined;
 			selectedNode = gn && gn.value ? gn : null;
 			selectedEdge = null;
+			orphanPanelOpen = false;
 		} else if (ev.dataType === 'edge') {
 			const gl = ev.data.value as GraphLink | undefined;
 			selectedEdge = gl && gl.protocol !== undefined ? gl : null;
@@ -411,6 +522,32 @@
 			const gn = ev.data.value as GraphNode | undefined;
 			if (gn && gn.value && gn.value.id) goto('/devices/detail/' + gn.value.id);
 		}
+	}
+
+	// Offline endpoint check for the link panel (#585).
+	function endpointOffline(l: GraphLink): boolean {
+		if (!graph) return false;
+		const src = graph.nodes.find((n) => n.id === l.source);
+		if (src?.status === 'offline') return true;
+		if (l.isUnidentified) return false;
+		const dst = graph.nodes.find((n) => n.id === l.target);
+		return dst?.status === 'offline';
+	}
+
+	// Age rendering for edges (#585): minutes under an hour, hours above.
+	function formatAge(ms: number): string {
+		const minutes = Math.floor(ms / 60000);
+		if (minutes < 60) return m['topology.Minutes Ago']({ n: minutes });
+		return m['topology.Hours Ago']({ n: Math.floor(minutes / 60) });
+	}
+
+	// Why a port is missing (#583): protocol-aware explanation shown in the
+	// link panel whenever an end shows a bare dash.
+	function portHint(l: GraphLink): string {
+		if (l.protocol === 'ARP') return m['topology.Port Hint ARP']();
+		if (l.protocol === 'speaks-with') return m['topology.Port Hint Traffic']();
+		if (l.protocol === 'LLDP' || l.protocol === 'CDP') return m['topology.Port Hint Lldp']();
+		return m['topology.Port Hint Snmp']();
 	}
 
 	// Resolve a link's endpoint device names for the detail panel (nicer than
@@ -440,6 +577,19 @@
 				⇄ {m['topology.Bridge Count']({ n: bridgeCount })}
 			</span>
 		{/if}
+		<!-- Orphan grouping toggle (#584): collapsed by default — the canvas
+		     carries relationships, not an island ocean. -->
+		{#if orphanNodes.length > 0}
+			<button
+				onclick={() => (showOrphans = !showOrphans)}
+				aria-pressed={showOrphans}
+				class="px-2 py-1 rounded-full border border-border bg-surface text-xs transition-colors hover:border-border-strong"
+				title={m['topology.Orphan Panel Desc']()}
+			>
+				{showOrphans ? m['topology.Orphan Hide']() : m['topology.Orphan Show']()}
+				<span class="text-muted font-mono ml-1">×{orphanNodes.length}</span>
+			</button>
+		{/if}
 		<!-- Layer filter pills (also reflected in the legend) -->
 		<div class="flex items-center gap-1 text-xs">
 			{#each LAYER_ORDER as layer}
@@ -463,6 +613,37 @@
 			onclick={() => fetchTopology()}
 			class="btn btn-secondary text-sm"
 		>{m['dashboard.Refresh']()}</button>
+
+		<!-- Edge-type legend (#583): style + name + count for every protocol
+		     actually present on the canvas; click toggles the whole type
+		     (same interaction as the layer pills). Weak-evidence types
+		     (ARP / speaks-with) carry the fainter line + a tooltip flag. -->
+		{#if edgeStats.length > 0}
+			<div class="flex items-center gap-1 text-xs flex-wrap w-full" aria-label={m['topology.Edge Types']()}>
+				{#each edgeStats as stat (stat.protocol)}
+					{@const style = protocolStyle(stat.protocol)}
+					{@const weak = WEAK_PROTOCOLS.has(stat.protocol)}
+					<button
+						onclick={() => toggleProtocol(stat.protocol)}
+						aria-pressed={!hiddenProtocols[stat.protocol]}
+						class="px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1.5 {hiddenProtocols[stat.protocol]
+							? 'border-border bg-surface opacity-40'
+							: 'border-border-strong bg-surface-strong'}"
+						title={weak ? m['topology.Weak Evidence Desc']() : stat.protocol}
+					>
+						<span
+							class="inline-block w-4 border-t-2 mr-0.5 align-middle"
+							style="border-color: {cssVar(style.color[0], style.color[1])}; border-top-style: {style.type}"
+						></span>
+						{stat.protocol}
+						{#if weak}
+							<span class="text-[10px] text-muted">({m['topology.Weak Evidence']()})</span>
+						{/if}
+						<span class="text-muted font-mono">×{stat.count}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
 	</div>
 
 	{#if loading}
@@ -485,6 +666,27 @@
 			description={m['topology.No Edges Desc']()}
 		/>
 	{:else}
+		<!-- Enrichment guidance (#584): the default deployment shape renders an
+		     ARP star at best; these hints name the unlit data sources and link
+		     straight to the settings page where each is enabled. -->
+		{#if enrichHints.length > 0}
+			<div class="flex flex-wrap items-center gap-2 text-xs">
+				<span class="text-muted font-medium">{m['topology.Enrich Hints Title']()}:</span>
+				{#each enrichHints as family (family)}
+					<a
+						href="/settings"
+						class="px-2 py-1 rounded-full border border-primary/40 text-primary hover:bg-primary/10 transition-colors inline-flex items-center gap-1"
+					>
+						<Settings2 class="w-3 h-3" aria-hidden="true" />
+						{family === 'wifi'
+							? m['topology.Hint Wifi']()
+							: family === 'traffic'
+								? m['topology.Hint Traffic']()
+								: m['topology.Hint Snmp']()}
+					</a>
+				{/each}
+			</div>
+		{/if}
 		<div class="flex gap-3 flex-1 min-h-[500px]">
 			<!-- Graph canvas (fills available space; detail panel overlays on the right) -->
 			<div class="bg-surface border border-border rounded-lg p-2 flex-1 min-w-0">
@@ -496,7 +698,7 @@
 				<aside class="w-72 shrink-0 bg-surface border border-border rounded-lg p-4 text-sm overflow-y-auto">
 					<div class="flex items-start justify-between mb-2">
 						<h3 class="font-semibold text-base">{m['topology.Node Detail Title']()}</h3>
-						<button onclick={() => (selectedNode = null)} class="text-muted hover:text-text" aria-label="close">
+						<button onclick={() => (selectedNode = null)} class="text-muted hover:text-text" aria-label={m['common.Close']()}>
 							<X class="w-4 h-4" />
 						</button>
 					</div>
@@ -543,7 +745,7 @@
 				<aside class="w-72 shrink-0 bg-surface border border-border rounded-lg p-4 text-sm overflow-y-auto">
 					<div class="flex items-start justify-between mb-2">
 						<h3 class="font-semibold text-base">{m['topology.Edge Detail Title']()}</h3>
-						<button onclick={() => (selectedEdge = null)} class="text-muted hover:text-text" aria-label="close">
+						<button onclick={() => (selectedEdge = null)} class="text-muted hover:text-text" aria-label={m['common.Close']()}>
 							<X class="w-4 h-4" />
 						</button>
 					</div>
@@ -568,10 +770,52 @@
 							<dt class="text-muted">{m['topology.Remote Port']()}</dt>
 							<dd class="font-mono">{selectedEdge.remotePort || '—'}</dd>
 						</div>
+						{#if !selectedEdge.localPort || !selectedEdge.remotePort}
+							<!-- #583: a bare dash where the graph's most valuable
+							     troubleshooting fact should be needs a way out, not a
+							     dead end. Explain WHY the port is missing and what
+							     would fill it. -->
+							<p class="text-xs text-muted mt-2 border-t border-border pt-2">
+								{portHint(selectedEdge)}
+							</p>
+						{/if}
+						{#if selectedEdge.lastSeen}
+							<div>
+								<dt class="text-muted">{m['topology.Last Seen']()}</dt>
+								<dd>{formatAge(edgeAgeMs(selectedEdge) ?? 0)}{#if isStaleEdge(selectedEdge)} <span class="text-warning">({m['topology.Edge Stale']()})</span>{/if}</dd>
+							</div>
+						{/if}
+						{#if endpointOffline(selectedEdge)}
+							<p class="text-xs text-warning mt-2">{m['topology.Edge Offline Endpoint']()}</p>
+						{/if}
 						{#if selectedEdge.isCrossLink}
 							<p class="text-xs text-accent-purple mt-2">↻ {m['topology.Cross Link']()}</p>
 						{/if}
 					</dl>
+				</aside>
+			{:else if orphanPanelOpen}
+				<!-- Orphan member list (#584): what the collapsed group node holds. -->
+				<aside class="w-72 shrink-0 bg-surface border border-border rounded-lg p-4 text-sm overflow-y-auto">
+					<div class="flex items-start justify-between mb-2">
+						<h3 class="font-semibold text-base">{m['topology.Orphan Panel Title']()}</h3>
+						<button onclick={() => (orphanPanelOpen = false)} class="text-muted hover:text-text" aria-label={m['common.Close']()}>
+							<X class="w-4 h-4" />
+						</button>
+					</div>
+					<p class="text-xs text-muted mb-3">{m['topology.Orphan Panel Desc']()}</p>
+					<ul class="space-y-1">
+						{#each orphanNodes as on (on.id)}
+							<li>
+								<a
+									href="/devices/detail/{on.value.id}"
+									class="flex items-center justify-between px-2 py-1.5 rounded hover:bg-bg-hover transition-colors"
+								>
+									<span class="truncate">{on.name}</span>
+									<span class="text-muted font-mono text-xs shrink-0 ml-2">{on.value.ip_address}</span>
+								</a>
+							</li>
+						{/each}
+					</ul>
 				</aside>
 			{/if}
 		</div>

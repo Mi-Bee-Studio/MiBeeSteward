@@ -9,7 +9,12 @@
 -->
 
 <script lang="ts">
-	import { fade, scale } from 'svelte/transition';
+	import { scale } from 'svelte/transition';
+
+	// Open-modal registry (#582): the close() handler of every OPEN Modal,
+	// in open order. The last entry is the topmost modal; while any modal is
+	// open, the Escape key belongs to that topmost one alone.
+	const openModalStack: Array<() => void> = [];
 	import { m } from '$lib/i18n-paraglide';
 	import { X } from '@lucide/svelte';
 
@@ -100,6 +105,25 @@
 		}
 	}
 
+	// Escape ownership (#582): answer Escape from a DOCUMENT-CAPTURE
+	// listener instead of relying on the keydown bubbling up to the
+	// backdrop. Bubbling was never guaranteed: synthetic KeyboardEvents
+	// default to bubbles:false (automation, key injection — the #582
+	// reproduction), and focus sitting outside the modal meant the event
+	// never traversed the backdrop at all (the app layout carried a
+	// querySelector workaround for exactly that half). A capture listener
+	// sees every keydown regardless of where — or whether — it bubbles.
+	function handleDocumentKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Escape') return;
+		// Stacked modals: only the topmost one answers.
+		if (openModalStack[openModalStack.length - 1] !== close) return;
+		// Own the key entirely: the same event must not also run the
+		// backdrop's delegated handler (double close / double onClose) or
+		// app-level Escape logic beneath this modal.
+		e.stopImmediatePropagation();
+		close();
+	}
+
 	function close() {
 		// Locked by the caller (e.g. ConfirmDialog during an in-flight async
 		// confirm): ignore Escape / backdrop / X so the request is not orphaned.
@@ -134,6 +158,8 @@
 		if (open) {
 			previouslyFocused = document.activeElement as HTMLElement;
 			document.body.style.overflow = 'hidden';
+			openModalStack.push(close);
+			document.addEventListener('keydown', handleDocumentKeydown, true);
 
 			// Focus first focusable element after the dialog's scale transition
 			// paints. requestAnimationFrame (chained once to land on the post-paint
@@ -153,6 +179,9 @@
 			});
 
 			return () => {
+				const idx = openModalStack.indexOf(close);
+				if (idx !== -1) openModalStack.splice(idx, 1);
+				document.removeEventListener('keydown', handleDocumentKeydown, true);
 				cancelAnimationFrame(raf1);
 				cancelAnimationFrame(raf2);
 			};
@@ -166,10 +195,19 @@
 </script>
 
 {#if open}
+	<!-- Closing must never depend on an animation finishing (#567): Svelte
+	     outro transitions wait for the Web Animations clock, and embedded
+	     webviews (old tablets, kiosks, some Electron/WebView hosts) can have
+	     a document timeline that never advances - the outro's onfinish never
+	     fired, open flipped false but the backdrop+dialog DOM lingered
+	     forever, intercepting every pointer event under it. So: no outro at
+	     all (close removes the DOM on the spot), and the intro is
+	     transform-only (in:scale) - a frozen clock then leaves the dialog at
+	     0.95 scale, still fully visible and usable, instead of an
+	     opacity-keyed fade that would pin the scrim invisible. -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="modal-backdrop"
-		transition:fade={{ duration: 150 }}
 		onclick={handleBackdropClick}
 		onkeydown={handleKeydown}
 	>
@@ -177,7 +215,7 @@
 			bind:this={dialogRef}
 			class="modal-dialog"
 			style="max-width: {maxWidth}"
-			transition:scale={{ duration: 200, start: 0.95 }}
+			in:scale={{ duration: 200, start: 0.95 }}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby={titleId}

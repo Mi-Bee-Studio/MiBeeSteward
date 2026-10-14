@@ -70,6 +70,9 @@ export interface GraphLink {
 	isUnidentified: boolean;
 	/** speaks-with edges (#500): observed byte total (both directions). */
 	bytes?: number | null;
+	/** When the adjacency was last re-observed (#585), RFC3339; null/empty =
+	 *  age unknown (treated as fresh, never faded). Drives ghost-edge fading. */
+	lastSeen?: string | null;
 }
 
 export interface GraphBuildResult {
@@ -79,6 +82,123 @@ export interface GraphBuildResult {
 	layers: Record<TopoLayer, number[]>;
 	/** The detected root node id (null if graph is empty). */
 	rootId: number | null;
+}
+
+/**
+ * Weak-evidence protocols (#583): relations inferred from observation rather
+ * than reported wiring — ARP is "same subnet per the gateway's table",
+ * speaks-with is "these two talked". They render fainter than hard L2 facts
+ * and the legend labels them, so users stop reading inference as cabling.
+ */
+export const WEAK_PROTOCOLS = new Set(['ARP', 'speaks-with']);
+
+/**
+ * Display order for edge types in the legend (#583): hard wiring facts first,
+ * inferred/corroborating relations last.
+ */
+export const PROTOCOL_ORDER = [
+	'LLDP',
+	'CDP',
+	'Bridge-MIB',
+	'Q-BRIDGE-MIB',
+	'STP',
+	'WiFi',
+	'route-table',
+	'ARP',
+	'speaks-with'
+];
+
+/**
+ * edgeTypeCounts (#583): per-protocol edge totals for the current graph,
+ * ordered by PROTOCOL_ORDER (unknown protocols sort last, alphabetically).
+ * The legend lists only what actually appears on the canvas.
+ */
+export function edgeTypeCounts(links: GraphLink[]): Array<{ protocol: string; count: number }> {
+	const counts = new Map<string, number>();
+	for (const l of links) {
+		counts.set(l.protocol, (counts.get(l.protocol) ?? 0) + 1);
+	}
+	return [...counts.entries()]
+		.map(([protocol, count]) => ({ protocol, count }))
+		.sort(
+			(a, b) =>
+				(PROTOCOL_ORDER.indexOf(a.protocol) + 1 || PROTOCOL_ORDER.length + a.protocol.charCodeAt(0)) -
+				(PROTOCOL_ORDER.indexOf(b.protocol) + 1 || PROTOCOL_ORDER.length + b.protocol.charCodeAt(0))
+		);
+}
+
+/**
+ * Edge freshness thresholds (#585): how long an adjacency may go unobserved
+ * before the graph treats it as a ghost. Generic edges use 10 minutes (a
+ * generous 2× a typical scan cycle); WiFi associations fade at half that —
+ * associations are far more volatile than wiring facts and a departed client
+ * simply stops refreshing the edge (#539 left the data side correct; this is
+ * the UI half).
+ */
+export const STALE_EDGE_MS = 10 * 60 * 1000;
+export const WIFI_STALE_MS = 5 * 60 * 1000;
+
+/** Age of an edge in ms, or null when unknown (no/invalid lastSeen). */
+export function edgeAgeMs(l: Pick<GraphLink, 'protocol' | 'lastSeen'>, now = Date.now()): number | null {
+	if (!l.lastSeen) return null;
+	const t = Date.parse(l.lastSeen);
+	if (Number.isNaN(t)) return null;
+	return Math.max(0, now - t);
+}
+
+/** Staleness verdict for an edge (#585): past its protocol's threshold. */
+export function isStaleEdge(
+	l: Pick<GraphLink, 'protocol' | 'lastSeen'>,
+	now = Date.now()
+): boolean {
+	const age = edgeAgeMs(l, now);
+	if (age === null) return false;
+	return age > (l.protocol === 'WiFi' ? WIFI_STALE_MS : STALE_EDGE_MS);
+}
+
+/**
+ * splitOrphans (#584): partition nodes into connected (degree > 0 or the
+ * root — the root is the graph's anchor and stays on the canvas even in the
+ * degenerate no-edge case) versus orphans (degree 0). Orphan oceans are the
+ * default deployment shape: without LLDP/Bridge/WiFi/flow sources the graph
+ * shows an ARP star at best and everything else floats alone, conveying
+ * nothing a device list doesn't already say.
+ */
+export function splitOrphans(nodes: GraphNode[]): { connected: GraphNode[]; orphans: GraphNode[] } {
+	const connected: GraphNode[] = [];
+	const orphans: GraphNode[] = [];
+	for (const gn of nodes) {
+		if (gn.degree > 0 || gn.isRoot) connected.push(gn);
+		else orphans.push(gn);
+	}
+	return { connected, orphans };
+}
+
+/** The edge families the enrichment hints (#584) know how to light up. */
+export type EnrichmentFamily = 'wifi' | 'traffic' | 'snmp';
+
+/**
+ * missingEnrichmentFamilies (#584): which data-source families the current
+ * graph has ZERO edges from — the actionable gap, in display order. WiFi
+ * associations (hostapd), device-to-device traffic (passive observation),
+ * and managed-switch wiring (SNMP walks) are all existing capabilities the
+ * default deployment simply hasn't turned on; the hints link to the
+ * settings page where each source is enabled.
+ */
+export function missingEnrichmentFamilies(links: GraphLink[]): EnrichmentFamily[] {
+	const present = new Set(links.map((l) => l.protocol));
+	const missing: EnrichmentFamily[] = [];
+	if (!present.has('WiFi')) missing.push('wifi');
+	if (!present.has('speaks-with')) missing.push('traffic');
+	if (
+		!present.has('LLDP') &&
+		!present.has('CDP') &&
+		!present.has('Bridge-MIB') &&
+		!present.has('Q-BRIDGE-MIB')
+	) {
+		missing.push('snmp');
+	}
+	return missing;
 }
 
 /** Endpoint types that live at the network edge (leaves). */
@@ -359,7 +479,8 @@ export function buildGraph(graph: TopologyGraph): GraphBuildResult {
 			remotePort: edge.remote_port,
 			isCrossLink: to !== null && crossLinkSet.has(`${from}>${to}`),
 			isUnidentified,
-			bytes: edge.bytes ?? null
+			bytes: edge.bytes ?? null,
+			lastSeen: edge.last_seen ?? null
 		});
 	}
 

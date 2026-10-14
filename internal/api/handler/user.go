@@ -580,6 +580,50 @@ func (h *UserHandler) AdminResetPassword(w http.ResponseWriter, r *http.Request)
 	Success(w, map[string]string{"message": "password reset successfully"})
 }
 
+// DeleteUser handles DELETE /api/v1/users/{id} (admin only, #568).
+//
+// The route never existed - the SPA's row-level delete button answered chi's
+// sub-router 404 while the UI kept showing the row, so user deletion was
+// only possible through the batch endpoint. Mirrors the batch path's
+// self-delete guard; a missing user is a real 404.
+func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	targetID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || targetID <= 0 {
+		Error(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
+
+	currentID, _, ok := middleware.GetUserFromContext(r)
+	if !ok {
+		Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	if err := h.svc.DeleteUser(r.Context(), targetID, currentID); err != nil {
+		if errors.Is(err, service.ErrSelfDelete) {
+			Error(w, http.StatusBadRequest, "cannot delete yourself")
+			return
+		}
+		if errors.Is(err, service.ErrUserNotFound) {
+			Error(w, http.StatusNotFound, "user not found")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed to delete user")
+		return
+	}
+
+	h.auditRepo.Log(r.Context(), service.AuditLog{
+		UserID:       &currentID,
+		Action:       "admin.user.delete",
+		ResourceType: "user",
+		ResourceID:   strconv.FormatInt(targetID, 10),
+		IPAddress:    r.RemoteAddr,
+		UserAgent:    r.UserAgent(),
+	})
+
+	Success(w, map[string]string{"message": "user deleted"})
+}
+
 // cookieMaxAge returns the cookie MaxAge in seconds.
 // Precedence: CookieMaxAge config → TokenExpiry config → 86400 (24h default).
 func (h *UserHandler) cookieMaxAge() int {

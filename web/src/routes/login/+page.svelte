@@ -127,6 +127,10 @@
 			auth.login(res.user, res.token);
 
 			if (res.user.must_change_password) {
+				// Login succeeded: clear the stale form error (e.g. from a
+				// mistyped earlier attempt) so it does not linger under the
+				// force-change modal (#569).
+				error = '';
 				showForceDialog = true;
 			} else {
 				goto('/dashboard');
@@ -267,6 +271,7 @@
 			// previously this dumped them onto the generic /settings page.
 			if (res.user.must_change_password) {
 				twoFactorRequired = false;
+				error = '';
 				showForceDialog = true;
 			} else {
 				goto('/dashboard');

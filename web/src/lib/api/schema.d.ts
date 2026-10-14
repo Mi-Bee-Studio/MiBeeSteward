@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Liveness + version (public) */
+        /** Liveness + version (public); also served at the root as /health for conventional monitors/probes (#571) */
         get: {
             parameters: {
                 query?: never;
@@ -576,6 +576,43 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a user (admin; self-delete rejected) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["OK"];
+                /** @description User not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -6270,6 +6307,11 @@ export interface components {
              * @description speaks-with edges only - observed byte total
              */
             bytes?: number | null;
+            /**
+             * Format: date-time
+             * @description When the adjacency was last re-observed (#585); empty = age unknown. Drives ghost-edge fading.
+             */
+            last_seen?: string;
             /** @description route-table edge context (#528) - dest_subnet, next_hop, route_proto; null for neighbor-derived edges */
             metadata?: Record<string, never> | null;
         };

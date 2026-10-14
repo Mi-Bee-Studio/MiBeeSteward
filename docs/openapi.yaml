@@ -61,7 +61,7 @@ paths:
   /health:
     get:
       tags: [Health]
-      summary: Liveness + version (public)
+      summary: Liveness + version (public); also served at the root as /health for conventional monitors/probes (#571)
       security: []
       responses:
         "200":
@@ -235,6 +235,14 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/UserList"}
+  /users/{id}:
+    delete:
+      tags: [Users]
+      summary: Delete a user (admin; self-delete rejected)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+        "404": {description: User not found}
   /users/batch-delete:
     post:
       tags: [Users]
@@ -2600,6 +2608,7 @@ components:
         local_port: {type: string, nullable: true}
         remote_port: {type: string, nullable: true, description: Far-end ifName (LLDP/CDP only)}
         bytes: {type: integer, format: int64, nullable: true, description: speaks-with edges only - observed byte total}
+        last_seen: {type: string, format: date-time, description: "When the adjacency was last re-observed (#585); empty = age unknown. Drives ghost-edge fading."}
         metadata:
           type: object
           nullable: true
