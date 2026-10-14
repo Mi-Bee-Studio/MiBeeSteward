@@ -880,3 +880,25 @@ rules:
         inferred_brand: { const: "TP-Link" }
         inferred_model: { regex_capture: 1 }
         appliance: { const: "router" }
+
+  # ── GL.iNet 路由器主机名（GL-MT2500.tail-…，field LAN 2026-10-13）────────
+  # GL.iNet firmware defaults the DHCP/mDNS name to "GL-MT<model>" (MT2500 =
+  # Opal). Randomized-MAC units have no OUI to brand them — the hostname is
+  # the only vendor signal. Model keeps the MT prefix.
+  - id: iot-host-glinet-mt
+    source: builtin
+    priority: 115
+    exclusive_group: glinet-host
+    match:
+      kind: hostname
+      field: hostname
+      op: regex
+      value: '(?i)^gl[-_]?(mt[0-9]{3,5}[a-z]*)(?:[-_][0-9a-z]+)*(?:\.[0-9a-z-]+)*$'
+    service: miot
+    protocol: hostname
+    confidence: 0.55
+    extract:
+      metadata:
+        inferred_brand: { const: "GL.iNet" }
+        inferred_model: { regex_capture: 1 }
+        appliance: { const: "router" }
