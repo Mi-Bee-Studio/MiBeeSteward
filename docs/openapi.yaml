@@ -2608,6 +2608,7 @@ components:
         local_port: {type: string, nullable: true}
         remote_port: {type: string, nullable: true, description: Far-end ifName (LLDP/CDP only)}
         bytes: {type: integer, format: int64, nullable: true, description: speaks-with edges only - observed byte total}
+        last_seen: {type: string, format: date-time, description: "When the adjacency was last re-observed (#585); empty = age unknown. Drives ghost-edge fading."}
         metadata:
           type: object
           nullable: true

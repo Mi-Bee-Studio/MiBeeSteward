@@ -1206,7 +1206,21 @@
 		"Port Hint Snmp": "Ports come from SNMP walks — bind credentials for the managed switch to collect them.",
 		"Weak Evidence": "Weak evidence",
 		"Weak Evidence Desc": "Inferred from observation, not a wiring fact: corroborating relation only.",
-		"Edge Types": "Edges"
+		"Edge Types": "Edges",
+		"Last Seen": "Last seen",
+		"Minutes Ago": "{n} min ago",
+		"Hours Ago": "{n} h ago",
+		"Edge Stale": "possibly stale",
+		"Edge Offline Endpoint": "endpoint offline",
+		"Orphan Group Node": "No topology data ({n})",
+		"Orphan Show": "Show disconnected",
+		"Orphan Hide": "Group disconnected",
+		"Orphan Panel Title": "Disconnected devices",
+		"Orphan Panel Desc": "No relation observed for these devices yet — no neighbor, no association, no traffic. The hints below light up the data sources that draw the lines between them.",
+		"Hint Wifi": "Enable hostapd discovery on a router-form agent to see wireless associations",
+		"Hint Traffic": "Enable passive observation (eBPF) to see who talks to whom, with traffic",
+		"Hint Snmp": "Bind SNMP credentials for managed switches to collect wiring and ports",
+		"Enrich Hints Title": "Make this graph richer"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",
