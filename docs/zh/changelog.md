@@ -7,6 +7,22 @@
 
 ## [Unreleased]（未发布）
 
+## [0.7.4] - 2026-10-14
+
+### 修复
+- **根路径 `GET /health` 返回健康 JSON 而非 SPA HTML（#571）**：按惯例探测 `/health` 的外部监控、容器探针与负载均衡此前拿到的是 SPA fallback 的 `200 + index.html`——API 挂了但 SPA 还在服务的进程会被误报健康。根路径现在返回与 `/api/v1/health` 完全相同的 JSON（注册在 `/metrics` 旁；OpenAPI parity 测试扩展、双语文档注明别名）。
+- **`DELETE /api/v1/users/{id}` 端点补齐（#568）**：UI 行内删除按钮一直在调一个从未实现的端点——每次单用户删除都命中 chi 子路由 404，列表行却还在（此前只有批量端点）。新增 UserService.DeleteUser + handler 沿用批量路径的自删防线、对不存在 id 返回真 404、审计记录 `admin.user.delete`；OpenAPI 声明该操作、Go/TS 客户端再生成、handler 测试钉死成功/404/自删/非法 id 四态。
+- **demo 横幅不再破坏应用外壳布局（#566）**：demo 横幅此前是 `h-screen` 外壳的 flex 子元素（位于侧栏与主区之间），被 stretch 成全高竖列——1280px 下仪表盘被挤到 ~440px、标题竖排，任意宽度中间都有一条拦截指针事件的全高死区。横幅改为 `fixed bottom-0` 底部条、除自身按钮外指针穿透，主区预留条高使滚动内容停靠其上。
+- **modal 关闭不再依赖动画完成（#567）**：Svelte 退场 transition 等待 Web Animations 时钟，而在 document timeline 不推进的宿主（旧平板/kiosk 的嵌入式 WebView、jsdom、部分 Electron——本产品 LAN 监控的真实访问端）里 `onfinish` 永不触发——`open` 已翻转但 backdrop+dialog DOM 永久残留、吞掉其下所有指针事件；X/取消/Escape/保存成功全部"无效"，只能 F5。关闭现在即刻移除 DOM（无退场动画），入场改纯 transform（`in:scale`）：冻结时钟下退化为 0.95 缩放、完全可见可用，而不是把遮罩钉在透明态的 opacity 类 fade。新增组件测试在 onfinish 永不触发的 animate 桩下钉死全部关闭路径。
+- **toast 鲁棒性 + ECharts 卸载竞态（#573）**：相同 type+message 的重复 toast 合并为一行 ×N 计数并重启计时窗，不再堆叠重复行；悬停现在真正暂停自动消退（此前只有 CSS 进度条冻结、store 计时器照跑，读到一半就消失）；toast 移除不再等待退场动画（与 #567 同一冻结时钟病灶——store 已删、DOM 残留）。心跳 tab 首开偶发的 `Cannot read properties of undefined (reading 'off')` 修复：Chart 事件绑定 effect 的清理函数读取响应式 instance 变量，卸载时 onMount 清理先 dispose 并置 undefined——清理改为解绑其绑定时捕获的同一实例。
+- **快速扫描不再在长同步扫描上假失败（#570）**：API client 此前对所有请求硬编码 30s 超时，而 `POST /scanner/scan` 全程占住请求（demo /28 不可路由 IP × 2s 超时实测 36s）——UI 数秒报 "request timeout" 时服务端正常完成，诱导重复提交。client 新增 per-request `timeoutMs`，扫描请求给 5 分钟预算（取消按钮仍即时中止）；假时钟 + 悬挂 fetch 测试钉死默认值与覆盖两条。
+- **i18n / a11y 批量（#569）**：后端错误是英文原文字符串（线上无错误码）且直接裸露在中文 UI——getErrorMessage 现在把用户实际会遇到的串（保留地址段扫描守卫 #317、同密码/弱密码守卫、自删守卫、扫描超时）映射为本地化文案，新增双语 message keys，未知串仍原样透传以保留精确诊断。拓扑链路/节点详情面板关闭按钮改用本地化 aria-label（读屏不再读英文 "close"）。用户页弹窗表单输入框补全 label for/id 关联。登录成功打开强制改密弹窗时清除下层表单残留错误。
+- **Escape 在所有派发形态下关闭弹窗（#582，#567 残留）**：弹窗此前只响应能冒泡到 backdrop 的 keydown（Svelte 委托），合成 KeyboardEvent 默认 `bubbles:false`（自动化/按键注入——#582 的复现路径）到不了任何 handler；焦点在弹窗外时事件也根本不经过 backdrop（应用外壳里恰好有个只补了这半边的 querySelector 点 X 补丁；两个半吊子补丁一并退役）。Modal 打开期间经 document 捕获阶段持有 Escape：捕获看得见任意目标/焦点/是否冒泡的按键；open-modal 栈保证叠层弹窗只有栈顶响应、事件被独占（不会双关/双 onClose），closable=false 的进行中锁保持"请求结束后 Escape 恢复可用"语义。
+- **拓扑边类型图例 + 弱证据分层 + 端口缺失解释（#583）**：图上有七种边线型但图例只解释节点分层——灰色点线 ARP 推断（l3，置信 0.5）读起来和绿色实线 LLDP 接线事实（l2，0.85）一模一样。图例现在列出当前图上实际出现的每种边类型（线型色样 + 协议 + 条数，硬事实在前）；点击 pill 整类开关（与分层 pills 同交互）；弱证据类型（ARP、speaks-with）满可见度下也以 0.4 透明度淡显并带"弱证据"标签；链路面板对裸破折号端口按协议解释——ARP 由网关表推断、speaks-with 无端口概念、LLDP/CDP 邻居未上报、Bridge/STP 需绑 SNMP 凭据——图上最值钱的排障信息有了出路。
+- **拓扑边新鲜度上线 + 幽灵边淡显（#585）**：`topology_edges` 一直记录 last_seen 但 API 丢弃、UI 把每条边画成"现在的连接"——WiFi 客户端断开后琥珀关联永驻（#539 修了数据侧、明确遗留 UI 半边）；设备离线后其边满强度绘制。topology 载荷现在对全部三族边携带 last_seen（邻居派生、speaks-with、物化 route-table；OpenAPI + 客户端再生成），超阈值（通用 10 分钟≈2×扫描周期、WiFi 5 分钟）的边淡显 + 虚线化、任一端点离线同样淡显，tooltip/链路面板显示"最后可见 N 分钟前"+ 疑似陈旧标记；未知年龄永不淡化。
+- **拓扑孤点海洋归组 + 丰富引导（#584）**：默认部署形态下图只有 ARP 星甚至更少（demo 实测：4 条边、15 个孤点=75%）——孤点随机漂浮零信息量，页面也不解释怎么点亮更多。度 0 节点现在默认收进一个虚线群组节点（"未接入拓扑数据（N 台）"），点击开成员列表（逐行链设备详情）；工具栏 pill 展开/收起；missingEnrichmentFamilies 推导零在场边类型族，提示行逐条链到 /settings（hostapd / eBPF 被动观测 / SNMP 凭据）——拓扑页从"展示"升级为"点亮数据源"的入口。
+- **demo 拨测种子只在文档命名空间（#572）**：demo 种子的 tcp 拨测目标此前是 `1.1.1.1:53`——真实 Cloudflare anycast 地址，demo 实例每 60s 对真实基础设施发包，违反 demo 约定（仅 RFC 5737 段 / RFC 2606 域），隔离 demo 环境常驻失败噪音。种子目标改用 TEST-NET-3 与 example.org 域，种子测试按设备 IP 的既有方式钉死该约定。
+
 ### 新增
 - **自建 opkg feed（#563）**：`make feed-index` 把构建出的 `.ipk` 包（center + agent）变成自包含的 feed 目录——opkg 标准 `Packages`/`Packages.gz` 索引（带 `Filename`/`Size`/`SHA256sum` 字段）——任意静态文件服务即可托管。路由器经 `/etc/opkg/customfeeds.conf` 一次订阅，升级就是普通的 `opkg update && opkg upgrade`（或 LuCI 软件包页）。生成器（`scripts/make_opkg_feed.sh`）从每个 ipk 里挖出 control 元数据（`./` 前缀的 gzip-tar 成员）并兼容 busybox；CI openwrt job 每个 PR 冒烟索引形状。索引条目带每包 SHA256sum，opkg 按取回索引校验下载；索引本身未签名（usign 签名为后续增强）——请部署在你掌控的主机上。rig 实测：路由器订阅内网 feed 后从索引看到 `mibee-steward 0.7.3`，安装状态零变化。
 
