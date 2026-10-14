@@ -156,6 +156,51 @@ export function isStaleEdge(
 	return age > (l.protocol === 'WiFi' ? WIFI_STALE_MS : STALE_EDGE_MS);
 }
 
+/**
+ * splitOrphans (#584): partition nodes into connected (degree > 0 or the
+ * root — the root is the graph's anchor and stays on the canvas even in the
+ * degenerate no-edge case) versus orphans (degree 0). Orphan oceans are the
+ * default deployment shape: without LLDP/Bridge/WiFi/flow sources the graph
+ * shows an ARP star at best and everything else floats alone, conveying
+ * nothing a device list doesn't already say.
+ */
+export function splitOrphans(nodes: GraphNode[]): { connected: GraphNode[]; orphans: GraphNode[] } {
+	const connected: GraphNode[] = [];
+	const orphans: GraphNode[] = [];
+	for (const gn of nodes) {
+		if (gn.degree > 0 || gn.isRoot) connected.push(gn);
+		else orphans.push(gn);
+	}
+	return { connected, orphans };
+}
+
+/** The edge families the enrichment hints (#584) know how to light up. */
+export type EnrichmentFamily = 'wifi' | 'traffic' | 'snmp';
+
+/**
+ * missingEnrichmentFamilies (#584): which data-source families the current
+ * graph has ZERO edges from — the actionable gap, in display order. WiFi
+ * associations (hostapd), device-to-device traffic (passive observation),
+ * and managed-switch wiring (SNMP walks) are all existing capabilities the
+ * default deployment simply hasn't turned on; the hints link to the
+ * settings page where each source is enabled.
+ */
+export function missingEnrichmentFamilies(links: GraphLink[]): EnrichmentFamily[] {
+	const present = new Set(links.map((l) => l.protocol));
+	const missing: EnrichmentFamily[] = [];
+	if (!present.has('WiFi')) missing.push('wifi');
+	if (!present.has('speaks-with')) missing.push('traffic');
+	if (
+		!present.has('LLDP') &&
+		!present.has('CDP') &&
+		!present.has('Bridge-MIB') &&
+		!present.has('Q-BRIDGE-MIB')
+	) {
+		missing.push('snmp');
+	}
+	return missing;
+}
+
 /** Endpoint types that live at the network edge (leaves). */
 const ENDPOINT_TYPES = new Set([
 	'pc',

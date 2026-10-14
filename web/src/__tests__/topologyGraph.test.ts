@@ -18,6 +18,8 @@ import {
 	edgeAgeMs,
 	STALE_EDGE_MS,
 	WIFI_STALE_MS,
+	splitOrphans,
+	missingEnrichmentFamilies,
 	recommendedForceParams,
 	LAYER_ORDER,
 	isSegmentBridge,
@@ -418,5 +420,42 @@ describe('edge freshness (#585)', () => {
 		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: '' }, now)).toBe(false);
 		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: 'not-a-date' }, now)).toBe(false);
 		expect(edgeAgeMs({ protocol: 'LLDP', lastSeen: null }, now)).toBeNull();
+	});
+});
+
+// #584: orphan census + enrichment gaps drive the collapsed group node and
+// the actionable hints.
+describe('orphan grouping and enrichment hints (#584)', () => {
+	it('splitOrphans separates degree-0 nodes; the root always stays connected', () => {
+		const g: TopologyGraph = {
+			nodes: [
+				node({ id: 1, mac_address: 'aa:aa:aa:aa:aa:01', inferred_type: 'router' }),
+				node({ id: 2, mac_address: 'aa:aa:aa:aa:aa:02' }),
+				node({ id: 3, mac_address: 'aa:aa:aa:aa:aa:03' }),
+				node({ id: 4, mac_address: 'aa:aa:aa:aa:aa:04' })
+			],
+			edges: [
+				edge({ from_device_id: 1, to_device_id: 2, to_mac: 'aa:aa:aa:aa:aa:02', protocol: 'LLDP' })
+			]
+		} as unknown as TopologyGraph;
+		const built = buildGraph(g);
+		const { connected, orphans } = splitOrphans(built.nodes);
+		expect(connected.map((n) => n.id).sort()).toEqual([1, 2]);
+		expect(orphans.map((n) => n.id).sort()).toEqual([3, 4]);
+	});
+
+	it('missingEnrichmentFamilies: empty graph misses all three; full graph misses none', () => {
+		expect(missingEnrichmentFamilies([])).toEqual(['wifi', 'traffic', 'snmp']);
+		const rich = [
+			{ protocol: 'WiFi' },
+			{ protocol: 'speaks-with' },
+			{ protocol: 'LLDP' }
+		].map((p) => ({ ...p, source: 1, target: 2 })) as never[];
+		expect(missingEnrichmentFamilies(rich)).toEqual([]);
+	});
+
+	it('missingEnrichmentFamilies: WiFi alone lights wifi only (traffic + snmp still missing)', () => {
+		const links = [{ source: 1, target: 2, protocol: 'WiFi' }] as never[];
+		expect(missingEnrichmentFamilies(links)).toEqual(['traffic', 'snmp']);
 	});
 });
