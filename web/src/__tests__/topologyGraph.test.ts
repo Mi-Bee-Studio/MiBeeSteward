@@ -14,6 +14,10 @@ import {
 	buildGraph,
 	edgeTypeCounts,
 	WEAK_PROTOCOLS,
+	isStaleEdge,
+	edgeAgeMs,
+	STALE_EDGE_MS,
+	WIFI_STALE_MS,
 	recommendedForceParams,
 	LAYER_ORDER,
 	isSegmentBridge,
@@ -372,5 +376,47 @@ describe('edgeTypeCounts (#583)', () => {
 		expect(WEAK_PROTOCOLS.has('speaks-with')).toBe(true);
 		expect(WEAK_PROTOCOLS.has('LLDP')).toBe(false);
 		expect(WEAK_PROTOCOLS.has('WiFi')).toBe(false);
+	});
+});
+
+// #585: edges carry freshness; ghosts fade, unknown age never does.
+describe('edge freshness (#585)', () => {
+	const now = Date.parse('2026-10-14T12:00:00Z');
+
+	it('buildGraph carries last_seen onto links', () => {
+		const g: TopologyGraph = {
+			nodes: [node({ id: 1, mac_address: 'aa:aa:aa:aa:aa:01' }), node({ id: 2, mac_address: 'aa:aa:aa:aa:aa:02' })],
+			edges: [
+				edge({
+					from_device_id: 1,
+					to_device_id: 2,
+					to_mac: 'aa:aa:aa:aa:aa:02',
+					protocol: 'WiFi',
+					last_seen: '2026-10-14T11:30:00Z'
+				})
+			]
+		} as unknown as TopologyGraph;
+		const built = buildGraph(g);
+		expect(built.links).toHaveLength(1);
+		expect(built.links[0].lastSeen).toBe('2026-10-14T11:30:00Z');
+	});
+
+	it('generic edge is stale past 10 minutes', () => {
+		expect(isStaleEdge({ protocol: 'LLDP', lastSeen: new Date(now - STALE_EDGE_MS - 1).toISOString() }, now)).toBe(true);
+		expect(isStaleEdge({ protocol: 'LLDP', lastSeen: new Date(now - STALE_EDGE_MS + 60000).toISOString() }, now)).toBe(false);
+	});
+
+	it('WiFi edges use the shorter 5-minute threshold (associations are volatile)', () => {
+		const sixMinAgo = new Date(now - WIFI_STALE_MS - 60000).toISOString();
+		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: sixMinAgo }, now)).toBe(true);
+		// The same age on a generic edge is still fresh.
+		expect(isStaleEdge({ protocol: 'LLDP', lastSeen: sixMinAgo }, now)).toBe(false);
+	});
+
+	it('unknown or invalid age is never stale (no fading on missing data)', () => {
+		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: null }, now)).toBe(false);
+		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: '' }, now)).toBe(false);
+		expect(isStaleEdge({ protocol: 'WiFi', lastSeen: 'not-a-date' }, now)).toBe(false);
+		expect(edgeAgeMs({ protocol: 'LLDP', lastSeen: null }, now)).toBeNull();
 	});
 });

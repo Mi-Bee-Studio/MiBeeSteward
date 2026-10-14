@@ -1206,7 +1206,12 @@
 		"Port Hint Snmp": "端口信息来自 SNMP 采集——为网管交换机绑定凭据后可采集。",
 		"Weak Evidence": "弱证据",
 		"Weak Evidence Desc": "由观测推断，非接线事实：仅作佐证关系。",
-		"Edge Types": "边类型"
+		"Edge Types": "边类型",
+		"Last Seen": "最后可见",
+		"Minutes Ago": "{n} 分钟前",
+		"Hours Ago": "{n} 小时前",
+		"Edge Stale": "疑似陈旧",
+		"Edge Offline Endpoint": "端点离线"
 	},
 	"certificates": {
 		"Title": "TLS 证书",

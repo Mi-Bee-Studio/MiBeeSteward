@@ -1206,7 +1206,12 @@
 		"Port Hint Snmp": "Ports come from SNMP walks — bind credentials for the managed switch to collect them.",
 		"Weak Evidence": "Weak evidence",
 		"Weak Evidence Desc": "Inferred from observation, not a wiring fact: corroborating relation only.",
-		"Edge Types": "Edges"
+		"Edge Types": "Edges",
+		"Last Seen": "Last seen",
+		"Minutes Ago": "{n} min ago",
+		"Hours Ago": "{n} h ago",
+		"Edge Stale": "possibly stale",
+		"Edge Offline Endpoint": "endpoint offline"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",

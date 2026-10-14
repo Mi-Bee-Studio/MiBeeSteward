@@ -6307,6 +6307,11 @@ export interface components {
              * @description speaks-with edges only - observed byte total
              */
             bytes?: number | null;
+            /**
+             * Format: date-time
+             * @description When the adjacency was last re-observed (#585); empty = age unknown. Drives ghost-edge fading.
+             */
+            last_seen?: string;
             /** @description route-table edge context (#528) - dest_subnet, next_hop, route_proto; null for neighbor-derived edges */
             metadata?: Record<string, never> | null;
         };

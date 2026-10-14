@@ -52,6 +52,8 @@
 		formatPresence,
 		edgeTypeCounts,
 		WEAK_PROTOCOLS,
+		isStaleEdge,
+		edgeAgeMs,
 		type GraphNode,
 		type GraphLink,
 		type TopoLayer
@@ -324,6 +326,11 @@
 				};
 			});
 
+		// Node status by id (#585): an edge whose endpoint is offline (per
+		// heartbeat) is a "was connected", not an "is connected".
+		const statusById = new Map<string, string>();
+		for (const gn of built.nodes) statusById.set(String(gn.id), gn.value.status || '');
+
 		const echartsLinks = built.links
 			.filter((l) => visibleNodeIds.has(l.source) && (l.isUnidentified || visibleNodeIds.has(l.target)))
 			// Edge-type filter (#583): the legend pills toggle whole protocols.
@@ -334,7 +341,18 @@
 				// Weak-evidence hierarchy (#583): ARP/speaks-with render fainter
 				// than hard wiring facts even at full visibility, so users read
 				// inference as inference.
-				const baseOpacity = WEAK_PROTOCOLS.has(l.protocol) ? 0.4 : 0.8;
+				let baseOpacity = WEAK_PROTOCOLS.has(l.protocol) ? 0.4 : 0.8;
+				// Staleness (#585): an adjacency past its freshness threshold
+				// (10min generic, 5min WiFi) fades and dashed-izes — the ghost
+				// of a departed client must not read as a live link.
+				const stale = isStaleEdge(l);
+				if (stale) baseOpacity *= 0.4;
+				// Offline endpoint (#585): edges of an offline device dim the
+				// same way regardless of the edge's own freshness.
+				const offlineEnd =
+					statusById.get(String(l.source)) === 'offline' ||
+					(!l.isUnidentified && statusById.get(String(l.target)) === 'offline');
+				if (offlineEnd) baseOpacity *= 0.4;
 				return {
 					source: String(l.source),
 					target: String(l.target),
@@ -342,7 +360,7 @@
 					lineStyle: {
 						color: cssVar(style.color[0], style.color[1]),
 						width: l.isCrossLink ? style.width + 0.5 : style.width,
-						type: l.isUnidentified ? 'dashed' : style.type,
+						type: l.isUnidentified || stale ? 'dashed' : style.type,
 						opacity: dimmed ? 0.1 : l.isCrossLink ? 0.5 : baseOpacity,
 						curveness: l.isCrossLink ? 0.3 : 0.1
 					},
@@ -381,6 +399,11 @@
 						let tip = `<b>${escapeHtml(l.protocol)}</b><br/>${localLabel}: ${escapeHtml(l.localPort || '—')}<br/>${remoteLabel}: ${remote}`;
 						if (l.protocol === 'speaks-with' && l.bytes != null) {
 							tip += `<br/>${escapeHtml(m['topology.Bytes']())}: ${formatBytes(l.bytes)}`;
+						}
+						const age = edgeAgeMs(l);
+						if (age !== null) {
+							tip += `<br/>${escapeHtml(m['topology.Last Seen']())}: ${formatAge(age)}`;
+							if (isStaleEdge(l)) tip += ` <span style="opacity:0.7">(${escapeHtml(m['topology.Edge Stale']())})</span>`;
 						}
 						return tip;
 					}
@@ -438,6 +461,23 @@
 			const gn = ev.data.value as GraphNode | undefined;
 			if (gn && gn.value && gn.value.id) goto('/devices/detail/' + gn.value.id);
 		}
+	}
+
+	// Offline endpoint check for the link panel (#585).
+	function endpointOffline(l: GraphLink): boolean {
+		if (!graph) return false;
+		const src = graph.nodes.find((n) => n.id === l.source);
+		if (src?.status === 'offline') return true;
+		if (l.isUnidentified) return false;
+		const dst = graph.nodes.find((n) => n.id === l.target);
+		return dst?.status === 'offline';
+	}
+
+	// Age rendering for edges (#585): minutes under an hour, hours above.
+	function formatAge(ms: number): string {
+		const minutes = Math.floor(ms / 60000);
+		if (minutes < 60) return m['topology.Minutes Ago']({ n: minutes });
+		return m['topology.Hours Ago']({ n: Math.floor(minutes / 60) });
 	}
 
 	// Why a port is missing (#583): protocol-aware explanation shown in the
@@ -643,6 +683,15 @@
 							<p class="text-xs text-muted mt-2 border-t border-border pt-2">
 								{portHint(selectedEdge)}
 							</p>
+						{/if}
+						{#if selectedEdge.lastSeen}
+							<div>
+								<dt class="text-muted">{m['topology.Last Seen']()}</dt>
+								<dd>{formatAge(edgeAgeMs(selectedEdge) ?? 0)}{#if isStaleEdge(selectedEdge)} <span class="text-warning">({m['topology.Edge Stale']()})</span>{/if}</dd>
+							</div>
+						{/if}
+						{#if endpointOffline(selectedEdge)}
+							<p class="text-xs text-warning mt-2">{m['topology.Edge Offline Endpoint']()}</p>
 						{/if}
 						{#if selectedEdge.isCrossLink}
 							<p class="text-xs text-accent-purple mt-2">↻ {m['topology.Cross Link']()}</p>

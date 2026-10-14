@@ -1833,9 +1833,12 @@ type TLSPortCerts struct {
 // TopologyEdge defines model for TopologyEdge.
 type TopologyEdge struct {
 	// Bytes speaks-with edges only - observed byte total
-	Bytes        *int64  `json:"bytes,omitempty"`
-	FromDeviceId int64   `json:"from_device_id"`
-	LocalPort    *string `json:"local_port"`
+	Bytes        *int64 `json:"bytes,omitempty"`
+	FromDeviceId int64  `json:"from_device_id"`
+
+	// LastSeen When the adjacency was last re-observed (#585); empty = age unknown. Drives ghost-edge fading.
+	LastSeen  *time.Time `json:"last_seen,omitempty"`
+	LocalPort *string    `json:"local_port"`
 
 	// Metadata route-table edge context (#528) - dest_subnet, next_hop, route_proto; null for neighbor-derived edges
 	Metadata *map[string]interface{} `json:"metadata,omitempty"`

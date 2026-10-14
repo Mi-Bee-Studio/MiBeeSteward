@@ -70,6 +70,9 @@ export interface GraphLink {
 	isUnidentified: boolean;
 	/** speaks-with edges (#500): observed byte total (both directions). */
 	bytes?: number | null;
+	/** When the adjacency was last re-observed (#585), RFC3339; null/empty =
+	 *  age unknown (treated as fresh, never faded). Drives ghost-edge fading. */
+	lastSeen?: string | null;
 }
 
 export interface GraphBuildResult {
@@ -122,6 +125,35 @@ export function edgeTypeCounts(links: GraphLink[]): Array<{ protocol: string; co
 				(PROTOCOL_ORDER.indexOf(a.protocol) + 1 || PROTOCOL_ORDER.length + a.protocol.charCodeAt(0)) -
 				(PROTOCOL_ORDER.indexOf(b.protocol) + 1 || PROTOCOL_ORDER.length + b.protocol.charCodeAt(0))
 		);
+}
+
+/**
+ * Edge freshness thresholds (#585): how long an adjacency may go unobserved
+ * before the graph treats it as a ghost. Generic edges use 10 minutes (a
+ * generous 2× a typical scan cycle); WiFi associations fade at half that —
+ * associations are far more volatile than wiring facts and a departed client
+ * simply stops refreshing the edge (#539 left the data side correct; this is
+ * the UI half).
+ */
+export const STALE_EDGE_MS = 10 * 60 * 1000;
+export const WIFI_STALE_MS = 5 * 60 * 1000;
+
+/** Age of an edge in ms, or null when unknown (no/invalid lastSeen). */
+export function edgeAgeMs(l: Pick<GraphLink, 'protocol' | 'lastSeen'>, now = Date.now()): number | null {
+	if (!l.lastSeen) return null;
+	const t = Date.parse(l.lastSeen);
+	if (Number.isNaN(t)) return null;
+	return Math.max(0, now - t);
+}
+
+/** Staleness verdict for an edge (#585): past its protocol's threshold. */
+export function isStaleEdge(
+	l: Pick<GraphLink, 'protocol' | 'lastSeen'>,
+	now = Date.now()
+): boolean {
+	const age = edgeAgeMs(l, now);
+	if (age === null) return false;
+	return age > (l.protocol === 'WiFi' ? WIFI_STALE_MS : STALE_EDGE_MS);
 }
 
 /** Endpoint types that live at the network edge (leaves). */
@@ -402,7 +434,8 @@ export function buildGraph(graph: TopologyGraph): GraphBuildResult {
 			remotePort: edge.remote_port,
 			isCrossLink: to !== null && crossLinkSet.has(`${from}>${to}`),
 			isUnidentified,
-			bytes: edge.bytes ?? null
+			bytes: edge.bytes ?? null,
+			lastSeen: edge.last_seen ?? null
 		});
 	}
 
