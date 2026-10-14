@@ -1199,7 +1199,14 @@
 		"Interfaces IP": "地址",
 		"Bridges Segments": "跨网段桥接",
 		"Bridge Count": "{n} 台桥接多网段",
-		"Bridge Count Desc": "同时活跃在多个网段的设备（多归属在场事实）——跨网段链接点，图上以蓝色描边标出。"
+		"Bridge Count Desc": "同时活跃在多个网段的设备（多归属在场事实）——跨网段链接点，图上以蓝色描边标出。",
+		"Port Hint ARP": "ARP 关联由网关 ARP 表推断，不含端口信息。",
+		"Port Hint Traffic": "流量观测展示的是谁与谁通信，不含端口信息。",
+		"Port Hint Lldp": "设备未上报该邻居的端口信息。",
+		"Port Hint Snmp": "端口信息来自 SNMP 采集——为网管交换机绑定凭据后可采集。",
+		"Weak Evidence": "弱证据",
+		"Weak Evidence Desc": "由观测推断，非接线事实：仅作佐证关系。",
+		"Edge Types": "边类型"
 	},
 	"certificates": {
 		"Title": "TLS 证书",
