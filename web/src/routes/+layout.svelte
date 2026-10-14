@@ -178,15 +178,12 @@
 			// Don't intercept when typing in inputs
 			if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
 
-			if (e.key === 'Escape') {
-				// Close any open modal
-				const backdrop = document.querySelector('.modal-backdrop');
-				if (backdrop) {
-					const closeBtn = backdrop.querySelector('.modal-close') as HTMLButtonElement | null;
-					closeBtn?.click();
-				}
-				return;
-			}
+			// Escape is owned by the open Modal itself (#582): it registers a
+			// document-capture listener while open, covering every focus and
+			// dispatch shape. The old branch here (querySelector a backdrop and
+			// click its X) only patched the focus-outside case and could never
+			// see non-bubbling synthetic keydowns — both halves now live in the
+			// component with the closable/confirmDiscard guards intact.
 
 			if (e.key === '/') {
 				e.preventDefault();

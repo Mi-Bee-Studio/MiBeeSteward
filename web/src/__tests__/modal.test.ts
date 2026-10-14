@@ -8,7 +8,7 @@
  * the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import ModalHost from './modal-host.svelte';
@@ -58,6 +58,60 @@ describe('Modal close paths (#567)', () => {
 		render(ModalHost, { closable: false });
 
 		await fireEvent.click(document.querySelector('.modal-close')!);
+		await tick();
+
+		expect(document.querySelector('.modal-backdrop')).toBeTruthy();
+	});
+});
+
+// #582: Escape must close the modal in EVERY dispatch shape. The old code
+// only handled keydowns that bubbled up to the backdrop (Svelte-delegated),
+// so (a) non-bubbling synthetic KeyboardEvents — the JS default, common in
+// automation and key injection — never reached any handler, and (b) with
+// focus outside the modal the event never traversed the backdrop at all
+// (the app layout carried a querySelector-click-X workaround for that
+// half). The modal now owns Escape via a document-CAPTURE listener while
+// open: capture sees the key regardless of target, focus, or bubbles.
+describe('Modal Escape ownership (#582)', () => {
+	it('closes on a NON-bubbling Escape dispatched inside the modal (the reported case)', async () => {
+		render(ModalHost);
+
+		const x = document.querySelector('.modal-close')!;
+		// KeyboardEvent defaults: bubbles = false. Only a capture-phase
+		// listener can observe this.
+		x.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		await tick();
+
+		expect(document.querySelector('.modal-backdrop')).toBeNull();
+	});
+
+	it('closes on a bubbling Escape while focus (and target) is outside the modal', async () => {
+		render(ModalHost);
+
+		document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+		await tick();
+
+		expect(document.querySelector('.modal-backdrop')).toBeNull();
+	});
+
+	it('fires onClose exactly once per Escape (no double close via the backdrop path)', async () => {
+		const onClose = vi.fn();
+		render(ModalHost, { onClose });
+
+		const x = document.querySelector('.modal-close')!;
+		// Bubbling from inside: both the capture owner and the backdrop's
+		// delegated handler COULD see it — the owner must claim the event.
+		x.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+		await tick();
+
+		expect(onClose).toHaveBeenCalledTimes(1);
+		expect(document.querySelector('.modal-backdrop')).toBeNull();
+	});
+
+	it('keeps the modal open on Escape while closable=false (async confirm in flight)', async () => {
+		render(ModalHost, { closable: false });
+
+		document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 		await tick();
 
 		expect(document.querySelector('.modal-backdrop')).toBeTruthy();
