@@ -14,10 +14,10 @@
 <script lang="ts">
 	import Modal from '$lib/components/Modal.svelte';
 
-	let { closable = true }: { closable?: boolean } = $props();
+	let { closable = true, onClose }: { closable?: boolean; onClose?: () => void } = $props();
 	let open = $state(true);
 </script>
 
-<Modal bind:open title="Host modal" maxWidth="20rem" {closable}>
+<Modal bind:open title="Host modal" maxWidth="20rem" {closable} {onClose}>
 	<p class="host-body">host body</p>
 </Modal>
