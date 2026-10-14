@@ -274,3 +274,33 @@ func TestCleanupReservedAddressDevices(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, removed)
 }
+
+// TestReconcile_ParkedRowsNotMismatches pins the 2026-10-14 follow-up to the
+// randomized-MAC parking guard: parked holders carry the '#park:<id>' sentinel
+// as their ip_address — NOT '' — so the reconcile mismatch scan counted them
+// as out-of-network drift every pass (a field rig logged the WARN ~7×/day
+// with parked rows as every sample IP). A parked row has no IP claim at all;
+// it must be excluded exactly like the empty-string rows.
+func TestReconcile_ParkedRowsNotMismatches(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	defer dbConn.Close()
+
+	net62 := addNetwork(t, dbConn, "lan-62", "192.168.2.0/24")
+	addDevice(t, dbConn, "192.168.2.5", net62)  // in network: OK
+	addDevice(t, dbConn, "192.168.1.20", net62) // OUT of network: mismatch
+	// Parked holder: sentinel ip, still attributed to this network.
+	res, err := dbConn.ExecContext(context.Background(),
+		`INSERT INTO devices (name, type, ip_address, network_id, tags, user_attributes)
+		 VALUES ('parked-holder', 'iot', '#park:42', ?, '{}', '{}')`, net62)
+	require.NoError(t, err)
+	parked, _ := res.LastInsertId()
+
+	svc := New(dbConn, 0, nil, nil)
+	mismatches, err := svc.Reconcile(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, mismatches, 1, "the parked row must not count as drift")
+	require.Equal(t, "192.168.1.20", mismatches[0].IP)
+	_ = parked
+}
