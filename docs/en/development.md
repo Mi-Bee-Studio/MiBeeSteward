@@ -33,6 +33,18 @@ make build-all              # Cross-compile (linux amd64 + arm64)
 make build-linux-arm64      # arm64 only
 ```
 
+### Runtime is Linux-only — never run the server on a Windows dev machine
+
+The center and agent ship as Linux binaries (amd64/arm64/ARMv7). On a Windows
+dev machine, do the build/test work only (cross-compile via the
+`make build-linux-*` targets, `go test`, `npm test`, lint) and never run the
+server/agent locally — not as a service, not as a demo instance, not via
+`scripts/e2e.sh` (run that on a Linux host or in CI). Run-level verification
+(deploy, functional, API, browser UI) belongs on a Linux test host: build the
+linux binary, deploy it there, verify against that instance. On a Windows
+machine, drive the frontend dev server with its proxy pointed at a
+Linux-hosted backend.
+
 ## Project Structure
 
 ```mermaid

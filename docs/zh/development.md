@@ -33,6 +33,15 @@ make build-all              # 交叉编译（linux amd64 + arm64）
 make build-linux-arm64      # 仅 arm64
 ```
 
+### 运行时只面向 Linux——禁止在 Windows 开发机上运行服务
+
+center 与 agent 只发布 Linux 二进制（amd64/arm64/ARMv7）。Windows 开发机上只做
+构建与测试类工作（`make build-linux-*` 交叉编译、`go test`、`npm test`、lint），
+**绝不本地运行 server/agent**——不以服务形式、不开 demo 实例、也不跑
+`scripts/e2e.sh`（后者放到 Linux 主机或 CI 上执行）。运行级验证（部署、功能、
+API、浏览器 UI）一律在 Linux 测试主机上做：构建 linux 二进制、部署上去、对着
+真实实例验证。Windows 机器上做前端开发时，dev server 的代理指向 Linux 侧后端。
+
 ## 项目结构
 
 ```mermaid
