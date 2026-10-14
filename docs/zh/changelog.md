@@ -94,6 +94,8 @@
 - **多台随机 MAC 持有者的停放不再失败**：随机 MAC 守卫通过把槽位持有者的 IP 清空为 `''` 来停放——但 `(ip_address, network_id)` 唯一索引下每个网络只允许一个空 IP 行，同网络的第二次及以后的停放撞约束，停放失败后随机客户端在争议 IP 的建行也失败，且每轮扫描重试（实地四个持有者 ≈340 WARN/天）。现在每台持有者停放到按行的 `#park:<id>` 哨兵——构造上唯一、不匹配任何按 IP 的查询、按 MAC 重解析语义不变。
 - **孤儿心跳配置回收**：主库不开 SQLite `foreign_keys`，`heartbeat_configs` 的 ON DELETE CASCADE 从不生效——删除设备行（静默设备清扫、reconcile ghost 清理）后心跳配置残留，仍启用的配置对一个已消失的 IP 永久探测（实地两个孤儿贡献了上述 ~2300 ERROR/天的大头）。保留维护清扫现在回收 `device_id` 已无主的可配置，分批执行。
 - **HTTP/ICMP 探测失败全面接入 #271 连败分级日志**：周期探测降噪器（首败 WARN、后续采样 DEBUG）此前只接了 http 建请求与 icmp 运行分支——http 的 `client.Do` 失败与 icmp 的 `NewPinger` 失败两处仍直打 `slog.Error`。实地一台 center 有五个半死 IoT http 服务，恰恰经由这两条分支刷出 **~2300 ERROR/天**；两处均已改走 `logProbeFailure`。
+- **Recog 语料刷新（2548 → 2550）**：上游在 2026-10-10 导入后新增两条 SNMP sysDescr 指纹。经 `fpimport recog` 重导；零删除。
+- **停放的随机 MAC 持有者不再被 reconcile 计为漂移**：随机 MAC 守卫把槽位持有者停放到 `#park:<id>` 哨兵 IP——不是空串——网络 reconcile 的 mismatch 扫描因此每轮都把停放行标记为网外漂移（实地一台 rig 每天刷 ~7 次 WARN，样本 IP 全是停放行）。扫描现在像排除空串一样排除哨兵：停放行根本不持有 IP 主张。
 - **GL.iNet 路由器主机名点亮随机 MAC 设备（2026-10-13 实地批次）**：GL.iNet 固件默认设备名为 `GL-MT<型号>`（`GL-MT2500` = Opal）——随机 MAC 的设备没有 OUI 可用，主机名是唯一厂商信号。新规则 `iot-host-glinet-mt` 提取品牌 GL.iNet + MT 型号词元。
 - **`SDK` 加入网页服务垃圾品牌黑名单（2026-10-12 实地批次）**：fnOS（及其他 NAS/网页 SDK 前端）发送字面 `Server: SDK` 头——一台 fnOS 盒子的品牌在两轮扫描间退化成 "SDK"，与当年 nginx/Portable 的路径一模一样。折叠守卫跳过它、垃圾品牌治愈可清除它，与既有条目同族。
 - **TP-Link TL-XDR 路由器型号提取（2026-10-11 实地批次）**：TP-Link 国行路由器自命名 `TL-XDR<型号><营销后缀>`（`TL-XDR3040易展版`——后缀为 CJK 且随 SKU 变化）。品牌已由 OUI 给出；新规则 `iot-host-tplink-xdr` 提取 XDR 型号词元并容忍 CJK 尾部（顺手关闭挂了很久的 "TL-XDR3040易展版 当作 brand" 归一化观察项：营销尾词不再进入身份）。
