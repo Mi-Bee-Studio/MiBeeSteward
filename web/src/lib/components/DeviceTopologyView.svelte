@@ -666,6 +666,27 @@
 			description={m['topology.No Edges Desc']()}
 		/>
 	{:else}
+		<!-- Enrichment guidance (#584): the default deployment shape renders an
+		     ARP star at best; these hints name the unlit data sources and link
+		     straight to the settings page where each is enabled. -->
+		{#if enrichHints.length > 0}
+			<div class="flex flex-wrap items-center gap-2 text-xs">
+				<span class="text-muted font-medium">{m['topology.Enrich Hints Title']()}:</span>
+				{#each enrichHints as family (family)}
+					<a
+						href="/settings"
+						class="px-2 py-1 rounded-full border border-primary/40 text-primary hover:bg-primary/10 transition-colors inline-flex items-center gap-1"
+					>
+						<Settings2 class="w-3 h-3" aria-hidden="true" />
+						{family === 'wifi'
+							? m['topology.Hint Wifi']()
+							: family === 'traffic'
+								? m['topology.Hint Traffic']()
+								: m['topology.Hint Snmp']()}
+					</a>
+				{/each}
+			</div>
+		{/if}
 		<div class="flex gap-3 flex-1 min-h-[500px]">
 			<!-- Graph canvas (fills available space; detail panel overlays on the right) -->
 			<div class="bg-surface border border-border rounded-lg p-2 flex-1 min-w-0">
