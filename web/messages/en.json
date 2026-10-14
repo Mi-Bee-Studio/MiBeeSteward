@@ -1199,7 +1199,14 @@
 		"Interfaces IP": "Address",
 		"Bridges Segments": "bridges segments",
 		"Bridge Count": "{n} bridging multiple segments",
-		"Bridge Count Desc": "Devices present in more than one network (multi-homed presence facts) - the cross-segment link points. Blue ring on the graph."
+		"Bridge Count Desc": "Devices present in more than one network (multi-homed presence facts) - the cross-segment link points. Blue ring on the graph.",
+		"Port Hint ARP": "ARP edges are inferred from the gateway's ARP table — they carry no port information.",
+		"Port Hint Traffic": "Traffic observations show who talks to whom, not over which port.",
+		"Port Hint Lldp": "The device did not report a port for this neighbor.",
+		"Port Hint Snmp": "Ports come from SNMP walks — bind credentials for the managed switch to collect them.",
+		"Weak Evidence": "Weak evidence",
+		"Weak Evidence Desc": "Inferred from observation, not a wiring fact: corroborating relation only.",
+		"Edge Types": "Edges"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",

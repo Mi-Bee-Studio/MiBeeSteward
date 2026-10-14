@@ -50,6 +50,8 @@
 		LAYER_ORDER,
 		isSegmentBridge,
 		formatPresence,
+		edgeTypeCounts,
+		WEAK_PROTOCOLS,
 		type GraphNode,
 		type GraphLink,
 		type TopoLayer
@@ -70,6 +72,15 @@
 	// one clears the other so only one panel shows at a time).
 	let selectedNode = $state<GraphNode | null>(null);
 	let selectedEdge = $state<GraphLink | null>(null);
+	// Per-protocol edge visibility (#583): the edge-type legend doubles as a
+	// filter, mirroring the layer pills above. Absent protocol = visible (the
+	// map only stores explicit hides, so new protocols default to shown).
+	let hiddenProtocols = $state<Record<string, boolean>>({});
+
+	function toggleProtocol(protocol: string) {
+		hiddenProtocols = { ...hiddenProtocols, [protocol]: !hiddenProtocols[protocol] };
+	}
+
 	// Per-layer visibility (the legend doubles as a filter toggle). All on by default.
 	let layerVisible = $state<Record<TopoLayer, boolean>>({
 		root: true,
@@ -205,8 +216,17 @@
 		return labels[layer];
 	}
 
-	// The ECharts option. Rebuilt whenever graph/search/layer-filter change.
-	let graphOption = $derived<EChartsOption | null>(buildOption(graph, searchQuery, layerVisible));
+	// Edge types actually present in the graph (#583) — the legend lists only
+	// these, with per-type counts.
+	let edgeStats = $derived.by(() => {
+		if (!graph) return [];
+		return edgeTypeCounts(buildGraph(graph).links);
+	});
+
+	// The ECharts option. Rebuilt whenever graph/search/layer/edge-type filters change.
+	let graphOption = $derived<EChartsOption | null>(
+		buildOption(graph, searchQuery, layerVisible, hiddenProtocols)
+	);
 
 	// Cross-segment bridge count (#556): nodes present in more than one
 	// segment — the link points joining the LAN clusters. Zero on a
@@ -219,7 +239,8 @@
 	function buildOption(
 		g: TopologyGraph | null,
 		search: string,
-		lvis: Record<TopoLayer, boolean>
+		lvis: Record<TopoLayer, boolean>,
+		hiddenProto: Record<string, boolean>
 	): EChartsOption | null {
 		if (!g || g.nodes.length === 0) return null;
 		const built = buildGraph(g);
@@ -305,9 +326,15 @@
 
 		const echartsLinks = built.links
 			.filter((l) => visibleNodeIds.has(l.source) && (l.isUnidentified || visibleNodeIds.has(l.target)))
+			// Edge-type filter (#583): the legend pills toggle whole protocols.
+			.filter((l) => !hiddenProto[l.protocol])
 			.map((l) => {
 				const style = protocolStyle(l.protocol);
 				const dimmed = search && !highlightedIds.has(l.source) && !highlightedIds.has(l.target);
+				// Weak-evidence hierarchy (#583): ARP/speaks-with render fainter
+				// than hard wiring facts even at full visibility, so users read
+				// inference as inference.
+				const baseOpacity = WEAK_PROTOCOLS.has(l.protocol) ? 0.4 : 0.8;
 				return {
 					source: String(l.source),
 					target: String(l.target),
@@ -316,7 +343,7 @@
 						color: cssVar(style.color[0], style.color[1]),
 						width: l.isCrossLink ? style.width + 0.5 : style.width,
 						type: l.isUnidentified ? 'dashed' : style.type,
-						opacity: dimmed ? 0.1 : l.isCrossLink ? 0.5 : 0.8,
+						opacity: dimmed ? 0.1 : l.isCrossLink ? 0.5 : baseOpacity,
 						curveness: l.isCrossLink ? 0.3 : 0.1
 					},
 					emphasis: { lineStyle: { width: 3 } }
@@ -413,6 +440,15 @@
 		}
 	}
 
+	// Why a port is missing (#583): protocol-aware explanation shown in the
+	// link panel whenever an end shows a bare dash.
+	function portHint(l: GraphLink): string {
+		if (l.protocol === 'ARP') return m['topology.Port Hint ARP']();
+		if (l.protocol === 'speaks-with') return m['topology.Port Hint Traffic']();
+		if (l.protocol === 'LLDP' || l.protocol === 'CDP') return m['topology.Port Hint Lldp']();
+		return m['topology.Port Hint Snmp']();
+	}
+
 	// Resolve a link's endpoint device names for the detail panel (nicer than
 	// showing bare ids).
 	function nodeNameById(id: number): string {
@@ -463,6 +499,37 @@
 			onclick={() => fetchTopology()}
 			class="btn btn-secondary text-sm"
 		>{m['dashboard.Refresh']()}</button>
+
+		<!-- Edge-type legend (#583): style + name + count for every protocol
+		     actually present on the canvas; click toggles the whole type
+		     (same interaction as the layer pills). Weak-evidence types
+		     (ARP / speaks-with) carry the fainter line + a tooltip flag. -->
+		{#if edgeStats.length > 0}
+			<div class="flex items-center gap-1 text-xs flex-wrap w-full" aria-label={m['topology.Edge Types']()}>
+				{#each edgeStats as stat (stat.protocol)}
+					{@const style = protocolStyle(stat.protocol)}
+					{@const weak = WEAK_PROTOCOLS.has(stat.protocol)}
+					<button
+						onclick={() => toggleProtocol(stat.protocol)}
+						aria-pressed={!hiddenProtocols[stat.protocol]}
+						class="px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1.5 {hiddenProtocols[stat.protocol]
+							? 'border-border bg-surface opacity-40'
+							: 'border-border-strong bg-surface-strong'}"
+						title={weak ? m['topology.Weak Evidence Desc']() : stat.protocol}
+					>
+						<span
+							class="inline-block w-4 border-t-2 mr-0.5 align-middle"
+							style="border-color: {cssVar(style.color[0], style.color[1])}; border-top-style: {style.type}"
+						></span>
+						{stat.protocol}
+						{#if weak}
+							<span class="text-[10px] text-muted">({m['topology.Weak Evidence']()})</span>
+						{/if}
+						<span class="text-muted font-mono">×{stat.count}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
 	</div>
 
 	{#if loading}
@@ -568,6 +635,15 @@
 							<dt class="text-muted">{m['topology.Remote Port']()}</dt>
 							<dd class="font-mono">{selectedEdge.remotePort || '—'}</dd>
 						</div>
+						{#if !selectedEdge.localPort || !selectedEdge.remotePort}
+							<!-- #583: a bare dash where the graph's most valuable
+							     troubleshooting fact should be needs a way out, not a
+							     dead end. Explain WHY the port is missing and what
+							     would fill it. -->
+							<p class="text-xs text-muted mt-2 border-t border-border pt-2">
+								{portHint(selectedEdge)}
+							</p>
+						{/if}
 						{#if selectedEdge.isCrossLink}
 							<p class="text-xs text-accent-purple mt-2">↻ {m['topology.Cross Link']()}</p>
 						{/if}

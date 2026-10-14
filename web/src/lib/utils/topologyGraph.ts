@@ -81,6 +81,49 @@ export interface GraphBuildResult {
 	rootId: number | null;
 }
 
+/**
+ * Weak-evidence protocols (#583): relations inferred from observation rather
+ * than reported wiring — ARP is "same subnet per the gateway's table",
+ * speaks-with is "these two talked". They render fainter than hard L2 facts
+ * and the legend labels them, so users stop reading inference as cabling.
+ */
+export const WEAK_PROTOCOLS = new Set(['ARP', 'speaks-with']);
+
+/**
+ * Display order for edge types in the legend (#583): hard wiring facts first,
+ * inferred/corroborating relations last.
+ */
+export const PROTOCOL_ORDER = [
+	'LLDP',
+	'CDP',
+	'Bridge-MIB',
+	'Q-BRIDGE-MIB',
+	'STP',
+	'WiFi',
+	'route-table',
+	'ARP',
+	'speaks-with'
+];
+
+/**
+ * edgeTypeCounts (#583): per-protocol edge totals for the current graph,
+ * ordered by PROTOCOL_ORDER (unknown protocols sort last, alphabetically).
+ * The legend lists only what actually appears on the canvas.
+ */
+export function edgeTypeCounts(links: GraphLink[]): Array<{ protocol: string; count: number }> {
+	const counts = new Map<string, number>();
+	for (const l of links) {
+		counts.set(l.protocol, (counts.get(l.protocol) ?? 0) + 1);
+	}
+	return [...counts.entries()]
+		.map(([protocol, count]) => ({ protocol, count }))
+		.sort(
+			(a, b) =>
+				(PROTOCOL_ORDER.indexOf(a.protocol) + 1 || PROTOCOL_ORDER.length + a.protocol.charCodeAt(0)) -
+				(PROTOCOL_ORDER.indexOf(b.protocol) + 1 || PROTOCOL_ORDER.length + b.protocol.charCodeAt(0))
+		);
+}
+
 /** Endpoint types that live at the network edge (leaves). */
 const ENDPOINT_TYPES = new Set([
 	'pc',
