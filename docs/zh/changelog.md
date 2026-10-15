@@ -94,6 +94,7 @@
 - **多台随机 MAC 持有者的停放不再失败**：随机 MAC 守卫通过把槽位持有者的 IP 清空为 `''` 来停放——但 `(ip_address, network_id)` 唯一索引下每个网络只允许一个空 IP 行，同网络的第二次及以后的停放撞约束，停放失败后随机客户端在争议 IP 的建行也失败，且每轮扫描重试（实地四个持有者 ≈340 WARN/天）。现在每台持有者停放到按行的 `#park:<id>` 哨兵——构造上唯一、不匹配任何按 IP 的查询、按 MAC 重解析语义不变。
 - **孤儿心跳配置回收**：主库不开 SQLite `foreign_keys`，`heartbeat_configs` 的 ON DELETE CASCADE 从不生效——删除设备行（静默设备清扫、reconcile ghost 清理）后心跳配置残留，仍启用的配置对一个已消失的 IP 永久探测（实地两个孤儿贡献了上述 ~2300 ERROR/天的大头）。保留维护清扫现在回收 `device_id` 已无主的可配置，分批执行。
 - **HTTP/ICMP 探测失败全面接入 #271 连败分级日志**：周期探测降噪器（首败 WARN、后续采样 DEBUG）此前只接了 http 建请求与 icmp 运行分支——http 的 `client.Do` 失败与 icmp 的 `NewPinger` 失败两处仍直打 `slog.Error`。实地一台 center 有五个半死 IoT http 服务，恰恰经由这两条分支刷出 **~2300 ERROR/天**；两处均已改走 `logProbeFailure`。
+- **乱码主机名不再进入设备记录（2026-10-15 实地批次）**：探针名字解码器（NBNS/mDNS）对不规范应答可能产出乱码，实地一台设备展示了二进制垃圾主机名（无效 UTF-8 + 控制字符）并泄入 scan_attributes。主机事实折叠的两个主机名入口（rDNS/NBNS/mDNS 证据与 TLS-CN 回退）现在都过 `plausibleHostname` 闸门——合法非 ASCII 名（CJK 营销后缀）照常通过。
 - **Recog 语料刷新（2548 → 2550）**：上游在 2026-10-10 导入后新增两条 SNMP sysDescr 指纹。经 `fpimport recog` 重导；零删除。
 - **停放的随机 MAC 持有者不再被 reconcile 计为漂移**：随机 MAC 守卫把槽位持有者停放到 `#park:<id>` 哨兵 IP——不是空串——网络 reconcile 的 mismatch 扫描因此每轮都把停放行标记为网外漂移（实地一台 rig 每天刷 ~7 次 WARN，样本 IP 全是停放行）。扫描现在像排除空串一样排除哨兵：停放行根本不持有 IP 主张。
 - **GL.iNet 路由器主机名点亮随机 MAC 设备（2026-10-13 实地批次）**：GL.iNet 固件默认设备名为 `GL-MT<型号>`（`GL-MT2500` = Opal）——随机 MAC 的设备没有 OUI 可用，主机名是唯一厂商信号。新规则 `iot-host-glinet-mt` 提取品牌 GL.iNet + MT 型号词元。

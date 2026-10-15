@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // HostReport is the aggregated result of scanning one IP through the pipeline.
@@ -275,6 +277,24 @@ func closedPortsFromEvidence(ev []Evidence) []int {
 // stripWildcardPrefix removes a leading "*." from a TLS cert CN so it reads as
 // a hostname ("*.hikvision.com" → "hikvision.com"). CNs without a wildcard are
 // returned unchanged.
+// plausibleHostname gates the names that may become node_hostname: valid
+// UTF-8 with no control runes. Probe parsers (NBNS/mDNS name decoders) can
+// emit mojibake for non-conforming responders, and a binary-garbage hostname
+// both displays as junk and leaks into scan_attributes (field-found
+// 2026-10-15). Legitimate non-ASCII names (CJK marketing suffixes like
+// TL-XDR3040易展版) pass — only undecodable/control runes fail.
+func plausibleHostname(s string) bool {
+	if s == "" || !utf8.ValidString(s) {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
 func stripWildcardPrefix(cn string) string {
 	if len(cn) >= 2 && cn[0] == '*' && cn[1] == '.' {
 		return cn[2:]
@@ -591,14 +611,14 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 				report.Device.Fields["oui_vendor"] = v
 			}
 		case "hostname":
-			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" {
+			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" && plausibleHostname(v) {
 				report.Device.Fields["node_hostname"] = v
 			}
 		case "tls":
 			// TLS cert CN/SAN often carry the device's hostname or vendor
 			// domain (e.g. "*.hikvision.com"). Prefer an explicit rDNS/mDNS
 			// hostname, but fall back to a cert CN when nothing else is set.
-			if v := e.RawData["subject_cn"]; v != "" && report.Device.Fields["node_hostname"] == "" {
+			if v := e.RawData["subject_cn"]; v != "" && report.Device.Fields["node_hostname"] == "" && plausibleHostname(v) {
 				report.Device.Fields["node_hostname"] = stripWildcardPrefix(v)
 			}
 			// Derive brand from the cert CN. TLS cert vendor (OpenWrt, GL.iNet,
