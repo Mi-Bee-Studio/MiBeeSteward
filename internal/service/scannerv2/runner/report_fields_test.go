@@ -45,14 +45,14 @@ func TestReportJSONFields(t *testing.T) {
 			{Service: "ssh", Port: 22, Confidence: 1.0},
 		},
 	}
-	ports, services, snmp := reportJSONFields(rep)
+	ports, services, snmp := ReportJSONFields(rep)
 	require.JSONEq(t, `[22,80]`, ports)
 	require.Contains(t, services, `"http/80"`)
 	require.Contains(t, services, `"ssh/22"`)
 	require.Equal(t, "{}", snmp, "no SNMP evidence → empty object")
 
 	// Bare report keeps the defaults.
-	p2, s2, n2 := reportJSONFields(scannerv2.HostReport{})
+	p2, s2, n2 := ReportJSONFields(scannerv2.HostReport{})
 	require.Equal(t, "[]", p2)
 	require.Equal(t, "{}", s2)
 	require.Equal(t, "{}", n2)
@@ -60,7 +60,7 @@ func TestReportJSONFields(t *testing.T) {
 
 func TestReportPromFields(t *testing.T) {
 	// No fields → all empty.
-	_, ne, data := reportPromFields(scannerv2.HostReport{})
+	_, ne, data := ReportPromFields(scannerv2.HostReport{})
 	require.Empty(t, ne)
 	require.Empty(t, data)
 
@@ -68,7 +68,7 @@ func TestReportPromFields(t *testing.T) {
 	rep := scannerv2.HostReport{Device: scannerv2.DeviceRef{Fields: map[string]string{
 		"prometheus_url": "http://10.0.0.1:9090/metrics",
 	}}}
-	prom, ne, data := reportPromFields(rep)
+	prom, ne, data := ReportPromFields(rep)
 	require.Equal(t, "http://10.0.0.1:9090/metrics", prom)
 	require.Empty(t, ne)
 	require.Empty(t, data, "no NE URL → no NE data record")
@@ -77,7 +77,7 @@ func TestReportPromFields(t *testing.T) {
 	rep.Device.Fields["node_exporter_url"] = "http://10.0.0.1:9100/metrics"
 	rep.Device.Fields["kernel_version"] = "6.1.0"
 	rep.Device.Fields["cpu_count"] = "4"
-	_, ne, data = reportPromFields(rep)
+	_, ne, data = ReportPromFields(rep)
 	require.Equal(t, "http://10.0.0.1:9100/metrics", ne)
 	require.Contains(t, data, `"metrics_url":"http://10.0.0.1:9100/metrics"`)
 	require.Contains(t, data, `"kernel_version":"6.1.0"`)

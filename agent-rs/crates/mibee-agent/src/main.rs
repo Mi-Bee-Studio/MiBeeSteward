@@ -668,6 +668,10 @@ async fn run_scan(
         }
     }
     if !alive_hosts.is_empty() {
+        // ARP-star neighbors (see engine/arp_star.rs): the agent's own ARP
+        // table is the sole adjacency evidence on unmanaged networks, and the
+        // center can only see it if we ship it with the batch.
+        mibee_agent::engine::arp_star::inject_arp_star(&mut alive_hosts, network_cidr).await;
         reporter.report(alive_hosts).await;
     }
     log(format!(

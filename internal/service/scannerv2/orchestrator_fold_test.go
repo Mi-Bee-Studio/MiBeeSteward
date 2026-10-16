@@ -42,6 +42,19 @@ func TestOrchestrator_DispatchEvidenceFold(t *testing.T) {
 		t.Fatalf("hostname fold wrong: %v", rep.Device.Fields)
 	}
 
+	// Garbage hostnames never land: a mojibake name (invalid UTF-8 with a
+	// control byte, as a broken NBNS/mDNS parser can emit — field-found
+	// 2026-10-15: a rig device displayed a binary-garbage hostname) must be
+	// dropped, while a CJK marketing suffix (TL-XDR易展版) stays.
+	rep = run(Evidence{Kind: "hostname", RawData: map[string]string{"hostname": "L\x14ÿ.lan"}})
+	if _, ok := rep.Device.Fields["node_hostname"]; ok {
+		t.Fatalf("garbage hostname must be dropped, got %q", rep.Device.Fields["node_hostname"])
+	}
+	rep = run(Evidence{Kind: "hostname", RawData: map[string]string{"hostname": "TL-XDR3040易展版"}})
+	if rep.Device.Fields["node_hostname"] != "TL-XDR3040易展版" {
+		t.Fatalf("CJK hostname must survive the gate: %q", rep.Device.Fields["node_hostname"])
+	}
+
 	// TLS: wildcard CN fills hostname; cert brand overrides a generic
 	// web-server brand.
 	rep = run(

@@ -308,8 +308,12 @@ func (s *Service) checkNetwork(ctx context.Context, n netCache) ([]Mismatch, err
 	// Pull only ip + id for this network's devices. A network's device set is
 	// typically <1000; this is cheap and avoids the cross-join complexity of
 	// doing the membership check in SQL (SQLite has no native CIDR type).
+	// Parked holders ('#park:<id>' sentinels from the randomized-MAC guard)
+	// hold no IP claim at all — excluded like the empty-string rows, else
+	// reconcile counts them as drift every pass (field-found 2026-10-14).
 	rows, err := s.dbConn.QueryContext(ctx,
-		`SELECT id, ip_address FROM devices WHERE network_id = ? AND ip_address != ''`, n.id)
+		`SELECT id, ip_address FROM devices
+		 WHERE network_id = ? AND ip_address != '' AND ip_address NOT LIKE '#park:%'`, n.id)
 	if err != nil {
 		return nil, err
 	}

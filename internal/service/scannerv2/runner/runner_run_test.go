@@ -143,3 +143,92 @@ func TestRunner_Run_LoopbackEndToEnd(t *testing.T) {
 	require.Equal(t, 1, sinkCalls)
 	require.Equal(t, 1, sinkAlive)
 }
+
+// TestRunner_Run_TaskNetworkDrivesFinalize pins the multi-network fix
+// (2026-10-16): a scan task carries its own network_id, and the run's
+// per-device tagging + network-scoped finalize steps must follow the TASK's
+// network — not the wiring-time singleton resolved from config network.name.
+// Before the fix a center scanning several networks tagged every device with
+// the singleton (empty name → "default"), so ARP injection, edge derivation
+// and lost detection all ran against a network that holds nothing.
+func TestRunner_Run_TaskNetworkDrivesFinalize(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { dbConn.Close() })
+	q := sqldb.New(dbConn)
+	ctx := context.Background()
+
+	eng, err := engine.NewEngine(dbConn, engine.Config{
+		AllowReservedTargets: true,
+		PerProbeTimeout:      300 * time.Millisecond,
+		PerHostTimeout:       3 * time.Second,
+		MaxConcurrentHosts:   4,
+	}, nil)
+	require.NoError(t, err)
+
+	// The singleton runner identity is UNTAGGED (networkID 0 = the config-less
+	// center), while the task belongs to a concrete network.
+	rn := New(eng, q, dbConn, nil, 0, slog.New(slog.DiscardHandler))
+	rn.SetRepo(store.NewSQLiteRepository(dbConn, store.Options{}, nil))
+
+	net, err := q.CreateNetwork(ctx, sqldb.CreateNetworkParams{Name: "task-net"})
+	require.NoError(t, err)
+
+	res, err := dbConn.Exec(`INSERT INTO scan_tasks (name, targets, cron_expr, pipeline_config, timeout, concurrent_hosts, network_id, enabled)
+		VALUES ('task-net sweep', '127.0.0.1', '* * * * *', '{}', 10, 4, ?, 1)`, net.ID)
+	require.NoError(t, err)
+	taskID, err := res.LastInsertId()
+	require.NoError(t, err)
+
+	rn.Run(ctx, taskID, "127.0.0.1", 3*time.Second, 4, false, 0)
+
+	var devNet sql.NullInt64
+	require.NoError(t, dbConn.QueryRow(
+		`SELECT network_id FROM devices WHERE ip_address='127.0.0.1'`).Scan(&devNet))
+	require.True(t, devNet.Valid, "device must be tagged with the TASK's network, not left NULL")
+	require.Equal(t, net.ID, devNet.Int64)
+}
+
+// TestRunner_Run_UnboundTaskScopedByTargets pins the transplant-era shape the
+// rig exposed (2026-10-16): scan tasks created before per-task network
+// binding carry network_id NULL and only a target CIDR. The run must then
+// scope its finalize chain to the network whose cidr matches the target —
+// the singleton (config network.name, empty → "default") matched nothing and
+// every network-scoped step ran against an empty network.
+func TestRunner_Run_UnboundTaskScopedByTargets(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { dbConn.Close() })
+	q := sqldb.New(dbConn)
+	ctx := context.Background()
+
+	eng, err := engine.NewEngine(dbConn, engine.Config{
+		AllowReservedTargets: true,
+		PerProbeTimeout:      300 * time.Millisecond,
+		PerHostTimeout:       3 * time.Second,
+		MaxConcurrentHosts:   4,
+	}, nil)
+	require.NoError(t, err)
+
+	rn := New(eng, q, dbConn, nil, 0, slog.New(slog.DiscardHandler))
+	rn.SetRepo(store.NewSQLiteRepository(dbConn, store.Options{}, nil))
+
+	cidr := "127.0.0.0/8"
+	netRow, err := q.CreateNetwork(ctx, sqldb.CreateNetworkParams{Name: "target-net", Cidr: &cidr})
+	require.NoError(t, err)
+
+	// network_id deliberately NULL — the pre-binding task shape.
+	res, err := dbConn.Exec(`INSERT INTO scan_tasks (name, targets, cron_expr, pipeline_config, timeout, concurrent_hosts, enabled)
+		VALUES ('unbound sweep', '127.0.0.1', '* * * * *', '{}', 10, 4, 1)`)
+	require.NoError(t, err)
+	taskID, err := res.LastInsertId()
+	require.NoError(t, err)
+
+	rn.Run(ctx, taskID, "127.0.0.1", 3*time.Second, 4, false, 0)
+
+	var devNet sql.NullInt64
+	require.NoError(t, dbConn.QueryRow(
+		`SELECT network_id FROM devices WHERE ip_address='127.0.0.1'`).Scan(&devNet))
+	require.True(t, devNet.Valid, "unbound task must scope by its target CIDR, not the singleton")
+	require.Equal(t, netRow.ID, devNet.Int64)
+}

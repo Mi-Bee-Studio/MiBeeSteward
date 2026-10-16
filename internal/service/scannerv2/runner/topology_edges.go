@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// deriveTopologyEdges materializes device↔device edges into the topology_edges
+// DeriveTopologyEdges materializes device↔device edges into the topology_edges
 // table from the raw device_neighbors rows. device_neighbors stores every
 // observed adjacency as device→neighbor_mac (the remote end may be an
 // unidentified MAC); topology_edges promotes the subset where BOTH endpoints
@@ -29,6 +29,11 @@ import (
 // upsert, which also refreshes last_seen + raises confidence when a new
 // protocol corroborates an existing edge.
 //
+// Exported because agent-scanned networks never run the local Runner: the
+// agent-report ingest path calls it after applying a batch, so wire neighbors
+// (LLDP walks, agent ARP stars) materialize on agent networks too instead of
+// waiting for a local scan that never comes.
+//
 // Edge semantics by protocol:
 //   - LLDP / CDP / Bridge-MIB / Q-BRIDGE-MIB → edge_type "l2" (physical/logical
 //     port adjacency, the strongest signal, a switch literally sees the peer)
@@ -37,7 +42,7 @@ import (
 //
 // Failures are logged and never abort a scan (same pattern as the
 // other finalize steps).
-func (rn *Runner) deriveTopologyEdges(ctx context.Context, networkID sql.NullInt64) {
+func (rn *Runner) DeriveTopologyEdges(ctx context.Context, networkID sql.NullInt64) {
 	if !networkID.Valid {
 		return // no network scoping: can't partition edges correctly
 	}

@@ -27,6 +27,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
+	"strings"
 	"time"
 
 	"mibee-steward/internal/changedetect"
@@ -240,6 +242,55 @@ func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, net
 // local scan path can pass it back through ApplyReport if needed.
 func (rn *Runner) NetworkID() sql.NullInt64 { return rn.networkID }
 
+// networkIDForTargets resolves the network a scan's targets live in, for
+// tasks that predate per-task network binding: every networks.cidr row that
+// CONTAINS the first parseable target (a CIDR target matches its own /24-style
+// row, a bare IP matches the row that holds it). First hit wins; an ambiguous
+// or unresolvable target set returns invalid (the caller keeps the singleton).
+func (rn *Runner) networkIDForTargets(ctx context.Context, targets string) sql.NullInt64 {
+	first := ""
+	for _, tok := range strings.Split(targets, ",") {
+		if t := strings.TrimSpace(tok); t != "" {
+			first = t
+			break
+		}
+	}
+	if first == "" {
+		return sql.NullInt64{}
+	}
+	var tgt *net.IPNet
+	if _, parsed, err := net.ParseCIDR(first); err == nil {
+		tgt = parsed
+	} else if ip := net.ParseIP(first); ip != nil {
+		tgt = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
+	}
+	if tgt == nil {
+		return sql.NullInt64{}
+	}
+	rows, err := rn.dbConn.QueryContext(ctx, `SELECT id, cidr FROM networks WHERE cidr IS NOT NULL AND cidr != ''`)
+	if err != nil {
+		return sql.NullInt64{}
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var cidr string
+		if err := rows.Scan(&id, &cidr); err != nil {
+			continue
+		}
+		_, parsed, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		// A CIDR target matches the identical network row; a bare IP matches
+		// the row containing it.
+		if tgt.String() == parsed.String() || parsed.Contains(tgt.IP) {
+			return sql.NullInt64{Int64: id, Valid: true}
+		}
+	}
+	return sql.NullInt64{}
+}
+
 // Run executes one scan task: creates a run record, runs the engine over
 // targets, persists per-host results, applies the device bridge, and finalizes
 // the run + task status. It never returns an error that would crash the
@@ -273,6 +324,16 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	// always scanned its global list. Read the task row and thread the spec
 	// through the per-scan ProbeHint (no shared-engine mutation, safe under
 	// concurrent scans). A missing/disabled port_scan stage keeps the global
+	// list. The same row read resolves THIS RUN's network: scan tasks carry
+	// their own network_id (a center may scan several networks with one
+	// config-less singleton identity), and every network-scoped finalize step
+	// below must follow the TASK's network, not the wiring-time singleton —
+	// on a multi-network center the singleton resolved from config
+	// network.name (empty → "default") matched no scanned device, so ARP
+	// injection, edge derivation and lost detection all ran against a
+	// network that holds nothing (zero-edge graph, field-found on the
+	// soft-router rig 2026-10-16).
+	runNet := rn.networkID
 	// list ("" spec).
 	portSpec := ""
 	if task, err := rn.queries.GetScanTask(ctx, taskID); err == nil {
@@ -285,6 +346,14 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 		if json.Unmarshal([]byte(task.PipelineConfig), &pipeline) == nil &&
 			pipeline.PortScan.Enabled && pipeline.PortScan.Ports != "" {
 			portSpec = pipeline.PortScan.Ports
+		}
+		if task.NetworkID != nil && *task.NetworkID > 0 {
+			runNet = sql.NullInt64{Int64: *task.NetworkID, Valid: true}
+		} else if byTarget := rn.networkIDForTargets(ctx, task.Targets); byTarget.Valid {
+			// Tasks created before per-task network binding carried only a
+			// target CIDR (the 2026-10 rig transplants); the network row with
+			// that CIDR is the only sane scoping for the finalize chain.
+			runNet = byTarget
 		}
 	}
 
@@ -320,7 +389,7 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 			continue
 		}
 		aliveHosts++
-		isNew, upd := rn.persistHost(ctx, taskID, runID, rep, persistRawEvidence)
+		isNew, upd := rn.persistHost(ctx, taskID, runID, rep, persistRawEvidence, runNet)
 		if isNew {
 			newHosts++
 		}
@@ -346,30 +415,30 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	//     network's known-online devices. Devices absent for >= lostThreshold
 	//     consecutive scans are declared lost + marked offline. Runs on a fresh
 	//     context so a server shutdown mid-finalize doesn't skip it.
-	rn.DetectLost(context.Background(), rn.networkID, taskID, reports, "")
+	rn.DetectLost(context.Background(), runNet, taskID, reports, "")
 
 	// 3c.5 Local anchor (#522): fill the center's own interface MACs into its
 	//     device rows. Self-scan can never learn them (local ARP takes the
 	//     loopback shortcut), and the MAC-keyed neighbor sources resolve their
 	//     local end against exactly these rows. Runs every scan so a row
 	//     created by this scan is anchored by it too.
-	rn.AnchorLocalInterfaces(context.Background())
+	rn.anchorLocalInterfaces(context.Background(), runNet)
 
 	// 3d. ARP-derived topology edges: walk the local kernel's ARP cache once
 	//     and write device→gateway edges (protocol="ARP") to device_neighbors.
 	//     This is the ONLY topology source when no device speaks SNMP, it
 	//     makes the L2 graph useful on home/SOHO networks. Runs on a fresh
 	//     context so a shutdown mid-finalize doesn't skip it.
-	rn.injectARPTopology(context.Background(), rn.networkID, reports)
+	rn.injectARPTopology(context.Background(), runNet, reports)
 
 	// 3e. Topology materialization: derive device↔device edges (topology_edges)
 	//     from the raw device_neighbors rows, and record the scanned subnet(s).
 	//     These populate the topology tables that the graph view reads (the
 	//     device_neighbors table alone can't express fully-resolved links or
 	//     subnet anchors). Runs after ARP injection so the gateway is known.
-	rn.deriveTopologyEdges(context.Background(), rn.networkID)
-	rn.recordSubnets(context.Background(), rn.networkID)
-	rn.recordVLANs(context.Background(), rn.networkID, reports)
+	rn.DeriveTopologyEdges(context.Background(), runNet)
+	rn.recordSubnets(context.Background(), runNet)
+	rn.recordVLANs(context.Background(), runNet, reports)
 
 	// 4. Finalize the run.
 	finish := time.Now()
@@ -429,10 +498,10 @@ func (rn *Runner) failRun(ctx context.Context, runID, taskID int64, duration tim
 
 // persistHost writes the per-host scan_result, then upserts the device and (for
 // new devices) seeds heartbeat configs. Returns (isNew, wasUpdated).
-func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scannerv2.HostReport, _ bool) (bool, bool) {
+func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scannerv2.HostReport, _ bool, runNet sql.NullInt64) (bool, bool) {
 	// Write the scan_results row.
-	ports, services, snmpData := reportJSONFields(rep)
-	promURL, neURL, neData := reportPromFields(rep)
+	ports, services, snmpData := ReportJSONFields(rep)
+	promURL, neURL, neData := ReportPromFields(rep)
 	if _, err := rn.queries.CreateScanResult(ctx, db.CreateScanResultParams{
 		TaskID:               taskID,
 		RunID:                &runID,
@@ -451,13 +520,13 @@ func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scan
 		rn.logger.Warn("scan runner: insert scan_result failed", "ip", rep.IP, "error", err)
 	}
 
-	// Device bridge.
-	return rn.applyDeviceBridge(ctx, rep, rn.networkID, "")
+	// Device bridge (network-scoped to the TASK's network, see Run step 0).
+	return rn.applyDeviceBridge(ctx, rep, runNet, "")
 }
 
-// reportJSONFields serializes a HostReport's ports/services/snmp into the JSON
+// ReportJSONFields serializes a HostReport's ports/services/snmp into the JSON
 // strings the scan_results table expects.
-func reportJSONFields(rep scannerv2.HostReport) (string, string, string) {
+func ReportJSONFields(rep scannerv2.HostReport) (string, string, string) {
 	ports := "[]"
 	if len(rep.Evidence) > 0 {
 		portList := uniqueOpenPorts(rep.Evidence)
@@ -490,9 +559,9 @@ func reportJSONFields(rep scannerv2.HostReport) (string, string, string) {
 	return ports, services, snmp
 }
 
-// reportPromFields extracts prometheus/node_exporter URLs + NE data from the
+// ReportPromFields extracts prometheus/node_exporter URLs + NE data from the
 // report's collected data / device fields.
-func reportPromFields(rep scannerv2.HostReport) (promURL, neURL, neData string) {
+func ReportPromFields(rep scannerv2.HostReport) (promURL, neURL, neData string) {
 	if rep.Device.Fields != nil {
 		promURL = rep.Device.Fields["prometheus_url"]
 		neURL = rep.Device.Fields["node_exporter_url"]

@@ -14,10 +14,10 @@ pub struct ArpProbe;
 static CACHE: OnceLock<Mutex<Option<(SystemTime, Vec<ArpRow>)>>> = OnceLock::new();
 
 #[derive(Clone)]
-struct ArpRow {
-    ip: String,
-    mac: String,
-    device: String,
+pub(crate) struct ArpRow {
+    pub(crate) ip: String,
+    pub(crate) mac: String,
+    pub(crate) device: String,
 }
 
 probe_impl!(ArpProbe, "active:arp", |ip: IpAddr, hint: &ProbeHint| async move { for _ in 0..3 {

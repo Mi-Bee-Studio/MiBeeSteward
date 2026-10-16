@@ -2,6 +2,7 @@
 //! probes, orchestrator fold, and report building. Behavior ports the Go
 //! scannerv2 engine as used by cmd/agent.
 
+pub mod arp_star;
 pub mod device_types;
 pub mod dns;
 pub mod identify;

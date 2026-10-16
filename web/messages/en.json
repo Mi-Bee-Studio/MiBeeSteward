@@ -179,7 +179,7 @@
 		"Sse Device Lost": "A device went offline",
 		"Sse Device Recovered": "A device came back online",
 		"Remote Network": "Remote",
-		"Remote Network Desc": "Mirrored from a federated peer network (read-only here; edits belong on its own center)",
+		"Remote Network Desc": "This segment is managed by an agent / federation peer: read-only mirror here, edit at the data source",
 		"Mirror Stale": "Remote · stale",
 		"Mirror Stale Desc": "The agent/peer managing this segment has not reported for a while; its data may be outdated. Last report: {t}"
 	},
@@ -292,7 +292,9 @@
 		"Config Deleted": "Heartbeat config deleted",
 		"Interval Seconds": "Interval (seconds)",
 		"Timeout Seconds": "Timeout (seconds)",
-		"Enabled Toggle": "Enabled"
+		"Enabled Toggle": "Enabled",
+		"Uses Default": "default (follows global heartbeat settings)",
+		"Default Short": "default"
 	},
 	"dashboard": {
 		"Dashboard": "Dashboard",
@@ -1296,7 +1298,7 @@
 		"Network Vlans Desc": "802.1Q VLANs observed on this network (via the gateway's Q-BRIDGE-MIB walk)",
 		"Network Vlans Empty": "No VLANs observed — the network has no SNMP-speaking VLAN-aware bridge",
 		"Remote Network": "Remote network",
-		"Remote Network Desc": "This device is mirrored from a federated peer network: read-only here, managed on its own center."
+		"Remote Network Desc": "This segment is managed by an agent / federation peer: read-only mirror here, edit at the data source"
 	},
 	"validation": {
 		"Name Required": "Name is required",

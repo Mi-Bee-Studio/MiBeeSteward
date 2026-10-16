@@ -179,7 +179,7 @@
 		"Sse Device Lost": "有设备离线",
 		"Sse Device Recovered": "有设备恢复在线",
 		"Remote Network": "远端",
-		"Remote Network Desc": "镜像自联邦对端网段（本端只读，编辑在对端所属 center）",
+		"Remote Network Desc": "该网段由采集器 / 联邦对端管理：本端为只读镜像，编辑需在数据来源侧进行",
 		"Mirror Stale": "远端 · 过期",
 		"Mirror Stale Desc": "管理该网段的 agent/联邦对端已有一段时间未上报，数据可能过期。最近上报：{t}"
 	},
@@ -292,7 +292,9 @@
 		"Config Deleted": "心跳配置已删除",
 		"Interval Seconds": "检查间隔（秒）",
 		"Timeout Seconds": "超时（秒）",
-		"Enabled Toggle": "启用"
+		"Enabled Toggle": "启用",
+		"Uses Default": "默认（跟随全局心跳设置）",
+		"Default Short": "默认"
 	},
 	"dashboard": {
 		"Dashboard": "仪表盘",
@@ -1296,7 +1298,7 @@
 		"Network Vlans Desc": "本网络观测到的 802.1Q VLAN（经网关 Q-BRIDGE-MIB 采集）",
 		"Network Vlans Empty": "暂无 VLAN —— 网络内没有可 SNMP 访问的 VLAN 感知网桥",
 		"Remote Network": "远端网段",
-		"Remote Network Desc": "该设备镜像自联邦对端网段：本端只读，在其所属 center 管理。"
+		"Remote Network Desc": "该网段由采集器 / 联邦对端管理：本端为只读镜像，编辑需在数据来源侧进行"
 	},
 	"validation": {
 		"Name Required": "名称为必填项",

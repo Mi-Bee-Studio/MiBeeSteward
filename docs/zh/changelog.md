@@ -7,6 +7,15 @@
 
 ## [Unreleased]（未发布）
 
+### Fixed
+- **多网段 center：一次扫描跟随任务自己的网络，而不是接线期的单例网络（R68S 零边残留）**：定时扫描任务自带 `network_id`，但 `Run()` 的所有网段相关步骤用的都是启动时从 config `network.name`（空 → "default"）解析出的单例网络——设备归组靠 MAC 主键身份解析侥幸正确，而 ARP 注入、边物化、失联检测、子网记录、本机锚定全部落在什么都沒有的网络里（软路由 rig 上：两个 LAN 扫描都完成、`device_neighbors` 零行）。现在整个收尾链路改用任务网络，并有回环端到端测试钉住。
+- **agent 扫描网段终于有拓扑连线——分布式 rig 上"零边图"的根治（2026-10-16 走查）**：三个断点叠加，使所有 agent 网段的拓扑图没有任何连线。(1) `deriveTopologyEdges` 只在本地扫描的收尾步骤运行，agent 上报的邻居边永远停在 `device_neighbors`、等不来 `topology_edges` 物化——agent 报告落库路径现在在每批应用后立即物化。(2) 无网管交换机的网络里 agent 从不上报任何邻接：agent-rs 0.1.8 在每次扫描后用自己的 `/proc/net/arp` + `/proc/net/route` 推导网关星型（网关择取：默认路由网关位于被扫网段**内**时直接采用 → ARP 表里存在网段首地址（.1）时采用 → 路由器视角兜底，agent 自身即网关，用 ARP 表 device 列定位 LAN 接口、从 sysfs 读自机 MAC 作星心），为每个存活主机附带一条 `ARP` wire neighbor。(3) center 本地 ARP 星在路由器本体上选错星心：默认路由指向 WAN 上游（不在任何被扫网段、也没有设备行），软路由 center 上所有边都解析不到任何设备、该步骤零产出——现在同样按"限定被扫 CIDR + 自机锚定接口兜底"的三级择取。两处修复上线后，rig 图上呈现真实的网关星型（lan-62 与 lan-63 均以桥接路由器为中心）加既有的 route-table 边。
+- **未绑定网络的任务按目标 CIDR 归属网络（R68S 残留第二层）**：上一条任务网络修复假设任务带 `network_id`，但 rig 上数据平移时代创建的任务该列为 NULL——早于按任务绑定网络的功能，只有目标 CIDR 标识归属。这类任务现在会解析出 cidr 包含首个可解析目标的网络（完全相同的 CIDR 或包含它的行），让整个收尾链路即使面对旧任务行也落在正确网络上；回归测试钉住 NULL network_id 形态。
+- **"扫描结果"页在纯 agent center 上不再恒空**：`scan_results` 此前只由本地 Runner 的 persistHost 写入，所有网段都由 agent 扫描的 center（即分布式 rig）一边每轮扫描、仪表盘记录运行，一边"扫描结果"页永远"暂无扫描结果"。现在 scan 来源的 agent 报告会按主机写 `scan_results`，挂到该网段待关闭的 dispatch-run 上（即 `backfillAgentRunStats` 关闭的那个 run），字段形状与本地路径一致；被动涓流与无 run 批次跳过（没有诚实的关联可挂）。
+- **"上次确认存活"不再在持续在线的 agent 设备上冻结**：`last_online_at` 取自 `device_liveness` 序列，但只有状态**翻转**才会采样——lease sweeper 只在离线→在线恢复时写 online 判定，而 center 侧心跳探测又明确跳过 agent 网段，于是连续在线数周的设备详情页停留在上一次翻转（rig 上停在 10 月 7 日），旁边却是几分钟前刚扫到它的记录。`RecordAliveSnapshots` 现在为每个存活主机按报告采样 online 判定，心跳服务内按"每设备每 5 分钟至多一条"节流——序列获得诚实性而不放大写入。
+- **心跳配置不再显示"间隔: 0秒 · 超时: 0秒"**：agent 上报的心跳配置 interval/timeout 为 `0` 时含义是"跟随服务默认值"（探测侧回退 30s/5s），设备详情页却把裸 0 打印了出来。现在 0 渲染为本地化的"默认"（悬停提示：跟随全局心跳设置），编辑表单也用生效默认值预填，而不是打开一个非法的 `min=1` 零值。
+- **"远端"徽标提示不再把普通 agent 网段说成联邦镜像**：所有只读镜像设备（agent 管理或联邦对端）此前一律显示"镜像自联邦对端网段"——对自家 agent 扫描的家庭局域网是错误文案。徽标现改为"该网段由采集器 / 联邦对端管理：本端为只读镜像，编辑需在数据来源侧进行"；拓扑图层筛选 pill 也像其它切换 pill 一样补上 `aria-pressed`。
+
 ## [0.7.4] - 2026-10-14
 
 ### 修复
@@ -94,6 +103,9 @@
 - **多台随机 MAC 持有者的停放不再失败**：随机 MAC 守卫通过把槽位持有者的 IP 清空为 `''` 来停放——但 `(ip_address, network_id)` 唯一索引下每个网络只允许一个空 IP 行，同网络的第二次及以后的停放撞约束，停放失败后随机客户端在争议 IP 的建行也失败，且每轮扫描重试（实地四个持有者 ≈340 WARN/天）。现在每台持有者停放到按行的 `#park:<id>` 哨兵——构造上唯一、不匹配任何按 IP 的查询、按 MAC 重解析语义不变。
 - **孤儿心跳配置回收**：主库不开 SQLite `foreign_keys`，`heartbeat_configs` 的 ON DELETE CASCADE 从不生效——删除设备行（静默设备清扫、reconcile ghost 清理）后心跳配置残留，仍启用的配置对一个已消失的 IP 永久探测（实地两个孤儿贡献了上述 ~2300 ERROR/天的大头）。保留维护清扫现在回收 `device_id` 已无主的可配置，分批执行。
 - **HTTP/ICMP 探测失败全面接入 #271 连败分级日志**：周期探测降噪器（首败 WARN、后续采样 DEBUG）此前只接了 http 建请求与 icmp 运行分支——http 的 `client.Do` 失败与 icmp 的 `NewPinger` 失败两处仍直打 `slog.Error`。实地一台 center 有五个半死 IoT http 服务，恰恰经由这两条分支刷出 **~2300 ERROR/天**；两处均已改走 `logProbeFailure`。
+- **乱码主机名不再进入设备记录（2026-10-15 实地批次）**：探针名字解码器（NBNS/mDNS）对不规范应答可能产出乱码，实地一台设备展示了二进制垃圾主机名（无效 UTF-8 + 控制字符）并泄入 scan_attributes。主机事实折叠的两个主机名入口（rDNS/NBNS/mDNS 证据与 TLS-CN 回退）现在都过 `plausibleHostname` 闸门——合法非 ASCII 名（CJK 营销后缀）照常通过。
+- **Recog 语料刷新（2548 → 2550）**：上游在 2026-10-10 导入后新增两条 SNMP sysDescr 指纹。经 `fpimport recog` 重导；零删除。
+- **停放的随机 MAC 持有者不再被 reconcile 计为漂移**：随机 MAC 守卫把槽位持有者停放到 `#park:<id>` 哨兵 IP——不是空串——网络 reconcile 的 mismatch 扫描因此每轮都把停放行标记为网外漂移（实地一台 rig 每天刷 ~7 次 WARN，样本 IP 全是停放行）。扫描现在像排除空串一样排除哨兵：停放行根本不持有 IP 主张。
 - **GL.iNet 路由器主机名点亮随机 MAC 设备（2026-10-13 实地批次）**：GL.iNet 固件默认设备名为 `GL-MT<型号>`（`GL-MT2500` = Opal）——随机 MAC 的设备没有 OUI 可用，主机名是唯一厂商信号。新规则 `iot-host-glinet-mt` 提取品牌 GL.iNet + MT 型号词元。
 - **`SDK` 加入网页服务垃圾品牌黑名单（2026-10-12 实地批次）**：fnOS（及其他 NAS/网页 SDK 前端）发送字面 `Server: SDK` 头——一台 fnOS 盒子的品牌在两轮扫描间退化成 "SDK"，与当年 nginx/Portable 的路径一模一样。折叠守卫跳过它、垃圾品牌治愈可清除它，与既有条目同族。
 - **TP-Link TL-XDR 路由器型号提取（2026-10-11 实地批次）**：TP-Link 国行路由器自命名 `TL-XDR<型号><营销后缀>`（`TL-XDR3040易展版`——后缀为 CJK 且随 SKU 变化）。品牌已由 OUI 给出；新规则 `iot-host-tplink-xdr` 提取 XDR 型号词元并容忍 CJK 尾部（顺手关闭挂了很久的 "TL-XDR3040易展版 当作 brand" 归一化观察项：营销尾词不再进入身份）。
