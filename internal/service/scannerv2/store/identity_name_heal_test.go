@@ -80,4 +80,35 @@ func TestApplyDeviceIdentity_GarbageNameHeal(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conn.QueryRowContext(ctx, `SELECT name FROM devices WHERE id = ?`, devID).Scan(&name))
 	require.Equal(t, "书房台灯", name, "plausible name (user edit) untouched")
+
+	// The attr strip is independent of the name state: a row whose name was
+	// already healed (e.g. by a build that lacked the strip) keeps the
+	// garbage attr hostname; a plausible attr hostname under a plausible
+	// name survives untouched.
+	_, err = conn.ExecContext(ctx, `UPDATE devices SET scan_attributes = ? WHERE id = ?`,
+		string(seedAttrs), devID)
+	require.NoError(t, err)
+	_, err = repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
+		TargetID: devID, IP: "10.0.0.42", MAC: mac, NetworkID: nid,
+		ScanAttributesJSON: "{}",
+	})
+	require.NoError(t, err)
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT scan_attributes FROM devices WHERE id = ?`, devID).Scan(&attrsRaw))
+	require.NoError(t, json.Unmarshal([]byte(attrsRaw), &attrs))
+	require.NotContains(t, attrs, "hostname", "garbage attr strips even when the name is already clean")
+	require.Equal(t, "Acme", attrs["vendor"])
+
+	goodAttrs, err := json.Marshal(map[string]any{"hostname": "书房台灯", "vendor": "Acme"})
+	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, `UPDATE devices SET scan_attributes = ? WHERE id = ?`,
+		string(goodAttrs), devID)
+	require.NoError(t, err)
+	_, err = repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
+		TargetID: devID, IP: "10.0.0.42", MAC: mac, NetworkID: nid,
+		ScanAttributesJSON: "{}",
+	})
+	require.NoError(t, err)
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT scan_attributes FROM devices WHERE id = ?`, devID).Scan(&attrsRaw))
+	require.NoError(t, json.Unmarshal([]byte(attrsRaw), &attrs))
+	require.Equal(t, "书房台灯", attrs["hostname"], "plausible attr hostname survives the strip")
 }

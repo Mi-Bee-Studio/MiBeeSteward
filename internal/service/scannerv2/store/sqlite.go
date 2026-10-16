@@ -890,6 +890,15 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 	// scan's (already-gated) name, or with the IP when the scan carries
 	// none — so the row self-heals without touching plausible names
 	// (user edits included).
+	//
+	// The same mojibake usually also sits in scan_attributes.hostname, and
+	// the merge-keep-old json_patch semantics ("a shallow scan can't erase
+	// a deeper scan's fields") preserve it forever. The attr strip is
+	// deliberately INDEPENDENT of the name check: a row whose name was
+	// already healed (e.g. by an earlier build that lacked the strip) still
+	// carries the garbage attr, so implausibility of the attr hostname alone
+	// must trigger the strip; a plausible stored attribute (or none) is left
+	// for the merge doctrine to keep.
 	var storedName string
 	var storedAttrs []byte
 	if err := r.db.QueryRowContext(ctx,
@@ -900,28 +909,23 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 			if scannerv2.PlausibleHostname(in.Name) && in.Name != "" {
 				healName = in.Name
 			}
-			// The same mojibake usually also sits in scan_attributes.hostname,
-			// and the merge-keep-old json_patch semantics ("a shallow scan
-			// can't erase a deeper scan's fields") would preserve it forever.
-			// Strip exactly an implausible hostname key; a plausible stored
-			// attribute (or none) is left for the merge doctrine to keep.
-			var attrs map[string]any
-			if json.Unmarshal(storedAttrs, &attrs) == nil {
-				if h, ok := attrs["hostname"].(string); ok && !scannerv2.PlausibleHostname(h) {
-					delete(attrs, "hostname")
-					if cleaned, merr := json.Marshal(attrs); merr == nil {
-						if _, err := r.db.ExecContext(ctx,
-							`UPDATE devices SET name = ?, scan_attributes = ?, updated_at = ? WHERE id = ?`,
-							healName, string(cleaned), now, in.TargetID); err != nil {
-							r.logger.Warn("device identity: garbage name heal failed", "ip", in.IP, "device_id", in.TargetID, "error", err)
-						}
-					}
-				}
-			}
 			if _, err := r.db.ExecContext(ctx,
 				`UPDATE devices SET name = ?, updated_at = ? WHERE id = ?`,
 				healName, now, in.TargetID); err != nil {
 				r.logger.Warn("device identity: garbage name heal failed", "ip", in.IP, "device_id", in.TargetID, "error", err)
+			}
+		}
+		var attrs map[string]any
+		if json.Unmarshal(storedAttrs, &attrs) == nil {
+			if h, ok := attrs["hostname"].(string); ok && !scannerv2.PlausibleHostname(h) {
+				delete(attrs, "hostname")
+				if cleaned, merr := json.Marshal(attrs); merr == nil {
+					if _, err := r.db.ExecContext(ctx,
+						`UPDATE devices SET scan_attributes = ?, updated_at = ? WHERE id = ?`,
+						string(cleaned), now, in.TargetID); err != nil {
+						r.logger.Warn("device identity: garbage attr hostname strip failed", "ip", in.IP, "device_id", in.TargetID, "error", err)
+					}
+				}
 			}
 		}
 	}
