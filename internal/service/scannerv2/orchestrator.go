@@ -11,8 +11,10 @@ package scannerv2
 
 import (
 	"context"
+	_ "embed"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unicode"
@@ -295,6 +297,13 @@ func plausibleHostname(s string) bool {
 	return true
 }
 
+// PlausibleHostname is the exported form of plausibleHostname: the single
+// plausibility gate every hostname must pass before it can reach a device
+// record, wherever it came from (local-scan fold or an agent-reported wire
+// field). The store's ingest path uses it so older agents that still emit
+// mojibake cannot dirty rows.
+func PlausibleHostname(s string) bool { return plausibleHostname(s) }
+
 func stripWildcardPrefix(cn string) string {
 	if len(cn) >= 2 && cn[0] == '*' && cn[1] == '.' {
 		return cn[2:]
@@ -343,16 +352,27 @@ func hasCameraEvidence(ev []Evidence) bool {
 // an fnOS NAS branded "Portable").
 // webServerBrandDenylist are software names that appear in HTTP SERVER
 // headers / SSDP SERVER fields and were historically folded into devices.brand
-// before the junk guards existed. Exported (lowercase, for SQL IN lists) so the
-// store's junk-brand heal can recognize rows still carrying one.
-var webServerBrandDenylist = []string{
-	"nginx", "apache", "caddy", "lighttpd", "microsoft iis",
-	"minidlna", "readymedia", "portable",
-	// fnOS (and other NAS/web SDK front-ends) ship a literal "SDK" Server
-	// header — a software-stack name, not a device vendor (field-found
-	// 2026-10-12: an fnOS box's brand regressed to "SDK" between scans).
-	"sdk",
-}
+// before the junk guards existed. Single source of truth:
+// configs/fingerprints/web-server-brands.txt, synced here and into the Rust
+// agent's assets by `make sync-webserver-brands` (CI checks both copies for
+// drift) so the two stacks can never disagree — the Rust copy had drifted
+// (missing "sdk") while both were hardcoded. Exported (lowercase, for SQL IN
+// lists) so the store's junk-brand heal can recognize rows still carrying one.
+//
+//go:embed web_server_brands.txt
+var webServerBrandsFile string
+
+var webServerBrandDenylist = func() []string {
+	var names []string
+	for _, line := range strings.Split(webServerBrandsFile, "\n") {
+		line = strings.TrimSpace(strings.ToLower(line))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		names = append(names, line)
+	}
+	return names
+}()
 
 // WebServerBrandNames returns the lowercase denylist behind IsWebServerBrand.
 func WebServerBrandNames() []string {
@@ -650,7 +670,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 			// vendor, serial). Hostname fills node_hostname; vendor TXT fills
 			// inferred_brand; the rest lands under mdns.* for the attribute
 			// builder to propagate.
-			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" {
+			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" && plausibleHostname(v) {
 				report.Device.Fields["node_hostname"] = v
 			}
 			for _, key := range []string{"txt.vendor", "txt.manufacturer", "txt.md", "txt.ty"} {
@@ -675,7 +695,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 		case "netbios":
 			// NetBIOS returns a Windows hostname + workgroup/domain. These are
 			// the only source of hostname for many Windows hosts.
-			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" {
+			if v := e.RawData["hostname"]; v != "" && report.Device.Fields["node_hostname"] == "" && plausibleHostname(v) {
 				report.Device.Fields["node_hostname"] = v
 			}
 			if v := e.RawData["workgroup"]; v != "" && report.Device.Fields["netbios_workgroup"] == "" {

@@ -55,6 +55,24 @@ func TestOrchestrator_DispatchEvidenceFold(t *testing.T) {
 		t.Fatalf("CJK hostname must survive the gate: %q", rep.Device.Fields["node_hostname"])
 	}
 
+	// The gate covers every node_hostname entry point, not just the hostname
+	// evidence kind: broken NBNS/mDNS decoders emit their mojibake through
+	// the mdns and netbios folds too, and a garbage TLS-CN is equally
+	// possible from a malformed cert.
+	for _, kind := range []string{"mdns", "netbios"} {
+		rep = run(Evidence{Kind: kind, RawData: map[string]string{"hostname": "L\x14ÿ.lan"}})
+		if _, ok := rep.Device.Fields["node_hostname"]; ok {
+			t.Fatalf("%s garbage hostname must be dropped, got %q", kind, rep.Device.Fields["node_hostname"])
+		}
+	}
+	rep = run(Evidence{Kind: "netbios", RawData: map[string]string{"hostname": "TL-XDR3040易展版", "workgroup": "WORKGROUP"}})
+	if rep.Device.Fields["node_hostname"] != "TL-XDR3040易展版" {
+		t.Fatalf("CJK netbios hostname must survive the gate: %q", rep.Device.Fields["node_hostname"])
+	}
+	if rep.Device.Fields["netbios_workgroup"] != "WORKGROUP" {
+		t.Fatalf("ungated sibling field unaffected: %v", rep.Device.Fields)
+	}
+
 	// TLS: wildcard CN fills hostname; cert brand overrides a generic
 	// web-server brand.
 	rep = run(

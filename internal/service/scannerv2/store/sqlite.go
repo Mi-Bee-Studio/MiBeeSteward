@@ -1095,7 +1095,7 @@ func buildStoreScanAttributes(d scannerv2.DeviceRef, extra map[string]string, op
 		OSVersion:           extra["os_version"],
 		KernelVersion:       extra["kernel_version"],
 		FirmwareVersion:     extra["firmware_version"],
-		Hostname:            firstNonEmptyStore(extra["node_hostname"], extra["sys_name"]),
+		Hostname:            firstPlausibleHostnameStore(extra["node_hostname"], extra["sys_name"]),
 		MAC:                 extra["mac"],
 	}
 	// Numeric fields must be real numbers (not strings) so the typed struct
@@ -1154,6 +1154,20 @@ func buildStoreScanAttributes(d scannerv2.DeviceRef, extra map[string]string, op
 func firstNonEmptyStore(values ...string) string {
 	for _, v := range values {
 		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// firstPlausibleHostnameStore is the ingest-side hostname gate: the first
+// value that passes scannerv2.PlausibleHostname wins, and garbage never
+// reaches the device record no matter which path produced it (local fold,
+// agent wire field, or sysName fallback). An agent older than the fold-side
+// gates can still emit mojibake — this is the backstop that catches it.
+func firstPlausibleHostnameStore(values ...string) string {
+	for _, v := range values {
+		if v != "" && scannerv2.PlausibleHostname(v) {
 			return v
 		}
 	}
