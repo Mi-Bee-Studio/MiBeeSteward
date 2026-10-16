@@ -486,7 +486,15 @@
 		// Edit a heartbeat config: open the modal with a copy of the config so
 		// the form edits a draft without mutating the list entry directly.
 		function openEditConfig(cfg: typeof heartbeatConfigs[0]) {
-			editingConfig = { ...cfg };
+			// Agent-reported configs carry interval/timeout 0 = "center
+			// default" (the prober falls back to 30s/5s). Prefill the defaults
+			// so the min=1 form doesn't open on an invalid 0 the user never
+			// chose (#-era agent heartbeats all arrive as 0/0).
+			editingConfig = {
+				...cfg,
+				interval_seconds: cfg.interval_seconds > 0 ? cfg.interval_seconds : 30,
+				timeout_seconds: cfg.timeout_seconds > 0 ? cfg.timeout_seconds : 5
+			};
 		}
 
 		async function saveEditConfig(e: Event) {
@@ -1981,9 +1989,13 @@
 							<div class="min-w-0 flex-1">
 								<div class="font-mono text-xs text-text truncate" title={cfg.target}>{cfg.target}</div>
 								<div class="flex items-center gap-2 mt-0.5 text-[11px] text-muted">
-									<span>{m['heartbeat.Interval']()}: {cfg.interval_seconds}{m['heartbeat.Seconds Short']()}</span>
+									<span title={m['heartbeat.Uses Default']()}>{m['heartbeat.Interval']()}:
+										{#if cfg.interval_seconds > 0}{cfg.interval_seconds}{m['heartbeat.Seconds Short']()}{:else}{m['heartbeat.Default Short']()}{/if}
+									</span>
 									<span>·</span>
-									<span>{m['heartbeat.Timeout']()}: {cfg.timeout_seconds}{m['heartbeat.Seconds Short']()}</span>
+									<span title={m['heartbeat.Uses Default']()}>{m['heartbeat.Timeout']()}:
+										{#if cfg.timeout_seconds > 0}{cfg.timeout_seconds}{m['heartbeat.Seconds Short']()}{:else}{m['heartbeat.Default Short']()}{/if}
+									</span>
 									{#if cfg.enabled === 0}
 										<span class="px-1 py-0 rounded bg-error/10 text-error font-medium">{m['heartbeat.Disabled Badge']()}</span>
 									{/if}

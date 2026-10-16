@@ -55,7 +55,7 @@ func TestDeriveTopologyEdges(t *testing.T) {
 		VALUES (?, 'de:ad:00:00:00:ff', 'cdp', ?)`, swID, net.ID)
 	require.NoError(t, err)
 
-	rn.deriveTopologyEdges(ctx, sql.NullInt64{Int64: net.ID, Valid: true})
+	rn.DeriveTopologyEdges(ctx, sql.NullInt64{Int64: net.ID, Valid: true})
 
 	// Exactly one materialized edge: sw → ap (the ghost neighbor doesn't join).
 	var count int
@@ -70,10 +70,10 @@ func TestDeriveTopologyEdges(t *testing.T) {
 	require.Equal(t, "lldp", protoStr)
 
 	// A re-run refreshes instead of duplicating.
-	rn.deriveTopologyEdges(ctx, sql.NullInt64{Int64: net.ID, Valid: true})
+	rn.DeriveTopologyEdges(ctx, sql.NullInt64{Int64: net.ID, Valid: true})
 	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM topology_edges`).Scan(&count))
 	require.Equal(t, 1, count)
 
 	// NULL network scope → no-op (no query runs).
-	rn.deriveTopologyEdges(ctx, sql.NullInt64{})
+	rn.DeriveTopologyEdges(ctx, sql.NullInt64{})
 }

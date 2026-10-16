@@ -12,6 +12,7 @@ package runner
 import (
 	"context"
 	"database/sql"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,19 +45,59 @@ func TestHexRouteToIP(t *testing.T) {
 }
 
 func TestGuessGatewayFromARP(t *testing.T) {
+	_, lanSubnet, err := net.ParseCIDR("192.168.1.0/24")
+	require.NoError(t, err)
+	// nil subnet: legacy behavior, any .1 wins
 	require.Equal(t, "192.168.1.1", guessGatewayFromARP(map[string]string{
 		"192.168.1.20": "aa:bb:cc:dd:ee:20",
 		"192.168.1.1":  "aa:bb:cc:dd:ee:01",
-	}))
+	}, nil))
 	// .1 on a different octet boundary does not count; no candidate → ""
 	require.Equal(t, "10.0.0.1", guessGatewayFromARP(map[string]string{
 		"10.0.0.1":  "aa:bb:cc:dd:ee:01",
 		"10.0.0.53": "aa:bb:cc:dd:ee:53",
-	}))
+	}, nil))
 	require.Empty(t, guessGatewayFromARP(map[string]string{
 		"192.168.1.20": "aa:bb:cc:dd:ee:20",
-	}))
-	require.Empty(t, guessGatewayFromARP(nil))
+	}, nil))
+	require.Empty(t, guessGatewayFromARP(nil, nil))
+
+	// subnet-scoped: the ARP cache spans every interface (WAN included), the
+	// .1 of ANOTHER subnet must not become this LAN's star center
+	require.Empty(t, guessGatewayFromARP(map[string]string{
+		"10.10.0.1":   "aa:bb:cc:dd:ee:f1",
+		"192.168.1.5": "aa:bb:cc:dd:ee:05",
+	}, lanSubnet))
+	require.Equal(t, "192.168.1.1", guessGatewayFromARP(map[string]string{
+		"10.10.0.1":   "aa:bb:cc:dd:ee:f1",
+		"192.168.1.1": "aa:bb:cc:dd:ee:01",
+	}, lanSubnet))
+}
+
+// TestNetworkCIDR verifies the scanned network's CIDR load (nil for missing /
+// unparseable, parsed for a sane row).
+func TestNetworkCIDR(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	queries := db.New(conn)
+	rn := New(nil, queries, conn, nil, 0, nil)
+	ctx := context.Background()
+
+	withCIDR, err := queries.CreateNetwork(ctx, db.CreateNetworkParams{Name: "n1", Cidr: strPtr("192.168.1.0/24")})
+	require.NoError(t, err)
+	noCIDR, err := queries.CreateNetwork(ctx, db.CreateNetworkParams{Name: "n2"})
+	require.NoError(t, err)
+	badCIDR, err := queries.CreateNetwork(ctx, db.CreateNetworkParams{Name: "n3", Cidr: strPtr("not-a-cidr")})
+	require.NoError(t, err)
+
+	sub := rn.networkCIDR(ctx, withCIDR.ID)
+	require.NotNil(t, sub)
+	require.True(t, sub.Contains(net.ParseIP("192.168.1.77")))
+	require.False(t, sub.Contains(net.ParseIP("10.0.0.1")))
+	require.Nil(t, rn.networkCIDR(ctx, noCIDR.ID))
+	require.Nil(t, rn.networkCIDR(ctx, badCIDR.ID))
+	require.Nil(t, rn.networkCIDR(ctx, 99999))
 }
 
 func TestReadARPFile_ParsesProcNetArpFormat(t *testing.T) {

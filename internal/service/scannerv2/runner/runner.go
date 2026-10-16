@@ -367,7 +367,7 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	//     These populate the topology tables that the graph view reads (the
 	//     device_neighbors table alone can't express fully-resolved links or
 	//     subnet anchors). Runs after ARP injection so the gateway is known.
-	rn.deriveTopologyEdges(context.Background(), rn.networkID)
+	rn.DeriveTopologyEdges(context.Background(), rn.networkID)
 	rn.recordSubnets(context.Background(), rn.networkID)
 	rn.recordVLANs(context.Background(), rn.networkID, reports)
 
@@ -431,8 +431,8 @@ func (rn *Runner) failRun(ctx context.Context, runID, taskID int64, duration tim
 // new devices) seeds heartbeat configs. Returns (isNew, wasUpdated).
 func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scannerv2.HostReport, _ bool) (bool, bool) {
 	// Write the scan_results row.
-	ports, services, snmpData := reportJSONFields(rep)
-	promURL, neURL, neData := reportPromFields(rep)
+	ports, services, snmpData := ReportJSONFields(rep)
+	promURL, neURL, neData := ReportPromFields(rep)
 	if _, err := rn.queries.CreateScanResult(ctx, db.CreateScanResultParams{
 		TaskID:               taskID,
 		RunID:                &runID,
@@ -455,9 +455,9 @@ func (rn *Runner) persistHost(ctx context.Context, taskID, runID int64, rep scan
 	return rn.applyDeviceBridge(ctx, rep, rn.networkID, "")
 }
 
-// reportJSONFields serializes a HostReport's ports/services/snmp into the JSON
+// ReportJSONFields serializes a HostReport's ports/services/snmp into the JSON
 // strings the scan_results table expects.
-func reportJSONFields(rep scannerv2.HostReport) (string, string, string) {
+func ReportJSONFields(rep scannerv2.HostReport) (string, string, string) {
 	ports := "[]"
 	if len(rep.Evidence) > 0 {
 		portList := uniqueOpenPorts(rep.Evidence)
@@ -490,9 +490,9 @@ func reportJSONFields(rep scannerv2.HostReport) (string, string, string) {
 	return ports, services, snmp
 }
 
-// reportPromFields extracts prometheus/node_exporter URLs + NE data from the
+// ReportPromFields extracts prometheus/node_exporter URLs + NE data from the
 // report's collected data / device fields.
-func reportPromFields(rep scannerv2.HostReport) (promURL, neURL, neData string) {
+func ReportPromFields(rep scannerv2.HostReport) (promURL, neURL, neData string) {
 	if rep.Device.Fields != nil {
 		promURL = rep.Device.Fields["prometheus_url"]
 		neURL = rep.Device.Fields["node_exporter_url"]

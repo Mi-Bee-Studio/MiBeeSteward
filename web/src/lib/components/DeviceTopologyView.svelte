@@ -595,6 +595,7 @@
 			{#each LAYER_ORDER as layer}
 				<button
 					onclick={() => (layerVisible = { ...layerVisible, [layer]: !layerVisible[layer] })}
+					aria-pressed={layerVisible[layer]}
 					class="px-2 py-1 rounded-full border transition-colors {layerVisible[layer]
 						? 'border-border-strong bg-surface-strong'
 						: 'border-border bg-surface opacity-50'}"

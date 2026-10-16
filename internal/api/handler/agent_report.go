@@ -251,6 +251,21 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	// background LeaseSweeper expires stale agent devices on its own slow ticker.
 	h.runner.RecordAliveSnapshots(r.Context(), nid, 0, hostReportsForLease(inNetwork))
 
+	// Materialize topology edges for agent networks: the local Runner finalize
+	// that normally does this (DeriveTopologyEdges) never runs for agent-scanned
+	// networks, so wire neighbors applied above would sit in device_neighbors
+	// forever without a topology_edges row (the graph rendered agent networks
+	// edge-less even with LLDP/ARP adjacency flowing). Same contract as the
+	// finalize step: cheap, idempotent, failure never fails the report.
+	h.runner.DeriveTopologyEdges(r.Context(), nid)
+
+	// Per-host scan_results for the pending dispatch-run (fromScan batches
+	// only): the 扫描结果 page browses this table, and without these rows it
+	// showed "暂无扫描结果" on agent-only centers while scans ran every cycle.
+	if fromScan {
+		h.recordAgentScanResults(r.Context(), *networkID, inNetwork)
+	}
+
 	// Cache the hash so the next report can short-circuit if nothing changed.
 	if stateHash != "" {
 		h.hashMu.Lock()
@@ -275,6 +290,62 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		Accepted: added + updated, Added: added, Updated: updated, Skipped: skipped,
 		OutOfNetwork: outOfNetwork,
 	})
+}
+
+// recordAgentScanResults writes per-host scan_results rows for a scan-origin
+// report batch, linked to the network's pending dispatch-run (the same run
+// backfillAgentRunStats closes with the batch's stats). The 扫描结果 page
+// browses this table; without it, agent-only centers showed an empty page
+// while scans ran every cycle. Rows carry the same field shape the local
+// Runner's persistHost writes, built from the bridged HostReports. Reports
+// that arrive with no pending run (agent self-scheduled scans) are skipped:
+// there is no honest run/task linkage to attach them to.
+func (h *AgentReportHandler) recordAgentScanResults(ctx context.Context, networkID int64, hosts []domain.ReportedHost) {
+	if h.dbConn == nil || len(hosts) == 0 {
+		return
+	}
+	var taskID, runID int64
+	err := h.dbConn.QueryRowContext(ctx, `
+		SELECT r.task_id, r.id FROM scan_task_runs r
+		JOIN scan_tasks t ON t.id = r.task_id
+		WHERE t.network_id = ? AND r.status = 'running'
+		ORDER BY r.started_at LIMIT 1`, networkID).Scan(&taskID, &runID)
+	if err != nil {
+		return // no pending dispatch-run for this network
+	}
+	for _, host := range hosts {
+		if !host.Alive || host.IP == "" {
+			continue
+		}
+		rep := runner.ReportedHostToReport(host)
+		ports, services, snmpData := runner.ReportJSONFields(rep)
+		promURL, neURL, neData := runner.ReportPromFields(rep)
+		if _, err := h.queries.CreateScanResult(ctx, db.CreateScanResultParams{
+			TaskID:               taskID,
+			RunID:                &runID,
+			Ip:                   rep.IP,
+			Alive:                1,
+			RttMs:                rep.RTTMs,
+			Ports:                ports,
+			Services:             services,
+			SnmpData:             snmpData,
+			PrometheusDetected:   boolToInt(promURL != ""),
+			PrometheusUrl:        promURL,
+			NodeExporterDetected: boolToInt(neURL != ""),
+			NodeExporterUrl:      neURL,
+			NodeExporterData:     neData,
+		}); err != nil {
+			slog.Debug("agent report: scan_result insert failed", "ip", rep.IP, "error", err)
+		}
+	}
+}
+
+// boolToInt mirrors the runner's scan-result boolean encoding (INTEGER 0/1).
+func boolToInt(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // backfillAgentRunStats completes the oldest still-"running" run row among

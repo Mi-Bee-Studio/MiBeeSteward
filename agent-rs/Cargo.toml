@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/mibee-fingerprints", "crates/mibee-agent", "crates/mibee-ebpf"]
 
 [workspace.package]
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 

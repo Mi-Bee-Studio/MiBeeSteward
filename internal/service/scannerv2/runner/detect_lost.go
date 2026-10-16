@@ -189,6 +189,18 @@ func (rn *Runner) RecordAliveSnapshots(ctx context.Context, networkID sql.NullIn
 				`UPDATE devices SET last_seen = ? WHERE device_uuid = ?`,
 				scannerv2.DBTime(now), devUUID); err != nil {
 				rn.logger.Warn("record-alive-snapshots: last_seen stamp failed", "ip", rep.IP, "error", err)
+			} else if rn.heartbeat != nil {
+				// Liveness sample for the continuously-online case: the sweeper
+				// only samples on offline↔online transitions, so a device that
+				// has been up for weeks (the normal agent-network device) never
+				// got a fresh 'online' row and the detail page's 上次确认存活
+				// froze at some ancient transition. SampleLiveness throttles
+				// per-device, this is not a per-report write amplification.
+				var devID int64
+				if err := rn.dbConn.QueryRowContext(ctx,
+					`SELECT id FROM devices WHERE device_uuid = ?`, devUUID).Scan(&devID); err == nil {
+					rn.heartbeat.SampleLiveness(devID, "online", "scan")
+				}
 			}
 		}
 	}

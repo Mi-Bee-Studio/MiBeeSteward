@@ -64,6 +64,13 @@ type HeartbeatService struct {
 	// only probed when tickCount % offlineBackoff == 0, so known-dead hosts are
 	// checked at a fraction of the live-host cadence instead of every tick.
 	tickCount uint64
+	// lastOnlineSample throttles scan/lease-driven "online" liveness samples
+	// (SampleLiveness): the alive-snapshot path fires per report (~every scan
+	// cycle per host), and unthrottled that would multiply device_liveness
+	// rows by the scan cadence. One sample per device per window is plenty for
+	// the "上次确认存活" signal the series feeds.
+	lastOnlineSample   map[int64]time.Time
+	lastOnlineSampleMu sync.Mutex
 }
 
 // NewHeartbeatService creates a new HeartbeatService. mainDB is the main CRUD
@@ -87,14 +94,15 @@ func NewHeartbeatService(mainDB *sql.DB, store *HeartbeatStore, cfg *config.Conf
 		hcfg.OfflineBackoffTicks = 10
 	}
 	return &HeartbeatService{
-		queries:     db.New(mainDB),
-		mainDB:      mainDB,
-		store:       store,
-		cfg:         hcfg,
-		failCounts:  make(map[int64]int),
-		statusCache: make(map[int64]string),
-		lastSynced:  make(map[int64]string),
-		lastProbe:   make(map[int64]time.Time),
+		queries:          db.New(mainDB),
+		mainDB:           mainDB,
+		store:            store,
+		cfg:              hcfg,
+		failCounts:       make(map[int64]int),
+		statusCache:      make(map[int64]string),
+		lastSynced:       make(map[int64]string),
+		lastProbe:        make(map[int64]time.Time),
+		lastOnlineSample: make(map[int64]time.Time),
 	}
 }
 
@@ -568,9 +576,22 @@ func (s *HeartbeatService) applyDeviceVerdict(deviceID int64, anySuccess bool) {
 // (source of truth), it only leaves a gap the multi-period judgment tolerates.
 // An empty store (nil) is a no-op (tests / agent contexts without a heartbeat
 // store).
+//
+// "online" samples from the per-report paths are throttled to one per device
+// per 5 minutes: RecordAliveSnapshots fires per scan report, and the series
+// only needs enough resolution to keep 上次确认存活 honest.
 func (s *HeartbeatService) SampleLiveness(deviceID int64, status, source string) {
 	if s.store == nil || status == "" {
 		return
+	}
+	if status == "online" {
+		s.lastOnlineSampleMu.Lock()
+		if last, ok := s.lastOnlineSample[deviceID]; ok && time.Since(last) < 5*time.Minute {
+			s.lastOnlineSampleMu.Unlock()
+			return
+		}
+		s.lastOnlineSample[deviceID] = time.Now()
+		s.lastOnlineSampleMu.Unlock()
 	}
 	s.store.EnqueueLiveness(livenessRow{
 		DeviceID:  deviceID,

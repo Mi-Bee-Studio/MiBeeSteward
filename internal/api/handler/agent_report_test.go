@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -557,4 +558,87 @@ func TestAgentReport_MultiHomedMACStable(t *testing.T) {
 		  AND json_extract(before_data, '$.ip_address') != json_extract(after_data, '$.ip_address')`,
 		id1).Scan(&moves))
 	require.Zerof(t, moves, "stable twin batch must not relocate the row (churn was the bug)")
+}
+
+// TestAgentReport_MaterializesTopologyEdgesAndScanResults covers the agent-side
+// halves of the graph/results pipeline that the local Runner finalize used to
+// own alone: (a) wire neighbors whose BOTH endpoints are known devices must
+// promote into topology_edges (the topology view reads only that table), and
+// (b) a scan-origin batch must write per-host scan_results linked to the
+// network's pending dispatch-run (the 扫描结果 page browses that table and was
+// empty on agent-only centers).
+func TestAgentReport_MaterializesTopologyEdgesAndScanResults(t *testing.T) {
+	srv, db, token, networkID := setupAgentIngestServer(t)
+
+	// A pending dispatch-run for this network (dispatch creates it "running";
+	// the report closes it via backfillAgentRunStats and now also fills
+	// scan_results under it). Raw SQL: the sqlc CreateScanTask query predates
+	// the network_id column.
+	var taskID int64
+	require.NoError(t, db.QueryRow(`
+		INSERT INTO scan_tasks (name, targets, cron_expr, network_id, enabled)
+		VALUES ('lan-62 sweep', '192.168.2.0/24', '', ?, 1) RETURNING id`, networkID).Scan(&taskID))
+	started := time.Now().Add(-time.Minute)
+	var runID int64
+	require.NoError(t, db.QueryRow(`
+		INSERT INTO scan_task_runs (task_id, status, started_at, total_hosts, alive_hosts)
+		VALUES (?, 'running', ?, 0, 0) RETURNING id`, taskID, started).Scan(&runID))
+	_ = runID
+
+	body := map[string]interface{}{
+		"agent_id": "agent-62",
+		"origin":   "scan",
+		"hosts": []map[string]interface{}{
+			// Two devices that see each other via LLDP → both endpoints known
+			// → a topology_edges row must exist after the report.
+			{
+				"ip": "192.168.2.10", "alive": true, "mac": "aa:bb:cc:dd:ee:10",
+				"neighbors": []map[string]interface{}{
+					{"neighbor_mac": "aa:bb:cc:dd:ee:11", "protocol": "LLDP"},
+				},
+			},
+			{
+				"ip": "192.168.2.11", "alive": true, "mac": "aa:bb:cc:dd:ee:11",
+				"neighbors": []map[string]interface{}{
+					{"neighbor_mac": "aa:bb:cc:dd:ee:10", "protocol": "LLDP"},
+				},
+			},
+			// A device whose neighbor is NOT a known device: stays in
+			// device_neighbors only, no edge row.
+			{
+				"ip": "192.168.2.12", "alive": true, "mac": "aa:bb:cc:dd:ee:12",
+				"neighbors": []map[string]interface{}{
+					{"neighbor_mac": "aa:bb:cc:dd:ee:99", "protocol": "ARP"},
+				},
+			},
+			{"ip": "192.168.2.13", "alive": false, "mac": "aa:bb:cc:dd:ee:13"}, // dead: no scan_results row
+		},
+	}
+	code, out := postReport(t, srv, token, body)
+	require.Equal(t, http.StatusOK, code, "%v", out)
+
+	// (a) topology_edges: exactly the resolved LLDP pair (deduped per direction
+	// is fine — UNIQUE(from,to,edge_type) keeps one row per directed edge).
+	var edgeCount, resolvedPairs int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM topology_edges`).Scan(&edgeCount))
+	require.NoError(t, db.QueryRow(`
+		SELECT COUNT(*) FROM topology_edges e
+		JOIN devices d1 ON d1.id = e.from_device_id
+		JOIN devices d2 ON d2.id = e.to_device_id
+		WHERE d1.mac_address = 'aa:bb:cc:dd:ee:10' AND d2.mac_address = 'aa:bb:cc:dd:ee:11'
+		   OR d1.mac_address = 'aa:bb:cc:dd:ee:11' AND d2.mac_address = 'aa:bb:cc:dd:ee:10'`).Scan(&resolvedPairs))
+	require.Positive(t, edgeCount)
+	require.Positive(t, resolvedPairs)
+
+	// (b) scan_results: three alive in-network hosts, one dead → 3 rows, all
+	// linked to the pending run's task.
+	var results, linked int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM scan_results WHERE alive = 1`).Scan(&results))
+	require.NoError(t, db.QueryRow(`
+		SELECT COUNT(*) FROM scan_results r
+		JOIN scan_task_runs run ON run.id = r.run_id
+		JOIN scan_tasks tk ON tk.id = r.task_id
+		WHERE tk.network_id = ?`, networkID).Scan(&linked))
+	require.Equal(t, 3, results)
+	require.Equal(t, 3, linked)
 }

@@ -13,7 +13,9 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
+	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -62,23 +64,73 @@ func (rn *Runner) injectARPTopology(ctx context.Context, networkID sql.NullInt64
 		return
 	}
 
-	// 2. Identify the gateway: prefer /proc/net/route default route, fall back
-	//    to .1 heuristic on the scanner's own subnet.
+	subnet := rn.networkCIDR(ctx, networkID.Int64)
+
+	// 2. Identify the star center. The default-route gateway is only valid
+	//    when it sits INSIDE the scanned subnet: on the router itself (the
+	//    soft-router center scanning its own LANs) the default route points at
+	//    the WAN upstream — a different subnet whose device row never exists
+	//    here — and every edge would resolve to nothing (the zero-edge graph
+	//    this step exists to prevent).
 	gatewayIP := readDefaultGatewayFrom(routeTablePath)
-	if gatewayIP == "" {
-		gatewayIP = guessGatewayFromARP(arpEntries)
+	if gatewayIP != "" && subnet != nil && !subnet.Contains(net.ParseIP(gatewayIP)) {
+		gatewayIP = ""
 	}
+	// 2b. Fall back to the scanned subnet's .1 present in the ARP table (a
+	//     leaf box whose uplink is PPPoE still ARPs the real LAN gateway
+	//     during the scan). A router has no ARP entry for its own .1, so this
+	//     misses on exactly the boxes that need the next rule.
 	if gatewayIP == "" {
+		gatewayIP = guessGatewayFromARP(arpEntries, subnet)
+	}
+	var gatewayMAC string
+	if gatewayIP != "" {
+		gatewayMAC = arpEntries[gatewayIP]
+	}
+	// 2c. Last resort: the scanner box itself holds an address in the scanned
+	//     subnet → it IS this subnet's gateway (router/soft-router vantage).
+	//     The box's own interface MAC is the star center; AnchorLocalInterfaces
+	//     keeps a device row keyed by that same MAC so the edges resolve.
+	if gatewayMAC == "" && subnet != nil {
+		if selfMAC := selfMACInSubnet(subnet); selfMAC != "" {
+			gatewayIP, gatewayMAC = "self", selfMAC
+		}
+	}
+	if gatewayMAC == "" {
 		rn.logger.Debug("arp-topology: no gateway identified, skipping")
-		return
-	}
-	gatewayMAC, ok := arpEntries[gatewayIP]
-	if !ok || gatewayMAC == "" {
-		rn.logger.Debug("arp-topology: gateway has no ARP entry", "gateway", gatewayIP)
 		return
 	}
 
 	rn.injectARPEdges(ctx, networkID, reports, gatewayIP, gatewayMAC)
+}
+
+// networkCIDR loads the scanned network's CIDR (networks.cidr), parsed. A
+// missing/unparseable cidr returns nil: the gateway heuristics then keep their
+// legacy subnet-agnostic behavior.
+func (rn *Runner) networkCIDR(ctx context.Context, networkID int64) *net.IPNet {
+	var cidr sql.NullString
+	if err := rn.dbConn.QueryRowContext(ctx,
+		`SELECT cidr FROM networks WHERE id = ?`, networkID).Scan(&cidr); err != nil || !cidr.Valid || cidr.String == "" {
+		return nil
+	}
+	_, parsed, err := net.ParseCIDR(cidr.String)
+	if err != nil {
+		return nil
+	}
+	return parsed
+}
+
+// selfMACInSubnet returns the scanner box's own interface MAC that holds an
+// IPv4 address inside subnet, or "" (the local anchor enumeration is the
+// ground truth for "which MAC do I answer on in this subnet", #522).
+func selfMACInSubnet(subnet *net.IPNet) string {
+	for _, pair := range localIPMACPairs() {
+		ip := net.ParseIP(pair.IP)
+		if ip != nil && subnet.Contains(ip) {
+			return pair.MAC
+		}
+	}
+	return ""
 }
 
 // arpTablePath is the kernel's ARP cache, world-readable (no privileges).
@@ -250,9 +302,22 @@ func hexRouteToIP(hex string) string {
 
 // guessGatewayFromARP finds a likely gateway IP from the ARP entries when
 // /proc/net/route is unavailable. Heuristic: the .1 address of the first /24
-// seen in the ARP table (e.g. 192.168.1.1). Returns "" if no .1 exists.
-func guessGatewayFromARP(arp map[string]string) string {
+// seen in the ARP table (e.g. 192.168.1.1), scoped to subnet when known (the
+// ARP cache spans every interface, including WAN). Returns "" if no candidate
+// exists. Deterministic: iterates sorted IPs.
+func guessGatewayFromARP(arp map[string]string, subnet *net.IPNet) string {
+	ips := make([]string, 0, len(arp))
 	for ip := range arp {
+		ips = append(ips, ip)
+	}
+	sort.Strings(ips)
+	for _, ip := range ips {
+		if subnet != nil {
+			parsed := net.ParseIP(ip)
+			if parsed == nil || !subnet.Contains(parsed) {
+				continue
+			}
+		}
 		parts := strings.Split(ip, ".")
 		if len(parts) == 4 && parts[3] == "1" {
 			return ip
