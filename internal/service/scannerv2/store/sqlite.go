@@ -891,11 +891,32 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 	// none — so the row self-heals without touching plausible names
 	// (user edits included).
 	var storedName string
-	if err := r.db.QueryRowContext(ctx, `SELECT name FROM devices WHERE id = ?`, in.TargetID).Scan(&storedName); err == nil {
+	var storedAttrs []byte
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT name, scan_attributes FROM devices WHERE id = ?`, in.TargetID).
+		Scan(&storedName, &storedAttrs); err == nil {
 		if storedName != "" && storedName != in.IP && !scannerv2.PlausibleHostname(storedName) {
 			healName := in.IP
 			if scannerv2.PlausibleHostname(in.Name) && in.Name != "" {
 				healName = in.Name
+			}
+			// The same mojibake usually also sits in scan_attributes.hostname,
+			// and the merge-keep-old json_patch semantics ("a shallow scan
+			// can't erase a deeper scan's fields") would preserve it forever.
+			// Strip exactly an implausible hostname key; a plausible stored
+			// attribute (or none) is left for the merge doctrine to keep.
+			var attrs map[string]any
+			if json.Unmarshal(storedAttrs, &attrs) == nil {
+				if h, ok := attrs["hostname"].(string); ok && !scannerv2.PlausibleHostname(h) {
+					delete(attrs, "hostname")
+					if cleaned, merr := json.Marshal(attrs); merr == nil {
+						if _, err := r.db.ExecContext(ctx,
+							`UPDATE devices SET name = ?, scan_attributes = ?, updated_at = ? WHERE id = ?`,
+							healName, string(cleaned), now, in.TargetID); err != nil {
+							r.logger.Warn("device identity: garbage name heal failed", "ip", in.IP, "device_id", in.TargetID, "error", err)
+						}
+					}
+				}
 			}
 			if _, err := r.db.ExecContext(ctx,
 				`UPDATE devices SET name = ?, updated_at = ? WHERE id = ?`,
