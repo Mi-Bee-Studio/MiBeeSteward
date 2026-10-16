@@ -3,14 +3,14 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-full build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt feed-index clean test coverage coverage-gate coverage-bump coverage-agent-rs coverage-agent-rs-gate coverage-agent-rs-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: sync-webserver-brands all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-full build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt feed-index clean test coverage coverage-gate coverage-bump coverage-agent-rs coverage-agent-rs-gate coverage-agent-rs-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
 build-frontend:
 	cd web && npm run build
 
-build-server: sync-device-types sync-oui-curated
+build-server: sync-device-types sync-oui-curated sync-webserver-brands
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server/
 
 # Discovery agent (distributed mode): the Rust agent (agent-rs/, issue #471)
@@ -367,6 +367,15 @@ sync-device-types:
 	@cp -v configs/fingerprints/device-types/device_types.yaml internal/service/scannerv2/runner/device_types.yaml
 	@echo "device_types.yaml synced to runner embed dir"
 
+# web-server-brands denylist: shared data layer read by BOTH stacks (the Go
+# center embed and the Rust agent assets) - one source in configs/, so the
+# two denylists can never drift again (they did while both were hardcoded:
+# the Rust copy was missing "sdk").
+sync-webserver-brands:
+	@cp -v configs/fingerprints/web-server-brands.txt internal/service/scannerv2/web_server_brands.txt
+	@cp -v configs/fingerprints/web-server-brands.txt agent-rs/crates/mibee-agent/assets/web_server_brands.txt
+	@echo "web-server-brands.txt synced to both embeds"
+
 # docs-changelog-sync regenerates the docs/en/changelog.md mirror from the
 # root CHANGELOG.md and version-checks the hand-maintained Chinese translation
 # (docs/zh/changelog.md) against it (#322). Run whenever CHANGELOG.md changes;
@@ -389,7 +398,7 @@ sync-oui-curated:
 # copy in the tree) with the configs/ source of truth — same contract as the
 # Go embed syncs above: configs/ is truth, the agent-rs assets are build-time
 # copies (crates cannot include_str files outside their package dir).
-sync-agent-rs-assets:
+sync-agent-rs-assets: sync-webserver-brands
 	@cp -v configs/fingerprints/*.yaml agent-rs/crates/mibee-agent/assets/fingerprints/
 	@cp -v configs/fingerprints/device-types/device_types.yaml agent-rs/crates/mibee-agent/assets/device_types.yaml
 	@cp -v configs/oui-curated.txt agent-rs/crates/mibee-agent/assets/oui_curated.txt
@@ -398,7 +407,7 @@ sync-agent-rs-assets:
 # check-agent-rs-assets fails when the committed agent-rs copies drifted from
 # configs/ (CI runs it; same guard class as the sqlc/apiclient drift checks).
 check-agent-rs-assets:
-	@ok=1; 	for f in configs/fingerprints/*.yaml; do 		b=$$(basename "$$f"); 		diff -q "$$f" "agent-rs/crates/mibee-agent/assets/fingerprints/$$b" >/dev/null || { echo "::error::agent-rs assets drift: $$b (run 'make sync-agent-rs-assets')"; ok=0; }; 	done; 	diff -q configs/fingerprints/device-types/device_types.yaml agent-rs/crates/mibee-agent/assets/device_types.yaml >/dev/null || { echo "::error::agent-rs assets drift: device_types.yaml (run 'make sync-agent-rs-assets')"; ok=0; }; 	diff -q configs/oui-curated.txt agent-rs/crates/mibee-agent/assets/oui_curated.txt >/dev/null || { echo "::error::agent-rs assets drift: oui_curated.txt (run 'make sync-agent-rs-assets')"; ok=0; }; 	[ $$ok -eq 1 ] && echo "agent-rs assets in sync"
+	@ok=1; 	for f in configs/fingerprints/*.yaml; do 		b=$$(basename "$$f"); 		diff -q "$$f" "agent-rs/crates/mibee-agent/assets/fingerprints/$$b" >/dev/null || { echo "::error::agent-rs assets drift: $$b (run 'make sync-agent-rs-assets')"; ok=0; }; 	done; 	diff -q configs/fingerprints/device-types/device_types.yaml agent-rs/crates/mibee-agent/assets/device_types.yaml >/dev/null || { echo "::error::agent-rs assets drift: device_types.yaml (run 'make sync-agent-rs-assets')"; ok=0; }; 	diff -q configs/oui-curated.txt agent-rs/crates/mibee-agent/assets/oui_curated.txt >/dev/null || { echo "::error::agent-rs assets drift: oui_curated.txt (run 'make sync-agent-rs-assets')"; ok=0; }; 	 diff -q configs/fingerprints/web-server-brands.txt agent-rs/crates/mibee-agent/assets/web_server_brands.txt >/dev/null || { echo "::error::agent-rs assets drift: web_server_brands.txt (run 'make sync-agent-rs-assets')"; ok=0; }; 	diff -q configs/fingerprints/web-server-brands.txt internal/service/scannerv2/web_server_brands.txt >/dev/null || { echo "::error::Go embed drift: web_server_brands.txt (run 'make sync-webserver-brands')"; ok=0; }; 	[ $$ok -eq 1 ] && echo "agent-rs assets in sync"
 
 # fpimport converts third-party fingerprint databases into the MiBee rule format.
 # See cmd/fpimport/ and docs/fingerprint-spec.md for supported sources.

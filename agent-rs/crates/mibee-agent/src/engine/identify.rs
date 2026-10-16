@@ -195,11 +195,33 @@ fn os_from_sysdescr(t: &SnmpTables, lower: &str) -> String {
 
 // ---------- host-level evidence fold (orchestrator.go) ----------
 
-pub const WEB_SERVER_DENYLIST: [&str; 8] =
-    ["nginx", "apache", "caddy", "lighttpd", "microsoft iis", "minidlna", "readymedia", "portable"];
+/// Web-server brand denylist parsed once from the shared data file
+/// (EMBEDDED_WEB_SERVER_BRANDS, synced from configs/ — the Go center embeds
+/// the same source). This used to be a hardcoded array here AND in Go, and
+/// the two drifted (the Rust copy was missing "sdk").
+fn web_server_denylist() -> &'static Vec<String> {
+    static LIST: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    LIST.get_or_init(|| {
+        crate::engine::EMBEDDED_WEB_SERVER_BRANDS
+            .lines()
+            .map(|l| l.trim().to_lowercase())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .collect()
+    })
+}
 
 pub fn is_web_server_name(brand: &str) -> bool {
-    WEB_SERVER_DENYLIST.contains(&brand.to_lowercase().as_str())
+    let lower = brand.to_lowercase();
+    web_server_denylist().iter().any(|n| *n == lower)
+}
+
+/// Go plausibleHostname (orchestrator.go): a name may become node_hostname
+/// only when it carries no control runes and no undecodable-byte marker.
+/// Rust Strings are always valid UTF-8, so the Go utf8.ValidString check
+/// translates to rejecting U+FFFD — lossy decoders emit it exactly where Go
+/// saw invalid bytes. CJK marketing suffixes (TL-XDR3040易展版) pass.
+pub fn plausible_hostname(s: &str) -> bool {
+    !s.is_empty() && !s.chars().any(|c| c.is_control() || c == '\u{FFFD}')
 }
 
 pub fn looks_like_brand_junk(v: &str) -> bool {
@@ -328,11 +350,16 @@ pub fn fold_host_evidence(fields: &mut DeviceFields, ev: &[Evidence]) {
                 fields.set("oui_vendor", &rd.get("oui_vendor").cloned().unwrap_or_default());
             }
             "hostname" => {
-                fields.set_if_empty("node_hostname", &rd.get("hostname").cloned().unwrap_or_default());
+                let v = rd.get("hostname").cloned().unwrap_or_default();
+                if plausible_hostname(&v) {
+                    fields.set_if_empty("node_hostname", &v);
+                }
             }
             "tls" => {
                 let cn = rd.get("subject_cn").cloned().unwrap_or_default();
-                fields.set_if_empty("node_hostname", strip_wildcard_prefix(&cn));
+                if plausible_hostname(&cn) {
+                    fields.set_if_empty("node_hostname", strip_wildcard_prefix(&cn));
+                }
                 let cn_brand = cert_fields_to_brand(
                     &cn,
                     &rd.get("issuer_org").cloned().unwrap_or_default(),
@@ -354,7 +381,10 @@ pub fn fold_host_evidence(fields: &mut DeviceFields, ev: &[Evidence]) {
                 }
             }
             "mdns" => {
-                fields.set_if_empty("node_hostname", &rd.get("hostname").cloned().unwrap_or_default());
+                let v = rd.get("hostname").cloned().unwrap_or_default();
+                if plausible_hostname(&v) {
+                    fields.set_if_empty("node_hostname", &v);
+                }
                 for key in ["txt.vendor", "txt.manufacturer", "txt.md", "txt.ty"] {
                     if let Some(v) = rd.get(key) {
                         if !looks_like_brand_junk(v) && fields.get("inferred_brand").is_empty() {
@@ -375,7 +405,10 @@ pub fn fold_host_evidence(fields: &mut DeviceFields, ev: &[Evidence]) {
                 }
             }
             "netbios" => {
-                fields.set_if_empty("node_hostname", &rd.get("hostname").cloned().unwrap_or_default());
+                let v = rd.get("hostname").cloned().unwrap_or_default();
+                if plausible_hostname(&v) {
+                    fields.set_if_empty("node_hostname", &v);
+                }
                 fields.set_if_empty("netbios_workgroup", &rd.get("workgroup").cloned().unwrap_or_default());
                 // deliberately NO os_type inference (Go parity note)
             }
@@ -737,5 +770,85 @@ mod tests {
         assert_eq!(ssdp_server_to_brand("Linux/4.4 UPnP/1.1 MyDevice/1.0"), "MyDevice");
         assert_eq!(ssdp_server_to_brand("lunzn,fastrhino-r68s UPnP/1.1"), "");
         assert_eq!(ssdp_server_to_os("lunzn,fastrhino-r68s UPnP/1.1"), ""); // no / in first token
+    }
+
+    #[test]
+    fn web_server_denylist_loads_from_shared_data() {
+        // Parsed from the synced configs/fingerprints/web-server-brands.txt —
+        // the same file the Go center embeds. "sdk" is the entry the old
+        // hardcoded Rust copy was missing (fnOS Server header, field-found
+        // 2026-10-12).
+        assert!(is_web_server_name("nginx"));
+        assert!(is_web_server_name("NGINX"));
+        assert!(is_web_server_name("Microsoft IIS"));
+        assert!(is_web_server_name("SDK"));
+        assert!(!is_web_server_name("Hikvision"));
+        assert_eq!(web_server_denylist().len(), 9, "denylist: {:?}", web_server_denylist());
+    }
+
+    #[test]
+    fn plausible_hostname_matches_go_semantics() {
+        // Go plausibleHostname: valid UTF-8, no control runes. Rust Strings
+        // are valid UTF-8 by construction; U+FFFD marks what Go saw as
+        // invalid bytes (lossy decode).
+        assert!(plausible_hostname("rpi3b-storage"));
+        assert!(plausible_hostname("TL-XDR3040易展版"), "CJK marketing suffix passes");
+        assert!(!plausible_hostname(""));
+        assert!(!plausible_hostname("L\x14ÿ.lan"), "control rune fails");
+        assert!(!plausible_hostname("bad\u{FFFD}name"), "lossy-decode marker fails");
+        assert!(!plausible_hostname("tab\tname"), "control whitespace fails");
+    }
+
+    #[test]
+    fn fold_drops_garbage_hostnames_from_every_entry_point() {
+        // The four node_hostname write sites (hostname / tls-CN / mdns /
+        // netbios) all gate on plausible_hostname — a mojibake name from a
+        // broken NBNS/mDNS responder never reaches the wire.
+        for kind in ["hostname", "mdns", "netbios"] {
+            let mut f = DeviceFields::default();
+            let ev = vec![Evidence {
+                kind: kind.into(),
+                raw_data: rd(&[("hostname", "L\x14ÿ.lan")]),
+                ..Default::default()
+            }];
+            fold_host_evidence(&mut f, &ev);
+            assert!(
+                f.get("node_hostname").is_empty(),
+                "{kind} garbage must be dropped"
+            );
+        }
+        let mut f = DeviceFields::default();
+        let ev = vec![Evidence {
+            kind: "tls".into(),
+            raw_data: rd(&[("subject_cn", "bad\u{FFFD}.local"), ("issuer_org", "")]),
+            ..Default::default()
+        }];
+        fold_host_evidence(&mut f, &ev);
+        assert!(
+            f.get("node_hostname").is_empty(),
+            "garbage TLS-CN must be dropped"
+        );
+
+        // Clean names still land on every entry point.
+        let mut f = DeviceFields::default();
+        let ev = vec![
+            Evidence {
+                kind: "hostname".into(),
+                raw_data: rd(&[("hostname", "core.lan")]),
+                ..Default::default()
+            },
+            Evidence {
+                kind: "mdns".into(),
+                raw_data: rd(&[("hostname", "appletv.local")]),
+                ..Default::default()
+            },
+        ];
+        fold_host_evidence(&mut f, &ev);
+        assert_eq!(f.get("node_hostname"), "core.lan", "first clean evidence wins");
+        let mut f = DeviceFields::default();
+        let ev = vec![Evidence { kind: "netbios".into(), raw_data: rd(&[("hostname", "TL-XDR3040易展版"), ("workgroup", "WORKGROUP")]), ..Default::default() }];
+        fold_host_evidence(&mut f, &ev);
+        assert_eq!(f.get("node_hostname"), "TL-XDR3040易展版");
+        assert_eq!(f.get("netbios_workgroup"), "WORKGROUP", "ungated sibling field unaffected");
     }
 }

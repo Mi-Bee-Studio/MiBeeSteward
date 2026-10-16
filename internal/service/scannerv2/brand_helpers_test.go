@@ -10,6 +10,7 @@
 package scannerv2
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -67,11 +68,28 @@ func TestLooksLikeBrandJunk(t *testing.T) {
 // added after the field session: a NAS fronted by MiniDLNA was branded
 // "MiniDLNA", an fnOS NAS "Portable" — both software tokens, not vendors.
 func TestWebServerBrandDenylistExtension(t *testing.T) {
-	for _, name := range []string{"nginx", "MiniDLNA", "ReadyMedia", "Portable", "Caddy", "lighttpd"} {
+	for _, name := range []string{"nginx", "MiniDLNA", "ReadyMedia", "Portable", "Caddy", "lighttpd", "SDK"} {
 		require.True(t, IsWebServerBrand(name), name)
 	}
 	for _, name := range []string{"Xiaomi", "Viomi", "Synology", "GL.iNet"} {
 		require.False(t, IsWebServerBrand(name), name)
+	}
+}
+
+// TestWebServerBrandDenylistFromSharedData pins the file-backed denylist:
+// web_server_brands.txt (synced from configs/fingerprints/, the same source
+// the Rust agent embeds) must parse to the expected nine lowercase names —
+// comment lines skipped, nothing silently missing (the Rust copy drifted
+// exactly that way while both lists were hardcoded).
+func TestWebServerBrandDenylistFromSharedData(t *testing.T) {
+	names := WebServerBrandNames()
+	require.Len(t, names, 9, "denylist: %v", names)
+	require.ElementsMatch(t, []string{
+		"nginx", "apache", "caddy", "lighttpd", "microsoft iis",
+		"minidlna", "readymedia", "portable", "sdk",
+	}, names)
+	for _, name := range names {
+		require.Equal(t, name, strings.ToLower(name), "entries must be lowercase: %q", name)
 	}
 }
 

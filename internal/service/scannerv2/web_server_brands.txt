@@ -1,0 +1,22 @@
+# Web-server / media-server software names that must never become a device
+# brand (shared data layer: the Go center embeds its copy at
+# internal/service/scannerv2/web_server_brands.txt, the Rust agent at
+# agent-rs/crates/mibee-agent/assets/web_server_brands.txt — synced by
+# `make sync-webserver-brands`, drift-checked in CI).
+#
+# These names appear in HTTP Server headers / SSDP SERVER fields and were
+# historically folded into devices.brand before the junk guards existed
+# (field-found: a Xiaomi gateway branded "nginx", a NAS branded "MiniDLNA",
+# an fnOS NAS branded "Portable"; fnOS boxes also ship a literal "SDK"
+# Server header — field-found 2026-10-12).
+#
+# One lowercase name per line; blank lines and # comments ignored.
+nginx
+apache
+caddy
+lighttpd
+microsoft iis
+minidlna
+readymedia
+portable
+sdk

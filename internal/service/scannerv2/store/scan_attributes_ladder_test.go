@@ -48,6 +48,20 @@ func TestBuildStoreScanAttributes_FieldLadder(t *testing.T) {
 	require.Zero(t, attr.MemoryTotalBytes, "junk numeric stays zero")
 	require.Zero(t, attr.CPUCount, "negative numeric stays zero")
 	require.Zero(t, attr.UptimeSeconds, "zero uptime stays zero")
+
+	// Ingest-side hostname gate: garbage never reaches the device record,
+	// whatever path produced it (an agent older than the fold-side gates can
+	// still emit mojibake on the wire) — fall through to the next candidate,
+	// and stay empty when every candidate is implausible.
+	d3 := scannerv2.DeviceRef{IP: "10.0.0.3", Type: "other"}
+	attr = buildStoreScanAttributes(d3, map[string]string{
+		"node_hostname": "L\x14ÿ.lan", "sys_name": "clean-host",
+	}, "", "", "", "")
+	require.Equal(t, "clean-host", attr.Hostname, "garbage node_hostname falls through to sys_name")
+	attr = buildStoreScanAttributes(d3, map[string]string{
+		"node_hostname": "bad\x01name", "sys_name": "worse\tname",
+	}, "", "", "", "")
+	require.Empty(t, attr.Hostname, "all-implausible candidates stay empty")
 }
 
 // TestEnrichDeviceByMAC_MergesAndCreates drives the MAC-keyed enrichment:
