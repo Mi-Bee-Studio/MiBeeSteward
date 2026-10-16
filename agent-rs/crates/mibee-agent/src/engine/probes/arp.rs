@@ -20,7 +20,11 @@ pub(crate) struct ArpRow {
     pub(crate) device: String,
 }
 
-probe_impl!(ArpProbe, "active:arp", |ip: IpAddr, hint: &ProbeHint| async move { for _ in 0..3 {
+probe_impl!(
+    ArpProbe,
+    "active:arp",
+    |ip: IpAddr, hint: &ProbeHint| async move {
+        for _ in 0..3 {
             if let Some(rows) = cached_arp().await {
                 if let Some(row) = rows.iter().find(|r| r.ip == ip.to_string()) {
                     let mut e = ev("active:arp", "mac", ip, 1.0);
@@ -38,7 +42,9 @@ probe_impl!(ArpProbe, "active:arp", |ip: IpAddr, hint: &ProbeHint| async move { 
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
-        Vec::new() });
+        Vec::new()
+    }
+);
 
 async fn cached_arp() -> Option<Vec<ArpRow>> {
     let cache = CACHE.get_or_init(|| Mutex::new(None));
@@ -51,12 +57,22 @@ async fn cached_arp() -> Option<Vec<ArpRow>> {
         }
     }
     let rows = parse_proc_arp().await?;
-    let _ = cache.lock().ok()?.replace((SystemTime::now(), rows.clone()));
+    let _ = cache
+        .lock()
+        .ok()?
+        .replace((SystemTime::now(), rows.clone()));
     Some(rows)
 }
 
 pub async fn parse_proc_arp() -> Option<Vec<ArpRow>> {
     let text = tokio::fs::read_to_string("/proc/net/arp").await.ok()?;
+    Some(parse_arp_table(&text))
+}
+
+/// Pure /proc/net/arp body parse: only reachable (flags 0x2) entries
+/// survive, MACs are lowercased, device comes from the 6th column. Short or
+/// non-reachable lines are skipped, never fatal.
+pub(crate) fn parse_arp_table(text: &str) -> Vec<ArpRow> {
     let mut rows = Vec::new();
     for line in text.lines().skip(1) {
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -72,7 +88,7 @@ pub async fn parse_proc_arp() -> Option<Vec<ArpRow>> {
             device: cols[5].to_string(),
         });
     }
-    Some(rows)
+    rows
 }
 
 #[cfg(test)]
@@ -80,12 +96,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_arp_table_text() {
-        // exercised through parse on Linux; unit-test the shape logic via a
-        // direct parser variant below (kept separate from /proc reads).
-        let cols: Vec<&str> = "192.0.2.5 0x1 0x2 aa:bb:cc:dd:ee:ff * br-lan".split_whitespace().collect();
-        assert_eq!(cols[2], "0x2");
-        assert_eq!(cols[3].to_ascii_lowercase(), "aa:bb:cc:dd:ee:ff");
-        assert_eq!(cols[5], "br-lan");
+    fn parse_arp_table_keeps_reachable_rows_and_lowercases_macs() {
+        let table = concat!(
+            "IP address       HW type   Flags   HW address            Mask     Device\n",
+            "192.0.2.5        0x1       0x2     AA:BB:CC:DD:EE:05    *        br-lan\n",
+            "192.0.2.6        0x1       0x0     aa:bb:cc:dd:ee:06    *        br-lan\n",
+            "truncated line\n",
+        );
+        let rows = parse_arp_table(table);
+        assert_eq!(rows.len(), 1, "only the reachable (0x2) row survives");
+        assert_eq!(rows[0].ip, "192.0.2.5");
+        assert_eq!(rows[0].mac, "aa:bb:cc:dd:ee:05");
+        assert_eq!(rows[0].device, "br-lan");
+        assert!(parse_arp_table("").is_empty());
+        assert!(parse_arp_table("header only\n").is_empty());
     }
 }

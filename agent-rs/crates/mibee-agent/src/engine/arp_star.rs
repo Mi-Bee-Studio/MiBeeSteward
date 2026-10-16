@@ -46,6 +46,13 @@ pub async fn inject_arp_star(hosts: &mut [ReportedHost], network_cidr: &str) {
     let Some(star_mac) = pick_star_mac(net).await else {
         return;
     };
+    annotate_star_neighbors(hosts, &star_mac);
+}
+
+/// The pure per-host half: every alive, MAC-known host except the star center
+/// itself gains exactly one device→gateway ARP neighbor — unless a richer
+/// (e.g. SNMP-sourced) ARP adjacency for the same peer is already there.
+fn annotate_star_neighbors(hosts: &mut [ReportedHost], star_mac: &str) {
     for h in hosts.iter_mut() {
         if !h.alive || h.mac.is_empty() || h.mac == star_mac {
             continue;
@@ -59,7 +66,7 @@ pub async fn inject_arp_star(hosts: &mut [ReportedHost], network_cidr: &str) {
             continue;
         }
         h.neighbors.push(ReportedNeighbor {
-            neighbor_mac: star_mac.clone(),
+            neighbor_mac: star_mac.to_string(),
             protocol: "ARP".into(),
             source: "local:arp_star".into(),
             ..Default::default()
@@ -124,10 +131,15 @@ fn subnet_contains(net: Ipv4Net, ip: Ipv4Addr) -> bool {
     (u32::from(ip) & m) == (u32::from(net.network()) & m)
 }
 
-/// The kernel's default-route gateway from /proc/net/route (hex little-endian
-/// columns), or None when there is no default route / the file is unreadable.
+/// The kernel's default-route gateway from /proc/net/route, or None when
+/// there is no default route / the file is unreadable.
 fn default_gateway() -> Option<Ipv4Addr> {
-    let text = std::fs::read_to_string("/proc/net/route").ok()?;
+    default_gateway_from(&std::fs::read_to_string("/proc/net/route").ok()?)
+}
+
+/// Pure /proc/net/route scan: the default route is destination 00000000; its
+/// gateway column is a hex little-endian word. Header line skipped.
+fn default_gateway_from(text: &str) -> Option<Ipv4Addr> {
     for line in text.lines().skip(1) {
         let cols: Vec<&str> = line.split_whitespace().collect();
         if cols.len() < 3 || cols[1] != "00000000" {
@@ -319,5 +331,82 @@ mod tests {
         }];
         inject_arp_star(&mut hosts, "not-a-cidr").await;
         assert!(hosts[0].neighbors.is_empty());
+    }
+
+    #[test]
+    fn annotate_gives_each_eligible_host_exactly_one_star_edge() {
+        let star = "aa:bb:cc:dd:ee:01";
+        let host = |ip: &str, alive: bool, mac: &str| ReportedHost {
+            ip: ip.into(),
+            alive,
+            mac: mac.into(),
+            ..Default::default()
+        };
+        let mut hosts = vec![
+            host("192.0.2.5", true, "aa:bb:cc:dd:ee:05"),
+            // dead host: no edge
+            host("192.0.2.6", false, "aa:bb:cc:dd:ee:06"),
+            // MAC-less host: the center could never key the edge
+            host("192.0.2.7", true, ""),
+            // the star center itself never points at itself
+            host("192.0.2.1", true, star),
+        ];
+        annotate_star_neighbors(&mut hosts, star);
+        assert_eq!(hosts[0].neighbors.len(), 1);
+        let n = &hosts[0].neighbors[0];
+        assert_eq!(n.neighbor_mac, star);
+        assert_eq!(n.protocol, "ARP");
+        assert_eq!(n.source, "local:arp_star");
+        for (i, h) in hosts.iter().enumerate().skip(1) {
+            assert!(
+                h.neighbors.is_empty(),
+                "host #{i} ({}) must stay edge-less",
+                h.ip
+            );
+        }
+    }
+
+    #[test]
+    fn annotate_never_shadows_an_existing_arp_adjacency() {
+        let star = "aa:bb:cc:dd:ee:01";
+        let mut hosts = vec![ReportedHost {
+            ip: "192.0.2.5".into(),
+            alive: true,
+            mac: "aa:bb:cc:dd:ee:05".into(),
+            neighbors: vec![ReportedNeighbor {
+                neighbor_mac: star.into(),
+                protocol: "ARP".into(),
+                source: "snmp:l2_mib".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+        annotate_star_neighbors(&mut hosts, star);
+        assert_eq!(
+            hosts[0].neighbors.len(),
+            1,
+            "must not duplicate the adjacency"
+        );
+        assert_eq!(
+            hosts[0].neighbors[0].source, "snmp:l2_mib",
+            "the richer source wins"
+        );
+    }
+
+    #[test]
+    fn default_gateway_reads_the_default_route_row() {
+        let table = concat!(
+            "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n",
+            "eth0\t00000000\t0100A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n",
+            "eth0\t0001A8C0\t0200A8C0\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n",
+        );
+        assert_eq!(
+            default_gateway_from(table),
+            Some("192.168.0.1".parse().unwrap())
+        );
+        // no default route: only a subnet route present
+        let no_default = "Iface\tDestination\tGateway\neth0\t0001A8C0\t0200A8C0\n";
+        assert_eq!(default_gateway_from(no_default), None);
+        assert_eq!(default_gateway_from(""), None);
     }
 }
