@@ -11,6 +11,7 @@ package runner
 
 import (
 	"context"
+	"database/sql"
 	"net"
 
 	"mibee-steward/internal/service/scannerv2"
@@ -61,6 +62,13 @@ func localIPMACPairs() []scannerv2.IPMACPair {
 // and as a per-scan finalize step — self-healing, so a row created by any
 // scan is anchored by that same scan.
 func (rn *Runner) AnchorLocalInterfaces(ctx context.Context) {
+	rn.anchorLocalInterfaces(ctx, rn.networkID)
+}
+
+// anchorLocalInterfaces is the per-run form: scheduled scans pass the TASK's
+// network (a multi-network center anchors its own MACs into the rows of the
+// network it just scanned, not the wiring-time singleton network).
+func (rn *Runner) anchorLocalInterfaces(ctx context.Context, networkID sql.NullInt64) {
 	if rn.repo == nil {
 		return
 	}
@@ -68,7 +76,7 @@ func (rn *Runner) AnchorLocalInterfaces(ctx context.Context) {
 	if len(pairs) == 0 {
 		return
 	}
-	anchored, err := rn.repo.AnchorLocalInterfaces(ctx, rn.networkID, pairs)
+	anchored, err := rn.repo.AnchorLocalInterfaces(ctx, networkID, pairs)
 	if err != nil {
 		rn.logger.Debug("local anchor: store call failed", "error", err)
 		return

@@ -8,6 +8,7 @@
 ## [Unreleased]（未发布）
 
 ### Fixed
+- **多网段 center：一次扫描跟随任务自己的网络，而不是接线期的单例网络（R68S 零边残留）**：定时扫描任务自带 `network_id`，但 `Run()` 的所有网段相关步骤用的都是启动时从 config `network.name`（空 → "default"）解析出的单例网络——设备归组靠 MAC 主键身份解析侥幸正确，而 ARP 注入、边物化、失联检测、子网记录、本机锚定全部落在什么都沒有的网络里（软路由 rig 上：两个 LAN 扫描都完成、`device_neighbors` 零行）。现在整个收尾链路改用任务网络，并有回环端到端测试钉住。
 - **agent 扫描网段终于有拓扑连线——分布式 rig 上"零边图"的根治（2026-10-16 走查）**：三个断点叠加，使所有 agent 网段的拓扑图没有任何连线。(1) `deriveTopologyEdges` 只在本地扫描的收尾步骤运行，agent 上报的邻居边永远停在 `device_neighbors`、等不来 `topology_edges` 物化——agent 报告落库路径现在在每批应用后立即物化。(2) 无网管交换机的网络里 agent 从不上报任何邻接：agent-rs 0.1.8 在每次扫描后用自己的 `/proc/net/arp` + `/proc/net/route` 推导网关星型（网关择取：默认路由网关位于被扫网段**内**时直接采用 → ARP 表里存在网段首地址（.1）时采用 → 路由器视角兜底，agent 自身即网关，用 ARP 表 device 列定位 LAN 接口、从 sysfs 读自机 MAC 作星心），为每个存活主机附带一条 `ARP` wire neighbor。(3) center 本地 ARP 星在路由器本体上选错星心：默认路由指向 WAN 上游（不在任何被扫网段、也没有设备行），软路由 center 上所有边都解析不到任何设备、该步骤零产出——现在同样按"限定被扫 CIDR + 自机锚定接口兜底"的三级择取。两处修复上线后，rig 图上呈现真实的网关星型（lan-62 与 lan-63 均以桥接路由器为中心）加既有的 route-table 边。
 - **"扫描结果"页在纯 agent center 上不再恒空**：`scan_results` 此前只由本地 Runner 的 persistHost 写入，所有网段都由 agent 扫描的 center（即分布式 rig）一边每轮扫描、仪表盘记录运行，一边"扫描结果"页永远"暂无扫描结果"。现在 scan 来源的 agent 报告会按主机写 `scan_results`，挂到该网段待关闭的 dispatch-run 上（即 `backfillAgentRunStats` 关闭的那个 run），字段形状与本地路径一致；被动涓流与无 run 批次跳过（没有诚实的关联可挂）。
 - **"上次确认存活"不再在持续在线的 agent 设备上冻结**：`last_online_at` 取自 `device_liveness` 序列，但只有状态**翻转**才会采样——lease sweeper 只在离线→在线恢复时写 online 判定，而 center 侧心跳探测又明确跳过 agent 网段，于是连续在线数周的设备详情页停留在上一次翻转（rig 上停在 10 月 7 日），旁边却是几分钟前刚扫到它的记录。`RecordAliveSnapshots` 现在为每个存活主机按报告采样 online 判定，心跳服务内按"每设备每 5 分钟至多一条"节流——序列获得诚实性而不放大写入。
