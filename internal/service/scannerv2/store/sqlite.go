@@ -862,11 +862,16 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 
 	// 1b. Junk-brand heal. The fill-when-empty CASE above would keep a
 	// web-server banner name (nginx/apache/…, field data written before the
-	// fold-time junk guards existed) or a letter-less junk value ("0,1,2")
-	// as the brand forever. When this scan carries a real brand, overwrite
-	// exactly those two junk classes; a curated non-junk brand still wins
-	// over any scan-derived one (user edits are never clobbered).
-	if in.Brand != "" {
+	// fold-time junk guards existed, or by pre-2026-10-17 builds whose HTTP
+	// fold still branded from the Server header) or a letter-less junk value
+	// ("0,1,2") as the brand forever. A junk-class stored brand is replaced
+	// by this scan's real brand — or by '' when the scan carries none (the
+	// 宁空勿错 doctrine: an asset registry shows no vendor rather than a
+	// wrong one). A curated non-junk brand still wins over any scan-derived
+	// one (user edits are never clobbered), and fill-when-empty never
+	// re-writes the cleared slot because the fold no longer produces
+	// web-server brands at all.
+	{
 		deny := scannerv2.WebServerBrandNames()
 		healSQL := `UPDATE devices SET brand = ?, updated_at = ?
 			WHERE id = ?

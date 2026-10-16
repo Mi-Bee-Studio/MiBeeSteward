@@ -112,3 +112,53 @@ func TestApplyDeviceIdentity_GarbageNameHeal(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(attrsRaw), &attrs))
 	require.Equal(t, "书房台灯", attrs["hostname"], "plausible attr hostname survives the strip")
 }
+
+// TestApplyDeviceIdentity_JunkBrandHeal pins the 宁空勿错 heal semantics: a
+// stored denylisted brand (rows branded from the HTTP Server header by
+// pre-2026-10-17 builds) is replaced by the scan's real brand — or cleared
+// outright when the scan carries none — while a curated brand survives
+// every scan.
+func TestApplyDeviceIdentity_JunkBrandHeal(t *testing.T) {
+	repo, nid, conn, ctx := resolveRepo(t, 1)
+	mac := "aa:bb:cc:dd:ee:52"
+	devID := seedDeviceRow(t, conn, "10.0.0.52", mac, nid)
+	write := func(brand string) {
+		_, err := conn.ExecContext(ctx, `UPDATE devices SET brand = ? WHERE id = ?`, brand, devID)
+		require.NoError(t, err)
+	}
+	read := func() string {
+		var brand string
+		require.NoError(t, conn.QueryRowContext(ctx, `SELECT brand FROM devices WHERE id = ?`, devID).Scan(&brand))
+		return brand
+	}
+	apply := func(brand string) {
+		_, err := repo.ApplyDeviceIdentity(ctx, scannerv2.IdentityWrite{
+			TargetID: devID, IP: "10.0.0.52", MAC: mac, NetworkID: nid,
+			Brand: brand, ScanAttributesJSON: "{}",
+		})
+		require.NoError(t, err)
+	}
+
+	// No-brand scan clears a denylisted stored brand (the rig's five
+	// nginx rows are exactly this shape).
+	write("nginx")
+	apply("")
+	require.Empty(t, read(), "brand-less scan clears the web-server junk brand")
+
+	// A real brand still overwrites directly.
+	write("MiniDLNA")
+	apply("QNAP Systems")
+	require.Equal(t, "QNAP Systems", read(), "real brand replaces junk")
+
+	// Letter-less junk clears too.
+	write("0,1,2")
+	apply("")
+	require.Empty(t, read(), "brand-less scan clears letter-less junk")
+
+	// A curated brand (user edit) survives both scan shapes.
+	write("书房NAS")
+	apply("")
+	require.Equal(t, "书房NAS", read(), "curated brand never clobbered by a brand-less scan")
+	apply("Espressif")
+	require.Equal(t, "书房NAS", read(), "curated brand never clobbered by a scan brand")
+}

@@ -53,10 +53,6 @@ func TestOrchestrator_PureHelperTails(t *testing.T) {
 		{Kind: "port_closed", Port: 1}, {Kind: "other", Port: 9}, {Kind: "port_closed", Port: 2},
 	}))
 
-	require.Equal(t, "Caddy", httpServerToBrand("caddy/2.7"))
-	require.Equal(t, "lighttpd", httpServerToBrand("lighttpd/1.4"))
-	require.Empty(t, httpServerToBrand("weird-server"))
-
 	require.Equal(t, "Axis", certCNToBrand("AXIS P3245 Network Camera"))
 	require.Equal(t, "QNAP", certCNToBrand("QNAP NAS default"))
 	require.Equal(t, "Cisco", certCNToBrand("Cisco Small Business"))

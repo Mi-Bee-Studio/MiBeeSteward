@@ -311,38 +311,6 @@ func stripWildcardPrefix(cn string) string {
 	return cn
 }
 
-// httpServerToBrand extracts a coarse product/vendor label from an HTTP Server
-// header, used only as a last-resort brand when SNMP/cert/OUI yielded nothing.
-// Returns "" for servers that don't map to a clear product (the vast majority).
-func httpServerToBrand(server string) string {
-	switch {
-	case containsFold(server, "nginx"):
-		return "nginx"
-	case containsFold(server, "apache"):
-		return "Apache"
-	case containsFold(server, "caddy"):
-		return "Caddy"
-	case containsFold(server, "iis") || containsFold(server, "microsoft"):
-		return "Microsoft IIS"
-	case containsFold(server, "lighttpd"):
-		return "lighttpd"
-	}
-	return ""
-}
-
-// hasCameraEvidence reports whether the host produced RTSP-banner or ONVIF
-// response evidence, i.e. it is (very likely) a camera. Used to suppress
-// using the HTTP Server header (nginx/Apache reverse proxy) as the device
-// brand, since that software is not the camera's vendor.
-func hasCameraEvidence(ev []Evidence) bool {
-	for _, e := range ev {
-		if e.Kind == "rtsp_banner" || e.Kind == "onvif_response" {
-			return true
-		}
-	}
-	return false
-}
-
 // isWebServerName reports whether a brand string is a generic web-server or
 // media-server software name (nginx, Apache, Caddy, MiniDLNA, …) rather than
 // a real device vendor. Used by the TLS evidence fold and the miot handler to
@@ -654,16 +622,16 @@ func (o *Orchestrator) dispatch(ctx context.Context, report *HostReport, _ Probe
 				}
 			}
 		case "http":
-			// The Server header sometimes carries a vendor/product string that
-			// is more specific than OUI (e.g. "nginx/1.25", "Apache/2.4.58").
-			// Don't overwrite a stronger SNMP/cert-derived brand. Also skip when
-			// the host has RTSP/ONVIF evidence: cameras commonly front their web
-			// UI with nginx/Apache, and the web-server software is NOT the camera
-			// vendor, setting "nginx" as the brand of a Hikvision camera is
-			// misleading. Let the OUI/cert/ONVIF brand (or empty) win instead.
-			if v := e.RawData["server"]; v != "" && report.Device.Fields["inferred_brand"] == "" && !hasCameraEvidence(report.Evidence) {
-				report.Device.Fields["inferred_brand"] = httpServerToBrand(v)
-			}
+			// Deliberately NO brand from the Server header (decision
+			// 2026-10-17, "宁空勿错"): the header's only mappable outputs
+			// (nginx/Apache/Caddy/IIS/lighttpd) are ALL webServerBrandDenylist
+			// members — software-stack names, never device vendors — so the
+			// "last-resort brand" could only ever produce junk the store's
+			// heal would later have to fight. An asset registry shows no
+			// vendor rather than a wrong one; the Server string itself stays
+			// visible in the service/identity evidence. The SSDP path made
+			// the same call long ago (ssdpServerToBrand skips denylisted
+			// tokens); this closes the philosophic gap between the two.
 		case "mdns":
 			// mDNS carries a hostname (from SRV/A), advertised services
 			// (_onvif/_rtsp/_airplay), and high-signal TXT records (model,
