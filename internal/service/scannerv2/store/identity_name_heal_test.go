@@ -10,6 +10,7 @@
 package store
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -26,10 +27,17 @@ func TestApplyDeviceIdentity_GarbageNameHeal(t *testing.T) {
 	repo, nid, conn, ctx := resolveRepo(t, 1)
 	mac := "aa:bb:cc:dd:ee:42"
 
-	// Row carrying the field-found garbage name.
+	// Row carrying the field-found garbage name — and the same mojibake as
+	// its scan_attributes.hostname, which the merge-keep-old json_patch
+	// semantics would preserve forever.
 	devID := seedDeviceRow(t, conn, "10.0.0.42", mac, nid)
-	_, err := conn.ExecContext(ctx, `UPDATE devices SET name = ? WHERE id = ?`,
-		"L\x14ÿ.tail1a481.ts.net", devID)
+	garbage := "L\x14ÿ.tail1a481.ts.net"
+	seedAttrs, err := json.Marshal(map[string]any{
+		"hostname": garbage, "vendor": "Acme", "mac": "aa:bb:cc:dd:ee:42",
+	})
+	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, `UPDATE devices SET name = ?, scan_attributes = ? WHERE id = ?`,
+		garbage, string(seedAttrs), devID)
 	require.NoError(t, err)
 
 	// Next scan arrives with a clean name.
@@ -42,6 +50,12 @@ func TestApplyDeviceIdentity_GarbageNameHeal(t *testing.T) {
 	var name string
 	require.NoError(t, conn.QueryRowContext(ctx, `SELECT name FROM devices WHERE id = ?`, devID).Scan(&name))
 	require.Equal(t, "winhomepc.tail1a481.ts.net", name, "garbage name healed to the scan's clean name")
+	var attrsRaw string
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT scan_attributes FROM devices WHERE id = ?`, devID).Scan(&attrsRaw))
+	var attrs map[string]any
+	require.NoError(t, json.Unmarshal([]byte(attrsRaw), &attrs))
+	require.NotContains(t, attrs, "hostname", "garbage attr hostname stripped by the heal")
+	require.Equal(t, "Acme", attrs["vendor"], "sibling attribute keys survive the strip")
 
 	// A scan with NO name still heals: the IP is the honest fallback.
 	_, err = conn.ExecContext(ctx, `UPDATE devices SET name = ? WHERE id = ?`,
