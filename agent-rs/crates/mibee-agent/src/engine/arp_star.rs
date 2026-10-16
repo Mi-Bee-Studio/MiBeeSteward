@@ -30,7 +30,7 @@ use std::net::Ipv4Addr;
 
 use ipnet::Ipv4Net;
 
-use crate::engine::probes::arp::parse_proc_arp;
+use crate::engine::probes::arp::{parse_proc_arp, ArpRow};
 use crate::wire::{ReportedHost, ReportedNeighbor};
 
 /// Annotate every alive host (except the star center itself) with a
@@ -52,8 +52,7 @@ pub async fn inject_arp_star(hosts: &mut [ReportedHost], network_cidr: &str) {
         }
         // An SNMP-sourced ARP adjacency for the same peer already says more
         // (port context); never shadow it with a second bare ARP row.
-        if h
-            .neighbors
+        if h.neighbors
             .iter()
             .any(|n| n.neighbor_mac == star_mac && n.protocol == "ARP")
         {
@@ -69,14 +68,26 @@ pub async fn inject_arp_star(hosts: &mut [ReportedHost], network_cidr: &str) {
 }
 
 /// Resolve the star-center MAC for the scanned subnet (rules in the module
-/// doc). Pure over the inputs except the two /proc + sysfs reads.
+/// doc). Thin /proc + sysfs reader around the pure rule ladder.
 async fn pick_star_mac(net: Ipv4Net) -> Option<String> {
     let arp = parse_proc_arp().await?;
-    let in_subnet: Vec<&crate::engine::probes::arp::ArpRow> = arp
+    pick_star_mac_from(net, &arp, default_gateway(), read_iface_mac)
+}
+
+/// The pure rule ladder, split out so the vantage rules are unit-testable
+/// without /proc fixtures: filter the ARP table down to the scanned subnet,
+/// then apply gateway rules 1-3 using the injected default route and sysfs
+/// MAC reader (rule 3's router vantage).
+fn pick_star_mac_from(
+    net: Ipv4Net,
+    rows: &[ArpRow],
+    default_gw: Option<Ipv4Addr>,
+    iface_mac: impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let in_subnet: Vec<&ArpRow> = rows
         .iter()
         .filter(|r| {
-            r.ip
-                .parse::<Ipv4Addr>()
+            r.ip.parse::<Ipv4Addr>()
                 .map(|ip| subnet_contains(net, ip))
                 .unwrap_or(false)
         })
@@ -86,7 +97,7 @@ async fn pick_star_mac(net: Ipv4Net) -> Option<String> {
     }
 
     // Rule 1: default-route gateway inside the scanned subnet.
-    if let Some(gw) = default_gateway() {
+    if let Some(gw) = default_gw {
         if subnet_contains(net, gw) {
             if let Some(row) = in_subnet.iter().find(|r| r.ip == gw.to_string()) {
                 return Some(row.mac.clone());
@@ -103,7 +114,7 @@ async fn pick_star_mac(net: Ipv4Net) -> Option<String> {
     // Rule 3: router vantage — this box IS the gateway; its MAC on the LAN
     // interface the in-subnet entries live on.
     let iface = dominant_iface(&in_subnet)?;
-    read_iface_mac(&iface)
+    iface_mac(iface)
 }
 
 /// Mask math instead of ipnet's Contains (whose trait surface differs across
@@ -143,7 +154,7 @@ fn hex_route_to_ip(hex: &str) -> Option<Ipv4Addr> {
 
 /// The interface name carrying the most in-subnet ARP entries (the LAN-facing
 /// iface; ties broken by name for determinism).
-fn dominant_iface<'a>(rows: &[&'a crate::engine::probes::arp::ArpRow]) -> Option<&'a str> {
+fn dominant_iface<'a>(rows: &[&'a ArpRow]) -> Option<&'a str> {
     let mut counts: HashMap<&str, usize> = HashMap::new();
     for r in rows {
         if !r.device.is_empty() && r.device != "*" {
@@ -171,6 +182,20 @@ fn read_iface_mac(iface: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn arp_rows(list: &[(&str, &str, &str)]) -> Vec<ArpRow> {
+        list.iter()
+            .map(|(ip, mac, dev)| ArpRow {
+                ip: (*ip).into(),
+                mac: (*mac).into(),
+                device: (*dev).into(),
+            })
+            .collect()
+    }
+
+    fn net() -> Ipv4Net {
+        "192.0.2.0/24".parse().unwrap()
+    }
+
     #[test]
     fn hex_route_word_parses() {
         assert_eq!(
@@ -181,27 +206,98 @@ mod tests {
             hex_route_to_ip("0101A8C0"),
             Some("192.168.1.1".parse().unwrap())
         );
-        assert_eq!(hex_route_to_ip("0A00000A"), Some("10.0.0.10".parse().unwrap()));
+        assert_eq!(
+            hex_route_to_ip("0A00000A"),
+            Some("10.0.0.10".parse().unwrap())
+        );
         assert_eq!(hex_route_to_ip(""), None);
         assert_eq!(hex_route_to_ip("0100A8"), None); // 7 chars
         assert_eq!(hex_route_to_ip("ZZ00A8C0"), None); // non-hex
     }
 
     #[test]
+    fn subnet_contains_honors_the_mask() {
+        assert!(subnet_contains(net(), "192.0.2.77".parse().unwrap()));
+        assert!(!subnet_contains(net(), "192.0.3.1".parse().unwrap()));
+        let wide: Ipv4Net = "192.0.0.0/16".parse().unwrap();
+        assert!(subnet_contains(wide, "192.0.99.5".parse().unwrap()));
+        assert!(!subnet_contains(wide, "192.1.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn rule1_default_gateway_inside_the_subnet_wins() {
+        let rows = arp_rows(&[
+            ("192.0.2.1", "aa:bb:cc:dd:ee:01", "br-lan"),
+            ("192.0.2.5", "aa:bb:cc:dd:ee:05", "br-lan"),
+            ("198.51.100.9", "aa:bb:cc:dd:ee:09", "eth-wan"), // outside: ignored
+        ]);
+        let gw: Ipv4Addr = "192.0.2.1".parse().unwrap();
+        // Rules 1/2 resolve before any sysfs read is attempted.
+        let star = pick_star_mac_from(net(), &rows, Some(gw), |iface| {
+            panic!("rules 1/2 must resolve without the sysfs read: {iface}")
+        });
+        assert_eq!(star.as_deref(), Some("aa:bb:cc:dd:ee:01"));
+    }
+
+    #[test]
+    fn rule1_gateway_outside_subnet_or_absent_from_arp_falls_through() {
+        let rows = arp_rows(&[
+            ("192.0.2.1", "aa:bb:cc:dd:ee:01", "br-lan"),
+            ("192.0.2.5", "aa:bb:cc:dd:ee:05", "br-lan"),
+        ]);
+        // WAN-side default route (router vantage): must not become the star; .1 does.
+        let wan_gw: Ipv4Addr = "203.0.113.1".parse().unwrap();
+        let star = pick_star_mac_from(net(), &rows, Some(wan_gw), |_| None);
+        assert_eq!(star.as_deref(), Some("aa:bb:cc:dd:ee:01"));
+        // Gateway numerically inside the subnet but never ARPed: rule 2 answers.
+        let silent_gw: Ipv4Addr = "192.0.2.9".parse().unwrap();
+        let star = pick_star_mac_from(net(), &rows, Some(silent_gw), |_| None);
+        assert_eq!(star.as_deref(), Some("aa:bb:cc:dd:ee:01"));
+    }
+
+    #[test]
+    fn rule3_router_vantage_reads_the_dominant_lan_iface_mac() {
+        // No .1 row and no gateway: this box IS the star, named by its LAN iface.
+        let rows = arp_rows(&[
+            ("192.0.2.5", "aa:bb:cc:dd:ee:05", "br-lan"),
+            ("192.0.2.6", "aa:bb:cc:dd:ee:06", "br-lan"),
+            ("192.0.2.7", "aa:bb:cc:dd:ee:07", "eth1"),
+        ]);
+        let star = pick_star_mac_from(net(), &rows, None, |iface| {
+            assert_eq!(iface, "br-lan");
+            Some("ff:ee:dd:cc:bb:aa".into())
+        });
+        assert_eq!(star.as_deref(), Some("ff:ee:dd:cc:bb:aa"));
+        // A sysfs miss (unreadable MAC) means no star, never a wrong one.
+        let star = pick_star_mac_from(net(), &rows, None, |_| None);
+        assert_eq!(star, None);
+    }
+
+    #[test]
+    fn no_in_subnet_rows_means_no_star() {
+        // Everything outside the scanned subnet.
+        let rows = arp_rows(&[("198.51.100.9", "aa:bb:cc:dd:ee:09", "eth0")]);
+        assert_eq!(pick_star_mac_from(net(), &rows, None, |_| panic!()), None);
+        // Garbage IPs in the table are skipped, not fatal.
+        let rows = arp_rows(&[("not-an-ip", "aa:bb:cc:dd:ee:0a", "br-lan")]);
+        assert_eq!(pick_star_mac_from(net(), &rows, None, |_| panic!()), None);
+    }
+
+    #[test]
     fn dominant_iface_picks_lan_side_and_breaks_ties_deterministically() {
-        use crate::engine::probes::arp::ArpRow;
-        let row = |ip: &str, dev: &str| ArpRow {
-            ip: ip.into(),
-            mac: "aa:bb:cc:dd:ee:01".into(),
-            device: dev.into(),
-        };
-        let r1 = row("192.0.2.2", "br-lan");
-        let r2 = row("192.0.2.3", "br-lan");
-        let r3 = row("192.0.2.4", "eth1");
-        let rows = vec![&r1, &r2, &r3];
-        assert_eq!(dominant_iface(&rows), Some("br-lan"));
+        let rows = arp_rows(&[
+            ("192.0.2.2", "aa:bb:cc:dd:ee:02", "br-lan"),
+            ("192.0.2.3", "aa:bb:cc:dd:ee:03", "br-lan"),
+            ("192.0.2.4", "aa:bb:cc:dd:ee:04", "eth1"),
+        ]);
+        let refs: Vec<&ArpRow> = rows.iter().collect();
+        assert_eq!(dominant_iface(&refs), Some("br-lan"));
         // a row with no device never wins
-        let r4 = row("192.0.2.5", "");
+        let r4 = ArpRow {
+            ip: "192.0.2.5".into(),
+            mac: "aa:bb:cc:dd:ee:05".into(),
+            device: "".into(),
+        };
         assert_eq!(dominant_iface(&[&r4]), None);
     }
 
