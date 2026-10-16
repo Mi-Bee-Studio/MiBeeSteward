@@ -27,6 +27,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
+	"strings"
 	"time"
 
 	"mibee-steward/internal/changedetect"
@@ -240,6 +242,55 @@ func (rn *Runner) ApplyReport(ctx context.Context, rep scannerv2.HostReport, net
 // local scan path can pass it back through ApplyReport if needed.
 func (rn *Runner) NetworkID() sql.NullInt64 { return rn.networkID }
 
+// networkIDForTargets resolves the network a scan's targets live in, for
+// tasks that predate per-task network binding: every networks.cidr row that
+// CONTAINS the first parseable target (a CIDR target matches its own /24-style
+// row, a bare IP matches the row that holds it). First hit wins; an ambiguous
+// or unresolvable target set returns invalid (the caller keeps the singleton).
+func (rn *Runner) networkIDForTargets(ctx context.Context, targets string) sql.NullInt64 {
+	first := ""
+	for _, tok := range strings.Split(targets, ",") {
+		if t := strings.TrimSpace(tok); t != "" {
+			first = t
+			break
+		}
+	}
+	if first == "" {
+		return sql.NullInt64{}
+	}
+	var tgt *net.IPNet
+	if _, parsed, err := net.ParseCIDR(first); err == nil {
+		tgt = parsed
+	} else if ip := net.ParseIP(first); ip != nil {
+		tgt = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
+	}
+	if tgt == nil {
+		return sql.NullInt64{}
+	}
+	rows, err := rn.dbConn.QueryContext(ctx, `SELECT id, cidr FROM networks WHERE cidr IS NOT NULL AND cidr != ''`)
+	if err != nil {
+		return sql.NullInt64{}
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var cidr string
+		if err := rows.Scan(&id, &cidr); err != nil {
+			continue
+		}
+		_, parsed, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		// A CIDR target matches the identical network row; a bare IP matches
+		// the row containing it.
+		if tgt.String() == parsed.String() || parsed.Contains(tgt.IP) {
+			return sql.NullInt64{Int64: id, Valid: true}
+		}
+	}
+	return sql.NullInt64{}
+}
+
 // Run executes one scan task: creates a run record, runs the engine over
 // targets, persists per-host results, applies the device bridge, and finalizes
 // the run + task status. It never returns an error that would crash the
@@ -298,6 +349,11 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 		}
 		if task.NetworkID != nil && *task.NetworkID > 0 {
 			runNet = sql.NullInt64{Int64: *task.NetworkID, Valid: true}
+		} else if byTarget := rn.networkIDForTargets(ctx, task.Targets); byTarget.Valid {
+			// Tasks created before per-task network binding carried only a
+			// target CIDR (the 2026-10 rig transplants); the network row with
+			// that CIDR is the only sane scoping for the finalize chain.
+			runNet = byTarget
 		}
 	}
 

@@ -188,3 +188,47 @@ func TestRunner_Run_TaskNetworkDrivesFinalize(t *testing.T) {
 	require.True(t, devNet.Valid, "device must be tagged with the TASK's network, not left NULL")
 	require.Equal(t, net.ID, devNet.Int64)
 }
+
+// TestRunner_Run_UnboundTaskScopedByTargets pins the transplant-era shape the
+// rig exposed (2026-10-16): scan tasks created before per-task network
+// binding carry network_id NULL and only a target CIDR. The run must then
+// scope its finalize chain to the network whose cidr matches the target —
+// the singleton (config network.name, empty → "default") matched nothing and
+// every network-scoped step ran against an empty network.
+func TestRunner_Run_UnboundTaskScopedByTargets(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { dbConn.Close() })
+	q := sqldb.New(dbConn)
+	ctx := context.Background()
+
+	eng, err := engine.NewEngine(dbConn, engine.Config{
+		AllowReservedTargets: true,
+		PerProbeTimeout:      300 * time.Millisecond,
+		PerHostTimeout:       3 * time.Second,
+		MaxConcurrentHosts:   4,
+	}, nil)
+	require.NoError(t, err)
+
+	rn := New(eng, q, dbConn, nil, 0, slog.New(slog.DiscardHandler))
+	rn.SetRepo(store.NewSQLiteRepository(dbConn, store.Options{}, nil))
+
+	cidr := "127.0.0.0/8"
+	netRow, err := q.CreateNetwork(ctx, sqldb.CreateNetworkParams{Name: "target-net", Cidr: &cidr})
+	require.NoError(t, err)
+
+	// network_id deliberately NULL — the pre-binding task shape.
+	res, err := dbConn.Exec(`INSERT INTO scan_tasks (name, targets, cron_expr, pipeline_config, timeout, concurrent_hosts, enabled)
+		VALUES ('unbound sweep', '127.0.0.1', '* * * * *', '{}', 10, 4, 1)`)
+	require.NoError(t, err)
+	taskID, err := res.LastInsertId()
+	require.NoError(t, err)
+
+	rn.Run(ctx, taskID, "127.0.0.1", 3*time.Second, 4, false, 0)
+
+	var devNet sql.NullInt64
+	require.NoError(t, dbConn.QueryRow(
+		`SELECT network_id FROM devices WHERE ip_address='127.0.0.1'`).Scan(&devNet))
+	require.True(t, devNet.Valid, "unbound task must scope by its target CIDR, not the singleton")
+	require.Equal(t, netRow.ID, devNet.Int64)
+}
