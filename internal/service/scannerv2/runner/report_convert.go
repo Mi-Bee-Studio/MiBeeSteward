@@ -48,7 +48,6 @@ func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 	fields := map[string]string{
 		"inferred_type":        h.InferredType,
 		"inferred_type_source": h.InferredTypeSource,
-		"inferred_brand":       h.InferredBrand,
 		"inferred_model":       h.InferredModel,
 		"inferred_description": h.InferredDescription,
 		"inferred_location":    h.InferredLocation,
@@ -61,6 +60,16 @@ func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 	}
 	if wireSysName != "" {
 		fields["sys_name"] = wireSysName
+	}
+	// Same doctrine for the wire brand (decision 2026-10-17): a junk-class
+	// value (denylisted web-server name, letter-less junk) is dropped at the
+	// border, so an agent older than the fold-side retirement (or any future
+	// regression) cannot (re-)brand rows with software names — combined with
+	// the store heal this clears legacy rows no matter which agent version
+	// reports them.
+	fields["inferred_brand"] = ""
+	if !scannerv2.IsJunkBrand(h.InferredBrand) {
+		fields["inferred_brand"] = h.InferredBrand
 	}
 
 	// The agent wire payload has no top-level OS field: hostToReported drops

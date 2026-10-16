@@ -362,6 +362,12 @@ func isWebServerName(brand string) bool {
 // hostname-derived ecosystem brand, mirroring the TLS fold below).
 func IsWebServerBrand(brand string) bool { return isWebServerName(brand) }
 
+// IsJunkBrand reports whether a brand value is junk-class — a denylisted
+// web-server software name or a letter-less value (numeric flag lists like
+// AirPlay's "0,1,2"). The store's heal and the agent-report ingest both use
+// it: junk-class brands never enter or stay in devices.brand (宁空勿错).
+func IsJunkBrand(brand string) bool { return isWebServerName(brand) || looksLikeBrandJunk(brand) }
+
 // looksLikeBrandJunk rejects mDNS TXT values that are numeric flag lists or
 // codes rather than vendor names. AirPlay receivers publish txt.md="0,1,2"
 // (receiver capability flags), which previously became the device brand
