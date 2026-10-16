@@ -31,6 +31,20 @@ import (
 // evidence piece so reportMAC()'s fallback path finds it too.
 func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 	mac := store.NormalizeMAC(h.MAC)
+	// The wire conversion is the center-side gate for every agent-reported
+	// name: an agent older than the fold/passive gates can still emit
+	// mojibake (broken NBNS/mDNS decoders, mojibake DHCP/DNS-sighting names),
+	// and devices.name (deviceDisplayName) reads node_hostname BEFORE any
+	// later backstop runs — implausible names are dropped here so neither
+	// the display name nor scan_attributes can inherit them.
+	wireHostname := ""
+	if scannerv2.PlausibleHostname(h.Hostname) {
+		wireHostname = h.Hostname
+	}
+	wireSysName := ""
+	if h.SNMP != nil && scannerv2.PlausibleHostname(h.SNMP.SysName) {
+		wireSysName = h.SNMP.SysName
+	}
 	fields := map[string]string{
 		"inferred_type":        h.InferredType,
 		"inferred_type_source": h.InferredTypeSource,
@@ -38,15 +52,15 @@ func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 		"inferred_model":       h.InferredModel,
 		"inferred_description": h.InferredDescription,
 		"inferred_location":    h.InferredLocation,
-		"node_hostname":        h.Hostname,
+		"node_hostname":        wireHostname,
 		"mac":                  mac,
 		"open_ports":           h.OpenPorts,
 		"detected_services":    h.DetectedServices,
 		"prometheus_url":       h.PrometheusURL,
 		"node_exporter_url":    h.NodeExporterURL,
 	}
-	if h.SNMP != nil {
-		fields["sys_name"] = h.SNMP.SysName
+	if wireSysName != "" {
+		fields["sys_name"] = wireSysName
 	}
 
 	// The agent wire payload has no top-level OS field: hostToReported drops
@@ -189,7 +203,7 @@ func ReportedHostToReport(h domain.ReportedHost) scannerv2.HostReport {
 		Heartbeats: heartbeats,
 		Device: scannerv2.DeviceRef{
 			IP:     h.IP,
-			Name:   h.Hostname,
+			Name:   wireHostname,
 			Type:   h.InferredType,
 			Brand:  h.InferredBrand,
 			Fields: fields,

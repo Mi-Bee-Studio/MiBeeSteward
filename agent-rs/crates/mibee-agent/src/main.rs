@@ -242,6 +242,11 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
             let reporter = reporter_disc;
             loop {
                 for (ip, hostname, mac) in sources.sweep(&engine, &mut state).await {
+                    // Passive names (DHCP lease files, DNS sightings) can carry
+                    // mojibake exactly like the probe decoders do — the same
+                    // plausibility gate applies before the name reaches the wire.
+                    let hostname = hostname
+                        .filter(|h| mibee_agent::engine::identify::plausible_hostname(h));
                     let mut host = mibee_agent::wire::ReportedHost {
                         ip,
                         alive: true,
