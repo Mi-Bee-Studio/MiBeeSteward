@@ -1151,15 +1151,6 @@ func buildStoreScanAttributes(d scannerv2.DeviceRef, extra map[string]string, op
 	return attr
 }
 
-func firstNonEmptyStore(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // firstPlausibleHostnameStore is the ingest-side hostname gate: the first
 // value that passes scannerv2.PlausibleHostname wins, and garbage never
 // reaches the device record no matter which path produced it (local fold,
