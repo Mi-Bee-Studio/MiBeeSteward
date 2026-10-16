@@ -86,19 +86,19 @@ func TestOrchestrator_DispatchEvidenceFold(t *testing.T) {
 		t.Fatalf("wildcard CN must become hostname: %v", rep.Device.Fields)
 	}
 
-	// http alone (no camera evidence): Server header → web-server brand.
+	// http alone: the Server header is NOT a brand (decision 2026-10-17,
+	// 宁空勿错) — its only mappable outputs are denylisted web-server names.
+	// An asset registry shows no vendor rather than a wrong one.
 	rep = run(Evidence{Kind: "http", RawData: map[string]string{"server": "Apache/2.4"}})
-	if rep.Device.Fields["inferred_brand"] != "Apache" {
-		t.Fatalf("http brand fold wrong: %v", rep.Device.Fields)
+	if v, ok := rep.Device.Fields["inferred_brand"]; ok && v != "" {
+		t.Fatalf("http Server header must not brand the device, got %q", v)
 	}
-
-	// http WITH camera evidence: the web-server brand is suppressed.
 	rep = run(
 		Evidence{Kind: "rtsp_banner", RawData: map[string]string{"server": "nginx"}},
 		Evidence{Kind: "http", RawData: map[string]string{"server": "nginx"}},
 	)
-	if rep.Device.Fields["inferred_brand"] == "nginx" {
-		t.Fatalf("camera host must not take the reverse-proxy brand: %v", rep.Device.Fields)
+	if v, ok := rep.Device.Fields["inferred_brand"]; ok && v != "" {
+		t.Fatalf("camera host must not take the reverse-proxy brand, got %q", v)
 	}
 
 	// mDNS: hostname + txt.vendor brand.

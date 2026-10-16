@@ -228,23 +228,6 @@ pub fn looks_like_brand_junk(v: &str) -> bool {
     !v.chars().any(|c| c.is_ascii_alphabetic())
 }
 
-pub fn http_server_to_brand(server: &str) -> String {
-    let l = server.to_lowercase();
-    if l.contains("nginx") {
-        "nginx".into()
-    } else if l.contains("apache") {
-        "Apache".into()
-    } else if l.contains("caddy") {
-        "Caddy".into()
-    } else if l.contains("iis") || l.contains("microsoft") {
-        "Microsoft IIS".into()
-    } else if l.contains("lighttpd") {
-        "lighttpd".into()
-    } else {
-        String::new()
-    }
-}
-
 pub fn strip_wildcard_prefix(cn: &str) -> &str {
     if cn.len() >= 2 && cn.starts_with("*.") {
         &cn[2..]
@@ -310,10 +293,6 @@ pub fn ssdp_server_to_brand(server: &str) -> String {
     String::new()
 }
 
-fn has_camera_evidence(ev: &[Evidence]) -> bool {
-    ev.iter().any(|e| e.kind == "rtsp_banner" || e.kind == "onvif_response")
-}
-
 /// The device field bag produced by the fold chain (Go Device.Fields).
 #[derive(Default, Clone, Debug)]
 pub struct DeviceFields {
@@ -372,13 +351,11 @@ pub fn fold_host_evidence(fields: &mut DeviceFields, ev: &[Evidence]) {
                 }
             }
             "http" => {
-                let server = rd.get("server").cloned().unwrap_or_default();
-                if !server.is_empty()
-                    && fields.get("inferred_brand").is_empty()
-                    && !has_camera_evidence(ev)
-                {
-                    fields.set("inferred_brand", &http_server_to_brand(&server));
-                }
+                // Deliberately NO brand from the Server header (decision
+                // 2026-10-17, 宁空勿错 — mirrors the Go fold): the header's
+                // only mappable outputs are ALL denylisted web-server names,
+                // never device vendors. The Server string itself stays in the
+                // service identity evidence.
             }
             "mdns" => {
                 let v = rd.get("hostname").cloned().unwrap_or_default();
@@ -715,14 +692,35 @@ mod tests {
         assert_eq!(f.get("mac"), "AA:BB:CC:11:22:33");
         assert_eq!(f.get("inferred_brand"), "Xiaomi Communications");
         assert_eq!(f.get("node_hostname"), "rpi3b-storage");
-        // http brand never overwrites OUI brand
-        assert_eq!(f.get("inferred_brand"), "Xiaomi Communications");
 
-        // TLS overrides a web-server brand
+        // http alone: the Server header is NOT a brand (decision
+        // 2026-10-17, 宁空勿错 — mirrors the Go fold). Its only mappable
+        // outputs are denylisted web-server names; 宁空勿错.
+        let mut f1 = DeviceFields::default();
+        let ev1 = vec![Evidence {
+            kind: "http".into(),
+            raw_data: rd(&[("server", "nginx/1.24")]),
+            ..Default::default()
+        }];
+        fold_host_evidence(&mut f1, &ev1);
+        assert!(
+            f1.get("inferred_brand").is_empty(),
+            "http Server header must not brand"
+        );
+
+        // TLS brand fills the empty slot
         let mut f2 = DeviceFields::default();
         let ev2 = vec![
-            Evidence { kind: "http".into(), raw_data: rd(&[("server", "nginx")]), ..Default::default() },
-            Evidence { kind: "tls".into(), raw_data: rd(&[("subject_cn", "iStoreOS-xx"), ("issuer_org", "OpenWrt")]), ..Default::default() },
+            Evidence {
+                kind: "http".into(),
+                raw_data: rd(&[("server", "nginx")]),
+                ..Default::default()
+            },
+            Evidence {
+                kind: "tls".into(),
+                raw_data: rd(&[("subject_cn", "iStoreOS-xx"), ("issuer_org", "OpenWrt")]),
+                ..Default::default()
+            },
         ];
         fold_host_evidence(&mut f2, &ev2);
         assert_eq!(f2.get("inferred_brand"), "iStoreOS");

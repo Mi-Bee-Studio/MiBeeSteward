@@ -35,15 +35,6 @@ func TestOrchestratorBrandHelpers(t *testing.T) {
 	require.Equal(t, "iStoreOS", certFieldsToBrand("router.lan", "iStoreOS"))
 	require.Equal(t, "Synology", certFieldsToBrand("synology-ds920", ""))
 
-	require.Equal(t, "nginx", httpServerToBrand("nginx/1.24.0"))
-	require.Equal(t, "Apache", httpServerToBrand("Apache/2.4"))
-	require.Equal(t, "Microsoft IIS", httpServerToBrand("Microsoft-IIS/10"))
-	require.Equal(t, "", httpServerToBrand("RandomSoftware/1.0"))
-
-	require.True(t, hasCameraEvidence([]Evidence{{Kind: "rtsp_banner"}, {Kind: "echo"}}))
-	require.True(t, hasCameraEvidence([]Evidence{{Kind: "onvif_response"}}))
-	require.False(t, hasCameraEvidence([]Evidence{{Kind: "http"}}))
-
 	require.True(t, isWebServerName("NGINX"))
 	require.True(t, isWebServerName("Apache"))
 	require.True(t, isWebServerName("SDK"), "fnOS ships Server: SDK (field-found 2026-10-12)")
