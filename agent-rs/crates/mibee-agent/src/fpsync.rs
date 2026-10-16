@@ -26,10 +26,7 @@ pub enum SyncOutcome {
 
 /// One sync attempt. `sync_dir` is <configdir>/fingerprints-sync; `rev_path`
 /// is `<sync_dir>.rev` (Go layout).
-pub async fn sync_once(
-    client: &CenterClient,
-    sync_dir: &Path,
-) -> SyncOutcome {
+pub async fn sync_once(client: &CenterClient, sync_dir: &Path) -> SyncOutcome {
     let rev_path = PathBuf::from(format!("{}.rev", sync_dir.display()));
     let current_rev = std::fs::read_to_string(&rev_path).unwrap_or_default();
     let fetch = match client.get_fingerprints(current_rev.trim()).await {
@@ -91,10 +88,16 @@ pub async fn sync_once(
             // rate-limited re-exec; when deferred, drop the .rev so the next
             // poll re-attempts (Go semantics: the rate-limit window coalesces)
             match maybe_reexec() {
-                Reexec::Performed => SyncOutcome::Applied { rev, reexec_deferred: false },
+                Reexec::Performed => SyncOutcome::Applied {
+                    rev,
+                    reexec_deferred: false,
+                },
                 Reexec::Deferred => {
                     let _ = std::fs::remove_file(&rev_path);
-                    SyncOutcome::Applied { rev, reexec_deferred: true }
+                    SyncOutcome::Applied {
+                        rev,
+                        reexec_deferred: true,
+                    }
                 }
             }
         }
@@ -146,7 +149,11 @@ fn maybe_reexec() -> Reexec {
     let marker = last_restart_marker();
     if let Ok(meta) = std::fs::metadata(&marker) {
         if let Ok(modified) = meta.modified() {
-            if modified.elapsed().map(|e| e < MIN_RESTART_INTERVAL).unwrap_or(true) {
+            if modified
+                .elapsed()
+                .map(|e| e < MIN_RESTART_INTERVAL)
+                .unwrap_or(true)
+            {
                 return Reexec::Deferred;
             }
         }
@@ -170,10 +177,18 @@ fn maybe_reexec() -> Reexec {
 }
 
 /// The poll loop (interval from config, clamped >= 60s upstream).
-pub async fn run_sync_loop(client: Arc<CenterClient>, sync_dir: PathBuf, interval: std::time::Duration, mut stop: tokio::sync::watch::Receiver<bool>) {
+pub async fn run_sync_loop(
+    client: Arc<CenterClient>,
+    sync_dir: PathBuf,
+    interval: std::time::Duration,
+    mut stop: tokio::sync::watch::Receiver<bool>,
+) {
     loop {
         match sync_once(&client, &sync_dir).await {
-            SyncOutcome::Applied { rev, reexec_deferred } => {
+            SyncOutcome::Applied {
+                rev,
+                reexec_deferred,
+            } => {
                 eprintln!("fpsync: applied corpus rev {rev} (reexec deferred: {reexec_deferred})");
             }
             SyncOutcome::NotModified => {}
@@ -192,21 +207,19 @@ pub async fn run_sync_loop(client: Arc<CenterClient>, sync_dir: PathBuf, interva
 mod tests {
     use super::*;
 
-    #[test]
-    fn extracts_flat_yaml_and_rejects_other_shapes() {
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("x");
-        std::fs::create_dir_all(&out).unwrap();
-        // build a valid flat archive
+    fn build_flat_tar_gz(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
         let mut tar_bytes = Vec::new();
         {
             let mut builder = tar::Builder::new(&mut tar_bytes);
-            let mut header = tar::Header::new_gnu();
-            let content = b"version: 1\nrules: []\n";
-            header.set_size(content.len() as u64);
-            header.set_mode(0o644);
-            header.set_cksum();
-            builder.append_data(&mut header, "a.yaml", &content[..]).unwrap();
+            for (name, content) in entries {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(content.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                builder
+                    .append_data(&mut header, name, &content[..])
+                    .unwrap();
+            }
             builder.finish().unwrap();
         }
         let mut gz = Vec::new();
@@ -217,26 +230,107 @@ mod tests {
             std::io::Write::write_all(&mut e, &tar_bytes).unwrap();
             e.finish().unwrap();
         }
+        gz
+    }
+
+    fn out_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("x")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn extracts_flat_yaml_and_rejects_other_shapes() {
+        let dir = out_dir();
+        let out = dir.path().join("x");
+        let gz = build_flat_tar_gz(&[("a.yaml", b"version: 1\nrules: []\n".to_vec())]);
         assert_eq!(extract_flat_yaml_tar_gz(&gz, &out).unwrap(), 1);
         assert!(out.join("a.yaml").exists());
 
         // nested path rejects the whole archive
-        let mut tar2 = tar::Builder::new(Vec::new());
-        let mut header = tar::Header::new_gnu();
-        let content = b"x";
-        header.set_size(1);
-        header.set_cksum();
-        tar2.append_data(&mut header, "sub/dir.yaml", &content[..]).unwrap();
-        tar2.finish().unwrap();
-        let raw = tar2.into_inner().unwrap();
-        let mut gz2 = Vec::new();
+        let gz2 = build_flat_tar_gz(&[("sub/dir.yaml", b"x".to_vec())]);
+        assert_eq!(
+            extract_flat_yaml_tar_gz(&gz2, &out),
+            Err("nested path in archive")
+        );
+    }
+
+    #[test]
+    fn extract_rejects_non_yaml_entries() {
+        let dir = out_dir();
+        let gz = build_flat_tar_gz(&[("readme.txt", b"not a rule".to_vec())]);
+        assert_eq!(
+            extract_flat_yaml_tar_gz(&gz, &dir.path().join("x")),
+            Err("non-yaml entry in archive")
+        );
+    }
+
+    #[test]
+    fn extract_rejects_more_than_64_files() {
+        let dir = out_dir();
+        let rule = || b"version: 1\nrules: []\n".to_vec();
+        let entries: Vec<(&str, Vec<u8>)> = (0..65)
+            .map(|i| {
+                (
+                    Box::leak(format!("r{i}.yaml").into_boxed_str()) as &str,
+                    rule(),
+                )
+            })
+            .collect();
+        let gz = build_flat_tar_gz(&entries);
+        assert_eq!(
+            extract_flat_yaml_tar_gz(&gz, &dir.path().join("x")),
+            Err("more than 64 files")
+        );
+        // exactly 64 is the documented ceiling and must pass
+        let entries: Vec<(&str, Vec<u8>)> = (0..64)
+            .map(|i| {
+                (
+                    Box::leak(format!("q{i}.yaml").into_boxed_str()) as &str,
+                    rule(),
+                )
+            })
+            .collect();
+        let gz = build_flat_tar_gz(&entries);
+        assert_eq!(
+            extract_flat_yaml_tar_gz(&gz, &dir.path().join("x")).unwrap(),
+            64
+        );
+    }
+
+    #[test]
+    fn extract_rejects_oversize_file() {
+        let dir = out_dir();
+        let big = vec![b'x'; MAX_FILE_BYTES + 1];
+        let gz = build_flat_tar_gz(&[("big.yaml", big)]);
+        assert_eq!(
+            extract_flat_yaml_tar_gz(&gz, &dir.path().join("x")),
+            Err("file exceeds 4 MiB")
+        );
+    }
+
+    #[test]
+    fn extract_accepts_empty_archive_as_zero_rules() {
+        let dir = out_dir();
+        let gz = build_flat_tar_gz(&[]);
+        assert_eq!(
+            extract_flat_yaml_tar_gz(&gz, &dir.path().join("x")).unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn extract_rejects_garbage_streams() {
+        let dir = out_dir();
+        let mut gz = Vec::new();
         {
             use flate2::write::GzEncoder;
-            use flate2::Compression;
-            let mut e = GzEncoder::new(&mut gz2, Compression::default());
-            std::io::Write::write_all(&mut e, &raw).unwrap();
-            let _ = e.finish();
+            let mut e = GzEncoder::new(&mut gz, flate2::Compression::default());
+            std::io::Write::write_all(&mut e, b"definitely not a tar stream").unwrap();
+            e.finish().unwrap();
         }
-        assert!(extract_flat_yaml_tar_gz(&gz2, &out).is_err());
+        assert!(extract_flat_yaml_tar_gz(&gz, &dir.path().join("x")).is_err());
+        // raw non-gzip bytes fail the same way
+        assert!(extract_flat_yaml_tar_gz(b"plain bytes", &dir.path().join("x")).is_err());
     }
 }
