@@ -46,7 +46,7 @@ func TestOrchestrator_DispatchEvidenceFold(t *testing.T) {
 	// control byte, as a broken NBNS/mDNS parser can emit — field-found
 	// 2026-10-15: a rig device displayed a binary-garbage hostname) must be
 	// dropped, while a CJK marketing suffix (TL-XDR易展版) stays.
-	rep = run(Evidence{Kind: "hostname", RawData: map[string]string{"hostname": "Lÿ.lan"}})
+	rep = run(Evidence{Kind: "hostname", RawData: map[string]string{"hostname": "L\x14ÿ.lan"}})
 	if _, ok := rep.Device.Fields["node_hostname"]; ok {
 		t.Fatalf("garbage hostname must be dropped, got %q", rep.Device.Fields["node_hostname"])
 	}

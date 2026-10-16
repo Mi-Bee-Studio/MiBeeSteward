@@ -277,7 +277,7 @@ func TestCleanupReservedAddressDevices(t *testing.T) {
 
 // TestReconcile_ParkedRowsNotMismatches pins the 2026-10-14 follow-up to the
 // randomized-MAC parking guard: parked holders carry the '#park:<id>' sentinel
-// as their ip_address — NOT '' — so the reconcile mismatch scan counted them
+// as their ip_address — NOT empty — so the reconcile mismatch scan counted them
 // as out-of-network drift every pass (a field rig logged the WARN ~7×/day
 // with parked rows as every sample IP). A parked row has no IP claim at all;
 // it must be excluded exactly like the empty-string rows.
