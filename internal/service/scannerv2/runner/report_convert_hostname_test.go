@@ -50,3 +50,24 @@ func TestReportedHostToReport_GateWireHostnames(t *testing.T) {
 	require.Equal(t, "TL-XDR3040易展版", rep.Device.Name)
 	require.Equal(t, "sw-core", rep.Device.Fields["sys_name"])
 }
+
+// TestReportedHostToReport_GateWireBrand pins the brand-side border gate
+// (decision 2026-10-17): an agent older than the fold-side retirement still
+// sends web-server brands — the conversion drops junk-class values so they
+// can neither fill nor keep a row branded, letting the store heal clear the
+// legacy rows regardless of agent version. Real brands pass verbatim.
+func TestReportedHostToReport_GateWireBrand(t *testing.T) {
+	for _, junk := range []string{"nginx", "MiniDLNA", "SDK", "0,1,2"} {
+		rep := ReportedHostToReport(domain.ReportedHost{
+			IP: "192.0.2.20", Alive: true, MAC: "aa:bb:cc:dd:ee:20",
+			InferredBrand: junk,
+		})
+		require.Empty(t, rep.Device.Fields["inferred_brand"], "junk wire brand %q must drop", junk)
+	}
+	rep := ReportedHostToReport(domain.ReportedHost{
+		IP: "192.0.2.21", Alive: true, MAC: "aa:bb:cc:dd:ee:21",
+		InferredBrand: "QNAP Systems",
+	})
+	require.Equal(t, "QNAP Systems", rep.Device.Fields["inferred_brand"], "real wire brand passes")
+	require.Equal(t, "QNAP Systems", rep.Device.Brand)
+}
