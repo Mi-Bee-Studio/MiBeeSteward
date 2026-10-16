@@ -883,6 +883,28 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 		}
 	}
 
+	// 1c. Garbage-name heal. The fill-when-empty name CASE keeps a pre-gate
+	// mojibake name (control runes / undecodable bytes from broken
+	// NBNS/mDNS decoders or passive DNS-sighting names) as devices.name
+	// forever. Overwrite exactly the implausible stored names — with this
+	// scan's (already-gated) name, or with the IP when the scan carries
+	// none — so the row self-heals without touching plausible names
+	// (user edits included).
+	var storedName string
+	if err := r.db.QueryRowContext(ctx, `SELECT name FROM devices WHERE id = ?`, in.TargetID).Scan(&storedName); err == nil {
+		if storedName != "" && storedName != in.IP && !scannerv2.PlausibleHostname(storedName) {
+			healName := in.IP
+			if scannerv2.PlausibleHostname(in.Name) && in.Name != "" {
+				healName = in.Name
+			}
+			if _, err := r.db.ExecContext(ctx,
+				`UPDATE devices SET name = ?, updated_at = ? WHERE id = ?`,
+				healName, now, in.TargetID); err != nil {
+				r.logger.Warn("device identity: garbage name heal failed", "ip", in.IP, "device_id", in.TargetID, "error", err)
+			}
+		}
+	}
+
 	// 2. Status/mac/last_seen stamping + roam relocation / replacement offline.
 	if in.ReplacedID != 0 || in.TakeOver {
 		// Replacement/takeover: force-overwrite mac on the ip-holder (it now
