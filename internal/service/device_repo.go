@@ -187,6 +187,11 @@ func (r *DeviceRepository) Update(ctx context.Context, params db.UpdateDevicePar
 
 // Delete removes a device by ID.
 func (r *DeviceRepository) Delete(ctx context.Context, id int64) error {
+	// Bound probe targets detach first (#606): auto targets die with their
+	// origin, manual/system ones keep running unbound.
+	if _, err := r.queries.DetachProbeTargetsFromDevice(ctx, &id); err != nil {
+		return fmt.Errorf("failed to detach probe targets: %w", err)
+	}
 	affected, err := r.queries.DeleteDevice(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete device: %w", err)

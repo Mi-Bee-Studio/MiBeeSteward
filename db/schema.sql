@@ -776,6 +776,10 @@ CREATE TABLE IF NOT EXISTS agent_status (
     clock_offset_seconds REAL NOT NULL DEFAULT 0,
     scans_total INTEGER NOT NULL DEFAULT 0,
     fingerprint_rev TEXT NOT NULL DEFAULT '',   -- corpus revision the agent runs (corpus adoption view)
+    -- Probe modules this agent binary can execute (#604), comma-separated
+    -- ('icmp,http,tls,tcp,dns'); '' = legacy agent that never reported
+    -- capabilities (dispatcher treats it as the historical set icmp/http/tls).
+    supported_modules TEXT NOT NULL DEFAULT '',
     last_report_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -849,8 +853,8 @@ CREATE INDEX IF NOT EXISTS idx_user_network_grants_user ON user_network_grants(u
 CREATE TABLE IF NOT EXISTS probe_targets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
-    module TEXT NOT NULL CHECK(module IN ('http', 'tls', 'tcp', 'icmp')),
-    target TEXT NOT NULL,               -- full URL (http); host:port (tls/tcp); host or IP (icmp)
+    module TEXT NOT NULL CHECK(module IN ('http', 'tls', 'tcp', 'icmp', 'dns')),
+    target TEXT NOT NULL,               -- full URL (http); host:port (tls/tcp); host or IP (icmp/dns)
     interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK(interval_seconds >= 10 AND interval_seconds <= 86400),
     timeout_seconds INTEGER NOT NULL DEFAULT 10 CHECK(timeout_seconds >= 1 AND timeout_seconds <= 60),
     enabled INTEGER NOT NULL DEFAULT 1,
@@ -867,9 +871,27 @@ CREATE TABLE IF NOT EXISTS probe_targets (
     -- alone and results split per vantage in probe_results, so one target row
     -- can carry multiple vantages' series. Kept at the table tail so fresh
     -- (schema.sql) and migrated (ALTER TABLE append) column orders match.
-    vantage TEXT NOT NULL DEFAULT 'center'
+    vantage TEXT NOT NULL DEFAULT 'center',
+    -- Per-module execution options as JSON (#605): http method/expected
+    -- status codes/keyword match/ignore_tls_errors, dns record/resolver/
+    -- expected IPs, tcp send/expect banner matching. Validated per module at
+    -- CRUD time; '' = no options. Deliberately NOT a secrets store: no
+    -- credentials or auth headers ever go here (the agent command channel
+    -- must stay secret-free).
+    options TEXT NOT NULL DEFAULT '',
+    -- Optional device binding (#606): links a target to a discovered asset
+    -- (discover-then-probe). NULL = free target (the blackbox norm). The
+    -- main DB does not enable the foreign_keys pragma, so device deletion
+    -- detaches explicitly (DetachProbeTargetsFromDevice).
+    device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+    -- Provenance (#606): 'manual' (user-created), 'auto' (policy-generated
+    -- from discovered services), 'system' (built-in egress-quality matrix,
+    -- #608). Only manual rows are user-managed lifecycles; auto rows follow
+    -- their origin service, system rows are reseeded from config at startup.
+    source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual', 'auto', 'system'))
 );
 CREATE INDEX IF NOT EXISTS idx_probe_targets_enabled ON probe_targets(enabled);
+CREATE INDEX IF NOT EXISTS idx_probe_targets_device ON probe_targets(device_id);
 
 -- probe_results: time-series outcome of every probe execution (synthetic-probehistory).
 -- Volume is tiny next to heartbeat_results (a handful of user-configured

@@ -53,7 +53,7 @@ func (f *fakeProber) count() int {
 
 func newTestEngine(t *testing.T, queries *db.Queries, fp *fakeProber, cc certCollector) *Engine {
 	t.Helper()
-	e := NewEngine(queries, slog.New(slog.NewTextHandler(io.Discard, nil)), nil /* no metrics */)
+	e := NewEngine(queries, slog.New(slog.NewTextHandler(io.Discard, nil)), nil /* no metrics */, 0)
 	e.exec.probers = map[string]probe.Prober{"http": fp, "tcp": fp, "icmp": fp}
 	if cc == nil {
 		// Never touch the network from tests; modules that don't collect certs

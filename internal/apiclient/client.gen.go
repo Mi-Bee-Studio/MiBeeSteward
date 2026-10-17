@@ -450,6 +450,87 @@ func (e NotificationRuleScopeType) Valid() bool {
 	}
 }
 
+// Defines values for ProbeOptionsExpectMode.
+const (
+	ProbeOptionsExpectModeContains ProbeOptionsExpectMode = "contains"
+	ProbeOptionsExpectModeRegex    ProbeOptionsExpectMode = "regex"
+)
+
+// Valid indicates whether the value is a known member of the ProbeOptionsExpectMode enum.
+func (e ProbeOptionsExpectMode) Valid() bool {
+	switch e {
+	case ProbeOptionsExpectModeContains:
+		return true
+	case ProbeOptionsExpectModeRegex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeOptionsKeywordMode.
+const (
+	ProbeOptionsKeywordModeContains    ProbeOptionsKeywordMode = "contains"
+	ProbeOptionsKeywordModeNotContains ProbeOptionsKeywordMode = "not_contains"
+	ProbeOptionsKeywordModeRegex       ProbeOptionsKeywordMode = "regex"
+)
+
+// Valid indicates whether the value is a known member of the ProbeOptionsKeywordMode enum.
+func (e ProbeOptionsKeywordMode) Valid() bool {
+	switch e {
+	case ProbeOptionsKeywordModeContains:
+		return true
+	case ProbeOptionsKeywordModeNotContains:
+		return true
+	case ProbeOptionsKeywordModeRegex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeOptionsMethod.
+const (
+	GET  ProbeOptionsMethod = "GET"
+	HEAD ProbeOptionsMethod = "HEAD"
+)
+
+// Valid indicates whether the value is a known member of the ProbeOptionsMethod enum.
+func (e ProbeOptionsMethod) Valid() bool {
+	switch e {
+	case GET:
+		return true
+	case HEAD:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeOptionsRecord.
+const (
+	A     ProbeOptionsRecord = "A"
+	AAAA  ProbeOptionsRecord = "AAAA"
+	CNAME ProbeOptionsRecord = "CNAME"
+	TXT   ProbeOptionsRecord = "TXT"
+)
+
+// Valid indicates whether the value is a known member of the ProbeOptionsRecord enum.
+func (e ProbeOptionsRecord) Valid() bool {
+	switch e {
+	case A:
+		return true
+	case AAAA:
+		return true
+	case CNAME:
+		return true
+	case TXT:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeResultStatus.
 const (
 	ProbeResultStatusFail    ProbeResultStatus = "fail"
@@ -497,6 +578,7 @@ func (e ProbeTargetLastStatus) Valid() bool {
 
 // Defines values for ProbeTargetModule.
 const (
+	Dns  ProbeTargetModule = "dns"
 	Http ProbeTargetModule = "http"
 	Icmp ProbeTargetModule = "icmp"
 	Tcp  ProbeTargetModule = "tcp"
@@ -506,6 +588,8 @@ const (
 // Valid indicates whether the value is a known member of the ProbeTargetModule enum.
 func (e ProbeTargetModule) Valid() bool {
 	switch e {
+	case Dns:
+		return true
 	case Http:
 		return true
 	case Icmp:
@@ -513,6 +597,27 @@ func (e ProbeTargetModule) Valid() bool {
 	case Tcp:
 		return true
 	case Tls:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeTargetSource.
+const (
+	Auto   ProbeTargetSource = "auto"
+	Manual ProbeTargetSource = "manual"
+	System ProbeTargetSource = "system"
+)
+
+// Valid indicates whether the value is a known member of the ProbeTargetSource enum.
+func (e ProbeTargetSource) Valid() bool {
+	switch e {
+	case Auto:
+		return true
+	case Manual:
+		return true
+	case System:
 		return true
 	default:
 		return false
@@ -1471,6 +1576,54 @@ type PipelineConfig struct {
 	} `json:"snmp"`
 }
 
+// ProbeOptions Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free.
+type ProbeOptions struct {
+	// Expect tcp only; banner match against the first bytes read
+	Expect *string `json:"expect,omitempty"`
+
+	// ExpectMode tcp only; default contains
+	ExpectMode *ProbeOptionsExpectMode `json:"expect_mode,omitempty"`
+
+	// ExpectedIps dns only; A/AAAA answers must intersect this set
+	ExpectedIps *[]string `json:"expected_ips,omitempty"`
+
+	// ExpectedStatus http only; exact allowed status codes (e.g. [200,204]); empty = status < 400
+	ExpectedStatus *[]int `json:"expected_status,omitempty"`
+
+	// IgnoreTlsErrors http only; default false = verify TLS (agent parity)
+	IgnoreTlsErrors *bool `json:"ignore_tls_errors,omitempty"`
+
+	// Keyword http only; body match after the status check
+	Keyword *string `json:"keyword,omitempty"`
+
+	// KeywordMode default contains
+	KeywordMode *ProbeOptionsKeywordMode `json:"keyword_mode,omitempty"`
+
+	// Method http only; default GET
+	Method *ProbeOptionsMethod `json:"method,omitempty"`
+
+	// Record dns only; default A
+	Record *ProbeOptionsRecord `json:"record,omitempty"`
+
+	// Resolver dns only; host[:port] resolver to query, empty = system default
+	Resolver *string `json:"resolver,omitempty"`
+
+	// Send tcp only; ASCII payload written right after connect
+	Send *string `json:"send,omitempty"`
+}
+
+// ProbeOptionsExpectMode tcp only; default contains
+type ProbeOptionsExpectMode string
+
+// ProbeOptionsKeywordMode default contains
+type ProbeOptionsKeywordMode string
+
+// ProbeOptionsMethod http only; default GET
+type ProbeOptionsMethod string
+
+// ProbeOptionsRecord dns only; default A
+type ProbeOptionsRecord string
+
 // ProbeResult defines model for ProbeResult.
 type ProbeResult struct {
 	// CertNotAfter Leaf cert expiry; empty when none collected
@@ -1508,7 +1661,10 @@ type ProbeResultList struct {
 
 // ProbeTarget Synthetic-probe target. module (NOT method) selects the executor; last_* denormalize the newest outcome (empty/0 = never probed).
 type ProbeTarget struct {
-	CreatedAt       string                 `json:"created_at"`
+	CreatedAt string `json:"created_at"`
+
+	// DeviceId Bound device (#606); omitted when the target is free (unbound)
+	DeviceId        *int64                 `json:"device_id,omitempty"`
 	Enabled         bool                   `json:"enabled"`
 	Id              int64                  `json:"id"`
 	IntervalSeconds int                    `json:"interval_seconds"`
@@ -1520,7 +1676,13 @@ type ProbeTarget struct {
 	Name            string                 `json:"name"`
 	Notes           string                 `json:"notes"`
 
-	// Target URL (http), host:port (tls/tcp), host/IP (icmp)
+	// Options Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free.
+	Options *ProbeOptions `json:"options,omitempty"`
+
+	// Source 'manual' (user) | 'auto' (policy-generated from discovered services, #606) | 'system' (built-in egress-quality matrix, #608)
+	Source ProbeTargetSource `json:"source"`
+
+	// Target URL (http), host:port (tls/tcp), host/IP (icmp), bare domain (dns)
 	Target         string `json:"target"`
 	TimeoutSeconds int    `json:"timeout_seconds"`
 	UpdatedAt      string `json:"updated_at"`
@@ -1537,6 +1699,9 @@ type ProbeTargetLastStatus string
 
 // ProbeTargetModule defines model for ProbeTarget.Module.
 type ProbeTargetModule string
+
+// ProbeTargetSource 'manual' (user) | 'auto' (policy-generated from discovered services, #606) | 'system' (built-in egress-quality matrix, #608)
+type ProbeTargetSource string
 
 // ProbeTargetList defines model for ProbeTargetList.
 type ProbeTargetList struct {
@@ -2154,6 +2319,9 @@ type GetProbeTargetsParams struct {
 	// Offset Pagination offset (negative → 400)
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
+
+	// DeviceId Filter to targets bound to one device (#606); pagination fields are advisory for this shape
+	DeviceId *int64 `form:"device_id,omitempty" json:"device_id,omitempty"`
 }
 
 // GetProbeTargetsIdResultsParams defines parameters for GetProbeTargetsIdResults.
@@ -3424,7 +3592,7 @@ type ClientInterface interface {
 	// Corresponds with GET /probe-targets (the `GetProbeTargets` operationId).
 	GetProbeTargets(ctx context.Context, params *GetProbeTargetsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostProbeTargets Create a probe target (http/tcp/icmp/snmp; vantage center|agent:..|all)
+	// PostProbeTargets Create a probe target (http/tls/tcp/icmp/dns; vantage center|agent:..|all)
 	//
 	// Corresponds with POST /probe-targets (the `PostProbeTargets` operationId).
 	PostProbeTargets(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -5483,7 +5651,7 @@ func (c *Client) GetProbeTargets(ctx context.Context, params *GetProbeTargetsPar
 	return c.Client.Do(req)
 }
 
-// PostProbeTargets Create a probe target (http/tcp/icmp/snmp; vantage center|agent:..|all)
+// PostProbeTargets Create a probe target (http/tls/tcp/icmp/dns; vantage center|agent:..|all)
 //
 // Corresponds with POST /probe-targets (the `PostProbeTargets` operationId).
 func (c *Client) PostProbeTargets(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -10793,6 +10961,18 @@ func NewGetProbeTargetsRequest(server string, params *GetProbeTargetsParams) (*h
 
 		}
 
+		if params.DeviceId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "device_id", *params.DeviceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -13600,7 +13780,7 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /probe-targets (the `GetProbeTargets` operationId).
 	GetProbeTargetsWithResponse(ctx context.Context, params *GetProbeTargetsParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsResponse, error)
 
-	// PostProbeTargetsWithResponse Create a probe target (http/tcp/icmp/snmp; vantage center|agent:..|all)
+	// PostProbeTargetsWithResponse Create a probe target (http/tls/tcp/icmp/dns; vantage center|agent:..|all)
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -21957,7 +22137,7 @@ func (c *ClientWithResponses) GetProbeTargetsWithResponse(ctx context.Context, p
 	return ParseGetProbeTargetsResponse(rsp)
 }
 
-// PostProbeTargetsWithResponse Create a probe target (http/tcp/icmp/snmp; vantage center|agent:..|all)
+// PostProbeTargetsWithResponse Create a probe target (http/tls/tcp/icmp/dns; vantage center|agent:..|all)
 //
 // Returns a wrapper object for the known response body format(s).
 //

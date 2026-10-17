@@ -205,11 +205,12 @@ func (s *AgentCommandService) validateScanTargets(ctx context.Context, agentID s
 // is precomputed by the caller (receive_time - scanned_at); meta may be nil
 // for agents on older builds (keep zero values).
 func (s *AgentCommandService) UpsertAgentStatus(ctx context.Context, agentID string, meta *domain.AgentMeta, clockOffset float64) error {
-	var version, goVersion, hostname, fpRev string
+	var version, goVersion, hostname, fpRev, modules string
 	var uptime, scans int64
 	if meta != nil {
 		version, goVersion, hostname, fpRev = meta.Version, meta.GoVersion, meta.Hostname, meta.FingerprintRev
 		uptime, scans = meta.UptimeSec, meta.ScansTotal
+		modules = strings.Join(meta.SupportedModules, ",")
 	}
 	return s.queries.UpsertAgentStatus(ctx, db.UpsertAgentStatusParams{
 		AgentID:            agentID,
@@ -220,6 +221,7 @@ func (s *AgentCommandService) UpsertAgentStatus(ctx context.Context, agentID str
 		ClockOffsetSeconds: clockOffset,
 		ScansTotal:         scans,
 		FingerprintRev:     fpRev,
+		SupportedModules:   modules,
 		LastReportAt:       time.Now().UTC(),
 	})
 }

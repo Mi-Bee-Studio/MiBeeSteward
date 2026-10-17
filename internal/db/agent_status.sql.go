@@ -12,7 +12,7 @@ import (
 
 const listAgentStatus = `-- name: ListAgentStatus :many
 SELECT agent_id, version, go_version, hostname, uptime_seconds,
-    clock_offset_seconds, scans_total, fingerprint_rev, last_report_at
+    clock_offset_seconds, scans_total, fingerprint_rev, supported_modules, last_report_at
 FROM agent_status
 ORDER BY last_report_at ASC
 `
@@ -36,6 +36,7 @@ func (q *Queries) ListAgentStatus(ctx context.Context) ([]AgentStatus, error) {
 			&i.ClockOffsetSeconds,
 			&i.ScansTotal,
 			&i.FingerprintRev,
+			&i.SupportedModules,
 			&i.LastReportAt,
 		); err != nil {
 			return nil, err
@@ -54,8 +55,8 @@ func (q *Queries) ListAgentStatus(ctx context.Context) ([]AgentStatus, error) {
 const upsertAgentStatus = `-- name: UpsertAgentStatus :exec
 
 INSERT INTO agent_status (agent_id, version, go_version, hostname, uptime_seconds,
-    clock_offset_seconds, scans_total, fingerprint_rev, last_report_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    clock_offset_seconds, scans_total, fingerprint_rev, supported_modules, last_report_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(agent_id) DO UPDATE SET
     version = excluded.version,
     go_version = excluded.go_version,
@@ -64,6 +65,7 @@ ON CONFLICT(agent_id) DO UPDATE SET
     clock_offset_seconds = excluded.clock_offset_seconds,
     scans_total = excluded.scans_total,
     fingerprint_rev = excluded.fingerprint_rev,
+    supported_modules = excluded.supported_modules,
     last_report_at = excluded.last_report_at
 `
 
@@ -76,6 +78,7 @@ type UpsertAgentStatusParams struct {
 	ClockOffsetSeconds float64   `json:"clock_offset_seconds"`
 	ScansTotal         int64     `json:"scans_total"`
 	FingerprintRev     string    `json:"fingerprint_rev"`
+	SupportedModules   string    `json:"supported_modules"`
 	LastReportAt       time.Time `json:"last_report_at"`
 }
 
@@ -89,6 +92,8 @@ type UpsertAgentStatusParams struct {
 // LICENSE-COMMERCIAL.md.
 // Refresh the fleet snapshot on every authenticated agent report (#278).
 // clock_offset is passed precomputed by the handler (receive_time - scanned_at).
+// supported_modules (#604) is the agent-declared probe capability set;
+// ” = legacy agent that never reported capabilities.
 func (q *Queries) UpsertAgentStatus(ctx context.Context, arg UpsertAgentStatusParams) error {
 	_, err := q.db.ExecContext(ctx, upsertAgentStatus,
 		arg.AgentID,
@@ -99,6 +104,7 @@ func (q *Queries) UpsertAgentStatus(ctx context.Context, arg UpsertAgentStatusPa
 		arg.ClockOffsetSeconds,
 		arg.ScansTotal,
 		arg.FingerprintRev,
+		arg.SupportedModules,
 		arg.LastReportAt,
 	)
 	return err

@@ -54,6 +54,15 @@ heartbeat:
   timeout: 5
   retention_days: 30
 
+# Synthetic probing engine (#608 egress quality + #606 autogen defaults; see
+# config.example.yaml for the fully documented block).
+probe:
+  max_concurrency: 8
+  quality:
+    enabled: true
+  autogen:
+    enabled: false
+
 prometheus:
   enabled: true
   metrics_path: "/metrics"

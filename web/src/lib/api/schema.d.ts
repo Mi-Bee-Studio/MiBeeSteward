@@ -2736,6 +2736,8 @@ export interface paths {
                     /** @description Pagination offset (negative → 400) */
                     offset?: components["parameters"]["offset"];
                     search?: string;
+                    /** @description Filter to targets bound to one device (#606); pagination fields are advisory for this shape */
+                    device_id?: number;
                 };
                 header?: never;
                 path?: never;
@@ -2755,7 +2757,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** Create a probe target (http/tcp/icmp/snmp; vantage center|agent:..|all) */
+        /** Create a probe target (http/tls/tcp/icmp/dns; vantage center|agent:..|all) */
         post: {
             parameters: {
                 query?: never;
@@ -6027,8 +6029,8 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            module: "http" | "tls" | "tcp" | "icmp";
-            /** @description URL (http), host:port (tls/tcp), host/IP (icmp) */
+            module: "http" | "tls" | "tcp" | "icmp" | "dns";
+            /** @description URL (http), host:port (tls/tcp), host/IP (icmp), bare domain (dns) */
             target: string;
             interval_seconds: number;
             timeout_seconds: number;
@@ -6045,6 +6047,54 @@ export interface components {
             vantage: string;
             /** @description Newest result per vantage track (agent tracks included); omitted when the target has no history yet. last_* mirrors the center track only. */
             vantage_latest?: components["schemas"]["ProbeVantageLatest"][];
+            options?: components["schemas"]["ProbeOptions"];
+            /**
+             * Format: int64
+             * @description Bound device (#606); omitted when the target is free (unbound)
+             */
+            device_id?: number;
+            /**
+             * @description 'manual' (user) | 'auto' (policy-generated from discovered services, #606) | 'system' (built-in egress-quality matrix, #608)
+             * @enum {string}
+             */
+            source: "manual" | "auto" | "system";
+        };
+        /** @description Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free. */
+        ProbeOptions: {
+            /**
+             * @description http only; default GET
+             * @enum {string}
+             */
+            method?: "GET" | "HEAD";
+            /** @description http only; exact allowed status codes (e.g. [200,204]); empty = status < 400 */
+            expected_status?: number[];
+            /** @description http only; body match after the status check */
+            keyword?: string;
+            /**
+             * @description default contains
+             * @enum {string}
+             */
+            keyword_mode?: "contains" | "not_contains" | "regex";
+            /** @description http only; default false = verify TLS (agent parity) */
+            ignore_tls_errors?: boolean;
+            /**
+             * @description dns only; default A
+             * @enum {string}
+             */
+            record?: "A" | "AAAA" | "CNAME" | "TXT";
+            /** @description dns only; host[:port] resolver to query, empty = system default */
+            resolver?: string;
+            /** @description dns only; A/AAAA answers must intersect this set */
+            expected_ips?: string[];
+            /** @description tcp only; ASCII payload written right after connect */
+            send?: string;
+            /** @description tcp only; banner match against the first bytes read */
+            expect?: string;
+            /**
+             * @description tcp only; default contains
+             * @enum {string}
+             */
+            expect_mode?: "contains" | "regex";
         };
         /** @description Newest probe outcome of one executor's track. */
         ProbeVantageLatest: {

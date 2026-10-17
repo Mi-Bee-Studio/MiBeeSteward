@@ -62,3 +62,13 @@ DELETE FROM probe_results
 WHERE id IN (
     SELECT sub.id FROM probe_results AS sub WHERE sub.checked_at < ? LIMIT ?
 );
+
+-- name: ListProbeResultsSince :many
+-- Raw in-window rows for the egress-quality analyzer (#608): aggregation
+-- (ok-rate, exact p50) happens in Go over this bounded set - the default
+-- 15-minute window holds at most a few thousand rows even on a busy probe
+-- table. Oldest-first so percentiles read naturally.
+SELECT id, target_id, status, latency_ms, checked_at, vantage
+FROM probe_results
+WHERE checked_at >= ?
+ORDER BY checked_at ASC, id ASC;

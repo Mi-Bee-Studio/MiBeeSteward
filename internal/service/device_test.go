@@ -66,6 +66,26 @@ func setupDeviceService(t *testing.T) (*DeviceService, *sql.DB) {
 			offline_since TIMESTAMP,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS probe_targets (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			module TEXT NOT NULL,
+			target TEXT NOT NULL,
+			interval_seconds INTEGER NOT NULL DEFAULT 60,
+			timeout_seconds INTEGER NOT NULL DEFAULT 10,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			notes TEXT NOT NULL DEFAULT '',
+			last_run_at TEXT NOT NULL DEFAULT '',
+			last_status TEXT NOT NULL DEFAULT '',
+			last_latency_ms REAL NOT NULL DEFAULT 0,
+			last_error TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			vantage TEXT NOT NULL DEFAULT 'center',
+			options TEXT NOT NULL DEFAULT '',
+			device_id INTEGER,
+			source TEXT NOT NULL DEFAULT 'manual'
 		)
 	`)
 	require.NoError(t, err)

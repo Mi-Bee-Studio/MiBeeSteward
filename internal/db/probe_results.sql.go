@@ -226,3 +226,53 @@ func (q *Queries) ListProbeResultsByTarget(ctx context.Context, arg ListProbeRes
 	}
 	return items, nil
 }
+
+const listProbeResultsSince = `-- name: ListProbeResultsSince :many
+SELECT id, target_id, status, latency_ms, checked_at, vantage
+FROM probe_results
+WHERE checked_at >= ?
+ORDER BY checked_at ASC, id ASC
+`
+
+type ListProbeResultsSinceRow struct {
+	ID        int64   `json:"id"`
+	TargetID  int64   `json:"target_id"`
+	Status    string  `json:"status"`
+	LatencyMs float64 `json:"latency_ms"`
+	CheckedAt string  `json:"checked_at"`
+	Vantage   string  `json:"vantage"`
+}
+
+// Raw in-window rows for the egress-quality analyzer (#608): aggregation
+// (ok-rate, exact p50) happens in Go over this bounded set - the default
+// 15-minute window holds at most a few thousand rows even on a busy probe
+// table. Oldest-first so percentiles read naturally.
+func (q *Queries) ListProbeResultsSince(ctx context.Context, checkedAt string) ([]ListProbeResultsSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProbeResultsSince, checkedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProbeResultsSinceRow{}
+	for rows.Next() {
+		var i ListProbeResultsSinceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TargetID,
+			&i.Status,
+			&i.LatencyMs,
+			&i.CheckedAt,
+			&i.Vantage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

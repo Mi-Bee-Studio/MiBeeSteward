@@ -79,20 +79,31 @@ func RunTarget(ctx context.Context, t db.ProbeTarget) Outcome {
 	return defaultTargetExecutor.execute(ctx, t)
 }
 
-// execute dispatches one target to its module prober. Never panics on an
-// unknown module (returns a fail outcome), the CHECK constraint makes that
-// unreachable, but the engine must never wedge on bad data.
+// execute dispatches one target to its module prober. Targets carrying an
+// options block (#605) take the option-aware paths; option-less targets keep
+// the shared probers (heartbeat parity). Never panics on an unknown module
+// (returns a fail outcome) - the CHECK constraint makes that unreachable, but
+// the engine must never wedge on bad data.
 func (x *targetExecutor) execute(ctx context.Context, t db.ProbeTarget) outcome {
 	timeout := time.Duration(t.TimeoutSeconds) * time.Second
+	opts := parseProbeOptions(t.Options)
 	switch t.Module {
 	case "http":
+		if opts != nil {
+			return x.executeHTTPOptions(ctx, t, opts, timeout)
+		}
 		return x.executeHTTP(ctx, t, timeout)
 	case "tls":
 		return x.executeTLS(ctx, t, timeout)
 	case "tcp":
+		if opts != nil {
+			return x.executeTCPOptions(ctx, t, opts, timeout)
+		}
 		return x.executeSimple(ctx, t, "tcp", timeout)
 	case "icmp":
 		return x.executeSimple(ctx, t, "icmp", timeout)
+	case "dns":
+		return x.executeDNS(ctx, t, timeout)
 	default:
 		return outcome{Status: "fail", ErrMsg: "unknown module: " + t.Module}
 	}

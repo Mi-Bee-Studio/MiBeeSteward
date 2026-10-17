@@ -63,6 +63,10 @@ func (s *BatchService) DeleteDevices(ctx context.Context, ids []int64, userID in
 	var totalDeleted int64
 
 	for _, id := range ids {
+		// Bound probe targets detach first (#606), same as the single delete.
+		if _, err := q.DetachProbeTargetsFromDevice(ctx, &id); err != nil {
+			return 0, fmt.Errorf("failed to detach probe targets for device %d: %w", id, err)
+		}
 		affected, err := q.DeleteDevice(ctx, id)
 		if err != nil {
 			return 0, fmt.Errorf("failed to delete device %d: %w", id, err)
