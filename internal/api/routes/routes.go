@@ -803,7 +803,22 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}()
 	agentProbeReportHandler := handler.NewAgentProbeReportHandler(probeTargetSvc)
 	probeTargetHandler := handler.NewProbeTargetHandler(probeTargetSvc, scanQueries)
-	registerProbeTargetRoutes(r, probeTargetHandler)
+	// Egress-quality matrix (#608): seed the system targets from config at
+	// startup (idempotent), then keep the verdict gauges fresh on a ticker.
+	// A seed failure must not block boot - the panel degrades to no-data.
+	probeQualitySvc := probetarget.NewQualityService(db.New(probeDB), cfg.Probe.Quality, slog.Default())
+	if err := probeQualitySvc.Seed(context.Background()); err != nil {
+		slog.Warn("probe quality: seed failed, matrix inactive this boot", "error", err)
+	}
+	probeQualityStop := make(chan struct{})
+	go probeQualitySvc.StartMetricsLoop(context.Background(), prometheus.DefaultRegisterer, probeQualityStop)
+	probeQualityHandler := handler.NewProbeQualityHandler(probeQualitySvc)
+	registerProbeTargetRoutes(r, probeTargetHandler, probeQualityHandler)
+	// Discover-then-probe autogen (#606): default OFF, periodic reconcile of
+	// discovered services into device-bound targets. Same stop pattern.
+	probeAutogenSvc := probetarget.NewAutogenService(db.New(probeDB), cfg.Probe.Autogen, slog.Default())
+	probeAutogenStop := make(chan struct{})
+	go probeAutogenSvc.StartSweepLoop(context.Background(), probeAutogenStop)
 
 	// --- SNMP credential management (issue #135, SNMPv3) ---
 	// CRUD for SNMP credentials (v1/v2c community strings + v3 USM auth/priv).
@@ -1004,6 +1019,21 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 			// already stopped
 		default:
 			close(probeDispatchStop)
+		}
+		// Same guarded stop for the quality metrics loop (#608): its Analyze
+		// reads probe_results and must not race the DB close.
+		select {
+		case <-probeQualityStop:
+			// already stopped
+		default:
+			close(probeQualityStop)
+		}
+		// And the autogen sweep (#606): same read/write surface.
+		select {
+		case <-probeAutogenStop:
+			// already stopped
+		default:
+			close(probeAutogenStop)
 		}
 		// Stop the device-metrics refresher BEFORE the DB close, its tick
 		// runs aggregate COUNTs against dbConn (#333).

@@ -531,6 +531,78 @@ func (e ProbeOptionsRecord) Valid() bool {
 	}
 }
 
+// Defines values for ProbeQualityGroupRole.
+const (
+	Primary   ProbeQualityGroupRole = "primary"
+	Reference ProbeQualityGroupRole = "reference"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityGroupRole enum.
+func (e ProbeQualityGroupRole) Valid() bool {
+	switch e {
+	case Primary:
+		return true
+	case Reference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeQualityTargetCrossVantage.
+const (
+	ProbeQualityTargetCrossVantageMixed      ProbeQualityTargetCrossVantage = "mixed"
+	ProbeQualityTargetCrossVantageNoData     ProbeQualityTargetCrossVantage = "no_data"
+	ProbeQualityTargetCrossVantageOk         ProbeQualityTargetCrossVantage = "ok"
+	ProbeQualityTargetCrossVantageTargetDown ProbeQualityTargetCrossVantage = "target_down"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityTargetCrossVantage enum.
+func (e ProbeQualityTargetCrossVantage) Valid() bool {
+	switch e {
+	case ProbeQualityTargetCrossVantageMixed:
+		return true
+	case ProbeQualityTargetCrossVantageNoData:
+		return true
+	case ProbeQualityTargetCrossVantageOk:
+		return true
+	case ProbeQualityTargetCrossVantageTargetDown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeQualityVantageVerdict.
+const (
+	ProbeQualityVantageVerdictDegraded         ProbeQualityVantageVerdict = "degraded"
+	ProbeQualityVantageVerdictDnsFault         ProbeQualityVantageVerdict = "dns_fault"
+	ProbeQualityVantageVerdictEgressDown       ProbeQualityVantageVerdict = "egress_down"
+	ProbeQualityVantageVerdictInsufficient     ProbeQualityVantageVerdict = "insufficient"
+	ProbeQualityVantageVerdictOk               ProbeQualityVantageVerdict = "ok"
+	ProbeQualityVantageVerdictUpstreamResolver ProbeQualityVantageVerdict = "upstream_resolver"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityVantageVerdict enum.
+func (e ProbeQualityVantageVerdict) Valid() bool {
+	switch e {
+	case ProbeQualityVantageVerdictDegraded:
+		return true
+	case ProbeQualityVantageVerdictDnsFault:
+		return true
+	case ProbeQualityVantageVerdictEgressDown:
+		return true
+	case ProbeQualityVantageVerdictInsufficient:
+		return true
+	case ProbeQualityVantageVerdictOk:
+		return true
+	case ProbeQualityVantageVerdictUpstreamResolver:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeResultStatus.
 const (
 	ProbeResultStatusFail    ProbeResultStatus = "fail"
@@ -1624,6 +1696,64 @@ type ProbeOptionsMethod string
 // ProbeOptionsRecord dns only; default A
 type ProbeOptionsRecord string
 
+// ProbeQualityGroup defines model for ProbeQualityGroup.
+type ProbeQualityGroup struct {
+	Name string `json:"name"`
+
+	// Role primary = the network verdict; reference groups are displayed separately
+	Role     ProbeQualityGroupRole `json:"role"`
+	Targets  []ProbeQualityTarget  `json:"targets"`
+	Vantages []ProbeQualityVantage `json:"vantages"`
+}
+
+// ProbeQualityGroupRole primary = the network verdict; reference groups are displayed separately
+type ProbeQualityGroupRole string
+
+// ProbeQualityReport Egress-quality analysis (#608): per-group, per-vantage verdicts computed read-time over the window's probe_results. Verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok; reasons are stable codes for UI localization.
+type ProbeQualityReport struct {
+	Groups        []ProbeQualityGroup `json:"groups"`
+	WindowMinutes int                 `json:"window_minutes"`
+}
+
+// ProbeQualityTarget defines model for ProbeQualityTarget.
+type ProbeQualityTarget struct {
+	// CrossVantage target-side isolation - failing everywhere blames the target, not the networks
+	CrossVantage ProbeQualityTargetCrossVantage `json:"cross_vantage"`
+	Module       string                         `json:"module"`
+	Name         string                         `json:"name"`
+	PerVantage   map[string]ProbeQualityTrack   `json:"per_vantage"`
+	Target       string                         `json:"target"`
+}
+
+// ProbeQualityTargetCrossVantage target-side isolation - failing everywhere blames the target, not the networks
+type ProbeQualityTargetCrossVantage string
+
+// ProbeQualityTrack defines model for ProbeQualityTrack.
+type ProbeQualityTrack struct {
+	LastStatus *string `json:"last_status,omitempty"`
+	OkRate     float32 `json:"ok_rate"`
+	P50Ms      float32 `json:"p50_ms"`
+	Samples    int     `json:"samples"`
+}
+
+// ProbeQualityVantage defines model for ProbeQualityVantage.
+type ProbeQualityVantage struct {
+	NetworkName *string `json:"network_name,omitempty"`
+
+	// Reasons stable reason codes
+	Reasons []string `json:"reasons"`
+
+	// Score 0-100
+	Score int `json:"score"`
+
+	// Vantage 'center' or 'agent:{id}'
+	Vantage string                     `json:"vantage"`
+	Verdict ProbeQualityVantageVerdict `json:"verdict"`
+}
+
+// ProbeQualityVantageVerdict defines model for ProbeQualityVantage.Verdict.
+type ProbeQualityVantageVerdict string
+
 // ProbeResult defines model for ProbeResult.
 type ProbeResult struct {
 	// CertNotAfter Leaf cert expiry; empty when none collected
@@ -2309,6 +2439,12 @@ type GetNotificationLogsParams struct {
 
 	// Offset Pagination offset (negative → 400)
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// GetProbeQualityParams defines parameters for GetProbeQuality.
+type GetProbeQualityParams struct {
+	// Window lookback minutes (5-1440, default from probe.quality.window_minutes)
+	Window *int `form:"window,omitempty" json:"window,omitempty"`
 }
 
 // GetProbeTargetsParams defines parameters for GetProbeTargets.
@@ -3586,6 +3722,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /notification/rules/{id} (the `PutNotificationRulesId` operationId).
 	PutNotificationRulesId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProbeQuality Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
+	//
+	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
+	GetProbeQuality(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetProbeTargets Synthetic probing targets (search filter)
 	//
@@ -5626,6 +5767,21 @@ func (c *Client) PatchNotificationRulesId(ctx context.Context, id Id, reqEditors
 // Corresponds with PUT /notification/rules/{id} (the `PutNotificationRulesId` operationId).
 func (c *Client) PutNotificationRulesId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutNotificationRulesIdRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProbeQuality Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
+//
+// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
+func (c *Client) GetProbeQuality(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeQualityRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -10897,6 +11053,60 @@ func NewPutNotificationRulesIdRequest(server string, id Id) (*http.Request, erro
 	return req, nil
 }
 
+// NewGetProbeQualityRequest constructs an http.Request for the GetProbeQuality method
+func NewGetProbeQualityRequest(server string, params *GetProbeQualityParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-quality")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Window != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "window", *params.Window, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProbeTargetsRequest constructs an http.Request for the GetProbeTargets method
 func NewGetProbeTargetsRequest(server string, params *GetProbeTargetsParams) (*http.Request, error) {
 	var err error
@@ -13772,6 +13982,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /notification/rules/{id} (the `PutNotificationRulesId` operationId).
 	PutNotificationRulesIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PutNotificationRulesIdResponse, error)
+
+	// GetProbeQualityWithResponse Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
+	GetProbeQualityWithResponse(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*GetProbeQualityResponse, error)
 
 	// GetProbeTargetsWithResponse Synthetic probing targets (search filter)
 	//
@@ -18756,6 +18973,47 @@ func (r PutNotificationRulesIdResponse) ContentType() string {
 	return ""
 }
 
+type GetProbeQualityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeQualityReport
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeQualityResponse) GetJSON200() *ProbeQualityReport {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeQualityResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeQualityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeQualityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeQualityResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetProbeTargetsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -22124,6 +22382,19 @@ func (c *ClientWithResponses) PutNotificationRulesIdWithResponse(ctx context.Con
 	return ParsePutNotificationRulesIdResponse(rsp)
 }
 
+// GetProbeQualityWithResponse Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
+func (c *ClientWithResponses) GetProbeQualityWithResponse(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*GetProbeQualityResponse, error) {
+	rsp, err := c.GetProbeQuality(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeQualityResponse(rsp)
+}
+
 // GetProbeTargetsWithResponse Synthetic probing targets (search filter)
 //
 // Returns a wrapper object for the known response body format(s).
@@ -25453,6 +25724,32 @@ func ParsePutNotificationRulesIdResponse(rsp *http.Response) (*PutNotificationRu
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest NotificationRule
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProbeQualityResponse parses an HTTP response from a GetProbeQualityWithResponse call
+func ParseGetProbeQualityResponse(rsp *http.Response) (*GetProbeQualityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeQualityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeQualityReport
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

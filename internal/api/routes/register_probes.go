@@ -17,8 +17,13 @@ import (
 	"mibee-steward/internal/domain"
 )
 
-// registerProbeTargetRoutes registers /api/v1/probe-targets.
-func registerProbeTargetRoutes(r chi.Router, probeTargetHandler *handler.ProbeTargetHandler) {
+// registerProbeTargetRoutes registers /api/v1/probe-targets and the
+// egress-quality analysis endpoint (#608).
+func registerProbeTargetRoutes(r chi.Router, probeTargetHandler *handler.ProbeTargetHandler, probeQualityHandler *handler.ProbeQualityHandler) {
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireCapability(domain.CapProbeRead))
+		r.Get("/api/v1/probe-quality", probeQualityHandler.GetQuality)
+	})
 	r.Route("/api/v1/probe-targets", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapProbeRead))

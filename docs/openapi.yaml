@@ -907,6 +907,18 @@ paths:
       responses:
         "200": {description: File download}
 
+  /probe-quality:
+    get:
+      tags: [ProbeTargets]
+      summary: Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
+      parameters:
+        - {name: window, in: query, schema: {type: integer}, description: "lookback minutes (5-1440, default from probe.quality.window_minutes)"}
+      responses:
+        "200":
+          description: Quality report
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeQualityReport"}
   /probe-targets:
     get:
       tags: [ProbeTargets]
@@ -2414,6 +2426,51 @@ components:
         - type: object
           properties:
             results: {type: array, items: {$ref: "#/components/schemas/ProbeResult"}}
+    ProbeQualityReport:
+      type: object
+      description: "Egress-quality analysis (#608): per-group, per-vantage verdicts computed read-time over the window's probe_results. Verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok; reasons are stable codes for UI localization."
+      required: [window_minutes, groups]
+      properties:
+        window_minutes: {type: integer}
+        groups:
+          type: array
+          items: {$ref: "#/components/schemas/ProbeQualityGroup"}
+    ProbeQualityGroup:
+      type: object
+      required: [name, role, vantages, targets]
+      properties:
+        name: {type: string}
+        role: {type: string, enum: [primary, reference], description: "primary = the network verdict; reference groups are displayed separately"}
+        vantages: {type: array, items: {$ref: "#/components/schemas/ProbeQualityVantage"}}
+        targets: {type: array, items: {$ref: "#/components/schemas/ProbeQualityTarget"}}
+    ProbeQualityVantage:
+      type: object
+      required: [vantage, verdict, score, reasons]
+      properties:
+        vantage: {type: string, description: "'center' or 'agent:{id}'"}
+        network_name: {type: string}
+        verdict: {type: string, enum: [ok, degraded, egress_down, dns_fault, upstream_resolver, insufficient]}
+        score: {type: integer, description: 0-100}
+        reasons: {type: array, items: {type: string}, description: stable reason codes}
+    ProbeQualityTarget:
+      type: object
+      required: [name, module, target, cross_vantage, per_vantage]
+      properties:
+        name: {type: string}
+        module: {type: string}
+        target: {type: string}
+        cross_vantage: {type: string, enum: [ok, target_down, mixed, no_data], description: "target-side isolation - failing everywhere blames the target, not the networks"}
+        per_vantage:
+          type: object
+          additionalProperties: {$ref: "#/components/schemas/ProbeQualityTrack"}
+    ProbeQualityTrack:
+      type: object
+      required: [ok_rate, p50_ms, samples]
+      properties:
+        ok_rate: {type: number}
+        p50_ms: {type: number}
+        samples: {type: integer}
+        last_status: {type: string}
 
     SNMPCredential:
       type: object

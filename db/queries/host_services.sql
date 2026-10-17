@@ -27,3 +27,15 @@ WHERE id IN (
 -- unique-INDEX conflict target. updated_at is RFC3339 text (DBTime).
 INSERT INTO host_services (ip, device_uuid, service, port, protocol, confidence, metadata, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS TEXT));
+
+-- name: ListHostServicesWithDevice :many
+-- Discover-then-probe autogen source (#606): every classified service joined
+-- to its owning device (stable device_uuid key; pre-backfill empty uuids are
+-- unjoinable and skipped). Service/type/volume filtering happens in Go - the
+-- table is retention-bounded and the sweep is rare.
+SELECT hs.service, hs.port,
+       d.id AS device_id, d.type AS device_type, d.ip_address AS device_ip, d.network_id AS network_id
+FROM host_services hs
+JOIN devices d ON d.device_uuid = hs.device_uuid
+WHERE hs.device_uuid != ''
+ORDER BY d.id, hs.port;

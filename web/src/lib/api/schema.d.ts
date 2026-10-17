@@ -2720,6 +2720,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/probe-quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description lookback minutes (5-1440, default from probe.quality.window_minutes) */
+                    window?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Quality report */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeQualityReport"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/probe-targets": {
         parameters: {
             query?: never;
@@ -6131,6 +6170,51 @@ export interface components {
         };
         ProbeResultList: components["schemas"]["PageMeta"] & {
             results?: components["schemas"]["ProbeResult"][];
+        };
+        /** @description Egress-quality analysis (#608): per-group, per-vantage verdicts computed read-time over the window's probe_results. Verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok; reasons are stable codes for UI localization. */
+        ProbeQualityReport: {
+            window_minutes: number;
+            groups: components["schemas"]["ProbeQualityGroup"][];
+        };
+        ProbeQualityGroup: {
+            name: string;
+            /**
+             * @description primary = the network verdict; reference groups are displayed separately
+             * @enum {string}
+             */
+            role: "primary" | "reference";
+            vantages: components["schemas"]["ProbeQualityVantage"][];
+            targets: components["schemas"]["ProbeQualityTarget"][];
+        };
+        ProbeQualityVantage: {
+            /** @description 'center' or 'agent:{id}' */
+            vantage: string;
+            network_name?: string;
+            /** @enum {string} */
+            verdict: "ok" | "degraded" | "egress_down" | "dns_fault" | "upstream_resolver" | "insufficient";
+            /** @description 0-100 */
+            score: number;
+            /** @description stable reason codes */
+            reasons: string[];
+        };
+        ProbeQualityTarget: {
+            name: string;
+            module: string;
+            target: string;
+            /**
+             * @description target-side isolation - failing everywhere blames the target, not the networks
+             * @enum {string}
+             */
+            cross_vantage: "ok" | "target_down" | "mixed" | "no_data";
+            per_vantage: {
+                [key: string]: components["schemas"]["ProbeQualityTrack"];
+            };
+        };
+        ProbeQualityTrack: {
+            ok_rate: number;
+            p50_ms: number;
+            samples: number;
+            last_status?: string;
         };
         /** @description Masked projection, passphrases are NEVER returned (not even ciphertext) */
         SNMPCredential: {
