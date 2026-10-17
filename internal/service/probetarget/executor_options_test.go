@@ -112,23 +112,18 @@ func TestExecuteHTTPOptions_TimeoutClassification(t *testing.T) {
 	addr := l.Addr().String()
 	// Black-hole the connection: accept, hold open, never answer - the only
 	// shape that reliably burns the whole budget into a timeout (an immediate
-	// close would RST and read as fail).
-	hold := make(chan net.Conn, 16)
+	// close would RST and read as fail). Connections live in the accept
+	// goroutine only, so the race detector has nothing to say.
 	go func() {
 		for {
 			c, aerr := l.Accept()
 			if aerr != nil {
 				return
 			}
-			hold <- c
+			_ = c.SetDeadline(time.Now().Add(30 * time.Second))
 		}
 	}()
-	defer func() {
-		close(hold)
-		for c := range hold {
-			_ = c.Close()
-		}
-	}()
+	defer l.Close()
 
 	out := exec.execute(ctx, httpTarget("http://"+addr+"/", nil))
 	require.Equal(t, "timeout", out.Status)
