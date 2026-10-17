@@ -139,9 +139,10 @@ func seedQualityWorld(t *testing.T, queries *db.Queries, cfg config.ProbeQuality
 			}
 			for i, c := range statuses {
 				st := "success"
-				if c == 'f' {
+				switch c {
+				case 'f':
 					st = "fail"
-				} else if c == 't' {
+				case 't':
 					st = "timeout"
 				}
 				checked := time.Now().UTC().Add(-time.Duration(i+1) * time.Minute).Format(time.RFC3339)

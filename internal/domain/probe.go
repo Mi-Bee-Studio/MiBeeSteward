@@ -87,20 +87,20 @@ func NormalizeProbeVantage(v string) (string, error) {
 // secret-free by design.
 type ProbeOptions struct {
 	// http module.
-	Method          string `json:"method,omitempty"`           // GET (default) | HEAD
-	ExpectedStatus  []int  `json:"expected_status,omitempty"`  // exact allowed codes; empty = status < 400 (legacy semantics)
-	Keyword         string `json:"keyword,omitempty"`          // body match after the status check
-	KeywordMode     string `json:"keyword_mode,omitempty"`     // contains (default) | not_contains | regex
+	Method          string `json:"method,omitempty"`            // GET (default) | HEAD
+	ExpectedStatus  []int  `json:"expected_status,omitempty"`   // exact allowed codes; empty = status < 400 (legacy semantics)
+	Keyword         string `json:"keyword,omitempty"`           // body match after the status check
+	KeywordMode     string `json:"keyword_mode,omitempty"`      // contains (default) | not_contains | regex
 	IgnoreTLSErrors bool   `json:"ignore_tls_errors,omitempty"` // default false = verify TLS like the center always has
 
 	// dns module.
-	Record      string   `json:"record,omitempty"`      // A (default) | AAAA | CNAME | TXT
-	Resolver    string   `json:"resolver,omitempty"`    // host[:port]; empty = the host's system resolver
+	Record      string   `json:"record,omitempty"`       // A (default) | AAAA | CNAME | TXT
+	Resolver    string   `json:"resolver,omitempty"`     // host[:port]; empty = the host's system resolver
 	ExpectedIPs []string `json:"expected_ips,omitempty"` // A/AAAA answers must intersect this set
 
 	// tcp module.
 	Send       string `json:"send,omitempty"`        // optional payload written right after connect (ASCII; no binary in v1)
-	Expect     string `json:"expect,omitempty"`       // banner match against the first bytes read
+	Expect     string `json:"expect,omitempty"`      // banner match against the first bytes read
 	ExpectMode string `json:"expect_mode,omitempty"` // contains (default) | regex
 }
 
