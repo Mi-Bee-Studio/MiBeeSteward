@@ -112,4 +112,13 @@ func TestService_OptionsRoundTrip(t *testing.T) {
 	bad := domain.ProbeOptions{Keyword: "not for dns"}
 	_, err = svc.Update(ctx, fancy.ID, domain.UpdateProbeTargetRequest{Options: &bad})
 	require.ErrorContains(t, err, "do not apply")
+
+	// A module switch without an options payload clears the stale options
+	// (a partial-update client must not strand the old module's fields).
+	newModule := "tcp"
+	newTarget := "203.0.113.10:53"
+	switched, err := svc.Update(ctx, fancy.ID, domain.UpdateProbeTargetRequest{Module: &newModule, Target: &newTarget})
+	require.NoError(t, err)
+	require.Equal(t, "tcp", switched.Module)
+	require.Nil(t, switched.Options)
 }

@@ -210,6 +210,12 @@ func (s *Service) Update(ctx context.Context, id int64, req domain.UpdateProbeTa
 	options := parseProbeOptions(existing.Options)
 	if req.Options != nil {
 		options = req.Options
+	} else if module != existing.Module {
+		// A module switch invalidates the old module's options: without an
+		// explicit options payload in the same request they are cleared, so
+		// a partial-update client cannot strand e.g. dns fields on a tcp
+		// target (the per-module gating would then be unsatisfiable).
+		options = nil
 	}
 	deviceID := existing.DeviceID
 	if req.DeviceID != nil {
