@@ -80,6 +80,16 @@ export type ProbeResult = Schemas['ProbeResult'];
 export type ProbeResultListResponse = Schemas['ProbeResultList'];
 /** Synchronous trigger response (POST /probe-targets/{id}/trigger). */
 export type ProbeTriggerResponse = Schemas['ProbeResult'];
+/** Per-module execution options (#605): method/status/keyword (http), record/
+ *  resolver/expected_ips (dns), send/expect/expect_mode (tcp). */
+export type ProbeOptions = Schemas['ProbeOptions'];
+// Egress-quality report (GET /probe-quality, #608): per-group vantage verdicts
+// computed read-time over the window's probe_results.
+export type ProbeQualityReport = Schemas['ProbeQualityReport'];
+export type ProbeQualityGroup = Schemas['ProbeQualityGroup'];
+export type ProbeQualityVantage = Schemas['ProbeQualityVantage'];
+export type ProbeQualityTarget = Schemas['ProbeQualityTarget'];
+export type ProbeQualityTrack = Schemas['ProbeQualityTrack'];
 
 // ---------------------------------------------------------------------------
 // Linked Document (used in device-document linking modal)

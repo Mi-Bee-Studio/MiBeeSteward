@@ -24,7 +24,8 @@
 		Power,
 		ScanSearch,
 		HeartPulse,
-		Activity
+		Activity,
+		Globe
 	} from '@lucide/svelte';
 	import type { Component } from 'svelte';
 
@@ -60,7 +61,8 @@
 		{ key: 'builtin:recent_changes', type: 'list', icon: History, label: () => m["dashboard.Preset Recent Changes"](), desc: () => m["dashboard.Preset Recent Changes Desc"]() },
 		{ key: 'builtin:offline_devices', type: 'list', icon: Power, label: () => m["dashboard.Preset Offline Devices"](), desc: () => m["dashboard.Preset Offline Devices Desc"]() },
 		{ key: 'builtin:scan_activity', type: 'list', icon: ScanSearch, label: () => m["dashboard.Preset Scan Activity"](), desc: () => m["dashboard.Preset Scan Activity Desc"]() },
-		{ key: 'builtin:probe_status', type: 'list', icon: HeartPulse, label: () => m["dashboard.Preset Probe Status"](), desc: () => m["dashboard.Preset Probe Status Desc"]() }
+		{ key: 'builtin:probe_status', type: 'list', icon: HeartPulse, label: () => m["dashboard.Preset Probe Status"](), desc: () => m["dashboard.Preset Probe Status Desc"]() },
+		{ key: 'builtin:probe_quality', type: 'list', icon: Globe, label: () => m["dashboard.Preset Probe Quality"](), desc: () => m["dashboard.Preset Probe Quality Desc"]() }
 	];
 
 	const isEditing = $derived(editWidget !== null);

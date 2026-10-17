@@ -195,13 +195,80 @@ export const agentTokenSchema = z.object({
 
 // --- Probe target create/edit form (probes page, 拨测) ---
 // Target grammar is module-conditional (http = absolute http(s) URL, tls/tcp =
-// host:port, icmp = bare host), enforced in superRefine so the base fields'
-// per-field blur validation keeps working. Bounds mirror the backend's
-// probe_targets CHECK constraints (10s-24h interval, 1-60s timeout).
+// host:port, icmp = bare host, dns = bare domain), enforced in superRefine so
+// the base fields' per-field blur validation keeps working. Bounds mirror the
+// backend's probe_targets CHECK constraints (10s-24h interval, 1-60s timeout).
+
+// resolverOk mirrors the Go ValidateProbeOptions spirit, lightly: a bare host
+// (port 53 implied) or host[:port] with a numeric port 1-65535. Bare IPv6
+// literals (multiple colons, no port) pass through; "/" and whitespace never do.
+const resolverOk = (v: string): boolean => {
+	if (/[\s/]/.test(v)) return false;
+	const idx = v.lastIndexOf(':');
+	if (idx === -1) return true; // bare host: 223.5.5.5
+	if (v.indexOf(':') !== idx && !v.slice(0, idx).startsWith('[')) return true; // bare IPv6
+	const port = Number(v.slice(idx + 1));
+	return v.slice(0, idx).replace(/^\[|\]$/g, '') !== '' && Number.isInteger(port) && port >= 1 && port <= 65535;
+};
+
+// Per-module option checks (#605), a light mirror of Go's ValidateProbeOptions:
+// enums, expected_status range, resolver shape, and the mode-requires-value
+// pairs. Values arrive from the form (selects constrain most of them) — this
+// guards the submit payload the same way the backend does.
+export const probeOptionsSchema = z
+	.object({
+		method: z.string().optional(),
+		expected_status: z.array(z.number()).optional(),
+		keyword: z.string().optional(),
+		keyword_mode: z.string().optional(),
+		ignore_tls_errors: z.boolean().optional(),
+		record: z.string().optional(),
+		resolver: z.string().optional(),
+		expected_ips: z.array(z.string()).optional(),
+		send: z.string().optional(),
+		expect: z.string().optional(),
+		expect_mode: z.string().optional()
+	})
+	.superRefine((opts, ctx) => {
+		if (opts.method !== undefined && opts.method !== 'GET' && opts.method !== 'HEAD') {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['method'], message: 'validation.Method Invalid' });
+		}
+		if (opts.expected_status?.some((c) => !Number.isInteger(c) || c < 100 || c > 599)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['expected_status'], message: 'validation.Expected Status Range' });
+		}
+		if (opts.keyword_mode !== undefined) {
+			if (!['contains', 'not_contains', 'regex'].includes(opts.keyword_mode)) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['keyword_mode'], message: 'validation.Keyword Mode Invalid' });
+			} else if (!opts.keyword) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['keyword_mode'], message: 'validation.Keyword Mode Requires Keyword' });
+			}
+		}
+		if (opts.record !== undefined && !['A', 'AAAA', 'CNAME', 'TXT'].includes(opts.record)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['record'], message: 'validation.Record Invalid' });
+		}
+		if (opts.resolver !== undefined && opts.resolver !== '' && !resolverOk(opts.resolver)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['resolver'], message: 'validation.Resolver Invalid' });
+		}
+		if (
+			opts.expected_ips?.some(
+				(ip) => !(ipv4Regex.test(ip) && ip.split('.').every((n) => Number(n) >= 0 && Number(n) <= 255)) && !ip.includes(':')
+			)
+		) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['expected_ips'], message: 'validation.Expected IPs Invalid' });
+		}
+		if (opts.expect_mode !== undefined) {
+			if (!['contains', 'regex'].includes(opts.expect_mode)) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['expect_mode'], message: 'validation.Expect Mode Invalid' });
+			} else if (!opts.expect) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['expect_mode'], message: 'validation.Expect Mode Requires Expect' });
+			}
+		}
+	});
+
 export const probeTargetSchema = z
 	.object({
 		name: z.string().min(1, 'validation.Name Required').max(100, 'validation.Name Max Length'),
-		module: z.enum(['http', 'tls', 'tcp', 'icmp']),
+		module: z.enum(['http', 'tls', 'tcp', 'icmp', 'dns']),
 		target: z.string().min(1, 'validation.Target Required'),
 		interval_seconds: z
 			.number()
@@ -209,7 +276,8 @@ export const probeTargetSchema = z
 			.min(10, 'validation.Interval Range')
 			.max(86400, 'validation.Interval Range'),
 		timeout_seconds: z.number().int().min(1, 'validation.Timeout Range').max(60, 'validation.Timeout Range'),
-		notes: z.string().max(500, 'validation.Notes Max Length').optional()
+		notes: z.string().max(500, 'validation.Notes Max Length').optional(),
+		options: probeOptionsSchema.optional()
 	})
 	.superRefine((data, ctx) => {
 		if (data.timeout_seconds >= data.interval_seconds) {
@@ -252,12 +320,14 @@ export const probeTargetSchema = z
 				}
 				break;
 			}
-			case 'icmp': {
+			case 'icmp':
+			case 'dns': {
+				// Bare host (icmp) / bare domain (dns): no port, no path, no scheme.
 				if (/[\s/:]/.test(data.target)) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
 						path: ['target'],
-						message: 'validation.Invalid Host'
+						message: data.module === 'dns' ? 'validation.Invalid Domain' : 'validation.Invalid Host'
 					});
 				}
 				break;
@@ -370,12 +440,24 @@ export function validateField<T>(
 	field: keyof T & string,
 	value: unknown
 ): { valid: boolean; error?: string } {
-	const fieldSchema = schema.pick({ [field]: true } as { [K in keyof T]: true });
-	const result = fieldSchema.safeParse({ [field]: value });
+	// zod 4 refuses .pick() on object schemas carrying refinements (e.g.
+	// probeTargetSchema's module-conditional grammar): fall back to the field's
+	// own subschema from .shape. Refinements are cross-field rules a single-
+	// field blur check can't evaluate anyway; they run on validateForm submit.
+	let result: { success: boolean; error?: { issues: { message?: string }[] } };
+	try {
+		const fieldSchema = (schema as z.ZodObject<Record<string, z.ZodType>>).pick({ [field]: true } as {
+			[K in keyof T]: true;
+		});
+		result = fieldSchema.safeParse({ [field]: value }) as typeof result;
+	} catch {
+		const shape = (schema as unknown as z.ZodObject<Record<string, z.ZodType>>).shape;
+		result = shape[field].safeParse(value) as typeof result;
+	}
 	if (result.success) {
 		return { valid: true };
 	}
-	const firstIssue = result.error.issues[0];
+	const firstIssue = result.error?.issues[0];
 	return { valid: false, error: translate(firstIssue?.message) };
 }
 

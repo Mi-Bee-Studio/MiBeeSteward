@@ -243,6 +243,7 @@ var builtinWidgetTemplates = map[string]string{
 	"builtin:offline_devices":  "list",
 	"builtin:scan_activity":    "list",
 	"builtin:probe_status":     "list",
+	"builtin:probe_quality":    "list",
 }
 
 // validateWidgetConfig is the pure validation shared by CreateConfig and

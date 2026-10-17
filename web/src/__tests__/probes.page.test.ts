@@ -15,9 +15,9 @@ import { render, waitFor, fireEvent } from '@testing-library/svelte';
 // render-only + list-render + interaction: mock the API surface the probes
 // page touches: target list, per-target certificate summaries (badge),
 // per-target results history, networks (vantage selector's agent options),
-// and the auth store. Assertions are data-driven (names / vantage tokens),
-// never localized strings (except where an interaction must FIND a button;
-// the suite runs under the en locale).
+// the egress-quality report (#608), and the auth store. Assertions are
+// data-driven (names / vantage tokens), never localized strings (except where
+// an interaction must FIND a button; the suite runs under the en locale).
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 // echarts cannot paint under jsdom (canvas getContext returns null → zrender
 // crashes in $effect); the history modal mounts Chart on its default tab.
@@ -42,6 +42,51 @@ vi.mock('$lib/api/client', () => ({
 				return Promise.resolve({
 					networks: [{ id: 1, name: 'lan-62', cidr: '192.168.2.0/24', agent_id: 'edge-1' }],
 					total: 1
+				});
+			}
+			if (url.startsWith('/probe-quality')) {
+				// #608 egress-quality report: primary group with three vantages
+				// (ok / dns_fault / upstream_resolver) + one reference group.
+				return Promise.resolve({
+					window_minutes: 15,
+					groups: [
+						{
+							name: 'egress',
+							role: 'primary',
+							vantages: [
+								{ vantage: 'center', network_name: 'Main LAN', verdict: 'ok', score: 98, reasons: [] },
+								{ vantage: 'agent:edge-1', verdict: 'dns_fault', score: 41, reasons: ['dns_fault.direct_ok_name_resolution_dead', 'ok_rate_low'] },
+								{ vantage: 'agent:edge-2', verdict: 'upstream_resolver', score: 55, reasons: ['upstream_resolver.failing:pub-dns'] }
+							],
+							targets: [
+								{
+									name: 'pub-http',
+									module: 'http',
+									target: 'http://203.0.113.9/',
+									cross_vantage: 'ok',
+									per_vantage: {
+										center: { ok_rate: 1, p50_ms: 30.4, samples: 12, last_status: 'success' },
+										'agent:edge-1': { ok_rate: 0.25, p50_ms: 88.2, samples: 8, last_status: 'fail' }
+									}
+								},
+								{
+									name: 'pub-dns',
+									module: 'dns',
+									target: 'www.example.com',
+									cross_vantage: 'mixed',
+									per_vantage: {
+										center: { ok_rate: 1, p50_ms: 12, samples: 10, last_status: 'success' }
+									}
+								}
+							]
+						},
+						{
+							name: 'reference-alt',
+							role: 'reference',
+							vantages: [{ vantage: 'center', verdict: 'insufficient', score: 0, reasons: ['insufficient_data'] }],
+							targets: []
+						}
+					]
 				});
 			}
 			if (url.startsWith('/probe-targets') && url.includes('/certificates')) {
@@ -105,9 +150,49 @@ vi.mock('$lib/api/client', () => ({
 						],
 						created_at: '2026-08-19T00:00:00Z',
 						updated_at: '2026-08-19T00:00:00Z'
+					},
+					{
+						id: 3,
+						name: 'sys-egress-http',
+						module: 'http',
+						target: 'http://203.0.113.9/',
+						interval_seconds: 60,
+						timeout_seconds: 10,
+						enabled: true,
+						notes: '',
+						vantage: 'all',
+						source: 'system',
+						last_status: 'success',
+						last_latency_ms: 30.4,
+						vantage_latest: [
+							{ vantage: 'center', status: 'success', latency_ms: 30.4, checked_at: '2026-09-17T00:00:03Z' },
+							{ vantage: 'agent:edge-1', status: 'success', latency_ms: 45, checked_at: '2026-09-17T00:00:03Z' }
+						],
+						created_at: '2026-08-19T00:00:00Z',
+						updated_at: '2026-08-19T00:00:00Z'
+					},
+					{
+						id: 4,
+						name: 'auto-nas-web',
+						module: 'tcp',
+						target: '192.168.2.168:5000',
+						interval_seconds: 120,
+						timeout_seconds: 10,
+						enabled: true,
+						notes: '',
+						vantage: 'center',
+						source: 'auto',
+						device_id: 11,
+						last_status: 'success',
+						last_latency_ms: 3.2,
+						vantage_latest: [
+							{ vantage: 'center', status: 'success', latency_ms: 3.2, checked_at: '2026-09-17T00:00:04Z' }
+						],
+						created_at: '2026-08-19T00:00:00Z',
+						updated_at: '2026-08-19T00:00:00Z'
 					}
 				],
-				total: 2
+				total: 4
 			});
 		}),
 		post: vi.fn(() => Promise.resolve({})),
@@ -135,6 +220,7 @@ function resultRow(id: number, vantage: string, status: string, latencyMs: numbe
 }
 
 import Probes from '../routes/probes/+page.svelte';
+import { api } from '$lib/api/client';
 
 describe('Probes page', () => {
 	it('mounts and renders the target table with the seeded row', async () => {
@@ -267,5 +353,190 @@ describe('Probes page', () => {
 		expect(values).toContain('center');
 		expect(values).toContain('all');
 		expect(values).toContain('agent:edge-1');
+	});
+
+	// --- #605/#608 additions -------------------------------------------------
+
+	it('module select offers dns and the per-module option fields follow the module', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('github-tls');
+		});
+
+		const addBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+			(b.textContent ?? '').includes('Add Target')
+		) as HTMLElement;
+		await fireEvent.click(addBtn);
+
+		const moduleSelect = container.querySelector('#probe-module') as HTMLSelectElement;
+		expect(moduleSelect).toBeTruthy();
+		const values = Array.from(moduleSelect.querySelectorAll('option')).map((o) => o.getAttribute('value'));
+		expect(values).toEqual(['http', 'tls', 'tcp', 'icmp', 'dns']);
+
+		// http (default): method/expected-status/keyword fields visible.
+		expect(container.querySelector('#probe-opt-method')).toBeTruthy();
+		expect(container.querySelector('#probe-opt-status')).toBeTruthy();
+		expect(container.querySelector('#probe-opt-keyword')).toBeTruthy();
+		expect(container.querySelector('#probe-opt-record')).toBeNull();
+
+		// dns: record/resolver/expected-ips replace the http fields.
+		await fireEvent.change(moduleSelect, { target: { value: 'dns' } });
+		expect(container.querySelector('#probe-opt-record')).toBeTruthy();
+		expect(container.querySelector('#probe-opt-resolver')).toBeTruthy();
+		expect(container.querySelector('#probe-opt-ips')).toBeTruthy();
+		expect(container.querySelector('#probe-opt-method')).toBeNull();
+
+		// tcp: send/expect/expect-mode.
+		await fireEvent.change(moduleSelect, { target: { value: 'tcp' } });
+		expect(container.querySelector('#probe-opt-send')).toBeTruthy();
+		expect(container.querySelector('#probe-opt-expect')).toBeTruthy();
+		expect(container.querySelector('#probe-opt-expect-mode')).toBeTruthy();
+		expect(container.querySelector('#probe-opt-record')).toBeNull();
+
+		// tls / icmp take no options at all.
+		await fireEvent.change(moduleSelect, { target: { value: 'tls' } });
+		expect(container.querySelector('#probe-opt-method')).toBeNull();
+		expect(container.querySelector('#probe-opt-send')).toBeNull();
+		await fireEvent.change(moduleSelect, { target: { value: 'icmp' } });
+		expect(container.querySelector('#probe-opt-send')).toBeNull();
+	});
+
+	it('submit payload carries the module options (empty values omitted)', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('github-tls');
+		});
+
+		const addBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+			(b.textContent ?? '').includes('Add Target')
+		) as HTMLElement;
+		await fireEvent.click(addBtn);
+
+		await fireEvent.input(container.querySelector('#probe-name')!, { target: { value: 'site-http' } });
+		await fireEvent.input(container.querySelector('#probe-target')!, {
+			target: { value: 'https://example.com/healthz' }
+		});
+		// http options: expected status list, keyword, ignore TLS. Defaults
+		// (method GET, keyword_mode contains) must be omitted from the payload.
+		await fireEvent.input(container.querySelector('#probe-opt-status')!, { target: { value: '200,204' } });
+		await fireEvent.input(container.querySelector('#probe-opt-keyword')!, { target: { value: 'ok' } });
+		// The options block's only checkbox is "ignore TLS errors".
+		const optBlock = container.querySelector('#probe-opt-keyword')?.closest('.border');
+		const checkbox = optBlock?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+		expect(checkbox).toBeTruthy();
+		await fireEvent.click(checkbox);
+
+		const form = container.querySelector('#probe-name')?.closest('form') as HTMLFormElement;
+		await fireEvent.submit(form);
+
+		await waitFor(() => {
+			expect(vi.mocked(api.post)).toHaveBeenCalled();
+		});
+		const [url, body] = vi.mocked(api.post).mock.calls.at(-1)!;
+		expect(url).toBe('/probe-targets/');
+		expect(body).toMatchObject({
+			module: 'http',
+			target: 'https://example.com/healthz',
+			options: {
+				expected_status: [200, 204],
+				keyword: 'ok',
+				ignore_tls_errors: true
+			}
+		});
+		// Defaults are omitted: no method / keyword_mode keys.
+		const options = (body as Record<string, Record<string, unknown>>).options ?? {};
+		expect('method' in options).toBe(false);
+		expect('keyword_mode' in options).toBe(false);
+	});
+
+	it('prefills the create form from the ?create=1 deep link (device detail page)', async () => {
+		window.history.replaceState(null, '', '/probes?create=1&module=tcp&target=192.0.2.10%3A8080&device_id=7');
+		try {
+			const { container } = render(Probes);
+			await waitFor(() => {
+				expect(container.querySelector('#probe-module')).toBeTruthy();
+			});
+			expect((container.querySelector('#probe-module') as HTMLSelectElement).value).toBe('tcp');
+			expect((container.querySelector('#probe-target') as HTMLInputElement).value).toBe('192.0.2.10:8080');
+			// tcp options render, http's don't.
+			expect(container.querySelector('#probe-opt-send')).toBeTruthy();
+			expect(container.querySelector('#probe-opt-method')).toBeNull();
+
+			await fireEvent.input(container.querySelector('#probe-name')!, { target: { value: 'svc-tcp' } });
+			const form = container.querySelector('#probe-name')?.closest('form') as HTMLFormElement;
+			await fireEvent.submit(form);
+
+			await waitFor(() => {
+				expect(vi.mocked(api.post)).toHaveBeenCalled();
+			});
+			const [, body] = vi.mocked(api.post).mock.calls.at(-1)!;
+			expect(body).toMatchObject({
+				module: 'tcp',
+				target: '192.0.2.10:8080',
+				device_id: 7
+			});
+			// No options set → the create payload omits the key entirely.
+			expect('options' in (body as Record<string, unknown>)).toBe(false);
+		} finally {
+			window.history.replaceState(null, '', '/probes');
+		}
+	});
+
+	it('renders source badges for system and auto targets (manual gets none)', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('sys-egress-http');
+			expect(container.textContent).toContain('auto-nas-web');
+		});
+
+		const systemIcon = container.querySelector('[title^="Built-in target"]');
+		expect(systemIcon).toBeTruthy();
+		expect(systemIcon?.querySelector('svg')).toBeTruthy();
+
+		const autoIcon = container.querySelector('[title^="Auto-generated"]');
+		expect(autoIcon).toBeTruthy();
+		expect(autoIcon?.querySelector('svg')).toBeTruthy();
+
+		// The manual rows (github-tls) carry no source icon.
+		const manualRow = Array.from(container.querySelectorAll('tr')).find((r) =>
+			r.textContent?.includes('github-tls')
+		);
+		expect(manualRow?.querySelector('[title^="Built-in target"]')).toBeNull();
+		expect(manualRow?.querySelector('[title^="Auto-generated"]')).toBeNull();
+	});
+
+	it('egress-quality section renders vantage rows, verdict badges and reason chips', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('Main LAN');
+		});
+
+		// Vantage labels: network_name when present, raw vantage otherwise.
+		expect(container.textContent).toContain('agent:edge-1');
+		// Target columns render with ok-rate % and p50 latency.
+		expect(container.textContent).toContain('pub-http');
+		expect(container.textContent).toContain('100% · 30ms');
+		expect(container.textContent).toContain('25% · 88ms');
+		// A (vantage, target) cell with no data renders the muted dash.
+		expect(container.textContent).toContain('—');
+
+		// Verdict badges (en labels).
+		expect(container.textContent).toContain('ok · 98');
+		expect(container.textContent).toContain('DNS fault · 41');
+		expect(container.textContent).toContain('upstream resolver · 55');
+		expect(container.textContent).toContain('insufficient data · 0');
+
+		// Reason chips for the non-ok vantage (localized, incl. the
+		// upstream_resolver.failing:<name> suffix stripped to the name).
+		expect(container.textContent).toContain('direct paths OK, name resolution dead');
+		expect(container.textContent).toContain('success rate low');
+		expect(container.textContent).toContain('resolver pub-dns failing');
+
+		// Reference group renders with its secondary marker.
+		expect(container.textContent).toContain('reference-alt');
+		const refBadge = Array.from(container.querySelectorAll('.badge')).find((b) =>
+			(b.textContent ?? '').trim() === 'reference'
+		);
+		expect(refBadge).toBeTruthy();
 	});
 });
