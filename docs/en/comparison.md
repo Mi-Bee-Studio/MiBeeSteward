@@ -54,7 +54,7 @@ LibreNMS and Zabbix are the mainstream SNMP-monitoring stacks: metric collection
 
 ### vs. lightweight uptime: Uptime Kuma
 
-Uptime Kuma watches services you **already know about** and renders a lovely status page, adjacent to, not overlapping, MiBee. MiBee's probing module (v0.5.0) covers the basics of external availability and certificate expiry; if you need status pages, multi-location probing, or rich notification routing, Uptime Kuma fits better. A common combo: MiBee discovers and registers inside assets, Uptime Kuma guards key services.
+Uptime Kuma watches services you **already know about** and renders a lovely status page, adjacent to, not overlapping, MiBee. MiBee's probing module covers http/tls/tcp/icmp/dns with per-target options and multi-vantage execution from the center and every agent (including a built-in network egress-quality verdict); if you need status pages or rich notification routing, Uptime Kuma fits better. A common combo: MiBee discovers and registers inside assets, Uptime Kuma guards key services.
 
 ## Capability matrix
 

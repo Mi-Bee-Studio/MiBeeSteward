@@ -78,15 +78,18 @@ Oxidized/RANCID 风格的网络设备配置拉取与版本管理：
 - **差异对比**：任意两版本 unified diff；设备详情「配置历史」标签页带手工着色的 diff 渲染；配置变更联动变更检测与通知。
 - **加密凭据库**：SSH 凭据 AES-256-GCM 加密存储，写入加密、读取脱敏。
 
-## 拨测（Synthetic Probing，v0.5.0）
+## 拨测（Synthetic Probing，v0.5.0，#603–#610 扩展）
 
 blackbox 风格的外部资源周期探测--公网站点、托管 TLS 端口等「网络外」的资产：
 
-- **四种模块**：`http`（状态 <400 为成功，https 附带证书链）、`tls`（完整证书链）、`tcp`、`icmp`；每目标可配间隔（10s–86400s）与超时（1–60s）。
-- **引擎**：10s tick 重读目标（增删改即时生效，无需重启）、8 并发、断点续跑、手动触发。
+- **五种模块**：`http`（状态 <400 为成功，https 附带证书链）、`tls`（完整证书链）、`tcp`、`icmp`、`dns`（A/AAAA/CNAME/TXT 查询，可指定专用解析器）；每目标可配间隔（10s–86400s）与超时（1–60s）。
+- **按模块选项（#605）**：`http`--method（GET/HEAD）、`expected_status`（精确状态码集合，留空 = 沿用 <400 判定）、`keyword` + `keyword_mode`（contains / not_contains / regex）正文匹配、`ignore_tls_errors`（默认 false = 校验 TLS）；`dns`--`record`、`resolver`（host[:port]，留空用系统解析器）、`expected_ips`（A/AAAA 答案须命中其一）；`tcp`--连接后 `send` 载荷 + `expect` banner 匹配（`expect_mode`）。选项以 JSON 存在目标行上、原样下发 vantage agent。刻意不支持自定义请求头与凭据：选项在数据库中是明文，且必须保持 agent 命令通道无密钥，这是设计保证。
+- **设备绑定与自动生成（#606）**：目标可绑定到已发现设备（`device_id`，`GET /probe-targets?device_id=` 按设备过滤）；设备详情页对每个发现的服务提供一键建拨测 + 绑定目标面板。`probe.autogen`（默认关闭）把发现的 http/https 服务自动生成为设备绑定目标（`source=auto`）并跟随其生命周期--服务消失 → 目标停用挂起，回归 → 复活；手工目标永不触碰。分工口径：心跳回答「设备可达性」，拨测回答「服务层语义」。
+- **出口质量（#608）**：内置公共拨测点矩阵（`probe.quality`，裸配置默认关闭；随附的 `config.example.yaml` 显式设 `enabled: true`），从每个视角（中心 + 全部 agent）执行，按网络在滑动窗口上分析，判定链确定（`egress_down > dns_fault > upstream_resolver > degraded > ok`）并做跨视角目标隔离。判定与分数以 Prometheus gauge `mibee_probe_egress_verdict` / `mibee_probe_quality_score` 导出（仅指标；通知联动刻意未建）。
+- **引擎**：10s tick 重读目标（增删改即时生效，无需重启）、并发经 `probe.max_concurrency` 可配（默认 8）、断点续跑、手动触发。
 - **证书库存**：复用扫描器的证书链采集，SNI 自动推导；瞬时失败保留最后已知良好链。
-- **多视角（#277）**：目标的探测可由中心、所有已注册 agent 或指定 agent 发起--结果按 `(target, vantage)` 分别记录，历史弹窗并排展示并在不一致时高亮，指标带 `mibee_probe_*{vantage=…}` 标签。
-- **指标与告警**：`mibee_probe_up` / `mibee_probe_duration_seconds` / `mibee_probe_cert_expiry_timestamp_seconds`，附带示例告警规则（目标宕机、证书临期）。
+- **多视角（#277）**：目标的探测可由中心、所有已注册 agent 或指定 agent 发起--结果按 `(target, vantage)` 分别记录，历史弹窗并排展示并在不一致时高亮，指标带 `mibee_probe_*{vantage=…}` 标签。调度器按 agent 上报的 `supported_modules` 能力声明过滤计划（#604）；tcp/dns 计划要求 agent 0.2.0+。
+- **指标与告警**：`mibee_probe_up` / `mibee_probe_duration_seconds` / `mibee_probe_cert_expiry_timestamp_seconds`（加上述质量 gauge），附带示例告警规则（目标宕机、证书临期）。
 
 ![拨测](images/pb-probes.webp)
 
@@ -130,11 +133,11 @@ SvelteKit 5 单页应用嵌入二进制，中英双语（自动检测 + 区域�
 |---|---|
 | 仪表盘 | 可配置组件卡（状态分布、心跳成功率、类型分布、位置分布）、扫描活动、需要关注横幅 + 一键扫描 |
 | 设备列表 | 跨网络聚合、筛选（状态/类型/网络）、可选列（本地持久化）、服务端搜索/排序/分页（含数值 IP 排序）、拓扑视图切换 |
-| 设备详情 | 健康横幅 + 标签页：概览 / 扫描发现（服务/端口/banner）/ 网络与证书（TLS 链、邻居、子网）/ 系统 / 心跳 / 配置历史 |
+| 设备详情 | 健康横幅 + 标签页：概览 / 扫描发现（服务/端口/banner，每服务一键建拨测）/ 网络与证书（TLS 链、邻居、子网）/ 系统 / 心跳 / 绑定拨测 / 配置历史 |
 | 扫描中心 | 快速扫描（同步）、扫描任务（异步，支持取消）、扫描结果、被动发现漏斗 |
 | 拓扑 | 分层布局、层过滤、搜索聚焦、邻居高亮、端口钻取 |
 | 变更 | 时间线 + 事件筛选 + 结构化差异 |
-| 拨测 | 目标管理、状态/延迟/证书天数徽章、历史与证书链模态框 |
+| 拨测 | 目标管理（manual / auto / system 三种来源、按模块选项）、状态/延迟/证书天数徽章、历史与证书链模态框、出口质量区块 |
 | 采集器/网络/用户/审计 | 分布式运维与治理面 |
 | 设置 | 个人资料/密码/TOTP/主题语言；通知渠道与规则；SNMP 凭据 |
 

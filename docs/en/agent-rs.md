@@ -73,7 +73,7 @@ The differential testing paid for itself immediately: it exposed a latent BER bu
 
 The 3× code growth is the deliberate price of the two requirements that motivated the rewrite: no runtime memory surprises, and no dependency on libraries whose allocation behavior we cannot control. Where the Go agent delegated wire formats to libraries, the Rust agent owns them — and owns their differential tests.
 
-## Feature parity (final state, 0.1.5)
+## Feature parity (retirement state, 0.1.5; Rust-column notes call out later additions)
 
 | Capability | Go agent | Rust agent | Notes |
 |---|---|---|---|
@@ -89,6 +89,7 @@ The 3× code growth is the deliberate price of the two requirements that motivat
 | Hostname evidence channels (NBNS, TLS cert CN → hostname rules) | ✔ | ✔ | 0.1.4/0.1.5 |
 | hostapd/iw WiFi station telemetry | ✔ | ✔ | live rig validation pending an AP-equipped rig |
 | Heartbeat probe specs from report | ✔ | ✔ | |
+| Vantage probe plans (probe command, #344) | ✔ icmp/http/tls | ✔ all five modules (0.2.0, #604/#605) | Go/early-Rust agents failed tcp plans with "unknown module" — a live bug; the center now shields legacy agents via capability negotiation and 0.2.0 adds tcp + dns execution, option semantics (http keyword/expected-status, tcp send/expect, dns record/resolver/expected-ips), and the `supported_modules` declaration |
 | Retention sweep + VACUUM | ✔ | ✔ | |
 | conntrack new-host reporting | ✔ | ✔ | LAN endpoint of ESTABLISHED/[ASSURED] flows reported once on first sighting (src or dst side, Go parser parity incl. [UNASSURED] rejection) — #504 |
 | mDNS unicast queries (`scanner.mdns.unicast_queries`) | ✔ | ✔ | each query also sent to the target's 5353 directly, for unicast-only responders (#20/#504) |
@@ -150,6 +151,7 @@ platform, including the off-Linux path.
 - **2026-10-06**: both rig agents (NanoPi NEO armv7 via systemd, FastRhino R68S arm64 via the iStoreOS web package channel) switched to the Rust agent. From that moment the rigs' identification pipeline has been Rust-only.
 - **0.1.0 → 0.1.5**, five production upgrades across the two rigs: zero failed upgrades, zero service restarts (`NRestarts=0` across the whole window), zero missed scan cadences. The randomized-MAC guard, multi-homed stability fix, and TLS-CN hostname channel were all shipped and field-verified in this window.
 - **0.1.7 (#554)**: the reporter no longer treats 401 as terminal. The flaw was caught live during the 2026-10-12 main-center migration: a ~3-minute token-restore window made both agents drop batches and the affected agent needed a manual restart to resume. Now a 401 parks the batch and cools down 5 minutes between re-checks, so a center rebuild that restores the same token is survived without operator action. Shutdown is bounded too: `stop_flush` re-parks once instead of spinning on a queue that cannot drain.
+- **0.2.0 (#604/#605)**: the prober reaches module parity with the center. tcp and dns execution added — tcp was a live bug (plans were shipped but failed "unknown module"), and the agent now declares `supported_modules` in its report meta so the center's dispatcher can route tcp/dns plans to it (legacy agents are held back with an upgrade hint instead of failing red). http probes now VERIFY TLS by default, center parity — a behavior change from 0.1.x, which accepted any certificate; `ignore_tls_errors` per target is the explicit opt-out for self-signed internal sites. icmp and tls accept hostnames (system resolver). The tls `cert_trusted` verdict is a real webpki-roots verifying handshake, replacing the old self_signed approximation. Failed report batches park instead of dropping (bounded 100-batch queue, 4-attempt backoff ladder 1s→8s, 4xx terminal — the reporter's #554 pattern), and each target's first run is deterministically staggered over its first minute so a fresh plan does not march in lockstep.
 - The Go agent's last production duty was 2026-10-06 01:27 UTC (NEO). It was removed from the repository on 2026-10-09.
 
 ## Retirement notes for operators

@@ -78,15 +78,18 @@ Oxidized/RANCID-style config pull and versioning for network gear:
 - **Diffing**: unified diff between any two versions; a Config History tab on device detail with hand-colored rendering; config changes feed change detection and notifications.
 - **Encrypted credential vault**: SSH credentials AES-256-GCM encrypted at rest; encrypted on write, redacted on read.
 
-## Synthetic Probing (v0.5.0)
+## Synthetic Probing (v0.5.0, expanded #603–#610)
 
 Blackbox-style periodic probing of external assets, public sites, hosted TLS ports, anything "outside" the network:
 
-- **Four modules**: `http` (status <400 = success; https collects the cert chain), `tls` (full chain), `tcp`, `icmp`; per-target interval (10s–86400s) and timeout (1–60s).
-- **Engine**: 10s tick re-reads targets (CRUD effective without restart), 8-way concurrency, resume from last run, manual trigger.
+- **Five modules**: `http` (status <400 = success; https collects the cert chain), `tls` (full chain), `tcp`, `icmp`, and `dns` (A/AAAA/CNAME/TXT lookups, optionally against a pinned resolver); per-target interval (10s–86400s) and timeout (1–60s).
+- **Per-module options (#605)**: `http` — method (GET/HEAD), `expected_status` (exact allowed codes, empty = legacy <400 rule), `keyword` + `keyword_mode` (contains / not_contains / regex) body match, `ignore_tls_errors` (default false = verify TLS); `dns` — `record`, `resolver` (host[:port], empty = system resolver), `expected_ips` (A/AAAA answers must intersect); `tcp` — `send` payload after connect + `expect` banner match (`expect_mode`). Options are stored as JSON on the target and shipped verbatim to vantage agents. Deliberately no custom headers or credentials: options are plaintext in the DB and ride the secret-free agent command channel by design.
+- **Device binding & autogen (#606)**: a target can bind to a discovered device (`device_id`, filterable via `GET /probe-targets?device_id=`); the device page offers one-click probe creation per discovered service plus a bound-targets panel. `probe.autogen` (default OFF) turns discovered services into device-bound targets (`source=auto`) and follows their lifecycle — service disappears → target parked, returns → revived; manual targets are never touched. Division of labor: heartbeat answers device reachability, probing answers service-level semantics.
+- **Egress quality (#608)**: an optional built-in matrix of public probe points (`probe.quality`, off in a bare config; the shipped `config.example.yaml` sets `enabled: true`) executed from EVERY vantage — center + all agents — and analyzed per network over a sliding window with a deterministic verdict chain (`egress_down > dns_fault > upstream_resolver > degraded > ok`) and cross-vantage target isolation. Verdicts and scores are exported as Prometheus gauges `mibee_probe_egress_verdict` / `mibee_probe_quality_score` (metrics only; notification wiring is deliberately not built).
+- **Engine**: 10s tick re-reads targets (CRUD effective without restart), concurrency configurable via `probe.max_concurrency` (default 8), resume from last run, manual trigger.
 - **Certificate inventory**: reuses the scanner's cert-chain collector; SNI auto-derived; last-known-good chain kept on transient failure.
-- **Multi-vantage (#277)**: a target's probes can run from the center, every registered agent, or one specific agent, results recorded per `(target, vantage)`, shown side by side in the history dialog with disagreement highlighted, and exported as `mibee_probe_*{vantage=…}`.
-- **Metrics & alerts**: `mibee_probe_up` / `mibee_probe_duration_seconds` / `mibee_probe_cert_expiry_timestamp_seconds`, with example alert rules (target down, cert expiring).
+- **Multi-vantage (#277)**: a target's probes can run from the center, every registered agent, or one specific agent, results recorded per `(target, vantage)`, shown side by side in the history dialog with disagreement highlighted, and exported as `mibee_probe_*{vantage=…}`. The dispatcher filters plans per agent by its declared `supported_modules` capability (#604); agents must run 0.2.0+ for tcp/dns plans.
+- **Metrics & alerts**: `mibee_probe_up` / `mibee_probe_duration_seconds` / `mibee_probe_cert_expiry_timestamp_seconds` (plus the quality gauges above), with example alert rules (target down, cert expiring).
 
 ![Probes](images/pb-probes.webp)
 
@@ -130,11 +133,11 @@ A SvelteKit 5 SPA embedded in the binary: Chinese/English i18n (auto-detect + lo
 |---|---|
 | Dashboard | Configurable widget cards (status distribution, heartbeat success, type distribution, location), scan activity, needs-attention banner + one-click scan |
 | Devices | Cross-network aggregation, filters (status/type/network), optional columns (persisted), server-side search/sort/pagination (numeric IP ordering), topology view toggle |
-| Device detail | Health banner + tabs: overview / scan discovery (services/ports/banners) / network & certificates (TLS chains, neighbors, subnets) / systems / heartbeat / config history |
+| Device detail | Health banner + tabs: overview / scan discovery (services/ports/banners, one-click probe per service) / network & certificates (TLS chains, neighbors, subnets) / systems / heartbeat / bound probes / config history |
 | Scan center | Quick scan (sync), scan tasks (async, cancellable), scan results, passive-discovery funnel |
 | Topology | Layered layout, layer filters, search focus, neighbor highlight, port drill-down |
 | Changes | Timeline + event filters + structured diffs |
-| Probes | Target management, status/latency/cert-days badges, history and cert-chain modals |
+| Probes | Target management (manual / auto / system sources, per-module options), status/latency/cert-days badges, history and cert-chain modals, egress-quality section |
 | Agents/Networks/Users/Audit | Distributed ops and governance surfaces |
 | Settings | Profile/password/TOTP/theme/language; notification channels & rules; SNMP credentials |
 

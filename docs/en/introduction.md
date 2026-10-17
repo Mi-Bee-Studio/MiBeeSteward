@@ -44,7 +44,7 @@ flowchart LR
 ### Synthetic Probing (external resources)
 
 - Explicitly configured periodic probing (blackbox_exporter-style) of any reachable endpoint, typically external/internet resources (a public HTTPS site, a hosted mail TLS port, a vendor gateway), tracking availability and latency on fixed intervals.
-- Four modules: `http` (full URL, status < 400 = success; https targets also collect the certificate chain), `tls` (host:port handshake with full chain collection), `tcp`, and `icmp`.
+- Five modules: `http` (full URL, status < 400 = success; https targets also collect the certificate chain), `tls` (host:port handshake with full chain collection), `tcp`, `icmp`, and `dns` (bare-domain resolution, optional pinned resolver and expected-IP assertions).
 - The TLS certificate capability is reused from the internal network to the outside world: chain (leaf/intermediates/root), SANs, serial, fingerprint, PEM, negotiated TLS version/cipher, and a trust verdict are all persisted; result history carries a cert-expiry summary so rotation cadence is observable.
 - Availability and certificate-expiry metrics (`mibee_probe_up` / `mibee_probe_cert_expiry_timestamp_seconds`) flow through `/metrics`; alerting is left to Prometheus (example rules ship with the repo).
 
@@ -113,7 +113,7 @@ Track research devices, test rigs, measurement equipment, and edge nodes with fl
 | Registry | Device registry (CMDB-lite): CRUD, grouping, device systems management |
 | Heartbeat | Continuous asset freshness: online/offline + latency + history |
 | Config backup | Scheduled SSH running-config pulls, versioned storage + diffs (opt-in) |
-| Synthetic probing | Blackbox-style periodic probing of external endpoints (http/tls/tcp/icmp) |
+| Synthetic probing | Blackbox-style periodic probing of external endpoints (http/tls/tcp/icmp/dns), device binding, and network egress-quality assessment |
 | Change notifications | Rule-driven device/config change events → webhook/email |
 | Metrics export | `/metrics` (Prometheus format) + `/sd` (HTTP service discovery) |
 

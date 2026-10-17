@@ -386,6 +386,61 @@ scanner:
     unicast_queries: false
 ```
 
+## 拨测（Synthetic Probing）配置
+
+每目标的 interval/timeout 存放在 `probe_targets` 行上（由 UI/API 管理）；本配置块调的是引擎本身及其两个内置子系统--出口质量矩阵（#608）与「发现即拨测」自动生成策略（#606）。
+
+| 键 | 类型 | 默认 | 说明 |
+|-----|------|---------|-------------|
+| `probe.max_concurrency` | int | 8 | 最大并发探测数（信号量）。取代此前硬编码的 8；0 = 默认值，上限 64。环境变量 `MIBEE_PROBE_MAX_CONCURRENCY`。 |
+| `probe.quality.enabled` | bool | false | 网络出口质量评估：系统种入的公共拨测点矩阵，从每个视角（中心 + 全部 agent）执行、按网络分析。裸配置默认**关闭**；`configs/config.example.yaml` 以 `enabled: true` 作为推荐值出厂。环境变量 `MIBEE_PROBE_QUALITY_ENABLED`。 |
+| `probe.quality.window_minutes` | int | 15 | 分析器回看窗口（5–1440）。环境变量 `MIBEE_PROBE_QUALITY_WINDOW_MINUTES`。 |
+| `probe.quality.interval_seconds` | int | 120 | 每个质量目标的种入周期（≥10）。 |
+| `probe.quality.http_degraded_ms` | int | 800 | http 腿的 p50 延迟阈值，超出即标记视角降级（叠加在成功率阈值之上）。 |
+| `probe.quality.dns_degraded_ms` | int | 300 | dns 腿的同上阈值。 |
+| `probe.quality.ok_rate_threshold` | float | 0.9 | 窗口内最低成功率（0..1]。 |
+| `probe.quality.groups` | map | 见下 | 拨测点矩阵，`组名 → [{name, module, target, options}]`。保留组 `domestic` 驱动主判定；`international`（及任何其它组名）仅作参照--跨境波动是独立信号，不算出口故障。留空 = 出厂默认：国内组（双公共解析器做 DNS 差分诊断、主流 HTTP 站点、204 端点、免 DNS 的直连 IP TCP 腿）加国际参照组。所有取值均可配置，无一硬编码。 |
+| `probe.autogen.enabled` | bool | false | 发现即拨测：从发现的服务自动创建设备绑定目标（`source=auto`）。默认关闭--它会自行写行，必须是有意识的选择。关闭时挂起整个 auto 存量（行与历史保留）。 |
+| `probe.autogen.services` | []string | ["http","https"] | 可生成 auto 目标的服务身份（匹配 `host_services.service`）。 |
+| `probe.autogen.device_types` | []string | [] | 限定仅这些设备类型生成；留空 = 全部。 |
+| `probe.autogen.interval_seconds` | int | 300 | auto 目标的探测间隔（≥10）。 |
+| `probe.autogen.max_targets` | int | 100 | 存量上限（1–1000），避免千台设备的 LAN 炸出 3000 个目标。 |
+| `probe.autogen.sweep_interval_minutes` | int | 15 | 对账周期：为新服务建目标、为离开扫描的服务挂起目标、回归即复活。手工目标永不触碰。 |
+
+质量种入语义（启动时执行、幂等）：开启时--缺失的矩阵行被创建（`source=system`、vantage `all`），漂移的行按配置刷新（module/target/options），配置中已删除的 `source=system` 行连**结果历史**一起删除；关闭时--所有 system 目标挂起（停用、保留历史）。在 UI 里删除的行会在下次重启时重种；要永久移除某目标，请从 `groups` 里删掉它（或关闭 `probe.quality`）。
+
+**示例**（与 `configs/config.example.yaml` 一致）：
+```yaml
+probe:
+  max_concurrency: 8
+  quality:
+    enabled: true
+    window_minutes: 15
+    interval_seconds: 120
+    http_degraded_ms: 800
+    dns_degraded_ms: 300
+    ok_rate_threshold: 0.9
+    groups:
+      domestic:
+        - {name: quality-dns-ali,    module: dns,  target: www.baidu.com, options: {record: A, resolver: 223.5.5.5}}
+        - {name: quality-dns-dnspod, module: dns,  target: www.baidu.com, options: {record: A, resolver: 119.29.29.29}}
+        - {name: quality-http-baidu, module: http, target: https://www.baidu.com}
+        - {name: quality-http-qq,    module: http, target: https://www.qq.com}
+        - {name: quality-http-204,   module: http, target: http://connect.rom.miui.com/generate_204, options: {expected_status: [204]}}
+        - {name: quality-tcp-ipdirect, module: tcp, target: 223.5.5.5:53}
+      international:
+        - {name: quality-dns-cf,         module: dns,  target: www.cloudflare.com, options: {record: A, resolver: 1.1.1.1}}
+        - {name: quality-http-google204, module: http, target: http://www.google.com/generate_204, options: {expected_status: [204]}}
+  autogen:
+    enabled: false
+    services: [http, https]
+    interval_seconds: 300
+    max_targets: 100
+    sweep_interval_minutes: 15
+```
+
+矩阵支撑的判定语义（为什么两个解析器、为什么有直连 IP TCP 腿、为什么国际组只作参照）见[架构 → 拨测](architecture.md)，并由 `GET /api/v1/probe-quality` 呈现。
+
 ## 路由器驻留发现源
 
 扫描器除了主动探测外，还可以从路由器驻留源获取设备数据。整个服务由总开关 `scanner.discovery.enabled` 控制（默认关闭）。注意：`trigger_identify` 与 `router_arp`/`arp_cache`/`multicast` 子源在 `configs/config.example.yaml` 中出厂为 true（推荐值）--开箱关闭靠的是总开关，而非各子源自身默认关闭。当宿主机上不存在对应的文件或 socket 时，每个源都是空操作（no-op）。

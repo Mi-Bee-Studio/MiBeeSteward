@@ -50,11 +50,15 @@ The Changes page lays out device additions / attribute changes / losses / config
 
 ## Synthetic Probing
 
-The Probes page manages periodic probing of targets **outside** your network: HTTP(S) availability, ICMP liveness, TCP ports, DNS, plus full certificate-chain collection and expiry tracking for HTTPS sites. Each target has its own interval; results feed the dashboard and alerting metrics.
+The Probes page manages periodic probing of targets **outside** your network: HTTP(S) availability, TLS certificate chains, TCP ports, ICMP liveness, and DNS resolution (`http` / `tls` / `tcp` / `icmp` / `dns` modules), plus full certificate-chain collection and expiry tracking for HTTPS sites. Each target has its own interval and, per module, an options form: http — method, expected status codes, body keyword (contains / not_contains / regex), ignore-TLS-errors; dns — record type, pinned resolver, expected IPs; tcp — send payload and banner expectation. Options never carry credentials or auth headers (the agent command channel stays secret-free by design).
 
 Every target also declares its **vantage**, where its probes run from (the center itself, every registered agent, or one specific agent). The history dialog shows each vantage's latest result side by side and highlights when tracks disagree on success, the "reachable from A, not from B" view. See [Distributed](distributed.md#vantage-probing-277).
 
+Targets carry a **source** badge — manual (yours), auto (generated from a discovered service, parked while that service is absent from scans), or system (the egress-quality matrix, managed by `probe.quality` config) — and may be bound to a device. The page also hosts the **egress quality** section: per-vantage verdicts (ok / degraded / egress down / DNS fault / upstream resolver) and scores over the built-in probe-point matrix, one column per network vantage, so "is this site down, or is MY egress broken" is answered at a glance.
+
 ![Probe targets](images/probes.webp)
+
+On the device detail page, the scan-discovery tab offers **one-click probe creation** per discovered service (pre-filled http/tcp target bound to the device), and a bound-targets panel lists every probe watching that asset; a service no longer present in the latest scan shows a read-only "not in latest scan" badge instead of the create button.
 
 ## Distributed Agents
 

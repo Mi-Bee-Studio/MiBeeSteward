@@ -54,7 +54,7 @@ LibreNMS 与 Zabbix 是 SNMP 网络监控的主流选择：指标采集、阈值
 
 ### 对比轻量拨测：Uptime Kuma
 
-Uptime Kuma 监控你**已经知道**的服务并给出漂亮的状态页--赛道与 MiBee 互补而非重叠。MiBee 的拨测模块（v0.5.0）覆盖了外网站点可用性与证书到期的基础场景；如果需要状态页、多地点拨测、丰富通知渠道，Uptime Kuma 更合适。一个常见的组合：MiBee 发现并登记内网资产，Uptime Kuma 看护关键服务。
+Uptime Kuma 监控你**已经知道**的服务并给出漂亮的状态页--赛道与 MiBee 互补而非重叠。MiBee 的拨测模块覆盖 http/tls/tcp/icmp/dns 五类模块、按目标选项，并支持从中心与每个 agent 的多视角执行（含内置的网络出口质量判定）；如果需要状态页、丰富通知渠道，Uptime Kuma 更合适。一个常见的组合：MiBee 发现并登记内网资产，Uptime Kuma 看护关键服务。
 
 ## 能力矩阵
 

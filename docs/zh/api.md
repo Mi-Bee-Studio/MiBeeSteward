@@ -3591,7 +3591,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 
 
 
-面向外网等显式配置端点的周期探测（blackbox_exporter 模式）：`http` / `tls` / `tcp` / `icmp` 四类模块。`tls` 模块与 https 的 `http` 模块会采集完整证书链（复用扫描器的证书清点能力，`tls` 结果含信任判定与 TLS 版本）。读（`CapProbeRead`）任意登录用户可用；写（`CapProbeManage`）操作员及以上。
+面向外网等显式配置端点的周期探测（blackbox_exporter 模式）：`http` / `tls` / `tcp` / `icmp` / `dns` 五类模块（`dns` 为纯域名解析探测，可指定解析器与期望 IP 断言）。`tls` 模块与 https 的 `http` 模块会采集完整证书链（复用扫描器的证书清点能力，`tls` 结果含信任判定与 TLS 版本）。目标可携带按模块的 `options` 对象（#605，http 方法/期望状态码/正文关键字/忽略 TLS 错误，dns 记录类型/解析器/期望 IP，tcp 载荷/banner），并可经 `device_id` 绑定到已发现设备（#606）；每个响应都带 `source`（`manual` / `auto` / `system`）。选项刻意不含凭据与认证头：它在数据库中是明文，且必须保持 agent 命令通道无密钥。读（`CapProbeRead`）任意登录用户可用；写（`CapProbeManage`）操作员及以上。字段级文档见 [openapi.yaml](https://github.com/Mi-Bee-Studio/MiBeeSteward/blob/main/docs/openapi.yaml)（`ProbeTarget` / `ProbeOptions` / `ProbeQualityReport`）。
 
 
 
@@ -3603,7 +3603,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 |------|------|------|------|
 
 
-| `/api/v1/probe-targets/` | GET | 需认证 · `CapProbeRead` | 拨测目标列表（`limit`/`offset`/`search` 分页搜索） |
+| `/api/v1/probe-targets/` | GET | 需认证 · `CapProbeRead` | 拨测目标列表（`limit`/`offset`/`search` 分页搜索，可选 `device_id` 按设备过滤 #606） |
 
 
 | `/api/v1/probe-targets/` | POST | 操作员及以上 · `CapProbeManage` | 创建拨测目标 |
@@ -3612,7 +3612,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 | `/api/v1/probe-targets/{id}` | GET | 需认证 · `CapProbeRead` | 获取单个目标 |
 
 
-| `/api/v1/probe-targets/{id}` | PUT | 操作员及以上 · `CapProbeManage` | 更新目标（部分更新，nil 字段保持不变） |
+| `/api/v1/probe-targets/{id}` | PUT | 操作员及以上 · `CapProbeManage` | 更新目标（部分更新，nil 字段保持不变；`device_id: 0` 显式解除绑定） |
 
 
 | `/api/v1/probe-targets/{id}` | DELETE | 操作员及以上 · `CapProbeManage` | 删除目标（连同历史结果与已存证书链） |
@@ -3625,6 +3625,9 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 
 
 | `/api/v1/probe-targets/{id}/certificates` | GET | 需认证 · `CapProbeRead` | 当前证书链（响应形状与设备证书端点一致） |
+
+
+| `/api/v1/probe-quality` | GET | 需认证 · `CapProbeRead` | 出口质量分析（#608）：内置拨测点矩阵上的分组、分视角判定（可选 `window` 分钟覆盖回看窗口） |
 
 
 
@@ -3690,10 +3693,10 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 - `name`（必填，全局唯一）：目标名称（同时是 Prometheus 指标 label）
 
 
-- `module`（必填）：`http` | `tls` | `tcp` | `icmp`
+- `module`（必填）：`http` | `tls` | `tcp` | `icmp` | `dns`
 
 
-- `target`（必填）：按模块校验--`http` 须为完整 http(s) URL；`tls`/`tcp` 须为 host:port（端口 1–65535）；`icmp` 须为纯主机名或 IP
+- `target`（必填）：按模块校验--`http` 须为完整 http(s) URL；`tls`/`tcp` 须为 host:port（端口 1–65535）；`icmp` 须为纯主机名或 IP；`dns` 须为纯域名（不带端口、不带路径--解析器是选项而非目标的一部分）
 
 
 - `interval_seconds`（可选，默认 60）：探测间隔，10–86400 秒
@@ -3708,10 +3711,16 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 - `vantage`（可选，默认 `center`）：执行计划--`center`（本机执行）、`agent:{agent_id}`（该 agent 经分布式命令通道执行；中心拒绝本地执行，手动触发返回 409）、`all`（中心 + 全部已注册 agent；各轨道结果分别盖 `center` / `agent:{id}` 章--见[分布式](distributed.md#多视角拨测277)）
 
 
+- `options`（可选，按模块，#605）：http--`method`（`GET`/`HEAD`）、`expected_status`（精确状态码集合如 `[200,204]`，留空 = 状态 < 400）、`keyword` + `keyword_mode`（`contains`/`not_contains`/`regex`）、`ignore_tls_errors`（默认 false = 校验 TLS）；dns--`record`（`A`/`AAAA`/`CNAME`/`TXT`）、`resolver`（`host[:port]`，留空用系统解析器）、`expected_ips`（A/AAAA 答案须命中其一，至多 8 条）；tcp--`send`（连接后写入的载荷）、`expect` + `expect_mode`（`contains`/`regex`）banner 匹配。`icmp`/`tls` 无选项。不属于该模块的字段会被拒绝；刻意不设凭据/认证头（选项在库中明文，且必须原样走无密钥的 agent 命令通道）。
+
+
+- `device_id`（可选，#606）：绑定到已发现资产；`GET /probe-targets?device_id=` 按它过滤，设备删除时解绑（auto 目标停用，manual 目标继续运行）。
 
 
 
-**响应**：`201 Created` 带 ProbeTargetResponse（含 `last_run_at`/`last_status`/`last_latency_ms`/`last_error` 去规范化最新结果--只反映中心轨道，空 = 尚未探测；另含 `vantage_latest`--各视角轨道的最新一条结果（含 agent 轨道），尚无历史时省略）。
+
+
+**响应**：`201 Created` 带 ProbeTargetResponse（含 `last_run_at`/`last_status`/`last_latency_ms`/`last_error` 去规范化最新结果--只反映中心轨道，空 = 尚未探测；另含 `vantage_latest`--各视角轨道的最新一条结果（含 agent 轨道），尚无历史时省略；以及 `options`、`device_id`（未绑定时省略）与 `source`--`manual` / `auto`（自动生成，#606）/ `system`（出口质量矩阵，#608））。
 
 
 
@@ -3796,6 +3805,26 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 
 
 相关指标：`mibee_probe_up{name,module}`、`mibee_probe_duration_seconds`、`mibee_probe_cert_expiry_timestamp_seconds`、`mibee_probe_checks_total{status,module}`（见[指标与服务发现](#指标与服务发现)）。
+
+
+
+
+
+### GET /api/v1/probe-quality
+
+
+
+网络出口质量（#608）：对 `probe.quality` 矩阵近期结果的读时分析。可选 `window` 查询参数覆盖回看窗口（分钟，默认取 `probe.quality.window_minutes`）。
+
+
+
+
+
+**需认证** · `CapProbeRead`
+
+
+
+**响应**形状（细节见 [openapi.yaml](https://github.com/Mi-Bee-Studio/MiBeeSteward/blob/main/docs/openapi.yaml) 的 `ProbeQualityReport`）：`window_minutes` 加 `groups[]`，每个配置组一条--保留名 `domestic` 组 `role: primary`（其判定即该网络的判定），其余组（默认 `international`）`role: reference`（单独展示；跨境波动是独立信号，不算出口故障）。每组含 `vantages[]`（`vantage`、`network_name`、`verdict`、`score` 0–100、`reasons[]` 稳定代码，如 `egress_down.all_paths_failing` / `dns_fault.direct_ok_name_resolution_dead` / `upstream_resolver.failing:<目标>` / `ok_rate_low` / `latency_high` / `insufficient_data`）与 `targets[]`（各视角窗口统计 `ok_rate`/`p50_ms`/`samples`，外加 `cross_vantage` 隔离判定 `ok` / `target_down` / `mixed` / `no_data`--处处失败归咎目标并从网络判定中剔除，仅在多于一个视角上报时有意义）。判定链确定：`egress_down > dns_fault > upstream_resolver > degraded > ok`。同一判定/分数以 `mibee_probe_egress_verdict{vantage,group,verdict}` / `mibee_probe_quality_score{vantage,group}` gauge 导出--只出指标，刻意不做通知联动。
 
 
 
