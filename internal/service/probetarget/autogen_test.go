@@ -12,6 +12,7 @@ package probetarget
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -41,8 +42,9 @@ func setupAutogen(t *testing.T) (*AutogenService, *db.Queries, *sql.DB) {
 	return svc, queries, conn
 }
 
-// seedDeviceWithServices: one device (uuid + network) and a set of
-// classified service rows.
+// seedDeviceWithServices: one device (uuid + network) whose row carries the
+// detected_services JSON both write paths populate. services are name/port
+// pairs; port 0 models the hostname-derived portless identities.
 func seedDeviceWithServices(t *testing.T, conn *sql.DB, agentID string, services ...[2]string) (deviceID int64) {
 	t.Helper()
 	ctx := context.Background()
@@ -53,17 +55,19 @@ func seedDeviceWithServices(t *testing.T, conn *sql.DB, agentID string, services
 		_, err = conn.ExecContext(ctx, `UPDATE networks SET agent_id = ? WHERE id = ?`, agentID, net.ID)
 		require.NoError(t, err)
 	}
+	svcJSON := "["
+	for i, svc := range services {
+		if i > 0 {
+			svcJSON += ","
+		}
+		svcJSON += fmt.Sprintf(`{"name":%q,"port":%s,"protocol":"tcp"}`, svc[0], svc[1])
+	}
+	svcJSON += "]"
 	res, err := conn.ExecContext(ctx,
-		`INSERT INTO devices (device_uuid, name, ip_address, type, network_id) VALUES ('uuid-1', 'web-01', '192.0.2.10', 'server', ?)`, net.ID)
+		`INSERT INTO devices (device_uuid, name, ip_address, type, network_id, detected_services) VALUES ('uuid-1', 'web-01', '192.0.2.10', 'server', ?, ?)`, net.ID, svcJSON)
 	require.NoError(t, err)
 	deviceID, err = res.LastInsertId()
 	require.NoError(t, err)
-	for _, svc := range services {
-		_, err = conn.ExecContext(ctx,
-			`INSERT INTO host_services (ip, device_uuid, service, port, updated_at) VALUES ('192.0.2.10', 'uuid-1', ?, ?, CURRENT_TIMESTAMP)`,
-			svc[0], svc[1])
-		require.NoError(t, err)
-	}
 	return deviceID
 }
 
@@ -104,23 +108,24 @@ func TestAutogenSweep(t *testing.T) {
 		svc, queries, conn := setupAutogen(t)
 		devID := seedDeviceWithServices(t, conn, "", [2]string{"http", "80"})
 		name := autogenName(devID, "http", 80)
+		setServices := func(json string) {
+			_, err := conn.ExecContext(ctx, `UPDATE devices SET detected_services = ? WHERE id = ?`, json, devID)
+			require.NoError(t, err)
+		}
 
 		_, _, _, err := svc.Sweep(ctx)
 		require.NoError(t, err)
 		require.Equal(t, int64(1), listAutoTargets(t, queries)[name].Enabled)
 
 		// The service leaves the scan → target parked (kept for history).
-		_, err = conn.ExecContext(ctx, `DELETE FROM host_services`)
-		require.NoError(t, err)
+		setServices("[]")
 		_, _, disabled, err := svc.Sweep(ctx)
 		require.NoError(t, err)
 		require.EqualValues(t, 1, disabled)
 		require.Equal(t, int64(0), listAutoTargets(t, queries)[name].Enabled, "parked, not deleted")
 
 		// The same service on the same port returns → the parked row revives.
-		_, err = conn.ExecContext(ctx,
-			`INSERT INTO host_services (ip, device_uuid, service, port, updated_at) VALUES ('192.0.2.10', 'uuid-1', 'http', 80, CURRENT_TIMESTAMP)`)
-		require.NoError(t, err)
+		setServices(`[{"name":"http","port":80,"protocol":"tcp"}]`)
 		_, enabled, _, err := svc.Sweep(ctx)
 		require.NoError(t, err)
 		require.EqualValues(t, 1, enabled)
@@ -128,9 +133,7 @@ func TestAutogenSweep(t *testing.T) {
 
 		// The service moves to a new port → a NEW target appears; the old one
 		// parks again.
-		_, err = conn.ExecContext(ctx,
-			`UPDATE host_services SET port = 8080 WHERE service = 'http'`)
-		require.NoError(t, err)
+		setServices(`[{"name":"http","port":8080,"protocol":"tcp"}]`)
 		_, enabled, _, err = svc.Sweep(ctx)
 		require.NoError(t, err)
 		moved := listAutoTargets(t, queries)[autogenName(devID, "http", 8080)]

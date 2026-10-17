@@ -11,6 +11,7 @@ package probetarget
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -21,11 +22,12 @@ import (
 	"mibee-steward/internal/domain"
 )
 
-// AutogenService is the discover-then-probe reconciler (#606): it turns
-// discovered host_services into device-bound probe targets (source=auto)
-// and follows their lifecycle - a service that leaves the scan disables its
-// target, a reappearance re-enables it. Manual targets are never touched.
-// Default OFF; bounded by probe.autogen.max_targets.
+// AutogenService is the discover-then-probe reconciler (#606): it turns the
+// devices' detected_services identities (the JSON both the agent-report
+// bridge and the local/passive identify populate) into device-bound probe
+// targets (source=auto) and follows their lifecycle - a service that leaves
+// the scan disables its target, a reappearance re-enables it. Manual targets
+// are never touched. Default OFF; bounded by probe.autogen.max_targets.
 type AutogenService struct {
 	queries *db.Queries
 	cfg     config.ProbeAutogenConfig
@@ -91,9 +93,9 @@ func (s *AutogenService) Sweep(ctx context.Context) (created, enabled, disabled 
 		return 0, 0, disabled, nil
 	}
 
-	services, err := s.queries.ListHostServicesWithDevice(ctx)
+	services, err := s.queries.ListDevicesForProbeAutogen(ctx)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("autogen: list host services: %w", err)
+		return 0, 0, 0, fmt.Errorf("autogen: list devices: %w", err)
 	}
 	nets, err := s.queries.ListNetworks(ctx)
 	if err != nil {
@@ -128,62 +130,77 @@ func (s *AutogenService) Sweep(ctx context.Context) (created, enabled, disabled 
 	}
 
 	desired := make(map[string]bool)
-	for _, row := range services {
-		svc := strings.ToLower(row.Service)
-		if len(serviceFilter) > 0 && !serviceFilter[svc] {
+	for _, d := range services {
+		if len(typeFilter) > 0 && !typeFilter[d.Type] {
 			continue
 		}
-		if len(typeFilter) > 0 && !typeFilter[row.DeviceType] {
+		if d.IpAddress == "" {
 			continue
 		}
-		if row.Port <= 0 || row.DeviceIp == "" {
+		// detected_services JSON: [{"name":"http","port":8080,"protocol":"tcp"},...]
+		var svcs []struct {
+			Name string `json:"name"`
+			Port int64  `json:"port"`
+		}
+		if err := json.Unmarshal([]byte(d.DetectedServices), &svcs); err != nil {
 			continue
 		}
-		name := autogenName(row.DeviceID, svc, row.Port)
-		desired[name] = true
-		module, target := autogenPlan(svc, row.DeviceIp, row.Port)
-
-		if prev, ok := autoByName[name]; ok {
-			// Follow drift: the service may have moved port semantics; the
-			// vantage may have changed with the device's network. Re-enable
-			// a target that was parked when the service had vanished.
-			needsUpdate := prev.Module != module || prev.Target != target
-			if needsUpdate {
-				if _, uerr := s.queries.UpdateProbeTarget(ctx, db.UpdateProbeTargetParams{
-					Name: prev.Name, Module: module, Target: target,
-					IntervalSeconds: prev.IntervalSeconds, TimeoutSeconds: prev.TimeoutSeconds,
-					Enabled: prev.Enabled, Notes: prev.Notes, Vantage: vantageFor(row.NetworkID),
-					Options: prev.Options, DeviceID: &row.DeviceID, ID: prev.ID,
-				}); uerr != nil {
-					return created, enabled, disabled, fmt.Errorf("autogen: update %s: %w", name, uerr)
-				}
+		for _, svc := range svcs {
+			name := strings.ToLower(svc.Name)
+			if len(serviceFilter) > 0 && !serviceFilter[name] {
+				continue
 			}
-			if prev.Enabled == 0 {
-				if eerr := s.queries.ToggleProbeTargetEnabled(ctx, db.ToggleProbeTargetEnabledParams{Enabled: 1, ID: prev.ID}); eerr != nil {
-					return created, enabled, disabled, fmt.Errorf("autogen: re-enable %s: %w", name, eerr)
-				}
-				enabled++
+			// Portless identities (hostname-derived, e.g. miot on port 0)
+			// have nothing to dial.
+			if svc.Port <= 0 {
+				continue
 			}
-			continue
-		}
+			targetName := autogenName(d.ID, name, svc.Port)
+			desired[targetName] = true
+			module, target := autogenPlan(name, d.IpAddress, svc.Port)
 
-		if autoCount >= s.cfg.MaxTargets {
-			s.logger.Warn("probe autogen: max_targets reached, skipping new services",
-				"cap", s.cfg.MaxTargets, "skipped_from", name)
-			break
+			if prev, ok := autoByName[targetName]; ok {
+				// Follow drift: the service may have moved port semantics; the
+				// vantage may have changed with the device's network. Re-enable
+				// a target that was parked when the service had vanished.
+				needsUpdate := prev.Module != module || prev.Target != target
+				if needsUpdate {
+					if _, uerr := s.queries.UpdateProbeTarget(ctx, db.UpdateProbeTargetParams{
+						Name: prev.Name, Module: module, Target: target,
+						IntervalSeconds: prev.IntervalSeconds, TimeoutSeconds: prev.TimeoutSeconds,
+						Enabled: prev.Enabled, Notes: prev.Notes, Vantage: vantageFor(d.NetworkID),
+						Options: prev.Options, DeviceID: &d.ID, ID: prev.ID,
+					}); uerr != nil {
+						return created, enabled, disabled, fmt.Errorf("autogen: update %s: %w", targetName, uerr)
+					}
+				}
+				if prev.Enabled == 0 {
+					if eerr := s.queries.ToggleProbeTargetEnabled(ctx, db.ToggleProbeTargetEnabledParams{Enabled: 1, ID: prev.ID}); eerr != nil {
+						return created, enabled, disabled, fmt.Errorf("autogen: re-enable %s: %w", targetName, eerr)
+					}
+					enabled++
+				}
+				continue
+			}
+
+			if autoCount >= s.cfg.MaxTargets {
+				s.logger.Warn("probe autogen: max_targets reached, skipping new services",
+					"cap", s.cfg.MaxTargets, "skipped_from", targetName)
+				break
+			}
+			deviceID := d.ID
+			if _, cerr := s.queries.CreateProbeTarget(ctx, db.CreateProbeTargetParams{
+				Name: targetName, Module: module, Target: target,
+				IntervalSeconds: int64(s.cfg.IntervalSeconds), TimeoutSeconds: 10,
+				Enabled: 1, Notes: "auto-generated from a discovered service (#606)",
+				Vantage: vantageFor(d.NetworkID), DeviceID: &deviceID,
+				Source: domain.ProbeSourceAuto,
+			}); cerr != nil {
+				return created, enabled, disabled, fmt.Errorf("autogen: create %s: %w", targetName, cerr)
+			}
+			autoCount++
+			created++
 		}
-		deviceID := row.DeviceID
-		if _, cerr := s.queries.CreateProbeTarget(ctx, db.CreateProbeTargetParams{
-			Name: name, Module: module, Target: target,
-			IntervalSeconds: int64(s.cfg.IntervalSeconds), TimeoutSeconds: 10,
-			Enabled: 1, Notes: "auto-generated from a discovered service (#606)",
-			Vantage: vantageFor(row.NetworkID), DeviceID: &deviceID,
-			Source: domain.ProbeSourceAuto,
-		}); cerr != nil {
-			return created, enabled, disabled, fmt.Errorf("autogen: create %s: %w", name, cerr)
-		}
-		autoCount++
-		created++
 	}
 
 	// Services that left the scan park their targets (kept for history, the
