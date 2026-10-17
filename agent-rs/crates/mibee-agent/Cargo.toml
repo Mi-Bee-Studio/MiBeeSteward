@@ -63,5 +63,8 @@ ebpf = ["dep:mibee-ebpf", "mibee-ebpf/loader"]
 
 [dev-dependencies]
 tempfile = "3"
+# Loopback TLS server for the tls-probe handshake tests (ring backend,
+# already in the tree via rustls).
+rcgen = "0.13"
 serial_test = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "test-util"] }
