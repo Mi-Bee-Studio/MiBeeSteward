@@ -161,9 +161,11 @@ mod tests {
     fn rr(name: &str, rdata: RData) -> RR {
         RR { name: name.into(), rtype: match rdata {
             RData::Ptr(_) => 12,
+            RData::Cname(_) => 5,
             RData::Txt(_) => 16,
             RData::Srv { .. } => 33,
             RData::A(_) => 1,
+            RData::Aaaa(_) => 28,
             RData::Other(t) => t,
         }, rdata }
     }

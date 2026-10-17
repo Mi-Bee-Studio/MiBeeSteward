@@ -45,6 +45,9 @@ mod tests {
                 uptime_sec: 0, // omitempty in Go
                 scans_total: 12,
                 fingerprint_rev: "abc".into(),
+                // #604 capability declaration; empty vec omits from JSON like
+                // an old agent that never reported modules.
+                supported_modules: Vec::new(),
             }),
             hosts: Some(vec![ReportedHost {
                 ip: "192.0.2.5".into(),

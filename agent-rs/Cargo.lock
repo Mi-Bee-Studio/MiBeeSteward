@@ -869,7 +869,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]
@@ -1144,7 +1144,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "mibee-agent"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -1163,6 +1163,7 @@ dependencies = [
  "oxitls-rustcrypto-provider",
  "rand",
  "rcgen",
+ "regex",
  "reqwest",
  "rusqlite",
  "rustls",
@@ -1177,12 +1178,13 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-rustls",
+ "webpki-roots 0.26.11",
  "x509-parser",
 ]
 
 [[package]]
 name = "mibee-ebpf"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "aya",
  "aya-obj",
@@ -1190,7 +1192,7 @@ dependencies = [
 
 [[package]]
 name = "mibee-fingerprints"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "regex",
  "regex-syntax",
@@ -1678,7 +1680,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "webpki-roots",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]
@@ -2459,6 +2461,15 @@ checksum = "88261b9deccee56594c11a3460c462c41f58d148598fe70ad77070126a68aba4"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "0.26.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
+dependencies = [
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]

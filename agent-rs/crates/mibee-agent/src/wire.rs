@@ -39,6 +39,10 @@ pub struct AgentMeta {
     pub scans_total: i64,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub fingerprint_rev: String,
+    /// Probe modules this binary can execute (#604); the center's dispatcher
+    /// holds back plans for modules an agent never declared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_modules: Vec<String>,
 }
 
 fn is_zero_i64(v: &i64) -> bool {
@@ -266,7 +270,7 @@ pub struct ProbeTargetSpec {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
-    pub module: String, // icmp | http | tls
+    pub module: String, // icmp | http | tls | tcp | dns
     #[serde(default)]
     pub target: String,
     #[serde(default)]
@@ -275,6 +279,40 @@ pub struct ProbeTargetSpec {
     pub timeout_seconds: i64,
     #[serde(default)]
     pub vantage: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<ProbeTargetOptions>,
+}
+
+/// Go `domain.ProbeOptions` (#605) — per-module execution options riding the
+/// plan spec. Fields only apply to their own module; the center validates
+/// the gating before shipping, the agent just executes.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ProbeTargetOptions {
+    // http
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub method: String, // GET | HEAD
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expected_status: Vec<i64>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub keyword: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub keyword_mode: String, // contains | not_contains | regex
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ignore_tls_errors: bool,
+    // dns
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub record: String, // A | AAAA | CNAME | TXT
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub resolver: String, // host[:port]; empty = system nameserver
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expected_ips: Vec<String>,
+    // tcp
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub send: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub expect: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub expect_mode: String, // contains | regex
 }
 
 /// POST /api/v1/agents/probe-report row — Go `probetarget.AgentResultReport`.

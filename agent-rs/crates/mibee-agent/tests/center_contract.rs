@@ -464,8 +464,12 @@ async fn probe_report_batch_shape_and_ack() {
         latency_ms: 12.5,
         ..Default::default()
     }];
-    let accepted = c.post_probe_results(&results).await.unwrap();
-    assert_eq!(accepted, 1);
+    // PostOutcome (#604): Accepted carries the ack, 4xx would be Rejected
+    // (terminal — the park queue treats it as delivered).
+    match c.post_probe_results(&results).await.unwrap() {
+        mibee_agent::center::PostOutcome::Accepted(ack) => assert_eq!(ack.accepted, 1),
+        other => panic!("expected Accepted, got {other:?}"),
+    }
     let log = mock.log.lock().unwrap();
     assert_eq!(log[0].path, "/api/v1/agents/probe-report");
     let body: serde_json::Value = serde_json::from_slice(&log[0].body).unwrap();
@@ -473,6 +477,73 @@ async fn probe_report_batch_shape_and_ack() {
     assert_eq!(body["results"][0]["latency_ms"], 12.5);
     assert_eq!(body["results"][0]["vantage"], "agent:agent-lan-63");
 }
+
+/// The prober park queue (#604): a center outage no longer drops batches —
+/// they park (bounded) and flush once the center recovers.
+#[tokio::test]
+async fn probe_results_park_and_recover() {
+    use mibee_agent::prober::{run_prober_with_tuning, Prober};
+    use std::time::Duration;
+
+    // A fast local responder as the probe target: each tick produces a
+    // success row in milliseconds, keeping the loop's timing deterministic.
+    let tl = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = format!("127.0.0.1:{}", tl.local_addr().unwrap().port());
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        while let Ok((mut s, _)) = tl.accept().await {
+            let mut b = [0u8; 256];
+            let _ = s.read(&mut b).await;
+            let _ = s.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n").await;
+        }
+    });
+
+    let (base, mock) = spawn_mock().await;
+    let c = client(&base);
+    let prober = std::sync::Arc::new(tokio::sync::Mutex::new(Prober::new("agent:t".into())));
+    // id 0 → stagger offset 0: the target is due on the first tick.
+    prober.lock().await.apply_plan(
+        "f1",
+        vec![mibee_agent::wire::ProbeTargetSpec {
+            id: 0,
+            module: "http".into(),
+            target,
+            interval_seconds: 3600,
+            timeout_seconds: 2,
+            ..Default::default()
+        }],
+    );
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+
+    // The first flush burns its whole 4-attempt ladder on 503 (retriable).
+    mock.then(MockAction::Json(503, String::new()));
+    mock.then(MockAction::Json(503, String::new()));
+    mock.then(MockAction::Json(503, String::new()));
+    mock.then(MockAction::Json(503, String::new()));
+    // The mock's default is 200 {"accepted":1}: the parked batch drains on
+    // the next tick's recovery slot.
+
+    let task = tokio::spawn(run_prober_with_tuning(
+        prober.clone(),
+        c.clone(),
+        stop_rx,
+        Duration::from_millis(5),
+        Duration::from_millis(50),
+    ));
+    // Ladder (4×503 + backoffs) parks the batch; the following tick drains
+    // it against the recovered (default 200) center.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    stop_tx.send(true).unwrap();
+    match task.await {
+        Ok(()) => {}
+        Err(e) => panic!("prober task failed: {e}"),
+    }
+
+    let log = mock.log.lock().unwrap();
+    let probe_posts = log.iter().filter(|r| r.path.contains("probe-report")).count();
+    assert_eq!(probe_posts, 5, "4 failed ladder attempts + 1 recovery drain");
+}
+
 
 #[tokio::test]
 async fn fingerprint_rev_negotiation() {

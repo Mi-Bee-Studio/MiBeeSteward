@@ -62,7 +62,9 @@ pub fn reverse_ptr_name(ip: IpAddr) -> String {
     }
 }
 
-async fn system_nameservers() -> Vec<String> {
+/// First nameserver from /etc/resolv.conf with :53 applied (empty when
+/// unreadable). Also the prober dns module's system-resolver fallback (#605).
+pub(crate) async fn system_nameservers() -> Vec<String> {
     if let Ok(text) = tokio::fs::read_to_string("/etc/resolv.conf").await {
         for line in text.lines() {
             let line = line.trim();

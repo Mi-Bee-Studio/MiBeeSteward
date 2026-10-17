@@ -1,8 +1,14 @@
-//! Minimal DNS codec: PTR query building + response parsing (name
-//! compression, PTR/A/CNAME/TXT/SRV), shared by the rDNS and mDNS probes.
+//! Minimal DNS codec: query building (PTR + the prober's A/AAAA/CNAME/TXT)
+//! and response parsing (name compression, PTR/A/AAAA/CNAME/TXT/SRV),
+//! shared by the rDNS and mDNS probes and the prober's dns module (#605).
 //! Wire-format only; no resolver crate.
 
 pub fn build_ptr_query(qname: &str, id: u16, recursion_desired: bool) -> Vec<u8> {
+    build_query(qname, 12, id, recursion_desired)
+}
+
+/// Generic query builder: qtype 1=A, 28=AAAA, 5=CNAME, 16=TXT, 12=PTR.
+pub fn build_query(qname: &str, qtype: u16, id: u16, recursion_desired: bool) -> Vec<u8> {
     let mut out = Vec::with_capacity(qname.len() + 18);
     out.extend_from_slice(&id.to_be_bytes());
     // QR=0 OPCODE=0 AA=0 TC=0 RD(recursion)
@@ -14,7 +20,7 @@ pub fn build_ptr_query(qname: &str, id: u16, recursion_desired: bool) -> Vec<u8>
     out.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT
     out.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT
     encode_name(qname, &mut out);
-    out.extend_from_slice(&12u16.to_be_bytes()); // QTYPE=PTR
+    out.extend_from_slice(&qtype.to_be_bytes());
     out.extend_from_slice(&1u16.to_be_bytes()); // QCLASS=IN
     out
 }
@@ -32,7 +38,9 @@ pub fn encode_name(name: &str, out: &mut Vec<u8>) {
 #[derive(Debug, Clone, PartialEq)]
 pub enum RData {
     Ptr(String),
+    Cname(String),
     A(std::net::Ipv4Addr),
+    Aaaa(std::net::Ipv6Addr),
     Txt(Vec<String>),
     Srv { prio: u16, weight: u16, port: u16, target: String },
     Other(u16),
@@ -48,6 +56,8 @@ pub struct RR {
 #[derive(Debug, Clone, Default)]
 pub struct Message {
     pub id: u16,
+    /// Response code (flags & 0x000F): 0 = NOERROR, 3 = NXDOMAIN.
+    pub rcode: u8,
     pub answers: Vec<RR>,
     pub additional: Vec<RR>,
 }
@@ -59,6 +69,35 @@ impl std::fmt::Display for DnsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "dns: {}", self.0)
     }
+}
+
+/// One UDP query round-trip against an explicit resolver: send, wait with a
+/// deadline, parse, verify the transaction id. The prober's dns module
+/// (#605) uses this for pinned resolvers (egress differential) and the
+/// system nameserver alike. rcode is the caller's to interpret.
+pub async fn udp_query(
+    addr: std::net::SocketAddr,
+    qname: &str,
+    qtype: u16,
+    timeout: std::time::Duration,
+) -> Result<Message, String> {
+    let id = (std::process::id() as u16).wrapping_mul(31) ^ qname.len() as u16;
+    let q = build_query(qname, qtype, id, true);
+    let sock = tokio::net::UdpSocket::bind(if addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })
+        .await
+        .map_err(|e| e.to_string())?;
+    sock.connect(addr).await.map_err(|e| e.to_string())?;
+    sock.send(&q).await.map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; 1500];
+    let n = tokio::time::timeout(timeout, sock.recv(&mut buf))
+        .await
+        .map_err(|_| "i/o timeout".to_string())?
+        .map_err(|e| e.to_string())?;
+    let msg = parse_message(&buf[..n]).map_err(|e| e.to_string())?;
+    if msg.id != id {
+        return Err("mismatched dns transaction id".into());
+    }
+    Ok(msg)
 }
 
 struct Reader<'a> {
@@ -123,7 +162,7 @@ impl<'a> Reader<'a> {
 pub fn parse_message(buf: &[u8]) -> Result<Message, DnsError> {
     let mut r = Reader { buf, pos: 0 };
     let id = r.u16()?;
-    let _flags = r.u16()?;
+    let flags = r.u16()?;
     let qdcount = r.u16()?;
     let ancount = r.u16()?;
     let nscount = r.u16()?;
@@ -133,7 +172,7 @@ pub fn parse_message(buf: &[u8]) -> Result<Message, DnsError> {
         r.u16()?; // qtype
         r.u16()?; // qclass
     }
-    let mut msg = Message { id, ..Default::default() };
+    let mut msg = Message { id, rcode: (flags & 0x000F) as u8, ..Default::default() };
     for i in 0..(ancount + nscount + arcount) {
         let name = r.name(0)?;
         let rtype = r.u16()?;
@@ -143,12 +182,20 @@ pub fn parse_message(buf: &[u8]) -> Result<Message, DnsError> {
         let start = r.pos;
         let rdata = match rtype {
             12 => RData::Ptr(r.name(1)?), // compression allowed inside rdata
+            5 => RData::Cname(r.name(1)?),
             1 if rdlen == 4 => {
                 let a = r.u8()?;
                 let b = r.u8()?;
                 let c = r.u8()?;
                 let d = r.u8()?;
                 RData::A(std::net::Ipv4Addr::new(a, b, c, d))
+            }
+            28 if rdlen == 16 => {
+                let mut o = [0u8; 16];
+                for b in o.iter_mut() {
+                    *b = r.u8()?;
+                }
+                RData::Aaaa(std::net::Ipv6Addr::from(o))
             }
             16 => {
                 // one or more length-prefixed character-strings

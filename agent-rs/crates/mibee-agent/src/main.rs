@@ -150,6 +150,15 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
             version: format!("mibee-agent-rs/{VERSION}"),
             go_version: format!("rust/{}", std::env::consts::ARCH),
             hostname: hostname_str(),
+            // Probe capability declaration (#604): the center's dispatcher
+            // holds back tcp/dns plans from agents that never declared them.
+            supported_modules: vec![
+                "icmp".into(),
+                "http".into(),
+                "tls".into(),
+                "tcp".into(),
+                "dns".into(),
+            ],
             ..Default::default()
         };
         meta.fingerprint_rev = fp_rev.clone();
