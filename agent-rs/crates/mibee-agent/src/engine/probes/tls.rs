@@ -261,6 +261,113 @@ mod tests {
         assert_eq!(tls_evidence_with_cert_cn(ip, 443, &wildcard).len(), 1);
         assert_eq!(tls_evidence_with_cert_cn(ip, 443, &BTreeMap::new()).len(), 1);
     }
+
+    /// Spin a REAL loopback TLS server (self-signed, CN = a device-model
+    /// label) and drive the public handshake paths against it — the same
+    /// code the rig exercises against LAN devices, without inventing mocks.
+    /// `fixed_port`: bind exactly this port (the probe scans the fixed
+    /// TLS_PORTS list, so the end-to-end test needs a listed port).
+    async fn spawn_loopback_tls_on(fixed_port: Option<u16>) -> Option<u16> {
+        use tokio_rustls::rustls::pki_types::PrivateKeyDer;
+        let key = rcgen::KeyPair::generate().unwrap();
+        let mut params = rcgen::CertificateParams::new(vec!["127.0.0.1".to_string()]).unwrap();
+        params.distinguished_name = rcgen::DistinguishedName::new();
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "r68s-loopback");
+        let cert = params.self_signed(&key).unwrap();
+        let server_cfg = tokio_rustls::rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![cert.der().clone()],
+                PrivateKeyDer::Pkcs8(key.serialize_der().into()),
+            )
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_cfg));
+        // Prefer the requested port; fall back to an ephemeral one.
+        let mut tries: Vec<u16> = Vec::new();
+        if let Some(p) = fixed_port {
+            tries.push(p);
+        } else {
+            tries.push(0);
+        }
+        for port in tries {
+            if let Ok(listener) = tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
+                let bound = listener.local_addr().unwrap().port();
+                tokio::spawn(async move {
+                    while let Ok((sock, _)) = listener.accept().await {
+                        let a = acceptor.clone();
+                        tokio::spawn(async move {
+                            let _ = a.accept(sock).await;
+                        });
+                    }
+                });
+                return Some(bound);
+            }
+        }
+        None
+    }
+
+    #[tokio::test]
+    async fn cert_probe_extracts_leaf_fields_from_a_live_tls_server() {
+        let port = spawn_loopback_tls_on(None).await.expect("ephemeral bind");
+        let fields = cert_probe("127.0.0.1", port, Duration::from_secs(5))
+            .await
+            .expect("handshake against the loopback server");
+        assert_eq!(
+            fields.get("subject_cn").map(|s| s.as_str()),
+            Some("r68s-loopback")
+        );
+        assert_eq!(fields.get("self_signed").map(|s| s.as_str()), Some("true"));
+        // SAN general names render in their Display form ("IPAddress(7f:00:00:01)").
+        assert_eq!(
+            fields.get("san_ip").map(|s| s.as_str()),
+            Some("IPAddress(7f:00:00:01)")
+        );
+        assert!(matches!(fields.get("_version").map(|s| s.as_str()), Some("1.2") | Some("1.3")));
+        assert_eq!(fields.get("fingerprint_sha256").map(|s| s.len()), Some(64));
+        assert!(fields.contains_key("not_after"));
+    }
+
+    #[tokio::test]
+    async fn tls_probe_end_toend_over_a_listed_port() {
+        // The probe scans the FIXED TLS_PORTS list, so the end-to-end drive
+        // needs the server on one of them. Try the less-common high ports
+        // first (443/636/993 are likelier taken on dev hosts); if every
+        // candidate is occupied the environment cannot host the test.
+        let mut port = None;
+        for cand in [9443u16, 8443, 4443, 989, 990, 992, 994] {
+            if let Some(p) = spawn_loopback_tls_on(Some(cand)).await {
+                port = Some(p);
+                break;
+            }
+        }
+        let port = match port {
+            Some(p) => p,
+            None => panic!("no TLS-listed port could be bound on 127.0.0.1"),
+        };
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        let hint = ProbeHint {
+            community_override: None,
+            timeout: Duration::from_secs(5),
+            community: "public".into(),
+            port_spec: vec![port],
+            snmp_port: 161,
+            mdns_port: 0,
+            rdns_servers: vec![],
+            oui: Arc::new(crate::engine::oui::Oui::parse("")),
+            snmp_v3: None,
+        };
+        let out = TlsProbe.probe(ip, &hint).await;
+        assert_eq!(out.len(), 2, "tls piece + hostname piece for the model-shaped CN");
+        assert_eq!(out[0].kind, "tls");
+        assert_eq!(out[0].port, port as i64);
+        assert_eq!(out[1].kind, "hostname");
+        assert_eq!(
+            out[1].raw_data.as_ref().unwrap().get("hostname").unwrap(),
+            "r68s-loopback"
+        );
+    }
 }
 
 /// TLS probe against host:port returning cert fields + "_version" key
