@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2026 Mi Bee Studio. All rights reserved.
  *
- * This file is part of MiBee Steward, distributed under the GNU Affero General
+ * This file is part of Mi Bee Steward, distributed under the GNU Affero General
  * Public License v3.0 or later; see LICENSE for the full text. A commercial
  * license is available for use cases the AGPL does not accommodate; see
  * LICENSE-COMMERCIAL.md.
@@ -15,10 +15,127 @@ import { render, waitFor, fireEvent } from '@testing-library/svelte';
 // render-only + list-render + interaction: mock the API surface the probes
 // page touches: target list, per-target certificate summaries (badge),
 // per-target results history, networks (vantage selector's agent options),
-// the egress-quality report (#608), and the auth store. Assertions are
-// data-driven (names / vantage tokens), never localized strings (except where
-// an interaction must FIND a button; the suite runs under the en locale).
+// the per-category quality report (#608/#613), and the auth store.
+// Assertions are data-driven (names / vantage tokens), never localized
+// strings (except where an interaction must FIND a button or assert a
+// localized label; the suite runs under the en locale).
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+
+// Mutable target seed: individual tests swap the array (empty a category,
+// search scenarios) and restore it in finally. vi.hoisted so the api mock
+// factory below can close over it — factories run while the module graph
+// loads, before any test-body statement executes.
+const mockState = vi.hoisted(() => {
+	const rows: Record<string, unknown>[] = [
+		{
+			id: 1,
+			name: 'github-tls',
+			module: 'tls',
+			target: 'github.com:443',
+			interval_seconds: 60,
+			timeout_seconds: 10,
+			enabled: true,
+			notes: '',
+			last_run_at: '2026-08-19T00:00:00Z',
+			last_status: 'success',
+			last_latency_ms: 42.5,
+			vantage: 'all',
+			vantage_latest: [
+				{ vantage: 'center', status: 'success', latency_ms: 42.5, checked_at: '2026-09-17T00:00:02Z' },
+				{
+					vantage: 'agent:edge-1',
+					status: 'fail',
+					latency_ms: 0,
+					error_message: 'connection refused',
+					checked_at: '2026-09-17T00:00:01Z'
+				}
+			],
+			created_at: '2026-08-19T00:00:00Z',
+			updated_at: '2026-08-19T00:00:00Z'
+		},
+		{
+			id: 2,
+			name: 'intranet-gw',
+			module: 'http',
+			target: 'http://10.0.0.1/healthz',
+			interval_seconds: 120,
+			timeout_seconds: 10,
+			enabled: true,
+			notes: '',
+			vantage: 'agent:edge-1',
+			// Agent-only plan: last_* stays empty, the agent track is
+			// the only signal (the case vantage_latest exists for).
+			vantage_latest: [
+				{ vantage: 'agent:edge-1', status: 'success', latency_ms: 88, checked_at: '2026-09-17T00:00:00Z' }
+			],
+			created_at: '2026-08-19T00:00:00Z',
+			updated_at: '2026-08-19T00:00:00Z'
+		},
+		{
+			id: 3,
+			name: 'sys-egress-http',
+			module: 'http',
+			target: 'http://203.0.113.9/',
+			interval_seconds: 60,
+			timeout_seconds: 10,
+			enabled: true,
+			notes: '',
+			vantage: 'all',
+			source: 'system',
+			last_status: 'success',
+			last_latency_ms: 30.4,
+			vantage_latest: [
+				{ vantage: 'center', status: 'success', latency_ms: 30.4, checked_at: '2026-09-17T00:00:03Z' },
+				{ vantage: 'agent:edge-1', status: 'success', latency_ms: 45, checked_at: '2026-09-17T00:00:03Z' }
+			],
+			created_at: '2026-08-19T00:00:00Z',
+			updated_at: '2026-08-19T00:00:00Z'
+		},
+		{
+			id: 4,
+			name: 'auto-nas-web',
+			module: 'tcp',
+			target: '192.168.2.168:5000',
+			interval_seconds: 120,
+			timeout_seconds: 10,
+			enabled: true,
+			notes: '',
+			vantage: 'center',
+			source: 'auto',
+			device_id: 11,
+			last_status: 'success',
+			last_latency_ms: 3.2,
+			vantage_latest: [
+				{ vantage: 'center', status: 'success', latency_ms: 3.2, checked_at: '2026-09-17T00:00:04Z' }
+			],
+			created_at: '2026-08-19T00:00:00Z',
+			updated_at: '2026-08-19T00:00:00Z'
+		},
+		// Manual target bound to a device (#613): covers the device_id>0
+		// branch of the lan category (auto source is the other branch).
+		{
+			id: 5,
+			name: 'nas-ssh',
+			module: 'tcp',
+			target: '192.0.2.168:22',
+			interval_seconds: 120,
+			timeout_seconds: 10,
+			enabled: true,
+			notes: '',
+			vantage: 'center',
+			device_id: 12,
+			last_status: 'success',
+			last_latency_ms: 1.8,
+			vantage_latest: [
+				{ vantage: 'center', status: 'success', latency_ms: 1.8, checked_at: '2026-09-17T00:00:05Z' }
+			],
+			created_at: '2026-08-19T00:00:00Z',
+			updated_at: '2026-08-19T00:00:00Z'
+		}
+	];
+	return { targets: rows };
+});
+
 // echarts cannot paint under jsdom (canvas getContext returns null → zrender
 // crashes in $effect); the history modal mounts Chart on its default tab.
 vi.mock('$lib/charts/echarts', () => ({
@@ -45,46 +162,89 @@ vi.mock('$lib/api/client', () => ({
 				});
 			}
 			if (url.startsWith('/probe-quality')) {
-				// #608 egress-quality report: primary group with three vantages
-				// (ok / dns_fault / upstream_resolver) + one reference group.
+				// #613 per-category quality report: lan/external render as
+				// compact window-health matrices; the quality category nests
+				// the #608 config groups (primary with three vantage verdicts
+				// + one reference group) verbatim.
 				return Promise.resolve({
 					window_minutes: 15,
-					groups: [
+					categories: [
 						{
-							name: 'egress',
-							role: 'primary',
+							category: 'lan',
 							vantages: [
-								{ vantage: 'center', network_name: 'Main LAN', verdict: 'ok', score: 98, reasons: [] },
-								{ vantage: 'agent:edge-1', verdict: 'dns_fault', score: 41, reasons: ['dns_fault.direct_ok_name_resolution_dead', 'ok_rate_low'] },
-								{ vantage: 'agent:edge-2', verdict: 'upstream_resolver', score: 55, reasons: ['upstream_resolver.failing:pub-dns'] }
+								{ vantage: 'agent:edge-1', network_name: 'LAN A', verdict: 'ok', score: 97, reasons: [] }
 							],
 							targets: [
 								{
-									name: 'pub-http',
+									name: 'nas-web',
 									module: 'http',
-									target: 'http://203.0.113.9/',
+									target: 'http://192.0.2.168:5000/',
 									cross_vantage: 'ok',
 									per_vantage: {
-										center: { ok_rate: 1, p50_ms: 30.4, samples: 12, last_status: 'success' },
-										'agent:edge-1': { ok_rate: 0.25, p50_ms: 88.2, samples: 8, last_status: 'fail' }
-									}
-								},
-								{
-									name: 'pub-dns',
-									module: 'dns',
-									target: 'www.example.com',
-									cross_vantage: 'mixed',
-									per_vantage: {
-										center: { ok_rate: 1, p50_ms: 12, samples: 10, last_status: 'success' }
+										'agent:edge-1': { ok_rate: 1, p50_ms: 3.2, samples: 10, last_status: 'success' }
 									}
 								}
 							]
 						},
 						{
-							name: 'reference-alt',
-							role: 'reference',
-							vantages: [{ vantage: 'center', verdict: 'insufficient', score: 0, reasons: ['insufficient_data'] }],
-							targets: []
+							category: 'external',
+							vantages: [
+								{ vantage: 'center', network_name: 'Main LAN', verdict: 'degraded', score: 70, reasons: ['ok_rate_low'] }
+							],
+							targets: [
+								{
+									name: 'ext-http',
+									module: 'http',
+									target: 'http://203.0.113.99/',
+									cross_vantage: 'ok',
+									per_vantage: {
+										center: { ok_rate: 0.8, p50_ms: 120.4, samples: 10, last_status: 'success' }
+									}
+								}
+							]
+						},
+						{
+							category: 'quality',
+							vantages: [],
+							targets: [],
+							groups: [
+								{
+									name: 'egress',
+									role: 'primary',
+									vantages: [
+										{ vantage: 'center', network_name: 'Main LAN', verdict: 'ok', score: 98, reasons: [] },
+										{ vantage: 'agent:edge-1', verdict: 'dns_fault', score: 41, reasons: ['dns_fault.direct_ok_name_resolution_dead', 'ok_rate_low'] },
+										{ vantage: 'agent:edge-2', verdict: 'upstream_resolver', score: 55, reasons: ['upstream_resolver.failing:pub-dns'] }
+									],
+									targets: [
+										{
+											name: 'pub-http',
+											module: 'http',
+											target: 'http://203.0.113.9/',
+											cross_vantage: 'ok',
+											per_vantage: {
+												center: { ok_rate: 1, p50_ms: 30.4, samples: 12, last_status: 'success' },
+												'agent:edge-1': { ok_rate: 0.25, p50_ms: 88.2, samples: 8, last_status: 'fail' }
+											}
+										},
+										{
+											name: 'pub-dns',
+											module: 'dns',
+											target: 'www.example.com',
+											cross_vantage: 'mixed',
+											per_vantage: {
+												center: { ok_rate: 1, p50_ms: 12, samples: 10, last_status: 'success' }
+											}
+										}
+									]
+								},
+								{
+									name: 'reference-alt',
+									role: 'reference',
+									vantages: [{ vantage: 'center', verdict: 'insufficient', score: 0, reasons: ['insufficient_data'] }],
+									targets: []
+								}
+							]
 						}
 					]
 				});
@@ -106,93 +266,8 @@ vi.mock('$lib/api/client', () => ({
 				});
 			}
 			return Promise.resolve({
-				targets: [
-					{
-						id: 1,
-						name: 'github-tls',
-						module: 'tls',
-						target: 'github.com:443',
-						interval_seconds: 60,
-						timeout_seconds: 10,
-						enabled: true,
-						notes: '',
-						last_run_at: '2026-08-19T00:00:00Z',
-						last_status: 'success',
-						last_latency_ms: 42.5,
-						vantage: 'all',
-						vantage_latest: [
-							{ vantage: 'center', status: 'success', latency_ms: 42.5, checked_at: '2026-09-17T00:00:02Z' },
-							{
-								vantage: 'agent:edge-1',
-								status: 'fail',
-								latency_ms: 0,
-								error_message: 'connection refused',
-								checked_at: '2026-09-17T00:00:01Z'
-							}
-						],
-						created_at: '2026-08-19T00:00:00Z',
-						updated_at: '2026-08-19T00:00:00Z'
-					},
-					{
-						id: 2,
-						name: 'intranet-gw',
-						module: 'http',
-						target: 'http://10.0.0.1/healthz',
-						interval_seconds: 120,
-						timeout_seconds: 10,
-						enabled: true,
-						notes: '',
-						vantage: 'agent:edge-1',
-						// Agent-only plan: last_* stays empty, the agent track is
-						// the only signal (the case vantage_latest exists for).
-						vantage_latest: [
-							{ vantage: 'agent:edge-1', status: 'success', latency_ms: 88, checked_at: '2026-09-17T00:00:00Z' }
-						],
-						created_at: '2026-08-19T00:00:00Z',
-						updated_at: '2026-08-19T00:00:00Z'
-					},
-					{
-						id: 3,
-						name: 'sys-egress-http',
-						module: 'http',
-						target: 'http://203.0.113.9/',
-						interval_seconds: 60,
-						timeout_seconds: 10,
-						enabled: true,
-						notes: '',
-						vantage: 'all',
-						source: 'system',
-						last_status: 'success',
-						last_latency_ms: 30.4,
-						vantage_latest: [
-							{ vantage: 'center', status: 'success', latency_ms: 30.4, checked_at: '2026-09-17T00:00:03Z' },
-							{ vantage: 'agent:edge-1', status: 'success', latency_ms: 45, checked_at: '2026-09-17T00:00:03Z' }
-						],
-						created_at: '2026-08-19T00:00:00Z',
-						updated_at: '2026-08-19T00:00:00Z'
-					},
-					{
-						id: 4,
-						name: 'auto-nas-web',
-						module: 'tcp',
-						target: '192.168.2.168:5000',
-						interval_seconds: 120,
-						timeout_seconds: 10,
-						enabled: true,
-						notes: '',
-						vantage: 'center',
-						source: 'auto',
-						device_id: 11,
-						last_status: 'success',
-						last_latency_ms: 3.2,
-						vantage_latest: [
-							{ vantage: 'center', status: 'success', latency_ms: 3.2, checked_at: '2026-09-17T00:00:04Z' }
-						],
-						created_at: '2026-08-19T00:00:00Z',
-						updated_at: '2026-08-19T00:00:00Z'
-					}
-				],
-				total: 4
+				targets: mockState.targets,
+				total: mockState.targets.length
 			});
 		}),
 		post: vi.fn(() => Promise.resolve({})),
@@ -221,6 +296,20 @@ function resultRow(id: number, vantage: string, status: string, latencyMs: numbe
 
 import Probes from '../routes/probes/+page.svelte';
 import { api } from '$lib/api/client';
+import { probeCategory } from '$lib/utils/probes';
+
+describe('probeCategory helper (#613)', () => {
+	it('derives the category from source and device binding', () => {
+		expect(probeCategory({ source: 'system' })).toBe('quality');
+		expect(probeCategory({ source: 'auto' })).toBe('lan');
+		expect(probeCategory({ source: 'manual', device_id: 11 })).toBe('lan');
+		expect(probeCategory({ source: 'manual' })).toBe('external');
+		expect(probeCategory({})).toBe('external');
+		// device_id 0/absent is not a binding (mirrors the backend's
+		// DeviceID != nil check for real IDs).
+		expect(probeCategory({ device_id: 0 })).toBe('external');
+	});
+});
 
 describe('Probes page', () => {
 	it('mounts and renders the target table with the seeded row', async () => {
@@ -308,6 +397,7 @@ describe('Probes page', () => {
 		const historyBtn = Array.from(container.querySelectorAll('button')).find((b) =>
 			(b.textContent ?? '').trim() === 'History'
 		) as HTMLElement;
+		expect(historyBtn).toBeTruthy();
 		await fireEvent.click(historyBtn);
 		await waitFor(() => {
 			expect(container.textContent).toContain('Latest per vantage');
@@ -366,6 +456,7 @@ describe('Probes page', () => {
 		const addBtn = Array.from(container.querySelectorAll('button')).find((b) =>
 			(b.textContent ?? '').includes('Add Target')
 		) as HTMLElement;
+		expect(addBtn).toBeTruthy();
 		await fireEvent.click(addBtn);
 
 		const moduleSelect = container.querySelector('#probe-module') as HTMLSelectElement;
@@ -410,6 +501,7 @@ describe('Probes page', () => {
 		const addBtn = Array.from(container.querySelectorAll('button')).find((b) =>
 			(b.textContent ?? '').includes('Add Target')
 		) as HTMLElement;
+		expect(addBtn).toBeTruthy();
 		await fireEvent.click(addBtn);
 
 		await fireEvent.input(container.querySelector('#probe-name')!, { target: { value: 'site-http' } });
@@ -538,5 +630,209 @@ describe('Probes page', () => {
 			(b.textContent ?? '').trim() === 'reference'
 		);
 		expect(refBadge).toBeTruthy();
+	});
+
+	// --- #613 additions: per-category quality panel + list sections ---------
+
+	it('quality panel renders the lan/external matrices ahead of the quality groups', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('Main LAN');
+		});
+
+		// Category headings in fixed order lan → external → quality.
+		const headings = Array.from(container.querySelectorAll('h4')).map((h) => (h.textContent ?? '').trim());
+		expect(headings).toEqual(['LAN probes', 'External business probes', 'Egress quality probes']);
+
+		// lan matrix: its own vantage (named network) + target column and a
+		// simple ok verdict badge.
+		expect(container.textContent).toContain('LAN A');
+		expect(container.textContent).toContain('nas-web');
+		expect(container.textContent).toContain('100% · 3ms');
+		expect(container.textContent).toContain('ok · 97');
+
+		// external matrix: degraded verdict + its reason chip.
+		expect(container.textContent).toContain('ext-http');
+		expect(container.textContent).toContain('80% · 120ms');
+		expect(container.textContent).toContain('degraded · 70');
+		expect(container.textContent).toContain('success rate low');
+	});
+
+	it('groups the target list into three category sections in order', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('github-tls');
+		});
+
+		const sectionOf = (name: string) =>
+			Array.from(container.querySelectorAll('section[data-category]')).find((s) =>
+				s.textContent?.includes(name)
+			);
+
+		// lan = auto source or device-bound; external = manual unbound;
+		// quality = source system.
+		expect(sectionOf('auto-nas-web')?.getAttribute('data-category')).toBe('lan');
+		expect(sectionOf('nas-ssh')?.getAttribute('data-category')).toBe('lan');
+		expect(sectionOf('github-tls')?.getAttribute('data-category')).toBe('external');
+		expect(sectionOf('intranet-gw')?.getAttribute('data-category')).toBe('external');
+		expect(sectionOf('sys-egress-http')?.getAttribute('data-category')).toBe('quality');
+
+		const order = Array.from(container.querySelectorAll('section[data-category]')).map((s) =>
+			s.getAttribute('data-category')
+		);
+		expect(order).toEqual(['lan', 'external', 'quality']);
+	});
+
+	it('section headers show the count and the enabled/ok/failing summary', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('nas-ssh');
+		});
+
+		// lan: 2 targets (auto-nas-web + nas-ssh), both enabled and succeeding.
+		const lan = container.querySelector('section[data-category="lan"]');
+		expect(lan?.textContent).toContain('LAN probes');
+		expect(lan?.textContent).toContain('2 enabled · 2 ok · 0 failing');
+
+		// external: github-tls (newest center track succeeds) + intranet-gw.
+		const external = container.querySelector('section[data-category="external"]');
+		expect(external?.textContent).toContain('2 enabled · 2 ok · 0 failing');
+
+		// quality: the single system target row.
+		const quality = container.querySelector('section[data-category="quality"]');
+		expect(quality?.textContent).toContain('1 enabled · 1 ok · 0 failing');
+	});
+
+	it('collapsing a section hides its table and persists to localStorage', async () => {
+		localStorage.removeItem('mibee.probes.sections');
+		try {
+			const { container } = render(Probes);
+			await waitFor(() => {
+				expect(container.textContent).toContain('github-tls');
+			});
+
+			// All sections expanded by default with their sub-tables rendered.
+			expect(container.querySelector('#probes-section-quality table')).toBeTruthy();
+
+			const toggle = container.querySelector(
+				'button[aria-controls="probes-section-quality"]'
+			) as HTMLElement;
+			expect(toggle).toBeTruthy();
+			expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+			await fireEvent.click(toggle);
+			// Collapsed: the section keeps its header, the content div is gone
+			// (its only row disappears with it).
+			expect(container.querySelector('#probes-section-quality')).toBeNull();
+			const header = container.querySelector('section[data-category="quality"]');
+			expect(header?.textContent).toContain('Egress quality probes');
+			expect(header?.textContent).not.toContain('sys-egress-http');
+			expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+			// Persistence: expanded-state map stored under the stable key.
+			expect(JSON.parse(localStorage.getItem('mibee.probes.sections') ?? '{}')).toEqual({
+				lan: true,
+				external: true,
+				quality: false
+			});
+		} finally {
+			localStorage.removeItem('mibee.probes.sections');
+		}
+	});
+
+	it('an empty category keeps its header and renders the one-line hint', async () => {
+		const seeded = mockState.targets;
+		mockState.targets = seeded.filter((t) => probeCategory(t as { source?: string; device_id?: number }) !== 'lan');
+		try {
+			const { container } = render(Probes);
+			await waitFor(() => {
+				expect(container.textContent).toContain('github-tls');
+			});
+
+			const lan = container.querySelector('section[data-category="lan"]');
+			expect(lan).toBeTruthy();
+			expect(lan?.textContent).toContain('No LAN probes yet');
+			// Hint only: no sub-table for the empty section.
+			expect(lan?.querySelector('table')).toBeNull();
+			// Sibling sections still render their tables.
+			expect(container.querySelector('section[data-category="external"] table')).toBeTruthy();
+		} finally {
+			mockState.targets = seeded;
+		}
+	});
+
+	it('the page-level search filters within sections and hides matchless ones', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('github-tls');
+		});
+
+		const search = container.querySelector('input[aria-label="Search"]') as HTMLInputElement;
+		expect(search).toBeTruthy();
+
+		// "github" only matches an external-section row: lan/quality hide.
+		await fireEvent.input(search, { target: { value: 'github' } });
+		await waitFor(() => {
+			expect(container.querySelectorAll('section[data-category]').length).toBe(1);
+		});
+		const visible = container.querySelector('section[data-category]');
+		expect(visible?.getAttribute('data-category')).toBe('external');
+		expect(visible?.textContent).toContain('github-tls');
+
+		// No match anywhere: all sections hide, one no-match note shows.
+		await fireEvent.input(search, { target: { value: 'zzz-no-such-target' } });
+		await waitFor(() => {
+			expect(container.querySelector('section[data-category]')).toBeNull();
+		});
+		expect(container.textContent).toContain('No match');
+	});
+
+	it('the section select-all checkbox selects that section\'s rows only', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('github-tls');
+		});
+
+		const external = container.querySelector('section[data-category="external"]');
+		const selectAll = external?.querySelector(
+			'input[aria-label^="Select all in"]'
+		) as HTMLInputElement;
+		expect(selectAll).toBeTruthy();
+		await fireEvent.click(selectAll);
+
+		// Batch toolbar appears with exactly the section's two rows.
+		await waitFor(() => {
+			expect(container.textContent).toContain('2 selected');
+		});
+		// Row-level checkboxes inside the OTHER sections stay unchecked.
+		const qualityRow = container.querySelector(
+			'section[data-category="quality"] tbody input[type="checkbox"]'
+		) as HTMLInputElement;
+		expect(qualityRow?.checked).toBe(false);
+	});
+
+	it('the quality panel help button carries the formula explanation tooltip', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('Main LAN');
+		});
+
+		// The round help button is wired to the tooltip via aria-describedby.
+		const btn = container.querySelector('button[aria-describedby="probes-quality-help"]') as HTMLElement;
+		expect(btn).toBeTruthy();
+		expect(btn.getAttribute('aria-label')).toContain('verdicts');
+
+		// The tooltip content lives in the DOM (CSS-revealed on hover/focus,
+		// visible to screen readers and jsdom regardless): window, cell math,
+		// the simple-category rule, the verdict chain, config thresholds.
+		const tip = container.querySelector('[data-quality-help]');
+		expect(tip).toBeTruthy();
+		expect(tip?.getAttribute('role')).toBe('tooltip');
+		const text = tip?.textContent ?? '';
+		expect(text).toContain('last 15 minutes');
+		expect(text).toContain('successes ÷ total probes');
+		expect(text).toContain('default 90%');
+		expect(text).toContain('egress down');
+		expect(text).toContain('probe.quality config');
 	});
 });

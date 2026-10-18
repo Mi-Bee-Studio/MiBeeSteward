@@ -27,7 +27,7 @@
 	import CertificateModal from '$lib/components/CertificateModal.svelte';
 	import Chart from '$lib/components/Chart.svelte';
 	import type { EChartsOption } from '$lib/charts/echarts';
-	import { Activity as ActivityIcon } from '@lucide/svelte';
+	import { Activity as ActivityIcon, ChevronDown, Info, Search } from '@lucide/svelte';
 
 	import type {
 		ProbeTarget,
@@ -38,6 +38,7 @@
 		ProbeVantageLatest,
 		ProbeOptions,
 		ProbeQualityReport,
+		ProbeQualityCategory,
 		ProbeQualityGroup,
 		ProbeQualityVantage,
 		ProbeQualityTrack,
@@ -46,6 +47,8 @@
 		Network
 	} from '$lib/types';
 	import { certDayDelta } from '$lib/utils/certs';
+	import { probeCategory, PROBE_CATEGORIES } from '$lib/utils/probes';
+	import type { ProbeCategory } from '$lib/utils/probes';
 
 	// --- State ---
 	let targets = $state<ProbeTarget[]>([]);
@@ -69,8 +72,23 @@
 		selectedIds = next;
 	}
 
-	function toggleSelectAll() {
-		selectedIds = selectedIds.size === targets.length ? new Set() : new Set(targets.map((t) => t.id));
+	// Per-section select-all (#613): each category header's checkbox works on
+	// that section's visible rows only; the global batch toolbar above keeps
+	// operating on the combined selection across sections.
+	function sectionAllSelected(sec: CategorySection): boolean {
+		return sec.rows.length > 0 && sec.rows.every((t) => selectedIds.has(t.id));
+	}
+
+	function toggleSelectSection(sec: CategorySection) {
+		const ids = sec.rows.map((t) => t.id);
+		if (ids.length === 0) return;
+		const clear = ids.every((id) => selectedIds.has(id));
+		const next = new Set(selectedIds);
+		for (const id of ids) {
+			if (clear) next.delete(id);
+			else next.add(id);
+		}
+		selectedIds = next;
 	}
 
 	async function runBatch(op: (t: ProbeTarget) => Promise<unknown>, label: string) {
@@ -159,6 +177,101 @@
 		});
 	});
 
+	// --- Category sections (#613): the list groups into three collapsible
+	// sections in a fixed order — LAN (device-bound / auto targets), external
+	// business (manual, unbound), egress quality (source=system matrix). The
+	// derivation lives in $lib/utils/probes so it stays aligned with the
+	// backend's TargetCategory.
+	interface CategorySection {
+		key: ProbeCategory;
+		label: string;
+		// Rows visible in this section after the page-level search; the
+		// summary always describes the WHOLE category so a filter can't mask
+		// its health.
+		rows: ProbeTarget[];
+		summary: { enabled: number; ok: number; bad: number };
+	}
+
+	// One page-level search box (replaces the single table's built-in one):
+	// it applies within every section; a section with no match hides itself.
+	let searchQuery = $state('');
+
+	function matchesSearch(t: ProbeTarget): boolean {
+		if (!searchQuery) return true;
+		const q = searchQuery.toLowerCase();
+		return t.name.toLowerCase().includes(q) || t.target.toLowerCase().includes(q);
+	}
+
+	function categoryLabel(key: ProbeCategory): string {
+		switch (key) {
+			case 'lan':
+				return m['probes.Category LAN']();
+			case 'external':
+				return m['probes.Category External']();
+			default:
+				return m['probes.Category Quality']();
+		}
+	}
+
+	function categoryEmptyHint(key: ProbeCategory): string {
+		switch (key) {
+			case 'lan':
+				return m['probes.Section Empty LAN']();
+			case 'external':
+				return m['probes.Section Empty External']();
+			default:
+				return m['probes.Section Empty Quality']();
+		}
+	}
+
+	const sections = $derived.by<CategorySection[]>(() => {
+		return PROBE_CATEGORIES.map((key) => {
+			const all = targets.filter((t) => probeCategory(t) === key);
+			let ok = 0;
+			let bad = 0;
+			for (const t of all) {
+				const latest = latestOverall(t);
+				if (!latest) continue;
+				if (latest.status === 'success') ok++;
+				else bad++;
+			}
+			return {
+				key,
+				label: categoryLabel(key),
+				rows: all.filter(matchesSearch),
+				summary: { enabled: all.filter((t) => t.enabled).length, ok, bad }
+			};
+		});
+	});
+
+	// Collapsed/expanded per section, persisted so the choice survives reloads
+	// (same localStorage pattern as ColumnPicker). Default: all expanded.
+	const SECTIONS_STORAGE_KEY = 'mibee.probes.sections';
+	const SECTIONS_DEFAULT: Record<ProbeCategory, boolean> = { lan: true, external: true, quality: true };
+
+	function loadSectionToggles(): Record<ProbeCategory, boolean> {
+		if (typeof localStorage === 'undefined') return { ...SECTIONS_DEFAULT };
+		try {
+			const raw = localStorage.getItem(SECTIONS_STORAGE_KEY);
+			if (raw) return { ...SECTIONS_DEFAULT, ...(JSON.parse(raw) as Partial<Record<ProbeCategory, boolean>>) };
+		} catch {
+			// Corrupt entry: fall through to the default (all expanded).
+		}
+		return { ...SECTIONS_DEFAULT };
+	}
+
+	let sectionsOpen = $state<Record<ProbeCategory, boolean>>(loadSectionToggles());
+
+	function toggleSection(key: ProbeCategory) {
+		sectionsOpen = { ...sectionsOpen, [key]: !sectionsOpen[key] };
+		if (typeof localStorage === 'undefined') return;
+		try {
+			localStorage.setItem(SECTIONS_STORAGE_KEY, JSON.stringify(sectionsOpen));
+		} catch {
+			// Storage unavailable: the toggle still holds for this session.
+		}
+	}
+
 	// --- Egress quality report (#608): GET /probe-quality, fetched once on
 	// mount + manual refresh. The report is computed read-time server-side, no
 	// point polling it on the 10s target cadence.
@@ -178,19 +291,39 @@
 		}
 	}
 
+	// --- Category view of the report (#613): the payload carries lan,
+	// external and quality; the panel renders them in that order. The
+	// category-level vantages of quality mirror the primary group, so the
+	// panel renders the nested groups directly.
+	function qualityCat(name: ProbeCategory): ProbeQualityCategory {
+		return quality?.categories?.find((c) => c.category === name) ?? { category: name, vantages: [], targets: [] };
+	}
+
+	// The two simple categories render as one compact matrix each; their
+	// verdicts are plain window health (ok/degraded/insufficient).
+	const SIMPLE_CATEGORIES = ['lan', 'external'] as const;
+	// Column cap for those matrices so they stay compact; the overflow is
+	// noted under the table ("+N more").
+	const MATRIX_MAX_TARGETS = 8;
+
+	function simpleCatEmpty(cat: ProbeQualityCategory): boolean {
+		return (cat.targets ?? []).length === 0 && (cat.vantages ?? []).length === 0;
+	}
+
 	// Primary group first, reference groups after it (by name) so the network
 	// verdict leads and the comparison groups read as context.
 	const qualityGroups = $derived.by<ProbeQualityGroup[]>(() => {
-		const groups = quality?.groups ?? [];
+		const groups = qualityCat('quality').groups ?? [];
 		return [...groups].sort((a, b) => {
 			const rank = (g: ProbeQualityGroup) => (g.role === 'primary' ? 0 : 1);
 			return rank(a) - rank(b) || a.name.localeCompare(b.name);
 		});
 	});
-	// Empty = no groups at all, or none with a single observed vantage yet.
+	// Quality category empty = no groups at all, or none with a single
+	// observed vantage yet.
 	const qualityEmpty = $derived.by(() => {
 		if (quality === null) return false;
-		const groups = quality.groups ?? [];
+		const groups = qualityCat('quality').groups ?? [];
 		return groups.length === 0 || groups.every((g) => (g.vantages ?? []).length === 0);
 	});
 
@@ -991,12 +1124,127 @@
 		</div>
 		<p class="text-sm text-text-muted mb-6">{m['probes.Subtitle']()}</p>
 
-		<!-- Egress quality (#608): per-group vantage × target matrix + verdicts.
-		     Primary group leads; reference groups render visually secondary. -->
+		<!-- Quality matrix snippet (#608/#613): rows = vantages, columns =
+		     targets, cells = ok% · p50 colored by ok-rate, trailing verdict
+		     badge + score; reason chips for actionable verdicts. `more` counts
+		     target columns omitted past the compact cap (0 = all shown). -->
+		{#snippet qualityMatrix(vantages: ProbeQualityVantage[], cols: ProbeQualityTarget[], more: number)}
+			<div class="overflow-x-auto">
+				<table class="w-full text-xs">
+					<thead>
+						<tr class="text-left text-text-muted border-b border-border">
+							<th class="py-1.5 pr-4 font-medium whitespace-nowrap">{m['probes.Quality Vantage']()}</th>
+							{#each cols as t (t.name)}
+								<th class="py-1.5 pr-4 font-medium font-mono whitespace-nowrap" title={t.target}>{t.name}</th>
+							{/each}
+							<th class="py-1.5 font-medium whitespace-nowrap">{m['probes.Quality Verdict']()}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each vantages as v (v.vantage)}
+							<tr class="border-b border-border/40 last:border-0">
+								<td class="py-1.5 pr-4 whitespace-nowrap">
+									<span class="truncate" title="{v.network_name ? v.vantage : ''}">{vantageLabel(v)}</span>
+								</td>
+								{#each cols as t (t.name)}
+									{@const tr = t.per_vantage?.[v.vantage]}
+									{@const st = trackState(tr)}
+									<td class="py-1.5 pr-4 font-mono whitespace-nowrap"
+										title={tr && tr.samples ? m['probes.Vantage Samples']({ count: tr.samples }) : ''}
+									>
+										{#if st === 'none'}
+											<span class="text-text-muted">—</span>
+										{:else}
+											<span class="inline-flex items-center gap-1.5 {trackTextCls[st]}">
+												<span class="inline-block h-2 w-2 shrink-0 rounded-full {trackDotCls[st]}"></span>
+												{Math.round((tr?.ok_rate ?? 0) * 100)}% · {Math.round(tr?.p50_ms ?? 0)}ms
+											</span>
+										{/if}
+									</td>
+								{/each}
+								<td class="py-1.5">
+									<span class="badge {verdictCls(v.verdict)}" style={verdictStyle(v.verdict)}>
+										{verdictLabel(v.verdict)} · {v.score}
+									</span>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			{#if more > 0}
+				<p class="mt-1 text-xs text-text-muted">{m['probes.Quality More Targets']({ count: more })}</p>
+			{/if}
+			<!-- Reason chips: only for actionable verdicts (not ok /
+			     insufficient, which carry no actionable detail). -->
+			{#each vantages as v (v.vantage)}
+				{#if v.verdict !== 'ok' && v.verdict !== 'insufficient' && (v.reasons ?? []).length > 0}
+					<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+						<span class="text-xs text-text-muted">{vantageLabel(v)}:</span>
+						{#each v.reasons as r (r)}
+							<span class="badge badge-warning !text-[0.625rem] !px-1.5 !py-0.5">{reasonLabel(r)}</span>
+						{/each}
+					</div>
+				{/if}
+			{/each}
+		{/snippet}
+
+		<!-- Egress quality (#608/#613): per-category vantage × target matrices
+		     with verdicts, in order lan → external → quality. The two simple
+		     categories render one compact matrix each (window health only); the
+		     quality category keeps the verdict-chain config groups (primary
+		     group leads, reference groups render visually secondary). -->
 		<div class="bg-surface border border-border rounded-lg p-4 mb-6">
 			<div class="flex items-center justify-between gap-4 mb-3">
 				<div>
-					<h3 class="text-sm font-semibold text-text">{m['probes.Quality Title']()}</h3>
+					<div class="flex items-center gap-1.5">
+						<h3 class="text-sm font-semibold text-text">{m['probes.Quality Title']()}</h3>
+						<!-- Help (#613): hover (or keyboard focus) reveals the verdict
+						     formulas. Pure CSS reveal — the content always stays in the
+						     DOM, so screen readers (and tests) see it either way. -->
+						<div class="relative inline-flex group">
+							<button
+								type="button"
+								class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-text-muted transition-colors hover:border-text-muted hover:text-text"
+								aria-label={m['probes.Quality Help Title']()}
+								aria-describedby="probes-quality-help"
+							>
+								<Info class="h-3.5 w-3.5" />
+							</button>
+							<div
+								id="probes-quality-help"
+								role="tooltip"
+								data-quality-help
+								class="invisible pointer-events-none absolute left-0 top-full z-40 mt-2 w-[26rem] max-w-[80vw] rounded-lg border border-border bg-surface p-3 shadow-lg transition-opacity opacity-0
+									group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto
+									group-focus-within:visible group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
+							>
+								<p class="mb-2 text-xs font-semibold text-text">{m['probes.Quality Help Title']()}</p>
+								<dl class="space-y-1.5">
+									<div class="flex gap-2">
+										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Window Label']()}</dt>
+										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Window']({ window: quality?.window_minutes ?? 15 })}</dd>
+									</div>
+									<div class="flex gap-2">
+										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Cell Label']()}</dt>
+										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Cell']()}</dd>
+									</div>
+									<div class="flex gap-2">
+										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Simple Label']()}</dt>
+										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Simple']()}</dd>
+									</div>
+									<div class="flex gap-2">
+										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Chain Label']()}</dt>
+										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Chain']()}</dd>
+									</div>
+									<div class="flex gap-2">
+										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Thresholds Label']()}</dt>
+										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Thresholds']()}</dd>
+									</div>
+								</dl>
+							</div>
+						</div>
+					</div>
 					<p class="text-xs text-muted">{m['probes.Quality Desc']({ window: quality?.window_minutes ?? 15 })}</p>
 				</div>
 				<button onclick={fetchQuality} disabled={qualityLoading} class="btn btn-secondary !py-1 !px-3 text-xs shrink-0">
@@ -1008,74 +1256,46 @@
 			{/if}
 			{#if quality === null && !qualityError}
 				<p class="text-xs text-muted py-2">…</p>
-			{:else if qualityEmpty}
-				<p class="text-xs text-muted py-2 italic">{m['probes.Quality Empty']()}</p>
 			{:else}
-				{#each qualityGroups as g (g.name)}
-					<div class="mb-3 last:mb-0 {g.role === 'reference' ? 'opacity-80' : ''}">
+				<!-- lan + external: one compact window-health matrix each. -->
+				{#each SIMPLE_CATEGORIES as key (key)}
+					{@const cat = qualityCat(key)}
+					<div class="mb-3 last:mb-0">
 						<div class="flex items-center gap-2 mb-1.5">
-							<h4 class="text-xs font-semibold {g.role === 'reference' ? 'text-text-muted' : 'text-text'}">{g.name}</h4>
-							{#if g.role === 'reference'}
-								<span class="badge badge-info !text-[0.625rem] !px-1.5">{m['probes.Quality Reference']()}</span>
-							{/if}
+							<h4 class="text-xs font-semibold text-text">{categoryLabel(key)}</h4>
 						</div>
-						<div class="overflow-x-auto">
-							<table class="w-full text-xs">
-								<thead>
-									<tr class="text-left text-text-muted border-b border-border">
-										<th class="py-1.5 pr-4 font-medium whitespace-nowrap">{m['probes.Quality Vantage']()}</th>
-										{#each g.targets ?? [] as t (t.name)}
-											<th class="py-1.5 pr-4 font-medium font-mono whitespace-nowrap" title={t.target}>{t.name}</th>
-										{/each}
-										<th class="py-1.5 font-medium whitespace-nowrap">{m['probes.Quality Verdict']()}</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each g.vantages ?? [] as v (v.vantage)}
-										<tr class="border-b border-border/40 last:border-0">
-											<td class="py-1.5 pr-4 whitespace-nowrap">
-												<span class="truncate" title="{v.network_name ? v.vantage : ''}">{vantageLabel(v)}</span>
-											</td>
-											{#each g.targets ?? [] as t (t.name)}
-												{@const tr = t.per_vantage?.[v.vantage]}
-												{@const st = trackState(tr)}
-												<td class="py-1.5 pr-4 font-mono whitespace-nowrap"
-													title={tr && tr.samples ? m['probes.Vantage Samples']({ count: tr.samples }) : ''}
-												>
-													{#if st === 'none'}
-														<span class="text-text-muted">—</span>
-													{:else}
-														<span class="inline-flex items-center gap-1.5 {trackTextCls[st]}">
-															<span class="inline-block h-2 w-2 shrink-0 rounded-full {trackDotCls[st]}"></span>
-															{Math.round((tr?.ok_rate ?? 0) * 100)}% · {Math.round(tr?.p50_ms ?? 0)}ms
-														</span>
-													{/if}
-												</td>
-											{/each}
-											<td class="py-1.5">
-												<span class="badge {verdictCls(v.verdict)}" style={verdictStyle(v.verdict)}>
-													{verdictLabel(v.verdict)} · {v.score}
-												</span>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-						<!-- Reason chips: only for actionable verdicts (not ok /
-						     insufficient, which carry no actionable detail). -->
-						{#each g.vantages ?? [] as v (v.vantage)}
-							{#if v.verdict !== 'ok' && v.verdict !== 'insufficient' && (v.reasons ?? []).length > 0}
-								<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-									<span class="text-xs text-text-muted">{vantageLabel(v)}:</span>
-									{#each v.reasons as r (r)}
-										<span class="badge badge-warning !text-[0.625rem] !px-1.5 !py-0.5">{reasonLabel(r)}</span>
-									{/each}
-								</div>
-							{/if}
-						{/each}
+						{#if simpleCatEmpty(cat)}
+							<p class="text-xs text-muted italic">{m['probes.Quality Cat Empty']()}</p>
+						{:else}
+							{@render qualityMatrix(
+								cat.vantages ?? [],
+								(cat.targets ?? []).slice(0, MATRIX_MAX_TARGETS),
+								Math.max(0, (cat.targets ?? []).length - MATRIX_MAX_TARGETS)
+							)}
+						{/if}
 					</div>
 				{/each}
+				<!-- quality: the egress verdict-chain groups, as before (#608). -->
+				<div class="mb-3 last:mb-0">
+					<div class="flex items-center gap-2 mb-1.5">
+						<h4 class="text-xs font-semibold text-text">{categoryLabel('quality')}</h4>
+					</div>
+					{#if qualityEmpty}
+						<p class="text-xs text-muted italic">{m['probes.Quality Empty']()}</p>
+					{:else}
+						{#each qualityGroups as g (g.name)}
+							<div class="mb-3 last:mb-0 {g.role === 'reference' ? 'opacity-80' : ''}">
+								<div class="flex items-center gap-2 mb-1.5">
+									<h5 class="text-xs font-semibold {g.role === 'reference' ? 'text-text-muted' : 'text-text'}">{g.name}</h5>
+									{#if g.role === 'reference'}
+										<span class="badge badge-info !text-[0.625rem] !px-1.5">{m['probes.Quality Reference']()}</span>
+									{/if}
+								</div>
+								{@render qualityMatrix(g.vantages ?? [], g.targets ?? [], 0)}
+							</div>
+						{/each}
+					{/if}
+				</div>
 			{/if}
 		</div>
 
@@ -1173,73 +1393,128 @@
 				onAction={openCreate}
 			/>
 		{:else}
+			<!-- Category sections (#613): three collapsible sub-tables — LAN,
+			     external business, egress quality — one page-level search box
+			     applying within each. An empty section keeps its header + hint;
+			     a section with no SEARCH match hides itself entirely. -->
 			<div class="bg-surface border border-border rounded-lg p-4">
-				<DataTable
-					{columns}
-					rows={targets as unknown as Record<string, unknown>[]}
-					searchableKeys={['name', 'target']}
-					emptyTitle={m['probes.No Targets']()}
-				>
-					{#snippet cell(row, col)}
-						{#if col.key === 'select'}
-							{@const t = targets.find((x) => x.id === row.id)}
-							{#if t}
+				<div class="relative mb-4">
+					<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
+					<input
+						type="text"
+						bind:value={searchQuery}
+						placeholder={m['common.Search']() + '...'}
+						aria-label={m['common.Search']()}
+						class="input pl-10"
+					/>
+				</div>
+				{#each sections as sec (sec.key)}
+					{#if sec.rows.length > 0 || !searchQuery}
+						<section class="mb-5 last:mb-0" data-category={sec.key}>
+							<div class="flex items-center gap-3 border-b border-border pb-2 mb-3">
+								<button
+									type="button"
+									class="flex min-w-0 flex-1 items-center gap-2 text-left"
+									onclick={() => toggleSection(sec.key)}
+									aria-expanded={sectionsOpen[sec.key]}
+									aria-controls="probes-section-{sec.key}"
+									aria-label={m['probes.Section Toggle']({ name: sec.label })}
+								>
+									<ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform {sectionsOpen[sec.key] ? '' : '-rotate-90'}" />
+									<span class="whitespace-nowrap text-sm font-semibold text-text">{sec.label}</span>
+									<span class="whitespace-nowrap text-xs text-text-muted">{sec.rows.length}</span>
+									<span class="truncate text-xs text-text-muted">{m['probes.Section Summary']({ enabled: sec.summary.enabled, ok: sec.summary.ok, bad: sec.summary.bad })}</span>
+								</button>
+								<!-- Section select-all: works on this section's rows
+								     only; the global batch toolbar merges selections. -->
 								<input
 									type="checkbox"
-									checked={selectedIds.has(t.id)}
-									onchange={() => toggleSelected(t.id)}
-									aria-label={m['probes.Batch Select Row']({ name: t.name })}
-									class="checkbox"
+									class="checkbox shrink-0"
+									checked={sectionAllSelected(sec)}
+									onchange={() => toggleSelectSection(sec)}
+									aria-label={m['probes.Select Section']({ name: sec.label })}
 								/>
-							{/if}
-						{:else if col.key === 'enabled'}
-							{@const t = targets.find((x) => x.id === row.id)}
-							{#if t}
-								<button
-									onclick={() => toggleEnabled(t)}
-									role="switch"
-									aria-checked={t.enabled}
-									aria-label={t.enabled ? m['probes.Enabled']() : m['probes.Disabled']()}
-									class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors
-										{t.enabled ? 'bg-success' : 'bg-border'}"
-								>
-									<span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform
-										{t.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}"></span>
-								</button>
-							{/if}
-						{:else if col.key === 'actions'}
-							{@const t = targets.find((x) => x.id === row.id)}
-							{#if t}
-								<div class="flex items-center gap-2">
-									<button
-										onclick={() => triggerNow(t)}
-										disabled={triggeringId !== null || isAgentOnly(t)}
-										title={isAgentOnly(t) ? m['probes.Trigger Agent Only']() : ''}
-										class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
-									>{triggeringId === t.id ? m['probes.Triggering']() : m['probes.Trigger']()}</button>
-									{#if t.module === 'tls' || t.module === 'http'}
-										<button
-											onclick={() => openCerts(t)}
-											class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
-										>{m['probes.View Cert']()}</button>
+							</div>
+							{#if sectionsOpen[sec.key]}
+								<div id="probes-section-{sec.key}">
+									{#if sec.rows.length === 0}
+										<p class="py-2 text-xs text-text-muted italic">{categoryEmptyHint(sec.key)}</p>
+									{:else}
+										<DataTable
+											{columns}
+											rows={sec.rows as unknown as Record<string, unknown>[]}
+											searchableKeys={[]}
+											emptyTitle={m['probes.No Targets']()}
+										>
+											{#snippet cell(row, col)}
+												{#if col.key === 'select'}
+													{@const t = targets.find((x) => x.id === row.id)}
+													{#if t}
+														<input
+															type="checkbox"
+															checked={selectedIds.has(t.id)}
+															onchange={() => toggleSelected(t.id)}
+															aria-label={m['probes.Batch Select Row']({ name: t.name })}
+															class="checkbox"
+														/>
+													{/if}
+												{:else if col.key === 'enabled'}
+													{@const t = targets.find((x) => x.id === row.id)}
+													{#if t}
+														<button
+															onclick={() => toggleEnabled(t)}
+															role="switch"
+															aria-checked={t.enabled}
+															aria-label={t.enabled ? m['probes.Enabled']() : m['probes.Disabled']()}
+															class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors
+																{t.enabled ? 'bg-success' : 'bg-border'}"
+														>
+															<span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform
+																{t.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}"></span>
+														</button>
+													{/if}
+												{:else if col.key === 'actions'}
+													{@const t = targets.find((x) => x.id === row.id)}
+													{#if t}
+														<div class="flex items-center gap-2">
+															<button
+																onclick={() => triggerNow(t)}
+																disabled={triggeringId !== null || isAgentOnly(t)}
+																title={isAgentOnly(t) ? m['probes.Trigger Agent Only']() : ''}
+																class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+															>{triggeringId === t.id ? m['probes.Triggering']() : m['probes.Trigger']()}</button>
+															{#if t.module === 'tls' || t.module === 'http'}
+																<button
+																	onclick={() => openCerts(t)}
+																	class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+																>{m['probes.View Cert']()}</button>
+															{/if}
+															<button
+																onclick={() => openResults(t)}
+																class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+															>{m['probes.View Results']()}</button>
+															<button
+																onclick={() => openEdit(t)}
+																class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+															>{m['common.Edit']()}</button>
+															<button
+																onclick={() => openDelete(t)}
+																class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors"
+															>{m['probes.Delete Target']()}</button>
+														</div>
+													{/if}
+												{/if}
+											{/snippet}
+										</DataTable>
 									{/if}
-									<button
-										onclick={() => openResults(t)}
-										class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
-									>{m['probes.View Results']()}</button>
-									<button
-										onclick={() => openEdit(t)}
-										class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
-									>{m['common.Edit']()}</button>
-									<button
-										onclick={() => openDelete(t)}
-										class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors"
-									>{m['probes.Delete Target']()}</button>
 								</div>
 							{/if}
-						{/if}
-					{/snippet}
-				</DataTable>
+						</section>
+					{/if}
+				{/each}
+				{#if searchQuery && sections.every((s) => s.rows.length === 0)}
+					<p class="py-6 text-center text-sm text-text-muted">{m['probes.No Match']()}</p>
+				{/if}
 			</div>
 		{/if}
 	</div>

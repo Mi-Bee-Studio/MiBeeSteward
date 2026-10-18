@@ -3627,7 +3627,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 | `/api/v1/probe-targets/{id}/certificates` | GET | 需认证 · `CapProbeRead` | 当前证书链（响应形状与设备证书端点一致） |
 
 
-| `/api/v1/probe-quality` | GET | 需认证 · `CapProbeRead` | 出口质量分析（#608）：内置拨测点矩阵上的分组、分视角判定（可选 `window` 分钟覆盖回看窗口） |
+| `/api/v1/probe-quality` | GET | 需认证 · `CapProbeRead` | 质量分析（#613）：按管理分类的分视角判定--内网/外网业务简单健康 + 出口矩阵判定链（可选 `window` 分钟覆盖回看窗口） |
 
 
 
@@ -3824,7 +3824,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 
 
 
-**响应**形状（细节见 [openapi.yaml](https://github.com/Mi-Bee-Studio/MiBeeSteward/blob/main/docs/openapi.yaml) 的 `ProbeQualityReport`）：`window_minutes` 加 `groups[]`，每个配置组一条--保留名 `domestic` 组 `role: primary`（其判定即该网络的判定），其余组（默认 `international`）`role: reference`（单独展示；跨境波动是独立信号，不算出口故障）。每组含 `vantages[]`（`vantage`、`network_name`、`verdict`、`score` 0–100、`reasons[]` 稳定代码，如 `egress_down.all_paths_failing` / `dns_fault.direct_ok_name_resolution_dead` / `upstream_resolver.failing:<目标>` / `ok_rate_low` / `latency_high` / `insufficient_data`）与 `targets[]`（各视角窗口统计 `ok_rate`/`p50_ms`/`samples`，外加 `cross_vantage` 隔离判定 `ok` / `target_down` / `mixed` / `no_data`--处处失败归咎目标并从网络判定中剔除，仅在多于一个视角上报时有意义）。判定链确定：`egress_down > dns_fault > upstream_resolver > degraded > ok`。同一判定/分数以 `mibee_probe_egress_verdict{vantage,group,verdict}` / `mibee_probe_quality_score{vantage,group}` gauge 导出--只出指标，刻意不做通知联动。
+**响应**形状（细节见 [openapi.yaml](https://github.com/Mi-Bee-Studio/MiBeeSteward/blob/main/docs/openapi.yaml) 的 `ProbeQualityReport`）：`window_minutes` 加 `categories[]`--管理分类（#613）：`lan`（设备绑定目标）与 `external`（手动未绑定的业务目标）各带简单窗口健康判定（`ok` / `degraded` / `insufficient`；平均成功率对阈值 + 分模块 p50 预算），`quality` 内嵌出口矩阵的 `groups[]`，每个配置组一条--保留名 `domestic` 组 `role: primary`（其判定即该网络的判定），其余组（默认 `international`）`role: reference`（单独展示；跨境波动是独立信号，不算出口故障）。每组含 `vantages[]`（`vantage`、`network_name`、`verdict`、`score` 0–100、`reasons[]` 稳定代码，如 `egress_down.all_paths_failing` / `dns_fault.direct_ok_name_resolution_dead` / `upstream_resolver.failing:<目标>` / `ok_rate_low` / `latency_high` / `insufficient_data`）与 `targets[]`（各视角窗口统计 `ok_rate`/`p50_ms`/`samples`，外加 `cross_vantage` 隔离判定 `ok` / `target_down` / `mixed` / `no_data`--处处失败归咎目标并从网络判定中剔除，仅在多于一个视角上报时有意义）。判定链确定：`egress_down > dns_fault > upstream_resolver > degraded > ok`。同一判定/分数以 `mibee_probe_egress_verdict{vantage,category,group,verdict}` / `mibee_probe_quality_score{vantage,category}` gauge 导出--只出指标，刻意不做通知联动。
 
 
 

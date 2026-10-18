@@ -2428,12 +2428,23 @@ components:
             results: {type: array, items: {$ref: "#/components/schemas/ProbeResult"}}
     ProbeQualityReport:
       type: object
-      description: "Egress-quality analysis (#608): per-group, per-vantage verdicts computed read-time over the window's probe_results. Verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok; reasons are stable codes for UI localization."
-      required: [window_minutes, groups]
+      description: "Quality analysis (#613): computed per management category - lan (device-bound targets), external (manual business targets, simple ok/degraded verdicts) and quality (the built-in egress matrix, verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok with config groups nested). Reasons are stable codes for UI localization."
+      required: [window_minutes, categories]
       properties:
         window_minutes: {type: integer}
+        categories:
+          type: array
+          items: {$ref: "#/components/schemas/ProbeQualityCategory"}
+    ProbeQualityCategory:
+      type: object
+      required: [category, vantages, targets]
+      properties:
+        category: {type: string, enum: [lan, external, quality], description: "lan = device-bound targets; external = manual unbound (business) targets; quality = the built-in system matrix"}
+        vantages: {type: array, items: {$ref: "#/components/schemas/ProbeQualityVantage"}, description: "for quality, mirrors the primary group's verdicts"}
+        targets: {type: array, items: {$ref: "#/components/schemas/ProbeQualityTarget"}}
         groups:
           type: array
+          description: quality category only - the egress matrix's config groups (domestic primary + reference groups)
           items: {$ref: "#/components/schemas/ProbeQualityGroup"}
     ProbeQualityGroup:
       type: object
