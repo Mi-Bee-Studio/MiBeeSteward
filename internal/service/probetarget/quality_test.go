@@ -174,19 +174,6 @@ func primaryVerdict(t *testing.T, svc *QualityService, vantage string) QualityVa
 	return QualityVantageReport{}
 }
 
-func categoryReport(t *testing.T, svc *QualityService, category string) QualityCategoryReport {
-	t.Helper()
-	report, err := svc.Analyze(context.Background(), 15)
-	require.NoError(t, err)
-	for _, cat := range report.Categories {
-		if cat.Category == category {
-			return cat
-		}
-	}
-	t.Fatalf("no category %q in report", category)
-	return QualityCategoryReport{}
-}
-
 // TestQualityVerdictChain pins the deterministic verdict chain.
 func TestQualityVerdictChain(t *testing.T) {
 	all := func(statuses string) string { return statuses }
