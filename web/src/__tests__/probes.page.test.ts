@@ -634,28 +634,76 @@ describe('Probes page', () => {
 
 	// --- #613 additions: per-category quality panel + list sections ---------
 
-	it('quality panel renders the lan/external matrices ahead of the quality groups', async () => {
+	it('quality panel renders quality groups then external, without the lan category (#615)', async () => {
 		const { container } = render(Probes);
 		await waitFor(() => {
 			expect(container.textContent).toContain('Main LAN');
 		});
 
-		// Category headings in fixed order lan → external → quality.
-		const headings = Array.from(container.querySelectorAll('h4')).map((h) => (h.textContent ?? '').trim());
-		expect(headings).toEqual(['LAN probes', 'External business probes', 'Egress quality probes']);
+		const panel = container.querySelector('[data-quality-panel]') as HTMLElement;
+		expect(panel).toBeTruthy();
 
-		// lan matrix: its own vantage (named network) + target column and a
-		// simple ok verdict badge.
-		expect(container.textContent).toContain('LAN A');
-		expect(container.textContent).toContain('nas-web');
-		expect(container.textContent).toContain('100% · 3ms');
-		expect(container.textContent).toContain('ok · 97');
+		// Category headings in order quality → external; lan no longer has a
+		// block in the panel (its health is the strip in the lan section).
+		const headings = Array.from(panel.querySelectorAll('h4')).map((h) => (h.textContent ?? '').trim());
+		expect(headings).toEqual(['Egress quality probes', 'External business probes']);
 
-		// external matrix: degraded verdict + its reason chip.
-		expect(container.textContent).toContain('ext-http');
-		expect(container.textContent).toContain('80% · 120ms');
-		expect(container.textContent).toContain('degraded · 70');
-		expect(container.textContent).toContain('success rate low');
+		// The lan category's matrix is gone from the panel: its vantage label,
+		// target column and verdict badge appear nowhere in the panel section.
+		expect(panel.textContent).not.toContain('LAN A');
+		expect(panel.textContent).not.toContain('nas-web');
+		expect(panel.textContent).not.toContain('ok · 97');
+		expect(panel.textContent).not.toContain('100% · 3ms');
+
+		// quality groups render as before, leading the panel now.
+		expect(panel.textContent).toContain('pub-http');
+		expect(panel.textContent).toContain('100% · 30ms');
+		expect(panel.textContent).toContain('ok · 98');
+
+		// external keeps its compact matrix: target cell + verdict badge +
+		// reason chip.
+		expect(panel.textContent).toContain('ext-http');
+		expect(panel.textContent).toContain('80% · 120ms');
+		expect(panel.textContent).toContain('degraded · 70');
+		expect(panel.textContent).toContain('success rate low');
+	});
+
+	it('the lan section shows the per-vantage health strip when expanded (#615)', async () => {
+		localStorage.removeItem('mibee.probes.sections');
+		try {
+			const { container } = render(Probes);
+			await waitFor(() => {
+				expect(container.textContent).toContain('auto-nas-web');
+			});
+
+			// Expanded by default: one quiet badge row inside the lan section.
+			const strip = container.querySelector(
+				'section[data-category="lan"] [data-lan-health]'
+			) as HTMLElement;
+			expect(strip).toBeTruthy();
+			// Vantage label = network name; verdict badge with score, same
+			// badge styling the panel uses (ok → badge-success).
+			expect(strip.textContent).toContain('LAN A');
+			expect(strip.textContent).toContain('ok · 97');
+			expect(strip.querySelector('.badge')?.className).toContain('badge-success');
+			// Quiet: no matrix, no lan target cells in the strip.
+			expect(strip.querySelector('table')).toBeNull();
+			expect(strip.textContent).not.toContain('nas-web');
+
+			// The strip sits above the section's sub-table.
+			const table = container.querySelector('section[data-category="lan"] table') as HTMLElement;
+			expect(table).toBeTruthy();
+			expect(strip.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+			// Collapsing the lan section hides the strip with it.
+			const toggle = container.querySelector(
+				'button[aria-controls="probes-section-lan"]'
+			) as HTMLElement;
+			await fireEvent.click(toggle);
+			expect(container.querySelector('[data-lan-health]')).toBeNull();
+		} finally {
+			localStorage.removeItem('mibee.probes.sections');
+		}
 	});
 
 	it('groups the target list into three category sections in order', async () => {
@@ -824,7 +872,8 @@ describe('Probes page', () => {
 
 		// The tooltip content lives in the DOM (CSS-revealed on hover/focus,
 		// visible to screen readers and jsdom regardless): window, cell math,
-		// the simple-category rule, the verdict chain, config thresholds.
+		// the simple-category rule (external matrix + LAN health strip, #615),
+		// the verdict chain, config thresholds.
 		const tip = container.querySelector('[data-quality-help]');
 		expect(tip).toBeTruthy();
 		expect(tip?.getAttribute('role')).toBe('tooltip');
@@ -832,6 +881,7 @@ describe('Probes page', () => {
 		expect(text).toContain('last 15 minutes');
 		expect(text).toContain('successes ÷ total probes');
 		expect(text).toContain('default 90%');
+		expect(text).toContain('health strip');
 		expect(text).toContain('egress down');
 		expect(text).toContain('probe.quality config');
 	});
