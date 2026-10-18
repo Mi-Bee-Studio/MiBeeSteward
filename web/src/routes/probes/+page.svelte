@@ -292,17 +292,23 @@
 	}
 
 	// --- Category view of the report (#613): the payload carries lan,
-	// external and quality; the panel renders them in that order. The
-	// category-level vantages of quality mirror the primary group, so the
-	// panel renders the nested groups directly.
+	// external and quality. The panel renders quality (verdict-chain groups)
+	// then external — #615 removed the lan matrix from the panel; the lan
+	// category's per-vantage health is the quiet strip inside the lan list
+	// section. The category-level vantages of quality mirror the primary
+	// group, so the panel renders the nested groups directly.
 	function qualityCat(name: ProbeCategory): ProbeQualityCategory {
 		return quality?.categories?.find((c) => c.category === name) ?? { category: name, vantages: [], targets: [] };
 	}
 
-	// The two simple categories render as one compact matrix each; their
+	// External is the panel's one simple category: a compact matrix whose
 	// verdicts are plain window health (ok/degraded/insufficient).
-	const SIMPLE_CATEGORIES = ['lan', 'external'] as const;
-	// Column cap for those matrices so they stay compact; the overflow is
+	const externalCat = $derived(qualityCat('external'));
+	// LAN health strip (#615): the lan category's per-vantage verdicts feed
+	// the single badge row at the top of the lan list section — same one
+	// /probe-quality fetch the panel consumes.
+	const lanVantages = $derived(qualityCat('lan').vantages ?? []);
+	// Column cap for the compact matrix so it stays compact; the overflow is
 	// noted under the table ("+N more").
 	const MATRIX_MAX_TARGETS = 8;
 
@@ -1190,11 +1196,12 @@
 		{/snippet}
 
 		<!-- Egress quality (#608/#613): per-category vantage × target matrices
-		     with verdicts, in order lan → external → quality. The two simple
-		     categories render one compact matrix each (window health only); the
-		     quality category keeps the verdict-chain config groups (primary
-		     group leads, reference groups render visually secondary). -->
-		<div class="bg-surface border border-border rounded-lg p-4 mb-6">
+		     with verdicts — quality first (verdict-chain config groups; primary
+		     group leads, reference groups render visually secondary), then
+		     external as one compact matrix (window health only). #615: the lan
+		     category does NOT render here; its per-vantage health is the strip
+		     inside the lan list section below. -->
+		<div class="bg-surface border border-border rounded-lg p-4 mb-6" data-quality-panel>
 			<div class="flex items-center justify-between gap-4 mb-3">
 				<div>
 					<div class="flex items-center gap-1.5">
@@ -1257,25 +1264,8 @@
 			{#if quality === null && !qualityError}
 				<p class="text-xs text-muted py-2">…</p>
 			{:else}
-				<!-- lan + external: one compact window-health matrix each. -->
-				{#each SIMPLE_CATEGORIES as key (key)}
-					{@const cat = qualityCat(key)}
-					<div class="mb-3 last:mb-0">
-						<div class="flex items-center gap-2 mb-1.5">
-							<h4 class="text-xs font-semibold text-text">{categoryLabel(key)}</h4>
-						</div>
-						{#if simpleCatEmpty(cat)}
-							<p class="text-xs text-muted italic">{m['probes.Quality Cat Empty']()}</p>
-						{:else}
-							{@render qualityMatrix(
-								cat.vantages ?? [],
-								(cat.targets ?? []).slice(0, MATRIX_MAX_TARGETS),
-								Math.max(0, (cat.targets ?? []).length - MATRIX_MAX_TARGETS)
-							)}
-						{/if}
-					</div>
-				{/each}
-				<!-- quality: the egress verdict-chain groups, as before (#608). -->
+				<!-- quality: the egress verdict-chain groups, as before (#608);
+				     they lead the panel (#615). -->
 				<div class="mb-3 last:mb-0">
 					<div class="flex items-center gap-2 mb-1.5">
 						<h4 class="text-xs font-semibold text-text">{categoryLabel('quality')}</h4>
@@ -1294,6 +1284,23 @@
 								{@render qualityMatrix(g.vantages ?? [], g.targets ?? [], 0)}
 							</div>
 						{/each}
+					{/if}
+				</div>
+				<!-- external: its compact window-health matrix with verdict
+				     badges + reason chips (#615: the lan matrix left the panel —
+				     LAN health renders as the strip in the lan list section). -->
+				<div class="mb-3 last:mb-0">
+					<div class="flex items-center gap-2 mb-1.5">
+						<h4 class="text-xs font-semibold text-text">{categoryLabel('external')}</h4>
+					</div>
+					{#if simpleCatEmpty(externalCat)}
+						<p class="text-xs text-muted italic">{m['probes.Quality Cat Empty']()}</p>
+					{:else}
+						{@render qualityMatrix(
+							externalCat.vantages ?? [],
+							(externalCat.targets ?? []).slice(0, MATRIX_MAX_TARGETS),
+							Math.max(0, (externalCat.targets ?? []).length - MATRIX_MAX_TARGETS)
+						)}
 					{/if}
 				</div>
 			{/if}
@@ -1437,6 +1444,22 @@
 							</div>
 							{#if sectionsOpen[sec.key]}
 								<div id="probes-section-{sec.key}">
+									<!-- LAN health strip (#615): one quiet row of per-vantage
+									     verdict badges above the sub-table, fed by the same
+									     /probe-quality fetch the egress panel uses. No lan
+									     vantages → nothing renders. -->
+									{#if sec.key === 'lan' && lanVantages.length > 0}
+										<div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1" data-lan-health>
+											{#each lanVantages as v (v.vantage)}
+												<span class="inline-flex items-center gap-1.5">
+													<span class="text-xs text-text-muted" title="{v.network_name ? v.vantage : ''}">{vantageLabel(v)}</span>
+													<span class="badge {verdictCls(v.verdict)}" style={verdictStyle(v.verdict)}>
+														{verdictLabel(v.verdict)} · {v.score}
+													</span>
+												</span>
+											{/each}
+										</div>
+									{/if}
 									{#if sec.rows.length === 0}
 										<p class="py-2 text-xs text-text-muted italic">{categoryEmptyHint(sec.key)}</p>
 									{:else}
