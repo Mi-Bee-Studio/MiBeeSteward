@@ -38,7 +38,7 @@ func setupRealEngineProbes(t *testing.T) (*httptest.Server, *ProbeTargetHandler)
 	t.Cleanup(func() { conn.Close() })
 	queries := sqldb.New(conn)
 
-	eng := probetarget.NewEngine(queries, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	eng := probetarget.NewEngine(queries, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, 0)
 	h := NewProbeTargetHandler(probetarget.New(queries, eng), queries)
 
 	r := chi.NewMux()

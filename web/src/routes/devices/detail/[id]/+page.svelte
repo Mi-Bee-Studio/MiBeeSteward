@@ -18,10 +18,10 @@
 	import { auth } from '$lib/stores/auth';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { formatDateTime as formatTimestamp } from '$lib/utils/index';
-	import type { Device, Network, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks, DeviceSighting, DeviceInterfaceRow } from '$lib/types';
+	import type { Device, Network, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks, DeviceSighting, DeviceInterfaceRow, ProbeTarget, ProbeTargetListResponse } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
-	import { Monitor, BarChart3, FileText } from '@lucide/svelte';
+	import { Monitor, BarChart3, FileText, Activity } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -189,6 +189,88 @@
 	let deletingConfigId = $state<number | null>(null);
 	let heartbeatDeleteOpen = $state(false);
 	let deleteConfigLoading = $state(false);
+	// --- Probes bound to this device (#606) ---
+	// Read-time panel: lists /probe-targets?device_id={id} on the Overview
+	// tab. null = not loaded yet; management (enable/delete/options) stays on
+	// the /probes page, this panel only surfaces what is bound.
+	let deviceProbes = $state<ProbeTarget[] | null>(null);
+	let deviceProbesLoading = $state(false);
+
+	async function fetchDeviceProbes() {
+		if (invalidId) return;
+		deviceProbesLoading = true;
+		try {
+			const res = await api.get<ProbeTargetListResponse>(`/probe-targets/?device_id=${deviceId}&limit=50`);
+			deviceProbes = res.targets ?? [];
+		} catch {
+			deviceProbes = [];
+		} finally {
+			deviceProbesLoading = false;
+		}
+	}
+
+	// Per-service probe-create button: maps a detected service onto the probes
+	// page's prefill deep link (?create=1&module=…&target=…&device_id=…).
+	// http/https → http module with the scheme's URL; anything else on a TCP
+	// port → tcp module against ip:port.
+	function probeLinkForService(name: string | undefined, port: number | undefined): string | null {
+		const ip = device?.ip_address;
+		if (!ip || !port || invalidId) return null;
+		const n = (name || '').toLowerCase();
+		let module = 'tcp';
+		let target = `${ip}:${port}`;
+		if (n.startsWith('https')) {
+			module = 'http';
+			target = `https://${ip}:${port}/`;
+		} else if (n.startsWith('http')) {
+			module = 'http';
+			target = `http://${ip}:${port}/`;
+		}
+		return `/probes?create=1&module=${module}&target=${encodeURIComponent(target)}&device_id=${deviceId}`;
+	}
+
+	function createProbeForService(name: string | undefined, port: number | undefined) {
+		const link = probeLinkForService(name, port);
+		if (link) goto(link);
+	}
+
+	// Compact status for a bound target: mirrors the probes page's
+	// latestOverall (newest vantage track wins, center breaks ties, else the
+	// denormalized last_* fields).
+	function probeLatest(t: ProbeTarget): { status: string; latency_ms: number } | null {
+		const tracks = t.vantage_latest ?? [];
+		if (tracks.length > 0) {
+			let best = tracks[0];
+			for (const tr of tracks) {
+				if (tr.checked_at > best.checked_at || (tr.checked_at === best.checked_at && tr.vantage === 'center')) {
+					best = tr;
+				}
+			}
+			return { status: best.status, latency_ms: best.latency_ms };
+		}
+		if (!t.last_status) return null;
+		return { status: t.last_status, latency_ms: t.last_latency_ms };
+	}
+
+	// A bound target whose port dropped out of the device's latest scan (the
+	// service moved/went away but the probe still fires): subtle amber badge,
+	// read-time only. Targets without a port (icmp/dns) and devices with no
+	// port data at all never flag.
+	function probePortMissing(t: ProbeTarget): boolean {
+		if (!device) return false;
+		const m = t.target.match(/:(\d{1,5})(?:\/|\?|#|$)/);
+		if (!m) return false;
+		const port = Number(m[1]);
+		const known = new Set<number>();
+		for (const p of parseJsonArray(device.open_ports) as Array<{ port?: number }>) {
+			if (p.port) known.add(p.port);
+		}
+		for (const s of parseJsonArray(device.detected_services) as Array<{ port?: number }>) {
+			if (s.port) known.add(s.port);
+		}
+		return known.size > 0 && !known.has(port);
+	}
+
 	// --- Label state ---
 	let labelSaving = $state(false);
 
@@ -413,6 +495,8 @@
 		// the same `device` fetch, Network/Heartbeat/Config fetch on first open
 		// via setTab. This cuts the initial load from 6 parallel requests to 2.
 		fetchSystems();
+		// Probes bound to this device (Overview panel, #606).
+		fetchDeviceProbes();
 		// Header Health card probe (see heartbeatConfigCount above).
 		api.get<{ total: number }>(`/devices/${deviceId}/heartbeat-configs?limit=1`)
 			.then((res) => { heartbeatConfigCount = res.total ?? 0; })
@@ -1295,8 +1379,21 @@
 							<span class="scan-info-label">{m['scaninfo.Detected Services']()}</span>
 							<div class="flex flex-wrap gap-1 mt-1">
 								{#if parsedServices.length > 0}
-									{#each parsedServices as svc}
-										<span class="service-badge">{svc.port}/{svc.name ?? svc.protocol ?? ''}</span>
+									{#each parsedServices as svc (svc.port)}
+										<span class="service-badge inline-flex items-center gap-1">
+											{svc.port}/{svc.name ?? svc.protocol ?? ''}
+											{#if probeLinkForService(svc.name, svc.port)}
+												<button
+													type="button"
+													class="text-primary hover:text-primary/70 transition-colors"
+													title={m['devicedetail.Probe Create']()}
+													aria-label={m['devicedetail.Probe Create']() + ': ' + (svc.name ?? '') + ' ' + (svc.port ?? '')}
+													onclick={() => createProbeForService(svc.name, svc.port)}
+												>
+													<Activity class="w-3 h-3" />
+												</button>
+											{/if}
+										</span>
 									{/each}
 								{:else}
 									<span class="text-xs text-muted italic">{m['scaninfo.No Services']()}</span>
@@ -1381,20 +1478,59 @@
 			{/if}
 
 			<!-- Prometheus Labels Panel -->
-			<div class="scan-info-panel">
-				<h3 class="scan-info-title">
-					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-					{m['labels.Per Device Labels']()}
-				</h3>
-				<LabelEditor
-					labels={parseLabels(device.prometheus_labels)}
-					onSave={handleSaveLabels}
-				/>
+				<div class="scan-info-panel">
+					<h3 class="scan-info-title">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+						{m['labels.Per Device Labels']()}
+					</h3>
+					<LabelEditor
+						labels={parseLabels(device.prometheus_labels)}
+						onSave={handleSaveLabels}
+					/>
+				</div>
 			</div>
-		</div>
-	{/if}
+		{/if}
 
-	</div><!-- /overview tabpanel -->
+		<!-- Probes bound to this device (#606): compact read-only list, management
+		     lives on /probes. A bound target whose port vanished from the latest
+		     scan gets a subtle amber badge (read-time only). -->
+		{#if !invalidId}
+			<div class="scan-info-panel mt-6">
+				<h3 class="scan-info-title">
+					<Activity class="w-4 h-4 text-primary" />
+					{m['devicedetail.Probes Title']()}
+				</h3>
+				<p class="text-xs text-text-muted mb-3">{m['devicedetail.Probes Desc']()}</p>
+				{#if deviceProbes === null || deviceProbesLoading}
+					<p class="text-xs text-muted py-2">…</p>
+				{:else if deviceProbes.length === 0}
+					<p class="text-xs text-muted italic py-2">{m['devicedetail.Probes Empty']()}</p>
+				{:else}
+					<div class="divide-y divide-border/50">
+						{#each deviceProbes as pt (pt.id)}
+							{@const latest = probeLatest(pt)}
+							<div class="flex items-center gap-2 py-1.5">
+								<span class="badge badge-info uppercase !text-[0.625rem] !px-1.5">{pt.module}</span>
+								<a href="/probes" class="text-sm text-primary hover:underline truncate">{pt.name}</a>
+								<span class="font-mono text-xs text-text-muted truncate">{pt.target}</span>
+								<span class="flex-1"></span>
+								{#if probePortMissing(pt)}
+									<span class="badge badge-warning !text-[0.625rem] !px-1.5">{m['devicedetail.Probe Port Gone']()}</span>
+								{/if}
+								{#if latest}
+									<span class="badge {latest.status === 'success' ? 'badge-success' : latest.status === 'timeout' ? 'badge-warning' : 'badge-error'}">{latest.status}</span>
+								{:else}
+									<span class="badge">{m['probes.Never Run']()}</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+					<a href="/probes" class="text-xs text-primary hover:underline mt-2 inline-block">{m['devicedetail.Probes Manage']()} →</a>
+				{/if}
+			</div>
+		{/if}
+
+		</div><!-- /overview tabpanel -->
 	{/if}<!-- /overview tab -->
 
 	<!-- ── DISCOVERY TAB ── -->
@@ -1463,12 +1599,25 @@
 				<!-- Services & ports (prefer typed scan_attributes) -->
 				{#if (sa.detected_services && sa.detected_services.length > 0) || (sa.open_ports && sa.open_ports.length > 0)}
 					<div class="mt-3 pt-3 border-t border-border">
-						<h4 class="scan-info-label mb-2">{m['scaninfo.Detected Services']()}</h4>
+						<h4 class="scan-info-label mb-2">{m['scaninfo.Detected Services']}</h4>
 						<div class="flex flex-wrap gap-1">
-							{#each sa.detected_services ?? [] as svc}
-								<span class="service-badge">{svc.port}/{svc.name}{svc.protocol ? ' · ' + svc.protocol : ''}{svc.version ? ' ' + svc.version : ''}</span>
+							{#each sa.detected_services ?? [] as svc (svc.port)}
+								<span class="service-badge inline-flex items-center gap-1">
+									{svc.port}/{svc.name}{svc.protocol ? ' · ' + svc.protocol : ''}{svc.version ? ' ' + svc.version : ''}
+									{#if probeLinkForService(svc.name, svc.port)}
+										<button
+											type="button"
+											class="text-primary hover:text-primary/70 transition-colors"
+											title={m['devicedetail.Probe Create']()}
+											aria-label={m['devicedetail.Probe Create']() + ': ' + (svc.name ?? '') + ' ' + (svc.port ?? '')}
+											onclick={() => createProbeForService(svc.name, svc.port)}
+										>
+											<Activity class="w-3 h-3" />
+										</button>
+									{/if}
+								</span>
 							{/each}
-							{#each sa.open_ports ?? [] as p}
+							{#each sa.open_ports ?? [] as p (p.port)}
 								{#if !(sa.detected_services ?? []).some((s) => s.port === p.port)}
 									<span class="service-badge opacity-70">{p.port}{p.service ? '/' + p.service : ''}</span>
 								{/if}

@@ -70,6 +70,11 @@ type AgentMeta struct {
 	// FingerprintRev is the content hash of the corpus the agent currently
 	// runs (empty for old agents): powers the fleet corpus-adoption view.
 	FingerprintRev string `json:"fingerprint_rev,omitempty"`
+	// SupportedModules is the probe module set this agent binary can execute
+	// (#604), e.g. ["icmp","http","tls","tcp","dns"]. Absent on pre-0.2.0
+	// agents; the probe dispatcher then assumes the legacy set icmp/http/tls
+	// (and shields them from tcp/dns plans).
+	SupportedModules []string `json:"supported_modules,omitempty"`
 }
 
 // ReportedHost is one alive host in an AgentReport. Fields mirror what the

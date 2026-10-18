@@ -12,6 +12,7 @@ package probetarget
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -42,12 +43,25 @@ func New(queries *db.Queries, engine *Engine) *Service {
 
 // Create validates and inserts a probe target. interval/timeout zero-values
 // fall back to the schema defaults (60s/10s) rather than tripping validation.
+// API-created rows are always source=manual; auto/system rows come from their
+// own seeding paths.
 func (s *Service) Create(ctx context.Context, req domain.ProbeTargetRequest) (domain.ProbeTargetResponse, error) {
 	if err := domain.ValidateProbeTargetRequest(req); err != nil {
 		return domain.ProbeTargetResponse{}, err
 	}
 	name := strings.TrimSpace(req.Name)
 	if err := s.checkNameFree(ctx, name, 0); err != nil {
+		return domain.ProbeTargetResponse{}, err
+	}
+	var deviceID *int64
+	if req.DeviceID != nil && *req.DeviceID > 0 {
+		if err := s.checkDeviceExists(ctx, *req.DeviceID); err != nil {
+			return domain.ProbeTargetResponse{}, err
+		}
+		deviceID = req.DeviceID
+	}
+	options, err := marshalProbeOptions(req.Options)
+	if err != nil {
 		return domain.ProbeTargetResponse{}, err
 	}
 
@@ -69,6 +83,9 @@ func (s *Service) Create(ctx context.Context, req domain.ProbeTargetRequest) (do
 		Enabled:         enabled,
 		Notes:           req.Notes,
 		Vantage:         vantage,
+		Options:         options,
+		DeviceID:        deviceID,
+		Source:          domain.ProbeSourceManual,
 	})
 	if err != nil {
 		return domain.ProbeTargetResponse{}, err
@@ -125,6 +142,23 @@ func (s *Service) List(ctx context.Context, search string, limit, offset int) ([
 	return out, total, nil
 }
 
+// ListByDevice returns every target bound to one device (#606), newest
+// vantage tracks attached. Used by the device detail health panel; unpaginated
+// because a device's bound set is small by construction.
+func (s *Service) ListByDevice(ctx context.Context, deviceID int64) ([]domain.ProbeTargetResponse, int64, error) {
+	rows, err := s.queries.ListProbeTargetsByDevice(ctx, &deviceID)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]domain.ProbeTargetResponse, 0, len(rows))
+	for _, t := range rows {
+		resp := toTargetResponse(t)
+		s.attachVantageLatest(ctx, &resp)
+		out = append(out, resp)
+	}
+	return out, int64(len(out)), nil
+}
+
 // Update applies a partial update. The merged result must pass full create
 // validation (module grammar + bounds), so an edit can't smuggle in a target
 // shape the executor can't handle.
@@ -173,11 +207,37 @@ func (s *Service) Update(ctx context.Context, id int64, req domain.UpdateProbeTa
 		}
 		vantage = v
 	}
+	options := parseProbeOptions(existing.Options)
+	if req.Options != nil {
+		options = req.Options
+	} else if module != existing.Module {
+		// A module switch invalidates the old module's options: without an
+		// explicit options payload in the same request they are cleared, so
+		// a partial-update client cannot strand e.g. dns fields on a tcp
+		// target (the per-module gating would then be unsatisfiable).
+		options = nil
+	}
+	deviceID := existing.DeviceID
+	if req.DeviceID != nil {
+		if *req.DeviceID > 0 {
+			if err := s.checkDeviceExists(ctx, *req.DeviceID); err != nil {
+				return domain.ProbeTargetResponse{}, err
+			}
+			deviceID = req.DeviceID
+		} else {
+			deviceID = nil // explicit 0 clears the binding (#606)
+		}
+	}
+	optionsJSON, err := marshalProbeOptions(options)
+	if err != nil {
+		return domain.ProbeTargetResponse{}, err
+	}
 
 	if err := domain.ValidateProbeTargetRequest(domain.ProbeTargetRequest{
 		Name: name, Module: module, Target: target,
 		IntervalSeconds: int(interval), TimeoutSeconds: int(timeout),
 		Enabled: &enabled, Notes: notes, Vantage: vantage,
+		Options: options,
 	}); err != nil {
 		return domain.ProbeTargetResponse{}, err
 	}
@@ -196,6 +256,8 @@ func (s *Service) Update(ctx context.Context, id int64, req domain.UpdateProbeTa
 		Enabled:         existing.Enabled, // toggled separately below (same split as scan tasks)
 		Notes:           notes,
 		Vantage:         vantage,
+		Options:         optionsJSON,
+		DeviceID:        deviceID,
 		ID:              id,
 	})
 	if err != nil {
@@ -343,7 +405,7 @@ func (s *Service) attachVantageLatest(ctx context.Context, resp *domain.ProbeTar
 }
 
 func toTargetResponse(t db.ProbeTarget) domain.ProbeTargetResponse {
-	return domain.ProbeTargetResponse{
+	resp := domain.ProbeTargetResponse{
 		ID:              t.ID,
 		Name:            t.Name,
 		Module:          t.Module,
@@ -359,7 +421,66 @@ func toTargetResponse(t db.ProbeTarget) domain.ProbeTargetResponse {
 		CreatedAt:       t.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:       t.UpdatedAt.UTC().Format(time.RFC3339),
 		Vantage:         t.Vantage,
+		Options:         parseProbeOptions(t.Options),
+		Source:          t.Source,
 	}
+	if t.DeviceID != nil {
+		resp.DeviceID = *t.DeviceID
+	}
+	return resp
+}
+
+// marshalProbeOptions serializes an option block for the DB column. A nil or
+// empty struct marshals to "" so pre-#605 rows and option-less rows are
+// indistinguishable (and the wire spec omits the field entirely).
+func marshalProbeOptions(opts *domain.ProbeOptions) (string, error) {
+	if probeOptionsEmpty(opts) {
+		return "", nil
+	}
+	b, err := json.Marshal(opts)
+	if err != nil {
+		return "", fmt.Errorf("options: %w", err)
+	}
+	return string(b), nil
+}
+
+// parseProbeOptions decodes the stored option block; empty/unparseable rows
+// yield nil (the legacy shape) rather than an error - the executor treats a
+// nil block as plain pre-#605 semantics and the UI hides the section.
+func parseProbeOptions(s string) *domain.ProbeOptions {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var opts domain.ProbeOptions
+	if err := json.Unmarshal([]byte(s), &opts); err != nil {
+		return nil
+	}
+	if probeOptionsEmpty(&opts) {
+		return nil
+	}
+	return &opts
+}
+
+// probeOptionsEmpty reports whether an option block carries no semantic
+// content (all fields zero). Slices forbid struct equality, hence the
+// explicit field walk.
+func probeOptionsEmpty(o *domain.ProbeOptions) bool {
+	return o == nil || (o.Method == "" && len(o.ExpectedStatus) == 0 && o.Keyword == "" &&
+		o.KeywordMode == "" && !o.IgnoreTLSErrors && o.Record == "" && o.Resolver == "" &&
+		len(o.ExpectedIPs) == 0 && o.Send == "" && o.Expect == "" && o.ExpectMode == "")
+}
+
+// checkDeviceExists guards the device binding (#606): a bound target whose
+// device vanished would silently become a floating row, so reject the write.
+func (s *Service) checkDeviceExists(ctx context.Context, id int64) error {
+	_, err := s.queries.GetDevice(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("device %d does not exist", id)
+		}
+		return err
+	}
+	return nil
 }
 
 func toResultResponse(r db.ProbeResult) domain.ProbeResultResponse {

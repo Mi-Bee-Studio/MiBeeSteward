@@ -154,7 +154,9 @@ func Seed(ctx context.Context, dbConn *sql.DB, logger *slog.Logger) error {
 	exec(`INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, created_at, updated_at)
 		VALUES ('demo-api', 'http', 'https://example.org/healthz', 60, 10, 1, datetime('now'), datetime('now'))`)
 	exec(`INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, created_at, updated_at)
-		VALUES ('demo-dns', 'tcp', '203.0.113.10:53', 60, 5, 1, datetime('now'), datetime('now'))`)
+		VALUES ('demo-dns', 'dns', 'example.com', 60, 5, 1, datetime('now'), datetime('now'))`)
+	exec(`INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, created_at, updated_at)
+		VALUES ('demo-tcp-dns', 'tcp', '203.0.113.10:53', 60, 5, 1, datetime('now'), datetime('now'))`)
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM probe_targets`)
 	if err == nil {
 		var ids []int64

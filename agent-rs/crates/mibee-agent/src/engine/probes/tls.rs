@@ -378,7 +378,13 @@ pub async fn cert_probe(
     timeout: Duration,
 ) -> Option<BTreeMap<String, String>> {
     use tokio::io::AsyncReadExt;
-    let addr = SocketAddr::new(host.parse().ok()?, port);
+    // IP literals connect directly; a hostname resolves first (#604: the
+    // center-side dialer always could). SNI below keeps the hostname form.
+    let ip: IpAddr = match host.parse() {
+        Ok(ip) => ip,
+        Err(_) => resolve_host(host).await?,
+    };
+    let addr = SocketAddr::new(ip, port);
     let sock = tokio::time::timeout(timeout, TcpStream::connect(addr)).await.ok()?.ok()?;
     let config = any_cert_client();
     let server_name = rustls::pki_types::ServerName::try_from(host.to_string()).ok()?;
@@ -388,9 +394,7 @@ pub async fn cert_probe(
         .ok()?
         .ok()?;
     use tokio::io::AsyncWriteExt;
-    let _ = stream.write_all(b"HEAD / HTTP/1.0
-
-").await;
+    let _ = stream.write_all(b"HEAD / HTTP/1.0\r\n\r\n").await;
     let mut sink = [0u8; 16];
     let _ = tokio::time::timeout(Duration::from_millis(200), stream.read(&mut sink)).await;
     let (io, session) = stream.get_ref();
@@ -409,4 +413,55 @@ pub async fn cert_probe(
         fields.insert("_version".into(), version.to_string());
     }
     Some(fields)
+}
+
+/// System-resolver hostname → first IP (blocking getaddrinfo off the async
+/// path). Shared by the prober's icmp/tls hostname targets (#604).
+pub async fn resolve_host(host: &str) -> Option<IpAddr> {
+    let host = host.to_string();
+    tokio::task::spawn_blocking(move || {
+        use std::net::ToSocketAddrs;
+        (host.as_str(), 0)
+            .to_socket_addrs()
+            .ok()?
+            .next()
+            .map(|sa| sa.ip())
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Verifying TLS handshake against the webpki root store — the prober's
+/// `cert_trusted` verdict (#604 parity with the center's two-pass
+/// chainIsTrusted). Ok(()) = the chain validates for this server name.
+pub async fn tls_verify_handshake(host: &str, port: u16, timeout: Duration) -> Result<(), String> {
+    crate::tls_provider::ensure_tls_provider();
+    let ip: IpAddr = match host.parse() {
+        Ok(ip) => ip,
+        Err(_) => resolve_host(host).await.ok_or_else(|| "resolve host: no address".to_string())?,
+    };
+    let addr = SocketAddr::new(ip, port);
+    let sock = tokio::time::timeout(timeout, TcpStream::connect(addr))
+        .await
+        .map_err(|_| "connect timeout".to_string())?
+        .map_err(|e| e.to_string())?;
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
+        .map_err(|e| e.to_string())?;
+    let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
+    let mut stream = tokio::time::timeout(timeout, connector.connect(server_name, sock))
+        .await
+        .map_err(|_| "handshake timeout".to_string())?
+        .map_err(|e| format!("invalid peer certificate: {e}"))?;
+    // Drain politely then drop.
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let _ = stream.write_all(b"HEAD / HTTP/1.0\r\n\r\n").await;
+    let mut sink = [0u8; 16];
+    let _ = stream.read(&mut sink).await;
+    Ok(())
 }

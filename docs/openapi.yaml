@@ -907,6 +907,18 @@ paths:
       responses:
         "200": {description: File download}
 
+  /probe-quality:
+    get:
+      tags: [ProbeTargets]
+      summary: Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
+      parameters:
+        - {name: window, in: query, schema: {type: integer}, description: "lookback minutes (5-1440, default from probe.quality.window_minutes)"}
+      responses:
+        "200":
+          description: Quality report
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeQualityReport"}
   /probe-targets:
     get:
       tags: [ProbeTargets]
@@ -915,6 +927,7 @@ paths:
         - {$ref: "#/components/parameters/limit"}
         - {$ref: "#/components/parameters/offset"}
         - {name: search, in: query, schema: {type: string}}
+        - {name: device_id, in: query, schema: {type: integer, format: int64}, description: "Filter to targets bound to one device (#606); pagination fields are advisory for this shape"}
       responses:
         "200":
           description: Targets envelope
@@ -923,7 +936,7 @@ paths:
               schema: {$ref: "#/components/schemas/ProbeTargetList"}
     post:
       tags: [ProbeTargets]
-      summary: Create a probe target (http/tcp/icmp/snmp; vantage center|agent:..|all)
+      summary: Create a probe target (http/tls/tcp/icmp/dns; vantage center|agent:..|all)
       responses:
         "201":
           description: Created target
@@ -2336,12 +2349,12 @@ components:
     ProbeTarget:
       type: object
       description: Synthetic-probe target. module (NOT method) selects the executor; last_* denormalize the newest outcome (empty/0 = never probed).
-      required: [id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_latency_ms, created_at, updated_at, vantage]
+      required: [id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_latency_ms, created_at, updated_at, vantage, source]
       properties:
         id: {type: integer, format: int64}
         name: {type: string}
-        module: {type: string, enum: [http, tls, tcp, icmp]}
-        target: {type: string, description: "URL (http), host:port (tls/tcp), host/IP (icmp)"}
+        module: {type: string, enum: [http, tls, tcp, icmp, dns]}
+        target: {type: string, description: "URL (http), host:port (tls/tcp), host/IP (icmp), bare domain (dns)"}
         interval_seconds: {type: integer}
         timeout_seconds: {type: integer}
         enabled: {type: boolean}
@@ -2357,6 +2370,25 @@ components:
           type: array
           description: Newest result per vantage track (agent tracks included); omitted when the target has no history yet. last_* mirrors the center track only.
           items: {$ref: "#/components/schemas/ProbeVantageLatest"}
+        options:
+          $ref: "#/components/schemas/ProbeOptions"
+        device_id: {type: integer, format: int64, description: "Bound device (#606); omitted when the target is free (unbound)"}
+        source: {type: string, enum: [manual, auto, system], description: "'manual' (user) | 'auto' (policy-generated from discovered services, #606) | 'system' (built-in egress-quality matrix, #608)"}
+    ProbeOptions:
+      type: object
+      description: "Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free."
+      properties:
+        method: {type: string, enum: [GET, HEAD], description: "http only; default GET"}
+        expected_status: {type: array, items: {type: integer}, description: "http only; exact allowed status codes (e.g. [200,204]); empty = status < 400"}
+        keyword: {type: string, description: "http only; body match after the status check"}
+        keyword_mode: {type: string, enum: [contains, not_contains, regex], description: "default contains"}
+        ignore_tls_errors: {type: boolean, description: "http only; default false = verify TLS (agent parity)"}
+        record: {type: string, enum: [A, AAAA, CNAME, TXT], description: "dns only; default A"}
+        resolver: {type: string, description: "dns only; host[:port] resolver to query, empty = system default"}
+        expected_ips: {type: array, items: {type: string}, description: "dns only; A/AAAA answers must intersect this set"}
+        send: {type: string, description: "tcp only; ASCII payload written right after connect"}
+        expect: {type: string, description: "tcp only; banner match against the first bytes read"}
+        expect_mode: {type: string, enum: [contains, regex], description: "tcp only; default contains"}
     ProbeVantageLatest:
       type: object
       description: Newest probe outcome of one executor's track.
@@ -2394,6 +2426,51 @@ components:
         - type: object
           properties:
             results: {type: array, items: {$ref: "#/components/schemas/ProbeResult"}}
+    ProbeQualityReport:
+      type: object
+      description: "Egress-quality analysis (#608): per-group, per-vantage verdicts computed read-time over the window's probe_results. Verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok; reasons are stable codes for UI localization."
+      required: [window_minutes, groups]
+      properties:
+        window_minutes: {type: integer}
+        groups:
+          type: array
+          items: {$ref: "#/components/schemas/ProbeQualityGroup"}
+    ProbeQualityGroup:
+      type: object
+      required: [name, role, vantages, targets]
+      properties:
+        name: {type: string}
+        role: {type: string, enum: [primary, reference], description: "primary = the network verdict; reference groups are displayed separately"}
+        vantages: {type: array, items: {$ref: "#/components/schemas/ProbeQualityVantage"}}
+        targets: {type: array, items: {$ref: "#/components/schemas/ProbeQualityTarget"}}
+    ProbeQualityVantage:
+      type: object
+      required: [vantage, verdict, score, reasons]
+      properties:
+        vantage: {type: string, description: "'center' or 'agent:{id}'"}
+        network_name: {type: string}
+        verdict: {type: string, enum: [ok, degraded, egress_down, dns_fault, upstream_resolver, insufficient]}
+        score: {type: integer, description: 0-100}
+        reasons: {type: array, items: {type: string}, description: stable reason codes}
+    ProbeQualityTarget:
+      type: object
+      required: [name, module, target, cross_vantage, per_vantage]
+      properties:
+        name: {type: string}
+        module: {type: string}
+        target: {type: string}
+        cross_vantage: {type: string, enum: [ok, target_down, mixed, no_data], description: "target-side isolation - failing everywhere blames the target, not the networks"}
+        per_vantage:
+          type: object
+          additionalProperties: {$ref: "#/components/schemas/ProbeQualityTrack"}
+    ProbeQualityTrack:
+      type: object
+      required: [ok_rate, p50_ms, samples]
+      properties:
+        ok_rate: {type: number}
+        p50_ms: {type: number}
+        samples: {type: integer}
+        last_status: {type: string}
 
     SNMPCredential:
       type: object

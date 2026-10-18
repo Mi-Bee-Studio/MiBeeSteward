@@ -194,7 +194,9 @@ mibee-agent snmp-credential -config /etc/mibee/agent.yaml -action remove -name s
 - `agent:{agent_id}`：指定 agent 执行；中心拒绝在本地跑此类目标（手动触发返回 409 `ErrProbeVantageNotLocal`）。
 - `all`：中心与所有已注册 agent 各跑一条轨道。
 
-调度器经命令通道向每个 agent 下发其探测计划（按指纹去重，稳态零命令流量）；`all` 计划按 agent 分别盖章，结果落入各自轨道。agent 用与中心**相同的执行内核**跑探测，批量 POST 到 `POST /api/v1/agents/probe-report`--agent token 认证，且上报者的身份会覆盖 payload 里声称的任何 vantage（agent 永远只能写自己的轨道）。
+调度器经命令通道向每个 agent 下发其探测计划（按指纹去重，稳态零命令流量）；`all` 计划按 agent 分别盖章，结果落入各自轨道。agent 用与中心**相同的执行语义**跑探测，批量 POST 到 `POST /api/v1/agents/probe-report`--agent token 认证，且上报者的身份会覆盖 payload 里声称的任何 vantage（agent 永远只能写自己的轨道）。
+
+**能力协商（#604）**：每个 agent 声明自己的拨测模块集（上报 meta 里的 `supported_modules`，中心记入 `agent_status`），调度器据此过滤计划--agent 永远不会收到它无法执行的目标。未声明能力的旧 agent（≤0.1.x）按 `{icmp, http, tls}` 假定，tcp/dns 计划会被扣留并在中心日志打一次性升级提示：0.2.0 之前的 agent 收到 tcp 计划只会以「unknown module」失败（一个真实 bug），调度器选择先挡住、而不是放任目标变红。**tcp 或 dns 的 vantage 目标要求 mibee-agent 0.2.0+**--该版本同时带来：http 探测默认校验 TLS（旧 agent 接受任意证书；`ignore_tls_errors` 是按目标的显式豁免）、icmp/tls 支持主机名（系统解析器）、真实 webpki-roots 信任判定、失败上报批次进有界重试队列而非丢弃、以及首次运行的确定性错峰。
 
 中心侧结果按 `(target, vantage)` 维度入库。拨测页全程按视角展示：目标表单提供视角选择器；目标列表按轨道逐行显示状态（列表/详情响应的 `vantage_latest`，agent-only 目标的 `last_*` 只由中心写、不会更新，agent 结果靠它才可见），轨道间成功与否不一致时高亮；历史弹窗默认图表页签（各轨道延迟折线，失败断线；agent 轨道用虚线和独立符号，与 center 重叠时仍可分辨），下方状态色块时间线带成功率，原始明细保留在独立页签。全部 `mibee_probe_*` 指标带 `vantage` 标签。不做调度强一致：agent 离线只是停止为其轨道贡献样本。
 

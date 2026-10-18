@@ -25,6 +25,11 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 # provider instead — same code, target-conditional provider dep below.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots-no-provider"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["tls12"] }
+# WebPKI root store for the prober's VERIFYING handshake (#604): same roots
+# reqwest uses, depended on directly so tls_verify_handshake can build its
+# own rustls ClientConfig.
+webpki-roots = "0.26"
+regex = { workspace = true }
 x509-parser = "0.16"
 socket2 = "0.5"
 futures = "0.3"

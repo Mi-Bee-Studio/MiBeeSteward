@@ -33,15 +33,18 @@ type CommandEnqueuer interface {
 
 // Spec is ONE target's execution definition as shipped to an agent
 // inside the "probe" command payload. The agent runs it on its own schedule
-// and reports results tagged with the vantage it was given.
+// and reports results tagged with the vantage it was given. Options rides
+// along as raw JSON (already validated at CRUD time) so the agent codec sees
+// exactly what the center validated - the Rust side decodes the same shape.
 type Spec struct {
-	ID              int64  `json:"id"`
-	Name            string `json:"name"`
-	Module          string `json:"module"`
-	Target          string `json:"target"`
-	IntervalSeconds int    `json:"interval_seconds"`
-	TimeoutSeconds  int    `json:"timeout_seconds"`
-	Vantage         string `json:"vantage"`
+	ID              int64           `json:"id"`
+	Name            string          `json:"name"`
+	Module          string          `json:"module"`
+	Target          string          `json:"target"`
+	IntervalSeconds int             `json:"interval_seconds"`
+	TimeoutSeconds  int             `json:"timeout_seconds"`
+	Vantage         string          `json:"vantage"`
+	Options         json.RawMessage `json:"options,omitempty"`
 }
 
 // planRefreshInterval bounds how long a restarted agent stays planless. The
@@ -50,6 +53,13 @@ type Spec struct {
 // sent, so unchanged plans are re-shipped periodically (re-applying a plan is
 // a no-op on the agent).
 const planRefreshInterval = 5 * time.Minute
+
+// legacySupportedModules is the assumed capability set of an agent that never
+// reported capabilities (#604): exactly what the historical agent binary could
+// execute. tcp is absent on purpose - pre-capability agents fail tcp probes
+// with "unknown module" (a live bug), so the dispatcher shields them from tcp
+// plans until they upgrade and declare support.
+var legacySupportedModules = map[string]bool{"icmp": true, "http": true, "tls": true}
 
 // AgentDispatcher ships vantage probe plans to agents over the command
 // channel (#277 step 2). It is NOT a scheduler: agents run their own
@@ -66,6 +76,9 @@ type AgentDispatcher struct {
 	lastFingerprint map[string]string
 	// lastSentAt per agentID of that enqueue, for the periodic refresh.
 	lastSentAt map[string]time.Time
+	// lastHeldBack per agentID of the module-unsupported targets held back on
+	// the last tick, so the upgrade hint logs once per change, not every tick.
+	lastHeldBack map[string]int
 }
 
 func NewAgentDispatcher(queries *db.Queries, enqueue CommandEnqueuer, logger *slog.Logger) *AgentDispatcher {
@@ -78,13 +91,16 @@ func NewAgentDispatcher(queries *db.Queries, enqueue CommandEnqueuer, logger *sl
 		logger:          logger,
 		lastFingerprint: make(map[string]string),
 		lastSentAt:      make(map[string]time.Time),
+		lastHeldBack:    make(map[string]int),
 	}
 }
 
 // DispatchTick lists enabled targets, groups the agent-vantage ones
 // ('agent:{id}' exclusively, 'all' additionally to the center track) per
 // agent, and enqueues a "probe" plan for any agent whose plan changed.
-// Called on the same 10s cadence as the engine tick by the center wiring.
+// Targets whose module the agent cannot execute are held back per its
+// declared capabilities (#604). Called on the same 10s cadence as the engine
+// tick by the center wiring.
 func (d *AgentDispatcher) DispatchTick(ctx context.Context) {
 	targets, err := d.queries.ListEnabledProbeTargets(ctx)
 	if err != nil {
@@ -92,21 +108,30 @@ func (d *AgentDispatcher) DispatchTick(ctx context.Context) {
 		return
 	}
 	agents := d.knownAgents(ctx)
+	caps := d.agentCapabilities(ctx)
 
 	perAgent := make(map[string][]db.ProbeTarget)
+	heldBack := make(map[string]int)
+	ship := func(agentID string, t db.ProbeTarget) {
+		if !agentSupports(caps, agentID, t.Module) {
+			heldBack[agentID]++
+			return
+		}
+		perAgent[agentID] = append(perAgent[agentID], t)
+	}
 	for _, t := range targets {
 		switch {
 		case t.Vantage == domain.ProbeVantageAll:
 			// 'all' runs on every known agent in addition to the center.
 			for _, agentID := range agents {
-				perAgent[agentID] = append(perAgent[agentID], t)
+				ship(agentID, t)
 			}
 		case strings.HasPrefix(t.Vantage, domain.ProbeVantageAgentPrefix):
 			agentID := strings.TrimPrefix(t.Vantage, domain.ProbeVantageAgentPrefix)
 			if agentID == "" {
 				continue
 			}
-			perAgent[agentID] = append(perAgent[agentID], t)
+			ship(agentID, t)
 		}
 	}
 
@@ -128,6 +153,19 @@ func (d *AgentDispatcher) DispatchTick(ctx context.Context) {
 			d.logger.Warn("probe dispatch: clear plan failed", "agent_id", agentID, "error", err)
 		}
 	}
+	// Capability hold-back bookkeeping: log a change once (upgrade hint), not
+	// on every 10s tick; a clean agent drops its stale hint.
+	for _, agentID := range agents {
+		n := heldBack[agentID]
+		if d.lastHeldBack[agentID] != n {
+			if n > 0 {
+				d.logger.Warn("probe dispatch: agent lacks module support, targets held back",
+					"agent_id", agentID, "held_back", n,
+					"hint", "upgrade to mibee-agent 0.2.0+ for tcp/dns execution")
+			}
+			d.lastHeldBack[agentID] = n
+		}
+	}
 }
 
 // knownAgents returns the agent IDs that currently have a network bound
@@ -147,16 +185,57 @@ func (d *AgentDispatcher) knownAgents(ctx context.Context) []string {
 	return ids
 }
 
+// agentCapabilities reads the per-agent declared probe module set from
+// agent_status (#604). Agents that never reported capabilities are absent
+// from the map and fall back to legacySupportedModules at the call site.
+func (d *AgentDispatcher) agentCapabilities(ctx context.Context) map[string]map[string]bool {
+	rows, err := d.queries.ListAgentStatus(ctx)
+	if err != nil {
+		d.logger.Warn("probe dispatch: list agent status failed", "error", err)
+		return nil
+	}
+	caps := make(map[string]map[string]bool, len(rows))
+	for _, r := range rows {
+		if strings.TrimSpace(r.SupportedModules) == "" {
+			continue
+		}
+		set := make(map[string]bool)
+		for _, m := range strings.Split(r.SupportedModules, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				set[m] = true
+			}
+		}
+		if len(set) > 0 {
+			caps[r.AgentID] = set
+		}
+	}
+	return caps
+}
+
+// agentSupports decides whether one agent may execute one module: its
+// declared set when it reported capabilities, the legacy set otherwise.
+func agentSupports(caps map[string]map[string]bool, agentID, module string) bool {
+	if set, ok := caps[agentID]; ok {
+		return set[module]
+	}
+	return legacySupportedModules[module]
+}
+
 // sendPlan enqueues a "probe" command for one agent when (and only when) the
 // plan content changed. The payload carries the plan's fingerprint so the
 // agent can log a repeated plan.
 func (d *AgentDispatcher) sendPlan(ctx context.Context, agentID string, list []db.ProbeTarget) error {
 	specs := make([]Spec, 0, len(list))
 	for _, t := range list {
+		var opts json.RawMessage
+		if strings.TrimSpace(t.Options) != "" {
+			opts = json.RawMessage(t.Options)
+		}
 		specs = append(specs, Spec{
 			ID: t.ID, Name: t.Name, Module: t.Module, Target: t.Target,
 			IntervalSeconds: int(t.IntervalSeconds), TimeoutSeconds: int(t.TimeoutSeconds),
 			Vantage: agentVantageFor(t.Vantage, agentID),
+			Options: opts,
 		})
 	}
 	sort.Slice(specs, func(i, j int) bool { return specs[i].ID < specs[j].ID })

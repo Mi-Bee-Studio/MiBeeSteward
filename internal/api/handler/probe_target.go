@@ -56,7 +56,9 @@ func (h *ProbeTargetHandler) CreateTarget(w http.ResponseWriter, r *http.Request
 	Created(w, resp)
 }
 
-// ListTargets handles GET /api/v1/probe-targets
+// ListTargets handles GET /api/v1/probe-targets. Optional device_id filter
+// narrows to one device's bound targets (#606); search + pagination apply to
+// the unfiltered listing as before.
 func (h *ProbeTargetHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, offset, ok := ParsePagination(w, r, 20, 100)
@@ -64,6 +66,21 @@ func (h *ProbeTargetHandler) ListTargets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	search := q.Get("search")
+
+	if device := q.Get("device_id"); device != "" {
+		deviceID, err := strconv.ParseInt(device, 10, 64)
+		if err != nil || deviceID <= 0 {
+			Error(w, http.StatusBadRequest, "device_id must be a positive integer")
+			return
+		}
+		targets, total, err := h.service.ListByDevice(r.Context(), deviceID)
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "failed to list probe targets")
+			return
+		}
+		SuccessList(w, "targets", targets, total, limit, offset)
+		return
+	}
 
 	targets, total, err := h.service.List(r.Context(), search, int(limit), int(offset))
 	if err != nil {

@@ -3596,7 +3596,7 @@ Get device heartbeat results.
 
 
 
-Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style), typically external/internet resources. Four modules: `http` / `tls` / `tcp` / `icmp`. The `tls` module, and https-flavored `http` targets, collect the full certificate chain (reusing the scanner's internal cert inventory for external hosts; results carry a trust verdict and TLS version). Reads (`CapProbeRead`) are available to any logged-in user; writes (`CapProbeManage`) require operator and above.
+Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style), typically external/internet resources. Five modules: `http` / `tls` / `tcp` / `icmp` / `dns` (bare-domain DNS resolution with optional pinned resolver and expected-IP assertions). The `tls` module, and https-flavored `http` targets, collect the full certificate chain (reusing the scanner's internal cert inventory for external hosts; results carry a trust verdict and TLS version). Targets may carry a per-module `options` object (#605) — http method/expected statuses/body keyword/ignore-TLS-errors, dns record/resolver/expected IPs, tcp send/expect — and bind to a discovered device via `device_id` (#606); every response carries `source` (`manual` / `auto` / `system`). Options deliberately hold no credentials or auth headers: they are plaintext in the DB and ride the secret-free agent command channel. Reads (`CapProbeRead`) are available to any logged-in user; writes (`CapProbeManage`) require operator and above. Field-level documentation lives in [openapi.yaml](https://github.com/Mi-Bee-Studio/MiBeeSteward/blob/main/docs/openapi.yaml) (`ProbeTarget` / `ProbeOptions` / `ProbeQualityReport`).
 
 
 
@@ -3608,7 +3608,7 @@ Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style)
 |----------|--------|------|-------------|
 
 
-| `/api/v1/probe-targets/` | GET | Auth · `CapProbeRead` | List targets (`limit`/`offset`/`search`) |
+| `/api/v1/probe-targets/` | GET | Auth · `CapProbeRead` | List targets (`limit`/`offset`/`search`, optional `device_id` filter #606) |
 
 
 | `/api/v1/probe-targets/` | POST | Operator+ · `CapProbeManage` | Create a probe target |
@@ -3617,7 +3617,7 @@ Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style)
 | `/api/v1/probe-targets/{id}` | GET | Auth · `CapProbeRead` | Get one target |
 
 
-| `/api/v1/probe-targets/{id}` | PUT | Operator+ · `CapProbeManage` | Update (partial; nil fields unchanged) |
+| `/api/v1/probe-targets/{id}` | PUT | Operator+ · `CapProbeManage` | Update (partial; nil fields unchanged; `device_id: 0` clears the binding) |
 
 
 | `/api/v1/probe-targets/{id}` | DELETE | Operator+ · `CapProbeManage` | Delete target (with its result history and stored certificate chain) |
@@ -3632,7 +3632,7 @@ Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style)
 | `/api/v1/probe-targets/{id}/certificates` | GET | Auth · `CapProbeRead` | Current certificate chain (same shape as the device endpoint) |
 
 
-
+| `/api/v1/probe-quality` | GET | Auth · `CapProbeRead` | Egress-quality analysis (#608): per-group, per-vantage verdicts over the built-in probe-point matrix (optional `window` minutes) |
 
 
 ### POST /api/v1/probe-targets/
@@ -3695,10 +3695,10 @@ Create a probe target.
 - `name` (required, globally unique): target name (also the Prometheus metric label)
 
 
-- `module` (required): `http` | `tls` | `tcp` | `icmp`
+- `module` (required): `http` | `tls` | `tcp` | `icmp` | `dns`
 
 
-- `target` (required, module-validated): `http` needs a full http(s) URL; `tls`/`tcp` need host:port (port 1–65535); `icmp` needs a bare host or IP
+- `target` (required, module-validated): `http` needs a full http(s) URL; `tls`/`tcp` need host:port (port 1–65535); `icmp` needs a bare host or IP; `dns` needs a bare domain (no port, no path — the resolver is an option, not part of the target)
 
 
 - `interval_seconds` (optional, default 60): probe interval, 10–86400 seconds
@@ -3713,10 +3713,16 @@ Create a probe target.
 - `vantage` (optional, default `center`): execution plan, `center` (this instance probes), `agent:{agent_id}` (that agent executes over the distributed command channel; the center refuses local execution, so manual trigger returns 409), or `all` (center + every registered agent; each track's rows are stamped `center` / `agent:{id}`, see [Distributed](distributed.md#vantage-probing-277))
 
 
+- `options` (optional, per-module, #605): http — `method` (`GET`/`HEAD`), `expected_status` (exact allowed codes, e.g. `[200,204]`; empty = status < 400), `keyword` + `keyword_mode` (`contains`/`not_contains`/`regex`), `ignore_tls_errors` (default false = verify TLS); dns — `record` (`A`/`AAAA`/`CNAME`/`TXT`), `resolver` (`host[:port]`, empty = system resolver), `expected_ips` (A/AAAA answers must intersect, ≤8 entries); tcp — `send` (payload written after connect), `expect` + `expect_mode` (`contains`/`regex`) banner match. `icmp`/`tls` take no options. Fields foreign to the module are rejected, and no credentials/auth headers exist by design (options are plaintext in the DB and ride the secret-free agent command channel verbatim).
+
+
+- `device_id` (optional, #606): bind the target to a discovered asset; `GET /probe-targets?device_id=` filters by it, and device deletion unbinds (auto-generated targets are disabled, manual ones keep running).
 
 
 
-**Response**: `201 Created` with ProbeTargetResponse (including the denormalized `last_run_at`/`last_status`/`last_latency_ms`/`last_error`, which mirror the CENTER track only; plus `vantage_latest`, the newest result row of every vantage track with agent tracks included, omitted when there is no history yet).
+
+
+**Response**: `201 Created` with ProbeTargetResponse (including the denormalized `last_run_at`/`last_status`/`last_latency_ms`/`last_error`, which mirror the CENTER track only; plus `vantage_latest`, the newest result row of every vantage track with agent tracks included, omitted when there is no history yet; plus `options`, `device_id` (omitted when unbound), and `source` — `manual` / `auto` (autogen, #606) / `system` (egress-quality matrix, #608)).
 
 
 
@@ -3801,6 +3807,26 @@ The target's current certificate chain (leaf + intermediates/root, with SAN/seri
 
 
 Related metrics: `mibee_probe_up{name,module}`, `mibee_probe_duration_seconds`, `mibee_probe_cert_expiry_timestamp_seconds`, `mibee_probe_checks_total{status,module}` (see [Metrics & Service Discovery](#metrics--service-discovery)).
+
+
+
+
+
+### GET /api/v1/probe-quality
+
+
+
+Network egress quality (#608), read-time analysis over the `probe.quality` matrix's recent results. Optional `window` query parameter overrides the lookback (minutes, default `probe.quality.window_minutes`).
+
+
+
+
+
+**Authenticated** · `CapProbeRead`
+
+
+
+**Response** shape (details in [openapi.yaml](https://github.com/Mi-Bee-Studio/MiBeeSteward/blob/main/docs/openapi.yaml), `ProbeQualityReport`): `window_minutes` plus `groups[]`, one per configured group — the reserved `domestic` group is `role: primary` (its verdict IS the network's verdict), every other group (default `international`) is `role: reference` (displayed separately; cross-border variance is its own signal, not an egress fault). Each group carries `vantages[]` (`vantage`, `network_name`, `verdict`, `score` 0–100, `reasons[]` stable codes such as `egress_down.all_paths_failing` / `dns_fault.direct_ok_name_resolution_dead` / `upstream_resolver.failing:<target>` / `ok_rate_low` / `latency_high` / `insufficient_data`) and `targets[]` with per-vantage window stats (`ok_rate`, `p50_ms`, `samples`) plus a `cross_vantage` isolation verdict (`ok` / `target_down` / `mixed` / `no_data` — failing EVERYWHERE blames the target and excludes it from network verdicts; meaningful only with more than one reporting vantage). The verdict chain is deterministic: `egress_down > dns_fault > upstream_resolver > degraded > ok`. The same verdicts/scores are exported as `mibee_probe_egress_verdict{vantage,group,verdict}` / `mibee_probe_quality_score{vantage,group}` gauges — metrics only, no notification wiring by design.
 
 
 

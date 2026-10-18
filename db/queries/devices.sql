@@ -133,3 +133,15 @@ SET status = ?,
     END,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
+
+-- name: ListDevicesForProbeAutogen :many
+-- Discover-then-probe autogen source (#606): devices carrying classified
+-- service identities. detected_services is the JSON array BOTH write paths
+-- populate (the agent-report bridge and the local/passive identify), unlike
+-- host_services whose device_uuid backfill only heals on rewrite cycles that
+-- agent-fed networks never run - it also carries the owning device_id
+-- directly, so no identity join is needed.
+SELECT id, type, ip_address, network_id, detected_services
+FROM devices
+WHERE detected_services != '[]' AND detected_services != ''
+ORDER BY id;

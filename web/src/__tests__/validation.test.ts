@@ -24,6 +24,7 @@ import {
 	agentTokenSchema,
 	notificationChannelSchema,
 	scannerTaskSchema,
+	probeTargetSchema,
 	validateField,
 	validateForm,
 	validateScanTarget,
@@ -756,5 +757,122 @@ describe('scannerTaskSchema', () => {
 		if (!result.success) {
 			expect(result.error.issues.some((i) => i.message === 'validation.Timeout Range Task')).toBe(true);
 		}
+	});
+});
+
+// --- probeTargetSchema (#605: dns module grammar + per-module options) ---
+
+describe('probeTargetSchema', () => {
+	const base = {
+		name: 'site-http',
+		module: 'http',
+		target: 'https://example.com/healthz',
+		interval_seconds: 60,
+		timeout_seconds: 10
+	};
+
+	it('accepts a dns target that is a bare domain', () => {
+		const result = probeTargetSchema.safeParse({ ...base, module: 'dns', target: 'www.example.com' });
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects dns targets carrying a port, path, or scheme', () => {
+		for (const target of ['example.com:53', 'example.com/a', 'https://example.com']) {
+			const result = probeTargetSchema.safeParse({ ...base, module: 'dns', target });
+			expect(result.success).toBe(false);
+			if (!result.success) {
+				expect(
+					result.error.issues.some((i) => i.path[0] === 'target' && i.message === 'validation.Invalid Domain')
+				).toBe(true);
+			}
+		}
+	});
+
+	it('validates expected_status entries against the 100-599 range', () => {
+		const result = validateForm(probeTargetSchema, { ...base, options: { expected_status: [200, 999] } });
+		expect(result.valid).toBe(false);
+		expect(result.errors['options.expected_status']).toBe('Status codes must be 100-599 (e.g. 200,204)');
+	});
+
+	it('rejects an unknown keyword_mode and a mode set without a keyword', () => {
+		const badEnum = validateForm(probeTargetSchema, { ...base, options: { keyword: 'ok', keyword_mode: 'glob' } });
+		expect(badEnum.valid).toBe(false);
+		expect(badEnum.errors['options.keyword_mode']).toBe('keyword_mode must be contains, not_contains, or regex');
+
+		const noKeyword = validateForm(probeTargetSchema, { ...base, options: { keyword_mode: 'regex' } });
+		expect(noKeyword.valid).toBe(false);
+		expect(noKeyword.errors['options.keyword_mode']).toBe('A keyword is required when a match mode is set');
+	});
+
+	it('validates the dns record enum', () => {
+		const result = validateForm(probeTargetSchema, {
+			...base,
+			module: 'dns',
+			target: 'www.example.com',
+			options: { record: 'MX' }
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors['options.record']).toBe('record must be one of A, AAAA, CNAME, TXT');
+	});
+
+	it('validates the resolver host[:port] shape', () => {
+		for (const resolver of ['223.5.5.5', '223.5.5.5:5353']) {
+			expect(
+				validateForm(probeTargetSchema, { ...base, module: 'dns', target: 'a.example.com', options: { resolver } }).valid
+			).toBe(true);
+		}
+		for (const resolver of ['223.5.5.5:70000', '223.5.5.5:x', 'a b', '223.5.5.5/24']) {
+			const result = validateForm(probeTargetSchema, { ...base, module: 'dns', target: 'a.example.com', options: { resolver } });
+			expect(result.valid).toBe(false);
+			expect(result.errors['options.resolver']).toBe('resolver must be host[:port] with port 1-65535 (e.g. 223.5.5.5)');
+		}
+	});
+
+	it('validates expected_ips entries as IP addresses', () => {
+		const result = validateForm(probeTargetSchema, {
+			...base,
+			module: 'dns',
+			target: 'a.example.com',
+			options: { expected_ips: ['203.0.113.9', 'not-an-ip'] }
+		});
+		expect(result.valid).toBe(false);
+		expect(result.errors['options.expected_ips']).toBe('expected_ips entries must be valid IP addresses');
+	});
+
+	it('rejects expect_mode without expect and unknown enum values', () => {
+		const noExpect = validateForm(probeTargetSchema, { ...base, module: 'tcp', target: 'a.example.com:80', options: { expect_mode: 'regex' } });
+		expect(noExpect.valid).toBe(false);
+		expect(noExpect.errors['options.expect_mode']).toBe('An expect string is required when a match mode is set');
+
+		const badEnum = validateForm(probeTargetSchema, { ...base, module: 'tcp', target: 'a.example.com:80', options: { expect: 'SSH', expect_mode: 'glob' } });
+		expect(badEnum.valid).toBe(false);
+		expect(badEnum.errors['options.expect_mode']).toBe('expect_mode must be contains or regex');
+	});
+
+	it('accepts a fully populated dns target and a populated http target', () => {
+		expect(
+			probeTargetSchema.safeParse({
+				...base,
+				module: 'dns',
+				target: 'www.example.com',
+				options: { record: 'AAAA', resolver: '223.5.5.5', expected_ips: ['2001:db8::1'] }
+			}).success
+		).toBe(true);
+		expect(
+			probeTargetSchema.safeParse({
+				...base,
+				options: { method: 'HEAD', expected_status: [200, 204], keyword: 'ok', keyword_mode: 'regex', ignore_tls_errors: true }
+			}).success
+		).toBe(true);
+	});
+
+	// The probes page blurs individual fields through validateField; zod 4
+	// refuses .pick() on refined objects, so the helper must fall back to the
+	// field's own subschema (this was a latent throw before that fallback).
+	it('validateField works on the refined schema (shape fallback path)', () => {
+		expect(validateField(probeTargetSchema, 'target', 'www.example.com').valid).toBe(true);
+		const empty = validateField(probeTargetSchema, 'target', '');
+		expect(empty.valid).toBe(false);
+		expect(empty.error).toBe('Target is required');
 	});
 });

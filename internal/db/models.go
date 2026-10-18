@@ -28,6 +28,7 @@ type AgentStatus struct {
 	ClockOffsetSeconds float64   `json:"clock_offset_seconds"`
 	ScansTotal         int64     `json:"scans_total"`
 	FingerprintRev     string    `json:"fingerprint_rev"`
+	SupportedModules   string    `json:"supported_modules"`
 	LastReportAt       time.Time `json:"last_report_at"`
 }
 
@@ -382,6 +383,9 @@ type ProbeTarget struct {
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	Vantage         string    `json:"vantage"`
+	Options         string    `json:"options"`
+	DeviceID        *int64    `json:"device_id"`
+	Source          string    `json:"source"`
 }
 
 type ProbeTlsCert struct {

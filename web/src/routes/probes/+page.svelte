@@ -15,7 +15,7 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
-	import { html, formatDateTime as formatTime } from '$lib/utils/index';
+	import { html, escapeAttr, formatDateTime as formatTime } from '$lib/utils/index';
 	import { probeTargetSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { addToast } from '$lib/stores/toast';
 
@@ -36,6 +36,11 @@
 		ProbeResultListResponse,
 		ProbeTriggerResponse,
 		ProbeVantageLatest,
+		ProbeOptions,
+		ProbeQualityReport,
+		ProbeQualityGroup,
+		ProbeQualityVantage,
+		ProbeQualityTrack,
 		TLSPortCerts,
 		DeviceCertificatesResponse,
 		Network
@@ -115,6 +120,10 @@
 		successRate: number | null;
 		avgLatency: number | null;
 	}
+	// All selectable modules (#605 adds dns). Drives both the overview cards
+	// and the create/edit form's module select.
+	const MODULES = ['http', 'tls', 'tcp', 'icmp', 'dns'] as const;
+	type ProbeModule = (typeof MODULES)[number];
 	// A target's effective latest outcome: the newest row across vantage
 	// tracks when any exist (agent-vantage plans never write last_*), else the
 	// denormalized center fields. Ties on checked_at prefer the center track.
@@ -133,8 +142,7 @@
 		return { status: t.last_status, latency_ms: t.last_latency_ms };
 	}
 	const moduleStats = $derived.by<ModuleStat[]>(() => {
-		const mods = ['http', 'tls', 'tcp', 'icmp'];
-		return mods.map((mod) => {
+		return MODULES.map((mod) => {
 			const rows = targets.filter((t) => t.module === mod);
 			const ran = rows
 				.map(latestOverall)
@@ -150,6 +158,128 @@
 			};
 		});
 	});
+
+	// --- Egress quality report (#608): GET /probe-quality, fetched once on
+	// mount + manual refresh. The report is computed read-time server-side, no
+	// point polling it on the 10s target cadence.
+	let quality = $state<ProbeQualityReport | null>(null);
+	let qualityLoading = $state(false);
+	let qualityError = $state('');
+
+	async function fetchQuality() {
+		qualityLoading = true;
+		qualityError = '';
+		try {
+			quality = await api.get<ProbeQualityReport>('/probe-quality');
+		} catch (err: unknown) {
+			qualityError = getErrorMessage(err);
+		} finally {
+			qualityLoading = false;
+		}
+	}
+
+	// Primary group first, reference groups after it (by name) so the network
+	// verdict leads and the comparison groups read as context.
+	const qualityGroups = $derived.by<ProbeQualityGroup[]>(() => {
+		const groups = quality?.groups ?? [];
+		return [...groups].sort((a, b) => {
+			const rank = (g: ProbeQualityGroup) => (g.role === 'primary' ? 0 : 1);
+			return rank(a) - rank(b) || a.name.localeCompare(b.name);
+		});
+	});
+	// Empty = no groups at all, or none with a single observed vantage yet.
+	const qualityEmpty = $derived.by(() => {
+		if (quality === null) return false;
+		const groups = quality.groups ?? [];
+		return groups.length === 0 || groups.every((g) => (g.vantages ?? []).length === 0);
+	});
+
+	// Row label: the human network name when the vantage maps to one, else the
+	// raw vantage token; center renders with its friendly name.
+	function vantageLabel(v: ProbeQualityVantage): string {
+		if (v.network_name) return v.network_name;
+		if (v.vantage === 'center') return m['probes.Vantage Center']();
+		return v.vantage;
+	}
+
+	function verdictLabel(verdict: string): string {
+		switch (verdict) {
+			case 'ok':
+				return m['probes.Verdict Ok']();
+			case 'degraded':
+				return m['probes.Verdict Degraded']();
+			case 'egress_down':
+				return m['probes.Verdict Egress Down']();
+			case 'dns_fault':
+				return m['probes.Verdict Dns Fault']();
+			case 'upstream_resolver':
+				return m['probes.Verdict Upstream Resolver']();
+			default:
+				return m['probes.Verdict Insufficient']();
+		}
+	}
+
+	// ok=green, degraded=amber, dns_fault/egress_down=red, upstream_resolver
+	// =orange (distinct from degraded's amber), insufficient=gray (the bare
+	// .badge default). Orange has no theme token; the inline style pins it
+	// like the chart palette does.
+	function verdictCls(verdict: string): string {
+		switch (verdict) {
+			case 'ok':
+				return 'badge-success';
+			case 'degraded':
+				return 'badge-warning';
+			case 'dns_fault':
+			case 'egress_down':
+				return 'badge-error';
+			default:
+				return '';
+		}
+	}
+	function verdictStyle(verdict: string): string {
+		return verdict === 'upstream_resolver'
+			? 'color:#fb923c;background:color-mix(in srgb, #fb923c 14%, transparent)'
+			: '';
+	}
+
+	// Stable reason codes (#608 quality.go) → localized chips.
+	// upstream_resolver.failing:<name> carries the failing target's name.
+	function reasonLabel(code: string): string {
+		if (code === 'egress_down.all_paths_failing') return m['probes.Reason Egress Down']();
+		if (code === 'dns_fault.direct_ok_name_resolution_dead') return m['probes.Reason Dns Fault']();
+		if (code === 'ok_rate_low') return m['probes.Reason Ok Rate Low']();
+		if (code === 'latency_high') return m['probes.Reason Latency High']();
+		if (code === 'insufficient_data') return m['probes.Reason Insufficient']();
+		const prefix = 'upstream_resolver.failing:';
+		if (code.startsWith(prefix)) {
+			return m['probes.Reason Upstream Resolver']({ name: code.slice(prefix.length) });
+		}
+		return code;
+	}
+
+	// Cell state from a track: the newest status leads; when the window has
+	// samples but no last_status, the ok_rate band decides.
+	function trackState(tr: ProbeQualityTrack | undefined): 'ok' | 'warn' | 'err' | 'none' {
+		if (!tr || !tr.samples) return 'none';
+		if (tr.last_status === 'success') return 'ok';
+		if (tr.last_status === 'timeout') return 'warn';
+		if (tr.last_status) return 'err';
+		if (tr.ok_rate >= 0.9) return 'ok';
+		if (tr.ok_rate >= 0.5) return 'warn';
+		return 'err';
+	}
+	const trackDotCls: Record<'ok' | 'warn' | 'err' | 'none', string> = {
+		ok: 'bg-success',
+		warn: 'bg-warning',
+		err: 'bg-error',
+		none: 'bg-border'
+	};
+	const trackTextCls: Record<'ok' | 'warn' | 'err' | 'none', string> = {
+		ok: 'text-success',
+		warn: 'text-warning',
+		err: 'text-error',
+		none: 'text-text-muted'
+	};
 
 	// --- Cert expiry timeline (#276): TLS/http targets on a 0..90d+ scale -----
 	interface TimelineEntry {
@@ -181,15 +311,84 @@
 	let editModalOpen = $state(false);
 	let editingId = $state<number | null>(null); // null = create
 	let formName = $state('');
-	let formModule = $state<'http' | 'tls' | 'tcp' | 'icmp'>('http');
+	let formModule = $state<ProbeModule>('http');
 	let formTarget = $state('');
 	let formInterval = $state(60);
 	let formTimeout = $state(10);
 	let formNotes = $state('');
 	let formEnabled = $state(true);
 	let formVantage = $state('center');
+	// Optional device binding (#606): prefilled from ?device_id= (device detail
+	// page's per-service create button) or the edited target's existing value.
+	let formDeviceId = $state<number | null>(null);
 	let formLoading = $state(false);
 	let fieldErrors = $state<Record<string, string>>({});
+
+	// --- Per-module options (#605) ---
+	// Text inputs for list fields (expected_status / expected_ips) hold
+	// comma-separated values; buildFormOptions() turns them into arrays and
+	// drops empty values so the payload only carries what the user set.
+	let optMethod = $state<'GET' | 'HEAD'>('GET');
+	let optExpectedStatus = $state('');
+	let optKeyword = $state('');
+	let optKeywordMode = $state<'contains' | 'not_contains' | 'regex'>('contains');
+	let optIgnoreTls = $state(false);
+	let optRecord = $state<'A' | 'AAAA' | 'CNAME' | 'TXT'>('A');
+	let optResolver = $state('');
+	let optExpectedIps = $state('');
+	let optSend = $state('');
+	let optExpect = $state('');
+	let optExpectMode = $state<'contains' | 'regex'>('contains');
+
+	function resetOptionFields() {
+		optMethod = 'GET';
+		optExpectedStatus = '';
+		optKeyword = '';
+		optKeywordMode = 'contains';
+		optIgnoreTls = false;
+		optRecord = 'A';
+		optResolver = '';
+		optExpectedIps = '';
+		optSend = '';
+		optExpect = '';
+		optExpectMode = 'contains';
+	}
+
+	// Build the module's options object from the form fields, omitting empty
+	// values and defaults (server omitempty semantics). Returns undefined when
+	// nothing is set (create then omits the key entirely).
+	function buildFormOptions(): ProbeOptions | undefined {
+		const o: ProbeOptions = {};
+		if (formModule === 'http') {
+			if (optMethod !== 'GET') o.method = optMethod;
+			const codes = optExpectedStatus
+				.split(',')
+				.map((s) => s.trim())
+				.filter(Boolean)
+				.map(Number);
+			if (codes.length) o.expected_status = codes;
+			if (optKeyword.trim()) {
+				o.keyword = optKeyword.trim();
+				if (optKeywordMode !== 'contains') o.keyword_mode = optKeywordMode;
+			}
+			if (optIgnoreTls) o.ignore_tls_errors = true;
+		} else if (formModule === 'dns') {
+			if (optRecord !== 'A') o.record = optRecord;
+			if (optResolver.trim()) o.resolver = optResolver.trim();
+			const ips = optExpectedIps
+				.split(',')
+				.map((s) => s.trim())
+				.filter(Boolean);
+			if (ips.length) o.expected_ips = ips;
+		} else if (formModule === 'tcp') {
+			if (optSend) o.send = optSend;
+			if (optExpect) {
+				o.expect = optExpect;
+				if (optExpectMode !== 'contains') o.expect_mode = optExpectMode;
+			}
+		}
+		return Object.keys(o).length ? o : undefined;
+	}
 
 	// --- Trigger (per-row, in-flight marker disables just that row's button) ---
 	let triggeringId = $state<number | null>(null);
@@ -214,7 +413,24 @@
 	onMount(() => {
 		fetchTargets();
 		fetchAgents();
+		fetchQuality();
 		pollTimer = setInterval(fetchTargets, 10000);
+		// Deep-link prefill from the device detail page's per-service create
+		// button (#606): ?create=1&module=…&target=…&device_id=… opens the
+		// create modal prefilled. Read once from window.location (the page is
+		// an SPA route; no server-side load involved).
+		const sp = new URLSearchParams(window.location.search);
+		if (sp.get('create') === '1') {
+			openCreate();
+			const mod = sp.get('module');
+			if (mod === 'http' || mod === 'tls' || mod === 'tcp' || mod === 'icmp' || mod === 'dns') {
+				formModule = mod;
+			}
+			const tgt = sp.get('target');
+			if (tgt) formTarget = tgt;
+			const dev = Number(sp.get('device_id'));
+			if (Number.isFinite(dev) && dev > 0) formDeviceId = dev;
+		}
 	});
 	onDestroy(() => {
 		if (pollTimer) clearInterval(pollTimer);
@@ -285,6 +501,8 @@
 		formNotes = '';
 		formEnabled = true;
 		formVantage = 'center';
+		formDeviceId = null;
+		resetOptionFields();
 		fieldErrors = {};
 		editModalOpen = true;
 	}
@@ -299,6 +517,24 @@
 		formNotes = t.notes || '';
 		formEnabled = t.enabled;
 		formVantage = t.vantage || 'center';
+		// Keep the existing device binding on edit (no unbind UI; deleting the
+		// binding is a device-page/probes-list concern, not this form's).
+		formDeviceId = t.device_id ?? null;
+		resetOptionFields();
+		const o = t.options;
+		if (o) {
+			if (o.method === 'HEAD') optMethod = 'HEAD';
+			if (o.expected_status?.length) optExpectedStatus = o.expected_status.join(',');
+			if (o.keyword) optKeyword = o.keyword;
+			if (o.keyword_mode === 'not_contains' || o.keyword_mode === 'regex') optKeywordMode = o.keyword_mode;
+			if (o.ignore_tls_errors) optIgnoreTls = true;
+			if (o.record === 'AAAA' || o.record === 'CNAME' || o.record === 'TXT') optRecord = o.record;
+			if (o.resolver) optResolver = o.resolver;
+			if (o.expected_ips?.length) optExpectedIps = o.expected_ips.join(',');
+			if (o.send) optSend = o.send;
+			if (o.expect) optExpect = o.expect;
+			if (o.expect_mode === 'regex') optExpectMode = 'regex';
+		}
 		fieldErrors = {};
 		editModalOpen = true;
 	}
@@ -325,7 +561,8 @@
 		http: 'probes.Module http Help',
 		tls: 'probes.Module tls Help',
 		tcp: 'probes.Module tcp Help',
-		icmp: 'probes.Module icmp Help'
+		icmp: 'probes.Module icmp Help',
+		dns: 'probes.Module dns Help'
 	};
 
 	function moduleHelp(mod: string): string {
@@ -336,6 +573,8 @@
 				return m['probes.Module tcp Help']();
 			case 'icmp':
 				return m['probes.Module icmp Help']();
+			case 'dns':
+				return m['probes.Module dns Help']();
 			default:
 				return m['probes.Module http Help']();
 		}
@@ -349,6 +588,8 @@
 				return 'example.com:443';
 			case 'tcp':
 				return 'example.com:80';
+			case 'dns':
+				return 'www.example.com';
 			default:
 				return 'example.com';
 		}
@@ -362,13 +603,15 @@
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
+		const options = buildFormOptions();
 		const validation = validateForm(probeTargetSchema, {
 			name: formName,
 			module: formModule,
 			target: formTarget.trim(),
 			interval_seconds: formInterval,
 			timeout_seconds: formTimeout,
-			notes: formNotes
+			notes: formNotes,
+			options
 		});
 		if (!validation.valid) {
 			fieldErrors = validation.errors;
@@ -377,7 +620,7 @@
 		fieldErrors = {};
 		formLoading = true;
 		try {
-			const body = {
+			const body: Record<string, unknown> = {
 				name: formName.trim(),
 				module: formModule,
 				target: formTarget.trim(),
@@ -387,10 +630,17 @@
 				enabled: formEnabled,
 				vantage: formVantage
 			};
+			if (formDeviceId) body.device_id = formDeviceId;
 			if (editingId === null) {
+				// Create: omit options entirely when nothing is set.
+				if (options) body.options = options;
 				await api.post('/probe-targets/', body);
 				addToast('success', m['probes.Target Created']());
 			} else {
+				// Update is partial (nil keeps current): an explicit empty
+				// object clears stale options so switching the module can't
+				// leave another module's fields behind in the DB.
+				body.options = options ?? {};
 				await api.put(`/probe-targets/${editingId}`, body);
 				addToast('success', m['probes.Target Updated']());
 			}
@@ -536,9 +786,35 @@
 	// returns 409 ErrProbeVantageNotLocal): reflect that in the button state.
 	const isAgentOnly = (t: ProbeTarget) => (t.vantage || 'center').startsWith('agent:');
 
+	// Source badges (#606/#608): system = config-managed egress-quality matrix
+	// (shield), auto = policy-generated from a discovered service (magic wand).
+	// The table renders cells through the escaping html`` helper, so the icons
+	// are static trusted markup concatenated onto the escaped name fragment
+	// (interpolating markup through html`` would escape it).
+	const SOURCE_SVG = {
+		system:
+			'<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>',
+		auto: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>'
+	};
+	const sourceIcon = (row: Record<string, unknown>): string => {
+		const src = String(row.source || 'manual');
+		if (src === 'system') {
+			return `<span class="ml-1 inline-flex items-center align-middle text-text-muted" title="${escapeAttr(m['probes.Source System']())}">${SOURCE_SVG.system}</span>`;
+		}
+		if (src === 'auto') {
+			return `<span class="ml-1 inline-flex items-center align-middle text-text-muted" title="${escapeAttr(m['probes.Source Auto']())}">${SOURCE_SVG.auto}</span>`;
+		}
+		return '';
+	};
+
 	const columns = $derived([
 		{ key: 'select', label: m['probes.Batch Select'](), interactive: true },
-		{ key: 'name', label: m['probes.Name'](), sortable: true, render: (row: Record<string, unknown>) => html`<span class="font-medium">${row.name}</span>` },
+		{
+			key: 'name',
+			label: m['probes.Name'](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => html`<span class="font-medium">${row.name}</span>` + sourceIcon(row)
+		},
 		{ key: 'module', label: m['probes.Module'](), render: (row: Record<string, unknown>) => html`<span class="badge badge-info uppercase">${row.module}</span>` },
 		{ key: 'target', label: m['probes.Target'](), render: (row: Record<string, unknown>) => html`<span class="font-mono text-xs">${row.target}</span>` },
 		{ key: 'vantage', label: m['probes.Vantage'](), render: (row: Record<string, unknown>) => vantageBadge(String(row.vantage || '')) },
@@ -715,8 +991,96 @@
 		</div>
 		<p class="text-sm text-text-muted mb-6">{m['probes.Subtitle']()}</p>
 
+		<!-- Egress quality (#608): per-group vantage × target matrix + verdicts.
+		     Primary group leads; reference groups render visually secondary. -->
+		<div class="bg-surface border border-border rounded-lg p-4 mb-6">
+			<div class="flex items-center justify-between gap-4 mb-3">
+				<div>
+					<h3 class="text-sm font-semibold text-text">{m['probes.Quality Title']()}</h3>
+					<p class="text-xs text-muted">{m['probes.Quality Desc']({ window: quality?.window_minutes ?? 15 })}</p>
+				</div>
+				<button onclick={fetchQuality} disabled={qualityLoading} class="btn btn-secondary !py-1 !px-3 text-xs shrink-0">
+					{qualityLoading ? '…' : m['probes.Refresh']()}
+				</button>
+			</div>
+			{#if qualityError}
+				<p class="text-xs text-error mb-2">{m['probes.Quality Error']()}: {qualityError}</p>
+			{/if}
+			{#if quality === null && !qualityError}
+				<p class="text-xs text-muted py-2">…</p>
+			{:else if qualityEmpty}
+				<p class="text-xs text-muted py-2 italic">{m['probes.Quality Empty']()}</p>
+			{:else}
+				{#each qualityGroups as g (g.name)}
+					<div class="mb-3 last:mb-0 {g.role === 'reference' ? 'opacity-80' : ''}">
+						<div class="flex items-center gap-2 mb-1.5">
+							<h4 class="text-xs font-semibold {g.role === 'reference' ? 'text-text-muted' : 'text-text'}">{g.name}</h4>
+							{#if g.role === 'reference'}
+								<span class="badge badge-info !text-[0.625rem] !px-1.5">{m['probes.Quality Reference']()}</span>
+							{/if}
+						</div>
+						<div class="overflow-x-auto">
+							<table class="w-full text-xs">
+								<thead>
+									<tr class="text-left text-text-muted border-b border-border">
+										<th class="py-1.5 pr-4 font-medium whitespace-nowrap">{m['probes.Quality Vantage']()}</th>
+										{#each g.targets ?? [] as t (t.name)}
+											<th class="py-1.5 pr-4 font-medium font-mono whitespace-nowrap" title={t.target}>{t.name}</th>
+										{/each}
+										<th class="py-1.5 font-medium whitespace-nowrap">{m['probes.Quality Verdict']()}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each g.vantages ?? [] as v (v.vantage)}
+										<tr class="border-b border-border/40 last:border-0">
+											<td class="py-1.5 pr-4 whitespace-nowrap">
+												<span class="truncate" title="{v.network_name ? v.vantage : ''}">{vantageLabel(v)}</span>
+											</td>
+											{#each g.targets ?? [] as t (t.name)}
+												{@const tr = t.per_vantage?.[v.vantage]}
+												{@const st = trackState(tr)}
+												<td class="py-1.5 pr-4 font-mono whitespace-nowrap"
+													title={tr && tr.samples ? m['probes.Vantage Samples']({ count: tr.samples }) : ''}
+												>
+													{#if st === 'none'}
+														<span class="text-text-muted">—</span>
+													{:else}
+														<span class="inline-flex items-center gap-1.5 {trackTextCls[st]}">
+															<span class="inline-block h-2 w-2 shrink-0 rounded-full {trackDotCls[st]}"></span>
+															{Math.round((tr?.ok_rate ?? 0) * 100)}% · {Math.round(tr?.p50_ms ?? 0)}ms
+														</span>
+													{/if}
+												</td>
+											{/each}
+											<td class="py-1.5">
+												<span class="badge {verdictCls(v.verdict)}" style={verdictStyle(v.verdict)}>
+													{verdictLabel(v.verdict)} · {v.score}
+												</span>
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+						<!-- Reason chips: only for actionable verdicts (not ok /
+						     insufficient, which carry no actionable detail). -->
+						{#each g.vantages ?? [] as v (v.vantage)}
+							{#if v.verdict !== 'ok' && v.verdict !== 'insufficient' && (v.reasons ?? []).length > 0}
+								<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+									<span class="text-xs text-text-muted">{vantageLabel(v)}:</span>
+									{#each v.reasons as r (r)}
+										<span class="badge badge-warning !text-[0.625rem] !px-1.5 !py-0.5">{reasonLabel(r)}</span>
+									{/each}
+								</div>
+							{/if}
+						{/each}
+					</div>
+				{/each}
+			{/if}
+		</div>
+
 		<!-- Module overview cards (#276): per-module success rate + avg latency -->
-		<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+		<div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
 			{#each moduleStats as ms (ms.module)}
 				<div class="bg-surface border border-border rounded-lg px-4 py-3">
 					<div class="flex items-center justify-between">
@@ -907,9 +1271,102 @@
 				<option value="tls">tls</option>
 				<option value="tcp">tcp</option>
 				<option value="icmp">icmp</option>
+				<option value="dns">dns</option>
 			</select>
 			<p class="text-xs text-text-muted mt-1">{moduleHelp(formModule)}</p>
 		</div>
+
+		<!-- Per-module options (#605): only the selected module's fields render;
+		     empty values are omitted from the payload on submit. -->
+		{#if formModule === 'http'}
+			<div class="rounded-md border border-border p-3 space-y-3">
+				<p class="text-xs font-semibold text-text-muted">{m['probes.Options Title']()}</p>
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label class="block text-xs text-text-muted mb-1" for="probe-opt-method">{m['probes.Opt Method']()}</label>
+						<select id="probe-opt-method" class="input" bind:value={optMethod}>
+							<option value="GET">GET</option>
+							<option value="HEAD">HEAD</option>
+						</select>
+					</div>
+					<div>
+						<label class="block text-xs text-text-muted mb-1" for="probe-opt-status">{m['probes.Opt Expected Status']()}</label>
+						<input id="probe-opt-status" class="input font-mono text-xs" bind:value={optExpectedStatus} placeholder="200,204" />
+						{#if fieldErrors['options.expected_status']}
+							<p class="text-xs text-error mt-1">{fieldErrors['options.expected_status']}</p>
+						{/if}
+					</div>
+				</div>
+				<div>
+					<label class="block text-xs text-text-muted mb-1" for="probe-opt-keyword">{m['probes.Opt Keyword']()}</label>
+					<input id="probe-opt-keyword" class="input" bind:value={optKeyword} placeholder="ok" />
+				</div>
+				<div class="flex items-end gap-3">
+					<div class="flex-1">
+						<label class="block text-xs text-text-muted mb-1" for="probe-opt-keyword-mode">{m['probes.Opt Keyword Mode']()}</label>
+						<select id="probe-opt-keyword-mode" class="input" bind:value={optKeywordMode}>
+							<option value="contains">contains</option>
+							<option value="not_contains">not_contains</option>
+							<option value="regex">regex</option>
+						</select>
+					</div>
+					<label class="flex items-center gap-2 text-sm text-text pb-2">
+						<input type="checkbox" bind:checked={optIgnoreTls} class="checkbox" />
+						{m['probes.Opt Ignore Tls']()}
+					</label>
+				</div>
+			</div>
+		{:else if formModule === 'dns'}
+			<div class="rounded-md border border-border p-3 space-y-3">
+				<p class="text-xs font-semibold text-text-muted">{m['probes.Options Title']()}</p>
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label class="block text-xs text-text-muted mb-1" for="probe-opt-record">{m['probes.Opt Record']()}</label>
+						<select id="probe-opt-record" class="input" bind:value={optRecord}>
+							<option value="A">A</option>
+							<option value="AAAA">AAAA</option>
+							<option value="CNAME">CNAME</option>
+							<option value="TXT">TXT</option>
+						</select>
+					</div>
+					<div>
+						<label class="block text-xs text-text-muted mb-1" for="probe-opt-resolver">{m['probes.Opt Resolver']()}</label>
+						<input id="probe-opt-resolver" class="input font-mono text-xs" bind:value={optResolver} placeholder="223.5.5.5" />
+						{#if fieldErrors['options.resolver']}
+							<p class="text-xs text-error mt-1">{fieldErrors['options.resolver']}</p>
+						{/if}
+					</div>
+				</div>
+				<div>
+					<label class="block text-xs text-text-muted mb-1" for="probe-opt-ips">{m['probes.Opt Expected Ips']()}</label>
+					<input id="probe-opt-ips" class="input font-mono text-xs" bind:value={optExpectedIps} placeholder="1.2.3.4,5.6.7.8" />
+					{#if fieldErrors['options.expected_ips']}
+						<p class="text-xs text-error mt-1">{fieldErrors['options.expected_ips']}</p>
+					{/if}
+				</div>
+			</div>
+		{:else if formModule === 'tcp'}
+			<div class="rounded-md border border-border p-3 space-y-3">
+				<p class="text-xs font-semibold text-text-muted">{m['probes.Options Title']()}</p>
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label class="block text-xs text-text-muted mb-1" for="probe-opt-send">{m['probes.Opt Send']()}</label>
+						<input id="probe-opt-send" class="input font-mono text-xs" bind:value={optSend} placeholder="GET / HTTP/1.0" />
+					</div>
+					<div>
+						<label class="block text-xs text-text-muted mb-1" for="probe-opt-expect">{m['probes.Opt Expect']()}</label>
+						<input id="probe-opt-expect" class="input font-mono text-xs" bind:value={optExpect} placeholder="220" />
+					</div>
+				</div>
+				<div>
+					<label class="block text-xs text-text-muted mb-1" for="probe-opt-expect-mode">{m['probes.Opt Expect Mode']()}</label>
+					<select id="probe-opt-expect-mode" class="input" bind:value={optExpectMode}>
+						<option value="contains">contains</option>
+						<option value="regex">regex</option>
+					</select>
+				</div>
+			</div>
+		{/if}
 
 		<div>
 			<label class="block text-xs text-text-muted mb-1" for="probe-target">{m['probes.Target']()}</label>
@@ -922,6 +1379,9 @@
 				placeholder={targetPlaceholder(formModule)}
 			/>
 			{#if fieldErrors.target}<p class="text-xs text-error mt-1">{fieldErrors.target}</p>{/if}
+			{#if formDeviceId}
+				<p class="text-xs text-text-muted mt-1">{m['probes.Device Bound']({ id: formDeviceId })}</p>
+			{/if}
 		</div>
 
 		<div>

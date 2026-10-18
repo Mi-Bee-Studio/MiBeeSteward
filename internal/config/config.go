@@ -27,6 +27,7 @@ type Config struct {
 	Database   DatabaseConfig   `koanf:"database"`
 	Auth       AuthConfig       `koanf:"auth"`
 	Heartbeat  HeartbeatConfig  `koanf:"heartbeat"`
+	Probe      ProbeConfig      `koanf:"probe"`
 	Prometheus PrometheusConfig `koanf:"prometheus"`
 	Dashboard  DashboardConfig  `koanf:"dashboard"`
 	Storage    StorageConfig    `koanf:"storage"`
@@ -467,6 +468,7 @@ func Load(configPath string) (*Config, error) {
 	// toggles). Done before validation so the service sees a fully-populated cfg.
 	normalizeDiscovery(&cfg)
 	normalizeRBAC(&cfg)
+	normalizeProbe(&cfg)
 
 	// Validate
 	if err := Validate(&cfg); err != nil {
@@ -631,6 +633,10 @@ func Validate(cfg *Config) error {
 	}
 	if cfg.Security.MasterKey == "" {
 		fmt.Fprintf(os.Stderr, "NOTE: security.master_key is not set: SNMPv3 credential storage disabled (v1/v2c scans unaffected). Set it to a 32-byte value to enable v3.\n")
+	}
+
+	if err := validateProbe(cfg); err != nil {
+		return err
 	}
 
 	return nil

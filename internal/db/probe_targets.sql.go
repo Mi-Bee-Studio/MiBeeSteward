@@ -31,9 +31,9 @@ func (q *Queries) CountProbeTargetsSearch(ctx context.Context, arg CountProbeTar
 const createProbeTarget = `-- name: CreateProbeTarget :one
 
 
-INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, notes, vantage)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, notes, vantage, options, device_id, source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 `
 
 type CreateProbeTargetParams struct {
@@ -45,6 +45,9 @@ type CreateProbeTargetParams struct {
 	Enabled         int64  `json:"enabled"`
 	Notes           string `json:"notes"`
 	Vantage         string `json:"vantage"`
+	Options         string `json:"options"`
+	DeviceID        *int64 `json:"device_id"`
+	Source          string `json:"source"`
 }
 
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -68,6 +71,9 @@ func (q *Queries) CreateProbeTarget(ctx context.Context, arg CreateProbeTargetPa
 		arg.Enabled,
 		arg.Notes,
 		arg.Vantage,
+		arg.Options,
+		arg.DeviceID,
+		arg.Source,
 	)
 	var i ProbeTarget
 	err := row.Scan(
@@ -86,6 +92,9 @@ func (q *Queries) CreateProbeTarget(ctx context.Context, arg CreateProbeTargetPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Vantage,
+		&i.Options,
+		&i.DeviceID,
+		&i.Source,
 	)
 	return i, err
 }
@@ -103,8 +112,28 @@ func (q *Queries) DeleteProbeTarget(ctx context.Context, id int64) (int64, error
 	return result.RowsAffected()
 }
 
+const detachProbeTargetsFromDevice = `-- name: DetachProbeTargetsFromDevice :execrows
+UPDATE probe_targets
+SET device_id = NULL,
+    enabled = CASE WHEN source = 'auto' THEN 0 ELSE enabled END,
+    updated_at = CURRENT_TIMESTAMP
+WHERE device_id = ?
+`
+
+// Device deletion hook (#606): unbind every bound target. Policy-generated
+// (auto) targets die with their origin; manual and system ones keep running
+// unbound. The main DB does not enable the foreign_keys pragma, so this
+// explicit sweep is the real cascade.
+func (q *Queries) DetachProbeTargetsFromDevice(ctx context.Context, deviceID *int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, detachProbeTargetsFromDevice, deviceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getProbeTarget = `-- name: GetProbeTarget :one
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 FROM probe_targets
 WHERE id = ?
 `
@@ -128,12 +157,15 @@ func (q *Queries) GetProbeTarget(ctx context.Context, id int64) (ProbeTarget, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Vantage,
+		&i.Options,
+		&i.DeviceID,
+		&i.Source,
 	)
 	return i, err
 }
 
 const getProbeTargetByName = `-- name: GetProbeTargetByName :one
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 FROM probe_targets
 WHERE name = ?
 `
@@ -159,12 +191,15 @@ func (q *Queries) GetProbeTargetByName(ctx context.Context, name string) (ProbeT
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Vantage,
+		&i.Options,
+		&i.DeviceID,
+		&i.Source,
 	)
 	return i, err
 }
 
 const listEnabledProbeTargets = `-- name: ListEnabledProbeTargets :many
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 FROM probe_targets
 WHERE enabled = 1
 `
@@ -198,6 +233,110 @@ func (q *Queries) ListEnabledProbeTargets(ctx context.Context) ([]ProbeTarget, e
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Vantage,
+			&i.Options,
+			&i.DeviceID,
+			&i.Source,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProbeTargets = `-- name: ListProbeTargets :many
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
+FROM probe_targets
+ORDER BY id
+`
+
+// Full inventory regardless of enabled/source (the table stays small); the
+// egress-quality analyzer (#608) and the autogen sweep (#606) reason over
+// everything, unlike the engine which only ticks the enabled set.
+func (q *Queries) ListProbeTargets(ctx context.Context) ([]ProbeTarget, error) {
+	rows, err := q.db.QueryContext(ctx, listProbeTargets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProbeTarget{}
+	for rows.Next() {
+		var i ProbeTarget
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Module,
+			&i.Target,
+			&i.IntervalSeconds,
+			&i.TimeoutSeconds,
+			&i.Enabled,
+			&i.Notes,
+			&i.LastRunAt,
+			&i.LastStatus,
+			&i.LastLatencyMs,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Vantage,
+			&i.Options,
+			&i.DeviceID,
+			&i.Source,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProbeTargetsByDevice = `-- name: ListProbeTargetsByDevice :many
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
+FROM probe_targets
+WHERE device_id = ?
+ORDER BY id
+`
+
+// Device-bound targets for the device detail health panel (#606).
+func (q *Queries) ListProbeTargetsByDevice(ctx context.Context, deviceID *int64) ([]ProbeTarget, error) {
+	rows, err := q.db.QueryContext(ctx, listProbeTargetsByDevice, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProbeTarget{}
+	for rows.Next() {
+		var i ProbeTarget
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Module,
+			&i.Target,
+			&i.IntervalSeconds,
+			&i.TimeoutSeconds,
+			&i.Enabled,
+			&i.Notes,
+			&i.LastRunAt,
+			&i.LastStatus,
+			&i.LastLatencyMs,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Vantage,
+			&i.Options,
+			&i.DeviceID,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -213,7 +352,7 @@ func (q *Queries) ListEnabledProbeTargets(ctx context.Context) ([]ProbeTarget, e
 }
 
 const listProbeTargetsSearch = `-- name: ListProbeTargetsSearch :many
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 FROM probe_targets
 WHERE (? = '' OR INSTR(lower(name), lower(?)) > 0 OR INSTR(lower(target), lower(?)) > 0)
 ORDER BY id
@@ -263,6 +402,9 @@ func (q *Queries) ListProbeTargetsSearch(ctx context.Context, arg ListProbeTarge
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Vantage,
+			&i.Options,
+			&i.DeviceID,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -324,9 +466,9 @@ func (q *Queries) ToggleProbeTargetEnabled(ctx context.Context, arg ToggleProbeT
 const updateProbeTarget = `-- name: UpdateProbeTarget :one
 UPDATE probe_targets
 SET name = ?, module = ?, target = ?, interval_seconds = ?, timeout_seconds = ?,
-    enabled = ?, notes = ?, vantage = ?, updated_at = CURRENT_TIMESTAMP
+    enabled = ?, notes = ?, vantage = ?, options = ?, device_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 `
 
 type UpdateProbeTargetParams struct {
@@ -338,9 +480,13 @@ type UpdateProbeTargetParams struct {
 	Enabled         int64  `json:"enabled"`
 	Notes           string `json:"notes"`
 	Vantage         string `json:"vantage"`
+	Options         string `json:"options"`
+	DeviceID        *int64 `json:"device_id"`
 	ID              int64  `json:"id"`
 }
 
+// source is deliberately NOT updatable here: provenance is set at creation
+// and owned by its creator path (manual = user, auto = sweep, system = seed).
 func (q *Queries) UpdateProbeTarget(ctx context.Context, arg UpdateProbeTargetParams) (ProbeTarget, error) {
 	row := q.db.QueryRowContext(ctx, updateProbeTarget,
 		arg.Name,
@@ -351,6 +497,8 @@ func (q *Queries) UpdateProbeTarget(ctx context.Context, arg UpdateProbeTargetPa
 		arg.Enabled,
 		arg.Notes,
 		arg.Vantage,
+		arg.Options,
+		arg.DeviceID,
 		arg.ID,
 	)
 	var i ProbeTarget
@@ -370,6 +518,9 @@ func (q *Queries) UpdateProbeTarget(ctx context.Context, arg UpdateProbeTargetPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Vantage,
+		&i.Options,
+		&i.DeviceID,
+		&i.Source,
 	)
 	return i, err
 }

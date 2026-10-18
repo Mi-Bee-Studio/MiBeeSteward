@@ -44,9 +44,9 @@ const (
 	// last_run_at, so a 10s tick schedules anything ≥10s faithfully while
 	// keeping CRUD changes effective within 10s without any notify wiring.
 	tickInterval = 10 * time.Second
-	// maxConcurrency bounds simultaneous probes (semaphore). External targets
-	// are few; 8 keeps a burst of due targets from hogging connections.
-	maxConcurrency = 8
+	// defaultMaxConcurrency is the fallback semaphore bound when the caller
+	// passes none (probe.max_concurrency, normalized to 8 by the config).
+	defaultMaxConcurrency = 8
 )
 
 // Engine is the interval scheduler + probe executor. The DB is the source of
@@ -74,10 +74,15 @@ type Engine struct {
 	started bool
 }
 
-// NewEngine constructs an Engine. reg may be nil (tests) to skip metrics.
-func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Registerer) *Engine {
+// NewEngine constructs an Engine. maxConcurrency bounds simultaneous probes
+// (probe.max_concurrency); <=0 falls back to the default 8. reg may be nil
+// (tests) to skip metrics.
+func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Registerer, maxConcurrency int) *Engine {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if maxConcurrency <= 0 {
+		maxConcurrency = defaultMaxConcurrency
 	}
 	return &Engine{
 		queries: queries,

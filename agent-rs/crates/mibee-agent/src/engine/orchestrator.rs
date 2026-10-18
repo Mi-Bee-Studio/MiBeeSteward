@@ -261,11 +261,26 @@ pub fn host_to_reported(
         })
         .collect();
     host.heartbeats = generate_heartbeats(ip, identities);
-    // detected_services: sorted unique service names as JSON array string
-    let mut names: Vec<&str> = identities.iter().map(|i| i.service.as_str()).collect();
-    names.sort();
-    names.dedup();
-    host.detected_services = serde_json::to_string(&names).unwrap_or_default();
+    // detected_services: the center's canonical OBJECT shape
+    // [{"name","port","protocol"}] - what its local-scan/passive identify
+    // writes and what the device page chips + probe autogen parse. The old
+    // name-only array carried no ports, so device-bound probing could never
+    // consume agent-fed identities.
+    {
+        let mut svcs: Vec<(String, i64, String)> = identities
+            .iter()
+            .map(|i| (i.service.clone(), i.port, i.protocol.clone()))
+            .collect();
+        svcs.sort();
+        svcs.dedup();
+        let objs: Vec<serde_json::Value> = svcs
+            .into_iter()
+            .map(|(name, port, protocol)| {
+                serde_json::json!({"name": name, "port": port, "protocol": protocol})
+            })
+            .collect();
+        host.detected_services = serde_json::to_string(&objs).unwrap_or_default();
+    }
     // L2 adjacency edges → wire neighbors array (Go hostToReported parity):
     // the evidence slice never crosses the wire, so this extraction is the
     // only way the center's device_neighbors pipeline sees agent topology.
@@ -688,7 +703,8 @@ mod tests {
         assert_eq!(host.mac, "aa:bb:cc:dd:ee:ff");
         assert_eq!(host.hostname, "rpi3b-storage");
         assert_eq!(host.rtt_ms, 12);
-        assert_eq!(host.detected_services, r#"["ssh"]"#);
+        // Canonical object shape (center parity, ports included).
+        assert_eq!(host.detected_services, r#"[{"name":"ssh","port":22,"protocol":"tcp"}]"#);
         assert_eq!(host.services[0].service, "ssh");
         // ssh identity now also carries a TCP heartbeat spec (Go depth-0 rule)
         assert_eq!(host.heartbeats.len(), 1);

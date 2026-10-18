@@ -40,8 +40,8 @@ func TestSeedAndWipe(t *testing.T) {
 	require.Equal(t, 2, counts(`SELECT COUNT(*) FROM networks WHERE name LIKE 'demo-%'`))
 	require.Equal(t, len(demoDevices), counts(`SELECT COUNT(*) FROM devices WHERE device_uuid LIKE 'demo-uuid-%'`))
 	require.Positive(t, counts(`SELECT COUNT(*) FROM change_log`))
-	require.Equal(t, 3, counts(`SELECT COUNT(*) FROM probe_targets WHERE name LIKE 'demo-%'`))
-	require.Equal(t, 3*30, counts(`SELECT COUNT(*) FROM probe_results`))
+	require.Equal(t, 4, counts(`SELECT COUNT(*) FROM probe_targets WHERE name LIKE 'demo-%'`))
+	require.Equal(t, 4*30, counts(`SELECT COUNT(*) FROM probe_results`))
 	require.Positive(t, counts(`SELECT COUNT(*) FROM topology_edges`))
 	// All device IPs are RFC 5737 documentation ranges, demo data can never
 	// collide with a real network.
@@ -50,7 +50,7 @@ func TestSeedAndWipe(t *testing.T) {
 	// Probe targets too must stay in documentation namespaces (#572): IPs in
 	// RFC 5737 ranges, hostnames in RFC 2606 example domains — demo installs
 	// never send traffic to live infrastructure.
-	require.Equal(t, 3, counts(`SELECT COUNT(*) FROM probe_targets WHERE name LIKE 'demo-%'
+	require.Equal(t, 4, counts(`SELECT COUNT(*) FROM probe_targets WHERE name LIKE 'demo-%'
 		AND (
 			(target LIKE '198.51.100.%' OR target LIKE '203.0.113.%' OR target LIKE '192.0.2.%')
 			OR target LIKE '%example.org%'

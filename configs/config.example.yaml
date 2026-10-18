@@ -168,6 +168,51 @@ heartbeat:
   # ones). 0 = use default. A scan that revives a host clears this immediately.
   offline_backoff_ticks: 10
 
+# --- Synthetic probing (拨测) engine ---
+# Per-target interval/timeout live on each probe_targets row (managed in the
+# UI); this block tunes the engine itself and the two built-in subsystems.
+probe:
+  # Max simultaneous probes (semaphore, default 8). External targets are
+  # few; raise only for large matrices. MIBEE_PROBE_MAX_CONCURRENCY.
+  max_concurrency: 8
+  # Network egress quality assessment (#608): a system-seeded matrix of
+  # public probe points executed from EVERY vantage (center + all agents),
+  # analyzed per network (verdict: ok / degraded / egress down / DNS fault /
+  # upstream resolver). The domestic group drives the primary verdict; other
+  # groups (international by default) are reference-only. All values are
+  # defaults - override or replace any of them here; deleting a target from
+  # this list removes it at the next start, and a UI-deleted row is reseeded.
+  quality:
+    enabled: true
+    window_minutes: 15      # analyzer lookback. MIBEE_PROBE_QUALITY_WINDOW_MINUTES.
+    interval_seconds: 120   # seeded cadence of every quality target.
+    http_degraded_ms: 800   # p50 threshold marking a vantage degraded.
+    dns_degraded_ms: 300
+    ok_rate_threshold: 0.9  # min success rate within the window (0..1].
+    groups:
+      domestic:
+        - {name: quality-dns-ali,    module: dns,  target: www.baidu.com, options: {record: A, resolver: 223.5.5.5}}
+        - {name: quality-dns-dnspod, module: dns,  target: www.baidu.com, options: {record: A, resolver: 119.29.29.29}}
+        - {name: quality-http-baidu, module: http, target: https://www.baidu.com}
+        - {name: quality-http-qq,    module: http, target: https://www.qq.com}
+        - {name: quality-http-204,   module: http, target: http://connect.rom.miui.com/generate_204, options: {expected_status: [204]}}
+        - {name: quality-tcp-ipdirect, module: tcp, target: 223.5.5.5:53}
+      # Reference group: displayed separately, excluded from the primary
+      # verdict (cross-border variance is its own signal, not an egress fault).
+      international:
+        - {name: quality-dns-cf,         module: dns,  target: www.cloudflare.com, options: {record: A, resolver: 1.1.1.1}}
+        - {name: quality-http-google204, module: http, target: http://www.google.com/generate_204, options: {expected_status: [204]}}
+  # Discover-then-probe autogen (#606): auto-create device-bound probe
+  # targets for discovered services (source=auto rows only; manual targets
+  # are never touched). Default OFF.
+  autogen:
+    enabled: false
+    services: [http, https]  # service identities eligible for auto targets
+    # device_types: []       # empty = all device types
+    interval_seconds: 300    # auto-target cadence
+    max_targets: 100         # population cap
+    sweep_interval_minutes: 15
+
 prometheus:
   enabled: true
   metrics_path: "/metrics"

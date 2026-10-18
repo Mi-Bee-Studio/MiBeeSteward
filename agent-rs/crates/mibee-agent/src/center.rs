@@ -136,8 +136,14 @@ impl CenterClient {
         Ok(())
     }
 
-    /// POST /api/v1/agents/probe-report — batch of results.
-    pub async fn post_probe_results(&self, results: &[ProbeResultReport]) -> Result<i64, TransportError> {
+    /// POST /api/v1/agents/probe-report — batch of results. The outcome
+    /// mirrors the report POST (#604): Accepted / Rejected(4xx terminal —
+    /// the batch is gone, treated as delivered) / Err(transport, caller
+    /// retries then parks).
+    pub async fn post_probe_results(
+        &self,
+        results: &[ProbeResultReport],
+    ) -> Result<PostOutcome, TransportError> {
         let resp = self
             .http
             .post(format!("{}/api/v1/agents/probe-report", self.base))
@@ -147,15 +153,22 @@ impl CenterClient {
             .await
             .map_err(|e| TransportError(e.to_string()))?;
         let status = resp.status().as_u16();
-        if status != 200 {
-            return Err(TransportError(format!("probe-report status {status}")));
+        match status {
+            s if (200..300).contains(&s) => {
+                #[derive(serde::Deserialize)]
+                struct Ack {
+                    #[serde(default)]
+                    accepted: i64,
+                }
+                let ack: Ack = resp.json().await.map_err(|e| TransportError(e.to_string()))?;
+                Ok(PostOutcome::Accepted(crate::wire::ReportAck {
+                    accepted: ack.accepted,
+                    ..Default::default()
+                }))
+            }
+            400 | 401 | 403 | 409 => Ok(PostOutcome::Rejected(status)),
+            s => Err(TransportError(format!("probe-report status {s}"))),
         }
-        #[derive(serde::Deserialize)]
-        struct Ack {
-            accepted: i64,
-        }
-        let ack: Ack = resp.json().await.map_err(|e| TransportError(e.to_string()))?;
-        Ok(ack.accepted)
     }
 
     /// GET /api/v1/agents/fingerprints?rev= — 204 not-modified, 200 tar.gz +

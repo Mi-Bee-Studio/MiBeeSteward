@@ -12,19 +12,19 @@
 -- Not part of identity: name stays UNIQUE alone.
 
 -- name: CreateProbeTarget :one
-INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, notes, vantage)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage;
+INSERT INTO probe_targets (name, module, target, interval_seconds, timeout_seconds, enabled, notes, vantage, options, device_id, source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source;
 
 -- name: GetProbeTarget :one
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 FROM probe_targets
 WHERE id = ?;
 
 -- name: GetProbeTargetByName :one
 -- Duplicate-name detection for CRUD validation (name is the metric label, so
 -- duplicates would make mibee_probe_* series ambiguous).
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 FROM probe_targets
 WHERE name = ?;
 
@@ -33,7 +33,7 @@ WHERE name = ?;
 -- same empty-string short-circuit idiom as ListScanTasksSearch (INSTR so
 -- search terms need no escaping). CountProbeTargetsSearch MUST mirror this
 -- WHERE.
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 FROM probe_targets
 WHERE (? = '' OR INSTR(lower(name), lower(?)) > 0 OR INSTR(lower(target), lower(?)) > 0)
 ORDER BY id
@@ -45,11 +45,13 @@ FROM probe_targets
 WHERE (? = '' OR INSTR(lower(name), lower(?)) > 0 OR INSTR(lower(target), lower(?)) > 0);
 
 -- name: UpdateProbeTarget :one
+-- source is deliberately NOT updatable here: provenance is set at creation
+-- and owned by its creator path (manual = user, auto = sweep, system = seed).
 UPDATE probe_targets
 SET name = ?, module = ?, target = ?, interval_seconds = ?, timeout_seconds = ?,
-    enabled = ?, notes = ?, vantage = ?, updated_at = CURRENT_TIMESTAMP
+    enabled = ?, notes = ?, vantage = ?, options = ?, device_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage;
+RETURNING id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source;
 
 -- name: ToggleProbeTargetEnabled :exec
 UPDATE probe_targets
@@ -65,7 +67,7 @@ WHERE id = ?;
 -- Targets whose vantage is agent-only are filtered in the engine (Go), not
 -- here: the center engine runs 'center' and 'all' vantages and leaves
 -- 'agent:{id}' plans to the agent command channel (#277 step 2).
-SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
 FROM probe_targets
 WHERE enabled = 1;
 
@@ -76,3 +78,29 @@ WHERE enabled = 1;
 UPDATE probe_targets
 SET last_run_at = ?, last_status = ?, last_latency_ms = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
+
+-- name: ListProbeTargets :many
+-- Full inventory regardless of enabled/source (the table stays small); the
+-- egress-quality analyzer (#608) and the autogen sweep (#606) reason over
+-- everything, unlike the engine which only ticks the enabled set.
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
+FROM probe_targets
+ORDER BY id;
+
+-- name: ListProbeTargetsByDevice :many
+-- Device-bound targets for the device detail health panel (#606).
+SELECT id, name, module, target, interval_seconds, timeout_seconds, enabled, notes, last_run_at, last_status, last_latency_ms, last_error, created_at, updated_at, vantage, options, device_id, source
+FROM probe_targets
+WHERE device_id = ?
+ORDER BY id;
+
+-- name: DetachProbeTargetsFromDevice :execrows
+-- Device deletion hook (#606): unbind every bound target. Policy-generated
+-- (auto) targets die with their origin; manual and system ones keep running
+-- unbound. The main DB does not enable the foreign_keys pragma, so this
+-- explicit sweep is the real cascade.
+UPDATE probe_targets
+SET device_id = NULL,
+    enabled = CASE WHEN source = 'auto' THEN 0 ELSE enabled END,
+    updated_at = CURRENT_TIMESTAMP
+WHERE device_id = ?;

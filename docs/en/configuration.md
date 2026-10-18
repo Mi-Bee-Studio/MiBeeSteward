@@ -400,6 +400,61 @@ scanner:
     unicast_queries: false
 ```
 
+## Probe (Synthetic Probing) Configuration
+
+Per-target interval/timeout live on each `probe_targets` row (managed in the UI/API); this block tunes the engine itself and its two built-in subsystems, the egress-quality matrix (#608) and the discover-then-probe autogen policy (#606).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `probe.max_concurrency` | int | 8 | Max simultaneous probes (semaphore). Replaces the previously hard-coded bound of 8; 0 = default, capped at 64. Env `MIBEE_PROBE_MAX_CONCURRENCY`. |
+| `probe.quality.enabled` | bool | false | Network egress quality assessment: a system-seeded matrix of public probe points executed from EVERY vantage (center + all agents), analyzed per network. A bare config defaults to **disabled**; `configs/config.example.yaml` ships `enabled: true` as the recommended value. Env `MIBEE_PROBE_QUALITY_ENABLED`. |
+| `probe.quality.window_minutes` | int | 15 | Analyzer lookback window (5–1440). Env `MIBEE_PROBE_QUALITY_WINDOW_MINUTES`. |
+| `probe.quality.interval_seconds` | int | 120 | Seeded cadence of every quality target (≥10). |
+| `probe.quality.http_degraded_ms` | int | 800 | p50 latency threshold (http legs) marking a vantage degraded, on top of the ok-rate threshold. |
+| `probe.quality.dns_degraded_ms` | int | 300 | Same for dns legs. |
+| `probe.quality.ok_rate_threshold` | float | 0.9 | Minimum success rate within the window (0..1]. |
+| `probe.quality.groups` | map | see below | The probe-point matrix, `group name → [{name, module, target, options}]`. The reserved group `domestic` drives the primary verdict; `international` (and any other name) is reference-only — cross-border variance is its own signal, not an egress fault. Empty = the shipped defaults: a domestic group (two public resolvers for DNS differential diagnosis, mainstream HTTP sites, a 204 endpoint, a DNS-free direct-IP TCP leg) plus an international reference group. Every value is configurable; nothing is hardcoded. |
+| `probe.autogen.enabled` | bool | false | Discover-then-probe: auto-create device-bound probe targets (`source=auto`) from discovered services. Default OFF — it writes rows on its own, so it must be a deliberate choice. Turning it off parks the auto population (rows + history kept). |
+| `probe.autogen.services` | []string | ["http","https"] | Service identities eligible for auto targets (matched against `host_services.service`). |
+| `probe.autogen.device_types` | []string | [] | Restrict generation to those device types; empty = all. |
+| `probe.autogen.interval_seconds` | int | 300 | Probe interval of auto targets (≥10). |
+| `probe.autogen.max_targets` | int | 100 | Population cap (1–1000) so a 1000-device LAN cannot explode into 3000 targets. |
+| `probe.autogen.sweep_interval_minutes` | int | 15 | Reconcile cadence: create targets for new services, park targets whose service left the scan, revive on reappearance. Manual targets are never touched. |
+
+Quality seeding semantics (applied at startup, idempotent): enabled — missing matrix rows are created (`source=system`, vantage `all`), drifted rows are refreshed from config (module/target/options), and a `source=system` row whose config entry was removed is deleted **with its result history**; disabled — every system target is parked (disabled, kept for history). A row deleted in the UI is reseeded on the next restart; to remove a target permanently, remove it from `groups` (or disable `probe.quality`).
+
+**Example** (matching `configs/config.example.yaml`):
+```yaml
+probe:
+  max_concurrency: 8
+  quality:
+    enabled: true
+    window_minutes: 15
+    interval_seconds: 120
+    http_degraded_ms: 800
+    dns_degraded_ms: 300
+    ok_rate_threshold: 0.9
+    groups:
+      domestic:
+        - {name: quality-dns-ali,    module: dns,  target: www.baidu.com, options: {record: A, resolver: 223.5.5.5}}
+        - {name: quality-dns-dnspod, module: dns,  target: www.baidu.com, options: {record: A, resolver: 119.29.29.29}}
+        - {name: quality-http-baidu, module: http, target: https://www.baidu.com}
+        - {name: quality-http-qq,    module: http, target: https://www.qq.com}
+        - {name: quality-http-204,   module: http, target: http://connect.rom.miui.com/generate_204, options: {expected_status: [204]}}
+        - {name: quality-tcp-ipdirect, module: tcp, target: 223.5.5.5:53}
+      international:
+        - {name: quality-dns-cf,         module: dns,  target: www.cloudflare.com, options: {record: A, resolver: 1.1.1.1}}
+        - {name: quality-http-google204, module: http, target: http://www.google.com/generate_204, options: {expected_status: [204]}}
+  autogen:
+    enabled: false
+    services: [http, https]
+    interval_seconds: 300
+    max_targets: 100
+    sweep_interval_minutes: 15
+```
+
+The verdict semantics the matrix feeds (why two resolvers, why a direct-IP TCP leg, why the international group is reference-only) are explained in [Architecture → Synthetic Probing](architecture.md) and surfaced by `GET /api/v1/probe-quality`.
+
 ## Router-Resident Discovery Sources
 
 The scanner can ingest device data from router-resident sources in addition to active probing. The whole service is gated by the master switch `scanner.discovery.enabled` (disabled by default). Note: `trigger_identify` and the `router_arp`/`arp_cache`/`multicast` sub-source toggles ship **enabled: true** in `configs/config.example.yaml` (the recommended values), they are off out of the box because of the master switch, not because each source individually defaults off. Each source is a no-op when the backing file or socket is absent on the host.

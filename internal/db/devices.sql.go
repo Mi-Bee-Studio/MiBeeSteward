@@ -548,6 +548,56 @@ func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Dev
 	return items, nil
 }
 
+const listDevicesForProbeAutogen = `-- name: ListDevicesForProbeAutogen :many
+SELECT id, type, ip_address, network_id, detected_services
+FROM devices
+WHERE detected_services != '[]' AND detected_services != ''
+ORDER BY id
+`
+
+type ListDevicesForProbeAutogenRow struct {
+	ID               int64  `json:"id"`
+	Type             string `json:"type"`
+	IpAddress        string `json:"ip_address"`
+	NetworkID        *int64 `json:"network_id"`
+	DetectedServices string `json:"detected_services"`
+}
+
+// Discover-then-probe autogen source (#606): devices carrying classified
+// service identities. detected_services is the JSON array BOTH write paths
+// populate (the agent-report bridge and the local/passive identify), unlike
+// host_services whose device_uuid backfill only heals on rewrite cycles that
+// agent-fed networks never run - it also carries the owning device_id
+// directly, so no identity join is needed.
+func (q *Queries) ListDevicesForProbeAutogen(ctx context.Context) ([]ListDevicesForProbeAutogenRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDevicesForProbeAutogen)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDevicesForProbeAutogenRow{}
+	for rows.Next() {
+		var i ListDevicesForProbeAutogenRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.IpAddress,
+			&i.NetworkID,
+			&i.DetectedServices,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTopologyDevices = `-- name: ListTopologyDevices :many
 SELECT id, name, ip_address, mac_address, type, status, scan_vendor, scan_mac, scan_os, scan_hostname, network_id,
        CAST(COALESCE(json_extract(scan_attributes, '$.stp.is_root'), 0) AS INTEGER) AS stp_root

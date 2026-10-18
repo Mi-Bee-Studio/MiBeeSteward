@@ -87,7 +87,8 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 1. Open the **Probes** page and click **+ New Target**:
    - HTTP module for websites (e.g. `https://example.com`);
    - TLS module when you only care about certificates (e.g. `example.com:443`);
-   - `host:port` for TCP reachability, plain ICMP for connectivity.
+   - `host:port` for TCP reachability, plain ICMP for connectivity;
+   - DNS resolution (e.g. `example.com`) to watch your resolver path — optionally pin a public resolver or assert expected answer IPs.
    Keep the default interval (anything from 10s to 24h is available).
 2. Results arrive within seconds. The page top summarizes success rate and average latency per module; the target list below carries status, latency, and **cert-days-remaining badges**.
 

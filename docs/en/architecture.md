@@ -368,7 +368,16 @@ Liveness noise control: online/offline verdicts are sampled into the `device_liv
 
 
 
-`internal/service/probetarget` probes explicitly configured EXTERNAL endpoints (public HTTPS sites, hosted TLS ports) on per-target intervals (10s tick re-reads targets, CRUD applies without restart; next-due resumes from `last_run_at`; 8-probe concurrency bound). Modules http/tcp/icmp reuse the heartbeat probers; tls (and https) call `CollectCertChain`, so the internal cert-chain inventory extends to internet hosts. Tables: `probe_targets` / `probe_results` / `probe_tls_certs`; metrics `mibee_probe_*`.
+`internal/service/probetarget` probes explicitly configured EXTERNAL endpoints (public HTTPS sites, hosted TLS ports) on per-target intervals (10s tick re-reads targets, CRUD applies without restart; next-due resumes from `last_run_at`; concurrency bounded by `probe.max_concurrency`, default 8 — previously a hard-coded 8). Modules http/tcp/icmp reuse the heartbeat probers; tls (and https) call `CollectCertChain`, so the internal cert-chain inventory extends to internet hosts. Tables: `probe_targets` / `probe_results` / `probe_tls_certs`; metrics `mibee_probe_*`.
+
+Three subsystems grew around that engine (#603–#610):
+
+- **Per-module options executor (#605)**: a target may carry an options JSON block. Option-less targets stay on the shared legacy probers (bit-for-bit unchanged semantics); option-carrying http/tcp targets run the option-aware executors (`executor_options.go`: method, exact expected status codes, 1 MiB-bounded body keyword match contains/not_contains/regex, `ignore_tls_errors` opt-out; tcp send payload + banner expectation), and the new `dns` module (`executor_dns.go`: A/AAAA/CNAME/TXT, pinned resolver `host[:port]` via a PreferGo UDP resolver, `expected_ips` intersection on A/AAAA). Options are validated per module at CRUD time (fields foreign to the module are rejected, not silently ignored) and deliberately hold no credentials — they ride the secret-free agent command channel verbatim.
+- **Capability-filtered dispatcher (#604)**: the vantage dispatcher filters each agent's plan by its declared `supported_modules` capability (reported in report meta → `agent_status.supported_modules`). Legacy agents (≤0.1.x, no declaration) are assumed `{icmp, http, tls}` and held back from tcp/dns plans with a one-time upgrade hint — pre-0.2.0 agents shipped tcp plans but failed them with "unknown module" (a live bug), so the dispatcher shields them until they upgrade.
+- **Egress quality (#608)**: `QualityService` seeds a system matrix of public probe points from `probe.quality` config (rows with `source=system`, vantage `all`; disabled = parked, config edits refresh rows, a config entry removed deletes the row with its history, a UI-deleted row reseeds on restart) and analyzes them read-time over a sliding window: per-vantage ok-rate and p50 aggregation, cross-vantage target isolation (failing everywhere blames the target, excluded from network verdicts; needs >1 reporting vantage), then the deterministic verdict chain `egress_down > dns_fault > upstream_resolver > degraded > ok`. The DNS differential (two public resolvers), the DNS-free direct-IP TCP leg, 204 endpoints, and the international reference group (excluded from the primary verdict — cross-border variance is its own signal, not an egress fault) are all config, nothing hardcoded. Served at `GET /api/v1/probe-quality`; a 1-minute loop refreshes the `mibee_probe_egress_verdict` / `mibee_probe_quality_score` gauges (metrics only, no notification wiring by design).
+- **Autogen sweep (#606)**: `AutogenService` (startup + every `probe.autogen.sweep_interval_minutes`, default 15) reconciles each device's detected_services identities into device-bound targets (`source=auto`): http/https services get http targets, other TCP services plain port probes, vantage preferring the device's own network agent. A service that left the scan parks its target (kept for history); a reappearance revives it; manual targets are never touched; the population is capped by `max_targets` (default 100). Default OFF.
+
+Schema generation 8 (#609) carries the storage side: `probe_targets` gains `options` (JSON), `device_id` (optional device binding; deletion unbinds — auto targets are disabled, manual/system keep running), `source` (`manual|auto|system`) and the `dns` module CHECK; `agent_status` gains `supported_modules`. As always the schema is fresh-only — crossing from an older generation is backup → new DB → rescan.
 
 
 
@@ -561,6 +570,12 @@ Resident goroutines started by `NewRouter()` (stopped in dependency order on gra
 | Config-backup sweep | 6h (config) | SSH running-config pulls → `device_configs` versions |
 
 | Probe-target engine | 10s tick | Due synthetic probes → `probe_results` |
+
+| Probe dispatch tick | 10s tick | Capability-filtered vantage plans → agent command channel (fingerprint-deduplicated) |
+
+| Egress-quality metrics loop | 1 min | Window analysis → `mibee_probe_egress_verdict` / `mibee_probe_quality_score` gauges |
+
+| Probe autogen sweep | 15 min (config) | Discovered services → device-bound `source=auto` targets (park/revive lifecycle) |
 
 | Notification rule engine | event-driven | Change events → matched rules → dispatch queue |
 

@@ -29,7 +29,7 @@
 	import { formatTime } from '$lib/utils/index';
 	import { auth } from '$lib/stores/auth';
 	import type { EChartsOption } from '$lib/charts/echarts';
-	import type { DashboardListItem, DashboardWidgetConfig } from '$lib/types';
+	import type { DashboardListItem, DashboardWidgetConfig, ProbeQualityReport } from '$lib/types';
 
 	interface DeviceStats {
 		by_status: { online: number; offline: number; unknown: number };
@@ -675,6 +675,33 @@
 		};
 	}
 
+	// Egress-quality verdict (#608) → list-row chip: verdict text reuses the
+	// probes page's labels; status maps onto DashboardWidget's chip classes
+	// (ok=success, degraded=warning, dns_fault/egress_down=error, the rest
+	// neutral — DashboardWidget renders unknown statuses in its muted default).
+	function qualityVerdictText(verdict: string): string {
+		switch (verdict) {
+			case 'ok':
+				return m['probes.Verdict Ok']();
+			case 'degraded':
+				return m['probes.Verdict Degraded']();
+			case 'egress_down':
+				return m['probes.Verdict Egress Down']();
+			case 'dns_fault':
+				return m['probes.Verdict Dns Fault']();
+			case 'upstream_resolver':
+				return m['probes.Verdict Upstream Resolver']();
+			default:
+				return m['probes.Verdict Insufficient']();
+		}
+	}
+	function qualityVerdictStatus(verdict: string): string {
+		if (verdict === 'ok') return 'success';
+		if (verdict === 'degraded') return 'warning';
+		if (verdict === 'dns_fault' || verdict === 'egress_down') return 'error';
+		return 'neutral';
+	}
+
 	async function refreshBuiltinWidget(w: WidgetState) {
 		switch (w.query) {
 			case 'builtin:device_status': {
@@ -734,6 +761,24 @@
 						subtitle: t.last_latency_ms != null ? `${t.target} · ${t.last_latency_ms}ms` : t.target,
 						status: t.last_status ?? (t.enabled ? 'unknown' : 'disabled'),
 						time: t.last_run_at ? formatTime(new Date(t.last_run_at)) : undefined,
+						href: '/probes'
+					}))
+				});
+				break;
+			}
+			case 'builtin:probe_quality': {
+				// Egress quality (#608): one row per vantage of the primary
+				// group (the network verdict; reference groups stay on the
+				// /probes quality matrix).
+				const q = await api.get<ProbeQualityReport>('/probe-quality');
+				const groups = q.groups ?? [];
+				const primary = groups.find((g) => g.role === 'primary') ?? groups[0];
+				applyWidgetPatch(w.id, {
+					listItems: (primary?.vantages ?? []).map((v) => ({
+						title: v.network_name || (v.vantage === 'center' ? m['probes.Vantage Center']() : v.vantage),
+						subtitle: `${qualityVerdictText(v.verdict)} · ${v.score}`,
+						status: qualityVerdictStatus(v.verdict),
+						time: formatTime(new Date()),
 						href: '/probes'
 					}))
 				});

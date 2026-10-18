@@ -41,6 +41,14 @@ heartbeat:
   timeout: 5  # 心跳检查超时时间（秒）
   retention_days: 30  # 心跳数据保留天数
 
+# 拨测引擎（出口质量评估 #608 与发现即拨测 #606 的默认值；完整键表见 config.example.yaml）
+probe:
+  max_concurrency: 8
+  quality:
+    enabled: true
+  autogen:
+    enabled: false
+
 # Prometheus 监控配置
 prometheus:
   enabled: true  # 启用 Prometheus 指标收集
