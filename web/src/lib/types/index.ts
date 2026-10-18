@@ -83,9 +83,11 @@ export type ProbeTriggerResponse = Schemas['ProbeResult'];
 /** Per-module execution options (#605): method/status/keyword (http), record/
  *  resolver/expected_ips (dns), send/expect/expect_mode (tcp). */
 export type ProbeOptions = Schemas['ProbeOptions'];
-// Egress-quality report (GET /probe-quality, #608): per-group vantage verdicts
-// computed read-time over the window's probe_results.
+// Egress-quality report (GET /probe-quality, #608/#613): per-category
+// (lan/external/quality) vantage verdicts computed read-time over the
+// window's probe_results; the quality category nests its config groups.
 export type ProbeQualityReport = Schemas['ProbeQualityReport'];
+export type ProbeQualityCategory = Schemas['ProbeQualityCategory'];
 export type ProbeQualityGroup = Schemas['ProbeQualityGroup'];
 export type ProbeQualityVantage = Schemas['ProbeQualityVantage'];
 export type ProbeQualityTarget = Schemas['ProbeQualityTarget'];

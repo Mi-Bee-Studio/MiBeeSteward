@@ -6171,10 +6171,22 @@ export interface components {
         ProbeResultList: components["schemas"]["PageMeta"] & {
             results?: components["schemas"]["ProbeResult"][];
         };
-        /** @description Egress-quality analysis (#608): per-group, per-vantage verdicts computed read-time over the window's probe_results. Verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok; reasons are stable codes for UI localization. */
+        /** @description Quality analysis (#613): computed per management category - lan (device-bound targets), external (manual business targets, simple ok/degraded verdicts) and quality (the built-in egress matrix, verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok with config groups nested). Reasons are stable codes for UI localization. */
         ProbeQualityReport: {
             window_minutes: number;
-            groups: components["schemas"]["ProbeQualityGroup"][];
+            categories: components["schemas"]["ProbeQualityCategory"][];
+        };
+        ProbeQualityCategory: {
+            /**
+             * @description lan = device-bound targets; external = manual unbound (business) targets; quality = the built-in system matrix
+             * @enum {string}
+             */
+            category: "lan" | "external" | "quality";
+            /** @description for quality, mirrors the primary group's verdicts */
+            vantages: components["schemas"]["ProbeQualityVantage"][];
+            targets: components["schemas"]["ProbeQualityTarget"][];
+            /** @description quality category only - the egress matrix's config groups (domestic primary + reference groups) */
+            groups?: components["schemas"]["ProbeQualityGroup"][];
         };
         ProbeQualityGroup: {
             name: string;

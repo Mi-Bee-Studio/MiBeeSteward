@@ -54,6 +54,29 @@ type qualityLeg struct {
 	st     QualityTrackStats
 }
 
+// Target categories (#613): the management UI groups targets and the quality
+// analyzer computes per these. Derivation is deterministic - no stored tag:
+//   - quality  : source=system (the built-in egress matrix, config-managed)
+//   - lan      : device-bound (source=auto, or manual with a device_id)
+//   - external : manual targets without a device binding (business sites)
+const (
+	ProbeCategoryLAN      = "lan"
+	ProbeCategoryExternal = "external"
+	ProbeCategoryQuality  = "quality"
+)
+
+// TargetCategory derives one target's management category.
+func TargetCategory(t db.ProbeTarget) string {
+	switch {
+	case t.Source == domain.ProbeSourceSystem:
+		return ProbeCategoryQuality
+	case t.DeviceID != nil || t.Source == domain.ProbeSourceAuto:
+		return ProbeCategoryLAN
+	default:
+		return ProbeCategoryExternal
+	}
+}
+
 // QualityService seeds the built-in egress-quality matrix from config and
 // computes per-vantage verdicts over a sliding window. Read-time analysis:
 // no state table, no notifications (the rejected "B" direction), pure
@@ -212,7 +235,8 @@ type QualityVantageReport struct {
 	Reasons     []string `json:"reasons"`
 }
 
-// QualityGroupReport is one config group's slice of the matrix.
+// QualityGroupReport is one config group's slice of the quality matrix
+// (quality category only).
 type QualityGroupReport struct {
 	Name     string                 `json:"name"`
 	Role     string                 `json:"role"` // primary | reference
@@ -220,15 +244,28 @@ type QualityGroupReport struct {
 	Targets  []QualityTargetMatrix  `json:"targets"`
 }
 
-// QualityReport is the GET /api/v1/probe-quality payload.
-type QualityReport struct {
-	WindowMinutes int                  `json:"window_minutes"`
-	Groups        []QualityGroupReport `json:"groups"`
+// QualityCategoryReport is one category's slice of the report. lan/external
+// carry simple ok/degraded verdicts over their own targets; quality carries
+// the full egress verdict chain, with the config groups nested.
+type QualityCategoryReport struct {
+	Category string                 `json:"category"` // lan | external | quality
+	Vantages []QualityVantageReport `json:"vantages"`
+	Targets  []QualityTargetMatrix  `json:"targets"`
+	Groups   []QualityGroupReport   `json:"groups,omitempty"` // quality only
 }
 
-// Analyze aggregates the window's probe_results into per-vantage verdicts.
-// Read-only and deterministic; the window holds a few thousand rows at
-// most, percentiles are exact (computed in Go, no SQL approximation).
+// QualityReport is the GET /api/v1/probe-quality payload (#613: computed per
+// management category).
+type QualityReport struct {
+	WindowMinutes int                     `json:"window_minutes"`
+	Categories    []QualityCategoryReport `json:"categories"`
+}
+
+// Analyze aggregates the window's probe_results into per-CATEGORY verdicts
+// (#613): lan (device-bound targets), external (manual business targets) and
+// quality (the built-in matrix, verdict chain inside). Read-only and
+// deterministic; the window holds a few thousand rows at most, percentiles
+// are exact (computed in Go, no SQL approximation).
 func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (QualityReport, error) {
 	if windowMinutes <= 0 {
 		windowMinutes = s.cfg.WindowMinutes
@@ -270,66 +307,217 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 		}
 	}
 
+	statsOf := func(id int64, vantage string) (QualityTrackStats, bool) {
+		a := agg[qualityKey{id, vantage}]
+		if a == nil {
+			return QualityTrackStats{}, false
+		}
+		return a.stats(), true
+	}
+
+	// Bucket the enabled targets by management category.
+	buckets := map[string][]db.ProbeTarget{
+		ProbeCategoryLAN: {}, ProbeCategoryExternal: {}, ProbeCategoryQuality: {},
+	}
+	for _, t := range targets {
+		if t.Enabled == 1 {
+			buckets[TargetCategory(t)] = append(buckets[TargetCategory(t)], t)
+		}
+	}
+
+	networkName := func(v string) string { return networkNameFor(v, networkByAgent) }
+	report := QualityReport{WindowMinutes: windowMinutes}
+
+	// lan + external: simple per-vantage health over the category's own
+	// targets (each target only ever has its own vantage's track - a LAN
+	// service is probed from its own network - so no cross-vantage
+	// isolation applies here).
+	for _, cat := range []string{ProbeCategoryLAN, ProbeCategoryExternal} {
+		cr := QualityCategoryReport{Category: cat}
+		vantageSet := make(map[string]bool)
+		for _, t := range buckets[cat] {
+			per := make(map[string]QualityTrackStats)
+			for k := range agg {
+				if k.targetID == t.ID {
+					per[k.vantage] = agg[k].stats()
+					vantageSet[k.vantage] = true
+				}
+			}
+			cr.Targets = append(cr.Targets, QualityTargetMatrix{
+				Name: t.Name, Module: t.Module, Target: t.Target,
+				CrossVantage: crossVantageVerdict(per), PerVantage: per,
+			})
+		}
+		for _, v := range sortedKeys(vantageSet) {
+			vr := judgeSimpleCategory(buckets[cat], v, statsOf, s.cfg)
+			if name := networkName(v); name != "" {
+				vr.NetworkName = name
+			}
+			cr.Vantages = append(cr.Vantages, vr)
+		}
+		report.Categories = append(report.Categories, cr)
+	}
+
+	// quality: the deterministic egress verdict chain over the config
+	// matrix (system targets), groups nested.
+	cr := QualityCategoryReport{Category: ProbeCategoryQuality}
 	targetByName := make(map[string]db.ProbeTarget, len(targets))
 	for _, t := range targets {
 		targetByName[t.Name] = t
 	}
-
 	groupNames := make([]string, 0, len(s.cfg.Groups))
 	for name := range s.cfg.Groups {
 		groupNames = append(groupNames, name)
 	}
 	sort.Strings(groupNames)
-
-	report := QualityReport{WindowMinutes: windowMinutes}
 	for _, group := range groupNames {
-		gr := QualityGroupReport{Name: group, Role: "reference"}
-		if group == QualityPrimaryGroup {
-			gr.Role = "primary"
+		gr := s.analyzeGroup(group, s.cfg.Groups[group], targetByName, agg, networkName)
+		cr.Groups = append(cr.Groups, gr)
+		if group != QualityPrimaryGroup {
+			continue
 		}
-		idOf := func(name string) (int64, bool) {
-			t, ok := targetByName[name]
-			if !ok {
-				return 0, false
+		// The category-level view mirrors the PRIMARY group's verdicts; the
+		// reference groups stay nested below it in the UI.
+		cr.Vantages = gr.Vantages
+	}
+	cr.Targets = qualityMatrixTargets(s.cfg, targetByName, agg)
+	report.Categories = append(report.Categories, cr)
+	return report, nil
+}
+
+// analyzeGroup computes one quality config group (verdict chain + matrix
+// columns).
+func (s *QualityService) analyzeGroup(
+	group string,
+	cfgTargets []config.ProbeQualityTarget,
+	targetByName map[string]db.ProbeTarget,
+	agg map[qualityKey]*trackAgg,
+	networkName func(vantage string) string,
+) QualityGroupReport {
+	gr := QualityGroupReport{Name: group, Role: "reference"}
+	if group == QualityPrimaryGroup {
+		gr.Role = "primary"
+	}
+	idOf := func(name string) (int64, bool) {
+		t, ok := targetByName[name]
+		if !ok {
+			return 0, false
+		}
+		return t.ID, true
+	}
+	perVantageOf := func(name string) map[string]QualityTrackStats {
+		out := make(map[string]QualityTrackStats)
+		if id, ok := idOf(name); ok {
+			for k, a := range agg {
+				if k.targetID == id {
+					out[k.vantage] = a.stats()
+				}
 			}
-			return t.ID, true
 		}
-		perVantageOf := func(name string) map[string]QualityTrackStats {
-			out := make(map[string]QualityTrackStats)
-			if id, ok := idOf(name); ok {
+		return out
+	}
+
+	for _, qt := range cfgTargets {
+		per := perVantageOf(qt.Name)
+		gr.Targets = append(gr.Targets, QualityTargetMatrix{
+			Name: qt.Name, Module: qt.Module, Target: qt.Target,
+			CrossVantage: crossVantageVerdict(per), PerVantage: per,
+		})
+	}
+	vantageSet := make(map[string]bool)
+	for _, qt := range cfgTargets {
+		for v := range perVantageOf(qt.Name) {
+			vantageSet[v] = true
+		}
+	}
+	for _, v := range sortedKeys(vantageSet) {
+		vr := judgeVantage(cfgTargets, agg, idOf, v, s.cfg)
+		if name := networkName(v); name != "" {
+			vr.NetworkName = name
+		}
+		gr.Vantages = append(gr.Vantages, vr)
+	}
+	return gr
+}
+
+// qualityMatrixTargets flattens the config groups into the category-level
+// column list (display only - the verdicts live in the groups).
+func qualityMatrixTargets(cfg config.ProbeQualityConfig, targetByName map[string]db.ProbeTarget, agg map[qualityKey]*trackAgg) []QualityTargetMatrix {
+	var out []QualityTargetMatrix
+	for _, group := range cfg.Groups {
+		for _, qt := range group {
+			per := make(map[string]QualityTrackStats)
+			if t, ok := targetByName[qt.Name]; ok {
 				for k, a := range agg {
-					if k.targetID == id {
-						out[k.vantage] = a.stats()
+					if k.targetID == t.ID {
+						per[k.vantage] = a.stats()
 					}
 				}
 			}
-			return out
-		}
-
-		for _, qt := range s.cfg.Groups[group] {
-			perVantage := perVantageOf(qt.Name)
-			gr.Targets = append(gr.Targets, QualityTargetMatrix{
+			out = append(out, QualityTargetMatrix{
 				Name: qt.Name, Module: qt.Module, Target: qt.Target,
-				CrossVantage: crossVantageVerdict(perVantage), PerVantage: perVantage,
+				CrossVantage: crossVantageVerdict(per), PerVantage: per,
 			})
 		}
-
-		vantageSet := make(map[string]bool)
-		for _, qt := range s.cfg.Groups[group] {
-			for v := range perVantageOf(qt.Name) {
-				vantageSet[v] = true
-			}
-		}
-		for _, v := range sortedKeys(vantageSet) {
-			vr := judgeVantage(s.cfg.Groups[group], agg, idOf, v, s.cfg)
-			if name := networkNameFor(v, networkByAgent); name != "" {
-				vr.NetworkName = name
-			}
-			gr.Vantages = append(gr.Vantages, vr)
-		}
-		report.Groups = append(report.Groups, gr)
 	}
-	return report, nil
+	return out
+}
+
+// judgeSimpleCategory is the lan/external verdict: no egress semantics, just
+// window health - mean ok-rate over the category's evaluated legs against
+// the ok-rate threshold, per-module p50 budgets, insufficient below two
+// samples.
+func judgeSimpleCategory(
+	bucket []db.ProbeTarget,
+	vantage string,
+	statsOf func(id int64, vantage string) (QualityTrackStats, bool),
+	cfg config.ProbeQualityConfig,
+) QualityVantageReport {
+	vr := QualityVantageReport{
+		Vantage: vantage,
+		Verdict: QualityVerdictInsufficient,
+		Reasons: []string{"insufficient_data"},
+	}
+	var legs []qualityLeg
+	totalSamples := 0
+	for _, t := range bucket {
+		st, ok := statsOf(t.ID, vantage)
+		if !ok || st.Samples == 0 {
+			continue
+		}
+		totalSamples += st.Samples
+		legs = append(legs, qualityLeg{name: t.Name, module: t.Module, st: st})
+	}
+	if len(legs) == 0 || totalSamples < 2 {
+		return vr
+	}
+	vr.Reasons = vr.Reasons[:0]
+
+	okSum := 0.0
+	for _, l := range legs {
+		okSum += l.st.OkRate
+	}
+	if okSum/float64(len(legs)) < cfg.OkRateThreshold {
+		vr.Reasons = append(vr.Reasons, "ok_rate_low")
+	}
+	for _, l := range legs {
+		budget := float64(cfg.HTTPDegradedMs)
+		if l.module == "dns" {
+			budget = float64(cfg.DNSDegradedMs)
+		}
+		if l.st.P50Ms > 0 && l.st.P50Ms > budget {
+			vr.Reasons = append(vr.Reasons, "latency_high")
+			break
+		}
+	}
+	vr.Score = okRateScore(legs)
+	if len(vr.Reasons) > 0 {
+		vr.Verdict = QualityVerdictDegraded
+		vr.Score = maxInt(vr.Score-20, 0)
+	} else {
+		vr.Verdict = QualityVerdictOK
+	}
+	return vr
 }
 
 // trackAgg accumulates one (target, vantage) window; latencies count only

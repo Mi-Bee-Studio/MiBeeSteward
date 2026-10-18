@@ -158,17 +158,19 @@ func primaryVerdict(t *testing.T, svc *QualityService, vantage string) QualityVa
 	t.Helper()
 	report, err := svc.Analyze(context.Background(), 15)
 	require.NoError(t, err)
-	for _, g := range report.Groups {
-		if g.Role != "primary" {
-			continue
-		}
-		for _, v := range g.Vantages {
-			if v.Vantage == vantage {
-				return v
+	for _, cat := range report.Categories {
+		for _, g := range cat.Groups {
+			if g.Role != "primary" {
+				continue
+			}
+			for _, v := range g.Vantages {
+				if v.Vantage == vantage {
+					return v
+				}
 			}
 		}
 	}
-	t.Fatalf("no verdict for vantage %q", vantage)
+	t.Fatalf("no primary-group verdict for vantage %q", vantage)
 	return QualityVantageReport{}
 }
 
@@ -233,11 +235,17 @@ func TestQualityVerdictChain(t *testing.T) {
 		// rather than a wrong verdict.
 		report, err := svc.Analyze(context.Background(), 15)
 		require.NoError(t, err)
-		for _, g := range report.Groups {
-			require.Empty(t, g.Vantages)
-			for _, col := range g.Targets {
-				require.Equal(t, "no_data", col.CrossVantage)
+		for _, cat := range report.Categories {
+			if cat.Category == ProbeCategoryQuality {
+				for _, g := range cat.Groups {
+					require.Empty(t, g.Vantages)
+					for _, col := range g.Targets {
+						require.Equal(t, "no_data", col.CrossVantage)
+					}
+				}
+				continue
 			}
+			require.Empty(t, cat.Vantages)
 		}
 	})
 	t.Run("cross-vantage isolation excludes a dead target", func(t *testing.T) {
@@ -255,12 +263,83 @@ func TestQualityVerdictChain(t *testing.T) {
 		require.Equal(t, QualityVerdictOK, v.Verdict)
 		report, err := svc.Analyze(context.Background(), 15)
 		require.NoError(t, err)
-		for _, g := range report.Groups {
-			for _, col := range g.Targets {
-				if col.Name == "q-http" {
-					require.Equal(t, "target_down", col.CrossVantage)
+		for _, cat := range report.Categories {
+			for _, g := range cat.Groups {
+				for _, col := range g.Targets {
+					if col.Name == "q-http" {
+						require.Equal(t, "target_down", col.CrossVantage)
+					}
 				}
 			}
 		}
 	})
+}
+
+// TestQualityCategories pins the category split (#613): lan targets
+// (device-bound) and external ones (manual, unbound) get their own
+// per-vantage simple verdicts; the egress chain stays in the quality
+// category's groups.
+func TestQualityCategories(t *testing.T) {
+	ctx := context.Background()
+	svc, queries := setupQuality(t)
+	// Quality matrix rows (primary group healthy).
+	seedQualityWorld(t, queries, testQualityConfig(), "center", map[string]string{
+		"q-dns-a": "ssss", "q-dns-b": "ssss", "q-http": "ssss", "q-direct": "ssss", "q-int-http": "ssss",
+	}, 50)
+	// A lan (auto) target healthy at its own agent vantage; an external
+	// (manual) target failing at center.
+	auto, err := queries.CreateProbeTarget(ctx, db.CreateProbeTargetParams{
+		Name: "auto-d1-http-80", Module: "http", Target: "http://192.0.2.10:80/",
+		IntervalSeconds: 300, TimeoutSeconds: 10, Enabled: 1,
+		Vantage: domain.ProbeVantageAgentPrefix + "agent-lan-63", Source: domain.ProbeSourceAuto,
+	})
+	require.NoError(t, err)
+	ext, err := queries.CreateProbeTarget(ctx, db.CreateProbeTargetParams{
+		Name: "biz-site", Module: "http", Target: "https://www.example.org/",
+		IntervalSeconds: 300, TimeoutSeconds: 10, Enabled: 1,
+		Vantage: domain.ProbeVantageCenter, Source: domain.ProbeSourceManual,
+	})
+	require.NoError(t, err)
+	mk := func(id int64, v, st string, latency float64) {
+		require.NoError(t, queries.CreateProbeResult(ctx, db.CreateProbeResultParams{
+			TargetID: id, Status: st, LatencyMs: latency, Vantage: v,
+			CheckedAt: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
+		}))
+		require.NoError(t, queries.CreateProbeResult(ctx, db.CreateProbeResultParams{
+			TargetID: id, Status: st, LatencyMs: latency, Vantage: v,
+			CheckedAt: time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339),
+		}))
+	}
+	mk(auto.ID, "agent:agent-lan-63", "success", 12)
+	mk(ext.ID, "center", "fail", 0)
+
+	report, err := svc.Analyze(context.Background(), 15)
+	require.NoError(t, err)
+	cats := map[string]QualityCategoryReport{}
+	for _, c := range report.Categories {
+		cats[c.Category] = c
+	}
+	require.Len(t, cats, 3)
+	require.NotEmpty(t, cats[ProbeCategoryQuality].Groups, "egress chain nested under quality")
+
+	lan := cats[ProbeCategoryLAN]
+	require.Len(t, lan.Targets, 1)
+	require.Equal(t, "auto-d1-http-80", lan.Targets[0].Name)
+	require.Len(t, lan.Vantages, 1)
+	require.Equal(t, "agent:agent-lan-63", lan.Vantages[0].Vantage)
+	require.Equal(t, QualityVerdictOK, lan.Vantages[0].Verdict)
+
+	extCat := cats[ProbeCategoryExternal]
+	require.Len(t, extCat.Targets, 1)
+	require.Equal(t, QualityVerdictDegraded, extCat.Vantages[0].Verdict)
+	require.Contains(t, extCat.Vantages[0].Reasons, "ok_rate_low")
+}
+
+// TestTargetCategory pins the derivation rules.
+func TestTargetCategory(t *testing.T) {
+	dev := int64(7)
+	require.Equal(t, ProbeCategoryQuality, TargetCategory(db.ProbeTarget{Source: domain.ProbeSourceSystem}))
+	require.Equal(t, ProbeCategoryLAN, TargetCategory(db.ProbeTarget{Source: domain.ProbeSourceAuto}))
+	require.Equal(t, ProbeCategoryLAN, TargetCategory(db.ProbeTarget{Source: domain.ProbeSourceManual, DeviceID: &dev}))
+	require.Equal(t, ProbeCategoryExternal, TargetCategory(db.ProbeTarget{Source: domain.ProbeSourceManual}))
 }

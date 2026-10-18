@@ -769,9 +769,10 @@
 			case 'builtin:probe_quality': {
 				// Egress quality (#608): one row per vantage of the primary
 				// group (the network verdict; reference groups stay on the
-				// /probes quality matrix).
+				// /probes quality matrix). #613 made the report per-category —
+				// the widget keeps reading the quality category's groups.
 				const q = await api.get<ProbeQualityReport>('/probe-quality');
-				const groups = q.groups ?? [];
+				const groups = q.categories?.find((c) => c.category === 'quality')?.groups ?? [];
 				const primary = groups.find((g) => g.role === 'primary') ?? groups[0];
 				applyWidgetPatch(w.id, {
 					listItems: (primary?.vantages ?? []).map((v) => ({

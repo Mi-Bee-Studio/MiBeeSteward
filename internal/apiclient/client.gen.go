@@ -531,6 +531,27 @@ func (e ProbeOptionsRecord) Valid() bool {
 	}
 }
 
+// Defines values for ProbeQualityCategoryCategory.
+const (
+	External ProbeQualityCategoryCategory = "external"
+	Lan      ProbeQualityCategoryCategory = "lan"
+	Quality  ProbeQualityCategoryCategory = "quality"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityCategoryCategory enum.
+func (e ProbeQualityCategoryCategory) Valid() bool {
+	switch e {
+	case External:
+		return true
+	case Lan:
+		return true
+	case Quality:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeQualityGroupRole.
 const (
 	Primary   ProbeQualityGroupRole = "primary"
@@ -1696,6 +1717,22 @@ type ProbeOptionsMethod string
 // ProbeOptionsRecord dns only; default A
 type ProbeOptionsRecord string
 
+// ProbeQualityCategory defines model for ProbeQualityCategory.
+type ProbeQualityCategory struct {
+	// Category lan = device-bound targets; external = manual unbound (business) targets; quality = the built-in system matrix
+	Category ProbeQualityCategoryCategory `json:"category"`
+
+	// Groups quality category only - the egress matrix's config groups (domestic primary + reference groups)
+	Groups  *[]ProbeQualityGroup `json:"groups,omitempty"`
+	Targets []ProbeQualityTarget `json:"targets"`
+
+	// Vantages for quality, mirrors the primary group's verdicts
+	Vantages []ProbeQualityVantage `json:"vantages"`
+}
+
+// ProbeQualityCategoryCategory lan = device-bound targets; external = manual unbound (business) targets; quality = the built-in system matrix
+type ProbeQualityCategoryCategory string
+
 // ProbeQualityGroup defines model for ProbeQualityGroup.
 type ProbeQualityGroup struct {
 	Name string `json:"name"`
@@ -1709,10 +1746,10 @@ type ProbeQualityGroup struct {
 // ProbeQualityGroupRole primary = the network verdict; reference groups are displayed separately
 type ProbeQualityGroupRole string
 
-// ProbeQualityReport Egress-quality analysis (#608): per-group, per-vantage verdicts computed read-time over the window's probe_results. Verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok; reasons are stable codes for UI localization.
+// ProbeQualityReport Quality analysis (#613): computed per management category - lan (device-bound targets), external (manual business targets, simple ok/degraded verdicts) and quality (the built-in egress matrix, verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok with config groups nested). Reasons are stable codes for UI localization.
 type ProbeQualityReport struct {
-	Groups        []ProbeQualityGroup `json:"groups"`
-	WindowMinutes int                 `json:"window_minutes"`
+	Categories    []ProbeQualityCategory `json:"categories"`
+	WindowMinutes int                    `json:"window_minutes"`
 }
 
 // ProbeQualityTarget defines model for ProbeQualityTarget.
