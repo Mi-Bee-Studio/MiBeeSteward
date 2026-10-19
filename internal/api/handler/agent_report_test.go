@@ -642,3 +642,116 @@ func TestAgentReport_MaterializesTopologyEdgesAndScanResults(t *testing.T) {
 	require.Equal(t, 3, results)
 	require.Equal(t, 3, linked)
 }
+
+// TestAgentReport_PassiveReportPreservesServices pins the #612 fix: a passive
+// batch re-reports a known host with every probe field empty (the agent
+// restart scenario that once cleared a whole network's services) — the bridge
+// must keep the scanned-in services while still enriching identity (the
+// passive hostname lands). The inverse direction is pinned too: an ACTIVE
+// scan batch that observed no services DOES clear stale ones.
+func TestAgentReport_PassiveReportPreservesServices(t *testing.T) {
+	srv, db, token, _ := setupAgentIngestServer(t)
+	mac := "08:00:27:11:22:60"
+	ip := "192.168.2.60"
+
+	// 1. Scan-shaped report with a service → the row carries it.
+	status, out := postReport(t, srv, token, domain.AgentReport{
+		AgentID: "agent-62",
+		Hosts: []domain.ReportedHost{{
+			IP: ip, Alive: true, MAC: mac,
+			Services: []domain.ReportedService{{Service: "http", Port: 80, Protocol: "tcp"}},
+		}},
+	})
+	require.Equal(t, http.StatusOK, status, "body=%v", out)
+	var svcs string
+	require.NoError(t, db.QueryRow(`SELECT detected_services FROM devices WHERE ip_address = ?`, ip).Scan(&svcs))
+	require.Contains(t, svcs, `"http"`, "scan report must land the service")
+
+	// 2. Passive batch: same host, all probe fields empty, only a hostname.
+	status2, out2 := postReport(t, srv, token, domain.AgentReport{
+		AgentID: "agent-62", Origin: "passive",
+		Hosts: []domain.ReportedHost{{IP: ip, Alive: true, MAC: mac, Hostname: "printer-hall"}},
+	})
+	require.Equal(t, http.StatusOK, status2, "body=%v", out2)
+	var svcs2, name string
+	require.NoError(t, db.QueryRow(`SELECT detected_services, COALESCE(name,'') FROM devices WHERE ip_address = ?`, ip).Scan(&svcs2, &name))
+	require.Contains(t, svcs2, `"http"`, "passive report must NOT clear scanned-in services (#612)")
+	require.Equal(t, "printer-hall", name, "passive identity (hostname) still enriches the row")
+
+	// 3. Active scan batch WITHOUT services → stale services cleared (the
+	// authoritative-observation direction the CASE-keep must not break).
+	status3, out3 := postReport(t, srv, token, domain.AgentReport{
+		AgentID: "agent-62",
+		Hosts:   []domain.ReportedHost{{IP: ip, Alive: true, MAC: mac}},
+	})
+	require.Equal(t, http.StatusOK, status3, "body=%v", out3)
+	var svcs3 string
+	require.NoError(t, db.QueryRow(`SELECT detected_services FROM devices WHERE ip_address = ?`, ip).Scan(&svcs3))
+	require.Equal(t, "[]", svcs3, "an active scan that observed no services clears stale ones")
+}
+
+// TestAgentReport_PassiveFirstSightingStoresEmptyArray: a host first seen by a
+// passive batch gets a canonical '[]' in detected_services (not the empty
+// preserve-marker), so the UI's JSON parsers never trip on the sentinel.
+func TestAgentReport_PassiveFirstSightingStoresEmptyArray(t *testing.T) {
+	srv, db, token, _ := setupAgentIngestServer(t)
+
+	status, out := postReport(t, srv, token, domain.AgentReport{
+		AgentID: "agent-62", Origin: "passive",
+		Hosts: []domain.ReportedHost{{IP: "192.168.2.61", Alive: true, MAC: "08:00:27:11:22:61"}},
+	})
+	require.Equal(t, http.StatusOK, status, "body=%v", out)
+	require.Equal(t, float64(1), out["added"], "passive first sighting creates the device")
+
+	var svcs, ports string
+	require.NoError(t, db.QueryRow(`SELECT detected_services, open_ports FROM devices WHERE ip_address = '192.168.2.61'`).Scan(&svcs, &ports))
+	require.Equal(t, "[]", svcs)
+	require.Equal(t, "[]", ports)
+}
+
+// TestAgentReport_HashSkip_ReconcilesWipedServices pins the #612 fast-path
+// heal: a device whose service columns were wiped out-of-band (the historical
+// passive-empty overwrite) is restored by the NEXT stable-hash report — the
+// state hash says "nothing changed", so the skipped bridge would otherwise
+// never re-land them.
+func TestAgentReport_HashSkip_ReconcilesWipedServices(t *testing.T) {
+	srv, db, token, _ := setupAgentIngestServer(t)
+	ip := "192.168.2.62"
+	host := domain.ReportedHost{
+		IP: ip, Alive: true, MAC: "08:00:27:11:22:62",
+		Services: []domain.ReportedService{{Service: "ssh", Port: 22, Protocol: "tcp"}},
+	}
+
+	// 1. Scan batch with hash → services land, hash cached.
+	status, out := postReportWithHeader(t, srv, token, "X-Network-State-Hash", "hash-X", domain.AgentReport{
+		AgentID: "agent-62", Hosts: []domain.ReportedHost{host},
+	})
+	require.Equal(t, http.StatusOK, status, "body=%v", out)
+	var svcs string
+	require.NoError(t, db.QueryRow(`SELECT detected_services FROM devices WHERE ip_address = ?`, ip).Scan(&svcs))
+	require.Contains(t, svcs, `"ssh"`)
+
+	// 2. Simulate the historical wipe: services cleared center-side, out of
+	// band (what a pre-#612 passive empty-field report did).
+	_, err := db.Exec(`UPDATE devices SET open_ports = '', detected_services = '' WHERE ip_address = ?`, ip)
+	require.NoError(t, err)
+
+	// 3. Same hash again → fast path taken, and the reconcile heals the row.
+	status2, out2 := postReportWithHeader(t, srv, token, "X-Network-State-Hash", "hash-X", domain.AgentReport{
+		AgentID: "agent-62", Hosts: []domain.ReportedHost{host},
+	})
+	require.Equal(t, http.StatusOK, status2, "body=%v", out2)
+	require.Equal(t, true, out2["stable"], "identical hash must still take the fast path")
+	require.Equal(t, float64(1), out2["reconciled"], "the wiped row is healed on the stable path")
+
+	var svcs2 string
+	require.NoError(t, db.QueryRow(`SELECT detected_services FROM devices WHERE ip_address = ?`, ip).Scan(&svcs2))
+	require.Contains(t, svcs2, `"ssh"`, "services re-landed by the reconcile")
+
+	// 4. Third identical report: steady state — stable, nothing left to heal.
+	_, out3 := postReportWithHeader(t, srv, token, "X-Network-State-Hash", "hash-X", domain.AgentReport{
+		AgentID: "agent-62", Hosts: []domain.ReportedHost{host},
+	})
+	require.Equal(t, true, out3["stable"])
+	require.Equal(t, float64(0), out3["reconciled"], "healed row no longer matches the reconcile predicate")
+}

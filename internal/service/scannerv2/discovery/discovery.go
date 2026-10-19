@@ -793,6 +793,12 @@ type SinkAdapter struct {
 // its IP belongs to when that is resolvable, then forwards it upstream when
 // the adapter is agent-side.
 func (a SinkAdapter) Apply(ctx context.Context, rep scannerv2.HostReport) bool {
+	// Passive sightings assert liveness/identity only (#612): mark the report
+	// so the bridge leaves the service columns alone instead of overwriting
+	// them with the empty observation. Every source feeding this sink is a
+	// discovery source (ARP/diff, mDNS/SSDP, DHCP/DNS sightings); none of
+	// them looked at the host's ports.
+	rep.Passive = true
 	nid := a.Runner.NetworkID()
 	if resolved := a.Networks.Resolve(ctx, rep.IP); resolved.Valid {
 		nid = resolved

@@ -339,6 +339,14 @@ func (rn *Runner) applyDeviceBridge(ctx context.Context, rep scannerv2.HostRepor
 // former createDevice + existingUpdateArgs derivation that lived inline here.
 func (rn *Runner) buildIdentityWrite(rep scannerv2.HostReport, mac, devType, brand, descr, location string, networkID sql.NullInt64) scannerv2.IdentityWrite {
 	ports, services := deviceScanInfoJSON(rep)
+	if rep.Passive {
+		// A passive report never looked at ports (#612): empty string is the
+		// "not observed" marker the store's CASE-WHEN reads as "keep the
+		// existing values". Without this, a discovery-only sighting (agent
+		// restart re-reporting its whole LAN with all probe fields empty)
+		// wiped devices.open_ports/detected_services network-wide.
+		ports, services = "", ""
+	}
 	return scannerv2.IdentityWrite{
 		IP:                   rep.IP,
 		MAC:                  mac,

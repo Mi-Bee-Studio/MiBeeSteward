@@ -598,6 +598,47 @@ func (q *Queries) ListDevicesForProbeAutogen(ctx context.Context) ([]ListDevices
 	return items, nil
 }
 
+const listNetworkDeviceServiceState = `-- name: ListNetworkDeviceServiceState :many
+SELECT ip_address, open_ports, detected_services
+FROM devices
+WHERE network_id = ?
+ORDER BY ip_address
+`
+
+type ListNetworkDeviceServiceStateRow struct {
+	IpAddress        string `json:"ip_address"`
+	OpenPorts        string `json:"open_ports"`
+	DetectedServices string `json:"detected_services"`
+}
+
+// Fast-path service reconcile source (#612): the agent-report hash fast path
+// skips the device bridge entirely, so a device row whose service columns
+// were wiped (historically by a passive empty-field report) can never
+// re-land them. This reads just the columns the reconcile compares, per
+// network, so the steady-state cost of the check is one indexed SELECT.
+func (q *Queries) ListNetworkDeviceServiceState(ctx context.Context, networkID *int64) ([]ListNetworkDeviceServiceStateRow, error) {
+	rows, err := q.db.QueryContext(ctx, listNetworkDeviceServiceState, networkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNetworkDeviceServiceStateRow{}
+	for rows.Next() {
+		var i ListNetworkDeviceServiceStateRow
+		if err := rows.Scan(&i.IpAddress, &i.OpenPorts, &i.DetectedServices); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTopologyDevices = `-- name: ListTopologyDevices :many
 SELECT id, name, ip_address, mac_address, type, status, scan_vendor, scan_mac, scan_os, scan_hostname, network_id,
        CAST(COALESCE(json_extract(scan_attributes, '$.stp.is_root'), 0) AS INTEGER) AS stp_root

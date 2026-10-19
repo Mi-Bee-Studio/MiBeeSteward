@@ -194,6 +194,14 @@ type Repository interface {
 	// thin SQL layer with no classification logic. in.TargetID MUST be the value
 	// returned by ResolveDeviceIdentity (0 when IsNew).
 	ApplyDeviceIdentity(ctx context.Context, in IdentityWrite) (deviceID int64, err error)
+
+	// BackfillHostServiceUUIDs heals host_services rows written before their
+	// device row existed (RecordServices resolves device_uuid at write time;
+	// on agent-fed networks and one-shot identify triggers the device row is
+	// created after the service rows, and no rewrite cycle ever revisits
+	// them — #612). Idempotent single UPDATE; returns the number of rows
+	// healed. Persistence failures are logged, never fatal to the caller.
+	BackfillHostServiceUUIDs(ctx context.Context) (int64, error)
 }
 
 // IdentityResolution is the read-only result of ResolveDeviceIdentity. It tells
@@ -309,6 +317,11 @@ func (NoopRepository) ResolveDeviceIdentity(context.Context, string, string, sql
 
 // ApplyDeviceIdentity is a no-op; returns 0 (no row created) and nil.
 func (NoopRepository) ApplyDeviceIdentity(context.Context, IdentityWrite) (int64, error) {
+	return 0, nil
+}
+
+// BackfillHostServiceUUIDs is a no-op; heals nothing.
+func (NoopRepository) BackfillHostServiceUUIDs(context.Context) (int64, error) {
 	return 0, nil
 }
 

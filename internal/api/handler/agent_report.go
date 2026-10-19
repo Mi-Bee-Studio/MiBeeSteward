@@ -177,6 +177,17 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 					"agent_id", rep.AgentID, "network_id", *networkID, "out_of_network", oon)
 			}
 			h.runner.RecordAliveSnapshots(r.Context(), nid, 0, hostReportsForLease(hostsForLease))
+			// Service reconcile (#612): the fast path skips the bridge by
+			// design, so a device row whose service columns were wiped
+			// (historically by a passive empty-field report clearing
+			// detected_services network-wide) can NEVER re-land them — the
+			// next scan batch hashes the same as the one before the wipe and
+			// is skipped forever. Heal here: when a report host carries
+			// service data but the center row's columns are empty, run the
+			// bridge for exactly those hosts. Steady state costs one indexed
+			// SELECT per report; the bridge only runs for actual mismatches,
+			// and once healed the row stops matching.
+			reconciled := h.reconcileWipedServices(r.Context(), *networkID, nid, agentID, hostsForLease)
 			// Close the pending dispatch-run with real numbers (#390): the
 			// stable path adds/updates nothing by design (bridge skipped), but
 			// the reported host count IS the run's alive set.
@@ -184,8 +195,9 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 				h.backfillAgentRunStats(r.Context(), *networkID, len(hostsForLease), 0, 0)
 			}
 			slog.Debug("agent report: stable network, skipped device bridge",
-				"agent_id", rep.AgentID, "network_id", *networkID, "hosts", len(rep.Hosts))
-			Success(w, reportAck{Accepted: 0, Stable: true, OutOfNetwork: oon})
+				"agent_id", rep.AgentID, "network_id", *networkID, "hosts", len(rep.Hosts),
+				"reconciled", reconciled)
+			Success(w, reportAck{Accepted: 0, Stable: true, OutOfNetwork: oon, Reconciled: reconciled})
 			return
 		}
 	}
@@ -225,6 +237,12 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, host := range inNetwork {
 		hr := runner.ReportedHostToReport(host)
+		// Passive batches assert liveness/identity only: the bridge must not
+		// touch the service columns (#612). An agent's discovery sweep
+		// re-reports its whole LAN with every probe field empty after a
+		// restart; without the flag that one batch cleared the scanned-in
+		// services of the entire network (observed 33/33 → 0/33 on lan-63).
+		hr.Passive = rep.Origin == "passive"
 		var aliases []string
 		if m := store.NormalizeMAC(host.MAC); m != "" {
 			for ip := range macIPs[m] {
@@ -541,4 +559,59 @@ type reportAck struct {
 	Skipped      int  `json:"skipped"`        // dead hosts, missing IP, or apply errors
 	OutOfNetwork int  `json:"out_of_network"` // hosts dropped by the CIDR boundary check (issue #19)
 	Stable       bool `json:"stable"`         // true = state hash matched, device bridge skipped
+	Reconciled   int  `json:"reconciled"`     // stable-path service heals (#612), 0 otherwise
+}
+
+// reconcileWipedServices is the stable-path heal for wiped service columns
+// (#612). It re-bridges exactly the report hosts that carry service data
+// while their device row's open_ports/detected_services are empty — rows the
+// skipped bridge would otherwise never restore (the state hash that gated the
+// fast path says "nothing changed", and it didn't: the wipe happened center-
+// side, out-of-band). Returns the number of hosts healed; failures degrade
+// to a debug log, the reconcile must never fail the report.
+func (h *AgentReportHandler) reconcileWipedServices(ctx context.Context, networkID int64, nid sql.NullInt64, agentID string, hosts []domain.ReportedHost) int {
+	carriers := make([]domain.ReportedHost, 0, len(hosts))
+	for _, host := range hosts {
+		carries := len(host.Services) > 0 ||
+			(host.OpenPorts != "" && host.OpenPorts != "[]") ||
+			(host.DetectedServices != "" && host.DetectedServices != "[]")
+		if carries {
+			carriers = append(carriers, host)
+		}
+	}
+	if len(carriers) == 0 {
+		return 0
+	}
+	rows, err := h.queries.ListNetworkDeviceServiceState(ctx, &networkID)
+	if err != nil {
+		slog.Debug("agent report: service-state reconcile read failed",
+			"network_id", networkID, "error", err)
+		return 0
+	}
+	wiped := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		portsEmpty := row.OpenPorts == "" || row.OpenPorts == "[]"
+		servicesEmpty := row.DetectedServices == "" || row.DetectedServices == "[]"
+		wiped[row.IpAddress] = portsEmpty && servicesEmpty
+	}
+	reconciled := 0
+	for _, host := range carriers {
+		if !wiped[host.IP] {
+			continue // no device row, or the row already carries services
+		}
+		hr := runner.ReportedHostToReport(host)
+		// A scan batch (the only kind that reaches the fast path): the
+		// bridge writes the services authoritatively.
+		if _, _, err := h.runner.ApplyReport(ctx, hr, nid, agentID); err != nil {
+			slog.Debug("agent report: service-state reconcile apply failed",
+				"ip", host.IP, "error", err)
+			continue
+		}
+		reconciled++
+	}
+	if reconciled > 0 {
+		slog.Info("agent report: stable-path service reconcile healed wiped rows",
+			"network_id", networkID, "reconciled", reconciled)
+	}
+	return reconciled
 }

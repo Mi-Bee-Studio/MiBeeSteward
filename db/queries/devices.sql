@@ -145,3 +145,14 @@ SELECT id, type, ip_address, network_id, detected_services
 FROM devices
 WHERE detected_services != '[]' AND detected_services != ''
 ORDER BY id;
+
+-- name: ListNetworkDeviceServiceState :many
+-- Fast-path service reconcile source (#612): the agent-report hash fast path
+-- skips the device bridge entirely, so a device row whose service columns
+-- were wiped (historically by a passive empty-field report) can never
+-- re-land them. This reads just the columns the reconcile compares, per
+-- network, so the steady-state cost of the check is one indexed SELECT.
+SELECT ip_address, open_ports, detected_services
+FROM devices
+WHERE network_id = ?
+ORDER BY ip_address;

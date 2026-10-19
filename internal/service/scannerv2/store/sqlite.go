@@ -716,8 +716,8 @@ func existingIdentityUpdate() string {
 		    model = CASE WHEN (model = '' OR model = 'unknown') AND ? != '' THEN ? ELSE model END,
 		    description = CASE WHEN (description = '' OR description = 'unknown') AND ? != '' THEN ? ELSE description END,
 		    location = CASE WHEN (location = '' OR location = 'unknown') AND ? != '' THEN ? ELSE location END,
-		    open_ports = ?,
-		    detected_services = ?,
+		    open_ports = CASE WHEN ? != '' THEN ? ELSE open_ports END,
+		    detected_services = CASE WHEN ? != '' THEN ? ELSE detected_services END,
 		    prometheus_url = CASE WHEN ? != '' THEN ? ELSE prometheus_url END,
 		    node_exporter_url = CASE WHEN ? != '' THEN ? ELSE node_exporter_url END,
 		    scan_attributes = json_patch(scan_attributes, ?),
@@ -742,8 +742,8 @@ func replacementIdentityUpdate() string {
 		    model = CASE WHEN ? != '' THEN ? ELSE model END,
 		    description = CASE WHEN ? != '' THEN ? ELSE description END,
 		    location = CASE WHEN ? != '' THEN ? ELSE location END,
-		    open_ports = ?,
-		    detected_services = ?,
+		    open_ports = CASE WHEN ? != '' THEN ? ELSE open_ports END,
+		    detected_services = CASE WHEN ? != '' THEN ? ELSE detected_services END,
 		    prometheus_url = CASE WHEN ? != '' THEN ? ELSE prometheus_url END,
 		    node_exporter_url = CASE WHEN ? != '' THEN ? ELSE node_exporter_url END,
 		    scan_attributes = json_patch(scan_attributes, ?),
@@ -764,7 +764,11 @@ func identityUpdateArgs(in scannerv2.IdentityWrite, now string) []any {
 		in.Model, in.Model,
 		in.Description, in.Description,
 		in.Location, in.Location,
-		in.OpenPortsJSON, in.DetectedServicesJSON,
+		// open_ports/detected_services take TWO placeholders each: the CASE
+		// reads "" as "not observed" (passive report) and keeps the stored
+		// value, anything else (including the explicit "[]") overwrites.
+		in.OpenPortsJSON, in.OpenPortsJSON,
+		in.DetectedServicesJSON, in.DetectedServicesJSON,
 		in.PrometheusURL, in.PrometheusURL,
 		in.NodeExporterURL, in.NodeExporterURL,
 		in.ScanAttributesJSON,
@@ -807,6 +811,33 @@ func (r *SQLiteRepository) ApplyDeviceIdentity(ctx context.Context, in scannerv2
 	return r.updateDeviceIdentity(ctx, in)
 }
 
+// BackfillHostServiceUUIDs fills device_uuid on host_services rows whose
+// owning device row did not exist when the service row was written (#612).
+// RecordServices resolves the uuid at write time and relies on a later
+// rewrite cycle to heal rows written before the device existed — a cycle
+// agent-fed networks never run (their reports bypass RecordServices) and
+// one-shot identify triggers never re-run either (observed on a fresh
+// center DB: 67/67 rows with an empty device_uuid). The subquery prefers
+// the most recently seen device per ip (duplicate ips across networks
+// resolve to the live one); the EXISTS guard keeps rows without any device
+// row empty. A slow background sweep calls this; idempotent.
+func (r *SQLiteRepository) BackfillHostServiceUUIDs(ctx context.Context) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE host_services
+		SET device_uuid = (
+			SELECT d.device_uuid FROM devices d
+			WHERE d.ip_address = host_services.ip
+			ORDER BY d.last_seen DESC
+			LIMIT 1
+		)
+		WHERE device_uuid = ''
+		  AND EXISTS (SELECT 1 FROM devices d WHERE d.ip_address = host_services.ip)`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // createDeviceIdentity inserts a new device row. Ported verbatim from the former
 // runner.createDevice; the values arrive pre-computed in the IdentityWrite.
 func (r *SQLiteRepository) createDeviceIdentity(ctx context.Context, in scannerv2.IdentityWrite) (int64, error) {
@@ -815,6 +846,18 @@ func (r *SQLiteRepository) createDeviceIdentity(ctx context.Context, in scannerv
 		devType = "other"
 	}
 	now := scannerv2.DBTime(time.Now())
+	// A passive first sighting carries no service observation (""): store the
+	// canonical empty array so the UI's JSON parsers never see '' (#612). The
+	// CASE-keep marker only exists on the UPDATE path; an INSERT has no
+	// previous value to keep.
+	openPorts := in.OpenPortsJSON
+	if openPorts == "" {
+		openPorts = "[]"
+	}
+	detectedServices := in.DetectedServicesJSON
+	if detectedServices == "" {
+		detectedServices = "[]"
+	}
 	res, err := r.db.ExecContext(ctx, `
 		INSERT INTO devices (device_uuid, name, type, brand, model, ip_address, mac_address,
 		                     status, scan_source, description, location,
@@ -828,7 +871,7 @@ func (r *SQLiteRepository) createDeviceIdentity(ctx context.Context, in scannerv
 		        ?, ?, ?, ?, ?)`,
 		uuid.NewString(), in.Name, devType, in.Brand, in.Model, in.IP, in.MAC,
 		in.Description, in.Location,
-		in.OpenPortsJSON, in.DetectedServicesJSON, in.PrometheusURL, in.NodeExporterURL,
+		openPorts, detectedServices, in.PrometheusURL, in.NodeExporterURL,
 		in.ScanAttributesJSON, in.NetworkID, now, now,
 		in.TagsJSON, in.RTTMs, now, now, now)
 	if err != nil {
