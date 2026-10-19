@@ -36,6 +36,14 @@ type HostReport struct {
 	// Collected is the per-service deep-collection results, keyed by service.
 	// Useful for the API response and for re-hydration in tests.
 	Collected map[string]CollectedData
+	// Passive marks a report that asserts liveness/identity only: its source
+	// never looked at ports (the agent's discovery sweeps — DHCP leases, DNS
+	// sightings, eBPF sightings). Such a report must NOT clear the service
+	// columns: the bridge maps "no observation" to empty strings and the store
+	// keeps the existing values (#612). Zero value (false) is the normal
+	// behavior every active scan relies on: a scan that observed no services
+	// DOES clear stale ones.
+	Passive bool
 }
 
 // OrchestratorConfig tunes orchestrator behavior.

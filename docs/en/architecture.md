@@ -489,7 +489,7 @@ flowchart LR
 
 
 
-**Anti-entropy**: agent reports carry `X-Network-State-Hash` (SHA-256 of the alive-set identity/classification fields); the center uses it for drift detection. **Lease TTL**: agent tokens are bound to `network_id` + `agent_id`; lease-TTL lost detection (default 5m), revocation is soft-delete (`revoked_at`).
+**Anti-entropy**: agent reports carry `X-Network-State-Hash` (SHA-256 of the alive-set identity/classification fields); the center uses it for drift detection. A matching hash skips the device bridge (lease refresh only) — with one heal rider (#612): a report host carrying services while its center row's service columns are empty is re-bridged right there, because a center-side wipe (historically a passive empty-field report) could otherwise never re-land while the hash says "unchanged". **Passive batches** (`origin: "passive"`, the agent's discovery sweeps between scans) assert liveness/identity only: the bridge preserves `open_ports`/`detected_services`/prometheus URLs instead of overwriting them with the empty observation — an active scan that genuinely observed no services still clears stale ones. A slow background sweep also backfills `host_services.device_uuid` for rows written before their device row existed. **Lease TTL**: agent tokens are bound to `network_id` + `agent_id`; lease-TTL lost detection (default 5m), revocation is soft-delete (`revoked_at`).
 
 
 

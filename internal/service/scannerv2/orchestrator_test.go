@@ -173,6 +173,10 @@ func (r *recordRepo) ApplyDeviceIdentity(_ context.Context, _ IdentityWrite) (in
 	return 0, nil
 }
 
+func (r *recordRepo) BackfillHostServiceUUIDs(_ context.Context) (int64, error) {
+	return 0, nil
+}
+
 func TestOrchestrator_GatherClassifyDispatch(t *testing.T) {
 	// Two probes, one classifier per evidence kind, two handlers with a
 	// cascade from http → prometheus.

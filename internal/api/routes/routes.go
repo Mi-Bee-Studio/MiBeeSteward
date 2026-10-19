@@ -400,6 +400,38 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	reconciler := scannerv2reconcile.New(dbConn, reconcileInterval, prometheus.DefaultRegisterer, slog.Default())
 	reconciler.Start(reconcileCtx)
 
+	// host_services uuid backfill (#612): RecordServices resolves device_uuid
+	// at write time, but rows written before their device row existed are
+	// never revisited — agent-fed networks bypass RecordServices entirely and
+	// one-shot identify triggers never re-run, so the rows sit at '' forever
+	// (observed 67/67 on a rebuilt center DB). One pass at startup (heals the
+	// previous instance's leftovers) plus an hourly tick; the sweep is a
+	// single idempotent UPDATE that no-ops when nothing matches. Center-only;
+	// stopped in the cleanup closure below before db.Close().
+	hsBackfillCtx, hsBackfillCancel := context.WithCancel(context.Background())
+	go func(repo scannerv2.Repository) {
+		run := func() {
+			n, err := repo.BackfillHostServiceUUIDs(hsBackfillCtx)
+			switch {
+			case err != nil:
+				slog.Default().Debug("host_services uuid backfill failed", "error", err)
+			case n > 0:
+				slog.Default().Info("host_services uuid backfill healed rows", "rows", n)
+			}
+		}
+		run()
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-hsBackfillCtx.Done():
+				return
+			case <-t.C:
+				run()
+			}
+		}
+	}(v2Engine.Repository)
+
 	// Passive discovery service: a long-running, near-zero-traffic watcher that
 	// spots newly-appeared hosts between scheduled scans by diffing router/local
 	// ARP tables and passively listening for mDNS/SSDP. New hosts are fed through
@@ -1058,6 +1090,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// devices/networks and must not race db.Close().
 		reconcileCancel()
 		reconciler.Stop()
+		// Stop the host_services uuid backfill ticker BEFORE the DB close
+		// (#612); same race shape as the reconciler above.
+		hsBackfillCancel()
 		// Stop the passive discovery sources + coordinator BEFORE the DB close;
 		// the coordinator's known-host pre-check and the sources' walks hold
 		// open DB/SNMP handles that must not race db.Close().
