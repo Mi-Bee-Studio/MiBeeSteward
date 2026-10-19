@@ -1938,7 +1938,7 @@
 							class="tls-cert-row"
 							data-status={certStatus(portCerts)}
 							onclick={() => openCertModal(portCerts)}
-							aria-label={m['certificates.ViewCert']?.() ?? `:${portCerts.port} TLS`}
+							aria-label={m['certificates.ViewDetails']()}
 						>
 							<div class="tls-cert-port">
 								<span class="tls-cert-port-num">:{portCerts.port}</span>
