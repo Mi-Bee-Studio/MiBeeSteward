@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
@@ -58,10 +59,15 @@ func (s *NotificationService) CreateChannel(ctx context.Context, req domain.Crea
 		enabled = 0
 	}
 
+	config, err := normalizeChannelConfig(req.Config)
+	if err != nil {
+		return nil, err
+	}
+
 	ch, err := s.q.CreateChannel(ctx, db.CreateChannelParams{
 		Name:    req.Name,
 		Type:    string(req.Type),
-		Config:  string(req.Config),
+		Config:  config,
 		Enabled: enabled,
 	})
 	if err != nil {
@@ -125,7 +131,10 @@ func (s *NotificationService) UpdateChannel(ctx context.Context, id int64, req d
 
 	config := existing.Config
 	if req.Config != nil {
-		config = string(*req.Config)
+		config, err = normalizeChannelConfig(*req.Config)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	enabled := existing.Enabled
@@ -452,12 +461,36 @@ func (s *NotificationService) MarkAllNotificationLogsRead(ctx context.Context, u
 
 // --- Response transformers ---
 
+// normalizeChannelConfig validates a channel config blob before it is
+// persisted: blank/null normalizes to "{}" and the value must be a JSON
+// object. Without this, a create/update request omitting "config" stored ""
+// (the column DEFAULT never applies because the INSERT names the column), and
+// every later read of that row failed JSON encoding — surfacing as a 200 with
+// an empty body because the handler had already written the status header.
+func normalizeChannelConfig(raw json.RawMessage) (string, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return "{}", nil
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
+		return "", fmt.Errorf("%w: config must be a JSON object: %v", ErrInvalidChannelConfig, err)
+	}
+	return trimmed, nil
+}
+
 func toChannelResponse(ch db.NotificationChannel) domain.ChannelResponse {
+	config := ch.Config
+	// Read-side backstop for rows persisted as "" before write-side
+	// normalization existed.
+	if strings.TrimSpace(config) == "" {
+		config = "{}"
+	}
 	return domain.ChannelResponse{
 		ID:        ch.ID,
 		Name:      ch.Name,
 		Type:      ch.Type,
-		Config:    json.RawMessage(ch.Config),
+		Config:    json.RawMessage(config),
 		Enabled:   ch.Enabled == 1,
 		CreatedAt: ch.CreatedAt,
 		UpdatedAt: ch.UpdatedAt,
