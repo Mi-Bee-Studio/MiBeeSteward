@@ -91,6 +91,12 @@ sudo mv mibee-agent-linux-arm64 /usr/local/bin/mibee-agent
 # ziglang pip 包——见 agent-rs/README.md）
 make build-agent-rs
 cp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent /usr/local/bin/mibee-agent
+
+# 方式三：原生 deb/rpm 软件包（Debian/RHEL 主机——落盘 /usr/bin/mibee-agent +
+# systemd mibee-agent 服务，首装即生成 /etc/mibee/agent.yaml；生命周期见
+# deployment.md「软件包安装」）
+sudo apt install ./mibee-agent_<version>_amd64.deb
+```cp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent /usr/local/bin/mibee-agent
 ```
 
 ### 3. 配置并启动
@@ -110,7 +116,7 @@ EOF
 sudo mibee-agent -config /etc/mibee/agent.yaml
 ```
 
-可选：用 systemd 常驻（仓库 `deploy/mibee-agent.service` 提供 unit 模板）。
+可选：用 systemd 常驻（仓库 `deploy/mibee-agent.service` 提供 unit 模板；deb/rpm 包自带系统级 unit，以专用 `mibee-agent` 用户运行）。
 
 > **重要**：采集器**不会仅凭上述配置自行开始扫描**--它只执行本地 `scan_tasks` 中登记的扫描任务和中心下发的命令。让它动起来的三种方式：
 > 1. 在中心的 Agents 页面对该采集器下发一次 `scan` 命令（最常用）；

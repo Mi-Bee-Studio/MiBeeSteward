@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-s -w -X mibee-steward/internal/version.Version=$(VERSION)
 BUILD_DIR=bin
 
-.PHONY: sync-webserver-brands all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-full build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt feed-index clean test coverage coverage-gate coverage-bump coverage-agent-rs coverage-agent-rs-gate coverage-agent-rs-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
+.PHONY: sync-webserver-brands all build build-all build-frontend build-server build-with-ebpf build-with-lldp build-with-arpscan build-full build-linux-amd64 build-linux-arm64 build-linux-arm package-openwrt package-openwrt-ipk package-openwrt-apk package-openwrt-agent-rs package-openwrt-agent-rs-ipk package-openwrt-agent-rs-apk openwrt-stage openwrt-agent-stage check-openwrt feed-index package-deb package-rpm package-agent-deb package-agent-rpm deb-center-stage deb-agent-stage check-nfpm clean test coverage coverage-gate coverage-bump coverage-agent-rs coverage-agent-rs-gate coverage-agent-rs-bump dev migrate-up sync-fingerprints sync-device-types sync-oui-curated docs-changelog-sync fpimport sync-agent-rs-assets check-agent-rs-assets build-agent-rs test-agent-rs docker-build docker-build-priv docker-up docker-up-bridge docker-up-macvlan docker-down docker-logs
 
 all: build
 
@@ -156,6 +156,7 @@ package-openwrt-apk: openwrt-stage
 # rule builds it via cargo-zigbuild (same toolchain as build-agent-rs) unless
 # AGENT_BIN points at an already-built binary — the release pipeline sets
 # AGENT_BIN to reuse the binaries its agent-rs job just built.
+AGENT_TRIPLE_amd64 = x86_64-unknown-linux-musl
 AGENT_TRIPLE_arm64 = aarch64-unknown-linux-musl
 AGENT_TRIPLE_arm = armv7-unknown-linux-musleabihf
 
@@ -202,6 +203,134 @@ package-openwrt-agent-rs-apk: GOARCH?=arm64
 package-openwrt-agent-rs-apk: openwrt-agent-stage
 	PKG_VER=$$(echo "$(VERSION)" | sed 's/^v//'); \
 	sh ./deploy/openwrt/mkapk.sh $(BUILD_DIR)/openwrt-agent-stage $$PKG_VER $(GOARCH) $(BUILD_DIR)/mibee-agent_$${PKG_VER}_$(GOARCH).apk agent
+
+# ── deb/rpm packages (nfpm, #620): center + agent for the Debian/RHEL ──
+# families. One nfpm recipe per product (deploy/nfpm/{center,agent}.yaml)
+# produces BOTH formats; version/arch/staging root flow in as env vars.
+# Three arches: amd64 / arm64 / arm (deb armhf, rpm armv7hl — nfpm converts
+# internally). The layout follows 方案 A exactly (deploy/mibee-steward.service
+# hardcodes /opt/mibee-steward + numeric uid 1000): first-install config
+# generation lives in the postinst, upgrades never touch an existing config
+# (same semantics as the OpenWrt installers). Scripts are piped through
+# `tr -d '\r'` — a CRLF Windows checkout must not ship into packages.
+# CENTER_BIN / AGENT_BIN: reuse an already-built binary instead of building
+# here (the release pipeline's deb-rpm job sets both; GOARCH still selects
+# the package arch + build arch when unset).
+# NFPM runs via `go run` with the GOOS/GOARCH/GOARM env STRIPPED: callers
+# pass GOARCH=<arm> on the make command line, and an inherited GOARCH would
+# make go run cross-compile nfpm itself into a binary the host can't exec.
+NFPM_REF ?= v2.48.0
+NFPM = env -u GOOS -u GOARCH -u GOARM go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_REF)
+PKG_VER = $(patsubst v%,%,$(VERSION))
+# deb-family arch names per GOARCH; the rpm OUTPUT filenames spell the rpm
+# names out for convention's sake (nfpm derives them from the deb-style one).
+DEB_ARCH_amd64 = amd64
+DEB_ARCH_arm64 = arm64
+DEB_ARCH_arm = armhf
+RPM_ARCH_amd64 = x86_64
+RPM_ARCH_arm64 = aarch64
+RPM_ARCH_arm = armv7hl
+DEBARCH = $(DEB_ARCH_$(GOARCH))
+RPMARCH = $(RPM_ARCH_$(GOARCH))
+
+deb-center-stage: GOARCH?=amd64
+# A reused CENTER_BIN skips the frontend+build chain entirely (CI passes
+# binaries its release job already built); building here needs the embedded
+# frontend, hence the conditional build-frontend prerequisite.
+deb-center-stage: $(if $(strip $(CENTER_BIN)),,build-frontend) sync-device-types sync-oui-curated sync-webserver-brands
+	@rm -rf $(BUILD_DIR)/deb-center-stage
+	@mkdir -p $(BUILD_DIR)/deb-center-stage
+ifeq ($(strip $(CENTER_BIN)),)
+	GOOS=linux GOARCH=$(GOARCH) GOARM=7 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/deb-center-stage/mibee-steward ./cmd/server/
+else
+	cp $(CENTER_BIN) $(BUILD_DIR)/deb-center-stage/mibee-steward
+endif
+	tr -d '\r' < configs/config.example.yaml     > $(BUILD_DIR)/deb-center-stage/config.example.yaml
+	tr -d '\r' < configs/config.production.yaml  > $(BUILD_DIR)/deb-center-stage/config.production.yaml
+	tr -d '\r' < scripts/backup.sh               > $(BUILD_DIR)/deb-center-stage/backup.sh
+	tr -d '\r' < deploy/mibee-steward.service    > $(BUILD_DIR)/deb-center-stage/mibee-steward.service
+	tr -d '\r' < deploy/logrotate.conf           > $(BUILD_DIR)/deb-center-stage/logrotate.conf
+	tr -d '\r' < deploy/env.example              > $(BUILD_DIR)/deb-center-stage/env.example
+	tr -d '\r' < deploy/nfpm/center-postinst.sh  > $(BUILD_DIR)/deb-center-stage/postinst
+	tr -d '\r' < deploy/nfpm/center-prerm.sh     > $(BUILD_DIR)/deb-center-stage/prerm
+	tr -d '\r' < deploy/nfpm/center-postrm.sh    > $(BUILD_DIR)/deb-center-stage/postrm
+	chmod 755 $(BUILD_DIR)/deb-center-stage/mibee-steward $(BUILD_DIR)/deb-center-stage/backup.sh \
+	        $(BUILD_DIR)/deb-center-stage/postinst $(BUILD_DIR)/deb-center-stage/prerm $(BUILD_DIR)/deb-center-stage/postrm
+	@if grep -rlq $$(printf '\r') $(BUILD_DIR)/deb-center-stage; then \
+		echo "ERROR: CR bytes found in staged deb/rpm files (a tr -d step above is broken?):"; \
+		grep -rl $$(printf '\r') $(BUILD_DIR)/deb-center-stage; \
+		exit 1; \
+	fi
+
+package-deb: GOARCH?=amd64
+package-deb: deb-center-stage
+	NFPM_VERSION="$(PKG_VER)" NFPM_ARCH="$(DEBARCH)" \
+		$(NFPM) package -f deploy/nfpm/center.yaml -p deb \
+		-t $(BUILD_DIR)/mibee-steward_$(PKG_VER)_$(DEBARCH).deb
+	@echo "-> $(BUILD_DIR)/mibee-steward_$(PKG_VER)_$(DEBARCH).deb"
+
+package-rpm: GOARCH?=amd64
+package-rpm: deb-center-stage
+	NFPM_VERSION="$(PKG_VER)" NFPM_ARCH="$(DEBARCH)" \
+		$(NFPM) package -f deploy/nfpm/center.yaml -p rpm \
+		-t $(BUILD_DIR)/mibee-steward-$(PKG_VER)-1.$(RPMARCH).rpm
+	@echo "-> $(BUILD_DIR)/mibee-steward-$(PKG_VER)-1.$(RPMARCH).rpm"
+
+deb-agent-stage: GOARCH?=amd64
+deb-agent-stage:
+	@rm -rf $(BUILD_DIR)/deb-agent-stage
+	@mkdir -p $(BUILD_DIR)/deb-agent-stage
+ifeq ($(strip $(AGENT_BIN)),)
+	cd agent-rs && CARGO_ZIGBUILD_ZIG_COMMAND="$(ZIG_EXE)" cargo zigbuild --release --target $(AGENT_TRIPLE_$(GOARCH)) -p mibee-agent
+	cp agent-rs/target/$(AGENT_TRIPLE_$(GOARCH))/release/mibee-agent $(BUILD_DIR)/deb-agent-stage/mibee-agent
+else
+	cp $(AGENT_BIN) $(BUILD_DIR)/deb-agent-stage/mibee-agent
+endif
+	tr -d '\r' < configs/agent.example.yaml                   > $(BUILD_DIR)/deb-agent-stage/agent.example.yaml
+	tr -d '\r' < agent-rs/deploy/systemd/mibee-agent.service  > $(BUILD_DIR)/deb-agent-stage/mibee-agent.service
+	tr -d '\r' < deploy/nfpm/agent-postinst.sh                > $(BUILD_DIR)/deb-agent-stage/postinst
+	tr -d '\r' < deploy/nfpm/agent-prerm.sh                   > $(BUILD_DIR)/deb-agent-stage/prerm
+	tr -d '\r' < deploy/nfpm/agent-postrm.sh                  > $(BUILD_DIR)/deb-agent-stage/postrm
+	chmod 755 $(BUILD_DIR)/deb-agent-stage/mibee-agent $(BUILD_DIR)/deb-agent-stage/postinst \
+	        $(BUILD_DIR)/deb-agent-stage/prerm $(BUILD_DIR)/deb-agent-stage/postrm
+	@if grep -rlq $$(printf '\r') $(BUILD_DIR)/deb-agent-stage; then \
+		echo "ERROR: CR bytes found in staged agent deb/rpm files (a tr -d step above is broken?):"; \
+		grep -rl $$(printf '\r') $(BUILD_DIR)/deb-agent-stage; \
+		exit 1; \
+	fi
+
+package-agent-deb: GOARCH?=amd64
+package-agent-deb: deb-agent-stage
+	NFPM_VERSION="$(PKG_VER)" NFPM_ARCH="$(DEBARCH)" \
+		$(NFPM) package -f deploy/nfpm/agent.yaml -p deb \
+		-t $(BUILD_DIR)/mibee-agent_$(PKG_VER)_$(DEBARCH).deb
+	@echo "-> $(BUILD_DIR)/mibee-agent_$(PKG_VER)_$(DEBARCH).deb"
+
+package-agent-rpm: GOARCH?=amd64
+package-agent-rpm: deb-agent-stage
+	NFPM_VERSION="$(PKG_VER)" NFPM_ARCH="$(DEBARCH)" \
+		$(NFPM) package -f deploy/nfpm/agent.yaml -p rpm \
+		-t $(BUILD_DIR)/mibee-agent-$(PKG_VER)-1.$(RPMARCH).rpm
+	@echo "-> $(BUILD_DIR)/mibee-agent-$(PKG_VER)-1.$(RPMARCH).rpm"
+
+# Static assertions on the deb/rpm packaging sources (#620), same
+# git-index doctrine as check-openwrt: CR scan + sh -n on the committed
+# lifecycle scripts (a CRLF Windows working tree must not false-positive).
+check-nfpm:
+	@for f in deploy/nfpm/center.yaml deploy/nfpm/agent.yaml \
+	          deploy/nfpm/center-postinst.sh deploy/nfpm/center-prerm.sh deploy/nfpm/center-postrm.sh \
+	          deploy/nfpm/agent-postinst.sh deploy/nfpm/agent-prerm.sh deploy/nfpm/agent-postrm.sh \
+	          agent-rs/deploy/systemd/mibee-agent.service; do \
+		if git show :$$f 2>/dev/null | grep -q $$(printf '\r'); then \
+			echo "ERROR: CR byte in committed $$f — scripts/units must be LF-only"; exit 1; \
+		fi; \
+	done; echo "-> no CR bytes in committed deb/rpm sources"
+	@for f in deploy/nfpm/center-postinst.sh deploy/nfpm/center-prerm.sh deploy/nfpm/center-postrm.sh \
+	          deploy/nfpm/agent-postinst.sh deploy/nfpm/agent-prerm.sh deploy/nfpm/agent-postrm.sh; do \
+		if ! git show :$$f 2>/dev/null | sh -n; then \
+			echo "ERROR: sh -n failed on committed $$f"; exit 1; \
+		fi; \
+	done; echo "-> sh -n OK on committed deb/rpm scripts"
 
 # Static assertions on the OpenWrt packaging sources (#358). The R68S field
 # session (iStoreOS 24.10, #355) proved this class of bug goes "local-green,

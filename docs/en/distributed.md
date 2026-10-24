@@ -91,6 +91,13 @@ sudo mv mibee-agent-linux-arm64 /usr/local/bin/mibee-agent
 # the ziglang pip package — see agent-rs/README.md)
 make build-agent-rs
 cp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent /usr/local/bin/mibee-agent
+
+# Option 3: native deb/rpm package (Debian/RHEL hosts - lays down
+# /usr/bin/mibee-agent + a systemd mibee-agent service and GENERATES
+# /etc/mibee/agent.yaml on first install; see deployment.md
+# "Package Installation" for the lifecycle)
+sudo apt install ./mibee-agent_<version>_amd64.deb
+```cp agent-rs/target/aarch64-unknown-linux-musl/release/mibee-agent /usr/local/bin/mibee-agent
 ```
 
 ### 3. Configure and start
@@ -110,7 +117,7 @@ EOF
 sudo mibee-agent -config /etc/mibee/agent.yaml
 ```
 
-Optional: run it as a service with systemd (the repo ships a unit template at `deploy/mibee-agent.service`).
+Optional: run it as a service with systemd (the repo ships a unit template at `deploy/mibee-agent.service`; the deb/rpm package ships a system unit running as a dedicated `mibee-agent` user).
 
 > **Important**: the agent does **not** start scanning from this config alone, it only executes scan tasks registered in its local `scan_tasks` and commands dispatched by the center. Three ways to get it moving:
 > 1. Dispatch a `scan` command to it from the center's Agents page (most common);
