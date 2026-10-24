@@ -256,9 +256,13 @@ endif
 	tr -d '\r' < deploy/nfpm/center-postrm.sh    > $(BUILD_DIR)/deb-center-stage/postrm
 	chmod 755 $(BUILD_DIR)/deb-center-stage/mibee-steward $(BUILD_DIR)/deb-center-stage/backup.sh \
 	        $(BUILD_DIR)/deb-center-stage/postinst $(BUILD_DIR)/deb-center-stage/prerm $(BUILD_DIR)/deb-center-stage/postrm
-	@if grep -rlq $$(printf '\r') $(BUILD_DIR)/deb-center-stage; then \
+	# Guard: none of the staged files may carry a CR byte — EXCEPT the ELF
+	# binary, which legitimately contains 0x0D bytes (same doctrine as
+	# openwrt-stage's usr/bin exclusion; first field-found in the v0.8.0
+	# tag run, when the guard rejected the real ELF on CI).
+	@if grep -rlq $$(printf '\r') --exclude=mibee-steward $(BUILD_DIR)/deb-center-stage; then \
 		echo "ERROR: CR bytes found in staged deb/rpm files (a tr -d step above is broken?):"; \
-		grep -rl $$(printf '\r') $(BUILD_DIR)/deb-center-stage; \
+		grep -rl $$(printf '\r') --exclude=mibee-steward $(BUILD_DIR)/deb-center-stage; \
 		exit 1; \
 	fi
 
@@ -293,9 +297,10 @@ endif
 	tr -d '\r' < deploy/nfpm/agent-postrm.sh                  > $(BUILD_DIR)/deb-agent-stage/postrm
 	chmod 755 $(BUILD_DIR)/deb-agent-stage/mibee-agent $(BUILD_DIR)/deb-agent-stage/postinst \
 	        $(BUILD_DIR)/deb-agent-stage/prerm $(BUILD_DIR)/deb-agent-stage/postrm
-	@if grep -rlq $$(printf '\r') $(BUILD_DIR)/deb-agent-stage; then \
+	# Same guard + ELF exclusion as the center stage above.
+	@if grep -rlq $$(printf '\r') --exclude=mibee-agent $(BUILD_DIR)/deb-agent-stage; then \
 		echo "ERROR: CR bytes found in staged agent deb/rpm files (a tr -d step above is broken?):"; \
-		grep -rl $$(printf '\r') $(BUILD_DIR)/deb-agent-stage; \
+		grep -rl $$(printf '\r') --exclude=mibee-agent $(BUILD_DIR)/deb-agent-stage; \
 		exit 1; \
 	fi
 
