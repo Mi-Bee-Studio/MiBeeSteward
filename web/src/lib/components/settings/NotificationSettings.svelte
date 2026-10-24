@@ -30,6 +30,8 @@
 	interface ChannelConfig {
 		url?: string;
 		headers?: Record<string, string>;
+		format?: string;
+		source?: string;
 		host?: string;
 		port?: number;
 		username?: string;
@@ -78,6 +80,11 @@
 	// Webhook fields (also the URL for feishu/wecom/discord bots)
 	let formUrl = $state('');
 	let formHeaders = $state<{ key: string; value: string }[]>([{ key: '', value: '' }]);
+	// Payload shape for the generic webhook: 'raw' posts Steward's own payload
+	// JSON, 'alert' posts a receiver-agnostic alert envelope (severity/resolved/
+	// dedup_key) for external alert centers.
+	let formWebhookFormat = $state<'raw' | 'alert'>('raw');
+	let formAlertSource = $state('');
 
 	// Chat-platform extras
 	let formFeishuSecret = $state('');
@@ -117,6 +124,7 @@
 	let formSnapshot = $state('');
 	function snapshotForm(): string {
 		return JSON.stringify([formName, formType, formEnabled, formUrl, formHeaders,
+			formWebhookFormat, formAlertSource,
 			formFeishuSecret, formTelegramBotToken, formTelegramChatID, formDiscordUsername,
 			formSmtpHost, formSmtpPort, formSmtpUsername, formSmtpPassword,
 			formFromAddress, formToAddress]);
@@ -129,6 +137,8 @@
 		formEnabled = true;
 		formUrl = '';
 		formHeaders = [{ key: '', value: '' }];
+		formWebhookFormat = 'raw';
+		formAlertSource = '';
 		formFeishuSecret = '';
 		formTelegramBotToken = '';
 		formTelegramChatID = '';
@@ -178,6 +188,8 @@
 				formHeaders = entries.length > 0
 					? entries.map(([key, value]) => ({ key, value }))
 					: [{ key: '', value: '' }];
+				formWebhookFormat = cfg.format === 'alert' ? 'alert' : 'raw';
+				formAlertSource = cfg.source || '';
 			}
 			if (formType === 'feishu') formFeishuSecret = cfg.secret || '';
 			if (formType === 'discord') formDiscordUsername = cfg.username || '';
@@ -215,7 +227,11 @@
 					headers[h.key.trim()] = h.value.trim();
 				}
 			}
-			return { url: formUrl, headers };
+			const cfg: Record<string, unknown> = { url: formUrl, headers, format: formWebhookFormat };
+			if (formWebhookFormat === 'alert' && formAlertSource.trim()) {
+				cfg.source = formAlertSource.trim();
+			}
+			return cfg;
 		}
 		if (formType === 'feishu') {
 			const cfg: Record<string, unknown> = { url: formUrl };
@@ -874,6 +890,35 @@
 					<p class="mt-1 text-xs text-error">{fieldErrors.webhook_url}</p>
 				{/if}
 			</div>
+		{/if}
+
+		<!-- Webhook payload format: raw Steward JSON vs standardized alert envelope -->
+		{#if formType === 'webhook'}
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m["notifications.Payload Format"]()}</label>
+				<select
+					bind:value={formWebhookFormat}
+					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+						focus:border-primary focus:outline-none transition-colors"
+				>
+					<option value="raw">{m["notifications.Payload Format Raw"]()}</option>
+					<option value="alert">{m["notifications.Payload Format Alert"]()}</option>
+				</select>
+				<p class="mt-1 text-xs text-text-muted">{m["notifications.Payload Format Help"]()}</p>
+			</div>
+			{#if formWebhookFormat === 'alert'}
+				<div>
+					<label class="block text-xs text-text-muted mb-1">{m["notifications.Alert Source"]()}</label>
+					<input
+						bind:value={formAlertSource}
+						type="text"
+						placeholder={m["notifications.Alert Source Placeholder"]()}
+						class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+							focus:outline-none focus:border-primary transition-colors"
+					/>
+					<p class="mt-1 text-xs text-text-muted">{m["notifications.Alert Source Help"]()}</p>
+				</div>
+			{/if}
 		{/if}
 
 		<!-- Feishu sign secret (optional) -->

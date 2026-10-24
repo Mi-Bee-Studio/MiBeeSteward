@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Webhook alert-envelope format — generic external alert-center integration**: the generic `webhook` channel gains a `format` config field. `raw` (default) keeps the historical Steward payload byte-for-byte; `alert` POSTs a receiver-agnostic alert envelope `{type, severity, title, body, source, source_ref, tags, resolved, dedup_key, occurred_at}` — the minimal universal alert shape, so any external alert center (self-hosted MiBeeBell being one instance, not a special case) can consume severity/firing-resolved/dedup semantics. Severity maps deterministically from the event type (`device_lost` → `error`, recoveries/additions → `info`, identity/visibility changes → `warning`; Steward never emits `critical` — escalation is the receiver's job). `*_recovered` events carry `resolved: true` AND the same `dedup_key` as the event they resolve (key type-segment is the firing event), so receivers pair firing/resolved the way Alertmanager pairs group keys; `dedup_key` is `<source>/<type>/<source_ref>` with `source_ref` the stable device identity (MAC → IP → name), giving receivers per-device cooldown windows for free. `source` defaults to `mibee-steward`, overridable per channel. UI: payload-format select + source field in the channel form; docs: `docs/{en,zh}/integrations.md` document the full contract.
+
+### Fixed
+- **Notification channel with empty config returned 200 with an empty body**: a create/update request that omitted `config` (or sent `null`) stored `""` in `notification_channels` (the column's `DEFAULT '{}'` never applies — the INSERT names the column), and every later read of that row failed JSON encoding; because the response helper writes the status header before encoding, the failure surfaced as HTTP 200 with an empty body, breaking channel list/get for as long as the row existed. Write-side normalization now defaults blank/null to `{}` and rejects non-object config with a 400 (`ErrInvalidChannelConfig`); a read-side backstop re-defaults any pre-existing empty rows. Regression tests cover create/update/read paths and the invalid-config rejections.
+
 ## [0.8.0] - 2026-10-24
 
 ### Added

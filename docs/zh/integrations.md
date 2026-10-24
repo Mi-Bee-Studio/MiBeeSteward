@@ -38,14 +38,16 @@ Grafana → Dashboards → Import → 粘贴 JSON 文件内容 → 选择 Promet
 
 | 类型 | 配置字段 | 鉴权 |
 |---|---|---|
-| `webhook` | `url`、可选 `headers` | 自定义请求头（如接收方 token） |
+| `webhook` | `url`、可选 `headers`、可选 `format`（`raw` \| `alert`，默认 `raw`）、可选 `source`（仅 alert 格式） | 自定义请求头（如接收方 token） |
 | `email` | SMTP `host`/`port`/`username`/`password`、`from`、`to` | SMTP 认证 |
 | `feishu` | `url`、可选 `secret` | 飞书自定义机器人 HMAC 签名（在机器人上开启"签名校验"并粘贴密钥） |
 | `wecom` | `url` | 无（webhook URL 即凭证，请按密钥对待） |
 | `telegram` | `bot_token`、`chat_id` | Bot API token |
 | `discord` | `url`、可选 `username` | 无（webhook URL 即凭证） |
 
-四个聊天平台渠道是"格式化 webhook"：MiBee 会把事件转换成平台的消息格式（标题 + 详情的文本消息）。若需要原始 JSON 载荷，请使用通用 `webhook` 类型，它 POST 完整事件结构：
+四个聊天平台渠道是"格式化 webhook"：MiBee 会把事件转换成平台的消息格式（标题 + 详情的文本消息）。若需要结构化 JSON，请使用通用 `webhook` 类型。它有两种载荷格式：
+
+**`raw`（默认）** —— Steward 自身载荷结构，保持不变：
 
 ```json
 {
@@ -61,6 +63,33 @@ Grafana → Dashboards → Import → 粘贴 JSON 文件内容 → 选择 Promet
   }
 }
 ```
+
+**`alert`** —— 面向外部告警中心的通用告警信封（去重、冷却、静默、升级、分发均交由接收方完成）：
+
+```json
+{
+  "type": "device_lost",
+  "severity": "error",
+  "title": "Device Lost: cam-01",
+  "body": "Device: cam-01\nIP: 192.168.1.133\n...",
+  "source": "mibee-steward",
+  "source_ref": "aa:bb:cc:dd:ee:ff",
+  "tags": { "device_name": "cam-01", "ip_address": "192.168.1.133", "mac_address": "aa:bb:cc:dd:ee:ff", "device_type": "camera" },
+  "resolved": false,
+  "dedup_key": "mibee-steward/device_lost/aa:bb:cc:dd:ee:ff",
+  "occurred_at": "2026-08-22T00:02:43Z"
+}
+```
+
+信封语义：
+
+- `type` 即变更事件类型（`device_lost`、`device_recovered`、`device_added`、`device_changed`、`speaks_with_new`、`listen_port_added`）；测试发送为 `type: "test"`。
+- `severity` 按固定映射：`device_lost` → `error`；恢复与新增 → `info`；身份变更、新会话、新监听端口 → `warning`。Steward 永不发出 `critical` —— 升级是接收方告警中心的职责。
+- `*_recovered` 事件 `resolved` 为 `true`，且与其解决的原始事件携带**相同的 `dedup_key`**（键的类型段取触发事件，如 `device_recovered` → 键 `…/device_lost/<ref>`），接收方可据此做 firing/resolved 配对（与 Alertmanager 的 groupKey 配对同构）。
+- `source_ref` 是设备的稳定标识（MAC，缺失时依次回退 IP、名称）；`dedup_key` 为 `<source>/<type>/<source_ref>` —— 接收方直接拿它做冷却/去重，即可获得稳定的按设备窗口。
+- `source` 默认 `mibee-steward`，可按渠道覆盖（多个 Steward 实例汇入同一接收方时用于区分）。
+
+这是一个刻意保持通用的契约：Steward 不为任何接收方做特判。任何能摄取 `{type, severity, title, body, dedup_key, resolved}` JSON 的告警中心都可以对接——例如自部署的 [MiBeeBell](https://github.com/Mi-Bee-Studio/MiBeeBell)：在 Bell 注册一个 `default_source: mibee-steward` 的摄取 token，把渠道 URL 指向 `http://<bell>:9080/api/ingest/webhook/<token>`、格式选 `alert`，Steward 事件即经 Bell 的去抖/冷却/静默管道流向 Bell 的渠道（企微/钉钉/飞书/Telegram/SMTP……）。
 
 每个渠道在 UI（设置 → 通知 → 渠道行）都有**测试发送**按钮，绑定规则前先用它验证连通性。
 
