@@ -40,6 +40,27 @@ make build
 make build-linux-amd64
 ```
 
+### 软件包安装（deb / rpm）
+
+Debian / RHEL 系主机可以跳过下面的手工步骤：每个版本附带原生软件包——`mibee-steward`（center）与 `mibee-agent`（agent），各有 `.deb` / `.rpm` 双格式、amd64 / arm64 / armhf（rpm 侧为 armv7hl）三架构（校验和 `SHA256SUMS.deb-rpm`）：
+
+```bash
+# Debian / Ubuntu / Armbian（apt 可直接装本地文件；arm64 / armhf 同理）
+sudo apt install ./mibee-steward_<version>_amd64.deb
+# Fedora / RHEL / openSUSE
+sudo dnf install ./mibee-steward-<version>-1.x86_64.rpm
+```
+
+首次安装会自动完成下面二进制部署的全部手工步骤：铺出完全相同的目录布局（`/opt/mibee-steward` 下的二进制 + configs、`/usr/lib/systemd/system/` 下的 systemd unit、logrotate、`backup.sh`），**生成 `/opt/mibee-steward/configs/config.yaml`**（随机 `jwt_secret`；admin 密码留空——Web 界面首启时在浏览器里创建；`cookie_secure: false` 局域网明文 HTTP 默认——上 nginx+TLS 后改回 `true`），打开并持久化 `net.ipv4.ping_group_range`（非特权 ICMP），随后启用并启动服务。Web 界面在 `http://<host>:8080`。
+
+注意：
+
+- 服务以**数字 uid/gid 1000** 运行（unit 刻意如此，见其注释）；postinst 会把 `/opt/mibee-steward` 整体 chown 到 1000:1000。若本机 1000 不是预期账号，用 unit drop-in 覆盖。
+- 升级 = 安装新包：配置与数据永不被改动（配置只在首次安装生成）。`apt purge` / `dnf remove` 删除生成配置，但刻意保留 `data/`。
+- 从手工二进制安装迁移到包安装可直接进行（存量配置保留），但先移除手工拷贝的 `/etc/systemd/system/mibee-steward.service`——`/etc` 下的 unit 会永久遮蔽包内 unit（postinst 也会提示这一点）。
+- agent 包 `mibee-agent` 生命周期相同：`/etc/mibee/agent.yaml` + 专用 `mibee-agent` 系统用户；`network.name`/`cidr` 从默认路由推导，`center.url` / `center.auth_token` 未填时服务保持停止（[distributed.md](distributed.md)）。
+- 包只带默认构建；`-full` 能力变体仍是手工构建（[构建变体](build-variants.md)）。
+
 ### 最小配置
 
 ```bash
@@ -313,6 +334,10 @@ sudo systemctl stop mibee-steward
 sudo cp mibee-steward /opt/mibee-steward/
 sudo systemctl start mibee-steward
 ```
+
+### 软件包升级（deb / rpm）
+
+在旧包上直接安装新包即是全部升级动作：prerm 停服务 → postinst 重启，配置与数据保留。下方数据兼容性规则同样适用。
 
 ### Docker 升级
 

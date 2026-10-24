@@ -40,6 +40,27 @@ make build
 make build-linux-amd64
 ```
 
+### Package Installation (deb / rpm)
+
+Debian/RHEL-family hosts can skip the manual steps below entirely: every release ships native packages - `mibee-steward` (center) and `mibee-agent` (agent), each as `.deb` and `.rpm` for amd64 / arm64 / armhf (= armv7hl on the rpm side; checksums in `SHA256SUMS.deb-rpm`):
+
+```bash
+# Debian / Ubuntu / Armbian (apt resolves a local file; arm64 / armhf likewise)
+sudo apt install ./mibee-steward_<version>_amd64.deb
+# Fedora / RHEL / openSUSE
+sudo dnf install ./mibee-steward-<version>-1.x86_64.rpm
+```
+
+First install does everything the binary deployment below does by hand: it lays down the exact same layout (binary + configs under `/opt/mibee-steward`, the systemd unit in `/usr/lib/systemd/system/`, logrotate, `backup.sh`), **generates `/opt/mibee-steward/configs/config.yaml`** (random `jwt_secret`; empty admin password - the web UI's first-run screen asks you to create it; `cookie_secure: false` as the plain-HTTP LAN default - flip to `true` behind nginx+TLS), opens + persists `net.ipv4.ping_group_range` for unprivileged ICMP, then enables and starts the service. The web UI is at `http://<host>:8080`.
+
+Notes:
+
+- The service runs as **numeric uid/gid 1000** (the unit ships that way deliberately - see its comment); the postinst chowns `/opt/mibee-steward` to match. If uid 1000 is not the intended account on your host, override with a unit drop-in.
+- Upgrade = install the new package: config and data are never touched (config generation is first-install only). `apt purge` / `dnf remove` deletes the generated config but deliberately keeps `data/`.
+- Migrating a manual binary install to packages just works (the existing config stays), but remove a manually copied `/etc/systemd/system/mibee-steward.service` first - an `/etc` unit shadows the package unit forever (the postinst prints this hint too).
+- The agent package `mibee-agent` follows the same lifecycle with `/etc/mibee/agent.yaml` + a dedicated `mibee-agent` system user; it derives `network.name`/`cidr` from the default route and stays stopped until you fill in `center.url` / `center.auth_token` ([distributed.md](distributed.md)).
+- Packages carry the default build only; the `-full` capability variant stays a manual build ([build variants](build-variants.md)).
+
 ### Minimal Setup
 
 ```bash
@@ -327,6 +348,10 @@ sudo systemctl stop mibee-steward
 sudo cp mibee-steward /opt/mibee-steward/
 sudo systemctl start mibee-steward
 ```
+
+### Package Upgrade (deb / rpm)
+
+Installing the new package over the old one is the entire upgrade: prerm stops the service, postinst restarts it, config and data are kept. The data-compatibility rules below apply unchanged.
 
 ### Docker Upgrade
 

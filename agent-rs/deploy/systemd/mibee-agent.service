@@ -1,0 +1,46 @@
+# MiBee Steward Agent: SYSTEM-level systemd unit (#620).
+#
+# This is the unit shipped in the deb/rpm packages (deploy/nfpm/agent.yaml)
+# for generic Debian/RHEL hosts. It is deliberately NOT the same file as
+# deploy/mibee-agent.service (repo root, user-level, test-rig-specific
+# paths): a package owns a system unit with its own fixed layout —
+#
+#   binary:  /usr/bin/mibee-agent        (static musl, agent-rs)
+#   config:  /etc/mibee/agent.yaml       (generated on first install,
+#             kept on upgrade; local agent.db lands NEXT TO it)
+#   account: mibee-agent (system user, created by the package postinst)
+#
+# The agent runs unprivileged: ICMP probes use ping sockets, which the
+# package postinst enables via net.ipv4.ping_group_range (persisted in
+# /etc/sysctl.d/99-mibee.conf).
+
+[Unit]
+Description=MiBee Steward Agent - Distributed Discovery Agent
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mibee-agent
+Group=mibee-agent
+# agent.db is written next to the config (Go parity): state dir = /etc/mibee.
+WorkingDirectory=/etc/mibee
+ExecStart=/usr/bin/mibee-agent -config /etc/mibee/agent.yaml
+# always (not on-failure): the agent should come back after ANY exit,
+# including a clean SIGTERM, so it self-heals without manual intervention.
+# `systemctl stop` is still honored.
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# Security hardening (same posture as the center's unit).
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/mibee
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,52 @@
+# nfpm recipe for the MiBee Steward AGENT (Rust, agent-rs/) deb/rpm packages
+# (#620). Same invocation shape as center.yaml (NFPM_VERSION / NFPM_ARCH
+# env, run from the repo root — see that file's header for the env-var
+# rules), wrapped by `make package-agent-deb` / `package-agent-rpm`.
+#
+# Form B on generic Debian/RHEL hosts: the agent scans its own LAN and
+# reports to a remote center. Config lives at /etc/mibee/agent.yaml (the
+# convention shared with the router installers) and the agent's local DB is
+# written NEXT TO the config (Go parity, configs/agent.example.yaml):
+# /etc/mibee/agent.db. center.url/auth_token cannot be derived — first
+# install generates placeholder config and leaves the service stopped until
+# the operator fills them (same shape as agent-install.sh).
+name: mibee-agent
+arch: "${NFPM_ARCH}"
+platform: linux
+version: "${NFPM_VERSION}"
+# Release is rpm/apk-only (deb versions are untouched by it); pinned so the
+# rpm Release field matches the -1 in the Makefile output filename.
+release: "1"
+section: net
+priority: optional
+maintainer: Mi-Bee Studio <mi-bee-studio@users.noreply.github.com>
+description: |
+  Distributed discovery agent for MiBee Steward (form B): scans the LAN it
+  sits on and reports upstream to a MiBee Steward center. Static musl
+  binary, unprivileged (ICMP via ping sockets); supports all five probe
+  modules (http/tls/tcp/icmp/dns) and the corpus-sync channel.
+homepage: https://github.com/Mi-Bee-Studio/MiBeeSteward
+license: AGPL-3.0-or-later
+depends: []
+provides:
+  - mibee-agent
+contents:
+  - src: bin/deb-agent-stage/mibee-agent
+    dst: /usr/bin/mibee-agent
+    file_info:
+      mode: 0755
+  - src: bin/deb-agent-stage/agent.example.yaml
+    dst: /etc/mibee/agent.example.yaml
+    file_info:
+      mode: 0644
+  - src: bin/deb-agent-stage/mibee-agent.service
+    dst: /usr/lib/systemd/system/mibee-agent.service
+    file_info:
+      mode: 0644
+scripts:
+  postinstall: bin/deb-agent-stage/postinst
+  preremove: bin/deb-agent-stage/prerm
+  postremove: bin/deb-agent-stage/postrm
+# rpm-specific metadata (ignored when building deb).
+rpm:
+  group: Applications/Internet

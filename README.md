@@ -150,7 +150,7 @@ Full bilingual manuals (English + [中文](docs/zh/introduction.md)) live in `do
 - [Architecture](docs/en/architecture.md), System design and data flow
 - [API Reference](docs/en/api.md), REST API documentation
 - [Configuration](docs/en/configuration.md), Configuration reference
-- [Deployment](docs/en/deployment.md), Production deployment guide (systemd / nginx / Docker / OpenWrt)
+- [Deployment](docs/en/deployment.md), Production deployment guide (deb/rpm packages / systemd / nginx / Docker / OpenWrt)
 - [Distributed Guide](docs/en/distributed.md), Center + agent model for multi-network discovery
 - [Integrations](docs/en/integrations.md), Grafana dashboards, notification channels (Feishu/WeCom/Telegram/Discord), n8n & Home Assistant
 - [Benchmarks](docs/en/benchmark.md), Synthetic scale harness (loadgen) and the nmap accuracy comparison

@@ -1,0 +1,77 @@
+# nfpm recipe for the MiBee Steward CENTER deb/rpm packages (#620).
+#
+# One recipe, two formats (nfpm converts the arch name per format):
+#   NFPM_VERSION=<tag-without-v> NFPM_ARCH=amd64|arm64|armhf \
+#     nfpm package -f deploy/nfpm/center.yaml -p deb -t out.deb  (or -p rpm)
+# Run from the REPO ROOT: src paths below are relative to the working
+# directory (nfpm does NOT expand env vars in contents.src — only the
+# version/arch scalars come from the environment). The Makefile wraps this:
+# `make package-deb` / `make package-rpm` (staging + env + invocation).
+#
+# Layout = 方案 A EXACTLY (deploy/mibee-steward.service hardcodes
+# /opt/mibee-steward and numeric uid 1000): the package must not invent a
+# second layout. /opt/mibee-steward/configs/config.yaml is NOT shipped — the
+# postinst generates it on first install (random jwt_secret, browser
+# first-run admin, plain-HTTP LAN cookie) and upgrades never touch it, the
+# same semantics as the OpenWrt installers (#359).
+name: mibee-steward
+arch: "${NFPM_ARCH}"
+platform: linux
+version: "${NFPM_VERSION}"
+# Release is rpm/apk-only (deb versions are untouched by it); pinned so the
+# rpm Release field matches the -1 in the Makefile output filename.
+release: "1"
+section: net
+priority: optional
+maintainer: Mi-Bee Studio <mi-bee-studio@users.noreply.github.com>
+description: |
+  Network & IoT asset discovery and registry (CMDB-lite) for home/SOHO LANs.
+  Single static CGO-free binary with the web UI embedded: active scanning
+  (ICMP/TCP/HTTP/TLS/DNS/SNMP), passive discovery, fingerprint
+  classification, probes/synthetic monitoring and a distributed
+  center/agent model. See the project documentation for details.
+homepage: https://github.com/Mi-Bee-Studio/MiBeeSteward
+license: AGPL-3.0-or-later
+# Static binary, POSIX-sh scripts: no runtime dependencies on any distro.
+depends: []
+provides:
+  - mibee-steward
+contents:
+  - src: bin/deb-center-stage/mibee-steward
+    dst: /opt/mibee-steward/mibee-steward
+    file_info:
+      mode: 0755
+  - src: bin/deb-center-stage/config.example.yaml
+    dst: /opt/mibee-steward/configs/config.example.yaml
+    file_info:
+      mode: 0644
+  - src: bin/deb-center-stage/config.production.yaml
+    dst: /opt/mibee-steward/configs/config.production.yaml
+    file_info:
+      mode: 0644
+  - src: bin/deb-center-stage/backup.sh
+    dst: /opt/mibee-steward/scripts/backup.sh
+    file_info:
+      mode: 0755
+  - src: bin/deb-center-stage/mibee-steward.service
+    dst: /usr/lib/systemd/system/mibee-steward.service
+    file_info:
+      mode: 0644
+  # logrotate.d ships as a (no-)clobber config file: operator edits survive
+  # upgrades (deb conffile / rpm %config(noreplace)).
+  - src: bin/deb-center-stage/logrotate.conf
+    dst: /etc/logrotate.d/mibee-steward
+    type: config|noreplace
+    file_info:
+      mode: 0644
+  - src: bin/deb-center-stage/env.example
+    dst: /usr/share/doc/mibee-steward/examples/env.example
+    file_info:
+      mode: 0644
+scripts:
+  postinstall: bin/deb-center-stage/postinst
+  preremove: bin/deb-center-stage/prerm
+  postremove: bin/deb-center-stage/postrm
+# rpm-specific metadata (ignored when building deb).
+rpm:
+  group: Applications/Internet

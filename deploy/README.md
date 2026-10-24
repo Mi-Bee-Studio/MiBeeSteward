@@ -175,6 +175,26 @@ sudo crontab -e
 0 2 * * * /opt/mibee-steward/scripts/backup.sh /opt/mibee-steward/data/mibee.db /opt/mibee-steward/data/backups 30
 ```
 
+## 方案 A'：deb / rpm 软件包安装（Debian / RHEL 系推荐）
+
+GitHub Releases 每个版本附带原生软件包：`mibee-steward`（center）与 `mibee-agent`（agent），各有 `.deb` / `.rpm` 双格式、amd64 / arm64 / armhf（rpm 侧为 armv7hl）三架构（校验和 `SHA256SUMS.deb-rpm`）：
+
+```bash
+# Debian / Ubuntu / Armbian（arm64 / armhf 同理）
+sudo apt install ./mibee-steward_<version>_amd64.deb
+# Fedora / RHEL / openSUSE
+sudo dnf install ./mibee-steward-<version>-1.x86_64.rpm
+```
+
+- 首次安装即完成上面方案 A 的全部手工步骤：`/opt/mibee-steward` 布局、systemd unit（`/usr/lib/systemd/system/`）、logrotate、备份脚本，并**生成 `configs/config.yaml`**（随机 jwt_secret、空 admin 密码交给浏览器首启创建、`cookie_secure: false` 局域网默认——上 nginx+TLS 后改回 true）、打开并持久化 `ping_group_range`，随后拉起服务。
+- 服务以**数字 uid/gid 1000** 运行（unit 刻意如此，见其注释）；postinst 把 `/opt/mibee-steward` 整体 chown 到 1000:1000。若本机 1000 不是预期账号，用 drop-in 覆盖 unit。
+- 升级 = 安装新包（prerm 停服务 → postinst 重启），配置与数据永不改动；`apt purge` / `dnf remove` 删生成配置但保留 `data/`。
+- 从手工安装迁移到包安装：直接装即可（存量配置保留）；但需先移除手工拷贝的 `/etc/systemd/system/mibee-steward.service`，否则它会永久遮蔽包内 unit（postinst 也会提示）。
+- agent 包 `mibee-agent` 同生命周期：`/etc/mibee/agent.yaml` + 专用 `mibee-agent` 系统用户，`network.name`/`cidr` 从默认路由推导，`center.url` / `auth_token` 未填时服务保持停止（装完按提示三步收尾，见 docs deployment.md / distributed.md）。
+- 包只带默认构建；`-full` 能力变体仍是手工构建（docs build-variants.md）。
+
+本地构建：`make package-deb` / `make package-rpm`（center）、`make package-agent-deb` / `make package-agent-rpm`（agent）；配方与生命周期脚本在 `deploy/nfpm/`。
+
 ## 方案 C: OpenWrt 路由器部署（router 形态）
 
 MiBee Steward 可以**直接装在 OpenWrt 路由器上**，拿到"咽喉点"独有的发现信号（DHCP 租约表 / conntrack 流表 / hostapd WiFi 关联 / DNS 查询日志）--这些是任意 LAN 主机都拿不到的。两种形态：

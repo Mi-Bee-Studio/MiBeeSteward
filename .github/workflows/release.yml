@@ -3,9 +3,11 @@ name: Release
 # Builds amd64 + arm64 binaries for the center (cmd/server, embeds the
 # frontend), the Rust agent's static musl binaries (agent-rs/, amd64/arm64/
 # armv7, version-stamped from the tag), the three OpenWrt/iStoreOS router
-# package forms (tarball / .ipk / .apk, arm64 - #359), and a multi-arch
-# container image on GHCR (ghcr.io/<owner>/<repo>); everything is attached to
-# the GitHub Release. CGO-free; SQLite via modernc.org/sqlite.
+# package forms (tarball / .ipk / .apk, arm64 - #359), deb + rpm packages
+# for the Debian/RHEL families (#620, center + agent, three arches, built
+# with nfpm), and a multi-arch container image on GHCR
+# (ghcr.io/<owner>/<repo>); everything is attached to the GitHub Release.
+# CGO-free; SQLite via modernc.org/sqlite.
 on:
   push:
     tags:
@@ -228,6 +230,64 @@ jobs:
             mibee-agent_*_arm64.apk
             SHA256SUMS.agent-rs
 
+  # deb/rpm packages (#620): center + agent, amd64/arm64/arm(v7), both
+  # formats via the nfpm recipes (deploy/nfpm/, `make package-deb` etc.).
+  # Reuses the release job's binaries (default variant only — the -full
+  # variants stay tarball/local-build) and the agent job's musl binaries;
+  # the arm center binary is not part of the release matrix, so this job
+  # builds it itself (needs the embedded frontend, hence the npm step).
+  deb-rpm:
+    needs: [release, agent-rs]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Download center binaries (default variant, amd64 + arm64)
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-linux-amd64-default
+      - name: Download center arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-linux-arm64-default
+      - name: Download agent binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: agent-rs-binaries
+      - name: Package (3 arches x deb/rpm x center+agent)
+        run: |
+          ls -la
+          (cd web && npm ci)
+          for A in amd64 arm64 arm; do
+            if [ "$A" = arm ]; then
+              # No prebuilt arm center binary: the stage target builds it
+              # (GOARCH/GOARM are set inside the Makefile recipe).
+              make GOARCH=arm package-deb package-rpm
+            else
+              make GOARCH=$A CENTER_BIN="$PWD/mibee-steward-linux-$A" package-deb package-rpm
+            fi
+            ABIN="$PWD/mibee-agent-linux-$A"
+            [ "$A" = arm ] && ABIN="$PWD/mibee-agent-linux-armv7"
+            make GOARCH=$A AGENT_BIN="$ABIN" package-agent-deb package-agent-rpm
+          done
+          ls -la bin/
+          (cd bin && sha256sum *.deb *.rpm > SHA256SUMS.deb-rpm)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-rpm-packages
+          path: |
+            bin/*.deb
+            bin/*.rpm
+            bin/SHA256SUMS.deb-rpm
+
   # Multi-arch container image → GHCR. The Dockerfile rebuilds the frontend
   # itself (Stage 1), so this job does NOT depend on build-frontend — it runs
   # fully self-contained. Only the unprivileged variant is published
@@ -272,10 +332,10 @@ jobs:
             BUILD_TAGS=
 
   publish:
-    # Needs the binaries, the Rust agent binaries, the container image AND the
-    # router packages, so a Release is only created when every artifact has
-    # succeeded.
-    needs: [release, agent-rs, docker, openwrt]
+    # Needs the binaries, the Rust agent binaries, the container image, the
+    # router packages AND the deb/rpm packages, so a Release is only created
+    # when every artifact has succeeded.
+    needs: [release, agent-rs, docker, openwrt, deb-rpm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -293,6 +353,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: openwrt-packages
+          merge-multiple: true
+      - name: Download deb/rpm packages
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-rpm-packages
           merge-multiple: true
       # Center-binary checksums (#502): flat names only, same rule as the
       # agent's SHA256SUMS (#491) — release assets download into one
@@ -326,6 +391,19 @@ jobs:
             mibee-agent-openwrt-arm64-*.tar.gz
             mibee-agent_*_arm64.ipk
             mibee-agent_*_arm64.apk
+            mibee-steward_*_amd64.deb
+            mibee-steward_*_arm64.deb
+            mibee-steward_*_armhf.deb
+            mibee-agent_*_amd64.deb
+            mibee-agent_*_arm64.deb
+            mibee-agent_*_armhf.deb
+            mibee-steward-*-1.x86_64.rpm
+            mibee-steward-*-1.aarch64.rpm
+            mibee-steward-*-1.armv7hl.rpm
+            mibee-agent-*-1.x86_64.rpm
+            mibee-agent-*-1.aarch64.rpm
+            mibee-agent-*-1.armv7hl.rpm
             SHA256SUMS.center
             SHA256SUMS.openwrt
             SHA256SUMS.agent-rs
+            SHA256SUMS.deb-rpm
