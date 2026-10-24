@@ -2759,6 +2759,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/probe-quality/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description lookback days (hourly buckets for 7d, daily for 30d; raw probe results are retained 30 days by default) */
+                    days?: 7 | 30;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Quality history */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeQualityHistoryReport"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/probe-targets": {
         parameters: {
             query?: never;
@@ -6208,6 +6247,48 @@ export interface components {
             score: number;
             /** @description stable reason codes */
             reasons: string[];
+        };
+        /** @description Bucketed egress-quality trend: the same verdict chain as ProbeQualityReport replayed per time bucket (hour for days=7, day for days=30). Per-bucket latency is the mean success latency, not an exact p50; buckets with no data are omitted. */
+        ProbeQualityHistoryReport: {
+            /** @enum {integer} */
+            days: 7 | 30;
+            /** @enum {string} */
+            bucket: "hour" | "day";
+            groups: components["schemas"]["ProbeQualityHistoryGroup"][];
+        };
+        ProbeQualityHistoryGroup: {
+            name: string;
+            /** @enum {string} */
+            role: "primary" | "reference";
+            series: components["schemas"]["ProbeQualityHistorySeries"][];
+        };
+        ProbeQualityHistorySeries: {
+            /** @description 'center' or 'agent:{id}' */
+            vantage: string;
+            network_name?: string;
+            points: components["schemas"]["ProbeQualityHistoryPoint"][];
+        };
+        ProbeQualityHistoryPoint: {
+            /**
+             * Format: date-time
+             * @description bucket start, UTC
+             */
+            t: string;
+            /**
+             * Format: double
+             * @description mean ok-rate over the bucket's evaluated legs (0-1); cross-vantage target-down isolation applies per bucket, same as the live window
+             */
+            ok_rate: number;
+            /**
+             * Format: double
+             * @description mean success latency across legs, weighted by successful samples
+             */
+            avg_ms: number;
+            samples: number;
+            /** @description 0-100, the same score the live window reports */
+            score: number;
+            /** @enum {string} */
+            verdict: "ok" | "degraded" | "egress_down" | "dns_fault" | "upstream_resolver" | "insufficient";
         };
         ProbeQualityTarget: {
             name: string;

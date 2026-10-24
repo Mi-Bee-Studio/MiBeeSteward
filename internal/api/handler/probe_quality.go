@@ -46,3 +46,24 @@ func (h *ProbeQualityHandler) GetQuality(w http.ResponseWriter, r *http.Request)
 	}
 	Success(w, report)
 }
+
+// GetQualityHistory handles GET /api/v1/probe-quality/history?days=7 (7 or
+// 30; hourly buckets for 7d, daily for 30d). Same verdict chain as the live
+// window, replayed per bucket over the retention horizon.
+func (h *ProbeQualityHandler) GetQualityHistory(w http.ResponseWriter, r *http.Request) {
+	days := 7
+	if raw := r.URL.Query().Get("days"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || (v != 7 && v != 30) {
+			Error(w, http.StatusBadRequest, "days must be 7 or 30")
+			return
+		}
+		days = v
+	}
+	report, err := h.service.History(r.Context(), days)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to aggregate probe quality history")
+		return
+	}
+	Success(w, report)
+}

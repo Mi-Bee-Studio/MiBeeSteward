@@ -92,6 +92,12 @@ export type ProbeQualityGroup = Schemas['ProbeQualityGroup'];
 export type ProbeQualityVantage = Schemas['ProbeQualityVantage'];
 export type ProbeQualityTarget = Schemas['ProbeQualityTarget'];
 export type ProbeQualityTrack = Schemas['ProbeQualityTrack'];
+// Bucketed egress-quality trend (GET /probe-quality/history): the same
+// verdict chain replayed per hour (7d) or day (30d) bucket.
+export type ProbeQualityHistoryReport = Schemas['ProbeQualityHistoryReport'];
+export type ProbeQualityHistoryGroup = Schemas['ProbeQualityHistoryGroup'];
+export type ProbeQualityHistorySeries = Schemas['ProbeQualityHistorySeries'];
+export type ProbeQualityHistoryPoint = Schemas['ProbeQualityHistoryPoint'];
 
 // ---------------------------------------------------------------------------
 // Linked Document (used in device-document linking modal)

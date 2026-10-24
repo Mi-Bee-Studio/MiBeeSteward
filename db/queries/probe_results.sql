@@ -72,3 +72,25 @@ SELECT id, target_id, status, latency_ms, checked_at, vantage
 FROM probe_results
 WHERE checked_at >= ?
 ORDER BY checked_at ASC, id ASC;
+
+-- name: ListProbeQualityBuckets :many
+-- Bucketed aggregation for the egress-quality TREND (the days=7/30 history
+-- endpoint): one row per (target, vantage, time bucket) over the quality
+-- matrix's system targets. bucket_len slices the RFC3339 UTC column - 13 =
+-- hour ("2026-10-24T05"), 10 = day ("2026-10-24") - so buckets are
+-- wall-clock aligned and lexically sortable. avg_ms counts successes only
+-- (a failure's latency is the timeout burn, not network RTT). SQL-side
+-- aggregation keeps the stream bounded: a 30-day month is ~200 bucket rows
+-- per track, not ~800k raw rows - the read-time trend stays cheap while the
+-- raw ListProbeResultsSince path keeps serving the exact-p50 short window.
+SELECT pr.target_id AS target_id,
+       pr.vantage AS vantage,
+       substr(pr.checked_at, 1, sqlc.arg(bucket_len)) AS bucket,
+       COUNT(*) AS samples,
+       SUM(CASE WHEN pr.status = 'success' THEN 1 ELSE 0 END) AS ok_count,
+       AVG(CASE WHEN pr.status = 'success' AND pr.latency_ms > 0 THEN pr.latency_ms END) AS avg_ms
+FROM probe_results pr
+JOIN probe_targets pt ON pt.id = pr.target_id
+WHERE pr.checked_at >= sqlc.arg(cutoff) AND pt.source = 'system' AND pt.enabled = 1
+GROUP BY pr.target_id, pr.vantage, bucket
+ORDER BY bucket ASC, pr.target_id ASC, pr.vantage ASC;

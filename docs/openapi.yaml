@@ -919,6 +919,18 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ProbeQualityReport"}
+  /probe-quality/history:
+    get:
+      tags: [ProbeTargets]
+      summary: Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
+      parameters:
+        - {name: days, in: query, schema: {type: integer, enum: [7, 30], default: 7}, description: "lookback days (hourly buckets for 7d, daily for 30d; raw probe results are retained 30 days by default)"}
+      responses:
+        "200":
+          description: Quality history
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeQualityHistoryReport"}
   /probe-targets:
     get:
       tags: [ProbeTargets]
@@ -2463,6 +2475,38 @@ components:
         verdict: {type: string, enum: [ok, degraded, egress_down, dns_fault, upstream_resolver, insufficient]}
         score: {type: integer, description: 0-100}
         reasons: {type: array, items: {type: string}, description: stable reason codes}
+    ProbeQualityHistoryReport:
+      type: object
+      description: "Bucketed egress-quality trend: the same verdict chain as ProbeQualityReport replayed per time bucket (hour for days=7, day for days=30). Per-bucket latency is the mean success latency, not an exact p50; buckets with no data are omitted."
+      required: [days, bucket, groups]
+      properties:
+        days: {type: integer, enum: [7, 30]}
+        bucket: {type: string, enum: [hour, day]}
+        groups: {type: array, items: {$ref: "#/components/schemas/ProbeQualityHistoryGroup"}}
+    ProbeQualityHistoryGroup:
+      type: object
+      required: [name, role, series]
+      properties:
+        name: {type: string}
+        role: {type: string, enum: [primary, reference]}
+        series: {type: array, items: {$ref: "#/components/schemas/ProbeQualityHistorySeries"}}
+    ProbeQualityHistorySeries:
+      type: object
+      required: [vantage, points]
+      properties:
+        vantage: {type: string, description: "'center' or 'agent:{id}'"}
+        network_name: {type: string}
+        points: {type: array, items: {$ref: "#/components/schemas/ProbeQualityHistoryPoint"}}
+    ProbeQualityHistoryPoint:
+      type: object
+      required: [t, ok_rate, avg_ms, samples, score, verdict]
+      properties:
+        t: {type: string, format: date-time, description: "bucket start, UTC"}
+        ok_rate: {type: number, format: double, description: "mean ok-rate over the bucket's evaluated legs (0-1); cross-vantage target-down isolation applies per bucket, same as the live window"}
+        avg_ms: {type: number, format: double, description: "mean success latency across legs, weighted by successful samples"}
+        samples: {type: integer}
+        score: {type: integer, description: "0-100, the same score the live window reports"}
+        verdict: {type: string, enum: [ok, degraded, egress_down, dns_fault, upstream_resolver, insufficient]}
     ProbeQualityTarget:
       type: object
       required: [name, module, target, cross_vantage, per_vantage]

@@ -23,6 +23,7 @@ func registerProbeTargetRoutes(r chi.Router, probeTargetHandler *handler.ProbeTa
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapProbeRead))
 		r.Get("/api/v1/probe-quality", probeQualityHandler.GetQuality)
+		r.Get("/api/v1/probe-quality/history", probeQualityHandler.GetQualityHistory)
 	})
 	r.Route("/api/v1/probe-targets", func(r chi.Router) {
 		r.Group(func(r chi.Router) {

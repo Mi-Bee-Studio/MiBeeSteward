@@ -3628,6 +3628,7 @@ SSH 凭据供设备配置备份探测使用（详见 [设备配置历史](#设�
 
 
 | `/api/v1/probe-quality` | GET | 需认证 · `CapProbeRead` | 质量分析（#613）：按管理分类的分视角判定--内网/外网业务简单健康 + 出口矩阵判定链（可选 `window` 分钟覆盖回看窗口） |
+| `/api/v1/probe-quality/history` | GET | 需认证 · `CapProbeRead` | 分桶质量趋势--同一条判定链按小时（`days=7`）/ 天（`days=30`）桶回放 |
 
 
 
@@ -3867,6 +3868,26 @@ Prometheus 数据源的仪表板配置与查询透传。读（`CapDashboardRead`
 
 
 | `/api/v1/dashboard/query_range` | GET | 需认证 · `CapDashboardRead` | Prometheus 范围查询透传 |
+
+
+
+
+
+### GET /api/v1/probe-quality/history
+
+
+
+分桶出口质量趋势：与 `/api/v1/probe-quality` 同一条确定性判定链，按时间桶在保留期内回放。聚合在 SQL 侧完成（每个 目标 × 视角 × 桶 一行），一个月只有几百个桶行而非约 80 万条原始结果；唯一近似是延迟--桶内预算按该桶成功均值延迟而非精确 p50 判定（结构性判定 `egress_down` / `dns_fault` / `upstream_resolver` 由成功率驱动，保持精确）。`days` 接受 7（小时桶）或 30（天桶）；原始拨测结果默认保留 30 天（`retention.probe_results_days`），30 天图从数据实际起点开始。跨视角 target-down 隔离按桶生效，与实时窗口一致。
+
+
+
+
+
+**需认证** · `CapProbeRead`
+
+
+
+**响应**形状（`ProbeQualityHistoryReport`）：`days`、`bucket`（`hour` | `day`）与镜像报告配置组的 `groups[]`（`role: primary` / `reference`），每组按视角带 `series[]`（`vantage`、`network_name`），其 `points[]` 含 `t`（桶起点，UTC）、`ok_rate`（桶内已评估腿的平均）、`avg_ms`（按成功样本数加权的成功延迟均值）、`samples`、`score` 与 `verdict`。无数据的桶被省略--即序列中的空档。
 
 
 

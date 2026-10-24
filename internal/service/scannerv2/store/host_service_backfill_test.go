@@ -12,6 +12,7 @@ package store
 import (
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -30,16 +31,20 @@ func TestBackfillHostServiceUUIDs(t *testing.T) {
 
 	// Device rows: .10 has a fresh row, plus a stale twin at the same ip in a
 	// DIFFERENT network (the (ip, network_id) unique index allows that) — the
-	// most recently seen one must win the subquery.
+	// most recently seen one must win the subquery. The twin's staleness is
+	// pinned RELATIVE to now (both rows seed at insert-time "now"); a
+	// hardcoded date made "recent" age past the twin five days after the
+	// test was written.
 	seedDeviceRowWithUUID(t, conn, "10.0.0.10", "aa:bb:cc:dd:ee:10", nid, "uuid-recent")
 	_, err := conn.ExecContext(ctx,
-		`UPDATE devices SET last_seen = '2026-10-19T00:00:00Z' WHERE device_uuid = 'uuid-recent'`)
-	require.NoError(t, err)
-	_, err = conn.ExecContext(ctx,
 		`INSERT INTO networks (id, name, cidr, site, created_at, updated_at)
 		 VALUES (2, 'n2', '10.0.1.0/24', 's', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`)
 	require.NoError(t, err)
 	seedDeviceRowWithUUID(t, conn, "10.0.0.10", "aa:bb:cc:dd:ee:99", sqlNullInt64(2), "uuid-stale")
+	_, err = conn.ExecContext(ctx,
+		`UPDATE devices SET last_seen = ? WHERE device_uuid = 'uuid-stale'`,
+		time.Now().UTC().Add(-24*time.Hour).Format(time.RFC3339))
+	require.NoError(t, err)
 
 	insert := func(ip, devUUID, service string, port int) {
 		t.Helper()
