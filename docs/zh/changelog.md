@@ -5,7 +5,9 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]（未发布）
+## [Unreleased]
+
+## [0.8.0] - 2026-10-24
 
 ### Added
 - **deb/rpm 原生软件包（#620）**：每个版本起为 Debian 与 Red Hat 系发行版附带 `mibee-steward`（center）与 `mibee-agent` 软件包——`.deb` + `.rpm`，amd64/arm64/armhf（= armv7hl），由新的 nfpm 流水线构建（`deploy/nfpm/` 配方 + `make package-deb`/`package-rpm`/`package-agent-deb`/`package-agent-rpm`；新的 `deb-rpm` release job 复用 release 二进制并自行构建 arm 版 center 二进制；校验和在 `SHA256SUMS.deb-rpm`）。包内布局与二进制部署（方案 A）完全一致——`/opt/mibee-steward`、随包 systemd unit（数字 uid 1000）、以不可覆盖 config file 交付的 logrotate、备份脚本——包安装与手工安装可互换。生命周期沿用 OpenWrt 安装器的纪律：首次安装**生成**配置（随机 jwt_secret、浏览器首启创建 admin 密码、局域网明文 HTTP cookie）并打开 + 持久化 `ping_group_range`；升级永不触碰配置与数据；purge 删除生成配置但刻意保留 `data/`。agent 包新增专用系统级 unit（`agent-rs/deploy/systemd/`，非特权 `mibee-agent` 用户，配置 + `agent.db` 落在 `/etc/mibee`），`network.name`/`cidr` 从默认路由推导，center 凭据填好前服务保持停止。`make check-nfpm`（提交树 CR 扫描 + `sh -n`，接入 CI 打包门）守卫这些源文件。背后的打包格式全景调研（缓办：apt/yum 仓库、HA add-on、Helm；明确不做及理由：snap/flatpak/AppImage/brew/SPK/QPKG）记录于 #620-#624。
@@ -18,6 +20,8 @@
 - **网络出口质量（#608）**：`probe.quality` 种入公共拨测点系统矩阵（`source=system`、vantage `all`），从每个视角（中心 + 全部 agent）执行，按网络在滑动窗口上分析（默认 15 分钟，读时聚合、无状态表）。判定链确定——`egress_down > dns_fault > upstream_resolver > degraded > ok`——并做跨视角目标隔离（处处失败的目标归目标侧、从网络判定中剔除；需多于一个上报视角，单视角整体失败仍读作该网络的故障）。诊断语义是结构化的：双公共解析器做 DNS 差分，免 DNS 的直连 IP TCP 腿（223.5.5.5:53）区分「解析坏了」与「出口死了」，204 端点测纯 HTTP 可达，国际组仅作参照——跨境波动是独立信号，不算出口故障。所有取值可配（组、阈值、节奏——无一硬编码）；裸配置默认关闭（normalizer 不强制开启），`configs/config.example.yaml` 以 `enabled: true` 作为推荐值出厂。由 `GET /api/v1/probe-quality?window=` 提供（CapProbeRead）；判定与分数以 `mibee_probe_egress_verdict{vantage,group,verdict}` / `mibee_probe_quality_score{vantage,group}` gauge 经 1 分钟循环导出——只出指标，刻意不做通知联动。重种语义：配置变更刷新 system 行，配置删项连历史删行，UI 删掉的行重启后重种（想彻底删除：从配置移除，或关闭 `probe.quality`），关闭即挂起整个矩阵。
 - **模式第 8 代（#609）**：`probe_targets` 新增 `options`（JSON）、`device_id`（可选设备绑定）、`source`（`manual|auto|system`）与 `dns` 模块 CHECK；`agent_status` 新增 `supported_modules`。「仅首次建库」原则不变——从第 7 代跨过来 = 备份 → 移除旧库 → 全新启动 → 重扫（tcp/dns 计划另需 agent 0.2.0+，见 #604）。
 - **拨测文档漂移修复（#610）**：`docs/{en,zh}/web-ui.md` 的拨测小节自 #277 时代的文案改写起就声称支持 DNS，而 dns 模块并不存在——随 #605 落地，该文本终成事实；所有拨测文档面（features、api、architecture、distributed、configuration、agent-rs、introduction、comparison、product-scope）现在都精确表述模块集为 http/tls/tcp/icmp/dns 及选项/绑定/质量各面；`openapi.yaml` 中漂移的枚举注释已就地修正。
+
+- **自建 opkg feed（#563）**：`make feed-index` 把构建出的 `.ipk` 包（center + agent）变成自包含的 feed 目录——opkg 标准 `Packages`/`Packages.gz` 索引（带 `Filename`/`Size`/`SHA256sum` 字段）——任意静态文件服务即可托管。路由器经 `/etc/opkg/customfeeds.conf` 一次订阅，升级就是普通的 `opkg update && opkg upgrade`（或 LuCI 软件包页）。生成器（`scripts/make_opkg_feed.sh`）从每个 ipk 里挖出 control 元数据（`./` 前缀的 gzip-tar 成员）并兼容 busybox；CI openwrt job 每个 PR 冒烟索引形状。索引条目带每包 SHA256sum，opkg 按取回索引校验下载；索引本身未签名（usign 签名为后续增强）——请部署在你掌控的主机上。rig 实测：路由器订阅内网 feed 后从索引看到 `mibee-steward 0.7.3`，安装状态零变化。
 
 ### Changed
 - **拨测页重构为健康优先（2026-10-23，2026-10-24 按 rig 反馈收紧）**：页面现在先回答「现在有没有问题」。顶部总览条领先展示异常目标数（附按模块细分与一键「只看异常」过滤）、每个网络视角的最差出口判定、证书临期计数。目标列表把失败/超时行置顶并加异常底色，失败轨道把错误信息直接印在状态格里（悬停见全文），点击目标名称展开排障行——各视角最新结果、完整错误文本、快捷操作（立即探测 / 历史 / 证书 / 编辑），无需打开历史弹窗；证书列的天数徽章本身即证书链按钮。按模块的总览卡片（建立在单点采样噪声上的成功率，且与分区汇总重复）移除，其唯一有效信号以总览条上的按模块异常细分保留。**第二轮布局迭代（用户反馈：「更友好、默认折叠」）**：出口质量与证书面板上移到总览条与列表之间、折叠为一行标题；三个列表分区默认收起——每个表头带计数、异常红色徽章与「启用/正常/异常」汇总，收起不丢失信号；搜索/过滤命中的分区自动展开、清除后收回。趋势成为质量面板内的子折叠块，查询仅在首次展开时执行。纯展示层变更——无 API、模式或配置改动；页面测试 31 个钉住行为。文档截图经脱敏代理对新布局重拍（probes.webp 与 pb-probes.webp，en/zh），playbooks 演练段落同步改写；web-ui/api 已先行双语更新。
@@ -38,9 +42,6 @@
 - **心跳配置不再显示"间隔: 0秒 · 超时: 0秒"**：agent 上报的心跳配置 interval/timeout 为 `0` 时含义是"跟随服务默认值"（探测侧回退 30s/5s），设备详情页却把裸 0 打印了出来。现在 0 渲染为本地化的"默认"（悬停提示：跟随全局心跳设置），编辑表单也用生效默认值预填，而不是打开一个非法的 `min=1` 零值。
 - **"远端"徽标提示不再把普通 agent 网段说成联邦镜像**：所有只读镜像设备（agent 管理或联邦对端）此前一律显示"镜像自联邦对端网段"——对自家 agent 扫描的家庭局域网是错误文案。徽标现改为"该网段由采集器 / 联邦对端管理：本端为只读镜像，编辑需在数据来源侧进行"；拓扑图层筛选 pill 也像其它切换 pill 一样补上 `aria-pressed`。
 
-## [0.7.4] - 2026-10-14
-
-### 修复
 - **根路径 `GET /health` 返回健康 JSON 而非 SPA HTML（#571）**：按惯例探测 `/health` 的外部监控、容器探针与负载均衡此前拿到的是 SPA fallback 的 `200 + index.html`——API 挂了但 SPA 还在服务的进程会被误报健康。根路径现在返回与 `/api/v1/health` 完全相同的 JSON（注册在 `/metrics` 旁；OpenAPI parity 测试扩展、双语文档注明别名）。
 - **`DELETE /api/v1/users/{id}` 端点补齐（#568）**：UI 行内删除按钮一直在调一个从未实现的端点——每次单用户删除都命中 chi 子路由 404，列表行却还在（此前只有批量端点）。新增 UserService.DeleteUser + handler 沿用批量路径的自删防线、对不存在 id 返回真 404、审计记录 `admin.user.delete`；OpenAPI 声明该操作、Go/TS 客户端再生成、handler 测试钉死成功/404/自删/非法 id 四态。
 - **demo 横幅不再破坏应用外壳布局（#566）**：demo 横幅此前是 `h-screen` 外壳的 flex 子元素（位于侧栏与主区之间），被 stretch 成全高竖列——1280px 下仪表盘被挤到 ~440px、标题竖排，任意宽度中间都有一条拦截指针事件的全高死区。横幅改为 `fixed bottom-0` 底部条、除自身按钮外指针穿透，主区预留条高使滚动内容停靠其上。
@@ -53,10 +54,6 @@
 - **拓扑边新鲜度上线 + 幽灵边淡显（#585）**：`topology_edges` 一直记录 last_seen 但 API 丢弃、UI 把每条边画成"现在的连接"——WiFi 客户端断开后琥珀关联永驻（#539 修了数据侧、明确遗留 UI 半边）；设备离线后其边满强度绘制。topology 载荷现在对全部三族边携带 last_seen（邻居派生、speaks-with、物化 route-table；OpenAPI + 客户端再生成），超阈值（通用 10 分钟≈2×扫描周期、WiFi 5 分钟）的边淡显 + 虚线化、任一端点离线同样淡显，tooltip/链路面板显示"最后可见 N 分钟前"+ 疑似陈旧标记；未知年龄永不淡化。
 - **拓扑孤点海洋归组 + 丰富引导（#584）**：默认部署形态下图只有 ARP 星甚至更少（demo 实测：4 条边、15 个孤点=75%）——孤点随机漂浮零信息量，页面也不解释怎么点亮更多。度 0 节点现在默认收进一个虚线群组节点（"未接入拓扑数据（N 台）"），点击开成员列表（逐行链设备详情）；工具栏 pill 展开/收起；missingEnrichmentFamilies 推导零在场边类型族，提示行逐条链到 /settings（hostapd / eBPF 被动观测 / SNMP 凭据）——拓扑页从"展示"升级为"点亮数据源"的入口。
 - **demo 拨测种子只在文档命名空间（#572）**：demo 种子的 tcp 拨测目标此前是 `1.1.1.1:53`——真实 Cloudflare anycast 地址，demo 实例每 60s 对真实基础设施发包，违反 demo 约定（仅 RFC 5737 段 / RFC 2606 域），隔离 demo 环境常驻失败噪音。种子目标改用 TEST-NET-3 与 example.org 域，种子测试按设备 IP 的既有方式钉死该约定。
-
-### 新增
-- **自建 opkg feed（#563）**：`make feed-index` 把构建出的 `.ipk` 包（center + agent）变成自包含的 feed 目录——opkg 标准 `Packages`/`Packages.gz` 索引（带 `Filename`/`Size`/`SHA256sum` 字段）——任意静态文件服务即可托管。路由器经 `/etc/opkg/customfeeds.conf` 一次订阅，升级就是普通的 `opkg update && opkg upgrade`（或 LuCI 软件包页）。生成器（`scripts/make_opkg_feed.sh`）从每个 ipk 里挖出 control 元数据（`./` 前缀的 gzip-tar 成员）并兼容 busybox；CI openwrt job 每个 PR 冒烟索引形状。索引条目带每包 SHA256sum，opkg 按取回索引校验下载；索引本身未签名（usign 签名为后续增强）——请部署在你掌控的主机上。rig 实测：路由器订阅内网 feed 后从索引看到 `mibee-steward 0.7.3`，安装状态零变化。
-
 
 ## [0.7.3] - 2026-10-13
 
