@@ -1341,4 +1341,31 @@ describe('Probes page', () => {
 		}
 	});
 
+	it('certificate summaries fetch once per probe run, not once per poll (429 fix)', async () => {
+		const certCalls = () =>
+			vi.mocked(api.get).mock.calls.filter(([u]) => String(u).includes('/certificates')).length;
+		const baseline = certCalls();
+
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('github-tls');
+		});
+		// Seed: exactly the tls/http targets (github-tls, intranet-gw,
+		// sys-egress-http) fetch — once each.
+		await waitFor(() => {
+			expect(certCalls() - baseline).toBe(3);
+		});
+
+		// A list refresh with UNCHANGED last_run_at must not refetch certs:
+		// flip an enabled switch (its handler refetches the target list).
+		const sw = container.querySelector(
+			'section[data-category="external"] button[role="switch"]'
+		) as HTMLElement;
+		await fireEvent.click(sw);
+		await waitFor(() => {
+			expect(vi.mocked(api.put)).toHaveBeenCalled();
+		});
+		await new Promise((r) => setTimeout(r, 80));
+		expect(certCalls() - baseline).toBe(3);
+	});
 });

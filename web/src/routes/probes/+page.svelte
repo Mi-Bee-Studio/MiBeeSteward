@@ -869,27 +869,51 @@
 		}
 	}
 
-	// Per-target certificate leaf expiry for the table badge. N small requests
-	// (one per tls/http target): the list endpoint doesn't carry cert state and
-	// the target count is user-configured-small by nature.
+	// Per-target certificate leaf expiry for the table badge. Certificates
+	// are collected by the probe ENGINE per run, so between runs a target's
+	// chain cannot change: the 10s list poll only refetches targets whose
+	// last_run_at ADVANCED since we last looked. On an autogen fleet (50+
+	// http targets on this rig) the old fetch-every-poll burst blew the
+	// global 600/min/IP rate limit — a console full of 429s
+	// (field-reported 2026-10-24). Failed fetches cache as empty too and
+	// wait for the next run, so a rate-limited sweep cannot retry-loop.
+	// Requests go out in chunks of 5 so even the cold-start sweep stays
+	// polite to the limiter.
+	let certFetchRuns: Record<number, string> = {};
 	async function fetchCertSummaries() {
-		const tlsLike = targets.filter((t) => t.module === 'tls' || t.module === 'http');
-		const entries = await Promise.all(
-			tlsLike.map(async (t) => {
-				try {
-					const res = await api.get<DeviceCertificatesResponse>(`/probe-targets/${t.id}/certificates`);
-					const leaf = res.certificates?.[0]?.leaf;
-					return [t.id, leaf ? leaf.not_after : ''] as const;
-				} catch {
-					return [t.id, ''] as const;
-				}
-			})
-		);
-		const map: Record<number, string> = {};
-		for (const [id, notAfter] of entries) {
-			if (notAfter) map[id] = notAfter;
+		const liveIds = new Set(targets.map((t) => t.id));
+		for (const id of Object.keys(certFetchRuns).map(Number)) {
+			if (!liveIds.has(id)) delete certFetchRuns[id];
 		}
-		certExpiry = map;
+		const stale = targets.filter(
+			(t) =>
+				(t.module === 'tls' || t.module === 'http') &&
+				certFetchRuns[t.id] !== (t.last_run_at ?? '')
+		);
+		if (stale.length === 0) return;
+		for (let i = 0; i < stale.length; i += 5) {
+			const entries = await Promise.all(
+				stale.slice(i, i + 5).map(async (t) => {
+					certFetchRuns[t.id] = t.last_run_at ?? '';
+					try {
+						const res = await api.get<DeviceCertificatesResponse>(`/probe-targets/${t.id}/certificates`);
+						const leaf = res.certificates?.[0]?.leaf;
+						return [t.id, leaf ? leaf.not_after : ''] as const;
+					} catch {
+						return [t.id, ''] as const;
+					}
+				})
+			);
+			const map = { ...certExpiry };
+			for (const id of Object.keys(map).map(Number)) {
+				if (!liveIds.has(id)) delete map[id];
+			}
+			for (const [id, notAfter] of entries) {
+				if (notAfter) map[id] = notAfter;
+				else delete map[id];
+			}
+			certExpiry = map;
+		}
 	}
 
 	// --- Create / Edit ---
