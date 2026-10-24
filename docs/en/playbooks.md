@@ -90,11 +90,11 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
    - `host:port` for TCP reachability, plain ICMP for connectivity;
    - DNS resolution (e.g. `example.com`) to watch your resolver path — optionally pin a public resolver or assert expected answer IPs.
    Keep the default interval (anything from 10s to 24h is available).
-2. Results arrive within seconds. The page top summarizes success rate and average latency per module; the target list below carries status, latency, and **cert-days-remaining badges**.
+2. Results arrive within seconds. The page opens collapsed on a health summary bar — the failing-target count with a one-click *Problems only* filter, the worst egress verdict per network vantage, and certificate-expiry counts. Expand a category section and failing rows sort to the top, error message printed right in the status cell; the egress-quality panel's matrices (lookback chips up to 24h) and its 7-day/30-day trend answer "is it just down now, or has it been like this all week".
 
    ![Probes overview](images/pb-probes.webp)
 
-3. Click any bar in the "certificate expiry timeline" to open the **full certificate chain** modal, leaf and intermediate CA subjects, issuers, serials, SANs, validity, with one-click PEM copy.
+3. Click a row's cert-days-remaining badge — or a bar in the "certificate expiry timeline" panel — to open the **full certificate chain** modal, leaf and intermediate CA subjects, issuers, serials, SANs, validity, with one-click PEM copy.
 
    ![Certificate chain](images/pb-probe-certchain.webp)
 
