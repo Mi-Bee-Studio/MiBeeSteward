@@ -42,6 +42,9 @@
 		ProbeQualityGroup,
 		ProbeQualityVantage,
 		ProbeQualityTrack,
+		ProbeQualityHistoryReport,
+		ProbeQualityHistoryGroup,
+		ProbeQualityHistorySeries,
 		TLSPortCerts,
 		DeviceCertificatesResponse,
 		Network
@@ -130,18 +133,9 @@
 		runBatch((t) => api.delete(`/probe-targets/${t.id}`), m['common.Delete']());
 	}
 
-	// --- Module overview cards (#276): per-module success rate + avg latency --
-	interface ModuleStat {
-		module: string;
-		total: number;
-		enabled: number;
-		successRate: number | null;
-		avgLatency: number | null;
-	}
-	// All selectable modules (#605 adds dns). Drives both the overview cards
-	// and the create/edit form's module select.
-	const MODULES = ['http', 'tls', 'tcp', 'icmp', 'dns'] as const;
-	type ProbeModule = (typeof MODULES)[number];
+	// All selectable modules (#605 adds dns). Drives the create/edit form's
+	// module select.
+	type ProbeModule = 'http' | 'tls' | 'tcp' | 'icmp' | 'dns';
 	// A target's effective latest outcome: the newest row across vantage
 	// tracks when any exist (agent-vantage plans never write last_*), else the
 	// denormalized center fields. Ties on checked_at prefer the center track.
@@ -159,22 +153,29 @@
 		if (!t.last_status) return null;
 		return { status: t.last_status, latency_ms: t.last_latency_ms };
 	}
-	const moduleStats = $derived.by<ModuleStat[]>(() => {
-		return MODULES.map((mod) => {
-			const rows = targets.filter((t) => t.module === mod);
-			const ran = rows
-				.map(latestOverall)
-				.filter((v): v is { status: string; latency_ms: number } => v !== null);
-			const ok = ran.filter((v) => v.status === 'success');
-			const lat = ok.map((v) => v.latency_ms).filter((v) => v > 0);
-			return {
-				module: mod,
-				total: rows.length,
-				enabled: rows.filter((t) => t.enabled).length,
-				successRate: ran.length ? Math.round((ok.length / ran.length) * 100) : null,
-				avgLatency: lat.length ? lat.reduce((a, b) => a + b, 0) / lat.length : null
-			};
-		});
+	// --- Health-first redesign: problem rank + overview derivations ----------
+	// A target's problem rank uses the SAME latestOverall the section summary
+	// counts (fail < timeout < success < no data), so the health bar, the
+	// "problems only" filter, the failing-first sort and the ok/failing counts
+	// can never disagree about a row. Never-run rows rank last, not as failing.
+	function problemRank(t: ProbeTarget): number {
+		const latest = latestOverall(t);
+		if (!latest) return 3;
+		if (latest.status === 'fail') return 0;
+		if (latest.status === 'timeout') return 1;
+		return 2;
+	}
+	const failingTargets = $derived(targets.filter((t) => problemRank(t) <= 1));
+	const pausedCount = $derived(targets.filter((t) => !t.enabled).length);
+	// Failing breakdown by module ("http 2 · dns 1") — the one number the
+	// removed module overview cards carried that still matters for discovery.
+	const failingByModule = $derived.by(() => {
+		const parts: string[] = [];
+		for (const mod of ['http', 'tls', 'tcp', 'icmp', 'dns'] as const) {
+			const n = failingTargets.filter((t) => t.module === mod).length;
+			if (n > 0) parts.push(`${mod} ${n}`);
+		}
+		return parts;
 	});
 
 	// --- Category sections (#613): the list groups into three collapsible
@@ -194,7 +195,14 @@
 
 	// One page-level search box (replaces the single table's built-in one):
 	// it applies within every section; a section with no match hides itself.
+	// Two pill filters ride next to it: "problems only" (any failing/timeout
+	// row) and "cert expiring" — with either active a section hides itself
+	// exactly like a search miss (the health bar's blocks toggle the same
+	// state, so there is one filter model).
 	let searchQuery = $state('');
+	let problemFilter = $state(false);
+	let certFilter = $state(false);
+	const filterActive = $derived(problemFilter || certFilter);
 
 	function matchesSearch(t: ProbeTarget): boolean {
 		if (!searchQuery) return true;
@@ -238,16 +246,25 @@
 			return {
 				key,
 				label: categoryLabel(key),
-				rows: all.filter(matchesSearch),
+				// Search + filters, then failing-first: the stable sort keeps
+				// insertion order within the same rank, so a healthy list
+				// looks unchanged and problems float to the top.
+				rows: all
+					.filter(matchesRow)
+					.sort((a, b) => problemRank(a) - problemRank(b)),
 				summary: { enabled: all.filter((t) => t.enabled).length, ok, bad }
 			};
 		});
 	});
 
 	// Collapsed/expanded per section, persisted so the choice survives reloads
-	// (same localStorage pattern as ColumnPicker). Default: all expanded.
+	// (same localStorage pattern as ColumnPicker). Default: ALL COLLAPSED
+	// (layout iteration 2) — the header already carries the count + health
+	// summary, so a collapsed section loses no signal; rows are one click
+	// away. Search/filter matches auto-expand a section regardless (the
+	// user asked for those rows), and collapse back when the query clears.
 	const SECTIONS_STORAGE_KEY = 'mibee.probes.sections';
-	const SECTIONS_DEFAULT: Record<ProbeCategory, boolean> = { lan: true, external: true, quality: true };
+	const SECTIONS_DEFAULT: Record<ProbeCategory, boolean> = { lan: false, external: false, quality: false };
 
 	function loadSectionToggles(): Record<ProbeCategory, boolean> {
 		if (typeof localStorage === 'undefined') return { ...SECTIONS_DEFAULT };
@@ -272,6 +289,15 @@
 		}
 	}
 
+	// Effective open state: the user's stored choice, overridden while a
+	// search or filter is active — a section holding MATCHES expands itself
+	// so results are visible without a second click, and collapses back
+	// when the query clears.
+	function sectionEffectiveOpen(key: ProbeCategory, rows: number): boolean {
+		if ((searchQuery || filterActive) && rows > 0) return true;
+		return sectionsOpen[key];
+	}
+
 	// --- Egress quality report (#608): GET /probe-quality, fetched once on
 	// mount + manual refresh. The report is computed read-time server-side, no
 	// point polling it on the 10s target cadence.
@@ -283,12 +309,18 @@
 		qualityLoading = true;
 		qualityError = '';
 		try {
-			quality = await api.get<ProbeQualityReport>('/probe-quality');
+			quality = await api.get<ProbeQualityReport>(`/probe-quality?window=${qualityWindow}`);
 		} catch (err: unknown) {
 			qualityError = getErrorMessage(err);
 		} finally {
 			qualityLoading = false;
 		}
+	}
+
+	function setQualityWindow(minutes: number) {
+		if (qualityWindow === minutes) return;
+		qualityWindow = minutes;
+		fetchQuality();
 	}
 
 	// --- Category view of the report (#613): the payload carries lan,
@@ -332,6 +364,195 @@
 		const groups = qualityCat('quality').groups ?? [];
 		return groups.length === 0 || groups.every((g) => (g.vantages ?? []).length === 0);
 	});
+
+	// Worst verdict per vantage across every category and group (severity:
+	// egress_down > dns_fault > upstream_resolver > degraded > ok; anything
+	// else, i.e. insufficient, never counts as an alert). Feeds the health
+	// bar's egress block and decides the quality panel's default state — the
+	// one "is MY egress broken" signal that must be visible without expanding
+	// anything.
+	const VERDICT_SEVERITY: Record<string, number> = {
+		ok: 0,
+		degraded: 1,
+		upstream_resolver: 2,
+		dns_fault: 3,
+		egress_down: 4
+	};
+	function verdictSeverity(v: string): number {
+		return VERDICT_SEVERITY[v] ?? -1;
+	}
+	const worstVantages = $derived.by<ProbeQualityVantage[]>(() => {
+		if (!quality) return [];
+		const worst = new Map<string, ProbeQualityVantage>();
+		const consider = (v: ProbeQualityVantage | undefined) => {
+			if (!v) return;
+			const cur = worst.get(v.vantage);
+			if (!cur || verdictSeverity(v.verdict) > verdictSeverity(cur.verdict)) worst.set(v.vantage, v);
+		};
+		for (const cat of quality.categories ?? []) {
+			for (const v of cat.vantages ?? []) consider(v);
+			for (const g of cat.groups ?? []) {
+				for (const v of g.vantages ?? []) consider(v);
+			}
+		}
+		const order = (v: string) => (v === 'center' ? 0 : 1);
+		return [...worst.values()].sort(
+			(a, b) => order(a.vantage) - order(b.vantage) || a.vantage.localeCompare(b.vantage)
+		);
+	});
+	const egressAlert = $derived(worstVantages.some((v) => verdictSeverity(v.verdict) >= 1));
+
+	// Collapsed-by-default drill-down (layout iteration 2): the health bar
+	// carries the summary, these panels are pure on-demand. The stored
+	// preference still wins once the user has toggled manually.
+	const QUALITY_OPEN_KEY = 'mibee.probes.qualityOpen';
+	function loadOpenPref(key: string): boolean | null {
+		if (typeof localStorage === 'undefined') return null;
+		try {
+			const raw = localStorage.getItem(key);
+			return raw === null ? null : raw === 'true';
+		} catch {
+			return null;
+		}
+	}
+	function saveOpenPref(key: string, v: boolean) {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			localStorage.setItem(key, String(v));
+		} catch {
+			// Storage unavailable: the toggle still holds for this session.
+		}
+	}
+	let qualityOpenPref = loadOpenPref(QUALITY_OPEN_KEY);
+	let qualityOpen = $state(qualityOpenPref ?? false);
+
+	function toggleQualityOpen() {
+		qualityOpen = !qualityOpen;
+		qualityOpenPref = qualityOpen;
+		saveOpenPref(QUALITY_OPEN_KEY, qualityOpen);
+	}
+
+	// --- Window selector + trend (#608 follow-up) -----------------------------
+	// The matrices answer "what is it like right now"; the window chips widen
+	// that lookback to at most 24h (the API clamps 5..1440 minutes). Longer
+	// horizons are the TREND below: /probe-quality/history buckets the same
+	// verdict chain per hour (7d) or day (30d) SQL-side, so months stay cheap.
+	const QUALITY_WINDOWS = [
+		{ label: '15m', minutes: 15 },
+		{ label: '1h', minutes: 60 },
+		{ label: '6h', minutes: 360 },
+		{ label: '24h', minutes: 1440 }
+	] as const;
+	let qualityWindow = $state(15);
+
+	// Trend state: one cached report per range; switching chips re-fetches
+	// only when the target range was never loaded.
+	let historyDays = $state<7 | 30>(7);
+	let historyCache = $state<Record<number, ProbeQualityHistoryReport | null>>({});
+	let historyLoading = $state(false);
+	let historyError = $state('');
+
+	// The trend is a sub-drill-down inside the panel: collapsed until asked,
+	// and its query (seconds on the ARM rig) runs ONLY on first open — the
+	// mount path stays light.
+	let trendOpen = $state(false);
+
+	function toggleTrendOpen() {
+		trendOpen = !trendOpen;
+		if (trendOpen) fetchHistory(historyDays);
+	}
+
+	async function fetchHistory(days: 7 | 30) {
+		if (historyCache[days] !== undefined && historyCache[days] !== null) return;
+		historyLoading = true;
+		historyError = '';
+		try {
+			const res = await api.get<ProbeQualityHistoryReport>(`/probe-quality/history?days=${days}`);
+			historyCache = { ...historyCache, [days]: res };
+		} catch (err: unknown) {
+			historyError = getErrorMessage(err);
+		} finally {
+			historyLoading = false;
+		}
+	}
+
+	function switchHistoryDays(days: 7 | 30) {
+		historyDays = days;
+		fetchHistory(days);
+	}
+
+	const historyReport = $derived<ProbeQualityHistoryReport | null>(
+		historyCache[historyDays] ?? null
+	);
+	const historyEmpty = $derived(
+		historyReport !== null && (historyReport.groups ?? []).every((g) => (g.series ?? []).length === 0)
+	);
+	// Trend series colors follow the page's vantage convention: center =
+	// theme accent, agents the fixed readable palette (same mapping as the
+	// history modal's latency chart).
+	const historySeriesColors = $derived.by<Map<string, string>>(() => {
+		const map = new Map<string, string>();
+		let agentIdx = 0;
+		for (const g of historyReport?.groups ?? []) {
+			for (const s of g.series ?? []) {
+				if (map.has(s.vantage)) continue;
+				map.set(
+					s.vantage,
+					s.vantage === 'center'
+						? cssVar('--color-accent', '#818cf8')
+						: TRACK_PALETTE[agentIdx++ % TRACK_PALETTE.length]
+				);
+			}
+		}
+		return map;
+	});
+
+	function trendChartOption(g: ProbeQualityHistoryGroup): EChartsOption {
+		const series = (g.series ?? []).map((s: ProbeQualityHistorySeries) => {
+			const color = historySeriesColors.get(s.vantage);
+			return {
+				name: s.network_name || s.vantage,
+				type: 'line' as const,
+				symbolSize: 3,
+				showSymbol: false,
+				connectNulls: false,
+				emphasis: { focus: 'series' },
+				data: (s.points ?? []).map((p) => [p.t, Math.round(p.ok_rate * 1000) / 10]),
+				lineStyle: { width: 2, color, type: g.role === 'reference' ? 'dashed' : 'solid' },
+				itemStyle: { color }
+			};
+		});
+		return {
+			animation: false,
+			grid: { left: 44, right: 12, top: 12, bottom: 40 },
+			tooltip: {
+				trigger: 'axis',
+				valueFormatter: (v: unknown) => `${v}%`
+			},
+			legend: { bottom: 0, type: 'scroll', textStyle: { fontSize: 10 } },
+			xAxis: { type: 'time', axisLabel: { hideOverlap: true } },
+			yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+			series
+		};
+	}
+
+	// Verdict cell colors for the trend strip (the same grammar the results
+	// modal's status timeline uses).
+	const trendStripCls = (verdict: string) => {
+		switch (verdict) {
+			case 'ok':
+				return 'bg-success';
+			case 'degraded':
+				return 'bg-warning';
+			case 'egress_down':
+			case 'dns_fault':
+				return 'bg-error';
+			case 'upstream_resolver':
+				return 'bg-[#fb923c]';
+			default:
+				return 'bg-border';
+		}
+	};
 
 	// Row label: the human network name when the vantage maps to one, else the
 	// raw vantage token; center renders with its friendly name.
@@ -436,6 +657,18 @@
 		}
 		return entries.sort((a, b) => a.days - b.days);
 	});
+	// Targets whose leaf cert is inside the warning window (expired included).
+	// One set drives the health bar's cert block, the "cert expiring" filter
+	// and the timeline panel's default state.
+	const certExpiringIds = $derived.by<Set<number>>(() => {
+		const ids = new Set<number>();
+		for (const e of certTimeline) {
+			if (e.days < expiryWarnDays) ids.add(e.t.id);
+		}
+		return ids;
+	});
+	const certExpiredCount = $derived(certTimeline.filter((e) => e.days < 0).length);
+	const certAlert = $derived(certExpiringIds.size > 0);
 	// Expiry warning threshold (days): persisted per browser (#276 goal: configurable).
 	let expiryWarnDays = $state<number>(
 		Number(localStorage.getItem('probes.expiryWarnDays')) || 30
@@ -444,6 +677,27 @@
 		expiryWarnDays = n;
 		localStorage.setItem('probes.expiryWarnDays', String(n));
 	}
+	// Same collapse doctrine as the quality panel: pure on-demand.
+	const CERT_OPEN_KEY = 'mibee.probes.certOpen';
+	let certOpenPref = loadOpenPref(CERT_OPEN_KEY);
+	let certOpen = $state(certOpenPref ?? false);
+
+	function toggleCertOpen() {
+		certOpen = !certOpen;
+		certOpenPref = certOpen;
+		saveOpenPref(CERT_OPEN_KEY, certOpen);
+	}
+
+	// Row passes the search box AND the pill filters (OR across the two
+	// filters when both are active — each names its own kind of problem).
+	function matchesRow(t: ProbeTarget): boolean {
+		if (!matchesSearch(t)) return false;
+		if (!filterActive) return true;
+		if (problemFilter && problemRank(t) <= 1) return true;
+		if (certFilter && certExpiringIds.has(t.id)) return true;
+		return false;
+	}
+
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 	// --- Create/Edit modal ---
@@ -531,6 +785,15 @@
 
 	// --- Trigger (per-row, in-flight marker disables just that row's button) ---
 	let triggeringId = $state<number | null>(null);
+
+	// --- Expandable troubleshoot row: click a target's name to open the
+	// per-vantage latest results (with full error text) + quick actions
+	// without opening the history modal. One row open across all sections.
+	let expandedId = $state<number | null>(null);
+
+	function toggleExpand(id: number) {
+		expandedId = expandedId === id ? null : id;
+	}
 
 	// --- Delete confirm ---
 	let deleteDialogOpen = $state(false);
@@ -696,14 +959,6 @@
 		return opts;
 	});
 
-	const moduleHelpKeys: Record<string, string> = {
-		http: 'probes.Module http Help',
-		tls: 'probes.Module tls Help',
-		tcp: 'probes.Module tcp Help',
-		icmp: 'probes.Module icmp Help',
-		dns: 'probes.Module dns Help'
-	};
-
 	function moduleHelp(mod: string): string {
 		switch (mod) {
 			case 'tls':
@@ -828,6 +1083,7 @@
 		try {
 			await api.delete(`/probe-targets/${deleteTarget.id}`);
 			addToast('success', m['probes.Target Deleted']());
+			if (expandedId === deleteTarget.id) expandedId = null;
 			deleteTarget = null;
 			fetchTargets();
 		} catch (err: unknown) {
@@ -877,9 +1133,12 @@
 
 	// Status cell: one line per vantage track so agent outcomes are visible at
 	// a glance (last_* mirrors the center track only). A lone center track
-	// renders as compactly as the old single badge. Lines are built as separate
-	// html fragments and joined: interpolating an HtmlString into another
-	// html` template would double-escape its markup.
+	// renders as compactly as the old single badge. The troubleshoot fast
+	// path: a non-success track prints its error_message right in the cell
+	// (truncated, full text on hover) — "why is it red" no longer requires
+	// opening the history modal. Lines are built as separate html fragments
+	// and joined: interpolating an HtmlString into another html` template
+	// would double-escape its markup.
 	const vantageStatusCell = (row: Record<string, unknown>) => {
 		const tracks = row.vantage_latest as ProbeVantageLatest[] | undefined;
 		const plan = String(row.vantage || 'center');
@@ -890,17 +1149,27 @@
 			}
 			return html`<span class="text-text-muted text-xs">${m['probes.Never Run']()}</span>`;
 		}
+		const truncErr = (s: string) => (s.length > 48 ? s.slice(0, 48) + '…' : s);
+		const errLine = (msg?: string) =>
+			msg
+				? html`<div class="mt-0.5 max-w-[15rem] truncate text-[0.625rem] leading-tight text-error" title="${msg}">${truncErr(msg)}</div>`
+				: '';
 		if (tracks.length === 1 && tracks[0].vantage === 'center' && !agentExpected) {
 			const t = tracks[0];
-			if (t.latency_ms > 0) {
-				return html`<div class="flex items-center gap-2"><span class="badge ${t.status === 'success' ? 'badge-success' : t.status === 'timeout' ? 'badge-warning' : 'badge-error'}">${t.status}</span><span class="text-xs font-mono">${fmtLatency(t.latency_ms)}</span></div>`;
-			}
-			return statusBadge(t.status);
+			const head =
+				t.latency_ms > 0
+					? html`<div class="flex items-center gap-2"><span class="badge ${t.status === 'success' ? 'badge-success' : t.status === 'timeout' ? 'badge-warning' : 'badge-error'}">${t.status}</span><span class="text-xs font-mono">${fmtLatency(t.latency_ms)}</span></div>`
+					: statusBadge(t.status);
+			if (t.status === 'success' || !t.error_message) return head;
+			return '<div class="space-y-0.5">' + head + errLine(t.error_message) + '</div>';
 		}
 		const disagree = new Set(tracks.map((t) => t.status === 'success')).size > 1;
 		const lines = tracks.map((t) => {
 			const dot = t.status === 'success' ? 'bg-success' : t.status === 'timeout' ? 'bg-warning' : 'bg-error';
-			return html`<div class="flex items-center gap-1.5"><span class="inline-block h-2 w-2 shrink-0 rounded-full ${dot}"></span><span class="max-w-[9rem] truncate font-mono text-xs text-text-muted" title="${t.vantage}">${t.vantage}</span><span class="text-xs font-mono text-text-muted">${t.latency_ms > 0 ? fmtLatency(t.latency_ms) : ''}</span></div>`;
+			const title = t.error_message ? `${t.vantage}: ${t.error_message}` : t.vantage;
+			const line = html`<div class="flex items-center gap-1.5"><span class="inline-block h-2 w-2 shrink-0 rounded-full ${dot}"></span><span class="max-w-[9rem] truncate font-mono text-xs text-text-muted" title="${title}">${t.vantage}</span><span class="text-xs font-mono text-text-muted">${t.latency_ms > 0 ? fmtLatency(t.latency_ms) : ''}</span></div>`;
+			if (t.status === 'success' || !t.error_message) return line;
+			return '<div>' + line + errLine(t.error_message) + '</div>';
 		});
 		if (agentExpected && !tracks.some((t) => t.vantage !== 'center')) {
 			lines.push(html`<div class="text-warning text-xs">${m['probes.Agent No Results']()}</div>`);
@@ -946,36 +1215,52 @@
 		return '';
 	};
 
+	// Table columns (render path uses the auto-escaping html helper). The name
+	// and cert columns are interactive: the name button toggles the expandable
+	// troubleshoot row, the cert badge opens the chain — both render via the
+	// cell snippet (#167 keyboard-accessible path), not render strings.
 	const columns = $derived([
 		{ key: 'select', label: m['probes.Batch Select'](), interactive: true },
-		{
-			key: 'name',
-			label: m['probes.Name'](),
-			sortable: true,
-			render: (row: Record<string, unknown>) => html`<span class="font-medium">${row.name}</span>` + sourceIcon(row)
-		},
+		{ key: 'name', label: m['probes.Name'](), sortable: true, interactive: true },
 		{ key: 'module', label: m['probes.Module'](), render: (row: Record<string, unknown>) => html`<span class="badge badge-info uppercase">${row.module}</span>` },
 		{ key: 'target', label: m['probes.Target'](), render: (row: Record<string, unknown>) => html`<span class="font-mono text-xs">${row.target}</span>` },
 		{ key: 'vantage', label: m['probes.Vantage'](), render: (row: Record<string, unknown>) => vantageBadge(String(row.vantage || '')) },
 		{ key: 'interval_seconds', label: m['probes.Interval'](), render: (row: Record<string, unknown>) => html`<span class="text-xs">${row.interval_seconds}s</span>` },
 		{ key: 'last_status', label: m['probes.Vantage Status'](), sortable: true, render: (row: Record<string, unknown>) => vantageStatusCell(row) },
-		{
-			key: 'cert',
-			label: m['probes.Cert Expiry'](),
-			render: (row: Record<string, unknown>) => {
-				const id = row.id as number;
-				const mod = row.module as string;
-				if (mod !== 'tls' && mod !== 'http') return html`<span class="text-text-muted text-xs">-</span>`;
-				const notAfter = certExpiry[id];
-				if (!notAfter) return html`<span class="text-text-muted text-xs">-</span>`;
-				const days = certDayDelta(notAfter);
-				const cls = days < 0 ? 'badge-error' : days < 15 ? 'badge-warning' : 'badge-success';
-				return html`<span class="badge ${cls}" title="${notAfter}">${m['probes.Cert Days']({ days })}</span>`;
-			}
-		},
+		{ key: 'cert', label: m['probes.Cert Expiry'](), interactive: true },
 		{ key: 'enabled', label: m['probes.Enabled'](), interactive: true },
 		{ key: 'actions', label: m['probes.Actions'](), interactive: true }
 	]);
+
+	// Failing/timeout rows get a quiet error tint so a scan down the list
+	// stops on them (they are also sorted to the top of their section).
+	function rowClass(row: Record<string, unknown>): string {
+		return problemRank(row as unknown as ProbeTarget) <= 1 ? 'bg-error/5' : '';
+	}
+
+	// The expandable row's track list: vantage_latest when any track exists,
+	// else the denormalized center fields as a single pseudo-track (targets
+	// whose agent plans never wrote last_* but carry a center run).
+	interface ExpandedTrack {
+		vantage: string;
+		status: string;
+		latency_ms: number;
+		checked_at: string;
+		error_message?: string;
+	}
+	function expandedTracks(t: ProbeTarget): ExpandedTrack[] {
+		if ((t.vantage_latest ?? []).length > 0) return t.vantage_latest as ExpandedTrack[];
+		if (!t.last_status || !t.last_run_at) return [];
+		return [
+			{
+				vantage: 'center',
+				status: t.last_status,
+				latency_ms: t.last_latency_ms,
+				checked_at: t.last_run_at,
+				error_message: t.last_error || undefined
+			}
+		];
+	}
 
 	// Per-vantage tracks for the results modal (#277): each executor's newest
 	// row, side by side. `results` arrive newest-first from the API, so the
@@ -1195,181 +1480,387 @@
 			{/each}
 		{/snippet}
 
-		<!-- Egress quality (#608/#613): per-category vantage × target matrices
-		     with verdicts — quality first (verdict-chain config groups; primary
-		     group leads, reference groups render visually secondary), then
-		     external as one compact matrix (window health only). #615: the lan
-		     category does NOT render here; its per-vantage health is the strip
-		     inside the lan list section below. -->
-		<div class="bg-surface border border-border rounded-lg p-4 mb-6" data-quality-panel>
-			<div class="flex items-center justify-between gap-4 mb-3">
-				<div>
-					<div class="flex items-center gap-1.5">
-						<h3 class="text-sm font-semibold text-text">{m['probes.Quality Title']()}</h3>
-						<!-- Help (#613): hover (or keyboard focus) reveals the verdict
-						     formulas. Pure CSS reveal — the content always stays in the
-						     DOM, so screen readers (and tests) see it either way. -->
-						<div class="relative inline-flex group">
-							<button
-								type="button"
-								class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-text-muted transition-colors hover:border-text-muted hover:text-text"
-								aria-label={m['probes.Quality Help Title']()}
-								aria-describedby="probes-quality-help"
-							>
-								<Info class="h-3.5 w-3.5" />
-							</button>
-							<div
-								id="probes-quality-help"
-								role="tooltip"
-								data-quality-help
-								class="invisible pointer-events-none absolute left-0 top-full z-40 mt-2 w-[26rem] max-w-[80vw] rounded-lg border border-border bg-surface p-3 shadow-lg transition-opacity opacity-0
-									group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto
-									group-focus-within:visible group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
-							>
-								<p class="mb-2 text-xs font-semibold text-text">{m['probes.Quality Help Title']()}</p>
-								<dl class="space-y-1.5">
-									<div class="flex gap-2">
-										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Window Label']()}</dt>
-										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Window']({ window: quality?.window_minutes ?? 15 })}</dd>
-									</div>
-									<div class="flex gap-2">
-										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Cell Label']()}</dt>
-										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Cell']()}</dd>
-									</div>
-									<div class="flex gap-2">
-										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Simple Label']()}</dt>
-										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Simple']()}</dd>
-									</div>
-									<div class="flex gap-2">
-										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Chain Label']()}</dt>
-										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Chain']()}</dd>
-									</div>
-									<div class="flex gap-2">
-										<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Thresholds Label']()}</dt>
-										<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Thresholds']()}</dd>
-									</div>
-								</dl>
-							</div>
-						</div>
-					</div>
-					<p class="text-xs text-muted">{m['probes.Quality Desc']({ window: quality?.window_minutes ?? 15 })}</p>
-				</div>
-				<button onclick={fetchQuality} disabled={qualityLoading} class="btn btn-secondary !py-1 !px-3 text-xs shrink-0">
-					{qualityLoading ? '…' : m['probes.Refresh']()}
-				</button>
-			</div>
-			{#if qualityError}
-				<p class="text-xs text-error mb-2">{m['probes.Quality Error']()}: {qualityError}</p>
-			{/if}
-			{#if quality === null && !qualityError}
-				<p class="text-xs text-muted py-2">…</p>
-			{:else}
-				<!-- quality: the egress verdict-chain groups, as before (#608);
-				     they lead the panel (#615). -->
-				<div class="mb-3 last:mb-0">
-					<div class="flex items-center gap-2 mb-1.5">
-						<h4 class="text-xs font-semibold text-text">{categoryLabel('quality')}</h4>
-					</div>
-					{#if qualityEmpty}
-						<p class="text-xs text-muted italic">{m['probes.Quality Empty']()}</p>
-					{:else}
-						{#each qualityGroups as g (g.name)}
-							<div class="mb-3 last:mb-0 {g.role === 'reference' ? 'opacity-80' : ''}">
-								<div class="flex items-center gap-2 mb-1.5">
-									<h5 class="text-xs font-semibold {g.role === 'reference' ? 'text-text-muted' : 'text-text'}">{g.name}</h5>
-									{#if g.role === 'reference'}
-										<span class="badge badge-info !text-[0.625rem] !px-1.5">{m['probes.Quality Reference']()}</span>
-									{/if}
-								</div>
-								{@render qualityMatrix(g.vantages ?? [], g.targets ?? [], 0)}
-							</div>
-						{/each}
-					{/if}
-				</div>
-				<!-- external: its compact window-health matrix with verdict
-				     badges + reason chips (#615: the lan matrix left the panel —
-				     LAN health renders as the strip in the lan list section). -->
-				<div class="mb-3 last:mb-0">
-					<div class="flex items-center gap-2 mb-1.5">
-						<h4 class="text-xs font-semibold text-text">{categoryLabel('external')}</h4>
-					</div>
-					{#if simpleCatEmpty(externalCat)}
-						<p class="text-xs text-muted italic">{m['probes.Quality Cat Empty']()}</p>
-					{:else}
-						{@render qualityMatrix(
-							externalCat.vantages ?? [],
-							(externalCat.targets ?? []).slice(0, MATRIX_MAX_TARGETS),
-							Math.max(0, (externalCat.targets ?? []).length - MATRIX_MAX_TARGETS)
-						)}
-					{/if}
-				</div>
-			{/if}
-		</div>
-
-		<!-- Module overview cards (#276): per-module success rate + avg latency -->
-		<div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-			{#each moduleStats as ms (ms.module)}
-				<div class="bg-surface border border-border rounded-lg px-4 py-3">
-					<div class="flex items-center justify-between">
-						<span class="badge badge-info uppercase">{ms.module}</span>
-						<span class="text-xs text-muted">{ms.enabled}/{ms.total}</span>
-					</div>
-					<p class="mt-2 text-lg font-semibold {ms.successRate === null ? 'text-muted' : ms.successRate >= 90 ? 'text-success' : ms.successRate >= 50 ? 'text-warning' : 'text-error'}">
-						{ms.successRate === null ? '-' : ms.successRate + '%'}
-					</p>
-					<p class="text-xs text-muted">{m['probes.Avg Latency']()}: {ms.avgLatency === null ? '-' : ms.avgLatency < 1000 ? Math.round(ms.avgLatency) + 'ms' : (ms.avgLatency / 1000).toFixed(2) + 's'}</p>
-				</div>
-			{/each}
-		</div>
-
-		<!-- Cert expiry timeline (#276): TLS/http targets sorted by days-left -->
-		{#if certTimeline.length > 0}
-			<div class="bg-surface border border-border rounded-lg p-4 mb-6">
-				<div class="flex items-center justify-between mb-3">
-					<div>
-						<h3 class="text-sm font-semibold text-text">{m['probes.Cert Timeline']()}</h3>
-						<p class="text-xs text-muted">{m['probes.Cert Timeline Desc']()}</p>
-					</div>
-					<select
-						value={expiryWarnDays}
-						onchange={(e) => setExpiryWarn(Number((e.target as HTMLSelectElement).value))}
-						class="input !w-auto text-xs"
-						aria-label={m['probes.Expiry Threshold']()}
-					>
-						{#each [15, 30, 60, 90] as d (d)}
-							<option value={d}>{m['probes.Expiry Threshold Option']({ days: d })}</option>
-						{/each}
-					</select>
-				</div>
-				<div class="space-y-1.5">
-					{#each certTimeline as e (e.t.id)}
-						{@const pct = Math.max(2, Math.min(100, (e.days / 90) * 100))}
-						{@const cls = e.days < 0 ? 'bg-error' : e.days < expiryWarnDays ? 'bg-warning' : 'bg-success'}
+		<!-- Health summary bar: the page's one-glance answer to "any problems
+		     right now" — failing targets (button = problems-only filter), the
+		     worst egress verdict per vantage (button = quality panel below),
+		     and cert expiry counts (button = cert timeline below). Replaces
+		     the old module overview cards: their per-module success rate rode
+		     on single-sample noise and duplicated the section summaries; the
+		     failing-by-module breakdown keeps the one useful part. -->
+		{#if loading}
+			<div class="mb-6 h-24 rounded-lg border border-border bg-surface animate-pulse" data-health-summary></div>
+		{:else}
+			<div class="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3" data-health-summary>
+				<!-- Targets: the list's own health -->
+				<div class="rounded-lg border bg-surface px-4 py-3 {failingTargets.length > 0 ? 'border-error/40' : 'border-border'}">
+					<div class="flex items-center justify-between gap-2">
+						<span class="text-xs font-medium text-text-muted">{m['probes.Overview Targets']()}</span>
 						<button
 							type="button"
-							onclick={() => openCerts(e.t)}
-							class="w-full flex items-center gap-3 group text-left"
-							title={e.notAfter}
-						>
-							<span class="w-40 shrink-0 truncate text-xs font-medium group-hover:text-primary">{e.t.name}</span>
-							<span class="flex-1 h-3 rounded-full bg-border/50 overflow-hidden">
-								<span class="block h-full {cls} rounded-full transition-all" style="width: {pct}%"></span>
-							</span>
-							<span class="w-20 shrink-0 text-right text-xs font-mono {e.days < expiryWarnDays ? 'text-warning' : 'text-muted'}">
-								{e.days < 0 ? m['probes.Cert Expired']() : m['probes.Cert Days']({ days: e.days })}
-							</span>
-						</button>
-					{/each}
-				</div>
-				{#if certTimeline.some((e) => e.days >= 0 && e.days < expiryWarnDays)}
-					<p class="mt-3 text-xs text-warning">
-						{m['probes.Cert Expiring Hint']()}
-						<a href="/settings/notifications" class="text-primary hover:underline">{m['probes.Cert Configure Rule']()}</a>
+							onclick={() => (problemFilter = !problemFilter)}
+							disabled={failingTargets.length === 0}
+							aria-pressed={problemFilter}
+							aria-label={m['probes.Overview Targets Aria']()}
+							class="btn btn-secondary !py-1 !px-2.5 text-xs {problemFilter ? '!text-primary !border-primary/40' : ''}"
+						>{m['probes.Filter Problems']()}</button>
+					</div>
+					<p class="mt-1.5 text-sm font-semibold {failingTargets.length > 0 ? 'text-error' : 'text-success'}">
+						{#if failingTargets.length > 0}
+							{m['probes.Overview Failing']({ count: failingTargets.length, total: targets.length })}
+						{:else}
+							{m['probes.Overview All Healthy']({ total: targets.length })}
+						{/if}
 					</p>
-				{/if}
+					{#if failingTargets.length > 0 || pausedCount > 0}
+						<p class="mt-0.5 truncate text-xs text-text-muted">
+							{#if failingTargets.length > 0}{failingByModule.join(' · ')}{/if}
+							{#if pausedCount > 0}{failingTargets.length > 0 ? ' · ' : ''}{m['probes.Overview Paused']({ count: pausedCount })}{/if}
+						</p>
+					{/if}
+				</div>
+				<!-- Egress: worst verdict per vantage; the whole block toggles
+				     the quality panel (drill-down below the list) -->
+				<button
+					type="button"
+					onclick={toggleQualityOpen}
+					aria-expanded={qualityOpen}
+					aria-label={m['probes.Overview Egress Aria']()}
+					class="rounded-lg border bg-surface px-4 py-3 text-left {egressAlert ? 'border-warning/40' : 'border-border'}"
+				>
+					<span class="flex items-center justify-between gap-2">
+						<span class="text-xs font-medium text-text-muted">{m['probes.Overview Egress']()}</span>
+						<ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform {qualityOpen ? '' : '-rotate-90'}" />
+					</span>
+					{#if qualityError}
+						<span class="mt-1.5 block text-sm font-semibold text-error">{m['probes.Overview Egress Error']()}</span>
+					{:else if quality === null}
+						<span class="mt-1.5 block text-sm font-semibold text-text-muted">…</span>
+					{:else if worstVantages.length === 0}
+						<span class="mt-1.5 block text-sm font-semibold text-text-muted">{m['probes.Quality Empty']()}</span>
+					{:else}
+						<span class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1" data-egress-chips>
+							{#each worstVantages as v (v.vantage)}
+								<span class="inline-flex items-center gap-1">
+									<span class="text-xs text-text-muted" title="{v.network_name ? v.vantage : ''}">{vantageLabel(v)}</span>
+									<span class="badge {verdictCls(v.verdict)}" style={verdictStyle(v.verdict)}>{verdictLabel(v.verdict)}</span>
+								</span>
+							{/each}
+						</span>
+					{/if}
+				</button>
+				<!-- Certs: expiry counts; the whole block toggles the timeline -->
+				<button
+					type="button"
+					onclick={toggleCertOpen}
+					aria-expanded={certOpen}
+					aria-label={m['probes.Overview Certs Aria']()}
+					class="rounded-lg border bg-surface px-4 py-3 text-left {certExpiredCount > 0 ? 'border-error/40' : certAlert ? 'border-warning/40' : 'border-border'}"
+				>
+					<span class="flex items-center justify-between gap-2">
+						<span class="text-xs font-medium text-text-muted">{m['probes.Overview Certs']()}</span>
+						<ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform {certOpen ? '' : '-rotate-90'}" />
+					</span>
+					<span class="mt-1.5 block text-sm font-semibold {certExpiredCount > 0 ? 'text-error' : certAlert ? 'text-warning' : 'text-success'}">
+						{#if certAlert}
+							{@const soon = certExpiringIds.size - certExpiredCount}
+							{m['probes.Overview Certs Expiring']({ count: soon, days: expiryWarnDays })}
+							{#if certExpiredCount > 0} · {m['probes.Overview Certs Expired']({ count: certExpiredCount })}{/if}
+						{:else}
+							{m['probes.Overview Certs Ok']()}
+						{/if}
+					</span>
+				</button>
 			</div>
 		{/if}
 
+			<!-- Egress quality (#608/#613): per-category vantage × target
+			     matrices with verdicts — quality first (verdict-chain config
+			     groups; primary group leads, reference groups render visually
+			     secondary), then external as one compact matrix (window health
+			     only). #615: the lan category does NOT render here; its
+			     per-vantage health is the strip inside the lan list section
+			     above. Moved below the list (health-first redesign): the
+			     health bar's verdict chips carry the summary, these matrices
+			     are the drill-down — collapsed when healthy, open on any
+			     alert (manual toggles remembered per browser). -->
+			<div class="bg-surface border border-border rounded-lg p-4 mb-6" data-quality-panel>
+				<div class="flex items-center justify-between gap-4">
+					<div class="min-w-0">
+						<div class="flex items-center gap-1.5">
+							<button
+								type="button"
+								onclick={toggleQualityOpen}
+								aria-expanded={qualityOpen}
+								aria-label={m['probes.Overview Egress Aria']()}
+								class="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-2"
+							>
+								<ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform {qualityOpen ? '' : '-rotate-90'}" />
+							</button>
+							<h3 class="text-sm font-semibold text-text">{m['probes.Quality Title']()}</h3>
+							<!-- Help (#613): hover (or keyboard focus) reveals the verdict
+							     formulas. Pure CSS reveal — the content always stays in the
+							     DOM, so screen readers (and tests) see it either way. -->
+							<div class="relative inline-flex group">
+								<button
+									type="button"
+									class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-text-muted transition-colors hover:border-text-muted hover:text-text"
+									aria-label={m['probes.Quality Help Title']()}
+									aria-describedby="probes-quality-help"
+								>
+									<Info class="h-3.5 w-3.5" />
+								</button>
+								<div
+									id="probes-quality-help"
+									role="tooltip"
+									data-quality-help
+									class="invisible pointer-events-none absolute left-0 top-full z-40 mt-2 w-[26rem] max-w-[80vw] rounded-lg border border-border bg-surface p-3 shadow-lg transition-opacity opacity-0
+										group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto
+										group-focus-within:visible group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
+								>
+									<p class="mb-2 text-xs font-semibold text-text">{m['probes.Quality Help Title']()}</p>
+									<dl class="space-y-1.5">
+										<div class="flex gap-2">
+											<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Window Label']()}</dt>
+											<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Window']({ window: quality?.window_minutes ?? 15 })}</dd>
+										</div>
+										<div class="flex gap-2">
+											<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Cell Label']()}</dt>
+											<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Cell']()}</dd>
+										</div>
+										<div class="flex gap-2">
+											<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Simple Label']()}</dt>
+											<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Simple']()}</dd>
+										</div>
+										<div class="flex gap-2">
+											<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Chain Label']()}</dt>
+											<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Chain']()}</dd>
+										</div>
+										<div class="flex gap-2">
+											<dt class="w-28 shrink-0 text-xs font-medium text-text">{m['probes.Quality Help Thresholds Label']()}</dt>
+											<dd class="min-w-0 flex-1 text-xs text-text-muted">{m['probes.Quality Help Thresholds']()}</dd>
+										</div>
+									</dl>
+								</div>
+							</div>
+						</div>
+						<p class="text-xs text-muted">{m['probes.Quality Desc']({ window: quality?.window_minutes ?? 15 })}</p>
+					</div>
+					<div class="flex items-center gap-2 shrink-0">
+						<!-- Window chips (#608 follow-up): widen the matrices' lookback
+						     (API clamps 5..1440 min). Longer horizons = the trend below. -->
+						<div class="flex items-center rounded-full border border-border overflow-hidden" role="group" aria-label={m['probes.Quality Window']()} data-quality-window>
+							{#each QUALITY_WINDOWS as w (w.label)}
+								<button
+									type="button"
+									onclick={() => setQualityWindow(w.minutes)}
+									aria-pressed={qualityWindow === w.minutes}
+									class="px-2.5 py-1 text-xs transition-colors {qualityWindow === w.minutes ? 'bg-primary/10 text-primary font-medium' : 'text-text-muted hover:text-text'}"
+								>{w.label}</button>
+							{/each}
+						</div>
+						<button onclick={fetchQuality} disabled={qualityLoading} class="btn btn-secondary !py-1 !px-3 text-xs shrink-0">
+							{qualityLoading ? '…' : m['probes.Refresh']()}
+						</button>
+					</div>
+				</div>
+				{#if qualityError}
+					<p class="mt-2 text-xs text-error">{m['probes.Quality Error']()}: {qualityError}</p>
+				{/if}
+				{#if qualityOpen}
+					{#if quality === null && !qualityError}
+						<p class="mt-3 text-xs text-muted py-2">…</p>
+					{:else}
+						<!-- quality: the egress verdict-chain groups, as before (#608);
+						     they lead the panel (#615). -->
+						<div class="mt-3 mb-3 last:mb-0">
+							<div class="flex items-center gap-2 mb-1.5">
+								<h4 class="text-xs font-semibold text-text">{categoryLabel('quality')}</h4>
+							</div>
+							{#if qualityEmpty}
+								<p class="text-xs text-muted italic">{m['probes.Quality Empty']()}</p>
+							{:else}
+								{#each qualityGroups as g (g.name)}
+									<div class="mb-3 last:mb-0 {g.role === 'reference' ? 'opacity-80' : ''}">
+										<div class="flex items-center gap-2 mb-1.5">
+											<h5 class="text-xs font-semibold {g.role === 'reference' ? 'text-text-muted' : 'text-text'}">{g.name}</h5>
+											{#if g.role === 'reference'}
+												<span class="badge badge-info !text-[0.625rem] !px-1.5">{m['probes.Quality Reference']()}</span>
+											{/if}
+										</div>
+										{@render qualityMatrix(g.vantages ?? [], g.targets ?? [], 0)}
+									</div>
+								{/each}
+							{/if}
+						</div>
+						<!-- external: its compact window-health matrix with verdict
+						     badges + reason chips (#615: the lan matrix left the panel —
+						     LAN health renders as the strip in the lan list section). -->
+						<div class="mb-3 last:mb-0">
+							<div class="flex items-center gap-2 mb-1.5">
+								<h4 class="text-xs font-semibold text-text">{categoryLabel('external')}</h4>
+							</div>
+							{#if simpleCatEmpty(externalCat)}
+								<p class="text-xs text-muted italic">{m['probes.Quality Cat Empty']()}</p>
+							{:else}
+								{@render qualityMatrix(
+									externalCat.vantages ?? [],
+									(externalCat.targets ?? []).slice(0, MATRIX_MAX_TARGETS),
+									Math.max(0, (externalCat.targets ?? []).length - MATRIX_MAX_TARGETS)
+								)}
+							{/if}
+						</div>
+						<!-- Trend (#608 follow-up): the same verdict chain replayed per
+						     hour (7d) / day (30d) bucket — the week/month answer. A
+						     sub-drill-down inside the panel: collapsed until asked,
+						     fetched lazily on first open. One ok-rate line chart per
+						     config group (reference dashed), the primary group also
+						     gets a per-vantage verdict strip in the same grammar as
+						     the history modal's status timeline. -->
+						<div class="mt-4 border-t border-border pt-3" data-quality-trend>
+							<div class="flex flex-wrap items-center justify-between gap-2">
+								<button
+									type="button"
+									onclick={toggleTrendOpen}
+									aria-expanded={trendOpen}
+									aria-label={m['probes.Trend Toggle']()}
+									class="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-2 shrink-0"
+								>
+									<ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform {trendOpen ? '' : '-rotate-90'}" />
+								</button>
+								<h4 class="whitespace-nowrap text-xs font-semibold text-text">{m['probes.Quality Trend']()}</h4>
+								<span class="min-w-0 flex-1 truncate text-xs text-text-muted">
+									{trendOpen && historyReport ? m['probes.Quality Trend Desc']({ bucket: historyReport.bucket }) : ''}
+								</span>
+								{#if trendOpen}
+									<div class="flex items-center rounded-full border border-border overflow-hidden shrink-0" role="group" aria-label={m['probes.Quality Trend']()} data-trend-range>
+										<button
+											type="button"
+											onclick={() => switchHistoryDays(7)}
+											aria-pressed={historyDays === 7}
+											class="px-2.5 py-1 text-xs transition-colors {historyDays === 7 ? 'bg-primary/10 text-primary font-medium' : 'text-text-muted hover:text-text'}"
+										>{m['probes.Trend Days 7']()}</button>
+										<button
+											type="button"
+											onclick={() => switchHistoryDays(30)}
+											aria-pressed={historyDays === 30}
+											class="px-2.5 py-1 text-xs transition-colors {historyDays === 30 ? 'bg-primary/10 text-primary font-medium' : 'text-text-muted hover:text-text'}"
+										>{m['probes.Trend Days 30']()}</button>
+									</div>
+								{/if}
+							</div>
+							{#if trendOpen}
+								{#if historyError}
+									<p class="mt-2 text-xs text-error">{m['probes.Quality Error']()}: {historyError}</p>
+								{:else if historyLoading && !historyReport}
+									<p class="py-4 text-center text-xs text-muted">…</p>
+								{:else if historyEmpty}
+									<p class="py-4 text-center text-xs text-muted italic">{m['probes.Quality Trend Empty']()}</p>
+								{:else if historyReport}
+									{#each historyReport.groups ?? [] as g (g.name)}
+										<div class="mb-3 last:mb-0 {g.role === 'reference' ? 'opacity-80' : ''}" data-trend-group={g.name}>
+											<div class="flex items-center gap-2 mb-1.5">
+												<h5 class="text-xs font-semibold {g.role === 'reference' ? 'text-text-muted' : 'text-text'}">{g.name}</h5>
+												{#if g.role === 'reference'}
+													<span class="badge badge-info !text-[0.625rem] !px-1.5">{m['probes.Quality Reference']()}</span>
+												{/if}
+											</div>
+											<Chart option={trendChartOption(g)} height="200px" />
+											{#if g.role === 'primary'}
+												<!-- Verdict strip per vantage: one cell per bucket,
+												     colored by the replayed verdict; gaps stay gaps. -->
+												<div class="mt-2 space-y-1">
+													{#each g.series ?? [] as s (s.vantage)}
+														<div class="flex items-center gap-2">
+															<span class="w-36 shrink-0 truncate font-mono text-xs text-text-muted" title={s.vantage}>
+																{s.network_name || s.vantage}
+															</span>
+															<div class="flex flex-1 gap-[2px] overflow-hidden" role="img"
+																aria-label="{s.network_name || s.vantage}: {s.points?.length ?? 0} buckets"
+															>
+																{#each s.points ?? [] as p (p.t)}
+																	<span
+																		class="h-3.5 min-w-[3px] flex-1 rounded-sm {trendStripCls(p.verdict)}"
+																		title="{p.t} · {p.verdict} · {Math.round(p.ok_rate * 100)}%"
+																	></span>
+																{/each}
+															</div>
+														</div>
+													{/each}
+												</div>
+											{/if}
+										</div>
+									{/each}
+								{/if}
+							{/if}
+						</div>
+					{/if}
+				{/if}
+			</div>
+
+			<!-- Cert expiry timeline (#276): TLS/http targets sorted by
+			     days-left. Collapsed unless something expires inside the
+			     warning window (first visit follows the data; manual toggles
+			     remembered per browser). -->
+			{#if certTimeline.length > 0}
+				<div class="bg-surface border border-border rounded-lg p-4 mb-6" data-cert-panel>
+					<div class="flex items-center justify-between gap-4 mb-3">
+						<div class="flex items-center gap-1.5 min-w-0">
+							<button
+								type="button"
+								onclick={toggleCertOpen}
+								aria-expanded={certOpen}
+								aria-label={m['probes.Overview Certs Aria']()}
+								class="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-2"
+							>
+								<ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform {certOpen ? '' : '-rotate-90'}" />
+							</button>
+							<h3 class="text-sm font-semibold text-text whitespace-nowrap">{m['probes.Cert Timeline']()}</h3>
+							{#if certAlert}
+								<span class="badge {certExpiredCount > 0 ? 'badge-error' : 'badge-warning'}">{certExpiringIds.size}</span>
+							{/if}
+							<p class="truncate text-xs text-muted">{m['probes.Cert Timeline Desc']()}</p>
+						</div>
+						<select
+							value={expiryWarnDays}
+							onchange={(e) => setExpiryWarn(Number((e.target as HTMLSelectElement).value))}
+							class="input !w-auto text-xs shrink-0"
+							aria-label={m['probes.Expiry Threshold']()}
+						>
+							{#each [15, 30, 60, 90] as d (d)}
+								<option value={d}>{m['probes.Expiry Threshold Option']({ days: d })}</option>
+							{/each}
+						</select>
+					</div>
+					{#if certOpen}
+						<div class="space-y-1.5">
+							{#each certTimeline as e (e.t.id)}
+								{@const pct = Math.max(2, Math.min(100, (e.days / 90) * 100))}
+								{@const cls = e.days < 0 ? 'bg-error' : e.days < expiryWarnDays ? 'bg-warning' : 'bg-success'}
+								<button
+									type="button"
+									onclick={() => openCerts(e.t)}
+									class="w-full flex items-center gap-3 group text-left"
+									title={e.notAfter}
+								>
+									<span class="w-40 shrink-0 truncate text-xs font-medium group-hover:text-primary">{e.t.name}</span>
+									<span class="flex-1 h-3 rounded-full bg-border/50 overflow-hidden">
+										<span class="block h-full {cls} rounded-full transition-all" style="width: {pct}%"></span>
+									</span>
+									<span class="w-20 shrink-0 text-right text-xs font-mono {e.days < expiryWarnDays ? 'text-warning' : 'text-muted'}">
+										{e.days < 0 ? m['probes.Cert Expired']() : m['probes.Cert Days']({ days: e.days })}
+									</span>
+								</button>
+							{/each}
+						</div>
+						{#if certTimeline.some((e) => e.days >= 0 && e.days < expiryWarnDays)}
+							<p class="mt-3 text-xs text-warning">
+								{m['probes.Cert Expiring Hint']()}
+								<a href="/settings/notifications" class="text-primary hover:underline">{m['probes.Cert Configure Rule']()}</a>
+							</p>
+						{/if}
+					{/if}
+				</div>
+			{/if}
 		<!-- Batch toolbar (#276) -->
 		{#if selectedIds.size > 0}
 			<div class="mb-4 flex flex-wrap items-center gap-2 px-4 py-2.5 bg-primary/5 border border-primary/20 rounded-lg">
@@ -1402,34 +1893,109 @@
 		{:else}
 			<!-- Category sections (#613): three collapsible sub-tables — LAN,
 			     external business, egress quality — one page-level search box
-			     applying within each. An empty section keeps its header + hint;
-			     a section with no SEARCH match hides itself entirely. -->
+			     plus the problems/cert filters applying within each. An empty
+			     section keeps its header + hint; a section with no SEARCH or
+			     FILTER match hides itself entirely. -->
+			{#snippet expandedRow(row: Record<string, unknown>)}
+				{@const t = targets.find((x) => x.id === row.id)}
+				{#if t}
+					<div class="border-b border-border bg-surface-2/60 px-4 py-3" data-expanded-row>
+						<div class="mb-2 flex flex-wrap items-center justify-between gap-3">
+							<span class="text-xs font-semibold text-text">{m['probes.Expanded Latest']()}</span>
+							<div class="flex items-center gap-2">
+								<button
+									onclick={() => triggerNow(t)}
+									disabled={triggeringId !== null || isAgentOnly(t)}
+									title={isAgentOnly(t) ? m['probes.Trigger Agent Only']() : ''}
+									class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+								>{triggeringId === t.id ? m['probes.Triggering']() : m['probes.Trigger']()}</button>
+								<button
+									onclick={() => openResults(t)}
+									class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+								>{m['probes.View Results']()}</button>
+								{#if t.module === 'tls' || t.module === 'http'}
+									<button
+										onclick={() => openCerts(t)}
+										class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+									>{m['probes.View Cert']()}</button>
+								{/if}
+								<button
+									onclick={() => openEdit(t)}
+									class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+								>{m['common.Edit']()}</button>
+							</div>
+						</div>
+						<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+							{#each expandedTracks(t) as tr (tr.vantage)}
+								<div class="rounded-md border border-border bg-surface px-3 py-2">
+									<div class="flex flex-wrap items-center gap-2">
+										<span class="font-mono text-xs text-text-muted">{tr.vantage}</span>
+										<span class="badge {tr.status === 'success' ? 'badge-success' : tr.status === 'timeout' ? 'badge-warning' : 'badge-error'}">{tr.status}</span>
+										{#if tr.latency_ms > 0}
+											<span class="font-mono text-xs text-text-muted">{fmtLatency(tr.latency_ms)}</span>
+										{/if}
+										<span class="text-xs text-text-muted">{formatTime(tr.checked_at)}</span>
+									</div>
+									{#if tr.error_message}
+										<p class="mt-1 break-words text-xs text-error">{tr.error_message}</p>
+									{/if}
+								</div>
+							{:else}
+								<p class="text-xs text-text-muted italic">{m['probes.Never Run']()}</p>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			{/snippet}
 			<div class="bg-surface border border-border rounded-lg p-4">
-				<div class="relative mb-4">
-					<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
-					<input
-						type="text"
-						bind:value={searchQuery}
-						placeholder={m['common.Search']() + '...'}
-						aria-label={m['common.Search']()}
-						class="input pl-10"
-					/>
+				<div class="mb-4 flex flex-wrap items-center gap-2">
+					<div class="relative min-w-[12rem] max-w-md flex-1">
+						<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
+						<input
+							type="text"
+							bind:value={searchQuery}
+							placeholder={m['common.Search']() + '...'}
+							aria-label={m['common.Search']()}
+							class="input pl-10"
+						/>
+					</div>
+					<button
+						type="button"
+						onclick={() => (problemFilter = !problemFilter)}
+						aria-pressed={problemFilter}
+						class="rounded-full border px-3 py-1.5 text-xs transition-colors {problemFilter ? 'border-error/50 bg-error/10 text-error' : 'border-border text-text-muted hover:text-text'}"
+					>{m['probes.Filter Problems']()}{#if failingTargets.length > 0} · {failingTargets.length}{/if}</button>
+					{#if certTimeline.length > 0}
+						<button
+							type="button"
+							onclick={() => (certFilter = !certFilter)}
+							aria-pressed={certFilter}
+							class="rounded-full border px-3 py-1.5 text-xs transition-colors {certFilter ? 'border-warning/50 bg-warning/10 text-warning' : 'border-border text-text-muted hover:text-text'}"
+						>{m['probes.Filter Certs']()}{#if certExpiringIds.size > 0} · {certExpiringIds.size}{/if}</button>
+					{/if}
 				</div>
 				{#each sections as sec (sec.key)}
-					{#if sec.rows.length > 0 || !searchQuery}
+					{#if sec.rows.length > 0 || !(searchQuery || filterActive)}
+						{@const open = sectionEffectiveOpen(sec.key, sec.rows.length)}
 						<section class="mb-5 last:mb-0" data-category={sec.key}>
 							<div class="flex items-center gap-3 border-b border-border pb-2 mb-3">
 								<button
 									type="button"
 									class="flex min-w-0 flex-1 items-center gap-2 text-left"
 									onclick={() => toggleSection(sec.key)}
-									aria-expanded={sectionsOpen[sec.key]}
+									aria-expanded={open}
 									aria-controls="probes-section-{sec.key}"
 									aria-label={m['probes.Section Toggle']({ name: sec.label })}
 								>
-									<ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform {sectionsOpen[sec.key] ? '' : '-rotate-90'}" />
+									<ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform {open ? '' : '-rotate-90'}" />
 									<span class="whitespace-nowrap text-sm font-semibold text-text">{sec.label}</span>
 									<span class="whitespace-nowrap text-xs text-text-muted">{sec.rows.length}</span>
+									<!-- Failing badge: a collapsed section must still
+									     scream its problems (the summary text stays,
+									     the badge is the scannable signal). -->
+									{#if sec.summary.bad > 0}
+										<span class="badge badge-error !px-1.5 !py-0.5 !text-[0.625rem] shrink-0">{sec.summary.bad}</span>
+									{/if}
 									<span class="truncate text-xs text-text-muted">{m['probes.Section Summary']({ enabled: sec.summary.enabled, ok: sec.summary.ok, bad: sec.summary.bad })}</span>
 								</button>
 								<!-- Section select-all: works on this section's rows
@@ -1442,7 +2008,7 @@
 									aria-label={m['probes.Select Section']({ name: sec.label })}
 								/>
 							</div>
-							{#if sectionsOpen[sec.key]}
+							{#if open}
 								<div id="probes-section-{sec.key}">
 									<!-- LAN health strip (#615): one quiet row of per-vantage
 									     verdict badges above the sub-table, fed by the same
@@ -1466,6 +2032,9 @@
 										<DataTable
 											{columns}
 											rows={sec.rows as unknown as Record<string, unknown>[]}
+											rowClassName={rowClass}
+											expandedRowId={expandedId}
+											expandedContent={expandedRow}
 											searchableKeys={[]}
 											emptyTitle={m['probes.No Targets']()}
 										>
@@ -1480,6 +2049,38 @@
 															aria-label={m['probes.Batch Select Row']({ name: t.name })}
 															class="checkbox"
 														/>
+													{/if}
+												{:else if col.key === 'name'}
+													{@const t = targets.find((x) => x.id === row.id)}
+													{#if t}
+														<span class="inline-flex items-center">
+															<!-- The name is the troubleshoot affordance: click to
+															     open the expandable row (per-vantage latest + full
+															     error + quick actions). -->
+															<button
+																type="button"
+																onclick={() => toggleExpand(t.id)}
+																aria-expanded={expandedId === t.id}
+																aria-label={m['probes.Inspect Row']({ name: t.name })}
+																class="font-medium hover:text-primary transition-colors {expandedId === t.id ? 'text-primary' : ''}"
+															>{t.name}</button>
+															{@html sourceIcon(row)}
+														</span>
+													{/if}
+												{:else if col.key === 'cert'}
+													{@const t = targets.find((x) => x.id === row.id)}
+													{#if t && (t.module === 'tls' || t.module === 'http') && certExpiry[t.id]}
+														{@const days = certDayDelta(certExpiry[t.id])}
+														<!-- The badge IS the cert button (the dedicated action
+														     button moved into the expandable row). -->
+														<button
+															type="button"
+															onclick={() => openCerts(t)}
+															title={certExpiry[t.id]}
+															class="badge {days < 0 ? 'badge-error' : days < 15 ? 'badge-warning' : 'badge-success'}"
+														>{m['probes.Cert Days']({ days })}</button>
+													{:else}
+														<span class="text-text-muted text-xs">-</span>
 													{/if}
 												{:else if col.key === 'enabled'}
 													{@const t = targets.find((x) => x.id === row.id)}
@@ -1506,12 +2107,6 @@
 																title={isAgentOnly(t) ? m['probes.Trigger Agent Only']() : ''}
 																class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
 															>{triggeringId === t.id ? m['probes.Triggering']() : m['probes.Trigger']()}</button>
-															{#if t.module === 'tls' || t.module === 'http'}
-																<button
-																	onclick={() => openCerts(t)}
-																	class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
-																>{m['probes.View Cert']()}</button>
-															{/if}
 															<button
 																onclick={() => openResults(t)}
 																class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
@@ -1537,11 +2132,13 @@
 				{/each}
 				{#if searchQuery && sections.every((s) => s.rows.length === 0)}
 					<p class="py-6 text-center text-sm text-text-muted">{m['probes.No Match']()}</p>
+				{:else if !searchQuery && filterActive && sections.every((s) => s.rows.length === 0)}
+					<p class="py-6 text-center text-sm text-success">{m['probes.Filter No Problems']()}</p>
 				{/if}
 			</div>
 		{/if}
-	</div>
-{/if}
+		</div>
+	{/if}
 
 <!-- Create/Edit Modal -->
 <Modal
