@@ -115,7 +115,6 @@ func (s *QualityService) History(ctx context.Context, days int) (QualityHistoryR
 	// the documented per-bucket approximation; the chain then runs untouched.
 	type pointAcc struct {
 		okSum, okCount float64
-		samples        int
 	}
 	buckets := make(map[string]map[qualityKey]*trackAgg)
 	acc := make(map[string]map[string]*pointAcc) // bucket → vantage → weighted latency
