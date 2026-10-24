@@ -3633,6 +3633,7 @@ Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style)
 
 
 | `/api/v1/probe-quality` | GET | Auth · `CapProbeRead` | Quality analysis (#613): per-category, per-vantage verdicts — lan/external simple health + the egress matrix chain (optional `window` minutes) |
+| `/api/v1/probe-quality/history` | GET | Auth · `CapProbeRead` | Bucketed quality trend — the same verdict chain replayed per hour (`days=7`) or day (`days=30`) bucket |
 
 
 ### POST /api/v1/probe-targets/
@@ -3869,6 +3870,26 @@ Prometheus data source dashboard configuration and query passthrough. Read (`Cap
 
 
 | `/api/v1/dashboard/query_range` | GET | Authenticated · `CapDashboardRead` | Prometheus range query passthrough |
+
+
+
+
+
+### GET /api/v1/probe-quality/history
+
+
+
+Bucketed egress-quality trend: the SAME deterministic verdict chain as `/api/v1/probe-quality`, replayed per time bucket over the retention horizon. Aggregation happens SQL-side (one row per target × vantage × bucket), so a 30-day month is a few hundred bucket rows, not ~800k raw results; the one approximation is latency — per-bucket budgets judge the bucket's mean success latency instead of an exact p50 (the structural verdicts `egress_down` / `dns_fault` / `upstream_resolver` are ok-rate driven and stay exact). `days` accepts 7 (hourly buckets) or 30 (daily buckets); raw probe results are retained 30 days by default (`retention.probe_results_days`), so a 30-day chart starts wherever the data starts. Cross-vantage target-down isolation applies per bucket, same as the live window.
+
+
+
+
+
+**Authenticated** · `CapProbeRead`
+
+
+
+**Response** shape (`ProbeQualityHistoryReport`): `days`, `bucket` (`hour` | `day`) and `groups[]` mirroring the report's config groups (`role: primary` / `reference`), each with `series[]` per vantage (`vantage`, `network_name`) whose `points[]` carry `t` (bucket start, UTC), `ok_rate` (mean over the bucket's evaluated legs), `avg_ms` (success-latency mean weighted by successful samples), `samples`, `score` and `verdict`. Buckets with no data are omitted — gaps in the series.
 
 
 

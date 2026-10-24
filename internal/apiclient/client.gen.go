@@ -554,16 +554,100 @@ func (e ProbeQualityCategoryCategory) Valid() bool {
 
 // Defines values for ProbeQualityGroupRole.
 const (
-	Primary   ProbeQualityGroupRole = "primary"
-	Reference ProbeQualityGroupRole = "reference"
+	ProbeQualityGroupRolePrimary   ProbeQualityGroupRole = "primary"
+	ProbeQualityGroupRoleReference ProbeQualityGroupRole = "reference"
 )
 
 // Valid indicates whether the value is a known member of the ProbeQualityGroupRole enum.
 func (e ProbeQualityGroupRole) Valid() bool {
 	switch e {
-	case Primary:
+	case ProbeQualityGroupRolePrimary:
 		return true
-	case Reference:
+	case ProbeQualityGroupRoleReference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeQualityHistoryGroupRole.
+const (
+	ProbeQualityHistoryGroupRolePrimary   ProbeQualityHistoryGroupRole = "primary"
+	ProbeQualityHistoryGroupRoleReference ProbeQualityHistoryGroupRole = "reference"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityHistoryGroupRole enum.
+func (e ProbeQualityHistoryGroupRole) Valid() bool {
+	switch e {
+	case ProbeQualityHistoryGroupRolePrimary:
+		return true
+	case ProbeQualityHistoryGroupRoleReference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeQualityHistoryPointVerdict.
+const (
+	ProbeQualityHistoryPointVerdictDegraded         ProbeQualityHistoryPointVerdict = "degraded"
+	ProbeQualityHistoryPointVerdictDnsFault         ProbeQualityHistoryPointVerdict = "dns_fault"
+	ProbeQualityHistoryPointVerdictEgressDown       ProbeQualityHistoryPointVerdict = "egress_down"
+	ProbeQualityHistoryPointVerdictInsufficient     ProbeQualityHistoryPointVerdict = "insufficient"
+	ProbeQualityHistoryPointVerdictOk               ProbeQualityHistoryPointVerdict = "ok"
+	ProbeQualityHistoryPointVerdictUpstreamResolver ProbeQualityHistoryPointVerdict = "upstream_resolver"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityHistoryPointVerdict enum.
+func (e ProbeQualityHistoryPointVerdict) Valid() bool {
+	switch e {
+	case ProbeQualityHistoryPointVerdictDegraded:
+		return true
+	case ProbeQualityHistoryPointVerdictDnsFault:
+		return true
+	case ProbeQualityHistoryPointVerdictEgressDown:
+		return true
+	case ProbeQualityHistoryPointVerdictInsufficient:
+		return true
+	case ProbeQualityHistoryPointVerdictOk:
+		return true
+	case ProbeQualityHistoryPointVerdictUpstreamResolver:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeQualityHistoryReportBucket.
+const (
+	Day  ProbeQualityHistoryReportBucket = "day"
+	Hour ProbeQualityHistoryReportBucket = "hour"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityHistoryReportBucket enum.
+func (e ProbeQualityHistoryReportBucket) Valid() bool {
+	switch e {
+	case Day:
+		return true
+	case Hour:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeQualityHistoryReportDays.
+const (
+	ProbeQualityHistoryReportDaysN30 ProbeQualityHistoryReportDays = 30
+	ProbeQualityHistoryReportDaysN7  ProbeQualityHistoryReportDays = 7
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityHistoryReportDays enum.
+func (e ProbeQualityHistoryReportDays) Valid() bool {
+	switch e {
+	case ProbeQualityHistoryReportDaysN30:
+		return true
+	case ProbeQualityHistoryReportDaysN7:
 		return true
 	default:
 		return false
@@ -915,6 +999,24 @@ func (e GetDevicesParamsOrder) Valid() bool {
 	case Asc:
 		return true
 	case Desc:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetProbeQualityHistoryParamsDays.
+const (
+	GetProbeQualityHistoryParamsDaysN30 GetProbeQualityHistoryParamsDays = 30
+	GetProbeQualityHistoryParamsDaysN7  GetProbeQualityHistoryParamsDays = 7
+)
+
+// Valid indicates whether the value is a known member of the GetProbeQualityHistoryParamsDays enum.
+func (e GetProbeQualityHistoryParamsDays) Valid() bool {
+	switch e {
+	case GetProbeQualityHistoryParamsDaysN30:
+		return true
+	case GetProbeQualityHistoryParamsDaysN7:
 		return true
 	default:
 		return false
@@ -1746,6 +1848,58 @@ type ProbeQualityGroup struct {
 // ProbeQualityGroupRole primary = the network verdict; reference groups are displayed separately
 type ProbeQualityGroupRole string
 
+// ProbeQualityHistoryGroup defines model for ProbeQualityHistoryGroup.
+type ProbeQualityHistoryGroup struct {
+	Name   string                       `json:"name"`
+	Role   ProbeQualityHistoryGroupRole `json:"role"`
+	Series []ProbeQualityHistorySeries  `json:"series"`
+}
+
+// ProbeQualityHistoryGroupRole defines model for ProbeQualityHistoryGroup.Role.
+type ProbeQualityHistoryGroupRole string
+
+// ProbeQualityHistoryPoint defines model for ProbeQualityHistoryPoint.
+type ProbeQualityHistoryPoint struct {
+	// AvgMs mean success latency across legs, weighted by successful samples
+	AvgMs float64 `json:"avg_ms"`
+
+	// OkRate mean ok-rate over the bucket's evaluated legs (0-1); cross-vantage target-down isolation applies per bucket, same as the live window
+	OkRate  float64 `json:"ok_rate"`
+	Samples int     `json:"samples"`
+
+	// Score 0-100, the same score the live window reports
+	Score int `json:"score"`
+
+	// T bucket start, UTC
+	T       time.Time                       `json:"t"`
+	Verdict ProbeQualityHistoryPointVerdict `json:"verdict"`
+}
+
+// ProbeQualityHistoryPointVerdict defines model for ProbeQualityHistoryPoint.Verdict.
+type ProbeQualityHistoryPointVerdict string
+
+// ProbeQualityHistoryReport Bucketed egress-quality trend: the same verdict chain as ProbeQualityReport replayed per time bucket (hour for days=7, day for days=30). Per-bucket latency is the mean success latency, not an exact p50; buckets with no data are omitted.
+type ProbeQualityHistoryReport struct {
+	Bucket ProbeQualityHistoryReportBucket `json:"bucket"`
+	Days   ProbeQualityHistoryReportDays   `json:"days"`
+	Groups []ProbeQualityHistoryGroup      `json:"groups"`
+}
+
+// ProbeQualityHistoryReportBucket defines model for ProbeQualityHistoryReport.Bucket.
+type ProbeQualityHistoryReportBucket string
+
+// ProbeQualityHistoryReportDays defines model for ProbeQualityHistoryReport.Days.
+type ProbeQualityHistoryReportDays int
+
+// ProbeQualityHistorySeries defines model for ProbeQualityHistorySeries.
+type ProbeQualityHistorySeries struct {
+	NetworkName *string                    `json:"network_name,omitempty"`
+	Points      []ProbeQualityHistoryPoint `json:"points"`
+
+	// Vantage 'center' or 'agent:{id}'
+	Vantage string `json:"vantage"`
+}
+
 // ProbeQualityReport Quality analysis (#613): computed per management category - lan (device-bound targets), external (manual business targets, simple ok/degraded verdicts) and quality (the built-in egress matrix, verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok with config groups nested). Reasons are stable codes for UI localization.
 type ProbeQualityReport struct {
 	Categories    []ProbeQualityCategory `json:"categories"`
@@ -2483,6 +2637,15 @@ type GetProbeQualityParams struct {
 	// Window lookback minutes (5-1440, default from probe.quality.window_minutes)
 	Window *int `form:"window,omitempty" json:"window,omitempty"`
 }
+
+// GetProbeQualityHistoryParams defines parameters for GetProbeQualityHistory.
+type GetProbeQualityHistoryParams struct {
+	// Days lookback days (hourly buckets for 7d, daily for 30d; raw probe results are retained 30 days by default)
+	Days *GetProbeQualityHistoryParamsDays `form:"days,omitempty" json:"days,omitempty"`
+}
+
+// GetProbeQualityHistoryParamsDays defines parameters for GetProbeQualityHistory.
+type GetProbeQualityHistoryParamsDays int
 
 // GetProbeTargetsParams defines parameters for GetProbeTargets.
 type GetProbeTargetsParams struct {
@@ -3764,6 +3927,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 	GetProbeQuality(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProbeQualityHistory Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
+	//
+	// Corresponds with GET /probe-quality/history (the `GetProbeQualityHistory` operationId).
+	GetProbeQualityHistory(ctx context.Context, params *GetProbeQualityHistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetProbeTargets Synthetic probing targets (search filter)
 	//
@@ -5819,6 +5987,21 @@ func (c *Client) PutNotificationRulesId(ctx context.Context, id Id, reqEditors .
 // Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 func (c *Client) GetProbeQuality(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetProbeQualityRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProbeQualityHistory Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
+//
+// Corresponds with GET /probe-quality/history (the `GetProbeQualityHistory` operationId).
+func (c *Client) GetProbeQualityHistory(ctx context.Context, params *GetProbeQualityHistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeQualityHistoryRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -11144,6 +11327,60 @@ func NewGetProbeQualityRequest(server string, params *GetProbeQualityParams) (*h
 	return req, nil
 }
 
+// NewGetProbeQualityHistoryRequest constructs an http.Request for the GetProbeQualityHistory method
+func NewGetProbeQualityHistoryRequest(server string, params *GetProbeQualityHistoryParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-quality/history")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Days != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "days", *params.Days, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProbeTargetsRequest constructs an http.Request for the GetProbeTargets method
 func NewGetProbeTargetsRequest(server string, params *GetProbeTargetsParams) (*http.Request, error) {
 	var err error
@@ -14026,6 +14263,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 	GetProbeQualityWithResponse(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*GetProbeQualityResponse, error)
+
+	// GetProbeQualityHistoryWithResponse Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-quality/history (the `GetProbeQualityHistory` operationId).
+	GetProbeQualityHistoryWithResponse(ctx context.Context, params *GetProbeQualityHistoryParams, reqEditors ...RequestEditorFn) (*GetProbeQualityHistoryResponse, error)
 
 	// GetProbeTargetsWithResponse Synthetic probing targets (search filter)
 	//
@@ -19051,6 +19295,47 @@ func (r GetProbeQualityResponse) ContentType() string {
 	return ""
 }
 
+type GetProbeQualityHistoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeQualityHistoryReport
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeQualityHistoryResponse) GetJSON200() *ProbeQualityHistoryReport {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeQualityHistoryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeQualityHistoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeQualityHistoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeQualityHistoryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetProbeTargetsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -22432,6 +22717,19 @@ func (c *ClientWithResponses) GetProbeQualityWithResponse(ctx context.Context, p
 	return ParseGetProbeQualityResponse(rsp)
 }
 
+// GetProbeQualityHistoryWithResponse Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-quality/history (the `GetProbeQualityHistory` operationId).
+func (c *ClientWithResponses) GetProbeQualityHistoryWithResponse(ctx context.Context, params *GetProbeQualityHistoryParams, reqEditors ...RequestEditorFn) (*GetProbeQualityHistoryResponse, error) {
+	rsp, err := c.GetProbeQualityHistory(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeQualityHistoryResponse(rsp)
+}
+
 // GetProbeTargetsWithResponse Synthetic probing targets (search filter)
 //
 // Returns a wrapper object for the known response body format(s).
@@ -25787,6 +26085,32 @@ func ParseGetProbeQualityResponse(rsp *http.Response) (*GetProbeQualityResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ProbeQualityReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProbeQualityHistoryResponse parses an HTTP response from a GetProbeQualityHistoryWithResponse call
+func ParseGetProbeQualityHistoryResponse(rsp *http.Response) (*GetProbeQualityHistoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeQualityHistoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeQualityHistoryReport
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

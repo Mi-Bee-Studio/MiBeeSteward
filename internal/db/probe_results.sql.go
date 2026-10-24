@@ -165,6 +165,73 @@ func (q *Queries) LatestProbeResultsPerVantage(ctx context.Context, targetID int
 	return items, nil
 }
 
+const listProbeQualityBuckets = `-- name: ListProbeQualityBuckets :many
+SELECT pr.target_id AS target_id,
+       pr.vantage AS vantage,
+       substr(pr.checked_at, 1, ?1) AS bucket,
+       COUNT(*) AS samples,
+       SUM(CASE WHEN pr.status = 'success' THEN 1 ELSE 0 END) AS ok_count,
+       AVG(CASE WHEN pr.status = 'success' AND pr.latency_ms > 0 THEN pr.latency_ms END) AS avg_ms
+FROM probe_results pr
+JOIN probe_targets pt ON pt.id = pr.target_id
+WHERE pr.checked_at >= ?2 AND pt.source = 'system' AND pt.enabled = 1
+GROUP BY pr.target_id, pr.vantage, bucket
+ORDER BY bucket ASC, pr.target_id ASC, pr.vantage ASC
+`
+
+type ListProbeQualityBucketsParams struct {
+	BucketLen int64  `json:"bucket_len"`
+	Cutoff    string `json:"cutoff"`
+}
+
+type ListProbeQualityBucketsRow struct {
+	TargetID int64    `json:"target_id"`
+	Vantage  string   `json:"vantage"`
+	Bucket   string   `json:"bucket"`
+	Samples  int64    `json:"samples"`
+	OkCount  *float64 `json:"ok_count"`
+	AvgMs    *float64 `json:"avg_ms"`
+}
+
+// Bucketed aggregation for the egress-quality TREND (the days=7/30 history
+// endpoint): one row per (target, vantage, time bucket) over the quality
+// matrix's system targets. bucket_len slices the RFC3339 UTC column - 13 =
+// hour ("2026-10-24T05"), 10 = day ("2026-10-24") - so buckets are
+// wall-clock aligned and lexically sortable. avg_ms counts successes only
+// (a failure's latency is the timeout burn, not network RTT). SQL-side
+// aggregation keeps the stream bounded: a 30-day month is ~200 bucket rows
+// per track, not ~800k raw rows - the read-time trend stays cheap while the
+// raw ListProbeResultsSince path keeps serving the exact-p50 short window.
+func (q *Queries) ListProbeQualityBuckets(ctx context.Context, arg ListProbeQualityBucketsParams) ([]ListProbeQualityBucketsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProbeQualityBuckets, arg.BucketLen, arg.Cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProbeQualityBucketsRow{}
+	for rows.Next() {
+		var i ListProbeQualityBucketsRow
+		if err := rows.Scan(
+			&i.TargetID,
+			&i.Vantage,
+			&i.Bucket,
+			&i.Samples,
+			&i.OkCount,
+			&i.AvgMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProbeResultsByTarget = `-- name: ListProbeResultsByTarget :many
 SELECT id, target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage
 FROM probe_results
