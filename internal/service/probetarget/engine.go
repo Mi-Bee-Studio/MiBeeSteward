@@ -19,6 +19,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/probe"
@@ -68,6 +69,11 @@ type Engine struct {
 	inFlight sync.Map   // target ID → struct{}; guards against tick/trigger overlap
 	sem      chan struct{}
 
+	// recorder receives probe_failed/probe_recovered liveness transitions
+	// (#608 follow-up); nil = transitions are detected but recorded nowhere.
+	recorder    changedetect.ChangeRecorder
+	transitions *transitionDetector
+
 	cancel  context.CancelFunc
 	done    chan struct{}
 	startMu sync.Mutex
@@ -76,8 +82,9 @@ type Engine struct {
 
 // NewEngine constructs an Engine. maxConcurrency bounds simultaneous probes
 // (probe.max_concurrency); <=0 falls back to the default 8. reg may be nil
-// (tests) to skip metrics.
-func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Registerer, maxConcurrency int) *Engine {
+// (tests) to skip metrics. recorder may be nil (agent / tests) to disable
+// probe liveness transition events.
+func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Registerer, maxConcurrency int, recorder changedetect.ChangeRecorder) *Engine {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -85,9 +92,11 @@ func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Register
 		maxConcurrency = defaultMaxConcurrency
 	}
 	return &Engine{
-		queries: queries,
-		logger:  logger,
-		metrics: newMetrics(reg),
+		queries:     queries,
+		logger:      logger,
+		metrics:     newMetrics(reg),
+		recorder:    recorder,
+		transitions: newTransitionDetector(),
 		exec: targetExecutor{
 			probers: map[string]probe.Prober{
 				"http": &probe.HTTPProber{},
@@ -169,6 +178,7 @@ func (e *Engine) tick(ctx context.Context) {
 			delete(e.nextDue, id) // deleted/disabled since last tick
 		}
 	}
+	e.transitions.prune(present)
 	for i := range targets {
 		t := targets[i]
 		// Vantage plan (#277): the center engine executes 'center' and 'all'
@@ -293,6 +303,28 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 	}
 
 	e.metrics.record(t.Name, t.Module, domain.ProbeVantageCenter, out.Status, out.Latency.Seconds(), certExpiryUnix(out.CertNotAfter))
+
+	// Liveness transition (#608 follow-up): probe_failed after
+	// probeFailedThreshold consecutive failures, probe_recovered on the first
+	// success after a failing spell. DeviceID carries the probe TARGET id
+	// here (entity_type discriminates; change_log.entity_id is generic).
+	if e.recorder != nil {
+		if ct := e.transitions.observe(t.ID, t.LastStatus, out.Status); ct != "" {
+			e.recorder.Record(ctx, changedetect.ChangeEvent{
+				ChangeType: ct,
+				EntityType: changedetect.EntityTypeProbeTarget,
+				DeviceID:   t.ID,
+				After: map[string]any{
+					"target_name": t.Name,
+					"module":      t.Module,
+					"target":      t.Target,
+					"vantage":     domain.ProbeVantageCenter,
+					"status":      out.Status,
+					"error":       out.ErrMsg,
+				},
+			})
+		}
+	}
 
 	return domain.ProbeResultResponse{
 		TargetID:     t.ID,

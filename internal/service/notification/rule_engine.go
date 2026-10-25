@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -121,12 +122,20 @@ func (e *RuleEngine) run(ctx context.Context) {
 }
 
 // handleEvent matches one change_log row against enabled rules and dispatches.
+// Device events and probe-target liveness events take separate paths (payload
+// shape and scope semantics differ); other entity types are not rule-eligible.
 func (e *RuleEngine) handleEvent(ctx context.Context, row db.ChangeLog) {
-	// Only device events are rule-eligible (entity_type guards against future
-	// non-device change types like service/topology_edge).
-	if row.EntityType != changedetect.EntityTypeDevice {
-		return
+	switch row.EntityType {
+	case changedetect.EntityTypeDevice:
+		e.handleDeviceEvent(ctx, row)
+	case changedetect.EntityTypeProbeTarget:
+		e.handleProbeEvent(ctx, row)
 	}
+}
+
+// handleDeviceEvent is the historical rule path: device change events with
+// device scope matching (all/network/device) and per-(rule,MAC) cooldown.
+func (e *RuleEngine) handleDeviceEvent(ctx context.Context, row db.ChangeLog) {
 	rules, err := e.queries.ListEnabledRulesByEventType(ctx, row.ChangeType)
 	if err != nil {
 		e.logger.Error("notification rule engine: load rules failed", "event_type", row.ChangeType, "error", err)
@@ -290,4 +299,127 @@ func eventTitle(changeType string) string {
 		return "New listening port"
 	}
 	return "Device event"
+}
+
+// probeSnap is the after_data snapshot the probe engine stamps on its
+// change_log rows; the fallback identity source when the target row is gone.
+type probeSnap struct {
+	TargetName string `json:"target_name"`
+	Module     string `json:"module"`
+	Target     string `json:"target"`
+	Error      string `json:"error"`
+}
+
+// handleProbeEvent matches probe-target liveness transitions (probe_failed /
+// probe_recovered). Probe rules only support scope=all: a probe target probes
+// an arbitrary endpoint and is not network-scoped, and even a device-bound
+// target's verdict concerns the endpoint, not the asset row.
+func (e *RuleEngine) handleProbeEvent(ctx context.Context, row db.ChangeLog) {
+	rules, err := e.queries.ListEnabledRulesByEventType(ctx, row.ChangeType)
+	if err != nil {
+		e.logger.Error("notification rule engine: load rules failed", "event_type", row.ChangeType, "error", err)
+		return
+	}
+	if len(rules) == 0 {
+		return
+	}
+
+	snap := e.probeEventTarget(ctx, row)
+	entityKey := "probe"
+	if row.EntityID != nil && *row.EntityID > 0 {
+		entityKey = fmt.Sprintf("probe:%d", *row.EntityID)
+	}
+
+	for _, rule := range rules {
+		if rule.ScopeType != domain.RuleScopeAll {
+			continue
+		}
+		if !e.cooldownAllows(rule.ID, entityKey, rule.CooldownMinutes) {
+			continue
+		}
+		e.dispatchProbe(ctx, rule, row, snap)
+		e.markFired(ctx, rule.ID, entityKey)
+	}
+}
+
+// probeEventTarget resolves the target's display identity. The recorder's
+// after_data snapshot is the base (it carries the run's error text); the live
+// row then overrides name/module/address when it still exists (survives
+// renames) — a target deleted between emission and dispatch keeps the
+// snapshot identity.
+func (e *RuleEngine) probeEventTarget(ctx context.Context, row db.ChangeLog) probeSnap {
+	snap := probeSnap{TargetName: "unknown target"}
+	if row.AfterData != nil {
+		var s probeSnap
+		if err := json.Unmarshal([]byte(*row.AfterData), &s); err != nil || s.TargetName == "" {
+			s = probeSnap{TargetName: "unknown target"}
+		} else {
+			snap = s
+		}
+	}
+	if row.EntityID != nil && *row.EntityID > 0 {
+		if t, err := e.queries.GetProbeTarget(ctx, *row.EntityID); err == nil {
+			snap.TargetName, snap.Module, snap.Target = t.Name, t.Module, t.Target
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			e.logger.Error("notification rule engine: resolve probe target failed", "entity_id", *row.EntityID, "error", err)
+		}
+	}
+	return snap
+}
+
+// dispatchProbe mirrors dispatch() for probe events: resolve the channel,
+// build a probe-shaped payload, hand off to the Dispatcher.
+func (e *RuleEngine) dispatchProbe(ctx context.Context, rule db.NotificationRule, row db.ChangeLog, snap probeSnap) {
+	ch, err := e.queries.GetChannelByID(ctx, rule.ChannelID)
+	if err != nil {
+		e.logger.Error("notification rule engine: resolve channel failed", "rule_id", rule.ID, "channel_id", rule.ChannelID, "error", err)
+		return
+	}
+	if ch.Enabled == 0 {
+		return
+	}
+	payload := buildProbePayload(rule, row, snap)
+	ruleID := rule.ID
+	e.dispatcher.Dispatch(ctx, domain.ChannelType(ch.Type), json.RawMessage(ch.Config), payload, &ruleID, ch.ID)
+}
+
+// buildProbePayload constructs the probe-event payload. Metadata carries a
+// stable source_ref (probe/<target_id>) so the alert-envelope dedup key pairs
+// probe_failed/probe_recovered per target across renames.
+func buildProbePayload(rule db.NotificationRule, row db.ChangeLog, snap probeSnap) Payload {
+	title := "Probe failed"
+	if row.ChangeType == changedetect.ChangeTypeProbeRecovered {
+		title = "Probe recovered"
+	}
+	body := "Target: " + snap.TargetName + "\n" +
+		"Module: " + snap.Module + "\n" +
+		"Address: " + snap.Target + "\n" +
+		"Event: " + row.ChangeType + "\n"
+	if snap.Error != "" {
+		body += "Error: " + snap.Error + "\n"
+	}
+	body += "Detected at: " + row.DetectedAt.Format(time.RFC3339)
+
+	meta := map[string]any{
+		"event_type":     row.ChangeType,
+		"target_name":    snap.TargetName,
+		"module":         snap.Module,
+		"target_address": snap.Target,
+		"rule_id":        rule.ID,
+		"rule_name":      rule.Name,
+		"detected_at":    row.DetectedAt.Format(time.RFC3339),
+	}
+	if snap.Error != "" {
+		meta["error"] = snap.Error
+	}
+	if row.EntityID != nil && *row.EntityID > 0 {
+		meta["target_id"] = *row.EntityID
+		meta["source_ref"] = fmt.Sprintf("probe/%d", *row.EntityID)
+	}
+	metaJSON, _ := json.Marshal(meta)
+	return Payload{
+		Subject:  title + ": " + snap.TargetName,
+		Body:     body,
+		Metadata: metaJSON,
+	}
 }

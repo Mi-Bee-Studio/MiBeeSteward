@@ -167,7 +167,7 @@ func TestIngestAgentResults_OwnsVantage(t *testing.T) {
 	t.Cleanup(func() { conn.Close() })
 	queries := db.New(conn)
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
-	engine := NewEngine(queries, quiet, nil, 0)
+	engine := NewEngine(queries, quiet, nil, 0, nil)
 	svc := New(queries, engine)
 	ctx := context.Background()
 

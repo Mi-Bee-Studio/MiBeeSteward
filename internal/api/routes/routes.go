@@ -812,7 +812,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// probe:read (viewer+); CRUD + trigger → probe:manage (operator+). NOT
 	// network-scoped: #138's object-level scope guards the internal inventory,
 	// while probing aims at arbitrary external endpoints by design.
-	probeEngine := probetarget.NewEngine(db.New(probeDB), slog.Default(), prometheus.DefaultRegisterer, cfg.Probe.MaxConcurrency)
+	probeEngine := probetarget.NewEngine(db.New(probeDB), slog.Default(), prometheus.DefaultRegisterer, cfg.Probe.MaxConcurrency, changeRecorder)
 	probeTargetSvc := probetarget.New(db.New(probeDB), probeEngine)
 	// Vantage probe dispatcher (#277): ships agent plans over the command
 	// channel whenever a plan content changes (fingerprint-gated, steady

@@ -11,6 +11,7 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -267,4 +268,84 @@ func TestRuleEngine_NonDeviceEventIgnored(t *testing.T) {
 	})
 	drain(t, log, 1)
 	assert.Equal(t, 0, log.count(), "non-device events must be ignored")
+}
+
+// TestRuleEngine_ProbeEventDispatch: a probe_failed row (entity_type=
+// probe_target) dispatches with a probe-shaped payload — the live target row
+// wins for identity, and metadata carries the stable probe/<id> source_ref.
+func TestRuleEngine_ProbeEventDispatch(t *testing.T) {
+	e, q, log, sender := setupTestEngine(t)
+	chID := seedChannel(t, q, "wh", true)
+	seedRule(t, q, "probe-rule", "probe_failed", "all", chID, true)
+
+	tgt, err := q.CreateProbeTarget(context.Background(), db.CreateProbeTargetParams{
+		Name: "www-example", Module: "http", Target: "https://www.example.com",
+		IntervalSeconds: 300, TimeoutSeconds: 10, Enabled: 1, Vantage: "all", Options: "{}",
+		Source: "manual",
+	})
+	require.NoError(t, err)
+	targetID := tgt.ID
+	after := `{"target_name":"www-example","module":"http","target":"https://www.example.com","error":"dial timeout"}`
+
+	e.handleEvent(context.Background(), db.ChangeLog{
+		ChangeType: "probe_failed", EntityType: "probe_target", EntityID: &targetID,
+		AfterData: &after, DetectedAt: time.Now(),
+	})
+	drain(t, log, 1)
+
+	sents := sender.snapshot()
+	require.Len(t, sents, 1)
+	assert.Contains(t, sents[0].Subject, "Probe failed")
+	assert.Contains(t, sents[0].Subject, "www-example")
+	assert.Contains(t, sents[0].Body, "dial timeout")
+	var meta map[string]any
+	require.NoError(t, json.Unmarshal(sents[0].Metadata, &meta))
+	assert.Equal(t, "probe_failed", meta["event_type"])
+	assert.Equal(t, "www-example", meta["target_name"])
+	assert.Equal(t, fmt.Sprintf("probe/%d", tgt.ID), meta["source_ref"])
+}
+
+// TestRuleEngine_ProbeEventScopeAllOnly: probe events never match network- or
+// device-scoped rules (a probe target is not network-scoped).
+func TestRuleEngine_ProbeEventScopeAllOnly(t *testing.T) {
+	e, q, log, _ := setupTestEngine(t)
+	chID := seedChannel(t, q, "wh", true)
+	networkID := int64(1)
+	_, err := q.CreateNotificationRule(context.Background(), db.CreateNotificationRuleParams{
+		Name: "net-scoped", EventType: "probe_failed", ScopeType: "network",
+		ScopeNetworkID: &networkID, ChannelID: chID, CooldownMinutes: 30, Enabled: 1,
+	})
+	require.NoError(t, err)
+
+	targetID := int64(42)
+	e.handleEvent(context.Background(), db.ChangeLog{
+		ChangeType: "probe_failed", EntityType: "probe_target", EntityID: &targetID,
+		DetectedAt: time.Now(),
+	})
+	drain(t, log, 1)
+	assert.Equal(t, 0, log.count(), "network-scoped rules must not match probe events")
+}
+
+// TestRuleEngine_ProbeEventDeletedTargetFallback: the after_data snapshot is
+// the identity fallback when the target row no longer exists.
+func TestRuleEngine_ProbeEventDeletedTargetFallback(t *testing.T) {
+	e, q, log, sender := setupTestEngine(t)
+	chID := seedChannel(t, q, "wh", true)
+	seedRule(t, q, "probe-rule", "probe_recovered", "all", chID, true)
+
+	targetID := int64(999) // no probe_targets row
+	after := `{"target_name":"gone-site","module":"tcp","target":"gone.example.com:443"}`
+
+	e.handleEvent(context.Background(), db.ChangeLog{
+		ChangeType: "probe_recovered", EntityType: "probe_target", EntityID: &targetID,
+		AfterData: &after, DetectedAt: time.Now(),
+	})
+	drain(t, log, 1)
+
+	sents := sender.snapshot()
+	require.Len(t, sents, 1)
+	assert.Contains(t, sents[0].Subject, "gone-site")
+	var meta map[string]any
+	require.NoError(t, json.Unmarshal(sents[0].Metadata, &meta))
+	assert.Equal(t, "probe/999", meta["source_ref"])
 }

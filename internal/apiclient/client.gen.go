@@ -406,6 +406,8 @@ const (
 	NotificationRuleEventTypeDeviceLost      NotificationRuleEventType = "device_lost"
 	NotificationRuleEventTypeDeviceRecovered NotificationRuleEventType = "device_recovered"
 	NotificationRuleEventTypeListenPortAdded NotificationRuleEventType = "listen_port_added"
+	NotificationRuleEventTypeProbeFailed     NotificationRuleEventType = "probe_failed"
+	NotificationRuleEventTypeProbeRecovered  NotificationRuleEventType = "probe_recovered"
 	NotificationRuleEventTypeSpeaksWithNew   NotificationRuleEventType = "speaks_with_new"
 )
 
@@ -421,6 +423,10 @@ func (e NotificationRuleEventType) Valid() bool {
 	case NotificationRuleEventTypeDeviceRecovered:
 		return true
 	case NotificationRuleEventTypeListenPortAdded:
+		return true
+	case NotificationRuleEventTypeProbeFailed:
+		return true
+	case NotificationRuleEventTypeProbeRecovered:
 		return true
 	case NotificationRuleEventTypeSpeaksWithNew:
 		return true

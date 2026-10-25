@@ -111,6 +111,11 @@ const (
 	// #500: passive-observer signals (flow telemetry + listen watch).
 	RuleEventTypeSpeaksWithNew   = "speaks_with_new"
 	RuleEventTypeListenPortAdded = "listen_port_added"
+	// Probe-target liveness transitions (#608 follow-up): a target failing
+	// probeFailedThreshold consecutive runs declares probe_failed; the first
+	// success after that emits probe_recovered. entity_type=probe_target.
+	RuleEventTypeProbeFailed    = "probe_failed"
+	RuleEventTypeProbeRecovered = "probe_recovered"
 )
 
 // RuleScopeType controls which devices a rule applies to.
@@ -125,7 +130,8 @@ func IsValidRuleEventType(t string) bool {
 	switch t {
 	case RuleEventTypeDeviceLost, RuleEventTypeDeviceRecovered,
 		RuleEventTypeDeviceAdded, RuleEventTypeDeviceChanged,
-		RuleEventTypeSpeaksWithNew, RuleEventTypeListenPortAdded:
+		RuleEventTypeSpeaksWithNew, RuleEventTypeListenPortAdded,
+		RuleEventTypeProbeFailed, RuleEventTypeProbeRecovered:
 		return true
 	}
 	return false

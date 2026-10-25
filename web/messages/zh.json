@@ -877,6 +877,8 @@
 		"Event Device Recovered": "设备恢复",
 		"Event Device Added": "设备新增",
 		"Event Device Changed": "设备变更",
+		"Event Probe Failed": "拨测失败",
+		"Event Probe Recovered": "拨测恢复",
 		"Scope": "作用范围",
 		"Scope All": "全部设备",
 		"Scope Network": "指定网络",

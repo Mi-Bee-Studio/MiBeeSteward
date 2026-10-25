@@ -481,6 +481,8 @@
 			case 'device_recovered': return m["notifications.Event Device Recovered"]();
 			case 'device_added': return m["notifications.Event Device Added"]();
 			case 'device_changed': return m["notifications.Event Device Changed"]();
+			case 'probe_failed': return m["notifications.Event Probe Failed"]();
+			case 'probe_recovered': return m["notifications.Event Probe Recovered"]();
 		}
 		return t;
 	}
@@ -1183,6 +1185,8 @@
 				<option value="device_recovered">{m["notifications.Event Device Recovered"]()}</option>
 				<option value="device_added">{m["notifications.Event Device Added"]()}</option>
 				<option value="device_changed">{m["notifications.Event Device Changed"]()}</option>
+				<option value="probe_failed">{m["notifications.Event Probe Failed"]()}</option>
+				<option value="probe_recovered">{m["notifications.Event Probe Recovered"]()}</option>
 			</select>
 		</div>
 

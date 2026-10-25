@@ -877,6 +877,8 @@
 		"Event Device Recovered": "Device Recovered",
 		"Event Device Added": "Device Added",
 		"Event Device Changed": "Device Changed",
+		"Event Probe Failed": "Probe Failed",
+		"Event Probe Recovered": "Probe Recovered",
 		"Scope": "Scope",
 		"Scope All": "All devices",
 		"Scope Network": "Specific network",
