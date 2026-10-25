@@ -863,7 +863,7 @@
 		"Payload Format": "Payload format",
 		"Payload Format Raw": "Raw JSON",
 		"Payload Format Alert": "Alert envelope",
-		"Payload Format Help": "Raw JSON posts Steward's own payload shape. Alert envelope posts a standardized {type, severity, title, body, source_ref, resolved, dedup_key} event — use it to feed external alert centers.",
+		"Payload Format Help": "Raw JSON posts Steward's own payload shape. Alert envelope posts a standardized event (fields: type, severity, title, body, source_ref, resolved, dedup_key) — use it to feed external alert centers.",
 		"Alert Source": "Event source",
 		"Alert Source Placeholder": "mibee-steward",
 		"Alert Source Help": "Identifies Steward in the alert envelope and its dedup keys (alert envelope format only)",
