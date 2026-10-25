@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS notification_log (
 CREATE TABLE IF NOT EXISTS notification_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    event_type TEXT NOT NULL,                  -- device_lost|device_recovered|device_added|device_changed|speaks_with_new|listen_port_added
+    event_type TEXT NOT NULL,                  -- device_lost|device_recovered|device_added|device_changed|speaks_with_new|listen_port_added|probe_failed|probe_recovered
     scope_type TEXT NOT NULL DEFAULT 'all',    -- all|network|device
     scope_network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
     scope_device_uuid TEXT NOT NULL DEFAULT '',-- device scope: device_uuid (stable across IP changes)
@@ -683,8 +683,8 @@ CREATE TABLE IF NOT EXISTS change_log (
     agent_id TEXT,
     network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
     change_type TEXT NOT NULL,      -- device_added / device_lost / device_changed /
-                                    -- service_added / ... / neighbor_added / ...
-    entity_type TEXT NOT NULL,      -- device / service / neighbor / topology_edge
+                                    -- probe_failed / probe_recovered / ...
+    entity_type TEXT NOT NULL,      -- device / probe_target / (service, neighbor reserved)
     entity_id INTEGER,
     before_data TEXT,               -- JSON snapshot (lost/changed)
     after_data TEXT,                -- JSON snapshot (added/changed)

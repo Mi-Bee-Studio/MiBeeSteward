@@ -64,6 +64,7 @@ type alertEnvelope struct {
 // resolves. Both sides of a pair share one dedup_key (source/firing/ref).
 var recoveryDedupType = map[string]string{
 	domain.RuleEventTypeDeviceRecovered: domain.RuleEventTypeDeviceLost,
+	domain.RuleEventTypeProbeRecovered:  domain.RuleEventTypeProbeFailed,
 }
 
 // alertSeverity maps a Steward change event type to an envelope severity.
@@ -71,9 +72,10 @@ var recoveryDedupType = map[string]string{
 // tier); payloads without an event type (test dispatch, manual sends) are info.
 func alertSeverity(eventType string) string {
 	switch eventType {
-	case domain.RuleEventTypeDeviceLost:
+	case domain.RuleEventTypeDeviceLost, domain.RuleEventTypeProbeFailed:
 		return AlertSeverityError
-	case domain.RuleEventTypeDeviceRecovered, domain.RuleEventTypeDeviceAdded:
+	case domain.RuleEventTypeDeviceRecovered, domain.RuleEventTypeDeviceAdded,
+		domain.RuleEventTypeProbeRecovered:
 		return AlertSeverityInfo
 	case domain.RuleEventTypeDeviceChanged,
 		domain.RuleEventTypeSpeaksWithNew,
@@ -109,9 +111,14 @@ func buildAlertEnvelope(p Payload, source string) alertEnvelope {
 	}
 
 	// source_ref: the stable entity identity for receiver-side cooldown and
-	// firing/resolved pairing. MAC is stable across rescans and re-adds (same
-	// property the rule engine cooldown keys on); IP and name are fallbacks.
-	sourceRef := metaString(meta, "mac_address")
+	// firing/resolved pairing. Event sources may stamp it explicitly (probe
+	// events use probe/<target_id>); device events rely on MAC, stable across
+	// rescans and re-adds (the same property the rule engine cooldown keys
+	// on); IP and name are fallbacks.
+	sourceRef := metaString(meta, "source_ref")
+	if sourceRef == "" {
+		sourceRef = metaString(meta, "mac_address")
+	}
 	if sourceRef == "" {
 		sourceRef = metaString(meta, "ip_address")
 	}
@@ -133,7 +140,11 @@ func buildAlertEnvelope(p Payload, source string) alertEnvelope {
 	}
 
 	tags := map[string]string{}
-	for _, key := range []string{"device_name", "ip_address", "mac_address", "device_type", "rule_name"} {
+	for _, key := range []string{
+		"device_name", "ip_address", "mac_address", "device_type", // device events
+		"target_name", "target_address", "module", // probe events
+		"rule_name",
+	} {
 		if v := metaString(meta, key); v != "" {
 			tags[key] = v
 		}

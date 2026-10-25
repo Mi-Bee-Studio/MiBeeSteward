@@ -125,3 +125,36 @@ func payloadWithEvent(eventType, mac string) Payload {
 	})
 	return Payload{Subject: eventType, Body: "body", Metadata: meta}
 }
+
+func TestBuildAlertEnvelope_ProbeEvents(t *testing.T) {
+	// probe_failed: error severity, explicit probe/<id> source_ref wins over
+	// the device-identity fallbacks, probe fields land in tags.
+	meta, _ := json.Marshal(map[string]any{
+		"event_type":     "probe_failed",
+		"target_name":    "www-example",
+		"module":         "http",
+		"target_address": "https://www.example.com",
+		"source_ref":     "probe/7",
+		"rule_name":      "site-watch",
+	})
+	env := buildAlertEnvelope(Payload{Subject: "Probe failed: www-example", Metadata: meta}, "")
+	assert.Equal(t, AlertSeverityError, env.Severity)
+	assert.Equal(t, "probe/7", env.SourceRef)
+	assert.Equal(t, "mibee-steward/probe_failed/probe/7", env.DedupKey)
+	assert.Equal(t, map[string]string{
+		"target_name":    "www-example",
+		"module":         "http",
+		"target_address": "https://www.example.com",
+		"rule_name":      "site-watch",
+	}, env.Tags)
+
+	// probe_recovered pairs with probe_failed via the shared dedup key
+	// (metadata source_ref keeps them aligned regardless of renames).
+	recMeta, _ := json.Marshal(map[string]any{
+		"event_type": "probe_recovered", "target_name": "www-example", "source_ref": "probe/7",
+	})
+	rec := buildAlertEnvelope(Payload{Subject: "Probe recovered: www-example", Metadata: recMeta}, "")
+	assert.True(t, rec.Resolved)
+	assert.Equal(t, AlertSeverityInfo, rec.Severity)
+	assert.Equal(t, env.DedupKey, rec.DedupKey, "recovery must share the firing dedup key")
+}

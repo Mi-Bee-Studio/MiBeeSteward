@@ -86,10 +86,22 @@ const (
 	// Service when configdiff.Diff is non-empty. dedupKind returns "" for it
 	// (never throttled), every real config change is worth recording.
 	ChangeTypeDeviceConfigChanged = "device_config_changed"
+	// Probe-target liveness transitions (probe engine, #608 follow-up): a
+	// target that failed probeFailedThreshold consecutive runs declares
+	// probe_failed; the first success after that emits probe_recovered. The
+	// _recovered suffix keeps the alert envelope's firing/resolved pairing
+	// working for free (see notification/alert_format.go).
+	ChangeTypeProbeFailed    = "probe_failed"
+	ChangeTypeProbeRecovered = "probe_recovered"
 )
 
-// EntityType is always "device" in this phase (service/neighbor reserved).
-const EntityTypeDevice = "device"
+// EntityType discriminates which entity a change_log row concerns. "device" is
+// the historical (and majority) case; "probe_target" rows come from the probe
+// engine's liveness state machine (entity_id = probe_targets.id).
+const (
+	EntityTypeDevice      = "device"
+	EntityTypeProbeTarget = "probe_target"
+)
 
 // Severity ranks a change event for UI triage. The change-history page defaults
 // to showing identity-tier events so real adds/removes/identity-changes are

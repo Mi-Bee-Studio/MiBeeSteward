@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/probe"
@@ -53,7 +54,12 @@ func (f *fakeProber) count() int {
 
 func newTestEngine(t *testing.T, queries *db.Queries, fp *fakeProber, cc certCollector) *Engine {
 	t.Helper()
-	e := NewEngine(queries, slog.New(slog.NewTextHandler(io.Discard, nil)), nil /* no metrics */, 0)
+	return newTestEngineWithRecorder(t, queries, fp, cc, nil)
+}
+
+func newTestEngineWithRecorder(t *testing.T, queries *db.Queries, fp *fakeProber, cc certCollector, rec changedetect.ChangeRecorder) *Engine {
+	t.Helper()
+	e := NewEngine(queries, slog.New(slog.NewTextHandler(io.Discard, nil)), nil /* no metrics */, 0, rec)
 	e.exec.probers = map[string]probe.Prober{"http": fp, "tcp": fp, "icmp": fp}
 	if cc == nil {
 		// Never touch the network from tests; modules that don't collect certs
@@ -82,6 +88,80 @@ func mustCreate(t *testing.T, svc *Service, req domain.ProbeTargetRequest) domai
 	resp, err := svc.Create(context.Background(), req)
 	require.NoError(t, err)
 	return resp
+}
+
+// fakeChangeRecorder captures Record calls for transition assertions.
+type fakeChangeRecorder struct {
+	mu     sync.Mutex
+	events []changedetect.ChangeEvent
+}
+
+func (f *fakeChangeRecorder) Record(_ context.Context, ev changedetect.ChangeEvent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.events = append(f.events, ev)
+}
+
+func (f *fakeChangeRecorder) snapshot() []changedetect.ChangeEvent {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cp := make([]changedetect.ChangeEvent, len(f.events))
+	copy(cp, f.events)
+	return cp
+}
+
+// TestEngine_ProbeLivenessTransitions pins the probe_failed/probe_recovered
+// wiring end to end: threshold-crossing failure emits once, further failures
+// stay quiet, first success recovers.
+func TestEngine_ProbeLivenessTransitions(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	queries := db.New(conn)
+	ctx := context.Background()
+
+	fp := &fakeProber{fn: func(int) (*probe.Result, error) {
+		return &probe.Result{Success: false, ErrorMessage: "connection refused"}, nil
+	}}
+	rec := &fakeChangeRecorder{}
+	engine := newTestEngineWithRecorder(t, queries, fp, nil, rec)
+	svc := New(queries, engine)
+	tgt := mustCreate(t, svc, validCreate("http", "http://example.com/healthz"))
+
+	// below-threshold failures emit nothing
+	for i := 0; i < probeFailedThreshold-1; i++ {
+		_, err := engine.TriggerNow(ctx, tgt.ID)
+		require.NoError(t, err)
+	}
+	require.Empty(t, rec.snapshot())
+
+	// threshold-crossing failure emits exactly one probe_failed
+	_, err = engine.TriggerNow(ctx, tgt.ID)
+	require.NoError(t, err)
+	events := rec.snapshot()
+	require.Len(t, events, 1)
+	require.Equal(t, changedetect.ChangeTypeProbeFailed, events[0].ChangeType)
+	require.Equal(t, changedetect.EntityTypeProbeTarget, events[0].EntityType)
+	require.Equal(t, tgt.ID, events[0].DeviceID)
+	after, ok := events[0].After.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, tgt.Name, after["target_name"])
+	require.Equal(t, "http", after["module"])
+
+	// still failing: no further transitions
+	_, err = engine.TriggerNow(ctx, tgt.ID)
+	require.NoError(t, err)
+	require.Len(t, rec.snapshot(), 1)
+
+	// first success recovers
+	fp.fn = func(int) (*probe.Result, error) {
+		return &probe.Result{Success: true, StatusCode: 200}, nil
+	}
+	_, err = engine.TriggerNow(ctx, tgt.ID)
+	require.NoError(t, err)
+	events = rec.snapshot()
+	require.Len(t, events, 2)
+	require.Equal(t, changedetect.ChangeTypeProbeRecovered, events[1].ChangeType)
 }
 
 func TestEngine_TriggerNowHTTP(t *testing.T) {

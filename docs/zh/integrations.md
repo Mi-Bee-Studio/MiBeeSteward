@@ -83,8 +83,8 @@ Grafana → Dashboards → Import → 粘贴 JSON 文件内容 → 选择 Promet
 
 信封语义：
 
-- `type` 即变更事件类型（`device_lost`、`device_recovered`、`device_added`、`device_changed`、`speaks_with_new`、`listen_port_added`）；测试发送为 `type: "test"`。
-- `severity` 按固定映射：`device_lost` → `error`；恢复与新增 → `info`；身份变更、新会话、新监听端口 → `warning`。Steward 永不发出 `critical` —— 升级是接收方告警中心的职责。
+- `type` 即变更事件类型（`device_lost`、`device_recovered`、`device_added`、`device_changed`、`speaks_with_new`、`listen_port_added`）或拨测存活事件对（连续 3 次失败判定 `probe_failed`，此后首次成功发出 `probe_recovered`）；测试发送为 `type: "test"`。
+- `severity` 按固定映射：`device_lost`、`probe_failed` → `error`；恢复与新增 → `info`；身份变更、新会话、新监听端口 → `warning`。Steward 永不发出 `critical` —— 升级是接收方告警中心的职责。
 - `*_recovered` 事件 `resolved` 为 `true`，且与其解决的原始事件携带**相同的 `dedup_key`**（键的类型段取触发事件，如 `device_recovered` → 键 `…/device_lost/<ref>`），接收方可据此做 firing/resolved 配对（与 Alertmanager 的 groupKey 配对同构）。
 - `source_ref` 是设备的稳定标识（MAC，缺失时依次回退 IP、名称）；`dedup_key` 为 `<source>/<type>/<source_ref>` —— 接收方直接拿它做冷却/去重，即可获得稳定的按设备窗口。
 - `source` 默认 `mibee-steward`，可按渠道覆盖（多个 Steward 实例汇入同一接收方时用于区分）。
