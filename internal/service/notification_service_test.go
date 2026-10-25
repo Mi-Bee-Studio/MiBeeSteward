@@ -274,3 +274,78 @@ func TestNotificationLogs_PaginationClampAndUserReadState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(4), otherUnread)
 }
+
+// Regression for the "empty config 200 empty response" bug: a create/update
+// omitting config (nil) or sending null/whitespace stored "" in the DB, and
+// every later read of that row failed JSON encoding — surfacing as 200 with
+// an empty body. Write-side normalization now defaults to "{}"; non-object
+// config is rejected with ErrInvalidChannelConfig.
+func TestNotificationChannel_EmptyConfigNormalization(t *testing.T) {
+	svc, _ := setupNotificationService(t)
+	ctx := context.Background()
+
+	// create without config → "{}" stored and echoed back on every read path
+	created, err := svc.CreateChannel(ctx, domain.CreateChannelRequest{
+		Name: "no-config-hook",
+		Type: domain.ChannelTypeWebhook,
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, `{}`, string(created.Config))
+
+	got, err := svc.GetChannel(ctx, created.ID)
+	require.NoError(t, err)
+	require.JSONEq(t, `{}`, string(got.Config))
+
+	all, err := svc.ListChannels(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{}`, string(all[0].Config))
+
+	// explicit null behaves the same as omitted
+	nullChannel, err := svc.CreateChannel(ctx, domain.CreateChannelRequest{
+		Name:   "null-config-hook",
+		Type:   domain.ChannelTypeWebhook,
+		Config: json.RawMessage(`null`),
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, `{}`, string(nullChannel.Config))
+
+	// non-object config is rejected (arrays, scalars, invalid JSON)
+	for _, bad := range []json.RawMessage{
+		json.RawMessage(`[1,2]`),
+		json.RawMessage(`"webhook"`),
+		json.RawMessage(`{invalid`),
+	} {
+		_, err := svc.CreateChannel(ctx, domain.CreateChannelRequest{
+			Name:   "bad-config-hook",
+			Type:   domain.ChannelTypeWebhook,
+			Config: bad,
+		})
+		require.ErrorIs(t, err, ErrInvalidChannelConfig, "config=%s", bad)
+	}
+
+	// update paths: nil keeps the stored config, empty/null resets to "{}"
+	empty := json.RawMessage(``)
+	updated, err := svc.UpdateChannel(ctx, created.ID, domain.UpdateChannelRequest{Config: &empty})
+	require.NoError(t, err)
+	require.JSONEq(t, `{}`, string(updated.Config))
+
+	filled, err := svc.UpdateChannel(ctx, created.ID, domain.UpdateChannelRequest{
+		Config: ptrRawMessage(t, `{"url":"https://example.com/hook","format":"alert"}`),
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"url":"https://example.com/hook","format":"alert"}`, string(filled.Config))
+
+	kept, err := svc.UpdateChannel(ctx, created.ID, domain.UpdateChannelRequest{})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"url":"https://example.com/hook","format":"alert"}`, string(kept.Config))
+
+	badUpdate := json.RawMessage(`[]`)
+	_, err = svc.UpdateChannel(ctx, created.ID, domain.UpdateChannelRequest{Config: &badUpdate})
+	require.ErrorIs(t, err, ErrInvalidChannelConfig)
+}
+
+func ptrRawMessage(t *testing.T, raw string) *json.RawMessage {
+	t.Helper()
+	m := json.RawMessage(raw)
+	return &m
+}

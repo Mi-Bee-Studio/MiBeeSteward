@@ -1657,7 +1657,7 @@ type NetworkWithMirror struct {
 
 // NotificationChannel Notification channel (password/secret masked in responses)
 type NotificationChannel struct {
-	// Config Channel-type-specific config (secret redacted on read)
+	// Config Channel-type-specific config (secret redacted on read). Webhook channels accept optional format ('raw', default, the Steward payload shape; or 'alert', a receiver-agnostic alert envelope with type/severity/title/body/source/source_ref/tags/resolved/dedup_key/occurred_at fields) and source (alert format only, defaults to 'mibee-steward'); see docs/en/integrations.md.
 	Config    map[string]interface{}  `json:"config"`
 	CreatedAt time.Time               `json:"created_at"`
 	Enabled   bool                    `json:"enabled"`

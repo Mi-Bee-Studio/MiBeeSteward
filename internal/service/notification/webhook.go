@@ -24,6 +24,13 @@ import (
 type WebhookConfig struct {
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers,omitempty"`
+	// Format selects the POST body shape: "raw" (default, the Steward Payload
+	// JSON as-is) or "alert" (receiver-agnostic alert envelope, see
+	// alert_format.go). Optional for backwards compatibility.
+	Format string `json:"format,omitempty"`
+	// Source overrides the envelope's source/dedup prefix when Format is
+	// "alert" (defaults to DefaultAlertSource). Ignored by "raw".
+	Source string `json:"source,omitempty"`
 }
 
 // WebhookSender sends notifications via HTTP POST to a webhook endpoint.
@@ -64,7 +71,13 @@ func (w *WebhookSender) SendWithConfig(ctx context.Context, payload Payload, con
 		return SendResult{Success: false, Error: "webhook URL is required"}
 	}
 
-	body, err := json.Marshal(payload)
+	var body []byte
+	var err error
+	if cfg.Format == AlertFormatAlert {
+		body, err = json.Marshal(buildAlertEnvelope(payload, cfg.Source))
+	} else {
+		body, err = json.Marshal(payload)
+	}
 	if err != nil {
 		return SendResult{Success: false, Error: fmt.Sprintf("failed to marshal payload: %v", err)}
 	}

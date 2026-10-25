@@ -2804,7 +2804,9 @@ components:
         id: {type: integer, format: int64}
         name: {type: string}
         type: {type: string, enum: [webhook, email, feishu, wecom, telegram, discord]}
-        config: {type: object, description: Channel-type-specific config (secret redacted on read)}
+        config:
+          type: object
+          description: "Channel-type-specific config (secret redacted on read). Webhook channels accept optional format ('raw', default, the Steward payload shape; or 'alert', a receiver-agnostic alert envelope with type/severity/title/body/source/source_ref/tags/resolved/dedup_key/occurred_at fields) and source (alert format only, defaults to 'mibee-steward'); see docs/en/integrations.md."
         enabled: {type: boolean}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}

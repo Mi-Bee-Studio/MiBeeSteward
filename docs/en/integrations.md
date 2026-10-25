@@ -38,14 +38,16 @@ Notification rules (event → channel, see [Web UI](web-ui.md) → Settings → 
 
 | Type | Config fields | Auth |
 |---|---|---|
-| `webhook` | `url`, optional `headers` map | Custom headers (e.g. your receiver's token) |
+| `webhook` | `url`, optional `headers` map, optional `format` (`raw` \| `alert`, default `raw`), optional `source` (alert format only) | Custom headers (e.g. your receiver's token) |
 | `email` | SMTP `host`/`port`/`username`/`password`, `from`, `to` | SMTP AUTH |
 | `feishu` | `url`, optional `secret` | Feishu custom-bot HMAC signature (enable signature verification on the bot and paste the secret) |
 | `wecom` | `url` | none (the webhook URL is the credential, treat it as secret) |
 | `telegram` | `bot_token`, `chat_id` | Bot API token |
 | `discord` | `url`, optional `username` | none (webhook URL is the credential) |
 
-The four chat-platform channels are "formatted webhooks": MiBee translates each event into the platform's message format (a text message combining the subject and details). Use the generic `webhook` type when you want the raw JSON payload instead, it posts the full event structure:
+The four chat-platform channels are "formatted webhooks": MiBee translates each event into the platform's message format (a text message combining the subject and details). Use the generic `webhook` type when you want structured JSON instead. It has two payload formats:
+
+**`raw` (default)** — Steward's own payload shape, unchanged:
 
 ```json
 {
@@ -61,6 +63,33 @@ The four chat-platform channels are "formatted webhooks": MiBee translates each 
   }
 }
 ```
+
+**`alert`** — a receiver-agnostic alert envelope for external alert centers (dedup, cooldown, escalation and fan-out become the receiver's job):
+
+```json
+{
+  "type": "device_lost",
+  "severity": "error",
+  "title": "Device Lost: cam-01",
+  "body": "Device: cam-01\nIP: 192.168.1.133\n...",
+  "source": "mibee-steward",
+  "source_ref": "aa:bb:cc:dd:ee:ff",
+  "tags": { "device_name": "cam-01", "ip_address": "192.168.1.133", "mac_address": "aa:bb:cc:dd:ee:ff", "device_type": "camera" },
+  "resolved": false,
+  "dedup_key": "mibee-steward/device_lost/aa:bb:cc:dd:ee:ff",
+  "occurred_at": "2026-08-22T00:02:43Z"
+}
+```
+
+Semantics of the envelope:
+
+- `type` is the change event type (`device_lost`, `device_recovered`, `device_added`, `device_changed`, `speaks_with_new`, `listen_port_added`); a test send posts `type: "test"`.
+- `severity` maps deterministically: `device_lost` → `error`; recoveries and additions → `info`; identity changes, new conversations and new listen ports → `warning`. Steward never emits `critical` — escalation belongs to the receiving alert center.
+- `resolved` is `true` for `*_recovered` events, and such events carry the **same `dedup_key` as the event they resolve** (the key's type segment is the firing event, e.g. `device_recovered` → key `…/device_lost/<ref>`), so receivers pair firing/resolved the way Alertmanager pairs group keys.
+- `source_ref` is the stable device identity (MAC, falling back to IP, then name) and `dedup_key` is `<source>/<type>/<source_ref>` — receivers that key cooldown/dedup on it get stable per-device windows for free.
+- `source` defaults to `mibee-steward` and can be overridden per channel (multiple Steward instances feeding one receiver).
+
+This is a deliberately generic contract: no receiver is special-cased in Steward. Any alert center that ingests `{type, severity, title, body, dedup_key, resolved}` JSON works — for example a self-hosted [MiBeeBell](https://github.com/Mi-Bee-Studio/MiBeeBell) instance: register an ingest token with `default_source: mibee-steward`, point the channel URL at `http://<bell>:9080/api/ingest/webhook/<token>`, set the format to `alert`, and Steward events flow through Bell's dedup/cooldown/silence pipeline out to Bell's channels (WeCom/DingTalk/Feishu/Telegram/SMTP/…).
 
 Every channel has a **Test send** button in the UI (Settings → Notifications → channel row), use it to verify delivery before wiring rules.
 

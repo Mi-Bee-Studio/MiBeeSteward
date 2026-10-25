@@ -159,3 +159,57 @@ func TestNewWebhookSenderFromConfig(t *testing.T) {
 	assert.NotNil(t, sender)
 	assert.NotNil(t, sender.Client)
 }
+
+func TestWebhookSenderAlertFormat(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	sender := NewWebhookSender()
+	config, _ := json.Marshal(WebhookConfig{
+		URL:    server.URL,
+		Format: AlertFormatAlert,
+	})
+
+	result := sender.SendWithConfig(context.Background(), Payload{
+		Subject:  "Device lost: nas-01",
+		Body:     "Device: nas-01",
+		Metadata: json.RawMessage(`{"event_type":"device_lost","mac_address":"aa:bb:cc:dd:ee:ff","device_name":"nas-01"}`),
+	}, config)
+
+	require.True(t, result.Success)
+	assert.Equal(t, "device_lost", body["type"])
+	assert.Equal(t, "error", body["severity"])
+	assert.Equal(t, "Device lost: nas-01", body["title"])
+	assert.Equal(t, false, body["resolved"])
+	assert.Equal(t, DefaultAlertSource, body["source"])
+	assert.Equal(t, "mibee-steward/device_lost/aa:bb:cc:dd:ee:ff", body["dedup_key"])
+	// the alert shape replaces the raw Payload shape on the wire
+	assert.NotContains(t, body, "subject")
+	assert.NotContains(t, body, "recipient")
+}
+
+func TestWebhookSenderExplicitRawFormatUnchanged(t *testing.T) {
+	var receivedPayload Payload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&receivedPayload))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	sender := NewWebhookSender()
+	config, _ := json.Marshal(WebhookConfig{URL: server.URL, Format: AlertFormatRaw})
+
+	result := sender.SendWithConfig(context.Background(), Payload{
+		Subject:   "alert",
+		Body:      "device offline",
+		Recipient: "admin",
+	}, config)
+
+	require.True(t, result.Success)
+	assert.Equal(t, "alert", receivedPayload.Subject)
+	assert.Equal(t, "admin", receivedPayload.Recipient)
+}

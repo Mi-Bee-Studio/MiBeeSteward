@@ -6610,7 +6610,7 @@ export interface components {
             name: string;
             /** @enum {string} */
             type: "webhook" | "email" | "feishu" | "wecom" | "telegram" | "discord";
-            /** @description Channel-type-specific config (secret redacted on read) */
+            /** @description Channel-type-specific config (secret redacted on read). Webhook channels accept optional format ('raw', default, the Steward payload shape; or 'alert', a receiver-agnostic alert envelope with type/severity/title/body/source/source_ref/tags/resolved/dedup_key/occurred_at fields) and source (alert format only, defaults to 'mibee-steward'); see docs/en/integrations.md. */
             config: Record<string, never>;
             enabled: boolean;
             /** Format: date-time */
