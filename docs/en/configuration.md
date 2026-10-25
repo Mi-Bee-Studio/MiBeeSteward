@@ -407,6 +407,8 @@ Per-target interval/timeout live on each `probe_targets` row (managed in the UI/
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `probe.max_concurrency` | int | 8 | Max simultaneous probes (semaphore). Replaces the previously hard-coded bound of 8; 0 = default, capped at 64. Env `MIBEE_PROBE_MAX_CONCURRENCY`. |
+| `probe.notify_fail_threshold` | int | 3 | Consecutive failing runs a probe track (per target × vantage) needs before `probe_failed` fires into notifications. 0 = default 3, range 1–10; at the recommended 300s cadence the default declares within 15 minutes. Env `MIBEE_PROBE_NOTIFY_FAIL_THRESHOLD`. |
+| `agent_fleet.offline_threshold_minutes` | int | 10 | How stale an agent's `last_report_at` must be before `agent_offline` fires. 0 = default 10 (two fully quiet cycles at the recommended probe cadence), range 1–1440. Env `MIBEE_AGENT_FLEET_OFFLINE_THRESHOLD_MINUTES`. |
 | `probe.quality.enabled` | bool | false | Network egress quality assessment: a system-seeded matrix of public probe points executed from EVERY vantage (center + all agents), analyzed per network. A bare config defaults to **disabled**; `configs/config.example.yaml` ships `enabled: true` as the recommended value. Env `MIBEE_PROBE_QUALITY_ENABLED`. |
 | `probe.quality.window_minutes` | int | 15 | Analyzer lookback window (5–1440). Env `MIBEE_PROBE_QUALITY_WINDOW_MINUTES`. |
 | `probe.quality.interval_seconds` | int | 120 | Seeded cadence of every quality target (≥10). |

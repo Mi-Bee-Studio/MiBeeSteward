@@ -813,7 +813,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// probe:read (viewer+); CRUD + trigger → probe:manage (operator+). NOT
 	// network-scoped: #138's object-level scope guards the internal inventory,
 	// while probing aims at arbitrary external endpoints by design.
-	probeEngine := probetarget.NewEngine(db.New(probeDB), slog.Default(), prometheus.DefaultRegisterer, cfg.Probe.MaxConcurrency, changeRecorder)
+	probeEngine := probetarget.NewEngine(db.New(probeDB), slog.Default(), prometheus.DefaultRegisterer, cfg.Probe.MaxConcurrency, changeRecorder).
+		WithNotifyFailThreshold(cfg.Probe.NotifyFailThreshold)
 	probeTargetSvc := probetarget.New(db.New(probeDB), probeEngine)
 	// Vantage probe dispatcher (#277): ships agent plans over the command
 	// channel whenever a plan content changes (fingerprint-gated, steady
@@ -1012,7 +1013,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// Agent liveness watcher: declares agent_offline/agent_recovered from
 	// fleet last_report_at staleness through the same changeRecorder the rule
 	// engine subscribes to (a dead agent = a blind network segment).
-	agentWatcher := agentwatch.NewSweeper(db.New(dbConn), changeRecorder, slog.Default())
+	agentWatcher := agentwatch.NewSweeper(db.New(dbConn), changeRecorder, slog.Default()).
+		WithOfflineThreshold(cfg.AgentFleet.OfflineThresholdMinutes)
 	agentWatcher.Start(context.Background())
 
 	registerNotificationRoutes(r, notificationHandler)

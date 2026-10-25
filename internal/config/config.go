@@ -146,6 +146,11 @@ type AgentFleetConfig struct {
 	// The agent still needs its own center.remote_ops_enabled opt-in to
 	// execute them, either side can keep ops from running.
 	RemoteOpsEnabled bool `koanf:"remote_ops_enabled"`
+	// OfflineThresholdMinutes is how stale an agent's last_report_at must be
+	// before agent_offline fires (0 = default 10; the agentwatch sweeper).
+	// The recommended probe cadence is 300s, so the default tolerates two
+	// fully quiet cycles before declaring.
+	OfflineThresholdMinutes int `koanf:"offline_threshold_minutes"`
 }
 
 // NetworkConfig describes the logical network this instance scans/owns.
@@ -469,6 +474,10 @@ func Load(configPath string) (*Config, error) {
 	normalizeDiscovery(&cfg)
 	normalizeRBAC(&cfg)
 	normalizeProbe(&cfg)
+	// agent_fleet.offline_threshold_minutes: 0 = the documented default (10).
+	if cfg.AgentFleet.OfflineThresholdMinutes == 0 {
+		cfg.AgentFleet.OfflineThresholdMinutes = 10
+	}
 
 	// Validate
 	if err := Validate(&cfg); err != nil {
@@ -637,6 +646,9 @@ func Validate(cfg *Config) error {
 
 	if err := validateProbe(cfg); err != nil {
 		return err
+	}
+	if m := cfg.AgentFleet.OfflineThresholdMinutes; m < 0 || m > 1440 {
+		return fmt.Errorf("agent_fleet.offline_threshold_minutes must be between 1 and 1440")
 	}
 
 	return nil

@@ -78,6 +78,11 @@ agent_fleet:
   remote_ops_enabled: false # allow ENQUEUEING ops commands (restart /
                        # config-reload / logs-tail) from the admin UI. Default
                        # false; each successful enqueue is audit-logged.
+  # How stale an agent's last_report_at must be before agent_offline fires
+  # into notifications (0 = default 10 minutes, range 1-1440). The default
+  # tolerates two fully quiet cycles at the recommended 300s probe cadence.
+  # MIBEE_AGENT_FLEET_OFFLINE_THRESHOLD_MINUTES.
+  offline_threshold_minutes: 10
 
 # security holds process-wide secret keying material. master_key protects
 # SNMPv3 USM auth/priv passphrases stored in SQLite (AES-256-GCM). Generate
@@ -175,6 +180,11 @@ probe:
   # Max simultaneous probes (semaphore, default 8). External targets are
   # few; raise only for large matrices. MIBEE_PROBE_MAX_CONCURRENCY.
   max_concurrency: 8
+  # Consecutive failing runs before probe_failed fires into notifications
+  # (0 = default 3, range 1-10). Lower = noisier but faster detection; at
+  # the recommended 300s cadence the default declares within 15 minutes.
+  # MIBEE_PROBE_NOTIFY_FAIL_THRESHOLD.
+  notify_fail_threshold: 3
   # Network egress quality assessment (#608): a system-seeded matrix of
   # public probe points executed from EVERY vantage (center + all agents),
   # analyzed per network (verdict: ok / degraded / egress down / DNS fault /

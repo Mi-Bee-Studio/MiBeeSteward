@@ -9,7 +9,7 @@ import (
 )
 
 func TestTransitionDetector_ThresholdBeforeFailing(t *testing.T) {
-	d := newTransitionDetector()
+	d := newTransitionDetector(defaultProbeFailThreshold)
 
 	// two failures: below threshold, nothing emits, still not failing
 	assert.Empty(t, d.observe(1, "center", "success", "fail"))
@@ -21,7 +21,7 @@ func TestTransitionDetector_ThresholdBeforeFailing(t *testing.T) {
 }
 
 func TestTransitionDetector_StreakResetsOnSuccess(t *testing.T) {
-	d := newTransitionDetector()
+	d := newTransitionDetector(defaultProbeFailThreshold)
 
 	assert.Empty(t, d.observe(1, "center", "success", "fail"))
 	assert.Empty(t, d.observe(1, "center", "success", "fail"))
@@ -34,9 +34,9 @@ func TestTransitionDetector_StreakResetsOnSuccess(t *testing.T) {
 }
 
 func TestTransitionDetector_RecoveryEmitsOnce(t *testing.T) {
-	d := newTransitionDetector()
+	d := newTransitionDetector(defaultProbeFailThreshold)
 
-	for i := 0; i < probeFailedThreshold; i++ {
+	for i := 0; i < defaultProbeFailThreshold; i++ {
 		d.observe(1, "center", "success", "fail")
 	}
 	assert.Equal(t, changedetect.ChangeTypeProbeRecovered, d.observe(1, "center", "success", "success"))
@@ -45,7 +45,7 @@ func TestTransitionDetector_RecoveryEmitsOnce(t *testing.T) {
 }
 
 func TestTransitionDetector_RestartSeedsFromPersistedStateSilently(t *testing.T) {
-	d := newTransitionDetector()
+	d := newTransitionDetector(defaultProbeFailThreshold)
 
 	// first sight with persisted failing state: adopt WITHOUT emitting
 	assert.Empty(t, d.observe(1, "center", "fail", "fail"))
@@ -58,10 +58,10 @@ func TestTransitionDetector_RestartSeedsFromPersistedStateSilently(t *testing.T)
 // to the target is dead declares its own failure while the center track never
 // leaves ok.
 func TestTransitionDetector_TracksAreIndependentPerVantage(t *testing.T) {
-	d := newTransitionDetector()
+	d := newTransitionDetector(defaultProbeFailThreshold)
 
 	agent := "agent:lan-63"
-	for i := 0; i < probeFailedThreshold-1; i++ {
+	for i := 0; i < defaultProbeFailThreshold-1; i++ {
 		assert.Empty(t, d.observe(1, agent, "", "fail"))
 		assert.Empty(t, d.observe(1, "center", "", "success"))
 	}
@@ -73,8 +73,26 @@ func TestTransitionDetector_TracksAreIndependentPerVantage(t *testing.T) {
 	assert.Equal(t, changedetect.ChangeTypeProbeRecovered, d.observe(1, agent, "", "success"))
 }
 
+// TestTransitionDetector_CustomThreshold: probe.notify_fail_threshold
+// overrides the declare-after-N boundary (here 2 instead of the default 3).
+func TestTransitionDetector_CustomThreshold(t *testing.T) {
+	d := newTransitionDetector(2)
+
+	assert.Empty(t, d.observe(1, "center", "success", "fail"))
+	assert.Equal(t, changedetect.ChangeTypeProbeFailed, d.observe(1, "center", "success", "fail"))
+}
+
+// TestTransitionDetector_NonPositiveThresholdFallsBackToDefault: the config
+// convention "0/negative = default" holds at the detector level too.
+func TestTransitionDetector_NonPositiveThresholdFallsBackToDefault(t *testing.T) {
+	d := newTransitionDetector(0)
+	assert.Empty(t, d.observe(1, "center", "success", "fail"))
+	assert.Empty(t, d.observe(1, "center", "success", "fail"))
+	assert.Equal(t, changedetect.ChangeTypeProbeFailed, d.observe(1, "center", "success", "fail"))
+}
+
 func TestTransitionDetector_PruneDropsAbsentTargets(t *testing.T) {
-	d := newTransitionDetector()
+	d := newTransitionDetector(defaultProbeFailThreshold)
 
 	d.observe(1, "center", "success", "fail")
 	d.observe(2, "center", "success", "fail")

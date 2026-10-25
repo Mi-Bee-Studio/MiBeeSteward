@@ -84,6 +84,34 @@ func TestSweeper_OfflineAndRecoveryTransitions(t *testing.T) {
 	}
 }
 
+// TestSweeper_CustomThreshold: agent_fleet.offline_threshold_minutes is the
+// staleness cutoff — with a sub-second threshold injected (same package), a
+// marginally-old report already declares offline without waiting the default
+// 10 minutes.
+func TestSweeper_CustomThreshold(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	q := db.New(conn)
+	ctx := context.Background()
+
+	rec := &recordingRecorder{}
+	s := NewSweeper(q, rec, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s.threshold = 100 * time.Millisecond
+
+	// Fresh now → adopted online; then it goes just past the cutoff.
+	seedAgent(t, q, "agent-fast", time.Now().Add(-50*time.Millisecond))
+	s.sweep(ctx)
+	require.Empty(t, rec.events, "still fresh at first sight: silent adoption")
+
+	require.NoError(t, q.UpsertAgentStatus(ctx, db.UpsertAgentStatusParams{
+		AgentID: "agent-fast", Version: "0.1.8", Hostname: "fast-host", LastReportAt: time.Now().Add(-200 * time.Millisecond),
+	}))
+	s.sweep(ctx)
+	require.Len(t, rec.events, 1)
+	assert.Equal(t, changedetect.ChangeTypeAgentOffline, rec.events[0].ChangeType)
+}
+
 func TestSweeper_DeregisteredAgentStateDropped(t *testing.T) {
 	conn, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
