@@ -32,6 +32,7 @@ import (
 	"mibee-steward/internal/dbopen"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
+	"mibee-steward/internal/service/agentwatch"
 	"mibee-steward/internal/service/demoseed"
 	"mibee-steward/internal/service/flows"
 	"mibee-steward/internal/service/listenwatch"
@@ -1008,6 +1009,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	ruleEngine := notification.NewRuleEngine(scanQueries, changeWatcher, notificationDispatcher, slog.Default())
 	ruleEngine.Start(context.Background())
 
+	// Agent liveness watcher: declares agent_offline/agent_recovered from
+	// fleet last_report_at staleness through the same changeRecorder the rule
+	// engine subscribes to (a dead agent = a blind network segment).
+	agentWatcher := agentwatch.NewSweeper(db.New(dbConn), changeRecorder, slog.Default())
+	agentWatcher.Start(context.Background())
+
 	registerNotificationRoutes(r, notificationHandler)
 
 	// Prometheus metrics + HTTP service discovery are PUBLIC: Prometheus
@@ -1124,6 +1131,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		// subscriber and calls dispatcher.Dispatch; stopping it first prevents
 		// in-flight dispatch attempts against a stopped dispatcher.
 		ruleEngine.Stop()
+		// Agent liveness watcher: same ordering rationale (it feeds the
+		// recorder → rule engine chain).
+		agentWatcher.Stop()
 		// Stop the notification dispatcher's worker goroutines too. Without
 		// this, the 3 workers (and their *db.Queries handle) outlive graceful
 		// shutdown and race against db.Close() in main.go.

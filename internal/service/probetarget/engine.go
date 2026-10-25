@@ -309,7 +309,7 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 	// success after a failing spell. DeviceID carries the probe TARGET id
 	// here (entity_type discriminates; change_log.entity_id is generic).
 	if e.recorder != nil {
-		if ct := e.transitions.observe(t.ID, t.LastStatus, out.Status); ct != "" {
+		if ct := e.transitions.observe(t.ID, domain.ProbeVantageCenter, t.LastStatus, out.Status); ct != "" {
 			e.recorder.Record(ctx, changedetect.ChangeEvent{
 				ChangeType: ct,
 				EntityType: changedetect.EntityTypeProbeTarget,

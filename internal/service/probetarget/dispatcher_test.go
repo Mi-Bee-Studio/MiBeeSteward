@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/testutil"
@@ -193,4 +194,51 @@ func TestIngestAgentResults_OwnsVantage(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 0, n)
+}
+
+// TestIngestAgentResults_LivenessTransitions: the agent's reporting track
+// drives the same probe_failed/probe_recovered state machine as the center's
+// execution track — a site dead only from the agent's vantage still notifies.
+func TestIngestAgentResults_LivenessTransitions(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	queries := db.New(conn)
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	rec := &fakeChangeRecorder{}
+	engine := NewEngine(queries, quiet, nil, 0, rec)
+	svc := New(queries, engine)
+	ctx := context.Background()
+
+	created, err := svc.Create(ctx, validCreate("http", "http://x.example/"))
+	require.NoError(t, err)
+
+	fail := AgentResultReport{TargetID: created.ID, Status: "fail", ErrorMessage: "dial timeout", CheckedAt: "2026-08-26T02:00:00Z"}
+	// below threshold: quiet
+	for i := 0; i < probeFailedThreshold-1; i++ {
+		_, err := svc.IngestAgentResults(ctx, "agent-63", []AgentResultReport{fail})
+		require.NoError(t, err)
+	}
+	require.Empty(t, rec.snapshot())
+
+	// threshold-crossing batch emits one probe_failed on the agent's track
+	_, err = svc.IngestAgentResults(ctx, "agent-63", []AgentResultReport{fail})
+	require.NoError(t, err)
+	events := rec.snapshot()
+	require.Len(t, events, 1)
+	require.Equal(t, changedetect.ChangeTypeProbeFailed, events[0].ChangeType)
+	require.Equal(t, changedetect.EntityTypeProbeTarget, events[0].EntityType)
+	after, ok := events[0].After.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "agent:agent-63", after["vantage"])
+	require.Equal(t, "dial timeout", after["error"])
+
+	// first success on the agent track recovers
+	_, err = svc.IngestAgentResults(ctx, "agent-63", []AgentResultReport{
+		{TargetID: created.ID, Status: "success", LatencyMs: 10, CheckedAt: "2026-08-26T02:01:00Z"},
+	})
+	require.NoError(t, err)
+	events = rec.snapshot()
+	require.Len(t, events, 2)
+	require.Equal(t, changedetect.ChangeTypeProbeRecovered, events[1].ChangeType)
 }

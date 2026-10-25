@@ -349,3 +349,31 @@ func TestRuleEngine_ProbeEventDeletedTargetFallback(t *testing.T) {
 	require.NoError(t, json.Unmarshal(sents[0].Metadata, &meta))
 	assert.Equal(t, "probe/999", meta["source_ref"])
 }
+
+// TestRuleEngine_AgentEventDispatch: an agent_offline row (entity_type=agent)
+// dispatches with an agent-shaped payload; the source_ref is the stable agent
+// id and the display name is the hostname.
+func TestRuleEngine_AgentEventDispatch(t *testing.T) {
+	e, q, log, sender := setupTestEngine(t)
+	chID := seedChannel(t, q, "wh", true)
+	seedRule(t, q, "agent-rule", "agent_offline", "all", chID, true)
+
+	agentID := "agent-lan-63"
+	after := `{"agent_id":"agent-lan-63","hostname":"nanopineo","version":"0.1.8","last_report_at":"2026-10-25T02:00:00Z"}`
+
+	e.handleEvent(context.Background(), db.ChangeLog{
+		ChangeType: "agent_offline", EntityType: "agent", AgentID: &agentID,
+		AfterData: &after, DetectedAt: time.Now(),
+	})
+	drain(t, log, 1)
+
+	sents := sender.snapshot()
+	require.Len(t, sents, 1)
+	assert.Contains(t, sents[0].Subject, "Agent offline")
+	assert.Contains(t, sents[0].Subject, "nanopineo")
+	assert.Contains(t, sents[0].Body, "0.1.8")
+	var meta map[string]any
+	require.NoError(t, json.Unmarshal(sents[0].Metadata, &meta))
+	assert.Equal(t, "agent_offline", meta["event_type"])
+	assert.Equal(t, "agent/agent-lan-63", meta["source_ref"])
+}

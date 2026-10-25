@@ -65,6 +65,7 @@ type alertEnvelope struct {
 var recoveryDedupType = map[string]string{
 	domain.RuleEventTypeDeviceRecovered: domain.RuleEventTypeDeviceLost,
 	domain.RuleEventTypeProbeRecovered:  domain.RuleEventTypeProbeFailed,
+	domain.RuleEventTypeAgentRecovered:  domain.RuleEventTypeAgentOffline,
 }
 
 // alertSeverity maps a Steward change event type to an envelope severity.
@@ -72,10 +73,11 @@ var recoveryDedupType = map[string]string{
 // tier); payloads without an event type (test dispatch, manual sends) are info.
 func alertSeverity(eventType string) string {
 	switch eventType {
-	case domain.RuleEventTypeDeviceLost, domain.RuleEventTypeProbeFailed:
+	case domain.RuleEventTypeDeviceLost, domain.RuleEventTypeProbeFailed,
+		domain.RuleEventTypeAgentOffline:
 		return AlertSeverityError
 	case domain.RuleEventTypeDeviceRecovered, domain.RuleEventTypeDeviceAdded,
-		domain.RuleEventTypeProbeRecovered:
+		domain.RuleEventTypeProbeRecovered, domain.RuleEventTypeAgentRecovered:
 		return AlertSeverityInfo
 	case domain.RuleEventTypeDeviceChanged,
 		domain.RuleEventTypeSpeaksWithNew,
@@ -142,7 +144,8 @@ func buildAlertEnvelope(p Payload, source string) alertEnvelope {
 	tags := map[string]string{}
 	for _, key := range []string{
 		"device_name", "ip_address", "mac_address", "device_type", // device events
-		"target_name", "target_address", "module", // probe events
+		"target_name", "target_address", "module", "vantage", // probe events
+		"agent_id", "agent_name", // agent events
 		"rule_name",
 	} {
 		if v := metaString(meta, key); v != "" {

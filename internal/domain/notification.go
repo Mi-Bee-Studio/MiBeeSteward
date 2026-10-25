@@ -116,6 +116,11 @@ const (
 	// success after that emits probe_recovered. entity_type=probe_target.
 	RuleEventTypeProbeFailed    = "probe_failed"
 	RuleEventTypeProbeRecovered = "probe_recovered"
+	// Agent fleet liveness (agentwatch.Sweeper): an agent whose last_report_at
+	// went stale past the threshold declares agent_offline; a fresh report
+	// after that emits agent_recovered. entity_type=agent.
+	RuleEventTypeAgentOffline   = "agent_offline"
+	RuleEventTypeAgentRecovered = "agent_recovered"
 )
 
 // RuleScopeType controls which devices a rule applies to.
@@ -131,7 +136,8 @@ func IsValidRuleEventType(t string) bool {
 	case RuleEventTypeDeviceLost, RuleEventTypeDeviceRecovered,
 		RuleEventTypeDeviceAdded, RuleEventTypeDeviceChanged,
 		RuleEventTypeSpeaksWithNew, RuleEventTypeListenPortAdded,
-		RuleEventTypeProbeFailed, RuleEventTypeProbeRecovered:
+		RuleEventTypeProbeFailed, RuleEventTypeProbeRecovered,
+		RuleEventTypeAgentOffline, RuleEventTypeAgentRecovered:
 		return true
 	}
 	return false

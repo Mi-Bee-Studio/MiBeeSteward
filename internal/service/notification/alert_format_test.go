@@ -158,3 +158,23 @@ func TestBuildAlertEnvelope_ProbeEvents(t *testing.T) {
 	assert.Equal(t, AlertSeverityInfo, rec.Severity)
 	assert.Equal(t, env.DedupKey, rec.DedupKey, "recovery must share the firing dedup key")
 }
+
+func TestBuildAlertEnvelope_AgentEvents(t *testing.T) {
+	meta, _ := json.Marshal(map[string]any{
+		"event_type": "agent_offline",
+		"agent_id":   "agent-lan-63",
+		"agent_name": "nanopineo",
+		"source_ref": "agent/agent-lan-63",
+	})
+	env := buildAlertEnvelope(Payload{Subject: "Agent offline: nanopineo", Metadata: meta}, "")
+	assert.Equal(t, AlertSeverityError, env.Severity)
+	assert.Equal(t, "agent/agent-lan-63", env.SourceRef)
+	assert.Equal(t, "mibee-steward/agent_offline/agent/agent-lan-63", env.DedupKey)
+
+	recMeta, _ := json.Marshal(map[string]any{
+		"event_type": "agent_recovered", "agent_id": "agent-lan-63", "source_ref": "agent/agent-lan-63",
+	})
+	rec := buildAlertEnvelope(Payload{Subject: "Agent recovered: nanopineo", Metadata: recMeta}, "")
+	assert.True(t, rec.Resolved)
+	assert.Equal(t, env.DedupKey, rec.DedupKey, "agent recovery must pair with agent_offline")
+}
