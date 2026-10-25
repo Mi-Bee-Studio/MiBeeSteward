@@ -19,6 +19,11 @@ type ProbeConfig struct {
 	// MaxConcurrency bounds simultaneous probes (semaphore). 0 = default 8,
 	// the historical hard-coded value.
 	MaxConcurrency int `koanf:"max_concurrency"`
+	// NotifyFailThreshold is how many consecutive failing runs a probe track
+	// needs before probe_failed fires (0 = default 3; the #608 liveness
+	// wiring). Lower = noisier but faster detection; at the recommended 300s
+	// cadence the default declares within 15 minutes.
+	NotifyFailThreshold int `koanf:"notify_fail_threshold"`
 	// Quality configures the built-in network egress quality assessment
 	// (#608): a system-seeded matrix of public probe points, executed from
 	// every vantage (center + all agents), analyzed per network.
@@ -113,6 +118,12 @@ func normalizeProbe(cfg *Config) {
 	if p.MaxConcurrency < 1 {
 		p.MaxConcurrency = 1
 	}
+	if p.NotifyFailThreshold == 0 {
+		p.NotifyFailThreshold = 3
+	}
+	if p.NotifyFailThreshold < 1 {
+		p.NotifyFailThreshold = 1
+	}
 	q := &p.Quality
 	if q.WindowMinutes == 0 {
 		q.WindowMinutes = 15
@@ -154,6 +165,9 @@ func validateProbe(cfg *Config) error {
 	p := &cfg.Probe
 	if p.MaxConcurrency > 64 {
 		return fmt.Errorf("probe.max_concurrency must be at most 64")
+	}
+	if p.NotifyFailThreshold > 10 {
+		return fmt.Errorf("probe.notify_fail_threshold must be at most 10")
 	}
 	q := &p.Quality
 	if q.WindowMinutes != 0 && (q.WindowMinutes < 5 || q.WindowMinutes > 1440) {

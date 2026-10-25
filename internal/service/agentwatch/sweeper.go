@@ -27,12 +27,13 @@ import (
 const (
 	// sweepInterval is how often staleness is re-evaluated.
 	sweepInterval = 30 * time.Second
-	// offlineThreshold is how stale last_report_at must be before an agent is
-	// declared offline. The recommended probe cadence is 300s, so 10 minutes
+	// defaultOfflineThreshold is how stale last_report_at must be before an
+	// agent is declared offline (agent_fleet.offline_threshold_minutes,
+	// 0 = this). The recommended probe cadence is 300s, so 10 minutes
 	// tolerates two fully quiet cycles (a report lands with every probe round
 	// AND every passive sweep) before declaring — generous against cadence
 	// jitter, still timely for "the segment just went dark".
-	offlineThreshold = 10 * time.Minute
+	defaultOfflineThreshold = 10 * time.Minute
 )
 
 // Sweeper is the agent-liveness state machine. First sight adopts the current
@@ -42,6 +43,8 @@ type Sweeper struct {
 	queries  *db.Queries
 	recorder changedetect.ChangeRecorder
 	logger   *slog.Logger
+	// threshold is the staleness cutoff (agent_fleet.offline_threshold_minutes).
+	threshold time.Duration
 
 	mu      sync.Mutex
 	offline map[string]bool // agentID → currently declared offline
@@ -59,12 +62,24 @@ func NewSweeper(queries *db.Queries, recorder changedetect.ChangeRecorder, logge
 		logger = slog.Default()
 	}
 	return &Sweeper{
-		queries:  queries,
-		recorder: recorder,
-		logger:   logger,
-		offline:  make(map[string]bool),
-		done:     make(chan struct{}),
+		queries:   queries,
+		recorder:  recorder,
+		logger:    logger,
+		threshold: defaultOfflineThreshold,
+		offline:   make(map[string]bool),
+		done:      make(chan struct{}),
 	}
+}
+
+// WithOfflineThreshold sets the staleness cutoff in minutes
+// (agent_fleet.offline_threshold_minutes; <=0 = the default 10). Call before
+// Start.
+func (s *Sweeper) WithOfflineThreshold(minutes int) *Sweeper {
+	if minutes <= 0 {
+		minutes = 10
+	}
+	s.threshold = time.Duration(minutes) * time.Minute
+	return s
 }
 
 // Start launches the sweep loop (one immediate sweep, then every
@@ -122,7 +137,7 @@ func (s *Sweeper) sweep(ctx context.Context) {
 	present := make(map[string]bool, len(rows))
 	for _, row := range rows {
 		present[row.AgentID] = true
-		stale := now.Sub(row.LastReportAt) > offlineThreshold
+		stale := now.Sub(row.LastReportAt) > s.threshold
 
 		s.mu.Lock()
 		prev, seen := s.offline[row.AgentID]

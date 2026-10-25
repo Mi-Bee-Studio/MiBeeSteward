@@ -393,6 +393,8 @@ scanner:
 | 键 | 类型 | 默认 | 说明 |
 |-----|------|---------|-------------|
 | `probe.max_concurrency` | int | 8 | 最大并发探测数（信号量）。取代此前硬编码的 8；0 = 默认值，上限 64。环境变量 `MIBEE_PROBE_MAX_CONCURRENCY`。 |
+| `probe.notify_fail_threshold` | int | 3 | 拨测轨道（目标 × 视角）连续失败多少次后向通知管道发出 `probe_failed`。0 = 默认 3，范围 1–10；推荐 300s 周期下默认约 15 分钟内判定。环境变量 `MIBEE_PROBE_NOTIFY_FAIL_THRESHOLD`。 |
+| `agent_fleet.offline_threshold_minutes` | int | 10 | agent 的 `last_report_at` 陈旧多少分钟后发出 `agent_offline`。0 = 默认 10（推荐拨测周期下容忍两个完整静默周期），范围 1–1440。环境变量 `MIBEE_AGENT_FLEET_OFFLINE_THRESHOLD_MINUTES`。 |
 | `probe.quality.enabled` | bool | false | 网络出口质量评估：系统种入的公共拨测点矩阵，从每个视角（中心 + 全部 agent）执行、按网络分析。裸配置默认**关闭**；`configs/config.example.yaml` 以 `enabled: true` 作为推荐值出厂。环境变量 `MIBEE_PROBE_QUALITY_ENABLED`。 |
 | `probe.quality.window_minutes` | int | 15 | 分析器回看窗口（5–1440）。环境变量 `MIBEE_PROBE_QUALITY_WINDOW_MINUTES`。 |
 | `probe.quality.interval_seconds` | int | 120 | 每个质量目标的种入周期（≥10）。 |

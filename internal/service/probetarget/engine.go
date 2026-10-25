@@ -96,7 +96,7 @@ func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Register
 		logger:      logger,
 		metrics:     newMetrics(reg),
 		recorder:    recorder,
-		transitions: newTransitionDetector(),
+		transitions: newTransitionDetector(defaultProbeFailThreshold),
 		exec: targetExecutor{
 			probers: map[string]probe.Prober{
 				"http": &probe.HTTPProber{},
@@ -109,6 +109,18 @@ func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Register
 		sem:     make(chan struct{}, maxConcurrency),
 		done:    make(chan struct{}),
 	}
+}
+
+// WithNotifyFailThreshold overrides how many consecutive failing runs a probe
+// track needs before probe_failed fires (probe.notify_fail_threshold; <=0 =
+// the default 3). Call before Start; the detector is otherwise guarded by its
+// own mutex, but setting at construction time keeps the semantics obvious.
+func (e *Engine) WithNotifyFailThreshold(n int) *Engine {
+	if n <= 0 {
+		n = defaultProbeFailThreshold
+	}
+	e.transitions.threshold = n
+	return e
 }
 
 // Start launches the tick loop (one immediate sweep, then every tickInterval).

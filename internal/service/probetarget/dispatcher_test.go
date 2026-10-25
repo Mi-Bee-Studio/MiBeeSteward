@@ -215,7 +215,7 @@ func TestIngestAgentResults_LivenessTransitions(t *testing.T) {
 
 	fail := AgentResultReport{TargetID: created.ID, Status: "fail", ErrorMessage: "dial timeout", CheckedAt: "2026-08-26T02:00:00Z"}
 	// below threshold: quiet
-	for i := 0; i < probeFailedThreshold-1; i++ {
+	for i := 0; i < defaultProbeFailThreshold-1; i++ {
 		_, err := svc.IngestAgentResults(ctx, "agent-63", []AgentResultReport{fail})
 		require.NoError(t, err)
 	}

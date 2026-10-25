@@ -129,7 +129,7 @@ func TestEngine_ProbeLivenessTransitions(t *testing.T) {
 	tgt := mustCreate(t, svc, validCreate("http", "http://example.com/healthz"))
 
 	// below-threshold failures emit nothing
-	for i := 0; i < probeFailedThreshold-1; i++ {
+	for i := 0; i < defaultProbeFailThreshold-1; i++ {
 		_, err := engine.TriggerNow(ctx, tgt.ID)
 		require.NoError(t, err)
 	}

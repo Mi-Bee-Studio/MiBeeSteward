@@ -15,12 +15,12 @@ import (
 	"mibee-steward/internal/changedetect"
 )
 
-// probeFailedThreshold is how many consecutive failing runs a track needs
-// before probe_failed is declared. Three was chosen over one deliberate
-// flap-damping: a single lost packet on a 300s cadence must not page anyone,
-// while 3×interval (15 min at the recommended cadence) is still well inside
-// "the service is down" territory.
-const probeFailedThreshold = 3
+// defaultProbeFailThreshold is the default consecutive-failing-runs count
+// before probe_failed is declared (probe.notify_fail_threshold, 0 = this).
+// Three was chosen over one deliberate flap-damping: a single lost packet on
+// a 300s cadence must not page anyone, while 3×interval (15 min at the
+// recommended cadence) is still well inside "the service is down" territory.
+const defaultProbeFailThreshold = 3
 
 // transitionDetector is the probe engine's liveness state machine, keyed per
 // (target, vantage) track — the center's own execution track and each agent's
@@ -41,8 +41,9 @@ const probeFailedThreshold = 3
 // per-vantage state and start fresh, so an already-failing agent track
 // re-declares after threshold more failures following a center restart.
 type transitionDetector struct {
-	mu     sync.Mutex
-	states map[trackKey]*probeState
+	mu        sync.Mutex
+	states    map[trackKey]*probeState
+	threshold int // consecutive failures before declaring (config-tunable)
 }
 
 type trackKey struct {
@@ -55,9 +56,13 @@ type probeState struct {
 	streak  int // consecutive failures while not yet failing
 }
 
-// newTransitionDetector builds an empty detector.
-func newTransitionDetector() *transitionDetector {
-	return &transitionDetector{states: make(map[trackKey]*probeState)}
+// newTransitionDetector builds a detector declaring after threshold
+// consecutive failures (<=0 falls back to the default).
+func newTransitionDetector(threshold int) *transitionDetector {
+	if threshold <= 0 {
+		threshold = defaultProbeFailThreshold
+	}
+	return &transitionDetector{states: make(map[trackKey]*probeState), threshold: threshold}
 }
 
 // observe feeds one result for a (target, vantage) track and reports which
@@ -90,7 +95,7 @@ func (d *transitionDetector) observe(targetID int64, vantage, lastStatus, status
 		return "" // still failing, no transition
 	}
 	st.streak++
-	if st.streak >= probeFailedThreshold {
+	if st.streak >= d.threshold {
 		st.failing = true
 		st.streak = 0
 		return changedetect.ChangeTypeProbeFailed

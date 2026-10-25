@@ -87,7 +87,7 @@ const (
 	// (never throttled), every real config change is worth recording.
 	ChangeTypeDeviceConfigChanged = "device_config_changed"
 	// Probe-target liveness transitions (probe engine, #608 follow-up): a
-	// target that failed probeFailedThreshold consecutive runs declares
+	// target that failed defaultProbeFailThreshold consecutive runs declares
 	// probe_failed; the first success after that emits probe_recovered. The
 	// _recovered suffix keeps the alert envelope's firing/resolved pairing
 	// working for free (see notification/alert_format.go).

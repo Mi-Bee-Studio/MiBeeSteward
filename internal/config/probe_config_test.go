@@ -22,6 +22,7 @@ func TestNormalizeProbe(t *testing.T) {
 	normalizeProbe(cfg)
 	p := &cfg.Probe
 	require.Equal(t, 8, p.MaxConcurrency)
+	require.Equal(t, 3, p.NotifyFailThreshold, "notify_fail_threshold default")
 	require.Equal(t, 15, p.Quality.WindowMinutes)
 	require.Equal(t, 120, p.Quality.IntervalSeconds)
 	require.Equal(t, 800, p.Quality.HTTPDegradedMs)
@@ -53,6 +54,18 @@ func TestNormalizeProbe(t *testing.T) {
 	normalizeProbe(cfg)
 	require.Len(t, cfg.Probe.Quality.Groups, 1)
 	require.Contains(t, cfg.Probe.Quality.Groups, "mine")
+
+	// notify_fail_threshold: 0 → default 3, negative clamps to 1, explicit
+	// values are kept.
+	cfg = &Config{}
+	normalizeProbe(cfg)
+	require.Equal(t, 3, cfg.Probe.NotifyFailThreshold)
+	cfg.Probe.NotifyFailThreshold = -1
+	normalizeProbe(cfg)
+	require.Equal(t, 1, cfg.Probe.NotifyFailThreshold)
+	cfg.Probe.NotifyFailThreshold = 5
+	normalizeProbe(cfg)
+	require.Equal(t, 5, cfg.Probe.NotifyFailThreshold)
 }
 
 // validProbeConfig builds the minimal center-mode Config that passes the
@@ -66,6 +79,16 @@ func validProbeConfig() *Config {
 // tests; the Load path normalizes first).
 func TestValidateProbe(t *testing.T) {
 	require.NoError(t, Validate(validProbeConfig()), "zero config is valid unnormalized")
+
+	// notify_fail_threshold ceiling.
+	badThreshold := validProbeConfig()
+	badThreshold.Probe.NotifyFailThreshold = 11
+	require.ErrorContains(t, Validate(badThreshold), "notify_fail_threshold")
+
+	// agent_fleet.offline_threshold_minutes range (0 = default via Load).
+	badOffline := validProbeConfig()
+	badOffline.AgentFleet.OfflineThresholdMinutes = 1441
+	require.ErrorContains(t, Validate(badOffline), "offline_threshold_minutes")
 
 	bad := validProbeConfig()
 	bad.Probe.MaxConcurrency = 65

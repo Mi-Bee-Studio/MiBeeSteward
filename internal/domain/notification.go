@@ -112,7 +112,7 @@ const (
 	RuleEventTypeSpeaksWithNew   = "speaks_with_new"
 	RuleEventTypeListenPortAdded = "listen_port_added"
 	// Probe-target liveness transitions (#608 follow-up): a target failing
-	// probeFailedThreshold consecutive runs declares probe_failed; the first
+	// defaultProbeFailThreshold consecutive runs declares probe_failed; the first
 	// success after that emits probe_recovered. entity_type=probe_target.
 	RuleEventTypeProbeFailed    = "probe_failed"
 	RuleEventTypeProbeRecovered = "probe_recovered"
