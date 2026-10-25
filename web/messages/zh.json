@@ -863,7 +863,7 @@
 		"Payload Format": "载荷格式",
 		"Payload Format Raw": "原始 JSON",
 		"Payload Format Alert": "标准告警信封",
-		"Payload Format Help": "原始 JSON 直接发送 Steward 自身载荷；标准告警信封发送通用的 {type, severity, title, body, source_ref, resolved, dedup_key} 事件结构，适合对接外部告警中心。",
+		"Payload Format Help": "原始 JSON 直接发送 Steward 自身载荷；标准告警信封发送通用的事件结构（字段：type、severity、title、body、source_ref、resolved、dedup_key），适合对接外部告警中心。",
 		"Alert Source": "事件来源标识",
 		"Alert Source Placeholder": "mibee-steward",
 		"Alert Source Help": "告警信封中的 source 字段与去重键前缀，用于在接收方标识 Steward（仅告警信封格式生效）",
