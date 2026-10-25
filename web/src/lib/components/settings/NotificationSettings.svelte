@@ -483,6 +483,8 @@
 			case 'device_changed': return m["notifications.Event Device Changed"]();
 			case 'probe_failed': return m["notifications.Event Probe Failed"]();
 			case 'probe_recovered': return m["notifications.Event Probe Recovered"]();
+			case 'agent_offline': return m["notifications.Event Agent Offline"]();
+			case 'agent_recovered': return m["notifications.Event Agent Recovered"]();
 		}
 		return t;
 	}
@@ -1187,6 +1189,8 @@
 				<option value="device_changed">{m["notifications.Event Device Changed"]()}</option>
 				<option value="probe_failed">{m["notifications.Event Probe Failed"]()}</option>
 				<option value="probe_recovered">{m["notifications.Event Probe Recovered"]()}</option>
+				<option value="agent_offline">{m["notifications.Event Agent Offline"]()}</option>
+				<option value="agent_recovered">{m["notifications.Event Agent Recovered"]()}</option>
 			</select>
 		</div>
 

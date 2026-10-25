@@ -130,6 +130,8 @@ func (e *RuleEngine) handleEvent(ctx context.Context, row db.ChangeLog) {
 		e.handleDeviceEvent(ctx, row)
 	case changedetect.EntityTypeProbeTarget:
 		e.handleProbeEvent(ctx, row)
+	case changedetect.EntityTypeAgent:
+		e.handleAgentEvent(ctx, row)
 	}
 }
 
@@ -301,12 +303,110 @@ func eventTitle(changeType string) string {
 	return "Device event"
 }
 
+// agentSnap is the after_data snapshot the agentwatch sweeper stamps on its
+// change_log rows (agent liveness). The snapshot is the identity source — it
+// is seconds old at dispatch and survives agent deregistration.
+type agentSnap struct {
+	AgentID  string `json:"agent_id"`
+	Hostname string `json:"hostname"`
+	Version  string `json:"version"`
+}
+
+// handleAgentEvent matches agent fleet liveness transitions (agent_offline /
+// agent_recovered). Like probe events, agent rules support scope=all only.
+func (e *RuleEngine) handleAgentEvent(ctx context.Context, row db.ChangeLog) {
+	rules, err := e.queries.ListEnabledRulesByEventType(ctx, row.ChangeType)
+	if err != nil {
+		e.logger.Error("notification rule engine: load rules failed", "event_type", row.ChangeType, "error", err)
+		return
+	}
+	if len(rules) == 0 {
+		return
+	}
+
+	snap := agentSnap{AgentID: "unknown-agent"}
+	if row.AfterData != nil {
+		var s agentSnap
+		if err := json.Unmarshal([]byte(*row.AfterData), &s); err != nil || s.AgentID == "" {
+			s = agentSnap{AgentID: "unknown-agent"}
+		} else {
+			snap = s
+		}
+	}
+	if row.AgentID != nil && snap.AgentID == "unknown-agent" {
+		snap.AgentID = *row.AgentID
+	}
+
+	entityKey := "agent:" + snap.AgentID
+	for _, rule := range rules {
+		if rule.ScopeType != domain.RuleScopeAll {
+			continue
+		}
+		if !e.cooldownAllows(rule.ID, entityKey, rule.CooldownMinutes) {
+			continue
+		}
+		e.dispatchAgent(ctx, rule, row, snap)
+		e.markFired(ctx, rule.ID, entityKey)
+	}
+}
+
+// dispatchAgent mirrors dispatch() for agent events: resolve the channel,
+// build an agent-shaped payload, hand off to the Dispatcher.
+func (e *RuleEngine) dispatchAgent(ctx context.Context, rule db.NotificationRule, row db.ChangeLog, snap agentSnap) {
+	ch, err := e.queries.GetChannelByID(ctx, rule.ChannelID)
+	if err != nil {
+		e.logger.Error("notification rule engine: resolve channel failed", "rule_id", rule.ID, "channel_id", rule.ChannelID, "error", err)
+		return
+	}
+	if ch.Enabled == 0 {
+		return
+	}
+	payload := buildAgentPayload(rule, row, snap)
+	ruleID := rule.ID
+	e.dispatcher.Dispatch(ctx, domain.ChannelType(ch.Type), json.RawMessage(ch.Config), payload, &ruleID, ch.ID)
+}
+
+// buildAgentPayload constructs the agent-event payload. The display name is
+// the hostname (the agent id is the stable identity and rides in source_ref).
+func buildAgentPayload(rule db.NotificationRule, row db.ChangeLog, snap agentSnap) Payload {
+	title := "Agent offline"
+	if row.ChangeType == changedetect.ChangeTypeAgentRecovered {
+		title = "Agent recovered"
+	}
+	name := snap.Hostname
+	if name == "" {
+		name = snap.AgentID
+	}
+	body := "Agent: " + snap.AgentID + "\n" +
+		"Hostname: " + snap.Hostname + "\n" +
+		"Version: " + snap.Version + "\n" +
+		"Event: " + row.ChangeType + "\n" +
+		"Detected at: " + row.DetectedAt.Format(time.RFC3339)
+
+	meta := map[string]any{
+		"event_type":  row.ChangeType,
+		"agent_id":    snap.AgentID,
+		"agent_name":  snap.Hostname,
+		"rule_id":     rule.ID,
+		"rule_name":   rule.Name,
+		"detected_at": row.DetectedAt.Format(time.RFC3339),
+		"source_ref":  "agent/" + snap.AgentID,
+	}
+	metaJSON, _ := json.Marshal(meta)
+	return Payload{
+		Subject:  title + ": " + name,
+		Body:     body,
+		Metadata: metaJSON,
+	}
+}
+
 // probeSnap is the after_data snapshot the probe engine stamps on its
 // change_log rows; the fallback identity source when the target row is gone.
 type probeSnap struct {
 	TargetName string `json:"target_name"`
 	Module     string `json:"module"`
 	Target     string `json:"target"`
+	Vantage    string `json:"vantage"`
 	Error      string `json:"error"`
 }
 
@@ -394,6 +494,7 @@ func buildProbePayload(rule db.NotificationRule, row db.ChangeLog, snap probeSna
 	body := "Target: " + snap.TargetName + "\n" +
 		"Module: " + snap.Module + "\n" +
 		"Address: " + snap.Target + "\n" +
+		"Vantage: " + snap.Vantage + "\n" +
 		"Event: " + row.ChangeType + "\n"
 	if snap.Error != "" {
 		body += "Error: " + snap.Error + "\n"
@@ -408,6 +509,9 @@ func buildProbePayload(rule db.NotificationRule, row db.ChangeLog, snap probeSna
 		"rule_id":        rule.ID,
 		"rule_name":      rule.Name,
 		"detected_at":    row.DetectedAt.Format(time.RFC3339),
+	}
+	if snap.Vantage != "" {
+		meta["vantage"] = snap.Vantage
 	}
 	if snap.Error != "" {
 		meta["error"] = snap.Error

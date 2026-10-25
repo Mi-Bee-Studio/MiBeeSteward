@@ -15,28 +15,39 @@ import (
 	"mibee-steward/internal/changedetect"
 )
 
-// probeFailedThreshold is how many consecutive failing runs a target needs
+// probeFailedThreshold is how many consecutive failing runs a track needs
 // before probe_failed is declared. Three was chosen over one deliberate
 // flap-damping: a single lost packet on a 300s cadence must not page anyone,
 // while 3×interval (15 min at the recommended cadence) is still well inside
 // "the service is down" territory.
 const probeFailedThreshold = 3
 
-// transitionDetector is the probe engine's liveness state machine. It watches
-// every center-executed result per target and declares transitions:
+// transitionDetector is the probe engine's liveness state machine, keyed per
+// (target, vantage) track — the center's own execution track and each agent's
+// reporting track declare failures independently (a site can be fine from the
+// center and dead from an agent's network, which is exactly the signal worth
+// notifying). All tracks of one target share the notification identity
+// (source_ref probe/<id>, rule cooldown key), so a site failing on every
+// vantage still produces one dispatch per rule cooldown window.
 //
 //	ok --(N consecutive fails)--> failing  → emits probe_failed
 //	failing --(any success)--> ok          → emits probe_recovered
 //
 // Failures while already failing emit nothing (the state did not change); the
 // receiving side's dedup/cooldown would collapse repeats anyway. State is
-// in-memory: on restart a target whose persisted last_status already says
-// failing is seeded AS failing without emitting — the missed transition stays
-// quiet (the target is visibly failing in the probes UI), while a later
-// recovery still emits normally.
+// in-memory: the center track seeds from the target's persisted last_status
+// on first sight (silently — the target is already visibly failing in the
+// probes UI, no synthesized stale alert); agent tracks have no persisted
+// per-vantage state and start fresh, so an already-failing agent track
+// re-declares after threshold more failures following a center restart.
 type transitionDetector struct {
 	mu     sync.Mutex
-	states map[int64]*probeState
+	states map[trackKey]*probeState
+}
+
+type trackKey struct {
+	targetID int64
+	vantage  string
 }
 
 type probeState struct {
@@ -46,22 +57,24 @@ type probeState struct {
 
 // newTransitionDetector builds an empty detector.
 func newTransitionDetector() *transitionDetector {
-	return &transitionDetector{states: make(map[int64]*probeState)}
+	return &transitionDetector{states: make(map[trackKey]*probeState)}
 }
 
-// observe feeds one result for a target and reports which change type to emit,
-// if any. lastStatus is the target's persisted last_status BEFORE this result
-// ("" when unknown), used only to seed first sight.
-func (d *transitionDetector) observe(targetID int64, lastStatus string, status string) string {
+// observe feeds one result for a (target, vantage) track and reports which
+// change type to emit, if any. lastStatus is the track's persisted status
+// BEFORE this result; only the center track has one ("" when unknown), which
+// is used solely to seed first sight.
+func (d *transitionDetector) observe(targetID int64, vantage, lastStatus, status string) string {
 	failed := status != probeStatusSuccess
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	st, ok := d.states[targetID]
+	key := trackKey{targetID: targetID, vantage: vantage}
+	st, ok := d.states[key]
 	if !ok {
 		// First sight this process: adopt the persisted state silently.
 		st = &probeState{failing: lastStatus != "" && lastStatus != probeStatusSuccess}
-		d.states[targetID] = st
+		d.states[key] = st
 	}
 
 	if !failed {
@@ -85,14 +98,15 @@ func (d *transitionDetector) observe(targetID int64, lastStatus string, status s
 	return ""
 }
 
-// prune drops state for targets absent from present so deleted/disabled
-// targets do not leak entries (mirrors the engine's nextDue pruning).
+// prune drops all tracks of targets absent from present so deleted/disabled
+// targets do not leak entries (mirrors the engine's nextDue pruning; agent
+// tracks die with their target, not with their plan).
 func (d *transitionDetector) prune(present map[int64]bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	for id := range d.states {
-		if !present[id] {
-			delete(d.states, id)
+	for k := range d.states {
+		if !present[k.targetID] {
+			delete(d.states, k)
 		}
 	}
 }

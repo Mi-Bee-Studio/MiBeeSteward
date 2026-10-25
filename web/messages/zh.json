@@ -879,6 +879,8 @@
 		"Event Device Changed": "设备变更",
 		"Event Probe Failed": "拨测失败",
 		"Event Probe Recovered": "拨测恢复",
+		"Event Agent Offline": "采集器离线",
+		"Event Agent Recovered": "采集器恢复",
 		"Scope": "作用范围",
 		"Scope All": "全部设备",
 		"Scope Network": "指定网络",

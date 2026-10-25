@@ -93,6 +93,12 @@ const (
 	// working for free (see notification/alert_format.go).
 	ChangeTypeProbeFailed    = "probe_failed"
 	ChangeTypeProbeRecovered = "probe_recovered"
+	// Agent fleet liveness (agentwatch.Sweeper): an agent whose
+	// last_report_at went stale past the threshold declares agent_offline (a
+	// dead agent is a blind network segment); a fresh report after that
+	// emits agent_recovered.
+	ChangeTypeAgentOffline   = "agent_offline"
+	ChangeTypeAgentRecovered = "agent_recovered"
 )
 
 // EntityType discriminates which entity a change_log row concerns. "device" is
@@ -101,6 +107,7 @@ const (
 const (
 	EntityTypeDevice      = "device"
 	EntityTypeProbeTarget = "probe_target"
+	EntityTypeAgent       = "agent"
 )
 
 // Severity ranks a change event for UI triage. The change-history page defaults

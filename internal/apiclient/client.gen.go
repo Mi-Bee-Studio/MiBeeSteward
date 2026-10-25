@@ -401,6 +401,8 @@ func (e NotificationLogStatus) Valid() bool {
 
 // Defines values for NotificationRuleEventType.
 const (
+	NotificationRuleEventTypeAgentOffline    NotificationRuleEventType = "agent_offline"
+	NotificationRuleEventTypeAgentRecovered  NotificationRuleEventType = "agent_recovered"
 	NotificationRuleEventTypeDeviceAdded     NotificationRuleEventType = "device_added"
 	NotificationRuleEventTypeDeviceChanged   NotificationRuleEventType = "device_changed"
 	NotificationRuleEventTypeDeviceLost      NotificationRuleEventType = "device_lost"
@@ -414,6 +416,10 @@ const (
 // Valid indicates whether the value is a known member of the NotificationRuleEventType enum.
 func (e NotificationRuleEventType) Valid() bool {
 	switch e {
+	case NotificationRuleEventTypeAgentOffline:
+		return true
+	case NotificationRuleEventTypeAgentRecovered:
+		return true
 	case NotificationRuleEventTypeDeviceAdded:
 		return true
 	case NotificationRuleEventTypeDeviceChanged:

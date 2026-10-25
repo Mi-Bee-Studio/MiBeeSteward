@@ -4211,7 +4211,7 @@ Alert notification channel and rule management. Rules are gated by capability ma
 
 
 
-`event_type` values: device change events (`device_lost`, `device_recovered`, `device_added`, `device_changed`, `speaks_with_new`, `listen_port_added`; scoped all/network/device, entity_type `device`) and probe liveness events (`probe_failed`, `probe_recovered` — a target failing 3 consecutive probe runs declares `probe_failed`, the first success after that emits `probe_recovered`; scope `all` only, entity_type `probe_target`).
+`event_type` values: device change events (`device_lost`, `device_recovered`, `device_added`, `device_changed`, `speaks_with_new`, `listen_port_added`; scoped all/network/device, entity_type `device`), probe liveness events (`probe_failed`, `probe_recovered` — a track failing 3 consecutive probe runs declares `probe_failed`, the first success after that emits `probe_recovered`; per (target, vantage) track, scope `all` only, entity_type `probe_target`), and agent fleet liveness events (`agent_offline`, `agent_recovered` — an agent whose `last_report_at` is stale past 10 minutes declares `agent_offline`, its next report emits `agent_recovered`; scope `all` only, entity_type `agent`).
 
 
 

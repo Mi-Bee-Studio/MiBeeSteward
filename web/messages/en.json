@@ -879,6 +879,8 @@
 		"Event Device Changed": "Device Changed",
 		"Event Probe Failed": "Probe Failed",
 		"Event Probe Recovered": "Probe Recovered",
+		"Event Agent Offline": "Agent Offline",
+		"Event Agent Recovered": "Agent Recovered",
 		"Scope": "Scope",
 		"Scope All": "All devices",
 		"Scope Network": "Specific network",

@@ -83,8 +83,8 @@ The four chat-platform channels are "formatted webhooks": MiBee translates each 
 
 Semantics of the envelope:
 
-- `type` is the change event type (`device_lost`, `device_recovered`, `device_added`, `device_changed`, `speaks_with_new`, `listen_port_added`) or the probe liveness pair (`probe_failed` after 3 consecutive probe failures, `probe_recovered` on the first success after); a test send posts `type: "test"`.
-- `severity` maps deterministically: `device_lost` and `probe_failed` → `error`; recoveries and additions → `info`; identity changes, new conversations and new listen ports → `warning`. Steward never emits `critical` — escalation belongs to the receiving alert center.
+- `type` is the change event type (`device_lost`, `device_recovered`, `device_added`, `device_changed`, `speaks_with_new`, `listen_port_added`), the probe liveness pair (`probe_failed` after 3 consecutive probe failures on a (target, vantage) track, `probe_recovered` on the first success after; `tags.vantage` names the track), or the agent fleet pair (`agent_offline` when an agent's `last_report_at` is stale past 10 minutes, `agent_recovered` on its next report); a test send posts `type: "test"`.
+- `severity` maps deterministically: `device_lost`, `probe_failed` and `agent_offline` → `error`; recoveries and additions → `info`; identity changes, new conversations and new listen ports → `warning`. Steward never emits `critical` — escalation belongs to the receiving alert center.
 - `resolved` is `true` for `*_recovered` events, and such events carry the **same `dedup_key` as the event they resolve** (the key's type segment is the firing event, e.g. `device_recovered` → key `…/device_lost/<ref>`), so receivers pair firing/resolved the way Alertmanager pairs group keys.
 - `source_ref` is the stable device identity (MAC, falling back to IP, then name) and `dedup_key` is `<source>/<type>/<source_ref>` — receivers that key cooldown/dedup on it get stable per-device windows for free.
 - `source` defaults to `mibee-steward` and can be overridden per channel (multiple Steward instances feeding one receiver).

@@ -2822,7 +2822,7 @@ components:
       properties:
         id: {type: integer, format: int64}
         name: {type: string}
-        event_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered, speaks_with_new, listen_port_added, probe_failed, probe_recovered]}
+        event_type: {type: string, enum: [device_added, device_changed, device_lost, device_recovered, speaks_with_new, listen_port_added, probe_failed, probe_recovered, agent_offline, agent_recovered]}
         scope_type: {type: string, enum: [all, network, device]}
         scope_network_id: {type: integer, format: int64, nullable: true}
         scope_device_uuid: {type: string}

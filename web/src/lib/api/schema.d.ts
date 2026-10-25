@@ -6628,7 +6628,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            event_type: "device_added" | "device_changed" | "device_lost" | "device_recovered" | "speaks_with_new" | "listen_port_added" | "probe_failed" | "probe_recovered";
+            event_type: "device_added" | "device_changed" | "device_lost" | "device_recovered" | "speaks_with_new" | "listen_port_added" | "probe_failed" | "probe_recovered" | "agent_offline" | "agent_recovered";
             /** @enum {string} */
             scope_type: "all" | "network" | "device";
             /** Format: int64 */

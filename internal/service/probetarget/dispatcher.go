@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 )
@@ -329,6 +330,29 @@ func (s *Service) IngestAgentResults(ctx context.Context, agentID string, result
 			return accepted, err
 		}
 		accepted++
+
+		// Liveness transitions on the agent's own track, same state machine as
+		// the center's: a site fine from the center but dead from this agent's
+		// network is a vantage-local outage worth notifying (after_data carries
+		// the vantage; the notification identity stays target-level so a
+		// everywhere-outage still dispatches once per rule cooldown).
+		if s.engine != nil && s.engine.recorder != nil {
+			if ct := s.engine.transitions.observe(r.TargetID, own, "", r.Status); ct != "" {
+				s.engine.recorder.Record(ctx, changedetect.ChangeEvent{
+					ChangeType: ct,
+					EntityType: changedetect.EntityTypeProbeTarget,
+					DeviceID:   r.TargetID,
+					After: map[string]any{
+						"target_name": t.Name,
+						"module":      t.Module,
+						"target":      t.Target,
+						"vantage":     own,
+						"status":      r.Status,
+						"error":       r.ErrorMessage,
+					},
+				})
+			}
+		}
 	}
 	return accepted, nil
 }

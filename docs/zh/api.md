@@ -4207,7 +4207,7 @@ Prometheus 数据源的仪表板配置与查询透传。读（`CapDashboardRead`
 
 | `/api/v1/notification/rules/{id}` | DELETE | 需管理员 · `CapNotificationManage` | 删除规则 |
 
-`event_type` 取值：设备变更事件（`device_lost`、`device_recovered`、`device_added`、`device_changed`、`speaks_with_new`、`listen_port_added`；作用范围 all/network/device，entity_type `device`）与拨测存活事件（`probe_failed`、`probe_recovered` —— 连续 3 次拨测失败判定 `probe_failed`，此后首次成功发出 `probe_recovered`；仅支持 all 范围，entity_type `probe_target`）。
+`event_type` 取值：设备变更事件（`device_lost`、`device_recovered`、`device_added`、`device_changed`、`speaks_with_new`、`listen_port_added`；作用范围 all/network/device，entity_type `device`）、拨测存活事件（`probe_failed`、`probe_recovered` —— 某轨道连续 3 次拨测失败判定 `probe_failed`，此后首次成功发出 `probe_recovered`；按（目标 × 视角）轨道判定，仅支持 all 范围，entity_type `probe_target`）与采集器存活事件（`agent_offline`、`agent_recovered` —— `last_report_at` 陈旧超过 10 分钟判定 `agent_offline`，其下一次上报发出 `agent_recovered`；仅支持 all 范围，entity_type `agent`）。
 
 
 
