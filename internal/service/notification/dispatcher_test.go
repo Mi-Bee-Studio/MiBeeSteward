@@ -311,12 +311,10 @@ func (f SenderFunc) Send(ctx context.Context, payload Payload) SendResult {
 
 func retryDispatcher(t *testing.T, window time.Duration, sender Sender) (*Dispatcher, *recordingLogCreator) {
 	t.Helper()
-	oldSweep, oldFirst := retrySweepInterval, retryFirstDelay
-	retrySweepInterval, retryFirstDelay = 100*time.Millisecond, 200*time.Millisecond
-	t.Cleanup(func() { retrySweepInterval, retryFirstDelay = oldSweep, oldFirst })
 	log := &recordingLogCreator{}
 	d := NewDispatcher(log, nil).
 		WithRetryWindow(window).
+		withRetryPacing(200*time.Millisecond, 100*time.Millisecond, 1*time.Second).
 		WithSenderFactory(func(domain.ChannelType, json.RawMessage) (Sender, error) {
 			return sender, nil
 		})
@@ -378,10 +376,11 @@ func TestRetryWindowExpiryLogsFailure(t *testing.T) {
 		return SendResult{Success: false, Error: "connection refused (receiver down)"}
 	})
 	// window must outlive the fast ladder (~3s of in-process backoff) so the
-	// job parks; the first delayed backoff must land BEYOND the window end so
-	// the job is still parked when the sweeper sees it expired.
+	// job parks; the first delayed backoff (2s, set below) must land BEYOND
+	// the 4s window end so the job is still parked when the sweeper sees it
+	// expired.
 	d, log := retryDispatcher(t, 4*time.Second, sender)
-	retryFirstDelay = 2 * time.Second
+	d.withRetryPacing(2*time.Second, 0, 0)
 
 	d.Dispatch(context.Background(), domain.ChannelTypeWebhook, json.RawMessage(`{}`),
 		Payload{Subject: "never recovers"}, nil, 1)

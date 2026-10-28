@@ -34,12 +34,13 @@ const (
 	// process (documented limitation).
 )
 
-// Delayed-retry pacing knobs are vars so tests can shrink the timeline
-// (defaults: 30s first backoff doubling to a 5m cap, swept every 15s).
-var (
-	retrySweepInterval = 15 * time.Second
-	retryFirstDelay    = 30 * time.Second
-	retryMaxDelay      = 5 * time.Minute
+// Delayed-retry pacing defaults (30s first backoff doubling to a 5m cap,
+// swept every 15s). The per-instance pacing fields on Dispatcher let tests
+// shrink the timeline race-free under -race.
+const (
+	retrySweepIntervalDefault = 15 * time.Second
+	retryFirstDelayDefault    = 30 * time.Second
+	retryMaxDelayDefault      = 5 * time.Minute
 )
 
 // Dispatcher manages async notification delivery via a worker pool.
@@ -55,7 +56,10 @@ type Dispatcher struct {
 	// retryWindow bounds how long a retryable failure keeps requeueing
 	// (notify.retry_window_minutes; 0 = give up after the fast ladder, the
 	// historical behavior).
-	retryWindow time.Duration
+	retryWindow   time.Duration
+	sweepInterval time.Duration
+	firstDelay    time.Duration
+	maxDelay      time.Duration
 
 	delayedMu sync.Mutex
 	delayed   map[*dispatchJob]time.Time // job → next requeue attempt
@@ -88,10 +92,13 @@ func NewDispatcher(db LogCreator, logger *slog.Logger) *Dispatcher {
 		logger = slog.Default()
 	}
 	return &Dispatcher{
-		channel: make(chan dispatchJob, channelBuffer),
-		db:      db,
-		logger:  logger,
-		delayed: make(map[*dispatchJob]time.Time),
+		channel:       make(chan dispatchJob, channelBuffer),
+		db:            db,
+		logger:        logger,
+		delayed:       make(map[*dispatchJob]time.Time),
+		sweepInterval: retrySweepIntervalDefault,
+		firstDelay:    retryFirstDelayDefault,
+		maxDelay:      retryMaxDelayDefault,
 	}
 }
 
@@ -103,6 +110,21 @@ func (d *Dispatcher) WithRetryWindow(window time.Duration) *Dispatcher {
 		window = 0
 	}
 	d.retryWindow = window
+	return d
+}
+
+// withRetryPacing shrinks the delayed-retry timeline (tests only): first
+// backoff, sweep interval and backoff cap. Must be called before Start.
+func (d *Dispatcher) withRetryPacing(first, sweep, max time.Duration) *Dispatcher {
+	if first > 0 {
+		d.firstDelay = first
+	}
+	if sweep > 0 {
+		d.sweepInterval = sweep
+	}
+	if max > 0 {
+		d.maxDelay = max
+	}
 	return d
 }
 
@@ -165,7 +187,7 @@ func (d *Dispatcher) Stop() {
 // channel; jobs whose bounded window expired get their final failed row.
 func (d *Dispatcher) retrySweeper(ctx context.Context) {
 	defer d.wg.Done()
-	ticker := time.NewTicker(retrySweepInterval)
+	ticker := time.NewTicker(d.sweepInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -197,7 +219,7 @@ func (d *Dispatcher) retrySweeper(ctx context.Context) {
 					// channel full: park it for the next sweep instead of
 					// dropping — the window still bounds total effort.
 					d.delayedMu.Lock()
-					d.delayed[&parked] = now.Add(retrySweepInterval)
+					d.delayed[&parked] = now.Add(d.sweepInterval)
 					d.delayedMu.Unlock()
 				}
 			}
@@ -288,11 +310,11 @@ func (d *Dispatcher) processJob(job dispatchJob) {
 	if d.retryWindow > 0 && lastResult.IsRetryable() &&
 		time.Since(job.firstAttempt) < d.retryWindow {
 		if job.backoff == 0 {
-			job.backoff = retryFirstDelay
-		} else if job.backoff < retryMaxDelay {
+			job.backoff = d.firstDelay
+		} else if job.backoff < d.maxDelay {
 			job.backoff *= 2
-			if job.backoff > retryMaxDelay {
-				job.backoff = retryMaxDelay
+			if job.backoff > d.maxDelay {
+				job.backoff = d.maxDelay
 			}
 		}
 		d.delayedMu.Lock()
