@@ -28,6 +28,7 @@ type Config struct {
 	Auth       AuthConfig       `koanf:"auth"`
 	Heartbeat  HeartbeatConfig  `koanf:"heartbeat"`
 	Probe      ProbeConfig      `koanf:"probe"`
+	Notify     NotifyConfig     `koanf:"notify"`
 	Prometheus PrometheusConfig `koanf:"prometheus"`
 	Dashboard  DashboardConfig  `koanf:"dashboard"`
 	Storage    StorageConfig    `koanf:"storage"`
@@ -136,6 +137,16 @@ type FingerprintSyncConfig struct {
 	// Interval is the poll cadence (duration string, default "10m"; clamped
 	// to >= 1m — the corpus changes rarely).
 	Interval string `koanf:"interval"`
+}
+
+// NotifyConfig tunes the notification dispatcher (#633). RetryWindowMinutes
+// bounds how long a retryable delivery failure (receiver briefly
+// unreachable) keeps requeueing with growing backoff before a final failed
+// row: 0 = the documented default (30), negative = disabled (give up after
+// the fast in-process ladder). In-memory only — a window does not survive a
+// restart.
+type NotifyConfig struct {
+	RetryWindowMinutes int `koanf:"retry_window_minutes"`
 }
 
 // AgentFleetConfig is the CENTER-side fleet-management switch block (#278).
@@ -478,6 +489,13 @@ func Load(configPath string) (*Config, error) {
 	if cfg.AgentFleet.OfflineThresholdMinutes == 0 {
 		cfg.AgentFleet.OfflineThresholdMinutes = 10
 	}
+	// notify.retry_window_minutes: 0 = the documented default (30); negative
+	// disables the delayed-retry window (#633).
+	if cfg.Notify.RetryWindowMinutes == 0 {
+		cfg.Notify.RetryWindowMinutes = 30
+	} else if cfg.Notify.RetryWindowMinutes < 0 {
+		cfg.Notify.RetryWindowMinutes = 0
+	}
 
 	// Validate
 	if err := Validate(&cfg); err != nil {
@@ -649,6 +667,9 @@ func Validate(cfg *Config) error {
 	}
 	if m := cfg.AgentFleet.OfflineThresholdMinutes; m < 0 || m > 1440 {
 		return fmt.Errorf("agent_fleet.offline_threshold_minutes must be between 1 and 1440")
+	}
+	if m := cfg.Notify.RetryWindowMinutes; m > 1440 {
+		return fmt.Errorf("notify.retry_window_minutes must be at most 1440")
 	}
 
 	return nil
