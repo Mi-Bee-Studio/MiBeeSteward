@@ -26,6 +26,21 @@ const (
 	channelBuffer  = 100
 	maxRetries     = 3
 	retryBaseDelay = 1 * time.Second
+	// delayed-retry pacing (issue #633): after the in-process backoff ladder
+	// (1s/2s/4s) is exhausted, a retryable failure requeues at these growing
+	// delays until the bounded window expires. Covers the "receiver briefly
+	// unreachable" outage (a restarted alert center, a network blip) without
+	// any schema change — the delayed set is in-memory and dies with the
+	// process (documented limitation).
+)
+
+// Delayed-retry pacing defaults (30s first backoff doubling to a 5m cap,
+// swept every 15s). The per-instance pacing fields on Dispatcher let tests
+// shrink the timeline race-free under -race.
+const (
+	retrySweepIntervalDefault = 15 * time.Second
+	retryFirstDelayDefault    = 30 * time.Second
+	retryMaxDelayDefault      = 5 * time.Minute
 )
 
 // Dispatcher manages async notification delivery via a worker pool.
@@ -37,6 +52,17 @@ type Dispatcher struct {
 	wg            sync.WaitGroup
 	cancel        context.CancelFunc
 	senderFactory SenderFactory
+
+	// retryWindow bounds how long a retryable failure keeps requeueing
+	// (notify.retry_window_minutes; 0 = give up after the fast ladder, the
+	// historical behavior).
+	retryWindow   time.Duration
+	sweepInterval time.Duration
+	firstDelay    time.Duration
+	maxDelay      time.Duration
+
+	delayedMu sync.Mutex
+	delayed   map[*dispatchJob]time.Time // job → next requeue attempt
 }
 
 // dispatchJob represents a single notification to be delivered.
@@ -47,6 +73,10 @@ type dispatchJob struct {
 	payload   Payload
 	ruleID    *int64
 	channelID int64
+
+	// delayed-retry bookkeeping (firstAttempt is set on Dispatch)
+	firstAttempt time.Time
+	backoff      time.Duration // next delayed delay; 0 = not yet delayed
 }
 
 // LogCreator abstracts the DB create call for testability.
@@ -62,10 +92,40 @@ func NewDispatcher(db LogCreator, logger *slog.Logger) *Dispatcher {
 		logger = slog.Default()
 	}
 	return &Dispatcher{
-		channel: make(chan dispatchJob, channelBuffer),
-		db:      db,
-		logger:  logger,
+		channel:       make(chan dispatchJob, channelBuffer),
+		db:            db,
+		logger:        logger,
+		delayed:       make(map[*dispatchJob]time.Time),
+		sweepInterval: retrySweepIntervalDefault,
+		firstDelay:    retryFirstDelayDefault,
+		maxDelay:      retryMaxDelayDefault,
 	}
+}
+
+// WithRetryWindow enables the bounded delayed-retry window (#633): retryable
+// failures keep requeueing with growing backoff until the window since the
+// first dispatch attempt expires. Must be called before Start.
+func (d *Dispatcher) WithRetryWindow(window time.Duration) *Dispatcher {
+	if window < 0 {
+		window = 0
+	}
+	d.retryWindow = window
+	return d
+}
+
+// withRetryPacing shrinks the delayed-retry timeline (tests only): first
+// backoff, sweep interval and backoff cap. Must be called before Start.
+func (d *Dispatcher) withRetryPacing(first, sweep, maxDelay time.Duration) *Dispatcher {
+	if first > 0 {
+		d.firstDelay = first
+	}
+	if sweep > 0 {
+		d.sweepInterval = sweep
+	}
+	if maxDelay > 0 {
+		d.maxDelay = maxDelay
+	}
+	return d
 }
 
 // WithSenderFactory allows overriding the sender factory (for testing).
@@ -106,28 +166,78 @@ func (d *Dispatcher) Start(ctx context.Context) {
 		d.wg.Add(1)
 		go d.worker(ctx, i)
 	}
+	if d.retryWindow > 0 {
+		d.wg.Add(1)
+		go d.retrySweeper(ctx)
+	}
 
-	d.logger.Info("notification dispatcher started", "workers", defaultWorkers)
+	d.logger.Info("notification dispatcher started", "workers", defaultWorkers,
+		"retry_window", d.retryWindow)
 }
 
-// Stop signals workers to stop and waits for completion.
+// Stop signals workers to stop and waits for completion. The delayed-retry
+// set is dropped with the process (documented: a window does not survive a
+// restart).
 func (d *Dispatcher) Stop() {
-	if d.cancel != nil {
-		d.cancel()
-	}
+	d.cancel()
 	d.wg.Wait()
+}
+
+// retrySweeper periodically moves due delayed jobs back onto the dispatch
+// channel; jobs whose bounded window expired get their final failed row.
+func (d *Dispatcher) retrySweeper(ctx context.Context) {
+	defer d.wg.Done()
+	ticker := time.NewTicker(d.sweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			var due []dispatchJob
+			d.delayedMu.Lock()
+			for job, at := range d.delayed {
+				if now.Before(at) {
+					continue
+				}
+				if now.Sub(job.firstAttempt) >= d.retryWindow {
+					delete(d.delayed, job)
+					d.logResult(ctx, job.ruleID, job.channelID, "failed", job.payload,
+						"receiver unreachable: retry window expired")
+					continue
+				}
+				delete(d.delayed, job)
+				due = append(due, *job)
+			}
+			d.delayedMu.Unlock()
+			for _, job := range due {
+				parked := job
+				select {
+				case d.channel <- job:
+				default:
+					// channel full: park it for the next sweep instead of
+					// dropping — the window still bounds total effort.
+					d.delayedMu.Lock()
+					d.delayed[&parked] = now.Add(d.sweepInterval)
+					d.delayedMu.Unlock()
+				}
+			}
+		}
+	}
 }
 
 // Dispatch sends a job to the worker pool. Non-blocking, returns immediately.
 // If the channel is full, the job is dropped and logged.
 func (d *Dispatcher) Dispatch(ctx context.Context, channelType domain.ChannelType, config json.RawMessage, payload Payload, ruleID *int64, channelID int64) {
 	job := dispatchJob{
-		ctx:       ctx,
-		channel:   channelType,
-		config:    config,
-		payload:   payload,
-		ruleID:    ruleID,
-		channelID: channelID,
+		ctx:          ctx,
+		channel:      channelType,
+		config:       config,
+		payload:      payload,
+		ruleID:       ruleID,
+		channelID:    channelID,
+		firstAttempt: time.Now(),
 	}
 
 	select {
@@ -191,6 +301,29 @@ func (d *Dispatcher) processJob(job dispatchJob) {
 			d.logResult(job.ctx, job.ruleID, job.channelID, "failed", job.payload, result.Error)
 			return
 		}
+	}
+
+	// Fast ladder exhausted. A retryable failure inside an active window
+	// (#633) parks the job for a later delayed attempt instead of giving up —
+	// the sweeper requeues it (or writes the final failed row when the
+	// window expires).
+	if d.retryWindow > 0 && lastResult.IsRetryable() &&
+		time.Since(job.firstAttempt) < d.retryWindow {
+		if job.backoff == 0 {
+			job.backoff = d.firstDelay
+		} else if job.backoff < d.maxDelay {
+			job.backoff *= 2
+			if job.backoff > d.maxDelay {
+				job.backoff = d.maxDelay
+			}
+		}
+		d.delayedMu.Lock()
+		d.delayed[&job] = time.Now().Add(job.backoff)
+		d.delayedMu.Unlock()
+		d.logger.Warn("notification parked for delayed retry",
+			"channel", job.channel, "backoff", job.backoff,
+			"window_left", d.retryWindow-time.Since(job.firstAttempt))
+		return
 	}
 
 	// All retries exhausted

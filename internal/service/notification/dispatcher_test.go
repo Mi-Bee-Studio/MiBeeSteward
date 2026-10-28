@@ -3,6 +3,7 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -304,4 +305,145 @@ type SenderFunc func(ctx context.Context, payload Payload) SendResult
 
 func (f SenderFunc) Send(ctx context.Context, payload Payload) SendResult {
 	return f(ctx, payload)
+}
+
+// --- #633 bounded delayed-retry window ---
+
+func retryDispatcher(t *testing.T, window time.Duration, sender Sender) (*Dispatcher, *recordingLogCreator) {
+	t.Helper()
+	log := &recordingLogCreator{}
+	d := NewDispatcher(log, nil).
+		WithRetryWindow(window).
+		withRetryPacing(200*time.Millisecond, 100*time.Millisecond, 1*time.Second).
+		WithSenderFactory(func(domain.ChannelType, json.RawMessage) (Sender, error) {
+			return sender, nil
+		})
+	d.Start(context.Background())
+	t.Cleanup(d.Stop)
+	return d, log
+}
+
+func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("condition not met in time")
+}
+
+// TestRetryWindowRecoversAfterOutage: sender fails while "the receiver is
+// down", then recovers — the parked job must be requeued by the sweeper and
+// delivered inside the window.
+func TestRetryWindowRecoversAfterOutage(t *testing.T) {
+	var calls int32
+	var recovered int32
+	sender := SenderFunc(func(_ context.Context, _ Payload) SendResult {
+		if atomic.AddInt32(&calls, 1) <= maxRetries {
+			return SendResult{Success: false, Error: "connection refused (receiver down)"}
+		}
+		atomic.StoreInt32(&recovered, 1)
+		return SendResult{Success: true}
+	})
+	d, log := retryDispatcher(t, 5*time.Minute, sender)
+
+	d.Dispatch(context.Background(), domain.ChannelTypeWebhook, json.RawMessage(`{"url":"http://x"}`),
+		Payload{Subject: "outage"}, nil, 1)
+
+	waitFor(t, 10*time.Second, func() bool { return atomic.LoadInt32(&recovered) == 1 })
+	// exactly one successful row, and no failed row (never gave up)
+	found := false
+	for _, row := range log.snapshot() {
+		if row.Status == "sent" {
+			found = true
+		}
+		if row.Status == "failed" {
+			t.Errorf("unexpected failed row: %+v", row)
+		}
+	}
+	if !found {
+		t.Error("no sent row after recovery")
+	}
+}
+
+// TestRetryWindowExpiryLogsFailure: the receiver never comes back — the job
+// gets a final failed row once the window expires.
+func TestRetryWindowExpiryLogsFailure(t *testing.T) {
+	sender := SenderFunc(func(_ context.Context, _ Payload) SendResult {
+		return SendResult{Success: false, Error: "connection refused (receiver down)"}
+	})
+	// window must outlive the fast ladder (~3s of in-process backoff) so the
+	// job parks; the first delayed backoff (2s, set below) must land BEYOND
+	// the 4s window end so the job is still parked when the sweeper sees it
+	// expired.
+	d, log := retryDispatcher(t, 4*time.Second, sender)
+	d.withRetryPacing(2*time.Second, 0, 0)
+
+	d.Dispatch(context.Background(), domain.ChannelTypeWebhook, json.RawMessage(`{}`),
+		Payload{Subject: "never recovers"}, nil, 1)
+
+	waitFor(t, 10*time.Second, func() bool {
+		for _, row := range log.snapshot() {
+			if row.Status == "failed" && strings.Contains(row.ErrorMessage, "retry window expired") {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// TestRetryWindowDisabledKeepsLegacyBehavior: window 0 → the fast ladder is
+// all there is; a retryable failure logs failed immediately (old semantics).
+func TestRetryWindowDisabledKeepsLegacyBehavior(t *testing.T) {
+	sender := SenderFunc(func(_ context.Context, _ Payload) SendResult {
+		return SendResult{Success: false, Error: "connection refused (receiver down)"}
+	})
+	d, log := retryDispatcher(t, 0, sender)
+
+	d.Dispatch(context.Background(), domain.ChannelTypeWebhook, json.RawMessage(`{}`),
+		Payload{Subject: "legacy"}, nil, 1)
+
+	waitFor(t, 15*time.Second, func() bool {
+		for _, row := range log.snapshot() {
+			if row.Status == "failed" {
+				return true
+			}
+		}
+		return false
+	})
+	d.delayedMu.Lock()
+	parked := len(d.delayed)
+	d.delayedMu.Unlock()
+	if parked != 0 {
+		t.Errorf("window disabled must not park jobs, parked=%d", parked)
+	}
+}
+
+// TestRetryWindowIgnoresPermanentErrors: non-retryable failures never park.
+func TestRetryWindowIgnoresPermanentErrors(t *testing.T) {
+	sender := SenderFunc(func(_ context.Context, _ Payload) SendResult {
+		return SendResult{Success: false, Error: "webhook URL is required", Permanent: true}
+	})
+	d, log := retryDispatcher(t, 5*time.Minute, sender)
+
+	d.Dispatch(context.Background(), domain.ChannelTypeWebhook, json.RawMessage(`{}`),
+		Payload{Subject: "bad config"}, nil, 1)
+
+	waitFor(t, 15*time.Second, func() bool {
+		for _, row := range log.snapshot() {
+			if row.Status == "failed" && strings.Contains(row.ErrorMessage, "webhook URL") {
+				return true
+			}
+		}
+		return false
+	})
+	d.delayedMu.Lock()
+	parked := len(d.delayed)
+	d.delayedMu.Unlock()
+	if parked != 0 {
+		t.Errorf("permanent errors must not park, parked=%d", parked)
+	}
 }

@@ -999,7 +999,8 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 
 	// Notification service, dispatcher, and handler
 	notificationSvc := service.NewNotificationService(db.New(notifyDB))
-	notificationDispatcher := notification.NewDispatcher(db.New(notifyDB), nil)
+	notificationDispatcher := notification.NewDispatcher(db.New(notifyDB), nil).
+		WithRetryWindow(time.Duration(cfg.Notify.RetryWindowMinutes) * time.Minute)
 	notificationDispatcher.Start(context.Background())
 	notificationHandler := handler.NewNotificationHandler(notificationSvc, notificationDispatcher, auditRepo)
 

@@ -45,6 +45,16 @@ func (r *recordingLogCreator) count() int {
 	return len(r.logs)
 }
 
+// snapshot returns a copy of the logs for race-free inspection from the test
+// goroutine while dispatcher workers may still be appending.
+func (r *recordingLogCreator) snapshot() []db.CreateNotificationLogParams {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]db.CreateNotificationLogParams, len(r.logs))
+	copy(out, r.logs)
+	return out
+}
+
 // recordingSender is a Sender that records every payload it "sent".
 type recordingSender struct {
 	mu    sync.Mutex

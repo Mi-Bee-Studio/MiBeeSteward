@@ -73,6 +73,15 @@ snmp_trap:
   bind: ":162"
   community: "public"
 
+# notify tunes the notification dispatcher. retry_window_minutes bounds how
+# long a retryable delivery failure (receiver briefly unreachable, e.g. the
+# alert center restarting) keeps requeuing with growing backoff before a
+# final failed row: 0 = default 30; negative = disabled (give up after the
+# fast in-process ladder). In-memory only - a window does not survive a
+# restart. MIBEE_NOTIFY_RETRY_WINDOW_MINUTES.
+notify:
+  retry_window_minutes: 30
+
 # agent_fleet is the CENTER-side fleet-management block (#278).
 agent_fleet:
   remote_ops_enabled: false # allow ENQUEUEING ops commands (restart /
