@@ -356,7 +356,7 @@ func TestRetryWindowRecoversAfterOutage(t *testing.T) {
 	waitFor(t, 10*time.Second, func() bool { return atomic.LoadInt32(&recovered) == 1 })
 	// exactly one successful row, and no failed row (never gave up)
 	found := false
-	for _, row := range log.logs {
+	for _, row := range log.snapshot() {
 		if row.Status == "sent" {
 			found = true
 		}
@@ -386,7 +386,7 @@ func TestRetryWindowExpiryLogsFailure(t *testing.T) {
 		Payload{Subject: "never recovers"}, nil, 1)
 
 	waitFor(t, 10*time.Second, func() bool {
-		for _, row := range log.logs {
+		for _, row := range log.snapshot() {
 			if row.Status == "failed" && strings.Contains(row.ErrorMessage, "retry window expired") {
 				return true
 			}
@@ -407,7 +407,7 @@ func TestRetryWindowDisabledKeepsLegacyBehavior(t *testing.T) {
 		Payload{Subject: "legacy"}, nil, 1)
 
 	waitFor(t, 15*time.Second, func() bool {
-		for _, row := range log.logs {
+		for _, row := range log.snapshot() {
 			if row.Status == "failed" {
 				return true
 			}
@@ -433,7 +433,7 @@ func TestRetryWindowIgnoresPermanentErrors(t *testing.T) {
 		Payload{Subject: "bad config"}, nil, 1)
 
 	waitFor(t, 15*time.Second, func() bool {
-		for _, row := range log.logs {
+		for _, row := range log.snapshot() {
 			if row.Status == "failed" && strings.Contains(row.ErrorMessage, "webhook URL") {
 				return true
 			}
