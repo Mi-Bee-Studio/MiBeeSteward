@@ -115,15 +115,15 @@ func (d *Dispatcher) WithRetryWindow(window time.Duration) *Dispatcher {
 
 // withRetryPacing shrinks the delayed-retry timeline (tests only): first
 // backoff, sweep interval and backoff cap. Must be called before Start.
-func (d *Dispatcher) withRetryPacing(first, sweep, max time.Duration) *Dispatcher {
+func (d *Dispatcher) withRetryPacing(first, sweep, maxDelay time.Duration) *Dispatcher {
 	if first > 0 {
 		d.firstDelay = first
 	}
 	if sweep > 0 {
 		d.sweepInterval = sweep
 	}
-	if max > 0 {
-		d.maxDelay = max
+	if maxDelay > 0 {
+		d.maxDelay = maxDelay
 	}
 	return d
 }
