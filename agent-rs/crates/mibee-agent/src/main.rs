@@ -454,6 +454,26 @@ async fn execute_command(
     client: &Arc<CenterClient>,
     db_path: &str,
 ) {
+    // Remote-ops double gate (#278): the center-side fleet switch only
+    // blocks ENQUEUEING ops commands; this agent-side opt-in
+    // (center.remote_ops_enabled, default false) must independently refuse
+    // to execute them. The Go agent gated both sides; the Rust port parsed
+    // the flag without consulting it, so a config that opted OUT still
+    // restarted the agent on command.
+    if is_remote_ops(&cmd.command) && !cfg.center.remote_ops_enabled {
+        log(format!(
+            "command {}: remote ops disabled on this agent (center.remote_ops_enabled=false)",
+            cmd.id
+        ));
+        let _ = client
+            .complete_command(
+                cmd.id,
+                "failed",
+                r#"{"error":"remote ops disabled on this agent (center.remote_ops_enabled)"}"#,
+            )
+            .await;
+        return;
+    }
     match cmd.command.as_str() {
         "scan" => {
             let result = match serde_json::from_str::<ScanCommand>(&cmd.payload) {
@@ -532,6 +552,13 @@ enum CredentialRef<'a> {
     None,
     ByName(&'a str),
     ById(i64),
+}
+
+/// Remote-ops command set (#278): restart / config-reload / logs-tail are
+/// gated behind the agent-side `center.remote_ops_enabled` opt-in (the
+/// center's fleet switch gates enqueueing; this gates execution).
+fn is_remote_ops(command: &str) -> bool {
+    matches!(command, "restart" | "config-reload" | "logs-tail")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -914,6 +941,24 @@ fn snmp_credential_cli(args: &[String]) -> i32 {
         other => {
             eprintln!("unknown action {other:?} (add|list|remove)");
             1
+        }
+    }
+}
+
+#[cfg(test)]
+mod remote_ops_gate_tests {
+    use super::is_remote_ops;
+
+    #[test]
+    fn ops_commands_are_gated_data_plane_is_not() {
+        // The opt-in set (#278): exactly these three commands refuse to run
+        // when center.remote_ops_enabled is off.
+        for cmd in ["restart", "config-reload", "logs-tail"] {
+            assert!(is_remote_ops(cmd), "{cmd} must be gated");
+        }
+        // Data-plane commands flow regardless of the ops opt-in.
+        for cmd in ["scan", "probe", "update-fingerprints", "reboot"] {
+            assert!(!is_remote_ops(cmd), "{cmd} must NOT be gated");
         }
     }
 }
