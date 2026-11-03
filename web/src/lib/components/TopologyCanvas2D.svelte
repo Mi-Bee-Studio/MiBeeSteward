@@ -54,6 +54,7 @@
 		edgeOpacity,
 		SEARCH_DIM_NODE_OPACITY,
 		searchHighlightSet,
+		unknownNeighborStubs,
 		ORPHAN_GROUP_ID,
 		isStaleEdge,
 		edgeAgeMs,
@@ -186,36 +187,66 @@
 		const statusById = new Map<string, string>();
 		for (const gn of built.nodes) statusById.set(String(gn.id), gn.value.status || '');
 
-		const echartsLinks = built.links
+		const visibleLinks = built.links
 			.filter((l) => visibleNodeIds.has(l.source) && (l.isUnidentified || visibleNodeIds.has(l.target)))
 			// Edge-type filter (#583): the legend pills toggle whole protocols.
-			.filter((l) => !hiddenProto[l.protocol])
-			.map((l) => {
-				const style = protocolStyle(l.protocol);
-				const dimmed = search && !highlightedIds.has(l.source) && !highlightedIds.has(l.target);
-				// Staleness (#585): an adjacency past its freshness threshold
-				// (10min generic, 5min WiFi) fades and dashed-izes — the ghost
-				// of a departed client must not read as a live link.
-				const stale = isStaleEdge(l);
-				// Offline endpoint (#585): edges of an offline device dim the
-				// same way regardless of the edge's own freshness.
-				const offlineEnd =
-					statusById.get(String(l.source)) === 'offline' ||
-					(!l.isUnidentified && statusById.get(String(l.target)) === 'offline');
-				return {
-					source: String(l.source),
-					target: String(l.target),
-					value: l,
-					lineStyle: {
-						color: resolveToken(style.color),
-						width: l.isCrossLink ? style.width + 0.5 : style.width,
-						type: l.isUnidentified || stale ? 'dashed' : style.dash,
-						opacity: edgeOpacity(l, { stale, offlineEnd, dimmed: !!dimmed }),
-						curveness: l.isCrossLink ? 0.3 : 0.1
-					},
-					emphasis: { lineStyle: { width: 3 } }
-				};
+			.filter((l) => !hiddenProto[l.protocol]);
+
+		// Unidentified-neighbor stubs (#636): edges whose far end is only a MAC
+		// hang off one synthetic dashed node per unseen MAC. Without them
+		// ECharts drops the links (no target device) while the legend still
+		// counts them.
+		const stubs = unknownNeighborStubs(visibleLinks);
+		const stubIdByMac = new Map(stubs.map((s) => [s.mac, s.id]));
+		for (const s of stubs) {
+			echartsNodes.push({
+				id: s.id,
+				name: s.mac,
+				symbolSize: 18,
+				itemStyle: {
+					color: 'transparent',
+					borderColor: cssVar('--color-muted', '#94a3b8'),
+					borderWidth: 2,
+					borderType: 'dashed'
+				},
+				label: {
+					show: force.labelDensity === 'all' && !search,
+					position: 'right',
+					fontSize: 10,
+					color: cssVar('--color-text-muted', '#cbd5e1'),
+					formatter: () => `${m['topology.Unidentified Neighbor']()} ${s.mac}`
+				}
 			});
+		}
+
+		const echartsLinks = visibleLinks.map((l) => {
+			const style = protocolStyle(l.protocol);
+			const dimmed = search && !highlightedIds.has(l.source) && !highlightedIds.has(l.target);
+			// Staleness (#585): an adjacency past its freshness threshold
+			// (10min generic, 5min WiFi) fades and dashed-izes — the ghost
+			// of a departed client must not read as a live link.
+			const stale = isStaleEdge(l);
+			// Offline endpoint (#585): edges of an offline device dim the
+			// same way regardless of the edge's own freshness.
+			const offlineEnd =
+				statusById.get(String(l.source)) === 'offline' ||
+				(!l.isUnidentified && statusById.get(String(l.target)) === 'offline');
+			return {
+				source: String(l.source),
+				target: l.isUnidentified
+					? (stubIdByMac.get(l.toMac || '(unknown)') ?? String(l.target))
+					: String(l.target),
+				value: l,
+				lineStyle: {
+					color: resolveToken(style.color),
+					width: l.isCrossLink ? style.width + 0.5 : style.width,
+					type: l.isUnidentified || stale ? 'dashed' : style.dash,
+					opacity: edgeOpacity(l, { stale, offlineEnd, dimmed: !!dimmed }),
+					curveness: l.isCrossLink ? 0.3 : 0.1
+				},
+				emphasis: { lineStyle: { width: 3 } }
+			};
+		});
 
 		// ECharts categories (legend + force grouping). Order matches LAYER_ORDER.
 		const categories = LAYER_ORDER.map((layer) => ({

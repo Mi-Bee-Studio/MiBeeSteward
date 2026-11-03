@@ -24,6 +24,7 @@ import {
 	LAYER_ORDER,
 	isSegmentBridge,
 	formatPresence,
+	unknownNeighborStubs,
 	protocolStyle,
 	nodeSize,
 	nodeRing,
@@ -228,7 +229,7 @@ describe('topologyGraph', () => {
 			expect(byId.get(2)!.category).toBe(LAYER_ORDER.indexOf('core'));
 		});
 
-		it('6. Unidentified neighbor → link flagged isUnidentified, not dropped', () => {
+		it('6. Unidentified neighbor → link flagged isUnidentified, not dropped; to_mac carried (#636)', () => {
 			const graph: TopologyGraph = {
 				nodes: [node({ id: 1, type: 'router', inferred_type: 'router' })],
 				edges: [edge({ from_device_id: 1, to_mac: 'ff:ff:ff:ff:ff:ff', protocol: 'LLDP' })]
@@ -237,6 +238,14 @@ describe('topologyGraph', () => {
 			// The edge to an unknown MAC is preserved (graph renders it as a stub).
 			expect(result.links.length).toBe(1);
 			expect(result.links[0].isUnidentified).toBe(true);
+			// The stub node's identity is the raw to_mac (#636).
+			expect(result.links[0].toMac).toBe('ff:ff:ff:ff:ff:ff');
+			// Resolved edges carry no stub identity.
+			const resolvedGraph: TopologyGraph = {
+				nodes: [node({ id: 1, mac_address: 'aa:aa:aa:aa:aa:01' }), node({ id: 2, mac_address: 'aa:aa:aa:aa:aa:02' })],
+				edges: [edge({ from_device_id: 1, to_device_id: 2, to_mac: 'aa:aa:aa:aa:aa:02', protocol: 'LLDP' })]
+			};
+			expect(buildGraph(resolvedGraph).links[0].toMac).toBeNull();
 		});
 
 		it('7. layers grouping → node ids bucketed by layer', () => {
@@ -464,6 +473,38 @@ describe('orphan grouping and enrichment hints (#584)', () => {
 	it('missingEnrichmentFamilies: WiFi alone lights wifi only (traffic + snmp still missing)', () => {
 		const links = [{ source: 1, target: 2, protocol: 'WiFi' }] as never[];
 		expect(missingEnrichmentFamilies(links)).toEqual(['traffic', 'snmp']);
+	});
+});
+
+// #636: unidentified-neighbor edges get one synthetic stub node per unseen
+// MAC so the canvas can actually draw them (and the legend count matches).
+describe('unknownNeighborStubs (#636)', () => {
+	it('groups unidentified links by to_mac with per-stub link counts', () => {
+		const stubs = unknownNeighborStubs([
+			{ isUnidentified: true, toMac: 'aa:00:00:00:00:ff' },
+			{ isUnidentified: true, toMac: 'aa:00:00:00:00:ff' },
+			{ isUnidentified: true, toMac: 'bb:00:00:00:00:ff' },
+			{ isUnidentified: false, toMac: null } // resolved edges never stub
+		]);
+		expect(stubs).toHaveLength(2);
+		const byMac = new Map(stubs.map((s) => [s.mac, s]));
+		expect(byMac.get('aa:00:00:00:00:ff')).toMatchObject({ id: 'unknown:aa:00:00:00:00:ff', linkCount: 2 });
+		expect(byMac.get('bb:00:00:00:00:ff')).toMatchObject({ linkCount: 1 });
+	});
+
+	it('a missing to_mac collapses into a single (unknown) bucket, never splits', () => {
+		const stubs = unknownNeighborStubs([
+			{ isUnidentified: true, toMac: null },
+			{ isUnidentified: true, toMac: '' }
+		]);
+		expect(stubs).toHaveLength(1);
+		expect(stubs[0].mac).toBe('(unknown)');
+		expect(stubs[0].linkCount).toBe(2);
+	});
+
+	it('no unidentified links → no stubs', () => {
+		expect(unknownNeighborStubs([{ isUnidentified: false, toMac: null }])).toEqual([]);
+		expect(unknownNeighborStubs([])).toEqual([]);
 	});
 });
 

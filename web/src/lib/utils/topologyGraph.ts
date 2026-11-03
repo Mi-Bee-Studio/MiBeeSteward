@@ -68,6 +68,9 @@ export interface GraphLink {
 	isCrossLink: boolean;
 	/** True if the far end is an unidentified neighbor (no matching device). */
 	isUnidentified: boolean;
+	/** Raw to_mac for unidentified far ends (#636): the identity of the
+	 * synthetic canvas stub node. Null when the edge resolved to a device. */
+	toMac?: string | null;
 	/** speaks-with edges (#500): observed byte total (both directions). */
 	bytes?: number | null;
 	/** When the adjacency was last re-observed (#585), RFC3339; null/empty =
@@ -479,6 +482,7 @@ export function buildGraph(graph: TopologyGraph): GraphBuildResult {
 			remotePort: edge.remote_port,
 			isCrossLink: to !== null && crossLinkSet.has(`${from}>${to}`),
 			isUnidentified,
+			toMac: isUnidentified ? edge.to_mac : null,
 			bytes: edge.bytes ?? null,
 			lastSeen: edge.last_seen ?? null
 		});
@@ -685,3 +689,33 @@ export function searchHighlightSet(
 /** Synthetic node id for the collapsed orphan group (#584): real device ids
  *  are numeric strings, so this can never collide. */
 export const ORPHAN_GROUP_ID = 'orphans-group';
+
+/** One synthetic canvas node for an unidentified neighbor (#636): all edges
+ *  pointing at the same unseen MAC collapse onto one stub. */
+export interface UnknownNeighborStub {
+	/** ECharts node id; never collides with numeric device ids. */
+	id: string;
+	/** The MAC the far end reported ('(unknown)' when the edge carried none). */
+	mac: string;
+	/** How many visible links point at this stub. */
+	linkCount: number;
+}
+
+/**
+ * unknownNeighborStubs (#636): edges to unidentified neighbors used to be
+ * silently dropped by the renderer (their target device doesn't exist) while
+ * the legend still counted them. Grouping them by to_mac gives the canvas one
+ * dashed stub node per unseen MAC to hang those links on. Feed it the
+ * ALREADY-FILTERED link list so stubs appear only when their links do.
+ */
+export function unknownNeighborStubs(
+	links: Array<Pick<GraphLink, 'isUnidentified' | 'toMac'>>
+): UnknownNeighborStub[] {
+	const byMac = new Map<string, number>();
+	for (const l of links) {
+		if (!l.isUnidentified) continue;
+		const mac = l.toMac || '(unknown)';
+		byMac.set(mac, (byMac.get(mac) ?? 0) + 1);
+	}
+	return [...byMac.entries()].map(([mac, linkCount]) => ({ id: `unknown:${mac}`, mac, linkCount }));
+}
