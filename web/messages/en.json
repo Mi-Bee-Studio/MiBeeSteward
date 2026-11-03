@@ -1219,7 +1219,17 @@
 		"Hint Traffic": "Enable passive observation (eBPF) to see who talks to whom, with traffic",
 		"Hint Snmp": "Bind SNMP credentials for managed switches to collect wiring and ports",
 		"Enrich Hints Title": "Make this graph richer",
-		"Webgl Unavailable": "WebGL unavailable — 3D view disabled"
+		"Webgl Unavailable": "WebGL unavailable — 3D view disabled",
+		"Color By Layer": "Layer colors",
+		"Color By Type": "Type colors",
+		"Labels Auto": "Auto labels",
+		"Labels All": "All labels",
+		"Labels None": "No labels",
+		"Type Network": "Network gear",
+		"Type Camera": "Cameras",
+		"Type Computer": "Computers / servers",
+		"Type Mobile": "Mobile",
+		"Type Other": "Other"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",

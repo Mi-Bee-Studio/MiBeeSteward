@@ -10,7 +10,7 @@
  */
 
 import { m } from '$lib/i18n-paraglide';
-import type { TopoLayer } from '$lib/utils/topologyGraph';
+import type { DeviceTypeBucket, TopoLayer } from '$lib/utils/topologyGraph';
 import type { TopoNode } from '$lib/types';
 
 /**
@@ -30,6 +30,18 @@ export function layerLabel(layer: TopoLayer): string {
 		edge: m['topology.Layer Endpoint']()
 	};
 	return labels[layer];
+}
+
+/** Type-bucket label for color-by-type mode + legend chips. */
+export function bucketLabel(bucket: DeviceTypeBucket): string {
+	const labels: Record<DeviceTypeBucket, string> = {
+		network: m['topology.Type Network'](),
+		camera: m['topology.Type Camera'](),
+		computer: m['topology.Type Computer'](),
+		mobile: m['topology.Type Mobile'](),
+		other: m['topology.Type Other']()
+	};
+	return labels[bucket];
 }
 
 export function typeLabel(type: string): string {

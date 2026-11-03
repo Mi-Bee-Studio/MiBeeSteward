@@ -58,11 +58,13 @@
 		splitOrphans,
 		missingEnrichmentFamilies,
 		topologyFingerprint,
+		typeBucketCounts,
+		TYPE_BUCKET_COLORS,
 		type GraphNode,
 		type GraphLink,
 		type TopoLayer
 	} from '$lib/utils/topologyGraph';
-	import { layerLabel, typeLabel, deviceType, formatAge } from '$lib/utils/topologyLabels';
+	import { layerLabel, bucketLabel, typeLabel, deviceType, formatAge } from '$lib/utils/topologyLabels';
 	import { Share2, X, Settings2 } from '@lucide/svelte';
 
 	let {
@@ -93,6 +95,12 @@
 	// instead of a floating island ocean; one pill expands them back.
 	let showOrphans = $state(false);
 	let orphanPanelOpen = $state(false);
+
+	// Node color mode + label density (user request 2026-11-03): color by
+	// hierarchy layer (default) or by device-type bucket; labels auto (by
+	// node count), forced all (identify every point) or none.
+	let colorMode = $state<'layer' | 'type'>('layer');
+	let labelMode = $state<'auto' | 'all' | 'none'>('auto');
 
 	// 2D/3D renderer dimension (#635 PR2). The three.js chunk loads lazily on
 	// the first 2D→3D toggle; the preference rides the URL (&dim=3d) like the
@@ -205,6 +213,9 @@
 	// Build once per graph, feed every derived below (#584).
 	let builtGraph = $derived(graph ? buildGraph(graph) : null);
 
+	// Type-bucket census for the color-by-type legend.
+	let typeStats = $derived(builtGraph ? typeBucketCounts(builtGraph.nodes) : []);
+
 	// Edge types actually present in the graph (#583) — the legend lists only
 	// these, with per-type counts.
 	let edgeStats = $derived(builtGraph ? edgeTypeCounts(builtGraph.links) : []);
@@ -216,7 +227,10 @@
 		void themeTick;
 		return {
 			layer: Object.fromEntries(LAYER_ORDER.map((l) => [l, resolveToken(LAYER_COLORS[l])])) as Record<TopoLayer, string>,
-			protocol: Object.fromEntries(edgeStats.map((s) => [s.protocol, resolveToken(protocolStyle(s.protocol).color)])) as Record<string, string>
+			protocol: Object.fromEntries(edgeStats.map((s) => [s.protocol, resolveToken(protocolStyle(s.protocol).color)])) as Record<string, string>,
+			bucket: Object.fromEntries(
+				Object.entries(TYPE_BUCKET_COLORS).map(([b, tc]) => [b, resolveToken(tc)])
+			) as Record<string, string>
 		};
 	});
 
@@ -352,6 +366,40 @@
 			{/each}
 		</div>
 		<div class="flex-1"></div>
+		<!-- Node color mode (user request 2026-11-03): by hierarchy layer
+		     (default) or by device-type bucket — paired with the type legend
+		     below when active. -->
+		<div class="flex items-center rounded-full border border-border overflow-hidden text-xs" role="group" aria-label="node color mode">
+			<button
+				onclick={() => (colorMode = 'layer')}
+				aria-pressed={colorMode === 'layer'}
+				class="px-2.5 py-1 {colorMode === 'layer' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Color By Layer']()}</button>
+			<button
+				onclick={() => (colorMode = 'type')}
+				aria-pressed={colorMode === 'type'}
+				class="px-2.5 py-1 {colorMode === 'type' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Color By Type']()}</button>
+		</div>
+		<!-- Label density: auto (node-count-derived) / all (identify every
+		     point) / none. -->
+		<div class="flex items-center rounded-full border border-border overflow-hidden text-xs" role="group" aria-label="label density">
+			<button
+				onclick={() => (labelMode = 'auto')}
+				aria-pressed={labelMode === 'auto'}
+				class="px-2.5 py-1 {labelMode === 'auto' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Labels Auto']()}</button>
+			<button
+				onclick={() => (labelMode = 'all')}
+				aria-pressed={labelMode === 'all'}
+				class="px-2.5 py-1 {labelMode === 'all' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Labels All']()}</button>
+			<button
+				onclick={() => (labelMode = 'none')}
+				aria-pressed={labelMode === 'none'}
+				class="px-2.5 py-1 {labelMode === 'none' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Labels None']()}</button>
+		</div>
 		<!-- 2D/3D dimension toggle (#635): 3D lazily loads its chunk; WebGL-less
 		     environments stay on 2D with a hint. -->
 		<div class="flex items-center rounded-full border border-border overflow-hidden text-xs" role="group" aria-label="renderer dimension">
@@ -373,6 +421,24 @@
 			onclick={() => fetchTopology()}
 			class="btn btn-secondary text-sm"
 		>{m['dashboard.Refresh']()}</button>
+
+		<!-- Type-bucket legend (color-by-type mode, user request 2026-11-03):
+		     dot + name + count per present bucket — the key to "which color is
+		     what kind of device". -->
+		{#if colorMode === 'type' && typeStats.length > 0}
+			<div class="flex items-center gap-1 text-xs flex-wrap w-full" aria-label={m['topology.Color By Type']()}>
+				{#each typeStats as stat (stat.bucket)}
+					<span class="px-2 py-1 rounded-full border border-border bg-surface inline-flex items-center gap-1.5">
+						<span
+							class="inline-block w-2.5 h-2.5 rounded-full"
+							style="background: {toolbarColors.bucket[stat.bucket]}"
+						></span>
+						{bucketLabel(stat.bucket)}
+						<span class="text-muted font-mono">×{stat.count}</span>
+					</span>
+				{/each}
+			</div>
+		{/if}
 
 		<!-- Edge-type legend (#583): style + name + count for every protocol
 		     actually present on the canvas; click toggles the whole type
@@ -455,6 +521,8 @@
 							layerVisible={layerVisible}
 							hiddenProtocols={hiddenProtocols}
 							expandOrphans={showOrphans}
+							colorMode={colorMode}
+							labelDensity={labelMode === "auto" ? undefined : labelMode === "all" ? "all" : "none"}
 							height="640px"
 							onselectnode={handleSelectNode}
 							onselectedge={handleSelectEdge}
@@ -468,6 +536,8 @@
 							layerVisible={layerVisible}
 							hiddenProtocols={hiddenProtocols}
 							expandOrphans={showOrphans}
+							colorMode={colorMode}
+							labelDensity={labelMode === "auto" ? undefined : labelMode === "all" ? "all" : "none"}
 							height="640px"
 							onselectnode={handleSelectNode}
 							onselectedge={handleSelectEdge}
