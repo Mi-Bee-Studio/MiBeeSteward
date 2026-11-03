@@ -25,9 +25,15 @@
   theme/freshness rebuilds — only colors/opacities re-resolve).
 
   Interactions: drag = orbit, wheel = zoom (OrbitControls, touch-action
-  none); click node → panel, click edge (line threshold) → edge panel,
-  double-click node → device page, click the translucent group sphere →
-  orphan member panel.
+  none); dragging a NODE moves it on a camera-facing plane and the position
+  survives rebuilds (#635 PR3); click node → panel, click edge (line
+  threshold) → edge panel, double-click node → device page, click the
+  translucent group sphere → orphan member panel.
+
+  InstancedMesh deliberately NOT used: at LAN scale (tens to a few hundred
+  nodes) per-node meshes cost a few hundred tiny draw calls — negligible —
+  while instancing would complicate raycast→node mapping and per-node
+  materials. Revisit only if graphs ever reach thousands of nodes.
 -->
 
 <script lang="ts">
@@ -114,6 +120,14 @@
 	let nodeMeshes: THREE.Mesh[] = [];
 	let edgeLines: THREE.Line[] = [];
 	let labels: CSS2DObject[] = [];
+	// Live position registry + per-node label, kept for drag updates (#635 PR3).
+	let posById = new Map<string, THREE.Vector3>();
+	let labelById = new Map<string, CSS2DObject>();
+	// Node positions the user dragged: survive scene rebuilds (poll refresh)
+	// so a hand-placed node doesn't snap back every 60s.
+	let draggedPos = new Map<string, THREE.Vector3>();
+	let dragTarget: THREE.Mesh | null = null;
+	let dragPlane = new THREE.Plane();
 	const raycaster = new THREE.Raycaster();
 
 	function disposeScene() {
@@ -122,10 +136,35 @@
 		disposables = [];
 		nodeMeshes = [];
 		edgeLines = [];
+		posById = new Map();
+		labelById = new Map();
 		// CSS2DRenderer leaves removed labels' DOM elements behind — take them
 		// out explicitly or they pile up in the overlay on every rebuild.
 		for (const l of labels) l.element.remove();
 		labels = [];
+	}
+
+	/** Re-point one node's incident edges + label at a new position (#635 PR3). */
+	function moveNodeTo(id: string, p: THREE.Vector3) {
+		posById.get(id)?.copy(p);
+		for (const line of edgeLines) {
+			const ud = line.userData as { kind: string; sourceId: string; targetId: string };
+			if (ud.kind !== 'edge' || (ud.sourceId !== id && ud.targetId !== id)) continue;
+			const a = posById.get(ud.sourceId);
+			const b = posById.get(ud.targetId);
+			if (!a || !b) continue;
+			const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute;
+			attr.setXYZ(0, a.x, a.y, a.z);
+			attr.setXYZ(1, b.x, b.y, b.z);
+			attr.needsUpdate = true;
+			if ((line.material as THREE.LineDashedMaterial).isLineDashedMaterial) line.computeLineDistances();
+		}
+		const label = labelById.get(id);
+		if (label) {
+			const mesh = nodeMeshes.find((m) => (m.userData as { spec: { id: string } }).spec.id === id);
+			label.position.copy(p);
+			label.position.y += (mesh?.scale.x ?? 2) + 1.5;
+		}
 	}
 
 	function rebuild(spec: NonNullable<typeof sceneSpec>) {
@@ -150,6 +189,9 @@
 			.stop();
 		for (let i = 0; i < 260; i++) sim.tick();
 		const pos = new Map(simNodes.map((n) => [n.id, new THREE.Vector3(n.x, n.y, n.z)]));
+		// Hand-dragged positions win over the simulation (#635 PR3): a node the
+		// user placed stays put across poll-driven rebuilds.
+		for (const [id, p] of draggedPos) pos.get(id)?.copy(p);
 
 		// One shared unit sphere; per-node scale (cheap, few geometries).
 		const sphere = new THREE.SphereGeometry(1, 20, 14);
@@ -170,8 +212,11 @@
 			mesh.userData = { kind: 'node', spec: n };
 			root.add(mesh);
 			nodeMeshes.push(mesh);
+			posById.set(n.id, mesh.position);
 
 			// Ring badge (#556): a wireframe shell slightly larger than the node.
+			// A CHILD of the node mesh so drags (and any motion) carry it along,
+			// and non-recursive raycasts skip it structurally.
 			if (n.ring) {
 				const ringMat = new THREE.MeshBasicMaterial({
 					color: new THREE.Color(resolveToken(n.ring.color)),
@@ -181,10 +226,8 @@
 				});
 				disposables.push(ringMat);
 				const ring = new THREE.Mesh(sphere, ringMat);
-				ring.scale.setScalar(n.radius + 0.45);
-				ring.position.copy(p);
-				ring.userData = { kind: 'deco' };
-				root.add(ring);
+				ring.scale.setScalar((n.radius + 0.45) / n.radius);
+				mesh.add(ring);
 			}
 			// Stubs read as hollow: wireframe the node itself.
 			if (n.kind === 'stub') (mesh.material as THREE.MeshBasicMaterial).wireframe = true;
@@ -206,12 +249,13 @@
 				label.position.y += n.radius + 1.5;
 				root.add(label);
 				labels.push(label);
+				labelById.set(n.id, label);
 			}
 		}
 
 		for (const e of spec.edges) {
-			const a = pos.get(e.sourceId);
-			const b = pos.get(e.targetId);
+			const a = posById.get(e.sourceId);
+			const b = posById.get(e.targetId);
 			if (!a || !b) continue;
 			const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
 			disposables.push(geo);
@@ -231,7 +275,7 @@
 			disposables.push(mat);
 			const line = new THREE.Line(geo, mat);
 			if (e.dashed) line.computeLineDistances();
-			line.userData = { kind: 'edge', link: e.link };
+			line.userData = { kind: 'edge', link: e.link, sourceId: e.sourceId, targetId: e.targetId };
 			root.add(line);
 			edgeLines.push(line);
 		}
@@ -297,9 +341,59 @@
 
 		let downX = 0;
 		let downY = 0;
-		const onDown = (ev: PointerEvent) => { downX = ev.clientX; downY = ev.clientY; };
+		const nodeMeshFor = (spec: { id: string }) =>
+			nodeMeshes.find((m) => (m.userData as { spec: { id: string } }).spec.id === spec.id);
+		const ndcFrom = (ev: PointerEvent | MouseEvent) => {
+			const rect = container!.getBoundingClientRect();
+			return new THREE.Vector2(
+				((ev.clientX - rect.left) / rect.width) * 2 - 1,
+				-((ev.clientY - rect.top) / rect.height) * 2 + 1
+			);
+		};
+		const onDown = (ev: PointerEvent) => {
+			downX = ev.clientX;
+			downY = ev.clientY;
+			// Node grab (#635 PR3): drag a node on a camera-facing plane; empty
+			// space keeps the orbit behavior.
+			const hit = pick(ev);
+			if (hit.node) {
+				const mesh = nodeMeshFor(hit.node);
+				if (mesh) {
+					dragTarget = mesh;
+					controls.enabled = false;
+					const camDir = new THREE.Vector3();
+					camera.getWorldDirection(camDir);
+					dragPlane.setFromNormalAndCoplanarPoint(camDir, mesh.position);
+				}
+			}
+		};
+		const onMove = (ev: PointerEvent) => {
+			if (dragTarget) {
+				raycaster.setFromCamera(ndcFrom(ev), camera);
+				const p = new THREE.Vector3();
+				if (raycaster.ray.intersectPlane(dragPlane, p)) {
+					dragTarget.position.copy(p);
+					moveNodeTo((dragTarget.userData as { spec: { id: string } }).spec.id, p);
+				}
+				return;
+			}
+			renderer.domElement.style.cursor = Object.values(pick(ev))[0] ? 'pointer' : 'grab';
+		};
 		const onUp = (ev: PointerEvent) => {
-			if (Math.hypot(ev.clientX - downX, ev.clientY - downY) > 5) return; // drag = orbit
+			const moved = Math.hypot(ev.clientX - downX, ev.clientY - downY) > 5;
+			if (dragTarget) {
+				// A real drag pins the node (survives rebuilds); a tap falls
+				// through to the click selection below.
+				if (moved) {
+					draggedPos.set((dragTarget.userData as { spec: { id: string } }).spec.id, dragTarget.position.clone());
+					dragTarget = null;
+					controls.enabled = true;
+					return;
+				}
+				dragTarget = null;
+				controls.enabled = true;
+			}
+			if (moved) return; // orbit drag, not a click
 			const hit = pick(ev);
 			if (hit.node?.kind === 'orphan-group') { onopenorphans?.(); return; }
 			if (hit.node?.graphNode) { onselectnode?.(hit.node.graphNode); return; }
@@ -308,9 +402,6 @@
 		const onDbl = (ev: MouseEvent) => {
 			const hit = pick(ev as PointerEvent);
 			if (hit.node?.graphNode?.value.id) onopendevice?.(hit.node.graphNode.value.id);
-		};
-		const onMove = (ev: PointerEvent) => {
-			renderer.domElement.style.cursor = Object.values(pick(ev))[0] ? 'pointer' : 'grab';
 		};
 		renderer.domElement.addEventListener('pointerdown', onDown);
 		renderer.domElement.addEventListener('pointerup', onUp);
