@@ -96,15 +96,25 @@
 	// merges (same mechanism as the search-rebuild path), so this never
 	// restarts the force layout.
 	let freshnessTick = $state(0);
+	// Theme flips re-resolve every cssVar() color baked into the option (#639):
+	// Chart.svelte re-inits the canvas on data-theme change, but a re-init
+	// alone re-serves the same stale option — the option itself must rebuild.
+	let themeVersion = $state(0);
 	onMount(() => {
 		const t = setInterval(() => (freshnessTick += 1), 30_000);
-		return () => clearInterval(t);
+		const obs = new MutationObserver(() => (themeVersion += 1));
+		obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+		return () => {
+			clearInterval(t);
+			obs.disconnect();
+		};
 	});
 
 	// The ECharts option. Rebuilt whenever graph/search/layer/edge-type/orphan
-	// state changes — or the freshness tick fires (#637).
+	// state changes — or the freshness tick fires (#637) / the theme flips (#639).
 	let graphOption = $derived.by(() => {
 		void freshnessTick; // track: time-driven style refreshes
+		void themeVersion; // track: token colors re-resolve on theme flips
 		return buildOption(graph, search, layerVisible, hiddenProtocols, expandOrphans);
 	});
 
