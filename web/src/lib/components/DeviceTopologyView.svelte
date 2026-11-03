@@ -101,6 +101,20 @@
 	// node count), forced all (identify every point) or none.
 	let colorMode = $state<'layer' | 'type'>('layer');
 	let labelMode = $state<'auto' | 'all' | 'none'>('auto');
+	// Type-bucket chips: click to filter (user request 2026-11-03). All on by
+	// default; combines with the layer pills (a node renders only when BOTH
+	// its layer and its bucket are enabled).
+	let bucketVisible = $state<Record<string, boolean>>({
+		network: true,
+		camera: true,
+		computer: true,
+		mobile: true,
+		other: true
+	});
+
+	function toggleBucket(bucket: string) {
+		bucketVisible = { ...bucketVisible, [bucket]: !bucketVisible[bucket] };
+	}
 
 	// 2D/3D renderer dimension (#635 PR2). The three.js chunk loads lazily on
 	// the first 2D→3D toggle; the preference rides the URL (&dim=3d) like the
@@ -426,20 +440,27 @@
 			class="btn btn-secondary text-sm"
 		>{m['dashboard.Refresh']()}</button>
 
-		<!-- Type-bucket legend (color-by-type mode, user request 2026-11-03):
-		     dot + name + count per present bucket — the key to "which color is
-		     what kind of device". -->
-		{#if colorMode === 'type' && typeStats.length > 0}
+		<!-- Type-bucket legend (user request 2026-11-03): dot + name + count
+		     per present bucket, shown in BOTH color modes — the chips are
+		     click-to-filter (same interaction as the layer pills and the
+		     edge-type legend; multiple chips combine). -->
+		{#if typeStats.length > 0}
 			<div class="flex items-center gap-1 text-xs flex-wrap w-full" aria-label={m['topology.Color By Type']()}>
 				{#each typeStats as stat (stat.bucket)}
-					<span class="px-2 py-1 rounded-full border border-border bg-surface inline-flex items-center gap-1.5">
+					<button
+						onclick={() => toggleBucket(stat.bucket)}
+						aria-pressed={bucketVisible[stat.bucket]}
+						class="px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1.5 {bucketVisible[stat.bucket]
+							? 'border-border-strong bg-surface-strong'
+							: 'border-border bg-surface opacity-40'}"
+					>
 						<span
 							class="inline-block w-2.5 h-2.5 rounded-full"
 							style="background: {toolbarColors.bucket[stat.bucket]}"
 						></span>
 						{bucketLabel(stat.bucket)}
 						<span class="text-muted font-mono">×{stat.count}</span>
-					</span>
+					</button>
 				{/each}
 			</div>
 		{/if}
@@ -525,6 +546,7 @@
 							layerVisible={layerVisible}
 							hiddenProtocols={hiddenProtocols}
 							expandOrphans={showOrphans}
+							bucketVisible={bucketVisible}
 							colorMode={colorMode}
 							labelDensity={labelMode === "auto" ? undefined : labelMode === "all" ? "all" : "none"}
 							height="640px"
@@ -540,6 +562,7 @@
 							layerVisible={layerVisible}
 							hiddenProtocols={hiddenProtocols}
 							expandOrphans={showOrphans}
+							bucketVisible={bucketVisible}
 							colorMode={colorMode}
 							labelDensity={labelMode === "auto" ? undefined : labelMode === "all" ? "all" : "none"}
 							height="640px"
