@@ -25,20 +25,29 @@
   theme/freshness rebuilds — only colors/opacities re-resolve).
 
   Interactions: drag = orbit, wheel = zoom (OrbitControls, touch-action
-  none); click node → panel, click edge (line threshold) → edge panel,
-  double-click node → device page, click the translucent group sphere →
-  orphan member panel.
+  none); dragging a NODE moves it on a camera-facing plane and the position
+  survives rebuilds (#635 PR3); click node → panel, click edge (line
+  threshold) → edge panel, double-click node → device page, click the
+  translucent group sphere → orphan member panel.
+
+  InstancedMesh deliberately NOT used: at LAN scale (tens to a few hundred
+  nodes) per-node meshes cost a few hundred tiny draw calls — negligible —
+  while instancing would complicate raycast→node mapping and per-node
+  materials. Revisit only if graphs ever reach thousands of nodes.
 -->
 
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { m } from '$lib/i18n-paraglide';
 	import { resolveToken } from '$lib/utils/cssVar';
+	import { escapeHtml } from '$lib/utils';
+	import { typeLabel, deviceType } from '$lib/utils/topologyLabels';
 	import type { TopologyGraph } from '$lib/types';
 	import {
 		buildGraph,
 		recommendedForceParams,
 		splitOrphans,
+		nodeFilterVisible,
 		SEARCH_DIM_NODE_OPACITY,
 		type GraphNode,
 		type GraphLink,
@@ -54,8 +63,11 @@
 		graph,
 		search = '',
 		layerVisible,
+		bucketVisible,
 		hiddenProtocols = {},
 		expandOrphans = false,
+		colorMode = 'layer',
+		labelDensity,
 		height = '640px',
 		onselectnode,
 		onselectedge,
@@ -65,8 +77,14 @@
 		graph: TopologyGraph;
 		search?: string;
 		layerVisible: Record<TopoLayer, boolean>;
+		/** Type-bucket chips: click to filter (user request 2026-11-03). */
+		bucketVisible?: Record<string, boolean>;
 		hiddenProtocols?: Record<string, boolean>;
 		expandOrphans?: boolean;
+		colorMode?: 'layer' | 'type';
+		/** Overrides the node-count-derived density when set (user request
+		 *  2026-11-03: force all labels to identify every point). */
+		labelDensity?: 'all' | 'core' | 'none';
 		height?: string;
 		onselectnode?: (gn: GraphNode | null) => void;
 		onselectedge?: (gl: GraphLink | null) => void;
@@ -77,20 +95,27 @@
 	let container: HTMLDivElement | undefined = $state();
 	let webglFailed = $state(false);
 
+	// Absent bucket map = all visible (back-compat default).
+	let buckets = $derived(
+		bucketVisible ?? { network: true, camera: true, computer: true, mobile: true, iot: true, other: true }
+	);
+
 	let built = $derived(graph ? buildGraph(graph) : null);
 	let force = $derived(built ? recommendedForceParams(built.nodes.length) : null);
 	// Visible orphan count for the collapsed group sphere's label (#584).
 	let orphanCount = $derived(
-		built ? splitOrphans(built.nodes).orphans.filter((o) => layerVisible[o.layer]).length : 0
+		built ? splitOrphans(built.nodes).orphans.filter((o) => nodeFilterVisible(o, layerVisible, buckets)).length : 0
 	);
 	let sceneSpec = $derived(
 		built && force
 			? buildTopologyScene(built, {
 					search,
 					layerVisible,
+					bucketVisible: buckets,
 					hiddenProtocols,
 					expandOrphans,
-					labelDensity: force.labelDensity
+					labelDensity: labelDensity ?? force.labelDensity,
+					colorMode
 				})
 			: null
 	);
@@ -103,6 +128,7 @@
 	// three.js one-time handles.
 	let renderer: THREE.WebGLRenderer;
 	let labelRenderer: CSS2DRenderer;
+	let tooltip: HTMLDivElement;
 	let camera: THREE.PerspectiveCamera;
 	let controls: OrbitControls;
 	let root = new THREE.Group();
@@ -114,6 +140,14 @@
 	let nodeMeshes: THREE.Mesh[] = [];
 	let edgeLines: THREE.Line[] = [];
 	let labels: CSS2DObject[] = [];
+	// Live position registry + per-node label, kept for drag updates (#635 PR3).
+	let posById = new Map<string, THREE.Vector3>();
+	let labelById = new Map<string, CSS2DObject>();
+	// Node positions the user dragged: survive scene rebuilds (poll refresh)
+	// so a hand-placed node doesn't snap back every 60s.
+	let draggedPos = new Map<string, THREE.Vector3>();
+	let dragTarget: THREE.Mesh | null = null;
+	let dragPlane = new THREE.Plane();
 	const raycaster = new THREE.Raycaster();
 
 	function disposeScene() {
@@ -122,10 +156,35 @@
 		disposables = [];
 		nodeMeshes = [];
 		edgeLines = [];
+		posById = new Map();
+		labelById = new Map();
 		// CSS2DRenderer leaves removed labels' DOM elements behind — take them
 		// out explicitly or they pile up in the overlay on every rebuild.
 		for (const l of labels) l.element.remove();
 		labels = [];
+	}
+
+	/** Re-point one node's incident edges + label at a new position (#635 PR3). */
+	function moveNodeTo(id: string, p: THREE.Vector3) {
+		posById.get(id)?.copy(p);
+		for (const line of edgeLines) {
+			const ud = line.userData as { kind: string; sourceId: string; targetId: string };
+			if (ud.kind !== 'edge' || (ud.sourceId !== id && ud.targetId !== id)) continue;
+			const a = posById.get(ud.sourceId);
+			const b = posById.get(ud.targetId);
+			if (!a || !b) continue;
+			const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute;
+			attr.setXYZ(0, a.x, a.y, a.z);
+			attr.setXYZ(1, b.x, b.y, b.z);
+			attr.needsUpdate = true;
+			if ((line.material as THREE.LineDashedMaterial).isLineDashedMaterial) line.computeLineDistances();
+		}
+		const label = labelById.get(id);
+		if (label) {
+			const mesh = nodeMeshes.find((m) => (m.userData as { spec: { id: string } }).spec.id === id);
+			label.position.copy(p);
+			label.position.y += (mesh?.scale.x ?? 2) + 1.5;
+		}
 	}
 
 	function rebuild(spec: NonNullable<typeof sceneSpec>) {
@@ -150,6 +209,9 @@
 			.stop();
 		for (let i = 0; i < 260; i++) sim.tick();
 		const pos = new Map(simNodes.map((n) => [n.id, new THREE.Vector3(n.x, n.y, n.z)]));
+		// Hand-dragged positions win over the simulation (#635 PR3): a node the
+		// user placed stays put across poll-driven rebuilds.
+		for (const [id, p] of draggedPos) pos.get(id)?.copy(p);
 
 		// One shared unit sphere; per-node scale (cheap, few geometries).
 		const sphere = new THREE.SphereGeometry(1, 20, 14);
@@ -170,8 +232,11 @@
 			mesh.userData = { kind: 'node', spec: n };
 			root.add(mesh);
 			nodeMeshes.push(mesh);
+			posById.set(n.id, mesh.position);
 
 			// Ring badge (#556): a wireframe shell slightly larger than the node.
+			// A CHILD of the node mesh so drags (and any motion) carry it along,
+			// and non-recursive raycasts skip it structurally.
 			if (n.ring) {
 				const ringMat = new THREE.MeshBasicMaterial({
 					color: new THREE.Color(resolveToken(n.ring.color)),
@@ -181,10 +246,8 @@
 				});
 				disposables.push(ringMat);
 				const ring = new THREE.Mesh(sphere, ringMat);
-				ring.scale.setScalar(n.radius + 0.45);
-				ring.position.copy(p);
-				ring.userData = { kind: 'deco' };
-				root.add(ring);
+				ring.scale.setScalar((n.radius + 0.45) / n.radius);
+				mesh.add(ring);
 			}
 			// Stubs read as hollow: wireframe the node itself.
 			if (n.kind === 'stub') (mesh.material as THREE.MeshBasicMaterial).wireframe = true;
@@ -206,12 +269,13 @@
 				label.position.y += n.radius + 1.5;
 				root.add(label);
 				labels.push(label);
+				labelById.set(n.id, label);
 			}
 		}
 
 		for (const e of spec.edges) {
-			const a = pos.get(e.sourceId);
-			const b = pos.get(e.targetId);
+			const a = posById.get(e.sourceId);
+			const b = posById.get(e.targetId);
 			if (!a || !b) continue;
 			const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
 			disposables.push(geo);
@@ -231,7 +295,7 @@
 			disposables.push(mat);
 			const line = new THREE.Line(geo, mat);
 			if (e.dashed) line.computeLineDistances();
-			line.userData = { kind: 'edge', link: e.link };
+			line.userData = { kind: 'edge', link: e.link, sourceId: e.sourceId, targetId: e.targetId };
 			root.add(line);
 			edgeLines.push(line);
 		}
@@ -271,6 +335,12 @@
 		labelRenderer.domElement.style.pointerEvents = 'none';
 		container.appendChild(labelRenderer.domElement);
 
+		// Hover info card (user request 2026-11-03): 2D always had ECharts
+		// tooltips; the 3D canvas gets parity — what a point IS, at a glance.
+		tooltip = document.createElement('div');
+		tooltip.className = 'absolute z-10 hidden pointer-events-none bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs leading-4 shadow-md max-w-[240px]';
+		container.appendChild(tooltip);
+
 		camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
 		camera.position.set(0, 150, 260);
 
@@ -297,9 +367,93 @@
 
 		let downX = 0;
 		let downY = 0;
-		const onDown = (ev: PointerEvent) => { downX = ev.clientX; downY = ev.clientY; };
+		const nodeMeshFor = (spec: { id: string }) =>
+			nodeMeshes.find((m) => (m.userData as { spec: { id: string } }).spec.id === spec.id);
+		const ndcFrom = (ev: PointerEvent | MouseEvent) => {
+			const rect = container!.getBoundingClientRect();
+			return new THREE.Vector2(
+				((ev.clientX - rect.left) / rect.width) * 2 - 1,
+				-((ev.clientY - rect.top) / rect.height) * 2 + 1
+			);
+		};
+		const onDown = (ev: PointerEvent) => {
+			downX = ev.clientX;
+			downY = ev.clientY;
+			// Node grab (#635 PR3): drag a node on a camera-facing plane; empty
+			// space keeps the orbit behavior.
+			const hit = pick(ev);
+			if (hit.node) {
+				const mesh = nodeMeshFor(hit.node);
+				if (mesh) {
+					dragTarget = mesh;
+					controls.enabled = false;
+					const camDir = new THREE.Vector3();
+					camera.getWorldDirection(camDir);
+					dragPlane.setFromNormalAndCoplanarPoint(camDir, mesh.position);
+				}
+			}
+		};
+		const onMove = (ev: PointerEvent) => {
+			if (dragTarget) {
+				tooltip.classList.add('hidden');
+				raycaster.setFromCamera(ndcFrom(ev), camera);
+				const p = new THREE.Vector3();
+				if (raycaster.ray.intersectPlane(dragPlane, p)) {
+					dragTarget.position.copy(p);
+					moveNodeTo((dragTarget.userData as { spec: { id: string } }).spec.id, p);
+				}
+				return;
+			}
+			const hit = pick(ev);
+			renderer.domElement.style.cursor = hit.node || hit.edge ? 'pointer' : 'grab';
+			updateTooltip(ev, hit.node);
+		};
+
+		/** Hover card: identify the point under the cursor without a click. */
+		const updateTooltip = (ev: PointerEvent, node?: SceneNodeSpec) => {
+			if (!node) {
+				tooltip.classList.add('hidden');
+				return;
+			}
+			let html = '';
+			if (node.graphNode) {
+				const gn = node.graphNode;
+				const n = gn.value;
+				const marks = (gn.isRoot ? ' ⭐' : '') + (gn.isBridge ? ' ⇄' : '');
+				html = `<div class="font-medium truncate">${escapeHtml(n.name || `#${n.id}`)}${marks}</div>`
+					+ `<div class="font-mono text-muted">${escapeHtml(n.ip_address || '-')}</div>`
+					+ `<div>${escapeHtml(m['topology.Tooltip Type']())}: ${escapeHtml(typeLabel(deviceType(n)))}`
+					+ ` · ${escapeHtml(m['topology.Tooltip Status']())}: ${escapeHtml(n.status || '-')}</div>`
+					+ (n.brand ? `<div class="text-muted">${escapeHtml(n.brand)}</div>` : '');
+			} else if (node.kind === 'stub') {
+				html = `<div class="font-medium">${escapeHtml(m['topology.Unidentified Neighbor']())}</div>`
+					+ `<div class="font-mono text-muted">${escapeHtml(node.id.split(':')[1] ?? '')}</div>`;
+			} else {
+				html = `<div class="font-medium">${escapeHtml(m['topology.Orphan Group Node']({ n: orphanCount }))}</div>`;
+			}
+			tooltip.innerHTML = html;
+			tooltip.classList.remove('hidden');
+			const rect = container.getBoundingClientRect();
+			const x = Math.min(ev.clientX - rect.left + 14, rect.width - 250);
+			const y = Math.min(ev.clientY - rect.top + 14, rect.height - 80);
+			tooltip.style.left = `${Math.max(0, x)}px`;
+			tooltip.style.top = `${Math.max(0, y)}px`;
+		};
 		const onUp = (ev: PointerEvent) => {
-			if (Math.hypot(ev.clientX - downX, ev.clientY - downY) > 5) return; // drag = orbit
+			const moved = Math.hypot(ev.clientX - downX, ev.clientY - downY) > 5;
+			if (dragTarget) {
+				// A real drag pins the node (survives rebuilds); a tap falls
+				// through to the click selection below.
+				if (moved) {
+					draggedPos.set((dragTarget.userData as { spec: { id: string } }).spec.id, dragTarget.position.clone());
+					dragTarget = null;
+					controls.enabled = true;
+					return;
+				}
+				dragTarget = null;
+				controls.enabled = true;
+			}
+			if (moved) return; // orbit drag, not a click
 			const hit = pick(ev);
 			if (hit.node?.kind === 'orphan-group') { onopenorphans?.(); return; }
 			if (hit.node?.graphNode) { onselectnode?.(hit.node.graphNode); return; }
@@ -309,24 +463,44 @@
 			const hit = pick(ev as PointerEvent);
 			if (hit.node?.graphNode?.value.id) onopendevice?.(hit.node.graphNode.value.id);
 		};
-		const onMove = (ev: PointerEvent) => {
-			renderer.domElement.style.cursor = Object.values(pick(ev))[0] ? 'pointer' : 'grab';
-		};
 		renderer.domElement.addEventListener('pointerdown', onDown);
 		renderer.domElement.addEventListener('pointerup', onUp);
 		renderer.domElement.addEventListener('dblclick', onDbl);
 		renderer.domElement.addEventListener('pointermove', onMove);
 
-		const loop = () => {
+		// Render loop: requestAnimationFrame, with a frozen-clock watchdog —
+		// embedded browsers with a frozen document.timeline never fire rAF
+		// (the canvas stayed blank); if no frame arrives within 500ms, fall
+		// back to a setTimeout driver at ~30fps, which fires everywhere.
+		let loopTimer: ReturnType<typeof setTimeout> | null = null;
+		const frame = () => {
 			controls.update();
 			renderer.render(root, camera);
 			labelRenderer.render(root, camera);
-			raf = requestAnimationFrame(loop);
 		};
-		raf = requestAnimationFrame(loop);
+		let frames = 0;
+		const countedRafLoop = () => {
+			frames++;
+			frame();
+			raf = requestAnimationFrame(countedRafLoop);
+		};
+		const timeoutLoop = () => {
+			frame();
+			loopTimer = setTimeout(timeoutLoop, 33);
+		};
+		raf = requestAnimationFrame(countedRafLoop);
+		const watchdog = setTimeout(() => {
+			if (frames === 0) timeoutLoop();
+		}, 500);
+		const stopLoop = () => {
+			cancelAnimationFrame(raf);
+			raf = 0;
+			if (loopTimer) clearTimeout(loopTimer);
+			clearTimeout(watchdog);
+		};
 
 		return () => {
-			cancelAnimationFrame(raf);
+			stopLoop();
 			clearInterval(t);
 			resizeObs?.disconnect();
 			themeObs?.disconnect();
@@ -339,6 +513,7 @@
 			renderer.dispose();
 			container?.removeChild(renderer.domElement);
 			container?.removeChild(labelRenderer.domElement);
+			tooltip.remove();
 		};
 	});
 

@@ -48,6 +48,8 @@
 		recommendedForceParams,
 		LAYER_ORDER,
 		LAYER_COLORS,
+		typeFillColor,
+		typeBucketOf,
 		protocolStyle,
 		nodeSize,
 		nodeRing,
@@ -69,8 +71,11 @@
 		graph,
 		search = '',
 		layerVisible,
+		bucketVisible,
 		hiddenProtocols = {},
 		expandOrphans = false,
+		colorMode = 'layer',
+		labelDensity,
 		height = '640px',
 		onselectnode,
 		onselectedge,
@@ -80,8 +85,14 @@
 		graph: TopologyGraph;
 		search?: string;
 		layerVisible: Record<TopoLayer, boolean>;
+		/** Type-bucket chips: click to filter (user request 2026-11-03). */
+		bucketVisible?: Record<string, boolean>;
 		hiddenProtocols?: Record<string, boolean>;
 		expandOrphans?: boolean;
+		colorMode?: 'layer' | 'type';
+		/** Overrides the node-count-derived density when set (user request
+		 *  2026-11-03: force all labels to identify every point). */
+		labelDensity?: 'all' | 'core' | 'none';
 		height?: string;
 		onselectnode?: (gn: GraphNode | null) => void;
 		onselectedge?: (gl: GraphLink | null) => void;
@@ -115,35 +126,42 @@
 	let graphOption = $derived.by(() => {
 		void freshnessTick; // track: time-driven style refreshes
 		void themeVersion; // track: token colors re-resolve on theme flips
-		return buildOption(graph, search, layerVisible, hiddenProtocols, expandOrphans);
+		return buildOption(graph, search, layerVisible, bucketVisible, hiddenProtocols, expandOrphans, colorMode, labelDensity);
 	});
 
 	function buildOption(
 		g: TopologyGraph,
 		search: string,
 		lvis: Record<TopoLayer, boolean>,
+		bvis: Record<string, boolean> | undefined,
 		hiddenProto: Record<string, boolean>,
-		expandOrphans: boolean
+		expandOrphans: boolean,
+		colorMode: 'layer' | 'type' = 'layer',
+		labelDensityOverride?: 'all' | 'core' | 'none'
 	): EChartsOption | null {
 		if (!g || g.nodes.length === 0) return null;
 		const built = buildGraph(g);
 		if (built.nodes.length === 0) return null;
+		// Absent bucket map = all buckets visible (back-compat default).
+		const bucketOn = (bucket: string) => bvis?.[bucket] !== false;
 
 		// Orphan grouping (#584): collapsed mode renders the connected subgraph
 		// plus one synthetic dashed group node; expanded renders everything.
 		const { connected, orphans } = splitOrphans(built.nodes);
 		const layoutNodes = expandOrphans ? built.nodes : connected;
-		const orphanVisible = orphans.filter((o) => lvis[o.layer]).length;
+		const orphanVisible = orphans.filter((o) => lvis[o.layer] && bucketOn(typeBucketOf(o))).length;
 		const renderCount = layoutNodes.length + (expandOrphans || orphanVisible === 0 ? 0 : 1);
 
 		const force = recommendedForceParams(Math.max(renderCount, 1));
 
-		// Nodes filtered by layer visibility. Hidden layers' nodes are omitted
-		// (and their links auto-dropped by ECharts when an endpoint is absent).
+		// Nodes filtered by layer AND type-bucket visibility (chips click to
+		// filter). Hidden nodes' links auto-drop when an endpoint is absent.
 		// Orphans have no links, so collapsing them drops nothing (#584).
 		const visibleNodeIds = new Set<number>();
 		for (const gn of layoutNodes) {
-			if (lvis[gn.layer]) visibleNodeIds.add(gn.id);
+			if (lvis[gn.layer] && bucketOn(typeBucketOf(gn))) {
+				visibleNodeIds.add(gn.id);
+			}
 		}
 
 		// Search dimming: matched nodes and their one-hop neighbors stay lit.
@@ -153,10 +171,11 @@
 			.filter((gn) => visibleNodeIds.has(gn.id))
 			.map((gn) => {
 				const dimmed = search && !highlightedIds.has(gn.id);
-				const [token, fallback] = [LAYER_COLORS[gn.layer].token, LAYER_COLORS[gn.layer].fallback];
+				const fill = colorMode === 'type' ? typeFillColor(gn) : LAYER_COLORS[gn.layer];
+				const [token, fallback] = [fill.token, fill.fallback];
 				// Root gets a larger glyph; others scale with degree.
 				const size = nodeSize(gn);
-				const showLabel = nodeLabelVisible(gn, force.labelDensity);
+				const showLabel = nodeLabelVisible(gn, labelDensityOverride ?? force.labelDensity);
 				// Cross-segment bridge (#556): a blue ring marks the node that
 				// joins two segments (the root keeps its amber gateway ring).
 				const ring = nodeRing(gn);

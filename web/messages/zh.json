@@ -1219,7 +1219,18 @@
 		"Hint Traffic": "启用被动观测（eBPF），可见设备间通信与流量",
 		"Hint Snmp": "为网管交换机绑定 SNMP 凭据，可采集物理接线与端口",
 		"Enrich Hints Title": "让这张图更丰富",
-		"Webgl Unavailable": "WebGL 不可用——已保持 2D 视图"
+		"Webgl Unavailable": "WebGL 不可用——已保持 2D 视图",
+		"Color By Layer": "按层上色",
+		"Color By Type": "按类型上色",
+		"Labels Auto": "标签·自动",
+		"Labels All": "标签·全部",
+		"Labels None": "标签·无",
+		"Type Network": "网络设备",
+		"Type Camera": "摄像头",
+		"Type Computer": "电脑 / 服务器",
+		"Type Mobile": "移动设备",
+		"Type Other": "其他",
+		"Type Iot": "智能设备 / IoT"
 	},
 	"certificates": {
 		"Title": "TLS 证书",

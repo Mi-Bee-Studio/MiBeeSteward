@@ -98,6 +98,60 @@ func (q *Queries) DeleteAgentCommand(ctx context.Context, id int64) (int64, erro
 	return result.RowsAffected()
 }
 
+const deletePendingAgentCommandsByCommand = `-- name: DeletePendingAgentCommandsByCommand :execrows
+DELETE FROM agent_commands
+WHERE agent_id = ? AND command = ? AND status = 'pending'
+`
+
+type DeletePendingAgentCommandsByCommandParams struct {
+	AgentID string `json:"agent_id"`
+	Command string `json:"command"`
+}
+
+// Coalescing guard: drop an agent's still-pending commands of one type. A
+// probe plan is a full snapshot, so a newer plan supersedes any still-queued
+// one instead of piling up behind it while the agent is offline.
+func (q *Queries) DeletePendingAgentCommandsByCommand(ctx context.Context, arg DeletePendingAgentCommandsByCommandParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deletePendingAgentCommandsByCommand, arg.AgentID, arg.Command)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const getPendingAgentCommandByPayload = `-- name: GetPendingAgentCommandByPayload :one
+SELECT id, agent_id, command, payload, status, created_at, acknowledged_at, result FROM agent_commands
+WHERE agent_id = ? AND command = ? AND payload = ? AND status = 'pending'
+ORDER BY id DESC
+LIMIT 1
+`
+
+type GetPendingAgentCommandByPayloadParams struct {
+	AgentID string `json:"agent_id"`
+	Command string `json:"command"`
+	Payload string `json:"payload"`
+}
+
+// Coalescing guard: find an identical still-pending command. A scheduler
+// tick re-dispatching the same scan while the agent is offline must not
+// enqueue a duplicate: the serial agent poller would grind through every
+// copy on reconnect (observed 650+ pending rows after a day-long outage).
+func (q *Queries) GetPendingAgentCommandByPayload(ctx context.Context, arg GetPendingAgentCommandByPayloadParams) (AgentCommand, error) {
+	row := q.db.QueryRowContext(ctx, getPendingAgentCommandByPayload, arg.AgentID, arg.Command, arg.Payload)
+	var i AgentCommand
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.Command,
+		&i.Payload,
+		&i.Status,
+		&i.CreatedAt,
+		&i.AcknowledgedAt,
+		&i.Result,
+	)
+	return i, err
+}
+
 const listAllAgentCommands = `-- name: ListAllAgentCommands :many
 SELECT id, agent_id, command, payload, status, created_at, acknowledged_at, result FROM agent_commands
 ORDER BY id DESC

@@ -40,9 +40,11 @@ const allLayers = { root: true, core: true, access: true, edge: true } as const;
 const opts = (over: Partial<Parameters<typeof buildTopologyScene>[1]> = {}) => ({
 	search: '',
 	layerVisible: { ...allLayers },
+	bucketVisible: { network: true, camera: true, computer: true, mobile: true, iot: true, other: true },
 	hiddenProtocols: {},
 	expandOrphans: false,
 	labelDensity: 'all' as const,
+	colorMode: 'layer' as const,
 	...over
 });
 
@@ -101,6 +103,29 @@ describe('topology3dLayout (#635 PR2)', () => {
 		const scene = buildTopologyScene(buildGraph(g), opts({ layerVisible: { ...allLayers, edge: false } }));
 		expect(scene.nodes.find((n) => n.id === '3')).toBeUndefined();
 		expect(scene.edges).toHaveLength(1); // camera's edge dropped with it
+	});
+
+	it('buildTopologyScene: hidden type bucket drops its nodes + incident edges (chip filter)', () => {
+		const g: TopologyGraph = {
+			nodes: [
+				node({ id: 1, inferred_type: 'router' }),
+				node({ id: 2, inferred_type: 'switch' }),
+				node({ id: 3, inferred_type: 'pc' })
+			],
+			edges: [
+				edge({ from_device_id: 1, to_device_id: 2, to_mac: '00:00:00:00:00:02', protocol: 'LLDP' }),
+				edge({ from_device_id: 2, to_device_id: 3, to_mac: '00:00:00:00:00:03', protocol: 'LLDP' })
+			]
+		};
+		const scene = buildTopologyScene(
+			buildGraph(g),
+			opts({ bucketVisible: { network: true, camera: true, computer: false, mobile: true, other: true } })
+		);
+		// The pc (computer bucket) is filtered out; its edge drops with it.
+		expect(scene.nodes.find((n) => n.id === '3')).toBeUndefined();
+		expect(scene.edges).toHaveLength(1);
+		// Both routers/switches survive (network bucket still on).
+		expect(scene.nodes.filter((n) => n.kind === 'device')).toHaveLength(2);
 	});
 
 	it('buildTopologyScene: unidentified edges target stub nodes (#636 parity)', () => {
