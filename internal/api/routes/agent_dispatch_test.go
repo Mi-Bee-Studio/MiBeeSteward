@@ -75,7 +75,10 @@ func TestDispatchAgentScan_SuccessAndFailure(t *testing.T) {
 	require.Equal(t, "", run.ErrorMessage)
 
 	// Second dispatch (a report never arrived): the previous run is superseded
-	// with a note, and a fresh "running" row takes its place.
+	// with a note, and a fresh "running" row takes its place. The COMMAND row
+	// is NOT duplicated: enqueue-side coalescing (#648) returns the identical
+	// still-pending scan as-is — the offline-backlog fix — while the run-row
+	// supersession (this test's original #390 subject) still happens.
 	dispatchAgentScan(ctx, conn, queries, svc, 7, "192.168.2.0/24", 300*1e9, "agent-62", 0)
 	var supersededStatus, supersededMsg string
 	require.NoError(t, conn.QueryRow(`SELECT status, error_message FROM scan_task_runs WHERE id = ?`, run.ID).Scan(&supersededStatus, &supersededMsg))
@@ -85,12 +88,15 @@ func TestDispatchAgentScan_SuccessAndFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, run.ID, run2.ID, "a fresh dispatch records a fresh run row")
 	require.Equal(t, "running", run2.Status)
+	var cmdCountAfterCoalesce int
+	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM agent_commands WHERE agent_id='agent-62' AND command='scan'`).Scan(&cmdCountAfterCoalesce))
+	require.Equal(t, 1, cmdCountAfterCoalesce, "identical pending scan coalesces to one command row (#648)")
 
 	// Failure path: out-of-CIDR targets → no command + failed run with reason.
 	dispatchAgentScan(ctx, conn, queries, svc, 7, "10.99.0.0/24", 300*1e9, "agent-62", 0)
 	var cmdCount2 int
 	require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM agent_commands`).Scan(&cmdCount2))
-	require.Equal(t, 2, cmdCount2, "only the two accepted dispatches enqueue; the rejected one must not")
+	require.Equal(t, 1, cmdCount2, "the coalesced scan stays single; the rejected dispatch must not enqueue")
 	run3, err := queries.GetLatestRun(ctx, 7)
 	require.NoError(t, err)
 	require.Equal(t, "failed", run3.Status)
