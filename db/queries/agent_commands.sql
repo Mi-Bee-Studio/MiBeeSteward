@@ -41,3 +41,20 @@ SELECT COUNT(*) FROM agent_commands;
 
 -- name: DeleteAgentCommand :execrows
 DELETE FROM agent_commands WHERE id = ?;
+
+-- name: DeletePendingAgentCommandsByCommand :execrows
+-- Coalescing guard: drop an agent's still-pending commands of one type. A
+-- probe plan is a full snapshot, so a newer plan supersedes any still-queued
+-- one instead of piling up behind it while the agent is offline.
+DELETE FROM agent_commands
+WHERE agent_id = ? AND command = ? AND status = 'pending';
+
+-- name: GetPendingAgentCommandByPayload :one
+-- Coalescing guard: find an identical still-pending command. A scheduler
+-- tick re-dispatching the same scan while the agent is offline must not
+-- enqueue a duplicate: the serial agent poller would grind through every
+-- copy on reconnect (observed 650+ pending rows after a day-long outage).
+SELECT * FROM agent_commands
+WHERE agent_id = ? AND command = ? AND payload = ? AND status = 'pending'
+ORDER BY id DESC
+LIMIT 1;

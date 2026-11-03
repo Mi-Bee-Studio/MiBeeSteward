@@ -58,11 +58,13 @@
 		splitOrphans,
 		missingEnrichmentFamilies,
 		topologyFingerprint,
+		typeBucketCounts,
+		TYPE_BUCKET_COLORS,
 		type GraphNode,
 		type GraphLink,
 		type TopoLayer
 	} from '$lib/utils/topologyGraph';
-	import { layerLabel, typeLabel, deviceType, formatAge } from '$lib/utils/topologyLabels';
+	import { layerLabel, bucketLabel, typeLabel, deviceType, formatAge } from '$lib/utils/topologyLabels';
 	import { Share2, X, Settings2 } from '@lucide/svelte';
 
 	let {
@@ -93,6 +95,27 @@
 	// instead of a floating island ocean; one pill expands them back.
 	let showOrphans = $state(false);
 	let orphanPanelOpen = $state(false);
+
+	// Node color mode + label density (user request 2026-11-03): color by
+	// hierarchy layer (default) or by device-type bucket; labels auto (by
+	// node count), forced all (identify every point) or none.
+	let colorMode = $state<'layer' | 'type'>('layer');
+	let labelMode = $state<'auto' | 'all' | 'none'>('auto');
+	// Type-bucket chips: click to filter (user request 2026-11-03). All on by
+	// default; combines with the layer pills (a node renders only when BOTH
+	// its layer and its bucket are enabled).
+	let bucketVisible = $state<Record<string, boolean>>({
+		network: true,
+		camera: true,
+		computer: true,
+		mobile: true,
+		iot: true,
+		other: true
+	});
+
+	function toggleBucket(bucket: string) {
+		bucketVisible = { ...bucketVisible, [bucket]: !bucketVisible[bucket] };
+	}
 
 	// 2D/3D renderer dimension (#635 PR2). The three.js chunk loads lazily on
 	// the first 2D→3D toggle; the preference rides the URL (&dim=3d) like the
@@ -205,6 +228,9 @@
 	// Build once per graph, feed every derived below (#584).
 	let builtGraph = $derived(graph ? buildGraph(graph) : null);
 
+	// Type-bucket census for the color-by-type legend.
+	let typeStats = $derived(builtGraph ? typeBucketCounts(builtGraph.nodes) : []);
+
 	// Edge types actually present in the graph (#583) — the legend lists only
 	// these, with per-type counts.
 	let edgeStats = $derived(builtGraph ? edgeTypeCounts(builtGraph.links) : []);
@@ -216,7 +242,10 @@
 		void themeTick;
 		return {
 			layer: Object.fromEntries(LAYER_ORDER.map((l) => [l, resolveToken(LAYER_COLORS[l])])) as Record<TopoLayer, string>,
-			protocol: Object.fromEntries(edgeStats.map((s) => [s.protocol, resolveToken(protocolStyle(s.protocol).color)])) as Record<string, string>
+			protocol: Object.fromEntries(edgeStats.map((s) => [s.protocol, resolveToken(protocolStyle(s.protocol).color)])) as Record<string, string>,
+			bucket: Object.fromEntries(
+				Object.entries(TYPE_BUCKET_COLORS).map(([b, tc]) => [b, resolveToken(tc)])
+			) as Record<string, string>
 		};
 	});
 
@@ -258,19 +287,23 @@
 		goto('/devices/detail/' + id);
 	}
 
-	// Canvas-swap fade-in (#635 PR3): a short JS-driven rAF tween —
-	// deliberately NOT a CSS/WAAPI animation (an IAB's frozen
-	// document.timeline leaves those stuck at their start state forever;
-	// plain style mutations on rAF keep working there).
+	// Canvas-swap fade-in (#635 PR3): a short setTimeout-driven tween.
+	// Deliberately NOT CSS/WAAPI (frozen document.timeline environments
+	// leave those stuck at their start state) and NOT requestAnimationFrame
+	// — the same frozen-clock hosts never fire rAF either, which left the
+	// canvas stuck at the tween's start opacity (blanked the whole view).
+	// setTimeout fires everywhere.
 	function fadeSwap(node: HTMLElement) {
-		const t0 = performance.now();
-		const step = (t: number) => {
-			const k = Math.min(1, (t - t0) / 180);
+		const t0 = Date.now();
+		const step = () => {
+			const k = Math.min(1, (Date.now() - t0) / 180);
 			node.style.opacity = String(0.25 + 0.75 * k);
-			if (k < 1) requestAnimationFrame(step);
+			if (k < 1) setTimeout(step, 30);
 		};
 		node.style.opacity = '0.25';
-		requestAnimationFrame(step);
+		setTimeout(step, 30);
+		// Belt and braces: never leave the canvas dimmed, whatever stalls.
+		setTimeout(() => (node.style.opacity = '1'), 400);
 	}
 
 	// Offline endpoint check for the link panel (#585).
@@ -352,6 +385,40 @@
 			{/each}
 		</div>
 		<div class="flex-1"></div>
+		<!-- Node color mode (user request 2026-11-03): by hierarchy layer
+		     (default) or by device-type bucket — paired with the type legend
+		     below when active. -->
+		<div class="flex items-center rounded-full border border-border overflow-hidden text-xs" role="group" aria-label="node color mode">
+			<button
+				onclick={() => (colorMode = 'layer')}
+				aria-pressed={colorMode === 'layer'}
+				class="px-2.5 py-1 {colorMode === 'layer' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Color By Layer']()}</button>
+			<button
+				onclick={() => (colorMode = 'type')}
+				aria-pressed={colorMode === 'type'}
+				class="px-2.5 py-1 {colorMode === 'type' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Color By Type']()}</button>
+		</div>
+		<!-- Label density: auto (node-count-derived) / all (identify every
+		     point) / none. -->
+		<div class="flex items-center rounded-full border border-border overflow-hidden text-xs" role="group" aria-label="label density">
+			<button
+				onclick={() => (labelMode = 'auto')}
+				aria-pressed={labelMode === 'auto'}
+				class="px-2.5 py-1 {labelMode === 'auto' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Labels Auto']()}</button>
+			<button
+				onclick={() => (labelMode = 'all')}
+				aria-pressed={labelMode === 'all'}
+				class="px-2.5 py-1 {labelMode === 'all' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Labels All']()}</button>
+			<button
+				onclick={() => (labelMode = 'none')}
+				aria-pressed={labelMode === 'none'}
+				class="px-2.5 py-1 {labelMode === 'none' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>{m['topology.Labels None']()}</button>
+		</div>
 		<!-- 2D/3D dimension toggle (#635): 3D lazily loads its chunk; WebGL-less
 		     environments stay on 2D with a hint. -->
 		<div class="flex items-center rounded-full border border-border overflow-hidden text-xs" role="group" aria-label="renderer dimension">
@@ -373,6 +440,31 @@
 			onclick={() => fetchTopology()}
 			class="btn btn-secondary text-sm"
 		>{m['dashboard.Refresh']()}</button>
+
+		<!-- Type-bucket legend (user request 2026-11-03): dot + name + count
+		     per present bucket, shown in BOTH color modes — the chips are
+		     click-to-filter (same interaction as the layer pills and the
+		     edge-type legend; multiple chips combine). -->
+		{#if typeStats.length > 0}
+			<div class="flex items-center gap-1 text-xs flex-wrap w-full" aria-label={m['topology.Color By Type']()}>
+				{#each typeStats as stat (stat.bucket)}
+					<button
+						onclick={() => toggleBucket(stat.bucket)}
+						aria-pressed={bucketVisible[stat.bucket]}
+						class="px-2 py-1 rounded-full border transition-colors inline-flex items-center gap-1.5 {bucketVisible[stat.bucket]
+							? 'border-border-strong bg-surface-strong'
+							: 'border-border bg-surface opacity-40'}"
+					>
+						<span
+							class="inline-block w-2.5 h-2.5 rounded-full"
+							style="background: {toolbarColors.bucket[stat.bucket]}"
+						></span>
+						{bucketLabel(stat.bucket)}
+						<span class="text-muted font-mono">×{stat.count}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
 
 		<!-- Edge-type legend (#583): style + name + count for every protocol
 		     actually present on the canvas; click toggles the whole type
@@ -455,6 +547,9 @@
 							layerVisible={layerVisible}
 							hiddenProtocols={hiddenProtocols}
 							expandOrphans={showOrphans}
+							bucketVisible={bucketVisible}
+							colorMode={colorMode}
+							labelDensity={labelMode === "auto" ? undefined : labelMode === "all" ? "all" : "none"}
 							height="640px"
 							onselectnode={handleSelectNode}
 							onselectedge={handleSelectEdge}
@@ -468,6 +563,9 @@
 							layerVisible={layerVisible}
 							hiddenProtocols={hiddenProtocols}
 							expandOrphans={showOrphans}
+							bucketVisible={bucketVisible}
+							colorMode={colorMode}
+							labelDensity={labelMode === "auto" ? undefined : labelMode === "all" ? "all" : "none"}
 							height="640px"
 							onselectnode={handleSelectNode}
 							onselectedge={handleSelectEdge}

@@ -40,11 +40,14 @@
 	import { onMount } from 'svelte';
 	import { m } from '$lib/i18n-paraglide';
 	import { resolveToken } from '$lib/utils/cssVar';
+	import { escapeHtml } from '$lib/utils';
+	import { typeLabel, deviceType } from '$lib/utils/topologyLabels';
 	import type { TopologyGraph } from '$lib/types';
 	import {
 		buildGraph,
 		recommendedForceParams,
 		splitOrphans,
+		nodeFilterVisible,
 		SEARCH_DIM_NODE_OPACITY,
 		type GraphNode,
 		type GraphLink,
@@ -60,8 +63,11 @@
 		graph,
 		search = '',
 		layerVisible,
+		bucketVisible,
 		hiddenProtocols = {},
 		expandOrphans = false,
+		colorMode = 'layer',
+		labelDensity,
 		height = '640px',
 		onselectnode,
 		onselectedge,
@@ -71,8 +77,14 @@
 		graph: TopologyGraph;
 		search?: string;
 		layerVisible: Record<TopoLayer, boolean>;
+		/** Type-bucket chips: click to filter (user request 2026-11-03). */
+		bucketVisible?: Record<string, boolean>;
 		hiddenProtocols?: Record<string, boolean>;
 		expandOrphans?: boolean;
+		colorMode?: 'layer' | 'type';
+		/** Overrides the node-count-derived density when set (user request
+		 *  2026-11-03: force all labels to identify every point). */
+		labelDensity?: 'all' | 'core' | 'none';
 		height?: string;
 		onselectnode?: (gn: GraphNode | null) => void;
 		onselectedge?: (gl: GraphLink | null) => void;
@@ -83,20 +95,27 @@
 	let container: HTMLDivElement | undefined = $state();
 	let webglFailed = $state(false);
 
+	// Absent bucket map = all visible (back-compat default).
+	let buckets = $derived(
+		bucketVisible ?? { network: true, camera: true, computer: true, mobile: true, iot: true, other: true }
+	);
+
 	let built = $derived(graph ? buildGraph(graph) : null);
 	let force = $derived(built ? recommendedForceParams(built.nodes.length) : null);
 	// Visible orphan count for the collapsed group sphere's label (#584).
 	let orphanCount = $derived(
-		built ? splitOrphans(built.nodes).orphans.filter((o) => layerVisible[o.layer]).length : 0
+		built ? splitOrphans(built.nodes).orphans.filter((o) => nodeFilterVisible(o, layerVisible, buckets)).length : 0
 	);
 	let sceneSpec = $derived(
 		built && force
 			? buildTopologyScene(built, {
 					search,
 					layerVisible,
+					bucketVisible: buckets,
 					hiddenProtocols,
 					expandOrphans,
-					labelDensity: force.labelDensity
+					labelDensity: labelDensity ?? force.labelDensity,
+					colorMode
 				})
 			: null
 	);
@@ -109,6 +128,7 @@
 	// three.js one-time handles.
 	let renderer: THREE.WebGLRenderer;
 	let labelRenderer: CSS2DRenderer;
+	let tooltip: HTMLDivElement;
 	let camera: THREE.PerspectiveCamera;
 	let controls: OrbitControls;
 	let root = new THREE.Group();
@@ -315,6 +335,12 @@
 		labelRenderer.domElement.style.pointerEvents = 'none';
 		container.appendChild(labelRenderer.domElement);
 
+		// Hover info card (user request 2026-11-03): 2D always had ECharts
+		// tooltips; the 3D canvas gets parity — what a point IS, at a glance.
+		tooltip = document.createElement('div');
+		tooltip.className = 'absolute z-10 hidden pointer-events-none bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs leading-4 shadow-md max-w-[240px]';
+		container.appendChild(tooltip);
+
 		camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
 		camera.position.set(0, 150, 260);
 
@@ -369,6 +395,7 @@
 		};
 		const onMove = (ev: PointerEvent) => {
 			if (dragTarget) {
+				tooltip.classList.add('hidden');
 				raycaster.setFromCamera(ndcFrom(ev), camera);
 				const p = new THREE.Vector3();
 				if (raycaster.ray.intersectPlane(dragPlane, p)) {
@@ -377,7 +404,40 @@
 				}
 				return;
 			}
-			renderer.domElement.style.cursor = Object.values(pick(ev))[0] ? 'pointer' : 'grab';
+			const hit = pick(ev);
+			renderer.domElement.style.cursor = hit.node || hit.edge ? 'pointer' : 'grab';
+			updateTooltip(ev, hit.node);
+		};
+
+		/** Hover card: identify the point under the cursor without a click. */
+		const updateTooltip = (ev: PointerEvent, node?: SceneNodeSpec) => {
+			if (!node) {
+				tooltip.classList.add('hidden');
+				return;
+			}
+			let html = '';
+			if (node.graphNode) {
+				const gn = node.graphNode;
+				const n = gn.value;
+				const marks = (gn.isRoot ? ' ⭐' : '') + (gn.isBridge ? ' ⇄' : '');
+				html = `<div class="font-medium truncate">${escapeHtml(n.name || `#${n.id}`)}${marks}</div>`
+					+ `<div class="font-mono text-muted">${escapeHtml(n.ip_address || '-')}</div>`
+					+ `<div>${escapeHtml(m['topology.Tooltip Type']())}: ${escapeHtml(typeLabel(deviceType(n)))}`
+					+ ` · ${escapeHtml(m['topology.Tooltip Status']())}: ${escapeHtml(n.status || '-')}</div>`
+					+ (n.brand ? `<div class="text-muted">${escapeHtml(n.brand)}</div>` : '');
+			} else if (node.kind === 'stub') {
+				html = `<div class="font-medium">${escapeHtml(m['topology.Unidentified Neighbor']())}</div>`
+					+ `<div class="font-mono text-muted">${escapeHtml(node.id.split(':')[1] ?? '')}</div>`;
+			} else {
+				html = `<div class="font-medium">${escapeHtml(m['topology.Orphan Group Node']({ n: orphanCount }))}</div>`;
+			}
+			tooltip.innerHTML = html;
+			tooltip.classList.remove('hidden');
+			const rect = container.getBoundingClientRect();
+			const x = Math.min(ev.clientX - rect.left + 14, rect.width - 250);
+			const y = Math.min(ev.clientY - rect.top + 14, rect.height - 80);
+			tooltip.style.left = `${Math.max(0, x)}px`;
+			tooltip.style.top = `${Math.max(0, y)}px`;
 		};
 		const onUp = (ev: PointerEvent) => {
 			const moved = Math.hypot(ev.clientX - downX, ev.clientY - downY) > 5;
@@ -408,16 +468,39 @@
 		renderer.domElement.addEventListener('dblclick', onDbl);
 		renderer.domElement.addEventListener('pointermove', onMove);
 
-		const loop = () => {
+		// Render loop: requestAnimationFrame, with a frozen-clock watchdog —
+		// embedded browsers with a frozen document.timeline never fire rAF
+		// (the canvas stayed blank); if no frame arrives within 500ms, fall
+		// back to a setTimeout driver at ~30fps, which fires everywhere.
+		let loopTimer: ReturnType<typeof setTimeout> | null = null;
+		const frame = () => {
 			controls.update();
 			renderer.render(root, camera);
 			labelRenderer.render(root, camera);
-			raf = requestAnimationFrame(loop);
 		};
-		raf = requestAnimationFrame(loop);
+		let frames = 0;
+		const countedRafLoop = () => {
+			frames++;
+			frame();
+			raf = requestAnimationFrame(countedRafLoop);
+		};
+		const timeoutLoop = () => {
+			frame();
+			loopTimer = setTimeout(timeoutLoop, 33);
+		};
+		raf = requestAnimationFrame(countedRafLoop);
+		const watchdog = setTimeout(() => {
+			if (frames === 0) timeoutLoop();
+		}, 500);
+		const stopLoop = () => {
+			cancelAnimationFrame(raf);
+			raf = 0;
+			if (loopTimer) clearTimeout(loopTimer);
+			clearTimeout(watchdog);
+		};
 
 		return () => {
-			cancelAnimationFrame(raf);
+			stopLoop();
 			clearInterval(t);
 			resizeObs?.disconnect();
 			themeObs?.disconnect();
@@ -430,6 +513,7 @@
 			renderer.dispose();
 			container?.removeChild(renderer.domElement);
 			container?.removeChild(labelRenderer.domElement);
+			tooltip.remove();
 		};
 	});
 
