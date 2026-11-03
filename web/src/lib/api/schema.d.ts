@@ -5707,7 +5707,7 @@ export interface components {
             neighbor_device_id: number | null;
             neighbor_mac: string;
             /** @enum {string} */
-            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP" | "WiFi" | "speaks-with";
+            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "Q-BRIDGE-MIB" | "STP" | "ARP" | "WiFi" | "speaks-with";
             /**
              * Format: int64
              * @description speaks-with edges only — observed byte total
@@ -6525,7 +6525,7 @@ export interface components {
             to_device_id: number | null;
             to_mac: string;
             /** @enum {string} */
-            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "ARP" | "WiFi" | "route-table";
+            protocol: "LLDP" | "CDP" | "Bridge-MIB" | "Q-BRIDGE-MIB" | "STP" | "ARP" | "WiFi" | "route-table" | "speaks-with";
             local_port: string | null;
             /** @description Far-end ifName (LLDP/CDP only) */
             remote_port: string | null;
