@@ -25,6 +25,7 @@ import {
 	isSegmentBridge,
 	formatPresence,
 	unknownNeighborStubs,
+	topologyFingerprint,
 	protocolStyle,
 	nodeSize,
 	nodeRing,
@@ -505,6 +506,41 @@ describe('unknownNeighborStubs (#636)', () => {
 	it('no unidentified links → no stubs', () => {
 		expect(unknownNeighborStubs([{ isUnidentified: false, toMac: null }])).toEqual([]);
 		expect(unknownNeighborStubs([])).toEqual([]);
+	});
+});
+
+// #637: the poll change-detector must see freshness, not just structure —
+// otherwise ghost edges never fade on a static page.
+describe('topologyFingerprint (#637)', () => {
+	const base: TopologyGraph = {
+		nodes: [node({ id: 1, status: 'online' }), node({ id: 2, status: 'online' })],
+		edges: [
+			edge({ from_device_id: 1, to_device_id: 2, to_mac: 'aa:aa:aa:aa:aa:02', protocol: 'WiFi', last_seen: '2026-11-03T01:00:00Z' })
+		]
+	} as unknown as TopologyGraph;
+
+	it('identical payload → identical fingerprint; array order churn is invisible', () => {
+		const shuffled: TopologyGraph = {
+			nodes: [...base.nodes].reverse(),
+			edges: [...base.edges]
+		} as unknown as TopologyGraph;
+		expect(topologyFingerprint(shuffled)).toBe(topologyFingerprint(base));
+	});
+
+	it('a last_seen bump flips the fingerprint (freshness must flow through polls)', () => {
+		const bumped: TopologyGraph = {
+			...base,
+			edges: [edge({ from_device_id: 1, to_device_id: 2, to_mac: 'aa:aa:aa:aa:aa:02', protocol: 'WiFi', last_seen: '2026-11-03T01:05:00Z' })]
+		} as unknown as TopologyGraph;
+		expect(topologyFingerprint(bumped)).not.toBe(topologyFingerprint(base));
+	});
+
+	it('a node status change flips the fingerprint (offline dimming is data-driven)', () => {
+		const offline: TopologyGraph = {
+			...base,
+			nodes: [node({ id: 1, status: 'offline' }), node({ id: 2, status: 'online' })]
+		} as unknown as TopologyGraph;
+		expect(topologyFingerprint(offline)).not.toBe(topologyFingerprint(base));
 	});
 });
 
