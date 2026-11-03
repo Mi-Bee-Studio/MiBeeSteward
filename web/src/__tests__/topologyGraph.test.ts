@@ -26,6 +26,12 @@ import {
 	formatPresence,
 	unknownNeighborStubs,
 	topologyFingerprint,
+	deviceTypeBucket,
+	typeFillColor,
+	typeBucketOf,
+	nodeFilterVisible,
+	typeBucketCounts,
+	TYPE_BUCKET_COLORS,
 	protocolStyle,
 	nodeSize,
 	nodeRing,
@@ -541,6 +547,70 @@ describe('topologyFingerprint (#637)', () => {
 			nodes: [node({ id: 1, status: 'offline' }), node({ id: 2, status: 'online' })]
 		} as unknown as TopologyGraph;
 		expect(topologyFingerprint(offline)).not.toBe(topologyFingerprint(base));
+	});
+});
+
+// Device-type color buckets (user request 2026-11-03, refined same day):
+// vendor-string matchers + layer-aware network classification.
+describe('device-type buckets', () => {
+	it('type words AND known vendor strings bucket; unknowns land in other', () => {
+		expect(deviceTypeBucket('cisco router')).toBe('network');
+		expect(deviceTypeBucket('Switch')).toBe('network');
+		expect(deviceTypeBucket('GL.iNet')).toBe('network');
+		expect(deviceTypeBucket('iStoreOS')).toBe('network');
+		expect(deviceTypeBucket('ip camera')).toBe('camera');
+		expect(deviceTypeBucket('NAS')).toBe('computer');
+		expect(deviceTypeBucket('Raspberry Pi Foundation')).toBe('computer');
+		expect(deviceTypeBucket('QNAP Systems')).toBe('computer');
+		expect(deviceTypeBucket('android phone')).toBe('mobile');
+		expect(deviceTypeBucket('Beijing Xiaomi Mobile Software')).toBe('mobile');
+		expect(deviceTypeBucket('Espressif Inc.')).toBe('iot');
+		expect(deviceTypeBucket('Xiaomi')).toBe('iot');
+		expect(deviceTypeBucket('Lumi United Technology')).toBe('iot');
+		expect(deviceTypeBucket('printer')).toBe('other');
+		expect(deviceTypeBucket('')).toBe('other');
+	});
+
+	it('every bucket has a distinct token color (6 buckets)', () => {
+		const tokens = new Set(Object.values(TYPE_BUCKET_COLORS).map((c) => c.token));
+		expect(tokens.size).toBe(6);
+	});
+
+	it('typeBucketOf: root/core layers ARE network gear, whatever the vendor string', () => {
+		// The detected gateway reports vendor string "GL.iNet"-style junk —
+		// its layer makes it network (hiding "other" must never delete the hub).
+		expect(typeBucketOf({ layer: 'root', value: { inferred_type: 'whatever-vendor', type: 'other' } })).toBe('network');
+		expect(typeBucketOf({ layer: 'core', value: { inferred_type: '', type: '' } })).toBe('network');
+		expect(typeBucketOf({ layer: 'edge', value: { inferred_type: '', type: 'camera' } })).toBe('camera');
+		expect(typeFillColor({ layer: 'root', value: { inferred_type: 'caddyserver', type: 'other' } }).token).toBe(
+			TYPE_BUCKET_COLORS.network.token
+		);
+	});
+
+	it('typeBucketCounts: display order, zeros omitted (layer-aware)', () => {
+		const nodes = [
+			{ layer: 'edge' as const, value: { inferred_type: 'pc', type: 'pc' } },
+			{ layer: 'edge' as const, value: { inferred_type: 'pc', type: 'pc' } },
+			{ layer: 'core' as const, value: { inferred_type: 'mystery-vendor', type: 'other' } }
+		];
+		expect(typeBucketCounts(nodes)).toEqual([
+			{ bucket: 'network', count: 1 }, // core layer → network despite vendor junk
+			{ bucket: 'computer', count: 2 }
+		]);
+	});
+
+	it('nodeFilterVisible: needs BOTH the layer pill and the type chip on', () => {
+		const gn = { layer: 'edge' as const, value: { inferred_type: 'camera', type: 'camera' } };
+		const allBuckets = { network: true, camera: true, computer: true, mobile: true, iot: true, other: true };
+		const allLayers = { root: true, core: true, access: true, edge: true };
+		expect(nodeFilterVisible(gn, allLayers, allBuckets)).toBe(true);
+		// Layer off, bucket on → hidden.
+		expect(nodeFilterVisible(gn, { ...allLayers, edge: false }, allBuckets)).toBe(false);
+		// Layer on, bucket off → hidden (chip filter).
+		expect(nodeFilterVisible(gn, allLayers, { ...allBuckets, camera: false })).toBe(false);
+		// The gateway (root) survives an "other"-only hide — the core complaint.
+		const gw = { layer: 'root' as const, value: { inferred_type: 'vendor-junk', type: 'other' } };
+		expect(nodeFilterVisible(gw, allLayers, { ...allBuckets, other: false })).toBe(true);
 	});
 });
 
