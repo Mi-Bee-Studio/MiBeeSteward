@@ -103,17 +103,28 @@
 	});
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let panelTickTimer: ReturnType<typeof setInterval> | null = null;
+	let themeObs: MutationObserver | null = null;
+	// Bumped by the data-theme observer so toolbar token colors re-resolve (#639).
+	let themeTick = $state(0);
 	let fetchSeq = 0;
 	let prevSignature = '';
 
 	onMount(() => {
-		fetchTopology();
+		// The first fetch belongs to the networkId $effect below (it tracks the
+		// prop and fires on mount) — fetching here too doubled the request and
+		// the first response was discarded by fetchSeq (#638).
 		pollTimer = setInterval(() => fetchTopology(true), 60000);
 		panelTickTimer = setInterval(() => (panelTick += 1), 30_000);
+		// Theme flips must re-resolve the toolbar's token colors (#639): the
+		// pills/legend read CSS variables at render time and a data-theme
+		// change alone re-renders nothing.
+		themeObs = new MutationObserver(() => (themeTick += 1));
+		themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 	});
 	onDestroy(() => {
 		if (pollTimer) clearInterval(pollTimer);
 		if (panelTickTimer) clearInterval(panelTickTimer);
+		themeObs?.disconnect();
 	});
 
 	// Refetch when the network filter changes (prop reactivity).
@@ -162,6 +173,17 @@
 	// Edge types actually present in the graph (#583) — the legend lists only
 	// these, with per-type counts.
 	let edgeStats = $derived(builtGraph ? edgeTypeCounts(builtGraph.links) : []);
+
+	// Theme-reactive resolved colors (#639): the toolbar pills/legend resolve
+	// CSS-variable tokens at render time — re-resolve whenever data-theme
+	// flips (themeTick) or the present protocol set changes.
+	let toolbarColors = $derived.by(() => {
+		void themeTick;
+		return {
+			layer: Object.fromEntries(LAYER_ORDER.map((l) => [l, resolveToken(LAYER_COLORS[l])])) as Record<TopoLayer, string>,
+			protocol: Object.fromEntries(edgeStats.map((s) => [s.protocol, resolveToken(protocolStyle(s.protocol).color)])) as Record<string, string>
+		};
+	});
 
 	// Orphan census (#584): degree-0 nodes (the root always stays drawn).
 	let orphanNodes = $derived(builtGraph ? splitOrphans(builtGraph.nodes).orphans : []);
@@ -269,11 +291,11 @@
 					class="px-2 py-1 rounded-full border transition-colors {layerVisible[layer]
 						? 'border-border-strong bg-surface-strong'
 						: 'border-border bg-surface opacity-50'}"
-					style={layerVisible[layer] ? `border-color: ${resolveToken(LAYER_COLORS[layer])}` : ''}
+					style={layerVisible[layer] ? `border-color: ${toolbarColors.layer[layer]}` : ''}
 				>
 					<span
 						class="inline-block w-2 h-2 rounded-full mr-1 align-middle"
-						style="background: {resolveToken(LAYER_COLORS[layer])}"
+						style="background: {toolbarColors.layer[layer]}"
 					></span>
 					{layerLabel(layer)}
 				</button>
@@ -304,7 +326,7 @@
 					>
 						<span
 							class="inline-block w-4 border-t-2 mr-0.5 align-middle"
-							style="border-color: {resolveToken(style.color)}; border-top-style: {style.dash}"
+							style="border-color: {toolbarColors.protocol[stat.protocol]}; border-top-style: {style.dash}"
 						></span>
 						{stat.protocol}
 						{#if weak}
