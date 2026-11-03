@@ -114,6 +114,38 @@ func (s *AgentCommandService) Enqueue(ctx context.Context, agentID, command stri
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
+
+	// Coalescing guard: the pull model has no backpressure, so while an
+	// agent is offline the scheduler keeps enqueueing every tick and the
+	// agent's serial poller then grinds through the whole backlog on
+	// reconnect (observed 650+ pending rows after a day-long center outage:
+	// fresh probe plans starved behind hours of stale rescans). Two rules
+	// bound the queue without losing work:
+	//   probe - the plan is a full snapshot, so a newer plan supersedes any
+	//           still-pending one (delete-then-insert);
+	//   scan  - an identical pending scan (same payload bytes; json.Marshal
+	//           sorts map keys, so the bytes are deterministic) is returned
+	//           as-is; the next tick re-dispatches anyway.
+	if command == "probe" {
+		if _, err := s.queries.DeletePendingAgentCommandsByCommand(ctx, db.DeletePendingAgentCommandsByCommandParams{
+			AgentID: agentID,
+			Command: command,
+		}); err != nil {
+			// Not fatal: a leftover duplicate plan is harmless (the agent
+			// applies the newest payload it sees). Fall through to insert.
+			slog.Warn("agent command coalesce: pending probe sweep failed", "agent_id", agentID, "error", err)
+		}
+	} else if command == "scan" {
+		if existing, err := s.queries.GetPendingAgentCommandByPayload(ctx, db.GetPendingAgentCommandByPayloadParams{
+			AgentID: agentID,
+			Command: command,
+			Payload: string(payloadBytes),
+		}); err == nil {
+			slog.Info("agent command coalesce: identical scan already pending", "agent_id", agentID, "command_id", existing.ID)
+			return existing, nil
+		}
+	}
+
 	return s.queries.CreateAgentCommand(ctx, db.CreateAgentCommandParams{
 		AgentID: agentID,
 		Command: command,
