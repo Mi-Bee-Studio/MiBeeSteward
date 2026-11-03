@@ -28,6 +28,7 @@ import {
 	topologyFingerprint,
 	deviceTypeBucket,
 	typeFillColor,
+	nodeFilterVisible,
 	typeBucketCounts,
 	TYPE_BUCKET_COLORS,
 	protocolStyle,
@@ -581,6 +582,17 @@ describe('device-type buckets', () => {
 			{ bucket: 'network', count: 1 },
 			{ bucket: 'computer', count: 2 }
 		]);
+	});
+
+	it('nodeFilterVisible: needs BOTH the layer pill and the type chip on', () => {
+		const gn = { layer: 'edge' as const, value: { inferred_type: 'camera', type: 'camera' } };
+		const allBuckets = { network: true, camera: true, computer: true, mobile: true, other: true };
+		const allLayers = { root: true, core: true, access: true, edge: true };
+		expect(nodeFilterVisible(gn, allLayers, allBuckets)).toBe(true);
+		// Layer off, bucket on → hidden.
+		expect(nodeFilterVisible(gn, { ...allLayers, edge: false }, allBuckets)).toBe(false);
+		// Layer on, bucket off → hidden (chip filter).
+		expect(nodeFilterVisible(gn, allLayers, { ...allBuckets, camera: false })).toBe(false);
 	});
 });
 

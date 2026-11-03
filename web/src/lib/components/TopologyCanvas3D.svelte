@@ -47,6 +47,7 @@
 		buildGraph,
 		recommendedForceParams,
 		splitOrphans,
+		nodeFilterVisible,
 		SEARCH_DIM_NODE_OPACITY,
 		type GraphNode,
 		type GraphLink,
@@ -62,6 +63,7 @@
 		graph,
 		search = '',
 		layerVisible,
+		bucketVisible,
 		hiddenProtocols = {},
 		expandOrphans = false,
 		colorMode = 'layer',
@@ -75,6 +77,8 @@
 		graph: TopologyGraph;
 		search?: string;
 		layerVisible: Record<TopoLayer, boolean>;
+		/** Type-bucket chips: click to filter (user request 2026-11-03). */
+		bucketVisible?: Record<string, boolean>;
 		hiddenProtocols?: Record<string, boolean>;
 		expandOrphans?: boolean;
 		colorMode?: 'layer' | 'type';
@@ -91,17 +95,23 @@
 	let container: HTMLDivElement | undefined = $state();
 	let webglFailed = $state(false);
 
+	// Absent bucket map = all visible (back-compat default).
+	let buckets = $derived(
+		bucketVisible ?? { network: true, camera: true, computer: true, mobile: true, other: true }
+	);
+
 	let built = $derived(graph ? buildGraph(graph) : null);
 	let force = $derived(built ? recommendedForceParams(built.nodes.length) : null);
 	// Visible orphan count for the collapsed group sphere's label (#584).
 	let orphanCount = $derived(
-		built ? splitOrphans(built.nodes).orphans.filter((o) => layerVisible[o.layer]).length : 0
+		built ? splitOrphans(built.nodes).orphans.filter((o) => nodeFilterVisible(o, layerVisible, buckets)).length : 0
 	);
 	let sceneSpec = $derived(
 		built && force
 			? buildTopologyScene(built, {
 					search,
 					layerVisible,
+					bucketVisible: buckets,
 					hiddenProtocols,
 					expandOrphans,
 					labelDensity: labelDensity ?? force.labelDensity,

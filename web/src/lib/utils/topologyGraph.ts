@@ -622,6 +622,20 @@ export function typeBucketCounts(
 }
 
 /**
+ * Combined visibility verdict (user request 2026-11-03: click a type chip to
+ * filter): a node renders only when BOTH its layer pill AND its type bucket
+ * chip are on. One shared check so the 2D and 3D canvases agree.
+ */
+export function nodeFilterVisible(
+	gn: Pick<GraphNode, 'layer' | 'value'>,
+	layerVisible: Record<TopoLayer, boolean>,
+	bucketVisible: Record<DeviceTypeBucket, boolean>
+): boolean {
+	if (!layerVisible[gn.layer]) return false;
+	return bucketVisible[deviceTypeBucket(gn.value.inferred_type || gn.value.type || 'other')];
+}
+
+/**
  * Protocol → line color/dash/width. High-confidence L2 (LLDP/CDP) = green
  * solid; Bridge-MIB = blue solid; STP = purple dashed; ARP (L3,
  * low-confidence) = grey dotted. route-table (#640): an L3 path fact the

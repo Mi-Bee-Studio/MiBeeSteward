@@ -49,6 +49,7 @@
 		LAYER_ORDER,
 		LAYER_COLORS,
 		typeFillColor,
+		deviceTypeBucket,
 		protocolStyle,
 		nodeSize,
 		nodeRing,
@@ -70,6 +71,7 @@
 		graph,
 		search = '',
 		layerVisible,
+		bucketVisible,
 		hiddenProtocols = {},
 		expandOrphans = false,
 		colorMode = 'layer',
@@ -83,6 +85,8 @@
 		graph: TopologyGraph;
 		search?: string;
 		layerVisible: Record<TopoLayer, boolean>;
+		/** Type-bucket chips: click to filter (user request 2026-11-03). */
+		bucketVisible?: Record<string, boolean>;
 		hiddenProtocols?: Record<string, boolean>;
 		expandOrphans?: boolean;
 		colorMode?: 'layer' | 'type';
@@ -122,13 +126,14 @@
 	let graphOption = $derived.by(() => {
 		void freshnessTick; // track: time-driven style refreshes
 		void themeVersion; // track: token colors re-resolve on theme flips
-		return buildOption(graph, search, layerVisible, hiddenProtocols, expandOrphans, colorMode, labelDensity);
+		return buildOption(graph, search, layerVisible, bucketVisible, hiddenProtocols, expandOrphans, colorMode, labelDensity);
 	});
 
 	function buildOption(
 		g: TopologyGraph,
 		search: string,
 		lvis: Record<TopoLayer, boolean>,
+		bvis: Record<string, boolean> | undefined,
 		hiddenProto: Record<string, boolean>,
 		expandOrphans: boolean,
 		colorMode: 'layer' | 'type' = 'layer',
@@ -137,22 +142,26 @@
 		if (!g || g.nodes.length === 0) return null;
 		const built = buildGraph(g);
 		if (built.nodes.length === 0) return null;
+		// Absent bucket map = all buckets visible (back-compat default).
+		const bucketOn = (bucket: string) => bvis?.[bucket] !== false;
 
 		// Orphan grouping (#584): collapsed mode renders the connected subgraph
 		// plus one synthetic dashed group node; expanded renders everything.
 		const { connected, orphans } = splitOrphans(built.nodes);
 		const layoutNodes = expandOrphans ? built.nodes : connected;
-		const orphanVisible = orphans.filter((o) => lvis[o.layer]).length;
+		const orphanVisible = orphans.filter((o) => lvis[o.layer] && bucketOn(deviceTypeBucket(o.value.inferred_type || o.value.type || 'other'))).length;
 		const renderCount = layoutNodes.length + (expandOrphans || orphanVisible === 0 ? 0 : 1);
 
 		const force = recommendedForceParams(Math.max(renderCount, 1));
 
-		// Nodes filtered by layer visibility. Hidden layers' nodes are omitted
-		// (and their links auto-dropped by ECharts when an endpoint is absent).
+		// Nodes filtered by layer AND type-bucket visibility (chips click to
+		// filter). Hidden nodes' links auto-drop when an endpoint is absent.
 		// Orphans have no links, so collapsing them drops nothing (#584).
 		const visibleNodeIds = new Set<number>();
 		for (const gn of layoutNodes) {
-			if (lvis[gn.layer]) visibleNodeIds.add(gn.id);
+			if (lvis[gn.layer] && bucketOn(deviceTypeBucket(gn.value.inferred_type || gn.value.type || 'other'))) {
+				visibleNodeIds.add(gn.id);
+			}
 		}
 
 		// Search dimming: matched nodes and their one-hop neighbors stay lit.

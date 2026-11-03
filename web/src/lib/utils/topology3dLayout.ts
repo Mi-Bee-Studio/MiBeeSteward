@@ -9,12 +9,20 @@
  * for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
  */
 
-import type { GraphBuildResult, GraphNode, GraphLink, TokenColor, TopoLayer } from '$lib/utils/topologyGraph';
+import type {
+	DeviceTypeBucket,
+	GraphBuildResult,
+	GraphNode,
+	GraphLink,
+	TokenColor,
+	TopoLayer
+} from '$lib/utils/topologyGraph';
 import {
 	LAYER_COLORS,
 	typeFillColor,
 	edgeOpacity,
 	isStaleEdge,
+	nodeFilterVisible,
 	nodeLabelVisible,
 	nodeRing,
 	nodeSize,
@@ -106,14 +114,14 @@ export interface SceneOptions {
  * GraphBuildResult; get what to draw.
  */
 export function buildTopologyScene(built: GraphBuildResult, opts: SceneOptions): TopologyScene {
-	const { search, layerVisible, hiddenProtocols, expandOrphans, labelDensity, colorMode } = opts;
+	const { search, layerVisible, bucketVisible, hiddenProtocols, expandOrphans, labelDensity, colorMode } = opts;
 
 	// Orphan grouping mirrors the 2D contract (#584).
 	const { connected, orphans } = splitOrphans(built.nodes);
 	const layoutNodes = expandOrphans ? built.nodes : connected;
-	const orphanVisible = orphans.filter((o) => layerVisible[o.layer]).length;
+	const orphanVisible = orphans.filter((o) => nodeFilterVisible(o, layerVisible, bucketVisible)).length;
 
-	const visibleNodeIds = new Set(layoutNodes.filter((gn) => layerVisible[gn.layer]).map((gn) => gn.id));
+	const visibleNodeIds = new Set(layoutNodes.filter((gn) => nodeFilterVisible(gn, layerVisible, bucketVisible)).map((gn) => gn.id));
 	const highlighted = searchHighlightSet(built.nodes, built.links, search);
 
 	const statusById = new Map(built.nodes.map((gn) => [gn.id, gn.value.status || '']));
