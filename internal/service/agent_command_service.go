@@ -126,7 +126,8 @@ func (s *AgentCommandService) Enqueue(ctx context.Context, agentID, command stri
 	//   scan  - an identical pending scan (same payload bytes; json.Marshal
 	//           sorts map keys, so the bytes are deterministic) is returned
 	//           as-is; the next tick re-dispatches anyway.
-	if command == "probe" {
+	switch command {
+	case "probe":
 		if _, err := s.queries.DeletePendingAgentCommandsByCommand(ctx, db.DeletePendingAgentCommandsByCommandParams{
 			AgentID: agentID,
 			Command: command,
@@ -135,7 +136,7 @@ func (s *AgentCommandService) Enqueue(ctx context.Context, agentID, command stri
 			// applies the newest payload it sees). Fall through to insert.
 			slog.Warn("agent command coalesce: pending probe sweep failed", "agent_id", agentID, "error", err)
 		}
-	} else if command == "scan" {
+	case "scan":
 		if existing, err := s.queries.GetPendingAgentCommandByPayload(ctx, db.GetPendingAgentCommandByPayloadParams{
 			AgentID: agentID,
 			Command: command,
