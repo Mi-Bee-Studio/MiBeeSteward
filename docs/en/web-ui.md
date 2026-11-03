@@ -42,6 +42,8 @@ For switched networks with LLDP / CDP / Bridge-MIB support, the topology page re
 
 ![Network topology](images/topology.webp)
 
+The graph renders through one of two interchangeable canvases chosen in the toolbar: the classic 2D force graph (ECharts) or a 3D scene (three.js; the choice persists in the URL as `&dim=3d`). The 3D view stacks the hierarchy along the vertical axis - gateway on top, then switches/routers, access, endpoints - and supports orbit/zoom, dragging individual nodes into place (positions survive refreshes), hover cards (name · IP · type · status · brand), and the same panels and double-click-to-device navigation as 2D. Node identification is controlled next to it: **color by layer** (the hierarchy) or **color by device type** - six buckets (network gear / cameras / computers & servers / mobile / smart devices & IoT / other), where the gateway and core layers always classify as network gear regardless of the vendor string a scanner reported - and **label density** (auto / all / none) so a large graph can label every point. The type chips double as click-to-filter toggles (they combine with the layer pills; edges drop with their endpoints), unidentified-neighbor edges render as dashed links to a synthetic stub, and edges past their freshness window (10 min generic / 5 min WiFi) fade to dashed on their own.
+
 ## Change Center
 
 The Changes page lays out device additions / attribute changes / losses / config changes on a timeline, the "history axis" of the quasi-realtime network portrait. The SSE-based `/changes/watch` endpoint feeds downstream integrations.
