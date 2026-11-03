@@ -334,10 +334,18 @@ vi.mock('$lib/api/client', () => ({
 					total: 4
 				});
 			}
-			return Promise.resolve({
-				targets: mockState.targets,
-				total: mockState.targets.length
-			});
+			// The list endpoint: honor limit/offset like the real API so tests
+			// can exercise the page's fetch-all-pages loop (the page asks for
+			// pages of 100 until the reported total is covered).
+			{
+				const u = new URL(url, 'http://test.local');
+				const limit = Number(u.searchParams.get('limit')) || 100;
+				const offset = Number(u.searchParams.get('offset')) || 0;
+				return Promise.resolve({
+					targets: mockState.targets.slice(offset, offset + limit),
+					total: mockState.targets.length
+				});
+			}
 		}),
 		post: vi.fn(() => Promise.resolve({})),
 		put: vi.fn(() => Promise.resolve({})),
@@ -405,6 +413,44 @@ describe('Probes page', () => {
 			expect(container.textContent).toContain('github-tls');
 			expect(container.textContent).toContain('github.com:443');
 		});
+	});
+
+	it('fetches every page: targets beyond the first 100 render, not silently truncated', async () => {
+		// 250 targets: the page must keep fetching pages of 100 until the
+		// reported total is covered. Regression: a single limit=100 fetch hid
+		// every later-created target (they kept probing, just invisibly) once
+		// auto-generation pushed a busy LAN past one page.
+		const seeded = mockState.targets;
+		const many = Array.from({ length: 250 }, (_, i) => ({
+			id: 1000 + i,
+			name: `bulk-target-${i}`,
+			module: 'icmp',
+			target: `192.0.2.${(i % 250) + 1}`,
+			interval_seconds: 300,
+			timeout_seconds: 10,
+			enabled: true,
+			notes: '',
+			vantage: 'center',
+			last_status: 'success',
+			created_at: '2026-09-17T00:00:00Z',
+			updated_at: '2026-09-17T00:00:00Z'
+		}));
+		mockState.targets = many;
+		try {
+			const { container } = render(Probes);
+			await waitFor(() => {
+				// Row 249 lives on the THIRD page — invisible to a one-page fetch.
+				expect(container.textContent).toContain('bulk-target-249');
+			});
+			// The loop stopped at the total: 250 rows in the external section's
+			// table (all bulk rows are manual/unbound), not 300 (no over-fetch).
+			const rows = container
+				.querySelector('section[data-category="external"] tbody')
+				?.querySelectorAll('tr');
+			expect(rows?.length).toBe(250);
+		} finally {
+			mockState.targets = seeded;
+		}
 	});
 
 	it('renders the module badge and per-vantage status lines (agent track visible)', async () => {

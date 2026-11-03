@@ -840,8 +840,25 @@
 
 	async function fetchTargets() {
 		try {
-			const res = await api.get<ProbeTargetListResponse>('/probe-targets/?limit=100');
-			targets = res.targets || [];
+			// Fetch EVERY page, not just the first: once #606 auto-generation
+			// pushed a busy LAN past one page of targets, a single limit=100
+			// fetch silently hid everything beyond it — later-created targets
+			// kept probing but were invisible on this page. Loop pages until
+			// the reported total is covered (bounded; a page short of the
+			// limit also ends the loop without trusting total).
+			const PAGE = 100;
+			let all: ProbeTarget[] = [];
+			let offset = 0;
+			for (let page = 0; page < 50; page++) {
+				const res = await api.get<ProbeTargetListResponse>(
+					`/probe-targets/?limit=${PAGE}&offset=${offset}`
+				);
+				const batch = res.targets || [];
+				all = all.concat(batch);
+				offset += batch.length;
+				if (batch.length < PAGE || (res.total != null && all.length >= res.total)) break;
+			}
+			targets = all;
 			error = '';
 			fetchCertSummaries();
 		} catch (err: unknown) {
