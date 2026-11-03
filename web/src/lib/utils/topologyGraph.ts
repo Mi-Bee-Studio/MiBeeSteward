@@ -533,3 +533,155 @@ export function recommendedForceParams(nodeCount: number): {
 		labelDensity: 'all'
 	};
 }
+
+// ---------------------------------------------------------------------------
+// Shared visual rules (#635 PR1): renderer-agnostic style verdicts.
+//
+// The 2D canvas (ECharts) and the future 3D renderer (three.js) must render
+// the SAME decisions — node size, ring badges, label budgets, the edge
+// opacity ladder, search dimming. These pure functions/tables express each
+// rule once, in theme-token form (CSS variable name + hex fallback); each
+// renderer resolves tokens to concrete colors itself (canvas contexts can't
+// parse var()). Keep anything DOM- or i18n-dependent OUT of this module.
+// ---------------------------------------------------------------------------
+
+/** A color expressed as a CSS-variable token plus a hard hex fallback. */
+export interface TokenColor {
+	token: string;
+	fallback: string;
+}
+
+/**
+ * Layer → fill color. root = amber (the gateway must stand out), core = blue,
+ * access = purple, edge = grey (endpoints blend in).
+ */
+export const LAYER_COLORS: Record<TopoLayer, TokenColor> = {
+	root: { token: '--color-warning', fallback: '#f59e0b' },
+	core: { token: '--color-info', fallback: '#3b82f6' },
+	access: { token: '--color-accent-purple', fallback: '#8b5cf6' },
+	edge: { token: '--color-muted', fallback: '#64748b' }
+};
+
+/**
+ * Protocol → line color/dash/width. High-confidence L2 (LLDP/CDP) = green
+ * solid; Bridge-MIB = blue solid; STP = purple dashed; ARP (L3,
+ * low-confidence) = grey dotted. route-table has no entry yet (#640) and
+ * falls through to the muted-solid default.
+ */
+export interface ProtocolStyle {
+	color: TokenColor;
+	dash: 'solid' | 'dashed' | 'dotted';
+	width: number;
+}
+
+export const PROTOCOL_STYLES: Record<string, ProtocolStyle> = {
+	LLDP: { color: { token: '--color-success', fallback: '#10b981' }, dash: 'solid', width: 2 },
+	CDP: { color: { token: '--color-success', fallback: '#10b981' }, dash: 'solid', width: 2 },
+	'Bridge-MIB': { color: { token: '--color-info', fallback: '#3b82f6' }, dash: 'solid', width: 1.5 },
+	'Q-BRIDGE-MIB': { color: { token: '--color-info', fallback: '#3b82f6' }, dash: 'solid', width: 1.5 },
+	STP: { color: { token: '--color-accent-purple', fallback: '#8b5cf6' }, dash: 'dashed', width: 1.5 },
+	// WiFi (#505): hostapd association observed on the AP — its own class,
+	// amber dashed, as the release notes have always described.
+	WiFi: { color: { token: '--color-accent-amber', fallback: '#f59e0b' }, dash: 'dashed', width: 1.5 },
+	ARP: { color: { token: '--color-muted', fallback: '#94a3b8' }, dash: 'dotted', width: 1 },
+	// speaks-with (#500): L3 traffic observation — visually the faintest
+	// class (corroborating relation, not a link fact).
+	'speaks-with': { color: { token: '--color-info', fallback: '#38bdf8' }, dash: 'dotted', width: 1 }
+};
+
+/** Line style for any protocol string; unknown protocols get muted solid. */
+export function protocolStyle(protocol: string): ProtocolStyle {
+	return (
+		PROTOCOL_STYLES[protocol] ?? {
+			color: { token: '--color-muted', fallback: '#94a3b8' },
+			dash: 'solid',
+			width: 1
+		}
+	);
+}
+
+/** Node glyph size: the root is a fixed 44; others scale with degree,
+ *  clamped to 16–40. */
+export function nodeSize(gn: Pick<GraphNode, 'isRoot' | 'degree'>): number {
+	return gn.isRoot ? 44 : Math.max(16, Math.min(40, 12 + gn.degree * 2));
+}
+
+/**
+ * Node ring badge (#556): the root keeps its amber gateway ring, a
+ * multi-segment bridge gets a blue one (root wins when both apply); plain
+ * nodes get none.
+ */
+export function nodeRing(gn: Pick<GraphNode, 'isRoot' | 'isBridge'>): { color: TokenColor; width: number } | null {
+	if (gn.isRoot) return { color: { token: '--color-warning', fallback: '#f59e0b' }, width: 3 };
+	if (gn.isBridge) return { color: { token: '--color-primary', fallback: '#3b82f6' }, width: 2 };
+	return null;
+}
+
+/**
+ * Label visibility by density budget: 'all' labels every node; 'core' only
+ * the root/core layers (medium+ graphs); 'none' labels nothing.
+ */
+export function nodeLabelVisible(gn: Pick<GraphNode, 'layer'>, density: 'all' | 'core' | 'none'): boolean {
+	if (density === 'all') return true;
+	if (density === 'none') return false;
+	return gn.layer === 'root' || gn.layer === 'core';
+}
+
+/**
+ * The edge opacity ladder (#583/#585) as one pure verdict. Weak evidence
+ * (ARP/speaks-with) starts fainter; staleness and an offline endpoint each
+ * multiply another 0.4 in; a cross-link renders as a half-tone secondary
+ * line INSTEAD of the ladder; an active search dims everything to
+ * near-invisible first.
+ */
+export function edgeOpacity(
+	link: Pick<GraphLink, 'protocol' | 'isCrossLink'>,
+	state: { stale?: boolean; offlineEnd?: boolean; dimmed?: boolean } = {}
+): number {
+	if (state.dimmed) return 0.1;
+	if (link.isCrossLink) return 0.5;
+	let opacity = WEAK_PROTOCOLS.has(link.protocol) ? 0.4 : 0.8;
+	if (state.stale) opacity *= 0.4;
+	if (state.offlineEnd) opacity *= 0.4;
+	return opacity;
+}
+
+/** Node opacity while a search is active and the node is not part of the
+ *  highlight set (#… search dimming). */
+export const SEARCH_DIM_NODE_OPACITY = 0.15;
+
+/**
+ * Which node ids stay lit for a search query: matches on name / IP / MAC
+ * (case-insensitive substring) plus the direct neighbors of every match, so
+ * a matched node's context survives the dimming. Empty query → empty set
+ * (nothing is dimmed).
+ */
+export function searchHighlightSet(
+	nodes: Array<Pick<GraphNode, 'id' | 'value'>>,
+	links: Array<Pick<GraphLink, 'source' | 'target'>>,
+	query: string
+): Set<number> {
+	if (!query) return new Set();
+	const q = query.toLowerCase();
+	const matched = new Set<number>();
+	for (const gn of nodes) {
+		const n = gn.value;
+		if (
+			(n.name || '').toLowerCase().includes(q) ||
+			(n.ip_address || '').toLowerCase().includes(q) ||
+			(n.mac_address || '').toLowerCase().includes(q)
+		) {
+			matched.add(gn.id);
+		}
+	}
+	const highlighted = new Set(matched);
+	for (const link of links) {
+		if (matched.has(link.source)) highlighted.add(link.target);
+		if (matched.has(link.target)) highlighted.add(link.source);
+	}
+	return highlighted;
+}
+
+/** Synthetic node id for the collapsed orphan group (#584): real device ids
+ *  are numeric strings, so this can never collide. */
+export const ORPHAN_GROUP_ID = 'orphans-group';

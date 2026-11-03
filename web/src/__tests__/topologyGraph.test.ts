@@ -23,7 +23,14 @@ import {
 	recommendedForceParams,
 	LAYER_ORDER,
 	isSegmentBridge,
-	formatPresence
+	formatPresence,
+	protocolStyle,
+	nodeSize,
+	nodeRing,
+	nodeLabelVisible,
+	edgeOpacity,
+	searchHighlightSet,
+	LAYER_COLORS
 } from '$lib/utils/topologyGraph';
 import type { TopologyGraph, TopoNode, TopoEdge } from '$lib/types';
 
@@ -457,5 +464,89 @@ describe('orphan grouping and enrichment hints (#584)', () => {
 	it('missingEnrichmentFamilies: WiFi alone lights wifi only (traffic + snmp still missing)', () => {
 		const links = [{ source: 1, target: 2, protocol: 'WiFi' }] as never[];
 		expect(missingEnrichmentFamilies(links)).toEqual(['traffic', 'snmp']);
+	});
+});
+
+// #635 PR1: renderer-agnostic style verdicts — the 2D canvas and the future
+// 3D renderer consume the same rules so the two views can never drift apart.
+describe('shared visual rules (#635)', () => {
+	it('protocolStyle: known protocols styled; unknown (incl. route-table today, #640) fall to muted solid', () => {
+		const lldp = protocolStyle('LLDP');
+		expect(lldp.color.token).toBe('--color-success');
+		expect(lldp.dash).toBe('solid');
+		expect(lldp.width).toBe(2);
+		// route-table has no style entry yet (#640): pin the fallback so the
+		// gap stays visible until the entry lands.
+		const fallback = protocolStyle('route-table');
+		expect(fallback.color.token).toBe('--color-muted');
+		expect(fallback.dash).toBe('solid');
+		expect(fallback.width).toBe(1);
+	});
+
+	it('LAYER_COLORS covers all four layers with token + hex fallback', () => {
+		for (const layer of LAYER_ORDER) {
+			const c = LAYER_COLORS[layer];
+			expect(c.token.startsWith('--color-')).toBe(true);
+			expect(c.fallback).toMatch(/^#[0-9a-f]{6}$/i);
+		}
+		expect(LAYER_COLORS.root.token).toBe('--color-warning'); // gateway = amber
+	});
+
+	it('nodeSize: root fixed 44; others scale with degree clamped 16–40', () => {
+		expect(nodeSize({ isRoot: true, degree: 0 })).toBe(44);
+		expect(nodeSize({ isRoot: false, degree: 0 })).toBe(16);
+		expect(nodeSize({ isRoot: false, degree: 5 })).toBe(22);
+		expect(nodeSize({ isRoot: false, degree: 99 })).toBe(40);
+	});
+
+	it('nodeRing: root wins over bridge; plain nodes get none', () => {
+		expect(nodeRing({ isRoot: true, isBridge: true })?.color.token).toBe('--color-warning');
+		expect(nodeRing({ isRoot: true, isBridge: true })?.width).toBe(3);
+		expect(nodeRing({ isRoot: false, isBridge: true })?.color.token).toBe('--color-primary');
+		expect(nodeRing({ isRoot: false, isBridge: true })?.width).toBe(2);
+		expect(nodeRing({ isRoot: false, isBridge: false })).toBeNull();
+	});
+
+	it('nodeLabelVisible: density budgets gate which layers get labels', () => {
+		expect(nodeLabelVisible({ layer: 'edge' }, 'all')).toBe(true);
+		expect(nodeLabelVisible({ layer: 'edge' }, 'core')).toBe(false);
+		expect(nodeLabelVisible({ layer: 'root' }, 'core')).toBe(true);
+		expect(nodeLabelVisible({ layer: 'access' }, 'core')).toBe(false);
+		expect(nodeLabelVisible({ layer: 'root' }, 'none')).toBe(false);
+	});
+
+	it('edgeOpacity ladder: weak starts fainter; stale/offline multiply in; cross-link replaces; search dims first', () => {
+		const hard = { protocol: 'LLDP', isCrossLink: false };
+		const weak = { protocol: 'ARP', isCrossLink: false };
+		expect(edgeOpacity(hard)).toBe(0.8);
+		expect(edgeOpacity(weak)).toBe(0.4);
+		// Weak evidence + ghost (#585) compounds.
+		expect(edgeOpacity(weak, { stale: true })).toBeCloseTo(0.16);
+		// Stale AND offline endpoint: both factors apply.
+		expect(edgeOpacity(hard, { stale: true, offlineEnd: true })).toBeCloseTo(0.8 * 0.4 * 0.4);
+		// A cross-link is a half-tone secondary line, not the ladder.
+		expect(edgeOpacity({ protocol: 'LLDP', isCrossLink: true }, { stale: true })).toBe(0.5);
+		// An active search overrides everything.
+		expect(edgeOpacity(hard, { dimmed: true })).toBe(0.1);
+	});
+
+	it('searchHighlightSet: name/IP/MAC matches + one-hop neighbors; empty query dims nothing', () => {
+		const nodes = [
+			{ id: 1, value: node({ id: 1, name: 'gateway', ip_address: '192.0.2.1', mac_address: 'aa:00:00:00:00:01' }) },
+			{ id: 2, value: node({ id: 2, name: 'ap-2', ip_address: '192.0.2.2', mac_address: 'bb:00:00:00:00:02' }) },
+			{ id: 3, value: node({ id: 3, name: 'cam', ip_address: '192.0.2.3', mac_address: 'cc:00:00:00:00:03' }) }
+		];
+		const links = [
+			{ source: 1, target: 2 },
+			{ source: 2, target: 3 }
+		];
+		// Name match, case-insensitive; node 1 is an endpoint of link 1-2.
+		expect(searchHighlightSet(nodes, links, 'GATE')).toEqual(new Set([1, 2]));
+		// IP match keeps the node + its one-hop neighbor.
+		expect(searchHighlightSet(nodes, links, '192.0.2.3')).toEqual(new Set([2, 3]));
+		// MAC match on the middle node lights both neighbors.
+		expect(searchHighlightSet(nodes, links, 'bb:00')).toEqual(new Set([1, 2, 3]));
+		// Empty query → nothing dimmed.
+		expect(searchHighlightSet(nodes, links, '')).toEqual(new Set());
 	});
 });
