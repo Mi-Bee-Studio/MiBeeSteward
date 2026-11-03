@@ -143,7 +143,9 @@
 			.filter((l) => byId.has(l.source) && byId.has(l.target));
 		const sim = forceSimulation(simNodes as never)
 			.force('charge', forceManyBody().strength(-140))
-			.force('link', forceLink(simLinks as never).distance(48).strength(0.7))
+			// .id() is REQUIRED: forceLink matches link endpoints by index
+			// otherwise, and string ids throw "node not found".
+			.force('link', forceLink(simLinks as never).id((d: { id: string }) => d.id).distance(48).strength(0.7))
 			.force('y', forceY((d: { layer: TopoLayer }) => layerY(d.layer)).strength(0.45))
 			.stop();
 		for (let i = 0; i < 260; i++) sim.tick();
