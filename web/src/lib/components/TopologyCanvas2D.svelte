@@ -35,6 +35,7 @@
 -->
 
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { m } from '$lib/i18n-paraglide';
 	import Chart from '$lib/components/Chart.svelte';
 	import type { EChartsOption } from '$lib/charts/echarts';
@@ -88,11 +89,24 @@
 		onopendevice?: (deviceId: number) => void;
 	} = $props();
 
+	// Freshness tick (#637): staleness fading, offline dimming and edge ages
+	// are time-driven verdicts computed at option-build time — a static page
+	// never crossed a threshold on its own. Rebuild every 30s so ghosts fade
+	// without user interaction. Positions are id-stable across setOption
+	// merges (same mechanism as the search-rebuild path), so this never
+	// restarts the force layout.
+	let freshnessTick = $state(0);
+	onMount(() => {
+		const t = setInterval(() => (freshnessTick += 1), 30_000);
+		return () => clearInterval(t);
+	});
+
 	// The ECharts option. Rebuilt whenever graph/search/layer/edge-type/orphan
-	// state changes.
-	let graphOption = $derived<EChartsOption | null>(
-		buildOption(graph, search, layerVisible, hiddenProtocols, expandOrphans)
-	);
+	// state changes — or the freshness tick fires (#637).
+	let graphOption = $derived.by(() => {
+		void freshnessTick; // track: time-driven style refreshes
+		return buildOption(graph, search, layerVisible, hiddenProtocols, expandOrphans);
+	});
 
 	function buildOption(
 		g: TopologyGraph,

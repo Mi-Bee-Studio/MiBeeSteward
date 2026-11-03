@@ -719,3 +719,24 @@ export function unknownNeighborStubs(
 	}
 	return [...byMac.entries()].map(([mac, linkCount]) => ({ id: `unknown:${mac}`, mac, linkCount }));
 }
+
+/**
+ * topologyFingerprint (#637): change-detector for the topology payload.
+ * Covers STRUCTURE (node ids, edge endpoints/protocols) and everything that
+ * drives time-sensitive rendering — per-edge last_seen and per-node status —
+ * so a silent poll actually delivers freshness updates instead of
+ * short-circuiting on an unchanged skeleton (the #637 bug: ghost edges never
+ * faded on a static page because the signature ignored last_seen).
+ * Order-insensitive (both sides sort); array order churn must not rebuild.
+ */
+export function topologyFingerprint(g: TopologyGraph): string {
+	const nodeKeys = g.nodes
+		.map((n) => `${n.id}:${n.status ?? ''}`)
+		.sort()
+		.join(',');
+	const edgeKeys = g.edges
+		.map((e) => `${e.from_device_id}>${e.to_device_id ?? e.to_mac}:${e.protocol}@${e.last_seen ?? ''}`)
+		.sort()
+		.join(',');
+	return `${g.nodes.length}|${g.edges.length}|${nodeKeys}|${edgeKeys}`;
+}

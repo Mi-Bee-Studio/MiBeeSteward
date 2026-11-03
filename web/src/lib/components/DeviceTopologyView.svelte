@@ -57,6 +57,7 @@
 		edgeAgeMs,
 		splitOrphans,
 		missingEnrichmentFamilies,
+		topologyFingerprint,
 		type GraphNode,
 		type GraphLink,
 		type TopoLayer
@@ -101,15 +102,18 @@
 		edge: true
 	});
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	let panelTickTimer: ReturnType<typeof setInterval> | null = null;
 	let fetchSeq = 0;
 	let prevSignature = '';
 
 	onMount(() => {
 		fetchTopology();
 		pollTimer = setInterval(() => fetchTopology(true), 60000);
+		panelTickTimer = setInterval(() => (panelTick += 1), 30_000);
 	});
 	onDestroy(() => {
 		if (pollTimer) clearInterval(pollTimer);
+		if (panelTickTimer) clearInterval(panelTickTimer);
 	});
 
 	// Refetch when the network filter changes (prop reactivity).
@@ -124,7 +128,10 @@
 			const qs = networkId ? `?network_id=${networkId}` : '';
 			const fresh = await api.get<TopologyGraph>(`/topology${qs}`);
 			if (seq !== fetchSeq) return;
-			const sig = graphSignature(fresh);
+			// #637: the fingerprint covers last_seen + status too, so silent
+			// polls deliver freshness updates instead of short-circuiting on
+			// an unchanged skeleton.
+			const sig = topologyFingerprint(fresh);
 			if (silent && sig === prevSignature) return;
 			prevSignature = sig;
 			graph = fresh;
@@ -137,14 +144,17 @@
 		}
 	}
 
-	function graphSignature(g: TopologyGraph): string {
-		const nodeIds = g.nodes.map((n) => n.id).sort((a, b) => a - b).join(',');
-		const edgeKeys = g.edges
-			.map((e) => `${e.from_device_id}>${e.to_device_id ?? e.to_mac}:${e.protocol}`)
-			.sort()
-			.join(',');
-		return `${g.nodes.length}|${g.edges.length}|${nodeIds}|${edgeKeys}`;
-	}
+	// Panel freshness (#637): "最后可见" ages and the stale verdict in the
+	// edge panel are computed at render time — a shared 30s tick keeps them
+	// moving on an otherwise static page (same cadence as the canvas tick).
+	let panelTick = $state(0);
+
+	// The selected edge's age/staleness verdict, recomputed on the tick.
+	let selectedEdgeAge = $derived.by(() => {
+		void panelTick; // track: time-driven verdicts
+		if (!selectedEdge) return null;
+		return { ageMs: edgeAgeMs(selectedEdge) ?? 0, stale: isStaleEdge(selectedEdge) };
+	});
 
 	// Build once per graph, feed every derived below (#584).
 	let builtGraph = $derived(graph ? buildGraph(graph) : null);
@@ -447,7 +457,7 @@
 						{#if selectedEdge.lastSeen}
 							<div>
 								<dt class="text-muted">{m['topology.Last Seen']()}</dt>
-								<dd>{formatAge(edgeAgeMs(selectedEdge) ?? 0)}{#if isStaleEdge(selectedEdge)} <span class="text-warning">({m['topology.Edge Stale']()})</span>{/if}</dd>
+								<dd>{formatAge(selectedEdgeAge?.ageMs ?? 0)}{#if selectedEdgeAge?.stale} <span class="text-warning">({m['topology.Edge Stale']()})</span>{/if}</dd>
 							</div>
 						{/if}
 						{#if endpointOffline(selectedEdge)}
