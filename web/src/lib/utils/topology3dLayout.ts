@@ -134,7 +134,7 @@ export function buildTopologyScene(built: GraphBuildResult, opts: SceneOptions):
 			kind: 'device',
 			graphNode: gn,
 			radius: nodeRadius(gn),
-			fill: colorMode === 'type' ? typeFillColor(gn.value) : LAYER_COLORS[gn.layer],
+			fill: colorMode === 'type' ? typeFillColor(gn) : LAYER_COLORS[gn.layer],
 			ring: nodeRing(gn),
 			labelVisible: nodeLabelVisible(gn, labelDensity),
 			dimmed: !!search && !highlighted.has(gn.id),

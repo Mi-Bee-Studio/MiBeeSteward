@@ -1229,7 +1229,8 @@
 		"Type Camera": "Cameras",
 		"Type Computer": "Computers / servers",
 		"Type Mobile": "Mobile",
-		"Type Other": "Other"
+		"Type Other": "Other",
+		"Type Iot": "Smart devices / IoT"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",

@@ -40,7 +40,7 @@ const allLayers = { root: true, core: true, access: true, edge: true } as const;
 const opts = (over: Partial<Parameters<typeof buildTopologyScene>[1]> = {}) => ({
 	search: '',
 	layerVisible: { ...allLayers },
-	bucketVisible: { network: true, camera: true, computer: true, mobile: true, other: true },
+	bucketVisible: { network: true, camera: true, computer: true, mobile: true, iot: true, other: true },
 	hiddenProtocols: {},
 	expandOrphans: false,
 	labelDensity: 'all' as const,
