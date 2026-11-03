@@ -258,6 +258,21 @@
 		goto('/devices/detail/' + id);
 	}
 
+	// Canvas-swap fade-in (#635 PR3): a short JS-driven rAF tween —
+	// deliberately NOT a CSS/WAAPI animation (an IAB's frozen
+	// document.timeline leaves those stuck at their start state forever;
+	// plain style mutations on rAF keep working there).
+	function fadeSwap(node: HTMLElement) {
+		const t0 = performance.now();
+		const step = (t: number) => {
+			const k = Math.min(1, (t - t0) / 180);
+			node.style.opacity = String(0.25 + 0.75 * k);
+			if (k < 1) requestAnimationFrame(step);
+		};
+		node.style.opacity = '0.25';
+		requestAnimationFrame(step);
+	}
+
 	// Offline endpoint check for the link panel (#585).
 	function endpointOffline(l: GraphLink): boolean {
 		if (!graph) return false;
@@ -428,36 +443,40 @@
 		<div class="flex gap-3 flex-1 min-h-[500px]">
 			<!-- Graph canvas (fills available space; detail panel overlays on the right).
 			     The renderer swaps by dimension (#635) — both implement the same
-			     contract, and the 3D component itself lazy-loads its chunk. -->
-			<div class="bg-surface border border-border rounded-lg p-2 flex-1 min-w-0">
-				{#if dim === '3d' && Canvas3D}
-					<Canvas3D
-						graph={graph}
-						search={searchQuery}
-						layerVisible={layerVisible}
-						hiddenProtocols={hiddenProtocols}
-						expandOrphans={showOrphans}
-						height="640px"
-						onselectnode={handleSelectNode}
-						onselectedge={handleSelectEdge}
-						onopenorphans={openOrphanPanel}
-						onopendevice={openDevice}
-					/>
-				{:else}
-					<TopologyCanvas2D
-						graph={graph}
-						search={searchQuery}
-						layerVisible={layerVisible}
-						hiddenProtocols={hiddenProtocols}
-						expandOrphans={showOrphans}
-						height="640px"
-						onselectnode={handleSelectNode}
-						onselectedge={handleSelectEdge}
-						onopenorphans={openOrphanPanel}
-						onopendevice={openDevice}
-					/>
-				{/if}
-			</div>
+			     contract, and the 3D component itself lazy-loads its chunk. The
+			     {#key dim} block remounts the wrapper so the fade-in action runs
+			     on every swap (#635 PR3). -->
+			{#key dim}
+				<div class="bg-surface border border-border rounded-lg p-2 flex-1 min-w-0" use:fadeSwap>
+					{#if dim === '3d' && Canvas3D}
+						<Canvas3D
+							graph={graph}
+							search={searchQuery}
+							layerVisible={layerVisible}
+							hiddenProtocols={hiddenProtocols}
+							expandOrphans={showOrphans}
+							height="640px"
+							onselectnode={handleSelectNode}
+							onselectedge={handleSelectEdge}
+							onopenorphans={openOrphanPanel}
+							onopendevice={openDevice}
+						/>
+					{:else}
+						<TopologyCanvas2D
+							graph={graph}
+							search={searchQuery}
+							layerVisible={layerVisible}
+							hiddenProtocols={hiddenProtocols}
+							expandOrphans={showOrphans}
+							height="640px"
+							onselectnode={handleSelectNode}
+							onselectedge={handleSelectEdge}
+							onopenorphans={openOrphanPanel}
+							onopendevice={openDevice}
+						/>
+					{/if}
+				</div>
+			{/key}
 
 			<!-- Drill-down panel: shows when a node or edge is selected -->
 			{#if selectedNode}
