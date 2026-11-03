@@ -3,6 +3,7 @@
 //! results (10s or 32 rows), and parks-not-drops failed batches (bounded
 //! oldest-first queue + retry ladder, the reporter's #554 pattern).
 
+use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -226,6 +227,64 @@ async fn icmp_ping(target: &str, timeout: Duration) -> Option<()> {
     crate::engine::probes::datagram_ping(ip, timeout).await
 }
 
+/// Resolve host:port with retries, resilient to slow local resolvers.
+///
+/// The static-musl agent carries musl's resolver, whose retry budget is a
+/// single ~5s window. On LANs fronted by a caching stub (systemd-resolved,
+/// dnsmasq+smartdns) a momentarily slow upstream makes getaddrinfo give up
+/// with EAI_AGAIN while glibc/Go clients on the same box sail through —
+/// field-observed as intermittent ~5007ms "error sending request" failures
+/// on every dual-name business target. Retrying the whole lookup a few
+/// times absorbs exactly that transient.
+///
+/// Generic over the resolve future so tests can drive fail-fail-succeed
+/// sequences without touching the real resolver.
+async fn resolve_retry_core<F, Fut>(
+    attempts: u32,
+    delay: Duration,
+    mut resolve: F,
+) -> Result<Vec<std::net::SocketAddr>, String>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = std::io::Result<Vec<std::net::SocketAddr>>>,
+{
+    let mut last = String::new();
+    for attempt in 0..attempts.max(1) {
+        match resolve().await {
+            Ok(addrs) if !addrs.is_empty() => return Ok(addrs),
+            Ok(_) => last = "empty answer".to_string(),
+            Err(e) => last = e.to_string(),
+        }
+        if attempt + 1 < attempts {
+            tokio::time::sleep(delay).await;
+        }
+    }
+    Err(last)
+}
+
+/// Resilient host resolution for the http executor: getaddrinfo (musl)
+/// retried up to `attempts` times with a short pause between rounds.
+async fn resolve_host_resilient(
+    host: &str,
+    port: u16,
+    attempts: u32,
+    delay: Duration,
+) -> Result<Vec<std::net::SocketAddr>, String> {
+    resolve_retry_core(attempts, delay, || {
+        let host = host.to_string();
+        async move {
+            tokio::task::spawn_blocking(move || {
+                (host.as_str(), port)
+                    .to_socket_addrs()
+                    .map(|it| it.collect::<Vec<_>>())
+            })
+            .await
+            .unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())))
+        }
+    })
+    .await
+}
+
 async fn http_probe(
     target: &str,
     opts: Option<&ProbeTargetOptions>,
@@ -238,9 +297,24 @@ async fn http_probe(
     let ignore_tls = opts.map(|o| o.ignore_tls_errors).unwrap_or(false);
     let is_head = opts.map(|o| o.method.as_str()).unwrap_or("") == "HEAD";
     let method = if is_head { reqwest::Method::HEAD } else { reqwest::Method::GET };
+
+    // Resolve OUTSIDE reqwest (retry loop above) and pin the answer with
+    // resolve_to_addrs: reqwest's own single-shot resolution inherits the
+    // musl budget and reports only a truncated "error sending request".
+    // Pinning keeps SNI/Host on the URL hostname while connecting straight
+    // to the resolved addresses.
+    let parsed = reqwest::Url::parse(&url)
+        .map_err(|e| ProbeFailure::other(format!("bad url {url:?}: {e}")))?;
+    let host = parsed.host_str().unwrap_or_default().to_string();
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    let addrs = resolve_host_resilient(&host, port, 3, Duration::from_millis(300))
+        .await
+        .map_err(ProbeFailure::other)?;
+
     let client = reqwest::Client::builder()
         .timeout(timeout)
         .danger_accept_invalid_certs(ignore_tls)
+        .resolve_to_addrs(&host, &addrs)
         .build()
         .map_err(|e| ProbeFailure::other(e.to_string()))?;
     let resp = client.request(method, &url).send().await.map_err(|e| {
@@ -930,5 +1004,72 @@ mod tests {
         let r = run_probe(&spec, "agent:t").await;
         assert_eq!(r.status, "fail");
         assert!(r.error_message.contains("NXDOMAIN"), "{}", r.error_message);
+    }
+
+    #[tokio::test]
+    async fn resolve_retry_absorbs_transient_failures() {
+        // The field shape: getaddrinfo gives up twice (slow stub upstream),
+        // the third round answers. The retry loop must absorb exactly that.
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let calls = AtomicU32::new(0);
+        let want = vec!["127.0.0.1:80".parse::<std::net::SocketAddr>().unwrap()];
+        let addrs = want.clone();
+        let result = resolve_retry_core(3, Duration::from_millis(1), || {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            let addrs = addrs.clone();
+            async move {
+                if n < 2 {
+                    Err(std::io::Error::other("Try again"))
+                } else {
+                    Ok(addrs)
+                }
+            }
+        })
+        .await;
+        assert_eq!(result.unwrap(), want);
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn resolve_retry_reports_last_error_after_budget() {
+        // Persistent resolver failure exhausts the budget and surfaces the
+        // LAST error (better diagnostics than the old truncated reqwest
+        // "error sending request").
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let calls = AtomicU32::new(0);
+        let err = resolve_retry_core(3, Duration::from_millis(1), || {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            async move { Err(std::io::Error::other(format!("attempt {n} failed"))) }
+        })
+        .await
+        .unwrap_err();
+        assert!(err.contains("attempt 2 failed"), "last error should survive: {err}");
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn resolve_retry_treats_empty_answer_as_failure() {
+        // A resolver answering with zero records must not be mistaken for
+        // success (connecting to nothing would surface as an opaque error).
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let calls = AtomicU32::new(0);
+        let err = resolve_retry_core(2, Duration::from_millis(1), || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async { Ok(vec![]) }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(err, "empty answer");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn resolve_host_resilient_resolves_loopback() {
+        // End-to-end through the real getaddrinfo path (no DNS needed):
+        // a literal IP host resolves on the first attempt.
+        let addrs = resolve_host_resilient("127.0.0.1", 80, 3, Duration::from_millis(1))
+            .await
+            .unwrap();
+        assert!(addrs.iter().any(|a| a.port() == 80));
     }
 }
