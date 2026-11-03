@@ -94,6 +94,39 @@
 	let showOrphans = $state(false);
 	let orphanPanelOpen = $state(false);
 
+	// 2D/3D renderer dimension (#635 PR2). The three.js chunk loads lazily on
+	// the first 2D→3D toggle; the preference rides the URL (&dim=3d) like the
+	// view= param. WebGL-less environments stay on 2D with a hint.
+	type TopoDim = '2d' | '3d';
+	let dim = $state<TopoDim>('2d');
+	let Canvas3D = $state<typeof import('./TopologyCanvas3D.svelte').default | null>(null);
+	let webglBlocked = $state(false);
+
+	function webglSupported(): boolean {
+		try {
+			const c = document.createElement('canvas');
+			return !!(c.getContext('webgl2') || c.getContext('webgl'));
+		} catch {
+			return false;
+		}
+	}
+
+	async function setDim(next: TopoDim) {
+		if (next === '3d') {
+			if (!webglSupported()) {
+				webglBlocked = true;
+				return;
+			}
+			webglBlocked = false;
+			if (!Canvas3D) Canvas3D = (await import('./TopologyCanvas3D.svelte')).default;
+		}
+		dim = next;
+		const url = new URL(window.location.href);
+		if (next === '3d') url.searchParams.set('dim', '3d');
+		else url.searchParams.delete('dim');
+		window.history.replaceState({}, '', url);
+	}
+
 	// Per-layer visibility (the legend doubles as a filter toggle). All on by default.
 	let layerVisible = $state<Record<TopoLayer, boolean>>({
 		root: true,
@@ -120,6 +153,8 @@
 		// change alone re-renders nothing.
 		themeObs = new MutationObserver(() => (themeTick += 1));
 		themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+		// Deep link ?dim=3d (#635): honor the persisted preference on mount.
+		if (new URLSearchParams(window.location.search).get('dim') === '3d') void setDim('3d');
 	});
 	onDestroy(() => {
 		if (pollTimer) clearInterval(pollTimer);
@@ -302,6 +337,23 @@
 			{/each}
 		</div>
 		<div class="flex-1"></div>
+		<!-- 2D/3D dimension toggle (#635): 3D lazily loads its chunk; WebGL-less
+		     environments stay on 2D with a hint. -->
+		<div class="flex items-center rounded-full border border-border overflow-hidden text-xs" role="group" aria-label="renderer dimension">
+			<button
+				onclick={() => setDim('2d')}
+				aria-pressed={dim === '2d'}
+				class="px-2.5 py-1 {dim === '2d' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>2D</button>
+			<button
+				onclick={() => setDim('3d')}
+				aria-pressed={dim === '3d'}
+				class="px-2.5 py-1 {dim === '3d' ? 'bg-surface-strong' : 'bg-surface text-muted'}"
+			>3D</button>
+		</div>
+		{#if webglBlocked}
+			<span class="text-xs text-warning">{m['topology.Webgl Unavailable']()}</span>
+		{/if}
 		<button
 			onclick={() => fetchTopology()}
 			class="btn btn-secondary text-sm"
@@ -374,20 +426,37 @@
 			</div>
 		{/if}
 		<div class="flex gap-3 flex-1 min-h-[500px]">
-			<!-- Graph canvas (fills available space; detail panel overlays on the right) -->
+			<!-- Graph canvas (fills available space; detail panel overlays on the right).
+			     The renderer swaps by dimension (#635) — both implement the same
+			     contract, and the 3D component itself lazy-loads its chunk. -->
 			<div class="bg-surface border border-border rounded-lg p-2 flex-1 min-w-0">
-				<TopologyCanvas2D
-					graph={graph}
-					search={searchQuery}
-					layerVisible={layerVisible}
-					hiddenProtocols={hiddenProtocols}
-					expandOrphans={showOrphans}
-					height="640px"
-					onselectnode={handleSelectNode}
-					onselectedge={handleSelectEdge}
-					onopenorphans={openOrphanPanel}
-					onopendevice={openDevice}
-				/>
+				{#if dim === '3d' && Canvas3D}
+					<Canvas3D
+						graph={graph}
+						search={searchQuery}
+						layerVisible={layerVisible}
+						hiddenProtocols={hiddenProtocols}
+						expandOrphans={showOrphans}
+						height="640px"
+						onselectnode={handleSelectNode}
+						onselectedge={handleSelectEdge}
+						onopenorphans={openOrphanPanel}
+						onopendevice={openDevice}
+					/>
+				{:else}
+					<TopologyCanvas2D
+						graph={graph}
+						search={searchQuery}
+						layerVisible={layerVisible}
+						hiddenProtocols={hiddenProtocols}
+						expandOrphans={showOrphans}
+						height="640px"
+						onselectnode={handleSelectNode}
+						onselectedge={handleSelectEdge}
+						onopenorphans={openOrphanPanel}
+						onopendevice={openDevice}
+					/>
+				{/if}
 			</div>
 
 			<!-- Drill-down panel: shows when a node or edge is selected -->
