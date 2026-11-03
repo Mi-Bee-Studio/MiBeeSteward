@@ -12,6 +12,7 @@
 import type { GraphBuildResult, GraphNode, GraphLink, TokenColor, TopoLayer } from '$lib/utils/topologyGraph';
 import {
 	LAYER_COLORS,
+	typeFillColor,
 	edgeOpacity,
 	isStaleEdge,
 	nodeLabelVisible,
@@ -95,6 +96,8 @@ export interface SceneOptions {
 	hiddenProtocols: Record<string, boolean>;
 	expandOrphans: boolean;
 	labelDensity: 'all' | 'core' | 'none';
+	/** Fill colors: by hierarchy layer (default) or by device-type bucket. */
+	colorMode: 'layer' | 'type';
 }
 
 /**
@@ -103,7 +106,7 @@ export interface SceneOptions {
  * GraphBuildResult; get what to draw.
  */
 export function buildTopologyScene(built: GraphBuildResult, opts: SceneOptions): TopologyScene {
-	const { search, layerVisible, hiddenProtocols, expandOrphans, labelDensity } = opts;
+	const { search, layerVisible, hiddenProtocols, expandOrphans, labelDensity, colorMode } = opts;
 
 	// Orphan grouping mirrors the 2D contract (#584).
 	const { connected, orphans } = splitOrphans(built.nodes);
@@ -123,7 +126,7 @@ export function buildTopologyScene(built: GraphBuildResult, opts: SceneOptions):
 			kind: 'device',
 			graphNode: gn,
 			radius: nodeRadius(gn),
-			fill: LAYER_COLORS[gn.layer],
+			fill: colorMode === 'type' ? typeFillColor(gn.value) : LAYER_COLORS[gn.layer],
 			ring: nodeRing(gn),
 			labelVisible: nodeLabelVisible(gn, labelDensity),
 			dimmed: !!search && !highlighted.has(gn.id),

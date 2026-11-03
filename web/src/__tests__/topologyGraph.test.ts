@@ -26,6 +26,10 @@ import {
 	formatPresence,
 	unknownNeighborStubs,
 	topologyFingerprint,
+	deviceTypeBucket,
+	typeFillColor,
+	typeBucketCounts,
+	TYPE_BUCKET_COLORS,
 	protocolStyle,
 	nodeSize,
 	nodeRing,
@@ -541,6 +545,42 @@ describe('topologyFingerprint (#637)', () => {
 			nodes: [node({ id: 1, status: 'offline' }), node({ id: 2, status: 'online' })]
 		} as unknown as TopologyGraph;
 		expect(topologyFingerprint(offline)).not.toBe(topologyFingerprint(base));
+	});
+});
+
+// Device-type color buckets (user request 2026-11-03): color-by-type mode.
+describe('device-type buckets', () => {
+	it('substrings bucket like classifyLayer does; unknowns land in other', () => {
+		expect(deviceTypeBucket('cisco router')).toBe('network');
+		expect(deviceTypeBucket('Switch')).toBe('network');
+		expect(deviceTypeBucket('ip camera')).toBe('camera');
+		expect(deviceTypeBucket('NAS')).toBe('computer');
+		expect(deviceTypeBucket('android phone')).toBe('mobile');
+		expect(deviceTypeBucket('printer')).toBe('other');
+		expect(deviceTypeBucket('')).toBe('other');
+	});
+
+	it('every bucket has a distinct token color', () => {
+		const tokens = new Set(Object.values(TYPE_BUCKET_COLORS).map((c) => c.token));
+		expect(tokens.size).toBe(5);
+	});
+
+	it('typeFillColor prefers inferred_type over type', () => {
+		expect(typeFillColor({ inferred_type: 'router', type: 'other' }).token).toBe(TYPE_BUCKET_COLORS.network.token);
+		expect(typeFillColor({ inferred_type: '', type: 'camera' }).token).toBe(TYPE_BUCKET_COLORS.camera.token);
+		expect(typeFillColor({ inferred_type: '', type: '' }).token).toBe(TYPE_BUCKET_COLORS.other.token);
+	});
+
+	it('typeBucketCounts: display order, zeros omitted', () => {
+		const nodes = [
+			{ value: { inferred_type: 'pc', type: 'pc' } },
+			{ value: { inferred_type: 'pc', type: 'pc' } },
+			{ value: { inferred_type: 'switch', type: 'switch' } }
+		];
+		expect(typeBucketCounts(nodes)).toEqual([
+			{ bucket: 'network', count: 1 },
+			{ bucket: 'computer', count: 2 }
+		]);
 	});
 });
 

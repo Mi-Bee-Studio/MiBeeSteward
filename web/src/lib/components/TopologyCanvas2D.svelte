@@ -48,6 +48,7 @@
 		recommendedForceParams,
 		LAYER_ORDER,
 		LAYER_COLORS,
+		typeFillColor,
 		protocolStyle,
 		nodeSize,
 		nodeRing,
@@ -71,6 +72,8 @@
 		layerVisible,
 		hiddenProtocols = {},
 		expandOrphans = false,
+		colorMode = 'layer',
+		labelDensity,
 		height = '640px',
 		onselectnode,
 		onselectedge,
@@ -82,6 +85,10 @@
 		layerVisible: Record<TopoLayer, boolean>;
 		hiddenProtocols?: Record<string, boolean>;
 		expandOrphans?: boolean;
+		colorMode?: 'layer' | 'type';
+		/** Overrides the node-count-derived density when set (user request
+		 *  2026-11-03: force all labels to identify every point). */
+		labelDensity?: 'all' | 'core' | 'none';
 		height?: string;
 		onselectnode?: (gn: GraphNode | null) => void;
 		onselectedge?: (gl: GraphLink | null) => void;
@@ -115,7 +122,7 @@
 	let graphOption = $derived.by(() => {
 		void freshnessTick; // track: time-driven style refreshes
 		void themeVersion; // track: token colors re-resolve on theme flips
-		return buildOption(graph, search, layerVisible, hiddenProtocols, expandOrphans);
+		return buildOption(graph, search, layerVisible, hiddenProtocols, expandOrphans, colorMode, labelDensity);
 	});
 
 	function buildOption(
@@ -123,7 +130,9 @@
 		search: string,
 		lvis: Record<TopoLayer, boolean>,
 		hiddenProto: Record<string, boolean>,
-		expandOrphans: boolean
+		expandOrphans: boolean,
+		colorMode: 'layer' | 'type' = 'layer',
+		labelDensityOverride?: 'all' | 'core' | 'none'
 	): EChartsOption | null {
 		if (!g || g.nodes.length === 0) return null;
 		const built = buildGraph(g);
@@ -153,10 +162,11 @@
 			.filter((gn) => visibleNodeIds.has(gn.id))
 			.map((gn) => {
 				const dimmed = search && !highlightedIds.has(gn.id);
-				const [token, fallback] = [LAYER_COLORS[gn.layer].token, LAYER_COLORS[gn.layer].fallback];
+				const fill = colorMode === 'type' ? typeFillColor(gn.value) : LAYER_COLORS[gn.layer];
+				const [token, fallback] = [fill.token, fill.fallback];
 				// Root gets a larger glyph; others scale with degree.
 				const size = nodeSize(gn);
-				const showLabel = nodeLabelVisible(gn, force.labelDensity);
+				const showLabel = nodeLabelVisible(gn, labelDensityOverride ?? force.labelDensity);
 				// Cross-segment bridge (#556): a blue ring marks the node that
 				// joins two segments (the root keeps its amber gateway ring).
 				const ring = nodeRing(gn);

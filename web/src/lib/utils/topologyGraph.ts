@@ -567,6 +567,61 @@ export const LAYER_COLORS: Record<TopoLayer, TokenColor> = {
 };
 
 /**
+ * Device-type color buckets (user request 2026-11-03): the layer palette
+ * answers "where in the hierarchy", type buckets answer "what is this
+ * thing" — five buckets keep a crowded canvas readable. Substring match,
+ * same discipline as classifyLayer (inferred_type can be richer, e.g.
+ * "cisco router" / "ip camera").
+ */
+export type DeviceTypeBucket = 'network' | 'camera' | 'computer' | 'mobile' | 'other';
+
+export const TYPE_BUCKET_ORDER: DeviceTypeBucket[] = ['network', 'camera', 'computer', 'mobile', 'other'];
+
+const TYPE_BUCKET_MATCHERS: Array<{ bucket: DeviceTypeBucket; matches: string[] }> = [
+	{ bucket: 'network', matches: ['router', 'firewall', 'switch'] },
+	{ bucket: 'camera', matches: ['camera', 'nvr'] },
+	{ bucket: 'computer', matches: ['pc', 'server', 'nas', 'notebook', 'laptop', 'desktop', 'workstation'] },
+	{ bucket: 'mobile', matches: ['phone', 'tablet', 'mobile'] }
+];
+
+/** Bucket a raw device-type string; unknowns land in 'other'. */
+export function deviceTypeBucket(type: string): DeviceTypeBucket {
+	const t = (type || 'other').toLowerCase();
+	for (const { bucket, matches } of TYPE_BUCKET_MATCHERS) {
+		if (matches.some((m) => t.includes(m))) return bucket;
+	}
+	return 'other';
+}
+
+/** Type-bucket fills: network=blue, camera=amber, computer=green,
+ *  mobile=purple, other=muted. */
+export const TYPE_BUCKET_COLORS: Record<DeviceTypeBucket, TokenColor> = {
+	network: { token: '--color-info', fallback: '#3b82f6' },
+	camera: { token: '--color-accent-amber', fallback: '#f59e0b' },
+	computer: { token: '--color-success', fallback: '#10b981' },
+	mobile: { token: '--color-accent-purple', fallback: '#8b5cf6' },
+	other: { token: '--color-muted', fallback: '#71717a' }
+};
+
+/** Fill color for a node in color-by-type mode. */
+export function typeFillColor(n: Pick<TopoNode, 'inferred_type' | 'type'>): TokenColor {
+	return TYPE_BUCKET_COLORS[deviceTypeBucket(n.inferred_type || n.type || 'other')];
+}
+
+/** Per-bucket node counts for the type legend, in display order, zeros
+ *  omitted — only buckets actually present render as chips. */
+export function typeBucketCounts(
+	nodes: Array<Pick<GraphNode, 'value'>>
+): Array<{ bucket: DeviceTypeBucket; count: number }> {
+	const counts = new Map<DeviceTypeBucket, number>();
+	for (const gn of nodes) {
+		const b = deviceTypeBucket(gn.value.inferred_type || gn.value.type || 'other');
+		counts.set(b, (counts.get(b) ?? 0) + 1);
+	}
+	return TYPE_BUCKET_ORDER.filter((b) => counts.has(b)).map((bucket) => ({ bucket, count: counts.get(bucket)! }));
+}
+
+/**
  * Protocol → line color/dash/width. High-confidence L2 (LLDP/CDP) = green
  * solid; Bridge-MIB = blue solid; STP = purple dashed; ARP (L3,
  * low-confidence) = grey dotted. route-table (#640): an L3 path fact the
