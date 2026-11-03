@@ -97,7 +97,7 @@
 
 	// Absent bucket map = all visible (back-compat default).
 	let buckets = $derived(
-		bucketVisible ?? { network: true, camera: true, computer: true, mobile: true, other: true }
+		bucketVisible ?? { network: true, camera: true, computer: true, mobile: true, iot: true, other: true }
 	);
 
 	let built = $derived(graph ? buildGraph(graph) : null);

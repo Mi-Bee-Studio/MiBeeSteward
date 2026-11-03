@@ -49,7 +49,7 @@
 		LAYER_ORDER,
 		LAYER_COLORS,
 		typeFillColor,
-		deviceTypeBucket,
+		typeBucketOf,
 		protocolStyle,
 		nodeSize,
 		nodeRing,
@@ -149,7 +149,7 @@
 		// plus one synthetic dashed group node; expanded renders everything.
 		const { connected, orphans } = splitOrphans(built.nodes);
 		const layoutNodes = expandOrphans ? built.nodes : connected;
-		const orphanVisible = orphans.filter((o) => lvis[o.layer] && bucketOn(deviceTypeBucket(o.value.inferred_type || o.value.type || 'other'))).length;
+		const orphanVisible = orphans.filter((o) => lvis[o.layer] && bucketOn(typeBucketOf(o))).length;
 		const renderCount = layoutNodes.length + (expandOrphans || orphanVisible === 0 ? 0 : 1);
 
 		const force = recommendedForceParams(Math.max(renderCount, 1));
@@ -159,7 +159,7 @@
 		// Orphans have no links, so collapsing them drops nothing (#584).
 		const visibleNodeIds = new Set<number>();
 		for (const gn of layoutNodes) {
-			if (lvis[gn.layer] && bucketOn(deviceTypeBucket(gn.value.inferred_type || gn.value.type || 'other'))) {
+			if (lvis[gn.layer] && bucketOn(typeBucketOf(gn))) {
 				visibleNodeIds.add(gn.id);
 			}
 		}
@@ -171,7 +171,7 @@
 			.filter((gn) => visibleNodeIds.has(gn.id))
 			.map((gn) => {
 				const dimmed = search && !highlightedIds.has(gn.id);
-				const fill = colorMode === 'type' ? typeFillColor(gn.value) : LAYER_COLORS[gn.layer];
+				const fill = colorMode === 'type' ? typeFillColor(gn) : LAYER_COLORS[gn.layer];
 				const [token, fallback] = [fill.token, fill.fallback];
 				// Root gets a larger glyph; others scale with degree.
 				const size = nodeSize(gn);

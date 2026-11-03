@@ -109,6 +109,7 @@
 		camera: true,
 		computer: true,
 		mobile: true,
+		iot: true,
 		other: true
 	});
 

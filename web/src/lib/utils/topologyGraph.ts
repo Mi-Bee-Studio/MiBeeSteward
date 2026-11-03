@@ -567,24 +567,31 @@ export const LAYER_COLORS: Record<TopoLayer, TokenColor> = {
 };
 
 /**
- * Device-type color buckets (user request 2026-11-03): the layer palette
- * answers "where in the hierarchy", type buckets answer "what is this
- * thing" — five buckets keep a crowded canvas readable. Substring match,
- * same discipline as classifyLayer (inferred_type can be richer, e.g.
- * "cisco router" / "ip camera").
+ * Device-type color buckets (user request 2026-11-03, refined same day):
+ * the layer palette answers "where in the hierarchy", type buckets answer
+ * "what is this thing". Real-world inferred_type is mostly OUI VENDOR
+ * strings ("GL.iNet", "Espressif Inc.", "Raspberry Pi Foundation"), so the
+ * matchers combine type words AND known-vendor substrings, and the root/core
+ * LAYER is the authoritative network signal — the detected gateway must
+ * never fall into 'other' (hiding "other" used to delete the graph's hub
+ * and every line with it).
  */
-export type DeviceTypeBucket = 'network' | 'camera' | 'computer' | 'mobile' | 'other';
+export type DeviceTypeBucket = 'network' | 'camera' | 'computer' | 'mobile' | 'iot' | 'other';
 
-export const TYPE_BUCKET_ORDER: DeviceTypeBucket[] = ['network', 'camera', 'computer', 'mobile', 'other'];
+export const TYPE_BUCKET_ORDER: DeviceTypeBucket[] = ['network', 'camera', 'computer', 'mobile', 'iot', 'other'];
 
+// Order matters (first match wins): mobile BEFORE iot so "Beijing Xiaomi
+// Mobile Software" (phone-heavy OUI) stays mobile while bare "Xiaomi"
+// (smart-home-heavy OUI) lands in iot.
 const TYPE_BUCKET_MATCHERS: Array<{ bucket: DeviceTypeBucket; matches: string[] }> = [
-	{ bucket: 'network', matches: ['router', 'firewall', 'switch'] },
-	{ bucket: 'camera', matches: ['camera', 'nvr'] },
-	{ bucket: 'computer', matches: ['pc', 'server', 'nas', 'notebook', 'laptop', 'desktop', 'workstation'] },
-	{ bucket: 'mobile', matches: ['phone', 'tablet', 'mobile'] }
+	{ bucket: 'network', matches: ['router', 'firewall', 'switch', 'access point', 'gl.inet', 'istoreos', 'openwrt', 'mercury', 'tp-link', 'tplink'] },
+	{ bucket: 'camera', matches: ['camera', 'nvr', 'ipcam'] },
+	{ bucket: 'computer', matches: ['pc', 'server', 'nas', 'notebook', 'laptop', 'desktop', 'workstation', 'raspberry pi', 'orange pi', 'banana pi', 'qnap', 'nvidia', 'micro-star', 'msi', 'caddy'] },
+	{ bucket: 'mobile', matches: ['phone', 'tablet', 'mobile', 'redmi', 'xiaomi communications'] },
+	{ bucket: 'iot', matches: ['iot', 'embedded', 'espressif', 'esp32', 'esp8266', 'lumi', 'aqara', 'smartmi', 'imilab', 'mijia', 'miio', 'sensor', 'hub', 'xiaomi'] }
 ];
 
-/** Bucket a raw device-type string; unknowns land in 'other'. */
+/** Bucket a raw device-type/vendor string; unknowns land in 'other'. */
 export function deviceTypeBucket(type: string): DeviceTypeBucket {
 	const t = (type || 'other').toLowerCase();
 	for (const { bucket, matches } of TYPE_BUCKET_MATCHERS) {
@@ -593,29 +600,41 @@ export function deviceTypeBucket(type: string): DeviceTypeBucket {
 	return 'other';
 }
 
-/** Type-bucket fills: network=blue, camera=amber, computer=green,
- *  mobile=purple, other=muted. */
+/**
+ * The CANONICAL bucket for a graph node: the root/core layers ARE network
+ * gear by construction (detectRoot picked the gateway; core = switches and
+ * routers), whatever vendor string the scanner reported. Everything else
+ * buckets by its type/vendor string.
+ */
+export function typeBucketOf(gn: Pick<GraphNode, 'layer' | 'value'>): DeviceTypeBucket {
+	if (gn.layer === 'root' || gn.layer === 'core') return 'network';
+	return deviceTypeBucket(gn.value.inferred_type || gn.value.type || 'other');
+}
+
+/** Type-bucket fills: network=sky, camera=amber, computer=green,
+ *  mobile=purple, iot=indigo, other=muted. */
 export const TYPE_BUCKET_COLORS: Record<DeviceTypeBucket, TokenColor> = {
-	network: { token: '--color-info', fallback: '#3b82f6' },
+	network: { token: '--color-info', fallback: '#38bdf8' },
 	camera: { token: '--color-accent-amber', fallback: '#f59e0b' },
 	computer: { token: '--color-success', fallback: '#10b981' },
-	mobile: { token: '--color-accent-purple', fallback: '#8b5cf6' },
-	other: { token: '--color-muted', fallback: '#71717a' }
+	mobile: { token: '--color-accent-purple', fallback: '#a78bfa' },
+	iot: { token: '--color-primary', fallback: '#6366f1' },
+	other: { token: '--color-muted', fallback: '#a1a1aa' }
 };
 
-/** Fill color for a node in color-by-type mode. */
-export function typeFillColor(n: Pick<TopoNode, 'inferred_type' | 'type'>): TokenColor {
-	return TYPE_BUCKET_COLORS[deviceTypeBucket(n.inferred_type || n.type || 'other')];
+/** Fill color for a node in color-by-type mode (layer-aware). */
+export function typeFillColor(gn: Pick<GraphNode, 'layer' | 'value'>): TokenColor {
+	return TYPE_BUCKET_COLORS[typeBucketOf(gn)];
 }
 
 /** Per-bucket node counts for the type legend, in display order, zeros
  *  omitted — only buckets actually present render as chips. */
 export function typeBucketCounts(
-	nodes: Array<Pick<GraphNode, 'value'>>
+	nodes: Array<Pick<GraphNode, 'layer' | 'value'>>
 ): Array<{ bucket: DeviceTypeBucket; count: number }> {
 	const counts = new Map<DeviceTypeBucket, number>();
 	for (const gn of nodes) {
-		const b = deviceTypeBucket(gn.value.inferred_type || gn.value.type || 'other');
+		const b = typeBucketOf(gn);
 		counts.set(b, (counts.get(b) ?? 0) + 1);
 	}
 	return TYPE_BUCKET_ORDER.filter((b) => counts.has(b)).map((bucket) => ({ bucket, count: counts.get(bucket)! }));
@@ -632,7 +651,7 @@ export function nodeFilterVisible(
 	bucketVisible: Record<DeviceTypeBucket, boolean>
 ): boolean {
 	if (!layerVisible[gn.layer]) return false;
-	return bucketVisible[deviceTypeBucket(gn.value.inferred_type || gn.value.type || 'other')];
+	return bucketVisible[typeBucketOf(gn)];
 }
 
 /**

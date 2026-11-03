@@ -1229,7 +1229,8 @@
 		"Type Camera": "摄像头",
 		"Type Computer": "电脑 / 服务器",
 		"Type Mobile": "移动设备",
-		"Type Other": "其他"
+		"Type Other": "其他",
+		"Type Iot": "智能设备 / IoT"
 	},
 	"certificates": {
 		"Title": "TLS 证书",

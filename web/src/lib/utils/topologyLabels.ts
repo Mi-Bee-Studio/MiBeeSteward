@@ -39,6 +39,7 @@ export function bucketLabel(bucket: DeviceTypeBucket): string {
 		camera: m['topology.Type Camera'](),
 		computer: m['topology.Type Computer'](),
 		mobile: m['topology.Type Mobile'](),
+		iot: m['topology.Type Iot'](),
 		other: m['topology.Type Other']()
 	};
 	return labels[bucket];
