@@ -1218,7 +1218,8 @@
 		"Hint Wifi": "Enable hostapd discovery on a router-form agent to see wireless associations",
 		"Hint Traffic": "Enable passive observation (eBPF) to see who talks to whom, with traffic",
 		"Hint Snmp": "Bind SNMP credentials for managed switches to collect wiring and ports",
-		"Enrich Hints Title": "Make this graph richer"
+		"Enrich Hints Title": "Make this graph richer",
+		"Webgl Unavailable": "WebGL unavailable — 3D view disabled"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",

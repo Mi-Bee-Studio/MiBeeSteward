@@ -257,6 +257,16 @@ interface AddDevicesResponse {
 	// adding a history entry (replaceState). Enables shareable/reloadable views.
 	function syncUrl() {
 		const params = buildParams();
+		// Foreign params this page doesn't own must survive the rewrite —
+		// building the query from scratch used to strip them (the topology
+		// view's dim=3d deep link, #635, vanished on the first sync).
+		const owned = new Set([
+			'status', 'type', 'network_id', 'search', 'created_from', 'created_to', 'sort', 'order', 'limit', 'offset', 'view'
+		]);
+		const current = new URLSearchParams(window.location.search);
+		for (const [k, v] of current) {
+			if (!owned.has(k)) params.set(k, v);
+		}
 		const qs = params.toString();
 		history.replaceState(null, '', qs ? `?${qs}` : '?');
 	}

@@ -33,14 +33,20 @@ export default defineConfig({
 		cssCodeSplit: true,
 		rollupOptions: {
 			output: {
-				manualChunks(id) {
-					if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) {
-						return 'echarts';
-					}
-					if (id.includes('node_modules')) {
-						return 'vendor';
-					}
+			manualChunks(id) {
+				if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) {
+					return 'echarts';
 				}
+				// The 3D topology renderer (#635) loads three.js + d3-force-3d
+				// only on the first 2D→3D toggle (dynamic import) — keep them
+				// out of the eager vendor bundle.
+				if (id.includes('node_modules/three') || id.includes('node_modules/d3-force-3d')) {
+					return 'three';
+				}
+				if (id.includes('node_modules')) {
+					return 'vendor';
+				}
+			}
 			}
 		}
 	}
