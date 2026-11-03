@@ -272,19 +272,23 @@
 		goto('/devices/detail/' + id);
 	}
 
-	// Canvas-swap fade-in (#635 PR3): a short JS-driven rAF tween —
-	// deliberately NOT a CSS/WAAPI animation (an IAB's frozen
-	// document.timeline leaves those stuck at their start state forever;
-	// plain style mutations on rAF keep working there).
+	// Canvas-swap fade-in (#635 PR3): a short setTimeout-driven tween.
+	// Deliberately NOT CSS/WAAPI (frozen document.timeline environments
+	// leave those stuck at their start state) and NOT requestAnimationFrame
+	// — the same frozen-clock hosts never fire rAF either, which left the
+	// canvas stuck at the tween's start opacity (blanked the whole view).
+	// setTimeout fires everywhere.
 	function fadeSwap(node: HTMLElement) {
-		const t0 = performance.now();
-		const step = (t: number) => {
-			const k = Math.min(1, (t - t0) / 180);
+		const t0 = Date.now();
+		const step = () => {
+			const k = Math.min(1, (Date.now() - t0) / 180);
 			node.style.opacity = String(0.25 + 0.75 * k);
-			if (k < 1) requestAnimationFrame(step);
+			if (k < 1) setTimeout(step, 30);
 		};
 		node.style.opacity = '0.25';
-		requestAnimationFrame(step);
+		setTimeout(step, 30);
+		// Belt and braces: never leave the canvas dimmed, whatever stalls.
+		setTimeout(() => (node.style.opacity = '1'), 400);
 	}
 
 	// Offline endpoint check for the link panel (#585).
