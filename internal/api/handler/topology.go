@@ -78,7 +78,7 @@ type topoEdge struct {
 	FromDeviceID int64   `json:"from_device_id"`
 	ToDeviceID   *int64  `json:"to_device_id"`
 	ToMAC        string  `json:"to_mac"`
-	Protocol     string  `json:"protocol"` // LLDP / CDP / Bridge-MIB / ARP / WiFi / speaks-with / route-table
+	Protocol     string  `json:"protocol"` // LLDP / CDP / Bridge-MIB / Q-BRIDGE-MIB / STP / ARP / WiFi / speaks-with / route-table
 	LocalPort    *string `json:"local_port"`
 	RemotePort   *string `json:"remote_port"`
 	// Bytes carries the speaks-with edge's observed traffic total (#500);

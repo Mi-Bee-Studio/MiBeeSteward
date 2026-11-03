@@ -569,8 +569,9 @@ export const LAYER_COLORS: Record<TopoLayer, TokenColor> = {
 /**
  * Protocol → line color/dash/width. High-confidence L2 (LLDP/CDP) = green
  * solid; Bridge-MIB = blue solid; STP = purple dashed; ARP (L3,
- * low-confidence) = grey dotted. route-table has no entry yet (#640) and
- * falls through to the muted-solid default.
+ * low-confidence) = grey dotted. route-table (#640): an L3 path fact the
+ * router itself reported — blue dashed (L3 family, stronger than the dotted
+ * inferences, not cabling either).
  */
 export interface ProtocolStyle {
 	color: TokenColor;
@@ -588,6 +589,10 @@ export const PROTOCOL_STYLES: Record<string, ProtocolStyle> = {
 	// amber dashed, as the release notes have always described.
 	WiFi: { color: { token: '--color-accent-amber', fallback: '#f59e0b' }, dash: 'dashed', width: 1.5 },
 	ARP: { color: { token: '--color-muted', fallback: '#94a3b8' }, dash: 'dotted', width: 1 },
+	// route-table (#640/#528): the router's own route table named this path —
+	// an L3 fact, blue dashed (same family as speaks-with's blue, solid
+	// evidence though: dest_subnet/next_hop metadata rides along).
+	'route-table': { color: { token: '--color-info', fallback: '#3b82f6' }, dash: 'dashed', width: 1.5 },
 	// speaks-with (#500): L3 traffic observation — visually the faintest
 	// class (corroborating relation, not a link fact).
 	'speaks-with': { color: { token: '--color-info', fallback: '#38bdf8' }, dash: 'dotted', width: 1 }

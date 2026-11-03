@@ -547,14 +547,17 @@ describe('topologyFingerprint (#637)', () => {
 // #635 PR1: renderer-agnostic style verdicts — the 2D canvas and the future
 // 3D renderer consume the same rules so the two views can never drift apart.
 describe('shared visual rules (#635)', () => {
-	it('protocolStyle: known protocols styled; unknown (incl. route-table today, #640) fall to muted solid', () => {
+	it('protocolStyle: known protocols styled; route-table has its own entry (#640); unknowns fall to muted solid', () => {
 		const lldp = protocolStyle('LLDP');
 		expect(lldp.color.token).toBe('--color-success');
 		expect(lldp.dash).toBe('solid');
 		expect(lldp.width).toBe(2);
-		// route-table has no style entry yet (#640): pin the fallback so the
-		// gap stays visible until the entry lands.
-		const fallback = protocolStyle('route-table');
+		// route-table (#640): L3 fact, blue dashed — no longer the muted default.
+		const rt = protocolStyle('route-table');
+		expect(rt.color.token).toBe('--color-info');
+		expect(rt.dash).toBe('dashed');
+		// Unknown future protocols still fall through to the muted solid default.
+		const fallback = protocolStyle('ZZZ-future');
 		expect(fallback.color.token).toBe('--color-muted');
 		expect(fallback.dash).toBe('solid');
 		expect(fallback.width).toBe(1);

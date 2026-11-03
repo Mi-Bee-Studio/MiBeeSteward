@@ -222,6 +222,8 @@ const (
 	DeviceNeighborProtocolBridgeMIB  DeviceNeighborProtocol = "Bridge-MIB"
 	DeviceNeighborProtocolCDP        DeviceNeighborProtocol = "CDP"
 	DeviceNeighborProtocolLLDP       DeviceNeighborProtocol = "LLDP"
+	DeviceNeighborProtocolQBRIDGEMIB DeviceNeighborProtocol = "Q-BRIDGE-MIB"
+	DeviceNeighborProtocolSTP        DeviceNeighborProtocol = "STP"
 	DeviceNeighborProtocolSpeaksWith DeviceNeighborProtocol = "speaks-with"
 	DeviceNeighborProtocolWiFi       DeviceNeighborProtocol = "WiFi"
 )
@@ -236,6 +238,10 @@ func (e DeviceNeighborProtocol) Valid() bool {
 	case DeviceNeighborProtocolCDP:
 		return true
 	case DeviceNeighborProtocolLLDP:
+		return true
+	case DeviceNeighborProtocolQBRIDGEMIB:
+		return true
+	case DeviceNeighborProtocolSTP:
 		return true
 	case DeviceNeighborProtocolSpeaksWith:
 		return true
@@ -930,7 +936,10 @@ const (
 	TopologyEdgeProtocolBridgeMIB  TopologyEdgeProtocol = "Bridge-MIB"
 	TopologyEdgeProtocolCDP        TopologyEdgeProtocol = "CDP"
 	TopologyEdgeProtocolLLDP       TopologyEdgeProtocol = "LLDP"
+	TopologyEdgeProtocolQBRIDGEMIB TopologyEdgeProtocol = "Q-BRIDGE-MIB"
 	TopologyEdgeProtocolRouteTable TopologyEdgeProtocol = "route-table"
+	TopologyEdgeProtocolSTP        TopologyEdgeProtocol = "STP"
+	TopologyEdgeProtocolSpeaksWith TopologyEdgeProtocol = "speaks-with"
 	TopologyEdgeProtocolWiFi       TopologyEdgeProtocol = "WiFi"
 )
 
@@ -945,7 +954,13 @@ func (e TopologyEdgeProtocol) Valid() bool {
 		return true
 	case TopologyEdgeProtocolLLDP:
 		return true
+	case TopologyEdgeProtocolQBRIDGEMIB:
+		return true
 	case TopologyEdgeProtocolRouteTable:
+		return true
+	case TopologyEdgeProtocolSTP:
+		return true
+	case TopologyEdgeProtocolSpeaksWith:
 		return true
 	case TopologyEdgeProtocolWiFi:
 		return true
