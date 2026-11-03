@@ -458,16 +458,39 @@
 		renderer.domElement.addEventListener('dblclick', onDbl);
 		renderer.domElement.addEventListener('pointermove', onMove);
 
-		const loop = () => {
+		// Render loop: requestAnimationFrame, with a frozen-clock watchdog —
+		// embedded browsers with a frozen document.timeline never fire rAF
+		// (the canvas stayed blank); if no frame arrives within 500ms, fall
+		// back to a setTimeout driver at ~30fps, which fires everywhere.
+		let loopTimer: ReturnType<typeof setTimeout> | null = null;
+		const frame = () => {
 			controls.update();
 			renderer.render(root, camera);
 			labelRenderer.render(root, camera);
-			raf = requestAnimationFrame(loop);
 		};
-		raf = requestAnimationFrame(loop);
+		let frames = 0;
+		const countedRafLoop = () => {
+			frames++;
+			frame();
+			raf = requestAnimationFrame(countedRafLoop);
+		};
+		const timeoutLoop = () => {
+			frame();
+			loopTimer = setTimeout(timeoutLoop, 33);
+		};
+		raf = requestAnimationFrame(countedRafLoop);
+		const watchdog = setTimeout(() => {
+			if (frames === 0) timeoutLoop();
+		}, 500);
+		const stopLoop = () => {
+			cancelAnimationFrame(raf);
+			raf = 0;
+			if (loopTimer) clearTimeout(loopTimer);
+			clearTimeout(watchdog);
+		};
 
 		return () => {
-			cancelAnimationFrame(raf);
+			stopLoop();
 			clearInterval(t);
 			resizeObs?.disconnect();
 			themeObs?.disconnect();
