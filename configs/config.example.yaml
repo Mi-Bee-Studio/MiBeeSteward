@@ -524,3 +524,16 @@ archive:
   # Engine tick (the restore timer needs finer granularity than the 6h
   # retention sweep; the archived set is small, so this is cheap).
   sweep_interval_seconds: 60
+  # Periodic-pattern learner (#664): a device that keeps returning on a
+  # stable cycle (e.g. appears online once a month) is exempt from
+  # auto-archive. Learns from archive<->online transitions once enough
+  # history accumulates; a learned pattern auto-expires after the device
+  # has been absent longer than 2x the learned cycle.
+  smart:
+    # Opt out entirely (default: learner enabled).
+    disabled: false
+    # Minimum event-history span before a pattern is trusted.
+    min_history_days: 60
+    # The exemption only engages for archive thresholds below this (a
+    # month-plus threshold never crosses a monthly cycle anyway).
+    max_threshold_days: 30

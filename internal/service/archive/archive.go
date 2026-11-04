@@ -115,6 +115,12 @@ func New(queries *db.Queries, cfg config.ArchiveConfig, logger *slog.Logger) *Se
 	if cfg.SweepIntervalSeconds <= 0 {
 		cfg.SweepIntervalSeconds = 60
 	}
+	if cfg.Smart.MinHistoryDays <= 0 {
+		cfg.Smart.MinHistoryDays = 60
+	}
+	if cfg.Smart.MaxThresholdDays <= 0 {
+		cfg.Smart.MaxThresholdDays = 30
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -188,6 +194,7 @@ func (s *Service) effectiveCfg() config.ArchiveConfig {
 
 func (s *Service) runOnce(ctx context.Context) {
 	cfg := s.effectiveCfg()
+	s.patternSweep(ctx, cfg) // before autoArchive: a fresh pattern exempts this tick
 	s.autoArchive(ctx, cfg)
 	s.stampOnline(ctx)
 	s.restoreCheck(ctx, cfg)
@@ -216,6 +223,11 @@ func (s *Service) autoArchive(ctx context.Context, cfg config.ArchiveConfig) {
 			thresholdDays = int(c.OfflineDaysOverride)
 		}
 		if c.OfflineSince == nil || c.OfflineSince.After(now.AddDate(0, 0, -thresholdDays)) {
+			continue
+		}
+		// Smart exemption (#664): a device whose return cycle was learned
+		// (or is learnable right now) stays in the asset library.
+		if s.evaluateDevice(ctx, c.ID, thresholdDays, c.Periodic == 1, cfg, now) {
 			continue
 		}
 		detail, _ := json.Marshal(map[string]any{

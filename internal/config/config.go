@@ -265,6 +265,31 @@ type ArchiveConfig struct {
 	// finer granularity than the retention sweeper's 6h, so the engine runs its
 	// own fast loop over the (small) archived set. 0 → 60.
 	SweepIntervalSeconds int `koanf:"sweep_interval_seconds" json:"sweep_interval_seconds"`
+	// Smart tunes the periodic-pattern learner (#664): a device that keeps
+	// returning on a stable cycle (e.g. appears once a month) is exempt from
+	// auto-archive once enough history accumulates.
+	Smart ArchiveSmartConfig `koanf:"smart" json:"smart"`
+}
+
+// ArchiveSmartConfig tunes the periodic-pattern learner (#664). The exemption
+// only engages when ALL of: the learner is not disabled, the device's
+// appearance-event history spans ≥ MinHistoryDays, the effective archive
+// threshold is < MaxThresholdDays, and ≥2 consecutive appearance intervals
+// are stable (±25% of their median). A recognized pattern auto-expires once
+// the device has been absent longer than 2× the learned cycle.
+type ArchiveSmartConfig struct {
+	// Disabled opts OUT of the learner. Inverted flag name so the Go zero
+	// value (false) is the default-ON behavior — house convention keeps bools
+	// honest with koanf's zero value.
+	Disabled bool `koanf:"disabled" json:"disabled"`
+	// MinHistoryDays is the minimum event-history span before the learner
+	// trusts a pattern (user rule: "历史数据不足2个月则智能识别失效").
+	// 0 → 60.
+	MinHistoryDays int `koanf:"min_history_days" json:"min_history_days"`
+	// MaxThresholdDays caps which thresholds the exemption applies to: only
+	// effective thresholds (per-device override > global) BELOW this engage
+	// the learner (user rule: 阈值小于一个月才有智能豁免). 0 → 30.
+	MaxThresholdDays int `koanf:"max_threshold_days" json:"max_threshold_days"`
 }
 
 type ServerConfig struct {
@@ -608,6 +633,12 @@ func normalizeArchive(cfg *Config) {
 	}
 	if a.SweepIntervalSeconds <= 0 {
 		a.SweepIntervalSeconds = 60
+	}
+	if a.Smart.MinHistoryDays <= 0 {
+		a.Smart.MinHistoryDays = 60
+	}
+	if a.Smart.MaxThresholdDays <= 0 {
+		a.Smart.MaxThresholdDays = 30
 	}
 }
 

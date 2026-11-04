@@ -86,6 +86,43 @@ func (q *Queries) InsertArchiveEvent(ctx context.Context, arg InsertArchiveEvent
 	return err
 }
 
+const listArchivedDeviceOverrides = `-- name: ListArchivedDeviceOverrides :many
+SELECT id, COALESCE(archive_offline_days_override, 0) AS offline_days_override
+FROM devices WHERE archived_at IS NOT NULL
+`
+
+type ListArchivedDeviceOverridesRow struct {
+	ID                  int64 `json:"id"`
+	OfflineDaysOverride int64 `json:"offline_days_override"`
+}
+
+// Archived devices are re-evaluated every tick: a recognized pattern both
+// flags the device periodic AND auto-restores it out of the archive. The
+// threshold override rides along: the exemption only applies below the
+// max_threshold_days cap, evaluated per device.
+func (q *Queries) ListArchivedDeviceOverrides(ctx context.Context) ([]ListArchivedDeviceOverridesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listArchivedDeviceOverrides)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArchivedDeviceOverridesRow{}
+	for rows.Next() {
+		var i ListArchivedDeviceOverridesRow
+		if err := rows.Scan(&i.ID, &i.OfflineDaysOverride); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listArchivedOnline = `-- name: ListArchivedOnline :many
 SELECT id, archive_pin, online_since
 FROM devices
@@ -156,7 +193,8 @@ func (q *Queries) ListArchivedOnlineBroken(ctx context.Context) ([]ListArchivedO
 }
 
 const listAutoArchiveCandidates = `-- name: ListAutoArchiveCandidates :many
-SELECT id, name, mac_address, ip_address, offline_since,
+
+SELECT id, name, mac_address, ip_address, offline_since, periodic,
        COALESCE(archive_offline_days_override, 0) AS offline_days_override
 FROM devices
 WHERE archived_at IS NULL
@@ -172,9 +210,13 @@ type ListAutoArchiveCandidatesRow struct {
 	MacAddress          string     `json:"mac_address"`
 	IpAddress           string     `json:"ip_address"`
 	OfflineSince        *time.Time `json:"offline_since"`
+	Periodic            int64      `json:"periodic"`
 	OfflineDaysOverride int64      `json:"offline_days_override"`
 }
 
+// === Periodic-pattern learner (#664) ===
+// Candidate select gains the periodic flag so the exemption check needs no
+// second round-trip.
 func (q *Queries) ListAutoArchiveCandidates(ctx context.Context) ([]ListAutoArchiveCandidatesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAutoArchiveCandidates)
 	if err != nil {
@@ -190,8 +232,87 @@ func (q *Queries) ListAutoArchiveCandidates(ctx context.Context) ([]ListAutoArch
 			&i.MacAddress,
 			&i.IpAddress,
 			&i.OfflineSince,
+			&i.Periodic,
 			&i.OfflineDaysOverride,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeviceArchiveEvents = `-- name: ListDeviceArchiveEvents :many
+SELECT id, event, triggered_by, occurred_at
+FROM asset_archive_events
+WHERE device_id = ?
+ORDER BY occurred_at ASC, id ASC
+`
+
+type ListDeviceArchiveEventsRow struct {
+	ID          int64     `json:"id"`
+	Event       string    `json:"event"`
+	TriggeredBy string    `json:"triggered_by"`
+	OccurredAt  time.Time `json:"occurred_at"`
+}
+
+// Learning input: the device's lifecycle event series, oldest first. The
+// learner filters event/trigger values in Go (small per-device series).
+func (q *Queries) ListDeviceArchiveEvents(ctx context.Context, deviceID int64) ([]ListDeviceArchiveEventsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDeviceArchiveEvents, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDeviceArchiveEventsRow{}
+	for rows.Next() {
+		var i ListDeviceArchiveEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Event,
+			&i.TriggeredBy,
+			&i.OccurredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPeriodicDeviceStates = `-- name: ListPeriodicDeviceStates :many
+SELECT id, status, periodic_cycle_days FROM devices WHERE periodic = 1
+`
+
+type ListPeriodicDeviceStatesRow struct {
+	ID                int64   `json:"id"`
+	Status            string  `json:"status"`
+	PeriodicCycleDays float64 `json:"periodic_cycle_days"`
+}
+
+// Periodic devices are checked for pattern expiry (absent > 2x cycle).
+func (q *Queries) ListPeriodicDeviceStates(ctx context.Context) ([]ListPeriodicDeviceStatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPeriodicDeviceStates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPeriodicDeviceStatesRow{}
+	for rows.Next() {
+		var i ListPeriodicDeviceStatesRow
+		if err := rows.Scan(&i.ID, &i.Status, &i.PeriodicCycleDays); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -236,6 +357,31 @@ type SetDeviceArchivePinParams struct {
 
 func (q *Queries) SetDeviceArchivePin(ctx context.Context, arg SetDeviceArchivePinParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, setDeviceArchivePin, arg.ArchivePin, arg.UpdatedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setDevicePeriodic = `-- name: SetDevicePeriodic :execrows
+UPDATE devices SET periodic = ?, periodic_cycle_days = ?, updated_at = ?
+WHERE id = ?
+`
+
+type SetDevicePeriodicParams struct {
+	Periodic          int64     `json:"periodic"`
+	PeriodicCycleDays float64   `json:"periodic_cycle_days"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	ID                int64     `json:"id"`
+}
+
+func (q *Queries) SetDevicePeriodic(ctx context.Context, arg SetDevicePeriodicParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setDevicePeriodic,
+		arg.Periodic,
+		arg.PeriodicCycleDays,
+		arg.UpdatedAt,
+		arg.ID,
+	)
 	if err != nil {
 		return 0, err
 	}
