@@ -53,17 +53,17 @@ const (
 
 // Event / trigger values for asset_archive_events (mirror the schema CHECKs).
 const (
-	EventArchived        = "archived"
-	EventRestored        = "restored"
-	EventOnlineBlip      = "online_blip"
-	EventPatternLearned  = "pattern_learned"
-	EventPatternCleared  = "pattern_cleared"
-	EventPinSet          = "pin_set"
-	EventPinCleared      = "pin_cleared"
-	TriggerAutoOffline   = "auto_offline"
-	TriggerAutoRestore   = "auto_restore"
-	TriggerPattern       = "pattern"
-	TriggerManual        = "manual"
+	EventArchived       = "archived"
+	EventRestored       = "restored"
+	EventOnlineBlip     = "online_blip"
+	EventPatternLearned = "pattern_learned"
+	EventPatternCleared = "pattern_cleared"
+	EventPinSet         = "pin_set"
+	EventPinCleared     = "pin_cleared"
+	TriggerAutoOffline  = "auto_offline"
+	TriggerAutoRestore  = "auto_restore"
+	TriggerPattern      = "pattern"
+	TriggerManual       = "manual"
 )
 
 // SettingKeyEngine is the settings-center overlay key (#663 runtime knobs).
