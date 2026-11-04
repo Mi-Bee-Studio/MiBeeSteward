@@ -471,14 +471,9 @@ scanner:
 # Defaults: heartbeat 7d, scan_results/runs 30d, audit 90d, notifications 30d,
 # service_evidence 14d, host_tls_certs 30d, sweep every 6h, batches of 5000.
 #
-# silent_device_*: scanner-discovered devices (scan_source='scanner_v2') that
-# have had NO heartbeat (all probe configs failing) for longer than these
-# windows are physically DELETED (manual devices are never auto-deleted). A
-# device WITH a MAC gets silent_device_days_mac (7d: a real asset may be
-# genuinely gone for a while); a device WITHOUT a MAC gets
-# silent_device_hours_no_mac (24h: a mac-less identity is unreliable and pruned
-# faster). A device that recovers (5 consecutive online probe cycles) clears its
-# offline clock. Each deletion is logged to change_log as device_removed.
+# (silent_device_* RETIRED, #663: offline devices are no longer physically
+# deleted — the asset-archive engine below archives them, history preserved.
+# The only remaining device-row delete is the roamed-orphan duplicate reap.)
 retention:
   heartbeat_results_days: 7
   # device_liveness: per-device online/offline verdict series (sampled every
@@ -505,7 +500,27 @@ retention:
   # interval). probe_tls_certs is not swept: it holds only each target's
   # current certificate chain, replaced on every successful collection.
   probe_results_days: 30
-  silent_device_days_mac: 7
-  silent_device_hours_no_mac: 24
   sweep_interval_hours: 6
   batch_size: 5000
+
+# ── Archive (asset-archive lifecycle, #663) ─────────────────────────────────
+# Offline devices are ARCHIVED to the asset archive instead of physically
+# deleted — the device row and every attached history (configs, certificates,
+# documents, sightings, archive events) stays, and the archive stays queryable
+# (dossier timeline). Archived devices that come back online briefly (1-2
+# short appearances) stay archived; only continuous online past
+# restore_online_minutes returns the asset to the live library. Manual pins
+# (per-device, set from the device page) override everything:
+# force_archive = never auto-restored; force_active = never auto-archived.
+# Manual devices (scan_source='manual') respond to manual archive only.
+# A field of 0 means "use the documented default".
+archive:
+  # Days a device may stay offline before auto-archive. Per-device override:
+  # devices.archive_offline_days_override (unset = follow this global value).
+  offline_days: 7
+  # Minutes an archived device must stay CONTINUOUSLY online before it
+  # auto-restores. Brief blips record online_blip events and stay archived.
+  restore_online_minutes: 60
+  # Engine tick (the restore timer needs finer granularity than the 6h
+  # retention sweep; the archived set is small, so this is cheap).
+  sweep_interval_seconds: 60

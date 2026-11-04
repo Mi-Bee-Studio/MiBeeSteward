@@ -33,6 +33,7 @@ import (
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 	"mibee-steward/internal/service/agentwatch"
+	"mibee-steward/internal/service/archive"
 	"mibee-steward/internal/service/demoseed"
 	"mibee-steward/internal/service/flows"
 	"mibee-steward/internal/service/listenwatch"
@@ -916,6 +917,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// config.normalizeRetention, so cfg.Retention is fully populated here.
 	cleanupSvc := scannerv2cleanup.New(scanQueries, hbStore.Queries(), hbStore.DB(), dbConn, cfg.Retention)
 	cleanupSvc.Start(context.Background())
+
+	// Asset-archive lifecycle engine (#663): offline devices are archived
+	// (row + history preserved) instead of physically deleted; continuous
+	// online past the restore threshold returns an asset to the live library.
+	// The settings-center overlay (archive.engine) is re-read each tick, so
+	// runtime threshold edits apply without a restart.
+	archiveSvc := archive.New(scanQueries, cfg.Archive, slog.Default())
+	if settingsSvc != nil {
+		archiveSvc.SetSettingsSource(settingsSvc)
+	}
+	archiveSvc.Start(context.Background())
 
 	// Config-backup sweep (#137): fetches running-configs over SSH for devices
 	// with a bound SSH credential. Opt-in (scanner.config_backup.enabled), needs

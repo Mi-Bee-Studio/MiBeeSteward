@@ -55,6 +55,12 @@ type Config struct {
 	// detail tables (heartbeat_results, scan_results, …). Without it these
 	// tables grow unbounded, heartbeat_results alone accumulates ~270k rows/day.
 	Retention RetentionConfig `koanf:"retention"`
+	// Archive drives the asset-archive lifecycle engine (#663): offline
+	// devices are ARCHIVED (row + FK history preserved) instead of physically
+	// deleted, and archived devices continuously online past the restore
+	// threshold re-enter the asset library. The engine always runs (like the
+	// retention sweeper); these knobs tune thresholds only.
+	Archive ArchiveConfig `koanf:"archive"`
 	// Network identifies the logical network this instance is responsible for.
 	// Used to resolve devices.network_id (seeded into the networks table at
 	// startup). Single-instance default name is "default"; in a distributed
@@ -223,20 +229,11 @@ type RetentionConfig struct {
 	// expiry). probe_tls_certs is NOT swept, it holds only each target's
 	// current chain, replaced on every successful collection.
 	ProbeResultsDays int `koanf:"probe_results_days"`
-	// SilentDeviceDaysMAC is how long a scanner-discovered device WITH a MAC
-	// address can stay offline (no heartbeat, all probe configs failing) before
-	// the silent-device retention sweep physically deletes it (issue #117). MAC-
-	// bearing devices are real assets that may genuinely disappear for a while
-	// (laptop on a long trip, IoT device powered off), so the window is generous
-	// (7d). A device that comes back online (5 consecutive successful probe
-	// cycles) clears offline_since and the clock resets. Manual devices
-	// (scan_source != 'scanner_v2') are NEVER auto-deleted. 0 → default 7.
-	SilentDeviceDaysMAC int `koanf:"silent_device_days_mac"`
-	// SilentDeviceHoursNoMAC is the same window for scanner-discovered devices
-	// WITHOUT a MAC (mac_address=''). A mac-less device is an unreliable identity
-	// (could be a transient/duplicate discovery), so it's pruned much faster
-	// (24h) to keep the registry clean. 0 → default 24.
-	SilentDeviceHoursNoMAC int `koanf:"silent_device_hours_no_mac"`
+	// (silent_device_days_mac / silent_device_hours_no_mac RETIRED, #663: the
+	// silent-device physical prune is replaced by the asset-archive engine —
+	// ArchiveConfig + internal/service/archive. Scanner devices offline past
+	// the archive threshold are ARCHIVED, not deleted; only the roamed-orphan
+	// duplicate prune remains in cleanup.)
 	// SweepIntervalHours is how often the retention sweeper runs across all
 	// tables. Default 6h, frequent enough that no table drifts far past its
 	// window, rare enough to be negligible overhead.
@@ -245,6 +242,29 @@ type RetentionConfig struct {
 	// deletes on million-row tables hold the write lock too long and bloat WAL;
 	// batching keeps each transaction small so WAL can checkpoint between batches.
 	BatchSize int `koanf:"batch_size"`
+}
+
+// ArchiveConfig tunes the asset-archive lifecycle engine (#663). The engine
+// REPLACES the old silent-device physical prune: a scanner-discovered device
+// offline past the threshold is archived (archived_at stamped, history kept);
+// an archived device continuously online past RestoreOnlineMinutes re-enters
+// the asset library; brief 1-2 blips never accumulate to a restore. Pins
+// (devices.archive_pin) override everything: force_active is never
+// auto-archived, force_archive is never auto-restored. Manual devices
+// (scan_source != 'scanner_v2') respond to manual archive only.
+type ArchiveConfig struct {
+	// OfflineDays is the global auto-archive threshold: days a device may stay
+	// offline before it moves to the archive. Per-device override:
+	// devices.archive_offline_days_override (NULL/0 = follow this). 0 → 7.
+	OfflineDays int `koanf:"offline_days" json:"offline_days"`
+	// RestoreOnlineMinutes is how long an archived device must stay
+	// CONTINUOUSLY online before it auto-restores into the asset library.
+	// Shorter appearances record online_blip events and stay archived. 0 → 60.
+	RestoreOnlineMinutes int `koanf:"restore_online_minutes" json:"restore_online_minutes"`
+	// SweepIntervalSeconds is the archive engine tick. The restore timer needs
+	// finer granularity than the retention sweeper's 6h, so the engine runs its
+	// own fast loop over the (small) archived set. 0 → 60.
+	SweepIntervalSeconds int `koanf:"sweep_interval_seconds" json:"sweep_interval_seconds"`
 }
 
 type ServerConfig struct {
@@ -480,6 +500,7 @@ func Load(configPath string) (*Config, error) {
 	// Apply retention defaults (and the scanner.retention_days back-compat
 	// fallback for scan_results) before validation.
 	normalizeRetention(&cfg)
+	normalizeArchive(&cfg)
 	// Apply passive-discovery defaults (interval, trigger_identify, per-source
 	// toggles). Done before validation so the service sees a fully-populated cfg.
 	normalizeDiscovery(&cfg)
@@ -566,17 +587,27 @@ func normalizeRetention(cfg *Config) {
 	if r.ProbeResultsDays <= 0 {
 		r.ProbeResultsDays = 30
 	}
-	if r.SilentDeviceDaysMAC <= 0 {
-		r.SilentDeviceDaysMAC = 7
-	}
-	if r.SilentDeviceHoursNoMAC <= 0 {
-		r.SilentDeviceHoursNoMAC = 24
-	}
 	if r.SweepIntervalHours <= 0 {
 		r.SweepIntervalHours = 6
 	}
 	if r.BatchSize <= 0 {
 		r.BatchSize = 5000
+	}
+}
+
+// normalizeArchive fills the asset-archive engine defaults (#663): 7d offline
+// threshold, 60min continuous-online restore, 60s engine tick. Same zero-value
+// convention as normalizeRetention: 0 means "use the default", never "disabled".
+func normalizeArchive(cfg *Config) {
+	a := &cfg.Archive
+	if a.OfflineDays <= 0 {
+		a.OfflineDays = 7
+	}
+	if a.RestoreOnlineMinutes <= 0 {
+		a.RestoreOnlineMinutes = 60
+	}
+	if a.SweepIntervalSeconds <= 0 {
+		a.SweepIntervalSeconds = 60
 	}
 }
 
