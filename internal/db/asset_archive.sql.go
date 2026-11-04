@@ -47,6 +47,17 @@ func (q *Queries) ClearOnlineSince(ctx context.Context, arg ClearOnlineSincePara
 	return result.RowsAffected()
 }
 
+const countArchivedDevices = `-- name: CountArchivedDevices :one
+SELECT COUNT(*) FROM devices WHERE archived_at IS NOT NULL
+`
+
+func (q *Queries) CountArchivedDevices(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countArchivedDevices)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertArchiveEvent = `-- name: InsertArchiveEvent :exec
 
 
@@ -110,6 +121,91 @@ func (q *Queries) ListArchivedDeviceOverrides(ctx context.Context) ([]ListArchiv
 	for rows.Next() {
 		var i ListArchivedDeviceOverridesRow
 		if err := rows.Scan(&i.ID, &i.OfflineDaysOverride); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArchivedDevices = `-- name: ListArchivedDevices :many
+SELECT d.id, d.name, d.type, d.brand, d.model, d.ip_address, d.mac_address,
+       d.status, d.archived_at, d.archive_pin, d.online_since, d.offline_since,
+       d.periodic, d.periodic_cycle_days, d.scan_source,
+       d.network_id, n.name AS network_name,
+       d.created_at, d.updated_at
+FROM devices d
+LEFT JOIN networks n ON n.id = d.network_id
+WHERE d.archived_at IS NOT NULL
+ORDER BY d.archived_at DESC
+LIMIT ? OFFSET ?
+`
+
+type ListArchivedDevicesParams struct {
+	Limit  int64 `json:"limit"`
+	Offset int64 `json:"offset"`
+}
+
+type ListArchivedDevicesRow struct {
+	ID                int64      `json:"id"`
+	Name              string     `json:"name"`
+	Type              string     `json:"type"`
+	Brand             string     `json:"brand"`
+	Model             string     `json:"model"`
+	IpAddress         string     `json:"ip_address"`
+	MacAddress        string     `json:"mac_address"`
+	Status            string     `json:"status"`
+	ArchivedAt        *time.Time `json:"archived_at"`
+	ArchivePin        string     `json:"archive_pin"`
+	OnlineSince       *time.Time `json:"online_since"`
+	OfflineSince      *time.Time `json:"offline_since"`
+	Periodic          int64      `json:"periodic"`
+	PeriodicCycleDays float64    `json:"periodic_cycle_days"`
+	ScanSource        string     `json:"scan_source"`
+	NetworkID         *int64     `json:"network_id"`
+	NetworkName       *string    `json:"network_name"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+// Archive list view (#667): archived rows newest-first with the network
+// label and the fields the list/dossier UI badges on.
+func (q *Queries) ListArchivedDevices(ctx context.Context, arg ListArchivedDevicesParams) ([]ListArchivedDevicesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listArchivedDevices, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArchivedDevicesRow{}
+	for rows.Next() {
+		var i ListArchivedDevicesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Type,
+			&i.Brand,
+			&i.Model,
+			&i.IpAddress,
+			&i.MacAddress,
+			&i.Status,
+			&i.ArchivedAt,
+			&i.ArchivePin,
+			&i.OnlineSince,
+			&i.OfflineSince,
+			&i.Periodic,
+			&i.PeriodicCycleDays,
+			&i.ScanSource,
+			&i.NetworkID,
+			&i.NetworkName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -292,6 +388,58 @@ func (q *Queries) ListDeviceArchiveEvents(ctx context.Context, deviceID int64) (
 	return items, nil
 }
 
+const listDeviceChangeEvents = `-- name: ListDeviceChangeEvents :many
+SELECT id, change_type, before_data, after_data, detected_at
+FROM change_log
+WHERE entity_type = 'device' AND entity_id = ?
+ORDER BY detected_at DESC
+LIMIT ?
+`
+
+type ListDeviceChangeEventsParams struct {
+	EntityID *int64 `json:"entity_id"`
+	Limit    int64  `json:"limit"`
+}
+
+type ListDeviceChangeEventsRow struct {
+	ID         int64     `json:"id"`
+	ChangeType string    `json:"change_type"`
+	BeforeData *string   `json:"before_data"`
+	AfterData  *string   `json:"after_data"`
+	DetectedAt time.Time `json:"detected_at"`
+}
+
+// Dossier material (#666): change_log rows for THIS device (the shared
+// ListChangeLog has no entity_id filter).
+func (q *Queries) ListDeviceChangeEvents(ctx context.Context, arg ListDeviceChangeEventsParams) ([]ListDeviceChangeEventsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDeviceChangeEvents, arg.EntityID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDeviceChangeEventsRow{}
+	for rows.Next() {
+		var i ListDeviceChangeEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChangeType,
+			&i.BeforeData,
+			&i.AfterData,
+			&i.DetectedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPeriodicDeviceStates = `-- name: ListPeriodicDeviceStates :many
 SELECT id, status, periodic_cycle_days FROM devices WHERE periodic = 1
 `
@@ -401,6 +549,26 @@ type StampArchivedOnlineSinceParams struct {
 
 func (q *Queries) StampArchivedOnlineSince(ctx context.Context, arg StampArchivedOnlineSinceParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, stampArchivedOnlineSince, arg.OnlineSince, arg.UpdatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updateArchiveThresholdOverride = `-- name: UpdateArchiveThresholdOverride :execrows
+
+UPDATE devices SET archive_offline_days_override = ?, updated_at = ? WHERE id = ?
+`
+
+type UpdateArchiveThresholdOverrideParams struct {
+	ArchiveOfflineDaysOverride *int64    `json:"archive_offline_days_override"`
+	UpdatedAt                  time.Time `json:"updated_at"`
+	ID                         int64     `json:"id"`
+}
+
+// === Archive API surface (#666) ===
+func (q *Queries) UpdateArchiveThresholdOverride(ctx context.Context, arg UpdateArchiveThresholdOverrideParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateArchiveThresholdOverride, arg.ArchiveOfflineDaysOverride, arg.UpdatedAt, arg.ID)
 	if err != nil {
 		return 0, err
 	}

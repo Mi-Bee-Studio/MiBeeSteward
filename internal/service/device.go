@@ -372,6 +372,41 @@ func toDeviceResponse(d db.Device) domain.DeviceResponse {
 		LastScanRttMs:    d.LastScanRttMs,
 		ScanAttributes:   scanAttrs,
 		UserAttributes:   userAttrs,
+		// Asset-archive lifecycle (#663).
+		ArchivedAt:                 d.ArchivedAt,
+		ArchivePin:                 d.ArchivePin,
+		ArchiveOfflineDaysOverride: d.ArchiveOfflineDaysOverride,
+		OnlineSince:                d.OnlineSince,
+		Periodic:                   d.Periodic == 1,
+		PeriodicCycleDays:          d.PeriodicCycleDays,
+	}
+}
+
+// DeviceTagFiller batch-fills dictionary tags onto device responses (#665).
+// Implemented by the tags service; nil disables the enrichment (tests).
+type DeviceTagFiller interface {
+	FillForDevices(ctx context.Context, deviceIDs []int64) (map[int64][]domain.TagBrief, error)
+	ListForDevice(ctx context.Context, deviceID int64) ([]db.ListDeviceTagsRow, error)
+}
+
+// AttachDeviceTagBriefs fills DictionaryTags on a page of responses.
+func AttachDeviceTagBriefs(ctx context.Context, filler DeviceTagFiller, devs []domain.DeviceResponse) {
+	if filler == nil || len(devs) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(devs))
+	for _, d := range devs {
+		ids = append(ids, d.ID)
+	}
+	briefs, err := filler.FillForDevices(ctx, ids)
+	if err != nil {
+		slog.Warn("device tag fill failed", "error", err)
+		return
+	}
+	for i := range devs {
+		if b, ok := briefs[devs[i].ID]; ok {
+			devs[i].DictionaryTags = b
+		}
 	}
 }
 

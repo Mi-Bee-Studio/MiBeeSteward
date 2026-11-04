@@ -54,6 +54,7 @@ import (
 	scannerv2store "mibee-steward/internal/service/scannerv2/store"
 	scannerv2task "mibee-steward/internal/service/scannerv2/taskservice"
 	"mibee-steward/internal/service/snmptrap"
+	"mibee-steward/internal/service/tags"
 	"mibee-steward/internal/version"
 )
 
@@ -234,6 +235,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	deviceSvc := service.NewDeviceService(deviceRepo, heartbeatSvc)
 	deviceHandler := handler.NewDeviceHandler(deviceSvc)
 	registerDeviceRoutes(r, exportHandler, deviceHandler, batchHandler, scopeResolver, dbConn)
+
+	// Tag dictionary (#665): seed the built-ins idempotently, then register
+	// the dictionary + per-device assignment surface. Device rows get their
+	// dictionary_tags enrichment through the same service.
+	tagSvc := tags.New(db.New(dbConn))
+	if err := tagSvc.SeedBuiltins(context.Background()); err != nil {
+		slog.Warn("tag seed failed (continuing)", "error", err)
+	}
+	deviceHandler.SetTagFiller(tagSvc)
+	tagHandler := handler.NewTagHandler(tagSvc)
+	registerTagRoutes(r, tagHandler)
+	registerDeviceTagRoutes(r, scopeResolver, dbConn, tagHandler)
 	// Scanner routes (v2 engine)
 	scanQueries := db.New(dbConn)
 	// Wire the DB querier for agent-token verification (RequireAgentToken). Done
@@ -928,6 +941,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		archiveSvc.SetSettingsSource(settingsSvc)
 	}
 	archiveSvc.Start(context.Background())
+
+	// Archive API surface (#666): list + dossier + manual actions.
+	archiveHandler := handler.NewArchiveHandler(archiveSvc)
+	registerArchiveRoutes(r, scopeResolver, archiveHandler)
+	registerArchiveActionRoutes(r, scopeResolver, dbConn, archiveHandler)
 
 	// Config-backup sweep (#137): fetches running-configs over SSH for devices
 	// with a bound SSH credential. Opt-in (scanner.config_backup.enabled), needs
