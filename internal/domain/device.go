@@ -161,25 +161,25 @@ type DeviceFilter struct {
 // Response types
 
 type DeviceResponse struct {
-	ID             int64     `json:"id"`
-	Name           string    `json:"name"`
-	Type           string    `json:"type"`
-	Brand          string    `json:"brand"`
-	Model          string    `json:"model"`
-	Location       string    `json:"location"`
-	Purpose        string    `json:"purpose"`
-	Description    string    `json:"description"`
-	Status         string    `json:"status"`
-	IPAddress      string    `json:"ip_address"`
-	MACAddress     string    `json:"mac_address"`
-	SerialNumber   string    `json:"serial_number"`
-	PurchaseDate   string    `json:"purchase_date"`
-	WarrantyExpiry string    `json:"warranty_expiry"`
+	ID             int64  `json:"id"`
+	Name           string `json:"name"`
+	Type           string `json:"type"`
+	Brand          string `json:"brand"`
+	Model          string `json:"model"`
+	Location       string `json:"location"`
+	Purpose        string `json:"purpose"`
+	Description    string `json:"description"`
+	Status         string `json:"status"`
+	IPAddress      string `json:"ip_address"`
+	MACAddress     string `json:"mac_address"`
+	SerialNumber   string `json:"serial_number"`
+	PurchaseDate   string `json:"purchase_date"`
+	WarrantyExpiry string `json:"warranty_expiry"`
 	// Tags is the DEPRECATED free-form string (#665): superseded by the tag
 	// dictionary; kept in the payload until the frontend edit modal's chip
 	// migration ships everywhere, then it goes away with the next schema
 	// crossing.
-	Tags           string    `json:"tags"`
+	Tags           string     `json:"tags"`
 	DictionaryTags []TagBrief `json:"dictionary_tags,omitempty"`
 	// Asset-archive lifecycle visibility (#663): ArchivedAt non-nil = the
 	// device lives in the archive; ArchivePin is ''/force_archive/

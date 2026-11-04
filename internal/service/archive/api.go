@@ -18,8 +18,8 @@ import (
 	"mibee-steward/internal/db"
 )
 
-// ArchiveListItem is one row of the archive list view (#667).
-type ArchiveListItem struct {
+// ListItem is one row of the archive list view (#667).
+type ListItem struct {
 	ID                int64      `json:"id"`
 	Name              string     `json:"name"`
 	Type              string     `json:"type"`
@@ -41,7 +41,7 @@ type ArchiveListItem struct {
 }
 
 // ListArchived returns the archived-device page (newest first) plus total.
-func (s *Service) ListArchived(ctx context.Context, limit, offset int64) ([]ArchiveListItem, int64, error) {
+func (s *Service) ListArchived(ctx context.Context, limit, offset int64) ([]ListItem, int64, error) {
 	rows, err := s.queries.ListArchivedDevices(ctx, db.ListArchivedDevicesParams{
 		Limit: limit, Offset: offset,
 	})
@@ -52,9 +52,9 @@ func (s *Service) ListArchived(ctx context.Context, limit, offset int64) ([]Arch
 	if err != nil {
 		return nil, 0, fmt.Errorf("count archived: %w", err)
 	}
-	out := make([]ArchiveListItem, 0, len(rows))
+	out := make([]ListItem, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, ArchiveListItem{
+		out = append(out, ListItem{
 			ID:                r.ID,
 			Name:              r.Name,
 			Type:              r.Type,
