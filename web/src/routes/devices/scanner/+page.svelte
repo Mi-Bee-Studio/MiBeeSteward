@@ -14,6 +14,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { validateScanTarget } from '$lib/utils/validation';
+	import { analyzeScanTarget, type ScanTargetInfo } from '$lib/utils/scanTargets';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import PortListEditor from '$lib/components/scanner/PortListEditor.svelte';
 	import { portTemplates } from '$lib/portTemplates';
@@ -59,6 +60,9 @@
 	// engine's global list (the previous, only behavior).
 	let portSpec = $state('');
 	let targetsError = $state('');
+	// Target facts for the info line (#684): address capacity, sync-scan
+	// limit warning, and the local-execution note.
+	let targetsInfo = $state<ScanTargetInfo | null>(null);
 	// SNMP credential selection (issue #135). When set, overrides community and
 	// routes the scan through v3 USM (or the credential's own community).
 	let credentials = $state<Array<{ id: number; name: string; security_level: string }>>([]);
@@ -131,9 +135,10 @@
 	}
 
 	function validateTargets(): string | null {
-		const err = validateScanTarget(targets);
-		targetsError = err || '';
-		return err;
+		const info = analyzeScanTarget(targets);
+		targetsInfo = info;
+		targetsError = info.error ?? '';
+		return info.error;
 	}
 
 	// The synchronous scan endpoint holds the request open for the whole scan:
@@ -340,6 +345,14 @@
 				/>
 				{#if targetsError}
 					<p class="form-error">{targetsError}</p>
+				{:else if targetsInfo && targets.trim()}
+					<p class="text-xs text-muted mt-1 flex flex-wrap items-center gap-x-3">
+						<span>{m['scanner.Addresses Count']({ count: targetsInfo.addresses })}</span>
+						{#if targetsInfo.overSyncLimit}
+							<span class="text-warning">{m['scanner.Over Sync Limit']()}</span>
+						{/if}
+						<span>{m['scanner.Runs Locally Sync']()}</span>
+					</p>
 				{/if}
 			</div>
 			<div>

@@ -16,6 +16,7 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { validateScanTarget, validateCronExpr, scannerTaskSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { CRON_PRESETS, CUSTOM_KEY, cronForPresetKey, presetKeyForCron } from '$lib/utils/cron';
+	import { analyzeScanTarget, normalizeCIDR, type ScanTargetInfo } from '$lib/utils/scanTargets';
 	import type { ScannerTask, PipelineConfig, ScanRun } from '$lib/types';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -71,6 +72,10 @@
 
 	let formName = $state('');
 	let formTargets = $state('');
+	// Target facts for the info line (#684): capacity, task-limit warning,
+	// and the executor hint (agent vs center-local) below.
+	let targetsInfo = $state<ScanTargetInfo | null>(null);
+	let knownNetworks = $state<Array<{ name: string; cidr: string | null; agent_id: string | null }>>([]);
 	let formCronExpr = $state('');
 	// Schedule selection: a preset key (cron.ts) or CUSTOM_KEY. The cron
 	// expression is DERIVED while a preset is active: most operators should
@@ -122,7 +127,31 @@
 		} catch {
 			// non-admin / disabled: leave empty
 		}
+		// Registered networks feed the executor hint (#684): a single-CIDR
+		// target matching a network tells the user WHERE the task will run
+		// (the agent bound to that network, or the center itself) — a fact
+		// the task router decides silently today.
+		try {
+			const res = await api.get<{ networks: Array<{ name: string; cidr: string | null; agent_id: string | null }> }>('/networks');
+			knownNetworks = res.networks ?? [];
+		} catch {
+			// hint degrades to the unmatched wording
+		}
 		await fetchTasks();
+	});
+
+	// Executor hint mirrors the backend's ResolveNetworkFromTargets: exactly
+	// one CIDR part, normalized, equal to a registered network's CIDR → the
+	// task binds to that network (agent-bound ⇒ dispatched, else local).
+	// Every other shape stays unbound and runs on the center.
+	const executorHint = $derived.by(() => {
+		const info = targetsInfo;
+		if (!info || info.error || !info.singleCIDR) return null;
+		const net = knownNetworks.find((n) => normalizeCIDR(n.cidr ?? '') === info.singleCIDR);
+		if (!net) return { text: m['scanner.Executor Local Unmatched'](), agent: false };
+		return net.agent_id
+			? { text: m['scanner.Executor Agent']({ network: net.name }), agent: true }
+			: { text: m['scanner.Executor Local'](), agent: false };
 	});
 
 	// Clear all in-flight poll timers on unmount so navigating away mid-run
@@ -271,11 +300,12 @@
 	}
 
 	function validateTargets(): string | null {
-		const err = validateScanTarget(formTargets);
-		fieldErrors = err
-			? { ...fieldErrors, targets: err }
+		const info = analyzeScanTarget(formTargets);
+		targetsInfo = info;
+		fieldErrors = info.error
+			? { ...fieldErrors, targets: info.error }
 			: (() => { const { targets: _, ...rest } = fieldErrors; return rest; })();
-		return err;
+		return info.error;
 	}
 
 	function validateCron(): string | null {
@@ -748,6 +778,16 @@
 				/>
 				{#if fieldErrors.targets}
 					<p class="text-error text-xs mt-1">{fieldErrors.targets}</p>
+				{:else if targetsInfo && formTargets.trim()}
+					<p class="text-xs text-muted mt-1 flex flex-wrap items-center gap-x-3">
+						<span>{m['scanner.Addresses Count']({ count: targetsInfo.addresses })}</span>
+						{#if targetsInfo.overTaskLimit}
+							<span class="text-warning">{m['scanner.Over Task Limit']()}</span>
+						{/if}
+						{#if executorHint}
+							<span class="{executorHint.agent ? 'text-success' : ''}">{executorHint.text}</span>
+						{/if}
+					</p>
 				{/if}
 			</div>
 
