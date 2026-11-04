@@ -1111,6 +1111,20 @@
 		"Agent Stale": "已过期",
 		"Agent Stale Desc": "该网段的 agent 超过新鲜窗口未上报，数据未在刷新。"
 	},
+	"netsuggest": {
+		"Title": "扫描我的网络",
+		"Desc": "已识别本机所在的网络，可多选——将为每个网络创建每日扫描任务并立即执行首次扫描。",
+		"Loading": "正在识别本机网络…",
+		"Bridge Warning": "当前 center 以容器方式运行且未使用 host 网络——列出的是容器自身网段而非你的局域网。请改用 host 网络模式（network_mode: host）重启后再进行真实扫描。",
+		"No Lan Warning": "本机未发现可扫描的局域网接口，请手动填写目标网段。",
+		"Actual Cidr": "实际网段 {cidr}",
+		"Primary": "默认路由",
+		"Create And Run": "创建任务并立即扫描",
+		"Created": "已创建 {count} 个扫描任务，首次扫描已开始",
+		"Use My Network": "使用本机网络",
+		"None": "未能识别可预填的本机网络",
+		"Error": "读取本机网络信息失败"
+	},
 	"discovery": {
 		"Enabled": "已启用",
 		"Subtitle": "被动监听状态 —— 通过 ARP/DHCP 在网络上看到的主机,无需主动扫描。",

@@ -73,5 +73,7 @@ func registerSettingsRoutes(r chi.Router, settingsHandler *handler.SettingsHandl
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
 		r.Get("/api/v1/system", settingsHandler.GetSystem)
+		// First-use scan suggestions: the host's own IPv4 interfaces (#678).
+		r.Get("/api/v1/system/network-interfaces", settingsHandler.GetNetworkInterfaces)
 	})
 }

@@ -623,19 +623,19 @@ func (e ProbeOptionsRecord) Valid() bool {
 
 // Defines values for ProbeQualityCategoryCategory.
 const (
-	External ProbeQualityCategoryCategory = "external"
-	Lan      ProbeQualityCategoryCategory = "lan"
-	Quality  ProbeQualityCategoryCategory = "quality"
+	ProbeQualityCategoryCategoryExternal ProbeQualityCategoryCategory = "external"
+	ProbeQualityCategoryCategoryLan      ProbeQualityCategoryCategory = "lan"
+	ProbeQualityCategoryCategoryQuality  ProbeQualityCategoryCategory = "quality"
 )
 
 // Valid indicates whether the value is a known member of the ProbeQualityCategoryCategory enum.
 func (e ProbeQualityCategoryCategory) Valid() bool {
 	switch e {
-	case External:
+	case ProbeQualityCategoryCategoryExternal:
 		return true
-	case Lan:
+	case ProbeQualityCategoryCategoryLan:
 		return true
-	case Quality:
+	case ProbeQualityCategoryCategoryQuality:
 		return true
 	default:
 		return false
@@ -996,6 +996,51 @@ func (e ScanRunStatus) Valid() bool {
 	case ScanRunStatusPending:
 		return true
 	case ScanRunStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SystemNetworkInterfaceKind.
+const (
+	SystemNetworkInterfaceKindLan      SystemNetworkInterfaceKind = "lan"
+	SystemNetworkInterfaceKindVirtual  SystemNetworkInterfaceKind = "virtual"
+	SystemNetworkInterfaceKindVpn      SystemNetworkInterfaceKind = "vpn"
+	SystemNetworkInterfaceKindWireless SystemNetworkInterfaceKind = "wireless"
+)
+
+// Valid indicates whether the value is a known member of the SystemNetworkInterfaceKind enum.
+func (e SystemNetworkInterfaceKind) Valid() bool {
+	switch e {
+	case SystemNetworkInterfaceKindLan:
+		return true
+	case SystemNetworkInterfaceKindVirtual:
+		return true
+	case SystemNetworkInterfaceKindVpn:
+		return true
+	case SystemNetworkInterfaceKindWireless:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SystemNetworkInterfacesReportWarning.
+const (
+	SystemNetworkInterfacesReportWarningBridgeContainer SystemNetworkInterfacesReportWarning = "bridge_container"
+	SystemNetworkInterfacesReportWarningEmpty           SystemNetworkInterfacesReportWarning = ""
+	SystemNetworkInterfacesReportWarningNoLan           SystemNetworkInterfacesReportWarning = "no_lan"
+)
+
+// Valid indicates whether the value is a known member of the SystemNetworkInterfacesReportWarning enum.
+func (e SystemNetworkInterfacesReportWarning) Valid() bool {
+	switch e {
+	case SystemNetworkInterfacesReportWarningBridgeContainer:
+		return true
+	case SystemNetworkInterfacesReportWarningEmpty:
+		return true
+	case SystemNetworkInterfacesReportWarningNoLan:
 		return true
 	default:
 		return false
@@ -2540,6 +2585,48 @@ type SubnetList struct {
 	Subnets *[]Subnet `json:"subnets,omitempty"`
 	Total   *int      `json:"total,omitempty"`
 }
+
+// SystemNetworkInterface defines model for SystemNetworkInterface.
+type SystemNetworkInterface struct {
+	// Addresses total address count of cidr
+	Addresses int `json:"addresses"`
+
+	// Cidr on-link subnet as configured
+	Cidr string `json:"cidr"`
+	Ipv4 string `json:"ipv4"`
+
+	// Kind naming-convention classification
+	Kind SystemNetworkInterfaceKind `json:"kind"`
+
+	// Mac interface MAC when present
+	Mac *string `json:"mac,omitempty"`
+
+	// Name interface name
+	Name      string `json:"name"`
+	PrefixLen int    `json:"prefix_len"`
+
+	// Primary this interface owns the IPv4 default route
+	Primary bool `json:"primary"`
+
+	// SuggestedCidr scan suggestion — cidr clamped to the /24 containing ipv4 when wider
+	SuggestedCidr string `json:"suggested_cidr"`
+}
+
+// SystemNetworkInterfaceKind naming-convention classification
+type SystemNetworkInterfaceKind string
+
+// SystemNetworkInterfacesReport defines model for SystemNetworkInterfacesReport.
+type SystemNetworkInterfacesReport struct {
+	// Container center runs inside a container (/.dockerenv or /run/.containerenv)
+	Container  bool                     `json:"container"`
+	Interfaces []SystemNetworkInterface `json:"interfaces"`
+
+	// Warning machine-key hint — bridge_container = likely not host-networked, scanning degraded; no_lan = nothing LAN-like to suggest
+	Warning *SystemNetworkInterfacesReportWarning `json:"warning,omitempty"`
+}
+
+// SystemNetworkInterfacesReportWarning machine-key hint — bridge_container = likely not host-networked, scanning degraded; no_lan = nothing LAN-like to suggest
+type SystemNetworkInterfacesReportWarning string
 
 // TLSPortCerts One TLS-speaking port, handshake metadata + cert chain
 type TLSPortCerts struct {
@@ -4573,6 +4660,17 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /system (the `GetSystem` operationId).
 	GetSystem(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSystemNetworkInterfaces Local IPv4 interface candidates (first-use scan suggestion,
+	//
+	// Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+	// non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+	// suggested CIDR, naming-convention kind classification, the
+	// default-route (primary) marker, and container/bridge-mode hints.
+	// Read-only host introspection — no packets on the wire.
+	//
+	// Corresponds with GET /system/network-interfaces (the `GetSystemNetworkInterfaces` operationId).
+	GetSystemNetworkInterfaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetTags Tag dictionary (built-ins first), any authenticated user (#665)
 	//
@@ -7276,6 +7374,27 @@ func (c *Client) GetSubnets(ctx context.Context, params *GetSubnetsParams, reqEd
 // Corresponds with GET /system (the `GetSystem` operationId).
 func (c *Client) GetSystem(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSystemRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSystemNetworkInterfaces Local IPv4 interface candidates (first-use scan suggestion,
+//
+// Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+// non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+// suggested CIDR, naming-convention kind classification, the
+// default-route (primary) marker, and container/bridge-mode hints.
+// Read-only host introspection — no packets on the wire.
+//
+// Corresponds with GET /system/network-interfaces (the `GetSystemNetworkInterfaces` operationId).
+func (c *Client) GetSystemNetworkInterfaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSystemNetworkInterfacesRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -14283,6 +14402,33 @@ func NewGetSystemRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetSystemNetworkInterfacesRequest constructs an http.Request for the GetSystemNetworkInterfaces method
+func NewGetSystemNetworkInterfacesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/system/network-interfaces")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetTagsRequest constructs an http.Request for the GetTags method
 func NewGetTagsRequest(server string) (*http.Request, error) {
 	var err error
@@ -16001,6 +16147,19 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /system (the `GetSystem` operationId).
 	GetSystemWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemResponse, error)
+
+	// GetSystemNetworkInterfacesWithResponse Local IPv4 interface candidates (first-use scan suggestion,
+	//
+	// Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+	// non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+	// suggested CIDR, naming-convention kind classification, the
+	// default-route (primary) marker, and container/bridge-mode hints.
+	// Read-only host introspection — no packets on the wire.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /system/network-interfaces (the `GetSystemNetworkInterfaces` operationId).
+	GetSystemNetworkInterfacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemNetworkInterfacesResponse, error)
 
 	// GetTagsWithResponse Tag dictionary (built-ins first), any authenticated user (#665)
 	//
@@ -22698,6 +22857,54 @@ func (r GetSystemResponse) ContentType() string {
 	return ""
 }
 
+type GetSystemNetworkInterfacesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SystemNetworkInterfacesReport
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSystemNetworkInterfacesResponse) GetJSON200() *SystemNetworkInterfacesReport {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSystemNetworkInterfacesResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSystemNetworkInterfacesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSystemNetworkInterfacesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSystemNetworkInterfacesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSystemNetworkInterfacesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetTagsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -25415,6 +25622,25 @@ func (c *ClientWithResponses) GetSystemWithResponse(ctx context.Context, reqEdit
 		return nil, err
 	}
 	return ParseGetSystemResponse(rsp)
+}
+
+// GetSystemNetworkInterfacesWithResponse Local IPv4 interface candidates (first-use scan suggestion,
+//
+// Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+// non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+// suggested CIDR, naming-convention kind classification, the
+// default-route (primary) marker, and container/bridge-mode hints.
+// Read-only host introspection — no packets on the wire.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /system/network-interfaces (the `GetSystemNetworkInterfaces` operationId).
+func (c *ClientWithResponses) GetSystemNetworkInterfacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemNetworkInterfacesResponse, error) {
+	rsp, err := c.GetSystemNetworkInterfaces(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSystemNetworkInterfacesResponse(rsp)
 }
 
 // GetTagsWithResponse Tag dictionary (built-ins first), any authenticated user (#665)
@@ -29498,6 +29724,39 @@ func ParseGetSystemResponse(rsp *http.Response) (*GetSystemResponse, error) {
 	response := &GetSystemResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetSystemNetworkInterfacesResponse parses an HTTP response from a GetSystemNetworkInterfacesWithResponse call
+func ParseGetSystemNetworkInterfacesResponse(rsp *http.Response) (*GetSystemNetworkInterfacesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSystemNetworkInterfacesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SystemNetworkInterfacesReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
 	}
 
 	return response, nil

@@ -1111,6 +1111,20 @@
 		"Agent Stale": "stale",
 		"Agent Stale Desc": "The owning agent has not reported within the fresh window; this segment is not being refreshed."
 	},
+	"netsuggest": {
+		"Title": "Scan My Network",
+		"Desc": "Networks detected on this machine. Pick one or more — a daily scan task is created for each and the first run starts immediately.",
+		"Loading": "Detecting local networks…",
+		"Bridge Warning": "This center runs in a container without host networking — the networks listed are the container's own, not your LAN. Restart it with host networking (network_mode: host) before scanning for real.",
+		"No Lan Warning": "No LAN-like interface was found on this machine. Fill in the target network manually.",
+		"Actual Cidr": "on-link {cidr}",
+		"Primary": "Default route",
+		"Create And Run": "Create Task & Scan Now",
+		"Created": "Created {count} scan task(s); first run started",
+		"Use My Network": "Use My Network",
+		"None": "No local network detected to prefill",
+		"Error": "Failed to read local network info"
+	},
 	"discovery": {
 		"Enabled": "Enabled",
 		"Subtitle": "Passive listener status — hosts seen on the network via ARP/DHCP, without an active scan.",
