@@ -101,3 +101,35 @@ func TestAssignAndBulk(t *testing.T) {
 	require.Len(t, briefs[d3], 2)
 	require.False(t, briefs[d1][0].Builtin == false, "external is a built-in")
 }
+
+func TestUpdateAndRemove(t *testing.T) {
+	svc, conn := newSvc(t)
+	ctx := context.Background()
+	require.NoError(t, svc.SeedBuiltins(ctx))
+
+	created, err := svc.Create(ctx, "lab", "Lab", "#00aa00", "lab gear", 9)
+	require.NoError(t, err)
+
+	// Empty name is rejected.
+	_, err = svc.Update(ctx, created.ID, "  ", "#00aa00", "", 9)
+	require.Error(t, err)
+	// Rename + recolor works.
+	updated, err := svc.Update(ctx, created.ID, "Lab gear", "#00bb00", "all lab", 10)
+	require.NoError(t, err)
+	require.Equal(t, "Lab gear", updated.Name)
+
+	// Per-device remove: assign then remove.
+	res, err := conn.ExecContext(ctx, `INSERT INTO devices (device_uuid, name, type, tags) VALUES ('rm-uuid', 'rm', 'other', '{}')`)
+	require.NoError(t, err)
+	devID, _ := res.LastInsertId()
+	require.NoError(t, svc.ReplaceDeviceTags(ctx, devID, []int64{created.ID}))
+	require.NoError(t, svc.RemoveFromDevice(ctx, devID, created.ID))
+	got, err := svc.ListForDevice(ctx, devID)
+	require.NoError(t, err)
+	require.Len(t, got, 0)
+
+	// Get by id + key round-trip.
+	byKey, err := svc.GetTagByKey(ctx, "lab")
+	require.NoError(t, err)
+	require.Equal(t, created.ID, byKey.ID)
+}

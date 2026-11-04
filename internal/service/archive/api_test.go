@@ -81,3 +81,14 @@ func TestSetThresholdOverride(t *testing.T) {
 		`SELECT COALESCE(archive_offline_days_override, 0) FROM devices WHERE id = ?`, id).Scan(&ov))
 	require.Equal(t, int64(0), ov)
 }
+
+func TestEffectiveThreshold(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	svc := New(db.New(conn), config.ArchiveConfig{OfflineDays: 7}, nil)
+	require.Equal(t, 7, svc.EffectiveThreshold(0))
+	require.Equal(t, 7, svc.EffectiveThreshold(-1))
+	require.Equal(t, 3, svc.EffectiveThreshold(3))
+}
