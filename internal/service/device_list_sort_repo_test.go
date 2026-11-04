@@ -59,6 +59,15 @@ func setupSortTestDB(t *testing.T) (*DeviceRepository, *sql.DB) {
 			first_seen TIMESTAMP,
 			last_seen TIMESTAMP,
 			offline_since TIMESTAMP,
+			archived_at TIMESTAMP,
+			archive_pin TEXT NOT NULL DEFAULT '',
+			archive_offline_days_override INTEGER,
+			online_since TIMESTAMP,
+			periodic INTEGER NOT NULL DEFAULT 0,
+			periodic_cycle_days REAL NOT NULL DEFAULT 0,
+			lifecycle_state TEXT NOT NULL DEFAULT 'in_use',
+			owner TEXT NOT NULL DEFAULT '',
+			asset_no TEXT NOT NULL DEFAULT '',
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
