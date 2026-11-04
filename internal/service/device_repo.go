@@ -527,12 +527,28 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 		networkFilterEnabled = 1
 		networkIDArg = *f.NetworkID
 	}
+	// archive filter (#663): "" = the asset library (exclude archived, the
+	// default for the devices page); "only" = the archive view; "all" = both.
+	archivedMode := f.Archived
+	// tag filter (#665): the EXISTS clause is appended ONLY when a tag filter
+	// is active — the mini-schemas used by repository tests create devices
+	// without the tags/device_tags tables, and a statically-present reference
+	// would break every list query against them.
+	tagClause := ""
+	var tagArgs []any
+	if f.TagID != nil {
+		tagClause = `
+	  AND EXISTS (SELECT 1 FROM device_tags dts WHERE dts.device_id = d.id AND dts.tag_id = ?)`
+		tagArgs = append(tagArgs, *f.TagID)
+	}
 
 	query := `SELECT d.id, d.name, d.type, d.brand, d.model, d.location, d.purpose, d.description, d.status, d.ip_address,
 		d.mac_address, d.serial_number, d.purchase_date, d.warranty_expiry, d.tags, d.scan_source, d.prometheus_labels,
 		d.last_scanned_at, d.last_scan_task_id, d.open_ports, d.detected_services, d.prometheus_url, d.node_exporter_url,
 		d.last_scan_rtt_ms, d.scan_attributes, d.user_attributes, d.scan_vendor, d.scan_mac, d.scan_os, d.scan_hostname,
 		d.network_id, d.first_seen, d.last_seen, d.offline_since,
+		d.archived_at, d.archive_pin, d.archive_offline_days_override, d.online_since,
+		d.periodic, d.periodic_cycle_days,
 		d.created_at, d.updated_at,
 		n.name
 	FROM devices d
@@ -543,6 +559,10 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 	  AND (? = '' OR d.created_at >= ?)
 	  AND (? = '' OR d.created_at <= ?)
 	  AND (? = 0 OR d.network_id = ?)
+	  AND ( (? = 'all')
+	     OR (? = 'only' AND d.archived_at IS NOT NULL)
+	     OR (? = '' AND d.archived_at IS NULL) )
+	  ` + tagClause + `
 	  ` + scopeClause(f) + `
 	ORDER BY ` + sortExpr + " " + dir + `
 	LIMIT ? OFFSET ?`
@@ -554,7 +574,9 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 		createdFrom, createdFromArg,
 		createdTo, createdToArg,
 		networkFilterEnabled, networkIDArg,
+		archivedMode, archivedMode, archivedMode,
 	)
+	args = append(args, tagArgs...)
 	args = append(args, scopeArgs(f)...)
 	args = append(args, f.Limit, f.Offset)
 
@@ -576,6 +598,8 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 			&d.LastScannedAt, &d.LastScanTaskID, &d.OpenPorts, &d.DetectedServices, &d.PrometheusUrl, &d.NodeExporterUrl,
 			&d.LastScanRttMs, &d.ScanAttributes, &d.UserAttributes, &d.ScanVendor, &d.ScanMac, &d.ScanOs, &d.ScanHostname,
 			&d.NetworkID, &d.FirstSeen, &d.LastSeen, &d.OfflineSince,
+			&d.ArchivedAt, &d.ArchivePin, &d.ArchiveOfflineDaysOverride, &d.OnlineSince,
+			&d.Periodic, &d.PeriodicCycleDays,
 			&d.CreatedAt, &d.UpdatedAt,
 			&networkName,
 		); err != nil {
@@ -614,6 +638,15 @@ func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int
 		networkFilterEnabled = 1
 		networkIDArg = *f.NetworkID
 	}
+	// archive + tag filters must mirror listFilteredOn exactly too.
+	archivedMode := f.Archived
+	tagClause := ""
+	var tagArgs []any
+	if f.TagID != nil {
+		tagClause = `
+	  AND EXISTS (SELECT 1 FROM device_tags dts WHERE dts.device_id = devices.id AND dts.tag_id = ?)`
+		tagArgs = append(tagArgs, *f.TagID)
+	}
 
 	query := `SELECT COUNT(*) FROM devices
 	WHERE (? = '' OR status = ?)
@@ -622,6 +655,10 @@ func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int
 	  AND (? = '' OR created_at >= ?)
 	  AND (? = '' OR created_at <= ?)
 	  AND (? = 0 OR network_id = ?)
+	  AND ( (? = 'all')
+	     OR (? = 'only' AND archived_at IS NOT NULL)
+	     OR (? = '' AND archived_at IS NULL) )
+	  ` + tagClause + `
 	  ` + scopeClauseCount(f)
 
 	args = append(args,
@@ -631,7 +668,9 @@ func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int
 		createdFrom, createdFromArg,
 		createdTo, createdToArg,
 		networkFilterEnabled, networkIDArg,
+		archivedMode, archivedMode, archivedMode,
 	)
+	args = append(args, tagArgs...)
 	args = append(args, scopeArgs(f)...)
 
 	var count int64

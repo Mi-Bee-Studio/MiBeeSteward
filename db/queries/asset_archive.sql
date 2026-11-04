@@ -85,3 +85,34 @@ SELECT id, status, periodic_cycle_days FROM devices WHERE periodic = 1;
 -- name: SetDevicePeriodic :execrows
 UPDATE devices SET periodic = ?, periodic_cycle_days = ?, updated_at = ?
 WHERE id = ?;
+
+-- === Archive API surface (#666) ===
+
+-- name: UpdateArchiveThresholdOverride :execrows
+UPDATE devices SET archive_offline_days_override = ?, updated_at = ? WHERE id = ?;
+
+-- Archive list view (#667): archived rows newest-first with the network
+-- label and the fields the list/dossier UI badges on.
+-- name: ListArchivedDevices :many
+SELECT d.id, d.name, d.type, d.brand, d.model, d.ip_address, d.mac_address,
+       d.status, d.archived_at, d.archive_pin, d.online_since, d.offline_since,
+       d.periodic, d.periodic_cycle_days, d.scan_source,
+       d.network_id, n.name AS network_name,
+       d.created_at, d.updated_at
+FROM devices d
+LEFT JOIN networks n ON n.id = d.network_id
+WHERE d.archived_at IS NOT NULL
+ORDER BY d.archived_at DESC
+LIMIT ? OFFSET ?;
+
+-- name: CountArchivedDevices :one
+SELECT COUNT(*) FROM devices WHERE archived_at IS NOT NULL;
+
+-- Dossier material (#666): change_log rows for THIS device (the shared
+-- ListChangeLog has no entity_id filter).
+-- name: ListDeviceChangeEvents :many
+SELECT id, change_type, before_data, after_data, detected_at
+FROM change_log
+WHERE entity_type = 'device' AND entity_id = ?
+ORDER BY detected_at DESC
+LIMIT ?;

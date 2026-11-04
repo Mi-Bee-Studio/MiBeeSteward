@@ -24,12 +24,19 @@ import (
 
 // DeviceHandler handles HTTP requests for device endpoints.
 type DeviceHandler struct {
-	svc *service.DeviceService
+	svc     *service.DeviceService
+	tagFill service.DeviceTagFiller // nil ⇒ no dictionary-tag enrichment
 }
 
 // NewDeviceHandler creates a new DeviceHandler.
 func NewDeviceHandler(svc *service.DeviceService) *DeviceHandler {
 	return &DeviceHandler{svc: svc}
+}
+
+// SetTagFiller wires the tag-dictionary enrichment (#665). Nil-safe.
+func (h *DeviceHandler) SetTagFiller(f service.DeviceTagFiller) *DeviceHandler {
+	h.tagFill = f
+	return h
 }
 
 // Routes returns a Chi router with all device routes registered.
@@ -87,6 +94,13 @@ func (h *DeviceHandler) Get(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to get device")
 		return
 	}
+	if h.tagFill != nil {
+		if briefs, err := h.tagFill.FillForDevices(r.Context(), []int64{resp.ID}); err == nil {
+			if b, ok := briefs[resp.ID]; ok {
+				resp.DictionaryTags = b
+			}
+		}
+	}
 
 	Success(w, resp)
 }
@@ -135,6 +149,20 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 			filter.NetworkID = &id
 		}
 	}
+	// archived (#663): "" (default) = asset library only; "only" = archived
+	// rows only; "all" = both. Anything else is treated as the default.
+	switch q.Get("archived") {
+	case "only":
+		filter.Archived = "only"
+	case "all":
+		filter.Archived = "all"
+	}
+	// tag_id (#665): filter to devices carrying this dictionary tag.
+	if v := q.Get("tag_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil && id > 0 {
+			filter.TagID = &id
+		}
+	}
 	// Object-level network scope (#138 Phase 2): a restricted caller only sees
 	// their granted networks. Applied in addition to any explicit network_id.
 	if scope := domain.ScopeFromContext(r.Context()); !scope.IsGlobal() {
@@ -147,6 +175,7 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to list devices")
 		return
 	}
+	service.AttachDeviceTagBriefs(r.Context(), h.tagFill, resp.Devices)
 
 	SuccessList(w, "devices", resp.Devices, int64(resp.Total), limit, offset)
 }
