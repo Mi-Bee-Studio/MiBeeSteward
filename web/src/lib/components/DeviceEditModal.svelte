@@ -21,6 +21,7 @@
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
 	import { m } from '$lib/i18n-paraglide';
 	import { addToast } from '$lib/stores/toast';
+	import { tagDisplayName } from '$lib/api/archiveTags';
 	import type { Device } from '$lib/types';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { deviceSchema, validateField, validateForm } from '$lib/utils/validation';
@@ -105,7 +106,7 @@
 					.get<{ tags: { id: number; key: string; name: string; color: string; builtin: number }[] }>('/tags')
 					.then((resp) => {
 						tagDictionary = (resp.tags ?? []).map((t) => ({
-							id: t.id, key: t.key, name: t.name, color: t.color, builtin: t.builtin === 1
+							id: t.id, key: t.key, name: tagDisplayName(t), color: t.color, builtin: t.builtin === 1
 						}));
 					})
 					.catch(() => {});

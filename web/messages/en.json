@@ -1720,6 +1720,10 @@
 		"Custom": "Custom",
 		"Color": "Color",
 		"Delete Title": "Delete tag",
-		"Delete Msg": "Delete \"{name}\"? It will be removed from every device."
+		"Delete Msg": "Delete \"{name}\"? It will be removed from every device.",
+		"name.internal": "Internal asset",
+		"name.external": "External device",
+		"name.temporary": "Temporary use",
+		"name.pending": "Ownership pending"
 	}
 }

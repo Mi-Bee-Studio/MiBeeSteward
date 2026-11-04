@@ -10,7 +10,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import { listTags, createTag, updateTag, deleteTag, type Tag } from '$lib/api/archiveTags';
+	import { listTags, createTag, updateTag, deleteTag, tagDisplayName, type Tag } from '$lib/api/archiveTags';
 
 	let tags = $state<Tag[]>([]);
 	let loading = $state(true);
@@ -156,7 +156,7 @@
 									class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
 									style="background: {tag.color || '#888888'}22; color: {tag.color || '#888888'}"
 								>
-									{tag.name}
+									{tagDisplayName(tag)}
 								</span>
 							</td>
 							<td class="px-3 py-2 font-mono text-xs">{tag.key}</td>
