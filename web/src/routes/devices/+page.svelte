@@ -31,6 +31,7 @@
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import HeartbeatExpandableRow from '$lib/components/HeartbeatExpandableRow.svelte';
 	import ColumnPicker from '$lib/components/ColumnPicker.svelte';
+	import { tagDisplayName } from '$lib/api/archiveTags';
 
 interface Stats {
     by_status: Record<string, number>;
@@ -209,7 +210,7 @@ interface AddDevicesResponse {
 		// Tag dictionary for the filter dropdown + batch tagging (#665, best-effort).
 		api.get<{ tags: { id: number; key: string; name: string; color: string; builtin: number }[] }>('/tags')
 			.then((r) => {
-				tagDictionary = (r.tags ?? []).map((t) => ({ id: t.id, key: t.key, name: t.name, color: t.color, builtin: t.builtin === 1 }));
+				tagDictionary = (r.tags ?? []).map((t) => ({ id: t.id, key: t.key, name: tagDisplayName(t), color: t.color, builtin: t.builtin === 1 }));
 			})
 			.catch(() => {});
 		pollTimer = setInterval(() => {
@@ -878,11 +879,11 @@ interface AddDevicesResponse {
 				const id = row.id;
 				const name = escapeHtml(String(row.name ?? ''));
 				// Dictionary tag chips (#665) ride under the name.
-				const tags = (row.dictionary_tags as { name: string; color: string }[] | undefined) ?? [];
+				const tags = (row.dictionary_tags as { key: string; name: string; color: string; builtin: boolean }[] | undefined) ?? [];
 				const tagHtml = tags
 					.map((t) => {
 						const color = /^#[0-9a-fA-F]{3,8}$/.test(t.color || '') ? t.color : '#2563eb';
-						return `<span class="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium align-middle" style="background:${color}22;color:${color}">${escapeHtml(t.name)}</span>`;
+						return `<span class="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium align-middle" style="background:${color}22;color:${color}">${escapeHtml(tagDisplayName(t))}</span>`;
 					})
 					.join('');
 				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']()}">${name}</button>${tagHtml}`;

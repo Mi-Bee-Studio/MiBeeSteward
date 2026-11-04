@@ -10,6 +10,35 @@
  */
 
 import { api } from './client';
+import { m } from '$lib/i18n-paraglide';
+
+// Builtin tag keys whose display name is localized by key (#665): the
+// dictionary's `name` is the editable default (English); the UI shows the
+// localized name for built-ins unless the operator renamed it (rename = the
+// user overriding localization with their own label — see tags settings).
+const localizedBuiltinKeys = new Set(['internal', 'external', 'temporary', 'pending']);
+
+// tagDisplayName localizes a builtin tag's label. Renaming a builtin (name
+// diverges from the seeded default) is treated as an explicit user override
+// and wins over localization.
+const builtinDefaultNames: Record<string, string> = {
+	internal: 'Internal asset',
+	external: 'External device',
+	temporary: 'Temporary use',
+	pending: 'Ownership pending'
+};
+
+export function tagDisplayName(tag: { key: string; name: string; builtin: boolean | number }): string {
+	const isBuiltin = tag.builtin === true || tag.builtin === 1;
+	if (isBuiltin && localizedBuiltinKeys.has(tag.key)) {
+		if (tag.name && tag.name !== builtinDefaultNames[tag.key]) {
+			return tag.name; // operator renamed the built-in: explicit override
+		}
+		const fn = (m as unknown as Record<string, () => string>)['tags.name.' + tag.key];
+		if (fn) return fn();
+	}
+	return tag.name;
+}
 
 // --- Asset archive (#663/#666) ---
 

@@ -1720,6 +1720,10 @@
 		"Custom": "自定义",
 		"Color": "颜色",
 		"Delete Title": "删除标签",
-		"Delete Msg": "删除“{name}”？它将从所有设备上移除。"
+		"Delete Msg": "删除“{name}”？它将从所有设备上移除。",
+		"name.internal": "内部资产",
+		"name.external": "外部设备",
+		"name.temporary": "临时使用",
+		"name.pending": "待确认归属"
 	}
 }
