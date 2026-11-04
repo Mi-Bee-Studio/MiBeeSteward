@@ -34,7 +34,7 @@ import (
 )
 
 var (
-	configPath  = flagSet.String("config", "configs/config.example.yaml", "Path to config file")
+	configPath  = flagSet.String("config", "config.yaml", "Path to config file (auto-generated with a random jwt_secret on first run if missing, #682)")
 	showVersion = flagSet.Bool("version", false, "Print the build version and exit")
 	demoMode    = flagSet.Bool("demo", false, "Demo mode (#285): seed a fictional inventory on an empty database and keep it active")
 )
@@ -73,6 +73,22 @@ func runCLI(args []string) error {
 	if *showVersion {
 		fmt.Println("mibee-steward", version.Version)
 		return nil
+	}
+
+	// #682 first-use: a missing config file no longer aborts the very first
+	// run — generate a minimal usable one (random jwt_secret, empty admin
+	// password = browser first-run setup) and keep going. An EXISTING file is
+	// never touched, however broken: rewriting a config the user wrote (or a
+	// package installer generated) is not ours to do.
+	generated, err := ensureConfigFile(*configPath)
+	if err != nil {
+		return fmt.Errorf("config file %s is missing and generating a minimal one failed: %w", *configPath, err)
+	}
+	if generated {
+		// slog is not initialized yet (it needs the config), so these go to
+		// stdout directly; systemd captures stdout into the journal.
+		fmt.Printf("mibee-steward: no config file found — generated a minimal one at %s\n", *configPath)
+		fmt.Printf("mibee-steward: open http://<this-host>:8080 in a browser to complete the first-run admin setup\n")
 	}
 
 	// Load configuration first (before slog init)

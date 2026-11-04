@@ -40,6 +40,8 @@ docker run -d --name mibee \
 
 ## Minimal Configuration
 
+**Zero-config path (#682)**: if the config file does not exist, the very first `./mibee-steward` run generates a minimal one at the `-config` path (default `config.yaml`) — a random `jwt_secret`, an empty admin password so the browser first-run setup creates it — and starts right away. Write a config yourself only when you want to tune something.
+
 Create `config.yaml`. The smallest useful config is the listen address, your local network CIDR, and two required auth keys (`auth.jwt_secret` must be at least 32 characters; an empty `auth.initial_admin_password` aborts startup):
 
 ```yaml

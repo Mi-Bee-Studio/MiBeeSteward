@@ -16,8 +16,11 @@ import (
 )
 
 // TestRunCLI_FrontDoors walks the argv front's validation ladder: -version
-// short-circuits, a bad flag errors, a missing config errors, and an
-// unwritable data directory errors past the config load.
+// short-circuits, a bad flag errors, an ungeneratable config errors (a
+// MISSING config is auto-generated since #682 — its happy path is covered by
+// TestEnsureConfigFile_GeneratesMissingConfig, and letting runCLI proceed
+// here would block in serve), and an unwritable data directory errors past
+// the config load.
 func TestRunCLI_FrontDoors(t *testing.T) {
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -30,9 +33,18 @@ func TestRunCLI_FrontDoors(t *testing.T) {
 
 	require.Error(t, runCLI([]string{"-no-such-flag"}))
 
-	*configPath = filepath.Join(t.TempDir(), "missing.yaml")
+	// Missing config under a read-only parent: the #682 generation itself
+	// fails and surfaces as an error — this is the runCLI wiring of the
+	// generator, without booting the generated config into serve.
+	roDir := t.TempDir()
+	readonly := filepath.Join(roDir, "readonly")
+	require.NoError(t, os.Mkdir(readonly, 0o500))
+	*configPath = filepath.Join(readonly, "missing.yaml")
 	err := runCLI(nil)
-	require.ErrorContains(t, err, "failed to load config")
+	require.ErrorContains(t, err, "generating a minimal one failed")
+	// And nothing was created at the path.
+	_, statErr := os.Stat(*configPath)
+	require.True(t, os.IsNotExist(statErr), "no config may be created under a read-only parent")
 
 	// Valid config whose data directory cannot be created (parent is a
 	// regular file) fails at the MkdirAll bootstrap.

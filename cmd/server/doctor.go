@@ -55,7 +55,7 @@ func runDoctor(args []string) {
 // runDoctor so os.Exit happens AFTER doctorMain's defers (db.Close) have run.
 func doctor(args []string) int {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
-	cfgPath := fs.String("config", "configs/config.example.yaml", "Path to config file")
+	cfgPath := fs.String("config", "config.yaml", "Path to config file")
 	_ = fs.Parse(args)
 
 	fmt.Printf("mibee-steward doctor: config %s\n\n", *cfgPath)
