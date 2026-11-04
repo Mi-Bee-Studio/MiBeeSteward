@@ -70,6 +70,13 @@ interface AddDevicesResponse {
 	// GET /networks on mount.
 	let networkFilter = $state('');
 	let networks = $state<NetworkWithMirror[]>([]);
+	// Tag filter (#665): dictionary tag id as string; '' = all tags.
+	let tagFilter = $state('');
+	let tagDictionary = $state<{ id: number; key: string; name: string; color: string; builtin: boolean }[]>([]);
+	// Batch tagging (#665): assign one dictionary tag to every selected row.
+	let batchTagOpen = $state(false);
+	let batchTagID = $state('');
+	let batchTagBusy = $state(false);
 	// #379: a device in a network with agent_id set is a mirror (distributed
 	// agent or federated peer) - read-only here, hide its edit/delete actions.
 	const remoteNetworkIDs = $derived(new Set(networks.filter((n) => n.agent_id).map((n) => n.id)));
@@ -199,6 +206,12 @@ interface AddDevicesResponse {
 		// Load the network registry for the filter dropdown (best-effort; a
 		// failure just leaves the dropdown empty: the list still works).
 		api.get<{ networks: NetworkWithMirror[]; total: number }>('/networks').then((r) => { networks = r.networks || []; networksError = false; }).catch(() => { networksError = true; });
+		// Tag dictionary for the filter dropdown + batch tagging (#665, best-effort).
+		api.get<{ tags: { id: number; key: string; name: string; color: string; builtin: number }[] }>('/tags')
+			.then((r) => {
+				tagDictionary = (r.tags ?? []).map((t) => ({ id: t.id, key: t.key, name: t.name, color: t.color, builtin: t.builtin === 1 }));
+			})
+			.catch(() => {});
 		pollTimer = setInterval(() => {
 			if (!editOpen && !deleteOpen && !batchDeleteOpen && !batchStatusOpen && !batchStatusConfirmOpen && !importOpen && !linkOpen) {
 				void refreshDevicesSilent();
@@ -240,6 +253,7 @@ interface AddDevicesResponse {
 		if (statusFilter) params.set('status', statusFilter);
 		if (typeFilter) params.set('type', typeFilter);
 		if (networkFilter) params.set('network_id', networkFilter);
+		if (tagFilter) params.set('tag_id', tagFilter);
 		if (searchQuery) params.set('search', searchQuery);
 		if (dateFrom) params.set('created_from', dateFrom);
 		if (dateTo) params.set('created_to', dateTo);
@@ -453,6 +467,24 @@ interface AddDevicesResponse {
 			addToast('error', getErrorMessage(err));
 		} finally {
 			batchLoading = false;
+		}
+	}
+
+	// Batch tagging (#665): assign one dictionary tag to every selected row.
+	async function confirmBatchTag() {
+		if (selectedIds.size === 0 || !batchTagID) return;
+		batchTagBusy = true;
+		try {
+			const resp = await api.post<{ applied: number }>(`/tags/${batchTagID}/devices`, {
+				device_ids: Array.from(selectedIds)
+			});
+			addToast('success', m['devices.Batch Tag Success']({ count: resp.applied ?? selectedIds.size }));
+			batchTagOpen = false;
+			fetchDevices();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			batchTagBusy = false;
 		}
 	}
 
@@ -845,7 +877,15 @@ interface AddDevicesResponse {
 			render: (row: Record<string, unknown>) => {
 				const id = row.id;
 				const name = escapeHtml(String(row.name ?? ''));
-				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']()}">${name}</button>`;
+				// Dictionary tag chips (#665) ride under the name.
+				const tags = (row.dictionary_tags as { name: string; color: string }[] | undefined) ?? [];
+				const tagHtml = tags
+					.map((t) => {
+						const color = /^#[0-9a-fA-F]{3,8}$/.test(t.color || '') ? t.color : '#2563eb';
+						return `<span class="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium align-middle" style="background:${color}22;color:${color}">${escapeHtml(t.name)}</span>`;
+					})
+					.join('');
+				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']()}">${name}</button>${tagHtml}`;
 			}
 		},
 		{
@@ -1081,6 +1121,15 @@ interface AddDevicesResponse {
 					<option value={net.id}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
 				{/each}
 			</select>
+			<!-- Tag filter (#665): dictionary-driven, server-side. -->
+			{#if tagDictionary.length > 0}
+				<select bind:value={tagFilter} onchange={applyFilters} class="input">
+					<option value="">{m['devices.All Tags']()}</option>
+					{#each tagDictionary as tag (tag.id)}
+						<option value={tag.id}>{tag.name}</option>
+					{/each}
+				</select>
+			{/if}
 			<!-- Filtering into a stale agent/peer segment (#557): say so next
 			     to the filter, or frozen data reads like a bug. -->
 			{#if networkFilter && staleNetworkIDs.has(Number(networkFilter))}
@@ -1213,6 +1262,14 @@ interface AddDevicesResponse {
 				</span>
 			</div>
 			<div class="flex-1"></div>
+			{#if tagDictionary.length > 0}
+				<button
+					onclick={() => { batchTagID = String(tagDictionary[0].id); batchTagOpen = true; }}
+					class="btn btn-secondary text-xs py-1.5"
+				>
+					{m['devices.Batch Tag']()}
+				</button>
+			{/if}
 			<button
 				onclick={() => (batchDeleteOpen = true)}
 				class="btn btn-danger text-xs py-1.5"
@@ -1431,6 +1488,24 @@ interface AddDevicesResponse {
 	onConfirm={confirmBatchDelete}
 	onCancel={() => { batchDeleteOpen = false; }}
 />
+
+<!-- Batch tagging (#665): pick a dictionary tag, apply to all selected. -->
+<Modal bind:open={batchTagOpen} title={m['devices.Batch Tag']()} onClose={() => { batchTagOpen = false; }}>
+	<div class="space-y-4">
+		<p class="text-sm text-muted">{m['devices.Batch Tag Desc']({ count: selectedIds.size })}</p>
+		<select bind:value={batchTagID} class="input">
+			{#each tagDictionary as tag (tag.id)}
+				<option value={tag.id}>{tag.name}</option>
+			{/each}
+		</select>
+		<div class="flex justify-end gap-2">
+			<button class="btn btn-secondary" onclick={() => { batchTagOpen = false; }}>{m['common.Cancel']()}</button>
+			<button class="btn btn-primary" disabled={batchTagBusy || !batchTagID} onclick={confirmBatchTag}>
+				{m['common.Confirm']()}
+			</button>
+		</div>
+	</div>
+</Modal>
 
 <!-- Batch status-update confirmation: the dropdown stages the chosen status
      here, and only this confirm fires the mutation. Stops an accidental

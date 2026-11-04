@@ -49,6 +49,11 @@
 	let formPurchaseDate = $state('');
 	let formWarrantyExpiry = $state('');
 	let formTags = $state('');
+	// Tag dictionary chips (#665): the device's dictionary-tag set, synced
+	// through its own endpoint after save. The legacy free-text tags string
+	// stays in the main payload (schema validation expects it).
+	let selectedTagIds = $state<number[]>([]);
+	let tagDictionary = $state<{ id: number; key: string; name: string; color: string; builtin: boolean }[]>([]);
 	let formError = $state('');
 	let formLoading = $state(false);
 	let fieldErrors = $state<Record<string, string>>({});
@@ -81,6 +86,7 @@
 		formPurchaseDate = '';
 		formWarrantyExpiry = '';
 		formTags = '';
+		selectedTagIds = [];
 		formError = '';
 		fieldErrors = {};
 		editing = null;
@@ -92,6 +98,18 @@
 	// $effect.pre so the form is ready before the modal body renders.
 	$effect(() => {
 		if (open) {
+			// Load the tag dictionary once per mount (best-effort; chips render
+			// empty and stay clickable-off on failure).
+			if (tagDictionary.length === 0) {
+				api
+					.get<{ tags: { id: number; key: string; name: string; color: string; builtin: number }[] }>('/tags')
+					.then((resp) => {
+						tagDictionary = (resp.tags ?? []).map((t) => ({
+							id: t.id, key: t.key, name: t.name, color: t.color, builtin: t.builtin === 1
+						}));
+					})
+					.catch(() => {});
+			}
 			if (device) {
 				editing = device;
 				formName = device.name;
@@ -106,6 +124,8 @@
 				formPurchaseDate = device.purchase_date || '';
 				formWarrantyExpiry = device.warranty_expiry || '';
 				formTags = device.tags || '';
+				selectedTagIds = ((device as Device & { dictionary_tags?: { id: number }[] })
+					.dictionary_tags ?? []).map((t) => t.id);
 				formError = '';
 				fieldErrors = {};
 			} else {
@@ -160,6 +180,13 @@
 		try {
 			if (editing) {
 				await api.put(`/devices/${editing.id}`, body);
+				// Best-effort dictionary-tag sync (#665): a failure here must not
+				// discard the user's field edits, so the toast is informational.
+				try {
+					await api.put(`/devices/${editing.id}/tags`, { tag_ids: selectedTagIds });
+				} catch {
+					addToast('warning', m['devices.Tags Sync Failed']());
+				}
 				addToast('success', m['devices.Updated']());
 			} else {
 				await api.post('/devices', body);
@@ -303,11 +330,32 @@
 				class="input" />
 		</div>
 
-		<!-- Tags -->
+		<!-- Tags (dictionary chips, #665; the legacy free-text string moved on) -->
 		<div class="col-span-2">
 			<label class="block text-xs text-muted mb-1">{m['devices.Tags']()}</label>
-			<input bind:value={formTags} placeholder="server,production,rack-a"
-				class="input" />
+			<div class="flex flex-wrap gap-1.5">
+				{#each tagDictionary as tag (tag.id)}
+					<button
+						type="button"
+						class="rounded-full px-2.5 py-1 text-xs font-medium border transition-colors {selectedTagIds.includes(tag.id)
+							? 'border-transparent'
+							: 'border-border text-muted hover:bg-muted/20'}"
+						style={selectedTagIds.includes(tag.id)
+							? `background: ${tag.color || '#2563eb'}22; color: ${tag.color || '#2563eb'}; border-color: ${tag.color || '#2563eb'}55`
+							: ''}
+						onclick={() => {
+							selectedTagIds = selectedTagIds.includes(tag.id)
+								? selectedTagIds.filter((id) => id !== tag.id)
+								: [...selectedTagIds, tag.id];
+						}}
+					>
+						{tag.name}
+					</button>
+				{/each}
+				{#if tagDictionary.length === 0}
+					<span class="text-xs text-muted">{m['devices.Tags Loading']()}</span>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Submit -->

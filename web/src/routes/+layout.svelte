@@ -38,6 +38,7 @@
 		Bot,
 		Network,
 		Activity,
+		Archive,
 		Fingerprint
 	} from '@lucide/svelte';
 	import type { Component } from 'svelte';
@@ -143,6 +144,7 @@
 			items: [
 				{ path: '/dashboard', label: m['navigation.Dashboard'](), icon: LayoutDashboard },
 				{ path: '/devices', label: m['navigation.Devices'](), icon: Server },
+				{ path: '/archive', label: m['navigation.Archive'](), icon: Archive },
 				{ path: '/changes', label: m['navigation.Changes'](), icon: History },
 				{ path: '/probes', label: m['navigation.Probes'](), icon: Activity }
 			]

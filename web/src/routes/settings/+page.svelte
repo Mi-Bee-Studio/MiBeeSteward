@@ -38,6 +38,7 @@
 		| '2fa'
 		| 'notifications'
 		| 'snmp'
+		| 'tags'
 		| 'fingerprints'
 		| 'security'
 		| 'language';
@@ -48,6 +49,7 @@
 		'2fa',
 		'notifications',
 		'snmp',
+		'tags',
 		'fingerprints',
 		'security',
 		'language'
@@ -496,6 +498,13 @@ function handleCancel2FASetup() {
 		<AccordionSection id="snmp" title={m["snmpCredentials.Title"]()}
 			open={openSection === 'snmp'} onToggle={() => toggleSection('snmp')}>
 			<SnmpCredentialsSettings />
+		</AccordionSection>
+
+		<!-- Tag dictionary management (#665): link card into the full page. -->
+		<AccordionSection id="tags" title={m['tags.Title']()}
+			open={openSection === 'tags'} onToggle={() => toggleSection('tags')}>
+			<p class="text-sm text-muted mb-3">{m['tags.Subtitle']()}</p>
+			<a href="/settings/tags" class="btn btn-primary text-sm">{m['tags.Manage']()}</a>
 		</AccordionSection>
 
 		<!-- Fingerprint corpus management (upload / online update / fleet adoption) -->
