@@ -23,8 +23,11 @@ import (
 
 // SchemaVersion is the schema generation this build creates. Version 2 was
 // the last generation that migrated older databases in place (v0.6 and
-// earlier); 3 is the first fresh-only generation.
-const SchemaVersion = 8
+// earlier); 3 is the first fresh-only generation. Version 9 adds the asset
+// archive layer (archived_at/pin/override/periodic columns +
+// asset_archive_events), the tag dictionary (tags + device_tags), and the
+// asset register columns (#662).
+const SchemaVersion = 9
 
 // runMigrations creates a fresh database from the embedded schema and stamps
 // the version, or verifies an existing database is at the current version.
