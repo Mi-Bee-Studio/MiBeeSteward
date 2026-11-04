@@ -26,7 +26,8 @@
 	let formColor = $state('#2563eb');
 	let formDesc = $state('');
 
-	let isAdmin = $state(false);
+	// Admin gate: derived from the auth store ($auth auto-subscribes).
+	let isAdmin = $derived(($auth.user?.role ?? '') === 'admin');
 
 	async function load() {
 		loading = true;
@@ -101,7 +102,6 @@
 	}
 
 	onMount(() => {
-		isAdmin = auth.user?.role === 'admin';
 		load();
 	});
 </script>
