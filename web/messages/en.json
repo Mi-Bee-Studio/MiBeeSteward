@@ -1134,6 +1134,19 @@
 		"None": "No local network detected to prefill",
 		"Error": "Failed to read local network info"
 	},
+	"onboarding": {
+		"Title": "Getting started",
+		"Subtitle": "Three steps to your first inventory.",
+		"Step1 Title": "Create your first scan task",
+		"Step1 Desc": "One click: we detect this machine's network, create a daily task, and run it now.",
+		"Step2 Title": "Want a preview first?",
+		"Step2 Desc": "Restart with -demo to explore a fictional fleet; an amber banner offers one-click clear.",
+		"Step2 Ack": "Got it",
+		"Step3 Title": "Multiple networks?",
+		"Step3 Desc": "Install an agent in each segment — the center schedules and collects everything.",
+		"Step3 Action": "Agents page",
+		"Hide": "Hide the getting-started card"
+	},
 	"discovery": {
 		"Enabled": "Enabled",
 		"Subtitle": "Passive listener status — hosts seen on the network via ARP/DHCP, without an active scan.",

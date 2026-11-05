@@ -1134,6 +1134,19 @@
 		"None": "未能识别可预填的本机网络",
 		"Error": "读取本机网络信息失败"
 	},
+	"onboarding": {
+		"Title": "开始使用",
+		"Subtitle": "三步完成第一次资产盘点。",
+		"Step1 Title": "创建首个扫描任务",
+		"Step1 Desc": "一键识别本机所在网段，创建每日扫描任务并立即执行。",
+		"Step2 Title": "想先看看效果？",
+		"Step2 Desc": "用 -demo 启动可浏览一套演示数据；琥珀色横幅支持一键清除。",
+		"Step2 Ack": "知道了",
+		"Step3 Title": "有多网段？",
+		"Step3 Desc": "在每个网段部署一个采集器——中心统一调度与汇总。",
+		"Step3 Action": "前往采集器页",
+		"Hide": "隐藏开始使用卡片"
+	},
 	"discovery": {
 		"Enabled": "已启用",
 		"Subtitle": "被动监听状态 —— 通过 ARP/DHCP 在网络上看到的主机,无需主动扫描。",

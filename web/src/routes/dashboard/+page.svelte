@@ -17,6 +17,7 @@
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import NetworkSuggestModal from '$lib/components/NetworkSuggestModal.svelte';
+	import OnboardingChecklist from '$lib/components/OnboardingChecklist.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { api } from '$lib/api/client';
@@ -1083,6 +1084,9 @@
 		{@const offCount = overview?.devices.offline ?? stats?.by_status.offline ?? 0}
 		{@const lastNew = overview?.scanning.last_discovery?.new_hosts ?? 0}
 		{@const totalDevices = overview?.devices.total ?? Object.values(stats?.by_status ?? {}).reduce((a, b) => a + b, 0)}
+		{#if isAdmin}
+			<OnboardingChecklist {totalDevices} onOpenSmartScan={() => (smartScanOpen = true)} />
+		{/if}
 		<div class="attention-banner {totalDevices === 0 ? 'attention-empty' : offCount > 0 ? 'attention-warn' : 'attention-ok'} mb-6">
 			<div class="flex items-center gap-3 min-w-0 flex-1">
 				{#if totalDevices === 0}
