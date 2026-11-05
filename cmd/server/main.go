@@ -80,15 +80,8 @@ func runCLI(args []string) error {
 	// password = browser first-run setup) and keep going. An EXISTING file is
 	// never touched, however broken: rewriting a config the user wrote (or a
 	// package installer generated) is not ours to do.
-	generated, err := ensureConfigFile(*configPath)
-	if err != nil {
-		return fmt.Errorf("config file %s is missing and generating a minimal one failed: %w", *configPath, err)
-	}
-	if generated {
-		// slog is not initialized yet (it needs the config), so these go to
-		// stdout directly; systemd captures stdout into the journal.
-		fmt.Printf("mibee-steward: no config file found — generated a minimal one at %s\n", *configPath)
-		fmt.Printf("mibee-steward: open http://<this-host>:8080 in a browser to complete the first-run admin setup\n")
+	if _, err := generateIfMissing(*configPath); err != nil {
+		return err
 	}
 
 	// Load configuration first (before slog init)

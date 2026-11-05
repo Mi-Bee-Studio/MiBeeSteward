@@ -72,3 +72,20 @@ func ensureConfigFile(path string) (bool, error) {
 	}
 	return true, nil
 }
+
+// generateIfMissing is runCLI's #682 front step: generate the config when
+// missing and tell the operator where it landed (slog is not initialized
+// yet — it needs the config — so the notice goes to stdout, which systemd
+// captures into the journal). The error wraps the config path so the CLI
+// front door prints an actionable message.
+func generateIfMissing(path string) (bool, error) {
+	generated, err := ensureConfigFile(path)
+	if err != nil {
+		return false, fmt.Errorf("config file %s is missing and generating a minimal one failed: %w", path, err)
+	}
+	if generated {
+		fmt.Printf("mibee-steward: no config file found — generated a minimal one at %s\n", path)
+		fmt.Printf("mibee-steward: open http://<this-host>:8080 in a browser to complete the first-run admin setup\n")
+	}
+	return generated, nil
+}

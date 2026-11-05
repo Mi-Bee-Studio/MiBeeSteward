@@ -107,3 +107,26 @@ func TestMinimalConfigTemplateInvariants(t *testing.T) {
 	require.NotContains(t, minimalConfigTemplate, "master_key")
 	require.True(t, strings.Contains(minimalConfigTemplate, `initial_admin_password: ""`))
 }
+
+// TestGenerateIfMissing covers runCLI's generation front step directly: the
+// happy path (generate + notice) and the wrapped error an unwritable
+// location produces — the same arm TestRunCLI_FrontDoors drives end-to-end.
+func TestGenerateIfMissing(t *testing.T) {
+	// Missing file → generated, no error.
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	generated, err := generateIfMissing(path)
+	require.NoError(t, err)
+	require.True(t, generated)
+	// Now existing → no-op.
+	generated, err = generateIfMissing(path)
+	require.NoError(t, err)
+	require.False(t, generated)
+
+	// Unwritable location → the wrapped, path-carrying error.
+	roDir := t.TempDir()
+	readonly := filepath.Join(roDir, "readonly")
+	require.NoError(t, os.Mkdir(readonly, 0o500))
+	_, err = generateIfMissing(filepath.Join(readonly, "config.yaml"))
+	require.ErrorContains(t, err, "generating a minimal one failed")
+	require.ErrorContains(t, err, "readonly")
+}
