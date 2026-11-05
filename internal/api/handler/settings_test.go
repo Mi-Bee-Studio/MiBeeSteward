@@ -132,6 +132,54 @@ func TestSystem_RequiresAuth(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
+// TestSystem_NetworkInterfaces pins the #678 first-use suggestion endpoint:
+// any signed-in user gets the host's interface snapshot (interfaces list +
+// container flag; the warning key is machine-dependent and only asserted
+// when present).
+func TestSystem_NetworkInterfaces(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	resp, err := doAuthed(t, server, http.MethodGet, "/api/v1/system/network-interfaces", token, nil)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body struct {
+		Interfaces []struct {
+			Name          string `json:"name"`
+			IPv4          string `json:"ipv4"`
+			PrefixLen     int    `json:"prefix_len"`
+			CIDR          string `json:"cidr"`
+			Kind          string `json:"kind"`
+			Primary       bool   `json:"primary"`
+			Addresses     int    `json:"addresses"`
+			SuggestedCIDR string `json:"suggested_cidr"`
+		} `json:"interfaces"`
+		Container bool   `json:"container"`
+		Warning   string `json:"warning"`
+	}
+	decodeJSON(t, resp, &body)
+	require.NotNil(t, body.Interfaces)
+	for _, iface := range body.Interfaces {
+		require.NotEmpty(t, iface.Name)
+		require.NotContains(t, iface.IPv4, "127.0.0.1", "loopback interfaces are never listed")
+		require.Contains(t, []string{"lan", "wireless", "virtual", "vpn"}, iface.Kind)
+		require.Positive(t, iface.Addresses)
+		require.NotEmpty(t, iface.SuggestedCIDR)
+	}
+	if body.Warning != "" {
+		require.Contains(t, []string{"bridge_container", "no_lan"}, body.Warning)
+	}
+
+	// Anonymous access is rejected like /system.
+	resp2, err := http.Get(server.URL + "/api/v1/system/network-interfaces")
+	require.NoError(t, err)
+	resp2.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, resp2.StatusCode)
+}
+
 // doAuthed issues a JSON request with a bearer token.
 func doAuthed(t *testing.T, server *httptest.Server, method, path, token string, body io.Reader) (*http.Response, error) {
 	t.Helper()
