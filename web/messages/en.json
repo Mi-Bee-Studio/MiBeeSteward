@@ -483,6 +483,7 @@
 		"Executor Local Unmatched": "No registered network matches — will run on the center itself",
 		"Community": "SNMP Community",
 		"Timeout": "Timeout (seconds)",
+		"Timeout Hint": "Engine floor is 10s per host; values below 5s run at 10s",
 		"Start Scan": "Start Scan",
 		"Scanning": "Scanning...",
 		"Scan Results": "Scan Results",
