@@ -162,6 +162,10 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
             ..Default::default()
         };
         meta.fingerprint_rev = fp_rev.clone();
+        // Self-network detection (#686): where the host actually sits, so
+        // the center can fill a blank network cidr without trusting the
+        // config claim. Best-effort — empty on failure.
+        meta.self_interfaces = mibee_agent::selfnet::detect_self_networks();
         *reporter.meta.lock().unwrap() = meta;
     }
     let reporter = Arc::new(reporter);

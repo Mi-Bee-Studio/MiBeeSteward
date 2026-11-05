@@ -43,6 +43,27 @@ pub struct AgentMeta {
     /// holds back plans for modules an agent never declared.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub supported_modules: Vec<String>,
+    /// The host's DETECTED IPv4 on-link subnets (#686) — where the agent
+    /// actually sits, as opposed to network_cidr (the configured claim).
+    /// Empty on detection failure and on older agents (field absent = old
+    /// wire shape, byte-compatible).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub self_interfaces: Vec<SelfInterface>,
+}
+
+/// Go `domain.AgentSelfInterface` (inside AgentMeta, #686).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SelfInterface {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub cidr: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub primary: bool,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 fn is_zero_i64(v: &i64) -> bool {

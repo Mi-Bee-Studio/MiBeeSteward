@@ -343,6 +343,74 @@ func TestAgentReport_BackfillNetworkCIDR(t *testing.T) {
 	require.Equal(t, "192.168.99.0/24", gotCidr.String, "disagreeing report must not clobber the established cidr")
 }
 
+// TestAgentReport_BackfillNetworkCIDR_FromSelfInterfaces covers the #686
+// fallback: an agent shipping NO configured NetworkCIDR but a detected
+// meta.self_interfaces list still fills the blank networks.cidr — with the
+// PRIMARY interface's subnet, not a secondary one.
+func TestAgentReport_BackfillNetworkCIDR_FromSelfInterfaces(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { dbConn.Close() })
+	queries := sqldb.New(dbConn)
+	middleware.SetAgentQueries(queries)
+	t.Cleanup(func() { middleware.SetAgentQueries(nil) })
+
+	net, err := queries.CreateNetwork(context.Background(), sqldb.CreateNetworkParams{Name: "lan-77"}) // no cidr
+	require.NoError(t, err)
+	networkID := net.ID
+	plaintext, hash := middleware.GenerateAgentToken()
+	_, err = queries.CreateAgentToken(context.Background(), sqldb.CreateAgentTokenParams{
+		AgentID: "agent-77", TokenHash: hash, NetworkID: &networkID, Name: "77 subnet agent",
+	})
+	require.NoError(t, err)
+
+	rn := scannerv2runner.New(nil, queries, dbConn, nil, 0, nil)
+	rn.SetRepo(store.NewSQLiteRepository(dbConn, store.Options{}, nil))
+	h := handler.NewAgentReportHandler(rn, queries, dbConn, nil)
+	r := chi.NewMux()
+	r.Use(chimw.RequestID)
+	r.Use(chimw.Recoverer)
+	r.Route("/api/v1/agents", func(r chi.Router) {
+		r.Use(middleware.RequireAgentToken)
+		r.Post("/report", h.Report)
+	})
+	srv := httptest.NewServer(r)
+	t.Cleanup(func() { srv.Close() })
+
+	// No NetworkCIDR (unconfigured claim); the detected list has a secondary
+	// /28 FIRST-ish ordering quirk by design: primary must win regardless of
+	// list position.
+	postReport(t, srv, plaintext, domain.AgentReport{
+		AgentID: "agent-77",
+		Meta: &domain.AgentMeta{
+			Version: "mibee-agent-rs/0.2.2-test",
+			SelfInterfaces: []domain.AgentSelfInterface{
+				{Name: "eth9", CIDR: "10.77.0.16/28"},
+				{Name: "eth0", CIDR: "192.168.77.0/24", Primary: true},
+			},
+		},
+		Hosts: []domain.ReportedHost{{IP: "192.168.77.5", Alive: true, MAC: "aa:bb:cc:dd:ee:77"}},
+	})
+
+	var gotCidr sql.NullString
+	err = dbConn.QueryRow(`SELECT cidr FROM networks WHERE id = ?`, networkID).Scan(&gotCidr)
+	require.NoError(t, err)
+	require.True(t, gotCidr.Valid, "blank cidr must be filled from the detected primary")
+	require.Equal(t, "192.168.77.0/24", gotCidr.String)
+
+	// A later report's DETECTED value must not clobber the established cidr
+	// (same non-clobber rule as the configured claim).
+	postReport(t, srv, plaintext, domain.AgentReport{
+		AgentID: "agent-77",
+		Meta: &domain.AgentMeta{SelfInterfaces: []domain.AgentSelfInterface{
+			{Name: "eth0", CIDR: "10.99.0.0/24", Primary: true},
+		}},
+	})
+	err = dbConn.QueryRow(`SELECT cidr FROM networks WHERE id = ?`, networkID).Scan(&gotCidr)
+	require.NoError(t, err)
+	require.Equal(t, "192.168.77.0/24", gotCidr.String, "detected value never overwrites an established cidr")
+}
+
 // TestAgentReport_BoundaryCheck_Layer2 covers the center-side per-host CIDR
 // gate (issue #19 Layer 2): hosts whose IP falls outside the reporting agent's
 // network CIDR are dropped from BOTH the device bridge and the lease refresh;
