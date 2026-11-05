@@ -40,7 +40,7 @@ docker run -d --name mibee \
 
 ## Minimal Configuration
 
-Create `config.yaml`. The smallest useful config is the listen address, your local network CIDR, and two required auth keys (`auth.jwt_secret` must be at least 32 characters; an empty `auth.initial_admin_password` aborts startup):
+Create `config.yaml`. The smallest useful config is the listen address, your local network CIDR, and the JWT secret (`auth.jwt_secret` must be at least 32 characters). `initial_admin_password` may stay empty — the first visit to the UI then opens the first-run setup that creates the admin password in the browser:
 
 ```yaml
 server:
@@ -53,7 +53,7 @@ network:
 
 auth:
   jwt_secret: "change-me-to-a-random-string-32-chars-min"   # ≥32 chars, required
-  initial_admin_password: "your-strong-password"            # required; change after first login
+  initial_admin_password: ""                                # empty = browser first-run setup; or set a temp password (first login forces a change)
 ```
 
 Every config key can be overridden by an environment variable with the `MIBEE_` prefix (dots become underscores, e.g. `network.cidr` → `MIBEE_NETWORK_CIDR`):
@@ -64,7 +64,7 @@ export MIBEE_AUTH_JWT_SECRET="$(openssl rand -base64 32)"
 export MIBEE_AUTH_INITIAL_ADMIN_PASSWORD="your-strong-password"
 ```
 
-For production, always set `auth.jwt_secret` and `auth.initial_admin_password`. See the [Configuration Reference](configuration.md) for all options.
+For production, always set a unique `auth.jwt_secret`; for the admin password either set `initial_admin_password` to a one-time value (the first login forces a change) or leave it empty and create the password through the browser first-run setup. See the [Configuration Reference](configuration.md) for all options.
 
 ## Start and Log In
 
@@ -72,7 +72,7 @@ For production, always set `auth.jwt_secret` and `auth.initial_admin_password`. 
 ./mibee-steward --config config.yaml
 ```
 
-Open http://localhost:8080 and log in with `admin` and the configured initial password; change the password immediately after the first login. Health check:
+Open http://localhost:8080. If `initial_admin_password` is empty, the login page switches to a first-run form: create the admin password there and you are logged straight in. Otherwise log in with `admin` and the configured password, and the first login forces you to replace it. Health check:
 
 ![Login page](images/login.webp)
 
@@ -147,7 +147,8 @@ The response is `{ hosts, total, alive, duration_ms }`; each host carries `ip`, 
 | No devices found | Verify `network.cidr` and `targets`; check that the firewall allows ICMP and SNMP (UDP 161) |
 | Devices online but unidentified | Check the SNMP community (default `public`), or pass `community` explicitly in the scan request |
 | Scanning misbehaves in Docker | Switch to host networking (see above) |
-| Service fails to start | Read the startup log: a missing `auth.jwt_secret` (<32 chars) or an empty `auth.initial_admin_password` exits immediately; then check write permissions on the `data/` directory |
+| Service fails to start | Read the startup log: a missing `auth.jwt_secret` (<32 chars) exits immediately (an empty `initial_admin_password` is fine — that is the browser first-run path); then check write permissions on the `data/` directory |
+| Want a self-check | `./mibee-steward doctor -config config.yaml` — validates the config and checks the database, port conflicts, backups, and (agent mode) center reachability |
 | Forgot the admin password | `./mibee-steward reset-admin-password -config config.yaml` (interactive prompt, or `-password 'new-pass'` / env `MIBEE_RESET_PASSWORD`) |
 
 ## Next Steps

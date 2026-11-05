@@ -40,7 +40,7 @@ docker run -d --name mibee \
 
 ## 最小配置
 
-创建 `config.yaml`。最小配置只需监听地址、本机网络 CIDR 与两个必需的认证项（`auth.jwt_secret` 至少 32 字符，`auth.initial_admin_password` 为空则服务直接退出）：
+创建 `config.yaml`。最小配置只需监听地址、本机网络 CIDR 与 JWT 密钥（`auth.jwt_secret` 至少 32 字符）。`initial_admin_password` 可以留空——首次打开界面时会进入浏览器首启流程，在页面上创建 admin 密码：
 
 ```yaml
 server:
@@ -53,7 +53,7 @@ network:
 
 auth:
   jwt_secret: "change-me-to-a-random-string-32-chars-min"   # ≥32 字符，必填
-  initial_admin_password: "your-strong-password"            # 必填，首次登录后修改
+  initial_admin_password: ""                                # 留空 = 浏览器首启设置；也可填临时密码（首次登录强制修改）
 ```
 
 所有配置项均可被 `MIBEE_` 前缀环境变量覆盖（点号转下划线，如 `network.cidr` → `MIBEE_NETWORK_CIDR`）：
@@ -64,7 +64,7 @@ export MIBEE_AUTH_JWT_SECRET="$(openssl rand -base64 32)"
 export MIBEE_AUTH_INITIAL_ADMIN_PASSWORD="your-strong-password"
 ```
 
-生产环境务必设置 `auth.jwt_secret` 与 `auth.initial_admin_password`。完整配置项见[配置参考](configuration.md)。
+生产环境务必设置唯一的 `auth.jwt_secret`；admin 密码既可以填一次性 `initial_admin_password`（首次登录强制修改），也可以留空走浏览器首启流程创建。完整配置项见[配置参考](configuration.md)。
 
 ## 启动并登录
 
@@ -72,7 +72,7 @@ export MIBEE_AUTH_INITIAL_ADMIN_PASSWORD="your-strong-password"
 ./mibee-steward --config config.yaml
 ```
 
-打开 http://localhost:8080，使用 `admin` 与配置的初始密码登录，登录后立即修改密码。健康检查：
+打开 http://localhost:8080。若 `initial_admin_password` 留空，登录页会切换为首启表单，创建 admin 密码后直接进入；否则用 `admin` 与初始密码登录，首次登录会强制修改密码。健康检查：
 
 ![登录页](images/login.webp)
 
@@ -147,7 +147,8 @@ curl -X POST http://localhost:8080/api/v1/scanner/scan \
 | 没有发现任何设备 | 确认 `network.cidr` 与 `targets` 正确；检查防火墙是否放行 ICMP 与 SNMP（UDP 161） |
 | 设备在线但识别为空 | 确认 SNMP community（默认 `public`），或在扫描请求中显式传 `community` |
 | Docker 中扫描异常 | 改用 host 网络模式（见上文） |
-| 服务无法启动 | 看启动日志：缺 `auth.jwt_secret`（<32 字符）或 `auth.initial_admin_password` 为空会直接退出；再检查 `data/` 目录写权限 |
+| 服务无法启动 | 看启动日志：缺 `auth.jwt_secret`（<32 字符）会直接退出（`initial_admin_password` 为空是正常的——那是浏览器首启路径）；再检查 `data/` 目录写权限 |
+| 想做一键自检 | `./mibee-steward doctor -config config.yaml`——校验配置，检查数据库、端口冲突、备份，以及（agent 模式）中心可达性 |
 | 忘记 admin 密码 | `./mibee-steward reset-admin-password -config config.yaml`（交互输入，或加 `-password '新密码'` / 环境变量 `MIBEE_RESET_PASSWORD`） |
 
 ## 下一步
