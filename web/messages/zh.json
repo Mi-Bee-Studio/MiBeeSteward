@@ -483,6 +483,7 @@
 		"Executor Local Unmatched": "未匹配已登记网络——将在 center 本机执行",
 		"Community": "SNMP 团体名",
 		"Timeout": "超时时间（秒）",
+		"Timeout Hint": "引擎每主机下限 10 秒；低于 5 秒的值按 10 秒执行",
 		"Start Scan": "开始扫描",
 		"Scanning": "扫描中...",
 		"Scan Results": "扫描结果",

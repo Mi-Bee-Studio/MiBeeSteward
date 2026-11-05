@@ -57,7 +57,10 @@
 	// Form state
 	let targets = $state('');
 	let community = $state('public');
-	let timeout = $state(2);
+	// Engine floor (#685): the sync handler runs any per-host value below 5s
+	// at 10s (multi-probe pipeline floor), so the field offers 5-10 and
+	// defaults to the floor value itself.
+	let timeout = $state(10);
 	// Optional TCP port whitelist for the quick scan (#275). Empty = the
 	// engine's global list (the previous, only behavior).
 	let portSpec = $state('');
@@ -195,7 +198,7 @@
 			const res = await api.post<ScanResponse>('/scanner/scan', {
 				targets: targets.trim(),
 				community: community || 'public',
-				timeout: timeout || 2,
+				timeout: timeout || 10,
 				ports: portSpec.trim() || undefined,
 				credential_id: selectedCredentialId ?? undefined
 			}, { signal: scanController?.signal, timeoutMs: SCAN_TIMEOUT_MS });
@@ -416,11 +419,12 @@
 				<input
 					type="number"
 					bind:value={timeout}
-					min="1"
+					min="5"
 					max="10"
 					class="input"
 					disabled={scanning}
 				/>
+				<p class="text-xs text-muted mt-1">{m['scanner.Timeout Hint']()}</p>
 			</div>
 		</div>
 		<div class="mt-2">

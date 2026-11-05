@@ -18,6 +18,7 @@
 	import { CRON_PRESETS, CUSTOM_KEY, cronForPresetKey, presetKeyForCron } from '$lib/utils/cron';
 	import { analyzeScanTarget, normalizeCIDR, type ScanTargetInfo } from '$lib/utils/scanTargets';
 	import { bestLocalNetwork } from '$lib/utils/netSuggest';
+	import { backendDefaultPipeline } from '$lib/utils/pipelineDefaults';
 
 	import type { ScannerTask, PipelineConfig, ScanRun } from '$lib/types';
 
@@ -108,15 +109,10 @@
 	let activeRuns = $state<Map<number, ScanRun>>(new Map());
 	let pollingTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
+	// The form's pre-filled pipeline = the backend's DefaultPipelineConfig,
+	// shared and pinned in $lib/utils/pipelineDefaults (#685).
 	function defaultPipeline(): PipelineConfig {
-		return {
-			icmp: { enabled: true, timeout: 2 },
-			snmp: { enabled: true, community: 'public', timeout: 5 },
-			port_scan: { enabled: true, ports: '22,80,443,8080,9100', scan_type: 'connect' },
-			service_detect: { enabled: true },
-			prometheus: { enabled: true, ports: '9090' },
-			node_exporter: { enabled: true }
-		};
+		return backendDefaultPipeline();
 	}
 
 	// --- Lifecycle ---
