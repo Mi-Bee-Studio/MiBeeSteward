@@ -40,6 +40,8 @@ docker run -d --name mibee \
 
 ## 最小配置
 
+**零配置路径（#682）**：若配置文件不存在，首次运行 `./mibee-steward` 会在 `-config` 路径（默认 `config.yaml`）自动生成一份最小配置——随机 `jwt_secret`、admin 密码留空走浏览器首启——并直接启动。只有在需要显式定制时才需要自己编写配置。
+
 创建 `config.yaml`。最小配置只需监听地址、本机网络 CIDR 与 JWT 密钥（`auth.jwt_secret` 至少 32 字符）。`initial_admin_password` 可以留空——首次打开界面时会进入浏览器首启流程，在页面上创建 admin 密码：
 
 ```yaml
