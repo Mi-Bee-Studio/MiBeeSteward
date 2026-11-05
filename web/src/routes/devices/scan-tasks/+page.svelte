@@ -194,6 +194,17 @@
 				activeRuns.set(task.id, stubRun);
 				activeRuns = new Map(activeRuns);
 				pollRunStatus(task.id);
+				// #687: a run already in flight while the inventory is empty
+				// is the first scan (covers the #678 one-click flow, which
+				// triggers before this page loads). Best-effort: a failed
+				// probe just means the normal completion toast.
+				api.get<{ by_status: Record<string, number> }>('/devices/stats')
+					.then((s) => {
+						if (Object.values(s.by_status ?? {}).reduce((a, b) => a + b, 0) === 0) {
+							firstScanCandidates.add(task.id);
+						}
+					})
+					.catch(() => {});
 			}
 		}
 	}
@@ -385,9 +396,22 @@
 	}
 
 	// --- Trigger ---
+	// First-scan guidance (#687): a run triggered while the inventory was
+	// EMPTY and that comes back with live hosts is "the first scan" — its
+	// completion toast gets a celebratory wording plus a View-devices CTA.
+	const firstScanCandidates = new Set<number>();
+
 	async function triggerTask(task: ScannerTask) {
 		triggeringId = task.id;
 		try {
+			// Snapshot emptiness BEFORE the run can change it (best-effort;
+			// a failed probe just means no guidance toast, never a wrong one).
+			const stats = await api
+				.get<{ by_status: Record<string, number> }>('/devices/stats')
+				.catch(() => null);
+			if (stats && Object.values(stats.by_status ?? {}).reduce((a, b) => a + b, 0) === 0) {
+				firstScanCandidates.add(task.id);
+			}
 			await api.post(`/scanner/tasks/${task.id}/trigger`, {});
 			addToast('info', m['scanner.Scan Triggered']({ name: task.name }));
 			// Start polling for run status
@@ -427,9 +451,20 @@
 						stopPolling(taskId);
 						activeRuns.set(taskId, run);
 						activeRuns = new Map(activeRuns);
-						if (run.status === 'completed') {
+					if (run.status === 'completed') {
+						const firstScan = firstScanCandidates.delete(taskId) && run.alive_hosts > 0;
+						if (firstScan) {
+							// #687: the first scan deserves a way out — a
+							// longer-lived toast with a View-devices CTA.
+							addToast('success', m['scanner.First Scan Done']({ count: run.alive_hosts }), {
+								label: m['scanner.View Devices'](),
+								callback: () => goto('/devices'),
+								timeout: 15000
+							});
+						} else {
 							addToast('success', m['scanner.Scan Done']({ alive: run.alive_hosts, total: run.total_hosts, new: run.new_hosts, duration: run.duration_ms }));
-						} else if (run.status === 'cancelled') {
+						}
+					} else if (run.status === 'cancelled') {
 							addToast('info', m['scanner.Scan Cancelled']());
 						} else {
 							addToast('error', m['scanner.Scan Failed']({ error: run.error_message || 'unknown error' }));

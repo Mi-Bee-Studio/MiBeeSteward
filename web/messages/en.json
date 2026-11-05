@@ -475,6 +475,8 @@
 		"Targets": "Target Range",
 		"Targets Placeholder": "e.g. 192.168.1.0/24 or 192.168.1.1",
 		"Addresses Count": "{count} addresses",
+		"First Scan Done": "First scan complete — {count} devices discovered! Your inventory is live.",
+		"View Devices": "View devices",
 		"Over Sync Limit": "Over the 1024-address synchronous-scan limit — use a scan task instead",
 		"Over Task Limit": "Over the 4096-address scan-task limit — split the target",
 		"Runs Locally Sync": "Synchronous scans always run on the center itself",
