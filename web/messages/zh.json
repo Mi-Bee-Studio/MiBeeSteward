@@ -475,6 +475,8 @@
 		"Targets": "目标范围",
 		"Targets Placeholder": "例如 192.168.1.0/24 或 192.168.1.1",
 		"Addresses Count": "{count} 个地址",
+		"First Scan Done": "首次扫描完成——发现 {count} 台设备！资产库已就绪。",
+		"View Devices": "查看设备",
 		"Over Sync Limit": "超出同步扫描 1024 地址上限——请改用扫描任务",
 		"Over Task Limit": "超出扫描任务 4096 地址上限——请拆分目标",
 		"Runs Locally Sync": "同步扫描始终在 center 本机执行",
