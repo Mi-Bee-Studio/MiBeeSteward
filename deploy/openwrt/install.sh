@@ -113,42 +113,9 @@ gen_secret() {
     echo "$_s"
 }
 
-# mask_to_prefix 255.255.255.0 -> 24. Same busybox-portability story as
-# gen_secret: `ipcalc` is not guaranteed either (the same R68S build lacks
-# it), so the cidr derivation needs a pure-ash fallback. Contiguous masks
-# only; echoes nothing (and returns 1) on anything else.
-mask_to_prefix() {
-    _p=0 _zero=0 _rest="$1"
-    while [ -n "$_rest" ]; do
-        _o="${_rest%%.*}"
-        case "$_rest" in *.*) _rest="${_rest#*.}" ;; *) _rest="" ;; esac
-        case "$_o" in
-            255) [ "$_zero" = 0 ] || return 1; _p=$((_p+8)) ;;
-            254) [ "$_zero" = 0 ] || return 1; _p=$((_p+7)); _zero=1 ;;
-            252) [ "$_zero" = 0 ] || return 1; _p=$((_p+6)); _zero=1 ;;
-            248) [ "$_zero" = 0 ] || return 1; _p=$((_p+5)); _zero=1 ;;
-            240) [ "$_zero" = 0 ] || return 1; _p=$((_p+4)); _zero=1 ;;
-            224) [ "$_zero" = 0 ] || return 1; _p=$((_p+3)); _zero=1 ;;
-            192) [ "$_zero" = 0 ] || return 1; _p=$((_p+2)); _zero=1 ;;
-            128) [ "$_zero" = 0 ] || return 1; _p=$((_p+1)); _zero=1 ;;
-            0)   _zero=1 ;;
-            *)   return 1 ;;
-        esac
-    done
-    echo "$_p"
-}
-
-# ip_mask_base 192.168.2.1 255.255.255.0 -> 192.168.2.0 (per-octet AND).
-ip_mask_base() {
-    _ip="$1" _mask="$2" _out=""
-    while [ -n "$_ip" ]; do
-        _io="${_ip%%.*}"; case "$_ip" in *.*) _ip="${_ip#*.}" ;; *) _ip="" ;; esac
-        _mo="${_mask%%.*}"; case "$_mask" in *.*) _mask="${_mask#*.}" ;; *) _mask="" ;; esac
-        _b=$(( _io & _mo ))
-        _out="${_out}${_out:+.}$_b"
-    done
-    echo "$_out"
-}
+# (The cidr-derivation helpers mask_to_prefix / ip_mask_base used to live
+# here; #688 moved that math into detect-lans.sh, which now enumerates ALL
+# static interfaces instead of only network.lan.)
 
 # enable_source KEY: flips "enabled: false" to true inside the YAML block
 # "KEY:" of the generated config (block-scoped awk identical to luci-helper.sh
@@ -190,51 +157,38 @@ if [ -f "$CONF_DST" ]; then
         echo "--       enable under LuCI > Services > MiBee Steward > Settings (one click)"
     fi
 else
-    # LAN cidr from uci (static lan is the norm on OpenWrt/iStoreOS).
-    # uci may store ipaddr bare OR as CIDR ("192.168.1.1/24" — field-found on
-    # an iStoreOS 24.10 box, 0.7.1: the LuCI link and the address math below
-    # both choke on the suffix). Split it once: bare IP + optional prefix.
+    # LAN segments from uci (#688): detect-lans.sh enumerates every static
+    # interface ("lan" first — it may be a bare IP or CIDR-form ipaddr, with
+    # or without a netmask key; the address math lives there, ash-only, no
+    # ipcalc required). The FIRST segment drives the generated config's
+    # network.* identity; any additional segments are printed as a hint
+    # below — the YAML schema binds one network per center, extra segments
+    # are declared on the Networks page or via one agent per segment.
+    DETECT=""
+    if [ "$FROM_IPK" = 1 ] && [ -f /usr/lib/mibee/detect-lans.sh ]; then
+        DETECT=/usr/lib/mibee/detect-lans.sh
+    elif [ -f ./detect-lans.sh ]; then
+        DETECT=./detect-lans.sh
+    fi
     NET_NAME="lan"
     NET_CIDR=""
-    LAN_IP="$(uci -q get network.lan.ipaddr || true)"
-    LAN_PREFIX=""
-    case "$LAN_IP" in
-        */*) LAN_PREFIX="${LAN_IP##*/}"; LAN_IP="${LAN_IP%%/*}" ;;
-    esac
-    LAN_MASK="$(uci -q get network.lan.netmask || true)"
-    if [ -z "$LAN_MASK" ] && [ -n "$LAN_PREFIX" ]; then
-        # CIDR-style ipaddr without a separate netmask key: synthesize the
-        # dotted mask for the common router prefixes (ip_mask_base needs one).
-        case "$LAN_PREFIX" in
-            8)  LAN_MASK="128.0.0.0" ;;
-            16) LAN_MASK="255.255.0.0" ;;
-            24) LAN_MASK="255.255.255.0" ;;
-            25) LAN_MASK="255.255.255.128" ;;
-            26) LAN_MASK="255.255.255.192" ;;
-            27) LAN_MASK="255.255.255.224" ;;
-            28) LAN_MASK="255.255.255.240" ;;
-            29) LAN_MASK="255.255.255.248" ;;
-            30) LAN_MASK="255.255.255.252" ;;
-        esac
-    fi
-    NET_BASE="" NET_PREFIX=""
-    if [ -n "$LAN_IP" ] && [ -n "$LAN_MASK" ]; then
-        if command -v ipcalc >/dev/null 2>&1; then
-            # busybox ipcalc -pn prints NET=<base> and PREFIX=<n>
-            eval "$(ipcalc -pn "$LAN_IP" "$LAN_MASK" 2>/dev/null || true)"
-            NET_BASE="${NET:-}"
-            NET_PREFIX="${PREFIX:-}"
-        fi
-        if [ -z "$NET_BASE" ] || [ -z "$NET_PREFIX" ]; then
-            # ipcalc not present (see mask_to_prefix): pure-ash fallback.
-            NET_PREFIX="$(mask_to_prefix "$LAN_MASK" || true)"
-            NET_BASE="$(ip_mask_base "$LAN_IP" "$LAN_MASK")"
-        fi
-        if [ -n "$NET_BASE" ] && [ -n "$NET_PREFIX" ] && [ "$NET_PREFIX" -gt 0 ] 2>/dev/null; then
-            NET_CIDR="$NET_BASE/$NET_PREFIX"
-            OCT3="$(echo "$NET_BASE" | cut -d. -f3)"
-            [ -n "$OCT3" ] && NET_NAME="lan-$OCT3"   # project convention: lan-<3rd octet>
-        fi
+    EXTRA_LANS=""
+    if [ -n "$DETECT" ]; then
+        _first=1
+        while read -r _ifc _cidr; do
+            [ -n "$_cidr" ] || continue
+            if [ "$_first" = 1 ]; then
+                _first=0
+                OCT3="$(echo "$_cidr" | cut -d. -f3)"
+                NET_NAME="lan"
+                [ -n "$OCT3" ] && NET_NAME="lan-$OCT3"   # project convention: lan-<3rd octet>
+                NET_CIDR="$_cidr"
+            else
+                EXTRA_LANS="$EXTRA_LANS $_cidr"
+            fi
+        done <<EOF
+$(sh "$DETECT" 2>/dev/null || true)
+EOF
     fi
     [ -n "$NET_CIDR" ] || echo "-- WARN: could not derive LAN cidr from uci: edit network.cidr in $CONF_DST"
 
@@ -289,6 +243,12 @@ else
     fi
     chmod 600 "$CONF_DST"
     echo "-- generated $CONF_DST (network: $NET_NAME $NET_CIDR, db: $DATA_DIR/mibee.db)"
+    if [ -n "$EXTRA_LANS" ]; then
+        # #688: multi-LAN routers — say what the single-network config could not cover.
+        echo "-- additional LAN segments detected from uci:$EXTRA_LANS"
+        echo "--   the config binds ONE network per center: declare these on the"
+        echo "--   Networks page, or deploy one agent per segment (distributed mode)"
+    fi
     echo "-- Tier-1 passive discovery ON: dhcp_leases + conntrack + hostapd (router-resident)"
     echo "--   dns_log (DNS query fingerprinting) is available but OFF: needs"
     echo "--   uci set dhcp.@dnsmasq[0].logqueries=1 && uci commit dhcp && /etc/init.d/dnsmasq restart"
