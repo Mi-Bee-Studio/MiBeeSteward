@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import { m } from '$lib/i18n-paraglide';
 import { currentPasswordPolicy } from '$lib/stores/passwordPolicy';
+import { analyzeScanTarget } from '$lib/utils/scanTargets';
 
 // Password length follows the EFFECTIVE backend policy (auth.password_policy,
 // #332): read at validation time via the passwordPolicy store, never a
@@ -498,53 +499,13 @@ export function isValidIP(ip: string): boolean {
 /**
  * Validates scan target(s) input.
  * Accepts: single IP, CIDR notation, comma-separated list, IP ranges (1.1.1.1-10).
+ * Delegates to analyzeScanTarget (#684), so the form rejects at typing what
+ * the backend rejects on submit (reserved space #317, IPv6, reversed ranges)
+ * — not just the raw syntax.
  * Returns a localized error message string or null if valid.
  */
 export function validateScanTarget(value: string): string | null {
-	if (!value.trim()) return m['validation.Targets Required']();
-
-	const targets = value.split(',').map(t => t.trim()).filter(t => t.length > 0);
-	if (targets.length === 0) return m['validation.Targets Required']();
-
-	for (const target of targets) {
-		// Single IP
-		if (ipv4OctetPattern.test(target)) {
-			if (!isValidOctets(target)) {
-				return m['validation.Invalid IP']({ target });
-			}
-			continue;
-		}
-
-		// CIDR notation
-		const cidrMatch = target.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\/(\d{1,2})$/);
-		if (cidrMatch) {
-			if (!isValidOctets(cidrMatch[1])) {
-				return m['validation.Invalid CIDR IP']({ target });
-			}
-			const prefix = parseInt(cidrMatch[2], 10);
-			if (prefix < 0 || prefix > 32) {
-				return m['validation.Invalid CIDR Prefix']({ target });
-			}
-			continue;
-		}
-
-		// IP range (1.1.1.1-10)
-		const rangeMatch = target.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})-(\d{1,3})$/);
-		if (rangeMatch) {
-			if (!isValidOctets(rangeMatch[1])) {
-				return m['validation.Invalid Range IP']({ target });
-			}
-			const rangeEnd = parseInt(rangeMatch[2], 10);
-			if (rangeEnd < 0 || rangeEnd > 255) {
-				return m['validation.Invalid Range End']({ target });
-			}
-			continue;
-		}
-
-		return m['validation.Invalid Target']({ target });
-	}
-
-	return null;
+	return analyzeScanTarget(value).error;
 }
 
 /**
