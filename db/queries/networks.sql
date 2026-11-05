@@ -66,6 +66,8 @@ DELETE FROM networks WHERE id = ?;
 -- name: UpdateNetworkRaw
 -- NOTE: this query is intentionally NOT a sqlc-managed query. sqlc v1.31.1
 -- truncates the generated string for multi-bind UPDATE statements (drops the
--- trailing `?`), so UpdateNetwork is implemented with raw database/sql in
+-- trailing bind or text — re-confirmed by #686: a 3-bind UPDATE lost its tail
+-- at the '' literal and at LENGTH(x) = 0 alike), so multi-bind UPDATEs are
+-- implemented with raw database/sql in
 -- network.go (handler), reusing GetNetwork to read the updated row back.
 

@@ -139,8 +139,20 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	// Once filled, invalidate the cidr cache so the next resolveNetworkCIDR
 	// picks it up. The token still authoritatively binds network_id, this only
 	// supplies the cidr geometry the agent knows best (its own LAN).
-	if rep.NetworkCIDR != "" {
-		h.maybeBackfillNetworkCIDR(r.Context(), *networkID, rep.NetworkCIDR)
+	// #686: when the configured claim is absent, fall back to the agent's
+	// DETECTED primary self-interface (meta.self_interfaces) — where the host
+	// actually sits beats an empty config claim.
+	reportedCIDR := rep.NetworkCIDR
+	if reportedCIDR == "" && rep.Meta != nil {
+		for _, si := range rep.Meta.SelfInterfaces {
+			if si.Primary && si.CIDR != "" {
+				reportedCIDR = si.CIDR
+				break
+			}
+		}
+	}
+	if reportedCIDR != "" {
+		h.maybeBackfillNetworkCIDR(r.Context(), *networkID, reportedCIDR)
 	}
 
 	if len(rep.Hosts) == 0 {

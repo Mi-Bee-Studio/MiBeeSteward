@@ -75,6 +75,19 @@ type AgentMeta struct {
 	// agents; the probe dispatcher then assumes the legacy set icmp/http/tls
 	// (and shields them from tcp/dns plans).
 	SupportedModules []string `json:"supported_modules,omitempty"`
+	// SelfInterfaces is the host's DETECTED IPv4 on-link subnets (#686) —
+	// where the agent actually sits, as opposed to the report's NetworkCIDR
+	// (the configured claim). Absent on older agents; the center uses the
+	// primary entry to fill a blank networks.cidr, never to overwrite one.
+	SelfInterfaces []AgentSelfInterface `json:"self_interfaces,omitempty"`
+}
+
+// AgentSelfInterface is one detected on-link subnet of the agent host
+// (inside AgentMeta, #686; mirrors the Rust wire type byte-for-byte).
+type AgentSelfInterface struct {
+	Name    string `json:"name,omitempty"`
+	CIDR    string `json:"cidr,omitempty"`
+	Primary bool   `json:"primary,omitempty"`
 }
 
 // ReportedHost is one alive host in an AgentReport. Fields mirror what the
