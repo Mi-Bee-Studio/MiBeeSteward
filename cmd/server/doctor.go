@@ -86,8 +86,13 @@ func doctor(args []string) int {
 	}
 
 	if cfg.Auth.InitialAdminPassword == "" {
-		checks = append(checks, doctorCheck{name: "auth.initial_admin_password", status: "fail",
-			detail: "not set (admin cannot be created on a fresh DB)", fixHint: "set it, then change it after first login"})
+		// Empty is the installer default (deb/rpm postinst, OpenWrt
+		// install.sh) and a designed path: the passwordless admin is created
+		// and the first login redirects to the browser setup flow
+		// (POST /auth/setup). Failing here would block startup via the
+		// systemd unit's ExecStartPre (#679).
+		checks = append(checks, doctorCheck{name: "auth.initial_admin_password", status: "ok",
+			detail: "not set — browser first-run setup will create the admin password"})
 	} else {
 		checks = append(checks, doctorCheck{name: "auth.initial_admin_password", status: "ok", detail: "present"})
 	}
