@@ -135,6 +135,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
 		r.Get("/api/v1/system", settingsHandler.GetSystem)
+		r.Get("/api/v1/system/network-interfaces", settingsHandler.GetNetworkInterfaces)
 	})
 
 	// Admin-only user list
