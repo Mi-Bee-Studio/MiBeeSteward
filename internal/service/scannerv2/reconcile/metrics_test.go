@@ -23,8 +23,8 @@ import (
 
 func TestMetrics_NilReceiverIsNoOp(t *testing.T) {
 	var m *metrics
-	m.set(1, "lan-1", 5)   // must not panic
-	m.reset()              // ditto
+	m.set(1, "lan-1", 5) // must not panic
+	m.reset()            // ditto
 	require.Nil(t, newMetrics(nil), "nil registerer disables metrics entirely")
 }
 
