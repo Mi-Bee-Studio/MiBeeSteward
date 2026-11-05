@@ -1440,10 +1440,10 @@ interface AddDevicesResponse {
 				{columns}
 				rows={devices as unknown as Record<string, unknown>[]}
 				rowClassName={(row) => isStaleDevice(row as Pick<Device, 'network_id'>) ? 'opacity-60' : ''}
-				emptyTitle={m['devices.No Devices']()}
-				emptyDescription={m['devices.No Devices Desc']()}
-				emptyAction={openCreate}
-				emptyActionLabel={m['devices.Create Device']()}
+			emptyTitle={m['devices.No Devices']()}
+			emptyDescription={m['devices.No Devices Desc']()}
+			emptyAction={() => goto('/devices/scan-tasks')}
+			emptyActionLabel={m['devices.Scan Network']()}
 				expandedRowId={expandedDeviceId}
 				expandedContent={expandedRow}
 				externalSortKey={sortKey || null}

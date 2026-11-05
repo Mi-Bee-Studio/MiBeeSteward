@@ -295,6 +295,24 @@ paths:
       responses:
         "204": {description: Revoked}
 
+  /system/network-interfaces:
+    get:
+      tags: [Settings]
+      summary: Local IPv4 interface candidates (first-use scan suggestion, #678)
+      description: |
+        Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+        non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+        suggested CIDR, naming-convention kind classification, the
+        default-route (primary) marker, and container/bridge-mode hints.
+        Read-only host introspection — no packets on the wire.
+      responses:
+        "200":
+          description: Interface snapshot
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SystemNetworkInterfacesReport"}
+        "401": {$ref: "#/components/responses/Error"}
+
   /devices:
     get:
       tags: [Devices]
@@ -1945,6 +1963,33 @@ components:
         user: {$ref: "#/components/schemas/User"}
         two_factor_required: {type: boolean}
         user_id: {type: integer}
+
+    SystemNetworkInterfacesReport:
+      type: object
+      required: [interfaces, container]
+      properties:
+        interfaces:
+          type: array
+          items: {$ref: "#/components/schemas/SystemNetworkInterface"}
+        container: {type: boolean, description: center runs inside a container (/.dockerenv or /run/.containerenv)}
+        warning:
+          type: string
+          enum: ["", bridge_container, no_lan]
+          description: machine-key hint — bridge_container = likely not host-networked, scanning degraded; no_lan = nothing LAN-like to suggest
+
+    SystemNetworkInterface:
+      type: object
+      required: [name, ipv4, prefix_len, cidr, kind, primary, addresses, suggested_cidr]
+      properties:
+        name: {type: string, description: interface name, e.g. eth0 / br-lan}
+        ipv4: {type: string, format: ipv4}
+        prefix_len: {type: integer, minimum: 0, maximum: 32}
+        cidr: {type: string, description: on-link subnet as configured, e.g. 192.168.1.0/24}
+        mac: {type: string, description: interface MAC when present}
+        kind: {type: string, enum: [lan, wireless, virtual, vpn], description: naming-convention classification}
+        primary: {type: boolean, description: this interface owns the IPv4 default route}
+        addresses: {type: integer, description: total address count of cidr}
+        suggested_cidr: {type: string, description: scan suggestion — cidr clamped to the /24 containing ipv4 when wider}
 
     User:
       type: object

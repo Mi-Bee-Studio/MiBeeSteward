@@ -15,6 +15,8 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { validateScanTarget } from '$lib/utils/validation';
 	import { analyzeScanTarget, type ScanTargetInfo } from '$lib/utils/scanTargets';
+	import { bestLocalNetwork } from '$lib/utils/netSuggest';
+
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import PortListEditor from '$lib/components/scanner/PortListEditor.svelte';
 	import { portTemplates } from '$lib/portTemplates';
@@ -139,6 +141,22 @@
 		targetsInfo = info;
 		targetsError = info.error ?? '';
 		return info.error;
+	}
+
+	// "Use my network" (#678): fill targets with the center host's own
+	// network — the default-route interface's suggested CIDR.
+	async function useLocalNetwork() {
+		try {
+			const cidr = await bestLocalNetwork();
+			if (!cidr) {
+				addToast('warning', m['netsuggest.None']());
+				return;
+			}
+			targets = cidr;
+			validateTargets();
+		} catch {
+			addToast('error', m['netsuggest.Error']());
+		}
 	}
 
 	// The synchronous scan endpoint holds the request open for the whole scan:
@@ -333,9 +351,19 @@
 	<!-- Scan Form -->
 	<div class="bg-surface border border-border rounded-lg p-5 space-y-4">
 		<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-			<div class="md:col-span-1">
+		<div class="md:col-span-1">
+			<div class="flex items-center justify-between">
 				<label class="label text-sm">{m['scanner.Targets']()}</label>
-				<input
+				<button
+					type="button"
+					class="text-xs text-primary hover:underline"
+					disabled={scanning}
+					onclick={useLocalNetwork}
+				>
+					{m['netsuggest.Use My Network']()}
+				</button>
+			</div>
+			<input
 					type="text"
 					bind:value={targets}
 					placeholder={m['scanner.Targets Placeholder']()}

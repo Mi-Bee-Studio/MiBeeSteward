@@ -804,6 +804,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/network-interfaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Local IPv4 interface candidates (first-use scan suggestion,
+         * @description Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+         *     non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+         *     suggested CIDR, naming-convention kind classification, the
+         *     default-route (primary) marker, and container/bridge-mode hints.
+         *     Read-only host introspection — no packets on the wire.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Interface snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemNetworkInterfacesReport"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices": {
         parameters: {
             query?: never;
@@ -5918,6 +5962,38 @@ export interface components {
             user: components["schemas"]["User"];
             two_factor_required?: boolean;
             user_id?: number;
+        };
+        SystemNetworkInterfacesReport: {
+            interfaces: components["schemas"]["SystemNetworkInterface"][];
+            /** @description center runs inside a container (/.dockerenv or /run/.containerenv) */
+            container: boolean;
+            /**
+             * @description machine-key hint — bridge_container = likely not host-networked, scanning degraded; no_lan = nothing LAN-like to suggest
+             * @enum {string}
+             */
+            warning?: "" | "bridge_container" | "no_lan";
+        };
+        SystemNetworkInterface: {
+            /** @description interface name */
+            name: string;
+            /** Format: ipv4 */
+            ipv4: string;
+            prefix_len: number;
+            /** @description on-link subnet as configured */
+            cidr: string;
+            /** @description interface MAC when present */
+            mac?: string;
+            /**
+             * @description naming-convention classification
+             * @enum {string}
+             */
+            kind: "lan" | "wireless" | "virtual" | "vpn";
+            /** @description this interface owns the IPv4 default route */
+            primary: boolean;
+            /** @description total address count of cidr */
+            addresses: number;
+            /** @description scan suggestion — cidr clamped to the /24 containing ipv4 when wider */
+            suggested_cidr: string;
         };
         User: {
             /** Format: int64 */

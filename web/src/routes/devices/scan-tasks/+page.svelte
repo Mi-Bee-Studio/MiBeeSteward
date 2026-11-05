@@ -17,6 +17,8 @@
 	import { validateScanTarget, validateCronExpr, scannerTaskSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { CRON_PRESETS, CUSTOM_KEY, cronForPresetKey, presetKeyForCron } from '$lib/utils/cron';
 	import { analyzeScanTarget, normalizeCIDR, type ScanTargetInfo } from '$lib/utils/scanTargets';
+	import { bestLocalNetwork } from '$lib/utils/netSuggest';
+
 	import type { ScannerTask, PipelineConfig, ScanRun } from '$lib/types';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -306,6 +308,22 @@
 			? { ...fieldErrors, targets: info.error }
 			: (() => { const { targets: _, ...rest } = fieldErrors; return rest; })();
 		return info.error;
+	}
+
+	// "Use my network" (#678): fill targets with the center host's own
+	// network — the default-route interface's suggested CIDR.
+	async function useLocalNetwork() {
+		try {
+			const cidr = await bestLocalNetwork();
+			if (!cidr) {
+				addToast('warning', m['netsuggest.None']());
+				return;
+			}
+			formTargets = cidr;
+			validateTargets();
+		} catch {
+			addToast('error', m['netsuggest.Error']());
+		}
 	}
 
 	function validateCron(): string | null {
@@ -766,7 +784,16 @@
 
 			<!-- Targets -->
 			<div>
-				<label class="block text-xs text-text-muted mb-1">{m['scanner.Targets']()} *</label>
+				<div class="flex items-center justify-between mb-1">
+					<label class="block text-xs text-text-muted">{m['scanner.Targets']()} *</label>
+					<button
+						type="button"
+						class="text-xs text-primary hover:underline"
+						onclick={useLocalNetwork}
+					>
+						{m['netsuggest.Use My Network']()}
+					</button>
+				</div>
 				<input
 					bind:value={formTargets}
 					required

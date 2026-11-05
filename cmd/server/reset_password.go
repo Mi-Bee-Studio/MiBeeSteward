@@ -42,7 +42,7 @@ import (
 //	MIBEE_RESET_PASSWORD=newpass mibee-steward reset-admin-password -config configs/config.yaml
 func resetAdminPasswordSubcommand(args []string) {
 	fs := flag.NewFlagSet("reset-admin-password", flag.ExitOnError)
-	cfgPath := fs.String("config", "configs/config.example.yaml", "Path to config file")
+	cfgPath := fs.String("config", "config.yaml", "Path to config file")
 	pwFlag := fs.String("password", "", "New admin password (prefer stdin to avoid shell history)")
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
