@@ -26,7 +26,7 @@ import { describe, expect, it } from 'vitest';
 //   3. No en catalog value leaks CJK text (an untranslated value would show
 //      Chinese to English users).
 
-type Catalog = Record<string, string | Catalog>;
+interface Catalog { [k: string]: string | Catalog }
 
 function loadCatalog(name: string): Catalog {
 	return JSON.parse(readFileSync(join(process.cwd(), 'messages', name), 'utf-8'));

@@ -171,7 +171,7 @@
 
 	function handleBlur(field: string, value: string) {
 		touched[field] = true;
-		const result = validateField(userSchema, field, value);
+		const result = validateField(userSchema, field as Parameters<typeof validateField>[1], value);
 		if (!result.valid && result.error) {
 			fieldErrors[field] = result.error;
 		} else {

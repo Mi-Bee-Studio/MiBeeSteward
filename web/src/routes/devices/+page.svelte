@@ -837,7 +837,7 @@ interface AddDevicesResponse {
 			case 'network_name':
 				return row.network_name ? escapeHtml(String(row.network_name)) : '-';
 			case 'last_scanned_at': {
-				const t = (sa?.last_scanned_at as string) || row.last_scanned_at;
+				const t = ((sa as { last_scanned_at?: string } | undefined)?.last_scanned_at) || (row.last_scanned_at as string | null);
 				return escapeHtml(formatDateTime(t));
 			}
 			case 'last_scan_rtt_ms': {
@@ -1359,7 +1359,7 @@ interface AddDevicesResponse {
 		</div>
 	{/if}
 
-	{#snippet expandedRow(row)}
+	{#snippet expandedRow(row: Record<string, unknown>)}
 		{@const device = devices.find((d) => d.id === row.id)}
 		{@const sa = device?.scan_attributes}
 		<div class="border-t border-border bg-bg/50">

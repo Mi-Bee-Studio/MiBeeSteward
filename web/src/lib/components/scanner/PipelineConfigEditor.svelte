@@ -51,7 +51,7 @@
 			case 'full': {
 				const def = backendDefaultPipeline();
 				config.icmp = { ...def.icmp };
-				config.snmp = { enabled: true, community: config.snmp.community || def.snmp.community, timeout: def.snmp.timeout };
+				config.snmp = { enabled: true, community: config.snmp.community || def.snmp.community };
 				config.port_scan = { enabled: true, ports: config.port_scan.ports || def.port_scan.ports, scan_type: def.port_scan.scan_type };
 				config.service_detect = { ...def.service_detect };
 				config.prometheus = { enabled: true, ports: config.prometheus.ports || def.prometheus.ports };
@@ -155,7 +155,7 @@
 							? 'bg-primary text-text-inverse'
 							: 'bg-surface text-muted hover:text-text'}
 						{preset.key !== 'custom' ? 'border-r border-border' : ''}"
-				>{m[preset.labelKey]()}</button>
+				>{(m[preset.labelKey as keyof typeof m] as () => string)()}</button>
 			{/each}
 		</div>
 		<span class="ml-auto text-xs text-muted">
@@ -191,9 +191,9 @@
 					<!-- Name + description -->
 					<div class="flex-1 min-w-0">
 						<span class="text-sm font-medium {enabled ? 'text-text' : 'text-muted'}">
-							{m[stage.nameKey]()}
+							{(m[stage.nameKey as keyof typeof m] as () => string)()}
 						</span>
-						<p class="text-xs text-muted mt-0.5 truncate">{m[stage.descKey]()}</p>
+						<p class="text-xs text-muted mt-0.5 truncate">{(m[stage.descKey as keyof typeof m] as () => string)()}</p>
 					</div>
 
 					<!-- Toggle switch -->
@@ -202,7 +202,7 @@
 						onclick={(e) => { e.stopPropagation(); toggleStage(stage.key); }}
 						role="switch"
 						aria-checked={enabled}
-						aria-label={m[stage.nameKey]()}
+						aria-label={(m[stage.nameKey as keyof typeof m] as () => string)()}
 					>
 						<span class="toggle-knob"></span>
 					</button>
@@ -230,6 +230,9 @@
 									</div>
 								</div>
 							{:else if stage.key === 'snmp'}
+								<!-- snmp carries ONLY the community on the wire (#274 contract):
+								     the backend PipelineConfig has no snmp.timeout, a timeout
+								     input here would be silently dropped on save. -->
 								<div class="space-y-3">
 									<div class="config-field">
 										<label class="config-label">{m['scanner.pipeline.field_community']()}</label>
@@ -240,20 +243,6 @@
 											onchange={() => onchange?.()}
 											class="config-input w-48"
 										/>
-									</div>
-									<div class="config-field">
-										<label class="config-label">{m['scanner.pipeline.field_timeout']()}</label>
-										<div class="flex items-center gap-2">
-											<input
-												type="number"
-												bind:value={config.snmp.timeout}
-												min="1"
-												max="60"
-												onchange={() => onchange?.()}
-												class="config-input w-24"
-											/>
-											<span class="text-xs text-muted">{m['scanner.pipeline.seconds']()}</span>
-										</div>
 									</div>
 								</div>
 							{:else if stage.key === 'port_scan'}

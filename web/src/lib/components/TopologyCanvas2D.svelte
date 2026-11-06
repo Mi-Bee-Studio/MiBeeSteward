@@ -138,7 +138,7 @@
 		expandOrphans: boolean,
 		colorMode: 'layer' | 'type' = 'layer',
 		labelDensityOverride?: 'all' | 'core' | 'none'
-	): EChartsOption | null {
+	): import('echarts').EChartsCoreOption | null {
 		if (!g || g.nodes.length === 0) return null;
 		const built = buildGraph(g);
 		if (built.nodes.length === 0) return null;
@@ -214,7 +214,7 @@
 					borderColor: cssVar('--color-muted', '#94a3b8'),
 					borderWidth: 2,
 					borderType: 'dashed'
-				},
+				} as never,
 				label: {
 					show: true,
 					position: 'inside',
@@ -222,7 +222,7 @@
 					color: cssVar('--color-text-muted', '#cbd5e1'),
 					formatter: () => m['topology.Orphan Group Node']({ n: orphanVisible })
 				}
-			});
+			} as never);
 		}
 
 		// Node status by id (#585): an edge whose endpoint is offline (per
@@ -251,7 +251,7 @@
 					borderColor: cssVar('--color-muted', '#94a3b8'),
 					borderWidth: 2,
 					borderType: 'dashed'
-				},
+				} as never,
 				label: {
 					show: force.labelDensity === 'all' && !search,
 					position: 'right',
@@ -259,7 +259,7 @@
 					color: cssVar('--color-text-muted', '#cbd5e1'),
 					formatter: () => `${m['topology.Unidentified Neighbor']()} ${s.mac}`
 				}
-			});
+			} as never);
 		}
 
 		const echartsLinks = visibleLinks.map((l) => {
@@ -368,7 +368,8 @@
 	// Click dispatch: node → onselectnode (the synthetic orphan group becomes
 	// onopenorphans); edge → onselectedge. The shell owns the mutually
 	// exclusive panel state; the canvas only reports what was clicked.
-	function onChartClick(ev: { dataType: string; data: { id?: string; value?: GraphNode | GraphLink } }) {
+	function onChartClick(raw: Record<string, unknown>) {
+		const ev = raw as unknown as { dataType: string; data: { id?: string; value?: GraphNode | GraphLink } };
 		if (ev.dataType === 'node') {
 			if ((ev.data as { id?: string }).id === ORPHAN_GROUP_ID) {
 				onopenorphans?.();
@@ -383,7 +384,8 @@
 	}
 
 	// Double-click node → device detail page (the shell navigates).
-	function onChartDblClick(ev: { dataType: string; data: { value?: GraphNode } }) {
+	function onChartDblClick(raw: Record<string, unknown>) {
+		const ev = raw as unknown as { dataType: string; data: { value?: GraphNode } };
 		if (ev.dataType === 'node') {
 			const gn = ev.data.value as GraphNode | undefined;
 			if (gn && gn.value && gn.value.id) onopendevice?.(gn.value.id);

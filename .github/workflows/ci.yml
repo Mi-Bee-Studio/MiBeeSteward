@@ -217,6 +217,14 @@ jobs:
       # baseline — vitest exits non-zero if any metric drops below them.
       - working-directory: web
         run: npm run test:coverage
+      # svelte-check gate (#703): the Svelte compiler lets undefined
+      # identifiers through as "maybe global" (the #687 goto-not-imported
+      # class and the #690 stale-template-variable class both shipped green
+      # through build+vitest). svelte-check fails on errors; the existing
+      # warning backlog (~115, mostly a11y) is tracked for a later ratchet.
+      - name: svelte-check gate (#703)
+        working-directory: web
+        run: npx svelte-check --fail-on-warnings false --output summary
 
   sqlc-verify:
     runs-on: ubuntu-latest

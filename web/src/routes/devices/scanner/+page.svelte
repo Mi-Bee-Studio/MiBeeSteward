@@ -123,7 +123,7 @@
 	function getDeviceTypeLabel(type: string): string {
 		const key = `devices.${type.charAt(0).toUpperCase() + type.slice(1)}`;
 		try {
-			return m[key as keyof typeof m]();
+			return (m[key as keyof typeof m] as () => string)();
 		} catch {
 			return type;
 		}

@@ -86,10 +86,10 @@ vi.mock('$lib/api/client', () => ({
 
 import Settings from '../routes/settings/+page.svelte';
 import { api } from '$lib/api/client';
-import { load as loadFingerprintsRedirect } from '../routes/settings/fingerprints/+page.ts';
-import { load as loadNotificationsRedirect } from '../routes/settings/notifications/+page.ts';
-import { load as loadSnmpRedirect } from '../routes/settings/snmp-credentials/+page.ts';
-import { load as loadSecurityRedirect } from '../routes/settings/security/+page.ts';
+import { load as loadFingerprintsRedirect } from '../routes/settings/fingerprints/+page';
+import { load as loadNotificationsRedirect } from '../routes/settings/notifications/+page';
+import { load as loadSnmpRedirect } from '../routes/settings/snmp-credentials/+page';
+import { load as loadSecurityRedirect } from '../routes/settings/security/+page';
 
 const SECTION_IDS = [
 	'profile',

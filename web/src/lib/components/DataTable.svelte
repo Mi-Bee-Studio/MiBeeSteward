@@ -143,9 +143,10 @@
 		if (onSortChange) return data;
 		if (!sortKey || sortDirection === 'none') return data;
 
+		const key = sortKey as string;
 		return [...data].sort((a, b) => {
-			const aVal = a[sortKey];
-			const bVal = b[sortKey];
+			const aVal = a[key];
+			const bVal = b[key];
 			if (aVal == null && bVal == null) return 0;
 			if (aVal == null) return 1;
 			if (bVal == null) return -1;

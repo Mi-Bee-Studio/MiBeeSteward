@@ -23,7 +23,7 @@
 		onclick,
 		ondblclick
 	}: {
-		option: EChartsOption;
+		option: import('echarts').EChartsCoreOption;
 		width?: string;
 		height?: string;
 		// When true, the chart shows a spinner overlay on top of the canvas.

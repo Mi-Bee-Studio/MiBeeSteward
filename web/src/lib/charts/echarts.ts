@@ -61,4 +61,5 @@ echarts.use([
 ]);
 
 export { echarts };
-export type { ECharts, EChartsOption } from 'echarts/core';
+export type { ECharts } from 'echarts/core';
+export type { EChartsOption } from 'echarts/types/dist/shared';

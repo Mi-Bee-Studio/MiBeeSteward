@@ -9,7 +9,7 @@
 	import { X, Plus } from '@lucide/svelte';
 
 	let {
-		value,
+		value = $bindable(),
 		onchange,
 		id
 	}: {

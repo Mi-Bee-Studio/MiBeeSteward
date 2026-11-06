@@ -20,7 +20,7 @@ import type { PipelineConfig } from '$lib/types';
 export function backendDefaultPipeline(): PipelineConfig {
 	return {
 		icmp: { enabled: true, timeout: 2 },
-		snmp: { enabled: true, community: 'public', timeout: 5 },
+		snmp: { enabled: true, community: 'public' },
 		port_scan: { enabled: true, ports: '22,80,443,9100', scan_type: 'connect' },
 		service_detect: { enabled: true },
 		prometheus: { enabled: true, ports: '9090,9100' },

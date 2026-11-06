@@ -436,7 +436,7 @@
 			title={m["common.No Results"]()}
 			description={m['common.No Results Desc']({ query: searchQuery || m['common.Clear Filters']() })}
 			actionLabel={m['common.Clear Filters']()}
-			onAction={() => { searchQuery = ''; searchInput = ''; filterUser = ''; filterAction = ''; filterResourceType = ''; filterDateFrom = ''; filterDateTo = ''; fetchLogs(); }}
+			onAction={() => { searchQuery = ''; searchInput = ''; filterUser = ''; filterAction = ''; filterResourceType = ''; filterDateFrom = ''; filterDateTo = ''; fetchAuditLogs(); }}
 		/>
 	{:else if logs.length === 0}
 		<EmptyState

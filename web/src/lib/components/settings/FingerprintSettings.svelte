@@ -136,14 +136,11 @@
 			const fd = new FormData();
 			fd.append('file', file);
 			const res = await api.upload<{ rev: string; rule_count: number }>('/fingerprints', fd);
-			addToast(
-				m['fingerprintAdmin.uploadOk']({ rules: String(res.rule_count), rev: res.rev.slice(0, 8) }),
-				'success'
-			);
+			addToast('success', m['fingerprintAdmin.uploadOk']({ rules: String(res.rule_count), rev: res.rev.slice(0, 8) }));
 			invalidateCheckResult();
 			await load();
 		} catch (e) {
-			addToast(m['fingerprintAdmin.uploadFailed']({ error: getErrorMessage(e) }), 'error');
+			addToast('error', m['fingerprintAdmin.uploadFailed']({ error: getErrorMessage(e) }));
 		} finally {
 			busy = '';
 		}
@@ -160,14 +157,11 @@
 		busy = 'rollback';
 		try {
 			const res = await api.post<{ rev: string; rule_count: number }>('/fingerprints/rollback', {});
-			addToast(
-				m['fingerprintAdmin.rollbackOk']({ rules: String(res.rule_count), rev: res.rev.slice(0, 8) }),
-				'success'
-			);
+			addToast('success', m['fingerprintAdmin.rollbackOk']({ rules: String(res.rule_count), rev: res.rev.slice(0, 8) }));
 			invalidateCheckResult();
 			await load();
 		} catch (e) {
-			addToast(m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }), 'error');
+			addToast('error', m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }));
 		} finally {
 			busy = '';
 		}
@@ -188,7 +182,7 @@
 				removed_rules: res.removed_rules ?? []
 			};
 		} catch (e) {
-			addToast(m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }), 'error');
+			addToast('error', m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }));
 		} finally {
 			busy = '';
 		}
@@ -202,14 +196,11 @@
 				'/fingerprints/upstream/apply',
 				{}
 			);
-			addToast(
-				m['fingerprintAdmin.uploadOk']({ rules: String(res.rule_count), rev: res.rev.slice(0, 8) }),
-				'success'
-			);
+			addToast('success', m['fingerprintAdmin.uploadOk']({ rules: String(res.rule_count), rev: res.rev.slice(0, 8) }));
 			invalidateCheckResult();
 			await load();
 		} catch (e) {
-			addToast(m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }), 'error');
+			addToast('error', m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }));
 		} finally {
 			busy = '';
 		}
@@ -222,7 +213,7 @@
 			);
 			previewFile = res;
 		} catch (e) {
-			addToast(m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }), 'error');
+			addToast('error', m['fingerprintAdmin.actionFailed']({ error: getErrorMessage(e) }));
 		}
 	}
 
@@ -231,7 +222,7 @@
 </script>
 
 {#if loading}
-	<PageSkeleton />
+	<PageSkeleton type='form' />
 {:else if error}
 	<EmptyState title={m['fingerprintAdmin.title']()} description={error} actionLabel={m['fingerprintAdmin.retry']()} onAction={() => void load()} />
 {:else if status}

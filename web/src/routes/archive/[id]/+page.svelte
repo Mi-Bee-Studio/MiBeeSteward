@@ -81,11 +81,11 @@
 		actionBusy = true;
 		try {
 			await restoreDevice(id, true);
-			addToast(m['archive.Restored Generic'](), 'success');
+			addToast('success', m['archive.Restored Generic']());
 			restoreOpen = false;
 			await load();
 		} catch (e) {
-			addToast(e instanceof Error ? e.message : String(e), 'error');
+			addToast('error', e instanceof Error ? e.message : String(e));
 		} finally {
 			actionBusy = false;
 		}

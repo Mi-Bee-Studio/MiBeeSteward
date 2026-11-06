@@ -153,7 +153,7 @@
 	});
 
 	function handleBlur(field: string, value: string) {
-		const result = validateField(deviceSchema, field as keyof typeof deviceSchema._type, value);
+		const result = validateField(deviceSchema, field as Parameters<typeof validateField>[1], value);
 		if (result.valid) {
 			const { [field]: _, ...rest } = fieldErrors;
 			fieldErrors = rest;

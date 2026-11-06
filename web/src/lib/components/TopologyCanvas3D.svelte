@@ -204,8 +204,8 @@
 			.force('charge', forceManyBody().strength(-140))
 			// .id() is REQUIRED: forceLink matches link endpoints by index
 			// otherwise, and string ids throw "node not found".
-			.force('link', forceLink(simLinks as never).id((d: { id: string }) => d.id).distance(48).strength(0.7))
-			.force('y', forceY((d: { layer: TopoLayer }) => layerY(d.layer)).strength(0.45))
+			.force('link', forceLink(simLinks as never).id(((d: { id: string }) => d.id) as never).distance(48).strength(0.7) as never)
+			.force('y', (forceY(((d: { layer: TopoLayer }) => layerY(d.layer)) as never) as { strength(v: number): unknown }).strength(0.45) as never)
 			.stop();
 		for (let i = 0; i < 260; i++) sim.tick();
 		const pos = new Map(simNodes.map((n) => [n.id, new THREE.Vector3(n.x, n.y, n.z)]));
@@ -349,8 +349,8 @@
 		controls.target.set(0, 0, 0);
 
 		const resize = () => {
-			const w = container.clientWidth || 1;
-			const h = container.clientHeight || 1;
+			const w = container!.clientWidth || 1;
+			const h = container!.clientHeight || 1;
 			renderer.setSize(w, h, false);
 			labelRenderer.setSize(w, h);
 			camera.aspect = w / h;
@@ -433,7 +433,7 @@
 			}
 			tooltip.innerHTML = html;
 			tooltip.classList.remove('hidden');
-			const rect = container.getBoundingClientRect();
+			const rect = container!.getBoundingClientRect();
 			const x = Math.min(ev.clientX - rect.left + 14, rect.width - 250);
 			const y = Math.min(ev.clientY - rect.top + 14, rect.height - 80);
 			tooltip.style.left = `${Math.max(0, x)}px`;
@@ -475,8 +475,8 @@
 		let loopTimer: ReturnType<typeof setTimeout> | null = null;
 		const frame = () => {
 			controls.update();
-			renderer.render(root, camera);
-			labelRenderer.render(root, camera);
+			renderer.render(root as unknown as THREE.Scene, camera);
+			labelRenderer.render(root as unknown as THREE.Scene, camera);
 		};
 		let frames = 0;
 		const countedRafLoop = () => {

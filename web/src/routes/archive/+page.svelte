@@ -53,12 +53,12 @@
 		actionBusy = true;
 		try {
 			await restoreDevice(restoreTarget.id, restoreTarget.archive_pin === 'force_archive');
-			addToast(m['archive.Restored']({ name: restoreTarget.name }), 'success');
+			addToast('success', m['archive.Restored']({ name: restoreTarget.name }));
 			restoreOpen = false;
 			restoreTarget = null;
 			await load();
 		} catch (e) {
-			addToast(e instanceof Error ? e.message : String(e), 'error');
+			addToast('error', e instanceof Error ? e.message : String(e));
 		} finally {
 			actionBusy = false;
 		}
@@ -70,14 +70,14 @@
 		try {
 			await putArchiveSettings(item.id, { pin: next });
 			addToast(
+				'success',
 				next
 					? m['archive.Pin Set']({ name: item.name })
-					: m['archive.Pin Cleared']({ name: item.name }),
-				'success'
+					: m['archive.Pin Cleared']({ name: item.name })
 			);
 			await load();
 		} catch (e) {
-			addToast(e instanceof Error ? e.message : String(e), 'error');
+			addToast('error', e instanceof Error ? e.message : String(e));
 		} finally {
 			actionBusy = false;
 		}

@@ -4,6 +4,7 @@
  * Copyright (c) 2026 Mi Bee Studio. All rights reserved.
  */
 
+import type { Snippet } from 'svelte';
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
 
@@ -110,7 +111,7 @@ describe('App layout', () => {
 
 	// An authenticated app page renders the sidebar shell.
 	it('renders the sidebar for an authenticated user on an app page', async () => {
-		const { container } = render(Layout, { children: () => {} });
+		const { container } = render(Layout, { children: (() => {}) as unknown as Snippet });
 
 		await waitFor(() => {
 			expect(container.querySelector('aside')).toBeTruthy();
@@ -123,7 +124,7 @@ describe('App layout', () => {
 	it('does not render the sidebar or hamburger on /login even when authenticated (#430)', async () => {
 		mocks.route.pathname = '/login';
 
-		const { container } = render(Layout, { children: () => {} });
+		const { container } = render(Layout, { children: (() => {}) as unknown as Snippet });
 
 		await waitFor(() => {
 			expect(container.querySelector('aside')).toBeNull();
@@ -142,7 +143,7 @@ describe('App layout', () => {
 	it('pins the demo banner as a fixed bottom strip that does not join the shell flex row (#566)', async () => {
 		mocks.demoMode.on = true;
 
-		const { container } = render(Layout, { children: () => {} });
+		const { container } = render(Layout, { children: (() => {}) as unknown as Snippet });
 
 		const banner = await waitFor(() => {
 			const el = container.querySelector('div.fixed.bottom-0');
@@ -162,7 +163,7 @@ describe('App layout', () => {
 	});
 
 	it('renders no demo banner when demo mode is off', async () => {
-		const { container } = render(Layout, { children: () => {} });
+		const { container } = render(Layout, { children: (() => {}) as unknown as Snippet });
 		await waitFor(() => {
 			expect(container.querySelector('aside')).toBeTruthy();
 		});

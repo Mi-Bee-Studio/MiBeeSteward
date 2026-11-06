@@ -26,6 +26,14 @@ flowchart TD
     F -->|"No"| H["Standalone binary: systemd"]
 ```
 
+### Packaging roadmap & non-goals (decision record, 2026-10-24)
+
+Shipped: **deb/rpm** via nfpm (amd64/arm64/armhf, #620) and the OpenWrt ipk/apk/tar.gz family; apt/yum **repositories** are parked until deb/rpm see real user feedback (#621), Home Assistant add-on and Helm charts likewise wait for demand signals (#622, #623).
+
+On-demand pool (same nfpm path, cheap to produce when a signal arrives): **pacman** (Arch/Manjaro; artifacts without AUR maintenance), **Alpine apk** (same apk-tools family as the OpenWrt 24.10+ packages but a separate repo/ABI policy; the static binary makes the artifact near-zero cost), **nix flake** (a separate, non-nfpm path; small audience).
+
+Explicit non-goals: **snap** (a scanner needs raw sockets for ICMP/ARP; confinement fights the product), **flatpak / AppImage** (GUI-first formats; this is a headless server), **Homebrew** (macOS is not a target platform), **Synology SPK / QNAP QPKG** (per-vendor SDK lock-in and signing burdens for a niche that Docker on the NAS already serves).
+
 ## Binary Deployment
 
 ### Download

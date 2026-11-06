@@ -918,7 +918,7 @@ describe('Probes page', () => {
 
 	it('an empty category keeps its header and renders the one-line hint', async () => {
 		const seeded = mockState.targets;
-		mockState.targets = seeded.filter((t) => probeCategory(t as { source?: string; device_id?: number }) !== 'lan');
+		mockState.targets = seeded.filter((t) => probeCategory(t as Partial<Pick<import('$lib/types').ProbeTarget, 'source' | 'device_id'>>) !== 'lan');
 		try {
 			const { container } = render(Probes);
 			await waitFor(() => {

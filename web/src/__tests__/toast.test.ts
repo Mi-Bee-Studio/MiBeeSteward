@@ -97,10 +97,10 @@ describe('toast store', () => {
 		vi.advanceTimersByTime(4900);
 		addToast('info', 'blip');
 		vi.advanceTimersByTime(4900);
-		expect(get(toasts).length).toBe(1, 'restarted window must not have fired yet');
+		expect(get(toasts).length).toBe(1);
 
 		vi.advanceTimersByTime(200);
-		expect(get(toasts).length).toBe(0, 'restarted window fires after the full 5s');
+		expect(get(toasts).length).toBe(0);
 	});
 
 	it('pauseToast freezes dismissal and resumeToast continues the remainder (#573)', () => {
@@ -112,11 +112,11 @@ describe('toast store', () => {
 		vi.advanceTimersByTime(2000);
 		pauseToast(id);
 		vi.advanceTimersByTime(60000);
-		expect(get(toasts).length).toBe(1, 'paused toast must not dismiss');
+		expect(get(toasts).length).toBe(1);
 
 		resumeToast(id);
 		vi.advanceTimersByTime(2900);
-		expect(get(toasts).length).toBe(1, 'resume must continue the remainder, not a full window');
+		expect(get(toasts).length).toBe(1);
 
 		vi.advanceTimersByTime(200);
 		expect(get(toasts).length).toBe(0);
