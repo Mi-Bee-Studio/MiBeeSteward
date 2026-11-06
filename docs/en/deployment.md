@@ -349,7 +349,6 @@ Measured on a 85-device LAN with default retention windows (30d scan results,
   (a stuck sweeper shows as monotonic growth on one table).
 
 
-
 ### Restore
 
 Backups are **binary database files** produced by `sqlite3 ".backup"`, not SQL scripts. Restore by copying the file back:
@@ -398,6 +397,29 @@ Data compatibility: since v0.7 the schema is created fresh on first start and is
 ### Home Assistant add-on (#622)
 
 The add-on source pack lives at `deploy/homeassistant` (copy to the standalone `hassio-addons` repository; the image wraps the GHCR release with an options-to-env entrypoint). `host_network: true` — a scanner is its LAN; state lives on `/data/steward` and survives updates; secrets are add-on options with secure blanks (empty master key disables the v3 vault rather than inventing a weak key; the admin password always comes from the browser first-run setup). An HA-box center covers the LANs the box bridges — multi-segment sites still want one agent per segment reporting here.
+
+### apt / yum repositories (#621, parked until demand)
+
+The publisher is ready but **manual** (workflow `apt-yum-repo`, workflow_dispatch): it signs the release deb/rpm assets with a dedicated GPG key (secrets `GPG_PRIVATE_KEY` / `GPG_PASSPHRASE` — the private key NEVER enters the repo), builds the apt pool via reprepro and the yum tree via createrepo_c + rpmsign, and publishes `apt/`, `yum/` and the public `KEY.gpg.asc` to the `gh-pages` branch. Without the secrets it exits with a setup notice and publishes nothing — an unsigned repository would be worse than none.
+
+Once live, installs become:
+
+```bash
+# Debian/Ubuntu
+curl -fsSL https://mi-bee-studio.github.io/MiBeeSteward/KEY.gpg.asc | sudo tee /etc/apt/keyrings/mibee.asc
+echo "deb [signed-by=/etc/apt/keyrings/mibee.asc] https://mi-bee-studio.github.io/MiBeeSteward/apt stable main" | sudo tee /etc/apt/sources.list.d/mibee.list
+sudo apt update && sudo apt install mibee-steward
+
+# Fedora/RHEL (once rpm assets carry the signature)
+sudo rpm --import https://mi-bee-studio.github.io/MiBeeSteward/KEY.gpg.asc
+sudo dnf config-manager --add-repo https://mi-bee-studio.github.io/MiBeeSteward/yum
+```
+
+
+### Home Assistant add-on (#622)
+
+The add-on source pack lives at `deploy/homeassistant` (copy to the standalone `hassio-addons` repository; the image wraps the GHCR release with an options-to-env entrypoint). `host_network: true` — a scanner is its LAN; state lives on `/data/steward` and survives updates; secrets are add-on options with secure blanks (empty master key disables the v3 vault rather than inventing a weak key; the admin password always comes from the browser first-run setup). An HA-box center covers the LANs the box bridges — multi-segment sites still want one agent per segment reporting here.
+
 
 ### Kubernetes / k3s (Helm, #623)
 

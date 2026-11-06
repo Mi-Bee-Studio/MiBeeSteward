@@ -335,7 +335,6 @@ SQLite 数据库默认位于 `./data/mibee.db`（二进制部署）或容器内 
 - 经验值：默认保留窗口下按**每台被扫描设备每月约 2 MB** 预算；之后关注 `mibee_db_size_bytes`，若偏离线性增长，用 `mibee_db_table_rows` 定位哪张表在累积（清理器卡死表现为单表单调增长）
 
 
-
 ### 恢复
 
 备份文件是 `sqlite3 ".backup"` 产出的**二进制数据库文件**，不是 SQL 脚本--直接复制回原位即可：
@@ -384,6 +383,29 @@ docker compose up -d
 ### Home Assistant add-on（#622）
 
 add-on 源包在 `deploy/homeassistant`（拷入独立 hassio-addons 仓库；镜像在 GHCR release 之上包一层 options→env 入口）。`host_network: true`——扫描器即其所在 LAN；状态落 `/data/steward` 升级保留；密钥为 add-on options 且空白即安全默认（空 master key 宁禁用 v3 凭据库不造弱钥；admin 密码永远走浏览器首启）。HA 盒上的 center 覆盖该盒桥接的 LAN——多网段站点仍需每段一个 agent 汇报至此。
+
+### apt / yum 软件仓库（#621，需求信号前保持手动）
+
+发布器已就绪但**手动触发**（workflow `apt-yum-repo`，workflow_dispatch）：以专用 GPG 密钥签名 release 的 deb/rpm 产物（secrets `GPG_PRIVATE_KEY` / `GPG_PASSPHRASE`——私钥绝不入库），reprepro 建 apt 池、createrepo_c + rpmsign 建 yum 树，把 `apt/`、`yum/` 与公钥 `KEY.gpg.asc` 发布到 `gh-pages` 分支。未配置 secrets 时带提示退出、什么都不发——未签名仓库比没有仓库更糟。
+
+启用后安装即：
+
+```bash
+# Debian/Ubuntu
+curl -fsSL https://mi-bee-studio.github.io/MiBeeSteward/KEY.gpg.asc | sudo tee /etc/apt/keyrings/mibee.asc
+echo "deb [signed-by=/etc/apt/keyrings/mibee.asc] https://mi-bee-studio.github.io/MiBeeSteward/apt stable main" | sudo tee /etc/apt/sources.list.d/mibee.list
+sudo apt update && sudo apt install mibee-steward
+
+# Fedora/RHEL（rpm 产物带签名后）
+sudo rpm --import https://mi-bee-studio.github.io/MiBeeSteward/KEY.gpg.asc
+sudo dnf config-manager --add-repo https://mi-bee-studio.github.io/MiBeeSteward/yum
+```
+
+
+### Home Assistant add-on（#622）
+
+add-on 源包在 `deploy/homeassistant`（拷入独立 hassio-addons 仓库；镜像在 GHCR release 之上包一层 options→env 入口）。`host_network: true`——扫描器即其所在 LAN；状态落 `/data/steward` 升级保留；密钥为 add-on options 且空白即安全默认（空 master key 宁禁用 v3 凭据库不造弱钥；admin 密码永远走浏览器首启）。HA 盒上的 center 覆盖该盒桥接的 LAN——多网段站点仍需每段一个 agent 汇报至此。
+
 
 ### Kubernetes / k3s（Helm，#623）
 
