@@ -190,7 +190,16 @@ func (s *Scheduler) TriggerNow(taskID int64) error {
 	if !ok {
 		return fmt.Errorf("no job registered for task %d", taskID)
 	}
-	return j.RunNow()
+	if err := j.RunNow(); err != nil {
+		return err
+	}
+	// #695 observability: the gap between this line and executeScan's
+	// "scan job started" log IS the scheduler pickup latency on the ops
+	// timeline (gocron enqueue → executor → singleton runner). Healthy
+	// pickups are subsecond; minutes-long gaps mean executor starvation
+	// (loaded box), not a lost trigger.
+	s.logger.Info("scan trigger accepted", "task_id", taskID)
+	return nil
 }
 
 // CancelTask cancels an in-flight run for the task. Returns an error if no run
