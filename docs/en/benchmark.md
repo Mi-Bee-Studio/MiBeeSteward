@@ -45,6 +45,39 @@ Scale up by widening the CIDR: `--devices 10000 --base 127.8.0.0` + `--targets 1
 
 Requires `nmap`, `curl`, `jq`-less (python3), and credentials via `MIBEE_USER` / `MIBEE_PASS`.
 
+## Low-resource field test (pre-v0.9.0, 2026-11-07)
+
+Can the center carry a real home/SMB LAN on hardware class people actually
+run routers and Pi-class boxes on? The whole binary — scanner, SQLite,
+embedded SPA — was run under a cgroup v2 `systemd-run` scope with
+**CPUQuota 30%** (three tenths of one core) and **MemoryMax 256 MB**, then
+driven through the 1000-device synthetic plane:
+
+| Metric | Value | Notes |
+|---|---|---|
+| Idle RSS after boot | **43 MB** | zero-config first boot, fresh DB |
+| 1000-device scan (ICMP+SNMP+port_scan, /22 = 1022 hosts) | **446 s, 1022/1022 discovered** | ≈2.3 hosts/s at 0.3 core |
+| Peak RSS during + after the scan | **168 MB** | headroom to the 256 MB cap |
+| Center CPU for the whole scan | 88.2 s | ≈20% of the quota budget |
+| SQLite DB growth | **0.6 MB** | 1000 devices + evidence |
+| `mibee_sqlite_busy_total` delta | **0** | no single-writer contention |
+| Device list API p50 / p95 / max (n=100) | 90.7 / 201 / 502 ms | paginated list under quota |
+| Dashboard overview aggregate | **7–10 ms** | 1000 devices, all cards |
+| `/devices/stats` | ~10 ms | |
+
+Reading: on a third of one core and a 256 MB ceiling, a fresh center
+discovers a full /22, serves the dashboard in single-digit milliseconds, and
+keeps the list page interactive (p95 ≈0.2 s). The write path never
+contended (`sqlite_busy` stayed 0). That is Raspberry-Pi-Zero-2W / budget
+router territory — a single-board Linux box comfortably runs the center for
+a thousand-device LAN; for anything bigger, agents fan out and the center
+only aggregates.
+
+Reproduce: `sudo systemd-run --unit=mibee-bench --property=CPUQuota=30%
+--property=MemoryMax=256M ./mibee-steward -config …` then the loadgen
+procedure above; the transient unit pins the limits while everything else
+stays stock.
+
 ## Methodology caveats
 
 - The loopback plane has no packet loss, no latency, and no ARP, wall-clock scan duration underestimates a real LAN; DB write load, identification work, and API latency are representative.
