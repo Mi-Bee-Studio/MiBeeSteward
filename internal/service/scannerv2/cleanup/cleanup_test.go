@@ -88,7 +88,7 @@ func createSwitch(t *testing.T, queries *db.Queries, name string) error {
 		Type:           "switch",
 		Status:         "unknown",
 		Tags:           "{}",
-		UserAttributes: "{}",
+		UserAttributes: "{}", LifecycleState: "in_use",
 	})
 	return err
 }

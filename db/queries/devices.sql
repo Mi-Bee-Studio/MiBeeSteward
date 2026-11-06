@@ -8,11 +8,14 @@
 -- for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
 
 -- name: CreateDevice :one
+-- lifecycle_state/owner/asset_no are the asset-ledger columns (#669); the
+-- caller always passes them (the service defaults lifecycle to in_use).
 INSERT INTO devices (
     device_uuid, name, type, brand, model, location, purpose, description,
     status, ip_address, mac_address, serial_number,
-    purchase_date, warranty_expiry, tags, user_attributes
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    purchase_date, warranty_expiry, tags, user_attributes,
+    lifecycle_state, owner, asset_no
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at;
 
 -- name: GetDevice :one
@@ -48,7 +51,8 @@ ORDER BY id;
 UPDATE devices
 SET name = ?, type = ?, brand = ?, model = ?, location = ?, purpose = ?, description = ?,
     status = ?, ip_address = ?, mac_address = ?, serial_number = ?,
-    purchase_date = ?, warranty_expiry = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
+    purchase_date = ?, warranty_expiry = ?, tags = ?,
+    lifecycle_state = ?, owner = ?, asset_no = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at;
 

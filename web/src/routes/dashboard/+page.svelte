@@ -68,6 +68,10 @@
 			total: number; online: number; offline: number; unknown: number; online_rate: number;
 			by_type: Record<string, number>;
 			by_location: Record<string, number>;
+			// Asset-ledger calibers (#669): ACTIVE devices only; by_tag counts
+			// a device once per carried tag (sum may exceed active total).
+			by_lifecycle?: Record<string, number>;
+			by_tag?: Record<string, number>;
 		};
 		scanning: {
 			tasks_total: number; runs_total: number;
@@ -385,6 +389,92 @@
 				data: entries.map((e) => e[1]),
 				itemStyle: { color: primary, borderRadius: [4, 4, 0, 0] },
 				barMaxWidth: 40
+			}]
+		};
+	}
+
+	// buildLifecycleBar (#669): ACTIVE-device lifecycle distribution as a
+	// horizontal bar. Fixed state order (not count-sorted) so the ledger reads
+	// like the lifecycle itself: in_use → spare → repair → lent → retired.
+	function lifecycleStateLabel(s: string): string {
+		switch (s) {
+			case 'in_use': return m['devices.Lifecycle In Use']();
+			case 'spare': return m['devices.Lifecycle Spare']();
+			case 'repair': return m['devices.Lifecycle Repair']();
+			case 'lent': return m['devices.Lifecycle Lent']();
+			case 'retired': return m['devices.Lifecycle Retired']();
+			default: return s;
+		}
+	}
+	function buildLifecycleBar(): EChartsOption {
+		const src = overview?.devices.by_lifecycle ?? {};
+		const order = ['in_use', 'spare', 'repair', 'lent', 'retired'];
+		const entries = order.map((s) => [s, src[s] ?? 0] as [string, number]);
+		const border = getBorderColor();
+		const colors: Record<string, string> = {
+			in_use: getCSSVar('--color-success', '#34d399'),
+			spare: getPrimaryColor(),
+			repair: getCSSVar('--color-warning', '#fbbf24'),
+			lent: getCSSVar('--color-accent', '#67e8f9'),
+			retired: getTextMutedColor()
+		};
+		const total = entries.reduce((a, e) => a + e[1], 0);
+		if (total === 0) {
+			return {
+				backgroundColor: 'transparent',
+				title: { text: m["dashboard.No Data"](), left: 'center', top: 'center', textStyle: { color: getTextMutedColor(), fontSize: 14 } }
+			};
+		}
+		return {
+			backgroundColor: 'transparent',
+			tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+			grid: { left: '3%', right: '8%', top: '3%', bottom: '3%', containLabel: true },
+			xAxis: { type: 'value', axisLabel: { color: getTextMutedColor() }, splitLine: { lineStyle: { color: `${border}40` } } },
+			yAxis: {
+				type: 'category',
+				data: entries.map((e) => lifecycleStateLabel(e[0])),
+				axisLabel: { color: getTextMutedColor(), fontSize: 11 },
+				axisLine: { lineStyle: { color: border } }
+			},
+			series: [{
+				type: 'bar',
+				data: entries.map((e) => ({ value: e[1], itemStyle: { color: colors[e[0]] ?? getPrimaryColor(), borderRadius: [0, 4, 4, 0] } })),
+				barMaxWidth: 22,
+				label: { show: true, position: 'right', color: getTextMutedColor() }
+			}]
+		};
+	}
+
+	// buildTagBar (#669): ACTIVE-device count per dictionary tag, count-sorted,
+	// top 8 (long tails make unreadable bars). Caliber: a device counts once
+	// per carried tag, so the sum can exceed the active total.
+	function buildTagBar(): EChartsOption {
+		const src = overview?.devices.by_tag ?? {};
+		const entries = Object.entries(src).sort((a, b) => b[1] - a[1]).slice(0, 8);
+		const border = getBorderColor();
+		if (entries.length === 0) {
+			return {
+				backgroundColor: 'transparent',
+				title: { text: m["dashboard.No Data"](), left: 'center', top: 'center', textStyle: { color: getTextMutedColor(), fontSize: 14 } }
+			};
+		}
+		return {
+			backgroundColor: 'transparent',
+			tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+			grid: { left: '3%', right: '8%', top: '3%', bottom: '3%', containLabel: true },
+			xAxis: { type: 'value', axisLabel: { color: getTextMutedColor() }, splitLine: { lineStyle: { color: `${border}40` } } },
+			yAxis: {
+				type: 'category',
+				data: entries.map((e) => e[0]).reverse(),
+				axisLabel: { color: getTextMutedColor(), fontSize: 11, formatter: (v: string) => v.length > 10 ? v.substring(0, 10) + '...' : v },
+				axisLine: { lineStyle: { color: border } }
+			},
+			series: [{
+				type: 'bar',
+				data: entries.map((e) => e[1]).reverse(),
+				itemStyle: { color: getPrimaryColor(), borderRadius: [0, 4, 4, 0] },
+				barMaxWidth: 22,
+				label: { show: true, position: 'right', color: getTextMutedColor() }
 			}]
 		};
 	}
@@ -1192,6 +1282,28 @@
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
 						<Chart option={buildLocationBar(devices)} height="100%" />
+					</div>
+				</div>
+
+				<!-- Lifecycle distribution (#669, ledger caliber: ACTIVE devices) -->
+				<div class="bg-surface border border-border rounded-lg overflow-hidden">
+					<div class="px-4 py-3 border-b border-border">
+						<h3 class="text-sm font-semibold text-text">{m["dashboard.Lifecycle Distribution"]()}</h3>
+						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Lifecycle Desc"]()}</p>
+					</div>
+					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
+						<Chart option={buildLifecycleBar()} height="100%" />
+					</div>
+				</div>
+
+				<!-- Tag distribution (#669, a device counts once per tag) -->
+				<div class="bg-surface border border-border rounded-lg overflow-hidden">
+					<div class="px-4 py-3 border-b border-border">
+						<h3 class="text-sm font-semibold text-text">{m["dashboard.Tag Distribution"]()}</h3>
+						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Tag Desc"]()}</p>
+					</div>
+					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
+						<Chart option={buildTagBar()} height="100%" />
 					</div>
 				</div>
 

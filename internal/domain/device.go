@@ -20,6 +20,27 @@ const (
 	StatusUnknown DeviceStatus = "unknown"
 )
 
+// Lifecycle states of the asset ledger (#669). Mirrors the schema CHECK on
+// devices.lifecycle_state; the empty string means "no filter / not set yet"
+// in request/filter contexts, never a stored value (the column defaults to
+// in_use).
+const (
+	LifecycleInUse  = "in_use"
+	LifecycleSpare  = "spare"
+	LifecycleRepair = "repair"
+	LifecycleLent   = "lent"
+	LifecycleRetire = "retired"
+)
+
+// ValidLifecycleState reports whether s is one of the five ledger states.
+func ValidLifecycleState(s string) bool {
+	switch s {
+	case LifecycleInUse, LifecycleSpare, LifecycleRepair, LifecycleLent, LifecycleRetire:
+		return true
+	}
+	return false
+}
+
 // DeviceType represents the category of a device.
 //
 // The set of valid types is defined ONCE here (via the TypeXxx constants +
@@ -94,6 +115,13 @@ type CreateDeviceRequest struct {
 	PurchaseDate   string         `json:"purchase_date"`
 	WarrantyExpiry string         `json:"warranty_expiry"`
 	Tags           string         `json:"tags"`
+	// Asset-ledger fields (#669). A manual asset with neither IP nor MAC uses
+	// asset_no as its human-facing identity (network_id is NULL for manual
+	// rows, and SQLite unique indexes treat NULLs as distinct, so multiple
+	// IP-less assets coexist).
+	LifecycleState string         `json:"lifecycle_state"`
+	Owner          string         `json:"owner"`
+	AssetNo        string         `json:"asset_no"`
 	UserAttributes UserAttributes `json:"user_attributes,omitempty"`
 }
 
@@ -111,6 +139,10 @@ type UpdateDeviceRequest struct {
 	PurchaseDate   *string `json:"purchase_date,omitempty"`
 	WarrantyExpiry *string `json:"warranty_expiry,omitempty"`
 	Tags           *string `json:"tags,omitempty"`
+	// Asset-ledger fields (#669): all optional; nil = leave unchanged.
+	LifecycleState *string `json:"lifecycle_state,omitempty"`
+	Owner          *string `json:"owner,omitempty"`
+	AssetNo        *string `json:"asset_no,omitempty"`
 	// UserAttributesPatch is merged into the existing user_attributes map.
 	// Empty-string values delete keys. scan_attributes is engine-owned and
 	// cannot be set through this request.
@@ -143,6 +175,9 @@ type DeviceFilter struct {
 	// TagID filters to devices carrying this tag (dictionary id). nil = no
 	// tag filter (#665).
 	TagID *int64 `json:"tag_id,omitempty"`
+	// LifecycleState filters by the asset-ledger lifecycle (#669): '' = all
+	// states; one of in_use/spare/repair/lent/retired = exact match.
+	LifecycleState string `json:"lifecycle_state,omitempty"`
 	// SortBy is validated against a whitelist in the repository layer (never
 	// interpolated raw into SQL). Order is "asc" or "desc" (default "asc").
 	SortBy string `json:"sort_by,omitempty"`
@@ -191,6 +226,13 @@ type DeviceResponse struct {
 	OnlineSince                *time.Time `json:"online_since,omitempty"`
 	Periodic                   bool       `json:"periodic"`
 	PeriodicCycleDays          float64    `json:"periodic_cycle_days,omitempty"`
+	// Asset-ledger fields (#669): lifecycle_state is in_use/spare/repair/
+	// lent/retired (schema CHECK); owner is a free-text responsible person;
+	// asset_no is the org's asset number — for a manual asset with neither IP
+	// nor MAC it is the only identity.
+	LifecycleState string `json:"lifecycle_state"`
+	Owner          string `json:"owner"`
+	AssetNo        string `json:"asset_no"`
 	CreatedAt                  time.Time  `json:"created_at"`
 	UpdatedAt                  time.Time  `json:"updated_at"`
 	ScanSource                 string     `json:"scan_source"`
@@ -276,6 +318,13 @@ type OverviewDevices struct {
 	OnlineRate float64          `json:"online_rate"` // 0..1, online/total (0 when total==0)
 	ByType     map[string]int64 `json:"by_type"`     // full-population GROUP BY (not a 200-row sample)
 	ByLocation map[string]int64 `json:"by_location"` // GROUP BY location (empty location bucketed as "unknown")
+	// Asset-ledger calibers (#669), both over ACTIVE devices only
+	// (archived_at IS NULL): by_lifecycle groups lifecycle_state (a device in
+	// the archive is out of the working inventory, counting it here would
+	// double-represent gone things); by_tag groups dictionary tag NAME with a
+	// device counted once per carried tag (sum > total is expected).
+	ByLifecycle map[string]int64 `json:"by_lifecycle"`
+	ByTag       map[string]int64 `json:"by_tag"`
 }
 
 // OverviewScanning summarises recent scan activity so the dashboard reflects

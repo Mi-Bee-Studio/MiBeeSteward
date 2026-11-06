@@ -873,6 +873,8 @@ export interface paths {
                     archived?: "" | "only" | "all";
                     /** @description Filter to devices carrying this dictionary tag (#665) */
                     tag_id?: number;
+                    /** @description Exact lifecycle filter (#669); absent = all states */
+                    lifecycle_state?: "in_use" | "spare" | "repair" | "lent" | "retired";
                 };
                 header?: never;
                 path?: never;
@@ -6190,6 +6192,15 @@ export interface components {
             periodic?: boolean;
             /** @description Learned cycle length in days (0 = none) */
             periodic_cycle_days?: number;
+            /**
+             * @description Asset-ledger lifecycle (#669)
+             * @enum {string}
+             */
+            lifecycle_state?: "in_use" | "spare" | "repair" | "lent" | "retired";
+            /** @description Free-text responsible person (#669) */
+            owner?: string;
+            /** @description Organization asset number; the human identity for IP-less manual assets (#669) */
+            asset_no?: string;
             /** @description Tag dictionary entries attached to this device (#665) */
             dictionary_tags?: components["schemas"]["TagBrief"][];
         };

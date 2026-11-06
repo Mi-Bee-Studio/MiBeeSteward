@@ -189,6 +189,33 @@ func (e DeviceArchivePin) Valid() bool {
 	}
 }
 
+// Defines values for DeviceLifecycleState.
+const (
+	DeviceLifecycleStateInUse   DeviceLifecycleState = "in_use"
+	DeviceLifecycleStateLent    DeviceLifecycleState = "lent"
+	DeviceLifecycleStateRepair  DeviceLifecycleState = "repair"
+	DeviceLifecycleStateRetired DeviceLifecycleState = "retired"
+	DeviceLifecycleStateSpare   DeviceLifecycleState = "spare"
+)
+
+// Valid indicates whether the value is a known member of the DeviceLifecycleState enum.
+func (e DeviceLifecycleState) Valid() bool {
+	switch e {
+	case DeviceLifecycleStateInUse:
+		return true
+	case DeviceLifecycleStateLent:
+		return true
+	case DeviceLifecycleStateRepair:
+		return true
+	case DeviceLifecycleStateRetired:
+		return true
+	case DeviceLifecycleStateSpare:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DeviceStatus.
 const (
 	DeviceStatusOffline DeviceStatus = "offline"
@@ -1188,6 +1215,33 @@ func (e GetDevicesParamsArchived) Valid() bool {
 	}
 }
 
+// Defines values for GetDevicesParamsLifecycleState.
+const (
+	GetDevicesParamsLifecycleStateInUse   GetDevicesParamsLifecycleState = "in_use"
+	GetDevicesParamsLifecycleStateLent    GetDevicesParamsLifecycleState = "lent"
+	GetDevicesParamsLifecycleStateRepair  GetDevicesParamsLifecycleState = "repair"
+	GetDevicesParamsLifecycleStateRetired GetDevicesParamsLifecycleState = "retired"
+	GetDevicesParamsLifecycleStateSpare   GetDevicesParamsLifecycleState = "spare"
+)
+
+// Valid indicates whether the value is a known member of the GetDevicesParamsLifecycleState enum.
+func (e GetDevicesParamsLifecycleState) Valid() bool {
+	switch e {
+	case GetDevicesParamsLifecycleStateInUse:
+		return true
+	case GetDevicesParamsLifecycleStateLent:
+		return true
+	case GetDevicesParamsLifecycleStateRepair:
+		return true
+	case GetDevicesParamsLifecycleStateRetired:
+		return true
+	case GetDevicesParamsLifecycleStateSpare:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PutDevicesIdArchiveSettingsJSONBodyPin.
 const (
 	PutDevicesIdArchiveSettingsJSONBodyPinEmpty        PutDevicesIdArchiveSettingsJSONBodyPin = ""
@@ -1461,10 +1515,13 @@ type Device struct {
 	ArchivePin *DeviceArchivePin `json:"archive_pin,omitempty"`
 
 	// ArchivedAt Non-null = the device lives in the asset archive (#663)
-	ArchivedAt  *time.Time `json:"archived_at,omitempty"`
-	Brand       string     `json:"brand"`
-	CreatedAt   time.Time  `json:"created_at"`
-	Description string     `json:"description"`
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
+
+	// AssetNo Organization asset number; the human identity for IP-less manual assets (#669)
+	AssetNo     *string   `json:"asset_no,omitempty"`
+	Brand       string    `json:"brand"`
+	CreatedAt   time.Time `json:"created_at"`
+	Description string    `json:"description"`
 
 	// DetectedServices Legacy JSON-string column; parse for ServiceEntry items. UI prefers scan_attributes.detected_services
 	DetectedServices string `json:"detected_services"`
@@ -1481,11 +1538,14 @@ type Device struct {
 	LastScannedAt  *time.Time `json:"last_scanned_at,omitempty"`
 
 	// LastSeen Scan-derived last observed online
-	LastSeen   *time.Time `json:"last_seen,omitempty"`
-	Location   string     `json:"location"`
-	MacAddress string     `json:"mac_address"`
-	Model      string     `json:"model"`
-	Name       string     `json:"name"`
+	LastSeen *time.Time `json:"last_seen,omitempty"`
+
+	// LifecycleState Asset-ledger lifecycle (#669)
+	LifecycleState *DeviceLifecycleState `json:"lifecycle_state,omitempty"`
+	Location       string                `json:"location"`
+	MacAddress     string                `json:"mac_address"`
+	Model          string                `json:"model"`
+	Name           string                `json:"name"`
 
 	// NetworkId Logical network the device was discovered on (absent for legacy rows)
 	NetworkId       *int64  `json:"network_id,omitempty"`
@@ -1500,6 +1560,9 @@ type Device struct {
 
 	// OpenPorts Legacy JSON-string column; parse for OpenPortEntry items. UI prefers scan_attributes.open_ports
 	OpenPorts string `json:"open_ports"`
+
+	// Owner Free-text responsible person (#669)
+	Owner *string `json:"owner,omitempty"`
 
 	// Periodic Learned return cycle (#664) — exempt from auto-archive
 	Periodic *bool `json:"periodic,omitempty"`
@@ -1527,6 +1590,9 @@ type Device struct {
 
 // DeviceArchivePin Manual pin, highest lifecycle priority
 type DeviceArchivePin string
+
+// DeviceLifecycleState Asset-ledger lifecycle (#669)
+type DeviceLifecycleState string
 
 // DeviceStatus defines model for Device.Status.
 type DeviceStatus string
@@ -2917,6 +2983,9 @@ type GetDevicesParams struct {
 
 	// TagId Filter to devices carrying this dictionary tag (#665)
 	TagId *int `form:"tag_id,omitempty" json:"tag_id,omitempty"`
+
+	// LifecycleState Exact lifecycle filter (#669); absent = all states
+	LifecycleState *GetDevicesParamsLifecycleState `form:"lifecycle_state,omitempty" json:"lifecycle_state,omitempty"`
 }
 
 // GetDevicesParamsOrder defines parameters for GetDevices.
@@ -2924,6 +2993,9 @@ type GetDevicesParamsOrder string
 
 // GetDevicesParamsArchived defines parameters for GetDevices.
 type GetDevicesParamsArchived string
+
+// GetDevicesParamsLifecycleState defines parameters for GetDevices.
+type GetDevicesParamsLifecycleState string
 
 // PostDevicesIdArchiveJSONBody defines parameters for PostDevicesIdArchive.
 type PostDevicesIdArchiveJSONBody struct {
@@ -9369,6 +9441,18 @@ func NewGetDevicesRequest(server string, params *GetDevicesParams) (*http.Reques
 		if params.TagId != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "tag_id", *params.TagId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.LifecycleState != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "lifecycle_state", *params.LifecycleState, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

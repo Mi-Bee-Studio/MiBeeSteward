@@ -141,7 +141,7 @@ func TestDBRecorder_CooldownDedup(t *testing.T) {
 	dev, err := queries.CreateDevice(ctx, db.CreateDeviceParams{
 		Name: "d1", Type: "server", IpAddress: "10.0.0.1", Status: "online",
 		// CHECK(json_valid) columns require valid JSON; empty string fails.
-		UserAttributes: "{}", Tags: "[]",
+		UserAttributes: "{}", Tags: "[]", LifecycleState: "in_use",
 	})
 	require.NoError(t, err)
 

@@ -183,8 +183,10 @@ func (s *DashboardService) Overview(ctx context.Context, scope domain.Scope) (*d
 	pred, predArgs := scopeql.NetworkPredicate(scope, "")
 
 	dev := domain.OverviewDevices{
-		ByType:     map[string]int64{},
-		ByLocation: map[string]int64{},
+		ByType:      map[string]int64{},
+		ByLocation:  map[string]int64{},
+		ByLifecycle: map[string]int64{},
+		ByTag:       map[string]int64{},
 	}
 
 	// --- 1. Device totals + by_status ---
@@ -256,6 +258,53 @@ func (s *DashboardService) Overview(ctx context.Context, scope domain.Scope) (*d
 	locRows.Close()
 	if err := locRows.Err(); err != nil {
 		return nil, fmt.Errorf("overview: location rows: %w", err)
+	}
+
+	// --- 3b. by_lifecycle (#669): ACTIVE devices only. A device in the
+	// archive is out of the working inventory; counting it here would
+	// double-represent gone things. ---
+	lcRows, err := s.dbConn.QueryContext(ctx,
+		`SELECT lifecycle_state, COUNT(*) FROM devices WHERE `+pred+` AND archived_at IS NULL GROUP BY lifecycle_state`, predArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("overview: count by lifecycle: %w", err)
+	}
+	for lcRows.Next() {
+		var state string
+		var c int64
+		if err := lcRows.Scan(&state, &c); err != nil {
+			lcRows.Close()
+			return nil, fmt.Errorf("overview: scan lifecycle: %w", err)
+		}
+		dev.ByLifecycle[state] = c
+	}
+	lcRows.Close()
+	if err := lcRows.Err(); err != nil {
+		return nil, fmt.Errorf("overview: lifecycle rows: %w", err)
+	}
+
+	// --- 3c. by_tag (#669): ACTIVE devices grouped by carried dictionary
+	// tag NAME. A device counts once per tag, so the sum can exceed the
+	// active total — that is the caliber, not a bug. Untagged devices are
+	// simply absent (the "no tag" bucket is active-total minus tagged). ---
+	tagPred, tagPredArgs := scopeql.NetworkPredicate(scope, "d")
+	tagRows, err := s.dbConn.QueryContext(ctx,
+		`SELECT t.name, COUNT(*) FROM devices d JOIN device_tags dt ON dt.device_id = d.id JOIN tags t ON t.id = dt.tag_id
+		 WHERE `+tagPred+` AND d.archived_at IS NULL GROUP BY t.name ORDER BY COUNT(*) DESC`, tagPredArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("overview: count by tag: %w", err)
+	}
+	for tagRows.Next() {
+		var name string
+		var c int64
+		if err := tagRows.Scan(&name, &c); err != nil {
+			tagRows.Close()
+			return nil, fmt.Errorf("overview: scan tag: %w", err)
+		}
+		dev.ByTag[name] = c
+	}
+	tagRows.Close()
+	if err := tagRows.Err(); err != nil {
+		return nil, fmt.Errorf("overview: tag rows: %w", err)
 	}
 	out.Devices = dev
 

@@ -191,8 +191,9 @@ const createDevice = `-- name: CreateDevice :one
 INSERT INTO devices (
     device_uuid, name, type, brand, model, location, purpose, description,
     status, ip_address, mac_address, serial_number,
-    purchase_date, warranty_expiry, tags, user_attributes
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    purchase_date, warranty_expiry, tags, user_attributes,
+    lifecycle_state, owner, asset_no
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at
 `
 
@@ -213,6 +214,9 @@ type CreateDeviceParams struct {
 	WarrantyExpiry string `json:"warranty_expiry"`
 	Tags           string `json:"tags"`
 	UserAttributes string `json:"user_attributes"`
+	LifecycleState string `json:"lifecycle_state"`
+	Owner          string `json:"owner"`
+	AssetNo        string `json:"asset_no"`
 }
 
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -223,6 +227,8 @@ type CreateDeviceParams struct {
 // Public License v3.0 or later. You may use, modify, and redistribute it under
 // those terms; see LICENSE for the full text. A commercial license is available
 // for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+// lifecycle_state/owner/asset_no are the asset-ledger columns (#669); the
+// caller always passes them (the service defaults lifecycle to in_use).
 func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Device, error) {
 	row := q.db.QueryRowContext(ctx, createDevice,
 		arg.DeviceUuid,
@@ -241,6 +247,9 @@ func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Dev
 		arg.WarrantyExpiry,
 		arg.Tags,
 		arg.UserAttributes,
+		arg.LifecycleState,
+		arg.Owner,
+		arg.AssetNo,
 	)
 	var i Device
 	err := row.Scan(
@@ -758,7 +767,8 @@ const updateDevice = `-- name: UpdateDevice :one
 UPDATE devices
 SET name = ?, type = ?, brand = ?, model = ?, location = ?, purpose = ?, description = ?,
     status = ?, ip_address = ?, mac_address = ?, serial_number = ?,
-    purchase_date = ?, warranty_expiry = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
+    purchase_date = ?, warranty_expiry = ?, tags = ?,
+    lifecycle_state = ?, owner = ?, asset_no = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at
 `
@@ -778,6 +788,9 @@ type UpdateDeviceParams struct {
 	PurchaseDate   string `json:"purchase_date"`
 	WarrantyExpiry string `json:"warranty_expiry"`
 	Tags           string `json:"tags"`
+	LifecycleState string `json:"lifecycle_state"`
+	Owner          string `json:"owner"`
+	AssetNo        string `json:"asset_no"`
 	ID             int64  `json:"id"`
 }
 
@@ -800,6 +813,9 @@ func (q *Queries) UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (Dev
 		arg.PurchaseDate,
 		arg.WarrantyExpiry,
 		arg.Tags,
+		arg.LifecycleState,
+		arg.Owner,
+		arg.AssetNo,
 		arg.ID,
 	)
 	var i Device
