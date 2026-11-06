@@ -149,6 +149,7 @@ jobs:
           make gen-api-go
           git diff --exit-code -- internal/apiclient/ || {
             echo "::error::internal/apiclient/client.gen.go is out of sync with docs/openapi.yaml — run 'make gen-api-go' and commit the result"
+            git diff -- internal/apiclient/ | head -60
             exit 1
           }
       - uses: golangci/golangci-lint-action@v7
