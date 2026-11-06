@@ -1,0 +1,69 @@
+# Default values for mibee-steward (#623).
+#
+# Architecture notes (issue constraints):
+#   - replicas is LOCKED to 1: the center keeps its state in SQLite (WAL)
+#     on a ReadWriteOnce PVC; there is no multi-replica story and none is
+#     planned — do not "fix" this to a HPA.
+#   - The in-cluster center does NOT default to hostNetwork: a pod has no
+#     LAN presence worth scanning from. Discovery reach into the physical
+#     LANs is the agents' job (agent-on-LAN + center-in-cluster hybrid);
+#     deploy agents outside the cluster on the target networks.
+image:
+  repository: ghcr.io/mi-bee-studio/mibee-steward
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP     # In-cluster access; expose via ingress or an explicit
+  port: 8080          # LoadBalancer/NodePort override below
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: steward.example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+persistence:
+  enabled: true
+  existingClaim: ""   # reuse a pre-created PVC; empty = create one below
+  size: 2Gi
+  storageClass: ""    # cluster default when empty; must provision RWO
+
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits: { memory: 512Mi }
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# --- Secrets ---------------------------------------------------------------
+# SECURITY (issue constraint): secrets NEVER live in this file. Create an
+# Opaque secret with the keys below (see README for the one-liner) and name
+# it here; the template also supports create=true for eval environments,
+# generating a random jwt_secret — but master_key must still be provided via
+# --set-config or an existing secret, so credential-vault keys never transit
+# helm values in production.
+secrets:
+  existingName: ""    # preferred: pre-created Opaque secret
+  create: false       # eval convenience: helm creates it (random jwt only)
+  # Required keys on the secret:
+  #   MIBEE_AUTH_JWT_SECRET      - 32+ chars
+  #   MIBEE_SECURITY_MASTER_KEY  - exactly 32 bytes (base64/urandom)
+  #   MIBEE_AUTH_INITIAL_ADMIN_PASSWORD - empty = browser first-run setup
+
+config:
+  # Non-secret server config (rendered into a ConfigMap; env-based, see
+  # deploy/env.example for the full key list). Scanner/probe tuning keys
+  # carry the MIBEE_ prefix here directly.
+  MIBEE_SCANNER_ALLOW_RESERVED_TARGETS: "false"

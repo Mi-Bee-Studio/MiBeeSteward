@@ -26,6 +26,10 @@ flowchart TD
     F -->|"No"| H["Standalone binary: systemd"]
 ```
 
+=======
+
+>>>>>>> origin/main
+
 ### Packaging roadmap & non-goals (decision record, 2026-10-24)
 
 Shipped: **deb/rpm** via nfpm (amd64/arm64/armhf, #620) and the OpenWrt ipk/apk/tar.gz family; apt/yum **repositories** are parked until deb/rpm see real user feedback (#621), Home Assistant add-on and Helm charts likewise wait for demand signals (#622, #623).
@@ -35,6 +39,8 @@ On-demand pool (same nfpm path, cheap to produce when a signal arrives): **pacma
 Explicit non-goals: **snap** (a scanner needs raw sockets for ICMP/ARP; confinement fights the product), **flatpak / AppImage** (GUI-first formats; this is a headless server), **Homebrew** (macOS is not a target platform), **Synology SPK / QNAP QPKG** (per-vendor SDK lock-in and signing burdens for a niche that Docker on the NAS already serves).
 
 ## Binary Deployment
+
+
 
 ### Download
 
@@ -47,6 +53,8 @@ make build
 # or cross-compile
 make build-linux-amd64
 ```
+
+
 
 ### Package Installation (deb / rpm)
 
@@ -69,6 +77,8 @@ Notes:
 - The agent package `mibee-agent` follows the same lifecycle with `/etc/mibee/agent.yaml` + a dedicated `mibee-agent` system user; it derives `network.name`/`cidr` from the default route and stays stopped until you fill in `center.url` / `center.auth_token` ([distributed.md](distributed.md)).
 - Packages carry the default build only; the `-full` capability variant stays a manual build ([build variants](build-variants.md)).
 
+
+
 ### Minimal Setup
 
 ```bash
@@ -82,6 +92,8 @@ sudo cp -r configs/* /opt/mibee-steward/configs/
 sudo chown -R mibee:mibee /opt/mibee-steward
 sudo chmod +x /opt/mibee-steward/mibee-steward
 ```
+
+
 
 ### Production Configuration
 
@@ -100,6 +112,8 @@ auth:
   cookie_same_site: "strict"
 ```
 
+
+
 ### Systemd Service
 
 ```bash
@@ -112,6 +126,8 @@ sudo systemctl start mibee-steward
 The service includes security hardening: `NoNewPrivileges=true`, `ProtectSystem=strict`, `ReadWritePaths=/opt/mibee-steward/data`.
 
 ## Docker Deployment
+
+
 
 ### Prebuilt Image (GHCR)
 
@@ -126,6 +142,8 @@ docker pull ghcr.io/mi-bee-studio/mibeesteward:0.4.0
 ```
 
 The prebuilt image is the **unprivileged variant** (LLDP/eBPF compiled as stubs). For passive probes, build from source with `make docker-build-priv`.
+
+
 
 ### docker-compose
 
@@ -144,6 +162,8 @@ services:
 volumes:
   mibee-data:
 ```
+
+
 
 ### Network Mode Selection (Important)
 
@@ -171,6 +191,8 @@ Field experience backs this up: bridge mode recovers essentially no device MACs 
 > 3. **Passive multicast broken**: the bridge doesn't forward 224/239 multicast, so mDNS/SSDP listeners self-disable.
 >
 > Partial workaround: list your gateway router IPs in `scanner.router_arp.routers` so the scanner can SNMP-walk the router's ARP table for MACs, but this only recovers MACs, not ICMP or multicast.
+
+
 
 ### Full Host-Mode Example
 
@@ -203,6 +225,8 @@ docker compose --profile host build
 ```
 
 The Makefile wraps common flows: `make docker-up` (host profile, recommended), `make docker-up-bridge` (demo), `make docker-up-macvlan`, `make docker-build-priv` (privileged variant).
+
+
 
 ### Running the Prebuilt Image Directly
 
@@ -279,9 +303,13 @@ sudo certbot --nginx -d your-domain.com
 
 ## Data & Backup
 
+
+
 ### Data Location
 
 The SQLite database lives at `./data/mibee.db` (binary deployment) or `/data/mibee.db` inside the container (Docker deployment).
+
+
 
 ### Backup Strategy
 
@@ -297,6 +325,8 @@ Use `scripts/backup.sh` for safe SQLite backups (no database locking):
 ```
 
 The backup script automatically verifies integrity and cleans up expired backups.
+
+
 
 ### Automatic Maintenance
 
@@ -318,6 +348,8 @@ db-growth alert in the self-monitoring example (see `deploy/prometheus`).
 Ready-to-import Grafana dashboards for all exported metrics live in
 `deploy/grafana/`, see the [Integrations guide](integrations.md).
 
+
+
 ### Capacity Planning (field-measured baseline)
 
 Measured on a 85-device LAN with default retention windows (30d scan results,
@@ -334,6 +366,8 @@ Measured on a 85-device LAN with default retention windows (30d scan results,
   (a stuck sweeper shows as monotonic growth on one table).
 
 
+
+
 ### Restore
 
 Backups are **binary database files** produced by `sqlite3 ".backup"`, not SQL scripts. Restore by copying the file back:
@@ -348,6 +382,8 @@ sudo systemctl start mibee-steward
 
 ## Upgrading
 
+
+
 ### Binary Upgrade
 
 ```bash
@@ -357,9 +393,13 @@ sudo cp mibee-steward /opt/mibee-steward/
 sudo systemctl start mibee-steward
 ```
 
+
+
 ### Package Upgrade (deb / rpm)
 
 Installing the new package over the old one is the entire upgrade: prerm stops the service, postinst restarts it, config and data are kept. The data-compatibility rules below apply unchanged.
+
+
 
 ### Docker Upgrade
 
@@ -375,9 +415,12 @@ Data compatibility: since v0.7 the schema is created fresh on first start and is
 > 1. The **archive learner's window restarts from deployment day**. The periodic-pattern exemption (`archive.smart.*`) learns from `asset_archive_events`, a new table that starts empty — a device that "always comes back in November" needs to re-accumulate appearance points for ~2 months (its learned cycle) before smart exemption re-engages. Devices with a known return pattern can be protected immediately with a `force_active` pin.
 > 2. Ledger columns (`lifecycle_state` / `owner` / `asset_no`) and tag assignments exist only from the new database onward; if the old inventory carried that data in `user_attributes` or device notes, it needs re-entry — the CSV export of the old database (Devices → export) is the practical migration source.
 
+<<<<<<< HEAD
+
 ### Home Assistant add-on (#622)
 
 The add-on source pack lives at `deploy/homeassistant` (copy to the standalone `hassio-addons` repository; the image wraps the GHCR release with an options-to-env entrypoint). `host_network: true` — a scanner is its LAN; state lives on `/data/steward` and survives updates; secrets are add-on options with secure blanks (empty master key disables the v3 vault rather than inventing a weak key; the admin password always comes from the browser first-run setup). An HA-box center covers the LANs the box bridges — multi-segment sites still want one agent per segment reporting here.
+
 ### apt / yum repositories (#621, parked until demand)
 
 The publisher is ready but **manual** (workflow `apt-yum-repo`, workflow_dispatch): it signs the release deb/rpm assets with a dedicated GPG key (secrets `GPG_PRIVATE_KEY` / `GPG_PASSPHRASE` — the private key NEVER enters the repo), builds the apt pool via reprepro and the yum tree via createrepo_c + rpmsign, and publishes `apt/`, `yum/` and the public `KEY.gpg.asc` to the `gh-pages` branch. Without the secrets it exits with a setup notice and publishes nothing — an unsigned repository would be worse than none.
@@ -394,6 +437,19 @@ sudo apt update && sudo apt install mibee-steward
 sudo rpm --import https://mi-bee-studio.github.io/MiBeeSteward/KEY.gpg.asc
 sudo dnf config-manager --add-repo https://mi-bee-studio.github.io/MiBeeSteward/yum
 ```
+
+
+### Home Assistant add-on (#622)
+
+The add-on source pack lives at `deploy/homeassistant` (copy to the standalone `hassio-addons` repository; the image wraps the GHCR release with an options-to-env entrypoint). `host_network: true` — a scanner is its LAN; state lives on `/data/steward` and survives updates; secrets are add-on options with secure blanks (empty master key disables the v3 vault rather than inventing a weak key; the admin password always comes from the browser first-run setup). An HA-box center covers the LANs the box bridges — multi-segment sites still want one agent per segment reporting here.
+
+
+### Kubernetes / k3s (Helm, #623)
+
+The center ships a Helm chart at `deploy/helm/mibee-steward` (CI-linted). Architecture is **single-instance by design**: state is SQLite (WAL) on a ReadWriteOnce PVC, `replicas: 1` is locked, strategy is `Recreate` — two writers are not a topology, and more LAN coverage means more **agents**, not more center replicas. The pod does NOT default to hostNetwork: the intended shape is the hybrid — center in the cluster, one agent per target LAN outside it, pointed at the service/ingress URL.
+
+Secrets never live in values: create an Opaque secret (`MIBEE_AUTH_JWT_SECRET`, `MIBEE_SECURITY_MASTER_KEY`, `MIBEE_AUTH_INITIAL_ADMIN_PASSWORD`) and pass `--set secrets.existingName=...`. Eval installs may `--set secrets.create=true` (random jwt, browser first-run password; master key stays unset). See `deploy/helm/mibee-steward/README.md`.
+
 ### Resetting the admin password
 
 Forgot the `admin` password? No DB surgery needed:
