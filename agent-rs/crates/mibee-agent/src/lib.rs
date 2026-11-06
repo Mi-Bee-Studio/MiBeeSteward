@@ -11,6 +11,7 @@ pub mod ebpf_source;
 pub mod engine;
 pub mod fpsync;
 pub mod prober;
+pub mod selfnet;
 pub mod tls_provider;
 pub mod vault;
 pub mod wire;
@@ -48,6 +49,9 @@ mod tests {
                 // #604 capability declaration; empty vec omits from JSON like
                 // an old agent that never reported modules.
                 supported_modules: Vec::new(),
+                // #686 self-network detection; empty vec omits from JSON
+                // like an old agent that never detected anything.
+                self_interfaces: Vec::new(),
             }),
             hosts: Some(vec![ReportedHost {
                 ip: "192.0.2.5".into(),

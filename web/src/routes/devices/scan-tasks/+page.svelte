@@ -11,11 +11,16 @@
 <script lang="ts">
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
+	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { validateScanTarget, validateCronExpr, scannerTaskSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { CRON_PRESETS, CUSTOM_KEY, cronForPresetKey, presetKeyForCron } from '$lib/utils/cron';
+	import { analyzeScanTarget, normalizeCIDR, type ScanTargetInfo } from '$lib/utils/scanTargets';
+	import { bestLocalNetwork } from '$lib/utils/netSuggest';
+	import { backendDefaultPipeline } from '$lib/utils/pipelineDefaults';
+
 	import type { ScannerTask, PipelineConfig, ScanRun } from '$lib/types';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -71,6 +76,10 @@
 
 	let formName = $state('');
 	let formTargets = $state('');
+	// Target facts for the info line (#684): capacity, task-limit warning,
+	// and the executor hint (agent vs center-local) below.
+	let targetsInfo = $state<ScanTargetInfo | null>(null);
+	let knownNetworks = $state<Array<{ name: string; cidr: string | null; agent_id: string | null }>>([]);
 	let formCronExpr = $state('');
 	// Schedule selection: a preset key (cron.ts) or CUSTOM_KEY. The cron
 	// expression is DERIVED while a preset is active: most operators should
@@ -98,18 +107,19 @@
 	// --- Trigger feedback ---
 	let triggeringId = $state<number | null>(null);
 	let cancellingId = $state<number | null>(null);
-	let activeRuns = $state<Map<number, ScanRun>>(new Map());
+	// TrackedRun = a real run row, or the client-side stub shown between the
+	// trigger POST and the run row landing in the DB (scheduler pickup). The
+	// stub flag is the "queued" discriminator: id-less synthetic runs must NOT
+	// render as "Running" (nothing is scanning yet) nor offer Cancel (there is
+	// no run to cancel; gocron's RunNow is fire-and-forget).
+	type TrackedRun = ScanRun & { stub?: boolean };
+	let activeRuns = $state<Map<number, TrackedRun>>(new Map());
 	let pollingTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
+	// The form's pre-filled pipeline = the backend's DefaultPipelineConfig,
+	// shared and pinned in $lib/utils/pipelineDefaults (#685).
 	function defaultPipeline(): PipelineConfig {
-		return {
-			icmp: { enabled: true, timeout: 2 },
-			snmp: { enabled: true, community: 'public', timeout: 5 },
-			port_scan: { enabled: true, ports: '22,80,443,8080,9100', scan_type: 'connect' },
-			service_detect: { enabled: true },
-			prometheus: { enabled: true, ports: '9090' },
-			node_exporter: { enabled: true }
-		};
+		return backendDefaultPipeline();
 	}
 
 	// --- Lifecycle ---
@@ -122,24 +132,68 @@
 		} catch {
 			// non-admin / disabled: leave empty
 		}
+		// Registered networks feed the executor hint (#684): a single-CIDR
+		// target matching a network tells the user WHERE the task will run
+		// (the agent bound to that network, or the center itself) — a fact
+		// the task router decides silently today.
+		try {
+			const res = await api.get<{ networks: Array<{ name: string; cidr: string | null; agent_id: string | null }> }>('/networks');
+			knownNetworks = res.networks ?? [];
+		} catch {
+			// hint degrades to the unmatched wording
+		}
 		await fetchTasks();
+
+		// #695: periodic silent refresh while the page is visible. An open page
+		// otherwise never sees out-of-band activity: cron-tick runs, triggers
+		// from another tab/the API, or a slow scheduler pickup landing after
+		// this page gave up waiting. The auto-continue loop inside fetchTasks
+		// attaches polling (and thus the completion toast) to whatever it finds.
+		refreshTimer = setInterval(() => {
+			if (document.visibilityState !== 'visible') return;
+			if (formOpen || deleteOpen) return; // don't reorder under an open modal
+			fetchTasks(true);
+		}, 15000);
+	});
+
+	// Executor hint mirrors the backend's ResolveNetworkFromTargets: exactly
+	// one CIDR part, normalized, equal to a registered network's CIDR → the
+	// task binds to that network (agent-bound ⇒ dispatched, else local).
+	// Every other shape stays unbound and runs on the center.
+	const executorHint = $derived.by(() => {
+		const info = targetsInfo;
+		if (!info || info.error || !info.singleCIDR) return null;
+		const net = knownNetworks.find((n) => normalizeCIDR(n.cidr ?? '') === info.singleCIDR);
+		if (!net) return { text: m['scanner.Executor Local Unmatched'](), agent: false };
+		return net.agent_id
+			? { text: m['scanner.Executor Agent']({ network: net.name }), agent: true }
+			: { text: m['scanner.Executor Local'](), agent: false };
 	});
 
 	// Clear all in-flight poll timers on unmount so navigating away mid-run
 	// does not keep firing requests (and writing toasts/state) against a
-	// destroyed component. Each timer otherwise self-reschedules for up to ~5min.
+	// destroyed component. Each timer otherwise self-reschedules for up to
+	// ~5min fast-phase + the slow fallback phase (#695).
+	let refreshTimer: ReturnType<typeof setInterval> | null = null;
 	onDestroy(() => {
 		for (const timer of pollingTimers.values()) {
 			clearTimeout(timer);
 		}
 		pollingTimers.clear();
 		if (searchTimer) clearTimeout(searchTimer);
+		if (refreshTimer) clearInterval(refreshTimer);
 	});
 
 	// --- Data fetching ---
-	async function fetchTasks() {
-		loading = true;
-		error = '';
+	// silent=true (the #695 periodic refresh) skips the skeleton/error toggles:
+	// a background refresh must not flash the table or clobber page state on a
+	// transient blip, and the auto-continue loop below still picks up tasks
+	// that started running out-of-band (cron tick, another tab, API trigger).
+	async function fetchTasks(silent = false) {
+		if (!silent) {
+			loading = true;
+			error = '';
+		}
 		try {
 			const params = new URLSearchParams();
 			if (searchQuery) params.set('search', searchQuery);
@@ -151,9 +205,9 @@
 			tasks = res.tasks || [];
 			total = res.total || 0;
 		} catch (err: unknown) {
-			error = getErrorMessage(err);
+			if (!silent) error = getErrorMessage(err);
 		} finally {
-			loading = false;
+			if (!silent) loading = false;
 		}
 
 		// Auto-detect running tasks and start polling
@@ -167,6 +221,17 @@
 				activeRuns.set(task.id, stubRun);
 				activeRuns = new Map(activeRuns);
 				pollRunStatus(task.id);
+				// #687: a run already in flight while the inventory is empty
+				// is the first scan (covers the #678 one-click flow, which
+				// triggers before this page loads). Best-effort: a failed
+				// probe just means the normal completion toast.
+				api.get<{ by_status: Record<string, number> }>('/devices/stats')
+					.then((s) => {
+						if (Object.values(s.by_status ?? {}).reduce((a, b) => a + b, 0) === 0) {
+							firstScanCandidates.add(task.id);
+						}
+					})
+					.catch(() => {});
 			}
 		}
 	}
@@ -271,11 +336,28 @@
 	}
 
 	function validateTargets(): string | null {
-		const err = validateScanTarget(formTargets);
-		fieldErrors = err
-			? { ...fieldErrors, targets: err }
+		const info = analyzeScanTarget(formTargets);
+		targetsInfo = info;
+		fieldErrors = info.error
+			? { ...fieldErrors, targets: info.error }
 			: (() => { const { targets: _, ...rest } = fieldErrors; return rest; })();
-		return err;
+		return info.error;
+	}
+
+	// "Use my network" (#678): fill targets with the center host's own
+	// network — the default-route interface's suggested CIDR.
+	async function useLocalNetwork() {
+		try {
+			const cidr = await bestLocalNetwork();
+			if (!cidr) {
+				addToast('warning', m['netsuggest.None']());
+				return;
+			}
+			formTargets = cidr;
+			validateTargets();
+		} catch {
+			addToast('error', m['netsuggest.Error']());
+		}
 	}
 
 	function validateCron(): string | null {
@@ -341,14 +423,29 @@
 	}
 
 	// --- Trigger ---
+	// First-scan guidance (#687): a run triggered while the inventory was
+	// EMPTY and that comes back with live hosts is "the first scan" — its
+	// completion toast gets a celebratory wording plus a View-devices CTA.
+	const firstScanCandidates = new Set<number>();
+
 	async function triggerTask(task: ScannerTask) {
 		triggeringId = task.id;
 		try {
+			// Snapshot emptiness BEFORE the run can change it (best-effort;
+			// a failed probe just means no guidance toast, never a wrong one).
+			const stats = await api
+				.get<{ by_status: Record<string, number> }>('/devices/stats')
+				.catch(() => null);
+			if (stats && Object.values(stats.by_status ?? {}).reduce((a, b) => a + b, 0) === 0) {
+				firstScanCandidates.add(task.id);
+			}
 			await api.post(`/scanner/tasks/${task.id}/trigger`, {});
 			addToast('info', m['scanner.Scan Triggered']({ name: task.name }));
-			// Start polling for run status
-			const stubRun: ScanRun = {
-				id: 0, task_id: task.id, status: 'running',
+			// Start polling for run status. The stub carries stub=true: until the
+			// run row lands in the DB (scheduler pickup), the row must read
+			// "Queued", not "Running" — and offer no Cancel (#695).
+			const stubRun: TrackedRun = {
+				id: 0, task_id: task.id, status: 'running', stub: true,
 				total_hosts: 0, alive_hosts: 0, new_hosts: 0, updated_hosts: 0,
 				duration_ms: 0, created_at: new Date().toISOString()
 			};
@@ -370,7 +467,20 @@
 		// (once, not per failure). Reset on any successful poll (#65).
 		let consecutiveErrors = 0;
 		let errorToasted = false;
-		const maxPolls = 100; // ~300s with 3s interval
+		// #695 three-phase budget. Phase 1 (fast): 100×3s ≈ 5min waiting for
+		// the run row. Phase 2 (fallback): rig41 has shown scheduler pickups
+		// of 2.5-5.5min under load — instead of giving up (which silently
+		// killed the completion toast), drop to 15s polling and keep watching
+		// for up to 2h total. Phase 3: give up, pointing at the runs list.
+		// Once a run row HAS appeared, stay on the fast cadence: only the
+		// status flips matter there, and a slow cadence would delay the
+		// completion toast.
+		const FAST_POLLS = 100; // ~300s at 3s
+		const SLOW_POLLS = 480; // ~2h more at 15s
+		const FAST_INTERVAL = 3000;
+		const SLOW_INTERVAL = 15000;
+		let slowPhaseToasted = false;
+		let seenRun = false;
 		const poll = async () => {
 			pollCount++;
 			try {
@@ -378,13 +488,25 @@
 				consecutiveErrors = 0;
 				errorToasted = false;
 				if (res.runs && res.runs.length > 0) {
+					seenRun = true;
 					const run = res.runs[0];
 					if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
 						stopPolling(taskId);
 						activeRuns.set(taskId, run);
 						activeRuns = new Map(activeRuns);
 						if (run.status === 'completed') {
-							addToast('success', m['scanner.Scan Done']({ alive: run.alive_hosts, total: run.total_hosts, new: run.new_hosts, duration: run.duration_ms }));
+							const firstScan = firstScanCandidates.delete(taskId) && run.alive_hosts > 0;
+							if (firstScan) {
+								// #687: the first scan deserves a way out — a
+								// longer-lived toast with a View-devices CTA.
+								addToast('success', m['scanner.First Scan Done']({ count: run.alive_hosts }), {
+									label: m['scanner.View Devices'](),
+									callback: () => goto('/devices'),
+									timeout: 15000
+								});
+							} else {
+								addToast('success', m['scanner.Scan Done']({ alive: run.alive_hosts, total: run.total_hosts, new: run.new_hosts, duration: run.duration_ms }));
+							}
 						} else if (run.status === 'cancelled') {
 							addToast('info', m['scanner.Scan Cancelled']());
 						} else {
@@ -399,17 +521,26 @@
 						activeRuns.set(taskId, run);
 						activeRuns = new Map(activeRuns);
 					}
-				} else if (pollCount >= maxPolls) {
-					stopPolling(taskId);
-					activeRuns.delete(taskId);
-					activeRuns = new Map(activeRuns);
-					// No run row appeared after ~5min of polling. The backend now
-					// records a failed run when the engine is unavailable (so this
-					// path is rarer), but a scheduler that never picked up the
-					// trigger can still land here: point the user at the runs list
-					// / server logs rather than claiming the scheduler is unwired.
-					addToast('warning', m['scanner.Scan No Run']());
-					fetchTasks();
+				} else if (!seenRun) {
+					// No run row yet — the scheduler hasn't picked the trigger up.
+					if (pollCount >= FAST_POLLS && !slowPhaseToasted) {
+						// Phase 1→2: one heads-up, then keep watching at the slow
+						// cadence. The queued badge stays up the whole time.
+						slowPhaseToasted = true;
+						addToast('warning', m['scanner.Slow Pickup']());
+					}
+					if (pollCount >= FAST_POLLS + SLOW_POLLS) {
+						// Phase 3: no run row after ~2h. The backend records a
+						// failed run when the engine is unavailable (so this is
+						// rare), but a scheduler that never picked up the trigger
+						// can still land here: point the user at the runs list /
+						// server logs rather than claiming the scheduler is unwired.
+						stopPolling(taskId);
+						activeRuns.delete(taskId);
+						activeRuns = new Map(activeRuns);
+						addToast('warning', m['scanner.Scan No Run']());
+						fetchTasks();
+					}
 				}
 			} catch (err: unknown) {
 				// Poll errors are non-critical (keep trying), but after several in
@@ -422,10 +553,11 @@
 				}
 			}
 			if (pollingTimers.has(taskId)) {
-				pollingTimers.set(taskId, setTimeout(poll, 3000));
+				const interval = seenRun || pollCount < FAST_POLLS ? FAST_INTERVAL : SLOW_INTERVAL;
+				pollingTimers.set(taskId, setTimeout(poll, interval));
 			}
 		};
-		pollingTimers.set(taskId, setTimeout(poll, 3000));
+		pollingTimers.set(taskId, setTimeout(poll, FAST_INTERVAL));
 	}
 
 	function stopPolling(taskId: number) {
@@ -617,11 +749,23 @@
 									</button>
 								</td>
 
-								<!-- Last run -->
-								<td class="px-4 py-3 text-xs text-text-muted whitespace-nowrap">
-									{#if activeRuns.has(task.id)}
-										{@const run = activeRuns.get(task.id)}
-										{#if run?.status === 'running'}
+									<!-- Last run -->
+									<td class="px-4 py-3 text-xs text-text-muted whitespace-nowrap">
+										{#if activeRuns.has(task.id)}
+											{@const run = activeRuns.get(task.id)}
+											{#if run?.status === 'running' && run.stub}
+												<!-- #695: triggered but the run row hasn't landed yet
+												     (scheduler pickup). Honest "queued" state instead
+												     of claiming the scan is already running. -->
+												<span class="inline-flex items-center gap-1.5 text-text-muted"
+													title={m['scanner.Queued Hint']()}>
+													<svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+														<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+														<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+													</svg>
+													{m['scanner.Queued']()}
+												</span>
+											{:else if run?.status === 'running'}
 											<div>
 												<span class="inline-flex items-center gap-1.5 text-accent">
 													<svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -670,7 +814,7 @@
 										{m['scanner.Trigger']()}
 									{/if}
 											</button>
-											{#if activeRuns.has(task.id) && activeRuns.get(task.id)?.status === 'running'}
+											{#if activeRuns.has(task.id) && activeRuns.get(task.id)?.status === 'running' && !activeRuns.get(task.id)?.stub}
 												<button
 													onclick={() => cancelTask(task.id)}
 													disabled={cancellingId === task.id}
@@ -736,7 +880,16 @@
 
 			<!-- Targets -->
 			<div>
-				<label class="block text-xs text-text-muted mb-1">{m['scanner.Targets']()} *</label>
+				<div class="flex items-center justify-between mb-1">
+					<label class="block text-xs text-text-muted">{m['scanner.Targets']()} *</label>
+					<button
+						type="button"
+						class="text-xs text-primary hover:underline"
+						onclick={useLocalNetwork}
+					>
+						{m['netsuggest.Use My Network']()}
+					</button>
+				</div>
 				<input
 					bind:value={formTargets}
 					required
@@ -748,6 +901,16 @@
 				/>
 				{#if fieldErrors.targets}
 					<p class="text-error text-xs mt-1">{fieldErrors.targets}</p>
+				{:else if targetsInfo && formTargets.trim()}
+					<p class="text-xs text-muted mt-1 flex flex-wrap items-center gap-x-3">
+						<span>{m['scanner.Addresses Count']({ count: targetsInfo.addresses })}</span>
+						{#if targetsInfo.overTaskLimit}
+							<span class="text-warning">{m['scanner.Over Task Limit']()}</span>
+						{/if}
+						{#if executorHint}
+							<span class="{executorHint.agent ? 'text-success' : ''}">{executorHint.text}</span>
+						{/if}
+					</p>
 				{/if}
 			</div>
 

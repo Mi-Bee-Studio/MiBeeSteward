@@ -16,6 +16,8 @@
 	import WidgetPicker from '$lib/components/WidgetPicker.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import NetworkSuggestModal from '$lib/components/NetworkSuggestModal.svelte';
+	import OnboardingChecklist from '$lib/components/OnboardingChecklist.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { api } from '$lib/api/client';
@@ -149,6 +151,9 @@
 	// (data loaded, $state set, but no re-render). Deriving from $auth directly
 	// aligns with how +layout.svelte already consumes the store.
 	let isAdmin = $derived($auth.user?.role === 'admin');
+	// First-use smart scan flow (#678): the empty-state "Scan Network" button
+	// opens the detected-networks picker instead of a bare page hop.
+	let smartScanOpen = $state(false);
 
 	let pickerOpen = $state(false);
 	let editingWidget = $state<DashboardConfig | null>(null);
@@ -1079,6 +1084,9 @@
 		{@const offCount = overview?.devices.offline ?? stats?.by_status.offline ?? 0}
 		{@const lastNew = overview?.scanning.last_discovery?.new_hosts ?? 0}
 		{@const totalDevices = overview?.devices.total ?? Object.values(stats?.by_status ?? {}).reduce((a, b) => a + b, 0)}
+		{#if isAdmin}
+			<OnboardingChecklist {totalDevices} onOpenSmartScan={() => (smartScanOpen = true)} />
+		{/if}
 		<div class="attention-banner {totalDevices === 0 ? 'attention-empty' : offCount > 0 ? 'attention-warn' : 'attention-ok'} mb-6">
 			<div class="flex items-center gap-3 min-w-0 flex-1">
 				{#if totalDevices === 0}
@@ -1106,7 +1114,7 @@
 			</div>
 			{#if isAdmin}
 				<button
-					onclick={() => goto('/devices/scan-tasks')}
+					onclick={() => (smartScanOpen = true)}
 					class="btn btn-primary shrink-0"
 				>
 					<Radar class="w-4 h-4" />
@@ -1115,6 +1123,8 @@
 			{/if}
 		</div>
 	{/if}
+
+	<NetworkSuggestModal bind:open={smartScanOpen} />
 
 
 			<!-- Rendered-content block keyed on the NEGATIVE store read ({#if !$loading})

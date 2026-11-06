@@ -193,7 +193,7 @@ INSERT INTO devices (
     status, ip_address, mac_address, serial_number,
     purchase_date, warranty_expiry, tags, user_attributes
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, created_at, updated_at
+RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at
 `
 
 type CreateDeviceParams struct {
@@ -280,6 +280,15 @@ func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Dev
 		&i.FirstSeen,
 		&i.LastSeen,
 		&i.OfflineSince,
+		&i.ArchivedAt,
+		&i.ArchivePin,
+		&i.ArchiveOfflineDaysOverride,
+		&i.OnlineSince,
+		&i.Periodic,
+		&i.PeriodicCycleDays,
+		&i.LifecycleState,
+		&i.Owner,
+		&i.AssetNo,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -300,7 +309,7 @@ func (q *Queries) DeleteDevice(ctx context.Context, id int64) (int64, error) {
 }
 
 const getDevice = `-- name: GetDevice :one
-SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, created_at, updated_at
+SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at
 FROM devices
 WHERE id = ?
 `
@@ -345,6 +354,15 @@ func (q *Queries) GetDevice(ctx context.Context, id int64) (Device, error) {
 		&i.FirstSeen,
 		&i.LastSeen,
 		&i.OfflineSince,
+		&i.ArchivedAt,
+		&i.ArchivePin,
+		&i.ArchiveOfflineDaysOverride,
+		&i.OnlineSince,
+		&i.Periodic,
+		&i.PeriodicCycleDays,
+		&i.LifecycleState,
+		&i.Owner,
+		&i.AssetNo,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -352,7 +370,7 @@ func (q *Queries) GetDevice(ctx context.Context, id int64) (Device, error) {
 }
 
 const getDeviceByIP = `-- name: GetDeviceByIP :one
-SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, created_at, updated_at
+SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at
 FROM devices
 WHERE ip_address = ?
 LIMIT 1
@@ -398,6 +416,15 @@ func (q *Queries) GetDeviceByIP(ctx context.Context, ipAddress string) (Device, 
 		&i.FirstSeen,
 		&i.LastSeen,
 		&i.OfflineSince,
+		&i.ArchivedAt,
+		&i.ArchivePin,
+		&i.ArchiveOfflineDaysOverride,
+		&i.OnlineSince,
+		&i.Periodic,
+		&i.PeriodicCycleDays,
+		&i.LifecycleState,
+		&i.Owner,
+		&i.AssetNo,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -405,7 +432,7 @@ func (q *Queries) GetDeviceByIP(ctx context.Context, ipAddress string) (Device, 
 }
 
 const getDeviceByMAC = `-- name: GetDeviceByMAC :one
-SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, created_at, updated_at
+SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at
 FROM devices
 WHERE json_extract(scan_attributes, '$.mac') = ?
 LIMIT 1
@@ -455,6 +482,15 @@ func (q *Queries) GetDeviceByMAC(ctx context.Context, scanAttributes string) (De
 		&i.FirstSeen,
 		&i.LastSeen,
 		&i.OfflineSince,
+		&i.ArchivedAt,
+		&i.ArchivePin,
+		&i.ArchiveOfflineDaysOverride,
+		&i.OnlineSince,
+		&i.Periodic,
+		&i.PeriodicCycleDays,
+		&i.LifecycleState,
+		&i.Owner,
+		&i.AssetNo,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -462,7 +498,7 @@ func (q *Queries) GetDeviceByMAC(ctx context.Context, scanAttributes string) (De
 }
 
 const listDevices = `-- name: ListDevices :many
-SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, created_at, updated_at
+SELECT id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at
 FROM devices
 WHERE (? = '' OR status = ?)
   AND (? = '' OR type = ?)
@@ -532,6 +568,15 @@ func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Dev
 			&i.FirstSeen,
 			&i.LastSeen,
 			&i.OfflineSince,
+			&i.ArchivedAt,
+			&i.ArchivePin,
+			&i.ArchiveOfflineDaysOverride,
+			&i.OnlineSince,
+			&i.Periodic,
+			&i.PeriodicCycleDays,
+			&i.LifecycleState,
+			&i.Owner,
+			&i.AssetNo,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -715,7 +760,7 @@ SET name = ?, type = ?, brand = ?, model = ?, location = ?, purpose = ?, descrip
     status = ?, ip_address = ?, mac_address = ?, serial_number = ?,
     purchase_date = ?, warranty_expiry = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, created_at, updated_at
+RETURNING id, device_uuid, name, type, brand, model, location, purpose, description, status, ip_address, mac_address, serial_number, purchase_date, warranty_expiry, tags, scan_source, prometheus_labels, last_scanned_at, last_scan_task_id, open_ports, detected_services, prometheus_url, node_exporter_url, last_scan_rtt_ms, scan_attributes, user_attributes, scan_vendor, scan_mac, scan_os, scan_hostname, network_id, ssh_credential_id, first_seen, last_seen, offline_since, archived_at, archive_pin, archive_offline_days_override, online_since, periodic, periodic_cycle_days, lifecycle_state, owner, asset_no, created_at, updated_at
 `
 
 type UpdateDeviceParams struct {
@@ -795,6 +840,15 @@ func (q *Queries) UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (Dev
 		&i.FirstSeen,
 		&i.LastSeen,
 		&i.OfflineSince,
+		&i.ArchivedAt,
+		&i.ArchivePin,
+		&i.ArchiveOfflineDaysOverride,
+		&i.OnlineSince,
+		&i.Periodic,
+		&i.PeriodicCycleDays,
+		&i.LifecycleState,
+		&i.Owner,
+		&i.AssetNo,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

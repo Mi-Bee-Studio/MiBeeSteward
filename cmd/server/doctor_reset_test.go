@@ -51,9 +51,9 @@ func doctorHealthyExit() int {
 }
 
 // TestDoctor_ConfigMatrix drives the doctor's configuration checks: broken
-// YAML fails fast; missing/short jwt_secret, missing admin password, missing
-// master key, and secret reuse produce the expected verdicts; a healthy
-// config reaches the DB checks and exits 0.
+// YAML fails fast; missing/short jwt_secret, empty admin password (browser
+// first-run path), missing master key, and secret reuse produce the expected
+// verdicts; a healthy config reaches the DB checks and exits 0.
 func TestDoctor_ConfigMatrix(t *testing.T) {
 	// Broken YAML → config fail → exit 1.
 	broken := filepath.Join(t.TempDir(), "broken.yaml")
@@ -78,14 +78,15 @@ func TestDoctor_ConfigMatrix(t *testing.T) {
 	require.NoError(t, os.WriteFile(noJWT, []byte(patched), 0o600))
 	require.Equal(t, doctorFailExit, doctor([]string{"-config", noJWT}))
 
-	// Empty initial_admin_password → fail arm (admin cannot be created on a
-	// fresh DB).
+	// Empty initial_admin_password → the installer default / browser
+	// first-run setup path: healthy, not a failure (#679). A fail verdict
+	// here would block startup via the systemd unit's ExecStartPre.
 	noPw := writeCenterConfig(t, t.TempDir(), "")
 	src, err = os.ReadFile(noPw)
 	require.NoError(t, err)
 	patched = strings.Replace(string(src), "initial_admin_password: \"Str0ng!Pass\"", "initial_admin_password: \"\"", 1)
 	require.NoError(t, os.WriteFile(noPw, []byte(patched), 0o600))
-	require.Equal(t, doctorFailExit, doctor([]string{"-config", noPw}))
+	require.Equal(t, doctorHealthyExit(), doctor([]string{"-config", noPw}))
 
 	// jwt_secret == initial_admin_password → secret-reuse warn.
 	reuse := writeCenterConfig(t, t.TempDir(), "")

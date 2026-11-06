@@ -69,6 +69,27 @@ func (e AgentCommandStatus) Valid() bool {
 	}
 }
 
+// Defines values for ArchiveItemArchivePin.
+const (
+	ArchiveItemArchivePinEmpty        ArchiveItemArchivePin = ""
+	ArchiveItemArchivePinForceActive  ArchiveItemArchivePin = "force_active"
+	ArchiveItemArchivePinForceArchive ArchiveItemArchivePin = "force_archive"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveItemArchivePin enum.
+func (e ArchiveItemArchivePin) Valid() bool {
+	switch e {
+	case ArchiveItemArchivePinEmpty:
+		return true
+	case ArchiveItemArchivePinForceActive:
+		return true
+	case ArchiveItemArchivePinForceArchive:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChangeLogEntryChangeType.
 const (
 	ChangeLogEntryChangeTypeDeviceAdded         ChangeLogEntryChangeType = "device_added"
@@ -141,6 +162,27 @@ func (e DashboardConfigType) Valid() bool {
 	case List:
 		return true
 	case Pie:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeviceArchivePin.
+const (
+	DeviceArchivePinEmpty        DeviceArchivePin = ""
+	DeviceArchivePinForceActive  DeviceArchivePin = "force_active"
+	DeviceArchivePinForceArchive DeviceArchivePin = "force_archive"
+)
+
+// Valid indicates whether the value is a known member of the DeviceArchivePin enum.
+func (e DeviceArchivePin) Valid() bool {
+	switch e {
+	case DeviceArchivePinEmpty:
+		return true
+	case DeviceArchivePinForceActive:
+		return true
+	case DeviceArchivePinForceArchive:
 		return true
 	default:
 		return false
@@ -288,6 +330,36 @@ func (e DocumentType) Valid() bool {
 	case File:
 		return true
 	case Url:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DossierEntryKind.
+const (
+	DossierEntryKindArchiveEvent DossierEntryKind = "archive_event"
+	DossierEntryKindCert         DossierEntryKind = "cert"
+	DossierEntryKindChange       DossierEntryKind = "change"
+	DossierEntryKindConfig       DossierEntryKind = "config"
+	DossierEntryKindDocument     DossierEntryKind = "document"
+	DossierEntryKindSighting     DossierEntryKind = "sighting"
+)
+
+// Valid indicates whether the value is a known member of the DossierEntryKind enum.
+func (e DossierEntryKind) Valid() bool {
+	switch e {
+	case DossierEntryKindArchiveEvent:
+		return true
+	case DossierEntryKindCert:
+		return true
+	case DossierEntryKindChange:
+		return true
+	case DossierEntryKindConfig:
+		return true
+	case DossierEntryKindDocument:
+		return true
+	case DossierEntryKindSighting:
 		return true
 	default:
 		return false
@@ -551,19 +623,19 @@ func (e ProbeOptionsRecord) Valid() bool {
 
 // Defines values for ProbeQualityCategoryCategory.
 const (
-	External ProbeQualityCategoryCategory = "external"
-	Lan      ProbeQualityCategoryCategory = "lan"
-	Quality  ProbeQualityCategoryCategory = "quality"
+	ProbeQualityCategoryCategoryExternal ProbeQualityCategoryCategory = "external"
+	ProbeQualityCategoryCategoryLan      ProbeQualityCategoryCategory = "lan"
+	ProbeQualityCategoryCategoryQuality  ProbeQualityCategoryCategory = "quality"
 )
 
 // Valid indicates whether the value is a known member of the ProbeQualityCategoryCategory enum.
 func (e ProbeQualityCategoryCategory) Valid() bool {
 	switch e {
-	case External:
+	case ProbeQualityCategoryCategoryExternal:
 		return true
-	case Lan:
+	case ProbeQualityCategoryCategoryLan:
 		return true
-	case Quality:
+	case ProbeQualityCategoryCategoryQuality:
 		return true
 	default:
 		return false
@@ -930,6 +1002,69 @@ func (e ScanRunStatus) Valid() bool {
 	}
 }
 
+// Defines values for SystemNetworkInterfaceKind.
+const (
+	SystemNetworkInterfaceKindLan      SystemNetworkInterfaceKind = "lan"
+	SystemNetworkInterfaceKindVirtual  SystemNetworkInterfaceKind = "virtual"
+	SystemNetworkInterfaceKindVpn      SystemNetworkInterfaceKind = "vpn"
+	SystemNetworkInterfaceKindWireless SystemNetworkInterfaceKind = "wireless"
+)
+
+// Valid indicates whether the value is a known member of the SystemNetworkInterfaceKind enum.
+func (e SystemNetworkInterfaceKind) Valid() bool {
+	switch e {
+	case SystemNetworkInterfaceKindLan:
+		return true
+	case SystemNetworkInterfaceKindVirtual:
+		return true
+	case SystemNetworkInterfaceKindVpn:
+		return true
+	case SystemNetworkInterfaceKindWireless:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SystemNetworkInterfacesReportWarning.
+const (
+	SystemNetworkInterfacesReportWarningBridgeContainer SystemNetworkInterfacesReportWarning = "bridge_container"
+	SystemNetworkInterfacesReportWarningEmpty           SystemNetworkInterfacesReportWarning = ""
+	SystemNetworkInterfacesReportWarningNoLan           SystemNetworkInterfacesReportWarning = "no_lan"
+)
+
+// Valid indicates whether the value is a known member of the SystemNetworkInterfacesReportWarning enum.
+func (e SystemNetworkInterfacesReportWarning) Valid() bool {
+	switch e {
+	case SystemNetworkInterfacesReportWarningBridgeContainer:
+		return true
+	case SystemNetworkInterfacesReportWarningEmpty:
+		return true
+	case SystemNetworkInterfacesReportWarningNoLan:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TagBuiltin.
+const (
+	TagBuiltinN0 TagBuiltin = 0
+	TagBuiltinN1 TagBuiltin = 1
+)
+
+// Valid indicates whether the value is a known member of the TagBuiltin enum.
+func (e TagBuiltin) Valid() bool {
+	switch e {
+	case TagBuiltinN0:
+		return true
+	case TagBuiltinN1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TopologyEdgeProtocol.
 const (
 	TopologyEdgeProtocolARP        TopologyEdgeProtocol = "ARP"
@@ -1032,6 +1167,48 @@ func (e GetDevicesParamsOrder) Valid() bool {
 	}
 }
 
+// Defines values for GetDevicesParamsArchived.
+const (
+	GetDevicesParamsArchivedAll   GetDevicesParamsArchived = "all"
+	GetDevicesParamsArchivedEmpty GetDevicesParamsArchived = ""
+	GetDevicesParamsArchivedOnly  GetDevicesParamsArchived = "only"
+)
+
+// Valid indicates whether the value is a known member of the GetDevicesParamsArchived enum.
+func (e GetDevicesParamsArchived) Valid() bool {
+	switch e {
+	case GetDevicesParamsArchivedAll:
+		return true
+	case GetDevicesParamsArchivedEmpty:
+		return true
+	case GetDevicesParamsArchivedOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PutDevicesIdArchiveSettingsJSONBodyPin.
+const (
+	PutDevicesIdArchiveSettingsJSONBodyPinEmpty        PutDevicesIdArchiveSettingsJSONBodyPin = ""
+	PutDevicesIdArchiveSettingsJSONBodyPinForceActive  PutDevicesIdArchiveSettingsJSONBodyPin = "force_active"
+	PutDevicesIdArchiveSettingsJSONBodyPinForceArchive PutDevicesIdArchiveSettingsJSONBodyPin = "force_archive"
+)
+
+// Valid indicates whether the value is a known member of the PutDevicesIdArchiveSettingsJSONBodyPin enum.
+func (e PutDevicesIdArchiveSettingsJSONBodyPin) Valid() bool {
+	switch e {
+	case PutDevicesIdArchiveSettingsJSONBodyPinEmpty:
+		return true
+	case PutDevicesIdArchiveSettingsJSONBodyPinForceActive:
+		return true
+	case PutDevicesIdArchiveSettingsJSONBodyPinForceArchive:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetProbeQualityHistoryParamsDays.
 const (
 	GetProbeQualityHistoryParamsDaysN30 GetProbeQualityHistoryParamsDays = 30
@@ -1117,6 +1294,43 @@ type AgentToken struct {
 type AgentTokenList struct {
 	Tokens *[]AgentToken `json:"tokens,omitempty"`
 	Total  *int          `json:"total,omitempty"`
+}
+
+// ArchiveItem defines model for ArchiveItem.
+type ArchiveItem struct {
+	ArchivePin        ArchiveItemArchivePin `json:"archive_pin"`
+	ArchivedAt        time.Time             `json:"archived_at"`
+	Brand             *string               `json:"brand,omitempty"`
+	CreatedAt         time.Time             `json:"created_at"`
+	Id                int64                 `json:"id"`
+	IpAddress         *string               `json:"ip_address,omitempty"`
+	MacAddress        *string               `json:"mac_address,omitempty"`
+	Model             *string               `json:"model,omitempty"`
+	Name              string                `json:"name"`
+	NetworkId         *int64                `json:"network_id,omitempty"`
+	NetworkName       *string               `json:"network_name,omitempty"`
+	OfflineSince      *time.Time            `json:"offline_since,omitempty"`
+	OnlineSince       *time.Time            `json:"online_since,omitempty"`
+	Periodic          bool                  `json:"periodic"`
+	PeriodicCycleDays *float32              `json:"periodic_cycle_days,omitempty"`
+	ScanSource        string                `json:"scan_source"`
+
+	// Status online while archived = visible but filed (force_archive or blip window)
+	Status string `json:"status"`
+	Type   string `json:"type"`
+}
+
+// ArchiveItemArchivePin defines model for ArchiveItem.ArchivePin.
+type ArchiveItemArchivePin string
+
+// ArchiveList defines model for ArchiveList.
+type ArchiveList struct {
+	Devices *[]ArchiveItem `json:"devices,omitempty"`
+	Limit   *int64         `json:"limit,omitempty"`
+	Offset  *int64         `json:"offset,omitempty"`
+
+	// Total Filtered count
+	Total *int64 `json:"total,omitempty"`
 }
 
 // AuditFacets defines model for AuditFacets.
@@ -1240,14 +1454,25 @@ type DashboardConfigList struct {
 
 // Device defines model for Device.
 type Device struct {
-	Brand       string    `json:"brand"`
-	CreatedAt   time.Time `json:"created_at"`
-	Description string    `json:"description"`
+	// ArchiveOfflineDaysOverride Per-device archive threshold; null = global
+	ArchiveOfflineDaysOverride *int64 `json:"archive_offline_days_override,omitempty"`
+
+	// ArchivePin Manual pin, highest lifecycle priority
+	ArchivePin *DeviceArchivePin `json:"archive_pin,omitempty"`
+
+	// ArchivedAt Non-null = the device lives in the asset archive (#663)
+	ArchivedAt  *time.Time `json:"archived_at,omitempty"`
+	Brand       string     `json:"brand"`
+	CreatedAt   time.Time  `json:"created_at"`
+	Description string     `json:"description"`
 
 	// DetectedServices Legacy JSON-string column; parse for ServiceEntry items. UI prefers scan_attributes.detected_services
 	DetectedServices string `json:"detected_services"`
-	Id               int64  `json:"id"`
-	IpAddress        string `json:"ip_address"`
+
+	// DictionaryTags Tag dictionary entries attached to this device (#665)
+	DictionaryTags *[]TagBrief `json:"dictionary_tags,omitempty"`
+	Id             int64       `json:"id"`
+	IpAddress      string      `json:"ip_address"`
 
 	// LastOnlineAt Authoritative last-alive from the verdict series (detail rows only)
 	LastOnlineAt   *time.Time `json:"last_online_at,omitempty"`
@@ -1270,12 +1495,21 @@ type Device struct {
 	// OfflineSince Retention clock start when offline
 	OfflineSince *time.Time `json:"offline_since,omitempty"`
 
+	// OnlineSince Continuous-online clock start (archive restore timer)
+	OnlineSince *time.Time `json:"online_since,omitempty"`
+
 	// OpenPorts Legacy JSON-string column; parse for OpenPortEntry items. UI prefers scan_attributes.open_ports
-	OpenPorts        string `json:"open_ports"`
-	PrometheusLabels string `json:"prometheus_labels"`
-	PrometheusUrl    string `json:"prometheus_url"`
-	PurchaseDate     string `json:"purchase_date"`
-	Purpose          string `json:"purpose"`
+	OpenPorts string `json:"open_ports"`
+
+	// Periodic Learned return cycle (#664) — exempt from auto-archive
+	Periodic *bool `json:"periodic,omitempty"`
+
+	// PeriodicCycleDays Learned cycle length in days (0 = none)
+	PeriodicCycleDays *float32 `json:"periodic_cycle_days,omitempty"`
+	PrometheusLabels  string   `json:"prometheus_labels"`
+	PrometheusUrl     string   `json:"prometheus_url"`
+	PurchaseDate      string   `json:"purchase_date"`
+	Purpose           string   `json:"purpose"`
 
 	// ScanAttributes Engine-written discovery document (mirrors domain.ScanAttributes; stored as JSON in devices.scan_attributes). All fields fill progressively, treat every field as optional. Engine-owned: user edits go to user_attributes.
 	ScanAttributes ScanAttributes `json:"scan_attributes"`
@@ -1290,6 +1524,9 @@ type Device struct {
 	UserAttributes map[string]string `json:"user_attributes"`
 	WarrantyExpiry string            `json:"warranty_expiry"`
 }
+
+// DeviceArchivePin Manual pin, highest lifecycle priority
+type DeviceArchivePin string
 
 // DeviceStatus defines model for Device.Status.
 type DeviceStatus string
@@ -1463,6 +1700,11 @@ type DeviceSystemList struct {
 	Total *int64 `json:"total,omitempty"`
 }
 
+// DeviceTagList defines model for DeviceTagList.
+type DeviceTagList struct {
+	Tags *[]TagBrief `json:"tags,omitempty"`
+}
+
 // DiscoveryStatus Passive-discovery runtime observability. NOTE: config/stats inner keys are Go-default PascalCase (the structs carry no json tags) and Interval is time.Duration, an integer in NANOSECONDS.
 type DiscoveryStatus struct {
 	Config struct {
@@ -1533,6 +1775,23 @@ type DocumentList struct {
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
 }
+
+// Dossier defines model for Dossier.
+type Dossier struct {
+	Entries *[]DossierEntry `json:"entries,omitempty"`
+}
+
+// DossierEntry defines model for DossierEntry.
+type DossierEntry struct {
+	// Data Kind-specific payload
+	Data       *map[string]interface{} `json:"data,omitempty"`
+	Kind       DossierEntryKind        `json:"kind"`
+	OccurredAt time.Time               `json:"occurred_at"`
+	Summary    string                  `json:"summary"`
+}
+
+// DossierEntryKind defines model for DossierEntry.Kind.
+type DossierEntryKind string
 
 // Error defines model for Error.
 type Error struct {
@@ -2327,6 +2586,48 @@ type SubnetList struct {
 	Total   *int      `json:"total,omitempty"`
 }
 
+// SystemNetworkInterface defines model for SystemNetworkInterface.
+type SystemNetworkInterface struct {
+	// Addresses total address count of cidr
+	Addresses int `json:"addresses"`
+
+	// Cidr on-link subnet as configured
+	Cidr string `json:"cidr"`
+	Ipv4 string `json:"ipv4"`
+
+	// Kind naming-convention classification
+	Kind SystemNetworkInterfaceKind `json:"kind"`
+
+	// Mac interface MAC when present
+	Mac *string `json:"mac,omitempty"`
+
+	// Name interface name
+	Name      string `json:"name"`
+	PrefixLen int    `json:"prefix_len"`
+
+	// Primary this interface owns the IPv4 default route
+	Primary bool `json:"primary"`
+
+	// SuggestedCidr scan suggestion — cidr clamped to the /24 containing ipv4 when wider
+	SuggestedCidr string `json:"suggested_cidr"`
+}
+
+// SystemNetworkInterfaceKind naming-convention classification
+type SystemNetworkInterfaceKind string
+
+// SystemNetworkInterfacesReport defines model for SystemNetworkInterfacesReport.
+type SystemNetworkInterfacesReport struct {
+	// Container center runs inside a container (/.dockerenv or /run/.containerenv)
+	Container  bool                     `json:"container"`
+	Interfaces []SystemNetworkInterface `json:"interfaces"`
+
+	// Warning machine-key hint — bridge_container = likely not host-networked, scanning degraded; no_lan = nothing LAN-like to suggest
+	Warning *SystemNetworkInterfacesReportWarning `json:"warning,omitempty"`
+}
+
+// SystemNetworkInterfacesReportWarning machine-key hint — bridge_container = likely not host-networked, scanning degraded; no_lan = nothing LAN-like to suggest
+type SystemNetworkInterfacesReportWarning string
+
 // TLSPortCerts One TLS-speaking port, handshake metadata + cert chain
 type TLSPortCerts struct {
 	Chain       []CertificateInfo `json:"chain"`
@@ -2341,6 +2642,54 @@ type TLSPortCerts struct {
 	TlsVersion string           `json:"tls_version"`
 	Trusted    bool             `json:"trusted"`
 	UpdatedAt  string           `json:"updated_at"`
+}
+
+// Tag defines model for Tag.
+type Tag struct {
+	// Builtin 1 = seeded built-in (cannot be deleted)
+	Builtin TagBuiltin `json:"builtin"`
+
+	// Color Hex, e.g. '#2563eb'
+	Color       string    `json:"color"`
+	CreatedAt   time.Time `json:"created_at"`
+	Description string    `json:"description"`
+	Id          int64     `json:"id"`
+
+	// Key Stable slug; identity for i18n + API
+	Key string `json:"key"`
+
+	// Name Editable display label
+	Name      string    `json:"name"`
+	SortOrder int64     `json:"sort_order"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TagBuiltin 1 = seeded built-in (cannot be deleted)
+type TagBuiltin int
+
+// TagBrief defines model for TagBrief.
+type TagBrief struct {
+	Builtin bool   `json:"builtin"`
+	Color   string `json:"color"`
+	Id      int64  `json:"id"`
+	Key     string `json:"key"`
+	Name    string `json:"name"`
+}
+
+// TagInput defines model for TagInput.
+type TagInput struct {
+	Color       *string `json:"color,omitempty"`
+	Description *string `json:"description,omitempty"`
+
+	// Key Create only; lowercase slug
+	Key       *string `json:"key,omitempty"`
+	Name      *string `json:"name,omitempty"`
+	SortOrder *int64  `json:"sort_order,omitempty"`
+}
+
+// TagList defines model for TagList.
+type TagList struct {
+	Tags *[]Tag `json:"tags,omitempty"`
 }
 
 // TopologyEdge defines model for TopologyEdge.
@@ -2461,6 +2810,9 @@ type Limit = int64
 // Offset defines model for offset.
 type Offset = int64
 
+// Conflict defines model for Conflict.
+type Conflict = Error
+
 // Created defines model for Created.
 type Created = map[string]interface{}
 
@@ -2480,6 +2832,20 @@ type GetAgentsCommandsAllParams struct {
 type GetAgentsFingerprintsParams struct {
 	// Rev last-applied revision (64-hex); omit to force download
 	Rev *string `form:"rev,omitempty" json:"rev,omitempty"`
+}
+
+// GetArchiveParams defines parameters for GetArchive.
+type GetArchiveParams struct {
+	// Limit Page size (absent/0 → endpoint default; malformed or negative → 400; over-max clamps)
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Offset Pagination offset (negative → 400)
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// GetArchiveIdDossierParams defines parameters for GetArchiveIdDossier.
+type GetArchiveIdDossierParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // GetAuditLogsParams defines parameters for GetAuditLogs.
@@ -2545,10 +2911,36 @@ type GetDevicesParams struct {
 	Sort      *string                `form:"sort,omitempty" json:"sort,omitempty"`
 	Order     *GetDevicesParamsOrder `form:"order,omitempty" json:"order,omitempty"`
 	NetworkId *int                   `form:"network_id,omitempty" json:"network_id,omitempty"`
+
+	// Archived Asset-library slice (#663). Default (empty) hides archived rows; only = archive view; all = both
+	Archived *GetDevicesParamsArchived `form:"archived,omitempty" json:"archived,omitempty"`
+
+	// TagId Filter to devices carrying this dictionary tag (#665)
+	TagId *int `form:"tag_id,omitempty" json:"tag_id,omitempty"`
 }
 
 // GetDevicesParamsOrder defines parameters for GetDevices.
 type GetDevicesParamsOrder string
+
+// GetDevicesParamsArchived defines parameters for GetDevices.
+type GetDevicesParamsArchived string
+
+// PostDevicesIdArchiveJSONBody defines parameters for PostDevicesIdArchive.
+type PostDevicesIdArchiveJSONBody struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
+// PutDevicesIdArchiveSettingsJSONBody defines parameters for PutDevicesIdArchiveSettings.
+type PutDevicesIdArchiveSettingsJSONBody struct {
+	// OfflineDaysOverride 0 = clear (follow global); 1-365
+	OfflineDaysOverride *int `json:"offline_days_override,omitempty"`
+
+	// Pin Absent = unchanged
+	Pin *PutDevicesIdArchiveSettingsJSONBodyPin `json:"pin,omitempty"`
+}
+
+// PutDevicesIdArchiveSettingsJSONBodyPin defines parameters for PutDevicesIdArchiveSettings.
+type PutDevicesIdArchiveSettingsJSONBodyPin string
 
 // GetDevicesIdConfigsParams defines parameters for GetDevicesIdConfigs.
 type GetDevicesIdConfigsParams struct {
@@ -2593,6 +2985,11 @@ type GetDevicesIdHeartbeatStatsParams struct {
 	To   time.Time `form:"to" json:"to"`
 }
 
+// PostDevicesIdRestoreJSONBody defines parameters for PostDevicesIdRestore.
+type PostDevicesIdRestoreJSONBody struct {
+	Force *bool `json:"force,omitempty"`
+}
+
 // GetDevicesIdSightingsParams defines parameters for GetDevicesIdSightings.
 type GetDevicesIdSightingsParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
@@ -2609,6 +3006,11 @@ type GetDevicesIdSystemsParams struct {
 	// Offset Pagination offset (negative → 400)
 	Offset   *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 	Category *string `form:"category,omitempty" json:"category,omitempty"`
+}
+
+// PutDevicesIdTagsJSONBody defines parameters for PutDevicesIdTags.
+type PutDevicesIdTagsJSONBody struct {
+	TagIds *[]int64 `json:"tag_ids,omitempty"`
 }
 
 // GetDocumentsParams defines parameters for GetDocuments.
@@ -2775,6 +3177,11 @@ type GetSubnetsParams struct {
 	NetworkId *int64 `form:"network_id,omitempty" json:"network_id,omitempty"`
 }
 
+// PostTagsIdDevicesJSONBody defines parameters for PostTagsIdDevices.
+type PostTagsIdDevicesJSONBody struct {
+	DeviceIds []int64 `json:"device_ids"`
+}
+
 // GetTopologyParams defines parameters for GetTopology.
 type GetTopologyParams struct {
 	NetworkId *int `form:"network_id,omitempty" json:"network_id,omitempty"`
@@ -2793,6 +3200,18 @@ type GetUsersParams struct {
 // PostAuthLoginJSONRequestBody defines body for PostAuthLogin for application/json ContentType.
 type PostAuthLoginJSONRequestBody PostAuthLoginJSONBody
 
+// PostDevicesIdArchiveJSONRequestBody defines body for PostDevicesIdArchive for application/json ContentType.
+type PostDevicesIdArchiveJSONRequestBody PostDevicesIdArchiveJSONBody
+
+// PutDevicesIdArchiveSettingsJSONRequestBody defines body for PutDevicesIdArchiveSettings for application/json ContentType.
+type PutDevicesIdArchiveSettingsJSONRequestBody PutDevicesIdArchiveSettingsJSONBody
+
+// PostDevicesIdRestoreJSONRequestBody defines body for PostDevicesIdRestore for application/json ContentType.
+type PostDevicesIdRestoreJSONRequestBody PostDevicesIdRestoreJSONBody
+
+// PutDevicesIdTagsJSONRequestBody defines body for PutDevicesIdTags for application/json ContentType.
+type PutDevicesIdTagsJSONRequestBody PutDevicesIdTagsJSONBody
+
 // PostDocumentsUploadMultipartRequestBody defines body for PostDocumentsUpload for multipart/form-data ContentType.
 type PostDocumentsUploadMultipartRequestBody PostDocumentsUploadMultipartBody
 
@@ -2801,6 +3220,15 @@ type PostFingerprintsMultipartRequestBody PostFingerprintsMultipartBody
 
 // PutFingerprintsMultipartRequestBody defines body for PutFingerprints for multipart/form-data ContentType.
 type PutFingerprintsMultipartRequestBody PutFingerprintsMultipartBody
+
+// PostTagsJSONRequestBody defines body for PostTags for application/json ContentType.
+type PostTagsJSONRequestBody = TagInput
+
+// PutTagsIdJSONRequestBody defines body for PutTagsId for application/json ContentType.
+type PutTagsIdJSONRequestBody = TagInput
+
+// PostTagsIdDevicesJSONRequestBody defines body for PostTagsIdDevices for application/json ContentType.
+type PostTagsIdDevicesJSONRequestBody PostTagsIdDevicesJSONBody
 
 // Getter for additional properties for ScanAttributes. Returns the specified
 // element and whether it was found
@@ -3401,6 +3829,16 @@ type ClientInterface interface {
 	// Corresponds with POST /agents/{agentId}/commands (the `PostAgentsAgentIdCommands` operationId).
 	PostAgentsAgentIdCommands(ctx context.Context, agentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetArchive Archived-device page, newest first (#666)
+	//
+	// Corresponds with GET /archive (the `GetArchive` operationId).
+	GetArchive(ctx context.Context, params *GetArchiveParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetArchiveIdDossier The device's merged lifetime timeline (archive events, changes, config versions, certificates, documents, sightings), newest first
+	//
+	// Corresponds with GET /archive/{id}/dossier (the `GetArchiveIdDossier` operationId).
+	GetArchiveIdDossier(ctx context.Context, id Id, params *GetArchiveIdDossierParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetAuditLogs Audit trail (user_id/action/resource_type/date_from/date_to/search)
 	//
 	// Corresponds with GET /audit-logs (the `GetAuditLogs` operationId).
@@ -3590,6 +4028,34 @@ type ClientInterface interface {
 	// Corresponds with PUT /devices/{id} (the `PutDevicesId` operationId).
 	PutDevicesId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostDevicesIdArchiveWithBody Manual archive (#663). Any scan_source; an online device may be archived too. Use the force_archive pin for "stays archived"
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /devices/{id}/archive (the `PostDevicesIdArchive` operationId).
+	PostDevicesIdArchiveWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostDevicesIdArchive Manual archive (#663). Any scan_source; an online device may be archived too. Use the force_archive pin for "stays archived"
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /devices/{id}/archive (the `PostDevicesIdArchive` operationId).
+	PostDevicesIdArchive(ctx context.Context, id Id, body PostDevicesIdArchiveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutDevicesIdArchiveSettingsWithBody Pin set/clear + per-device offline-days override (0 = follow global)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /devices/{id}/archive-settings (the `PutDevicesIdArchiveSettings` operationId).
+	PutDevicesIdArchiveSettingsWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutDevicesIdArchiveSettings Pin set/clear + per-device offline-days override (0 = follow global)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /devices/{id}/archive-settings (the `PutDevicesIdArchiveSettings` operationId).
+	PutDevicesIdArchiveSettings(ctx context.Context, id Id, body PutDevicesIdArchiveSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetDevicesIdCertificates TLS certificate chains seen on the device's services
 	//
 	// Corresponds with GET /devices/{id}/certificates (the `GetDevicesIdCertificates` operationId).
@@ -3667,6 +4133,20 @@ type ClientInterface interface {
 	// Corresponds with GET /devices/{id}/neighbors (the `GetDevicesIdNeighbors` operationId).
 	GetDevicesIdNeighbors(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostDevicesIdRestoreWithBody Manual restore; force=true clears a force_archive pin first
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /devices/{id}/restore (the `PostDevicesIdRestore` operationId).
+	PostDevicesIdRestoreWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostDevicesIdRestore Manual restore; force=true clears a force_archive pin first
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /devices/{id}/restore (the `PostDevicesIdRestore` operationId).
+	PostDevicesIdRestore(ctx context.Context, id Id, body PostDevicesIdRestoreJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetDevicesIdSightings Address-observation history of a device (#527/#529, newest first)
 	//
 	// Where the device was seen (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which pipeline source. The roaming/move archaeology feed.
@@ -3703,6 +4183,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /devices/{id}/systems/{systemId} (the `PutDevicesIdSystemsSystemId` operationId).
 	PutDevicesIdSystemsSystemId(ctx context.Context, id Id, systemId int, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDevicesIdTags The device's tags
+	//
+	// Corresponds with GET /devices/{id}/tags (the `GetDevicesIdTags` operationId).
+	GetDevicesIdTags(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutDevicesIdTagsWithBody Replace the device's tag set (body tag_ids ARE the new set)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /devices/{id}/tags (the `PutDevicesIdTags` operationId).
+	PutDevicesIdTagsWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutDevicesIdTags Replace the device's tag set (body tag_ids ARE the new set)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /devices/{id}/tags (the `PutDevicesIdTags` operationId).
+	PutDevicesIdTags(ctx context.Context, id Id, body PutDevicesIdTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostDevicesUuidFingerprintDraft Draft a fingerprint rule from a device's accumulated evidence
 	//
@@ -4162,6 +4661,69 @@ type ClientInterface interface {
 	// Corresponds with GET /system (the `GetSystem` operationId).
 	GetSystem(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSystemNetworkInterfaces Local IPv4 interface candidates (first-use scan suggestion,
+	//
+	// Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+	// non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+	// suggested CIDR, naming-convention kind classification, the
+	// default-route (primary) marker, and container/bridge-mode hints.
+	// Read-only host introspection — no packets on the wire.
+	//
+	// Corresponds with GET /system/network-interfaces (the `GetSystemNetworkInterfaces` operationId).
+	GetSystemNetworkInterfaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetTags Tag dictionary (built-ins first), any authenticated user (#665)
+	//
+	// Corresponds with GET /tags (the `GetTags` operationId).
+	GetTags(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostTagsWithBody Create a custom tag (admin)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /tags (the `PostTags` operationId).
+	PostTagsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostTags Create a custom tag (admin)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /tags (the `PostTags` operationId).
+	PostTags(ctx context.Context, body PostTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteTagsId Delete a custom tag + its assignments; built-ins are protected (admin)
+	//
+	// Corresponds with DELETE /tags/{id} (the `DeleteTagsId` operationId).
+	DeleteTagsId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutTagsIdWithBody Edit display fields; key and builtin flag are immutable (admin)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /tags/{id} (the `PutTagsId` operationId).
+	PutTagsIdWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutTagsId Edit display fields; key and builtin flag are immutable (admin)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /tags/{id} (the `PutTagsId` operationId).
+	PutTagsId(ctx context.Context, id Id, body PutTagsIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostTagsIdDevicesWithBody Bulk-assign one tag to many devices (admin+operator — the batch "tag the visitor phones" path)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /tags/{id}/devices (the `PostTagsIdDevices` operationId).
+	PostTagsIdDevicesWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostTagsIdDevices Bulk-assign one tag to many devices (admin+operator — the batch "tag the visitor phones" path)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /tags/{id}/devices (the `PostTagsIdDevices` operationId).
+	PostTagsIdDevices(ctx context.Context, id Id, body PostTagsIdDevicesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetTopology Device-level topology graph ({nodes, edges}; network_id filter)
 	//
 	// Corresponds with GET /topology (the `GetTopology` operationId).
@@ -4380,6 +4942,36 @@ func (c *Client) PostAgentsTokensIdRevoke(ctx context.Context, id Id, reqEditors
 // Corresponds with POST /agents/{agentId}/commands (the `PostAgentsAgentIdCommands` operationId).
 func (c *Client) PostAgentsAgentIdCommands(ctx context.Context, agentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostAgentsAgentIdCommandsRequest(c.Server, agentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetArchive Archived-device page, newest first (#666)
+//
+// Corresponds with GET /archive (the `GetArchive` operationId).
+func (c *Client) GetArchive(ctx context.Context, params *GetArchiveParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetArchiveRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetArchiveIdDossier The device's merged lifetime timeline (archive events, changes, config versions, certificates, documents, sightings), newest first
+//
+// Corresponds with GET /archive/{id}/dossier (the `GetArchiveIdDossier` operationId).
+func (c *Client) GetArchiveIdDossier(ctx context.Context, id Id, params *GetArchiveIdDossierParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetArchiveIdDossierRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4949,6 +5541,74 @@ func (c *Client) PutDevicesId(ctx context.Context, id Id, reqEditors ...RequestE
 	return c.Client.Do(req)
 }
 
+// PostDevicesIdArchiveWithBody Manual archive (#663). Any scan_source; an online device may be archived too. Use the force_archive pin for "stays archived"
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /devices/{id}/archive (the `PostDevicesIdArchive` operationId).
+func (c *Client) PostDevicesIdArchiveWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostDevicesIdArchiveRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostDevicesIdArchive Manual archive (#663). Any scan_source; an online device may be archived too. Use the force_archive pin for "stays archived"
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /devices/{id}/archive (the `PostDevicesIdArchive` operationId).
+func (c *Client) PostDevicesIdArchive(ctx context.Context, id Id, body PostDevicesIdArchiveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostDevicesIdArchiveRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutDevicesIdArchiveSettingsWithBody Pin set/clear + per-device offline-days override (0 = follow global)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /devices/{id}/archive-settings (the `PutDevicesIdArchiveSettings` operationId).
+func (c *Client) PutDevicesIdArchiveSettingsWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutDevicesIdArchiveSettingsRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutDevicesIdArchiveSettings Pin set/clear + per-device offline-days override (0 = follow global)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /devices/{id}/archive-settings (the `PutDevicesIdArchiveSettings` operationId).
+func (c *Client) PutDevicesIdArchiveSettings(ctx context.Context, id Id, body PutDevicesIdArchiveSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutDevicesIdArchiveSettingsRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetDevicesIdCertificates TLS certificate chains seen on the device's services
 //
 // Corresponds with GET /devices/{id}/certificates (the `GetDevicesIdCertificates` operationId).
@@ -5176,6 +5836,40 @@ func (c *Client) GetDevicesIdNeighbors(ctx context.Context, id Id, reqEditors ..
 	return c.Client.Do(req)
 }
 
+// PostDevicesIdRestoreWithBody Manual restore; force=true clears a force_archive pin first
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /devices/{id}/restore (the `PostDevicesIdRestore` operationId).
+func (c *Client) PostDevicesIdRestoreWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostDevicesIdRestoreRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostDevicesIdRestore Manual restore; force=true clears a force_archive pin first
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /devices/{id}/restore (the `PostDevicesIdRestore` operationId).
+func (c *Client) PostDevicesIdRestore(ctx context.Context, id Id, body PostDevicesIdRestoreJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostDevicesIdRestoreRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetDevicesIdSightings Address-observation history of a device (#527/#529, newest first)
 //
 // Where the device was seen (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which pipeline source. The roaming/move archaeology feed.
@@ -5273,6 +5967,55 @@ func (c *Client) GetDevicesIdSystemsSystemId(ctx context.Context, id Id, systemI
 // Corresponds with PUT /devices/{id}/systems/{systemId} (the `PutDevicesIdSystemsSystemId` operationId).
 func (c *Client) PutDevicesIdSystemsSystemId(ctx context.Context, id Id, systemId int, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutDevicesIdSystemsSystemIdRequest(c.Server, id, systemId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetDevicesIdTags The device's tags
+//
+// Corresponds with GET /devices/{id}/tags (the `GetDevicesIdTags` operationId).
+func (c *Client) GetDevicesIdTags(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDevicesIdTagsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutDevicesIdTagsWithBody Replace the device's tag set (body tag_ids ARE the new set)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /devices/{id}/tags (the `PutDevicesIdTags` operationId).
+func (c *Client) PutDevicesIdTagsWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutDevicesIdTagsRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutDevicesIdTags Replace the device's tag set (body tag_ids ARE the new set)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /devices/{id}/tags (the `PutDevicesIdTags` operationId).
+func (c *Client) PutDevicesIdTags(ctx context.Context, id Id, body PutDevicesIdTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutDevicesIdTagsRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -6641,6 +7384,159 @@ func (c *Client) GetSystem(ctx context.Context, reqEditors ...RequestEditorFn) (
 	return c.Client.Do(req)
 }
 
+// GetSystemNetworkInterfaces Local IPv4 interface candidates (first-use scan suggestion,
+//
+// Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+// non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+// suggested CIDR, naming-convention kind classification, the
+// default-route (primary) marker, and container/bridge-mode hints.
+// Read-only host introspection — no packets on the wire.
+//
+// Corresponds with GET /system/network-interfaces (the `GetSystemNetworkInterfaces` operationId).
+func (c *Client) GetSystemNetworkInterfaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSystemNetworkInterfacesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetTags Tag dictionary (built-ins first), any authenticated user (#665)
+//
+// Corresponds with GET /tags (the `GetTags` operationId).
+func (c *Client) GetTags(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetTagsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostTagsWithBody Create a custom tag (admin)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /tags (the `PostTags` operationId).
+func (c *Client) PostTagsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostTagsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostTags Create a custom tag (admin)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /tags (the `PostTags` operationId).
+func (c *Client) PostTags(ctx context.Context, body PostTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostTagsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteTagsId Delete a custom tag + its assignments; built-ins are protected (admin)
+//
+// Corresponds with DELETE /tags/{id} (the `DeleteTagsId` operationId).
+func (c *Client) DeleteTagsId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteTagsIdRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutTagsIdWithBody Edit display fields; key and builtin flag are immutable (admin)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /tags/{id} (the `PutTagsId` operationId).
+func (c *Client) PutTagsIdWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutTagsIdRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutTagsId Edit display fields; key and builtin flag are immutable (admin)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /tags/{id} (the `PutTagsId` operationId).
+func (c *Client) PutTagsId(ctx context.Context, id Id, body PutTagsIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutTagsIdRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostTagsIdDevicesWithBody Bulk-assign one tag to many devices (admin+operator — the batch "tag the visitor phones" path)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /tags/{id}/devices (the `PostTagsIdDevices` operationId).
+func (c *Client) PostTagsIdDevicesWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostTagsIdDevicesRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostTagsIdDevices Bulk-assign one tag to many devices (admin+operator — the batch "tag the visitor phones" path)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /tags/{id}/devices (the `PostTagsIdDevices` operationId).
+func (c *Client) PostTagsIdDevices(ctx context.Context, id Id, body PostTagsIdDevicesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostTagsIdDevicesRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetTopology Device-level topology graph ({nodes, edges}; network_id filter)
 //
 // Corresponds with GET /topology (the `GetTopology` operationId).
@@ -7176,6 +8072,133 @@ func NewPostAgentsAgentIdCommandsRequest(server string, agentId string) (*http.R
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetArchiveRequest constructs an http.Request for the GetArchive method
+func NewGetArchiveRequest(server string, params *GetArchiveParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/archive")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetArchiveIdDossierRequest constructs an http.Request for the GetArchiveIdDossier method
+func NewGetArchiveIdDossierRequest(server string, id Id, params *GetArchiveIdDossierParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/archive/%s/dossier", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -8331,6 +9354,30 @@ func NewGetDevicesRequest(server string, params *GetDevicesParams) (*http.Reques
 
 		}
 
+		if params.Archived != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "archived", *params.Archived, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.TagId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "tag_id", *params.TagId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -8578,6 +9625,100 @@ func NewPutDevicesIdRequest(server string, id Id) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewPostDevicesIdArchiveRequest calls the generic PostDevicesIdArchive builder with application/json body
+func NewPostDevicesIdArchiveRequest(server string, id Id, body PostDevicesIdArchiveJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostDevicesIdArchiveRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPostDevicesIdArchiveRequestWithBody constructs an http.Request for the PostDevicesIdArchive method, with any body, and a specified content type
+func NewPostDevicesIdArchiveRequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/archive", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPutDevicesIdArchiveSettingsRequest calls the generic PutDevicesIdArchiveSettings builder with application/json body
+func NewPutDevicesIdArchiveSettingsRequest(server string, id Id, body PutDevicesIdArchiveSettingsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutDevicesIdArchiveSettingsRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPutDevicesIdArchiveSettingsRequestWithBody constructs an http.Request for the PutDevicesIdArchiveSettings method, with any body, and a specified content type
+func NewPutDevicesIdArchiveSettingsRequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/archive-settings", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -9325,6 +10466,53 @@ func NewGetDevicesIdNeighborsRequest(server string, id Id) (*http.Request, error
 	return req, nil
 }
 
+// NewPostDevicesIdRestoreRequest calls the generic PostDevicesIdRestore builder with application/json body
+func NewPostDevicesIdRestoreRequest(server string, id Id, body PostDevicesIdRestoreJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostDevicesIdRestoreRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPostDevicesIdRestoreRequestWithBody constructs an http.Request for the PostDevicesIdRestore method, with any body, and a specified content type
+func NewPostDevicesIdRestoreRequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/restore", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetDevicesIdSightingsRequest constructs an http.Request for the GetDevicesIdSightings method
 func NewGetDevicesIdSightingsRequest(server string, id Id, params *GetDevicesIdSightingsParams) (*http.Request, error) {
 	var err error
@@ -9670,6 +10858,87 @@ func NewPutDevicesIdSystemsSystemIdRequest(server string, id Id, systemId int) (
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetDevicesIdTagsRequest constructs an http.Request for the GetDevicesIdTags method
+func NewGetDevicesIdTagsRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/tags", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutDevicesIdTagsRequest calls the generic PutDevicesIdTags builder with application/json body
+func NewPutDevicesIdTagsRequest(server string, id Id, body PutDevicesIdTagsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutDevicesIdTagsRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPutDevicesIdTagsRequestWithBody constructs an http.Request for the PutDevicesIdTags method, with any body, and a specified content type
+func NewPutDevicesIdTagsRequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/tags", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -13133,6 +14402,228 @@ func NewGetSystemRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetSystemNetworkInterfacesRequest constructs an http.Request for the GetSystemNetworkInterfaces method
+func NewGetSystemNetworkInterfacesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/system/network-interfaces")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetTagsRequest constructs an http.Request for the GetTags method
+func NewGetTagsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/tags")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostTagsRequest calls the generic PostTags builder with application/json body
+func NewPostTagsRequest(server string, body PostTagsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostTagsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostTagsRequestWithBody constructs an http.Request for the PostTags method, with any body, and a specified content type
+func NewPostTagsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/tags")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteTagsIdRequest constructs an http.Request for the DeleteTagsId method
+func NewDeleteTagsIdRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/tags/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutTagsIdRequest calls the generic PutTagsId builder with application/json body
+func NewPutTagsIdRequest(server string, id Id, body PutTagsIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutTagsIdRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPutTagsIdRequestWithBody constructs an http.Request for the PutTagsId method, with any body, and a specified content type
+func NewPutTagsIdRequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/tags/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostTagsIdDevicesRequest calls the generic PostTagsIdDevices builder with application/json body
+func NewPostTagsIdDevicesRequest(server string, id Id, body PostTagsIdDevicesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostTagsIdDevicesRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPostTagsIdDevicesRequestWithBody constructs an http.Request for the PostTagsIdDevices method, with any body, and a specified content type
+func NewPostTagsIdDevicesRequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/tags/%s/devices", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetTopologyRequest constructs an http.Request for the GetTopology method
 func NewGetTopologyRequest(server string, params *GetTopologyParams) (*http.Request, error) {
 	var err error
@@ -13531,6 +15022,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /agents/{agentId}/commands (the `PostAgentsAgentIdCommands` operationId).
 	PostAgentsAgentIdCommandsWithResponse(ctx context.Context, agentId string, reqEditors ...RequestEditorFn) (*PostAgentsAgentIdCommandsResponse, error)
 
+	// GetArchiveWithResponse Archived-device page, newest first (#666)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /archive (the `GetArchive` operationId).
+	GetArchiveWithResponse(ctx context.Context, params *GetArchiveParams, reqEditors ...RequestEditorFn) (*GetArchiveResponse, error)
+
+	// GetArchiveIdDossierWithResponse The device's merged lifetime timeline (archive events, changes, config versions, certificates, documents, sightings), newest first
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /archive/{id}/dossier (the `GetArchiveIdDossier` operationId).
+	GetArchiveIdDossierWithResponse(ctx context.Context, id Id, params *GetArchiveIdDossierParams, reqEditors ...RequestEditorFn) (*GetArchiveIdDossierResponse, error)
+
 	// GetAuditLogsWithResponse Audit trail (user_id/action/resource_type/date_from/date_to/search)
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -13790,6 +15295,34 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /devices/{id} (the `PutDevicesId` operationId).
 	PutDevicesIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PutDevicesIdResponse, error)
 
+	// PostDevicesIdArchiveWithBodyWithResponse Manual archive (#663). Any scan_source; an online device may be archived too. Use the force_archive pin for "stays archived"
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /devices/{id}/archive (the `PostDevicesIdArchive` operationId).
+	PostDevicesIdArchiveWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostDevicesIdArchiveResponse, error)
+
+	// PostDevicesIdArchiveWithResponse Manual archive (#663). Any scan_source; an online device may be archived too. Use the force_archive pin for "stays archived"
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /devices/{id}/archive (the `PostDevicesIdArchive` operationId).
+	PostDevicesIdArchiveWithResponse(ctx context.Context, id Id, body PostDevicesIdArchiveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostDevicesIdArchiveResponse, error)
+
+	// PutDevicesIdArchiveSettingsWithBodyWithResponse Pin set/clear + per-device offline-days override (0 = follow global)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /devices/{id}/archive-settings (the `PutDevicesIdArchiveSettings` operationId).
+	PutDevicesIdArchiveSettingsWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutDevicesIdArchiveSettingsResponse, error)
+
+	// PutDevicesIdArchiveSettingsWithResponse Pin set/clear + per-device offline-days override (0 = follow global)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /devices/{id}/archive-settings (the `PutDevicesIdArchiveSettings` operationId).
+	PutDevicesIdArchiveSettingsWithResponse(ctx context.Context, id Id, body PutDevicesIdArchiveSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutDevicesIdArchiveSettingsResponse, error)
+
 	// GetDevicesIdCertificatesWithResponse TLS certificate chains seen on the device's services
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -13897,6 +15430,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /devices/{id}/neighbors (the `GetDevicesIdNeighbors` operationId).
 	GetDevicesIdNeighborsWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdNeighborsResponse, error)
 
+	// PostDevicesIdRestoreWithBodyWithResponse Manual restore; force=true clears a force_archive pin first
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /devices/{id}/restore (the `PostDevicesIdRestore` operationId).
+	PostDevicesIdRestoreWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostDevicesIdRestoreResponse, error)
+
+	// PostDevicesIdRestoreWithResponse Manual restore; force=true clears a force_archive pin first
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /devices/{id}/restore (the `PostDevicesIdRestore` operationId).
+	PostDevicesIdRestoreWithResponse(ctx context.Context, id Id, body PostDevicesIdRestoreJSONRequestBody, reqEditors ...RequestEditorFn) (*PostDevicesIdRestoreResponse, error)
+
 	// GetDevicesIdSightingsWithResponse Address-observation history of a device (#527/#529, newest first)
 	//
 	// Where the device was seen (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which pipeline source. The roaming/move archaeology feed.
@@ -13947,6 +15494,27 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /devices/{id}/systems/{systemId} (the `PutDevicesIdSystemsSystemId` operationId).
 	PutDevicesIdSystemsSystemIdWithResponse(ctx context.Context, id Id, systemId int, reqEditors ...RequestEditorFn) (*PutDevicesIdSystemsSystemIdResponse, error)
+
+	// GetDevicesIdTagsWithResponse The device's tags
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /devices/{id}/tags (the `GetDevicesIdTags` operationId).
+	GetDevicesIdTagsWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdTagsResponse, error)
+
+	// PutDevicesIdTagsWithBodyWithResponse Replace the device's tag set (body tag_ids ARE the new set)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /devices/{id}/tags (the `PutDevicesIdTags` operationId).
+	PutDevicesIdTagsWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutDevicesIdTagsResponse, error)
+
+	// PutDevicesIdTagsWithResponse Replace the device's tag set (body tag_ids ARE the new set)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /devices/{id}/tags (the `PutDevicesIdTags` operationId).
+	PutDevicesIdTagsWithResponse(ctx context.Context, id Id, body PutDevicesIdTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutDevicesIdTagsResponse, error)
 
 	// PostDevicesUuidFingerprintDraftWithResponse Draft a fingerprint rule from a device's accumulated evidence
 	//
@@ -14580,6 +16148,75 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /system (the `GetSystem` operationId).
 	GetSystemWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemResponse, error)
 
+	// GetSystemNetworkInterfacesWithResponse Local IPv4 interface candidates (first-use scan suggestion,
+	//
+	// Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+	// non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+	// suggested CIDR, naming-convention kind classification, the
+	// default-route (primary) marker, and container/bridge-mode hints.
+	// Read-only host introspection — no packets on the wire.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /system/network-interfaces (the `GetSystemNetworkInterfaces` operationId).
+	GetSystemNetworkInterfacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemNetworkInterfacesResponse, error)
+
+	// GetTagsWithResponse Tag dictionary (built-ins first), any authenticated user (#665)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /tags (the `GetTags` operationId).
+	GetTagsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetTagsResponse, error)
+
+	// PostTagsWithBodyWithResponse Create a custom tag (admin)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /tags (the `PostTags` operationId).
+	PostTagsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostTagsResponse, error)
+
+	// PostTagsWithResponse Create a custom tag (admin)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /tags (the `PostTags` operationId).
+	PostTagsWithResponse(ctx context.Context, body PostTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostTagsResponse, error)
+
+	// DeleteTagsIdWithResponse Delete a custom tag + its assignments; built-ins are protected (admin)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /tags/{id} (the `DeleteTagsId` operationId).
+	DeleteTagsIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteTagsIdResponse, error)
+
+	// PutTagsIdWithBodyWithResponse Edit display fields; key and builtin flag are immutable (admin)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /tags/{id} (the `PutTagsId` operationId).
+	PutTagsIdWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutTagsIdResponse, error)
+
+	// PutTagsIdWithResponse Edit display fields; key and builtin flag are immutable (admin)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /tags/{id} (the `PutTagsId` operationId).
+	PutTagsIdWithResponse(ctx context.Context, id Id, body PutTagsIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutTagsIdResponse, error)
+
+	// PostTagsIdDevicesWithBodyWithResponse Bulk-assign one tag to many devices (admin+operator — the batch "tag the visitor phones" path)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /tags/{id}/devices (the `PostTagsIdDevices` operationId).
+	PostTagsIdDevicesWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostTagsIdDevicesResponse, error)
+
+	// PostTagsIdDevicesWithResponse Bulk-assign one tag to many devices (admin+operator — the batch "tag the visitor phones" path)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /tags/{id}/devices (the `PostTagsIdDevices` operationId).
+	PostTagsIdDevicesWithResponse(ctx context.Context, id Id, body PostTagsIdDevicesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostTagsIdDevicesResponse, error)
+
 	// GetTopologyWithResponse Device-level topology graph ({nodes, edges}; network_id filter)
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -15087,6 +16724,88 @@ func (r PostAgentsAgentIdCommandsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PostAgentsAgentIdCommandsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetArchiveResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ArchiveList
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetArchiveResponse) GetJSON200() *ArchiveList {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetArchiveResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetArchiveResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetArchiveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetArchiveResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetArchiveIdDossierResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Dossier
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetArchiveIdDossierResponse) GetJSON200() *Dossier {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetArchiveIdDossierResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetArchiveIdDossierResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetArchiveIdDossierResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetArchiveIdDossierResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -16545,6 +18264,95 @@ func (r PutDevicesIdResponse) ContentType() string {
 	return ""
 }
 
+type PostDevicesIdArchiveResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OK
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostDevicesIdArchiveResponse) GetJSON200() *OK {
+	return r.JSON200
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r PostDevicesIdArchiveResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r PostDevicesIdArchiveResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostDevicesIdArchiveResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostDevicesIdArchiveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostDevicesIdArchiveResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutDevicesIdArchiveSettingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OK
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutDevicesIdArchiveSettingsResponse) GetJSON200() *OK {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PutDevicesIdArchiveSettingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutDevicesIdArchiveSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutDevicesIdArchiveSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutDevicesIdArchiveSettingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetDevicesIdCertificatesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -17160,6 +18968,54 @@ func (r GetDevicesIdNeighborsResponse) ContentType() string {
 	return ""
 }
 
+type PostDevicesIdRestoreResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OK
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostDevicesIdRestoreResponse) GetJSON200() *OK {
+	return r.JSON200
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r PostDevicesIdRestoreResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r PostDevicesIdRestoreResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostDevicesIdRestoreResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostDevicesIdRestoreResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostDevicesIdRestoreResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetDevicesIdSightingsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -17434,6 +19290,88 @@ func (r PutDevicesIdSystemsSystemIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PutDevicesIdSystemsSystemIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetDevicesIdTagsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeviceTagList
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdTagsResponse) GetJSON200() *DeviceTagList {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetDevicesIdTagsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDevicesIdTagsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDevicesIdTagsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetDevicesIdTagsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutDevicesIdTagsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OK
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutDevicesIdTagsResponse) GetJSON200() *OK {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PutDevicesIdTagsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutDevicesIdTagsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutDevicesIdTagsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutDevicesIdTagsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -20919,6 +22857,270 @@ func (r GetSystemResponse) ContentType() string {
 	return ""
 }
 
+type GetSystemNetworkInterfacesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SystemNetworkInterfacesReport
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSystemNetworkInterfacesResponse) GetJSON200() *SystemNetworkInterfacesReport {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSystemNetworkInterfacesResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSystemNetworkInterfacesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSystemNetworkInterfacesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSystemNetworkInterfacesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSystemNetworkInterfacesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetTagsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TagList
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetTagsResponse) GetJSON200() *TagList {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetTagsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetTagsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetTagsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetTagsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostTagsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Tag
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PostTagsResponse) GetJSON201() *Tag {
+	return r.JSON201
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r PostTagsResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r PostTagsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostTagsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostTagsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostTagsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteTagsIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteTagsIdResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteTagsIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteTagsIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteTagsIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteTagsIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutTagsIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Tag
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutTagsIdResponse) GetJSON200() *Tag {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PutTagsIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutTagsIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutTagsIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutTagsIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostTagsIdDevicesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *struct {
+		Applied *int `json:"applied,omitempty"`
+	}
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostTagsIdDevicesResponse) GetJSON200() *struct {
+	Applied *int `json:"applied,omitempty"`
+} {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PostTagsIdDevicesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostTagsIdDevicesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostTagsIdDevicesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostTagsIdDevicesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetTopologyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -21334,6 +23536,32 @@ func (c *ClientWithResponses) PostAgentsAgentIdCommandsWithResponse(ctx context.
 		return nil, err
 	}
 	return ParsePostAgentsAgentIdCommandsResponse(rsp)
+}
+
+// GetArchiveWithResponse Archived-device page, newest first (#666)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /archive (the `GetArchive` operationId).
+func (c *ClientWithResponses) GetArchiveWithResponse(ctx context.Context, params *GetArchiveParams, reqEditors ...RequestEditorFn) (*GetArchiveResponse, error) {
+	rsp, err := c.GetArchive(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetArchiveResponse(rsp)
+}
+
+// GetArchiveIdDossierWithResponse The device's merged lifetime timeline (archive events, changes, config versions, certificates, documents, sightings), newest first
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /archive/{id}/dossier (the `GetArchiveIdDossier` operationId).
+func (c *ClientWithResponses) GetArchiveIdDossierWithResponse(ctx context.Context, id Id, params *GetArchiveIdDossierParams, reqEditors ...RequestEditorFn) (*GetArchiveIdDossierResponse, error) {
+	rsp, err := c.GetArchiveIdDossier(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetArchiveIdDossierResponse(rsp)
 }
 
 // GetAuditLogsWithResponse Audit trail (user_id/action/resource_type/date_from/date_to/search)
@@ -21817,6 +24045,58 @@ func (c *ClientWithResponses) PutDevicesIdWithResponse(ctx context.Context, id I
 	return ParsePutDevicesIdResponse(rsp)
 }
 
+// PostDevicesIdArchiveWithBodyWithResponse Manual archive (#663). Any scan_source; an online device may be archived too. Use the force_archive pin for "stays archived"
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /devices/{id}/archive (the `PostDevicesIdArchive` operationId).
+func (c *ClientWithResponses) PostDevicesIdArchiveWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostDevicesIdArchiveResponse, error) {
+	rsp, err := c.PostDevicesIdArchiveWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostDevicesIdArchiveResponse(rsp)
+}
+
+// PostDevicesIdArchiveWithResponse Manual archive (#663). Any scan_source; an online device may be archived too. Use the force_archive pin for "stays archived"
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /devices/{id}/archive (the `PostDevicesIdArchive` operationId).
+func (c *ClientWithResponses) PostDevicesIdArchiveWithResponse(ctx context.Context, id Id, body PostDevicesIdArchiveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostDevicesIdArchiveResponse, error) {
+	rsp, err := c.PostDevicesIdArchive(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostDevicesIdArchiveResponse(rsp)
+}
+
+// PutDevicesIdArchiveSettingsWithBodyWithResponse Pin set/clear + per-device offline-days override (0 = follow global)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /devices/{id}/archive-settings (the `PutDevicesIdArchiveSettings` operationId).
+func (c *ClientWithResponses) PutDevicesIdArchiveSettingsWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutDevicesIdArchiveSettingsResponse, error) {
+	rsp, err := c.PutDevicesIdArchiveSettingsWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutDevicesIdArchiveSettingsResponse(rsp)
+}
+
+// PutDevicesIdArchiveSettingsWithResponse Pin set/clear + per-device offline-days override (0 = follow global)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /devices/{id}/archive-settings (the `PutDevicesIdArchiveSettings` operationId).
+func (c *ClientWithResponses) PutDevicesIdArchiveSettingsWithResponse(ctx context.Context, id Id, body PutDevicesIdArchiveSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutDevicesIdArchiveSettingsResponse, error) {
+	rsp, err := c.PutDevicesIdArchiveSettings(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutDevicesIdArchiveSettingsResponse(rsp)
+}
+
 // GetDevicesIdCertificatesWithResponse TLS certificate chains seen on the device's services
 //
 // Returns a wrapper object for the known response body format(s).
@@ -22014,6 +24294,32 @@ func (c *ClientWithResponses) GetDevicesIdNeighborsWithResponse(ctx context.Cont
 	return ParseGetDevicesIdNeighborsResponse(rsp)
 }
 
+// PostDevicesIdRestoreWithBodyWithResponse Manual restore; force=true clears a force_archive pin first
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /devices/{id}/restore (the `PostDevicesIdRestore` operationId).
+func (c *ClientWithResponses) PostDevicesIdRestoreWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostDevicesIdRestoreResponse, error) {
+	rsp, err := c.PostDevicesIdRestoreWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostDevicesIdRestoreResponse(rsp)
+}
+
+// PostDevicesIdRestoreWithResponse Manual restore; force=true clears a force_archive pin first
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /devices/{id}/restore (the `PostDevicesIdRestore` operationId).
+func (c *ClientWithResponses) PostDevicesIdRestoreWithResponse(ctx context.Context, id Id, body PostDevicesIdRestoreJSONRequestBody, reqEditors ...RequestEditorFn) (*PostDevicesIdRestoreResponse, error) {
+	rsp, err := c.PostDevicesIdRestore(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostDevicesIdRestoreResponse(rsp)
+}
+
 // GetDevicesIdSightingsWithResponse Address-observation history of a device (#527/#529, newest first)
 //
 // Where the device was seen (ip/mac/network), via which vantage (empty = center-local, else the reporting agent id), from which pipeline source. The roaming/move archaeology feed.
@@ -22105,6 +24411,45 @@ func (c *ClientWithResponses) PutDevicesIdSystemsSystemIdWithResponse(ctx contex
 		return nil, err
 	}
 	return ParsePutDevicesIdSystemsSystemIdResponse(rsp)
+}
+
+// GetDevicesIdTagsWithResponse The device's tags
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /devices/{id}/tags (the `GetDevicesIdTags` operationId).
+func (c *ClientWithResponses) GetDevicesIdTagsWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdTagsResponse, error) {
+	rsp, err := c.GetDevicesIdTags(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDevicesIdTagsResponse(rsp)
+}
+
+// PutDevicesIdTagsWithBodyWithResponse Replace the device's tag set (body tag_ids ARE the new set)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /devices/{id}/tags (the `PutDevicesIdTags` operationId).
+func (c *ClientWithResponses) PutDevicesIdTagsWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutDevicesIdTagsResponse, error) {
+	rsp, err := c.PutDevicesIdTagsWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutDevicesIdTagsResponse(rsp)
+}
+
+// PutDevicesIdTagsWithResponse Replace the device's tag set (body tag_ids ARE the new set)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /devices/{id}/tags (the `PutDevicesIdTags` operationId).
+func (c *ClientWithResponses) PutDevicesIdTagsWithResponse(ctx context.Context, id Id, body PutDevicesIdTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutDevicesIdTagsResponse, error) {
+	rsp, err := c.PutDevicesIdTags(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutDevicesIdTagsResponse(rsp)
 }
 
 // PostDevicesUuidFingerprintDraftWithResponse Draft a fingerprint rule from a device's accumulated evidence
@@ -23279,6 +25624,129 @@ func (c *ClientWithResponses) GetSystemWithResponse(ctx context.Context, reqEdit
 	return ParseGetSystemResponse(rsp)
 }
 
+// GetSystemNetworkInterfacesWithResponse Local IPv4 interface candidates (first-use scan suggestion,
+//
+// Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+// non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+// suggested CIDR, naming-convention kind classification, the
+// default-route (primary) marker, and container/bridge-mode hints.
+// Read-only host introspection — no packets on the wire.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /system/network-interfaces (the `GetSystemNetworkInterfaces` operationId).
+func (c *ClientWithResponses) GetSystemNetworkInterfacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemNetworkInterfacesResponse, error) {
+	rsp, err := c.GetSystemNetworkInterfaces(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSystemNetworkInterfacesResponse(rsp)
+}
+
+// GetTagsWithResponse Tag dictionary (built-ins first), any authenticated user (#665)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /tags (the `GetTags` operationId).
+func (c *ClientWithResponses) GetTagsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetTagsResponse, error) {
+	rsp, err := c.GetTags(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetTagsResponse(rsp)
+}
+
+// PostTagsWithBodyWithResponse Create a custom tag (admin)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /tags (the `PostTags` operationId).
+func (c *ClientWithResponses) PostTagsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostTagsResponse, error) {
+	rsp, err := c.PostTagsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostTagsResponse(rsp)
+}
+
+// PostTagsWithResponse Create a custom tag (admin)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /tags (the `PostTags` operationId).
+func (c *ClientWithResponses) PostTagsWithResponse(ctx context.Context, body PostTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostTagsResponse, error) {
+	rsp, err := c.PostTags(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostTagsResponse(rsp)
+}
+
+// DeleteTagsIdWithResponse Delete a custom tag + its assignments; built-ins are protected (admin)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /tags/{id} (the `DeleteTagsId` operationId).
+func (c *ClientWithResponses) DeleteTagsIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteTagsIdResponse, error) {
+	rsp, err := c.DeleteTagsId(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteTagsIdResponse(rsp)
+}
+
+// PutTagsIdWithBodyWithResponse Edit display fields; key and builtin flag are immutable (admin)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /tags/{id} (the `PutTagsId` operationId).
+func (c *ClientWithResponses) PutTagsIdWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutTagsIdResponse, error) {
+	rsp, err := c.PutTagsIdWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutTagsIdResponse(rsp)
+}
+
+// PutTagsIdWithResponse Edit display fields; key and builtin flag are immutable (admin)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /tags/{id} (the `PutTagsId` operationId).
+func (c *ClientWithResponses) PutTagsIdWithResponse(ctx context.Context, id Id, body PutTagsIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutTagsIdResponse, error) {
+	rsp, err := c.PutTagsId(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutTagsIdResponse(rsp)
+}
+
+// PostTagsIdDevicesWithBodyWithResponse Bulk-assign one tag to many devices (admin+operator — the batch "tag the visitor phones" path)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /tags/{id}/devices (the `PostTagsIdDevices` operationId).
+func (c *ClientWithResponses) PostTagsIdDevicesWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostTagsIdDevicesResponse, error) {
+	rsp, err := c.PostTagsIdDevicesWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostTagsIdDevicesResponse(rsp)
+}
+
+// PostTagsIdDevicesWithResponse Bulk-assign one tag to many devices (admin+operator — the batch "tag the visitor phones" path)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /tags/{id}/devices (the `PostTagsIdDevices` operationId).
+func (c *ClientWithResponses) PostTagsIdDevicesWithResponse(ctx context.Context, id Id, body PostTagsIdDevicesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostTagsIdDevicesResponse, error) {
+	rsp, err := c.PostTagsIdDevices(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostTagsIdDevicesResponse(rsp)
+}
+
 // GetTopologyWithResponse Device-level topology graph ({nodes, edges}; network_id filter)
 //
 // Returns a wrapper object for the known response body format(s).
@@ -23599,6 +26067,58 @@ func ParsePostAgentsAgentIdCommandsResponse(rsp *http.Response) (*PostAgentsAgen
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetArchiveResponse parses an HTTP response from a GetArchiveWithResponse call
+func ParseGetArchiveResponse(rsp *http.Response) (*GetArchiveResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetArchiveResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ArchiveList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetArchiveIdDossierResponse parses an HTTP response from a GetArchiveIdDossierWithResponse call
+func ParseGetArchiveIdDossierResponse(rsp *http.Response) (*GetArchiveIdDossierResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetArchiveIdDossierResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Dossier
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	}
 
@@ -24485,6 +27005,65 @@ func ParsePutDevicesIdResponse(rsp *http.Response) (*PutDevicesIdResponse, error
 	return response, nil
 }
 
+// ParsePostDevicesIdArchiveResponse parses an HTTP response from a PostDevicesIdArchiveWithResponse call
+func ParsePostDevicesIdArchiveResponse(rsp *http.Response) (*PostDevicesIdArchiveResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostDevicesIdArchiveResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OK
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutDevicesIdArchiveSettingsResponse parses an HTTP response from a PutDevicesIdArchiveSettingsWithResponse call
+func ParsePutDevicesIdArchiveSettingsResponse(rsp *http.Response) (*PutDevicesIdArchiveSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutDevicesIdArchiveSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OK
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetDevicesIdCertificatesResponse parses an HTTP response from a GetDevicesIdCertificatesWithResponse call
 func ParseGetDevicesIdCertificatesResponse(rsp *http.Response) (*GetDevicesIdCertificatesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -24869,6 +27448,39 @@ func ParseGetDevicesIdNeighborsResponse(rsp *http.Response) (*GetDevicesIdNeighb
 	return response, nil
 }
 
+// ParsePostDevicesIdRestoreResponse parses an HTTP response from a PostDevicesIdRestoreWithResponse call
+func ParsePostDevicesIdRestoreResponse(rsp *http.Response) (*PostDevicesIdRestoreResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostDevicesIdRestoreResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OK
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetDevicesIdSightingsResponse parses an HTTP response from a GetDevicesIdSightingsWithResponse call
 func ParseGetDevicesIdSightingsResponse(rsp *http.Response) (*GetDevicesIdSightingsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -25024,6 +27636,58 @@ func ParsePutDevicesIdSystemsSystemIdResponse(rsp *http.Response) (*PutDevicesId
 	}
 
 	response := &PutDevicesIdSystemsSystemIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OK
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetDevicesIdTagsResponse parses an HTTP response from a GetDevicesIdTagsWithResponse call
+func ParseGetDevicesIdTagsResponse(rsp *http.Response) (*GetDevicesIdTagsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDevicesIdTagsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeviceTagList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutDevicesIdTagsResponse parses an HTTP response from a PutDevicesIdTagsWithResponse call
+func ParsePutDevicesIdTagsResponse(rsp *http.Response) (*PutDevicesIdTagsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutDevicesIdTagsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -27060,6 +29724,181 @@ func ParseGetSystemResponse(rsp *http.Response) (*GetSystemResponse, error) {
 	response := &GetSystemResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetSystemNetworkInterfacesResponse parses an HTTP response from a GetSystemNetworkInterfacesWithResponse call
+func ParseGetSystemNetworkInterfacesResponse(rsp *http.Response) (*GetSystemNetworkInterfacesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSystemNetworkInterfacesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SystemNetworkInterfacesReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetTagsResponse parses an HTTP response from a GetTagsWithResponse call
+func ParseGetTagsResponse(rsp *http.Response) (*GetTagsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTagsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TagList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostTagsResponse parses an HTTP response from a PostTagsWithResponse call
+func ParsePostTagsResponse(rsp *http.Response) (*PostTagsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostTagsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Tag
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteTagsIdResponse parses an HTTP response from a DeleteTagsIdWithResponse call
+func ParseDeleteTagsIdResponse(rsp *http.Response) (*DeleteTagsIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteTagsIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutTagsIdResponse parses an HTTP response from a PutTagsIdWithResponse call
+func ParsePutTagsIdResponse(rsp *http.Response) (*PutTagsIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutTagsIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Tag
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostTagsIdDevicesResponse parses an HTTP response from a PostTagsIdDevicesWithResponse call
+func ParsePostTagsIdDevicesResponse(rsp *http.Response) (*PostTagsIdDevicesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostTagsIdDevicesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Applied *int `json:"applied,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	}
 
 	return response, nil

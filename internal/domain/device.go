@@ -136,6 +136,13 @@ type DeviceFilter struct {
 	// devices on that network only. NULL-network (legacy/unresolved) devices
 	// are excluded when this is set, they have no network to match.
 	NetworkID *int64 `json:"network_id,omitempty"`
+	// Archived selects the library/archive slice (#663): "" = asset library
+	// only (archived rows excluded — the devices-page default); "only" =
+	// archived rows only (the archive view); "all" = both.
+	Archived string `json:"archived,omitempty"`
+	// TagID filters to devices carrying this tag (dictionary id). nil = no
+	// tag filter (#665).
+	TagID *int64 `json:"tag_id,omitempty"`
 	// SortBy is validated against a whitelist in the repository layer (never
 	// interpolated raw into SQL). Order is "asc" or "desc" (default "asc").
 	SortBy string `json:"sort_by,omitempty"`
@@ -154,24 +161,39 @@ type DeviceFilter struct {
 // Response types
 
 type DeviceResponse struct {
-	ID             int64     `json:"id"`
-	Name           string    `json:"name"`
-	Type           string    `json:"type"`
-	Brand          string    `json:"brand"`
-	Model          string    `json:"model"`
-	Location       string    `json:"location"`
-	Purpose        string    `json:"purpose"`
-	Description    string    `json:"description"`
-	Status         string    `json:"status"`
-	IPAddress      string    `json:"ip_address"`
-	MACAddress     string    `json:"mac_address"`
-	SerialNumber   string    `json:"serial_number"`
-	PurchaseDate   string    `json:"purchase_date"`
-	WarrantyExpiry string    `json:"warranty_expiry"`
-	Tags           string    `json:"tags"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	ScanSource     string    `json:"scan_source"`
+	ID             int64  `json:"id"`
+	Name           string `json:"name"`
+	Type           string `json:"type"`
+	Brand          string `json:"brand"`
+	Model          string `json:"model"`
+	Location       string `json:"location"`
+	Purpose        string `json:"purpose"`
+	Description    string `json:"description"`
+	Status         string `json:"status"`
+	IPAddress      string `json:"ip_address"`
+	MACAddress     string `json:"mac_address"`
+	SerialNumber   string `json:"serial_number"`
+	PurchaseDate   string `json:"purchase_date"`
+	WarrantyExpiry string `json:"warranty_expiry"`
+	// Tags is the DEPRECATED free-form string (#665): superseded by the tag
+	// dictionary; kept in the payload until the frontend edit modal's chip
+	// migration ships everywhere, then it goes away with the next schema
+	// crossing.
+	Tags           string     `json:"tags"`
+	DictionaryTags []TagBrief `json:"dictionary_tags,omitempty"`
+	// Asset-archive lifecycle visibility (#663): ArchivedAt non-nil = the
+	// device lives in the archive; ArchivePin is ''/force_archive/
+	// force_active; Periodic marks a learned return cycle; the override is
+	// the per-device archive threshold (nil = global).
+	ArchivedAt                 *time.Time `json:"archived_at,omitempty"`
+	ArchivePin                 string     `json:"archive_pin"`
+	ArchiveOfflineDaysOverride *int64     `json:"archive_offline_days_override,omitempty"`
+	OnlineSince                *time.Time `json:"online_since,omitempty"`
+	Periodic                   bool       `json:"periodic"`
+	PeriodicCycleDays          float64    `json:"periodic_cycle_days,omitempty"`
+	CreatedAt                  time.Time  `json:"created_at"`
+	UpdatedAt                  time.Time  `json:"updated_at"`
+	ScanSource                 string     `json:"scan_source"`
 	// NetworkID/NetworkName identify the logical network this device was
 	// discovered on (distributed/multi-LAN). NetworkID is nil for legacy
 	// unresolved devices; NetworkName is the human label from the networks table
@@ -215,6 +237,17 @@ type DeviceResponse struct {
 type DeviceListResponse struct {
 	Devices []DeviceResponse `json:"devices"`
 	Total   int              `json:"total"`
+}
+
+// TagBrief is the tag dictionary slice attached to device rows (#665). The
+// list view fills it via one batched assignment query; the detail view via a
+// single per-device query.
+type TagBrief struct {
+	ID      int64  `json:"id"`
+	Key     string `json:"key"`
+	Name    string `json:"name"`
+	Color   string `json:"color"`
+	Builtin bool   `json:"builtin"`
 }
 
 type DeviceStatsResponse struct {

@@ -43,6 +43,15 @@ type AgentToken struct {
 	RevokedAt  *time.Time `json:"revoked_at"`
 }
 
+type AssetArchiveEvent struct {
+	ID          int64     `json:"id"`
+	DeviceID    int64     `json:"device_id"`
+	Event       string    `json:"event"`
+	TriggeredBy string    `json:"triggered_by"`
+	Detail      string    `json:"detail"`
+	OccurredAt  time.Time `json:"occurred_at"`
+}
+
 type AuditLog struct {
 	ID           int64      `json:"id"`
 	UserID       *int64     `json:"user_id"`
@@ -80,44 +89,53 @@ type DashboardConfig struct {
 }
 
 type Device struct {
-	ID               int64      `json:"id"`
-	DeviceUuid       string     `json:"device_uuid"`
-	Name             string     `json:"name"`
-	Type             string     `json:"type"`
-	Brand            string     `json:"brand"`
-	Model            string     `json:"model"`
-	Location         string     `json:"location"`
-	Purpose          string     `json:"purpose"`
-	Description      string     `json:"description"`
-	Status           string     `json:"status"`
-	IpAddress        string     `json:"ip_address"`
-	MacAddress       string     `json:"mac_address"`
-	SerialNumber     string     `json:"serial_number"`
-	PurchaseDate     string     `json:"purchase_date"`
-	WarrantyExpiry   string     `json:"warranty_expiry"`
-	Tags             string     `json:"tags"`
-	ScanSource       string     `json:"scan_source"`
-	PrometheusLabels string     `json:"prometheus_labels"`
-	LastScannedAt    *time.Time `json:"last_scanned_at"`
-	LastScanTaskID   *int64     `json:"last_scan_task_id"`
-	OpenPorts        string     `json:"open_ports"`
-	DetectedServices string     `json:"detected_services"`
-	PrometheusUrl    string     `json:"prometheus_url"`
-	NodeExporterUrl  string     `json:"node_exporter_url"`
-	LastScanRttMs    int64      `json:"last_scan_rtt_ms"`
-	ScanAttributes   string     `json:"scan_attributes"`
-	UserAttributes   string     `json:"user_attributes"`
-	ScanVendor       *string    `json:"scan_vendor"`
-	ScanMac          *string    `json:"scan_mac"`
-	ScanOs           *string    `json:"scan_os"`
-	ScanHostname     *string    `json:"scan_hostname"`
-	NetworkID        *int64     `json:"network_id"`
-	SshCredentialID  *int64     `json:"ssh_credential_id"`
-	FirstSeen        *time.Time `json:"first_seen"`
-	LastSeen         *time.Time `json:"last_seen"`
-	OfflineSince     *time.Time `json:"offline_since"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID                         int64      `json:"id"`
+	DeviceUuid                 string     `json:"device_uuid"`
+	Name                       string     `json:"name"`
+	Type                       string     `json:"type"`
+	Brand                      string     `json:"brand"`
+	Model                      string     `json:"model"`
+	Location                   string     `json:"location"`
+	Purpose                    string     `json:"purpose"`
+	Description                string     `json:"description"`
+	Status                     string     `json:"status"`
+	IpAddress                  string     `json:"ip_address"`
+	MacAddress                 string     `json:"mac_address"`
+	SerialNumber               string     `json:"serial_number"`
+	PurchaseDate               string     `json:"purchase_date"`
+	WarrantyExpiry             string     `json:"warranty_expiry"`
+	Tags                       string     `json:"tags"`
+	ScanSource                 string     `json:"scan_source"`
+	PrometheusLabels           string     `json:"prometheus_labels"`
+	LastScannedAt              *time.Time `json:"last_scanned_at"`
+	LastScanTaskID             *int64     `json:"last_scan_task_id"`
+	OpenPorts                  string     `json:"open_ports"`
+	DetectedServices           string     `json:"detected_services"`
+	PrometheusUrl              string     `json:"prometheus_url"`
+	NodeExporterUrl            string     `json:"node_exporter_url"`
+	LastScanRttMs              int64      `json:"last_scan_rtt_ms"`
+	ScanAttributes             string     `json:"scan_attributes"`
+	UserAttributes             string     `json:"user_attributes"`
+	ScanVendor                 *string    `json:"scan_vendor"`
+	ScanMac                    *string    `json:"scan_mac"`
+	ScanOs                     *string    `json:"scan_os"`
+	ScanHostname               *string    `json:"scan_hostname"`
+	NetworkID                  *int64     `json:"network_id"`
+	SshCredentialID            *int64     `json:"ssh_credential_id"`
+	FirstSeen                  *time.Time `json:"first_seen"`
+	LastSeen                   *time.Time `json:"last_seen"`
+	OfflineSince               *time.Time `json:"offline_since"`
+	ArchivedAt                 *time.Time `json:"archived_at"`
+	ArchivePin                 string     `json:"archive_pin"`
+	ArchiveOfflineDaysOverride *int64     `json:"archive_offline_days_override"`
+	OnlineSince                *time.Time `json:"online_since"`
+	Periodic                   int64      `json:"periodic"`
+	PeriodicCycleDays          float64    `json:"periodic_cycle_days"`
+	LifecycleState             string     `json:"lifecycle_state"`
+	Owner                      string     `json:"owner"`
+	AssetNo                    string     `json:"asset_no"`
+	CreatedAt                  time.Time  `json:"created_at"`
+	UpdatedAt                  time.Time  `json:"updated_at"`
 }
 
 type DeviceConfig struct {
@@ -217,6 +235,12 @@ type DeviceSystem struct {
 	Tags           string    `json:"tags"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type DeviceTag struct {
+	DeviceID  int64     `json:"device_id"`
+	TagID     int64     `json:"tag_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Document struct {
@@ -541,6 +565,18 @@ type SystemSetting struct {
 	Key       string    `json:"key"`
 	Value     string    `json:"value"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type Tag struct {
+	ID          int64     `json:"id"`
+	Key         string    `json:"key"`
+	Name        string    `json:"name"`
+	Color       string    `json:"color"`
+	Description string    `json:"description"`
+	Builtin     int64     `json:"builtin"`
+	SortOrder   int64     `json:"sort_order"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type TopologyEdge struct {

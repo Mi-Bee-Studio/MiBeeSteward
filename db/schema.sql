@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS devices (
     serial_number TEXT NOT NULL DEFAULT '',
     purchase_date TEXT NOT NULL DEFAULT '',
     warranty_expiry TEXT NOT NULL DEFAULT '',
+    -- DEPRECATED (#665): free-form tags string, superseded by the tags
+    -- dictionary + device_tags association. Kept physically until the next
+    -- schema crossing removes it; new code must not read or write it.
     tags TEXT NOT NULL DEFAULT '{}',
     scan_source TEXT NOT NULL DEFAULT 'manual',
     prometheus_labels TEXT NOT NULL DEFAULT '{}',
@@ -119,6 +122,38 @@ CREATE TABLE IF NOT EXISTS devices (
     -- and not refreshed on heartbeat-online) - offline_since is the authoritative
     -- "how long has this device had no heartbeat" timestamp.
     offline_since TIMESTAMP,
+    -- === Asset archive layer (#662) ===
+    -- archived_at: NULL = active in the asset library; non-NULL = archived
+    -- to the asset archive. Archiving REPLACES the old silent-device
+    -- physical prune: the row plus every FK-attached history (configs, certs,
+    -- documents, sightings, events) stays. Auto-archive fires when
+    -- offline_since outlives the effective threshold (per-device override >
+    -- global archive.offline_days; default 7d).
+    archived_at TIMESTAMP,
+    -- archive_pin: manual override with the HIGHEST priority in the
+    -- lifecycle state machine. 'force_archive' = never auto-restored
+    -- (stays archived even while online); 'force_active' = never
+    -- auto-archived. '' = fully automatic lifecycle.
+    archive_pin TEXT NOT NULL DEFAULT '' CHECK(archive_pin IN ('', 'force_archive', 'force_active')),
+    -- archive_offline_days_override: per-device auto-archive threshold in
+    -- days. NULL = follow the global archive.offline_days.
+    archive_offline_days_override INTEGER,
+    -- online_since: stamped when status flips offline->online and cleared
+    -- on the reverse flip. Shared by the auto-restore timer (an archived
+    -- device must stay CONTINUOUSLY online >= archive.restore_online_minutes
+    -- before re-entering the library; brief 1-2 blips never accumulate) and
+    -- the continuous-online display for active devices.
+    online_since TIMESTAMP,
+    -- periodic / periodic_cycle_days: smart pattern recognition (#664). A
+    -- device that keeps returning on a stable cycle (e.g. appears once a
+    -- month), learned from archive<->online transitions over >= 60 days of
+    -- history, is exempt from auto-archive. cycle_days = 0 = not learned.
+    periodic INTEGER NOT NULL DEFAULT 0 CHECK(periodic IN (0, 1)),
+    periodic_cycle_days REAL NOT NULL DEFAULT 0,
+    -- === Asset register columns (#669; schema lands here, UI later) ===
+    lifecycle_state TEXT NOT NULL DEFAULT 'in_use' CHECK(lifecycle_state IN ('in_use', 'spare', 'repair', 'lent', 'retired')),
+    owner TEXT NOT NULL DEFAULT '',
+    asset_no TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -964,6 +999,58 @@ CREATE TABLE IF NOT EXISTS probe_tls_certs (
 );
 CREATE INDEX IF NOT EXISTS idx_probe_tls_certs_target ON probe_tls_certs(target_id, cert_index);
 CREATE INDEX IF NOT EXISTS idx_probe_tls_certs_expiring ON probe_tls_certs(not_after);
+
+
+-- === Asset archive layer (#662) ===
+-- asset_archive_events: append-only lifecycle event stream for the asset
+-- archive. Every archive / restore / pin / pattern transition writes one
+-- row. It is the durable backbone for (a) the dossier timeline and (b) the
+-- smart periodic-pattern learner (#664) - change_log (30d retention) and
+-- device_liveness (7d, disposable cache) cannot back its 60-day window.
+-- Volume is one row per lifecycle transition, so it is retained
+-- indefinitely (no retention sweep).
+CREATE TABLE IF NOT EXISTS asset_archive_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    event TEXT NOT NULL CHECK(event IN ('archived', 'restored', 'online_blip', 'pattern_learned', 'pattern_cleared', 'pin_set', 'pin_cleared')),
+    triggered_by TEXT NOT NULL CHECK(triggered_by IN ('auto_offline', 'auto_restore', 'pattern', 'manual')),
+    detail TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(detail)),  -- e.g. {"online_minutes":12,"cycle_days":30.5}
+    occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_asset_archive_events_device ON asset_archive_events(device_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_asset_archive_events_event ON asset_archive_events(event);
+CREATE INDEX IF NOT EXISTS idx_asset_archive_events_occurred ON asset_archive_events(occurred_at);
+
+-- Archive listing filter (WHERE archived_at IS NOT NULL ORDER BY archived_at).
+CREATE INDEX IF NOT EXISTS idx_devices_archived ON devices(archived_at);
+
+-- === Tag dictionary (#662 schema groundwork; service + seeds land in #665) ===
+-- Distinguishes e.g. internal assets from visitors' devices that were
+-- recorded because they temporarily used the network. Built-in seeds
+-- (internal / external / temporary / pending) are planted idempotently at
+-- startup by the tag service; the frontend localizes built-ins by key while
+-- `name` stays the (editable) default label.
+CREATE TABLE IF NOT EXISTS tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,       -- stable slug; identity for API + i18n
+    name TEXT NOT NULL,             -- display label (editable)
+    color TEXT NOT NULL DEFAULT '', -- hex, e.g. '#2563eb'
+    description TEXT NOT NULL DEFAULT '',
+    builtin INTEGER NOT NULL DEFAULT 0,  -- 1 = seeded built-in: cannot be deleted
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Device-tag association (many-to-many, in the device_documents style).
+-- Filtering by tag resolves through idx_device_tags_tag.
+CREATE TABLE IF NOT EXISTS device_tags (
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (device_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS idx_device_tags_tag ON device_tags(tag_id);
 
 
 -- Identity + lookup indexes (created by the migration chain on legacy DBs;

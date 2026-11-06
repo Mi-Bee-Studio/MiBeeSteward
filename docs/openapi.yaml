@@ -295,6 +295,24 @@ paths:
       responses:
         "204": {description: Revoked}
 
+  /system/network-interfaces:
+    get:
+      tags: [Settings]
+      summary: Local IPv4 interface candidates (first-use scan suggestion, #678)
+      description: |
+        Enumerates the center host's own IPv4 interfaces (UP, non-loopback,
+        non-link-local) as scan suggestions: on-link CIDR, a /24-clamped
+        suggested CIDR, naming-convention kind classification, the
+        default-route (primary) marker, and container/bridge-mode hints.
+        Read-only host introspection — no packets on the wire.
+      responses:
+        "200":
+          description: Interface snapshot
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SystemNetworkInterfacesReport"}
+        "401": {$ref: "#/components/responses/Error"}
+
   /devices:
     get:
       tags: [Devices]
@@ -308,6 +326,8 @@ paths:
         - {name: sort, in: query, schema: {type: string}}
         - {name: order, in: query, schema: {type: string, enum: [asc, desc]}}
         - {name: network_id, in: query, schema: {type: integer}}
+        - {name: archived, in: query, schema: {type: string, enum: ["", only, all]}, description: "Asset-library slice (#663). Default (empty) hides archived rows; only = archive view; all = both"}
+        - {name: tag_id, in: query, schema: {type: integer}, description: "Filter to devices carrying this dictionary tag (#665)"}
       responses:
         "200":
           description: Device list envelope
@@ -329,6 +349,182 @@ paths:
       summary: CSV/JSON export (query mirrors the list endpoint)
       responses:
         "200": {description: File download}
+
+  /devices/{id}/archive:
+    post:
+      tags: [Archive]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      summary: Manual archive (#663). Any scan_source; an online device may be archived too. Use the force_archive pin for "stays archived"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /devices/{id}/restore:
+    post:
+      tags: [Archive]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      summary: Manual restore; force=true clears a force_archive pin first
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: {type: boolean}
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /devices/{id}/archive-settings:
+    put:
+      tags: [Archive]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      summary: Pin set/clear + per-device offline-days override (0 = follow global)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pin: {type: string, enum: ["", force_archive, force_active], description: "Absent = unchanged"}
+                offline_days_override: {type: integer, description: "0 = clear (follow global); 1-365"}
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
+  /archive:
+    get:
+      tags: [Archive]
+      summary: Archived-device page, newest first (#666)
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+      responses:
+        "200":
+          description: Archive list envelope
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ArchiveList"}
+  /archive/{id}/dossier:
+    get:
+      tags: [Archive]
+      summary: The device's merged lifetime timeline (archive events, changes, config versions, certificates, documents, sightings), newest first
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: limit, in: query, schema: {type: integer, default: 100, maximum: 500}}
+      responses:
+        "200":
+          description: Dossier timeline
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Dossier"}
+
+  /tags:
+    get:
+      tags: [Tags]
+      summary: Tag dictionary (built-ins first), any authenticated user (#665)
+      responses:
+        "200":
+          description: Dictionary
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TagList"}
+    post:
+      tags: [Tags]
+      summary: Create a custom tag (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TagInput"}
+      responses:
+        "201":
+          description: Created tag
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Tag"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /tags/{id}:
+    put:
+      tags: [Tags]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      summary: Edit display fields; key and builtin flag are immutable (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TagInput"}
+      responses:
+        "200":
+          description: Updated tag
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Tag"}
+    delete:
+      tags: [Tags]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      summary: Delete a custom tag + its assignments; built-ins are protected (admin)
+      responses:
+        "204": {description: Deleted}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /tags/{id}/devices:
+    post:
+      tags: [Tags]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      summary: Bulk-assign one tag to many devices (admin+operator — the batch "tag the visitor phones" path)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_ids]
+              properties:
+                device_ids:
+                  type: array
+                  maxItems: 1000
+                  items: {type: integer, format: int64}
+      responses:
+        "200":
+          description: Number of NEW assignments applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applied: {type: integer}
+  /devices/{id}/tags:
+    get:
+      tags: [Tags]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      summary: The device's tags
+      responses:
+        "200":
+          description: Device tags
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceTagList"}
+    put:
+      tags: [Tags]
+      parameters: [{$ref: "#/components/parameters/id"}]
+      summary: Replace the device's tag set (body tag_ids ARE the new set)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tag_ids:
+                  type: array
+                  maxItems: 50
+                  items: {type: integer, format: int64}
+      responses:
+        "200": {$ref: "#/components/responses/OK"}
   /devices/stats:
     get:
       tags: [Devices]
@@ -1726,6 +1922,11 @@ components:
       content:
         application/json:
           schema: {type: object}
+    Conflict:
+      description: State conflict (already archived / not archived / protected)
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
     Created:
       description: Created resource
       content:
@@ -1762,6 +1963,33 @@ components:
         user: {$ref: "#/components/schemas/User"}
         two_factor_required: {type: boolean}
         user_id: {type: integer}
+
+    SystemNetworkInterfacesReport:
+      type: object
+      required: [interfaces, container]
+      properties:
+        interfaces:
+          type: array
+          items: {$ref: "#/components/schemas/SystemNetworkInterface"}
+        container: {type: boolean, description: center runs inside a container (/.dockerenv or /run/.containerenv)}
+        warning:
+          type: string
+          enum: ["", bridge_container, no_lan]
+          description: machine-key hint — bridge_container = likely not host-networked, scanning degraded; no_lan = nothing LAN-like to suggest
+
+    SystemNetworkInterface:
+      type: object
+      required: [name, ipv4, prefix_len, cidr, kind, primary, addresses, suggested_cidr]
+      properties:
+        name: {type: string, description: interface name, e.g. eth0 / br-lan}
+        ipv4: {type: string, format: ipv4}
+        prefix_len: {type: integer, minimum: 0, maximum: 32}
+        cidr: {type: string, description: on-link subnet as configured, e.g. 192.168.1.0/24}
+        mac: {type: string, description: interface MAC when present}
+        kind: {type: string, enum: [lan, wireless, virtual, vpn], description: naming-convention classification}
+        primary: {type: boolean, description: this interface owns the IPv4 default route}
+        addresses: {type: integer, description: total address count of cidr}
+        suggested_cidr: {type: string, description: scan suggestion — cidr clamped to the /24 containing ipv4 when wider}
 
     User:
       type: object
@@ -1906,6 +2134,16 @@ components:
         last_scan_rtt_ms: {type: integer, format: int64}
         scan_attributes: {$ref: "#/components/schemas/ScanAttributes"}
         user_attributes: {type: object, additionalProperties: {type: string}}
+        archived_at: {type: string, format: date-time, nullable: true, description: "Non-null = the device lives in the asset archive (#663)"}
+        archive_pin: {type: string, enum: ["", force_archive, force_active], description: "Manual pin, highest lifecycle priority"}
+        archive_offline_days_override: {type: integer, format: int64, nullable: true, description: "Per-device archive threshold; null = global"}
+        online_since: {type: string, format: date-time, nullable: true, description: "Continuous-online clock start (archive restore timer)"}
+        periodic: {type: boolean, description: "Learned return cycle (#664) — exempt from auto-archive"}
+        periodic_cycle_days: {type: number, description: "Learned cycle length in days (0 = none)"}
+        dictionary_tags:
+          type: array
+          description: Tag dictionary entries attached to this device (#665)
+          items: {$ref: "#/components/schemas/TagBrief"}
     DeviceList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -1921,6 +2159,94 @@ components:
       properties:
         by_status: {type: object, additionalProperties: {type: integer, format: int64}, description: "keyed online/offline/unknown"}
         by_type: {type: object, additionalProperties: {type: integer, format: int64}}
+
+    Tag:
+      type: object
+      required: [id, key, name, color, description, builtin, sort_order, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64}
+        key: {type: string, description: "Stable slug; identity for i18n + API"}
+        name: {type: string, description: "Editable display label"}
+        color: {type: string, description: "Hex, e.g. '#2563eb'"}
+        description: {type: string}
+        builtin: {type: integer, enum: [0, 1], description: "1 = seeded built-in (cannot be deleted)"}
+        sort_order: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    TagInput:
+      type: object
+      properties:
+        key: {type: string, description: "Create only; lowercase slug"}
+        name: {type: string}
+        color: {type: string}
+        description: {type: string}
+        sort_order: {type: integer, format: int64}
+    TagBrief:
+      type: object
+      required: [id, key, name, color, builtin]
+      properties:
+        id: {type: integer, format: int64}
+        key: {type: string}
+        name: {type: string}
+        color: {type: string}
+        builtin: {type: boolean}
+    TagList:
+      type: object
+      properties:
+        tags:
+          type: array
+          items: {$ref: "#/components/schemas/Tag"}
+    DeviceTagList:
+      type: object
+      properties:
+        tags:
+          type: array
+          items: {$ref: "#/components/schemas/TagBrief"}
+
+    ArchiveItem:
+      type: object
+      required: [id, name, type, status, archived_at, archive_pin, periodic, scan_source, created_at]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        type: {type: string}
+        brand: {type: string}
+        model: {type: string}
+        ip_address: {type: string}
+        mac_address: {type: string}
+        status: {type: string, description: "online while archived = visible but filed (force_archive or blip window)"}
+        archived_at: {type: string, format: date-time}
+        archive_pin: {type: string, enum: ["", force_archive, force_active]}
+        online_since: {type: string, format: date-time, nullable: true}
+        offline_since: {type: string, format: date-time, nullable: true}
+        periodic: {type: boolean}
+        periodic_cycle_days: {type: number}
+        scan_source: {type: string}
+        network_id: {type: integer, format: int64, nullable: true}
+        network_name: {type: string}
+        created_at: {type: string, format: date-time}
+    ArchiveList:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            devices:
+              type: array
+              items: {$ref: "#/components/schemas/ArchiveItem"}
+    DossierEntry:
+      type: object
+      required: [kind, occurred_at, summary]
+      properties:
+        kind: {type: string, enum: [archive_event, change, config, cert, document, sighting]}
+        occurred_at: {type: string, format: date-time}
+        summary: {type: string}
+        data: {type: object, additionalProperties: true, description: "Kind-specific payload"}
+    Dossier:
+      type: object
+      properties:
+        entries:
+          type: array
+          items: {$ref: "#/components/schemas/DossierEntry"}
 
     DeviceSystem:
       type: object

@@ -14,6 +14,9 @@
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { validateScanTarget } from '$lib/utils/validation';
+	import { analyzeScanTarget, type ScanTargetInfo } from '$lib/utils/scanTargets';
+	import { bestLocalNetwork } from '$lib/utils/netSuggest';
+
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import PortListEditor from '$lib/components/scanner/PortListEditor.svelte';
 	import { portTemplates } from '$lib/portTemplates';
@@ -54,11 +57,17 @@
 	// Form state
 	let targets = $state('');
 	let community = $state('public');
-	let timeout = $state(2);
+	// Engine floor (#685): the sync handler runs any per-host value below 5s
+	// at 10s (multi-probe pipeline floor), so the field offers 5-10 and
+	// defaults to the floor value itself.
+	let timeout = $state(10);
 	// Optional TCP port whitelist for the quick scan (#275). Empty = the
 	// engine's global list (the previous, only behavior).
 	let portSpec = $state('');
 	let targetsError = $state('');
+	// Target facts for the info line (#684): address capacity, sync-scan
+	// limit warning, and the local-execution note.
+	let targetsInfo = $state<ScanTargetInfo | null>(null);
 	// SNMP credential selection (issue #135). When set, overrides community and
 	// routes the scan through v3 USM (or the credential's own community).
 	let credentials = $state<Array<{ id: number; name: string; security_level: string }>>([]);
@@ -131,9 +140,26 @@
 	}
 
 	function validateTargets(): string | null {
-		const err = validateScanTarget(targets);
-		targetsError = err || '';
-		return err;
+		const info = analyzeScanTarget(targets);
+		targetsInfo = info;
+		targetsError = info.error ?? '';
+		return info.error;
+	}
+
+	// "Use my network" (#678): fill targets with the center host's own
+	// network — the default-route interface's suggested CIDR.
+	async function useLocalNetwork() {
+		try {
+			const cidr = await bestLocalNetwork();
+			if (!cidr) {
+				addToast('warning', m['netsuggest.None']());
+				return;
+			}
+			targets = cidr;
+			validateTargets();
+		} catch {
+			addToast('error', m['netsuggest.Error']());
+		}
 	}
 
 	// The synchronous scan endpoint holds the request open for the whole scan:
@@ -172,7 +198,7 @@
 			const res = await api.post<ScanResponse>('/scanner/scan', {
 				targets: targets.trim(),
 				community: community || 'public',
-				timeout: timeout || 2,
+				timeout: timeout || 10,
 				ports: portSpec.trim() || undefined,
 				credential_id: selectedCredentialId ?? undefined
 			}, { signal: scanController?.signal, timeoutMs: SCAN_TIMEOUT_MS });
@@ -328,9 +354,19 @@
 	<!-- Scan Form -->
 	<div class="bg-surface border border-border rounded-lg p-5 space-y-4">
 		<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-			<div class="md:col-span-1">
+		<div class="md:col-span-1">
+			<div class="flex items-center justify-between">
 				<label class="label text-sm">{m['scanner.Targets']()}</label>
-				<input
+				<button
+					type="button"
+					class="text-xs text-primary hover:underline"
+					disabled={scanning}
+					onclick={useLocalNetwork}
+				>
+					{m['netsuggest.Use My Network']()}
+				</button>
+			</div>
+			<input
 					type="text"
 					bind:value={targets}
 					placeholder={m['scanner.Targets Placeholder']()}
@@ -340,6 +376,14 @@
 				/>
 				{#if targetsError}
 					<p class="form-error">{targetsError}</p>
+				{:else if targetsInfo && targets.trim()}
+					<p class="text-xs text-muted mt-1 flex flex-wrap items-center gap-x-3">
+						<span>{m['scanner.Addresses Count']({ count: targetsInfo.addresses })}</span>
+						{#if targetsInfo.overSyncLimit}
+							<span class="text-warning">{m['scanner.Over Sync Limit']()}</span>
+						{/if}
+						<span>{m['scanner.Runs Locally Sync']()}</span>
+					</p>
 				{/if}
 			</div>
 			<div>
@@ -375,11 +419,12 @@
 				<input
 					type="number"
 					bind:value={timeout}
-					min="1"
+					min="5"
 					max="10"
 					class="input"
 					disabled={scanning}
 				/>
+				<p class="text-xs text-muted mt-1">{m['scanner.Timeout Hint']()}</p>
 			</div>
 		</div>
 		<div class="mt-2">

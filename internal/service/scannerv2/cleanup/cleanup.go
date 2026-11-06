@@ -50,7 +50,7 @@ type Service struct {
 // sqlc Queries bound to the dedicated heartbeat.db (nil ⇒ heartbeat pruning
 // is skipped, for tests/main-DB-only contexts). heartbeatDB is the raw
 // connection for the RFC3339-bound device_liveness delete (nil ⇒ skipped).
-// mainDB is the raw main-DB connection for the silent-device prune (nil ⇒
+// mainDB is the raw main-DB connection for the roamed-orphan prune (nil ⇒
 // device pruning is skipped, tests that don't exercise it). SweepIntervalHours
 // <=0 and BatchSize<=0 are defended in config.normalizeRetention.
 func New(queries *db.Queries, heartbeatQueries *db.Queries, heartbeatDB, mainDB *sql.DB, cfg config.RetentionConfig) *Service {
@@ -128,13 +128,14 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneHostServices(ctx)
 	s.pruneHostTLSCerts(ctx)
 	s.pruneProbeResults(ctx)
-	s.pruneSilentDevices(ctx)
-	// After the silent-device sweep (and any other device-row delete — reconcile's
-	// ghost cleanup runs on its own ticker): reap heartbeat configs whose device
-	// row is gone. The main DB does not enable SQLite's foreign_keys pragma, so
-	// the ON DELETE CASCADE on heartbeat_configs never fires (field-found
-	// 2026-10-08: two orphaned configs kept probing a vanished IP and logged
-	// ~2300 ERRORs/day between them).
+	s.pruneRoamedOrphans(ctx)
+	// After the roamed-orphan sweep (and any other device-row delete — the
+	// asset-archive engine keeps its rows, reconcile's ghost cleanup runs on its
+	// own ticker): reap heartbeat configs whose device row is gone. The main DB
+	// does not enable SQLite's foreign_keys pragma, so the ON DELETE CASCADE on
+	// heartbeat_configs never fires (field-found 2026-10-08: two orphaned
+	// configs kept probing a vanished IP and logged ~2300 ERRORs/day between
+	// them).
 	s.pruneOrphanHeartbeatConfigs(ctx)
 	// Storage health last: checkpoint/optimize are most useful right after
 	// the bulk deletes above, and the size/row samples reflect the post-prune
@@ -364,69 +365,42 @@ func (s *Service) pruneProbeResults(ctx context.Context) {
 	})
 }
 
-// silentDeviceCutoff returns the cutoff time for the "no heartbeat" silent-
-// device prune, keyed by MAC presence. macCutoff uses SilentDeviceDaysMAC
-// (default 7d); noMacCutoff uses SilentDeviceHoursNoMAC (default 24h). A field
-// of 0 means "use the default" (normalizeRetention fills them), never "disabled".
-func silentDeviceCutoffs(cfg config.RetentionConfig) (macCutoff, noMacCutoff time.Time) {
-	now := time.Now()
-	macDays := cfg.SilentDeviceDaysMAC
-	if macDays <= 0 {
-		macDays = 7
-	}
-	noMacHours := cfg.SilentDeviceHoursNoMAC
-	if noMacHours <= 0 {
-		noMacHours = 24
-	}
-	return now.AddDate(0, 0, -macDays), now.Add(time.Duration(-noMacHours) * time.Hour)
-}
-
-// pruneSilentDevices physically deletes scanner-discovered devices that have had
-// no heartbeat for longer than the configured window (issue #117). Two cases:
+// pruneRoamedOrphans physically deletes stale per-network duplicate rows: a
+// scanner_v2 device whose MAC is currently ONLINE on another row (it
+// DHCP-roamed to a different network) AND whose offline_since is older than
+// the settle window — the live copy exists elsewhere, so this row is an
+// identity leftover, not an asset. It is DELETED, not archived: archiving a
+// duplicate would seed the asset archive with ghost rows. Each deletion is
+// logged to change_log as device_removed (with a before snapshot + reason)
+// BEFORE the DELETE, so the audit trail survives the CASCADE. Skipped
+// entirely when mainDB is nil (tests that don't exercise device pruning).
 //
-//  1. Silent device: a scanner_v2 device whose status is 'offline' and whose
-//     offline_since is older than the threshold, 7d if it has a MAC (a real
-//     asset that may be genuinely gone), 24h if it has no MAC (an unreliable
-//     mac-less identity that's likely a transient/duplicate discovery).
-//  2. Roamed orphan: a scanner_v2 device whose MAC also exists ONLINE in another
-//     network (it DHCP-roamed) AND whose offline_since is older than
-//     roamedOrphanWindow, the device has a live copy elsewhere, so this row is
-//     a stale old-network leftover. The window is tighter than the silent
-//     window (the online copy proves the asset still exists).
-//
-// Manual devices (scan_source != 'scanner_v2') are NEVER auto-deleted, a human
-// added them, a human removes them (CMDB semantics). Each deletion is logged to
-// change_log as device_removed (with a before snapshot + reason) BEFORE the
-// DELETE, so the audit trail survives the CASCADE. Skipped entirely when mainDB
-// is nil (tests that don't exercise device pruning).
+// This is the ONLY remaining device-row delete in the sweeper: the
+// silent-device physical prune (offline 7d/24h → DELETE) was replaced by the
+// asset-archive engine (#663, internal/service/archive), which ARCHIVES
+// offline devices instead of deleting them.
 //
 // NOTE on cutoff formatting: offline_since is stored as RFC3339-ish TEXT (the
 // heartbeat/scan writers pass Go time.Time, which modernc serializes with a
-// space + monotonic suffix; the silent-device tests store RFC3339Nano). A
-// string-comparison `< ?` therefore needs the cutoff bound in a matching
-// RFC3339 shape, NOT a raw time.Time (which would sort wrong). Mirrors the
-// documented device_liveness prune (pruneDeviceLiveness). We use RFC3339Nano
-// for sub-second precision.
-func (s *Service) pruneSilentDevices(ctx context.Context) {
+// space + monotonic suffix; tests store RFC3339Nano). A string-comparison
+// `< ?` therefore needs the cutoff bound in a matching RFC3339 shape, NOT a
+// raw time.Time (which would sort wrong). Mirrors the documented
+// device_liveness prune (pruneDeviceLiveness). We use RFC3339Nano for
+// sub-second precision.
+func (s *Service) pruneRoamedOrphans(ctx context.Context) {
 	if s.mainDB == nil {
 		return
 	}
-	macCut, noMacCut := silentDeviceCutoffs(s.cfg)
 	// The roamed-orphan window: ~5 probe cycles at the 30s default tick ≈ 2.5min is
 	// too aggressive (a scan-in-progress could briefly show the old row offline).
 	// Use a safe floor (10min) so a genuine roam settles before the orphan is cut.
 	const roamedOrphanWindow = 10 * time.Minute
-	roamedCut := time.Now().Add(-roamedOrphanWindow)
-	// Format cutoffs as RFC3339Nano so the string `<` comparison against the
-	// stored offline_since TEXT sorts correctly (see the NOTE above).
-	macCutStr := macCut.UTC().Format(time.RFC3339Nano)
-	noMacCutStr := noMacCut.UTC().Format(time.RFC3339Nano)
-	roamedCutStr := roamedCut.UTC().Format(time.RFC3339Nano)
+	roamedCutStr := time.Now().Add(-roamedOrphanWindow).UTC().Format(time.RFC3339Nano)
 
 	var totalDeleted int64
 	for {
 		if ctx.Err() != nil {
-			s.logger.Info("cleanup: silent-device sweep cancelled", "deleted_so_far", totalDeleted)
+			s.logger.Info("cleanup: roamed-orphan sweep cancelled", "deleted_so_far", totalDeleted)
 			return
 		}
 		// Select one batch of candidate rows (id + identity for the change_log
@@ -434,26 +408,23 @@ func (s *Service) pruneSilentDevices(ctx context.Context) {
 		// failure on one row doesn't lose the audit trail for the others.
 		rows, err := s.mainDB.QueryContext(ctx, `
 			SELECT id, device_uuid, name, type, brand, model, mac_address, ip_address,
-			       network_id, offline_since,
-			   CASE
-			         WHEN mac_address != '' AND offline_since < ? THEN 'silent_mac'
-			         WHEN mac_address = ''  AND offline_since < ? THEN 'silent_no_mac'
-			         WHEN mac_address != '' AND offline_since < ? AND EXISTS (
-			           SELECT 1 FROM devices d2
-			           WHERE d2.mac_address = devices.mac_address
-			             AND d2.id != devices.id
-			             AND d2.status = 'online'
-			         ) THEN 'roamed_orphan'
-			       END AS reason
+			       network_id, offline_since
 			FROM devices
 			WHERE scan_source = 'scanner_v2'
 			  AND status = 'offline'
 			  AND offline_since IS NOT NULL
-			  AND reason IS NOT NULL
+			  AND mac_address != ''
+			  AND offline_since < ?
+			  AND EXISTS (
+			    SELECT 1 FROM devices d2
+			    WHERE d2.mac_address = devices.mac_address
+			      AND d2.id != devices.id
+			      AND d2.status = 'online'
+			  )
 			LIMIT ?`,
-			macCutStr, noMacCutStr, roamedCutStr, s.batch)
+			roamedCutStr, s.batch)
 		if err != nil {
-			s.logger.Warn("cleanup: silent-device select failed", "error", err)
+			s.logger.Warn("cleanup: roamed-orphan select failed", "error", err)
 			return
 		}
 		type candidate struct {
@@ -465,15 +436,14 @@ func (s *Service) pruneSilentDevices(ctx context.Context) {
 			mac, ip      string
 			networkID    sql.NullInt64
 			offlineSince sql.NullTime
-			reason       string
 		}
 		var batch []candidate
 		for rows.Next() {
 			var c candidate
 			var netID sql.NullInt64
 			if err := rows.Scan(&c.id, &c.uuid, &c.name, &c.devType, &c.brand, &c.model,
-				&c.mac, &c.ip, &netID, &c.offlineSince, &c.reason); err != nil {
-				s.logger.Warn("cleanup: silent-device scan failed", "error", err)
+				&c.mac, &c.ip, &netID, &c.offlineSince); err != nil {
+				s.logger.Warn("cleanup: roamed-orphan scan failed", "error", err)
 				break
 			}
 			c.networkID = netID
@@ -483,10 +453,10 @@ func (s *Service) pruneSilentDevices(ctx context.Context) {
 
 		for _, c := range batch {
 			s.logDeviceRemoved(ctx, c.id, c.uuid, c.name, c.devType, c.brand, c.model,
-				c.mac, c.ip, c.networkID, c.reason)
+				c.mac, c.ip, c.networkID, "roamed_orphan")
 			if err := s.execWithBusyRetry(ctx, `DELETE FROM devices WHERE id = ?`, c.id); err != nil {
-				s.logger.Warn("cleanup: silent-device delete failed",
-					"device_id", c.id, "ip", c.ip, "mac", c.mac, "reason", c.reason, "error", err)
+				s.logger.Warn("cleanup: roamed-orphan delete failed",
+					"device_id", c.id, "ip", c.ip, "mac", c.mac, "error", err)
 				continue
 			}
 			totalDeleted++
@@ -498,10 +468,7 @@ func (s *Service) pruneSilentDevices(ctx context.Context) {
 		}
 	}
 	if totalDeleted > 0 {
-		s.logger.Info("cleanup: pruned silent devices",
-			"count", totalDeleted,
-			"silent_mac_days", s.cfg.SilentDeviceDaysMAC,
-			"silent_no_mac_hours", s.cfg.SilentDeviceHoursNoMAC)
+		s.logger.Info("cleanup: pruned roamed-orphan duplicates", "count", totalDeleted)
 	}
 }
 

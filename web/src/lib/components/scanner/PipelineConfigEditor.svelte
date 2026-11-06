@@ -14,6 +14,7 @@
 	import { ChevronDown, Info } from '@lucide/svelte';
 	import PortListEditor from '$lib/components/scanner/PortListEditor.svelte';
 	import { portTemplates } from '$lib/portTemplates';
+	import { backendDefaultPipeline } from '$lib/utils/pipelineDefaults';
 
 	let {
 		config = $bindable(defaultPipelineConfig()),
@@ -23,15 +24,10 @@
 		onchange?: () => void;
 	} = $props();
 
+	// The editor's fallback = the backend's DefaultPipelineConfig, shared
+	// and pinned in $lib/utils/pipelineDefaults (#685).
 	function defaultPipelineConfig(): PipelineConfig {
-		return {
-			icmp: { enabled: true, timeout: 2 },
-			snmp: { enabled: true, community: 'public', timeout: 5 },
-			port_scan: { enabled: true, ports: '22,80,443,8080,9100', scan_type: 'connect' },
-			service_detect: { enabled: true },
-			prometheus: { enabled: true, ports: '9090' },
-			node_exporter: { enabled: true }
-		};
+		return backendDefaultPipeline();
 	}
 
 	// --- Expanded state ---
@@ -52,14 +48,16 @@
 				config.prometheus = { ...config.prometheus, enabled: false };
 				config.node_exporter = { enabled: false };
 				break;
-			case 'full':
-				config.icmp = { enabled: true, timeout: 2 };
-				config.snmp = { enabled: true, community: config.snmp.community || 'public', timeout: 5 };
-				config.port_scan = { enabled: true, ports: config.port_scan.ports || '22,80,443,8080,9100', scan_type: 'connect' };
-				config.service_detect = { enabled: true };
-				config.prometheus = { enabled: true, ports: config.prometheus.ports || '9090' };
-				config.node_exporter = { enabled: true };
+			case 'full': {
+				const def = backendDefaultPipeline();
+				config.icmp = { ...def.icmp };
+				config.snmp = { enabled: true, community: config.snmp.community || def.snmp.community, timeout: def.snmp.timeout };
+				config.port_scan = { enabled: true, ports: config.port_scan.ports || def.port_scan.ports, scan_type: def.port_scan.scan_type };
+				config.service_detect = { ...def.service_detect };
+				config.prometheus = { enabled: true, ports: config.prometheus.ports || def.prometheus.ports };
+				config.node_exporter = { ...def.node_exporter };
 				break;
+			}
 			case 'prometheus':
 				config.icmp = { enabled: true, timeout: 2 };
 				config.snmp = { ...config.snmp, enabled: false };

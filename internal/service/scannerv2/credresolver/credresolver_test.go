@@ -203,3 +203,55 @@ func TestCacheTTL_Is30Seconds(t *testing.T) {
 		t.Errorf("cacheTTL = %v, want 30s (changing it has scan-throughput implications)", cacheTTL)
 	}
 }
+
+// TestResolveByID_IsEngineAlias (#697 coverage headroom): the engine-facing
+// alias shares Resolve's body — same ErrDisabled/ErrNotFound/success paths.
+func TestResolveByID_IsEngineAlias(t *testing.T) {
+	r, id := newTestResolver(t, scannerv2.SNMPLevelAuthPriv)
+
+	got, err := r.ResolveByID(context.Background(), id)
+	if err != nil {
+		t.Fatalf("ResolveByID(%d): %v", id, err)
+	}
+	if got == nil || got.ID != id {
+		t.Errorf("ResolveByID returned %+v (id %d), want the stored credential", got, id)
+	}
+
+	// Error paths route through the same body.
+	if _, err := r.ResolveByID(context.Background(), 0); err != ErrNotFound {
+		t.Errorf("ResolveByID(0): err = %v, want ErrNotFound", err)
+	}
+	var nilResolver *Resolver
+	if _, err := nilResolver.ResolveByID(context.Background(), 1); err != ErrDisabled {
+		t.Errorf("nil resolver: err = %v, want ErrDisabled", err)
+	}
+}
+
+// TestInvalidateAll (#697 coverage headroom): the master-key-rotation hook
+// drops every cached entry, so the next read re-fetches from the DB.
+func TestInvalidateAll(t *testing.T) {
+	r, id := newTestResolver(t, scannerv2.SNMPLevelAuthPriv)
+
+	// Prime the cache.
+	if _, err := r.Resolve(context.Background(), id); err != nil {
+		t.Fatalf("prime: %v", err)
+	}
+	r.mu.Lock()
+	cached := len(r.cache)
+	r.mu.Unlock()
+	if cached != 1 {
+		t.Fatalf("cache after prime = %d entries, want 1", cached)
+	}
+
+	r.InvalidateAll()
+	r.mu.Lock()
+	cached = len(r.cache)
+	r.mu.Unlock()
+	if cached != 0 {
+		t.Errorf("cache after InvalidateAll = %d entries, want 0", cached)
+	}
+
+	// nil receiver must not panic (rotation hook may run on a disabled vault).
+	var nilResolver *Resolver
+	nilResolver.InvalidateAll()
+}
