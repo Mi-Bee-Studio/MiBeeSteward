@@ -1,0 +1,17 @@
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mibee-steward.fullname" . }}-data
+  labels:
+    {{- include "mibee-steward.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce     # SQLite WAL: single-writer, RWO is the contract
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}
