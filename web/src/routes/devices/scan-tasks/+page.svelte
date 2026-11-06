@@ -11,6 +11,7 @@
 <script lang="ts">
 	import { api } from '$lib/api/client';
 	import { m } from '$lib/i18n-paraglide';
+	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
 	import { addToast } from '$lib/stores/toast';
 	import { getErrorMessage } from '$lib/utils/error';
@@ -106,7 +107,13 @@
 	// --- Trigger feedback ---
 	let triggeringId = $state<number | null>(null);
 	let cancellingId = $state<number | null>(null);
-	let activeRuns = $state<Map<number, ScanRun>>(new Map());
+	// TrackedRun = a real run row, or the client-side stub shown between the
+	// trigger POST and the run row landing in the DB (scheduler pickup). The
+	// stub flag is the "queued" discriminator: id-less synthetic runs must NOT
+	// render as "Running" (nothing is scanning yet) nor offer Cancel (there is
+	// no run to cancel; gocron's RunNow is fire-and-forget).
+	type TrackedRun = ScanRun & { stub?: boolean };
+	let activeRuns = $state<Map<number, TrackedRun>>(new Map());
 	let pollingTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
 	// The form's pre-filled pipeline = the backend's DefaultPipelineConfig,
@@ -136,6 +143,17 @@
 			// hint degrades to the unmatched wording
 		}
 		await fetchTasks();
+
+		// #695: periodic silent refresh while the page is visible. An open page
+		// otherwise never sees out-of-band activity: cron-tick runs, triggers
+		// from another tab/the API, or a slow scheduler pickup landing after
+		// this page gave up waiting. The auto-continue loop inside fetchTasks
+		// attaches polling (and thus the completion toast) to whatever it finds.
+		refreshTimer = setInterval(() => {
+			if (document.visibilityState !== 'visible') return;
+			if (formOpen || deleteOpen) return; // don't reorder under an open modal
+			fetchTasks(true);
+		}, 15000);
 	});
 
 	// Executor hint mirrors the backend's ResolveNetworkFromTargets: exactly
@@ -154,19 +172,28 @@
 
 	// Clear all in-flight poll timers on unmount so navigating away mid-run
 	// does not keep firing requests (and writing toasts/state) against a
-	// destroyed component. Each timer otherwise self-reschedules for up to ~5min.
+	// destroyed component. Each timer otherwise self-reschedules for up to
+	// ~5min fast-phase + the slow fallback phase (#695).
+	let refreshTimer: ReturnType<typeof setInterval> | null = null;
 	onDestroy(() => {
 		for (const timer of pollingTimers.values()) {
 			clearTimeout(timer);
 		}
 		pollingTimers.clear();
 		if (searchTimer) clearTimeout(searchTimer);
+		if (refreshTimer) clearInterval(refreshTimer);
 	});
 
 	// --- Data fetching ---
-	async function fetchTasks() {
-		loading = true;
-		error = '';
+	// silent=true (the #695 periodic refresh) skips the skeleton/error toggles:
+	// a background refresh must not flash the table or clobber page state on a
+	// transient blip, and the auto-continue loop below still picks up tasks
+	// that started running out-of-band (cron tick, another tab, API trigger).
+	async function fetchTasks(silent = false) {
+		if (!silent) {
+			loading = true;
+			error = '';
+		}
 		try {
 			const params = new URLSearchParams();
 			if (searchQuery) params.set('search', searchQuery);
@@ -178,9 +205,9 @@
 			tasks = res.tasks || [];
 			total = res.total || 0;
 		} catch (err: unknown) {
-			error = getErrorMessage(err);
+			if (!silent) error = getErrorMessage(err);
 		} finally {
-			loading = false;
+			if (!silent) loading = false;
 		}
 
 		// Auto-detect running tasks and start polling
@@ -414,9 +441,11 @@
 			}
 			await api.post(`/scanner/tasks/${task.id}/trigger`, {});
 			addToast('info', m['scanner.Scan Triggered']({ name: task.name }));
-			// Start polling for run status
-			const stubRun: ScanRun = {
-				id: 0, task_id: task.id, status: 'running',
+			// Start polling for run status. The stub carries stub=true: until the
+			// run row lands in the DB (scheduler pickup), the row must read
+			// "Queued", not "Running" — and offer no Cancel (#695).
+			const stubRun: TrackedRun = {
+				id: 0, task_id: task.id, status: 'running', stub: true,
 				total_hosts: 0, alive_hosts: 0, new_hosts: 0, updated_hosts: 0,
 				duration_ms: 0, created_at: new Date().toISOString()
 			};
@@ -438,7 +467,20 @@
 		// (once, not per failure). Reset on any successful poll (#65).
 		let consecutiveErrors = 0;
 		let errorToasted = false;
-		const maxPolls = 100; // ~300s with 3s interval
+		// #695 three-phase budget. Phase 1 (fast): 100×3s ≈ 5min waiting for
+		// the run row. Phase 2 (fallback): rig41 has shown scheduler pickups
+		// of 2.5-5.5min under load — instead of giving up (which silently
+		// killed the completion toast), drop to 15s polling and keep watching
+		// for up to 2h total. Phase 3: give up, pointing at the runs list.
+		// Once a run row HAS appeared, stay on the fast cadence: only the
+		// status flips matter there, and a slow cadence would delay the
+		// completion toast.
+		const FAST_POLLS = 100; // ~300s at 3s
+		const SLOW_POLLS = 480; // ~2h more at 15s
+		const FAST_INTERVAL = 3000;
+		const SLOW_INTERVAL = 15000;
+		let slowPhaseToasted = false;
+		let seenRun = false;
 		const poll = async () => {
 			pollCount++;
 			try {
@@ -446,25 +488,26 @@
 				consecutiveErrors = 0;
 				errorToasted = false;
 				if (res.runs && res.runs.length > 0) {
+					seenRun = true;
 					const run = res.runs[0];
 					if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
 						stopPolling(taskId);
 						activeRuns.set(taskId, run);
 						activeRuns = new Map(activeRuns);
-					if (run.status === 'completed') {
-						const firstScan = firstScanCandidates.delete(taskId) && run.alive_hosts > 0;
-						if (firstScan) {
-							// #687: the first scan deserves a way out — a
-							// longer-lived toast with a View-devices CTA.
-							addToast('success', m['scanner.First Scan Done']({ count: run.alive_hosts }), {
-								label: m['scanner.View Devices'](),
-								callback: () => goto('/devices'),
-								timeout: 15000
-							});
-						} else {
-							addToast('success', m['scanner.Scan Done']({ alive: run.alive_hosts, total: run.total_hosts, new: run.new_hosts, duration: run.duration_ms }));
-						}
-					} else if (run.status === 'cancelled') {
+						if (run.status === 'completed') {
+							const firstScan = firstScanCandidates.delete(taskId) && run.alive_hosts > 0;
+							if (firstScan) {
+								// #687: the first scan deserves a way out — a
+								// longer-lived toast with a View-devices CTA.
+								addToast('success', m['scanner.First Scan Done']({ count: run.alive_hosts }), {
+									label: m['scanner.View Devices'](),
+									callback: () => goto('/devices'),
+									timeout: 15000
+								});
+							} else {
+								addToast('success', m['scanner.Scan Done']({ alive: run.alive_hosts, total: run.total_hosts, new: run.new_hosts, duration: run.duration_ms }));
+							}
+						} else if (run.status === 'cancelled') {
 							addToast('info', m['scanner.Scan Cancelled']());
 						} else {
 							addToast('error', m['scanner.Scan Failed']({ error: run.error_message || 'unknown error' }));
@@ -478,17 +521,26 @@
 						activeRuns.set(taskId, run);
 						activeRuns = new Map(activeRuns);
 					}
-				} else if (pollCount >= maxPolls) {
-					stopPolling(taskId);
-					activeRuns.delete(taskId);
-					activeRuns = new Map(activeRuns);
-					// No run row appeared after ~5min of polling. The backend now
-					// records a failed run when the engine is unavailable (so this
-					// path is rarer), but a scheduler that never picked up the
-					// trigger can still land here: point the user at the runs list
-					// / server logs rather than claiming the scheduler is unwired.
-					addToast('warning', m['scanner.Scan No Run']());
-					fetchTasks();
+				} else if (!seenRun) {
+					// No run row yet — the scheduler hasn't picked the trigger up.
+					if (pollCount >= FAST_POLLS && !slowPhaseToasted) {
+						// Phase 1→2: one heads-up, then keep watching at the slow
+						// cadence. The queued badge stays up the whole time.
+						slowPhaseToasted = true;
+						addToast('warning', m['scanner.Slow Pickup']());
+					}
+					if (pollCount >= FAST_POLLS + SLOW_POLLS) {
+						// Phase 3: no run row after ~2h. The backend records a
+						// failed run when the engine is unavailable (so this is
+						// rare), but a scheduler that never picked up the trigger
+						// can still land here: point the user at the runs list /
+						// server logs rather than claiming the scheduler is unwired.
+						stopPolling(taskId);
+						activeRuns.delete(taskId);
+						activeRuns = new Map(activeRuns);
+						addToast('warning', m['scanner.Scan No Run']());
+						fetchTasks();
+					}
 				}
 			} catch (err: unknown) {
 				// Poll errors are non-critical (keep trying), but after several in
@@ -501,10 +553,11 @@
 				}
 			}
 			if (pollingTimers.has(taskId)) {
-				pollingTimers.set(taskId, setTimeout(poll, 3000));
+				const interval = seenRun || pollCount < FAST_POLLS ? FAST_INTERVAL : SLOW_INTERVAL;
+				pollingTimers.set(taskId, setTimeout(poll, interval));
 			}
 		};
-		pollingTimers.set(taskId, setTimeout(poll, 3000));
+		pollingTimers.set(taskId, setTimeout(poll, FAST_INTERVAL));
 	}
 
 	function stopPolling(taskId: number) {
@@ -696,11 +749,23 @@
 									</button>
 								</td>
 
-								<!-- Last run -->
-								<td class="px-4 py-3 text-xs text-text-muted whitespace-nowrap">
-									{#if activeRuns.has(task.id)}
-										{@const run = activeRuns.get(task.id)}
-										{#if run?.status === 'running'}
+									<!-- Last run -->
+									<td class="px-4 py-3 text-xs text-text-muted whitespace-nowrap">
+										{#if activeRuns.has(task.id)}
+											{@const run = activeRuns.get(task.id)}
+											{#if run?.status === 'running' && run.stub}
+												<!-- #695: triggered but the run row hasn't landed yet
+												     (scheduler pickup). Honest "queued" state instead
+												     of claiming the scan is already running. -->
+												<span class="inline-flex items-center gap-1.5 text-text-muted"
+													title={m['scanner.Queued Hint']()}>
+													<svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+														<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+														<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+													</svg>
+													{m['scanner.Queued']()}
+												</span>
+											{:else if run?.status === 'running'}
 											<div>
 												<span class="inline-flex items-center gap-1.5 text-accent">
 													<svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -749,7 +814,7 @@
 										{m['scanner.Trigger']()}
 									{/if}
 											</button>
-											{#if activeRuns.has(task.id) && activeRuns.get(task.id)?.status === 'running'}
+											{#if activeRuns.has(task.id) && activeRuns.get(task.id)?.status === 'running' && !activeRuns.get(task.id)?.stub}
 												<button
 													onclick={() => cancelTask(task.id)}
 													disabled={cancellingId === task.id}
