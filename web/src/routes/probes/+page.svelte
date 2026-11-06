@@ -40,6 +40,7 @@
 		ProbeQualityReport,
 		ProbeQualityCategory,
 		ProbeQualityGroup,
+ProbeQualityTarget,
 		ProbeQualityVantage,
 		ProbeQualityTrack,
 		ProbeQualityHistoryReport,
@@ -507,7 +508,7 @@
 		return map;
 	});
 
-	function trendChartOption(g: ProbeQualityHistoryGroup): EChartsOption {
+	function trendChartOption(g: ProbeQualityHistoryGroup): import('echarts').EChartsCoreOption {
 		const series = (g.series ?? []).map((s: ProbeQualityHistorySeries) => {
 			const color = historySeriesColors.get(s.vantage);
 			return {
@@ -1367,7 +1368,7 @@
 	// target usually sit within a few ms of each other, so agent tracks draw
 	// dashed with their own symbol and hover focuses one series: solid lines
 	// stacking on solid lines would read as a single line.
-	const latencyChartOption = $derived.by<EChartsOption>(() => {
+	const latencyChartOption = $derived.by<import('echarts').EChartsCoreOption>(() => {
 		const series = vantageTracks.map((track) => {
 			const isCenter = track.vantage === 'center';
 			const color = trackColors.get(track.vantage);

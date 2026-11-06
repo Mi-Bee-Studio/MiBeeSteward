@@ -606,7 +606,8 @@ export function deviceTypeBucket(type: string): DeviceTypeBucket {
  * routers), whatever vendor string the scanner reported. Everything else
  * buckets by its type/vendor string.
  */
-export function typeBucketOf(gn: Pick<GraphNode, 'layer' | 'value'>): DeviceTypeBucket {
+type TypeBucketInput = Pick<GraphNode, 'layer'> & { value: Pick<TopoNode, 'inferred_type' | 'type'> };
+export function typeBucketOf(gn: TypeBucketInput): DeviceTypeBucket {
 	if (gn.layer === 'root' || gn.layer === 'core') return 'network';
 	return deviceTypeBucket(gn.value.inferred_type || gn.value.type || 'other');
 }
@@ -623,14 +624,14 @@ export const TYPE_BUCKET_COLORS: Record<DeviceTypeBucket, TokenColor> = {
 };
 
 /** Fill color for a node in color-by-type mode (layer-aware). */
-export function typeFillColor(gn: Pick<GraphNode, 'layer' | 'value'>): TokenColor {
+export function typeFillColor(gn: TypeBucketInput): TokenColor {
 	return TYPE_BUCKET_COLORS[typeBucketOf(gn)];
 }
 
 /** Per-bucket node counts for the type legend, in display order, zeros
  *  omitted — only buckets actually present render as chips. */
 export function typeBucketCounts(
-	nodes: Array<Pick<GraphNode, 'layer' | 'value'>>
+	nodes: Array<TypeBucketInput>
 ): Array<{ bucket: DeviceTypeBucket; count: number }> {
 	const counts = new Map<DeviceTypeBucket, number>();
 	for (const gn of nodes) {
@@ -646,7 +647,7 @@ export function typeBucketCounts(
  * chip are on. One shared check so the 2D and 3D canvases agree.
  */
 export function nodeFilterVisible(
-	gn: Pick<GraphNode, 'layer' | 'value'>,
+	gn: TypeBucketInput,
 	layerVisible: Record<TopoLayer, boolean>,
 	bucketVisible: Record<DeviceTypeBucket, boolean>
 ): boolean {

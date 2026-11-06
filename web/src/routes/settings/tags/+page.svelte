@@ -61,11 +61,11 @@
 		busy = true;
 		try {
 			await createTag({ key: formKey, name: formName, color: formColor, description: formDesc });
-			addToast(m['tags.Created'](), 'success');
+			addToast('success', m['tags.Created']());
 			createOpen = false;
 			await load();
 		} catch (e) {
-			addToast(e instanceof Error ? e.message : String(e), 'error');
+			addToast('error', e instanceof Error ? e.message : String(e));
 		} finally {
 			busy = false;
 		}
@@ -76,11 +76,11 @@
 		busy = true;
 		try {
 			await updateTag(editTarget.id, { name: formName, color: formColor, description: formDesc });
-			addToast(m['tags.Updated'](), 'success');
+			addToast('success', m['tags.Updated']());
 			editTarget = null;
 			await load();
 		} catch (e) {
-			addToast(e instanceof Error ? e.message : String(e), 'error');
+			addToast('error', e instanceof Error ? e.message : String(e));
 		} finally {
 			busy = false;
 		}
@@ -91,11 +91,11 @@
 		busy = true;
 		try {
 			await deleteTag(deleteTarget.id);
-			addToast(m['tags.Deleted'](), 'success');
+			addToast('success', m['tags.Deleted']());
 			deleteTarget = null;
 			await load();
 		} catch (e) {
-			addToast(e instanceof Error ? e.message : String(e), 'error');
+			addToast('error', e instanceof Error ? e.message : String(e));
 		} finally {
 			busy = false;
 		}

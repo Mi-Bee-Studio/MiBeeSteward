@@ -59,7 +59,7 @@
 		if (!device?.network_id) return;
 		try {
 			const res = await api.get<{ networks: Network[]; total: number }>('/networks');
-			const net = (res.networks || []).find((n) => n.id === device.network_id);
+			const net = (res.networks || []).find((n) => n.id === device!.network_id);
 			remoteManaged = !!net?.agent_id;
 		} catch {
 			remoteManaged = false;
@@ -2186,7 +2186,7 @@
 							? 'bg-primary text-inverse'
 							: 'bg-surface border border-border text-muted hover:text-text hover:border-primary'}"
 				>
-					{m[`heartbeat.Last ${preset}` as keyof typeof m]()}
+					{(m[`heartbeat.Last ${preset}` as keyof typeof m] as () => string)()}
 				</button>
 			{/each}
 			<div class="flex items-center gap-2 ml-2">

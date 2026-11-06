@@ -119,7 +119,7 @@ describe('topology3dLayout (#635 PR2)', () => {
 		};
 		const scene = buildTopologyScene(
 			buildGraph(g),
-			opts({ bucketVisible: { network: true, camera: true, computer: false, mobile: true, other: true } })
+			opts({ bucketVisible: { network: true, camera: true, computer: false, mobile: true, iot: true, other: true } })
 		);
 		// The pc (computer bucket) is filtered out; its edge drops with it.
 		expect(scene.nodes.find((n) => n.id === '3')).toBeUndefined();

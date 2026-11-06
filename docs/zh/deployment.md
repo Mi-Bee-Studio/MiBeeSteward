@@ -26,6 +26,14 @@ flowchart TD
     F -->|"否"| H["单机二进制部署：systemd 管理"]
 ```
 
+### 打包路线与非目标（决策记录，2026-10-24）
+
+已交付：nfpm 产线的 **deb/rpm**（amd64/arm64/armhf，#620）与 OpenWrt ipk/apk/tar.gz 家族；apt/yum **软件仓库**在 deb/rpm 收到真实用户反馈前排期（#621），Home Assistant add-on 与 Helm chart 同样等待需求信号（#622、#623）。
+
+按需备选池（nfpm 同一路径，信号出现时产出成本低）：**pacman**（Arch/Manjaro；只出产物不进 AUR 维护）、**Alpine apk**（与 OpenWrt 24.10+ 包同属 apk-tools 家族但仓库/ABI 策略各自独立；静态二进制使产物近乎零成本）、**nix flake**（独立路径非 nfpm；群体小众）。
+
+明确不做：**snap**（扫描器需要 raw socket 做 ICMP/ARP，沙箱与产品天性相克）、**flatpak / AppImage**（面向 GUI 应用的格式；本产品是无头服务）、**Homebrew**（macOS 非目标平台）、**群晖 SPK / 威联通 QPKG**（每厂商 SDK 锁定与签名负担，而 NAS 上的 Docker 已服务该场景）。
+
 ## 二进制部署
 
 ### 下载

@@ -41,9 +41,9 @@
 		Archive,
 		Fingerprint
 	} from '@lucide/svelte';
-	import type { Component } from 'svelte';
+	import type { Component, Snippet } from 'svelte';
 
-	let { children } = $props<{ children: () => void }>();
+	let { children }: { children: Snippet } = $props();
 
 	let sidebarOpen = $state(false);
 
@@ -261,7 +261,7 @@
 				{#if gi > 0}
 					<div class="my-2 mx-3 border-t border-border"></div>
 				{/if}
-				<p class="nav-group-label">{m[group.labelKey]()}</p>
+				<p class="nav-group-label">{(m[group.labelKey as keyof typeof m] as () => string)()}</p>
 				{#each group.items as item (item.path)}
 					{@const active = $page.url.pathname === item.path || (item.path !== '/' && $page.url.pathname.startsWith(item.path + '/'))}
 					<a

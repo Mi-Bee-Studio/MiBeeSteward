@@ -155,7 +155,7 @@ describe('Dashboard page', () => {
 		// the whole dashboard on the loading skeleton (seen live 2026-09-17:
 		// banner + skeleton + custom widgets on screen simultaneously).
 		const origGet = api.get;
-		api.get = vi.fn((url: string) => {
+		api.get = vi.fn((url: string): Promise<unknown> => {
 			if (url.startsWith('/dashboard/overview')) {
 				return Promise.resolve({
 					devices: {
@@ -172,7 +172,7 @@ describe('Dashboard page', () => {
 				});
 			}
 			return origGet(url);
-		});
+		}) as unknown as typeof api.get;
 
 		try {
 			const { container } = render(Dashboard);

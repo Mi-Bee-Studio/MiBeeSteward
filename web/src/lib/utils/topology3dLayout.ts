@@ -77,7 +77,7 @@ export interface SceneNodeSpec {
 	graphNode?: GraphNode;
 	radius: number;
 	fill: TokenColor;
-	ring: TokenColor | null;
+	ring: { color: TokenColor; width: number } | null;
 	labelVisible: boolean;
 	dimmed: boolean;
 	/** Force-simulation position target. */
@@ -106,6 +106,8 @@ export interface SceneOptions {
 	labelDensity: 'all' | 'core' | 'none';
 	/** Fill colors: by hierarchy layer (default) or by device-type bucket. */
 	colorMode: 'layer' | 'type';
+	/** Type-bucket chip filters (#659): a node renders only when its bucket is on. */
+	bucketVisible: Record<DeviceTypeBucket, boolean>;
 }
 
 /**

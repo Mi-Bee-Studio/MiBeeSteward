@@ -16,6 +16,8 @@ interface User {
 	username: string;
 	email: string;
 	role: string;
+	/** First-login forced password change flag (login response carries it). */
+	must_change_password?: boolean;
 }
 function createAuthStore() {
 	// Try to restore from localStorage on init

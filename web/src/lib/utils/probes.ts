@@ -25,7 +25,7 @@ export type ProbeCategory = (typeof PROBE_CATEGORIES)[number];
  *              device (device_id > 0)
  *   external = manual, unbound business targets
  */
-export function probeCategory(t: Pick<ProbeTarget, 'source' | 'device_id'>): ProbeCategory {
+export function probeCategory(t: Partial<Pick<ProbeTarget, 'source' | 'device_id'>>): ProbeCategory {
 	if (t.source === 'system') return 'quality';
 	if (t.source === 'auto' || (t.device_id != null && t.device_id > 0)) return 'lan';
 	return 'external';

@@ -32,7 +32,8 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 if (typeof Element.prototype.animate !== 'function') {
 	Element.prototype.animate = function (
 		_keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
-		_options?: number | KeyframeAnimationOptions
+		_options?: unknown
+
 	) {
 		return {
 			finished: Promise.resolve(),
@@ -42,7 +43,7 @@ if (typeof Element.prototype.animate !== 'function') {
 			play() {},
 			reverse() {}
 		};
-	};
+	} as unknown as typeof Element.prototype.animate;
 }
 
 afterEach(() => {
