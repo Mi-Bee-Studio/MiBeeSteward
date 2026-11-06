@@ -102,19 +102,19 @@ func IsValidDeviceType(t string) bool {
 // Request types
 
 type CreateDeviceRequest struct {
-	Name           string         `json:"name"`
-	Type           string         `json:"type"`
-	Brand          string         `json:"brand"`
-	Model          string         `json:"model"`
-	Location       string         `json:"location"`
-	Purpose        string         `json:"purpose"`
-	Description    string         `json:"description"`
-	IPAddress      string         `json:"ip_address"`
-	MACAddress     string         `json:"mac_address"`
-	SerialNumber   string         `json:"serial_number"`
-	PurchaseDate   string         `json:"purchase_date"`
-	WarrantyExpiry string         `json:"warranty_expiry"`
-	Tags           string         `json:"tags"`
+	Name           string `json:"name"`
+	Type           string `json:"type"`
+	Brand          string `json:"brand"`
+	Model          string `json:"model"`
+	Location       string `json:"location"`
+	Purpose        string `json:"purpose"`
+	Description    string `json:"description"`
+	IPAddress      string `json:"ip_address"`
+	MACAddress     string `json:"mac_address"`
+	SerialNumber   string `json:"serial_number"`
+	PurchaseDate   string `json:"purchase_date"`
+	WarrantyExpiry string `json:"warranty_expiry"`
+	Tags           string `json:"tags"`
 	// Asset-ledger fields (#669). A manual asset with neither IP nor MAC uses
 	// asset_no as its human-facing identity (network_id is NULL for manual
 	// rows, and SQLite unique indexes treat NULLs as distinct, so multiple
@@ -230,12 +230,12 @@ type DeviceResponse struct {
 	// lent/retired (schema CHECK); owner is a free-text responsible person;
 	// asset_no is the org's asset number — for a manual asset with neither IP
 	// nor MAC it is the only identity.
-	LifecycleState string `json:"lifecycle_state"`
-	Owner          string `json:"owner"`
-	AssetNo        string `json:"asset_no"`
-	CreatedAt                  time.Time  `json:"created_at"`
-	UpdatedAt                  time.Time  `json:"updated_at"`
-	ScanSource                 string     `json:"scan_source"`
+	LifecycleState string    `json:"lifecycle_state"`
+	Owner          string    `json:"owner"`
+	AssetNo        string    `json:"asset_no"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	ScanSource     string    `json:"scan_source"`
 	// NetworkID/NetworkName identify the logical network this device was
 	// discovered on (distributed/multi-LAN). NetworkID is nil for legacy
 	// unresolved devices; NetworkName is the human label from the networks table
