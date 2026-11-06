@@ -71,6 +71,10 @@ func (h *DeviceHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusBadRequest, "device name is required")
 			return
 		}
+		if errors.Is(err, service.ErrInvalidLifecycleState) {
+			Error(w, http.StatusBadRequest, "invalid lifecycle_state (in_use/spare/repair/lent/retired)")
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to create device")
 		return
 	}
@@ -163,6 +167,12 @@ func (h *DeviceHandler) List(w http.ResponseWriter, r *http.Request) {
 			filter.TagID = &id
 		}
 	}
+	// lifecycle_state (#669): exact match on the asset-ledger lifecycle.
+	// Empty/unknown values fall back to "no filter" (the '' disable-bind in
+	// the repo query), same leniency as status/type.
+	if v := q.Get("lifecycle_state"); domain.ValidLifecycleState(v) {
+		filter.LifecycleState = v
+	}
 	// Object-level network scope (#138 Phase 2): a restricted caller only sees
 	// their granted networks. Applied in addition to any explicit network_id.
 	if scope := domain.ScopeFromContext(r.Context()); !scope.IsGlobal() {
@@ -214,6 +224,10 @@ func (h *DeviceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, service.ErrInvalidIP) {
 			Error(w, http.StatusBadRequest, "invalid IP address format")
+			return
+		}
+		if errors.Is(err, service.ErrInvalidLifecycleState) {
+			Error(w, http.StatusBadRequest, "invalid lifecycle_state (in_use/spare/repair/lent/retired)")
 			return
 		}
 		Error(w, http.StatusInternalServerError, "failed to update device")

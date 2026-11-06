@@ -328,6 +328,7 @@ paths:
         - {name: network_id, in: query, schema: {type: integer}}
         - {name: archived, in: query, schema: {type: string, enum: ["", only, all]}, description: "Asset-library slice (#663). Default (empty) hides archived rows; only = archive view; all = both"}
         - {name: tag_id, in: query, schema: {type: integer}, description: "Filter to devices carrying this dictionary tag (#665)"}
+        - {name: lifecycle_state, in: query, schema: {type: string, enum: [in_use, spare, repair, lent, retired]}, description: "Exact lifecycle filter (#669); absent = all states"}
       responses:
         "200":
           description: Device list envelope
@@ -2140,6 +2141,9 @@ components:
         online_since: {type: string, format: date-time, nullable: true, description: "Continuous-online clock start (archive restore timer)"}
         periodic: {type: boolean, description: "Learned return cycle (#664) — exempt from auto-archive"}
         periodic_cycle_days: {type: number, description: "Learned cycle length in days (0 = none)"}
+        lifecycle_state: {type: string, enum: [in_use, spare, repair, lent, retired], description: "Asset-ledger lifecycle (#669)"}
+        owner: {type: string, description: "Free-text responsible person (#669)"}
+        asset_no: {type: string, description: "Organization asset number; the human identity for IP-less manual assets (#669)"}
         dictionary_tags:
           type: array
           description: Tag dictionary entries attached to this device (#665)

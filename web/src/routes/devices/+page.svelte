@@ -65,6 +65,8 @@ interface AddDevicesResponse {
 	// --- Filters ---
 	let statusFilter = $state('');
 	let typeFilter = $state('');
+	// Lifecycle filter (#669): '' = all states; exact server-side match.
+	let lifecycleFilter = $state('');
 	let dateFrom = $state('');
 	let dateTo = $state('');
 	// Network filter (distributed): empty = all networks. Populated from
@@ -253,6 +255,7 @@ interface AddDevicesResponse {
 		const params = new URLSearchParams();
 		if (statusFilter) params.set('status', statusFilter);
 		if (typeFilter) params.set('type', typeFilter);
+		if (lifecycleFilter) params.set('lifecycle_state', lifecycleFilter);
 		if (networkFilter) params.set('network_id', networkFilter);
 		if (tagFilter) params.set('tag_id', tagFilter);
 		if (searchQuery) params.set('search', searchQuery);
@@ -291,6 +294,7 @@ interface AddDevicesResponse {
 		const sp = new URLSearchParams(window.location.search);
 		if (sp.get('status')) statusFilter = sp.get('status')!;
 		if (sp.get('type')) typeFilter = sp.get('type')!;
+		if (sp.get('lifecycle_state')) lifecycleFilter = sp.get('lifecycle_state')!;
 		if (sp.get('network_id')) networkFilter = sp.get('network_id')!;
 		if (sp.get('search')) {
 			searchQuery = sp.get('search')!;
@@ -774,6 +778,33 @@ interface AddDevicesResponse {
 	const defaultColumns = ['network_name'];
 	let selectedColumnKeys = $state(new Set<string>(defaultColumns));
 
+	// lifecycleLabel / lifecycleBadge (#669): the ledger state's localized
+	// label + a muted chip. Literal m[] calls per key (paraglide's m is typed
+	// per key, same convention as presetLabel in scan-tasks).
+	function lifecycleLabel(state: string): string {
+		switch (state) {
+			case 'in_use': return m['devices.Lifecycle In Use']();
+			case 'spare': return m['devices.Lifecycle Spare']();
+			case 'repair': return m['devices.Lifecycle Repair']();
+			case 'lent': return m['devices.Lifecycle Lent']();
+			case 'retired': return m['devices.Lifecycle Retired']();
+			default: return state;
+		}
+	}
+	// Badge only for the NON-default states: in_use is the population norm,
+	// a chip on every row would be noise. Colors stay in the muted/neutral
+	// family so they don't fight the tag chips.
+	function lifecycleBadge(state: unknown): string {
+		const s = String(state ?? '');
+		if (!s || s === 'in_use') return '';
+		const cls =
+			s === 'repair' ? 'text-warning bg-warning/10' :
+			s === 'retired' ? 'text-text-muted bg-border' :
+			s === 'lent' ? 'text-accent bg-accent/10' :
+			'text-success bg-success/10'; // spare
+		return `<span class="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium align-middle ${cls}" title="${m['devices.Lifecycle']()}">${escapeHtml(lifecycleLabel(s))}</span>`;
+	}
+
 	// Render functions for each optional column (read from scan_attributes
 	// where the engine writes the rich data, falling back to top-level fields).
 	function renderOptionalColumn(key: string, row: Record<string, unknown>): string {
@@ -886,7 +917,8 @@ interface AddDevicesResponse {
 						return `<span class="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium align-middle" style="background:${color}22;color:${color}">${escapeHtml(tagDisplayName(t))}</span>`;
 					})
 					.join('');
-				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']()}">${name}</button>${tagHtml}`;
+				const lcHtml = lifecycleBadge(row.lifecycle_state);
+				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']()}">${name}</button>${lcHtml}${tagHtml}`;
 			}
 		},
 		{
@@ -1110,6 +1142,19 @@ interface AddDevicesResponse {
 		<option value="phone">{m['devices.Phone']()}</option>
 		<option value="printer">{m['devices.Printer']()}</option>
 		<option value="other">{m['devices.Other']()}</option>
+		</select>
+		<!-- Lifecycle filter (#669): exact server-side match. -->
+		<select
+			bind:value={lifecycleFilter}
+			onchange={applyFilters}
+			class="input"
+		>
+			<option value="">{m['devices.All Lifecycles']()}</option>
+			<option value="in_use">{m['devices.Lifecycle In Use']()}</option>
+			<option value="spare">{m['devices.Lifecycle Spare']()}</option>
+			<option value="repair">{m['devices.Lifecycle Repair']()}</option>
+			<option value="lent">{m['devices.Lifecycle Lent']()}</option>
+			<option value="retired">{m['devices.Lifecycle Retired']()}</option>
 		</select>
 		{#if networks.length > 0}
 			<select

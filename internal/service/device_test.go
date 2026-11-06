@@ -397,3 +397,103 @@ func TestDevice_List_TotalIsRealCount(t *testing.T) {
 	require.Len(t, list2.Devices, 2)
 	require.Equal(t, 7, list2.Total)
 }
+
+// --- Asset ledger (#669) ---
+
+// TestDevice_LedgerDefaultsAndValidation pins the create-side ledger
+// contract: empty lifecycle defaults to in_use, an explicit state round-trips,
+// a bogus state is rejected with the typed error, and owner/asset_no persist
+// (they make a manual IP-less asset identifiable).
+func TestDevice_LedgerDefaultsAndValidation(t *testing.T) {
+	svc, _ := setupDeviceService(t)
+	ctx := context.Background()
+
+	// Empty lifecycle → schema/service default in_use.
+	d1, err := svc.Create(ctx, domain.CreateDeviceRequest{Name: "Ledger-Default"})
+	require.NoError(t, err)
+	require.Equal(t, domain.LifecycleInUse, d1.LifecycleState)
+	require.Empty(t, d1.Owner)
+	require.Empty(t, d1.AssetNo)
+
+	// Explicit state + ledger fields round-trip; no IP/MAC is fine (manual
+	// physical asset — asset_no is the identity).
+	d2, err := svc.Create(ctx, domain.CreateDeviceRequest{
+		Name: "Ledger-Monitor", LifecycleState: domain.LifecycleSpare,
+		Owner: "ops", AssetNo: "IT-2026-0042",
+	})
+	require.NoError(t, err)
+	require.Equal(t, domain.LifecycleSpare, d2.LifecycleState)
+	require.Equal(t, "ops", d2.Owner)
+	require.Equal(t, "IT-2026-0042", d2.AssetNo)
+
+	// Bogus state rejected with the typed error.
+	_, err = svc.Create(ctx, domain.CreateDeviceRequest{Name: "Ledger-Bad", LifecycleState: "deployed"})
+	require.ErrorIs(t, err, ErrInvalidLifecycleState)
+}
+
+// TestDevice_LedgerUpdateMerge pins the update-side merge: the three ledger
+// fields patch independently, an invalid lifecycle is rejected, and omitted
+// fields survive.
+func TestDevice_LedgerUpdateMerge(t *testing.T) {
+	svc, _ := setupDeviceService(t)
+	ctx := context.Background()
+	d, err := svc.Create(ctx, domain.CreateDeviceRequest{
+		Name: "Ledger-Update", LifecycleState: domain.LifecycleInUse, Owner: "a", AssetNo: "N1",
+	})
+	require.NoError(t, err)
+
+	sp := domain.LifecycleSpare
+	updated, err := svc.Update(ctx, d.ID, domain.UpdateDeviceRequest{LifecycleState: &sp})
+	require.NoError(t, err)
+	require.Equal(t, domain.LifecycleSpare, updated.LifecycleState)
+	require.Equal(t, "a", updated.Owner)    // untouched
+	require.Equal(t, "N1", updated.AssetNo) // untouched
+
+	owner := "b"
+	updated, err = svc.Update(ctx, d.ID, domain.UpdateDeviceRequest{Owner: &owner})
+	require.NoError(t, err)
+	require.Equal(t, "b", updated.Owner)
+	require.Equal(t, domain.LifecycleSpare, updated.LifecycleState)
+
+	bad := "recycling"
+	_, err = svc.Update(ctx, d.ID, domain.UpdateDeviceRequest{LifecycleState: &bad})
+	require.ErrorIs(t, err, ErrInvalidLifecycleState)
+}
+
+// TestDevice_LedgerFilterAndSearch pins the read side: the lifecycle_state
+// filter is an exact server-side match, and the search box now covers owner
+// and asset_no (an IP-less manual asset is findable by its number).
+func TestDevice_LedgerFilterAndSearch(t *testing.T) {
+	svc, _ := setupDeviceService(t)
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name, lc, owner, asset string
+	}{
+		{"A", domain.LifecycleInUse, "zhang", "IT-0001"},
+		{"B", domain.LifecycleSpare, "li", "IT-0002"},
+		{"C", domain.LifecycleSpare, "wang", "IT-0003"},
+	} {
+		_, err := svc.Create(ctx, domain.CreateDeviceRequest{
+			Name: tc.name, LifecycleState: tc.lc, Owner: tc.owner, AssetNo: tc.asset,
+		})
+		require.NoError(t, err)
+	}
+
+	list, err := svc.List(ctx, domain.DeviceFilter{LifecycleState: domain.LifecycleSpare})
+	require.NoError(t, err)
+	require.Equal(t, 2, list.Total)
+	for _, d := range list.Devices {
+		require.Equal(t, domain.LifecycleSpare, d.LifecycleState)
+	}
+
+	// Search by owner and by asset_no.
+	byOwner, err := svc.List(ctx, domain.DeviceFilter{Search: "zhang"})
+	require.NoError(t, err)
+	require.Equal(t, 1, byOwner.Total)
+	require.Equal(t, "A", byOwner.Devices[0].Name)
+
+	byAsset, err := svc.List(ctx, domain.DeviceFilter{Search: "IT-0003"})
+	require.NoError(t, err)
+	require.Equal(t, 1, byAsset.Total)
+	require.Equal(t, "C", byAsset.Devices[0].Name)
+}

@@ -161,7 +161,7 @@ func insertTestDevice(t *testing.T, q *db.Queries, ctx context.Context, name, ip
 		Status:         "unknown",
 		IpAddress:      ipAddr,
 		Tags:           "{}",
-		UserAttributes: "{}",
+		UserAttributes: "{}", LifecycleState: "in_use",
 	})
 	require.NoError(t, err)
 	return device.ID
@@ -907,7 +907,7 @@ func TestSyncStatus_StampOfflineSince(t *testing.T) {
 	// Create an ONLINE device via the repo so it has a valid row.
 	dev, err := queries.CreateDevice(ctx, db.CreateDeviceParams{
 		DeviceUuid: "flip-uuid", Name: "flip-test", Type: "server",
-		Status: "online", Tags: "{}", UserAttributes: "{}",
+		Status: "online", Tags: "{}", UserAttributes: "{}", LifecycleState: "in_use",
 	})
 	require.NoError(t, err)
 

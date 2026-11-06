@@ -119,7 +119,7 @@ func TestArchiveEndpoints_JSONBehavior(t *testing.T) {
 	// manual archive applies to any source, so the flow works end to end).
 	dev, err := q.CreateDevice(ctx, db.CreateDeviceParams{
 		DeviceUuid: "arch-test-uuid", Name: "arch-test", Type: "other", Status: "offline",
-		IpAddress: "192.0.2.50", Tags: "{}", UserAttributes: "{}",
+		IpAddress: "192.0.2.50", Tags: "{}", UserAttributes: "{}", LifecycleState: "in_use",
 	})
 	require.NoError(t, err)
 	id := dev.ID
@@ -181,12 +181,12 @@ func TestDeviceTagEndpoints_JSONBehavior(t *testing.T) {
 	// Two devices + a custom tag to assign.
 	d1, err := q.CreateDevice(ctx, db.CreateDeviceParams{
 		DeviceUuid: "tag-a-uuid", Name: "tag-a", Type: "other", Status: "online",
-		IpAddress: "192.0.2.61", Tags: "{}", UserAttributes: "{}",
+		IpAddress: "192.0.2.61", Tags: "{}", UserAttributes: "{}", LifecycleState: "in_use",
 	})
 	require.NoError(t, err)
 	d2, err := q.CreateDevice(ctx, db.CreateDeviceParams{
 		DeviceUuid: "tag-b-uuid", Name: "tag-b", Type: "other", Status: "online",
-		IpAddress: "192.0.2.62", Tags: "{}", UserAttributes: "{}",
+		IpAddress: "192.0.2.62", Tags: "{}", UserAttributes: "{}", LifecycleState: "in_use",
 	})
 	require.NoError(t, err)
 
@@ -238,7 +238,7 @@ func TestDossier_CoversAllKinds(t *testing.T) {
 
 	dev, err := q.CreateDevice(ctx, db.CreateDeviceParams{
 		DeviceUuid: "dossier-uuid", Name: "dossier-dev", Type: "server", Status: "offline",
-		IpAddress: "192.0.2.63", Tags: "{}", UserAttributes: "{}",
+		IpAddress: "192.0.2.63", Tags: "{}", UserAttributes: "{}", LifecycleState: "in_use",
 	})
 	require.NoError(t, err)
 
@@ -279,7 +279,7 @@ func TestArchiveEndpoints_NotArchivedConflict(t *testing.T) {
 
 	dev, err := q.CreateDevice(ctx, db.CreateDeviceParams{
 		DeviceUuid: "conflict-uuid", Name: "conflict-dev", Type: "other", Status: "online",
-		IpAddress: "192.0.2.64", Tags: "{}", UserAttributes: "{}",
+		IpAddress: "192.0.2.64", Tags: "{}", UserAttributes: "{}", LifecycleState: "in_use",
 	})
 	require.NoError(t, err)
 

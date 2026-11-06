@@ -25,6 +25,9 @@ var (
 	ErrDeviceNotFound     = errors.New("device not found")
 	ErrInvalidIP          = errors.New("invalid IP address")
 	ErrDeviceNameRequired = errors.New("device name is required")
+	// ErrInvalidLifecycleState: the asset-ledger lifecycle must be one of
+	// in_use/spare/repair/lent/retired (#669).
+	ErrInvalidLifecycleState = errors.New("invalid lifecycle_state")
 )
 
 // DeviceService handles device management business logic.
@@ -48,6 +51,17 @@ func (s *DeviceService) Create(ctx context.Context, req domain.CreateDeviceReque
 		if net.ParseIP(req.IPAddress) == nil {
 			return nil, ErrInvalidIP
 		}
+	}
+
+	// Asset-ledger fields (#669): lifecycle defaults to in_use (the schema
+	// default); an explicit value must be one of the five states. A manual
+	// asset with neither IP nor MAC is fine — network_id stays NULL and
+	// SQLite's unique index treats NULLs as distinct, so IP-less assets
+	// coexist; asset_no is their human-facing identity.
+	if req.LifecycleState == "" {
+		req.LifecycleState = domain.LifecycleInUse
+	} else if !domain.ValidLifecycleState(req.LifecycleState) {
+		return nil, ErrInvalidLifecycleState
 	}
 
 	device, err := s.repo.Create(ctx, req)
@@ -151,6 +165,11 @@ func (s *DeviceService) Update(ctx context.Context, id int64, req domain.UpdateD
 		PurchaseDate:   existing.PurchaseDate,
 		WarrantyExpiry: existing.WarrantyExpiry,
 		Tags:           existing.Tags,
+		// The ledger fields are NOT NULL with defaults; seed from the existing
+		// row so a partial update keeps them (schema CHECK backs the enum).
+		LifecycleState: existing.LifecycleState,
+		Owner:          existing.Owner,
+		AssetNo:        existing.AssetNo,
 	}
 
 	if req.Name != nil {
@@ -194,6 +213,21 @@ func (s *DeviceService) Update(ctx context.Context, id int64, req domain.UpdateD
 	}
 	if req.Tags != nil {
 		params.Tags = *req.Tags
+	}
+	// Asset-ledger fields (#669): lifecycle is enum-checked (the schema CHECK
+	// would reject bad values, but a typed error beats a raw SQLite message);
+	// owner/asset_no are free text.
+	if req.LifecycleState != nil {
+		if !domain.ValidLifecycleState(*req.LifecycleState) {
+			return nil, ErrInvalidLifecycleState
+		}
+		params.LifecycleState = *req.LifecycleState
+	}
+	if req.Owner != nil {
+		params.Owner = *req.Owner
+	}
+	if req.AssetNo != nil {
+		params.AssetNo = *req.AssetNo
 	}
 
 	device, err := s.repo.Update(ctx, params)
@@ -379,6 +413,10 @@ func toDeviceResponse(d db.Device) domain.DeviceResponse {
 		OnlineSince:                d.OnlineSince,
 		Periodic:                   d.Periodic == 1,
 		PeriodicCycleDays:          d.PeriodicCycleDays,
+		// Asset-ledger fields (#669).
+		LifecycleState: d.LifecycleState,
+		Owner:          d.Owner,
+		AssetNo:        d.AssetNo,
 	}
 }
 

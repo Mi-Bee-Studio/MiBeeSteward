@@ -49,6 +49,10 @@
 	let formSerialNumber = $state('');
 	let formPurchaseDate = $state('');
 	let formWarrantyExpiry = $state('');
+	// Asset-ledger fields (#669): lifecycle select + free-text owner/asset_no.
+	let formLifecycle = $state('in_use');
+	let formOwner = $state('');
+	let formAssetNo = $state('');
 	let formTags = $state('');
 	// Tag dictionary chips (#665): the device's dictionary-tag set, synced
 	// through its own endpoint after save. The legacy free-text tags string
@@ -70,7 +74,8 @@
 	function snapshotForm(): string {
 		return JSON.stringify([formName, formType, formBrand, formModel, formLocation,
 			formPurpose, formIpAddress, formMacAddress, formSerialNumber,
-			formPurchaseDate, formWarrantyExpiry, formTags]);
+			formPurchaseDate, formWarrantyExpiry, formLifecycle, formOwner, formAssetNo,
+			formTags]);
 	}
 	const formDirty = $derived(open && snapshotForm() !== formSnapshot);
 
@@ -86,6 +91,9 @@
 		formSerialNumber = '';
 		formPurchaseDate = '';
 		formWarrantyExpiry = '';
+		formLifecycle = 'in_use';
+		formOwner = '';
+		formAssetNo = '';
 		formTags = '';
 		selectedTagIds = [];
 		formError = '';
@@ -124,6 +132,9 @@
 				formSerialNumber = device.serial_number || '';
 				formPurchaseDate = device.purchase_date || '';
 				formWarrantyExpiry = device.warranty_expiry || '';
+				formLifecycle = device.lifecycle_state || 'in_use';
+				formOwner = device.owner || '';
+				formAssetNo = device.asset_no || '';
 				formTags = device.tags || '';
 				selectedTagIds = ((device as Device & { dictionary_tags?: { id: number }[] })
 					.dictionary_tags ?? []).map((t) => t.id);
@@ -168,6 +179,9 @@
 			serial_number: formSerialNumber,
 			purchase_date: formPurchaseDate,
 			warranty_expiry: formWarrantyExpiry,
+			lifecycle_state: formLifecycle,
+			owner: formOwner,
+			asset_no: formAssetNo,
 			tags: formTags
 		};
 
@@ -329,6 +343,33 @@
 			<label class="block text-xs text-muted mb-1">{m['devices.Warranty Expiry']()}</label>
 			<input type="date" bind:value={formWarrantyExpiry}
 				class="input" />
+		</div>
+
+		<!-- Asset ledger (#669): lifecycle / owner / asset number -->
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Lifecycle']()}</label>
+			<select bind:value={formLifecycle} class="input">
+				<option value="in_use">{m['devices.Lifecycle In Use']()}</option>
+				<option value="spare">{m['devices.Lifecycle Spare']()}</option>
+				<option value="repair">{m['devices.Lifecycle Repair']()}</option>
+				<option value="lent">{m['devices.Lifecycle Lent']()}</option>
+				<option value="retired">{m['devices.Lifecycle Retired']()}</option>
+			</select>
+		</div>
+
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Owner']()}</label>
+			<input bind:value={formOwner}
+				placeholder={m['devices.Owner Placeholder']()}
+				class="input" />
+		</div>
+
+		<div>
+			<label class="block text-xs text-muted mb-1">{m['devices.Asset No']()}</label>
+			<input bind:value={formAssetNo}
+				placeholder={m['devices.Asset No Placeholder']()}
+				class="input" />
+			<p class="mt-1 text-xs text-muted">{m['devices.Asset No Hint']()}</p>
 		</div>
 
 		<!-- Tags (dictionary chips, #665; the legacy free-text string moved on) -->

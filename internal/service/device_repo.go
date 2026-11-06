@@ -46,6 +46,14 @@ func (r *DeviceRepository) Create(ctx context.Context, req domain.CreateDeviceRe
 		tags = "{}"
 	}
 
+	// The lifecycle column is NOT NULL with a CHECK enum: '' would violate
+	// it. Defaulting HERE (not only in the service) keeps every repo caller
+	// safe — test fixtures and future services create devices directly.
+	lifecycle := req.LifecycleState
+	if lifecycle == "" {
+		lifecycle = domain.LifecycleInUse
+	}
+
 	userAttrs, err := domain.MarshalUserAttributes(req.UserAttributes)
 	if err != nil {
 		return db.Device{}, fmt.Errorf("failed to marshal user_attributes: %w", err)
@@ -67,6 +75,9 @@ func (r *DeviceRepository) Create(ctx context.Context, req domain.CreateDeviceRe
 		PurchaseDate:   req.PurchaseDate,
 		WarrantyExpiry: req.WarrantyExpiry,
 		Tags:           tags,
+		LifecycleState: lifecycle,
+		Owner:          req.Owner,
+		AssetNo:        req.AssetNo,
 		UserAttributes: userAttrs,
 	})
 	if err != nil {
@@ -506,6 +517,7 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 		typeVal        = f.Type
 		searchVal      = f.Search
 		likeVal        = "%" + escapeLike(f.Search) + "%"
+		lifecycleVal   = f.LifecycleState
 		createdFrom    string // "" disables the bound
 		createdTo      string
 		createdFromArg *string
@@ -549,16 +561,18 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 		d.network_id, d.first_seen, d.last_seen, d.offline_since,
 		d.archived_at, d.archive_pin, d.archive_offline_days_override, d.online_since,
 		d.periodic, d.periodic_cycle_days,
+		d.lifecycle_state, d.owner, d.asset_no,
 		d.created_at, d.updated_at,
 		n.name
 	FROM devices d
 	LEFT JOIN networks n ON n.id = d.network_id
 	WHERE (? = '' OR d.status = ?)
 	  AND (? = '' OR d.type = ?)
-	  AND (? = '' OR d.name LIKE ? ESCAPE '\' OR d.ip_address LIKE ? ESCAPE '\' OR d.mac_address LIKE ? ESCAPE '\' OR d.serial_number LIKE ? ESCAPE '\')
+	  AND (? = '' OR d.name LIKE ? ESCAPE '\' OR d.ip_address LIKE ? ESCAPE '\' OR d.mac_address LIKE ? ESCAPE '\' OR d.serial_number LIKE ? ESCAPE '\' OR d.owner LIKE ? ESCAPE '\' OR d.asset_no LIKE ? ESCAPE '\')
 	  AND (? = '' OR d.created_at >= ?)
 	  AND (? = '' OR d.created_at <= ?)
 	  AND (? = 0 OR d.network_id = ?)
+	  AND (? = '' OR d.lifecycle_state = ?)
 	  AND ( (? = 'all')
 	     OR (? = 'only' AND d.archived_at IS NOT NULL)
 	     OR (? = '' AND d.archived_at IS NULL) )
@@ -570,10 +584,11 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 	args = append(args,
 		statusVal, statusVal,
 		typeVal, typeVal,
-		searchVal, likeVal, likeVal, likeVal, likeVal,
+		searchVal, likeVal, likeVal, likeVal, likeVal, likeVal, likeVal,
 		createdFrom, createdFromArg,
 		createdTo, createdToArg,
 		networkFilterEnabled, networkIDArg,
+		lifecycleVal, lifecycleVal,
 		archivedMode, archivedMode, archivedMode,
 	)
 	args = append(args, tagArgs...)
@@ -600,6 +615,7 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 			&d.NetworkID, &d.FirstSeen, &d.LastSeen, &d.OfflineSince,
 			&d.ArchivedAt, &d.ArchivePin, &d.ArchiveOfflineDaysOverride, &d.OnlineSince,
 			&d.Periodic, &d.PeriodicCycleDays,
+			&d.LifecycleState, &d.Owner, &d.AssetNo,
 			&d.CreatedAt, &d.UpdatedAt,
 			&networkName,
 		); err != nil {
@@ -613,13 +629,14 @@ func listFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter, sortE
 // countFilteredOn is the count query body parameterized over the DBTX it runs on.
 func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int64, error) {
 	var (
-		args        []any
-		statusVal   = f.Status
-		typeVal     = f.Type
-		searchVal   = f.Search
-		likeVal     = "%" + escapeLike(f.Search) + "%"
-		createdFrom string
-		createdTo   string
+		args         []any
+		statusVal    = f.Status
+		typeVal      = f.Type
+		searchVal    = f.Search
+		likeVal      = "%" + escapeLike(f.Search) + "%"
+		lifecycleVal = f.LifecycleState
+		createdFrom  string
+		createdTo    string
 	)
 	createdFromArg := (*string)(nil)
 	if f.CreatedAtFrom != nil {
@@ -651,10 +668,11 @@ func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int
 	query := `SELECT COUNT(*) FROM devices
 	WHERE (? = '' OR status = ?)
 	  AND (? = '' OR type = ?)
-	  AND (? = '' OR name LIKE ? ESCAPE '\' OR ip_address LIKE ? ESCAPE '\' OR mac_address LIKE ? ESCAPE '\' OR serial_number LIKE ? ESCAPE '\')
+	  AND (? = '' OR name LIKE ? ESCAPE '\' OR ip_address LIKE ? ESCAPE '\' OR mac_address LIKE ? ESCAPE '\' OR serial_number LIKE ? ESCAPE '\' OR owner LIKE ? ESCAPE '\' OR asset_no LIKE ? ESCAPE '\')
 	  AND (? = '' OR created_at >= ?)
 	  AND (? = '' OR created_at <= ?)
 	  AND (? = 0 OR network_id = ?)
+	  AND (? = '' OR lifecycle_state = ?)
 	  AND ( (? = 'all')
 	     OR (? = 'only' AND archived_at IS NOT NULL)
 	     OR (? = '' AND archived_at IS NULL) )
@@ -664,10 +682,11 @@ func countFilteredOn(ctx context.Context, q db.DBTX, f domain.DeviceFilter) (int
 	args = append(args,
 		statusVal, statusVal,
 		typeVal, typeVal,
-		searchVal, likeVal, likeVal, likeVal, likeVal,
+		searchVal, likeVal, likeVal, likeVal, likeVal, likeVal, likeVal,
 		createdFrom, createdFromArg,
 		createdTo, createdToArg,
 		networkFilterEnabled, networkIDArg,
+		lifecycleVal, lifecycleVal,
 		archivedMode, archivedMode, archivedMode,
 	)
 	args = append(args, tagArgs...)

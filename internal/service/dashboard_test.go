@@ -263,3 +263,43 @@ func TestDashboardQuery_UpstreamErrors(t *testing.T) {
 	var upErr *UpstreamError
 	require.ErrorAs(t, err, &upErr)
 }
+
+// TestDashboardOverview_LedgerCalibers (#669): by_lifecycle and by_tag count
+// ACTIVE devices only — an archived device is out of the working inventory —
+// and by_tag counts a device once per carried tag (sum may exceed total).
+func TestDashboardOverview_LedgerCalibers(t *testing.T) {
+	svc, conn := setupDashboardService(t)
+
+	seed := func(name, lc string, archived bool, tagIDs ...int64) {
+		t.Helper()
+		var arch any
+		if archived {
+			arch = "2026-11-01 00:00:00"
+		}
+		res, err := conn.Exec(`INSERT INTO devices (device_uuid, name, type, status, ip_address, lifecycle_state, archived_at)
+			VALUES (?, ?, 'pc', 'online', ?, ?, ?)`, "uuid-"+name, name, "192.0.2.10", lc, arch)
+		require.NoError(t, err)
+		id, err := res.LastInsertId()
+		require.NoError(t, err)
+		for _, tid := range tagIDs {
+			_, err := conn.Exec(`INSERT INTO device_tags (device_id, tag_id) VALUES (?, ?)`, id, tid)
+			require.NoError(t, err)
+		}
+	}
+	// The tag dictionary built-ins are seeded by the tags service, not the
+	// schema — insert one tag row directly for the bucket.
+	tagRes, err := conn.Exec(`INSERT INTO tags (key, name, color, description, builtin, sort_order) VALUES ('internal', 'Internal', '#2563eb', '', 1, 0)`)
+	require.NoError(t, err)
+	extraID, err := tagRes.LastInsertId()
+	require.NoError(t, err)
+
+	seed("Active-A", "in_use", false, extraID)
+	seed("Active-B", "spare", false, extraID)
+	seed("Archived-C", "retired", true, extraID) // excluded from BOTH maps
+
+	ov, err := svc.Overview(context.Background(), domain.Scope{Global: true})
+	require.NoError(t, err)
+	require.Equal(t, map[string]int64{"in_use": 1, "spare": 1}, ov.Devices.ByLifecycle)
+	// Both ACTIVE carriers count under the tag; the archived one does not.
+	require.Equal(t, map[string]int64{"Internal": 2}, ov.Devices.ByTag)
+}
