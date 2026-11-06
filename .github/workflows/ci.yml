@@ -335,6 +335,9 @@ jobs:
       # the nfpm lifecycle scripts (same gate class as check-openwrt).
       - name: Static assertions (deb/rpm packaging sources)
         run: make check-nfpm
+      # HA add-on source pack (#622): run.sh syntax + manifest keys.
+      - name: Static assertions (Home Assistant add-on pack)
+        run: bash scripts/check-homeassistant.sh
       - name: Packaging smoke (stage guard + mkipk.sh, center)
         run: |
           (cd web && npm ci)

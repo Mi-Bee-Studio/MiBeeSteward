@@ -1,0 +1,6 @@
+# HA add-on store presentation (copied to the add-on repository).
+build_from:
+  aarch64: ghcr.io/mi-bee-studio/mibee-steward:latest
+  amd64: ghcr.io/mi-bee-studio/mibee-steward:latest
+labels:
+  io.hass.type: addon

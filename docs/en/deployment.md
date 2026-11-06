@@ -375,6 +375,9 @@ Data compatibility: since v0.7 the schema is created fresh on first start and is
 > 1. The **archive learner's window restarts from deployment day**. The periodic-pattern exemption (`archive.smart.*`) learns from `asset_archive_events`, a new table that starts empty — a device that "always comes back in November" needs to re-accumulate appearance points for ~2 months (its learned cycle) before smart exemption re-engages. Devices with a known return pattern can be protected immediately with a `force_active` pin.
 > 2. Ledger columns (`lifecycle_state` / `owner` / `asset_no`) and tag assignments exist only from the new database onward; if the old inventory carried that data in `user_attributes` or device notes, it needs re-entry — the CSV export of the old database (Devices → export) is the practical migration source.
 
+### Home Assistant add-on (#622)
+
+The add-on source pack lives at `deploy/homeassistant` (copy to the standalone `hassio-addons` repository; the image wraps the GHCR release with an options-to-env entrypoint). `host_network: true` — a scanner is its LAN; state lives on `/data/steward` and survives updates; secrets are add-on options with secure blanks (empty master key disables the v3 vault rather than inventing a weak key; the admin password always comes from the browser first-run setup). An HA-box center covers the LANs the box bridges — multi-segment sites still want one agent per segment reporting here.
 ### Resetting the admin password
 
 Forgot the `admin` password? No DB surgery needed:

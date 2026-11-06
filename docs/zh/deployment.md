@@ -361,6 +361,9 @@ docker compose up -d
 > 1. **档案学习窗从部署日重新起算**。周期模式豁免（`archive.smart.*`）从 `asset_archive_events` 学习，而这是张从零开始的新表——一台「每年十一月总会回来」的设备需要重新积累约两个月（一个学习周期）的出现点，智能豁免才会重新生效。已知回归规律的设备可以先用 `force_active` pin 立即保护。
 > 2. 台账列（`lifecycle_state` / `owner` / `asset_no`）与标签指派只在新数据库中存在；若旧资产库把这些数据记在 `user_attributes` 或设备备注里，需要重新录入——旧库的 CSV 导出（设备页 → 导出）是现实的迁移来源。
 
+### Home Assistant add-on（#622）
+
+add-on 源包在 `deploy/homeassistant`（拷入独立 hassio-addons 仓库；镜像在 GHCR release 之上包一层 options→env 入口）。`host_network: true`——扫描器即其所在 LAN；状态落 `/data/steward` 升级保留；密钥为 add-on options 且空白即安全默认（空 master key 宁禁用 v3 凭据库不造弱钥；admin 密码永远走浏览器首启）。HA 盒上的 center 覆盖该盒桥接的 LAN——多网段站点仍需每段一个 agent 汇报至此。
 ### 管理员密码重置
 
 忘记 `admin` 密码时无需改库：

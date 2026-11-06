@@ -1,0 +1,36 @@
+# Home Assistant add-on manifest: MiBee Steward center (#622).
+#
+# This directory is the SOURCE for the standalone add-on repository
+# (copy mibee-steward/ + repository README there; the add-on repo builds its
+# image FROM the GHCR release image, wrapping this entrypoint contract).
+# HA writes the user's options to /data/options.json; run.sh maps them onto
+# MIBEE_* env and boots the center binary with data on /data (HA's managed
+# volume — survives add-on updates).
+name: MiBee Steward
+version: 0.9.0
+slug: mibee_steward
+description: Network/IoT asset discovery & registry (CMDB-lite) for your LAN
+url: https://github.com/Mi-Bee-Studio/MiBeeSteward
+arch: [aarch64, amd64]
+startup: services
+boot: auto
+init: false
+# A scanner IS its LAN: the add-on runs host-networked so ICMP/ARP/MDNS/SSDP
+# reach the physical segments the HA box sits on.
+host_network: true
+map:
+  - share:rw
+options:
+  jwt_secret: ""
+  master_key: ""
+  agent_token: ""
+  reserved_targets: false
+schema:
+  # Secrets typed once in the add-on options; blanks follow the secure
+  # defaults (browser first-run setup creates the admin password; empty
+  # master key disables the v3 credential vault).
+  jwt_secret: str?
+  master_key: str?
+  agent_token: str?
+  reserved_targets: bool?
+image: ghcr.io/mi-bee-studio/hassio-mibee-steward
