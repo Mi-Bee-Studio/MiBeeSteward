@@ -1,0 +1,108 @@
+# apt/yum repository publisher (#621).
+#
+# STATUS: manual (workflow_dispatch) by design — the issue parks automatic
+# publication until deb/rpm see real user feedback ("不做提前优化"). The
+# mechanism below is complete; going live needs exactly two repo secrets:
+#   GPG_PRIVATE_KEY  - ASCII-armored export of a dedicated signing key
+#                      (gpg --armor --export-secret-keys KEYID)
+#   GPG_PASSPHRASE   - that key's passphrase
+# Without them the job exits green with a setup hint, never half-publishing
+# an unsigned repository (apt refuses unsigned repos; shipping one that
+# users must --allow-unauthenticated would be worse than not shipping).
+#
+# Layout on the gh-pages branch (publish target, #621 scope):
+#   apt/            reprepo-managed Debian pool + dists (amd64 arm64 armhf)
+#   yum/            createrepo_c-managed RPM repository (x86_64 aarch64 armhf)
+#   KEY.gpg.asc     the PUBLIC signing key users import
+name: apt-yum-repo
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag whose deb/rpm assets to publish (e.g. v0.9.0)"
+        required: true
+
+permissions:
+  contents: write   # gh-pages push
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on signing secrets (#621)
+        run: |
+          if [ -z "${{ secrets.GPG_PRIVATE_KEY }}" ]; then
+            echo "::notice::GPG_PRIVATE_KEY not configured — the apt/yum repository publisher stays parked (#621). Configure GPG_PRIVATE_KEY + GPG_PASSPHRASE repo secrets to go live; nothing was published."
+            exit 0
+          fi
+          echo "signing configured"
+          # Guard the rest of the job on the secret being present.
+          echo "HAS_KEY=1" >> "$GITHUB_ENV"
+
+      - name: Checkout gh-pages (repo root)
+        if: env.HAS_KEY == '1'
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: repo-pages
+
+      - name: Download release deb/rpm assets
+        if: env.HAS_KEY == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" \
+            --repo "$GITHUB_REPOSITORY" --dir assets -p '*.deb' -p '*.rpm'
+
+      - name: Import signing key
+        if: env.HAS_KEY == '1'
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import || {
+            echo "::error::GPG_PRIVATE_KEY failed to import — expected ASCII-armored secret key"; exit 1; }
+          KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
+          echo "KEYID=$KEYID" >> "$GITHUB_ENV"
+
+      - name: Build apt repository (reprepro)
+        if: env.HAS_KEY == '1'
+        run: |
+          sudo apt-get update && sudo apt-get install -y reprepro
+          mkdir -p apt/conf
+          cat > apt/conf/distributions <<DIST
+          Origin: MiBee Steward
+          Codename: stable
+          Architectures: amd64 arm64 armhf
+          Components: main
+          Description: MiBee Steward — network/IoT asset discovery & registry
+          SignWith: $KEYID
+          DIST
+          for deb in assets/*.deb; do
+            reprepro --basedir apt includedeb stable "$deb"
+          done
+          gpg --armor --export "$KEYID" > repo-pages/KEY.gpg.asc
+
+      - name: Build yum repository (createrepo_c + rpmsign)
+        if: env.HAS_KEY == '1'
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          sudo apt-get install -y createrepo_c rpm
+          mkdir -p repo-pages/yum
+          cp assets/*.rpm repo-pages/yum/
+          for rpm in repo-pages/yum/*.rpm; do
+            rpm --define "_gpg_name $KEYID" \
+                --define "_gpg_sign_cmd_extra_args --batch --passphrase $GPG_PASSPHRASE" \
+                --addsign "$rpm"
+          done
+          createrepo_c repo-pages/yum
+
+      - name: Publish to gh-pages
+        if: env.HAS_KEY == '1'
+        run: |
+          cp -r apt repo-pages/apt
+          cd repo-pages
+          git config user.name "release-bot"
+          git config user.email "noreply@github.com"
+          git add apt yum KEY.gpg.asc
+          git commit -m "apt/yum repo: ${{ inputs.release_tag }}" || echo "nothing to commit"
+          git push origin gh-pages
