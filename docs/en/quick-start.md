@@ -87,8 +87,10 @@ curl http://localhost:8080/api/v1/health
 Curious what the inventory looks like before wiring a real subnet? Start in demo mode, a fictional fleet (two networks, ~20 devices with portraits, change history, probe results) is seeded on first boot and kept active with simulated events:
 
 ```bash
-./mibee-steward -demo -config configs/config.example.yaml
+./mibee-steward -demo
 ```
+
+(No config file yet? One is generated on first start — see [zero-config first run](#minimal-configuration) above; or pass `-config configs/config.example.yaml` to try the checked-in example.)
 
 Open the UI and explore; an amber banner marks demo mode and offers a one-click **Clear demo data** to switch to real inventorying.
 

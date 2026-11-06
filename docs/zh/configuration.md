@@ -586,8 +586,6 @@ head -c 32 /dev/urandom | base64
 |-----|------|---------|-------------|
 | `retention.heartbeat_results_days` | int | 7 | 心跳结果保留天数 |
 | `retention.device_liveness_days` | int | 7（随心跳窗口） | 设备活跃度序列保留天数。未设置时取 `heartbeat_results_days` 的值。 |
-| `retention.silent_device_days_mac` | int | 7 | 静默扫描发现设备（有 MAC）的物理删除阈值：超过此天数无观测即删除 |
-| `retention.silent_device_hours_no_mac` | int | 24 | 静默设备（无 MAC）的物理删除阈值：超过此小时数无观测即删除 |
 | `retention.scan_results_days` | int | 30 | 扫描结果保留天数 |
 | `retention.scan_task_runs_days` | int | 30 | 扫描任务运行记录保留天数 |
 | `retention.audit_logs_days` | int | 90 | 审计日志保留天数 |
@@ -601,6 +599,24 @@ head -c 32 /dev/urandom | base64
 | `retention.probe_results_days` | int | 30 | 拨测历史结果保留天数（`probe_tls_certs` 不清扫--每目标只存当前证书链） |
 | `retention.sweep_interval_hours` | int | 6 | 清理扫描间隔（小时） |
 | `retention.batch_size` | int | 5000 | 每批清理的最大行数 |
+
+## 归档配置（#663、#664）
+
+资产归档引擎**取代**旧的静默设备物理清扫：扫描发现的设备离线超过阈值后
+归档（保留完整历史），不再删除。阈值每引擎 tick 从设置中心 overlay 重读，
+运行时改动即时生效、无需重启。
+
+| 键 | 类型 | 默认值 | 描述 |
+|-----|------|---------|-------------|
+| `archive.offline_days` | int | 7 | 设备离线多少天后移入档案。每设备覆写：`devices.archive_offline_days_override`（NULL/0 = 跟随本值）。无 MAC 设备走 24 小时快速通道。 |
+| `archive.restore_online_minutes` | int | 60 | 归档设备须**连续**在线多少分钟才自动恢复回资产库。更短的出现只记 `online_blip` 事件并保持归档。 |
+| `archive.sweep_interval_seconds` | int | 60 | 归档引擎 tick（秒）。恢复计时器需要比 6h 保留清扫更细的粒度。 |
+| `archive.smart.disabled` | bool | false | 退出周期模式学习器（反义命名，Go 零值保持学习器默认开启）。 |
+| `archive.smart.min_history_days` | int | 60 | 出现事件历史跨度达到该天数前学习器不信任模式（用户规则：历史不足 2 个月则智能识别不生效）。 |
+| `archive.smart.max_threshold_days` | int | 30 | 仅当有效阈值**低于**该天数时学习器才介入（用户规则：阈值到了月级就不该再被智能否决）。 |
+
+双 pin 压过一切：`force_active` 永不自动归档，`force_archive` 永不自动恢复。
+手工资产（`scan_source != 'scanner_v2'`）只响应手动归档。
 
 ## 流遥测配置（#500）
 

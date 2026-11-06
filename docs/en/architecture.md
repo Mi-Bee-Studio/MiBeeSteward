@@ -541,7 +541,7 @@ flowchart LR
 
 
 
-A **silent-device sweep** also runs: scanner-discovered devices that stop appearing for 24h without a MAC (`retention.silent_device_hours_no_mac`) or 7 days with a MAC (`retention.silent_device_days_mac`) are physically deleted with a `device_removed` record, discovery is the entry to the registry, and rows that can never be rediscovered get reclaimed.
+An **asset-archive engine** (`internal/service/archive/`, #663) replaces the old silent-device physical prune: a scanner-discovered device offline past the threshold (per-device override > global `archive.offline_days`, default 7d; no-MAC devices take a 24h fast lane) moves to the archive — `archived_at` stamped, full history preserved, every transition written to `asset_archive_events`. An archived device continuously online past `archive.restore_online_minutes` (default 60) auto-restores; brief blips only record `online_blip` events. Pins (`force_active`/`force_archive`) override everything, and the periodic-pattern learner (#664) exempts devices that keep returning on a stable cycle. The only remaining device-row delete is the roamed-orphan duplicate reap — a duplicate is not an asset, archiving it would create a ghost.
 
 
 
