@@ -600,8 +600,6 @@ The synchronous scan endpoint (`POST /api/v1/scanner/scan`) imposes a hard targe
 |-----|------|---------|-------------|
 | `retention.heartbeat_results_days` | int | 7 | Heartbeat results retention (days) |
 | `retention.device_liveness_days` | int | 7 (mirrors the heartbeat window) | Device liveness series retention (days). Defaults to the `heartbeat_results_days` value when unset. |
-| `retention.silent_device_days_mac` | int | 7 | Physical deletion of silent scanner-discovered devices with a MAC: deleted after this many days without observation |
-| `retention.silent_device_hours_no_mac` | int | 24 | Physical deletion of silent devices without a MAC: deleted after this many hours without observation |
 | `retention.scan_results_days` | int | 30 | Scan results retention (days) |
 | `retention.scan_task_runs_days` | int | 30 | Scan task run records retention (days) |
 | `retention.audit_logs_days` | int | 90 | Audit logs retention (days) |
@@ -615,6 +613,26 @@ The synchronous scan endpoint (`POST /api/v1/scanner/scan`) imposes a hard targe
 | `retention.probe_results_days` | int | 30 | Synthetic-probe result history retention (days). `probe_tls_certs` is not swept, it holds only each target's current chain |
 | `retention.sweep_interval_hours` | int | 6 | Cleanup sweep interval (hours) |
 | `retention.batch_size` | int | 5000 | Max rows per cleanup batch |
+
+## Archive Configuration (#663, #664)
+
+The asset-archive engine REPLACES the old silent-device physical prune: a
+scanner-discovered device offline past the threshold is archived (history
+kept), not deleted. Thresholds are re-read from the settings overlay every
+engine tick, so runtime changes apply without a restart.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `archive.offline_days` | int | 7 | Days a device may stay offline before it moves to the archive. Per-device override: `devices.archive_offline_days_override` (NULL/0 = follow this). Devices without a MAC take a 24h fast lane. |
+| `archive.restore_online_minutes` | int | 60 | How long an archived device must stay CONTINUOUSLY online before it auto-restores into the asset library. Shorter appearances record `online_blip` events and stay archived. |
+| `archive.sweep_interval_seconds` | int | 60 | Archive engine tick (seconds). The restore timer needs finer granularity than the retention sweeper's 6h. |
+| `archive.smart.disabled` | bool | false | Opts OUT of the periodic-pattern learner (inverted flag so the Go zero value keeps the learner ON). |
+| `archive.smart.min_history_days` | int | 60 | Minimum appearance-event history span before the learner trusts a pattern (user rule: under 2 months of history, smart detection does not engage). |
+| `archive.smart.max_threshold_days` | int | 30 | Only effective thresholds BELOW this engage the learner (user rule: a month-scale threshold should not be second-guessed by smartness). |
+
+Pins override everything: `force_active` is never auto-archived,
+`force_archive` is never auto-restored. Manual devices (`scan_source !=
+'scanner_v2'`) respond to manual archive only.
 
 ## Flow Telemetry Configuration (#500)
 

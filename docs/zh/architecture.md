@@ -507,7 +507,7 @@ flowchart LR
 
 
 
-**保留清除器**（`internal/service/scannerv2/cleanup/`）：定期裁剪高频详情表。批量删除（默认 5000 行）避免长时间持有 SQLite 写锁。启动时 + 每 `sweep_interval_hours`（默认 6）执行一次。**静默设备清理**：持续无 MAC 设备 24 小时（`retention.silent_device_hours_no_mac`）/ 有 MAC 设备 7 天（`retention.silent_device_days_mac`）未再被发现即物理删除并记录 `device_removed`--扫描发现是登记的入口，长期扫不到的行会被回收。
+**保留清除器**（`internal/service/scannerv2/cleanup/`）：定期裁剪高频详情表。批量删除（默认 5000 行）避免长时间持有 SQLite 写锁。启动时 + 每 `sweep_interval_hours`（默认 6）执行一次。**资产归档引擎**（`internal/service/archive/`，#663）取代了旧的静默设备物理清扫：扫描发现的设备离线超过阈值（每设备覆写 > 全局 `archive.offline_days`，默认 7 天；无 MAC 设备 24 小时快速通道）后移入档案——盖 `archived_at`、完整保留历史、每次转换写入 `asset_archive_events`。归档设备连续在线超过 `archive.restore_online_minutes`（默认 60）自动恢复；短暂上线只记 `online_blip` 事件。双 pin（`force_active`/`force_archive`）压过一切，周期模式学习器（#664）豁免按稳定周期回归的设备。仅存的设备行删除是漂移孤儿重复行收割——重复行不是资产，归档它只会造出幽灵。
 
 
 
