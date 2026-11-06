@@ -26,9 +26,6 @@ flowchart TD
     F -->|"No"| H["Standalone binary: systemd"]
 ```
 
-=======
-
->>>>>>> origin/main
 
 ### Packaging roadmap & non-goals (decision record, 2026-10-24)
 
@@ -39,7 +36,6 @@ On-demand pool (same nfpm path, cheap to produce when a signal arrives): **pacma
 Explicit non-goals: **snap** (a scanner needs raw sockets for ICMP/ARP; confinement fights the product), **flatpak / AppImage** (GUI-first formats; this is a headless server), **Homebrew** (macOS is not a target platform), **Synology SPK / QNAP QPKG** (per-vendor SDK lock-in and signing burdens for a niche that Docker on the NAS already serves).
 
 ## Binary Deployment
-
 
 
 ### Download
@@ -53,7 +49,6 @@ make build
 # or cross-compile
 make build-linux-amd64
 ```
-
 
 
 ### Package Installation (deb / rpm)
@@ -78,7 +73,6 @@ Notes:
 - Packages carry the default build only; the `-full` capability variant stays a manual build ([build variants](build-variants.md)).
 
 
-
 ### Minimal Setup
 
 ```bash
@@ -92,7 +86,6 @@ sudo cp -r configs/* /opt/mibee-steward/configs/
 sudo chown -R mibee:mibee /opt/mibee-steward
 sudo chmod +x /opt/mibee-steward/mibee-steward
 ```
-
 
 
 ### Production Configuration
@@ -113,7 +106,6 @@ auth:
 ```
 
 
-
 ### Systemd Service
 
 ```bash
@@ -126,7 +118,6 @@ sudo systemctl start mibee-steward
 The service includes security hardening: `NoNewPrivileges=true`, `ProtectSystem=strict`, `ReadWritePaths=/opt/mibee-steward/data`.
 
 ## Docker Deployment
-
 
 
 ### Prebuilt Image (GHCR)
@@ -142,7 +133,6 @@ docker pull ghcr.io/mi-bee-studio/mibeesteward:0.4.0
 ```
 
 The prebuilt image is the **unprivileged variant** (LLDP/eBPF compiled as stubs). For passive probes, build from source with `make docker-build-priv`.
-
 
 
 ### docker-compose
@@ -162,7 +152,6 @@ services:
 volumes:
   mibee-data:
 ```
-
 
 
 ### Network Mode Selection (Important)
@@ -191,7 +180,6 @@ Field experience backs this up: bridge mode recovers essentially no device MACs 
 > 3. **Passive multicast broken**: the bridge doesn't forward 224/239 multicast, so mDNS/SSDP listeners self-disable.
 >
 > Partial workaround: list your gateway router IPs in `scanner.router_arp.routers` so the scanner can SNMP-walk the router's ARP table for MACs, but this only recovers MACs, not ICMP or multicast.
-
 
 
 ### Full Host-Mode Example
@@ -225,7 +213,6 @@ docker compose --profile host build
 ```
 
 The Makefile wraps common flows: `make docker-up` (host profile, recommended), `make docker-up-bridge` (demo), `make docker-up-macvlan`, `make docker-build-priv` (privileged variant).
-
 
 
 ### Running the Prebuilt Image Directly
@@ -304,11 +291,9 @@ sudo certbot --nginx -d your-domain.com
 ## Data & Backup
 
 
-
 ### Data Location
 
 The SQLite database lives at `./data/mibee.db` (binary deployment) or `/data/mibee.db` inside the container (Docker deployment).
-
 
 
 ### Backup Strategy
@@ -325,7 +310,6 @@ Use `scripts/backup.sh` for safe SQLite backups (no database locking):
 ```
 
 The backup script automatically verifies integrity and cleans up expired backups.
-
 
 
 ### Automatic Maintenance
@@ -349,7 +333,6 @@ Ready-to-import Grafana dashboards for all exported metrics live in
 `deploy/grafana/`, see the [Integrations guide](integrations.md).
 
 
-
 ### Capacity Planning (field-measured baseline)
 
 Measured on a 85-device LAN with default retention windows (30d scan results,
@@ -364,8 +347,6 @@ Measured on a 85-device LAN with default retention windows (30d scan results,
   retention windows, then watch `mibee_db_size_bytes`, if growth deviates
   from linear, check `mibee_db_table_rows` for which table is accumulating
   (a stuck sweeper shows as monotonic growth on one table).
-
-
 
 
 ### Restore
@@ -383,7 +364,6 @@ sudo systemctl start mibee-steward
 ## Upgrading
 
 
-
 ### Binary Upgrade
 
 ```bash
@@ -394,11 +374,9 @@ sudo systemctl start mibee-steward
 ```
 
 
-
 ### Package Upgrade (deb / rpm)
 
 Installing the new package over the old one is the entire upgrade: prerm stops the service, postinst restarts it, config and data are kept. The data-compatibility rules below apply unchanged.
-
 
 
 ### Docker Upgrade
@@ -415,7 +393,6 @@ Data compatibility: since v0.7 the schema is created fresh on first start and is
 > 1. The **archive learner's window restarts from deployment day**. The periodic-pattern exemption (`archive.smart.*`) learns from `asset_archive_events`, a new table that starts empty — a device that "always comes back in November" needs to re-accumulate appearance points for ~2 months (its learned cycle) before smart exemption re-engages. Devices with a known return pattern can be protected immediately with a `force_active` pin.
 > 2. Ledger columns (`lifecycle_state` / `owner` / `asset_no`) and tag assignments exist only from the new database onward; if the old inventory carried that data in `user_attributes` or device notes, it needs re-entry — the CSV export of the old database (Devices → export) is the practical migration source.
 
-<<<<<<< HEAD
 
 ### Home Assistant add-on (#622)
 

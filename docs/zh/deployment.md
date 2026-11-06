@@ -26,9 +26,6 @@ flowchart TD
     F -->|"否"| H["单机二进制部署：systemd 管理"]
 ```
 
-=======
-
->>>>>>> origin/main
 
 ### 打包路线与非目标（决策记录，2026-10-24）
 
@@ -39,7 +36,6 @@ flowchart TD
 明确不做：**snap**（扫描器需要 raw socket 做 ICMP/ARP，沙箱与产品天性相克）、**flatpak / AppImage**（面向 GUI 应用的格式；本产品是无头服务）、**Homebrew**（macOS 非目标平台）、**群晖 SPK / 威联通 QPKG**（每厂商 SDK 锁定与签名负担，而 NAS 上的 Docker 已服务该场景）。
 
 ## 二进制部署
-
 
 
 ### 下载
@@ -53,7 +49,6 @@ make build
 # 或交叉编译
 make build-linux-amd64
 ```
-
 
 
 ### 软件包安装（deb / rpm）
@@ -78,7 +73,6 @@ sudo dnf install ./mibee-steward-<version>-1.x86_64.rpm
 - 包只带默认构建；`-full` 能力变体仍是手工构建（[构建变体](build-variants.md)）。
 
 
-
 ### 最小配置
 
 ```bash
@@ -92,7 +86,6 @@ sudo cp -r configs/* /opt/mibee-steward/configs/
 sudo chown -R mibee:mibee /opt/mibee-steward
 sudo chmod +x /opt/mibee-steward/mibee-steward
 ```
-
 
 
 ### 配置生产环境
@@ -113,7 +106,6 @@ auth:
 ```
 
 
-
 ### Systemd 服务
 
 ```bash
@@ -126,7 +118,6 @@ sudo systemctl start mibee-steward
 服务内置安全加固：`NoNewPrivileges=true`、`ProtectSystem=strict`、`ReadWritePaths=/opt/mibee-steward/data`。
 
 ## Docker 部署
-
 
 
 ### 使用预构建镜像（GHCR）
@@ -142,7 +133,6 @@ docker pull ghcr.io/mi-bee-studio/mibeesteward:0.4.0
 ```
 
 预构建镜像是**非特权变体**（LLDP/eBPF 编译为 stub）。如需被动探测能力，用源码 + `make docker-build-priv` 自行构建。
-
 
 
 ### docker-compose
@@ -162,7 +152,6 @@ services:
 volumes:
   mibee-data:
 ```
-
 
 
 ### 网络模式选型（重要）
@@ -191,7 +180,6 @@ flowchart LR
 > 3. **被动多播失效**：bridge 不转发 224/239 多播，mDNS/SSDP 监听源会自禁用。
 >
 > 补救：bridge 模式下在 `scanner.router_arp.routers` 里列出网关路由器 IP，让扫描器通过 SNMP walk 路由器的 ARP 表补 MAC；但这只能补 MAC，救不了 ICMP/多播。
-
 
 
 ### host 模式完整示例
@@ -225,7 +213,6 @@ docker compose --profile host build
 ```
 
 Makefile 封装了常用流程：`make docker-up`（host profile，推荐）、`make docker-up-bridge`（演示）、`make docker-up-macvlan`、`make docker-build-priv`（特权变体）。
-
 
 
 ### 直接运行预构建镜像
@@ -304,11 +291,9 @@ sudo certbot --nginx -d your-domain.com
 ## 数据与备份
 
 
-
 ### 数据位置
 
 SQLite 数据库默认位于 `./data/mibee.db`（二进制部署）或容器内 `/data/mibee.db`（Docker 部署）。
-
 
 
 ### 备份策略
@@ -327,7 +312,6 @@ SQLite 数据库默认位于 `./data/mibee.db`（二进制部署）或容器内 
 备份脚本会自动验证完整性并清理过期备份。
 
 
-
 ### 自动养护
 
 每轮保留清理（默认每 6 小时，`retention.sweep_interval_hours`）同时执行存储健康巡检：WAL 检查点并截断（`PRAGMA wal_checkpoint(TRUNCATE)`，将预写日志页折回主文件，`-wal` 归零）、刷新 SQLite 统计信息（`PRAGMA optimize`），并将磁盘体积与高容量表行数导出到 Prometheus：
@@ -342,7 +326,6 @@ SQLite 数据库默认位于 `./data/mibee.db`（二进制部署）或容器内 
 所有导出指标均有开箱即用的 Grafana 面板（`deploy/grafana/`），见[生态集成指南](integrations.md)。
 
 
-
 ### 容量规划（实测基线）
 
 在 85 台设备的局域网、默认保留窗口（扫描结果 30 天、心跳结果 7 天、服务证据 14 天）下实测：
@@ -350,8 +333,6 @@ SQLite 数据库默认位于 `./data/mibee.db`（二进制部署）或容器内 
 - 稳态：主库约 150 MB + 心跳库约 4 MB
 - 增长主要由 `scan_results`（每任务 × 每 IP × 每轮扫描一行，/24 每 30 分钟一轮 ≈ 1.2 万行/天）与 `heartbeat_results`（每探测每 tick 一行，30 台 × 3 探测 × 2880 tick/天 ≈ 26 万行/天，7 天清理）主导
 - 经验值：默认保留窗口下按**每台被扫描设备每月约 2 MB** 预算；之后关注 `mibee_db_size_bytes`，若偏离线性增长，用 `mibee_db_table_rows` 定位哪张表在累积（清理器卡死表现为单表单调增长）
-
-
 
 
 ### 恢复
@@ -369,7 +350,6 @@ sudo systemctl start mibee-steward
 ## 升级
 
 
-
 ### 二进制升级
 
 ```bash
@@ -380,11 +360,9 @@ sudo systemctl start mibee-steward
 ```
 
 
-
 ### 软件包升级（deb / rpm）
 
 在旧包上直接安装新包即是全部升级动作：prerm 停服务 → postinst 重启，配置与数据保留。下方数据兼容性规则同样适用。
-
 
 
 ### Docker 升级
@@ -401,7 +379,6 @@ docker compose up -d
 > 1. **档案学习窗从部署日重新起算**。周期模式豁免（`archive.smart.*`）从 `asset_archive_events` 学习，而这是张从零开始的新表——一台「每年十一月总会回来」的设备需要重新积累约两个月（一个学习周期）的出现点，智能豁免才会重新生效。已知回归规律的设备可以先用 `force_active` pin 立即保护。
 > 2. 台账列（`lifecycle_state` / `owner` / `asset_no`）与标签指派只在新数据库中存在；若旧资产库把这些数据记在 `user_attributes` 或设备备注里，需要重新录入——旧库的 CSV 导出（设备页 → 导出）是现实的迁移来源。
 
-<<<<<<< HEAD
 
 ### Home Assistant add-on（#622）
 
