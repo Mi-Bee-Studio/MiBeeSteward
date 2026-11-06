@@ -12,19 +12,31 @@ The first visit to `http://<host>:8080` redirects to the login page. Sign in wit
 
 ## Dashboard
 
-The dashboard is the landing view: device status distribution, heartbeat success rate, device type distribution, and other widget cards; recent scan activity (alive / new / duration); and the offline devices that need attention. The widget layout is customizable (add/remove widgets), and a scan can be kicked off from the top-right corner.
+The dashboard is the landing view: device status distribution, heartbeat success rate, device type distribution, and other widget cards; recent scan activity (alive / new / duration); and the offline devices that need attention. Two ledger-caliber cards join the grid (#669): **lifecycle distribution** (the active fleet by ledger state, archive excluded) and **device count by tag** (per dictionary tag — a device counts once per carried tag, so the sum may exceed the total). The widget layout is customizable (add/remove widgets), and a scan can be kicked off from the top-right corner.
 
 ![Dashboard](images/dashboard.webp)
 
 ## Device Inventory
 
-The device list is the day-to-day workhorse: every registered device across all networks, filterable by status/type, searchable, and sortable. Each row shows IP, MAC, OUI vendor, inferred type and brand, and online status; the identification source (protocol evidence vs hostname heuristic) is distinguished by a badge.
+The device list is the day-to-day workhorse: every registered device across all networks, filterable by status/type/lifecycle, searchable, and sortable. Each row shows IP, MAC, OUI vendor, inferred type and brand, and online status; the identification source (protocol evidence vs hostname heuristic) is distinguished by a badge. Two asset-ledger layers ride on top (#665, #669): dictionary **tag chips** under the name (batch tagging over selected rows, server-side `tag_id` filtering), and the **lifecycle badge** for non-`in_use` states (spare / in repair / lent out / retired in muted state colors — the population norm stays quiet). The ledger itself — lifecycle state, responsible person (owner), and the organization's asset number — is edited in the device form; a physical asset with neither IP nor MAC is a first-class device whose `asset_no` is its identity, and the search box matches owner and asset number too.
 
 ![Device list](images/devices.webp)
 
 Click any device for the detail page: base info, scan attributes (SNMP sysName/description, open ports, detected services and versions), TLS certificates, heartbeat history, neighbor relationships, config backup versions, and attached documents, all on one page.
 
 ![Device detail](images/device-detail.webp)
+
+## Asset Archive & Ledger
+
+Offline devices are archived, not deleted (#663): a scanner-discovered device offline past the threshold (per-device override > global `archive.offline_days`) moves to the **Archive** (档案库) with its full history preserved; coming back online continuously past the restore window auto-returns it; `force_archive` / `force_active` pins override the automation; and the periodic-pattern learner (#664) exempts devices that keep returning on a stable cycle. The Archive page lists the filed devices with their badges and archive times, offers manual restore (force-breaking a pin asks first), and opens each device's **dossier** — a six-source timeline (archive events, change log, config versions, TLS certificates, documents, sightings) of everything the system ever knew about the asset.
+
+![Archive list](images/archive.webp)
+
+![Archive dossier](images/archive-dossier.webp)
+
+The tag dictionary is managed under Settings → Tags: the four built-ins (internal / external / temporary / pending) are delete-protected, custom tags get a color picker, and the same chips flow into the device list, the device form, and the dashboard's tag-distribution card.
+
+![Tag dictionary settings](images/tags-settings.webp)
 
 ## Discovery & Identification
 

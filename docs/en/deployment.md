@@ -362,6 +362,11 @@ docker compose up -d
 
 Data compatibility: since v0.7 the schema is created fresh on first start and is not upgraded in place. A database stamped with an older schema version is rejected at startup with instructions; upgrading across that boundary means backing up the data directory (`scripts/backup.sh`), starting with a new database, and letting the next scan repopulate devices. Within a compatible schema version, replacing the binary is all an upgrade needs. ARMv7 devices have no prebuilt release artifact, cross-compile locally with `make build-linux-arm`.
 
+> **Crossing schema 8 → 9 (the asset-archive portfolio, #662–#669)** — two things to expect after the fresh database:
+>
+> 1. The **archive learner's window restarts from deployment day**. The periodic-pattern exemption (`archive.smart.*`) learns from `asset_archive_events`, a new table that starts empty — a device that "always comes back in November" needs to re-accumulate appearance points for ~2 months (its learned cycle) before smart exemption re-engages. Devices with a known return pattern can be protected immediately with a `force_active` pin.
+> 2. Ledger columns (`lifecycle_state` / `owner` / `asset_no`) and tag assignments exist only from the new database onward; if the old inventory carried that data in `user_attributes` or device notes, it needs re-entry — the CSV export of the old database (Devices → export) is the practical migration source.
+
 ### Resetting the admin password
 
 Forgot the `admin` password? No DB surgery needed:
