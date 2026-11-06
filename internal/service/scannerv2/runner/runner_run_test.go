@@ -256,7 +256,7 @@ func (h *testLogHandler) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 func (h *testLogHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
-func (h *testLogHandler) WithGroup(name string) slog.Handler   { return h }
+func (h *testLogHandler) WithGroup(_ string) slog.Handler      { return h }
 
 // TestRunner_Run_MarksTaskRunningFromStart (#710): the task's
 // last_run_status must flip to 'running' the moment the run row exists —
