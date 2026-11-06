@@ -1,0 +1,13 @@
+apiVersion: v2
+name: mibee-steward
+description: |
+  MiBee Steward center — network/IoT asset discovery & registry
+  (CMDB-lite). Single-instance by design: SQLite (WAL) on a RW PVC,
+  replicas are locked to 1 (#623).
+type: application
+version: 0.1.0
+appVersion: "0.9.0"
+annotations:
+  artifacthub.io/images: |
+    - name: mibee-steward
+      image: ghcr.io/mi-bee-studio/mibee-steward:latest

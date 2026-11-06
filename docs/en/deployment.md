@@ -375,6 +375,11 @@ Data compatibility: since v0.7 the schema is created fresh on first start and is
 > 1. The **archive learner's window restarts from deployment day**. The periodic-pattern exemption (`archive.smart.*`) learns from `asset_archive_events`, a new table that starts empty — a device that "always comes back in November" needs to re-accumulate appearance points for ~2 months (its learned cycle) before smart exemption re-engages. Devices with a known return pattern can be protected immediately with a `force_active` pin.
 > 2. Ledger columns (`lifecycle_state` / `owner` / `asset_no`) and tag assignments exist only from the new database onward; if the old inventory carried that data in `user_attributes` or device notes, it needs re-entry — the CSV export of the old database (Devices → export) is the practical migration source.
 
+### Kubernetes / k3s (Helm, #623)
+
+The center ships a Helm chart at `deploy/helm/mibee-steward` (CI-linted). Architecture is **single-instance by design**: state is SQLite (WAL) on a ReadWriteOnce PVC, `replicas: 1` is locked, strategy is `Recreate` — two writers are not a topology, and more LAN coverage means more **agents**, not more center replicas. The pod does NOT default to hostNetwork: the intended shape is the hybrid — center in the cluster, one agent per target LAN outside it, pointed at the service/ingress URL.
+
+Secrets never live in values: create an Opaque secret (`MIBEE_AUTH_JWT_SECRET`, `MIBEE_SECURITY_MASTER_KEY`, `MIBEE_AUTH_INITIAL_ADMIN_PASSWORD`) and pass `--set secrets.existingName=...`. Eval installs may `--set secrets.create=true` (random jwt, browser first-run password; master key stays unset). See `deploy/helm/mibee-steward/README.md`.
 ### Resetting the admin password
 
 Forgot the `admin` password? No DB surgery needed:
