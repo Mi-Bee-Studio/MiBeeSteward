@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mibee-steward.fullname" . }}
+  labels:
+    {{- include "mibee-steward.labels" . | nindent 4 }}
+spec:
+  # LOCKED to 1 (#623): SQLite (WAL) on a RWO PVC has exactly one writer.
+  # Scaling the center horizontally is not a supported topology — more LAN
+  # coverage means more AGENTS, not more center replicas.
+  replicas: 1
+  strategy:
+    type: Recreate        # RollingUpdate would briefly run two writers
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "mibee-steward.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "mibee-steward.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # NO hostNetwork by design (#623): a pod has no meaningful LAN
+      # presence; the distributed agents carry the physical-LAN scanning.
+      containers:
+        - name: mibee-steward
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: {{ include "mibee-steward.secretName" . }}
+            - configMapRef:
+                name: {{ include "mibee-steward.fullname" . }}-config
+          volumeMounts:
+            - name: data
+              mountPath: /opt/mibee-steward/data
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if and .Values.persistence.enabled (or .Values.persistence.existingClaim .Values.secrets.create) }}
+          {{- if .Values.persistence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim }}
+          {{- else }}
+          persistentVolumeClaim:
+            claimName: {{ include "mibee-steward.fullname" . }}-data
+          {{- end }}
+          {{- else }}
+          emptyDir: {}      # eval mode only: state does not survive pod restarts
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

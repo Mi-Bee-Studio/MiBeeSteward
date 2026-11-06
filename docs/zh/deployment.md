@@ -361,6 +361,11 @@ docker compose up -d
 > 1. **档案学习窗从部署日重新起算**。周期模式豁免（`archive.smart.*`）从 `asset_archive_events` 学习，而这是张从零开始的新表——一台「每年十一月总会回来」的设备需要重新积累约两个月（一个学习周期）的出现点，智能豁免才会重新生效。已知回归规律的设备可以先用 `force_active` pin 立即保护。
 > 2. 台账列（`lifecycle_state` / `owner` / `asset_no`）与标签指派只在新数据库中存在；若旧资产库把这些数据记在 `user_attributes` 或设备备注里，需要重新录入——旧库的 CSV 导出（设备页 → 导出）是现实的迁移来源。
 
+### Kubernetes / k3s（Helm，#623）
+
+center 附带 Helm chart（`deploy/helm/mibee-steward`，CI lint 把关）。架构**单实例设计**：状态为 RWO PVC 上的 SQLite（WAL），`replicas: 1` 锁死、策略 Recreate——双写不是拓扑，更多 LAN 覆盖意味着更多 **agent** 而非更多 center 副本。pod 默认**不做** hostNetwork：预期形态是混合部署——center 在集群内、每目标 LAN 一个 agent 在集群外，指向 service/ingress URL。
+
+密钥永不进 values：创建 Opaque secret（`MIBEE_AUTH_JWT_SECRET`、`MIBEE_SECURITY_MASTER_KEY`、`MIBEE_AUTH_INITIAL_ADMIN_PASSWORD`）并 `--set secrets.existingName=...`；评估安装可 `--set secrets.create=true`（随机 jwt、浏览器首启设密；master key 保持未设）。详见 `deploy/helm/mibee-steward/README.md`。
 ### 管理员密码重置
 
 忘记 `admin` 密码时无需改库：

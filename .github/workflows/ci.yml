@@ -226,6 +226,21 @@ jobs:
         working-directory: web
         run: npx svelte-check --fail-on-warnings false --output summary
 
+  # Helm chart gate (#623): lint + render the deploy/helm chart so template
+  # drift fails CI instead of a user's first install.
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - run: helm lint deploy/helm/mibee-steward
+      # Render both secret paths (existing-secret production form and the
+      # eval create=true form) to catch condition bugs the lint can't.
+      - run: helm template deploy/helm/mibee-steward >/dev/null
+      - run: helm template deploy/helm/mibee-steward --set secrets.create=true >/dev/null
+
   sqlc-verify:
     runs-on: ubuntu-latest
     steps:
