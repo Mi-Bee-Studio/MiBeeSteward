@@ -22,9 +22,7 @@ import (
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/service/scannerv2"
-	scannerv2probe "mibee-steward/internal/service/scannerv2/probe"
 )
 
 // Sentinel errors returned to the handler for status-code mapping.
@@ -97,17 +95,10 @@ func NewEngine(queries *db.Queries, logger *slog.Logger, reg prometheus.Register
 		metrics:     newMetrics(reg),
 		recorder:    recorder,
 		transitions: newTransitionDetector(defaultProbeFailThreshold),
-		exec: targetExecutor{
-			probers: map[string]probe.Prober{
-				"http": &probe.HTTPProber{},
-				"tcp":  &probe.TCPProber{},
-				"icmp": &probe.ICMPProber{},
-			},
-			certCollect: scannerv2probe.CollectCertChain,
-		},
-		nextDue: make(map[int64]time.Time),
-		sem:     make(chan struct{}, maxConcurrency),
-		done:    make(chan struct{}),
+		exec:        newTargetExecutor(),
+		nextDue:     make(map[int64]time.Time),
+		sem:         make(chan struct{}, maxConcurrency),
+		done:        make(chan struct{}),
 	}
 }
 
