@@ -212,6 +212,6 @@ func TestExecuteHTTP_SendsProbeUserAgent(t *testing.T) {
 
 	require.Len(t, got, 2)
 	for _, ua := range got {
-		require.Equal(t, probe.ProbeUserAgent(), ua)
+		require.Equal(t, probe.UserAgent(), ua)
 	}
 }

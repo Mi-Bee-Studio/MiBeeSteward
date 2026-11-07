@@ -64,7 +64,7 @@ func (x *targetExecutor) executeHTTPOptions(ctx context.Context, t db.ProbeTarge
 	if err != nil {
 		return outcome{Status: "fail", ErrMsg: err.Error()}
 	}
-	req.Header.Set("User-Agent", probe.ProbeUserAgent())
+	req.Header.Set("User-Agent", probe.UserAgent())
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
