@@ -2067,7 +2067,7 @@ ProbeQualityTarget,
 													<td class="py-1.5 pr-3">{p.reached_ttl || '—'}</td>
 													<td class="py-1.5 pr-3">{p.reply_ttl || '—'}</td>
 													<td class="py-1.5 pr-3">{p.visible_hops}</td>
-													<td class="py-1.5 pr-3">{pathStatusBadge(p)}</td>
+													<td class="py-1.5 pr-3"><span class={pathStatusBadge(p).cls}>{pathStatusBadge(p).label}</span></td>
 													<td class="py-1.5 pr-3 text-xs text-text-muted">{formatTime(p.traced_at)}</td>
 													<td class="py-1.5 text-right">
 														<button type="button" class="btn btn-ghost btn-xs mr-1" onclick={() => openPathModal(p)}>{m['probes.Paths View']()}</button>
