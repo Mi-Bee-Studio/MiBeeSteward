@@ -5,6 +5,11 @@ All notable changes to MiBee Steward are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Probe: synthetic HTTP probes send a product User-Agent (#713)**: some public sites reject common tool UAs — www.qq.com answers Go's default `Go-http-client/1.1` (and curl's) with 501 — so the built-in egress-quality target `quality-http-qq` failed on every center run and the center's domestic verdict sat at `degraded` permanently. Both probe HTTP paths (option-less and `executeHTTPOptions`) now send `MiBeeSteward-probe/<version> (+https://github.com/Mi-Bee-Studio/MiBeeSteward)`, and the engine and `RunTarget` build their executor from one constructor so the two paths cannot drift apart again. Heartbeat checks against LAN devices keep Go's default User-Agent (unchanged).
+
 ## [0.9.0] - 2026-11-07
 
 ### Added
