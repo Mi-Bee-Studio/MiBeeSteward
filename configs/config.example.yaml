@@ -257,6 +257,35 @@ probe:
     interval_seconds: 300    # auto-target cadence
     max_targets: 100         # population cap
     sweep_interval_minutes: 15
+  # Egress identity recorder (#718): every interval the center asks a set of
+  # public echo sources (HTTP/STUN/DNS) which public IP the current egress
+  # presents, enriches the distinct IPs with their origin ASN, and stores the
+  # round in data/probe_ext.db. Recording only - changes never notify (#716).
+  # The probes page shows the current IPs in the "Egress & Paths" panel.
+  # MIBEE_PROBE_EGRESS_ENABLED / _INTERVAL_SECONDS.
+  egress:
+    enabled: true
+    interval_seconds: 300
+    # DNS servers used for the Team Cymru origin-ASN TXT lookups. The default
+    # public resolver works from most networks; the system resolver often
+    # blocks these TXT queries.
+    asn_resolvers: [223.5.5.5]
+    # sources: []            # empty = built-in multi-transport set; a
+    #                         # non-empty list REPLACES it. Entries:
+    #                         # {name: http-a, kind: http, target: "https://..."}
+    #                         # {name: stun-a, kind: stun, target: "host:3478"}
+    #                         # {name: dns-a, kind: dns, target: "ns|qname"}
+  # Path recorder (#719): zero-privilege TCP/ICMP TTL walks from the center
+  # to every enabled target of the listed categories. Zero capabilities
+  # needed (ICMP rides unprivileged ping sockets). Latest path per target is
+  # shown in the probes page; "Trace now" runs one on demand.
+  # MIBEE_PROBE_TRACE_* .
+  trace:
+    categories: [external, quality]  # lan stays off (topology's job)
+    interval_minutes: 30
+    max_ttl: 30
+    per_hop_ms: 500         # silent-middle egress needs the full walk
+    concurrency: 2
 
 prometheus:
   enabled: true
@@ -526,6 +555,9 @@ retention:
   # interval). probe_tls_certs is not swept: it holds only each target's
   # current certificate chain, replaced on every successful collection.
   probe_results_days: 30
+  # probe_ext: the egress/path side database data/probe_ext.db (#716/#718/
+  # #719 - egress echo rounds + path samples). Small volume.
+  probe_ext_days: 30
   sweep_interval_hours: 6
   batch_size: 5000
 

@@ -32,6 +32,60 @@ type ProbeConfig struct {
 	// targets for discovered services. Default OFF - it writes rows on its
 	// own, so it must be a deliberate choice.
 	Autogen ProbeAutogenConfig `koanf:"autogen"`
+	// Egress drives the egress-identity recorder (#718): every interval the
+	// center (and later agents) asks a set of echo sources which public IP
+	// the current egress presents, enriches the distinct IPs with their ASN,
+	// and stores the round in the probe_ext.db side database. Recording only
+	// - change notifications are deliberately out of scope (the #716 ruling:
+	// changes never alert on their own).
+	Egress ProbeEgressConfig `koanf:"egress"`
+	// Trace drives the zero-privilege path recorder (#719): every interval
+	// each enabled external/quality target gets one TCP/ICMP TTL walk; the
+	// latest path per target is what the probes page shows (#716 UI).
+	Trace ProbeTraceConfig `koanf:"trace"`
+}
+
+// ProbeEgressConfig tunes the egress-identity rounds (#718).
+type ProbeEgressConfig struct {
+	Enabled bool `koanf:"enabled"`
+	// IntervalSeconds between rounds (center-side; agents get it via the
+	// egress plan when the agent side lands).
+	IntervalSeconds int `koanf:"interval_seconds"`
+	// ASNResolvers are the DNS servers used for the Team Cymru origin ASN
+	// TXT lookups, in preference order. The default public resolver works
+	// from both survey networks; the system resolver often blocks the TXT
+	// CHAOS-ish queries.
+	ASNResolvers []string `koanf:"asn_resolvers"`
+	// Sources replaces the built-in echo-source set entirely when non-empty.
+	// Each entry: kind http (Target = URL returning the IP in the body),
+	// stun (Target = host:port), or dns (Target = "server|qname|TXT").
+	Sources []ProbeEgressSource `koanf:"sources"`
+}
+
+// ProbeEgressSource is one public-IP echo source.
+type ProbeEgressSource struct {
+	Name   string `koanf:"name" json:"name"`
+	Kind   string `koanf:"kind" json:"kind"` // http | stun | dns
+	Target string `koanf:"target" json:"target"`
+}
+
+// ProbeTraceConfig tunes the path recorder (#719, center side first).
+type ProbeTraceConfig struct {
+	// Categories lists the probe-target categories that get periodic traces
+	// (lan | external | quality). Default external+quality; lan stays off
+	// (internal paths change with every ARP flap and are the topology page's
+	// job, not the egress path question).
+	Categories []string `koanf:"categories"`
+	// IntervalMinutes between baseline traces per target.
+	IntervalMinutes int `koanf:"interval_minutes"`
+	// MaxTTL bounds the TTL walk.
+	MaxTTL int `koanf:"max_ttl"`
+	// PerHopMs is each TTL attempt's wait. Silent-middle egress (the survey's
+	// 63.x case: hops 2..N-1 all mute, destination at 12-17) means NO early
+	// give-up - the walk always runs to reached/max-ttl.
+	PerHopMs int `koanf:"per_hop_ms"`
+	// Concurrency bounds simultaneous traces.
+	Concurrency int `koanf:"concurrency"`
 }
 
 // ProbeQualityConfig drives the egress-quality matrix. The default target
@@ -84,6 +138,92 @@ type ProbeAutogenConfig struct {
 	MaxTargets int `koanf:"max_targets"`
 	// SweepIntervalMinutes is the reconcile cadence.
 	SweepIntervalMinutes int `koanf:"sweep_interval_minutes"`
+}
+
+// DefaultEgressSources is the shipped echo-source set (#718): a domestic and
+// an international mix across three transports, because no single source is
+// reliable from every network (survey 2026-11-07: per-source availability
+// ranged from always-dead to ~100%). Public anycast/service addresses only.
+func DefaultEgressSources() []ProbeEgressSource {
+	return []ProbeEgressSource{
+		{Name: "http-icanhazip", Kind: "http", Target: "https://ipv4.icanhazip.com"},
+		{Name: "http-aws-checkip", Kind: "http", Target: "https://checkip.amazonaws.com"},
+		{Name: "http-cf-trace", Kind: "http", Target: "https://www.cloudflare.com/cdn-cgi/trace"},
+		{Name: "http-ipip", Kind: "http", Target: "https://myip.ipip.net/json"},
+		{Name: "stun-bilibili", Kind: "stun", Target: "stun.chat.bilibili.com:3478"},
+		{Name: "stun-google", Kind: "stun", Target: "stun.l.google.com:19302"},
+		{Name: "stun-cloudflare", Kind: "stun", Target: "stun.cloudflare.com:3478"},
+		{Name: "dns-google-echo", Kind: "dns", Target: "ns1.google.com|o-o.myaddr.l.google.com"},
+	}
+}
+
+// normalizeEgressTrace fills the documented defaults (house convention: zero
+// means default).
+func normalizeEgressTrace(cfg *Config) {
+	e := &cfg.Probe.Egress
+	if e.IntervalSeconds == 0 {
+		e.IntervalSeconds = 300
+	}
+	if len(e.ASNResolvers) == 0 {
+		e.ASNResolvers = []string{"223.5.5.5"}
+	}
+	if len(e.Sources) == 0 {
+		e.Sources = DefaultEgressSources()
+	}
+	t := &cfg.Probe.Trace
+	if len(t.Categories) == 0 {
+		t.Categories = []string{"external", "quality"}
+	}
+	if t.IntervalMinutes == 0 {
+		t.IntervalMinutes = 30
+	}
+	if t.MaxTTL == 0 {
+		t.MaxTTL = 30
+	}
+	if t.PerHopMs == 0 {
+		t.PerHopMs = 500
+	}
+	if t.Concurrency == 0 {
+		t.Concurrency = 2
+	}
+}
+
+// validateEgressTrace checks cross-field sanity (zero values pass, like the
+// other validators).
+func validateEgressTrace(cfg *Config) error {
+	e := &cfg.Probe.Egress
+	if e.IntervalSeconds != 0 && (e.IntervalSeconds < 60 || e.IntervalSeconds > 86400) {
+		return fmt.Errorf("probe.egress.interval_seconds must be between 60 and 86400")
+	}
+	for _, s := range e.Sources {
+		switch s.Kind {
+		case "http", "stun", "dns":
+		default:
+			return fmt.Errorf("probe.egress.sources.%s: kind must be http, stun or dns", s.Name)
+		}
+		if s.Target == "" || s.Name == "" {
+			return fmt.Errorf("probe.egress.sources.%s: every source needs name and target", s.Name)
+		}
+	}
+	t := &cfg.Probe.Trace
+	for _, c := range t.Categories {
+		if c != "lan" && c != "external" && c != "quality" {
+			return fmt.Errorf("probe.trace.categories: unknown category %q (lan|external|quality)", c)
+		}
+	}
+	if t.IntervalMinutes != 0 && t.IntervalMinutes < 5 {
+		return fmt.Errorf("probe.trace.interval_minutes must be at least 5")
+	}
+	if t.MaxTTL != 0 && (t.MaxTTL < 8 || t.MaxTTL > 64) {
+		return fmt.Errorf("probe.trace.max_ttl must be between 8 and 64")
+	}
+	if t.PerHopMs != 0 && (t.PerHopMs < 100 || t.PerHopMs > 3000) {
+		return fmt.Errorf("probe.trace.per_hop_ms must be between 100 and 3000")
+	}
+	if t.Concurrency != 0 && t.Concurrency > 8 {
+		return fmt.Errorf("probe.trace.concurrency must be at most 8")
+	}
+	return nil
 }
 
 // DefaultQualityGroups is the shipped default matrix: a domestic primary
@@ -156,6 +296,7 @@ func normalizeProbe(cfg *Config) {
 	if a.SweepIntervalMinutes == 0 {
 		a.SweepIntervalMinutes = 15
 	}
+	normalizeEgressTrace(cfg)
 }
 
 // validateProbe checks cross-field sanity after normalization. Zero values
@@ -203,5 +344,5 @@ func validateProbe(cfg *Config) error {
 			return fmt.Errorf("probe.autogen.max_targets must be between 1 and 1000")
 		}
 	}
-	return nil
+	return validateEgressTrace(cfg)
 }
