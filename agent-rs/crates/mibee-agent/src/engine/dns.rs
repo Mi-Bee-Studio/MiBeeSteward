@@ -140,6 +140,11 @@ struct Reader<'a> {
     pos: usize,
 }
 
+/// Upper bound on compression-pointer jumps while reading one name (#714).
+/// Legitimate chains are a handful deep; the cap turns a pointer loop in a
+/// corrupt or hostile packet into an error instead of a hang.
+const MAX_POINTER_JUMPS: usize = 16;
+
 impl<'a> Reader<'a> {
     fn u8(&mut self) -> Result<u8, DnsError> {
         let b = *self.buf.get(self.pos).ok_or(DnsError(format!("truncated at {}", self.pos)))?;
@@ -156,26 +161,33 @@ impl<'a> Reader<'a> {
         let b = self.u16()? as u32;
         Ok(a << 16 | b)
     }
-    /// Read a (possibly compressed) name; guards pointer loops.
+    /// Read a (possibly compressed) name. RFC 1035 §4.1.4 lets a name end in
+    /// a pointer whose target may itself end in a pointer (chained
+    /// compression, e.g. DNSPod's CNAME answers), so pointers are followed
+    /// repeatedly; MAX_POINTER_JUMPS bounds the walk so loops still fail.
     fn name(&mut self, depth: usize) -> Result<String, DnsError> {
         if depth > 8 {
             return Err(DnsError("compression loop".into()));
         }
         let mut labels: Vec<String> = Vec::new();
-        let mut jumped = false;
-        let mut return_pos = 0usize;
+        let mut jumps = 0usize;
+        // The caller resumes right after the FIRST pointer: that is where
+        // this name ends in the record being parsed.
+        let mut return_pos: Option<usize> = None;
         loop {
             let len = self.u8()?;
             match len {
                 0 => break,
                 0xC0..=0xFF => {
-                    if jumped {
-                        return Err(DnsError("double pointer".into()));
+                    jumps += 1;
+                    if jumps > MAX_POINTER_JUMPS {
+                        return Err(DnsError("compression pointer loop".into()));
                     }
                     let ptr = ((len & 0x3F) as usize) << 8 | self.u8()? as usize;
-                    return_pos = self.pos;
+                    if return_pos.is_none() {
+                        return_pos = Some(self.pos);
+                    }
                     self.pos = ptr;
-                    jumped = true;
                 }
                 _ => {
                     let end = self.pos + len as usize;
@@ -187,8 +199,8 @@ impl<'a> Reader<'a> {
                 }
             }
         }
-        if jumped {
-            self.pos = return_pos;
+        if let Some(pos) = return_pos {
+            self.pos = pos;
         }
         Ok(labels.join("."))
     }
@@ -443,5 +455,81 @@ mod tests {
         assert!(err.contains("i/o timeout"), "err = {err}");
         // The whole ladder stays inside (roughly) the caller's budget.
         assert!(started.elapsed() < std::time::Duration::from_millis(1500));
+    /// Header + one question for `z.tld A IN` (qname at offset 12).
+    fn header_and_question(an: u16) -> Vec<u8> {
+        let mut m = Vec::new();
+        m.extend_from_slice(&0x4242u16.to_be_bytes());
+        m.extend_from_slice(&[0x81, 0x80]);
+        m.extend_from_slice(&1u16.to_be_bytes()); // qd
+        m.extend_from_slice(&an.to_be_bytes()); // an
+        m.extend_from_slice(&[0, 0, 0, 0]);
+        encode_name("z.tld", &mut m);
+        m.extend_from_slice(&[0, 1, 0, 1]);
+        m
+    }
+
+    /// #714: a name whose pointer target itself ends in a pointer (chained
+    /// compression, the shape DNSPod uses for CNAME answers) used to fail
+    /// with "double pointer" and dropped the whole response.
+    #[test]
+    fn chained_compression_pointers_resolve() {
+        let mut m = header_and_question(2);
+        // answer 1: z.tld CNAME ns.z.tld, rdata written as "ns" + pointer to qname
+        m.extend_from_slice(&[0xC0, 0x0C]);
+        m.extend_from_slice(&[0, 5, 0, 1]);
+        m.extend_from_slice(&60u32.to_be_bytes());
+        let rd_start = m.len() + 2;
+        m.extend_from_slice(&5u16.to_be_bytes());
+        m.extend_from_slice(&[2, b'n', b's', 0xC0, 0x0C]);
+        // answer 2: name = pointer to answer 1's rdata (which ends in a pointer)
+        m.extend_from_slice(&[0xC0, rd_start as u8]);
+        m.extend_from_slice(&[0, 1, 0, 1]);
+        m.extend_from_slice(&60u32.to_be_bytes());
+        m.extend_from_slice(&4u16.to_be_bytes());
+        m.extend_from_slice(&[192, 0, 2, 7]);
+
+        let msg = parse_message(&m).unwrap();
+        assert_eq!(msg.answers.len(), 2);
+        match &msg.answers[0].rdata {
+            RData::Cname(n) => assert_eq!(n, "ns.z.tld"),
+            o => panic!("{o:?}"),
+        }
+        // Parsing resumed after the first pointer: type/rdata read correctly.
+        assert_eq!(msg.answers[1].name, "ns.z.tld");
+        match &msg.answers[1].rdata {
+            RData::A(ip) => assert_eq!(*ip, std::net::Ipv4Addr::new(192, 0, 2, 7)),
+            o => panic!("{o:?}"),
+        }
+    }
+
+    /// Pointer loops (self-referencing or mutual) must still fail, not hang.
+    #[test]
+    fn compression_pointer_loops_are_errors() {
+        // answer name points at itself
+        let mut m = header_and_question(1);
+        let at = m.len() as u8;
+        m.extend_from_slice(&[0xC0, at]);
+        m.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 1]);
+        let err = parse_message(&m).unwrap_err();
+        assert!(err.0.contains("loop"), "{}", err.0);
+
+        // two names pointing at each other
+        let mut m = header_and_question(2);
+        let a = m.len() as u8;
+        m.extend_from_slice(&[0xC0, a + 16]); // -> answer 2's name
+        m.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 1]);
+        m.extend_from_slice(&[0xC0, a]); // -> answer 1's name
+        m.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 2]);
+        let err = parse_message(&m).unwrap_err();
+        assert!(err.0.contains("loop"), "{}", err.0);
+    }
+
+    /// A pointer past the end of the packet is a truncation error.
+    #[test]
+    fn out_of_range_pointer_is_an_error() {
+        let mut m = header_and_question(1);
+        m.extend_from_slice(&[0xC0, 0xFF]);
+        m.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 1]);
+        assert!(parse_message(&m).is_err());
     }
 }
