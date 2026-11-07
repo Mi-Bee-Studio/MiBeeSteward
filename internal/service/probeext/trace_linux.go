@@ -170,6 +170,7 @@ func tcpProbeOnce(dst [4]byte, port, ttl int, wait time.Duration, srcPort int) *
 	ms := float64(time.Since(start).Microseconds()) / 1000
 	if rev&pollErr != 0 || rev&pollHup != 0 {
 		if hop, ok := readErrQueue(fd, net.IP(dst[:]).String()); ok {
+			hop.TTL = ttl
 			hop.MS = ms
 			return hop
 		}
@@ -182,7 +183,7 @@ func tcpProbeOnce(dst [4]byte, port, ttl int, wait time.Duration, srcPort int) *
 		}
 		if soerr == 0 || syscall.Errno(soerr) == syscall.ECONNREFUSED {
 			// connected (or refused by the destination itself): reached.
-			return &PathHop{IP: net.IP(dst[:]).String(), MS: ms}
+			return &PathHop{TTL: ttl, IP: net.IP(dst[:]).String(), MS: ms}
 		}
 	}
 	return nil
@@ -226,7 +227,7 @@ func (t *Tracer) traceICMP(dst [4]byte) TraceResult {
 			if err := syscall.Sendto(fd, pkt, 0, &syscall.SockaddrInet4{Addr: dst}); err != nil {
 				continue
 			}
-			hop = icmpRecvOnce(fd, dstStr, uint16(ttl), t.PerHop, start, buf, oob)
+			hop = icmpRecvOnce(fd, dstStr, ttl, t.PerHop, start, buf, oob)
 			if hop != nil {
 				break
 			}
@@ -250,7 +251,7 @@ func (t *Tracer) traceICMP(dst [4]byte) TraceResult {
 
 // icmpRecvOnce waits for either an echo reply (type 0, seq match; carries
 // the reply TTL via the IP_TTL cmsg) or an error-queue Time Exceeded.
-func icmpRecvOnce(fd int, dstStr string, seq uint16, wait time.Duration, start time.Time, buf, oob []byte) *PathHop {
+func icmpRecvOnce(fd int, dstStr string, ttl int, wait time.Duration, start time.Time, buf, oob []byte) *PathHop {
 	deadline := start.Add(wait)
 	for {
 		remain := time.Until(deadline)
@@ -272,9 +273,9 @@ func icmpRecvOnce(fd int, dstStr string, seq uint16, wait time.Duration, start t
 		if err != nil {
 			continue
 		}
-		if n >= 16 && buf[0] == 0 && binary.BigEndian.Uint16(buf[6:8]) == seq {
+		if n >= 16 && buf[0] == 0 && binary.BigEndian.Uint16(buf[6:8]) == uint16(ttl) {
 			ms := float64(time.Since(start).Microseconds()) / 1000
-			hop := &PathHop{IP: dstStr, MS: ms}
+			hop := &PathHop{TTL: ttl, IP: dstStr, MS: ms}
 			hop.replyTTL = replyTTLFromCmsg(oob[:oobn])
 			return hop
 		}

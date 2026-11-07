@@ -42,6 +42,9 @@ func TestTraceLoopbackTCP(t *testing.T) {
 	if res.DstIP != "127.0.0.1" {
 		t.Errorf("dst = %q, want 127.0.0.1", res.DstIP)
 	}
+	if res.Hops[0].TTL != 1 {
+		t.Errorf("destination hop TTL = %d, want 1 (hops carry their TTL)", res.Hops[0].TTL)
+	}
 }
 
 // TestTraceLoopbackICMP pins the ping-socket tracer the same way.
