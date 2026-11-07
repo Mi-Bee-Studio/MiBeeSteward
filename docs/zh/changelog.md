@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Fixed
+- **agent-rs：带链式压缩指针的 DNS 应答恢复解析（#714）**：agent 的 DNS 解码器每个名字最多跟随一次压缩指针，再遇到指针就报 "double pointer"；但 RFC 1035 允许指针指向的后缀本身再以指针结尾——DNSPod 的 CNAME 应答正是这种形态。因此内置质量目标 `quality-dns-dnspod` 在 agent 上每次都失败，agent 视角的出口判定被误导为 `upstream_resolver` 并点名 DNSPod。现在会连续跟随指针，跳转上限 16 次，指针环仍会快速报错。mDNS 与反向 DNS 应答也用同一个解码器，此前解析出错时整包被静默丢弃，现在这些报文也能读出。
+- **agent-rs：http 拨测发送产品 User-Agent（#713）**：与 center 侧拨测修复对齐——agent 的 http 拨测此前不发 User-Agent，现在发送 `MiBeeSteward-probe/<版本> (+https://github.com/Mi-Bee-Studio/MiBeeSteward)`，同一目标的各视角轨道对被拨测站点呈现同一身份。
+
 ## [0.9.0] - 2026-11-07
 
 ### Added
