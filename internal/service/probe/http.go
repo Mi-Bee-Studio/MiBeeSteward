@@ -14,10 +14,27 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"mibee-steward/internal/version"
 )
 
-// HTTPProber sends HTTP/HTTPS GET requests to a target URL.
-type HTTPProber struct{}
+// ProbeUserAgent is the User-Agent synthetic probes send. Some public sites
+// reject common tool UAs outright: www.qq.com answers Go's default
+// "Go-http-client/1.1" (and curl's) with 501 while a product UA gets 200,
+// which kept the built-in egress-quality matrix permanently degraded on the
+// center track (#713). Heartbeat deliberately does not use it (see
+// HTTPProber.UserAgent).
+func ProbeUserAgent() string {
+	return "MiBeeSteward-probe/" + version.Version + " (+https://github.com/Mi-Bee-Studio/MiBeeSteward)"
+}
+
+// HTTPProber sends HTTP/HTTPS GET requests to a target URL. UserAgent, when
+// set, replaces Go's default User-Agent header. The probe engine sets
+// ProbeUserAgent(); heartbeat keeps the zero value so device checks against
+// LAN web UIs stay exactly as before.
+type HTTPProber struct {
+	UserAgent string
+}
 
 // Probe performs an HTTP GET to the target URL and checks the status code.
 func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Duration) (*Result, error) {
@@ -39,6 +56,9 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 			Success:      false,
 			ErrorMessage: err.Error(),
 		}, nil
+	}
+	if p.UserAgent != "" {
+		req.Header.Set("User-Agent", p.UserAgent)
 	}
 
 	start := time.Now()

@@ -59,16 +59,24 @@ type targetExecutor struct {
 	certCollect certCollector
 }
 
+// newTargetExecutor builds the production executor: the shared probers (the
+// http one carrying the probe User-Agent, #713) + the scanner's real cert
+// collector. Engine and RunTarget both build it here so the two paths can
+// never drift apart again.
+func newTargetExecutor() targetExecutor {
+	return targetExecutor{
+		probers: map[string]probe.Prober{
+			"http": &probe.HTTPProber{UserAgent: probe.ProbeUserAgent()},
+			"tcp":  &probe.TCPProber{},
+			"icmp": &probe.ICMPProber{},
+		},
+		certCollect: scannerv2probe.CollectCertChain,
+	}
+}
+
 // defaultTargetExecutor is what RunTarget (and the agent) use: the production
 // probers + the scanner's real cert collector.
-var defaultTargetExecutor = targetExecutor{
-	probers: map[string]probe.Prober{
-		"http": &probe.HTTPProber{},
-		"tcp":  &probe.TCPProber{},
-		"icmp": &probe.ICMPProber{},
-	},
-	certCollect: scannerv2probe.CollectCertChain,
-}
+var defaultTargetExecutor = newTargetExecutor()
 
 // RunTarget dispatches one target to its module prober, the shared
 // execution core used by BOTH the center engine and the agent-side vantage
