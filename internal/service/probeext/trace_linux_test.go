@@ -15,6 +15,7 @@ import (
 	"context"
 	"net"
 	"net/http/httptest"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -47,8 +48,16 @@ func TestTraceLoopbackTCP(t *testing.T) {
 	}
 }
 
-// TestTraceLoopbackICMP pins the ping-socket tracer the same way.
+// TestTraceLoopbackICMP pins the ping-socket tracer the same way. Skipped
+// when the environment forbids unprivileged ICMP ping sockets: GitHub
+// Actions runners ship ping_group_range "1 0" (root-only), while the
+// product's installers open it (deploy/postinst + OpenWrt install.sh).
 func TestTraceLoopbackICMP(t *testing.T) {
+	if fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_ICMP); err != nil {
+		t.Skipf("no unprivileged ICMP ping sockets here (ping_group_range): %v", err)
+	} else {
+		syscall.Close(fd)
+	}
 	tr := NewTracer(8, 300, 1)
 	res := tr.TraceHost(context.Background(), "127.0.0.1", 0, "icmp")
 	if res.Err != "" {
