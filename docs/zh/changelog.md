@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.9.0] - 2026-11-07
 
 ### Added
 - **agent-rs：自网段上报 + 空 cidr 回落回填（#686）**：agent 现在从 `/proc/net/route` 探测宿主机的实际 IPv4 在链子网（纯解析、零新依赖：小端十六进制、on-link 行给出每个接口的子网、默认路由行标记 primary、跳过链路本地与 lo），随 `meta.self_interfaces` 上报（`name`/`cidr`/`primary`；探测失败或旧版 agent 时缺省——wire 形状字节级兼容，由 golden 形状测试钉死）。center 侧作为 #19 networks.cidr 回填的**回落**消费：agent 配置的 `network_cidr` 声明缺席时，用探测到的 primary 填补绑定网络的空白 cidr——永不覆写既有值（非覆写规则不变，不匹配仍记日志）。刻意不落 agent_status（那需要 bump schema），也刻意不走 sqlc（sqlc 1.31.1 截断多绑定 UPDATE 文本——`''` 字面量与 `LENGTH(x)=0` 双双复现；db/queries/networks.sql 注释已扩记）：回填骑在既有 raw-SQL 路径上。
