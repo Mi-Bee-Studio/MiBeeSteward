@@ -66,7 +66,7 @@ type targetExecutor struct {
 func newTargetExecutor() targetExecutor {
 	return targetExecutor{
 		probers: map[string]probe.Prober{
-			"http": &probe.HTTPProber{UserAgent: probe.ProbeUserAgent()},
+			"http": &probe.HTTPProber{UserAgent: probe.UserAgent()},
 			"tcp":  &probe.TCPProber{},
 			"icmp": &probe.ICMPProber{},
 		},
