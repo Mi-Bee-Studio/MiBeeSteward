@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/service/probe"
 )
 
 func httpTarget(url string, opts *domain.ProbeOptions) db.ProbeTarget {
@@ -182,4 +184,34 @@ func TestExecuteTCPOptions(t *testing.T) {
 		})
 		require.Equal(t, "success", out.Status)
 	})
+}
+
+// TestExecuteHTTP_SendsProbeUserAgent pins #713 on both http paths of the
+// production executor (Engine and RunTarget share newTargetExecutor): the
+// option-less legacy prober and executeHTTPOptions. The responder mimics a
+// site that rejects Go's default UA with 501.
+func TestExecuteHTTP_SendsProbeUserAgent(t *testing.T) {
+	exec := newTargetExecutor()
+	ctx := context.Background()
+
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.UserAgent())
+		if strings.HasPrefix(r.UserAgent(), "Go-http-client/") {
+			w.WriteHeader(http.StatusNotImplemented)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	legacy := exec.execute(ctx, httpTarget(srv.URL, nil))
+	require.Equal(t, "success", legacy.Status, legacy.ErrMsg)
+	withOpts := exec.execute(ctx, httpTarget(srv.URL, &domain.ProbeOptions{ExpectedStatus: []int{200}}))
+	require.Equal(t, "success", withOpts.Status, withOpts.ErrMsg)
+
+	require.Len(t, got, 2)
+	for _, ua := range got {
+		require.Equal(t, probe.ProbeUserAgent(), ua)
+	}
 }
