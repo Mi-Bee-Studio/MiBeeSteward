@@ -24,6 +24,7 @@ import (
 
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/service/probe"
 )
 
 // Option-aware execution for the http and tcp modules (#605). The legacy
@@ -63,6 +64,7 @@ func (x *targetExecutor) executeHTTPOptions(ctx context.Context, t db.ProbeTarge
 	if err != nil {
 		return outcome{Status: "fail", ErrMsg: err.Error()}
 	}
+	req.Header.Set("User-Agent", probe.ProbeUserAgent())
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
