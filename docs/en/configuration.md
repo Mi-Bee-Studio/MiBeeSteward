@@ -423,6 +423,15 @@ Per-target interval/timeout live on each `probe_targets` row (managed in the UI/
 | `probe.autogen.interval_seconds` | int | 300 | Probe interval of auto targets (≥10). |
 | `probe.autogen.max_targets` | int | 100 | Population cap (1–1000) so a 1000-device LAN cannot explode into 3000 targets. |
 | `probe.autogen.sweep_interval_minutes` | int | 15 | Reconcile cadence: create targets for new services, park targets whose service left the scan, revive on reappearance. Manual targets are never touched. |
+| `probe.egress.enabled` | bool | false | Egress identity recorder (#718): every interval the center asks a set of public echo sources (HTTP/STUN/DNS) which public IP the current egress presents, enriches the distinct IPs with their origin ASN, and stores the round in `data/probe_ext.db`. Recording only — changes never notify (#716). A bare config defaults to **disabled**; `configs/config.example.yaml` ships `enabled: true` as the recommended value. Env `MIBEE_PROBE_EGRESS_ENABLED`. |
+| `probe.egress.interval_seconds` | int | 300 | Round cadence (60–86400). Env `MIBEE_PROBE_EGRESS_INTERVAL_SECONDS`. |
+| `probe.egress.asn_resolvers` | []string | ["223.5.5.5"] | DNS servers used for the Team Cymru origin-ASN TXT lookups, in preference order. |
+| `probe.egress.sources` | []source | built-in set | Echo sources; a non-empty list REPLACES the built-in multi-transport set. Entry: `{name, kind: http\|stun\|dns, target}` (http: URL returning the IP in the body; stun: `host:port`; dns: `server\|qname`). |
+| `probe.trace.categories` | []string | ["external","quality"] | Probe-target categories that get periodic zero-privilege path traces (#719). `lan` stays off — internal paths are the topology page's job. |
+| `probe.trace.interval_minutes` | int | 30 | Baseline trace cadence per target (≥5). |
+| `probe.trace.max_ttl` | int | 30 | TTL walk bound (8–64). Silent-middle egress needs the full walk: no early give-up. |
+| `probe.trace.per_hop_ms` | int | 500 | Per-TTL wait (100–3000). |
+| `probe.trace.concurrency` | int | 2 | Simultaneous traces (≤8). |
 
 Quality seeding semantics (applied at startup, idempotent): enabled — missing matrix rows are created (`source=system`, vantage `all`), drifted rows are refreshed from config (module/target/options), and a `source=system` row whose config entry was removed is deleted **with its result history**; disabled — every system target is parked (disabled, kept for history). A row deleted in the UI is reseeded on the next restart; to remove a target permanently, remove it from `groups` (or disable `probe.quality`).
 
@@ -611,6 +620,7 @@ The synchronous scan endpoint (`POST /api/v1/scanner/scan`) imposes a hard targe
 | `retention.host_services_days` | int | 30 | Host service records retention (days) |
 | `retention.host_tls_certs_days` | int | 30 | TLS certificate records retention (days) |
 | `retention.probe_results_days` | int | 30 | Synthetic-probe result history retention (days). `probe_tls_certs` is not swept, it holds only each target's current chain |
+| `retention.probe_ext_days` | int | 30 | Egress echo rounds + path samples retention (days), the `data/probe_ext.db` side database (#716/#718/#719). |
 | `retention.sweep_interval_hours` | int | 6 | Cleanup sweep interval (hours) |
 | `retention.batch_size` | int | 5000 | Max rows per cleanup batch |
 
