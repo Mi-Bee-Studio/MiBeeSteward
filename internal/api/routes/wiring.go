@@ -230,6 +230,19 @@ func dispatchAgentScan(ctx context.Context, dbConn *sql.DB, queries *db.Queries,
 		slog.Warn("agent dispatch: run row create failed", "task_id", taskID, "error", runErr)
 	}
 	runCreated := runErr == nil && run.ID != 0
+	// #710 (release-readiness walkthrough): mark the TASK running at dispatch
+	// time — the agent path's run row can stay "running" for a whole poll
+	// cycle, and without this the task list shows "never run" meanwhile.
+	running := "running"
+	if runCreated {
+		if err := queries.UpdateScanTaskStatus(ctx, db.UpdateScanTaskStatusParams{
+			LastRunAt:     &now,
+			LastRunStatus: &running,
+			ID:            taskID,
+		}); err != nil {
+			slog.Debug("agent dispatch: mark task running failed", "task_id", taskID, "error", err)
+		}
+	}
 	finishRun := func(status, errMsg string) {
 		if !runCreated {
 			return

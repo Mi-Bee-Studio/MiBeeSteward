@@ -45,6 +45,26 @@ bin/loadgen drive --center http://127.0.0.1:8080 \
 
 依赖 `nmap`、`curl`、python3；凭据经 `MIBEE_USER` / `MIBEE_PASS` 传入。
 
+## 极低资源实测（v0.9.0 发版前，2026-11-07）
+
+center 能不能跑在人们真正用来跑路由器/派级硬件的资源档上？整个二进制——扫描器、SQLite、内嵌 SPA——在 cgroup v2 `systemd-run` 作用域下运行：**CPUQuota 30%**（单核的三成）+ **MemoryMax 256 MB**，再驱动千设备合成平面：
+
+| 指标 | 数值 | 说明 |
+|---|---|---|
+| 启动后空载 RSS | **43 MB** | 零配置首启、全新库 |
+| 千机扫描（ICMP+SNMP+port_scan，/22=1022 地址） | **446 秒，1022/1022 全发现** | 0.3 核下 ≈2.3 台/秒 |
+| 扫描期间及之后 RSS 峰值 | **168 MB** | 距 256 MB 上限有余量 |
+| 全程 center CPU | 88.2 秒 | ≈配额预算的 20% |
+| SQLite 库增长 | **0.6 MB** | 千设备+证据 |
+| `mibee_sqlite_busy_total` 增量 | **0** | 无单写者争抢 |
+| 设备列表 API p50 / p95 / max（n=100） | 90.7 / 201 / 502 ms | 限配额下的分页列表 |
+| 仪表盘 overview 聚合 | **7–10 ms** | 千设备全卡片 |
+| `/devices/stats` | ~10 ms | |
+
+解读：单核三成 + 256 MB 上限下，全新 center 扫完一整个 /22、仪表盘毫秒级响应、列表页保持可交互（p95 ≈0.2 秒），写路径零争抢。这是树莓派 Zero 2 W / 入门路由器的资源档——一块单板 Linux 稳跑千机 LAN 的 center；再往上，agent 扇出、center 只做聚合。
+
+复现：`sudo systemd-run --unit=mibee-bench --property=CPUQuota=30% --property=MemoryMax=256M ./mibee-steward -config …` 后接上文 loadgen 流程；临时单元钉住限额，其余一切原样。
+
 ## 方法学注意事项
 
 - 回环面没有丢包、延迟与 ARP，墙钟扫描时长会低估真实局域网；DB 写入负载、识别工作量与 API 延迟具有代表性。

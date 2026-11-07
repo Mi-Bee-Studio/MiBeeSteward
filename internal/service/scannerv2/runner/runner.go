@@ -368,6 +368,24 @@ func (rn *Runner) Run(ctx context.Context, taskID int64, targets string, timeout
 	}
 	runID := run.ID
 
+	// 1b. Mark the TASK as running the moment the run row exists (#710,
+	// found by the release-readiness walkthrough): last_run_status was only
+	// written at finalize, so during a minutes-long scan the task list said
+	// "never run" and the one-click flow's auto-continue (which keys on
+	// last_run_status === 'running') never attached its polling/toast chain.
+	started := start
+	if err := rn.queries.UpdateScanTaskStatus(ctx, db.UpdateScanTaskStatusParams{
+		LastRunAt:     &started,
+		LastRunStatus: strPtr("running"),
+		ID:            taskID,
+	}); err != nil {
+		rn.logger.Debug("scan runner: mark task running failed", "task_id", taskID, "run_id", runID, "error", err)
+	} else {
+		// Observability twin of the trigger-accepted line: the gap to the
+		// finalize write is the honest task-running window.
+		rn.logger.Debug("scan runner: task marked running", "task_id", taskID, "run_id", runID)
+	}
+
 	// 2. Execute the engine. The engine's per-host timeout + concurrency are
 	//    applied via a transient reconfiguration; we just pass targets through.
 	rn.engine.Orchestrator.SetTimeouts(timeout, concurrentHosts)

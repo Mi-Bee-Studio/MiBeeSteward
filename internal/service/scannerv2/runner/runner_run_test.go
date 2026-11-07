@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,9 +45,15 @@ func seedRunTask(t *testing.T, conn *sql.DB, pipeline string) int64 {
 // a runner whose engine failed to init still records a FAILED run row for the
 // fired task (the trigger must not appear to succeed silently).
 func TestRunner_Run_NilEngineMarksFailedRun(t *testing.T) {
-	dbConn, err := testutil.SetupTestDBFromSchema()
+	// cache=shared in-memory DB: the test polls on one pooled conn while
+	// the runner goroutine writes on another — plain :memory: is per-conn.
+	dbConn, err := sql.Open("sqlite", "file:mark710?mode=memory&cache=shared")
 	require.NoError(t, err)
 	t.Cleanup(func() { dbConn.Close() })
+	schema, err := testutil.ReadSchemaFile()
+	require.NoError(t, err)
+	_, err = dbConn.Exec(schema)
+	require.NoError(t, err)
 	q := sqldb.New(dbConn)
 	ctx := context.Background()
 
@@ -231,4 +238,66 @@ func TestRunner_Run_UnboundTaskScopedByTargets(t *testing.T) {
 		`SELECT network_id FROM devices WHERE ip_address='127.0.0.1'`).Scan(&devNet))
 	require.True(t, devNet.Valid, "unbound task must scope by its target CIDR, not the singleton")
 	require.Equal(t, netRow.ID, devNet.Int64)
+}
+
+// testLogHandler collects slog records so tests can assert on log
+// sequencing without a second DB connection (the shared in-memory SQLite
+// is per-conn and observing mid-run state concurrently needs log evidence).
+type testLogHandler struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (h *testLogHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *testLogHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.lines = append(h.lines, r.Message)
+	return nil
+}
+func (h *testLogHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *testLogHandler) WithGroup(_ string) slog.Handler      { return h }
+
+// TestRunner_Run_MarksTaskRunningFromStart (#710): the task's
+// last_run_status must flip to 'running' the moment the run row exists —
+// asserted via the "task marked running" debug line firing BEFORE the
+// engine scan (i.e. before any persist/finalize lines). The one-click
+// flow's auto-continue keys on this; mid-scan the task list must not read
+// "never run".
+func TestRunner_Run_MarksTaskRunningFromStart(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { dbConn.Close() })
+	q := sqldb.New(dbConn)
+	ctx := context.Background()
+
+	taskID := seedRunTask(t, dbConn, `{"icmp":{"enabled":true,"timeout":1}}`)
+	eng, err := engine.NewEngine(dbConn, engine.Config{
+		AllowReservedTargets: true,
+		PerProbeTimeout:      100 * time.Millisecond,
+		PerHostTimeout:       1 * time.Second,
+		MaxConcurrentHosts:   4,
+	}, nil)
+	require.NoError(t, err)
+	lh := &testLogHandler{}
+	rn := New(eng, q, dbConn, nil, 0, slog.New(lh))
+	rn.SetRepo(store.NewSQLiteRepository(dbConn, store.Options{}, nil))
+
+	rn.Run(ctx, taskID, "127.0.0.1", 1*time.Second, 4, false, 0)
+
+	lh.mu.Lock()
+	defer lh.mu.Unlock()
+	marked := -1
+	for i, l := range lh.lines {
+		if l == "scan runner: task marked running" {
+			marked = i
+			break
+		}
+	}
+	require.GreaterOrEqual(t, marked, 0, "run-start must mark the task running (#710); log lines: %v", lh.lines)
+
+	var status sql.NullString
+	require.NoError(t, dbConn.QueryRow(
+		`SELECT last_run_status FROM scan_tasks WHERE id = ?`, taskID).Scan(&status))
+	require.True(t, status.Valid, "final last_run_status must be set")
 }
