@@ -5,6 +5,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Fixed
+- **拨测：合成 HTTP 拨测改发产品 User-Agent（#713）**：部分公网站点会拒绝常见工具 UA——www.qq.com 对 Go 默认的 `Go-http-client/1.1`（以及 curl 的默认 UA）返回 501——导致内置出口质量目标 `quality-http-qq` 在 center 上每次都失败，center 的 domestic 判定常年停在 `degraded`。两条拨测 HTTP 路径（无 options 的路径与 `executeHTTPOptions`）现在统一发送 `MiBeeSteward-probe/<版本> (+https://github.com/Mi-Bee-Studio/MiBeeSteward)`；拨测引擎与 `RunTarget` 改由同一个构造函数生成执行器，两条路径不会再分叉。对 LAN 设备的心跳检查仍使用 Go 默认 User-Agent（行为不变）。
+
 ## [0.9.0] - 2026-11-07
 
 ### Added
