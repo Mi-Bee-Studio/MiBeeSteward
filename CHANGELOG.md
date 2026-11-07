@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **agent-rs: DNS replies with chained compression pointers parse again (#714)**: the agent's DNS decoder followed at most one compression pointer per name and rejected the rest as "double pointer", but RFC 1035 lets a pointer's target itself end in a pointer — the shape DNSPod uses for CNAME answers. Every agent run of the built-in `quality-dns-dnspod` target therefore failed, steering the agent egress verdict to `upstream_resolver` and naming DNSPod as the culprit. Pointers are now followed repeatedly under a 16-jump cap, so pointer loops still fail fast. The same decoder parses mDNS and reverse-DNS replies, where a parse error silently dropped the whole packet; those packets are read now too.
+- **agent-rs: http probes send the product User-Agent (#713)**: parity with the center's probe fix — agent http probes now send `MiBeeSteward-probe/<version> (+https://github.com/Mi-Bee-Studio/MiBeeSteward)` instead of no User-Agent, so both tracks of a target present the same identity to the probed site.
 
 ## [0.9.0] - 2026-11-07
 
