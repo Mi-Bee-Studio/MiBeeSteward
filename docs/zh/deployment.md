@@ -129,7 +129,7 @@ sudo systemctl start mibee-steward
 docker pull ghcr.io/mi-bee-studio/mibeesteward:latest
 
 # 或锁定具体版本
-docker pull ghcr.io/mi-bee-studio/mibeesteward:0.4.0
+docker pull ghcr.io/mi-bee-studio/mibeesteward:0.9.0
 ```
 
 预构建镜像是**非特权变体**（LLDP/eBPF 编译为 stub）。如需被动探测能力，用源码 + `make docker-build-priv` 自行构建。

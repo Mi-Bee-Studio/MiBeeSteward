@@ -13,7 +13,7 @@
 
 ### 方式一：GitHub Releases
 
-从 [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) 下载对应架构的二进制（当前 v0.5.0）：
+从 [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) 下载对应架构的二进制（当前 v0.9.0）：
 
 ```bash
 chmod +x mibee-steward
@@ -23,7 +23,7 @@ chmod +x mibee-steward
 ### 方式二：Docker
 
 ```bash
-docker pull ghcr.io/mi-bee-studio/mibeesteward:0.4.0
+docker pull ghcr.io/mi-bee-studio/mibeesteward:0.9.0
 ```
 
 扫描依赖网络命名空间能力，容器建议使用 host 网络模式并声明 `NET_RAW` / `NET_ADMIN`：
@@ -33,7 +33,7 @@ docker run -d --name mibee \
   --network host \
   --cap-add NET_RAW --cap-add NET_ADMIN \
   -v "$PWD/configs:/app/configs:ro" \
-  ghcr.io/mi-bee-studio/mibeesteward:0.4.0
+  ghcr.io/mi-bee-studio/mibeesteward:0.9.0
 ```
 
 > Docker 默认 bridge 模式位于 NAT 之后，ICMP、ARP/MAC 与多播探测会失效，不能用于真实资产盘点。详见[部署](deployment.md)。

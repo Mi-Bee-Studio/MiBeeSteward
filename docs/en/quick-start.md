@@ -13,7 +13,7 @@ This guide shows how to get MiBee Steward running in minutes and complete your f
 
 ### Option 1: GitHub Releases
 
-Download the binary for your architecture from the [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) page (current version: v0.5.0):
+Download the binary for your architecture from the [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) page (current version: v0.9.0):
 
 ```bash
 chmod +x mibee-steward
@@ -23,7 +23,7 @@ chmod +x mibee-steward
 ### Option 2: Docker
 
 ```bash
-docker pull ghcr.io/mi-bee-studio/mibeesteward:0.4.0
+docker pull ghcr.io/mi-bee-studio/mibeesteward:0.9.0
 ```
 
 Scanning operates at the network-namespace level, so run the container with host networking and declare `NET_RAW` / `NET_ADMIN`:
@@ -33,7 +33,7 @@ docker run -d --name mibee \
   --network host \
   --cap-add NET_RAW --cap-add NET_ADMIN \
   -v "$PWD/configs:/app/configs:ro" \
-  ghcr.io/mi-bee-studio/mibeesteward:0.4.0
+  ghcr.io/mi-bee-studio/mibeesteward:0.9.0
 ```
 
 > Docker's default bridge mode sits behind NAT, which breaks ICMP, ARP/MAC, and multicast probing, it cannot be used for real asset inventory. See [Deployment](deployment.md).
