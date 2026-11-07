@@ -129,7 +129,7 @@ From v0.4.0 onwards, each release publishes a multi-arch container image (amd64 
 docker pull ghcr.io/mi-bee-studio/mibeesteward:latest
 
 # Or pin a specific version
-docker pull ghcr.io/mi-bee-studio/mibeesteward:0.4.0
+docker pull ghcr.io/mi-bee-studio/mibeesteward:0.9.0
 ```
 
 The prebuilt image is the **unprivileged variant** (LLDP/eBPF compiled as stubs). For passive probes, build from source with `make docker-build-priv`.
