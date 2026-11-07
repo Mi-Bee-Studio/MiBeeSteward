@@ -5,6 +5,11 @@ All notable changes to MiBee Steward are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **agent-rs: DNS replies with chained compression pointers parse again (#714)**: the agent's DNS decoder followed at most one compression pointer per name and rejected the rest as "double pointer", but RFC 1035 lets a pointer's target itself end in a pointer — the shape DNSPod uses for CNAME answers. Every agent run of the built-in `quality-dns-dnspod` target therefore failed, steering the agent egress verdict to `upstream_resolver` and naming DNSPod as the culprit. Pointers are now followed repeatedly under a 16-jump cap, so pointer loops still fail fast. The same decoder parses mDNS and reverse-DNS replies, where a parse error silently dropped the whole packet; those packets are read now too.
+
 ## [0.9.0] - 2026-11-07
 
 ### Added
