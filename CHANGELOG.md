@@ -5,7 +5,7 @@ All notable changes to MiBee Steward are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2026-11-07
 
 ### Added
 - **Docs: the archive/ledger portfolio gets its tour + upgrade callouts (#670)**: the Web UI tour (en/zh) gains the Asset Archive & Ledger section — the archive page, the six-source dossier timeline, and the tags dictionary settings, all with screenshots captured through the sanitizing proxy — and the device-inventory / dashboard sections now describe the ledger badge, tag chips, lifecycle filter, and the two ledger-caliber cards. The deployment guide (en/zh) calls out the two schema-8→9 fresh-database realities: the archive learner's window restarts from deployment day (a known-cycle device needs ~one cycle of re-accumulated appearance points before smart exemption re-engages; `force_active` protects it immediately), and ledger columns / tag assignments exist only from the new database onward (the old inventory's CSV export is the practical migration source).
