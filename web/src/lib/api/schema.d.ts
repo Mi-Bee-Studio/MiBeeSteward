@@ -3273,6 +3273,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/probe-egress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current egress identity per vantage (#718) - latest public-IP echo round, ASN enrichment, local gateway. Recording only, changes never notify (#716) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Egress report */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeEgressReport"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/probe-paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Latest traced path per target and vantage (#719) - hop list, reached TTL, reply TTL */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Path snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbePathsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/probe-targets": {
         parameters: {
             query?: never;
@@ -3531,6 +3603,85 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/probe-targets/{id}/paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Path-trace history of one target (#719), newest first */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Path samples */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbePathsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/probe-targets/{id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trace this target's path now from the center (#719, zero-privilege TCP/ICMP TTL walk) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The stored manual sample */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbePathSample"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -6921,6 +7072,98 @@ export interface components {
             score: number;
             /** @enum {string} */
             verdict: "ok" | "degraded" | "egress_down" | "dns_fault" | "upstream_resolver" | "insufficient";
+        };
+        /** @description Current egress identity per vantage (#718): the latest echo round's per-source results, the distinct public IPs observed in the window (with origin ASN), and the local default-route gateway. Recording only - changes never notify (#716). */
+        ProbeEgressReport: {
+            vantages: components["schemas"]["ProbeEgressVantage"][];
+        };
+        ProbeEgressVantage: {
+            /** @description 'center' or 'agent:{id}' */
+            vantage: string;
+            network_name?: string;
+            /**
+             * Format: date-time
+             * @description latest round, UTC
+             */
+            round_at?: string;
+            /** @description distinct public IPs seen this round; more than one usually means a CGNAT address pool assigned per destination */
+            ips: components["schemas"]["ProbeEgressIP"][];
+            sources: components["schemas"]["ProbeEgressSource"][];
+            /** @description default-route gateway IP */
+            local_gateway?: string;
+            local_iface?: string;
+        };
+        ProbeEgressIP: {
+            /** Format: ipv4 */
+            ip: string;
+            /** @description origin ASN (Team Cymru), empty when the lookup failed */
+            asn?: string;
+            as_name?: string;
+            /** @description echo sources that observed this IP in the latest round */
+            sources?: string[];
+            /** Format: date-time */
+            first_seen?: string;
+            /** Format: date-time */
+            last_seen?: string;
+            /** @description successful observations within the 24h window */
+            samples: number;
+        };
+        ProbeEgressSource: {
+            source: string;
+            /** @enum {string} */
+            kind: "http" | "stun" | "dns";
+            ok: boolean;
+            ip?: string;
+            /** Format: double */
+            ms: number;
+            err?: string;
+        };
+        ProbePathsResponse: {
+            paths: components["schemas"]["ProbePathSample"][];
+        };
+        /** @description One zero-privilege path trace (#719). Silent hops carry an empty ip. reply_ttl is the destination reply's IP TTL (ICMP method via IP_RECVTTL; 0 = unknown). */
+        ProbePathSample: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            target_id: number;
+            target_name?: string;
+            vantage: string;
+            /** @description the IP the tracer resolved and walked (DNS pollution makes the name-level view ambiguous) */
+            resolved_ip?: string;
+            /** @description probe module (snapshot only) */
+            module?: string;
+            /** @description target string (snapshot only) */
+            target?: string;
+            /**
+             * @description management category (snapshot only)
+             * @enum {string}
+             */
+            category?: "lan" | "external" | "quality";
+            /** @enum {string} */
+            method: "tcp" | "icmp";
+            /**
+             * @description max_ttl with one visible hop is the silent-middle-egress shape: only the gateway answers
+             * @enum {string}
+             */
+            end_state: "reached" | "max_ttl" | "error";
+            /** @description TTL whose answer came from the destination (0 = never reached) */
+            reached_ttl?: number;
+            reply_ttl?: number;
+            visible_hops?: number;
+            hops: components["schemas"]["ProbePathHop"][];
+            /** @enum {string} */
+            trigger?: "baseline" | "manual";
+            err?: string;
+            /** Format: date-time */
+            traced_at: string;
+        };
+        ProbePathHop: {
+            ttl: number;
+            /** @description empty = this hop stayed silent */
+            ip?: string;
+            /** Format: double */
+            ms?: number;
         };
         ProbeQualityTarget: {
             name: string;

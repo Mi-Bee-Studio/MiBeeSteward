@@ -238,6 +238,11 @@ type RetentionConfig struct {
 	// expiry). probe_tls_certs is NOT swept, it holds only each target's
 	// current chain, replaced on every successful collection.
 	ProbeResultsDays int `koanf:"probe_results_days"`
+	// ProbeExtDays is the retention window for the probe_ext.db side database
+	// (#716/#718/#719): egress echo rounds and path samples. Volume is small
+	// (one round row per source per interval, one sample row per traced
+	// target per interval). Default 30.
+	ProbeExtDays int `koanf:"probe_ext_days"`
 	// (silent_device_days_mac / silent_device_hours_no_mac RETIRED, #663: the
 	// silent-device physical prune is replaced by the asset-archive engine —
 	// ArchiveConfig + internal/service/archive. Scanner devices offline past
@@ -637,6 +642,9 @@ func normalizeRetention(cfg *Config) {
 	}
 	if r.ProbeResultsDays <= 0 {
 		r.ProbeResultsDays = 30
+	}
+	if r.ProbeExtDays <= 0 {
+		r.ProbeExtDays = 30
 	}
 	if r.SweepIntervalHours <= 0 {
 		r.SweepIntervalHours = 6
