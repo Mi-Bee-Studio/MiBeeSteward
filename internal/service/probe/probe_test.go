@@ -163,10 +163,10 @@ func TestHTTPProbe_UserAgent(t *testing.T) {
 	}
 }
 
-func TestProbeUserAgent(t *testing.T) {
-	ua := ProbeUserAgent()
+func TestUserAgent(t *testing.T) {
+	ua := UserAgent()
 	if !strings.HasPrefix(ua, "MiBeeSteward-probe/") || strings.HasPrefix(ua, "Go-http-client") {
-		t.Errorf("ProbeUserAgent() = %q, want a MiBeeSteward-probe product token", ua)
+		t.Errorf("UserAgent() = %q, want a MiBeeSteward-probe product token", ua)
 	}
 }
 
