@@ -399,16 +399,27 @@ fn trim_err(s: &str) -> String {
 pub async fn run_egress(
     runner: Arc<Mutex<EgressRunner>>,
     client: Arc<CenterClient>,
+    stop: tokio::sync::watch::Receiver<bool>,
+) {
+    run_egress_with_tuning(runner, client, stop, RETRY_BACKOFF, TICK).await
+}
+
+/// Test surface: same loop with shrunken cadences.
+pub async fn run_egress_with_tuning(
+    runner: Arc<Mutex<EgressRunner>>,
+    client: Arc<CenterClient>,
     mut stop: tokio::sync::watch::Receiver<bool>,
+    retry_backoff: Duration,
+    tick: Duration,
 ) {
     let mut pending: Vec<Vec<EgressRoundReport>> = Vec::new();
     loop {
         tokio::select! {
-            _ = tokio::time::sleep(TICK) => {}
+            _ = tokio::time::sleep(tick) => {}
             _ = stop.changed() => {
                 let tail = runner.lock().await.tick().await;
                 if !tail.is_empty() {
-                    let _ = post_ladder(&client, &tail, RETRY_BACKOFF).await;
+                    let _ = post_ladder(&client, &tail, retry_backoff).await;
                 }
                 return;
             }
@@ -416,7 +427,7 @@ pub async fn run_egress(
         // One parked batch per tick, oldest first.
         if !pending.is_empty() {
             let head = pending.remove(0);
-            if post_ladder(&client, &head, RETRY_BACKOFF).await.is_err() {
+            if post_ladder(&client, &head, retry_backoff).await.is_err() {
                 pending.insert(0, head);
                 continue;
             }
@@ -425,7 +436,7 @@ pub async fn run_egress(
         if rounds.is_empty() {
             continue;
         }
-        if post_ladder(&client, &rounds, RETRY_BACKOFF).await.is_err() {
+        if post_ladder(&client, &rounds, retry_backoff).await.is_err() {
             pending.push(rounds);
             while pending.len() > PENDING_MAX {
                 pending.remove(0);
@@ -551,5 +562,129 @@ mod tests {
         r.apply_plan("f2", vec![], 30);
         assert!(r.sources.is_empty());
         assert!(r.tick().await.is_empty(), "cleared plan runs nothing");
+    }
+
+    #[tokio::test]
+    async fn egress_plan_tick_cadence() {
+        let mut r = EgressRunner::new();
+        // A source that always fails fast keeps the round offline-safe.
+        r.apply_plan("f1", vec![EgressSourceSpec { name: "bad".into(), kind: "xyz".into(), target: String::new() }], 60);
+        let first = r.tick().await;
+        assert_eq!(first.len(), 1, "first round runs immediately");
+        // Not due again within the interval.
+        assert!(r.tick().await.is_empty());
+    }
+
+    /// One full round against local fakes: an HTTP echo body, a STUN
+    /// responder with a fixed XOR-MAPPED-ADDRESS, a DNS TXT echo, and two
+    /// broken specs — every source kind offline.
+    #[tokio::test]
+    async fn run_round_local_fakes() {
+        // HTTP echo: answers the IP in the body.
+        let tl = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let http_target = format!("http://127.0.0.1:{}/ip", tl.local_addr().unwrap().port());
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            while let Ok((mut s, _)) = tl.accept().await {
+                let mut b = [0u8; 512];
+                let _ = s.read(&mut b).await;
+                let body = "93.184.216.34";
+                let _ = s.write_all(
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).as_bytes(),
+                ).await;
+            }
+        });
+
+        // STUN: answers every binding request with a fixed XOR-MAPPED-ADDRESS.
+        let stun_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let stun_target = stun_sock.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 64];
+            loop {
+                let Ok((n, from)) = stun_sock.recv_from(&mut buf).await else { return };
+                if n < 20 { continue; }
+                let mapped = u32::from_be_bytes([93, 184, 216, 99]) ^ 0x2112_A442;
+                let mut resp = Vec::with_capacity(32);
+                resp.extend_from_slice(&0x0101u16.to_be_bytes());
+                resp.extend_from_slice(&12u16.to_be_bytes());
+                resp.extend_from_slice(&buf[4..20]); // cookie + txn echoed
+                resp.extend_from_slice(&0x0020u16.to_be_bytes());
+                resp.extend_from_slice(&8u16.to_be_bytes());
+                resp.push(0);
+                resp.push(1); // IPv4
+                resp.extend_from_slice(&443u16.to_be_bytes());
+                resp.extend_from_slice(&mapped.to_be_bytes());
+                let _ = stun_sock.send_to(&resp, from).await;
+            }
+        });
+
+        // DNS TXT echo: answer the copied question with one TXT string.
+        let dns_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let dns_server = dns_sock.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 512];
+            loop {
+                let Ok((n, from)) = dns_sock.recv_from(&mut buf).await else { return };
+                if n < 12 { continue; }
+                let q = buf[..n].to_vec();
+                let mut i = 12;
+                while i < q.len() && q[i] != 0 { i += 1 + q[i] as usize; }
+                i += 5; // root + qtype + qclass
+                let txt = "93.184.216.100";
+                let mut resp = q[..i].to_vec();
+                resp[2] |= 0x80; // QR
+                resp[3] = 0x80; // RD + RA
+                resp[6..8].copy_from_slice(&1u16.to_be_bytes());
+                resp.extend_from_slice(&[0xC0, 0x0C, 0, 16, 0, 1, 0, 0, 0, 60]);
+                resp.extend_from_slice(&(txt.len() as u16 + 1).to_be_bytes());
+                resp.push(txt.len() as u8);
+                resp.extend_from_slice(txt.as_bytes());
+                let _ = dns_sock.send_to(&resp, from).await;
+            }
+        });
+
+        let report = run_round(&[
+            EgressSourceSpec { name: "http-test".into(), kind: "http".into(), target: http_target },
+            EgressSourceSpec { name: "stun-test".into(), kind: "stun".into(), target: stun_target },
+            EgressSourceSpec { name: "dns-test".into(), kind: "dns".into(), target: format!("{dns_server}|echo.example") },
+            EgressSourceSpec { name: "bad-kind".into(), kind: "xyz".into(), target: String::new() },
+            EgressSourceSpec { name: "bad-dns".into(), kind: "dns".into(), target: "no-pipe".into() },
+        ])
+        .await;
+
+        let by: std::collections::HashMap<&str, &EgressResultReport> =
+            report.results.iter().map(|r| (r.source.as_str(), r)).collect();
+        let http = by["http-test"];
+        assert!(http.ok, "http err={}", http.err);
+        assert_eq!(http.ip, "93.184.216.34");
+        let stun = by["stun-test"];
+        assert!(stun.ok, "stun err={}", stun.err);
+        assert_eq!(stun.ip, "93.184.216.99");
+        let dns = by["dns-test"];
+        assert!(dns.ok, "dns err={}", dns.err);
+        assert_eq!(dns.ip, "93.184.216.100");
+        assert!(!by["bad-kind"].ok);
+        assert!(by["bad-kind"].err.contains("unknown kind"));
+        assert!(!by["bad-dns"].ok);
+        assert!(by["bad-dns"].err.contains("server|qname"));
+        // The local layer rides along (on Linux both fields resolve).
+        assert!(!report.round_at.is_empty());
+    }
+
+    #[test]
+    fn resolver_parsing() {
+        assert!(parse_resolver("1.2.3.4").is_ok());
+        assert_eq!(parse_resolver("1.2.3.4").unwrap().port(), 53);
+        assert_eq!(parse_resolver("1.2.3.4:5353").unwrap().port(), 5353);
+        assert!(parse_resolver("[::1]").is_ok());
+        assert!(parse_resolver("bad host!").is_err());
+    }
+
+    #[test]
+    fn local_egress_reads_proc() {
+        let (gw, iface) = read_local_egress();
+        // On a Linux test host the default route exists; on other platforms
+        // both are empty. Never one-sided.
+        assert_eq!(gw.is_empty(), iface.is_empty(), "gw={gw} iface={iface}");
     }
 }
