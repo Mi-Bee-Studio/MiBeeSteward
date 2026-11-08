@@ -54,7 +54,11 @@ impl Tracer {
     /// icmp — mirrors the center's method choice).
     pub async fn trace_host(&self, host: &str, port: i64, method: &str) -> TraceResult {
         let method = if method.is_empty() || method == "auto" {
-            if port > 0 { "tcp" } else { "icmp" }
+            if port > 0 {
+                "tcp"
+            } else {
+                "icmp"
+            }
         } else {
             method
         };
@@ -70,7 +74,11 @@ impl Tracer {
             }
         };
         let (max_ttl, per_hop) = (self.max_ttl, self.per_hop_ms);
-        let port_eff = if method == "tcp" && port <= 0 { 80 } else { port };
+        let port_eff = if method == "tcp" && port <= 0 {
+            80
+        } else {
+            port
+        };
         // fn pointer: 'static + Send into spawn_blocking without cloning the
         // method decision.
         let walk: fn([u8; 4], i64, i64, i64) -> TraceResult = if method == "tcp" {
@@ -158,7 +166,11 @@ pub fn trace_host_allowed(host: &str) -> bool {
 
 /// Trace one plan spec and shape the wire report. Never fails: broken specs
 /// become stored error samples, matching the center's traceTarget.
-pub async fn trace_spec(tracer: &Tracer, spec: &ProbeTargetSpec, trigger: &str) -> PathSampleReport {
+pub async fn trace_spec(
+    tracer: &Tracer,
+    spec: &ProbeTargetSpec,
+    trigger: &str,
+) -> PathSampleReport {
     let mut report = PathSampleReport {
         target_id: spec.id,
         target_name: spec.name.clone(),
@@ -187,7 +199,11 @@ pub async fn trace_spec(tracer: &Tracer, spec: &ProbeTargetSpec, trigger: &str) 
     report.hops = res
         .hops
         .iter()
-        .map(|h| PathHopReport { ttl: h.ttl, ip: h.ip.clone(), ms: h.ms })
+        .map(|h| PathHopReport {
+            ttl: h.ttl,
+            ip: h.ip.clone(),
+            ms: h.ms,
+        })
         .collect();
     report.visible_hops = report.hops.iter().filter(|h| !h.ip.is_empty()).count() as i64;
     report
@@ -198,7 +214,14 @@ pub async fn trace_spec(tracer: &Tracer, spec: &ProbeTargetSpec, trigger: &str) 
 fn fixed_port(dst: [u8; 4], port: u16) -> u16 {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
-    h.update([dst[0], dst[1], dst[2], dst[3], (port >> 8) as u8, (port & 0xFF) as u8]);
+    h.update([
+        dst[0],
+        dst[1],
+        dst[2],
+        dst[3],
+        (port >> 8) as u8,
+        (port & 0xFF) as u8,
+    ]);
     let d = h.finalize();
     40000 + u16::from_be_bytes([d[0], d[1]]) % 20000
 }
@@ -222,19 +245,28 @@ mod imp {
             sin_port: port.to_be(),
             // s_addr is the address in network byte order: the u32 whose
             // little-endian memory layout IS dst (htonl equivalence).
-            sin_addr: libc::in_addr { s_addr: u32::from_le_bytes(dst) },
+            sin_addr: libc::in_addr {
+                s_addr: u32::from_le_bytes(dst),
+            },
             sin_zero: [0; 8],
         }
     }
 
     pub(super) fn trace_tcp(dst: [u8; 4], port: i64, max_ttl: i64, per_hop_ms: i64) -> TraceResult {
         let dst_str = format!("{}.{}.{}.{}", dst[0], dst[1], dst[2], dst[3]);
-        let mut res = TraceResult { method: "tcp".into(), dst_ip: dst_str.clone(), ..Default::default() };
+        let mut res = TraceResult {
+            method: "tcp".into(),
+            dst_ip: dst_str.clone(),
+            ..Default::default()
+        };
         let src_port = fixed_port(dst, port as u16);
         for ttl in 1..=max_ttl {
             let hop = tcp_probe_once(dst, port as u16, ttl as i32, per_hop_ms, src_port);
             match hop {
-                None => res.hops.push(TraceHop { ttl, ..Default::default() }),
+                None => res.hops.push(TraceHop {
+                    ttl,
+                    ..Default::default()
+                }),
                 Some(h) => {
                     let ip = h.ip.clone();
                     res.hops.push(h);
@@ -252,9 +284,19 @@ mod imp {
 
     /// One TTL-limited connect: the responding hop (destination IP = the
     /// target itself, including the refused case) or None on silence.
-    fn tcp_probe_once(dst: [u8; 4], port: u16, ttl: i32, per_hop_ms: i64, src_port: u16) -> Option<TraceHop> {
+    fn tcp_probe_once(
+        dst: [u8; 4],
+        port: u16,
+        ttl: i32,
+        per_hop_ms: i64,
+        src_port: u16,
+    ) -> Option<TraceHop> {
         unsafe {
-            let fd = libc::socket(libc::AF_INET, libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC, 0);
+            let fd = libc::socket(
+                libc::AF_INET,
+                libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
+                0,
+            );
             if fd < 0 {
                 return None;
             }
@@ -263,8 +305,13 @@ mod imp {
                 return None;
             }
             let addr = sockaddr(dst, port);
-            let rc = libc::connect(fd, &addr as *const _ as *const libc::sockaddr, std::mem::size_of::<libc::sockaddr_in>() as u32);
-            if rc != 0 && std::io::Error::last_os_error().raw_os_error() != Some(libc::EINPROGRESS) {
+            let rc = libc::connect(
+                fd,
+                &addr as *const _ as *const libc::sockaddr,
+                std::mem::size_of::<libc::sockaddr_in>() as u32,
+            );
+            if rc != 0 && std::io::Error::last_os_error().raw_os_error() != Some(libc::EINPROGRESS)
+            {
                 return None;
             }
             let started = std::time::Instant::now();
@@ -274,7 +321,13 @@ mod imp {
             // connection surfaces as ECONNREFUSED here on every kernel.
             let mut soerr: i32 = 0;
             let mut len = std::mem::size_of::<i32>() as u32;
-            let rc = libc::getsockopt(fd, libc::SOL_SOCKET, libc::SO_ERROR, &mut soerr as *mut _ as *mut _, &mut len);
+            let rc = libc::getsockopt(
+                fd,
+                libc::SOL_SOCKET,
+                libc::SO_ERROR,
+                &mut soerr as *mut _ as *mut _,
+                &mut len,
+            );
             if rc == 0 && (soerr == 0 || soerr == libc::ECONNREFUSED) {
                 return Some(TraceHop {
                     ttl: ttl as i64,
@@ -286,18 +339,36 @@ mod imp {
             if rev & (POLLERR | POLLHUP) != 0 {
                 let dst_str = format!("{}.{}.{}.{}", dst[0], dst[1], dst[2], dst[3]);
                 if let Some(ip) = read_err_queue(fd, &dst_str) {
-                    return Some(TraceHop { ttl: ttl as i64, ip, ms, ..Default::default() });
+                    return Some(TraceHop {
+                        ttl: ttl as i64,
+                        ip,
+                        ms,
+                        ..Default::default()
+                    });
                 }
             }
             None
         }
     }
 
-    pub(super) fn trace_icmp(dst: [u8; 4], _port: i64, max_ttl: i64, per_hop_ms: i64) -> TraceResult {
+    pub(super) fn trace_icmp(
+        dst: [u8; 4],
+        _port: i64,
+        max_ttl: i64,
+        per_hop_ms: i64,
+    ) -> TraceResult {
         let dst_str = format!("{}.{}.{}.{}", dst[0], dst[1], dst[2], dst[3]);
-        let mut res = TraceResult { method: "icmp".into(), dst_ip: dst_str.clone(), ..Default::default() };
+        let mut res = TraceResult {
+            method: "icmp".into(),
+            dst_ip: dst_str.clone(),
+            ..Default::default()
+        };
         unsafe {
-            let fd = libc::socket(libc::AF_INET, libc::SOCK_DGRAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC, libc::IPPROTO_ICMP);
+            let fd = libc::socket(
+                libc::AF_INET,
+                libc::SOCK_DGRAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
+                libc::IPPROTO_ICMP,
+            );
             if fd < 0 {
                 res.end_state = "error".into();
                 res.err = format!("icmp socket: {}", std::io::Error::last_os_error());
@@ -307,21 +378,43 @@ mod imp {
             let one: i32 = 1;
             // IP_RECVTTL: without the cmsg the reply TTL stays unknown, but
             // the trace still works — ignore failure.
-            libc::setsockopt(fd, libc::IPPROTO_IP, libc::IP_RECVTTL, &one as *const _ as *const _, std::mem::size_of::<i32>() as u32);
+            libc::setsockopt(
+                fd,
+                libc::IPPROTO_IP,
+                libc::IP_RECVTTL,
+                &one as *const _ as *const _,
+                std::mem::size_of::<i32>() as u32,
+            );
             let addr = sockaddr(dst, 0);
             for ttl in 1..=max_ttl {
-                libc::setsockopt(fd, libc::IPPROTO_IP, libc::IP_TTL, &ttl as *const _ as *const _, std::mem::size_of::<i32>() as u32);
+                libc::setsockopt(
+                    fd,
+                    libc::IPPROTO_IP,
+                    libc::IP_TTL,
+                    &ttl as *const _ as *const _,
+                    std::mem::size_of::<i32>() as u32,
+                );
                 let mut pkt = [0u8; 24];
                 pkt[0] = 8; // echo request; kernel fills id + checksum
                 pkt[6..8].copy_from_slice(&(ttl as u16).to_be_bytes()); // seq identifies the probe
                 pkt[8..23].copy_from_slice(b"mibee-pathprobe"); // 15 bytes
                 let started = std::time::Instant::now();
-                let rc = libc::sendto(fd, pkt.as_ptr() as *const _, pkt.len(), 0, &addr as *const _ as *const libc::sockaddr, std::mem::size_of::<libc::sockaddr_in>() as u32);
+                let rc = libc::sendto(
+                    fd,
+                    pkt.as_ptr() as *const _,
+                    pkt.len(),
+                    0,
+                    &addr as *const _ as *const libc::sockaddr,
+                    std::mem::size_of::<libc::sockaddr_in>() as u32,
+                );
                 if rc < 0 {
                     continue;
                 }
                 match icmp_recv_once(fd, &dst_str, ttl as u16, per_hop_ms, started) {
-                    None => res.hops.push(TraceHop { ttl, ..Default::default() }),
+                    None => res.hops.push(TraceHop {
+                        ttl,
+                        ..Default::default()
+                    }),
                     Some(h) => {
                         let is_dst = h.ip == dst_str;
                         let reply_ttl = h.reply_ttl;
@@ -342,7 +435,13 @@ mod imp {
 
     /// Wait for an echo reply (type 0, seq match, reply TTL via cmsg) or an
     /// error-queue Time Exceeded for this probe.
-    fn icmp_recv_once(fd: i32, dst_str: &str, ttl: u16, per_hop_ms: i64, started: std::time::Instant) -> Option<TraceHop> {
+    fn icmp_recv_once(
+        fd: i32,
+        dst_str: &str,
+        ttl: u16,
+        per_hop_ms: i64,
+        started: std::time::Instant,
+    ) -> Option<TraceHop> {
         let deadline = started + std::time::Duration::from_millis(per_hop_ms.max(1) as u64);
         loop {
             let remain = deadline.saturating_duration_since(std::time::Instant::now());
@@ -354,18 +453,26 @@ mod imp {
                 if rev & POLLERR != 0 {
                     if let Some(ip) = read_err_queue(fd, dst_str) {
                         let ms = started.elapsed().as_secs_f64() * 1000.0;
-                        return Some(TraceHop { ttl: ttl as i64, ip, ms, ..Default::default() });
+                        return Some(TraceHop {
+                            ttl: ttl as i64,
+                            ip,
+                            ms,
+                            ..Default::default()
+                        });
                     }
                     continue;
                 }
                 let mut buf = [0u8; 2048];
                 let mut oob = [0u8; 512];
-                let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut _, iov_len: buf.len() };
+                let mut iov = libc::iovec {
+                    iov_base: buf.as_mut_ptr() as *mut _,
+                    iov_len: buf.len(),
+                };
                 let mut mh: libc::msghdr = std::mem::zeroed();
                 mh.msg_iov = &mut iov;
                 mh.msg_iovlen = 1;
                 mh.msg_control = oob.as_mut_ptr() as *mut _;
-                mh.msg_controllen = oob.len();
+                mh.msg_controllen = oob.len() as _;
                 let n = libc::recvmsg(fd, &mut mh, libc::MSG_DONTWAIT);
                 if n < 0 {
                     continue;
@@ -388,22 +495,48 @@ mod imp {
     /// fixed source port (TCP only; 0 skips the bind).
     unsafe fn prep_probe_socket(fd: i32, ttl: i32, src_port: u16) -> Result<(), ()> {
         let ttl = ttl;
-        if libc::setsockopt(fd, libc::IPPROTO_IP, libc::IP_TTL, &ttl as *const _ as *const _, std::mem::size_of::<i32>() as u32) != 0 {
+        if libc::setsockopt(
+            fd,
+            libc::IPPROTO_IP,
+            libc::IP_TTL,
+            &ttl as *const _ as *const _,
+            std::mem::size_of::<i32>() as u32,
+        ) != 0
+        {
             return Err(());
         }
         let one: i32 = 1;
-        if libc::setsockopt(fd, libc::IPPROTO_IP, libc::IP_RECVERR, &one as *const _ as *const _, std::mem::size_of::<i32>() as u32) != 0 {
+        if libc::setsockopt(
+            fd,
+            libc::IPPROTO_IP,
+            libc::IP_RECVERR,
+            &one as *const _ as *const _,
+            std::mem::size_of::<i32>() as u32,
+        ) != 0
+        {
             return Err(());
         }
         if src_port > 0 {
-            if libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_REUSEADDR, &one as *const _ as *const _, std::mem::size_of::<i32>() as u32) != 0 {
+            if libc::setsockopt(
+                fd,
+                libc::SOL_SOCKET,
+                libc::SO_REUSEADDR,
+                &one as *const _ as *const _,
+                std::mem::size_of::<i32>() as u32,
+            ) != 0
+            {
                 return Err(());
             }
             // Drain stale error-queue entries a previous attempt (same
             // 5-tuple) may have left behind before rebinding.
             drain_err_queue(fd);
             let a = sockaddr([0, 0, 0, 0], src_port);
-            if libc::bind(fd, &a as *const _ as *const libc::sockaddr, std::mem::size_of::<libc::sockaddr_in>() as u32) != 0 {
+            if libc::bind(
+                fd,
+                &a as *const _ as *const libc::sockaddr,
+                std::mem::size_of::<libc::sockaddr_in>() as u32,
+            ) != 0
+            {
                 return Err(());
             }
         }
@@ -414,12 +547,15 @@ mod imp {
         let mut buf = [0u8; 512];
         let mut oob = [0u8; 512];
         for _ in 0..32 {
-            let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut _, iov_len: buf.len() };
+            let mut iov = libc::iovec {
+                iov_base: buf.as_mut_ptr() as *mut _,
+                iov_len: buf.len(),
+            };
             let mut mh: libc::msghdr = std::mem::zeroed();
             mh.msg_iov = &mut iov;
             mh.msg_iovlen = 1;
             mh.msg_control = oob.as_mut_ptr() as *mut _;
-            mh.msg_controllen = oob.len();
+            mh.msg_controllen = oob.len() as _;
             let n = libc::recvmsg(fd, &mut mh, libc::MSG_DONTWAIT | libc::MSG_ERRQUEUE);
             if n < 0 || mh.msg_controllen == 0 {
                 return;
@@ -433,12 +569,15 @@ mod imp {
     unsafe fn read_err_queue(fd: i32, dst_str: &str) -> Option<String> {
         let mut buf = [0u8; 512];
         let mut oob = [0u8; 512];
-        let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut _, iov_len: buf.len() };
+        let mut iov = libc::iovec {
+            iov_base: buf.as_mut_ptr() as *mut _,
+            iov_len: buf.len(),
+        };
         let mut mh: libc::msghdr = std::mem::zeroed();
         mh.msg_iov = &mut iov;
         mh.msg_iovlen = 1;
         mh.msg_control = oob.as_mut_ptr() as *mut _;
-        mh.msg_controllen = oob.len();
+        mh.msg_controllen = oob.len() as _;
         let n = libc::recvmsg(fd, &mut mh, libc::MSG_DONTWAIT | libc::MSG_ERRQUEUE);
         if n < 0 {
             return None;
@@ -449,7 +588,7 @@ mod imp {
             let hdr = &*cmsg;
             if hdr.cmsg_level == libc::IPPROTO_IP
                 && hdr.cmsg_type == libc::IP_RECVERR
-                && hdr.cmsg_len >= (libc::CMSG_LEN(std::mem::size_of::<ErrEntry>() as u32)) as usize
+                && hdr.cmsg_len >= libc::CMSG_LEN(std::mem::size_of::<ErrEntry>() as u32) as _
             {
                 let data = libc::CMSG_DATA(cmsg) as *const u8;
                 let ee = std::slice::from_raw_parts(data, std::mem::size_of::<ErrEntry>());
@@ -467,7 +606,11 @@ mod imp {
                     // Unreachable: the destination itself answered. Loopback
                     // RSTs carry a zeroed offender sockaddr, so fall back to
                     // the connect target.
-                    let ip = if ip.is_empty() { dst_str.to_string() } else { ip };
+                    let ip = if ip.is_empty() {
+                        dst_str.to_string()
+                    } else {
+                        ip
+                    };
                     if ip == dst_str {
                         return Some(ip);
                     }
@@ -501,7 +644,10 @@ mod imp {
         let mut cmsg = libc::CMSG_FIRSTHDR(&mh);
         while !cmsg.is_null() {
             let hdr = &*cmsg;
-            if hdr.cmsg_level == libc::IPPROTO_IP && hdr.cmsg_type == libc::IP_TTL && hdr.cmsg_len >= libc::CMSG_LEN(4) as usize {
+            if hdr.cmsg_level == libc::IPPROTO_IP
+                && hdr.cmsg_type == libc::IP_TTL
+                && hdr.cmsg_len >= libc::CMSG_LEN(4) as _
+            {
                 let data = libc::CMSG_DATA(cmsg) as *const i32;
                 return *data as i64;
             }
@@ -513,8 +659,15 @@ mod imp {
     /// ppoll(2) on one fd, EINTR-safe; None = timeout/error/zero revents.
     unsafe fn ppoll_fd(fd: i32, events: i16, timeout_ms: i64) -> Option<i16> {
         loop {
-            let mut pfd = libc::pollfd { fd, events, revents: 0 };
-            let ts = libc::timespec { tv_sec: timeout_ms / 1000, tv_nsec: (timeout_ms % 1000) * 1_000_000 };
+            let mut pfd = libc::pollfd {
+                fd,
+                events,
+                revents: 0,
+            };
+            let ts = libc::timespec {
+                tv_sec: (timeout_ms / 1000) as _,
+                tv_nsec: ((timeout_ms % 1000) * 1_000_000) as _,
+            };
             let rc = libc::ppoll(&mut pfd, 1, &ts, std::ptr::null());
             if rc < 0 {
                 let err = std::io::Error::last_os_error();
@@ -543,10 +696,20 @@ mod imp {
 #[cfg(not(target_os = "linux"))]
 mod imp {
     use super::*;
-    pub(super) fn trace_tcp(_dst: [u8; 4], _port: i64, _max_ttl: i64, _per_hop_ms: i64) -> TraceResult {
+    pub(super) fn trace_tcp(
+        _dst: [u8; 4],
+        _port: i64,
+        _max_ttl: i64,
+        _per_hop_ms: i64,
+    ) -> TraceResult {
         unsupported("tcp")
     }
-    pub(super) fn trace_icmp(_dst: [u8; 4], _port: i64, _max_ttl: i64, _per_hop_ms: i64) -> TraceResult {
+    pub(super) fn trace_icmp(
+        _dst: [u8; 4],
+        _port: i64,
+        _max_ttl: i64,
+        _per_hop_ms: i64,
+    ) -> TraceResult {
         unsupported("icmp")
     }
     pub(super) fn err_queue_offender(_data: &[u8]) -> String {
@@ -642,7 +805,11 @@ mod tests {
         // Refused (nothing listening further down the ephemeral range) is
         // still "reached": the destination itself answered with an RST.
         let res2 = tr.trace_host("127.0.0.1", 9, "tcp").await;
-        assert_eq!(res2.end_state, "reached", "refused counts as reached, err={}", res2.err);
+        assert_eq!(
+            res2.end_state, "reached",
+            "refused counts as reached, err={}",
+            res2.err
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -661,9 +828,15 @@ mod tests {
         let tr = Tracer::new(1, 400);
         let res = tr.trace_host("223.5.5.5", 0, "icmp").await;
         assert_ne!(res.end_state, "error", "err={}", res.err);
-        assert_eq!(res.end_state, "max_ttl", "TTL1 to an off-link address cannot reach");
+        assert_eq!(
+            res.end_state, "max_ttl",
+            "TTL1 to an off-link address cannot reach"
+        );
         if let Some(h0) = res.hops.first() {
-            assert_ne!(h0.ip, "223.5.5.5", "TTL1 hop is the destination - loopback route?");
+            assert_ne!(
+                h0.ip, "223.5.5.5",
+                "TTL1 hop is the destination - loopback route?"
+            );
         }
     }
 
@@ -679,12 +852,22 @@ mod tests {
     async fn trace_spec_shapes_report() {
         let tr = Tracer::new(2, 200);
         // Empty target: stored error sample, not a failure.
-        let spec = ProbeTargetSpec { id: 3, module: "http".into(), target: String::new(), ..Default::default() };
+        let spec = ProbeTargetSpec {
+            id: 3,
+            module: "http".into(),
+            target: String::new(),
+            ..Default::default()
+        };
         let r = trace_spec(&tr, &spec, "baseline").await;
         assert_eq!(r.end_state, "error");
         assert_eq!(r.err, "cannot derive host from target");
         // Reserved literal: refused (#719 gate).
-        let spec = ProbeTargetSpec { id: 4, module: "icmp".into(), target: "127.0.0.1".into(), ..Default::default() };
+        let spec = ProbeTargetSpec {
+            id: 4,
+            module: "icmp".into(),
+            target: "127.0.0.1".into(),
+            ..Default::default()
+        };
         let r = trace_spec(&tr, &spec, "baseline").await;
         assert_eq!(r.end_state, "error");
         assert_eq!(r.err, "reserved target refused");
