@@ -118,6 +118,12 @@ func TestProbeExtEndpoints(t *testing.T) {
 	require.Equal(t, 200, code)
 	require.Len(t, hist["paths"].([]any), 1)
 
+	// Unknown (but valid) id: 404 through the service error path.
+	resp3, err := http.Post(srv.URL+"/api/v1/probe-targets/424242/trace", "", nil)
+	require.NoError(t, err)
+	defer resp3.Body.Close()
+	require.Equal(t, 404, resp3.StatusCode)
+
 	// Invalid ids are rejected without touching the service.
 	resp2, err := http.Post(srv.URL+"/api/v1/probe-targets/notanumber/trace", "", nil)
 	require.NoError(t, err)
