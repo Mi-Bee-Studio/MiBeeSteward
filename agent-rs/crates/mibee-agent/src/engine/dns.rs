@@ -455,6 +455,8 @@ mod tests {
         assert!(err.contains("i/o timeout"), "err = {err}");
         // The whole ladder stays inside (roughly) the caller's budget.
         assert!(started.elapsed() < std::time::Duration::from_millis(1500));
+    }
+
     /// Header + one question for `z.tld A IN` (qname at offset 12).
     fn header_and_question(an: u16) -> Vec<u8> {
         let mut m = Vec::new();
