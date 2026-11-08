@@ -281,20 +281,6 @@ func icmpRecvOnce(fd int, dstStr string, ttl int, wait time.Duration, start time
 	}
 }
 
-// replyTTLFromCmsg extracts the IP_TTL control message (IP_RECVTTL).
-func replyTTLFromCmsg(oob []byte) int {
-	msgs, err := syscall.ParseSocketControlMessage(oob)
-	if err != nil {
-		return 0
-	}
-	for _, m := range msgs {
-		if m.Header.Level == syscall.IPPROTO_IP && m.Header.Type == syscall.IP_TTL && len(m.Data) >= 1 {
-			return int(m.Data[0])
-		}
-	}
-	return 0
-}
-
 // prepProbeSocket applies the common socket options: IP_TTL, IP_RECVERR,
 // and the fixed source port (TCP only; srcPort 0 skips the bind).
 func prepProbeSocket(fd, ttl, srcPort int) error {

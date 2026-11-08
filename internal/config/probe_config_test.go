@@ -111,3 +111,59 @@ func TestValidateProbe(t *testing.T) {
 	}
 	require.ErrorContains(t, Validate(incomplete), "name, module and target")
 }
+
+// TestValidateEgressTrace pins the egress/path config validation branches
+// (#718/#719): source kinds, category names, and each numeric range.
+func TestValidateEgressTrace(t *testing.T) {
+	newCfg := func(mutate func(*Config)) *Config {
+		c := validProbeConfig()
+		mutate(c)
+		return c
+	}
+	require.NoError(t, Validate(newCfg(func(c *Config) {})))
+
+	badKind := newCfg(func(c *Config) {
+		c.Probe.Egress.Sources = []ProbeEgressSource{{Name: "x", Kind: " carrier-pigeon", Target: "y"}}
+	})
+	badKind.Probe.Egress.Sources[0].Kind = "carrier-pigeon"
+	require.ErrorContains(t, Validate(badKind), "kind must be http, stun or dns")
+
+	noTarget := newCfg(func(c *Config) {
+		c.Probe.Egress.Sources = []ProbeEgressSource{{Name: "x", Kind: "http"}}
+	})
+	require.ErrorContains(t, Validate(noTarget), "every source needs name and target")
+
+	for secs, want := range map[int]string{59: "between 60 and 86400", 86401: "between 60 and 86400"} {
+		bad := newCfg(func(c *Config) { c.Probe.Egress.IntervalSeconds = secs })
+		require.ErrorContains(t, Validate(bad), want)
+	}
+
+	badCat := newCfg(func(c *Config) { c.Probe.Trace.Categories = []string{"dmz"} })
+	require.ErrorContains(t, Validate(badCat), "unknown category")
+
+	badInterval := newCfg(func(c *Config) { c.Probe.Trace.IntervalMinutes = 4 })
+	require.ErrorContains(t, Validate(badInterval), "interval_minutes")
+
+	badTTL := newCfg(func(c *Config) { c.Probe.Trace.MaxTTL = 7 })
+	require.ErrorContains(t, Validate(badTTL), "max_ttl")
+
+	badHop := newCfg(func(c *Config) { c.Probe.Trace.PerHopMs = 99 })
+	require.ErrorContains(t, Validate(badHop), "per_hop_ms")
+
+	badConc := newCfg(func(c *Config) { c.Probe.Trace.Concurrency = 9 })
+	require.ErrorContains(t, Validate(badConc), "concurrency")
+}
+
+// TestNormalizeEgressTrace pins the documented defaults.
+func TestNormalizeEgressTrace(t *testing.T) {
+	c := validProbeConfig()
+	normalizeProbe(c)
+	require.Equal(t, 300, c.Probe.Egress.IntervalSeconds)
+	require.Equal(t, []string{"223.5.5.5"}, c.Probe.Egress.ASNResolvers)
+	require.NotEmpty(t, c.Probe.Egress.Sources)
+	require.Equal(t, []string{"external", "quality"}, c.Probe.Trace.Categories)
+	require.Equal(t, 30, c.Probe.Trace.IntervalMinutes)
+	require.Equal(t, 30, c.Probe.Trace.MaxTTL)
+	require.Equal(t, 500, c.Probe.Trace.PerHopMs)
+	require.Equal(t, 2, c.Probe.Trace.Concurrency)
+}
