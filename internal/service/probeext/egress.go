@@ -46,6 +46,9 @@ type egressCollector struct {
 }
 
 func newEgressCollector(cfg config.ProbeEgressConfig, logger *slog.Logger) *egressCollector {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &egressCollector{
 		cfg:    cfg,
 		logger: logger,
@@ -238,7 +241,7 @@ func (c *egressCollector) dnsEcho(ctx context.Context, target string) (string, s
 		PreferGo: true,
 		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			d := net.Dialer{Timeout: 3 * time.Second}
-			return d.DialContext(ctx, "udp4", net.JoinHostPort(server, "53"))
+			return d.DialContext(ctx, "udp4", resolverAddr(server))
 		},
 	}
 	qctx, cancel := context.WithTimeout(ctx, 6*time.Second)
@@ -279,7 +282,7 @@ func (c *egressCollector) lookupASN(ctx context.Context, ip string) (string, str
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				d := net.Dialer{Timeout: 3 * time.Second}
-				return d.DialContext(ctx, "udp4", net.JoinHostPort(server, "53"))
+				return d.DialContext(ctx, "udp4", resolverAddr(server))
 			},
 		}
 		vals, err := resolver.LookupTXT(qctx, qname)
@@ -294,9 +297,14 @@ func (c *egressCollector) lookupASN(ctx context.Context, ip string) (string, str
 		}
 		if asn != "" {
 			// Best-effort AS name lookup (second TXT query, same resolver).
+			// Live responses vary: with an empty bgp-prefix the name lands
+			// on field 4, the documented 6-field layout puts it on 5. Take
+			// the last populated of the two.
 			if nv, nerr := resolver.LookupTXT(qctx, "AS"+asn+".asn.cymru.com"); nerr == nil && len(nv) > 0 {
 				nf := strings.Split(nv[0], "|")
-				if len(nf) >= 5 {
+				if len(nf) >= 6 && strings.TrimSpace(nf[5]) != "" {
+					asName = strings.TrimSpace(nf[5])
+				} else if len(nf) >= 5 {
 					asName = strings.TrimSpace(nf[4])
 				}
 			}
@@ -319,7 +327,17 @@ func readLocalEgress() (gwIP, iface string) {
 	if err != nil {
 		return "", ""
 	}
-	for _, line := range strings.Split(string(data), "\n")[1:] {
+	return parseProcNetRoute(string(data))
+}
+
+// parseProcNetRoute extracts the first default route's gateway + interface.
+// Exposed for tests; the gateway column is little-endian hex.
+func parseProcNetRoute(content string) (gwIP, iface string) {
+	lines := strings.Split(content, "\n")
+	if len(lines) < 2 {
+		return "", ""
+	}
+	for _, line := range lines[1:] {
 		cols := strings.Fields(line)
 		if len(cols) < 8 || cols[1] != "00000000" {
 			continue
@@ -339,6 +357,15 @@ func readLocalEgress() (gwIP, iface string) {
 		return net.IPv4(b[0], b[1], b[2], b[3]).String(), cols[0]
 	}
 	return "", ""
+}
+
+// resolverAddr normalizes a configured resolver to a UDP dial address:
+// host, host:port, or [v6]:port pass through, bare hosts get :53.
+func resolverAddr(server string) string {
+	if strings.Contains(server, ":") {
+		return server
+	}
+	return net.JoinHostPort(server, "53")
 }
 
 // isPublicIP reports whether s parses as a global-scope IPv4. CGNAT space
