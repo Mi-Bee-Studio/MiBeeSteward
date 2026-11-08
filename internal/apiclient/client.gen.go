@@ -69,6 +69,87 @@ func (e AgentCommandStatus) Valid() bool {
 	}
 }
 
+// Defines values for AgentEgressRoundResultsKind.
+const (
+	AgentEgressRoundResultsKindDns  AgentEgressRoundResultsKind = "dns"
+	AgentEgressRoundResultsKindHttp AgentEgressRoundResultsKind = "http"
+	AgentEgressRoundResultsKindStun AgentEgressRoundResultsKind = "stun"
+)
+
+// Valid indicates whether the value is a known member of the AgentEgressRoundResultsKind enum.
+func (e AgentEgressRoundResultsKind) Valid() bool {
+	switch e {
+	case AgentEgressRoundResultsKindDns:
+		return true
+	case AgentEgressRoundResultsKindHttp:
+		return true
+	case AgentEgressRoundResultsKindStun:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPathSampleEndState.
+const (
+	AgentPathSampleEndStateError   AgentPathSampleEndState = "error"
+	AgentPathSampleEndStateMaxTtl  AgentPathSampleEndState = "max_ttl"
+	AgentPathSampleEndStateReached AgentPathSampleEndState = "reached"
+)
+
+// Valid indicates whether the value is a known member of the AgentPathSampleEndState enum.
+func (e AgentPathSampleEndState) Valid() bool {
+	switch e {
+	case AgentPathSampleEndStateError:
+		return true
+	case AgentPathSampleEndStateMaxTtl:
+		return true
+	case AgentPathSampleEndStateReached:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPathSampleMethod.
+const (
+	AgentPathSampleMethodIcmp AgentPathSampleMethod = "icmp"
+	AgentPathSampleMethodTcp  AgentPathSampleMethod = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the AgentPathSampleMethod enum.
+func (e AgentPathSampleMethod) Valid() bool {
+	switch e {
+	case AgentPathSampleMethodIcmp:
+		return true
+	case AgentPathSampleMethodTcp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPathSampleTrigger.
+const (
+	AgentPathSampleTriggerBaseline AgentPathSampleTrigger = "baseline"
+	AgentPathSampleTriggerFailure  AgentPathSampleTrigger = "failure"
+	AgentPathSampleTriggerManual   AgentPathSampleTrigger = "manual"
+)
+
+// Valid indicates whether the value is a known member of the AgentPathSampleTrigger enum.
+func (e AgentPathSampleTrigger) Valid() bool {
+	switch e {
+	case AgentPathSampleTriggerBaseline:
+		return true
+	case AgentPathSampleTriggerFailure:
+		return true
+	case AgentPathSampleTriggerManual:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ArchiveItemArchivePin.
 const (
 	ArchiveItemArchivePinEmpty        ArchiveItemArchivePin = ""
@@ -732,6 +813,7 @@ func (e ProbePathSampleMethod) Valid() bool {
 // Defines values for ProbePathSampleTrigger.
 const (
 	ProbePathSampleTriggerBaseline ProbePathSampleTrigger = "baseline"
+	ProbePathSampleTriggerFailure  ProbePathSampleTrigger = "failure"
 	ProbePathSampleTriggerManual   ProbePathSampleTrigger = "manual"
 )
 
@@ -739,6 +821,8 @@ const (
 func (e ProbePathSampleTrigger) Valid() bool {
 	switch e {
 	case ProbePathSampleTriggerBaseline:
+		return true
+	case ProbePathSampleTriggerFailure:
 		return true
 	case ProbePathSampleTriggerManual:
 		return true
@@ -1429,6 +1513,56 @@ type AgentCommandList struct {
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
 }
+
+// AgentEgressRound One agent-side egress round (#718) in an /agents/egress-report batch. Raw echo outcomes; ASN enrichment happens on the center.
+type AgentEgressRound struct {
+	Local *struct {
+		GatewayIp *string `json:"gateway_ip,omitempty"`
+
+		// GatewayMac reported for forward-compat; not persisted
+		GatewayMac *string `json:"gateway_mac,omitempty"`
+		Iface      *string `json:"iface,omitempty"`
+	} `json:"local,omitempty"`
+	Results []struct {
+		Err    *string                     `json:"err,omitempty"`
+		Ip     *string                     `json:"ip,omitempty"`
+		Kind   AgentEgressRoundResultsKind `json:"kind"`
+		Ms     *float64                    `json:"ms,omitempty"`
+		Ok     bool                        `json:"ok"`
+		Source string                      `json:"source"`
+	} `json:"results"`
+	RoundAt time.Time `json:"round_at"`
+}
+
+// AgentEgressRoundResultsKind defines model for AgentEgressRound.Results.Kind.
+type AgentEgressRoundResultsKind string
+
+// AgentPathSample One agent-side path trace (#719) in an /agents/path-report batch. The center re-derives the target name and recounts visible hops.
+type AgentPathSample struct {
+	EndState   AgentPathSampleEndState `json:"end_state"`
+	Err        *string                 `json:"err,omitempty"`
+	Hops       *[]ProbePathHop         `json:"hops,omitempty"`
+	Method     *AgentPathSampleMethod  `json:"method,omitempty"`
+	ReachedTtl *int                    `json:"reached_ttl,omitempty"`
+	ReplyTtl   *int                    `json:"reply_ttl,omitempty"`
+	ResolvedIp *string                 `json:"resolved_ip,omitempty"`
+	TargetId   int64                   `json:"target_id"`
+
+	// TargetName informational; the center stores its own live row's name
+	TargetName  *string                 `json:"target_name,omitempty"`
+	TracedAt    time.Time               `json:"traced_at"`
+	Trigger     *AgentPathSampleTrigger `json:"trigger,omitempty"`
+	VisibleHops *int                    `json:"visible_hops,omitempty"`
+}
+
+// AgentPathSampleEndState defines model for AgentPathSample.EndState.
+type AgentPathSampleEndState string
+
+// AgentPathSampleMethod defines model for AgentPathSample.Method.
+type AgentPathSampleMethod string
+
+// AgentPathSampleTrigger defines model for AgentPathSample.Trigger.
+type AgentPathSampleTrigger string
 
 // AgentToken defines model for AgentToken.
 type AgentToken struct {
@@ -2354,10 +2488,12 @@ type ProbePathSample struct {
 	ResolvedIp *string `json:"resolved_ip,omitempty"`
 
 	// Target target string (snapshot only)
-	Target      *string                 `json:"target,omitempty"`
-	TargetId    int64                   `json:"target_id"`
-	TargetName  *string                 `json:"target_name,omitempty"`
-	TracedAt    time.Time               `json:"traced_at"`
+	Target     *string   `json:"target,omitempty"`
+	TargetId   int64     `json:"target_id"`
+	TargetName *string   `json:"target_name,omitempty"`
+	TracedAt   time.Time `json:"traced_at"`
+
+	// Trigger failure = snapshot fired by the agent right after a failed probe (#719)
 	Trigger     *ProbePathSampleTrigger `json:"trigger,omitempty"`
 	Vantage     string                  `json:"vantage"`
 	VisibleHops *int                    `json:"visible_hops,omitempty"`
@@ -2372,7 +2508,7 @@ type ProbePathSampleEndState string
 // ProbePathSampleMethod defines model for ProbePathSample.Method.
 type ProbePathSampleMethod string
 
-// ProbePathSampleTrigger defines model for ProbePathSample.Trigger.
+// ProbePathSampleTrigger failure = snapshot fired by the agent right after a failed probe (#719)
 type ProbePathSampleTrigger string
 
 // ProbePathsResponse defines model for ProbePathsResponse.
@@ -3103,10 +3239,20 @@ type GetAgentsCommandsAllParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// PostAgentsEgressReportJSONBody defines parameters for PostAgentsEgressReport.
+type PostAgentsEgressReportJSONBody struct {
+	Rounds []AgentEgressRound `json:"rounds"`
+}
+
 // GetAgentsFingerprintsParams defines parameters for GetAgentsFingerprints.
 type GetAgentsFingerprintsParams struct {
 	// Rev last-applied revision (64-hex); omit to force download
 	Rev *string `form:"rev,omitempty" json:"rev,omitempty"`
+}
+
+// PostAgentsPathReportJSONBody defines parameters for PostAgentsPathReport.
+type PostAgentsPathReportJSONBody struct {
+	Paths []AgentPathSample `json:"paths"`
 }
 
 // GetArchiveParams defines parameters for GetArchive.
@@ -3482,6 +3628,12 @@ type GetUsersParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
 }
+
+// PostAgentsEgressReportJSONRequestBody defines body for PostAgentsEgressReport for application/json ContentType.
+type PostAgentsEgressReportJSONRequestBody PostAgentsEgressReportJSONBody
+
+// PostAgentsPathReportJSONRequestBody defines body for PostAgentsPathReport for application/json ContentType.
+type PostAgentsPathReportJSONRequestBody PostAgentsPathReportJSONBody
 
 // PostAuthLoginJSONRequestBody defines body for PostAuthLogin for application/json ContentType.
 type PostAuthLoginJSONRequestBody PostAuthLoginJSONBody
@@ -4068,12 +4220,48 @@ type ClientInterface interface {
 	// Corresponds with POST /agents/commands/{id}/complete (the `PostAgentsCommandsIdComplete` operationId).
 	PostAgentsCommandsIdComplete(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostAgentsEgressReportWithBody [agent] Egress-identity round batches (#718)
+	//
+	// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+	PostAgentsEgressReportWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostAgentsEgressReport [agent] Egress-identity round batches (#718)
+	//
+	// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+	PostAgentsEgressReport(ctx context.Context, body PostAgentsEgressReportJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetAgentsFingerprints [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
 	//
 	// Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
 	//
 	// Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
 	GetAgentsFingerprints(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostAgentsPathReportWithBody [agent] Path-trace sample batches (#719)
+	//
+	// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+	PostAgentsPathReportWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostAgentsPathReport [agent] Path-trace sample batches (#719)
+	//
+	// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+	PostAgentsPathReport(ctx context.Context, body PostAgentsPathReportJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostAgentsProbeReport [agent] Synthetic probe result batches
 	//
@@ -5121,6 +5309,44 @@ func (c *Client) PostAgentsCommandsIdComplete(ctx context.Context, id Id, reqEdi
 	return c.Client.Do(req)
 }
 
+// PostAgentsEgressReportWithBody [agent] Egress-identity round batches (#718)
+//
+// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+func (c *Client) PostAgentsEgressReportWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAgentsEgressReportRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostAgentsEgressReport [agent] Egress-identity round batches (#718)
+//
+// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+func (c *Client) PostAgentsEgressReport(ctx context.Context, body PostAgentsEgressReportJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAgentsEgressReportRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetAgentsFingerprints [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
 //
 // Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
@@ -5128,6 +5354,44 @@ func (c *Client) PostAgentsCommandsIdComplete(ctx context.Context, id Id, reqEdi
 // Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
 func (c *Client) GetAgentsFingerprints(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetAgentsFingerprintsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostAgentsPathReportWithBody [agent] Path-trace sample batches (#719)
+//
+// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+func (c *Client) PostAgentsPathReportWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAgentsPathReportRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostAgentsPathReport [agent] Path-trace sample batches (#719)
+//
+// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+func (c *Client) PostAgentsPathReport(ctx context.Context, body PostAgentsPathReportJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAgentsPathReportRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -8154,6 +8418,46 @@ func NewPostAgentsCommandsIdCompleteRequest(server string, id Id) (*http.Request
 	return req, nil
 }
 
+// NewPostAgentsEgressReportRequest calls the generic PostAgentsEgressReport builder with application/json body
+func NewPostAgentsEgressReportRequest(server string, body PostAgentsEgressReportJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostAgentsEgressReportRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostAgentsEgressReportRequestWithBody constructs an http.Request for the PostAgentsEgressReport method, with any body, and a specified content type
+func NewPostAgentsEgressReportRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agents/egress-report")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetAgentsFingerprintsRequest constructs an http.Request for the GetAgentsFingerprints method
 func NewGetAgentsFingerprintsRequest(server string, params *GetAgentsFingerprintsParams) (*http.Request, error) {
 	var err error
@@ -8204,6 +8508,46 @@ func NewGetAgentsFingerprintsRequest(server string, params *GetAgentsFingerprint
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewPostAgentsPathReportRequest calls the generic PostAgentsPathReport builder with application/json body
+func NewPostAgentsPathReportRequest(server string, body PostAgentsPathReportJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostAgentsPathReportRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostAgentsPathReportRequestWithBody constructs an http.Request for the PostAgentsPathReport method, with any body, and a specified content type
+func NewPostAgentsPathReportRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agents/path-report")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -15484,6 +15828,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /agents/commands/{id}/complete (the `PostAgentsCommandsIdComplete` operationId).
 	PostAgentsCommandsIdCompleteWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PostAgentsCommandsIdCompleteResponse, error)
 
+	// PostAgentsEgressReportWithBodyWithResponse [agent] Egress-identity round batches (#718)
+	//
+	// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+	PostAgentsEgressReportWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAgentsEgressReportResponse, error)
+
+	// PostAgentsEgressReportWithResponse [agent] Egress-identity round batches (#718)
+	//
+	// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+	PostAgentsEgressReportWithResponse(ctx context.Context, body PostAgentsEgressReportJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAgentsEgressReportResponse, error)
+
 	// GetAgentsFingerprintsWithResponse [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
 	//
 	// Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
@@ -15492,6 +15854,24 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
 	GetAgentsFingerprintsWithResponse(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*GetAgentsFingerprintsResponse, error)
+
+	// PostAgentsPathReportWithBodyWithResponse [agent] Path-trace sample batches (#719)
+	//
+	// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+	PostAgentsPathReportWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAgentsPathReportResponse, error)
+
+	// PostAgentsPathReportWithResponse [agent] Path-trace sample batches (#719)
+	//
+	// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+	PostAgentsPathReportWithResponse(ctx context.Context, body PostAgentsPathReportJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAgentsPathReportResponse, error)
 
 	// PostAgentsProbeReportWithResponse [agent] Synthetic probe result batches
 	//
@@ -16965,6 +17345,51 @@ func (r PostAgentsCommandsIdCompleteResponse) ContentType() string {
 	return ""
 }
 
+type PostAgentsEgressReportResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *struct {
+		Accepted *int `json:"accepted,omitempty"`
+	}
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostAgentsEgressReportResponse) GetJSON200() *struct {
+	Accepted *int `json:"accepted,omitempty"`
+} {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PostAgentsEgressReportResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostAgentsEgressReportResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostAgentsEgressReportResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostAgentsEgressReportResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetAgentsFingerprintsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -16993,6 +17418,51 @@ func (r GetAgentsFingerprintsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetAgentsFingerprintsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostAgentsPathReportResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *struct {
+		Accepted *int `json:"accepted,omitempty"`
+	}
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostAgentsPathReportResponse) GetJSON200() *struct {
+	Accepted *int `json:"accepted,omitempty"`
+} {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PostAgentsPathReportResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostAgentsPathReportResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostAgentsPathReportResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostAgentsPathReportResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -24145,6 +24615,36 @@ func (c *ClientWithResponses) PostAgentsCommandsIdCompleteWithResponse(ctx conte
 	return ParsePostAgentsCommandsIdCompleteResponse(rsp)
 }
 
+// PostAgentsEgressReportWithBodyWithResponse [agent] Egress-identity round batches (#718)
+//
+// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+func (c *ClientWithResponses) PostAgentsEgressReportWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAgentsEgressReportResponse, error) {
+	rsp, err := c.PostAgentsEgressReportWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostAgentsEgressReportResponse(rsp)
+}
+
+// PostAgentsEgressReportWithResponse [agent] Egress-identity round batches (#718)
+//
+// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+func (c *ClientWithResponses) PostAgentsEgressReportWithResponse(ctx context.Context, body PostAgentsEgressReportJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAgentsEgressReportResponse, error) {
+	rsp, err := c.PostAgentsEgressReport(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostAgentsEgressReportResponse(rsp)
+}
+
 // GetAgentsFingerprintsWithResponse [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
 //
 // Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
@@ -24158,6 +24658,36 @@ func (c *ClientWithResponses) GetAgentsFingerprintsWithResponse(ctx context.Cont
 		return nil, err
 	}
 	return ParseGetAgentsFingerprintsResponse(rsp)
+}
+
+// PostAgentsPathReportWithBodyWithResponse [agent] Path-trace sample batches (#719)
+//
+// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+func (c *ClientWithResponses) PostAgentsPathReportWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAgentsPathReportResponse, error) {
+	rsp, err := c.PostAgentsPathReportWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostAgentsPathReportResponse(rsp)
+}
+
+// PostAgentsPathReportWithResponse [agent] Path-trace sample batches (#719)
+//
+// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+func (c *ClientWithResponses) PostAgentsPathReportWithResponse(ctx context.Context, body PostAgentsPathReportJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAgentsPathReportResponse, error) {
+	rsp, err := c.PostAgentsPathReport(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostAgentsPathReportResponse(rsp)
 }
 
 // PostAgentsProbeReportWithResponse [agent] Synthetic probe result batches
@@ -26687,6 +27217,37 @@ func ParsePostAgentsCommandsIdCompleteResponse(rsp *http.Response) (*PostAgentsC
 	return response, nil
 }
 
+// ParsePostAgentsEgressReportResponse parses an HTTP response from a PostAgentsEgressReportWithResponse call
+func ParsePostAgentsEgressReportResponse(rsp *http.Response) (*PostAgentsEgressReportResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostAgentsEgressReportResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Accepted *int `json:"accepted,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case rsp.StatusCode == 400:
+		break // No content-type
+
+	}
+
+	return response, nil
+}
+
 // ParseGetAgentsFingerprintsResponse parses an HTTP response from a GetAgentsFingerprintsWithResponse call
 func ParseGetAgentsFingerprintsResponse(rsp *http.Response) (*GetAgentsFingerprintsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -26698,6 +27259,37 @@ func ParseGetAgentsFingerprintsResponse(rsp *http.Response) (*GetAgentsFingerpri
 	response := &GetAgentsFingerprintsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParsePostAgentsPathReportResponse parses an HTTP response from a PostAgentsPathReportWithResponse call
+func ParsePostAgentsPathReportResponse(rsp *http.Response) (*PostAgentsPathReportResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostAgentsPathReportResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Accepted *int `json:"accepted,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case rsp.StatusCode == 400:
+		break // No content-type
+
 	}
 
 	return response, nil

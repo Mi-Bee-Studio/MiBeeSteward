@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"mibee-steward/internal/changedetect"
+	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/testutil"
@@ -29,14 +30,28 @@ import (
 // service slice).
 type fakeEnqueuer struct {
 	plans map[string][]map[string]interface{} // agentID → enqueued payloads
+	cmds  map[string][]string                 // agentID → command names, same order
 }
 
-func (f *fakeEnqueuer) Enqueue(_ context.Context, agentID, _ string, payload map[string]interface{}) (db.AgentCommand, error) {
+func (f *fakeEnqueuer) Enqueue(_ context.Context, agentID, command string, payload map[string]interface{}) (db.AgentCommand, error) {
 	if f.plans == nil {
 		f.plans = map[string][]map[string]interface{}{}
+		f.cmds = map[string][]string{}
 	}
 	f.plans[agentID] = append(f.plans[agentID], payload)
+	f.cmds[agentID] = append(f.cmds[agentID], command)
 	return db.AgentCommand{ID: int64(len(f.plans[agentID]))}, nil
+}
+
+// payloadsOf returns only the payloads enqueued with the given command name.
+func (f *fakeEnqueuer) payloadsOf(agentID, command string) []map[string]interface{} {
+	var out []map[string]interface{}
+	for i, c := range f.cmds[agentID] {
+		if c == command {
+			out = append(out, f.plans[agentID][i])
+		}
+	}
+	return out
 }
 
 func setupDispatch(t *testing.T) (*AgentDispatcher, *fakeEnqueuer, *db.Queries, *sql.DB) {
@@ -47,7 +62,7 @@ func setupDispatch(t *testing.T) (*AgentDispatcher, *fakeEnqueuer, *db.Queries, 
 	queries := db.New(conn)
 	fake := &fakeEnqueuer{}
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewAgentDispatcher(queries, fake, quiet), fake, queries, conn
+	return NewAgentDispatcher(queries, fake, quiet, config.ProbeConfig{}), fake, queries, conn
 }
 
 func seedVantageWorld(t *testing.T, conn *sql.DB) {

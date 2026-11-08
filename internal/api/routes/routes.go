@@ -881,8 +881,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	probeTargetSvc := probetarget.New(db.New(probeDB), probeEngine)
 	// Vantage probe dispatcher (#277): ships agent plans over the command
 	// channel whenever a plan content changes (fingerprint-gated, steady
-	// state is zero traffic). Same 10s cadence as the engine tick.
-	probeDispatcher := probetarget.NewAgentDispatcher(db.New(probeDB), agentCmdSvc, slog.Default())
+	// state is zero traffic). Same 10s cadence as the engine tick. Also owns
+	// the egress echo plans and the trace block riding probe plans (#718/#719).
+	probeDispatcher := probetarget.NewAgentDispatcher(db.New(probeDB), agentCmdSvc, slog.Default(), cfg.Probe)
 	// Stop channel for the dispatch ticker below, without it the goroutine
 	// ran forever (one leak per NewRouter call; tests call NewRouter a lot).
 	probeDispatchStop := make(chan struct{})
@@ -964,7 +965,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// fpManagedDir resolved above (engine construction) per the shared
 	// fingerprint_path > managed > embedded precedence.
 	agentFingerprintsHandler := handler.NewAgentFingerprintsHandler(cfg.Scanner.FingerprintPath, fpManagedDir, slog.Default())
-	registerAgentRoutes(r, agentReportHandler, agentProbeReportHandler, agentCommandHandler, agentFingerprintsHandler)
+	// Agent-side egress/path reporting (#718/#719): same agent-token regime,
+	// probe_ext.db side store (probeExtSvc built above in the probe block).
+	agentEgressReportHandler := handler.NewAgentEgressReportHandler(probeExtSvc)
+	agentPathReportHandler := handler.NewAgentPathReportHandler(probeExtSvc)
+	registerAgentRoutes(r, agentReportHandler, agentProbeReportHandler, agentEgressReportHandler, agentPathReportHandler, agentCommandHandler, agentFingerprintsHandler)
 	fingerprintAdminHandler := handler.NewFingerprintAdminHandler(v2Engine, cfg.Scanner.FingerprintPath, fpManagedDir, cfg.Scanner.FingerprintUpstreamURL, scanQueries, auditRepo)
 	registerFingerprintAdminRoutes(r, fingerprintAdminHandler)
 
