@@ -112,7 +112,7 @@ func TestAgentPathReportHandler(t *testing.T) {
 		Name: "web", Module: "http", Target: "http://x.example/",
 		Vantage:         domain.ProbeVantageAgentPrefix + "agent-62",
 		IntervalSeconds: 300, TimeoutSeconds: 10,
-		Source:          domain.ProbeSourceManual,
+		Source: domain.ProbeSourceManual,
 	})
 	require.NoError(t, err)
 	sample := `{"paths":[{"target_id":1,"end_state":"reached","traced_at":"2026-11-08T08:00:00Z"},` +
