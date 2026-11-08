@@ -660,3 +660,49 @@ async fn reporter_early_flush_at_buffer_cap() {
     assert_eq!(body["hosts"].as_array().unwrap().len(), 4);
     assert!(log[0].state_hash.is_some(), "scan batch carries state hash");
 }
+
+/// The egress loop's park queue (#718): a center outage parks the round and
+/// the recovery slot drains it — same contract as probe batches.
+#[tokio::test]
+async fn egress_rounds_park_and_recover() {
+    use mibee_agent::egress::{run_egress_with_tuning, EgressRunner};
+    use mibee_agent::wire::EgressSourceSpec;
+
+    let (base, mock) = spawn_mock().await;
+    let c = client(&base);
+    let runner = std::sync::Arc::new(tokio::sync::Mutex::new(EgressRunner::new()));
+    // A plan whose only source fails fast (unknown kind) keeps the round
+    // offline-safe while still exercising the full tick→post→park path.
+    runner.lock().await.apply_plan(
+        "f1",
+        vec![EgressSourceSpec { name: "bad".into(), kind: "xyz".into(), target: String::new() }],
+        3600,
+    );
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+
+    mock.then(MockAction::Json(503, String::new()));
+    mock.then(MockAction::Json(503, String::new()));
+    mock.then(MockAction::Json(503, String::new()));
+    mock.then(MockAction::Json(503, String::new()));
+
+    let task = tokio::spawn(run_egress_with_tuning(
+        runner.clone(),
+        c.clone(),
+        stop_rx,
+        std::time::Duration::from_millis(5),
+        std::time::Duration::from_millis(50),
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    stop_tx.send(true).unwrap();
+    match task.await {
+        Ok(()) => {}
+        Err(e) => panic!("egress task failed: {e}"),
+    }
+
+    let log = mock.log.lock().unwrap();
+    let posts = log.iter().filter(|r| r.path.contains("egress-report")).count();
+    assert_eq!(posts, 5, "4 failed ladder attempts + 1 recovery drain");
+    let body: serde_json::Value = serde_json::from_slice(&log[4].body).unwrap();
+    assert_eq!(body["rounds"][0]["results"][0]["source"], "bad");
+    assert_eq!(body["rounds"][0]["results"][0]["ok"], serde_json::json!(false), "unknown-kind source reports a failed row, not a dropped round");
+}
