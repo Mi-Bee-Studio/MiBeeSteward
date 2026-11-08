@@ -65,8 +65,13 @@ func NewService(cfg config.ProbeConfig, store *Store, queries *db.Queries, logge
 // every probe.egress.interval_seconds, path traces per due target limited
 // to the configured categories and concurrency.
 func (s *Service) Start(ctx context.Context) {
+	s.startLoop(ctx, 30*time.Second)
+}
+
+// startLoop is Start with an injectable tick interval (tests).
+func (s *Service) startLoop(ctx context.Context, every time.Duration) {
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(every)
 		defer ticker.Stop()
 		for {
 			select {
