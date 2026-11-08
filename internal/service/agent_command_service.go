@@ -64,11 +64,13 @@ var OpsCommands = map[string]bool{
 	"logs-tail":     true,
 }
 
-// ValidCommands is the full enqueue whitelist (scan + gated ops family).
+// ValidCommands is the full enqueue whitelist (scan + probe plans + the
+// egress echo plan lane #718 + gated ops family).
 func ValidCommands() map[string]bool {
 	return map[string]bool{
 		"scan":          true,
 		"probe":         true,
+		"egress":        true,
 		"restart":       true,
 		"config-reload": true,
 		"logs-tail":     true,
@@ -119,22 +121,23 @@ func (s *AgentCommandService) Enqueue(ctx context.Context, agentID, command stri
 	// agent is offline the scheduler keeps enqueueing every tick and the
 	// agent's serial poller then grinds through the whole backlog on
 	// reconnect (observed 650+ pending rows after a day-long center outage:
-	// fresh probe plans starved behind hours of stale rescans). Two rules
+	// fresh probe plans starved behind hours of stale rescans). Three rules
 	// bound the queue without losing work:
-	//   probe - the plan is a full snapshot, so a newer plan supersedes any
-	//           still-pending one (delete-then-insert);
-	//   scan  - an identical pending scan (same payload bytes; json.Marshal
-	//           sorts map keys, so the bytes are deterministic) is returned
-	//           as-is; the next tick re-dispatches anyway.
+	//   probe  - the plan is a full snapshot, so a newer plan supersedes any
+	//            still-pending one (delete-then-insert);
+	//   egress - same snapshot semantics as probe plans (#718 plan lane);
+	//   scan   - an identical pending scan (same payload bytes; json.Marshal
+	//            sorts map keys, so the bytes are deterministic) is returned
+	//            as-is; the next tick re-dispatches anyway.
 	switch command {
-	case "probe":
+	case "probe", "egress":
 		if _, err := s.queries.DeletePendingAgentCommandsByCommand(ctx, db.DeletePendingAgentCommandsByCommandParams{
 			AgentID: agentID,
 			Command: command,
 		}); err != nil {
 			// Not fatal: a leftover duplicate plan is harmless (the agent
 			// applies the newest payload it sees). Fall through to insert.
-			slog.Warn("agent command coalesce: pending probe sweep failed", "agent_id", agentID, "error", err)
+			slog.Warn("agent command coalesce: pending plan sweep failed", "agent_id", agentID, "command", command, "error", err)
 		}
 	case "scan":
 		if existing, err := s.queries.GetPendingAgentCommandByPayload(ctx, db.GetPendingAgentCommandByPayloadParams{
