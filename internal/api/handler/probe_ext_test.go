@@ -48,13 +48,15 @@ func setupProbeExt(t *testing.T) (*httptest.Server, *sql.DB) {
 		Trace:  config.ProbeTraceConfig{Categories: []string{"external"}, IntervalMinutes: 30, MaxTTL: 8, PerHopMs: 200, Concurrency: 1},
 	}
 	svc := probeext.NewService(cfg, store, queries, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	h := NewProbeExtHandler(svc)
+	episodes := probeext.NewEpisodeService(store, queries, conn, config.QualityEpisodeConfig{}, nil, nil)
+	h := NewProbeExtHandler(svc, episodes)
 
 	r := chi.NewMux()
 	r.Get("/api/v1/probe-egress", h.Egress)
 	r.Get("/api/v1/probe-paths", h.Paths)
 	r.Get("/api/v1/probe-targets/{id}/paths", h.TargetPaths)
 	r.Post("/api/v1/probe-targets/{id}/trace", h.TraceNow)
+	r.Get("/api/v1/probe-quality/episodes", h.Episodes)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	return srv, conn
@@ -131,4 +133,16 @@ func TestProbeExtEndpoints(t *testing.T) {
 	resp2.Body.Close()
 	code, _ = getJSON("/api/v1/probe-targets/-3/paths")
 	require.Equal(t, 400, code)
+}
+
+// TestProbeExtEpisodesEndpoint pins the episodes API: empty state returns an
+// empty array (not null).
+func TestProbeExtEpisodesEndpoint(t *testing.T) {
+	srv, _ := setupProbeExt(t)
+	resp, err := http.Get(srv.URL + "/api/v1/probe-quality/episodes")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, string(body), "\"episodes\":[]")
 }

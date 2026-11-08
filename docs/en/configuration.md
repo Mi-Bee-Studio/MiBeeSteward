@@ -417,6 +417,12 @@ Per-target interval/timeout live on each `probe_targets` row (managed in the UI/
 | `probe.quality.dns_degraded_ms` | int | 300 | Same for dns legs. |
 | `probe.quality.ok_rate_threshold` | float | 0.9 | Minimum success rate within the window (0..1]. |
 | `probe.quality.groups` | map | see below | The probe-point matrix, `group name → [{name, module, target, options}]`. The reserved group `domestic` drives the primary verdict; `international` (and any other name) is reference-only — cross-border variance is its own signal, not an egress fault. Empty = the shipped defaults: a domestic group (two public resolvers for DNS differential diagnosis, mainstream HTTP sites, a 204 endpoint, a DNS-free direct-IP TCP leg) plus an international reference group. Every value is configurable; nothing is hardcoded. |
+| `probe.quality.episodes.enabled` | bool | (follows quality) | Degradation-episode detector switch (#720). Absent = follow `probe.quality.enabled`; explicit false is the off switch. |
+| `probe.quality.episodes.latency_ratio` | float | 2.0 | A track's window p50 counts as degraded at `p50 >= max(base × ratio, base + min_delta)`. |
+| `probe.quality.episodes.latency_min_delta_ms` | int | 50 | Absolute latency floor so a 3ms baseline cannot "double" into noise. |
+| `probe.quality.episodes.ok_rate_drop` | float | 0.3 | Window ok-rate counts as degraded at `ok_rate <= base − drop` (0..1). |
+| `probe.quality.episodes.min_windows` | int | 2 | Consecutive degraded 15-minute windows before a track candidate counts (2 ≈ 30 sustained minutes). |
+| `probe.quality.episodes.alert_requires_attribution` | bool | true | The #716 ruling, enforced: degraded episodes without a same-window egress/path change stay recorded (UI yellow) but never notify. Explicit false allows notifying unattributed episodes. |
 | `probe.autogen.enabled` | bool | false | Discover-then-probe: auto-create device-bound probe targets (`source=auto`) from discovered services. Default OFF — it writes rows on its own, so it must be a deliberate choice. Turning it off parks the auto population (rows + history kept). |
 | `probe.autogen.services` | []string | ["http","https"] | Service identities eligible for auto targets (matched against `host_services.service`). |
 | `probe.autogen.device_types` | []string | [] | Restrict generation to those device types; empty = all. |

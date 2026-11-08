@@ -669,6 +669,51 @@ func (e ProbeEgressSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for ProbeEpisodeAttributionKind.
+const (
+	EgressChange       ProbeEpisodeAttributionKind = "egress_change"
+	ErrorShape         ProbeEpisodeAttributionKind = "error_shape"
+	PathChange         ProbeEpisodeAttributionKind = "path_change"
+	PeerEgressDegraded ProbeEpisodeAttributionKind = "peer_egress_degraded"
+)
+
+// Valid indicates whether the value is a known member of the ProbeEpisodeAttributionKind enum.
+func (e ProbeEpisodeAttributionKind) Valid() bool {
+	switch e {
+	case EgressChange:
+		return true
+	case ErrorShape:
+		return true
+	case PathChange:
+		return true
+	case PeerEgressDegraded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeEpisodeMetricReason.
+const (
+	Both    ProbeEpisodeMetricReason = "both"
+	Latency ProbeEpisodeMetricReason = "latency"
+	OkRate  ProbeEpisodeMetricReason = "ok_rate"
+)
+
+// Valid indicates whether the value is a known member of the ProbeEpisodeMetricReason enum.
+func (e ProbeEpisodeMetricReason) Valid() bool {
+	switch e {
+	case Both:
+		return true
+	case Latency:
+		return true
+	case OkRate:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeOptionsExpectMode.
 const (
 	ProbeOptionsExpectModeContains ProbeOptionsExpectMode = "contains"
@@ -846,6 +891,24 @@ func (e ProbeQualityCategoryCategory) Valid() bool {
 	case ProbeQualityCategoryCategoryLan:
 		return true
 	case ProbeQualityCategoryCategoryQuality:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeQualityEpisodeKind.
+const (
+	ProbeQualityEpisodeKindNetwork ProbeQualityEpisodeKind = "network"
+	ProbeQualityEpisodeKindPath    ProbeQualityEpisodeKind = "path"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityEpisodeKind enum.
+func (e ProbeQualityEpisodeKind) Valid() bool {
+	switch e {
+	case ProbeQualityEpisodeKindNetwork:
+		return true
+	case ProbeQualityEpisodeKindPath:
 		return true
 	default:
 		return false
@@ -1440,6 +1503,24 @@ func (e PutDevicesIdArchiveSettingsJSONBodyPin) Valid() bool {
 	case PutDevicesIdArchiveSettingsJSONBodyPinForceActive:
 		return true
 	case PutDevicesIdArchiveSettingsJSONBodyPinForceArchive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetProbeQualityEpisodesParamsActive.
+const (
+	GetProbeQualityEpisodesParamsActiveN0 GetProbeQualityEpisodesParamsActive = 0
+	GetProbeQualityEpisodesParamsActiveN1 GetProbeQualityEpisodesParamsActive = 1
+)
+
+// Valid indicates whether the value is a known member of the GetProbeQualityEpisodesParamsActive enum.
+func (e GetProbeQualityEpisodesParamsActive) Valid() bool {
+	switch e {
+	case GetProbeQualityEpisodesParamsActiveN0:
+		return true
+	case GetProbeQualityEpisodesParamsActiveN1:
 		return true
 	default:
 		return false
@@ -2409,6 +2490,33 @@ type ProbeEgressVantage struct {
 	Vantage string `json:"vantage"`
 }
 
+// ProbeEpisodeAttribution defines model for ProbeEpisodeAttribution.
+type ProbeEpisodeAttribution struct {
+	// At change timestamp when point-precise
+	At     *string                     `json:"at,omitempty"`
+	Detail string                      `json:"detail"`
+	Kind   ProbeEpisodeAttributionKind `json:"kind"`
+}
+
+// ProbeEpisodeAttributionKind defines model for ProbeEpisodeAttribution.Kind.
+type ProbeEpisodeAttributionKind string
+
+// ProbeEpisodeMetric defines model for ProbeEpisodeMetric.
+type ProbeEpisodeMetric struct {
+	BaseOkRate float64                  `json:"base_ok_rate"`
+	BaseP50Ms  float64                  `json:"base_p50_ms"`
+	Name       string                   `json:"name"`
+	OkRate     float64                  `json:"ok_rate"`
+	P50Ms      float64                  `json:"p50_ms"`
+	Reason     ProbeEpisodeMetricReason `json:"reason"`
+	Samples    int                      `json:"samples"`
+	TargetId   int64                    `json:"target_id"`
+	Vantage    string                   `json:"vantage"`
+}
+
+// ProbeEpisodeMetricReason defines model for ProbeEpisodeMetric.Reason.
+type ProbeEpisodeMetricReason string
+
 // ProbeOptions Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free.
 type ProbeOptions struct {
 	// Expect tcp only; banner match against the first bytes read
@@ -2531,6 +2639,42 @@ type ProbeQualityCategory struct {
 
 // ProbeQualityCategoryCategory lan = device-bound targets; external = manual unbound (business) targets; quality = the built-in system matrix
 type ProbeQualityCategoryCategory string
+
+// ProbeQualityEpisode One degradation episode (#720). notified=false episodes are recorded-only (no notification fired; the #716 impact-only rule).
+type ProbeQualityEpisode struct {
+	Attribution []ProbeEpisodeAttribution `json:"attribution"`
+	Id          int64                     `json:"id"`
+
+	// Kind network = one egress group's quality points mostly degraded; path = one destination /24 degraded from that group's view
+	Kind ProbeQualityEpisodeKind `json:"kind"`
+
+	// LastSeenAt last window the confirmation still held
+	LastSeenAt      time.Time            `json:"last_seen_at"`
+	MetricDegraded  []ProbeEpisodeMetric `json:"metric_degraded"`
+	Notified        bool                 `json:"notified"`
+	RecoverNotified bool                 `json:"recover_notified"`
+
+	// ResolvedAt empty = active
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	StartedAt  time.Time  `json:"started_at"`
+
+	// TargetGroup destination /24 for path episodes, '' for network
+	TargetGroup string `json:"target_group"`
+
+	// VantageGroup 'center' or 'agent:{id}' — the egress group
+	VantageGroup string `json:"vantage_group"`
+
+	// Windows consecutive degraded windows seen
+	Windows int `json:"windows"`
+}
+
+// ProbeQualityEpisodeKind network = one egress group's quality points mostly degraded; path = one destination /24 degraded from that group's view
+type ProbeQualityEpisodeKind string
+
+// ProbeQualityEpisodes defines model for ProbeQualityEpisodes.
+type ProbeQualityEpisodes struct {
+	Episodes []ProbeQualityEpisode `json:"episodes"`
+}
 
 // ProbeQualityGroup defines model for ProbeQualityGroup.
 type ProbeQualityGroup struct {
@@ -3493,6 +3637,18 @@ type GetProbeQualityParams struct {
 	// Window lookback minutes (5-1440, default from probe.quality.window_minutes)
 	Window *int `form:"window,omitempty" json:"window,omitempty"`
 }
+
+// GetProbeQualityEpisodesParams defines parameters for GetProbeQualityEpisodes.
+type GetProbeQualityEpisodesParams struct {
+	// Days history window (default 1 = last 24h)
+	Days *int `form:"days,omitempty" json:"days,omitempty"`
+
+	// Active 1 = only unresolved episodes
+	Active *GetProbeQualityEpisodesParamsActive `form:"active,omitempty" json:"active,omitempty"`
+}
+
+// GetProbeQualityEpisodesParamsActive defines parameters for GetProbeQualityEpisodes.
+type GetProbeQualityEpisodesParamsActive int
 
 // GetProbeQualityHistoryParams defines parameters for GetProbeQualityHistory.
 type GetProbeQualityHistoryParams struct {
@@ -4937,6 +5093,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 	GetProbeQuality(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProbeQualityEpisodes Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+	//
+	// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+	//
+	// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+	GetProbeQualityEpisodes(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetProbeQualityHistory Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 	//
@@ -7357,6 +7520,23 @@ func (c *Client) GetProbePaths(ctx context.Context, reqEditors ...RequestEditorF
 // Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 func (c *Client) GetProbeQuality(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetProbeQualityRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProbeQualityEpisodes Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+//
+// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+//
+// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+func (c *Client) GetProbeQualityEpisodes(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeQualityEpisodesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -13399,6 +13579,72 @@ func NewGetProbeQualityRequest(server string, params *GetProbeQualityParams) (*h
 	return req, nil
 }
 
+// NewGetProbeQualityEpisodesRequest constructs an http.Request for the GetProbeQualityEpisodes method
+func NewGetProbeQualityEpisodesRequest(server string, params *GetProbeQualityEpisodesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-quality/episodes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Days != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "days", *params.Days, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Active != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "active", *params.Active, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProbeQualityHistoryRequest constructs an http.Request for the GetProbeQualityHistory method
 func NewGetProbeQualityHistoryRequest(server string, params *GetProbeQualityHistoryParams) (*http.Request, error) {
 	var err error
@@ -16779,6 +17025,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 	GetProbeQualityWithResponse(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*GetProbeQualityResponse, error)
+
+	// GetProbeQualityEpisodesWithResponse Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+	//
+	// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+	GetProbeQualityEpisodesWithResponse(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*GetProbeQualityEpisodesResponse, error)
 
 	// GetProbeQualityHistoryWithResponse Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 	//
@@ -22367,6 +22622,47 @@ func (r GetProbeQualityResponse) ContentType() string {
 	return ""
 }
 
+type GetProbeQualityEpisodesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeQualityEpisodes
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeQualityEpisodesResponse) GetJSON200() *ProbeQualityEpisodes {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeQualityEpisodesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeQualityEpisodesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeQualityEpisodesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeQualityEpisodesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetProbeQualityHistoryResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -26371,6 +26667,21 @@ func (c *ClientWithResponses) GetProbeQualityWithResponse(ctx context.Context, p
 	return ParseGetProbeQualityResponse(rsp)
 }
 
+// GetProbeQualityEpisodesWithResponse Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+//
+// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+func (c *ClientWithResponses) GetProbeQualityEpisodesWithResponse(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*GetProbeQualityEpisodesResponse, error) {
+	rsp, err := c.GetProbeQualityEpisodes(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeQualityEpisodesResponse(rsp)
+}
+
 // GetProbeQualityHistoryWithResponse Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 //
 // Returns a wrapper object for the known response body format(s).
@@ -30198,6 +30509,32 @@ func ParseGetProbeQualityResponse(rsp *http.Response) (*GetProbeQualityResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ProbeQualityReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProbeQualityEpisodesResponse parses an HTTP response from a GetProbeQualityEpisodesWithResponse call
+func ParseGetProbeQualityEpisodesResponse(rsp *http.Response) (*GetProbeQualityEpisodesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeQualityEpisodesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeQualityEpisodes
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

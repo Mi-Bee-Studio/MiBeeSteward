@@ -1128,6 +1128,28 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ProbeQualityHistoryReport"}
+  /probe-quality/episodes:
+    get:
+      tags: [ProbeTargets]
+      summary: Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+      description: >
+        Episodes are the impact-only alert surface of the probe extension:
+        a track degrades when its 15-minute window clearly drops below its
+        own baseline (72h median, or same weekday-hour once 7 days of
+        history exist), and an episode only opens after cross-confirmation
+        (one egress group's quality points mostly degraded = network kind;
+        one destination /24 degraded from enough vantages = path kind).
+        Episodes without a same-window egress/path attribution stay
+        recorded (notified=false) but never fire notifications (#716).
+      parameters:
+        - {name: days, in: query, schema: {type: integer, default: 1}, description: "history window (default 1 = last 24h)"}
+        - {name: active, in: query, schema: {type: integer, enum: [0, 1], default: 0}, description: "1 = only unresolved episodes"}
+      responses:
+        "200":
+          description: Episode list
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeQualityEpisodes"}
   /probe-egress:
     get:
       tags: [ProbeTargets]
@@ -2941,6 +2963,48 @@ components:
         samples: {type: integer}
         score: {type: integer, description: "0-100, the same score the live window reports"}
         verdict: {type: string, enum: [ok, degraded, egress_down, dns_fault, upstream_resolver, insufficient]}
+    ProbeQualityEpisodes:
+      type: object
+      required: [episodes]
+      properties:
+        episodes: {type: array, items: {$ref: "#/components/schemas/ProbeQualityEpisode"}}
+    ProbeQualityEpisode:
+      type: object
+      description: "One degradation episode (#720). notified=false episodes are recorded-only (no notification fired; the #716 impact-only rule)."
+      required: [id, kind, vantage_group, target_group, started_at, last_seen_at, windows, metric_degraded, attribution, notified, recover_notified]
+      properties:
+        id: {type: integer, format: int64}
+        kind: {type: string, enum: [network, path], description: "network = one egress group's quality points mostly degraded; path = one destination /24 degraded from that group's view"}
+        vantage_group: {type: string, description: "'center' or 'agent:{id}' — the egress group"}
+        target_group: {type: string, description: "destination /24 for path episodes, '' for network"}
+        started_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time, description: "last window the confirmation still held"}
+        windows: {type: integer, description: "consecutive degraded windows seen"}
+        metric_degraded: {type: array, items: {$ref: "#/components/schemas/ProbeEpisodeMetric"}}
+        attribution: {type: array, items: {$ref: "#/components/schemas/ProbeEpisodeAttribution"}}
+        notified: {type: boolean}
+        resolved_at: {type: string, format: date-time, description: "empty = active"}
+        recover_notified: {type: boolean}
+    ProbeEpisodeMetric:
+      type: object
+      required: [target_id, name, vantage, p50_ms, base_p50_ms, ok_rate, base_ok_rate, samples, reason]
+      properties:
+        target_id: {type: integer, format: int64}
+        name: {type: string}
+        vantage: {type: string}
+        p50_ms: {type: number, format: double}
+        base_p50_ms: {type: number, format: double}
+        ok_rate: {type: number, format: double}
+        base_ok_rate: {type: number, format: double}
+        samples: {type: integer}
+        reason: {type: string, enum: [latency, ok_rate, both]}
+    ProbeEpisodeAttribution:
+      type: object
+      required: [kind, detail]
+      properties:
+        kind: {type: string, enum: [egress_change, path_change, peer_egress_degraded, error_shape]}
+        detail: {type: string}
+        at: {type: string, description: "change timestamp when point-precise"}
     ProbeEgressReport:
       type: object
       description: "Current egress identity per vantage (#718): the latest echo round's per-source results, the distinct public IPs observed in the window (with origin ASN), and the local default-route gateway. Recording only - changes never notify (#716)."

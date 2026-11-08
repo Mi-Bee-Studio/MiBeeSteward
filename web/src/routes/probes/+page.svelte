@@ -21,6 +21,7 @@
 
 	import Modal from '$lib/components/Modal.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import EpisodeDetail from '$lib/components/EpisodeDetail.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -48,6 +49,7 @@ ProbeQualityTarget,
 		ProbeQualityHistorySeries,
 		ProbeEgressVantage,
 		ProbePathSample,
+		ProbeQualityEpisode,
 		TLSPortCerts,
 		DeviceCertificatesResponse,
 		Network
@@ -706,6 +708,8 @@ ProbeQualityTarget,
 	let egressError = $state('');
 	let paths: ProbePathSample[] | null = $state(null);
 	let pathsError = $state('');
+	let episodes = $state<ProbeQualityEpisode[] | null>(null);
+	let episodesModalOpen = $state(false);
 	let egressSourcesOpen = $state(false);
 	let pathModalSample = $state<ProbePathSample | null>(null);
 	let pathModalOpen = $state(false);
@@ -731,6 +735,26 @@ ProbeQualityTarget,
 		} catch (e) {
 			pathsError = e instanceof Error ? e.message : String(e);
 		}
+	}
+	// Quality episodes (#720): the impact-only alert surface. 24h window;
+	// the banner distinguishes notified (red) from recorded-only (yellow).
+	async function fetchEpisodes() {
+		try {
+			const j = await api.get<{ episodes: ProbeQualityEpisode[] }>('/probe-quality/episodes?days=1');
+			episodes = j.episodes ?? [];
+		} catch {
+			// Non-fatal: the banner simply stays hidden.
+			episodes = episodes ?? [];
+		}
+	}
+	const activeEpisodes = $derived((episodes ?? []).filter((e) => !e.resolved_at));
+	const notifiedActive = $derived(activeEpisodes.some((e) => e.notified));
+	const showEpisodeBanner = $derived(episodes !== null && episodes.length > 0);
+	function openEpisodesModal() {
+		episodesModalOpen = true;
+	}
+	function closeEpisodesModal() {
+		episodesModalOpen = false;
 	}
 	async function traceNow(targetId: number) {
 		traceBusyId = targetId;
@@ -896,12 +920,15 @@ ProbeQualityTarget,
 		fetchQuality();
 		fetchEgress();
 		fetchPaths();
+		fetchEpisodes();
 		pollTimer = setInterval(fetchTargets, 10000);
 		// Egress & paths: low-cadence refresh (60s) - the collapsed header
-		// always shows the current public IP (#716).
+		// always shows the current public IP (#716). Episodes ride the same
+		// cadence (#720 banner).
 		egressTimer = setInterval(() => {
 			void fetchEgress();
 			void fetchPaths();
+			void fetchEpisodes();
 		}, 60000);
 		// Deep-link prefill from the device detail page's per-service create
 		// button (#606): ?create=1&module=…&target=…&device_id=… opens the
@@ -1699,6 +1726,27 @@ ProbeQualityTarget,
 					</span>
 				</button>
 			</div>
+		{/if}
+
+		<!-- Quality degradation episodes (#720): impact-only alert surface.
+		     Red = notified (attributed, fired); yellow = recorded-only (no
+		     same-window change to attribute). Hidden entirely when the last
+		     24h saw no episode. -->
+		{#if showEpisodeBanner}
+			<button
+				type="button"
+				onclick={openEpisodesModal}
+				data-quality-banner
+				class="flex w-full items-center gap-2 rounded-lg border px-4 py-2.5 text-left {notifiedActive ? 'border-error/40 bg-error/5' : 'border-warning/40 bg-warning/5'}"
+			>
+				<span class="text-sm font-semibold {notifiedActive ? 'text-error' : 'text-warning'}">
+					{activeEpisodes.length > 0
+						? m['probes.Episode Banner Active']({ count: activeEpisodes.length })
+						: m['probes.Episode Banner Recent']({ count: episodes!.length })}
+				</span>
+				<span class="text-xs text-text-muted">{m['probes.Episode Banner Hint']()}</span>
+				<span class="ml-auto text-xs text-text-muted">{m['probes.Episode Banner View']()} →</span>
+			</button>
 		{/if}
 
 			<!-- Egress quality (#608/#613): per-category vantage × target
@@ -2797,4 +2845,15 @@ ProbeQualityTarget,
 			<p class="text-xs text-text-muted">{m['probes.Paths Silent Note']()}</p>
 		</div>
 	{/if}
+</Modal>
+
+<!-- Quality episodes: last-24h list (#720). -->
+<Modal bind:open={episodesModalOpen} title={m['probes.Episodes Modal Title']()} maxWidth="44rem" onClose={closeEpisodesModal}>
+	<div class="max-h-[70vh] space-y-2 overflow-y-auto" data-episodes-modal>
+		{#each episodes ?? [] as episode (episode.id)}
+			<EpisodeDetail {episode} />
+		{:else}
+			<p class="text-sm text-text-muted">{m['probes.Episode Empty']()}</p>
+		{/each}
+	</div>
 </Modal>

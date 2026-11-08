@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	_ "mibee-steward/internal/dbopen" // registers the modernc sqlite driver
@@ -68,6 +70,23 @@ CREATE TABLE IF NOT EXISTS path_samples (
 );
 CREATE INDEX IF NOT EXISTS idx_path_samples_target ON path_samples(target_id, vantage, traced_at DESC);
 CREATE INDEX IF NOT EXISTS idx_path_samples_time ON path_samples(traced_at);
+
+CREATE TABLE IF NOT EXISTS quality_episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,                -- network | path
+    vantage_group TEXT NOT NULL,       -- one vantage token today ('center' | 'agent:{id}')
+    target_group TEXT NOT NULL,        -- destination /24 for path episodes, '' for network
+    started_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    windows INTEGER NOT NULL DEFAULT 1,     -- consecutive degraded windows seen
+    metric_degraded TEXT NOT NULL DEFAULT '[]', -- JSON [{target_id,vantage,name,p50_ms,base_p50_ms,ok_rate,base_ok_rate,samples}]
+    attribution TEXT NOT NULL DEFAULT '[]',     -- JSON [{kind,detail,at}]
+    notified INTEGER NOT NULL DEFAULT 0,    -- fired quality_degraded into change_log
+    resolved_at TEXT NOT NULL DEFAULT '',   -- '' = active
+    recover_notified INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_quality_episodes_time ON quality_episodes(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quality_episodes_active ON quality_episodes(resolved_at, last_seen_at DESC);
 `
 
 // Store is the probe_ext.db handle. Single connection + WAL: writes are
@@ -427,4 +446,161 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// --- quality_episodes (#720) -----------------------------------------------
+
+// InsertEpisode stores a new episode row; JSON fields are marshaled here.
+func (s *Store) InsertEpisode(ctx context.Context, e QualityEpisode) (int64, error) {
+	metrics, _ := json.Marshal(e.MetricDegraded)
+	attr, _ := json.Marshal(e.Attribution)
+	res, err := s.conn.ExecContext(ctx,
+		`INSERT INTO quality_episodes
+		 (kind, vantage_group, target_group, started_at, last_seen_at, windows, metric_degraded, attribution, notified, resolved_at, recover_notified)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.Kind, e.VantageGroup, e.TargetGroup, e.StartedAt, e.LastSeenAt, e.Windows,
+		string(metrics), string(attr), boolInt(e.Notified), e.ResolvedAt, boolInt(e.RecoverNotified))
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// UpdateEpisodeWindow bumps the continuation bookkeeping.
+func (s *Store) UpdateEpisodeWindow(ctx context.Context, id int64, lastSeenAtISO string) error {
+	_, err := s.conn.ExecContext(ctx,
+		`UPDATE quality_episodes SET last_seen_at = ?, windows = windows + 1 WHERE id = ?`, lastSeenAtISO, id)
+	return err
+}
+
+// ResolveEpisode stamps the resolution time.
+func (s *Store) ResolveEpisode(ctx context.Context, id int64, resolvedAtISO string) error {
+	_, err := s.conn.ExecContext(ctx,
+		`UPDATE quality_episodes SET resolved_at = ? WHERE id = ?`, resolvedAtISO, id)
+	return err
+}
+
+// MarkEpisodeNotified / MarkEpisodeRecoverNotified flip the alert flags.
+func (s *Store) MarkEpisodeNotified(ctx context.Context, id int64) error {
+	_, err := s.conn.ExecContext(ctx, `UPDATE quality_episodes SET notified = 1 WHERE id = ?`, id)
+	return err
+}
+
+func (s *Store) MarkEpisodeRecoverNotified(ctx context.Context, id int64) error {
+	_, err := s.conn.ExecContext(ctx, `UPDATE quality_episodes SET recover_notified = 1 WHERE id = ?`, id)
+	return err
+}
+
+// ListActiveEpisodes returns every unresolved episode.
+func (s *Store) ListActiveEpisodes(ctx context.Context) ([]QualityEpisode, error) {
+	return s.listEpisodes(ctx, `WHERE resolved_at = '' ORDER BY last_seen_at DESC`)
+}
+
+// ListEpisodesSince returns episodes started within the window (all states).
+func (s *Store) ListEpisodesSince(ctx context.Context, sinceISO string, limit int) ([]QualityEpisode, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	return s.listEpisodes(ctx, `WHERE started_at >= ? ORDER BY started_at DESC LIMIT `+strconv.Itoa(limit), sinceISO)
+}
+
+func (s *Store) listEpisodes(ctx context.Context, where string, args ...any) ([]QualityEpisode, error) {
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT id, kind, vantage_group, target_group, started_at, last_seen_at, windows,
+		        metric_degraded, attribution, notified, resolved_at, recover_notified
+		 FROM quality_episodes `+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []QualityEpisode
+	for rows.Next() {
+		var e QualityEpisode
+		var metricsJSON, attrJSON string
+		var notified, recoverNotified int
+		if err := rows.Scan(&e.ID, &e.Kind, &e.VantageGroup, &e.TargetGroup, &e.StartedAt, &e.LastSeenAt,
+			&e.Windows, &metricsJSON, &attrJSON, &notified, &e.ResolvedAt, &recoverNotified); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(metricsJSON), &e.MetricDegraded)
+		_ = json.Unmarshal([]byte(attrJSON), &e.Attribution)
+		if e.MetricDegraded == nil {
+			e.MetricDegraded = []EpisodeMetric{}
+		}
+		if e.Attribution == nil {
+			e.Attribution = []EpisodeAttribution{}
+		}
+		e.Notified = notified != 0
+		e.RecoverNotified = recoverNotified != 0
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// EgressChangedBetween reports whether the vantage's distinct public-IP set
+// changed between adjacent rounds inside [from,to]; returns the first
+// change round's timestamp.
+func (s *Store) EgressChangedBetween(ctx context.Context, vantage, fromISO, toISO string) (bool, string) {
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT round_at, ip FROM egress_rounds
+		 WHERE vantage = ? AND round_at >= ? AND round_at <= ? AND ok = 1 AND kind != 'local' AND ip != ''
+		 ORDER BY round_at`, vantage, fromISO, toISO)
+	if err != nil {
+		return false, ""
+	}
+	defer rows.Close()
+	type setKey map[string]bool
+	var lastSet setKey
+	var lastAt string
+	for rows.Next() {
+		var at, ip string
+		if err := rows.Scan(&at, &ip); err != nil {
+			return false, ""
+		}
+		if lastSet == nil {
+			lastSet = setKey{ip: true}
+			lastAt = at
+			continue
+		}
+		if !lastSet[ip] {
+			// New IP not present in the previous round's set.
+			return true, at
+		}
+		_ = lastAt
+	}
+	return false, ""
+}
+
+// PathChangedBetween counts targets whose visible hop sequence changed
+// between adjacent samples inside [from,to] for the given vantage.
+func (s *Store) PathChangedBetween(ctx context.Context, targetIDs []int64, vantage, fromISO, toISO string) int {
+	if len(targetIDs) == 0 {
+		return 0
+	}
+	ids := make([]string, len(targetIDs))
+	for i, id := range targetIDs {
+		ids[i] = strconv.FormatInt(id, 10)
+	}
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT target_id, hops, traced_at FROM path_samples
+		 WHERE vantage = ? AND traced_at >= ? AND traced_at <= ? AND target_id IN (`+strings.Join(ids, ",")+`)
+		 ORDER BY target_id, traced_at`, vantage, fromISO, toISO)
+	if err != nil {
+		return 0
+	}
+	defer rows.Close()
+	changed := map[int64]bool{}
+	lastHops := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var hops, at string
+		if err := rows.Scan(&id, &hops, &at); err != nil {
+			return len(changed)
+		}
+		if prev, ok := lastHops[id]; ok && prev != hops {
+			changed[id] = true
+		}
+		lastHops[id] = hops
+	}
+	return len(changed)
 }

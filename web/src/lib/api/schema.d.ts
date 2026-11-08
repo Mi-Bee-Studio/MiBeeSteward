@@ -3273,6 +3273,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/probe-quality/episodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+         * @description Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description history window (default 1 = last 24h) */
+                    days?: number;
+                    /** @description 1 = only unresolved episodes */
+                    active?: 0 | 1;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Episode list */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeQualityEpisodes"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/probe-egress": {
         parameters: {
             query?: never;
@@ -7180,6 +7224,65 @@ export interface components {
             score: number;
             /** @enum {string} */
             verdict: "ok" | "degraded" | "egress_down" | "dns_fault" | "upstream_resolver" | "insufficient";
+        };
+        ProbeQualityEpisodes: {
+            episodes: components["schemas"]["ProbeQualityEpisode"][];
+        };
+        /** @description One degradation episode (#720). notified=false episodes are recorded-only (no notification fired; the #716 impact-only rule). */
+        ProbeQualityEpisode: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * @description network = one egress group's quality points mostly degraded; path = one destination /24 degraded from that group's view
+             * @enum {string}
+             */
+            kind: "network" | "path";
+            /** @description 'center' or 'agent:{id}' — the egress group */
+            vantage_group: string;
+            /** @description destination /24 for path episodes, '' for network */
+            target_group: string;
+            /** Format: date-time */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description last window the confirmation still held
+             */
+            last_seen_at: string;
+            /** @description consecutive degraded windows seen */
+            windows: number;
+            metric_degraded: components["schemas"]["ProbeEpisodeMetric"][];
+            attribution: components["schemas"]["ProbeEpisodeAttribution"][];
+            notified: boolean;
+            /**
+             * Format: date-time
+             * @description empty = active
+             */
+            resolved_at?: string;
+            recover_notified: boolean;
+        };
+        ProbeEpisodeMetric: {
+            /** Format: int64 */
+            target_id: number;
+            name: string;
+            vantage: string;
+            /** Format: double */
+            p50_ms: number;
+            /** Format: double */
+            base_p50_ms: number;
+            /** Format: double */
+            ok_rate: number;
+            /** Format: double */
+            base_ok_rate: number;
+            samples: number;
+            /** @enum {string} */
+            reason: "latency" | "ok_rate" | "both";
+        };
+        ProbeEpisodeAttribution: {
+            /** @enum {string} */
+            kind: "egress_change" | "path_change" | "peer_egress_degraded" | "error_shape";
+            detail: string;
+            /** @description change timestamp when point-precise */
+            at?: string;
         };
         /** @description Current egress identity per vantage (#718): the latest echo round's per-source results, the distinct public IPs observed in the window (with origin ASN), and the local default-route gateway. Recording only - changes never notify (#716). */
         ProbeEgressReport: {

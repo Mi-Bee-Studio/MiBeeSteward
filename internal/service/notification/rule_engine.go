@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -132,6 +133,8 @@ func (e *RuleEngine) handleEvent(ctx context.Context, row db.ChangeLog) {
 		e.handleProbeEvent(ctx, row)
 	case changedetect.EntityTypeAgent:
 		e.handleAgentEvent(ctx, row)
+	case changedetect.EntityTypeProbeQuality:
+		e.handleQualityEvent(ctx, row)
 	}
 }
 
@@ -299,6 +302,10 @@ func eventTitle(changeType string) string {
 		return "New device conversation"
 	case changedetect.ChangeTypeListenPortAdded:
 		return "New listening port"
+	case changedetect.ChangeTypeQualityDegraded:
+		return "Quality degraded"
+	case changedetect.ChangeTypeQualityRecovered:
+		return "Quality recovered"
 	}
 	return "Device event"
 }
@@ -524,6 +531,140 @@ func buildProbePayload(rule db.NotificationRule, row db.ChangeLog, snap probeSna
 	return Payload{
 		Subject:  title + ": " + snap.TargetName,
 		Body:     body,
+		Metadata: metaJSON,
+	}
+}
+
+// qualitySnap is the after_data snapshot quality episodes stamp (#720).
+type qualitySnap struct {
+	Kind        string `json:"kind"`
+	Vantage     string `json:"vantage_group"`
+	TargetGroup string `json:"target_group"`
+	StartedAt   string `json:"started_at"`
+	ResolvedAt  string `json:"resolved_at"`
+	Reason      string `json:"reason"`
+	Metrics     []struct {
+		Name       string  `json:"name"`
+		Vantage    string  `json:"vantage"`
+		P50Ms      float64 `json:"p50_ms"`
+		BaseP50Ms  float64 `json:"base_p50_ms"`
+		OkRate     float64 `json:"ok_rate"`
+		BaseOkRate float64 `json:"base_ok_rate"`
+		Reason     string  `json:"reason"`
+	} `json:"metrics"`
+	Attribution []struct {
+		Kind   string `json:"kind"`
+		Detail string `json:"detail"`
+	} `json:"attribution"`
+}
+
+// handleQualityEvent matches quality degradation episodes (quality_degraded /
+// quality_recovered, #720). Scope=all only — an episode spans vantages and
+// networks by construction (that is what the cross-confirmation means).
+func (e *RuleEngine) handleQualityEvent(ctx context.Context, row db.ChangeLog) {
+	rules, err := e.queries.ListEnabledRulesByEventType(ctx, row.ChangeType)
+	if err != nil {
+		e.logger.Error("notification rule engine: load rules failed", "event_type", row.ChangeType, "error", err)
+		return
+	}
+	if len(rules) == 0 {
+		return
+	}
+
+	snap := qualitySnap{Kind: "unknown", Vantage: "unknown"}
+	if row.AfterData != nil {
+		if err := json.Unmarshal([]byte(*row.AfterData), &snap); err != nil || snap.Kind == "unknown" {
+			snap = qualitySnap{Kind: "unknown", Vantage: "unknown"}
+		}
+	}
+
+	entityKey := "quality"
+	if row.EntityID != nil && *row.EntityID > 0 {
+		entityKey = fmt.Sprintf("quality:%d", *row.EntityID)
+	}
+
+	for _, rule := range rules {
+		if rule.ScopeType != domain.RuleScopeAll {
+			continue
+		}
+		if !e.cooldownAllows(rule.ID, entityKey, rule.CooldownMinutes) {
+			continue
+		}
+		e.dispatchQuality(ctx, rule, row, snap)
+		e.markFired(ctx, rule.ID, entityKey)
+	}
+}
+
+// dispatchQuality mirrors dispatchProbe for episode events.
+func (e *RuleEngine) dispatchQuality(ctx context.Context, rule db.NotificationRule, row db.ChangeLog, snap qualitySnap) {
+	ch, err := e.queries.GetChannelByID(ctx, rule.ChannelID)
+	if err != nil {
+		e.logger.Error("notification rule engine: resolve channel failed", "rule_id", rule.ID, "channel_id", rule.ChannelID, "error", err)
+		return
+	}
+	if ch.Enabled == 0 {
+		return
+	}
+	payload := buildQualityPayload(rule, row, snap)
+	ruleID := rule.ID
+	e.dispatcher.Dispatch(ctx, domain.ChannelType(ch.Type), json.RawMessage(ch.Config), payload, &ruleID, ch.ID)
+}
+
+// buildQualityPayload shapes the episode alert. The dedup source_ref pairs
+// quality_degraded/quality_recovered per episode id.
+func buildQualityPayload(rule db.NotificationRule, row db.ChangeLog, snap qualitySnap) Payload {
+	degraded := row.ChangeType == changedetect.ChangeTypeQualityDegraded
+	title := "Quality degraded"
+	if !degraded {
+		title = "Quality recovered"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Scope: %s egress (%s)", snap.Vantage, snap.Kind)
+	if snap.TargetGroup != "" {
+		b.WriteString("\nDestination group: " + snap.TargetGroup)
+	}
+	fmt.Fprintf(&b, "\nAffected tracks: %d", len(snap.Metrics))
+	for i, m := range snap.Metrics {
+		if i >= 5 {
+			fmt.Fprintf(&b, "\n  … +%d more", len(snap.Metrics)-5)
+			break
+		}
+		fmt.Fprintf(&b, "\n  %s (%s): %s", m.Name, m.Vantage, m.Reason)
+		if m.BaseP50Ms > 0 {
+			fmt.Fprintf(&b, " p50 %.0f→%.0fms", m.BaseP50Ms, m.P50Ms)
+		}
+		fmt.Fprintf(&b, " ok %.0f%%→%.0f%%", m.BaseOkRate*100, m.OkRate*100)
+	}
+	if len(snap.Attribution) > 0 {
+		b.WriteString("\nAttribution:")
+		for _, a := range snap.Attribution {
+			b.WriteString("\n  " + a.Kind + ": " + a.Detail)
+		}
+	} else if degraded {
+		b.WriteString("\nAttribution: none (degradation without a same-window change)")
+	}
+	fmt.Fprintf(&b, "\nStarted at: %s", snap.StartedAt)
+	if snap.ResolvedAt != "" {
+		b.WriteString("\nResolved at: " + snap.ResolvedAt)
+	}
+	fmt.Fprintf(&b, "\nDetected at: %s", row.DetectedAt.Format(time.RFC3339))
+
+	meta := map[string]any{
+		"event_type":    row.ChangeType,
+		"kind":          snap.Kind,
+		"vantage_group": snap.Vantage,
+		"rule_id":       rule.ID,
+		"rule_name":     rule.Name,
+		"detected_at":   row.DetectedAt.Format(time.RFC3339),
+	}
+	if row.EntityID != nil && *row.EntityID > 0 {
+		meta["episode_id"] = *row.EntityID
+		meta["source_ref"] = fmt.Sprintf("quality/%d", *row.EntityID)
+	}
+	metaJSON, _ := json.Marshal(meta)
+	return Payload{
+		Subject:  title + ": " + snap.Vantage,
+		Body:     b.String(),
 		Metadata: metaJSON,
 	}
 }

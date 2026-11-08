@@ -485,6 +485,10 @@
 			case 'probe_recovered': return m["notifications.Event Probe Recovered"]();
 			case 'agent_offline': return m["notifications.Event Agent Offline"]();
 			case 'agent_recovered': return m["notifications.Event Agent Recovered"]();
+			case 'speaks_with_new': return m["notifications.Event Speaks With New"]();
+			case 'listen_port_added': return m["notifications.Event Listen Port Added"]();
+			case 'quality_degraded': return m["notifications.Event Quality Degraded"]();
+			case 'quality_recovered': return m["notifications.Event Quality Recovered"]();
 		}
 		return t;
 	}
@@ -1191,6 +1195,8 @@
 				<option value="probe_recovered">{m["notifications.Event Probe Recovered"]()}</option>
 				<option value="agent_offline">{m["notifications.Event Agent Offline"]()}</option>
 				<option value="agent_recovered">{m["notifications.Event Agent Recovered"]()}</option>
+				<option value="quality_degraded">{m["notifications.Event Quality Degraded"]()}</option>
+				<option value="quality_recovered">{m["notifications.Event Quality Recovered"]()}</option>
 			</select>
 		</div>
 

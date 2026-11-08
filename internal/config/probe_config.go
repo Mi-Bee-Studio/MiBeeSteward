@@ -110,6 +110,53 @@ type ProbeQualityConfig struct {
 	// from the primary verdict) drive the analyzer's grouping; other names
 	// are treated as reference groups. Empty map = use DefaultQualityGroups.
 	Groups map[string][]ProbeQualityTarget `koanf:"groups"`
+	// Episodes tunes the #720 degradation detector.
+	Episodes QualityEpisodeConfig `koanf:"episodes"`
+}
+
+// QualityEpisodeConfig tunes the relative-baseline degradation detector
+// (#720): a track is degraded when its 15-minute window clearly drops below
+// its own baseline; an episode only opens after cross-confirmation
+// (same egress group / same destination group) and — by default — only
+// notifies when a same-window egress/path change can be attributed.
+type QualityEpisodeConfig struct {
+	// Enabled: pointer so nil (key absent) follows probe.quality.enabled
+	// while an explicit false is the off switch.
+	Enabled *bool `koanf:"enabled"`
+	// LatencyRatio: window p50 counts as degraded latency at
+	// p50 >= max(base*ratio, base+min_delta).
+	LatencyRatio float64 `koanf:"latency_ratio"`
+	// LatencyMinDeltaMs floors the latency degradation so a 3ms baseline
+	// cannot "double" into noise.
+	LatencyMinDeltaMs int `koanf:"latency_min_delta_ms"`
+	// OkRateDrop (0..1): window ok-rate counts as degraded at
+	// ok_rate <= base - drop.
+	OkRateDrop float64 `koanf:"ok_rate_drop"`
+	// MinWindows: consecutive degraded 15-minute windows before a track
+	// candidate counts (2 = ~30 minutes of sustained degradation).
+	MinWindows int `koanf:"min_windows"`
+	// AlertRequiresAttribution: degraded episodes without a same-window
+	// egress/path change stay recorded (UI-yellow) but never notify.
+	// Pointer so the default (true, #716 ruling) applies when the key is
+	// absent while an explicit false still works.
+	AlertRequiresAttribution *bool `koanf:"alert_requires_attribution"`
+}
+
+// RequiresAttribution resolves the pointer with the #716 default (true).
+func (e QualityEpisodeConfig) RequiresAttribution() bool {
+	if e.AlertRequiresAttribution == nil {
+		return true
+	}
+	return *e.AlertRequiresAttribution
+}
+
+// DetectorEnabled resolves whether the episode detector runs: an explicit
+// episodes.enabled wins; otherwise the detector follows probe.quality.enabled.
+func (e QualityEpisodeConfig) DetectorEnabled(qualityEnabled bool) bool {
+	if e.Enabled != nil {
+		return *e.Enabled
+	}
+	return qualityEnabled
 }
 
 // ProbeQualityTarget is one matrix member: a name (the probe_targets row
@@ -282,6 +329,19 @@ func normalizeProbe(cfg *Config) {
 	}
 	if len(q.Groups) == 0 {
 		q.Groups = DefaultQualityGroups()
+	}
+	e := &q.Episodes
+	if e.LatencyRatio == 0 {
+		e.LatencyRatio = 2.0
+	}
+	if e.LatencyMinDeltaMs == 0 {
+		e.LatencyMinDeltaMs = 50
+	}
+	if e.OkRateDrop == 0 {
+		e.OkRateDrop = 0.3
+	}
+	if e.MinWindows == 0 {
+		e.MinWindows = 2
 	}
 	a := &p.Autogen
 	if len(a.Services) == 0 {

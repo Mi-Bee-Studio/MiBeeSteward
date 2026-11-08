@@ -121,6 +121,12 @@ const (
 	// after that emits agent_recovered. entity_type=agent.
 	RuleEventTypeAgentOffline   = "agent_offline"
 	RuleEventTypeAgentRecovered = "agent_recovered"
+	// Quality degradation episodes (#720): relative-baseline drop confirmed
+	// by cross-target/cross-vantage evidence. entity_type=probe_quality,
+	// entity_id = quality_episodes.id. Egress/path changes never fire on
+	// their own (#716 ruling) — they ride as attribution inside the payload.
+	RuleEventTypeQualityDegraded  = "quality_degraded"
+	RuleEventTypeQualityRecovered = "quality_recovered"
 )
 
 // RuleScopeType controls which devices a rule applies to.
@@ -137,7 +143,8 @@ func IsValidRuleEventType(t string) bool {
 		RuleEventTypeDeviceAdded, RuleEventTypeDeviceChanged,
 		RuleEventTypeSpeaksWithNew, RuleEventTypeListenPortAdded,
 		RuleEventTypeProbeFailed, RuleEventTypeProbeRecovered,
-		RuleEventTypeAgentOffline, RuleEventTypeAgentRecovered:
+		RuleEventTypeAgentOffline, RuleEventTypeAgentRecovered,
+		RuleEventTypeQualityDegraded, RuleEventTypeQualityRecovered:
 		return true
 	}
 	return false

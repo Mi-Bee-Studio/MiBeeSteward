@@ -25,6 +25,7 @@ func registerProbeTargetRoutes(r chi.Router, probeTargetHandler *handler.ProbeTa
 		r.Use(middleware.RequireCapability(domain.CapProbeRead))
 		r.Get("/api/v1/probe-quality", probeQualityHandler.GetQuality)
 		r.Get("/api/v1/probe-quality/history", probeQualityHandler.GetQualityHistory)
+		r.Get("/api/v1/probe-quality/episodes", probeExtHandler.Episodes)
 		r.Get("/api/v1/probe-egress", probeExtHandler.Egress)
 		r.Get("/api/v1/probe-paths", probeExtHandler.Paths)
 	})

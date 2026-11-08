@@ -19,6 +19,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"strings"
+
+	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
 	"mibee-steward/internal/testutil"
@@ -386,4 +389,98 @@ func TestRuleEngine_AgentEventDispatch(t *testing.T) {
 	require.NoError(t, json.Unmarshal(sents[0].Metadata, &meta))
 	assert.Equal(t, "agent_offline", meta["event_type"])
 	assert.Equal(t, "agent/agent-lan-63", meta["source_ref"])
+}
+
+// TestBuildQualityPayload pins the #720 episode alert shape: title pairs with
+// the event type, metrics/attribution render into the body, and the dedup
+// source_ref carries the episode id (firing/resolved pairing).
+func TestBuildQualityPayload(t *testing.T) {
+	degraded := db.ChangeLog{
+		ChangeType: changedetect.ChangeTypeQualityDegraded,
+		EntityType: changedetect.EntityTypeProbeQuality,
+		EntityID:   int64Ptr(7),
+		AfterData:  strPtr(`{"kind":"network","vantage_group":"agent:lan-63","target_group":"","started_at":"2026-11-08T08:00:00Z","metrics":[{"name":"quality-dns-ali","vantage":"agent:lan-63","p50_ms":400,"base_p50_ms":100,"ok_rate":1,"base_ok_rate":1,"reason":"latency"}],"attribution":[{"kind":"egress_change","detail":"public egress identity changed"}]}`),
+		DetectedAt: time.Date(2026, 11, 8, 8, 5, 0, 0, time.UTC),
+	}
+	p := buildQualityPayload(db.NotificationRule{ID: 1, Name: "q"}, degraded, qualitySnapFromJSON(t, *degraded.AfterData))
+	if p.Subject != "Quality degraded: agent:lan-63" {
+		t.Fatalf("subject = %q", p.Subject)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(p.Metadata, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta["source_ref"] != "quality/7" || meta["event_type"] != "quality_degraded" {
+		t.Fatalf("meta = %v", meta)
+	}
+	if !strings.Contains(p.Body, "p50 100→400ms") || !strings.Contains(p.Body, "egress_change") {
+		t.Fatalf("body = %q", p.Body)
+	}
+
+	recovered := degraded
+	recovered.ChangeType = changedetect.ChangeTypeQualityRecovered
+	p = buildQualityPayload(db.NotificationRule{ID: 1, Name: "q"}, recovered, qualitySnapFromJSON(t, *degraded.AfterData))
+	if p.Subject != "Quality recovered: agent:lan-63" {
+		t.Fatalf("recovered subject = %q", p.Subject)
+	}
+}
+
+func qualitySnapFromJSON(t *testing.T, raw string) qualitySnap {
+	t.Helper()
+	var s qualitySnap
+	if err := json.Unmarshal([]byte(raw), &s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// TestAlertSeverityQuality pins the envelope tiers (#720).
+func TestAlertSeverityQuality(t *testing.T) {
+	if alertSeverity(domain.RuleEventTypeQualityDegraded) != AlertSeverityError {
+		t.Fatal("degraded must be error-tier")
+	}
+	if alertSeverity(domain.RuleEventTypeQualityRecovered) != AlertSeverityInfo {
+		t.Fatal("recovered must be info-tier")
+	}
+	if recoveryDedupType[domain.RuleEventTypeQualityRecovered] != domain.RuleEventTypeQualityDegraded {
+		t.Fatal("recovered must pair with degraded for the dedup key")
+	}
+}
+
+func int64Ptr(v int64) *int64 { return &v }
+func strPtr(v string) *string { return &v }
+
+// TestRuleEngine_QualityEpisodeDispatch: a quality_degraded rule (scope=all)
+// dispatches on the episode event; a network-scoped rule does not (episodes
+// span networks by construction).
+func TestRuleEngine_QualityEpisodeDispatch(t *testing.T) {
+	e, q, log, _ := setupTestEngine(t)
+	chID := seedChannel(t, q, "wh", true)
+	allRule := seedRule(t, q, "q-all", "quality_degraded", "all", chID, true)
+	netRule := seedRule(t, q, "q-net", "quality_degraded", "network", chID, true)
+	epID := int64(42)
+
+	e.handleEvent(context.Background(), db.ChangeLog{
+		ChangeType: changedetect.ChangeTypeQualityDegraded,
+		EntityType: changedetect.EntityTypeProbeQuality,
+		EntityID:   &epID,
+		AfterData: strPtr(`{"kind":"network","vantage_group":"center","target_group":"","started_at":"2026-11-08T08:00:00Z",` +
+			`"metrics":[{"name":"quality-dns-ali","vantage":"center","p50_ms":400,"base_p50_ms":100,"ok_rate":1,"base_ok_rate":1,"reason":"latency"}],` +
+			`"attribution":[{"kind":"egress_change","detail":"public egress identity changed within ±30min of the degradation start","at":"2026-11-08T07:58:00Z"}]}`),
+		DetectedAt: time.Now(),
+	})
+	drain(t, log, 1)
+	require.Equal(t, 1, log.count(), "only the scope=all rule may fire")
+	assert.Equal(t, allRule, *log.logs[0].RuleID)
+	assert.NotEqual(t, netRule, *log.logs[0].RuleID)
+	// The dispatched payload carries the episode dedup ref + attribution.
+	assert.Contains(t, log.logs[0].Payload, "egress_change")
+	assert.Contains(t, log.logs[0].Payload, "p50 100→400ms")
+	var payload struct {
+		Metadata json.RawMessage `json:"metadata"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(log.logs[0].Payload), &payload))
+	var meta map[string]any
+	require.NoError(t, json.Unmarshal(payload.Metadata, &meta))
+	assert.Equal(t, "quality/42", meta["source_ref"])
 }

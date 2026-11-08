@@ -311,7 +311,11 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 	// probeFailedThreshold consecutive failures, probe_recovered on the first
 	// success after a failing spell. DeviceID carries the probe TARGET id
 	// here (entity_type discriminates; change_log.entity_id is generic).
-	if e.recorder != nil {
+	// System quality-matrix targets (#720) are EXEMPT: their tracks feed the
+	// relative-baseline episode detector instead, which alerts on confirmed
+	// impact with attribution — per-target flaps from a flaky reference
+	// point were pure noise (25% upstream loss ≈ dozens of flaps/day).
+	if e.recorder != nil && t.Source != domain.ProbeSourceSystem {
 		if ct := e.transitions.observe(t.ID, domain.ProbeVantageCenter, t.LastStatus, out.Status); ct != "" {
 			e.recorder.Record(ctx, changedetect.ChangeEvent{
 				ChangeType: ct,

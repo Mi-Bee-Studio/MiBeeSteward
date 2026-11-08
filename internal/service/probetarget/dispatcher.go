@@ -437,7 +437,9 @@ func (s *Service) IngestAgentResults(ctx context.Context, agentID string, result
 		// network is a vantage-local outage worth notifying (after_data carries
 		// the vantage; the notification identity stays target-level so a
 		// everywhere-outage still dispatches once per rule cooldown).
-		if s.engine != nil && s.engine.recorder != nil {
+		// System quality-matrix targets are EXEMPT (#720) — the episode
+		// detector owns their alerting (impact-confirmed, attributed).
+		if s.engine != nil && s.engine.recorder != nil && t.Source != domain.ProbeSourceSystem {
 			if ct := s.engine.transitions.observe(r.TargetID, own, "", r.Status); ct != "" {
 				s.engine.recorder.Record(ctx, changedetect.ChangeEvent{
 					ChangeType: ct,

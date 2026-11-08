@@ -403,6 +403,12 @@ scanner:
 | `probe.quality.dns_degraded_ms` | int | 300 | dns 腿的同上阈值。 |
 | `probe.quality.ok_rate_threshold` | float | 0.9 | 窗口内最低成功率（0..1]。 |
 | `probe.quality.groups` | map | 见下 | 拨测点矩阵，`组名 → [{name, module, target, options}]`。保留组 `domestic` 驱动主判定；`international`（及任何其它组名）仅作参照--跨境波动是独立信号，不算出口故障。留空 = 出厂默认：国内组（双公共解析器做 DNS 差分诊断、主流 HTTP 站点、204 端点、免 DNS 的直连 IP TCP 腿）加国际参照组。所有取值均可配置，无一硬编码。 |
+| `probe.quality.episodes.enabled` | bool | （跟随 quality） | 劣化段检测器开关（#720）。缺省时跟随 `probe.quality.enabled`；显式 false 即关闭。 |
+| `probe.quality.episodes.latency_ratio` | float | 2.0 | 轨道窗口 p50 在 `p50 >= max(基线 × ratio, 基线 + min_delta)` 时计为劣化。 |
+| `probe.quality.episodes.latency_min_delta_ms` | int | 50 | 延迟劣化的绝对增量下限——3ms 的基线不会"翻倍"成噪音。 |
+| `probe.quality.episodes.ok_rate_drop` | float | 0.3 | 窗口成功率在 `成功率 <= 基线 − drop` 时计为劣化（0..1）。 |
+| `probe.quality.episodes.min_windows` | int | 2 | 连续劣化的 15 分钟窗数门槛（2 ≈ 持续 30 分钟）。 |
+| `probe.quality.episodes.alert_requires_attribution` | bool | true | #716 裁定的落地：无同窗口出口/路径变更可归因的劣化段只记录（界面黄色）不通知。显式 false 允许无归因也通知。 |
 | `probe.autogen.enabled` | bool | false | 发现即拨测：从发现的服务自动创建设备绑定目标（`source=auto`）。默认关闭--它会自行写行，必须是有意识的选择。关闭时挂起整个 auto 存量（行与历史保留）。 |
 | `probe.autogen.services` | []string | ["http","https"] | 可生成 auto 目标的服务身份（匹配 `host_services.service`）。 |
 | `probe.autogen.device_types` | []string | [] | 限定仅这些设备类型生成；留空 = 全部。 |

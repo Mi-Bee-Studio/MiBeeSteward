@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"mibee-steward/internal/service/probeext"
 )
@@ -23,12 +24,13 @@ import (
 // manual trace trigger. Reads are read-only passthrough on the probeext
 // service; the trigger mutates (one trace) so it lives behind probe:manage.
 type ProbeExtHandler struct {
-	svc *probeext.Service
+	svc      *probeext.Service
+	episodes *probeext.EpisodeService
 }
 
 // NewProbeExtHandler builds the handler.
-func NewProbeExtHandler(svc *probeext.Service) *ProbeExtHandler {
-	return &ProbeExtHandler{svc: svc}
+func NewProbeExtHandler(svc *probeext.Service, episodes *probeext.EpisodeService) *ProbeExtHandler {
+	return &ProbeExtHandler{svc: svc, episodes: episodes}
 }
 
 // Egress godoc
@@ -128,4 +130,43 @@ func (h *ProbeExtHandler) TraceNow(w http.ResponseWriter, r *http.Request) {
 	}
 	b, _ := json.Marshal(sample)
 	Success(w, json.RawMessage(b))
+}
+
+// Episodes godoc
+// @Summary      Quality degradation episodes
+// @Description  Relative-baseline degradation episodes (#720): cross-
+// @Description  confirmed impact with attribution. active=1 returns only
+// @Description  unresolved episodes; days bounds the history window.
+// @Tags         probes
+// @Security     cookieAuth
+// @Param        days query int false "History window in days (default 1)"
+// @Param        active query int false "1 = only unresolved episodes"
+// @Success      200 {object} probeext.EpisodesResponse
+// @Failure      500 {object} ErrorResponse
+// @Router       /probe-quality/episodes [get]
+func (h *ProbeExtHandler) Episodes(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days <= 0 || days > 30 {
+		days = 1
+	}
+	since := time.Now().UTC().AddDate(0, 0, -days).Format(time.RFC3339)
+	episodes, err := h.episodes.ListEpisodesSince(r.Context(), since)
+	if err != nil {
+		slog.Error("probe episodes: list failed", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to list episodes")
+		return
+	}
+	if r.URL.Query().Get("active") == "1" {
+		var active []probeext.QualityEpisode
+		for _, e := range episodes {
+			if e.ResolvedAt == "" {
+				active = append(active, e)
+			}
+		}
+		episodes = active
+	}
+	if episodes == nil {
+		episodes = []probeext.QualityEpisode{}
+	}
+	Success(w, probeext.EpisodesResponse{Episodes: episodes})
 }

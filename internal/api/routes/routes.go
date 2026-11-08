@@ -921,7 +921,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}
 	probeExtSvc := probeext.NewService(cfg.Probe, probeExtStore, db.New(probeDB), slog.Default())
 	probeExtSvc.Start(context.Background())
-	probeExtHandler := handler.NewProbeExtHandler(probeExtSvc)
+	// Quality degradation episodes (#720): relative-baseline detection with
+	// cross-confirmation, attribution, impact-only alerting. Shares the
+	// probe_ext store + the change recorder the probe engine uses.
+	episodeSvc := probeext.NewEpisodeService(probeExtStore, db.New(probeDB), probeDB, cfg.Probe.Quality.Episodes, changeRecorder, slog.Default())
+	if cfg.Probe.Quality.Episodes.DetectorEnabled(cfg.Probe.Quality.Enabled) {
+		episodeSvc.Start(context.Background())
+	}
+	probeExtHandler := handler.NewProbeExtHandler(probeExtSvc, episodeSvc)
 	registerProbeTargetRoutes(r, probeTargetHandler, probeQualityHandler, probeExtHandler)
 	// Discover-then-probe autogen (#606): default OFF, periodic reconcile of
 	// discovered services into device-bound targets. Same stop pattern.
