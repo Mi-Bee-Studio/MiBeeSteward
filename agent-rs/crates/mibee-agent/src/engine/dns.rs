@@ -75,29 +75,64 @@ impl std::fmt::Display for DnsError {
 /// deadline, parse, verify the transaction id. The prober's dns module
 /// (#605) uses this for pinned resolvers (egress differential) and the
 /// system nameserver alike. rcode is the caller's to interpret.
+///
+/// #715: a single-shot UDP query loses the whole probe to one dropped
+/// packet, and the affected host's upstream drops UDP/53 per-packet at
+/// 50–87% inside minute-scale clusters (same box: TCP/53 99.9%, so the path
+/// itself is fine). Up to 3 attempts inside the caller's budget — same
+/// socket (stable 5-tuple), fresh transaction id per attempt so a late
+/// reply to an earlier attempt can never satisfy a later one. Center
+/// parity: its RetryProber does the same 1+2 ladder.
 pub async fn udp_query(
     addr: std::net::SocketAddr,
     qname: &str,
     qtype: u16,
     timeout: std::time::Duration,
 ) -> Result<Message, String> {
-    let id = (std::process::id() as u16).wrapping_mul(31) ^ qname.len() as u16;
-    let q = build_query(qname, qtype, id, true);
+    const ATTEMPTS: u32 = 3;
+    let per_attempt = (timeout / ATTEMPTS).max(std::time::Duration::from_millis(50));
     let sock = tokio::net::UdpSocket::bind(if addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })
         .await
         .map_err(|e| e.to_string())?;
     sock.connect(addr).await.map_err(|e| e.to_string())?;
-    sock.send(&q).await.map_err(|e| e.to_string())?;
+    let base = (std::process::id() as u16).wrapping_mul(31) ^ qname.len() as u16;
     let mut buf = vec![0u8; 1500];
-    let n = tokio::time::timeout(timeout, sock.recv(&mut buf))
-        .await
-        .map_err(|_| "i/o timeout".to_string())?
-        .map_err(|e| e.to_string())?;
-    let msg = parse_message(&buf[..n]).map_err(|e| e.to_string())?;
-    if msg.id != id {
-        return Err("mismatched dns transaction id".into());
+    let mut last_err = String::new();
+    for attempt in 0..ATTEMPTS {
+        let id = base ^ (attempt as u16).wrapping_mul(0x9E37);
+        let q = build_query(qname, qtype, id, true);
+        if let Err(e) = sock.send(&q).await {
+            last_err = e.to_string();
+            continue;
+        }
+        match tokio::time::timeout(per_attempt, sock.recv(&mut buf)).await {
+            Err(_) => {
+                last_err = "i/o timeout".to_string();
+                continue;
+            }
+            Ok(Err(e)) => {
+                last_err = e.to_string();
+                continue;
+            }
+            Ok(Ok(n)) => {
+                let msg = match parse_message(&buf[..n]) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        last_err = e.0;
+                        continue;
+                    }
+                };
+                if msg.id != id {
+                    // A stray/late reply for another attempt (or someone
+                    // else's query): retransmit with a fresh id.
+                    last_err = "mismatched dns transaction id".to_string();
+                    continue;
+                }
+                return Ok(msg);
+            }
+        }
     }
-    Ok(msg)
+    Err(last_err)
 }
 
 struct Reader<'a> {
@@ -358,5 +393,55 @@ mod tests {
             }
             o => panic!("{o:?}"),
         }
+    }
+
+    /// #715: a resolver that drops the first queries and then answers must
+    /// be satisfied by a retransmit inside the same budget — the reply
+    /// carries the retry attempt's transaction id.
+    #[tokio::test]
+    async fn udp_query_retransmits_through_packet_loss() {
+        let srv = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr: std::net::SocketAddr = srv.local_addr().unwrap();
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let seen_c = std::sync::Arc::clone(&seen);
+        tokio::spawn(async move {
+            let mut buf = [0u8; 512];
+            loop {
+                let Ok((n, from)) = srv.recv_from(&mut buf).await else { return };
+                let seq = seen_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if seq < 2 {
+                    continue; // drop the first two queries outright
+                }
+                // Echo the request header (so the id matches whatever
+                // attempt is asking) with QR set; counts stay as sent.
+                let mut resp = buf[..n].to_vec();
+                resp[2] |= 0x80;
+                let _ = srv.send_to(&resp, from).await;
+            }
+        });
+        let msg = udp_query(addr, "example.com", 1, std::time::Duration::from_millis(1500))
+            .await
+            .expect("retransmit must recover from two dropped queries");
+        assert_eq!(msg.answers.len(), 0);
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 3, "exactly three queries hit the wire");
+    }
+
+    /// #715: when everything is dropped the budget-guarded ladder surfaces
+    /// the timeout error, not a hang.
+    #[tokio::test]
+    async fn udp_query_all_dropped_times_out() {
+        let srv = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr: std::net::SocketAddr = srv.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 512];
+            while let Ok((_, _)) = srv.recv_from(&mut buf).await {}
+        });
+        let started = std::time::Instant::now();
+        let err = udp_query(addr, "example.com", 1, std::time::Duration::from_millis(300))
+            .await
+            .expect_err("all-dropped must fail");
+        assert!(err.contains("i/o timeout"), "err = {err}");
+        // The whole ladder stays inside (roughly) the caller's budget.
+        assert!(started.elapsed() < std::time::Duration::from_millis(1500));
     }
 }
