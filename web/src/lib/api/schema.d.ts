@@ -4558,6 +4558,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/egress-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * [agent] Egress-identity round batches (#718)
+         * @description One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        rounds: components["schemas"]["AgentEgressRound"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description Ack with the accepted round count */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accepted?: number;
+                        };
+                    };
+                };
+                /** @description Invalid body */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/path-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * [agent] Path-trace sample batches (#719)
+         * @description One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        paths: components["schemas"]["AgentPathSample"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description Ack with the accepted sample count */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accepted?: number;
+                        };
+                    };
+                };
+                /** @description Invalid body */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/fingerprints": {
         parameters: {
             query?: never;
@@ -7152,8 +7260,11 @@ export interface components {
             reply_ttl?: number;
             visible_hops?: number;
             hops: components["schemas"]["ProbePathHop"][];
-            /** @enum {string} */
-            trigger?: "baseline" | "manual";
+            /**
+             * @description failure = snapshot fired by the agent right after a failed probe (#719)
+             * @enum {string}
+             */
+            trigger?: "baseline" | "failure" | "manual";
             err?: string;
             /** Format: date-time */
             traced_at: string;
@@ -7164,6 +7275,48 @@ export interface components {
             ip?: string;
             /** Format: double */
             ms?: number;
+        };
+        /** @description One agent-side egress round (#718) in an /agents/egress-report batch. Raw echo outcomes; ASN enrichment happens on the center. */
+        AgentEgressRound: {
+            /** Format: date-time */
+            round_at: string;
+            local?: {
+                iface?: string;
+                gateway_ip?: string;
+                /** @description reported for forward-compat; not persisted */
+                gateway_mac?: string;
+            };
+            results: {
+                source: string;
+                /** @enum {string} */
+                kind: "http" | "stun" | "dns";
+                ok: boolean;
+                ip?: string;
+                /** Format: double */
+                ms?: number;
+                err?: string;
+            }[];
+        };
+        /** @description One agent-side path trace (#719) in an /agents/path-report batch. The center re-derives the target name and recounts visible hops. */
+        AgentPathSample: {
+            /** Format: int64 */
+            target_id: number;
+            /** @description informational; the center stores its own live row's name */
+            target_name?: string;
+            resolved_ip?: string;
+            /** @enum {string} */
+            method?: "tcp" | "icmp";
+            /** @enum {string} */
+            end_state: "reached" | "max_ttl" | "error";
+            reached_ttl?: number;
+            reply_ttl?: number;
+            visible_hops?: number;
+            hops?: components["schemas"]["ProbePathHop"][];
+            /** @enum {string} */
+            trigger?: "baseline" | "failure" | "manual";
+            err?: string;
+            /** Format: date-time */
+            traced_at: string;
         };
         ProbeQualityTarget: {
             name: string;
