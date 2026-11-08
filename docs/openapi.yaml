@@ -1475,6 +1475,65 @@ paths:
       security: [{agentToken: []}]
       responses:
         "200": {description: Ack}
+  /agents/egress-report:
+    post:
+      tags: [Agents]
+      summary: "[agent] Egress-identity round batches (#718)"
+      description: >
+        One batch of egress rounds from the agent-side collector. The
+        reporting agent's token identity overrides any vantage the payload
+        claims; distinct public IPs are origin-ASN-enriched on the center.
+        Recording only — no notifications.
+      security: [{agentToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rounds]
+              properties:
+                rounds:
+                  type: array
+                  items: {$ref: "#/components/schemas/AgentEgressRound"}
+      responses:
+        "200":
+          description: Ack with the accepted round count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {accepted: {type: integer}}
+        "400": {description: Invalid body}
+  /agents/path-report:
+    post:
+      tags: [Agents]
+      summary: "[agent] Path-trace sample batches (#719)"
+      description: >
+        One batch of zero-privilege path traces from the agent-side tracer.
+        Rows for deleted targets are skipped; the reporting agent's token
+        identity overrides any vantage claim. Recording only.
+      security: [{agentToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paths]
+              properties:
+                paths:
+                  type: array
+                  items: {$ref: "#/components/schemas/AgentPathSample"}
+      responses:
+        "200":
+          description: Ack with the accepted sample count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {accepted: {type: integer}}
+        "400": {description: Invalid body}
   /agents/fingerprints:
     get:
       tags: [Agents]
@@ -2944,7 +3003,7 @@ components:
         reply_ttl: {type: integer}
         visible_hops: {type: integer}
         hops: {type: array, items: {$ref: "#/components/schemas/ProbePathHop"}}
-        trigger: {type: string, enum: [baseline, manual]}
+        trigger: {type: string, enum: [baseline, failure, manual], description: "failure = snapshot fired by the agent right after a failed probe (#719)"}
         err: {type: string}
         traced_at: {type: string, format: date-time}
     ProbePathHop:
@@ -2954,6 +3013,47 @@ components:
         ttl: {type: integer}
         ip: {type: string, description: "empty = this hop stayed silent"}
         ms: {type: number, format: double}
+    AgentEgressRound:
+      type: object
+      description: "One agent-side egress round (#718) in an /agents/egress-report batch. Raw echo outcomes; ASN enrichment happens on the center."
+      required: [round_at, results]
+      properties:
+        round_at: {type: string, format: date-time}
+        local:
+          type: object
+          properties:
+            iface: {type: string}
+            gateway_ip: {type: string}
+            gateway_mac: {type: string, description: "reported for forward-compat; not persisted"}
+        results:
+          type: array
+          items:
+            type: object
+            required: [source, kind, ok]
+            properties:
+              source: {type: string}
+              kind: {type: string, enum: [http, stun, dns]}
+              ok: {type: boolean}
+              ip: {type: string}
+              ms: {type: number, format: double}
+              err: {type: string}
+    AgentPathSample:
+      type: object
+      description: "One agent-side path trace (#719) in an /agents/path-report batch. The center re-derives the target name and recounts visible hops."
+      required: [target_id, end_state, traced_at]
+      properties:
+        target_id: {type: integer, format: int64}
+        target_name: {type: string, description: "informational; the center stores its own live row's name"}
+        resolved_ip: {type: string}
+        method: {type: string, enum: [tcp, icmp]}
+        end_state: {type: string, enum: [reached, max_ttl, error]}
+        reached_ttl: {type: integer}
+        reply_ttl: {type: integer}
+        visible_hops: {type: integer}
+        hops: {type: array, items: {$ref: "#/components/schemas/ProbePathHop"}}
+        trigger: {type: string, enum: [baseline, failure, manual]}
+        err: {type: string}
+        traced_at: {type: string, format: date-time}
     ProbeQualityTarget:
       type: object
       required: [name, module, target, cross_vantage, per_vantage]

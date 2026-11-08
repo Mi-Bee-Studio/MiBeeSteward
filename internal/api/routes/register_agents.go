@@ -30,11 +30,15 @@ func registerAgentTokenRoutes(r chi.Router, agentAdminHandler *handler.AgentAdmi
 
 // registerAgentRoutes registers the agent report and
 // command-channel endpoints under /api/v1/agents.
-func registerAgentRoutes(r chi.Router, agentReportHandler *handler.AgentReportHandler, agentProbeReportHandler *handler.AgentProbeReportHandler, agentCommandHandler *handler.AgentCommandHandler, agentFingerprintsHandler *handler.AgentFingerprintsHandler) {
+func registerAgentRoutes(r chi.Router, agentReportHandler *handler.AgentReportHandler, agentProbeReportHandler *handler.AgentProbeReportHandler, agentEgressReportHandler *handler.AgentEgressReportHandler, agentPathReportHandler *handler.AgentPathReportHandler, agentCommandHandler *handler.AgentCommandHandler, agentFingerprintsHandler *handler.AgentFingerprintsHandler) {
 	r.Route("/api/v1/agents", func(r chi.Router) {
 		r.Use(middleware.RequireAgentToken)
 		r.Post("/report", agentReportHandler.Report)
 		r.Post("/probe-report", agentProbeReportHandler.Report)
+		// Egress/path extension (#718/#719): agent-side collector and tracer
+		// report batches. Recording only - no notifications from this path.
+		r.Post("/egress-report", agentEgressReportHandler.Report)
+		r.Post("/path-report", agentPathReportHandler.Report)
 		// Agent command channel (Phase 5c): the agent polls pending commands
 		// (GET /commands), acknowledges (POST /commands/{id}/ack), executes, and
 		// reports the result (POST /commands/{id}/complete). Pull model.
