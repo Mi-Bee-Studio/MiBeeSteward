@@ -478,12 +478,79 @@ async fn probe_report_batch_shape_and_ack() {
     assert_eq!(body["results"][0]["vantage"], "agent:agent-lan-63");
 }
 
+/// Egress + path report batches (#718/#719): wire shapes and ack semantics
+/// against the mock center — the two new agent endpoints piggyback the same
+/// batch-posting contract as probe-report.
+#[tokio::test]
+async fn egress_and_path_report_batch_shapes() {
+    use mibee_agent::wire::{EgressLocalReport, EgressResultReport, EgressRoundReport, PathHopReport, PathSampleReport};
+
+    let (base, mock) = spawn_mock().await;
+    let c = client(&base);
+
+    let rounds = vec![EgressRoundReport {
+        round_at: "2026-11-08T09:00:00.000Z".into(),
+        local: EgressLocalReport { iface: "end0".into(), gateway_ip: "192.168.2.1".into(), gateway_mac: String::new() },
+        results: vec![EgressResultReport {
+            source: "icanhazip".into(),
+            kind: "http".into(),
+            ok: true,
+            ip: "93.184.216.34".into(),
+            ms: 120.5,
+            err: String::new(),
+        }],
+    }];
+    match c.post_egress_rounds(&rounds).await.unwrap() {
+        mibee_agent::center::PostOutcome::Accepted(ack) => assert_eq!(ack.accepted, 1),
+        other => panic!("expected Accepted, got {other:?}"),
+    }
+
+    let paths = vec![PathSampleReport {
+        target_id: 4,
+        target_name: "web".into(),
+        resolved_ip: "93.184.216.34".into(),
+        method: "tcp".into(),
+        end_state: "reached".into(),
+        reached_ttl: 3,
+        reply_ttl: 55,
+        visible_hops: 2,
+        hops: vec![
+            PathHopReport { ttl: 1, ip: "192.168.2.1".into(), ms: 1.2 },
+            PathHopReport { ttl: 2, ip: String::new(), ms: 0.0 },
+        ],
+        trigger: "failure".into(),
+        err: String::new(),
+        traced_at: "2026-11-08T09:00:05.000Z".into(),
+    }];
+    match c.post_path_reports(&paths).await.unwrap() {
+        mibee_agent::center::PostOutcome::Accepted(ack) => assert_eq!(ack.accepted, 1),
+        other => panic!("expected Accepted, got {other:?}"),
+    }
+
+    let log = mock.log.lock().unwrap();
+    assert_eq!(log[0].path, "/api/v1/agents/egress-report");
+    let body: serde_json::Value = serde_json::from_slice(&log[0].body).unwrap();
+    assert_eq!(body["rounds"][0]["local"]["gateway_ip"], "192.168.2.1");
+    assert_eq!(body["rounds"][0]["results"][0]["ip"], "93.184.216.34");
+    assert_eq!(body["rounds"][0]["results"][0]["ms"], 120.5);
+    // gateway_mac is skip_serializing_if empty — the field is absent.
+    assert!(body["rounds"][0]["local"].get("gateway_mac").is_none());
+
+    assert_eq!(log[1].path, "/api/v1/agents/path-report");
+    let body: serde_json::Value = serde_json::from_slice(&log[1].body).unwrap();
+    assert_eq!(body["paths"][0]["target_id"], 4);
+    assert_eq!(body["paths"][0]["trigger"], "failure");
+    assert_eq!(body["paths"][0]["reply_ttl"], 55);
+    assert_eq!(body["paths"][0]["hops"][1]["ip"], "");
+}
+
 /// The prober park queue (#604): a center outage no longer drops batches —
 /// they park (bounded) and flush once the center recovers.
 #[tokio::test]
 async fn probe_results_park_and_recover() {
     use mibee_agent::prober::{run_prober_with_tuning, Prober};
     use std::time::Duration;
+
 
     // A fast local responder as the probe target: each tick produces a
     // success row in milliseconds, keeping the loop's timing deterministic.
@@ -512,6 +579,7 @@ async fn probe_results_park_and_recover() {
             timeout_seconds: 2,
             ..Default::default()
         }],
+        None,
     );
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
 
