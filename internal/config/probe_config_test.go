@@ -120,7 +120,7 @@ func TestValidateEgressTrace(t *testing.T) {
 		mutate(c)
 		return c
 	}
-	require.NoError(t, Validate(newCfg(func(c *Config) {})))
+	require.NoError(t, Validate(newCfg(func(*Config) {})))
 
 	badKind := newCfg(func(c *Config) {
 		c.Probe.Egress.Sources = []ProbeEgressSource{{Name: "x", Kind: " carrier-pigeon", Target: "y"}}
