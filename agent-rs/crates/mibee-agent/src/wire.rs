@@ -274,13 +274,53 @@ pub struct ScanCommand {
     pub credential_name: String,
 }
 
-/// `probe` command payload (plan push, fingerprint-guarded).
+/// `probe` command payload (plan push, fingerprint-guarded). The trace block
+/// (#719) rides the plan for agents that declared the `trace` capability;
+/// absent = tracing disabled on this agent.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ProbePlanCommand {
     #[serde(default)]
     pub targets: Vec<ProbeTargetSpec>,
     #[serde(default)]
     pub fingerprint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace: Option<TracePlan>,
+}
+
+/// Agent-side path-trace schedule (#719): which categories to trace and how.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TracePlan {
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub interval_minutes: i64,
+    #[serde(default)]
+    pub max_ttl: i64,
+    #[serde(default)]
+    pub per_hop_ms: i64,
+}
+
+/// `egress` command payload (#718): the echo-source set + cadence,
+/// fingerprint-guarded like probe plans. Empty sources = rounds disabled.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct EgressPlanCommand {
+    #[serde(default)]
+    pub sources: Vec<EgressSourceSpec>,
+    #[serde(default)]
+    pub interval_seconds: i64,
+    #[serde(default)]
+    pub fingerprint: String,
+}
+
+/// One echo source as pushed by the center (Go config.ProbeEgressSource).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct EgressSourceSpec {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub kind: String, // http | stun | dns
+    #[serde(default)]
+    pub target: String,
 }
 
 /// Go `probetarget.Spec`.
@@ -300,6 +340,10 @@ pub struct ProbeTargetSpec {
     pub timeout_seconds: i64,
     #[serde(default)]
     pub vantage: String,
+    /// Management category derived center-side (lan | external | quality) so
+    /// the trace plan's allow-list needs no agent-side replication (#719).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub category: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<ProbeTargetOptions>,
 }
@@ -364,6 +408,79 @@ pub struct ProbeResultReport {
 pub struct CommandComplete {
     pub status: String, // "done" | "failed"
     pub result: String,
+}
+
+/// One egress round in an /agents/egress-report batch (#718). Raw echo
+/// outcomes — origin-ASN enrichment happens on the center.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct EgressRoundReport {
+    pub round_at: String, // RFC3339 UTC, agent clock
+    #[serde(default)]
+    pub local: EgressLocalReport,
+    #[serde(default)]
+    pub results: Vec<EgressResultReport>,
+}
+
+/// The local-egress layer of one round (default-route view).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct EgressLocalReport {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub iface: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub gateway_ip: String,
+    /// Reported for forward-compat; the center does not persist it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub gateway_mac: String,
+}
+
+/// One echo source's outcome.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct EgressResultReport {
+    pub source: String,
+    pub kind: String,
+    pub ok: bool,
+    #[serde(default)]
+    pub ip: String,
+    #[serde(default)]
+    pub ms: f64,
+    #[serde(default)]
+    pub err: String,
+}
+
+/// One path trace in an /agents/path-report batch (#719).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PathSampleReport {
+    pub target_id: i64,
+    #[serde(default)]
+    pub target_name: String,
+    #[serde(default)]
+    pub resolved_ip: String,
+    #[serde(default)]
+    pub method: String,
+    pub end_state: String, // reached | max_ttl | error
+    #[serde(default)]
+    pub reached_ttl: i64,
+    #[serde(default)]
+    pub reply_ttl: i64,
+    #[serde(default)]
+    pub visible_hops: i64,
+    #[serde(default)]
+    pub hops: Vec<PathHopReport>,
+    #[serde(default)]
+    pub trigger: String, // baseline | failure
+    #[serde(default)]
+    pub err: String,
+    pub traced_at: String, // RFC3339 UTC, agent clock
+}
+
+/// One responding hop; silent TTLs carry an empty ip.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PathHopReport {
+    pub ttl: i64,
+    #[serde(default)]
+    pub ip: String,
+    #[serde(default)]
+    pub ms: f64,
 }
 
 /// The anti-entropy header value: SHA-256 over hosts sorted by IP, each

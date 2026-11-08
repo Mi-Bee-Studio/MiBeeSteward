@@ -58,8 +58,12 @@ oxitls-rustcrypto-provider = "0.3"
 # Passive eBPF observer (#498): optional, Linux-only. The `ebpf` feature
 # turns it on; every other target (and the default build) never resolves the
 # dependency, so default artifacts stay byte-identical.
+# libc: raw syscalls for the zero-privilege path tracer (#719) — ping
+# sockets, IP_RECVERR/MSG_ERRQUEUE, ppoll. Same Linux-only gate: non-Linux
+# builds (and the shipped default artifacts) never resolve it.
 [target.'cfg(target_os = "linux")'.dependencies]
 mibee-ebpf = { path = "../mibee-ebpf", optional = true }
+libc = "0.2"
 
 [features]
 # Enables the aya-based passive TC observer (implies mibee-ebpf/loader on
