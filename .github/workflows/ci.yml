@@ -144,6 +144,14 @@ jobs:
           name: frontend-dist
           path: web/dist
       - run: go vet ./...
+      # Unprivileged ICMP ping sockets for the probeext tracer tests (#719):
+      # ubuntu runners ship ping_group_range "1 0" (root-only); the product's
+      # installers open the same range on target hosts (deploy postinst /
+      # OpenWrt install.sh), so this mirrors a deployed host, not a special
+      # CI privilege. Without it the ICMP loopback tests skip and the
+      # coverage ratchet loses the whole ICMP tracer block.
+      - name: Open net.ipv4.ping_group_range
+        run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
       - name: Generated Go API client drift check (#274)
         run: |
           make gen-api-go
