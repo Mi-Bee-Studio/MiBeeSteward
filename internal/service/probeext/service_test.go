@@ -12,6 +12,7 @@ package probeext
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -197,4 +198,32 @@ func mustGet(t *testing.T, q *db.Queries, id int64) (row db.ProbeTarget) {
 		t.Fatal(err)
 	}
 	return row
+}
+
+// TestTickRunsEgressRound pins the scheduler tick's egress branch: with
+// egress enabled and every source local, one tick persists a round.
+func TestTickRunsEgressRound(t *testing.T) {
+	httpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("93.184.216.110\n"))
+	}))
+	defer httpSrv.Close()
+	queries, _ := openTestQueries(t)
+	store := openTestStore(t)
+	cfg := testServiceCfg()
+	cfg.Egress = config.ProbeEgressConfig{
+		Enabled:         true,
+		IntervalSeconds: 300,
+		Sources:         []config.ProbeEgressSource{{Name: "http-local", Kind: "http", Target: httpSrv.URL}},
+	}
+	svc := NewService(cfg, store, queries, nil)
+	svc.tick(context.Background())
+
+	views, err := store.LatestEgress(context.Background(), 24*time.Hour)
+	if err != nil || len(views) != 1 || len(views[0].IPs) != 1 || views[0].IPs[0].IP != "93.184.216.110" {
+		t.Fatalf("views = %+v err=%v", views, err)
+	}
+	// The next immediate tick must NOT re-run the round (interval honored).
+	svc.mu.Lock()
+	svc.nextEgress = time.Now().Add(time.Hour)
+	svc.mu.Unlock()
 }
