@@ -90,6 +90,8 @@ The 3× code growth is the deliberate price of the two requirements that motivat
 | hostapd/iw WiFi station telemetry | ✔ | ✔ | live rig validation pending an AP-equipped rig |
 | Heartbeat probe specs from report | ✔ | ✔ | |
 | Vantage probe plans (probe command, #344) | ✔ icmp/http/tls | ✔ all five modules (0.2.0, #604/#605) | Go/early-Rust agents failed tcp plans with "unknown module" — a live bug; the center now shields legacy agents via capability negotiation and 0.2.0 adds tcp + dns execution, option semantics (http keyword/expected-status, tcp send/expect, dns record/resolver/expected-ips), and the `supported_modules` declaration |
+| Egress echo rounds (`egress` command, #718) | ✗ | ✔ (0.2.2) | the center pushes the echo-source set + cadence to agents declaring `egress`; each vantage reports raw round outcomes to `POST /agents/egress-report` (ASN enrichment stays on the center) |
+| Zero-privilege path tracer (`trace` in probe plans, #719) | ✗ | ✔ (0.2.2, Linux) | a semantic port of the center's tracer (per-TTL TCP connect with hash-fixed source port + IP_RECVERR, ICMP ping sockets with seq-carries-TTL and IP_RECVTTL reply TTL); traces ride the probe plan's `trace` block, a failed probe triggers a rate-limited snapshot (`trigger=failure`), reports go to `POST /agents/path-report`; `libc` is the only new dependency (Linux-only) |
 | Retention sweep + VACUUM | ✔ | ✔ | |
 | conntrack new-host reporting | ✔ | ✔ | LAN endpoint of ESTABLISHED/[ASSURED] flows reported once on first sighting (src or dst side, Go parser parity incl. [UNASSURED] rejection) — #504 |
 | mDNS unicast queries (`scanner.mdns.unicast_queries`) | ✔ | ✔ | each query also sent to the target's 5353 directly, for unicast-only responders (#20/#504) |
