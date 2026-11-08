@@ -168,22 +168,21 @@ func tcpProbeOnce(dst [4]byte, port, ttl int, wait time.Duration, srcPort int) *
 		return nil
 	}
 	ms := float64(time.Since(start).Microseconds()) / 1000
-	if rev&pollErr != 0 || rev&pollHup != 0 {
+	// SO_ERROR first regardless of which bit poll set: a refused
+	// connection surfaces as ECONNREFUSED here on every kernel, while the
+	// POLLOUT/POLLERR mix varies.
+	soerr, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_ERROR)
+	if err == nil {
+		if soerr == 0 || syscall.Errno(soerr) == syscall.ECONNREFUSED {
+			// connected (or refused by the destination itself): reached.
+			return &PathHop{TTL: ttl, IP: net.IP(dst[:]).String(), MS: ms}
+		}
+	}
+	if rev&(pollErr|pollHup) != 0 {
 		if hop, ok := readErrQueue(fd, net.IP(dst[:]).String()); ok {
 			hop.TTL = ttl
 			hop.MS = ms
 			return hop
-		}
-		return nil
-	}
-	if rev&pollOut != 0 {
-		soerr, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_ERROR)
-		if err != nil {
-			return nil
-		}
-		if soerr == 0 || syscall.Errno(soerr) == syscall.ECONNREFUSED {
-			// connected (or refused by the destination itself): reached.
-			return &PathHop{TTL: ttl, IP: net.IP(dst[:]).String(), MS: ms}
 		}
 	}
 	return nil
@@ -357,8 +356,15 @@ func readErrQueue(fd int, dstStr string) (*PathHop, bool) {
 		if typ == 11 { // Time Exceeded: that TTL's router.
 			return &PathHop{IP: ip}, true
 		}
-		if typ == 3 && ip == dstStr { // Unreachable raised BY the destination.
-			return &PathHop{IP: ip}, true
+		if typ == 3 { // Unreachable (port/host...): the destination itself
+			// answered. Loopback RSTs carry a zeroed offender sockaddr, so
+			// fall back to the connect target.
+			if ip == "" {
+				ip = dstStr
+			}
+			if ip == dstStr {
+				return &PathHop{IP: ip}, true
+			}
 		}
 		return nil, false
 	}
