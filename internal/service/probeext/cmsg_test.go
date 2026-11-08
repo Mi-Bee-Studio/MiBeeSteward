@@ -29,7 +29,7 @@ func TestReplyTTLFromCmsg(t *testing.T) {
 	hdr.Type = syscall.IP_TTL
 	hdr.SetLen(syscall.CmsgLen(len(data)))
 	copy(buf[syscall.CmsgSpace(0):], data)
-	if got := replyTTLFromCmsg(buf[:hdr.Len()]); got != payload {
+	if got := replyTTLFromCmsg(buf[:int(hdr.Len)]); got != payload {
 		t.Fatalf("ttl = %d, want %d", got, payload)
 	}
 	_ = binary.BigEndian
