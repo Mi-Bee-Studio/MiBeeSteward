@@ -73,6 +73,32 @@ snmp_trap:
   bind: ":162"
   community: "public"
 
+# announce is the LAN self-announcement block (#729, ecosystem service
+# discovery): it makes THIS instance visible to the Scout app's one-shot
+# LAN scan (type=steward) instead of requiring a hand-typed address. Three
+# surfaces: mDNS advertisement (_mibee-steward._tcp), the public identity
+# endpoint GET /.well-known/mibee-service, and a UDP responder answering the
+# shared discovery probe. Default ON — the app shows nothing it cannot find,
+# so announcing IS the visibility. Published data is deliberately minimal:
+# a stable instance ID (generated once, data/instance-id), the instance
+# name, the API port — same disclosure posture as /health. Set enabled:
+# false on deployments that must stay invisible. Named "announce" (not
+# "discovery") to stay unambiguous next to scanner.discovery: THAT block is
+# this instance discovering OTHERS; this block is being discoverable.
+announce:
+  enabled: true
+  name: ""             # instance name (mDNS + well-known); empty = OS hostname
+  mdns: true           # _mibee-steward._tcp advertisement (5353/udp)
+  udp: true            # UDP discovery responder (App fallback for
+                       # multicast-restricted Wi-Fi)
+  udp_port: 49091      # steward's registered discovery port (adjacent to
+                       # the NVR's 49090; Scout docs/02 §8.3 registry
+                       # confirmation tracked in #729)
+  tls: false           # announced scheme hint: true only when a TLS-
+                       # terminating reverse proxy fronts the SAME port
+                       # clients discover
+
+
 # notify tunes the notification dispatcher. retry_window_minutes bounds how
 # long a retryable delivery failure (receiver briefly unreachable, e.g. the
 # alert center restarting) keeps requeuing with growing backoff before a

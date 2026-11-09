@@ -649,6 +649,23 @@ head -c 32 /dev/urandom | base64
 
 运维要点：防火墙只对 trap 来源网段放行该 UDP 端口（到达监听器的包都会被看到）；v3 trap（USM、凭据名引用凭据库）是已设计的后续项——配置面刻意没有 v3 键，避免开启一个空壳。
 
+## 局域网自宣告配置（#729）
+
+`scanner.discovery` 的反方向：本实例在局域网里**宣告自己**，让蜂探 App 的一次扫描直接识别出这是 MiBee 服务（type `steward`），而不是要求手填地址。三件套挂在一个开关下：mDNS 广告 `_mibee-steward._tcp`、公开身份端点 `GET /.well-known/mibee-service`（`{"service":"steward","name","ver","id"}`——无鉴权、恰好四个字段，与 `/health` 同等最小披露口径）、以及在 steward 端口应答共享探测帧 `MIBEE-NVR-DISCv1?`（应答带 `type=steward`）的 UDP 应答器。
+
+默认开：蜂探「扫不到就不出现」（裁定⑨A），宣告即是可见性。某个宣告面启动失败只记一行日志、绝不阻塞启动（损失的只是那一条发现路径）。对外披露刻意最少——稳定实例 ID（`data/instance-id`，首启生成、重启/升级/换 IP 不变；data 目录不可写时降级为进程内临时 ID 并记 warn）、实例名、API 端口。
+
+| 键 | 类型 | 默认值 | 说明 |
+|-----|------|---------|-------------|
+| `announce.enabled` | bool | `true` | 总开关；`false` 同时注销 well-known HTTP 端点（404） |
+| `announce.name` | string | `""` | 宣告的实例名（mDNS + well-known）；留空 = OS 主机名 |
+| `announce.mdns` | bool | `true` | `_mibee-steward._tcp` 广告（5353/udp；与 avahi/umdns 共存） |
+| `announce.udp` | bool | `true` | UDP 发现应答器（蜂探在组播受限 Wi-Fi 下的兜底路径） |
+| `announce.udp_port` | int | `49091` | steward 发现端口（紧邻 NVR 的 49090；登记确认跟踪在 #729） |
+| `announce.tls` | bool | `false` | 宣告的协议方案提示——仅当 TLS 终止的反向代理覆盖客户端发现的同一端口时置 true |
+
+取名 `announce`（而非 `discovery`）是为了与 `scanner.discovery` 保持无歧义：那个块是本实例**发现别人**；这个块是**被别人发现**。
+
 ## Docker 配置模板
 
 仓库提供了现成的 Docker Compose 配置模板 [`configs/config.docker.yaml`](../../configs/config.docker.yaml)，预配置了适合容器化部署的路径和网络设置--将其复制为你的起始 `config.yaml`，并为生产环境调整 `auth.jwt_secret` 和 `auth.initial_admin_password`。

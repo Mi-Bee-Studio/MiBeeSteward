@@ -394,7 +394,7 @@ flowchart LR
 
 
 
-- **Public**: No authentication required (health check, login, logout, 2FA verification, `/metrics`, `/sd`)
+- **Public**: No authentication required (health check, login, logout, 2FA verification, `/metrics`, `/sd`, `/.well-known/mibee-service`)
 
 
 - **Authenticated**: Valid JWT token (any role)
@@ -746,8 +746,26 @@ System health check, including database status.
 
 A root-level alias `GET /health` serves the same JSON. External monitors, container probes and load balancers that conventionally probe `/health` get real health status instead of the SPA fallback HTML (#571).
 
+### GET /.well-known/mibee-service
 
+Ecosystem service discovery identity endpoint (#729, Scout docs/02 §8.1): the Scout app's subnet scan hits this to classify a discovered instance by type instead of hand-typing addresses. Unauthenticated and minimal by contract — exactly four fields, nothing about addresses, capabilities, or credentials (same disclosure posture as `/health`; it must be public because the app cannot authenticate before it has discovered the instance).
 
+**Public**
+
+**Response**:
+
+```json
+{
+  "service": "steward",
+  "name": "steward-lan",
+  "ver": "v0.9.1",
+  "id": "6f0c8e2b1a4d5f379c8e0b2a4d6f8c1e"
+}
+```
+
+`service` is always `steward` (the docs/02 §8.4 type registry value); `name` is the announced instance name (`announce.name` or the OS hostname); `ver` is the build version; `id` is the stable per-installation ID (`data/instance-id`, survives restarts/upgrades/IP changes — it is the app-side bind/merge anchor). Disabled with `announce.enabled: false` (404).
+
+The same identity is also announced via mDNS `_mibee-steward._tcp` (TXT `ver/id/name/tls/api`, same shape as the NVR service) and a UDP responder on port 49091 answering the shared `MIBEE-NVR-DISCv1?` probe with `type=steward` — both configured under the `announce` block, see [configuration.md](configuration.md#lan-announce-configuration-729).
 
 
 ## Users & Network Grants
@@ -4290,6 +4308,7 @@ The following endpoints are not under the `/api/v1` prefix and **require no auth
 
 
 | `GET /sd` | Prometheus HTTP SD file contents (registered device IPs and labels, for Prometheus service discovery) |
+| `GET /.well-known/mibee-service` | Ecosystem service discovery identity (#729): `{service: steward, name, ver, id}` — the Scout app's scan classifier |
 
 
 

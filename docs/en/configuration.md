@@ -665,6 +665,23 @@ The inbound SNMP trap channel (#509) — devices speaking unprompted. `linkDown`
 
 Operational notes: open the UDP port in the firewall for the trap sources only (the listener sees any packet that reaches it); v3 traps (USM, credential-name references against the vault) are the designed follow-up — no v3 keys exist yet, so no one can enable a stub.
 
+## LAN Announce Configuration (#729)
+
+The opposite direction of `scanner.discovery`: this instance announcing ITSELF on the LAN so the Scout app's one-shot scan recognizes it as a MiBee service (type `steward`) instead of requiring a hand-typed address. Three surfaces under one switch: the mDNS advertisement `_mibee-steward._tcp`, the public identity endpoint `GET /.well-known/mibee-service` (`{"service":"steward","name","ver","id"}` — unauthenticated, exactly four fields, same disclosure posture as `/health`), and a UDP responder answering the shared `MIBEE-NVR-DISCv1?` probe on the steward port with `type=steward`.
+
+Default ON: the app shows nothing it cannot find, so announcing IS the visibility. A failed surface logs once and never blocks boot (the instance simply loses that one discovery path). The published data is deliberately minimal — a stable instance ID (`data/instance-id`, generated once and reused across restarts/upgrades/IP changes; an unwritable data dir degrades to an ephemeral ID with a warn), the instance name, the API port.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `announce.enabled` | bool | `true` | Master switch; `false` also unregisters the well-known HTTP endpoint (404) |
+| `announce.name` | string | `""` | Announced instance name (mDNS + well-known); empty = OS hostname |
+| `announce.mdns` | bool | `true` | `_mibee-steward._tcp` advertisement (5353/udp; coexists with avahi/umdns) |
+| `announce.udp` | bool | `true` | UDP discovery responder (the app's fallback for multicast-restricted Wi-Fi) |
+| `announce.udp_port` | int | `49091` | Steward discovery port (adjacent to the NVR's 49090; registry confirmation tracked in #729) |
+| `announce.tls` | bool | `false` | Announced scheme hint — `true` only when a TLS-terminating reverse proxy fronts the same port clients discover |
+
+Named `announce` (not `discovery`) to stay unambiguous next to `scanner.discovery`: THAT block is this instance discovering others; this block is being discoverable.
+
 ## Docker Configuration Template
 
 The repository ships a ready-to-use Docker Compose config template at [`configs/config.docker.yaml`](../../configs/config.docker.yaml). It pre-configures paths and network settings appropriate for containerized deployment, copy it as your starting `config.yaml` and adjust `auth.jwt_secret` and `auth.initial_admin_password` for production.
