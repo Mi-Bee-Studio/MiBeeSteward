@@ -5,6 +5,11 @@ All notable changes to MiBee Steward are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **OpenWrt installer: additive config migrations for kept configs (#727)**: the upgrade rule "existing config is kept" also meant a config generated before a feature's config block existed never gained it — the server treats the missing key as OFF forever, with nothing in the UI saying why (first field case: a pre-v0.8.0 config upgraded to 0.9.0 never seeded the #608 egress-quality matrix, no matter how long it waited). A new self-contained `deploy/openwrt/migrate-config.sh` (the #688 detect-lans.sh pattern: POSIX ash, busybox-awk safe, shipped in the tar.gz/.ipk/.apk, fixture test harness committed alongside) runs on every kept-config install: missing default blocks are ADDED (`probe.quality` → `enabled: true`, every other knob at its built-in default), anything set explicitly wins (`enabled: false` stays off), re-runs are byte-identical no-ops (same-version reinstall stays the standard verification path), and a failed rewrite leaves the config untouched and aborts the install loudly. `install.sh` calls it on the upgrade path (tarball and `--from-ipk` alike); `check-openwrt` now also EXECUTES the committed shell test harnesses (detect-lans + migrate-config) instead of only `sh -n`-ing them. For upgrade forms with no installer (binary/systemd, Docker), `doctor` gains a `probe.quality` check that warns with the one-line fix while the matrix is off.
+
 ## [0.9.0] - 2026-11-07
 
 ### Added

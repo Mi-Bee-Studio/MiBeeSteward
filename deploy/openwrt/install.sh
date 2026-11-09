@@ -21,7 +21,10 @@
 #      `uci get network.lan.*`, absolute DB + upload paths under
 #      /etc/mibee/data/ (procd CWD=/ makes the relative defaults land at /;
 #      the init script also injects absolute paths via MIBEE_* env).
-#      Re-runs (upgrades) keep the existing config untouched.
+#      Re-runs (upgrades) keep the existing config, except for additive
+#      migrations (migrate-config.sh): a feature-default block that predates
+#      the installed config (e.g. probe.quality, #608) is added — keys the
+#      operator set explicitly are never touched.
 #   4. Opens net.ipv4.ping_group_range (OpenWrt default `1 0` blocks the
 #      unprivileged ICMP ping sockets the probes use) + persists it.
 #   5. Enables + starts the service, then hits /api/v1/health.
@@ -55,7 +58,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --port) PORT="${2:?--port needs a value}"; shift 2 ;;
         --from-ipk) FROM_IPK=1; shift ;;
-        -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,42p' "$0"; exit 0 ;;
         *) echo "ERROR: unknown option: $1 (usage: $0 [--port N] [--from-ipk])" >&2; exit 1 ;;
     esac
 done
@@ -148,6 +151,24 @@ if [ -f "$CONF_DST" ]; then
             sed -i "s|^\([[:space:]]*jwt_secret:\).*|\1 \"$_fix_secret\"|" "$CONF_DST"
             echo "-- repaired empty jwt_secret in existing config (regenerated)"
         fi
+    fi
+    # Additive config migrations (#727): a kept config predating a feature's
+    # config block never gains it by waiting — the server treats the missing
+    # key as OFF forever (first field case #608: pre-v0.8.0 configs have no
+    # probe.quality key, so the egress-quality matrix never seeded and nothing
+    # in the UI says why). migrate-config.sh adds MISSING default blocks
+    # additively: anything set explicitly (quality enabled true OR false)
+    # wins, and re-runs are no-ops (same-version reinstall = standard path).
+    MIGRATE=""
+    if [ "$FROM_IPK" = 1 ] && [ -f /usr/lib/mibee/migrate-config.sh ]; then
+        MIGRATE=/usr/lib/mibee/migrate-config.sh
+    elif [ -f ./migrate-config.sh ]; then
+        MIGRATE=./migrate-config.sh
+    fi
+    if [ -n "$MIGRATE" ]; then
+        sh "$MIGRATE" "$CONF_DST"
+    else
+        echo "-- WARN: migrate-config.sh not found: skipping config migrations"
     fi
     # Tier-1 passive discovery (#360): pre-#360 installs generated configs
     # with the router-resident sources off. Keep the operator's config as-is
@@ -327,6 +348,7 @@ echo "  Doctor:      $BIN_DST doctor -config $CONF_DST"
 if [ "$FROM_IPK" = 1 ]; then
     echo "  Upgrade:     opkg install /tmp/mibee-steward_<new-version>_$([ "$(uname -m)" = aarch64 ] && echo arm64 || echo arm).ipk"
 else
-    echo "  Upgrade:     re-run ./install.sh from a fresh tarball (config is kept)"
+    echo "  Upgrade:     re-run ./install.sh from a fresh tarball (config is kept;"
+    echo "               missing feature-default blocks are migrated in additively)"
 fi
 echo "========================================================="

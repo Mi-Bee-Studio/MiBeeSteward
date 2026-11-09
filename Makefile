@@ -77,9 +77,10 @@ package-openwrt: build-frontend sync-device-types sync-oui-curated
 	tr -d '\r' < deploy/openwrt/mibee-steward.init > $(BUILD_DIR)/openwrt-pkg/mibee-steward.init
 	tr -d '\r' < deploy/openwrt/install.sh > $(BUILD_DIR)/openwrt-pkg/install.sh
 	tr -d '\r' < deploy/openwrt/detect-lans.sh > $(BUILD_DIR)/openwrt-pkg/detect-lans.sh
+	tr -d '\r' < deploy/openwrt/migrate-config.sh > $(BUILD_DIR)/openwrt-pkg/migrate-config.sh
 	tr -d '\r' < configs/config.example.yaml > $(BUILD_DIR)/openwrt-pkg/config.example.yaml
-	chmod +x $(BUILD_DIR)/openwrt-pkg/install.sh $(BUILD_DIR)/openwrt-pkg/detect-lans.sh
-	tar -czf $(BUILD_DIR)/mibee-steward-openwrt-$(GOARCH)-$(VERSION).tar.gz -C $(BUILD_DIR)/openwrt-pkg mibee-steward mibee-steward.init install.sh detect-lans.sh config.example.yaml
+	chmod +x $(BUILD_DIR)/openwrt-pkg/install.sh $(BUILD_DIR)/openwrt-pkg/detect-lans.sh $(BUILD_DIR)/openwrt-pkg/migrate-config.sh
+	tar -czf $(BUILD_DIR)/mibee-steward-openwrt-$(GOARCH)-$(VERSION).tar.gz -C $(BUILD_DIR)/openwrt-pkg mibee-steward mibee-steward.init install.sh detect-lans.sh migrate-config.sh config.example.yaml
 	@rm -rf $(BUILD_DIR)/openwrt-pkg
 	@echo "-> $(BUILD_DIR)/mibee-steward-openwrt-$(GOARCH)-$(VERSION).tar.gz  (scp to router, extract, ./install.sh)"
 
@@ -109,6 +110,7 @@ openwrt-stage: build-frontend sync-device-types sync-oui-curated
 	tr -d '\r' < configs/config.example.yaml     > $(BUILD_DIR)/openwrt-stage/etc/mibee/config.example.yaml
 	tr -d '\r' < deploy/openwrt/install.sh       > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/install.sh
 	tr -d '\r' < deploy/openwrt/detect-lans.sh   > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/detect-lans.sh
+	tr -d '\r' < deploy/openwrt/migrate-config.sh > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/migrate-config.sh
 	tr -d '\r' < deploy/openwrt/luci/luci-helper.sh > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-helper.sh
 	tr -d '\r' < deploy/openwrt/luci/luci-apply.sh  > $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-apply.sh
 # LuCI integration (inert files on builds without LuCI — no hard Depends):
@@ -116,7 +118,7 @@ openwrt-stage: build-frontend sync-device-types sync-oui-curated
 	tr -d '\r' < deploy/openwrt/luci/controller/mibee.lua > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/controller/mibee.lua
 	tr -d '\r' < deploy/openwrt/luci/view/mibee/status.htm   > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee/status.htm
 	tr -d '\r' < deploy/openwrt/luci/view/mibee/settings.htm > $(BUILD_DIR)/openwrt-stage/usr/lib/lua/luci/view/mibee/settings.htm
-	chmod 755 $(BUILD_DIR)/openwrt-stage/etc/init.d/mibee-steward $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/install.sh $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/detect-lans.sh $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-helper.sh $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-apply.sh
+	chmod 755 $(BUILD_DIR)/openwrt-stage/etc/init.d/mibee-steward $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/install.sh $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/detect-lans.sh $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/migrate-config.sh $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-helper.sh $(BUILD_DIR)/openwrt-stage/usr/lib/mibee/luci-apply.sh
 # Guard: none of the staged router files may carry a CR byte. busybox ash
 # happens to tolerate CRLF scripts and Go's YAML reader tolerates CRLF
 # configs, but LuCI's template parser does NOT (a raw \r inside a write("...")
@@ -344,7 +346,9 @@ check-nfpm:
 # on-router-dead": a LuCI template with a raw CR byte white-screens with
 # "unfinished string", a Lua syntax slip kills the whole controller, and none
 # of it is caught by go test. Fast (no build): luac -p on the controller,
-# CR-byte scan + sh -n on the committed router sources. The full packaging
+# CR-byte scan + sh -n on the committed router sources, and the POSIX-sh test
+# harnesses actually EXECUTED (detect-lans/migrate-config — committed tests
+# that only ever got syntax-checked would drift silently). The full packaging
 # smoke is `make package-openwrt-ipk` (openwrt-stage CR guard + mkipk.sh),
 # exercised by the CI `openwrt` job. CR/sh checks read the GIT INDEX (`git
 # show :file`) — a CRLF Windows working tree must not false-positive on files
@@ -360,6 +364,7 @@ check-openwrt:
 	$$LUAC -p deploy/openwrt/luci/controller/mibee.lua
 	@for f in deploy/openwrt/luci/view/mibee/status.htm deploy/openwrt/luci/view/mibee/settings.htm \
 	          deploy/openwrt/install.sh deploy/openwrt/detect-lans.sh deploy/openwrt/detect-lans.test.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
+	          deploy/openwrt/migrate-config.sh deploy/openwrt/migrate-config.test.sh \
 	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/luci/luci-apply.sh deploy/openwrt/mibee-steward.init \
 	          configs/config.example.yaml configs/agent.example.yaml \
 	          agent-rs/deploy/openwrt/mibee-agent.init agent-rs/deploy/openwrt/agent-install.sh; do \
@@ -368,12 +373,17 @@ check-openwrt:
 		fi; \
 	done; echo "-> no CR bytes in committed router sources"
 	@for f in deploy/openwrt/install.sh deploy/openwrt/detect-lans.sh deploy/openwrt/detect-lans.test.sh deploy/openwrt/mkipk.sh deploy/openwrt/mkapk.sh \
+	          deploy/openwrt/migrate-config.sh deploy/openwrt/migrate-config.test.sh \
 	          deploy/openwrt/luci/luci-helper.sh deploy/openwrt/luci/luci-apply.sh deploy/openwrt/mibee-steward.init \
 	          agent-rs/deploy/openwrt/mibee-agent.init agent-rs/deploy/openwrt/agent-install.sh; do \
 		if ! git show :$$f 2>/dev/null | sh -n; then \
 			echo "ERROR: sh -n failed on committed $$f"; exit 1; \
 		fi; \
 	done; echo "-> sh -n OK on committed router scripts"
+	@for t in deploy/openwrt/detect-lans.test.sh deploy/openwrt/migrate-config.test.sh; do \
+		echo "-> sh $$t"; \
+		if ! sh $$t; then echo "ERROR: $$t failed"; exit 1; fi; \
+	done; echo "-> router shell test harnesses OK"
 
 # Build with the eBPF passive observer enabled (#537: self-contained — the
 # bpf2go artifacts are generated on demand when absent, and the generation is

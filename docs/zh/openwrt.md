@@ -128,7 +128,7 @@ scp bin/mibee-steward-openwrt-arm64-*.tar.gz root@<路由器IP>:/tmp/
 ssh root@<路由器IP> 'cd /tmp && tar -xzf mibee-steward-openwrt-arm64-*.tar.gz && ./install.sh'
 ```
 
-`install.sh` 在路由器上依次完成：架构校验（拒绝 MIPS、冒烟执行二进制）→ 安装二进制到 `/usr/bin`、procd 脚本到 `/etc/init.d` → **首次安装**生成 `/etc/mibee/config.yaml`（随机 `jwt_secret`、`cookie_secure` 置 false（纯 HTTP 局域网）、admin 初始密码留空、从 `uci` 读取 LAN 网段填 `network.name/cidr`、DB 指向 `/etc/mibee/data/mibee.db` 绝对路径）→ 打开并持久化 `ping_group_range` → `enable` + `start` + 健康检查。已存在 `config.yaml` 时原样保留--**换新 tar 包重跑即升级**。装完按终端打印的地址与初始密码登录，随后建议：
+`install.sh` 在路由器上依次完成：架构校验（拒绝 MIPS、冒烟执行二进制）→ 安装二进制到 `/usr/bin`、procd 脚本到 `/etc/init.d` → **首次安装**生成 `/etc/mibee/config.yaml`（随机 `jwt_secret`、`cookie_secure` 置 false（纯 HTTP 局域网）、admin 初始密码留空、从 `uci` 读取 LAN 网段填 `network.name/cidr`、DB 指向 `/etc/mibee/data/mibee.db` 绝对路径）→ 打开并持久化 `ping_group_range` → `enable` + `start` + 健康检查。已存在 `config.yaml` 时原样保留，唯一例外是**加法式迁移**（`migrate-config.sh`，#727：配置早于某特性默认块的——如 `probe.quality`——会补上该块，让升级安装对齐首装默认；你显式设置过的键——包括 `enabled: false`——永不改动；重跑无副作用）--**换新 tar 包重跑即升级**。装完按终端打印的地址与初始密码登录，随后建议：
 
 - 修改 admin 密码（UI 内，或 `/usr/bin/mibee-steward reset-admin-password -config /etc/mibee/config.yaml`）；
 - 按需启用 4 个路由器专属发现源（`scanner.discovery.*`；R5S 无板载 WiFi，`hostapd` 空转是预期行为）；
@@ -156,7 +156,7 @@ scp bin/mibee-steward_*_arm64.apk root@<路由器IP>:/tmp/
 ssh root@<路由器IP> 'apk add --allow-untrusted /tmp/mibee-steward_*_arm64.apk'
 ```
 
-两种包的生命周期脚本等价：`pre-install`/`preinst` 做 uname 架构闸门（不匹配直接拒绝安装）；`post-install`/`postinst` 复用与 tar 包完全相同的配置逻辑（生成 `/etc/mibee/config.yaml`、打开 `ping_group_range`、enable + start + 健康检查--admin 密码不预生成，首启在浏览器创建）；升级 = 安装新版本的包（`opkg install` 新 ipk / `apk add` 新 apk，配置保留、服务自动重启）；卸载 = `opkg remove mibee-steward` / `apk del mibee-steward`（**`/etc/mibee` 的配置与数据库保留**，需要彻底清除时手动删）。
+两种包的生命周期脚本等价：`pre-install`/`preinst` 做 uname 架构闸门（不匹配直接拒绝安装）；`post-install`/`postinst` 复用与 tar 包完全相同的配置逻辑（生成 `/etc/mibee/config.yaml`、打开 `ping_group_range`、enable + start + 健康检查--admin 密码不预生成，首启在浏览器创建）；升级 = 安装新版本的包（`opkg install` 新 ipk / `apk add` 新 apk，配置保留——含与 tar 包一致的 `migrate-config.sh` 加法式迁移、服务自动重启）；卸载 = `opkg remove mibee-steward` / `apk del mibee-steward`（**`/etc/mibee` 的配置与数据库保留**，需要彻底清除时手动删）。
 
 架构说明：包内是 CGO-free 静态二进制，`Architecture: all`--不逐个匹配 OpenWrt 的目标架构名（`aarch64_generic`、`aarch64_cortex-a53`、`arm_cortex-a7_neon-vfpv4`……），真正的架构闸门是 pre 脚本的 uname 检查 + post 脚本的 `-version` 冒烟执行。精确架构命名与软件源发布仍是后续工作（见下文「当前不支持」）。tar 包路径继续保留：无包管理器的环境（任意 Linux 主机/任意 shell）同样可用。
 
