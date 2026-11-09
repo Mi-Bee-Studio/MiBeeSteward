@@ -5,6 +5,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Added
+- **OpenWrt 安装器：保配置升级的加法式迁移（#727）**：升级规则"已有配置原样保留"同时意味着——配置生成早于某特性的配置块时，该块永远不会出现，服务端把缺失的键视为永久关闭，UI 上没有任何迹象说明原因（首个现场案例：0.8.0 之前的配置升到 0.9.0 后，#608 出口质量矩阵无论等多久都不会播种）。新增自包含的 `deploy/openwrt/migrate-config.sh`（#688 detect-lans.sh 范式：POSIX ash、busybox-awk 安全、随 tar.gz/.ipk/.apk 分发、随仓带 fixture 桩测试 harness），每次保配置安装时运行：缺失的默认块做**加法**补入（`probe.quality` → `enabled: true`，其余参数全走内置默认）；运维显式设置的键优先（`enabled: false` 保持关闭）；重跑字节级无变化（同版本重装仍是标准验证路径）；重写失败则配置原样保留并大声中止安装。`install.sh` 在升级路径调用它（tar 包与 `--from-ipk` 一致）；`check-openwrt` 现在还会**执行**随仓的 shell 测试 harness（detect-lans + migrate-config），不再只做 `sh -n` 语法检查。对没有安装器的升级形态（二进制/systemd、Docker），`doctor` 新增 `probe.quality` 检查——矩阵关闭时给出 warn 与一行修复提示。
+
 ## [0.9.0] - 2026-11-07
 
 ### Added
