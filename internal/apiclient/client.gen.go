@@ -876,6 +876,27 @@ func (e ProbePathSampleTrigger) Valid() bool {
 	}
 }
 
+// Defines values for ProbePhaseRowModule.
+const (
+	ProbePhaseRowModuleHttp ProbePhaseRowModule = "http"
+	ProbePhaseRowModuleIcmp ProbePhaseRowModule = "icmp"
+	ProbePhaseRowModuleTcp  ProbePhaseRowModule = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the ProbePhaseRowModule enum.
+func (e ProbePhaseRowModule) Valid() bool {
+	switch e {
+	case ProbePhaseRowModuleHttp:
+		return true
+	case ProbePhaseRowModuleIcmp:
+		return true
+	case ProbePhaseRowModuleTcp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeQualityCategoryCategory.
 const (
 	ProbeQualityCategoryCategoryExternal ProbeQualityCategoryCategory = "external"
@@ -2624,6 +2645,35 @@ type ProbePathsResponse struct {
 	Paths []ProbePathSample `json:"paths"`
 }
 
+// ProbePhaseRow One run's per-stage timing breakdown (#717). Stage fields are 0/absent when the module does not exercise them (tcp carries connect_ms only, icmp carries reply_ttl only). latency_ms is the run total denormalized so the phases chart needs no join.
+type ProbePhaseRow struct {
+	CheckedAt time.Time           `json:"checked_at"`
+	ConnectMs *float64            `json:"connect_ms,omitempty"`
+	DnsMs     *float64            `json:"dns_ms,omitempty"`
+	LatencyMs float64             `json:"latency_ms"`
+	Module    ProbePhaseRowModule `json:"module"`
+
+	// ReplyTtl icmp only: remaining hop budget in the destination's reply (0 = unknown)
+	ReplyTtl *int `json:"reply_ttl,omitempty"`
+
+	// ResolvedIp the address the run actually used
+	ResolvedIp *string  `json:"resolved_ip,omitempty"`
+	TargetId   int64    `json:"target_id"`
+	TlsMs      *float64 `json:"tls_ms,omitempty"`
+
+	// TtfbMs time to first response byte after the request went out
+	TtfbMs  *float64 `json:"ttfb_ms,omitempty"`
+	Vantage string   `json:"vantage"`
+}
+
+// ProbePhaseRowModule defines model for ProbePhaseRow.Module.
+type ProbePhaseRowModule string
+
+// ProbePhasesResponse defines model for ProbePhasesResponse.
+type ProbePhasesResponse struct {
+	Phases []ProbePhaseRow `json:"phases"`
+}
+
 // ProbeQualityCategory defines model for ProbeQualityCategory.
 type ProbeQualityCategory struct {
 	// Category lan = device-bound targets; external = manual unbound (business) targets; quality = the built-in system matrix
@@ -3674,6 +3724,11 @@ type GetProbeTargetsParams struct {
 
 // GetProbeTargetsIdPathsParams defines parameters for GetProbeTargetsIdPaths.
 type GetProbeTargetsIdPathsParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetProbeTargetsIdPhasesParams defines parameters for GetProbeTargetsIdPhases.
+type GetProbeTargetsIdPhasesParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
@@ -5140,6 +5195,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
 	GetProbeTargetsIdPaths(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProbeTargetsIdPhases Per-stage timing history of one target (#717), newest first
+	//
+	// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+	//
+	// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+	GetProbeTargetsIdPhases(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetProbeTargetsIdResults Result history (vantage filter)
 	//
@@ -7657,6 +7719,23 @@ func (c *Client) GetProbeTargetsIdCertificates(ctx context.Context, id Id, reqEd
 // Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
 func (c *Client) GetProbeTargetsIdPaths(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetProbeTargetsIdPathsRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProbeTargetsIdPhases Per-stage timing history of one target (#717), newest first
+//
+// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+//
+// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+func (c *Client) GetProbeTargetsIdPhases(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeTargetsIdPhasesRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -14013,6 +14092,67 @@ func NewGetProbeTargetsIdPathsRequest(server string, id Id, params *GetProbeTarg
 	return req, nil
 }
 
+// NewGetProbeTargetsIdPhasesRequest constructs an http.Request for the GetProbeTargetsIdPhases method
+func NewGetProbeTargetsIdPhasesRequest(server string, id Id, params *GetProbeTargetsIdPhasesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-targets/%s/phases", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProbeTargetsIdResultsRequest constructs an http.Request for the GetProbeTargetsIdResults method
 func NewGetProbeTargetsIdResultsRequest(server string, id Id, params *GetProbeTargetsIdResultsParams) (*http.Request, error) {
 	var err error
@@ -17090,6 +17230,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
 	GetProbeTargetsIdPathsWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPathsResponse, error)
+
+	// GetProbeTargetsIdPhasesWithResponse Per-stage timing history of one target (#717), newest first
+	//
+	// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+	GetProbeTargetsIdPhasesWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPhasesResponse, error)
 
 	// GetProbeTargetsIdResultsWithResponse Result history (vantage filter)
 	//
@@ -22984,6 +23133,47 @@ func (r GetProbeTargetsIdPathsResponse) ContentType() string {
 	return ""
 }
 
+type GetProbeTargetsIdPhasesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbePhasesResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeTargetsIdPhasesResponse) GetJSON200() *ProbePhasesResponse {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeTargetsIdPhasesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeTargetsIdPhasesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeTargetsIdPhasesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeTargetsIdPhasesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetProbeTargetsIdResultsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -26784,6 +26974,21 @@ func (c *ClientWithResponses) GetProbeTargetsIdPathsWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseGetProbeTargetsIdPathsResponse(rsp)
+}
+
+// GetProbeTargetsIdPhasesWithResponse Per-stage timing history of one target (#717), newest first
+//
+// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+func (c *ClientWithResponses) GetProbeTargetsIdPhasesWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPhasesResponse, error) {
+	rsp, err := c.GetProbeTargetsIdPhases(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeTargetsIdPhasesResponse(rsp)
 }
 
 // GetProbeTargetsIdResultsWithResponse Result history (vantage filter)
@@ -30733,6 +30938,32 @@ func ParseGetProbeTargetsIdPathsResponse(rsp *http.Response) (*GetProbeTargetsId
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ProbePathsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProbeTargetsIdPhasesResponse parses an HTTP response from a GetProbeTargetsIdPhasesWithResponse call
+func ParseGetProbeTargetsIdPhasesResponse(rsp *http.Response) (*GetProbeTargetsIdPhasesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeTargetsIdPhasesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbePhasesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -22,6 +22,7 @@ import (
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/service/scannerv2"
 )
 
@@ -48,6 +49,14 @@ const (
 	defaultMaxConcurrency = 8
 )
 
+// PhasesSink receives per-stage timing breakdowns (#717): DNS / connect /
+// TLS / TTFB for http, connect for tcp, reply TTL for icmp. Implemented by
+// the probeext side store (probe_phases table); nil = breakdowns are
+// captured but dropped (agent executor path without the sink, tests).
+type PhasesSink interface {
+	StorePhase(ctx context.Context, targetID int64, module, vantage, checkedAt string, latencyMs float64, ph *probe.Phases) error
+}
+
 // Engine is the interval scheduler + probe executor. The DB is the source of
 // truth: every tick re-lists enabled targets (adds/edits/deletes apply within
 // one tick, no restart, no in-memory registry to desync), while an in-memory
@@ -71,6 +80,9 @@ type Engine struct {
 	// (#608 follow-up); nil = transitions are detected but recorded nowhere.
 	recorder    changedetect.ChangeRecorder
 	transitions *transitionDetector
+
+	// phases stores the per-stage timing breakdown (#717); nil = dropped.
+	phases PhasesSink
 
 	cancel  context.CancelFunc
 	done    chan struct{}
@@ -111,6 +123,14 @@ func (e *Engine) WithNotifyFailThreshold(n int) *Engine {
 		n = defaultProbeFailThreshold
 	}
 	e.transitions.threshold = n
+	return e
+}
+
+// WithPhasesSink attaches the per-stage timing sink (#717). Call before
+// Start; the sink is append-only so there is nothing to guard beyond
+// construction time.
+func (e *Engine) WithPhasesSink(s PhasesSink) *Engine {
+	e.phases = s
 	return e
 }
 
@@ -294,6 +314,16 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 		ID:            t.ID,
 	}); err != nil {
 		e.logger.Error("probe engine: update target last-result failed", "target_id", t.ID, "error", err)
+	}
+
+	// Per-stage timing (#717): append-only side-DB row. A phase row whose
+	// main result write failed is harmless — phase reads key off their own
+	// endpoint, never a join.
+	if out.Phases != nil && out.Phases.HasData() && e.phases != nil {
+		if err := e.phases.StorePhase(ctx, t.ID, t.Module, domain.ProbeVantageCenter, checkedAt,
+			float64(out.Latency.Microseconds())/1000.0, out.Phases); err != nil {
+			e.logger.Error("probe engine: store phases failed", "target_id", t.ID, "error", err)
+		}
 	}
 
 	// Upsert only on successful collection: a transient handshake failure must

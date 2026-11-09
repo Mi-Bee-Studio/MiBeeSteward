@@ -612,7 +612,7 @@ head -c 32 /dev/urandom | base64
 | `retention.host_services_days` | int | 30 | 主机服务记录保留天数 |
 | `retention.host_tls_certs_days` | int | 30 | TLS 证书记录保留天数 |
 | `retention.probe_results_days` | int | 30 | 拨测历史结果保留天数（`probe_tls_certs` 不清扫--每目标只存当前证书链） |
-| `retention.probe_ext_days` | int | 30 | 出口回显轮次 + 路径采样保留天数（`data/probe_ext.db` 旁路库，#716/#718/#719）。 |
+| `retention.probe_ext_days` | int | 30 | 出口回显轮次 + 路径采样 + 分阶段计时行保留天数（`data/probe_ext.db` 旁路库，#716/#717/#718/#719）。 |
 | `retention.sweep_interval_hours` | int | 6 | 清理扫描间隔（小时） |
 | `retention.batch_size` | int | 5000 | 每批清理的最大行数 |
 

@@ -37,6 +37,7 @@ func registerProbeTargetRoutes(r chi.Router, probeTargetHandler *handler.ProbeTa
 			r.Get("/{id}/results", probeTargetHandler.GetTargetResults)
 			r.Get("/{id}/certificates", probeTargetHandler.GetTargetCertificates)
 			r.Get("/{id}/paths", probeExtHandler.TargetPaths)
+			r.Get("/{id}/phases", probeExtHandler.TargetPhases)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireCapability(domain.CapProbeManage))

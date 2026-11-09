@@ -269,44 +269,53 @@ pub async fn run_probe(spec: &ProbeTargetSpec, vantage: &str) -> ProbeResultRepo
                 report.error_message = "no echo reply".into();
             }
         },
-        "http" => match http_probe(&spec.target, opts, timeout).await {
-            Ok((code, body)) => {
-                report.status_code = code as i64;
-                let expected = opts.and_then(|o| {
-                    if o.expected_status.is_empty() {
-                        None
+        "http" => {
+            let mut stages = crate::wire::ProbePhases::default();
+            let outcome = http_probe(&spec.target, opts, timeout, &mut stages).await;
+            // Stages survive both arms: a request that died AFTER resolution
+            // still tells the center what DNS cost (#717).
+            if !stages.resolved_ip.is_empty() || stages.dns_ms > 0.0 {
+                report.phases = Some(stages);
+            }
+            match outcome {
+                Ok((code, body)) => {
+                    report.status_code = code as i64;
+                    let expected = opts.and_then(|o| {
+                        if o.expected_status.is_empty() {
+                            None
+                        } else {
+                            Some(&o.expected_status)
+                        }
+                    });
+                    let status_ok = match expected {
+                        Some(list) => list.contains(&(code as i64)),
+                        None => (200..400).contains(&code),
+                    };
+                    if !status_ok {
+                        report.status = "fail".into();
+                        report.error_message = format!("http status {code} not in expected set");
+                    } else if let (Some(o), Some(body)) = (opts, body) {
+                        match match_payload(&o.keyword_mode, &o.keyword, &body) {
+                            Ok(true) => report.status = "success".into(),
+                            Ok(false) => {
+                                report.status = "fail".into();
+                                report.error_message = keyword_fail_reason(&o.keyword_mode);
+                            }
+                            Err(e) => {
+                                report.status = "fail".into();
+                                report.error_message = e;
+                            }
+                        }
                     } else {
-                        Some(&o.expected_status)
+                        report.status = "success".into();
                     }
-                });
-                let status_ok = match expected {
-                    Some(list) => list.contains(&(code as i64)),
-                    None => (200..400).contains(&code),
-                };
-                if !status_ok {
-                    report.status = "fail".into();
-                    report.error_message = format!("http status {code} not in expected set");
-                } else if let (Some(o), Some(body)) = (opts, body) {
-                    match match_payload(&o.keyword_mode, &o.keyword, &body) {
-                        Ok(true) => report.status = "success".into(),
-                        Ok(false) => {
-                            report.status = "fail".into();
-                            report.error_message = keyword_fail_reason(&o.keyword_mode);
-                        }
-                        Err(e) => {
-                            report.status = "fail".into();
-                            report.error_message = e;
-                        }
-                    }
-                } else {
-                    report.status = "success".into();
+                }
+                Err(f) => {
+                    report.status = if f.timeout { "timeout" } else { "fail" }.into();
+                    report.error_message = f.message;
                 }
             }
-            Err(f) => {
-                report.status = if f.timeout { "timeout" } else { "fail" }.into();
-                report.error_message = f.message;
-            }
-        },
+        }
         "tls" => match tls_probe(&spec.target, timeout).await {
             Ok((version, not_after, trusted)) if !version.is_empty() => {
                 report.status = "success".into();
@@ -433,6 +442,7 @@ async fn http_probe(
     target: &str,
     opts: Option<&ProbeTargetOptions>,
     timeout: Duration,
+    stages: &mut crate::wire::ProbePhases,
 ) -> Result<(u16, Option<Vec<u8>>), ProbeFailure> {
     let url = if target.starts_with("http") {
         target.to_string()
@@ -459,9 +469,18 @@ async fn http_probe(
         .map_err(|e| ProbeFailure::other(format!("bad url {url:?}: {e}")))?;
     let host = parsed.host_str().unwrap_or_default().to_string();
     let port = parsed.port_or_known_default().unwrap_or(80);
+    // #717: the resolve is agent-measurable (reqwest hides the rest), so the
+    // DNS stage + the pinned address land here — on failure too, the stages
+    // that did complete are the diagnostic payload.
+    let resolve_started = Instant::now();
     let addrs = resolve_host_resilient(&host, port, 3, Duration::from_millis(300))
         .await
         .map_err(ProbeFailure::other)?;
+    stages.dns_ms = (resolve_started.elapsed().as_secs_f64() * 1000.0 * 10.0).round() / 10.0;
+    stages.resolved_ip = addrs
+        .first()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_default();
 
     let client = reqwest::Client::builder()
         .timeout(timeout)
@@ -968,11 +987,51 @@ mod tests {
                     .await;
             }
         });
-        let (code, body) = http_probe(&format!("127.0.0.1:{port}"), None, Duration::from_secs(2))
-            .await
-            .unwrap();
+        // #717: the resolve stage + pinned address fill the phases out-param
+        // even though an IP literal skips real DNS.
+        let mut stages = crate::wire::ProbePhases::default();
+        let (code, body) = http_probe(
+            &format!("127.0.0.1:{port}"),
+            None,
+            Duration::from_secs(2),
+            &mut stages,
+        )
+        .await
+        .unwrap();
         assert_eq!(code, 204);
         assert!(body.is_none());
+        assert_eq!(stages.resolved_ip, "127.0.0.1");
+        assert!(stages.dns_ms >= 0.0);
+        assert_eq!(stages.connect_ms, 0.0, "agent http v1 measures dns only");
+    }
+
+    /// #717 wire/JSON parity: phases serialize with the same snake_case
+    /// omitempty shape the Go center decodes, and decode back losslessly.
+    #[test]
+    fn probe_phases_wire_shape() {
+        let p = crate::wire::ProbePhases {
+            resolved_ip: "203.0.113.9".into(),
+            dns_ms: 8.4,
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v["resolved_ip"], "203.0.113.9");
+        assert_eq!(v["dns_ms"], 8.4);
+        assert!(v.get("connect_ms").is_none());
+        assert!(v.get("tls_ms").is_none());
+        assert!(v.get("ttfb_ms").is_none());
+        assert!(v.get("reply_ttl").is_none());
+        let back: crate::wire::ProbePhases = serde_json::from_value(v).unwrap();
+        assert_eq!(back, p);
+
+        // reply_ttl rides along for icmp-shaped rows.
+        let icmp = crate::wire::ProbePhases {
+            reply_ttl: 54,
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&icmp).unwrap();
+        assert_eq!(v["reply_ttl"], 54);
+        assert!(v.get("resolved_ip").is_none());
     }
 
     /// keyword + expected_status semantics against a local responder.

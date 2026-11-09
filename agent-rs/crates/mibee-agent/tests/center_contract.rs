@@ -462,6 +462,13 @@ async fn probe_report_batch_shape_and_ack() {
         vantage: "agent:agent-lan-63".into(),
         status: "success".into(),
         latency_ms: 12.5,
+        // #717: dns_ms + resolved_ip measured agent-side ride the row; zero
+        // stages (connect/tls/ttfb) must stay absent, matching Go's omitempty.
+        phases: Some(mibee_agent::wire::ProbePhases {
+            resolved_ip: "203.0.113.9".into(),
+            dns_ms: 8.4,
+            ..Default::default()
+        }),
         ..Default::default()
     }];
     // PostOutcome (#604): Accepted carries the ack, 4xx would be Rejected
@@ -476,6 +483,24 @@ async fn probe_report_batch_shape_and_ack() {
     assert_eq!(body["results"][0]["target_id"], 4);
     assert_eq!(body["results"][0]["latency_ms"], 12.5);
     assert_eq!(body["results"][0]["vantage"], "agent:agent-lan-63");
+    assert_eq!(body["results"][0]["phases"]["resolved_ip"], "203.0.113.9");
+    assert_eq!(body["results"][0]["phases"]["dns_ms"], 8.4);
+    assert!(body["results"][0]["phases"].get("connect_ms").is_none());
+    assert!(body["results"][0]["phases"].get("tls_ms").is_none());
+    // A phase-less row omits the field entirely.
+    let plain = vec![ProbeResultReport {
+        target_id: 5,
+        status: "success".into(),
+        ..Default::default()
+    }];
+    drop(log);
+    match c.post_probe_results(&plain).await.unwrap() {
+        mibee_agent::center::PostOutcome::Accepted(ack) => assert_eq!(ack.accepted, 1),
+        other => panic!("expected Accepted, got {other:?}"),
+    }
+    let log = mock.log.lock().unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&log[1].body).unwrap();
+    assert!(body["results"][0].get("phases").is_none());
 }
 
 /// Egress + path report batches (#718/#719): wire shapes and ack semantics

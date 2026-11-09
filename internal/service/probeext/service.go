@@ -325,3 +325,9 @@ func (s *Service) PathsSnapshot(ctx context.Context) ([]map[string]any, error) {
 func (s *Service) ListTargetPaths(ctx context.Context, targetID int64, limit int) ([]PathSample, error) {
 	return s.store.ListPathsByTarget(ctx, targetID, limit)
 }
+
+// ListTargetPhases is the per-target per-stage timing history (#717,
+// GET /probe-targets/{id}/phases).
+func (s *Service) ListTargetPhases(ctx context.Context, targetID int64, limit int) ([]PhaseRow, error) {
+	return s.store.ListPhasesFor(ctx, targetID, limit)
+}

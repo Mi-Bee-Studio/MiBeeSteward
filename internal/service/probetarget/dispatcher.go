@@ -24,6 +24,7 @@ import (
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
+	"mibee-steward/internal/service/probe"
 )
 
 // CommandEnqueuer is the slice of AgentCommandService the dispatcher needs.
@@ -399,6 +400,9 @@ type AgentResultReport struct {
 	CertNotAfter string  `json:"cert_not_after"`
 	CertTrusted  *bool   `json:"cert_trusted"`
 	CheckedAt    string  `json:"checked_at"`
+	// Phases is the agent-measured per-stage breakdown (#717); absent on
+	// agents that don't measure it (forward-compatible decode).
+	Phases *probe.Phases `json:"phases,omitempty"`
 }
 
 // IngestAgentResults persists a batch of agent-side probe results (#277).
@@ -431,6 +435,16 @@ func (s *Service) IngestAgentResults(ctx context.Context, agentID string, result
 			return accepted, err
 		}
 		accepted++
+
+		// Per-stage timing off the agent's own runs (#717): same side-DB sink
+		// as the center's, tagged with the agent's vantage. The module comes
+		// from the target lookup above — the report intentionally carries no
+		// module field to spoof.
+		if r.Phases != nil && r.Phases.HasData() && s.engine != nil && s.engine.phases != nil {
+			if err := s.engine.phases.StorePhase(ctx, r.TargetID, t.Module, own, r.CheckedAt, r.LatencyMs, r.Phases); err != nil {
+				s.engine.logger.Error("probe ingest: store agent phases failed", "target_id", r.TargetID, "error", err)
+			}
+		}
 
 		// Liveness transitions on the agent's own track, same state machine as
 		// the center's: a site fine from the center but dead from this agent's

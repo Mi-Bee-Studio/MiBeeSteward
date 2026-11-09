@@ -3693,6 +3693,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/probe-targets/{id}/phases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Per-stage timing history of one target (#717), newest first
+         * @description One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Phase rows */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbePhasesResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/probe-targets/{id}/trace": {
         parameters: {
             query?: never;
@@ -7378,6 +7421,36 @@ export interface components {
             ip?: string;
             /** Format: double */
             ms?: number;
+        };
+        ProbePhasesResponse: {
+            phases: components["schemas"]["ProbePhaseRow"][];
+        };
+        /** @description One run's per-stage timing breakdown (#717). Stage fields are 0/absent when the module does not exercise them (tcp carries connect_ms only, icmp carries reply_ttl only). latency_ms is the run total denormalized so the phases chart needs no join. */
+        ProbePhaseRow: {
+            /** Format: int64 */
+            target_id: number;
+            /** @enum {string} */
+            module: "http" | "tcp" | "icmp";
+            vantage: string;
+            /** Format: date-time */
+            checked_at: string;
+            /** @description the address the run actually used */
+            resolved_ip?: string;
+            /** Format: double */
+            dns_ms?: number;
+            /** Format: double */
+            connect_ms?: number;
+            /** Format: double */
+            tls_ms?: number;
+            /**
+             * Format: double
+             * @description time to first response byte after the request went out
+             */
+            ttfb_ms?: number;
+            /** @description icmp only: remaining hop budget in the destination's reply (0 = unknown) */
+            reply_ttl?: number;
+            /** Format: double */
+            latency_ms: number;
         };
         /** @description One agent-side egress round (#718) in an /agents/egress-report batch. Raw echo outcomes; ASN enrichment happens on the center. */
         AgentEgressRound: {

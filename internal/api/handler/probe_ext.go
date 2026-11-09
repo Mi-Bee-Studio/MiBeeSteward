@@ -106,6 +106,40 @@ func (h *ProbeExtHandler) TargetPaths(w http.ResponseWriter, r *http.Request) {
 	Success(w, map[string]any{"paths": paths})
 }
 
+// TargetPhases godoc
+// @Summary      Per-stage timing history of one target
+// @Description  One row per run that produced a stage breakdown (#717):
+// @Description  DNS/connect/TLS/TTFB milliseconds for http, connect for tcp,
+// @Description  reply TTL for icmp, across all vantages. Runs without a
+// @Description  breakdown (dns/tls modules, failures) are simply absent.
+// @Tags         probes
+// @Security     cookieAuth
+// @Produce      json
+// @Param        id path int true "Target ID"
+// @Param        limit query int false "Max rows (default 200)"
+// @Success      200 {object} probeext.PhasesResponse
+// @Failure      400 {object} ErrorResponse
+// @Failure      500 {object} ErrorResponse
+// @Router       /probe-targets/{id}/phases [get]
+func (h *ProbeExtHandler) TargetPhases(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		Error(w, http.StatusBadRequest, "invalid target id")
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	phases, err := h.svc.ListTargetPhases(r.Context(), id, limit)
+	if err != nil {
+		slog.Error("probe-target phases: list failed", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to load phase history")
+		return
+	}
+	if phases == nil {
+		phases = []probeext.PhaseRow{}
+	}
+	Success(w, probeext.PhasesResponse{Phases: phases})
+}
+
 // TraceNow godoc
 // @Summary      Trace one target's path now (center vantage)
 // @Description  Runs one synchronous zero-privilege TCP/ICMP TTL walk and

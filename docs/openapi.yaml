@@ -1271,6 +1271,20 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ProbePathsResponse"}
+  /probe-targets/{id}/phases:
+    get:
+      tags: [ProbeTargets]
+      summary: Per-stage timing history of one target (#717), newest first
+      description: "One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows."
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: limit, in: query, schema: {type: integer, default: 200, maximum: 500}}
+      responses:
+        "200":
+          description: Phase rows
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbePhasesResponse"}
   /probe-targets/{id}/trace:
     post:
       tags: [ProbeTargets]
@@ -3077,6 +3091,27 @@ components:
         ttl: {type: integer}
         ip: {type: string, description: "empty = this hop stayed silent"}
         ms: {type: number, format: double}
+    ProbePhasesResponse:
+      type: object
+      required: [phases]
+      properties:
+        phases: {type: array, items: {$ref: "#/components/schemas/ProbePhaseRow"}}
+    ProbePhaseRow:
+      type: object
+      description: "One run's per-stage timing breakdown (#717). Stage fields are 0/absent when the module does not exercise them (tcp carries connect_ms only, icmp carries reply_ttl only). latency_ms is the run total denormalized so the phases chart needs no join."
+      required: [target_id, module, vantage, checked_at, latency_ms]
+      properties:
+        target_id: {type: integer, format: int64}
+        module: {type: string, enum: [http, tcp, icmp]}
+        vantage: {type: string}
+        checked_at: {type: string, format: date-time}
+        resolved_ip: {type: string, description: "the address the run actually used"}
+        dns_ms: {type: number, format: double}
+        connect_ms: {type: number, format: double}
+        tls_ms: {type: number, format: double}
+        ttfb_ms: {type: number, format: double, description: "time to first response byte after the request went out"}
+        reply_ttl: {type: integer, description: "icmp only: remaining hop budget in the destination's reply (0 = unknown)"}
+        latency_ms: {type: number, format: double}
     AgentEgressRound:
       type: object
       description: "One agent-side egress round (#718) in an /agents/egress-report batch. Raw echo outcomes; ASN enrichment happens on the center."

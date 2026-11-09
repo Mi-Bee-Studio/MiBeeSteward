@@ -74,6 +74,10 @@ fn is_zero_i32(v: &i32) -> bool {
     *v == 0
 }
 
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
+}
+
 /// Go `domain.ReportedHost`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ReportedHost {
@@ -401,6 +405,30 @@ pub struct ProbeResultReport {
     pub cert_trusted: Option<bool>,
     #[serde(default)]
     pub checked_at: String, // RFC3339 UTC, agent clock
+    /// Per-stage timing breakdown (#717) — Go `probe.Phases`. Agent http v1
+    /// measures dns_ms + resolved_ip only (reqwest hides connect/tls/ttfb);
+    /// the center stores whatever stages a row actually carries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phases: Option<ProbePhases>,
+}
+
+/// Per-stage breakdown of one probe run — Go `probe.Phases` (same snake_case
+/// wire shape). Zero/empty stages are omitted to keep rows compact; the
+/// center decodes absent fields as zero.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ProbePhases {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub resolved_ip: String,
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub dns_ms: f64,
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub connect_ms: f64,
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub tls_ms: f64,
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub ttfb_ms: f64,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub reply_ttl: i32,
 }
 
 /// POST /api/v1/agents/commands/{id}/complete body.
@@ -549,7 +577,13 @@ pub fn duration_secs(v: &str) -> u64 {
     if v.is_empty() {
         return 0;
     }
-    if v.contains(['s', 'm', 'h']) && !v.chars().last().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if v.contains(['s', 'm', 'h'])
+        && !v
+            .chars()
+            .last()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+    {
         // unit suffix or compound like "1m30s" — walk segments
         let mut total = 0u64;
         let mut cur = String::new();

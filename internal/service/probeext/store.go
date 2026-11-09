@@ -30,6 +30,8 @@ import (
 	"time"
 
 	_ "mibee-steward/internal/dbopen" // registers the modernc sqlite driver
+
+	"mibee-steward/internal/service/probe"
 )
 
 // extSchema is the additive DDL for probe_ext.db. checked_at/round_at/
@@ -87,6 +89,23 @@ CREATE TABLE IF NOT EXISTS quality_episodes (
 );
 CREATE INDEX IF NOT EXISTS idx_quality_episodes_time ON quality_episodes(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_quality_episodes_active ON quality_episodes(resolved_at, last_seen_at DESC);
+
+CREATE TABLE IF NOT EXISTS probe_phases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id INTEGER NOT NULL,        -- probe_targets.id (no FK: side DB)
+    module TEXT NOT NULL,              -- http | tcp | icmp
+    vantage TEXT NOT NULL,
+    checked_at TEXT NOT NULL,
+    resolved_ip TEXT NOT NULL DEFAULT '',
+    dns_ms REAL NOT NULL DEFAULT 0,    -- 0 = stage absent (non-http modules)
+    connect_ms REAL NOT NULL DEFAULT 0,
+    tls_ms REAL NOT NULL DEFAULT 0,
+    ttfb_ms REAL NOT NULL DEFAULT 0,
+    reply_ttl INTEGER NOT NULL DEFAULT 0, -- 0 = unknown (icmp)
+    latency_ms REAL NOT NULL DEFAULT 0    -- run total, denormalized so phase reads need no join
+);
+CREATE INDEX IF NOT EXISTS idx_probe_phases_target ON probe_phases(target_id, vantage, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_probe_phases_time ON probe_phases(checked_at);
 `
 
 // Store is the probe_ext.db handle. Single connection + WAL: writes are
@@ -426,19 +445,84 @@ func (s *Store) queryPaths(ctx context.Context, q string, args ...any) ([]PathSa
 
 // Prune deletes rows older than the given RFC3339 cutoff (retention sweep).
 func (s *Store) Prune(ctx context.Context, cutoff string) error {
-	for _, table := range []string{"egress_rounds", "path_samples"} {
-		var col string
-		if table == "egress_rounds" {
-			col = "round_at"
-		} else {
-			col = "traced_at"
-		}
+	for _, t := range []struct{ table, col string }{
+		{"egress_rounds", "round_at"},
+		{"path_samples", "traced_at"},
+		{"probe_phases", "checked_at"},
+	} {
 		if _, err := s.conn.ExecContext(ctx,
-			`DELETE FROM `+table+` WHERE `+col+` < ?`, cutoff); err != nil {
-			return fmt.Errorf("prune %s: %w", table, err)
+			`DELETE FROM `+t.table+` WHERE `+t.col+` < ?`, cutoff); err != nil {
+			return fmt.Errorf("prune %s: %w", t.table, err)
 		}
 	}
 	return nil
+}
+
+// --- probe_phases (#717) ----------------------------------------------------
+
+// PhaseRow is one run's per-stage timing breakdown. latency_ms is the run
+// total denormalized so the phases chart renders without a probe_results
+// join; omitempty on the stages keeps tcp/icmp rows compact on the wire.
+type PhaseRow struct {
+	TargetID   int64   `json:"target_id"`
+	Module     string  `json:"module"`
+	Vantage    string  `json:"vantage"`
+	CheckedAt  string  `json:"checked_at"`
+	ResolvedIP string  `json:"resolved_ip,omitempty"`
+	DNSMs      float64 `json:"dns_ms,omitempty"`
+	ConnectMs  float64 `json:"connect_ms,omitempty"`
+	TLSMs      float64 `json:"tls_ms,omitempty"`
+	TTFBMs     float64 `json:"ttfb_ms,omitempty"`
+	ReplyTTL   int     `json:"reply_ttl,omitempty"`
+	LatencyMs  float64 `json:"latency_ms"`
+}
+
+// PhasesResponse is the GET /probe-targets/{id}/phases payload.
+type PhasesResponse struct {
+	Phases []PhaseRow `json:"phases"`
+}
+
+// StorePhase appends one per-stage timing row (#717). It satisfies the
+// probetarget.PhasesSink interface (checked at the routes wiring site); a
+// nil or data-less Phases is a no-op, double-guarding the engine's gate.
+func (s *Store) StorePhase(ctx context.Context, targetID int64, module, vantage, checkedAt string, latencyMs float64, ph *probe.Phases) error {
+	if ph == nil || !ph.HasData() {
+		return nil
+	}
+	_, err := s.conn.ExecContext(ctx,
+		`INSERT INTO probe_phases
+		 (target_id, module, vantage, checked_at, resolved_ip, dns_ms, connect_ms, tls_ms, ttfb_ms, reply_ttl, latency_ms)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		targetID, module, vantage, checkedAt, ph.ResolvedIP, ph.DNSMs, ph.ConnectMs, ph.TLSMs, ph.TTFBMs, ph.ReplyTTL, latencyMs)
+	if err != nil {
+		return fmt.Errorf("store phase: %w", err)
+	}
+	return nil
+}
+
+// ListPhasesFor returns the newest-first phase rows of one target across all
+// vantages (the history modal renders one series per vantage).
+func (s *Store) ListPhasesFor(ctx context.Context, targetID int64, limit int) ([]PhaseRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT target_id, module, vantage, checked_at, resolved_ip, dns_ms, connect_ms, tls_ms, ttfb_ms, reply_ttl, latency_ms
+		 FROM probe_phases WHERE target_id = ? ORDER BY id DESC LIMIT ?`, targetID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PhaseRow{}
+	for rows.Next() {
+		var p PhaseRow
+		if err := rows.Scan(&p.TargetID, &p.Module, &p.Vantage, &p.CheckedAt, &p.ResolvedIP,
+			&p.DNSMs, &p.ConnectMs, &p.TLSMs, &p.TTFBMs, &p.ReplyTTL, &p.LatencyMs); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 func boolInt(b bool) int {

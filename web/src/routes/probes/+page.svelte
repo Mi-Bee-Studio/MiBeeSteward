@@ -50,6 +50,7 @@ ProbeQualityTarget,
 		ProbeEgressVantage,
 		ProbePathSample,
 		ProbeQualityEpisode,
+		ProbePhaseRow,
 		TLSPortCerts,
 		DeviceCertificatesResponse,
 		Network
@@ -57,6 +58,13 @@ ProbeQualityTarget,
 	import { certDayDelta } from '$lib/utils/certs';
 	import { probeCategory, PROBE_CATEGORIES } from '$lib/utils/probes';
 	import type { ProbeCategory } from '$lib/utils/probes';
+	import {
+		PHASE_STAGES,
+		hasPhaseData,
+		phaseTracks,
+		stageData,
+		ttlData
+	} from '$lib/probePhases';
 
 	// --- State ---
 	let targets = $state<ProbeTarget[]>([]);
@@ -898,6 +906,11 @@ ProbeQualityTarget,
 	let resultsLoading = $state(false);
 	// Chart is the default view (#277 follow-up); the raw rows stay one tab away.
 	let resultsTab = $state<'chart' | 'detail'>('chart');
+	// #717: per-stage rows ride along when the target's module measures them
+	// (http/tcp/icmp). The phases toggle only appears when some row carried a
+	// stage; a fetch failure is non-fatal (the total chart still works).
+	let phaseRows = $state<ProbePhaseRow[]>([]);
+	let chartMode = $state<'total' | 'phases'>('total');
 
 	// --- Certificate modal (reuses the shared component: same DTO shape) ---
 	let certModalOpen = $state(false);
@@ -1252,8 +1265,18 @@ ProbeQualityTarget,
 		results = [];
 		resultsTotal = 0;
 		resultsTab = 'chart';
+		phaseRows = [];
+		chartMode = 'total';
 		resultsModalOpen = true;
 		resultsLoading = true;
+		// Phase history (#717) loads in parallel; failure leaves the modal on
+		// the total chart (dns/tls targets have no phase rows anyway).
+		const phasesP = api
+			.get<{ phases?: ProbePhaseRow[] }>(`/probe-targets/${t.id}/phases?limit=200`)
+			.then((res) => {
+				phaseRows = res.phases || [];
+			})
+			.catch(() => {});
 		try {
 			const res = await api.get<ProbeResultListResponse>(`/probe-targets/${t.id}/results?limit=100`);
 			results = res.results || [];
@@ -1261,6 +1284,7 @@ ProbeQualityTarget,
 		} catch (err: unknown) {
 			addToast('error', getErrorMessage(err));
 		} finally {
+			await phasesP;
 			resultsLoading = false;
 		}
 	}
@@ -1513,6 +1537,106 @@ ProbeQualityTarget,
 
 	const statusStripCls = (s: string) =>
 		s === 'success' ? 'bg-success' : s === 'timeout' ? 'bg-warning' : 'bg-error';
+
+	// #717: per-stage stacked view. Fixed stage colors across vantages (the
+	// color answers "which stage", the x-cluster answers "which vantage");
+	// stacks are per-vantage so same-timestamp tracks sit side by side. The
+	// icmp reply TTL rides a dashed line on a second axis — hop budget, not
+	// milliseconds, and its drops are route-change smoke.
+	const PHASE_STAGE_COLORS: Record<string, string> = {
+		dns: '#38bdf8',
+		connect: '#34d399',
+		tls: '#c084fc',
+		ttfb: '#fbbf24'
+	};
+	const stageLabel = (s: string) =>
+		s === 'dns'
+			? m['probes.Stage Dns']()
+			: s === 'connect'
+				? m['probes.Stage Connect']()
+				: s === 'tls'
+					? m['probes.Stage Tls']()
+					: m['probes.Stage Ttfb']();
+	const phasesChartOption = $derived.by<import('echarts').EChartsCoreOption>(() => {
+		const tracks = phaseTracks(phaseRows);
+		const series: Record<string, unknown>[] = [];
+		for (const track of tracks) {
+			for (const stage of PHASE_STAGES) {
+				series.push({
+					name: `${track.vantage} · ${stageLabel(stage)}`,
+					type: 'bar',
+					stack: track.vantage,
+					barMaxWidth: 14,
+					itemStyle: { color: PHASE_STAGE_COLORS[stage] },
+					emphasis: { focus: 'series' },
+					data: stageData(track, stage).map((d) => ({
+						value: [d.time, d.ms],
+						row: d.row
+					}))
+				});
+			}
+		}
+		const ttls = ttlData(phaseRows);
+		if (ttls.length > 0) {
+			series.push({
+				name: m['probes.Paths Reply Ttl'](),
+				type: 'line',
+				yAxisIndex: 1,
+				symbol: 'diamond',
+				symbolSize: 6,
+				connectNulls: false,
+				lineStyle: { width: 1.5, type: 'dashed', color: '#94a3b8' },
+				itemStyle: { color: '#94a3b8' },
+				data: ttls
+			});
+		}
+		return {
+			animation: false,
+			grid: { left: 52, right: ttls.length > 0 ? 40 : 12, top: 12, bottom: 44 },
+			tooltip: {
+				trigger: 'axis',
+				// Rows carry their own extras (resolved IP, reply TTL, run
+				// total); append them under the per-stage values.
+				formatter: (params: unknown) => {
+					const list = (Array.isArray(params) ? params : [params]) as Array<{
+						value: [string, number];
+						row?: ProbePhaseRow;
+						marker?: string;
+						seriesName?: string;
+					}>;
+					if (list.length === 0) return '';
+					const lines: string[] = [String(list[0].value?.[0] ?? '')];
+					for (const p of list) {
+						if (!p.value || p.value[1] == null) continue;
+						lines.push(`${p.marker ?? ''}${p.seriesName ?? ''}: ${Math.round(p.value[1] * 10) / 10}`);
+					}
+					const row = list.find((p) => p.row)?.row;
+					if (row) {
+						const extras: string[] = [];
+						if (row.resolved_ip) extras.push(`${m['probes.Paths Resolved']()}: ${row.resolved_ip}`);
+						if ((row.reply_ttl ?? 0) > 0) extras.push(`${m['probes.Paths Reply Ttl']()}: ${row.reply_ttl}`);
+						extras.push(`${m['probes.Total']()}: ${fmtLatency(row.latency_ms ?? 0)}`);
+						lines.push(...extras.map((e) => `<div style="color:#94a3b8">${e}</div>`));
+					}
+					return lines.join('<br/>');
+				}
+			},
+			legend: { bottom: 0, type: 'scroll', textStyle: { fontSize: 10 } },
+			xAxis: { type: 'time', axisLabel: { hideOverlap: true } },
+			yAxis: [
+				{ type: 'value', scale: true, axisLabel: { formatter: '{value} ms' } },
+				{
+					type: 'value',
+					min: 0,
+					max: 64,
+					position: 'right',
+					axisLabel: { formatter: 'TTL {value}' },
+					splitLine: { show: false }
+				}
+			],
+			series
+		};
+	});
 
 	const resultColumns = $derived([
 		{ key: 'vantage', label: m['probes.Vantage'](), render: (row: Record<string, unknown>) => vantageBadge(String(row.vantage || '')) },
@@ -2750,8 +2874,33 @@ ProbeQualityTarget,
 			<span class="text-xs text-text-muted">{m['probes.Vantage Samples']({ count: resultsTotal })}</span>
 		</div>
 		{#if resultsTab === 'chart'}
-			<div class="text-xs font-semibold text-text mb-1">{m['probes.Latency Chart']()}</div>
-			<Chart option={latencyChartOption} height="240px" />
+			<div class="flex items-center justify-between gap-2 mb-1">
+				<div class="text-xs font-semibold text-text">
+					{chartMode === 'total' ? m['probes.Latency Chart']() : m['probes.Phases Chart']()}
+				</div>
+				{#if hasPhaseData(phaseRows)}
+					<!-- #717: total vs per-stage switch. Only offered when the
+					     target's module actually produced phase rows. -->
+					<div class="flex rounded-md border border-border text-xs overflow-hidden" data-phase-toggle>
+						<button
+							type="button"
+							onclick={() => (chartMode = 'total')}
+							class="px-2.5 py-1 transition-colors {chartMode === 'total' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
+						>{m['probes.Chart Total']()}</button>
+						<button
+							type="button"
+							onclick={() => (chartMode = 'phases')}
+							class="px-2.5 py-1 transition-colors {chartMode === 'phases' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
+						>{m['probes.Chart Stages']()}</button>
+					</div>
+				{/if}
+			</div>
+			{#if chartMode === 'total'}
+				<Chart option={latencyChartOption} height="240px" />
+			{:else}
+				<Chart option={phasesChartOption} height="240px" />
+				<p class="mt-1 text-[0.625rem] leading-tight text-text-muted">{m['probes.Phases Note']()}</p>
+			{/if}
 			<div class="mt-4">
 				<div class="text-xs font-semibold text-text mb-2">{m['probes.Status Timeline']()}</div>
 				<div class="space-y-1.5">

@@ -876,8 +876,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// probe:read (viewer+); CRUD + trigger → probe:manage (operator+). NOT
 	// network-scoped: #138's object-level scope guards the internal inventory,
 	// while probing aims at arbitrary external endpoints by design.
+	// The probe_ext.db side store (heartbeat.db pattern - additive DDL, no
+	// SchemaVersion bump) opens BEFORE the engine so the same handle serves as
+	// the per-stage timing sink (#717) and the egress/path/episode store
+	// (#716/#718/#719/#720).
+	probeExtStore, err := probeext.OpenStore(probeExtDBPathFor(cfg))
+	if err != nil {
+		slog.Error("failed to open probe_ext store", "error", err)
+		os.Exit(1)
+	}
 	probeEngine := probetarget.NewEngine(db.New(probeDB), slog.Default(), prometheus.DefaultRegisterer, cfg.Probe.MaxConcurrency, changeRecorder).
-		WithNotifyFailThreshold(cfg.Probe.NotifyFailThreshold)
+		WithNotifyFailThreshold(cfg.Probe.NotifyFailThreshold).
+		WithPhasesSink(probeExtStore)
 	probeTargetSvc := probetarget.New(db.New(probeDB), probeEngine)
 	// Vantage probe dispatcher (#277): ships agent plans over the command
 	// channel whenever a plan content changes (fingerprint-gated, steady
@@ -911,14 +921,9 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	probeQualityStop := make(chan struct{})
 	go probeQualitySvc.StartMetricsLoop(context.Background(), prometheus.DefaultRegisterer, probeQualityStop)
 	probeQualityHandler := handler.NewProbeQualityHandler(probeQualitySvc)
-	// Egress/path extension (#716/#718/#719): the probe_ext.db side store
-	// (heartbeat.db pattern - additive DDL, no SchemaVersion bump) plus the
-	// center-side egress rounds and path tracer. Recording only.
-	probeExtStore, err := probeext.OpenStore(probeExtDBPathFor(cfg))
-	if err != nil {
-		slog.Error("failed to open probe_ext store", "error", err)
-		os.Exit(1)
-	}
+	// Egress/path extension (#716/#718/#719): the probe_ext service on the
+	// store opened above the engine (center-side egress rounds + path tracer).
+	// Recording only.
 	probeExtSvc := probeext.NewService(cfg.Probe, probeExtStore, db.New(probeDB), slog.Default())
 	probeExtSvc.Start(context.Background())
 	// Quality degradation episodes (#720): relative-baseline detection with

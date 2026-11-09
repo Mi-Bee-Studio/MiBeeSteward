@@ -109,6 +109,9 @@ export type ProbePathHop = Schemas['ProbePathHop'];
 export type ProbeQualityEpisode = Schemas['ProbeQualityEpisode'];
 export type ProbeEpisodeMetric = Schemas['ProbeEpisodeMetric'];
 export type ProbeEpisodeAttribution = Schemas['ProbeEpisodeAttribution'];
+// Per-stage timing history (#717): DNS/connect/TLS/TTFB breakdown per run.
+export type ProbePhaseRow = Schemas['ProbePhaseRow'];
+export type ProbePhasesResponse = Schemas['ProbePhasesResponse'];
 
 // ---------------------------------------------------------------------------
 // Linked Document (used in device-document linking modal)

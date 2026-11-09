@@ -38,8 +38,16 @@ func (p *TCPProber) Probe(ctx context.Context, target string, timeout time.Durat
 
 	slog.Debug("probe executed", "method", "tcp", "target", target, "success", true, "latency", elapsed)
 	noteProbeSuccess("tcp", target, elapsed)
+	// #717: the dial covers resolution + connect; with no DNS hook here the
+	// whole elapsed time is attributed to the connect phase and the resolved
+	// address comes from the established connection itself.
+	ph := &Phases{ConnectMs: float64(elapsed.Microseconds()) / 1000}
+	if host, _, err := net.SplitHostPort(conn.RemoteAddr().String()); err == nil {
+		ph.ResolvedIP = host
+	}
 	return &Result{
 		Success: true,
 		Latency: elapsed,
+		Phases:  ph,
 	}, nil
 }

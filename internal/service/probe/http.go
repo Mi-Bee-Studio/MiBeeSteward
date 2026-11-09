@@ -11,8 +11,11 @@ package probe
 
 import (
 	"context"
+	"crypto/tls"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/http/httptrace"
 	"time"
 
 	"mibee-steward/internal/version"
@@ -37,7 +40,55 @@ type HTTPProber struct {
 }
 
 // Probe performs an HTTP GET to the target URL and checks the status code.
+// tracedPhases bundles the exported per-stage numbers (#717) with the
+// unexported timing anchors the httptrace hooks write into.
+type tracedPhases struct {
+	Phases
+	dnsStart, connectStart, tlsStart, wroteReq time.Time
+}
+
+func (t *tracedPhases) msSince(start time.Time) float64 {
+	if start.IsZero() {
+		return 0
+	}
+	return float64(time.Since(start).Microseconds()) / 1000
+}
+
 func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Duration) (*Result, error) {
+	// Per-stage timing (#717): the trace hooks fire inside client.Do; the
+	// phases ride on every Result this function returns — failure results
+	// keep the stages that DID complete (a timeout mid-handshake still tells
+	// you what dns/connect cost).
+	ph := &tracedPhases{}
+	trace := &httptrace.ClientTrace{
+		DNSStart: func(httptrace.DNSStartInfo) { ph.dnsStart = time.Now() },
+		DNSDone:  func(httptrace.DNSDoneInfo) { ph.DNSMs = ph.msSince(ph.dnsStart) },
+		ConnectStart: func(_, _ string) {
+			if ph.connectStart.IsZero() {
+				ph.connectStart = time.Now()
+			}
+		},
+		ConnectDone: func(_, _ string, err error) {
+			if err == nil && ph.ConnectMs == 0 {
+				ph.ConnectMs = ph.msSince(ph.connectStart)
+			}
+		},
+		TLSHandshakeStart: func() { ph.tlsStart = time.Now() },
+		TLSHandshakeDone:  func(_ tls.ConnectionState, _ error) { ph.TLSMs = ph.msSince(ph.tlsStart) },
+		GotConn: func(info httptrace.GotConnInfo) {
+			if !info.Reused {
+				if host, _, err := net.SplitHostPort(info.Conn.RemoteAddr().String()); err == nil {
+					ph.ResolvedIP = host
+				} else {
+					ph.ResolvedIP = info.Conn.RemoteAddr().String()
+				}
+			}
+		},
+		WroteRequest:         func(httptrace.WroteRequestInfo) { ph.wroteReq = time.Now() },
+		GotFirstResponseByte: func() { ph.TTFBMs = ph.msSince(ph.wroteReq) },
+	}
+	traceCtx := httptrace.WithClientTrace(ctx, trace)
+
 	client := &http.Client{
 		Timeout: timeout,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
@@ -48,7 +99,7 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 		},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	req, err := http.NewRequestWithContext(traceCtx, http.MethodGet, target, nil)
 	if err != nil {
 		// execution failure against the target (dial/timeout/response) → streak log
 		logProbeFailure("http", target, err)
@@ -75,6 +126,7 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 			Success:      false,
 			Latency:      elapsed,
 			ErrorMessage: err.Error(),
+			Phases:       &ph.Phases,
 		}, nil
 	}
 	defer resp.Body.Close()
@@ -87,6 +139,7 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 			Success:    true,
 			Latency:    latency,
 			StatusCode: resp.StatusCode,
+			Phases:     &ph.Phases,
 		}, nil
 	}
 
@@ -96,5 +149,6 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 		Latency:      latency,
 		StatusCode:   resp.StatusCode,
 		ErrorMessage: http.StatusText(resp.StatusCode),
+		Phases:       &ph.Phases,
 	}, nil
 }
