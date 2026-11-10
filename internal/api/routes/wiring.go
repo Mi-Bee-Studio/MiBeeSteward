@@ -109,6 +109,16 @@ func heartbeatDBPathFor(cfg *config.Config) string {
 	return filepath.Join(filepath.Dir(mainPath), "heartbeat.db")
 }
 
+// probeExtDBPathFor derives the probe_ext.db path the same way: same
+// directory as the main DB (#716/#718/#719 - egress rounds + path samples).
+func probeExtDBPathFor(cfg *config.Config) string {
+	mainPath := cfg.Database.SQLite.Path
+	if mainPath == "" {
+		mainPath = "./data/mibee.db"
+	}
+	return filepath.Join(filepath.Dir(mainPath), "probe_ext.db")
+}
+
 // resolveNetworkID upserts the networks row for this instance's configured
 // network (config `network.name`/cidr/site) and returns its id. The returned id
 // is stamped onto every device this instance discovers (devices.network_id) so

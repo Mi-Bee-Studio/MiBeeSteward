@@ -409,6 +409,15 @@ scanner:
 | `probe.autogen.interval_seconds` | int | 300 | auto 目标的探测间隔（≥10）。 |
 | `probe.autogen.max_targets` | int | 100 | 存量上限（1–1000），避免千台设备的 LAN 炸出 3000 个目标。 |
 | `probe.autogen.sweep_interval_minutes` | int | 15 | 对账周期：为新服务建目标、为离开扫描的服务挂起目标、回归即复活。手工目标永不触碰。 |
+| `probe.egress.enabled` | bool | false | 出口身份记录器（#718）：每到 interval，center 向一组公网回显源（HTTP/STUN/DNS）询问当前出口呈现的公网 IP，对去重后的 IP 做来源 ASN 富化，并把整轮结果存入 `data/probe_ext.db`。只记录——变更本身不通知（#716）。裸配置默认**关闭**；`configs/config.example.yaml` 以推荐值 `enabled: true` 出厂。环境变量 `MIBEE_PROBE_EGRESS_ENABLED`。 |
+| `probe.egress.interval_seconds` | int | 300 | 采集周期（60–86400）。环境变量 `MIBEE_PROBE_EGRESS_INTERVAL_SECONDS`。 |
+| `probe.egress.asn_resolvers` | []string | ["223.5.5.5"] | Team Cymru 来源 ASN TXT 查询所用的 DNS 服务器，按优先级排列。 |
+| `probe.egress.sources` | []source | 内置源组 | 回显源；非空即**整体替换**内置多协议源组。条目：`{name, kind: http\|stun\|dns, target}`（http：返回 IP 的 URL；stun：`host:port`；dns：`server\|qname`）。 |
+| `probe.trace.categories` | []string | ["external","quality"] | 参与周期性零权限路径追踪（#719）的拨测目标分类。`lan` 保持关闭——内网路径是拓扑页的职责。 |
+| `probe.trace.interval_minutes` | int | 30 | 每目标的基线追踪周期（≥5）。 |
+| `probe.trace.max_ttl` | int | 30 | TTL 走查上限（8–64）。中间跳静默的出口需要走完全程：不提前放弃。 |
+| `probe.trace.per_hop_ms` | int | 500 | 每跳等待（100–3000）。 |
+| `probe.trace.concurrency` | int | 2 | 并发追踪数（≤8）。 |
 
 质量种入语义（启动时执行、幂等）：开启时--缺失的矩阵行被创建（`source=system`、vantage `all`），漂移的行按配置刷新（module/target/options），配置中已删除的 `source=system` 行连**结果历史**一起删除；关闭时--所有 system 目标挂起（停用、保留历史）。在 UI 里删除的行会在下次重启时重种；要永久移除某目标，请从 `groups` 里删掉它（或关闭 `probe.quality`）。
 
@@ -597,6 +606,7 @@ head -c 32 /dev/urandom | base64
 | `retention.host_services_days` | int | 30 | 主机服务记录保留天数 |
 | `retention.host_tls_certs_days` | int | 30 | TLS 证书记录保留天数 |
 | `retention.probe_results_days` | int | 30 | 拨测历史结果保留天数（`probe_tls_certs` 不清扫--每目标只存当前证书链） |
+| `retention.probe_ext_days` | int | 30 | 出口回显轮次 + 路径采样保留天数（`data/probe_ext.db` 旁路库，#716/#718/#719）。 |
 | `retention.sweep_interval_hours` | int | 6 | 清理扫描间隔（小时） |
 | `retention.batch_size` | int | 5000 | 每批清理的最大行数 |
 

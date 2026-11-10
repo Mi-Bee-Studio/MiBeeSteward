@@ -302,6 +302,49 @@ vi.mock('$lib/api/client', () => ({
 					total: 1
 				});
 			}
+			if (url.startsWith('/probe-egress')) {
+				// #716/#718: the center card the collapsed summary renders.
+				return Promise.resolve({
+					vantages: [
+						{
+							vantage: 'center',
+							round_at: '2026-11-07T12:00:00Z',
+							ips: [
+								{ ip: '198.51.100.7', asn: '64496', as_name: 'Example One', sources: ['http-a', 'stun-b'], samples: 24 },
+								{ ip: '198.51.100.8', asn: '64496', as_name: 'Example One', sources: ['http-c'], samples: 6 }
+							],
+							sources: [
+								{ source: 'http-a', kind: 'http', ok: true, ip: '198.51.100.7', ms: 90 },
+								{ source: 'http-c', kind: 'http', ok: true, ip: '198.51.100.8', ms: 120 },
+								{ source: 'http-dead', kind: 'http', ok: false, ms: 8000, err: 'i/o timeout' }
+							],
+							local_gateway: '192.0.2.1',
+							local_iface: 'eth0'
+						}
+					]
+				});
+			}
+			if (url.startsWith('/probe-paths')) {
+				// #719: one reached path + one silent-middle max_ttl path.
+				return Promise.resolve({
+					paths: [
+						{
+							id: 31, target_id: 11, target_name: 'site-a', vantage: 'center',
+							resolved_ip: '203.0.113.10', method: 'tcp', end_state: 'reached',
+							reached_ttl: 12, reply_ttl: 0, visible_hops: 2,
+							hops: [{ ttl: 1, ip: '192.0.2.1', ms: 0.5 }, { ttl: 2 }, { ttl: 12, ip: '203.0.113.10', ms: 12 }],
+							trigger: 'baseline', traced_at: '2026-11-07T12:00:00Z'
+						},
+						{
+							id: 32, target_id: 12, target_name: 'site-b', vantage: 'center',
+							resolved_ip: '203.0.113.11', method: 'icmp', end_state: 'max_ttl',
+							reached_ttl: 0, reply_ttl: 0, visible_hops: 1,
+							hops: [{ ttl: 1, ip: '192.0.2.1', ms: 0.4 }],
+							trigger: 'baseline', traced_at: '2026-11-07T12:00:00Z'
+						}
+					]
+				});
+			}
 			if (url.startsWith('/probe-quality/history')) {
 				return Promise.resolve(mockState.history);
 			}
@@ -1413,5 +1456,44 @@ describe('Probes page', () => {
 		});
 		await new Promise((r) => setTimeout(r, 80));
 		expect(certCalls() - baseline).toBe(3);
+	});
+
+	// --- Egress & paths panel (#716/#718/#719) ---
+	it('shows the current public IP in the collapsed egress summary', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.querySelector('[data-egress-first-ip]')?.textContent).toBe('198.51.100.7');
+		});
+		// Pool note: more than one IP renders the count.
+		expect(container.querySelector('[data-egress-summary]')?.textContent).toContain('2');
+		// Collapsed by default: no cards, no paths table.
+		expect(container.querySelector('[data-egress-card]')).toBeNull();
+		expect(container.querySelector('[data-paths-table]')).toBeNull();
+	});
+
+	it('renders egress cards and the path table when expanded', async () => {
+		localStorage.setItem('mibee.probes.egressOpen', 'true');
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.querySelector('[data-egress-card]')).toBeTruthy();
+		});
+		const card = container.querySelector('[data-egress-card]') as HTMLElement;
+		expect(card.textContent).toContain('198.51.100.7');
+		expect(card.textContent).toContain('AS64496');
+		expect(card.textContent).toContain('192.0.2.1'); // local gateway
+		const rows = container.querySelectorAll('[data-path-row]');
+		expect(rows.length).toBe(2);
+		expect(rows[0].textContent).toContain('site-a');
+		expect(rows[0].textContent).toContain('203.0.113.10');
+		expect(rows[0].textContent).toContain('12'); // reached TTL
+		expect(rows[1].textContent).toContain('site-b'); // silent-middle shape
+		// The path modal opens from the view button and lists the hops.
+		const viewBtn = rows[0].querySelector('button') as HTMLElement;
+		await fireEvent.click(viewBtn);
+		await waitFor(() => {
+			const hops = container.querySelector('[data-path-hops]');
+			expect(hops).toBeTruthy();
+			expect(hops?.querySelectorAll('tbody tr').length).toBe(3);
+		});
 	});
 });

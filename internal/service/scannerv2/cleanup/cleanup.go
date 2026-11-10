@@ -38,6 +38,7 @@ type Service struct {
 	heartbeatQueries *db.Queries // dedicated heartbeat DB (heartbeat_results lives in a separate file)
 	heartbeatDB      *sql.DB     // raw conn to heartbeat.db, for device_liveness RFC3339-bound deletes (sqlc passes time.Time which sorts wrong vs stored RFC3339 text)
 	mainDB           *sql.DB     // raw conn to the main DB, for the device-pruning DELETE + change_log emit (sqlc has no batched device delete)
+	extDB            *sql.DB     // raw conn to probe_ext.db (egress rounds + path samples, #716); nil ⇒ skipped
 	cfg              config.RetentionConfig
 	interval         time.Duration
 	batch            int64
@@ -53,7 +54,7 @@ type Service struct {
 // mainDB is the raw main-DB connection for the roamed-orphan prune (nil ⇒
 // device pruning is skipped, tests that don't exercise it). SweepIntervalHours
 // <=0 and BatchSize<=0 are defended in config.normalizeRetention.
-func New(queries *db.Queries, heartbeatQueries *db.Queries, heartbeatDB, mainDB *sql.DB, cfg config.RetentionConfig) *Service {
+func New(queries *db.Queries, heartbeatQueries *db.Queries, heartbeatDB, mainDB, extDB *sql.DB, cfg config.RetentionConfig) *Service {
 	interval := time.Duration(cfg.SweepIntervalHours) * time.Hour
 	if interval <= 0 {
 		interval = 6 * time.Hour
@@ -67,6 +68,7 @@ func New(queries *db.Queries, heartbeatQueries *db.Queries, heartbeatDB, mainDB 
 		heartbeatQueries: heartbeatQueries,
 		heartbeatDB:      heartbeatDB,
 		mainDB:           mainDB,
+		extDB:            extDB,
 		cfg:              cfg,
 		interval:         interval,
 		batch:            batch,
@@ -128,6 +130,7 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneHostServices(ctx)
 	s.pruneHostTLSCerts(ctx)
 	s.pruneProbeResults(ctx)
+	s.pruneProbeExt(ctx)
 	s.pruneRoamedOrphans(ctx)
 	// After the roamed-orphan sweep (and any other device-row delete — the
 	// asset-archive engine keeps its rows, reconcile's ghost cleanup runs on its
@@ -363,6 +366,29 @@ func (s *Service) pruneProbeResults(ctx context.Context) {
 			Limit:     limit,
 		})
 	})
+}
+
+// pruneProbeExt prunes the probe_ext.db side database (#716/#718/#719:
+// egress echo rounds + path samples). Both timestamp columns are RFC3339
+// TEXT, same lexical-sort convention as probe_results. extDB nil ⇒ skipped
+// (tests / instances without the extension store).
+func (s *Service) pruneProbeExt(ctx context.Context) {
+	if s.extDB == nil {
+		return
+	}
+	days := s.cfg.ProbeExtDays
+	if days <= 0 {
+		return
+	}
+	cut := time.Now().UTC().AddDate(0, 0, -days).Format(time.RFC3339)
+	for _, q := range []string{
+		`DELETE FROM egress_rounds WHERE round_at < ?`,
+		`DELETE FROM path_samples WHERE traced_at < ?`,
+	} {
+		if _, err := s.extDB.ExecContext(ctx, q, cut); err != nil {
+			s.logger.Warn("probe_ext prune failed", "error", err)
+		}
+	}
 }
 
 // pruneRoamedOrphans physically deletes stale per-network duplicate rows: a

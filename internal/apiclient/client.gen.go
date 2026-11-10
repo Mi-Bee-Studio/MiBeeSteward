@@ -567,6 +567,27 @@ func (e NotificationRuleScopeType) Valid() bool {
 	}
 }
 
+// Defines values for ProbeEgressSourceKind.
+const (
+	ProbeEgressSourceKindDns  ProbeEgressSourceKind = "dns"
+	ProbeEgressSourceKindHttp ProbeEgressSourceKind = "http"
+	ProbeEgressSourceKindStun ProbeEgressSourceKind = "stun"
+)
+
+// Valid indicates whether the value is a known member of the ProbeEgressSourceKind enum.
+func (e ProbeEgressSourceKind) Valid() bool {
+	switch e {
+	case ProbeEgressSourceKindDns:
+		return true
+	case ProbeEgressSourceKindHttp:
+		return true
+	case ProbeEgressSourceKindStun:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeOptionsExpectMode.
 const (
 	ProbeOptionsExpectModeContains ProbeOptionsExpectMode = "contains"
@@ -642,6 +663,84 @@ func (e ProbeOptionsRecord) Valid() bool {
 	case CNAME:
 		return true
 	case TXT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbePathSampleCategory.
+const (
+	ProbePathSampleCategoryExternal ProbePathSampleCategory = "external"
+	ProbePathSampleCategoryLan      ProbePathSampleCategory = "lan"
+	ProbePathSampleCategoryQuality  ProbePathSampleCategory = "quality"
+)
+
+// Valid indicates whether the value is a known member of the ProbePathSampleCategory enum.
+func (e ProbePathSampleCategory) Valid() bool {
+	switch e {
+	case ProbePathSampleCategoryExternal:
+		return true
+	case ProbePathSampleCategoryLan:
+		return true
+	case ProbePathSampleCategoryQuality:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbePathSampleEndState.
+const (
+	ProbePathSampleEndStateError   ProbePathSampleEndState = "error"
+	ProbePathSampleEndStateMaxTtl  ProbePathSampleEndState = "max_ttl"
+	ProbePathSampleEndStateReached ProbePathSampleEndState = "reached"
+)
+
+// Valid indicates whether the value is a known member of the ProbePathSampleEndState enum.
+func (e ProbePathSampleEndState) Valid() bool {
+	switch e {
+	case ProbePathSampleEndStateError:
+		return true
+	case ProbePathSampleEndStateMaxTtl:
+		return true
+	case ProbePathSampleEndStateReached:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbePathSampleMethod.
+const (
+	ProbePathSampleMethodIcmp ProbePathSampleMethod = "icmp"
+	ProbePathSampleMethodTcp  ProbePathSampleMethod = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the ProbePathSampleMethod enum.
+func (e ProbePathSampleMethod) Valid() bool {
+	switch e {
+	case ProbePathSampleMethodIcmp:
+		return true
+	case ProbePathSampleMethodTcp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbePathSampleTrigger.
+const (
+	ProbePathSampleTriggerBaseline ProbePathSampleTrigger = "baseline"
+	ProbePathSampleTriggerManual   ProbePathSampleTrigger = "manual"
+)
+
+// Valid indicates whether the value is a known member of the ProbePathSampleTrigger enum.
+func (e ProbePathSampleTrigger) Valid() bool {
+	switch e {
+	case ProbePathSampleTriggerBaseline:
+		return true
+	case ProbePathSampleTriggerManual:
 		return true
 	default:
 		return false
@@ -872,25 +971,25 @@ func (e ProbeTargetLastStatus) Valid() bool {
 
 // Defines values for ProbeTargetModule.
 const (
-	Dns  ProbeTargetModule = "dns"
-	Http ProbeTargetModule = "http"
-	Icmp ProbeTargetModule = "icmp"
-	Tcp  ProbeTargetModule = "tcp"
-	Tls  ProbeTargetModule = "tls"
+	ProbeTargetModuleDns  ProbeTargetModule = "dns"
+	ProbeTargetModuleHttp ProbeTargetModule = "http"
+	ProbeTargetModuleIcmp ProbeTargetModule = "icmp"
+	ProbeTargetModuleTcp  ProbeTargetModule = "tcp"
+	ProbeTargetModuleTls  ProbeTargetModule = "tls"
 )
 
 // Valid indicates whether the value is a known member of the ProbeTargetModule enum.
 func (e ProbeTargetModule) Valid() bool {
 	switch e {
-	case Dns:
+	case ProbeTargetModuleDns:
 		return true
-	case Http:
+	case ProbeTargetModuleHttp:
 		return true
-	case Icmp:
+	case ProbeTargetModuleIcmp:
 		return true
-	case Tcp:
+	case ProbeTargetModuleTcp:
 		return true
-	case Tls:
+	case ProbeTargetModuleTls:
 		return true
 	default:
 		return false
@@ -899,19 +998,19 @@ func (e ProbeTargetModule) Valid() bool {
 
 // Defines values for ProbeTargetSource.
 const (
-	Auto   ProbeTargetSource = "auto"
-	Manual ProbeTargetSource = "manual"
-	System ProbeTargetSource = "system"
+	ProbeTargetSourceAuto   ProbeTargetSource = "auto"
+	ProbeTargetSourceManual ProbeTargetSource = "manual"
+	ProbeTargetSourceSystem ProbeTargetSource = "system"
 )
 
 // Valid indicates whether the value is a known member of the ProbeTargetSource enum.
 func (e ProbeTargetSource) Valid() bool {
 	switch e {
-	case Auto:
+	case ProbeTargetSourceAuto:
 		return true
-	case Manual:
+	case ProbeTargetSourceManual:
 		return true
-	case System:
+	case ProbeTargetSourceSystem:
 		return true
 	default:
 		return false
@@ -2123,6 +2222,59 @@ type PipelineConfig struct {
 	} `json:"snmp"`
 }
 
+// ProbeEgressIP defines model for ProbeEgressIP.
+type ProbeEgressIP struct {
+	AsName *string `json:"as_name,omitempty"`
+
+	// Asn origin ASN (Team Cymru), empty when the lookup failed
+	Asn       *string    `json:"asn,omitempty"`
+	FirstSeen *time.Time `json:"first_seen,omitempty"`
+	Ip        string     `json:"ip"`
+	LastSeen  *time.Time `json:"last_seen,omitempty"`
+
+	// Samples successful observations within the 24h window
+	Samples int `json:"samples"`
+
+	// Sources echo sources that observed this IP in the latest round
+	Sources *[]string `json:"sources,omitempty"`
+}
+
+// ProbeEgressReport Current egress identity per vantage (#718): the latest echo round's per-source results, the distinct public IPs observed in the window (with origin ASN), and the local default-route gateway. Recording only - changes never notify (#716).
+type ProbeEgressReport struct {
+	Vantages []ProbeEgressVantage `json:"vantages"`
+}
+
+// ProbeEgressSource defines model for ProbeEgressSource.
+type ProbeEgressSource struct {
+	Err    *string               `json:"err,omitempty"`
+	Ip     *string               `json:"ip,omitempty"`
+	Kind   ProbeEgressSourceKind `json:"kind"`
+	Ms     float64               `json:"ms"`
+	Ok     bool                  `json:"ok"`
+	Source string                `json:"source"`
+}
+
+// ProbeEgressSourceKind defines model for ProbeEgressSource.Kind.
+type ProbeEgressSourceKind string
+
+// ProbeEgressVantage defines model for ProbeEgressVantage.
+type ProbeEgressVantage struct {
+	// Ips distinct public IPs seen this round; more than one usually means a CGNAT address pool assigned per destination
+	Ips []ProbeEgressIP `json:"ips"`
+
+	// LocalGateway default-route gateway IP
+	LocalGateway *string `json:"local_gateway,omitempty"`
+	LocalIface   *string `json:"local_iface,omitempty"`
+	NetworkName  *string `json:"network_name,omitempty"`
+
+	// RoundAt latest round, UTC
+	RoundAt *time.Time          `json:"round_at,omitempty"`
+	Sources []ProbeEgressSource `json:"sources"`
+
+	// Vantage 'center' or 'agent:{id}'
+	Vantage string `json:"vantage"`
+}
+
 // ProbeOptions Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free.
 type ProbeOptions struct {
 	// Expect tcp only; banner match against the first bytes read
@@ -2170,6 +2322,63 @@ type ProbeOptionsMethod string
 
 // ProbeOptionsRecord dns only; default A
 type ProbeOptionsRecord string
+
+// ProbePathHop defines model for ProbePathHop.
+type ProbePathHop struct {
+	// Ip empty = this hop stayed silent
+	Ip  *string  `json:"ip,omitempty"`
+	Ms  *float64 `json:"ms,omitempty"`
+	Ttl int      `json:"ttl"`
+}
+
+// ProbePathSample One zero-privilege path trace (#719). Silent hops carry an empty ip. reply_ttl is the destination reply's IP TTL (ICMP method via IP_RECVTTL; 0 = unknown).
+type ProbePathSample struct {
+	// Category management category (snapshot only)
+	Category *ProbePathSampleCategory `json:"category,omitempty"`
+
+	// EndState max_ttl with one visible hop is the silent-middle-egress shape: only the gateway answers
+	EndState ProbePathSampleEndState `json:"end_state"`
+	Err      *string                 `json:"err,omitempty"`
+	Hops     []ProbePathHop          `json:"hops"`
+	Id       int64                   `json:"id"`
+	Method   ProbePathSampleMethod   `json:"method"`
+
+	// Module probe module (snapshot only)
+	Module *string `json:"module,omitempty"`
+
+	// ReachedTtl TTL whose answer came from the destination (0 = never reached)
+	ReachedTtl *int `json:"reached_ttl,omitempty"`
+	ReplyTtl   *int `json:"reply_ttl,omitempty"`
+
+	// ResolvedIp the IP the tracer resolved and walked (DNS pollution makes the name-level view ambiguous)
+	ResolvedIp *string `json:"resolved_ip,omitempty"`
+
+	// Target target string (snapshot only)
+	Target      *string                 `json:"target,omitempty"`
+	TargetId    int64                   `json:"target_id"`
+	TargetName  *string                 `json:"target_name,omitempty"`
+	TracedAt    time.Time               `json:"traced_at"`
+	Trigger     *ProbePathSampleTrigger `json:"trigger,omitempty"`
+	Vantage     string                  `json:"vantage"`
+	VisibleHops *int                    `json:"visible_hops,omitempty"`
+}
+
+// ProbePathSampleCategory management category (snapshot only)
+type ProbePathSampleCategory string
+
+// ProbePathSampleEndState max_ttl with one visible hop is the silent-middle-egress shape: only the gateway answers
+type ProbePathSampleEndState string
+
+// ProbePathSampleMethod defines model for ProbePathSample.Method.
+type ProbePathSampleMethod string
+
+// ProbePathSampleTrigger defines model for ProbePathSample.Trigger.
+type ProbePathSampleTrigger string
+
+// ProbePathsResponse defines model for ProbePathsResponse.
+type ProbePathsResponse struct {
+	Paths []ProbePathSample `json:"paths"`
+}
 
 // ProbeQualityCategory defines model for ProbeQualityCategory.
 type ProbeQualityCategory struct {
@@ -3159,6 +3368,11 @@ type GetProbeTargetsParams struct {
 
 	// DeviceId Filter to targets bound to one device (#606); pagination fields are advisory for this shape
 	DeviceId *int64 `form:"device_id,omitempty" json:"device_id,omitempty"`
+}
+
+// GetProbeTargetsIdPathsParams defines parameters for GetProbeTargetsIdPaths.
+type GetProbeTargetsIdPathsParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // GetProbeTargetsIdResultsParams defines parameters for GetProbeTargetsIdResults.
@@ -4521,6 +4735,16 @@ type ClientInterface interface {
 	// Corresponds with PUT /notification/rules/{id} (the `PutNotificationRulesId` operationId).
 	PutNotificationRulesId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetProbeEgress Current egress identity per vantage (#718) - latest public-IP echo round, ASN enrichment, local gateway. Recording only, changes never notify (#716)
+	//
+	// Corresponds with GET /probe-egress (the `GetProbeEgress` operationId).
+	GetProbeEgress(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProbePaths Latest traced path per target and vantage (#719) - hop list, reached TTL, reply TTL
+	//
+	// Corresponds with GET /probe-paths (the `GetProbePaths` operationId).
+	GetProbePaths(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetProbeQuality Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
 	//
 	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
@@ -4561,10 +4785,20 @@ type ClientInterface interface {
 	// Corresponds with GET /probe-targets/{id}/certificates (the `GetProbeTargetsIdCertificates` operationId).
 	GetProbeTargetsIdCertificates(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetProbeTargetsIdPaths Path-trace history of one target (#719), newest first
+	//
+	// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
+	GetProbeTargetsIdPaths(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetProbeTargetsIdResults Result history (vantage filter)
 	//
 	// Corresponds with GET /probe-targets/{id}/results (the `GetProbeTargetsIdResults` operationId).
 	GetProbeTargetsIdResults(ctx context.Context, id Id, params *GetProbeTargetsIdResultsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostProbeTargetsIdTrace Trace this target's path now from the center (#719, zero-privilege TCP/ICMP TTL walk)
+	//
+	// Corresponds with POST /probe-targets/{id}/trace (the `PostProbeTargetsIdTrace` operationId).
+	PostProbeTargetsIdTrace(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostProbeTargetsIdTrigger Probe now (409 for agent-vantage targets on the center)
 	//
@@ -6824,6 +7058,36 @@ func (c *Client) PutNotificationRulesId(ctx context.Context, id Id, reqEditors .
 	return c.Client.Do(req)
 }
 
+// GetProbeEgress Current egress identity per vantage (#718) - latest public-IP echo round, ASN enrichment, local gateway. Recording only, changes never notify (#716)
+//
+// Corresponds with GET /probe-egress (the `GetProbeEgress` operationId).
+func (c *Client) GetProbeEgress(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeEgressRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProbePaths Latest traced path per target and vantage (#719) - hop list, reached TTL, reply TTL
+//
+// Corresponds with GET /probe-paths (the `GetProbePaths` operationId).
+func (c *Client) GetProbePaths(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbePathsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetProbeQuality Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
 //
 // Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
@@ -6944,11 +7208,41 @@ func (c *Client) GetProbeTargetsIdCertificates(ctx context.Context, id Id, reqEd
 	return c.Client.Do(req)
 }
 
+// GetProbeTargetsIdPaths Path-trace history of one target (#719), newest first
+//
+// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
+func (c *Client) GetProbeTargetsIdPaths(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeTargetsIdPathsRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetProbeTargetsIdResults Result history (vantage filter)
 //
 // Corresponds with GET /probe-targets/{id}/results (the `GetProbeTargetsIdResults` operationId).
 func (c *Client) GetProbeTargetsIdResults(ctx context.Context, id Id, params *GetProbeTargetsIdResultsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetProbeTargetsIdResultsRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostProbeTargetsIdTrace Trace this target's path now from the center (#719, zero-privilege TCP/ICMP TTL walk)
+//
+// Corresponds with POST /probe-targets/{id}/trace (the `PostProbeTargetsIdTrace` operationId).
+func (c *Client) PostProbeTargetsIdTrace(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostProbeTargetsIdTraceRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -12653,6 +12947,60 @@ func NewPutNotificationRulesIdRequest(server string, id Id) (*http.Request, erro
 	return req, nil
 }
 
+// NewGetProbeEgressRequest constructs an http.Request for the GetProbeEgress method
+func NewGetProbeEgressRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-egress")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetProbePathsRequest constructs an http.Request for the GetProbePaths method
+func NewGetProbePathsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-paths")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProbeQualityRequest constructs an http.Request for the GetProbeQuality method
 func NewGetProbeQualityRequest(server string, params *GetProbeQualityParams) (*http.Request, error) {
 	var err error
@@ -13014,6 +13362,67 @@ func NewGetProbeTargetsIdCertificatesRequest(server string, id Id) (*http.Reques
 	return req, nil
 }
 
+// NewGetProbeTargetsIdPathsRequest constructs an http.Request for the GetProbeTargetsIdPaths method
+func NewGetProbeTargetsIdPathsRequest(server string, id Id, params *GetProbeTargetsIdPathsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-targets/%s/paths", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProbeTargetsIdResultsRequest constructs an http.Request for the GetProbeTargetsIdResults method
 func NewGetProbeTargetsIdResultsRequest(server string, id Id, params *GetProbeTargetsIdResultsParams) (*http.Request, error) {
 	var err error
@@ -13092,6 +13501,40 @@ func NewGetProbeTargetsIdResultsRequest(server string, id Id, params *GetProbeTa
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostProbeTargetsIdTraceRequest constructs an http.Request for the PostProbeTargetsIdTrace method
+func NewPostProbeTargetsIdTraceRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-targets/%s/trace", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -15936,6 +16379,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /notification/rules/{id} (the `PutNotificationRulesId` operationId).
 	PutNotificationRulesIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PutNotificationRulesIdResponse, error)
 
+	// GetProbeEgressWithResponse Current egress identity per vantage (#718) - latest public-IP echo round, ASN enrichment, local gateway. Recording only, changes never notify (#716)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-egress (the `GetProbeEgress` operationId).
+	GetProbeEgressWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetProbeEgressResponse, error)
+
+	// GetProbePathsWithResponse Latest traced path per target and vantage (#719) - hop list, reached TTL, reply TTL
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-paths (the `GetProbePaths` operationId).
+	GetProbePathsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetProbePathsResponse, error)
+
 	// GetProbeQualityWithResponse Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -15992,12 +16449,26 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /probe-targets/{id}/certificates (the `GetProbeTargetsIdCertificates` operationId).
 	GetProbeTargetsIdCertificatesWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdCertificatesResponse, error)
 
+	// GetProbeTargetsIdPathsWithResponse Path-trace history of one target (#719), newest first
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
+	GetProbeTargetsIdPathsWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPathsResponse, error)
+
 	// GetProbeTargetsIdResultsWithResponse Result history (vantage filter)
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /probe-targets/{id}/results (the `GetProbeTargetsIdResults` operationId).
 	GetProbeTargetsIdResultsWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdResultsParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdResultsResponse, error)
+
+	// PostProbeTargetsIdTraceWithResponse Trace this target's path now from the center (#719, zero-privilege TCP/ICMP TTL walk)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /probe-targets/{id}/trace (the `PostProbeTargetsIdTrace` operationId).
+	PostProbeTargetsIdTraceWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PostProbeTargetsIdTraceResponse, error)
 
 	// PostProbeTargetsIdTriggerWithResponse Probe now (409 for agent-vantage targets on the center)
 	//
@@ -21303,6 +21774,88 @@ func (r PutNotificationRulesIdResponse) ContentType() string {
 	return ""
 }
 
+type GetProbeEgressResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeEgressReport
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeEgressResponse) GetJSON200() *ProbeEgressReport {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeEgressResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeEgressResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeEgressResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeEgressResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetProbePathsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbePathsResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbePathsResponse) GetJSON200() *ProbePathsResponse {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbePathsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbePathsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbePathsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbePathsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetProbeQualityResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -21624,6 +22177,47 @@ func (r GetProbeTargetsIdCertificatesResponse) ContentType() string {
 	return ""
 }
 
+type GetProbeTargetsIdPathsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbePathsResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeTargetsIdPathsResponse) GetJSON200() *ProbePathsResponse {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeTargetsIdPathsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeTargetsIdPathsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeTargetsIdPathsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeTargetsIdPathsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetProbeTargetsIdResultsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -21659,6 +22253,54 @@ func (r GetProbeTargetsIdResultsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetProbeTargetsIdResultsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostProbeTargetsIdTraceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbePathSample
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostProbeTargetsIdTraceResponse) GetJSON200() *ProbePathSample {
+	return r.JSON200
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r PostProbeTargetsIdTraceResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r PostProbeTargetsIdTraceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostProbeTargetsIdTraceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostProbeTargetsIdTraceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostProbeTargetsIdTraceResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -25160,6 +25802,32 @@ func (c *ClientWithResponses) PutNotificationRulesIdWithResponse(ctx context.Con
 	return ParsePutNotificationRulesIdResponse(rsp)
 }
 
+// GetProbeEgressWithResponse Current egress identity per vantage (#718) - latest public-IP echo round, ASN enrichment, local gateway. Recording only, changes never notify (#716)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-egress (the `GetProbeEgress` operationId).
+func (c *ClientWithResponses) GetProbeEgressWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetProbeEgressResponse, error) {
+	rsp, err := c.GetProbeEgress(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeEgressResponse(rsp)
+}
+
+// GetProbePathsWithResponse Latest traced path per target and vantage (#719) - hop list, reached TTL, reply TTL
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-paths (the `GetProbePaths` operationId).
+func (c *ClientWithResponses) GetProbePathsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetProbePathsResponse, error) {
+	rsp, err := c.GetProbePaths(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbePathsResponse(rsp)
+}
+
 // GetProbeQualityWithResponse Network egress quality analysis (#608) - per-vantage verdicts over the built-in probe-point matrix
 //
 // Returns a wrapper object for the known response body format(s).
@@ -25264,6 +25932,19 @@ func (c *ClientWithResponses) GetProbeTargetsIdCertificatesWithResponse(ctx cont
 	return ParseGetProbeTargetsIdCertificatesResponse(rsp)
 }
 
+// GetProbeTargetsIdPathsWithResponse Path-trace history of one target (#719), newest first
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
+func (c *ClientWithResponses) GetProbeTargetsIdPathsWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPathsResponse, error) {
+	rsp, err := c.GetProbeTargetsIdPaths(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeTargetsIdPathsResponse(rsp)
+}
+
 // GetProbeTargetsIdResultsWithResponse Result history (vantage filter)
 //
 // Returns a wrapper object for the known response body format(s).
@@ -25275,6 +25956,19 @@ func (c *ClientWithResponses) GetProbeTargetsIdResultsWithResponse(ctx context.C
 		return nil, err
 	}
 	return ParseGetProbeTargetsIdResultsResponse(rsp)
+}
+
+// PostProbeTargetsIdTraceWithResponse Trace this target's path now from the center (#719, zero-privilege TCP/ICMP TTL walk)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /probe-targets/{id}/trace (the `PostProbeTargetsIdTrace` operationId).
+func (c *ClientWithResponses) PostProbeTargetsIdTraceWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PostProbeTargetsIdTraceResponse, error) {
+	rsp, err := c.PostProbeTargetsIdTrace(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostProbeTargetsIdTraceResponse(rsp)
 }
 
 // PostProbeTargetsIdTriggerWithResponse Probe now (409 for agent-vantage targets on the center)
@@ -28844,6 +29538,58 @@ func ParsePutNotificationRulesIdResponse(rsp *http.Response) (*PutNotificationRu
 	return response, nil
 }
 
+// ParseGetProbeEgressResponse parses an HTTP response from a GetProbeEgressWithResponse call
+func ParseGetProbeEgressResponse(rsp *http.Response) (*GetProbeEgressResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeEgressResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeEgressReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProbePathsResponse parses an HTTP response from a GetProbePathsWithResponse call
+func ParseGetProbePathsResponse(rsp *http.Response) (*GetProbePathsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbePathsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbePathsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetProbeQualityResponse parses an HTTP response from a GetProbeQualityWithResponse call
 func ParseGetProbeQualityResponse(rsp *http.Response) (*GetProbeQualityResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -29042,6 +29788,32 @@ func ParseGetProbeTargetsIdCertificatesResponse(rsp *http.Response) (*GetProbeTa
 	return response, nil
 }
 
+// ParseGetProbeTargetsIdPathsResponse parses an HTTP response from a GetProbeTargetsIdPathsWithResponse call
+func ParseGetProbeTargetsIdPathsResponse(rsp *http.Response) (*GetProbeTargetsIdPathsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeTargetsIdPathsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbePathsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetProbeTargetsIdResultsResponse parses an HTTP response from a GetProbeTargetsIdResultsWithResponse call
 func ParseGetProbeTargetsIdResultsResponse(rsp *http.Response) (*GetProbeTargetsIdResultsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -29062,6 +29834,39 @@ func ParseGetProbeTargetsIdResultsResponse(rsp *http.Response) (*GetProbeTargets
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostProbeTargetsIdTraceResponse parses an HTTP response from a PostProbeTargetsIdTraceWithResponse call
+func ParsePostProbeTargetsIdTraceResponse(rsp *http.Response) (*PostProbeTargetsIdTraceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostProbeTargetsIdTraceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbePathSample
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 
