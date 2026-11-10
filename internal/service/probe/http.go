@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"sync"
 	"time"
 
 	"mibee-steward/internal/version"
@@ -41,8 +42,12 @@ type HTTPProber struct {
 
 // Probe performs an HTTP GET to the target URL and checks the status code.
 // tracedPhases bundles the exported per-stage numbers (#717) with the
-// unexported timing anchors the httptrace hooks write into.
+// unexported timing anchors the httptrace hooks write into. The hooks fire
+// on DIFFERENT goroutines (WroteRequest from the request-writer goroutine,
+// GotFirstResponseByte from the connection read loop — both observed racing
+// the others under -race, CI 42750109723), so every touch is mutex-guarded.
 type tracedPhases struct {
+	mu                                         sync.Mutex
 	Phases
 	dnsStart, connectStart, tlsStart, wroteReq time.Time
 }
@@ -61,21 +66,42 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	// you what dns/connect cost).
 	ph := &tracedPhases{}
 	trace := &httptrace.ClientTrace{
-		DNSStart: func(httptrace.DNSStartInfo) { ph.dnsStart = time.Now() },
-		DNSDone:  func(httptrace.DNSDoneInfo) { ph.DNSMs = ph.msSince(ph.dnsStart) },
+		DNSStart: func(httptrace.DNSStartInfo) {
+			ph.mu.Lock()
+			ph.dnsStart = time.Now()
+			ph.mu.Unlock()
+		},
+		DNSDone: func(httptrace.DNSDoneInfo) {
+			ph.mu.Lock()
+			ph.DNSMs = ph.msSince(ph.dnsStart)
+			ph.mu.Unlock()
+		},
 		ConnectStart: func(_, _ string) {
+			ph.mu.Lock()
 			if ph.connectStart.IsZero() {
 				ph.connectStart = time.Now()
 			}
+			ph.mu.Unlock()
 		},
 		ConnectDone: func(_, _ string, err error) {
+			ph.mu.Lock()
 			if err == nil && ph.ConnectMs == 0 {
 				ph.ConnectMs = ph.msSince(ph.connectStart)
 			}
+			ph.mu.Unlock()
 		},
-		TLSHandshakeStart: func() { ph.tlsStart = time.Now() },
-		TLSHandshakeDone:  func(_ tls.ConnectionState, _ error) { ph.TLSMs = ph.msSince(ph.tlsStart) },
+		TLSHandshakeStart: func() {
+			ph.mu.Lock()
+			ph.tlsStart = time.Now()
+			ph.mu.Unlock()
+		},
+		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+			ph.mu.Lock()
+			ph.TLSMs = ph.msSince(ph.tlsStart)
+			ph.mu.Unlock()
+		},
 		GotConn: func(info httptrace.GotConnInfo) {
+			ph.mu.Lock()
 			if !info.Reused {
 				if host, _, err := net.SplitHostPort(info.Conn.RemoteAddr().String()); err == nil {
 					ph.ResolvedIP = host
@@ -83,9 +109,18 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 					ph.ResolvedIP = info.Conn.RemoteAddr().String()
 				}
 			}
+			ph.mu.Unlock()
 		},
-		WroteRequest:         func(httptrace.WroteRequestInfo) { ph.wroteReq = time.Now() },
-		GotFirstResponseByte: func() { ph.TTFBMs = ph.msSince(ph.wroteReq) },
+		WroteRequest: func(httptrace.WroteRequestInfo) {
+			ph.mu.Lock()
+			ph.wroteReq = time.Now()
+			ph.mu.Unlock()
+		},
+		GotFirstResponseByte: func() {
+			ph.mu.Lock()
+			ph.TTFBMs = ph.msSince(ph.wroteReq)
+			ph.mu.Unlock()
+		},
 	}
 	traceCtx := httptrace.WithClientTrace(ctx, trace)
 
@@ -116,6 +151,12 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	resp, err := client.Do(req)
 	elapsed := time.Since(start)
 
+	// Snapshot the phases under the lock: the last hooks (GotFirstResponseByte
+	// on the read loop) may interleave with Do returning on this goroutine.
+	ph.mu.Lock()
+	phases := ph.Phases
+	ph.mu.Unlock()
+
 	if err != nil {
 		// execution failure against the target (dial/timeout/response) → streak
 		// log. This is the branch a half-dead IoT http service hits EVERY cycle:
@@ -126,7 +167,7 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 			Success:      false,
 			Latency:      elapsed,
 			ErrorMessage: err.Error(),
-			Phases:       &ph.Phases,
+			Phases:       &phases,
 		}, nil
 	}
 	defer resp.Body.Close()
@@ -139,7 +180,7 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 			Success:    true,
 			Latency:    latency,
 			StatusCode: resp.StatusCode,
-			Phases:     &ph.Phases,
+			Phases:     &phases,
 		}, nil
 	}
 
@@ -149,6 +190,6 @@ func (p *HTTPProber) Probe(ctx context.Context, target string, timeout time.Dura
 		Latency:      latency,
 		StatusCode:   resp.StatusCode,
 		ErrorMessage: http.StatusText(resp.StatusCode),
-		Phases:       &ph.Phases,
+		Phases:       &phases,
 	}, nil
 }
