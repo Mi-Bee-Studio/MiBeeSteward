@@ -1054,7 +1054,15 @@ mod tests {
                 let _ = s.write_all(reply).await;
             }
         });
-        let (code, _) = http_probe(&format!("127.0.0.1:{port}"), None, Duration::from_secs(2)).await.unwrap();
+        let mut stages = crate::wire::ProbePhases::default();
+        let (code, _) = http_probe(
+            &format!("127.0.0.1:{port}"),
+            None,
+            Duration::from_secs(2),
+            &mut stages,
+        )
+        .await
+        .unwrap();
         assert_eq!(code, 204, "probe must send the MiBeeSteward-probe User-Agent");
     }
 
