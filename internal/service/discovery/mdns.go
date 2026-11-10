@@ -11,6 +11,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -190,7 +191,7 @@ func (m *Registrar) Stop() {
 // a busy LAN at boot (RFC 6762 §8.1).
 func (m *Registrar) announceLoop() {
 	defer m.wg.Done()
-	for i := 0; i < announceBursts; i++ {
+	for i := range announceBursts {
 		if i > 0 {
 			select {
 			case <-m.stop:
@@ -204,7 +205,7 @@ func (m *Registrar) announceLoop() {
 		if conn == nil {
 			return
 		}
-		if msg, err := m.response(nil, 0); err == nil {
+		if msg := m.response(nil); msg != nil {
 			if buf, err := msg.Pack(); err == nil {
 				_, _ = conn.WriteToUDP(buf, &net.UDPAddr{IP: net.ParseIP(mdnsGroupV4), Port: mdnsPort})
 			}
@@ -230,7 +231,7 @@ func (m *Registrar) readLoop() {
 				return
 			default:
 			}
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			if ne := (net.Error)(nil); errors.As(err, &ne) && ne.Timeout() {
 				continue
 			}
 			continue
@@ -244,12 +245,11 @@ func (m *Registrar) readLoop() {
 		if query.Response || len(query.Questions) == 0 {
 			continue
 		}
-		var resp *dnsmessage.Message
 		// Ordinary mDNS query (source port 5353): answer multicast. Anything
 		// else is a legacy one-shot query: answer unicast to the source with
 		// its transaction ID (RFC 6762 §6.7).
-		resp, aerr := m.answer(&query)
-		if aerr != nil || resp == nil {
+		resp := m.answer(&query)
+		if resp == nil {
 			continue
 		}
 		var dst *net.UDPAddr
@@ -275,13 +275,13 @@ func (m *Registrar) readLoop() {
 	}
 }
 
-// answer builds the response for one query; it returns (nil, nil) when the
-// query holds no matching question, or when a multicast query already carries
+// answer builds the response for one query; it returns nil when the query
+// holds no matching question, or when a multicast query already carries
 // our records as known answers (RFC 6762 §7.1 — answering again would spark
 // an answer storm between every instance seeing every other's cache).
-func (m *Registrar) answer(query *dnsmessage.Message) (*dnsmessage.Message, error) {
+func (m *Registrar) answer(query *dnsmessage.Message) *dnsmessage.Message {
 	if query.Response {
-		return nil, nil
+		return nil
 	}
 	matched := false
 	for _, q := range query.Questions {
@@ -308,14 +308,14 @@ func (m *Registrar) answer(query *dnsmessage.Message) (*dnsmessage.Message, erro
 		}
 	}
 	if !matched {
-		return nil, nil
+		return nil
 	}
 	// Known-answer suppression: a multicast query that already lists our
 	// instance's records knows about us; stay silent.
 	if m.queryHasOurRecords(query) {
-		return nil, nil
+		return nil
 	}
-	return m.response(query.Questions, uint16(0))
+	return m.response(query.Questions)
 }
 
 // response builds a full authoritative answer carrying every record a
@@ -323,7 +323,7 @@ func (m *Registrar) answer(query *dnsmessage.Message) (*dnsmessage.Message, erro
 // for connect). The query's questions are echoed for legacy one-shot
 // responses (RFC 6762 §6.7 asks the question be restated; harmless for
 // multicast where questions are usually omitted).
-func (m *Registrar) response(questions []dnsmessage.Question, _ uint16) (*dnsmessage.Message, error) {
+func (m *Registrar) response(questions []dnsmessage.Question) *dnsmessage.Message {
 	ptr := dnsmessage.Resource{
 		Header: dnsmessage.ResourceHeader{
 			Name:  dnsN(m.serviceFQDN),
@@ -382,7 +382,7 @@ func (m *Registrar) response(questions []dnsmessage.Question, _ uint16) (*dnsmes
 		},
 		Questions: questions,
 		Answers:   answers,
-	}, nil
+	}
 }
 
 // queryHasOurRecords reports whether the query's answer (known-answer) section
