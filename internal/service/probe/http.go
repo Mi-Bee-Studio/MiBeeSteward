@@ -47,7 +47,7 @@ type HTTPProber struct {
 // GotFirstResponseByte from the connection read loop — both observed racing
 // the others under -race, CI 42750109723), so every touch is mutex-guarded.
 type tracedPhases struct {
-	mu                                         sync.Mutex
+	mu sync.Mutex
 	Phases
 	dnsStart, connectStart, tlsStart, wroteReq time.Time
 }
