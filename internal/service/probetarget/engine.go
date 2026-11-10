@@ -22,7 +22,6 @@ import (
 	"mibee-steward/internal/changedetect"
 	"mibee-steward/internal/db"
 	"mibee-steward/internal/domain"
-	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/service/scannerv2"
 )
 
