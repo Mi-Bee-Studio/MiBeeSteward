@@ -9,6 +9,8 @@
 
 ### Added
 - **OpenWrt 安装器：保配置升级的加法式迁移（#727）**：升级规则"已有配置原样保留"同时意味着——配置生成早于某特性的配置块时，该块永远不会出现，服务端把缺失的键视为永久关闭，UI 上没有任何迹象说明原因（首个现场案例：0.8.0 之前的配置升到 0.9.0 后，#608 出口质量矩阵无论等多久都不会播种）。新增自包含的 `deploy/openwrt/migrate-config.sh`（#688 detect-lans.sh 范式：POSIX ash、busybox-awk 安全、随 tar.gz/.ipk/.apk 分发、随仓带 fixture 桩测试 harness），每次保配置安装时运行：缺失的默认块做**加法**补入（`probe.quality` → `enabled: true`，其余参数全走内置默认）；运维显式设置的键优先（`enabled: false` 保持关闭）；重跑字节级无变化（同版本重装仍是标准验证路径）；重写失败则配置原样保留并大声中止安装。`install.sh` 在升级路径调用它（tar 包与 `--from-ipk` 一致）；`check-openwrt` 现在还会**执行**随仓的 shell 测试 harness（detect-lans + migrate-config），不再只做 `sh -n` 语法检查。对没有安装器的升级形态（二进制/systemd、Docker），`doctor` 新增 `probe.quality` 检查——矩阵关闭时给出 warn 与一行修复提示。
+### Fixed
+- **扫描器：rtsp 服务不再自动播种 TCP:554 心跳（#731）**：心跳每个 tick 都会对相机的 RTSP 端口发一次裸 TCP 连接——而小内存流媒体设备（自研 RTSP 服务器的 ESP32 类相机）每个 accept 都会孵化并销毁一个完整 RTSP 会话（任务线程），30s 默认 tick 于是成了每天 2,880 次的「会话孵化→即弃」churn，并在一台此类设备上成为周期性内存腐坏的触发时间表。rtsp 现在不再产生心跳 spec（MiotHandler 先例）：设备落到桥接的设备级 ICMP 兜底——心跳对相机要的本就是活性，CameraHandler 的既有注释也正是这个理念（「相机可能 RTSP 掉了但主机没死」）。需要端口级 RTSP 监控的运维仍可手动加 TCP 心跳。NVR 的重连器也做过同样的决定（NvrRtsp #711，5s 下限 + Retry-After）。
 
 ## [0.9.0] - 2026-11-07
 
