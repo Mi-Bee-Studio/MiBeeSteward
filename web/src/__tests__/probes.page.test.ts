@@ -494,7 +494,9 @@ describe('Probes page', () => {
 		} finally {
 			mockState.targets = seeded;
 		}
-	});
+	}, 15_000); // 250 rendered rows run ~5s alone and flake past vitest's 5s
+	// default under full-suite load on slower runners (seen twice on rig41);
+	// the page fetches 3 pages sequentially, so the margin is legitimate.
 
 	it('renders the module badge and per-vantage status lines (agent track visible)', async () => {
 		const { container } = render(Probes);

@@ -99,6 +99,11 @@ interface AddDevicesResponse {
 	// page reload / shared link preserves the chosen density.
 	let limit = $state(20);
 	let showAdvanced = $state(false);
+	// Compact filter bar (#UI-compact): the four secondary axes (type /
+	// lifecycle / network / tag) live in one popover instead of four stacked
+	// full-width selects — the bar drops from ~240px to one ~48px row and the
+	// device table starts in the first viewport.
+	let filterMenuOpen = $state(false);
 	// View toggle: 'list' (device table) vs 'topology' (radial L2 graph).
 	// /topology used to be a separate top-level route; it's now a view here
 	// because list/subnet views were just alternate groupings of this same
@@ -400,6 +405,38 @@ interface AddDevicesResponse {
 		expandedDeviceId = null;
 		selectedIds = new Set();
 		fetchDevices();
+	}
+
+	// --- Compact filter bar helpers (#UI-compact) ---------------------------
+	// Chip labels reuse the EXISTING maps below (typeLabel Record ~line 750,
+	// lifecycleLabel fn ~line 836) so a chip and its DataTable/ledger row
+	// can never disagree.
+	interface ActiveSecondaryFilter {
+		key: 'type' | 'lifecycle' | 'network' | 'tag';
+		label: string;
+		clear: () => void;
+	}
+	const activeSecondaryFilters = $derived.by<ActiveSecondaryFilter[]>(() => {
+		const out: ActiveSecondaryFilter[] = [];
+		if (typeFilter) out.push({ key: 'type', label: typeLabel[typeFilter] ?? typeFilter, clear: () => { typeFilter = ''; applyFilters(); } });
+		if (lifecycleFilter) out.push({ key: 'lifecycle', label: lifecycleLabel(lifecycleFilter), clear: () => { lifecycleFilter = ''; applyFilters(); } });
+		// (lifecycleLabel/typeLabel are declared further down; both run before
+		// this derived is first read, so the references resolve fine.)
+		if (networkFilter) {
+			const net = networks.find((n) => String(n.id) === String(networkFilter));
+			out.push({ key: 'network', label: net ? net.name : String(networkFilter), clear: () => { networkFilter = ''; applyFilters(); } });
+		}
+		if (tagFilter) {
+			const tag = tagDictionary.find((t) => String(t.id) === String(tagFilter));
+			out.push({ key: 'tag', label: tag ? tag.name : String(tagFilter), clear: () => { tagFilter = ''; applyFilters(); } });
+		}
+		return out;
+	});
+	// The popover button's badge: how many secondary axes are active.
+	const secondaryActiveCount = $derived(activeSecondaryFilters.length);
+	function setStatusFilter(v: string) {
+		statusFilter = v;
+		applyFilters();
 	}
 
 	// Changing page size resets to page 0 (offset N of a larger page no longer
@@ -1112,88 +1149,144 @@ interface AddDevicesResponse {
 	</div>
 
 	{#if viewMode === 'list'}
-	<!-- Filters + Actions bar -->
-	<div class="flex flex-wrap gap-3 mb-4 items-center">
-		<select
-			bind:value={statusFilter}
-			onchange={applyFilters}
-			class="input"
-		>
-			<option value="">{m['devices.All Status']()}</option>
-			<option value="online">{m['devices.Online']()}</option>
-			<option value="offline">{m['devices.Offline']()}</option>
-			<option value="unknown">{m['devices.Unknown']()}</option>
-		</select>
-		<select
-			bind:value={typeFilter}
-			onchange={applyFilters}
-			class="input"
-		>
-			<option value="">{m['devices.All Types']()}</option>
-			<option value="pc">{m['devices.PC']()}</option>
-			<option value="embedded">{m['devices.Embedded']()}</option>
-			<option value="iot">{m['devices.IoT']()}</option>
-			<option value="server">{m['devices.Server']()}</option>
-			<option value="switch">{m['devices.Switch']()}</option>
-			<option value="router">{m['devices.Router']()}</option>
-			<option value="firewall">{m['devices.Firewall']()}</option>
-		<option value="nas">{m['devices.NAS']()}</option>
-		<option value="camera">{m['devices.Camera']()}</option>
-		<option value="phone">{m['devices.Phone']()}</option>
-		<option value="printer">{m['devices.Printer']()}</option>
-		<option value="other">{m['devices.Other']()}</option>
-		</select>
-		<!-- Lifecycle filter (#669): exact server-side match. -->
-		<select
-			bind:value={lifecycleFilter}
-			onchange={applyFilters}
-			class="input"
-		>
-			<option value="">{m['devices.All Lifecycles']()}</option>
-			<option value="in_use">{m['devices.Lifecycle In Use']()}</option>
-			<option value="spare">{m['devices.Lifecycle Spare']()}</option>
-			<option value="repair">{m['devices.Lifecycle Repair']()}</option>
-			<option value="lent">{m['devices.Lifecycle Lent']()}</option>
-			<option value="retired">{m['devices.Lifecycle Retired']()}</option>
-		</select>
-		{#if networks.length > 0}
-			<select
-				bind:value={networkFilter}
-				onchange={applyFilters}
-				class="input"
+	<!-- Compact filter bar (#UI-compact): status pills (the primary
+	     troubleshooting axis, with live counts) + one popover holding the four
+	     secondary axes + removable chips for whatever is active + search +
+	     actions. One ~48px row replaces ~240px of stacked full-width selects,
+	     so the device table starts in the first viewport. -->
+	<div class="flex flex-wrap gap-2 mb-4 items-center" data-filter-bar>
+		<div class="flex items-center gap-1" role="group" aria-label={m['devices.All Status']()} data-status-pills>
+			{#each [
+				{ v: '', label: m['devices.All Status'](), n: Object.values(stats.by_status).reduce((a, b) => a + b, 0) },
+				{ v: 'online', label: m['devices.Online'](), n: stats.by_status?.online ?? 0 },
+				{ v: 'offline', label: m['devices.Offline'](), n: stats.by_status?.offline ?? 0 },
+				{ v: 'unknown', label: m['devices.Unknown'](), n: stats.by_status?.unknown ?? 0 }
+			] as s (s.v)}
+				<button
+					type="button"
+					onclick={() => setStatusFilter(s.v)}
+					aria-pressed={statusFilter === s.v}
+					class="rounded-full border px-2.5 py-1 text-xs transition-colors {statusFilter === s.v
+						? s.v === 'offline'
+							? 'border-error/50 bg-error/10 text-error'
+							: s.v === 'online'
+								? 'border-success/50 bg-success/10 text-success'
+								: 'border-primary/50 bg-primary/10 text-primary'
+						: 'border-border text-text-muted hover:text-text'}"
+				>{s.label}{#if s.v !== ''} · {s.n}{/if}</button>
+			{/each}
+		</div>
+
+		<!-- Secondary axes (type / lifecycle / network / tag) in one popover. -->
+		<div class="relative">
+			<button
+				type="button"
+				onclick={() => (filterMenuOpen = !filterMenuOpen)}
+				aria-expanded={filterMenuOpen}
+				aria-haspopup="menu"
+				data-filter-menu-btn
+				class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors {filterMenuOpen || secondaryActiveCount > 0
+					? 'border-primary/50 bg-primary/10 text-primary'
+					: 'border-border text-text-muted hover:text-text'}"
 			>
-				<option value="">{m['devices.All Networks']()}</option>
-				{#each networks as net}
-					<option value={net.id}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
-				{/each}
-			</select>
-			<!-- Tag filter (#665): dictionary-driven, server-side. -->
-			{#if tagDictionary.length > 0}
-				<select bind:value={tagFilter} onchange={applyFilters} class="input">
-					<option value="">{m['devices.All Tags']()}</option>
-					{#each tagDictionary as tag (tag.id)}
-						<option value={tag.id}>{tag.name}</option>
-					{/each}
-				</select>
+				{m['devices.Filter Menu']()}{#if secondaryActiveCount > 0} · {secondaryActiveCount}{/if}
+				<ChevronDown class="w-3 h-3 transition-transform {filterMenuOpen ? 'rotate-180' : ''}" />
+			</button>
+			{#if filterMenuOpen}
+				<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+				<div class="fixed inset-0 z-10" onclick={() => (filterMenuOpen = false)} role="presentation"></div>
+				<div
+					class="absolute left-0 top-full mt-1 z-20 w-72 max-w-[85vw] rounded-lg border border-border bg-surface p-3 space-y-2.5"
+					style="box-shadow: var(--shadow-md);"
+					role="menu"
+					data-filter-menu
+				>
+					<div>
+						<label class="block text-xs text-muted mb-1">{m['devices.All Types']()}</label>
+						<select bind:value={typeFilter} onchange={applyFilters} class="input !w-full">
+							<option value="">{m['devices.All Types']()}</option>
+							<option value="pc">{m['devices.PC']()}</option>
+							<option value="embedded">{m['devices.Embedded']()}</option>
+							<option value="iot">{m['devices.IoT']()}</option>
+							<option value="server">{m['devices.Server']()}</option>
+							<option value="switch">{m['devices.Switch']()}</option>
+							<option value="router">{m['devices.Router']()}</option>
+							<option value="firewall">{m['devices.Firewall']()}</option>
+							<option value="nas">{m['devices.NAS']()}</option>
+							<option value="camera">{m['devices.Camera']()}</option>
+							<option value="phone">{m['devices.Phone']()}</option>
+							<option value="printer">{m['devices.Printer']()}</option>
+							<option value="other">{m['devices.Other']()}</option>
+						</select>
+					</div>
+					<div>
+						<!-- Lifecycle filter (#669): exact server-side match. -->
+						<label class="block text-xs text-muted mb-1">{m['devices.All Lifecycles']()}</label>
+						<select bind:value={lifecycleFilter} onchange={applyFilters} class="input !w-full">
+							<option value="">{m['devices.All Lifecycles']()}</option>
+							<option value="in_use">{m['devices.Lifecycle In Use']()}</option>
+							<option value="spare">{m['devices.Lifecycle Spare']()}</option>
+							<option value="repair">{m['devices.Lifecycle Repair']()}</option>
+							<option value="lent">{m['devices.Lifecycle Lent']()}</option>
+							<option value="retired">{m['devices.Lifecycle Retired']()}</option>
+						</select>
+					</div>
+					<div>
+						<label class="block text-xs text-muted mb-1">{m['devices.All Networks']()}</label>
+						{#if networks.length > 0}
+							<select bind:value={networkFilter} onchange={applyFilters} class="input !w-full">
+								<option value="">{m['devices.All Networks']()}</option>
+								{#each networks as net}
+									<option value={net.id}>{net.name}{net.cidr ? ` (${net.cidr})` : ''}</option>
+								{/each}
+							</select>
+							<!-- Filtering into a stale agent/peer segment (#557): say so
+							     inside the popover, or frozen data reads like a bug. -->
+							{#if networkFilter && staleNetworkIDs.has(Number(networkFilter))}
+								<p
+									class="mt-1 text-xs text-warning"
+									title={m['devices.Mirror Stale Desc']({ t: formatDateTime(agentLastUsedByID.get(Number(networkFilter)) ?? null) })}
+								>⚠ {m['devices.Mirror Stale']()}</p>
+							{/if}
+						{:else if networksError}
+							<!-- The /networks fetch failed: show a small indicator instead of
+							     silently dropping the filter (which would look like "no networks"). -->
+							<p class="text-xs text-warning" title={m['devices.Networks Load Failed']()}>
+								{m['devices.Networks Load Failed']()}
+							</p>
+						{:else}
+							<p class="text-xs text-muted">…</p>
+						{/if}
+					</div>
+					{#if tagDictionary.length > 0}
+						<!-- Tag filter (#665): dictionary-driven, server-side. -->
+						<div>
+							<label class="block text-xs text-muted mb-1">{m['devices.All Tags']()}</label>
+							<select bind:value={tagFilter} onchange={applyFilters} class="input !w-full">
+								<option value="">{m['devices.All Tags']()}</option>
+								{#each tagDictionary as tag (tag.id)}
+									<option value={tag.id}>{tag.name}</option>
+								{/each}
+							</select>
+						</div>
+					{/if}
+				</div>
 			{/if}
-			<!-- Filtering into a stale agent/peer segment (#557): say so next
-			     to the filter, or frozen data reads like a bug. -->
-			{#if networkFilter && staleNetworkIDs.has(Number(networkFilter))}
-				<span
-					class="text-xs text-warning inline-flex items-center gap-1"
-					title={m['devices.Mirror Stale Desc']({ t: formatDateTime(agentLastUsedByID.get(Number(networkFilter)) ?? null) })}
-				>⚠ {m['devices.Mirror Stale']()}</span>
-			{/if}
-		{:else if networksError}
-			<!-- The /networks fetch failed: show a small indicator instead of
-			     silently dropping the filter (which would look like "no networks"). -->
-			<span class="text-xs text-warning px-2 py-1 border border-warning/30 rounded" title={m['devices.Networks Load Failed']()}>
-				{m['devices.Networks Load Failed']()}
-			</span>
-		{/if}
+		</div>
+
+		<!-- Active secondary filters as removable chips (one per axis). -->
+		{#each activeSecondaryFilters as f (f.key)}
+			<button
+				type="button"
+				onclick={f.clear}
+				data-active-filter-chip="{f.key}"
+				class="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/5 px-2.5 py-1 text-xs text-primary hover:bg-primary/10 transition-colors"
+				title={m['common.Clear']()}
+			>{f.label} ✕</button>
+		{/each}
 
 		<!-- Server-side search (name / ip / mac / serial). 400ms debounce. -->
-		<div class="relative flex-1 min-w-[180px] max-w-xs">
+		<div class="relative flex-1 min-w-[160px] max-w-xs">
 			<input
 				type="text"
 				bind:value={searchInput}
